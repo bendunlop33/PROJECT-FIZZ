@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Progress Simple Prototype</title>
 <style>
-/* Progress, simplified (Ben, 21 Oct: "separate the page into key areas … overall progress vs plan/goals … review with changes, feedback"; "looks a bit complicated").
-   Two areas: 1 How it's going (glance), 2 This week's review (feedback + changes). Detail one tap deeper. Example data only. Direction D tokens. */
+/* Progress v3 (Ben, 21 Oct): keep the long-term "how we're tracking" chart, keep a weekly view, and the review reports what the coach
+   changed and why (small changes are automatic per rule 3, with Undo), instead of asking. Three areas: Goal over time · This week · Coach's changes.
+   Example data only. Direction D tokens. */
 :root {
   --canvas: #0D0C0B; --surface: #181615; --raised: #23201E; --divider: #302C29;
   --text: #F3EEE8; --text2: #B5ADA5; --text3: #948C84; --accent: #EDE5DA; --on-accent: #0D0C0B;
-  --data: #E8C9A0; --page: #1B1917; --ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
-  color-scheme: dark;
+  --data: #E8C9A0; --good: #5CC98A; --warn: #F2B84B; --page: #1B1917;
+  --ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { background: var(--page); color: var(--text); font-family: var(--ui); margin: 0; }
@@ -22,41 +23,51 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .chip { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text2); font: 600 14px var(--ui); cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 390px; line-height: 1.45; }
-.phone { width: 390px; max-width: 100%; height: 800px; background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 16px 16px 10px; display: flex; flex-direction: column; gap: 10px; position: relative; overflow: hidden; }
+.phone { width: 390px; max-width: 100%; height: 820px; background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 16px 16px 10px; display: flex; flex-direction: column; gap: 10px; position: relative; overflow: hidden; }
 .status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
-.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
 h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
-.sec { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); font-weight: 600; margin: 6px 2px -4px; }
-.card { background: var(--surface); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.sec { display: flex; justify-content: space-between; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); font-weight: 600; margin: 6px 2px -4px; }
+.sec span:last-child { letter-spacing: 0; text-transform: none; font-weight: 500; color: var(--text3); }
+.card { background: var(--surface); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.title { font-size: 21px; font-weight: 700; }
+.pill { font-size: 13px; padding: 5px 10px; border-radius: 999px; background: var(--raised); white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.pill i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.sub { color: var(--text2); font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tile { background: var(--raised); border-radius: 12px; padding: 10px 12px; }
+.tile .k { color: var(--text2); font-size: 13px; }
+.tile .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tile .v small { font-size: 13px; font-weight: 500; color: var(--text2); margin-left: 4px; }
 .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .k { color: var(--text2); font-size: 15px; }
-.v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.pd { min-height: 52px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 15px; font-weight: 600; gap: 1px; }
+.pd { min-height: 48px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; gap: 1px; }
 .pd small { font-size: 12px; font-weight: 500; }
 .pd.done { background: var(--data); color: var(--on-accent); }
 .pd.next { border: 1.5px solid var(--text2); }
 .pd.next small { color: var(--text2); }
-.pd.open { border: 1.5px dashed var(--divider); }
-.goal { display: flex; flex-direction: column; gap: 8px; }
-.meter { height: 10px; border-radius: 5px; background: var(--raised); position: relative; overflow: hidden; }
-.meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--data); border-radius: 5px; }
-.sub { color: var(--text2); font-size: 14px; font-variant-numeric: tabular-nums; }
-.more { background: none; border: 0; color: var(--text); font: 600 15px var(--ui); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); cursor: pointer; align-self: flex-start; min-height: 40px; padding: 0; }
-.note { font-size: 17px; line-height: 1.45; }
+.mus { display: grid; grid-template-columns: 78px 1fr 54px; gap: 10px; align-items: center; font-size: 15px; }
+.mus .n { text-align: right; font-variant-numeric: tabular-nums; }
+.bar { position: relative; height: 10px; border-radius: 5px; background: var(--raised); }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--data); }
+.bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text2); }
+.chg { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 0; border-top: 1px solid var(--divider); }
+.chg:first-of-type { border-top: 0; padding-top: 2px; }
+.chg .t { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chg .t s { color: var(--text3); font-weight: 500; }
+.chg .why { grid-column: 1; color: var(--text2); font-size: 14px; }
+.chg .u { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+.link { background: none; border: 0; color: var(--text); font: 600 15px var(--ui); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); cursor: pointer; min-height: 40px; padding: 0; }
+.note { font-size: 16px; line-height: 1.45; }
 .tag { color: var(--text3); font-size: 12px; margin-left: 6px; }
-.sug { background: var(--raised); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
-.sug .t { font-size: 16px; font-weight: 600; }
-.sug .ba { font-size: 16px; font-variant-numeric: tabular-nums; }
-.sug .ba s { color: var(--text3); }
+.ask { background: var(--raised); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.ask .t { font-size: 15px; font-weight: 600; }
 .acts { display: flex; gap: 8px; }
-.btn { min-height: 44px; border-radius: 999px; border: 1.5px solid var(--text3); background: none; color: var(--text); font: 600 16px var(--ui); cursor: pointer; padding: 0 18px; }
+.btn { min-height: 44px; border-radius: 999px; border: 1.5px solid var(--text3); background: none; color: var(--text); font: 600 15px var(--ui); cursor: pointer; padding: 0 16px; }
 .btn.yes { background: var(--accent); color: var(--on-accent); border: 0; flex: 1; }
-.done-line { color: var(--text2); font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
-.list { display: flex; flex-direction: column; }
-.li { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--divider); font-size: 15px; }
-.li:first-child { border-top: 0; padding-top: 0; }
-.li span:last-child { color: var(--text2); font-variant-numeric: tabular-nums; text-align: right; }
 .tabs { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .12em; color: var(--text3); padding: 10px 8px 0; border-top: 1px solid var(--divider); }
 .tabs .on { color: var(--text); font-weight: 600; }
 .toast { position: absolute; left: 14px; right: 14px; bottom: 60px; background: var(--raised); border: 1px solid var(--divider); border-radius: 14px; padding: 12px 14px; font-size: 15px; z-index: 30; }
@@ -71,84 +82,127 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="chips" id="demo"></div>
   </div>
   <div class="phone" id="app"></div>
-  <div class="hint">Example data. Two areas: <b>How it's going</b> (a glance at the plan and your goal) and <b>This week's review</b> (feedback and changes). Everything else is one tap away under "See more".</div>
+  <div class="hint">Example data. <b>Goal</b>: how you're tracking over time. <b>This week</b>: sessions and sets vs plan. <b>Coach's changes</b>: what the coach already adjusted for your next sessions and why, each with Undo. Bigger changes (your plan's days, swapping exercises) are the only things it asks about.</div>
 </div>
 <script>
 (() => {
-  const GOALS = [['plan', 'Follow the plan'], ['muscle', 'Build muscle'], ['strength', 'Get stronger']];
-  const GOAL_LINE = {
-    plan: { k: 'Planned sets this week', v: '27 of 28', pct: 96, sub: 'Last week 58 of 62' },
-    muscle: { k: 'Sets this week', v: '30 of 62', pct: 48, sub: 'Last week 58 of 62 · Chest 8 of 12 so far' },
-    strength: { k: 'Bench press', v: '102.5 × 6', pct: 70, sub: 'Up 2.5 kg in 3 weeks · target 110 × 6' },
+  const GOALS = [['strength', 'Get stronger'], ['muscle', 'Build muscle'], ['plan', 'Follow the plan']];
+  const WEEKS = ['25 Aug', '1 Sep', '8 Sep', '15 Sep', '22 Sep', '29 Sep', '6 Oct', '13 Oct'];
+  const GOAL = {
+    strength: { title: 'Bench 110 kg', sub: 'Top set, 6 reps · 100 now', est: 'about mid-Nov at this rate', series: [90, 92.5, 92.5, 95, 95, 97.5, 97.5, 100], target: 110, tiles: [['Squat top set', '117.5', '+5 in 4 wk'], ['Row top set', '92.5', 'level 3 wk']] },
+    muscle: { title: 'Weekly sets vs plan', sub: '58 of 62 last week', est: null, series: [48, 52, 50, 55, 57, 0, 54, 58], plan: [56, 56, 56, 60, 60, 60, 62, 62], tiles: [['Chest avg', '11.5', 'of 12'], ['Back avg', '12.8', 'of 14']] },
+    plan: { title: 'Sessions vs plan', sub: '30 of 32 over 8 weeks', est: null, series: [4, 4, 3, 4, 4, 0, 3, 4], planN: 4, tiles: [['Planned sets', '94%', '8 wk'], ['Runs', '11', '8 wk']] },
   };
-  const NOTE = {
-    plan: 'Good week: every planned session and almost every set done.',
-    muscle: 'Back and chest volume on plan. Shoulders a little light.',
-    strength: 'Bench moving up. Row has stayed at 92.5 × 8 for 3 weeks.',
-  };
-  const SUG = {
-    plan: { t: 'Cable row on Pull', b: '3 × 10–12', a: '3 × 8–10' },
-    muscle: { t: 'Lateral raise on Upper', b: '3 sets', a: '4 sets' },
-    strength: { t: 'Row on Pull', b: '3 × 8', a: '4 × 6' },
-  };
-  const DETAIL = [['Days trained', '4 of 4'], ['Planned sets', '58 of 62'], ['Bench press', '102.5 × 6'], ['Squat', '117.5 × 5'], ['Runs', '2']];
-  let s = { goal: 'plan', coach: true, sug: 'open', more: false, toast: null };
+  const NOTE = 'Good week. Legs light: Legs moved to Saturday.';
+  const CHANGES = [
+    { id: 'row', t: 'Row', b: '3 × 8', a: '4 × 6', when: 'next Pull', why: 'Stuck at 92.5 × 8 for 3 weeks' },
+    { id: 'lat', t: 'Lateral raise', b: '3 sets', a: '4 sets', when: 'next Upper', why: 'Shoulders under plan 2 weeks running' },
+    { id: 'squat', t: 'Squat', b: '117.5 kg', a: '120 kg', when: 'next Legs', why: 'All sets done at RPE 8' },
+  ];
+  let s = { goal: 'strength', coach: true, undone: {}, ask: 'open', toast: null };
   const app = document.getElementById('app');
 
   function controls() {
     document.getElementById('goals').innerHTML = GOALS.map(([k, l]) => `<button class="chip" data-a="goal" data-v="${k}" aria-pressed="${s.goal === k}">${l}</button>`).join('');
     document.getElementById('demo').innerHTML = `<button class="chip" data-a="coach" aria-pressed="${!s.coach}">${s.coach ? 'Coach connected' : 'Coach offline'}</button>`;
   }
-  function going() {
-    const g = GOAL_LINE[s.goal];
-    return `<div class="sec">How it's going</div>
+
+  function lineChart(g) {
+    const W = 320, H = 150, L = 34, R = 10, T = 18, B = 26;
+    const months = g.est ? 10 : 8;
+    const lo = Math.min(...g.series) - 3, hi = g.target + 2;
+    const x = (i) => L + (i * (W - L - R)) / (months - 1), y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+    const pts = g.series.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+    const last = g.series.length - 1;
+    const ticks = [90, 100, 110].map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#302C29"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" fill="#948C84" font-size="11">${v}</text>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Bench top set over 8 weeks, 90 to 100 kg, target 110, about mid-November at this rate (estimate)">
+      ${ticks}
+      <line x1="${L}" x2="${W - R}" y1="${y(g.target)}" y2="${y(g.target)}" stroke="#EDE5DA" stroke-dasharray="4 4"/>
+      <text x="${W - R}" y="${y(g.target) - 6}" text-anchor="end" fill="#B5ADA5" font-size="11">Target ${g.target}</text>
+      <line x1="${x(last)}" y1="${y(g.series[last])}" x2="${x(months - 1)}" y2="${y(g.target)}" stroke="#E8C9A0" stroke-dasharray="2 4" stroke-width="2"/>
+      <polyline points="${pts}" fill="none" stroke="#E8C9A0" stroke-width="2.2" stroke-linejoin="round"/>
+      ${g.series.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="${i === last ? 5 : 3}" fill="${i === last ? '#E8C9A0' : '#0D0C0B'}" stroke="#E8C9A0" stroke-width="1.6"/>`).join('')}
+      <text x="${x(0)}" y="${H - 6}" fill="#948C84" font-size="11">${WEEKS[0]}</text>
+      <text x="${x(last)}" y="${H - 6}" text-anchor="middle" fill="#948C84" font-size="11">${WEEKS[last]}</text>
+      <text x="${W - R}" y="${H - 6}" text-anchor="end" fill="#948C84" font-size="11">mid-Nov</text>
+    </svg>`;
+  }
+  function barChart(g) {
+    const W = 320, H = 130, L = 8, R = 8, T = 10, B = 24, n = g.series.length, bw = (W - L - R) / n;
+    const max = g.plan ? Math.max(...g.plan) + 4 : g.planN;
+    const plan = (i) => (g.plan ? g.plan[i] : g.planN);
+    const y = (v) => T + (H - T - B) * (1 - v / max);
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${g.title}, last 8 weeks">
+      ${g.series.map((v, i) => {
+        const x0 = L + i * bw + 5, w = bw - 10;
+        if (v === 0) return `<rect x="${x0}" y="${y(plan(i))}" width="${w}" height="${y(0) - y(plan(i))}" rx="5" fill="none" stroke="#302C29" stroke-dasharray="3 3"/><text x="${x0 + w / 2}" y="${y(0) - 8}" text-anchor="middle" fill="#948C84" font-size="11">⏸</text>`;
+        return `<rect x="${x0}" y="${y(plan(i))}" width="${w}" height="${y(0) - y(plan(i))}" rx="5" fill="#23201E"/><rect x="${x0}" y="${y(v)}" width="${w}" height="${y(0) - y(v)}" rx="5" fill="#E8C9A0"/>`;
+      }).join('')}
+      <text x="${L}" y="${H - 6}" fill="#948C84" font-size="11">${WEEKS[0]}</text>
+      <text x="${W - R}" y="${H - 6}" text-anchor="end" fill="#948C84" font-size="11">${WEEKS[n - 1]}</text>
+    </svg>`;
+  }
+  function goalCard() {
+    const g = GOAL[s.goal];
+    const pill = s.goal === 'strength' ? '<span class="pill"><i style="background:var(--good)"></i>On track</span>' : '';
+    return `<div class="sec"><span>Goal</span><span>last 8 weeks</span></div>
     <div class="card">
-      <div class="row"><span class="k">This week</span><span class="v">2 of 4</span></div>
-      <div class="strip" role="group" aria-label="This week: Push done Monday, Pull done Wednesday, Legs next, one more to go">
-        <div class="pd done">Push ✓<small>Mon</small></div><div class="pd done">Pull ✓<small>Wed</small></div>
-        <div class="pd next">Legs<small>next</small></div><div class="pd open"></div>
-      </div>
-      <div class="goal">
-        <div class="row"><span class="k">${g.k}</span><span class="v" style="font-size:18px">${g.v}</span></div>
-        <div class="meter" aria-hidden="true"><i style="width:${g.pct}%"></i></div>
-        <div class="sub">${g.sub}</div>
-      </div>
-      ${s.more ? `<div class="list">${DETAIL.map(([a, b]) => `<div class="li"><span>${a}</span><span>${b}</span></div>`).join('')}</div>` : ''}
-      <button class="more" data-a="more">${s.more ? 'Show less' : 'See more ›'}</button>
+      <div class="head"><span class="title">${g.title}</span>${pill}</div>
+      <div class="sub">${g.sub}${g.est ? ` · ${g.est} <span class="tag" style="margin:0">est.</span>` : ''}</div>
+      ${s.goal === 'strength' ? lineChart(g) : barChart(g)}
+      <div class="tiles">${g.tiles.map(([k, v, c]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}<small>${c}</small></div></div>`).join('')}</div>
     </div>`;
   }
-  function review() {
-    const g = SUG[s.goal];
-    let sug = '';
-    if (s.coach && s.sug === 'open') sug = `<div class="sug"><div class="t">${g.t}</div><div class="ba"><s>${g.b}</s> → ${g.a}</div><div class="acts"><button class="btn yes" data-a="apply">Apply</button><button class="btn" data-a="skip">Skip</button></div></div>`;
-    if (s.coach && s.sug === 'applied') sug = `<div class="done-line"><span>${g.t}: ${g.a} · applied</span><button class="more" data-a="undo">Undo</button></div>`;
-    return `<div class="sec">This week's review</div>
+  function weekCard() {
+    const mus = [['Chest', 14, 12], ['Back', 13, 14], ['Legs', 9, 14]];
+    return `<div class="sec"><span>This week</span><span>13–19 Oct</span></div>
     <div class="card">
-      <div class="note">${s.coach ? `${NOTE[s.goal]}<span class="tag">Coach</span>` : `4 of 4 days · 58 of 62 sets<span class="tag">Not reviewed · Offline</span>`}</div>
-      ${sug}
-      <div class="list">
-        <div class="li"><span>Changed last week</span><span>Squat 115 → 117.5 kg</span></div>
+      <div class="row"><span class="k">Sessions</span><span class="v">3 of 4 <span style="font-size:14px;font-weight:500;color:var(--text2)">· 2 runs</span></span></div>
+      <div class="strip" role="group" aria-label="Chest done Monday, Back done Wednesday, Shoulders done Friday, Legs moved to Saturday">
+        <div class="pd done">Chest ✓<small>Mon</small></div><div class="pd done">Back ✓<small>Wed</small></div>
+        <div class="pd done">Shldrs ✓<small>Fri</small></div><div class="pd next">Legs<small>Sat</small></div>
       </div>
-      <button class="more" data-a="past">Past reviews ›</button>
+      ${mus.map(([m, n, p]) => `<div class="mus" aria-label="${m} ${n} of ${p} planned sets"><span>${m}</span><div class="bar"><i style="width:${Math.min(n / 18, 1) * 100}%"></i><b style="left:${(p / 18) * 100}%"></b></div><span class="n">${n} / ${p}</span></div>`).join('')}
+    </div>`;
+  }
+  function changesCard() {
+    if (!s.coach) {
+      return `<div class="sec"><span>Coach's changes</span><span>for next week</span></div>
+      <div class="card"><div class="note">Built-in rule: Squat 117.5 → 120 kg next Legs<span class="tag">Not reviewed · Offline</span></div></div>`;
+    }
+    const rows = CHANGES.map((c) => s.undone[c.id]
+      ? `<div class="chg"><span class="t"><s>${c.t} ${c.a}</s> kept ${c.b}</span><span class="why">Undone</span><button class="link u" data-a="redo" data-v="${c.id}">Redo</button></div>`
+      : `<div class="chg"><span class="t">${c.t} <s>${c.b}</s> → ${c.a}</span><span class="why">${c.when} · ${c.why}</span><button class="link u" data-a="undo" data-v="${c.id}">Undo</button></div>`).join('');
+    const ask = s.ask === 'open' ? `<div class="ask"><div class="t">Legs has moved to Saturday 3 weeks running. Make Saturday its day in your plan?</div><div class="acts"><button class="btn yes" data-a="yes">Move Legs to Sat</button><button class="btn" data-a="no">Keep as is</button></div></div>`
+      : s.ask === 'yes' ? `<div class="chg"><span class="t">Legs → Saturday</span><span class="why">in your plan · your choice</span><button class="link u" data-a="askundo">Undo</button></div>` : '';
+    return `<div class="sec"><span>Coach's changes</span><span>for next week</span></div>
+    <div class="card">
+      <div class="note">${NOTE}<span class="tag">Coach</span></div>
+      <div>${rows}</div>
+      ${ask}
+      <button class="link" data-a="past" style="align-self:flex-start">Past weeks ›</button>
     </div>`;
   }
   function view() {
     controls();
+    const top = app.querySelector('.scroll')?.scrollTop ?? 0;
     app.innerHTML = `<div class="status"><span>09:41</span><span>●●● 82%</span></div>
-      <div class="scroll"><h1>Progress</h1>${going()}${review()}</div>
+      <div class="scroll"><h1>Progress</h1>${goalCard()}${weekCard()}${changesCard()}</div>
       <div class="tabs"><span>TODAY</span><span>LIBRARY</span><span class="on">PROGRESS</span><span>PROFILE</span></div>
       ${s.toast ? `<div class="toast" role="status">${s.toast}</div>` : ''}`;
+    app.querySelector('.scroll').scrollTop = top;
   }
   let tt;
   document.body.addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-a]'); if (!t) return; const a = t.dataset.a; s.toast = null;
-    if (a === 'goal') { s.goal = t.dataset.v; s.sug = 'open'; }
+    const t = ev.target.closest('[data-a]'); if (!t) return; const a = t.dataset.a, v = t.dataset.v; s.toast = null;
+    if (a === 'goal') s.goal = v;
     if (a === 'coach') s.coach = !s.coach;
-    if (a === 'more') s.more = !s.more;
-    if (a === 'apply') s.sug = 'applied';
-    if (a === 'undo') s.sug = 'open';
-    if (a === 'skip') { s.sug = 'skipped'; s.toast = 'Skipped'; }
-    if (a === 'past') s.toast = 'Opens the list of past weekly reviews';
+    if (a === 'undo') { s.undone[v] = true; s.toast = 'Undone: next session keeps the old target'; }
+    if (a === 'redo') s.undone[v] = false;
+    if (a === 'yes') { s.ask = 'yes'; s.toast = 'Legs is now on Saturday'; }
+    if (a === 'no') { s.ask = 'no'; s.toast = 'Kept as is'; }
+    if (a === 'askundo') s.ask = 'open';
+    if (a === 'past') s.toast = 'Opens past weeks: each week’s facts and changes';
     clearTimeout(tt); if (s.toast) tt = setTimeout(() => { s.toast = null; view(); }, 2500);
     view();
   });
