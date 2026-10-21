@@ -27,18 +27,18 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .askbar span:first-child { color: var(--text); }
 .mic { width: 46px; height: 46px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); cursor: pointer; display: grid; place-items: center; flex: none; }
 /* week strip */
-.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.day { background: var(--surface); border: 0; border-radius: 12px; padding: 6px 2px 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text); cursor: pointer; font-family: inherit; min-height: 70px; }
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.day { background: var(--surface); border: 0; border-radius: 12px; padding: 6px 1px 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text); cursor: pointer; font-family: inherit; min-height: 70px; }
 .day .dn { font-size: 11px; color: var(--text2); letter-spacing: .06em; }
 .day .dd { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .day.today { outline: 2px solid var(--accent); outline-offset: -2px; }
 .day.past { opacity: .9; }
-.pip { font-size: 10.5px; line-height: 1.15; padding: 2px 4px; border-radius: 6px; max-width: 100%; text-align: center; }
-.pip.lift { background: var(--done-sub); color: var(--done); }
-.pip.liftp { border: 1px dashed var(--text3); color: var(--text2); }
-.pip.run { background: var(--run-sub); color: var(--run); }
-.pip.runp { border: 1px dashed var(--run); color: var(--run); }
-.pip.rest { color: var(--text3); }
+.pip { font-size: 9.5px; line-height: 1.2; padding: 3px 1px; border-radius: 6px; width: 100%; box-sizing: border-box; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.02em; }
+.pip.plift { background: rgba(92,201,138,.20); color: #D8F5E3; box-shadow: inset 0 0 0 1px rgba(92,201,138,.55); }
+.pip.pliftp { border: 1px dashed var(--text3); color: var(--text2); }
+.pip.prun { background: var(--run-sub); color: var(--run); }
+.pip.prunp { border: 1px dashed var(--run); color: var(--run); }
+.pip.prest { color: var(--text3); }
 .planline { display: flex; justify-content: space-between; color: var(--text2); font-size: 13px; padding: 0 2px; }
 .planline b { color: var(--text); font-weight: 600; }
 /* recommended card */
@@ -123,7 +123,7 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .link { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; cursor: pointer; padding: 6px 0; font-family: inherit; }
 .mixrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text2); }
 .card .mv { color: var(--accent); }
-.day .pip.liftp { transition: background .2s; }
+.day .pip.pliftp { transition: background .2s; }
 .card .lt { color: var(--text2); font-weight: 500; font-size: 22px; }
 .alts { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
 .alt { flex: none; min-width: 132px; background: var(--surface); border: 1.5px solid transparent; border-radius: 14px; padding: 10px 12px; text-align: left; color: var(--text); cursor: pointer; font-family: inherit; display: flex; flex-direction: column; gap: 3px; }
@@ -308,7 +308,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="status"><span>09:41</span><span>●●● 82%</span></div>
     <div class="scroll">
       <div class="hdr"><h1>Tuesday</h1><div class="askrow"><button class="askbar sm" data-a="ask"><span>✦</span><span>Coach</span></button><button class="mic" data-a="ask" aria-label="Speak to the coach">${MIC}</button></div></div>
-      <div class="week">${WEEK.map((d, i) => `<button class="day${d.today ? ' today' : ''}${d.past ? ' past' : ''}" data-a="day" data-v="${i}" aria-label="${d.dn} ${d.dd}"><span class="dn">${d.today ? 'TODAY' : d.dn}</span><span class="dd">${d.dd}</span>${d.today ? `<span class="pip liftp">${s.day}</span>` : d.items.map((it) => `<span class="pip ${it.k}">${it.k === 'lift' ? '✓ ' : ''}${it.t}</span>`).join('')}</button>`).join('')}</div>
+      <div class="week">${WEEK.map((d, i) => `<button class="day${d.today ? ' today' : ''}${d.past ? ' past' : ''}" data-a="day" data-v="${i}" aria-label="${d.dn} ${d.dd}"><span class="dn">${d.today ? 'TODAY' : d.dn}</span><span class="dd">${d.dd}</span>${d.today ? `<span class="pip pliftp">${s.day}</span>` : d.items.map((it) => `<span class="pip p${it.k}">${it.t}</span>`).join('')}</button>`).join('')}</div>
       <div>
         <div class="label" style="margin:0 2px 8px">Today's session</div>
         <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more${PLANDAYS.includes(s.day) ? '' : ' on'}" data-a="other" aria-label="Other sessions">${PLANDAYS.includes(s.day) ? '⋯' : `<span class="oname">${s.day}</span>`}</button></div>
@@ -366,4 +366,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   });
   view();
 })();
+  function fitPips() { document.querySelectorAll(".pip").forEach((x) => { let f = 9.5; x.style.fontSize = ""; while (x.scrollWidth > x.clientWidth + 0.5 && f > 7) { f -= 0.25; x.style.fontSize = f + "px"; } }); }
+  new MutationObserver(() => requestAnimationFrame(fitPips)).observe(document.body, { childList: true, subtree: true }); requestAnimationFrame(fitPips);
 </script>

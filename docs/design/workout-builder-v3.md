@@ -72,7 +72,7 @@ Regions, top to bottom:
 
 1. **Day title** `Tuesday`, with the `GymChip` trailing [title Ben/Proto; GymChip kept from today.md, Proposal].
 2. **Coach bar + mic** `✦ Ask the coach` [Ben]. Opens the coach sheet (never full screen); the mic starts listening at once.
-3. **7-day strip** [Ben; range Proto, §9 Q19]: 3 days back, today, 3 ahead. Each cell: weekday, date, up to two items. A thin divider sits before Monday so the plan week is visible [Proposal]. No plan line and no run counter [Ben].
+3. **7-day strip** [Ben; range Proto, §9 Q19]: 3 days back, today, 3 ahead. Each cell: weekday, date, up to two items. A thin divider sits before Monday so the plan week is visible [Proposal]. No plan line and no run counter [Ben]. **Cell items (Ben, 21 Oct):** no ✓; a done session is a soft-green pill (same green as Progress chips), a planned one a dashed outline, cardio its own tint; every label is centred and on one line, shrinking to fit (`adjustsFontSizeToFit`, `numberOfLines={1}`, `minimumFontScale` 0.75) instead of wrapping or being cut off; all seven columns equal width.
 4. **Banners / rare lines** from today.md (failed backup, check-in line, pain `Still hurts?` line), unchanged, at most two [Proposal].
 5. **`Today's session`** [Ben]:
    - **Day segmented control**: the plan's days in plan order, `Chest` `Back` `Legs` `Shoulders` `⋯`. `NEXT` under the plan's next day, which is selected on open. Any day is one tap. `⋯` opens **Other workouts**.

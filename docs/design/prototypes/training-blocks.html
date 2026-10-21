@@ -57,16 +57,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .askbar span:first-child { color: var(--text); }
 .askbar.off span:last-child { color: var(--text3); }
 .mic { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); cursor: pointer; display: grid; place-items: center; flex: none; }
-.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.day { background: var(--surface); border: 0; border-radius: 12px; padding: 6px 2px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text); cursor: pointer; font-family: inherit; min-height: 70px; }
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.day { background: var(--surface); border: 0; border-radius: 12px; padding: 6px 1px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text); cursor: pointer; font-family: inherit; min-height: 70px; }
 .day .dn { font-size: 11px; color: var(--text2); letter-spacing: .06em; }
 .day .dd { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .day.today { outline: 2px solid var(--accent); outline-offset: -2px; }
-.pip { font-size: 10.5px; line-height: 1.15; padding: 2px 4px; border-radius: 6px; max-width: 100%; text-align: center; }
-.pip.lift { background: var(--done-sub); color: var(--done); }
-.pip.liftp { border: 1px dashed var(--text3); color: var(--text2); }
-.pip.run { background: var(--run-sub); color: var(--run); }
-.pip.runp { border: 1px dashed var(--run); color: var(--run); }
+.pip { font-size: 9.5px; line-height: 1.2; padding: 3px 1px; border-radius: 6px; width: 100%; box-sizing: border-box; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.02em; }
+.pip.plift { background: rgba(92,201,138,.20); color: #D8F5E3; box-shadow: inset 0 0 0 1px rgba(92,201,138,.55); }
+.pip.pliftp { border: 1px dashed var(--text3); color: var(--text2); }
+.pip.prun { background: var(--run-sub); color: var(--run); }
+.pip.prunp { border: 1px dashed var(--run); color: var(--run); }
 .card { background: var(--surface); border-radius: 20px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .card .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .card .big { font-size: 28px; font-weight: 600; letter-spacing: -.01em; }
@@ -363,7 +363,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const DN = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     return `<div class="week">${items.map((it, i) => {
       const dt = new Date(y, mo, dd + i - 3); const today = i === 3;
-      return `<button class="day${today ? ' today' : ''}" data-a="dayinfo" data-v="${i}" aria-label="${DN[dt.getDay()]} ${dt.getDate()}"><span class="dn">${today ? 'TODAY' : DN[dt.getDay()]}</span><span class="dd">${dt.getDate()}</span>${today ? `<span class="pip liftp">${s.day}</span>` : it.map((x) => `<span class="pip ${x.k}">${x.k === 'lift' ? '✓ ' : ''}${x.t}</span>`).join('')}</button>`;
+      return `<button class="day${today ? ' today' : ''}" data-a="dayinfo" data-v="${i}" aria-label="${DN[dt.getDay()]} ${dt.getDate()}"><span class="dn">${today ? 'TODAY' : DN[dt.getDay()]}</span><span class="dd">${dt.getDate()}</span>${today ? `<span class="pip pliftp">${s.day}</span>` : it.map((x) => `<span class="pip p${x.k}">${x.t}</span>`).join('')}</button>`;
     }).join('')}</div>`;
   }
   function today() {
@@ -677,6 +677,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   });
   view();
 })();
+  function fitPips() { document.querySelectorAll(".pip").forEach((x) => { let f = 9.5; x.style.fontSize = ""; while (x.scrollWidth > x.clientWidth + 0.5 && f > 7) { f -= 0.25; x.style.fontSize = f + "px"; } }); }
+  new MutationObserver(() => requestAnimationFrame(fitPips)).observe(document.body, { childList: true, subtree: true }); requestAnimationFrame(fitPips);
 </script>
 </body>
 </html>
