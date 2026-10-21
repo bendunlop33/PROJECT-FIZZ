@@ -6,6 +6,7 @@ import { DEFAULT_COACH_TIMING, runModelStep, type CoachTiming } from '../turn';
 import { builderLoadText, type BuilderCoachSnapshot } from './edit-ops';
 import { topLoad } from './load-guard';
 import type { SetupCoachContext } from './setup';
+import { BUILDER_TARGET_CORRECTION_LINES } from '../corrections';
 
 /**
  * The builder coach's model requests (workout-builder-v3 §5, §6.1). Each is
@@ -76,7 +77,7 @@ const WEEKLY_INSTRUCTIONS = [
 
 const INSTRUCTIONS: Readonly<Record<BuilderRequestKind, string>> = {
   setup: [...COMMON, 'Ben is on Set up. Read what he wants (day, length, main lift, supersets, muscle groups) and fill only what he said. Leave the rest null.'].join('\n'),
-  edit: [...COMMON, 'Ben is looking at today’s workout before he starts. Make only the changes he asked for. Each one is a proposal he applies or skips.'].join('\n'),
+  edit: [...COMMON, 'Ben is looking at today’s workout before he starts. Make only the changes he asked for. Each one is a proposal he applies or skips.', BUILDER_TARGET_CORRECTION_LINES].join('\n'),
   review: [
     ...COMMON,
     'Review the workout against his goal, the plan day and the facts given. Keep the verdict to a few words. Suggest only clear improvements (missing muscles, order, pairing, variety); none is fine.',

@@ -75,6 +75,11 @@ export const MAX_ANSWER_WORDS = 4;
 /** Words that make a quote a request: a verb of change, a comparative, or a polite ask. */
 const REQUEST_CUE =
   /\b(?:make|swap|switch|change|add|remove|drop|lower|raise|increase|decrease|reduce|bump|cut|skip|move|replace|put|give|go|try|adjust|set|use|take|do|let's|lets|can you|could you|would you|will you|please|i want|i'd like|i would like|want to|need to|heavier|lighter|harder|easier|more|less|fewer|instead|up|down|superset|pair (?:it|this|that|them|these|those|with|up))\b/;
+/**
+ * (21 Oct; Ben's live Back workout: "shrugs at 8 reps, I did 15 last time" got an apology and nothing changed)
+ * Ben pointing out that a target contradicts what he did, or is wrong, asks for it to be put right.
+ */
+const CORRECTION_CUE = /\b(?:i (?:did|do|got|hit|managed|lifted|usually do|normally do|always do)|last time|wrong|mistake|should be|supposed to be)\b/;
 /** His message asks for an opinion, not a change ("what do you think?"), unless it also asks outright. */
 const OPINION_ONLY = /\b(?:what do you think|do you think|should i|would it be|is it (?:ok|okay|fine|worth)|thoughts|any (?:ideas|advice|tips)|what would you)\b/;
 const ASKS_OUTRIGHT = /\b(?:can you|could you|would you|will you|please)\b/;
@@ -82,14 +87,15 @@ const ASKS_OUTRIGHT = /\b(?:can you|could you|would you|will you|please)\b/;
 /**
  * (Review coach-v3 S3; ADR 0027) Is a quote that is Ben's own words also a request? His whole
  * message when it is a short answer ("Working set"); else the quote reads as a request (a verb of
- * change, a comparative, a polite ask) and his message isn't only asking for an opinion. "Bench
+ * change, a comparative, a polite ask, or a correction: "I did 15 last time") and his message isn't
+ * only asking for an opinion. "Bench
  * felt easy, what do you think?" quoted as "felt easy" is a statement: offered, not applied (rule 3).
  */
 export function quoteAsks(quote: string, words: string): boolean {
   const q = wordsOf(quote).join(' ');
   const w = wordsOf(words).join(' ');
   if (q === w && wordsOf(words).length <= MAX_ANSWER_WORDS) return true;
-  if (!REQUEST_CUE.test(q)) return false;
+  if (!REQUEST_CUE.test(q) && !CORRECTION_CUE.test(q)) return false;
   return !OPINION_ONLY.test(w) || ASKS_OUTRIGHT.test(w);
 }
 

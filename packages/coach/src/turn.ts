@@ -28,6 +28,7 @@ import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
 import { asksForPlan, asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
 import { PLAN_INSTRUCTIONS } from './plan';
+import { LIVE_TARGET_CORRECTION_LINES } from './corrections';
 import { parseToolCall } from './tool-call';
 import { BUILD_INSTRUCTIONS, LIVE_LOAD_CHOICE_LINE, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, QUESTION_RULES } from './build';
 import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, refusedBuildActionIds } from './build-ask';
@@ -438,6 +439,7 @@ export function liveWorkoutInstructions(addOffered: boolean): string {
     'Too easy or Too hard with no set named is about his last logged working set (workout.lastWorkingSet); a warm-up never counts. Change that exercise’s remaining sets; never ask him which set it was. After warm-ups only, offer instead.',
     'For loads from his recent history, read get_recent_training first. History imported from FitNotes is his own training and a valid basis (equipment not recorded); the app fits every load to today’s equipment.',
     LIVE_LOAD_CHOICE_LINE,
+    LIVE_TARGET_CORRECTION_LINES,
     'When Ben did not ask, the app turns your call into an offer he accepts; nothing applies until he does.',
   ].join('\n');
 }
