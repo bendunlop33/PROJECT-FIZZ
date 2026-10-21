@@ -338,6 +338,7 @@ import type {
 } from '@fizz/schemas';
 
 import { undoOpId, undoRefusalText } from '../workout/undo-op';
+import { setActivePainFlagged } from '../workout/pain-flagged';
 
 /** A past workout's title when it has no exercise (`Finish anyway` with nothing added). */
 export const EMPTY_WORKOUT_TITLE = 'Empty workout';
@@ -2856,6 +2857,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         previous[ex.id] = lastComparableSession(h, ex);
       }
       const flags = await repos().painFlags.listActive(p.id);
+      // The Lock Screen and spoken cues hold back a heavier carried load on a flagged movement too (21 Oct).
+      if (aggregate.session.status === 'active') setActivePainFlagged(new Set(flags.map((f) => f.exerciseId)));
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
       const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(liveExercises(aggregate.exercises).map((e) => e.exerciseId))).title : null;
       const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
@@ -2923,7 +2926,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
     /** Edit set for a set not done yet (14 Oct): its target, type, target RPE and rest, with the built-in target RPE as the default. */
     plannedEditView(data: ActiveWorkoutData, setId: string, edits: PlannedSetEdits): PlannedSetEditView | null {
-      return buildPlannedSetEditView(data.aggregate, setId, edits, { ruleTargetRpe: ruleRpes(data), bodyweightExercises: data.bodyweightExercises });
+      return buildPlannedSetEditView(data.aggregate, setId, edits, { ruleTargetRpe: ruleRpes(data), bodyweightExercises: data.bodyweightExercises, painFlagged: data.painFlagged });
     },
 
     /**
@@ -2933,10 +2936,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     snapPlannedLoad: (data: ActiveWorkoutData, setId: string, typed: number | null): number | null | undefined => snapTypedLoadEasier(data.aggregate, setId, typed, data.bodyweightExercises),
 
     /** The rest screen's `Last set` and `Next` (F8). */
-    restSets: (data: ActiveWorkoutData): { last: SetGlance | null; next: SetGlance | null } => restSetsView(data.aggregate, ruleRpes(data)),
+    restSets: (data: ActiveWorkoutData): { last: SetGlance | null; next: SetGlance | null } => restSetsView(data.aggregate, ruleRpes(data), { painFlagged: data.painFlagged }),
 
     /** One set at a glance (the Focus view's set pager, F7). */
-    glance: (data: ActiveWorkoutData, setId: string): SetGlance | null => setGlance(data.aggregate, setId, ruleRpes(data)),
+    glance: (data: ActiveWorkoutData, setId: string): SetGlance | null => setGlance(data.aggregate, setId, ruleRpes(data), { painFlagged: data.painFlagged }),
 
     /** Prev / next across the workout (F7); viewing never changes the current set. */
     navigation: (data: ActiveWorkoutData, viewingSetId: string | null): SetNavigation => setNavigation(data.aggregate, viewingSetId),

@@ -1195,11 +1195,20 @@ The table above holds for both views; "card" means the open row and the after-se
 Rules, in order:
 1. If a draft was saved for this set (edited earlier or restored after a force-close), use the draft.
 2. If the set has a target load, use it for load. For reps, use the single target, or the **top** of a target range (the double-progression aim).
+   - **2a. Last set carries (Ben, 21 Oct 2026).** When Ben has logged an earlier set of this exercise in this workout at a load other than *that* set's target (set 2 at 105 kg against 100), a later pending set starts at his last logged load instead of its target. Reps still follow rule 2. It applies only when all of these hold:
+     - Same set-type group: working → working, top → top, back-off → back-off. A top set's load never reaches the back-offs. Warm-ups and drop sets never carry and never receive. Only sets after the logged one (by position) receive it.
+     - Same gym part (same kit), same unit and load convention. A result in another unit or convention never carries.
+     - The set's load target is unchanged since Start. Ben didn't set it himself (Edit set, pop-up), and no coach or rule change came after his log. A coach/rule target set *after* the log is newer and wins; one set before it is older and his log wins.
+     - Snapped to the row's kit toward easier, never past the equipment max (rule 4). If the kit can't make it, nothing carries.
+     - Not heavier (for an assisted machine, less assistance) while the movement has an active pain flag or a set this workout was marked `Pain` (rule 9). A lighter load still carries.
+     - Logged exactly at its target: nothing carries, so a planned ramp (100, 102.5, 105) stays.
+   - It's a prefill, not a write. The stored target, plan adherence and progression history keep the original target. Ben's own draft on a set (rule 1) wins over the carry; typing the plan's value back over a carried value sticks. Undo is retyping (or logging the next set at the plan's load, which ends the carry for later sets).
+   - Every surface draws the same value through `shownPlanned` / `prefillDraft`: open row, table rows, Focus list, exercise pop-up, Edit set, rest `Next` card, Lock Screen / Live Activity, spoken cue. Where a label is needed it reads like Ben's own edit (`Your edit 105 kg × 6–8`). No caption or extra UI; the target line under the open row's fields still reads `Target 100 kg × 6–8`. `draftSource` is `last_set` (for `Why?`/provenance: "Last set").
 3. If there's no target (empty workout, or the planned load was dropped, §2.11), use the last logged set of this exercise in this session, **in the same gym part** (same equipment; revision 2026-10-09, gym-switch §6.3). A set logged on Main Gym's bar never becomes the draft for the Hotel · Lisbon part.
 4. If there's still nothing, use the last comparable session's matching set from `getComparableHistory`. History in another unit or convention is never used (`prefillDraft` refuses it).
 5. Otherwise leave the field empty, and Log is disabled.
 
-The view returns `draftSource` (`draft | target | this_session | last_session | none`). If the source isn't the target, a caption under the fields shows it: `From your last set` / `From 1 Oct`.
+The view returns `draftSource` (`draft | target | last_set | this_session | last_session | none`). If the source is `this_session` or `last_session`, a caption under the fields shows it: `From your last set` / `From 1 Oct`. `last_set` (rule 2a) has no caption.
 
 ### 4.3 Equipment-aware input
 - The steppers move through `getAchievableLoads(equipmentId)`, so `+` on 100 kg barbell goes to the next achievable total, such as 102.5 kg.

@@ -12,6 +12,7 @@ import { createPlanModelPort } from '../coach/plan-model-port';
 import { createRestAlertController } from '../alerts/rest-alerts';
 import { nowMs } from '../clock';
 import { createLiveActivityController } from '../live-activity/controller';
+import { activePainFlagged } from '../workout/pain-flagged';
 import { lazyLiveActivityPort } from '../live-activity/lazy-port';
 import { containerBackupFiles, containerTextFile, emptyTemporaryFiles, removeContainerFiles } from '../device/files';
 import { createPersonalFiles, DEVICE_PREFS_FILE } from '../device/personal-files';
@@ -41,6 +42,7 @@ const DATA_LEDGER = 'data-ops.json';
  */
 const liveActivity = createLiveActivityController(lazyLiveActivityPort, {
   tz: () => deviceTimeZone(),
+  painFlagged: activePainFlagged,
   clock: { now: nowMs, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => { clearTimeout(h as ReturnType<typeof setTimeout>); } },
 });
 
@@ -54,6 +56,7 @@ const spokenCues = createSpokenCueController({
   clock: { now: nowMs, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => { clearTimeout(h as ReturnType<typeof setTimeout>); } },
   appActive: () => AppState.currentState === 'active',
   settings: () => voicePrefs(),
+  painFlagged: activePainFlagged,
 });
 
 /** One rest-alert controller for the app run (it remembers what is scheduled); the Live Activity and spoken cues follow it. */

@@ -66,9 +66,9 @@ export function planCues(state: SessionAggregate | null): PlannedCue[] {
  * values are the card's (review B1); `lastComparable` is the history the
  * card fills open fields from.
  */
-export function cueWords(kind: CueKind, state: SessionAggregate | null, detail: CueDetail, lastComparable: readonly ComparableSet[] = []): string {
+export function cueWords(kind: CueKind, state: SessionAggregate | null, detail: CueDetail, lastComparable: readonly ComparableSet[] = [], painFlagged?: ReadonlySet<string>): string {
   const event: CueEvent =
-    kind === 'warning' ? { kind: 'warning', seconds: WARNING_LEAD_S } : kind === 'work_end' ? { kind: 'work_end' } : { kind: 'rest_end', next: state === null ? null : spokenSetOf(state, state.session.activeSetId, lastComparable) };
+    kind === 'warning' ? { kind: 'warning', seconds: WARNING_LEAD_S } : kind === 'work_end' ? { kind: 'work_end' } : { kind: 'rest_end', next: state === null ? null : spokenSetOf(state, state.session.activeSetId, lastComparable, { painFlagged }) };
   return cueText(event, detail);
 }
 
@@ -109,6 +109,8 @@ export interface CuePorts {
   settings(): CueSettings;
   /** The card's history for an exercise row (the last comparable session's sets); read ahead, while the rest runs. */
   history?: (state: SessionAggregate, sessionExerciseId: string) => Promise<readonly ComparableSet[]>;
+  /** Movements with an active pain flag (no heavier load carried from the last set is said). */
+  painFlagged?: () => ReadonlySet<string> | undefined;
 }
 
 export function createSpokenCueController(ports: CuePorts) {
@@ -149,7 +151,7 @@ export function createSpokenCueController(ports: CuePorts) {
     // A failing speaker never throws into the workout (rule 1).
     const exId = activeRow(latest);
     const past = latest !== null && exId !== null ? (history.get(historyKey(latest, exId)) ?? []) : [];
-    void ports.speaker.speak(cueWords(cue.kind, latest, s.cueDetail, past), 'cue').catch(() => undefined);
+    void ports.speaker.speak(cueWords(cue.kind, latest, s.cueDetail, past, ports.painFlagged?.()), 'cue').catch(() => undefined);
   }
 
   return {

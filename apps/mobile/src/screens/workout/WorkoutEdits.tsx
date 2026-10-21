@@ -354,14 +354,14 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
   const view =
     data === null || popupExercise === undefined
       ? null
-      : sessionPopupView({ aggregate: data.aggregate, exercise: popupExercise, works: data.worksLines?.[popupExercise.exerciseId] ?? null, mayHurt: data.painFlagged.has(popupExercise.exerciseId) });
+      : sessionPopupView({ aggregate: data.aggregate, exercise: popupExercise, works: data.worksLines?.[popupExercise.exerciseId] ?? null, mayHurt: data.painFlagged.has(popupExercise.exerciseId), painFlagged: data.painFlagged });
 
   async function editCell(row: PopupSetRow, field: 'reps' | 'kg' | 'rpe', value: number): Promise<string | null> {
     return inTurn(async () => {
       latest.current.beforeEdit();
       const a = current();
       if (a === null) return POPUP_REFUSAL.changed;
-      const w = popupCellWrite(a, row.key, field, value, latest.current.latest()?.bodyweightExercises);
+      const w = popupCellWrite(a, row.key, field, value, latest.current.latest()?.bodyweightExercises, latest.current.latest()?.painFlagged);
       const opId = newUuid();
       switch (w.kind) {
         case 'refused':
