@@ -1181,8 +1181,10 @@ export type CoachTurnError = z.infer<typeof CoachTurnErrorSchema>;
 
 /**
  * (21 Oct, Ben's Build B report) What the provider said when a turn failed: shown behind the outcome
- * line's `Why?`. Diagnostic only: no tokens, credentials or Ben's words (the message is trimmed and
- * scrubbed before it is saved).
+ * line's `Why?`. Diagnostic only: token- and credential-shaped text, emails and long quoted spans are
+ * removed and the message is trimmed before it is saved (`scrubFailureMessage`). It is not
+ * guaranteed free of Ben's words: a provider can echo a short unquoted fragment of the request.
+ * Also kept on a completed turn whose forced change step failed (review coach-fail S2).
  */
 export const CoachTurnFailureSchema = z.object({
   kind: z.string().min(1).max(40),

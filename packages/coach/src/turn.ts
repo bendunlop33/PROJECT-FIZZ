@@ -22,9 +22,9 @@ import { buildCoachContext, contextInputItems, type CoachContextInput } from './
 import type { CoachExecutors, ToolCallContext, ToolResult } from './executors';
 import { functionToolDefinitions } from './function-tools';
 import type { CoachModelPort, ModelErrorKind, ModelEvent, ModelFailureDetail, ModelInputItem, ModelRequest } from './model-port';
-import { cleanFailure, scrubFailureMessage } from './failure';
+import { cleanFailure, failureWhy, scrubFailureMessage } from './failure';
 import { buildTurnRegistry, TODAY_TOOLS, type TurnGate, type TurnRegistry } from './registry';
-import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
+import { createReplyFilter, NO_CHANGE_SAVED_LINE, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
@@ -611,6 +611,29 @@ function afterWrite(record: ActionRecord): { sessionVersion?: number; sessionExe
 
 const INTERRUPTED_NOTE = 'Stopped.';
 
+/** The tool-log line when the model made more than one call in a step (app text, never a tool's result). */
+const ONE_CALL_LINE = 'Only one call at a time; the others were ignored.';
+/** The tool-log line for a text answer held on a live change request (app text, never a tool's result). */
+const NUDGE_CHANGE_LINE = 'Answer in text; asked to change.';
+
+/** Tool results that say a change was not applied. */
+const NOT_APPLIED_OUTCOMES: ReadonlySet<ToolLogLine['outcome']> = new Set(['not_allowed', 'invalid_args', 'rejected', 'stale', 'failed', 'proposed']);
+
+/**
+ * (21 Oct, review coach-fail B1) Does a tool result this turn back a reply sentence saying a change
+ * didn't go through? Only a write tool's own result that wasn't applied does (refused, stale,
+ * rejected, invalid, offered). The app's own lines never do: the coach_reply nudge, "only one call",
+ * think_harder, read tools and the read limit. Once a change to today committed this turn, nothing
+ * does (the card says it applied). Pure.
+ */
+export function failureBackedBy(log: readonly ToolLogLine[], tools: readonly { name: string; effect: string }[]): boolean {
+  const writes = new Set(tools.filter((t) => t.effect !== 'read').map((t) => t.name));
+  writes.delete(COACH_REPLY_TOOL_NAME);
+  writes.delete('think_harder');
+  if (log.some((l) => [...TODAY_TOOLS].some((n) => n === l.tool) && l.outcome === 'committed')) return false;
+  return log.some((l) => writes.has(l.tool) && NOT_APPLIED_OUTCOMES.has(l.outcome) && l.text !== ONE_CALL_LINE);
+}
+
 /** (v2, BD17) Ben tapped Skip on the coach's question. */
 export const SKIPPED_LINE = 'Ben skipped your question: build now with the defaults and what you know. Do not ask again.';
 /** (v2, BD17) Ben's message answers the coach's question. */
@@ -798,6 +821,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     mention === 'none' &&
     !futureScopeOnly(words) &&
     !asksToRename(words) &&
+    // Review coach-fail N2: `followsUpChange` accepts bare "yes" / "ok" / "please"; it counts only with an open,
+    // unanswered change request in the history (`openAsk`), never on its own.
     (asksLiveChange(words) || (openAsk !== null && followsUpChange(words)));
   // Review S5: adding is named only with the list of what can be added; without it the model can only guess an ID.
   const addOffered = registry.tools.some((t) => t.name === 'edit_today') && context.yourData.addable !== undefined;
@@ -848,6 +873,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const forcedName = forced ? forcedTool : 'edit_today';
   // The held text answer: shown after all if the forced step can't run on this route (named tool_choice unproven, spike S3).
   let heldReply: string | null = null;
+  // Review coach-fail S2: the forced step failed and the held answer was shown instead; kept on the turn.
+  let forcedFailure: { why: CoachTurnError; failure: ModelFailureDetail } | null = null;
 
   // Coach v3 (ADR 0027): the numbers the coach was given, from code's and Ben's text only (context, his
   // messages, tool outputs); the model's own words (earlier replies, its arguments) never verify a number.
@@ -861,8 +888,11 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   };
   // The backstop, created up front so a streamed reply is checked sentence by sentence as it arrives.
   // The reply is always the last step, so every action it could cite is already in the ledger.
-  // 21 Oct: "the adjustment didn't go through" is kept only when a tool result this turn wasn't applied.
-  const notAppliedThisTurn = (): boolean => toolLog.some((l) => l.outcome !== 'read' && l.outcome !== 'committed' && l.outcome !== 'replayed');
+  // 21 Oct: "the adjustment didn't go through" is kept only when a write tool's own result this turn wasn't
+  // applied (refused, stale, rejected, invalid, offered). Review coach-fail B1: the app's own lines (the nudge
+  // after a text answer, "only one call at a time", think_harder, read limits) never back it, and once a change
+  // to today committed this turn, nothing does.
+  const notAppliedThisTurn = (): boolean => failureBackedBy(toolLog, registry.tools);
   const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange || liveChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered, todayToolsOffered: todayOffered, facts, failureBacked: notAppliedThisTurn });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
@@ -964,10 +994,13 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       // The route refused the forced call (a rejected named tool_choice surfaces as `unavailable` or, 21 Oct, a
       // request error): the held answer stands, as before the nudge (WB3: `No change made.`). Review r2 S2: any
       // other error (usage limit, signed out, not eligible, model gone, network) is shown as it is, so the AI status stays honest.
+      // Review coach-fail S2: the forced step's own failure is kept on the turn (and logged after the reply is
+      // checked, so it never backs a "didn't go through" the held answer wrote before anything was tried).
       if (forceBuild && heldReply !== null && (why === 'unavailable' || why === 'request_error')) {
         const parsed = parseReply(heldReply, req.kind);
         if (parsed.ok) {
           message = parsed.reply.message;
+          forcedFailure = { why, failure: out.failure ?? { kind: why } };
           break;
         }
       }
@@ -984,11 +1017,11 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       message = out.text;
       break;
     }
-    if (out.extraCalls > 0) logLine({ tool: out.name, outcome: 'not_allowed', text: 'Only one call at a time; the others were ignored.', actionId: null });
+    if (out.extraCalls > 0) logLine({ tool: out.name, outcome: 'not_allowed', text: ONE_CALL_LINE, actionId: null });
     if (out.name === COACH_REPLY_TOOL_NAME && holdReply && step + 2 < maxSteps) {
       nudged = true;
       heldReply = out.arguments;
-      logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: forced ? 'Answer in text; asked to build.' : 'Answer in text; asked to change.', actionId: null });
+      logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: forced ? 'Answer in text; asked to build.' : NUDGE_CHANGE_LINE, actionId: null });
       input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: forcedPlan ? PLAN_NUDGE_LINE : forced ? BUILD_NUDGE_LINE : LIVE_CHANGE_NUDGE_LINE }) });
       continue;
@@ -1060,7 +1093,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       } else input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, ref) });
       continue;
     }
-    const asked = !TODAY_TOOLS.has(parsed.call.tool) || (!(confirmAgain && parsed.call.tool === 'edit_today') && todayAskVerdict(parsed.call.tool, gate, askInput.kind === 'words' ? askInput.text : words, askClaimOf(parsed.call.args), { noWorkingSet: difficultyTapWithoutWork, ...(setsOnly === undefined ? {} : { setsOnly }), ...(liveChange ? { benWordsAsk: true } : {}) }).asked);
+    const asked = !TODAY_TOOLS.has(parsed.call.tool) || (!(confirmAgain && parsed.call.tool === 'edit_today') && todayAskVerdict(parsed.call.tool, gate, askInput.kind === 'words' ? askInput.text : words, askClaimOf(parsed.call.args), { noWorkingSet: difficultyTapWithoutWork, ...(setsOnly === undefined ? {} : { setsOnly }), ...(liveChange && (setsOnly !== false || isStructuralRequest(gate.benRequest) || requestHas(gate.benRequest, 'add')) ? { benWordsAsk: true } : {}) }).asked);
     // Coach v3: an edit Ben didn't ask for is checked and saved as an offer (exactly what would apply), never applied.
     const proposer = !asked && parsed.call.tool === 'edit_today' && liveWorkout ? ports.executors.edit_today : undefined;
     if (!asked && proposer === undefined) {
@@ -1105,6 +1138,11 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const cards = thisTurn.map((record) => ({ record, rendered: renderActionResult(record, req.surface) }));
   let note = message === null ? null : (filter.note()?.text ?? null);
   if (error !== null && thisTurn.length > 0) note = INTERRUPTED_NOTE;
+  // Review coach-fail S2: the forced change step never ran; say so (no card, so nothing changed) and log why.
+  if (forcedFailure !== null) {
+    if (thisTurn.length === 0) note = NO_CHANGE_SAVED_LINE;
+    logLine({ tool: forcedName, outcome: 'failed', text: `Not run: ${failureWhy(cleanFailure(forcedFailure.failure))}`.slice(0, 300), actionId: null });
+  }
   const flagged = thisTurn.some((r) => r.detail.kind === 'set_pain_flag' && r.status === 'committed');
   const askPain = (mention === 'pain' || mention === 'unclear') && !flagged ? { bodyPart: messagePain?.bodyPart ?? null } : null;
   const endedAt = ports.now();
@@ -1126,7 +1164,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       complete: error === null,
     },
   });
-  const kept = error !== null && error !== 'cancelled' && failure !== null ? cleanFailure(failure) : null;
+  const kept = error !== null && error !== 'cancelled' && failure !== null ? cleanFailure(failure) : forcedFailure !== null ? cleanFailure(forcedFailure.failure) : null;
   await ports.store.updateTurn(req.turnId, { status, error, endedAtUtc: endedAt.utc, toolLog, ...(kept === null ? {} : { failure: kept }) }, endedAt.utc);
 
   return {

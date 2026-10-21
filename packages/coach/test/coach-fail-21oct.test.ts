@@ -10,8 +10,9 @@ import { verifyAsked } from '../src/intent';
 import type { ModelEvent } from '../src/model-port';
 import { collectFacts, verifySentence } from '../src/numbers';
 import { claimsChangeFailed, createReplyFilter, FAILURE_CLAIM_DETAIL } from '../src/reply';
-import { asksLiveChange, followsUpChange } from '../src/request';
-import { COACH_INSTRUCTIONS, LIVE_CHANGE_NUDGE_LINE, liveWorkoutInstructions, openChangeRequestIn, runCoachTurn } from '../src/turn';
+import { asksLiveChange, followsUpChange, mentionsTodaysSets } from '../src/request';
+import type { ToolLogLine } from '@fizz/schemas';
+import { COACH_INSTRUCTIONS, failureBackedBy, LIVE_CHANGE_NUDGE_LINE, liveWorkoutInstructions, openChangeRequestIn, runCoachTurn } from '../src/turn';
 import { ScriptedCoachModel } from './fake-model';
 import { at, call, id, kg, memoryStore, ports, reply, request, SESSION, words, workout } from './turn-fixtures';
 
@@ -322,5 +323,121 @@ describe('the live context carries the exercise’s recent sets (D/b)', () => {
     expect(sent(msg(false, []))).toEqual([UNANSWERED_TURN_NOTE]);
     expect(sent(msg(false, [id(5)]))).toEqual([CUT_OFF_TURN_NOTE]);
     expect(sent(msg(true, []))).toEqual([]);
+  });
+});
+
+describe('review coach-fail-21oct fixes', () => {
+  const BEN_2 = "It's too light given eg my set on Friday/sat";
+  const shown = (r: { items: readonly { kind: string; text?: string }[] }) => r.items.map((i) => (i.kind === 'sentence' ? (i.text ?? '') : ''));
+
+  it('B1a: a held "didn’t go through" is hidden when the forced edit_today step is rejected; the failure is kept (S2)', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const model = new ScriptedCoachModel([reply('The adjustment didn’t go through; keep the warm-ups controlled.'), [bad400]]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words(BEN_2), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
+    expect(model.requests[1]?.toolChoice).toEqual({ type: 'function', name: 'edit_today' });
+    expect(r.status).toBe('completed');
+    expect(shown(r)).toEqual([]);
+    expect(r.hiddenLines.map((h) => h.detail)).toEqual([FAILURE_CLAIM_DETAIL]);
+    // S2: the outcome is honest and the forced step's own failure is kept.
+    expect(r.note).toBe('No change made.');
+    expect(r.failure).toMatchObject({ kind: 'bad_request', status: 400, requestId: 'req_400' });
+    expect(r.toolLog.at(-1)).toMatchObject({ tool: 'edit_today', outcome: 'failed' });
+    expect(r.toolLog.at(-1)?.text).toContain('HTTP 400');
+    const turn = await s.repos.coach.getTurn(r.turnId);
+    expect(turn?.failure?.requestId).toBe('req_400');
+    expect(turn?.status).toBe('completed');
+  });
+
+  it('B1a: the held answer’s other sentences still show when the forced step is rejected', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const model = new ScriptedCoachModel([reply('Keep the warm-ups controlled.'), [{ type: 'error', error: 'unavailable', failure: { kind: 'unavailable', status: 503 } }]]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words(BEN_2), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
+    expect(r.status).toBe('completed');
+    expect(shown(r)).toEqual(['Keep the warm-ups controlled.']);
+    expect(r.note).toBe('No change made.');
+    expect(r.failure).toMatchObject({ kind: 'unavailable', status: 503 });
+  });
+
+  it('B1b: "didn’t go through" next to a committed card is hidden', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const model = new ScriptedCoachModel([reply('Keep them controlled.'), [call('edit_today', raise('It’s too light')), { type: 'completed' }], reply('The change didn’t go through. Keep the bar path tight.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words(BEN_2), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
+    expect(r.cards.map((c) => c.record.status)).toEqual(['committed']);
+    expect(shown(r)).toEqual(['Keep the bar path tight.']);
+    expect(r.failure).toBeUndefined();
+  });
+
+  it('B1: only a write tool’s own unapplied result backs a failure claim', () => {
+    const tools = [{ name: 'edit_today', effect: 'write' }, { name: 'get_active_session', effect: 'read' }, { name: 'think_harder', effect: 'read' }];
+    const line = (tool: string, outcome: ToolLogLine['outcome'], text = 'x') => ({ tool, outcome, text, actionId: null });
+    expect(failureBackedBy([line('reply', 'not_allowed', 'Answer in text; asked to change.')], tools)).toBe(false);
+    expect(failureBackedBy([line('edit_today', 'not_allowed', 'Only one call at a time; the others were ignored.')], tools)).toBe(false);
+    expect(failureBackedBy([line('think_harder', 'not_allowed'), line('get_active_session', 'not_allowed', 'Read limit reached.')], tools)).toBe(false);
+    for (const o of ['stale', 'rejected', 'invalid_args', 'not_allowed', 'proposed'] as const) expect(failureBackedBy([line('edit_today', o)], tools), o).toBe(true);
+    expect(failureBackedBy([line('edit_today', 'stale'), line('edit_today', 'committed')], tools)).toBe(false);
+  });
+
+  it('B2: declines, deferrals and contented feedback are not change requests', () => {
+    for (const t of [
+      "I'll fix it myself",
+      "Leave it, I'll sort it out",
+      "Not now, I'll change it later",
+      "Don't bump it",
+      'The warm-up felt too easy but working sets were perfect',
+      "Don't bump it, leave it, I'll sort it out",
+      'Leave the rows, I’ll sort it out',
+      'No need to fix them',
+      'I will adjust the weights myself',
+    ]) {
+      expect(asksLiveChange(t), t).toBe(false);
+      expect(mentionsTodaysSets(t), t).toBe(false);
+    }
+    // Still asks.
+    for (const t of [BEN_2, 'Fix them then', 'Never mind, make the rows heavier', 'Sets were fine but make the rows heavier', 'Make the rows warm up heavier']) expect(asksLiveChange(t), t).toBe(true);
+  });
+
+  it('B2: "I’ll fix it myself" with an edit_today call is offered, never applied', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const model = new ScriptedCoachModel([[call('edit_today', raise("I'll fix it myself")), { type: 'completed' }], reply('Ok.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words("I'll fix it myself"), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
+    expect(r.cards.map((c) => c.record.status)).not.toContain('committed');
+    expect(r.offer).toBe('adjust_today');
+    expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(7);
+  });
+
+  it('B2: "Don’t bump it, leave it, I’ll sort it out" is answered in text, never forced to edit_today', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const model = new ScriptedCoachModel([reply('Ok, over to you.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words("Don't bump it, leave it, I'll sort it out"), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
+    expect(model.requests).toHaveLength(1);
+    expect(shown(r)).toEqual(['Ok, over to you.']);
+  });
+
+  it('S1: a complaint about the load never applies a structural edit; it is offered', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const remove = { baseVersion: 7, ops: [{ op: 'remove', sessionExerciseId: id(30) }], reason: 'Too light.', benAsked: true, benQuote: 'It’s too light' };
+    const model = new ScriptedCoachModel([[call('edit_today', remove), { type: 'completed' }], reply('Want me to drop it?')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words(BEN_2), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
+    expect(r.cards.map((c) => c.record.status)).not.toContain('committed');
+    expect((await s.repos.sessions.get(SESSION))?.exercises.map((e) => e.id)).toContain(id(30));
+  });
+
+  it('S3: true statements are not failure claims', () => {
+    for (const t of ['I can’t change completed sets; edit the log instead.', 'I can’t make that call for you.', 'It didn’t land well with your elbow.', 'That didn’t go well.']) expect(claimsChangeFailed(t), t).toBe(false);
+    for (const t of ['I couldn’t apply it.', 'I wasn’t able to change the weights.', 'It didn’t go through.', 'That wasn’t saved.', 'The change didn’t land.']) expect(claimsChangeFailed(t), t).toBe(true);
+  });
+
+  it('S5: a long quoted echo of the request is dropped from the failure message; short names stay', () => {
+    expect(scrubFailureMessage("Invalid schema for function 'edit_today': can't use 'pattern' here")).toBe("Invalid schema for function 'edit_today': can't use 'pattern' here");
+    expect(scrubFailureMessage('Invalid input: "It’s too light given eg my set on Friday/sat and the rows" is not valid')).toBe('Invalid input: "…" is not valid');
+    expect(scrubFailureMessage("Value 'make the rows warm up heavier please because they felt light' rejected")).toBe("Value '…' rejected");
+    expect(scrubFailureMessage('Bad content at input[3]: "Make the rows warm up heavier please because they were')).toBe('Bad content at input[3]: "…');
+    expect(scrubFailureMessage("Can't find that model; the thing you asked for isn't on this route")).toBe("Can't find that model; the thing you asked for isn't on this route");
   });
 });

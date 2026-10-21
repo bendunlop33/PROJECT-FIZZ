@@ -1,3 +1,5 @@
+import { declinesChange } from './request';
+
 /**
  * Coach v3 (ADR 0027, Ben 18 Oct): the model decides what Ben meant; code checks it.
  *
@@ -121,6 +123,9 @@ export function verifyAsked(input: AskInput): AskVerdict {
   if (sets && input.chip) return { asked: true, by: 'chip' };
   if (sets && input.acceptedOffer) return { asked: true, by: 'accepted_offer' };
   const { benAsked, benQuote } = input.claim;
+  // Review coach-fail B2: Ben declined or deferred ("I'll fix it myself", "don't bump it", "not now"): his words never
+  // ask, whatever the model quotes or the word lists say (rule 3). The call becomes an offer.
+  if (input.words !== null && declinesChange(input.words)) return { asked: false, by: benAsked === false ? 'model_said_no' : 'not_a_request' };
   if (benAsked === true && quoteInWords(benQuote, input.words) && benQuote != null && input.words !== null) {
     // His words, but a statement or a question for an opinion: the coach's idea, offered (review S3).
     if (quoteAsks(benQuote, input.words)) return { asked: true, by: 'quote' };

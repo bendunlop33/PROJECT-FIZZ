@@ -1195,9 +1195,38 @@ const KEEP_AS_IS = /\b(?:keep|leave|hold)\b[^.?!]{0,30}\b(?:as (?:it is|they are
  */
 const INFO_QUESTION = /^(?:what(?:'s|s)?|how|which|when|where|who|why|did|was|were|is|are|am i|do i|does|have i|had i)\b(?! about\b)/;
 
+/**
+ * (21 Oct, review coach-fail B2) Ben declines or defers a change: a negated change verb ("don't bump
+ * it", "no need to fix them"), doing it himself ("I'll fix it", "I'll sort it out", "I'll change it
+ * later", "myself") or a deferral ("not now", "leave it"). Never a request for the coach to change
+ * anything, whatever else the message says (rule 3).
+ */
+const CHANGE_VERB = '(?:bump|change|fix|sort|adjust|touch|raise|lower|update|redo|correct|increase|decrease|alter|edit|move|drop|add|swap|make)';
+const DECLINES = new RegExp(
+  [
+    String.raw`\b(?:don'?t|do not|no need to|never(?! mind)|not going to|won'?t|wouldn'?t) (?:\w+ ){0,2}?${CHANGE_VERB}\b`,
+    String.raw`\bi(?:'ll| will|'m going to| am going to|'m gonna| can| shall|'d rather|'d prefer to) (?:just |rather |probably |do )?(?:${CHANGE_VERB}|handle|deal with|sort out|leave)\b`,
+    String.raw`\b(?:not now|not yet|not today|maybe later|later on|myself|leave (?:it|them|that|those|these|the \w+)(?:\s+(?:alone|be|for now))?\s*(?:[,.;!]|$)|no changes?|it'?s fine|they'?re fine)`,
+    String.raw`\b(?:${CHANGE_VERB}|do) (?:it|them|that|those) later\b`,
+  ].join('|'),
+);
+
+/**
+ * Review coach-fail B2: a contented clause ("but working sets were perfect", "the rest is fine"):
+ * feedback, not a request, unless Ben also asks outright or uses an imperative.
+ */
+const CONTENT = /\b(?:were|was|are|is|felt|feel|feels|look|looks) (?:\w+ )?(?:perfect|fine|good|spot on|right|great|ok|okay)\b/;
+const IMPERATIVE = /(?:^|[.!?;,]\s*|\b(?:but|and|so|just|then)\s+)(?:please\s+)?(?:make|fix|sort|bump|raise|lower|adjust|change|update|redo|correct|add|drop|swap|put|set|go)\b/;
+
+/** Review coach-fail B2: declined, deferred, or only contented feedback with no outright ask or imperative. */
+export function declinesChange(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'");
+  return DECLINES.test(t) || (CONTENT.test(t) && !OUTRIGHT_ASK.test(t) && !IMPERATIVE.test(t.trim()));
+}
+
 export function mentionsTodaysSets(text: string): boolean {
   const t = lower(text).replace(/[‘’]/g, "'");
-  if (KEEP_AS_IS.test(t)) return false;
+  if (KEEP_AS_IS.test(t) || declinesChange(t)) return false;
   const sentences = t.match(/[^.!?;]+[.!?;]*/g) ?? [];
   return sentences.some((s) => TODAY_SET_WORDS.test(s) && !INFO_QUESTION.test(s.trim()));
 }
@@ -1218,7 +1247,7 @@ const OUTRIGHT_ASK = /\b(?:can you|could you|would you|will you|please)\b/;
 
 export function asksLiveChange(text: string): boolean {
   const t = lower(text).replace(/[‘’]/g, "'");
-  if (KEEP_AS_IS.test(t) || futureScopeOnly(t)) return false;
+  if (KEEP_AS_IS.test(t) || declinesChange(t) || futureScopeOnly(t)) return false;
   if (OPINION_ONLY_ASK.test(t) && !OUTRIGHT_ASK.test(t)) return false;
   if (mentionsTodaysSets(t)) return true;
   const sentences = t.match(/[^.!?;]+[.!?;]*/g) ?? [];
