@@ -91,7 +91,7 @@ export function slotAfterTurn(result: CoachTurnResult, opts: { workoutModelGone?
     const text = refused.status === 'stale' ? 'Out of date' : renderActionResult(refused, 'slot').text;
     return { adjustment: null, outcome: { text, retry: refused.status === 'stale' } };
   }
-  const failed = outcomeFor(result.status, result.error, result.cards.length > 0, opts);
+  const failed = outcomeFor(result.status, result.error, result.cards.length > 0, { ...opts, failure: result.failure ?? null });
   if (failed !== null) return { adjustment: null, outcome: failed };
   return { adjustment: null, outcome: { text: 'No change made.', retry: false } };
 }

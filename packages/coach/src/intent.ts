@@ -1,3 +1,5 @@
+import { declinesChange } from './request';
+
 /**
  * Coach v3 (ADR 0027, Ben 18 Oct): the model decides what Ben meant; code checks it.
  *
@@ -37,6 +39,12 @@ export interface AskInput {
    * asks for those only: a swap, add, removal or move after a chip is the coach's own idea (an offer).
    */
   setsOnly?: boolean;
+  /**
+   * (21 Oct, Ben's Build B report) Code's own reading: Ben's whole message this turn is a clear request to
+   * change today's workout (`asksLiveChange`: "It's too light given my set on Friday", "Fix them then"). A
+   * claim of the model's whose quote is only part of it ("It's too light") then still counts as his ask.
+   */
+  benWordsAsk?: boolean;
 }
 
 /** Fewest words a quote needs, unless it is Ben's whole message ("Heavier"). */
@@ -115,10 +123,15 @@ export function verifyAsked(input: AskInput): AskVerdict {
   if (sets && input.chip) return { asked: true, by: 'chip' };
   if (sets && input.acceptedOffer) return { asked: true, by: 'accepted_offer' };
   const { benAsked, benQuote } = input.claim;
+  // Review coach-fail B2: Ben declined or deferred ("I'll fix it myself", "don't bump it", "not now"): his words never
+  // ask, whatever the model quotes or the word lists say (rule 3). The call becomes an offer.
+  if (input.words !== null && declinesChange(input.words)) return { asked: false, by: benAsked === false ? 'model_said_no' : 'not_a_request' };
   if (benAsked === true && quoteInWords(benQuote, input.words) && benQuote != null && input.words !== null) {
     // His words, but a statement or a question for an opinion: the coach's idea, offered (review S3).
-    return quoteAsks(benQuote, input.words) ? { asked: true, by: 'quote' } : { asked: false, by: 'not_a_request' };
+    if (quoteAsks(benQuote, input.words)) return { asked: true, by: 'quote' };
+    return input.benWordsAsk === true ? { asked: true, by: 'words' } : { asked: false, by: 'not_a_request' };
   }
+  if (benAsked === true && input.benWordsAsk === true) return { asked: true, by: 'words' };
   if (benAsked === false) return { asked: false, by: 'model_said_no' };
   return input.fallback() ? { asked: true, by: 'words' } : { asked: false, by: 'no_request' };
 }

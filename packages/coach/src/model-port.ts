@@ -46,6 +46,11 @@ export type ModelErrorKind =
   | 'auth_expired'
   | 'model_gone'
   | 'unavailable'
+  /**
+   * (21 Oct, Ben's Build B report) The route rejected the request itself (HTTP 400, a malformed
+   * response): a fault on our side or the route's, never "the coach is unavailable".
+   */
+  | 'request_error'
   | 'network'
   | 'timeout'
   | 'cancelled';
@@ -66,7 +71,29 @@ export type ModelEvent =
    */
   | { type: 'heartbeat' }
   | { type: 'completed' }
-  | { type: 'error'; error: ModelErrorKind; detail?: string };
+  | {
+      type: 'error';
+      error: ModelErrorKind;
+      detail?: string;
+      /** (21 Oct) What the provider said, kept on the failed turn for `Why?`. Never tokens or credentials. */
+      failure?: ModelFailureDetail;
+      /**
+       * (21 Oct) A temporary failure (5xx, 503, a dropped stream or connection): the turn retries
+       * that model step once before failing (nothing from the step was applied).
+       */
+      transient?: boolean;
+    };
+
+/** (21 Oct) A provider failure as recorded on the turn: kind, HTTP status, code, a short message, request ID. */
+export interface ModelFailureDetail {
+  /** The provider's failure kind (`bad_request`, `server`, `stream_interrupted`, …). */
+  kind: string;
+  status?: number;
+  code?: string;
+  /** Trimmed and scrubbed of anything token-like (`scrubFailureMessage`). */
+  message?: string;
+  requestId?: string;
+}
 
 export interface CoachModelPort {
   stream(request: ModelRequest): AsyncIterable<ModelEvent>;

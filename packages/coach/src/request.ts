@@ -1195,11 +1195,77 @@ const KEEP_AS_IS = /\b(?:keep|leave|hold)\b[^.?!]{0,30}\b(?:as (?:it is|they are
  */
 const INFO_QUESTION = /^(?:what(?:'s|s)?|how|which|when|where|who|why|did|was|were|is|are|am i|do i|does|have i|had i)\b(?! about\b)/;
 
+/**
+ * (21 Oct, review coach-fail B2) Ben declines or defers a change: a negated change verb ("don't bump
+ * it", "no need to fix them"), doing it himself ("I'll fix it", "I'll sort it out", "I'll change it
+ * later", "myself") or a deferral ("not now", "leave it"). Never a request for the coach to change
+ * anything, whatever else the message says (rule 3).
+ */
+const CHANGE_VERB = '(?:bump|change|fix|sort|adjust|touch|raise|lower|update|redo|correct|increase|decrease|alter|edit|move|drop|add|swap|make)';
+const DECLINES = new RegExp(
+  [
+    String.raw`\b(?:don'?t|do not|no need to|never(?! mind)|not going to|won'?t|wouldn'?t) (?:\w+ ){0,2}?${CHANGE_VERB}\b`,
+    String.raw`\bi(?:'ll| will|'m going to| am going to|'m gonna| can| shall|'d rather|'d prefer to) (?:just |rather |probably |do )?(?:${CHANGE_VERB}|handle|deal with|sort out|leave)\b`,
+    String.raw`\b(?:not now|not yet|not today|maybe later|later on|myself|leave (?:it|them|that|those|these|the \w+)(?:\s+(?:alone|be|for now))?\s*(?:[,.;!]|$)|no changes?|it'?s fine|they'?re fine)`,
+    String.raw`\b(?:${CHANGE_VERB}|do) (?:it|them|that|those) later\b`,
+  ].join('|'),
+);
+
+/**
+ * Review coach-fail B2: a contented clause ("but working sets were perfect", "the rest is fine"):
+ * feedback, not a request, unless Ben also asks outright or uses an imperative.
+ */
+const CONTENT = /\b(?:were|was|are|is|felt|feel|feels|look|looks) (?:\w+ )?(?:perfect|fine|good|spot on|right|great|ok|okay)\b/;
+const IMPERATIVE = /(?:^|[.!?;,]\s*|\b(?:but|and|so|just|then)\s+)(?:please\s+)?(?:make|fix|sort|bump|raise|lower|adjust|change|update|redo|correct|add|drop|swap|put|set|go)\b/;
+
+/** Review coach-fail B2: declined, deferred, or only contented feedback with no outright ask or imperative. */
+export function declinesChange(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'");
+  return DECLINES.test(t) || (CONTENT.test(t) && !OUTRIGHT_ASK.test(t) && !IMPERATIVE.test(t.trim()));
+}
+
 export function mentionsTodaysSets(text: string): boolean {
   const t = lower(text).replace(/[‘’]/g, "'");
-  if (KEEP_AS_IS.test(t)) return false;
+  if (KEEP_AS_IS.test(t) || declinesChange(t)) return false;
   const sentences = t.match(/[^.!?;]+[.!?;]*/g) ?? [];
   return sentences.some((s) => TODAY_SET_WORDS.test(s) && !INFO_QUESTION.test(s.trim()));
+}
+
+/**
+ * (21 Oct, Ben's Build B report) Ben, mid-workout, asks for today's sets to change in words the set
+ * list above misses: a complaint about the load ("It's too light given my set on Friday"), a fix
+ * ("Fix them then"), or warm-ups made heavier ("Make the rows warm up heavier"). With
+ * `mentionsTodaysSets`, these are a live change request: the turn ends in `edit_today`, not advice
+ * (rule 3). A question for information, an opinion-only question, a hold and words about a later
+ * session never count.
+ */
+const LOAD_COMPLAINT = /\b(?:(?:way|far|much|bit|a bit|a little|slightly|too) )?(?:too (?:light|heavy|easy|hard|much|little)|not (?:heavy|hard|challenging) enough|(?:light|heavy|easy|hard)er than (?:it should|they should|i (?:want|wanted|need|expected)))\b/;
+const FIX_ASK = /\b(?:fix|sort|redo|update|adjust|change|correct|bump|raise|lower) (?:it|them|that|those|these|this|all|the (?:sets?|weights?|loads?|targets?|numbers?|rest)|(?:it|them|that) up)\b|\b(?:sort (?:it|them) out|do (?:it|that) (?:then|now)|just do it)\b/;
+const WARMUP_CHANGE = /\bwarm-?\s?ups?\b[^.?!]{0,40}\b(?:heavier|lighter|harder|easier|up|down|more|less|working)\b|\b(?:make|turn|change|swap|switch)\b[^.?!]{0,40}\bwarm-?\s?ups?\b/;
+const OPINION_ONLY_ASK = /\b(?:what do you think|do you think|should i|would it be|is it (?:ok|okay|fine|worth)|thoughts|any (?:ideas|advice|tips)|what would you)\b/;
+const OUTRIGHT_ASK = /\b(?:can you|could you|would you|will you|please)\b/;
+
+export function asksLiveChange(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'");
+  if (KEEP_AS_IS.test(t) || declinesChange(t) || futureScopeOnly(t)) return false;
+  if (OPINION_ONLY_ASK.test(t) && !OUTRIGHT_ASK.test(t)) return false;
+  if (mentionsTodaysSets(t)) return true;
+  const sentences = t.match(/[^.!?;]+[.!?;]*/g) ?? [];
+  return sentences.some((raw) => {
+    const s = raw.trim();
+    // "Is it too heavy?" asks for an opinion; "Can you fix them?" asks outright.
+    if (/\?\s*$/.test(s) && !OUTRIGHT_ASK.test(s)) return false;
+    if (INFO_QUESTION.test(s) && !OUTRIGHT_ASK.test(s)) return false;
+    return LOAD_COMPLAINT.test(s) || FIX_ASK.test(s) || WARMUP_CHANGE.test(s);
+  });
+}
+
+/** A short follow-up that repeats an open request ("Try again", "Go on then", "Yes do it"), read only after one. */
+const FOLLOW_UP = /^(?:(?:ok(?:ay)?|yes|yeah|yep|right|so|well|please|then|now)[,!.]?\s+)*(?:try (?:it )?again|again|retry|go on|go ahead|do it|do that|yes|yeah|yep|please|ok(?:ay)?|sure|fix (?:it|them|that)|sort (?:it|them)|apply (?:it|them|that)|make the change)(?:\s+(?:then|now|please|again))*[.!]*$/;
+
+export function followsUpChange(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'").trim();
+  return t.split(/\s+/).length <= 6 && FOLLOW_UP.test(t);
 }
 
 /** Review B1: words that put a change on a later session or the plan, not today. */
