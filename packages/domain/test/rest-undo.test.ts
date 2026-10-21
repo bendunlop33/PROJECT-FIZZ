@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_RESUMABLE_RESTS, SessionAggregateSchema, type SessionAggregate } from '@fizz/schemas';
-import { chatSetUndoCommand, getSessionPhase, reduceSession } from '../src/index';
+import { MAX_FINISHED_RESUMABLE_DEPTH, MAX_RESUMABLE_RESTS, ResumableRestSchema, SessionAggregateSchema, type SessionAggregate } from '@fizz/schemas';
+import { boundResumable, chatSetUndoCommand, getSessionPhase, reduceSession } from '../src/index';
 import { at, id, kg, ms, values } from './fixtures';
 import { apply, BENCH, expectError, expectOk, FACE, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -38,6 +38,7 @@ describe('undo of a log puts back the rest it replaced', () => {
 
     const r = expectOk(reduceSession(s, undo(b1.id, 60)));
     expect(r.state.restTimer).toEqual({ ...warm, version: warm.version + 2 });
+    expect(r.state.restTimer?.restoredFinished).toBeUndefined();
     expect(r.state.restTimer?.resumeOnUndo).toBeUndefined();
     expect(r.events.map((e) => e.type)).toEqual(['SetUndone', 'RestEnded', 'RestStarted', 'ActiveSetChanged']);
     expect(r.events[1]).toMatchObject({ type: 'RestEnded', timerId: accidental?.id, reason: 'cancelled' });
@@ -57,7 +58,7 @@ describe('undo of a log puts back the rest it replaced', () => {
   it('the replaced rest ran out between tick and untick: it comes back finished at its deadline, "Rested" counting on, no alert', () => {
     const { s, b1, warm } = accidentalTick();
     const r = expectOk(reduceSession(s, undo(b1.id, 130)));
-    expect(r.state.restTimer).toEqual({ ...warm, status: 'expired', endedAtUtc: at(120).utc, remainingMsAtPause: null, version: warm.version + 2 });
+    expect(r.state.restTimer).toEqual({ ...warm, status: 'expired', endedAtUtc: at(120).utc, remainingMsAtPause: null, version: warm.version + 2, restoredFinished: true });
     expect(r.state.restTimer?.resumeOnUndo).toBeUndefined();
     // No RestStarted: nothing to schedule. The accidental rest is cancelled.
     expect(r.events.map((e) => e.type)).toEqual(['SetUndone', 'RestEnded', 'ActiveSetChanged']);
@@ -105,7 +106,7 @@ describe('undo of a log puts back the rest it replaced', () => {
     if (!expired) throw new Error('no rest');
     s = apply(s, logCmd(b1.id, values(kg(100), 8), 100));
     const r = expectOk(reduceSession(s, undo(b1.id, 110)));
-    expect(r.state.restTimer).toEqual({ ...expired, version: expired.version + 2 });
+    expect(r.state.restTimer).toEqual({ ...expired, version: expired.version + 2, restoredFinished: true });
     expect(getSessionPhase(r.state, ms(110))).toMatchObject({ kind: 'ready', restEnded: { endedAtUtc: at(90).utc, restedMs: 80_000 } });
   });
 
@@ -122,7 +123,7 @@ describe('undo of a log puts back the rest it replaced', () => {
     if (!skipped) throw new Error('no rest');
     s = apply(s, logCmd(b1.id, values(kg(100), 8), 50));
     const r = expectOk(reduceSession(s, undo(b1.id, 60)));
-    expect(r.state.restTimer).toEqual({ ...skipped, version: skipped.version + 2 });
+    expect(r.state.restTimer).toEqual({ ...skipped, version: skipped.version + 2, restoredFinished: true });
     expect(r.events.some((e) => e.type === 'RestStarted')).toBe(false);
     expect(getSessionPhase(r.state, ms(60))).toEqual({
       kind: 'ready',
@@ -413,5 +414,68 @@ describe('kept rests are capped (review S2)', () => {
     const r = expectOk(reduceSession(s, undo(ticks[21] ?? '', t + 1)));
     expect(r.state.restTimer).toMatchObject({ id: previousTimerId, status: 'running' });
     expect(r.state.restTimer?.resumeOnUndo).toHaveLength(MAX_RESUMABLE_RESTS - 1);
+  });
+});
+
+describe('finished kept rests stay near the top (review rest-undo-sp1 S1)', () => {
+  it(`22 ticks with each rest run out first keep only the newest ${String(MAX_FINISHED_RESUMABLE_DEPTH)} finished rests, and the row stays small`, () => {
+    const { state } = startFixture();
+    const [w, b1, b2] = bench(state);
+    if (!w || !b1 || !b2) throw new Error('fixture');
+    let s = state;
+    let after = b2.id;
+    const added: string[] = [];
+    for (let i = 0; i < 19; i += 1) {
+      const newSetId = id(71_000 + i);
+      s = apply(s, { type: 'add_set', at: at(1), opId: `add-${String(i)}`, sessionExerciseId: b2.sessionExerciseId, newSetId, setType: null, afterSetId: after });
+      added.push(newSetId);
+      after = newSetId;
+    }
+    const ticks = [w.id, b1.id, b2.id, ...added];
+    // Ten minutes apart: every rest has run out (expired) before the next log.
+    let t = 10;
+    for (const setId of ticks) s = apply(s, logCmd(setId, values(kg(100), 8), (t += 600)));
+    const stack = s.restTimer?.resumeOnUndo ?? [];
+    expect(stack).toHaveLength(MAX_FINISHED_RESUMABLE_DEPTH);
+    expect(stack.every((e) => e.timer.status === 'expired')).toBe(true);
+    expect(stack.map((e) => e.afterUndoOfSetId)).toEqual(ticks.slice(-MAX_FINISHED_RESUMABLE_DEPTH));
+    // Rewritten on every command (draft saves too): a small, fixed budget.
+    expect(JSON.stringify(stack).length).toBeLessThan(2_500);
+    expect(SessionAggregateSchema.safeParse(JSON.parse(JSON.stringify(s))).error?.issues).toBeUndefined();
+    // The newest five unwind one at a time, each finished; the sixth back puts no rest back.
+    for (const setId of ticks.slice(-MAX_FINISHED_RESUMABLE_DEPTH).reverse()) {
+      const r = expectOk(reduceSession(s, undo(setId, (t += 5))));
+      expect(r.state.restTimer).toMatchObject({ status: 'expired', restoredFinished: true });
+      s = r.state;
+    }
+    expect(s.restTimer?.resumeOnUndo).toBeUndefined();
+    const deeper = ticks.at(-MAX_FINISHED_RESUMABLE_DEPTH - 1) ?? '';
+    const before = s.restTimer;
+    const r = expectOk(reduceSession(s, undo(deeper, t + 5)));
+    expect(r.state.restTimer).toEqual(before);
+  });
+
+  it('only finished entries are bounded by depth: a running or paused one further down is kept', () => {
+    const { s, b1 } = accidentalTick();
+    const entry = s.restTimer?.resumeOnUndo?.[0];
+    if (!entry) throw new Error('fixture');
+    const finished = (n: number) => ({ afterUndoOfSetId: id(72_000 + n), timer: { ...entry.timer, status: 'expired' as const, endedAtUtc: entry.timer.deadlineUtc } });
+    const stack = [entry, ...Array.from({ length: MAX_FINISHED_RESUMABLE_DEPTH + 2 }, (_, n) => finished(n))];
+    const bounded = boundResumable(stack);
+    expect(bounded.map((e) => e.afterUndoOfSetId)).toEqual([b1.id, ...stack.slice(-MAX_FINISHED_RESUMABLE_DEPTH).map((e) => e.afterUndoOfSetId)]);
+    expect(bounded[0]?.timer.status).toBe('running');
+  });
+});
+
+describe('kept rest schema (review rest-undo-sp1 N1)', () => {
+  it('a finished kept rest needs its end time and no paused remainder', () => {
+    const { s } = accidentalTick();
+    const entry = s.restTimer?.resumeOnUndo?.[0];
+    if (!entry) throw new Error('fixture');
+    const finished = { ...entry, timer: { ...entry.timer, status: 'expired' as const, endedAtUtc: entry.timer.deadlineUtc, remainingMsAtPause: null } };
+    expect(ResumableRestSchema.safeParse(finished).success).toBe(true);
+    expect(ResumableRestSchema.safeParse({ ...finished, timer: { ...finished.timer, endedAtUtc: null } }).success).toBe(false);
+    expect(ResumableRestSchema.safeParse({ ...finished, timer: { ...finished.timer, status: 'skipped', remainingMsAtPause: 1000 } }).success).toBe(false);
+    expect(ResumableRestSchema.safeParse(entry).success).toBe(true);
   });
 });

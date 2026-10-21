@@ -1,4 +1,4 @@
-import { MAX_RESUMABLE_RESTS, type ResolvedRest, type RestSetting, type RestTimer, type ResumableRest, type SetType } from '@fizz/schemas';
+import { MAX_FINISHED_RESUMABLE_DEPTH, MAX_RESUMABLE_RESTS, type ResolvedRest, type RestSetting, type RestTimer, type ResumableRest, type SetType } from '@fizz/schemas';
 import { toIso, toMs } from './time';
 
 const SET_TYPE_LABEL: Record<SetType, string> = {
@@ -150,11 +150,25 @@ export function resumeRestTimer(timer: RestTimer, nowMs: number): RestTimer {
  * the "Rested" count-up carries on from when it ended.
  */
 
+const isFinished = (e: ResumableRest): boolean => e.timer.status === 'expired' || e.timer.status === 'skipped';
+
+/**
+ * `stack` bounded: the newest `MAX_RESUMABLE_RESTS`, and a finished entry
+ * only within the top `MAX_FINISHED_RESUMABLE_DEPTH` (review rest-undo-sp1
+ * S1). A dropped entry only means undoing that older log puts no rest back.
+ */
+export function boundResumable(stack: readonly ResumableRest[]): ResumableRest[] {
+  const newest = stack.slice(-MAX_RESUMABLE_RESTS);
+  const top = newest.length - MAX_FINISHED_RESUMABLE_DEPTH;
+  return newest.filter((e, i) => i >= top || !isFinished(e));
+}
+
 /** `timer` with `stack` as its rests to put back on undo (the field is absent when empty). */
 export function withResumable(timer: RestTimer, stack: readonly ResumableRest[]): RestTimer {
   const rest: RestTimer = { ...timer };
   delete rest.resumeOnUndo;
-  return stack.length === 0 ? rest : { ...rest, resumeOnUndo: stack.slice(-MAX_RESUMABLE_RESTS) };
+  const bounded = boundResumable(stack);
+  return bounded.length === 0 ? rest : { ...rest, resumeOnUndo: bounded };
 }
 
 /** A kept running rest whose deadline has passed is finished: `expired`, ended at its deadline. */
@@ -165,8 +179,8 @@ function settleResumable(timer: ResumableRest['timer'], nowMs: number): Resumabl
 
 /**
  * Kept rests as they are at `nowMs`: one that has run out is marked expired
- * (ended at its deadline), never dropped, so undo still shows "Rested" from
- * then. The stack stays capped at `MAX_RESUMABLE_RESTS` by `withResumable`.
+ * (ended at its deadline), so undo still shows "Rested" from then. The stack
+ * stays bounded by `withResumable` (`boundResumable`).
  */
 export function pruneResumable(stack: readonly ResumableRest[], nowMs: number): ResumableRest[] {
   return stack.map((e) => ({ ...e, timer: settleResumable(e.timer, nowMs) }));
@@ -186,6 +200,7 @@ export function resumableAfterLog(previous: RestTimer | null, bySetId: string, n
   if (status !== 'running' && status !== 'paused' && status !== 'expired' && status !== 'skipped') return carried;
   const core: RestTimer = { ...previous };
   delete core.resumeOnUndo;
+  delete core.restoredFinished;
   return [...carried, { afterUndoOfSetId: bySetId, timer: settleResumable({ ...core, status }, nowMs) }];
 }
 
@@ -227,5 +242,9 @@ export function restoreAfterUndo(stack: readonly ResumableRest[], setId: string,
   const rest = stack.slice(0, -1);
   const timer = settleResumable(top.timer, nowMs);
   const live = timer.status === 'running' || timer.status === 'paused';
-  return { restored: withResumable({ ...timer, endedAtUtc: live ? null : timer.endedAtUtc, version: timer.version + 2 }, rest), rest };
+  const back: RestTimer = live
+    ? { ...timer, endedAtUtc: null, version: timer.version + 2 }
+    : // Marked on the timer, so its end cue stays quiet also after a relaunch (review rest-undo-sp1 B1).
+      { ...timer, version: timer.version + 2, restoredFinished: true };
+  return { restored: withResumable(back, rest), rest };
 }

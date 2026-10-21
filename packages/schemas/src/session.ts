@@ -681,12 +681,24 @@ const RestTimerCoreSchema = z.object({
 export const ResumableRestSchema = z.object({
   /** Undoing this set's log restores `timer`. */
   afterUndoOfSetId: IdSchema,
-  timer: RestTimerCoreSchema.extend({ status: z.enum(['running', 'paused', 'expired', 'skipped']) }),
+  timer: RestTimerCoreSchema.extend({ status: z.enum(['running', 'paused', 'expired', 'skipped']) }).superRefine((t, ctx) => {
+    // A finished kept rest has its end and no paused remainder, or undo would show "Ended –".
+    if ((t.status === 'expired' || t.status === 'skipped') && (t.endedAtUtc === null || t.remainingMsAtPause !== null)) {
+      ctx.addIssue({ code: 'custom', message: 'A finished kept rest needs endedAtUtc and no remainingMsAtPause.', path: ['endedAtUtc'] });
+    }
+  }),
 });
 export type ResumableRest = z.infer<typeof ResumableRestSchema>;
 
 /** Most replaced rests kept for undo; older ones are dropped first. */
 export const MAX_RESUMABLE_RESTS = 20;
+/**
+ * Finished kept rests (expired or skipped) are kept only this near the top of
+ * the stack (review rest-undo-sp1 S1): undoing a log further back puts no
+ * rest back, as before untick restored rests. Keeps the row small, since it
+ * is rewritten on every command.
+ */
+export const MAX_FINISHED_RESUMABLE_DEPTH = 5;
 
 export const RestTimerSchema = RestTimerCoreSchema.extend({
   /**
@@ -695,6 +707,13 @@ export const RestTimerSchema = RestTimerCoreSchema.extend({
    * has passed is marked expired when next carried forward, not dropped.
    */
   resumeOnUndo: z.array(ResumableRestSchema).min(1).max(MAX_RESUMABLE_RESTS).optional(),
+  /**
+   * Put back by an undo already finished (workout-table-v3 §3): its end is
+   * history, so no rest-end cue, alert or haptic is due for it, also after a
+   * relaunch (review rest-undo-sp1 B1). Only on an `expired` or `skipped`
+   * timer. Absent = not.
+   */
+  restoredFinished: z.literal(true).optional(),
 });
 export type RestTimer = z.infer<typeof RestTimerSchema>;
 
