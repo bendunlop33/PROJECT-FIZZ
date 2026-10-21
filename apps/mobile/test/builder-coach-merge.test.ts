@@ -152,6 +152,17 @@ describe('Set up words (offline: code reads them, no coach bubble)', () => {
     expect(await s.coachDrafts.list()).toEqual(drafts);
   });
 
+  it('from Today on an Other session: the words keep Full body (a custom day with its groups), never the split’s first day (wiring B1)', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    setTodaySetupDay('full_body');
+    const r = await s.builderCoach.askSetup({ words: 'make it 45 min', opId: 'ask-fb', from: 'today' });
+    expect(r).toMatchObject({ kind: 'filled' });
+    const pending = takePendingSetupFill();
+    expect(pending?.setup).toMatchObject({ dayName: 'Full body', minutes: 45 });
+    expect(pending?.setup.groups.map((g) => g.group)).toEqual(['Legs', 'Back', 'Chest', 'Abs']);
+  });
+
   it('nothing it can read: `Not understood`, nothing applied', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);

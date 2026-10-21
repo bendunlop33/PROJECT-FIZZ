@@ -13,6 +13,7 @@ import {
   builderDraftUndo,
   builderSetupOf,
   CUSTOM_DAY_ID,
+  TODAY_OTHER_SESSIONS,
   currentDraftVersion,
   defaultRestS,
   deriveId,
@@ -750,10 +751,16 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const p = await owner();
       const days = await dayOptions();
       const all = [...days.split, ...days.ppl];
-      const day = all.find((d) => d.id === req.dayId) ?? days.split[0] ?? days.ppl[0];
+      // No day asked: the split's first. A day the builder doesn't list (Today's Other sessions, a day gone
+      // from the split) is a custom day with that session's name and groups, never another day (wiring B1).
+      const day = req.dayId === undefined ? (days.split[0] ?? days.ppl[0]) : all.find((d) => d.id === req.dayId);
       const t = await deps.training().catch(() => null);
       const minutes = t?.sessionMinutes ?? 60;
-      if (day === undefined) return { dayId: CUSTOM_DAY_ID, dayName: 'Custom', dayParts: [], minutes, mainLiftExerciseId: null, supersets: true, groups: [], variationId: null, groupsEdited: false };
+      if (day === undefined) {
+        const other = req.dayId === undefined ? undefined : TODAY_OTHER_SESSIONS.find((o) => o.id === req.dayId);
+        if (other === undefined) return { dayId: CUSTOM_DAY_ID, dayName: 'Custom', dayParts: [], minutes, mainLiftExerciseId: null, supersets: true, groups: [], variationId: null, groupsEdited: req.dayId !== undefined };
+        return { dayId: CUSTOM_DAY_ID, dayName: other.name, dayParts: [], minutes, mainLiftExerciseId: null, supersets: true, groups: other.groups.map((g) => ({ ...g })), variationId: null, groupsEdited: true };
+      }
       const main = await profileMainLift(day.id);
       const s: SetupInput = { dayId: day.id, dayName: day.name, dayParts: day.parts, minutes, mainLiftExerciseId: main, supersets: true, groups: [], variationId: null, groupsEdited: false };
       const env = await envFor(p, { groups: groupsOfParts(day.parts), exerciseIds: main === null ? [] : [main], keySeed: 'setup' });

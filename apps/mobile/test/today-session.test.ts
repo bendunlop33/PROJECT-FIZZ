@@ -332,6 +332,23 @@ describe('Today (v2) session card from the plan', () => {
     expect(r.aggregate.session.planDay).toBeUndefined();
   });
 
+  it('Build your own from each Other session opens Set up on that session (an unknown day is a custom day, never the split’s first; wiring B1)', async () => {
+    const { s } = await benWithPlan();
+    const data = await loaded(s);
+    expect(data.others.map((o) => o.name)).toEqual(['Full body', 'Upper', 'Push']);
+    for (const o of data.others) {
+      const setup = await s.builder.initialSetup({ dayId: o.splitDayId ?? undefined });
+      expect(setup.dayName).toBe(o.name);
+      expect(setup.groups.length).toBeGreaterThan(0);
+    }
+    const fb = await s.builder.initialSetup({ dayId: 'full_body' });
+    expect(fb).toMatchObject({ dayId: 'custom', dayName: 'Full body', groupsEdited: true });
+    expect(fb.groups.map((g) => g.group)).toEqual(['Legs', 'Back', 'Chest', 'Abs']);
+    expect((await s.builder.initialSetup({ dayId: 'push' })).dayId).toBe('push');
+    // A day gone from the split: Custom with nothing picked, not Push.
+    expect(await s.builder.initialSetup({ dayId: 'gone_day' })).toMatchObject({ dayId: 'custom', dayName: 'Custom', groups: [] });
+  });
+
   it('the strip and the clash line come only from what Ben logged; the review line says why there is no review', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
