@@ -26,6 +26,7 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 import { LIBRARY_COPY_UI } from '../../workout/library-view';
+import { planChangeText, planChangeUndoOpId } from '../../builder/builder-service';
 import { DELETE_COPY, deletedToastText, restoredToastText, summaryCanDelete } from '../../history/delete-view';
 import { handOffDeleteToast } from '../../history/toast-handoff';
 import { DeletedWorkoutView } from './DeletedWorkoutView';
@@ -74,7 +75,9 @@ export function SummaryScreen() {
     // A deleted (or purged) workout opens read-only with Restore (delete-workouts §3.2).
     // A presence read that fails offers no delete rather than one that would be refused (review r2 N2).
     const presence = await s.history.presence(sessionId).catch((): WorkoutPresence => ({ kind: 'hidden' }));
-    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone };
+    // (workout-builder-v3 §2.8) The plan change this Start made (`Chest · bench updated · Undo`), stored with the session.
+    const planChange = await s.builder.planChangeOf(sessionId).catch(() => null);
+    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone, planChange };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
   // its small changes are saved when it answers, until a workout starts from this one (CA10).
@@ -288,6 +291,28 @@ export function SummaryScreen() {
             </AppText>
           )}
         </View>
+
+        {data.value.planChange !== null ? (
+          <StatusLine
+            icon="checkmark.circle"
+            tone="info"
+            text={planChangeText(data.value.planChange)}
+            action={
+              <TextButton
+                label="Undo"
+                onPress={() => {
+                  const u = data.value.planChange;
+                  if (u === null) return;
+                  void services.builder.undoPlanChange(u, planChangeUndoOpId(sessionId)).then((r) => {
+                    if (!r.ok) setToast({ text: r.message });
+                    changed();
+                    reload();
+                  });
+                }}
+              />
+            }
+          />
+        ) : null}
 
         {/* D: a quiet hero (label, large title, facts); no tinted block. */}
         {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}

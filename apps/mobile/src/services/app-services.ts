@@ -23,6 +23,7 @@ import {
   type DiscardConfirmation,
   type RecoveryResult,
   type StartOutcome,
+  DEFAULT_CHECK_IN_SETTINGS,
 } from '@fizz/domain';
 import { bundledCatalogue, toExerciseRow, type CatalogueEntry } from '@fizz/catalogue';
 import {
@@ -58,8 +59,15 @@ import { createLiftTargetService } from './lift-target-service';
 import { createPlanServices } from './plan-services';
 import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
+import { createTodaySessionService } from './today-session';
 import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
+import { createBuilderEnv } from '../builder/builder-env';
+import { createBuilderService } from '../builder/builder-service';
+import { createBuilderCoachPorts } from '../builder/coach-ports';
+import { setBuilderReviewProvider } from '../builder/review';
+import { createBuilderCoachService, createDayNotes } from '../coach/builder-coach-service';
+import { createBuilderReviewProvider } from '../coach/builder-review-provider';
 
 /**
  * The app's in-process services (no HTTP layer). Screens call these and never
@@ -592,6 +600,23 @@ export function createAppServices(deps: AppServicesDeps) {
     typicalEquipment: () => typicalEquipment(),
   });
 
+  /** (Today v2, workout-builder-v3 §2.0) Today's session card from the plan, with the builder's rules. Local only. */
+  const todaySession = createTodaySessionService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    newId: deps.newId,
+    catalogueExercises,
+    currentGym: () => yourData.currentGym(),
+    typicalEquipment: () => typicalEquipment(),
+    coachStatus: async () => (await coach.availability()).status,
+    port: { ...loop.todayPort, start: (req) => loop.workout.start(req) },
+    // `builderCoach` is made below; these run only when Today asks (after startup).
+    nudge: (req) => builderCoach.preSessionNudge(req),
+    mixPick: (req) => builderCoach.mixPick(req),
+    offerAtOrBelow: () => DEFAULT_CHECK_IN_SETTINGS.offerAtOrBelow,
+  });
+
   /** Gyms and equipment (Your data): the minimal gym editor. */
   const gymServices = createGymServices({
     repos,
@@ -945,11 +970,58 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.signOutTimeoutMs === undefined ? {} : { signOutTimeoutMs: deps.signOutTimeoutMs }),
   });
 
+  /** (Workout builder v3) Set up → Your workout drafts over the builder rules; Start goes through the workout Start. */
+  const builder = createBuilderService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    env: createBuilderEnv({ store: () => deps.manager.store, now: deps.now, catalogueExercises }),
+    training: async () => {
+      const p = await getProfile();
+      return p === null ? null : repos().trainingProfiles.get(p.id).catch(() => null);
+    },
+    currentGym: () => yourData.currentGym(),
+    start: (req) => loop.workout.start(req),
+    upNextRoutineId: (gymId) => loop.todayPort.upNextRoutineId(gymId),
+  });
+
+  /**
+   * (Workout builder v3 §2.6, §2.9, §5, §6.1) The builder's coach: Set up words, Your workout proposals,
+   * Coach review and the pre-session nudge, reading and writing through the builder (`coach-ports`). Nothing
+   * in Set up, Your workout, Today or logging waits for it (rule 1). Its review is registered for the builder's
+   * Coach review sheet here, at app start.
+   */
+  const builderPorts = createBuilderCoachPorts(builder);
+  const ownerIdOf = async (): Promise<string> => {
+    const p = await getProfile();
+    if (p === null) throw new Error('Owner profile not found');
+    return p.id;
+  };
+  const builderCoach = createBuilderCoachService({
+    availability: () => coach.availability(),
+    ...(deps.coach === undefined ? {} : { model: deps.coach.model }),
+    now: deps.now,
+    newId: deps.newId,
+    ownerId: ownerIdOf,
+    source: builderPorts.source,
+    writer: builderPorts.writer,
+    reviews: {
+      current: async (subject) => repos().reviews.current(await ownerIdOf(), subject),
+      record: async (review) => repos().reviews.record(await ownerIdOf(), review),
+      update: async (next, expectedVersion, opId) => repos().reviews.update(await ownerIdOf(), next, expectedVersion, opId),
+    },
+    dayNotes: createDayNotes({ store: () => repos().coach, ownerId: ownerIdOf, now: deps.now }),
+  });
+  setBuilderReviewProvider(createBuilderReviewProvider(builderCoach, builderPorts.review, { newId: deps.newId }));
+
   return {
     ...loop,
+    builder,
+    builderCoach,
     library,
     customExercises,
     history,
+    todaySession,
     overview,
     routines,
     coachDrafts,

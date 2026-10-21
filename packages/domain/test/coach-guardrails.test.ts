@@ -1142,3 +1142,15 @@ describe('validateTodayAdjustment: the coach’s target RPE against the resolved
     expect(only).toMatchObject({ status: 'unchanged', outcome: 'Your target RPE stays. Nothing changed.' });
   });
 });
+
+describe('classifyPainMention with bareBodyPart: false (Today’s bar, wiring B2)', () => {
+  it('a body part named as a session is not a question; symptoms next to it still are', () => {
+    const today = (t: string) => classifyPainMention(t, { bareBodyPart: false });
+    expect(classifyPainMention('legs, 45 min')).toBe('unclear');
+    expect(today('legs, 45 min')).toBe('none');
+    expect(today('push day, no abs')).toBe('none');
+    expect(today('left knee is sore, legs feel wrecked')).toBe('unclear');
+    expect(today('my shoulder hurts, short session')).toBe('pain');
+    expect(today('elbow feels dodgy')).toBe('unclear');
+  });
+});

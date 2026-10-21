@@ -36,7 +36,7 @@ import {
 } from '../src/index';
 import { stableStringify } from '@fizz/domain';
 import { nodeDatabaseHost } from '../src/node/index';
-import { memoryDriver, tempDir, withoutSchema30 } from './helpers';
+import { beforeSchema31, memoryDriver, tempDir, withoutSchema30 } from './helpers';
 
 /**
  * Workout builder v3, slice S1 in SQLite (migration 30; Ben approved 20 Oct):
@@ -219,14 +219,16 @@ describe('migration 30 in place on a schema-29 database', () => {
     const at29 = await openStore(db, { migrations: MIGRATIONS.filter((m) => m.version <= 29) });
     await at29.repos.profiles.save(profile(), null);
     await appliedPlan(at29, PLAN);
-    await at29.repos.sessions.save(richFinishedSession(), null);
+    await at29.repos.sessions.save(beforeSchema31(richFinishedSession()), null);
     const before = await at29.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toEqual({ from: 29, to: 30, applied: [30] });
+    expect(await migrate(db)).toEqual({ from: 29, to: 31, applied: [30, 31] });
     const at30 = await openStore(db);
     const after = await at30.db.read((q) => exportTables(q));
     // Every older table keeps its rows; sessions gain only an empty `plan_day`.
     for (const [t, rows] of Object.entries(before)) {
       if (t === 'sessions') expect(after.sessions).toEqual(rows.map((r) => ({ ...r, plan_day: null })));
+      // Migration 31 (applied too): no rest kept for undo.
+      else if (t === 'rest_timers') expect(after.rest_timers).toEqual(rows.map((r) => ({ ...r, resume_on_undo: null, restored_finished: null })));
       else expect(after[t]).toEqual(rows);
     }
     expect(after.plan_day_variations).toEqual([]);

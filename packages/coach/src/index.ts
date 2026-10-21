@@ -32,3 +32,4 @@ export * from './find-exercises';
 export * from './gym-update';
 export * from './lift-target';
 export * from './activity-tools';
+export * from './builder';

@@ -8,3 +8,4 @@ export * from './session-fixture';
 export * from './repository-contract';
 export * as hotelFixture from './gym-fixture';
 export * from './large-history';
+export * as builderFixture from './builder-v3-fixture';

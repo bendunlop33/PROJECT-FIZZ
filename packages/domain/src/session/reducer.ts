@@ -31,8 +31,12 @@ import {
   createRestTimer,
   endRestTimer,
   expireRestTimerIfDue,
+  mapResumable,
   pauseRestTimer,
+  restoreAfterUndo,
+  resumableAfterLog,
   resumeRestTimer,
+  withResumable,
 } from '../rest';
 import { deriveId, stableStringify } from '../stable';
 import { asCardioInterval, CARDIO_TIMER_CAP_S, cardioElapsedMs, cardioHasValue, resumeCardioInterval } from '../cardio';
@@ -441,6 +445,8 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   }
 
   const events: SessionEvent[] = [];
+  // Unticking this set puts back the rest it ends here, deadline and all (workout-table-v3 §3).
+  const resumable = resumableAfterLog(state.restTimer, set.id, nowMs);
   let restTimer = state.restTimer;
   if (restTimer?.status === 'running') {
     // P2: logging during rest ends that rest early.
@@ -518,6 +524,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
       });
     }
     events.push({ type: 'ActiveSetChanged', setId: null }, { type: 'AllSetsDone' });
+    if (restTimer !== null) restTimer = withResumable(restTimer, resumable);
     const next = bumpVersion({ ...state, sets, audit, restTimer, workInterval: wi?.setId === set.id ? null : wi }, null);
     return { ok: true, state: next, events };
   }
@@ -553,6 +560,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
     });
   }
   events.push({ type: 'ActiveSetChanged', setId: nextActive });
+  if (restTimer !== null) restTimer = withResumable(restTimer, resumable);
   const next = bumpVersion({ ...state, sets, audit, restTimer, workInterval: wi?.setId === set.id ? null : wi }, nextActive);
   return { ok: true, state: next, events };
 }
@@ -736,6 +744,24 @@ function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowM
     restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
+  // Unticking never resets the rest (workout-table-v3 §3, Ben 20 Oct): the rest
+  // this log replaced comes back with its original deadline, or finished at its
+  // original end if it has run out (the "Rested" count-up carries on; no alert).
+  const back = restTimer === null ? null : restoreAfterUndo(restTimer.resumeOnUndo ?? [], set.id, nowMs);
+  if (restTimer !== null && back !== null) {
+    restTimer = back.restored;
+    if (restTimer.status === 'running' || restTimer.status === 'paused') {
+      events.push({
+        type: 'RestStarted',
+        timerId: restTimer.id,
+        setId: restTimer.setId,
+        kind: restTimer.kind,
+        durationS: restTimer.durationS,
+        deadlineUtc: restTimer.deadlineUtc,
+        timerVersion: restTimer.version,
+      });
+    }
+  }
   const audit: SessionAggregate['audit'] = [
     ...state.audit,
     {
@@ -762,6 +788,9 @@ function handleSetActiveSet(state: SessionAggregate, cmd: CommandOf<'set_active_
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'Only a pending set can become active.');
   if (state.session.activeSetId === set.id) return { ok: true, state, events: [] };
+  // A running (or paused) work timer stays on its set: Log would otherwise log another set while it runs (wo-v3 logic S3).
+  const wi = state.workInterval;
+  if (wi !== null && wi.setId !== set.id && (wi.status === 'running' || wi.status === 'paused')) return fail('work_interval_running', 'Stop the work timer first.');
   return { ok: true, state: bumpVersion(state, set.id), events: [{ type: 'ActiveSetChanged', setId: set.id }] };
 }
 
@@ -817,6 +846,8 @@ function handleStartWork(state: SessionAggregate, cmd: CommandOf<'start_work_int
     restTimer = endRestTimer(restTimer, 'ended_early', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'ended_early', timerVersion: restTimer.version, lateByMs: 0 });
   }
+  // Starting work ends rest for good: an Undo after this restores no earlier rest.
+  if (restTimer !== null) restTimer = withResumable(restTimer, []);
   // Cardio counts up: its timer runs to the cap, whatever was asked, and ✓ or Stop ends it (19 Oct).
   const durationS = ex.measurement === 'cardio' ? CARDIO_TIMER_CAP_S : cmd.durationS;
   const workInterval = resumed ?? {
@@ -874,7 +905,8 @@ function handleStopWork(state: SessionAggregate, cmd: CommandOf<'stop_work_inter
 
 function handlePause(state: SessionAggregate, nowMs: number): Handled {
   if (state.session.pause !== null) return fail('session_paused', 'The workout is already paused.');
-  const restTimer = state.restTimer ? pauseRestTimer(state.restTimer, nowMs) : null;
+  // Rests kept for Undo pause with it, so they keep time as if never replaced.
+  const restTimer = state.restTimer ? mapResumable(pauseRestTimer(state.restTimer, nowMs), (t) => pauseRestTimer(t, nowMs), nowMs, true) : null;
   let workInterval = state.workInterval;
   if (workInterval?.status === 'running') {
     workInterval = {
@@ -902,7 +934,7 @@ function handleResume(state: SessionAggregate, nowMs: number): Handled {
   const pause = state.session.pause;
   if (pause === null) return fail('not_paused', 'The workout is not paused.');
   const pausedFor = Math.max(0, nowMs - toMs(pause.pausedAtUtc));
-  const restTimer = state.restTimer ? resumeRestTimer(state.restTimer, nowMs) : null;
+  const restTimer = state.restTimer ? mapResumable(resumeRestTimer(state.restTimer, nowMs), (t) => resumeRestTimer(t, nowMs), nowMs, false) : null;
   let workInterval = state.workInterval;
   if (workInterval?.status === 'paused') {
     workInterval = {
@@ -981,6 +1013,8 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
     restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
+  // Nothing to put back once the workout is over (no undo of a log after Finish or Discard).
+  if (restTimer !== null) restTimer = withResumable(restTimer, []);
   // An open pause is closed at the tap time and stored unclipped; duration
   // counts only the part inside [startedAt, endedAt] (review R1).
   const pauses = closePause(state, nowMs);
@@ -1465,6 +1499,8 @@ function handleDiscard(state: SessionAggregate, cmd: CommandOf<'discard'>, nowMs
     restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
+  // Nothing to put back once the workout is over (no undo of a log after Finish or Discard).
+  if (restTimer !== null) restTimer = withResumable(restTimer, []);
   let workInterval = state.workInterval;
   if (workInterval && (workInterval.status === 'running' || workInterval.status === 'paused')) {
     // Explicit, confirmed discard of the whole workout: nothing is being kept.
@@ -1498,8 +1534,8 @@ function handleSetRestAfter(state: SessionAggregate, cmd: CommandOf<'set_rest_af
   if (!ex) return fail('exercise_not_found', 'Exercise not found in this workout.');
   const rest =
     cmd.scope === 'set'
-      ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: 'This set' }
-      : { seconds: cmd.seconds, source: 'exercise_default' as const, sourceLabel: `${ex.exerciseName} default (yours)` };
+      ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: 'This set', byOpId: cmd.opId }
+      : { seconds: cmd.seconds, source: 'exercise_default' as const, sourceLabel: `${ex.exerciseName} default (yours)`, byOpId: cmd.opId };
   // Only sets not done yet; completed sets and the running timer are never touched.
   const targets = cmd.scope === 'set' ? [set] : state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending');
   const ids = new Set(targets.map((s) => s.id));
@@ -1950,9 +1986,10 @@ function editedBefore(state: SessionAggregate, setId: string, entryIndex: number
 }
 
 /** `undo_op`: copy D4 (delete set, skip exercise, corrections), remove exercise and swap. */
-function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>): Handled {
+function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs: number): Handled {
   const prior = state.processedOps[cmd.targetOpId];
   if (!prior) return fail('operation_not_found', 'Nothing to undo.');
+  if (prior.commandType === 'fit_today_to_time') return undoFitToday(state, cmd, nowMs);
   const events: SessionEvent[] = [];
   switch (prior.commandType) {
     case 'delete_set':
@@ -2488,6 +2525,41 @@ function editSteps(state: SessionAggregate, opId: string): ProcessedOperation[] 
   }
 }
 
+/**
+ * `fit_today_to_time` (workout-table-v3 §5): every step, in order, or none.
+ * Refused once the workout moved on since the offer (rule 5).
+ */
+function handleFitTodayToTime(state: SessionAggregate, cmd: CommandOf<'fit_today_to_time'>, nowMs: number): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'Your workout moved on.');
+  for (const [i, step] of cmd.steps.entries()) {
+    if (step.opId !== coachEditStepOpId(cmd.opId, i)) return fail('invalid_values', 'A step of the change doesn’t belong to it.');
+  }
+  return runAll(state, (_s, i) => {
+    const step = cmd.steps[i];
+    return step === undefined ? null : { ...step, at: cmd.at };
+  }, nowMs);
+}
+
+/**
+ * Undo of a time fit: each step's own Undo, last step first, all or none.
+ * A rest or RPE change on a set Ben has logged (or edited) since stays as it
+ * is (rule 2); sets taken out and exercises skipped come back.
+ */
+function undoFitToday(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs: number): Handled {
+  const undos = editSteps(state, cmd.targetOpId)
+    .reverse()
+    .filter((step) => {
+      if (step.commandType !== 'edit_planned_set') return true;
+      const set = state.sets.find((s) => s.planned.edit?.opId === step.opId);
+      return set?.status === 'pending' && set.version === set.planned.edit?.version;
+    });
+  if (undos.length === 0) return fail('stale_version', STALE_UNDO);
+  return runAll(state, (_s, i) => {
+    const step = undos[i];
+    return step === undefined ? null : { type: 'undo_op', at: cmd.at, opId: coachEditStepOpId(cmd.opId, i), targetOpId: step.opId };
+  }, nowMs);
+}
+
 /** `revert_coach_edit`: each step's own Undo, last step first, all or none. */
 function handleRevertCoachEdit(state: SessionAggregate, cmd: CommandOf<'revert_coach_edit'>, nowMs: number): Handled {
   const prior = state.processedOps[cmd.targetOpId];
@@ -2563,7 +2635,7 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
     case 'remove_exercise':
       return handleRemoveExercise(state, command);
     case 'undo_op':
-      return handleUndoOp(state, command);
+      return handleUndoOp(state, command, nowMs);
     case 'set_note':
       return handleSetNote(state, command);
     case 'set_target_rpe':
@@ -2582,6 +2654,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleCoachEditToday(state, command, nowMs);
     case 'revert_coach_edit':
       return handleRevertCoachEdit(state, command, nowMs);
+    case 'fit_today_to_time':
+      return handleFitTodayToTime(state, command, nowMs);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -2683,6 +2757,7 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
       return ids.slice(state.exercises.length).some((id) => state.exercises.find((e) => e.id === id)?.supersetGroup !== null);
     }
     case 'coach_edit_today':
+    case 'fit_today_to_time':
       // Any step no longer in place (undone, or overtaken).
       return command.steps.some((step) => isSuperseded(state, { ...step, at: command.at }));
     case 'undo_op':

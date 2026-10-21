@@ -391,7 +391,12 @@ export function painBodyPart(text: string): string | null {
   return null;
 }
 
-export function classifyPainMention(text: string): PainMention {
+/**
+ * `bareBodyPart: false` (Today's bar, where "legs, 45 min" names a session): a body part with
+ * nothing else said is not a question. Any symptom, vague or effort word next to it still counts.
+ */
+export function classifyPainMention(text: string, opts: { bareBodyPart?: boolean } = {}): PainMention {
+  const bare = opts.bareBodyPart ?? true;
   let pain = false;
   let unclear = false;
   let effort = false;
@@ -463,7 +468,7 @@ export function classifyPainMention(text: string): PainMention {
       }
     }
     // Review r2 B3, r3 B2: a body part with nothing else said is a question, never `none`.
-    if (!clauseSignal && bodyPartMentioned(ws)) unclear = true;
+    if (bare && !clauseSignal && bodyPartMentioned(ws)) unclear = true;
     if (pastClause && pain && !painNow) {
       pain = false;
       unclear = true;

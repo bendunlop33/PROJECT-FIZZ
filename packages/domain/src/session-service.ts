@@ -5,11 +5,12 @@ import {
   type Exercise,
   type SessionAggregate,
   type SessionCheckIn,
+  type SessionPlanDay,
   type ValidationIssue,
   type WorkoutDraft,
   type ZonedTimestamp,
 } from '@fizz/schemas';
-import type { FencedResult, Repositories, SaveResult, WriteFence } from './ports';
+import type { AlongsideRefusal, FencedResult, Repositories, SaveResult, StartAlongside, WriteFence } from './ports';
 import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type SetFit, type StartWarning } from './session/create';
 import { recoverSession, type RecoveryResult } from './session/recovery';
 import type { RepeatInput, RepeatNote, RepeatOutput } from './session/repeat';
@@ -319,8 +320,12 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       gymEquipment?: readonly EquipmentInstance[];
       fence?: WriteFence;
       today?: TodayEditsInput;
+      /** (v3 §4.2) The plan day this workout is started as. */
+      planDay?: SessionPlanDay;
+      /** (v3 §4.6) Template or variation writes in the session's own transaction. */
+      alongside?: StartAlongside;
     },
-  ): Promise<{ ok: true; aggregate: SessionAggregate; duplicate: boolean; fits: Record<string, SetFit>; today: TodayPlanInfo; draftWhy?: Record<string, DraftSlotWhy> } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
+  ): Promise<{ ok: true; aggregate: SessionAggregate; duplicate: boolean; fits: Record<string, SetFit>; today: TodayPlanInfo; draftWhy?: Record<string, DraftSlotWhy> } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string }; alongside?: AlongsideRefusal }> {
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
       if (existing) return { ok: true, aggregate: existing, duplicate: true, fits: {}, today: { slotOf: {}, outcomes: [], resolved: noResolvedEdits(), slots: [], baseSlots: [], plannedShape: {}, fit: null, tiers: {} } };
@@ -355,10 +360,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, duplicate: false, fits: out.fits, today, draftWhy: draftSlotWhy(out) };
-    const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
+    const aggregate = req.planDay === undefined ? out.aggregate : { ...out.aggregate, session: { ...out.aggregate.session, planDay: req.planDay } };
+    const saved = await trySave(() => repos.sessions.save(aggregate, null, req.fence, req.alongside));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
-    if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };
-    return { ok: true, aggregate: out.aggregate, duplicate: false, fits: out.fits, today };
+    if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' }, ...(saved.error === 'stale_inputs' && saved.alongside !== undefined ? { alongside: saved.alongside } : {}) };
+    return { ok: true, aggregate, duplicate: false, fits: out.fits, today };
   }
 
   async function dispatch(sessionId: string, rawCommand: unknown): Promise<CommandOutcome> {

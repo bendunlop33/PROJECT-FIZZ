@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 
-import { toggleRepRange, type PlannedSetEdits } from '@fizz/domain';
+import { setStepName, toggleRepRange, type PlannedSetEdits } from '@fizz/domain';
 
 import { newUuid } from '../../device/runtime';
 import { returnToWorkout } from '../../navigation/actions';
@@ -78,7 +78,7 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
     }
     changed();
     if (r.kind === 'edited') {
-      navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: correctionToastText(UNDO_TOAST.corrected(view.setNumber), r.noteFailed), targetOpId: saveOp } }));
+      navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: correctionToastText(UNDO_TOAST.correctedNamed(view.stepName), r.noteFailed), targetOpId: saveOp } }));
       return;
     }
     navigation.goBack();
@@ -107,13 +107,14 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
   }
 
   async function insertAfter() {
-    const r = await services.workout.addSet({ sessionId, sessionExerciseId: set?.sessionExerciseId ?? '', opId: insertOp, newSetId: newUuid(), afterSetId: setId });
+    const newSetId = newUuid();
+    const r = await services.workout.addSet({ sessionId, sessionExerciseId: set?.sessionExerciseId ?? '', opId: insertOp, newSetId, afterSetId: setId });
     if (!r.ok) {
       onRefused(r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : r.error.message);
       return;
     }
     changed();
-    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.added((view?.setNumber ?? 0) + 1), targetOpId: insertOp } }));
+    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.addedNamed(setStepName(r.aggregate, newSetId) ?? 'Set'), targetOpId: insertOp } }));
   }
 
   async function remove() {
@@ -125,7 +126,7 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
       return;
     }
     changed();
-    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.deleted(view.setNumber), targetOpId: deleteOp } }));
+    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.deletedNamed(view.stepName), targetOpId: deleteOp } }));
   }
 
   const reps = view.reps;
@@ -139,7 +140,7 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
       <NumberAccessory />
       <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>{`Edit set ${String(view.setNumber)} · ${view.exerciseName}`}</AppText>
+          <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>{`Edit ${view.stepName.toLowerCase()} · ${view.exerciseName}`}</AppText>
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
         </View>
         <StepperTileRow

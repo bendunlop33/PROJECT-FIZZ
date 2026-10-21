@@ -17,9 +17,13 @@ import {
   type SaveResult,
   type SessionRef,
   type SessionRepository,
+  type AlongsideRefusal,
+  type StartAlongside,
   type WorkoutsRequest,
   type WriteFence,
 } from '@fizz/domain';
+import { saveRoutineTemplateIn } from './documents';
+import { saveVariationIn } from './plan-days';
 import type { Database } from './database';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
 import { CorruptDataError, HistoryRewriteError } from './errors';
@@ -348,6 +352,10 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
             remainingMsAtPause: timer.remaining_ms_at_pause,
             endedAtUtc: timer.ended_at_utc,
             version: timer.version,
+            ...(timer.resume_on_undo === null || timer.resume_on_undo === undefined
+              ? {}
+              : { resumeOnUndo: parseJson('rest_timers', id, 'resume_on_undo', timer.resume_on_undo) }),
+            ...(timer.restored_finished === 1 ? { restoredFinished: true as const } : {}),
           },
     workInterval:
       work === null
@@ -546,6 +554,38 @@ async function closeDraftsOnStart(tx: SqlExecutor, a: SessionAggregate): Promise
   return true;
 }
 
+/** Thrown inside a session create to roll back an alongside write that was refused. */
+class AlongsideRefused extends Error {
+  constructor(readonly reason: AlongsideRefusal) {
+    super(`alongside write refused: ${reason}`);
+  }
+}
+
+/** A Start's template or variation write (§4.6), checked against the rows as stored. Null = written. */
+async function alongsideIn(tx: SqlExecutor, ownerId: string, a: StartAlongside): Promise<AlongsideRefusal | null> {
+  if (a.template !== undefined) {
+    if (a.template.next.ownerId !== ownerId) return 'template_changed';
+    const r = await saveRoutineTemplateIn(tx, a.template.next, a.template.expectedVersion, { split: a.template.split, mainLifts: a.template.mainLifts });
+    if (!r.ok) return 'template_changed';
+  }
+  if (a.variation !== undefined) {
+    const r = await saveVariationIn(tx, ownerId, a.variation.next, a.variation.expectedVersion, a.opId);
+    switch (r.status) {
+      case 'written':
+      case 'replayed':
+        break;
+      case 'limit':
+        return 'variation_limit';
+      case 'duplicate_label':
+        return 'variation_label';
+      case 'stale':
+      case 'invalid':
+        return 'variation_changed';
+    }
+  }
+  return null;
+}
+
 /** Write a validated aggregate inside the caller's transaction (append-only checks included). */
 export async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Promise<void> {
   const sid = a.session.id;
@@ -578,6 +618,9 @@ export async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Prom
       remaining_ms_at_pause: t.remainingMsAtPause,
       ended_at_utc: t.endedAtUtc,
       version: t.version,
+      // Only when there is one (column from migration 31), as for other later columns.
+      ...(t.resumeOnUndo === undefined ? {} : { resume_on_undo: JSON.stringify(t.resumeOnUndo) }),
+      ...(t.restoredFinished === true ? { restored_finished: 1 } : {}),
     });
   }
   await tx.run('DELETE FROM work_intervals WHERE session_id = ?', [sid]);
@@ -677,16 +720,26 @@ export class SqliteSessions implements SessionRepository {
     });
   }
 
-  save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence): Promise<SaveResult | FencedResult> {
-    return this.db.write(async (tx): Promise<SaveResult | FencedResult> => {
+  save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence, alongside?: StartAlongside): Promise<SaveResult | FencedResult> {
+    const write = this.db.write(async (tx): Promise<SaveResult | FencedResult> => {
       const valid = checkWrite(SessionAggregateSchema, aggregate, T, aggregate.session.id);
       if (fence && !(await fenceHolds(tx, fence))) return { ok: false, error: 'stale_inputs' };
       const current = await tx.getFirst<{ revision: number }>('SELECT revision FROM sessions WHERE id = ?', [valid.session.id]);
       const currentRevision = current?.revision ?? null;
       if (currentRevision !== expectedRevision) return { ok: false, error: 'conflict', currentVersion: currentRevision };
       if (expectedRevision === null && !(await closeDraftsOnStart(tx, valid))) return { ok: false, error: 'stale_inputs' };
+      // (Builder v3 §4.6) The template or variation write and the session are one transaction under one
+      // op ID: a refusal rolls back everything above too (the draft stays open).
+      if (alongside !== undefined && expectedRevision === null) {
+        const refused = await alongsideIn(tx, valid.session.ownerId, alongside);
+        if (refused !== null) throw new AlongsideRefused(refused);
+      }
       await writeAggregate(tx, valid);
       return { ok: true, version: valid.revision };
+    });
+    return write.catch((e: unknown) => {
+      if (e instanceof AlongsideRefused) return { ok: false, error: 'stale_inputs', alongside: e.reason } as const;
+      throw e;
     });
   }
 

@@ -75,6 +75,12 @@ export interface BuilderFitOptions {
   planBufferMin?: number;
   /** Exercises to add when growing, best first (gym-available, not pain-flagged, injected). */
   addCandidates?: { arm: readonly string[]; mainGroup: readonly string[] };
+  /**
+   * Lowest length allowed (default `FIT_RULES.minMinutes`). The workout's
+   * `+N min` fit (workout-table-v3 §5) fits only the sets left, which can
+   * be shorter than a whole workout's 15 min.
+   */
+  floorMinutes?: number;
 }
 
 const cloneW = (w: BuilderWorkout): BuilderWorkout => ({ restLevel: w.restLevel, blocks: w.blocks.map((b) => ({ ...b, slots: [...b.slots] })) });
@@ -97,7 +103,9 @@ export function removeSlot(w: BuilderWorkout, key: string): BuilderWorkout {
 
 /** `fitToMinutes`: the ladder above. */
 export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts: BuilderFitOptions): BuilderFitResult {
-  const opts: BuilderFitOptions = { ...rawOpts, minutes: clampMinutes(rawOpts.minutes) };
+  const floor = rawOpts.floorMinutes;
+  const minutes = floor === undefined || !Number.isFinite(rawOpts.minutes) ? clampMinutes(rawOpts.minutes) : Math.max(floor, Math.min(FIT_RULES.maxMinutes, Math.round(rawOpts.minutes)));
+  const opts: BuilderFitOptions = { ...rawOpts, minutes };
   const over = (w: BuilderWorkout) => estimateBuilderSeconds(w, ctx) > opts.minutes * 60 + 29;
   const done = (w: BuilderWorkout, steps: BuilderFitStep[], status: BuilderFitStatus): BuilderFitResult => ({ workout: w, steps: tidySteps(steps), status, minutes: estimateBuilderMinutes(w, ctx) });
   let w = cloneW(input);

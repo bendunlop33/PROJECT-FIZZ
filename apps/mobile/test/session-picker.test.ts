@@ -452,19 +452,15 @@ describe('Done today and the in-place switch (§5, SP9, SP11, r2 S1)', () => {
     expect(model.requests).toHaveLength(0);
   });
 
-  it('Today’s Change reads “Change session” to VoiceOver (§4.5, r2 N4)', () => {
+  it('Today (v2) supersedes Change and the Up next card (workout-builder-v3 §2.0.9): the day control picks; Done today opens its Summary and keeps the day control for a second session', () => {
     const today = readFileSync(join(__dirname, '..', 'src', 'screens', 'TodayScreen.tsx'), 'utf8');
-    expect(today).toMatch(/label=\{SESSION_PICKER_COPY\.change\}\n\s*tone="secondary"\n\s*accessibilityLabel=\{SESSION_PICKER_COPY\.changeSession\}/);
-  });
-
-  it('Done today keeps Change and Start next session whenever there is an Up next, routines or not (review today-18oct B1)', () => {
-    const today = readFileSync(join(__dirname, '..', 'src', 'screens', 'TodayScreen.tsx'), 'utf8');
-    const done = today.slice(today.indexOf("case 'done_today':"), today.indexOf("case 'no_plan':"));
-    expect(done).toContain('<Hero label="Done today" {...changeAction}');
-    expect(done).toMatch(/\{next \? \(\n\s*<TextButton\n\s*label="Start next session"/);
-    expect(done).not.toContain('routines.length');
-    expect(today).toContain('<Hero\n              label="Up next"\n              {...changeAction}');
-    expect(today).toMatch(/const changeAction = hasChoice\(sessions\)/);
+    expect(today).not.toContain('SESSION_PICKER_COPY');
+    expect(today).not.toContain('label="Up next"');
+    const done = today.slice(today.indexOf('const doneLine ='), today.indexOf('const sessionBlock ='));
+    expect(done).toContain("navigation.navigate('Summary', { sessionId: main.sessionId })");
+    // The session block (day control, card) shows unless a workout is open; done today keeps it.
+    expect(today).toContain('if (openWorkout || session === null) return null;');
+    expect(today).toContain("const openWorkout = main.kind === 'resume' || main.kind === 'stale';");
   });
 });
 

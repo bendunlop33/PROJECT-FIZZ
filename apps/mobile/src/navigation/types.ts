@@ -1,3 +1,4 @@
+import type { StartChoice } from '../builder/builder-service';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { CustomExerciseFields, EquipmentKind, RoutineExercise, SetExclusion } from '@fizz/schemas';
 
@@ -152,7 +153,7 @@ export type RootStackParams = {
    * `routineOf`: start that routine with next targets (premium-feel §2.6).
    */
   CheckIn:
-    | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string }
+    | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string; /** (Today v2) Today's session card: the builder draft it committed. */ coachDraftOf?: string; /** That draft's version as committed: pinned in the Start's write (rule 5). */ coachDraftVersion?: number; /** (v3 §2.8) An edited card's prompt choice: the check-in, then the builder's Start with it. */ builderStart?: { choice: StartChoice; expectedVersion: number } }
     | { mode: 'edit'; checkInId: string }
     /**
      * Over the Workout overview (workout-overview §2.2): `What's up?` for a
@@ -220,7 +221,22 @@ export type RootStackParams = {
   Coach: { entry: CoachEntry; focus?: boolean; build?: boolean; draft?: string };
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
+  /**
+   * The workout builder's first page (workout-builder-v3 §2.2). `dayId`: Today's `Build your own`
+   * (Day = the card's day). `draftId`: `‹ Set up` from Your workout (its changes merge into that draft).
+   */
+  BuilderSetup: { dayId?: string; draftId?: string } | undefined;
+  /** Your workout (§2.3): one builder draft. `toast`: a write's toast handed back from Set up (`Rebuilt · Undo`). */
+  BuilderWorkout: { draftId: string; toast?: BuilderToastParam };
 };
+
+/** A builder toast handed between the builder's pages (`key`: shown once). */
+export interface BuilderToastParam {
+  key: string;
+  text: string;
+  undoOpId: string | null;
+  why: string | null;
+}
 
 /**
  * Where the workout editor returns to. `SaveSheet`: the Save sheet's `Edit ›`

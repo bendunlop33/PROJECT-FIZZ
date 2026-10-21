@@ -28,7 +28,7 @@ import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 import { addedWeightItems, addWeightToggle, canAddWeight, isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
-import { buildExecutionOrder, nextPendingSet } from './order';
+import { buildExecutionOrder, nextPendingSet, setSteps } from './order';
 import { DEFAULT_WORKING_SETS, GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
 import { midSwapSlot } from './mid-swap';
@@ -209,6 +209,8 @@ export type SetRowStatus = 'done' | 'active' | 'pending' | 'skipped';
 export interface SetRowView {
   setId: string;
   number: number;
+  /** The other side of a single-side log points at its partner (one prescribed set, `setSteps`). */
+  pairedWithSetId: string | null;
   /** `W`, `T`, `B`, `D`, `L`, `R` text badges (never colour alone). */
   badges: string[];
   /** Ben's note on this set, or null. */
@@ -256,6 +258,8 @@ export interface FocusView {
   /** The set's type word, always shown (F3): `Warm-up`, `Working`, `Top set`, `Back-off`, `Drop set`. */
   setTypeLabel: string;
   setNumber: number;
+  /** `Set 3` / `Warm-up` (`setSteps`): what the v3 table, toasts and sheets call this set. */
+  stepName: string;
   setCount: number;
   /** `imported`: from FitNotes (B7); kept as data, shown like any other `Last` (18 Oct). */
   previous: { performedAtUtc: string; text: string; values: SetValues; imported: boolean } | null;
@@ -337,6 +341,8 @@ export interface JustSavedView {
   setVersion: number;
   exerciseName: string;
   setNumber: number;
+  /** `Set 3` / `Warm-up` (`setSteps`). */
+  stepName: string;
   side: SetSide | null;
   /** `100 kg × 7` (the actual result), with Ben's exclusion words (`100 kg × 8 · spotted`, §2.13). */
   text: string;
@@ -418,6 +424,18 @@ const live = (s: WorkoutSet) => s.status !== 'deleted';
 /** Live sets of the exercise's whole block (all gym parts), so set numbers run across parts. */
 function exerciseSets(state: SessionAggregate, exId: string): WorkoutSet[] {
   return blockSets(state, exId);
+}
+
+/** `Set 3` / `Warm-up` for a set among its block's sets (`setSteps`, the v3 table's numbering). */
+function stepNameIn(own: readonly WorkoutSet[], setId: string): string {
+  return setSteps(own).get(setId)?.name ?? 'Set';
+}
+
+/** `Set 3` / `Warm-up` for any live set: the one name the active workout's toasts and sheets use (wo-v3 reviews B1). */
+export function setStepName(state: SessionAggregate, setId: string): string | null {
+  const set = state.sets.find((s) => s.id === setId);
+  if (set === undefined) return null;
+  return setSteps(exerciseSets(state, set.sessionExerciseId)).get(setId)?.name ?? null;
 }
 
 function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentInstance | null {
@@ -717,6 +735,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     headerLine: headerParts.filter((p): p is string => p !== null).join(' · '),
     setTypeLabel: SET_TYPE_WORD[set.setType],
     setNumber,
+    stepName: stepNameIn(own, set.id),
     setCount: own.length,
     previous:
       prev && prevFirst
@@ -788,6 +807,7 @@ export function buildSetRows(input: Pick<ActiveViewInput, 'aggregate' | 'gymName
     return {
       setId: s.id,
       number: i + 1,
+      pairedWithSetId: s.pairedWithSetId,
       badges: [SET_TYPE_BADGE[s.setType], sideBadge(s)].filter((b): b is string => b !== null),
       note: s.note ?? null,
       status,
@@ -814,7 +834,7 @@ export interface ExerciseCardFacts {
   exerciseName: string;
   note: string | null;
   /** Its next pending set (lowest index), or null when it has none. */
-  nextSet: { id: string; version: number; number: number } | null;
+  nextSet: { id: string; version: number; number: number; stepName: string } | null;
   targetRpe: TargetRpe | null;
   coachActionId: string | null;
   adjustedBy: 'coach' | 'rule' | null;
@@ -852,7 +872,7 @@ export function exerciseCardFacts(input: Pick<ActiveViewInput, 'aggregate' | 'ru
     exerciseId: ex.exerciseId,
     exerciseName: ex.exerciseName,
     note: ex.note ?? null,
-    nextSet: next === undefined ? null : { id: next.id, version: next.version, number: own.findIndex((s) => s.id === next.id) + 1 },
+    nextSet: next === undefined ? null : { id: next.id, version: next.version, number: own.findIndex((s) => s.id === next.id) + 1, stepName: stepNameIn(own, next.id) },
     targetRpe: next === undefined ? null : targetRpeOf(next, input.ruleTargetRpe?.[ex.id] ?? null),
     coachActionId: today && next.planned.coach !== undefined && coachUndoRefusal(state, next.planned.coach.actionId) === null ? next.planned.coach.actionId : null,
     adjustedBy: today ? (next.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null,
@@ -892,6 +912,7 @@ function buildJustSaved(state: SessionAggregate): JustSavedView | null {
     setVersion: set.version,
     exerciseName: ex.exerciseName,
     setNumber: exerciseSets(state, ex.id).findIndex((s) => s.id === set.id) + 1,
+    stepName: stepNameIn(exerciseSets(state, ex.id), set.id),
     side: set.side,
     text: withExclusionWords(valuesText(set.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }), set.exclusions),
     exclusions: normaliseExclusions(set.exclusions),
@@ -1046,6 +1067,8 @@ export interface SetEditView {
   setVersion: number;
   exerciseName: string;
   setNumber: number;
+  /** `Set 3` / `Warm-up` (`setSteps`). */
+  stepName: string;
   completedAtUtc: string | null;
   values: SetValues;
   loadField: LoadField | null;
@@ -1131,6 +1154,7 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
     setVersion: set.version,
     exerciseName: ex.exerciseName,
     setNumber: exerciseSets(state, ex.id).findIndex((s) => s.id === set.id) + 1,
+    stepName: stepNameIn(exerciseSets(state, ex.id), set.id),
     completedAtUtc: set.completedAt?.utc ?? null,
     values,
     loadField:
@@ -1178,6 +1202,8 @@ export interface PlannedSetEditView {
   setVersion: number;
   exerciseName: string;
   setNumber: number;
+  /** `Set 3` / `Warm-up` (`setSteps`). */
+  stepName: string;
   /** The set Log logs now; any other pending set offers `Do next`. */
   isCurrent: boolean;
   loadField: LoadField | null;
@@ -1306,6 +1332,7 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
     setVersion: set.version,
     exerciseName: ex.exerciseName,
     setNumber: own.findIndex((s) => s.id === set.id) + 1,
+    stepName: stepNameIn(own, set.id),
     isCurrent: state.session.activeSetId === set.id,
     addWeight: addWeightOf(state, ex, eq, options.bodyweightExercises),
     loadField: label === null ? null : { label, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq, checkEquipmentOf(state, ex, eq, options.bodyweightExercises)) },

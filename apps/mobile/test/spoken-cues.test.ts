@@ -230,6 +230,64 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     expect(r2.said).toEqual([]);
   });
 
+  it('an untick that brings back a rest already run out says nothing: no late "Rest done" (workout-table-v3 §3)', () => {
+    const { logged } = resting();
+    const { clock, said, controller } = rig({ startMs: ms(6) });
+    controller.reconcile(logged);
+    clock.advanceTo(ms(56));
+    expect(said).toEqual(['10 seconds.']);
+    // B1 ticked by accident at 0:58 (warm-up rest due at 1:05), unticked at 1:07, inside the late-cue window.
+    const b1 = setsFor(logged, BENCH)[1]?.id ?? '';
+    const ticked = apply(logged, logCmd(b1, values(kg(100), 8), 58));
+    controller.reconcile(ticked);
+    clock.advanceTo(ms(67));
+    const back = apply(ticked, { type: 'undo_log', at: at(67), opId: 'undo', setId: b1, expectedSetVersion: 2 });
+    expect(back.restTimer).toMatchObject({ id: logged.restTimer?.id, status: 'expired', endedAtUtc: at(65).utc });
+    controller.reconcile(back);
+    clock.advanceTo(ms(200));
+    expect(said).toEqual(['10 seconds.']);
+    expect(controller.pending).toEqual([]);
+  });
+
+  it('after a relaunch between the tick and the untick, a rest brought back finished still says nothing (review rest-undo-sp1 B1)', () => {
+    const { logged } = resting();
+    const b1 = setsFor(logged, BENCH)[1]?.id ?? '';
+    // Accidental tick at 0:58 (warm-up rest due at 1:05); force-close; relaunch at 1:04.
+    const ticked = apply(logged, logCmd(b1, values(kg(100), 8), 58));
+    const { clock, said, controller } = rig({ startMs: ms(64) });
+    controller.reconcile(ticked);
+    // Unticked at 1:07, inside the late-cue window of the kept rest's deadline.
+    clock.advanceTo(ms(67));
+    const back = apply(ticked, { type: 'undo_log', at: at(67), opId: 'undo', setId: b1, expectedSetVersion: 2 });
+    expect(back.restTimer).toMatchObject({ id: logged.restTimer?.id, status: 'expired', endedAtUtc: at(65).utc, restoredFinished: true });
+    expect(planCues(back)).toEqual([]);
+    controller.reconcile(back);
+    clock.advanceTo(ms(200));
+    expect(said).toEqual([]);
+    expect(controller.pending).toEqual([]);
+    // Relaunched again right after the untick: the stored state is just as quiet.
+    const again = rig({ startMs: ms(68) });
+    again.controller.reconcile(back);
+    again.clock.advanceTo(ms(200));
+    expect(again.said).toEqual([]);
+  });
+
+  it('a running rest left out of one reconcile and back expired on its own still says "Rest done" (review rest-undo-sp1 S2)', () => {
+    const { logged } = resting();
+    const { clock, said, controller } = rig({ startMs: ms(6) });
+    controller.reconcile(logged);
+    clock.advanceTo(ms(60));
+    controller.reconcile(null);
+    const t = logged.restTimer;
+    if (t === null) throw new Error('fixture');
+    const ranOut: SessionAggregate = { ...logged, restTimer: { ...t, status: 'expired', endedAtUtc: t.deadlineUtc, version: t.version + 1 } };
+    clock.advanceTo(ms(66));
+    controller.reconcile(ranOut);
+    clock.advanceTo(ms(70));
+    expect(said).toHaveLength(2);
+    expect(said[1]).toMatch(/^Rest done\./);
+  });
+
   it('a timed set: "10 seconds" and "Time."; short ones get no warning', () => {
     const { logged } = resting();
     const hang = setsFor(logged, HANG)[0]?.id ?? '';

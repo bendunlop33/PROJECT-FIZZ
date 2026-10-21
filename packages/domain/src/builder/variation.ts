@@ -1,3 +1,4 @@
+import { BUILD_LIMITS, type VariationOp } from '@fizz/schemas';
 import { BUILDER_MAX_SUPERSET } from './arrange';
 import { removeSlot } from './fit';
 import { setWorkingCount } from './set-rows';
@@ -8,23 +9,11 @@ import type { BuilderBlock, BuilderContext, BuilderWorkout } from './types';
  * Variations (workout-builder-v3 §1.3, §4.3, §9 Q17): a variation is the plan
  * day's template plus its extras, so a template change reaches every
  * variation. An op whose anchor exercise is gone is skipped and reported
- * (`Not applied: Hammer curl with Cable fly · Add anyway`).
- *
- * MERGE NOTE: S1 (schemas) owns `VariationOp`; this mirrors §4.3. The slot
- * an `add_slot` carries is reduced here to what the builder needs.
+ * (`Not applied: Hammer curl with Cable fly · Add anyway`). The ops are
+ * the schemas' `VariationOp` (§4.3).
  */
 
-export interface VariationSlotSpec {
-  exerciseId: string;
-  workingSets?: number;
-}
-
-export type VariationOp =
-  /** `after`: an exercise ID, or `'end'` to append (§4.3). */
-  | { kind: 'add_slot'; after: string; slot: VariationSlotSpec }
-  | { kind: 'pair'; a: string; b: string }
-  | { kind: 'remove_slot'; exerciseId: string }
-  | { kind: 'set_count'; exerciseId: string; n: number };
+export type { VariationOp };
 
 export type VariationSkipReason = 'anchor_missing' | 'already_in_workout' | 'main_lift' | 'superset_full' | 'already_paired' | 'max_exercises';
 
@@ -39,7 +28,7 @@ export interface VariationResult {
   skipped: SkippedOp[];
 }
 
-const MAX_EXERCISES = 10;
+const MAX_EXERCISES = BUILD_LIMITS.maxExercises;
 
 /** `applyVariation`: the template with the variation's extras applied in order. */
 export function applyVariation(template: BuilderWorkout, ops: readonly VariationOp[], ctx: BuilderContext): VariationResult {

@@ -1,3 +1,4 @@
+import type { StartChoice } from '../../builder/builder-service';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, View, type TextInput } from 'react-native';
@@ -41,7 +42,7 @@ const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
 export function CheckInScreen() {
   const route = useRoute<RouteProp<RootStackParams, 'CheckIn'>>();
   const p = route.params;
-  if (p.mode === 'start') return <StartCheckIn gymId={p.gymId} repeatOf={p.repeatOf ?? null} nextOf={p.nextOf ?? null} routineOf={p.routineOf ?? null} />;
+  if (p.mode === 'start') return <StartCheckIn gymId={p.gymId} repeatOf={p.repeatOf ?? null} nextOf={p.nextOf ?? null} routineOf={p.routineOf ?? null} coachDraftOf={p.coachDraftOf ?? null} coachDraftVersion={p.coachDraftVersion ?? null} {...(p.builderStart === undefined ? {} : { builderStart: p.builderStart })} />;
   if (p.mode === 'overview') return <StartCheckIn gymId={null} repeatOf={null} nextOf={null} routineOf={null} overview={{ checkInId: p.checkInId, atScore: p.atScore === true }} />;
   return <EditCheckIn checkInId={p.checkInId} />;
 }
@@ -243,7 +244,7 @@ function ReasonsEditor({ reasons, setReasons, note, setNote, noteRef }: { reason
  * workout` still closes to Today. `checkInId`: the score already saved on
  * the page (opens at What's up?); null opens at the score (AX sizes).
  */
-function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId: string | null; repeatOf: string | null; nextOf: string | null; routineOf: string | null; overview?: { checkInId: string | null; atScore: boolean } }) {
+function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, coachDraftOf = null, coachDraftVersion = null, builderStart, overview }: { gymId: string | null; repeatOf: string | null; nextOf: string | null; routineOf: string | null; /** (Today v2) Today's session card: its committed builder draft. */ coachDraftOf?: string | null; /** Its committed version, pinned in the write (rule 5; integrity S1). */ coachDraftVersion?: number | null; /** (v3 §2.8) Today's edited card: the prompt's choice, started through the builder. */ builderStart?: { choice: StartChoice; expectedVersion: number }; overview?: { checkInId: string | null; atScore: boolean } }) {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
@@ -305,9 +306,21 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
       return;
     }
     setBusy(true);
+    if (builderStart !== undefined && coachDraftOf !== null) {
+      // The edited card's §2.8 choice: the plan write and the session in the builder's one Start (same op ID on retry).
+      const b = await services.builder.start(coachDraftOf, { choice: builderStart.choice, opId: startOp, expectedVersion: builderStart.expectedVersion, gymId, checkIn }).catch(() => null);
+      setBusy(false);
+      if (b === null || !b.ok) {
+        setError(b === null ? 'Couldn’t start the workout. Try again.' : b.message);
+        return;
+      }
+      changed();
+      navigation.dispatch(openStartedWorkout(toast ? { toast } : undefined));
+      return;
+    }
     let r: Awaited<ReturnType<typeof services.workout.start>>;
     try {
-      r = await services.workout.start({ gymId, opId: startOp, checkIn, repeatOf, nextOf, routineOf });
+      r = await services.workout.start({ gymId, opId: startOp, checkIn, repeatOf, nextOf, routineOf, coachDraftOf, ...(coachDraftOf !== null && coachDraftVersion !== null ? { builder: { expectedVersion: coachDraftVersion } } : {}) });
     } catch (e) {
       // Never a stuck sheet (audit F9): say so; the same opId makes a retry safe.
       setBusy(false);

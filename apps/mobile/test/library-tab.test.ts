@@ -159,7 +159,8 @@ describe('navigation (EL10)', () => {
     expect(nav).toContain("Library: ['dumbbell', 'dumbbell.fill']");
     const today = code(read('screens/TodayScreen.tsx'));
     expect(today).not.toMatch(/navigate\('Workouts'\)/);
-    expect(today).toMatch(/screen: 'Library', params: \{ screen: 'LibraryHome', params: \{ segment: 'workouts' \} \}/);
+    // Today (v2, workout-builder-v3 §2.0.9): no session picker on Today any more (the day control and `⋯` replace it).
+    expect(today).not.toContain('SessionPickerSheet');
     expect(code(read('screens/workout/WorkoutOverviewScreen.tsx'))).toMatch(/openLibrary\('workouts'\)/);
   });
 });

@@ -17,6 +17,7 @@ import type {
   FencedResult,
   SaveResult,
   SessionRepository,
+  StartAlongside,
   WriteFence,
 } from './ports';
 
@@ -103,7 +104,9 @@ class MemorySessions implements SessionRepository {
   }
 
   /** Pins sessions only: the other fenced tables (check-ins, pain flags) aren't in memory storage. */
-  save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence): Promise<SaveResult | FencedResult> {
+  save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence, alongside?: StartAlongside): Promise<SaveResult | FencedResult> {
+    // Memory storage has no templates or variations: an alongside write can't be made, so nothing is.
+    if (alongside !== undefined && (alongside.template !== undefined || alongside.variation !== undefined)) return Promise.resolve({ ok: false, error: 'stale_inputs', alongside: 'template_changed' });
     for (const row of fence?.rows ?? []) {
       if (row.table === 'sessions' && (this.rows.get(row.id)?.revision ?? null) !== row.version) return Promise.resolve({ ok: false, error: 'stale_inputs' });
     }

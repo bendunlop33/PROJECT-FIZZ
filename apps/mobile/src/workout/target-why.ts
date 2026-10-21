@@ -22,7 +22,9 @@ export type WhyEvent =
   | { kind: 'logged' }
   /** The focused (active or up-next) set, after any change. */
   | { kind: 'active_set'; setId: string | null }
-  | { kind: 'keypad_opened' };
+  | { kind: 'keypad_opened' }
+  /** v3: the `Why?` sheet closed. */
+  | { kind: 'close' };
 
 export function whyPanelReducer(state: WhyPanel, e: WhyEvent): WhyPanel {
   switch (e.kind) {
@@ -34,6 +36,7 @@ export function whyPanelReducer(state: WhyPanel, e: WhyEvent): WhyPanel {
       return e.explanation === null ? { setId: e.setId, status: 'failed' } : { setId: e.setId, status: 'ready', explanation: e.explanation };
     case 'logged':
     case 'keypad_opened':
+    case 'close':
       return null;
     case 'active_set':
       return state !== null && state.setId !== e.setId ? null : state;

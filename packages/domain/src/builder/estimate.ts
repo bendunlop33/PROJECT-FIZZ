@@ -9,7 +9,8 @@ import type { BuilderBlock, BuilderInfoLookup, BuilderSlot, BuilderWorkout } fro
  * - superset: its warm-ups + rounds × (45 s per exercise + rest after the
  *   round). No switch time inside a round (Q16).
  * "Between exercises" is between blocks (a superset is one station).
- * MERGE NOTE (Q15): Today and time left should read these same constants.
+ * (Q15) Today and time left should read these same constants; wiring
+ * `duration.ts` / `time-left.ts` to them belongs to the Today (v2) stream.
  */
 export const BUILDER_TIME = {
   setupS: 120,

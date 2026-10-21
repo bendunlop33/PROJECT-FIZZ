@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { cardioTimeText, checkRoutineName, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { cardioTimeText, checkRoutineName, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -69,14 +69,21 @@ import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherShee
 import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
 import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
+import { TIME_FIT_COPY, timeFitSheet, type TimeFitSheetView } from '../../workout/time-fit';
+import { TimeFitSheet } from '../../ui/time-fit-sheet';
+import { CoachAskBar } from '../../ui/coach-ask-bar';
+import { createOnDeviceSpeech } from '../../voice/on-device-speech';
+import type { BuilderCoachReach } from '@fizz/coach';
 import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
-import { UNDO_TOAST } from '../../workout/undo-op';
+import { UNDO_TOAST, undoRefusalText } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
-import { anchorReducer, cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type CellEdit, type CellEditEvent, type CellField, type ChipState, type KeypadNextAction, type RowTap } from '../../workout/table';
-import { ChatButton, CorrectionEditor, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
+import { cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
+import { buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockMs, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
+import { CorrectionEditor, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
+import { WorkoutRoundsSheet, WhySheet } from './RoundSheets';
 import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
 import { awayPrimary, nextViewing, pagerView } from '../../workout/set-pager';
 
@@ -126,7 +133,8 @@ export function WorkoutScreen() {
   const [renameOpen, setRenameOpen] = useState(false);
   const renameOp = useRef(newUuid());
   const [renameAfter] = useState(() => createAfterDismiss());
-  const [restEditor, setRestEditor] = useState(false);
+  /** `Rest after` for one set (the open row's, or the set `Why?` names): its number, exercise, seconds and where they came from. */
+  const [restEditor, setRestEditor] = useState<{ setId: string; stepName: string; exerciseName: string; seconds: number; sourceLabel: string } | null>(null);
   /** `Notes` on the focused exercise (§4.4). */
   const [noteFor, setNoteFor] = useState<{ sessionExerciseId: string; exerciseName: string; note: string | null } | null>(null);
   /** The mid-workout Swap sheet (EL4): the row it swaps and its candidates. */
@@ -142,15 +150,19 @@ export function WorkoutScreen() {
   modeRef.current = mode;
   const { fontScale, width: windowWidth } = useWindowDimensions();
   const ax = fontScale >= AX_FONT_SCALE;
-  // Table anchoring (§2A.4): only these events move the list; Ben's own scrolling always wins.
-  const [anchorRequest, setAnchorRequest] = useState<AnchorRequest | null>(null);
-  const reduceMotionRef = useRef(false);
-  reduceMotionRef.current = theme.a11y.reduceMotion;
-  const anchorEvent = useCallback((e: AnchorEvent) => {
-    setAnchorRequest((cur) => anchorReducer(cur, e, { reduceMotion: reduceMotionRef.current }));
-  }, []);
-  const [chips, setChips] = useState<ChipState>({ done: false, now: null });
-  const tableRef = useRef<WorkoutTableHandle>(null);
+  // v3 (workout-table-v3 §1, §3): the round on screen. Null follows the open row (auto-advance); a key is one Ben picked.
+  const [pickedRound, setPickedRound] = useState<string | null>(null);
+  /** A select sent by a round change is in flight: Log waits for it (it logs the shown round's set). */
+  const [selecting, setSelecting] = useState(false);
+  /** Round-change selects go one at a time; the latest pick waits (reviews spec S2, logic S1). */
+  const selectQ = useRef<SelectQueue>(SELECT_IDLE);
+  /** Sets a round change made current: that change keeps Ben's pick (no bounce back mid-swipe). */
+  const roundSelects = useRef(new Set<string>());
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  /** `Why?` under an exercise (§2): the round and the exercise in it. */
+  const [whyFor, setWhyFor] = useState<{ roundKey: string; index: number } | null>(null);
+  /** `＋ Set`: the set just added, so its box scrolls to it and it flashes once. */
+  const [addedSetId, setAddedSetId] = useState<string | null>(null);
   /** The full rest view over Table (tap on the rest bar's countdown, §2A.6). */
   const [restFull, setRestFull] = useState(false);
   /** The set the after-set block (effort, offer) belongs to: until the next Log or another row is selected. */
@@ -178,6 +190,24 @@ export function WorkoutScreen() {
   // `Time left` (§2.15.1): its own clock moves on events (any new data) and once a minute, never every second.
   const [timeLeftNow, setTimeLeftNow] = useState(clockNow);
   const [timeLeftOpen, setTimeLeftOpen] = useState(false);
+  /** The `+N min` offer's sheet (v3 §5, review SP-3): the offer and how it reads; null = closed. */
+  const [fitOffer, setFitOffer] = useState<{ offer: TimeFitOffer; view: TimeFitSheetView } | null>(null);
+  const [fitBusy, setFitBusy] = useState(false);
+  // v3 §1.6: the shared coach ask bar (✦ + on-device mic) in place of Chat; its honest status word, as Today's.
+  const [coachReach, setCoachReach] = useState<BuilderCoachReach>('not_connected');
+  const [speech] = useState(createOnDeviceSpeech);
+  useEffect(() => {
+    let live = true;
+    void services.builderCoach
+      .status()
+      .catch((): BuilderCoachReach => 'not_connected')
+      .then((r) => {
+        if (live) setCoachReach(r);
+      });
+    return () => {
+      live = false;
+    };
+  }, [services]);
   const whyEvent = useCallback((e: WhyEvent) => {
     setWhy((cur) => whyPanelReducer(cur, e));
   }, []);
@@ -189,6 +219,7 @@ export function WorkoutScreen() {
   }, [data]);
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
+  const [sheetDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
   const loadRef = useRef<TextInput>(null);
   const repsRef = useRef<TextInput>(null);
@@ -443,8 +474,7 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (!hasView || drawn.current) return;
     drawn.current = true;
-    // Opened (Start, Resume, relaunch after a force-close): anchored on the stored active set, no animation (§2A.4).
-    anchorEvent({ kind: 'opened' });
+    // Opened (Start, Resume, relaunch after a force-close): the round with the stored active set shows (v3 §3).
     // Restored mid-rest: the after-set block (effort chips) belongs to the set just saved.
     if (view.rest?.kind === 'running' && view.justSaved) setAfterSetFor(view.justSaved.setId);
   }, [hasView]);
@@ -463,6 +493,19 @@ export function WorkoutScreen() {
   const timeLeft = useMemo(() => (data === 'loading' || data === null ? null : services.workout.timeLeft(data, timeLeftNow)), [services, data, timeLeftNow]);
   // The Table's rows change on events (data, drafts) and its pain checks once a minute; never every second.
   const table = useMemo(() => (data === 'loading' || data === null || mode !== 'table' ? null : services.workout.tableView(data, timeLeftNow, edits)), [services, data, timeLeftNow, edits, mode]);
+  // v3: one round per block, 3a / 3b in a superset, with the builder's works line (workout-table-v3 §1–§2).
+  const worksLines = data === 'loading' || data === null ? undefined : data.worksLines;
+  const latestLogged = data === 'loading' || data === null ? null : latestCommittedSetId(data.aggregate);
+  const rounds = useMemo(() => (table === null ? [] : buildRounds(table, (id) => worksLines?.[id] ?? null, latestLogged)), [table, worksLines, latestLogged]);
+  const timerRound = timerRoundIndex(rounds, data === 'loading' || data === null ? null : data.aggregate.workInterval);
+  // A change of the open row (a log, an untick, a delete, a row select) brings the page back to its round (auto-advance, §3);
+  // one a round change's own select made keeps the round Ben is on, even when an earlier select lands late.
+  useEffect(() => {
+    if (resetsPick(activeSetId, roundSelects.current)) {
+      roundSelects.current.clear();
+      setPickedRound(null);
+    }
+  }, [activeSetId]);
 
   // Edits belong to one set; when the active set changes, they are dropped (they were saved as a draft).
   useEffect(() => {
@@ -669,7 +712,7 @@ export function WorkoutScreen() {
 
   function showTable() {
     updatePrefs({ workoutView: 'table' });
-    anchorEvent({ kind: 'view_switched' });
+    setPickedRound(null);
   }
 
   /** A refused menu action: the shortest honest line (the screen reloads on a stale version). */
@@ -769,9 +812,9 @@ export function WorkoutScreen() {
     // Path B: a pure check on the logged set, no AI call (coach-adjustments §4.2).
     coach.afterLog(r.aggregate, loggedSetId);
     setViewing(nextViewing(services.workout.navigation({ ...loaded, aggregate: r.aggregate }, null), { kind: 'logged' }));
-    // Table: the saved row slides up and the next open row comes to the top (§2A.4 auto-advance).
+    // v3 §3: the round follows the open row, so a finished round advances to the next by itself.
     setAfterSetFor(loggedSetId);
-    anchorEvent({ kind: 'logged' });
+    setPickedRound(null);
     // The editor never reopens by itself when an Undo makes this set current again (review S3).
     editCell({ kind: 'logged' });
     setEdits(null);
@@ -785,10 +828,10 @@ export function WorkoutScreen() {
     const saved = r.aggregate.sets.find((s) => s.id === focus.setId);
     const label = focus.logLabel.replace(/^Log /, '');
     showToast({
-      text: `✓ Set ${String(focus.setNumber)} saved · ${label}`,
+      text: `✓ ${focus.stepName} saved · ${label}`,
       action: 'Undo',
       onAction: () => {
-        if (saved) void undo(saved.id, `undo:${saved.id}:${String(saved.undoCount)}`, focus.setNumber);
+        if (saved) void undo(saved.id, `undo:${saved.id}:${String(saved.undoCount)}`, focus.stepName);
       },
     });
   }
@@ -803,6 +846,18 @@ export function WorkoutScreen() {
       .catch(() => null)
       .then((explanation) => {
         whyEvent({ kind: 'loaded', setId: f.setId, explanation });
+      });
+  }
+
+  /** `Why?` under an exercise (v3 §2): the reason for its target set, read locally; the sheet shows it. */
+  function openWhy(setId: string) {
+    if (why?.setId === setId) return;
+    whyEvent({ kind: 'toggle', setId });
+    void services.workout
+      .explainTarget(session.id, setId)
+      .catch(() => null)
+      .then((explanation) => {
+        whyEvent({ kind: 'loaded', setId, explanation });
       });
   }
 
@@ -845,14 +900,14 @@ export function WorkoutScreen() {
     showToast({ icon: t.icon, text: t.detail ? `${t.text}. ${t.detail}` : t.text, ...(t.action && t.onAction ? { action: t.action, onAction: t.onAction } : {}) });
   }
 
-  async function undo(setId: string, opId: string, setNumber: number) {
+  async function undo(setId: string, opId: string, name: string) {
     const seq = ++loadSeq.current;
     const fresh = await services.workout.load(session.id);
     const set = fresh?.aggregate.sets.find((s) => s.id === setId);
     if (!fresh || !set) return;
     const r = await services.workout.dispatch(session.id, { type: 'undo_log', at: services.now(), opId, setId, expectedSetVersion: set.version });
     if (!r.ok) {
-      showToast({ icon: 'info.circle', text: `Can’t undo: set ${String(setNumber)} changed` });
+      showToast({ icon: 'info.circle', text: r.error.code === 'not_latest_set' ? 'Can’t untick: not the last set' : r.error.code === 'work_interval_running' ? 'Stop the timer first' : `Can’t undo: ${name.toLowerCase()} changed` });
       return;
     }
     haptic('undo');
@@ -883,7 +938,7 @@ export function WorkoutScreen() {
         // No confirm (copy D4): it applies at once with Undo.
         const opId = newUuid();
         void run({ type: 'delete_set', at: services.now(), opId, setId: f.setId, expectedSetVersion: f.setVersion }).then((r) => {
-          if (r.ok) toastUndoOp(UNDO_TOAST.deleted(f.setNumber), opId, session.id);
+          if (r.ok) toastUndoOp(UNDO_TOAST.deletedNamed(f.stepName), opId, session.id);
           else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
@@ -961,7 +1016,7 @@ export function WorkoutScreen() {
         }
         const opId = newUuid();
         void run({ type: 'delete_set', at: services.now(), opId, setId: next.id, expectedSetVersion: next.version }).then((r) => {
-          if (r.ok) toastUndoOp(UNDO_TOAST.deleted(next.number), opId, session.id);
+          if (r.ok) toastUndoOp(UNDO_TOAST.deletedNamed(next.stepName), opId, session.id);
           else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
@@ -998,7 +1053,7 @@ export function WorkoutScreen() {
       { label: 'History', run: () => { navigation.navigate('ExerciseProgress', { exerciseId: card.exerciseId, name: card.name, ...(ex?.equipmentId ? { equipmentId: ex.equipmentId } : {}) }); } },
       ...(open !== null && ax && open.previous !== null ? [{ label: `Last ${open.previous.text.replaceAll('\u00a0', ' ')}`, run: () => { copyLast(open); } }] : []),
       ...(plates.length > 0 ? [{ label: 'Plates', run: () => { Alert.alert('Plates', plates.join('\n')); } }] : []),
-      ...(card.isCurrent && focus !== null ? [{ label: `Rest after ${formatDuration(focus.restAfterS)}`, run: () => { setRestEditor(true); } }] : []),
+      ...(card.isCurrent && focus !== null ? [{ label: `Rest after ${formatDuration(focus.restAfterS)}`, run: () => { setRestEditor(restOfFocus(focus)); } }] : []),
       { label: 'Notes', run: () => { setNoteFor({ sessionExerciseId: card.sessionExerciseId, exerciseName: card.name, note: ex?.note ?? null }); } },
     ];
     ActionSheetIOS.showActionSheetWithOptions({ title: card.name, options: [...items.map((x) => x.label), 'Cancel'], cancelButtonIndex: items.length }, (i) => {
@@ -1020,28 +1075,155 @@ export function WorkoutScreen() {
       ...(f.addWeight ? [{ label: f.addWeight.on ? 'Bodyweight' : '+ Weight', run: () => { toggleWeight(f); } }] : []),
       { label: 'Focus view', run: () => { updatePrefs({ workoutView: 'focus' }); } },
     ];
-    ActionSheetIOS.showActionSheetWithOptions({ title: `Set ${String(f.setNumber)}`, options: [...items.map((x) => x.label), 'Cancel'], cancelButtonIndex: items.length }, (i) => {
+    ActionSheetIOS.showActionSheetWithOptions({ title: f.stepName, options: [...items.map((x) => x.label), 'Cancel'], cancelButtonIndex: items.length }, (i) => {
       items[i]?.run();
     });
   }
 
   /** A non-current row (or its ring) only becomes the open row: `set_active_set`, never a log (Ben, decision 4). */
-  async function selectRow(setId: string): Promise<boolean> {
-    setAfterSetFor(null);
+  async function selectRow(setId: string, o: { keepAfterSet?: boolean; version?: number; onLanded?: (version: number) => void } = {}): Promise<boolean> {
+    if (o.keepAfterSet !== true) setAfterSetFor(null);
     if (correction !== null) void saveCorrection();
     editCell({ kind: 'selected' });
     // The open row keeps its unsaved edit: saved now, not left to the 300 ms debounce the select would cancel.
+    // A queued round select (`o.version`) goes after one that already saved it.
     const r = await selectRowFlow({
       setId,
-      version: session.version,
-      draft: edits !== null ? saveDraftCommand(edits, services.now()) : null,
+      version: o.version ?? session.version,
+      draft: edits !== null && o.version === undefined ? saveDraftCommand(edits, services.now()) : null,
       at: services.now(),
       opId: newUuid(),
       save: (cmd) => services.workout.dispatch(session.id, cmd),
-      select: run,
+      select: async (cmd) => {
+        const out = await run(cmd);
+        if (out.ok) o.onLanded?.(out.aggregate.session.version);
+        return out;
+      },
     });
     if (!r.ok && !r.quiet) showToast({ icon: 'info.circle', text: refusalText(r.code, r.message) });
     return r.ok;
+  }
+
+  /** `Rest after` for the open row (its stored rest and where it came from). */
+  function restOfFocus(f: FocusView) {
+    return { setId: f.setId, stepName: f.stepName, exerciseName: f.exerciseName, seconds: f.restAfterS, sourceLabel: f.restSourceLabel };
+  }
+
+  /**
+   * A round change (v3 §3: strip, swipe, overview, `Next round`): it shows at
+   * once, and when it has sets to do and the open row is elsewhere its first
+   * one becomes current (`set_active_set`, never a log), so Log logs the
+   * shown round's set. The set just saved keeps its effort chips.
+   */
+  function goToRound(index: number) {
+    const target = rounds[index];
+    if (target === undefined) return;
+    closeCellEditors();
+    setPickedRound(target.key);
+    // A running work timer keeps its set current: the round only shows (logic S3; the domain refuses the select too).
+    if (timerRound !== null) return;
+    const { q, send } = queueSelect(selectQ.current, selectOnShow(target));
+    selectQ.current = q;
+    if (send !== null) sendRoundSelect(send, undefined);
+  }
+
+  /** One round-change select; when it lands, the pick that waited meanwhile goes next with the version it left. */
+  function sendRoundSelect(setId: string, version: number | undefined) {
+    roundSelects.current.add(setId);
+    setSelecting(true);
+    let landed: number | undefined;
+    void selectRow(setId, { keepAfterSet: true, ...(version !== undefined ? { version } : {}), onLanded: (v) => (landed = v) }).then(
+      (ok) => {
+        const next = selectLanded(selectQ.current, ok && landed !== undefined);
+        selectQ.current = next.q;
+        if (next.send !== null) sendRoundSelect(next.send, landed);
+        else setSelecting(false);
+      },
+      () => {
+        selectQ.current = SELECT_IDLE;
+        setSelecting(false);
+      },
+    );
+  }
+
+  /**
+   * A done row's ✓ (v3 §3): unticks it, the same `undo_log` as the toast's
+   * Undo; the domain only allows the latest log (older sets are corrected).
+   */
+  function untick(setId: string) {
+    const set = loaded.aggregate.sets.find((x) => x.id === setId);
+    if (set?.status !== 'completed') return;
+    const n = rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).find((r) => r.setId === setId);
+    void undo(set.id, `undo:${set.id}:${String(set.undoCount)}`, n?.stepName ?? 'Set');
+  }
+
+  /**
+   * v3 §5: `+N min` offers the builder's fit steps over the sets left as one
+   * change, applied only on Apply (rule 3), with Undo. False when there is
+   * nothing to offer (the Time left sheet opens instead).
+   */
+  function offerTimeFit(): boolean {
+    const over = timeLeft?.view.estimate.overByMinutes ?? null;
+    if (over === null || over <= 0) return false;
+    const offer = services.workout.timeFit(loaded, over);
+    if (offer === null) return false;
+    setFitOffer({ offer, view: timeFitSheet(offer, over) });
+    return true;
+  }
+
+  /** Apply on the fit sheet: one versioned write (stale → refused, rule 5), then the Undo toast; `⋯ › Undo fit to time` while it can still be undone (S1). */
+  function applyTimeFit() {
+    const f = fitOffer;
+    if (f === null || fitBusy) return;
+    closeCellEditors();
+    setFitBusy(true);
+    const opId = newUuid();
+    void services.workout
+      .applyTimeFit({ sessionId: session.id, offer: f.offer, opId })
+      .then((r) => {
+        setFitOffer(null);
+        if (!r.ok) {
+          void reload();
+          showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'Not applied. The workout changed.' : refusalText(r.error.code, r.error.message) });
+          return;
+        }
+        setData((cur) => withCommandResult(cur, loaded, r.aggregate));
+        changed();
+        toastUndoOp(f.view.applied, opId, session.id);
+      })
+      .finally(() => {
+        setFitBusy(false);
+      });
+  }
+
+  /** `⋯ › Undo fit to time` (review S1): the same `undo_op` as the toast; refused (and said so) once the workout moved on. */
+  function undoTimeFit() {
+    const target = undoableTimeFit(loaded.aggregate, services.now());
+    if (target === null) {
+      showToast({ icon: 'info.circle', text: undoRefusalText('stale_version') });
+      return;
+    }
+    closeCellEditors();
+    void services.workout.undoOp({ sessionId: session.id, targetOpId: target }).then((r) => {
+      changed();
+      void reload();
+      if (r.ok) {
+        haptic('undo');
+        showToast({ icon: 'info.circle', text: TIME_FIT_COPY.undone });
+      } else showToast({ icon: 'info.circle', text: r.message });
+    });
+  }
+
+  /** Swipe left on a row (v3 §2): delete at once with Undo; a done set's delete is a versioned, audited change too. */
+  function deleteRow(setId: string, name: string) {
+    const set = loaded.aggregate.sets.find((x) => x.id === setId);
+    if (set === undefined) return;
+    closeCellEditors();
+    const opId = newUuid();
+    void run({ type: 'delete_set', at: services.now(), opId, setId, expectedSetVersion: set.version }).then((r) => {
+      if (r.ok) toastUndoOp(UNDO_TOAST.deletedNamed(name), opId, session.id);
+      else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
+    });
   }
 
   /**
@@ -1066,7 +1248,7 @@ export function WorkoutScreen() {
       return;
     }
     if (r.toast !== null && r.undo !== null) showHanded({ kind: 'exclusion', key: c.opId, text: r.toast, undo: { sessionId: session.id, ...r.undo } });
-    else if (!r.duplicate) toastUndoOp(UNDO_TOAST.corrected(v.setNumber), c.opId, session.id);
+    else if (!r.duplicate) toastUndoOp(UNDO_TOAST.correctedNamed(v.stepName), c.opId, session.id);
     // F4: a corrected rep count runs the same offer check as a log.
     void reload().then((d) => {
       const id = patch.reps !== undefined ? correctedSetToCheck({ setId: c.setId }, d?.aggregate) : null;
@@ -1235,9 +1417,10 @@ export function WorkoutScreen() {
     setData((cur) => withCommandResult(cur, loaded, r.aggregate));
     changed();
     const added = r.aggregate.sets.find((x) => !loaded.aggregate.sets.some((y) => y.id === x.id));
-    const v = services.workout.view({ ...loaded, aggregate: r.aggregate }, clockNow(), null);
-    const n = v.focus?.rows.find((row) => row.setId === added?.id)?.number ?? r.aggregate.sets.filter((x) => x.sessionExerciseId === sessionExerciseId && x.status !== 'deleted').length;
-    showToast({ text: `Set ${String(n)} added` });
+    // v3 §2: its box scrolls to the new row and it flashes once.
+    if (added) setAddedSetId(added.id);
+    // The same name the new row shows (wo-v3 reviews B1).
+    showToast({ text: UNDO_TOAST.addedNamed((added && setStepName(r.aggregate, added.id)) ?? 'Set') });
   }
 
   // ---- Gym switch (gym-switch.md §4) ----
@@ -1387,8 +1570,8 @@ export function WorkoutScreen() {
       view: () => {
         const next = mode === 'table' ? 'focus' : 'table';
         updatePrefs({ workoutView: next });
-        // Back in Table: anchored on the open row again (check 10).
-        if (next === 'table') anchorEvent({ kind: 'view_switched' });
+        // Back in Table: the open row's round again (check 10).
+        if (next === 'table') setPickedRound(null);
       },
       pause: () => void pauseOrResume(),
       rename: () => {
@@ -1396,7 +1579,10 @@ export function WorkoutScreen() {
         setRenameOpen(true);
       },
       gym: openGymSheet,
-      coach: openCoach,
+      coach: () => {
+        openCoach();
+      },
+      undo_fit: undoTimeFit,
       finish: () => {
         setFinishOpen(true);
       },
@@ -1409,15 +1595,18 @@ export function WorkoutScreen() {
       },
     };
     const cuesOn = voiceCapability().speech ? prefs.voice.cuesOn : undefined;
-    const items = workoutMenu({ view: mode, paused: session.pause !== null, openEnded: view?.openEnded ?? false, ax, gymName: loaded.gymName, cuesOn }).map((m) => ({ label: m.label, run: run[m.id] }));
+    const undoFit = undoableTimeFit(loaded.aggregate, services.now()) !== null;
+    const items = workoutMenu({ view: mode, paused: session.pause !== null, openEnded: view?.openEnded ?? false, ax, gymName: loaded.gymName, cuesOn, undoFit }).map((m) => ({ label: m.label, run: run[m.id] }));
     const options = [...items.map((x) => x.label), 'Cancel'];
     ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: items.length - 1, cancelButtonIndex: items.length }, (i) => {
       items[i]?.run();
     });
   }
 
-  function openCoach() {
-    navigation.navigate('Coach', { entry: { kind: 'workout', sessionId: session.id } });
+  /** The workout's coach sheet (`{ kind: 'workout' }`); words the mic heard start in its field, unsent (Ben sends them). */
+  function openCoach(heard?: string) {
+    const words = heard?.trim() ?? '';
+    navigation.navigate('Coach', { entry: { kind: 'workout', sessionId: session.id }, ...(words === '' ? {} : { draft: words, focus: true }) });
   }
 
   /** `Rename workout` (premium-feel §2.6): versioned; Undo renames back. The routine keeps its name. */
@@ -1638,7 +1827,7 @@ export function WorkoutScreen() {
 
   const savedLine = view.justSaved ? (
     <AppText variant="callout" color="text.secondary" numeric>
-      {`${view.justSaved.exerciseName === focus?.exerciseName || focus === null ? '' : `${view.justSaved.exerciseName} · `}Set ${String(view.justSaved.setNumber)}${view.justSaved.side === 'left' ? ' (left)' : view.justSaved.side === 'right' ? ' (right)' : ''} saved · `}
+      {`${view.justSaved.exerciseName === focus?.exerciseName || focus === null ? '' : `${view.justSaved.exerciseName} · `}${view.justSaved.stepName}${view.justSaved.side === 'left' ? ' (left)' : view.justSaved.side === 'right' ? ' (right)' : ''} saved · `}
       <AppText variant="callout" numeric>
         {view.justSaved.text}
       </AppText>
@@ -1991,7 +2180,7 @@ export function WorkoutScreen() {
             <LinkLine
               accessibilityLabel={`${targetLineLabel(focus.target, focus.targetEstimate) ?? 'No target for this set'}. Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change the rest.`}
               onPress={() => {
-                setRestEditor(true);
+                setRestEditor(restOfFocus(focus));
               }}
             >
               <AppText variant="callout" color="text.secondary" numeric>
@@ -2173,10 +2362,34 @@ export function WorkoutScreen() {
     </View>
   ) : null;
 
-  // ---- Table view (active-workout §2A) ----
+  // ---- Round page (workout-table-v3) ----
   const tableMode = mode === 'table' && table !== null && view.phase !== 'empty';
-  const pill = tableMode ? tableLogLabel(view.primary, table.log, { offscreen: chips.now !== null }) : null;
-  const barPrimary = pill === null || back.kind === 'back' ? primary : { ...primary, label: pill.label, lead: pill.lead };
+  const shown = shownRoundIndex(rounds, pickedRound);
+  const shownRound = rounds[shown];
+  // §1.6: Log names the step; a done round reads `Next round`. A round whose open row isn't there yet (a select in flight or
+  // refused) never logs another round's set unseen: Log selects its first set instead.
+  const roundStep = tableMode ? roundPrimary({ rounds, shown, primary: view.primary }) : { kind: 'view' as const };
+  const offRound = tableMode && shownRound !== undefined && shownRound.hasPending && !shownRound.current;
+  // Never `Log …` for a set that tapping won't log (logic S2): `Go to Set 1`, or `Back to round 2` while a work timer runs there.
+  const offPill = offRound ? offRoundPill(shownRound, { timerRound }) : null;
+  const barPrimary =
+    back.kind === 'back' || !tableMode
+      ? primary
+      : offPill !== null
+        ? offPill.kind === 'back'
+          ? { label: offPill.label, onPress: () => { goToRound(offPill.index); } }
+          : { label: offPill.label, busy: selecting, onPress: () => { goToRound(shown); } }
+        : roundStep.kind === 'step'
+          ? { ...primary, label: roundStep.label }
+          : roundStep.kind === 'next_round'
+            ? { label: roundStep.label, onPress: () => { goToRound(roundStep.index); } }
+            : primary;
+  // §1.5: the SET clock counts up from the rest's end or the last log; frozen while paused.
+  const setClockStart = setClockStartMs({ rest, lastLogMs: lastLogMs(loaded.aggregate.sets), startedAtMs: toMs(session.startedAt.utc) });
+  const setClock = clockText(setClockMs({ startMs: setClockStart, nowMs: now, pausedMs: pausedMsWithin(loaded.aggregate, setClockStart, now, now) }));
+  const overTime = overTimeText(timeLeft?.view.estimate.overByMinutes);
+  const whySheet = whyFor !== null && whyFor.roundKey === shownRound?.key ? whyView(shownRound, whyFor.index) : null;
+  const whyExercise = whyFor !== null ? shownRound?.exercises[whyFor.index] : undefined;
   const afterSetSaved = view.justSaved !== null && view.justSaved.setId === afterSetFor ? view.justSaved : null;
   const painReviewNode =
     view.painReview && afterSetSaved && view.painReview.afterSetId === afterSetSaved.setId ? (
@@ -2205,7 +2418,7 @@ export function WorkoutScreen() {
           <View style={{ gap: theme.space['2'] }}>
             <EffortHeading scale={effortScale}>
               <AppText variant="label" color="text.tertiary" style={{ flexShrink: 1 }}>
-                {`${afterSetSaved.exerciseName !== focus?.exerciseName ? `${afterSetSaved.exerciseName.toUpperCase()} · ` : ''}SET ${String(afterSetSaved.setNumber)} ${effortScale === 'rir' ? 'REPS IN RESERVE' : 'EFFORT'}`}
+                {`${afterSetSaved.exerciseName !== focus?.exerciseName ? `${afterSetSaved.exerciseName.toUpperCase()} · ` : ''}${afterSetSaved.stepName.toUpperCase()} ${effortScale === 'rir' ? 'REPS IN RESERVE' : 'EFFORT'}`}
               </AppText>
             </EffortHeading>
             {effortChips}
@@ -2216,7 +2429,6 @@ export function WorkoutScreen() {
         <CoachSlot>{coach.slot !== null ? <CoachSlotContent coach={coach} /> : null}</CoachSlot>
       </View>
     ) : null;
-  const afterSetKey = afterSetNode === null ? null : (afterSetSaved?.setId ?? 'slot');
   // The warm-up ramp suggestion in the current card's header (§2A.3), as in Focus, with `Hide`.
   const warmUpNode =
     focus?.warmUp && !hiddenWarmUps.includes(focus.sessionExerciseId) ? (
@@ -2266,7 +2478,7 @@ export function WorkoutScreen() {
         <CorrectionEditor
           field={doneEdit.field}
           ax={ax}
-          setLabel={String(correctionView.setNumber)}
+          stepName={correctionView.stepName}
           loadField={correctionView.loadField}
           reps={correctionView.reps}
           duration={correctionView.duration}
@@ -2373,17 +2585,6 @@ export function WorkoutScreen() {
       onMore={() => {
         openSetMore(focus);
       }}
-      whyOpen={why !== null && why.setId === focus.setId}
-      whyPanel={
-        why !== null && why.setId === focus.setId ? (
-          <TargetWhyPanel
-            panel={why}
-            onPainFlag={(flagId) => {
-              openPainFlag(flagId, focus.sessionExerciseId);
-            }}
-          />
-        ) : null
-      }
       loadRef={loadRef}
       repsRef={repsRef}
       timeRef={timeRef}
@@ -2396,12 +2597,6 @@ export function WorkoutScreen() {
       onSide={(side) => {
         setValues(focus.draft, side);
       }}
-      onWhy={() => {
-        toggleWhy(focus);
-      }}
-      onRestAfter={() => {
-        setRestEditor(true);
-      }}
       onPainFlag={() => {
         openPainFlag(focus.painFlag?.flagId ?? '', focus.sessionExerciseId);
       }}
@@ -2410,44 +2605,13 @@ export function WorkoutScreen() {
       }}
       onTileFocus={(tile) => {
         setKeypadField({ row: 'open', field: tile });
-        if (modeRef.current === 'table') anchorEvent({ kind: 'keypad_opened', tile });
+      }}
+      onDelete={() => {
+        const name = rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).find((r) => r.setId === focus.setId)?.stepName ?? focus.stepName;
+        deleteRow(focus.setId, name);
       }}
     />
   ) : null;
-  const tableFooter = tableMode ? (
-    <>
-      {table.allDone ? (
-        <View style={{ gap: theme.space['3'] }}>
-          <AppText variant="title2" accessibilityRole="header">
-            {view.openEnded ? 'Exercise done' : 'All planned sets done.'}
-          </AppText>
-          {table.anchor === null ? afterSetNode : null}
-          {lastExercise ? (
-            <View style={{ alignItems: 'flex-start' }}>
-              <TextButton label="+ Add set" accessibilityLabel={`Add set to ${lastExercise.name}`} onPress={() => void addSet(lastExercise.sessionExerciseId)} />
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-      <View style={{ alignItems: 'flex-start', minHeight: theme.target.workout.height, justifyContent: 'center' }}>
-        <TextButton
-          label="+ Add exercise"
-          onPress={() => {
-            navigation.navigate('ExercisePicker', { sessionId: session.id });
-          }}
-        />
-      </View>
-      {timeLeft && !keypadOpen && !table.allDone ? (
-        <TimeLeftLine
-          view={timeLeft.view}
-          onPress={() => {
-            setTimeLeftOpen(true);
-          }}
-        />
-      ) : null}
-    </>
-  ) : null;
-
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <NumberAccessory onNext={onKeypadNext} onDone={closeCellEditors} />
@@ -2455,29 +2619,35 @@ export function WorkoutScreen() {
       <View style={{ paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: theme.space['2'], gap: theme.space['1'] }}>
           <IconButton icon="chevron.down" label="Minimise workout" onPress={close} />
-          {tableMode && chips.done ? (
-            <View style={{ flex: 1, alignItems: 'flex-start' }}>
-              <DoneChip
-                count={table.doneCount}
-                onPress={() => {
-                  tableRef.current?.scrollToTop(!theme.a11y.reduceMotion);
-                }}
-              />
-            </View>
-          ) : (
-            <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, minWidth: 64 }} accessibilityRole="header">
-              {view.title}
-            </AppText>
-          )}
+          <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, minWidth: 64 }} accessibilityRole="header">
+            {view.title}
+          </AppText>
           {/* The gym chip sits in the top bar (§2); at AX1+ it moves into ⋯. */}
           {!ax ? <GymChip gymName={loaded.gymName} onPress={openGymSheet} /> : null}
-          <View accessible accessibilityLabel={`${view.paused ? 'Paused, ' : ''}active time ${formatElapsed(view.elapsedMs)}`} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+          {/* v3 §5: the elapsed time opens Time left; `+12 min` after it while running over Ben's finish time (shown, never applied). */}
+          <Pressable
+            accessibilityRole={timeLeft ? 'button' : 'text'}
+            accessibilityLabel={`${view.paused ? 'Paused, ' : ''}active time ${formatElapsed(view.elapsedMs)}${overTime !== null ? `, ${overTime.replace('\u00a0', ' ')} over` : ''}`}
+            accessibilityHint={overTime !== null ? 'Offers a shorter rest of the workout' : timeLeft ? 'Shows the time left' : undefined}
+            disabled={!timeLeft}
+            onPress={() => {
+              if (overTime !== null && offerTimeFit()) return;
+              setTimeLeftOpen(true);
+            }}
+            hitSlop={8}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], minHeight: theme.target.min.height }}
+          >
             {view.paused ? <Icon name="pause.circle.fill" color="status.warning" size={16} /> : null}
             <AppText variant="callout" numeric color={view.paused ? 'status.warning' : 'text.secondary'}>
               {/* 1.8: paused shows the icon and the time; the word is in the label. */}
               {formatElapsed(view.elapsedMs)}
             </AppText>
-          </View>
+            {overTime !== null ? (
+              <AppText variant="label" numeric color="status.warning" style={{ fontSize: 13 }}>
+                {overTime}
+              </AppText>
+            ) : null}
+          </Pressable>
           {alertsOff(permission, prefs.alertsAsk) ? <IconButton icon="bell.slash" tint="text.secondary" label={alertsOffLabel(permission)} onPress={openAlertSettings} /> : null}
           <IconButton icon="ellipsis.circle" label="Workout menu" onPress={topMenu} />
         </View>
@@ -2494,44 +2664,64 @@ export function WorkoutScreen() {
                 ))}
             </View>
           ) : null}
-          <WorkoutTable
-            ref={tableRef}
-            table={table}
-            ax={ax}
-            reduceMotion={theme.a11y.reduceMotion}
-            openRow={openRowNode}
-            afterSet={table.anchor !== null ? afterSetNode : null}
-            afterSetKey={table.anchor !== null ? afterSetKey : null}
-            adjust={<AdjustButton coach={coach} />}
-            warmUp={warmUpNode}
-            focusRef={openHeaderRef}
-            adjustRow={focus ? <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} /> : null}
-            footer={tableFooter}
-            anchorRequest={anchorRequest}
-            keyboardHeight={keyboardHeight}
-            bottomInset={toastHeight}
-            onAnchorApplied={() => {
-              anchorEvent({ kind: 'applied' });
-            }}
-            onUserScroll={() => {
-              anchorEvent({ kind: 'user_scrolled' });
-            }}
-            onChips={setChips}
-            onEditSet={(setId) => {
-              navigation.navigate('EditSet', { sessionId: session.id, setId });
-            }}
-            onSelectSet={(id) => void selectRow(id)}
-            onCellTap={cellTap}
-            rowEditor={rowEditorNode}
-            onTapElsewhere={closeCellEditors}
-            onAddSet={(id) => void addSet(id)}
-            onMenu={openCardMenu}
-            onName={openExerciseSheet}
-            onNote={(sessionExerciseId, exerciseName, note) => {
-              setNoteFor({ sessionExerciseId, exerciseName, note });
-            }}
-            onPainBadge={openPainBadge}
-          />
+          {shownRound !== undefined ? (
+            <>
+              <RoundStrip
+                chips={roundStrip(rounds, shown)}
+                onPick={goToRound}
+                onWorkout={() => {
+                  setOverviewOpen(true);
+                }}
+              />
+              <RoundPage
+                key={shownRound.key}
+                round={shownRound}
+                ax={ax}
+                reduceMotion={theme.a11y.reduceMotion}
+                openRow={openRowNode}
+                afterSet={afterSetNode}
+                upNext={upNextText(rounds, shown)}
+                adjust={<AdjustButton coach={coach} />}
+                adjustRow={focus ? <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} /> : null}
+                warmUp={warmUpNode}
+                focusRef={openHeaderRef}
+                positionKey={positionKey(shownRound, activeSetId)}
+                editingSetId={editingCell !== null ? activeSetId : doneEdit !== null ? doneEdit.setId : null}
+                keyboardHeight={keyboardHeight}
+                highlightSetId={addedSetId}
+                onHighlightShown={() => {
+                  setAddedSetId(null);
+                }}
+                rowEditor={rowEditorNode}
+                canPrev={stepRound(shown, 'prev', rounds.length) !== null}
+                canNext={stepRound(shown, 'next', rounds.length) !== null}
+                onRound={(d) => {
+                  const to = stepRound(shown, d, rounds.length);
+                  if (to !== null) goToRound(to);
+                }}
+                onEditSet={(setId) => {
+                  navigation.navigate('EditSet', { sessionId: session.id, setId });
+                }}
+                onSelectSet={(id) => void selectRow(id)}
+                onCellTap={cellTap}
+                onUntick={untick}
+                onDeleteSet={deleteRow}
+                onTapElsewhere={closeCellEditors}
+                onAddSet={(id) => void addSet(id)}
+                onWhy={(index) => {
+                  setWhyFor({ roundKey: shownRound.key, index });
+                  const target = whyView(shownRound, index);
+                  if (target !== null) openWhy(target.setId);
+                }}
+                onMenu={openCardMenu}
+                onName={openExerciseSheet}
+                onNote={(sessionExerciseId, exerciseName, note) => {
+                  setNoteFor({ sessionExerciseId, exerciseName, note });
+                }}
+                onPainBadge={openPainBadge}
+              />
+            </>
+          ) : null}
         </View>
       ) : (
       <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], paddingBottom: theme.space['4'] + toastHeight }} {...WORKOUT_KEYBOARD}>
@@ -2633,15 +2823,8 @@ export function WorkoutScreen() {
           setChromeHeight(e.nativeEvent.layout.height);
         }}
       >
-        {tableMode && chips.now !== null ? (
-          <NowChip
-            direction={chips.now}
-            onPress={() => {
-              anchorEvent({ kind: 'now_chip' });
-            }}
-          />
-        ) : null}
-        {tableMode && rest !== null ? (
+        {/* v3 §1.5: the timer bar always shows: REST while resting, else the SET clock. */}
+        {tableMode && rest !== null && timerBarMode(rest) === 'rest' ? (
           <RestBar
             rest={rest}
             slim={keypadOpen}
@@ -2651,9 +2834,11 @@ export function WorkoutScreen() {
               setRestFull(true);
             }}
           />
+        ) : tableMode ? (
+          <SetClockBar text={setClock} paused={view.paused} slim={keypadOpen} />
         ) : null}
-        {/* `Chat` + Log (§2): the coach sheet shows its own honest status; Talk replaces Chat once voice ships. On the keypad, or with the cell bar under it: no home-indicator room (0.2; the cell bar takes it). */}
-        <ActionBar talk={<ChatButton ax={ax} onPress={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen || cellBar !== null} />
+        {/* v3 §1.6: the shared coach ask bar (✦ + on-device mic) + Log; the coach sheet shows its own honest status. On the keypad, or with the cell bar under it: no home-indicator room (0.2; the cell bar takes it). */}
+        <ActionBar talk={<CoachAskBar icons page="active" reach={coachReach} speech={speech} onOpen={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen || cellBar !== null} />
         {/* Ben, 20 Oct: the cell is the field; its − / +, Next › and Done sit on the keypad, under Log. */}
         {cellBar !== null ? (
           <CellKeypadBarView
@@ -2769,20 +2954,21 @@ export function WorkoutScreen() {
         }}
         onStale={() => void reload()}
       />
-      {focus ? (
+      {restEditor !== null ? (
         <RestAfterSheet
-          visible={restEditor}
-          setNumber={focus.setNumber}
-          exerciseName={focus.exerciseName}
-          seconds={focus.restAfterS}
-          sourceLabel={focus.restSourceLabel}
+          visible
+          stepName={restEditor.stepName}
+          exerciseName={restEditor.exerciseName}
+          seconds={restEditor.seconds}
+          sourceLabel={restEditor.sourceLabel}
           onClose={() => {
-            setRestEditor(false);
+            setRestEditor(null);
           }}
           onApply={(seconds, scope) => {
-            setRestEditor(false);
+            const target = restEditor;
+            setRestEditor(null);
             void services.workout
-              .setRestAfter({ sessionId: session.id, setId: focus.setId, seconds, scope, opId: newUuid(), expectedVersion: session.version })
+              .setRestAfter({ sessionId: session.id, setId: target.setId, seconds, scope, opId: newUuid(), expectedVersion: session.version })
               .then((r) => {
                 if (!r.ok) {
                   showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Try again.' : `Rest wasn’t changed: ${r.error.message}` });
@@ -2794,13 +2980,58 @@ export function WorkoutScreen() {
                 showToast({
                   text:
                     scope === 'set'
-                      ? `Rest after set ${String(focus.setNumber)}: ${formatDuration(seconds)}`
-                      : `${focus.exerciseName}: ${formatDuration(seconds)} rest${r.defaultSaved === false ? '' : ', also next time'}`,
+                      ? `Rest after ${target.stepName.toLowerCase()}: ${formatDuration(seconds)}`
+                      : `${target.exerciseName}: ${formatDuration(seconds)} rest${r.defaultSaved === false ? '' : ', also next time'}`,
                 });
               });
           }}
         />
       ) : null}
+      <WhySheet
+        visible={whySheet !== null}
+        title={whyExercise?.name ?? ''}
+        view={whySheet}
+        panel={why !== null && whySheet !== null && why.setId === whySheet.setId ? why : null}
+        onChangeRest={() => {
+          if (whySheet === null || shownRound === undefined) return;
+          const restRow = shownRound.exercises.flatMap((e) => e.rows.map((r) => ({ e, r }))).find((x) => x.r.setId === whySheet.restSetId);
+          const stored = loaded.aggregate.sets.find((x) => x.id === whySheet.restSetId);
+          setWhyFor(null);
+          whyEvent({ kind: 'close' });
+          setRestEditor({ setId: whySheet.restSetId, stepName: restRow?.r.stepName ?? 'Set', exerciseName: restRow?.e.name ?? '', seconds: whySheet.restSeconds, sourceLabel: stored?.rest.sourceLabel ?? '' });
+        }}
+        onPainFlag={(flagId) => {
+          openPainFlag(flagId, whyExercise?.sessionExerciseId);
+        }}
+        onClose={() => {
+          setWhyFor(null);
+          whyEvent({ kind: 'close' });
+        }}
+      />
+      <WorkoutRoundsSheet
+        visible={overviewOpen && tableMode}
+        title={overviewTitle(view.title, view.elapsedMs, timeLeft?.view.estimate.minutes ?? null)}
+        rows={overviewRows(rounds, shown, (id) => worksLines?.[id] ?? null)}
+        onPick={(index) => {
+          setOverviewOpen(false);
+          goToRound(index);
+        }}
+        onMenu={(sessionExerciseId) => {
+          // The exercise's own `⋯` (Swap, Superset, Remove…) once the sheet is gone (spec S3).
+          sheetDismiss.arm(() => {
+            openCardMenu(sessionExerciseId);
+          });
+          setOverviewOpen(false);
+        }}
+        onDismissed={sheetDismiss.dismissed}
+        onAddExercise={() => {
+          setOverviewOpen(false);
+          navigation.navigate('ExercisePicker', { sessionId: session.id });
+        }}
+        onClose={() => {
+          setOverviewOpen(false);
+        }}
+      />
       <GymSwitcherSheet
         visible={gymSheet !== 'closed'}
         gyms={gymSheet === 'closed' ? null : gymSheet}
@@ -2828,6 +3059,18 @@ export function WorkoutScreen() {
           setRenameOpen(false);
         }}
         onDismissed={renameAfter.dismissed}      />
+      <TimeFitSheet
+        view={fitOffer?.view ?? null}
+        busy={fitBusy}
+        onApply={applyTimeFit}
+        onClose={() => {
+          setFitOffer(null);
+        }}
+        onTimeLeft={() => {
+          setFitOffer(null);
+          setTimeLeftOpen(true);
+        }}
+      />
       <TimeLeftSheet
         visible={timeLeftOpen}
         view={timeLeft?.view ?? null}
@@ -3105,7 +3348,7 @@ const REST_CHOICES = [60, 90, 120, 150, 180, 240];
  */
 function RestAfterSheet({
   visible,
-  setNumber,
+  stepName,
   exerciseName,
   seconds,
   sourceLabel,
@@ -3113,7 +3356,8 @@ function RestAfterSheet({
   onApply,
 }: {
   visible: boolean;
-  setNumber: number;
+  /** `Set 3` / `Warm-up`: the table row's own name (wo-v3 reviews B1). */
+  stepName: string;
   exerciseName: string;
   seconds: number;
   sourceLabel: string;
@@ -3137,7 +3381,7 @@ function RestAfterSheet({
       <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>{exerciseName}</Eyebrow>
-          <AppText variant="title2" accessibilityRole="header">{`Rest after set ${String(setNumber)}`}</AppText>
+          <AppText variant="title2" accessibilityRole="header">{`Rest after ${stepName.toLowerCase()}`}</AppText>
         </View>
         {/* 1.10: the numeral on its own line (shrinks rather than clip at AX), the steps under it. */}
         <AppText variant="timerDisplay" align="center" numberOfLines={1} adjustsFontSizeToFit accessibilityLabel={`Rest ${formatDuration(value)}`}>

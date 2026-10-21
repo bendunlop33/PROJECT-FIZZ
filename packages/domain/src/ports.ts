@@ -2,11 +2,13 @@ import type {
   EquipmentInstance,
   Exercise,
   Gym,
+  PlanDayVariation,
   ProgressionRule,
   Routine,
   SessionAggregate,
   UserProfile,
 } from '@fizz/schemas';
+import type { PlanDayKeySplit } from './session/coach-plan';
 
 /**
  * Storage ports. The domain depends only on these interfaces; the SQLite
@@ -68,8 +70,26 @@ export interface SessionRepository {
    * from, re-checked inside the same transaction; a mismatch writes nothing
    * and returns `stale_inputs` (workout-overview §7, rule 5).
    */
-  save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence): Promise<SaveResult | FencedResult>;
+  save(aggregate: SessionAggregate, expectedRevision: number | null, fence?: WriteFence, alongside?: StartAlongside): Promise<SaveResult | FencedResult>;
 }
+
+/**
+ * (Workout builder v3 §2.8, §4.6) Writes that land in the new session's own
+ * transaction, under its op ID: `Update <day> in your plan` (the template, or
+ * the open variation) and `Save as new variation`. Any refused write (a
+ * version moved, the variation limit, a taken label) writes nothing at all,
+ * the session included, and the result says which (`alongside`).
+ */
+export interface StartAlongside {
+  opId: string;
+  /** The plan-day template's new version, at the version the builder opened (rule 5). */
+  template?: { next: Routine; expectedVersion: number } & PlanDayKeySplit;
+  /** A variation write: new (`expectedVersion` null) or an update at its version. */
+  variation?: { next: PlanDayVariation; expectedVersion: number | null };
+}
+
+/** Why an alongside write was refused (nothing was written). */
+export type AlongsideRefusal = 'template_changed' | 'variation_changed' | 'variation_limit' | 'variation_label';
 
 /** Tables a `WriteFence` can pin a row of. `sessions` pins the aggregate `revision`; `pre_start_drafts` pins an open draft (ADR 0022). */
 export type FenceTable = 'routines' | 'sessions' | 'check_ins' | 'profiles' | 'pre_start_drafts' | 'workout_drafts';
@@ -90,7 +110,7 @@ export interface WriteFence {
 }
 
 /** A fenced write found an input changed since it was planned; nothing was written. */
-export type FencedResult = { ok: false; error: 'stale_inputs' };
+export type FencedResult = { ok: false; error: 'stale_inputs'; alongside?: AlongsideRefusal };
 
 export interface Repositories {
   profiles: ProfileRepository;

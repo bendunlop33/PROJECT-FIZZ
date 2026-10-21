@@ -21,6 +21,17 @@ export function popToTabs(params: NavigatorScreenParams<TabParams>): PopToTabsAc
   return { type: 'POP_TO', payload: { name: 'Tabs', params } };
 }
 
+/**
+ * Between the builder's two pages (workout-builder-v3 §2.2–§2.3; review
+ * b3-builder B7). `POP_TO` goes back to that page if it is under this one,
+ * else this page becomes it: the builder is always one page on the stack,
+ * so `Close` (a plain back) leaves it, and no older Set up is left under a
+ * later Your workout to send an old version.
+ */
+export function builderPage<N extends 'BuilderSetup' | 'BuilderWorkout'>(name: N, params: NonNullable<RootStackParams[N]>) {
+  return { type: 'POP_TO', payload: { name, params } } as const;
+}
+
 /** Back to Today, optionally with a one-off toast. */
 export function popToToday(toast?: string): PopToTabsAction {
   return popToTabs(toast === undefined ? { screen: 'Today' } : { screen: 'Today', params: { toast } });

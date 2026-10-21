@@ -1,5 +1,6 @@
 import {
   activeWeekPlan,
+  plusSetType,
   avoidLegDays,
   isLegDay,
   legRunNear,
@@ -224,9 +225,16 @@ import {
   type SetFit,
   type WorkoutOverview,
   type WriteFence,
+  type AlongsideRefusal,
+  type StartAlongside,
   type ResolvedPace,
   recentPaceSamples,
   timeLeftSheet,
+  timeFitOffer,
+  fitTodayCommand,
+  builderInfoOf,
+  type BuilderExerciseInfo,
+  type TimeFitOffer,
   type ActiveSetView,
   type WorkoutTableView,
   type SetEditView,
@@ -288,6 +296,7 @@ import {
   shownRationale,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
+import { worksLine } from '@fizz/schemas';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
 import type {
   GymStation,
@@ -312,6 +321,7 @@ import type {
   RestSetting,
   SessionAggregate,
   SessionCheckIn,
+  SessionPlanDay,
   SessionCommand,
   SetExclusion,
   SetType,
@@ -432,7 +442,7 @@ export type WorkoutStartOutcome =
   | (Extract<StartOutcome, { ok: true }> & { notice?: string })
   | Extract<StartOutcome, { ok: false }>
   /** The overview's `expectedPreviewKey` no longer matches: nothing was created (workout-overview §7, rule 5). */
-  | { ok: false; error: { code: 'stale_preview'; message: string } };
+  | { ok: false; error: { code: 'stale_preview'; message: string; /** (Builder v3) The template or variation write was refused; nothing was created. */ alongside?: AlongsideRefusal } };
 /** How far back to look for Ben's last 5 finished workouts (pace for `Time left`). Older ones fall back to `Default`. */
 const RECENT_PACE_WINDOW_MS = 90 * 86_400_000;
 
@@ -563,6 +573,12 @@ export interface ActiveWorkoutData {
   exerciseInfo?: Readonly<Record<string, RuleExerciseInfo | null>>;
   /** Exercise IDs the catalogue lists as bodyweight: `+ Weight` and added-weight steps. */
   bodyweightExercises?: ReadonlySet<string>;
+  /** The builder's `works` line per exercise ID (`Chest, front delts, triceps`; workout-table-v3 §2); null when none. */
+  worksLines?: Readonly<Record<string, string | null>>;
+  /** The builder's group and role per exercise ID, for the `+N min` fit (workout-table-v3 §5); null when the builder has none. */
+  builderInfo?: Readonly<Record<string, BuilderExerciseInfo | null>>;
+  /** The main lifts of the builder or plan draft this workout started from (`session.coachDraft`), for the `+N min` fit. */
+  mainExerciseIds?: ReadonlySet<string>;
 }
 
 /**
@@ -973,6 +989,12 @@ export interface WorkoutStartRequest {
    * when this is given and the live draft differs, nothing is created.
    */
   draft?: { id: string; expectedVersion: number } | null;
+  /**
+   * (Workout builder v3 §2.8, §4.2, §4.6) A builder draft's Start, with `coachDraftOf`: the draft's
+   * version the page showed (a moved one creates nothing), the plan day it is started as, and the
+   * template or variation write that lands in the same transaction.
+   */
+  builder?: { expectedVersion: number; planDay?: SessionPlanDay; alongside?: StartAlongside };
 }
 
 /** The overview's key check (§7): a retry of a Start that landed, out of date, or fresh with what to re-check in the write. */
@@ -1616,7 +1638,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   async function coachDraftStart(
     p: UserProfile,
     draft: WorkoutDraft,
-    req: { gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; gymEquipment?: readonly EquipmentInstance[]; newId?: () => string; fence?: WriteFence; todayEdits?: TodayEditsInput },
+    req: { gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; gymEquipment?: readonly EquipmentInstance[]; newId?: () => string; fence?: WriteFence; todayEdits?: TodayEditsInput; planDay?: SessionPlanDay; alongside?: StartAlongside },
   ) {
     const v = currentDraftVersion(draft);
     const exercises = new Map<string, Exercise>();
@@ -1644,6 +1666,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       ...(req.gymEquipment ? { gymEquipment: req.gymEquipment } : {}),
       ...(req.fence ? { fence: req.fence } : {}),
       ...(req.todayEdits ? { today: req.todayEdits } : {}),
+      ...(req.planDay ? { planDay: req.planDay } : {}),
+      ...(req.alongside ? { alongside: req.alongside } : {}),
     });
   }
 
@@ -2253,6 +2277,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return d !== null && draftIsLive(d, ctx.now().utc) ? d : null;
   }
 
+  /** The `main` slots of the draft version a workout started from (none when it didn't, or the draft can't be read). */
+  async function draftMains(ownerId: string, aggregate: SessionAggregate): Promise<ReadonlySet<string>> {
+    const ref = aggregate.session.coachDraft;
+    if (ref === undefined) return new Set();
+    const d = await ctx.store().repos.workoutDrafts.get(ref.draftId).catch(() => null);
+    if (d === null || d.ownerId !== ownerId) return new Set();
+    const v = d.versions.find((x) => x.n === ref.version);
+    return new Set((v?.plan.slots ?? []).filter((x) => x.main).map((x) => x.exerciseId));
+  }
+
   /** An exercise by ID: Ben's list first, then the bundled catalogue's row (Coaching knowledge). */
   async function exerciseById(exerciseId: string): Promise<Exercise | null> {
     return (await repos().exercises.get(exerciseId).catch(() => null)) ?? ctx.catalogueExercises?.().find((e) => e.id === exerciseId) ?? null;
@@ -2623,12 +2657,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (resolvedD === null || resolvedD.kind !== 'coach_draft') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
         const t = await todayFor(p, resolvedD, req.gymId, undefined, today);
         if (draftMismatch(req.draft, t.draft)) return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
-        const fenced = withDraftFence(fence, t.draft);
-        const r = await coachDraftStart(p, resolvedD.draft, { gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, todayEdits: t.input, ...(fenced ? { fence: fenced } : {}) });
+        const draftFence = withDraftFence(fence, t.draft);
+        // A builder draft's version is pinned in the write: an edit since the page loaded creates nothing (rule 5).
+        const b = req.builder;
+        const fenced: WriteFence | undefined = b === undefined ? draftFence : { rows: [...(draftFence?.rows ?? []), { table: 'workout_drafts', id: resolvedD.draft.id, version: b.expectedVersion }], sets: draftFence?.sets ?? [] };
+        const r = await coachDraftStart(p, resolvedD.draft, { gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, todayEdits: t.input, ...(fenced ? { fence: fenced } : {}), ...(b?.planDay === undefined ? {} : { planDay: b.planDay }), ...(b?.alongside === undefined ? {} : { alongside: b.alongside }) });
         if (!r.ok) {
           // Two taps raced and the other one's start landed (OV5): this tap is its duplicate.
           const landed = await repos().sessions.findByStartOperation(p.id, req.opId).catch(() => null);
           if (landed) return { ok: true, aggregate: landed, warnings: [], duplicate: true };
+          if (r.alongside !== undefined) return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW, alongside: r.alongside } };
           const e = r.error;
           if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
           if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
@@ -2823,14 +2861,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
       const exerciseInfo: Record<string, RuleExerciseInfo | null> = {};
       const bodyweightExercises = new Set<string>();
+      const worksLines: Record<string, string | null> = {};
+      const builderInfo: Record<string, BuilderExerciseInfo | null> = {};
       for (const id of new Set(aggregate.exercises.map((e) => e.exerciseId))) {
         const e = await exerciseById(id).catch(() => null);
         exerciseInfo[id] = e;
+        worksLines[id] = e === null ? null : worksLine(e);
+        builderInfo[id] = e === null ? null : builderInfoOf(e);
         if (e?.defaultLoadConvention === 'bodyweight') bodyweightExercises.add(id);
       }
       return {
         exerciseInfo,
         bodyweightExercises,
+        worksLines,
+        builderInfo,
+        mainExerciseIds: await draftMains(p.id, aggregate),
         aggregate,
         gymName: gym?.name ?? null,
         gymNames: await gymNamesOf(p.id),
@@ -2912,6 +2957,23 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     timeLeft(data: ActiveWorkoutData, nowMs: number): { view: TimeLeftView; sheet: TimeLeftSheetView } | null {
       const view = buildTimeLeftView(data.aggregate, nowMs, data.recentPace);
       return view === null ? null : { view, sheet: timeLeftSheet(view.estimate, data.aggregate, nowMs, data.aggregate.session.startedAt.tz) };
+    },
+
+    /**
+     * `+N min` (workout-table-v3 §5): the builder's fit ladder over the sets
+     * left, as one offer. Nothing changes until `applyTimeFit` (rule 3).
+     */
+    timeFit(data: ActiveWorkoutData, overByMinutes: number): TimeFitOffer | null {
+      const info = data.builderInfo ?? {};
+      const o = timeFitOffer({ aggregate: data.aggregate, overByMinutes, info: (id) => info[id] ?? null, painFlagged: new Set(data.painFlagged), ...(data.mainExerciseIds === undefined ? {} : { mainExerciseIds: data.mainExerciseIds }) });
+      return o.status === 'none' ? null : o;
+    },
+
+    /** Ben's Apply on the `+N min` offer: one `fit_today_to_time`, refused once the workout moved on (rule 5). Undo is `undo_op` on `opId`. */
+    applyTimeFit: async (req: { sessionId: string; offer: TimeFitOffer; opId: string }): Promise<CommandOutcome> => {
+      const cmd = fitTodayCommand(req.offer, { opId: req.opId, at: ctx.now() });
+      if (cmd === null) return { ok: false, error: { code: 'invalid_values', message: 'Nothing to change.' } };
+      return ctx.afterCommand(await domain().dispatch(req.sessionId, cmd));
     },
 
     /** `Finish by` (§2.15.3): today only; null = `Not set`. Changes only the line's wording. */
@@ -3092,7 +3154,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           newId: ctx.newId,
         });
       }
-      const cmd: SessionCommand = { type: 'add_set', at: ctx.now(), opId: req.opId, sessionExerciseId: req.sessionExerciseId, newSetId: req.newSetId, setType: null, ...(req.afterSetId !== undefined ? { afterSetId: req.afterSetId } : {}), ...(continuation ? { continuation } : {}) };
+      // `＋ Set` copies the last working set, never a drop (wo-v3 logic S5); `Insert set after` copies the set it follows.
+      const setType = req.afterSetId === undefined ? plusSetType(aggregate.sets, req.sessionExerciseId) : null;
+      const cmd: SessionCommand = { type: 'add_set', at: ctx.now(), opId: req.opId, sessionExerciseId: req.sessionExerciseId, newSetId: req.newSetId, setType, ...(req.afterSetId !== undefined ? { afterSetId: req.afterSetId } : {}), ...(continuation ? { continuation } : {}) };
       return ctx.afterCommand(await domain().dispatch(req.sessionId, cmd));
     },
 
@@ -5270,7 +5334,29 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview, sessionTypes, coachDrafts };
+  /**
+   * (Today v2, workout-builder-v3 §2.0) What `todaySession` reads through this service, so Today's card plans from
+   * the same history, gym mapping, pain and Up next as Start (local reads only; never an AI call).
+   */
+  const todayPort = {
+    historyFor,
+    substituteCtx: (p: UserProfile, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, exerciseIds: Iterable<string>) => substituteCtx(p, gymId, gymEquipment, null, exerciseIds),
+    /** Up next's template (the applied plan's due day, with the run rule and a pin), or null. */
+    async upNextRoutineId(gymId: string, gymEquipment?: readonly EquipmentInstance[]): Promise<string | null> {
+      const p = await ctx.profile();
+      if (!p) return null;
+      const up = await resolveUpNext(p, gymId, gymEquipment).catch(() => null);
+      return up?.kind === 'routine' ? up.routine.id : null;
+    },
+    plannedDay: (routineId: string, gymId: string) => routines.planned(routineId, gymId),
+    /** The plan day Up next would name after `routineId` is done today (a prediction; saves nothing). */
+    async nextAfter(gymId: string, routineId: string): Promise<string | null> {
+      const r = await next.planAhead(gymId, routineId, 1).catch(() => null);
+      return r?.days[0]?.routineId ?? null;
+    },
+  };
+
+  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview, sessionTypes, coachDrafts, todayPort };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;

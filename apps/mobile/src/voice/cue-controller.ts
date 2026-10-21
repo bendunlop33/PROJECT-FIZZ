@@ -49,7 +49,8 @@ export function planCues(state: SessionAggregate | null): PlannedCue[] {
     out.push({ key: `${base}:end`, kind: 'work_end', fireAtMs: deadline });
   }
   const t = state.restTimer;
-  if (t && (t.status === 'running' || t.status === 'expired')) {
+  // A rest an undo put back already finished has no end to announce (workout-table-v3 §3).
+  if (t && (t.status === 'running' || (t.status === 'expired' && t.restoredFinished !== true))) {
     const deadline = toMs(t.deadlineUtc);
     // Keyed by the deadline, not the version: the tick that saves the expiry bumps the version.
     const base = `rest:${t.id}:${t.deadlineUtc}`;
