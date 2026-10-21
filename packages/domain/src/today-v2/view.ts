@@ -27,6 +27,10 @@ export const TODAY_V2_COPY = {
   mix: '↻ Mix it up',
   todayOnly: 'today only',
   undo: 'Undo',
+  // The coach's pre-session offer (§6.1; rule 3: applied only on Ben's tap).
+  apply: 'Apply',
+  skip: 'Skip',
+  applied: 'Applied',
   start: 'Start',
   edit: 'Edit',
   buildYourOwn: 'Build your own',
@@ -194,7 +198,8 @@ export function todayFitLine(fit: BuilderFitResult, minutes: number, planMinutes
 // ---------------------------------------------------------------------------
 // Why? (facts from code; the coach's reason when it changed something)
 
-export type TodayReviewStatus = 'offline' | 'not_connected' | 'not_reviewed';
+/** `reviewed`: the coach looked (its line, an applied or skipped offer, or its own silence): no `Not reviewed` line. */
+export type TodayReviewStatus = 'reviewed' | 'offline' | 'not_connected' | 'not_reviewed';
 
 export interface TodayWhyInput {
   dayName: string;
@@ -241,7 +246,7 @@ export function todayWhy(input: TodayWhyInput): string[] {
   for (const h of input.held ?? []) lines.push(`${h}: pain flag · held`);
   lines.push(`Accessories ${input.accessories} · ${String(input.minutes)}${NBSP}min`);
   if (input.coachReason !== null) lines.push(`✦ Coach: ${input.coachReason}`);
-  else lines.push(input.review === 'offline' ? TODAY_V2_COPY.notReviewedOffline : input.review === 'not_connected' ? TODAY_V2_COPY.notReviewedNotConnected : TODAY_V2_COPY.notReviewed);
+  else if (input.review !== 'reviewed') lines.push(input.review === 'offline' ? TODAY_V2_COPY.notReviewedOffline : input.review === 'not_connected' ? TODAY_V2_COPY.notReviewedNotConnected : TODAY_V2_COPY.notReviewed);
   return lines;
 }
 
@@ -255,6 +260,8 @@ export interface TodayMixLine {
   another: string;
   /** No coach pick: least recently done (shown as not reviewed). */
   notReviewed: boolean;
+  /** The coach's one-line reason for its pick (after the number check), shown under the swap; null: code's pick. */
+  reason: string | null;
   accessibilityLabel: string;
 }
 
@@ -264,6 +271,7 @@ export function todayMixLine(mix: { fromExerciseId: string; toExerciseId: string
     text,
     another: TODAY_V2_COPY.another(mix.k, mix.n),
     notReviewed: coachReason === null,
+    reason: coachReason,
     accessibilityLabel: `${nameOf(mix.fromExerciseId)} swapped for ${nameOf(mix.toExerciseId)}, today only${coachReason === null ? ', not reviewed' : `. ${coachReason}`}`,
   };
 }

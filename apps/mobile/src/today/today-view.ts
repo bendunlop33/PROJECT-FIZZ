@@ -128,6 +128,8 @@ export function routeAvailable(states: readonly (NavStateLike | undefined)[], ro
 }
 
 export const TODAY_SCREEN_COPY = {
+  /** The coach's offer couldn't be applied (not out of date: the write failed). */
+  offerFailed: 'Not applied',
   builderUnavailable: 'The builder isn’t in this build yet.',
   started: 'A workout is already in progress.',
   notStarted: (m: string) => `Couldn’t start the workout: ${m}. Try again.`,

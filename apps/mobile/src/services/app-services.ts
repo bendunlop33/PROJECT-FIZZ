@@ -23,6 +23,7 @@ import {
   type DiscardConfirmation,
   type RecoveryResult,
   type StartOutcome,
+  DEFAULT_CHECK_IN_SETTINGS,
 } from '@fizz/domain';
 import { bundledCatalogue, toExerciseRow, type CatalogueEntry } from '@fizz/catalogue';
 import {
@@ -610,6 +611,10 @@ export function createAppServices(deps: AppServicesDeps) {
     typicalEquipment: () => typicalEquipment(),
     coachStatus: async () => (await coach.availability()).status,
     port: { ...loop.todayPort, start: (req) => loop.workout.start(req) },
+    // `builderCoach` is made below; these run only when Today asks (after startup).
+    nudge: (req) => builderCoach.preSessionNudge(req),
+    mixPick: (req) => builderCoach.mixPick(req),
+    offerAtOrBelow: () => DEFAULT_CHECK_IN_SETTINGS.offerAtOrBelow,
   });
 
   /** Gyms and equipment (Your data): the minimal gym editor. */

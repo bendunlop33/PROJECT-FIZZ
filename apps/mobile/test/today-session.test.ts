@@ -281,6 +281,44 @@ describe('Today (v2) session card from the plan', () => {
     expect(await s.builder.undoPlanChange(r.planChange, 'upd-undo')).toEqual({ ok: true });
   });
 
+  it('merge: the coach on Today — a low check-in gets the nudge’s line in Why? with code’s offer; Apply writes it to the card’s draft once and the day goes quiet; Mix it up takes the coach’s pick from code’s shortlist with its reason', async () => {
+    const { s } = await benWithPlan();
+    const ci = await s.checkIns.record({ checkInId: '0d7f6c2e-4b1a-4c3d-9e8f-1a2b3c4d5e6f', opId: 'ci-1', score: 1 });
+    expect(ci.ok).toBe(true);
+    model = new StepModel([() => toolCall('pre_session_nudge', { speak: true, line: 'Low check-in today, so a little less volume.' })]);
+    const data = await loaded(s);
+    const key = data.nextKey ?? '';
+    const r = await s.todaySession.review(data, sel(data, key), 'nudge-1');
+    if (r?.kind !== 'line' || r.offer === null) throw new Error(`no offer: ${JSON.stringify(r)}`);
+    const shown = s.todaySession.card(data, sel(data, key), { nudge: r });
+    expect(shown?.why.at(-1)).toBe('✦ Coach: Low check-in today, so a little less volume.');
+    expect(shown?.why).not.toContain('Not reviewed');
+    // Rule 3: nothing changed until Apply.
+    expect(shown?.title).not.toMatch(/edited/);
+    const applied = await s.builderCoach.applyNudge({ offer: r.offer, localDate: data.localDate, opId: 'apply-nudge' });
+    expect(applied.kind).toBe('applied');
+    const after = await loaded(s);
+    const eased = s.todaySession.card(after, sel(after, key));
+    expect(eased?.edited?.draftId).toBe(r.offer.proposal.draftId);
+    const calls = model.requests.length;
+    const again = await s.todaySession.review(after, sel(after, key), 'nudge-2');
+    expect(again?.kind).toBe('settled');
+    expect(model.requests.length).toBe(calls);
+
+    // Mix it up on another day: the coach's pick (from code's shortlist only) leads, with its reason.
+    const pull = dayKeyOf(after, 'Pull');
+    const base = s.todaySession.card(after, sel(after, pull, { minutes: 75, mix: 1 }));
+    if (base === null || base.mixShortlist.length < 2) throw new Error('no shortlist');
+    const want = base.mixShortlist[base.mixShortlist.length - 1] ?? '';
+    model = new StepModel([() => toolCall('mix_pick', { exerciseId: want, reason: 'A fresh angle for your back.' })]);
+    const pick = await s.todaySession.mixPick(after, base);
+    expect(pick).toMatchObject({ by: 'coach', exerciseId: want });
+    const mixed = s.todaySession.card(after, sel(after, pull, { minutes: 75, mix: 1 }), { mixPick: pick });
+    expect(mixed?.mix?.notReviewed).toBe(false);
+    expect(mixed?.mix?.reason).toBe('A fresh angle for your back.');
+    expect(mixed?.rows.some((row) => row.name === after.internal.nameOf(want))).toBe(true);
+  });
+
   it('Other sessions: Push from ⋯ starts with no plan day (Up next is credited by what was trained)', async () => {
     const { s, gymId } = await benWithPlan();
     const data = await loaded(s);

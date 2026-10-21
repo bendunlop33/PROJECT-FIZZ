@@ -99,10 +99,15 @@ const MIX: TodayMixFacts = {
   painFlagged: () => false,
 };
 
-function draft(controls: Partial<TodayControls> = {}, day = chestDay(), mix: TodayMixFacts = MIX) {
+function input(controls: Partial<TodayControls> = {}, day = chestDay(), mix: TodayMixFacts = MIX): TodayAssembleInput {
   const c = { ...defaultTodayControls(day, { goal: 'strength' }), ...controls };
-  const input: TodayAssembleInput = { day, controls: c, ctx: context(), pool: poolFor(day, c.mainLiftExerciseId), mix };
-  const d = assembleTodayDraft(input);
+  return { day, controls: c, ctx: context(), pool: poolFor(day, c.mainLiftExerciseId), mix };
+}
+
+function draft(controls: Partial<TodayControls> = {}, day = chestDay(), mix: TodayMixFacts = MIX) {
+  const i = input(controls, day, mix);
+  const c = i.controls;
+  const d = assembleTodayDraft(i);
   if (d === null) throw new Error('no draft');
   return { d, c };
 }
@@ -238,6 +243,13 @@ describe('↻ Mix it up (today only)', () => {
     expect(pained.mix?.toExerciseId).not.toBe(one.mix?.toExerciseId);
     // Undo: mix 0 is the code draft again.
     expect(ids(draft({ minutes: 90, mix: 0 }).d)).toEqual(ids(before));
+    // The coach's order (its pick first, from code's shortlist only) decides the first pick; anything else is ignored.
+    expect(before.mixFromExerciseId).toBe('cable_fly');
+    const coachFirst = [...before.mixShortlist].reverse();
+    const coached = assembleTodayDraft({ ...input({ minutes: 90, mix: 1 }), mixOrder: coachFirst });
+    expect(coached?.mix?.toExerciseId).toBe(coachFirst[0]);
+    const offList = assembleTodayDraft({ ...input({ minutes: 90, mix: 1 }), mixOrder: ['not-on-the-list', ...before.mixShortlist.slice(1)] });
+    expect(offList?.mix?.toExerciseId).toBe(one.mix?.toExerciseId);
   });
 });
 
@@ -300,6 +312,11 @@ describe('Why? (facts from code; honest review status)', () => {
     // A main lift this gym can't do, and a pain-held one: one short line each, before the controls line.
     const flagged = todayWhy({ dayName: 'Back', nextDayName: 'Back', other: false, last: null, mainTarget: null, goal: null, liftTarget: null, accessories: 'focused', minutes: 45, coachReason: null, review: 'not_reviewed', held: ['Barbell row'], missingHere: 'Deadlift' });
     expect(flagged.map(sp)).toEqual(['Plan: Back is next', 'Deadlift: not at this gym', 'Barbell row: pain flag · held', 'Accessories focused · 45 min', 'Not reviewed']);
+    // The coach looked (todayCoachWhy → `reviewed`): its reason when it changed something, else no review line.
+    const looked = todayWhy({ dayName: 'Chest', nextDayName: 'Chest', other: false, last: null, mainTarget: null, goal: null, liftTarget: null, accessories: 'focused', minutes: 60, coachReason: null, review: 'reviewed' });
+    expect(looked.map(sp)).toEqual(['Plan: Chest is next', 'Accessories focused · 60 min']);
+    const spoke = todayWhy({ dayName: 'Chest', nextDayName: 'Chest', other: false, last: null, mainTarget: null, goal: null, liftTarget: null, accessories: 'focused', minutes: 60, coachReason: 'Three hard sessions in a row', review: 'reviewed' });
+    expect(spoke.at(-1)).toBe('✦ Coach: Three hard sessions in a row');
   });
 });
 

@@ -24,33 +24,17 @@ const useAx = () => useWindowDimensions().fontScale >= AX_FONT_SCALE;
 // ---------------------------------------------------------------------------
 // Header: `Tuesday` · gym · `✦ Coach` + mic
 
-export function TodayHeader({ title, gym, coachLabel, onCoach, onMic }: { title: string; gym: ReactNode; coachLabel: string; onCoach: () => void; onMic: () => void }) {
+export function TodayHeader({ title, gym, coach }: { title: string; gym: ReactNode; /** The shared coach bar, compact (`✦ Coach` + mic, §2.0.2). */ coach: ReactNode }) {
   const theme = useTheme();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], flexWrap: 'wrap' }}>
-      <AppText variant="title1" accessibilityRole="header" style={{ flexShrink: 1 }}>
-        {title}
-      </AppText>
-      <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', justifyContent: 'flex-start' }}>{gym}</View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={coachLabel === TODAY_V2_COPY.offline ? `${TODAY_SCREEN_COPY.coach}, offline` : TODAY_SCREEN_COPY.coach}
-        onPress={onCoach}
-        style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, backgroundColor: theme.colors['bg.raised'], opacity: pressed ? 0.7 : 1 })}
-      >
-        <AppText variant="label" color="text.secondary">
-          ✦
+    <View style={{ gap: theme.space['2'] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], flexWrap: 'wrap' }}>
+        <AppText variant="title1" accessibilityRole="header" style={{ flexShrink: 1 }}>
+          {title}
         </AppText>
-        <AppText variant="label">{coachLabel}</AppText>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={TODAY_SCREEN_COPY.speak}
-        onPress={onMic}
-        style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill, backgroundColor: theme.colors['bg.raised'], opacity: pressed ? 0.7 : 1 })}
-      >
-        <Icon name="mic" size={18} color="text.primary" />
-      </Pressable>
+        <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', justifyContent: 'flex-start' }}>{gym}</View>
+      </View>
+      {coach}
     </View>
   );
 }
@@ -464,7 +448,10 @@ export function SessionCard({
   onStart,
   onEdit,
   onBackToPlan,
+  offer = null,
 }: {
+  /** (§6.1) The coach's pre-session line with code's offer (`Apply` / `Skip`, rule 3); null: nothing to say. */
+  offer?: { line: string; lines: string[]; busy: boolean; onApply: () => void; onSkip: () => void } | null;
   view: TodayCardView;
   open: boolean;
   why: boolean;
@@ -571,6 +558,11 @@ export function SessionCard({
             <View style={{ gap: theme.space['1'] }}>
               <View accessible accessibilityLabel={view.mix.accessibilityLabel}>
                 <AppText variant="callout">{view.mix.text}</AppText>
+                {view.mix.reason !== null ? (
+                  <AppText variant="callout" color="text.secondary" style={{ fontSize: 13 }}>
+                    {view.mix.reason}
+                  </AppText>
+                ) : null}
                 {view.mix.notReviewed ? (
                   <AppText variant="callout" color="text.tertiary" style={{ fontSize: 13 }}>
                     {TODAY_V2_COPY.notReviewed}
@@ -585,6 +577,23 @@ export function SessionCard({
           ) : view.mixAvailable ? (
             <View style={{ alignSelf: 'flex-start' }}>
               <TextButton label={TODAY_V2_COPY.mix} tone="secondary" accessibilityLabel="Mix it up, swap one accessory for today" onPress={() => { dispatch({ kind: 'mix' }); }} />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {offer !== null ? (
+        <View style={{ gap: theme.space['1'] }} accessibilityLabel={[offer.line, ...offer.lines].join('. ')}>
+          <AppText variant="callout">{offer.line}</AppText>
+          {offer.lines.map((l) => (
+            <AppText key={l} variant="callout" color="text.secondary" numeric>
+              {l}
+            </AppText>
+          ))}
+          {offer.lines.length > 0 ? (
+            <View style={{ flexDirection: 'row', gap: theme.space['4'] }}>
+              <TextButton label={TODAY_V2_COPY.apply} disabled={offer.busy} onPress={offer.onApply} />
+              <TextButton label={TODAY_V2_COPY.skip} tone="secondary" disabled={offer.busy} onPress={offer.onSkip} />
             </View>
           ) : null}
         </View>

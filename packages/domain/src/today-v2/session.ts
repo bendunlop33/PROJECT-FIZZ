@@ -94,6 +94,11 @@ export interface TodayAssembleInput {
   /** Per group, best first: the template's, then Ben's history, then the catalogue (here, not pain-flagged). */
   pool: BuilderPool;
   mix: TodayMixFacts;
+  /**
+   * (§2.0.2 Mix it up rule 3) The coach's order of the shortlist (its pick first, `mixPick`); used only when it
+   * is exactly code's shortlist, else code's order (least recently done first) stands.
+   */
+  mixOrder?: readonly string[];
 }
 
 export interface TodayMix {
@@ -119,6 +124,9 @@ export interface TodayDraft {
   mix: TodayMix | null;
   /** How many fresh options there are for `↻ Mix it up` (0: the row is hidden). */
   mixOptions: number;
+  /** Code's shortlist for `↻ Mix it up` (least recently done first) and the accessory it swaps out: the coach picks from it. */
+  mixShortlist: string[];
+  mixFromExerciseId: string | null;
   advice: BuilderAdvice[];
   mainGroup: BuilderGroupName | null;
 }
@@ -169,6 +177,9 @@ interface Built {
   workout: BuilderWorkout;
   mix: TodayMix | null;
   mixOptions: number;
+  /** Code's shortlist and the accessory it replaces (for the coach's pick); empty / null when none. */
+  mixShortlist: string[];
+  mixFromExerciseId: string | null;
 }
 
 /** The groups to build: the template's, with Abs in when it is on (and kept for `absOff` when the plan has them). */
@@ -198,7 +209,7 @@ function build(input: TodayAssembleInput, t: TodayTemplate, c: TodayControls, ab
 function applyMix(workout: BuilderWorkout, input: TodayAssembleInput, c: TodayControls): Built {
   const { ctx, mix } = input;
   const target = mixItUpTarget({ workout, info: ctx.info, recentCountOnDay: mix.recentCountOnDay, varied: c.accessories === 'varied' });
-  if (target === null) return { workout, mix: null, mixOptions: 0 };
+  if (target === null) return { workout, mix: null, mixOptions: 0, mixShortlist: [], mixFromExerciseId: null };
   const group = infoOrDefault(ctx.info, target.exerciseId).group;
   const inWorkout = new Set(workout.blocks.flatMap((b) => b.slots.map((s) => s.exerciseId)));
   const shortlist = mixItUpShortlist({
@@ -211,13 +222,16 @@ function applyMix(workout: BuilderWorkout, input: TodayAssembleInput, c: TodayCo
     inWorkout,
     lastDoneMs: mix.lastDoneMs,
   });
-  if (c.mix <= 0 || shortlist.length === 0) return { workout, mix: null, mixOptions: shortlist.length };
-  const k = ((Math.round(c.mix) - 1) % shortlist.length) + 1;
-  const pick = shortlist[k - 1];
-  if (pick === undefined) return { workout, mix: null, mixOptions: shortlist.length };
+  const facts = { mixShortlist: shortlist, mixFromExerciseId: target.exerciseId };
+  if (c.mix <= 0 || shortlist.length === 0) return { workout, mix: null, mixOptions: shortlist.length, ...facts };
+  const o = input.mixOrder;
+  const order = o !== undefined && o.length === shortlist.length && shortlist.every((id) => o.includes(id)) ? o : shortlist;
+  const k = ((Math.round(c.mix) - 1) % order.length) + 1;
+  const pick = order[k - 1];
+  if (pick === undefined) return { workout, mix: null, mixOptions: shortlist.length, ...facts };
   const slot = makeSlot(pick, { main: false, workingSets: workingCount(target) }, ctx);
   const blocks = workout.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === target.key ? slot : s)) }));
-  return { workout: { ...workout, blocks }, mix: { slotKey: slot.key, fromExerciseId: target.exerciseId, toExerciseId: pick, k, n: shortlist.length }, mixOptions: shortlist.length };
+  return { workout: { ...workout, blocks }, mix: { slotKey: slot.key, fromExerciseId: target.exerciseId, toExerciseId: pick, k, n: shortlist.length }, mixOptions: shortlist.length, ...facts };
 }
 
 /**
@@ -259,6 +273,8 @@ export function assembleTodayDraft(input: TodayAssembleInput): TodayDraft | null
     planBufferMin,
     mix: built.mix !== null && fit.workout.blocks.some((b) => b.slots.some((s) => s.key === built.mix?.slotKey)) ? built.mix : null,
     mixOptions: built.mixOptions,
+    mixShortlist: built.mixShortlist,
+    mixFromExerciseId: built.mixFromExerciseId,
     advice: adviseBuilder(fit.workout.blocks, input.ctx.info),
     mainGroup,
   };

@@ -28,6 +28,12 @@ import { FinishSheet } from './workout/FinishSheet';
 import { GymChip } from './workout/GymSwitch';
 import { DayControl, DaySheet, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
 import { PromptSheet, promptView } from './builder/BuilderSheets';
+import { builderApplyOpId, type BuilderCoachReach, type MixPick } from '@fizz/coach';
+import { setTodaySetupDay } from '../builder/coach-ports';
+import type { NudgeResult } from '../coach/builder-coach-service';
+import { nudgeCardView } from '../coach/builder-coach-view';
+import { CoachAskBar } from '../ui/coach-ask-bar';
+import { createOnDeviceSpeech } from '../voice/on-device-speech';
 import type { StartChoice, StartPrompt } from '../builder/builder-service';
 
 /**
@@ -97,6 +103,13 @@ export function TodayScreen() {
   const [listAfter] = useState(() => createAfterDismiss());
 
   const [selection, setSelection] = useState<TodayCardState | null>(null);
+  // The builder coach (§2.0.5, §6.1): its reach for the bar, the card's pre-session nudge, Mix it up picks.
+  const [reach, setReach] = useState<BuilderCoachReach>('not_connected');
+  const [speech] = useState(createOnDeviceSpeech);
+  const [nudge, setNudge] = useState<{ key: string; result: NudgeResult } | null>(null);
+  const [nudgeBusy, setNudgeBusy] = useState(false);
+  const nudgeAsked = useRef<string | null>(null);
+  const [mixPicks, setMixPicks] = useState<ReadonlyMap<string, MixPick | null>>(new Map());
   // The builder's §2.8 prompt for an edited card's Start.
   const [prompt, setPrompt] = useState<{ prompt: StartPrompt; draftId: string; version: number } | null>(null);
   const [promptBusy, setPromptBusy] = useState(false);
@@ -127,7 +140,105 @@ export function TodayScreen() {
     setSelection((cur) => todayCardReducer(cur ?? { dayKey: key, controls: initial, open: false, why: false }, { kind: 'day', dayKey: key, initial }));
   };
 
-  const view = useMemo(() => (session === null || selection === null ? null : services.todaySession.card(session, { dayKey: selection.dayKey, controls: selection.controls })), [services, session, selection]);
+  const cardKey = selection === null ? null : `${selection.dayKey}|${selection.controls.mainLiftExerciseId ?? '-'}`;
+  const baseView = useMemo(() => (session === null || selection === null ? null : services.todaySession.card(session, { dayKey: selection.dayKey, controls: selection.controls })), [services, session, selection]);
+  const mixKey = baseView === null || cardKey === null ? null : `${cardKey}|${baseView.mixFromExerciseId ?? '-'}|${baseView.mixShortlist.join(',')}`;
+  const coachIn = useMemo(() => ({ nudge: nudge !== null && nudge.key === cardKey ? nudge.result : null, mixPick: mixKey === null ? null : (mixPicks.get(mixKey) ?? null) }), [nudge, cardKey, mixKey, mixPicks]);
+  const view = useMemo(() => (session === null || selection === null ? null : services.todaySession.card(session, { dayKey: selection.dayKey, controls: selection.controls }, coachIn)), [services, session, selection, coachIn]);
+
+  // The bar's status word, and Set up words asked here start from the card's day.
+  useEffect(() => {
+    void services.builderCoach
+      .status()
+      .catch((): BuilderCoachReach => 'not_connected')
+      .then(setReach);
+  }, [services, session]);
+  const cardDayId = view === null || session === null ? null : ([...session.days, ...session.others].find((d) => d.key === view.dayKey)?.splitDayId ?? null);
+  useEffect(() => {
+    setTodaySetupDay(cardDayId);
+  }, [cardDayId]);
+
+  // The pre-session nudge (§6.1): once per day and plan day, on the plan's next day as it opens. Silent unless a clear
+  // real signal; never applied without Apply (rule 3). The card's draft is saved first (the coach reviews that draft).
+  useEffect(() => {
+    // Only with the coach reachable: offline the card already says `Not reviewed · Offline`, and nothing is written.
+    if (reach !== 'ok' || session === null || selection === null || session.doneToday || session.nextKey === null || selection.dayKey !== session.nextKey || cardKey === null) return;
+    const key = `${session.localDate}|${cardKey}|${session.gymId ?? '-'}`;
+    if (nudgeAsked.current === key) return;
+    nudgeAsked.current = key;
+    let alive = true;
+    void services.todaySession.review(session, { dayKey: selection.dayKey, controls: session.initial[selection.dayKey] ?? selection.controls }, `nudge:${key}`).then((r) => {
+      if (alive && r !== null) setNudge({ key: cardKey, result: r });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [services, session, selection, cardKey, reach]);
+
+  // `↻ Mix it up` (rule 3): the coach picks from code's shortlist (with its reason) once Ben asks for a swap.
+  useEffect(() => {
+    if (session === null || baseView === null || mixKey === null || (selection?.controls.mix ?? 0) <= 0 || mixPicks.has(mixKey) || baseView.mixShortlist.length === 0) return;
+    let alive = true;
+    setMixPicks((m) => new Map(m).set(mixKey, null));
+    void services.todaySession.mixPick(session, baseView).then((pick) => {
+      if (alive && pick !== null) setMixPicks((m) => new Map(m).set(mixKey, pick));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [services, session, baseView, mixKey, selection, mixPicks]);
+
+  /** Words from Today's bar: a set-up request opens Set up filled (`fill_setup`, Undo there); anything else, the coach sheet. */
+  async function askToday(words: string) {
+    const r = await services.builderCoach.askSetup({ words, opId: newUuid(), from: 'today' });
+    if (r.kind === 'filled') {
+      navigation.navigate('BuilderSetup', cardDayId === null ? undefined : { dayId: cardDayId });
+      return;
+    }
+    if (r.kind === 'reply') {
+      setToast({ text: r.text });
+      return;
+    }
+    navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true });
+  }
+
+  /** The nudge's offer: Apply writes it to the card's draft (Undo puts it back); Skip leaves it. Both quiet the card today. */
+  async function onOffer(apply: boolean) {
+    const n = nudge;
+    if (n === null || session === null || n.result.kind !== 'line' || n.result.offer === null || nudgeBusy) return;
+    const offer = n.result.offer;
+    setNudgeBusy(true);
+    try {
+      if (!apply) {
+        await services.builderCoach.skipNudge({ localDate: session.localDate, opId: newUuid() });
+        setNudge({ key: n.key, result: { kind: 'settled', line: n.result.line, outcome: 'skipped' } });
+        return;
+      }
+      const r = await services.builderCoach.applyNudge({ offer, localDate: session.localDate, opId: newUuid() });
+      if (r.kind !== 'applied') {
+        setToast({ text: r.kind === 'out_of_date' ? r.line : TODAY_SCREEN_COPY.offerFailed });
+        return;
+      }
+      setNudge({ key: n.key, result: { kind: 'settled', line: n.result.line, outcome: 'applied' } });
+      changed();
+      reloadSession();
+      const draftId = offer.proposal.draftId;
+      setToast({
+        text: TODAY_V2_COPY.applied,
+        action: TODAY_V2_COPY.undo,
+        onAction: () => {
+          setToast(null);
+          void services.builder.undo(draftId, builderApplyOpId(offer.proposal.id), newUuid()).then(() => {
+            changed();
+            reloadSession();
+          });
+        },
+      });
+    } finally {
+      setNudgeBusy(false);
+    }
+  }
+  const offerCard = nudge !== null && nudge.key === cardKey ? nudgeCardView(nudge.result) : null;
 
   // `Chest moves to next session` when another day is picked (a prediction; nothing is written until Start).
   const [moved, setMoved] = useState<string | null>(null);
@@ -677,6 +788,7 @@ export function TodayScreen() {
             moved={moved}
             busy={starting}
             dispatch={act}
+            offer={offerCard === null ? null : { line: offerCard.line, lines: offerCard.offer?.lines ?? [], busy: nudgeBusy, onApply: () => void onOffer(true), onSkip: () => void onOffer(false) }}
             onStart={() => void startCard()}
             onEdit={() => void editCard()}
             onBackToPlan={() => void backToPlan()}
@@ -704,14 +816,21 @@ export function TodayScreen() {
               }}
             />
           }
-          coachLabel={session?.coachLabel ?? TODAY_V2_COPY.coach}
-          onCoach={() => {
-            navigation.navigate('Coach', { entry: { kind: 'today' } });
-          }}
-          onMic={() => {
-            // MERGE NOTE: the coach stream adds direct voice (listening at once); until then the sheet opens with its field.
-            navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true });
-          }}
+          coach={
+            <CoachAskBar
+              page="today"
+              compact
+              reach={reach}
+              speech={speech}
+              onOpen={(heard) => {
+                if (heard !== undefined && heard.trim() !== '') {
+                  void askToday(heard.trim());
+                  return;
+                }
+                navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true });
+              }}
+            />
+          }
         />
         {strip.length > 0 ? <WeekStrip cells={strip} onDay={setDaySheet} /> : null}
 

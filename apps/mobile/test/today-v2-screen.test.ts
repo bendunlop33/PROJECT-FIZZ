@@ -127,11 +127,17 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     }
   });
 
-  it('honest AI status: no canned coach text; the coach bar says Offline; the mic opens the coach sheet', () => {
+  it('honest AI status: no canned coach text; the shared coach bar shows the builder coach’s reach; heard words go to askSetup, the bar opens the coach sheet', () => {
     expect(screen).not.toMatch(/✦ Coach:/);
-    expect(parts).toContain('TODAY_V2_COPY.offline');
+    // The shared bar (its status word is `BUILDER_STATUS_WORD[reach]`: `Offline`, `Coach not connected`).
+    expect(screen).toContain('<CoachAskBar');
+    expect(screen).toMatch(/services\.builderCoach\s*\.status\(\)/);
+    expect(screen).toContain("services.builderCoach.askSetup({ words, opId: newUuid(), from: 'today' })");
     expect(screen).toContain("navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true })");
     expect(screen).not.toContain('AskPill');
+    // The nudge's offer is applied only through applyNudge / skipNudge (rule 3; the day is marked done).
+    expect(screen).toContain('services.builderCoach.applyNudge(');
+    expect(screen).toContain('services.builderCoach.skipNudge(');
   });
 
   it('superseded today.md parts are gone (Up next card, Recent, session picker); Resume, stale, check-in and pain lines stay', () => {

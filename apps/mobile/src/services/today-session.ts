@@ -85,6 +85,9 @@ import {
   type ZonedTimestamp,
 } from '@fizz/schemas';
 
+import { createBuilderLoadGuard, type MixPick, type NudgeSession, type PreSessionInput } from '@fizz/coach';
+import type { BuilderCoachWorld, NudgeResult } from '../coach/builder-coach-service';
+import { mixCoachReason, todayCoachWhy } from '../coach/builder-coach-view';
 import type { CoachStatus } from '../coach/coach-service';
 import type { WorkoutStartOutcome, WorkoutStartRequest } from './workout-services';
 
@@ -133,6 +136,18 @@ export interface TodaySessionDeps {
   typicalEquipment: () => Promise<readonly EquipmentInstance[] | null>;
   coachStatus: () => Promise<CoachStatus>;
   port: TodaySessionPort;
+  /** (§6.1) The builder coach's pre-session nudge on the card's draft; absent: not in this build's wiring. */
+  nudge?: (req: { draftId: string; splitDayId: string | null; input: PreSessionInput; opId: string }) => Promise<NudgeResult>;
+  /** (§2.0.2 Mix it up rule 3) The coach's pick from code's shortlist; absent: code's pick only. */
+  mixPick?: (req: { fromExerciseId: string; shortlist: readonly string[]; lastDone: (exerciseId: string) => string | null; world: BuilderCoachWorld }) => Promise<MixPick | null>;
+  /** Check-in settings' `offerAtOrBelow` (the nudge's low check-in signal); null: never. */
+  offerAtOrBelow?: () => number | null;
+}
+
+/** What the coach said about Today's card (null fields: nothing yet, or not asked). */
+export interface TodayCoachInputs {
+  nudge?: NudgeResult | null;
+  mixPick?: MixPick | null;
 }
 
 /** Per group, how many catalogue exercises join Ben's own in a pool (the rest are reachable in the builder). */
@@ -177,6 +192,8 @@ export interface TodaySessionData {
   strip: { workouts: { sessionId: string; localDate: string; title: string }[]; activities: Activity[]; firstUse: boolean };
   /** Done today (a second session can still be picked). */
   doneToday: boolean;
+  /** (§6.1) The pre-session nudge's real signals (finished sessions, today's check-in, logged activities). */
+  nudgeInput: PreSessionInput;
   /** Compute context (pure functions over what `load` read). */
   internal: TodayInternal;
 }
@@ -197,6 +214,10 @@ interface TodayInternal {
   here: (id: string) => boolean;
   /** An active pain flag covers it (rule 9). */
   pained: (id: string) => boolean;
+  /** Ben's saved memories (his words; Your data), for the coach's Mix it up pick. */
+  memories: readonly string[];
+  /** `13 Oct`: when an exercise was last done, else null. */
+  lastDoneText: (id: string) => string | null;
 }
 
 export interface TodaySelection {
@@ -229,6 +250,9 @@ export interface TodayCardView {
   mix: TodayMixLine | null;
   /** `↻ Mix it up` is offered (there's a fresh option). */
   mixAvailable: boolean;
+  /** Code's shortlist and the accessory it swaps (the coach picks from these). */
+  mixShortlist: string[];
+  mixFromExerciseId: string | null;
   startable: boolean;
   /** For `commit` (the code draft; null when edited). */
   draft: TodayDraft | null;
@@ -496,6 +520,34 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const stripWorkouts = newest
       .map((a) => ({ sessionId: a.session.id, localDate: localDateOf(toMs(a.session.startedAt.utc), tz), title: titleOf(a.session.routineName) }))
       .filter((w) => w.localDate >= addDays(today, -3) && w.localDate <= today);
+    // The nudge's real signals (rule 6): finished sessions in the window, today's check-in, what Ben logged.
+    const recentForNudge: NudgeSession[] = newest.slice(0, 10).map((a) => ({
+      sessionId: a.session.id,
+      localDate: localDateOf(toMs(a.session.startedAt.utc), a.session.startedAt.tz),
+      exercises: a.exercises
+        .filter((e) => e.removed === undefined)
+        .map((e) => ({
+          exerciseId: e.exerciseId,
+          sets: a.sets
+            .filter((x) => x.sessionExerciseId === e.id && x.status === 'completed')
+            .map((x) => ({ working: x.setType !== 'warmup', reps: x.actual?.reps ?? null, targetRepsMin: x.planned.reps?.min ?? null, rpe: x.actual?.rpe ?? null, targetRpe: x.planned.rpe ?? null })),
+        })),
+    }));
+    const todayCheckIns = await repos()
+      .checkIns.listSince(p.id, toIso(nowMs - DAY_MS))
+      .catch(() => []);
+    const checkIn = [...todayCheckIns].filter((c) => c.deletedAtUtc === undefined && localDateOf(toMs(c.recordedAt.utc), tz) === today).sort((a, b) => toMs(b.recordedAt.utc) - toMs(a.recordedAt.utc))[0];
+    const nudgeActs = await repos()
+      .activities.listBetween(p.id, addDays(today, -2), addDays(today, 1))
+      .catch(() => [] as Activity[]);
+    const nudgeInput: PreSessionInput = {
+      today,
+      recent: recentForNudge,
+      checkIn: checkIn === undefined ? null : { id: checkIn.id, score: checkIn.score, localDate: today },
+      offerAtOrBelow: deps.offerAtOrBelow?.() ?? null,
+      activities: nudgeActs.map((a) => ({ id: a.id, localDate: a.fields.date, kind: a.fields.kind, effort: a.fields.effort, status: a.fields.status })),
+    };
+    const memories = (await repos().coach.listMemories(p.id, 'active').catch(() => [])).filter((m) => m.dayNote === undefined).map((m) => m.text).slice(0, 20);
     const coach = await deps.coachStatus().catch((): CoachStatus => 'not_connected');
     const review = reviewOf(coach);
     const equipmentVersion = deriveId(stableStringify(sub.gym.equipment.map((e) => [e.id, e.version])));
@@ -518,7 +570,13 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       near,
       strip: { workouts: stripWorkouts, activities: acts, firstUse: newest.length === 0 && refs.length === 0 && acts.length === 0 },
       doneToday: stripWorkouts.some((w) => w.localDate === today),
+      nudgeInput,
       internal: {
+        memories,
+        lastDoneText: (id) => {
+          const ms = lastDoneMs.get(id);
+          return ms === undefined ? null : localDateText(localDateOf(ms, tz));
+        },
         ctx,
         info,
         nameOf: (id) => info(id)?.name ?? exercises.get(id)?.name ?? 'Exercise',
@@ -568,7 +626,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
   }
 
   /** `card`: the session card for a day and its controls. Pure over `data`. */
-  function card(data: TodaySessionData, sel: TodaySelection): TodayCardView | null {
+  function card(data: TodaySessionData, sel: TodaySelection, coach: TodayCoachInputs = {}): TodayCardView | null {
     const day = dayOf(data, sel.dayKey);
     if (day === null) return null;
     const { ctx, info, nameOf, worksOf, pained } = data.internal;
@@ -603,15 +661,20 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
         rows: todayBreakdown(edited.workout, info, worksOf, unit, pained),
-        why: whyLines(data, day, t, sel.controls, null, heldIn(edited.workout), gap),
+        why: whyLines(data, day, t, sel.controls, null, heldIn(edited.workout), gap, coachWhyOf(data, coach, null)),
         mix: null,
         mixAvailable: false,
+        mixShortlist: [],
+        mixFromExerciseId: null,
         startable: count > 0,
         draft: null,
       };
     }
-    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day) });
+    const pick = coach.mixPick ?? null;
+    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), ...(pick === null ? {} : { mixOrder: pick.order }) });
     if (d === null) return null;
+    // The coach's reason only for the swap it picked (shown under the swap and in Why?).
+    const mixReason = d.mix !== null && pick !== null && pick.exerciseId === d.mix.toExerciseId ? mixCoachReason(pick) : null;
     const unit = breakdownUnit(d.workout, data.unit);
     const advice = d.advice[0]?.reason ?? null;
     const mainSlot = d.workout.blocks.flatMap((b) => b.slots).find((s) => s.main) ?? null;
@@ -628,15 +691,24 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: d.absOn, planOn: t.absPlan, differs: d.absOn !== t.absPlan }, supersets: sel.controls.supersets },
       unit,
       rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
-      why: whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap),
-      mix: d.mix === null ? null : todayMixLine(d.mix, nameOf),
+      why: whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach, mixReason)),
+      mix: d.mix === null ? null : todayMixLine(d.mix, nameOf, mixReason),
       mixAvailable: d.mixOptions > 0,
+      mixShortlist: d.mixShortlist,
+      mixFromExerciseId: d.mixFromExerciseId,
       startable: d.exerciseCount > 0,
       draft: d,
     };
   }
 
-  function whyLines(data: TodaySessionData, day: TodayDay, t: TodayTemplate, c: TodayControls, mainTarget: string | null, held: readonly string[], gap: string | null): string[] {
+  /** The coach's part of Why?: its nudge (`todayCoachWhy`), else the Mix it up reason; no nudge yet: the connection's status. */
+  function coachWhyOf(data: TodaySessionData, coach: TodayCoachInputs, mixReason: string | null): { coachReason: string | null; review: TodayReviewStatus } {
+    const nudge = coach.nudge === undefined || coach.nudge === null ? null : todayCoachWhy(coach.nudge);
+    const review: TodayReviewStatus = nudge === null || nudge.review === 'pending' ? data.review : nudge.review;
+    return { coachReason: nudge?.coachReason ?? mixReason, review: mixReason !== null && review === 'not_reviewed' ? 'reviewed' : review };
+  }
+
+  function whyLines(data: TodaySessionData, day: TodayDay, t: TodayTemplate, c: TodayControls, mainTarget: string | null, held: readonly string[], gap: string | null, coach: { coachReason: string | null; review: TodayReviewStatus } = { coachReason: null, review: data.review }): string[] {
     const next = data.nextKey === null ? null : (dayOf(data, data.nextKey)?.name ?? null);
     return todayWhy({
       dayName: day.name,
@@ -648,8 +720,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       liftTarget: data.internal.liftTargetOf(t.mainLiftExerciseId),
       accessories: c.accessories,
       minutes: c.minutes,
-      coachReason: null,
-      review: data.review,
+      coachReason: coach.coachReason,
+      review: coach.review,
       held,
       missingHere: gap,
     });
@@ -804,12 +876,41 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return deps.port.start({ gymId: req.gymId, opId: req.opId, checkIn: req.checkIn, coachDraftOf: req.draftId });
   }
 
+  /**
+   * (§2.0.3 step 2, §6.1) The coach's look at the card: the card is committed as today's builder draft (the coach
+   * reviews the draft, and Apply changes that one draft), then the pre-session nudge runs on it. Silent unless a
+   * clear real signal; its offer is applied only on Ben's tap (`applyNudge`, rule 3). Null: not wired, or the
+   * draft couldn't be saved.
+   */
+  async function review(data: TodaySessionData, sel: TodaySelection, opId: string): Promise<NudgeResult | null> {
+    if (deps.nudge === undefined) return null;
+    const c = await commit(data, sel, `${opId}:commit`);
+    if (!c.ok) return null;
+    const day = dayOf(data, sel.dayKey);
+    return deps.nudge({ draftId: c.draftId, splitDayId: day?.kind === 'plan' ? day.splitDayId : null, input: data.nudgeInput, opId: `${opId}:${c.draftId}` }).catch(() => null);
+  }
+
+  /** `↻ Mix it up` (rule 3): the coach's pick from code's shortlist with its reason; offline or unwired: null (code's pick stands, not reviewed). */
+  async function mixPick(data: TodaySessionData, view: Pick<TodayCardView, 'mixShortlist' | 'mixFromExerciseId'>): Promise<MixPick | null> {
+    if (deps.mixPick === undefined || view.mixFromExerciseId === null || view.mixShortlist.length === 0) return null;
+    const { ctx, here } = data.internal;
+    const world: BuilderCoachWorld = {
+      snapshot: { draftId: '', draftVersion: 0, dayName: '', minutes: 0, supersets: false, workout: { blocks: [], restLevel: 'normal' }, revs: {} },
+      env: { ctx, usable: here, pain: () => null, loads: createBuilderLoadGuard({ ctx, refs: () => null, pain: () => null }), mainGroup: null },
+      extras: { usable: [], painFlags: [], dayNotes: [], plan: null, goal: data.goal, history: [], memories: data.internal.memories },
+    };
+    const pick = await deps.mixPick({ fromExerciseId: view.mixFromExerciseId, shortlist: view.mixShortlist, lastDone: data.internal.lastDoneText, world }).catch(() => null);
+    return pick?.by === 'coach' ? pick : null;
+  }
+
   return {
     load,
     card,
     movedLine,
     commit,
     start,
+    review,
+    mixPick,
     /** The 7-day strip for the card's day (`chosen`). */
     strip(data: TodaySessionData, chosen: string | null): StripCell[] {
       return buildTodayStrip({
