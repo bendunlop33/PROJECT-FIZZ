@@ -1,5 +1,14 @@
 import { canPair, infoOrDefault, sharedMuscle } from './arrange';
-import type { BuilderBlock, BuilderInfoLookup } from './types';
+import type { BuilderInfoLookup, BuilderSlot } from './types';
+
+/**
+ * What the checks read of a workout: its rounds in order, each with its
+ * exercises (a builder block, or the active workout's rounds still to do,
+ * keyed by session row; workout-table-v3 §7).
+ */
+export interface AdviceBlock {
+  slots: readonly Pick<BuilderSlot, 'key' | 'exerciseId'>[];
+}
 
 /**
  * "Not recommended" checks (workout-builder-v3 §3.8). Fixed, offline, each
@@ -31,7 +40,7 @@ export const ADVICE_TEXT = {
 } as const;
 
 /** `adviseBuilder`: every current "not recommended" item, in workout order. */
-export function adviseBuilder(blocks: readonly BuilderBlock[], info: BuilderInfoLookup): BuilderAdvice[] {
+export function adviseBuilder(blocks: readonly AdviceBlock[], info: BuilderInfoLookup): BuilderAdvice[] {
   const out: BuilderAdvice[] = [];
   const flat = blocks.flatMap((b, bi) => b.slots.map((s) => ({ s, bi, i: infoOrDefault(info, s.exerciseId) })));
   const ref = (x: (typeof flat)[number]): AdviceRef => ({ slotKey: x.s.key, exerciseId: x.s.exerciseId, name: x.i.name });

@@ -741,6 +741,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       case 'add_set':
       case 'add_drop':
       case 'rest':
+      case 'drop':
         return null;
     }
   }

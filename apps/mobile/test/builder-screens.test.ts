@@ -353,7 +353,8 @@ describe('Start prompt, advice, coach status and review (§2.6, §2.8, §2.9, §
 });
 
 describe('source checks', () => {
-  const screens = ['screens/builder/BuilderSetupScreen.tsx', 'screens/builder/BuilderWorkoutScreen.tsx', 'screens/builder/BuilderSheets.tsx', 'screens/builder/BuilderParts.tsx'].map(read).join('\n');
+  // The pop-up, the Swap sheet and the table parts are shared with the active workout (workout-table-v3 §7): read them too.
+  const screens = ['screens/builder/BuilderSetupScreen.tsx', 'screens/builder/BuilderWorkoutScreen.tsx', 'screens/builder/BuilderSheets.tsx', 'screens/builder/BuilderParts.tsx', 'ui/exercise-popup.tsx', 'ui/exercise-popup-model.ts', 'ui/swap-sheet.tsx', 'ui/table-parts.tsx'].map(read).join('\n');
   it('both routes are registered and typed', () => {
     const nav = read('navigation/AppNavigator.tsx');
     expect(nav).toContain('name="BuilderSetup"');
@@ -365,22 +366,24 @@ describe('source checks', () => {
     expect(screens).toContain('accessibilityActions');
     expect(screens).toContain("accessibilityRole=\"adjustable\"");
     expect(screens).toContain('InputAccessoryView');
-    expect(screens).toContain("name: 'delete_set', label: 'Delete set'");
+    expect(screens).toContain("name: 'delete_set' as const, label: POPUP_COPY.deleteSet");
   });
   it('pop-up set rows aren’t one VoiceOver element: # and Type carry the actions, the fields stay reachable (review B6)', () => {
-    const sheets = read('screens/builder/BuilderSheets.tsx');
-    const parts = read('screens/builder/BuilderParts.tsx');
+    // One pop-up for the builder and the workout: BuilderSheets maps the slot into it.
+    expect(read('screens/builder/BuilderSheets.tsx')).toContain('<ExercisePopup');
+    const sheets = read('ui/exercise-popup.tsx');
+    const parts = read('ui/table-parts.tsx');
     expect(parts).toMatch(/container\s*\?\s*\{ accessible: false \}/);
     expect(sheets).toMatch(/<SwipeRow[\s\S]{0,120}container/);
     expect(sheets).toContain('`${r.spokenName}, reps`');
-    expect(sheets).toContain('`${r.spokenName}, target RPE`');
+    expect(sheets).toContain("`${r.spokenName}, ${r.done ? 'RPE' : 'target RPE'}`");
     expect(sheets).toMatch(/accessibilityActions=\{actions\}/);
   });
   it('edits run one at a time on the latest snapshot; a held stepper keeps adding (review S4, S5)', () => {
     const ws = read('screens/builder/BuilderWorkoutScreen.tsx');
     expect(ws).toContain('queue.current.then(run, run)');
     expect(ws).toContain('const cur = snapRef.current;');
-    const parts = read('screens/builder/BuilderParts.tsx');
+    const parts = read('ui/table-parts.tsx');
     expect(parts).toContain('step.current = onStep;');
     expect(parts).toContain('step.current(delta)');
     expect(parts).toContain('sides.current.left');

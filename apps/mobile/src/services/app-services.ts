@@ -65,6 +65,7 @@ import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartO
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 import { createBuilderEnv } from '../builder/builder-env';
 import { createBuilderService } from '../builder/builder-service';
+import { createWorkoutEditService } from '../workout/workout-edit-service';
 import { createBuilderCoachPorts } from '../builder/coach-ports';
 import { setBuilderReviewProvider } from '../builder/review';
 import { createBuilderCoachService, createDayNotes } from '../coach/builder-coach-service';
@@ -972,11 +973,12 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   /** (Workout builder v3) Set up → Your workout drafts over the builder rules; Start goes through the workout Start. */
+  const builderEnv = createBuilderEnv({ store: () => deps.manager.store, now: deps.now, catalogueExercises });
   const builder = createBuilderService({
     store: () => deps.manager.store,
     profile: getProfile,
     now: deps.now,
-    env: createBuilderEnv({ store: () => deps.manager.store, now: deps.now, catalogueExercises }),
+    env: builderEnv,
     training: async () => {
       const p = await getProfile();
       return p === null ? null : repos().trainingProfiles.get(p.id).catch(() => null);
@@ -1030,11 +1032,18 @@ export function createAppServices(deps: AppServicesDeps) {
     mainLiftIds: () => training.splitMainLiftIds(),
   });
 
+  /**
+   * (workout-table-v3 §7) Same editing as the builder mid-workout: its Swap / Add sheet and load sources,
+   * `Why this weight?` and advice, over the workout's own versioned commands (today only).
+   */
+  const workoutEdit = createWorkoutEditService({ store: () => deps.manager.store, profile: getProfile, env: builderEnv, workout: loop.workout });
+
   return {
     ...loop,
     builder,
     builderCoach,
     reviews,
+    workoutEdit,
     library,
     customExercises,
     history,

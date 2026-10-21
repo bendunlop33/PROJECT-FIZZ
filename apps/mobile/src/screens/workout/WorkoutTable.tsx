@@ -15,6 +15,8 @@ import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { GymPartDivider, SnapNote } from './GymSwitch';
+import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
+import { dropIndex } from '../../ui/drag-logic';
 
 /**
  * The active workout's round page (workout-table-v3.md §1–§3; prototype
@@ -85,6 +87,25 @@ export interface RoundPageProps {
   onName: (card: { sessionExerciseId: string; exerciseId: string; name: string; isCurrent: boolean }) => void;
   onNote: (sessionExerciseId: string, name: string, note: string | null) => void;
   onPainBadge: (exerciseId: string) => void;
+  /**
+   * v3 §7 (same editing as the builder): press and hold a set row, then drag it among the sets not
+   * done yet (done sets stay in logged order); a hold without a drag opens its menu; VoiceOver has
+   * Move up / Move down and Change type. Absent: off.
+   */
+  setEdit?: {
+    /** The exercise's sets a drag can move, in order. */
+    movable: (sessionExerciseId: string) => readonly string[];
+    moves: (setId: string) => { up: boolean; down: boolean };
+    onDrop: (setId: string, to: number) => void;
+    onMenu: (setId: string) => void;
+    onMove: (setId: string, dir: 'up' | 'down') => void;
+    onChangeType: (setId: string) => void;
+  };
+  /** v3 §6–§7: the exercise header's VoiceOver actions beyond next / previous (Swap, Move, Superset, Unlink, Remove). */
+  exerciseActions?: (sessionExerciseId: string) => { name: string; label: string }[];
+  onExerciseAction?: (sessionExerciseId: string, name: string) => void;
+  /** `＋ Add exercise` under the last round (v3 §7, the builder's add flow); null on other rounds. */
+  onAddExercise?: (() => void) | null;
 }
 
 interface Measures {
@@ -230,6 +251,8 @@ export function RoundPage(props: RoundPageProps) {
     });
   };
 
+  /** A set row is being dragged (§7): the boxes and the page hold still. */
+  const [dragging, setDragging] = useState(false);
   const swipe = useSwipe((d) => {
     if (d === 'next' ? props.canNext : props.canPrev) {
       haptic('step');
@@ -248,7 +271,7 @@ export function RoundPage(props: RoundPageProps) {
     >
       <ScrollView
         ref={page}
-        scrollEnabled={fit?.pageScroll ?? false}
+        scrollEnabled={(fit?.pageScroll ?? false) && !dragging}
         scrollEventThrottle={32}
         onScroll={(e) => {
           pageY.current = e.nativeEvent.contentOffset.y;
@@ -269,6 +292,8 @@ export function RoundPage(props: RoundPageProps) {
                   index={i}
                   superset={round.superset}
                   page={props}
+                  dragging={dragging}
+                  onDragChange={setDragging}
                   fit={fit?.boxes[i] ?? null}
                   fades={fades[i] ?? { top: false, bottom: false }}
                   boxRef={(r) => {
@@ -295,6 +320,11 @@ export function RoundPage(props: RoundPageProps) {
             ))}
           </Pressable>
         </View>
+        {props.onAddExercise != null ? (
+          <View style={{ alignItems: 'flex-start' }}>
+            <TextButton label="＋ Add exercise" onPress={props.onAddExercise} />
+          </View>
+        ) : null}
         {props.afterSet}
         {props.upNext !== null && upNextShown ? (
           <View
@@ -344,6 +374,8 @@ function ExerciseBlock({
   index,
   superset,
   page: p,
+  dragging,
+  onDragChange,
   fit,
   fades,
   boxRef,
@@ -355,6 +387,8 @@ function ExerciseBlock({
   index: number;
   superset: boolean;
   page: RoundPageProps;
+  dragging: boolean;
+  onDragChange: (active: boolean) => void;
   fit: { height: number | null } | null;
   fades: { top: boolean; bottom: boolean };
   boxRef: (r: ScrollView | null) => void;
@@ -365,6 +399,10 @@ function ExerciseBlock({
   const height = fit?.height ?? null;
   const viewH = useRef(0);
   const contentH = useRef(0);
+  /** The set box's visible window: rows scrolled out of it are no drop targets (review S2). */
+  const boxView = useRef<View | null>(null);
+  const edit = p.setEdit;
+  const movable = edit?.movable(ex.sessionExerciseId) ?? [];
   return (
     <View style={{ opacity: ex.dim ? 0.55 : 1 }}>
       <ExerciseHeader ex={ex} superset={superset} page={p} />
@@ -372,6 +410,7 @@ function ExerciseBlock({
       {ex.isCurrent ? p.adjustRow : null}
       {p.ax ? null : <ColumnLabels loadHeader={ex.loadHeader} valueHeader={ex.valueHeader} />}
       <View
+        ref={boxView}
         onLayout={(e) => {
           viewH.current = e.nativeEvent.layout.height;
           onBoxFrame(e.nativeEvent.layout.height);
@@ -380,7 +419,7 @@ function ExerciseBlock({
       >
         <ScrollView
           ref={boxRef}
-          scrollEnabled={height !== null}
+          scrollEnabled={height !== null && !dragging}
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={32}
@@ -394,6 +433,18 @@ function ExerciseBlock({
           onScrollBeginDrag={p.onTapElsewhere}
           {...WORKOUT_KEYBOARD}
         >
+          {/* §7: press and hold a set not done yet, then drag it among those (done sets keep their logged order). */}
+          <DragList
+            enabled={edit !== undefined}
+            canDrop={(_from, t) => movable.includes(t.key)}
+            onDrop={(from, t) => {
+              const to = dropIndex(movable, from, t);
+              if (to !== null) edit?.onDrop(from, to);
+            }}
+            onMenu={(setId) => edit?.onMenu(setId)}
+            onDragChange={onDragChange}
+            viewport={boxView}
+          >
           {ex.rows.map((r) => (
             <View
               key={r.setId}
@@ -401,6 +452,7 @@ function ExerciseBlock({
                 onRow(r.setId, e.nativeEvent.layout.y, e.nativeEvent.layout.height);
               }}
             >
+              <DragItem dragKey={r.setId} draggable={movable.includes(r.setId)}>
               {r.row.partStart !== null ? <GymPartDivider label={r.row.partStart} /> : null}
               <SwipeRow
                 enabled={!r.skipped}
@@ -421,6 +473,17 @@ function ExerciseBlock({
                       onDelete={() => {
                         p.onDeleteSet(r.setId, r.stepName);
                       }}
+                      {...(edit === undefined
+                        ? {}
+                        : {
+                            moves: edit.moves(r.setId),
+                            onMoveSet: (dir: 'up' | 'down') => {
+                              edit.onMove(r.setId, dir);
+                            },
+                            onChangeType: () => {
+                              edit.onChangeType(r.setId);
+                            },
+                          })}
                       onPress={(part) => {
                         runRowTap(r.row, {
                           dismissKeyboard: () => { Keyboard.dismiss(); },
@@ -454,8 +517,10 @@ function ExerciseBlock({
               </SwipeRow>
               {/* At AX sizes (and cardio's pair) the correction sits under its row. */}
               {p.rowEditor?.setId === r.setId && (!p.rowEditor.inCell || p.ax) ? <View>{p.rowEditor.node}</View> : null}
+              </DragItem>
             </View>
           ))}
+          </DragList>
         </ScrollView>
         {height !== null && fades.top ? <Fade edge="top" /> : null}
         {height !== null && fades.bottom ? <Fade edge="bottom" /> : null}
@@ -481,10 +546,13 @@ function ExerciseHeader({ ex, superset, page: p }: { ex: RoundExercise; superset
           accessibilityActions={[
             ...(p.canNext ? [{ name: 'next', label: 'Next exercise' }] : []),
             ...(p.canPrev ? [{ name: 'previous', label: 'Previous exercise' }] : []),
+            ...(p.exerciseActions?.(ex.sessionExerciseId) ?? []),
           ]}
           onAccessibilityAction={(e) => {
-            if (e.nativeEvent.actionName === 'next') p.onRound('next');
-            if (e.nativeEvent.actionName === 'previous') p.onRound('prev');
+            const name = e.nativeEvent.actionName;
+            if (name === 'next') p.onRound('next');
+            else if (name === 'previous') p.onRound('prev');
+            else p.onExerciseAction?.(ex.sessionExerciseId, name);
           }}
           onPress={() => {
             p.onName({ sessionExerciseId: ex.sessionExerciseId, exerciseId: ex.exerciseId, name: ex.name, isCurrent: ex.isCurrent });
@@ -736,8 +804,36 @@ function CellBox({ text, done, warmup, on }: { text: string; done: boolean; warm
  * an open ring (tap = make current, never a log). The set number (or a
  * long-press) opens Edit set. VoiceOver actions mirror every tap and swipe.
  */
-export function TableSetRow({ row: r, hasLoad, ax, editing, cellEditor = null, onPress, onDelete }: { row: RoundRow; hasLoad: boolean; ax: boolean; editing: CellField | null; /** The edited cell's own field (Ben, 20 Oct), drawn in place of its value. */ cellEditor?: ReactNode; onPress: (part: RowPart) => void; onDelete: () => void }) {
+export function TableSetRow({
+  row: r,
+  hasLoad,
+  ax,
+  editing,
+  cellEditor = null,
+  onPress,
+  onDelete,
+  moves,
+  onMoveSet,
+  onChangeType,
+}: {
+  row: RoundRow;
+  hasLoad: boolean;
+  ax: boolean;
+  editing: CellField | null;
+  /** The edited cell's own field (Ben, 20 Oct), drawn in place of its value. */
+  cellEditor?: ReactNode;
+  onPress: (part: RowPart) => void;
+  onDelete: () => void;
+  /** v3 §7: VoiceOver Move up / Move down (sets not done yet) and Change type. */
+  moves?: { up: boolean; down: boolean };
+  onMoveSet?: (dir: 'up' | 'down') => void;
+  onChangeType?: () => void;
+}) {
   const theme = useTheme();
+  // §7: a hold arms the row's drag (inside the round's `DragList`); elsewhere it opens Edit set, as before.
+  const hold = useDragHandle(() => {
+    onPress('row');
+  });
   const row = r.row;
   const done = r.done;
   const skipped = r.skipped;
@@ -750,10 +846,15 @@ export function TableSetRow({ row: r, hasLoad, ax, editing, cellEditor = null, o
     ...(done ? (r.canUntick ? [{ name: 'untick', label: 'Untick' }] : []) : [{ name: 'select', label: 'Make current' }]),
     ...(row.columns.loadLabel !== null ? [{ name: 'load', label: 'Edit load here' }] : []),
     { name: 'value', label: `Edit ${valueName} here` },
+    ...(onChangeType !== undefined ? [{ name: 'type', label: 'Change type' }] : []),
+    ...(moves?.up === true ? [{ name: 'move_up', label: 'Move up' }] : []),
+    ...(moves?.down === true ? [{ name: 'move_down', label: 'Move down' }] : []),
     { name: 'delete', label: 'Delete set' },
   ];
   const onAction = (a: string) => {
     if (a === 'delete') onDelete();
+    else if (a === 'type') onChangeType?.();
+    else if (a === 'move_up' || a === 'move_down') onMoveSet?.(a === 'move_up' ? 'up' : 'down');
     else onPress(a === 'select' || a === 'untick' ? 'marker' : a === 'load' ? 'load' : a === 'value' ? 'value' : 'row');
   };
   const marker = done ? (
@@ -843,9 +944,7 @@ export function TableSetRow({ row: r, hasLoad, ax, editing, cellEditor = null, o
         onPress={() => {
           onPress(part);
         }}
-        onLongPress={() => {
-          onPress('row');
-        }}
+        {...hold}
         style={({ pressed }) => ({ flex: 1, minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
       >
         <CellBox text={text} done={done} warmup={r.warmup} on={on} />
@@ -867,9 +966,7 @@ export function TableSetRow({ row: r, hasLoad, ax, editing, cellEditor = null, o
           onPress={() => {
             onPress('row');
           }}
-          onLongPress={() => {
-            onPress('row');
-          }}
+          {...hold}
           style={({ pressed }) => ({ width: NUM_W, minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
         >
           <NumberCell row={r} current={false} todayChange={row.todayChange} />
@@ -933,6 +1030,10 @@ export interface OpenSetRowProps {
   onTileFocus: (tile: TileId) => void;
   /** VoiceOver's Delete (the swipe's mirror, §6). */
   onDelete?: () => void;
+  /** v3 §7: VoiceOver Move up / Move down and Change type, as on every set row. */
+  moves?: { up: boolean; down: boolean };
+  onMoveSet?: (dir: 'up' | 'down') => void;
+  onChangeType?: () => void;
 }
 
 /** The open row's round row and its exercise's load header, from the round page, so its cells line up with the header. */
@@ -950,6 +1051,8 @@ const OpenRowContext = createContext<{ row: RoundRow; loadHeader: string | null 
  */
 export function OpenSetRow(p: OpenSetRowProps) {
   const theme = useTheme();
+  // §7: a hold arms the drag (inside the round's `DragList`); its menu (or, elsewhere, the hold itself) is `onMore`.
+  const hold = useDragHandle(p.onMore);
   const f = p.focus;
   const ctx = useContext(OpenRowContext);
   const { width: windowWidth } = useWindowDimensions();
@@ -999,7 +1102,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
           haptic('step');
           p.onEditCell(on ? null : id);
         }}
-        onLongPress={p.onMore}
+        {...hold}
         style={({ pressed }) => ({ flex: 1, minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
       >
         <CellBox text={text} done={false} warmup={ctx?.row.warmup ?? false} on={on} />
@@ -1053,13 +1156,22 @@ export function OpenSetRow(p: OpenSetRowProps) {
           accessibilityRole="button"
           accessibilityLabel={`${f.exerciseName}, ${ctx?.row.accessibilityLabel ?? `${stepName}, ${f.setTypeLabel}${sideTag === 'L' ? ', left side' : sideTag === 'R' ? ', right side' : ''}`}${p.resting ? ', next' : ''}`}
           accessibilityHint="More for this set"
-          accessibilityActions={[{ name: 'activate' }, ...(p.onDelete ? [{ name: 'delete', label: 'Delete set' }] : [])]}
+          accessibilityActions={[
+            { name: 'activate' },
+            ...(p.onChangeType ? [{ name: 'type', label: 'Change type' }] : []),
+            ...(p.moves?.up === true ? [{ name: 'move_up', label: 'Move up' }] : []),
+            ...(p.moves?.down === true ? [{ name: 'move_down', label: 'Move down' }] : []),
+            ...(p.onDelete ? [{ name: 'delete', label: 'Delete set' }] : []),
+          ]}
           onAccessibilityAction={(e) => {
-            if (e.nativeEvent.actionName === 'delete') p.onDelete?.();
+            const a = e.nativeEvent.actionName;
+            if (a === 'delete') p.onDelete?.();
+            else if (a === 'type') p.onChangeType?.();
+            else if (a === 'move_up' || a === 'move_down') p.onMoveSet?.(a === 'move_up' ? 'up' : 'down');
             else p.onMore();
           }}
           onPress={p.onMore}
-          onLongPress={p.onMore}
+          {...hold}
           style={{ width: NUM_W, minHeight: theme.target.min.height, justifyContent: 'center' }}
         >
           {ctx !== null ? (

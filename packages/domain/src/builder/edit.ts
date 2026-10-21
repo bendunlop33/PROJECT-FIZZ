@@ -1,6 +1,6 @@
 import type { SetType } from '@fizz/schemas';
 import { adviseAfter, adviseBuilder, type BuilderAdvice } from './advise';
-import { builderSupersetWithNext, builderUnlink, slotsOf } from './arrange';
+import { BUILDER_MAX_SUPERSET, builderSupersetWithNext, builderUnlink, slotsOf } from './arrange';
 import { BUILDER_VOLUME } from './build';
 import { removeSlot } from './fit';
 import { roundContextOf, roundDownHere } from './loads';
@@ -30,7 +30,12 @@ export type BuilderEditOp =
   | { kind: 'add_warmup'; slotKey: string }
   | { kind: 'add_set'; slotKey: string }
   | { kind: 'add_drop'; slotKey: string }
-  | { kind: 'rest'; slotKey: string; restKind: RestKind | 'round'; seconds: number };
+  | { kind: 'rest'; slotKey: string; restKind: RestKind | 'round'; seconds: number }
+  /**
+   * Press-and-hold drag (§2.3, §9 Q18; workout-table-v3 §7): dropped on the top or bottom edge
+   * of another row = move there (as its own round); on its middle = superset with that row's round.
+   */
+  | { kind: 'drop'; slotKey: string; targetKey: string; edge: 'before' | 'after' | 'onto' };
 
 export type BuilderEditRefusal =
   | SetRowEditRefusal
@@ -59,7 +64,7 @@ export type BuilderEditResult =
   | { ok: false; reason: BuilderEditRefusal; lightest?: number };
 
 /** Ops that are Ben's moves (§2.3 "When Ben's own change is not recommended"). */
-const ADVISED: ReadonlySet<BuilderEditOp['kind']> = new Set(['swap', 'add_exercise', 'move', 'superset_next']);
+const ADVISED: ReadonlySet<BuilderEditOp['kind']> = new Set(['swap', 'add_exercise', 'move', 'superset_next', 'drop']);
 
 const find = (w: BuilderWorkout, key: string): { bi: number; si: number; slot: BuilderSlot } | null => {
   for (const [bi, b] of w.blocks.entries()) {
@@ -119,6 +124,12 @@ function edit(w: BuilderWorkout, op: BuilderEditOp, ctx: BuilderContext): Builde
       const blocks = builderSupersetWithNext(w.blocks, slot.key);
       if (blocks === null) return { ok: false, reason: 'cannot_superset' };
       const keys = (blocks.find((b) => b.slots.some((s) => s.key === slot.key))?.slots ?? []).map((s) => s.key);
+      return done({ ...w, blocks }, keys);
+    }
+    case 'drop': {
+      const blocks = dropBuilderSlot(w.blocks, slot.key, op.targetKey, op.edge);
+      if (blocks === null) return { ok: false, reason: op.edge === 'onto' ? 'cannot_superset' : 'cannot_move' };
+      const keys = op.edge === 'onto' ? (blocks.find((b) => b.slots.some((s) => s.key === slot.key))?.slots ?? []).map((s) => s.key) : [];
       return done({ ...w, blocks }, keys);
     }
     case 'unlink': {
@@ -200,9 +211,75 @@ export function moveBuilderSlot(blocks: readonly BuilderBlock[], bi: number, si:
   return out;
 }
 
+/**
+ * A dragged row dropped on another (§2.3 drag; Q18): it leaves its own superset (a partner left on
+ * its own stands alone; both are marked `unlinked`, as `Unlink` does), then either goes in as its
+ * own round before or after the target's round, or (`onto`) joins the target's round as Ben's own
+ * superset (`auto: false`). Null for a drop on itself, a drop that changes nothing, or a superset
+ * the rules don't allow (the main lift, more than 4; Q5): the row springs back.
+ */
+export function dropBuilderSlot(blocks: readonly BuilderBlock[], slotKey: string, targetKey: string, edge: 'before' | 'after' | 'onto'): BuilderBlock[] | null {
+  if (slotKey === targetKey) return null;
+  const from = blocks.findIndex((b) => b.slots.some((s) => s.key === slotKey));
+  const fromBlock = blocks[from];
+  const slot = fromBlock?.slots.find((s) => s.key === slotKey);
+  if (fromBlock === undefined || slot === undefined) return null;
+  const targetBlock = blocks.find((b) => b.slots.some((s) => s.key === targetKey));
+  if (targetBlock === undefined) return null;
+  if (edge === 'onto' && targetBlock === fromBlock) return null;
+  const wasPaired = fromBlock.slots.length > 1;
+  const mark = (s: BuilderSlot): BuilderSlot => (wasPaired ? { ...s, unlinked: true } : s);
+  const rest = fromBlock.slots.filter((s) => s.key !== slotKey);
+  const left: BuilderBlock | null = rest.length === 0 ? null : rest.length === 1 && rest[0] !== undefined ? { slots: [mark(rest[0])], auto: false } : { ...fromBlock, slots: rest, auto: false };
+  const without: BuilderBlock[] = blocks.flatMap((b) => (b === fromBlock ? (left === null ? [] : [left]) : [b]));
+  const at = without.findIndex((b) => b.slots.some((s) => s.key === targetKey));
+  const target = without[at];
+  if (target === undefined) return null;
+  const out = [...without];
+  if (edge === 'onto') {
+    const slots = [...target.slots, slot];
+    if (slots.some((s) => s.main) || slots.length > BUILDER_MAX_SUPERSET) return null;
+    const joined = slots.map((s) => {
+      if (s.unlinked !== true) return s;
+      const c = { ...s };
+      delete c.unlinked;
+      return c;
+    });
+    out.splice(at, 1, { ...target, slots: joined, auto: false });
+  } else {
+    out.splice(edge === 'before' ? at : at + 1, 0, { slots: [mark(slot)], auto: false });
+  }
+  const shape = (bs: readonly BuilderBlock[]) => bs.map((b) => b.slots.map((s) => s.key).join('+')).join('|');
+  return shape(out) === shape(blocks) ? null : out;
+}
+
+
 /** Whether `＋ Warm-up` can add one (§2.4: disabled at 4, or with no load to ramp to). */
 export function canAddWarmup(slot: BuilderSlot): boolean {
   return slot.rows.filter((r) => r.type === 'warmup').length < BUILDER_SET_RULES.maxWarmups && slot.rows.some((r) => r.type !== 'warmup' && r.load !== null);
+}
+
+/**
+ * The warm-up `＋ Warm-up` adds (§2.4), shared by the builder and the
+ * active workout (workout-table-v3 §7): the middle of the biggest gap in the
+ * ramp (from nothing, through the warm-ups there are, up to the first
+ * working load), rounded DOWN by `roundDown` to what the gym can load; reps
+ * by how close it sits to the working load. Null when no load fits in the gap.
+ */
+export function warmupGap(warmLoads: readonly number[], top: number, roundDown: (value: number) => number | null): { load: number; reps: number } | null {
+  if (!(top > 0)) return null;
+  const points = [0, ...[...warmLoads].filter((l) => l < top).sort((a, b) => a - b), top];
+  let best: [number, number] | null = null;
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1] ?? 0;
+    const b = points[i] ?? 0;
+    if (best === null || b - a > best[1] - best[0]) best = [a, b];
+  }
+  if (best === null) return null;
+  const k = roundDown((best[0] + best[1]) / 2);
+  if (k === null || k <= best[0] + 1e-9 || k >= best[1] - 1e-9) return null;
+  const pct = k / top;
+  return { load: k, reps: pct < 0.4 ? 10 : pct < 0.6 ? 5 : pct < 0.8 ? 3 : 1 };
 }
 
 /**
@@ -215,20 +292,14 @@ export function addWarmup(slot: BuilderSlot, ctx: BuilderContext): { ok: true; s
   if (warm.length >= BUILDER_SET_RULES.maxWarmups) return { ok: false, reason: 'max_warmups' };
   const top = slot.rows.find((r) => r.type !== 'warmup')?.load ?? null;
   if (top === null || top <= 0) return { ok: false, reason: 'no_load' };
-  const points = [0, ...warm.map((r) => r.load ?? 0).sort((a, b) => a - b), top];
-  let best: [number, number] | null = null;
-  for (let i = 1; i < points.length; i += 1) {
-    const a = points[i - 1] ?? 0;
-    const b = points[i] ?? 0;
-    if (best === null || b - a > best[1] - best[0]) best = [a, b];
-  }
-  if (best === null) return { ok: false, reason: 'no_gap' };
   const rc = { ...roundContextOf(ctx.loads(slot.exerciseId)), painCap: null };
-  const k = roundDownHere((best[0] + best[1]) / 2, rc)?.value ?? null;
-  if (k === null || k <= best[0] + 1e-9 || k >= best[1] - 1e-9) return { ok: false, reason: 'no_gap' };
-  const pct = k / top;
-  const reps = pct < 0.4 ? 10 : pct < 0.6 ? 5 : pct < 0.8 ? 3 : 1;
-  const row: BuilderSetRow = { type: 'warmup', reps, load: k, rpe: null };
+  const gap = warmupGap(
+    warm.map((r) => r.load ?? 0),
+    top,
+    (v) => roundDownHere(v, rc)?.value ?? null,
+  );
+  if (gap === null) return { ok: false, reason: 'no_gap' };
+  const row: BuilderSetRow = { type: 'warmup', reps: gap.reps, load: gap.load, rpe: null };
   const rest = slot.rows.filter((r) => r.type !== 'warmup');
   const ramp = [...warm, row].sort((a, b) => (a.load ?? 0) - (b.load ?? 0));
   return { ok: true, slot: { ...slot, rows: [...ramp, ...rest] } };
