@@ -205,7 +205,7 @@ export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, sp
           <AppText variant="callout" color={view.status === null ? 'accent' : 'text.secondary'} accessible={false} maxFontSizeMultiplier={COMPACT_MAX_SCALE}>
             ✦
           </AppText>
-          <AppText variant="callout" color={view.status === null ? 'text.primary' : 'text.secondary'} accessible={false} maxFontSizeMultiplier={COMPACT_MAX_SCALE} numberOfLines={1}>
+          <AppText variant="callout" color={view.status === null ? 'text.primary' : 'text.secondary'} accessible={false} maxFontSizeMultiplier={COMPACT_MAX_SCALE}>
             {listening ? 'Listening…' : view.short}
           </AppText>
         </Pressable>

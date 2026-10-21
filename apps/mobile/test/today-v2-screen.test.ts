@@ -241,8 +241,12 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     // With a plan the fallback never shows (the service gives none either).
     expect(todayActions({ openWorkout: false, read: 'ready', noPlan: false, cardShown: true, upNext: true }).upNext).toBe(false);
     expect(todayActions({ openWorkout: true, read: 'failed', noPlan: true, cardShown: false, upNext: true })).toEqual({ gymRow: false, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false });
-    // The screen draws what this says: the Up next row opens the overview (it creates nothing until its Start).
-    expect(screen).toContain("navigation.navigate('WorkoutOverview', { target: { kind: 'next' } });");
+    // The screen draws what this says: the Up next row starts it in one tap through Today's one Start (gym, alerts,
+    // check-in gate, op ID kept per intent), never the overview (OV11).
+    expect(screen).toContain("void start({ kind: 'routine', routineId: upNext.routineId })");
+    expect(screen).toContain("void start({ kind: 'next', sourceSessionId: upNext.sourceSessionId })");
+    expect(screen).toContain("navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, ...of });");
+    expect(screen).not.toContain("navigate('WorkoutOverview'");
     expect(screen).toContain('accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNext.title)}');
     expect(screen).toContain("{actions.emptyWorkout ? (");
   });

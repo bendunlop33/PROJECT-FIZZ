@@ -678,7 +678,7 @@ describe('Today (v2) session card from the plan', () => {
     // The app's one Up next resolver (split due day, then rotation): Back was trained least recently.
     const up = await s.next.preview(gymId);
     expect(up?.routine).not.toBeNull();
-    expect(data.upNext).toEqual({ title: up?.title, routineId: up?.routine?.id ?? null });
+    expect(data.upNext).toEqual({ title: up?.title, routineId: up?.routine?.id ?? null, sourceSessionId: null });
     expect(data.upNext?.title).toBe('Back');
   });
 
@@ -696,6 +696,13 @@ describe('Today (v2) session card from the plan', () => {
     // Push A was done last, so the rotation comes round to Pull A.
     expect(data.upNext?.title).toBe('Pull A');
     expect(data.upNext?.routineId).toBe((await s.next.preview(gymId))?.routine?.id);
+    // Today's one-tap Start of it (the screen's `routineOf` start): that routine, once per op ID (a retry is the same workout).
+    const routineId = data.upNext?.routineId ?? '';
+    const started = await s.workout.start({ gymId, opId: 'up-next-1', checkIn: { kind: 'skipped', atUtc: h.now().utc }, routineOf: routineId });
+    if (!started.ok) throw new Error(started.error.message);
+    expect(started.aggregate.session.routineId).toBe(routineId);
+    const again = await s.workout.start({ gymId, opId: 'up-next-1', checkIn: { kind: 'skipped', atUtc: h.now().utc }, routineOf: routineId });
+    expect(again.ok && again.aggregate.session.id).toBe(started.aggregate.session.id);
   });
 
   it('B1: with a plan in use there is no fallback (the plan’s NEXT is Up next); after the plan ends, Today falls back to the resolver', async () => {
@@ -710,7 +717,7 @@ describe('Today (v2) session card from the plan', () => {
     expect(after.status).toBe('no_plan');
     const up = await s.next.preview(gymId);
     expect(up).not.toBeNull();
-    expect(after.upNext).toEqual({ title: up?.title, routineId: up?.routine?.id ?? null });
+    expect(after.upNext).toEqual({ title: up?.title, routineId: up?.routine?.id ?? null, sourceSessionId: up?.routine ? null : up?.sourceSessionId });
   });
 
   it('a plan that can’t be read fails the load (the screen says Couldn’t load), never `No plan`', async () => {

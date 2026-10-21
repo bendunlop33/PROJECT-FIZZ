@@ -52,7 +52,8 @@ import type { StartChoice, StartPrompt } from '../builder/builder-service';
  * alternatives, Recent and Ask pill (§2.0.9, §7).
  */
 
-type StartIntent = { kind: 'empty' };
+/** An empty workout, or (No plan) the app's Up next: its routine or the last workout's next session (review today-fix-21oct B1). */
+type StartIntent = { kind: 'empty' } | { kind: 'routine'; routineId: string } | { kind: 'next'; sourceSessionId: string };
 type Nav = NavigationProp<ParamListBase>;
 
 /** Today's `Reviews ›` taps this run: each lands Progress on Reviews again (review b3-wave3-ux S9). */
@@ -387,14 +388,15 @@ export function TodayScreen() {
       if (g === null) return;
       await alertsAsk.ensureAsked();
       const gate = await gateCheckIn();
+      const of = intent.kind === 'routine' ? { routineOf: intent.routineId } : intent.kind === 'next' ? { nextOf: intent.sourceSessionId } : {};
       if (gate.ask) {
-        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId });
+        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, ...of });
         return;
       }
-      const key = intent.kind;
+      const key = intent.kind === 'routine' ? `routine:${intent.routineId}` : intent.kind === 'next' ? `next:${intent.sourceSessionId}` : intent.kind;
       const opId = startOps.current.get(key) ?? newUuid();
       startOps.current.set(key, opId);
-      const r = await services.workout.start({ gymId: g.gymId, opId, checkIn: gate.checkIn });
+      const r = await services.workout.start({ gymId: g.gymId, opId, checkIn: gate.checkIn, ...of });
       if (!r.ok) {
         setError(r.error.code === 'session_already_active' ? TODAY_SCREEN_COPY.started : r.error.message);
         reload();
@@ -756,12 +758,14 @@ export function TodayScreen() {
                 />
               </View>
               {upNext !== null ? (
-                // The old Today's Up next (Profile split, routines in rotation): his own workout, one tap to its overview.
+                // The old Today's Up next (Profile split, routines in rotation): his own workout, Start in one tap (as the card's).
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNext.title)}
+                  disabled={starting}
                   onPress={() => {
-                    navigation.navigate('WorkoutOverview', { target: { kind: 'next' } });
+                    if (upNext.routineId !== null) void start({ kind: 'routine', routineId: upNext.routineId });
+                    else if (upNext.sourceSessionId !== null) void start({ kind: 'next', sourceSessionId: upNext.sourceSessionId });
                   }}
                   style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingLeft: theme.space['4'], paddingRight: theme.space['2'], borderRadius: theme.radius.lg, backgroundColor: theme.colors['bg.surface'], opacity: pressed ? 0.7 : 1 })}
                 >

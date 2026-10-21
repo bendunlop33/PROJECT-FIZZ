@@ -128,7 +128,7 @@ export const TODAY_SCREEN_COPY = {
   sessionFailed: 'Couldn’t load',
   /** No plan in use: the old Today's Up next (split, rotation) still offered (review today-fix-21oct B1). */
   upNext: 'Up next',
-  upNextLabel: (title: string) => `Up next, ${title}. Opens the workout.`,
+  upNextLabel: (title: string) => `Start ${title}, up next`,
 } as const;
 
 /** What Today's session area offers in each state of its read (review today-fix-21oct B1, S2, S3). */

@@ -124,7 +124,7 @@ export interface TodaySessionPort {
   substituteCtx: (p: UserProfile, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, exerciseIds: Iterable<string>) => Promise<SubstituteContext>;
   upNextRoutineId: (gymId: string, gymEquipment?: readonly EquipmentInstance[]) => Promise<string | null>;
   /** No plan in use: the app's Up next (split, rotation, longest gap), as the old Today named it; null: none. */
-  upNext: (gymId: string) => Promise<{ title: string; routineId: string | null } | null>;
+  upNext: (gymId: string) => Promise<TodayUpNext | null>;
   plannedDay: (routineId: string, gymId: string) => Promise<{ aggregate: SessionAggregate } | null>;
   nextAfter: (gymId: string, routineId: string) => Promise<string | null>;
   start: (req: WorkoutStartRequest) => Promise<WorkoutStartOutcome>;
@@ -165,6 +165,14 @@ const RECENT_ON_DAY = 4;
 
 export type TodaySessionStatus = 'plan' | 'paused' | 'no_plan';
 
+/** The app's Up next with no plan in use: a routine (Start starts it) or the last workout's next session (`nextOf`). */
+export interface TodayUpNext {
+  title: string;
+  routineId: string | null;
+  /** The workout a next session repeats; null for a routine. */
+  sourceSessionId: string | null;
+}
+
 /** An open builder draft for today that Ben changed in the builder (`Chest · edited`), or the coach's offer he applied. */
 export interface TodayEditedDraft {
   draftId: string;
@@ -195,7 +203,7 @@ export interface TodaySessionData {
    * (review today-fix-21oct B1) No plan in use: Up next from the Profile split or the routines in rotation (else the
    * longest gap), so Ben's own workouts stay one tap from Today, as on the old Today. Null with a plan, or none.
    */
-  upNext: { title: string; routineId: string | null } | null;
+  upNext: TodayUpNext | null;
   /** The controls each day opens with (its last-used main lift, the goal's accessories, the plan's length). */
   initial: Readonly<Record<string, TodayControls>>;
   goal: 'strength' | 'muscle' | 'both' | null;
