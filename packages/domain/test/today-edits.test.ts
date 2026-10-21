@@ -369,7 +369,8 @@ describe('substituteTargets and rankSubstitutions (TE6, TE-A4, TE-A5)', () => {
     const rows = rank();
     expect(rows.map((r) => r.name)).toEqual(['DB bench press', 'Chest press machine', 'Push-up', 'Incline DB press']);
     // The built-in rule's own rep range for each (the slot's set count); a substitute with no history keeps the slot's sets and reps.
-    expect(rows.map((r) => plain(r.targetText))).toEqual(['32.5 kg each × 6–10', '— × 6–8', 'BW × 10–12', '30 kg each × 6–10']);
+    // Reps from history (21 Oct): push-ups (15, 14, 12; bodyweight) follow his reps, 11–14, not the rule's capped 10–12.
+    expect(rows.map((r) => plain(r.targetText))).toEqual(['32.5 kg each × 6–10', '— × 6–8', 'BW × 11–14', '30 kg each × 6–10']);
     expect(rows.map((r) => r.equipmentWord)).toEqual(['Dumbbells', 'Stack', 'Bodyweight', 'Dumbbells']);
     expect(plain(rows[0]?.lastText)).toMatch(/^last 32\.5 × 8 · 17 Sep$/);
     expect(rows[1]?.lastText).toBe('No history');

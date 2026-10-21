@@ -1,7 +1,8 @@
 import type { CheckIn, EquipmentInstance, LoadConvention, Measurement, PainFlag, PlannedSet, ProgressionRule, SetType, WeightUnit } from '@fizz/schemas';
 import { painMentionedNotFlagged, painStatusFor } from './checkin';
 import { builtInDefaultRule, ruleCategory, type RuleExerciseInfo } from './default-rule';
-import { calculateNextTargets, type HistorySession, type NextTargets, type PainStatus } from './progression';
+import { calculateNextTargets, latestJudgedSession, type HistorySession, type NextTargets, type PainStatus } from './progression';
+import { aimReps, PERSONAL_REPS, personalRepRange, personalRuleName, ruleRepsFact, typicalReps, type RuleReps } from './rep-range';
 import { ruleTargetProvenance, type RuleProvenanceInput } from './target-provenance';
 
 /**
@@ -41,26 +42,51 @@ export interface NextTargetRequest {
   fitLater?: boolean;
   /** See `NextTargetsInput.comparableEquipmentIds` (other items of the same kind and bar mass). */
   comparableEquipmentIds?: ReadonlySet<string>;
+  /**
+   * (Reps from history, 21 Oct) The exercise is a secondary lift in this workout: a main barbell lift's
+   * built-in rule is read as a compound lift's, so its reps follow Ben's last session (a barbell row after
+   * the main lift at his usual 12, not 3–6).
+   */
+  accessory?: boolean;
 }
 
 export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; rule: ProgressionRule } {
-  const category = ruleCategory(req.exercise, req.equipment?.kind ?? null, req.convention);
-  const rule = req.rule ?? builtInDefaultRule(req.ownerId, req.unit, req.workingSets, category);
+  const own = ruleCategory(req.exercise, req.equipment?.kind ?? null, req.convention);
+  const category = req.accessory === true && own === 'main_barbell' ? 'compound' : own;
+  const base = req.rule ?? builtInDefaultRule(req.ownerId, req.unit, req.workingSets, category);
   const flagged = painStatusFor(req.painFlags, req.exerciseId);
   const pain = flagged.active ? flagged : req.sessionPain;
-  const result = calculateNextTargets({
+  const input = {
     exerciseName: req.exerciseName,
     measurement: req.measurement,
     history: req.history,
-    rule,
+    rule: base,
     equipment: req.equipment,
     unit: req.unit,
     convention: req.convention,
     pain,
     ...(req.fitLater === true ? { fitLater: true } : {}),
     ...(req.comparableEquipmentIds !== undefined ? { comparableEquipmentIds: req.comparableEquipmentIds } : {}),
-  });
-  return { result, rule };
+  };
+  if (req.measurement !== 'reps' || base.method !== 'double_progression') return { result: calculateNextTargets(input), rule: base };
+  // Reps from history (21 Oct): the built-in rule's range follows Ben's last session of this exercise, except
+  // on a main barbell lift (its top set / back-offs scheme) or a rule of his own (`fixed`).
+  const latest = latestJudgedSession(input);
+  const last = latest === null ? null : typicalReps(latest.reps);
+  const personal = req.rule === null && category !== 'main_barbell';
+  const loadable = (req.equipment?.loadConvention ?? req.convention) !== 'bodyweight';
+  const p = personal ? personalRepRange(base.repRange, last, base.ceilingRepCap, loadable) : { range: { ...base.repRange }, kind: 'fixed' as const };
+  const moved = p.kind === 'history' || p.kind === 'toward_goal';
+  // A loaded lift's cap is never below the range (more reps there means more load); bodyweight keeps room to add reps.
+  const cap = loadable ? Math.max(base.ceilingRepCap, p.range.max) : Math.max(base.ceilingRepCap, p.range.max + PERSONAL_REPS.width);
+  const rule: ProgressionRule = moved ? { ...base, repRange: p.range, ceilingRepCap: cap, name: personalRuleName(p.range, base.maxRpeToProgress) } : base;
+  const result = calculateNextTargets({ ...input, rule });
+  const first = result.sets.find((s) => s.setType !== 'warmup');
+  const aim = aimReps(result.decision, first?.reps ?? p.range, last, latest === null ? null : { from: latest.load, to: first?.load?.value ?? null, direction: latest.direction });
+  const reps: RuleReps = { last, goal: { ...base.repRange }, range: p.range, kind: p.kind, aim };
+  const fact = ruleRepsFact(reps);
+  const explanation = fact === null ? result.explanation : { ...result.explanation, facts: [fact, ...result.explanation.facts] };
+  return { result: { ...result, explanation, reps }, rule };
 }
 
 const PLANNABLE = new Set<NextTargets['decision']>(['increase_load', 'increase_reps', 'hold', 'hold_after_miss', 'reduce_load', 'ceiling_reached', 'halted_pain']);

@@ -22,6 +22,7 @@ import {
 import { allLeftOutFact, isSetCountable } from './exclusions';
 import { toMs } from './time';
 import { convertMass, convertMassExactly, fromScaled, toScaled } from './units';
+import type { RuleReps } from './rep-range';
 
 export interface HistorySet {
   setType: SetType;
@@ -350,6 +351,8 @@ export interface NextTargets {
   explanation: { summary: string; facts: string[] };
   /** Comparable sessions used, latest first. */
   basedOnSessionIds: string[];
+  /** (Reps from history, 21 Oct) The reps the rule used and the one count to plan (`nextTargetsFor`). */
+  reps?: RuleReps;
 }
 
 interface Criteria {
@@ -412,6 +415,8 @@ interface SessionEval {
    */
   increaseFrom: number | null;
   minReps: number;
+  /** (Reps from history, 21 Oct) Reps of the judged sets, as logged. */
+  judgedReps: number[];
   /** Every judged set reached the top of the range (false when nothing was counted). */
   allHitTop: boolean;
   /**
@@ -676,6 +681,7 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
       easierLeftOut: reading?.easier.length ?? 0,
       increaseFrom,
       minReps: reps.length === 0 ? 0 : Math.min(...reps),
+      judgedReps: reps,
       allHitTop,
       anyBelowFloor: atPlan.some((x) => (x.reps ?? 0) < criteria.repRange.min),
       effortOk: effortWithin(judged, criteria),
@@ -1090,6 +1096,20 @@ function builderFormatOtherLoad(ctx: Ctx, sessions: readonly SessionEval[], firs
     return r.load;
   }
   return asLoad(ctx, raw);
+}
+
+/**
+ * (Reps from history, 21 Oct) The newest comparable session the rule would
+ * plan from (the same reading as `calculateNextTargets`: like-for-like
+ * equipment, FitNotes working sets, builder-format top + back-offs): its
+ * judged reps and the load it plans from. Null when there's none.
+ */
+export function latestJudgedSession(input: NextTargetsInput): { reps: number[]; load: number | null; direction: LoadDirection } | null {
+  const unit = input.equipment?.unit ?? input.unit;
+  const convention = input.equipment?.loadConvention ?? input.convention;
+  const ctx: Ctx = { input, unit, convention, direction: loadDirection(convention), facts: [], infeasible: false };
+  const ref = comparableSessions(ctx).find((s) => s.loggedSets > 0);
+  return ref === undefined ? null : { reps: ref.judgedReps, load: ref.load, direction: ctx.direction };
 }
 
 /**
