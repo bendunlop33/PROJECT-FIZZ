@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { builderInfoOf, starterExercises, type BuilderContext, type BuilderExerciseInfo, type BuilderGroupName, type BuilderPool } from '../src/index';
-import { cable, loadInput } from './builder-v3-fixture';
+import { bar, cable, loadInput } from './builder-v3-fixture';
 
 /**
  * The real bundled catalogue (packages/catalogue/data/exercises) as the
@@ -10,7 +10,9 @@ import { cable, loadInput } from './builder-v3-fixture';
  * (`starterExercises`: primary muscles only) replace their catalogue facts,
  * as on Ben's phone (his Barbell row works lats and upper back only).
  * Pools are alphabetical (the service's order with no history), led by an
- * optional history order. Loads are a plain cable stack (structure only).
+ * optional history order. Loads are a plain cable stack (structure only);
+ * `variedLoads`: lifts on a bar get a whole-bar est. max that differs per
+ * exercise (for "heaviest first").
  */
 
 type Facts = Parameters<typeof builderInfoOf>[0];
@@ -42,7 +44,7 @@ export interface CatalogueWorld {
   ctx: () => BuilderContext;
 }
 
-export function catalogueWorld(opts: { starterFacts?: boolean } = {}): CatalogueWorld {
+export function catalogueWorld(opts: { starterFacts?: boolean; variedLoads?: boolean } = {}): CatalogueWorld {
   const infos = new Map<string, BuilderExerciseInfo>();
   for (const e of RAW) {
     const i = builderInfoOf({ ...e, id: e.key } as unknown as Facts);
@@ -74,7 +76,14 @@ export function catalogueWorld(opts: { starterFacts?: boolean } = {}): Catalogue
       let n = 0;
       return {
         info,
-        loads: () => loadInput({ equipment: cable, convention: 'stack', e1rm: 60 }),
+        loads: (id) => {
+          if (opts.variedLoads === true && infos.get(id)?.barbell === true) {
+            let h = 0;
+            for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 997;
+            return loadInput({ equipment: bar, convention: 'total', e1rm: 40 + (h % 160) });
+          }
+          return loadInput({ equipment: cable, convention: 'stack', e1rm: 60 });
+        },
         newKey: (id) => {
           n += 1;
           return `${id}#${String(n)}`;

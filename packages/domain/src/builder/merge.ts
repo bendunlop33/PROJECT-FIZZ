@@ -1,4 +1,4 @@
-import { infoOrDefault, pairSlots, unpairAuto } from './arrange';
+import { bandInsertIndex, infoOrDefault, pairSlots, unpairAuto } from './arrange';
 import type { BuilderPool, BuilderSetup, GroupCount } from './build';
 import { fitToMinutes, removeSlot, type BuilderFitResult } from './fit';
 import { makeSlot } from './slot';
@@ -33,7 +33,7 @@ const countOf = (groups: readonly GroupCount[], g: BuilderGroupName): number => 
 /**
  * `mergeSetupChange`: from `prev` to `next` set-up over Ben's edited workout.
  * Group counts add or remove only that group's exercises (removing untouched
- * ones first, from the end; a new one is paired only with a single Ben
+ * ones first, from the end; a new one goes in its §3.4 band and is paired only with a single Ben
  * didn't unlink); Supersets re-pairs only pairs the builder made;
  * a length change trims or adds sets (`fitToMinutes`, no new exercises).
  */
@@ -65,10 +65,9 @@ export function mergeSetupChange(
       }
       const slot = makeSlot(id, { main: false }, ctx);
       const block: BuilderBlock = { slots: [slot], auto: false };
-      const absAt = w.blocks.findIndex((b) => b.slots.every((s) => groupOf(s) === 'Abs'));
+      // §3.4 bands, as filling time does: a compound before the isolations, abs last (review builder-order B1).
       const blocks = [...w.blocks];
-      if (absAt < 0 || g === 'Abs') blocks.push(block);
-      else blocks.splice(absAt, 0, block);
+      blocks.splice(bandInsertIndex(blocks, slot, ctx.info, [g]), 0, block);
       w = { ...w, blocks };
       added.add(slot.key);
       changes.push({ kind: 'group_added', group: g, slotKey: slot.key, exerciseId: id });
@@ -78,7 +77,14 @@ export function mergeSetupChange(
       const cand = [...all()].reverse().filter((s) => groupOf(s) === g && !s.main);
       const s = cand.find((x) => x.touched !== true) ?? cand[0];
       if (s === undefined) break;
+      const pair = w.blocks.find((b) => b.auto && b.slots.length === 2 && b.slots.some((x) => x.key === s.key));
       w = removeSlot(w, s.key);
+      // Abs its partner leaves go back to the end (abs last, §3.4), free to pair again (review builder-order B1).
+      const left = pair?.slots.find((x) => x.key !== s.key);
+      if (left !== undefined && groupOf(left) === 'Abs') {
+        w = { ...w, blocks: [...w.blocks.filter((b) => !b.slots.some((x) => x.key === left.key)), { slots: [left], auto: false }] };
+        added.add(left.key);
+      }
       changes.push({ kind: 'group_removed', group: g, slotKey: s.key, exerciseId: s.exerciseId });
       diff += 1;
     }

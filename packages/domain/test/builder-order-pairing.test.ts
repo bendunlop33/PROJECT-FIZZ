@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   BUILDER_DAY_MIXES,
+  TODAY_OTHER_SESSIONS,
   assembleTodayDraft,
+  bandInsertIndex,
   buildFromSetup,
   canAutoPair,
   defaultBuilderMainLift,
@@ -47,8 +49,18 @@ function rank(s: BuilderSlot, info: (id: string) => BuilderExerciseInfo | null):
   return i.heavy ? 1 : 2;
 }
 
-/** (a)–(d) for one workout; `order`: also check the §3.4 bands (c) and heavy-first (b). */
-function expectRules(w: BuilderWorkout, world: CatalogueWorld, hasMain: boolean, label: string, opts: { order: boolean } = { order: true }): void {
+/** A bar lift's est. max in the world (null: not a whole-bar load). */
+function barLoad(world: CatalogueWorld, id: string): number | null {
+  const l = world.ctx().loads(id);
+  return l.convention === 'total' ? l.e1rm : null;
+}
+
+/**
+ * (a)–(d) for one workout; `order`: also check the §3.4 bands (c) and
+ * heavy-first (b); `heaviest`: the lead bar lift is the heaviest known one
+ * (a fresh build with no main lift).
+ */
+function expectRules(w: BuilderWorkout, world: CatalogueWorld, hasMain: boolean, label: string, opts: { order: boolean; heaviest?: boolean } = { order: true }): void {
   const { info } = world;
   const all = w.blocks.flatMap((b) => b.slots);
   const mains = all.filter((s) => s.main);
@@ -80,9 +92,26 @@ function expectRules(w: BuilderWorkout, world: CatalogueWorld, hasMain: boolean,
       const first = w.blocks[0]?.slots[0];
       expect(first !== undefined && rank(first, info), `${label}: heavy first ${names(w, info).join(' | ')}`).toBe(1);
       if (heavy.some((s) => info(s.exerciseId)?.barbell === true)) expect(info(first?.exerciseId ?? '')?.barbell, label).toBe(true);
+      if (opts.heaviest === true && first !== undefined) {
+        const top = Math.max(...heavy.map((s) => (info(s.exerciseId)?.barbell === true ? (barLoad(world, s.exerciseId) ?? -1) : -1)));
+        if (top >= 0) expect(barLoad(world, first.exerciseId), `${label}: heaviest first ${names(w, info).join(' | ')}`).toBe(top);
+      }
     }
   }
 }
+
+/** Every day Set up or Today can build: the split mixes, the Other sessions, an arms-only day. */
+const ALL_MIXES: readonly (readonly [string, readonly GroupCount[]])[] = [
+  ...Object.entries(BUILDER_DAY_MIXES),
+  ...TODAY_OTHER_SESSIONS.map((o) => [`other:${o.id}`, o.groups] as const),
+  [
+    'arms',
+    [
+      { group: 'Biceps', count: 2 },
+      { group: 'Triceps', count: 2 },
+    ],
+  ],
+];
 
 describe("Ben's Back day (Build B screenshot, 21 Oct)", () => {
   // His phone's starter Barbell row works lats and upper back only, so it shares nothing with a curl.
@@ -145,20 +174,19 @@ describe('defaultBuilderMainLift', () => {
 });
 
 describe('order and pairing rules over every day × length × Supersets × main lift', () => {
-  const days = Object.keys(BUILDER_DAY_MIXES) as (keyof typeof BUILDER_DAY_MIXES)[];
   const lengths = [15, 20, 25, 30, 35, 40, 45, 50, 60, 75, 90, 120];
   for (const starterFacts of [false, true]) {
     const world = catalogueWorld({ starterFacts });
     for (const history of [[], BACK_HISTORY, [...world.ids].reverse()]) {
       it(`Set up build (${starterFacts ? 'starter rows' : 'catalogue'}, history ${String(history.length)})`, () => {
         const pool = world.pool(history);
-        for (const day of days) {
-          const mix = BUILDER_DAY_MIXES[day];
+        for (const [day, mix] of ALL_MIXES) {
           const main = defaultBuilderMainLift({ groups: mix.map((g) => g.group), pool, info: world.info, catalogueKeyOf: (id) => id });
-          expect(main, day).not.toBeNull();
+          // Only an arms day has no main compound.
+          expect(main === null, day).toBe(day === 'arms');
           for (const minutes of lengths) {
             for (const supersets of [true, false]) {
-              for (const mainLiftExerciseId of [null, main]) {
+              for (const mainLiftExerciseId of main === null ? [null] : [null, main]) {
                 const label = `${day} ${String(minutes)} min supersets ${String(supersets)} main ${String(mainLiftExerciseId)}`;
                 const rec = recommendForSetup(mix, { minutes, mainLiftExerciseId, supersets }, pool, world.ctx());
                 for (const groups of [rec.groups, mix.map((g) => ({ ...g }))]) {
@@ -175,10 +203,9 @@ describe('order and pairing rules over every day × length × Supersets × main 
 
     it(`Today card: grow, abs on/off, accessories, Mix it up (${starterFacts ? 'starter rows' : 'catalogue'})`, () => {
       const pool = world.pool(BACK_HISTORY);
-      for (const day of days) {
-        const mix = BUILDER_DAY_MIXES[day];
+      for (const [day, mix] of ALL_MIXES) {
         const main = defaultBuilderMainLift({ groups: mix.map((g) => g.group), pool, info: world.info, catalogueKeyOf: (id) => id });
-        for (const mainLiftExerciseId of [null, main]) {
+        for (const mainLiftExerciseId of main === null ? [null] : [null, main]) {
           const today: TodayDay = {
             key: `other:${day}`,
             kind: 'other',
@@ -257,5 +284,111 @@ describe('the builder never re-pairs a heavy lift', () => {
     if (merged.kind !== 'merged') throw new Error('expected a merge');
     expectRules(merged.workout, world, false, 'merge', { order: false });
     expect(merged.workout.blocks.some((b) => b.slots.length > 1)).toBe(true);
+  });
+});
+
+describe('heaviest bar lift first with no main lift (varied loads)', () => {
+  const world = catalogueWorld({ starterFacts: true, variedLoads: true });
+  it('every day × length × Supersets: the heaviest known bar lift leads', () => {
+    const pool = world.pool();
+    for (const [day, mix] of ALL_MIXES) {
+      for (const minutes of [20, 30, 45, 60, 90]) {
+        for (const supersets of [true, false]) {
+          const groups = mix.map((g) => ({ ...g, count: g.group === 'Abs' ? g.count : g.count + 1 }));
+          const r = buildFromSetup({ minutes, mainLiftExerciseId: null, supersets, groups }, pool, world.ctx());
+          expectRules(r.workout, world, false, `${day} ${String(minutes)} ss ${String(supersets)}`, { order: true, heaviest: true });
+        }
+      }
+    }
+  });
+});
+
+describe('Set up merges keep the order and pairing rules (review builder-order B1, S3)', () => {
+  for (const starterFacts of [false, true]) {
+    const world = catalogueWorld({ starterFacts });
+    it(`group counts up and down, abs paired or off, length up (${starterFacts ? 'starter rows' : 'catalogue'})`, () => {
+      const pool = world.pool(BACK_HISTORY);
+      let checked = 0;
+      for (const [day, mix] of ALL_MIXES) {
+        const main = defaultBuilderMainLift({ groups: mix.map((g) => g.group), pool, info: world.info, catalogueKeyOf: (id) => id });
+        for (const mainLiftExerciseId of main === null ? [null] : [null, main]) {
+          for (const supersets of [true, false]) {
+            for (const absOff of [false, true]) {
+              for (const minutes of [30, 60]) {
+                const groups = mix.filter((g) => !absOff || g.group !== 'Abs').map((g) => ({ ...g, count: g.group === 'Abs' && !absOff ? Math.max(1, g.count) : g.count }));
+                const prev = { minutes, mainLiftExerciseId, supersets, groups, dayId: day, variationId: null };
+                const built = buildFromSetup(prev, pool, world.ctx()).workout;
+                const hasMain = mainLiftExerciseId !== null;
+                const targets = [...new Set([...groups.map((g) => g.group), 'Back' as const, 'Biceps' as const, 'Abs' as const])];
+                for (const g of targets) {
+                  for (const delta of [1, 2, 3, -1]) {
+                    const before = groups.find((x) => x.group === g)?.count ?? 0;
+                    if (before + delta < 0) continue;
+                    const nextGroups = groups.some((x) => x.group === g) ? groups.map((x) => (x.group === g ? { ...x, count: before + delta } : x)) : [...groups, { group: g, count: delta }];
+                    const label = `${day} main ${String(mainLiftExerciseId)} ss ${String(supersets)} absOff ${String(absOff)} ${String(minutes)} min ${g} ${delta > 0 ? '+' : ''}${String(delta)}`;
+                    const ctx = world.ctx();
+                    const r = mergeSetupChange(prev, { ...prev, groups: nextGroups }, built, pool, ctx);
+                    if (r.kind !== 'merged') continue;
+                    expectRules(r.workout, world, hasMain, label);
+                    // A second change on top (abs back on, another group up) keeps them too.
+                    const again = mergeSetupChange({ ...prev, groups: nextGroups }, { ...prev, groups: nextGroups.map((x) => ({ ...x, count: x.count + 1 })) }, r.workout, pool, ctx);
+                    if (again.kind === 'merged') expectRules(again.workout, world, hasMain, `${label} then all +1`);
+                    checked += 1;
+                  }
+                }
+                // Length up: more sets, same order and pairs.
+                const longer = mergeSetupChange(prev, { ...prev, minutes: minutes + 30 }, built, pool, world.ctx());
+                if (longer.kind === 'merged') expectRules(longer.workout, world, hasMain, `${day} ${String(minutes)} → ${String(minutes + 30)}`);
+              }
+            }
+          }
+        }
+      }
+      expect(checked).toBeGreaterThan(500);
+    });
+  }
+
+  it("Ben's Back day, Main lift none, Back 1 → 4: Barbell row leads, compounds before the curl + abs pair", () => {
+    const world = catalogueWorld({ starterFacts: true });
+    const pool = world.pool(BACK_HISTORY);
+    const ctx = world.ctx();
+    const prev = {
+      minutes: 60,
+      mainLiftExerciseId: null,
+      supersets: true,
+      groups: [
+        { group: 'Back' as const, count: 1 },
+        { group: 'Biceps' as const, count: 1 },
+        { group: 'Abs' as const, count: 1 },
+      ],
+      dayId: 'back',
+      variationId: null,
+    };
+    const built = buildFromSetup(prev, pool, ctx).workout;
+    const r = mergeSetupChange(prev, { ...prev, groups: prev.groups.map((g) => (g.group === 'Back' ? { ...g, count: 4 } : g)) }, built, pool, ctx);
+    if (r.kind !== 'merged') throw new Error('expected a merge');
+    const ns = names(r.workout, world.info);
+    expect(ns[0]).toBe('Barbell row');
+    expect(ns.findIndex((n) => n.includes('back extension'))).toBeGreaterThan(ns.findIndex((n) => n === 'Barbell row'));
+    expect(ns[ns.length - 1]).toMatch(/Ab|abs|crunch|plank/i);
+    expectRules(r.workout, world, false, 'ben merge');
+  });
+});
+
+describe('bandInsertIndex', () => {
+  const world = catalogueWorld({ starterFacts: true });
+  const slot = (exerciseId: string, main = false): BuilderSlot => ({ key: exerciseId, exerciseId, main, repRange: { min: 8, max: 12 }, rows: [], unit: 'kg', convention: 'total', source: 'none', startLight: null, anchorE1rm: null });
+  const blocks: BuilderBlock[] = [
+    { slots: [slot('bodyweight-45-degree-back-extension')], auto: false },
+    { slots: [slot('barbell-curl'), slot('bodyweight-ab-wheel-rollout')], auto: true },
+  ];
+  it('a heavy compound goes first; an isolation before the block holding abs; abs at the end; never above the main lift', () => {
+    expect(bandInsertIndex(blocks, slot(ROW), world.info, ['Back'])).toBe(0);
+    expect(bandInsertIndex(blocks, slot('dumbbell-rear-delt-fly'), world.info, ['Back'])).toBe(1);
+    expect(bandInsertIndex(blocks, slot('cable-crunch'), world.info, ['Abs'])).toBe(2);
+    const withMain = [{ slots: [slot(ROW, true)], auto: false }, ...blocks];
+    expect(bandInsertIndex(withMain, slot('barbell-seal-row'), world.info, ['Back'])).toBe(1);
+    // Same band as the back extension (a compound): after it.
+    expect(bandInsertIndex(withMain, slot('cable-lat-pulldown'), world.info, ['Back'])).toBe(2);
   });
 });

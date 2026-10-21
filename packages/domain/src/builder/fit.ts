@@ -1,4 +1,4 @@
-import { canAutoPair, infoOrDefault, pairSlots } from './arrange';
+import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
 import { estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { makeSlot } from './slot';
 import { BUILDER_SET_RULES, setWorkingCount, workingCount } from './set-rows';
@@ -264,40 +264,10 @@ function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOption
   return { workout: w, steps, status: steps.length === 0 ? 'fits' : 'fitted', minutes: estimateBuilderMinutes(w, ctx) };
 }
 
-/** §3.4 bands: heavy compound 1, other compound 2, isolation 3, abs 4 (the main lift is always first). */
-function orderRank(s: BuilderSlot, ctx: BuilderContext): number {
-  const i = infoOrDefault(ctx.info, s.exerciseId);
-  if (i.group === 'Abs') return 4;
-  if (i.role !== 'compound') return 3;
-  return i.heavy ? 1 : 2;
-}
-
-/** Insert a new single after the last block with one of `groups` (else before abs), moved up past blocks of a later §3.4 band; with Supersets on, pair only the new one (review B3). */
+/** Insert a new single where the §3.4 bands put it (`bandInsertIndex`); with Supersets on, pair only the new one (review B3). */
 function insertAfterGroup(w: BuilderWorkout, slot: BuilderSlot, groups: readonly BuilderGroupName[], ctx: BuilderContext, supersets: boolean): { w: BuilderWorkout; key: string } {
-  const g = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId).group;
-  let at = -1;
-  w.blocks.forEach((b, i) => {
-    if (b.slots.some((s) => groups.includes(g(s)) && g(s) !== 'Abs')) at = i;
-  });
-  if (at < 0) {
-    const abs = w.blocks.findIndex((b) => b.slots.every((s) => g(s) === 'Abs'));
-    at = (abs < 0 ? w.blocks.length : abs) - 1;
-  }
-  // §3.4 order: a new compound goes before the isolations (and a heavy one before the lighter compounds)…
-  const rank = orderRank(slot, ctx);
-  while (at >= 0) {
-    const lead = w.blocks[at]?.slots[0];
-    if (lead === undefined || lead.main || orderRank(lead, ctx) <= rank) break;
-    at -= 1;
-  }
-  // …and an isolation goes after the other groups' compounds.
-  for (;;) {
-    const lead = w.blocks[at + 1]?.slots[0];
-    if (lead === undefined || orderRank(lead, ctx) >= rank) break;
-    at += 1;
-  }
   const blocks = [...w.blocks];
-  blocks.splice(at + 1, 0, { slots: [slot], auto: false });
+  blocks.splice(bandInsertIndex(blocks, slot, ctx.info, groups), 0, { slots: [slot], auto: false });
   return { w: { ...w, blocks: supersets ? pairSlots(blocks, ctx.info, { only: new Set([slot.key]) }) : blocks }, key: slot.key };
 }
 

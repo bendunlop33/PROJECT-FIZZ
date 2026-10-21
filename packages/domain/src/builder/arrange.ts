@@ -134,6 +134,63 @@ export function splitInvalidAutoPairs(blocks: readonly BuilderBlock[], info: Bui
   });
 }
 
+/**
+ * §3.4 band of one exercise: main lift 0, heavy compound 1, other compound 2,
+ * isolation 3, abs 4.
+ */
+export function builderOrderRank(s: Pick<BuilderSlot, 'exerciseId' | 'main'>, info: BuilderInfoLookup): number {
+  if (s.main) return 0;
+  const i = infoOrDefault(info, s.exerciseId);
+  if (isAbs(i)) return 4;
+  if (i.role !== 'compound') return 3;
+  return i.heavy ? 1 : 2;
+}
+
+/**
+ * A block's band: the main lift's 0; else its best slot's, except that abs
+ * paired with an isolation are the abs band (4: a new isolation goes before
+ * that pair, review builder-order B1). Abs paired with a compound (the only
+ * partner that fitted) stay in that compound's band.
+ */
+export function builderBlockRank(b: BuilderBlock, info: BuilderInfoLookup): number {
+  if (b.slots.some((s) => s.main)) return 0;
+  const best = Math.min(...b.slots.map((s) => builderOrderRank(s, info)));
+  return best === 3 && b.slots.some((s) => isAbs(infoOrDefault(info, s.exerciseId))) ? 4 : best;
+}
+
+/**
+ * `bandInsertIndex`: where a new single goes (an index for `splice`) so the
+ * §3.4 bands hold. Starts after the last block with one of `groups` (abs
+ * excluded; none, or no groups: before the first block holding abs, else
+ * the end; abs: the end),
+ * then moves up past blocks of a later band (never above the main lift) and
+ * down past blocks of an earlier one. Used by every path that adds an
+ * exercise: filling time, Set up group counts, the coach's `add`.
+ */
+export function bandInsertIndex(blocks: readonly BuilderBlock[], slot: Pick<BuilderSlot, 'exerciseId' | 'main'>, info: BuilderInfoLookup, groups: readonly string[] = []): number {
+  const g = (s: BuilderSlot) => infoOrDefault(info, s.exerciseId).group;
+  let at = -1;
+  blocks.forEach((b, i) => {
+    if (b.slots.some((s) => groups.includes(g(s)) && g(s) !== 'Abs')) at = i;
+  });
+  const rank = builderOrderRank(slot, info);
+  if (at < 0) {
+    const abs = rank === 4 ? -1 : blocks.findIndex((b) => builderBlockRank(b, info) === 4);
+    at = (abs < 0 ? blocks.length : abs) - 1;
+  }
+  while (at >= 0) {
+    const b = blocks[at];
+    if (b === undefined || builderBlockRank(b, info) <= rank) break;
+    at -= 1;
+  }
+  for (;;) {
+    const b = blocks[at + 1];
+    if (b === undefined || builderBlockRank(b, info) >= rank) break;
+    at += 1;
+  }
+  return at + 1;
+}
+
 /** The first muscle both work; same part (both quads…) counts as shared. */
 export function sharedMuscle(x: BuilderExerciseInfo, y: BuilderExerciseInfo): string | null {
   const m = x.muscles.find((v) => y.muscles.includes(v));
@@ -176,7 +233,10 @@ export function pairSlots(blocks: readonly BuilderBlock[], info: BuilderInfoLook
     if (a === undefined || taken.has(a)) continue;
     const b = left.find((y, k) => k > i && !taken.has(y) && allowed(a, y) && canAutoPair(a, y, info));
     if (b !== undefined) {
-      partner.set(a, b);
+      // The pair sits where its earlier-band member is, that one first (a new compound joining an
+      // isolation stays in the compound band; review builder-order B1).
+      const [lead, mate] = builderOrderRank(b, info) < builderOrderRank(a, info) ? [b, a] : [a, b];
+      partner.set(lead, mate);
       taken.add(a).add(b);
     }
   }

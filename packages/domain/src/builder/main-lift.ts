@@ -9,7 +9,11 @@ import type { BuilderGroupName, BuilderInfoLookup } from './types';
  * first) and the catalogue keys are injected.
  */
 
-/** The lead group's default main lifts, best first (catalogue keys). Arms and abs have none. */
+/**
+ * The lead group's default main lifts, best first (catalogue keys). Arms and abs have none.
+ * `barbell-row` is not a catalogue entry: it is the legacy starter key older phones' Barbell row
+ * rows carry (`starter-exercises.ts`), so those still match (review builder-order N1).
+ */
 export const BUILDER_DEFAULT_MAIN_LIFTS: Readonly<Partial<Record<BuilderGroupName, readonly string[]>>> = {
   Chest: ['barbell-bench-press', 'barbell-incline-bench-press', 'dumbbell-bench-press'],
   Back: ['barbell-bent-over-row', 'barbell-row', 'cable-lat-pulldown', 'cable-seated-row'],
