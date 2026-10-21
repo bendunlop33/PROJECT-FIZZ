@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
-import { addDays, currentDraftVersion, formFromEquipment, localDateOf, toMs, type EquipmentForm } from '@fizz/domain';
+import { addDays, currentDraftVersion, formFromEquipment, localDateOf, toMs, undoableTimeFit, type EquipmentForm } from '@fizz/domain';
 import { builderApplyOpId } from '@fizz/coach';
 
 import { planChangeUndoOpId } from '../src/builder/builder-service';
@@ -48,13 +48,15 @@ function usableOf(req: ModelRequest): { catalogueId: string; name: string }[] {
   if (data.build === undefined) throw new Error('not a build turn');
   return data.build.usable;
 }
-const planStub = (req: ModelRequest): ModelEvent[] => {
+const planStubOf = (days: typeof FOUR) => (req: ModelRequest): ModelEvent[] => {
   const usable = usableOf(req);
   const idOf = (name: string) => usable.find((u) => u.name === name)?.catalogueId ?? `missing-${name}`;
-  return toolCall('propose_plan', { days: FOUR.map(([dayName, splitDayId, exs]) => ({ dayName, splitDayId, focus: null, minutes: null, exercises: exs.map(([n, over]) => ex(idOf(n), over ?? {})) })), message: 'Push, pull, legs, upper.', minutes: null, gymName: null });
+  return toolCall('propose_plan', { days: days.map(([dayName, splitDayId, exs]) => ({ dayName, splitDayId, focus: null, minutes: null, exercises: exs.map(([n, over]) => ex(idOf(n), over ?? {})) })), message: 'Push, pull, legs, upper.', minutes: null, gymName: null });
 };
 
-async function benWithPlan() {
+const planStub = planStubOf(FOUR);
+
+async function benWithPlan(stub = planStub) {
   const { services: s } = await h.launch();
   const gymId = await setUpGym(h, s);
   await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 7, rpe: 8 }, { load: 100, reps: 7, rpe: 8 }] }]);
@@ -63,7 +65,7 @@ async function benWithPlan() {
   h.clockMs += DAY;
   await logWorkout(h, s, gymId, [{ exercise: 'Back squat', sets: [{ load: 100, reps: 5, rpe: 8 }, { load: 100, reps: 5, rpe: 8 }] }]);
   h.clockMs += DAY;
-  model = new StepModel([planStub, () => replyWith('Here is your week.')]);
+  model = new StepModel([stub, () => replyWith('Here is your week.')]);
   const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Build me a 4-day plan', spoken: false }, turnId: h.ids() });
   const card = r.cards[0]?.record;
   if (card?.detail.kind !== 'build_plan') throw new Error('no plan');
@@ -720,5 +722,68 @@ describe('Wave 2 merge integrity (reviews wave2-integrity, wave2-wiring)', () =>
     expect(loads.length).toBeGreaterThan(0);
     expect(Math.max(...loads)).toBeLessThanOrEqual(bar.barMass + 20);
     expect(Math.max(...loads)).toBeLessThan(100);
+  });
+});
+
+/**
+ * Review build-a S5: the `+N min` fit on a workout started from Today (a plan
+ * day with a superset), with the real catalogue's groups and roles: the plan's
+ * main lift is never trimmed or dropped, a superset's no-rest `a` stays at no
+ * rest, Apply is one write, and `⋯ › Undo fit to time` (undoableTimeFit) puts it back.
+ */
+describe('+N min fit from a Today Start (b3 merge, review S5)', () => {
+  it('a superset day with catalogue info: main lift kept, superset rests intact, Apply then ⋯ Undo', async () => {
+    // Push with two isolations from different groups, so Today pairs them.
+    const days: typeof FOUR = FOUR.map(([n, id, exs]) => [n, id, id === 'push' ? [...exs, ['Lateral raise', { reps: { min: 12, max: 15 } }], ['Triceps pushdown', { reps: { min: 10, max: 12 } }]] : exs]);
+    const { s, gymId } = await benWithPlan(planStubOf(days));
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const pick = sel(data, key, { minutes: 75, supersets: true });
+    const c = await s.todaySession.commit(data, pick, 'commit-fit');
+    if (!c.ok) throw new Error(c.message);
+    const started = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'start-fit', checkIn: null });
+    if (!started.ok) throw new Error(JSON.stringify(started.error));
+    const sessionId = started.aggregate.session.id;
+    const w = await s.workout.load(sessionId);
+    if (!w) throw new Error('no workout');
+    const a = w.aggregate;
+    const live = a.exercises.filter((e) => e.removed === undefined);
+    // A superset, and real catalogue info for every exercise (not defaults).
+    expect(live.some((e) => e.supersetGroup !== null && live.filter((x) => x.supersetGroup === e.supersetGroup).length > 1)).toBe(true);
+    for (const e of live) expect(w.builderInfo?.[e.exerciseId]?.group).toBeTruthy();
+    // The plan day's main lift reaches the fit (provenance or the draft's main slot).
+    const mainId = a.session.planDay?.mainLiftExerciseId ?? null;
+    const mains = new Set([...(w.mainExerciseIds ?? []), ...(mainId === null ? [] : [mainId])]);
+    expect(mains.size).toBeGreaterThan(0);
+    const mainRows = new Set(live.filter((e) => mains.has(e.exerciseId)).map((e) => e.id));
+    expect(mainRows.size).toBeGreaterThan(0);
+
+    const offer = s.workout.timeFit(w, 25);
+    if (offer === null) throw new Error('no offer');
+    const byId = new Map(a.sets.map((x) => [x.id, x]));
+    for (const l of offer.lines) if (l.kind === 'sets' || l.kind === 'drop' || l.kind === 'effort') expect(mainRows.has(l.sessionExerciseId)).toBe(false);
+    for (const st of offer.steps) {
+      if (st.type === 'skip_exercise') expect(mainRows.has(st.sessionExerciseId)).toBe(false);
+      if (st.type === 'delete_set') expect(mainRows.has(byId.get(st.setId)?.sessionExerciseId ?? '')).toBe(false);
+      if (st.type !== 'edit_planned_set') continue;
+      const set = byId.get(st.setId);
+      expect(set?.status).toBe('pending');
+      expect(st.patch.load).toBeUndefined();
+      // A superset's no-rest `a` (and any rest) only ever gets shorter, never added.
+      if (st.patch.restS !== undefined) expect(st.patch.restS).toBeLessThan(set?.rest.seconds ?? 0);
+    }
+    expect(offer.lines.length).toBeGreaterThan(0);
+
+    const applied = await s.workout.applyTimeFit({ sessionId, offer, opId: 'fit-today' });
+    expect(applied.ok).toBe(true);
+    const after = await s.workout.load(sessionId);
+    if (!after) throw new Error('no workout');
+    expect(undoableTimeFit(after.aggregate, h.now())).toBe('fit-today');
+    const shape = (x: typeof a) => x.sets.map((y) => [y.id, y.status, y.rest.seconds, y.planned.rpeOverride ?? y.planned.rpe]);
+    expect(shape(after.aggregate)).not.toEqual(shape(a));
+    expect((await s.workout.undoOp({ sessionId, targetOpId: 'fit-today' })).ok).toBe(true);
+    const back = await s.workout.load(sessionId);
+    expect(shape(back?.aggregate ?? a)).toEqual(shape(a));
+    expect(undoableTimeFit(back?.aggregate ?? a, h.now())).toBeNull();
   });
 });
