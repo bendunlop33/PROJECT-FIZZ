@@ -571,6 +571,17 @@ Whether step 4 should replace steps 1–3 ("est. 1RM everywhere") is still open 
 
 Open for Ben: the 90 % share; "last session" versus the best of the last 3 sessions; the reading of the rule load at its floor for the test.
 
+**Reps from history (21 Oct, PROPOSED, needs Ben's approval; not in CHANGELOG or ADR 0006/0010 yet).** Ben's live Back workout: shrugs planned at 8 reps though he did 15 last time. Same branch. Applies to the builder, Describe the workout, plan days and ＋ New workout from Today, Start, swaps, adds and `get_progression_targets` (all read the built-in rule through `nextTargetsFor`).
+
+- **The built-in rule's range follows his last session of that exercise** (typical reps = lower median of its working sets), for isolation and compound lifts: inside the goal range → the goal range; above it up to the rule's rep cap (isolation 15, compound 12) → `last − 3 … last` (15 → 12–15); above the cap → the top moves 2 reps a session toward the goal (20 → 15–18); below → `last … last + 3`; bodyweight follows his reps however high. Double progression then runs on that range. Why? fact: `Reps follow your last session (15 reps): 12–15.`
+- **One planned rep count** (`aim`): after a load increase, the reps the new load allows at the same effort (Epley; 50 × 15 → 52.5 × 13); a hold repeats his reps; add reps = the rule's next rep; a miss or reduction = the floor.
+- **Builder slots** (not the main lift) plan working sets at `aim`; the rule's load is used as is. Behind Why?: `Reps: last time 15` (or `· toward 8–12`).
+- **Main lift**: top set / back-offs unchanged; Why? adds `Last time 12 reps · main lift 6–8` when his last reps were outside 6–8. A main barbell lift used as a secondary lift reads its rule as a compound lift's (a row after the main lift at his usual 12 → 9–12).
+- **Ben's own rule** keeps its range.
+- **A plan's week-1 load older than newer sessions** gives way to the rule (it plans from those sessions at his reps); before, it gave way only when more than 10 % lower.
+
+Open for Ben: the width (3), the cap as "wildly outside", the 2-rep step, Epley for the reps after a load increase, the lower median as "his reps", and leaving main barbell lifts on 3–6.
+
 ### 3.2 Rest defaults [Ben]
 
 | Set type | Default |
