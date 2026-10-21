@@ -1,0 +1,133 @@
+import { Pressable, ScrollView, View } from 'react-native';
+
+import { useTheme } from '../../theme';
+import { AppText, BottomCard, Icon, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
+import type { OverviewRowView, WhyView } from '../../workout/rounds';
+import type { WhyPanel } from '../../workout/target-why';
+import { TargetWhyPanel } from './TargetWhyPanel';
+
+/**
+ * The v3 round page's two sheets (workout-table-v3.md §2, §4). Every line
+ * comes from `rounds.ts` (`overviewRows`, `whyView`) and `explainTarget`;
+ * nothing is worked out here.
+ */
+
+/**
+ * `Workout` (§4): the builder's table, `#` · Exercise + works · `Sets` ·
+ * `Top set (kg)`, `3a` / `3b` rows without a box; done rounds dimmed with ✓,
+ * the shown round bright. A row tap jumps to its round. `＋ Add exercise`
+ * at the end (today only; the exercise `⋯` keeps Swap, Superset, Remove).
+ */
+export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: readonly OverviewRowView[]; onPick: (roundIndex: number) => void; onAddExercise: () => void; onClose: () => void }) {
+  const theme = useTheme();
+  const head = (t: string, style: object) => (
+    <AppText variant="label" color="text.tertiary" style={{ fontSize: 11, lineHeight: 14, letterSpacing: 0.8, textTransform: 'uppercase', ...style }} maxFontSizeMultiplier={1.6}>
+      {t}
+    </AppText>
+  );
+  return (
+    <BottomCard visible={p.visible} onClose={p.onClose} scroll={false}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'] }}>
+        <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
+          {p.title}
+        </AppText>
+        <TextButton label="Close" tone="secondary" onPress={p.onClose} />
+      </View>
+      <ScrollView style={{ flexShrink: 1 }}>
+        <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, paddingHorizontal: theme.space['2'], paddingBottom: theme.space['1'] }}>
+          {head('', { width: 30 })}
+          {head('Exercise', { flex: 1 })}
+          {head('Sets', { width: 48, textAlign: 'right' })}
+          {head('Top set (kg)', { width: 64, textAlign: 'right' })}
+        </View>
+        {p.rows.map((r) => (
+          <Pressable
+            key={r.key}
+            accessibilityRole="button"
+            accessibilityLabel={r.accessibilityLabel}
+            accessibilityHint="Shows this round"
+            onPress={() => {
+              p.onPick(r.roundIndex);
+            }}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              minHeight: 50,
+              paddingHorizontal: theme.space['2'],
+              paddingVertical: theme.space['1'],
+              borderTopWidth: theme.dividerWidth,
+              borderTopColor: theme.colors['border.divider'],
+              opacity: pressed ? TEXT_PRESSED_OPACITY : r.done && !r.current ? 0.6 : 1,
+            })}
+          >
+            <View style={{ width: 30, flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+              {r.done ? <Icon name="checkmark" color="status.done" size={11} /> : null}
+              <AppText variant="label" numeric color={r.current ? 'text.primary' : 'text.secondary'} style={{ fontSize: 13 }}>
+                {r.label}
+              </AppText>
+            </View>
+            <View style={{ flex: 1 }}>
+              <AppText variant="callout" color={r.current ? 'text.primary' : 'text.secondary'}>
+                {r.name}
+              </AppText>
+              {r.works !== null ? (
+                <AppText variant="callout" color="text.secondary" style={{ fontSize: 12, lineHeight: 16 }}>
+                  {r.works}
+                </AppText>
+              ) : null}
+            </View>
+            <AppText variant="callout" numeric style={{ width: 48, textAlign: 'right' }}>
+              {r.sets}
+            </AppText>
+            <AppText variant="callout" numeric style={{ width: 64, textAlign: 'right' }}>
+              {r.top}
+            </AppText>
+          </Pressable>
+        ))}
+        <View style={{ alignItems: 'flex-start', paddingTop: theme.space['2'] }}>
+          <TextButton label="＋ Add exercise" onPress={p.onAddExercise} />
+        </View>
+      </ScrollView>
+    </BottomCard>
+  );
+}
+
+/**
+ * `Why?` under an exercise (§2): its full target, the rest (after the round
+ * in a superset) with `Change`, last time, and the coach's or the rule's
+ * reason (`explainTarget`, as in the target's `Why?` panel).
+ */
+export function WhySheet(p: { visible: boolean; title: string; view: WhyView | null; panel: WhyPanel; onChangeRest: () => void; onPainFlag: (flagId: string) => void; onClose: () => void }) {
+  const theme = useTheme();
+  const v = p.view;
+  const line = (label: string, value: string, action?: { label: string; a11y: string; onPress: () => void }) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: theme.target.min.height, borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
+      <AppText variant="callout" color="text.secondary" style={{ width: 84 }}>
+        {label}
+      </AppText>
+      <AppText variant="callout" numeric style={{ flex: 1, fontWeight: '600' }}>
+        {value}
+      </AppText>
+      {action ? <TextButton label={action.label} tone="secondary" accessibilityLabel={action.a11y} onPress={action.onPress} /> : null}
+    </View>
+  );
+  return (
+    <BottomCard visible={p.visible} onClose={p.onClose}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'] }}>
+        <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
+          {p.title}
+        </AppText>
+        <TextButton label="Close" tone="secondary" onPress={p.onClose} />
+      </View>
+      {v !== null ? (
+        <View>
+          {line('Target', v.target)}
+          {line('Rest', v.rest.replace(/^Rest /, ''), { label: 'Change', a11y: 'Change the rest', onPress: p.onChangeRest })}
+          {v.last !== null ? line('Last time', v.last) : null}
+        </View>
+      ) : null}
+      {p.panel !== null ? <TargetWhyPanel panel={p.panel} onPainFlag={p.onPainFlag} /> : null}
+    </BottomCard>
+  );
+}

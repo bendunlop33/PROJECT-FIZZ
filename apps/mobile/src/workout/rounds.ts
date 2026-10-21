@@ -9,7 +9,7 @@
  * `buildWorkoutTableView` (domain). This file only groups, numbers and words
  * what the session already holds.
  */
-import type { RestView, TableColumns, TableRow, TopSet, WorkoutTableView } from '@fizz/domain';
+import { toMs, type RestView, type TableColumns, type TableRow, type TopSet, type WorkoutTableView } from '@fizz/domain';
 import type { SetType } from '@fizz/schemas';
 
 const NBSP = ' ';
@@ -474,8 +474,7 @@ export function timerBarMode(rest: Pick<RestView, 'kind'> | null): 'rest' | 'set
  * log if that came later (a superset's a → b has no rest), else the start.
  */
 export function setClockStartMs(p: { rest: RestView | null; lastLogMs: number | null; startedAtMs: number }): number {
-  const ended = p.rest?.kind === 'ended' && p.rest.endedAtUtc !== null ? Date.parse(p.rest.endedAtUtc) : Number.NaN;
-  const restEnd = Number.isNaN(ended) ? null : ended;
+  const restEnd = p.rest?.kind === 'ended' && p.rest.endedAtUtc !== null ? toMs(p.rest.endedAtUtc) : null;
   const candidates = [restEnd, p.lastLogMs].filter((x): x is number => x !== null);
   return candidates.length === 0 ? p.startedAtMs : Math.max(...candidates);
 }
@@ -485,8 +484,8 @@ export function lastLogMs(sets: readonly { status: string; completedAt: { utc: s
   let last: number | null = null;
   for (const s of sets) {
     if (s.status !== 'completed' || s.completedAt === null) continue;
-    const t = Date.parse(s.completedAt.utc);
-    if (!Number.isNaN(t) && (last === null || t > last)) last = t;
+    const t = toMs(s.completedAt.utc);
+    if (last === null || t > last) last = t;
   }
   return last;
 }

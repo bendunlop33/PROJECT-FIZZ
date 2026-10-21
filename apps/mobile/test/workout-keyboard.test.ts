@@ -30,18 +30,18 @@ describe('workout keyboard (F5)', () => {
   it('in the Table, tapping another row closes it before selecting or editing (review S3)', () => {
     for (const [state, part, action] of [['pending', 'marker', 'select'], ['pending', 'row', 'edit'], ['done', 'row', 'edit']] as const) {
       const calls: string[] = [];
-      const h = { dismissKeyboard: vi.fn(() => calls.push('dismiss')), edit: vi.fn(() => calls.push('edit')), select: vi.fn(() => calls.push('select')), selectEdit: vi.fn(), correct: vi.fn() };
+      const h = { dismissKeyboard: vi.fn(() => calls.push('dismiss')), edit: vi.fn(() => calls.push('edit')), select: vi.fn(() => calls.push('select')), selectEdit: vi.fn(), correct: vi.fn(), untick: vi.fn() };
       expect(runRowTap({ state, setId: 's1' }, h, part).kind).toBe(action);
       expect(calls).toEqual(['dismiss', action]);
       expect(h[action]).toHaveBeenCalledWith('s1');
     }
     // The open and skipped rows do nothing, and leave the pad as it is.
     for (const state of ['open', 'skipped'] as const) {
-      const h = { dismissKeyboard: vi.fn(), edit: vi.fn(), select: vi.fn(), selectEdit: vi.fn(), correct: vi.fn() };
+      const h = { dismissKeyboard: vi.fn(), edit: vi.fn(), select: vi.fn(), selectEdit: vi.fn(), correct: vi.fn(), untick: vi.fn() };
       expect(runRowTap({ state, setId: 's1' }, h).kind).toBe('none');
       expect(h.dismissKeyboard).not.toHaveBeenCalled();
     }
-    expect(table).toContain('runRowTap(row, {');
+    expect(table).toContain('runRowTap(r.row, {');
   });
 
   it('Log closes it', () => {
@@ -80,14 +80,14 @@ describe('the table stays a table (18 Oct; review B1, S3, S4, S6)', () => {
     expect(fn('async function log(')).toContain("editCell({ kind: 'logged' });");
     expect(fn('async function selectRow(')).toContain("editCell({ kind: 'selected' });");
   });
-  it('a drag or a tap below the rows closes it', () => {
-    expect(table.replace(/\s+/g, ' ')).toContain('onScrollBeginDrag={() => { props.onUserScroll(); props.onTapElsewhere(); }}');
+  it('a drag in a row box or a tap on the card outside the rows closes it', () => {
+    expect(table).toContain('onScrollBeginDrag={p.onTapElsewhere}');
     expect(table).toContain('accessible={false} onPress={props.onTapElsewhere}');
     expect(screen).toContain('onTapElsewhere={closeCellEditors}');
   });
   it('✓ on the open row logs only when Log can, and says what it logs', () => {
     expect(table).toContain('disabled={!p.canLog}');
-    expect(table).toContain('accessibilityLabel={`Set ${String(f.setNumber)}, ${plainSpaces(p.timedLogLabel ?? f.logLabel ?? \'Log\')}`}');
+    expect(table).toContain('accessibilityLabel={`${stepName}, ${plainSpaces(p.timedLogLabel ?? f.logLabel ?? \'Log\')}`}');
   });
   it('⋯ keeps copy last, the full set editor and Focus', () => {
     const more = fn('function openSetMore(');

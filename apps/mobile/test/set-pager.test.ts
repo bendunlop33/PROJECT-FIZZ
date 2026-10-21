@@ -112,7 +112,7 @@ describe('screens wire it (source checks; swipe feel and layout need a real iPho
   });
   it('while away the bar is Back (also over the Table pill); the set card and the viewed card swipe too (B2, S3)', () => {
     expect(screen).toContain('awayPrimary(view.primary.kind, away,');
-    expect(screen).toContain("pill === null || back.kind === 'back' ? primary");
+    expect(screen).toContain("back.kind === 'back' || !tableMode");
     expect(screen.match(/<Swipeable onSwipe=\{movePager\}/g)?.length).toBe(2);
   });
   it('the current set opens Edit set: its Focus row is tappable and ⋯ has Edit set (B1)', () => {

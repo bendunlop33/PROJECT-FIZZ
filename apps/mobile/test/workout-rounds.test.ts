@@ -66,11 +66,11 @@ function row(over: Partial<TableRow> = {}): TableRow {
     blockValue: '',
     accessibilityLabel: '',
     ...over,
-  } as TableRow;
+  };
 }
 
 function card(name: string, rows: TableRow[], over: Partial<TableCard> = {}): TableBlock {
-  const c = {
+  const c: TableCard = {
     key: `k-${name}`,
     sessionExerciseId: `se-${name}`,
     exerciseId: `ex-${name}`,
@@ -83,7 +83,7 @@ function card(name: string, rows: TableRow[], over: Partial<TableCard> = {}): Ta
     progressText: '',
     progressAccessibility: '',
     painBadge: false,
-    columns: { kind: 'load_reps', loadLabel: 'KG', valueLabel: 'REPS' },
+    columns: { kind: 'load_reps' as const, loadLabel: 'KG', valueLabel: 'REPS' as const },
     loadHeader: 'KG',
     repTarget: `6–8${NBSP}reps`,
     topSet: { value: 100, unit: 'kg' },
@@ -92,7 +92,7 @@ function card(name: string, rows: TableRow[], over: Partial<TableCard> = {}): Ta
     hasPending: rows.some((r) => r.state === 'pending' || r.state === 'open'),
     unilateral: false,
     ...over,
-  } as TableCard;
+  };
   return { kind: 'exercise', key: c.key, folded: null, card: c };
 }
 

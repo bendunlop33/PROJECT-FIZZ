@@ -7,6 +7,8 @@
 
 export const UNDO_TOAST = {
   deleted: (setNumber: number): string => `Set ${String(setNumber)} deleted`,
+  /** v3 swipe-left Delete: `Set 3 deleted`, `Warm-up deleted`. */
+  deletedNamed: (name: string): string => `${name} deleted`,
   skipped: (exerciseName: string): string => `${exerciseName} skipped`,
   corrected: (setNumber: number): string => `Set ${String(setNumber)} updated`,
   added: (setNumber: number): string => `Set ${String(setNumber)} added`,

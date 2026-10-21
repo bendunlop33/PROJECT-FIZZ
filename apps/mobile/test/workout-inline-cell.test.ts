@@ -71,9 +71,9 @@ describe('the tapped cell is the field (Ben, 20 Oct)', () => {
   });
 
   it('a done row’s cell is the field too; at AX sizes (one block row) it sits under the row', () => {
-    expect(table).toContain('cellEditor={props.rowEditor?.setId === row.setId && props.rowEditor.inCell && !props.ax ? props.rowEditor.node : null}');
-    expect(table).toContain('if (props.rowEditor?.setId === row.setId && (!props.rowEditor.inCell || props.ax)) parts.push(');
-    const row = table.slice(table.indexOf('export function TableSetRow'), table.indexOf('export function FoldedExercise'));
+    expect(table).toContain('cellEditor={p.rowEditor?.setId === r.setId && p.rowEditor.inCell && !p.ax ? p.rowEditor.node : null}');
+    expect(table).toContain('{p.rowEditor?.setId === r.setId && (!p.rowEditor.inCell || p.ax) ? <View>{p.rowEditor.node}</View> : null}');
+    const row = table.slice(table.indexOf('export function TableSetRow'), table.indexOf('export interface OpenSetRowProps'));
     expect(flat(row)).toContain('if (on && cellEditor !== null) {');
     const corr = table.slice(table.indexOf('export function CorrectionEditor'), table.indexOf('function NoteLink('));
     // Single values return the cell field alone: no InlineEditor (no second line, no row Done).
