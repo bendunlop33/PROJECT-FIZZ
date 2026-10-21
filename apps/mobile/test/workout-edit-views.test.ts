@@ -248,7 +248,7 @@ describe('pop-up edits as the workout’s own writes', () => {
     expect(cmd).toMatchObject({ type: 'set_rest_after', seconds: 165, scope: 'type' });
     expect(popupRestCommand(s, bench, { kind: 'working', seconds: 360 }, 1, { opId: 'r2', at: at(10) })).toBeNull();
     const row = s.exercises.find((e) => e.exerciseId === ROW)?.id ?? '';
-    expect(popupRestCommand(s, row, { kind: 'round', seconds: 90 }, 1, { opId: 'r3', at: at(10) })).toMatchObject({ seconds: 105, scope: 'exercise' });
+    expect(popupRestCommand(s, row, { kind: 'round', seconds: 90 }, 1, { opId: 'r3', at: at(10) })).toMatchObject({ seconds: 105, scope: 'round' });
   });
 });
 

@@ -85,8 +85,9 @@ export function loadSpoken(value: number | null, unit: WeightUnit, convention: L
 }
 
 export interface PopupSetRow {
-  /** Stable per row: the builder's row index, the session's set ID. */
+  /** Stable per row: the builder's row index, the session's set ID. Typed drafts, focus and edits are keyed by it. */
   key: string;
+  /** The row's position in `PopupView.rows` (the builder's row index for its commands). */
   index: number;
   /** `W` for a warm-up, else the working set's number. */
   mark: string;
@@ -144,6 +145,8 @@ export interface PopupView {
   canSwap: boolean;
   /** `Delete` (builder) or `Remove` (today only, mid-workout). */
   deleteLabel: string;
+  /** Hidden when it would be refused (a finished exercise has nothing to remove; review S5). */
+  canDeleteExercise: boolean;
 }
 
 /** `Next` order: Reps → Kg → RPE → next set's Reps (§2.7). Null at the end. */
@@ -151,6 +154,23 @@ export function nextField(rowIndex: number, field: PopupField, rowCount: number,
   if (field === 'reps') return { row: rowIndex, field: 'kg' };
   if (field === 'kg' && hasRpe(rowIndex)) return { row: rowIndex, field: 'rpe' };
   return rowIndex + 1 < rowCount ? { row: rowIndex + 1, field: 'reps' } : null;
+}
+
+/**
+ * The row a typed cell belongs to, by its key (review B1): never by position, so a skipped or
+ * removed set before it can't send an edit to another set (a logged one included, rule 2).
+ */
+export function popupRowByKey(rows: readonly PopupSetRow[], key: string): PopupSetRow | undefined {
+  return rows.find((r) => r.key === key);
+}
+
+/** `Next` from a cell, by row key: the next field in this row, else the next row's Reps; null at the end. */
+export function nextFieldByKey(rows: readonly PopupSetRow[], key: string, field: PopupField): { key: string; field: PopupField } | null {
+  const at = rows.findIndex((r) => r.key === key);
+  if (at < 0) return null;
+  const n = nextField(at, field, rows.length, (i) => rows[i]?.noRpe === false);
+  const row = n === null ? undefined : rows[n.row];
+  return n === null || row === undefined ? null : { key: row.key, field: n.field };
 }
 
 export type PopupRowAction = 'type' | 'move_up' | 'move_down' | 'delete_set';

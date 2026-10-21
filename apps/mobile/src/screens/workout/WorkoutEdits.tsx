@@ -5,7 +5,6 @@ import {
   addWarmupCommand,
   dropRoundCommand,
   moveSetCommand,
-  removeExerciseCommand,
   stepRoundCommand,
   stepSetCommand,
   supersetNextCommand,
@@ -23,7 +22,7 @@ import { ExercisePopup } from '../../ui/exercise-popup';
 import { holdMenu, POPUP_COPY, typeMenu, type PopupSetRow } from '../../ui/exercise-popup-model';
 import { SwapSheet } from '../../ui/swap-sheet';
 import type { ChoiceSection } from '../../ui/swap-sheet-model';
-import { popupCellWrite, popupRestCommand, POPUP_REFUSAL, sessionPopupView } from '../../workout/exercise-popup';
+import { popupCellWrite, popupRestCommand, POPUP_REFUSAL, removePrompt, sessionPopupView } from '../../workout/exercise-popup';
 import type { Round } from '../../workout/rounds';
 import { UNDO_TOAST } from '../../workout/undo-op';
 
@@ -185,20 +184,46 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
       { advise: true },
     );
 
-  /** `Remove` (§7): with logged sets Ben is asked first, and they stay in history; Undo either way. */
+  /** Exactly this command, then its toast (a refusal shows why; nothing is worked out again). */
+  function sendAsIs(command: SessionCommand & { opId: string }, text: string): Promise<boolean> {
+    return inTurn(async () => {
+      latest.current.beforeEdit();
+      const r = await send(command);
+      if (!r.ok) {
+        refused(r);
+        void latest.current.reload();
+        return false;
+      }
+      haptic('step');
+      if (!r.duplicate) latest.current.undoToast(text, command.opId);
+      return true;
+    });
+  }
+
+  /**
+   * `Remove` (§7): with logged sets Ben is asked first, and they stay in history; Undo either way.
+   * The command is built when he taps Remove, and the confirmation sends exactly that one: if the
+   * workout moved on while the dialog was open, it's refused as stale (rule 5, review B2/S3).
+   */
   function remove(sessionExerciseId: string) {
     const a = current();
     if (a === null) return;
-    const name = nameOf(a, sessionExerciseId);
-    const go = () => void edit((now, opId) => removeExerciseCommand(now, sessionExerciseId, { opId, at: at() }).command, () => UNDO_TOAST.removed(name));
-    const logged = removeExerciseCommand(a, sessionExerciseId, { opId: 'probe', at: at() }).loggedSets;
-    if (logged === 0) {
-      go();
+    const prompt = removePrompt(a, sessionExerciseId, { opId: newUuid(), at: at() });
+    if (prompt === null) {
+      latest.current.showToast({ text: 'Nothing left to remove' });
       return;
     }
-    Alert.alert(`Remove ${name}?`, `Keeps ${String(logged)} logged ${logged === 1 ? 'set' : 'sets'}`, [
+    if (prompt.kind === 'now') {
+      // Nothing to confirm: worked out in turn, on the state the writes before it left.
+      void edit((now, opId) => {
+        const p = removePrompt(now, sessionExerciseId, { opId, at: at() });
+        return p?.kind === 'now' ? p.command : null;
+      }, () => UNDO_TOAST.removed(prompt.name));
+      return;
+    }
+    Alert.alert(prompt.title, prompt.message, [
       { text: POPUP_COPY.cancel, style: 'cancel' },
-      { text: POPUP_COPY.remove, style: 'destructive', onPress: go },
+      { text: POPUP_COPY.remove, style: 'destructive', onPress: () => void sendAsIs(prompt.command, UNDO_TOAST.removed(prompt.name)) },
     ]);
   }
 
@@ -235,7 +260,7 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
       latest.current.adopt(r.aggregate);
       latest.current.changed();
       haptic('step');
-      const name = r.aggregate.exercises.find((e) => e.exerciseId === exerciseId && e.removed === undefined)?.exerciseName ?? 'Exercise';
+      const name = ('toName' in r && typeof r.toName === 'string' ? r.toName : undefined) ?? r.aggregate.exercises.find((e) => e.exerciseId === exerciseId && e.removed === undefined)?.exerciseName ?? 'Exercise';
       const text = s.mode === 'swap' ? UNDO_TOAST.swapped(s.name, name) : `${name} added`;
       await afterChange(before, r.aggregate, text, opId);
       // `Last` lines are per exercise: read the new row's history.
@@ -269,12 +294,12 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
         own.current = r.aggregate;
         latest.current.adopt(r.aggregate);
         latest.current.changed();
-        latest.current.undoToast(UNDO_TOAST.correctedNamed(stepNameOf(setId)), opId);
+        if (!r.duplicate) latest.current.undoToast(UNDO_TOAST.correctedNamed(stepNameOf(setId)), opId);
         return null;
       }
       const r = await send({ type: 'edit_planned_set', at: at(), opId, setId, expectedSetVersion: set.version, patch: { setType: type } });
       if (!r.ok) return latest.current.refusalText(r.error.code, r.error.message);
-      latest.current.undoToast(UNDO_TOAST.correctedNamed(stepNameOf(setId)), opId);
+      if (!r.duplicate) latest.current.undoToast(UNDO_TOAST.correctedNamed(stepNameOf(setId)), opId);
       return null;
     });
   }
@@ -356,6 +381,8 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
         case 'planned': {
           const r = await send({ type: 'edit_planned_set', at: at(), opId, setId: w.setId, expectedSetVersion: w.expectedSetVersion, patch: w.patch });
           if (!r.ok) return latest.current.refusalText(r.error.code, r.error.message);
+          // `Set 3 updated · Undo`, as the round page's own target edits (review S4); the rounding note stays under the table.
+          if (!r.duplicate) latest.current.undoToast(UNDO_TOAST.correctedNamed(row.spokenName), opId);
           return w.note;
         }
       }
@@ -393,6 +420,8 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
         onRestStep={(rest, dir) => {
           const id = popupFor;
           if (id === null) return;
+          // No toast per 15 s step (the stepper repeats while held, and its −/+ is its own reverse; the value
+          // is on screen). Decision for review S4: `set_rest_after` has no `undo_op`; today only, never a done set.
           void edit((a, opId) => popupRestCommand(a, id, { kind: rest.kind, seconds: currentRest(a, id, rest.kind) ?? rest.seconds }, dir, { opId, at: at() }), null);
         }}
         onMove={(dir) => {

@@ -388,6 +388,7 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
     mayHurt: f?.mayHurt === true,
     canSwap: true,
     deleteLabel: WORKOUT_COPY.delete,
+    canDeleteExercise: true,
   };
 }
 

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
+import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -1062,7 +1062,7 @@ export function WorkoutScreen() {
     const howTo = howToRouteFor(f, bundledHowToSources());
     const plates = services.workout.cardFacts(loaded, f.sessionExerciseId)?.plates ?? [];
     const round = roundMenuFlags(f.sessionExerciseId, plates.length > 0);
-    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: round !== undefined || f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset, canMarkNotHere: usesGymItem(f.sessionExerciseId), ...(round === undefined ? {} : { round }) });
+    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: round !== undefined ? canRemoveExercise(loaded.aggregate, f.sessionExerciseId) : f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset, canMarkNotHere: usesGymItem(f.sessionExerciseId), ...(round === undefined ? {} : { round }) });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (runMenuAction(action, f, plates)) return;
@@ -1127,7 +1127,7 @@ export function WorkoutScreen() {
     const next = facts.nextSet;
     const howTo = howToRouteFor(ex, bundledHowToSources());
     const round = roundMenuFlags(sessionExerciseId, facts.plates.length > 0);
-    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: round !== undefined || facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset, canMarkNotHere: usesGymItem(sessionExerciseId), ...(round === undefined ? {} : { round }) });
+    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: round !== undefined ? canRemoveExercise(loaded.aggregate, sessionExerciseId) : facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset, canMarkNotHere: usesGymItem(sessionExerciseId), ...(round === undefined ? {} : { round }) });
     ActionSheetIOS.showActionSheetWithOptions({ title: facts.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (runMenuAction(action, ex, facts.plates)) return;

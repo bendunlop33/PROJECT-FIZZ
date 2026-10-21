@@ -1,4 +1,4 @@
-import { canAddWarmupNow, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, type RestKind, type TargetExplanation } from '@fizz/domain';
+import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, type RestKind, type TargetExplanation } from '@fizz/domain';
 import { BUILD_LIMITS, type CommandOf, type Load, type SessionAggregate, type SetType, type SetValues, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 
 import { loadSpoken, loadText, POPUP_COPY, REST_STEP_S, restText, SET_TYPE_LABEL, SET_TYPES, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
@@ -52,9 +52,12 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
   if (ex === undefined) return null;
   const byId = new Map(a.sets.map((s) => [s.id, s]));
   const reps = ex.measurement === 'reps';
-  const rows = p.exercise.rows.flatMap((r, i): PopupSetRow[] => {
+  // Skipped and deleted sets aren't rows: drop them first, so `index` is the row's place in `rows` (review B1).
+  const shown = p.exercise.rows.flatMap((r) => {
     const set = byId.get(r.setId);
-    if (set === undefined || set.status === 'deleted' || set.status === 'skipped') return [];
+    return set === undefined || set.status === 'deleted' || set.status === 'skipped' ? [] : [{ r, set }];
+  });
+  const rows = shown.map(({ r, set }, i): PopupSetRow => {
     const done = set.status === 'completed';
     const values = done ? set.actual : null;
     const loadOf = done ? (values?.load ?? null) : set.planned.load;
@@ -67,8 +70,7 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
     const typeText = SET_TYPE_LABEL[set.setType];
     const spokenName = r.stepName;
     const loadWords = loadSpoken(load, ex.unit, loadOf?.convention ?? ex.loadConvention);
-    return [
-      {
+    return {
         key: set.id,
         index: i,
         mark: r.label,
@@ -89,8 +91,7 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
         draggable: !done && (steps.up || steps.down),
         accessibilityLabel: [spokenName, typeText, reps ? `${repsText} reps` : repsText, loadWords, rpe === null ? null : done ? `RPE ${trim(rpe)}` : `target RPE ${trim(rpe)}`, done ? 'done' : 'not done'].filter((x): x is string => x !== null && x !== '').join(', '),
         spokenName,
-      },
-    ];
+      };
   });
   const rounds = sessionRounds(a);
   const round = rounds.find((r) => r.members.some((m) => m.id === ex.id));
@@ -126,6 +127,7 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
     mayHurt: p.mayHurt,
     canSwap: midSwapSlot(a, ex.id) !== null,
     deleteLabel: POPUP_COPY.remove,
+    canDeleteExercise: canRemoveExercise(a, ex.id),
   };
 }
 
@@ -142,10 +144,13 @@ export const POPUP_REFUSAL = {
   max_warmups: 'At most 4 warm-ups',
   no_load: 'No load to warm up to',
   no_gap: 'No room for another warm-up',
+  superset: 'No warm-ups in a superset',
   done: 'Nothing left to warm up for',
   not_found: 'Not in this workout',
   notLoadable: 'Not at this gym',
   lighter: 'Lighter than this gym can load',
+  /** An assisted machine: easier is more assistance, and it has a most (N2). */
+  moreAssist: 'More assistance than this machine gives',
   noTarget: 'Warm-ups have no target effort',
   changed: 'The workout changed. Try again.',
 } as const;
@@ -180,7 +185,7 @@ export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps'
     return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { targetRpe: value }, note: null };
   }
   const snapped = snapTypedLoadEasier(a, setId, value, bodyweightExercises);
-  if (snapped === undefined || snapped === null) return { kind: 'refused', text: POPUP_REFUSAL.lighter };
+  if (snapped === undefined || snapped === null) return { kind: 'refused', text: ex.loadConvention === 'assistance' ? POPUP_REFUSAL.moreAssist : POPUP_REFUSAL.lighter };
   const note = Math.abs(snapped - value) < 1e-9 ? null : `Rounded to ${trim(snapped)} ${ex.unit}`;
   return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { load: { value: snapped, unit: ex.unit, convention: ex.loadConvention } }, note };
 }
@@ -193,6 +198,22 @@ export function popupRestCommand(a: SessionAggregate, sessionExerciseId: string,
   const seconds = clampBuilderRest(limit, rest.seconds + dir * REST_STEP_S);
   if (seconds === rest.seconds) return null;
   return typeRestCommand(a, sessionExerciseId, type, seconds, op);
+}
+
+/**
+ * `Remove` (§7) worked out once, when Ben taps it (review B2/S3): the exact command the confirmation
+ * sends, with the opId, version and logged count he was shown. With logged sets he is asked first
+ * (`Keeps N logged sets`); a confirmation sent after the workout moved on is refused as stale (rule 5).
+ * Null: nothing to remove.
+ */
+export type RemovePrompt = { kind: 'now'; command: CommandOf<'remove_exercise'>; name: string } | { kind: 'ask'; command: CommandOf<'remove_exercise'>; name: string; title: string; message: string };
+
+export function removePrompt(a: SessionAggregate, sessionExerciseId: string, op: { opId: string; at: ZonedTimestamp }): RemovePrompt | null {
+  const ex = a.exercises.find((e) => e.id === sessionExerciseId && e.removed === undefined);
+  if (ex === undefined || !canRemoveExercise(a, ex.id)) return null;
+  const { command, loggedSets } = removeExerciseCommand(a, ex.id, op);
+  if (loggedSets === 0) return { kind: 'now', command, name: ex.exerciseName };
+  return { kind: 'ask', command, name: ex.exerciseName, title: `Remove ${ex.exerciseName}?`, message: `Keeps ${String(loggedSets)} logged ${loggedSets === 1 ? 'set' : 'sets'}` };
 }
 
 export type ExerciseAction = 'swap' | 'move_up' | 'move_down' | 'superset_next' | 'unlink' | 'remove';
@@ -213,6 +234,6 @@ export function exerciseActions(a: SessionAggregate, sessionExerciseId: string):
     ...(moves.down ? [{ name: 'move_down' as const, label: POPUP_COPY.moveDown }] : []),
     ...(supersetNextCommand(a, ex.id, probe) !== null ? [{ name: 'superset_next' as const, label: POPUP_COPY.supersetNext }] : []),
     ...(ex.supersetGroup !== null ? [{ name: 'unlink' as const, label: POPUP_COPY.unlink }] : []),
-    { name: 'remove' as const, label: removeExerciseCommand(a, ex.id, probe).loggedSets > 0 ? 'Remove (keeps logged sets)' : POPUP_COPY.remove },
+    ...(canRemoveExercise(a, ex.id) ? [{ name: 'remove' as const, label: removeExerciseCommand(a, ex.id, probe).loggedSets > 0 ? 'Remove (keeps logged sets)' : POPUP_COPY.remove }] : []),
   ];
 }

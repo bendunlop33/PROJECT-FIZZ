@@ -10,7 +10,7 @@ import { Eyebrow, StatusLine, TextField } from './layout';
 import { BottomCard } from './sheet';
 import { AppText } from './Text';
 import { Divider, Stepper, SwipeRow, Table } from './table-parts';
-import { holdMenu, KEY_STEPS, nextField, popupRowActions, POPUP_COPY, typeMenu, type PopupField, type PopupRestRow, type PopupRowAction, type PopupSetRow, type PopupView } from './exercise-popup-model';
+import { holdMenu, KEY_STEPS, nextFieldByKey, popupRowActions, popupRowByKey, POPUP_COPY, typeMenu, type PopupField, type PopupRestRow, type PopupRowAction, type PopupSetRow, type PopupView } from './exercise-popup-model';
 
 /**
  * The exercise pop-up (workout-builder-v3 §2.4), one component for the
@@ -29,6 +29,9 @@ import { holdMenu, KEY_STEPS, nextField, popupRowActions, POPUP_COPY, typeMenu, 
  */
 
 export const POPUP_SET_BAR_ID = 'exercise-popup-set-bar';
+
+/** One width for the Reps, Kg and RPE headers and their cells, so they stay lined up at any text size (N2). */
+const VALUE_COL_W = 56;
 
 export interface ExercisePopupProps {
   view: PopupView | null;
@@ -60,7 +63,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
   const theme = useTheme();
   const view = p.view;
   const [whyLines, setWhyLines] = useState<string[] | null>(null);
-  const [focus, setFocus] = useState<{ row: number; field: PopupField } | null>(null);
+  const [focus, setFocus] = useState<{ key: string; field: PopupField } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [note, setNote] = useState<string | null>(null);
   const refs = useRef(new Map<string, TextInput | null>());
@@ -70,13 +73,14 @@ export function ExercisePopup(p: ExercisePopupProps) {
     setNote(null);
     setFocus(null);
   }, [p.resetKey]);
-  const keyOf = (row: number, field: PopupField) => `${String(row)}:${field}`;
+  // Every draft, ref and focus is keyed by the row's key (its set ID), never its position (review B1).
+  const keyOf = (rowKey: string, field: PopupField) => `${rowKey}:${field}`;
 
-  async function commit(row: number, field: PopupField, text: string) {
+  async function commit(rowKey: string, field: PopupField, text: string) {
     if (view === null) return;
-    const r = view.rows[row];
+    const r = popupRowByKey(view.rows, rowKey);
     const value = Number(text.replace(',', '.'));
-    const key = keyOf(row, field);
+    const key = keyOf(rowKey, field);
     setDrafts((d) => Object.fromEntries(Object.entries(d).filter(([k]) => k !== key)));
     if (r === undefined || text.trim() === '' || !Number.isFinite(value)) return;
     const same = field === 'reps' ? value === r.reps && r.repsText === String(r.reps) : field === 'rpe' ? value === r.rpe : value === r.load;
@@ -86,9 +90,9 @@ export function ExercisePopup(p: ExercisePopupProps) {
 
   async function step(dir: 1 | -1) {
     if (focus === null || view === null) return;
-    const r = view.rows[focus.row];
+    const r = popupRowByKey(view.rows, focus.key);
     if (r === undefined) return;
-    const k = keyOf(focus.row, focus.field);
+    const k = keyOf(focus.key, focus.field);
     const cur = Number(drafts[k] ?? (focus.field === 'reps' ? (r.reps ?? 0) : focus.field === 'rpe' ? (r.rpe ?? 8) : (r.load ?? 0)));
     let next: number | null;
     if (focus.field === 'reps') next = Math.max(1, cur + dir * KEY_STEPS.reps);
@@ -99,13 +103,13 @@ export function ExercisePopup(p: ExercisePopupProps) {
 
   function goNext() {
     if (focus === null || view === null) return;
-    const n = nextField(focus.row, focus.field, view.rows.length, (i) => view.rows[i]?.noRpe === false);
-    if (n === null) refs.current.get(keyOf(focus.row, focus.field))?.blur();
-    else refs.current.get(keyOf(n.row, n.field))?.focus();
+    const n = nextFieldByKey(view.rows, focus.key, focus.field);
+    if (n === null) refs.current.get(keyOf(focus.key, focus.field))?.blur();
+    else refs.current.get(keyOf(n.key, n.field))?.focus();
   }
 
   const cell = (r: PopupSetRow, field: PopupField, value: string, label: string) => {
-    const k = keyOf(r.index, field);
+    const k = keyOf(r.key, field);
     return (
       <TextField
         ref={(el) => {
@@ -118,13 +122,13 @@ export function ExercisePopup(p: ExercisePopupProps) {
         inputAccessoryViewID={POPUP_SET_BAR_ID}
         selectTextOnFocus
         onFocus={() => {
-          setFocus({ row: r.index, field });
+          setFocus({ key: r.key, field });
         }}
         onChangeText={(t) => {
           setDrafts((d) => ({ ...d, [k]: t }));
         }}
-        onEndEditing={(e) => void commit(r.index, field, e.nativeEvent.text)}
-        style={{ minHeight: 44, minWidth: 52, textAlign: 'right', fontVariant: ['tabular-nums'], ...(r.done ? { color: theme.colors['status.done'] } : {}) }}
+        onEndEditing={(e) => void commit(r.key, field, e.nativeEvent.text)}
+        style={{ minHeight: 44, width: VALUE_COL_W, textAlign: 'right', fontVariant: ['tabular-nums'], ...(r.done ? { color: theme.colors['status.done'] } : {}) }}
       />
     );
   };
@@ -175,7 +179,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
             <View style={{ flex: 1 }}>
               <PrimaryButton label={POPUP_COPY.done} onPress={p.onClose} />
             </View>
-            <DangerTextButton label={view?.deleteLabel ?? POPUP_COPY.delete} onPress={p.onDelete} />
+            {view === null || view.canDeleteExercise ? <DangerTextButton label={view?.deleteLabel ?? POPUP_COPY.delete} onPress={p.onDelete} /> : null}
           </View>
         </View>
       }
@@ -203,7 +207,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
           <Table>
             <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', paddingHorizontal: theme.space['3'], paddingTop: theme.space['2'], gap: theme.space['2'] }}>
               {['#', 'Type', 'Reps', view.kgHeader, 'RPE'].map((h, i) => (
-                <AppText key={h} variant="label" color="text.secondary" style={{ width: i === 0 ? 24 : i === 1 ? undefined : 56, flex: i === 1 ? 1 : undefined, textAlign: i > 1 ? 'right' : 'left' }}>
+                <AppText key={h} variant="label" color="text.secondary" style={{ width: i === 0 ? 24 : i === 1 ? undefined : VALUE_COL_W, flex: i === 1 ? 1 : undefined, textAlign: i > 1 ? 'right' : 'left' }}>
                   {h}
                 </AppText>
               ))}
@@ -255,7 +259,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
                     {cell(r, 'reps', r.repsText, `${r.spokenName}, reps`)}
                     {cell(r, 'kg', r.load === null ? '' : String(r.load), `${r.spokenName}, ${view.kgHeader}`)}
                     {r.noRpe ? (
-                      <AppText variant="callout" color="text.tertiary" style={{ width: 52, textAlign: 'right' }} accessibilityElementsHidden importantForAccessibility="no">
+                      <AppText variant="callout" color="text.tertiary" style={{ width: VALUE_COL_W, textAlign: 'right' }} accessibilityElementsHidden importantForAccessibility="no">
                         –
                       </AppText>
                     ) : (
@@ -333,7 +337,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
                 accessibilityRole="button"
                 accessibilityLabel={POPUP_COPY.done}
                 onPress={() => {
-                  if (focus !== null) refs.current.get(keyOf(focus.row, focus.field))?.blur();
+                  if (focus !== null) refs.current.get(keyOf(focus.key, focus.field))?.blur();
                 }}
                 style={{ minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors.accent }}
               >
