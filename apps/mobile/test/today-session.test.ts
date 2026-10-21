@@ -657,6 +657,62 @@ describe('Today (v2) session card from the plan', () => {
     expect(data.others.map((d) => d.name)).toEqual(['Full body', 'Upper', 'Push']);
   });
 
+  it('B1 (review today-fix-21oct): a Profile split and his own workouts in rotation, no applied plan → `No plan` with the old Today’s Up next (his own workout, one tap), never only the generic sessions', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    expect(await s.training.change({ kind: 'preset_split', split: 'clsb' }, snap.profile.version, 'split-clsb')).toMatchObject({ ok: true });
+    // Back, Shoulders, Legs, Chest: each logged once and saved to the rotation under its split day's name.
+    const days: [string, string][] = [['Back', 'Barbell row'], ['Shoulders', 'Overhead press'], ['Legs', 'Back squat'], ['Chest', 'Bench press']];
+    for (const [name, exercise] of days) {
+      const sessionId = await logWorkout(h, s, gymId, [{ exercise, sets: [{ load: 60, reps: 8, rpe: 8 }, { load: 60, reps: 8, rpe: 8 }] }]);
+      const r = await s.routines.saveFrom({ from: { kind: 'session', sessionId }, name, addToRotation: true, opId: `save-${name}` });
+      if (!r.ok) throw new Error(r.message);
+      h.clockMs += DAY;
+    }
+    expect(await s.plans.overview()).toBeNull();
+    const data = await loaded(s);
+    expect(data.status).toBe('no_plan');
+    expect(data.days).toEqual([]);
+    // The app's one Up next resolver (split due day, then rotation): Back was trained least recently.
+    const up = await s.next.preview(gymId);
+    expect(up?.routine).not.toBeNull();
+    expect(data.upNext).toEqual({ title: up?.title, routineId: up?.routine?.id ?? null });
+    expect(data.upNext?.title).toBe('Back');
+  });
+
+  it('B1: rotation only (no split, no plan) → Up next is the routine after the one done last', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    for (const [name, exercise] of [['Pull A', 'Lat pulldown'], ['Push A', 'Bench press']] as const) {
+      const sessionId = await logWorkout(h, s, gymId, [{ exercise, sets: [{ load: 60, reps: 8, rpe: 8 }] }]);
+      const r = await s.routines.saveFrom({ from: { kind: 'session', sessionId }, name, addToRotation: true, opId: `save-${name}` });
+      if (!r.ok) throw new Error(r.message);
+      h.clockMs += DAY;
+    }
+    const data = await loaded(s);
+    expect(data.status).toBe('no_plan');
+    // Push A was done last, so the rotation comes round to Pull A.
+    expect(data.upNext?.title).toBe('Pull A');
+    expect(data.upNext?.routineId).toBe((await s.next.preview(gymId))?.routine?.id);
+  });
+
+  it('B1: with a plan in use there is no fallback (the plan’s NEXT is Up next); after the plan ends, Today falls back to the resolver', async () => {
+    const { s, gymId, planId } = await benWithPlan();
+    const before = await loaded(s);
+    expect(before.status).toBe('plan');
+    expect(before.upNext).toBeNull();
+    const overview = await s.plans.overview();
+    if (overview === null) throw new Error('overview');
+    expect(await s.plans.end({ planId, expectedVersion: overview.planVersion, opId: 'end-plan' })).toMatchObject({ ok: true });
+    const after = await loaded(s);
+    expect(after.status).toBe('no_plan');
+    const up = await s.next.preview(gymId);
+    expect(up).not.toBeNull();
+    expect(after.upNext).toEqual({ title: up?.title, routineId: up?.routine?.id ?? null });
+  });
+
   it('a plan that can’t be read fails the load (the screen says Couldn’t load), never `No plan`', async () => {
     const { s, planId } = await benWithPlan();
     const file = s.developer.databaseNames().current;

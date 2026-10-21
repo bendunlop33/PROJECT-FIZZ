@@ -123,6 +123,8 @@ export interface TodaySessionPort {
   historyFor: (ownerId: string, exerciseId: string) => Promise<HistorySession[]>;
   substituteCtx: (p: UserProfile, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, exerciseIds: Iterable<string>) => Promise<SubstituteContext>;
   upNextRoutineId: (gymId: string, gymEquipment?: readonly EquipmentInstance[]) => Promise<string | null>;
+  /** No plan in use: the app's Up next (split, rotation, longest gap), as the old Today named it; null: none. */
+  upNext: (gymId: string) => Promise<{ title: string; routineId: string | null } | null>;
   plannedDay: (routineId: string, gymId: string) => Promise<{ aggregate: SessionAggregate } | null>;
   nextAfter: (gymId: string, routineId: string) => Promise<string | null>;
   start: (req: WorkoutStartRequest) => Promise<WorkoutStartOutcome>;
@@ -189,6 +191,11 @@ export interface TodaySessionData {
   others: TodayDay[];
   /** The plan's next day (null: no plan, or paused). */
   nextKey: string | null;
+  /**
+   * (review today-fix-21oct B1) No plan in use: Up next from the Profile split or the routines in rotation (else the
+   * longest gap), so Ben's own workouts stay one tap from Today, as on the old Today. Null with a plan, or none.
+   */
+  upNext: { title: string; routineId: string | null } | null;
   /** The controls each day opens with (its last-used main lift, the goal's accessories, the plan's length). */
   initial: Readonly<Record<string, TodayControls>>;
   goal: 'strength' | 'muscle' | 'both' | null;
@@ -570,9 +577,13 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const coach = await deps.coachStatus().catch((): CoachStatus => 'not_connected');
     const review = reviewOf(coach);
     const equipmentVersion = deriveId(stableStringify(sub.gym.equipment.map((e) => [e.id, e.version])));
+    // An applied plan with no live workouts left is no plan in use (Library › Your plan shows none either).
+    const status: TodaySessionStatus = plan === null || days.length === 0 ? 'no_plan' : paused ? 'paused' : 'plan';
+    // No plan: the old Today's Up next (split, rotation, longest gap) is still one tap away. Only at a saved gym, as
+    // the overview it opens starts there; a failed read is no Up next (the rest of Today still loads).
+    const fallbackNext = status === 'no_plan' && gymId !== null ? await deps.port.upNext(gymId).catch(() => null) : null;
     return {
-      // An applied plan with no live workouts left is no plan in use (Library › Your plan shows none either).
-      status: plan === null || days.length === 0 ? 'no_plan' : paused ? 'paused' : 'plan',
+      status,
       ownerId: p.id,
       localDate: today,
       tz,
@@ -582,6 +593,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       days,
       others,
       nextKey: nextDay?.key ?? null,
+      upNext: fallbackNext,
       initial,
       goal,
       review,
