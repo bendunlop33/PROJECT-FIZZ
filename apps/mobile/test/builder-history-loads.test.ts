@@ -94,6 +94,26 @@ describe("Ben's rows: a new workout's loads come from his recent sets (Build B, 
     expect(main.source).toBe('calc');
     // Why this weight? names the estimate from his own sets.
     const why = await s.builder.whyWeight(snap.draftId, main.key);
-    expect(why.length).toBeGreaterThan(0);
+    // Review S5: an estimate, labelled as one (rule 6), from the est. max of his own sets at the top set's reps.
+    expect(why[0]).toMatch(/^Est\. max \d+ kg \(estimate\) · 6 reps @ RPE 8$/);
+  });
+
+  it('review B1: the builder’s own format, top 100 × 6 @ 8 + back-offs 95 × 8 → next Pull day top 102.5 × 6, back-offs never below 95; Why? names last time', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    // Earlier plain rows, so the first built workout has a load (and an item) to log against.
+    await logWorkout(h, s, gymId, [{ exercise: 'Barbell row', sets: [{ load: 90, reps: 6, rpe: 8 }, { load: 90, reps: 6, rpe: 8 }, { load: 90, reps: 6, rpe: 8 }] }]);
+    h.clockMs += 4 * DAY;
+    await doRows(s, gymId, await buildPull(s, 'build-1'), 'start-1', { load: 100, reps: 6, rpe: 8 }, { load: 95, reps: 8 });
+    h.clockMs += 3 * DAY;
+    const snap = await buildPull(s, 'build-2');
+    const main = mainOf(snap);
+    expect(main.source).toBe('rule');
+    expect(main.rows.find((r) => r.type === 'top')?.load).toBe(102.5);
+    const backoffs = main.rows.filter((r) => r.type === 'backoff');
+    expect(backoffs.length).toBeGreaterThan(0);
+    // Before the fix: 87.5 × 8 (derived at the rule's 3-rep floor).
+    for (const b of backoffs) expect(b.load ?? 0).toBeGreaterThanOrEqual(95);
+    expect((await s.builder.whyWeight(snap.draftId, main.key))[0]).toBe('Last time + 2.5');
   });
 });

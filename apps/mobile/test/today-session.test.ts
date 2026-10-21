@@ -787,3 +787,21 @@ describe('+N min fit from a Today Start (b3 merge, review S5)', () => {
     expect(undoableTimeFit(back?.aggregate ?? a, h.now())).toBeNull();
   });
 });
+
+describe('builder-loads review B2: a plan day from Today never plans below newer, heavier history', () => {
+  it('bench logged at 130 × 8 @ 8 after the plan (its week-1 load from 100 × 7) → Today’s Push card plans from the newer sets, an estimate', async () => {
+    const { s, gymId } = await benWithPlan();
+    const before = await loaded(s);
+    const pushKey = dayKeyOf(before, 'Push');
+    const planTop = Number(s.todaySession.card(before, sel(before, pushKey))?.rows[0]?.top);
+    expect(planTop).toBeGreaterThan(0);
+    expect(planTop).toBeLessThan(110);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 130, reps: 8, rpe: 8 }, { load: 130, reps: 8, rpe: 8 }, { load: 130, reps: 8, rpe: 8 }] }]);
+    h.clockMs += DAY;
+    const after = await loaded(s);
+    const card = s.todaySession.card(after, sel(after, dayKeyOf(after, 'Push')));
+    expect(card?.rows[0]?.name).toBe('Bench press');
+    // 130 × 8 @ 8 → est. max ≈ 173; 6–8 reps @ 8 ≈ 130–137, rounded down on the bar. Never the plan's ~100.
+    expect(Number(card?.rows[0]?.top)).toBeGreaterThanOrEqual(125);
+  });
+});

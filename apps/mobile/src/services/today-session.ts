@@ -10,6 +10,9 @@ import {
   checkedOnOf,
   convertValue,
   ruleYieldsToHistory,
+  builtInTargetRpe,
+  lastSessionE1rm,
+  ruleCategory,
   currentDraftVersion,
   defaultTodayControls,
   todayContentHash,
@@ -283,6 +286,24 @@ export const TODAY_SESSION_COPY = {
 
 const titleOf = (name: string | null | undefined): string => (name ?? '').split('·')[0]?.trim() || 'Workout';
 
+/** A template dry run's load for one exercise. `planSetMs`: when its plan's loads were set (plan workouts only). */
+interface PlannedAnchor {
+  anchor: AnchorLoad;
+  unit: 'kg' | 'lb';
+  convention: string;
+  source: 'coach' | 'plan' | 'rule';
+  planSetMs: number | null;
+}
+
+/**
+ * (Builder-loads review B2) A plan's first-week load gives way to clearly stronger history logged after the plan
+ * set it, as in the builder (`builder-env`): Today never starts a plan day lighter than newer sets say.
+ */
+export function planAnchor(anchor: AnchorLoad | null, planSetMs: number | null, latestUtc: string | null): AnchorLoad | null {
+  if (anchor === null || planSetMs === null || latestUtc === null) return anchor;
+  return toMs(latestUtc) > planSetMs ? { ...anchor, yieldsToHistory: true } : anchor;
+}
+
 export function createTodaySessionService(deps: TodaySessionDeps) {
   const repos = () => deps.store().repos;
 
@@ -294,7 +315,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
   }
 
   /** Each exercise's load inputs at this gym: the template's dry run first, else the rule on its own history. */
-  async function loadInputs(p: UserProfile, ids: readonly string[], exercises: ReadonlyMap<string, Exercise>, sub: SubstituteContext, planned: ReadonlyMap<string, { anchor: AnchorLoad; unit: 'kg' | 'lb'; convention: string; source: 'coach' | 'plan' | 'rule' }>, flags: readonly PainFlag[]) {
+  async function loadInputs(p: UserProfile, ids: readonly string[], exercises: ReadonlyMap<string, Exercise>, sub: SubstituteContext, planned: ReadonlyMap<string, PlannedAnchor>, flags: readonly PainFlag[]) {
     const out = new Map<string, SlotLoadInput>();
     const nowMs = toMs(deps.now().utc);
     for (const id of ids) {
@@ -305,13 +326,16 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const fromPlan = planned.get(id);
       const anchorOf = (a: { anchor: AnchorLoad; unit: 'kg' | 'lb'; convention: string } | undefined): AnchorLoad | null => (a === undefined || a.convention !== refs.convention ? null : { ...a.anchor, value: convertValue(a.anchor.value, a.unit, refs.unit) });
       let ruleTarget: AnchorLoad | null = null;
+      const ruleRpe = builtInTargetRpe(ruleCategory(e, refs.equipment?.kind ?? null, refs.convention));
       if (fromPlan === undefined || fromPlan.source === 'rule') {
         const sp = substituteTargets({ workingSets: 3, templates: [{ setType: 'working', reps: { min: 8, max: 12 }, durationS: null }] }, e, history, sub);
         const first = sp.plan?.find((x) => x.setType !== 'warmup' && x.planned.load !== null);
         // The rule's load gives way to clearly stronger recent sets unless it's a miss, a reduction or a pain hold (21 Oct).
         const yields = ruleYieldsToHistory(first?.planned.provenance?.rule?.decision);
-        if (first?.planned.load != null && first.planned.load.convention === refs.convention) ruleTarget = { value: convertValue(first.planned.load.value, first.planned.load.unit, refs.unit), reps: first.planned.reps?.min ?? 8, rpe: first.planned.rpe ?? 8, ...(yields ? { yieldsToHistory: true } : {}) };
-        if (fromPlan !== undefined) ruleTarget = anchorOf(fromPlan) ?? ruleTarget;
+        // The rule's own target RPE, as the builder reads it (`ruleAnchorOf`; review S3).
+        if (first?.planned.load != null && first.planned.load.convention === refs.convention) ruleTarget = { value: convertValue(first.planned.load.value, first.planned.load.unit, refs.unit), reps: first.planned.reps?.min ?? 8, rpe: ruleRpe, ...(yields ? { yieldsToHistory: true } : {}) };
+        const dryRun = anchorOf(fromPlan);
+        if (dryRun !== null) ruleTarget = { ...dryRun, rpe: ruleRpe };
       }
       const flag = painFlagCovering(flags, id, nowMs, deps.now().tz);
       // Rule 9: a pain-flagged movement is held at its last working load, never progressed; with no history of its
@@ -325,9 +349,10 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         bodyweightExercise: e.defaultLoadConvention === 'bodyweight',
         gymEquipment: sub.gym.equipment,
         coachTarget: !heldNoHistory && fromPlan?.source === 'coach' ? anchorOf(fromPlan) : null,
-        planFirstLoad: !heldNoHistory && fromPlan?.source === 'plan' ? anchorOf(fromPlan) : null,
+        planFirstLoad: !heldNoHistory && fromPlan?.source === 'plan' ? planAnchor(anchorOf(fromPlan), fromPlan.planSetMs, refs.latest?.performedAtUtc ?? null) : null,
         ruleTarget: heldNoHistory ? null : ruleTarget,
         e1rm: heldNoHistory ? null : (refs.own?.e1rm ?? null),
+        lastE1rm: heldNoHistory ? null : lastSessionE1rm(refs.own),
         e1rmGapDays: refs.own?.gapDays ?? null,
         startLightCeiling: noReferenceCeiling(refs.equipment, refs.patternE1rms),
         painCap: held ? (refs.latest?.top.value ?? null) : null,
@@ -340,24 +365,39 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
   /** The template's dry run (what Start would plan from it here): each exercise's top (else first working) target. */
   async function plannedAnchors(templates: readonly TodayTemplate[], gymId: string | null) {
-    const out = new Map<string, { anchor: AnchorLoad; unit: 'kg' | 'lb'; convention: string; source: 'coach' | 'plan' | 'rule' }>();
+    const out = new Map<string, PlannedAnchor>();
     if (gymId === null) return out;
     for (const t of templates) {
       if (t.routineId === null) continue;
       const run = await deps.port.plannedDay(t.routineId, gymId).catch(() => null);
       if (run === null) continue;
+      const planSetMs = await planVersionMs(t.routineId);
       for (const ex of run.aggregate.exercises) {
         if (out.has(ex.exerciseId)) continue;
         const sets = run.aggregate.sets.filter((s) => s.sessionExerciseId === ex.id && s.setType !== 'warmup' && s.planned.load !== null).sort((a, b) => a.index - b.index);
         const pick = sets.find((s) => s.setType === 'top') ?? sets[0];
         const load = pick?.planned.load;
         if (pick === undefined || load === null || load === undefined) continue;
-        const source = pick.planned.source === 'coach' || pick.planned.provenance?.source === 'coach' ? 'coach' : pick.planned.provenance?.source === 'plan' ? 'plan' : 'rule';
+        const prov = pick.planned.provenance;
+        // A plan workout's first loads (`planFirstLoads`: the plan's checked coach loads, scope `build`) are the plan's
+        // week-1 loads, as the builder reads them (`builder-env`), so newer history can replace them (review B2).
+        const planLoad = planSetMs !== null && prov?.source === 'coach' && prov.coach?.scope === 'build';
+        const source = planLoad ? 'plan' : pick.planned.source === 'coach' || prov?.source === 'coach' ? 'coach' : prov?.source === 'plan' ? 'plan' : 'rule';
         const yields = source === 'rule' && ruleYieldsToHistory(pick.planned.provenance?.rule?.decision);
-        out.set(ex.exerciseId, { anchor: { value: load.value, reps: pick.planned.reps?.min ?? 8, rpe: pick.planned.rpe ?? 8, ...(yields ? { yieldsToHistory: true } : {}) }, unit: load.unit, convention: load.convention, source });
+        out.set(ex.exerciseId, { anchor: { value: load.value, reps: pick.planned.reps?.min ?? 8, rpe: pick.planned.rpe ?? 8, ...(yields ? { yieldsToHistory: true } : {}) }, unit: load.unit, convention: load.convention, source, planSetMs });
       }
     }
     return out;
+  }
+
+  /** When a plan workout's loads were set (its plan version's `createdAt`, else Apply's time); null for other workouts. */
+  async function planVersionMs(routineId: string): Promise<number | null> {
+    const routine = await repos().routines.get(routineId).catch(() => null);
+    const link = routine?.createdFromPlan;
+    if (link === undefined) return null;
+    const plan = await repos().planDrafts.get(link.planId).catch(() => null);
+    const setAt = plan?.versions.find((v) => v.n === link.versionN)?.createdAt.utc ?? link.atUtc;
+    return toMs(setAt);
   }
 
   function reviewOf(status: CoachStatus): TodayReviewStatus {
