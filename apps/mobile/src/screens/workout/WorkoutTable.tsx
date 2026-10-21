@@ -97,6 +97,7 @@ interface Measures {
 
 const sameFit = (a: RoundFit | null, b: RoundFit): boolean => a !== null && JSON.stringify(a) === JSON.stringify(b);
 
+/** Keyed by the round (`key={round.key}`), so a new round measures and fits from scratch. */
 export function RoundPage(props: RoundPageProps) {
   const theme = useTheme();
   const { round } = props;
@@ -108,14 +109,6 @@ export function RoundPage(props: RoundPageProps) {
   const [fades, setFades] = useState<Partial<Record<number, { top: boolean; bottom: boolean }>>>({});
   const applied = useRef(new Map<number, string>());
   const upNextShown = props.upNext !== null && (fit?.upNext ?? true);
-
-  // A new round: its measures and fit start fresh.
-  useEffect(() => {
-    m.current.rows = new Map();
-    m.current.boxFrames = new Map();
-    applied.current = new Map();
-    setFit(null);
-  }, [round.key]);
 
   const heightsOf = useCallback(
     (i: number): number[] => {
@@ -272,6 +265,7 @@ export function RoundPage(props: RoundPageProps) {
           <View
             onLayout={(e) => {
               m.current.upNext = e.nativeEvent.layout.height;
+              recompute();
             }}
             style={{ paddingHorizontal: theme.space['1'] }}
           >
@@ -899,6 +893,8 @@ export interface OpenSetRowProps {
   onGymLearn?: (yes: boolean) => void;
   /** A cell's field took focus (the keypad is opening on it): the keypad bar follows it. */
   onTileFocus: (tile: TileId) => void;
+  /** VoiceOver's Delete (the swipe's mirror, §6). */
+  onDelete?: () => void;
 }
 
 /** The open row's round row and its exercise's load header, from the round page, so its cells line up with the header. */
@@ -1019,6 +1015,11 @@ export function OpenSetRow(p: OpenSetRowProps) {
           accessibilityRole="button"
           accessibilityLabel={`${f.exerciseName}, ${ctx?.row.accessibilityLabel ?? `${stepName}, ${f.setTypeLabel}${sideTag === 'L' ? ', left side' : sideTag === 'R' ? ', right side' : ''}`}${p.resting ? ', next' : ''}`}
           accessibilityHint="More for this set"
+          accessibilityActions={[{ name: 'activate' }, ...(p.onDelete ? [{ name: 'delete', label: 'Delete set' }] : [])]}
+          onAccessibilityAction={(e) => {
+            if (e.nativeEvent.actionName === 'delete') p.onDelete?.();
+            else p.onMore();
+          }}
           onPress={p.onMore}
           onLongPress={p.onMore}
           style={{ width: NUM_W, minHeight: theme.target.min.height, justifyContent: 'center' }}

@@ -2483,6 +2483,10 @@ export function WorkoutScreen() {
       onTileFocus={(tile) => {
         setKeypadField({ row: 'open', field: tile });
       }}
+      onDelete={() => {
+        const name = rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).find((r) => r.setId === focus.setId)?.stepName ?? `Set ${String(focus.setNumber)}`;
+        deleteRow(focus.setId, name);
+      }}
     />
   ) : null;
   return (
@@ -2546,6 +2550,7 @@ export function WorkoutScreen() {
                 }}
               />
               <RoundPage
+                key={shownRound.key}
                 round={shownRound}
                 ax={ax}
                 reduceMotion={theme.a11y.reduceMotion}

@@ -8,7 +8,7 @@ import type { SessionCommand } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import { cellEditReducer, correctionPatch, doneRowEditing, loadCellA11y, valueCellA11y, openRowEditing, runRowTap, rowTap, selectCommand, selectRowFlow, workoutMenu, workoutViewOf, type SelectOutcome } from '../src/workout/table';
-import { buildRounds, shownRoundIndex } from '../src/workout/rounds';
+import { buildRounds, roundPrimary, roundStrip, selectOnShow, shownRoundIndex } from '../src/workout/rounds';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
@@ -366,5 +366,75 @@ describe('cell labels (review S7)', () => {
     expect(valueCellA11y('REPS', '—')).toBe('Reps: none');
     expect(valueCellA11y('TIME', '0:45')).toBe('Time 0:45');
     expect(valueCellA11y('DIST', '20\u00a0m')).toBe('Distance 20 m');
+  });
+});
+
+describe('the v3 round page end to end, offline (workout-table-v3 §1–§3)', () => {
+  it('one round per exercise; a finished round advances; a done round offers Next round; only the last log unticks; swipe-delete has Undo', async () => {
+    const { services: s } = await h.launch();
+    const sessionId = await benchWorkout(s);
+    const picks = await s.workout.pickerExercises(sessionId, 'Lat pulldown');
+    const pull = picks.find((p) => p.exercise.name === 'Lat pulldown') ?? picks[0];
+    if (!pull) throw new Error('no second exercise');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pull.exercise.id, equipmentId: pull.equipment[0]?.id ?? null, opId: 'add-pull' });
+    if (!added.ok) throw new Error(added.error.message);
+
+    const roundsNow = async () => {
+      const d = await s.workout.load();
+      if (!d) throw new Error('no workout');
+      const r = buildRounds(s.workout.tableView(d, h.clockMs, null), (id) => d.worksLines?.[id] ?? null);
+      return { d, r, shown: shownRoundIndex(r, null) };
+    };
+    let { d, r, shown } = await roundsNow();
+    expect(r.map((x) => x.exercises.map((e) => e.label))).toEqual([['1'], ['2']]);
+    expect(shown).toBe(0);
+    expect(r[0]?.exercises[0]?.subline).toMatch(/chest/i);
+    const step = roundPrimary({ rounds: r, shown, primary: s.workout.view(d, h.clockMs, null).primary });
+    expect(step.kind).toBe('step');
+    expect(step.kind === 'step' ? step.label : '').toMatch(/^(Warm-up|Set 1) · (Log|Enter) /);
+
+    // Log every bench set: the page follows the open row into round 2 by itself.
+    const loggedIds: string[] = [];
+    for (let i = 0; i < 10 && r[0]?.hasPending === true; i += 1) {
+      const f = s.workout.view(d, h.clockMs, null).focus;
+      if (!f) throw new Error('no open row');
+      h.clockMs += 60_000;
+      const values = { ...f.logValues, load: f.logValues.load ?? load60, reps: f.logValues.reps ?? 6 };
+      const out = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: f.opId, setId: f.setId, values, restTimerId: h.ids() });
+      if (!out.ok) throw new Error(out.error.message);
+      loggedIds.push(f.setId);
+      ({ d, r, shown } = await roundsNow());
+    }
+    expect(r[0]?.done).toBe(true);
+    expect(shown).toBe(1);
+    expect(roundStrip(r, shown).map((c) => c.text)).toEqual(['✓ 1', '2']);
+    // Back on the done round: nothing to select, and Log reads Next round.
+    expect(selectOnShow(r[0])).toBeNull();
+    expect(roundPrimary({ rounds: r, shown: 0, primary: s.workout.view(d, h.clockMs, null).primary })).toEqual({ kind: 'next_round', label: 'Next round', index: 1 });
+
+    // A done row's ✓: only the latest log unticks; an older one is corrected instead.
+    const older = d.aggregate.sets.find((x) => x.id === loggedIds[0]);
+    const refused = await s.workout.dispatch(sessionId, { type: 'undo_log', at: h.now(), opId: 'untick-old', setId: older?.id ?? '', expectedSetVersion: older?.version ?? 0 });
+    expect(refused).toMatchObject({ ok: false, error: { code: 'not_latest_set' } });
+    const latest = d.aggregate.sets.find((x) => x.id === loggedIds.at(-1));
+    const unticked = await s.workout.dispatch(sessionId, { type: 'undo_log', at: h.now(), opId: 'untick-new', setId: latest?.id ?? '', expectedSetVersion: latest?.version ?? 0 });
+    expect(unticked.ok).toBe(true);
+    ({ d, r, shown } = await roundsNow());
+    expect(shown).toBe(0);
+    expect(r[0]?.exercises[0]?.rows.find((x) => x.current)?.setId).toBe(latest?.id);
+
+    // Swipe left on a pending row: deleted at once, and Undo brings it back (versioned, audited).
+    const pending = r[1]?.exercises[0]?.rows[0];
+    const set = d.aggregate.sets.find((x) => x.id === pending?.setId);
+    const del = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: 'swipe-del', setId: set?.id ?? '', expectedSetVersion: set?.version ?? 0 });
+    expect(del.ok).toBe(true);
+    ({ r } = await roundsNow());
+    expect(r[1]?.exercises[0]?.rows.some((x) => x.setId === set?.id)).toBe(false);
+    expect((await s.workout.undoOp({ sessionId, targetOpId: 'swipe-del' })).ok).toBe(true);
+    ({ r } = await roundsNow());
+    expect(r[1]?.exercises[0]?.rows.some((x) => x.setId === set?.id)).toBe(true);
+    // A stale delete (the set changed since it was shown) is refused, never applied to newer state.
+    const stale = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: 'swipe-stale', setId: set?.id ?? '', expectedSetVersion: set?.version ?? 0 });
+    expect(stale).toMatchObject({ ok: false, error: { code: 'stale_version' } });
   });
 });
