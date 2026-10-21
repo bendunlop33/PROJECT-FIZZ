@@ -388,6 +388,12 @@ describe('source checks', () => {
     expect(parts).toContain('step.current(delta)');
     expect(parts).toContain('sides.current.left');
   });
+  it('the works line under an exercise wraps, never cut with an ellipsis (Ben, 21 Oct)', () => {
+    const ws = read('screens/builder/BuilderWorkoutScreen.tsx');
+    const works = /<AppText[^>]*>\s*\{r\.works\}/.exec(ws)?.[0] ?? '';
+    expect(works).toContain('{r.works}');
+    expect(works).not.toContain('numberOfLines');
+  });
   it('Start asks the check-in when it’s due, reuses a recent one, and passes it on (review S10)', () => {
     const ws = read('screens/builder/BuilderWorkoutScreen.tsx');
     expect(ws).toContain('services.checkIns.gate()');

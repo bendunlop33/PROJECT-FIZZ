@@ -1,3 +1,5 @@
+import { declinesChange } from './request';
+
 /**
  * Coach v3 (ADR 0027, Ben 18 Oct): the model decides what Ben meant; code checks it.
  *
@@ -37,6 +39,12 @@ export interface AskInput {
    * asks for those only: a swap, add, removal or move after a chip is the coach's own idea (an offer).
    */
   setsOnly?: boolean;
+  /**
+   * (21 Oct, Ben's Build B report) Code's own reading: Ben's whole message this turn is a clear request to
+   * change today's workout (`asksLiveChange`: "It's too light given my set on Friday", "Fix them then"). A
+   * claim of the model's whose quote is only part of it ("It's too light") then still counts as his ask.
+   */
+  benWordsAsk?: boolean;
 }
 
 /** Fewest words a quote needs, unless it is Ben's whole message ("Heavier"). */
@@ -75,6 +83,28 @@ export const MAX_ANSWER_WORDS = 4;
 /** Words that make a quote a request: a verb of change, a comparative, or a polite ask. */
 const REQUEST_CUE =
   /\b(?:make|swap|switch|change|add|remove|drop|lower|raise|increase|decrease|reduce|bump|cut|skip|move|replace|put|give|go|try|adjust|set|use|take|do|let's|lets|can you|could you|would you|will you|please|i want|i'd like|i would like|want to|need to|heavier|lighter|harder|easier|more|less|fewer|instead|up|down|superset|pair (?:it|this|that|them|these|those|with|up))\b/;
+/**
+ * (21 Oct; Ben's live Back workout: "shrugs at 8 reps, I did 15 last time" got an apology and nothing changed)
+ * Ben contradicting a planned value with a number of his own asks for it to be put right: the quote says
+ * what he did or what it should be, with a number ("I did 15", "should be 12"), and his message objects
+ * to a planned value (a question, "why", "only", "wrong", "but", or a second, different number).
+ * Review B1: plain statements ("Squats felt heavy last time", "Done, I did all the reps", "I did 100 kg
+ * on bench last time, felt strong") are not corrections. Only ever read for a sets-only `edit_today`.
+ */
+const CORRECTION_CLAIM = /\b(?:i (?:did|got|hit|managed|lifted|usually do|normally do|always do|do)|should be|supposed to be|meant to be)(?: \S+){0,3}? \d+(?:\.\d+)?\b/;
+const OBJECTION = /\?|\b(?:why|only|wrong|mistake|but|instead of|should be|supposed to be|meant to be)\b/;
+
+function numbersIn(text: string): Set<string> {
+  return new Set(text.match(/\d+(?:\.\d+)?/g) ?? []);
+}
+
+/** Does Ben's quote correct a planned value (review B1: a number plus a contradiction)? */
+export function quoteCorrects(quote: string, words: string): boolean {
+  const q = wordsOf(quote).join(' ');
+  if (!CORRECTION_CLAIM.test(q)) return false;
+  const raw = words.toLowerCase();
+  return OBJECTION.test(raw) || numbersIn(raw).size >= 2;
+}
 /** His message asks for an opinion, not a change ("what do you think?"), unless it also asks outright. */
 const OPINION_ONLY = /\b(?:what do you think|do you think|should i|would it be|is it (?:ok|okay|fine|worth)|thoughts|any (?:ideas|advice|tips)|what would you)\b/;
 const ASKS_OUTRIGHT = /\b(?:can you|could you|would you|will you|please)\b/;
@@ -82,14 +112,16 @@ const ASKS_OUTRIGHT = /\b(?:can you|could you|would you|will you|please)\b/;
 /**
  * (Review coach-v3 S3; ADR 0027) Is a quote that is Ben's own words also a request? His whole
  * message when it is a short answer ("Working set"); else the quote reads as a request (a verb of
- * change, a comparative, a polite ask) and his message isn't only asking for an opinion. "Bench
+ * change, a comparative, a polite ask, or, with `correction` (a sets-only `edit_today` only), a
+ * correction of a planned value: `quoteCorrects`) and his message isn't
+ * only asking for an opinion. "Bench
  * felt easy, what do you think?" quoted as "felt easy" is a statement: offered, not applied (rule 3).
  */
-export function quoteAsks(quote: string, words: string): boolean {
+export function quoteAsks(quote: string, words: string, opts: { correction?: boolean } = {}): boolean {
   const q = wordsOf(quote).join(' ');
   const w = wordsOf(words).join(' ');
   if (q === w && wordsOf(words).length <= MAX_ANSWER_WORDS) return true;
-  if (!REQUEST_CUE.test(q)) return false;
+  if (!REQUEST_CUE.test(q) && !(opts.correction === true && quoteCorrects(quote, words))) return false;
   return !OPINION_ONLY.test(w) || ASKS_OUTRIGHT.test(w);
 }
 
@@ -115,10 +147,17 @@ export function verifyAsked(input: AskInput): AskVerdict {
   if (sets && input.chip) return { asked: true, by: 'chip' };
   if (sets && input.acceptedOffer) return { asked: true, by: 'accepted_offer' };
   const { benAsked, benQuote } = input.claim;
+  // Review coach-fail B2: Ben declined or deferred ("I'll fix it myself", "don't bump it", "not now"): his words never
+  // ask, whatever the model quotes or the word lists say (rule 3). The call becomes an offer.
+  if (input.words !== null && declinesChange(input.words)) return { asked: false, by: benAsked === false ? 'model_said_no' : 'not_a_request' };
   if (benAsked === true && quoteInWords(benQuote, input.words) && benQuote != null && input.words !== null) {
     // His words, but a statement or a question for an opinion: the coach's idea, offered (review S3).
-    return quoteAsks(benQuote, input.words) ? { asked: true, by: 'quote' } : { asked: false, by: 'not_a_request' };
+    // Review B1: a correction ("I did 15") asks only for today's set targets, never a structural edit or a lift target.
+    const correction = input.tool === 'edit_today' && input.setsOnly === true;
+    if (quoteAsks(benQuote, input.words, { correction })) return { asked: true, by: 'quote' };
+    return input.benWordsAsk === true ? { asked: true, by: 'words' } : { asked: false, by: 'not_a_request' };
   }
+  if (benAsked === true && input.benWordsAsk === true) return { asked: true, by: 'words' };
   if (benAsked === false) return { asked: false, by: 'model_said_no' };
   return input.fallback() ? { asked: true, by: 'words' } : { asked: false, by: 'no_request' };
 }

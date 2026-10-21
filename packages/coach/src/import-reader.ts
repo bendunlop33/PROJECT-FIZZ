@@ -182,6 +182,8 @@ export function importLayoutFailure(error: 'no_layout_returned' | ModelErrorKind
       return { kind: 'unavailable', reason: 'unavailable' };
     case 'timeout':
       return { kind: 'failed', reason: 'timeout' };
+    case 'request_error':
+      return { kind: 'failed', reason: 'provider_error' };
     case 'cancelled':
       return { kind: 'failed', reason: 'stopped' };
     case 'no_layout_returned':

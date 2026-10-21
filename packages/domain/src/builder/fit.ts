@@ -1,4 +1,4 @@
-import { infoOrDefault, pairSlots, canPair } from './arrange';
+import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
 import { estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { makeSlot } from './slot';
 import { BUILDER_SET_RULES, setWorkingCount, workingCount } from './set-rows';
@@ -264,19 +264,10 @@ function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOption
   return { workout: w, steps, status: steps.length === 0 ? 'fits' : 'fitted', minutes: estimateBuilderMinutes(w, ctx) };
 }
 
-/** Insert a new single after the last block with one of `groups` (else before abs); with Supersets on, pair only the new one (review B3). */
+/** Insert a new single where the §3.4 bands put it (`bandInsertIndex`); with Supersets on, pair only the new one (review B3). */
 function insertAfterGroup(w: BuilderWorkout, slot: BuilderSlot, groups: readonly BuilderGroupName[], ctx: BuilderContext, supersets: boolean): { w: BuilderWorkout; key: string } {
-  const g = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId).group;
-  let at = -1;
-  w.blocks.forEach((b, i) => {
-    if (b.slots.some((s) => groups.includes(g(s)) && g(s) !== 'Abs')) at = i;
-  });
-  if (at < 0) {
-    const abs = w.blocks.findIndex((b) => b.slots.every((s) => g(s) === 'Abs'));
-    at = (abs < 0 ? w.blocks.length : abs) - 1;
-  }
   const blocks = [...w.blocks];
-  blocks.splice(at + 1, 0, { slots: [slot], auto: false });
+  blocks.splice(bandInsertIndex(blocks, slot, ctx.info, groups), 0, { slots: [slot], auto: false });
   return { w: { ...w, blocks: supersets ? pairSlots(blocks, ctx.info, { only: new Set([slot.key]) }) : blocks }, key: slot.key };
 }
 
@@ -311,7 +302,7 @@ export function absOff(w: BuilderWorkout, ctx: BuilderContext, opts: { supersets
     }
     const arm = kept.length === 1 ? kept[0] : undefined;
     if (opts.supersets && partner === null && arm !== undefined && ARM_GROUPS.includes(infoOrDefault(ctx.info, arm.exerciseId).group)) {
-      const id = opts.armCandidates.find((c) => !present.has(c) && ARM_GROUPS.includes(infoOrDefault(ctx.info, c).group) && canPair(arm, { exerciseId: c, main: false }, ctx.info).ok);
+      const id = opts.armCandidates.find((c) => !present.has(c) && ARM_GROUPS.includes(infoOrDefault(ctx.info, c).group) && canAutoPair(arm, { exerciseId: c, main: false }, ctx.info));
       if (id !== undefined) {
         const slot = makeSlot(id, { main: false, workingSets: workingCount(arm) }, ctx);
         partner = { slotKey: slot.key, exerciseId: id };

@@ -294,6 +294,8 @@ import {
   leftOutCount,
   draftSavedRoutineId,
   shownRationale,
+  secondaryMainLifts,
+  type RuleReps,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import { worksLine } from '@fizz/schemas';
@@ -338,6 +340,7 @@ import type {
 } from '@fizz/schemas';
 
 import { undoOpId, undoRefusalText } from '../workout/undo-op';
+import { setActivePainFlagged } from '../workout/pain-flagged';
 
 /** A past workout's title when it has no exercise (`Finish anyway` with nothing added). */
 export const EMPTY_WORKOUT_TITLE = 'Empty workout';
@@ -1455,14 +1458,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** The built-in rule's next targets only (playbook 7-F): the comparison and the fallback for the coach's. */
-  async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
+  async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null, repsOut?: Map<string, RuleReps>): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
     const out = new Map<string, { setType: SetType; planned: PlannedSet }[]>();
     const flags = await repos().painFlags.listActive(p.id);
     const now = unspecifiedPain(today);
     const sessionPain = now.active ? now : unspecifiedPain(await sessionCheckIn(source));
+    const blocks = nextTargetBlocks(source);
+    const infos = new Map<string, Exercise | null>();
+    for (const b of blocks) if (!infos.has(b.decider.exerciseId)) infos.set(b.decider.exerciseId, await repos().exercises.get(b.decider.exerciseId).catch(() => null));
+    // A main barbell lift after the workout's main lift reads as a secondary lift, as in the builder (review S3).
+    const secondary = secondaryMainLifts(blocks, (id) => infos.get(id) ?? null);
     // One entry per exercise block: a split exercise reads its deciding part with the
     // block's set count, the same as the Summary's `Next time` (review r2 B1).
-    for (const block of nextTargetBlocks(source)) {
+    for (const block of blocks) {
       const sx = block.decider;
       // (19 Oct) A second copy of an exercise (a superset with itself at 0) never plans next time.
       if (block.copy || out.has(sx.exerciseId)) continue;
@@ -1479,9 +1487,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const { result } = nextTargetsForBlock(
         block,
         // A FitNotes source recorded no item: its loads are fitted to the gym when the workout is built (B7; rule 4).
-        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain, ...(source.session.source === 'import' ? { fitLater: true } : {}) },
+        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain, ...(source.session.source === 'import' ? { fitLater: true } : {}), ...(secondary.has(sx.exerciseId) ? { accessory: true } : {}) },
         null,
       );
+      if (repsOut !== undefined && result.reps !== undefined) repsOut.set(sx.exerciseId, result.reps);
       // Rule provenance on each set, so `Why?` explains a progressed target as the rule's, never as a repeat (review B1.1).
       // A split block's targets are the deciding part's, on its item.
       const plan = plannedSetsFromTargets(result, { history, equipment: block.equipment, at: ctx.now() });
@@ -2580,11 +2589,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * The built-in rule's next targets for a finished workout (the summary
      * turn's comparison and fallback, D21). Never the coach's own.
      */
-    async builtInNextTargets(sessionId: string): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null> {
+    async builtInNextTargets(sessionId: string, reps?: Map<string, RuleReps>): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null> {
       const p = await ctx.profile();
       const source = await repos().sessions.get(sessionId);
       if (!p || !source) return null;
-      return builtInNextTargetsOf(p, source, null).catch(() => null);
+      return builtInNextTargetsOf(p, source, null, reps).catch(() => null);
     },
 
     /**
@@ -2856,6 +2865,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         previous[ex.id] = lastComparableSession(h, ex);
       }
       const flags = await repos().painFlags.listActive(p.id);
+      // The Lock Screen and spoken cues hold back a heavier carried load on a flagged movement too (21 Oct).
+      if (aggregate.session.status === 'active') setActivePainFlagged(new Set(flags.map((f) => f.exerciseId)));
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
       const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(liveExercises(aggregate.exercises).map((e) => e.exerciseId))).title : null;
       const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
@@ -2923,7 +2934,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
     /** Edit set for a set not done yet (14 Oct): its target, type, target RPE and rest, with the built-in target RPE as the default. */
     plannedEditView(data: ActiveWorkoutData, setId: string, edits: PlannedSetEdits): PlannedSetEditView | null {
-      return buildPlannedSetEditView(data.aggregate, setId, edits, { ruleTargetRpe: ruleRpes(data), bodyweightExercises: data.bodyweightExercises });
+      return buildPlannedSetEditView(data.aggregate, setId, edits, { ruleTargetRpe: ruleRpes(data), bodyweightExercises: data.bodyweightExercises, painFlagged: data.painFlagged });
     },
 
     /**
@@ -2933,10 +2944,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     snapPlannedLoad: (data: ActiveWorkoutData, setId: string, typed: number | null): number | null | undefined => snapTypedLoadEasier(data.aggregate, setId, typed, data.bodyweightExercises),
 
     /** The rest screen's `Last set` and `Next` (F8). */
-    restSets: (data: ActiveWorkoutData): { last: SetGlance | null; next: SetGlance | null } => restSetsView(data.aggregate, ruleRpes(data)),
+    restSets: (data: ActiveWorkoutData): { last: SetGlance | null; next: SetGlance | null } => restSetsView(data.aggregate, ruleRpes(data), { painFlagged: data.painFlagged }),
 
     /** One set at a glance (the Focus view's set pager, F7). */
-    glance: (data: ActiveWorkoutData, setId: string): SetGlance | null => setGlance(data.aggregate, setId, ruleRpes(data)),
+    glance: (data: ActiveWorkoutData, setId: string): SetGlance | null => setGlance(data.aggregate, setId, ruleRpes(data), { painFlagged: data.painFlagged }),
 
     /** Prev / next across the workout (F7); viewing never changes the current set. */
     navigation: (data: ActiveWorkoutData, viewingSetId: string | null): SetNavigation => setNavigation(data.aggregate, viewingSetId),
@@ -5373,6 +5384,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (!p) return null;
       const up = await resolveUpNext(p, gymId, gymEquipment).catch(() => null);
       return up?.kind === 'routine' ? up.routine.id : null;
+    },
+    /**
+     * (review today-fix-21oct B1) With no plan in use, what the old Today's Up next named: the same resolver (the
+     * Profile split's due day, the routines in rotation, the longest gap). Its title, and its routine when it is one.
+     */
+    async upNext(gymId: string): Promise<{ title: string; routineId: string | null; sourceSessionId: string | null } | null> {
+      const v = await next.preview(gymId).catch(() => null);
+      if (v === null || (v.routine === null && v.sourceSessionId === null)) return null;
+      return { title: v.title, routineId: v.routine?.id ?? null, sourceSessionId: v.routine === null ? v.sourceSessionId : null };
     },
     plannedDay: (routineId: string, gymId: string) => routines.planned(routineId, gymId),
     /** The plan day Up next would name after `routineId` is done today (a prediction; saves nothing). */

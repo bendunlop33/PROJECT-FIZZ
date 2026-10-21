@@ -552,7 +552,11 @@ describe('Live Activity through the app services: late reads, Undo, coach change
     const undone = await s.workout.dispatch(logged.session.id, { type: 'undo_log', at: h.now(), opId: `undo:${setId}`, setId, expectedSetVersion: setVersion });
     if (!undone.ok) throw new Error(undone.error.message);
     await h.settle(s);
-    expect(fake.only().props).toMatchObject({ state: 'ready', startMs: 0, endMs: 0, line2: readyLine2 });
+    // The undone set keeps what Ben logged as its draft (Log prefills it), so the line shows those values as
+    // the table does, not the bare target (weight-revert B2, 21 Oct).
+    expect(readyLine2.replaceAll('\u00a0', ' ')).toBe('Target 3–6 reps');
+    expect(fake.only().props).toMatchObject({ state: 'ready', startMs: 0, endMs: 0 });
+    expect(fake.only().props.line2.replaceAll('\u00a0', ' ')).toBe('Your edit 60 kg × 8');
     expect(fake.calls.filter((c) => c.startsWith('start'))).toHaveLength(1);
     expect(h.pending.size).toBe(0);
   });

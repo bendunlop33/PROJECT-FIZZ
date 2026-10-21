@@ -56,6 +56,36 @@ async function pushSetup(s: AppServices, over: Partial<SetupInput> = {}): Promis
   return { ...base, ...over };
 }
 
+describe('Set up main lift with no plan day (Ben, 21 Oct)', () => {
+  it('a day with no main lift of its own opens with its main compound (Pull → Barbell row), first and alone', async () => {
+    const { s } = await ben();
+    const setup = await s.builder.initialSetup({ dayId: 'pull' });
+    const facts = await s.builder.setupFacts(setup);
+    expect(facts.mainLifts[0]).toMatchObject({ name: 'Barbell row', fromProfile: false });
+    expect(setup.mainLiftExerciseId).toBe(facts.mainLifts[0]?.id);
+    const snap = ok(await s.builder.create({ ...setup, minutes: 40, supersets: true }, 'c-pull')).snapshot;
+    expect(snap.workout.blocks[0]?.slots.map((x) => [snap.facts[x.exerciseId]?.name, x.main])).toEqual([['Barbell row', true]]);
+    expect(snap.workout.blocks.slice(1).every((b) => b.slots.every((x) => !x.main))).toBe(true);
+  });
+});
+
+describe('one default main lift for Set up and the coach (review builder-order S2)', () => {
+  it('for every day, the coach’s day change brings the main lift Set up opens with, which leads Set up’s list', async () => {
+    for (const make of [ben, benWithPlan]) {
+      const { s } = await make();
+      const base = await s.builder.initialSetup({ dayId: 'push' });
+      const { ctx } = await s.builder.coachSetupContext(base);
+      expect(ctx.days.length).toBeGreaterThan(0);
+      for (const d of ctx.days) {
+        const opened = await s.builder.initialSetup({ dayId: d.id });
+        expect(d.defaultMainLiftExerciseId, d.id).toBe(opened.mainLiftExerciseId);
+        const facts = await s.builder.setupFacts(opened);
+        if (opened.mainLiftExerciseId !== null) expect(facts.mainLifts[0]?.id, d.id).toBe(opened.mainLiftExerciseId);
+      }
+    }
+  });
+});
+
 describe('Set up → Your workout → Start, offline (§8 S3)', () => {
   it('builds Push from Set up, starts with no network, and the first set logs at the top set Ben saw', async () => {
     const { s, gymId } = await ben();
@@ -457,7 +487,13 @@ describe('plan-day templates and the Start prompt (§2.8, Q11)', () => {
 describe('builder Start → the v3 rounds (b3 merge)', () => {
   it('rounds, labels, set types, target RPE and loads are the builder’s', async () => {
     const { s, gymId } = await ben();
-    const snap = ok(await s.builder.create(await pushSetup(s, { minutes: 60, supersets: true }), 'c-v3')).snapshot;
+    // Arm isolations: something the builder may pair (heavy lifts never pair, Ben 21 Oct).
+    const groups = [
+      { group: 'Chest' as const, count: 2 },
+      { group: 'Triceps' as const, count: 2 },
+      { group: 'Biceps' as const, count: 1 },
+    ];
+    const snap = ok(await s.builder.create(await pushSetup(s, { minutes: 60, supersets: true, groups, groupsEdited: true }), 'c-v3')).snapshot;
     const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-v3', expectedVersion: snap.version, gymId });
     if (!started.ok) throw new Error('not started');
     const data = await s.workout.load(started.sessionId);

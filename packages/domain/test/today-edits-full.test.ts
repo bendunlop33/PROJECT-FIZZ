@@ -575,10 +575,11 @@ describe('Update Push A (§11.5, TE-B7, TE-B8)', () => {
     const out = plan(fiveEdits(), { adds: facePullPlan(), swaps: new Map([[SLOT_BENCH, DB_PLAN]]) });
     const lines = templateLinesFromEdits({ routine: pushA(), resolved: out.resolved, today: todayShapes(out.aggregate, out.slotOf), nameOf: names });
     // Face pull's reps come from its own history through the built-in rule (20 kg × 15, 15, 15). Since main's playbook 7-F
-    // change (11 Oct: a next load over 10% heavier progresses reps instead), that history plans 12–15, not 8–12.
+    // change (11 Oct: a next load over 10% heavier progresses reps instead), that history planned 12–15, not 8–12. Reps from
+    // history (21 Oct): the range follows his 15 (12–15) and the stack's next step is still too big, so it holds at 15.
     expect(lines.map((l) => [l.label, plain(l.text), l.checked])).toEqual([
       ['Changed', 'Bench press', true],
-      ['Added', 'Face pull · 3 × 12–15', true],
+      ['Added', 'Face pull · 3 × 15', true],
       ['Sets', 'Incline DB press 3 → 4', true],
       ['Order', 'Incline DB press first', true],
       ['Removed', 'Cable fly', false],
@@ -604,9 +605,9 @@ describe('Update Push A (§11.5, TE-B7, TE-B8)', () => {
     const fp = r.exercises.find((e) => e.exerciseId === FACE_PULL);
     expect(fp?.id).toBe(NEW_SLOT);
     expect(fp?.setTemplates.map((t) => [t.targetLoad, t.targetReps])).toEqual([
-      [null, { min: 12, max: 15 }],
-      [null, { min: 12, max: 15 }],
-      [null, { min: 12, max: 15 }],
+      [null, { min: 15, max: 15 }],
+      [null, { min: 15, max: 15 }],
+      [null, { min: 15, max: 15 }],
     ]);
     expect(r.exercises.find((e) => e.id === SLOT_INCLINE)?.setTemplates.filter((t) => t.setType !== 'warmup')).toHaveLength(4);
     // Today's typed load never reaches the template (TE-B8).

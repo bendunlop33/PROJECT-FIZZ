@@ -72,7 +72,7 @@ Regions, top to bottom:
 
 1. **Day title** `Tuesday`, with the `GymChip` trailing [title Ben/Proto; GymChip kept from today.md, Proposal].
 2. **Coach bar + mic** `✦ Ask the coach` [Ben]. Opens the coach sheet (never full screen); the mic starts listening at once.
-3. **7-day strip** [Ben; range Proto, §9 Q19]: 3 days back, today, 3 ahead. Each cell: weekday, date, up to two items. A thin divider sits before Monday so the plan week is visible [Proposal]. No plan line and no run counter [Ben]. **Cell items (Ben, 21 Oct):** no ✓; a done session is a soft-green pill (same green as Progress chips), a planned one a dashed outline, cardio its own tint; every label is centred and on one line, shrinking to fit (`adjustsFontSizeToFit`, `numberOfLines={1}`, `minimumFontScale` 0.75) instead of wrapping or being cut off; all seven columns equal width.
+3. **7-day strip** [Ben; range Proto, §9 Q19]: 3 days back, today, 3 ahead. Each cell: weekday, date, up to two items. A thin divider sits before Monday so the plan week is visible [Proposal]. No plan line and no run counter [Ben]. **Cell items (Ben, 21 Oct):** no ✓; a done session is a soft-green pill (same green as Progress chips), a planned one a dashed outline, cardio its own tint; every label is centred and on one line, shrinking to fit (`adjustsFontSizeToFit`, `numberOfLines={1}`, `minimumFontScale` 0.75) instead of wrapping or being cut off; all seven columns equal width. Label text about 10 pt with slight negative tracking (the prototype's `.pip`, 9.5 px, −0.02 em), growing with Dynamic Type only to 1.1× (the column is fixed; accessibility sizes get the list), so `Shoulders` fits a 375 pt column at the 0.75 floor (review today-fix-21oct SP5).
 4. **Banners / rare lines** from today.md (failed backup, check-in line, pain `Still hurts?` line), unchanged, at most two [Proposal].
 5. **`Today's session`** [Ben]:
    - **Day segmented control**: the plan's days in plan order, `Chest` `Back` `Legs` `Shoulders` `⋯`. `NEXT` under the plan's next day, which is selected on open. Any day is one tap. `⋯` opens **Other workouts**.
@@ -159,7 +159,7 @@ Other workouts sheet (`⋯`), half height [Proto]:
 │   Close                                  │
 ```
 
-- **Strip items** [Ben]: done workout `✓ Shoulders` (green fill), done activity `Run 12k` (run colour fill), planned plan day `Legs` and planned run `Run 8k` (dashed outline, same colour, plus `Planned` in the VoiceOver label and the sheet), rest `Rest` (text only). Colour is never the only signal (✓, dashed outline, the word). Today's cell has the accent outline and shows the chosen day.
+- **Strip items** [Ben]: done workout `✓ Shoulders` (green fill), done activity `Run 12k` (run colour fill), planned plan day `Legs` and planned run `Run 8k` (dashed outline, same colour, plus `Planned` in the VoiceOver label and the sheet), rest `Rest` (text only). Colour is never the only signal (fill vs dashed outline, plus the VoiceOver word `done` / `Planned`); no ✓ in cells (Ben, 21 Oct; the accessibility list keeps it). Today's cell has the accent outline and shows the chosen day.
 - **Runs** (logged or planned) appear only when Ben logged them (`＋ Activity`) or told the coach (`log_activity`) [Ben]. Nothing is inferred or added by the plan. [Proposal] The same goes for future plan days: they show only when dated (a week change Ben applied, or days he told the coach); otherwise future cells stay empty, since the rotation has no dates.
 - **Cells** are ≥ 44 pt wide at 390 pt (7 × ~47 pt). At accessibility Dynamic Type sizes the strip becomes a 7-row list (`Sat 17 · ✓ Shoulders`) [Proposal].
 - **Session controls** [Ben, 20 Oct: "when click chest, it should say Main lift: bench, incline. and have option for superset on/off. these are the core crux of the session"]: under the day control, five compact rows (about 38 pt visible, small labels and chips; each control keeps a 44 pt tap area) [Ben, 20 Oct: "make the main lift through to supersets a bit smaller"], and the card rebuilds from them:
@@ -215,7 +215,7 @@ Picking another day or session type drafts that one the same way (steps 1, 3, 4)
 | Workout in progress | Resume card replaces Today's session (today.md, unchanged); day control, chips and Build your own hidden; strip stays |
 | Stale unfinished workout | today.md's stale card, unchanged |
 | Done today | Card becomes `✓ Chest · 58 min ›` (opens Summary), no Start; day control and Build your own stay for a second session, no day selected |
-| No plan | No day control; card replaced by `No plan` with `Build your own` as the primary button and `Set up a plan ›`; `⋯` content (recent workouts) shows as a list |
+| No plan | No day control; `No plan` and `Set up a plan ›` on one row; when the app's Up next resolver names a workout (Profile split, routines in rotation, else the longest gap; as the old Today), an `Up next · <name>` row with `Start` (one tap, as the card; never the overview) is the main action and `Build your own` is secondary, otherwise `Build your own` is primary; the Other sessions and `Empty workout` as one row of chips; `＋ Activity` beside Build your own (built 21 Oct; **pending Ben**: whether a split or rotation without an applied plan should instead show as plan days, review today-fix-21oct SP4) |
 | Plan paused | Day control shows the paused plan's days, none marked `NEXT`; `Plan paused` under the label |
 | First use | Strip shows today only; as No plan |
 | Large Dynamic Type | Strip as a list; day control as a `Day` row; chips wrap |
@@ -253,7 +253,7 @@ Picking another day or session type drafts that one the same way (steps 1, 3, 4)
 3. Collapsed card shows only `Day · Main lift`, exercise count, `~N min`, `plan day N of 4` (next day only), Start, Edit.
 4. Every Based on line matches stored data (dates, actuals, targets); a coach line appears only when the draft differs from the code draft, and Undo restores it.
 5. A coach structural change is never applied without `Apply`.
-6. Strip: done items carry ✓, planned ones a dashed outline and `Planned` in VoiceOver; a run logged in the Activity sheet appears at once. With no activities logged or told to the coach, no run appears anywhere on Today.
+6. Strip: done items are a filled soft-green pill (no ✓), planned ones a dashed outline and `Planned` in VoiceOver; a run logged in the Activity sheet appears at once. With no activities logged or told to the coach, no run appears anywhere on Today.
 7. With a long run Saturday logged, picking Legs on Friday shows the `!` line; Start still works. Without it, no line.
 8. Picking another day, type or `⋯` workout changes no plan data; doing Shoulders today moves Up next past Shoulders.
 9. Chest with Bench, Incline and one variation shows 3 chips; Legs with one template shows none. Each pick is one tap and changes the card name.
@@ -561,6 +561,26 @@ Ben's direction: every set's load comes from est. 1RM + reps + target RPE, round
 9. Defaults [Proto]: main lift 4 sets (1 top set of 6 + 3 back-offs of 8); others 3 sets × 8–12.
 
 Whether step 4 should replace steps 1–3 ("est. 1RM everywhere") is still open in the backlog: §9 Q12.
+
+**Builder loads fix (21 Oct, PROPOSED, needs Ben's approval; not in CHANGELOG or ADR 0006 yet).** Ben's Build B report ("It knew my history but wasn't using it"). Branch `claude/builder-loads-21oct` changes steps 1–2 as below. It applies to every new-workout path: the builder, Describe the workout, and Today.
+
+- **History can replace a stale anchor.** The built-in rule's load gives way to Ben's own sets when it implies an e1RM below 90 % of the est. max from his **last session** (`HISTORY_WINS_SHARE`; cut after a 14+ day gap, R1–R2). A miss, a reduction or a pain hold never gives way. A plan's week-1 load gives way the same way once history newer than the plan exists. The coach's target never gives way. The replaced load reads as `Est. max … (estimate)`.
+- **What a rule load means.** For the test above, the rule's load is read at its own rep floor and target RPE (main barbell: 3 reps @ 8.5). Used as the top set, other sets derive from it at the reps and RPE it's used at (6 @ 8). If the rule gives way and the last session's est. max (gap-cut) is higher, other sets use that instead. A set of more reps is never heavier than the top set. Example: after top 100 × 6 @ 8 + back-offs 95 × 8, the next build is top 102.5 × 6 with back-offs at 95 × 8 (not 87.5).
+- **Builder-format history.** A main lift logged as a top set + back-offs is judged on both and planned from the top set. Where the rule's plan is plain working sets (a routine's start, swaps, the coach-chat fallback), the first set takes the progressed top load. The rest take the back-off load moved by the same step.
+- **Same-mass bars.** The rule reads history on any bar of the same kind and bar mass, as `loadReferences` does, in the builder, Today and swaps.
+
+Open for Ben: the 90 % share; "last session" versus the best of the last 3 sessions; the reading of the rule load at its floor for the test.
+
+**Reps from history (21 Oct, PROPOSED, needs Ben's approval; not in CHANGELOG or ADR 0006/0010 yet).** Ben's live Back workout: shrugs planned at 8 reps though he did 15 last time. Same branch. Applies to the builder, Describe the workout, plan days and ＋ New workout from Today, Start, swaps, adds and `get_progression_targets` (all read the built-in rule through `nextTargetsFor`).
+
+- **The built-in rule's range follows his last session of that exercise** (typical reps = lower median of its working sets), for isolation and compound lifts: inside the goal range → the goal range; above it up to the rule's rep cap (isolation 15, compound 12) → `last − 3 … last` (15 → 12–15); above the cap → the top moves 2 reps a session toward the goal (20 → 15–18); below → `last … last + 3`; bodyweight follows his reps however high. Double progression then runs on that range. Why? fact: `Reps follow your last session (15 reps): 12–15.`
+- **One planned rep count** (`aim`): after a load increase, the reps the new load allows at the same effort (Epley; 50 × 15 → 52.5 × 13); a hold repeats his reps; add reps = the rule's next rep; a miss or reduction = the floor.
+- **Builder slots** (not the main lift) plan working sets at `aim`; the rule's load is used as is. Behind Why?: `Reps: last time 15` (or `· toward 8–12`).
+- **Main lift**: top set / back-offs unchanged; Why? adds `Last time 12 reps · main lift 6–8` when his last reps were outside 6–8. A main barbell lift used as a secondary lift reads its rule as a compound lift's (a row after the main lift at his usual 12 → 9–12).
+- **Ben's own rule** keeps its range.
+- **A plan's week-1 load older than newer sessions** gives way to the rule (it plans from those sessions at his reps); before, it gave way only when more than 10 % lower.
+
+Open for Ben: the width (3), the cap as "wildly outside", the 2-rep step, Epley for the reps after a load increase, the lower median as "his reps", and leaving main barbell lifts on 3–6.
 
 ### 3.2 Rest defaults [Ben]
 

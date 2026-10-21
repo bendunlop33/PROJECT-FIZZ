@@ -321,7 +321,7 @@ describe('Why? (facts from code; honest review status)', () => {
 });
 
 describe('7-day strip (3 back, today, 3 ahead)', () => {
-  it('done ✓, Rest on an empty past day, planned runs dashed with `Planned`, no runs unless logged', () => {
+  it('done (no ✓ in the cell, Ben 21 Oct), Rest on an empty past day, planned runs dashed with `Planned`, no runs unless logged', () => {
     const cells = buildTodayStrip({
       today: '2026-10-20',
       workouts: [{ sessionId: 's1', localDate: '2026-10-17', title: 'Shoulders' }],
@@ -332,7 +332,8 @@ describe('7-day strip (3 back, today, 3 ahead)', () => {
       chosen: 'Chest',
     });
     expect(cells.map((c) => c.weekday)).toEqual(['SAT', 'SUN', 'MON', 'TODAY', 'WED', 'THU', 'FRI']);
-    expect(cells[0]?.items[0]).toMatchObject({ kind: 'workout', text: '✓ Shoulders' });
+    expect(cells[0]?.items[0]).toMatchObject({ kind: 'workout', text: 'Shoulders' });
+    expect(cells.flatMap((c) => c.items).some((i) => i.text.includes('✓'))).toBe(false);
     expect(cells[1]?.items[0]).toMatchObject({ kind: 'activity', text: 'Run 12k', planned: false });
     expect(cells[2]?.items[0]).toMatchObject({ kind: 'rest', text: 'Rest' });
     expect(cells[2]?.weekStart).toBe(true);

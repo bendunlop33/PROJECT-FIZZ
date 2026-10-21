@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
@@ -244,8 +247,9 @@ describe('Today (v2) session card from the plan', () => {
     // The card's own control choices may already differ from the template (they are today's changes too); Today only
     // asks once Ben edited the draft in the builder (§2.0.4 Edited in builder).
     const before = (await s.builder.startPrompt(c.draftId))?.lines.length ?? 0;
-    // Ben adds a set in the builder: the card reads `· edited`, and Start gets the prompt.
-    const slot = snap.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main);
+    // Ben adds a set in the builder to a planned accessory: the card reads `· edited`, and Start gets the prompt.
+    const planned = new Set(card.draft?.template.exerciseIds ?? []);
+    const slot = snap.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main && planned.has(x.exerciseId));
     if (slot === undefined) throw new Error('no accessory');
     const e = await s.builder.edit(c.draftId, { kind: 'add_set', slotKey: slot.key }, { opId: 'merge-add-set', basis: { version: snap.version } });
     expect(e.status).toBe('written');
@@ -596,6 +600,138 @@ describe('Today (v2) session card from the plan', () => {
     expect(s.todaySession.card(off, sel(off, k))?.why.at(-1)).toBe('Not reviewed · Offline');
   });
 
+  it('Ben’s plan from the old plan builder (before v3 templates and migration 30) is his plan on Today: its days, NEXT and a card; never `No plan` (21 Oct)', async () => {
+    const { s, planId } = await benWithPlan();
+    const before = await loaded(s);
+    expect(before.status).toBe('plan');
+    // Rewrite the stored plan and its workouts to what the 19 Oct plan builder wrote: `applied.made` one per day with
+    // no main lift, workouts with only `createdFromPlan` (no `planDay`), no variations.
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    const row = db.prepare('SELECT data FROM plan_drafts WHERE id = ?').get(planId) as { data: string };
+    const plan = JSON.parse(row.data) as { applied: { made: Record<string, unknown>[] } };
+    for (const m of plan.applied.made) delete m.mainLiftExerciseId;
+    db.prepare('UPDATE plan_drafts SET data = ? WHERE id = ?').run(JSON.stringify(plan), planId);
+    const routines = db.prepare('SELECT id, data FROM routines').all() as { id: string; data: string }[];
+    let old = 0;
+    for (const r of routines) {
+      const doc = JSON.parse(r.data) as { createdFromPlan?: { planId: string }; planDay?: unknown };
+      if (doc.createdFromPlan?.planId !== planId) continue;
+      delete doc.planDay;
+      old += 1;
+      db.prepare('UPDATE routines SET data = ? WHERE id = ?').run(JSON.stringify(doc), r.id);
+    }
+    expect(old).toBe(4);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM plan_day_variations').get() as { n: number }).n).toBe(0);
+    db.close();
+
+    const s2 = (await h.launch()).services;
+    const data = await loaded(s2);
+    expect(data.status).toBe('plan');
+    expect(data.days.map((d) => d.name)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    expect(data.nextKey).not.toBeNull();
+    expect(data.days.map((d) => d.key)).toEqual(before.days.map((d) => d.key));
+    const card = s2.todaySession.card(data, sel(data, data.nextKey ?? ''));
+    expect(card?.startable).toBe(true);
+    // Library › Your plan reads the same plan.
+    expect((await s2.plans.overview())?.days.length).toBe(4);
+  });
+
+  it('No plan when no plan is in use: an applied plan whose workouts are all deleted reads as none (as Library › Your plan)', async () => {
+    const { s, planId } = await benWithPlan();
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    for (const r of db.prepare('SELECT id, data FROM routines').all() as { id: string; data: string }[]) {
+      const doc = JSON.parse(r.data) as { createdFromPlan?: { planId: string }; deletedAtUtc?: string | null };
+      if (doc.createdFromPlan?.planId !== planId) continue;
+      doc.deletedAtUtc = '2026-10-15T08:00:00.000Z';
+      db.prepare('UPDATE routines SET data = ? WHERE id = ?').run(JSON.stringify(doc), r.id);
+    }
+    db.close();
+    const s2 = (await h.launch()).services;
+    expect(await s2.plans.overview()).toBeNull();
+    const data = await loaded(s2);
+    expect(data.status).toBe('no_plan');
+    expect(data.days).toEqual([]);
+    expect(data.others.map((d) => d.name)).toEqual(['Full body', 'Upper', 'Push']);
+  });
+
+  it('B1 (review today-fix-21oct): a Profile split and his own workouts in rotation, no applied plan → `No plan` with the old Today’s Up next (his own workout, one tap), never only the generic sessions', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    expect(await s.training.change({ kind: 'preset_split', split: 'clsb' }, snap.profile.version, 'split-clsb')).toMatchObject({ ok: true });
+    // Back, Shoulders, Legs, Chest: each logged once and saved to the rotation under its split day's name.
+    const days: [string, string][] = [['Back', 'Barbell row'], ['Shoulders', 'Overhead press'], ['Legs', 'Back squat'], ['Chest', 'Bench press']];
+    for (const [name, exercise] of days) {
+      const sessionId = await logWorkout(h, s, gymId, [{ exercise, sets: [{ load: 60, reps: 8, rpe: 8 }, { load: 60, reps: 8, rpe: 8 }] }]);
+      const r = await s.routines.saveFrom({ from: { kind: 'session', sessionId }, name, addToRotation: true, opId: `save-${name}` });
+      if (!r.ok) throw new Error(r.message);
+      h.clockMs += DAY;
+    }
+    expect(await s.plans.overview()).toBeNull();
+    const data = await loaded(s);
+    expect(data.status).toBe('no_plan');
+    expect(data.days).toEqual([]);
+    // The app's one Up next resolver (split due day, then rotation): Back was trained least recently.
+    const up = await s.next.preview(gymId);
+    expect(up?.routine).not.toBeNull();
+    expect(data.upNext).toEqual({ title: up?.title, routineId: up?.routine?.id ?? null, sourceSessionId: null });
+    expect(data.upNext?.title).toBe('Back');
+  });
+
+  it('B1: rotation only (no split, no plan) → Up next is the routine after the one done last', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    for (const [name, exercise] of [['Pull A', 'Lat pulldown'], ['Push A', 'Bench press']] as const) {
+      const sessionId = await logWorkout(h, s, gymId, [{ exercise, sets: [{ load: 60, reps: 8, rpe: 8 }] }]);
+      const r = await s.routines.saveFrom({ from: { kind: 'session', sessionId }, name, addToRotation: true, opId: `save-${name}` });
+      if (!r.ok) throw new Error(r.message);
+      h.clockMs += DAY;
+    }
+    const data = await loaded(s);
+    expect(data.status).toBe('no_plan');
+    // Push A was done last, so the rotation comes round to Pull A.
+    expect(data.upNext?.title).toBe('Pull A');
+    expect(data.upNext?.routineId).toBe((await s.next.preview(gymId))?.routine?.id);
+    // Today's one-tap Start of it (the screen's `routineOf` start): that routine, once per op ID (a retry is the same workout).
+    const routineId = data.upNext?.routineId ?? '';
+    const started = await s.workout.start({ gymId, opId: 'up-next-1', checkIn: { kind: 'skipped', atUtc: h.now().utc }, routineOf: routineId });
+    if (!started.ok) throw new Error(started.error.message);
+    expect(started.aggregate.session.routineId).toBe(routineId);
+    const again = await s.workout.start({ gymId, opId: 'up-next-1', checkIn: { kind: 'skipped', atUtc: h.now().utc }, routineOf: routineId });
+    expect(again.ok && again.aggregate.session.id).toBe(started.aggregate.session.id);
+  });
+
+  it('B1: with a plan in use there is no fallback (the plan’s NEXT is Up next); after the plan ends, Today falls back to the resolver', async () => {
+    const { s, gymId, planId } = await benWithPlan();
+    const before = await loaded(s);
+    expect(before.status).toBe('plan');
+    expect(before.upNext).toBeNull();
+    const overview = await s.plans.overview();
+    if (overview === null) throw new Error('overview');
+    expect(await s.plans.end({ planId, expectedVersion: overview.planVersion, opId: 'end-plan' })).toMatchObject({ ok: true });
+    const after = await loaded(s);
+    expect(after.status).toBe('no_plan');
+    const up = await s.next.preview(gymId);
+    expect(up).not.toBeNull();
+    expect(after.upNext).toEqual({ title: up?.title, routineId: up?.routine?.id ?? null, sourceSessionId: up?.routine ? null : up?.sourceSessionId });
+  });
+
+  it('a plan that can’t be read fails the load (the screen says Couldn’t load), never `No plan`', async () => {
+    const { s, planId } = await benWithPlan();
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    db.prepare("UPDATE plan_drafts SET data = json_set(data, '$.applied', NULL) WHERE id = ?").run(planId);
+    db.close();
+    const s2 = (await h.launch()).services;
+    await expect(s2.todaySession.load()).rejects.toThrow();
+  });
+
   it('`movedLine`: the next day itself has none; another plan day names what moves; an Other session has none', async () => {
     const { s } = await benWithPlan();
     const data = await loaded(s);
@@ -785,5 +921,53 @@ describe('+N min fit from a Today Start (b3 merge, review S5)', () => {
     const back = await s.workout.load(sessionId);
     expect(shape(back?.aggregate ?? a)).toEqual(shape(a));
     expect(undoableTimeFit(back?.aggregate ?? a, h.now())).toBeNull();
+  });
+});
+
+describe('builder-loads review B2: a plan day from Today never plans below newer, heavier history', () => {
+  it('bench logged at 130 × 8 @ 8 after the plan (its week-1 load from 100 × 7) → Today’s Push card plans from the newer sets, an estimate', async () => {
+    const { s, gymId } = await benWithPlan();
+    const before = await loaded(s);
+    const pushKey = dayKeyOf(before, 'Push');
+    const planTop = Number(s.todaySession.card(before, sel(before, pushKey))?.rows[0]?.top);
+    expect(planTop).toBeGreaterThan(0);
+    expect(planTop).toBeLessThan(110);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 130, reps: 8, rpe: 8 }, { load: 130, reps: 8, rpe: 8 }, { load: 130, reps: 8, rpe: 8 }] }]);
+    h.clockMs += DAY;
+    const after = await loaded(s);
+    const card = s.todaySession.card(after, sel(after, dayKeyOf(after, 'Push')));
+    expect(card?.rows[0]?.name).toBe('Bench press');
+    // 130 × 8 @ 8 → est. max ≈ 173; 6–8 reps @ 8 ≈ 130–137, rounded down on the bar. Never the plan's ~100.
+    expect(Number(card?.rows[0]?.top)).toBeGreaterThanOrEqual(125);
+  });
+});
+
+describe('reps from history (Ben, 21 Oct): a plan day started from Today plans reps from his last session of each exercise', () => {
+  it('barbell row (the Pull day’s second lift; the plan says 6–8) last done 3 × 70 × 12 → the started Pull day plans it at 9–12 reps; the main lift keeps its top set', async () => {
+    const { s, gymId } = await benWithPlan();
+    await logWorkout(h, s, gymId, [{ exercise: 'Barbell row', sets: [{ load: 70, reps: 12 }, { load: 70, reps: 12 }, { load: 70, reps: 12 }] }]);
+    h.clockMs += DAY;
+    const data = await loaded(s);
+    const pullKey = dayKeyOf(data, 'Pull');
+    const c = await s.todaySession.commit(data, sel(data, pullKey), 'commit-pull');
+    if (!c.ok) throw new Error(c.message);
+    const started = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'start-pull', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(JSON.stringify(started.error));
+    const a = started.aggregate;
+    const reps = (name: string) => {
+      const e = a.exercises.find((x) => x.exerciseName === name);
+      if (e === undefined) throw new Error(`no ${name}`);
+      return a.sets.filter((x) => x.sessionExerciseId === e.id && x.setType !== 'warmup').map((x) => [x.setType, x.planned.reps?.min ?? 0, x.planned.load?.value ?? null] as const);
+    };
+    const row = reps('Barbell row');
+    expect(row.length).toBeGreaterThan(0);
+    for (const [type, n, load] of row) {
+      expect(type).toBe('working');
+      expect(n).toBeGreaterThanOrEqual(9);
+      expect(n).toBeLessThanOrEqual(12);
+      expect(load ?? 0).toBeGreaterThanOrEqual(70);
+    }
+    // The main lift (lat pulldown) keeps its top set / back-offs scheme.
+    expect(reps('Lat pulldown')[0]?.[0]).toBe('top');
   });
 });

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
+import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -80,6 +80,7 @@ import { UNDO_TOAST, undoRefusalText } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
+import { createDraftSaver } from '../../workout/draft-saver';
 import { cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
 import { buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockMs, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
 import { CorrectionEditor, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
@@ -127,7 +128,12 @@ export function WorkoutScreen() {
   const [data, setData] = useState<ActiveWorkoutData | null | 'loading'>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(clockNow);
-  const [edits, setEdits] = useState<DraftEdits | null>(null);
+  const [rawEdits, setEdits] = useState<DraftEdits | null>(null);
+  // Ben's unsaved edits against the workout as stored now: his own newer target replaces them, any other change keeps them (21 Oct).
+  const edits = useMemo(() => (data === 'loading' || data === null ? rawEdits : reconcileDraftEdits(rawEdits, data.aggregate)), [rawEdits, data]);
+  useEffect(() => {
+    if (edits !== rawEdits) setEdits(edits);
+  }, [edits, rawEdits]);
   const [guard, setGuard] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -570,16 +576,31 @@ export function WorkoutScreen() {
   }, [view?.focus?.setId, whyEvent]);
 
   // Debounced draft save (300 ms): unsaved edits survive a force-close without counting as results.
+  // Only a change to the edits saves: a refresh, tick or coach change never sends old values again (21 Oct).
+  // A save refused as stale reloads, so the edits re-base and save again (draft-saver.ts, review S2).
+  const editsSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
+  const draftSaver = useMemo(
+    () =>
+      editsSessionId === null
+        ? null
+        : createDraftSaver({
+            save: (cmd) => services.workout.dispatch(editsSessionId, cmd),
+            reload,
+            now: () => services.now(),
+            setTimer: (fn, ms) => setTimeout(fn, ms),
+            clearTimer: (h) => {
+              clearTimeout(h as ReturnType<typeof setTimeout>);
+            },
+          }),
+    [editsSessionId, services, reload],
+  );
   useEffect(() => {
-    if (!edits || data === 'loading' || data === null) return;
-    const sessionId = data.aggregate.session.id;
-    const t = setTimeout(() => {
-      void services.workout.dispatch(sessionId, saveDraftCommand(edits, services.now()));
-    }, 300);
+    if (!edits || draftSaver === null) return;
+    draftSaver.schedule(edits);
     return () => {
-      clearTimeout(t);
+      draftSaver.cancel();
     };
-  }, [edits, data, services]);
+  }, [edits, draftSaver]);
 
   // Work timer end in the foreground (§2.7): one haptic at 0, then a tick saves the planned time as the draft.
   useEffect(() => {
@@ -783,9 +804,11 @@ export function WorkoutScreen() {
   function setValues(values: SetValues, side?: SetSide) {
     if (!focus) return;
     const base: DraftEdits = edits?.setId === focus.setId ? edits : { setId: focus.setId, values: focus.draft };
-    const next: DraftEdits = { setId: focus.setId, values };
+    const next: DraftEdits = { setId: focus.setId, values, setVersion: focus.setVersion };
     const s = side ?? base.side;
     if (s !== undefined) next.side = s;
+    // A load left at the carry is saved as the carry, never as Ben's own weight (review CS1).
+    if (focus.carriedLoad !== null) next.carried = focus.carriedLoad;
     setEdits(next);
     setRestoredDraft(null);
   }
@@ -794,7 +817,7 @@ export function WorkoutScreen() {
   function copyLast(f: FocusView) {
     const prev = f.previous;
     if (!prev) return;
-    setEdits({ setId: f.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+    setEdits({ setId: f.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, setVersion: f.setVersion, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
   }
 
   function editLoad(f: FocusView, v: number | null) {
@@ -1198,6 +1221,13 @@ export function WorkoutScreen() {
       at: services.now(),
       opId: newUuid(),
       save: (cmd) => services.workout.dispatch(session.id, cmd),
+      // Refused as stale: re-read and save Ben's edits re-based on the stored set before selecting (review S2).
+      rebase: async () => {
+        const d = await reload();
+        if (d === null) return null;
+        const live = reconcileDraftEdits(edits, d.aggregate);
+        return { version: d.aggregate.session.version, draft: live === null ? null : saveDraftCommand(live, services.now()) };
+      },
       select: async (cmd) => {
         const out = await run(cmd);
         if (out.ok) o.onLanded?.(out.aggregate.session.version);
@@ -2013,7 +2043,7 @@ export function WorkoutScreen() {
               onPress={() => {
                 const prev = focus.previous;
                 if (!prev) return;
-                setEdits({ setId: focus.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+                setEdits({ setId: focus.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, setVersion: focus.setVersion, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
               }}
             >
               <AppText variant="callout" color="text.secondary" numeric>

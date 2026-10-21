@@ -48,10 +48,12 @@ describe('coach sheet keyboard (build 131)', () => {
     const build = screen.slice(screen.indexOf('async function build('), screen.indexOf('function openDraft('));
     expect(build).toContain('Keyboard.dismiss();');
     // Design pass 4.1: only while Ben is at the end (or something new was added): `follow` → stickToEnd.
-    expect(transcript).toContain('onContentSizeChange={follow}');
-    expect(transcript).toContain('onLayout={follow}');
+    // 21 Oct (Ben's Build B report): sizes are recorded, and following shows the newest turn from its start (`followOffset`).
+    const flatTranscript = transcript.replace(/\s+/g, ' ');
+    expect(flatTranscript).toContain('onContentSizeChange={(_w, h) => { transcript.current.contentHeight = h; follow(); }}');
+    expect(flatTranscript).toContain('onLayout={(e) => { transcript.current.viewportHeight = e.nativeEvent.layout.height; follow(); }}');
     expect(screen).toContain('followState.thread(threadId);');
-    expect(screen).toContain('if (followState.follow(contentCount, starters)) scroll.current?.scrollToEnd({ animated: false });');
+    expect(screen).toContain('if (followState.follow(contentCount, starters)) scroll.current?.scrollTo({ y: followOffset(transcript.current), animated: false });');
     // Offset by where the page sheet starts in the window (design pass 0.4).
     expect(screen).toContain('<SheetKeyboardAvoidingView');
   });

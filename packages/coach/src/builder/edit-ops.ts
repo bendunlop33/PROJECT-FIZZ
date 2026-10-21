@@ -2,6 +2,7 @@ import {
   BUILDER_MAX_SUPERSET,
   BUILDER_SET_RULES,
   adviseBuilder,
+  bandInsertIndex,
   anchorE1rmOf,
   builderSupersetWithNext,
   builderUnlink,
@@ -21,6 +22,7 @@ import {
   roundDownHere,
   setWorkingCount,
   slotsOf,
+  splitInvalidAutoPairs,
   warmupsFor,
   workingCount,
   type BuilderBlock,
@@ -148,12 +150,9 @@ function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext):
   return { ...slot, rows: [...warm, ...work], anchorE1rm: anchor, source: 'coach_target', startLight: null, touched: true };
 }
 
-/** Where a new single goes when no anchor is named: at the end, before a trailing abs block (unless it is abs). */
+/** Where a new single goes when no anchor is named: in its §3.4 band, after its own group (the builder's rule, `bandInsertIndex`; review builder-order S1). */
 function endIndex(w: BuilderWorkout, exerciseId: string, ctx: BuilderContext): number {
-  if (infoOrDefault(ctx.info, exerciseId).group === 'Abs') return w.blocks.length;
-  let at = w.blocks.length;
-  while (at > 0 && (w.blocks[at - 1]?.slots.every((s) => infoOrDefault(ctx.info, s.exerciseId).group === 'Abs') ?? false)) at -= 1;
-  return at;
+  return bandInsertIndex(w.blocks, { exerciseId, main: false }, ctx.info, [infoOrDefault(ctx.info, exerciseId).group]);
 }
 
 interface Working {
@@ -212,6 +211,12 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
       const fresh = makeSlot(op.toExerciseId, { main: false, workingSets: workingCount(s) }, ctx);
       const next: BuilderSlot = { ...setWorkingCount(fresh, workingCount(s)), touched: true, ...(s.restS === undefined ? {} : { restS: s.restS }) };
       st.w = replaceSlot(st.w, s.key, next);
+      // A builder pair that now holds a heavy lift (or a shared muscle) splits, as Mix it up does (review builder-order S1).
+      const pair = st.w.blocks.find((b) => b.slots.some((x) => x.key === next.key));
+      const split = splitInvalidAutoPairs(st.w.blocks, ctx.info);
+      const alone = split.find((b) => b.slots.some((x) => x.key === next.key))?.slots.length === 1;
+      if (pair !== undefined && pair.slots.length > 1 && alone) st.structure.push(`Unlink ${pair.slots.map((x) => name(x.exerciseId)).join(' + ')}`);
+      st.w = { ...st.w, blocks: split };
       const origin = [...st.swapped.entries()].find(([, v]) => v === s.key)?.[0] ?? s.key;
       st.swapped.set(origin, next.key);
       return;

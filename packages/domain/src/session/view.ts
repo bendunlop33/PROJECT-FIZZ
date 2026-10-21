@@ -1,6 +1,8 @@
 import type { Load, SessionAggregate, SessionExercise, SetExclusion, SetValues, WorkoutSession, WorkoutSet } from '@fizz/schemas';
 import { restOverrunMs, restRemainingMs } from '../rest';
 import { toMs } from '../time';
+import { carriedLoad, type CarryOptions } from './carry';
+import { draftAsValues } from './pending-values';
 
 /**
  * Derived phase (flow §3.1). "Result saved" is not a stored phase: the commit
@@ -109,7 +111,8 @@ export function draftOperationId(set: WorkoutSet): string {
   return `log:${set.id}:${set.undoCount}`;
 }
 
-export type DraftSource = 'draft' | 'target' | 'this_session' | 'last_session' | 'none';
+/** `last_set`: the target with the load Ben's last logged set of this exercise carries (`carriedLoad`, 21 Oct). */
+export type DraftSource = 'draft' | 'target' | 'last_set' | 'this_session' | 'last_session' | 'none';
 
 export interface ComparableSet {
   index: number;
@@ -127,7 +130,8 @@ const EMPTY: SetValues = { load: null, reps: null, durationS: null, rpe: null, r
 
 /**
  * Draft prefill (active-workout.md §4.2), first match wins:
- * saved draft → target (top of rep range) → last set of this exercise this
+ * saved draft → target (top of rep range; its load replaced by the load
+ * Ben's last logged set carries, rule 2a) → last set of this exercise this
  * session → matching set of the last comparable session → empty.
  * Effort is never prefilled.
  */
@@ -135,10 +139,12 @@ export function prefillDraft(
   state: SessionAggregate,
   setId: string,
   lastComparable: readonly ComparableSet[] = [],
+  opts: CarryOptions = {},
 ): { values: SetValues; source: DraftSource } {
   const set = state.sets.find((s) => s.id === setId);
   if (!set) return { values: EMPTY, source: 'none' };
-  if (set.draft) return { values: set.draft, source: 'draft' };
+  // A load saved as the carry follows the carry: after it ends (Undo of that log) the target (CS1).
+  if (set.draft) return { values: draftAsValues(set.draft, set.planned, set.draft.loadCarried === true ? carriedLoad(state, set, opts) : null), source: 'draft' };
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
 
   const done = state.sets
@@ -156,15 +162,16 @@ export function prefillDraft(
   if (p.load !== null || p.reps !== null || p.durationS !== null || plannedDistance !== null) {
     // Target fields win; any field the target leaves open falls back to history.
     const distanceM = plannedDistance ?? fallback?.distanceM ?? null;
+    const carry = carriedLoad(state, set, opts);
     return {
       values: {
         ...EMPTY,
-        load: p.load ?? fallback?.load ?? null,
+        load: carry ?? p.load ?? fallback?.load ?? null,
         reps: p.reps?.max ?? fallback?.reps ?? null,
         durationS: p.durationS ?? fallback?.durationS ?? null,
         ...(distanceM !== null ? { distanceM } : {}),
       },
-      source: 'target',
+      source: carry !== null ? 'last_set' : 'target',
     };
   }
   if (lastHere) return { values: { ...lastHere, rpe: null, rir: null }, source: 'this_session' };

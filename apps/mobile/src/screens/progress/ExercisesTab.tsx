@@ -27,7 +27,8 @@ const DEFAULT_PERIOD: ProgressPeriodKey = '6m';
 /** Open on this exercise and workout (a home record); a new `n` re-opens it. */
 export interface ExercisesFocus {
   exerciseId: string;
-  sessionId: string;
+  /** Null: the exercise's page (Overview's `Open Bench ›`); else that workout in it (a record's tap). */
+  sessionId: string | null;
   sessionExerciseId: string | null;
   n: number;
 }
@@ -52,7 +53,7 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
     setExerciseId(focus.exerciseId);
     setSeriesId(null);
     setMeasure(null);
-    setOpened({ sessionId: focus.sessionId, sessionExerciseId: focus.sessionExerciseId });
+    setOpened(focus.sessionId === null ? null : { sessionId: focus.sessionId, sessionExerciseId: focus.sessionExerciseId });
     setSelected(focus.sessionId);
     setOpen(null);
     reload();

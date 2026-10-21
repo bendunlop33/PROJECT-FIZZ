@@ -10,6 +10,8 @@
  */
 
 import {
+  liveFocusExerciseIds,
+  RECENT_LIFT_SESSIONS,
   actionIdFor,
   applyBuiltInAdjustment,
   asksForMoreSets,
@@ -147,6 +149,7 @@ import {
   builtInTargetsView,
   equipmentView,
   exerciseHistoryView,
+  type ExerciseHistoryView,
   exerciseRecordsView,
   recentSessionsView,
   toIso,
@@ -195,6 +198,7 @@ import {
   type SessionAdjustment,
   type SessionAdjustmentTrigger,
   gymSetupWords,
+  type RuleReps,
 } from '@fizz/domain';
 import type { CandidateWrite, MemoryWrite, SqliteRepositories, Store } from '@fizz/persistence';
 import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
@@ -390,7 +394,7 @@ export interface CoachServiceDeps {
   /** Keychain + settings file; no network. Absent: not connected. */
   connection?: () => Promise<TextCoachState>;
   /** The built-in rule's next targets for a finished workout (workout services). */
-  builtInNextTargets: (sessionId: string) => Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null>;
+  builtInNextTargets: (sessionId: string, reps?: Map<string, RuleReps>) => Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null>;
   /** After a coach change to today's sets or its Undo: rest alerts follow the new targets. */
   onSessionChanged?: (aggregate: SessionAggregate) => void;
   /** The bundled exercise catalogue (Coaching knowledge), for swap options and names. */
@@ -850,7 +854,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         const aggs = await finishedWith(exerciseId);
         const latest = [...aggs].sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc))[0];
         if (latest === undefined) return null;
-        const planned = (await deps.builtInNextTargets(latest.session.id).catch(() => null))?.get(exerciseId) ?? null;
+        const reps = new Map<string, RuleReps>();
+        const planned = (await deps.builtInNextTargets(latest.session.id, reps).catch(() => null))?.get(exerciseId) ?? null;
         const ex = latest.exercises.find((e) => e.exerciseId === exerciseId);
         if (planned === null || ex === undefined) return null;
         const flags = await repos().painFlags.listActive(p.id).catch(() => []);
@@ -863,6 +868,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           planned,
           basedOn: { utc: latest.session.startedAt.utc, tz: latest.session.startedAt.tz, title: latest.session.routineName },
           painFlag: flags.find((f) => f.exerciseId === exerciseId && f.status === 'active') ?? null,
+          reps: reps.get(exerciseId) ?? null,
         });
       },
     };
@@ -926,6 +932,17 @@ export function createCoachService(deps: CoachServiceDeps) {
         workoutLabel: session.session.routineName ?? 'workout',
         benAskedForMoreSets,
       });
+    }
+    return out;
+  }
+
+  /** (21 Oct) The recent sessions of a live workout's exercises in play, as `get_recent_training` reads them. Local reads only. */
+  async function recentLiftsFor(p: UserProfile, session: SessionAggregate, words: string): Promise<ExerciseHistoryView[]> {
+    const reads = trainingReads(p, session);
+    const out: ExerciseHistoryView[] = [];
+    for (const id of liveFocusExerciseIds(session, namedExercises(words, session))) {
+      const v = await reads.exerciseHistory(id, RECENT_LIFT_SESSIONS).catch(() => null);
+      if (v !== null && v.sessions.length > 0) out.push(v);
     }
     return out;
   }
@@ -1536,6 +1553,9 @@ export function createCoachService(deps: CoachServiceDeps) {
     const allAddable = kind === 'workout' && session !== null && session.session.status === 'active' && deps.coachAddInputs !== undefined ? await addableFor(p, session) : null;
     const recentBen = recentBenWords(benWordsOf(thread), toMs(deps.now().utc));
     const addable = allAddable === null ? null : capAddable(allAddable, [req.input.kind === 'words' ? req.input.text : '', ...recentBen].join('\n'));
+    // 21 Oct (Ben's Build B report): a live turn carries the last sessions of the exercises in play (the one he's on,
+    // the ones he named here or in his recent messages), so "it's too light given Friday" has Friday's sets without a read.
+    const recentLifts = kind === 'workout' && session !== null && session.session.status === 'active' ? await recentLiftsFor(p, session, [req.input.kind === 'words' ? req.input.text : '', ...recentBen].join('\n')).catch(() => []) : [];
     // (19 Oct) The capped addable list in the prompt; `find_exercises` searches all of it (`edit_today` add checks against all of it).
     if (allAddable !== null && session !== null) {
       const ids = new Set(allAddable.map((a) => a.exerciseId));
@@ -1561,7 +1581,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           // Coach v3 (Ben 18 Oct): his lighter mid-workout model, if he chose one; `think_harder` returns to the main one.
           ...(kind === 'workout' && a.workoutModel != null ? { workoutModel: a.workoutModel } : {}),
           surface: 'sheet',
-          context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(planPause === undefined ? {} : { plan: planPause }), ...(weekView === null ? {} : { week: weekView }) },
+          context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(weekView === null ? {} : { week: weekView }) },
           structuralSignals: await structuralSignalsFor(p, session).catch(() => []),
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),

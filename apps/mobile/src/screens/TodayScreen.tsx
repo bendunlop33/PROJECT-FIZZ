@@ -1,6 +1,7 @@
 import { useFocusEffect, useNavigation, useRoute, type NavigationProp, type ParamListBase, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
@@ -20,13 +21,13 @@ import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import { todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { todayActions, todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
 import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 import { GymChip } from './workout/GymSwitch';
-import { DayControl, DaySheet, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
+import { DayControl, DaySheet, OtherSessionChips, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
 import { PromptSheet, promptView } from './builder/BuilderSheets';
 import { builderApplyOpId, type BuilderCoachReach, type MixPick } from '@fizz/coach';
 import { setTodaySetupDay } from '../builder/coach-ports';
@@ -51,7 +52,8 @@ import type { StartChoice, StartPrompt } from '../builder/builder-service';
  * alternatives, Recent and Ask pill (§2.0.9, §7).
  */
 
-type StartIntent = { kind: 'empty' };
+/** An empty workout, or (No plan) the app's Up next: its routine or the last workout's next session (review today-fix-21oct B1). */
+type StartIntent = { kind: 'empty' } | { kind: 'routine'; routineId: string } | { kind: 'next'; sourceSessionId: string };
 type Nav = NavigationProp<ParamListBase>;
 
 /** Today's `Reviews ›` taps this run: each lands Progress on Reviews again (review b3-wave3-ux S9). */
@@ -59,6 +61,10 @@ let reviewsTaps = 0;
 
 export function TodayScreen() {
   const theme = useTheme();
+  // Today is a bare tab screen (no native stack, so no navigation controller): `contentInsetAdjustmentBehavior`
+  // never insets it for the status bar, and the header ran under the clock (Ben, 21 Oct). It pads itself, as
+  // Library does.
+  const insets = useSafeAreaInsets();
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation<Nav>();
@@ -84,7 +90,7 @@ export function TodayScreen() {
   // Today's session loads on its own (review S1): Resume, stale and the banners never wait for it, and it isn't read
   // at all while a workout is open (the card is hidden then).
   const workoutOpen = data.state === 'ready' && data.value.active !== null;
-  const [session, reloadSession] = useTodaySessionData(data.state === 'ready' && !workoutOpen);
+  const [session, reloadSession, sessionFailed] = useTodaySessionData(data.state === 'ready' && !workoutOpen);
   const reload = useCallback(() => {
     reloadScreen();
     reloadSession();
@@ -382,14 +388,15 @@ export function TodayScreen() {
       if (g === null) return;
       await alertsAsk.ensureAsked();
       const gate = await gateCheckIn();
+      const of = intent.kind === 'routine' ? { routineOf: intent.routineId } : intent.kind === 'next' ? { nextOf: intent.sourceSessionId } : {};
       if (gate.ask) {
-        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId });
+        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, ...of });
         return;
       }
-      const key = intent.kind;
+      const key = intent.kind === 'routine' ? `routine:${intent.routineId}` : intent.kind === 'next' ? `next:${intent.sourceSessionId}` : intent.kind;
       const opId = startOps.current.get(key) ?? newUuid();
       startOps.current.set(key, opId);
-      const r = await services.workout.start({ gymId: g.gymId, opId, checkIn: gate.checkIn });
+      const r = await services.workout.start({ gymId: g.gymId, opId, checkIn: gate.checkIn, ...of });
       if (!r.ok) {
         setError(r.error.code === 'session_already_active' ? TODAY_SCREEN_COPY.started : r.error.message);
         reload();
@@ -574,7 +581,7 @@ export function TodayScreen() {
   if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
   if (data.state === 'error') {
     return (
-      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], padding: theme.components.screenMargin, paddingTop: theme.space['8'] }}>
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], padding: theme.components.screenMargin, paddingTop: insets.top + theme.space['3'] }}>
         <View style={{ gap: theme.space['3'] }}>
           <StatusLine icon="exclamationmark.triangle" tone="warning" text={launch.recoveryError ? 'Your unfinished workout couldn’t be read.' : 'Couldn’t open your training data.'} detail="Data unchanged" info={data.message} infoLabel="Error details" />
           <SecondaryButton label="Try again" onPress={reload} />
@@ -697,34 +704,92 @@ export function TodayScreen() {
       </Pressable>
     ) : null;
 
+  const actions = todayActions({ openWorkout, read: session !== null ? 'ready' : sessionFailed ? 'failed' : 'loading', noPlan: session?.status === 'no_plan', cardShown: view !== null, upNext: session?.upNext != null });
+  // The gym sits on the session's row (its loads are this gym's), so the header stays one line at 375 pt. It shows
+  // while the session loads and after a failed read too (review today-fix-21oct S3).
+  const gymRow = actions.gymRow ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'] }}>
+      <Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>
+      <GymChip
+        gymName={gym?.name ?? null}
+        onPress={() => {
+          if (!gym) navigation.navigate('AddGym');
+          else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: gym.id }, initial: false } });
+        }}
+      />
+    </View>
+  ) : null;
   const sessionBlock = (() => {
-    if (openWorkout || session === null) return null;
+    if (openWorkout) return null;
+    if (session === null) {
+      // A failed read keeps every way to start (review S2): Build your own below, Empty workout here.
+      return (
+        <View style={{ gap: theme.space['2'] }}>
+          {gymRow}
+          {actions.failed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={TODAY_SCREEN_COPY.sessionFailed} action={<TextButton label="Try again" tone="secondary" onPress={reload} />} /> : null}
+          {actions.emptyWorkout ? (
+            <View style={{ alignSelf: 'flex-start' }}>
+              <TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" onPress={() => void start({ kind: 'empty' })} />
+            </View>
+          ) : null}
+        </View>
+      );
+    }
     const noPlan = session.status === 'no_plan';
+    const upNext = actions.upNext ? session.upNext : null;
     return (
       <View style={{ gap: theme.space['2'] }}>
-        <Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>
+        {gymRow}
         {noPlan ? (
           view === null ? (
-            <View style={{ gap: theme.space['3'] }}>
-              <AppText variant="title2">{TODAY_V2_COPY.noPlan}</AppText>
-              <PrimaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} />
-              <View style={{ alignSelf: 'flex-start' }}>
+            // No plan (§2.0.4), compact: `No plan` with `Set up a plan ›` on one row, the Other sessions as one row of
+            // chips (Empty workout last); `Build your own` (primary) and `＋ Activity` share the row below.
+            <View style={{ gap: theme.space['2'] }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], flexWrap: 'wrap' }}>
+                <AppText variant="title2" accessibilityRole="header">
+                  {TODAY_V2_COPY.noPlan}
+                </AppText>
                 <TextButton
                   label={`${TODAY_V2_COPY.setUpPlan} ›`}
+                  tone="secondary"
                   onPress={() => {
                     navigation.dispatch(openYourPlan(newUuid()));
                   }}
                 />
               </View>
-              {session.others.map((d) => (
-                <Pressable key={d.key} accessibilityRole="button" accessibilityLabel={d.name} onPress={() => { pickDay(d.key); }} style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.7 : 1 })}>
-                  <AppText variant="body">{d.name}</AppText>
-                  <Icon name="chevron.right" size={14} color="text.tertiary" />
+              {upNext !== null ? (
+                // The old Today's Up next (Profile split, routines in rotation): his own workout, Start in one tap (as the card's).
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNext.title)}
+                  disabled={starting}
+                  onPress={() => {
+                    if (upNext.routineId !== null) void start({ kind: 'routine', routineId: upNext.routineId });
+                    else if (upNext.sourceSessionId !== null) void start({ kind: 'next', sourceSessionId: upNext.sourceSessionId });
+                  }}
+                  style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingLeft: theme.space['4'], paddingRight: theme.space['2'], borderRadius: theme.radius.lg, backgroundColor: theme.colors['bg.surface'], opacity: pressed ? 0.7 : 1 })}
+                >
+                  <View style={{ flex: 1 }}>
+                    <AppText variant="sectionLabel" color="text.secondary" accessible={false}>
+                      {TODAY_SCREEN_COPY.upNext}
+                    </AppText>
+                    <AppText variant="headline" numberOfLines={1} accessible={false}>
+                      {upNext.title}
+                    </AppText>
+                  </View>
+                  <View pointerEvents="none" style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, backgroundColor: theme.colors.accent }}>
+                    <AppText variant="headline" color="on.accent" accessible={false}>
+                      {TODAY_V2_COPY.start}
+                    </AppText>
+                  </View>
                 </Pressable>
-              ))}
-              <View style={{ alignSelf: 'flex-start' }}>
-                <TextButton label={TODAY_V2_COPY.emptyWorkout} onPress={() => void start({ kind: 'empty' })} />
-              </View>
+              ) : null}
+              <OtherSessionChips
+                days={session.others}
+                emptyLabel={TODAY_V2_COPY.emptyWorkout}
+                onPick={pickDay}
+                onEmpty={() => void start({ kind: 'empty' })}
+              />
             </View>
           ) : (
             <View style={{ gap: theme.space['1'] }}>
@@ -802,21 +867,12 @@ export function TodayScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
+        contentInsetAdjustmentBehavior="never"
         // Re-renders keep the scroll position (Mix it up, a control): the ScrollView stays mounted (§2.0.2).
-        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['6'], gap: theme.space['3'] }}
+        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: insets.top + theme.space['3'], paddingBottom: theme.space['6'], gap: theme.space['3'] }}
       >
         <TodayHeader
           title={todayTitle(zoned.utc, zoned.tz)}
-          gym={
-            <GymChip
-              gymName={gym?.name ?? null}
-              onPress={() => {
-                if (!gym) navigation.navigate('AddGym');
-                else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: gym.id }, initial: false } });
-              }}
-            />
-          }
           coach={
             <CoachAskBar
               page="today"
@@ -893,8 +949,14 @@ export function TodayScreen() {
         {sessionBlock}
 
         {!openWorkout ? (
-          <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-            {session !== null && (session.status !== 'no_plan' || view !== null) ? <SecondaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} grow /> : null}
+          <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
+            {actions.buildYourOwn === 'primary' ? (
+              <View style={{ flex: 1 }}>
+                <PrimaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} />
+              </View>
+            ) : actions.buildYourOwn === 'secondary' ? (
+              <SecondaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} grow />
+            ) : null}
             <SecondaryButton
               label={TODAY_SCREEN_COPY.addActivity}
               accessibilityLabel={TODAY_SCREEN_COPY.activity}
@@ -1090,12 +1152,14 @@ function DetailList({ rows }: { rows: readonly DetailRow[] }) {
  * `enabled`, cached by the data version, the reload tick and the hour (so a new day re-reads), never while a workout
  * is open. An unreadable plan only hides the card (null), it never blocks Today or Start.
  */
-function useTodaySessionData(enabled: boolean): [TodaySessionData | null, () => void] {
+function useTodaySessionData(enabled: boolean): [TodaySessionData | null, () => void, boolean] {
   const services = useServices();
   const version = useDataVersion();
   const [tick, setTick] = useState(0);
   const [value, setValue] = useState<TodaySessionData | null>(null);
-  const cache = useRef<{ key: string; value: TodaySessionData | null } | null>(null);
+  // A failed read says so (Couldn't load · Try again), never `No plan` (review planview S5, as Library).
+  const [failed, setFailed] = useState(false);
+  const cache = useRef<{ key: string; value: TodaySessionData | null; failed: boolean } | null>(null);
   const reload = useCallback(() => {
     setTick((t) => t + 1);
   }, []);
@@ -1105,20 +1169,27 @@ function useTodaySessionData(enabled: boolean): [TodaySessionData | null, () => 
       const key = `${String(version)}|${String(tick)}|${services.now().utc.slice(0, 13)}`;
       if (cache.current?.key === key) {
         setValue(cache.current.value);
+        setFailed(cache.current.failed);
         return;
       }
       let alive = true;
       void services.todaySession
         .load()
-        .catch(() => null)
-        .then((v) => {
-          cache.current = { key, value: v };
-          if (alive) setValue(v);
+        .then(
+          (v) => ({ v, bad: false }),
+          () => ({ v: null, bad: true }),
+        )
+        .then(({ v, bad }) => {
+          cache.current = { key, value: v, failed: bad };
+          if (alive) {
+            setValue(v);
+            setFailed(bad);
+          }
         });
       return () => {
         alive = false;
       };
     }, [services, version, tick, enabled]),
   );
-  return [value, reload];
+  return [value, reload, failed];
 }

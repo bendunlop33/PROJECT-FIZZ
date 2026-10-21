@@ -4,6 +4,7 @@ import { formatNumber, type LoadContext } from './display';
 import { equipmentOfRow } from './session/equipment-snapshot';
 import { blockSets } from './session/gym-switch';
 import { prefillDraft, type ComparableSet } from './session/view';
+import type { CarryOptions } from './session/carry';
 import { isPlatesAddedKind } from './plates-added';
 
 /**
@@ -138,14 +139,14 @@ export function spokenSetDetail(s: SpokenSetInput): string {
  * `lastComparable` → empty), so the voice never says a load or reps the screen
  * doesn't show (review B1). A field with no value anywhere is left out.
  */
-export function spokenSetOf(state: SessionAggregate, setId: string | null, lastComparable: readonly ComparableSet[] = []): SpokenSetInput | null {
+export function spokenSetOf(state: SessionAggregate, setId: string | null, lastComparable: readonly ComparableSet[] = [], carry: CarryOptions = {}): SpokenSetInput | null {
   if (setId === null) return null;
   const set = state.sets.find((s) => s.id === setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) return null;
   const own = blockSets(state, ex.id);
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
-  const v = prefillDraft(state, setId, lastComparable).values;
+  const v = prefillDraft(state, setId, lastComparable, carry).values;
   return {
     exerciseName: ex.exerciseName,
     number: Math.max(1, own.indexOf(set) + 1),

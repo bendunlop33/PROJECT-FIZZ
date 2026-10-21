@@ -1,5 +1,5 @@
 import { adviseBuilder, type BuilderAdvice } from '../builder/advise';
-import { infoOrDefault } from '../builder/arrange';
+import { infoOrDefault, splitInvalidAutoPairs } from '../builder/arrange';
 import { buildFromSetup, type AccessoryStyle, type BuilderPool, type GroupCount } from '../builder/build';
 import { estimateBuilderMinutes } from '../builder/estimate';
 import { absOff, clampMinutes, fitToMinutes, type BuilderFitResult } from '../builder/fit';
@@ -230,7 +230,11 @@ function applyMix(workout: BuilderWorkout, input: TodayAssembleInput, c: TodayCo
   const pick = order[k - 1];
   if (pick === undefined) return { workout, mix: null, mixOptions: shortlist.length, ...facts };
   const slot = makeSlot(pick, { main: false, workingSets: workingCount(target) }, ctx);
-  const blocks = workout.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === target.key ? slot : s)) }));
+  // The pick takes the target's place; a builder pair it can't join (a heavy lift, a shared muscle) splits.
+  const blocks = splitInvalidAutoPairs(
+    workout.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === target.key ? slot : s)) })),
+    ctx.info,
+  );
   return { workout: { ...workout, blocks }, mix: { slotKey: slot.key, fromExerciseId: target.exerciseId, toExerciseId: pick, k, n: shortlist.length }, mixOptions: shortlist.length, ...facts };
 }
 

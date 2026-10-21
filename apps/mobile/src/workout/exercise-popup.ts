@@ -1,4 +1,4 @@
-import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, type RestKind, type TargetExplanation } from '@fizz/domain';
+import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, shownPlannedIn, type RestKind, type TargetExplanation } from '@fizz/domain';
 import { BUILD_LIMITS, type CommandOf, type Load, type SessionAggregate, type SetType, type SetValues, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 
 import { loadSpoken, loadText, POPUP_COPY, REST_STEP_S, restText, SET_TYPE_LABEL, SET_TYPES, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
@@ -44,6 +44,8 @@ export interface SessionPopupInput {
   exercise: RoundExercise;
   works: string | null;
   mayHurt: boolean;
+  /** Exercise IDs with an active pain flag: no heavier load carries from the last set onto a row. */
+  painFlagged?: ReadonlySet<string>;
 }
 
 export function sessionPopupView(p: SessionPopupInput): PopupView | null {
@@ -60,9 +62,11 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
   const rows = shown.map(({ r, set }, i): PopupSetRow => {
     const done = set.status === 'completed';
     const values = done ? set.actual : null;
-    const loadOf = done ? (values?.load ?? null) : set.planned.load;
+    // A pending row shows Ben's own draft values over the target, as the table does (21 Oct).
+    const shown = done ? set.planned : shownPlannedIn(a, set, ex, { painFlagged: p.painFlagged });
+    const loadOf = done ? (values?.load ?? null) : shown.load;
     const load = loadOf === null || loadOf.convention === 'bodyweight' ? null : loadOf.value;
-    const range = set.planned.reps;
+    const range = shown.reps;
     const repsValue = !reps ? null : done ? (values?.reps ?? null) : range === null ? null : range.min;
     const repsText = !reps ? plain(r.row.cells.value) : done ? (repsValue === null ? '' : String(repsValue)) : range === null ? '' : range.min === range.max ? String(range.min) : `${String(range.min)}–${String(range.max)}`;
     const rpe = rpeNumber(r.rpe);
@@ -159,6 +163,8 @@ export const POPUP_REFUSAL = {
 export type PopupCellWrite =
   | { kind: 'correct'; setId: string; expectedSetVersion: number; patch: Partial<SetValues> }
   | { kind: 'planned'; setId: string; expectedSetVersion: number; patch: { reps?: { min: number; max: number }; load?: Load; targetRpe?: number }; note: string | null }
+  /** Nothing to write: the value (after rounding to the kit) is already the row's (`Nearest here: 100 kg`), never a silent `updated`. */
+  | { kind: 'unchanged'; note: string | null }
   | { kind: 'refused'; text: string };
 
 /**
@@ -167,7 +173,7 @@ export type PopupCellWrite =
  * item (rule 4; `Rounded to 97.5 kg` when it moved), never past its max; reps are exact; a warm-up
  * has no target effort.
  */
-export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps' | 'kg' | 'rpe', value: number, bodyweightExercises?: ReadonlySet<string>): PopupCellWrite {
+export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps' | 'kg' | 'rpe', value: number, bodyweightExercises?: ReadonlySet<string>, painFlagged?: ReadonlySet<string>): PopupCellWrite {
   const set = a.sets.find((s) => s.id === setId);
   const ex = set === undefined ? undefined : a.exercises.find((e) => e.id === set.sessionExerciseId);
   if (set === undefined || ex === undefined || set.status === 'deleted' || set.status === 'skipped') return { kind: 'refused', text: POPUP_REFUSAL.changed };
@@ -179,14 +185,27 @@ export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps'
     if (field === 'kg') return { kind: 'correct', setId, expectedSetVersion: set.version, patch: { load: { value, unit: load?.unit ?? ex.unit, convention: load?.convention ?? ex.loadConvention } } };
     return { kind: 'correct', setId, expectedSetVersion: set.version, patch: field === 'reps' ? { reps: value } : { rpe: value, rir: null } };
   }
-  if (field === 'reps') return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { reps: { min: value, max: value } }, note: null };
+  // What the row shows: Ben's own draft values over the target. Typing that again writes nothing (N2, 21 Oct).
+  // A write for one field keeps his other draft values (the reducer clears only the fields it sets, B1).
+  const shown = shownPlannedIn(a, set, ex, { painFlagged });
+  if (field === 'reps') {
+    const r = shown.reps;
+    if (r !== null && r.min === value && r.max === value) return { kind: 'unchanged', note: null };
+    return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { reps: { min: value, max: value } }, note: null };
+  }
   if (field === 'rpe') {
     if (set.setType === 'warmup' || set.setType === 'drop') return { kind: 'refused', text: POPUP_REFUSAL.noTarget };
     return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { targetRpe: value }, note: null };
   }
   const snapped = snapTypedLoadEasier(a, setId, value, bodyweightExercises);
   if (snapped === undefined || snapped === null) return { kind: 'refused', text: ex.loadConvention === 'assistance' ? POPUP_REFUSAL.moreAssist : POPUP_REFUSAL.lighter };
-  const note = Math.abs(snapped - value) < 1e-9 ? null : `Rounded to ${trim(snapped)} ${ex.unit}`;
+  const rounded = Math.abs(snapped - value) >= 1e-9;
+  const stored = shown.load;
+  if (stored !== null && stored.convention !== 'bodyweight' && Math.abs(stored.value - snapped) < 1e-9) {
+    // Rounded back onto the load the row shows: say so where Ben typed, no write and no `updated · Undo` (21 Oct).
+    return { kind: 'unchanged', note: rounded ? `Nearest here: ${trim(snapped)} ${ex.unit}` : null };
+  }
+  const note = rounded ? `Rounded to ${trim(snapped)} ${ex.unit}` : null;
   return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { load: { value: snapped, unit: ex.unit, convention: ex.loadConvention } }, note };
 }
 

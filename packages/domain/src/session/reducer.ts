@@ -18,6 +18,7 @@ import type {
   SetSide,
   SetSnapshot,
   SetValues,
+  DraftValues,
   TargetProvenance,
   WorkoutSet,
 } from '@fizz/schemas';
@@ -45,6 +46,8 @@ import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { pendingSetsOf } from './mid-swap';
 import { buildExecutionOrder, effectiveOffset, firstPendingRound, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
+import { draftWithNewTarget, type TargetValueField } from './pending-values';
+import { benSetLoad, carriedLoad, hasOwnValuesAnyFlags } from './carry';
 
 export type SessionErrorCode =
   | 'operation_id_reused'
@@ -348,7 +351,7 @@ function flagsFor(values: SetValues, state: SessionAggregate, ex: SessionExercis
   return isLoadAchievable(values.load, eq) ? [] : ['off_profile_load'];
 }
 
-function baseDraft(set: WorkoutSet): SetValues {
+function baseDraft(set: WorkoutSet): DraftValues {
   return set.draft ?? { load: set.planned.load, reps: null, durationS: null, rpe: null, rir: null };
 }
 
@@ -1235,6 +1238,20 @@ function withoutEditRecords(planned: WorkoutSet['planned']): WorkoutSet['planned
   return copy;
 }
 
+/**
+ * The draft after `edit_planned_set` changed some target values (B1, 21 Oct):
+ * the changed fields take the new target, the rest of Ben's draft stays.
+ * Nothing of his own left (every value equals what the new target prefills):
+ * no draft, so the row shows the target.
+ */
+function draftAfterTargetEdit(state: SessionAggregate, edited: WorkoutSet, before: DraftValues | null, fields: readonly TargetValueField[]): DraftValues | null {
+  if (before === null) return null;
+  const draft = draftWithNewTarget(before, edited.planned, fields);
+  // Against what the row shows without a draft: the load his last logged set carries, else the target (21 Oct).
+  // His pain flags aren't known here: his own against either carry (with or without a flag) stays (CS4).
+  return hasOwnValuesAnyFlags(state, { ...edited, draft }) ? draft : null;
+}
+
 const NO_TARGET_TYPES: ReadonlySet<WorkoutSet['setType']> = new Set(['warmup', 'drop']);
 
 /**
@@ -1266,7 +1283,9 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
   const noTarget = NO_TARGET_TYPES.has(setType);
   if (p.targetRpe != null && noTarget) return fail('invalid_values', 'Warm-up and drop sets have no target effort.');
 
-  const valuesTouched = p.load !== undefined || p.reps !== undefined || p.durationS !== undefined || p.distanceM !== undefined;
+  // The values Ben set (even to what the target already was: over his draft that is a change, 21 Oct).
+  const fields: TargetValueField[] = (['load', 'reps', 'durationS', 'distanceM'] as const).filter((f) => p[f] !== undefined);
+  const valuesTouched = fields.length > 0;
   let planned: WorkoutSet['planned'] = { ...set.planned };
   delete planned.edit;
   if (valuesTouched) {
@@ -1287,16 +1306,21 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
   // An earlier edit's record stays in `before`, so undoing this one gives that one its Undo back (review S5).
   const beforePlanned = { ...set.planned };
   const version = set.version + 1;
-  const edited: WorkoutSet = {
+  const withEdit: WorkoutSet = {
     ...set,
     setType,
     rest,
-    // The unsaved draft held the old target; the new one prefills Log.
-    draft: valuesTouched ? null : set.draft,
-    planned: { ...planned, edit: { opId: cmd.opId, version, before: { planned: beforePlanned, setType: set.setType, rest: set.rest, draft: set.draft } } },
+    planned: { ...planned, edit: { opId: cmd.opId, version, before: { planned: beforePlanned, setType: set.setType, rest: set.rest, draft: set.draft }, ...(valuesTouched ? { fields } : {}) } },
     version,
   };
-  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds])) {
+  // Only the fields Ben set a new target for leave his draft; any other value he typed stays (B1, 21 Oct).
+  const edited: WorkoutSet = { ...withEdit, draft: valuesTouched ? draftAfterTargetEdit(state, withEdit, set.draft, fields) : set.draft };
+  // Setting a target back to the preset over Ben's draft clears the draft: a change, so the row shows it (21 Oct).
+  // So is setting the plan's load over a load his last set carries: the carry stops for this set. Without his
+  // pain flags here, any carry counts (CS4); the sheet and the pop-up, which know them, only send a load equal to
+  // the target when the row showed another one.
+  const carryStops = fields.includes('load') && !benSetLoad(set.planned) && carriedLoad(state, set) !== null;
+  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds, edited.draft, carryStops]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds, set.draft, false])) {
     return { ok: true, state, events: [] };
   }
   const events: SessionEvent[] = [{ type: 'PlannedSetEdited', setId: set.id, undo: false }];
@@ -1627,6 +1651,8 @@ function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>):
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'Drafts are only for sets not yet logged.');
+  // A save made on an older version of the set never puts its values back over a newer write (21 Oct).
+  if (cmd.expectedSetVersion !== undefined && cmd.expectedSetVersion !== set.version) return fail('stale_version', 'This set changed since it was edited.');
   // The side chosen before logging is kept on the pending set, so it survives a minimise or restart.
   if (cmd.side !== undefined) {
     const ex = exerciseOf(state, set);

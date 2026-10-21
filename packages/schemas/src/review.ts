@@ -178,6 +178,8 @@ export const ReviewProposalSchema = z.object({
   status: z.enum(['open', 'applied', 'skipped', 'undone', 'stale']),
   /** The `update_routine` record Apply wrote (Undo's target). */
   actionId: IdSchema.nullable(),
+  /** (Review build-b-21oct S3) Refused because the movement has an active pain flag (rule 9), not because the plan moved. */
+  held: z.literal('pain').optional(),
 });
 export type ReviewProposal = z.infer<typeof ReviewProposalSchema>;
 

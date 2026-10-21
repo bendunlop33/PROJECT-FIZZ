@@ -454,7 +454,8 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
     if (asked === null) note('shape', `${ex.name} · work time missing · ${formatDuration(durationS)} used`);
     else if (durationS !== asked) note('clamped', `${ex.name} · work ${formatDuration(asked)} → ${formatDuration(durationS)}`);
   } else if (p.reps === null) {
-    reps = ruleRangeFor(ex);
+    // Reps from history (21 Oct): the rule's range on his own history first (his last session's reps), else the category's.
+    reps = ctx.ruleReps(ex, working) ?? ruleRangeFor(ex);
     note('shape', `${ex.name} · reps missing · ${repRangeText(reps)} used`);
   } else {
     const lo = Math.min(p.reps.min, p.reps.max);

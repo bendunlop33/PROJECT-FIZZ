@@ -40,6 +40,19 @@ export const SetValuesSchema = z.object({
 export type SetValues = z.infer<typeof SetValuesSchema>;
 
 /**
+ * A pending set's saved draft: its values, and `loadCarried` when the load
+ * is the one Ben's last logged set carried onto this set (active-workout §4.2
+ * rule 2a), not one he typed. That load is never his own edit: once the
+ * carry ends (Undo of that log) the row shows its target again (review
+ * weight-revert CS1, 21 Oct). Absent: the load is as he left it (every draft
+ * saved before this existed). Never on a result.
+ */
+export const DraftValuesSchema = SetValuesSchema.extend({
+  loadCarried: z.literal(true).optional(),
+});
+export type DraftValues = z.infer<typeof DraftValuesSchema>;
+
+/**
  * How a target was fitted to a gym's equipment (gym-switch.md §6.1, ADR 0019).
  * `restored`: back to the intended target after an earlier fit lowered or
  * dropped it. `dropped`: no load target (reps and time are kept).
@@ -343,6 +356,12 @@ export interface PlannedSetEdit {
     rest: ResolvedRest;
     draft: SetValues | null;
   };
+  /**
+   * The target values this edit set (21 Oct, weight flicking back): only
+   * these leave Ben's draft, and only these replace the screen's unsaved
+   * edits. Absent on older records and when no value was set.
+   */
+  fields?: ('load' | 'reps' | 'durationS' | 'distanceM')[] | undefined;
 }
 
 export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
@@ -370,7 +389,8 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
       .object({
         opId: OperationIdSchema,
         version: z.int().min(1),
-        before: z.object({ planned: PlannedSetSchema, setType: SetTypeSchema, rest: ResolvedRestSchema, draft: SetValuesSchema.nullable() }),
+        before: z.object({ planned: PlannedSetSchema, setType: SetTypeSchema, rest: ResolvedRestSchema, draft: DraftValuesSchema.nullable() }),
+        fields: z.array(z.enum(['load', 'reps', 'durationS', 'distanceM'])).max(4).optional(),
       })
       .optional();
   },
@@ -394,7 +414,7 @@ export const WorkoutSetSchema = z.object({
   rest: ResolvedRestSchema,
   actual: SetValuesSchema.nullable(),
   /** Unsaved edits; never counted as a result. */
-  draft: SetValuesSchema.nullable(),
+  draft: DraftValuesSchema.nullable(),
   completedAt: ZonedTimestampSchema.nullable(),
   completedByOpId: OperationIdSchema.nullable(),
   /** Number of times a logged result was undone; drives the next draft opId. */
@@ -484,7 +504,7 @@ export const GymChangeSetBeforeSchema = z.object({
   id: IdSchema,
   sessionExerciseId: IdSchema,
   planned: PlannedSetSchema,
-  draft: SetValuesSchema.nullable(),
+  draft: DraftValuesSchema.nullable(),
 });
 export type GymChangeSetBefore = z.infer<typeof GymChangeSetBeforeSchema>;
 

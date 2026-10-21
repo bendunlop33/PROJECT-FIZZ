@@ -91,7 +91,7 @@ describe('plan model port (ADR 0020 C5, unproven on the device until S3)', () =>
     const { fetch, calls } = fakeFetch({ [OPENAI_RESPONSES_URL]: () => jsonResponse(429, { error: { code: 'subscription_sharing_usage_limit_exceeded', message: 'Limit' } }) });
     const settings = memorySettings();
     const events = await collect(createPlanModelPort({ fetch, vault: vaultWithTokens(), settings, nowMs: clock.now }).stream(request));
-    expect(events).toEqual([{ type: 'error', error: 'usage_limit', detail: 'Limit' }]);
+    expect(events).toEqual([{ type: 'error', error: 'usage_limit', detail: 'Limit', failure: { kind: 'usage_limit', status: 429, code: 'subscription_sharing_usage_limit_exceeded', message: 'Limit' } }]);
     expect(parseConnectionSettings(settings.text).lastFailure?.kind).toBe('usage_limit');
     expect(calls.map((c) => c.url)).toEqual([OPENAI_RESPONSES_URL]);
   });
@@ -151,7 +151,8 @@ describe('reasoning effort (Coach v3, ADR 0027; unproven on the plan route until
     const { fetch, calls } = fakeFetch({ [OPENAI_RESPONSES_URL]: () => jsonResponse(400, { error: { message: 'Bad input' } }) });
     const settings = memorySettings();
     const events = await collect(createPlanModelPort({ fetch, vault: vaultWithTokens(), settings, nowMs: clock.now }).stream({ ...request, effort: 'low' }));
-    expect(events).toMatchObject([{ type: 'error', error: 'unavailable' }]);
+    // 21 Oct: a request the route rejected is a request error with its reason, not "unavailable".
+    expect(events).toMatchObject([{ type: 'error', error: 'request_error', failure: { kind: 'bad_request', status: 400, message: 'Bad input' } }]);
     expect(calls).toHaveLength(2);
     expect(parseConnectionSettings(settings.text).reasoning).toBeUndefined();
     const limited = fakeFetch({ [OPENAI_RESPONSES_URL]: () => jsonResponse(429, { error: { code: 'subscription_sharing_usage_limit_exceeded', message: 'Limit' } }) });

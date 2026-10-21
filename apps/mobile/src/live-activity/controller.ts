@@ -77,7 +77,7 @@ export type LiveActivityStatus = 'not_in_build' | 'idle' | 'showing' | 'failed';
 /** Re-check a little after a countdown ends, so a Resting activity left at 0:00 turns Ready while the app runs. */
 export const DEADLINE_RECHECK_MS = 500;
 
-export function createLiveActivityController(port: LiveActivityPort, opts: { tz: (state: SessionAggregate) => string; clock?: ActivityClock }) {
+export function createLiveActivityController(port: LiveActivityPort, opts: { tz: (state: SessionAggregate) => string; clock?: ActivityClock; painFlagged?: () => ReadonlySet<string> | undefined }) {
   let current: { sessionId: string; id: string; key: string } | null = null;
   let adopted = false;
   /** Workouts whose activity Ben swiped away this run. */
@@ -131,7 +131,7 @@ export function createLiveActivityController(port: LiveActivityPort, opts: { tz:
     if (state !== null && applied !== null && applied.sessionId === state.session.id && state.session.version < applied.version) return;
     applied = state === null ? null : { sessionId: state.session.id, version: state.session.version };
     lastState = state;
-    const content = state === null ? null : buildLockScreenContent(state, nowMs, opts.tz(state));
+    const content = state === null ? null : buildLockScreenContent(state, nowMs, opts.tz(state), { painFlagged: opts.painFlagged?.() });
     const running = listIds();
 
     if (!adopted) {

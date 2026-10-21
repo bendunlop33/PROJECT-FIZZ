@@ -19,9 +19,41 @@ describe('Progress v3 screens', () => {
   const progress = read('screens', 'progress', 'ProgressScreen.tsx');
   const detail = read('screens', 'progress', 'ReviewDetailScreen.tsx');
 
-  it('sits at the top of Progress, above the segments', () => {
-    expect(progress.indexOf('<ReviewsSection />')).toBeGreaterThan(-1);
-    expect(progress.indexOf('<ReviewsSection />')).toBeLessThan(progress.indexOf('<Segmented'));
+  it('Progress tabs `Overview | Lifts | Training`, Overview first and the default; its links open Lifts (on a lift) and Training', () => {
+    expect(progress).toContain("useState<'overview' | 'lifts' | 'training'>('overview')");
+    const tabs = ["{ key: 'overview', label: 'Overview' }", "{ key: 'lifts', label: 'Lifts' }", "{ key: 'training', label: 'Training' }"].map((t) => progress.indexOf(t));
+    expect(tabs.every((i) => i > 0)).toBe(true);
+    expect([...tabs].sort((a, b) => a - b)).toEqual(tabs);
+    expect(progress).toContain('<ReviewsSection onOpenLifts={openLifts} onOpenTraining={openTraining} />');
+    // `Open Bench ›` lands on that lift's page in Lifts (no workout picked); `Details ›` on Training's totals.
+    expect(progress).toContain('setExercisesFocus((f) => ({ exerciseId, sessionId: null, sessionExerciseId: null, n: (f?.n ?? 0) + 1 }))');
+    expect(progress).toContain("<ExercisesTab focus={exercisesFocus} />");
+    expect(read('screens', 'progress', 'ExercisesTab.tsx')).toContain('focus.sessionId === null ? null');
+    expect(charts).toContain('PROGRESS_COPY.allLiftsLink : PROGRESS_COPY.openLift(one.name)');
+    expect(charts).toContain('onOpen(one === null ? null : one.exerciseId)');
+    expect(charts).toContain('<SmallLink label={PROGRESS_COPY.details}');
+    expect(section).toContain('<SectionHead title={PROGRESS_COPY.trends} right={PROGRESS_COPY.last8} />');
+    // Today's `Reviews ›` lands on Overview.
+    expect(progress).toContain("setTab('overview');");
+  });
+
+  it('This week: `THIS WEEK · 13–19 OCT` with a small Week | Month switch (44 pt to tap); Month is the 5-week calendar with its key', () => {
+    expect(charts).toContain('`${PROGRESS_COPY.thisWeek} · ${range}` : PROGRESS_COPY.last5');
+    expect(charts).toContain('accessibilityRole="tab"');
+    expect(charts).toContain('accessibilityState={{ selected: on }}');
+    expect(charts).toContain('hitSlop={{ top: 9, bottom: 9, left: 2, right: 2 }}');
+    expect(charts).toContain('minHeight: 26, minWidth: 44');
+    expect(charts).toContain("mode === 'month' ? (\n        <MonthCalendar");
+    expect(charts).toContain('PROGRESS_COPY.calendarKey[i]');
+    expect(charts).toContain("mode === 'month' && weeksOnPlan !== null");
+    // Each row is one VoiceOver sentence; rows with a review open it.
+    expect(charts).toContain('accessibilityLabel={r.accessibilityLabel}');
+    expect(charts).toContain('Opens that week’s review');
+    // Missed and planned sessions are listed after the row, never put on a day.
+    expect(charts).toContain('r.open.map((o, i)');
+    // `cardio`, not `runs`.
+    expect(charts).toContain('view.cardio');
+    expect(code(charts)).not.toMatch(/\bruns\b/);
   });
 
   it('one page for every goal: This week → Progress (Lifts, Muscles) → Coach’s changes at the bottom', () => {
@@ -43,15 +75,36 @@ describe('Progress v3 screens', () => {
     expect(charts).toContain('accessibilityLabel={chip.accessibilityLabel}');
     expect(charts).toContain('accessibilityLabel={r.accessibilityLabel}');
     expect(charts).toContain('accessibilityLabel={one === null ? view.chartLabel : one.chartLabel}');
-    expect(charts).toContain('accessibilityState={{ expanded: open }}');
-    // Lift rows, past-week rows, links: at least 44 pt even where the visual is smaller.
-    expect(charts.match(/minHeight: 44/g)?.length).toBeGreaterThanOrEqual(4);
+    // Lift rows, calendar rows, links: at least 44 pt even where the visual is smaller.
+    expect(charts.match(/minHeight: 44/g)?.length).toBeGreaterThanOrEqual(3);
     expect(section.match(/minHeight: 44/g)?.length).toBeGreaterThanOrEqual(2);
     // Large text: chips two a row, muscle rows wrap.
     expect(charts).toContain('const perRow = ax ? 2 : 4;');
     expect(charts).toContain("flexWrap: ax ? 'wrap' : 'nowrap'");
     // No Skia: the table still lists every lift (the chart is skipped, never a blank box).
     expect(charts).toContain('&& Drawing !== null;');
+  });
+
+  it('Lifts: PB rings (tap → `PB · Bench 100 × 6 · week of 13 Oct`), a `PB` tag before Current, the key `Top set · ◎ PB · ○ est. · Edit`, load type and unit said', () => {
+    expect(read('reviews', 'LiftsCanvas.tsx')).toContain('p.ring ? <Circle');
+    expect(charts).toContain('const ring = ringAt(layout, locationX, locationY);');
+    expect(charts).toContain('<LoadCell width={column} number={l.current} suffix={l.current === \'–\' ? null : l.loadSuffix} pb={l.latestPb} />');
+    expect(charts).toContain("part === 'pb' ? (");
+    expect(charts).toContain('${PROGRESS_COPY.topSet} · ${PROGRESS_COPY.pbKey} · ${PROGRESS_COPY.est}');
+    expect(charts).toContain('A ring means a personal best.');
+    // `each` / `stack` / `assist` beside Current and Target; kg or lb in the column header (CLAUDE.md: load convention explicit).
+    expect(charts).toContain('<LoadCell width={column} number={l.targetText} suffix={l.target === null ? null : l.loadSuffix} pb={false} />');
+    // The number is never cut off (review progress-v3b-design S1): no line limit on it; the parts wrap instead.
+    const cell = charts.slice(charts.indexOf('function LoadCell'), charts.indexOf('function PbTag'));
+    expect(cell).not.toContain('numberOfLines');
+    expect(cell).toContain('liftCellLines({ width, number, suffix, pb, fontScale: scale })');
+    expect(charts).toContain('`${PROGRESS_COPY.liftHead[2]} ${view.unit}`');
+  });
+
+  it('Summary lists new PBs (`New best · Bench 100 × 6`), from the service, local only', () => {
+    const summary = read('screens', 'workout', 'SummaryScreen.tsx');
+    expect(summary).toContain('s.reviews.sessionBests(sessionId).catch(() => [])');
+    expect(summary).toContain('accessibilityLabel={b.accessibilityLabel}');
   });
 
   it('changes: small ones Undo / Redo, structural ones Apply / Keep as is; one op ID per tap; Got it is versioned', () => {

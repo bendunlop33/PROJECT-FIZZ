@@ -344,7 +344,7 @@ export class SqliteCoachStore {
   }
 
   /** End a turn (or record its tool log so far). Versioned; a finished turn is never reopened. */
-  updateTurn(turnId: string, patch: Pick<CoachTurn, 'status' | 'error' | 'endedAtUtc' | 'toolLog'>, atUtc: string): Promise<CoachTurn> {
+  updateTurn(turnId: string, patch: Pick<CoachTurn, 'status' | 'error' | 'endedAtUtc' | 'toolLog'> & Partial<Pick<CoachTurn, 'failure'>>, atUtc: string): Promise<CoachTurn> {
     return this.db.write(async (tx) => {
       const current = await getDoc(tx, COACH_TURN_SPEC, turnId);
       if (current === null) throw new Error(`Turn ${turnId} doesn't exist`);

@@ -158,3 +158,39 @@ export function checkWeeklyReview(args: WeeklyReviewArgs, ctx: { facts: WeeklyFa
   });
   return { verdict: verdict?.slice(0, 200) ?? null, lines: lines.map((l) => l.slice(0, 300)), hidden, proposals, refused };
 }
+
+/** The coach's ask Ben hasn't answered (open, or out of date without his answer): a fresh tweak may replace it. */
+export function unansweredAsk(p: Pick<ReviewProposal, 'source' | 'status'>): boolean {
+  return p.source === 'coach' && (p.status === 'open' || p.status === 'stale');
+}
+
+/**
+ * What a re-run review keeps of the review it replaces (review build-b-21oct S1, progress-v3b-data B1). Ben's
+ * answers carry over (applied, skipped, undone, out of date); code's open and out-of-date suggestions don't
+ * (code makes them again); the coach's open asks carry over unanswered, except one on a movement with a pain
+ * flag now (rule 9). A carried ask's reason was checked against the old facts, so it is checked again against
+ * this week's: a sentence whose number no longer holds is hidden like any other (rule 6).
+ */
+export function carriedProposals(previous: readonly ReviewProposal[], ctx: { facts: WeeklyFacts; painFlagged: ReadonlySet<string> }): ReviewProposal[] {
+  const claims = weeklyClaimFacts(ctx.facts);
+  return previous
+    .filter((p) => (p.status === 'open' ? p.source === 'coach' && !ctx.painFlagged.has(p.change.exerciseId) : !(p.status === 'stale' && p.source === 'code')))
+    .map((p) => (unansweredAsk(p) && p.reason !== null ? { ...p, reason: checkClaims(p.reason, claims).shown?.slice(0, 300) ?? null } : p));
+}
+
+/**
+ * This run's coach tweaks into the stored changes, one per routine and exercise: a fresh tweak replaces an
+ * unanswered coach ask for the same exercise in its place (the newer data wins); anything Ben answered, and
+ * code's, stays and the tweak is dropped. At most `max`.
+ */
+export function mergeCoachAsks(stored: readonly ReviewProposal[], fresh: readonly ReviewProposal[], max = 4): ReviewProposal[] {
+  const key = (p: ReviewProposal) => `${p.change.routineId}|${p.change.exerciseId}`;
+  const out = [...stored];
+  for (const p of fresh) {
+    const i = out.findIndex((q) => key(q) === key(p));
+    const had = out[i];
+    if (had === undefined) out.push(p);
+    else if (unansweredAsk(had)) out[i] = p;
+  }
+  return out.slice(0, max);
+}

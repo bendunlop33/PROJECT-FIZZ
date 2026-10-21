@@ -587,7 +587,7 @@ export function createAppServices(deps: AppServicesDeps) {
     now: deps.now,
     newId: deps.newId,
     ...(deps.coach === undefined ? {} : { model: deps.coach.model, connection: deps.coach.connection }),
-    builtInNextTargets: (sessionId) => loop.workout.builtInNextTargets(sessionId),
+    builtInNextTargets: (sessionId, reps) => loop.workout.builtInNextTargets(sessionId, reps),
     upNextTitle: (gymId) => loop.workout.upNextTitle(gymId),
     coachAddInputs: (exerciseId, aggregate) => loop.workout.coachAddInputs(exerciseId, aggregate),
     onSessionChanged: (a) => {

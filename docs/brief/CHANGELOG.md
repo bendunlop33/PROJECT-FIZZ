@@ -599,3 +599,12 @@ Ben approved `docs/design/workout-builder-v3.md` ("go", with the recommended ans
 ## 2026-10-21: Training blocks approved (Ben)
 
 - `docs/design/training-blocks.md` approved with all recommended answers, except `How did it feel?`, which stays after every workout and feeds weekly and block reviews. 6-week blocks (5 build + deload), deload −10 % load / −1 set / ~RPE 7, early deload ends the block, empty weeks don't count, block week in Today's header and Progress, next block never auto-starts, ≤ 2 accessory swaps per plan day per block, block IDs on sessions only. Builds after Build B.
+
+## 2026-10-21: Last set carries to the remaining sets (Ben)
+
+- **Decision (Ben, 21 Oct):** when Ben logs a working set at a weight other than its target (set 2 at 105 kg against a 100 kg plan), the remaining pending sets of that exercise in this workout start at his logged weight, not the plan. It is his own change, so it applies at once as the prefilled value (rule 3, Ben-asked). Prompted by `docs/reviews/weight-revert-21oct.md` R3/SP1 ("keeps flicking back to before").
+- **Bounds (Ben):** same exercise only; warm-ups never carry or receive.
+- **Bounds (developer's calls, pending Ben's confirmation; review SPC3):** same set-type group (top → back-off doesn't carry; back-off → back-off does); drop sets never carry or receive; same gym part only. Also implementation guardrails from CLAUDE.md rules 4, 9 and kg/lb: same unit and convention; snapped to the kit toward easier, never past the equipment max; a pain flag on the movement blocks a heavier carry; a set Ben edited himself keeps his value; a coach or rule target set after his log wins.
+- **Pending Ben:** a load Ben set himself on the *logged* set counts as his choice, so it carries (review CS2/SPC2, implemented, to confirm); a ramp logged off target is flattened by the absolute carry (review CS3/SPC1, unchanged, Ben to choose).
+- **Record:** a prefill only. The stored target, plan adherence and progression history keep the original target. No extra UI; labels read `Your edit`.
+- Spec: `docs/design/active-workout.md` §4.2 rule 2a (supersedes "target wins over this session's last set").

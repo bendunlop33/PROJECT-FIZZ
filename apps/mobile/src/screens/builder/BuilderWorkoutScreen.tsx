@@ -467,7 +467,8 @@ export function BuilderWorkoutScreen() {
             {r.main ? <AppText variant="label" color="text.secondary">{`  ${WORKOUT_COPY.main}`}</AppText> : null}
           </AppText>
           {r.works !== null ? (
-            <AppText variant="label" color="text.secondary" numberOfLines={1}>
+            // Wraps (no ellipsis), like the Today strip: `Lower back, glutes, hamstrings` is never cut (Ben, 21 Oct).
+            <AppText variant="label" color="text.secondary">
               {r.works}
             </AppText>
           ) : null}

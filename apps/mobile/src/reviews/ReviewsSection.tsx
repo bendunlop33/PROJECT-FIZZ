@@ -9,13 +9,13 @@ import { newUuid } from '../device/runtime';
 import { useDataChanged, useScreenData, useServices } from '../shell/context';
 import { useTheme } from '../theme';
 import { AppText, BottomCard, ChecklistRow, PrimaryButton, SecondaryButton } from '../ui';
-import { ChangeRow, LiftsCard, MusclesCard, PROGRESS_TEXT, ProgressCard, SectionHead, WeekCard } from './charts';
+import { ChangeRow, LiftsCard, MusclesCard, PROGRESS_TEXT, ProgressCard, SectionHead, WeekCard, WeekHead, type WeekMode } from './charts';
 import type { LiftChoice, ProgressData, ProposalOutcome } from './weekly-review-service';
 
 /**
  * Progress v3 (agreed with Ben 21 Oct; progress-goals.md "Progress v3 (agreed)", prototype
  * `progress-simple.html`): one page for every goal (the goal shapes the coach, not the page). This week →
- * Progress (Lifts, Muscles) → Coach's changes at the bottom. Lays out the service's view models; computes
+ * Trends (Lifts, Muscles) → Coach's changes at the bottom. Lays out the service's view models; computes
  * nothing. Local data only: identical offline, where Coach's changes read `Not reviewed · Offline` (rule 1).
  */
 
@@ -292,11 +292,16 @@ export function LiftsShownSheet({ visible, onClose, version, onSaved }: { visibl
   );
 }
 
-/** Progress (v3) at the top of the Progress tab. Nothing at all until there is something to show. */
-export function ReviewsSection() {
+/**
+ * Progress › Overview (v3): This week (Week | Month), Trends (Lifts, Muscles), Coach's changes. Nothing at all
+ * until there is something to show. `onOpenLifts`: the Lifts tab (on one lift's page, or its list);
+ * `onOpenTraining`: the Training tab.
+ */
+export function ReviewsSection({ onOpenLifts, onOpenTraining }: { onOpenLifts: (exerciseId: string | null) => void; onOpenTraining: () => void }) {
   const navigation = useNavigation();
   const [data, reload] = useScreenData((s) => s.reviews.progress());
   const [liftsOpen, setLiftsOpen] = useState(false);
+  const [mode, setMode] = useState<WeekMode>('week');
   if (data.state === 'error') {
     // One honest line when it can't be read, never nothing (review b3-wave3-ux N7).
     return (
@@ -317,9 +322,18 @@ export function ReviewsSection() {
     <View style={{ gap: 14 }}>
       {showWeek ? (
         <>
-          <SectionHead title={PROGRESS_COPY.thisWeek} right={d.week.range} />
+          <WeekHead
+            mode={mode}
+            range={d.week.range}
+            weeksOnPlan={d.week.month.weeksOnPlan}
+            onMode={(m) => {
+              haptic('step');
+              setMode(m);
+            }}
+          />
           <WeekCard
             view={d.week}
+            mode={mode}
             onOpenSession={(sessionId) => {
               navigation.navigate('Summary', { sessionId, back: true });
             }}
@@ -329,14 +343,15 @@ export function ReviewsSection() {
       ) : null}
       {showGoal ? (
         <>
-          <SectionHead title={PROGRESS_COPY.progress} right={PROGRESS_COPY.last8} />
+          <SectionHead title={PROGRESS_COPY.trends} right={PROGRESS_COPY.last8} />
           <LiftsCard
             view={d.lifts}
             onEdit={() => {
               setLiftsOpen(true);
             }}
+            onOpen={onOpenLifts}
           />
-          {!d.muscles.empty ? <MusclesCard view={d.muscles} /> : null}
+          {!d.muscles.empty ? <MusclesCard view={d.muscles} onDetails={onOpenTraining} /> : null}
         </>
       ) : null}
       {d.changes !== null ? (

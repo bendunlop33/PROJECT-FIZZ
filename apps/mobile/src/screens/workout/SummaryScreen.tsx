@@ -78,7 +78,9 @@ export function SummaryScreen() {
     const presence = await s.history.presence(sessionId).catch((): WorkoutPresence => ({ kind: 'hidden' }));
     // (workout-builder-v3 §2.8) The plan change this Start made (`Chest · bench updated · Undo`), stored with the session.
     const planChange = await s.builder.planChangeOf(sessionId).catch(() => null);
-    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone, planChange };
+    // Progress v3 (Ben, 21 Oct): new PBs at the tracked reps, the Lifts chart's definition. Local only.
+    const newBests = await s.reviews.sessionBests(sessionId).catch(() => []);
+    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone, planChange, newBests };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
   // its small changes are saved when it answers, until a workout starts from this one (CA10).
@@ -491,6 +493,21 @@ export function SummaryScreen() {
         {sum.comparison ? (
           <FadeIn motion={follow(1)}>
             <Comparison c={sum.comparison} tz={tz} />
+          </FadeIn>
+        ) : null}
+        {data.value.newBests.length > 0 ? (
+          // `New best · Bench 100 × 6` (Progress v3): the tracked lifts' new PBs, same definition as the Lifts chart.
+          <FadeIn motion={follow(1)}>
+            <View style={{ gap: theme.space['2'] }}>
+              {data.value.newBests.map((b) => (
+                <View key={b.exerciseId} accessible accessibilityLabel={b.accessibilityLabel} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+                  <Icon name="star.fill" color="text.secondary" size={16} />
+                  <AppText variant="callout" numeric style={{ flex: 1 }}>
+                    {b.text}
+                  </AppText>
+                </View>
+              ))}
+            </View>
           </FadeIn>
         ) : null}
         {sum.records.length > 0 ? (

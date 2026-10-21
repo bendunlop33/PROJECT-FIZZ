@@ -103,6 +103,10 @@ describe('past training, equipment and built-in targets for one exercise', () =>
       expect(x.target).toMatch(new RegExp(`@ RPE ${String(x.rpe)}$`));
     }
     for (const x of targetSets.filter((t) => t.type === 'warmup' || t.type === 'drop')) expect(x.rpe).toBeNull();
+    // Review S3: last time's reps (8, 7: the lower median), the planned count and the Why? reason, as the builder reads them.
+    expect(targets?.data.lastReps).toBe(7);
+    expect(typeof targets?.data.plannedReps).toBe('number');
+    expect((targets?.data.why as string[]).length).toBeGreaterThan(0);
     expect(r.toolLog.map((l) => l.text)).toEqual(['Read your history', 'Read your gym’s equipment', 'Read next targets']);
   });
 

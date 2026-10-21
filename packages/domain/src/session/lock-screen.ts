@@ -1,9 +1,10 @@
 import type { SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { clockText } from '../calendar';
-import { formatDuration, NBSP, targetShort } from '../display';
+import { formatDuration, NBSP } from '../display';
 import { toMs } from '../time';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, partRootOf } from './gym-switch';
+import { shownTargetShortIn, type CarryOptions } from './carry';
 import { STALE_SESSION_MS } from './recovery';
 import { getSessionPhase } from './view';
 
@@ -24,7 +25,7 @@ export interface LockScreenContent {
   title: string;
   /** `Until 18:42 · Bench press · Set 3 of 4 next`; '' when none. */
   line1: string;
-  /** `Target 100 kg × 6–8`; '' when none. */
+  /** `Target 100 kg × 6–8` (Ben's own draft: `Your edit 105 kg × 6–8`); '' when none. */
   line2: string;
   /** The system-rendered countdown (epoch ms); null when nothing counts. */
   countdown: { startMs: number; endMs: number } | null;
@@ -47,7 +48,7 @@ interface NextSet {
   target: string | null;
 }
 
-function nextSetOf(state: SessionAggregate, setId: string | null): NextSet | null {
+function nextSetOf(state: SessionAggregate, setId: string | null, carry: CarryOptions): NextSet | null {
   if (setId === null) return null;
   const set = state.sets.find((s) => s.id === setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
@@ -55,15 +56,21 @@ function nextSetOf(state: SessionAggregate, setId: string | null): NextSet | nul
   // The whole block (every gym part), so numbering matches the in-app header (review ben-bugs N4).
   const own = blockSets(state, ex.id);
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
-  const target = targetShort(set.planned, { convention: ex.loadConvention, equipment: eq });
+  // Ben's own draft values over the target, as the table shows them (B2, 21 Oct): `Your edit 105 kg × 6–8`.
+  // A load carried from his last logged set reads the same (21 Oct).
+  const target = shownTargetShortIn(state, set, ex, { convention: ex.loadConvention, equipment: eq }, carry);
   const perSide = target !== null && ex.laterality === 'unilateral' && set.planned.reps !== null ? `${NBSP}per side` : '';
   return { set, ex, number: own.indexOf(set) + 1, of: own.length, target: target === null ? null : `${target}${perSide}` };
 }
 
-/** `Target 100 kg × 6–8` read aloud: `target 100 kilograms, 6 to 8 reps`. */
+/** `Target 100 kg × 6–8` read aloud: `target 100 kilograms, 6 to 8 reps` (`Your edit …`: `your edit …`). */
 export function lockScreenTargetWords(target: string): string {
   const plain = target.replaceAll(NBSP, ' ');
-  const [word, rest] = plain.startsWith('Coach target ') ? ['coach target', plain.slice('Coach target '.length)] : ['target', plain.replace(/^Target /, '')];
+  const [word, rest] = plain.startsWith('Coach target ')
+    ? ['coach target', plain.slice('Coach target '.length)]
+    : plain.startsWith('Your edit ')
+      ? ['your edit', plain.slice('Your edit '.length)]
+      : ['target', plain.replace(/^Target /, '')];
   const spoken = rest
     .replace(/\s*×\s*(\d+)(?:–(\d+))?/g, (_m, a: string, b: string | undefined) => (b === undefined ? `, ${a} reps` : `, ${a} to ${b} reps`))
     .replace(/(\d+)–(\d+)/g, '$1 to $2')
@@ -75,9 +82,10 @@ export function lockScreenTargetWords(target: string): string {
 /**
  * The content for `state` at `nowMs`, with clock times in `tz`; null when no
  * activity should show (no workout, finished or discarded, or stale: ≥ 6 h
- * since the last activity, flow §4.2).
+ * since the last activity, flow §4.2). `carry.painFlagged`: movements with
+ * an active pain flag, so a heavier load never carries onto the next set.
  */
-export function buildLockScreenContent(state: SessionAggregate | null, nowMs: number, tz: string): LockScreenContent | null {
+export function buildLockScreenContent(state: SessionAggregate | null, nowMs: number, tz: string, carry: CarryOptions = {}): LockScreenContent | null {
   if (state === null || state.session.status !== 'active') return null;
   if (nowMs - toMs(state.session.lastActivityAtUtc) >= STALE_SESSION_MS) return null;
   const name = state.session.routineName ?? TITLE_FALLBACK;
@@ -90,7 +98,7 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
       const endMs = t ? toMs(t.deadlineUtc) : nowMs + phase.remainingMs;
       const startMs = t ? Math.min(toMs(t.startedAtUtc), endMs) : nowMs;
       const until = `Until ${clockText(endMs, tz)}`;
-      const next = nextSetOf(state, phase.nextSetId);
+      const next = nextSetOf(state, phase.nextSetId, carry);
       const doneEx = t ? state.sets.find((s) => s.id === t.setId)?.sessionExerciseId : undefined;
       let line1 = until;
       let nextWords = '';
@@ -141,7 +149,7 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
     case 'paused': {
       const left = phase.timerRemainingMs ?? phase.workRemainingMs;
       const leftText = left === null ? null : formatDuration(Math.ceil(left / 1000));
-      const next = nextSetOf(state, state.session.activeSetId);
+      const next = nextSetOf(state, state.session.activeSetId, carry);
       const line1 =
         leftText !== null ? `${phase.timerRemainingMs !== null ? 'Rest' : 'Work'} ${leftText} left when you resume` : next !== null ? `Ready for set ${String(next.number)}` : '';
       return {
@@ -160,7 +168,7 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
     case 'empty':
     case 'all_done':
     case 'finished': {
-      const next = phase.kind === 'ready' ? nextSetOf(state, phase.setId) : null;
+      const next = phase.kind === 'ready' ? nextSetOf(state, phase.setId, carry) : null;
       const line1 = next === null ? (phase.kind === 'all_done' ? 'All sets done' : '') : `${next.ex.exerciseName} · Set ${String(next.number)} of ${String(next.of)}`;
       const target = next?.target ?? '';
       return {

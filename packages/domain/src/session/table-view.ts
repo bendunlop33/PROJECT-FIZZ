@@ -10,6 +10,7 @@ import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf, partsOf } from './gym-switch';
 import { isRoundEnd, nextPendingSet, setUnits } from './order';
 import { isPlatesAddedKind } from '../plates-added';
+import { painFlaggedOf, shownPlannedIn, type CarryOptions } from './carry';
 
 /**
  * `buildWorkoutTableView` (active-workout §2A.12): the Table view of the
@@ -207,8 +208,7 @@ export function tableColumns(ex: Pick<SessionExercise, 'measurement' | 'loadConv
   return { kind, loadLabel, valueLabel };
 }
 
-function valueCellTarget(set: WorkoutSet, m: Measurement): string {
-  const p = set.planned;
+function valueCellTarget(p: WorkoutSet['planned'], m: Measurement): string {
   if (m === 'cardio') return cardioValuesText(p);
   if (m === 'duration') return p.durationS === null ? '—' : formatDuration(p.durationS);
   if (m === 'distance') return p.distanceM === undefined || p.distanceM === null ? '—' : formatDistance(p.distanceM);
@@ -244,12 +244,12 @@ interface BuiltRow {
   unitCells: TableRow['cells'];
 }
 
-function rowOf(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null): BuiltRow {
-  const built = rowCore(state, base, activeSetId, ruleRpe, memberTag, memberName);
+function rowOf(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null, carry: CarryOptions): BuiltRow {
+  const built = rowCore(state, base, activeSetId, ruleRpe, memberTag, memberName, carry);
   const set = state.sets.find((s) => s.id === base.setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) return { row: built, unitCells: built.cells };
-  const source = set.status === 'completed' && set.actual ? set.actual.load : set.planned.load;
+  const source = set.status === 'completed' && set.actual ? set.actual.load : shownPlannedIn(state, set, ex, carry).load;
   const unitCells = {
     load: built.cells.load === null ? null : withUnit(built.cells.load, source, ex, equipmentOf(state, ex)),
     value: ex.measurement === 'reps' && built.cells.value !== '—' && built.cells.value !== 'Skipped' ? `${built.cells.value}${NBSP}reps` : built.cells.value,
@@ -290,7 +290,7 @@ function sharedColumns(own: readonly TableColumns[], built: readonly BuiltRow[])
   return { columns: shared, rows: built.map((b) => (shared === null ? { ...b.row, cells: b.unitCells } : b.row)) };
 }
 
-function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null): TableRow {
+function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null, carry: CarryOptions): TableRow {
   const set = state.sets.find((s) => s.id === base.setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) {
@@ -331,9 +331,11 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   const open = set.id === activeSetId;
   const today = carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null;
   const rpe = targetRpeOf(set, ruleRpe)?.rpe ?? null;
-  const p = set.planned;
+  // Ben's own values from the set's saved draft win over the preset in every row (21 Oct): never flick back.
+  const p = shownPlannedIn(state, set, ex, carry);
+  const own = p !== set.planned;
   const spokenTarget = spokenValues(p.load, p.reps === null ? null : repRangeText(p.reps), p.durationS, p.distanceM, ex, eq);
-  const targetWord = today === 'coach' ? 'coach target' : today === 'rule' ? 'adjusted target' : 'target';
+  const targetWord = own ? 'your edit' : today === 'coach' ? 'coach target' : today === 'rule' ? 'adjusted target' : 'target';
   const before = today !== null && p.coach ? p.coach.before : null;
   const planWas = before === null ? null : spokenValues(before.load, before.reps === null ? null : repRangeText(before.reps), before.durationS, before.distanceM, ex, eq);
   const rpeWords = rpe === null ? null : `RPE ${formatNumber(rpe)}`;
@@ -345,7 +347,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     restAfterS: set.rest.seconds,
     spoken: spokenTarget,
     columns,
-    cells: { load: rowLoadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(set, ex.measurement) },
+    cells: { load: rowLoadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(p, ex.measurement) },
     // The target RPE is a cell too (18 Oct: set · KG · REPS · RPE · ✓).
     effort: rpe === null ? null : `@${NBSP}${formatNumber(rpe)}`,
     pace: null,
@@ -503,7 +505,7 @@ function exerciseCard(input: ActiveViewInput, root: SessionExercise, parts: read
   const blockLive = blockSets(state, root.id).filter(live);
   const ruleRpe = input.ruleTargetRpe?.[action.id] ?? input.ruleTargetRpe?.[root.id] ?? null;
   const ownColumns = tableColumns(action, eq);
-  const { columns, rows } = sharedColumns([ownColumns], buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null)));
+  const { columns, rows } = sharedColumns([ownColumns], buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null, { painFlagged: painFlaggedOf(input) })));
   const prev = input.previous[action.id] ?? input.previous[root.id] ?? null;
   const headerLine = headerLineOf(action, eq);
   const lastLine = lastLineOf(prev, action, eq, state.session.startedAt.tz);
@@ -571,7 +573,7 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
       hasPending: memberLive.some((s) => s.status === 'pending'),
     });
     const ruleRpe = input.ruleTargetRpe?.[action.id] ?? null;
-    const mine = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName));
+    const mine = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName, { painFlagged: painFlaggedOf(input) }));
     built.push(...mine);
     memberBuilt.push(mine);
     unitsByMember.push({ tag, name: action.exerciseName, units: parts.flatMap((p, k) => setUnits(state.sets, p.id, k === 0 ? (root.roundOffset ?? 0) : 0)) });

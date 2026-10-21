@@ -10,6 +10,7 @@ import { isInHistory } from '../session/deletion';
 import { estimateOneRepMax } from '../progress/e1rm';
 import { toMs } from '../time';
 import { usualTargetRpeOf } from './target-rpe';
+import { ruleRepsFact, type RuleReps } from '../rep-range';
 
 /**
  * What the coach's read tools return about Ben's training (ADR 0020 §2,
@@ -603,6 +604,12 @@ export interface BuiltInTargetsView {
   sets: { type: SetType; target: string; load: Load | null; reps: { min: number; max: number } | null; rpe: number | null }[];
   /** `pain flag on: no increases` when the movement is flagged (rule 9). */
   painFlag: string | null;
+  /** (Review S3) Typical working reps of his last comparable session; null when unknown. */
+  lastReps: number | null;
+  /** (Review S3) The one rep count the builder plans inside the range (`RuleReps.aim`); null when unknown. */
+  plannedReps: number | null;
+  /** (Review S3) The rule's reason, as `Why?` shows it: its summary, then the reps fact when the range came from history. */
+  why: string[];
 }
 
 export function builtInTargetsView(input: {
@@ -613,7 +620,12 @@ export function builtInTargetsView(input: {
   painFlag: PainFlag | null;
   /** The built-in rule's target RPE for the exercise (`ruleTargetRpes`), or null when unknown (CHANGELOG 2026-10-11). */
   ruleRpe?: number | null;
+  /** The rule's reps (`NextTargets.reps`): last time's reps, the planned count, and the reps fact. */
+  reps?: RuleReps | null;
 }): BuiltInTargetsView {
+  const reps = input.reps ?? null;
+  const reason = input.planned.find((p) => p.setType !== 'warmup')?.planned.provenance?.rule?.summary ?? null;
+  const fact = reps === null ? null : ruleRepsFact(reps);
   return {
     domain: YOUR_DATA,
     note: READ_NOTE,
@@ -630,5 +642,8 @@ export function builtInTargetsView(input: {
       return { type: p.setType, target: rpe === null || target === '—' ? target : `${target} @ RPE ${formatNumber(rpe)}`, load, reps, rpe };
     }),
     painFlag: input.painFlag?.status === 'active' ? 'pain flag on: no increases' : null,
+    lastReps: reps?.last ?? null,
+    plannedReps: reps === null || reps.last === null ? null : reps.aim,
+    why: [reason, fact].filter((x): x is string => x !== null),
   };
 }
