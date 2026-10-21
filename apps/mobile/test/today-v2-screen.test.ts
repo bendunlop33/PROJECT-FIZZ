@@ -106,12 +106,13 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(start).toContain('await commitCard(sel, fresh, commitKey)');
     expect(screen).toContain('return services.todaySession.commit(data2, sel, opId);');
     expect(start).toContain('services.todaySession.start');
-    expect(start).toContain("navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, coachDraftOf: c.draftId })");
+    // The check-in route carries the committed version, pinned in the Start's write (integrity S1).
+    expect(start).toContain("navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, coachDraftOf: c.draftId, coachDraftVersion: c.version })");
     expect(start).not.toContain('WorkoutOverview');
     expect(start).not.toContain('Builder');
   });
 
-  it('Edit → `BuilderWorkout` { draftId }; Build your own → `BuilderSetup`; both guarded until the builder ships', () => {
+  it('Edit → `BuilderWorkout` { draftId }; Build your own → `BuilderSetup`; no placeholder or route guard (the builder is in this build)', () => {
     expect(screen).toContain("navigation.navigate('BuilderWorkout', { draftId: c.draftId })");
     expect(screen).toContain("navigation.navigate('BuilderSetup'");
     // The builder's routes are in this build: no placeholder toast, no route guard.
@@ -138,6 +139,10 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     // The nudge's offer is applied only through applyNudge / skipNudge (rule 3; the day is marked done).
     expect(screen).toContain('services.builderCoach.applyNudge(');
     expect(screen).toContain('services.builderCoach.skipNudge(');
+    // The nudge reviews the controls on the card now and its offer is keyed on them (wiring S1, integrity S2).
+    expect(screen).toContain('services.todaySession.review(session, { dayKey: selection.dayKey, controls: selection.controls }');
+    expect(screen).not.toContain('session.initial[selection.dayKey] ?? selection.controls');
+    expect(screen).toContain('nudge.key === nudgeKey');
   });
 
   it('superseded today.md parts are gone (Up next card, Recent, session picker); Resume, stale, check-in and pain lines stay', () => {

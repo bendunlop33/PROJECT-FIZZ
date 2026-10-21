@@ -2,7 +2,7 @@ import { useFocusEffect, useNavigation, useRoute, type NavigationProp, type Para
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 
-import { discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
+import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
@@ -130,9 +130,11 @@ export function TodayScreen() {
   };
 
   const cardKey = selection === null ? null : `${selection.dayKey}|${selection.controls.mainLiftExerciseId ?? '-'}`;
+  // The nudge is for the card as Ben has set it (wiring S1, integrity S2): its offer is dropped once a control moves.
+  const nudgeKey = selection === null || cardKey === null ? null : `${cardKey}|${JSON.stringify(selection.controls)}`;
   const baseView = useMemo(() => (session === null || selection === null ? null : services.todaySession.card(session, { dayKey: selection.dayKey, controls: selection.controls })), [services, session, selection]);
   const mixKey = baseView === null || cardKey === null ? null : `${cardKey}|${baseView.mixFromExerciseId ?? '-'}|${baseView.mixShortlist.join(',')}`;
-  const coachIn = useMemo(() => ({ nudge: nudge !== null && nudge.key === cardKey ? nudge.result : null, mixPick: mixKey === null ? null : (mixPicks.get(mixKey) ?? null) }), [nudge, cardKey, mixKey, mixPicks]);
+  const coachIn = useMemo(() => ({ nudge: nudge !== null && nudge.key === nudgeKey ? nudge.result : null, mixPick: mixKey === null ? null : (mixPicks.get(mixKey) ?? null) }), [nudge, nudgeKey, mixKey, mixPicks]);
   const view = useMemo(() => (session === null || selection === null ? null : services.todaySession.card(session, { dayKey: selection.dayKey, controls: selection.controls }, coachIn)), [services, session, selection, coachIn]);
 
   // The bar's status word, and Set up words asked here start from the card's day.
@@ -151,18 +153,20 @@ export function TodayScreen() {
   // real signal; never applied without Apply (rule 3). The card's draft is saved first (the coach reviews that draft).
   useEffect(() => {
     // Only with the coach reachable: offline the card already says `Not reviewed · Offline`, and nothing is written.
-    if (reach !== 'ok' || session === null || selection === null || session.doneToday || session.nextKey === null || selection.dayKey !== session.nextKey || cardKey === null) return;
-    const key = `${session.localDate}|${cardKey}|${session.gymId ?? '-'}`;
+    if (reach !== 'ok' || session === null || selection === null || session.doneToday || session.nextKey === null || selection.dayKey !== session.nextKey || nudgeKey === null) return;
+    const key = `${session.localDate}|${nudgeKey}|${session.gymId ?? '-'}`;
     if (nudgeAsked.current === key) return;
     nudgeAsked.current = key;
     let alive = true;
-    void services.todaySession.review(session, { dayKey: selection.dayKey, controls: session.initial[selection.dayKey] ?? selection.controls }, `nudge:${key}`).then((r) => {
-      if (alive && r !== null) setNudge({ key: cardKey, result: r });
+    // The controls on the card now: the offer is made on (and Apply writes) the workout Ben sees. The day's coach
+    // line is stored once, so a control change asks code for a fresh offer, not the model again.
+    void services.todaySession.review(session, { dayKey: selection.dayKey, controls: selection.controls }, `nudge:${deriveId(key)}`).then((r) => {
+      if (alive && r !== null) setNudge({ key: nudgeKey, result: r });
     });
     return () => {
       alive = false;
     };
-  }, [services, session, selection, cardKey, reach]);
+  }, [services, session, selection, nudgeKey, reach]);
 
   // `↻ Mix it up` (rule 3): the coach picks from code's shortlist (with its reason) once Ben asks for a swap.
   useEffect(() => {
@@ -226,7 +230,7 @@ export function TodayScreen() {
       setNudgeBusy(false);
     }
   }
-  const offerCard = nudge !== null && nudge.key === cardKey ? nudgeCardView(nudge.result) : null;
+  const offerCard = nudge !== null && nudge.key === nudgeKey ? nudgeCardView(nudge.result) : null;
 
   // `Chest moves to next session` when another day is picked (a prediction; nothing is written until Start).
   const [moved, setMoved] = useState<string | null>(null);
@@ -471,7 +475,7 @@ export function TodayScreen() {
       await alertsAsk.ensureAsked();
       const gate = await gateCheckIn();
       if (gate.ask) {
-        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, coachDraftOf: c.draftId });
+        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, coachDraftOf: c.draftId, coachDraftVersion: c.version });
         return;
       }
       const startKey = `start:${c.draftId}:${String(c.version)}`;

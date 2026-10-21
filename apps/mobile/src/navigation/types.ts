@@ -153,7 +153,7 @@ export type RootStackParams = {
    * `routineOf`: start that routine with next targets (premium-feel §2.6).
    */
   CheckIn:
-    | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string; /** (Today v2) Today's session card: the builder draft it committed. */ coachDraftOf?: string; /** (v3 §2.8) An edited card's prompt choice: the check-in, then the builder's Start with it. */ builderStart?: { choice: StartChoice; expectedVersion: number } }
+    | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string; /** (Today v2) Today's session card: the builder draft it committed. */ coachDraftOf?: string; /** That draft's version as committed: pinned in the Start's write (rule 5). */ coachDraftVersion?: number; /** (v3 §2.8) An edited card's prompt choice: the check-in, then the builder's Start with it. */ builderStart?: { choice: StartChoice; expectedVersion: number } }
     | { mode: 'edit'; checkInId: string }
     /**
      * Over the Workout overview (workout-overview §2.2): `What's up?` for a
