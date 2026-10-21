@@ -8,12 +8,14 @@ import {
   type BuilderDraftKey,
   type BuilderSetup,
   type DraftPlan,
+  type TodayDraftMark,
   type WorkoutDraft,
   type WorkoutDraftVersion,
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import { coachDraftExpiry, currentDraftVersion, type DraftLifeChange } from '../session/coach-draft';
 import { toMs } from '../time';
+import { deriveId, stableStringify } from '../stable';
 
 /**
  * Builder drafts' life (workout-builder-v3 §4.4). Pure; persistence decides
@@ -52,14 +54,14 @@ export interface NewBuilderDraftInput {
   at: ZonedTimestamp;
 }
 
-function version(input: { n: number; parentN: number | null; actionId: string; setup: BuilderSetup; plan: DraftPlan; focus: BuildFocus; day?: BuildDay | undefined; gymId: string | null; equipmentVersion: string; contextHash: string; at: ZonedTimestamp }): WorkoutDraftVersion {
+function version(input: { n: number; parentN: number | null; actionId: string; setup: BuilderSetup; plan: DraftPlan; focus: BuildFocus; day?: BuildDay | undefined; gymId: string | null; equipmentVersion: string; contextHash: string; at: ZonedTimestamp; today?: TodayDraftMark | undefined }): WorkoutDraftVersion {
   return {
     n: input.n,
     parentN: input.parentN,
     status: 'current',
     actionId: input.actionId,
     turnId: 'manual',
-    request: { text: '', minutes: input.setup.minutes, focus: input.focus, gymId: input.gymId, origin: 'builder', ...(input.day === undefined ? {} : { day: input.day }), setup: input.setup },
+    request: { text: '', minutes: input.setup.minutes, focus: input.focus, gymId: input.gymId, origin: 'builder', ...(input.day === undefined ? {} : { day: input.day }), setup: input.setup, ...(input.today === undefined ? {} : { today: input.today }) },
     rawArgs: '',
     plan: input.plan,
     fitMinutes: input.setup.minutes,
@@ -119,7 +121,7 @@ export interface BuilderDraftEdit {
   /** The draft's code-made name after the edit (`Chest · Bench`). */
   name?: string;
   /** A rebuild: a new version (§4.4); else the current one changes in place. */
-  rebuild?: { actionId: string; focus: BuildFocus; day?: BuildDay; gymId: string | null; equipmentVersion: string; contextHash: string; /** The key for the new Day / Main lift (review B1); Undo puts the old one back. */ key?: BuilderDraftKey };
+  rebuild?: { actionId: string; focus: BuildFocus; day?: BuildDay; gymId: string | null; equipmentVersion: string; contextHash: string; /** The key for the new Day / Main lift (review B1); Undo puts the old one back. */ key?: BuilderDraftKey; /** The coach's pre-session offer applied over Today's version: still Today's card (integrity B2). */ today?: TodayDraftMark };
   /** Keep the state before this edit for Undo (false: the edit clears any older Undo). */
   undoable: boolean;
   /** (§2.3 `Gym changed`) The version's gym moves in place; Undo puts the old one back. */
@@ -146,7 +148,7 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
   let currentVersion = current.currentVersion;
   if (e.rebuild !== undefined) {
     const n = Math.max(...current.versions.map((v) => v.n)) + 1;
-    const next = version({ n, parentN: current.currentVersion, actionId: e.rebuild.actionId, setup: e.setup, plan: e.plan, focus: e.rebuild.focus, day: e.rebuild.day, gymId: e.rebuild.gymId, equipmentVersion: e.rebuild.equipmentVersion, contextHash: e.rebuild.contextHash, at: e.at });
+    const next = version({ n, parentN: current.currentVersion, actionId: e.rebuild.actionId, setup: e.setup, plan: e.plan, focus: e.rebuild.focus, day: e.rebuild.day, gymId: e.rebuild.gymId, equipmentVersion: e.rebuild.equipmentVersion, contextHash: e.rebuild.contextHash, at: e.at, today: e.rebuild.today });
     versions = [...current.versions.map((v): WorkoutDraftVersion => (v.status === 'current' ? { ...v, status: 'replaced' } : v)), next];
     // Under the cap: the oldest replaced versions go first (the current and its parent stay for Undo).
     while (versions.length > MAX_WORKOUT_DRAFT_VERSIONS) {
@@ -208,4 +210,30 @@ export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoO
     undo: null,
   };
   return { kind: 'write', next, expectedVersion: current.version };
+}
+
+// ---------------------------------------------------------------------------
+// Today's ownership (§2.0.2; review integrity B2)
+
+/** The content a Today mark vouches for: the version's plan, set-up and gym. Any builder write changes it. */
+export function todayContentHash(v: { plan: DraftPlan; setup: BuilderSetup | undefined | null; gymId: string | null }): string {
+  return deriveId(`today-content:${stableStringify({ plan: v.plan, setup: v.setup ?? null, gymId: v.gymId })}`);
+}
+
+/** Today's controls as the mark stores them. */
+export function todayControlsHash(controls: unknown): string {
+  return deriveId(`today-controls:${stableStringify(controls)}`);
+}
+
+/**
+ * Who the draft's current content belongs to: `today` (Today wrote it), `nudge` (Ben applied the coach's
+ * pre-session offer over Today's version), else `edited` (Ben changed it in the builder). By content, not
+ * by who wrote last: an Undo back to Today's content is Today's again.
+ */
+export function todayDraftState(d: Pick<WorkoutDraft, 'versions' | 'currentVersion'>): { state: 'today' | 'nudge'; controls: string } | { state: 'edited' } {
+  const v = d.versions.find((x) => x.n === d.currentVersion);
+  const mark = v?.request.today;
+  if (v === undefined || mark === undefined) return { state: 'edited' };
+  if (todayContentHash({ plan: v.plan, setup: v.request.setup, gymId: v.request.gymId }) !== mark.hash) return { state: 'edited' };
+  return { state: mark.by, controls: mark.controls };
 }

@@ -390,6 +390,13 @@ export const BuildDaySchema = z.object({
 });
 export type BuildDay = z.infer<typeof BuildDaySchema>;
 
+export const TodayDraftMarkSchema = z.object({
+  by: z.enum(['today', 'nudge']),
+  controls: z.string().min(1).max(128),
+  hash: z.string().min(1).max(128),
+});
+export type TodayDraftMark = z.infer<typeof TodayDraftMarkSchema>;
+
 export const WorkoutDraftVersionSchema = z.object({
   n: z.int().min(1),
   parentN: z.int().min(1).nullable(),
@@ -407,6 +414,12 @@ export const WorkoutDraftVersionSchema = z.object({
     day: BuildDaySchema.optional(),
     /** (v3 §4.4) Set up, on a builder version (`origin: 'builder'`). */
     setup: BuilderSetupSchema.optional(),
+    /**
+     * (v3 §2.0.2) A version Today wrote (`today`), or the coach's pre-session offer Ben applied over one
+     * (`nudge`): the controls it came from and its content hash (plan, set-up, gym). Today owns the draft
+     * while the content still matches; any builder edit changes it (`edited`), and Undo puts it back.
+     */
+    today: TodayDraftMarkSchema.optional(),
   }),
   /** The model's arguments as received (data). */
   rawArgs: z.string().max(40_000),

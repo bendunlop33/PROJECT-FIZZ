@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
-import { addDays, currentDraftVersion, localDateOf, toMs } from '@fizz/domain';
+import { addDays, currentDraftVersion, formFromEquipment, localDateOf, toMs, type EquipmentForm } from '@fizz/domain';
+import { builderApplyOpId } from '@fizz/coach';
 
 import { planChangeUndoOpId } from '../src/builder/builder-service';
 import type { AppServices } from '../src/services/app-services';
@@ -180,7 +181,7 @@ describe('Today (v2) session card from the plan', () => {
     expect(strip.find((c) => c.today)?.items[0]).toMatchObject({ kind: 'workout' });
   });
 
-  it('a draft changed outside Today (the builder) shows as `· edited` and is never overwritten by Today', async () => {
+  it('a draft changed outside Today (the builder) shows as `· edited` and is never overwritten by Today; a version Undo back to Today’s own content is Today’s again (ownership by content)', async () => {
     const { s } = await benWithPlan();
     const data = await loaded(s);
     const key = data.nextKey ?? '';
@@ -189,10 +190,17 @@ describe('Today (v2) session card from the plan', () => {
     const c2 = await s.todaySession.commit(data, sel(data, key), 'commit-e2');
     if (!c1.ok || !c2.ok) throw new Error('commit');
     expect(c2.draftId).toBe(c1.draftId);
-    // A write that isn't Today's (here the drafts' own versioned Undo; the builder's edits are the same kind).
+    // The drafts' own versioned Undo back to version 1: Today's content for the longer controls, so still Today's card.
     h.clockMs += 60_000;
     const u = await s.coachDrafts.undoVersion({ draftId: c2.draftId, versionN: 2, expectedVersion: c2.version, opId: 'undo-v2' });
     expect(u).toMatchObject({ ok: true });
+    const back = await loaded(s);
+    expect(s.todaySession.card(back, sel(back, key))?.title).not.toMatch(/edited/);
+    // Ben's edit in the builder: `· edited`, and Today never overwrites it.
+    const snap = await s.builder.read(c1.draftId);
+    const slot = snap?.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main);
+    if (snap === null || slot === undefined) throw new Error('no accessory');
+    expect((await s.builder.edit(c1.draftId, { kind: 'add_set', slotKey: slot.key }, { opId: 'e-add-set', basis: { version: snap.version } })).status).toBe('written');
     const again = await loaded(s);
     const view = s.todaySession.card(again, sel(again, key));
     expect(view?.title).toMatch(/· edited$/);
@@ -298,8 +306,11 @@ describe('Today (v2) session card from the plan', () => {
     const applied = await s.builderCoach.applyNudge({ offer: r.offer, localDate: data.localDate, opId: 'apply-nudge' });
     expect(applied.kind).toBe('applied');
     const after = await loaded(s);
+    // The coach's change, applied on Ben's tap, is still Today's card: plain title, its draft shown (integrity B2).
     const eased = s.todaySession.card(after, sel(after, key));
-    expect(eased?.edited?.draftId).toBe(r.offer.proposal.draftId);
+    expect(eased?.edited).toBeNull();
+    expect(eased?.title).not.toMatch(/edited/);
+    expect(eased?.nudged?.draftId).toBe(r.offer.proposal.draftId);
     const calls = model.requests.length;
     const again = await s.todaySession.review(after, sel(after, key), 'nudge-2');
     expect(again?.kind).toBe('settled');
@@ -596,5 +607,118 @@ describe('Today (v2) session card from the plan', () => {
     expect(line).not.toBeNull();
     const o = data.others[0]?.key ?? '';
     expect(await s.todaySession.movedLine(data, sel(data, o))).toBeNull();
+  });
+});
+
+describe('Wave 2 merge integrity (reviews wave2-integrity, wave2-wiring)', () => {
+  async function nudged() {
+    const { s, gymId } = await benWithPlan();
+    const ci = await s.checkIns.record({ checkInId: '0d7f6c2e-4b1a-4c3d-9e8f-1a2b3c4d5e6f', opId: 'ci-1', score: 1 });
+    expect(ci.ok).toBe(true);
+    model = new StepModel([() => toolCall('pre_session_nudge', { speak: true, line: 'Low check-in today, so a little less volume.' })]);
+    const data = await loaded(s);
+    const key = data.nextKey ?? '';
+    const r = await s.todaySession.review(data, sel(data, key), 'nudge-1');
+    if (r?.kind !== 'line' || r.offer === null) throw new Error(`no offer: ${JSON.stringify(r)}`);
+    const before = s.todaySession.card(data, sel(data, key));
+    const applied = await s.builderCoach.applyNudge({ offer: r.offer, localDate: data.localDate, opId: 'apply-nudge' });
+    expect(applied.kind).toBe('applied');
+    return { s, gymId, key, offer: r.offer, before };
+  }
+
+  it('B2: the nudge Ben applied is not `· edited`; Start is one tap (no §2.8 prompt) and starts the nudged workout', async () => {
+    const { s, gymId, key, offer, before } = await nudged();
+    const after = await loaded(s);
+    const card = s.todaySession.card(after, sel(after, key));
+    expect(card?.edited).toBeNull();
+    expect(card?.title).not.toMatch(/edited/);
+    expect(card?.nudged?.draftId).toBe(offer.proposal.draftId);
+    // No offer to write a fatigue-day cut into the plan.
+    expect(await s.builder.startPrompt(offer.proposal.draftId)).toBeNull();
+    // Today's commit keeps the nudged draft as it is; Start plans that one.
+    const c = await s.todaySession.commit(after, sel(after, key), 'commit-nudged');
+    if (!c.ok) throw new Error(c.message);
+    expect(c).toEqual({ ok: true, draftId: card?.nudged?.draftId, version: card?.nudged?.version });
+    const started = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'start-nudged', checkIn: null });
+    if (!started.ok) throw new Error(JSON.stringify(started.error));
+    const working = started.aggregate.sets.filter((x) => x.setType !== 'warmup').length;
+    const cardWorking = (card?.rows ?? []).reduce((n, row) => n + row.sets, 0);
+    expect(cardWorking).toBeGreaterThan(0);
+    expect(working).toBe(cardWorking);
+    expect(card?.rows).not.toEqual(before?.rows);
+  });
+
+  it('B2 / wiring S4: Undo after the nudge hands the card back to Today; its controls drive it again', async () => {
+    const { s, key, offer } = await nudged();
+    const draftId = offer.proposal.draftId;
+    const u = await s.builder.undo(draftId, builderApplyOpId(offer.proposal.id), 'undo-nudge');
+    expect(u.status).toBe('written');
+    const back = await loaded(s);
+    const card = s.todaySession.card(back, sel(back, key));
+    expect(card?.edited).toBeNull();
+    expect(card?.nudged).toBeNull();
+    expect(card?.title).not.toMatch(/edited/);
+    // The controls drive it: a longer session is a new Today version of the same draft.
+    const longer = (back.initial[key]?.minutes ?? 45) + 20;
+    const c = await s.todaySession.commit(back, sel(back, key, { minutes: longer }), 'commit-after-undo');
+    if (!c.ok) throw new Error(c.message);
+    expect(c.draftId).toBe(draftId);
+    expect(s.todaySession.card(await loaded(s), sel(back, key, { minutes: longer }))?.edited).toBeNull();
+  });
+
+  it('wiring S1 / S4: a control change after the nudge is Today’s card again (the nudge never hides Ben’s change)', async () => {
+    const { s, key } = await nudged();
+    const after = await loaded(s);
+    const longer = (after.initial[key]?.minutes ?? 45) + 20;
+    const changed = s.todaySession.card(after, sel(after, key, { minutes: longer }));
+    expect(changed?.nudged).toBeNull();
+    expect(changed?.edited).toBeNull();
+    expect(changed?.controls.minutes).toBe(longer);
+    expect(changed?.draft).not.toBeNull();
+    // Committing the change writes Today's content for those controls (nothing silently dropped).
+    const c = await s.todaySession.commit(after, sel(after, key, { minutes: longer }), 'commit-longer');
+    if (!c.ok) throw new Error(c.message);
+    const view = s.todaySession.card(await loaded(s), sel(after, key, { minutes: longer }));
+    expect(view?.summary).toBe(changed?.summary);
+  });
+
+  it('S1: Today’s Start pins the draft version in the write; a change after commit creates nothing (Today and the check-in route)', async () => {
+    const { s, gymId } = await benWithPlan();
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const c = await s.todaySession.commit(data, sel(data, key), 'commit-fence');
+    if (!c.ok) throw new Error(c.message);
+    const snap = await s.builder.read(c.draftId);
+    const slot = snap?.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main);
+    if (snap === null || slot === undefined) throw new Error('no accessory');
+    expect((await s.builder.edit(c.draftId, { kind: 'add_set', slotKey: slot.key }, { opId: 'fence-edit', basis: { version: snap.version } })).status).toBe('written');
+    // The check-in route's Start (coachDraftOf with the committed version).
+    const r = await s.workout.start({ gymId, opId: 'fence-start', checkIn: null, coachDraftOf: c.draftId, builder: { expectedVersion: c.version } });
+    expect(r.ok).toBe(false);
+    expect(await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'fence-start-2', checkIn: null })).toMatchObject({ ok: false });
+    expect(await s.sessions.active()).toBeNull();
+  });
+
+  it('S3 regression (rule 4): an equipment edit at the same gym between commit and Start snaps the committed loads to what the gym has now', async () => {
+    const { s, gymId } = await benWithPlan();
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const c = await s.todaySession.commit(data, sel(data, key), 'commit-eq');
+    if (!c.ok) throw new Error(c.message);
+    const bar = (await s.gyms.detail(gymId))?.equipment.find((e) => e.equipment.kind === 'barbell')?.equipment;
+    if (!bar) throw new Error('no bar');
+    const fewer = { ...formFromEquipment(bar), plates: [{ mass: 10, count: 2 }] } as EquipmentForm;
+    expect((await s.gyms.save({ gymId, equipmentId: bar.id, expectedVersion: bar.version, form: fewer })).ok).toBe(true);
+    const started = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'start-eq', checkIn: null });
+    if (!started.ok) throw new Error(JSON.stringify(started.error));
+    const a = started.aggregate;
+    const bench = a.exercises.find((e) => e.equipmentId === bar.id);
+    if (bench === undefined) throw new Error('no barbell lift');
+    const loads = a.sets.filter((x) => x.sessionExerciseId === bench.id).map((x) => x.planned.load?.value ?? 0);
+    // Bar plus 2 × 10 kg is the most this bar can now load.
+    if (!('barMass' in bar)) throw new Error('no bar mass');
+    expect(loads.length).toBeGreaterThan(0);
+    expect(Math.max(...loads)).toBeLessThanOrEqual(bar.barMass + 20);
+    expect(Math.max(...loads)).toBeLessThan(100);
   });
 });

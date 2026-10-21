@@ -126,8 +126,9 @@ export interface BuilderCoachWriter {
   /**
    * Write a checked workout as a new draft version (§4.4: applied coach proposals make a version) with
    * its Undo snapshot; refused (`stale`) when the draft moved past `expectedVersion`; idempotent on `opId`.
+   * `nudge`: the pre-session offer applied on Today's card, which stays Today's (not `edited`; integrity B2).
    */
-  applyWorkout(req: { draftId: string; expectedVersion: number; workout: BuilderWorkout; minutes: number; lines: readonly string[]; opId: string }): Promise<BuilderWriteResult>;
+  applyWorkout(req: { draftId: string; expectedVersion: number; workout: BuilderWorkout; minutes: number; lines: readonly string[]; opId: string; nudge?: boolean }): Promise<BuilderWriteResult>;
   /** Whether a write under this op ID already happened (a double tap, or a retry after a force-close). */
   applied(opId: string): Promise<boolean>;
 }
@@ -393,7 +394,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
      * against the draft as it is now: `Out of date. Ask again.` when a slot it touches changed, or
      * the same ops no longer give the lines Ben saw; then one versioned write under one op ID.
      */
-    async apply(proposal: BuilderProposal): Promise<ApplyResult> {
+    async apply(proposal: BuilderProposal, opts: { nudge?: boolean } = {}): Promise<ApplyResult> {
       // A double tap, or a retry after a force-close: already written under this op ID (review S1).
       if (await deps.writer.applied(builderApplyOpId(proposal.id)).catch(() => false)) return { kind: 'applied', lines: proposal.lines };
       const world = await deps.source.world(proposal.draftId);
@@ -401,7 +402,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       const env: BuilderCoachEnv = { ...world.env, askedHeavier: proposal.askedHeavier };
       const check = recheckBuilderProposal(proposal, world.snapshot, env);
       if (!check.ok) return { kind: 'out_of_date', line: check.line };
-      const w = await deps.writer.applyWorkout({ draftId: proposal.draftId, expectedVersion: world.snapshot.draftVersion, workout: check.outcome.workout, minutes: check.outcome.minutes, lines: proposal.lines, opId: builderApplyOpId(proposal.id) });
+      const w = await deps.writer.applyWorkout({ draftId: proposal.draftId, expectedVersion: world.snapshot.draftVersion, workout: check.outcome.workout, minutes: check.outcome.minutes, lines: proposal.lines, opId: builderApplyOpId(proposal.id), ...(opts.nudge === true ? { nudge: true } : {}) });
       if (w.ok) return { kind: 'applied', lines: proposal.lines };
       return w.reason === 'stale' ? { kind: 'out_of_date', line: 'Out of date. Ask again.' } : { kind: 'failed' };
     },
@@ -558,7 +559,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
      * pre-session review is marked applied so the card stays quiet today (review B1).
      */
     async applyNudge(req: { offer: NudgeOffer; localDate: string; opId: string }): Promise<ApplyResult> {
-      const out = await service.apply(req.offer.proposal);
+      const out = await service.apply(req.offer.proposal, { nudge: true });
       if (out.kind === 'applied') await markNudge(req.localDate, 'applied', req.opId);
       return out;
     },

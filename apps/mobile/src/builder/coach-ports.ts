@@ -87,7 +87,7 @@ export function createBuilderCoachPorts(builder: BuilderCoachPortsBuilder): { so
         done.add(opId);
         return Promise.resolve({ ok: true });
       },
-      applyWorkout: (req) => builder.applyCoachWorkout({ draftId: req.draftId, expectedVersion: req.expectedVersion, workout: req.workout, minutes: req.minutes, opId: req.opId }),
+      applyWorkout: (req) => builder.applyCoachWorkout({ draftId: req.draftId, expectedVersion: req.expectedVersion, workout: req.workout, minutes: req.minutes, opId: req.opId, ...(req.nudge === true ? { nudge: true } : {}) }),
       applied: (opId) => builder.coachApplied(opId),
     },
     review: { inputs: (draftId) => builder.reviewInputs(draftId) },

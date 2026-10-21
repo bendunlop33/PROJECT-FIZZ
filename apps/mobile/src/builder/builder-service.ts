@@ -14,6 +14,8 @@ import {
   builderSetupOf,
   CUSTOM_DAY_ID,
   TODAY_OTHER_SESSIONS,
+  todayContentHash,
+  todayDraftState,
   currentDraftVersion,
   defaultRestS,
   deriveId,
@@ -1117,6 +1119,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const p = await owner();
       const d = await repos().workoutDrafts.get(draftId).catch(() => null);
       if (d === null || d.ownerId !== p.id) return null;
+      // Only the coach's pre-session offer changed Today's card: a today-only change, never offered for the plan (integrity B2).
+      if (todayDraftState(d).state === 'nudge') return null;
       const stored = builderSetupOf(d);
       if (stored?.templateRoutineId === undefined) return null;
       const template = await repos().routines.get(stored.templateRoutineId).catch(() => null);
@@ -1383,7 +1387,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
      * version, `rev` bumped on every slot it changed (rule 5), and its Undo snapshot under `opId`. Refused
      * (`stale`) once the draft moved past `expectedVersion`; a retry with the same op ID writes once.
      */
-    async applyCoachWorkout(req: { draftId: string; expectedVersion: number; workout: BuilderWorkout; minutes: number; opId: string }): Promise<{ ok: true } | { ok: false; reason: 'stale' | 'failed' }> {
+    async applyCoachWorkout(req: { draftId: string; expectedVersion: number; workout: BuilderWorkout; minutes: number; opId: string; nudge?: boolean }): Promise<{ ok: true } | { ok: false; reason: 'stale' | 'failed' }> {
       const p = await owner();
       const d = await repos().workoutDrafts.get(req.draftId).catch(() => null);
       if (d === null || d.ownerId !== p.id || d.builderKey === undefined) return { ok: false, reason: 'stale' };
@@ -1394,6 +1398,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: exerciseIdsOf(req.workout), keySeed: `${d.id}:${req.opId}` });
       const setup: BuilderSetup = { ...stored, minutes: Math.max(BUILD_LIMITS.minMinutes, Math.min(BUILD_LIMITS.maxMinutes, Math.round(req.minutes))) };
       const plan = withSlotRevs(v.plan, toDraftPlan(req.workout, env.codec)).plan;
+      // The pre-session offer over Today's own content stays Today's card (integrity B2); over Ben's edit it's an edit.
+      const own = req.nudge === true ? todayDraftState(d) : { state: 'edited' as const };
+      const today = own.state === 'edited' ? undefined : { by: 'nudge' as const, controls: own.controls, hash: todayContentHash({ plan, setup, gymId: v.request.gymId }) };
       const change = builderDraftEdit(d, {
         opId: req.opId,
         at: deps.now(),
@@ -1401,7 +1408,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         plan,
         setup,
         undoable: true,
-        rebuild: { actionId: deriveId(`builder-coach-action:${req.opId}`), focus: v.request.focus, ...(v.request.day === undefined ? {} : { day: v.request.day }), gymId: v.request.gymId, equipmentVersion: env.equipmentVersion, contextHash: contextHash(setup, v.request.gymId, env.equipmentVersion) },
+        rebuild: { actionId: deriveId(`builder-coach-action:${req.opId}`), focus: v.request.focus, ...(v.request.day === undefined ? {} : { day: v.request.day }), gymId: v.request.gymId, equipmentVersion: env.equipmentVersion, contextHash: contextHash(setup, v.request.gymId, env.equipmentVersion), ...(today === undefined ? {} : { today }) },
       });
       const w = await repos()
         .workoutDrafts.write(p.id, d.id, (current) => (current.version !== d.version && change.kind === 'write' ? { kind: 'stale', current } : change))

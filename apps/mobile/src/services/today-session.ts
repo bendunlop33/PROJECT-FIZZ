@@ -11,6 +11,9 @@ import {
   convertValue,
   currentDraftVersion,
   defaultTodayControls,
+  todayContentHash,
+  todayControlsHash,
+  todayDraftState,
   deriveId,
   doableHere,
   estimateBuilderMinutes,
@@ -160,12 +163,18 @@ const RECENT_ON_DAY = 4;
 
 export type TodaySessionStatus = 'plan' | 'paused' | 'no_plan';
 
-/** An open builder draft for today that Ben changed in the builder (`Chest · edited`). */
+/** An open builder draft for today that Ben changed in the builder (`Chest · edited`), or the coach's offer he applied. */
 export interface TodayEditedDraft {
   draftId: string;
   version: number;
   name: string;
   workout: BuilderWorkout;
+}
+
+/** Today's draft with the coach's pre-session offer applied (still Today's card): shown while the controls are the ones it was applied over. */
+export interface TodayNudgedDraft extends TodayEditedDraft {
+  /** `todayControlsHash` of the controls it was applied over. */
+  controls: string;
 }
 
 export interface TodaySessionData {
@@ -187,6 +196,8 @@ export interface TodaySessionData {
   coachLabel: string;
   /** Open, edited builder drafts for today, by `dayKey|mainLift`. */
   edited: Readonly<Record<string, TodayEditedDraft>>;
+  /** Today's drafts with the coach's offer applied (not edited; integrity B2), by `dayKey|mainLift`. */
+  nudged: Readonly<Record<string, TodayNudgedDraft>>;
   /** The long or hard run near today (the clash line). */
   near: LegRunNear | null;
   strip: { workouts: { sessionId: string; localDate: string; title: string }[]; activities: Activity[]; firstUse: boolean };
@@ -230,6 +241,8 @@ export interface TodayCardView {
   /** `Chest`, or `Chest · edited`. */
   title: string;
   edited: TodayEditedDraft | null;
+  /** The coach's offer Ben applied: the card shows that draft, plain title, one-tap Start (no §2.8 prompt). */
+  nudged: TodayNudgedDraft | null;
   /** `5 exercises · ~52 min`. */
   summary: string;
   minutes: number;
@@ -503,13 +516,17 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
     // Open builder drafts for today: an edited one shows on the card (`Chest · edited`).
     const edited: Record<string, TodayEditedDraft> = {};
+    const nudged: Record<string, TodayNudgedDraft> = {};
     const open = (await repos().workoutDrafts.listByOwner(p.id).catch(() => [] as WorkoutDraft[])).filter((d) => d.status === 'open' && d.builderKey?.localDate === today && toMs(d.expiresAtUtc) > nowMs);
     for (const d of open) {
-      if (!isEdited(d)) continue;
+      const own = todayDraftState(d);
+      if (own.state === 'today') continue;
       const k = d.builderKey;
       if (k === undefined) continue;
       const dayKey = k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`;
-      edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = { draftId: d.id, version: d.version, name: d.name, workout: fromDraftPlan(currentDraftVersion(d).plan, builderSetupOf(d)?.restLevel ?? 'normal') };
+      const shown = { draftId: d.id, version: d.version, name: d.name, workout: fromDraftPlan(currentDraftVersion(d).plan, builderSetupOf(d)?.restLevel ?? 'normal') };
+      if (own.state === 'nudge') nudged[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = { ...shown, controls: own.controls };
+      else edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = shown;
     }
 
     // The strip: 3 back, today, 3 ahead.
@@ -567,6 +584,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       review,
       coachLabel: review === 'offline' ? TODAY_V2_COPY.offline : TODAY_V2_COPY.coach,
       edited,
+      nudged,
       near,
       strip: { workouts: stripWorkouts, activities: acts, firstUse: newest.length === 0 && refs.length === 0 && acts.length === 0 },
       doneToday: stripWorkouts.some((w) => w.localDate === today),
@@ -639,19 +657,24 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // A pain-flagged movement still on the card (only a main lift can be): held and named in Why? (rule 9).
     const heldIn = (w: BuilderWorkout): string[] => [...new Set(w.blocks.flatMap((b) => b.slots).filter((x) => pained(x.exerciseId)).map((x) => nameOf(x.exerciseId)))];
     const edited = data.edited[`${day.key}|${t.mainLiftExerciseId ?? '-'}`] ?? null;
+    // The coach's offer Ben applied, while the controls are the ones it went over; a control change since is Today's again.
+    const nudgedHere = data.nudged[`${day.key}|${t.mainLiftExerciseId ?? '-'}`] ?? null;
+    const nudged = nudgedHere !== null && nudgedHere.controls === todayControlsHash(sel.controls) ? nudgedHere : null;
     const clash = (() => {
       if (data.near === null) return null;
       const legs = t.groups[0]?.group === 'Legs' || (t.mainLiftExerciseId !== null && info(t.mainLiftExerciseId)?.group === 'Legs');
       return legs ? `${data.near.why}: legs fit better another day` : null;
     })();
-    if (edited !== null) {
-      const minutes = estimateBuilderMinutes(edited.workout, ctx);
-      const count = edited.workout.blocks.reduce((n, b) => n + b.slots.length, 0);
-      const unit = breakdownUnit(edited.workout, data.unit);
+    const held = edited ?? nudged;
+    if (held !== null) {
+      const minutes = estimateBuilderMinutes(held.workout, ctx);
+      const count = held.workout.blocks.reduce((n, b) => n + b.slots.length, 0);
+      const unit = breakdownUnit(held.workout, data.unit);
       return {
         dayKey: day.key,
-        title: `${day.name} · ${TODAY_V2_COPY.edited}`,
+        title: edited === null ? day.name : `${day.name} · ${TODAY_V2_COPY.edited}`,
         edited,
+        nudged: edited === null ? nudged : null,
         summary: TODAY_V2_COPY.summary(count, minutes),
         minutes,
         exerciseCount: count,
@@ -660,8 +683,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         clashLine: clash,
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
-        rows: todayBreakdown(edited.workout, info, worksOf, unit, pained),
-        why: whyLines(data, day, t, sel.controls, null, heldIn(edited.workout), gap, coachWhyOf(data, coach, null)),
+        rows: todayBreakdown(held.workout, info, worksOf, unit, pained),
+        why: whyLines(data, day, t, sel.controls, null, heldIn(held.workout), gap, coachWhyOf(data, coach, null)),
         mix: null,
         mixAvailable: false,
         mixShortlist: [],
@@ -682,6 +705,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       dayKey: day.key,
       title: day.name,
       edited: null,
+      nudged: null,
       summary: TODAY_V2_COPY.summary(d.exerciseCount, d.minutes),
       minutes: d.minutes,
       exerciseCount: d.exerciseCount,
@@ -751,16 +775,15 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
    * so any later write (an in-place edit, a new version, an Undo, a restore) bumps `version` and no longer matches.
    */
   function isEdited(d: WorkoutDraft): boolean {
-    const v = d.versions.find((x) => x.n === d.currentVersion);
-    if (v === undefined) return true;
-    return v.actionId !== todayActionId(d.id, v.n, d.version);
+    return todayDraftState(d).state === 'edited';
   }
 
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {
     return { planId: day.planId, dayIndex: day.dayIndex, splitDayId: day.splitDayId, mainLiftExerciseId: t.mainLiftExerciseId, localDate: data.localDate };
   }
 
-  function versionOf(data: TodaySessionData, day: TodayDay, d: TodayDraft, minutes: number, plan: DraftPlan, w: { draftId: string; n: number; parentN: number | null; draftVersion: number; at: ZonedTimestamp }): WorkoutDraftVersion {
+  function versionOf(data: TodaySessionData, day: TodayDay, d: TodayDraft, controls: TodayControls, plan: DraftPlan, w: { draftId: string; n: number; parentN: number | null; draftVersion: number; at: ZonedTimestamp }): WorkoutDraftVersion {
+    const minutes = controls.minutes;
     const { draftId, n, parentN, at } = w;
     const counts = new Map<BuilderGroupName, number>();
     for (const b of d.workout.blocks) for (const s of b.slots) {
@@ -786,7 +809,17 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       status: 'current',
       actionId: todayActionId(draftId, n, w.draftVersion),
       turnId: 'manual',
-      request: { text: '', minutes: setup.minutes, focus: 'split_day', gymId: data.gymId, origin: 'builder', day: { name: day.name.slice(0, 30), bodyParts: bodyParts.length > 0 ? bodyParts : ['Chest'] }, setup },
+      request: {
+        text: '',
+        minutes: setup.minutes,
+        focus: 'split_day',
+        gymId: data.gymId,
+        origin: 'builder',
+        day: { name: day.name.slice(0, 30), bodyParts: bodyParts.length > 0 ? bodyParts : ['Chest'] },
+        setup,
+        // Today owns the draft while its content still matches this (integrity B2).
+        today: { by: 'today', controls: todayControlsHash(controls), hash: todayContentHash({ plan, setup, gymId: data.gymId }) },
+      },
       rawArgs: '',
       plan,
       fitMinutes: setup.minutes,
@@ -808,6 +841,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const day = dayOf(data, sel.dayKey);
     if (view === null || day === null) return { ok: false, message: TODAY_SESSION_COPY.stale };
     if (view.edited !== null) return { ok: true, draftId: view.edited.draftId, version: view.edited.version };
+    // The coach's offer Ben applied stands as it is (one-tap Start; integrity B2).
+    if (view.nudged !== null) return { ok: true, draftId: view.nudged.draftId, version: view.nudged.version };
     const d = view.draft;
     if (d === null) return { ok: false, message: TODAY_SESSION_COPY.stale };
     if (d.exerciseCount === 0) return { ok: false, message: TODAY_SESSION_COPY.empty };
@@ -825,7 +860,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         const plan = withSlotRevs(cur.plan, built).plan;
         if (stableStringify(cur.plan) === stableStringify(plan)) return { ok: true, draftId: existing.id, version: existing.version };
         const n = Math.max(...existing.versions.map((v) => v.n)) + 1;
-        const v = versionOf(data, day, d, sel.controls.minutes, plan, { draftId: existing.id, n, parentN: cur.n, draftVersion: existing.version + 1, at });
+        const v = versionOf(data, day, d, sel.controls, plan, { draftId: existing.id, n, parentN: cur.n, draftVersion: existing.version + 1, at });
         const kept = existing.versions.map((x) => (x.n === cur.n ? { ...x, status: 'replaced' as const } : x));
         while (kept.length >= MAX_WORKOUT_DRAFT_VERSIONS) kept.shift();
         const next: WorkoutDraft = { ...existing, name, versions: [...kept, v], currentVersion: n, version: existing.version + 1, updatedAtUtc: at.utc, opIds: [...existing.opIds, opId].slice(-MAX_WORKOUT_DRAFT_OPS) };
@@ -841,7 +876,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         status: 'open',
         name,
         currentVersion: 1,
-        versions: [versionOf(data, day, d, sel.controls.minutes, plan, { draftId: id, n: 1, parentN: null, draftVersion: 1, at })],
+        versions: [versionOf(data, day, d, sel.controls, plan, { draftId: id, n: 1, parentN: null, draftVersion: 1, at })],
         sessionId: null,
         startedAtUtc: null,
         routineId: null,
@@ -873,7 +908,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       if (d === null || d.ownerId !== p.id) return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
       if (d.status === 'open' && d.version !== req.expectedVersion) return { ok: false, error: { code: 'stale_draft', message: TODAY_SESSION_COPY.stale } };
     }
-    return deps.port.start({ gymId: req.gymId, opId: req.opId, checkIn: req.checkIn, coachDraftOf: req.draftId });
+    // The version Ben saw is pinned inside the write too (integrity S1): a change after this read creates nothing.
+    return deps.port.start({ gymId: req.gymId, opId: req.opId, checkIn: req.checkIn, coachDraftOf: req.draftId, builder: { expectedVersion: req.expectedVersion } });
   }
 
   /**
