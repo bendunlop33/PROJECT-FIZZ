@@ -40,6 +40,9 @@ h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .mrow .key { letter-spacing: 0; text-transform: none; margin-left: 4px; }
 .mrow .mn { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 .mrow .mn small { font-weight: 500; color: var(--text2); font-size: 12px; }
+.new { font-size: 10px; letter-spacing: .08em; background: var(--accent); color: var(--on-accent); border-radius: 5px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; }
+.card.collapsed { flex-direction: row; justify-content: space-between; align-items: center; border: 0; color: var(--text); font: 600 15px var(--ui); cursor: pointer; min-height: 52px; padding: 0 16px; text-align: left; }
+.card.collapsed .chev { color: var(--text3); }
 .lifts { display: flex; flex-direction: column; }
 .lift { display: grid; grid-template-columns: 10px 1.3fr 1fr 1fr 1fr; gap: 6px; align-items: center; min-height: 34px; font-size: 13px !important; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font: 15px var(--ui); text-align: left; cursor: pointer; padding: 0 2px; border-radius: 8px; }
 .lift:first-child { border-top: 0; }
@@ -111,7 +114,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="chips" id="demo"></div>
   </div>
   <div class="phone" id="app"></div>
-  <div class="hint">Example data. <b>Goal</b>: how you're tracking over time (tap a lift's line or row to see it alone on its own scale). <b>This week</b>: sessions and sets vs plan. <b>Coach's changes</b>: what the coach already adjusted for your next sessions and why, each with Undo. Bigger changes (your plan's days, swapping exercises) are the only things it asks about.</div>
+  <div class="hint">Example data. <b>This week</b> first, then <b>Coach's changes</b> (full when new, one line after “Got it”), then <b>Goal</b>: how you're tracking over time (tap a lift's line or row to see it alone on its own scale). <b>This week</b>: sessions and sets vs plan. <b>Coach's changes</b>: what the coach already adjusted for your next sessions and why, each with Undo. Bigger changes (your plan's days, swapping exercises) are the only things it asks about.</div>
 </div>
 <script>
 (() => {
@@ -137,7 +140,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     { id: 'lat', t: 'Lateral raise', b: '3 sets', a: '4 sets', when: 'next Upper', why: 'Shoulders under plan 2 weeks running' },
     { id: 'squat', t: 'Squat', b: '117.5 kg', a: '120 kg', when: 'next Legs', why: 'All sets done at RPE 8' },
   ];
-  let s = { goal: 'strength', coach: true, undone: {}, ask: 'open', toast: null, focus: null };
+  let s = { seen: false, goal: 'strength', coach: true, undone: {}, ask: 'open', toast: null, focus: null };
   const app = document.getElementById('app');
 
   function controls() {
@@ -264,19 +267,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       : `<div class="chg"><span class="t">${c.t} <s>${c.b}</s> → ${c.a}</span><span class="why">${c.when} · ${c.why}</span><button class="link u" data-a="undo" data-v="${c.id}">Undo</button></div>`).join('');
     const ask = s.ask === 'open' ? `<div class="ask"><div class="t">Legs has moved to Saturday 3 weeks running. Make Saturday its day in your plan?</div><div class="acts"><button class="btn yes" data-a="yes">Move Legs to Sat</button><button class="btn" data-a="no">Keep as is</button></div></div>`
       : s.ask === 'yes' ? `<div class="chg"><span class="t">Legs → Saturday</span><span class="why">in your plan · your choice</span><button class="link u" data-a="askundo">Undo</button></div>` : '';
-    return `<div class="sec"><span>Coach's changes</span><span>for next week</span></div>
+    const n = CHANGES.filter((c) => !s.undone[c.id]).length;
+    if (s.seen) return `<div class="sec"><span>Coach's changes</span><span>for next week</span></div>
+    <button class="card collapsed" data-a="expandchg" aria-label="${n} changes for next week. Show"><span>${n} changes for next week</span><span class="chev">›</span></button>`;
+    return `<div class="sec"><span>Coach's changes <span class="new">NEW</span></span><span>for next week</span></div>
     <div class="card">
       <div class="note">${NOTE}<span class="tag">Coach</span></div>
       <div>${rows}</div>
       ${ask}
-      <button class="link" data-a="past" style="align-self:flex-start">Past weeks ›</button>
+      <div style="display:flex;justify-content:space-between"><button class="link" data-a="past">Past weeks ›</button><button class="link" data-a="gotit">Got it</button></div>
     </div>`;
   }
   function view() {
     controls();
     const top = app.querySelector('.scroll')?.scrollTop ?? 0;
     app.innerHTML = `<div class="status"><span>09:41</span><span>●●● 82%</span></div>
-      <div class="scroll"><h1>Progress</h1>${goalCard()}${weekCard()}${changesCard()}</div>
+      <div class="scroll"><h1>Progress</h1>${weekCard()}${changesCard()}${goalCard()}</div>
       <div class="tabs"><span>TODAY</span><span>LIBRARY</span><span class="on">PROGRESS</span><span>PROFILE</span></div>
       ${s.toast ? `<div class="toast" role="status">${s.toast}</div>` : ''}`;
     app.querySelector('.scroll').scrollTop = top;
@@ -291,6 +297,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'edit') s.toast = 'Pick the lifts to track (default: your plan\u2019s main lifts)';
     if (a === 'coach') s.coach = !s.coach;
     if (a === 'missed') s.missed = !s.missed;
+    if (a === 'gotit') s.seen = true;
+    if (a === 'expandchg') s.seen = false;
     if (a === 'undo') { s.undone[v] = true; s.toast = 'Undone: next session keeps the old target'; }
     if (a === 'redo') s.undone[v] = false;
     if (a === 'yes') { s.ask = 'yes'; s.toast = 'Legs is now on Saturday'; }
