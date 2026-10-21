@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { LiftView } from '@fizz/domain';
 
-import { LIFTS_CHART, liftsChartLayout, lineAt, pointAt, ringAt } from '../src/reviews/lifts-layout';
+import { LIFT_TABLE, LIFTS_CHART, liftCellLines, liftCellPartWidth, liftsChartLayout, liftTableColumnWidth, lineAt, pointAt, ringAt } from '../src/reviews/lifts-layout';
 import { progressPalette, withAlpha } from '../src/reviews/palette';
 
 /** The Lifts chart's geometry (Progress v3, the prototype's `liftChart`), pure. */
@@ -102,5 +102,38 @@ describe('Lifts chart layout', () => {
     expect(p.lines).toEqual(['#3987e5', '#d95926', '#199e70']);
     expect(p.doneFill).toBe('rgba(92, 201, 138, 0.2)');
     expect(p.dataUnder).toBe('rgba(232, 201, 160, 0.45)');
+  });
+});
+
+describe('the Lifts table’s Current / Target cell: wrap, never cut the number (review progress-v3b-design S1)', () => {
+  // The card's inner width on a 320 pt and a 390 pt phone (20 pt screen margin, the card's 14 pt padding).
+  const table = (screen: number) => screen - 2 * 20 - 2 * 14;
+  const col320 = liftTableColumnWidth(table(320));
+  const col390 = liftTableColumnWidth(table(390));
+
+  it('the column widths match the row (dot, gaps, four equal columns)', () => {
+    expect(col320).toBeCloseTo(53.5, 1);
+    expect(col390).toBeCloseTo(71, 1);
+  });
+
+  it('at 320 pt a stack PB and a per-dumbbell PB wrap: the number always has a line it fits on whole', () => {
+    for (const [number, suffix] of [['102.5', 'stack'], ['32.5', 'each'], ['502.5', 'stack']] as const) {
+      for (const fontScale of [1, 1.3, 3]) {
+        const lines = liftCellLines({ width: col320, number, suffix, pb: true, fontScale });
+        expect(lines.flat()).toEqual(['pb', 'number', 'suffix']);
+        const numberLine = lines.find((l) => l.includes('number')) ?? [];
+        const used = numberLine.reduce((w, p) => w + liftCellPartWidth(p, p === 'number' ? number : p === 'suffix' ? suffix : '', fontScale), 0) + LIFT_TABLE.partGap * (numberLine.length - 1);
+        expect(numberLine.length === 1 || used <= col320).toBe(true);
+        expect(liftCellPartWidth('number', number, fontScale)).toBeLessThanOrEqual(col320);
+      }
+    }
+    expect(liftCellLines({ width: col320, number: '102.5', suffix: 'stack', pb: true })).toEqual([['pb'], ['number'], ['suffix']]);
+    expect(liftCellLines({ width: col320, number: '32.5', suffix: 'each', pb: false })).toEqual([['number'], ['suffix']]);
+  });
+
+  it('at 390 pt a short number keeps its word beside it; no PB, no suffix: one line', () => {
+    expect(liftCellLines({ width: col390, number: '32.5', suffix: 'each', pb: true })).toEqual([['pb', 'number'], ['suffix']]);
+    expect(liftCellLines({ width: col390, number: '100', suffix: null, pb: false })).toEqual([['number']]);
+    expect(liftCellLines({ width: col390, number: '60', suffix: 'stack', pb: false })).toEqual([['number', 'suffix']]);
   });
 });

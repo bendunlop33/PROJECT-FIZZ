@@ -145,3 +145,51 @@ export function pointAt(layout: LiftsChartLayout, px: number, py: number, radius
     }
   return best !== null && best.d <= radius * radius ? best.p : null;
 }
+
+/**
+ * The Lifts table's Current / Target cell (review progress-v3b-design S1): the `PB` tag, the number and the
+ * load word (`each`, `stack`) wrap onto a second line rather than cut anything off; the number itself is never
+ * shortened. Widths are conservative estimates for SF Pro at the table's sizes (13 pt semibold tabular digits,
+ * 11 pt suffix, the 9.5 pt bold tag), scaled by Dynamic Type up to `maxScale` (the cell's text cap, as the
+ * calendar's: a five-character load fits a 320 pt column whole at it).
+ */
+export const LIFT_TABLE = { dot: 10, gap: 6, rowPadding: 4, cols: 4, partGap: 4, digit: 8.2, suffixChar: 6.6, tag: 24, maxScale: 1.3 } as const;
+
+export type LiftCellPart = 'pb' | 'number' | 'suffix';
+
+/** One of the four equal columns (name, reps, current, target) of a table `tableWidth` wide. */
+export function liftTableColumnWidth(tableWidth: number): number {
+  return Math.max(0, (tableWidth - LIFT_TABLE.rowPadding - LIFT_TABLE.dot - LIFT_TABLE.gap * LIFT_TABLE.cols) / LIFT_TABLE.cols);
+}
+
+export function liftCellPartWidth(part: LiftCellPart, text: string, fontScale = 1): number {
+  const s = Math.min(LIFT_TABLE.maxScale, Math.max(1, fontScale));
+  if (part === 'pb') return LIFT_TABLE.tag * s;
+  if (part === 'number') return text.length * LIFT_TABLE.digit * s;
+  return (text.length + 1) * LIFT_TABLE.suffixChar * s;
+}
+
+/** The cell's lines, each right-aligned: greedy, in the order tag, number, suffix; a part too wide alone still gets its own line. */
+export function liftCellLines(input: { width: number; number: string; suffix: string | null; pb: boolean; fontScale?: number }): LiftCellPart[][] {
+  const parts: { part: LiftCellPart; w: number }[] = [];
+  const s = Math.min(LIFT_TABLE.maxScale, input.fontScale ?? 1);
+  if (input.pb) parts.push({ part: 'pb', w: liftCellPartWidth('pb', '', s) });
+  parts.push({ part: 'number', w: liftCellPartWidth('number', input.number, s) });
+  if (input.suffix !== null) parts.push({ part: 'suffix', w: liftCellPartWidth('suffix', input.suffix, s) });
+  const lines: LiftCellPart[][] = [];
+  let line: LiftCellPart[] = [];
+  let used = 0;
+  for (const p of parts) {
+    const need = line.length === 0 ? p.w : used + LIFT_TABLE.partGap + p.w;
+    if (line.length > 0 && need > input.width) {
+      lines.push(line);
+      line = [p.part];
+      used = p.w;
+    } else {
+      line.push(p.part);
+      used = need;
+    }
+  }
+  if (line.length > 0) lines.push(line);
+  return lines;
+}

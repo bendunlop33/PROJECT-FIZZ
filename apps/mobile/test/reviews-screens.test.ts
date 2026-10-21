@@ -88,11 +88,16 @@ describe('Progress v3 screens', () => {
   it('Lifts: PB rings (tap → `PB · Bench 100 × 6 · week of 13 Oct`), a `PB` tag before Current, the key `Top set · ◎ PB · ○ est. · Edit`, load type and unit said', () => {
     expect(read('reviews', 'LiftsCanvas.tsx')).toContain('p.ring ? <Circle');
     expect(charts).toContain('const ring = ringAt(layout, locationX, locationY);');
-    expect(charts).toContain('{l.latestPb ? <PbTag /> : null}');
+    expect(charts).toContain('<LoadCell width={column} number={l.current} suffix={l.current === \'–\' ? null : l.loadSuffix} pb={l.latestPb} />');
+    expect(charts).toContain("part === 'pb' ? (");
     expect(charts).toContain('${PROGRESS_COPY.topSet} · ${PROGRESS_COPY.pbKey} · ${PROGRESS_COPY.est}');
     expect(charts).toContain('A ring means a personal best.');
     // `each` / `stack` / `assist` beside Current and Target; kg or lb in the column header (CLAUDE.md: load convention explicit).
-    expect(charts).toContain('{` ${l.loadSuffix}`}');
+    expect(charts).toContain('<LoadCell width={column} number={l.targetText} suffix={l.target === null ? null : l.loadSuffix} pb={false} />');
+    // The number is never cut off (review progress-v3b-design S1): no line limit on it; the parts wrap instead.
+    const cell = charts.slice(charts.indexOf('function LoadCell'), charts.indexOf('function PbTag'));
+    expect(cell).not.toContain('numberOfLines');
+    expect(cell).toContain('liftCellLines({ width, number, suffix, pb, fontScale: scale })');
     expect(charts).toContain('`${PROGRESS_COPY.liftHead[2]} ${view.unit}`');
   });
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, View, type TextStyle, type ViewStyle } from 'react-native';
+import { Pressable, useWindowDimensions, View, type TextStyle, type ViewStyle } from 'react-native';
 
 import { PROGRESS_COPY, type CalendarRowView, type ChangeRowView, type LiftsView, type MuscleTrackerRowView, type MuscleTrackerView, type ThisWeekView, type WeekChipView } from '@fizz/domain';
 
@@ -8,7 +8,7 @@ import { TICK_MAX_SCALE } from '../progress/axis-width';
 import { useAx } from '../progress/components';
 import { useTheme } from '../theme';
 import { AppText, Card, TextButton } from '../ui';
-import { liftsChartLayout, lineAt, pointAt, ringAt } from './lifts-layout';
+import { LIFT_TABLE, liftCellLines, liftsChartLayout, liftTableColumnWidth, lineAt, pointAt, ringAt } from './lifts-layout';
 import type { LiftsCanvas } from './LiftsCanvas';
 import { progressPalette } from './palette';
 
@@ -371,7 +371,38 @@ function SmallLink({ label, onPress, accessibilityLabel }: { label: string; onPr
   );
 }
 
-const LIFT_COLS = { dot: 10, gap: 6 } as const;
+const LIFT_COLS = { dot: LIFT_TABLE.dot, gap: LIFT_TABLE.gap } as const;
+
+/**
+ * Current / Target: the `PB` tag, the number and the load word on as many lines as the column needs (never a
+ * cut-off number; review progress-v3b-design S1). Before the table is measured everything is on one line.
+ */
+function LoadCell({ width, number, suffix, pb }: { width: number; number: string; suffix: string | null; pb: boolean }) {
+  const { fontScale } = useWindowDimensions();
+  const scale = Math.min(fontScale, LIFT_TABLE.maxScale);
+  const lines = width <= 0 ? [[...(pb ? (['pb'] as const) : []), 'number' as const, ...(suffix === null ? [] : (['suffix'] as const))]] : liftCellLines({ width, number, suffix, pb, fontScale: scale });
+  return (
+    <View style={{ flex: 1, alignItems: 'flex-end', justifyContent: 'center' }}>
+      {lines.map((line) => (
+        <View key={line.join('-')} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: LIFT_TABLE.partGap }}>
+          {line.map((part) =>
+            part === 'pb' ? (
+              <PbTag key="pb" />
+            ) : part === 'number' ? (
+              <AppText key="n" variant="callout" numeric align="right" maxFontSizeMultiplier={LIFT_TABLE.maxScale} style={[PROGRESS_TEXT.table, { fontWeight: '600', flexShrink: 0 }]}>
+                {number}
+              </AppText>
+            ) : (
+              <AppText key="s" variant="callout" color="text.secondary" align="right" maxFontSizeMultiplier={LIFT_TABLE.maxScale} style={PROGRESS_TEXT.suffix}>
+                {suffix}
+              </AppText>
+            ),
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
 
 /** The table's small `PB` tag (the latest top set is a PB); the row's VoiceOver label says it in words. */
 function PbTag() {
@@ -410,6 +441,8 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
   const [focus, setFocus] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [width, setWidth] = useState(0);
+  const [tableWidth, setTableWidth] = useState(0);
+  const column = liftTableColumnWidth(tableWidth);
   const one = focus === null ? null : (view.lifts.find((l) => l.exerciseId === focus) ?? null);
   const layout = liftsChartLayout({ lifts: view.lifts, focus: one === null ? null : one.exerciseId, weeks: view.weeks, width: Math.max(width, 1) });
   const loaded = loadLiftsCanvas();
@@ -444,25 +477,8 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
         <AppText variant="callout" color="text.secondary" numeric align="right" style={[PROGRESS_TEXT.table, { flex: 1 }]}>
           {l.repsText}
         </AppText>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
-          {l.latestPb ? <PbTag /> : null}
-          <AppText variant="callout" numeric align="right" numberOfLines={1} style={[PROGRESS_TEXT.table, { fontWeight: '600', flexShrink: 1 }]}>
-            {l.current}
-            {l.loadSuffix !== null && l.current !== '–' ? (
-              <AppText variant="callout" color="text.secondary" style={PROGRESS_TEXT.suffix}>
-                {` ${l.loadSuffix}`}
-              </AppText>
-            ) : null}
-          </AppText>
-        </View>
-        <AppText variant="callout" numeric align="right" numberOfLines={1} style={[PROGRESS_TEXT.table, { flex: 1, fontWeight: '600' }]}>
-          {l.targetText}
-          {l.loadSuffix !== null && l.target !== null ? (
-            <AppText variant="callout" color="text.secondary" style={PROGRESS_TEXT.suffix}>
-              {` ${l.loadSuffix}`}
-            </AppText>
-          ) : null}
-        </AppText>
+        <LoadCell width={column} number={l.current} suffix={l.current === '–' ? null : l.loadSuffix} pb={l.latestPb} />
+        <LoadCell width={column} number={l.targetText} suffix={l.target === null ? null : l.loadSuffix} pb={false} />
       </Pressable>
     );
   };
@@ -475,6 +491,7 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
         {one !== null ? (
           <SmallLink
             label={PROGRESS_COPY.allLifts}
+            accessibilityLabel="Show all lifts"
             onPress={() => {
               setFocus(null);
               setPicked(null);
@@ -586,7 +603,11 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
           </Pressable>
         </View>
       ) : null}
-      <View>
+      <View
+        onLayout={(e) => {
+          setTableWidth(Math.floor(e.nativeEvent.layout.width));
+        }}
+      >
         <LiftHead cells={[PROGRESS_COPY.liftHead[0], PROGRESS_COPY.liftHead[1], `${PROGRESS_COPY.liftHead[2]} ${view.unit}`, `${PROGRESS_COPY.liftHead[3]} ${view.unit}`]} top />
         {main.map(row)}
         {acc.length > 0 ? <LiftHead cells={[PROGRESS_COPY.accessories, '', '', '']} top={false} /> : null}
