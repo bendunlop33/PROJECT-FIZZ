@@ -10,6 +10,7 @@ import { readTextCoachState } from '@fizz/providers';
 import { coachConnectionPorts } from '../../ai/coach-connection-ports';
 import { summaryCoachView } from '../../ai/coach-connection-view';
 import { nextTimeView, type NextTimeRowView, type NextTimeTap } from '../../coach/next-time-view';
+import { FeelRow } from '../../reviews/FeelRow';
 import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
@@ -371,6 +372,9 @@ export function SummaryScreen() {
             ) : null}
           </View>
         </DelayedFade>
+
+        {/* (Ben, 21 Oct; workout-builder-v3 §6.2) One tap, a weekly review fact. */}
+        <FeelRow sessionId={sessionId} />
 
         {sum.highlight ? (
           <RuledSection title="Today" gap="2">

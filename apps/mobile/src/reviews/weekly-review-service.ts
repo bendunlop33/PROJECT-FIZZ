@@ -448,7 +448,8 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
           const d = viewsOf(r, g.nameOf);
           return d === null ? [] : [reviewHistoryRow(r, d, today)];
         }),
-        trainingVersion: g.training?.version ?? null,
+        // No row yet: the defaults are version 1 (the first change writes them).
+        trainingVersion: g.training?.version ?? 1,
       };
     },
 
@@ -580,6 +581,16 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       if (deps.model === undefined) return BUILDER_STATUS_WORD.not_connected;
       const a = await deps.availability().catch((): CoachAvailability => ({ status: 'not_connected', model: null }));
       return BUILDER_STATUS_WORD[reachOf(a)];
+    },
+
+    /** Summary's `How did it feel?`: Ben's stored answer and the workout's version (the tap's `expectedVersion`). */
+    async feelOf(sessionId: string): Promise<{ feel: 'easy' | 'good' | 'hard' | null; version: number } | null> {
+      const owner = await deps.profile();
+      const a = await repos()
+        .sessions.get(sessionId)
+        .catch(() => null);
+      if (owner === null || a === null || a.session.ownerId !== owner.id || a.session.status !== 'finished') return null;
+      return { feel: a.session.feel?.value ?? null, version: a.session.version };
     },
 
     /** Code's fact lines for a stored review (tests, diagnostics). */

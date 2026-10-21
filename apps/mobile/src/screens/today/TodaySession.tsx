@@ -451,7 +451,7 @@ export function SessionCard({
   offer = null,
 }: {
   /** (§6.1) The coach's pre-session line with code's offer (`Apply` / `Skip`, rule 3); null: nothing to say. */
-  offer?: { line: string; lines: string[]; busy: boolean; onApply: () => void; onSkip: () => void } | null;
+  offer?: { line: string; lines: string[]; busy: boolean; onApply: () => void; onSkip: () => void; /** (§6.2) Opens Progress › Reviews. */ onReviews?: () => void } | null;
   view: TodayCardView;
   open: boolean;
   why: boolean;
@@ -590,10 +590,11 @@ export function SessionCard({
               {l}
             </AppText>
           ))}
-          {offer.lines.length > 0 ? (
-            <View style={{ flexDirection: 'row', gap: theme.space['4'] }}>
-              <TextButton label={TODAY_V2_COPY.apply} disabled={offer.busy} onPress={offer.onApply} />
-              <TextButton label={TODAY_V2_COPY.skip} tone="secondary" disabled={offer.busy} onPress={offer.onSkip} />
+          {offer.lines.length > 0 || offer.onReviews !== undefined ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['4'] }}>
+              {offer.lines.length > 0 ? <TextButton label={TODAY_V2_COPY.apply} disabled={offer.busy} onPress={offer.onApply} /> : null}
+              {offer.lines.length > 0 ? <TextButton label={TODAY_V2_COPY.skip} tone="secondary" disabled={offer.busy} onPress={offer.onSkip} /> : null}
+              {offer.onReviews !== undefined ? <TextButton label="Reviews" icon="chevron.right" tone="secondary" accessibilityLabel="Open Reviews in Progress" onPress={offer.onReviews} /> : null}
             </View>
           ) : null}
         </View>

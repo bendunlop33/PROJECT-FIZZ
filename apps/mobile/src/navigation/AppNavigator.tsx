@@ -61,6 +61,7 @@ import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { ExerciseDetailScreen } from '../screens/progress/ExerciseDetailScreen';
 import { MusclesScreen } from '../screens/progress/MusclesScreen';
 import { ProgressScreen } from '../screens/progress/ProgressScreen';
+import { ReviewDetailScreen } from '../screens/progress/ReviewDetailScreen';
 import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
 import { RecentlyDeletedScreen } from '../screens/repeat/RecentlyDeletedScreen';
 import { RepeatScreen } from '../screens/repeat/RepeatScreen';
@@ -150,6 +151,7 @@ function ProgressNavigator() {
       <ProgressStack.Screen name="ProgressMuscles" component={MusclesScreen} options={{ title: 'Muscles' }} />
       <ProgressStack.Screen name="ProgressExercise" component={ExerciseDetailScreen} options={({ route }) => ({ title: route.params.name ?? '' })} />
       <ProgressStack.Screen name="ProgressExerciseInfo" component={ExerciseInfoScreen} options={({ route }) => ({ title: route.params.name ?? '' })} />
+      <ProgressStack.Screen name="ProgressReview" component={ReviewDetailScreen} options={{ title: 'Review' }} />
     </ProgressStack.Navigator>
   );
 }

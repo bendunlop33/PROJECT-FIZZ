@@ -83,6 +83,8 @@ export type ProgressStackParams = {
   ProgressExercise: ExerciseDetailParams;
   /** `Exercise info ›` on Progress exercise detail (exercise-library §9.7): the Library's Exercise detail, in this stack. */
   ProgressExerciseInfo: ExerciseInfoParams;
+  /** (Workout builder v3 §6.2) Progress › Reviews › a past week's review in full. */
+  ProgressReview: { reviewId: string };
 };
 
 /** The Library tab's stack (exercise-library §9, EL10). */

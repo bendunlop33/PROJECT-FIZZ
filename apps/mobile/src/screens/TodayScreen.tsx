@@ -772,7 +772,21 @@ export function TodayScreen() {
             moved={moved}
             busy={starting}
             dispatch={act}
-            offer={offerCard === null ? null : { line: offerCard.line, lines: offerCard.offer?.lines ?? [], busy: nudgeBusy, onApply: () => void onOffer(true), onSkip: () => void onOffer(false) }}
+            offer={
+              offerCard === null
+                ? null
+                : {
+                    line: offerCard.line,
+                    lines: offerCard.offer?.lines ?? [],
+                    busy: nudgeBusy,
+                    onApply: () => void onOffer(true),
+                    onSkip: () => void onOffer(false),
+                    // (§6.2) Today only ever shows this one line; the reviews live in Progress.
+                    onReviews: () => {
+                      navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressHome' } });
+                    },
+                  }
+            }
             onStart={() => void startCard()}
             onEdit={() => void editCard()}
             onBackToPlan={() => void backToPlan()}

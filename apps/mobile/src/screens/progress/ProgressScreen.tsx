@@ -20,6 +20,7 @@ import { AskPill } from '../coach/AskPill';
 import { CalendarView } from './CalendarView';
 import { unreadableText } from '../../progress/copy';
 import { ExercisesTab, type ExercisesFocus } from './ExercisesTab';
+import { ReviewsSection } from '../../reviews/ReviewsSection';
 import { HowCountedSheet, TimeSheet } from './sheets';
 
 /**
@@ -116,6 +117,8 @@ export function ProgressScreen() {
       <AppText variant="title1" accessibilityRole="header">
         Progress
       </AppText>
+      {/* (Workout builder v3 §6.2) Reviews at the top: the latest weekly review, the Goal view, past weeks. */}
+      <ReviewsSection />
       {home?.view.dataState === 'normal' ? (
         <Segmented
           options={[

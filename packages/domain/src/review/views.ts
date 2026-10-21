@@ -482,3 +482,25 @@ export function weekRangeText(monday: string): string {
   const sunday = addDays(monday, 6);
   return monday.slice(5, 7) === sunday.slice(5, 7) ? `${String(Number(monday.slice(8, 10)))}–${localDateText(sunday)}` : `${localDateText(monday)} – ${localDateText(sunday)}`;
 }
+
+// ---------------------------------------------------------------------------
+// Summary's `How did it feel?` (Ben, 21 Oct): one tap, stored with the workout as Ben gave it
+
+export const FEEL_COPY = { question: 'How did it feel?' } as const;
+
+export interface FeelOptionView {
+  key: 'easy' | 'good' | 'hard';
+  label: string;
+  selected: boolean;
+  /** The value to send on tap: this one, or null to clear when it is already chosen. */
+  next: 'easy' | 'good' | 'hard' | null;
+  accessibilityLabel: string;
+}
+
+export function feelOptions(current: 'easy' | 'good' | 'hard' | null): FeelOptionView[] {
+  return (['easy', 'good', 'hard'] as const).map((k) => {
+    const label = k === 'easy' ? 'Easy' : k === 'good' ? 'Good' : 'Hard';
+    const selected = current === k;
+    return { key: k, label, selected, next: selected ? null : k, accessibilityLabel: `${FEEL_COPY.question} ${label}` };
+  });
+}
