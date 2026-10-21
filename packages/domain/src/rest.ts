@@ -1,4 +1,4 @@
-import type { ResolvedRest, RestSetting, RestTimer, SetType } from '@fizz/schemas';
+import { MAX_FINISHED_RESUMABLE_DEPTH, MAX_RESUMABLE_RESTS, type ResolvedRest, type RestSetting, type RestTimer, type ResumableRest, type SetType } from '@fizz/schemas';
 import { toIso, toMs } from './time';
 
 const SET_TYPE_LABEL: Record<SetType, string> = {
@@ -139,4 +139,112 @@ export function resumeRestTimer(timer: RestTimer, nowMs: number): RestTimer {
     remainingMsAtPause: null,
     version: timer.version + 1,
   };
+}
+
+/*
+ * Unticking a set never resets the rest (workout-table-v3 §3, Ben 20 Oct).
+ * A log that replaces a rest keeps it on the timer that follows
+ * (`resumeOnUndo`, persisted with the timer, so it survives a force-close);
+ * undoing that log puts it back as it would be now: still running to its
+ * original deadline, or finished (expired or skipped, its original end), so
+ * the "Rested" count-up carries on from when it ended.
+ */
+
+const isFinished = (e: ResumableRest): boolean => e.timer.status === 'expired' || e.timer.status === 'skipped';
+
+/**
+ * `stack` bounded: the newest `MAX_RESUMABLE_RESTS`, and a finished entry
+ * only within the top `MAX_FINISHED_RESUMABLE_DEPTH` (review rest-undo-sp1
+ * S1). A dropped entry only means undoing that older log puts no rest back.
+ */
+export function boundResumable(stack: readonly ResumableRest[]): ResumableRest[] {
+  const newest = stack.slice(-MAX_RESUMABLE_RESTS);
+  const top = newest.length - MAX_FINISHED_RESUMABLE_DEPTH;
+  return newest.filter((e, i) => i >= top || !isFinished(e));
+}
+
+/** `timer` with `stack` as its rests to put back on undo (the field is absent when empty). */
+export function withResumable(timer: RestTimer, stack: readonly ResumableRest[]): RestTimer {
+  const rest: RestTimer = { ...timer };
+  delete rest.resumeOnUndo;
+  const bounded = boundResumable(stack);
+  return bounded.length === 0 ? rest : { ...rest, resumeOnUndo: bounded };
+}
+
+/** A kept running rest whose deadline has passed is finished: `expired`, ended at its deadline. */
+function settleResumable(timer: ResumableRest['timer'], nowMs: number): ResumableRest['timer'] {
+  if (timer.status !== 'running' || toMs(timer.deadlineUtc) > nowMs) return timer;
+  return { ...timer, status: 'expired', endedAtUtc: timer.deadlineUtc, remainingMsAtPause: null };
+}
+
+/**
+ * Kept rests as they are at `nowMs`: one that has run out is marked expired
+ * (ended at its deadline), so undo still shows "Rested" from then. The stack
+ * stays bounded by `withResumable` (`boundResumable`).
+ */
+export function pruneResumable(stack: readonly ResumableRest[], nowMs: number): ResumableRest[] {
+  return stack.map((e) => ({ ...e, timer: settleResumable(e.timer, nowMs) }));
+}
+
+/**
+ * The rests to put back on undo after a log of `bySetId`, given the rest
+ * timer before that log: what it already carried, plus itself when it was
+ * running, paused, expired or skipped, so undoing this log restores it
+ * (a finished one as finished). A rest that ended any other way (a log
+ * during it, a cancel) has nothing to put back.
+ */
+export function resumableAfterLog(previous: RestTimer | null, bySetId: string, nowMs: number): ResumableRest[] {
+  if (previous === null) return [];
+  const carried = pruneResumable(previous.resumeOnUndo ?? [], nowMs);
+  const status = previous.status;
+  if (status !== 'running' && status !== 'paused' && status !== 'expired' && status !== 'skipped') return carried;
+  const core: RestTimer = { ...previous };
+  delete core.resumeOnUndo;
+  delete core.restoredFinished;
+  return [...carried, { afterUndoOfSetId: bySetId, timer: settleResumable({ ...core, status }, nowMs) }];
+}
+
+/**
+ * Pause or resume the kept rests with the workout, so they keep time as if
+ * never replaced. Only running and paused ones change; a finished one (or one
+ * that has just run out, settled first) stays finished.
+ */
+export function mapResumable(timer: RestTimer, f: (t: RestTimer) => RestTimer, nowMs: number, prune: boolean): RestTimer {
+  const stack = timer.resumeOnUndo;
+  if (stack === undefined) return timer;
+  const mapped = (prune ? pruneResumable(stack, nowMs) : stack).map((e) => {
+    if (e.timer.status !== 'running' && e.timer.status !== 'paused') return e;
+    const t = f(e.timer);
+    return { ...e, timer: { ...t, status: t.status === 'paused' ? ('paused' as const) : ('running' as const) } };
+  });
+  return withResumable(timer, mapped);
+}
+
+export interface RestoredRest {
+  /** The rest put back: running to its original deadline, paused, or finished (expired or skipped) at its original end. */
+  restored: RestTimer;
+  /** What remains on the stack after this undo. */
+  rest: ResumableRest[];
+}
+
+/**
+ * Undo of `setId`'s log: the rest that log replaced, if any is on top of
+ * `stack`. A running rest keeps its absolute deadline; a paused one (the
+ * workout is paused) keeps its remaining time. One that has finished (before
+ * the log, or since) comes back finished with its original end, so the
+ * "Rested" count-up continues and no alert or countdown starts. Its version
+ * moves past the `ended_early` the log gave it, so alerts keyed by version
+ * reschedule.
+ */
+export function restoreAfterUndo(stack: readonly ResumableRest[], setId: string, nowMs: number): RestoredRest | null {
+  const top = stack.at(-1);
+  if (top?.afterUndoOfSetId !== setId) return null;
+  const rest = stack.slice(0, -1);
+  const timer = settleResumable(top.timer, nowMs);
+  const live = timer.status === 'running' || timer.status === 'paused';
+  const back: RestTimer = live
+    ? { ...timer, endedAtUtc: null, version: timer.version + 2 }
+    : // Marked on the timer, so its end cue stays quiet also after a relaunch (review rest-undo-sp1 B1).
+      { ...timer, version: timer.version + 2, restoredFinished: true };
+  return { restored: withResumable(back, rest), rest };
 }

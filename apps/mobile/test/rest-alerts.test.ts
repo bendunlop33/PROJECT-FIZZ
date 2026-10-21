@@ -110,16 +110,74 @@ describe('rest alert controller through a whole loop', () => {
     await step(apply(s, { type: 'resume', at: at(400), opId: 'resume-1' }), 400);
     expect(pendingAt()).toEqual([ms(540)]);
 
-    // Undo of the set that started this rest cancels it.
+    // Undo of the set that started this rest cancels it and puts back B1's rest, which the
+    // log at 60 s replaced, at its deadline (workout-table-v3 §3): 210 s + the 300 s paused.
     const last = s.sets.find((x) => x.id === b2?.id);
     await step(apply(s, { type: 'undo_log', at: at(410), opId: 'undo-1', setId: b2?.id ?? '', expectedSetVersion: last?.version ?? 0 }), 410);
-    expect(pendingAt()).toEqual([]);
+    expect(pendingAt()).toEqual([ms(510)]);
 
     await step(apply(s, logCmd(b2?.id ?? '', values(kg(100), 7), 420, 'log-again')), 420);
     expect(pendingAt()).toEqual([ms(600)]);
     await step(apply(s, { type: 'finish', at: at(430), opId: 'fin', expectedVersion: s.session.version, endedAt: null }), 430);
     expect(pendingAt()).toEqual([]);
     expect(ctl.lastError).toBeNull();
+  });
+
+  it('unticking an accidental tick reschedules the alert to the earlier rest’s original deadline, or cancels it when that rest has run out (workout-table-v3 §3)', async () => {
+    const phone = fakeNotifier();
+    const ctl = createRestAlertController(phone.port);
+    const { state } = startFixture();
+    const [w, b1] = setsFor(state, BENCH);
+    const pendingAt = () => [...phone.pending.values()].map((p) => p.fireAtMs);
+    let s = apply(state, logCmd(w?.id ?? '', values(kg(60), 10), 5));
+    s = apply(s, { type: 'adjust_rest', at: at(10), opId: 'plus', timerId: s.restTimer?.id ?? '', deltaS: 30 });
+    await ctl.reconcile(s, ms(10));
+    expect(pendingAt()).toEqual([ms(95)]);
+    const ticked = apply(s, logCmd(b1?.id ?? '', values(kg(100), 8), 20));
+    await ctl.reconcile(ticked, ms(20));
+    expect(pendingAt()).toEqual([ms(200)]);
+    const untick = (t: number, opId: string) => apply(ticked, { type: 'undo_log', at: at(t), opId, setId: b1?.id ?? '', expectedSetVersion: 2 });
+
+    const back = untick(25, 'undo-1');
+    await ctl.reconcile(back, ms(25));
+    expect(pendingAt()).toEqual([ms(95)]);
+    expect(phone.calls.at(-1)).toBe(`schedule ${back.restTimer?.id ?? ''}:${String(back.restTimer?.version)}:${b1?.id ?? ''}:${String(back.session.version)}`);
+
+    // In another run: unticked only after that rest's deadline. It comes back finished ("Rested"): no late alert.
+    const phone2 = fakeNotifier();
+    const ctl2 = createRestAlertController(phone2.port);
+    await ctl2.reconcile(ticked, ms(20));
+    const late = untick(100, 'undo-2');
+    expect(late.restTimer).toMatchObject({ id: s.restTimer?.id, status: 'expired', endedAtUtc: at(95).utc });
+    await ctl2.reconcile(late, ms(100));
+    expect(phone2.pending.size).toBe(0);
+    expect(phone2.calls.filter((c) => c.startsWith('schedule'))).toHaveLength(1);
+    expect(ctl.lastError).toBeNull();
+  });
+
+  it('unticking after a skipped or run-out rest: it comes back finished, and nothing is scheduled (workout-table-v3 §3)', async () => {
+    const { state } = startFixture();
+    const [w, b1] = setsFor(state, BENCH);
+    const logged = apply(state, logCmd(w?.id ?? '', values(kg(60), 10), 5));
+    const skipped = apply(logged, { type: 'skip_rest', at: at(10), opId: 'skip', timerId: logged.restTimer?.id ?? '' });
+    for (const [before, t] of [
+      [skipped, 20],
+      [logged, 100],
+    ] as const) {
+      const phone = fakeNotifier();
+      const ctl = createRestAlertController(phone.port);
+      const ticked = apply(before, logCmd(b1?.id ?? '', values(kg(100), 8), t));
+      await ctl.reconcile(ticked, ms(t));
+      expect(phone.pending.size).toBe(1);
+      const back = apply(ticked, { type: 'undo_log', at: at(t + 5), opId: `undo-${String(t)}`, setId: b1?.id ?? '', expectedSetVersion: 2 });
+      expect(back.restTimer?.status).toBe(before === skipped ? 'skipped' : 'expired');
+      await ctl.reconcile(back, ms(t + 5));
+      expect(phone.pending.size).toBe(0);
+      // A force-close and relaunch reads the same state: still nothing.
+      const relaunched = fakeNotifier();
+      await createRestAlertController(relaunched.port).reconcile(back, ms(t + 30));
+      expect(relaunched.pending.size).toBe(0);
+    }
   });
 
   it('after a force-close: a running rest is rescheduled once (replaced by identifier), an ended one is cancelled', async () => {
