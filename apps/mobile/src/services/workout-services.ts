@@ -577,6 +577,8 @@ export interface ActiveWorkoutData {
   worksLines?: Readonly<Record<string, string | null>>;
   /** The builder's group and role per exercise ID, for the `+N min` fit (workout-table-v3 §5); null when the builder has none. */
   builderInfo?: Readonly<Record<string, BuilderExerciseInfo | null>>;
+  /** The main lifts of the builder or plan draft this workout started from (`session.coachDraft`), for the `+N min` fit. */
+  mainExerciseIds?: ReadonlySet<string>;
 }
 
 /**
@@ -2276,6 +2278,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** An exercise by ID: Ben's list first, then the bundled catalogue's row (Coaching knowledge). */
+  /** The `main` slots of the draft version a workout started from (none when it didn't, or the draft can't be read). */
+  async function draftMains(ownerId: string, aggregate: SessionAggregate): Promise<ReadonlySet<string>> {
+    const ref = aggregate.session.coachDraft;
+    if (ref === undefined) return new Set();
+    const d = await ctx.store().repos.workoutDrafts.get(ref.draftId).catch(() => null);
+    if (d === null || d.ownerId !== ownerId) return new Set();
+    const v = d.versions.find((x) => x.n === ref.version);
+    return new Set((v?.plan.slots ?? []).filter((x) => x.main).map((x) => x.exerciseId));
+  }
+
   async function exerciseById(exerciseId: string): Promise<Exercise | null> {
     return (await repos().exercises.get(exerciseId).catch(() => null)) ?? ctx.catalogueExercises?.().find((e) => e.id === exerciseId) ?? null;
   }
@@ -2863,6 +2875,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         bodyweightExercises,
         worksLines,
         builderInfo,
+        mainExerciseIds: await draftMains(p.id, aggregate),
         aggregate,
         gymName: gym?.name ?? null,
         gymNames: await gymNamesOf(p.id),
@@ -2952,7 +2965,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      */
     timeFit(data: ActiveWorkoutData, overByMinutes: number): TimeFitOffer | null {
       const info = data.builderInfo ?? {};
-      const o = timeFitOffer({ aggregate: data.aggregate, overByMinutes, info: (id) => info[id] ?? null, painFlagged: new Set(data.painFlagged) });
+      const o = timeFitOffer({ aggregate: data.aggregate, overByMinutes, info: (id) => info[id] ?? null, painFlagged: new Set(data.painFlagged), ...(data.mainExerciseIds === undefined ? {} : { mainExerciseIds: data.mainExerciseIds }) });
       return o.status === 'none' ? null : o;
     },
 

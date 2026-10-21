@@ -129,6 +129,14 @@ describe('timeFitOffer: the builder ladder over the sets left (v3 §5)', () => {
     expect(o.afterMinutes).toBeLessThan(o.beforeMinutes);
   });
 
+  it('the draft’s main lifts (two on a plan day) are never trimmed or dropped', () => {
+    const s = underWay();
+    const o = timeFitOffer({ aggregate: s, overByMinutes: 30, info, mainExerciseIds: new Set([BENCH.id, RAISE.id]) });
+    const raise = exId(s, RAISE);
+    expect(o.lines.some((l) => (l.kind === 'sets' || l.kind === 'drop') && l.sessionExerciseId === raise)).toBe(false);
+    expect(o.lines.some((l) => l.kind === 'drop')).toBe(true);
+  });
+
   it('a pain-flagged accessory is never trimmed, pushed or dropped (rule 9)', () => {
     const s = underWay();
     const o = offer(s, 30, new Set([RAISE.id, CRUNCH.id, FLY.id]));

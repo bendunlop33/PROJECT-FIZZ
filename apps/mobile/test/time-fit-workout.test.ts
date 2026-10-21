@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import type { WorkoutSet } from '@fizz/schemas';
+
 import type { AppServices } from '../src/services/app-services';
 import { timeFitPrompt } from '../src/workout/time-fit';
 import { createHarness, setUpGym, type Harness } from './harness';
@@ -43,7 +45,7 @@ async function workout(s: AppServices): Promise<string> {
   return sessionId;
 }
 
-const shape = (sets: readonly { id: string; status: string; rest: { seconds: number }; planned: { rpeOverride?: number; rpe: number | null } }[]) =>
+const shape = (sets: readonly WorkoutSet[]) =>
   sets.map((x) => ({ id: x.id, status: x.status, rest: x.rest.seconds, rpe: x.planned.rpeOverride ?? x.planned.rpe }));
 
 describe('+N min: the builder fit as one offer with Apply and Undo (v3 §5)', () => {

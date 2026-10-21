@@ -25,6 +25,12 @@ export interface TimeFitInput {
   painFlagged?: ReadonlySet<string>;
   /** Ben's rest presets (seconds), as the builder's. */
   restPresetsS?: readonly number[];
+  /**
+   * The main lifts the workout was built with (exercise IDs): the builder or
+   * plan draft's `main` slots it started from (`session.coachDraft`). Absent
+   * or empty: the plan day's main lift, else a Top set, else the first compound.
+   */
+  mainExerciseIds?: ReadonlySet<string>;
 }
 
 export type TimeFitLine =
@@ -60,8 +66,10 @@ const liveOrdered = (a: SessionAggregate): SessionExercise[] => a.exercises.filt
 const pendingOf = (a: SessionAggregate, exId: string): WorkoutSet[] =>
   a.sets.filter((s) => s.sessionExerciseId === exId && s.status === 'pending').sort((x, y) => x.index - y.index);
 
-/** The main lift: the plan day's (provenance), else one with a Top set, else the first compound in order. */
-function mainIds(a: SessionAggregate, live: readonly SessionExercise[], info: BuilderInfoLookup): Set<string> {
+/** The main lifts: the draft's, or the plan day's (provenance), else one with a Top set, else the first compound in order. */
+function mainIds(a: SessionAggregate, live: readonly SessionExercise[], info: BuilderInfoLookup, fromDraft: ReadonlySet<string> | undefined): Set<string> {
+  const drafted = live.filter((e) => fromDraft?.has(e.exerciseId) === true);
+  if (drafted.length > 0) return new Set(drafted.map((e) => e.id));
   const planned = a.session.planDay?.mainLiftExerciseId ?? null;
   if (planned !== null) {
     const hit = live.filter((e) => e.exerciseId === planned);
@@ -103,7 +111,7 @@ function slotOf(a: SessionAggregate, ex: SessionExercise, main: boolean, touched
 function remainingWorkout(input: TimeFitInput): { w: BuilderWorkout; mainGroup: BuilderGroupName | null } {
   const a = input.aggregate;
   const live = liveOrdered(a);
-  const mains = mainIds(a, live, input.info);
+  const mains = mainIds(a, live, input.info, input.mainExerciseIds);
   const blocks: BuilderBlock[] = [];
   let lastGroup: string | null = null;
   let mainGroup: BuilderGroupName | null = null;
@@ -261,7 +269,7 @@ export function timeFitOffer(input: TimeFitInput): TimeFitOffer {
 /** Ben's Apply: the offer as one `fit_today_to_time`, each step with its own opId (`coachEditStepOpId`). */
 export function fitTodayCommand(offer: TimeFitOffer, p: { opId: string; at: ZonedTimestamp }): FitTodayToTimeCommand | null {
   if (offer.steps.length === 0) return null;
-  const steps = offer.steps.map((s, i): FitTodayStep => ({ ...s, opId: coachEditStepOpId(p.opId, i), at: p.at }) as FitTodayStep);
+  const steps = offer.steps.map((s, i): FitTodayStep => ({ ...s, opId: coachEditStepOpId(p.opId, i), at: p.at }));
   return { type: 'fit_today_to_time', at: p.at, opId: p.opId, expectedVersion: offer.expectedVersion, minutes: Math.max(1, Math.min(600, offer.targetMinutes)), steps };
 }
 
