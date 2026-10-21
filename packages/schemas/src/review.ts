@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IdSchema, LoadSchema, MassSchema, OperationIdSchema, RecordMetaSchema, RpeSchema, ZonedTimestampSchema } from './common';
+import { IdSchema, LoadSchema, MassSchema, OperationIdSchema, RecordMetaSchema, RpeSchema, UtcTimestampSchema, ZonedTimestampSchema } from './common';
 import { LocalDateSchema } from './import';
 import { MUSCLE_GROUPS } from './muscle-groups';
 import { SplitDayIdSchema } from './routine';
@@ -107,6 +107,14 @@ export const ReviewFactSchema = z.discriminatedUnion('kind', [
    * workouts from it all did `toSets` working sets of the exercise against the template's `fromSets`.
    */
   z.object({ kind: z.literal('template_edit'), routineId: IdSchema, exerciseId: IdSchema, sessions: z.int().min(2).max(20), fromSets: z.int().min(0).max(30), toSets: z.int().min(0).max(30) }),
+  /**
+   * (Weekly) The week's status as code worked it out, read back as stored (review b3-wave3-truth B4):
+   * `complete` false for a review made before the week ended (Sunday evening), so nothing is missed yet;
+   * `basis` what `planned` counts (plan days, the days-a-week aim, or nothing). `missed` is planned − done
+   * once the week is over, never more; `missedNames` only when no day of the week was paused (plan days
+   * aren't dated, pauses are, so with a pause which day was missed can't be said), at most `missed` of them.
+   */
+  z.object({ kind: z.literal('week_status'), complete: z.boolean(), basis: z.enum(['plan', 'aim', 'none']), missed: z.int().min(0).max(50), missedNames: z.array(z.string().trim().min(1).max(60)).max(7) }),
 ]);
 export type ReviewFact = z.infer<typeof ReviewFactSchema>;
 
@@ -129,7 +137,8 @@ export const ReviewCoachSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('pending') }),
   z.object({ status: z.literal('offline') }),
   z.object({ status: z.literal('not_connected') }),
-  z.object({ status: z.literal('failed') }),
+  /** `atUtc`: when the call failed; the same inputs aren't asked again for a while (review b3-wave3-truth S4). */
+  z.object({ status: z.literal('failed'), atUtc: UtcTimestampSchema.optional() }),
 ]);
 export type ReviewCoach = z.infer<typeof ReviewCoachSchema>;
 

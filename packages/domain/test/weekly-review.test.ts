@@ -105,7 +105,7 @@ describe('weekly review facts: edge cases (rule 6: from stored records only)', (
     expect(f.weeks.every((w) => w.planned === null && w.done === 0)).toBe(true);
     expect(f.lifts).toEqual([]);
     expect(f.rpe).toBeNull();
-    expect(weeklyReviewFacts(f).map((x) => x.kind)).toEqual(['week_sessions', 'week_sessions', 'week_sessions', 'week_sessions', 'week_sessions', 'week_sessions']);
+    expect(weeklyReviewFacts(f).map((x) => x.kind)).toEqual(['week_sessions', 'week_sessions', 'week_sessions', 'week_sessions', 'week_sessions', 'week_sessions', 'week_status']);
   });
 
   it('a plan: plan days done vs planned (the consistency card’s count), day dots, missed days named once the week is over', () => {
@@ -185,7 +185,12 @@ describe('lift trends for the lifts Ben chose (§6.2): est. 1RM labelled, target
     const view = liftChartView(l ?? (undefined as never), '2026-10-19');
     expect(plain(view.metric)).toBe('est. 1RM · kg');
     expect(plain(view.now)).toBe('est. 1RM 114 kg');
-    expect(plain(view.progress)).toBe('was 105 → now 114 → target 120 kg');
+    // `was` and `now` are estimates: the line says so, as it is read alone (review b3-wave3-truth S1).
+    expect(plain(view.progress)).toBe('est. 1RM was 105 → now 114 → target 120 kg');
+    // The label once (review b3-wave3-ux B3).
+    expect(plain(view.header)).toBe('est. 1RM · 114 kg');
+    // The table's value says unit and estimate, as VoiceOver reads each row alone (review b3-wave3-ux B4).
+    expect(view.table.map((r) => plain(r.value))).toEqual(['est. 114 kg', 'est. 111 kg', 'est. 108 kg']);
     expect(view.target).toBe(120);
     expect(view.words).toContain('estimated one-rep max');
     expect(view.table.map((r) => plain(r.set))).toEqual(['95 kg × 6', '92.5 kg × 6', '90 kg × 6']);
@@ -196,9 +201,15 @@ describe('lift trends for the lifts Ben chose (§6.2): est. 1RM labelled, target
   it('no target needed to see a trend; any exercise Ben logs; at most 6, in his order', () => {
     const sessions = [...history(SQUAT, [['2026-10-06', kg(120), 5], ['2026-10-13', kg(125), 5]]), ...history(CURL, [['2026-10-14', kg(40), 10]])];
     const f = weeklyFacts(input({ sessions, lifts: [CURL, SQUAT, BENCH, id(90), id(91), id(92), id(93)] }));
-    expect(f.lifts.map((l) => l.exerciseId)).toEqual([CURL, SQUAT]);
+    expect(f.lifts.map((l) => l.exerciseId)).toEqual([CURL, SQUAT, BENCH, id(90), id(91), id(92)]);
     expect(f.lifts.every((l) => l.target === null)).toBe(true);
     expect(liftChartView(f.lifts[0] ?? (undefined as never), '2026-10-19').sparse).toBe(true);
+    // A chosen lift with no sets in the window stays, saying so (review b3-wave3-ux S3), never silently dropped.
+    const empty = liftChartView(f.lifts[2] ?? (undefined as never), '2026-10-19');
+    expect(empty.empty).toBe('No sets in 16 weeks');
+    expect(empty.points).toEqual([]);
+    expect(empty.now).toBeNull();
+    expect(reviewFactLines(f).some((l) => l.includes('Ex 01'))).toBe(false);
   });
 
   it('lb: kg-logged sets are shown in Ben’s lb (and a lb target keeps its own unit)', () => {
@@ -257,11 +268,12 @@ describe('weekly signals: RPE, feel, runs, repeated edits (§6.1 feedback loop)'
       { id: id(72), date: '2026-10-18', kind: 'run' as const, status: 'planned' as const, distanceM: 5000 },
     ];
     const f = weeklyFacts(input({ sessions: [a, b], activities }));
-    expect(f.rpe).toEqual({ sessions: 2, mean: 8.8, target: 8 });
+    // Only the sets with a target are held against it (review b3-wave3-truth B3): squat's untargeted RPE 8 stays out.
+    expect(f.rpe).toEqual({ sessions: 1, mean: 9.3, target: 8 });
     expect(f.feel).toEqual({ easy: 0, good: 1, hard: 1 });
     expect(f.runs).toEqual({ count: 2, distanceM: 20000 });
     expect(f.week.runs).toBe(2);
-    expect(reviewFactLines(f)).toEqual(['2 workouts · 2 runs', 'RPE 8.8 · target 8', 'Felt: 1 good, 1 hard']);
+    expect(reviewFactLines(f)).toEqual(['2 workouts · 2 runs', 'RPE 9.3 · target 8', 'Felt: 1 good, 1 hard']);
     // No RPE logged: no RPE fact (rule 6).
     expect(weeklyFacts(input({ sessions: [sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }])] })).rpe).toBeNull();
   });
@@ -413,8 +425,157 @@ describe('Progress › Reviews views', () => {
     expect(card.facts.length).toBeLessThanOrEqual(5);
     expect(card.proposals[0]).toMatchObject({ text: 'Leg curl on Legs: 3 → 4 sets', statusText: null, canUndo: false });
     const row = reviewHistoryRow(review, d, '2026-10-19');
-    expect(plain(row.detail)).toBe('w/c 12 Oct · 2 of 4 · Back, Shoulders missed');
+    // The title is the week's facts; the status is secondary (review b3-wave3-ux S6).
+    expect(plain(row.title)).toBe('w/c 12 Oct · 2 of 4');
+    expect(plain(row.detail)).toBe('Not reviewed · Offline · Missed: Back, Shoulders');
     expect(row.spark).toEqual([108, 111, 114]);
     expect(sparkPoints(row.spark, 64, 22)).toEqual([{ x: 2, y: 20 }, { x: 32, y: 11 }, { x: 62, y: 2 }]);
+  });
+});
+
+describe('review fixes (b3-wave3 truth and UX reviews, 21 Oct)', () => {
+  const THREE: ReviewPlan = { ...plan(), days: plan().days.slice(0, 3) };
+  const stored = (facts: ReturnType<typeof weeklyReviewFacts>, coach: Parameters<typeof reviewCardView>[0]['coach'] = { status: 'offline' }) => ({
+    id: id(98),
+    ownerId: id(80),
+    version: 1,
+    createdAtUtc: '2026-10-19T09:00:00.000Z',
+    updatedAtUtc: '2026-10-19T09:00:00.000Z',
+    subject: { kind: 'weekly' as const, weekMonday: MONDAY },
+    inputsHash: 'h',
+    facts,
+    coach,
+    status: 'current' as const,
+    supersededById: null,
+    opIds: ['o'],
+    createdAt: { utc: '2026-10-19T09:00:00.000Z', tz: TZ },
+    proposals: [],
+  });
+  const read = (r: ReturnType<typeof stored>) => {
+    const d = weekDataOfReview(r, () => 'Exercise');
+    if (d === null) throw new Error('not weekly');
+    return d;
+  };
+
+  it('truth B3: RPE compares only the sets that had a target (bench at 8 vs 8, untargeted curls at 10 stay out)', () => {
+    const s = sess('2026-10-13', [
+      { exerciseId: BENCH, sets: [work(kg(100), 5, { rpe: 8, targetRpe: 8 }), work(kg(100), 5, { rpe: 8, targetRpe: 8 })] },
+      { exerciseId: CURL, sets: [work(kg(30), 10, { rpe: 10 }), work(kg(30), 10, { rpe: 10 })] },
+    ]);
+    const f = weeklyFacts(input({ sessions: [s] }));
+    expect(f.rpe).toEqual({ sessions: 1, mean: 8, target: 8 });
+    expect(reviewFactLines(f)).toContain('RPE 8 · target 8');
+    // With no targets at all: the plain mean, no target.
+    const none = weeklyFacts(input({ sessions: [sess('2026-10-13', [{ exerciseId: CURL, sets: [work(kg(30), 10, { rpe: 10 }), work(kg(30), 10, { rpe: 9 })] }])] }));
+    expect(none.rpe).toEqual({ sessions: 1, mean: 9.5, target: null });
+  });
+
+  it('truth B4: with paused days, missed is planned − done and no day is named (which one can’t be said)', () => {
+    const paused = new Set(['2026-10-17', '2026-10-18']);
+    const one = sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }], { routineId: CHEST_DAY });
+    const f = weeklyFacts(input({ sessions: [one], plans: [{ ...THREE, pausedDates: paused }] }));
+    expect(f.week).toMatchObject({ done: 1, planned: 2 });
+    expect(f.missedCount).toBe(1);
+    expect(f.missed).toEqual([]);
+    expect(reviewFactLines(f)).toContain('Missed: 1 day');
+    // Stored and read back: the same, never re-derived from the dots.
+    const d = read(stored(weeklyReviewFacts(f)));
+    expect(d.missedCount).toBe(1);
+    expect(d.missed).toEqual([]);
+    expect(reviewConsistencyView(d, '2026-10-19').missed).toBe('Missed: 1 day');
+  });
+
+  it('truth B4: everything planned done in a part-paused week: nothing missed on the stored card, row or full review', () => {
+    const paused = new Set(['2026-10-17', '2026-10-18']);
+    const a = sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }], { routineId: CHEST_DAY });
+    const b = sess('2026-10-14', [{ exerciseId: PULLUP, sets: [work(kg(20, 'assistance'), 8)] }], { routineId: PULL_DAY });
+    const f = weeklyFacts(input({ sessions: [a, b], plans: [{ ...THREE, pausedDates: paused }] }));
+    expect(f.week).toMatchObject({ done: 2, planned: 2 });
+    const r = stored(weeklyReviewFacts(f));
+    const d = read(r);
+    expect(d.missed).toEqual([]);
+    expect(d.missedCount).toBe(0);
+    expect(reviewCardView(r, d, '2026-10-19').facts.some((x) => x.startsWith('Missed'))).toBe(false);
+    expect(reviewHistoryRow(r, d, '2026-10-19').detail).not.toContain('Missed');
+    expect(reviewConsistencyView(d, '2026-10-19').missed).toBeNull();
+  });
+
+  it('truth B4: a Sunday-evening review names no day missed, stored or live (days still to come)', () => {
+    const one = sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }], { routineId: CHEST_DAY });
+    const f = weeklyFacts(input({ sessions: [one], plans: [plan()], nowMs: toMs('2026-10-18T18:30:00.000Z') }));
+    expect(f.complete).toBe(false);
+    const d = read(stored(weeklyReviewFacts(f)));
+    expect(d.complete).toBe(false);
+    expect(d.missed).toEqual([]);
+    expect(d.missedCount).toBe(0);
+    // Without pauses, at most planned − done days are named.
+    const done = weeklyFacts(input({ sessions: [one], plans: [plan()] }));
+    expect(done.missed).toEqual(['Back', 'Legs', 'Shoulders']);
+    expect(done.missedCount).toBe(3);
+  });
+
+  it('truth S2: an aim stays the aim (4 days against 3 is `4 of 3`, as the consistency card)', () => {
+    const days = ['2026-10-12', '2026-10-13', '2026-10-15', '2026-10-17'].map((d) => sess(d, [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }]));
+    const f = weeklyFacts(input({ sessions: days, aim: 3 }));
+    expect(f.week).toMatchObject({ done: 4, planned: 3 });
+    expect(reviewConsistencyView(f, '2026-10-19').summary).toBe('4 of 3');
+    expect(read(stored(weeklyReviewFacts(f))).basis).toBe('aim');
+  });
+
+  it('truth S5: a week under an older plan has no plan line (null), never `plan 0`', () => {
+    const old = { ...plan(), planId: id(61) };
+    const s = sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }], { routineId: CHEST_DAY });
+    const templates: ReviewTemplate[] = [{ planId: id(60), routineId: CHEST_DAY, name: 'Chest', version: 3, exercises: [{ exerciseId: BENCH, name: 'Bench', workingSets: 4 }] }];
+    expect(weeklyFacts(input({ sessions: [s], plans: [old], templates })).groups).toEqual([{ group: 'Chest', sets: 1, planned: null, range: null }]);
+  });
+
+  it('UX S1: the card’s five facts lead with the flags; lift values come last', () => {
+    const lifts = [BENCH, SQUAT, DB_PRESS, PULLUP, PUSHUP, CURL];
+    const history = (exerciseId: string, load: Load, reps: number) => ['2026-09-22', '2026-09-29', '2026-10-06', '2026-10-13'].map((d) => sess(d, [{ exerciseId, sets: [work(load, reps, { rpe: 9, targetRpe: 8 })] }], { feel: 'hard' }));
+    const sessions = [...history(BENCH, kg(100), 5), ...history(SQUAT, kg(120), 5), ...history(CURL, kg(40), 10)];
+    const f = weeklyFacts(input({ sessions, lifts, goal: 'muscle' }));
+    const r = stored(weeklyReviewFacts(f));
+    const card = reviewCardView(r, read(r), '2026-10-19');
+    expect(card.facts).toHaveLength(5);
+    expect(card.facts[1]).toMatch(/^Chest: 1 sets ▼ 6–20$/);
+    expect(card.facts.some((x) => x.includes('no new best in 3 sessions'))).toBe(true);
+    expect(card.facts.some((x) => x.includes('est. 1RM'))).toBe(false);
+  });
+
+  it('UX B1: a coach review whose verdict was hidden leads with its first line that passed; never `Not reviewed`', () => {
+    const f = weeklyFacts(input({ sessions: [sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }])] }));
+    const facts = weeklyReviewFacts(f);
+    const hidden = stored(facts, { status: 'reviewed', verdict: null, lines: ['Good pressing week.', 'Keep the legs day.'], actionIds: [], numbersChecked: true });
+    const card = reviewCardView(hidden, read(hidden), '2026-10-19');
+    expect(card.verdict).toBe('Good pressing week.');
+    expect(card.lines).toEqual(['Keep the legs day.']);
+    expect(card.reviewed).toBe(true);
+    const nothing = stored(facts, { status: 'reviewed', verdict: null, lines: [], actionIds: [], numbersChecked: true });
+    expect(reviewCardView(nothing, read(nothing), '2026-10-19').verdict).toBe('Reviewed');
+    // While the call is out it says so (not `Not reviewed · Pending`).
+    const pending = stored(facts, { status: 'pending' });
+    expect(reviewCardView(pending, read(pending), '2026-10-19').verdict).toBe('Reviewing…');
+  });
+
+  it('UX B3/B4: a best-set chart’s header names its label once; table cells carry their units', () => {
+    const sessions = [sess('2026-10-06', [{ exerciseId: PULLUP, sets: [work(kg(25, 'assistance'), 8)] }]), sess('2026-10-13', [{ exerciseId: PULLUP, sets: [work(kg(20, 'assistance'), 8)] }])];
+    const f = weeklyFacts(input({ sessions, lifts: [PULLUP, PUSHUP] }));
+    const v = liftChartView(f.lifts[0] ?? (undefined as never), '2026-10-19');
+    expect(plain(v.header)).toBe('Best set · Assist 20 kg × 8');
+    expect(v.table.map((r) => plain(r.value))).toEqual(['Assist 20 kg', 'Assist 25 kg']);
+    const bw = weeklyFacts(input({ sessions: [sess('2026-10-13', [{ exerciseId: PUSHUP, sets: [work(kg(0, 'bodyweight'), 20)] }])], lifts: [PUSHUP] }));
+    const r = liftChartView(bw.lifts[0] ?? (undefined as never), '2026-10-19');
+    expect(plain(r.header)).toBe('Best reps · 20 reps');
+    expect(r.table.map((x) => plain(x.value))).toEqual(['20 reps']);
+  });
+
+  it('UX S8: the Sets table says `in range`, `below`, `above`; UX N4: an assisted sparkline rises as assistance falls', () => {
+    const rows = setsBarsView([{ group: 'Chest', sets: 8, planned: null, range: { min: 6, max: 20 } }, { group: 'Quads', sets: 2, planned: null, range: { min: 6, max: 20 } }]).rows;
+    expect(rows.map((r) => r.statusWord)).toEqual(['in range', 'below']);
+    const sessions = ['2026-09-29', '2026-10-06', '2026-10-13'].map((d, i) => sess(d, [{ exerciseId: PULLUP, sets: [work(kg(30 - 5 * i, 'assistance'), 8)] }]));
+    const f = weeklyFacts(input({ sessions, lifts: [PULLUP] }));
+    const r = stored(weeklyReviewFacts(f));
+    const spark = reviewHistoryRow(r, read(r), '2026-10-19').spark;
+    expect(spark[2]).toBeGreaterThan(spark[0] ?? 0);
   });
 });

@@ -279,8 +279,13 @@ export interface WeeklyFacts {
   week: ReviewWeekCount;
   /** Day dots: each plan day (done or not), else each workout done. */
   days: { name: string; done: boolean; date: string | null }[];
-  /** Plan days not done, named (only once the week is over). */
+  /**
+   * Plan days not done, named: only once the week is over, at most `missedCount`, and only when no day of
+   * the week was paused (plan days aren't dated, pauses are; review b3-wave3-truth B4, SP1).
+   */
   missed: string[];
+  /** Plan days missed (planned − done) once the week is over; 0 before then or with no plan. */
+  missedCount: number;
   /** The last 6 weeks, oldest first, this one last. */
   weeks: ReviewWeekCount[];
   groups: GroupSets[];
@@ -357,7 +362,8 @@ function weekCount(input: WeeklyReviewInput, monday: string): { count: ReviewWee
     return { count: { monday, done: done.size, planned, workouts: sessions.length, runs }, plan, done };
   }
   const days = new Set(sessions.map((s) => s.date)).size;
-  if (input.aim !== null) return { count: { monday, done: days, planned: Math.max(days, input.aim), workouts: sessions.length, runs }, plan: null, done: new Map() };
+  // An aim stays the aim: 4 days against 3 reads `4 of 3`, as the consistency card's `4/3` (review b3-wave3-truth S2).
+  if (input.aim !== null && input.aim > 0) return { count: { monday, done: days, planned: input.aim, workouts: sessions.length, runs }, plan: null, done: new Map() };
   return { count: { monday, done: sessions.length, planned: null, workouts: sessions.length, runs }, plan: null, done: new Map() };
 }
 
@@ -459,6 +465,22 @@ function liftSeries(input: WeeklyReviewInput, exerciseId: string, endDate: strin
   };
 }
 
+/** A chosen lift with no sets in the trend window: no points, its target (if any) still named. */
+function emptyTrend(exerciseId: string, name: string, target: LiftTarget | null, unit: WeightUnit): LiftTrend {
+  return {
+    exerciseId,
+    name,
+    metric: target === null || target.kind === 'weight_reps' ? 'best_set' : 'e1rm',
+    unit: target?.load.unit ?? unit,
+    convention: target?.load.convention ?? null,
+    lowerIsBetter: false,
+    points: [],
+    target: target === null ? null : { value: target.load.value, reps: target.reps, kind: target.kind },
+    was: target?.was == null ? null : { value: target.was.value, isEstimate: target.was.isEstimate },
+    now: null,
+  };
+}
+
 const nameIn = (sessions: readonly ReviewSession[], exerciseId: string): string => {
   for (let i = sessions.length - 1; i >= 0; i -= 1) {
     const e = sessions[i]?.exercises.find((x) => x.exerciseId === exerciseId);
@@ -482,7 +504,7 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
   const mondays = Array.from({ length: W.weeks }, (_, i) => addDays(monday, -7 * (W.weeks - 1 - i)));
   const counted = mondays.map((m) => weekCount(scoped, m));
   const current = counted.at(-1) ?? weekCount(scoped, monday);
-  const basis: WeeklyFacts['basis'] = current.plan !== null ? 'plan' : input.aim !== null ? 'aim' : 'none';
+  const basis: WeeklyFacts['basis'] = current.plan !== null ? 'plan' : current.count.planned !== null ? 'aim' : 'none';
   const days =
     current.plan !== null
       ? current.plan.days.map((d) => {
@@ -490,7 +512,9 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
           return { name: d.name, done: at !== undefined, date: at === undefined ? null : localDateOf(toMs(at), input.tz) };
         })
       : thisWeek.slice(0, 7).map((s) => ({ name: s.name ?? 'Workout', done: true, date: s.date }));
-  const missed = complete && current.plan !== null && current.count.planned !== null && current.count.done < current.count.planned ? days.filter((d) => !d.done).map((d) => d.name) : [];
+  const missedCount = complete && current.plan !== null && current.count.planned !== null ? Math.max(0, current.count.planned - current.count.done) : 0;
+  const pausedNow = current.plan === null ? 0 : pausedInWeek(monday, current.plan.pausedDates);
+  const missed = missedCount > 0 && pausedNow === 0 ? days.filter((d) => !d.done).map((d) => d.name).slice(0, missedCount) : [];
 
   // Sets per muscle: the builder's convention.
   const sets = new Map<MuscleGroup, number>();
@@ -504,10 +528,11 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
   const planned = new Map<MuscleGroup, number>();
   const plan = current.plan;
   const pausedDays = plan === null ? 0 : pausedInWeek(monday, plan.pausedDates);
-  if (plan !== null && pausedDays === 0) {
-    const dayIds = new Set(plan.days.map((d) => d.routineId));
-    for (const t of input.templates) {
-      if (t.planId !== plan.planId || !dayIds.has(t.routineId)) continue;
+  // The plan's sets only from that plan's own templates: a week under an older plan has no plan line, never `plan 0` (review b3-wave3-truth S5).
+  const dayIds = new Set(plan?.days.map((d) => d.routineId) ?? []);
+  const planTemplates = plan === null ? [] : input.templates.filter((t) => t.planId === plan.planId && dayIds.has(t.routineId));
+  if (planTemplates.length > 0 && pausedDays === 0) {
+    for (const t of planTemplates) {
       for (const e of t.exercises) {
         const g = leadMuscleGroup(input.info(e.exerciseId));
         if (g !== null && e.workingSets > 0) planned.set(g, (planned.get(g) ?? 0) + e.workingSets);
@@ -521,14 +546,16 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
   };
   const groups: GroupSets[] = [...new Set([...sets.keys(), ...planned.keys()])]
     .sort((a, b) => order(a) - order(b))
-    .map((g) => ({ group: g, sets: sets.get(g) ?? 0, planned: plan === null || pausedDays > 0 ? null : (planned.get(g) ?? 0), range }));
+    .map((g) => ({ group: g, sets: sets.get(g) ?? 0, planned: planTemplates.length === 0 || pausedDays > 0 ? null : (planned.get(g) ?? 0), range }));
 
   // Lifts Ben chose.
   const targets = new Map(input.liftTargets.map((t) => [t.exerciseId, t]));
   const lifts: LiftTrend[] = [];
   for (const id of [...new Set(input.lifts)].slice(0, W.maxLifts)) {
-    const r = liftSeries(scoped, id, sunday, targets.get(id) ?? null);
-    if (r !== null) lifts.push({ ...r.trend, name: nameIn(sessions, id) });
+    const target = targets.get(id) ?? null;
+    const r = liftSeries(scoped, id, sunday, target);
+    // A chosen lift with no sets in the window stays, empty (review b3-wave3-ux S3): never dropped without a word.
+    lifts.push(r !== null ? { ...r.trend, name: nameIn(sessions, id) } : emptyTrend(id, nameIn(sessions, id), target, input.unit));
   }
 
   // Stalled: any lift done this week (and the chosen ones) with no new best over its last 3 sessions, the last one this week.
@@ -542,22 +569,23 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
     if (isStalled(r.all.map((c) => c.value), r.trend.lowerIsBetter)) stalled.push({ exerciseId: id, name: nameIn(sessions, id), sessions: W.stalledSessions });
   }
 
-  // RPE against the sessions' own targets.
-  const rpes: number[] = [];
-  const targetsRpe: number[] = [];
-  let rpeSessions = 0;
-  for (const s of thisWeek) {
-    let any = false;
+  // RPE against the sets' own targets: with any target, only the sets that had one are compared, so a set
+  // with no target never reads as drift (review b3-wave3-truth B3); with none, the plain mean, no target.
+  const rated: { rpe: number; target: number | null; sessionId: string }[] = [];
+  for (const s of thisWeek)
     for (const e of s.exercises)
-      for (const x of e.sets) {
-        if (!WORKING.has(x.setType) || x.rpe === null) continue;
-        any = true;
-        rpes.push(x.rpe);
-        if (x.targetRpe !== null) targetsRpe.push(x.targetRpe);
-      }
-    if (any) rpeSessions += 1;
-  }
-  const rpe = rpes.length === 0 ? null : { sessions: rpeSessions, mean: round1(rpes.reduce((a, b) => a + b, 0) / rpes.length), target: targetsRpe.length === 0 ? null : Math.round((targetsRpe.reduce((a, b) => a + b, 0) / targetsRpe.length) * 2) / 2 };
+      for (const x of e.sets) if (WORKING.has(x.setType) && x.rpe !== null) rated.push({ rpe: x.rpe, target: x.targetRpe, sessionId: s.sessionId });
+  const targeted = rated.filter((x) => x.target !== null);
+  const compared = targeted.length > 0 ? targeted : rated;
+  const mean = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const rpe =
+    compared.length === 0
+      ? null
+      : {
+          sessions: new Set(compared.map((x) => x.sessionId)).size,
+          mean: round1(mean(compared.map((x) => x.rpe))),
+          target: targeted.length === 0 ? null : Math.round(mean(targeted.map((x) => x.target ?? 0)) * 2) / 2,
+        };
 
   // Runs Ben logged.
   const weekRuns = input.activities.filter((a) => a.status === 'done' && a.kind === 'run' && a.date >= monday && a.date <= sunday);
@@ -573,6 +601,7 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
     week: current.count,
     days,
     missed,
+    missedCount,
     weeks: counted.map((c) => c.count),
     groups,
     lifts,
@@ -622,6 +651,8 @@ export function weeklyReviewFacts(f: WeeklyFacts): ReviewFact[] {
   if (f.week.planned !== null) out.push({ kind: 'sessions_vs_plan', done: clampInt(f.week.done, 50), planned: clampInt(f.week.planned, 50) });
   for (const w of f.weeks) out.push({ kind: 'week_sessions', weekMonday: w.monday, done: clampInt(w.done, 50), planned: w.planned === null ? null : clampInt(w.planned, 50), workouts: clampInt(w.workouts, 50), runs: clampInt(w.runs, 50) });
   for (const d of f.days.slice(0, 7)) out.push({ kind: 'week_day', name: d.name.slice(0, 60), done: d.done, localDate: d.date });
+  const missedCount = clampInt(f.missedCount, 50);
+  out.push({ kind: 'week_status', complete: f.complete, basis: f.basis, missed: missedCount, missedNames: f.missed.slice(0, Math.min(7, missedCount)).map((n) => n.slice(0, 60)) });
   for (const g of f.groups) out.push({ kind: 'group_sets', group: g.group, sets: clampInt(g.sets, 500), planned: g.planned === null ? null : clampInt(g.planned, 500), range: g.range });
   for (const l of f.lifts) {
     if (!UUID.test(l.exerciseId)) continue;

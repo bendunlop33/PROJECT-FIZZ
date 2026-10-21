@@ -120,3 +120,39 @@ describe('weekly review request: one strict tool, the stronger model, Your data 
     expect(BUILDER_COACH_TOOL_ARGS.weekly_review.safeParse({ verdict: 'x', lines: ['a', 'b', 'c', 'd'], tweaks: [] }).success).toBe(false);
   });
 });
+
+describe('weekly review claim check: review fixes (b3-wave3-truth B1, B2)', () => {
+  it('B1: an est. 1RM never passes as a load Ben lifted; it passes only when the sentence calls it an estimate', () => {
+    expect(facts.lifts[0]?.points.map((p) => p.value)).toEqual([108, 111, 114]);
+    const r = checkWeeklyReview({ verdict: 'Bench press is up to 114 kg.', lines: ['Bench press reached 114 kg for a single.', 'Bench press est. 1RM is up to 114 kg.', 'Bench press estimated max 114 kg.', 'Bench press moved 95 kg for 6 reps.'], tweaks: [] }, ctx);
+    expect(r.verdict).toBeNull();
+    expect(r.lines).toEqual(['Bench press est. 1RM is up to 114 kg.', 'Bench press estimated max 114 kg.', 'Bench press moved 95 kg for 6 reps.']);
+    expect(r.hidden).toEqual(['Bench press is up to 114 kg.', 'Bench press reached 114 kg for a single.']);
+  });
+
+  it('B2: each session count is checked against the fact it names (missed, hard/easy/good, stalled, done)', () => {
+    // 2 of 3 plan days done, the week over: 1 missed; no feel taps; nothing stalled.
+    expect(facts.week).toMatchObject({ done: 2, planned: 3 });
+    expect(facts.missedCount).toBe(1);
+    const r = checkWeeklyReview({ verdict: 'You missed 2 sessions.', lines: ['You did 2 hard sessions.', 'You missed 1 session.', 'You trained 2 sessions.', 'Squat stalled for 3 sessions.', 'Nothing felt easy in 2 sessions.'], tweaks: [] }, ctx);
+    expect(r.verdict).toBeNull();
+    expect(r.lines).toEqual(['You missed 1 session.', 'You trained 2 sessions.']);
+    expect(r.hidden).toEqual(['You missed 2 sessions.', 'You did 2 hard sessions.', 'Squat stalled for 3 sessions.', 'Nothing felt easy in 2 sessions.']);
+  });
+
+  it('B2: feel counts pass only for the word Ben tapped', () => {
+    const felt = weeklyFacts({ ...input, sessions: sessions.map((s) => (s.date === '2026-10-13' ? { ...s, feel: 'hard' as const } : s)) });
+    const r = checkWeeklyReview({ verdict: '1 session felt hard.', lines: ['You did 1 hard session.', '2 sessions felt hard.', 'You had 1 easy session.'], tweaks: [] }, { ...ctx, facts: felt });
+    expect(r.verdict).toBe('1 session felt hard.');
+    expect(r.lines).toEqual(['You did 1 hard session.']);
+  });
+
+  it('B2: a stalled count passes as a stall, never as sets', () => {
+    const stall = ['2026-09-15', '2026-09-22', '2026-09-29', '2026-10-13'].map((d) => sess(d, [{ exerciseId: SQUAT, sets: [work(kg(120), 5)] }]));
+    const f = weeklyFacts({ ...input, sessions: [...sessions.filter((s) => !s.exercises.some((e) => e.exerciseId === SQUAT)), ...stall] });
+    expect(f.stalled.map((s) => s.exerciseId)).toEqual([SQUAT]);
+    const r = checkWeeklyReview({ verdict: 'Back squat has stalled for 3 sessions.', lines: ['Back squat: 3 sets.'], tweaks: [] }, { ...ctx, facts: f });
+    expect(r.verdict).toBe('Back squat has stalled for 3 sessions.');
+    expect(r.lines).toEqual([]);
+  });
+});

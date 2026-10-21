@@ -14,7 +14,7 @@ import type { GroupSets, LiftMetric, LiftTrend, ReviewWeekCount, WeeklyFacts } f
  */
 
 /** What a view needs of the week: the live facts, or the facts stored on a review. */
-export type ReviewWeekData = Pick<WeeklyFacts, 'monday' | 'complete' | 'basis' | 'week' | 'days' | 'missed' | 'weeks' | 'groups' | 'lifts' | 'runs' | 'rpe' | 'stalled' | 'feel' | 'edits'>;
+export type ReviewWeekData = Pick<WeeklyFacts, 'monday' | 'complete' | 'basis' | 'week' | 'days' | 'missed' | 'missedCount' | 'weeks' | 'groups' | 'lifts' | 'runs' | 'rpe' | 'stalled' | 'feel' | 'edits'>;
 
 export const REVIEW_COPY = {
   section: 'Reviews',
@@ -43,12 +43,15 @@ export const REVIEW_COPY = {
   legendPlan: 'Plan',
   noReview: 'No review yet',
   noLifts: 'No lifts logged yet',
+  noRecentSets: 'No sets in 16 weeks',
+  reviewed: 'Reviewed',
+  reviewing: 'Reviewing…',
   noSets: 'No sets this week',
   goalNotSet: 'Goal not set',
   estimate: 'est. 1RM',
 } as const;
 
-const STATUS_WORD: Readonly<Record<string, string>> = { offline: 'Offline', not_connected: 'Coach not connected', failed: 'Coach didn’t answer', pending: 'Pending' };
+const STATUS_WORD: Readonly<Record<string, string>> = { offline: 'Offline', not_connected: 'Coach not connected', failed: 'Coach didn’t answer' };
 
 // ---------------------------------------------------------------------------
 // Stored → week data
@@ -86,14 +89,18 @@ export function weekDataOfReview(r: Pick<TrainingReview, 'subject' | 'facts'>, n
   const runs = of('runs')[0];
   const rpe = of('rpe_drift')[0];
   const feel = of('feel')[0];
+  // Missed days as code stored them, never re-derived from the dots (review b3-wave3-truth B4). A review
+  // from before `week_status` names none.
+  const status = of('week_status')[0];
   const planDays = days.length > 0 && of('sessions_vs_plan').length > 0;
   return {
     monday,
-    complete: true,
-    basis: planDays ? 'plan' : week.planned !== null ? 'aim' : 'none',
+    complete: status?.complete ?? true,
+    basis: status?.basis ?? (planDays ? 'plan' : week.planned !== null ? 'aim' : 'none'),
     week,
     days,
-    missed: planDays ? days.filter((d) => !d.done).map((d) => d.name) : [],
+    missed: status?.missedNames ?? [],
+    missedCount: status?.missed ?? 0,
     weeks,
     groups,
     lifts,
@@ -157,26 +164,51 @@ export function liftNowText(l: LiftTrend): string | null {
   return `Best set ${p.load === null ? valueText(l, p.value) : loadText(p.load, p.load.convention)}${NBSP}×${NBSP}${String(p.reps)}`;
 }
 
-/** `was 90 → now 97.5 → target 110 kg` (the target line's words); null without a target. */
+/** The newest value alone, for after the metric's label: `97.5 kg`, `100 kg × 5`, `12 reps`. */
+export function liftNowValue(l: LiftTrend): string | null {
+  const p = l.points.at(-1);
+  if (p === undefined) return null;
+  return pointValueText(l, p);
+}
+
+function pointValueText(l: LiftTrend, p: LiftTrend['points'][number]): string {
+  if (l.metric === 'e1rm') return valueText(l, p.value);
+  if (l.metric === 'reps') return `${String(p.reps)}${NBSP}reps`;
+  return `${p.load === null ? valueText(l, p.value) : loadText(p.load, p.load.convention)}${NBSP}×${NBSP}${String(p.reps)}`;
+}
+
+/** Whether a lift's `was` / `now` are estimates (an est. 1RM line, or a `was` stored as one). */
+const isEstimateLine = (l: LiftTrend): boolean => l.metric === 'e1rm' || l.was?.isEstimate === true;
+
+/**
+ * `est. 1RM was 90 → now 97.5 → target 110 kg` (the target line's words, read alone by VoiceOver and in
+ * tables, so an estimate says so; review b3-wave3-truth S1); null without a target.
+ */
 export function wasNowTarget(l: LiftTrend): string | null {
   if (l.target === null) return null;
   const parts = [l.was === null ? null : `was ${formatNumber(l.was.value)}`, l.now === null ? null : `now ${formatNumber(l.now)}`, `target ${valueText(l, l.target.value)}${l.target.kind === 'weight_reps' ? `${NBSP}×${NBSP}${String(l.target.reps)}` : ''}`].filter((x): x is string => x !== null);
-  return parts.join(' → ');
+  const line = parts.join(' → ');
+  return isEstimateLine(l) && (l.was !== null || l.now !== null) ? `${REVIEW_COPY.estimate} ${line}` : line;
+}
+
+/** `Missed: Legs`, or with no names (a paused day that week) `Missed: 1 day`; null with none missed. */
+export function missedText(d: Pick<ReviewWeekData, 'missed' | 'missedCount'>): string | null {
+  if (d.missedCount <= 0) return null;
+  if (d.missed.length > 0) return `Missed: ${d.missed.join(', ')}`;
+  return `Missed: ${String(d.missedCount)} ${d.missedCount === 1 ? 'day' : 'days'}`;
 }
 
 /**
- * The review's facts as short lines, most telling first: sessions (and runs), missed days, lifts, sets out
- * of range, stalls, RPE, feel. The card shows the first five; the full review shows all.
+ * The review's facts as short lines, the flags first (review b3-wave3-ux S1): sessions (and runs), missed
+ * days, sets out of range, stalls, RPE, feel, and only then each lift's value. The card shows the first
+ * five; the full review shows all.
  */
 export function reviewFactLines(d: ReviewWeekData): string[] {
   const out: string[] = [];
   const s = [sessionsText(d.week), d.week.planned !== null ? 'sessions' : null].filter(Boolean).join(' ');
   out.push(d.runs.count > 0 ? `${s} · ${runsText(d.runs.count)}` : s);
-  if (d.missed.length > 0) out.push(`Missed: ${d.missed.join(', ')}`);
-  for (const l of d.lifts) {
-    const now = liftNowText(l);
-    if (now !== null) out.push(`${l.name}: ${now}`);
-  }
+  const missed = missedText(d);
+  if (missed !== null) out.push(missed);
   for (const g of d.groups) {
     const st = groupStatus(g);
     if (st === 'below' || st === 'above') out.push(`${groupLabel(g.group)}: ${String(g.sets)} sets ${STATUS_MARK[st].mark} ${String(g.range?.min ?? 0)}–${String(g.range?.max ?? 0)}`);
@@ -185,6 +217,10 @@ export function reviewFactLines(d: ReviewWeekData): string[] {
   if (d.rpe !== null) out.push(d.rpe.target === null ? `RPE ${formatNumber(d.rpe.mean)}` : `RPE ${formatNumber(d.rpe.mean)} · target ${formatNumber(d.rpe.target)}`);
   const felt = (['easy', 'good', 'hard'] as const).filter((k) => d.feel[k] > 0).map((k) => `${String(d.feel[k])} ${k}`);
   if (felt.length > 0) out.push(`Felt: ${felt.join(', ')}`);
+  for (const l of d.lifts) {
+    const now = liftNowText(l);
+    if (now !== null) out.push(`${l.name}: ${now}`);
+  }
   return out;
 }
 
@@ -223,9 +259,19 @@ export function proposalView(p: ReviewProposal): ReviewProposalView {
   return { id: p.id, text, reason: p.reason, status: p.status, statusText, canUndo: p.status === 'applied' && p.actionId !== null, accessibilityLabel: [text, p.reason, statusText].filter((x): x is string => x !== null).join('. ').replaceAll(NBSP, ' ') };
 }
 
-function verdictOf(r: Pick<TrainingReview, 'coach'>): { verdict: string; reviewed: boolean; lines: string[] } {
+/**
+ * The card's headline. The coach answered: its verdict, or (its verdict hidden by the number check) its
+ * first line that passed, or `Reviewed`; never `Not reviewed` when it did review (rule 1; review
+ * b3-wave3-ux B1). Otherwise why not, honestly: `Reviewing…` while the call is out, `Not reviewed · Offline`.
+ */
+export function verdictOf(r: Pick<TrainingReview, 'coach'>): { verdict: string; reviewed: boolean; lines: string[] } {
   const c = r.coach;
-  if (c.status === 'reviewed') return { verdict: c.verdict ?? REVIEW_COPY.notReviewed, reviewed: c.verdict !== null || c.lines.length > 0, lines: c.lines };
+  if (c.status === 'reviewed') {
+    if (c.verdict !== null) return { verdict: c.verdict, reviewed: true, lines: c.lines };
+    const [first, ...rest] = c.lines;
+    return first === undefined ? { verdict: REVIEW_COPY.reviewed, reviewed: true, lines: [] } : { verdict: first, reviewed: true, lines: rest };
+  }
+  if (c.status === 'pending') return { verdict: REVIEW_COPY.reviewing, reviewed: false, lines: [] };
   if (c.status === 'silent') return { verdict: REVIEW_COPY.notReviewed, reviewed: false, lines: [] };
   return { verdict: `${REVIEW_COPY.notReviewed} · ${STATUS_WORD[c.status] ?? ''}`, reviewed: false, lines: [] };
 }
@@ -250,8 +296,9 @@ export function reviewCardView(r: TrainingReview, d: ReviewWeekData, today: stri
 
 export interface ReviewHistoryRow {
   reviewId: string;
+  /** The week's facts: `w/c 6 Oct · 4 of 4` (review b3-wave3-ux S6: never a column of identical statuses). */
   title: string;
-  /** `w/c 6 Oct · 4 of 4 · Legs missed`. */
+  /** The verdict, then what was missed: `Solid week · Legs missed`, `Not reviewed · Offline`. */
   detail: string;
   /** The first lift's points (oldest first); empty: no sparkline. */
   spark: number[];
@@ -260,11 +307,15 @@ export interface ReviewHistoryRow {
 
 export function reviewHistoryRow(r: TrainingReview, d: ReviewWeekData, today: string): ReviewHistoryRow {
   const v = verdictOf(r);
-  const parts = [`w/c ${shortDate(d.monday, today)}`, sessionsText(d.week), d.missed.length > 0 ? `${d.missed.join(', ')} missed` : null].filter((x): x is string => x !== null);
+  const sessions = `${sessionsText(d.week)}${d.runs.count > 0 ? ` · ${runsText(d.runs.count)}` : ''}`;
+  const missed = missedText(d);
+  const title = `w/c ${shortDate(d.monday, today)} · ${sessions}`;
+  const detail = [v.verdict, missed].filter((x): x is string => x !== null).join(' · ');
   const lift = d.lifts.find((l) => l.points.length >= 2);
-  const spark = lift?.points.map((p) => p.value) ?? [];
-  const sparkWords = lift === undefined || lift.now === null ? null : `${lift.name} ${formatNumber(lift.points[0]?.value ?? 0)} to ${formatNumber(lift.now)}`;
-  return { reviewId: r.id, title: v.verdict, detail: parts.join(' · '), spark, accessibilityLabel: [v.verdict, `Week of ${longDate(d.monday, today)}`, ...parts.slice(1), sparkWords].filter((x): x is string => x !== null).join('. ').replaceAll(NBSP, ' ') };
+  // Up is stronger on the sparkline: an assisted lift's values are flipped (review b3-wave3-ux N4).
+  const spark = lift === undefined ? [] : lift.points.map((p) => (lift.lowerIsBetter ? -p.value : p.value));
+  const sparkWords = lift === undefined || lift.now === null ? null : `${lift.name}${lift.metric === 'e1rm' ? ` ${REVIEW_COPY.estimate}` : ''} ${formatNumber(lift.points[0]?.value ?? 0)} to ${formatNumber(lift.now)}`;
+  return { reviewId: r.id, title, detail, spark, accessibilityLabel: [`Week of ${longDate(d.monday, today)}`, sessions, v.verdict, missed, sparkWords].filter((x): x is string => x !== null).join('. ').replaceAll(NBSP, ' ') };
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +386,7 @@ export function reviewConsistencyView(d: ReviewWeekData, today: string): ReviewC
     title: REVIEW_COPY.consistency,
     summary,
     dots,
-    missed: d.missed.length > 0 ? `Missed: ${d.missed.join(', ')}` : null,
+    missed: missedText(d),
     bars,
     scaleMax,
     words,
@@ -356,6 +407,8 @@ export interface SetsRowView {
   /** `✓` / `▼` / `▲` with its word, never colour alone. */
   mark: string | null;
   status: GroupStatus | null;
+  /** `in range`, `below`, `above` (the table's words; never the raw code, review b3-wave3-ux S8). */
+  statusWord: string | null;
   accessibilityLabel: string;
 }
 
@@ -385,6 +438,7 @@ export function setsBarsView(groups: readonly GroupSets[]): SetsBarsView {
       plannedAt: g.planned === null ? null : Math.min(1, g.planned / scaleMax),
       mark: st === null ? null : STATUS_MARK[st].mark,
       status: st,
+      statusWord: st === null ? null : STATUS_MARK[st].word,
       accessibilityLabel: words.join(', '),
     };
   });
@@ -406,6 +460,10 @@ export interface LiftChartView {
   metric: string;
   /** The newest value with what it is. */
   now: string | null;
+  /** The line under the title, its label once (review b3-wave3-ux B3): `est. 1RM · 97.5 kg`, `Best set · 100 kg × 5`, `est. 1RM · kg` with no sets. */
+  header: string;
+  /** No sets in the window: `No sets in 16 weeks` (review b3-wave3-ux S3); null otherwise. */
+  empty: string | null;
   /** `was 90 → now 97.5 → target 110 kg`; null without a target. */
   progress: string | null;
   points: { key: string; date: string; value: number; breakBefore: false }[];
@@ -416,6 +474,7 @@ export interface LiftChartView {
   /** Too few points for a line: the value alone. */
   sparse: boolean;
   words: string;
+  /** Table rows: each value with its unit and, for an est. 1RM, `est.` (VoiceOver reads a row alone; review b3-wave3-ux B4). */
   table: { key: string; date: string; value: string; set: string }[];
 }
 
@@ -423,10 +482,13 @@ export function liftChartView(l: LiftTrend, today: string): LiftChartView {
   const first = l.points[0];
   const last = l.points.at(-1);
   const metric = l.unit === null ? METRIC_LABEL[l.metric] : `${METRIC_LABEL[l.metric]} · ${liftUnitText(l.unit, l.convention)}`;
+  const nowValue = liftNowValue(l);
+  const header = nowValue === null ? metric : `${METRIC_LABEL[l.metric]} · ${nowValue}`;
   const progress = wasNowTarget(l);
+  const cell = (p: LiftTrend['points'][number]): string => (l.metric === 'e1rm' ? `est. ${valueText(l, p.value)}` : l.metric === 'reps' ? `${String(p.reps)}${NBSP}reps` : p.load === null ? valueText(l, p.value) : loadText(p.load, p.load.convention));
   const words = [
     `${l.name}, ${l.metric === 'e1rm' ? 'estimated one-rep max' : METRIC_LABEL[l.metric].toLowerCase()}`,
-    first === undefined || last === undefined ? 'no sets logged' : l.points.length === 1 ? `${valueText(l, last.value)} on ${longDate(last.date, today)}` : `${String(l.points.length)} sessions, ${valueText(l, first.value)} on ${longDate(first.date, today)} to ${valueText(l, last.value)} on ${longDate(last.date, today)}`,
+    first === undefined || last === undefined ? 'no sets in 16 weeks' : l.points.length === 1 ? `${valueText(l, last.value)} on ${longDate(last.date, today)}` : `${String(l.points.length)} sessions, ${valueText(l, first.value)} on ${longDate(first.date, today)} to ${valueText(l, last.value)} on ${longDate(last.date, today)}`,
     l.target === null ? null : `target ${valueText(l, l.target.value)}`,
     l.lowerIsBetter ? 'less assistance is stronger' : null,
   ].filter((x): x is string => x !== null);
@@ -435,6 +497,8 @@ export function liftChartView(l: LiftTrend, today: string): LiftChartView {
     title: l.name,
     metric,
     now: liftNowText(l),
+    header,
+    empty: l.points.length === 0 ? REVIEW_COPY.noRecentSets : null,
     progress,
     points: l.points.map((p) => ({ key: p.sessionId, date: p.date, value: p.value, breakBefore: false as const })),
     from: first?.date ?? today,
@@ -442,7 +506,7 @@ export function liftChartView(l: LiftTrend, today: string): LiftChartView {
     target: l.target?.value ?? null,
     sparse: l.points.length < 2,
     words: words.join('. ').replaceAll(NBSP, ' '),
-    table: [...l.points].reverse().map((p) => ({ key: p.sessionId, date: shortDate(p.date, today), value: l.unit === null ? String(p.value) : formatNumber(p.value), set: p.load === null ? `${String(p.reps)} reps` : `${loadText(p.load, p.load.convention)}${NBSP}×${NBSP}${String(p.reps)}` })),
+    table: [...l.points].reverse().map((p) => ({ key: p.sessionId, date: shortDate(p.date, today), value: cell(p), set: p.load === null ? `${String(p.reps)}${NBSP}reps` : `${loadText(p.load, p.load.convention)}${NBSP}×${NBSP}${String(p.reps)}` })),
   };
 }
 

@@ -1,6 +1,6 @@
 import { formatNumber, groupLabel, NBSP, reviewFactLines, WEEKLY_REVIEW, type ReviewTemplate, type TemplateEdit, type WeeklyFacts } from '@fizz/domain';
 import { builderGroupOfMuscleGroup, type ReviewProposal, type WeeklyReviewArgs, type WeightUnit } from '@fizz/schemas';
-import { checkClaims, claimLower, exerciseNames, type ClaimFacts } from './claims';
+import { checkClaims, claimLower, exerciseNames, type ClaimFacts, type SessionClaims } from './claims';
 
 /**
  * The weekly review's coach part, checked (workout-builder-v3 §6.1 weekly, §6.2; Ben 20–21 Oct). Pure.
@@ -36,7 +36,7 @@ function add(set: Set<number>, ...vs: (number | null | undefined)[]): void {
 export function weeklyClaimFacts(f: WeeklyFacts): ClaimFacts {
   const entities: ClaimFacts['entities'] = [];
   const entity = (names: readonly string[]) => {
-    const e = { names: [...new Set(names.map(claimLower))], sets: new Set<number>(), exercises: new Set<number>(), reps: new Set<number>(), rpe: new Set<number>(), loads: [] as { value: number; unit: WeightUnit }[] };
+    const e = { names: [...new Set(names.map(claimLower))], sets: new Set<number>(), exercises: new Set<number>(), reps: new Set<number>(), rpe: new Set<number>(), loads: [] as { value: number; unit: WeightUnit }[], estimates: [] as { value: number; unit: WeightUnit }[] };
     entities.push(e);
     return e;
   };
@@ -52,7 +52,8 @@ export function weeklyClaimFacts(f: WeeklyFacts): ClaimFacts {
     for (const p of l.points) {
       add(e.reps, p.reps);
       if (l.unit !== null) {
-        e.loads.push({ value: p.value, unit: l.unit });
+        // An est. 1RM is never a load Ben lifted (rule 6; review b3-wave3-truth B1): its own list.
+        (l.metric === 'e1rm' ? e.estimates : e.loads).push({ value: p.value, unit: l.unit });
         if (p.load !== null) e.loads.push({ value: p.load.value, unit: p.load.unit });
       } else add(e.reps, p.value);
     }
@@ -60,9 +61,8 @@ export function weeklyClaimFacts(f: WeeklyFacts): ClaimFacts {
       e.loads.push({ value: l.target.value, unit: l.unit });
       add(e.reps, l.target.reps);
     }
-    if (l.was !== null && l.unit !== null) e.loads.push({ value: l.was.value, unit: l.unit });
+    if (l.was !== null && l.unit !== null) (l.was.isEstimate ? e.estimates : e.loads).push({ value: l.was.value, unit: l.unit });
   }
-  for (const s of f.stalled) add(entity(exerciseNames(s.name)).sets, s.sessions);
   const rpe = entity(['rpe', 'average rpe']);
   if (f.rpe !== null) {
     add(rpe.rpe, f.rpe.mean, f.rpe.target);
@@ -70,8 +70,18 @@ export function weeklyClaimFacts(f: WeeklyFacts): ClaimFacts {
   }
   const runs = entity(['runs', 'run', 'km']);
   add(runs.sets, f.runs.count, f.runs.distanceM === null ? null : Math.round(f.runs.distanceM / 100) / 10);
-  const sessions = new Set<number>();
-  add(sessions, f.week.done, f.week.planned, f.week.workouts, f.rpe?.sessions, f.feel.easy, f.feel.good, f.feel.hard, ...f.stalled.map((s) => s.sessions), ...f.edits.map((e) => e.sessions));
+  // Each count against the fact it names (review b3-wave3-truth B2), never one shared pool.
+  const set = (...vs: (number | null | undefined)[]): Set<number> => {
+    const out = new Set<number>();
+    add(out, ...vs);
+    return out;
+  };
+  const sessions: SessionClaims = {
+    plain: set(f.week.done, f.week.planned, f.week.workouts),
+    missed: set(f.missedCount > 0 ? f.missedCount : null),
+    stalled: set(...f.stalled.map((s) => s.sessions)),
+    feel: { easy: set(f.feel.easy > 0 ? f.feel.easy : null), good: set(f.feel.good > 0 ? f.feel.good : null), hard: set(f.feel.hard > 0 ? f.feel.hard : null) },
+  };
   const ofPairs: [number, number][] = f.weeks.flatMap((w): [number, number][] => (w.planned === null ? [] : [[w.done, w.planned]]));
   const totalSets = f.groups.reduce((m, g) => m + g.sets, 0);
   return {
