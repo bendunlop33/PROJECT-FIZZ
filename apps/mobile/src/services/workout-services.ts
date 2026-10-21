@@ -1,5 +1,6 @@
 import {
   activeWeekPlan,
+  plusSetType,
   avoidLegDays,
   isLegDay,
   legRunNear,
@@ -3098,7 +3099,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           newId: ctx.newId,
         });
       }
-      const cmd: SessionCommand = { type: 'add_set', at: ctx.now(), opId: req.opId, sessionExerciseId: req.sessionExerciseId, newSetId: req.newSetId, setType: null, ...(req.afterSetId !== undefined ? { afterSetId: req.afterSetId } : {}), ...(continuation ? { continuation } : {}) };
+      // `＋ Set` copies the last working set, never a drop (wo-v3 logic S5); `Insert set after` copies the set it follows.
+      const setType = req.afterSetId === undefined ? plusSetType(aggregate.sets, req.sessionExerciseId) : null;
+      const cmd: SessionCommand = { type: 'add_set', at: ctx.now(), opId: req.opId, sessionExerciseId: req.sessionExerciseId, newSetId: req.newSetId, setType, ...(req.afterSetId !== undefined ? { afterSetId: req.afterSetId } : {}), ...(continuation ? { continuation } : {}) };
       return ctx.afterCommand(await domain().dispatch(req.sessionId, cmd));
     },
 

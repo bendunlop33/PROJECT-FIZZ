@@ -381,9 +381,9 @@ export function cellKeypadBar(p: { field: CellField | null; fields: CellFields |
  * 7.5 kg each`, `Set 3 reps, 12`, `Set 2 assistance, 20 kg`, `Set 1 time,
  * 45 seconds`, `Set 4 weight, none`.
  */
-export function cellInputA11y(p: { setLabel: string; field: CellField; value: number | null; unitText?: string | null; assisted?: boolean }): string {
+export function cellInputA11y(p: { stepName: string; field: CellField; value: number | null; unitText?: string | null; assisted?: boolean }): string {
   const noun = p.field === 'load' ? (p.assisted === true ? 'assistance' : 'weight') : p.field;
-  if (p.value === null) return `Set ${p.setLabel} ${noun}, none`;
+  if (p.value === null) return `${p.stepName} ${noun}, none`;
   const unit = p.field === 'load' ? (p.unitText ?? '') : p.field === 'time' ? 'seconds' : p.field === 'distance' ? 'metres' : '';
-  return `Set ${p.setLabel} ${noun}, ${String(p.value)}${unit === '' ? '' : ` ${unit}`}`;
+  return `${p.stepName} ${noun}, ${String(p.value)}${unit === '' ? '' : ` ${unit}`}`;
 }

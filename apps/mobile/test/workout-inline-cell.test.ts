@@ -83,13 +83,14 @@ describe('the tapped cell is the field (Ben, 20 Oct)', () => {
   });
 
   it('VoiceOver: the cell reads `Set 3 weight, 7.5 kg each`, with no dead swipe actions (the bar’s − / + step)', () => {
-    expect(cellInputA11y({ setLabel: '3', field: 'load', value: 7.5, unitText: 'kg each' })).toBe('Set 3 weight, 7.5 kg each');
-    expect(cellInputA11y({ setLabel: '3', field: 'reps', value: 12 })).toBe('Set 3 reps, 12');
-    expect(cellInputA11y({ setLabel: 'A2', field: 'load', value: 20, unitText: 'kg', assisted: true })).toBe('Set A2 assistance, 20 kg');
-    expect(cellInputA11y({ setLabel: '1', field: 'time', value: 45 })).toBe('Set 1 time, 45 seconds');
-    expect(cellInputA11y({ setLabel: '2', field: 'distance', value: 20 })).toBe('Set 2 distance, 20 metres');
-    expect(cellInputA11y({ setLabel: '4', field: 'load', value: null, unitText: 'kg' })).toBe('Set 4 weight, none');
-    expect(cellInputA11y({ setLabel: '5', field: 'load', value: 45, unitText: 'lb each' })).toBe('Set 5 weight, 45 lb each');
+    expect(cellInputA11y({ stepName: 'Set 3', field: 'load', value: 7.5, unitText: 'kg each' })).toBe('Set 3 weight, 7.5 kg each');
+    expect(cellInputA11y({ stepName: 'Set 3', field: 'reps', value: 12 })).toBe('Set 3 reps, 12');
+    expect(cellInputA11y({ stepName: 'Set A2', field: 'load', value: 20, unitText: 'kg', assisted: true })).toBe('Set A2 assistance, 20 kg');
+    expect(cellInputA11y({ stepName: 'Set 1', field: 'time', value: 45 })).toBe('Set 1 time, 45 seconds');
+    expect(cellInputA11y({ stepName: 'Set 2', field: 'distance', value: 20 })).toBe('Set 2 distance, 20 metres');
+    expect(cellInputA11y({ stepName: 'Set 4', field: 'load', value: null, unitText: 'kg' })).toBe('Set 4 weight, none');
+    expect(cellInputA11y({ stepName: 'Set 5', field: 'load', value: 45, unitText: 'lb each' })).toBe('Set 5 weight, 45 lb each');
+    expect(cellInputA11y({ stepName: 'Warm-up', field: 'reps', value: 10 })).toBe('Warm-up reps, 10');
     expect(ui).toContain('accessibilityLabel={fieldLabel ?? ');
     // VoiceOver focuses RN's native text field, so actions on the cell never fire: none are declared.
     expect(ui).not.toContain("name: 'increment'");

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { cardioTimeText, checkRoutineName, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { cardioTimeText, checkRoutineName, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -129,7 +129,7 @@ export function WorkoutScreen() {
   const renameOp = useRef(newUuid());
   const [renameAfter] = useState(() => createAfterDismiss());
   /** `Rest after` for one set (the open row's, or the set `Why?` names): its number, exercise, seconds and where they came from. */
-  const [restEditor, setRestEditor] = useState<{ setId: string; setNumber: number; exerciseName: string; seconds: number; sourceLabel: string } | null>(null);
+  const [restEditor, setRestEditor] = useState<{ setId: string; stepName: string; exerciseName: string; seconds: number; sourceLabel: string } | null>(null);
   /** `Notes` on the focused exercise (§4.4). */
   const [noteFor, setNoteFor] = useState<{ sessionExerciseId: string; exerciseName: string; note: string | null } | null>(null);
   /** The mid-workout Swap sheet (EL4): the row it swaps and its candidates. */
@@ -794,10 +794,10 @@ export function WorkoutScreen() {
     const saved = r.aggregate.sets.find((s) => s.id === focus.setId);
     const label = focus.logLabel.replace(/^Log /, '');
     showToast({
-      text: `✓ Set ${String(focus.setNumber)} saved · ${label}`,
+      text: `✓ ${focus.stepName} saved · ${label}`,
       action: 'Undo',
       onAction: () => {
-        if (saved) void undo(saved.id, `undo:${saved.id}:${String(saved.undoCount)}`, focus.setNumber);
+        if (saved) void undo(saved.id, `undo:${saved.id}:${String(saved.undoCount)}`, focus.stepName);
       },
     });
   }
@@ -866,14 +866,14 @@ export function WorkoutScreen() {
     showToast({ icon: t.icon, text: t.detail ? `${t.text}. ${t.detail}` : t.text, ...(t.action && t.onAction ? { action: t.action, onAction: t.onAction } : {}) });
   }
 
-  async function undo(setId: string, opId: string, setNumber: number, name?: string) {
+  async function undo(setId: string, opId: string, name: string) {
     const seq = ++loadSeq.current;
     const fresh = await services.workout.load(session.id);
     const set = fresh?.aggregate.sets.find((s) => s.id === setId);
     if (!fresh || !set) return;
     const r = await services.workout.dispatch(session.id, { type: 'undo_log', at: services.now(), opId, setId, expectedSetVersion: set.version });
     if (!r.ok) {
-      showToast({ icon: 'info.circle', text: r.error.code === 'not_latest_set' ? 'Only the last set can be unticked' : `Can’t undo: ${name !== undefined ? name.toLowerCase() : `set ${String(setNumber)}`} changed` });
+      showToast({ icon: 'info.circle', text: r.error.code === 'not_latest_set' ? 'Can’t untick: not the last set' : r.error.code === 'work_interval_running' ? 'Stop the timer first' : `Can’t undo: ${name.toLowerCase()} changed` });
       return;
     }
     haptic('undo');
@@ -904,7 +904,7 @@ export function WorkoutScreen() {
         // No confirm (copy D4): it applies at once with Undo.
         const opId = newUuid();
         void run({ type: 'delete_set', at: services.now(), opId, setId: f.setId, expectedSetVersion: f.setVersion }).then((r) => {
-          if (r.ok) toastUndoOp(UNDO_TOAST.deleted(f.setNumber), opId, session.id);
+          if (r.ok) toastUndoOp(UNDO_TOAST.deletedNamed(f.stepName), opId, session.id);
           else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
@@ -982,7 +982,7 @@ export function WorkoutScreen() {
         }
         const opId = newUuid();
         void run({ type: 'delete_set', at: services.now(), opId, setId: next.id, expectedSetVersion: next.version }).then((r) => {
-          if (r.ok) toastUndoOp(UNDO_TOAST.deleted(next.number), opId, session.id);
+          if (r.ok) toastUndoOp(UNDO_TOAST.deletedNamed(next.stepName), opId, session.id);
           else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
@@ -1041,7 +1041,7 @@ export function WorkoutScreen() {
       ...(f.addWeight ? [{ label: f.addWeight.on ? 'Bodyweight' : '+ Weight', run: () => { toggleWeight(f); } }] : []),
       { label: 'Focus view', run: () => { updatePrefs({ workoutView: 'focus' }); } },
     ];
-    ActionSheetIOS.showActionSheetWithOptions({ title: `Set ${String(f.setNumber)}`, options: [...items.map((x) => x.label), 'Cancel'], cancelButtonIndex: items.length }, (i) => {
+    ActionSheetIOS.showActionSheetWithOptions({ title: f.stepName, options: [...items.map((x) => x.label), 'Cancel'], cancelButtonIndex: items.length }, (i) => {
       items[i]?.run();
     });
   }
@@ -1067,7 +1067,7 @@ export function WorkoutScreen() {
 
   /** `Rest after` for the open row (its stored rest and where it came from). */
   function restOfFocus(f: FocusView) {
-    return { setId: f.setId, setNumber: f.setNumber, exerciseName: f.exerciseName, seconds: f.restAfterS, sourceLabel: f.restSourceLabel };
+    return { setId: f.setId, stepName: f.stepName, exerciseName: f.exerciseName, seconds: f.restAfterS, sourceLabel: f.restSourceLabel };
   }
 
   /**
@@ -1097,7 +1097,7 @@ export function WorkoutScreen() {
     const set = loaded.aggregate.sets.find((x) => x.id === setId);
     if (set?.status !== 'completed') return;
     const n = rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).find((r) => r.setId === setId);
-    void undo(set.id, `undo:${set.id}:${String(set.undoCount)}`, n?.number ?? 0, n?.stepName);
+    void undo(set.id, `undo:${set.id}:${String(set.undoCount)}`, n?.stepName ?? 'Set');
   }
 
   /** Swipe left on a row (v3 §2): delete at once with Undo; a done set's delete is a versioned, audited change too. */
@@ -1134,7 +1134,7 @@ export function WorkoutScreen() {
       return;
     }
     if (r.toast !== null && r.undo !== null) showHanded({ kind: 'exclusion', key: c.opId, text: r.toast, undo: { sessionId: session.id, ...r.undo } });
-    else if (!r.duplicate) toastUndoOp(UNDO_TOAST.corrected(v.setNumber), c.opId, session.id);
+    else if (!r.duplicate) toastUndoOp(UNDO_TOAST.correctedNamed(v.stepName), c.opId, session.id);
     // F4: a corrected rep count runs the same offer check as a log.
     void reload().then((d) => {
       const id = patch.reps !== undefined ? correctedSetToCheck({ setId: c.setId }, d?.aggregate) : null;
@@ -1305,9 +1305,8 @@ export function WorkoutScreen() {
     const added = r.aggregate.sets.find((x) => !loaded.aggregate.sets.some((y) => y.id === x.id));
     // v3 §2: its box scrolls to the new row and it flashes once.
     if (added) setAddedSetId(added.id);
-    const v = services.workout.view({ ...loaded, aggregate: r.aggregate }, clockNow(), null);
-    const n = v.focus?.rows.find((row) => row.setId === added?.id)?.number ?? r.aggregate.sets.filter((x) => x.sessionExerciseId === sessionExerciseId && x.status !== 'deleted').length;
-    showToast({ text: `Set ${String(n)} added` });
+    // The same name the new row shows (wo-v3 reviews B1).
+    showToast({ text: UNDO_TOAST.addedNamed((added && setStepName(r.aggregate, added.id)) ?? 'Set') });
   }
 
   // ---- Gym switch (gym-switch.md §4) ----
@@ -1708,7 +1707,7 @@ export function WorkoutScreen() {
 
   const savedLine = view.justSaved ? (
     <AppText variant="callout" color="text.secondary" numeric>
-      {`${view.justSaved.exerciseName === focus?.exerciseName || focus === null ? '' : `${view.justSaved.exerciseName} · `}Set ${String(view.justSaved.setNumber)}${view.justSaved.side === 'left' ? ' (left)' : view.justSaved.side === 'right' ? ' (right)' : ''} saved · `}
+      {`${view.justSaved.exerciseName === focus?.exerciseName || focus === null ? '' : `${view.justSaved.exerciseName} · `}${view.justSaved.stepName}${view.justSaved.side === 'left' ? ' (left)' : view.justSaved.side === 'right' ? ' (right)' : ''} saved · `}
       <AppText variant="callout" numeric>
         {view.justSaved.text}
       </AppText>
@@ -2295,7 +2294,7 @@ export function WorkoutScreen() {
           <View style={{ gap: theme.space['2'] }}>
             <EffortHeading scale={effortScale}>
               <AppText variant="label" color="text.tertiary" style={{ flexShrink: 1 }}>
-                {`${afterSetSaved.exerciseName !== focus?.exerciseName ? `${afterSetSaved.exerciseName.toUpperCase()} · ` : ''}SET ${String(afterSetSaved.setNumber)} ${effortScale === 'rir' ? 'REPS IN RESERVE' : 'EFFORT'}`}
+                {`${afterSetSaved.exerciseName !== focus?.exerciseName ? `${afterSetSaved.exerciseName.toUpperCase()} · ` : ''}${afterSetSaved.stepName.toUpperCase()} ${effortScale === 'rir' ? 'REPS IN RESERVE' : 'EFFORT'}`}
               </AppText>
             </EffortHeading>
             {effortChips}
@@ -2355,7 +2354,7 @@ export function WorkoutScreen() {
         <CorrectionEditor
           field={doneEdit.field}
           ax={ax}
-          setLabel={String(correctionView.setNumber)}
+          stepName={correctionView.stepName}
           loadField={correctionView.loadField}
           reps={correctionView.reps}
           duration={correctionView.duration}
@@ -2484,7 +2483,7 @@ export function WorkoutScreen() {
         setKeypadField({ row: 'open', field: tile });
       }}
       onDelete={() => {
-        const name = rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).find((r) => r.setId === focus.setId)?.stepName ?? `Set ${String(focus.setNumber)}`;
+        const name = rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).find((r) => r.setId === focus.setId)?.stepName ?? focus.stepName;
         deleteRow(focus.setId, name);
       }}
     />
@@ -2833,7 +2832,7 @@ export function WorkoutScreen() {
       {restEditor !== null ? (
         <RestAfterSheet
           visible
-          setNumber={restEditor.setNumber}
+          stepName={restEditor.stepName}
           exerciseName={restEditor.exerciseName}
           seconds={restEditor.seconds}
           sourceLabel={restEditor.sourceLabel}
@@ -2856,7 +2855,7 @@ export function WorkoutScreen() {
                 showToast({
                   text:
                     scope === 'set'
-                      ? `Rest after set ${String(target.setNumber)}: ${formatDuration(seconds)}`
+                      ? `Rest after ${target.stepName.toLowerCase()}: ${formatDuration(seconds)}`
                       : `${target.exerciseName}: ${formatDuration(seconds)} rest${r.defaultSaved === false ? '' : ', also next time'}`,
                 });
               });
@@ -2874,7 +2873,7 @@ export function WorkoutScreen() {
           const stored = loaded.aggregate.sets.find((x) => x.id === whySheet.restSetId);
           setWhyFor(null);
           whyEvent({ kind: 'close' });
-          setRestEditor({ setId: whySheet.restSetId, setNumber: restRow?.r.number ?? restRow?.r.row.number ?? 1, exerciseName: restRow?.e.name ?? '', seconds: whySheet.restSeconds, sourceLabel: stored?.rest.sourceLabel ?? '' });
+          setRestEditor({ setId: whySheet.restSetId, stepName: restRow?.r.stepName ?? 'Set', exerciseName: restRow?.e.name ?? '', seconds: whySheet.restSeconds, sourceLabel: stored?.rest.sourceLabel ?? '' });
         }}
         onPainFlag={(flagId) => {
           openPainFlag(flagId, whyExercise?.sessionExerciseId);
@@ -3204,7 +3203,7 @@ const REST_CHOICES = [60, 90, 120, 150, 180, 240];
  */
 function RestAfterSheet({
   visible,
-  setNumber,
+  stepName,
   exerciseName,
   seconds,
   sourceLabel,
@@ -3212,7 +3211,8 @@ function RestAfterSheet({
   onApply,
 }: {
   visible: boolean;
-  setNumber: number;
+  /** `Set 3` / `Warm-up`: the table row's own name (wo-v3 reviews B1). */
+  stepName: string;
   exerciseName: string;
   seconds: number;
   sourceLabel: string;
@@ -3236,7 +3236,7 @@ function RestAfterSheet({
       <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>{exerciseName}</Eyebrow>
-          <AppText variant="title2" accessibilityRole="header">{`Rest after set ${String(setNumber)}`}</AppText>
+          <AppText variant="title2" accessibilityRole="header">{`Rest after ${stepName.toLowerCase()}`}</AppText>
         </View>
         {/* 1.10: the numeral on its own line (shrinks rather than clip at AX), the steps under it. */}
         <AppText variant="timerDisplay" align="center" numberOfLines={1} adjustsFontSizeToFit accessibilityLabel={`Rest ${formatDuration(value)}`}>

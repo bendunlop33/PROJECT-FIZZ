@@ -4,7 +4,7 @@ import { cardioValuesText, dayMonthText, EQUIPMENT_WORD, formatDistance, formatD
 import { painFlagCovering } from '../pain-flags';
 import { massWords } from '../progress/text';
 import { targetRpeOf } from '../coach/target-rpe';
-import { buildSetRows, type ActiveViewInput, type PrimaryAction, type PreviousSession, type SetRowView } from './active-view';
+import { buildSetRows, setStepName, type ActiveViewInput, type PrimaryAction, type PreviousSession, type SetRowView } from './active-view';
 import { carriesTodayAdjustment } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf, partsOf } from './gym-switch';
@@ -676,14 +676,14 @@ export function buildWorkoutTableView(input: ActiveViewInput): WorkoutTableView 
       const ex = state.exercises.find((x) => x.id === activeSet.sessionExerciseId);
       if (block.kind === 'exercise') {
         const row = block.card.rows.find((r) => r.setId === activeSet.id);
-        log = { prefix: `Set ${String(row?.number ?? 1)}`, suffix: null, exerciseName: block.card.name };
+        log = { prefix: setStepName(state, activeSet.id) ?? `Set ${String(row?.number ?? 1)}`, suffix: null, exerciseName: block.card.name };
       } else {
         const rows = block.superset.rounds.flatMap((r) => r.rows);
         const row = rows.find((r) => r.setId === activeSet.id);
         // Logging A1 goes to A2 with no rest (§2.6): `A1 · Log 25 kg × 14 → A2`.
         const nextId = isRoundEnd(activeSet, state.exercises, state.sets) ? null : nextPendingSet(activeSet.id, state.exercises, state.sets);
         const nextTag = nextId === null ? null : (rows.find((r) => r.setId === nextId)?.memberTag ?? null);
-        log = { prefix: row?.memberTag ?? `Set ${String(row?.number ?? 1)}`, suffix: nextTag === null || nextTag === row?.memberTag ? null : `→ ${nextTag}`, exerciseName: ex?.exerciseName ?? block.superset.label };
+        log = { prefix: row?.memberTag ?? setStepName(state, activeSet.id) ?? `Set ${String(row?.number ?? 1)}`, suffix: nextTag === null || nextTag === row?.memberTag ? null : `→ ${nextTag}`, exerciseName: ex?.exerciseName ?? block.superset.label };
       }
     }
   }

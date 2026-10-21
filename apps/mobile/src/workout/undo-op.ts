@@ -11,7 +11,10 @@ export const UNDO_TOAST = {
   deletedNamed: (name: string): string => `${name} deleted`,
   skipped: (exerciseName: string): string => `${exerciseName} skipped`,
   corrected: (setNumber: number): string => `Set ${String(setNumber)} updated`,
+  /** v3 (wo-v3 reviews B1): the step name every toast shares with the table row, `Set 1 updated`, `Warm-up updated`. */
+  correctedNamed: (name: string): string => `${name} updated`,
   added: (setNumber: number): string => `Set ${String(setNumber)} added`,
+  addedNamed: (name: string): string => `${name} added`,
   removed: (exerciseName: string): string => `${exerciseName} removed`,
   swapped: (fromName: string, toName: string): string => `${fromName} → ${toName}`,
   /** (19 Oct) `Superset with…`: `Superset · Seated calf raise + Seated calf raise`. */

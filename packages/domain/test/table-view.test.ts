@@ -83,7 +83,7 @@ describe('buildWorkoutTableView: a fresh planned workout (WT1)', () => {
       ['pending', '', '100', '6–8', null],
     ]);
     const v = buildActiveSetView(input(state));
-    expect(plain(tableLogLabel(v.primary, t.log, { offscreen: false }).label)).toBe('Set 1 · Log 60 kg × 10');
+    expect(plain(tableLogLabel(v.primary, t.log, { offscreen: false }).label)).toBe('Warm-up · Log 60 kg × 10');
     expectAgreement(state);
   });
 

@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 
-import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
+import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, setStepName, toMs } from '@fizz/domain';
 import type { SetExclusion, SetType, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -166,7 +166,7 @@ export function EditSetScreen() {
       return;
     }
     if (corrected !== null && !corrected.duplicate) {
-      navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: withNote(UNDO_TOAST.corrected(view.setNumber)), targetOpId: saveOp }, ...check }));
+      navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: withNote(UNDO_TOAST.correctedNamed(view.stepName)), targetOpId: saveOp }, ...check }));
       return;
     }
     if (effortOrReps) {
@@ -191,20 +191,21 @@ export function EditSetScreen() {
       return;
     }
     changed();
-    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.deleted(view.setNumber), targetOpId: deleteOp } }));
+    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.deletedNamed(view.stepName), targetOpId: deleteOp } }));
   }
 
   /** `Insert set after` (14 Oct): a new set straight after this one, copying it, with Undo. The logged set is never touched. */
   async function insertAfter() {
     if (!view || !ex || aggregate?.session.status !== 'active') return;
-    const r = await services.workout.addSet({ sessionId, sessionExerciseId: ex.id, opId: insertOp, newSetId: newUuid(), afterSetId: setId });
+    const newSetId = newUuid();
+    const r = await services.workout.addSet({ sessionId, sessionExerciseId: ex.id, opId: insertOp, newSetId, afterSetId: setId });
     if (!r.ok) {
       setError(r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : r.error.message);
       void load();
       return;
     }
     changed();
-    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.added(view.setNumber + 1), targetOpId: insertOp } }));
+    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.addedNamed(setStepName(r.aggregate, newSetId) ?? 'Set'), targetOpId: insertOp } }));
   }
 
   return (
@@ -214,7 +215,7 @@ export function EditSetScreen() {
       <NumberAccessory />
       <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <AppText variant="title2" accessibilityRole="header">{`Edit set ${String(view.setNumber)} · ${view.exerciseName}`}</AppText>
+          <AppText variant="title2" accessibilityRole="header">{`Edit ${view.stepName.toLowerCase()} · ${view.exerciseName}`}</AppText>
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
         </View>
         {view.completedAtUtc ? <AppText variant="callout" color="text.secondary" numeric>{`Done at ${formatTime(toMs(view.completedAtUtc), tz)}`}</AppText> : null}

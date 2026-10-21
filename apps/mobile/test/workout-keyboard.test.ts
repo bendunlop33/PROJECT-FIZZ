@@ -74,7 +74,7 @@ describe('the table stays a table (18 Oct; review B1, S3, S4, S6)', () => {
     expect(save).toContain('expectedSetVersion: v.setVersion');
     expect(save).toContain('opId: c.opId');
     expect(save).toContain('if (patch === null) return;');
-    expect(save).toContain('toastUndoOp(UNDO_TOAST.corrected(v.setNumber), c.opId, session.id)');
+    expect(save).toContain('toastUndoOp(UNDO_TOAST.correctedNamed(v.stepName), c.opId, session.id)');
   });
   it('a Log and a select close the editor, so an Undo never reopens it', () => {
     expect(fn('async function log(')).toContain("editCell({ kind: 'logged' });");
