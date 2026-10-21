@@ -1202,6 +1202,43 @@ export function mentionsTodaysSets(text: string): boolean {
   return sentences.some((s) => TODAY_SET_WORDS.test(s) && !INFO_QUESTION.test(s.trim()));
 }
 
+/**
+ * (21 Oct, Ben's Build B report) Ben, mid-workout, asks for today's sets to change in words the set
+ * list above misses: a complaint about the load ("It's too light given my set on Friday"), a fix
+ * ("Fix them then"), or warm-ups made heavier ("Make the rows warm up heavier"). With
+ * `mentionsTodaysSets`, these are a live change request: the turn ends in `edit_today`, not advice
+ * (rule 3). A question for information, an opinion-only question, a hold and words about a later
+ * session never count.
+ */
+const LOAD_COMPLAINT = /\b(?:(?:way|far|much|bit|a bit|a little|slightly|too) )?(?:too (?:light|heavy|easy|hard|much|little)|not (?:heavy|hard|challenging) enough|(?:light|heavy|easy|hard)er than (?:it should|they should|i (?:want|wanted|need|expected)))\b/;
+const FIX_ASK = /\b(?:fix|sort|redo|update|adjust|change|correct|bump|raise|lower) (?:it|them|that|those|these|this|all|the (?:sets?|weights?|loads?|targets?|numbers?|rest)|(?:it|them|that) up)\b|\b(?:sort (?:it|them) out|do (?:it|that) (?:then|now)|just do it)\b/;
+const WARMUP_CHANGE = /\bwarm-?\s?ups?\b[^.?!]{0,40}\b(?:heavier|lighter|harder|easier|up|down|more|less|working)\b|\b(?:make|turn|change|swap|switch)\b[^.?!]{0,40}\bwarm-?\s?ups?\b/;
+const OPINION_ONLY_ASK = /\b(?:what do you think|do you think|should i|would it be|is it (?:ok|okay|fine|worth)|thoughts|any (?:ideas|advice|tips)|what would you)\b/;
+const OUTRIGHT_ASK = /\b(?:can you|could you|would you|will you|please)\b/;
+
+export function asksLiveChange(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'");
+  if (KEEP_AS_IS.test(t) || futureScopeOnly(t)) return false;
+  if (OPINION_ONLY_ASK.test(t) && !OUTRIGHT_ASK.test(t)) return false;
+  if (mentionsTodaysSets(t)) return true;
+  const sentences = t.match(/[^.!?;]+[.!?;]*/g) ?? [];
+  return sentences.some((raw) => {
+    const s = raw.trim();
+    // "Is it too heavy?" asks for an opinion; "Can you fix them?" asks outright.
+    if (/\?\s*$/.test(s) && !OUTRIGHT_ASK.test(s)) return false;
+    if (INFO_QUESTION.test(s) && !OUTRIGHT_ASK.test(s)) return false;
+    return LOAD_COMPLAINT.test(s) || FIX_ASK.test(s) || WARMUP_CHANGE.test(s);
+  });
+}
+
+/** A short follow-up that repeats an open request ("Try again", "Go on then", "Yes do it"), read only after one. */
+const FOLLOW_UP = /^(?:(?:ok(?:ay)?|yes|yeah|yep|right|so|well|please|then|now)[,!.]?\s+)*(?:try (?:it )?again|again|retry|go on|go ahead|do it|do that|yes|yeah|yep|please|ok(?:ay)?|sure|fix (?:it|them|that)|sort (?:it|them)|apply (?:it|them|that)|make the change)(?:\s+(?:then|now|please|again))*[.!]*$/;
+
+export function followsUpChange(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'").trim();
+  return t.split(/\s+/).length <= 6 && FOLLOW_UP.test(t);
+}
+
 /** Review B1: words that put a change on a later session or the plan, not today. */
 const FUTURE_SCOPE_WORDS =
   /\b(?:next (?:time|session|week|workout|one)|from now on|going forward|in (?:the )?future|future (?:sessions?|workouts?)|permanently|for good|routines?|templates?|programmes?|programs?|every (?:[a-z]+ )?(?:day|session|time|week|workout)|each (?:time|session|week|workout))\b/;

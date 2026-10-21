@@ -1,4 +1,4 @@
-import { ageFromBirthYear, buildExecutionOrder, deriveId, latestWeight, splitInUse, stableStringify, targetRpeOf, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
+import { ageFromBirthYear, buildExecutionOrder, deriveId, latestWeight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
 import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
@@ -122,6 +122,60 @@ export interface CoachContextInput {
    * only what he logged (rule 6). Absent when there is nothing to say.
    */
   week?: WeekContextView;
+  /**
+   * (21 Oct, Ben's Build B report) A live workout: the last sessions of the exercises in play (the one
+   * he's on, the ones he named), as `get_recent_training` reads them. The coach then has his recent
+   * loads without a read. Your data. Absent otherwise.
+   */
+  recentLifts?: readonly ExerciseHistoryView[];
+}
+
+/** (21 Oct) One exercise's recent sessions as the coach sees them in YOUR DATA. */
+export interface RecentLiftView {
+  exercise: string;
+  /** Newest first: `2026-10-17 · app: 80 kg × 12 @RPE 6, 90 kg × 12`. */
+  sessions: { date: string; source: 'app' | 'FitNotes import'; sets: string[] }[];
+  /** Present when any of it came from a FitNotes import. */
+  imported?: string;
+}
+
+/** Sessions per exercise in `recentLifts`. */
+export const RECENT_LIFT_SESSIONS = 3;
+/** Exercises in `recentLifts`. */
+export const RECENT_LIFT_EXERCISES = 3;
+
+/** `80 kg × 12 @RPE 6`, `22.5 kg each × 10`, `Assist 20 kg × 8 (warm-up)`: the load as logged, its unit and convention in the text. */
+export function recentLiftsView(history: readonly ExerciseHistoryView[]): RecentLiftView[] {
+  return history.slice(0, RECENT_LIFT_EXERCISES).map((h) => ({
+    exercise: h.exercise,
+    sessions: h.sessions.slice(0, RECENT_LIFT_SESSIONS).map((s) => ({
+      date: s.date,
+      source: s.source,
+      sets: s.sets.map((x) => `${x.loadText}${x.reps === null ? '' : ` × ${String(x.reps)}`}${x.rpe === null ? '' : ` @RPE ${String(x.rpe)}`}${x.type === 'warmup' ? ' (warm-up)' : ''}${x.notCounted === null ? '' : ` (${x.notCounted})`}`),
+    })),
+    ...(h.imported === undefined ? {} : { imported: h.imported }),
+  }));
+}
+
+/**
+ * (21 Oct) The exercises whose history goes with a live turn, at most `RECENT_LIFT_EXERCISES`: the ones
+ * Ben named (in session order of his words' match), then the one he's on (its next set to do), then the
+ * one he logged last. Exercise IDs. Pure.
+ */
+export function liveFocusExerciseIds(session: SessionAggregate, namedExerciseIds: readonly string[] = []): string[] {
+  const rows = session.exercises.filter((e) => e.removed === undefined);
+  const inSession = new Set(rows.map((e) => e.exerciseId));
+  const order = buildExecutionOrder(session.exercises, session.sets);
+  const byId = new Map(session.sets.map((x) => [x.id, x]));
+  const next = order.map((id) => byId.get(id)).find((x) => x !== undefined && x.status === 'pending' && rows.some((r) => r.id === x.sessionExerciseId));
+  const nextEx = next === undefined ? undefined : rows.find((r) => r.id === next.sessionExerciseId)?.exerciseId;
+  const lastEx = lastLoggedSets(session).lastLogged?.sessionExerciseId;
+  const lastExId = lastEx === undefined ? undefined : rows.find((r) => r.id === lastEx)?.exerciseId;
+  const out: string[] = [];
+  for (const id of [...namedExerciseIds.filter((x) => inSession.has(x)), nextEx, lastExId]) {
+    if (id !== undefined && !out.includes(id)) out.push(id);
+  }
+  return out.slice(0, RECENT_LIFT_EXERCISES);
 }
 
 /** This week as `log_activity` and `propose_week` read it (Your data). */
@@ -309,6 +363,8 @@ export interface YourData {
   plan?: PlanPauseView;
   /** (Ben, 20 Oct) General turns: this week, his activities and the days left. */
   week?: WeekContextView;
+  /** (21 Oct) Live workouts: the last sessions of the exercises in play. */
+  recentLifts?: RecentLiftView[];
 }
 
 export interface CoachingKnowledge {
@@ -447,6 +503,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.addable === undefined ? {} : { addable: input.addable.map((a) => ({ ...a })) }),
     ...(input.training === undefined ? {} : { training: trainingDetailsView(input.training).view }),
     ...(input.week === undefined ? {} : { week: JSON.parse(JSON.stringify(input.week)) as WeekContextView }),
+    ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
     ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until } } } }),
   };
 }
@@ -517,8 +574,17 @@ function messageText(m: CoachMessage): string | null {
   }
   // Only what was shown; hidden lines are never fed back to the model.
   const said = m.body.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : []));
-  return said.length === 0 ? null : said.join(' ');
+  if (said.length > 0) return said.join(' ');
+  // 21 Oct (Ben's Build B report): a turn that ended before any answer used to vanish, so the next turn saw his
+  // request unanswered and invented "the adjustment didn't go through". It is said as it was, and left open.
+  if (!m.body.complete) return m.body.actionIds.length === 0 ? UNANSWERED_TURN_NOTE : CUT_OFF_TURN_NOTE;
+  return null;
 }
+
+/** (21 Oct) In the history, for a turn that ended before the coach answered and changed nothing. App text. */
+export const UNANSWERED_TURN_NOTE = '[No answer: this turn ended before you replied (a connection or service error, or Ben stopped it), so nothing was changed. Ben’s message above is still open: if he follows it up, act on it now.]';
+/** (21 Oct) In the history, for a turn cut off after a change was saved (shown to Ben as a card). App text. */
+export const CUT_OFF_TURN_NOTE = '[Cut off before you replied, after a change was saved and shown to Ben as a card. Read get_active_session for today’s workout as it is now.]';
 
 export function buildCoachContext(input: CoachContextInput): CoachContext {
   const yourData = buildYourData(input);
@@ -591,6 +657,7 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
     if (t.liftTargets !== undefined && t.liftTargets.length > 0) yourData.push({ label: 'Lift targets', detail: t.liftTargets.map((x) => `${x.exercise} ${x.target}`).join(', ') });
   }
   if (y.addable !== undefined) yourData.push({ label: 'Exercises you can add here', detail: plural(y.addable.length, 'exercise') });
+  if (y.recentLifts !== undefined) yourData.push({ label: 'Recent sets', detail: y.recentLifts.map((r) => r.exercise).join(', ') });
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });
   // Read through tools when a question needs them (minimal by default), still Your data.
   if (!ctx.notAvailable.includes(NO_TRAINING_HISTORY)) yourData.push({ label: 'Past workouts and gym equipment', detail: 'read when needed' });

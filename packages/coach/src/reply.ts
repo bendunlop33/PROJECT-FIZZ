@@ -181,6 +181,35 @@ export function claimsNoTodayTool(sentence: string): boolean {
   return NO_TODAY_TOOL.test(t) || CANT_DO_HERE.test(t) || DO_IT_YOURSELF_TODAY.test(t);
 }
 
+/** `Why?` → `Not shown` for a sentence saying a change failed when nothing this turn says so (21 Oct). */
+export const FAILURE_CLAIM_DETAIL = 'It said a change didn’t go through; no tool result this turn says so.';
+
+const CHANGE_NOUN = '(?:adjustment|change|changes|edit|edits|update|tweak|request|it|that|this|they|those|these|them)';
+const FAILED_VERB = '(?:didn\'?t|did not|hasn\'?t|has not|haven\'?t|have not|wasn\'?t|was not|weren\'?t|were not|couldn\'?t|could not|won\'?t|wouldn\'?t|isn\'?t|is not|failed to|never)';
+const LANDED = '(?:go(?:ne)? through|went through|appl(?:y|ied)|stick|stuck|save|saved|land|landed|register|registered|accepted|allowed)';
+const FAILURE_CLAIM: readonly RegExp[] = [
+  // "The adjustment didn't go through", "it wasn't applied", "that change failed to save"
+  new RegExp(`\\b${CHANGE_NOUN} (?:still )?${FAILED_VERB} (?:\\w+ )?${LANDED}\\b`),
+  new RegExp(`\\b(?:adjustment|change|changes|edit|edits|update|request)s? (?:failed|errored|bounced)\\b`),
+  // "it was rejected", "the change got blocked"
+  /\b(?:adjustment|change|changes|edit|edits|update|request|it|that|they|those) (?:was|were|got|gets|has been|have been|is being|are being|keeps? (?:being|getting)) (?:rejected|refused|blocked|declined|denied)\b/,
+  // "the app is rejecting changes", "the app won't let me"
+  /\b(?:app|system|tool|it) (?:is |was |keeps |kept )?(?:rejecting|refusing|blocking|declining|not accepting|not letting|won'?t (?:accept|let|allow)|wouldn'?t (?:accept|let|allow)|didn'?t (?:accept|let|allow))\b/,
+  // "I couldn't apply it", "I wasn't able to change the sets"
+  /\bi (?:couldn'?t|could not|can'?t|cannot|wasn'?t able to|was unable to|am unable to|failed to|didn'?t manage to) (?:apply|save|make|update|change|adjust|push|get|set)\b/,
+];
+
+/**
+ * (21 Oct, Ben's Build B report: "The adjustment didn't go through" with no tool call behind it) The
+ * sentence says a change failed, was rejected or didn't apply. Pure; questions and conditionals
+ * ("If it doesn't apply, …") aren't claims.
+ */
+export function claimsChangeFailed(sentence: string): boolean {
+  const t = sentence.toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ');
+  if (/\?\s*$/.test(t) || /^\s*(?:if|unless|when|in case)\b/.test(t)) return false;
+  return FAILURE_CLAIM.some((re) => re.test(t));
+}
+
 /** `Why?` → `Not shown` for a sentence promising or claiming a workout in the app when none was built (review r3 B1). */
 export const NO_DRAFT_BUILT_DETAIL = 'No workout was built.';
 
@@ -230,6 +259,12 @@ export interface ReplyFilterOptions {
    * cards) is hidden (`unverified_number`). Absent: numbers aren't checked.
    */
   facts?: () => NumberFacts;
+  /**
+   * (21 Oct) Whether a tool result this turn wasn't applied (refused, out of date, invalid, offered). A
+   * sentence saying a change failed (`claimsChangeFailed`) is kept only then; otherwise it is hidden.
+   * Absent: such sentences aren't checked.
+   */
+  failureBacked?: () => boolean;
 }
 
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
@@ -268,6 +303,12 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       const changed = ledger.entries.some((e) => e.origin === 'this_turn' && todayKinds.has(e.record.detail.kind) && e.record.status === 'committed' && e.record.undoneBy === null);
       if (!changed && !noTodayToolHidden) out.push({ kind: 'sentence', text: TODAY_ASK_LINE });
       noTodayToolHidden = noTodayToolHidden || !changed;
+      for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
+      return out;
+    }
+    // 21 Oct: "The adjustment didn't go through" with nothing this turn that wasn't applied is invented.
+    if (options.failureBacked !== undefined && !options.failureBacked() && claimsChangeFailed(tokens.plainText)) {
+      hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: FAILURE_CLAIM_DETAIL });
       for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
       return out;
     }
