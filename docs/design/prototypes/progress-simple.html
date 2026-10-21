@@ -45,6 +45,26 @@ h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .card.collapsed { flex-direction: row; justify-content: space-between; align-items: center; border: 0; color: var(--text); font: 600 15px var(--ui); cursor: pointer; min-height: 52px; padding: 0 16px; text-align: left; }
 .card.collapsed .chev { color: var(--text3); }
 .hist { display: flex; flex-direction: column; border-top: 1px solid var(--divider); padding-top: 4px; }
+.cal { display: grid; grid-template-columns: 50px repeat(7, 1fr) 46px; gap: 4px; align-items: center; min-height: 34px; font-size: 12px; }
+.cal.head2 { min-height: 16px; color: var(--text3); font-size: 10.5px; text-align: center; }
+.cal .hw { color: var(--text2); font-variant-numeric: tabular-nums; }
+.cal .hn { text-align: right; color: var(--text2); font-variant-numeric: tabular-nums; }
+.cal i { height: 28px; border-radius: 8px; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: 12px; }
+.cal .cd, .ckey .cd { background: rgba(92,201,138,.22); color: #D8F5E3; box-shadow: inset 0 0 0 1.5px rgba(92,201,138,.55); }
+.cal .cm, .ckey .cm { color: var(--text3); background: rgba(243,238,232,.05); box-shadow: inset 0 0 0 1px var(--divider); }
+.cal .c0 { background: rgba(243,238,232,.025); }
+.cal.paused i { background: none; box-shadow: inset 0 0 0 1px var(--divider); border-radius: 8px; opacity: .5; }
+.run { width: 6px; height: 6px; border-radius: 50%; background: var(--text2); display: block; }
+.ckey { display: flex; gap: 14px; font-size: 11.5px; color: var(--text2); padding-top: 6px; }
+.ckey span { display: flex; align-items: center; gap: 5px; }
+.ckey i { font-style: normal; font-size: 9px; font-weight: 700; width: 16px; height: 14px; border-radius: 4px; display: inline-grid; place-items: center; }
+.ckey .c0 { background: rgba(243,238,232,.025); }
+.hlab { font-size: 12px; color: var(--text2); margin: 6px 0 4px; }
+.hpaused { font-size: 13px; color: var(--text3); padding: 6px 0; }
+.strip.mini .pd { min-height: 38px; font-size: 11px !important; }
+.strip.mini .pd small { font-size: 10px; }
+.pd.done.mini { background: rgba(92,201,138,.20); color: #D8F5E3; box-shadow: inset 0 0 0 1.5px rgba(92,201,138,.55); }
+.pd.miss.mini { background: rgba(243,238,232,.05); color: var(--text3); }
 .hrow2 { display: grid; grid-template-columns: 64px 1fr 60px; align-items: center; min-height: 28px; font-size: 13px; }
 .hrow2 .hw { color: var(--text2); font-variant-numeric: tabular-nums; }
 .hrow2 .hn { text-align: right; color: var(--text2); font-variant-numeric: tabular-nums; }
@@ -160,7 +180,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   function controls() {
     document.getElementById('goals').innerHTML = '<span style="color:var(--text2);font-size:13px">Your goal (Profile) shapes the coach\u2019s plan, targets and changes. The page is the same for every goal.</span>';
-    document.getElementById('demo').innerHTML = `<button class="chip" data-a="coach" aria-pressed="${!s.coach}">${s.coach ? 'Coach connected' : 'Coach offline'}</button><button class="chip" data-a="missed" aria-pressed="${s.missed}">Example: Legs missed</button>`;
+    document.getElementById('demo').innerHTML = `<button class="chip" data-a="coach" aria-pressed="${!s.coach}">${s.coach ? 'Coach connected' : 'Coach offline'}</button><button class="chip" data-a="missed" aria-pressed="${s.missed}">Example: Legs missed</button><button class="chip" data-a="hstyle">Past weeks: ${s.histStyle === 'chips' ? 'B chips' : 'A calendar'}</button>`;
   }
 
   const change = (l) => { const d = l.series[l.series.length - 1] - l.series[0]; return d === 0 ? 'level' : `${d > 0 ? '+' : ''}${d} kg`; };
@@ -270,15 +290,36 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     </div>`;
   }
   // Past weeks: one row per week, one square per planned session (d = done, m = missed, p = paused), runs on the right.
-  const HIST = [['6 Oct', 'dddm', 1], ['29 Sep', 'pppp', 0], ['22 Sep', 'dddd', 1], ['15 Sep', 'dddd', 2]];
-  const SESS = ['Chest', 'Back', 'Shoulders', 'Legs'];
+  // Past weeks, Mon–Sun. C/B/S/L = session done (letter), r = run, mX = planned X missed, '' = rest. Paused weeks flagged.
+  const HISTCAL = [
+    ['6 Oct', ['C', 'r', 'B', '', 'S', 'mL', 'r'], false, '3 of 4'],
+    ['29 Sep', ['', '', '', '', '', '', ''], true, 'Paused'],
+    ['22 Sep', ['C', '', 'B', 'r', 'S', 'L', ''], false, '4 of 4'],
+    ['15 Sep', ['C', 'r', 'B', '', 'S', 'r', 'L'], false, '4 of 4'],
+  ];
+  const HISTCHIPS = [
+    ['6 Oct', [['Chest', 'Mon – 98%', 'd'], ['Back', 'Wed – 100%', 'd'], ['Shoulders', 'Fri – 95%', 'd'], ['Legs', 'Sat – missed', 'm']]],
+    ['29 Sep', null],
+    ['22 Sep', [['Chest', 'Mon – 100%', 'd'], ['Back', 'Wed – 96%', 'd'], ['Shoulders', 'Fri – 102%', 'd'], ['Legs', 'Sat – 91%', 'd']]],
+  ];
+  const NAMES = { C: 'Chest', B: 'Back', S: 'Shoulders', L: 'Legs' };
   function histGrid() {
-    return `<div class="hist" role="table" aria-label="Last 4 weeks">${HIST.map(([w, c, runs]) => {
-      const done = [...c].filter((x) => x === 'd').length;
-      const lab = c[0] === 'p' ? `Week of ${w}: paused` : `Week of ${w}: ${done} of ${c.length} sessions, ${runs} run${runs === 1 ? '' : 's'}`;
-      return `<div class="hrow2" role="row" aria-label="${lab}"><span class="hw">${w}</span><span class="hc">${[...c].map((x, i) => `<i class="sq ${x}" title="${SESS[i]}"></i>`).join('')}</span><span class="hn">${c[0] === 'p' ? 'Paused' : `${done} of ${c.length}`}</span></div>`;
-    }).join('')}</div>`;
+    if (s.histStyle === 'chips') {
+      return `<div class="hist">${HISTCHIPS.map(([w, c]) => `<div class="hlab">${w}</div>${c ? `<div class="strip mini">${c.map(([n, t, k]) => `<div class="pd ${k === 'd' ? 'done' : 'miss'} mini">${n}<small>${t}</small></div>`).join('')}</div>` : '<div class="hpaused">Paused</div>'}`).join('')}</div>`;
+    }
+    const head = `<div class="cal head2" aria-hidden="true"><span></span>${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span>${d}</span>`).join('')}<span></span></div>`;
+    return `<div class="hist">${head}${HISTCAL.map(([w, days, paused, n]) => {
+      const lab = paused ? `Week of ${w}: paused` : `Week of ${w}: ${n} sessions; ${days.map((d, i) => d && d !== '' ? `${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]} ${d === 'r' ? 'run' : d.startsWith('m') ? NAMES[d[1]] + ' missed' : NAMES[d]}` : '').filter(Boolean).join(', ')}`;
+      return `<div class="cal${paused ? ' paused' : ''}" role="row" aria-label="${lab}"><span class="hw">${w}</span>${days.map((d) => {
+        if (paused) return '<i class="c0"></i>';
+        if (d === 'r') return '<i class="c0"><b class="run"></b></i>';
+        if (d.startsWith('m')) return `<i class="cm">${d[1]}</i>`;
+        if (d) return `<i class="cd">${d}</i>`;
+        return '<i class="c0"></i>';
+      }).join('')}<span class="hn">${n}</span></div>`;
+    }).join('')}<div class="ckey" aria-hidden="true"><span><i class="cd sm">C</i>Done</span><span><i class="cm sm">L</i>Missed</span><span><i class="c0 sm"><b class="run"></b></i>Run</span></div></div>`;
   }
+
   function changesCard() {
     if (!s.coach) {
       return `<div class="sec"><span>Coach's changes</span><span>for next week</span></div>
@@ -320,6 +361,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'coach') s.coach = !s.coach;
     if (a === 'missed') s.missed = !s.missed;
     if (a === 'hist') s.hist = !s.hist;
+    if (a === 'hstyle') { s.histStyle = s.histStyle === 'chips' ? 'cal' : 'chips'; s.hist = true; }
     if (a === 'gotit') s.seen = true;
     if (a === 'expandchg') s.seen = false;
     if (a === 'undo') { s.undone[v] = true; s.toast = 'Undone: next session keeps the old target'; }
