@@ -582,7 +582,7 @@ function messageText(m: CoachMessage): string | null {
 }
 
 /** (21 Oct) In the history, for a turn that ended before the coach answered and changed nothing. App text. */
-export const UNANSWERED_TURN_NOTE = '[No answer: this turn ended before you replied (a connection or service error, or Ben stopped it), so nothing was changed. Ben’s message above is still open: if he follows it up, act on it now.]';
+export const UNANSWERED_TURN_NOTE = '[No answer: this turn ended before you replied (a connection or service error, or Ben stopped it), so no change was made. Ben’s message above is still open: if he follows it up, act on it now.]';
 /** (21 Oct) In the history, for a turn cut off after a change was saved (shown to Ben as a card). App text. */
 export const CUT_OFF_TURN_NOTE = '[Cut off before you replied, after a change was saved and shown to Ben as a card. Read get_active_session for today’s workout as it is now.]';
 
