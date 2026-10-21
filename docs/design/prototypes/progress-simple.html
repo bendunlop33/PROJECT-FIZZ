@@ -52,6 +52,8 @@ h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .cal i { height: 28px; border-radius: 8px; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: 12px; }
 .cal .cd, .ckey .cd { background: rgba(92,201,138,.22); color: #D8F5E3; box-shadow: inset 0 0 0 1.5px rgba(92,201,138,.55); }
 .cal .cm, .ckey .cm { color: var(--text3); background: rgba(243,238,232,.05); box-shadow: inset 0 0 0 1px var(--divider); }
+.cal .cn, .ckey .cn { color: var(--text); box-shadow: inset 0 0 0 1.5px var(--text2); }
+.cal.now .hw { color: var(--text); font-weight: 600; }
 .cal .c0 { background: rgba(243,238,232,.025); }
 .cal.paused i { background: none; box-shadow: inset 0 0 0 1px var(--divider); border-radius: 8px; opacity: .5; }
 .run { width: 6px; height: 6px; border-radius: 50%; background: var(--text2); display: block; }
@@ -180,7 +182,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   function controls() {
     document.getElementById('goals').innerHTML = '<span style="color:var(--text2);font-size:13px">Your goal (Profile) shapes the coach\u2019s plan, targets and changes. The page is the same for every goal.</span>';
-    document.getElementById('demo').innerHTML = `<button class="chip" data-a="coach" aria-pressed="${!s.coach}">${s.coach ? 'Coach connected' : 'Coach offline'}</button><button class="chip" data-a="missed" aria-pressed="${s.missed}">Example: Legs missed</button><button class="chip" data-a="hstyle">Past weeks: ${s.histStyle === 'chips' ? 'B chips' : 'A calendar'}</button>`;
+    document.getElementById('demo').innerHTML = `<button class="chip" data-a="coach" aria-pressed="${!s.coach}">${s.coach ? 'Coach connected' : 'Coach offline'}</button><button class="chip" data-a="missed" aria-pressed="${s.missed}">Example: Legs missed</button>`;
   }
 
   const change = (l) => { const d = l.series[l.series.length - 1] - l.series[0]; return d === 0 ? 'level' : `${d > 0 ? '+' : ''}${d} kg`; };
@@ -280,18 +282,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     // Sets per muscle live in Muscles below (no duplicate here).
     return `<div class="sec"><span>This week</span><span>13–19 Oct</span></div>
     <div class="card">
-      <div class="row"><span class="k">Sessions</span><span class="v">3 of 4 <span style="font-size:14px;font-weight:500;color:var(--text2)">· 2 runs</span></span></div>
-      <div class="strip" role="group" aria-label="Chest done Monday, 100% of planned reps; Back done Wednesday, 92%; Shoulders done Friday, 104%; Legs moved to Saturday or missed">
+      <div class="row"><span class="k">Sessions</span><span class="v">3 of 4 <span style="font-size:14px;font-weight:500;color:var(--text2)">· 2 cardio</span></span></div>
+      ${s.hist ? histGrid() : `<div class="strip" role="group" aria-label="Chest done Monday, 100% of planned reps; Back done Wednesday, 92%; Shoulders done Friday, 104%; Legs moved to Saturday or missed">
         <button class="pd done" data-a="sess" data-v="Chest">Chest<small>Mon – 100%</small></button><button class="pd done" data-a="sess" data-v="Back">Back<small>Wed – 92%</small></button>
         <button class="pd done" data-a="sess" data-v="Shoulders">Shoulders<small>Fri – 104%</small></button>${s.missed ? `<button class="pd miss" data-a="sess" data-v="LegsMissed">Legs<small>Thu – missed</small></button>` : `<button class="pd next" data-a="sess" data-v="Legs">Legs<small>Sat – moved</small></button>`}
-      </div>
-      ${s.hist ? histGrid() : ''}
-      <button class="link" data-a="hist" aria-expanded="${!!s.hist}" style="align-self:flex-start;min-height:30px;font-size:13px">${s.hist ? 'Hide past weeks ▴' : 'Last 4 weeks ▾'}</button>
+      </div>`}
+      <button class="link" data-a="hist" aria-expanded="${!!s.hist}" style="align-self:flex-start;min-height:30px;font-size:13px">${s.hist ? 'Show this week ▴' : 'Last 4 weeks ▾'}</button>
     </div>`;
   }
   // Past weeks: one row per week, one square per planned session (d = done, m = missed, p = paused), runs on the right.
   // Past weeks, Mon–Sun. C/B/S/L = session done (letter), r = run, mX = planned X missed, '' = rest. Paused weeks flagged.
   const HISTCAL = [
+    ['13 Oct', ['C', 'r', 'B', '', 'S', 'nL', 'r'], false, '3 of 4', true],
     ['6 Oct', ['C', 'r', 'B', '', 'S', 'mL', 'r'], false, '3 of 4'],
     ['29 Sep', ['', '', '', '', '', '', ''], true, 'Paused'],
     ['22 Sep', ['C', '', 'B', 'r', 'S', 'L', ''], false, '4 of 4'],
@@ -308,16 +310,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       return `<div class="hist">${HISTCHIPS.map(([w, c]) => `<div class="hlab">${w}</div>${c ? `<div class="strip mini">${c.map(([n, t, k]) => `<div class="pd ${k === 'd' ? 'done' : 'miss'} mini">${n}<small>${t}</small></div>`).join('')}</div>` : '<div class="hpaused">Paused</div>'}`).join('')}</div>`;
     }
     const head = `<div class="cal head2" aria-hidden="true"><span></span>${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span>${d}</span>`).join('')}<span></span></div>`;
-    return `<div class="hist">${head}${HISTCAL.map(([w, days, paused, n]) => {
-      const lab = paused ? `Week of ${w}: paused` : `Week of ${w}: ${n} sessions; ${days.map((d, i) => d && d !== '' ? `${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]} ${d === 'r' ? 'run' : d.startsWith('m') ? NAMES[d[1]] + ' missed' : NAMES[d]}` : '').filter(Boolean).join(', ')}`;
-      return `<div class="cal${paused ? ' paused' : ''}" role="row" aria-label="${lab}"><span class="hw">${w}</span>${days.map((d) => {
+    return `<div class="hist">${head}${HISTCAL.map(([w, days, paused, n, now]) => {
+      const lab = paused ? `Week of ${w}: paused` : `Week of ${w}: ${n} sessions; ${days.map((d, i) => d && d !== '' ? `${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]} ${d === 'r' ? 'cardio' : d.startsWith('m') ? NAMES[d[1]] + ' missed' : d.startsWith('n') ? NAMES[d[1]] + ' planned' : NAMES[d]}` : '').filter(Boolean).join(', ')}`;
+      return `<div class="cal${paused ? ' paused' : ''}${now ? ' now' : ''}" role="row" aria-label="${now ? 'This week. ' : ''}${lab}"><span class="hw">${now ? 'This wk' : w}</span>${days.map((d) => {
         if (paused) return '<i class="c0"></i>';
         if (d === 'r') return '<i class="c0"><b class="run"></b></i>';
         if (d.startsWith('m')) return `<i class="cm">${d[1]}</i>`;
+        if (d.startsWith('n')) return `<i class="cn">${d[1]}</i>`;
         if (d) return `<i class="cd">${d}</i>`;
         return '<i class="c0"></i>';
       }).join('')}<span class="hn">${n}</span></div>`;
-    }).join('')}<div class="ckey" aria-hidden="true"><span><i class="cd sm">C</i>Done</span><span><i class="cm sm">L</i>Missed</span><span><i class="c0 sm"><b class="run"></b></i>Run</span></div></div>`;
+    }).join('')}<div class="ckey" aria-hidden="true"><span><i class="cd sm">C</i>Done</span><span><i class="cm sm">L</i>Missed</span><span><i class="cn sm">L</i>Planned</span><span><i class="c0 sm"><b class="run"></b></i>Cardio</span></div></div>`;
   }
 
   function changesCard() {
