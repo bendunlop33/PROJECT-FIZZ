@@ -53,6 +53,13 @@ export interface AnchorLoad {
   value: number;
   reps: number;
   rpe: number;
+  /**
+   * (Builder loads, 21 Oct) This anchor gives way to Ben's own recent sets
+   * when it implies a clearly lower e1RM than they do (`HISTORY_WINS_SHARE`):
+   * the built-in rule's load when it isn't a pain hold or a miss, and a
+   * plan's first-week load with newer history than the plan.
+   */
+  yieldsToHistory?: boolean;
 }
 
 /**
@@ -90,6 +97,8 @@ export interface SlotLoadInput {
   ruleTarget: AnchorLoad | null;
   /** Est. max from Ben's own recent sets (an estimate, rule 6). */
   e1rm: number | null;
+  /** Days since the newest of those sets (`OwnReference.gapDays`): a gap of 14+ days cuts the e1RM when it overrides an anchor. */
+  e1rmGapDays?: number | null;
   /** `noReferenceCeiling` for `Start light`; null = none. */
   startLightCeiling: number | null;
   /** Pain-flagged movement: no harder than this (the last comparable working load, rule 9). */

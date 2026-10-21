@@ -1,7 +1,9 @@
-import type { EquipmentInstance, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
+import type { EquipmentInstance, Load, LoadConvention, ProgressionRule, WeightUnit } from '@fizz/schemas';
+import { PLAYBOOK_DEFAULT_MAX_RPE } from '../default-rule';
+import type { NextTargets, ProgressionDecision } from '../progression';
 import { addedWeightEquipment } from '../added-weight';
 import { compareDifficulty, isPresenceOnly, loadDirection } from '../equipment';
-import { expectedLoad, referenceE1rm } from '../session/builder-loads';
+import { expectedLoad, referenceE1rm, returnCut } from '../session/builder-loads';
 import { fitOn, fitWithoutEquipment, type LoadFit } from '../session/snap';
 import { convertMass } from '../units';
 import type { AnchorLoad, BuilderLoadSourceKind, RoundedLoad, SlotLoadInput } from './types';
@@ -30,7 +32,17 @@ import type { AnchorLoad, BuilderLoadSourceKind, RoundedLoad, SlotLoadInput } fr
  *
  * Assisted and added-weight lifts have no formula (§2.4, §3.1.6): every
  * working set keeps the working kg.
+ *
+ * History wins over a stale anchor (builder loads, 21 Oct; Ben: "it knew my
+ * history but wasn't using it"): an anchor marked `yieldsToHistory` (the
+ * rule's load, a plan load older than the history) is replaced by the est.
+ * max from Ben's own recent sets when it implies an e1RM below
+ * `HISTORY_WINS_SHARE` of it. The est. max is cut after a gap (R1–R2) first.
+ * PROPOSED: the share and the order change await Ben's approval.
  */
+
+/** An anchor implying an e1RM below this share of Ben's recent est. max gives way to it. Proposed, for Ben to approve. */
+export const HISTORY_WINS_SHARE = 0.9;
 
 /** Conventions the reps/RPE formula applies to (same set as `loadReferences`' e1RM). */
 const FORMULA_CONVENTIONS: ReadonlySet<LoadConvention> = new Set(['total', 'per_hand', 'stack']);
@@ -76,6 +88,8 @@ export function builderLoad(raw: SlotLoadInput, set: { reps: number; rpe: number
     if (anchor === null || !Number.isFinite(anchor.value)) continue;
     if (!formula) return { ...u, source, working: anchor.value, anchorE1rm: null, estimate: false, startLight: null };
     const e1rm = anchorE1rmOf(anchor);
+    const history = historyOverride(anchor, e1rm, input);
+    if (history !== null) return { ...u, source: 'calc', working: tidy(expectedLoad(history, set.reps, set.rpe)), anchorE1rm: history, estimate: true, startLight: null };
     const same = anchor.reps === set.reps && anchor.rpe === set.rpe;
     // The built-in rule's load is used as the rule gave it (ADR 0006, review B3): the working sets take it
     // as is; other sets derive from it at the rule's own reps (`anchor.reps`).
@@ -86,6 +100,38 @@ export function builderLoad(raw: SlotLoadInput, set: { reps: number; rpe: number
     return { ...u, source: 'calc', working: tidy(expectedLoad(input.e1rm, set.reps, set.rpe)), anchorE1rm: input.e1rm, estimate: true, startLight: null };
   }
   return { ...u, source: 'none', working: null, anchorE1rm: null, estimate: false, startLight: input.startLightCeiling };
+}
+
+/**
+ * The est. max that replaces `anchor` (`HISTORY_WINS_SHARE`), cut after a
+ * gap; null when the anchor stands. Resistance conventions only (`formulaApplies`).
+ */
+export function historyOverride(anchor: AnchorLoad, anchorE1rm: number | null, input: Pick<SlotLoadInput, 'e1rm' | 'e1rmGapDays'>): number | null {
+  if (anchor.yieldsToHistory !== true || anchorE1rm === null || input.e1rm === null || !Number.isFinite(input.e1rm) || input.e1rm <= 0) return null;
+  const own = input.e1rm * (1 - returnCut(input.e1rmGapDays ?? 0));
+  return anchorE1rm < HISTORY_WINS_SHARE * own ? own : null;
+}
+
+/** Rule decisions whose load gives way to clearly stronger recent sets; never a miss, a reduction or a pain hold. */
+const RULE_YIELDS: ReadonlySet<ProgressionDecision> = new Set(['increase_load', 'increase_reps', 'hold', 'ceiling_reached']);
+
+/** Whether a rule load with this decision gives way to clearly stronger recent sets (`HISTORY_WINS_SHARE`). */
+export function ruleYieldsToHistory(decision: ProgressionDecision | null | undefined): boolean {
+  return decision !== null && decision !== undefined && RULE_YIELDS.has(decision);
+}
+
+/**
+ * `ruleAnchorOf`: the built-in rule's next target as the builder's anchor.
+ * The rule's load is for its own rep floor (hold, add load, reduce: the floor
+ * of the range; add reps: min = max) at the rule's target RPE (its progress
+ * limit, never above the playbook's 9). Null when it has no load here.
+ */
+export function ruleAnchorOf(result: Pick<NextTargets, 'sets' | 'decision' | 'loadFeasibility'>, rule: ProgressionRule, convention: LoadConvention): AnchorLoad | null {
+  const s = result.sets.find((x) => x.setType !== 'warmup' && x.load !== null);
+  if (s?.load == null || result.loadFeasibility === 'infeasible' || s.load.convention !== convention) return null;
+  const limit = rule.method === 'double_progression' ? rule.maxRpeToProgress : rule.topSet.maxRpeToProgress;
+  const rpe = limit === null ? 8 : Math.min(limit, PLAYBOOK_DEFAULT_MAX_RPE);
+  return { value: s.load.value, reps: s.reps.min, rpe, ...(RULE_YIELDS.has(result.decision) ? { yieldsToHistory: true } : {}) };
 }
 
 /** The e1RM a known load implies (Epley, RIR = 10 − RPE). Null outside 1–12 reps. */
