@@ -66,12 +66,21 @@ export const ReviewFactSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('group_sets'), group: MuscleGroupSchema, sets: z.int().min(0).max(500), planned: z.int().min(0).max(500).nullable(), range: RangeSchema.nullable() }),
   z.object({ kind: z.literal('sessions_vs_plan'), done: z.int().min(0).max(50), planned: z.int().min(0).max(50) }),
   z.object({ kind: z.literal('plan_line'), line: ReviewPlanLineSchema, ok: z.boolean(), actual: z.number().min(0).max(1000).nullable(), planned: z.number().min(0).max(1000).nullable(), exerciseIds: z.array(IdSchema).max(10) }),
-  /** A main lift's recent top sets (actuals), oldest first, with the target where one is set. */
+  /**
+   * A lift's recent best sets (actuals), oldest first, with the target where one is set. (Weekly, §6.2)
+   * `metric`: what the line plots: `e1rm` (each point's `estimate`, always labelled an estimate),
+   * `best_set` (the load), or `reps` (bodyweight). `lowerIsBetter`: an assisted lift (less assistance is
+   * stronger). `was`: what Ben had when he set the target. Absent on session reviews.
+   */
   z.object({
     kind: z.literal('lift_trend'),
     exerciseId: IdSchema,
-    points: z.array(z.object({ sessionId: IdSchema, localDate: LocalDateSchema, load: LoadSchema.nullable(), reps: z.int().min(0).max(1000) })).max(12),
+    points: z.array(z.object({ sessionId: IdSchema, localDate: LocalDateSchema, load: LoadSchema.nullable(), reps: z.int().min(0).max(1000), estimate: z.number().min(0).max(5000).optional() })).max(12),
     target: LoadSchema.nullable(),
+    metric: z.enum(['e1rm', 'best_set', 'reps']).optional(),
+    lowerIsBetter: z.boolean().optional(),
+    targetReps: z.int().min(1).max(100).nullable().optional(),
+    was: z.object({ value: z.number().min(0).max(5000), isEstimate: z.boolean() }).nullable().optional(),
   }),
   /** An estimated max: always labelled an estimate (rule 6). */
   z.object({ kind: z.literal('est_max'), exerciseId: IdSchema, value: MassSchema, estimate: z.literal(true) }),
@@ -82,6 +91,22 @@ export const ReviewFactSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('check_in'), checkInId: IdSchema }),
   z.object({ kind: z.literal('activity'), activityId: IdSchema }),
   z.object({ kind: z.literal('pain_flag'), painFlagId: IdSchema, exerciseId: IdSchema.nullable() }),
+  /**
+   * (Weekly, §6.2 Goal, Ben 21 Oct) One plan week's consistency: plan days done vs planned (null: no plan
+   * in use and no days-a-week aim that week), workouts and runs logged. Counts only, never a score.
+   */
+  z.object({ kind: z.literal('week_sessions'), weekMonday: LocalDateSchema, done: z.int().min(0).max(50), planned: z.int().min(0).max(50).nullable(), workouts: z.int().min(0).max(50), runs: z.int().min(0).max(50) }),
+  /** (Weekly) This week's day dots: a plan day (or a workout with no plan) and whether it was done. Missed days are named, not scored. */
+  z.object({ kind: z.literal('week_day'), name: z.string().trim().min(1).max(60), done: z.boolean(), localDate: LocalDateSchema.nullable() }),
+  /** (Weekly) Runs Ben logged (only his own activities, rule 6); distance only when every run had one. */
+  z.object({ kind: z.literal('runs'), count: z.int().min(0).max(50), distanceM: z.number().min(0).max(5_000_000).nullable() }),
+  /** (Weekly) `How did it feel?` taps on this week's Summaries (Ben's own words, never inferred). */
+  z.object({ kind: z.literal('feel'), easy: z.int().min(0).max(50), good: z.int().min(0).max(50), hard: z.int().min(0).max(50) }),
+  /**
+   * (Weekly, §6.1 feedback loop) The same edit repeated on a plan-day template: the last `sessions`
+   * workouts from it all did `toSets` working sets of the exercise against the template's `fromSets`.
+   */
+  z.object({ kind: z.literal('template_edit'), routineId: IdSchema, exerciseId: IdSchema, sessions: z.int().min(2).max(20), fromSets: z.int().min(0).max(30), toSets: z.int().min(0).max(30) }),
 ]);
 export type ReviewFact = z.infer<typeof ReviewFactSchema>;
 
@@ -116,7 +141,35 @@ export function reviewCoachSettled(c: ReviewCoach): boolean {
   return c.status === 'reviewed' || c.status === 'silent';
 }
 
-export const REVIEW_LIMITS = { maxFacts: 60, maxOpIds: 20, inputsHashMax: 128 } as const;
+export const REVIEW_LIMITS = { maxFacts: 60, maxOpIds: 20, inputsHashMax: 128, maxProposals: 4 } as const;
+
+/**
+ * (Weekly, §6.1, §6.2) A plan tweak the review offers with Apply / Skip: code's own (a repeated edit,
+ * `source: 'code'`) or the coach's, checked by code. Only a working-set count on one exercise of a
+ * plan-day template (no loads, so nothing to snap; rule 4 is untouched). Applied through the routine's
+ * versioned write with an `update_routine` record (`actionId`, so Undo restores the version before);
+ * refused when the template moved past `expectedVersion` (rule 5).
+ */
+export const ReviewProposalSchema = z.object({
+  id: z.string().min(1).max(128),
+  source: z.enum(['code', 'coach']),
+  change: z.object({
+    kind: z.literal('template_sets'),
+    routineId: IdSchema,
+    routineName: z.string().min(1).max(120),
+    expectedVersion: z.int().min(1),
+    exerciseId: IdSchema,
+    exerciseName: z.string().min(1).max(120),
+    fromSets: z.int().min(0).max(30),
+    toSets: z.int().min(1).max(30),
+  }),
+  /** Why, in words already checked by the claim check (null: none shown). */
+  reason: z.string().trim().min(1).max(300).nullable(),
+  status: z.enum(['open', 'applied', 'skipped', 'undone', 'stale']),
+  /** The `update_routine` record Apply wrote (Undo's target). */
+  actionId: IdSchema.nullable(),
+});
+export type ReviewProposal = z.infer<typeof ReviewProposalSchema>;
 
 /** A training review (named apart from `@fizz/catalogue`'s entry `ReviewSchema`; review b3-data N2). */
 export const TrainingReviewSchema = RecordMetaSchema.extend({
@@ -130,5 +183,7 @@ export const TrainingReviewSchema = RecordMetaSchema.extend({
   supersededById: IdSchema.nullable(),
   opIds: z.array(OperationIdSchema).min(1).max(REVIEW_LIMITS.maxOpIds),
   createdAt: ZonedTimestampSchema,
+  /** (Weekly) Plan tweaks offered with Apply / Skip. Absent: none (every review before them). */
+  proposals: z.array(ReviewProposalSchema).max(REVIEW_LIMITS.maxProposals).optional(),
 }).refine((r) => (r.status === 'superseded') === (r.supersededById !== null), { message: 'Only a superseded review names its successor', path: ['supersededById'] });
 export type TrainingReview = z.infer<typeof TrainingReviewSchema>;

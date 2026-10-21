@@ -233,7 +233,7 @@ describe('End plan and its Undo (migration 22): the plan and its days in one tra
     await seeded(at21);
     await apply(at21, 'apply-1');
     await expect(end(at21, 'end-1', 2)).rejects.toThrow();
-    expect(await migrate(old)).toMatchObject({ from: 21, to: 31, applied: [22, 23, 24, 25, 26, 27, 28, 29, 30, 31] });
+    expect(await migrate(old)).toMatchObject({ from: 21, to: 32, applied: [22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32] });
     const at22 = await openStore(old);
     expect(await at22.repos.planDrafts.get(PLAN)).toMatchObject({ status: 'applied', version: 2 });
     expect(await end(at22, 'end-1', 2)).toMatchObject({ status: 'written' });

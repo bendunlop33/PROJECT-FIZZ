@@ -130,6 +130,7 @@ export type SessionEvent =
   | { type: 'SessionRenamed'; name: string | null }
   /** `Count it` (or its Undo) on Progress's Time sheet (progress.md PG25a). */
   | { type: 'SessionDurationConfirmed'; confirmed: boolean }
+  | { type: 'SessionFeelSet'; feel: 'easy' | 'good' | 'hard' | null }
   | { type: 'FinishByChanged'; finishByUtc: string | null }
   /** A coach adjustment changed (or its Undo restored) pending targets. Cue layers rebuild the rest-end line. */
   | { type: 'TargetsAdjusted'; actionId: string; setIds: string[]; reverted: boolean }
@@ -1575,6 +1576,19 @@ function handleConfirmDuration(state: SessionAggregate, cmd: CommandOf<'confirm_
   return { ok: true, state: { ...state, session }, events: [{ type: 'SessionDurationConfirmed', confirmed: cmd.confirmed }] };
 }
 
+/**
+ * `set_feel` (Ben, 21 Oct): Summary's `How did it feel?` on a finished workout. Ben's own tap, stored with
+ * the workout as he gave it; a change or a clear (null) is another `set_feel`. No set or time changes.
+ */
+function handleSetFeel(state: SessionAggregate, cmd: CommandOf<'set_feel'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed; reload.');
+  if (state.session.status !== 'finished') return fail('session_not_finished', 'You can say how it felt after you finish.');
+  if ((state.session.feel?.value ?? null) === cmd.feel) return { ok: true, state, events: [] };
+  // A clear is stored as `value: null` (not dropped), so it is written over the answer it replaces.
+  const session = { ...state.session, version: state.session.version + 1, feel: { value: cmd.feel, at: cmd.at } };
+  return { ok: true, state: { ...state, session }, events: [{ type: 'SessionFeelSet', feel: cmd.feel }] };
+}
+
 /** Latest `Finish by` the wheel offers (now + 3 h, §2.15.3). */
 const FINISH_BY_MAX_MS = 3 * 3600_000;
 
@@ -2624,6 +2638,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleRenameSession(state, command);
     case 'confirm_session_duration':
       return handleConfirmDuration(state, command);
+    case 'set_feel':
+      return handleSetFeel(state, command);
     case 'set_finish_by':
       return handleSetFinishBy(state, command, nowMs);
     case 'adjust_pending_targets':
@@ -2717,6 +2733,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'rename_session':
       // A later rename (or its undo) replaced this name.
       return state.session.routineName !== (command.name === null ? null : command.name.trim());
+    case 'set_feel':
+      // A later tap replaced this one.
+      return (state.session.feel?.value ?? null) !== command.feel;
     case 'adjust_pending_targets':
       // Undone, or every set it set has since been logged or changed again, or the gym changed since.
       return coachUndoRefusal(state, command.actionId) !== null || !state.sets.some((s) => s.status === 'pending' && carriesTodayAdjustment(s.planned, command.actionId));
@@ -2823,7 +2842,7 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
     const undoesCorrection = command.type === 'undo_op' && state.processedOps[command.targetOpId]?.commandType === 'correct_set';
     const allowed =
       state.session.status === 'finished' &&
-      (command.type === 'correct_set' || command.type === 'update_session_timing' || command.type === 'rename_session' || command.type === 'confirm_session_duration' || command.type === 'set_note' || undoesCorrection);
+      (command.type === 'correct_set' || command.type === 'update_session_timing' || command.type === 'rename_session' || command.type === 'confirm_session_duration' || command.type === 'set_feel' || command.type === 'set_note' || undoesCorrection);
     if (!allowed) {
       const message =
         state.session.status === 'finished'

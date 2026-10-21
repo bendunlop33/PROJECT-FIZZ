@@ -188,6 +188,14 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
     }
     case 'remove_lift_target':
       return { ...p, liftTargets: withoutLiftTarget(p.liftTargets ?? [], c.exerciseId) };
+    case 'progress_lifts': {
+      const ids = [...new Set(c.exerciseIds.map((x) => x.trim()))];
+      if (ids.length > TRAINING_LIMITS.progressLiftsMax || ids.some((x) => x.length === 0 || x.length > 64)) return null;
+      const next = { ...p };
+      if (ids.length === 0) delete next.progressLifts;
+      else next.progressLifts = ids;
+      return next;
+    }
   }
 }
 

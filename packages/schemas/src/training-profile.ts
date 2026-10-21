@@ -45,6 +45,8 @@ export const TRAINING_LIMITS = {
   dayNameMax: 30,
   weightsMax: 1000,
   recentOpsMax: 50,
+  /** Lifts shown on Progress › Reviews (Ben, 21 Oct: up to 6). */
+  progressLiftsMax: 6,
 } as const;
 
 export const SplitDaySchema = z.object({
@@ -106,6 +108,11 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
   liftTargetsOn: z.boolean().optional(),
   /** (Ben, 20 Oct) At most 3, one per exercise. Absent: none. Kept while the setting is off. */
   liftTargets: z.array(LiftTargetSchema).max(LIFT_TARGET_LIMITS.max).optional(),
+  /**
+   * (Ben, 21 Oct; workout-builder-v3 §6.2 Goal) The lifts Progress › Reviews draws trend lines for: any
+   * exercises he logs, at most 6, in his order. Absent: the plan's main lifts. Your data (rule 10).
+   */
+  progressLifts: z.array(z.string().min(1).max(64)).max(TRAINING_LIMITS.progressLiftsMax).optional(),
   /** Operation IDs already applied, newest last (a repeat is a no-op; rule 5). */
   recentOps: z.array(OperationIdSchema).max(TRAINING_LIMITS.recentOpsMax),
 });
@@ -131,4 +138,6 @@ export type TrainingChange =
   | { kind: 'lift_targets_on'; on: boolean }
   /** A target for its exercise, replacing that exercise's one (max 3 exercises). */
   | { kind: 'set_lift_target'; target: LiftTarget }
-  | { kind: 'remove_lift_target'; exerciseId: string };
+  | { kind: 'remove_lift_target'; exerciseId: string }
+  /** (Ben, 21 Oct) The lifts Progress › Reviews shows (up to 6, in order); an empty list goes back to the plan's main lifts. */
+  | { kind: 'progress_lifts'; exerciseIds: readonly string[] };
