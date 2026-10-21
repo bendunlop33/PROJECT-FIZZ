@@ -117,3 +117,30 @@ describe("Ben's rows: a new workout's loads come from his recent sets (Build B, 
     expect((await s.builder.whyWeight(snap.draftId, main.key))[0]).toBe('Last time + 2.5');
   });
 });
+
+describe('Ben’s shrugs (21 Oct 19:15): a new workout’s reps come from his last session of the exercise', () => {
+  it('an isolation done at 15 reps last time (lateral raise, 3 × 10 kg each × 15, standing in for the shrugs) → the builder plans 12–15 reps (not 8) at 10 kg or more, and Why? says last time 15', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const done = await logWorkout(h, s, gymId, [{ exercise: 'Lateral raise', sets: [{ load: 10, reps: 15 }, { load: 10, reps: 15 }, { load: 10, reps: 15 }] }]);
+    const raiseId = (await s.workout.load(done))?.aggregate.exercises[0]?.exerciseId;
+    if (raiseId === undefined) throw new Error('no lateral raise');
+    h.clockMs += 3 * DAY;
+    let snap = await buildPull(s, 'build-shrug');
+    let slot = slotsOf(snap.workout.blocks).find((x) => x.exerciseId === raiseId);
+    if (slot === undefined) {
+      snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_exercise', exerciseId: raiseId }, { opId: 'add-raise', basis: { version: snap.version } })).snapshot;
+      slot = slotsOf(snap.workout.blocks).find((x) => x.exerciseId === raiseId);
+    }
+    if (slot === undefined) throw new Error('no lateral raise slot');
+    const work = slot.rows.filter((r) => r.type !== 'warmup');
+    expect(work.length).toBeGreaterThan(0);
+    // Before the fix: 8 reps (the builder's 8–12 floor).
+    for (const r of work) {
+      expect(r.reps).toBeGreaterThanOrEqual(12);
+      expect(r.reps).toBeLessThanOrEqual(15);
+      expect(r.load ?? 0).toBeGreaterThanOrEqual(10);
+    }
+    expect(await s.builder.whyWeight(snap.draftId, slot.key)).toContain('Reps: last time 15');
+  });
+});

@@ -4,6 +4,8 @@ import {
   applyBuilderEdit,
   applyVariation,
   builderLoad,
+  slotLoadOf,
+  slotRepsWhy,
   infoOrDefault,
   reloadSlotLoads,
   buildFromSetup,
@@ -912,7 +914,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
             swapped.add(s.key);
           }
         }
-        workout = { ...workout, blocks: workout.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (swapped.has(s.key) ? s : reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), env.ctx.loads(s.exerciseId)))) })) };
+        workout = { ...workout, blocks: workout.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (swapped.has(s.key) ? s : reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), slotLoadOf(env.ctx.loads(s.exerciseId), s.main)))) })) };
         const plan = withSlotRevs(v.plan, toDraftPlan(workout, env.codec)).plan;
         const setup: BuilderSetup = { ...stored };
         delete setup.gymKept;
@@ -1105,11 +1107,14 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           lines.push(slot.startLight === null ? 'Start light' : `Start light · up to ${String(slot.startLight)} ${u}`);
           break;
       }
+      // Reps from history (21 Oct): what he did last time, so the reps never contradict it silently.
+      const reps = slotRepsWhy(slot.main, slotLoadOf(env.ctx.loads(slot.exerciseId), slot.main).ruleReps);
+      if (reps !== null) lines.push(reps);
       if (slot.rows.some((r) => r.typed === true)) lines.push('Typed by you');
       // The gym's item moved a load: a typed kg (`roundedFrom`), or the worked-out load rounded down (rule 4; review S6).
       const item = env.itemNameOf(slot.exerciseId);
       const typedRounded = slot.rows.some((r) => r.typed === true && r.roundedFrom !== undefined);
-      const calcRounded = work !== undefined && work.typed !== true && work.load !== null && slot.source !== 'none' && !env.painFlagged(slot.exerciseId) && builderWorkingRounded(env.ctx.loads(slot.exerciseId), slot, work.load);
+      const calcRounded = work !== undefined && work.typed !== true && work.load !== null && slot.source !== 'none' && !env.painFlagged(slot.exerciseId) && builderWorkingRounded(slotLoadOf(env.ctx.loads(slot.exerciseId), slot.main), slot, work.load);
       if (item !== null && (typedRounded || calcRounded)) lines.push(`Rounded down: ${item}`);
       if (env.painFlagged(slot.exerciseId)) lines.push('May hurt · held at last time');
       return lines;

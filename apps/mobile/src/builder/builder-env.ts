@@ -11,6 +11,7 @@ import {
   painHoldFor,
   planFirstLoads,
   ruleAnchorOf,
+  ruleCategory,
   lastSessionE1rm,
   stableStringify,
   deriveId,
@@ -22,6 +23,7 @@ import {
   type DraftCodecContext,
   type HistorySession,
   type LoadReferences,
+  type RuleReps,
   type SlotLoadInput,
   type SubstituteContext,
 } from '@fizz/domain';
@@ -200,6 +202,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       const latestTop = refs.latest?.top.value ?? null;
       if (refs.latest != null) lastTop.set(id, { value: refs.latest.top.value, reps: refs.latest.top.reps });
       let ruleTarget: AnchorLoad | null = null;
+      let ruleReps: RuleReps | null = null;
+      let secondary: SlotLoadInput['secondary'];
       let coachTarget: AnchorLoad | null = null;
       if (history.length > 0) {
         const newest = history[0];
@@ -211,6 +215,13 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
           const comparableEquipmentIds = new Set(refs.comparableEquipmentIds ?? []);
           const { result, rule } = nextTargetsFor({ ownerId: p.id, exerciseId: id, exerciseName: e.name, measurement: e.measurement, unit: refs.unit, convention: refs.convention, equipment: eq, exercise: e, rule: null, workingSets: 3, history, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, comparableEquipmentIds });
           ruleTarget = ruleAnchorOf(result, rule, refs.convention);
+          // Reps from history (21 Oct): the rule's reps set the slot's reps (`slotRepRange`).
+          ruleReps = result.reps ?? null;
+          // A main barbell lift as a secondary lift: its rule read as a compound lift's (`slotLoadOf`).
+          if (ruleCategory(e, eq?.kind ?? null, refs.convention) === 'main_barbell') {
+            const acc = nextTargetsFor({ ownerId: p.id, exerciseId: id, exerciseName: e.name, measurement: e.measurement, unit: refs.unit, convention: refs.convention, equipment: eq, exercise: e, rule: null, workingSets: 3, history, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, comparableEquipmentIds, accessory: true });
+            secondary = { ruleTarget: ruleAnchorOf(acc.result, acc.rule, refs.convention), ruleReps: acc.result.reps ?? null };
+          }
         } catch {
           ruleTarget = null;
         }
@@ -233,6 +244,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         startLightCeiling: noReferenceCeiling(eq, refs.patternE1rms),
         painCap: flagged ? latestTop : null,
         historyVersion: refs.historyVersion,
+        ruleReps,
+        ...(secondary === undefined ? {} : { secondary }),
       };
     };
     for (const id of exact) {

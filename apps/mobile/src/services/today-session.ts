@@ -61,6 +61,7 @@ import {
   type SlotLoadInput,
   type StripCell,
   type SubstituteContext,
+  type SwapPlan,
   type TodayBreakdownRow,
   type TodayControls,
   type TodayDay,
@@ -304,6 +305,19 @@ export function planAnchor(anchor: AnchorLoad | null, planSetMs: number | null, 
   return toMs(latestUtc) > planSetMs ? { ...anchor, yieldsToHistory: true } : anchor;
 }
 
+/**
+ * The built-in rule's first working target as a builder anchor (`ruleAnchorOf` for a swap plan): its load in `unit`,
+ * for its rep range (`repsMax`, 21 Oct), at the rule's target RPE. It gives way to clearly stronger recent sets unless
+ * it's a miss, a reduction or a pain hold (21 Oct). Null with no load in this convention.
+ */
+function ruleAnchorFromPlan(sp: SwapPlan, convention: string, unit: 'kg' | 'lb', rpe: number): AnchorLoad | null {
+  const first = sp.plan?.find((x) => x.setType !== 'warmup' && x.planned.load !== null);
+  if (first?.planned.load == null || first.planned.load.convention !== convention) return null;
+  const yields = ruleYieldsToHistory(first.planned.provenance?.rule?.decision);
+  const reps = first.planned.reps;
+  return { value: convertValue(first.planned.load.value, first.planned.load.unit, unit), reps: reps?.min ?? 8, rpe, ...(reps === null ? {} : { repsMax: Math.max(reps.min, reps.max) }), ...(yields ? { yieldsToHistory: true } : {}) };
+}
+
 export function createTodaySessionService(deps: TodaySessionDeps) {
   const repos = () => deps.store().repos;
 
@@ -327,14 +341,17 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const anchorOf = (a: { anchor: AnchorLoad; unit: 'kg' | 'lb'; convention: string } | undefined): AnchorLoad | null => (a === undefined || a.convention !== refs.convention ? null : { ...a.anchor, value: convertValue(a.anchor.value, a.unit, refs.unit) });
       let ruleTarget: AnchorLoad | null = null;
       const ruleRpe = builtInTargetRpe(ruleCategory(e, refs.equipment?.kind ?? null, refs.convention));
-      if (fromPlan === undefined || fromPlan.source === 'rule') {
-        const sp = substituteTargets({ workingSets: 3, templates: [{ setType: 'working', reps: { min: 8, max: 12 }, durationS: null }] }, e, history, sub);
-        const first = sp.plan?.find((x) => x.setType !== 'warmup' && x.planned.load !== null);
-        // The rule's load gives way to clearly stronger recent sets unless it's a miss, a reduction or a pain hold (21 Oct).
-        const yields = ruleYieldsToHistory(first?.planned.provenance?.rule?.decision);
+      // The rule runs on every card, plan days too: its reps (Ben's last session of the exercise; 21 Oct) set every slot's reps.
+      const shape = { workingSets: 3, templates: [{ setType: 'working' as const, reps: { min: 8, max: 12 }, durationS: null }] };
+      const sp = substituteTargets(shape, e, history, sub);
+      // A main barbell lift as a secondary lift: its rule read as a compound lift's (`slotLoadOf`).
+      const acc = ruleCategory(e, refs.equipment?.kind ?? null, refs.convention) === 'main_barbell' ? substituteTargets(shape, e, history, sub, { accessory: true }) : null;
+      // A plan's week-1 load with newer history gives way to the rule (`builderLoad`; reps from history, 21 Oct).
+      const planStale = fromPlan?.source === 'plan' && planAnchor(anchorOf(fromPlan), fromPlan.planSetMs, refs.latest?.performedAtUtc ?? null)?.yieldsToHistory === true;
+      if (fromPlan === undefined || fromPlan.source === 'rule' || planStale) {
         // The rule's own target RPE, as the builder reads it (`ruleAnchorOf`; review S3).
-        if (first?.planned.load != null && first.planned.load.convention === refs.convention) ruleTarget = { value: convertValue(first.planned.load.value, first.planned.load.unit, refs.unit), reps: first.planned.reps?.min ?? 8, rpe: ruleRpe, ...(yields ? { yieldsToHistory: true } : {}) };
-        const dryRun = anchorOf(fromPlan);
+        ruleTarget = ruleAnchorFromPlan(sp, refs.convention, refs.unit, ruleRpe);
+        const dryRun = fromPlan?.source === 'rule' ? anchorOf(fromPlan) : null;
         if (dryRun !== null) ruleTarget = { ...dryRun, rpe: ruleRpe };
       }
       const flag = painFlagCovering(flags, id, nowMs, deps.now().tz);
@@ -358,6 +375,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         painCap: held ? (refs.latest?.top.value ?? null) : null,
         // Which history these loads came from: Start re-derives them once it moved (builder review B4).
         historyVersion: refs.historyVersion,
+        ruleReps: sp.ruleReps ?? null,
+        ...(acc === null || heldNoHistory ? {} : { secondary: { ruleTarget: ruleAnchorFromPlan(acc, refs.convention, refs.unit, builtInTargetRpe('compound')), ruleReps: acc.ruleReps ?? null } }),
       });
     }
     return out;

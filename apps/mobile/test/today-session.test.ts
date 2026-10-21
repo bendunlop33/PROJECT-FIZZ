@@ -805,3 +805,33 @@ describe('builder-loads review B2: a plan day from Today never plans below newer
     expect(Number(card?.rows[0]?.top)).toBeGreaterThanOrEqual(125);
   });
 });
+
+describe('reps from history (Ben, 21 Oct): a plan day started from Today plans reps from his last session of each exercise', () => {
+  it('barbell row (the Pull day’s second lift; the plan says 6–8) last done 3 × 70 × 12 → the started Pull day plans it at 9–12 reps; the main lift keeps its top set', async () => {
+    const { s, gymId } = await benWithPlan();
+    await logWorkout(h, s, gymId, [{ exercise: 'Barbell row', sets: [{ load: 70, reps: 12 }, { load: 70, reps: 12 }, { load: 70, reps: 12 }] }]);
+    h.clockMs += DAY;
+    const data = await loaded(s);
+    const pullKey = dayKeyOf(data, 'Pull');
+    const c = await s.todaySession.commit(data, sel(data, pullKey), 'commit-pull');
+    if (!c.ok) throw new Error(c.message);
+    const started = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'start-pull', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(JSON.stringify(started.error));
+    const a = started.aggregate;
+    const reps = (name: string) => {
+      const e = a.exercises.find((x) => x.exerciseName === name);
+      if (e === undefined) throw new Error(`no ${name}`);
+      return a.sets.filter((x) => x.sessionExerciseId === e.id && x.setType !== 'warmup').map((x) => [x.setType, x.planned.reps?.min ?? 0, x.planned.load?.value ?? null] as const);
+    };
+    const row = reps('Barbell row');
+    expect(row.length).toBeGreaterThan(0);
+    for (const [type, n, load] of row) {
+      expect(type).toBe('working');
+      expect(n).toBeGreaterThanOrEqual(9);
+      expect(n).toBeLessThanOrEqual(12);
+      expect(load ?? 0).toBeGreaterThanOrEqual(70);
+    }
+    // The main lift (lat pulldown) keeps its top set / back-offs scheme.
+    expect(reps('Lat pulldown')[0]?.[0]).toBe('top');
+  });
+});
