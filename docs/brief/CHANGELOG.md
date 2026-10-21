@@ -574,3 +574,12 @@ Ben approved `docs/design/workout-builder-v3.md` ("go", with the recommended ans
 - **Shown as a small sheet, not an alert (rule 2, review build-a SP-3).** The title is `N min over`. Each change has its own line showing before → after (`Cable row rest 1:30 → 1:00`, `Lateral raise 3 → 2 sets`, `Curl last set @8 → @9`, `Skip: Cable crunch`), followed by `≈ before → after min left`. The buttons are Apply / Not now, plus a `Time left ›` link. If the overrun is more than the fit should save, the fit stops at half of the remaining sets' length and the sheet says `Saves ≈ N min`.
 - **Undo** is in the toast and, for as long as it would still go through, in `⋯ › Undo fit to time`.
 - `session/fit-time.ts` (`fitPlanToMinutes`, FT3's skip-only trim) is no longer what the workout's `+N min` uses. Retiring it is left to the S1/S8 "Today, builder and time left agree" work.
+
+## 2026-10-21: Progress v3 (Ben's decisions)
+
+- Progress tabs `Overview | Lifts | Training`; Overview = This week (Week/Month calendar) → Trends (Lifts chart in kg with PB rings, estimated points and right-gutter targets; Muscles sets vs plan) → Coach's changes at the bottom. Spec: `docs/design/progress-goals.md` "Progress v3 (agreed)"; prototype `docs/design/prototypes/progress-simple.html`.
+- The training goal shapes the coach (rep ranges, volume, targets, progression), not the page; one page for every goal.
+- Small load/reps/sets changes for next sessions are applied by the coach with reason and Undo (rule 3); only structural changes are asked.
+- Lift progress is tracked at the lift target's reps, else the plan's reps; points are real when done at those reps, otherwise estimated and labelled; `about mid-Nov at this rate` (est.) allowed after ≥ 4 rising weeks and within 6 months (supersedes the lift-targets "never predicts" note).
+- Session chips show % of planned reps (can exceed 100); every working set counts toward sets per muscle regardless of RPE.
+- Added for Build B: `N weeks on plan` in Month view; new PBs listed on the workout Summary. Later: monthly recap card, Body section, block position.
