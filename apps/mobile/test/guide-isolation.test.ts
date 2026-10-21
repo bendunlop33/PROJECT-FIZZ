@@ -31,8 +31,15 @@ function valueImporters(re: RegExp): string[] {
 }
 
 describe('guide isolation (review S1)', () => {
-  it('only the player, the bake and Progress’s chart canvas import Skia, Reanimated or worklets', () => {
-    expect(valueImporters(/^(@shopify\/react-native-skia|react-native-reanimated|react-native-worklets)$/)).toEqual(['guide/GuidePlayer.tsx', 'guide/bake.ts', 'progress/TrendCanvas.tsx']);
+  it('only the player, the bake and Progress’s chart canvases import Skia, Reanimated or worklets', () => {
+    expect(valueImporters(/^(@shopify\/react-native-skia|react-native-reanimated|react-native-worklets)$/)).toEqual(['guide/GuidePlayer.tsx', 'guide/bake.ts', 'progress/TrendCanvas.tsx', 'reviews/LiftsCanvas.tsx']);
+  });
+
+  it('Progress v3’s Lifts canvas is required behind the same guard, never imported directly', () => {
+    expect(valueImporters(/\/LiftsCanvas$/)).toEqual([]);
+    const charts = readFileSync(join(SRC, 'reviews/charts.tsx'), 'utf8');
+    expect(charts).toContain('createGuardedLoader(() => {');
+    expect(charts).toContain("require('./LiftsCanvas')");
   });
 
   it('Progress’s Skia chart canvas (activity line and trend chart) is required behind the same guard, never imported directly (progress.md §7.1)', () => {
