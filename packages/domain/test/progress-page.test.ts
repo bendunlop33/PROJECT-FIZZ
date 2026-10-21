@@ -405,6 +405,14 @@ describe('PBs: a real top set beyond every earlier real one at the tracked reps 
     expect(liftsView(input({ sessions, lifts: [BENCH] }), opts({ earlier: flagged })).lifts[0]?.points.map((p) => p.pb)).toEqual([false, true]);
   });
 
+  it('a PB within a week: the week’s top set beats an earlier workout that week (the chart agrees with the Summary)', () => {
+    const mon = sess('2026-10-12', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }]);
+    const sat = sess('2026-10-17', [{ exerciseId: BENCH, sets: [work(kg(105), 6)] }]);
+    const l = liftsView(input({ sessions: [mon, sat], lifts: [BENCH] }), opts()).lifts[0];
+    expect(l?.points.map((p) => [p.value, p.pb])).toEqual([[105, true]]);
+    expect(sessionNewBests(input({ sessions: [mon, sat], lifts: [BENCH] }), opts(), sat.sessionId).map((b) => b.exerciseId)).toEqual([BENCH]);
+  });
+
   it('assisted: less assistance is the PB; per-hand dumbbells and stacks say their load (`each`, `stack`); kg sets on a lb profile compare in lb', () => {
     const pull = liftsView(input({ sessions: series(PULLUP, [work(kg(30, 'assistance'), 8), work(kg(25, 'assistance'), 8), work(kg(27.5, 'assistance'), 8)]), lifts: [PULLUP] }), opts()).lifts[0];
     expect(pull?.points.map((p) => p.pb)).toEqual([false, true, false]);

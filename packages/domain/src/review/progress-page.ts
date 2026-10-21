@@ -5,6 +5,7 @@ import { deriveId, stableStringify } from '../stable';
 import { e1rmConventionAllowed, roundEstimate } from '../progress/e1rm';
 import { longDate, shortDate } from '../progress/exercise-view';
 import { pausedInWeek } from '../progress/plan-tracker';
+import { toMs } from '../time';
 import { convertMass } from '../units';
 import { isPlatesAddedKind } from '../plates-added';
 import { liftUnitText, REVIEW_COPY, verdictOf, weekRangeText } from './views';
@@ -518,6 +519,8 @@ export function liftsView(input: WeeklyReviewInput, opts: LiftsOptions): LiftsVi
     const { newest, convention, lowerIsBetter, chartable, target } = t;
     const r = t.tracked;
     const points: LiftPointView[] = [];
+    // Each real point's top set: the workout it was done in (a PB is judged against everything before it).
+    const topAt = new Map<number, number>();
     mondays.forEach((m, week) => {
       const rows = liftRows(all.filter((s) => inWeek(s.date, m)), id, newest);
       if (!chartable) {
@@ -528,20 +531,25 @@ export function liftsView(input: WeeklyReviewInput, opts: LiftsOptions): LiftsVi
       }
       const reps = r.reps ?? 1;
       const { real, est } = bestSets(rows, t, reps, unit);
-      if (real !== null) points.push({ week, value: real.load, estimate: false, detail: `${nf(real.load)}${NBSP}×${NBSP}${String(real.reps)}`, pb: false, pbDetail: null });
+      if (real !== null) {
+        topAt.set(week, real.at);
+        points.push({ week, value: real.load, estimate: false, detail: `${nf(real.load)}${NBSP}×${NBSP}${String(real.reps)}`, pb: false, pbDetail: null });
+      }
       else if (est !== null) points.push({ week, value: est.value, estimate: true, detail: `est. ${nf(est.value)}${NBSP}×${NBSP}${String(reps)} from ${nf(est.load)}${NBSP}×${NBSP}${String(est.reps)}`, pb: false, pbDetail: null });
     });
-    // PBs: a real point beyond every earlier real top set at these reps (history before the window included).
+    // PBs: a real point whose top set beats every real set at these reps done before it (that week's earlier
+    // workouts and history before the window included), so the chart and the Summary's `New best` agree.
     const loadSuffix = suffixOf(convention);
     if (chartable) {
-      let best = bestSets(liftRows(pool.filter((s) => s.date < from), id, newest), t, r.reps ?? 1, unit).real?.load ?? null;
+      const rows = liftRows(pool, id, newest);
       for (const p of points) {
-        if (p.estimate) continue;
-        if (best !== null && (lowerIsBetter ? p.value < best : p.value > best)) {
+        const at = topAt.get(p.week);
+        if (p.estimate || at === undefined) continue;
+        const best = bestSets(rows.filter((x) => x.at < at), t, r.reps ?? 1, unit).real?.load;
+        if (best !== undefined && (lowerIsBetter ? p.value < best : p.value > best)) {
           p.pb = true;
           p.pbDetail = plain(`${PROGRESS_COPY.pb} · ${name} ${withSuffix(p.detail, loadSuffix)} · week of ${shortDate(mondays[p.week] ?? from, opts.today)}`);
         }
-        best = best === null ? p.value : lowerIsBetter ? Math.min(best, p.value) : Math.max(best, p.value);
       }
     }
     const last = points.at(-1);
@@ -637,7 +645,9 @@ function suffixOf(convention: LoadConvention | null): string | null {
       return 'assist';
     case 'added':
       return 'added';
-    default:
+    case 'total':
+    case 'bodyweight':
+    case null:
       return null;
   }
 }
@@ -694,28 +704,28 @@ function liftTermsOf(sessions: readonly ReviewSession[], id: string, t0: LiftTar
   return { newest, convention, lowerIsBetter: convention === 'assistance', chartable: convention !== null && convention !== 'bodyweight', target, tracked };
 }
 
-type LiftRow = { x: ReviewSession['exercises'][number]['sets'][number]; kind: ReviewSession['exercises'][number]['equipmentKind'] };
+type LiftRow = { x: ReviewSession['exercises'][number]['sets'][number]; kind: ReviewSession['exercises'][number]['equipmentKind']; /** The workout's start. */ at: number };
 
 /** A lift's sets in these workouts; stacks and plate-loaded machines only on the newest one's machine. */
 function liftRows(sessions: readonly ReviewSession[], id: string, newest: ReturnType<typeof newestRow>): LiftRow[] {
-  return sessions.flatMap((s) => s.exercises.filter((e) => e.exerciseId === id && (newest?.machine !== true || (e.equipmentId ?? null) === newest.equipmentId))).flatMap((e) => e.sets.map((x) => ({ x, kind: e.equipmentKind })));
+  return sessions.flatMap((s) => s.exercises.filter((e) => e.exerciseId === id && (newest?.machine !== true || (e.equipmentId ?? null) === newest.equipmentId)).flatMap((e) => e.sets.map((x) => ({ x, kind: e.equipmentKind, at: s.startedMs }))));
 }
 
 /**
  * The real top set at `reps` (the heaviest load, or least assistance, for at least those reps; for a 1-rep
  * track, a single) and, failing that, the best estimate from a 3–12-rep set. Loads in `unit`, rounded.
  */
-function bestSets(rows: readonly LiftRow[], t: Pick<LiftTerms, 'convention' | 'lowerIsBetter'>, reps: number, unit: WeightUnit): { real: Candidate | null; est: (Candidate & { value: number }) | null } {
-  let real: Candidate | null = null;
+function bestSets(rows: readonly LiftRow[], t: Pick<LiftTerms, 'convention' | 'lowerIsBetter'>, reps: number, unit: WeightUnit): { real: (Candidate & { at: number }) | null; est: (Candidate & { value: number }) | null } {
+  let real: (Candidate & { at: number }) | null = null;
   let est: (Candidate & { value: number }) | null = null;
   const { convention, lowerIsBetter } = t;
   if (convention === null) return { real, est };
-  for (const { x, kind } of rows) {
+  for (const { x, kind, at } of rows) {
     if (!WORKING.has(x.setType) || !x.counts || x.reps === null || x.reps < 1 || x.load === null || x.load.convention !== convention) continue;
     const v = roundEstimate(convertMass({ value: x.load.value, unit: x.load.unit }, unit).value, unit);
     // A 1-rep top set is a single; any other set only estimates it (review progress-v3-data S1).
     if (reps === 1 ? x.reps === 1 : x.reps >= reps) {
-      if (real === null || (lowerIsBetter ? v < real.load : v > real.load)) real = { load: v, reps: x.reps };
+      if (real === null || (lowerIsBetter ? v < real.load : v > real.load)) real = { load: v, reps: x.reps, at };
     } else if (!lowerIsBetter && x.reps >= LIFT_ESTIMATE_REPS.min && x.reps <= LIFT_ESTIMATE_REPS.max && e1rmConventionAllowed(convention, kind)) {
       const value = loadAtReps(v, x.reps, reps, unit);
       if (est === null || value > est.value) est = { load: v, reps: x.reps, value };
@@ -769,7 +779,7 @@ export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOption
  */
 export function liftHistorySessions(exerciseId: string, history: readonly { sessionId: string; performedAtUtc: string; equipmentId: string | null; tz?: string; sets: readonly { setType: SetType; load: ReviewSession['exercises'][number]['sets'][number]['load']; reps: number | null; exclusions?: readonly unknown[] }[] }[], tz: string): ReviewSession[] {
   return history.map((h) => {
-    const ms = Date.parse(h.performedAtUtc);
+    const ms = toMs(h.performedAtUtc);
     return {
       sessionId: h.sessionId,
       name: null,
