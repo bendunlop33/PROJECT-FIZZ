@@ -36,13 +36,15 @@ h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .pill i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .sub { color: var(--text2); font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .lifts { display: flex; flex-direction: column; }
-.lift { display: grid; grid-template-columns: 10px 1fr 44px 92px 52px; gap: 6px; align-items: center; min-height: 34px; font-size: 13px !important; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font: 15px var(--ui); text-align: left; cursor: pointer; padding: 0 2px; border-radius: 8px; }
+.lift { display: grid; grid-template-columns: 10px 1.3fr 1fr 1fr 1fr; gap: 6px; align-items: center; min-height: 34px; font-size: 13px !important; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font: 15px var(--ui); text-align: left; cursor: pointer; padding: 0 2px; border-radius: 8px; }
 .lift:first-child { border-top: 0; }
 .lift i { width: 8px; height: 8px; border-radius: 50%; }
 .lift .ln { font-weight: 600; }
 .lift .lv { font-variant-numeric: tabular-nums; font-weight: 600; }
 .lift .lr, .lift .lt { font-variant-numeric: tabular-nums; color: var(--text2); }
 .lift .lt { text-align: right; color: var(--text); font-weight: 600; }
+.lift .lr, .lift .lv { text-align: center; justify-content: center; }
+.lift.lh span:nth-child(3), .lift.lh span:nth-child(4) { text-align: center; }
 .lift .lv { display: flex; align-items: baseline; gap: 5px; }
 .lift .lv small { font-size: 11px; font-weight: 500; color: var(--text2); }
 .lift.lh { min-height: 22px; cursor: default; font-size: 10.5px !important; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); border-top: 0; }
