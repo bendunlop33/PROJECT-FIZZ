@@ -96,7 +96,12 @@ describe('a target the coach agrees was wrong is put right, never "Nothing chang
     expect(liftTargetAsked('I did 100 kg on bench last time, felt strong', { benAsked: true, benQuote: 'I did 100 kg on bench last time' })).toBe(false);
   });
 
-  it('live: the coach admits the target was wrong and applies the corrected reps at once, with Undo (fake model)', async () => {
+  // Review S4: the fake model is scripted to call edit_today, so this checks the code path (instructions sent, the
+  // gate, apply, Undo), not whether a real model calls the tool. A model that only apologises still ends with
+  // "Nothing changed"; the deterministic fallback is handed to claude/coach-fail-21oct (todo below).
+  it.todo('a reply that agrees a target was wrong with no tool call offers the rule’s from-history target (Apply/Undo); claude/coach-fail-21oct');
+
+  it('live: when the model calls edit_today for the correction, it applies at once with Undo (fake model scripted to call)', async () => {
     const s = await store();
     await saved(s, workout());
     const model = new ScriptedCoachModel([

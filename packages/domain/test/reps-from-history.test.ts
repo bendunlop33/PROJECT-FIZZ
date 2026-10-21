@@ -22,6 +22,8 @@ import {
   type BuilderExerciseInfo,
   type HistorySession,
   type SlotLoadInput,
+  secondaryMainLifts,
+  type NextTargetBlock,
 } from '../src/index';
 import { assisted, barbell, dumbbells, exercise, GYM, id, kg, lb, OWNER, T0_MS, TZ } from './fixtures';
 
@@ -234,7 +236,7 @@ describe('Ben’s shrugs, reproduced: did 15 last time → planned around 15, no
 
   it('review B2: eight weeks of Ben doing exactly what the builder plans (RPE 8): reps climb to the top, then the load rises', () => {
     let history: HistorySession[] = [...SHRUGS_15];
-    const plans: [number, number | null][] = [];
+    const plans: [number, number][] = [];
     for (let week = 1; week <= 8; week += 1) {
       const load = slotLoads(SHRUG, history, [rack]);
       const slot = makeSlot(SHRUG.id, { main: false }, ctxFor(SHRUG, load, 'isolation'));
@@ -377,5 +379,26 @@ describe('secondary compounds and main lifts', () => {
     const sp = substituteTargets({ workingSets: 3, templates: [{ setType: 'working', reps: ISO, durationS: null }] }, SHRUG, SHRUGS_15, { ...ctxAt([rack]), ownerId: OWNER, painFlags: [], sessionPain: { active: false, reportedAtUtc: null }, at: { utc: new Date(NOW).toISOString(), tz: TZ } });
     expect(sp.ruleReps).toMatchObject({ last: 15, range: { min: 12, max: 15 }, aim: 12 });
     expect(sp.plan?.map((s) => s.planned.reps)).toEqual([0, 1, 2].map(() => ({ min: 12, max: 15 })));
+  });
+});
+
+describe('review S3: a main barbell lift after the workout’s main lift reads as a secondary lift everywhere', () => {
+  const SQUAT = exercise(300, 'Back squat', { movementPattern: 'squat', mechanic: 'compound', family: 'squat' });
+  const block = (ex: Exercise, kind: EquipmentInstance['kind']): NextTargetBlock => ({ decider: { exerciseId: ex.id, loadConvention: kind === 'barbell' ? 'total' : 'per_hand' }, equipment: { kind } }) as unknown as NextTargetBlock;
+  const info = (x: string) => [SQUAT, ROW, SHRUG].find((e) => e.id === x) ?? null;
+
+  it('the first main barbell lift is the main lift; later ones are secondary; others are never listed', () => {
+    expect([...secondaryMainLifts([block(SQUAT, 'barbell'), block(SHRUG, 'dumbbells'), block(ROW, 'barbell')], info)]).toEqual([ROW.id]);
+    expect([...secondaryMainLifts([block(ROW, 'barbell'), block(SHRUG, 'dumbbells')], info)]).toEqual([]);
+    expect([...secondaryMainLifts([block(SHRUG, 'dumbbells')], info)]).toEqual([]);
+  });
+
+  it('the row after squats: the rule (Summary, Start, get_progression_targets) reads 9–12 like the builder, not 3–6', () => {
+    const ROWS_12 = [session(920, 4, bar, 'total', three(80, 12))];
+    const req = { ownerId: OWNER, exerciseId: ROW.id, exerciseName: ROW.name, measurement: 'reps' as const, unit: 'kg' as const, convention: 'total' as const, equipment: bar, exercise: ROW, rule: null, workingSets: 3, history: ROWS_12, painFlags: [], sessionPain: { active: false, reportedAtUtc: null } };
+    const asSecondary = nextTargetsFor({ ...req, accessory: true }).result;
+    expect(asSecondary.reps).toMatchObject({ last: 12, range: { min: 9, max: 12 }, kind: 'history' });
+    const load = slotLoads(ROW, ROWS_12, [bar]);
+    expect(asSecondary.reps).toEqual(load.secondary?.ruleReps);
   });
 });

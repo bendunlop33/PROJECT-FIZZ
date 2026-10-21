@@ -10,7 +10,7 @@ import { toIso, toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { summaryHighlight } from '../touches';
 import { equipmentOfRow } from './equipment-snapshot';
-import { gymRouteIds, nextTargetBlocks, nextTargetsForBlock, partRootOf } from './gym-switch';
+import { gymRouteIds, nextTargetBlocks, nextTargetsForBlock, partRootOf, secondaryMainLifts } from './gym-switch';
 import { sessionRecords } from './records';
 import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
@@ -336,6 +336,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   // as Start plans it (`planRoutineStart`, review S7), so no single target is promised for it here.
   const blocksOf = new Map<string, number>();
   for (const b of targetBlocks) blocksOf.set(b.root.exerciseId, (blocksOf.get(b.root.exerciseId) ?? 0) + 1);
+  const secondary = secondaryMainLifts(targetBlocks, (id) => input.exerciseInfo?.[id] ?? null);
   for (const block of targetBlocks) {
     if (block.prescribedSets === 0 || (blocksOf.get(block.root.exerciseId) ?? 0) > 1) continue;
     const ex = block.decider;
@@ -352,6 +353,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
         history: input.history[ex.exerciseId] ?? [],
         painFlags: input.painFlags,
         sessionPain: unspecifiedPain(input.checkIn),
+        ...(secondary.has(ex.exerciseId) ? { accessory: true } : {}),
       },
       gymId === null ? null : (input.gymNames?.[gymId] ?? (gymId === s.gymId ? input.gymName : null)),
     );

@@ -212,6 +212,20 @@ describe('builtInTargetsView (get_progression_targets)', () => {
     // Rule target unknown: no RPE invented (rule 6).
     expect(builtInTargetsView({ exerciseName: 'Bench press', convention: 'total', planned: [set('working', null)], basedOn: null, painFlag: null }).sets[0]?.rpe).toBeNull();
   });
+
+  it('review S3: shows last time’s reps, the planned count and the Why? reason, as the builder reads them', () => {
+    const v = builtInTargetsView({
+      exerciseName: 'Dumbbell shrug',
+      convention: 'per_hand',
+      planned: [{ setType: 'working', planned: { load: kg(32.5, 'per_hand'), reps: { min: 12, max: 15 }, durationS: null, rpe: null, rir: null } }],
+      basedOn: null,
+      painFlag: null,
+      reps: { last: 15, goal: { min: 8, max: 12 }, range: { min: 12, max: 15 }, kind: 'history', aim: 12 },
+    });
+    expect(v).toMatchObject({ lastReps: 15, plannedReps: 12, why: ['Reps follow your last session (15 reps): 12–15.'] });
+    const none = builtInTargetsView({ exerciseName: 'Bench press', convention: 'total', planned: [], basedOn: null, painFlag: null });
+    expect(none).toMatchObject({ lastReps: null, plannedReps: null, why: [] });
+  });
 });
 
 describe('exerciseRecordsView (get_exercise_records, Coach v3)', () => {
