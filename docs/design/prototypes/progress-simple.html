@@ -53,6 +53,7 @@ h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .lift .lt { text-align: right; color: var(--text); font-weight: 600; }
 .lift .lr, .lift .lv { text-align: right; justify-content: flex-end; }
 .lift.lh span:nth-child(n+3) { text-align: right; }
+.lift.lh.sub2 { margin-top: 6px; border-top: 1px solid var(--divider); padding-top: 6px; }
 .lift .lv { display: flex; align-items: baseline; gap: 5px; }
 .lift .lv small { font-size: 11px; font-weight: 500; color: var(--text2); }
 .lift.lh { min-height: 22px; cursor: default; font-size: 10.5px !important; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); border-top: 0; }
@@ -109,12 +110,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 <body>
 <div class="wrap">
   <div class="ctrl">
-    <span class="lab">Your goal (from Profile)</span>
+    <span class="lab">Goal</span>
     <div class="chips" id="goals"></div>
     <div class="chips" id="demo"></div>
   </div>
   <div class="phone" id="app"></div>
-  <div class="hint">Example data. <b>This week</b> first, then <b>Goal</b>: how you're tracking over time, then <b>Coach's changes</b> at the bottom (full when new, one line after “Got it”) (tap a lift's line or row to see it alone on its own scale). <b>This week</b>: sessions and sets vs plan. <b>Coach's changes</b>: what the coach already adjusted for your next sessions and why, each with Undo. Bigger changes (your plan's days, swapping exercises) are the only things it asks about.</div>
+  <div class="hint">Example data. <b>This week</b> first, then <b>Lifts</b> and <b>Muscles</b> (always both), then then <b>Coach's changes</b> at the bottom (full when new, one line after “Got it”) (tap a lift's line or row to see it alone on its own scale). <b>This week</b>: sessions and sets vs plan. <b>Coach's changes</b>: what the coach already adjusted for your next sessions and why, each with Undo. Bigger changes (your plan's days, swapping exercises) are the only things it asks about.</div>
 </div>
 <script>
 (() => {
@@ -125,6 +126,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     { n: 'Bench', reps: 6, c: '#3987e5', series: [90, 92.5, 92.5, 95, 95, 97.5, 97.5, 100], target: 110, est: 'mid-Nov', estW: { 3: '100 × 4', 6: '92.5 × 9' } },
     { n: 'Squat', reps: 5, c: '#d95926', series: [105, 107.5, 107.5, 110, 112.5, 112.5, 115, 117.5], target: 125, estW: { 1: '115 × 3' } },
     { n: 'Row', reps: 8, c: '#199e70', series: [85, 87.5, 87.5, 90, 92.5, 92.5, 92.5, 92.5], target: null, estW: {} },
+    // Key accessories: listed in the table, not drawn on the all-lifts chart; tap to see one alone.
+    { n: 'Incline DB', reps: 10, c: '#B5ADA5', acc: true, series: [27.5, 27.5, 30, 30, 30, 30, 30, 32.5], target: null, estW: {} },
+    { n: 'Pulldown', reps: 10, c: '#B5ADA5', acc: true, series: [57.5, 60, 60, 60, 62.5, 62.5, 62.5, 65], target: null, estW: { 4: '67.5 × 7' } },
+    { n: 'Lat raise', reps: 12, c: '#B5ADA5', acc: true, series: [10, 10, 10, 12, 12, 12, 12, 12], target: null, estW: {} },
   ];
   // Working sets per muscle per week (main muscle 1, helpers ½ — the builder's convention), last 8 weeks; plan = what the plan's sessions call for. null = paused week.
   const MUSCLES = [
@@ -144,7 +149,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const app = document.getElementById('app');
 
   function controls() {
-    document.getElementById('goals').innerHTML = GOALS.map(([k, l]) => `<button class="chip" data-a="goal" data-v="${k}" aria-pressed="${s.goal === k}">${l}</button>`).join('');
+    document.getElementById('goals').innerHTML = '<span style="color:var(--text2);font-size:13px">Your goal (Profile) shapes the coach\u2019s plan, targets and changes. The page is the same for every goal.</span>';
     document.getElementById('demo').innerHTML = `<button class="chip" data-a="coach" aria-pressed="${!s.coach}">${s.coach ? 'Coach connected' : 'Coach offline'}</button><button class="chip" data-a="missed" aria-pressed="${s.missed}">Example: Legs missed</button>`;
   }
 
@@ -153,7 +158,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function liftChart() {
     const W = 320, H = 160, L = 30, T = 14, B = 22;
     const R = s.focus === null ? 34 : 12;
-    const shown = s.focus === null ? LIFTS : [LIFTS[s.focus]];
+    const shown = s.focus === null ? LIFTS.filter((l) => !l.acc) : [LIFTS[s.focus]];
     const one = s.focus !== null ? LIFTS[s.focus] : null;
     const cols = one && one.est ? 10 : 8;
     const vals = shown.flatMap((l) => l.series).concat(shown.filter((l) => l.target).map((l) => l.target));
@@ -179,20 +184,20 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   function liftRows() {
     const head = `<div class="lift lh" aria-hidden="true"><span></span><span>Lift</span><span>Reps</span><span>Current</span><span>Target</span></div>`;
-    return head + LIFTS.map((l, i) => {
+    return head + LIFTS.map((l, i) => (l.acc && !LIFTS[i - 1].acc ? `<div class="lift lh sub2" aria-hidden="true"><span></span><span>Accessories</span><span></span><span></span><span></span></div>` : '') + (() => {
       const now = l.series[l.series.length - 1];
       const d = l.series[l.series.length - 1] - l.series[0];
       const on = s.focus === i;
       return `<button class="lift${on ? ' on' : ''}${s.focus !== null && !on ? ' dim' : ''}" data-a="focus" data-v="${i}" aria-pressed="${on}" aria-label="${l.n}, ${l.reps} reps, current ${now} kg, ${d === 0 ? 'level' : (d > 0 ? 'up ' : 'down ') + Math.abs(d) + ' kg'} in 8 weeks, ${l.target ? 'target ' + l.target + ' kg' : 'no target'}. ${on ? 'Showing alone' : 'Show alone'}">
-        <i style="background:${l.c}"></i><span class="ln">${l.n}</span><span class="lr">× ${l.reps}</span><span class="lv">${now}</span><span class="lt">${l.target ?? '–'}</span></button>`;
-    }).join('');
+        <i style="${l.acc ? 'border:1.5px solid #948C84;background:none' : `background:${l.c}`}"></i><span class="ln">${l.n}</span><span class="lr">× ${l.reps}</span><span class="lv">${now}</span><span class="lt">${l.target ?? '–'}</span></button>`;
+    })()).join('');
   }
   function strengthCard() {
     const one = s.focus !== null ? LIFTS[s.focus] : null;
     const pill = one && one.target ? '<span class="pill"><i style="background:var(--good)"></i>On track</span>' : '';
     const sub = one ? `Top set × ${one.reps} (${one.target ? 'target' : 'plan'} reps) · ${one.series[one.series.length - 1]} now${one.est ? ` · about ${one.est} at this rate <span class="tag" style="margin:0">est.</span>` : ''}` : 'Top set at each lift\u2019s reps · ○ est.';
     return `<div class="card">
-      <div class="head"><span class="title">Strength tracker</span>${one ? `<button class="link" data-a="all" style="min-height:28px">All lifts</button>` : ''}</div>
+      <div class="head"><span class="title">Lifts</span>${one ? `<button class="link" data-a="all" style="min-height:28px">All lifts</button>` : ''}</div>
       <div class="sub" style="font-size:13px">${one ? `<b style="color:var(--text)">${one.n}</b> · ` : ''}${sub}</div>
       ${pill ? `<div style="display:flex">${pill}</div>` : ''}
       ${liftChart()}
@@ -234,7 +239,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <span>${m}</span>${spark(v, p)}<span class="mn">${last}<small> of ${p}</small></span></div>`;
     }).join('');
     return `<div class="card">
-      <div class="head"><span class="title">Muscle tracker</span></div>
+      <div class="head"><span class="title">Muscles</span></div>
       <div class="sub" style="font-size:13px">Sets per week vs plan · last 8 weeks</div>
       <div class="sub" style="font-size:12px;display:flex;gap:12px;align-items:center" aria-hidden="true"><span><i style="display:inline-block;width:8px;height:10px;border-radius:2px;background:#E8C9A0;margin-right:4px"></i>At plan</span><span><i style="display:inline-block;width:8px;height:10px;border-radius:2px;background:rgba(232,201,160,.45);margin-right:4px"></i>Under</span><span>┄ Plan</span></div>
       <div class="mrow mh" aria-hidden="true"><span>Muscle</span><span>8 weeks</span><span style="text-align:right">Last week</span></div>
@@ -242,8 +247,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     </div>`;
   }
   function goalCard() {
-    const cards = s.goal === 'strength' ? strengthCard() : s.goal === 'muscle' ? muscleCard() : strengthCard() + muscleCard();
-    return `<div class="sec"><span>Goal</span><span>last 8 weeks</span></div>${cards}`;
+    return `<div class="sec"><span>Progress</span><span>last 8 weeks</span></div>${strengthCard()}${muscleCard()}`;
   }
   function weekCard() {
     const mus = [['Chest', 14, 12], ['Back', 13, 14], ['Legs', 9, 14]];
