@@ -8,7 +8,7 @@ import type { SessionCommand } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import { cellEditReducer, correctionPatch, doneRowEditing, loadCellA11y, valueCellA11y, openRowEditing, runRowTap, rowTap, selectCommand, selectRowFlow, workoutMenu, workoutViewOf, type SelectOutcome } from '../src/workout/table';
-import { buildRounds, roundPrimary, roundStrip, selectOnShow, shownRoundIndex } from '../src/workout/rounds';
+import { buildRounds, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, shownRoundIndex } from '../src/workout/rounds';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
@@ -436,5 +436,127 @@ describe('the v3 round page end to end, offline (workout-table-v3 §1–§3)', (
     // A stale delete (the set changed since it was shown) is refused, never applied to newer state.
     const stale = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: 'swipe-stale', setId: set?.id ?? '', expectedSetVersion: set?.version ?? 0 });
     expect(stale).toMatchObject({ ok: false, error: { code: 'stale_version' } });
+  });
+});
+
+describe('the v3 round page over real SQLite: supersets, relaunch, round change then log, done-set delete (wo-v3 logic S4)', () => {
+  async function supersetWorkout(s: AppServices): Promise<{ sessionId: string; benchRow: string; pullRow: string }> {
+    const sessionId = await benchWorkout(s);
+    const picks = await s.workout.pickerExercises(sessionId, 'Lat pulldown');
+    const pull = picks.find((p) => p.exercise.name === 'Lat pulldown') ?? picks[0];
+    if (!pull) throw new Error('no second exercise');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pull.exercise.id, equipmentId: pull.equipment[0]?.id ?? null, opId: 'add-pull' });
+    if (!added.ok) throw new Error(added.error.message);
+    const rows = [...added.aggregate.exercises].sort((a, b) => a.order - b.order);
+    const benchRow = rows[0]?.id ?? '';
+    const pullRow = rows[1]?.id ?? '';
+    const linked = await s.workout.linkSuperset({ sessionId, sessionExerciseId: pullRow, withSessionExerciseId: benchRow, opId: 'link-1', expectedVersion: added.aggregate.session.version });
+    if (!linked.ok) throw new Error(linked.error.message);
+    return { sessionId, benchRow, pullRow };
+  }
+  const roundsNow = async (s: AppServices) => {
+    const d = await s.workout.load();
+    if (!d) throw new Error('no workout');
+    const r = buildRounds(s.workout.tableView(d, h.clockMs, null), (id) => d.worksLines?.[id] ?? null);
+    return { d, r };
+  };
+  const logOpen = async (s: AppServices, sessionId: string) => {
+    const { d } = await roundsNow(s);
+    const f = s.workout.view(d, h.clockMs, null).focus;
+    if (!f) throw new Error('no open row');
+    h.clockMs += 30_000;
+    const row = d.aggregate.exercises.find((e) => e.id === f.sessionExerciseId);
+    const up = f.loadField?.up;
+    const load = f.logValues.load ?? (up?.enabled === true && row ? { value: up.value, unit: row.unit, convention: row.loadConvention } : load60);
+    const out = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: f.opId, setId: f.setId, values: { ...f.logValues, load, reps: f.logValues.reps ?? 6 }, restTimerId: h.ids() });
+    if (!out.ok) throw new Error(out.error.message);
+    return { setId: f.setId, aggregate: out.aggregate };
+  };
+
+  it('a → b has no rest, the rest follows b; a relaunch mid-superset lands on the open round', async () => {
+    const { services: s } = await h.launch();
+    const { sessionId } = await supersetWorkout(s);
+    let { r } = await roundsNow(s);
+    expect(r).toHaveLength(1);
+    expect(r[0]?.exercises.map((e) => e.label)).toEqual(['1a', '1b']);
+    // Log through the warm-ups (if any) and the first a.
+    let guard = 0;
+    while (guard < 10 && r[0]?.exercises.find((e) => e.rows.some((x) => x.current))?.label !== '1b') {
+      await logOpen(s, sessionId);
+      ({ r } = await roundsNow(s));
+      guard += 1;
+    }
+    expect(r[0]?.exercises.find((e) => e.rows.some((x) => x.current))?.label).toBe('1b');
+    const { d: before } = await roundsNow(s);
+    expect(before.aggregate.restTimer?.status).not.toBe('running');
+    const b = await logOpen(s, sessionId);
+    expect(b.aggregate.restTimer?.status).toBe('running');
+    expect(b.aggregate.restTimer?.setId).toBe(b.setId);
+    const openBefore = (await roundsNow(s)).r[0]?.exercises.flatMap((e) => e.rows).find((x) => x.current)?.setId;
+    // Force-close and relaunch: the same round, the same open row.
+    const { services: s2 } = await h.launch();
+    const { r: r2 } = await roundsNow(s2);
+    expect(shownRoundIndex(r2, null)).toBe(0);
+    expect(r2[0]?.exercises.flatMap((e) => e.rows).find((x) => x.current)?.setId).toBe(openBefore);
+  });
+
+  it('a round change selects (never logs), the next Log lands on the shown round\'s set, a relaunch keeps it; replayed opIds are no-ops', async () => {
+    const { services: s } = await h.launch();
+    const sessionId = await benchWorkout(s);
+    const picks = await s.workout.pickerExercises(sessionId, 'Lat pulldown');
+    const pull = picks.find((p) => p.exercise.name === 'Lat pulldown') ?? picks[0];
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pull?.exercise.id ?? '', equipmentId: pull?.equipment[0]?.id ?? null, opId: 'add-pull' });
+    if (!added.ok) throw new Error(added.error.message);
+    let { d, r } = await roundsNow(s);
+    expect(shownRoundIndex(r, null)).toBe(0);
+    const doneBefore = d.aggregate.sets.filter((x) => x.status === 'completed').length;
+    // Swipe to round 2: one set_active_set through the queue.
+    const { q, send } = queueSelect(SELECT_IDLE, selectOnShow(r[1]));
+    expect(send).toBe(r[1]?.firstPendingSetId);
+    const sel = selectCommand(send ?? '', d.aggregate.session.version, h.now(), 'round-sel-1');
+    const out = await s.workout.dispatch(sessionId, sel);
+    expect(out.ok).toBe(true);
+    expect(selectLanded(q, true).send).toBeNull();
+    // The select doesn't reset the pick: the page stays on round 2.
+    expect(resetsPick(send, new Set([send ?? '']))).toBe(false);
+    ({ d, r } = await roundsNow(s));
+    expect(d.aggregate.sets.filter((x) => x.status === 'completed')).toHaveLength(doneBefore);
+    expect(shownRoundIndex(r, null)).toBe(1);
+    // The same select replayed (a retry) changes nothing.
+    const replay = await s.workout.dispatch(sessionId, sel);
+    expect(replay.ok ? replay.aggregate.session.version : -1).toBe(d.aggregate.session.version);
+    // Log: it lands on round 2's set.
+    const logged = await logOpen(s, sessionId);
+    expect(logged.setId).toBe(send);
+    // Relaunch: still round 2.
+    const { services: s2 } = await h.launch();
+    expect(shownRoundIndex((await roundsNow(s2)).r, null)).toBe(1);
+  });
+
+  it('swipe-delete of a done set: audited with the logged values, Undo brings it back, and the untick window ends', async () => {
+    const { services: s } = await h.launch();
+    const sessionId = await benchWorkout(s);
+    const first = await logOpen(s, sessionId);
+    const second = await logOpen(s, sessionId);
+    let { d } = await roundsNow(s);
+    const done = d.aggregate.sets.find((x) => x.id === second.setId);
+    const del = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: 'swipe-done', setId: done?.id ?? '', expectedSetVersion: done?.version ?? 0 });
+    expect(del.ok).toBe(true);
+    if (!del.ok) return;
+    const audit = del.aggregate.audit.filter((a) => a.kind === 'deleted' && a.setId === done?.id);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.before?.status).toBe('completed');
+    // A replayed delete is a no-op, not a second delete.
+    const again = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: 'swipe-done', setId: done?.id ?? '', expectedSetVersion: done?.version ?? 0 });
+    expect(again.ok ? again.aggregate.audit.filter((a) => a.kind === 'deleted').length : -1).toBe(1);
+    // The delete ends the untick window: the older log can't be unticked past it.
+    ({ d } = await roundsNow(s));
+    const older = d.aggregate.sets.find((x) => x.id === first.setId);
+    const untick = await s.workout.dispatch(sessionId, { type: 'undo_log', at: h.now(), opId: 'untick-past-delete', setId: older?.id ?? '', expectedSetVersion: older?.version ?? 0 });
+    expect(untick).toMatchObject({ ok: false, error: { code: 'not_latest_set' } });
+    expect((await s.workout.undoOp({ sessionId, targetOpId: 'swipe-done' })).ok).toBe(true);
+    ({ d } = await roundsNow(s));
+    expect(d.aggregate.sets.find((x) => x.id === done?.id)?.status).toBe('completed');
+    expect(d.aggregate.sets.find((x) => x.id === done?.id)?.actual).toEqual(done?.actual);
   });
 });
