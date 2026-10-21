@@ -67,3 +67,93 @@ The developer acknowledged this. The app-level test (`time-fit-workout.test.ts`)
 - Untick after a force-close, with notification and Live Activity re-armed to the original deadline.
 - Superset box scrolling and keypad fallback on an SE-size screen.
 - Free-provisioning install of the Actions-built `.ipa` through SideStore (the datetimepicker native module is new since the last device build, if that build predates 19 Oct).
+
+---
+
+## Re-check 21 Oct (after `ae0d413`..`2d71217`)
+
+### Verdict: **NO-GO** (1 blocker: B1 is only partly fixed; small fix)
+
+The fixes for S1–S5, SP-3 and N1/N4 are real, and their tests fail when the fix is taken out. The follow-up check of the five earlier reviews finds every B item fixed in code. One gap remains. The B1 exception ("rests Ben set himself are never shortened") only recognises `edit_planned_set`. The in-workout **Rest after** sheet is the way Ben actually sets a rest, and it writes `set_rest_after`, which the fit doesn't see. So the fit still cuts those rests. Fix R1 and this is GO.
+
+### Checks run by the reviewer (on `2d71217`)
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | clean |
+| `eslint .` (6 GB heap) | clean |
+| `npm run check:migrations` | `Migrations OK: 1 to 31, none reserved or empty.` |
+| `vitest run` (full suite) | 437 files, 8255 passed, 1 todo |
+| `expo prebuild --platform ios --no-install`, then `npm run check:entitlements` | `Entitlement check: OK (no forbidden keys)`. `apps/mobile/ios` deleted afterwards; `git status` clean. |
+| Native config diff `493e80c..HEAD` | No native, plugin, module, patch or `package.json` changes. ADR 0004 holds. |
+
+**Mutation checks.** I reverted each fix in turn in `time-fit-today.ts`, ran the tests, then restored the file with `git checkout`:
+- **B1:** removing the `restCuts` guards *and* the `pinnedRests` pin fails all 3 new B1 tests. Removing only the `restCuts` guards fails none, because the pin alone protects. The guards are therefore redundant belt-and-braces.
+- **S2:** suppressing the effort line on a slot that lost a set fails the ladder-order test.
+- **S3:** `least = 1` fails the 300-min test.
+- **N4:** making `fitOwnEdit` always false fails 2 tests.
+- **S1:** making `undoableTimeFit` ignore the dry run fails 3 tests: the domain test, `time-fit-workout` and the S5 Today test.
+
+### Items from this review
+
+| Item | Status | Evidence |
+|---|---|---|
+| B1 | **Partly fixed** (see R1) | Fixed for `edit_planned_set` edits, pain flags and timed exercises (`time-fit-today.ts:169`, `pinnedRests`, `restCuts`). A pain-flagged member of a superset keeps both members' rests (reviewer probe P2, passed). |
+| S1 | Fixed | `⋯ › Undo fit to time` is shown only when a dry-run `undo_op` would succeed. It survives a relaunch (schema round trip) and is refused once stale. |
+| S2 | Fixed | Both lines show, e.g. `Cable fly 3 → 2 sets` and `Cable fly last set @8 → @9`. |
+| S3 | Fixed | The target is floored at half the remaining sets' length. When capped, the status is `over` and the sheet reads `Saves ≈ N min`. |
+| S4 | Fixed | `CoachAskBar icons page="active"`: ✦ shows `Coach` / `Offline` / `No coach` and is never disabled. Heard words go to the coach field unsent. |
+| S5 | Fixed | `today-session.test.ts` starts from Today with a real superset and catalogue info. The main lift is kept, rests only get shorter, and Apply → ⋯ Undo restores the sets. |
+| SP-3 | Fixed | `TimeFitSheet`: one before → after line per change, Apply / Not now / `Time left ›`. |
+| N1 | Fixed | |
+| N4 | Fixed | |
+
+### Earlier reviews: B items (each confirmed in code)
+- **wave2-wiring B1:** fixed. `builder-service.ts:752-764` turns an Other session into a custom day with that session's name and groups, and never falls back to `split[0]`. `coach-ports.ts:67` goes through the same function. Test at `today-session.test.ts:357`.
+- **wave2-wiring B2:** fixed. `todayAskFirst` (`builder-coach-view.ts:241`) sends pain or unclear words to the coach with `draft` before the Set up parser runs. A reply or `Not understood` also opens the coach with the words.
+- **wave2-integrity B1:** fixed. `BuilderProposal.askedHeavier` is stored (`proposal.ts:35,58,74`) and used by `apply` (`builder-coach-service.ts:402`).
+- **wave2-integrity B2:** fixed. Ownership is now by state (`todayDraftState`: `today` / `nudge` / `edited`), and a nudged draft isn't `· edited`. Tests at `today-session.test.ts:631,653`.
+- **wo-v3-spec B1 / wo-v3-logic B1:** fixed. `setSteps` / `stepName` is used in every toast and title.
+- **wo-v3-spec B2:** fixed. `boxAnchor` pins the box to the new row until the next log, untick or round change (`rounds.ts`).
+- **wo-v3-spec B3:** fixed. The fallback keeps 2-row boxes, hides Up next, and scrolls the page to the edited cell (`pageOffsetFor`, `WorkoutTable.tsx:209-215`).
+- **wo-v3-logic B2:** fixed. `companion` rows share their head's number and aren't counted (`rounds.ts:137,154`). The test expects `1L`, `1R`.
+- **rest-undo-sp1 B1:** fixed. `rest_timers.restored_finished` is persisted (migration 31, `sessions.ts:358,623`), `cue-controller.ts:53` uses it, and there is a fresh-controller test in `spoken-cues.test.ts`.
+
+**S items spot-checked, all fixed:**
+- integrity S1: the Today Start and the check-in route pin the draft version (`today-session.ts:912`, `CheckInScreen.tsx:323`).
+- integrity S2: the nudge is keyed to a hash of the controls.
+- logic S3: `set_active_set` is refused while another set's work timer runs (`reducer.ts:793`).
+- spec S5/S6: 44 pt chips; Untick is offered only on the latest log.
+- rest-undo S1: finished entries in the kept-rest stack are bounded.
+
+### Blocking
+
+**R1. The fit still shortens rests Ben set with the Rest after sheet (B1 not fully fixed).**
+- **Where:** `packages/domain/src/session/time-fit-today.ts:93` (`bensEdit` reads only `planned.edit`) and `packages/domain/src/session/reducer.ts:1528-1543` (`handleSetRestAfter` writes `rest.source: 'set_override'` or `'exercise_default'` but never sets `planned.edit`). The workout's `Rest after N` sheet (`WorkoutScreen.tsx:2957-2971` → `workout-services.ts:3118`) sends `set_rest_after`. So do `⋯ › Rest after` and `Why? › Change`.
+- **Failure (reproduced with a temporary test, since deleted):**
+  - Ben sets Cable fly set 2's rest to 4:00 through Rest after (`scope: 'set'`). He is then 1 min over and taps `+1 min`. The sheet lists `Cable fly rest 4:00 → 1:15`, and Apply sends `edit_planned_set { restS: 75 }` on that set.
+  - With `scope: 'exercise'` on bench at 5:00 (saved as his default, "(yours)"), the sheet lists `Bench press rest 5:00 → 2:30` on two sets.
+  - The sheet now shows the change, so it is no longer hidden. But the code comment (`:19-23`), the CHANGELOG entry of 21 Oct and the fix summary all say rests Ben set himself are left exactly as they are. That holds only for `edit_planned_set`, which is not the path the Rest after UI uses.
+- **Fix:**
+  - Treat a pending set as Ben's when its rest is his own: `rest.source === 'set_override'` or `'exercise_default'`, unless the fit's own step wrote that rest (`planned.edit` is the fit's op and the rest equals what that step set).
+  - Cleaner alternative: have `set_rest_after` record its provenance on the set, e.g. `rest.opId` or `planned.edit`, so `bensEdit` can read it.
+  - Decide with Ben whether per-set `set_override` rests from his routine template (`rest.ts:32`) count too. I'd say yes.
+  - Add tests: `set_rest_after` with scope `set` and with scope `exercise` leaves those rests unchanged at `over` = 1, 8 and 30. Also add a test for a superset whose member has a Rest-after rest.
+
+### Should fix
+- **R2. The workout's ✦ status word is fetched once.** `WorkoutScreen.tsx:197-210` calls `builderCoach.status()` only on mount. If the phone goes offline 20 minutes into a workout, ✦ still says `Coach` (rule 1: honest status). The sheet it opens is honest, so this doesn't block. Refresh it on `AppState` `active`, on focus, and after each coach sheet close, as Today does on reload.
+- **R3. Ben's rest presets aren't passed.** `workout-services.ts:2968` calls `timeFitOffer` without `restPresetsS`, so the fit's targets use the default presets while the builder uses Ben's. The workout fit and the builder can therefore cut to different rests (`3:00 → 2:30` here vs the builder's). Pass `restPresetsS` the same way the builder does.
+- Carried over and accepted as open: Log pill width on SE, live words not shown in the icons layout, N2, N3, SP-4, retiring `fitPlanToMinutes`.
+
+### Nits
+- `restCuts`' `touched` / round guards (`time-fit-today.ts:200-201`) are unreachable in practice, because the pin already makes the targets equal to the current values. Keep them, but the B1 tests only cover the pin. A short test calling `restCuts` with an unpinned touched slot would make the guards meaningful.
+- With `status: 'over'`, a fit that only rounds to 0 saved minutes reads `Saves ≈ 0 min`. Hide the offer, or say `Saves < 1 min`.
+
+### Spec issues (for Ben)
+- **SP-1 is recorded as decided without Ben's word.** The CHANGELOG entry `## 2026-10-21: Mid-workout fit to time (records Ben's 20 Oct approval…)` (`docs/brief/CHANGELOG.md:568`) states the main-lift rule ("its rests may shorten, 3:00 → 2:00"), the three exceptions and the sheet as if they were approved. Ben approved v3 §5 on 20 Oct. The main-lift rest question (SP-1), the sheet (SP-3) and the exceptions were raised by this review afterwards. Ben should confirm them, or the entry should mark them "proposed, pending Ben". This doesn't block a device-test build.
+- SP-4 (rest-undo SP-a/SP-b) is still open.
+
+### Needs a real iPhone
+- The fit sheet → Apply → toast, and ⋯ › Undo fit to time after a force-close.
+- The ✦ + mic pair beside the Log pill on an SE-size screen (label truncation), plus the mic → coach field hand-off.
+- Everything listed in the first section's device list still applies.
