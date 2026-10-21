@@ -399,6 +399,8 @@ function ExerciseBlock({
   const height = fit?.height ?? null;
   const viewH = useRef(0);
   const contentH = useRef(0);
+  /** The set box's visible window: rows scrolled out of it are no drop targets (review S2). */
+  const boxView = useRef<View | null>(null);
   const edit = p.setEdit;
   const movable = edit?.movable(ex.sessionExerciseId) ?? [];
   return (
@@ -408,6 +410,7 @@ function ExerciseBlock({
       {ex.isCurrent ? p.adjustRow : null}
       {p.ax ? null : <ColumnLabels loadHeader={ex.loadHeader} valueHeader={ex.valueHeader} />}
       <View
+        ref={boxView}
         onLayout={(e) => {
           viewH.current = e.nativeEvent.layout.height;
           onBoxFrame(e.nativeEvent.layout.height);
@@ -440,6 +443,7 @@ function ExerciseBlock({
             }}
             onMenu={(setId) => edit?.onMenu(setId)}
             onDragChange={onDragChange}
+            viewport={boxView}
           >
           {ex.rows.map((r) => (
             <View

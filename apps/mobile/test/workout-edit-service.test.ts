@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { currentGymEquipment, equipmentOfRow, isLoadAchievable, removeExerciseCommand, supersetNextCommand, type CommandOutcome } from '@fizz/domain';
+import { addWarmupCommand, currentGymEquipment, equipmentOfRow, isLoadAchievable, movableSetIds, moveSetCommand, removeExerciseCommand, supersetNextCommand, type CommandOutcome } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
@@ -148,5 +148,94 @@ describe('Remove with logged sets (§7: asks first, keeps them in history)', () 
     expect(u.ok).toBe(true);
     const back = await s.workout.load(sessionId);
     expect(back?.aggregate.sets.filter((x) => x.sessionExerciseId === bench && x.status === 'pending').length).toBeGreaterThan(0);
+  });
+});
+
+describe('pain holds the builder’s loads for Add and Swap (rule 9; integrity S4)', () => {
+  /** Incline logged easily (27.5 × 12 @ RPE 6): without pain the builder would go up from it. */
+  async function easyIncline(): Promise<{ s: AppServices; sessionId: string; bench: string }> {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 100, reps: 6, rpe: 8 }, { load: 100, reps: 6, rpe: 8 }] },
+      { exercise: 'Incline dumbbell press', sets: [{ load: 27.5, reps: 12, rpe: 6 }, { load: 27.5, reps: 12, rpe: 6 }, { load: 27.5, reps: 12, rpe: 6 }] },
+    ]);
+    h.clockMs += DAY;
+    const st = await s.workout.start({ gymId, opId: 'start-today', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!st.ok) throw new Error(st.error.message);
+    const sessionId = st.aggregate.session.id;
+    const pick = (await s.workout.pickerExercises(sessionId, 'Bench press')).find((p) => p.exercise.name === 'Bench press');
+    const a = ok(await s.workout.addExercise({ sessionId, exerciseId: pick?.exercise.id ?? '', equipmentId: pick?.equipment[0]?.id ?? null, opId: 'add-bench' }));
+    return { s, sessionId, bench: a.exercises.find((e) => e.exerciseName === 'Bench press')?.id ?? '' };
+  }
+
+  const working = (a: SessionAggregate, exerciseId: string) => {
+    const row = a.exercises.find((e) => e.exerciseId === exerciseId && e.removed === undefined);
+    return a.sets.filter((x) => x.sessionExerciseId === row?.id && x.status === 'pending' && x.setType !== 'warmup').map((x) => x.planned.load?.value ?? 0);
+  };
+
+  it('without pain the builder goes up from the easy sets (30 kg each), so the hold below is the pain flag’s', async () => {
+    const { s, sessionId } = await easyIncline();
+    const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null });
+    const incline = (c?.sections ?? []).flatMap((x) => x.items).find((i) => i.name === 'Incline dumbbell press');
+    if (incline === undefined) throw new Error('no incline in the sheet');
+    const loads = working(ok(await s.workoutEdit.add(sessionId, incline.exerciseId, 'add-incline')), incline.exerciseId);
+    expect(Math.max(...loads)).toBeGreaterThan(27.5);
+  });
+
+  it('Add: a pain-flagged exercise starts no heavier than its last comparable load (27.5 kg each), on the rack', async () => {
+    const { s, sessionId } = await easyIncline();
+    const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null });
+    const incline = (c?.sections ?? []).flatMap((x) => x.items).find((i) => i.name === 'Incline dumbbell press');
+    if (incline === undefined) throw new Error('no incline in the sheet');
+    expect((await s.pain.flagMovement({ exerciseId: incline.exerciseId, exerciseName: 'Incline dumbbell press', opId: 'pain-1' })).ok).toBe(true);
+    expect((await s.workoutEdit.choices(sessionId, { sessionExerciseId: null }))?.sections.flatMap((x) => x.items).find((i) => i.exerciseId === incline.exerciseId)?.mayHurt).toBe(true);
+    const a = ok(await s.workoutEdit.add(sessionId, incline.exerciseId, 'add-incline'));
+    const loads = working(a, incline.exerciseId);
+    expect(loads.length).toBeGreaterThan(0);
+    for (const v of loads) expect(v).toBeLessThanOrEqual(27.5);
+    const row = a.exercises.find((e) => e.exerciseId === incline.exerciseId && e.removed === undefined);
+    expect(achievable(a, row?.id ?? '')).toBe(true);
+
+  });
+
+  it('Swap: the substitute, pain-flagged, is held the same way', async () => {
+    const { s, sessionId, bench } = await easyIncline();
+    const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: bench });
+    const incline = (c?.sections ?? []).flatMap((x) => x.items).find((i) => i.name === 'Incline dumbbell press');
+    if (incline === undefined) throw new Error('no incline in the sheet');
+    expect((await s.pain.flagMovement({ exerciseId: incline.exerciseId, exerciseName: 'Incline dumbbell press', opId: 'pain-1' })).ok).toBe(true);
+    const a = ok(await s.workoutEdit.swap(sessionId, bench, incline.exerciseId, 'swap-1'));
+    const loads = working(a, incline.exerciseId);
+    expect(loads.length).toBeGreaterThan(0);
+    for (const v of loads) expect(v).toBeLessThanOrEqual(27.5);
+  });
+});
+
+describe('set order and warm-ups survive a force-close on SQLite (integrity S4)', () => {
+  it('reorder_sets and add_warmup are read back from the store as written; their Undo works after relaunch', async () => {
+    const { s, sessionId, bench, a } = await started();
+    const pending = a.sets.filter((x) => x.sessionExerciseId === bench && x.status === 'pending' && x.setType !== 'warmup').sort((x, y) => x.index - y.index);
+    expect(pending.length).toBeGreaterThanOrEqual(2);
+    const move = moveSetCommand(a, pending.at(-1)?.id ?? '', 0, { opId: 'reorder-1', at: h.now() });
+    if (move === null) throw new Error('no move');
+    const moved = ok(await s.workout.dispatch(sessionId, move));
+    const order = movableSetIds(moved, bench);
+    const warm = addWarmupCommand(moved, bench, { opId: 'warm-1', at: h.now(), newSetId: h.ids() });
+    if (!warm.ok) throw new Error(warm.reason);
+    const withWarm = ok(await s.workout.dispatch(sessionId, warm.command));
+    const shape = (x: SessionAggregate) => x.sets.filter((y) => y.sessionExerciseId === bench && y.status !== 'deleted').sort((p, q) => p.index - q.index).map((y) => `${y.id}:${y.setType}:${String(y.index)}`);
+    const before = shape(withWarm);
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    const back = (await s2.workout.load(sessionId))?.aggregate;
+    if (back === undefined) throw new Error('not restored');
+    expect(shape(back)).toEqual(before);
+    expect(movableSetIds(back, bench).filter((x) => order.includes(x))).toEqual(order);
+    expect(back.sets.find((x) => x.id === warm.command.newSetId)?.setType).toBe('warmup');
+    expect((await s2.workout.undoOp({ sessionId, targetOpId: 'warm-1' })).ok).toBe(true);
+    expect((await s2.workout.undoOp({ sessionId, targetOpId: 'reorder-1' })).ok).toBe(true);
+    const undone = (await s2.workout.load(sessionId))?.aggregate;
+    expect(movableSetIds(undone ?? back, bench)).toEqual(movableSetIds(a, bench));
   });
 });

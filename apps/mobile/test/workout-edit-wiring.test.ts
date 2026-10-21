@@ -29,7 +29,7 @@ describe('one implementation for both pages (§7: "same components, not copies")
     expect(read('screens', 'builder', 'BuilderParts.tsx')).toContain("from '../../ui/table-parts'");
   });
   it('press-and-hold drag is the shared DragList on Your workout, the round’s set rows and the Workout sheet', () => {
-    expect(builderWorkout).toMatch(/<DragList[\s\S]{0,200}allowOnto[\s\S]{0,200}kind: 'drop'/);
+    expect(builderWorkout).toMatch(/<DragList[\s\S]{0,200}allowOnto[\s\S]{0,400}canDrop=\{[\s\S]{0,200}dropBuilderSlot\([\s\S]{0,200}kind: 'drop'/);
     expect(table).toContain('<DragList');
     expect(table).toContain('canDrop={(_from, t) => movable.includes(t.key)}');
     expect(table.match(/useDragHandle\(/g)?.length).toBeGreaterThanOrEqual(2);

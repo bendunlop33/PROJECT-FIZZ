@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { builderApplyOpId, type BuilderCoachReach, type BuilderProposal } from '@fizz/coach';
-import { slotsOf, type BuilderEditOp } from '@fizz/domain';
+import { dropBuilderSlot, slotsOf, type BuilderEditOp } from '@fizz/domain';
 import type { BuilderGroup, CheckInScore, PlanChangeUndo, SessionCheckIn } from '@fizz/schemas';
 
 import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWriteResult, type StartChoice, type StartPrompt } from '../../builder/builder-service';
@@ -593,6 +593,8 @@ export function BuilderWorkoutScreen() {
           <DragList
             enabled
             allowOnto
+            // Only drops the builder takes are highlighted (the main lift, more than 4, a no-op spring back; review S5).
+            canDrop={(slotKey, t) => snapRef.current !== null && dropBuilderSlot(snapRef.current.workout.blocks, slotKey, t.key, t.edge) !== null}
             onDrop={(slotKey, t) => void edit({ kind: 'drop', slotKey, targetKey: t.key, edge: t.edge })}
             onMenu={rowMenu}
             onDragChange={setDragging}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, ScrollView, View, type PressableProps } from 'react-native';
 
 import { useTheme } from '../../theme';
@@ -47,6 +47,8 @@ export function WorkoutRoundsSheet(p: {
 }) {
   const theme = useTheme();
   const [dragging, setDragging] = useState(false);
+  /** The sheet's scrolling list: rows scrolled out of it are no drop targets (review S2). */
+  const listView = useRef<View | null>(null);
   const head = (t: string, style: object) => (
     <AppText variant="label" color="text.tertiary" style={{ fontSize: 11, lineHeight: 14, letterSpacing: 0.8, textTransform: 'uppercase', ...style }} maxFontSizeMultiplier={1.6}>
       {t}
@@ -60,6 +62,7 @@ export function WorkoutRoundsSheet(p: {
         </AppText>
         <TextButton label="Close" tone="secondary" onPress={p.onClose} />
       </View>
+      <View ref={listView} style={{ flexShrink: 1 }}>
       <ScrollView style={{ flexShrink: 1 }} scrollEnabled={!dragging}>
         <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, paddingHorizontal: theme.space['2'], paddingBottom: theme.space['1'] }}>
           {head('', { width: 30 })}
@@ -68,7 +71,7 @@ export function WorkoutRoundsSheet(p: {
           {head('Top set (kg)', { width: 64, textAlign: 'right' })}
           {head('', { width: theme.target.min.width })}
         </View>
-        <DragList enabled={p.drag !== undefined} allowOnto canDrop={(from, t) => p.drag?.canDrop(from, t) ?? false} onDrop={(from, t) => p.drag?.onDrop(from, t)} onMenu={p.onMenu} onDragChange={setDragging}>
+        <DragList enabled={p.drag !== undefined} allowOnto canDrop={(from, t) => p.drag?.canDrop(from, t) ?? false} onDrop={(from, t) => p.drag?.onDrop(from, t)} onMenu={p.onMenu} onDragChange={setDragging} viewport={listView}>
         {p.rows.map((r) => (
           <DragItem key={r.key} dragKey={r.key} draggable={p.drag?.draggable(r.key) ?? false}>
           <HeldPressable
@@ -134,6 +137,7 @@ export function WorkoutRoundsSheet(p: {
           <TextButton label="＋ Add exercise" onPress={p.onAddExercise} />
         </View>
       </ScrollView>
+      </View>
     </BottomCard>
   );
 }

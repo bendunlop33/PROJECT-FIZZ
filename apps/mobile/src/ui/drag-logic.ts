@@ -87,6 +87,23 @@ export function dragStep(phase: DragPhase, e: DragEvent): { phase: DragPhase; ef
 }
 
 /**
+ * The rows Ben can see in a box that scrolls (review S2): each frame cut to the box's visible
+ * window; a row scrolled out of it is no drop target (its drop line would be drawn where he can't
+ * see it). A finger above or below the box then lands before the first or after the last row he
+ * can see. No window: every frame as measured.
+ */
+export function visibleFrames(frames: readonly DragFrame[], window: { y: number; h: number } | null): DragFrame[] {
+  if (window === null) return [...frames];
+  const top = window.y;
+  const bottom = window.y + window.h;
+  return frames.flatMap((f) => {
+    const y = Math.max(f.y, top);
+    const end = Math.min(f.y + f.h, bottom);
+    return end - y > 0 ? [{ key: f.key, y, h: end - y }] : [];
+  });
+}
+
+/**
  * Where a row dragged to `y` would land: the row under the finger and the part of it (before /
  * after; onto in its middle when pairing is allowed). Past the first or last row it is before the
  * first or after the last. Null on the dragged row itself, or where `canDrop` says no.

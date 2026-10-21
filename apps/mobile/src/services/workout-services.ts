@@ -12,7 +12,7 @@ import {
   restSetsView,
   setGlance,
   setNavigation,
-  snapPlannedLoad,
+  snapTypedLoadEasier,
   workoutChatContext,
   type ComparableSet,
   type PlannedSetEdits,
@@ -2926,8 +2926,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return buildPlannedSetEditView(data.aggregate, setId, edits, { ruleTargetRpe: ruleRpes(data), bodyweightExercises: data.bodyweightExercises });
     },
 
-    /** A typed load for a set not done yet, made achievable on its equipment (rule 4). */
-    snapPlannedLoad: (data: ActiveWorkoutData, setId: string, typed: number | null): number | null | undefined => snapPlannedLoad(data.aggregate, setId, typed, data.bodyweightExercises),
+    /**
+     * A typed load for a set not done yet, made achievable on its equipment (rule 4): toward easier,
+     * never past the max, the same rule as the exercise pop-up and the builder (v3 §7; review S6).
+     */
+    snapPlannedLoad: (data: ActiveWorkoutData, setId: string, typed: number | null): number | null | undefined => snapTypedLoadEasier(data.aggregate, setId, typed, data.bodyweightExercises),
 
     /** The rest screen's `Last set` and `Next` (F8). */
     restSets: (data: ActiveWorkoutData): { last: SetGlance | null; next: SetGlance | null } => restSetsView(data.aggregate, ruleRpes(data)),

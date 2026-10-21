@@ -1,10 +1,10 @@
-import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Animated, PanResponder, View, type GestureResponderEvent, type StyleProp, type ViewStyle } from 'react-native';
 
 import { nowMs } from '../clock';
 import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
-import { DRAG, dragStep, dropTargetAt, type DragFrame, type DragPhase, type DropTarget } from './drag-logic';
+import { DRAG, dragStep, dropTargetAt, visibleFrames, type DragFrame, type DragPhase, type DropTarget } from './drag-logic';
 
 /**
  * Press-and-hold drag, built once (workout-builder-v3 §2.3, §9 Q18;
@@ -49,6 +49,11 @@ export interface DragListProps {
   onMenu?: (key: string) => void;
   /** A drag started or ended: the page stops (and restarts) scrolling. */
   onDragChange?: (active: boolean) => void;
+  /**
+   * The box the rows scroll in (a set box, a sheet): only the rows visible in it are drop targets,
+   * and a finger past its edge lands at the first or last row Ben can see (review S2).
+   */
+  viewport?: RefObject<View | null>;
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
 }
@@ -58,6 +63,7 @@ export function DragList(p: DragListProps) {
   const phaseRef = useRef<DragPhase>({ kind: 'idle' });
   const [target, setTarget] = useState<DropTarget | null>(null);
   const frames = useRef(new Map<string, DragFrame>());
+  const boxWindow = useRef<{ y: number; h: number } | null>(null);
   const items = useRef(new Map<string, View | null>());
   const startPage = useRef(0);
   const offset = useRef(new Animated.Value(0)).current;
@@ -79,7 +85,7 @@ export function DragList(p: DragListProps) {
   const targetFor = (key: string, pageY: number): DropTarget | null => {
     if (frames.current.size === 0) return null;
     const canDrop = latest.current.canDrop;
-    return dropTargetAt([...frames.current.values()], key, pageY, { allowOnto: latest.current.allowOnto === true, ...(canDrop === undefined ? {} : { canDrop: (t: DropTarget) => canDrop(key, t) }) });
+    return dropTargetAt(visibleFrames([...frames.current.values()], boxWindow.current), key, pageY, { allowOnto: latest.current.allowOnto === true, ...(canDrop === undefined ? {} : { canDrop: (t: DropTarget) => canDrop(key, t) }) });
   };
 
   const ctx = useMemo<Omit<DragContext, 'phase' | 'target' | 'enabled'>>(() => {
@@ -90,6 +96,10 @@ export function DragList(p: DragListProps) {
           haptic('step');
           // Where every row is now, in the window (the touch's page y is in the same space).
           frames.current = new Map();
+          boxWindow.current = null;
+          latest.current.viewport?.current?.measureInWindow((_x, y, _w, h) => {
+            boxWindow.current = { y, h };
+          });
           for (const [key, view] of items.current) {
             view?.measureInWindow((_x, y, _w, h) => {
               frames.current.set(key, { key, y, h });
