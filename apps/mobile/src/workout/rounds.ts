@@ -33,6 +33,8 @@ export interface RoundRow {
   /** The set Log logs now (the open row). */
   current: boolean;
   done: boolean;
+  /** The latest log: its ✓ unticks it (the domain refuses any other; older sets are corrected). */
+  canUntick: boolean;
   skipped: boolean;
   /** RPE column: the target `@9` until logged, then the logged RPE (`8`, `RIR 2`); null for warm-ups and none. */
   rpe: string | null;
@@ -111,7 +113,7 @@ function spokenEffort(r: RoundRow['rpe'], state: TableRow['state']): string | nu
  * the same numbering every toast and sheet uses, plus the set-type label and
  * RPE cell (§2).
  */
-export function roundRows(rows: readonly TableRow[]): RoundRow[] {
+export function roundRows(rows: readonly TableRow[], latestLoggedSetId: string | null = null): RoundRow[] {
   const steps = setSteps(rows.map((r) => ({ id: r.setId, setType: r.setType, pairedWithSetId: r.pairedWithSetId })));
   return rows.map((row) => {
     const step = steps.get(row.setId);
@@ -135,6 +137,7 @@ export function roundRows(rows: readonly TableRow[]): RoundRow[] {
       companion: step?.companion ?? false,
       current: row.state === 'open',
       done: row.state === 'done',
+      canUntick: row.state === 'done' && row.setId === latestLoggedSetId,
       skipped: row.state === 'skipped',
       rpe,
       stepName,
@@ -171,14 +174,14 @@ const MEMBER_LETTERS = 'abcdefghij';
  * One round per table block (§1.3): an exercise, or a superset's members as
  * `3a`, `3b`. `worksLineOf` reads the builder's works line by exercise ID.
  */
-export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf: (exerciseId: string) => string | null): Round[] {
+export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf: (exerciseId: string) => string | null, latestLoggedSetId: string | null = null): Round[] {
   return table.blocks.map((block, i) => {
     const n = i + 1;
     let exercises: RoundExercise[];
     let order: TableRow[];
     if (block.kind === 'exercise') {
       const c = block.card;
-      const rows = roundRows(c.rows);
+      const rows = roundRows(c.rows, latestLoggedSetId);
       const progress = progressOf(rows);
       exercises = [
         {
@@ -208,7 +211,7 @@ export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf
       order = ss.rounds.flatMap((r) => r.rows);
       const nextTag = order.find((r) => r.state === 'open')?.memberTag ?? order.find((r) => r.state === 'pending')?.memberTag ?? null;
       exercises = ss.members.map((m, k) => {
-        const rows = roundRows(m.rows);
+        const rows = roundRows(m.rows, latestLoggedSetId);
         const progress = progressOf(rows);
         const upNext = nextTag === m.tag;
         return {
@@ -570,6 +573,15 @@ export function setClockStartMs(p: { rest: RestView | null; lastLogMs: number | 
   const restEnd = p.rest?.kind === 'ended' && p.rest.endedAtUtc !== null ? toMs(p.rest.endedAtUtc) : null;
   const candidates = [restEnd, p.lastLogMs].filter((x): x is number => x !== null);
   return candidates.length === 0 ? p.startedAtMs : Math.max(...candidates);
+}
+
+/**
+ * The SET clock's time (§1.5): from `setClockStartMs` to now, less any pause
+ * since then (spec S7), so it freezes while paused and doesn't jump on
+ * Resume. `pausedMs` is the paused time inside that window (`pausedMsWithin`).
+ */
+export function setClockMs(p: { startMs: number; nowMs: number; pausedMs: number }): number {
+  return Math.max(0, p.nowMs - p.startMs - p.pausedMs);
 }
 
 /** The latest log time among the sets (`completedAt`), or null. */

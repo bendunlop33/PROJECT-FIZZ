@@ -15,10 +15,12 @@ import { TargetWhyPanel } from './TargetWhyPanel';
 /**
  * `Workout` (§4): the builder's table, `#` · Exercise + works · `Sets` ·
  * `Top set (kg)`, `3a` / `3b` rows without a box; done rounds dimmed with ✓,
- * the shown round bright. A row tap jumps to its round. `＋ Add exercise`
- * at the end (today only; the exercise `⋯` keeps Swap, Superset, Remove).
+ * the shown round bright. A row tap jumps to its round; its `⋯` opens that
+ * exercise's menu (Swap, Superset, Remove…; §4, review S3) once the sheet
+ * has closed. `＋ Add exercise` at the end (today only). Reorder comes with
+ * the drag slice.
  */
-export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: readonly OverviewRowView[]; onPick: (roundIndex: number) => void; onAddExercise: () => void; onClose: () => void }) {
+export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: readonly OverviewRowView[]; onPick: (roundIndex: number) => void; onMenu: (sessionExerciseId: string) => void; onAddExercise: () => void; onClose: () => void; onDismissed: () => void }) {
   const theme = useTheme();
   const head = (t: string, style: object) => (
     <AppText variant="label" color="text.tertiary" style={{ fontSize: 11, lineHeight: 14, letterSpacing: 0.8, textTransform: 'uppercase', ...style }} maxFontSizeMultiplier={1.6}>
@@ -26,7 +28,7 @@ export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: r
     </AppText>
   );
   return (
-    <BottomCard visible={p.visible} onClose={p.onClose} scroll={false}>
+    <BottomCard visible={p.visible} onClose={p.onClose} onDismissed={p.onDismissed} scroll={false}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'] }}>
         <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
           {p.title}
@@ -39,6 +41,7 @@ export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: r
           {head('Exercise', { flex: 1 })}
           {head('Sets', { width: 48, textAlign: 'right' })}
           {head('Top set (kg)', { width: 64, textAlign: 'right' })}
+          {head('', { width: theme.target.min.width })}
         </View>
         {p.rows.map((r) => (
           <Pressable
@@ -46,6 +49,11 @@ export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: r
             accessibilityRole="button"
             accessibilityLabel={r.accessibilityLabel}
             accessibilityHint="Shows this round"
+            accessibilityActions={[{ name: 'activate' }, { name: 'menu', label: 'Exercise options' }]}
+            onAccessibilityAction={(e) => {
+              if (e.nativeEvent.actionName === 'menu') p.onMenu(r.key);
+              else p.onPick(r.roundIndex);
+            }}
             onPress={() => {
               p.onPick(r.roundIndex);
             }}
@@ -83,6 +91,15 @@ export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: r
             <AppText variant="callout" numeric style={{ width: 64, textAlign: 'right' }}>
               {r.top}
             </AppText>
+            <Pressable
+              accessible={false}
+              onPress={() => {
+                p.onMenu(r.key);
+              }}
+              style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+            >
+              <Icon name="ellipsis" color="text.secondary" size={18} />
+            </Pressable>
           </Pressable>
         ))}
         <View style={{ alignItems: 'flex-start', paddingTop: theme.space['2'] }}>

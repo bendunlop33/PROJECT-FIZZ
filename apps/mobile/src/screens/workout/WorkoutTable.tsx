@@ -592,7 +592,7 @@ function ColumnLabels({ loadHeader, valueHeader }: { loadHeader: string | null; 
 function PainBadge({ onPress }: { onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel="Pain flag" onPress={onPress} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['2'], paddingVertical: 2, borderRadius: theme.radius.pill, backgroundColor: theme.colors['status.warning.subtle'] }}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Pain flag" onPress={onPress} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['2'], minHeight: 28, borderRadius: theme.radius.pill, backgroundColor: theme.colors['status.warning.subtle'] }}>
       <Icon name="exclamationmark.triangle" color="status.warning" size={14} />
       <AppText variant="label" color="status.warning">
         Pain
@@ -701,7 +701,8 @@ function NumberCell({ row, current, todayChange }: { row: RoundRow; current: boo
         {row.label}
       </AppText>
       {sub.map((s) => (
-        <AppText key={s} variant="label" color="text.tertiary" numberOfLines={1} style={{ fontSize: 10, lineHeight: 12, letterSpacing: 0.6, textTransform: 'uppercase' }} maxFontSizeMultiplier={1.4}>
+        // Mixed case like the prototype (`Back-off`): fits the 52 pt column without truncating (spec S4).
+        <AppText key={s} variant="label" color="text.tertiary" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 10, lineHeight: 12 }} maxFontSizeMultiplier={1.4}>
           {s}
         </AppText>
       ))}
@@ -745,7 +746,8 @@ export function TableSetRow({ row: r, hasLoad, ax, editing, cellEditor = null, o
   const rowActions = [
     { name: 'activate' },
     { name: 'edit', label: 'Edit set' },
-    ...(done ? [{ name: 'untick', label: 'Untick' }] : [{ name: 'select', label: 'Make current' }]),
+    // Only the latest log can be unticked; older done sets are corrected through their cells (spec S6).
+    ...(done ? (r.canUntick ? [{ name: 'untick', label: 'Untick' }] : []) : [{ name: 'select', label: 'Make current' }]),
     ...(row.columns.loadLabel !== null ? [{ name: 'load', label: 'Edit load here' }] : []),
     { name: 'value', label: `Edit ${valueName} here` },
     { name: 'delete', label: 'Delete set' },
@@ -756,8 +758,8 @@ export function TableSetRow({ row: r, hasLoad, ax, editing, cellEditor = null, o
   };
   const marker = done ? (
     <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Untick ${r.stepName.toLowerCase()}`}
+      accessibilityRole={r.canUntick ? 'button' : 'text'}
+      accessibilityLabel={r.canUntick ? `Untick ${r.stepName.toLowerCase()}` : `${r.stepName} done`}
       hitSlop={6}
       onPress={() => {
         onPress('marker');
@@ -1304,7 +1306,8 @@ export function RoundStrip({ chips, onPick, onWorkout }: { chips: readonly { key
             }}
             hitSlop={{ top: 7, bottom: 7 }}
             style={({ pressed }) => ({
-              minWidth: 36,
+              // 44 pt wide, 30 + 2 × 7 pt slop tall (spec S5).
+              minWidth: 44,
               height: 30,
               paddingHorizontal: theme.space['2'],
               borderRadius: 9,

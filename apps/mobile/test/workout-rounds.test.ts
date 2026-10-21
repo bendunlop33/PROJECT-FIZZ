@@ -26,6 +26,7 @@ import {
   roundStrip,
   rpeCellText,
   selectOnShow,
+  setClockMs,
   setClockStartMs,
   shownRoundIndex,
   stepLabel,
@@ -585,5 +586,30 @@ describe('round changes: one select at a time, no bounce, never a Log that only 
     expect(timerRoundIndex(rs, { setId: 'plank-1', status: 'stopped' })).toBeNull();
     expect(timerRoundIndex(rs, null)).toBeNull();
     expect(offRoundPill(r(1), { timerRound: 0 })).toEqual({ kind: 'back', label: 'Back to round 1', index: 0 });
+  });
+});
+
+describe('SET clock and pauses (spec S7)', () => {
+  it('a 10 min pause neither counts nor makes the clock jump on Resume; it freezes while paused', () => {
+    const start = 1_000_000;
+    // 2 min after the rest ended, then paused 10 min, resumed 1 min ago.
+    expect(setClockMs({ startMs: start, nowMs: start + 13 * 60_000, pausedMs: 10 * 60_000 })).toBe(3 * 60_000);
+    // While paused, pausedMsWithin grows with now: the clock stands still.
+    expect(setClockMs({ startMs: start, nowMs: start + 5 * 60_000, pausedMs: 3 * 60_000 })).toBe(2 * 60_000);
+    expect(setClockMs({ startMs: start, nowMs: start + 6 * 60_000, pausedMs: 4 * 60_000 })).toBe(2 * 60_000);
+    expect(setClockMs({ startMs: start, nowMs: start - 5, pausedMs: 0 })).toBe(0);
+  });
+});
+
+describe('only the latest log offers Untick (spec S6)', () => {
+  it('canUntick is the latest logged set only; other done rows are corrected instead', () => {
+    const a = row({ state: 'done', setId: 'a' });
+    const b = row({ state: 'done', setId: 'b' });
+    const c = row({ state: 'open', setId: 'c' });
+    const rs = roundRows([a, b, c], 'b');
+    expect(rs.map((r) => r.canUntick)).toEqual([false, true, false]);
+    expect(roundRows([a, b, c]).some((r) => r.canUntick)).toBe(false);
+    const [ex] = buildRounds(view([card('Bench', [a, b, c])]), works, 'a')[0]?.exercises ?? [];
+    expect(ex?.rows.map((r) => r.canUntick)).toEqual([true, false, false]);
   });
 });

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { cardioTimeText, checkRoutineName, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { cardioTimeText, checkRoutineName, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -76,7 +76,7 @@ import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
 import { cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
-import { buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
+import { buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockMs, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
 import { ChatButton, CorrectionEditor, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
 import { WorkoutRoundsSheet, WhySheet } from './RoundSheets';
 import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
@@ -196,6 +196,7 @@ export function WorkoutScreen() {
   }, [data]);
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
+  const [sheetDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
   const loadRef = useRef<TextInput>(null);
   const repsRef = useRef<TextInput>(null);
@@ -471,7 +472,8 @@ export function WorkoutScreen() {
   const table = useMemo(() => (data === 'loading' || data === null || mode !== 'table' ? null : services.workout.tableView(data, timeLeftNow, edits)), [services, data, timeLeftNow, edits, mode]);
   // v3: one round per block, 3a / 3b in a superset, with the builder's works line (workout-table-v3 §1–§2).
   const worksLines = data === 'loading' || data === null ? undefined : data.worksLines;
-  const rounds = useMemo(() => (table === null ? [] : buildRounds(table, (id) => worksLines?.[id] ?? null)), [table, worksLines]);
+  const latestLogged = data === 'loading' || data === null ? null : latestCommittedSetId(data.aggregate);
+  const rounds = useMemo(() => (table === null ? [] : buildRounds(table, (id) => worksLines?.[id] ?? null, latestLogged)), [table, worksLines, latestLogged]);
   const timerRound = timerRoundIndex(rounds, data === 'loading' || data === null ? null : data.aggregate.workInterval);
   // A change of the open row (a log, an untick, a delete, a row select) brings the page back to its round (auto-advance, §3);
   // one a round change's own select made keeps the round Ben is on, even when an earlier select lands late.
@@ -2297,8 +2299,8 @@ export function WorkoutScreen() {
             ? { label: roundStep.label, onPress: () => { goToRound(roundStep.index); } }
             : primary;
   // §1.5: the SET clock counts up from the rest's end or the last log; frozen while paused.
-  const clockNowMs = session.pause !== null ? toMs(session.pause.pausedAtUtc) : now;
-  const setClock = clockText(clockNowMs - setClockStartMs({ rest, lastLogMs: lastLogMs(loaded.aggregate.sets), startedAtMs: toMs(session.startedAt.utc) }));
+  const setClockStart = setClockStartMs({ rest, lastLogMs: lastLogMs(loaded.aggregate.sets), startedAtMs: toMs(session.startedAt.utc) });
+  const setClock = clockText(setClockMs({ startMs: setClockStart, nowMs: now, pausedMs: pausedMsWithin(loaded.aggregate, setClockStart, now, now) }));
   const overTime = overTimeText(timeLeft?.view.estimate.overByMinutes);
   const whySheet = whyFor !== null && whyFor.roundKey === shownRound?.key ? whyView(shownRound, whyFor.index) : null;
   const whyExercise = whyFor !== null ? shownRound?.exercises[whyFor.index] : undefined;
@@ -2927,6 +2929,14 @@ export function WorkoutScreen() {
           setOverviewOpen(false);
           goToRound(index);
         }}
+        onMenu={(sessionExerciseId) => {
+          // The exercise's own `⋯` (Swap, Superset, Remove…) once the sheet is gone (spec S3).
+          sheetDismiss.arm(() => {
+            openCardMenu(sessionExerciseId);
+          });
+          setOverviewOpen(false);
+        }}
+        onDismissed={sheetDismiss.dismissed}
         onAddExercise={() => {
           setOverviewOpen(false);
           navigation.navigate('ExercisePicker', { sessionId: session.id });
