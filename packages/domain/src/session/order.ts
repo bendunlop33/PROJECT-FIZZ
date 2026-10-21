@@ -152,6 +152,52 @@ export function setDisplayNumbers(exercises: readonly SessionExercise[], sets: r
   return out;
 }
 
+/** A set's name on the active workout (workout-table-v3 §2): `Set 3`, or `Warm-up`. */
+export interface SetStep {
+  /** The working-set number; null for a warm-up. */
+  number: number | null;
+  /** `Set 3` / `Warm-up`: what the table row, the Log pill, every toast and sheet title call it. */
+  name: string;
+  /** The other side of a single-side log: it shares its partner's number and isn't a set of its own. */
+  companion: boolean;
+}
+
+/**
+ * The one numbering the active workout uses everywhere (wo-v3 reviews B1/B2):
+ * one block's live sets in execution order, working sets numbered 1..n,
+ * warm-ups named `Warm-up` and not counted, and the other side of a
+ * single-side log (`pairedWithSetId`) taking its partner's number (a pair is
+ * one prescribed set). A companion whose partner is gone counts as its own.
+ */
+export function setSteps(ordered: readonly { id: string; setType: WorkoutSet['setType']; pairedWithSetId: string | null }[]): Map<string, SetStep> {
+  const out = new Map<string, SetStep>();
+  let n = 0;
+  for (const s of ordered) {
+    const head = s.pairedWithSetId === null ? undefined : out.get(s.pairedWithSetId);
+    if (head !== undefined) {
+      out.set(s.id, { number: head.number, name: head.name, companion: true });
+    } else if (s.setType === 'warmup') {
+      out.set(s.id, { number: null, name: 'Warm-up', companion: false });
+    } else {
+      n += 1;
+      out.set(s.id, { number: n, name: `Set ${String(n)}`, companion: false });
+    }
+  }
+  return out;
+}
+
+/**
+ * The set type `＋ Set` copies (workout-table-v3 §2: "a set like the last
+ * working set"; wo-v3 logic S5): the type of the row's last live set that
+ * isn't a warm-up or a drop set, so a plan ending in a drop adds another
+ * back-off, not another drop. Null (copy the last live set) when the row has
+ * only warm-ups or drops.
+ */
+export function plusSetType(sets: readonly WorkoutSet[], sessionExerciseId: string): WorkoutSet['setType'] | null {
+  const own = sets.filter((s) => s.sessionExerciseId === sessionExerciseId && s.status !== 'deleted').sort((a, b) => a.index - b.index);
+  return own.filter((s) => s.setType !== 'warmup' && s.setType !== 'drop').at(-1)?.setType ?? null;
+}
+
 /**
  * For a superset set: true when no later member of the group still has a
  * pending set in the same round. An other-side row is in its partner's round.

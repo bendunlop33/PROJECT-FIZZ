@@ -1,215 +1,156 @@
-import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
-import { AccessibilityInfo, Keyboard, Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
+import { AccessibilityInfo, Animated, Keyboard, PanResponder, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 
-import { formatDuration, NBSP, targetLineLabel, type FocusView, type LoadField, type StepTarget, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
+import { formatDuration, NBSP, type FocusView, type LoadField, type RestView, type StepTarget } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
 
 import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, StepperTileRow, TextButton, TEXT_PRESSED_OPACITY, type SymbolName } from '../../ui';
 import { CARDIO_TIME_FORMAT } from '../../ui/number-text';
-import { anchorTargetY, bottomSpacerHeight, cellInputA11y, chipsFor, editsInPlace, keypadTileY, loadCellA11y, openRowLabel, openRowSubLine, runRowTap, showsFolded, tileReportFor, valueCellA11y, type AnchorRequest, type CellField, type ChipState, type Expansions, type RowPart, type RowTap, type TileId, type TileReport } from '../../workout/table';
+import { cellInputA11y, editsInPlace, loadCellA11y, runRowTap, valueCellA11y, type CellField, type RowPart, type RowTap, type TileId } from '../../workout/table';
+import { boxAnchor, boxFades, fitRoundBoxes, keepInView, pageOffsetFor, ROW_HEIGHT_DEFAULT, type Round, type RoundExercise, type RoundFit, type RoundRow } from '../../workout/rounds';
+import { claimsDrag, swipeIntent } from '../../workout/set-pager';
 import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { GymPartDivider, SnapNote } from './GymSwitch';
-import { TargetWhyLink } from './TargetWhyPanel';
 
 /**
- * The workout Table view (active-workout §2A; design-system §9.74–§9.80): the
- * whole session as one list, anchored on the open row. Every value comes
- * from `buildWorkoutTableView` and `buildActiveSetView` (domain). This file
- * only lays them out, measures where the anchor is, and reports taps; the
+ * The active workout's round page (workout-table-v3.md §1–§3; prototype
+ * `docs/design/prototypes/workout-active-v3.html`): one round per page, a
+ * superset's `3a` / `3b` stacked without a box, each exercise's sets in a
+ * per-set table (`# · KG · REPS · RPE · ✓`) whose rows scroll inside their
+ * own box, sized so the round fits one screen (`fitRoundBoxes`). Every value
+ * comes from `buildWorkoutTableView` / `buildActiveSetView` (domain) through
+ * `buildRounds`; this file lays them out, measures, and reports taps. The
  * screen owns every command (one Log path, `WorkoutScreen.log`).
  */
 
 const plainSpaces = (s: string) => s.replaceAll(NBSP, ' ');
 
-export interface WorkoutTableHandle {
-  /** `↑ N done`: to the top of the list. Changes no data. */
-  scrollToTop: (animated: boolean) => void;
-}
+/** Column widths shared by the header, every row and the open row, so the cells line up. */
+const NUM_W = 52;
+const RPE_W = 40;
+const TICK_W = 44;
+/** Swipe this far left on a row to delete it (§2). */
+const DELETE_DX = 96;
 
-interface Layout {
-  y: number;
-  h: number;
-}
+// ---------------------------------------------------------------------------
+// The round page
 
-/** `OpenSetRow` reports where its tiles are, so the keypad and rest anchors know where they end (review r2 B1, S2). */
-const TileLayoutContext = createContext<((t: TileReport) => void) | null>(null);
-
-export interface WorkoutTableProps {
-  table: WorkoutTableView;
+export interface RoundPageProps {
+  round: Round;
   ax: boolean;
   reduceMotion: boolean;
-  /** The open row (`OpenSetRow`), rendered in place of the active set's row. */
+  /** The open row (`OpenSetRow`), drawn in place of the active set's row. */
   openRow: ReactNode;
-  /** The after-set block (effort, record, pain check, coach slot), directly above the open row; null when empty. */
+  /** Effort chips, record, pain check, coach slot, gym card for the set just saved; under the card. Null when empty. */
   afterSet: ReactNode;
-  /** Changes when the after-set block's content is for another set, so its position is measured fresh. */
-  afterSetKey: string | null;
-  /** `Adjust` on the current exercise's header (52 pt hit). */
+  /** `4 Lateral raise`; null when nothing is next. */
+  upNext: string | null;
+  /** `Adjust` on the current exercise's header, and its inline row under it. */
   adjust: ReactNode;
-  /** The inline `AdjustRow` under the current header. */
   adjustRow: ReactNode;
-  /** The warm-up ramp suggestion with `Hide` (§2A.3), in the current card's header; null when none. */
+  /** The warm-up ramp suggestion with `Hide`, under the current exercise's header; null when none. */
   warmUp: ReactNode;
-  /** The open row's header, where VoiceOver focus goes once an anchor with `focus` is applied (§2A.7). */
+  /** The open row's set cell: VoiceOver focus lands here after a Log or a round change (§6). */
   focusRef: RefObject<View | null>;
-  /** After the cards: `All planned sets done.`, `+ Add exercise`, `TimeLeftLine`. */
-  footer: ReactNode;
-  /** The pending scroll to the anchor, if any; `onAnchorApplied` clears it. */
-  anchorRequest: AnchorRequest | null;
-  /** The keypad's height (`keyboardWillShow` `endCoordinates.height`, its Done bar included); 0 while it's closed. */
+  /** When the boxes re-position (`positionKey`): a log, an untick, a round change. */
+  positionKey: string;
+  /** A cell is being typed in (never re-position then), and the row it's in. */
+  editingSetId: string | null;
+  /** The keypad's height (0 closed): a cell being typed in stays in its box. */
   keyboardHeight: number;
-  /** Room under the list for a floating toast while it shows (0.6). */
-  bottomInset?: number;
-  onAnchorApplied: () => void;
-  onUserScroll: () => void;
-  onChips: (c: ChipState) => void;
-  onEditSet: (setId: string) => void;
-  /** `onScreen`: the row was visible when tapped (no scroll follows). */
-  onSelectSet: (setId: string) => void;
-  /** A KG / REPS cell of a pending or done row: edited in place, never on another screen (18 Oct). */
-  onCellTap: (tap: Extract<RowTap, { kind: 'select_edit' | 'correct' }>) => void;
-  /**
-   * A done row's in-place correction; null when none is open. `inCell`: the node is the
-   * cell's own field (Ben, 20 Oct), drawn in place of the cell's value; else under the row.
-   */
+  /** A set just added with `＋ Set`: its box scrolls to it and it flashes once. */
+  highlightSetId: string | null;
+  onHighlightShown: () => void;
+  /** A done row's in-place correction; null when none is open. `inCell`: drawn in the cell, else under the row. */
   rowEditor: { setId: string; field: CellField; node: ReactNode; inCell: boolean } | null;
-  /** A drag, or a tap on the list outside the rows: closes any cell editor (review S4). */
+  canPrev: boolean;
+  canNext: boolean;
+  onRound: (direction: 'prev' | 'next') => void;
+  onEditSet: (setId: string) => void;
+  onSelectSet: (setId: string) => void;
+  onCellTap: (tap: Extract<RowTap, { kind: 'select_edit' | 'correct' }>) => void;
+  /** A done row's ✓: undo that log (the domain refuses anything but the latest). */
+  onUntick: (setId: string) => void;
+  /** Swipe left on a row (or VoiceOver's Delete): delete with Undo. */
+  onDeleteSet: (setId: string, name: string) => void;
+  /** A tap on the card outside the rows: closes any cell editor. */
   onTapElsewhere: () => void;
   onAddSet: (sessionExerciseId: string) => void;
+  onWhy: (exerciseIndex: number) => void;
   onMenu: (sessionExerciseId: string) => void;
   onName: (card: { sessionExerciseId: string; exerciseId: string; name: string; isCurrent: boolean }) => void;
   onNote: (sessionExerciseId: string, name: string, note: string | null) => void;
   onPainBadge: (exerciseId: string) => void;
 }
 
-export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTableProps, ref: Ref<WorkoutTableHandle>) {
+interface Measures {
+  available: number;
+  content: number;
+  upNext: number;
+  boxFrames: Map<number, number>;
+  rows: Map<number, Map<string, { y: number; h: number }>>;
+}
+
+const sameFit = (a: RoundFit | null, b: RoundFit): boolean => a !== null && JSON.stringify(a) === JSON.stringify(b);
+
+/** Keyed by the round (`key={round.key}`), so a new round measures and fits from scratch. */
+export function RoundPage(props: RoundPageProps) {
   const theme = useTheme();
-  const { table } = props;
-  const scroll = useRef<ScrollView>(null);
-  const [expansions, setExpansions] = useState<Expansions>({});
-  const [spacer, setSpacer] = useState(0);
+  const { round } = props;
+  const page = useRef<ScrollView>(null);
+  const boxes = useRef(new Map<number, ScrollView | null>());
+  const m = useRef<Measures>({ available: 0, content: 0, upNext: 0, boxFrames: new Map(), rows: new Map() });
+  const [fit, setFit] = useState<RoundFit | null>(null);
+  const scrollY = useRef(new Map<number, number>());
+  const [fades, setFades] = useState<Partial<Record<number, { top: boolean; bottom: boolean }>>>({});
+  const applied = useRef(new Map<number, string>());
+  const upNextShown = props.upNext !== null && (fit?.upNext ?? true);
+  /** The page's own scroll (fallback only) and its visible frame in the window. */
+  const pageY = useRef(0);
+  const outer = useRef<View>(null);
+  /**
+   * `＋ Set` (review B2): the new row stays the box's anchor until the next
+   * log, untick or round change, so the box never scrolls back off it when
+   * the extra row makes it start scrolling.
+   */
+  const [pin, setPin] = useState<{ setId: string; key: string } | null>(null);
+  if (props.highlightSetId !== null && pin?.setId !== props.highlightSetId) setPin({ setId: props.highlightSetId, key: props.positionKey });
+  const pinned = pin !== null && pin.key === props.positionKey ? pin.setId : null;
+  /** Bumped when the pinned row lays out, so the box positions on it once it's really there. */
+  const [pinLaidOut, setPinLaidOut] = useState(0);
+  const highlightShown = useRef(props.onHighlightShown);
+  highlightShown.current = props.onHighlightShown;
 
-  // Measured positions (content space for direct children; relative to the body for rows).
-  const headers = useRef(new Map<string, Layout>());
-  const bodies = useRef(new Map<string, Layout>());
-  const rows = useRef(new Map<string, { block: string; layout: Layout }>());
-  const folded = useRef(new Map<string, Layout>());
-  const open = useRef<{ setId: string; layout: Layout } | null>(null);
-  const after = useRef<{ key: string; layout: Layout } | null>(null);
-  const tiles = useRef<TileReport | null>(null);
-  const spacerAt = useRef<number | null>(null);
-  const viewport = useRef(0);
-  /** The viewport with the keypad closed (the keypad lifts the bottom bars and shrinks it by its height). */
-  const viewportClosed = useRef(0);
-  const scrollY = useRef(0);
-  const lastChips = useRef<ChipState>({ done: false, now: null });
-
-  const anchorKey = table.anchor?.blockKey ?? null;
-  const anchorSetId = table.anchor?.setId ?? null;
-
-  useImperativeHandle(ref, () => ({
-    scrollToTop: (animated) => {
-      scroll.current?.scrollTo({ y: 0, animated });
+  const heightsOf = useCallback(
+    (i: number): number[] => {
+      const ex = round.exercises[i];
+      const rows = m.current.rows.get(i);
+      return (ex?.rows ?? []).map((r) => rows?.get(r.setId)?.h ?? ROW_HEIGHT_DEFAULT);
     },
-  }));
+    [round],
+  );
 
-  /** The open row's top and bottom in content space, when it's laid out for the current anchor. */
-  const openBox = useCallback((): { top: number; bottom: number } | null => {
-    const o = open.current;
-    if (o === null || anchorKey === null || o.setId !== anchorSetId) return null;
-    const body = bodies.current.get(anchorKey);
-    if (!body) return null;
-    return { top: body.y + o.layout.y, bottom: body.y + o.layout.y + o.layout.h };
-  }, [anchorKey, anchorSetId]);
-
-  const reportChips = useCallback(() => {
-    const box = openBox();
-    let firstDone: number | null = null;
-    for (const [key, l] of folded.current) if (table.blocks.some((b) => b.key === key)) firstDone = firstDone === null ? l.y : Math.min(firstDone, l.y);
-    for (const r of rows.current.values()) {
-      const body = bodies.current.get(r.block);
-      if (body) firstDone = firstDone === null ? body.y + r.layout.y : Math.min(firstDone, body.y + r.layout.y);
-    }
-    const pinned = anchorKey === null ? 0 : (headers.current.get(anchorKey)?.h ?? 0);
-    const c = chipsFor({ doneCount: table.doneCount, firstDoneTop: firstDone, openTop: box?.top ?? null, openBottom: box?.bottom ?? null, scrollY: scrollY.current, viewportHeight: viewport.current, pinnedHeight: pinned });
-    if (c.done !== lastChips.current.done || c.now !== lastChips.current.now) {
-      lastChips.current = c;
-      props.onChips(c);
-    }
-  }, [openBox, table, anchorKey, props]);
-
-  // Apply a pending anchor once the open row (and the after-set block, when there is one) is measured for this set.
   const frame = useRef<number | null>(null);
-  const tryApply = useCallback(() => {
+  const recompute = useCallback(() => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(() => {
       frame.current = null;
-      const req = props.anchorRequest;
-      if (req === null) {
-        reportChips();
-        return;
-      }
-      if (anchorKey === null) {
-        props.onAnchorApplied();
-        return;
-      }
-      const header = headers.current.get(anchorKey);
-      const body = bodies.current.get(anchorKey);
-      const o = open.current;
-      if (!header || !body || o?.setId !== anchorSetId) return;
-      const openTop = body.y + o.layout.y;
-      // Only tiles measured under the current keypad state: it hides the plate line above them (review r3 S1).
-      const t = tileReportFor(tiles.current, { setId: anchorSetId, keypadOpen: props.keyboardHeight > 0 });
-      const closed = viewportClosed.current > 0 ? viewportClosed.current : viewport.current;
-      const geometry = { cardTop: header.y, headerHeight: header.h, viewportHeight: closed, openTop };
-      let y: number;
-      if (req.target.kind === 'tile') {
-        // The focused tile clears the keypad: wait for its height and the tile's layout (review r2 B1).
-        const ky = keypadTileY({ geometry, keyboardHeight: props.keyboardHeight, tile: req.target.tile, report: t });
-        if (ky === null) return;
-        y = ky;
-      } else {
-        // The after-set block leads, unless it and the open row's tiles can't both fit (review r2 S2).
-        const a = props.afterSetKey !== null ? after.current : null;
-        if (props.afterSetKey !== null && a?.key !== props.afterSetKey) return;
-        if (t.kind === 'stale') return;
-        let tilesBottom: number | null = null;
-        if (t.kind === 'fresh') for (const b of t.boxes.values()) tilesBottom = Math.max(tilesBottom ?? 0, openTop + b.y + b.h);
-        y = anchorTargetY({ ...geometry, viewportHeight: Math.max(0, closed - props.keyboardHeight), afterTop: a !== null ? body.y + a.layout.y : null, tilesBottom });
-      }
-      if (spacerAt.current !== null && closed > 0) {
-        // The closed viewport: enough room whether or not the keypad has shrunk the list yet.
-        const needed = bottomSpacerHeight({ viewportHeight: closed, contentEnd: spacerAt.current, anchorY: y });
-        if (needed !== spacer) {
-          // The spacer grows or shrinks first, then the scroll (it would clamp otherwise).
-          setSpacer(needed);
-          return;
-        }
-      }
-      scroll.current?.scrollTo({ y, animated: req.animated });
-      scrollY.current = y;
-      props.onAnchorApplied();
-      reportChips();
-      if (req.focus) {
-        // VoiceOver: the new open row after a Log or on open, not wherever focus was (review S5).
-        const target = props.focusRef;
-        setTimeout(
-          () => {
-            if (target.current !== null) AccessibilityInfo.sendAccessibilityEvent(target.current, 'focus');
-          },
-          req.animated ? 400 : 50,
-        );
-      }
+      const x = m.current;
+      if (x.available <= 0 || x.content <= 0) return;
+      let boxTotal = 0;
+      for (let i = 0; i < round.exercises.length; i += 1) boxTotal += x.boxFrames.get(i) ?? 0;
+      const fixed = Math.max(0, x.content - boxTotal - (upNextShown ? x.upNext : 0));
+      const next = fitRoundBoxes({ available: x.available, fixed, upNext: props.upNext === null ? 0 : x.upNext, boxes: round.exercises.map((e, i) => ({ heights: heightsOf(i), anchor: boxAnchor(e, pinned) })) });
+      setFit((cur) => (sameFit(cur, next) ? cur : next));
     });
-  }, [props, anchorKey, anchorSetId, spacer, reportChips]);
-
+  }, [round, heightsOf, props.upNext, upNextShown, pinned]);
   useEffect(() => {
-    if (props.anchorRequest !== null) tryApply();
-  }, [props.anchorRequest, tryApply, spacer]);
+    recompute();
+  }, [recompute, props.afterSet, props.keyboardHeight]);
   useEffect(
     () => () => {
       if (frame.current !== null) cancelAnimationFrame(frame.current);
@@ -217,246 +158,433 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
     [],
   );
 
-  const layoutOf = (e: LayoutChangeEvent): Layout => ({ y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height });
+  // Position each box on its current set (§2), or on a set just added: on a log, untick or round change, and when its height changes; never while typing.
+  useEffect(() => {
+    if (fit === null || props.editingSetId !== null) return;
+    fit.boxes.forEach((b, i) => {
+      const hasPin = pinned !== null && (round.exercises[i]?.rows.some((r) => r.setId === pinned) ?? false);
+      // The added row must be laid out (and in this fit) before the box can show it.
+      const pinReady = hasPin && (m.current.rows.get(i)?.has(pinned) ?? false) && b.rows > 0;
+      const key = `${props.positionKey}|${String(b.height)}|${hasPin ? `${pinned}:${String(pinReady)}:${String(pinLaidOut)}` : ''}`;
+      if (applied.current.get(i) === key) return;
+      // The first placement in a round is a jump; later ones (a log, an untick) move with the motion setting.
+      const animated = !props.reduceMotion && applied.current.has(i);
+      applied.current.set(i, key);
+      if (b.height !== null) {
+        boxes.current.get(i)?.scrollTo({ y: b.offset, animated });
+        scrollY.current.set(i, b.offset);
+      }
+      // `＋ Set`: the flash runs once the box shows the new row.
+      if (pinReady && props.highlightSetId === pinned) highlightShown.current();
+    });
+  }, [fit, props.positionKey, props.editingSetId, props.reduceMotion, pinned, pinLaidOut, round, props.highlightSetId]);
 
-  const latestApply = useRef(tryApply);
-  latestApply.current = tryApply;
-  const reportTiles = useCallback((t: TileReport) => {
-    tiles.current = t;
-    latestApply.current();
-  }, []);
+  // VoiceOver: the open row after a Log or a round change (§6).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (props.focusRef.current !== null) AccessibilityInfo.sendAccessibilityEvent(props.focusRef.current, 'focus');
+    }, 350);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [props.positionKey]);
 
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrollY.current = e.nativeEvent.contentOffset.y;
-    reportChips();
-  };
+  // The cell being typed in stays in its box as the keypad (and the slim rest strip) take room;
+  // in the page-scroll fallback the page also scrolls so the row clears the keypad (review B3).
+  useEffect(() => {
+    if (props.editingSetId === null || fit === null) return;
+    round.exercises.forEach((_ex, i) => {
+      const r = m.current.rows.get(i)?.get(props.editingSetId ?? '');
+      const b = fit.boxes[i];
+      if (r === undefined || b === undefined) return;
+      let offset = 0;
+      if (b.height !== null) {
+        const cur = scrollY.current.get(i) ?? b.offset;
+        offset = keepInView(cur, b.height, r.y, r.h);
+        if (offset !== cur) {
+          boxes.current.get(i)?.scrollTo({ y: offset, animated: !props.reduceMotion });
+          scrollY.current.set(i, offset);
+        }
+      }
+      if (!fit.pageScroll) return;
+      const box = boxes.current.get(i)?.getNativeScrollRef() ?? null;
+      const view = outer.current;
+      if (box === null || view === null) return;
+      view.measureInWindow((_x, pageTop, _w, pageHeight) => {
+        box.measureInWindow((_bx, boxTop) => {
+          const to = pageOffsetFor({ pageOffset: pageY.current, pageTop, pageHeight, rowTop: boxTop + r.y - offset, rowHeight: r.h });
+          if (to === pageY.current) return;
+          page.current?.scrollTo({ y: to, animated: !props.reduceMotion });
+          pageY.current = to;
+        });
+      });
+    });
+  }, [props.editingSetId, props.keyboardHeight, fit, round, props.reduceMotion]);
 
-  // Expanding remembers where the open row was; the block folds again once it moves to another block (§2A.3).
-  const toggleFold = (key: string, expand: boolean) => {
-    setExpansions((cur) => {
-      if (expand) return { ...cur, [key]: anchorKey };
-      return Object.fromEntries(Object.entries(cur).filter(([k]) => k !== key));
+  const onBoxScroll = (i: number, y: number, viewHeight: number, contentHeight: number) => {
+    scrollY.current.set(i, y);
+    const f = boxFades({ offset: y, viewHeight, contentHeight });
+    setFades((cur) => {
+      const prev = cur[i];
+      return prev !== undefined && prev.top === f.top && prev.bottom === f.bottom ? cur : { ...cur, [i]: f };
     });
   };
 
-  const children: ReactNode[] = [];
-  const sticky: number[] = [];
-  for (const block of table.blocks) {
-    const isFolded = showsFolded(block, expansions, anchorKey);
-    if (isFolded && block.folded !== null) {
-      const f = block.folded;
-      children.push(
-        <View
-          key={`fold:${block.key}`}
-          onLayout={(e) => {
-            folded.current.set(block.key, layoutOf(e));
-            tryApply();
-          }}
-          style={{ paddingTop: theme.space['3'] }}
-        >
-          <FoldedExercise name={f.name} summary={f.summary} skipped={f.skipped} accessibilityLabel={f.accessibilityLabel} ax={props.ax} onPress={() => { toggleFold(block.key, true); }} />
-        </View>,
-      );
-      for (const [id, r] of rows.current) if (r.block === block.key) rows.current.delete(id);
-      continue;
+  const swipe = useSwipe((d) => {
+    if (d === 'next' ? props.canNext : props.canPrev) {
+      haptic('step');
+      props.onRound(d);
     }
-    folded.current.delete(block.key);
-    const current = block.key === anchorKey;
-    sticky.push(children.length);
-    children.push(
-      <View
-        key={`head:${block.key}`}
-        onLayout={(e) => {
-          headers.current.set(block.key, layoutOf(e));
-          tryApply();
-        }}
-        style={{ backgroundColor: theme.colors['bg.canvas'], paddingTop: theme.space['3'] }}
-      >
-        <View style={{ backgroundColor: theme.colors['bg.surface'], borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, paddingHorizontal: theme.space['3'], paddingTop: theme.space['2'] }}>
-          {block.kind === 'exercise' ? (
-            <CardHeader card={block.card} current={current} ax={props.ax} adjust={current ? props.adjust : null} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} onName={props.onName} onNote={props.onNote} onPainBadge={props.onPainBadge} />
-          ) : (
-            <SupersetHeader superset={block.superset} ax={props.ax} adjust={current ? props.adjust : null} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} />
-          )}
-        </View>
-      </View>,
-    );
-    children.push(
-      <View
-        key={`body:${block.key}`}
-        onLayout={(e) => {
-          bodies.current.set(block.key, layoutOf(e));
-          tryApply();
-        }}
-        style={{ backgroundColor: theme.colors['bg.surface'], borderBottomLeftRadius: theme.radius.lg, borderBottomRightRadius: theme.radius.lg, paddingHorizontal: theme.space['3'], paddingBottom: theme.space['1'] }}
-      >
-        {/* Scrolls with the body, never pinned: the pinned header is the group line and column labels only (review r2 S1). */}
-        {block.kind === 'superset' ? <SupersetMembers superset={block.superset} ax={props.ax} onMenu={props.onMenu} onName={props.onName} onNote={props.onNote} onPainBadge={props.onPainBadge} /> : null}
-        {current ? props.warmUp : null}
-        {current ? props.adjustRow : null}
-        {blockRows(block).flatMap((item) => {
-          if (item.kind === 'round') {
-            return [
-              <View key={`round:${String(item.n)}`} style={{ paddingTop: theme.space['3'], paddingBottom: theme.space['1'] }} accessibilityRole="header">
-                <AppText variant="label" color="text.tertiary">{`ROUND ${String(item.n)}`}</AppText>
-              </View>,
-            ];
-          }
-          const row = item.row;
-          const parts: ReactNode[] = [];
-          if (row.partStart !== null) parts.push(<GymPartDivider key={`part:${row.setId}`} label={row.partStart} />);
-          if (row.state === 'open') {
-            if (props.afterSet !== null && props.afterSetKey !== null) {
-              parts.push(
-                <View
-                  key={`after:${props.afterSetKey}`}
-                  onLayout={(e) => {
-                    after.current = { key: props.afterSetKey ?? '', layout: layoutOf(e) };
-                    tryApply();
-                  }}
-                >
-                  {props.afterSet}
-                </View>,
-              );
-            }
-            parts.push(
-              <View
-                key={`open:${row.setId}`}
-                onLayout={(e) => {
-                  open.current = { setId: row.setId, layout: layoutOf(e) };
-                  tryApply();
-                }}
-              >
-                <OpenRowContext.Provider value={row}>{props.openRow}</OpenRowContext.Provider>
-              </View>,
-            );
-          } else {
-            parts.push(
-              <View
-                key={`row:${row.setId}`}
-                onLayout={(e) => {
-                  if (row.state === 'done') rows.current.set(row.setId, { block: block.key, layout: layoutOf(e) });
-                  else rows.current.delete(row.setId);
-                }}
-              >
-                <TableSetRow
-                  row={row}
-                  ax={props.ax}
-                  editing={props.rowEditor?.setId === row.setId ? props.rowEditor.field : null}
-                  cellEditor={props.rowEditor?.setId === row.setId && props.rowEditor.inCell && !props.ax ? props.rowEditor.node : null}
-                  onPress={(part) => {
-                    runRowTap(row, {
-                      dismissKeyboard: () => { Keyboard.dismiss(); },
-                      edit: (setId) => {
-                        props.onTapElsewhere();
-                        props.onEditSet(setId);
-                      },
-                      select: (setId) => {
-                        haptic('step');
-                        props.onTapElsewhere();
-                        props.onSelectSet(setId);
-                      },
-                      selectEdit: (setId, field) => {
-                        haptic('step');
-                        props.onCellTap({ kind: 'select_edit', setId, field });
-                      },
-                      correct: (setId, field) => {
-                        haptic('step');
-                        props.onCellTap({ kind: 'correct', setId, field });
-                      },
-                    }, part);
-                  }}
-                />
-              </View>,
-            );
-            // At AX sizes the row is one block, so the field sits under it.
-            if (props.rowEditor?.setId === row.setId && (!props.rowEditor.inCell || props.ax)) parts.push(<View key={`edit:${row.setId}`}>{props.rowEditor.node}</View>);
-          }
-          // Rows are direct children of the body, so their measured y is body-relative.
-          return parts;
-        })}
-        {block.kind === 'exercise' ? (
-          <View style={{ alignItems: 'flex-start', minHeight: theme.target.workout.height, justifyContent: 'center' }}>
-            <TextButton
-              label="+ Add set"
-              tone="secondary"
-              accessibilityLabel={`Add set to ${block.card.name}`}
-              onPress={() => {
-                props.onAddSet(block.card.sessionExerciseId);
-              }}
-            />
-          </View>
-        ) : null}
-      </View>,
-    );
-  }
-  children.push(
-    <Pressable key="footer" accessible={false} onPress={props.onTapElsewhere} style={{ paddingTop: theme.space['3'], gap: theme.space['3'] }}>
-      {props.footer}
-    </Pressable>,
-  );
-  children.push(
-    <Pressable
-      key="spacer"
-      accessible={false}
-      onPress={props.onTapElsewhere}
-      onLayout={(e) => {
-        spacerAt.current = e.nativeEvent.layout.y;
-        tryApply();
-      }}
-      style={{ height: spacer }}
-    />,
-  );
+  });
 
-  // Outside the ScrollView: its children must stay direct for `stickyHeaderIndices`.
   return (
-    <TileLayoutContext.Provider value={reportTiles}>
+    <View
+      ref={outer}
+      style={{ flex: 1 }}
+      onLayout={(e) => {
+        m.current.available = e.nativeEvent.layout.height;
+        recompute();
+      }}
+    >
       <ScrollView
-        ref={scroll}
-        stickyHeaderIndices={sticky}
-        onLayout={(e) => {
-          viewport.current = e.nativeEvent.layout.height;
-          if (props.keyboardHeight <= 0) viewportClosed.current = e.nativeEvent.layout.height;
-          tryApply();
-        }}
-        onScroll={onScroll}
+        ref={page}
+        scrollEnabled={fit?.pageScroll ?? false}
         scrollEventThrottle={32}
-        onScrollBeginDrag={() => {
-          props.onUserScroll();
-          props.onTapElsewhere();
+        onScroll={(e) => {
+          pageY.current = e.nativeEvent.contentOffset.y;
+        }}
+        onContentSizeChange={(_w, h) => {
+          m.current.content = h;
+          recompute();
         }}
         {...WORKOUT_KEYBOARD}
-        contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['3'] + (props.bottomInset ?? 0) }}
+        contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['2'], gap: theme.space['2'] }}
       >
-        {children}
+        <View {...swipe.panHandlers}>
+          <Pressable accessible={false} onPress={props.onTapElsewhere} style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['3'], gap: theme.space['3'] }}>
+            {round.exercises.map((ex, i) => (
+              <View key={ex.sessionExerciseId} style={i > 0 ? { borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingTop: theme.space['3'] } : undefined}>
+                <ExerciseBlock
+                  ex={ex}
+                  index={i}
+                  superset={round.superset}
+                  page={props}
+                  fit={fit?.boxes[i] ?? null}
+                  fades={fades[i] ?? { top: false, bottom: false }}
+                  boxRef={(r) => {
+                    boxes.current.set(i, r);
+                  }}
+                  onBoxFrame={(h) => {
+                    m.current.boxFrames.set(i, h);
+                    recompute();
+                  }}
+                  onRow={(setId, y, h) => {
+                    const rows = m.current.rows.get(i) ?? new Map<string, { y: number; h: number }>();
+                    const prev = rows.get(setId);
+                    rows.set(setId, { y, h });
+                    m.current.rows.set(i, rows);
+                    if (prev?.h !== h) recompute();
+                    // `＋ Set` (Ben, 20 Oct): once the new row is laid out its box positions on it (the effect above).
+                    if (pinned === setId && prev === undefined) setPinLaidOut((n) => n + 1);
+                  }}
+                  onBoxScroll={(y, vh, ch) => {
+                    onBoxScroll(i, y, vh, ch);
+                  }}
+                />
+              </View>
+            ))}
+          </Pressable>
+        </View>
+        {props.afterSet}
+        {props.upNext !== null && upNextShown ? (
+          <View
+            onLayout={(e) => {
+              // With the container's gap before it: hiding Up next frees both (review S1: no flicker, no 8 pt clip).
+              m.current.upNext = e.nativeEvent.layout.height + theme.space['2'];
+              recompute();
+            }}
+            style={{ paddingHorizontal: theme.space['1'] }}
+          >
+            <AppText variant="callout" color="text.secondary" numberOfLines={props.ax ? 3 : 1}>
+              {'Up next: '}
+              <AppText variant="callout" style={{ fontWeight: '600' }}>
+                {props.upNext}
+              </AppText>
+            </AppText>
+          </View>
+        ) : null}
       </ScrollView>
-    </TileLayoutContext.Provider>
+    </View>
   );
-});
+}
 
-type BodyItem = { kind: 'row'; row: TableRow } | { kind: 'round'; n: number };
-
-function blockRows(block: TableBlock): BodyItem[] {
-  if (block.kind === 'exercise') return block.card.rows.map((row) => ({ kind: 'row' as const, row }));
-  return block.superset.rounds.flatMap((r) => [{ kind: 'round' as const, n: r.n }, ...r.rows.map((row) => ({ kind: 'row' as const, row }))]);
+/** Horizontal swipes on the card (§3): next / previous round. Set rows claim their own swipes first (Delete). */
+function useSwipe(onSwipe: (d: 'prev' | 'next') => void) {
+  const latest = useRef(onSwipe);
+  latest.current = onSwipe;
+  return useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_e, g) => claimsDrag(g.dx, g.dy),
+        onPanResponderTerminationRequest: () => true,
+        onPanResponderRelease: (_e, g) => {
+          const d = swipeIntent(g.dx, g.dy);
+          if (d !== null) latest.current(d);
+        },
+      }),
+    [],
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Headers
+// One exercise in the round
 
-function ColumnLabels({ columns }: { columns: TableColumns }) {
+function ExerciseBlock({
+  ex,
+  index,
+  superset,
+  page: p,
+  fit,
+  fades,
+  boxRef,
+  onBoxFrame,
+  onRow,
+  onBoxScroll,
+}: {
+  ex: RoundExercise;
+  index: number;
+  superset: boolean;
+  page: RoundPageProps;
+  fit: { height: number | null } | null;
+  fades: { top: boolean; bottom: boolean };
+  boxRef: (r: ScrollView | null) => void;
+  onBoxFrame: (h: number) => void;
+  onRow: (setId: string, y: number, h: number) => void;
+  onBoxScroll: (y: number, viewHeight: number, contentHeight: number) => void;
+}) {
+  const height = fit?.height ?? null;
+  const viewH = useRef(0);
+  const contentH = useRef(0);
+  return (
+    <View style={{ opacity: ex.dim ? 0.55 : 1 }}>
+      <ExerciseHeader ex={ex} superset={superset} page={p} />
+      {ex.isCurrent ? p.warmUp : null}
+      {ex.isCurrent ? p.adjustRow : null}
+      {p.ax ? null : <ColumnLabels loadHeader={ex.loadHeader} valueHeader={ex.valueHeader} />}
+      <View
+        onLayout={(e) => {
+          viewH.current = e.nativeEvent.layout.height;
+          onBoxFrame(e.nativeEvent.layout.height);
+        }}
+        style={height === null ? undefined : { height }}
+      >
+        <ScrollView
+          ref={boxRef}
+          scrollEnabled={height !== null}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={false}
+          scrollEventThrottle={32}
+          onScroll={(e) => {
+            onBoxScroll(e.nativeEvent.contentOffset.y, e.nativeEvent.layoutMeasurement.height, e.nativeEvent.contentSize.height);
+          }}
+          onContentSizeChange={(_w, h) => {
+            contentH.current = h;
+            onBoxScroll(0, viewH.current, h);
+          }}
+          onScrollBeginDrag={p.onTapElsewhere}
+          {...WORKOUT_KEYBOARD}
+        >
+          {ex.rows.map((r) => (
+            <View
+              key={r.setId}
+              onLayout={(e) => {
+                onRow(r.setId, e.nativeEvent.layout.y, e.nativeEvent.layout.height);
+              }}
+            >
+              {r.row.partStart !== null ? <GymPartDivider label={r.row.partStart} /> : null}
+              <SwipeRow
+                enabled={!r.skipped}
+                onDelete={() => {
+                  p.onDeleteSet(r.setId, r.stepName);
+                }}
+              >
+                <Flash on={p.highlightSetId === r.setId} reduceMotion={p.reduceMotion}>
+                  {r.current ? (
+                    <OpenRowContext.Provider value={{ row: r, loadHeader: ex.loadHeader }}>{p.openRow}</OpenRowContext.Provider>
+                  ) : (
+                    <TableSetRow
+                      row={r}
+                      hasLoad={ex.loadHeader !== null}
+                      ax={p.ax}
+                      editing={p.rowEditor?.setId === r.setId ? p.rowEditor.field : null}
+                      cellEditor={p.rowEditor?.setId === r.setId && p.rowEditor.inCell && !p.ax ? p.rowEditor.node : null}
+                      onDelete={() => {
+                        p.onDeleteSet(r.setId, r.stepName);
+                      }}
+                      onPress={(part) => {
+                        runRowTap(r.row, {
+                          dismissKeyboard: () => { Keyboard.dismiss(); },
+                          edit: (setId) => {
+                            p.onTapElsewhere();
+                            p.onEditSet(setId);
+                          },
+                          select: (setId) => {
+                            haptic('step');
+                            p.onTapElsewhere();
+                            p.onSelectSet(setId);
+                          },
+                          selectEdit: (setId, field) => {
+                            haptic('step');
+                            p.onCellTap({ kind: 'select_edit', setId, field });
+                          },
+                          correct: (setId, field) => {
+                            haptic('step');
+                            p.onCellTap({ kind: 'correct', setId, field });
+                          },
+                          untick: (setId) => {
+                            haptic('step');
+                            p.onTapElsewhere();
+                            p.onUntick(setId);
+                          },
+                        }, part);
+                      }}
+                    />
+                  )}
+                </Flash>
+              </SwipeRow>
+              {/* At AX sizes (and cardio's pair) the correction sits under its row. */}
+              {p.rowEditor?.setId === r.setId && (!p.rowEditor.inCell || p.ax) ? <View>{p.rowEditor.node}</View> : null}
+            </View>
+          ))}
+        </ScrollView>
+        {height !== null && fades.top ? <Fade edge="top" /> : null}
+        {height !== null && fades.bottom ? <Fade edge="bottom" /> : null}
+      </View>
+      <CompactRow ex={ex} index={index} page={p} />
+    </View>
+  );
+}
+
+/** Label · name with `works · rep target` under it · progress, Adjust while current, `⋯` (§2). */
+function ExerciseHeader({ ex, superset, page: p }: { ex: RoundExercise; superset: boolean; page: RoundPageProps }) {
   const theme = useTheme();
-  const label = (t: string, flex: number | null, align: 'left' | 'center' = 'left') => (
-    <AppText variant="label" color="text.tertiary" style={flex === null ? { width: 52, textAlign: align } : { flex, textAlign: align }}>
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'], minHeight: theme.target.min.height }}>
+        <AppText variant="headline" numeric style={{ minWidth: 28, paddingTop: 2 }} importantForAccessibility="no" accessibilityElementsHidden>
+          {ex.label}
+        </AppText>
+        <Pressable
+          accessibilityRole="header"
+          accessibilityLabel={`${ex.label}, ${ex.name}${ex.subline !== null ? `, ${ex.subline}` : ''}, ${String(ex.progress.done)} of ${String(ex.progress.total)} sets done${ex.painBadge ? ', pain flag' : ''}`}
+          accessibilityHint="Opens the exercise"
+          accessibilityActions={[
+            ...(p.canNext ? [{ name: 'next', label: 'Next exercise' }] : []),
+            ...(p.canPrev ? [{ name: 'previous', label: 'Previous exercise' }] : []),
+          ]}
+          onAccessibilityAction={(e) => {
+            if (e.nativeEvent.actionName === 'next') p.onRound('next');
+            if (e.nativeEvent.actionName === 'previous') p.onRound('prev');
+          }}
+          onPress={() => {
+            p.onName({ sessionExerciseId: ex.sessionExerciseId, exerciseId: ex.exerciseId, name: ex.name, isCurrent: ex.isCurrent });
+          }}
+          style={({ pressed }) => ({ flex: 1, opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+        >
+          <AppText variant="headline" numberOfLines={p.ax ? 3 : 2}>
+            {ex.name}
+          </AppText>
+          {ex.subline !== null ? (
+            <AppText variant="callout" color="text.secondary" numeric style={{ fontSize: 13, lineHeight: 18 }}>
+              {ex.subline}
+            </AppText>
+          ) : null}
+        </Pressable>
+        {ex.painBadge ? (
+          <PainBadge
+            onPress={() => {
+              p.onPainBadge(ex.exerciseId);
+            }}
+          />
+        ) : null}
+        <AppText variant="callout" color="text.secondary" numeric style={{ paddingTop: 2 }} importantForAccessibility="no" accessibilityElementsHidden>
+          {ex.progressText}
+        </AppText>
+        {ex.isCurrent ? p.adjust : null}
+        <MenuButton
+          label={`${superset ? `${ex.label} ` : ''}${ex.name} menu`}
+          onPress={() => {
+            p.onMenu(ex.sessionExerciseId);
+          }}
+        />
+      </View>
+      {ex.note !== null ? (
+        <LinkLine
+          accessibilityLabel={`Note: ${ex.note}. Tap to edit.`}
+          onPress={() => {
+            p.onNote(ex.sessionExerciseId, ex.name, ex.note);
+          }}
+        >
+          <AppText variant="callout" color="text.secondary" numberOfLines={2}>
+            {ex.note}
+          </AppText>
+        </LinkLine>
+      ) : null}
+    </View>
+  );
+}
+
+/** `＋ Set` (small outlined pill) on the left, the underlined `Why?` text on the right (§2); both 44 pt targets. */
+function CompactRow({ ex, index, page: p }: { ex: RoundExercise; index: number; page: RoundPageProps }) {
+  const theme = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: theme.space['1'] }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Add set to ${ex.name}`}
+        hitSlop={8}
+        onPress={() => {
+          haptic('step');
+          p.onAddSet(ex.sessionExerciseId);
+        }}
+        style={({ pressed }) => ({ minHeight: 30, paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, borderWidth: 1.5, borderColor: theme.colors['border.divider'], justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+      >
+        <AppText variant="callout" color="text.secondary" style={{ fontSize: 13, lineHeight: 18 }}>
+          ＋ Set
+        </AppText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Why this target"
+        hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }}
+        onPress={() => {
+          p.onWhy(index);
+        }}
+        style={({ pressed }) => ({ minHeight: 30, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+      >
+        <AppText variant="callout" color="text.secondary" style={{ fontSize: 13, lineHeight: 18, textDecorationLine: 'underline', textDecorationColor: theme.colors['text.tertiary'] }}>
+          Why?
+        </AppText>
+      </Pressable>
+    </View>
+  );
+}
+
+/** `# · KG · REPS · RPE · ✓`: the unit once, in the header (§2). */
+function ColumnLabels({ loadHeader, valueHeader }: { loadHeader: string | null; valueHeader: string }) {
+  const theme = useTheme();
+  const label = (t: string, style: object) => (
+    <AppText variant="label" color="text.tertiary" numberOfLines={1} style={{ fontSize: 11, lineHeight: 14, letterSpacing: 1, textAlign: 'center', ...style }} maxFontSizeMultiplier={1.6}>
       {t}
     </AppText>
   );
   return (
-    <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: theme.space['2'] }}>
-      {label('SET', null)}
-      {columns.loadLabel !== null ? label(columns.loadLabel, 1) : null}
-      {label(columns.valueLabel, 1)}
-      {label('✓', null, 'center')}
+    <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: theme.space['2'], paddingBottom: theme.space['1'] }}>
+      {label('#', { width: NUM_W, textAlign: 'left', paddingLeft: theme.space['1'] })}
+      {loadHeader !== null ? label(loadHeader, { flex: 1 }) : null}
+      {label(valueHeader, { flex: 1 })}
+      {label('RPE', { width: RPE_W })}
+      {label('✓', { width: TICK_W })}
     </View>
   );
 }
@@ -464,7 +592,7 @@ function ColumnLabels({ columns }: { columns: TableColumns }) {
 function PainBadge({ onPress }: { onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel="Pain flag" onPress={onPress} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['2'], paddingVertical: 2, borderRadius: theme.radius.pill, backgroundColor: theme.colors['status.warning.subtle'] }}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Pain flag" onPress={onPress} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['2'], minHeight: 28, borderRadius: theme.radius.pill, backgroundColor: theme.colors['status.warning.subtle'] }}>
       <Icon name="exclamationmark.triangle" color="status.warning" size={14} />
       <AppText variant="label" color="status.warning">
         Pain
@@ -476,165 +604,86 @@ function PainBadge({ onPress }: { onPress: () => void }) {
 function MenuButton({ label, onPress }: { label: string; onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.workout.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
       <Icon name="ellipsis" color="text.primary" size={20} />
     </Pressable>
   );
 }
 
-function FoldButton({ onPress }: { onPress: () => void }) {
+/** A soft fade at a box's edge: more rows that way (§2). Drawn with steps of the card colour, no gradient module. */
+function Fade({ edge }: { edge: 'top' | 'bottom' }) {
   const theme = useTheme();
+  const steps = [0.85, 0.6, 0.35, 0.15];
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel="Fold" onPress={onPress} style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.workout.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
-      <Icon name="chevron.up" color="text.secondary" size={18} />
-    </Pressable>
-  );
-}
-
-function CardHeader({ card, current, ax, adjust, onFold, onMenu, onName, onNote, onPainBadge }: { card: TableCard; current: boolean; ax: boolean; adjust: ReactNode; onFold: (() => void) | null } & Pick<WorkoutTableProps, 'onMenu' | 'onName' | 'onNote' | 'onPainBadge'>) {
-  const theme = useTheme();
-  return (
-    <View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], minHeight: theme.target.workout.height }}>
-        <Pressable
-          accessibilityRole="header"
-          accessibilityLabel={`${card.name}, ${card.progressAccessibility}${card.painBadge ? ', pain flag' : ''}`}
-          accessibilityHint="Opens the exercise"
-          onPress={() => {
-            onName({ sessionExerciseId: card.sessionExerciseId, exerciseId: card.exerciseId, name: card.name, isCurrent: card.isCurrent });
-          }}
-          style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], minHeight: theme.target.workout.height, opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
-        >
-          <AppText variant="title2" numberOfLines={ax ? 3 : 2} style={{ flexShrink: 1 }}>
-            {card.name}
-          </AppText>
-          <Icon name="chevron.right" size={13} color="text.tertiary" />
-        </Pressable>
-        {card.painBadge ? (
-          <PainBadge
-            onPress={() => {
-              onPainBadge(card.exerciseId);
-            }}
-          />
-        ) : null}
-        {!ax ? (
-          <AppText variant="callout" color="text.tertiary" numeric importantForAccessibility="no" accessibilityElementsHidden>
-            {card.progressText}
-          </AppText>
-        ) : null}
-        {current ? adjust : null}
-        {onFold !== null ? <FoldButton onPress={onFold} /> : null}
-        <MenuButton
-          label={`${card.name} menu`}
-          onPress={() => {
-            onMenu(card.sessionExerciseId);
-          }}
-        />
-      </View>
-      <AppText variant="callout" color="text.secondary" numeric>
-        {plainSpaces(card.subtitle)}
-      </AppText>
-      {card.note !== null ? (
-        <LinkLine
-          accessibilityLabel={`Note: ${card.note}. Tap to edit.`}
-          onPress={() => {
-            onNote(card.sessionExerciseId, card.name, card.note);
-          }}
-        >
-          <AppText variant="callout" color="text.secondary" numberOfLines={3}>
-            {card.note}
-          </AppText>
-        </LinkLine>
-      ) : null}
-      {!ax && card.columns !== null ? <ColumnLabels columns={card.columns} /> : <View style={{ height: theme.space['2'] }} />}
-    </View>
-  );
-}
-
-/**
- * The superset header (§2A.8), the part that pins: `Superset A` ·
- * `Round 2 of 3`, `Adjust` while the group is current (acting on the open
- * member), `⋯` for the open member (else the one whose set is next), and the
- * shared column labels. The member lines scroll with the body
- * (`SupersetMembers`) so the pinned part stays short (review r2 S1).
- */
-function SupersetHeader({ superset, ax, adjust, onFold, onMenu }: { superset: SupersetCard; ax: boolean; adjust: ReactNode; onFold: (() => void) | null } & Pick<WorkoutTableProps, 'onMenu'>) {
-  const theme = useTheme();
-  const target = superset.members.find((m) => m.sessionExerciseId === superset.menuTarget);
-  return (
-    <View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: theme.target.workout.height }}>
-        <AppText variant="title2" accessibilityRole="header" style={{ flexShrink: 1 }}>
-          {superset.label}
-        </AppText>
-        <AppText variant="callout" color="text.tertiary" numeric style={{ flex: 1 }}>
-          {superset.roundText}
-        </AppText>
-        {adjust}
-        {onFold !== null ? <FoldButton onPress={onFold} /> : null}
-        <MenuButton
-          label={target !== undefined ? `${target.tag} ${target.name} menu` : `${superset.label} menu`}
-          onPress={() => {
-            onMenu(superset.menuTarget);
-          }}
-        />
-      </View>
-      {!ax && superset.columns !== null ? <ColumnLabels columns={superset.columns} /> : <View style={{ height: theme.space['2'] }} />}
-    </View>
-  );
-}
-
-/**
- * The superset's member lines (review B3), at the top of its body: each opens
- * that member's exercise sheet and has its own `⋯`, pain badge and note.
- */
-function SupersetMembers({ superset, ax, onMenu, onName, onNote, onPainBadge }: { superset: SupersetCard; ax: boolean } & Pick<WorkoutTableProps, 'onMenu' | 'onName' | 'onNote' | 'onPainBadge'>) {
-  const theme = useTheme();
-  return (
-    <View style={{ borderLeftWidth: 2, marginBottom: theme.space['2'], borderLeftColor: theme.colors['border.control'], paddingLeft: theme.space['2'] }}>
-      {superset.members.map((m) => (
-        <View key={m.tag}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${m.tag}, ${m.name}, ${plainSpaces(m.unitCaption)}${m.painBadge ? ', pain flag' : ''}`}
-              accessibilityHint="Opens the exercise"
-              onPress={() => {
-                onName({ sessionExerciseId: m.sessionExerciseId, exerciseId: m.exerciseId, name: m.name, isCurrent: m.isCurrent });
-              }}
-              style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], minHeight: theme.target.workout.height, opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
-            >
-              <AppText variant="callout" color={m.isCurrent ? 'text.primary' : 'text.secondary'} style={{ flexShrink: 1 }} numberOfLines={ax ? 3 : 2}>{`${m.tag} ${m.name} · ${plainSpaces(m.unitCaption)}`}</AppText>
-              <Icon name="chevron.right" size={12} color="text.tertiary" />
-            </Pressable>
-            {m.painBadge ? (
-              <PainBadge
-                onPress={() => {
-                  onPainBadge(m.exerciseId);
-                }}
-              />
-            ) : null}
-            <MenuButton
-              label={`${m.tag} ${m.name} menu`}
-              onPress={() => {
-                onMenu(m.sessionExerciseId);
-              }}
-            />
-          </View>
-          {m.note !== null ? (
-            <LinkLine
-              accessibilityLabel={`${m.tag} note: ${m.note}. Tap to edit.`}
-              onPress={() => {
-                onNote(m.sessionExerciseId, m.name, m.note);
-              }}
-            >
-              <AppText variant="callout" color="text.secondary" numberOfLines={3}>
-                {m.note}
-              </AppText>
-            </LinkLine>
-          ) : null}
-        </View>
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, [edge]: 0, height: 16 }}>
+      {(edge === 'top' ? steps : [...steps].reverse()).map((o, i) => (
+        <View key={i} style={{ height: 4, backgroundColor: theme.colors['bg.surface'], opacity: o }} />
       ))}
+    </View>
+  );
+}
+
+/** A row that just arrived with `＋ Set`: a brief highlight (none under Reduce Motion). */
+function Flash({ on, reduceMotion, children }: { on: boolean; reduceMotion: boolean; children: ReactNode }) {
+  const theme = useTheme();
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!on || reduceMotion) return;
+    v.setValue(1);
+    Animated.timing(v, { toValue: 0, duration: 1200, useNativeDriver: true }).start();
+  }, [on, reduceMotion, v]);
+  return (
+    <View>
+      <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.raised'], opacity: v }} />
+      {children}
+    </View>
+  );
+}
+
+/**
+ * Swipe left on a set row = Delete, with Undo (§2). The row claims every
+ * sideways drag, so a swipe that starts on a row never changes the round.
+ */
+function SwipeRow({ enabled, onDelete, children }: { enabled: boolean; onDelete: () => void; children: ReactNode }) {
+  const theme = useTheme();
+  const x = useRef(new Animated.Value(0)).current;
+  const latest = useRef(onDelete);
+  latest.current = onDelete;
+  const on = useRef(enabled);
+  on.current = enabled;
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_e, g) => on.current && claimsDrag(g.dx, g.dy),
+        onPanResponderMove: (_e, g) => {
+          x.setValue(Math.min(0, g.dx));
+        },
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderRelease: (_e, g) => {
+          if (g.dx <= -DELETE_DX) {
+            haptic('step');
+            Animated.timing(x, { toValue: -400, duration: 160, useNativeDriver: true }).start(() => {
+              latest.current();
+              x.setValue(0);
+            });
+            return;
+          }
+          Animated.spring(x, { toValue: 0, useNativeDriver: true }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(x, { toValue: 0, useNativeDriver: true }).start();
+        },
+      }),
+    [x],
+  );
+  return (
+    <View {...responder.panHandlers}>
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, borderRadius: theme.radius.sm, backgroundColor: theme.colors['status.danger'], alignItems: 'flex-end', justifyContent: 'center', paddingRight: theme.space['4'] }}>
+        <AppText variant="label" color="on.accent">
+          Delete
+        </AppText>
+      </View>
+      <Animated.View style={{ transform: [{ translateX: x }], backgroundColor: theme.colors['bg.surface'] }}>{children}</Animated.View>
     </View>
   );
 }
@@ -642,209 +691,199 @@ function SupersetMembers({ superset, ax, onMenu, onName, onNote, onPainBadge }: 
 // ---------------------------------------------------------------------------
 // Rows
 
-/**
- * `TableSetRow` (design-system §9.3 Table variant): one state-styled value
- * per cell. Done: bright, filled green tick; a tap edits it. Pending: dim,
- * open ring; a tap on the row edits its plan, a tap on the ring makes it
- * the current set (never logs). Skipped: `Skipped` with a slashed circle.
- */
-/**
- * A set row (§9.74; 18 Oct, Ben: "the table stays a table"). Each cell is its
- * own target: the set number opens Edit set (type, side, notes), the KG and
- * REPS cells edit in place (`rowTap`), a pending row's ring makes it current.
- * A long-press anywhere opens Edit set. Skipped rows do nothing.
- */
-export function TableSetRow({ row, ax, editing, cellEditor = null, onPress }: { row: TableRow; ax: boolean; editing: CellField | null; /** The edited cell's own field (Ben, 20 Oct), drawn in place of its value. */ cellEditor?: ReactNode; onPress: (part: RowPart) => void }) {
+/** The number cell: bold on the current set, `W` on a warm-up, the set type (or today's change) under it. */
+function NumberCell({ row, current, todayChange }: { row: RoundRow; current: boolean; todayChange: 'coach' | 'rule' | null }) {
   const theme = useTheme();
-  const done = row.state === 'done';
-  const skipped = row.state === 'skipped';
-  const valueColor = done ? 'text.primary' : 'text.tertiary';
-  const valueStyle = done ? { fontWeight: '500' as const } : undefined;
-  const setLabel = row.memberTag ?? String(row.number);
-  // A done row's value stays on one line: its effort and pace go to the second line (design pass nit).
-  const second = done ? [row.effort !== null ? plainSpaces(row.effort) : null, row.pace !== null ? plainSpaces(row.pace) : null, row.notCounted, row.note, row.gymCaption, row.edited ? 'Edited' : null].filter((x): x is string => x !== null) : [];
-  const marker = done ? (
-    <Icon name="checkmark.circle.fill" color="status.done" size={26} />
-  ) : skipped ? (
-    <Icon name="slash.circle" color="text.tertiary" size={24} />
-  ) : (
-    // The ring is its own 52 pt target: it makes this the current set (Ben's decision 3).
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Make set ${setLabel} current`}
-      hitSlop={8}
-      onPress={() => {
-        onPress('marker');
-      }}
-      style={{ width: 52, minHeight: theme.target.workout.height, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <View style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: theme.colors['border.control'] }} />
-    </Pressable>
+  const sub = [row.typeLabel, todayChange === 'coach' ? 'Coach' : todayChange === 'rule' ? 'Rule' : null].filter((x): x is string => x !== null);
+  return (
+    <View style={{ paddingLeft: theme.space['1'] }}>
+      <AppText variant="callout" numeric color={current ? 'text.primary' : row.warmup ? 'text.tertiary' : 'text.secondary'} style={current ? { fontWeight: '700' } : undefined}>
+        {row.label}
+      </AppText>
+      {sub.map((s) => (
+        // Mixed case like the prototype (`Back-off`): fits the 52 pt column without truncating (spec S4).
+        <AppText key={s} variant="label" color="text.tertiary" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 10, lineHeight: 12 }} maxFontSizeMultiplier={1.4}>
+          {s}
+        </AppText>
+      ))}
+    </View>
   );
-  const tag = row.todayChange === null ? null : (
-    <View style={{ marginLeft: theme.space['1'], paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, backgroundColor: theme.colors['bg.raised'] }}>
-      <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={2}>
-        {row.todayChange === 'coach' ? 'Coach' : 'Rule'}
+}
+
+/** A boxed value cell on a set not done yet; green text without a box on a done one (§2). */
+function CellBox({ text, done, warmup, on }: { text: string; done: boolean; warmup: boolean; on: boolean }) {
+  const theme = useTheme();
+  if (done) {
+    return (
+      <AppText variant="rowValue" color="status.done" numeric numberOfLines={1} style={{ textAlign: 'center' }}>
+        {text}
+      </AppText>
+    );
+  }
+  return (
+    <View style={{ minHeight: 36, borderRadius: 9, backgroundColor: theme.colors['bg.raised'], opacity: warmup ? 0.75 : 1, borderWidth: 1.5, borderColor: on ? theme.colors.accent : 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.space['1'] }}>
+      <AppText variant="rowValue" color={warmup ? 'text.secondary' : 'text.primary'} numeric numberOfLines={1} adjustsFontSizeToFit>
+        {text}
       </AppText>
     </View>
   );
-  const rowActions = (done ? [{ name: 'activate' }, { name: 'edit', label: 'Edit set' }] : [{ name: 'activate' }, { name: 'edit', label: 'Edit set' }, { name: 'select', label: 'Make current' }]).concat(
-    row.columns.loadLabel !== null ? [{ name: 'load', label: 'Edit load here' }] : [],
-    [{ name: 'value', label: `Edit ${row.columns.valueLabel === 'REPS' ? 'reps' : row.columns.valueLabel === 'TIME' ? 'time' : row.columns.valueLabel === 'TIME · DIST' ? 'time and distance' : 'distance'} here` }],
-  );
-  const longPress = () => {
-    onPress('row');
+}
+
+/**
+ * A set row (§2): `# · KG · REPS · RPE · ✓`. Done: green values without
+ * boxes and a filled ✓ (tap = untick); a value tap corrects it in place
+ * (versioned, Undo). Not done: boxed values (tap = select and edit in place),
+ * an open ring (tap = make current, never a log). The set number (or a
+ * long-press) opens Edit set. VoiceOver actions mirror every tap and swipe.
+ */
+export function TableSetRow({ row: r, hasLoad, ax, editing, cellEditor = null, onPress, onDelete }: { row: RoundRow; hasLoad: boolean; ax: boolean; editing: CellField | null; /** The edited cell's own field (Ben, 20 Oct), drawn in place of its value. */ cellEditor?: ReactNode; onPress: (part: RowPart) => void; onDelete: () => void }) {
+  const theme = useTheme();
+  const row = r.row;
+  const done = r.done;
+  const skipped = r.skipped;
+  const second = done ? [row.pace !== null ? plainSpaces(row.pace) : null, row.notCounted, row.note, row.gymCaption, row.edited ? 'Edited' : null].filter((x): x is string => x !== null) : [];
+  const valueName = row.columns.valueLabel === 'REPS' ? 'reps' : row.columns.valueLabel === 'TIME' ? 'time' : row.columns.valueLabel === 'TIME · DIST' ? 'time and distance' : 'distance';
+  const rowActions = [
+    { name: 'activate' },
+    { name: 'edit', label: 'Edit set' },
+    // Only the latest log can be unticked; older done sets are corrected through their cells (spec S6).
+    ...(done ? (r.canUntick ? [{ name: 'untick', label: 'Untick' }] : []) : [{ name: 'select', label: 'Make current' }]),
+    ...(row.columns.loadLabel !== null ? [{ name: 'load', label: 'Edit load here' }] : []),
+    { name: 'value', label: `Edit ${valueName} here` },
+    { name: 'delete', label: 'Delete set' },
+  ];
+  const onAction = (a: string) => {
+    if (a === 'delete') onDelete();
+    else onPress(a === 'select' || a === 'untick' ? 'marker' : a === 'load' ? 'load' : a === 'value' ? 'value' : 'row');
   };
+  const marker = done ? (
+    <Pressable
+      accessibilityRole={r.canUntick ? 'button' : 'text'}
+      accessibilityLabel={r.canUntick ? `Untick ${r.stepName.toLowerCase()}` : `${r.stepName} done`}
+      hitSlop={6}
+      onPress={() => {
+        onPress('marker');
+      }}
+      style={{ width: TICK_W, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center' }}
+    >
+      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: theme.colors['status.done'], alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="checkmark" color="on.accent" size={15} />
+      </View>
+    </Pressable>
+  ) : skipped ? (
+    <View style={{ width: TICK_W, alignItems: 'center' }}>
+      <Icon name="slash.circle" color="text.tertiary" size={24} />
+    </View>
+  ) : (
+    // The ring makes this the current set (Ben's decision 3); it never logs.
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Make ${r.stepName.toLowerCase()} current`}
+      hitSlop={6}
+      onPress={() => {
+        onPress('marker');
+      }}
+      style={{ width: TICK_W, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center' }}
+    >
+      <View style={{ width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderColor: theme.colors['text.tertiary'], alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="checkmark" color="text.tertiary" size={15} />
+      </View>
+    </Pressable>
+  );
 
   if (ax || skipped) {
     // AX1+ block rows and skipped rows: one element; the cells are VoiceOver actions.
     return (
       <Pressable
         accessibilityRole={skipped ? 'text' : 'button'}
-        accessibilityLabel={row.accessibilityLabel}
+        accessibilityLabel={r.accessibilityLabel}
         accessibilityHint={skipped ? undefined : 'Edit this set'}
         accessibilityActions={skipped ? [] : rowActions}
         onAccessibilityAction={(e) => {
-          const a = e.nativeEvent.actionName;
-          onPress(a === 'select' ? 'marker' : a === 'load' ? 'load' : a === 'value' ? 'value' : 'row');
+          onAction(e.nativeEvent.actionName);
         }}
         disabled={skipped}
         onPress={() => {
           onPress('row');
         }}
-        style={({ pressed }) => ({
-          minHeight: theme.target.workout.height,
-          borderTopWidth: theme.dividerWidth,
-          borderTopColor: theme.colors['border.divider'],
-          backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent',
-          justifyContent: 'center',
-          paddingVertical: theme.space['1'],
-        })}
+        style={({ pressed }) => ({ minHeight: theme.target.min.height, borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent', justifyContent: 'center', paddingVertical: theme.space['1'] })}
       >
-        {ax ? (
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['3'], paddingVertical: theme.space['2'] }}>
-            <View style={{ paddingTop: 2 }}>{marker}</View>
-            <View style={{ flex: 1, gap: theme.space['1'] }}>
-              <AppText variant="headline" color={done ? 'text.primary' : 'text.secondary'}>
-                {`${row.badges.length > 0 ? `${row.badges.join(' ')} · ` : ''}${row.blockTitle}`}
-              </AppText>
-              <AppText variant="body" color={valueColor} numeric>
-                {plainSpaces(row.blockValue)}
-              </AppText>
-              {tag}
-              {second.map((x) => (
-                <AppText key={x} variant="callout" color="text.secondary">
-                  {x}
-                </AppText>
-              ))}
-            </View>
-          </View>
-        ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 52, paddingLeft: theme.space['1'] }}>
-              <AppText variant="headline" color="text.secondary" numeric>
-                {setLabel}
-              </AppText>
-            </View>
-            <AppText variant="callout" color="text.tertiary" style={{ flex: 1 }}>
-              {row.cells.value}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['3'], paddingVertical: theme.space['2'] }}>
+          <View style={{ flex: 1, gap: theme.space['1'] }}>
+            <AppText variant="headline" color={done ? 'text.primary' : 'text.secondary'}>
+              {[r.stepName, r.typeLabel].filter((x): x is string => x !== null).join(' · ')}
             </AppText>
-            <View style={{ width: 52, alignItems: 'center', justifyContent: 'center' }}>{marker}</View>
+            <AppText variant="body" color={done ? 'status.done' : 'text.secondary'} numeric>
+              {[row.cells.load !== null && hasLoad ? plainSpaces(row.cells.load) : null, plainSpaces(row.cells.value), r.rpe].filter((x): x is string => x !== null).join(' · ')}
+            </AppText>
+            {second.map((x) => (
+              <AppText key={x} variant="callout" color="text.secondary">
+                {x}
+              </AppText>
+            ))}
           </View>
-        )}
+          {marker}
+        </View>
       </Pressable>
     );
   }
 
-  const cell = (part: 'load' | 'value', text: string, a11y: string, extra: ReactNode) => {
+  const cell = (part: 'load' | 'value', text: string, a11y: string) => {
     const on = editing !== null && (part === 'load' ? editing === 'load' : editing !== 'load');
     if (on && cellEditor !== null) {
       // No second line (Ben, 20 Oct): the cell itself takes the typing.
-      return (
-        <View style={{ flex: 1, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-          {cellEditor}
-          {extra}
-        </View>
-      );
+      return <View style={{ flex: 1, minHeight: theme.target.min.height, justifyContent: 'center' }}>{cellEditor}</View>;
     }
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${a11y}, set ${setLabel}`}
+        accessibilityLabel={`${a11y}, ${r.stepName.toLowerCase()}`}
         accessibilityHint={on ? 'Closes the editor' : done ? 'Corrects it here' : 'Edits it here'}
         accessibilityState={{ expanded: on }}
         onPress={() => {
           onPress(part);
         }}
-        onLongPress={longPress}
-        style={({ pressed }) => ({ flex: 1, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+        onLongPress={() => {
+          onPress('row');
+        }}
+        style={({ pressed }) => ({ flex: 1, minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
       >
-        <View style={on ? { paddingHorizontal: theme.space['1'], marginLeft: -theme.space['1'], borderRadius: theme.radius.sm, borderWidth: 2, borderColor: theme.colors['border.control'] } : undefined}>
-          <AppText variant="rowValue" color={valueColor} numeric style={valueStyle} numberOfLines={1}>
-            {text}
-          </AppText>
-        </View>
-        {extra}
+        <CellBox text={text} done={done} warmup={r.warmup} on={on} />
       </Pressable>
     );
   };
 
   return (
-    <View style={{ minHeight: theme.target.workout.height, borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], justifyContent: 'center', paddingVertical: theme.space['1'] }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+    <View style={{ minHeight: theme.target.min.height, borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], justifyContent: 'center', paddingVertical: 3 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={row.accessibilityLabel}
+          accessibilityLabel={r.accessibilityLabel}
           accessibilityHint="Edit this set"
           accessibilityActions={rowActions}
           onAccessibilityAction={(e) => {
-            const a = e.nativeEvent.actionName;
-            onPress(a === 'select' ? 'marker' : a === 'load' ? 'load' : a === 'value' ? 'value' : 'row');
+            onAction(e.nativeEvent.actionName);
           }}
           onPress={() => {
             onPress('row');
           }}
-          onLongPress={longPress}
-          style={({ pressed }) => ({ width: 52, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: theme.space['1'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+          onLongPress={() => {
+            onPress('row');
+          }}
+          style={({ pressed }) => ({ width: NUM_W, minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
         >
-          {/* A superset member's tag, then its badges as bordered badges (design pass nit), never `A1W` text. */}
-          {row.badges.length === 0 || row.memberTag !== null ? (
-            <AppText variant="headline" color="text.secondary" numeric>
-              {setLabel}
-            </AppText>
-          ) : null}
-          {row.badges.map((b) => (
-            <View key={b} style={{ minWidth: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors['border.control'], alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
-              <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={1.4}>
-                {b}
-              </AppText>
-            </View>
-          ))}
+          <NumberCell row={r} current={false} todayChange={row.todayChange} />
         </Pressable>
-        {/* Each row's own columns (review B2): a mixed superset's loaded member keeps its load cell. */}
-        {row.columns.loadLabel !== null ? cell('load', row.cells.load ?? '—', loadCellA11y(row.columns.loadLabel, row.cells.load), null) : null}
-        {cell(
-          'value',
-          plainSpaces(row.cells.value),
-          valueCellA11y(row.columns.valueLabel, row.cells.value),
-          <>
-            {row.effort !== null && !done ? (
-              <AppText variant="callout" color="text.secondary" numeric style={{ marginLeft: theme.space['2'] }}>
-                {plainSpaces(row.effort)}
-              </AppText>
-            ) : null}
-            {row.pace !== null && !done ? (
-              <AppText variant="callout" color="text.secondary" numeric style={{ marginLeft: theme.space['2'] }} accessibilityLabel={`Pace ${plainSpaces(row.pace)}`}>
-                {plainSpaces(row.pace)}
-              </AppText>
-            ) : null}
-            {tag}
-          </>,
-        )}
-        <View style={{ width: 52, alignItems: 'center', justifyContent: 'center' }}>{marker}</View>
+        {/* Each row's own columns (review B2): a mixed part keeps its load cell. */}
+        {hasLoad ? (row.columns.loadLabel !== null ? cell('load', plainSpaces(row.cells.load ?? '—'), loadCellA11y(row.columns.loadLabel, row.cells.load)) : <View style={{ flex: 1 }} />) : null}
+        {cell('value', plainSpaces(row.cells.value), valueCellA11y(row.columns.valueLabel, row.cells.value))}
+        <AppText variant="callout" color={done ? 'text.secondary' : 'text.tertiary'} numeric numberOfLines={1} adjustsFontSizeToFit style={{ width: RPE_W, textAlign: 'center', fontSize: 13 }} importantForAccessibility="no" accessibilityElementsHidden>
+          {r.rpe ?? ''}
+        </AppText>
+        {marker}
       </View>
       {second.length > 0 ? (
-        <AppText variant="callout" color="text.secondary" style={{ paddingLeft: 52, paddingBottom: theme.space['1'] }}>
+        <AppText variant="callout" color="text.secondary" style={{ paddingLeft: NUM_W, paddingBottom: theme.space['1'], fontSize: 13 }}>
           {second.join(' · ')}
         </AppText>
       ) : null}
@@ -852,42 +891,8 @@ export function TableSetRow({ row, ax, editing, cellEditor = null, onPress }: { 
   );
 }
 
-/** `FoldedExercise` (§9.77): one 52 pt line for a finished exercise; tap expands it in place. */
-export function FoldedExercise({ name, summary, skipped, accessibilityLabel, ax, onPress }: { name: string; summary: string | null; skipped: boolean; accessibilityLabel: string; ax: boolean; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: theme.target.workout.height,
-        borderRadius: theme.radius.lg,
-        backgroundColor: pressed ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
-        paddingHorizontal: theme.space['3'],
-        paddingVertical: theme.space['2'],
-        flexDirection: ax ? 'column' : 'row',
-        alignItems: ax ? 'flex-start' : 'center',
-        gap: theme.space['2'],
-      })}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], flexShrink: 1 }}>
-        <Icon name={skipped ? 'slash.circle' : 'checkmark.circle.fill'} color={skipped ? 'text.tertiary' : 'status.done'} size={24} />
-        <AppText variant="headline" numberOfLines={ax ? 3 : 1} style={{ flexShrink: 1 }}>
-          {skipped ? `${name} · Skipped` : name}
-        </AppText>
-      </View>
-      {summary !== null ? (
-        <AppText variant="callout" color="text.secondary" numeric numberOfLines={ax ? 3 : 1} ellipsizeMode="middle" style={ax ? undefined : { flex: 1, textAlign: 'right' }}>
-          {plainSpaces(summary)}
-        </AppText>
-      ) : null}
-    </Pressable>
-  );
-}
-
 // ---------------------------------------------------------------------------
-// The open row
+// The open row (the current set)
 
 export interface OpenSetRowProps {
   focus: FocusView;
@@ -896,7 +901,7 @@ export interface OpenSetRowProps {
   keypadOpen: boolean;
   /** `Copied from 1 Oct`, `Unsaved edit restored`, or null. */
   caption: string | null;
-  /** A timed set before Start: its ✓ logs without the timer. */
+  /** A timed set before Start: logs without the timer. */
   timedLogLabel: string | null;
   /** Cardio's small timer button (review S6): `Stop` while the pill logs the time so far, `Resume` after Stop; null otherwise. */
   workAction?: { label: string; onPress: () => void } | null;
@@ -904,8 +909,6 @@ export interface OpenSetRowProps {
   editing: TileId | null;
   /** ✓ is live: the set has every value Log needs. */
   canLog: boolean;
-  whyOpen: boolean;
-  whyPanel: ReactNode;
   loadRef: Ref<TextInput>;
   repsRef: Ref<TextInput>;
   timeRef: Ref<TextInput>;
@@ -914,103 +917,75 @@ export interface OpenSetRowProps {
   headerRef?: Ref<View>;
   onEditCell: (cell: TileId | null) => void;
   onLog: () => void;
-  /** `⋯` / long-press: copy last, the full set editor, Focus. */
+  /** The set number / long-press: copy last, the full set editor, Focus. */
   onMore: () => void;
   onLoad: (v: number | null) => void;
   onReps: (v: number | null) => void;
   onTime: (v: number | null) => void;
   onDistance: (v: number | null) => void;
   onSide: (s: SetSide) => void;
-  onWhy: () => void;
-  onRestAfter: () => void;
   onPainFlag: () => void;
   onOffProfile: () => void;
-  /** (ADR 0029; review S4) `Add 22 kg dumbbells here?`, offered once per idea, as on the Focus card; null when none. */
+  /** (ADR 0029; review S4) `Add 22 kg dumbbells here?`, offered once per idea; null when none. */
   gymLearnText?: string | null;
   onGymLearn?: (yes: boolean) => void;
-  /** A cell's field took focus (the keypad is opening on it): the Table anchors that editor (WT39, review r2 B1). */
+  /** A cell's field took focus (the keypad is opening on it): the keypad bar follows it. */
   onTileFocus: (tile: TileId) => void;
+  /** VoiceOver's Delete (the swipe's mirror, §6). */
+  onDelete?: () => void;
 }
 
-/** The open row's table row (its columns and target RPE cell), from the Table, so its cells line up with the header. */
-const OpenRowContext = createContext<Pick<TableRow, 'columns' | 'effort' | 'memberTag'> | null>(null);
+/** The open row's round row and its exercise's load header, from the round page, so its cells line up with the header. */
+const OpenRowContext = createContext<{ row: RoundRow; loadHeader: string | null } | null>(null);
 
 /**
- * `OpenSetRow` (18 Oct, Ben: "the table stays a table"): the current set is
- * one highlighted table row, set · load · value · ✓, like every other row.
- * A tap on a value cell makes that cell the field (Ben, 20 Oct: no second
- * editor line); its − / +, `Next ›` and `Done` are on the screen's keypad bar
- * (steps from `buildActiveSetView`). Cardio's time-and-distance cell keeps
- * its pair under the row. ✓ logs it on the one Log path. One short
- * line under it: target, plates, rest, `Why?`. Everything else (copy last,
- * the full set editor, Focus) is behind `⋯` or a long-press.
+ * `OpenSetRow` (v3 §2): the current set reads like every pending row (the
+ * same boxed cells, no row highlight), marked by its bold set number and an
+ * accent-outlined ✓ that logs it on the one Log path. A tap on a value cell
+ * makes that cell the field (Ben, 20 Oct); its − / +, `Next ›` and `Done`
+ * are on the keypad bar (steps from `buildActiveSetView`). Cardio's
+ * time-and-distance cell keeps its pair under the row. Only what matters
+ * for this set right now sits under it (plates while typing the load, the
+ * side, a pain flag, an off-profile load, a restored draft).
  */
 export function OpenSetRow(p: OpenSetRowProps) {
   const theme = useTheme();
   const f = p.focus;
-  const tableRow = useContext(OpenRowContext);
-  const columns = tableRow?.columns ?? null;
+  const ctx = useContext(OpenRowContext);
   const { width: windowWidth } = useWindowDimensions();
   const step = p.ax ? 60 : theme.target.workout.height;
   const working = f.workTimer !== null && (f.workTimer.state === 'running' || f.workTimer.state === 'paused');
   // Cardio (19 Oct): the timer counts up in the cell (time so far · distance), and the distance stays editable while it runs.
   const cardio = f.measurement === 'cardio';
-  // Where the editor is, relative to the open row's own top, so the keypad anchor knows where it ends.
-  const report = useContext(TileLayoutContext);
-  const rowY = useRef(0);
-  const editorY = useRef(0);
-  const box = useRef<{ id: TileId; layout: Layout } | null>(null);
-  const keypadOpen = useRef(p.keypadOpen);
-  keypadOpen.current = p.keypadOpen;
-  const send = () => {
-    if (report === null) return;
-    const boxes = new Map<TileId, Layout>();
-    const b = box.current;
-    // An in-place cell sits on the row's own line (Ben, 20 Oct); cardio's pair sits in the editor under it.
-    if (b !== null && b.id === p.editing) boxes.set(b.id, { y: rowY.current + (editsInPlace({ field: b.id, cardio }) ? 0 : editorY.current) + b.layout.y, h: b.layout.h });
-    report({ setId: f.setId, keypadOpen: keypadOpen.current, boxes });
-  };
-  const latestSend = useRef(send);
-  latestSend.current = send;
-  // Nothing above the editor changes with the keypad: no layout event follows, so re-send under the new state.
-  useEffect(() => {
-    latestSend.current();
-  }, [p.keypadOpen]);
-  const tileLayout = (id: TileId) => (e: LayoutChangeEvent) => {
-    box.current = { id, layout: { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height } };
-    send();
-  };
   const tileFocus = (id: TileId) => () => {
     p.onTileFocus(id);
   };
 
-  const badges = f.rows.find((r) => r.setId === f.setId)?.badges ?? [];
-  const sideTag = f.side?.kind === 'fixed' ? (f.side.value === 'left' ? 'L' : 'R') : null;
-  const memberTag = tableRow?.memberTag ?? null;
-  const hasLoadColumn = columns !== null ? columns.loadLabel !== null : f.cells.load !== null;
+  const hasLoadColumn = ctx !== null ? ctx.loadHeader !== null : f.cells.load !== null;
   const valueField: TileId | null = f.reps ? 'reps' : f.duration ? 'time' : f.distance ? 'distance' : null;
   const valueText = working && !cardio ? workTimerText(f.workTimer?.remainingMs ?? null) : plainSpaces(f.cells.value);
-
-  const setLabel = memberTag ?? String(f.setNumber);
+  const sideTag = f.side?.kind === 'fixed' ? (f.side.value === 'left' ? 'L' : 'R') : null;
+  const setLabel = ctx?.row.label ?? `${f.stepName === 'Warm-up' ? 'W' : f.stepName.replace(/^Set /, '')}${sideTag ?? ''}`;
+  const stepName = ctx?.row.stepName ?? f.stepName;
   // Ben, 20 Oct: the tapped cell is the field itself (value selected, keypad up); − + Next Done ride the keypad bar.
   const inPlace = (id: TileId): ReactNode => {
-    const common = { variant: 'cell' as const, autoFocus: p.keypadOpen, onFocus: tileFocus(id), onLayout: tileLayout(id), flex: null, onSurface: false };
+    const common = { variant: 'cell' as const, autoFocus: p.keypadOpen, onFocus: tileFocus(id), flex: null, onSurface: false };
     if (id === 'load' && f.loadField) {
       const l = f.loadField;
-      return <NumberStepper key="load" {...common} inputRef={p.loadRef} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ setLabel, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} warning={f.offProfileWarning !== null} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+      return <NumberStepper key="load" {...common} inputRef={p.loadRef} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ stepName, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} warning={f.offProfileWarning !== null} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
     }
-    if (id === 'reps' && f.reps) return <NumberStepper key="reps" {...common} inputRef={p.repsRef} label="Reps" fieldLabel={cellInputA11y({ setLabel, field: 'reps', value: f.reps.value })} unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
-    if (id === 'time' && f.duration && !working) return <NumberStepper key="time" {...common} inputRef={p.timeRef} label="Time" fieldLabel={cellInputA11y({ setLabel, field: 'time', value: f.duration.value })} unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
-    if (id === 'distance' && f.distance) return <NumberStepper key="dist" {...common} inputRef={p.distanceRef} label="Distance, metres" fieldLabel={cellInputA11y({ setLabel, field: 'distance', value: f.distance.value })} unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
+    if (id === 'reps' && f.reps) return <NumberStepper key="reps" {...common} inputRef={p.repsRef} label="Reps" fieldLabel={cellInputA11y({ stepName, field: 'reps', value: f.reps.value })} unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
+    if (id === 'time' && f.duration && !working) return <NumberStepper key="time" {...common} inputRef={p.timeRef} label="Time" fieldLabel={cellInputA11y({ stepName, field: 'time', value: f.duration.value })} unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
+    if (id === 'distance' && f.distance) return <NumberStepper key="dist" {...common} inputRef={p.distanceRef} label="Distance, metres" fieldLabel={cellInputA11y({ stepName, field: 'distance', value: f.distance.value })} unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
     return null;
   };
 
-  const cell = (id: TileId | null, text: string, a11y: string, flex: number) => {
+  const cell = (id: TileId | null, text: string, a11y: string) => {
     const on = id !== null && p.editing === id;
     const field = on && editsInPlace({ field: id, cardio }) ? inPlace(id) : null;
     if (field !== null) {
       // No second line: the cell itself takes the typing (Ben, 20 Oct).
-      return <View style={{ flex, minHeight: theme.target.workout.height, justifyContent: 'center' }}>{field}</View>;
+      return <View style={{ flex: 1, minHeight: theme.target.min.height, justifyContent: 'center' }}>{field}</View>;
     }
     return (
       <Pressable
@@ -1025,19 +1000,15 @@ export function OpenSetRow(p: OpenSetRowProps) {
           p.onEditCell(on ? null : id);
         }}
         onLongPress={p.onMore}
-        style={({ pressed }) => ({ flex, minHeight: theme.target.workout.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+        style={({ pressed }) => ({ flex: 1, minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
       >
-        <View style={{ alignSelf: 'flex-start', minWidth: 56, paddingHorizontal: theme.space['2'], paddingVertical: theme.space['1'], borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'], borderWidth: on ? 2 : 0, borderColor: theme.colors['border.control'] }}>
-          <AppText variant="rowValue" numeric style={{ fontWeight: '600' }}>
-            {text}
-          </AppText>
-        </View>
+        <CellBox text={text} done={false} warmup={ctx?.row.warmup ?? false} on={on} />
       </Pressable>
     );
   };
 
-  const loadA11y = loadCellA11y(columns?.loadLabel ?? null, f.cells.load);
-  const valueA11y = valueField === 'time' && working && !cardio ? `Time ${valueText}` : valueCellA11y(columns?.valueLabel ?? (valueField === 'time' ? 'TIME' : valueField === 'distance' ? 'DIST' : 'REPS'), f.cells.value);
+  const loadA11y = loadCellA11y(ctx?.row.row.columns.loadLabel ?? null, f.cells.load);
+  const valueA11y = valueField === 'time' && working && !cardio ? `Time ${valueText}` : valueCellA11y(ctx?.row.row.columns.valueLabel ?? (valueField === 'time' ? 'TIME' : valueField === 'distance' ? 'DIST' : 'REPS'), f.cells.value);
   let editor: ReactNode = null;
   // 1.3: a cardio set's time and distance stay together in one tile row (compact or stacked, never clipped).
   let stackDone = false;
@@ -1046,21 +1017,20 @@ export function OpenSetRow(p: OpenSetRowProps) {
     const distance = f.distance;
     const duration = f.duration;
     editor = working ? (
-      <NumberStepper key="dist" variant="inline" inputRef={p.distanceRef} autoFocus={p.keypadOpen} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={null} stepSize={step} label="DIST M" unit={null} value={distance.value} decimals down={distance.down} up={distance.up} onChange={p.onDistance} />
+      <NumberStepper key="dist" variant="inline" inputRef={p.distanceRef} autoFocus={p.keypadOpen} onFocus={tileFocus('distance')} flex={null} stepSize={step} label="DIST M" unit={null} value={distance.value} decimals down={distance.down} up={distance.up} onChange={p.onDistance} />
     ) : (
       <StepperTileRow tiles={cardioPairTiles({ timeText: duration.value === null ? '—' : CARDIO_TIME_FORMAT.show(duration.value), distance })} estimate={openRowWidth(windowWidth)} step={step} gap={theme.space['2']}>
         {({ numeralSize, compact, flexOf }) => (
           <>
-            <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={flexOf(1)} stepSize={step} numeralSize={numeralSize} compact={compact} label="TIME" unit={null} decimals={false} time value={duration.value} down={duration.down} up={duration.up} onChange={p.onTime} />
-            <NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={flexOf(1)} stepSize={step} numeralSize={numeralSize} compact={compact} label="DIST M" unit={null} value={distance.value} decimals down={distance.down} up={distance.up} onChange={p.onDistance} />
+            <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} flex={flexOf(1)} stepSize={step} numeralSize={numeralSize} compact={compact} label="TIME" unit={null} decimals={false} time value={duration.value} down={duration.down} up={duration.up} onChange={p.onTime} />
+            <NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} flex={flexOf(1)} stepSize={step} numeralSize={numeralSize} compact={compact} label="DIST M" unit={null} value={distance.value} decimals down={distance.down} up={distance.up} onChange={p.onDistance} />
           </>
         )}
       </StepperTileRow>
     );
   }
 
-  const target = f.targetBrief;
-  // 1.5: no 44 pt minimum on the line itself; padding and hitSlop make each link a 44 pt target.
+  // 1.5: links are 44 pt targets by padding and hitSlop, not by height.
   const link = (text: string, a11y: string, onPress: () => void) => (
     <Pressable accessibilityRole="button" accessibilityLabel={a11y} onPress={onPress} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }} style={({ pressed }) => ({ paddingVertical: theme.space['1'], justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
       <AppText variant="callout" color="text.secondary" numeric numberOfLines={1}>
@@ -1068,83 +1038,59 @@ export function OpenSetRow(p: OpenSetRowProps) {
       </AppText>
     </Pressable>
   );
-  // B1: the target and pace may shrink; `est.` never does, and `Plan was …` has its own line. At AX the line wraps.
-  const sub = openRowSubLine({ target: target !== null ? plainSpaces(target) : null, estimate: f.targetEstimate, pace: f.pace !== null ? plainSpaces(f.pace) : null, planWas: f.planWas !== null ? plainSpaces(f.planWas) : null, ax: p.ax });
-  const leadA11y = [target !== null ? `Target ${targetLineLabel(f.targetBrief, f.targetEstimate) ?? ''}` : null, f.pace !== null ? `Pace ${plainSpaces(f.pace)}` : null].filter((x): x is string => x !== null).join(', ');
   const plates = f.plateLine !== null && p.editing === 'load' ? (
-    <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${f.plateLine}`} style={{ paddingLeft: theme.space['2'], paddingBottom: theme.space['1'] }}>
+    <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${f.plateLine}`} style={{ paddingLeft: NUM_W, paddingBottom: theme.space['1'], fontSize: 13 }}>
       {plainSpaces(f.plateLine)}
     </AppText>
   ) : null;
+  const links = [p.workAction ? link(p.workAction.label, `${p.workAction.label} the timer`, p.workAction.onPress) : null, p.timedLogLabel !== null ? link(plainSpaces(p.timedLogLabel), `${stepName}, ${plainSpaces(p.timedLogLabel)}`, p.onLog) : null].filter((x) => x !== null);
 
   return (
-    <View
-      onLayout={(e) => {
-        rowY.current = e.nativeEvent.layout.y;
-        send();
-      }}
-      style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, marginHorizontal: -theme.space['1'], paddingLeft: theme.space['1'] + 3, paddingRight: theme.space['1'], paddingBottom: theme.space['1'] }}
-    >
-      <View style={{ position: 'absolute', left: 0, top: theme.space['2'], bottom: theme.space['2'], width: 3, borderRadius: 2, backgroundColor: theme.colors.accent }} />
-      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: theme.target.workout.height }}>
+    <View style={{ minHeight: theme.target.min.height, borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], paddingVertical: 3 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <Pressable
           ref={p.headerRef}
           accessibilityRole="button"
-          accessibilityLabel={`${f.exerciseName}, ${memberTag !== null ? `${memberTag}, ` : ''}set ${String(f.setNumber)}, ${f.setTypeLabel}${sideTag === 'L' ? ', left side' : sideTag === 'R' ? ', right side' : ''}, ${p.resting ? 'next' : 'current'}`}
+          accessibilityLabel={`${f.exerciseName}, ${ctx?.row.accessibilityLabel ?? `${stepName}, ${f.setTypeLabel}${sideTag === 'L' ? ', left side' : sideTag === 'R' ? ', right side' : ''}`}${p.resting ? ', next' : ''}`}
           accessibilityHint="More for this set"
+          accessibilityActions={[{ name: 'activate' }, ...(p.onDelete ? [{ name: 'delete', label: 'Delete set' }] : [])]}
+          onAccessibilityAction={(e) => {
+            if (e.nativeEvent.actionName === 'delete') p.onDelete?.();
+            else p.onMore();
+          }}
           onPress={p.onMore}
           onLongPress={p.onMore}
-          style={{ width: 49, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: 2 }}
+          style={{ width: NUM_W, minHeight: theme.target.min.height, justifyContent: 'center' }}
         >
-          {/* 1.6: a superset member reads `A2` (its badges after it); a plain set's badge stands for its number. */}
-          {badges.length === 0 || memberTag !== null ? (
-            <AppText variant="headline" color="accent" numeric>
-              {openRowLabel({ memberTag, setNumber: f.setNumber, sideTag })}
+          {ctx !== null ? (
+            <NumberCell row={ctx.row} current todayChange={f.adjustedBy} />
+          ) : (
+            <AppText variant="callout" numeric style={{ fontWeight: '700', paddingLeft: theme.space['1'] }}>
+              {setLabel}
             </AppText>
-          ) : null}
-          {badges.map((b) => (
-            <View key={b} style={{ minWidth: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
-              <AppText variant="label" color="accent" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={1.4}>
-                {b}
-              </AppText>
-            </View>
-          ))}
+          )}
         </Pressable>
-        {hasLoadColumn ? cell(f.loadField ? 'load' : null, f.cells.load ?? '—', loadA11y, 1) : null}
-        {cell(working && !cardio ? null : valueField, valueText, valueA11y, 1)}
-        {tableRow?.effort != null ? (
-          <AppText variant="callout" color="text.secondary" numeric style={{ marginRight: theme.space['1'] }} accessibilityLabel={`Target RPE ${plainSpaces(tableRow.effort).replace(/^@\s*/, '')}`}>
-            {plainSpaces(tableRow.effort)}
-          </AppText>
-        ) : null}
-        {f.adjustedBy !== null ? (
-          <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, backgroundColor: theme.colors['bg.surface'], marginRight: theme.space['1'] }}>
-            <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={2}>
-              {f.adjustedBy === 'coach' ? 'Coach' : 'Rule'}
-            </AppText>
-          </View>
-        ) : null}
+        {hasLoadColumn ? cell(f.loadField ? 'load' : null, plainSpaces(f.cells.load ?? '—'), loadA11y) : null}
+        {cell(working && !cardio ? null : valueField, valueText, valueA11y)}
+        <AppText variant="callout" color="text.tertiary" numeric numberOfLines={1} adjustsFontSizeToFit style={{ width: RPE_W, textAlign: 'center', fontSize: 13 }} accessibilityLabel={ctx?.row.rpe != null ? `Target RPE ${ctx.row.rpe.replace(/^@/, '')}` : undefined}>
+          {ctx?.row.rpe ?? ''}
+        </AppText>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Set ${String(f.setNumber)}, ${plainSpaces(p.timedLogLabel ?? f.logLabel ?? 'Log')}`}
+          accessibilityLabel={`${stepName}, ${plainSpaces(p.timedLogLabel ?? f.logLabel ?? 'Log')}`}
           accessibilityState={{ disabled: !p.canLog }}
           disabled={!p.canLog}
           onPress={p.onLog}
-          hitSlop={8}
-          style={({ pressed }) => ({ width: 52, minHeight: theme.target.workout.height, alignItems: 'center', justifyContent: 'center', opacity: !p.canLog ? 0.4 : pressed ? TEXT_PRESSED_OPACITY : 1 })}
+          hitSlop={6}
+          style={({ pressed }) => ({ width: TICK_W, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: !p.canLog ? 0.4 : pressed ? TEXT_PRESSED_OPACITY : 1 })}
         >
-          <View style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="checkmark" color="accent" size={16} />
+          <View style={{ width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="checkmark" color="accent" size={15} />
           </View>
         </Pressable>
       </View>
       {editor !== null ? (
-        <View
-          onLayout={(e) => {
-            editorY.current = e.nativeEvent.layout.y;
-            send();
-          }}
-        >
+        <View>
           <InlineEditor
             ax={p.ax}
             stack={stackDone}
@@ -1158,25 +1104,18 @@ export function OpenSetRow(p: OpenSetRowProps) {
         </View>
       ) : null}
       {plates}
-      {/* 1.5: one line under the row: target · Rest › · Why? (the set number already opens More). */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: sub.wrap ? 'wrap' : 'nowrap', columnGap: theme.space['3'], minHeight: theme.target.min.height, paddingLeft: 48 }}>
-        <View accessible={leadA11y !== ''} {...(leadA11y !== '' ? { accessibilityLabel: leadA11y } : {})} style={{ flexDirection: 'row', flexWrap: sub.wrap ? 'wrap' : 'nowrap', alignItems: 'center', columnGap: theme.space['1'], flexShrink: 1, flexGrow: 1, ...(sub.wrap ? { flexBasis: '100%' } : {}) }}>
-          {sub.segments.map((seg, i) => (
-            <AppText key={i} variant="callout" color="text.secondary" numeric {...(sub.wrap ? {} : { numberOfLines: 1 })} style={{ flexShrink: seg.shrink ? 1 : 0 }}>
-              {seg.text}
-            </AppText>
-          ))}
-        </View>
-        {p.workAction ? link(p.workAction.label, `${p.workAction.label} the timer`, p.workAction.onPress) : null}
-        {link(`Rest ${formatDuration(f.restAfterS)} ›`, `Rest after this set: ${formatDuration(f.restAfterS)}. Changes it.`, p.onRestAfter)}
-        {f.hasExplanation ? <TargetWhyLink slim open={p.whyOpen} onPress={p.onWhy} /> : null}
-      </View>
-      {sub.planWas !== null ? (
-        <AppText variant="callout" color="text.secondary" numeric style={{ paddingLeft: 48 }}>
-          {sub.planWas}
+      {links.length > 0 ? <View style={{ flexDirection: 'row', columnGap: theme.space['4'], paddingLeft: NUM_W }}>{links}</View> : null}
+      {f.targetEstimate ? (
+        // Rule 6: an estimated target says so, in the shortest word.
+        <AppText variant="callout" color="text.tertiary" style={{ paddingLeft: NUM_W, fontSize: 13 }} accessibilityLabel="Target is an estimate">
+          est.
         </AppText>
       ) : null}
-      {p.whyOpen ? p.whyPanel : null}
+      {f.planWas !== null ? (
+        <AppText variant="callout" color="text.secondary" numeric style={{ paddingLeft: NUM_W, fontSize: 13 }}>
+          {plainSpaces(f.planWas)}
+        </AppText>
+      ) : null}
       {f.side && f.side.kind === 'choice' ? (
         <ChipRow>
           {(['both', 'left', 'right'] as const).map((s) => (
@@ -1192,7 +1131,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
         </ChipRow>
       ) : null}
       {p.caption !== null ? (
-        <AppText variant="callout" color="text.secondary" style={{ paddingLeft: 48 }}>
+        <AppText variant="callout" color="text.secondary" style={{ paddingLeft: NUM_W, fontSize: 13 }}>
           {p.caption}
         </AppText>
       ) : null}
@@ -1248,8 +1187,8 @@ function InlineEditor({ ax, stack = false, onDone, children }: { ax: boolean; st
 export interface CorrectionEditorProps {
   field: CellField;
   ax: boolean;
-  /** The row's set label (`3`, `A2`), for VoiceOver's `Set 3 weight, 100 kg`. */
-  setLabel: string;
+  /** The row's step name (`Set 3`, `Warm-up`), for VoiceOver's `Set 3 weight, 100 kg`. */
+  stepName: string;
   loadField: LoadField | null;
   reps: StepField | null;
   duration: StepField | null;
@@ -1304,13 +1243,13 @@ export function CorrectionEditor(p: CorrectionEditorProps) {
     );
   } else if (p.field === 'load' && p.loadField) {
     const l = p.loadField;
-    return <NumberStepper key="load" {...cellProps} onFocus={focusOf('load')} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+    return <NumberStepper key="load" {...cellProps} onFocus={focusOf('load')} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ stepName: p.stepName, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
   } else if (p.field === 'reps' && p.reps) {
-    return <NumberStepper key="reps" {...cellProps} onFocus={focusOf('reps')} label="Reps" fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'reps', value: p.reps.value })} unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;
+    return <NumberStepper key="reps" {...cellProps} onFocus={focusOf('reps')} label="Reps" fieldLabel={cellInputA11y({ stepName: p.stepName, field: 'reps', value: p.reps.value })} unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;
   } else if (p.field === 'time' && p.duration) {
-    return <NumberStepper key="time" {...cellProps} onFocus={focusOf('time')} label="Time" fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'time', value: p.duration.value })} unit="s" value={p.duration.value} decimals={false} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />;
+    return <NumberStepper key="time" {...cellProps} onFocus={focusOf('time')} label="Time" fieldLabel={cellInputA11y({ stepName: p.stepName, field: 'time', value: p.duration.value })} unit="s" value={p.duration.value} decimals={false} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />;
   } else if (p.field === 'distance' && p.distance) {
-    return <NumberStepper key="dist" {...cellProps} onFocus={focusOf('distance')} label="Distance, metres" fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'distance', value: p.distance.value })} unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />;
+    return <NumberStepper key="dist" {...cellProps} onFocus={focusOf('distance')} label="Distance, metres" fieldLabel={cellInputA11y({ stepName: p.stepName, field: 'distance', value: p.distance.value })} unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />;
   }
   if (editor === null) return null;
   return (
@@ -1338,54 +1277,73 @@ function NoteLink({ icon, text, accessibilityLabel, onPress }: { icon: SymbolNam
 }
 
 // ---------------------------------------------------------------------------
-// Chips, rest bar, Chat
+// Round strip (§1.2)
 
-/** `DoneChip` (§9.78): `↑ 7 done` in the top bar's title slot. */
-export function DoneChip({ count, onPress }: { count: number; onPress: () => void }) {
+export function RoundStrip({ chips, onPick, onWorkout }: { chips: readonly { key: string; index: number; text: string; done: boolean; shown: boolean; accessibilityLabel: string }[]; onPick: (index: number) => void; onWorkout: () => void }) {
   const theme = useTheme();
+  const strip = useRef<ScrollView>(null);
+  const x = useRef(new Map<number, number>());
+  const shown = chips.find((c) => c.shown)?.index ?? 0;
+  useEffect(() => {
+    const at = x.current.get(shown);
+    if (at !== undefined) strip.current?.scrollTo({ x: Math.max(0, at - 60), animated: true });
+  }, [shown]);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${String(count)} ${count === 1 ? 'set' : 'sets'} done above. Shows them.`}
-      onPress={onPress}
-      hitSlop={8}
-      style={({ pressed }) => ({ minHeight: theme.target.workout.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], height: 36, paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, backgroundColor: theme.colors['bg.raised'], borderWidth: 1, borderColor: theme.colors['border.control'] }}>
-        <Icon name="arrow.up" color="text.primary" size={14} />
-        <AppText variant="label" numeric>{`${String(count)} done`}</AppText>
-      </View>
-    </Pressable>
-  );
-}
-
-/** `NowChip` (§9.79): `Now ↓` / `Now ↑` while the open row is off-screen. */
-export function NowChip({ direction, onPress }: { direction: 'below' | 'above'; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <View style={{ alignItems: 'flex-end', paddingHorizontal: theme.space['4'], paddingBottom: theme.space['1'] }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Current set, ${direction}. Scrolls to it.`}
-        onPress={onPress}
-        style={({ pressed }) => ({ minHeight: theme.target.workout.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], height: 36, paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, backgroundColor: theme.colors['bg.raised'], borderWidth: 1, borderColor: theme.colors['border.control'] }}>
-          <AppText variant="label">Now</AppText>
-          <Icon name={direction === 'below' ? 'arrow.down' : 'arrow.up'} color="text.primary" size={14} />
-        </View>
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['4'], gap: theme.space['2'], paddingBottom: theme.space['2'] }}>
+      <ScrollView ref={strip} horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ gap: 6, alignItems: 'center', paddingVertical: 2 }}>
+        {chips.map((c) => (
+          <Pressable
+            key={c.key}
+            accessibilityRole="button"
+            accessibilityLabel={c.accessibilityLabel}
+            accessibilityState={{ selected: c.shown }}
+            onLayout={(e) => {
+              x.current.set(c.index, e.nativeEvent.layout.x);
+            }}
+            onPress={() => {
+              haptic('step');
+              onPick(c.index);
+            }}
+            hitSlop={{ top: 7, bottom: 7 }}
+            style={({ pressed }) => ({
+              // 44 pt wide, 30 + 2 × 7 pt slop tall (spec S5).
+              minWidth: 44,
+              height: 30,
+              paddingHorizontal: theme.space['2'],
+              borderRadius: 9,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: c.done ? theme.colors['status.done.subtle'] : theme.colors['bg.surface'],
+              borderWidth: 1.5,
+              borderColor: c.shown ? theme.colors.accent : 'transparent',
+              opacity: pressed ? TEXT_PRESSED_OPACITY : 1,
+            })}
+          >
+            <AppText variant="label" numeric color={c.done ? 'status.done' : c.shown ? 'text.primary' : 'text.tertiary'} style={{ fontSize: 13, lineHeight: 16, fontWeight: '600' }} maxFontSizeMultiplier={1.6}>
+              {c.text}
+            </AppText>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <Pressable accessibilityRole="button" accessibilityLabel="Workout overview" onPress={onWorkout} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={({ pressed }) => ({ minHeight: 30, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
+        <AppText variant="callout" style={{ fontSize: 14, textDecorationLine: 'underline', textDecorationColor: theme.colors['text.tertiary'] }}>
+          Workout
+        </AppText>
       </Pressable>
     </View>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Timer bar (§1.5), Chat
+
 /** Height of the keypad-open rest strip (Ben, 20 Oct): one line, no pills. */
 export const SLIM_REST_HEIGHT = 32;
 
 /**
- * `RestBar` (§9.80): `REST 2:09` from the stored deadline, `−30` `+30`
- * `Skip`, and a 3 pt drain drawn at its current length each second (never
- * animated between seconds). Ended: `Ready · rested 3:12`; paused: frozen.
+ * `RestBar` (§9.80, v3 §1.5): `REST 1:29` (about 36 pt numerals) from the
+ * stored deadline, `−30` `+30` `Skip`, and a 3 pt drain drawn at its current
+ * length each second. Paused: frozen. Slim (keypad open): one line.
  */
 export function RestBar({ rest, slim = false, onAdjust, onSkip, onOpen }: { rest: RestView; slim?: boolean; onAdjust: (deltaS: number) => void; onSkip: () => void; onOpen: () => void }) {
   const theme = useTheme();
@@ -1423,10 +1381,10 @@ export function RestBar({ rest, slim = false, onAdjust, onSkip, onOpen }: { rest
         haptic('step');
         onPress();
       }}
-      style={({ pressed }) => ({ minHeight: theme.target.workout.height, minWidth: theme.target.workout.width, justifyContent: 'center', alignItems: 'center', opacity: paused ? 0.4 : pressed ? TEXT_PRESSED_OPACITY : 1 })}
+      style={({ pressed }) => ({ minHeight: theme.target.min.height, minWidth: 48, justifyContent: 'center', alignItems: 'center', opacity: paused ? 0.4 : pressed ? TEXT_PRESSED_OPACITY : 1 })}
     >
-      <View style={{ height: 36, paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], alignItems: 'center', justifyContent: 'center' }}>
-        <AppText variant="label" numeric>
+      <View style={{ height: 40, minWidth: 48, paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, borderWidth: 1.5, borderColor: theme.colors['text.tertiary'], alignItems: 'center', justifyContent: 'center' }}>
+        <AppText variant="label" numeric style={{ fontSize: 14 }}>
           {label}
         </AppText>
       </View>
@@ -1439,35 +1397,48 @@ export function RestBar({ rest, slim = false, onAdjust, onSkip, onOpen }: { rest
           accessibilityRole="button"
           accessibilityLabel={ended ? `Rest done${rested !== null ? `, rested ${rested}` : ''}` : `Rest${paused ? ', paused' : ''}, ${formatDuration(remainingS)} left. Opens the rest screen.`}
           onPress={onOpen}
-          style={({ pressed }) => ({ flex: 1, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+          style={({ pressed }) => ({ flex: 1, minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
         >
-          {ended ? (
-            <>
-              <Icon name="checkmark.circle.fill" color="status.done" size={18} />
-              <AppText variant="headline" numeric numberOfLines={1} style={{ flexShrink: 1 }}>
-                {rested !== null ? `Ready · rested ${rested}` : 'Ready'}
-              </AppText>
-            </>
-          ) : (
-            <>
-              {paused ? <Icon name="pause.circle.fill" color="status.warning" size={16} /> : null}
-              {/* Below 390 pt wide the eyebrow drops (the countdown and pills need the room); paused keeps its word. */}
-              {!narrow || paused ? (
-                <AppText variant="label" color={paused ? 'status.warning' : 'text.tertiary'} numberOfLines={1}>
-                  {paused ? (narrow ? 'PAUSED' : 'REST · PAUSED') : 'REST'}
-                </AppText>
-              ) : null}
-              <AppText variant="headline" numeric color={paused ? 'text.tertiary' : 'text.primary'} style={{ fontSize: 26, lineHeight: 32 }} maxFontSizeMultiplier={1.6}>
-                {formatDuration(remainingS)}
-              </AppText>
-            </>
-          )}
+          {paused ? <Icon name="pause.circle.fill" color="status.warning" size={16} /> : null}
+          {/* Below 390 pt wide the eyebrow drops (the countdown and pills need the room); paused keeps its word. */}
+          {!narrow || paused ? (
+            <AppText variant="label" color={paused ? 'status.warning' : 'text.secondary'} numberOfLines={1} style={{ fontSize: 11, letterSpacing: 1.3 }}>
+              {paused ? (narrow ? 'PAUSED' : 'REST · PAUSED') : 'REST'}
+            </AppText>
+          ) : null}
+          <AppText variant="headline" numeric color={paused ? 'text.tertiary' : 'text.primary'} style={{ fontSize: 36, lineHeight: 42 }} maxFontSizeMultiplier={1.4}>
+            {formatDuration(remainingS)}
+          </AppText>
         </Pressable>
         {!ended ? pill('−30', 'Rest 30 seconds shorter', () => { onAdjust(-30); }) : null}
         {!ended ? pill('+30', 'Rest 30 seconds longer', () => { onAdjust(30); }) : null}
         {!ended ? pill('Skip', 'Skip rest', onSkip) : null}
       </View>
       {rest.kind === 'running' ? <View style={{ position: 'absolute', left: 0, bottom: 0, height: 3, width: `${Math.round(fraction * 1000) / 10}%`, backgroundColor: theme.colors.accent }} /> : null}
+    </View>
+  );
+}
+
+/** The timer bar when not resting (v3 §1.5): `SET 0:25`, counting up since the rest ended or the last log, in secondary ink. */
+export function SetClockBar({ text, paused, slim = false }: { text: string; paused: boolean; slim?: boolean }) {
+  const theme = useTheme();
+  const label = `${paused ? 'Paused, ' : ''}set time ${text}`;
+  if (slim) {
+    return (
+      <View accessible accessibilityRole="timer" accessibilityLabel={label} style={{ marginHorizontal: theme.space['3'], marginBottom: theme.space['1'], minHeight: SLIM_REST_HEIGHT, borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'], flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['3'] }}>
+        <AppText variant="label" numeric color="text.secondary" maxFontSizeMultiplier={1.4}>{`Set ${text}`}</AppText>
+      </View>
+    );
+  }
+  return (
+    <View accessible accessibilityRole="timer" accessibilityLabel={label} style={{ marginHorizontal: theme.space['3'], marginBottom: theme.space['2'], minHeight: 64, borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'] }}>
+      {paused ? <Icon name="pause.circle.fill" color="status.warning" size={16} /> : null}
+      <AppText variant="label" color="text.secondary" style={{ fontSize: 11, letterSpacing: 1.3 }}>
+        SET
+      </AppText>
+      <AppText variant="headline" numeric color="text.secondary" style={{ fontSize: 36, lineHeight: 42 }} maxFontSizeMultiplier={1.4}>
+        {text}
+      </AppText>
     </View>
   );
 }
@@ -1480,14 +1451,15 @@ export function ChatButton({ ax, onPress }: { ax: boolean; onPress: () => void }
       accessibilityRole="button"
       accessibilityLabel="Chat"
       onPress={onPress}
-      style={({ pressed }) => ({ width: 60, height: 60, borderRadius: 30, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent', alignItems: 'center', justifyContent: 'center' })}
+      style={({ pressed }) => ({ width: 56, height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: theme.colors['text.tertiary'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent', alignItems: 'center', justifyContent: 'center' })}
     >
-      <Icon name="text.bubble" color="text.primary" size={22} />
+      <Icon name="text.bubble" color="text.primary" size={20} />
       {!ax ? (
-        <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }}>
+        <AppText variant="label" color="text.secondary" style={{ fontSize: 11, lineHeight: 14 }}>
           Chat
         </AppText>
       ) : null}
     </Pressable>
   );
 }
+

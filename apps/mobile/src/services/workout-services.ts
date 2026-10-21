@@ -1,5 +1,6 @@
 import {
   activeWeekPlan,
+  plusSetType,
   avoidLegDays,
   isLegDay,
   legRunNear,
@@ -290,6 +291,7 @@ import {
   shownRationale,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
+import { worksLine } from '@fizz/schemas';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
 import type {
   GymStation,
@@ -566,6 +568,8 @@ export interface ActiveWorkoutData {
   exerciseInfo?: Readonly<Record<string, RuleExerciseInfo | null>>;
   /** Exercise IDs the catalogue lists as bodyweight: `+ Weight` and added-weight steps. */
   bodyweightExercises?: ReadonlySet<string>;
+  /** The builder's `works` line per exercise ID (`Chest, front delts, triceps`; workout-table-v3 §2); null when none. */
+  worksLines?: Readonly<Record<string, string | null>>;
 }
 
 /**
@@ -2838,14 +2842,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
       const exerciseInfo: Record<string, RuleExerciseInfo | null> = {};
       const bodyweightExercises = new Set<string>();
+      const worksLines: Record<string, string | null> = {};
       for (const id of new Set(aggregate.exercises.map((e) => e.exerciseId))) {
         const e = await exerciseById(id).catch(() => null);
         exerciseInfo[id] = e;
+        worksLines[id] = e === null ? null : worksLine(e);
         if (e?.defaultLoadConvention === 'bodyweight') bodyweightExercises.add(id);
       }
       return {
         exerciseInfo,
         bodyweightExercises,
+        worksLines,
         aggregate,
         gymName: gym?.name ?? null,
         gymNames: await gymNamesOf(p.id),
@@ -3107,7 +3114,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           newId: ctx.newId,
         });
       }
-      const cmd: SessionCommand = { type: 'add_set', at: ctx.now(), opId: req.opId, sessionExerciseId: req.sessionExerciseId, newSetId: req.newSetId, setType: null, ...(req.afterSetId !== undefined ? { afterSetId: req.afterSetId } : {}), ...(continuation ? { continuation } : {}) };
+      // `＋ Set` copies the last working set, never a drop (wo-v3 logic S5); `Insert set after` copies the set it follows.
+      const setType = req.afterSetId === undefined ? plusSetType(aggregate.sets, req.sessionExerciseId) : null;
+      const cmd: SessionCommand = { type: 'add_set', at: ctx.now(), opId: req.opId, sessionExerciseId: req.sessionExerciseId, newSetId: req.newSetId, setType, ...(req.afterSetId !== undefined ? { afterSetId: req.afterSetId } : {}), ...(continuation ? { continuation } : {}) };
       return ctx.afterCommand(await domain().dispatch(req.sessionId, cmd));
     },
 

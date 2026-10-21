@@ -7,261 +7,25 @@ import { NBSP, tableLogLabel, type TableRow } from '@fizz/domain';
 import type { SessionCommand } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import { anchorReducer, anchorScrollY, anchorTargetY, bottomSpacerHeight, cellEditReducer, chipsFor, correctionPatch, doneRowEditing, keypadScrollY, loadCellA11y, valueCellA11y, openRowEditing, runRowTap, keypadTileY, rowTap, TILE_CLEARANCE, selectCommand, selectRowFlow, showsFolded, tileReportFor, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type SelectOutcome, type TileId, type TileReport } from '../src/workout/table';
+import { cellEditReducer, correctionPatch, doneRowEditing, loadCellA11y, valueCellA11y, openRowEditing, runRowTap, rowTap, selectCommand, selectRowFlow, workoutMenu, workoutViewOf, type SelectOutcome } from '../src/workout/table';
+import { buildRounds, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, shownRoundIndex } from '../src/workout/rounds';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
- * The workout Table view (active-workout §2A): anchoring and auto-advance,
- * the chips, row taps that select and never log, Finish placement, and the
- * whole loop on real SQLite with no coach: open anchored, log from the pill,
- * select a row, force-close mid-rest and relaunch on the same set.
+ * The workout table (active-workout §2A, workout-table-v3): row taps that
+ * select and never log, a done row's ✓ that unticks, Finish placement, and
+ * the whole loop on real SQLite with no coach: open on the stored set, log
+ * from the pill, select a row, force-close mid-rest and relaunch on the same
+ * set. The v3 round page's layout is in workout-rounds.test.ts.
  */
 
 const plain = (s: string | null | undefined) => (s ?? '').replaceAll(NBSP, ' ');
 
-describe('anchor position (§2A.4)', () => {
-  it('puts the anchor directly under its pinned header, or the header in place on the first row', () => {
-    // Card at 400, header 120 tall; open row 300 below the card top (two done rows above it).
-    expect(anchorScrollY({ cardTop: 400, headerHeight: 120, anchorTop: 700 })).toBe(580);
-    // Set 1 is open: the anchor sits right under the header, so the header stays in its natural place.
-    expect(anchorScrollY({ cardTop: 400, headerHeight: 120, anchorTop: 520 })).toBe(400);
-    expect(anchorScrollY({ cardTop: 0, headerHeight: 120, anchorTop: 120 })).toBe(0);
-  });
-
-  it('the bottom spacer lets the anchor reach the top on the last sets, and is never negative', () => {
-    expect(bottomSpacerHeight({ viewportHeight: 600, contentEnd: 1000, anchorY: 800 })).toBe(400);
-    expect(bottomSpacerHeight({ viewportHeight: 600, contentEnd: 3000, anchorY: 800 })).toBe(0);
-  });
-});
-
-/**
- * Phone geometry for the keypad and rest anchors, from this branch's tokens
- * (review r2 B1, S2). Window space: status bar, 52 pt top bar, then the
- * list; at the bottom the 76 pt Log bar, the 64 pt rest bar above it while
- * resting. The keypad (number pad + 44 pt Done bar) lifts both bars.
- * Content space: the card's header at 600, two done rows (2 × 52) in the
- * body, then the open row: 8 pt padding, a 44 pt top line, 8 pt gap, then
- * stacked 108 pt tiles 8 pt apart.
- */
-interface Phone {
-  name: string;
-  height: number;
-  status: number;
-  keypad: number;
-}
-const PHONES: Phone[] = [
-  { name: '375 × 667', height: 667, status: 20, keypad: 216 + 44 },
-  { name: '390 × 844', height: 844, status: 47, keypad: 291 + 44 },
-];
-const TOP_BAR = 52;
-const LOG_BAR = 76;
-const REST_BAR = 64;
-const HEADER = 124;
-const CARD_TOP = 600;
-const TILE = 108;
-const OPEN_TOP = CARD_TOP + HEADER + 2 * 52;
-const tileTop = (i: number) => OPEN_TOP + 8 + 44 + 8 + i * (TILE + 8);
-/** The tiles in order for each field the test focuses: LOAD + REPS, or LOAD + TIME. */
-const LAYOUTS: { focused: TileId; index: number; count: number }[] = [
-  { focused: 'load', index: 0, count: 2 },
-  { focused: 'reps', index: 1, count: 2 },
-  { focused: 'time', index: 1, count: 2 },
-  { focused: 'time', index: 0, count: 1 },
-];
-const listTop = (p: Phone) => p.status + TOP_BAR;
-const viewport = (p: Phone, resting: boolean) => p.height - listTop(p) - LOG_BAR - (resting ? REST_BAR : 0);
-
-describe('keypad anchor: the focused tile clears the keypad (WT39, review r2 B1)', () => {
-  for (const phone of PHONES) {
-    for (const resting of [false, true]) {
-      for (const l of LAYOUTS) {
-        it(`${phone.name}${resting ? ', resting' : ''}: ${l.focused.toUpperCase()} (tile ${String(l.index + 1)} of ${String(l.count)})`, () => {
-          const top = tileTop(l.index);
-          const bottom = top + TILE;
-          const y = keypadScrollY({ cardTop: CARD_TOP, headerHeight: HEADER, viewportHeight: viewport(phone, resting), openTop: OPEN_TOP, keyboardHeight: phone.keypad, tileBottom: bottom });
-          // Window positions once scrolled. The bars sit on the keypad; the tile's bottom clears them.
-          const keypadTop = phone.height - phone.keypad;
-          const barsTop = keypadTop - LOG_BAR - (resting ? REST_BAR : 0);
-          const tileBottomOnScreen = listTop(phone) + (bottom - y);
-          expect(tileBottomOnScreen).toBeLessThanOrEqual(barsTop - TILE_CLEARANCE);
-          expect(barsTop + LOG_BAR + (resting ? REST_BAR : 0)).toBe(keypadTop);
-          // The tile is below the pinned header whenever the space allows it.
-          const room = barsTop - listTop(phone) - HEADER;
-          if (room >= TILE + TILE_CLEARANCE) expect(listTop(phone) + (top - y)).toBeGreaterThanOrEqual(listTop(phone) + HEADER);
-          // Never further than needed: the open row's top stays under the header when that's enough.
-          expect(y).toBeGreaterThanOrEqual(OPEN_TOP - HEADER);
-        });
-      }
-    }
-  }
-
-  it('the old anchor (open row under the header) hid REPS behind the keypad at both sizes', () => {
-    for (const phone of PHONES) {
-      const openY = anchorScrollY({ cardTop: CARD_TOP, headerHeight: HEADER, anchorTop: OPEN_TOP });
-      const visibleBottom = openY + viewport(phone, false) - phone.keypad;
-      expect(tileTop(1) + TILE, phone.name).toBeGreaterThan(visibleBottom);
-    }
-  });
-
-  it('a short tile already in view keeps the open row under its header; no keypad height is no shift', () => {
-    const big = keypadScrollY({ cardTop: CARD_TOP, headerHeight: HEADER, viewportHeight: 2000, openTop: OPEN_TOP, keyboardHeight: 335, tileBottom: tileTop(1) + TILE });
-    expect(big).toBe(OPEN_TOP - HEADER);
-    expect(keypadScrollY({ cardTop: 0, headerHeight: HEADER, viewportHeight: 600, openTop: HEADER, keyboardHeight: 0, tileBottom: 300 })).toBe(0);
-  });
-});
-
-describe('keypad anchor: tile positions from before the keypad hid the plate line (review r3 S1)', () => {
-  const phone = PHONES[0];
-  if (!phone) throw new Error('phone');
-  const PLATE_LINE = 28;
-  const geometry = { cardTop: CARD_TOP, headerHeight: HEADER, viewportHeight: viewport(phone, true), openTop: OPEN_TOP };
-  // REPS, the second tile: below the plate line while the keypad is closed, 28 pt higher once it opens.
-  const reps = (y: number) => new Map([['reps' as const, { y, h: TILE }]]);
-  const closedReport: TileReport = { setId: 's2', keypadOpen: false, boxes: reps(tileTop(1) - OPEN_TOP + PLATE_LINE) };
-  const openReport: TileReport = { setId: 's2', keypadOpen: true, boxes: reps(tileTop(1) - OPEN_TOP) };
-
-  it('a stale report waits; the fresh one then applies, about 28 pt short of the stale offset', () => {
-    // Pending keypad request; the frame runs before the tiles' new onLayout.
-    const state: { request: { tile: TileId } | null; scrolledTo: number | null } = { request: { tile: 'reps' }, scrolledTo: null };
-    const frame = (report: TileReport | null) => {
-      if (state.request === null) return;
-      const y = keypadTileY({ geometry, keyboardHeight: phone.keypad, tile: state.request.tile, report: tileReportFor(report, { setId: 's2', keypadOpen: true }) });
-      if (y === null) return;
-      state.scrolledTo = y;
-      state.request = null;
-    };
-    frame(closedReport);
-    expect(state.scrolledTo).toBeNull();
-    expect(state.request).not.toBeNull();
-    frame(openReport);
-    expect(state.request).toBeNull();
-    const fresh = keypadScrollY({ ...geometry, keyboardHeight: phone.keypad, tileBottom: tileTop(1) + TILE });
-    expect(state.scrolledTo).toBe(fresh);
-    const staleY = keypadScrollY({ ...geometry, keyboardHeight: phone.keypad, tileBottom: tileTop(1) + PLATE_LINE + TILE });
-    expect(staleY - fresh).toBe(PLATE_LINE);
-    // At 375 x 667 during rest the fresh offset keeps the − / + row (the tile's bottom 52 pt) below the pinned header.
-    const tileTopOnScreen = listTop(phone) + (tileTop(1) - fresh);
-    expect(tileTopOnScreen + TILE - 52).toBeGreaterThanOrEqual(listTop(phone) + HEADER);
-  });
-
-  it('tileReportFor: another set is none; the other keypad state is stale; no keypad height waits', () => {
-    expect(tileReportFor(openReport, { setId: 's3', keypadOpen: true })).toEqual({ kind: 'none' });
-    expect(tileReportFor(null, { setId: 's2', keypadOpen: true })).toEqual({ kind: 'none' });
-    expect(tileReportFor(openReport, { setId: 's2', keypadOpen: false })).toEqual({ kind: 'stale' });
-    expect(tileReportFor(closedReport, { setId: 's2', keypadOpen: false }).kind).toBe('fresh');
-    expect(keypadTileY({ geometry, keyboardHeight: 0, tile: 'reps', report: tileReportFor(openReport, { setId: 's2', keypadOpen: true }) })).toBeNull();
-    expect(keypadTileY({ geometry, keyboardHeight: phone.keypad, tile: 'load', report: tileReportFor(openReport, { setId: 's2', keypadOpen: true }) })).toBeNull();
-  });
-
-});
-
-describe('rest anchor: the after-set block gives way to the open row’s tiles (review r2 S2)', () => {
-  const phone = PHONES[1] ?? PHONES[0];
-  if (!phone) throw new Error('phone');
-  const AFTER_TOP = OPEN_TOP;
-  const geometry = (afterHeight: number) => {
-    const open = AFTER_TOP + afterHeight;
-    const tilesBottom = open + 8 + 44 + 8 + 2 * TILE + 8;
-    return { cardTop: CARD_TOP, headerHeight: HEADER, viewportHeight: viewport(phone, true), openTop: open, afterTop: AFTER_TOP, tilesBottom };
-  };
-
-  it('effort chips alone: the block sits under the header and REPS is still above the rest bar', () => {
-    const g = geometry(100);
-    const y = anchorTargetY(g);
-    expect(y).toBe(AFTER_TOP - HEADER);
-    expect(g.tilesBottom).toBeLessThanOrEqual(y + g.viewportHeight - TILE_CLEARANCE);
-  });
-
-  it('chips plus an offer: the list goes just far enough for REPS to clear the rest bar; the block stays partly above', () => {
-    const g = geometry(250);
-    const y = anchorTargetY(g);
-    expect(y).toBeGreaterThan(AFTER_TOP - HEADER);
-    expect(g.tilesBottom + TILE_CLEARANCE).toBe(y + g.viewportHeight);
-    expect(y).toBeLessThanOrEqual(g.openTop - HEADER);
-  });
-
-  it('when even the open row can’t fit, its top goes under the header (never past it)', () => {
-    const g = { ...geometry(250), viewportHeight: 300 };
-    expect(anchorTargetY(g)).toBe(g.openTop - HEADER);
-  });
-
-  it('no after-set block: the open row; tiles not measured yet: the block', () => {
-    expect(anchorTargetY({ ...geometry(250), afterTop: null })).toBe(AFTER_TOP + 250 - HEADER);
-    expect(anchorTargetY({ ...geometry(250), tilesBottom: null })).toBe(AFTER_TOP - HEADER);
-  });
-});
-
-describe('anchor requests: what may move the list (WT3, WT7)', () => {
-  const step = (events: AnchorEvent[], reduceMotion = false): AnchorRequest | null => events.reduce<AnchorRequest | null>((cur, e) => anchorReducer(cur, e, { reduceMotion }), null);
-
-  it('opening (Start, Resume, relaunch) and switching back from Focus jump without animation', () => {
-    expect(step([])).toBeNull();
-    expect(step([{ kind: 'opened' }])).toEqual({ animated: false, target: { kind: 'anchor' }, focus: true });
-    expect(step([{ kind: 'view_switched' }])).toEqual({ animated: false, target: { kind: 'anchor' }, focus: true });
-  });
-
-  it('each Log auto-advances with motion; under Reduce Motion it jumps to the same place', () => {
-    // VoiceOver focus moves to the new open row after a Log (S5).
-    expect(step([{ kind: 'logged' }])).toEqual({ animated: true, target: { kind: 'anchor' }, focus: true });
-    expect(step([{ kind: 'logged' }], true)).toEqual({ animated: false, target: { kind: 'anchor' }, focus: true });
-    expect(step([{ kind: 'now_chip' }], true)).toEqual({ animated: false, target: { kind: 'anchor' }, focus: false });
-  });
-
-  it('the keypad anchors the tile Ben focused, named by the tile itself (WT39, review r2 B1)', () => {
-    expect(step([{ kind: 'keypad_opened', tile: 'reps' }])).toEqual({ animated: true, target: { kind: 'tile', tile: 'reps' }, focus: false });
-    expect(step([{ kind: 'keypad_opened', tile: 'load' }], true)).toEqual({ animated: false, target: { kind: 'tile', tile: 'load' }, focus: false });
-    // Moving to another tile retargets; a Log after it lands on the after-set block again.
-    expect(step([{ kind: 'keypad_opened', tile: 'load' }, { kind: 'keypad_opened', tile: 'time' }])).toMatchObject({ target: { kind: 'tile', tile: 'time' } });
-    expect(step([{ kind: 'keypad_opened', tile: 'reps' }, { kind: 'applied' }, { kind: 'logged' }])).toMatchObject({ target: { kind: 'anchor' } });
-  });
-
-  it('only a tile sends keypad_opened: the screen no longer guesses from the focused input (review r2 B1)', () => {
-    const src = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/workout/WorkoutScreen.tsx'), 'utf8');
-    expect(src).not.toContain('currentlyFocusedInput');
-    expect(src.match(/anchorEvent\(\{ kind: 'keypad_opened'/g)).toHaveLength(1);
-    // It also says which field the keypad is on, for `Next ›` (design pass 1.4).
-    expect(src).toMatch(/onTileFocus=\{\(tile\) => \{\s*setKeypadField\(\{ row: 'open', field: tile \}\);\s*if \(modeRef\.current === 'table'\) anchorEvent\(\{ kind: 'keypad_opened', tile \}\)/);
-    const row = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/workout/WorkoutTable.tsx'), 'utf8');
-    for (const tile of ['time', 'distance']) expect(row).toContain(`onFocus={tileFocus('${tile}')}`);
-    // The in-place cells (load, reps, time, distance) share `onFocus: tileFocus(id)` (Ben, 20 Oct).
-    expect(row).toContain('onFocus: tileFocus(id)');
-    expect(readFileSync(join(import.meta.dirname, '..', 'src', 'ui/workout.tsx'), 'utf8')).toMatch(/setFocused\(true\);\s*onFocus\?\.\(\);/);
-  });
-
-  it('timers, toasts, effort taps, offers and reloads never move the list; Ben scrolling cancels a pending move', () => {
-    const quiet: AnchorEvent[] = [{ kind: 'reloaded' }, { kind: 'rest_ended' }, { kind: 'effort' }, { kind: 'offer' }, { kind: 'toast' }];
-    expect(step(quiet)).toBeNull();
-    expect(step([{ kind: 'logged' }, { kind: 'user_scrolled' }])).toBeNull();
-    expect(step([{ kind: 'logged' }, { kind: 'applied' }, ...quiet])).toBeNull();
-  });
-
-  it('selecting a row on screen moves nothing; from off-screen (voice, a menu) it re-anchors', () => {
-    expect(step([{ kind: 'selected', onScreen: true }])).toBeNull();
-    expect(step([{ kind: 'selected', onScreen: false }])).toEqual({ animated: true, target: { kind: 'anchor' }, focus: false });
-  });
-});
-
-describe('chips (WT8, WT9)', () => {
-  const base = { doneCount: 3, firstDoneTop: 0, openTop: 700, openBottom: 1000, scrollY: 580, viewportHeight: 600, pinnedHeight: 120 };
-  it('anchored: `↑ N done` shows, no Now chip', () => {
-    expect(chipsFor(base)).toEqual({ done: true, now: null });
-  });
-  it('a fresh workout: nothing done, no chip', () => {
-    expect(chipsFor({ ...base, doneCount: 0, firstDoneTop: null, openTop: 120, openBottom: 400, scrollY: 0 })).toEqual({ done: false, now: null });
-  });
-  it('scrolled up past the open row: Now ↓ and the title instead of the done chip', () => {
-    expect(chipsFor({ ...base, scrollY: 0 })).toEqual({ done: false, now: 'below' });
-  });
-  it('scrolled down past it: Now ↑', () => {
-    expect(chipsFor({ ...base, scrollY: 1200 })).toEqual({ done: false, now: 'above' });
-  });
-});
-
 describe('row taps (WT10, WT11, WT12; Ben decision 4)', () => {
   const row = (state: TableRow['state']) => ({ state, setId: `set-${state}` });
-  it('a done row opens the correction sheet; a pending row opens Edit set and its ring only selects; open and skipped do nothing', () => {
+  it('a done row opens Edit set and its ✓ unticks it (v3 §3); a pending row opens Edit set and its ring only selects; open and skipped do nothing', () => {
     expect(rowTap(row('done'))).toEqual({ kind: 'edit', setId: 'set-done' });
-    expect(rowTap(row('done'), 'marker')).toEqual({ kind: 'edit', setId: 'set-done' });
+    expect(rowTap(row('done'), 'marker')).toEqual({ kind: 'untick', setId: 'set-done' });
     expect(rowTap(row('pending'))).toEqual({ kind: 'edit', setId: 'set-pending' });
     expect(rowTap(row('pending'), 'marker')).toEqual({ kind: 'select', setId: 'set-pending' });
     expect(rowTap(row('open'), 'marker')).toEqual({ kind: 'none' });
@@ -280,10 +44,11 @@ describe('row taps (WT10, WT11, WT12; Ben decision 4)', () => {
     expect(rowTap({ ...row('open'), columns: cols }, 'load')).toEqual({ kind: 'none' });
     expect(rowTap({ ...row('skipped'), columns: cols }, 'value')).toEqual({ kind: 'none' });
     const calls: string[] = [];
-    const h = { dismissKeyboard: () => calls.push('dismiss'), edit: () => calls.push('edit'), select: () => calls.push('select'), selectEdit: (id: string, f: string) => calls.push(`selectEdit:${id}:${f}`), correct: (id: string, f: string) => calls.push(`correct:${id}:${f}`) };
+    const h = { dismissKeyboard: () => calls.push('dismiss'), edit: () => calls.push('edit'), select: () => calls.push('select'), selectEdit: (id: string, f: string) => calls.push(`selectEdit:${id}:${f}`), correct: (id: string, f: string) => calls.push(`correct:${id}:${f}`), untick: (id: string) => calls.push(`untick:${id}`) };
     runRowTap({ ...row('pending'), columns: cols }, h, 'load');
     runRowTap({ ...row('done'), columns: cols }, h, 'value');
-    expect(calls).toEqual(['dismiss', 'selectEdit:set-pending:load', 'dismiss', 'correct:set-done:reps']);
+    runRowTap({ ...row('done'), columns: cols }, h, 'marker');
+    expect(calls).toEqual(['dismiss', 'selectEdit:set-pending:load', 'dismiss', 'correct:set-done:reps', 'dismiss', 'untick:set-done']);
   });
 });
 
@@ -376,16 +141,6 @@ describe('selectRowFlow: save the open row’s draft, then select (review S6, N9
   });
 });
 
-describe('folding (§2A.3)', () => {
-  const folded = { key: 'bench', folded: { name: 'Bench press', summary: '100 × 8', skipped: false, accessibilityLabel: '' } };
-  it('a finished block folds; expanded, it stays open until the open row moves to another block', () => {
-    expect(showsFolded(folded, {}, 'row')).toBe(true);
-    expect(showsFolded(folded, { bench: 'row' }, 'row')).toBe(false);
-    expect(showsFolded(folded, { bench: 'row' }, 'face')).toBe(true);
-    expect(showsFolded({ key: 'row', folded: null }, {}, 'row')).toBe(false);
-  });
-});
-
 describe('Finish placement and the top bar menu (WT27, WT28, check 14)', () => {
   it('Finish is in ⋯ (and the Log slot only when all is done), never in the list; Focus view leads', () => {
     const m = workoutMenu({ view: 'table', paused: false, openEnded: false, ax: false, gymName: 'Main Gym' });
@@ -406,14 +161,12 @@ describe('Finish placement and the top bar menu (WT27, WT28, check 14)', () => {
     expect(workoutViewOf('focus')).toBe('focus');
   });
 
-  it('a superset keeps Adjust and acts on the open member: the group ⋯ uses the domain’s menu target, never A1 by position (review B3)', () => {
+  it('v3: each exercise (3a, 3b) has its own ⋯ and name sheet; Adjust sits on the exercise with the open row (review B3)', () => {
     const list = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/workout/WorkoutTable.tsx'), 'utf8');
-    expect(list).toMatch(/onMenu\(superset\.menuTarget\)/);
+    expect(list).toMatch(/p\.onMenu\(ex\.sessionExerciseId\)/);
+    expect(list).toMatch(/p\.onName\(\{ sessionExerciseId: ex\.sessionExerciseId/);
+    expect(list).toContain('{ex.isCurrent ? p.adjust : null}');
     expect(list).not.toMatch(/members\[0\]/);
-    expect(list).toMatch(/<SupersetHeader[^>]*adjust=\{current \? props\.adjust : null\}/);
-    // Each member line opens its own sheet and menu.
-    expect(list).toMatch(/onMenu\(m\.sessionExerciseId\)/);
-    expect(list).toMatch(/onName\(\{ sessionExerciseId: m\.sessionExerciseId/);
   });
 
   it('the Table code has one Log path and no Finish in the list, and never computes progression or loads', () => {
@@ -552,8 +305,12 @@ describe('the Table loop end to end, offline (WT1, WT6, WT10, WT13, WT42)', () =
     const t = s.workout.tableView(data, h.clockMs, null);
     expect(t.anchor?.setId).toBe(openId);
     expect(t.doneCount).toBe(1);
-    // The screen opens anchored on it, without animation.
-    expect(anchorReducer(null, { kind: 'opened' }, { reduceMotion: false })).toEqual({ animated: false, target: { kind: 'anchor' }, focus: true });
+    // v3: the page opens on the round with that set, and its box positions on it.
+    const rounds = buildRounds(t, (id) => data.worksLines?.[id] ?? null);
+    const shown = rounds[shownRoundIndex(rounds, null)];
+    expect(shown?.current).toBe(true);
+    expect(shown?.exercises.flatMap((e) => e.rows).find((r) => r.current)?.setId).toBe(openId);
+    expect(data.worksLines?.[data.aggregate.exercises[0]?.exerciseId ?? '']).toMatch(/chest/i);
     const v = s.workout.view(data, h.clockMs, null);
     expect(v.focus?.setId).toBe(openId);
     expect(v.focus?.draft).toMatchObject({ load: { value: 62.5 }, reps: 5 });
@@ -609,5 +366,197 @@ describe('cell labels (review S7)', () => {
     expect(valueCellA11y('REPS', '—')).toBe('Reps: none');
     expect(valueCellA11y('TIME', '0:45')).toBe('Time 0:45');
     expect(valueCellA11y('DIST', '20\u00a0m')).toBe('Distance 20 m');
+  });
+});
+
+describe('the v3 round page end to end, offline (workout-table-v3 §1–§3)', () => {
+  it('one round per exercise; a finished round advances; a done round offers Next round; only the last log unticks; swipe-delete has Undo', async () => {
+    const { services: s } = await h.launch();
+    const sessionId = await benchWorkout(s);
+    const picks = await s.workout.pickerExercises(sessionId, 'Lat pulldown');
+    const pull = picks.find((p) => p.exercise.name === 'Lat pulldown') ?? picks[0];
+    if (!pull) throw new Error('no second exercise');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pull.exercise.id, equipmentId: pull.equipment[0]?.id ?? null, opId: 'add-pull' });
+    if (!added.ok) throw new Error(added.error.message);
+
+    const roundsNow = async () => {
+      const d = await s.workout.load();
+      if (!d) throw new Error('no workout');
+      const r = buildRounds(s.workout.tableView(d, h.clockMs, null), (id) => d.worksLines?.[id] ?? null);
+      return { d, r, shown: shownRoundIndex(r, null) };
+    };
+    let { d, r, shown } = await roundsNow();
+    expect(r.map((x) => x.exercises.map((e) => e.label))).toEqual([['1'], ['2']]);
+    expect(shown).toBe(0);
+    expect(r[0]?.exercises[0]?.subline).toMatch(/chest/i);
+    const step = roundPrimary({ rounds: r, shown, primary: s.workout.view(d, h.clockMs, null).primary });
+    expect(step.kind).toBe('step');
+    expect(step.kind === 'step' ? step.label : '').toMatch(/^(Warm-up|Set 1) · (Log|Enter) /);
+
+    // Log every bench set: the page follows the open row into round 2 by itself.
+    const loggedIds: string[] = [];
+    for (let i = 0; i < 10 && r[0]?.hasPending === true; i += 1) {
+      const f = s.workout.view(d, h.clockMs, null).focus;
+      if (!f) throw new Error('no open row');
+      h.clockMs += 60_000;
+      const values = { ...f.logValues, load: f.logValues.load ?? load60, reps: f.logValues.reps ?? 6 };
+      const out = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: f.opId, setId: f.setId, values, restTimerId: h.ids() });
+      if (!out.ok) throw new Error(out.error.message);
+      loggedIds.push(f.setId);
+      ({ d, r, shown } = await roundsNow());
+    }
+    expect(r[0]?.done).toBe(true);
+    expect(shown).toBe(1);
+    expect(roundStrip(r, shown).map((c) => c.text)).toEqual(['✓ 1', '2']);
+    // Back on the done round: nothing to select, and Log reads Next round.
+    expect(selectOnShow(r[0])).toBeNull();
+    expect(roundPrimary({ rounds: r, shown: 0, primary: s.workout.view(d, h.clockMs, null).primary })).toEqual({ kind: 'next_round', label: 'Next round', index: 1 });
+
+    // A done row's ✓: only the latest log unticks; an older one is corrected instead.
+    const older = d.aggregate.sets.find((x) => x.id === loggedIds[0]);
+    const refused = await s.workout.dispatch(sessionId, { type: 'undo_log', at: h.now(), opId: 'untick-old', setId: older?.id ?? '', expectedSetVersion: older?.version ?? 0 });
+    expect(refused).toMatchObject({ ok: false, error: { code: 'not_latest_set' } });
+    const latest = d.aggregate.sets.find((x) => x.id === loggedIds.at(-1));
+    const unticked = await s.workout.dispatch(sessionId, { type: 'undo_log', at: h.now(), opId: 'untick-new', setId: latest?.id ?? '', expectedSetVersion: latest?.version ?? 0 });
+    expect(unticked.ok).toBe(true);
+    ({ d, r, shown } = await roundsNow());
+    expect(shown).toBe(0);
+    expect(r[0]?.exercises[0]?.rows.find((x) => x.current)?.setId).toBe(latest?.id);
+
+    // Swipe left on a pending row: deleted at once, and Undo brings it back (versioned, audited).
+    const pending = r[1]?.exercises[0]?.rows[0];
+    const set = d.aggregate.sets.find((x) => x.id === pending?.setId);
+    const del = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: 'swipe-del', setId: set?.id ?? '', expectedSetVersion: set?.version ?? 0 });
+    expect(del.ok).toBe(true);
+    ({ r } = await roundsNow());
+    expect(r[1]?.exercises[0]?.rows.some((x) => x.setId === set?.id)).toBe(false);
+    expect((await s.workout.undoOp({ sessionId, targetOpId: 'swipe-del' })).ok).toBe(true);
+    ({ r } = await roundsNow());
+    expect(r[1]?.exercises[0]?.rows.some((x) => x.setId === set?.id)).toBe(true);
+    // A stale delete (the set changed since it was shown) is refused, never applied to newer state.
+    const stale = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: 'swipe-stale', setId: set?.id ?? '', expectedSetVersion: set?.version ?? 0 });
+    expect(stale).toMatchObject({ ok: false, error: { code: 'stale_version' } });
+  });
+});
+
+describe('the v3 round page over real SQLite: supersets, relaunch, round change then log, done-set delete (wo-v3 logic S4)', () => {
+  async function supersetWorkout(s: AppServices): Promise<{ sessionId: string; benchRow: string; pullRow: string }> {
+    const sessionId = await benchWorkout(s);
+    const picks = await s.workout.pickerExercises(sessionId, 'Lat pulldown');
+    const pull = picks.find((p) => p.exercise.name === 'Lat pulldown') ?? picks[0];
+    if (!pull) throw new Error('no second exercise');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pull.exercise.id, equipmentId: pull.equipment[0]?.id ?? null, opId: 'add-pull' });
+    if (!added.ok) throw new Error(added.error.message);
+    const rows = [...added.aggregate.exercises].sort((a, b) => a.order - b.order);
+    const benchRow = rows[0]?.id ?? '';
+    const pullRow = rows[1]?.id ?? '';
+    const linked = await s.workout.linkSuperset({ sessionId, sessionExerciseId: pullRow, withSessionExerciseId: benchRow, opId: 'link-1', expectedVersion: added.aggregate.session.version });
+    if (!linked.ok) throw new Error(linked.error.message);
+    return { sessionId, benchRow, pullRow };
+  }
+  const roundsNow = async (s: AppServices) => {
+    const d = await s.workout.load();
+    if (!d) throw new Error('no workout');
+    const r = buildRounds(s.workout.tableView(d, h.clockMs, null), (id) => d.worksLines?.[id] ?? null);
+    return { d, r };
+  };
+  const logOpen = async (s: AppServices, sessionId: string) => {
+    const { d } = await roundsNow(s);
+    const f = s.workout.view(d, h.clockMs, null).focus;
+    if (!f) throw new Error('no open row');
+    h.clockMs += 30_000;
+    const row = d.aggregate.exercises.find((e) => e.id === f.sessionExerciseId);
+    const up = f.loadField?.up;
+    const load = f.logValues.load ?? (up?.enabled === true && row ? { value: up.value, unit: row.unit, convention: row.loadConvention } : load60);
+    const out = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: f.opId, setId: f.setId, values: { ...f.logValues, load, reps: f.logValues.reps ?? 6 }, restTimerId: h.ids() });
+    if (!out.ok) throw new Error(out.error.message);
+    return { setId: f.setId, aggregate: out.aggregate };
+  };
+
+  it('a → b has no rest, the rest follows b; a relaunch mid-superset lands on the open round', async () => {
+    const { services: s } = await h.launch();
+    const { sessionId } = await supersetWorkout(s);
+    let { r } = await roundsNow(s);
+    expect(r).toHaveLength(1);
+    expect(r[0]?.exercises.map((e) => e.label)).toEqual(['1a', '1b']);
+    // Log through the warm-ups (if any) and the first a.
+    let guard = 0;
+    while (guard < 10 && r[0]?.exercises.find((e) => e.rows.some((x) => x.current))?.label !== '1b') {
+      await logOpen(s, sessionId);
+      ({ r } = await roundsNow(s));
+      guard += 1;
+    }
+    expect(r[0]?.exercises.find((e) => e.rows.some((x) => x.current))?.label).toBe('1b');
+    const { d: before } = await roundsNow(s);
+    expect(before.aggregate.restTimer?.status).not.toBe('running');
+    const b = await logOpen(s, sessionId);
+    expect(b.aggregate.restTimer?.status).toBe('running');
+    expect(b.aggregate.restTimer?.setId).toBe(b.setId);
+    const openBefore = (await roundsNow(s)).r[0]?.exercises.flatMap((e) => e.rows).find((x) => x.current)?.setId;
+    // Force-close and relaunch: the same round, the same open row.
+    const { services: s2 } = await h.launch();
+    const { r: r2 } = await roundsNow(s2);
+    expect(shownRoundIndex(r2, null)).toBe(0);
+    expect(r2[0]?.exercises.flatMap((e) => e.rows).find((x) => x.current)?.setId).toBe(openBefore);
+  });
+
+  it('a round change selects (never logs), the next Log lands on the shown round\'s set, a relaunch keeps it; replayed opIds are no-ops', async () => {
+    const { services: s } = await h.launch();
+    const sessionId = await benchWorkout(s);
+    const picks = await s.workout.pickerExercises(sessionId, 'Lat pulldown');
+    const pull = picks.find((p) => p.exercise.name === 'Lat pulldown') ?? picks[0];
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pull?.exercise.id ?? '', equipmentId: pull?.equipment[0]?.id ?? null, opId: 'add-pull' });
+    if (!added.ok) throw new Error(added.error.message);
+    let { d, r } = await roundsNow(s);
+    expect(shownRoundIndex(r, null)).toBe(0);
+    const doneBefore = d.aggregate.sets.filter((x) => x.status === 'completed').length;
+    // Swipe to round 2: one set_active_set through the queue.
+    const { q, send } = queueSelect(SELECT_IDLE, selectOnShow(r[1]));
+    expect(send).toBe(r[1]?.firstPendingSetId);
+    const sel = selectCommand(send ?? '', d.aggregate.session.version, h.now(), 'round-sel-1');
+    const out = await s.workout.dispatch(sessionId, sel);
+    expect(out.ok).toBe(true);
+    expect(selectLanded(q, true).send).toBeNull();
+    // The select doesn't reset the pick: the page stays on round 2.
+    expect(resetsPick(send, new Set([send ?? '']))).toBe(false);
+    ({ d, r } = await roundsNow(s));
+    expect(d.aggregate.sets.filter((x) => x.status === 'completed')).toHaveLength(doneBefore);
+    expect(shownRoundIndex(r, null)).toBe(1);
+    // The same select replayed (a retry) changes nothing.
+    const replay = await s.workout.dispatch(sessionId, sel);
+    expect(replay.ok ? replay.aggregate.session.version : -1).toBe(d.aggregate.session.version);
+    // Log: it lands on round 2's set.
+    const logged = await logOpen(s, sessionId);
+    expect(logged.setId).toBe(send);
+    // Relaunch: still round 2.
+    const { services: s2 } = await h.launch();
+    expect(shownRoundIndex((await roundsNow(s2)).r, null)).toBe(1);
+  });
+
+  it('swipe-delete of a done set: audited with the logged values, Undo brings it back, and the untick window ends', async () => {
+    const { services: s } = await h.launch();
+    const sessionId = await benchWorkout(s);
+    const first = await logOpen(s, sessionId);
+    const second = await logOpen(s, sessionId);
+    let { d } = await roundsNow(s);
+    const done = d.aggregate.sets.find((x) => x.id === second.setId);
+    const del = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: 'swipe-done', setId: done?.id ?? '', expectedSetVersion: done?.version ?? 0 });
+    expect(del.ok).toBe(true);
+    if (!del.ok) return;
+    const audit = del.aggregate.audit.filter((a) => a.kind === 'deleted' && a.setId === done?.id);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.before?.status).toBe('completed');
+    // A replayed delete is a no-op, not a second delete.
+    const again = await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: 'swipe-done', setId: done?.id ?? '', expectedSetVersion: done?.version ?? 0 });
+    expect(again.ok ? again.aggregate.audit.filter((a) => a.kind === 'deleted').length : -1).toBe(1);
+    // The delete ends the untick window: the older log can't be unticked past it.
+    ({ d } = await roundsNow(s));
+    const older = d.aggregate.sets.find((x) => x.id === first.setId);
+    const untick = await s.workout.dispatch(sessionId, { type: 'undo_log', at: h.now(), opId: 'untick-past-delete', setId: older?.id ?? '', expectedSetVersion: older?.version ?? 0 });
+    expect(untick).toMatchObject({ ok: false, error: { code: 'not_latest_set' } });
+    expect((await s.workout.undoOp({ sessionId, targetOpId: 'swipe-done' })).ok).toBe(true);
+    ({ d } = await roundsNow(s));
+    expect(d.aggregate.sets.find((x) => x.id === done?.id)?.status).toBe('completed');
+    expect(d.aggregate.sets.find((x) => x.id === done?.id)?.actual).toEqual(done?.actual);
   });
 });

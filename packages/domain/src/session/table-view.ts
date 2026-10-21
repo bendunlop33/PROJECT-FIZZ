@@ -1,10 +1,10 @@
-import type { EquipmentInstance, Load, Measurement, SessionAggregate, SessionExercise, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { EquipmentInstance, Load, Measurement, SessionAggregate, SessionExercise, SetType, SetValues, WorkoutSet } from '@fizz/schemas';
 import { paceText } from '../cardio';
 import { cardioValuesText, dayMonthText, EQUIPMENT_WORD, formatDistance, formatDuration, formatNumber, NBSP, repRangeText, rowLoadCell, rowValueCell, targetText } from '../display';
 import { painFlagCovering } from '../pain-flags';
 import { massWords } from '../progress/text';
 import { targetRpeOf } from '../coach/target-rpe';
-import { buildSetRows, type ActiveViewInput, type PrimaryAction, type PreviousSession, type SetRowView } from './active-view';
+import { buildSetRows, setStepName, type ActiveViewInput, type PrimaryAction, type PreviousSession, type SetRowView } from './active-view';
 import { carriesTodayAdjustment } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf, partsOf } from './gym-switch';
@@ -36,6 +36,12 @@ export interface TableColumns {
 
 export interface TableRow extends SetRowView {
   state: TableRowState;
+  /** The stored set type (v3: `W` rows, `Top` / `Back-off` / `Drop` labels, working-set numbering). */
+  setType: SetType;
+  /** The rest stored after this set (seconds), for `Why?` (workout-table-v3 §2). */
+  restAfterS: number;
+  /** VoiceOver words for the values alone (logged when done, else the target): `7.5 kilograms each, 12 reps`; empty when none. */
+  spoken: string;
   /** This row's own columns (its exercise, part and equipment): whether it has a load cell, and which value. */
   columns: TableColumns;
   /**
@@ -68,6 +74,12 @@ export interface FoldedLine {
   accessibilityLabel: string;
 }
 
+/** The heaviest working load in an exercise: logged when done, else its target (v3 overview `Top set`). */
+export interface TopSet {
+  value: number;
+  unit: 'kg' | 'lb';
+}
+
 export interface TableCard {
   /** The block's key: its first (root) session exercise. */
   key: string;
@@ -90,6 +102,11 @@ export interface TableCard {
   painBadge: boolean;
   /** The shared column header; null when the rows disagree (then each cell carries its unit). */
   columns: TableColumns | null;
+  /** v3 load column header: `KG`, `KG EACH`, `KG STACK`, `LB`, `ASSIST KG`, `+KG`; null without a load column. */
+  loadHeader: string | null;
+  /** v3 header subline's rep target from the stored targets: `8–12 reps`, `6 top · 8 back-offs`; null when none. */
+  repTarget: string | null;
+  topSet: TopSet | null;
   rows: TableRow[];
   isCurrent: boolean;
   hasPending: boolean;
@@ -110,6 +127,15 @@ export interface SupersetMember {
   note: string | null;
   /** The open row is one of this member's sets. */
   isCurrent: boolean;
+  /** v3: this member's own rows in its set order, with its own shared columns (cells carry units when they disagree). */
+  rows: TableRow[];
+  loadHeader: string | null;
+  repTarget: string | null;
+  topSet: TopSet | null;
+  /** `Last 1 Oct: 100 × 8, 8, 7` or `No previous result`. */
+  lastLine: string;
+  progress: { done: number; total: number };
+  hasPending: boolean;
 }
 
 export interface SupersetCard {
@@ -268,7 +294,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   const set = state.sets.find((s) => s.id === base.setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) {
-    return { ...base, state: 'skipped', columns: { kind: 'reps', loadLabel: null, valueLabel: 'REPS' }, cells: { load: null, value: '—' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
+    return { ...base, state: 'skipped', setType: 'working', restAfterS: 0, spoken: '', columns: { kind: 'reps', loadLabel: null, valueLabel: 'REPS' }, cells: { load: null, value: '—' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
   }
   const eq = equipmentOf(state, ex);
   const columns = tableColumns(ex, eq);
@@ -285,6 +311,9 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     return {
       ...base,
       state: 'done',
+      setType: set.setType,
+      restAfterS: set.rest.seconds,
+      spoken,
       columns,
       cells: { load: rowLoadCell(a.load, ex.loadConvention, eq), value: rowValueCell(a, ex.measurement) },
       effort,
@@ -297,7 +326,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     };
   }
   if (set.status === 'skipped') {
-    return { ...base, state: 'skipped', columns, cells: { load: null, value: 'Skipped' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
+    return { ...base, state: 'skipped', setType: set.setType, restAfterS: set.rest.seconds, spoken: '', columns, cells: { load: null, value: 'Skipped' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
   }
   const open = set.id === activeSetId;
   const today = carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null;
@@ -312,6 +341,9 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   return {
     ...base,
     state: open ? 'open' : 'pending',
+    setType: set.setType,
+    restAfterS: set.rest.seconds,
+    spoken: spokenTarget,
     columns,
     cells: { load: rowLoadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(set, ex.measurement) },
     // The target RPE is a cell too (18 Oct: set · KG · REPS · RPE · ✓).
@@ -325,6 +357,74 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
       ? `${who}, current`
       : `${[who, spokenTarget === '' ? 'no target' : `${targetWord} ${spokenTarget}`, rpeWords].filter((x): x is string => x !== null).join(', ')}${planWas !== null && planWas !== '' ? `. Plan was ${planWas}` : ''}`,
   };
+}
+
+/**
+ * The v3 load column header (workout-table-v3 §2): the unit once, with the
+ * convention where it matters: `KG EACH` (per dumbbell), `KG STACK`; `ASSIST
+ * KG`, `+KG`, `LB` as in `tableColumns`. Null without a load column.
+ */
+export function loadHeaderOf(columns: Pick<TableColumns, 'loadLabel'>, convention: SessionExercise['loadConvention']): string | null {
+  if (columns.loadLabel === null) return null;
+  if (convention === 'per_hand') return `${columns.loadLabel} EACH`;
+  if (convention === 'stack') return `${columns.loadLabel} STACK`;
+  return columns.loadLabel;
+}
+
+const TARGET_TYPES = ['top', 'working', 'backoff', 'drop'] as const;
+const TARGET_NOUN: Record<(typeof TARGET_TYPES)[number], readonly [string, string] | null> = { top: ['top', 'top'], working: null, backoff: ['back-off', 'back-offs'], drop: ['drop', 'drops'] };
+
+function plannedValueText(set: WorkoutSet, m: Measurement): string | null {
+  const p = set.planned;
+  if (m === 'reps') return p.reps === null ? null : repRangeText(p.reps);
+  if (m === 'duration') return p.durationS === null ? null : formatDuration(p.durationS);
+  if (m === 'distance') return p.distanceM === undefined || p.distanceM === null ? null : formatDistance(p.distanceM);
+  return null;
+}
+
+/**
+ * The rep target in an exercise's v3 header (§2), from the stored targets of
+ * its working sets (warm-ups and skipped sets left out), grouped by set type:
+ * `8–12 reps`, `10, 8 reps`, `6 top · 8 back-offs`, `0:45`. Null for cardio
+ * or when no working set has a target. Formats; never works a target out.
+ */
+export function repTargetOf(sets: readonly WorkoutSet[], measurement: Measurement): string | null {
+  const groups: { type: (typeof TARGET_TYPES)[number]; texts: string[]; count: number }[] = [];
+  for (const type of TARGET_TYPES) {
+    const own = sets.filter((s) => s.status !== 'deleted' && s.status !== 'skipped' && s.setType === type);
+    const texts: string[] = [];
+    for (const s of own) {
+      const t = plannedValueText(s, measurement);
+      if (t !== null && !texts.includes(t)) texts.push(t);
+    }
+    if (texts.length > 0) groups.push({ type, texts, count: own.length });
+  }
+  if (groups.length === 0) return null;
+  const only = groups.length === 1 ? groups[0] : undefined;
+  if (only?.type === 'working') return measurement === 'reps' ? `${only.texts.join(', ')}${NBSP}reps` : only.texts.join(', ');
+  return groups
+    .map((g) => {
+      const noun = TARGET_NOUN[g.type];
+      return noun === null ? g.texts.join(', ') : `${g.texts.join(', ')} ${g.count === 1 ? noun[0] : noun[1]}`;
+    })
+    .join(' · ');
+}
+
+/**
+ * The heaviest working load (overview `Top set`, §4): the logged load of a
+ * done set, else its target. Null for bodyweight and assisted exercises (less
+ * assistance isn't a heavier top set) and when no working set has a load.
+ */
+export function topSetOf(sets: readonly WorkoutSet[], ex: Pick<SessionExercise, 'loadConvention'>): TopSet | null {
+  if (ex.loadConvention === 'bodyweight' || ex.loadConvention === 'assistance') return null;
+  let top: TopSet | null = null;
+  for (const s of sets) {
+    if (s.status === 'deleted' || s.status === 'skipped' || s.setType === 'warmup') continue;
+    const load = s.status === 'completed' && s.actual !== null ? s.actual.load : s.planned.load;
+    if (load === null || load.convention === 'bodyweight') continue;
+    if (top === null || load.value > top.value) top = { value: load.value, unit: load.unit };
+  }
+  return top;
 }
 
 /** `100 × 8, 8, 7`; `100 × 8, 105 × 6`; `0:45, 0:40`; `40 × 20 m, 20 m`; `12, 10, 9` (actual results, session order). */
@@ -412,6 +512,9 @@ function exerciseCard(input: ActiveViewInput, root: SessionExercise, parts: read
   const summary = resultsSummary(doneValues, action, eq);
   return {
     card: {
+      loadHeader: loadHeaderOf(ownColumns, action.loadConvention),
+      repTarget: repTargetOf(blockLive, action.measurement),
+      topSet: topSetOf(blockLive, action),
       key: root.id,
       sessionExerciseId: action.id,
       exerciseId: action.exerciseId,
@@ -439,12 +542,15 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
   const members: SupersetMember[] = [];
   const unitsByMember: { tag: string; name: string; units: WorkoutSet[][] }[] = [];
   const built: BuiltRow[] = [];
+  const memberBuilt: BuiltRow[][] = [];
   const activeRow = activeSetId === null ? undefined : state.sets.find((s) => s.id === activeSetId);
   memberRoots.forEach((root, i) => {
     const parts = partsOf(state.exercises, root.id).filter((p) => p.removed === undefined);
     const action = actionRowOf(state, parts) ?? root;
     const tag = `${group}${String(i + 1)}`;
     const isCurrent = activeRow !== undefined && parts.some((p) => p.id === activeRow.sessionExerciseId);
+    const own = tableColumns(action, equipmentOf(state, action));
+    const memberLive = blockSets(state, root.id).filter(live);
     members.push({
       tag,
       // The member's actions act on the open row's part when it's current.
@@ -453,18 +559,31 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
       name: action.exerciseName,
       unitCaption: unitWords(action) ?? (action.loadConvention === 'bodyweight' ? 'bodyweight' : action.unit),
       painBadge: painBadgeOf(input, action),
-      columns: tableColumns(action, equipmentOf(state, action)),
+      columns: own,
       note: action.note ?? root.note ?? null,
       isCurrent,
+      rows: [],
+      loadHeader: loadHeaderOf(own, action.loadConvention),
+      repTarget: repTargetOf(memberLive, action.measurement),
+      topSet: topSetOf(memberLive, action),
+      lastLine: lastLineOf(input.previous[action.id] ?? input.previous[root.id] ?? null, action, equipmentOf(state, action), state.session.startedAt.tz),
+      progress: progressOf(memberLive),
+      hasPending: memberLive.some((s) => s.status === 'pending'),
     });
     const ruleRpe = input.ruleTargetRpe?.[action.id] ?? null;
-    for (const r of buildSetRows(input, root.id, activeSetId)) built.push(rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName));
+    const mine = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName));
+    built.push(...mine);
+    memberBuilt.push(mine);
     unitsByMember.push({ tag, name: action.exerciseName, units: parts.flatMap((p, k) => setUnits(state.sets, p.id, k === 0 ? (root.roundOffset ?? 0) : 0)) });
   });
   const { columns, rows: allRows } = sharedColumns(
     members.map((m) => m.columns),
     built,
   );
+  // v3: each member has its own header, so its rows only need to agree with each other.
+  members.forEach((m, i) => {
+    m.rows = sharedColumns([m.columns], memberBuilt[i] ?? []).rows;
+  });
   const rowsById = new Map(allRows.map((r) => [r.setId, r]));
   const of = Math.max(0, ...unitsByMember.map((m) => m.units.length));
   const rounds: SupersetCard['rounds'] = [];
@@ -557,14 +676,14 @@ export function buildWorkoutTableView(input: ActiveViewInput): WorkoutTableView 
       const ex = state.exercises.find((x) => x.id === activeSet.sessionExerciseId);
       if (block.kind === 'exercise') {
         const row = block.card.rows.find((r) => r.setId === activeSet.id);
-        log = { prefix: `Set ${String(row?.number ?? 1)}`, suffix: null, exerciseName: block.card.name };
+        log = { prefix: setStepName(state, activeSet.id) ?? `Set ${String(row?.number ?? 1)}`, suffix: null, exerciseName: block.card.name };
       } else {
         const rows = block.superset.rounds.flatMap((r) => r.rows);
         const row = rows.find((r) => r.setId === activeSet.id);
         // Logging A1 goes to A2 with no rest (§2.6): `A1 · Log 25 kg × 14 → A2`.
         const nextId = isRoundEnd(activeSet, state.exercises, state.sets) ? null : nextPendingSet(activeSet.id, state.exercises, state.sets);
         const nextTag = nextId === null ? null : (rows.find((r) => r.setId === nextId)?.memberTag ?? null);
-        log = { prefix: row?.memberTag ?? `Set ${String(row?.number ?? 1)}`, suffix: nextTag === null || nextTag === row?.memberTag ? null : `→ ${nextTag}`, exerciseName: ex?.exerciseName ?? block.superset.label };
+        log = { prefix: row?.memberTag ?? setStepName(state, activeSet.id) ?? `Set ${String(row?.number ?? 1)}`, suffix: nextTag === null || nextTag === row?.memberTag ? null : `→ ${nextTag}`, exerciseName: ex?.exerciseName ?? block.superset.label };
       }
     }
   }
