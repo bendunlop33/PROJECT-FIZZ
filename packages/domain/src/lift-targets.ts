@@ -35,7 +35,7 @@ import { isPlatesAddedKind } from './plates-added';
  * - Shown against Ben's own logged sets: the est. 1RM (always `est.`, from
  *   the Epley estimate Progress uses) or his best set at the target's reps,
  *   in the last `LIFT_TARGET_RECENT_DAYS`; what he had when he set it; time
- *   left and how far to go. Never a predicted finish date, never pass/fail.
+ *   left and how far to go. Never pass/fail; the one date (Progress v3, `at this rate`, est.) is `liftsView`'s.
  * - Hit: an actual logged set at or above the target since it was set (a
  *   single at the weight for 1RM; the weight for the reps for weight × reps).
  *   An estimate passing it never counts (rule 6). Worked out from the sets

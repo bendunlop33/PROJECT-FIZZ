@@ -575,6 +575,18 @@ Ben approved `docs/design/workout-builder-v3.md` ("go", with the recommended ans
 - **Undo** is in the toast and, for as long as it would still go through, in `⋯ › Undo fit to time`.
 - `session/fit-time.ts` (`fitPlanToMinutes`, FT3's skip-only trim) is no longer what the workout's `+N min` uses. Retiring it is left to the S1/S8 "Today, builder and time left agree" work.
 
+## 2026-10-21: Weekly review details (Wave 3; PM proposals pending Ben's confirmation)
+
+- **Status:** shipped in Wave 3 as proposals from the build and its two reviews (`docs/reviews/b3-wave3-truth-21oct.md`, `docs/reviews/b3-wave3-ux-21oct.md`). Ben to confirm or change each.
+- **Thresholds (§6.1):** a lift is flagged stalled after 3 sessions with no new best (it needs 4 sessions to judge). The same set-count edit in the 2 newest workouts from a plan day suggests updating the template.
+- **Sets-per-muscle ranges by goal:** muscle 6–20, strength 4–10, both 6–20 working sets a week per muscle group. Counted by the builder's direct rule: full credit to the exercise's lead primary muscle, nothing to secondary muscles. The builder's visible coverage gives other foci half credit, so the two numbers can differ on screen (Triceps from pressing, for example). Ben to choose which rule the ranges assume.
+- **Missed days:** named only once the week is over, and only when no day that week was paused. Plan days aren't dated but pauses are, so with a pause the review says `Missed: 1 day`, never a name. Never more than planned − done.
+- **RPE vs target:** only sets that had a target RPE are compared with it. With no targets, the plain average is shown with no target.
+- **Coach retries:** a coach call that failed isn't repeated for the same week and inputs for 6 hours (Ben's plan allowance).
+- **Lifts shown:** defaults to the plan's main lifts plus any lift with a target (up to 6). A chosen lift with no sets in the last 16 weeks shows `No sets in 16 weeks`.
+- **Layout:** Reviews stays a section at the top of Progress (§6.2). Lifts show one full chart and the rest as small tiles that open in place (the prototype's tiles), not a separate Reviews tab. Ben to choose if he wants the prototype's `Reviews | Lifts | Training` segment instead.
+- **Open for Ben:** Today links to Reviews only through the pre-session nudge, which is silent most days. Should a fresh weekly review add its own one-line link on Today (for example `Week reviewed ›` on Monday)?
+
 ## 2026-10-21: Progress v3 (Ben's decisions)
 
 - Progress tabs `Overview | Lifts | Training`; Overview = This week (Week/Month calendar) → Trends (Lifts chart in kg with PB rings, estimated points and right-gutter targets; Muscles sets vs plan) → Coach's changes at the bottom. Spec: `docs/design/progress-goals.md` "Progress v3 (agreed)"; prototype `docs/design/prototypes/progress-simple.html`.

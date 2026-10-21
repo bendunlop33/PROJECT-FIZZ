@@ -564,6 +564,13 @@ export const SessionDeletionSchema = z.object({
 });
 export type SessionDeletion = z.infer<typeof SessionDeletionSchema>;
 
+/** (Ben, 21 Oct) `How did it feel?` on Summary. */
+export const SessionFeelValueSchema = z.enum(['easy', 'good', 'hard']);
+export type SessionFeelValue = z.infer<typeof SessionFeelValueSchema>;
+/** `value` null: Ben cleared his answer (kept as a value so the cleared state is written over the old one). */
+export const SessionFeelSchema = z.object({ value: SessionFeelValueSchema.nullable(), at: ZonedTimestampSchema });
+export type SessionFeel = z.infer<typeof SessionFeelSchema>;
+
 export const WorkoutSessionSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
@@ -645,6 +652,11 @@ export const WorkoutSessionSchema = z.object({
    * once this is set. Absent = not confirmed. Changes no set and no time.
    */
   durationConfirmedAt: ZonedTimestampSchema.optional(),
+  /**
+   * (Ben, 21 Oct; workout-builder-v3 §6.2) Summary's one-tap `How did it feel?`: Easy, Good or Hard, as
+   * Ben tapped it (Your data; a weekly-review fact, never inferred). Absent or `value: null` = not answered.
+   */
+  feel: SessionFeelSchema.optional(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 

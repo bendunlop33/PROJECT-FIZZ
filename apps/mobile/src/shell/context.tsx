@@ -52,6 +52,8 @@ export function AppProvider({ services, launch, relaunch, children }: { services
   }, []);
   // A backup starting or finishing changes status lines everywhere.
   useEffect(() => services.backups.subscribe(changed), [services, changed]);
+  // A weekly review stored on open (pending, then the coach's part) reloads what shows it (review b3-wave3-ux B2).
+  useEffect(() => services.reviews.subscribe(changed), [services, changed]);
   return <AppContext.Provider value={{ services, launch, version, changed, relaunch }}>{children}</AppContext.Provider>;
 }
 

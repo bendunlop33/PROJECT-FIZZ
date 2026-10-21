@@ -1,3 +1,4 @@
+import { createWeeklyReviewService } from '../reviews/weekly-review-service';
 import { createCustomExercises } from './custom-exercises';
 import {
   buildPresetDraft,
@@ -1017,6 +1018,21 @@ export function createAppServices(deps: AppServicesDeps) {
   setBuilderReviewProvider(createBuilderReviewProvider(builderCoach, builderPorts.review, { newId: deps.newId }));
 
   /**
+   * (Workout builder v3 §6.1, §6.2) The weekly auto-review and Progress › Reviews: code's facts always,
+   * the coach's verdict and plan tweaks when reachable (the plan route only, rule 7). Runs on app open.
+   */
+  const reviews = createWeeklyReviewService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    newId: deps.newId,
+    availability: () => coach.availability(),
+    ...(deps.coach === undefined ? {} : { model: deps.coach.model }),
+    catalogueExercises,
+    mainLiftIds: () => training.splitMainLiftIds(),
+  });
+
+  /**
    * (workout-table-v3 §7) Same editing as the builder mid-workout: its Swap / Add sheet and load sources,
    * `Why this weight?` and advice, over the workout's own versioned commands (today only).
    */
@@ -1026,6 +1042,7 @@ export function createAppServices(deps: AppServicesDeps) {
     ...loop,
     builder,
     builderCoach,
+    reviews,
     workoutEdit,
     library,
     customExercises,

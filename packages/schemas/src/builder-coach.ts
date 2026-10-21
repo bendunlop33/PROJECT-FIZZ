@@ -21,6 +21,7 @@ export const BUILDER_COACH_TOOL = {
   reviewWorkout: 'review_workout',
   mixPick: 'mix_pick',
   preSessionNudge: 'pre_session_nudge',
+  weeklyReview: 'weekly_review',
 } as const;
 export type BuilderCoachToolName = (typeof BUILDER_COACH_TOOL)[keyof typeof BUILDER_COACH_TOOL];
 
@@ -73,6 +74,9 @@ export const BUILDER_COACH_LIMITS = {
   reasonMax: 200,
   noteMax: 120,
   nudgeLineMax: 160,
+  weeklyLines: 3,
+  weeklyLineMax: 200,
+  maxTweaks: 2,
 } as const;
 const L = BUILDER_COACH_LIMITS;
 
@@ -146,12 +150,26 @@ export const PreSessionNudgeArgsSchema = z.strictObject({
 });
 export type PreSessionNudgeArgs = z.infer<typeof PreSessionNudgeArgsSchema>;
 
+/**
+ * `weekly_review` (§6.1 weekly, §6.2; Ben 20–21 Oct): code supplies every fact; the coach writes a short
+ * verdict, at most 3 lines, and at most 2 plan tweaks (an exercise's working sets on a plan-day template,
+ * by the IDs in the context). Code checks each tweak and every number in the words (hidden when wrong);
+ * a tweak is only ever an offer with Apply / Skip.
+ */
+export const WeeklyReviewArgsSchema = z.strictObject({
+  verdict: coachText(L.verdictMax),
+  lines: z.array(coachText(L.weeklyLineMax)).max(L.weeklyLines),
+  tweaks: z.array(z.strictObject({ routineId: RefSchema, exerciseId: RefSchema, workingSets: z.int().min(0).max(30), reason: coachText(L.reasonMax) })).max(L.maxTweaks),
+});
+export type WeeklyReviewArgs = z.infer<typeof WeeklyReviewArgsSchema>;
+
 export const BUILDER_COACH_TOOL_ARGS = {
   fill_setup: FillSetupArgsSchema,
   propose_workout_edit: ProposeWorkoutEditArgsSchema,
   review_workout: ReviewWorkoutArgsSchema,
   mix_pick: MixPickArgsSchema,
   pre_session_nudge: PreSessionNudgeArgsSchema,
+  weekly_review: WeeklyReviewArgsSchema,
 } as const satisfies Record<BuilderCoachToolName, z.ZodType>;
 
 export type BuilderCoachToolArgs = { [K in BuilderCoachToolName]: z.infer<(typeof BUILDER_COACH_TOOL_ARGS)[K]> };

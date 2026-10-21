@@ -113,3 +113,4 @@ export * from './cardio';
 export * from './quick-gym';
 export * from './builder';
 export * from './today-v2';
+export * from './review';

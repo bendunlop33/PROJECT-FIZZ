@@ -8,7 +8,8 @@ import { UtcTimestampSchema, WeightUnitSchema } from './common';
  * export, restore and Delete my data carry them with the rest of it.
  *
  * A target is a goal Ben set, never a prescription: it isn't snapped to
- * equipment and the app never predicts when he'll reach it (rule 6). Whether
+ * equipment. The only date shown is Progress v3's `about mid-Nov at this rate`, always labelled
+ * an estimate, from real top sets only, after 4 rising weeks and within 6 months (Ben, 21 Oct). Whether
  * it's hit is worked out from logged sets each time (`liftTargetStatus`), so a
  * corrected or deleted set is reflected and nothing is stored twice.
  */

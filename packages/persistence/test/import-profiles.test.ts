@@ -138,8 +138,8 @@ describe('migration 15 in place on a schema-14 database', () => {
     await db.run(row(3, 'skipped_cardio'));
     await expect(db.run(row(4, 'skipped_not_a_set'))).rejects.toThrow();
     const before = await db.getAll('SELECT * FROM import_rows ORDER BY row_number');
-    expect(await migrate(db)).toEqual({ from: 14, to: 31, applied: [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31] });
-    expect(latestVersion()).toBe(31);
+    expect(await migrate(db)).toEqual({ from: 14, to: 32, applied: [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32] });
+    expect(latestVersion()).toBe(32);
     const after = await db.getAll('SELECT * FROM import_rows ORDER BY row_number');
     expect(after).toEqual(before.map((r) => ({ ...r, part: 0, workout_key: null, start_local: null })));
     await db.run(row(4, 'skipped_not_a_set'));

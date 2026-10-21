@@ -14,7 +14,7 @@ import {
 import { EquipmentInstanceSchema } from './equipment';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
-import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, RuleDecisionSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
+import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, RuleDecisionSchema, SessionFeelValueSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
 
 /**
  * Typed commands for the active-session state machine. Every mutating command
@@ -383,6 +383,18 @@ export const ConfirmSessionDurationCommandSchema = z.object({
   ...base,
   opId: OperationIdSchema,
   confirmed: z.boolean(),
+  expectedVersion: z.int().min(1),
+});
+
+/**
+ * (Ben, 21 Oct) Summary's `How did it feel?` (Easy / Good / Hard), and its change or clear (null). Only on
+ * a finished workout; changes no set and no time; versioned and idempotent like `rename_session`.
+ */
+export const SetFeelCommandSchema = z.object({
+  type: z.literal('set_feel'),
+  ...base,
+  opId: OperationIdSchema,
+  feel: SessionFeelValueSchema.nullable(),
   expectedVersion: z.int().min(1),
 });
 
@@ -831,6 +843,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   SetRestAfterCommandSchema,
   RenameSessionCommandSchema,
   ConfirmSessionDurationCommandSchema,
+  SetFeelCommandSchema,
   SetFinishByCommandSchema,
   AdjustPendingTargetsCommandSchema,
   RevertTargetAdjustmentCommandSchema,

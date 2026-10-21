@@ -54,6 +54,9 @@ import type { StartChoice, StartPrompt } from '../builder/builder-service';
 type StartIntent = { kind: 'empty' };
 type Nav = NavigationProp<ParamListBase>;
 
+/** Today's `Reviews ›` taps this run: each lands Progress on Reviews again (review b3-wave3-ux S9). */
+let reviewsTaps = 0;
+
 export function TodayScreen() {
   const theme = useTheme();
   const services = useServices();
@@ -772,7 +775,21 @@ export function TodayScreen() {
             moved={moved}
             busy={starting}
             dispatch={act}
-            offer={offerCard === null ? null : { line: offerCard.line, lines: offerCard.offer?.lines ?? [], busy: nudgeBusy, onApply: () => void onOffer(true), onSkip: () => void onOffer(false) }}
+            offer={
+              offerCard === null
+                ? null
+                : {
+                    line: offerCard.line,
+                    lines: offerCard.offer?.lines ?? [],
+                    busy: nudgeBusy,
+                    onApply: () => void onOffer(true),
+                    onSkip: () => void onOffer(false),
+                    // (§6.2) Today only ever shows this one line; the reviews live in Progress.
+                    onReviews: () => {
+                      navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressHome', params: { focus: 'reviews', n: (reviewsTaps += 1) } } });
+                    },
+                  }
+            }
             onStart={() => void startCard()}
             onEdit={() => void editCard()}
             onBackToPlan={() => void backToPlan()}

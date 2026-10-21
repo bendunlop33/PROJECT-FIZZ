@@ -77,6 +77,10 @@ function useForegroundAlerts(services: AppServices) {
       if (state !== 'active') return;
       void clearDeliveredWorkoutAlerts().catch(() => undefined);
       void restAlerts.reconcileFromRead(readActive, now);
+      // (§6.1) Back in the app is an open too: the weekly review runs (cached unless its inputs changed), never during a workout.
+      void readActive()
+        .then((a) => (a === null ? services.reviews.runOnOpen() : null))
+        .catch(() => null);
     });
     return () => {
       sub.remove();

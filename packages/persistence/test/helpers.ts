@@ -56,12 +56,25 @@ export function beforeSchema31(a: SessionAggregate): SessionAggregate {
   return { ...a, restTimer };
 }
 
+/** A backup's tables as a schema-31 build wrote them: no `sessions.feel` (migration 32, `How did it feel?`). */
+export function withoutSchema32<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+  const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  if (out.sessions) {
+    out.sessions = out.sessions.map((row) => {
+      const copy = { ...row };
+      delete copy.feel;
+      return copy;
+    });
+  }
+  return out as T;
+}
+
 /**
  * A backup's tables as a schema-30 build wrote them: no `rest_timers.resume_on_undo`
  * or `restored_finished` (migration 31, unticking keeps the rest).
  */
 export function withoutSchema31<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
-  const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  const out: Record<string, Record<string, unknown>[]> = withoutSchema32({ ...tables });
   if (out.rest_timers) {
     out.rest_timers = out.rest_timers.map((row) => {
       const copy = { ...row };

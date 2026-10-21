@@ -188,6 +188,23 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
     }
     case 'remove_lift_target':
       return { ...p, liftTargets: withoutLiftTarget(p.liftTargets ?? [], c.exerciseId) };
+    case 'progress_lifts': {
+      const ids = [...new Set(c.exerciseIds.map((x) => x.trim()))];
+      if (ids.length > TRAINING_LIMITS.progressLiftsMax || ids.some((x) => x.length === 0 || x.length > 64)) return null;
+      const next = { ...p };
+      if (ids.length === 0) delete next.progressLifts;
+      else next.progressLifts = ids;
+      // Picked reps are kept only for lifts still shown; a new pick replaces the old one.
+      const reps: Record<string, number> = {};
+      for (const [id, n] of Object.entries({ ...(p.progressLiftReps ?? {}), ...(c.reps ?? {}) })) {
+        if (!ids.includes(id)) continue;
+        if (!Number.isInteger(n) || n < 1 || n > 30) return null;
+        reps[id] = n;
+      }
+      if (Object.keys(reps).length === 0) delete next.progressLiftReps;
+      else next.progressLiftReps = reps;
+      return next;
+    }
   }
 }
 
