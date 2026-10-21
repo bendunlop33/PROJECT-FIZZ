@@ -9,6 +9,7 @@ import {
   buildTodayStrip,
   checkedOnOf,
   convertValue,
+  ruleYieldsToHistory,
   currentDraftVersion,
   defaultTodayControls,
   todayContentHash,
@@ -307,7 +308,9 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       if (fromPlan === undefined || fromPlan.source === 'rule') {
         const sp = substituteTargets({ workingSets: 3, templates: [{ setType: 'working', reps: { min: 8, max: 12 }, durationS: null }] }, e, history, sub);
         const first = sp.plan?.find((x) => x.setType !== 'warmup' && x.planned.load !== null);
-        if (first?.planned.load != null && first.planned.load.convention === refs.convention) ruleTarget = { value: convertValue(first.planned.load.value, first.planned.load.unit, refs.unit), reps: first.planned.reps?.min ?? 8, rpe: first.planned.rpe ?? 8 };
+        // The rule's load gives way to clearly stronger recent sets unless it's a miss, a reduction or a pain hold (21 Oct).
+        const yields = ruleYieldsToHistory(first?.planned.provenance?.rule?.decision);
+        if (first?.planned.load != null && first.planned.load.convention === refs.convention) ruleTarget = { value: convertValue(first.planned.load.value, first.planned.load.unit, refs.unit), reps: first.planned.reps?.min ?? 8, rpe: first.planned.rpe ?? 8, ...(yields ? { yieldsToHistory: true } : {}) };
         if (fromPlan !== undefined) ruleTarget = anchorOf(fromPlan) ?? ruleTarget;
       }
       const flag = painFlagCovering(flags, id, nowMs, deps.now().tz);
@@ -325,6 +328,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         planFirstLoad: !heldNoHistory && fromPlan?.source === 'plan' ? anchorOf(fromPlan) : null,
         ruleTarget: heldNoHistory ? null : ruleTarget,
         e1rm: heldNoHistory ? null : (refs.own?.e1rm ?? null),
+        e1rmGapDays: refs.own?.gapDays ?? null,
         startLightCeiling: noReferenceCeiling(refs.equipment, refs.patternE1rms),
         painCap: held ? (refs.latest?.top.value ?? null) : null,
         // Which history these loads came from: Start re-derives them once it moved (builder review B4).
@@ -349,7 +353,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         const load = pick?.planned.load;
         if (pick === undefined || load === null || load === undefined) continue;
         const source = pick.planned.source === 'coach' || pick.planned.provenance?.source === 'coach' ? 'coach' : pick.planned.provenance?.source === 'plan' ? 'plan' : 'rule';
-        out.set(ex.exerciseId, { anchor: { value: load.value, reps: pick.planned.reps?.min ?? 8, rpe: pick.planned.rpe ?? 8 }, unit: load.unit, convention: load.convention, source });
+        const yields = source === 'rule' && ruleYieldsToHistory(pick.planned.provenance?.rule?.decision);
+        out.set(ex.exerciseId, { anchor: { value: load.value, reps: pick.planned.reps?.min ?? 8, rpe: pick.planned.rpe ?? 8, ...(yields ? { yieldsToHistory: true } : {}) }, unit: load.unit, convention: load.convention, source });
       }
     }
     return out;

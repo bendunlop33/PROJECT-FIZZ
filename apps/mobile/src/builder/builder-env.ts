@@ -10,6 +10,7 @@ import {
   painFlagCovering,
   painHoldFor,
   planFirstLoads,
+  ruleAnchorOf,
   stableStringify,
   deriveId,
   toMs,
@@ -158,10 +159,15 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
 
     // Plan first-week loads for a template never done (§3.1 step 2).
     const firstLoads = new Map<string, AnchorLoad>();
+    /** When the plan's loads were set: newer history may replace a lower plan load (builder loads, 21 Oct). */
+    let planSetMs: number | null = null;
     const t = req.template ?? null;
     if (t !== null && t.createdFromPlan !== undefined) {
       const plan: PlanDraft | null = await repos.planDrafts.get(t.createdFromPlan.planId).catch(() => null);
       if (plan !== null && plan.ownerId === p.id) {
+        const link = t.createdFromPlan;
+        const setAt = plan.versions.find((v) => v.n === link.versionN)?.createdAt.utc;
+        planSetMs = setAt === undefined ? null : toMs(setAt);
         const ex = new Map<string, Exercise>();
         const hs = new Map<string, HistorySession[]>();
         for (const r of t.exercises) {
@@ -200,16 +206,17 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         const mine = saved.find((x) => x.exerciseId === id && x.status === 'saved' && x.target.load !== null);
         if (mine?.target.load != null && mine.target.load.convention === refs.convention) coachTarget = { value: mine.target.load.value, reps: mine.target.reps?.min ?? 8, rpe: mine.target.rpe ?? 8 };
         try {
-          const { result } = nextTargetsFor({ ownerId: p.id, exerciseId: id, exerciseName: e.name, measurement: e.measurement, unit: refs.unit, convention: refs.convention, equipment: eq, exercise: e, rule: null, workingSets: 3, history, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null } });
-          const s = result.sets.find((x) => x.setType !== 'warmup' && x.load !== null);
-          // The rule's load is for its own rep floor (hold, add load, reduce: the floor of the range; add reps: min = max).
-          // The builder uses it as is there and never scales it up by formula (review B3).
-          if (s?.load != null && result.loadFeasibility !== 'infeasible' && s.load.convention === refs.convention) ruleTarget = { value: s.load.value, reps: s.reps.min, rpe: 8 };
+          // The rule reads the same history as `loadReferences`: other items of the same kind and bar mass too (21 Oct).
+          const comparableEquipmentIds = new Set(refs.comparableEquipmentIds ?? []);
+          const { result, rule } = nextTargetsFor({ ownerId: p.id, exerciseId: id, exerciseName: e.name, measurement: e.measurement, unit: refs.unit, convention: refs.convention, equipment: eq, exercise: e, rule: null, workingSets: 3, history, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, comparableEquipmentIds });
+          ruleTarget = ruleAnchorOf(result, rule, refs.convention);
         } catch {
           ruleTarget = null;
         }
       }
       const e1rm = refs.own?.e1rm ?? null;
+      const planned = firstLoads.get(id) ?? null;
+      const newerThanPlan = planned !== null && planSetMs !== null && refs.latest !== null && toMs(refs.latest.performedAtUtc) > planSetMs;
       return {
         unit: refs.unit,
         convention: refs.convention,
@@ -217,9 +224,10 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         bodyweightExercise: e.defaultLoadConvention === 'bodyweight',
         gymEquipment: equipment,
         coachTarget,
-        planFirstLoad: firstLoads.get(id) ?? null,
+        planFirstLoad: planned === null ? null : newerThanPlan ? { ...planned, yieldsToHistory: true } : planned,
         ruleTarget,
         e1rm,
+        e1rmGapDays: refs.own?.gapDays ?? null,
         startLightCeiling: noReferenceCeiling(eq, refs.patternE1rms),
         painCap: flagged ? latestTop : null,
         historyVersion: refs.historyVersion,
