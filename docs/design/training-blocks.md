@@ -212,7 +212,25 @@ Applied by the Today drafter after §3.1 and fitting: working loads × 0.9 round
 
 ---
 
-## 8. Open questions for Ben
+## 8. Ben's answers (21 Oct 2026)
+
+All as recommended, with one change:
+1. Weekly targets are what he's compared against; today's weights still come from what he actually lifted. **Yes.**
+2. Block length 6 weeks (5 build + deload). **Yes.**
+3. Deload: loads −10 %, one set fewer per exercise, about RPE 7. **Yes.**
+4. Accepting an early deload ends the block after that week. **Yes.**
+5. A week with no lifting (not paused) doesn't count; the block waits; nothing marked missed. **Yes.**
+6. Block week in Today's header (`Tuesday · Week 3 of 6`). **Yes.**
+7. **Changed:** `How did it feel?` stays after every workout (one tap on Summary, already built in Wave 3) and feeds both the weekly and the block review; the block review shows the block's Easy/Good/Hard counts.
+8. `about mid-Nov at this rate` kept (≥ 4 rising weeks, within 6 months, labelled est.). **Yes** (already decided in Progress v3).
+9. A next block never starts by itself; skipping the review carries the plan on without a block. **Yes.**
+10. At most 2 accessory swaps per plan day per block; the main lift changes only if he asks or it stalls for 2 blocks. **Yes.**
+11. Block IDs on sessions only; templates carry over. **Yes.**
+
+Status: **Approved by Ben, 21 Oct 2026.** Build after Build B. Progress Overview shows `Block 1 · week 3 of 6` in the This week header once a block is running.
+
+## 8a. Original questions (for reference)
+
 
 1. Weekly targets are the plan to compare against (planned vs done). Today's weights still come from what he actually lifted, not the planned number. **Yes** / prescribe the planned number. *Recommended: yes* (keeps H4 and the approved load order).
 2. Default block length: **6 weeks (5 build + deload)** / 8 weeks. *Recommended: 6.*

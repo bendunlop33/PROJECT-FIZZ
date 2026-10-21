@@ -583,3 +583,7 @@ Ben approved `docs/design/workout-builder-v3.md` ("go", with the recommended ans
 - Lift progress is tracked at the lift target's reps, else the plan's reps; points are real when done at those reps, otherwise estimated and labelled; `about mid-Nov at this rate` (est.) allowed after ≥ 4 rising weeks and within 6 months (supersedes the lift-targets "never predicts" note).
 - Session chips show % of planned reps (can exceed 100); every working set counts toward sets per muscle regardless of RPE.
 - Added for Build B: `N weeks on plan` in Month view; new PBs listed on the workout Summary. Later: monthly recap card, Body section, block position.
+
+## 2026-10-21: Training blocks approved (Ben)
+
+- `docs/design/training-blocks.md` approved with all recommended answers, except `How did it feel?`, which stays after every workout and feeds weekly and block reviews. 6-week blocks (5 build + deload), deload −10 % load / −1 set / ~RPE 7, early deload ends the block, empty weeks don't count, block week in Today's header and Progress, next block never auto-starts, ≤ 2 accessory swaps per plan day per block, block IDs on sessions only. Builds after Build B.
