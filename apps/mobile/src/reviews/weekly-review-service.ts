@@ -53,6 +53,9 @@ import {
   autoApplicable,
   isStructuralProposal,
   liftsView,
+  liftHistorySessions,
+  sessionNewBests,
+  type NewBestView,
   musclesView,
   templateWorkingSets,
   thisWeekView,
@@ -154,10 +157,11 @@ export interface ReviewDetail {
   changes: CoachChangesView | null;
 }
 
-export type ProposalOutcome = { ok: true; line: string; proposal: ReviewProposalView } | { ok: false; reason: 'out_of_date' | 'changed_since' | 'missing' | 'failed'; message: string };
+export type ProposalOutcome = { ok: true; line: string; proposal: ReviewProposalView } | { ok: false; reason: 'out_of_date' | 'pain' | 'changed_since' | 'missing' | 'failed'; message: string };
 
 export const REVIEW_SERVICE_COPY = {
   outOfDate: 'Out of date',
+  heldPain: 'Held · pain',
   changedSince: (name: string) => `Can’t undo: ${name} changed since.`,
   failed: 'Couldn’t save',
   missing: 'Not found',
@@ -176,6 +180,8 @@ function reachOf(a: CoachAvailability): BuilderCoachReach {
 export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
   const repos = () => deps.store().repos;
   let running: Promise<WeeklyRun> | null = null;
+  /** The review whose coach call is out right now: Progress reads `Reviewing…` until it returns (review build-b-21oct S2). */
+  let asking: string | null = null;
   // Screens reload when a run stores a review (pending, then the coach's part; review b3-wave3-ux B2).
   const listeners = new Set<() => void>();
   const emit = () => {
@@ -201,6 +207,23 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       .sessions.listFinishedBetweenReadable(owner.id, from, toIso(nowMs + 1))
       .catch(() => ({ sessions: [] as SessionAggregate[] }));
     return r.sessions.map((a) => reviewSessionOf(a, owner.timezone, nowMs)).filter((s): s is ReviewSession => s !== null);
+  }
+
+  /**
+   * The tracked lifts' whole history (one indexed read each, at most 6), so a PB beats every earlier real top
+   * set, not only the weeks loaded. A lift whose history can't be read adds nothing (its PBs then judge the
+   * loaded weeks only).
+   */
+  async function liftHistory(g: Gathered): Promise<ReviewSession[]> {
+    const out: ReviewSession[] = [];
+    for (const id of new Set(g.input.lifts)) {
+      const h = await deps
+        .store()
+        .listExerciseHistory(g.owner.id, id)
+        .catch(() => []);
+      out.push(...liftHistorySessions(id, h, g.owner.timezone));
+    }
+    return out;
   }
 
   /** Every plan Ben applied (in use now or before), with its days and paused dates. */
@@ -411,8 +434,11 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       .reviews.current(owner.id, subject)
       .catch(() => null);
     // Ben's answers carry over (applied, skipped, undone, out of date); code's open suggestions are made
-    // again, and so is code's out-of-date one (its template moved; review b3-wave3-truth N1).
-    const carried = (previous?.proposals ?? []).filter((p) => p.status !== 'open' && !(p.status === 'stale' && p.source === 'code'));
+    // again, and so is code's out-of-date one (its template moved; review b3-wave3-truth N1). The coach's
+    // open asks carry over unanswered, whatever this run's coach says or if it can't be asked (review
+    // build-b-21oct S1); Apply's own check refuses one the plan moved past (rule 5). One on a movement with
+    // a pain flag now is dropped (rule 9).
+    const carried = (previous?.proposals ?? []).filter((p) => (p.status === 'open' ? p.source === 'coach' && !g.input.painFlagged.has(p.change.exerciseId) : !(p.status === 'stale' && p.source === 'code')));
     const taken = new Set(carried.map(keyOf));
     const fresh = codeProposals(f.edits, reviewId).filter((p) => !taken.has(keyOf(p)));
     const proposals = [...carried, ...fresh].slice(0, 4);
@@ -445,11 +471,19 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     // Small changes land in the plan before the page is told (review progress-v3-design B1).
     const stored = await autoApply(w.review);
     if (w.status === 'written' || stored.version !== w.review.version) emit();
-    const asked = await askCoach(g, f, stored.id, stored.proposals ?? [], opts.signal);
+    // `Reviewing…` while the call is out, then the page is told again when it returns (whatever it returned).
+    asking = stored.id;
+    emit();
+    const asked = await askCoach(g, f, stored.id, stored.proposals ?? [], opts.signal).finally(() => {
+      asking = null;
+    });
     const coachOp = `${opId}:coach`;
     const latest = (await repos().reviews.get(stored.id).catch(() => null)) ?? stored;
     // Still offline (or not connected) on a later open: nothing new to write.
-    if (asked.status !== 'ok' && asked.status !== 'failed' && latest.coach.status === asked.coach.status && asked.proposals.length === 0) return { kind: 'not_reviewed', review: latest, status: asked.status };
+    if (asked.status !== 'ok' && asked.status !== 'failed' && latest.coach.status === asked.coach.status && asked.proposals.length === 0) {
+      emit();
+      return { kind: 'not_reviewed', review: latest, status: asked.status };
+    }
     const mergedProposals = [...(latest.proposals ?? []), ...asked.proposals.filter((p) => !(latest.proposals ?? []).some((q) => keyOf(q) === keyOf(p)))].slice(0, 4);
     // The coach's sentence (or new changes) is news: `NEW` again until `Got it`.
     const { seenAtUtc, ...unseen } = latest;
@@ -460,7 +494,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       .catch(() => null);
     const wrote = u !== null && (u.status === 'written' || u.status === 'replayed') ? u.review : latest;
     const saved = u?.status === 'written' ? await autoApply(wrote) : wrote;
-    if (u?.status === 'written') emit();
+    emit();
     return asked.status === 'ok' ? { kind: 'reviewed', review: saved } : { kind: 'not_reviewed', review: saved, status: asked.status };
   }
 
@@ -513,12 +547,12 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
    * next version with an `update_routine` record, at `expectedVersion` (rule 5), never on a pain-flagged
    * movement (rule 9). `stale`: refused, nothing written.
    */
-  async function writeChange(owner: UserProfile, p: ReviewProposal, opId: string, author: ActionRecord['author'], expected: (routine: Routine) => number | null): Promise<{ kind: 'written'; actionId: string } | { kind: 'stale' } | { kind: 'changed_since' } | { kind: 'failed' }> {
+  async function writeChange(owner: UserProfile, p: ReviewProposal, opId: string, author: ActionRecord['author'], expected: (routine: Routine) => number | null): Promise<{ kind: 'written'; actionId: string } | { kind: 'stale' } | { kind: 'pain' } | { kind: 'changed_since' } | { kind: 'failed' }> {
     const pain = await repos()
       .painFlags.listActive(owner.id)
       .catch(() => null);
     if (pain === null) return { kind: 'failed' };
-    if (pain.some((f) => f.exerciseId === p.change.exerciseId)) return { kind: 'stale' };
+    if (pain.some((f) => f.exerciseId === p.change.exerciseId)) return { kind: 'pain' };
     const routine = await repos()
       .routines.get(p.change.routineId)
       .catch(() => null);
@@ -576,6 +610,11 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     // exercise's working sets aren't what the change started from (rule 5).
     const w = await writeChange(owner, p, applyOp, author, (routine) => (templateWorkingSets(routine, p.change.exerciseId) === p.change.fromSets ? routine.version : null));
     if (w.kind === 'failed') return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
+    if (w.kind === 'pain') {
+      // Held by the pain flag, and said so (rule 9; review build-b-21oct S3), never `Out of date`.
+      await changeProposal(req.reviewId, req.proposalId, `${req.opId}:stale`, (x) => ({ ...x, status: 'stale', held: 'pain' }));
+      return { ok: false, reason: 'pain', message: REVIEW_SERVICE_COPY.heldPain };
+    }
     if (w.kind !== 'written') {
       await changeProposal(req.reviewId, req.proposalId, `${req.opId}:stale`, (x) => ({ ...x, status: 'stale' }));
       return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
@@ -652,17 +691,31 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const newest = stored[0];
       // Only the latest reviewable week's review is `for next week` (review progress-v3-data S5).
       const current = newest !== undefined && mondayOf(newest) === weeklyReviewWeek(nowMs, owner.timezone);
+      const earlier = await liftHistory(g);
       return {
-        week: thisWeekView(g.input, { today, reviewIds: new Map(stored.map((r) => [mondayOf(r), r.id])) }),
-        lifts: liftsView(g.input, { today, mains: g.mains, planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, previousPlanReps: g.previousPlanReps, planAppliedDate: g.planAppliedDate, nameOf: g.nameOf }),
+        week: thisWeekView(g.input, { today, reviewIds: new Map(stored.map((r) => [mondayOf(r), r.id])), historyWeeks: SESSION_WEEKS - 1 }),
+        lifts: liftsView(g.input, { today, mains: g.mains, planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, previousPlanReps: g.previousPlanReps, planAppliedDate: g.planAppliedDate, nameOf: g.nameOf, earlier }),
         // Reviewed weeks keep the plan they were reviewed against (review progress-v3-design S4).
         muscles: musclesView(g.input, { today, storedPlans: new Map(stored.map((r) => [mondayOf(r), musclePlanOfReview(r)])) }),
-        changes: newest === undefined ? null : coachChangesView(newest, today, { current, actedOn: await actedOn(newest) }),
+        changes: newest === undefined ? null : coachChangesView(newest, today, { current, actedOn: await actedOn(newest), painFlagged: g.input.painFlagged, reviewing: asking === newest.id }),
         hasPast: stored.length > 1,
         liftsChosen: g.liftsChosen,
         // No row yet: the defaults are version 1 (the first change writes them).
         trainingVersion: g.training?.version ?? 1,
       };
+    },
+
+    /**
+     * The Summary's PB moment (Progress v3): `New best · Bench 100 × 6` for each tracked lift whose real top set
+     * in this workout beats every earlier real one at its tracked reps (the Lifts chart's definition). Local only.
+     */
+    async sessionBests(sessionId: string): Promise<NewBestView[]> {
+      const owner = await deps.profile();
+      if (owner === null) return [];
+      const nowMs = toMs(deps.now().utc);
+      const g = await gather(localWeekBounds(nowMs, owner.timezone).mondayLocalDate);
+      if (g === null) return [];
+      return sessionNewBests(g.input, { planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, nameOf: g.nameOf, earlier: await liftHistory(g) }, sessionId);
     },
 
     /** Past weeks: every stored weekly review but the newest, newest first. */
@@ -831,6 +884,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const w = await writeChange(owner, p, redoOp, 'ben', (routine) => (templateWorkingSets(routine, p.change.exerciseId) === p.change.fromSets ? routine.version : null));
       if (w.kind === 'failed') return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
       if (w.kind === 'changed_since') return { ok: false, reason: 'changed_since', message: REVIEW_SERVICE_COPY.changedSince(p.change.routineName) };
+      if (w.kind === 'pain') return { ok: false, reason: 'pain', message: REVIEW_SERVICE_COPY.heldPain };
       if (w.kind === 'stale') return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
       return outcome(await changeProposal(req.reviewId, req.proposalId, `${redoOp}:mark`, (x) => ({ ...x, status: 'applied', actionId: w.actionId })), line);
     },

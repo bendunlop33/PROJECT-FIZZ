@@ -168,20 +168,60 @@ describe('the weekly review on open', () => {
       seen.push('changed');
     });
     expect(await h.service.runOnOpen()).toMatchObject({ kind: 'reviewed' });
-    expect(seen).toEqual(['changed', 'changed']);
+    // The pending write, the coach call going out (`Reviewing…`), the coach's part.
+    expect(seen).toEqual(['changed', 'changed', 'changed']);
     expect(await h.service.runOnOpen()).toMatchObject({ kind: 'cached' });
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(3);
     off();
-    // Offline: the pending write is told; the offline part with nothing new isn't rewritten.
+    // Offline: the pending write is told, the call out and its answer; a later open with nothing new isn't rewritten.
     const o = await setUp({ model: new StepModel([], { weekly: true }), availability: () => OFFLINE });
     let n = 0;
     o.service.subscribe(() => {
       n += 1;
     });
+    const first = await o.service.runOnOpen();
+    expect(n).toBe(3);
+    const before = n;
     await o.service.runOnOpen();
-    expect(n).toBe(2);
-    await o.service.runOnOpen();
-    expect(n).toBe(2);
+    if (first.kind !== 'not_reviewed') throw new Error(first.kind);
+    expect((await o.store.repos.reviews.get(first.review.id))?.version).toBe(first.review.version);
+    // Asking again on that open is told too (`Reviewing…`, then back to `Offline`), never left showing `Reviewing…`.
+    expect(n - before).toBe(2);
+  });
+
+  it('`Reviewing…` while the coach call is out, then the stored result once it returns (review build-b-21oct S2)', async () => {
+    const h = await setUp({ model: new StepModel([verdict({ verdict: 'Good week' })], { weekly: true }), availability: () => OFFLINE });
+    await h.service.runOnOpen();
+    expect((await h.service.progress())?.changes?.tag).toBe('Not reviewed · Offline');
+    // Back online, but the call is slow: hold it at the availability check.
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let n = 0;
+    const slow = createWeeklyReviewService({
+      store: () => h.store,
+      profile: async () => h.store.repos.profiles.get(OWNER),
+      now: (): ZonedTimestamp => ({ utc: toIso(OPEN_MS), tz: TZ }),
+      newId: () => id(8_000_000 + (n += 1)),
+      availability: async () => {
+        await gate;
+        return ONLINE;
+      },
+      model: () => h.model ?? new StepModel([], { weekly: true }),
+      mainLiftIds: () => Promise.resolve(new Set([BENCH.id])),
+    });
+    let told = 0;
+    slow.subscribe(() => {
+      told += 1;
+    });
+    const run = slow.runOnOpen();
+    for (let i = 0; i < 50 && told === 0; i += 1) await new Promise((r) => setTimeout(r, 5));
+    expect((await slow.progress())?.changes?.tag).toBe('Reviewing…');
+    (release as unknown as () => void)();
+    expect(await run).toMatchObject({ kind: 'reviewed' });
+    expect(told).toBeGreaterThanOrEqual(2);
+    expect((await slow.progress())?.changes).toMatchObject({ tag: 'Coach', note: 'Good week' });
   });
 
   it('a new pain flag re-runs the review (its inputs changed; rule 9, review b3-wave3-truth B5)', async () => {
@@ -292,10 +332,11 @@ describe('weekly proposals: Apply / Skip / Undo, refused when stale (rule 5)', (
   it('Apply is refused once the exercise is pain-flagged after the review (rule 9; review b3-wave3-truth B5)', async () => {
     const h = await withProposal();
     await h.store.repos.painFlags.save(newPainFlag({ id: id(9501), ownerId: OWNER, opId: 'pain-2', exerciseId: CURL.id, exerciseName: CURL.name, area: null, source: 'check_in', checkInId: null, at: at(0) }), null);
-    expect(await h.service.applyProposal({ reviewId: id(9400), proposalId: 'p1', opId: 'tap-1' })).toMatchObject({ ok: false, reason: 'out_of_date' });
+    // Held for the pain flag, and said so (review build-b-21oct S3), never `Out of date`.
+    expect(await h.service.applyProposal({ reviewId: id(9400), proposalId: 'p1', opId: 'tap-1' })).toMatchObject({ ok: false, reason: 'pain', message: 'Held · pain' });
     expect(await workingOf(h.store, h.legs.id)).toBe(3);
     expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(h.legs.version);
-    expect((await h.store.repos.reviews.get(id(9400)))?.proposals?.find((p) => p.id === 'p1')?.status).toBe('stale');
+    expect((await h.store.repos.reviews.get(id(9400)))?.proposals?.find((p) => p.id === 'p1')).toMatchObject({ status: 'stale', held: 'pain' });
   });
 
   it('a force-close between Apply’s write and its mark: the next tap marks it applied (one write, Undo kept); the same for Undo (review b3-wave3-truth S3)', async () => {

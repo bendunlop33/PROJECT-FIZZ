@@ -199,4 +199,51 @@ describe('weekly review over an applied plan (review build-b-21oct B1)', () => {
     expect(b.review.id).not.toBe(a.review.id);
     expect(model.weeklyCalls).toBe(2);
   });
+
+  it('an unanswered ask survives a re-run on new inputs, offline or when the coach doesn\'t repeat it (review build-b-21oct S1)', async () => {
+    const x = await setup();
+    const s = x.s;
+    model.weekly = [
+      () => toolCall('weekly_review', { verdict: 'One.', lines: [], tweaks: [{ routineId: x.pullId, exerciseId: x.rowId, workingSets: 4, reason: 'Row 17 sets last week.' }] }),
+      () => toolCall('weekly_review', { verdict: 'Two.', lines: [], tweaks: [] }),
+    ];
+    h.clockMs = Date.parse('2026-10-18T17:30:00.000Z');
+    const a = await s.reviews.runOnOpen();
+    expect(a.kind).toBe('reviewed');
+    expect((await s.reviews.progress())?.changes?.asks.map((r) => [r.exercise, r.status])).toEqual([['Barbell row', 'open']]);
+    // New input (Pull again on Sunday), and the coach can't be reached: a new review, the ask still there.
+    h.clockMs = Date.parse('2026-10-18T18:00:00.000Z');
+    await doDay(s, x.gymId, x.pullId);
+    h.clockMs = Date.parse('2026-10-18T19:00:00.000Z');
+    conn = { ...CONNECTED, status: 'offline' };
+    const b = await s.reviews.runOnOpen();
+    expect(b.kind).toBe('not_reviewed');
+    if (a.kind !== 'reviewed' || b.kind !== 'not_reviewed') return;
+    expect(b.review.id).not.toBe(a.review.id);
+    expect((await s.reviews.progress())?.changes?.asks.map((r) => [r.exercise, r.status, r.canApply])).toEqual([['Barbell row', 'open', true]]);
+    // Online again, the coach doesn't repeat it: still asked, never dropped unanswered; Apply's own check still guards it.
+    conn = CONNECTED;
+    h.clockMs = Date.parse('2026-10-18T20:00:00.000Z');
+    expect((await s.reviews.runOnOpen()).kind).toBe('reviewed');
+    const now = (await s.reviews.progress())?.changes;
+    expect(now?.note).toBe('Two.');
+    expect(now?.asks.map((r) => r.exercise)).toEqual(['Barbell row']);
+    expect(await s.reviews.applyProposal({ reviewId: now?.reviewId ?? '', proposalId: now?.asks[0]?.id ?? '', opId: 'apply-ask' })).toMatchObject({ ok: true });
+    expect(await workingOf(s, x.pullId, x.gymId)).toEqual([3, 4]);
+  });
+
+  it('Summary: `New best · Bench press 105 × 6` for a tracked lift beating every earlier real top set; none on a tie', async () => {
+    const x = await setup();
+    const s = x.s;
+    h.clockMs = Date.parse('2026-10-17T07:00:00.000Z');
+    const tie = await logWorkout(h, s, x.gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 6, rpe: 8 }] }]);
+    expect(await s.reviews.sessionBests(tie)).toEqual([]);
+    h.clockMs += 3_600_000 * 24;
+    const pb = await logWorkout(h, s, x.gymId, [{ exercise: 'Bench press', sets: [{ load: 105, reps: 6, rpe: 9 }] }]);
+    const bests = await s.reviews.sessionBests(pb);
+    expect(bests.map((b) => b.text.replaceAll('\u00a0', ' '))).toEqual(['New best · Bench press 105 × 6']);
+    // Lifts: the newest point is a PB (the table's tag, the ring on the all-lifts chart).
+    const bench = (await s.reviews.progress())?.lifts.lifts.find((l) => l.name === 'Bench press');
+    expect(bench).toMatchObject({ latestPb: true, loadSuffix: null });
+  });
 });
