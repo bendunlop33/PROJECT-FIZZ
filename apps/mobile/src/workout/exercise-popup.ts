@@ -1,4 +1,4 @@
-import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, shownPlanned, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, type RestKind, type TargetExplanation } from '@fizz/domain';
+import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, shownPlannedIn, type RestKind, type TargetExplanation } from '@fizz/domain';
 import { BUILD_LIMITS, type CommandOf, type Load, type SessionAggregate, type SetType, type SetValues, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 
 import { loadSpoken, loadText, POPUP_COPY, REST_STEP_S, restText, SET_TYPE_LABEL, SET_TYPES, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
@@ -44,6 +44,8 @@ export interface SessionPopupInput {
   exercise: RoundExercise;
   works: string | null;
   mayHurt: boolean;
+  /** Exercise IDs with an active pain flag: no heavier load carries from the last set onto a row. */
+  painFlagged?: ReadonlySet<string>;
 }
 
 export function sessionPopupView(p: SessionPopupInput): PopupView | null {
@@ -61,7 +63,7 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
     const done = set.status === 'completed';
     const values = done ? set.actual : null;
     // A pending row shows Ben's own draft values over the target, as the table does (21 Oct).
-    const shown = done ? set.planned : shownPlanned(set, ex);
+    const shown = done ? set.planned : shownPlannedIn(a, set, ex, { painFlagged: p.painFlagged });
     const loadOf = done ? (values?.load ?? null) : shown.load;
     const load = loadOf === null || loadOf.convention === 'bodyweight' ? null : loadOf.value;
     const range = shown.reps;
@@ -171,7 +173,7 @@ export type PopupCellWrite =
  * item (rule 4; `Rounded to 97.5 kg` when it moved), never past its max; reps are exact; a warm-up
  * has no target effort.
  */
-export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps' | 'kg' | 'rpe', value: number, bodyweightExercises?: ReadonlySet<string>): PopupCellWrite {
+export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps' | 'kg' | 'rpe', value: number, bodyweightExercises?: ReadonlySet<string>, painFlagged?: ReadonlySet<string>): PopupCellWrite {
   const set = a.sets.find((s) => s.id === setId);
   const ex = set === undefined ? undefined : a.exercises.find((e) => e.id === set.sessionExerciseId);
   if (set === undefined || ex === undefined || set.status === 'deleted' || set.status === 'skipped') return { kind: 'refused', text: POPUP_REFUSAL.changed };
@@ -185,7 +187,7 @@ export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps'
   }
   // What the row shows: Ben's own draft values over the target. Typing that again writes nothing (N2, 21 Oct).
   // A write for one field keeps his other draft values (the reducer clears only the fields it sets, B1).
-  const shown = shownPlanned(set, ex);
+  const shown = shownPlannedIn(a, set, ex, { painFlagged });
   if (field === 'reps') {
     const r = shown.reps;
     if (r !== null && r.min === value && r.max === value) return { kind: 'unchanged', note: null };

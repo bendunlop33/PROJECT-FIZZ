@@ -37,7 +37,8 @@ import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
-import { changedTargetFields, draftWithNewTarget, pendingOwnValues, shownPlanned, shownTargetShort } from './pending-values';
+import { changedTargetFields, draftWithNewTarget, markCarriedLoad, pendingOwnValues } from './pending-values';
+import { carriedLoad, hasOwnValuesAnyFlags, painFlaggedOf, shownPlannedIn, shownTargetShortIn, type CarryOptions } from './carry';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -115,6 +116,13 @@ export interface DraftEdits {
   /** Set by "copy last time" (`Copied from 1 Oct`). */
   copied?: boolean;
   /**
+   * The load Ben's last logged set carried onto this row when the edits were
+   * made (`FocusView.carriedLoad`). A saved load equal to it is marked
+   * `loadCarried`, so it follows the carry rather than becoming his own edit
+   * (review CS1, 21 Oct). Absent: no carry.
+   */
+  carried?: Load;
+  /**
    * The set's version when these edits were made (rule 5). The debounced
    * `save_draft` carries it, so a save that lands after a newer write to the
    * set (Ben's own `Edit set`, a pop-up target) is refused instead of putting
@@ -129,7 +137,7 @@ export function saveDraftCommand(edits: DraftEdits, at: ZonedTimestamp): Command
     type: 'save_draft',
     at,
     setId: edits.setId,
-    values: edits.values,
+    values: markCarriedLoad(edits.values, edits.carried ?? null),
     ...(edits.side !== undefined ? { side: edits.side } : {}),
     ...(edits.setVersion !== undefined ? { expectedSetVersion: edits.setVersion } : {}),
   };
@@ -147,9 +155,11 @@ export function saveDraftCommand(edits: DraftEdits, at: ZonedTimestamp): Command
  *   null, so his new target shows and nothing stale is saved over it;
  * - any other change (a coach change, Undo): the edits stay (Ben's edit is
  *   kept, coach-adjustments §4.3).
+ * Pain flags aren't known here: a value of his against either carry (with or
+ * without a flag) stays (review CS4).
  * Kept edits are re-based on the set's new version so the next save lands.
  */
-export function reconcileDraftEdits(edits: DraftEdits | null, state: Pick<SessionAggregate, 'sets' | 'exercises'>): DraftEdits | null {
+export function reconcileDraftEdits(edits: DraftEdits | null, state: Pick<SessionAggregate, 'sets' | 'exercises' | 'session'>): DraftEdits | null {
   if (edits === null) return null;
   const set = state.sets.find((s) => s.id === edits.setId);
   if (!set || set.status !== 'pending') return null;
@@ -160,7 +170,7 @@ export function reconcileDraftEdits(edits: DraftEdits | null, state: Pick<Sessio
   if (fields.length === 0) return { ...edits, setVersion: set.version };
   const values = draftWithNewTarget(edits.values, set.planned, fields);
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
-  if (!ex || Object.keys(pendingOwnValues({ status: set.status, draft: values, planned: set.planned }, ex)).length === 0) return null;
+  if (!ex || !hasOwnValuesAnyFlags(state, { ...set, draft: values })) return null;
   const next: DraftEdits = { ...edits, values, setVersion: set.version };
   delete next.copied;
   return next;
@@ -311,6 +321,8 @@ export interface FocusView {
   previous: { performedAtUtc: string; text: string; values: SetValues; imported: boolean } | null;
   draft: SetValues;
   draftSource: DraftSource | 'edited' | 'copied';
+  /** The load Ben's last logged set carries onto this set (`carriedLoad`, with his pain flags); null: none. The screen keeps it on its edits (`DraftEdits.carried`). */
+  carriedLoad: Load | null;
   loadField: LoadField | null;
   /** `+ Weight` on a bodyweight exercise (`on`: logged with added weight today); null: not offered. */
   addWeight: { on: boolean } | null;
@@ -586,7 +598,7 @@ function repSteps(value: number | null): { down: StepTarget; up: StepTarget } {
   };
 }
 
-function rowText(set: WorkoutSet, ex: SessionExercise, eq: EquipmentInstance | null, active: boolean): { status: SetRowStatus; text: string } {
+function rowText(state: SessionAggregate, set: WorkoutSet, ex: SessionExercise, eq: EquipmentInstance | null, active: boolean, carry: CarryOptions): { status: SetRowStatus; text: string } {
   if (set.status === 'completed' && set.actual) {
     const v = valuesText(set.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq });
     const effort = set.actual.rpe !== null ? `   RPE ${formatNumber(set.actual.rpe)}` : set.actual.rir !== null ? `   RIR ${String(set.actual.rir)}` : '';
@@ -594,7 +606,7 @@ function rowText(set: WorkoutSet, ex: SessionExercise, eq: EquipmentInstance | n
   }
   if (set.status === 'skipped') return { status: 'skipped', text: 'Skipped' };
   if (active) return { status: 'active', text: 'now' };
-  return { status: 'pending', text: targetShort(shownPlanned(set, ex), { convention: ex.loadConvention, equipment: eq }) ?? 'No target' };
+  return { status: 'pending', text: targetShort(shownPlannedIn(state, set, ex, carry), { convention: ex.loadConvention, equipment: eq }) ?? 'No target' };
 }
 
 /** A done row's exclusion fields (§2.13); empty for any other row. */
@@ -691,7 +703,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   const setNumber = own.findIndex((s) => s.id === set.id) + 1;
 
   const edits = input.edits?.setId === set.id ? input.edits : null;
-  const pre = prefillDraft(state, set.id, prev?.sets ?? []);
+  const carry: CarryOptions = { painFlagged: painFlaggedOf(input) };
+  const pre = prefillDraft(state, set.id, prev?.sets ?? [], carry);
   const covering = painFlagCovering(input.painFlags ?? [], ex.exerciseId, input.nowMs, state.session.startedAt.tz);
   const painNote: PainFlagNoteView | null = covering
     ? { flagId: covering.flag.id, flagVersion: covering.flag.version, checkDue: covering.checkDue, text: painNoteText(covering.checkDue), accessibilityLabel: painNoteAccessibility(covering.checkDue) }
@@ -757,7 +770,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     const nextEx = nextSet ? state.exercises.find((e) => e.id === nextSet.sessionExerciseId) : undefined;
     // Another part of the same exercise (after a gym switch) isn't a "next exercise".
     if (nextSet && nextEx && partRootOf(state.exercises, nextEx.id) !== partRootOf(state.exercises, ex.id) && order.indexOf(nextId) > order.indexOf(set.id)) {
-      next = { kind: 'exercise', name: nextEx.exerciseName, target: shownTargetShort(nextSet, nextEx, { convention: nextEx.loadConvention, equipment: equipmentOf(state, nextEx) }), setId: nextId };
+      next = { kind: 'exercise', name: nextEx.exerciseName, target: shownTargetShortIn(state, nextSet, nextEx, { convention: nextEx.loadConvention, equipment: equipmentOf(state, nextEx) }, carry), setId: nextId };
     }
   }
 
@@ -795,6 +808,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
         : null,
     draft: values,
     draftSource,
+    carriedLoad: carriedLoad(state, set, carry),
     loadField,
     addWeight: addWeightOf(state, ex, eq, input.bodyweightExercises),
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
@@ -837,14 +851,15 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
  * source for both views, so they can't disagree on status, badges,
  * exclusions or gym captions.
  */
-export function buildSetRows(input: Pick<ActiveViewInput, 'aggregate' | 'gymNames'>, sessionExerciseId: string, activeSetId: string | null): SetRowView[] {
+export function buildSetRows(input: Pick<ActiveViewInput, 'aggregate' | 'gymNames' | 'painFlagged' | 'painFlags'>, sessionExerciseId: string, activeSetId: string | null): SetRowView[] {
   const state = input.aggregate;
+  const carry: CarryOptions = { painFlagged: painFlaggedOf(input) };
   const ex = state.exercises.find((e) => e.id === sessionExerciseId);
   if (!ex) return [];
   const own = exerciseSets(state, ex.id);
   return own.map((s, i) => {
     const partRow = state.exercises.find((e) => e.id === s.sessionExerciseId) ?? ex;
-    const { status, text } = rowText(s, partRow, equipmentOf(state, partRow), s.id === activeSetId);
+    const { status, text } = rowText(state, s, partRow, equipmentOf(state, partRow), s.id === activeSetId, carry);
     const gymId = partGymId(state, partRow);
     const prevRowId = own[i - 1]?.sessionExerciseId;
     const prevRow = prevRowId === undefined ? undefined : state.exercises.find((e) => e.id === prevRowId);
@@ -1054,14 +1069,14 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     exercises: exerciseEntries(state, liveSets),
     lastCompletedAtUtc: last,
     openEnded: isOpenEndedWorkout(state),
-    upNext: focus === null ? null : upNextLine(state, focus),
+    upNext: focus === null ? null : upNextLine(state, focus, { painFlagged: painFlaggedOf(input) }),
     timeLeft: input.withTimeLeft === false ? null : buildTimeLeftView(state, nowMs, input.recentPace),
     finishByUtc: session.finishBy?.utc ?? null,
   };
 }
 
 /** The Rest state's `Next · Set 3 · 100 kg × 6–8` (D-Rest). The exercise is named when it changes. */
-function upNextLine(state: SessionAggregate, focus: FocusView): string {
+function upNextLine(state: SessionAggregate, focus: FocusView, carry: CarryOptions): string {
   const lastId = latestCommittedSetId(state);
   const lastSet = lastId === null ? undefined : state.sets.find((s) => s.id === lastId);
   // A gym-switch continuation part is the same exercise (gym-switch GS6).
@@ -1073,7 +1088,7 @@ function upNextLine(state: SessionAggregate, focus: FocusView): string {
   // that load with the planned reps, so the next line says what will be lifted (premium-feel §3.6, D6).
   const carried = set && set.planned.load === null && focus.draft.load !== null && (set.planned.reps !== null || set.planned.durationS !== null) ? { ...set, planned: { ...set.planned, load: focus.draft.load } } : set;
   // Ben's own draft values over the target, as the table shows them (B2, 21 Oct).
-  const target = carried && ex ? shownTargetShort(carried, ex, { convention: ex.loadConvention, equipment: eq }) : null;
+  const target = carried && ex ? shownTargetShortIn(state, carried, ex, { convention: ex.loadConvention, equipment: eq }, carry) : null;
   // `Target 3–6 reps` → `3–6 reps`: the label stays on the set view.
   const what = target !== null ? target.replace(/^(Target|Your edit) /, '') : focus.logLabel === null ? null : focus.logLabel.replace(/^Log /, '');
   return [sameExercise ? null : focus.exerciseName, `Set ${String(focus.setNumber)}`, what].filter((p): p is string => p !== null).join(' · ');
@@ -1163,6 +1178,8 @@ export interface SetEditOptions {
   ruleTargetRpe?: Readonly<Record<string, number>> | undefined;
   /** Exercise IDs the catalogue lists as bodyweight (`ActiveViewInput.bodyweightExercises`). */
   bodyweightExercises?: ReadonlySet<string> | undefined;
+  /** Exercise IDs with an active pain flag: a heavier load never carries onto a set (`carriedLoad`). */
+  painFlagged?: ReadonlySet<string> | undefined;
 }
 
 /**
@@ -1354,7 +1371,7 @@ function snapLoadWith(state: SessionAggregate, setId: string, typed: number | nu
  * RPE and rest after it, as `edit_planned_set` saves them. Null when the
  * set isn't pending (a logged set opens `buildSetEditView`).
  */
-export function buildPlannedSetEditView(state: SessionAggregate, setId: string, edits: PlannedSetEdits = {}, options: Pick<SetEditOptions, 'ruleTargetRpe' | 'bodyweightExercises'> = {}): PlannedSetEditView | null {
+export function buildPlannedSetEditView(state: SessionAggregate, setId: string, edits: PlannedSetEdits = {}, options: Pick<SetEditOptions, 'ruleTargetRpe' | 'bodyweightExercises' | 'painFlagged'> = {}): PlannedSetEditView | null {
   const set = state.sets.find((s) => s.id === setId);
   if (set?.status !== 'pending') return null;
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
@@ -1362,7 +1379,10 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
   const eq = equipmentOf(state, ex);
   const p = set.planned;
   // The sheet opens on what the row shows: Ben's own draft values over the target (21 Oct); Save makes them the target.
-  const shown = shownPlanned(set, ex);
+  const carried = carriedLoad(state, set, { painFlagged: options.painFlagged });
+  const shown = shownPlannedIn(state, set, ex, { painFlagged: options.painFlagged });
+  // The row shows a carried load, not a draft load of Ben's (CB1): only a different load is his change.
+  const showsCarry = carried !== null && pendingOwnValues(set, ex, carried).load === undefined;
   const storedLoad = shown.load === null || shown.load.convention === 'bodyweight' ? null : shown.load.value;
   const loadValue = edits.load === undefined ? storedLoad : edits.load;
   const reps = edits.reps === undefined ? shown.reps : edits.reps;
@@ -1383,10 +1403,16 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
 
   const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const patch: NonNullable<PlannedSetEditView['patch']> = {};
-  if (!same(load, p.load)) patch.load = load;
-  if (ex.measurement === 'reps' && !same(reps, p.reps)) patch.reps = reps;
-  if ((ex.measurement === 'duration' || ex.measurement === 'cardio') && !same(durationS, p.durationS)) patch.durationS = durationS;
-  if ((ex.measurement === 'distance' || ex.measurement === 'cardio') && !same(distanceM, p.distanceM ?? null)) patch.distanceM = distanceM;
+  // A value back at the stored target over one the row showed instead (Ben's draft, a carried load) is a change too (21 Oct).
+  const differs = (v: unknown, stored: unknown, shownV: unknown) => !same(v, stored) || !same(v, shownV);
+  const shownLoad = shown.load === null || shown.load.convention === 'bodyweight' ? (p.load?.convention === 'bodyweight' ? p.load : null) : shown.load;
+  const norm = (l: Load | null) => (l === null ? null : { value: l.value, unit: l.unit, convention: l.convention });
+  // Over a carried load, only a load other than the carry is a change (CB1, 21 Oct): Save with the carry untouched
+  // writes no load, so the target keeps the plan's and the carry still follows his logged set (Undo of that log too).
+  if (showsCarry ? !same(norm(load), norm(carried)) : differs(norm(load), norm(p.load), norm(shownLoad))) patch.load = load;
+  if (ex.measurement === 'reps' && differs(reps, p.reps, shown.reps)) patch.reps = reps;
+  if ((ex.measurement === 'duration' || ex.measurement === 'cardio') && differs(durationS, p.durationS, shown.durationS)) patch.durationS = durationS;
+  if ((ex.measurement === 'distance' || ex.measurement === 'cardio') && differs(distanceM, p.distanceM ?? null, shown.distanceM ?? null)) patch.distanceM = distanceM;
   if (setType !== set.setType) patch.setType = setType;
   // A type changed to a warm-up or drop clears the override in the reducer itself.
   if (working && override !== storedOverride) patch.targetRpe = override;

@@ -807,6 +807,8 @@ export function WorkoutScreen() {
     const next: DraftEdits = { setId: focus.setId, values, setVersion: focus.setVersion };
     const s = side ?? base.side;
     if (s !== undefined) next.side = s;
+    // A load left at the carry is saved as the carry, never as Ben's own weight (review CS1).
+    if (focus.carriedLoad !== null) next.carried = focus.carriedLoad;
     setEdits(next);
     setRestoredDraft(null);
   }

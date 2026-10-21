@@ -70,3 +70,71 @@ What's good: R1 (`shownPlanned` in the table, Focus list, pop-up and Edit set sh
 - **B2 knock-on (for review):** after `Undo` of a logged set, the set is pending again with what Ben logged as its draft (Log already prefilled it, and the table showed it). The lock screen now shows it too: `Your edit 60 kg × 8` instead of `Target 3–6 reps`. `live-activity.test.ts` was updated for this; it still checks the same activity, Ready, no countdown and no second start.
 - **N2 fixed.** `popupCellWrite` compares with what the row shows (`shownPlanned`), so retyping Ben's own 105 or 7 is `unchanged`.
 - **Not done:** N1 (history not rewritten; the fix commit is green), N4 (builder `changeGym` reload test), N5 (device check). SP1 and SP2 still need Ben's decision; B1's per-field ownership covers the same ground as SP2 for his own edits, but not for coach changes (§4.3 is unchanged).
+
+## Carry forward (commits 211123a, 40ea4d0; reviewer, 21 Oct)
+
+**Verdict: CHANGES NEEDED**
+
+Scope: "last set carries" (Ben, 21 Oct; active-workout.md §4.2 rule 2a). `carriedLoad` is pure, one path, and every display surface uses it. The stored target is untouched on the log path. Restart, duplicate op ID and Undo of the log are covered. Problems: one common UI path (Edit set) writes the carried value into the stored target, and some edge paths turn a carry into "Ben's own" value or drop it.
+
+### Checks run (in /home/user/wt-weight-revert, HEAD 40ea4d0)
+
+- `npm run typecheck`: pass
+- `NODE_OPTIONS=--max-old-space-size=6144 npm run lint`: pass
+- `npx vitest run --maxWorkers=2`: 458 files, 8,525 passed, 1 todo (matches the developer)
+- Probes (a scratch vitest file outside the repo, using the same fixtures as `last-set-carry.test.ts`, with b2 logged at 105 against 100): results are quoted in the findings below.
+
+### Blocking
+
+**CB1. Edit set on a carried row writes the carried load into the stored target, and Save is enabled before anything changes.**
+- Where: `packages/domain/src/session/active-view.ts:1392-1395` (`differs(load, p.load, shownLoad)`) and `:1403` (`changed`).
+- Probe: `buildPlannedSetEditView(s, b3.id, {})` returns `patch: { load: 105 kg }, changed: true`. With a reps-only change it returns `patch: { load: 105, reps: 6–6 }`.
+- Scenario: Ben logs b2 at 105. He opens Edit set on b3 to change its reps, rest or note (or opens it and taps Save, which is already enabled). `edit_planned_set` stores `load: 105` with `fields: ['load', …]`. Three things go wrong:
+  - The stored target becomes 105. This breaks the approved rule that the target record (plan adherence, progression history) keeps 100.
+  - `benSetLoad` now reads it as Ben's own choice, so Undo of the b2 log, or logging b3 at 100, no longer moves b3 back.
+  - The toast says `Set 3 updated · Undo` for a value he never chose.
+- The test at `last-set-carry.test.ts:240` sends a hand-built `{ reps }` patch to the reducer. It skips the sheet, so it can't catch this.
+- Fix: when the shown load is a carry (no draft load of Ben's), compare the sheet's load only with the carried load. `patch.load` is set only when `load ≠ carried`, so setting 100 back is still a change. Leave the draft-owned path as it is. Test it through `buildPlannedSetEditView`: an untouched sheet gives `changed: false`; reps-only and rest-only edits put no `load` in the patch; after saving, the stored `planned.load` is still 100 and the carry still follows Undo of b2.
+
+### Should fix
+
+**CS1. A carried load saved inside a draft becomes "Your edit" after the carry ends.**
+- Where: `packages/domain/src/session/pending-values.ts:39` (draft load compared with `carry ?? p.load`) and `saveDraftCommand` / `handleSaveDraft`, which store the whole value set.
+- Probe: b2 logged at 105. Ben adjusts reps on the open b3, and the debounced save stores `{ load: 105, reps: 6 }`. He then undoes b2 (the 105 was a typo). b3 still shows **105**, as `source: 'draft'` / `Your edit`.
+- Scenario: the undo meant to remove 105 leaves it on the next set, labelled as his own.
+- Fix: record which draft fields Ben actually typed (per-field ownership, the same direction as SP2), or leave the load out of a saved draft when it equals the carry at save time. Test: save a reps-only draft on a carried row, undo the source log, and the row shows 100.
+
+**CS2. If Ben set the logged set's own target himself, the carry is off.**
+- Where: `packages/domain/src/session/carry.ts:81-85` compares the logged actual with `logged.planned.load`, and that already includes Ben's `edit_planned_set`.
+- Probe: b1 logged at 100. Ben sets b2's target to 105 in Edit set or the pop-up, then logs 105. b3 shows **100**.
+- Scenario: this is the same intent as Ben's example (set 2 at 105 against a 100 plan), reached through the pop-up instead of the keypad, and the later sets fall back to the plan. It is the "flicking back" complaint again.
+- Fix: compare with the logged set's target before Ben's own load edits (walk `planned.edit` back past entries whose `fields` include `load`), or treat `benSetLoad(logged.planned)` as a carry source. Add the test.
+
+**CS3. Logging off-target flattens a planned ramp, and logging heavier can make a later set lighter.**
+- Where: `carry.ts:85` and `:100`. The carry is absolute and replaces every later target.
+- Probe: ramp 100 / 102.5 / 105. Ben logs set 1 at 102.5, then set 2 shows 102.5 and set 3 shows **102.5** (plan 105).
+- Scenario: he went heavier than planned, and his top ramp set dropped 2.5 kg. The spec line "a planned ramp (100, 102.5, 105) stays" (§4.2 rule 2a) is only true when every set is logged on target. Ben's wording ("start at his logged weight") is literal, so this needs his call (see SPC1).
+- Fix (pending Ben): carry only onto sets whose target equals the logged set's original target, or carry the delta. At least add the ramp-off-target test and correct the spec sentence.
+
+**CS4. The reducer and reconcile work out the carry without pain flags, so they can disagree with the screen.**
+- Where: `reducer.ts:1250` (`draftAfterTargetEdit`), `reducer.ts:1319` (no-op check), `active-view.ts:164` (`reconcileDraftEdits`). All three call `carriedLoad` without `painFlagged`.
+- Scenario: bench has an active pain flag, and b2 is logged at 105. Ben types 105 on b4 himself (the screen shows `Your edit 105`). He then changes only b4's reps in Edit set. The reducer sees a 105 carry, judges the draft as "nothing of his", and clears it. The row drops to 100 and his typed value is silently lost. The no-op check can also misjudge an Edit set back to 100 on a pain-blocked row.
+- Fix: in the reducer and reconcile, where pain flags aren't known, never treat a heavier carry as the baseline (call `carriedLoad` as if the movement were flagged). Keeping a draft equal to a carry does no harm either way. Add a test with a flagged movement.
+
+**CS5. Changelog records the developer's own choices as Ben's decision.**
+- Where: `docs/brief/CHANGELOG.md`, the 21 Oct "Last set carries" entry, **Bounds**.
+- "Drop sets never carry or receive" and "same gym part only" are developer calls (open item 1). Ben named only warm-ups and "same exercise". CLAUDE.md requires Ben to approve brief changes, so mark these two as pending his confirmation, in the changelog and in §4.2 rule 2a.
+
+### Nits
+
+- **CN1.** The Lock Screen and voice pain cache (`apps/mobile/src/workout/pain-flagged.ts`) is set only on `workout.load` while a session is active, and is never cleared. A flag raised mid-rest outside a set (from the coach chat) can let the lock screen or the spoken cue say the heavier carried load until the next reload (developer open item 2). Refresh it from the pain-flag write path as well, or call `setActivePainFlagged` after a pain-flag change.
+- **CN2.** No tests for the edit-history fallbacks (developer open item 4): legacy `edit` records without `fields` (`carry.ts:38`), or a fit-to-time `edit_planned_set` stopping the carry. Add one each.
+- **CN3.** Carried values read `Your edit` on the lock screen, the `Next` card and in VoiceOver (developer open item 3). That's acceptable under minimal copy, but it's Ben's call (bare value or `Last set`).
+- **CN4.** `s.index < set.index` (`carry.ts:78`) decides "later". Confirm that set moves (`setMoveSteps`) renumber `index`. If they don't, a moved set could receive or miss a carry by its old position.
+- **CN5.** Still open from the first review: N1, N4, N5 (the device check now also needs the carry: b2 at 105, then the Next card, lock screen, spoken cue, Edit set on b3, Undo of b2, and a force-close with b3 open), and SP2.
+
+### Spec issues
+
+- **SPC1.** Rule 2a carries an absolute load, which conflicts with planned ramps and pyramids (CS3). Ben to choose: the absolute carry as approved, carry only between sets that share the same original target, or carry the delta.
+- **SPC2.** "Target unchanged since Start" (Ben's wording) doesn't cover a target Ben changed himself on the *logged* set (CS2). Ben's intent ("set 2 at 105 against a 100 plan") suggests his own target edit should count as the plan for that comparison. Confirm.
+- **SPC3.** Drop sets and the gym-part limit (CS5) need Ben's confirmation.
