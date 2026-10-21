@@ -91,6 +91,9 @@ export function builderLoad(raw: SlotLoadInput, set: { reps: number; rpe: number
   ];
   for (const [source, anchor] of anchored) {
     if (anchor === null || !Number.isFinite(anchor.value)) continue;
+    // (Reps from history, 21 Oct) A plan's week-1 load set before Ben's newer sessions gives way to the built-in
+    // rule, which plans from those sessions at his reps (a plan load never overrides fresher history).
+    if (source === 'plan' && anchor.yieldsToHistory === true && input.ruleTarget !== null && Number.isFinite(input.ruleTarget.value)) continue;
     if (!formula) return { ...u, source, working: anchor.value, anchorE1rm: null, estimate: false, startLight: null };
     const e1rm = anchorE1rmOf(anchor);
     const history = historyOverride(anchor, e1rm, input);

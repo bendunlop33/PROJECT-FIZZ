@@ -282,6 +282,17 @@ describe('secondary compounds and main lifts', () => {
     expect(result.reps).toMatchObject({ last: 12, range: { min: 9, max: 12 }, kind: 'history', aim: 9 });
   });
 
+  it('a plan’s week-1 load older than his newer sessions gives way to the rule at his reps; a current plan load stands', () => {
+    const load = slotLoads(SHRUG, SHRUGS_15, [rack]);
+    const stale = makeSlot(SHRUG.id, { main: false }, ctxFor(SHRUG, { ...load, planFirstLoad: { value: 20, reps: 8, rpe: 8, yieldsToHistory: true } }, 'isolation'));
+    expect(stale.source).toBe('rule');
+    expect(working(stale.rows).map((r) => [r.reps, r.load])).toEqual([0, 1, 2].map(() => [12, 32.5]));
+    const current = makeSlot(SHRUG.id, { main: false }, ctxFor(SHRUG, { ...load, planFirstLoad: { value: 20, reps: 8, rpe: 8 } }, 'isolation'));
+    expect(current.source).toBe('plan');
+    // Its load follows from the plan's e1RM at his reps (12), never the 8-rep load as is.
+    expect(working(current.rows).every((r) => r.reps === 12 && (r.load ?? 0) < 20)).toBe(true);
+  });
+
   it('a rule of Ben’s own keeps its range (`fixed`)', () => {
     const own = nextTargetsFor({ ownerId: OWNER, exerciseId: SHRUG.id, exerciseName: SHRUG.name, measurement: 'reps', unit: 'kg', convention: 'per_hand', equipment: rack, exercise: SHRUG, rule: null, workingSets: 3, history: SHRUGS_15, painFlags: [], sessionPain: { active: false, reportedAtUtc: null } }).rule;
     const mine = { ...own, id: id(5555), repRange: { min: 8, max: 12 }, name: 'Mine' };
