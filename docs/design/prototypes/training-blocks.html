@@ -214,10 +214,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .st.good { color: var(--good); }
 .st.warn { color: var(--warn); }
 .sh { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); margin-top: 4px; display: flex; justify-content: space-between; }
-.mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; font-size: 14px; font-variant-numeric: tabular-nums; }
-.mgrid div { display: flex; justify-content: space-between; min-height: 26px; align-items: center; }
+.mgrid { display: flex; flex-direction: column; font-size: 14px; font-variant-numeric: tabular-nums; }
+.mhead, .mgrid div { display: grid; grid-template-columns: 1fr 52px 52px; align-items: center; }
+.mhead { margin-top: 8px; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); min-height: 22px; }
+.mhead span:nth-child(n+2), .mgrid b, .mgrid small { text-align: right; }
+.mgrid small { color: var(--text2); font-size: 14px; }
+.mgrid div { min-height: 30px; border-top: 1px solid var(--divider); }
 .mgrid b { font-weight: 600; }
-.mgrid b small { font-weight: 500; color: var(--text2); font-size: 12px; }
+
 .fr { display: flex; justify-content: space-between; align-items: center; min-height: 36px; border-top: 1px solid var(--divider); font-size: 15px; font-variant-numeric: tabular-nums; gap: 10px; }
 .fr .k { font-size: 14px; }
 .fr b { font-weight: 600; text-align: right; }
@@ -566,7 +570,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function review() {
     const st = (d, p) => { const k = (d - p) / 2.5; return k >= 1 ? '<span class="st good">▲ Ahead</span>' : k <= -2 ? '<span class="st warn">▼ Behind</span>' : '<span class="st good">● On plan</span>'; };
     const lifts = RLIFTS.map(([n, r, a, b, p]) => `<div class="rv" aria-label="${n} top set ${a} to ${b} kg, plan ${p}"><span class="ln">${n}<small>× ${r}</small></span><span>${a} → <b>${b}</b></span><span class="pl">${p}</span>${st(b, p)}</div>`).join('');
-    const mus = RMUS.map(([m, a, p]) => `<div><span>${m}</span><b>${a}<small> of ${p}</small></b></div>`).join('');
+    const mus = RMUS.map(([m, a, p]) => `<div aria-label="${m}: ${a} sets a week on average, plan ${p}"><span>${m}</span><b>${a}</b><small>${p}</small></div>`).join('');
     const tg = NEXT_T.map(([n, a, b]) => `<div class="fr"><span class="k">${n}</span><b>${a} → ${b} <small>kg</small></b></div>`).join('');
     const lock = s.started || s.notNow;
     // Proposal items: the whole 44 pt row toggles Apply (on) / Skip (off). Skipped Row path falls back to the built-in one step a week.
@@ -587,7 +591,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <div class="card" style="gap:6px">
         <div class="rv rh" aria-hidden="true"><span>Top set</span><span>Was → now</span><span>Plan</span><span></span></div>
         ${lifts}
-        <div class="sh" style="margin-top:8px"><span>Sets / week</span><span>avg of plan</span></div>
+        <div class="mhead" aria-hidden="true"><span>Sets per week (avg)</span><span>Done</span><span>Plan</span></div>
         <div class="mgrid">${mus}</div>
         <div class="fr" style="margin-top:4px"><span class="k">Sessions</span><b>23 <small>of 24</small></b></div>
         <div class="fr"><span class="k">How it felt</span><b>Easy 4 · Good 15 · Hard 3</b></div>
