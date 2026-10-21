@@ -89,9 +89,9 @@ export interface HistorySession {
  * convention are still checked by each caller). A second copy from the
  * same workout (`copy`) is never compared: the main copy plans next time.
  */
-export function matchesEquipment(h: Pick<HistorySession, 'imported' | 'equipmentId' | 'copy'>, equipmentId: string | null): boolean {
+export function matchesEquipment(h: Pick<HistorySession, 'imported' | 'equipmentId' | 'copy'>, equipmentId: string | null, alsoComparable?: ReadonlySet<string>): boolean {
   if (h.copy === true) return false;
-  return h.imported || h.equipmentId === equipmentId;
+  return h.imported || h.equipmentId === equipmentId || (h.equipmentId !== null && alsoComparable?.has(h.equipmentId) === true);
 }
 
 /**
@@ -308,6 +308,14 @@ export interface NextTargetsInput {
    * is not prescribed (B7, ADR 0016 P-I3; rule 4).
    */
   fitLater?: boolean;
+  /**
+   * (Builder loads, 21 Oct) Other equipment items whose logged history is
+   * comparable with `equipment` (same kind, and for a bar the same bar mass:
+   * `comparableSessions` in `session/substitutes`). Without it only the same
+   * item compares (`matchesEquipment`), so a row logged on another bar of the
+   * same mass was skipped and older, lighter history planned the load.
+   */
+  comparableEquipmentIds?: ReadonlySet<string>;
 }
 
 export type ProgressionDecision =
@@ -463,6 +471,21 @@ function countedTypes(rule: ProgressionRule): SetType[] {
   return rule.method === 'double_progression' ? ['working'] : ['top'];
 }
 
+/**
+ * (Builder loads, 21 Oct; Ben: "it knew my history but wasn't using it") A
+ * workout made in the builder logs a main lift as a top set and back-offs,
+ * never `working`. Double progression read such a session as having no
+ * counted sets, so it planned from the newest older session with working
+ * sets (often lighter FitNotes history). An in-app session with no working
+ * sets but a top set is now judged on its top and back-off sets and planned
+ * from its top set.
+ */
+const BUILDER_FORMAT_TYPES: readonly SetType[] = ['top', 'backoff'];
+
+function builderFormatSets<T extends Pick<HistorySet, 'setType'>>(rule: ProgressionRule, s: Pick<HistorySession, 'imported'>, kept: readonly T[]): boolean {
+  return rule.method === 'double_progression' && !s.imported && !kept.some((x) => x.setType === 'working') && kept.some((x) => x.setType === 'top');
+}
+
 /** Sets that must be completed before the rule may progress (review B2, ADR 0003 S3). */
 function requiredSets(rule: ProgressionRule): number {
   return rule.method === 'double_progression' ? rule.workingSets : 1;
@@ -567,7 +590,10 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
   /** The latest comparable session, when it came from FitNotes: how many lighter sets were read as a warm-up ramp. */
   let latestFitNotes: { rampDropped: number } | null = null;
   for (const s of [...input.history].sort(byRecency)) {
-    const typed = comparableSetsOf(s).filter((x) => types.includes(x.setType) && x.reps !== null);
+    const kept = comparableSetsOf(s);
+    const builderFormat = builderFormatSets(input.rule, s, kept);
+    const sessionTypes = builderFormat ? BUILDER_FORMAT_TYPES : types;
+    const typed = kept.filter((x) => sessionTypes.includes(x.setType) && x.reps !== null);
     // §2.13: a set Ben marked (spotted, pain, form broke, other equipment) is
     // left out here, including the unit check (a flagged set on other
     // equipment doesn't make the session incomparable).
@@ -578,7 +604,7 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
         x.load.convention !== 'bodyweight' &&
         (x.load.unit !== ctx.unit || x.load.convention !== ctx.convention),
     );
-    if (!matchesEquipment(s, wantedEquipment) || mismatched || (s.imported && typed.length === 0)) {
+    if (!matchesEquipment(s, wantedEquipment, input.comparableEquipmentIds) || mismatched || (s.imported && typed.length === 0)) {
       excluded += 1;
       continue;
     }
@@ -587,14 +613,21 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
     const numeric = loads.filter((l): l is number => l !== null);
     const easiest =
       numeric.length === 0 ? null : ctx.direction === 'resistance' ? Math.min(...numeric) : Math.max(...numeric);
+    // Builder format: planned from the top set (the hardest top load), judged on top and back-offs.
+    const topLoads = builderFormat ? counted.filter((x) => x.setType === 'top' && x.load !== null && x.load.convention !== 'bodyweight').map((x) => x.load?.value ?? 0) : [];
+    const topLoad = topLoads.length === 0 ? null : ctx.direction === 'resistance' ? Math.max(...topLoads) : Math.min(...topLoads);
     // Import-progress r3 B1: a FitNotes session is planned from its working load
     // (the load with the most sets, ties to the easiest) and judged on the sets
     // there, plus harder sets unless they are a lone top set. Lighter finishers
     // are never judged or planned from.
     const reading = s.imported ? readFitNotesWorkingSets(counted) : null;
     const judged = reading ? reading.judged : counted;
-    const planLoad = reading ? (reading.reference?.value ?? null) : easiest;
-    const atPlan = reading ? judged.filter((x) => !reading.harderJudged.includes(x)) : counted;
+    const planLoad = reading ? (reading.reference?.value ?? null) : builderFormat && topLoad !== null ? topLoad : easiest;
+    const atPlan = reading
+      ? judged.filter((x) => !reading.harderJudged.includes(x))
+      : builderFormat && topLoad !== null
+        ? counted.filter((x) => x.load !== null && toScaled(x.load.value) === toScaled(topLoad))
+        : counted;
     const reps = judged.map((x) => x.reps ?? 0);
     const allHitTop = reps.length > 0 && reps.every((r) => r >= criteria.repRange.max);
     let increaseFrom: number | null = null;

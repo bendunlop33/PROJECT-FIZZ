@@ -39,6 +39,8 @@ export interface NextTargetRequest {
   sessionPain: PainStatus;
   /** See `NextTargetsInput.fitLater` (Start next session from a FitNotes workout). */
   fitLater?: boolean;
+  /** See `NextTargetsInput.comparableEquipmentIds` (other items of the same kind and bar mass). */
+  comparableEquipmentIds?: ReadonlySet<string>;
 }
 
 export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; rule: ProgressionRule } {
@@ -56,6 +58,7 @@ export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; r
     convention: req.convention,
     pain,
     ...(req.fitLater === true ? { fitLater: true } : {}),
+    ...(req.comparableEquipmentIds !== undefined ? { comparableEquipmentIds: req.comparableEquipmentIds } : {}),
   });
   return { result, rule };
 }

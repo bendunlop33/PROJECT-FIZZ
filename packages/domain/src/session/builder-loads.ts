@@ -183,6 +183,12 @@ export interface LoadReferences {
   patternE1rms: number[];
   /** Changes when the comparable history changes (`previewKey`, `checkedHistoryVersion`). */
   historyVersion: string;
+  /**
+   * Items Ben's comparable in-app history was logged on (same kind; a bar of
+   * the same mass). The built-in rule reads the same history through
+   * `NextTargetsInput.comparableEquipmentIds` (builder loads, 21 Oct).
+   */
+  comparableEquipmentIds?: string[];
 }
 
 const harderThan = (a: number, b: number, dir: LoadDirection): boolean => (dir === 'resistance' ? a > b + EPS : a < b - EPS);
@@ -261,6 +267,7 @@ export function loadReferences(input: LoadReferencesInput): LoadReferences {
     derived: own === null ? (input.derived ?? null) : null,
     patternE1rms: [...(input.patternE1rms ?? [])],
     historyVersion: historyVersionOf(all),
+    comparableEquipmentIds: [...new Set(comparable.flatMap((c) => (c.session.imported || c.session.equipmentId === null ? [] : [c.session.equipmentId])))],
   };
 }
 
