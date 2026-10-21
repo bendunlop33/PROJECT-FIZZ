@@ -109,12 +109,16 @@ function sameItemKind(a: EquipmentInstance, b: EquipmentInstance): boolean {
  * `substituteTargets` (§6.2): comparable history → the built-in rule's next
  * targets with the slot's working-set count (provenance kept for `Why?`),
  * on the item that history was done on (`pin`). None → no plan: the slot's
- * own sets and reps with no load (`No history`).
+ * own sets and reps with no load (`No history`). `accessory`: see
+ * `NextTargetRequest.accessory` (a secondary lift's reps follow history).
  */
-export function substituteTargets(slot: SubstituteSlot, exercise: Exercise, history: readonly HistorySession[], ctx: SubstituteContext): SwapPlan {
-  const found = comparableHistory(exercise, history, ctx);
+export function substituteTargets(slot: SubstituteSlot, exercise: Exercise, history: readonly HistorySession[], ctx: SubstituteContext, opts: { accessory?: boolean } = {}): SwapPlan {
+  const comparable = comparableSessions(exercise, history, ctx);
+  const found = comparable[0] ?? null;
   if (found === null || exercise.measurement !== 'reps') return { exercise, pin: null, plan: null };
   const eq = found.equipment;
+  // The rule reads the same history as `loadReferences`: other items of the same kind and bar mass too (review S2).
+  const comparableEquipmentIds = new Set(comparable.flatMap((c) => (c.session.imported || c.session.equipmentId === null ? [] : [c.session.equipmentId])));
   const { result } = nextTargetsFor({
     ownerId: ctx.ownerId,
     exerciseId: exercise.id,
@@ -129,9 +133,12 @@ export function substituteTargets(slot: SubstituteSlot, exercise: Exercise, hist
     history,
     painFlags: ctx.painFlags,
     sessionPain: ctx.sessionPain,
+    comparableEquipmentIds,
+    ...(opts.accessory === true ? { accessory: true } : {}),
   });
   const plan = plannedSetsFromTargets(result, { history, equipment: eq, at: ctx.at });
-  return plan === null ? { exercise, pin: null, plan: null } : { exercise, pin: eq, plan };
+  const reps = result.reps === undefined ? {} : { ruleReps: result.reps };
+  return plan === null ? { exercise, pin: null, plan: null, ...reps } : { exercise, pin: eq, plan, ...reps };
 }
 
 /**

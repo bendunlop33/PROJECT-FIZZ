@@ -1,4 +1,5 @@
 import type { BuilderGroup, DraftLoadSource, EquipmentInstance, LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
+import type { RuleReps } from '../rep-range';
 
 /**
  * Workout builder v3 (docs/design/workout-builder-v3.md, slice S2): the
@@ -53,6 +54,19 @@ export interface AnchorLoad {
   value: number;
   reps: number;
   rpe: number;
+  /**
+   * (Builder loads, 21 Oct) This anchor gives way to Ben's own recent sets
+   * when it implies a clearly lower e1RM than they do (`HISTORY_WINS_SHARE`):
+   * the built-in rule's load when it isn't a pain hold or a miss, and a
+   * plan's first-week load with newer history than the plan.
+   */
+  yieldsToHistory?: boolean;
+  /**
+   * (Reps from history, 21 Oct) The top of the rep range this load is for (the built-in rule's). A set
+   * of up to `repsMax` reps takes the load as is; a set of more reps follows from its e1RM.
+   * Absent: the load is for `reps` only.
+   */
+  repsMax?: number;
 }
 
 /**
@@ -90,12 +104,31 @@ export interface SlotLoadInput {
   ruleTarget: AnchorLoad | null;
   /** Est. max from Ben's own recent sets (an estimate, rule 6). */
   e1rm: number | null;
+  /**
+   * (Review S1) Est. max from the most recent comparable session only (`lastSessionE1rm`): what a stale
+   * anchor gives way to, so a drop Ben chose last time isn't undone by a heavier set before it.
+   * Absent: `e1rm` is used.
+   */
+  lastE1rm?: number | null;
+  /** Days since the newest of those sets (`OwnReference.gapDays`): a gap of 14+ days cuts the e1RM when it overrides an anchor. */
+  e1rmGapDays?: number | null;
   /** `noReferenceCeiling` for `Start light`; null = none. */
   startLightCeiling: number | null;
   /** Pain-flagged movement: no harder than this (the last comparable working load, rule 9). */
   painCap: number | null;
   /** The comparable history these loads were worked out from (`LoadReferences.historyVersion`); Start re-derives the slot once it moved (review B4). */
   historyVersion?: string | null;
+  /**
+   * (Reps from history, 21 Oct) The built-in rule's reps for this exercise (`NextTargets.reps`): what
+   * Ben did last time, the range the rule used and the one count to plan. Absent or null: no history,
+   * and the slot takes the builder's default range.
+   */
+  ruleReps?: RuleReps | null;
+  /**
+   * (Reps from history, 21 Oct) A main barbell lift's built-in rule read as a secondary lift's
+   * (`NextTargetRequest.accessory`): what a non-main slot of it uses (`slotLoadOf`). Absent: the same as above.
+   */
+  secondary?: { ruleTarget: AnchorLoad | null; ruleReps: RuleReps | null };
 }
 
 /** A load after rounding down to what this gym can load. */

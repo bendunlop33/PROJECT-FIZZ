@@ -198,6 +198,7 @@ import {
   type SessionAdjustment,
   type SessionAdjustmentTrigger,
   gymSetupWords,
+  type RuleReps,
 } from '@fizz/domain';
 import type { CandidateWrite, MemoryWrite, SqliteRepositories, Store } from '@fizz/persistence';
 import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
@@ -393,7 +394,7 @@ export interface CoachServiceDeps {
   /** Keychain + settings file; no network. Absent: not connected. */
   connection?: () => Promise<TextCoachState>;
   /** The built-in rule's next targets for a finished workout (workout services). */
-  builtInNextTargets: (sessionId: string) => Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null>;
+  builtInNextTargets: (sessionId: string, reps?: Map<string, RuleReps>) => Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null>;
   /** After a coach change to today's sets or its Undo: rest alerts follow the new targets. */
   onSessionChanged?: (aggregate: SessionAggregate) => void;
   /** The bundled exercise catalogue (Coaching knowledge), for swap options and names. */
@@ -853,7 +854,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         const aggs = await finishedWith(exerciseId);
         const latest = [...aggs].sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc))[0];
         if (latest === undefined) return null;
-        const planned = (await deps.builtInNextTargets(latest.session.id).catch(() => null))?.get(exerciseId) ?? null;
+        const reps = new Map<string, RuleReps>();
+        const planned = (await deps.builtInNextTargets(latest.session.id, reps).catch(() => null))?.get(exerciseId) ?? null;
         const ex = latest.exercises.find((e) => e.exerciseId === exerciseId);
         if (planned === null || ex === undefined) return null;
         const flags = await repos().painFlags.listActive(p.id).catch(() => []);
@@ -866,6 +868,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           planned,
           basedOn: { utc: latest.session.startedAt.utc, tz: latest.session.startedAt.tz, title: latest.session.routineName },
           painFlag: flags.find((f) => f.exerciseId === exerciseId && f.status === 'active') ?? null,
+          reps: reps.get(exerciseId) ?? null,
         });
       },
     };

@@ -183,6 +183,12 @@ export interface LoadReferences {
   patternE1rms: number[];
   /** Changes when the comparable history changes (`previewKey`, `checkedHistoryVersion`). */
   historyVersion: string;
+  /**
+   * Items Ben's comparable in-app history was logged on (same kind; a bar of
+   * the same mass). The built-in rule reads the same history through
+   * `NextTargetsInput.comparableEquipmentIds` (builder loads, 21 Oct).
+   */
+  comparableEquipmentIds?: string[];
 }
 
 const harderThan = (a: number, b: number, dir: LoadDirection): boolean => (dir === 'resistance' ? a > b + EPS : a < b - EPS);
@@ -216,6 +222,18 @@ export function ownReferenceOf(sessions: readonly RefSession[], convention: Load
   if (newest === undefined) return null;
   const e1rm = E1RM_CONVENTIONS.has(convention) ? referenceE1rm(inWindow.flatMap((s) => s.sets)) : null;
   return { sessions: inWindow, e1rm, gapDays: Math.max(0, Math.floor((nowMs - toMs(newest.performedAtUtc)) / DAY_MS)), estOnly };
+}
+
+/**
+ * (Builder loads review S1) The e1RM of the newest of `own`'s sessions only
+ * (`referenceE1rm` on its working sets): a stale anchor gives way to what Ben
+ * did last time, never to a heavier set from before a drop he chose himself.
+ * Null when `own` has no e1RM (assisted, added) or that session has none.
+ */
+export function lastSessionE1rm(own: OwnReference | null): number | null {
+  const newest = own?.sessions[0];
+  if (own === null || own.e1rm === null || newest === undefined) return null;
+  return referenceE1rm(newest.sets);
 }
 
 export interface LoadReferencesInput {
@@ -261,6 +279,7 @@ export function loadReferences(input: LoadReferencesInput): LoadReferences {
     derived: own === null ? (input.derived ?? null) : null,
     patternE1rms: [...(input.patternE1rms ?? [])],
     historyVersion: historyVersionOf(all),
+    comparableEquipmentIds: [...new Set(comparable.flatMap((c) => (c.session.imported || c.session.equipmentId === null ? [] : [c.session.equipmentId])))],
   };
 }
 

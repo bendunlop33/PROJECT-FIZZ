@@ -26,6 +26,7 @@ export * from './build-ask';
 export * from './rename';
 export * from './pause-plan';
 export * from './intent';
+export * from './corrections';
 export * from './edit-today';
 export * from './numbers';
 export * from './plan';

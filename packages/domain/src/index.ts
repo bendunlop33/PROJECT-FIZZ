@@ -45,6 +45,7 @@ export * from './plates-added';
 export * from './catalogue-id';
 export * from './default-rule';
 export * from './next-target';
+export * from './rep-range';
 export * from './gym-editor';
 export * from './session/repeat';
 export * from './session/routines';

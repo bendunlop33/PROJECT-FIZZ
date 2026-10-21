@@ -30,6 +30,7 @@ import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
 import { asksForPlan, asksLiveChange, asksToRename, chipRequest, followsUpChange, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
 import { PLAN_INSTRUCTIONS } from './plan';
+import { LIVE_TARGET_CORRECTION_LINES } from './corrections';
 import { parseToolCall } from './tool-call';
 import { BUILD_INSTRUCTIONS, LIVE_LOAD_CHOICE_LINE, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, QUESTION_RULES } from './build';
 import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, refusedBuildActionIds } from './build-ask';
@@ -447,6 +448,7 @@ export function liveWorkoutInstructions(addOffered: boolean): string {
     'When Ben asks to change today’s sets, or says a load is too light or too heavy ("too light", "fix them", "make the warm-ups heavier"), call edit_today in this turn with the change. Do not answer with advice alone.',
     'recentLifts in YOUR DATA has his last sessions of the exercises in play (date, load × reps @RPE, unit and convention as logged); use it for loads. For any other exercise, read get_recent_training. History imported from FitNotes is his own training and a valid basis (equipment not recorded); the app fits every load to today’s equipment.',
     LIVE_LOAD_CHOICE_LINE,
+    LIVE_TARGET_CORRECTION_LINES,
     'When Ben did not ask, the app turns your call into an offer he accepts; nothing applies until he does.',
   ].join('\n');
 }

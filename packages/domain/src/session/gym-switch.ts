@@ -20,6 +20,7 @@ import { MAX_GYM_CHANGES } from '@fizz/schemas';
 import { formatNumber, repRangeText } from '../display';
 import { isLoadAchievable } from '../equipment';
 import { equipmentRowLine } from '../gym-editor';
+import { ruleCategory, type RuleExerciseInfo } from '../default-rule';
 import { nextTargetsFor, type NextTargetRequest } from '../next-target';
 import { comparableSetsOf, fitNotesPlannedSets, type HistorySession, type NextTargets } from '../progression';
 import { toMs } from '../time';
@@ -192,6 +193,25 @@ export type NextTargetBlockRequest = Omit<NextTargetRequest, 'exerciseId' | 'exe
   /** `done`: Start next session (done sets). `prescribed`: the Summary (a skipped set holds). */
   count: 'done' | 'prescribed';
 };
+
+/**
+ * (Builder-loads review S3) The main barbell lifts in a workout that were secondary lifts: every
+ * main barbell block after the first. The first is the workout's main lift (the builder puts it
+ * first); the rest read their built-in rule as a compound lift's (`NextTargetRequest.accessory`),
+ * so a barbell row after squats reads the same reps on the Summary, Start and to the coach as in
+ * the builder. Pure.
+ */
+export function secondaryMainLifts(blocks: readonly NextTargetBlock[], info: (exerciseId: string) => RuleExerciseInfo | null): Set<string> {
+  const out = new Set<string>();
+  let seen = false;
+  for (const b of blocks) {
+    const ex = b.decider;
+    if (ruleCategory(info(ex.exerciseId), b.equipment?.kind ?? null, ex.loadConvention) !== 'main_barbell') continue;
+    if (seen) out.add(ex.exerciseId);
+    seen = true;
+  }
+  return out;
+}
 
 /**
  * Next targets for one exercise block (review r2 B1). Not split: exactly

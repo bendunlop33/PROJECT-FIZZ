@@ -294,6 +294,8 @@ import {
   leftOutCount,
   draftSavedRoutineId,
   shownRationale,
+  secondaryMainLifts,
+  type RuleReps,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import { worksLine } from '@fizz/schemas';
@@ -1455,14 +1457,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** The built-in rule's next targets only (playbook 7-F): the comparison and the fallback for the coach's. */
-  async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
+  async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null, repsOut?: Map<string, RuleReps>): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
     const out = new Map<string, { setType: SetType; planned: PlannedSet }[]>();
     const flags = await repos().painFlags.listActive(p.id);
     const now = unspecifiedPain(today);
     const sessionPain = now.active ? now : unspecifiedPain(await sessionCheckIn(source));
+    const blocks = nextTargetBlocks(source);
+    const infos = new Map<string, Exercise | null>();
+    for (const b of blocks) if (!infos.has(b.decider.exerciseId)) infos.set(b.decider.exerciseId, await repos().exercises.get(b.decider.exerciseId).catch(() => null));
+    // A main barbell lift after the workout's main lift reads as a secondary lift, as in the builder (review S3).
+    const secondary = secondaryMainLifts(blocks, (id) => infos.get(id) ?? null);
     // One entry per exercise block: a split exercise reads its deciding part with the
     // block's set count, the same as the Summary's `Next time` (review r2 B1).
-    for (const block of nextTargetBlocks(source)) {
+    for (const block of blocks) {
       const sx = block.decider;
       // (19 Oct) A second copy of an exercise (a superset with itself at 0) never plans next time.
       if (block.copy || out.has(sx.exerciseId)) continue;
@@ -1479,9 +1486,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const { result } = nextTargetsForBlock(
         block,
         // A FitNotes source recorded no item: its loads are fitted to the gym when the workout is built (B7; rule 4).
-        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain, ...(source.session.source === 'import' ? { fitLater: true } : {}) },
+        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain, ...(source.session.source === 'import' ? { fitLater: true } : {}), ...(secondary.has(sx.exerciseId) ? { accessory: true } : {}) },
         null,
       );
+      if (repsOut !== undefined && result.reps !== undefined) repsOut.set(sx.exerciseId, result.reps);
       // Rule provenance on each set, so `Why?` explains a progressed target as the rule's, never as a repeat (review B1.1).
       // A split block's targets are the deciding part's, on its item.
       const plan = plannedSetsFromTargets(result, { history, equipment: block.equipment, at: ctx.now() });
@@ -2580,11 +2588,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * The built-in rule's next targets for a finished workout (the summary
      * turn's comparison and fallback, D21). Never the coach's own.
      */
-    async builtInNextTargets(sessionId: string): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null> {
+    async builtInNextTargets(sessionId: string, reps?: Map<string, RuleReps>): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]> | null> {
       const p = await ctx.profile();
       const source = await repos().sessions.get(sessionId);
       if (!p || !source) return null;
-      return builtInNextTargetsOf(p, source, null).catch(() => null);
+      return builtInNextTargetsOf(p, source, null, reps).catch(() => null);
     },
 
     /**

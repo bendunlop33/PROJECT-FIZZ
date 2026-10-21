@@ -3,6 +3,7 @@ import { EQUIPMENT_WORD } from '../display';
 import { needsNoEquipment } from '../exercise-equipment';
 import { deriveId } from '../stable';
 import type { SnapSource } from './snap';
+import type { RuleReps } from '../rep-range';
 
 /**
  * A swapped slot's plan (`substituteTargets`): the substitute exercise, the
@@ -14,6 +15,8 @@ export interface SwapPlan {
   exercise: Exercise;
   pin: EquipmentInstance | null;
   plan: readonly { setType: SetType; planned: PlannedSet }[] | null;
+  /** (Reps from history, 21 Oct) The built-in rule's reps for the exercise (`NextTargets.reps`), when it ran. */
+  ruleReps?: RuleReps;
 }
 
 /** The pin ID a swap with no history starts from: no item, so the shared fit maps one by the exercise's kinds (GS3). */

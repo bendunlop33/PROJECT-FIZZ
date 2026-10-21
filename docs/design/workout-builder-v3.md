@@ -562,6 +562,26 @@ Ben's direction: every set's load comes from est. 1RM + reps + target RPE, round
 
 Whether step 4 should replace steps 1–3 ("est. 1RM everywhere") is still open in the backlog: §9 Q12.
 
+**Builder loads fix (21 Oct, PROPOSED, needs Ben's approval; not in CHANGELOG or ADR 0006 yet).** Ben's Build B report ("It knew my history but wasn't using it"). Branch `claude/builder-loads-21oct` changes steps 1–2 as below. It applies to every new-workout path: the builder, Describe the workout, and Today.
+
+- **History can replace a stale anchor.** The built-in rule's load gives way to Ben's own sets when it implies an e1RM below 90 % of the est. max from his **last session** (`HISTORY_WINS_SHARE`; cut after a 14+ day gap, R1–R2). A miss, a reduction or a pain hold never gives way. A plan's week-1 load gives way the same way once history newer than the plan exists. The coach's target never gives way. The replaced load reads as `Est. max … (estimate)`.
+- **What a rule load means.** For the test above, the rule's load is read at its own rep floor and target RPE (main barbell: 3 reps @ 8.5). Used as the top set, other sets derive from it at the reps and RPE it's used at (6 @ 8). If the rule gives way and the last session's est. max (gap-cut) is higher, other sets use that instead. A set of more reps is never heavier than the top set. Example: after top 100 × 6 @ 8 + back-offs 95 × 8, the next build is top 102.5 × 6 with back-offs at 95 × 8 (not 87.5).
+- **Builder-format history.** A main lift logged as a top set + back-offs is judged on both and planned from the top set. Where the rule's plan is plain working sets (a routine's start, swaps, the coach-chat fallback), the first set takes the progressed top load. The rest take the back-off load moved by the same step.
+- **Same-mass bars.** The rule reads history on any bar of the same kind and bar mass, as `loadReferences` does, in the builder, Today and swaps.
+
+Open for Ben: the 90 % share; "last session" versus the best of the last 3 sessions; the reading of the rule load at its floor for the test.
+
+**Reps from history (21 Oct, PROPOSED, needs Ben's approval; not in CHANGELOG or ADR 0006/0010 yet).** Ben's live Back workout: shrugs planned at 8 reps though he did 15 last time. Same branch. Applies to the builder, Describe the workout, plan days and ＋ New workout from Today, Start, swaps, adds and `get_progression_targets` (all read the built-in rule through `nextTargetsFor`).
+
+- **The built-in rule's range follows his last session of that exercise** (typical reps = lower median of its working sets), for isolation and compound lifts: inside the goal range → the goal range; above it up to the rule's rep cap (isolation 15, compound 12) → `last − 3 … last` (15 → 12–15); above the cap → the top moves 2 reps a session toward the goal (20 → 15–18); below → `last … last + 3`; bodyweight follows his reps however high. Double progression then runs on that range. Why? fact: `Reps follow your last session (15 reps): 12–15.`
+- **One planned rep count** (`aim`): after a load increase, the reps the new load allows at the same effort (Epley; 50 × 15 → 52.5 × 13); a hold repeats his reps; add reps = the rule's next rep; a miss or reduction = the floor.
+- **Builder slots** (not the main lift) plan working sets at `aim`; the rule's load is used as is. Behind Why?: `Reps: last time 15` (or `· toward 8–12`).
+- **Main lift**: top set / back-offs unchanged; Why? adds `Last time 12 reps · main lift 6–8` when his last reps were outside 6–8. A main barbell lift used as a secondary lift reads its rule as a compound lift's (a row after the main lift at his usual 12 → 9–12).
+- **Ben's own rule** keeps its range.
+- **A plan's week-1 load older than newer sessions** gives way to the rule (it plans from those sessions at his reps); before, it gave way only when more than 10 % lower.
+
+Open for Ben: the width (3), the cap as "wildly outside", the 2-rep step, Epley for the reps after a load increase, the lower median as "his reps", and leaving main barbell lifts on 3–6.
+
 ### 3.2 Rest defaults [Ben]
 
 | Set type | Default |
