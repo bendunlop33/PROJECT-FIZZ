@@ -291,7 +291,8 @@ describe('set_rest_after by set type (pop-up rest per type)', () => {
     }
     expect(setsFor(s1, ROW)).toEqual(setsFor(s0, ROW));
     expect(expectOk(reduceSession(s1, cmd as SessionCommand)).duplicate).toBe(true);
-    expectError(reduceSession(s1, { ...(cmd as SessionCommand & { opId: string }), opId: 'rest-r2' }), 'stale_version');
+    if (cmd === null) throw new Error('no command');
+    expectError(reduceSession(s1, { ...cmd, opId: 'rest-r2' }), 'stale_version');
   });
 });
 
