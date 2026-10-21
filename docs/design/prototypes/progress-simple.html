@@ -250,7 +250,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     return `<div class="sec"><span>Progress</span><span>last 8 weeks</span></div>${strengthCard()}${muscleCard()}`;
   }
   function weekCard() {
-    const mus = [['Chest', 14, 12], ['Back', 13, 14], ['Legs', 9, 14]];
+    // Sets per muscle live in Muscles below (no duplicate here).
     return `<div class="sec"><span>This week</span><span>13–19 Oct</span></div>
     <div class="card">
       <div class="row"><span class="k">Sessions</span><span class="v">3 of 4 <span style="font-size:14px;font-weight:500;color:var(--text2)">· 2 runs</span></span></div>
@@ -258,7 +258,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <button class="pd done" data-a="sess" data-v="Chest">Chest<small>Mon – 100%</small></button><button class="pd done" data-a="sess" data-v="Back">Back<small>Wed – 92%</small></button>
         <button class="pd done" data-a="sess" data-v="Shoulders">Shoulders<small>Fri – 104%</small></button>${s.missed ? `<button class="pd miss" data-a="sess" data-v="LegsMissed">Legs<small>Thu – missed</small></button>` : `<button class="pd next" data-a="sess" data-v="Legs">Legs<small>Sat – moved</small></button>`}
       </div>
-      ${mus.map(([m, n, p]) => `<div class="mus" aria-label="${m} ${n} of ${p} planned sets"><span>${m}</span><div class="bar"><i style="width:${Math.min(n / 18, 1) * 100}%"></i><b style="left:${(p / 18) * 100}%"></b></div><span class="n">${n} of ${p}</span></div>`).join('')}
     </div>`;
   }
   function changesCard() {
