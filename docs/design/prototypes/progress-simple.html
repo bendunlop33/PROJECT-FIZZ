@@ -167,7 +167,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       const d = l.series[l.series.length - 1] - l.series[0];
       const on = s.focus === i;
       return `<button class="lift${on ? ' on' : ''}${s.focus !== null && !on ? ' dim' : ''}" data-a="focus" data-v="${i}" aria-pressed="${on}" aria-label="${l.n}, ${l.reps} reps, current ${now} kg, ${d === 0 ? 'level' : (d > 0 ? 'up ' : 'down ') + Math.abs(d) + ' kg'} in 8 weeks, ${l.target ? 'target ' + l.target + ' kg' : 'no target'}. ${on ? 'Showing alone' : 'Show alone'}">
-        <i style="background:${l.c}"></i><span class="ln">${l.n}</span><span class="lr">× ${l.reps}</span><span class="lv">${now}<small>${d === 0 ? 'level' : (d > 0 ? '+' : '') + d}</small></span><span class="lt">${l.target ?? '–'}</span></button>`;
+        <i style="background:${l.c}"></i><span class="ln">${l.n}</span><span class="lr">× ${l.reps}</span><span class="lv">${now}</span><span class="lt">${l.target ?? '–'}</span></button>`;
     }).join('');
   }
   function strengthCard() {
