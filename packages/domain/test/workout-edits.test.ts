@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SessionAggregateSchema, type Exercise, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
+import { SessionAggregateSchema, type Exercise, type PlannedSet, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
 import {
   fitPlanToItem,
   snapTypedLoadEasier,
@@ -257,7 +257,8 @@ describe('remove_exercise with logged sets (asks first, keeps them in history)',
     const bench = rowId(s0, BENCH);
     const { command, loggedSets } = removeExerciseCommand(s0, bench, op('remove-1'));
     expect(loggedSets).toBe(2);
-    expectError(reduceSession(s0, { ...command, confirmedLoggedSets: undefined, opId: 'remove-0' } as SessionCommand), 'exercise_logged');
+    const unasked: SessionCommand = { type: 'remove_exercise', at: command.at, opId: 'remove-0', sessionExerciseId: bench, expectedVersion: command.expectedVersion };
+    expectError(reduceSession(s0, unasked), 'exercise_logged');
     expectError(reduceSession(s0, { ...command, confirmedLoggedSets: 1, opId: 'remove-x' }), 'exercise_logged');
     const s1 = apply(s0, command);
     const rows = setsFor(s1, BENCH);
@@ -354,7 +355,7 @@ describe('builder loads for an added or swapped exercise', () => {
 
 describe('loads typed or planned on the gym’s kit (rule 4)', () => {
   it('fitPlanToItem keeps what the item makes, rounds toward easier, never past the max, and blanks what only fits harder', () => {
-    const plan = [
+    const plan: { planned: PlannedSet }[] = [
       { planned: { load: kg(50, 'stack'), reps: null, durationS: null, rpe: null, rir: null } },
       { planned: { load: kg(52, 'stack'), reps: null, durationS: null, rpe: null, rir: null } },
       { planned: { load: kg(80, 'stack'), reps: null, durationS: null, rpe: null, rir: null } },
@@ -364,7 +365,8 @@ describe('loads typed or planned on the gym’s kit (rule 4)', () => {
     expect(fitted.map((p) => p.planned.load?.value ?? null)).toEqual([50, 50, 50, null]);
     // Assisted: easier is more assistance; past the most assistance there is it can't go.
     const machine = assisted();
-    const a = fitPlanToItem([{ planned: { load: kg(22, 'assistance'), reps: null, durationS: null, rpe: null, rir: null } }, { planned: { load: kg(60, 'assistance'), reps: null, durationS: null, rpe: null, rir: null } }], machine);
+    const assistedPlan: { planned: PlannedSet }[] = [{ planned: { load: kg(22, 'assistance'), reps: null, durationS: null, rpe: null, rir: null } }, { planned: { load: kg(60, 'assistance'), reps: null, durationS: null, rpe: null, rir: null } }];
+    const a = fitPlanToItem(assistedPlan, machine);
     expect(a.map((p) => p.planned.load?.value ?? null)).toEqual([25, null]);
   });
 

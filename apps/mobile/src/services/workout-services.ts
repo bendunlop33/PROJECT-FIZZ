@@ -3233,7 +3233,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'link_superset', at: ctx.now(), opId: req.opId, expectedVersion: req.expectedVersion, sessionExerciseId: req.withSessionExerciseId, withSessionExerciseId: req.sessionExerciseId }));
     },
 
-    async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string; shape?: AddShape; supersetWithSessionExerciseId?: string }): Promise<CommandOutcome> {
+    async addExercise(req: {
+      sessionId: string;
+      exerciseId: string;
+      equipmentId: string | null;
+      opId: string;
+      shape?: AddShape;
+      supersetWithSessionExerciseId?: string;
+      /**
+       * (workout-table-v3 §7) The sets to start with, already worked out and fitted to the item by the
+       * caller (the builder's load sources, `workoutEdit.add`). Absent: the built-in rule's plan (`planFor`).
+       */
+      plan?: { setType: SetType; planned: PlannedSet }[];
+    }): Promise<CommandOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       // A catalogue exercise is saved (Coaching knowledge, no owner) the first time it's added.
@@ -3244,7 +3256,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           if (!saved?.ok && !(await repos().exercises.get(req.exerciseId))) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
         }
       }
-      const planned = await planFor(p, req).catch(() => null);
+      const planned = req.plan ?? (await planFor(p, req).catch(() => null));
       // The picker's `Sets` count (exercise-library §10.2): only this exercise's new pending sets are shaped (rule 2).
       const plan = req.shape === undefined ? planned : shapeAddPlan(planned, req.shape);
       return ctx.afterCommand(
@@ -3309,7 +3321,18 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * fitted to this gym (rule 4); logged sets stay. Undo is `undoOp` on the
      * same opId. A retry with the same opId is a duplicate.
      */
-    async swapExercise(req: { sessionId: string; sessionExerciseId: string; exerciseId: string; opId: string }): Promise<CommandOutcome & { fromName?: string; toName?: string }> {
+    async swapExercise(req: {
+      sessionId: string;
+      sessionExerciseId: string;
+      exerciseId: string;
+      opId: string;
+      /**
+       * (workout-table-v3 §7) The substitute's sets from the builder's load sources (`workoutEdit.swap`),
+       * on `pin` (the item they were worked out on). Absent: its own history and the built-in rule
+       * (`substituteTargets`). Either way the shared fit snaps them to this gym (rule 4) and pain holds them.
+       */
+      builderPlan?: { plan: { setType: SetType; planned: PlannedSet }[]; pin: EquipmentInstance | null };
+    }): Promise<CommandOutcome & { fromName?: string; toName?: string }> {
       const failed = (message: string): CommandOutcome => ({ ok: false, error: { code: 'set_not_pending', message } });
       const p = await ctx.profile();
       const aggregate = await repos().sessions.get(req.sessionId);
@@ -3326,7 +3349,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (exercise === null) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
       const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
       const sctx = await midSwapCtx(p, aggregate, [exercise.id], row.id);
-      const plan = substituteTargets(slot, exercise, history, sctx);
+      const plan = req.builderPlan === undefined ? substituteTargets(slot, exercise, history, sctx) : { exercise, pin: req.builderPlan.pin, plan: req.builderPlan.plan };
       const built = buildSwapExerciseCommand({
         aggregate,
         sessionExerciseId: row.id,

@@ -1,17 +1,16 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { TextInput} from 'react-native';
-import { ActionSheetIOS, Alert, InputAccessoryView, Pressable, View, type AccessibilityActionEvent } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Pressable, View } from 'react-native';
 
-import type { BuilderEditOp } from '@fizz/domain';
-import type { BuilderGroup, SetType } from '@fizz/schemas';
+import type { BuilderEditOp, RestKind } from '@fizz/domain';
 
 import type { BuilderSnapshot, BuilderWriteResult } from '../../builder/builder-service';
-import { KEY_STEPS, nextField, popupView, promptView, PROMPT_COPY, REST_STEP_S, SET_TYPE_LABEL, SET_TYPES, WORKOUT_COPY, type PromptView } from '../../builder/builder-view';
+import { popupView, promptView, PROMPT_COPY, REST_STEP_S, WORKOUT_COPY, type PromptView } from '../../builder/builder-view';
 import { countText, reviewHeaderWord, type BuilderReview } from '../../builder/review';
 import type { ProposalCardView } from '../../coach/builder-coach-view';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, DangerTextButton, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
-import { ChoiceRow, Divider, Stepper, SwipeRow, Table } from './BuilderParts';
+import { AppText, BottomCard, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { ExercisePopup } from '../../ui/exercise-popup';
+import { Divider, Table } from './BuilderParts';
 
 /**
  * The builder's sheets (workout-builder-v3 §2.4, §2.5, §2.7, §2.8, §2.9).
@@ -19,11 +18,14 @@ import { ChoiceRow, Divider, Stepper, SwipeRow, Table } from './BuilderParts';
  * none works out a load, a rest default or a count itself.
  */
 
-export const SET_BAR_ID = 'builder-set-bar';
+const REST_KINDS: readonly (RestKind | 'round')[] = ['warmup', 'top', 'backoff', 'working', 'drop', 'before_drop', 'round'];
+const restKindOf = (k: string): RestKind | 'round' | null => REST_KINDS.find((x) => x === k) ?? null;
 
-type Field = 'reps' | 'kg' | 'rpe';
-
-/** The exercise pop-up (§2.4): per-set table, + Warm-up / + Set, rest per set type, move and pair, Why this weight?. */
+/**
+ * The exercise pop-up (§2.4) on Your workout: the shared `ExercisePopup` (the
+ * active workout uses the same one, workout-table-v3 §7) over this slot's
+ * `popupView`; every edit goes to the builder service as one `BuilderEditOp`.
+ */
 export function ExerciseSheet({
   snap,
   slotKey,
@@ -47,343 +49,54 @@ export function ExerciseSheet({
   kgStep: (slotKey: string, value: number | null, dir: 1 | -1) => Promise<number | null>;
   toast?: ReactNode;
 }) {
-  const theme = useTheme();
-  const [whyLines, setWhyLines] = useState<string[] | null>(null);
-  const [focus, setFocus] = useState<{ row: number; field: Field } | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [note, setNote] = useState<string | null>(null);
-  const refs = useRef(new Map<string, TextInput | null>());
-  useEffect(() => {
-    setWhyLines(null);
-    setDrafts({});
-    setNote(null);
-    setFocus(null);
-  }, [slotKey]);
   const view = slotKey === null ? null : popupView(snap, slotKey, (k) => snap.rests[slotKey]?.[k] ?? 0);
-  const keyOf = (row: number, field: Field) => `${String(row)}:${field}`;
-
-  async function commit(row: number, field: Field, text: string) {
-    if (slotKey === null || view === null) return;
-    const r = view.rows[row];
-    const value = Number(text.replace(',', '.'));
-    const key = keyOf(row, field);
-    setDrafts((d) => Object.fromEntries(Object.entries(d).filter(([k]) => k !== key)));
-    if (r === undefined || text.trim() === '' || !Number.isFinite(value)) return;
-    const same = field === 'reps' ? value === r.reps : field === 'rpe' ? value === r.rpe : value === r.load;
-    if (same) return;
-    const patch = field === 'reps' ? { kind: 'reps' as const, reps: value } : field === 'rpe' ? { kind: 'rpe' as const, rpe: value } : { kind: 'load' as const, value };
-    const res = await onEdit({ kind: 'edit_row', slotKey, index: row, patch });
-    setNote(res?.status === 'refused' ? res.message : null);
-  }
-
-  async function step(dir: 1 | -1) {
-    if (focus === null || slotKey === null || view === null) return;
-    const r = view.rows[focus.row];
-    if (r === undefined) return;
-    const k = keyOf(focus.row, focus.field);
-    const cur = Number(drafts[k] ?? (focus.field === 'reps' ? r.reps : focus.field === 'rpe' ? (r.rpe ?? 8) : (r.load ?? 0)));
-    let next: number | null;
-    if (focus.field === 'reps') next = Math.max(1, cur + dir * KEY_STEPS.reps);
-    else if (focus.field === 'rpe') next = Math.max(1, Math.min(10, cur + dir * KEY_STEPS.rpe));
-    else next = await kgStep(slotKey, Number.isFinite(cur) ? cur : null, dir);
-    if (next !== null) setDrafts((d) => ({ ...d, [k]: String(next) }));
-  }
-
-  function goNext() {
-    if (focus === null || view === null) return;
-    const n = nextField(focus.row, focus.field, view.rows.length, (i) => view.rows[i]?.type !== 'warmup');
-    if (n === null) refs.current.get(keyOf(focus.row, focus.field))?.blur();
-    else refs.current.get(keyOf(n.row, n.field))?.focus();
-  }
-
-  const cell = (row: number, field: Field, value: string, label: string, editable = true) => {
-    const k = keyOf(row, field);
-    return (
-      <TextField
-        ref={(el) => {
-          refs.current.set(k, el);
-        }}
-        accessibilityLabel={label}
-        editable={editable}
-        value={drafts[k] ?? value}
-        keyboardType={field === 'reps' ? 'number-pad' : 'decimal-pad'}
-        inputAccessoryViewID={SET_BAR_ID}
-        selectTextOnFocus
-        onFocus={() => { setFocus({ row, field }); }}
-        onChangeText={(t) => { setDrafts((d) => ({ ...d, [k]: t })); }}
-        onEndEditing={(e) => void commit(row, field, e.nativeEvent.text)}
-        style={{ minHeight: 44, minWidth: 52, textAlign: 'right', fontVariant: ['tabular-nums'] }}
-      />
-    );
-  };
-
-  const pickType = (row: number, current: SetType) => {
-    if (slotKey === null) return;
-    const options = [...SET_TYPES.map((t) => SET_TYPE_LABEL[t]), 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, title: 'Type' }, (i) => {
-      const t = SET_TYPES[i];
-      if (t !== undefined && t !== current) void onEdit({ kind: 'set_type', slotKey, index: row, type: t }).then((r) => { setNote(r?.status === 'refused' ? r.message : null); });
-    });
-  };
-
+  const refusal = (r: BuilderWriteResult | null): string | null => (r?.status === 'refused' ? r.message : null);
+  const send = async (op: BuilderEditOp | ((now: BuilderSnapshot) => BuilderEditOp | null)): Promise<string | null> => refusal(await onEdit(op));
   return (
-    <BottomCard
-      visible={slotKey !== null && view !== null}
-      onClose={onClose}
-      footer={
-        <View style={{ gap: theme.space['2'] }}>
-          {toast}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'] }}>
-            <View style={{ flex: 1 }}>
-              <PrimaryButton label={WORKOUT_COPY.done} onPress={onClose} />
-            </View>
-            <DangerTextButton label={WORKOUT_COPY.delete} onPress={onDelete} />
-          </View>
-        </View>
+    <ExercisePopup
+      view={view}
+      resetKey={slotKey}
+      onEditCell={(row, field, value) =>
+        slotKey === null ? Promise.resolve(null) : send({ kind: 'edit_row', slotKey, index: row.index, patch: field === 'reps' ? { kind: 'reps', reps: value } : field === 'rpe' ? { kind: 'rpe', rpe: value } : { kind: 'load', value } })
       }
-    >
-      {view === null || slotKey === null ? null : (
-        <>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
-            <View style={{ flex: 1, gap: theme.space['1'] }}>
-              <AppText variant="title2" accessibilityRole="header">
-                {view.name}
-              </AppText>
-              {view.works !== null ? (
-                <AppText variant="label" color="text.secondary">
-                  {view.works}
-                </AppText>
-              ) : null}
-              {view.mayHurt ? (
-                <AppText variant="label" color="status.warning">
-                  {WORKOUT_COPY.mayHurt}
-                </AppText>
-              ) : null}
-            </View>
-            <TextButton label={WORKOUT_COPY.swapExercise} onPress={onSwap} />
-          </View>
-          <Table>
-            <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', paddingHorizontal: theme.space['3'], paddingTop: theme.space['2'], gap: theme.space['2'] }}>
-              {['#', 'Type', 'Reps', view.kgHeader, 'RPE'].map((h, i) => (
-                <AppText key={h} variant="label" color="text.secondary" style={{ width: i === 0 ? 24 : i === 1 ? undefined : 56, flex: i === 1 ? 1 : undefined, textAlign: i > 1 ? 'right' : 'left' }}>
-                  {h}
-                </AppText>
-              ))}
-            </View>
-            {view.rows.map((r) => {
-              const actions = r.canDelete ? [{ name: 'delete_set', label: 'Delete set' }, { name: 'type', label: 'Change type' }] : [{ name: 'type', label: 'Change type' }];
-              const onAction = (name: string) => {
-                if (name === 'delete_set') void onEdit({ kind: 'delete_set', slotKey, index: r.index });
-                if (name === 'type') pickType(r.index, r.type);
-              };
-              return (
-                <SwipeRow
-                  key={`${String(r.index)}:${r.type}`}
-                  container
-                  onPress={() => { pickType(r.index, r.type); }}
-                  accessibilityLabel={r.accessibilityLabel}
-                  actions={actions}
-                  onAction={onAction}
-                  {...(r.canDelete ? { leftAction: { label: WORKOUT_COPY.delete, onPress: () => void onEdit({ kind: 'delete_set', slotKey, index: r.index }) } } : {})}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['3'], gap: theme.space['2'], minHeight: 52 }}>
-                    {/* `#` and Type are one VoiceOver element with the row's actions; the fields after it stay reachable (review B6). */}
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={r.accessibilityLabel}
-                      accessibilityHint="Changes the set type"
-                      accessibilityActions={actions}
-                      onAccessibilityAction={(e: AccessibilityActionEvent) => { onAction(e.nativeEvent.actionName); }}
-                      onPress={() => { pickType(r.index, r.type); }}
-                      style={{ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}
-                    >
-                      <AppText variant="callout" color="text.secondary" numeric style={{ width: 24 }}>
-                        {r.mark}
-                      </AppText>
-                      <AppText variant="callout" style={{ flex: 1 }}>
-                        {r.typeText}
-                      </AppText>
-                    </Pressable>
-                    {cell(r.index, 'reps', String(r.reps), `${r.spokenName}, reps`)}
-                    {cell(r.index, 'kg', r.load === null ? '' : String(r.load), `${r.spokenName}, ${view.kgHeader}`)}
-                    {r.type === 'warmup' ? (
-                      <AppText variant="callout" color="text.tertiary" style={{ width: 52, textAlign: 'right' }} accessibilityElementsHidden importantForAccessibility="no">
-                        –
-                      </AppText>
-                    ) : (
-                      cell(r.index, 'rpe', r.rpe === null ? '' : String(r.rpe), `${r.spokenName}, target RPE`)
-                    )}
-                  </View>
-                </SwipeRow>
-              );
-            })}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: theme.space['3'] }}>
-              <TextButton label={WORKOUT_COPY.warmup} disabled={!view.canAddWarmup} onPress={() => void onEdit({ kind: 'add_warmup', slotKey })} />
-              <TextButton label={WORKOUT_COPY.set} disabled={!view.canAddSet} onPress={() => void onEdit({ kind: 'add_set', slotKey })} />
-            </View>
-          </Table>
-          {note !== null ? <StatusLine icon="info.circle" tone="info" text={note} /> : null}
-          <Eyebrow>{WORKOUT_COPY.rest}</Eyebrow>
-          <Table>
-            {view.rests.map((x, i) => (
-              <View key={x.kind}>
-                {i > 0 ? <Divider /> : null}
-                <View style={{ minHeight: 54, flexDirection: 'row', alignItems: 'center', paddingLeft: theme.space['4'], paddingRight: theme.space['2'] }}>
-                  <AppText variant="body" style={{ flex: 1 }}>
-                    {x.label}
-                  </AppText>
-                  <Stepper
-                    label={x.label}
-                    valueText={x.text}
-                    canMinus={x.canMinus}
-                    canPlus={x.canPlus}
-                    repeat
-                    onStep={(d) =>
-                      void onEdit((now) => {
-                        // From the rest as it is when this step runs, so quick taps add up (review S4).
-                        const cur = now.rests[slotKey]?.[x.kind] ?? x.seconds;
-                        return { kind: 'rest', slotKey, restKind: x.kind, seconds: cur + d * REST_STEP_S };
-                      })
-                    }
-                  />
-                </View>
-              </View>
-            ))}
-          </Table>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
-            {view.canMoveUp ? <SecondaryButton label={`↑ ${WORKOUT_COPY.moveUp}`} onPress={() => void onEdit({ kind: 'move', slotKey, dir: 'up' })} /> : null}
-            {view.canMoveDown ? <SecondaryButton label={`↓ ${WORKOUT_COPY.moveDown}`} onPress={() => void onEdit({ kind: 'move', slotKey, dir: 'down' })} /> : null}
-            {view.canSupersetNext ? <SecondaryButton label={WORKOUT_COPY.supersetNext} onPress={() => void onEdit({ kind: 'superset_next', slotKey })} /> : null}
-            {view.canUnlink ? <SecondaryButton label={WORKOUT_COPY.unlink} onPress={() => void onEdit({ kind: 'unlink', slotKey })} /> : null}
-          </View>
-          <TextButton
-            label={`${WORKOUT_COPY.whyWeight}${whyLines === null ? ' ›' : ''}`}
-            tone="secondary"
-            onPress={() => {
-              if (whyLines !== null) setWhyLines(null);
-              else void why(slotKey).then(setWhyLines);
-            }}
-          />
-          {whyLines !== null
-            ? whyLines.map((l) => (
-                <AppText key={l} variant="label" color="text.secondary" numeric>
-                  {l}
-                </AppText>
-              ))
-            : null}
-          <InputAccessoryView nativeID={SET_BAR_ID}>
-            <View style={{ flexDirection: 'row', gap: theme.space['2'], padding: theme.space['2'], backgroundColor: theme.colors['bg.raised'] }}>
-              <View style={{ flex: 1 }} />
-              <Pressable accessibilityRole="button" accessibilityLabel="Less" onPress={() => void step(-1)} style={{ minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }}>
-                <AppText variant="headline">−</AppText>
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="More" onPress={() => void step(1)} style={{ minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }}>
-                <AppText variant="headline">+</AppText>
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={WORKOUT_COPY.next} onPress={goNext} style={{ minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }}>
-                <AppText variant="headline">{WORKOUT_COPY.next}</AppText>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={WORKOUT_COPY.done}
-                onPress={() => {
-                  if (focus !== null) refs.current.get(keyOf(focus.row, focus.field))?.blur();
-                }}
-                style={{ minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors.accent }}
-              >
-                <AppText variant="headline" color="on.accent">
-                  {WORKOUT_COPY.done}
-                </AppText>
-              </Pressable>
-            </View>
-          </InputAccessoryView>
-        </>
-      )}
-    </BottomCard>
+      onType={(row, type) => (slotKey === null ? Promise.resolve(null) : send({ kind: 'set_type', slotKey, index: row.index, type }))}
+      onDeleteRow={(row) => {
+        if (slotKey !== null) void onEdit({ kind: 'delete_set', slotKey, index: row.index });
+      }}
+      onAddWarmup={() => (slotKey === null ? Promise.resolve(null) : send({ kind: 'add_warmup', slotKey }))}
+      onAddSet={() => {
+        if (slotKey !== null) void onEdit({ kind: 'add_set', slotKey });
+      }}
+      onRestStep={(x, d) => {
+        const kind = restKindOf(x.kind);
+        if (slotKey === null || kind === null) return;
+        void onEdit((now) => {
+          // From the rest as it is when this step runs, so quick taps add up (review S4).
+          const cur = now.rests[slotKey]?.[kind] ?? x.seconds;
+          return { kind: 'rest', slotKey, restKind: kind, seconds: cur + d * REST_STEP_S };
+        });
+      }}
+      onMove={(dir) => {
+        if (slotKey !== null) void onEdit({ kind: 'move', slotKey, dir });
+      }}
+      onSupersetNext={() => {
+        if (slotKey !== null) void onEdit({ kind: 'superset_next', slotKey });
+      }}
+      onUnlink={() => {
+        if (slotKey !== null) void onEdit({ kind: 'unlink', slotKey });
+      }}
+      onSwap={onSwap}
+      onDelete={onDelete}
+      onClose={onClose}
+      why={() => (slotKey === null ? Promise.resolve([]) : why(slotKey))}
+      kgStep={(_row, value, dir) => (slotKey === null ? Promise.resolve(null) : kgStep(slotKey, value, dir))}
+      toast={toast}
+    />
   );
 }
 
-export interface ChoiceSection {
-  focus: string;
-  items: { exerciseId: string; name: string; works: string | null; mayHurt: boolean }[];
-}
-
-/** Swap / Add (§2.5): the group dropdown defaults to the exercise's group; exercises by focus with their works line. No estimated max. */
-export function SwapSheet({
-  visible,
-  title,
-  group,
-  groups,
-  sections,
-  actionWord,
-  onGroup,
-  onPick,
-  onClose,
-}: {
-  visible: boolean;
-  title: string;
-  group: BuilderGroup;
-  groups: readonly BuilderGroup[];
-  sections: readonly ChoiceSection[];
-  /** `Swap` or `Add` (the `May hurt` confirm's button). */
-  actionWord: string;
-  onGroup: (g: BuilderGroup) => void;
-  onPick: (exerciseId: string) => void;
-  onClose: () => void;
-}) {
-  const theme = useTheme();
-  const chooseGroup = () => {
-    const options = [...groups, 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, title: 'Muscle group' }, (i) => {
-      const g = groups[i];
-      if (g !== undefined) onGroup(g);
-    });
-  };
-  return (
-    <BottomCard visible={visible} onClose={onClose} footer={<TextButton label="Back" tone="secondary" onPress={onClose} />}>
-      <AppText variant="title2" accessibilityRole="header">
-        {title}
-      </AppText>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Muscle group, ${group}`} onPress={chooseGroup} style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <AppText variant="body">Muscle group</AppText>
-        <AppText variant="body" color="text.secondary">{`${group}  ⌄`}</AppText>
-      </Pressable>
-      {sections.length === 0 ? <StatusLine icon="info.circle" tone="info" text="All of these are in the workout" /> : null}
-      {sections.map((sec) => (
-        <View key={sec.focus} style={{ gap: theme.space['1'] }}>
-          {sections.length > 1 ? <Eyebrow>{sec.focus}</Eyebrow> : null}
-          <Table>
-            {sec.items.map((it, i) => (
-              <View key={it.exerciseId}>
-                {i > 0 ? <Divider /> : null}
-                <ChoiceRow
-                  title={it.name}
-                  line={it.works}
-                  tag={it.mayHurt ? WORKOUT_COPY.mayHurt : null}
-                  onPress={() => {
-                    if (!it.mayHurt) {
-                      onPick(it.exerciseId);
-                      return;
-                    }
-                    Alert.alert(WORKOUT_COPY.mayHurt, it.name, [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: actionWord,
-                        onPress: () => {
-                          onPick(it.exerciseId);
-                        },
-                      },
-                    ]);
-                  }}
-                />
-              </View>
-            ))}
-          </Table>
-        </View>
-      ))}
-    </BottomCard>
-  );
-}
+export type { ChoiceSection } from '../../ui/swap-sheet-model';
+export { SwapSheet } from '../../ui/swap-sheet';
 
 /** `Use these changes for` (§2.8): Today only / Update … in your plan / Save as new variation (name, then Save and start) / Cancel. */
 export function PromptSheet({
