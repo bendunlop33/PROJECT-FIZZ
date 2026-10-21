@@ -89,3 +89,20 @@ describe('checkFillSetup (the coach’s fill_setup)', () => {
     expect(total).toBeLessThanOrEqual(10);
   });
 });
+
+describe('a day change brings the main lift Set up opens that day with (review builder-order S2)', () => {
+  it('a plan day whose template has no main lift: none, as tapping the day opens it; the lifts stay offered', () => {
+    const base = ctx();
+    const c: SetupCoachContext = { ...base, days: base.days.map((d) => (d.id === 'push' ? { ...d, defaultMainLiftExerciseId: null } : d)) };
+    const fill = checkFillSetup({ ...none, dayId: 'push' }, c, 'push day');
+    expect(fill?.next).toMatchObject({ dayId: 'push', mainLiftExerciseId: null });
+    // None is the day's own default, so the toast doesn't call it out.
+    expect(fill?.toast).toBe('Push');
+    const named = checkFillSetup({ ...none, dayId: 'push', mainLiftCatalogueId: 'bench' }, c, 'push day with bench');
+    expect(named?.next.mainLiftExerciseId).toBe('bench');
+  });
+
+  it('no default given: the first of the day’s lifts, as before', () => {
+    expect(checkFillSetup({ ...none, dayId: 'pull' }, ctx(), 'pull')?.next.mainLiftExerciseId).toBe('row');
+  });
+});

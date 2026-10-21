@@ -247,8 +247,9 @@ describe('Today (v2) session card from the plan', () => {
     // The card's own control choices may already differ from the template (they are today's changes too); Today only
     // asks once Ben edited the draft in the builder (§2.0.4 Edited in builder).
     const before = (await s.builder.startPrompt(c.draftId))?.lines.length ?? 0;
-    // Ben adds a set in the builder: the card reads `· edited`, and Start gets the prompt.
-    const slot = snap.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main);
+    // Ben adds a set in the builder to a planned accessory: the card reads `· edited`, and Start gets the prompt.
+    const planned = new Set(card.draft?.template.exerciseIds ?? []);
+    const slot = snap.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main && planned.has(x.exerciseId));
     if (slot === undefined) throw new Error('no accessory');
     const e = await s.builder.edit(c.draftId, { kind: 'add_set', slotKey: slot.key }, { opId: 'merge-add-set', basis: { version: snap.version } });
     expect(e.status).toBe('written');

@@ -57,6 +57,7 @@ import {
   type SkippedOp,
   type StartAlongside,
   type TemplateSlotSpec,
+  defaultBuilderMainLift,
 } from '@fizz/domain';
 import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftKey, type BuilderGroup, type BuilderSetup, type Gym, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
@@ -340,6 +341,27 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   async function profileMainLift(dayId: string): Promise<string | null> {
     const t = await deps.training().catch(() => null);
     return t?.mainLifts?.[dayId] ?? t?.split?.days.find((d) => d.id === dayId)?.mainLiftExerciseId ?? null;
+  }
+
+  /**
+   * A day's main lift for Set up: the training profile's (Ben's choice or plan), else the lead group's default
+   * main compound at this gym (`defaultBuilderMainLift`; Back → Barbell row), never none silently. Null only when
+   * the lead group has no compound here.
+   */
+  function defaultMainOf(groups: readonly BuilderGroup[], env: BuilderEnv): string | null {
+    return defaultBuilderMainLift({ groups, pool: env.pool, info: env.info, catalogueKeyOf: (id) => env.exercise(id)?.catalogueKey ?? null });
+  }
+
+  /**
+   * The main lift Set up opens a split day with, one rule for Set up's row, its list and the coach's
+   * `fill_setup` (review builder-order S2): the profile's; else none when a plan template with no main
+   * lift exists for the day (that template opens); else the day's default main compound here.
+   */
+  async function setupMainFor(ownerId: string, dayId: string, groups: readonly BuilderGroup[], env: () => Promise<BuilderEnv>): Promise<string | null> {
+    const profileMain = await profileMainLift(dayId);
+    if (profileMain !== null) return profileMain;
+    if ((await templateFor(ownerId, dayId, null)) !== null) return null;
+    return defaultMainOf(groups, await env());
   }
 
   /** The applied plan in use (null: none); `paused` while a pause is running. */
@@ -762,11 +784,14 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       if (day === undefined) {
         const other = req.dayId === undefined ? undefined : TODAY_OTHER_SESSIONS.find((o) => o.id === req.dayId);
         if (other === undefined) return { dayId: CUSTOM_DAY_ID, dayName: 'Custom', dayParts: [], minutes, mainLiftExerciseId: null, supersets: true, groups: [], variationId: null, groupsEdited: req.dayId !== undefined };
-        return { dayId: CUSTOM_DAY_ID, dayName: other.name, dayParts: [], minutes, mainLiftExerciseId: null, supersets: true, groups: other.groups.map((g) => ({ ...g })), variationId: null, groupsEdited: true };
+        const otherGroups = other.groups.map((g) => g.group);
+        const otherMain = defaultMainOf(otherGroups, await envFor(p, { groups: otherGroups, keySeed: 'setup' }));
+        return { dayId: CUSTOM_DAY_ID, dayName: other.name, dayParts: [], minutes, mainLiftExerciseId: otherMain, supersets: true, groups: other.groups.map((g) => ({ ...g })), variationId: null, groupsEdited: true };
       }
-      const main = await profileMainLift(day.id);
+      const groups = groupsOfParts(day.parts);
+      const main = await setupMainFor(p.id, day.id, groups, () => envFor(p, { groups, keySeed: 'setup' }));
       const s: SetupInput = { dayId: day.id, dayName: day.name, dayParts: day.parts, minutes, mainLiftExerciseId: main, supersets: true, groups: [], variationId: null, groupsEdited: false };
-      const env = await envFor(p, { groups: groupsOfParts(day.parts), exerciseIds: main === null ? [] : [main], keySeed: 'setup' });
+      const env = await envFor(p, { groups, exerciseIds: main === null ? [] : [main], keySeed: 'setup' });
       return { ...s, groups: recommendation(s, env).groups };
     },
 
@@ -778,7 +803,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const profileMain = s.dayId === CUSTOM_DAY_ID ? null : await profileMainLift(s.dayId);
       const env = await envFor(p, { groups, exerciseIds: [s.mainLiftExerciseId, profileMain].filter((x): x is string => x !== null), keySeed: 'setup' });
       const compounds = env.compoundsOf(groups.filter((g) => g !== 'Abs'));
-      const mainLifts = [...(profileMain === null ? [] : [{ id: profileMain, name: env.nameOf(profileMain), fromProfile: true }]), ...compounds.filter((id) => id !== profileMain).map((id) => ({ id, name: env.nameOf(id), fromProfile: false }))];
+      // The lift Set up opens the day with leads the list (none for a plan template with no main lift).
+      const lead = s.dayId === CUSTOM_DAY_ID ? defaultMainOf(groups, env) : await setupMainFor(p.id, s.dayId, groups, () => Promise.resolve(env));
+      const mainLifts = [...(lead === null ? [] : [{ id: lead, name: env.nameOf(lead), fromProfile: profileMain !== null }]), ...compounds.filter((id) => id !== lead).map((id) => ({ id, name: env.nameOf(id), fromProfile: false }))];
       const variations = (await variationsFor(p.id, s.dayId, s.mainLiftExerciseId)).map((v) => ({ id: v.id, label: v.label, version: v.version }));
       const t = s.dayId === CUSTOM_DAY_ID ? null : await templateFor(p.id, s.dayId, s.mainLiftExerciseId);
       let loaded: GroupCount[] | null = null;
@@ -1350,9 +1377,12 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const env = await envFor(p, { groups: [...BUILDER_GROUP_ORDER], keySeed: 'coach-setup' });
       const out: SetupCoachContext['days'][number][] = [];
       for (const d of days) {
-        const profileMain = await profileMainLift(d.id);
-        const ids = [...(profileMain === null ? [] : [profileMain]), ...env.compoundsOf(groupsOfParts(d.parts).filter((g) => g !== 'Abs')).filter((id) => id !== profileMain).slice(0, 6)];
-        out.push({ id: d.id, name: d.name, mainLifts: ids.map((id) => ({ exerciseId: id, catalogueId: env.exercise(id)?.catalogueKey ?? null, name: env.nameOf(id) })) });
+        // The day's main lift first (the coach's `fill_setup` default on a day change): the profile's, else the default main compound.
+        const dayGroups = groupsOfParts(d.parts);
+        const opens = await setupMainFor(p.id, d.id, dayGroups, () => Promise.resolve(env));
+        const lead = opens ?? defaultMainOf(dayGroups, env);
+        const ids = [...(lead === null ? [] : [lead]), ...env.compoundsOf(dayGroups.filter((g) => g !== 'Abs')).filter((id) => id !== lead).slice(0, 6)];
+        out.push({ id: d.id, name: d.name, mainLifts: ids.map((id) => ({ exerciseId: id, catalogueId: env.exercise(id)?.catalogueKey ?? null, name: env.nameOf(id) })), defaultMainLiftExerciseId: opens });
       }
       const ctx: SetupCoachContext = {
         days: out,

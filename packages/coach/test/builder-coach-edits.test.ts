@@ -321,3 +321,46 @@ describe('staleness by slot (rule 5)', () => {
     expect(recheckBuilderProposal({ ...p, warnings: [] }, snap, env)).toEqual({ ok: false, line: OUT_OF_DATE_LINE });
   });
 });
+
+describe('swap and add follow the builder order and pairing rules (review builder-order S1)', () => {
+  const names = (w: BuilderWorkout) => w.blocks.map((b) => b.slots.map((s) => s.exerciseId).join('+'));
+
+  it('a swap that puts a heavy lift into a builder pair splits the pair, with a line', () => {
+    const { snap, env } = setup();
+    const pair = snap.workout.blocks.find((b) => b.auto && b.slots.length === 2);
+    const target = pair?.slots[0];
+    if (pair === undefined || target === undefined) throw new Error(`expected a builder pair: ${names(snap.workout).join(' | ')}`);
+    const o = applyBuilderEdits(snap, [{ op: 'swap', slotKey: target.key, toExerciseId: 'incline_bb' }], env);
+    const swapped = o.workout.blocks.find((b) => b.slots.some((s) => s.exerciseId === 'incline_bb'));
+    expect(swapped?.slots).toHaveLength(1);
+    expect(o.workout.blocks.some((b) => b.slots.length > 1 && b.slots.some((s) => F.info(s.exerciseId)?.heavy === true))).toBe(false);
+    expect(o.lines.some((l) => l.startsWith('Unlink Incline barbell press + '))).toBe(true);
+  });
+
+  it('a swap between light lifts keeps the pair', () => {
+    const { snap, env } = setup();
+    const pair = snap.workout.blocks.find((b) => b.auto && b.slots.length === 2 && b.slots.some((s) => s.exerciseId === 'pushdown'));
+    if (pair === undefined) throw new Error('expected pushdown + crunch');
+    const o = applyBuilderEdits(snap, [{ op: 'swap', slotKey: pair.slots.find((s) => s.exerciseId === 'pushdown')?.key ?? '', toExerciseId: 'oh_ext' }], env);
+    expect(o.workout.blocks.find((b) => b.slots.some((s) => s.exerciseId === 'oh_ext'))?.slots).toHaveLength(2);
+    expect(o.lines.some((l) => l.startsWith('Unlink'))).toBe(false);
+  });
+
+  it('an add with no anchor goes in its band: a heavy compound before the lighter ones and the isolations, an isolation before abs', () => {
+    const { snap, env } = setup();
+    const rank = (id: string) => {
+      const i = F.info(id);
+      if (i === null) return 3;
+      if (i.group === 'Abs') return 4;
+      if (i.role !== 'compound') return 3;
+      return i.heavy ? 1 : 2;
+    };
+    const heavy = applyBuilderEdits(snap, [{ op: 'add', exerciseId: 'incline_bb', afterSlotKey: null, workingSets: null }], env);
+    const at = heavy.workout.blocks.findIndex((b) => b.slots.some((s) => s.exerciseId === 'incline_bb'));
+    expect(heavy.workout.blocks.slice(0, at).every((b) => b.slots.every((s) => s.main || rank(s.exerciseId) <= 1)), names(heavy.workout).join(' | ')).toBe(true);
+    const iso = applyBuilderEdits(snap, [{ op: 'add', exerciseId: 'hammer', afterSlotKey: null, workingSets: null }], env);
+    const i = iso.workout.blocks.findIndex((b) => b.slots.some((s) => s.exerciseId === 'hammer'));
+    expect(iso.workout.blocks.slice(i + 1).every((b) => b.slots.some((s) => F.info(s.exerciseId)?.group === 'Abs')), names(iso.workout).join(' | ')).toBe(true);
+    expect(iso.workout.blocks.slice(0, i).every((b) => b.slots.every((s) => rank(s.exerciseId) <= 3 || s.main) || b.slots.some((s) => rank(s.exerciseId) < 3)), names(iso.workout).join(' | ')).toBe(true);
+  });
+});
