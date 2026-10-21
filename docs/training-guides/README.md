@@ -20,6 +20,7 @@ Evidence grades: **Strong** = consistent meta-analyses. **Moderate** = several t
 | [equipment-aware-progression.md](equipment-aware-progression.md) | Rule 7 rewrite: % steps, reps check for steps > 5%, coarse dumbbell/stack/plate steps, microloading, goal-based lever choice, no-AI fallback (EQ1–EQ10; fact-checked). Replaces evidence-core E8 | 2026-10-09 |
 | [goal-adaptive.md](goal-adaptive.md) | Rule G source: goal profiles (Strength, Muscle, General fitness, Maintain, Endurance), "also matters" floors, named events and tapers, how training is run, the endurance switch for rules 11–13, confirming goal changes (GA1–GA19; fact-checked). Library since v1: where it differs from the playbook, the playbook wins | 2026-10-09 |
 | [return-to-load.md](return-to-load.md) | **Candidates R1–R6, awaiting Ben:** comeback after a break (14-day trigger, today-only lighter start −10/−20/−40%, ramp over ~half the gap) and returning towards pre-flag sets after a pain flag is cleared (one step per session, ≤ ~10%, proposal only; pain stops it). Unblocks active-workout §2.14.3 once approved. Flags: new session-start offer; built-in ramp step vs 7-F (ADR 0006 note) | 2026-10-11 |
+| [warm-up.md](warm-up.md) | **Candidates WU1–WU12, awaiting Ben (fact-checked and revised 21 Oct):** code-generated warm-up sets from the first working load and reps; goal acts only through those (heavy band ≤ 6 reps: 3–5 step ladder; rep band: 50% × 8 then 80% × 4 or 5; already-warm muscle: 0–1 step), snapped to the gym's equipment, all within D17's 10-min session allowance with an ordered cut list; 1-rep steps only before sets of ≤ 3; general warm-up optional; stretching ≤ 30 s per muscle; no injury-prevention claims; warm-ups never count or trigger offers. Trigger: a 1-rep warm-up before rows 90 kg × 12 (now 45 × 8, 70 × 5). Flags: coach-output fallback, D17 time, rule T after hard runs, FitNotes warm-ups counted as hard sets (D18) | 2026-10-21 |
 
 ## Shortlist (14 rules): Ben's decisions, 9 Oct 2026
 
@@ -54,7 +55,7 @@ The approved text, its guardrails and the open parameters are in **[playbook-v1.
 - **T:** mid-session triggers compare logged effort with planned effort (conflict 1).
 - **7-F:** the equipment-aware built-in rule, as worded in the ADR 0006 amendment. It sets next-session targets when the coach is unavailable, and today also when no coach target has been applied. Whether the coach's target should apply instead is D21, for Ben.
 
-**Candidates awaiting Ben (not in force):** R1–R6 in [return-to-load.md](return-to-load.md).
+**Candidates awaiting Ben (not in force):** R1–R6 in [return-to-load.md](return-to-load.md); WU1–WU12 in [warm-up.md](warm-up.md).
 
 **Endurance switch (one definition, used everywhere):** on when a hard, long or key endurance-type session (run, ride, swim, row, class or HIIT, match or sport) is in the plan (planned or usual) or logged (imported or reported). Easy sessions never turn it on. Details in the playbook under "How training is run".
 
@@ -94,6 +95,7 @@ Ben (9 Oct 2026): "stop with hyrox, it should be more adaptable depending on wha
     - 10 → **resolved**: rule 13's "applies when" is reworded, per Ben's HYROX direction.
 11. **equipment-aware-progression.md open questions.** These are D2–D7: fallback step size and sets, the 10% cap vs an earned bigger jump, the "Big jump" note, a bodyweight entry, microplates, and heavy/light-day history. *Developer finding:* the built-in rule has `maxLoadJump: null`, so it can currently propose +20–25% jumps, which conflicts with 7-F. Details are in the playbook's PM notes.
 12. **return-to-load.md (R1–R6), open for Ben.** R2 adds a coach-raised offer at session start (a gap ≥ 14 days as the "clear signal" under CLAUDE.md rule 3). R6's built-in ramp step (up to ~10%) is larger than 7-F's smallest increment, so it needs an ADR 0006 note and code, or Ben picks the slower 7-F step. R4 lifts the block in active-workout §2.14.3 but keeps every pain-return step as a proposal.
+13. **warm-up.md (WU1–WU12), open for Ben.** Warm-ups become code-generated (works with no AI); the coach changes them only when Ben asks. Open points: whether code replaces a coach warm-up that fails the minimum (e.g. the 1-rep row) or only warns; D17's approved 10 min fits a two-heavy-lift session only after WU11's cuts, so Ben may want more; whether rule T should discount lower-body rep shortfalls within ~8 h of a hard run (would change an approved rule); FitNotes imports carry no warm-up flag, so under D18 imported warm-ups count as hard sets (proposed: an import-preview "likely warm-up?" flag, no automatic change); gym-profile fields for full-diameter plates and sled weight; the catalogue must carry category, movement pattern, primary muscle and an easier variation. Enes 2025 (1 vs 2 warm-up sets at 10RM) is still unread.
 
 ## Paid material Ben may want to add to the library
 
@@ -102,11 +104,13 @@ Ben (9 Oct 2026): "stop with hyrox, it should be more adaptable depending on wha
 - RP books and app
 - *The Hybrid Athlete* (A. Viada)
 - *Starting Strength* (Rippetoe)
+- *Muscle & Strength Pyramid: Training* (Helms) (warm-up chapter)
 - ACSM 2026 position stand full text (MSSE; paywalled when checked)
 - Pelland et al. *Sports Medicine* journal version (the preprint is free)
 - Rønnestad & Mujika 2014 (*Scand J Med Sci Sports*) journal version
 - NSCA *Essentials* textbook
 - MASS Research Review (Stronger By Science subscription; Sept 2022 "Detraining" issue)
 - Bosquet et al. 2013 and Ardern et al. 2016 full texts (journal access)
+- Enes et al. 2025 (*Sports Med Health Sci*) full text, and Viveiros et al. 2024 (journal unconfirmed)
 
 Only summaries are held here.
