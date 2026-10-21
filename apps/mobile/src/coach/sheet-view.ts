@@ -557,7 +557,13 @@ export function threadRows(data: ThreadData & { nowUtc?: string }): ThreadRow[] 
     if (coach !== undefined && coach.body.role === 'coach') {
       const sentences = coach.body.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : []));
       if (sentences.length > 0) rows.push({ kind: 'coach', key: coach.id, sentences, atUtc: coach.createdAt.utc, tz: coach.createdAt.tz });
-      if (coach.body.note !== null && turn?.status === 'completed') rows.push({ kind: 'note', key: `${coach.id}:note`, text: coach.body.note });
+      if (coach.body.note !== null && turn?.status === 'completed') {
+        // Review coach-fail S2: the forced change step failed and the held answer stood; the note gets the provider's reason behind Why?.
+        const ben = msgs.find((m) => m.body.role === 'ben');
+        const input = ben?.body.role === 'ben' ? ben.body.input : null;
+        if (turn.failure !== undefined) rows.push({ kind: 'outcome', key: `${coach.id}:note`, text: coach.body.note, icon: 'info.circle', retry: input !== null, why: failureWhy(turn.failure), input });
+        else rows.push({ kind: 'note', key: `${coach.id}:note`, text: coach.body.note });
+      }
     }
     if (turn !== null) {
       const o = outcomeFor(turn.status, turn.error, actions.length > 0, { failure: turn.failure ?? null });

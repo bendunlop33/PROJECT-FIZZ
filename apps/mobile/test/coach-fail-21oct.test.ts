@@ -6,7 +6,8 @@ import type { CoachTurnResult, ModelEvent, ModelRequest } from '@fizz/coach';
 import { OPENAI_RESPONSES_URL, serializeTokens, type SettingsStore } from '@fizz/providers';
 
 import { createPlanModelPort, failureDetailOf, modelErrorOf, transientFailure } from '../src/coach/plan-model-port';
-import { FOLLOW_TOP_GAP, followOffset, outcomeFor } from '../src/coach/sheet-view';
+import type { CoachMessage, CoachThread, CoachTurn } from '@fizz/schemas';
+import { FOLLOW_TOP_GAP, followOffset, outcomeFor, threadRows } from '../src/coach/sheet-view';
 import { slotAfterTurn } from '../src/coach/slot-view';
 import { FakeClock, fakeFetch, jsonResponse, MemoryVault } from '../../../packages/providers/test/helpers';
 
@@ -119,5 +120,22 @@ describe('the transcript never draws under the status pill (E)', () => {
     expect(row).toContain("flexDirection: 'row', flexWrap: 'wrap'");
     expect(row).toContain('flexGrow: 1, flexShrink: 1, flexBasis: 160');
     expect(row).not.toMatch(/position: 'absolute'|marginTop: -/);
+  });
+});
+
+describe('review coach-fail S2: a forced change step that failed keeps its reason behind Why?', () => {
+  const meta = { ownerId: 'owner', version: 1, createdAtUtc: '2026-10-21T17:00:00.000Z', updatedAtUtc: '2026-10-21T17:00:00.000Z' };
+  const at = { utc: '2026-10-21T17:00:00.000Z', tz: 'Europe/London' };
+  const thread: CoachThread = { ...meta, id: 'th', sessionId: null, title: 'Too light' };
+  const messages: CoachMessage[] = [
+    { id: 'm1', ownerId: 'owner', threadId: 'th', turnId: 't1', ordinal: 1, createdAt: at, body: { role: 'ben', input: { kind: 'words', text: 'It’s too light', spoken: false } } },
+    { id: 'm2', ownerId: 'owner', threadId: 'th', turnId: 't1', ordinal: 2, createdAt: at, body: { role: 'coach', items: [{ kind: 'sentence', text: 'Keep them controlled.' }], actionIds: [], note: 'No change made.', offer: null, hiddenLines: [], complete: true } },
+  ];
+  const turn = (failure?: CoachTurn['failure']): CoachTurn => ({ ...meta, id: 't1', threadId: 'th', kind: 'workout', status: 'completed', error: null, ...(failure === undefined ? {} : { failure }), model: 'm', contextHash: 'h', startedAt: at, endedAtUtc: at.utc, toolLog: [] });
+  const rows = (t: CoachTurn) => threadRows({ thread, messages, turns: new Map([['t1', t]]), actionsByTurn: new Map() });
+
+  it('with a kept failure the note has Why? and Try again; without one it is the plain note', () => {
+    expect(rows(turn({ kind: 'bad_request', status: 400, requestId: 'req_400' })).at(-1)).toMatchObject({ kind: 'outcome', text: 'No change made.', why: 'HTTP 400 · bad_request · request req_400', retry: true });
+    expect(rows(turn()).at(-1)).toMatchObject({ kind: 'note', text: 'No change made.' });
   });
 });
