@@ -285,6 +285,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       case 'unavailable':
         return 'not_connected';
       case 'usage_limit':
+      case 'request_error':
       case 'cancelled':
       case 'invalid_args':
       case 'no_answer':

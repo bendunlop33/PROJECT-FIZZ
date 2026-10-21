@@ -1169,6 +1169,8 @@ export const CoachTurnErrorSchema = z.enum([
   'auth_expired',
   'model_gone',
   'unavailable',
+  /** (21 Oct) The route rejected the request itself (HTTP 400, an unreadable response). */
+  'request_error',
   'network',
   'timeout',
   'cancelled',
@@ -1176,6 +1178,20 @@ export const CoachTurnErrorSchema = z.enum([
   'too_many_steps',
 ]);
 export type CoachTurnError = z.infer<typeof CoachTurnErrorSchema>;
+
+/**
+ * (21 Oct, Ben's Build B report) What the provider said when a turn failed: shown behind the outcome
+ * line's `Why?`. Diagnostic only: no tokens, credentials or Ben's words (the message is trimmed and
+ * scrubbed before it is saved).
+ */
+export const CoachTurnFailureSchema = z.object({
+  kind: z.string().min(1).max(40),
+  status: z.int().min(100).max(599).optional(),
+  code: z.string().min(1).max(120).optional(),
+  message: z.string().min(1).max(240).optional(),
+  requestId: z.string().min(1).max(120).optional(),
+});
+export type CoachTurnFailure = z.infer<typeof CoachTurnFailureSchema>;
 
 /** One line of the turn's tool log (`ToolSummaryLine`, `Why?` → `Not used`). App text. */
 export const ToolLogLineSchema = z.object({
@@ -1196,6 +1212,8 @@ export const CoachTurnSchema = RecordMetaSchema.extend({
   kind: CoachTurnKindSchema,
   status: CoachTurnStatusSchema,
   error: CoachTurnErrorSchema.nullable(),
+  /** (21 Oct) The provider's reason for a failed turn, when it gave one. Absent on older turns. */
+  failure: CoachTurnFailureSchema.optional(),
   model: z.string().min(1).max(120),
   /** `buildCoachContext().contextHash`, so `What the coach can see` can show what was sent. */
   contextHash: z.string().min(1).max(128),

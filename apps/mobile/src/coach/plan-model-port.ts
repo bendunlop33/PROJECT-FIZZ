@@ -20,7 +20,7 @@
  *   marks it `supported`. Unproven on the plan route until the device test.
  */
 
-import type { CoachModelPort, ModelErrorKind, ModelEvent, ModelInputItem, ModelRequest } from '@fizz/coach';
+import { cleanFailure, type CoachModelPort, type ModelErrorKind, type ModelEvent, type ModelFailureDetail, type ModelInputItem, type ModelRequest } from '@fizz/coach';
 import {
   loadConnectionSettings,
   reasoningCapabilityOf,
@@ -57,10 +57,38 @@ const ERROR_BY_KIND: Partial<Record<FailureKind, ModelErrorKind>> = {
   timeout: 'timeout',
 };
 
-/** Provider failure → the coach's error kind. Anything not listed is `unavailable` (Try again). */
+/**
+ * (21 Oct, Ben's Build B report) The route rejected the request itself: a 400, a capability it doesn't
+ * take, a response we couldn't read. Shown as `Coach error.`, never as the service being unavailable.
+ */
+const REQUEST_ERROR_KINDS: ReadonlySet<FailureKind> = new Set(['bad_request', 'unsupported_capability', 'protocol']);
+
+/**
+ * Provider failure → the coach's error kind. A request the route rejected is `request_error`; anything
+ * else not listed (5xx, 503 and the plan's usage-unavailable codes, 429, a refusal by policy or route, a
+ * dropped stream) is `unavailable` (Try again). The provider's own words go with it (`failureDetailOf`).
+ */
 export function modelErrorOf(f: Pick<ProviderFailure, 'kind' | 'code' | 'status'>): ModelErrorKind {
   if (f.code === 'model_not_found' || (f.kind === 'bad_request' && f.status === 404)) return 'model_gone';
-  return ERROR_BY_KIND[f.kind] ?? 'unavailable';
+  const listed = ERROR_BY_KIND[f.kind];
+  if (listed !== undefined) return listed;
+  return REQUEST_ERROR_KINDS.has(f.kind) ? 'request_error' : 'unavailable';
+}
+
+/** (21 Oct) A failure worth one more try of the same step: 5xx, 503, a dropped stream or connection. Never a limit or a timeout. */
+export function transientFailure(f: Pick<ProviderFailure, 'kind'>): boolean {
+  return f.kind === 'server' || f.kind === 'unavailable' || f.kind === 'stream_interrupted' || f.kind === 'network';
+}
+
+/** (21 Oct) What is kept on the failed turn: kind, status, code, a scrubbed short message, request ID. Never a token. */
+export function failureDetailOf(f: Pick<ProviderFailure, 'kind' | 'status' | 'code' | 'message' | 'requestId'>): ModelFailureDetail {
+  return cleanFailure({
+    kind: f.kind,
+    ...(f.status === undefined ? {} : { status: f.status }),
+    ...(f.code === undefined ? {} : { code: f.code }),
+    message: f.message,
+    ...(f.requestId === undefined ? {} : { requestId: f.requestId }),
+  });
 }
 
 const aborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
@@ -138,7 +166,8 @@ export function createPlanModelPort(deps: PlanModelDeps): CoachModelPort {
       const queue = new EventQueue();
       const fail = async (f: ProviderFailure): Promise<void> => {
         await recordProviderFailure(deps.settings, f, deps.nowMs()).catch(() => undefined);
-        queue.push({ type: 'error', error: request.signal?.aborted === true ? 'cancelled' : modelErrorOf(f), detail: f.message });
+        const cancelled = request.signal?.aborted === true;
+        queue.push({ type: 'error', error: cancelled ? 'cancelled' : modelErrorOf(f), detail: f.message, failure: failureDetailOf(f), ...(!cancelled && transientFailure(f) ? { transient: true } : {}) });
       };
       const run = (async () => {
         const fresh = await new TokenRefresher(deps.vault, { fetch: deps.fetch, nowMs: deps.nowMs }).ensureFresh();
@@ -186,7 +215,9 @@ export function createPlanModelPort(deps: PlanModelDeps): CoachModelPort {
         else await fail(result.error);
       })()
         .catch((e: unknown) => {
-          queue.push({ type: 'error', error: 'unavailable', detail: e instanceof Error ? e.message : String(e) });
+          // Thrown inside the app (a settings or Keychain read, the request check): an error of ours, not the service.
+          const message = e instanceof Error ? e.message : String(e);
+          queue.push({ type: 'error', error: 'request_error', detail: message, failure: cleanFailure({ kind: 'app_error', message }) });
         })
         .finally(() => {
           queue.close();

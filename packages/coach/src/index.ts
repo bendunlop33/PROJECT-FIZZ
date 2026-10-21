@@ -9,6 +9,7 @@ export * from './sentences';
 export * from './tokens';
 export * from './reply';
 export * from './model-port';
+export * from './failure';
 export * from './reply-tool';
 export * from './reply-stream';
 export * from './context';
