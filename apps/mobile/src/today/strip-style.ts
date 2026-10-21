@@ -50,14 +50,14 @@ export function stripLabelBudget(screenWidth: number, screenMargin: number, toda
  * (no renderer). Unknown characters count as wide.
  */
 const ADVANCE: Readonly<Record<string, number>> = {
-  ' ': 0.27, '·': 0.28, '.': 0.27, '-': 0.4, ...Object.fromEntries([...'0123456789'].map((d) => [d, 0.6])),
+  ' ': 0.27, '·': 0.28, '.': 0.27, '-': 0.4, ...Object.fromEntries(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => [d, 0.6])),
   a: 0.55, b: 0.6, c: 0.55, d: 0.6, e: 0.57, f: 0.36, g: 0.6, h: 0.58, i: 0.25, j: 0.25, k: 0.53, l: 0.25, m: 0.88, n: 0.58, o: 0.59, p: 0.6, q: 0.6, r: 0.38, s: 0.52, t: 0.36, u: 0.58, v: 0.53, w: 0.79, x: 0.52, y: 0.53, z: 0.52,
   A: 0.66, B: 0.65, C: 0.7, D: 0.71, E: 0.6, F: 0.57, G: 0.72, H: 0.73, I: 0.26, J: 0.5, K: 0.66, L: 0.55, M: 0.86, N: 0.74, O: 0.75, P: 0.63, Q: 0.75, R: 0.65, S: 0.62, T: 0.6, U: 0.72, V: 0.65, W: 0.95, X: 0.64, Y: 0.62, Z: 0.61,
 };
 
 /** A label's estimated width in points at `fontSize`, with the strip's letter spacing. */
 export function estimateLabelWidth(text: string, fontSize: number, letterSpacing: number = STRIP_LAYOUT.letterSpacing): number {
-  const chars = [...text];
+  const chars = Array.from(text);
   return chars.reduce((w, ch) => w + (ADVANCE[ch] ?? 0.8) * fontSize, 0) + letterSpacing * chars.length;
 }
 
