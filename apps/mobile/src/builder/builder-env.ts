@@ -7,6 +7,7 @@ import {
   nextTargetsFor,
   noReferenceCeiling,
   painFlagCovering,
+  painHoldFor,
   planFirstLoads,
   stableStringify,
   deriveId,
@@ -17,6 +18,7 @@ import {
   type BuilderPool,
   type DraftCodecContext,
   type HistorySession,
+  type LoadReferences,
   type SlotLoadInput,
   type SubstituteContext,
 } from '@fizz/domain';
@@ -47,6 +49,10 @@ export interface BuilderEnv {
   worksOf: (exerciseId: string) => string | null;
   focusOf: (exerciseId: string) => BuilderFocus | null;
   painFlagged: (exerciseId: string) => boolean;
+  /** The pain that holds a movement (`shoulder flagged 6 Oct`), else null (rule 9; the coach's checks name it). */
+  painText: (exerciseId: string) => string | null;
+  /** The load references read for an exercise (its loads were worked out from them); null when none were read. */
+  refsOf: (exerciseId: string) => LoadReferences | null;
   /** This gym has what the exercise needs (`Not at this gym` otherwise, §2.3). */
   doable: (exerciseId: string) => boolean;
   /** The item a slot's loads are worked out on here, by name (`Why this weight?` → `Rounded down: …`). */
@@ -173,12 +179,14 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     const exact = new Set<string>(req.exerciseIds);
     for (const g of new Set(req.groups)) for (const id of candidates(g).slice(0, POOL_EXACT)) exact.add(id);
     const loadCache = new Map<string, SlotLoadInput>();
+    const refsCache = new Map<string, LoadReferences>();
     const lastTop = new Map<string, { value: number; reps: number }>();
     const computeLoad = async (id: string): Promise<SlotLoadInput | null> => {
       const e = byId.get(id);
       if (e === undefined) return null;
       const history = await historyOf(id);
       const refs = loadReferences({ exercise: e, history, ctx: substitute, nowMs });
+      refsCache.set(id, refs);
       const eq = refs.equipment;
       const flagged = painFlagged(id);
       const latestTop = refs.latest?.top.value ?? null;
@@ -254,6 +262,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         return e === undefined ? null : builderFocusOf(e);
       },
       painFlagged,
+      painText: (id) => painHoldFor(id, flags, { active: false }, nowMs, at.tz)?.text ?? null,
+      refsOf: (id) => refsCache.get(id) ?? null,
       doable: (id) => {
         const e = byId.get(id);
         return e !== undefined && here(e);

@@ -8,51 +8,17 @@
  * words anything: the counts, plan lines and proposals are the service's (code),
  * the verdict, reasons and notes the coach's after the number check.
  *
- * Wiring at the merge: `setBuilderReviewProvider(createBuilderReviewProvider(...))`
- * in the builder stream's `apps/mobile/src/builder/review.ts`. The types below
- * are a local copy of that contract (the branches can't import each other
- * yet) with ONE addition the builder must take: status `failed` (connected,
- * but the review call failed), header `Not reviewed` (review S12; rule 1:
- * never shown as `Coach not connected`).
+ * Registered at app start: `setBuilderReviewProvider(createBuilderReviewProvider(...))`
+ * (`apps/mobile/src/builder/review.ts` owns the contract; status `failed` is
+ * connected-but-the-call-failed, header `Not reviewed`, review S12, rule 1).
  */
 
 import { builderApplyOpId, type BuilderProposal, type ReviewNote, type ReviewPlanDay } from '@fizz/coach';
 import type { BuilderGroupName } from '@fizz/domain';
 
+import type { BuilderReview, BuilderReviewAction, BuilderReviewProvider, BuilderReviewStatus } from '../builder/review';
 import type { BuilderCoachService, BuilderReviewResult } from './builder-coach-service';
 import { builderReviewView } from './builder-coach-view';
-
-// ---------------------------------------------------------------------------
-// The builder stream's contract (claude/b3-builder-20oct, apps/mobile/src/builder/review.ts), plus `failed`.
-
-export type BuilderReviewStatus = 'reviewed' | 'pending' | 'offline' | 'not_connected' | 'failed';
-
-export interface BuilderReviewAction {
-  id: string;
-  text: string;
-  reason: string | null;
-  apply: string;
-  outOfDate?: true;
-}
-
-export interface BuilderReview {
-  status: BuilderReviewStatus;
-  verdict: string | null;
-  /** Per core-muscle focus (`Upper chest 3`, `Mid chest 7`, as §2.9 shows); SP3 asks Ben to confirm the counting. */
-  counts: { group: string; sets: number; trained: boolean }[];
-  variety: string | null;
-  plan: { title: string; lines: { ok: boolean; text: string }[]; actions: BuilderReviewAction[] } | null;
-  suggestions: BuilderReviewAction[];
-  nextNotes: { id: string; text: string; ticked: boolean }[];
-  nextNotesTitle: string | null;
-}
-
-export interface BuilderReviewProvider {
-  review: (draftId: string, signal?: AbortSignal) => Promise<BuilderReview>;
-  apply: (draftId: string, actionId: string, opId: string) => Promise<{ ok: true; undoOpId: string | null } | { ok: false; message: string }>;
-  /** `notSaved`: note IDs that failed (an addition: the sheet can show `Not saved` beside them). */
-  saveNotes: (draftId: string, noteIds: readonly string[], opId: string) => Promise<{ ok: boolean; saved?: number; notSaved?: string[] }>;
-}
 
 // ---------------------------------------------------------------------------
 

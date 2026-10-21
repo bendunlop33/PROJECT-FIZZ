@@ -63,6 +63,10 @@ import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartO
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 import { createBuilderEnv } from '../builder/builder-env';
 import { createBuilderService } from '../builder/builder-service';
+import { createBuilderCoachPorts } from '../builder/coach-ports';
+import { setBuilderReviewProvider } from '../builder/review';
+import { createBuilderCoachService, createDayNotes } from '../coach/builder-coach-service';
+import { createBuilderReviewProvider } from '../coach/builder-review-provider';
 
 /**
  * The app's in-process services (no HTTP layer). Screens call these and never
@@ -973,11 +977,42 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     currentGym: () => yourData.currentGym(),
     start: (req) => loop.workout.start(req),
+    upNextRoutineId: (gymId) => loop.todayPort.upNextRoutineId(gymId),
   });
+
+  /**
+   * (Workout builder v3 §2.6, §2.9, §5, §6.1) The builder's coach: Set up words, Your workout proposals,
+   * Coach review and the pre-session nudge, reading and writing through the builder (`coach-ports`). Nothing
+   * in Set up, Your workout, Today or logging waits for it (rule 1). Its review is registered for the builder's
+   * Coach review sheet here, at app start.
+   */
+  const builderPorts = createBuilderCoachPorts(builder);
+  const ownerIdOf = async (): Promise<string> => {
+    const p = await getProfile();
+    if (p === null) throw new Error('Owner profile not found');
+    return p.id;
+  };
+  const builderCoach = createBuilderCoachService({
+    availability: () => coach.availability(),
+    ...(deps.coach === undefined ? {} : { model: deps.coach.model }),
+    now: deps.now,
+    newId: deps.newId,
+    ownerId: ownerIdOf,
+    source: builderPorts.source,
+    writer: builderPorts.writer,
+    reviews: {
+      current: async (subject) => repos().reviews.current(await ownerIdOf(), subject),
+      record: async (review) => repos().reviews.record(await ownerIdOf(), review),
+      update: async (next, expectedVersion, opId) => repos().reviews.update(await ownerIdOf(), next, expectedVersion, opId),
+    },
+    dayNotes: createDayNotes({ store: () => repos().coach, ownerId: ownerIdOf, now: deps.now }),
+  });
+  setBuilderReviewProvider(createBuilderReviewProvider(builderCoach, builderPorts.review, { newId: deps.newId }));
 
   return {
     ...loop,
     builder,
+    builderCoach,
     library,
     customExercises,
     history,

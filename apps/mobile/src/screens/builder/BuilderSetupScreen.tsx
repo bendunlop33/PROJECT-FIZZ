@@ -3,18 +3,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { BuilderCoachReach } from '@fizz/coach';
 import { CUSTOM_DAY_ID } from '@fizz/domain';
 import type { BuilderGroup } from '@fizz/schemas';
 
 import type { SetupFacts, SetupInput } from '../../builder/builder-service';
-import { addGroup, coachBarWord, coachStatusOf, sameIdentity, setupView, SETUP_COPY, stepGroup, stepMinutes, applyRecommended, withRecommendation, type CoachBarStatus } from '../../builder/builder-view';
+import { addGroup, sameIdentity, setupView, SETUP_COPY, stepGroup, stepMinutes, applyRecommended, withRecommendation } from '../../builder/builder-view';
+import { registerSetupPage, takePendingSetupFill } from '../../builder/coach-ports';
+import { CoachAskBar } from '../../ui/coach-ask-bar';
+import { createOnDeviceSpeech } from '../../voice/on-device-speech';
 import { newUuid } from '../../device/runtime';
 import { builderPage } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Eyebrow, Icon, PrimaryButton, Screen, StatusLine, TextButton, Toast, ToastHost } from '../../ui';
-import { ChoiceRow, CoachBar, Divider, Stepper, Table, ValueRow } from './BuilderParts';
+import { ChoiceRow, Divider, Stepper, Table, ValueRow } from './BuilderParts';
 
 /**
  * Set up (workout-builder-v3 §2.2): Day, Main lift, Variation (only when
@@ -35,10 +39,14 @@ export function BuilderSetupScreen() {
   const [facts, setFacts] = useState<SetupFacts | null>(null);
   const [draftVersion, setDraftVersion] = useState<number | null>(null);
   const [sheet, setSheet] = useState<'day' | 'main' | 'variation' | 'group' | null>(null);
-  const [coach, setCoach] = useState<CoachBarStatus>('not_connected');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ text: string; undo: { id: string; version: number } | null } | null>(null);
+  // `undo`: a variation Delete's; `restore`: a coach fill's (`Pull · 50 min · supersets on · Undo`, §2.6).
+  const [toast, setToast] = useState<{ text: string; undo: { id: string; version: number } | null; restore?: SetupInput } | null>(null);
+  const [reach, setReach] = useState<BuilderCoachReach>('not_connected');
+  const [speech] = useState(createOnDeviceSpeech);
+  const setupRef = useRef<SetupInput | null>(null);
+  setupRef.current = setup;
   const [screenReader, setScreenReader] = useState(false);
   useEffect(() => {
     void AccessibilityInfo.isScreenReaderEnabled().then(setScreenReader);
@@ -59,6 +67,13 @@ export function BuilderSetupScreen() {
   useEffect(() => {
     if (draftId !== null) return;
     const alive = { current: true };
+    // Words asked from Today's bar (§2.0.5): Set up opens filled, with the fill's Undo toast here.
+    const filled = takePendingSetupFill();
+    if (filled !== null) {
+      setSetup(filled.setup);
+      setToast({ text: filled.toast, undo: null, restore: filled.undo });
+      return;
+    }
     void services.builder.initialSetup(params?.dayId === undefined ? {} : { dayId: params.dayId }).then((s) => {
       if (alive.current) setSetup(s);
     });
@@ -73,8 +88,8 @@ export function BuilderSetupScreen() {
     useCallback(() => {
       const alive = { current: true };
       void (async () => {
-        const a = await services.coach.availability().catch(() => null);
-        if (alive.current) setCoach(coachStatusOf(a?.status ?? 'not_connected'));
+        const r = await services.builderCoach.status().catch((): BuilderCoachReach => 'not_connected');
+        if (alive.current) setReach(r);
         if (draftId === null) return;
         const snap = await services.builder.read(draftId);
         if (!alive.current || snap === null || snap.version === versionRef.current) return;
@@ -116,6 +131,40 @@ export function BuilderSetupScreen() {
   useEffect(() => {
     if (setup !== null && facts === null) change(setup);
   }, [setup, facts, change]);
+
+  // The coach's checked fill applies to these rows at once, with Undo (§2.6); registered while Set up is open.
+  useEffect(
+    () =>
+      registerSetupPage({
+        current: () => setupRef.current,
+        apply: (next, text, undo) => {
+          change(next, { keepGroups: true });
+          setToast({ text, undo: null, restore: undo });
+        },
+      }),
+    [change],
+  );
+
+  /** Set up's bar: the words fill the rows (the coach's `fill_setup`, or code's reading offline, §9 Q4); never a chat bubble. */
+  const ask = useCallback(
+    async (words: string) => {
+      const r = await services.builderCoach.askSetup({ words, opId: newUuid(), from: 'setup' });
+      if (r.status === 'ok' || r.status === 'offline' || r.status === 'not_connected') setReach(r.status);
+      switch (r.kind) {
+        case 'filled':
+          return;
+        case 'reply':
+          setToast({ text: r.text, undo: null });
+          return;
+        case 'not_understood':
+          setToast({ text: r.line, undo: null });
+          return;
+        case 'failed':
+          setToast({ text: SETUP_COPY.notFilled, undo: null });
+      }
+    },
+    [services],
+  );
 
   if (setup === null) return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
   const mainName = setup.mainLiftExerciseId === null ? null : (facts?.mainLifts.find((m) => m.id === setup.mainLiftExerciseId)?.name ?? null);
@@ -206,12 +255,20 @@ export function BuilderSetupScreen() {
           </AppText>
           <TextButton label="Close" tone="secondary" onPress={() => { navigation.goBack(); }} />
         </View>
-        <CoachBar
-          text={SETUP_COPY.bar}
-          statusWord={coachBarWord(coach)}
-          disabled={false}
-          onOpen={() => { navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true }); }}
-          onMic={() => { navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true }); }}
+        <CoachAskBar
+          page="setup"
+          reach={reach}
+          speech={speech}
+          onSubmit={(words) => void ask(words)}
+          onOpen={(heard) => {
+            if (heard !== undefined && heard.trim() !== '') {
+              void ask(heard);
+              return;
+            }
+            Alert.prompt(SETUP_COPY.bar, undefined, (text) => {
+              if (text.trim() !== '') void ask(text.trim());
+            });
+          }}
         />
         <Table>
           <ValueRow label={SETUP_COPY.day} value={v.dayValue} onPress={() => { setSheet('day'); }} />
@@ -288,7 +345,11 @@ export function BuilderSetupScreen() {
           <Toast
             icon="info.circle"
             text={toast.text}
-            {...(toast.undo !== null ? { action: 'Undo', onAction: () => { if (toast.undo !== null) undoDelete(toast.undo); } } : {})}
+            {...(toast.undo !== null
+              ? { action: 'Undo', onAction: () => { if (toast.undo !== null) undoDelete(toast.undo); } }
+              : toast.restore !== undefined
+                ? { action: 'Undo', onAction: () => { const back = toast.restore; setToast(null); if (back !== undefined) change(back, { keepGroups: true }); } }
+                : {})}
             onDismiss={() => { setToast(null); }}
             showClose={screenReader}
           />

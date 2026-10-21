@@ -15,7 +15,8 @@ import type { CoachBarStatus } from './builder-view';
  * `Reviewing…` shows only while a review call is in flight (review B5).
  */
 
-export type BuilderReviewStatus = 'reviewed' | 'reviewing' | 'not_reviewed' | 'offline' | 'not_connected';
+/** `failed`: connected, but the review call didn't give a usable answer; shown as `Not reviewed` (rule 1: never `Coach not connected`). */
+export type BuilderReviewStatus = 'reviewed' | 'reviewing' | 'not_reviewed' | 'failed' | 'offline' | 'not_connected';
 
 /** Why there is no coach review (behind `Why?`). */
 export const REVIEW_WHY = {
@@ -53,13 +54,13 @@ export interface BuilderReview {
 export interface BuilderReviewProvider {
   review: (draftId: string, signal?: AbortSignal) => Promise<BuilderReview>;
   apply: (draftId: string, actionId: string, opId: string) => Promise<{ ok: true; undoOpId: string | null } | { ok: false; message: string }>;
-  /** Done (or swipe down): the ticked notes are saved. */
-  saveNotes: (draftId: string, noteIds: readonly string[], opId: string) => Promise<{ ok: boolean }>;
+  /** Done (or swipe down): the ticked notes are saved. `notSaved`: the note IDs that failed (`Not saved`). */
+  saveNotes: (draftId: string, noteIds: readonly string[], opId: string) => Promise<{ ok: boolean; saved?: number; notSaved?: string[] }>;
 }
 
 let provider: BuilderReviewProvider | null = null;
 
-/** Wired by the coach stream at merge. Null: the code-only review with an honest status. */
+/** Registered at app start (`createBuilderReviewProvider`, the coach's review). Null: the code-only review with an honest status. */
 export function setBuilderReviewProvider(p: BuilderReviewProvider | null): void {
   provider = p;
 }
@@ -89,9 +90,11 @@ export async function runReview(snap: BuilderSnapshot, coach: CoachBarStatus, pr
   const status = reviewStartStatus(coach, provider !== null);
   const facts = { ...reviewFacts(snap, status), ...(status === 'not_reviewed' ? { whyNot: REVIEW_WHY.unavailable } : {}) };
   show(facts);
-  if (status !== 'reviewing' || provider === null) return facts;
+  if (provider === null) return facts;
+  // The provider is asked offline too: its counts (per muscle focus) and Plan section (with `Add back`) are code's
+  // and need no coach; with no coach it returns no verdict, suggestions or notes (§2.9, rule 1).
   const r = await provider.review(snap.draftId).catch(() => null);
-  const out = r ?? { ...facts, status: 'not_reviewed' as const, whyNot: REVIEW_WHY.failed };
+  const out: BuilderReview = r === null ? { ...facts, status: 'failed', whyNot: REVIEW_WHY.failed } : r.status === 'failed' ? { ...r, whyNot: r.whyNot ?? REVIEW_WHY.failed } : r;
   show(out);
   return out;
 }
@@ -130,6 +133,7 @@ export function reviewHeaderWord(s: BuilderReviewStatus): string {
     case 'reviewing':
       return 'Reviewing…';
     case 'not_reviewed':
+    case 'failed':
       return 'Not reviewed';
     case 'offline':
       return 'Offline';
@@ -141,4 +145,18 @@ export function reviewHeaderWord(s: BuilderReviewStatus): string {
 /** One count chip: `✓ Chest 6` trained, `· Abs` missing (icon plus text, not colour alone). */
 export function countText(c: BuilderReview['counts'][number]): string {
   return c.trained ? `✓ ${c.group} ${String(c.sets)}` : `· ${c.group}`;
+}
+
+/**
+ * The sheet after Apply on one of its actions: an applied one goes (the others stay usable, §2.9); one refused as
+ * out of date says so (`Out of date`) and stays.
+ */
+export function reviewAfterApply(r: BuilderReview, actionId: string, ok: boolean): BuilderReview {
+  const mark = (a: BuilderReviewAction): BuilderReviewAction => (a.id === actionId ? { ...a, outOfDate: true } : a);
+  const keep = (a: BuilderReviewAction): boolean => a.id !== actionId;
+  return {
+    ...r,
+    suggestions: ok ? r.suggestions.filter(keep) : r.suggestions.map(mark),
+    plan: r.plan === null ? null : { ...r.plan, actions: ok ? r.plan.actions.filter(keep) : r.plan.actions.map(mark) },
+  };
 }

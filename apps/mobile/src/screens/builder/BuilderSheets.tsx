@@ -390,6 +390,7 @@ export function PromptSheet({
   suggestedLabel,
   busy,
   error,
+  hideToday = false,
   onToday,
   onUpdate,
   onVariation,
@@ -399,6 +400,8 @@ export function PromptSheet({
   suggestedLabel: string;
   busy: boolean;
   error: string | null;
+  /** Coach review's `Update plan day` (§2.9): the same choice without `Today only` (nothing starts). */
+  hideToday?: boolean;
   onToday: () => void;
   onUpdate: () => void;
   onVariation: (label: string) => void;
@@ -448,7 +451,7 @@ export function PromptSheet({
             ))}
           </Table>
           {error !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
-          <PrimaryButton label={view.today} busy={busy} onPress={onToday} />
+          {hideToday ? null : <PrimaryButton label={view.today} busy={busy} onPress={onToday} />}
           {view.update !== null ? <TextButton label={view.update} onPress={onUpdate} disabled={busy} /> : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
             <TextButton label={view.variation.label} disabled={!view.variation.enabled || busy} onPress={() => { setNaming(true); }} />

@@ -257,6 +257,30 @@ describe('Today (v2) session card from the plan', () => {
     expect(await s.builder.undoPlanChange(change, planChangeUndoOpId(started.sessionId))).toEqual({ ok: true });
   });
 
+  it('merge: Coach review’s `Update plan day` writes the template before Start (versioned, once per op ID), the draft then matches it, and its Undo restores it', async () => {
+    const { s } = await benWithPlan();
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const c = await s.todaySession.commit(data, sel(data, key), 'commit-upd');
+    if (!c.ok) throw new Error('commit');
+    const snap = await s.builder.read(c.draftId);
+    const slot = snap?.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main);
+    if (snap === null || slot === undefined) throw new Error('no draft');
+    const e = await s.builder.edit(c.draftId, { kind: 'add_set', slotKey: slot.key }, { opId: 'upd-add-set', basis: { version: snap.version } });
+    if (e.status !== 'written') throw new Error(e.status);
+    const r = await s.builder.updatePlanDay(c.draftId, { choice: { kind: 'update' }, opId: 'upd-1', expectedVersion: e.snapshot.version });
+    if (!r.ok || r.planChange === null) throw new Error('not updated');
+    expect(r.planChange.kind).toBe('template');
+    // Nothing started; the draft now matches its plan day, so Start asks nothing.
+    expect((await s.coachDrafts.get(c.draftId))?.status).toBe('open');
+    expect(await s.builder.startPrompt(c.draftId)).toBeNull();
+    // The same tap again writes nothing more.
+    expect(await s.builder.updatePlanDay(c.draftId, { choice: { kind: 'update' }, opId: 'upd-1', expectedVersion: e.snapshot.version })).toEqual({ ok: true, planChange: null });
+    // A stale version is refused (rule 5).
+    expect(await s.builder.updatePlanDay(c.draftId, { choice: { kind: 'update' }, opId: 'upd-2', expectedVersion: e.snapshot.version })).toMatchObject({ ok: false, reason: 'stale' });
+    expect(await s.builder.undoPlanChange(r.planChange, 'upd-undo')).toEqual({ ok: true });
+  });
+
   it('Other sessions: Push from ⋯ starts with no plan day (Up next is credited by what was trained)', async () => {
     const { s, gymId } = await benWithPlan();
     const data = await loaded(s);

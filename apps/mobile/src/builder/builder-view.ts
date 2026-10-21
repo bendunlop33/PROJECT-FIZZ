@@ -12,6 +12,8 @@ import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from './bui
 export const SETUP_COPY = {
   title: 'Set up',
   bar: 'Describe the workout',
+  /** The coach's fill couldn't be written (Set up closed, or the write failed). */
+  notFilled: 'Couldn’t save. Try again.',
   day: 'Day',
   mainLift: 'Main lift',
   variation: 'Variation',
@@ -38,6 +40,12 @@ export const SETUP_COPY = {
 
 export const WORKOUT_COPY = {
   back: '‹ Set up',
+  /** A coach suggestion applied from Coach review (§2.6 `Applied · Undo`). */
+  applied: 'Applied',
+  /** Done on Coach review: a ticked note couldn't be saved. */
+  notSaved: 'Not saved',
+  /** `Update plan day` when the workout matches its plan day. */
+  noChanges: 'No changes',
   exercise: 'Exercise',
   sets: 'Sets',
   topSet: 'Top set',

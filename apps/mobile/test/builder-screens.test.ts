@@ -336,10 +336,18 @@ describe('Start prompt, advice, coach status and review (§2.6, §2.8, §2.9, §
     const good: BuilderReviewProvider = { ...failing, review: () => Promise.resolve({ ...reviewFacts(snapshot(W), 'reviewed'), verdict: 'Balanced' }) };
     const reviewed = await runReview(snapshot(W), 'ok', good, () => undefined);
     expect(reviewHeaderWord(reviewed.status)).toBe('● Coach');
-    // Offline: the provider isn't called.
-    let called = false;
-    await runReview(snapshot(W), 'offline', { ...good, review: () => { called = true; return good.review('x'); } }, () => undefined);
-    expect(called).toBe(false);
+    // Offline: the provider is still asked for code's facts (counts per focus, the Plan section with Add back, §2.9),
+    // and its status stays the honest one: no verdict, no suggestions (it makes no model call offline).
+    const offlineFacts: BuilderReview = { ...reviewFacts(snapshot(W), 'offline'), plan: { title: 'PLAN', lines: [], actions: [{ id: 'add', text: 'Add back Cable crunch', reason: null, apply: 'Add' }] } };
+    const shownOffline: BuilderReview[] = [];
+    const off = await runReview(snapshot(W), 'offline', { ...good, review: () => Promise.resolve(offlineFacts) }, (r) => shownOffline.push(r));
+    expect(shownOffline.map((r) => reviewHeaderWord(r.status))).toEqual(['Offline', 'Offline']);
+    expect(off.verdict).toBeNull();
+    expect(off.plan?.actions.map((x) => x.text)).toEqual(['Add back Cable crunch']);
+    // A connected call that fails is `failed`: `Not reviewed`, with Why?.
+    const failedStatus = await runReview(snapshot(W), 'ok', { ...good, review: () => Promise.resolve({ ...reviewFacts(snapshot(W), 'failed') }) }, () => undefined);
+    expect(reviewHeaderWord(failedStatus.status)).toBe('Not reviewed');
+    expect(failedStatus.whyNot).not.toBeNull();
   });
 });
 

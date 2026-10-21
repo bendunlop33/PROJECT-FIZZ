@@ -5,9 +5,11 @@ import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { slotsOf, type BuilderEditOp } from '@fizz/domain';
-import type { BuilderGroup, CheckInScore, SessionCheckIn } from '@fizz/schemas';
+import type { BuilderGroup, CheckInScore, PlanChangeUndo, SessionCheckIn } from '@fizz/schemas';
 
-import type { BuilderSnapshot, BuilderToast, BuilderWriteResult, StartChoice, StartPrompt } from '../../builder/builder-service';
+import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWriteResult, type StartChoice, type StartPrompt } from '../../builder/builder-service';
+import { reviewAfterApply } from '../../builder/review';
+import { UPDATE_PLAN_DAY_ACTION } from '../../coach/builder-review-provider';
 import { coachBarWord, coachStatusOf, editsFromText, promptView, workoutView, WORKOUT_COPY, type CoachBarStatus, type WorkoutRowView } from '../../builder/builder-view';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
@@ -29,6 +31,9 @@ import { ExerciseSheet, PromptSheet, ReviewSheet, SwapSheet, type ChoiceSection 
  * (drag is S4b, §9 Q18). Start asks `Use these changes for` only when the
  * structure differs from the plan day (Q11).
  */
+/** The toast Undo that undoes a plan change (`Chest · bench updated · Undo`), not a draft edit. */
+const PLAN_UNDO = 'plan-change';
+
 export function BuilderWorkoutScreen() {
   const theme = useTheme();
   const services = useServices();
@@ -59,6 +64,9 @@ export function BuilderWorkoutScreen() {
   const [startBusy, setStartBusy] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [review, setReview] = useState<BuilderReview | null>(null);
+  // Coach review's `Update plan day` (§2.9): the §2.8 choice with no Start; its Undo is the plan change's inverse.
+  const [planOnly, setPlanOnly] = useState(false);
+  const planUndo = useRef<PlanChangeUndo | null>(null);
   const [earlier, setEarlier] = useState<{ draftId: string; localDate: string; name: string }[]>([]);
   const [screenReader, setScreenReader] = useState(false);
   const startOp = useRef(newUuid());
@@ -154,6 +162,16 @@ export function BuilderWorkoutScreen() {
 
   function undo(opId: string): Promise<void> {
     showToast(null);
+    if (opId === PLAN_UNDO) {
+      const u = planUndo.current;
+      if (u === null) return Promise.resolve();
+      return services.builder.undoPlanChange(u, newUuid()).then(async (r) => {
+        if (!r.ok) showToast({ text: r.message, undoOpId: null, why: null });
+        else planUndo.current = null;
+        changed();
+        await reload();
+      });
+    }
     return inTurn(async () => {
       const cur = snapRef.current;
       if (cur === null) return;
@@ -228,8 +246,43 @@ export function BuilderWorkoutScreen() {
     else showToast({ text: r.message, undoOpId: null, why: null });
   }
 
+  /** `Update plan day` from Coach review: the §2.8 choice (Update / Save as new variation / Cancel), before Start. */
+  async function openPlanUpdate() {
+    if (snap === null) return;
+    const p = await services.builder.startPrompt(snap.draftId);
+    setReview(null);
+    if (p === null) {
+      showToast({ text: WORKOUT_COPY.noChanges, undoOpId: null, why: null });
+      return;
+    }
+    setStartError(null);
+    setPlanOnly(true);
+    setPrompt(p);
+  }
+
+  async function updatePlanDay(choice: Exclude<StartChoice, { kind: 'today' }>) {
+    if (snap === null || startBusy) return;
+    setStartBusy(true);
+    const r = await services.builder.updatePlanDay(snap.draftId, { choice, opId: startOp.current, expectedVersion: snap.version });
+    setStartBusy(false);
+    startOp.current = newUuid();
+    if (!r.ok) {
+      setStartError(r.message);
+      return;
+    }
+    setPrompt(null);
+    setPlanOnly(false);
+    changed();
+    await reload();
+    if (r.planChange !== null) {
+      planUndo.current = r.planChange;
+      showToast({ text: planChangeText(r.planChange), undoOpId: PLAN_UNDO, why: null });
+    }
+  }
+
   async function onStart() {
     if (snap === null) return;
+    setPlanOnly(false);
     const p = await services.builder.startPrompt(snap.draftId);
     if (p === null) await start({ kind: 'today' });
     else {
@@ -517,10 +570,14 @@ export function BuilderWorkoutScreen() {
         suggestedLabel={prompt?.suggestedLabel ?? ''}
         busy={startBusy}
         error={startError}
+        hideToday={planOnly}
         onToday={() => void start({ kind: 'today' })}
-        onUpdate={() => void start({ kind: 'update' })}
-        onVariation={(label) => void start({ kind: 'variation', label })}
-        onClose={() => { setPrompt(null); }}
+        onUpdate={() => void (planOnly ? updatePlanDay({ kind: 'update' }) : start({ kind: 'update' }))}
+        onVariation={(label) => void (planOnly ? updatePlanDay({ kind: 'variation', label }) : start({ kind: 'variation', label }))}
+        onClose={() => {
+          setPrompt(null);
+          setPlanOnly(false);
+        }}
       />
       {alertsAsk.sheet}
       <BottomCard visible={checkInSheet !== null} onClose={() => { setCheckInSheet(null); }}>
@@ -543,12 +600,28 @@ export function BuilderWorkoutScreen() {
         visible={review !== null}
         review={review}
         onApply={(id) => {
+          // `Update plan day` is the builder's own §2.8 choice (it owns plan-day writes); the provider never applies it.
+          if (id === UPDATE_PLAN_DAY_ACTION) {
+            void openPlanUpdate();
+            return;
+          }
           const p = builderReviewProvider();
-          if (p !== null) void p.apply(snap.draftId, id, newUuid()).then(() => reload());
+          if (p === null) return;
+          void p.apply(snap.draftId, id, newUuid()).then(async (r) => {
+            setReview((cur) => (cur === null ? cur : reviewAfterApply(cur, id, r.ok)));
+            if (r.ok) {
+              changed();
+              if (r.undoOpId !== null) showToast({ text: WORKOUT_COPY.applied, undoOpId: r.undoOpId, why: null });
+            } else showToast({ text: r.message, undoOpId: null, why: null });
+            await reload();
+          });
         }}
         onDone={(ticked) => {
           const p = builderReviewProvider();
-          if (p !== null && ticked.length > 0 && review?.status === 'reviewed') void p.saveNotes(snap.draftId, ticked, newUuid());
+          if (p !== null && ticked.length > 0 && review?.status === 'reviewed')
+            void p.saveNotes(snap.draftId, ticked, newUuid()).then((r) => {
+              if ((r.notSaved?.length ?? 0) > 0 || !r.ok) showToast({ text: WORKOUT_COPY.notSaved, undoOpId: null, why: null });
+            });
           setReview(null);
         }}
         onClose={() => { setReview(null); }}
