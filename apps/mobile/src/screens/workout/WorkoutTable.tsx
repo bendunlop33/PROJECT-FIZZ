@@ -1443,23 +1443,3 @@ export function SetClockBar({ text, paused, slim = false }: { text: string; paus
   );
 }
 
-/** `Chat` (60 × 60 round, design-system §9.1) until voice ships: opens the coach sheet. At AX1+ the word drops. */
-export function ChatButton({ ax, onPress }: { ax: boolean; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Chat"
-      onPress={onPress}
-      style={({ pressed }) => ({ width: 56, height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: theme.colors['text.tertiary'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent', alignItems: 'center', justifyContent: 'center' })}
-    >
-      <Icon name="text.bubble" color="text.primary" size={20} />
-      {!ax ? (
-        <AppText variant="label" color="text.secondary" style={{ fontSize: 11, lineHeight: 14 }}>
-          Chat
-        </AppText>
-      ) : null}
-    </Pressable>
-  );
-}
-

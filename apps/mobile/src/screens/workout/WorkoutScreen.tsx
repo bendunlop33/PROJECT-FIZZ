@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { cardioTimeText, checkRoutineName, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { cardioTimeText, checkRoutineName, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -69,16 +69,20 @@ import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherShee
 import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
 import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
-import { timeFitPrompt } from '../../workout/time-fit';
+import { TIME_FIT_COPY, timeFitSheet, type TimeFitSheetView } from '../../workout/time-fit';
+import { TimeFitSheet } from '../../ui/time-fit-sheet';
+import { CoachAskBar } from '../../ui/coach-ask-bar';
+import { createOnDeviceSpeech } from '../../voice/on-device-speech';
+import type { BuilderCoachReach } from '@fizz/coach';
 import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
-import { UNDO_TOAST } from '../../workout/undo-op';
+import { UNDO_TOAST, undoRefusalText } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
 import { cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
 import { buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockMs, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
-import { ChatButton, CorrectionEditor, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
+import { CorrectionEditor, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
 import { WorkoutRoundsSheet, WhySheet } from './RoundSheets';
 import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
 import { awayPrimary, nextViewing, pagerView } from '../../workout/set-pager';
@@ -186,6 +190,24 @@ export function WorkoutScreen() {
   // `Time left` (§2.15.1): its own clock moves on events (any new data) and once a minute, never every second.
   const [timeLeftNow, setTimeLeftNow] = useState(clockNow);
   const [timeLeftOpen, setTimeLeftOpen] = useState(false);
+  /** The `+N min` offer's sheet (v3 §5, review SP-3): the offer and how it reads; null = closed. */
+  const [fitOffer, setFitOffer] = useState<{ offer: TimeFitOffer; view: TimeFitSheetView } | null>(null);
+  const [fitBusy, setFitBusy] = useState(false);
+  // v3 §1.6: the shared coach ask bar (✦ + on-device mic) in place of Chat; its honest status word, as Today's.
+  const [coachReach, setCoachReach] = useState<BuilderCoachReach>('not_connected');
+  const [speech] = useState(createOnDeviceSpeech);
+  useEffect(() => {
+    let live = true;
+    void services.builderCoach
+      .status()
+      .catch((): BuilderCoachReach => 'not_connected')
+      .then((r) => {
+        if (live) setCoachReach(r);
+      });
+    return () => {
+      live = false;
+    };
+  }, [services]);
   const whyEvent = useCallback((e: WhyEvent) => {
     setWhy((cur) => whyPanelReducer(cur, e));
   }, []);
@@ -1145,34 +1167,51 @@ export function WorkoutScreen() {
     if (over === null || over <= 0) return false;
     const offer = services.workout.timeFit(loaded, over);
     if (offer === null) return false;
-    const p = timeFitPrompt(offer, over);
-    Alert.alert(p.title, p.message, [
-      { text: 'Not now', style: 'cancel' },
-      {
-        text: 'Time left',
-        onPress: () => {
-          setTimeLeftOpen(true);
-        },
-      },
-      {
-        text: p.apply,
-        onPress: () => {
-          closeCellEditors();
-          const opId = newUuid();
-          void services.workout.applyTimeFit({ sessionId: session.id, offer, opId }).then((r) => {
-            if (!r.ok) {
-              void reload();
-              showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'Not applied. The workout changed.' : refusalText(r.error.code, r.error.message) });
-              return;
-            }
-            setData((cur) => withCommandResult(cur, loaded, r.aggregate));
-            changed();
-            toastUndoOp(p.applied, opId, session.id);
-          });
-        },
-      },
-    ]);
+    setFitOffer({ offer, view: timeFitSheet(offer, over) });
     return true;
+  }
+
+  /** Apply on the fit sheet: one versioned write (stale → refused, rule 5), then the Undo toast; `⋯ › Undo fit to time` while it can still be undone (S1). */
+  function applyTimeFit() {
+    const f = fitOffer;
+    if (f === null || fitBusy) return;
+    closeCellEditors();
+    setFitBusy(true);
+    const opId = newUuid();
+    void services.workout
+      .applyTimeFit({ sessionId: session.id, offer: f.offer, opId })
+      .then((r) => {
+        setFitOffer(null);
+        if (!r.ok) {
+          void reload();
+          showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'Not applied. The workout changed.' : refusalText(r.error.code, r.error.message) });
+          return;
+        }
+        setData((cur) => withCommandResult(cur, loaded, r.aggregate));
+        changed();
+        toastUndoOp(f.view.applied, opId, session.id);
+      })
+      .finally(() => {
+        setFitBusy(false);
+      });
+  }
+
+  /** `⋯ › Undo fit to time` (review S1): the same `undo_op` as the toast; refused (and said so) once the workout moved on. */
+  function undoTimeFit() {
+    const target = undoableTimeFit(loaded.aggregate, services.now());
+    if (target === null) {
+      showToast({ icon: 'info.circle', text: undoRefusalText('stale_version') });
+      return;
+    }
+    closeCellEditors();
+    void services.workout.undoOp({ sessionId: session.id, targetOpId: target }).then((r) => {
+      changed();
+      void reload();
+      if (r.ok) {
+        haptic('undo');
+        showToast({ icon: 'info.circle', text: TIME_FIT_COPY.undone });
+      } else showToast({ icon: 'info.circle', text: r.message });
+    });
   }
 
   /** Swipe left on a row (v3 §2): delete at once with Undo; a done set's delete is a versioned, audited change too. */
@@ -1540,7 +1579,10 @@ export function WorkoutScreen() {
         setRenameOpen(true);
       },
       gym: openGymSheet,
-      coach: openCoach,
+      coach: () => {
+        openCoach();
+      },
+      undo_fit: undoTimeFit,
       finish: () => {
         setFinishOpen(true);
       },
@@ -1553,15 +1595,18 @@ export function WorkoutScreen() {
       },
     };
     const cuesOn = voiceCapability().speech ? prefs.voice.cuesOn : undefined;
-    const items = workoutMenu({ view: mode, paused: session.pause !== null, openEnded: view?.openEnded ?? false, ax, gymName: loaded.gymName, cuesOn }).map((m) => ({ label: m.label, run: run[m.id] }));
+    const undoFit = undoableTimeFit(loaded.aggregate, services.now()) !== null;
+    const items = workoutMenu({ view: mode, paused: session.pause !== null, openEnded: view?.openEnded ?? false, ax, gymName: loaded.gymName, cuesOn, undoFit }).map((m) => ({ label: m.label, run: run[m.id] }));
     const options = [...items.map((x) => x.label), 'Cancel'];
     ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: items.length - 1, cancelButtonIndex: items.length }, (i) => {
       items[i]?.run();
     });
   }
 
-  function openCoach() {
-    navigation.navigate('Coach', { entry: { kind: 'workout', sessionId: session.id } });
+  /** The workout's coach sheet (`{ kind: 'workout' }`); words the mic heard start in its field, unsent (Ben sends them). */
+  function openCoach(heard?: string) {
+    const words = heard?.trim() ?? '';
+    navigation.navigate('Coach', { entry: { kind: 'workout', sessionId: session.id }, ...(words === '' ? {} : { draft: words, focus: true }) });
   }
 
   /** `Rename workout` (premium-feel §2.6): versioned; Undo renames back. The routine keeps its name. */
@@ -2792,8 +2837,8 @@ export function WorkoutScreen() {
         ) : tableMode ? (
           <SetClockBar text={setClock} paused={view.paused} slim={keypadOpen} />
         ) : null}
-        {/* `Chat` + Log (§2): the coach sheet shows its own honest status; Talk replaces Chat once voice ships. On the keypad, or with the cell bar under it: no home-indicator room (0.2; the cell bar takes it). */}
-        <ActionBar talk={<ChatButton ax={ax} onPress={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen || cellBar !== null} />
+        {/* v3 §1.6: the shared coach ask bar (✦ + on-device mic) + Log; the coach sheet shows its own honest status. On the keypad, or with the cell bar under it: no home-indicator room (0.2; the cell bar takes it). */}
+        <ActionBar talk={<CoachAskBar icons page="active" reach={coachReach} speech={speech} onOpen={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen || cellBar !== null} />
         {/* Ben, 20 Oct: the cell is the field; its − / +, Next › and Done sit on the keypad, under Log. */}
         {cellBar !== null ? (
           <CellKeypadBarView
@@ -3014,6 +3059,18 @@ export function WorkoutScreen() {
           setRenameOpen(false);
         }}
         onDismissed={renameAfter.dismissed}      />
+      <TimeFitSheet
+        view={fitOffer?.view ?? null}
+        busy={fitBusy}
+        onApply={applyTimeFit}
+        onClose={() => {
+          setFitOffer(null);
+        }}
+        onTimeLeft={() => {
+          setFitOffer(null);
+          setTimeLeftOpen(true);
+        }}
+      />
       <TimeLeftSheet
         visible={timeLeftOpen}
         view={timeLeft?.view ?? null}

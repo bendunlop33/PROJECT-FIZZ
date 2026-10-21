@@ -2277,7 +2277,6 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return d !== null && draftIsLive(d, ctx.now().utc) ? d : null;
   }
 
-  /** An exercise by ID: Ben's list first, then the bundled catalogue's row (Coaching knowledge). */
   /** The `main` slots of the draft version a workout started from (none when it didn't, or the draft can't be read). */
   async function draftMains(ownerId: string, aggregate: SessionAggregate): Promise<ReadonlySet<string>> {
     const ref = aggregate.session.coachDraft;
@@ -2288,6 +2287,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return new Set((v?.plan.slots ?? []).filter((x) => x.main).map((x) => x.exerciseId));
   }
 
+  /** An exercise by ID: Ben's list first, then the bundled catalogue's row (Coaching knowledge). */
   async function exerciseById(exerciseId: string): Promise<Exercise | null> {
     return (await repos().exercises.get(exerciseId).catch(() => null)) ?? ctx.catalogueExercises?.().find((e) => e.id === exerciseId) ?? null;
   }

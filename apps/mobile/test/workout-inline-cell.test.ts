@@ -164,7 +164,7 @@ describe('the keypad bar: − + Next › Done', () => {
   });
 
   it('the screen draws the bar on the keypad under Log, and its keys run the row’s own handlers', () => {
-    const chrome = flat(screen.slice(screen.indexOf('<ActionBar talk={<ChatButton'), screen.indexOf('<ToastHost')));
+    const chrome = flat(screen.slice(screen.indexOf('<ActionBar talk={<CoachAskBar'), screen.indexOf('<ToastHost')));
     expect(chrome).toContain('{cellBar !== null ? ( <CellKeypadBarView');
     // One home-indicator gap only: the Log bar drops its own when the cell bar sits under it (review S2).
     expect(chrome).toContain('keypadOpen={keypadOpen || cellBar !== null} />');

@@ -220,7 +220,7 @@ export async function selectRowFlow(i: SelectRowInput): Promise<{ ok: true } | {
 
 export type WorkoutView = 'table' | 'focus';
 
-export type WorkoutMenuId = 'view' | 'pause' | 'rename' | 'gym' | 'cues' | 'coach' | 'finish' | 'edit_times' | 'discard';
+export type WorkoutMenuId = 'view' | 'pause' | 'rename' | 'gym' | 'cues' | 'coach' | 'undo_fit' | 'finish' | 'edit_times' | 'discard';
 
 /**
  * The top bar's `⋯` (§4.6), in order. `Finish workout` lives here (and in
@@ -235,6 +235,8 @@ export function workoutMenu(o: {
   gymName: string | null;
   /** Spoken cues on or off (the quick toggle mirrors Settings › Voice); absent when this build can't speak. */
   cuesOn?: boolean | undefined;
+  /** The `+N min` fit can still be undone (`undoableTimeFit`; review build-a S1): `Undo fit to time`. */
+  undoFit?: boolean | undefined;
 }): { id: WorkoutMenuId; label: string }[] {
   return [
     { id: 'view' as const, label: o.view === 'table' ? 'Focus view' : 'Table view' },
@@ -242,6 +244,7 @@ export function workoutMenu(o: {
     ...(o.openEnded ? [] : [{ id: 'rename' as const, label: 'Rename workout' }]),
     ...(o.ax && o.gymName !== null ? [{ id: 'gym' as const, label: `Gym: ${o.gymName} ›` }] : []),
     ...(o.cuesOn === undefined ? [] : [{ id: 'cues' as const, label: o.cuesOn ? 'Turn off spoken cues' : 'Turn on spoken cues' }]),
+    ...(o.undoFit === true ? [{ id: 'undo_fit' as const, label: 'Undo fit to time' }] : []),
     { id: 'coach' as const, label: 'Ask the coach' },
     { id: 'finish' as const, label: 'Finish workout' },
     { id: 'edit_times' as const, label: 'Edit workout times' },
