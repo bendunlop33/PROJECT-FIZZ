@@ -1,6 +1,7 @@
 import {
   builderInfoOf,
   builderWorksOf,
+  checkedOnOf,
   equipmentHere,
   doableHere,
   loadReferences,
@@ -240,12 +241,10 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     const presets = p.restPresets.map((r) => r.seconds);
     const ctx: BuilderContext = { info, loads, newKey: req.newKey, ...(presets.length > 0 ? { restPresetsS: presets } : {}) };
     const pool: BuilderPool = (g) => candidates(g).filter((id) => !painFlagged(id));
-    const checkedOnOf = (id: string): CheckedOnRecord | null => {
-      const eq = loads(id).equipment;
-      if (eq === null) return null;
-      return { equipmentId: eq.id, kind: eq.kind, convention: eq.loadConvention, unit: eq.unit, barKg: 'barMass' in eq && typeof eq.barMass === 'number' ? (eq.unit === 'kg' ? eq.barMass : null) : null };
-    };
-    const codec: DraftCodecContext = { info, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf, ...(presets.length > 0 ? { restPresetsS: presets } : {}) };
+    // The one `checkedOnOf` (domain): what Start's re-check compares against, so a builder draft and Today's agree
+    // (an lb bar's mass in kg, the slot's convention).
+    const checkedOn = (id: string): CheckedOnRecord | null => checkedOnOf(loads(id));
+    const codec: DraftCodecContext = { info, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf: checkedOn, ...(presets.length > 0 ? { restPresetsS: presets } : {}) };
     return {
       ctx,
       pool,

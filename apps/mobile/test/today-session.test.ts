@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
-import { addDays, localDateOf, toMs } from '@fizz/domain';
+import { addDays, currentDraftVersion, localDateOf, toMs } from '@fizz/domain';
 
 import { planChangeUndoOpId } from '../src/builder/builder-service';
 import type { AppServices } from '../src/services/app-services';
@@ -497,6 +497,31 @@ describe('Today (v2) session card from the plan', () => {
     const loads = r.aggregate.sets.filter((x) => x.sessionExerciseId === bench?.id && x.setType !== 'warmup').map((x) => x.planned.load);
     expect(loads.every((l) => l?.unit === 'lb')).toBe(true);
     expect(Math.max(...loads.map((l) => l?.value ?? 0))).toBe(top);
+  });
+
+  it('lb: the builder writes the same checked-on item as Today (one checkedOnOf: lb bar mass in kg), so an edit keeps it', async () => {
+    const { s } = await benWithPlan();
+    await s.setup.saveUnits('lb');
+    const gymId = h.ids();
+    expect(await s.setup.saveGym({ gymId, name: 'US Gym', draft: s.coachingKnowledge.buildGymDraft('commercial', 'lb') })).toEqual({ ok: true });
+    expect(await s.gyms.select(gymId)).toMatchObject({ ok: true });
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 205, reps: 8, rpe: 8 }] }]);
+    h.clockMs += DAY;
+    const data = await loaded(s);
+    const c = await s.todaySession.commit(data, sel(data, dayKeyOf(data, 'Push')), 'lb-checked-commit');
+    if (!c.ok) throw new Error(c.message);
+    const before = await s.coachDrafts.get(c.draftId);
+    if (before === null) throw new Error('no draft');
+    const bench = currentDraftVersion(before).plan.slots[0];
+    if (bench === undefined) throw new Error('no slot');
+    expect(bench.checkedOn).toMatchObject({ unit: 'lb' });
+    expect(bench.checkedOn?.barKg).toBeCloseTo(20.41, 1);
+    const snap = await s.builder.read(c.draftId);
+    if (snap === null) throw new Error('builder can’t read it');
+    const r = await s.builder.edit(c.draftId, { kind: 'add_set', slotKey: bench.slotKey }, { opId: 'lb-checked-edit', basis: { version: snap.version } });
+    expect(r.status).toBe('written');
+    const after = await s.coachDrafts.get(c.draftId);
+    expect(currentDraftVersion(after ?? before).plan.slots.find((x) => x.slotKey === bench.slotKey)?.checkedOn).toEqual(bench.checkedOn);
   });
 
   it('S4: a draft’s pinned loads are re-planned at Start when a pain flag arrives after the commit (held, never the frozen load)', async () => {
