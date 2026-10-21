@@ -730,6 +730,34 @@ export const RevertCoachEditCommandSchema = z.object({
   actionId: IdSchema,
 });
 
+/**
+ * One step of a time fit (workout-table-v3 §5): the workout's own commands,
+ * each with its own Undo (`undo_op`): a set's rest or target RPE
+ * (`edit_planned_set`), a set taken out (`delete_set`), an exercise's
+ * remaining sets skipped (`skip_exercise`).
+ */
+export const FitTodayStepSchema = z.discriminatedUnion('type', [EditPlannedSetCommandSchema, DeleteSetCommandSchema, SkipExerciseCommandSchema]);
+export type FitTodayStep = z.infer<typeof FitTodayStepSchema>;
+
+/**
+ * (workout-table-v3 §5, b3 merge) `+N min` → the builder's fit ladder over
+ * the sets not done yet (shorter rests → RPE 9 → fewer sets → drop an
+ * exercise, never the main lift), applied only when Ben taps Apply (rule 3).
+ * All or nothing, one version bump, refused once the workout moved on
+ * (rule 5). Each step is recorded with `coachEditStepOpId(opId, i)`; Undo is
+ * `undo_op` on `opId` (each step's own Undo, last first; a set logged since
+ * keeps what it was logged with, rule 2). `minutes`: the length it fitted to.
+ */
+export const FitTodayToTimeCommandSchema = z.object({
+  type: z.literal('fit_today_to_time'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  minutes: z.int().min(1).max(600),
+  steps: z.array(FitTodayStepSchema).min(1).max(120),
+});
+export type FitTodayToTimeCommand = z.infer<typeof FitTodayToTimeCommandSchema>;
+
 export const SessionCommandSchema = z.discriminatedUnion('type', [
   LogSetCommandSchema,
   SaveDraftCommandSchema,
@@ -770,6 +798,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   SplitSupersetCommandSchema,
   CoachEditTodayCommandSchema,
   RevertCoachEditCommandSchema,
+  FitTodayToTimeCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];

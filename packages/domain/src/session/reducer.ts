@@ -1986,9 +1986,10 @@ function editedBefore(state: SessionAggregate, setId: string, entryIndex: number
 }
 
 /** `undo_op`: copy D4 (delete set, skip exercise, corrections), remove exercise and swap. */
-function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>): Handled {
+function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs: number): Handled {
   const prior = state.processedOps[cmd.targetOpId];
   if (!prior) return fail('operation_not_found', 'Nothing to undo.');
+  if (prior.commandType === 'fit_today_to_time') return undoFitToday(state, cmd, nowMs);
   const events: SessionEvent[] = [];
   switch (prior.commandType) {
     case 'delete_set':
@@ -2524,6 +2525,41 @@ function editSteps(state: SessionAggregate, opId: string): ProcessedOperation[] 
   }
 }
 
+/**
+ * `fit_today_to_time` (workout-table-v3 §5): every step, in order, or none.
+ * Refused once the workout moved on since the offer (rule 5).
+ */
+function handleFitTodayToTime(state: SessionAggregate, cmd: CommandOf<'fit_today_to_time'>, nowMs: number): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'Your workout moved on.');
+  for (const [i, step] of cmd.steps.entries()) {
+    if (step.opId !== coachEditStepOpId(cmd.opId, i)) return fail('invalid_values', 'A step of the change doesn’t belong to it.');
+  }
+  return runAll(state, (_s, i) => {
+    const step = cmd.steps[i];
+    return step === undefined ? null : { ...step, at: cmd.at };
+  }, nowMs);
+}
+
+/**
+ * Undo of a time fit: each step's own Undo, last step first, all or none.
+ * A rest or RPE change on a set Ben has logged (or edited) since stays as it
+ * is (rule 2); sets taken out and exercises skipped come back.
+ */
+function undoFitToday(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs: number): Handled {
+  const undos = editSteps(state, cmd.targetOpId)
+    .reverse()
+    .filter((step) => {
+      if (step.commandType !== 'edit_planned_set') return true;
+      const set = state.sets.find((s) => s.planned.edit?.opId === step.opId);
+      return set?.status === 'pending' && set.version === set.planned.edit?.version;
+    });
+  if (undos.length === 0) return fail('stale_version', STALE_UNDO);
+  return runAll(state, (_s, i) => {
+    const step = undos[i];
+    return step === undefined ? null : { type: 'undo_op', at: cmd.at, opId: coachEditStepOpId(cmd.opId, i), targetOpId: step.opId };
+  }, nowMs);
+}
+
 /** `revert_coach_edit`: each step's own Undo, last step first, all or none. */
 function handleRevertCoachEdit(state: SessionAggregate, cmd: CommandOf<'revert_coach_edit'>, nowMs: number): Handled {
   const prior = state.processedOps[cmd.targetOpId];
@@ -2599,7 +2635,7 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
     case 'remove_exercise':
       return handleRemoveExercise(state, command);
     case 'undo_op':
-      return handleUndoOp(state, command);
+      return handleUndoOp(state, command, nowMs);
     case 'set_note':
       return handleSetNote(state, command);
     case 'set_target_rpe':
@@ -2618,6 +2654,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleCoachEditToday(state, command, nowMs);
     case 'revert_coach_edit':
       return handleRevertCoachEdit(state, command, nowMs);
+    case 'fit_today_to_time':
+      return handleFitTodayToTime(state, command, nowMs);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -2719,6 +2757,7 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
       return ids.slice(state.exercises.length).some((id) => state.exercises.find((e) => e.id === id)?.supersetGroup !== null);
     }
     case 'coach_edit_today':
+    case 'fit_today_to_time':
       // Any step no longer in place (undone, or overtaken).
       return command.steps.some((step) => isSuperseded(state, { ...step, at: command.at }));
     case 'undo_op':
