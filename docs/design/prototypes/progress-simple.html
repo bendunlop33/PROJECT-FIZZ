@@ -36,11 +36,17 @@ h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .pill i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .sub { color: var(--text2); font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .lifts { display: flex; flex-direction: column; }
-.lift { display: grid; grid-template-columns: 10px 46px auto 1fr; gap: 6px; align-items: center; min-height: 34px; font-size: 13px !important; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font: 15px var(--ui); text-align: left; cursor: pointer; padding: 0 2px; border-radius: 8px; }
+.lift { display: grid; grid-template-columns: 10px 1fr 44px 92px 52px; gap: 6px; align-items: center; min-height: 34px; font-size: 13px !important; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font: 15px var(--ui); text-align: left; cursor: pointer; padding: 0 2px; border-radius: 8px; }
 .lift:first-child { border-top: 0; }
 .lift i { width: 8px; height: 8px; border-radius: 50%; }
 .lift .ln { font-weight: 600; }
 .lift .lv { font-variant-numeric: tabular-nums; font-weight: 600; }
+.lift .lr, .lift .lt { font-variant-numeric: tabular-nums; color: var(--text2); }
+.lift .lt { text-align: right; color: var(--text); font-weight: 600; }
+.lift .lv { display: flex; align-items: baseline; gap: 5px; }
+.lift .lv small { font-size: 11px; font-weight: 500; color: var(--text2); }
+.lift.lh { min-height: 22px; cursor: default; font-size: 10.5px !important; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); border-top: 0; }
+.lift.lh span:last-child { text-align: right; }
 .lift .lc { color: var(--text2); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
 .lift.on { background: var(--raised); }
 .lift.dim { opacity: .5; }
@@ -155,13 +161,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${label}">${g}</svg>`;
   }
   function liftRows() {
-    return LIFTS.map((l, i) => {
+    const head = `<div class="lift lh" aria-hidden="true"><span></span><span>Lift</span><span>Reps</span><span>Current</span><span>Target</span></div>`;
+    return head + LIFTS.map((l, i) => {
       const now = l.series[l.series.length - 1];
-      const tgt = l.target ? ` · → ${l.target}` : '';
-      const st = stalled(l) ? ' · level 3 wk' : '';
+      const d = l.series[l.series.length - 1] - l.series[0];
       const on = s.focus === i;
-      return `<button class="lift${on ? ' on' : ''}${s.focus !== null && !on ? ' dim' : ''}" data-a="focus" data-v="${i}" aria-pressed="${on}" aria-label="${l.n}, ${now} kg for ${l.reps}, ${change(l)} in 8 weeks${tgt}. ${on ? 'Showing alone' : 'Show alone'}">
-        <i style="background:${l.c}"></i><span class="ln">${l.n}</span><span class="lv">${now} × ${l.reps}</span><span class="lc">${change(l)}${st}${tgt}</span></button>`;
+      return `<button class="lift${on ? ' on' : ''}${s.focus !== null && !on ? ' dim' : ''}" data-a="focus" data-v="${i}" aria-pressed="${on}" aria-label="${l.n}, ${l.reps} reps, current ${now} kg, ${d === 0 ? 'level' : (d > 0 ? 'up ' : 'down ') + Math.abs(d) + ' kg'} in 8 weeks, ${l.target ? 'target ' + l.target + ' kg' : 'no target'}. ${on ? 'Showing alone' : 'Show alone'}">
+        <i style="background:${l.c}"></i><span class="ln">${l.n}</span><span class="lr">× ${l.reps}</span><span class="lv">${now}<small>${d === 0 ? 'level' : (d > 0 ? '+' : '') + d}</small></span><span class="lt">${l.target ?? '–'}</span></button>`;
     }).join('');
   }
   function strengthCard() {
