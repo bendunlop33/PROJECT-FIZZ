@@ -96,9 +96,11 @@ export function builderLoad(raw: SlotLoadInput, set: { reps: number; rpe: number
     const history = historyOverride(anchor, e1rm, input);
     if (history !== null) return { ...u, source: 'calc', working: tidy(expectedLoad(history, set.reps, set.rpe)), anchorE1rm: history, estimate: true, startLight: null };
     const same = anchor.reps === set.reps && anchor.rpe === set.rpe;
-    // The built-in rule's load is used as the rule gave it (ADR 0006, review B3); other sets derive from it
-    // at the reps it's used at (review B1), not the rule's floor.
-    if (source === 'rule' && e1rm !== null) return { ...u, source, working: anchor.value, anchorE1rm: ruleDerivedE1rm(anchor, set, input), estimate: false, startLight: null };
+    // The built-in rule's load is used as the rule gave it (ADR 0006, review B3) for a set of no more reps than the
+    // rule's range; other sets derive from it at the reps it's used at (review B1), not the rule's floor. A set of more
+    // reps (a main barbell lift's rule, 3–6, as a secondary lift at Ben's own 12; 21 Oct) follows from its e1RM.
+    const inRange = anchor.repsMax === undefined || set.reps <= anchor.repsMax;
+    if (source === 'rule' && e1rm !== null && inRange) return { ...u, source, working: anchor.value, anchorE1rm: ruleDerivedE1rm(anchor, set, input), estimate: false, startLight: null };
     const working = same || e1rm === null ? anchor.value : tidy(expectedLoad(e1rm, set.reps, set.rpe));
     return { ...u, source, working, anchorE1rm: e1rm, estimate: false, startLight: null };
   }
@@ -159,7 +161,7 @@ export function ruleAnchorOf(result: Pick<NextTargets, 'sets' | 'decision' | 'lo
   if (s?.load == null || result.loadFeasibility === 'infeasible' || s.load.convention !== convention) return null;
   const limit = rule.method === 'double_progression' ? rule.maxRpeToProgress : rule.topSet.maxRpeToProgress;
   const rpe = limit === null ? 8 : Math.min(limit, PLAYBOOK_DEFAULT_MAX_RPE);
-  return { value: s.load.value, reps: s.reps.min, rpe, ...(RULE_YIELDS.has(result.decision) ? { yieldsToHistory: true } : {}) };
+  return { value: s.load.value, reps: s.reps.min, rpe, repsMax: Math.max(s.reps.min, s.reps.max), ...(RULE_YIELDS.has(result.decision) ? { yieldsToHistory: true } : {}) };
 }
 
 /** The e1RM a known load implies (Epley, RIR = 10 − RPE). Null outside 1–12 reps. */

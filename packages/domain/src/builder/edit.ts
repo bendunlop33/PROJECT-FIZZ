@@ -8,6 +8,7 @@ import { clampBuilderRest } from './rest';
 import { addDropSet, BUILDER_SET_RULES, changeSetType, editSetRow, setWorkingCount, workingCount, type RowPatch, type SetRowEditRefusal } from './set-rows';
 import { makeSlot } from './slot';
 import type { BuilderBlock, BuilderContext, BuilderSetRow, BuilderSlot, BuilderWorkout, RestKind, RoundedLoad } from './types';
+import { slotLoadOf } from './reps';
 
 /**
  * Ben's own edits on Your workout and the exercise pop-up
@@ -97,7 +98,7 @@ function edit(w: BuilderWorkout, op: BuilderEditOp, ctx: BuilderContext): Builde
   const at = find(w, op.slotKey);
   if (at === null) return { ok: false, reason: 'no_such_exercise' };
   const { slot } = at;
-  const load = () => ctx.loads(slot.exerciseId);
+  const load = () => slotLoadOf(ctx.loads(slot.exerciseId), slot.main);
   const touched = (s: BuilderSlot): BuilderSlot => ({ ...s, touched: true });
   switch (op.kind) {
     case 'delete_exercise':

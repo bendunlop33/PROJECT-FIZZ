@@ -5,6 +5,7 @@ export * from './set-rows';
 export * from './estimate';
 export * from './arrange';
 export * from './slot';
+export * from './reps';
 export * from './fit';
 export * from './build';
 export * from './merge';

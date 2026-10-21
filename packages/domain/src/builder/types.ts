@@ -1,4 +1,5 @@
 import type { BuilderGroup, DraftLoadSource, EquipmentInstance, LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
+import type { RuleReps } from '../rep-range';
 
 /**
  * Workout builder v3 (docs/design/workout-builder-v3.md, slice S2): the
@@ -60,6 +61,12 @@ export interface AnchorLoad {
    * plan's first-week load with newer history than the plan.
    */
   yieldsToHistory?: boolean;
+  /**
+   * (Reps from history, 21 Oct) The top of the rep range this load is for (the built-in rule's). A set
+   * of up to `repsMax` reps takes the load as is; a set of more reps follows from its e1RM.
+   * Absent: the load is for `reps` only.
+   */
+  repsMax?: number;
 }
 
 /**
@@ -111,6 +118,17 @@ export interface SlotLoadInput {
   painCap: number | null;
   /** The comparable history these loads were worked out from (`LoadReferences.historyVersion`); Start re-derives the slot once it moved (review B4). */
   historyVersion?: string | null;
+  /**
+   * (Reps from history, 21 Oct) The built-in rule's reps for this exercise (`NextTargets.reps`): what
+   * Ben did last time, the range the rule used and the one count to plan. Absent or null: no history,
+   * and the slot takes the builder's default range.
+   */
+  ruleReps?: RuleReps | null;
+  /**
+   * (Reps from history, 21 Oct) A main barbell lift's built-in rule read as a secondary lift's
+   * (`NextTargetRequest.accessory`): what a non-main slot of it uses (`slotLoadOf`). Absent: the same as above.
+   */
+  secondary?: { ruleTarget: AnchorLoad | null; ruleReps: RuleReps | null };
 }
 
 /** A load after rounding down to what this gym can load. */
