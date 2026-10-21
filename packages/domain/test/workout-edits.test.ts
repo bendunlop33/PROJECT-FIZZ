@@ -91,7 +91,8 @@ describe('reorder_sets (set-row drag)', () => {
 
   it('is idempotent and refuses a stale version or a set list that changed', () => {
     const s0 = benchWithMore();
-    const cmd = moveSetCommand(s0, movableSetIds(s0, rowId(s0, BENCH))[2] ?? '', 0, op('reorder-1')) as SessionCommand;
+    const cmd = moveSetCommand(s0, movableSetIds(s0, rowId(s0, BENCH))[2] ?? '', 0, op('reorder-1'));
+    if (cmd === null) throw new Error('no move');
     const s1 = apply(s0, cmd);
     const again = expectOk(reduceSession(s1, cmd));
     expect(again.duplicate).toBe(true);
