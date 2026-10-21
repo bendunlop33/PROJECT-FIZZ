@@ -4,7 +4,7 @@ import { newPainFlag, reduceSession, startWorkout, toIso } from '@fizz/domain';
 import { at, barbell, exercise, GYM, id, idGen, kg, OWNER, profile, routine, routineExercise, stack, template, T0_MS, TZ, values } from '@fizz/domain/testing';
 import { openStore, type Store } from '@fizz/persistence';
 import { openNodeDriver } from '@fizz/persistence/node';
-import type { Exercise, Routine, SessionAggregate, SessionCommand, TrainingReview, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, ReviewProposal, Routine, SessionAggregate, SessionCommand, TrainingReview, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../src/coach/coach-service';
 import { createWeeklyReviewService } from '../src/reviews/weekly-review-service';
@@ -99,9 +99,9 @@ describe('the weekly review on open', () => {
     expect(first.review.coach).toEqual({ status: 'offline' });
     expect(first.review.facts.map((f) => f.kind)).toEqual(expect.arrayContaining(['week_sessions', 'group_sets', 'lift_trend', 'rpe_drift']));
     expect(model.requests).toHaveLength(0);
-    const data = await h.service.reviews();
-    expect(data?.latest?.verdict).toBe('Not reviewed · Offline');
-    expect(data?.latest?.facts[0]).toBe('2 workouts');
+    const data = await h.service.progress();
+    expect(data?.changes).toMatchObject({ tag: 'Not reviewed · Offline', note: null, reviewed: false });
+    expect(h.service.factLinesOf(first.review, () => 'Exercise')[0]).toBe('2 workouts');
     // Still offline on the next open: nothing is rewritten.
     expect(await h.service.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'offline' });
     expect((await h.store.repos.reviews.get(first.review.id))?.version).toBe(first.review.version);
@@ -132,7 +132,7 @@ describe('the weekly review on open', () => {
     expect(b.review.id).not.toBe(a.review.id);
     const all = await h.store.repos.reviews.listByOwner(OWNER);
     expect(all.find((r) => r.id === a.review.id)).toMatchObject({ status: 'superseded', supersededById: b.review.id });
-    expect((await h.service.reviews())?.latest?.verdict).toBe('Better week');
+    expect((await h.service.progress())?.changes?.note).toBe('Better week');
   });
 
   it('no coach in the build: `Coach not connected`, never a canned reply; a failed call is `failed`, not asked again for 6 h (review b3-wave3-truth S4)', async () => {
@@ -200,18 +200,26 @@ describe('the weekly review on open', () => {
     await store.repos.profiles.save(profile(), null);
     const s = createWeeklyReviewService({ store: () => store, profile: () => store.repos.profiles.get(OWNER), now: () => ({ utc: toIso(OPEN_MS), tz: TZ }), newId: () => id(1), availability: () => Promise.resolve(ONLINE) });
     expect(await s.runOnOpen()).toEqual({ kind: 'nothing' });
-    expect((await s.reviews())?.latest).toBeNull();
+    expect((await s.progress())?.changes).toBeNull();
   });
 
-  it('Progress › Reviews: Goal view is this week live (consistency first), lifts default to the main lifts, any logged exercise can be chosen', async () => {
+  it('Progress (v3): This week live with % of planned reps, lifts default to the main lifts, any logged exercise can be chosen (with reps when not in the plan)', async () => {
     const h = await setUp({ model: new StepModel([verdict({ verdict: 'ok' })], { weekly: true }) });
     await h.service.runOnOpen();
-    const data = await h.service.reviews();
-    expect(data?.goal.sections[0]?.kind).toBe('consistency');
-    expect(data?.liftsShown.map((l) => l.name)).toEqual(['Bench press']);
-    expect(data?.liftsChosen).toBe(false);
+    // Back to Thu 8 Oct, 20:00 (Auckland): the live week is 5–11 Oct.
+    h.advance(-4.5 * DAY_S * 1000 + 3_600_000);
+    const data = await h.service.progress();
+    if (data === null) throw new Error('no data');
+    expect(data.week.range).toBe('5–11 Oct');
+    // Templates plan 5–10 reps a set (the low end counts): 2 × 6 of 2 × 5 is 120%; 2 × 10 of 2 × 5 is 200%.
+    expect(data.week.chips.map((c) => c.line.replaceAll('\u00a0', ' '))).toEqual(['Tue – 120%', 'Thu – 200%']);
+    expect(data.week.sessions).toBe('2');
+    expect(data.lifts.lifts.map((l) => [l.name, l.colour, l.repsSource])).toEqual([['Bench press', 0, 'logged']]);
+    expect(data.lifts.lifts[0]?.points.map((p) => p.value)).toEqual([90, 92.5, 95]);
+    expect(data.muscles.rows.map((r) => r.key)).toEqual(['Chest', 'Back', 'Shoulders', 'Legs', 'Arms']);
+    expect(data.liftsChosen).toBe(false);
     const choices = await h.service.liftChoices();
-    expect(choices.map((c) => [c.name, c.shown])).toEqual([['Leg curl', false], ['Bench press', true]]);
+    expect(choices.map((c) => [c.name, c.shown, c.needsReps, c.reps])).toEqual([['Leg curl', false, true, 10], ['Bench press', true, true, 6]]);
   });
 });
 
@@ -309,5 +317,101 @@ describe('weekly proposals: Apply / Skip / Undo, refused when stale (rule 5)', (
     if (run.kind !== 'not_reviewed') throw new Error(run.kind);
     expect(run.review.id).not.toBe(id(9400));
     expect(run.review.proposals?.map((p) => [p.id, p.status])).toEqual([['p2', 'skipped']]);
+  });
+});
+
+describe('Coach’s changes (Progress v3, rule 3): small changes applied with Undo, Redo, Got it', () => {
+  /** A stored review from a real run, then given open proposals (as a run that stored them and was force-closed before applying). */
+  async function stored(model: StepModel | null = null) {
+    const h = await setUp({ model });
+    const first = await h.service.runOnOpen();
+    if (first.kind !== 'not_reviewed' && first.kind !== 'reviewed') throw new Error(first.kind);
+    const legs: Routine = { ...routine([routineExercise(960, { exerciseId: CURL.id, setTemplates: [template(96_000, { targetLoad: kg(40, 'stack') }), template(96_001, { targetLoad: kg(40, 'stack') }), template(96_002, { targetLoad: kg(40, 'stack') })] })]), id: id(9310), name: 'Legs' };
+    await h.store.repos.routines.save(legs, null);
+    const r = first.review;
+    const proposals: ReviewProposal[] = [
+      { id: 'p1', source: 'code', change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: CURL.id, exerciseName: 'Leg curl', fromSets: 3, toSets: 4 }, reason: '4 sets the last 2 times', status: 'open', actionId: null },
+      { id: 'p2', source: 'coach', change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: CURL.id, exerciseName: 'Leg curl', fromSets: 3, toSets: 2 }, reason: null, status: 'open', actionId: null },
+    ];
+    expect(await h.store.repos.reviews.update(OWNER, { ...r, proposals, version: r.version + 1, opIds: [...r.opIds, 'seed-proposals'] }, r.version, 'seed-proposals')).toMatchObject({ status: 'written' });
+    return { ...h, legs, reviewId: r.id };
+  }
+  const workingOf = async (store: Store, rid: string) => (await store.repos.routines.get(rid))?.exercises[0]?.setTemplates.filter((t) => t.setType !== 'warmup').length;
+
+  it('the next open applies the small changes itself (recorded with reason and author), once; a later one made stale is refused (rule 5)', async () => {
+    const h = await stored();
+    const run = await h.service.runOnOpen();
+    if (run.kind === 'nothing' || run.kind === 'failed') throw new Error(run.kind);
+    expect(run.review.proposals?.map((p) => [p.id, p.status])).toEqual([['p1', 'applied'], ['p2', 'stale']]);
+    expect(await workingOf(h.store, h.legs.id)).toBe(4);
+    const actionId = run.review.proposals?.[0]?.actionId ?? '';
+    expect(await h.store.repos.coach.getAction(actionId)).toMatchObject({ author: 'checks', reason: '4 sets the last 2 times', detail: { kind: 'update_routine' } });
+    // Another open: nothing written twice.
+    await h.service.runOnOpen();
+    expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(h.legs.version + 1);
+    const view = (await h.service.progress())?.changes;
+    expect(view?.rows.map((r) => [r.exercise, r.after, r.status, r.canUndo])).toEqual([['Leg curl', '4 sets', 'applied', true], ['Leg curl', '2 sets', 'stale', false]]);
+    expect(view?.collapsed).toBe('1 change for next week');
+  });
+
+  it('a pain flag since the review: the small change isn’t applied (rule 9)', async () => {
+    const h = await stored();
+    await h.store.repos.painFlags.save(newPainFlag({ id: id(9502), ownerId: OWNER, opId: 'pain-3', exerciseId: CURL.id, exerciseName: CURL.name, area: null, source: 'check_in', checkInId: null, at: at(0) }), null);
+    await h.service.runOnOpen();
+    expect(await workingOf(h.store, h.legs.id)).toBe(3);
+  });
+
+  it('Undo, then Redo while the template is as the change left it; Redo refused once Ben changed the sets since (rule 5)', async () => {
+    const h = await stored();
+    await h.service.runOnOpen();
+    expect(await h.service.undoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'undo-a' })).toMatchObject({ ok: true, proposal: { status: 'undone' } });
+    expect(await workingOf(h.store, h.legs.id)).toBe(3);
+    // The next open doesn't put it back: an undone change stays undone.
+    await h.service.runOnOpen();
+    expect(await workingOf(h.store, h.legs.id)).toBe(3);
+    expect(await h.service.redoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'redo-a' })).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
+    expect(await workingOf(h.store, h.legs.id)).toBe(4);
+    // The same tap again: one write.
+    const v = (await h.store.repos.routines.get(h.legs.id))?.version;
+    await h.service.redoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'redo-a' });
+    expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(v);
+    await h.service.undoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'undo-b' });
+    const now = await h.store.repos.routines.get(h.legs.id);
+    if (now === null) throw new Error('missing');
+    const ex = now.exercises[0];
+    if (ex === undefined) throw new Error('missing');
+    await h.store.repos.routines.save({ ...now, exercises: [{ ...ex, setTemplates: ex.setTemplates.slice(0, 2) }], version: now.version + 1 }, now.version);
+    expect(await h.service.redoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'redo-b' })).toMatchObject({ ok: false, reason: 'changed_since' });
+    expect(await workingOf(h.store, h.legs.id)).toBe(2);
+  });
+
+  it('NEW until Got it (versioned, idempotent; a tap on an older version is refused); kept through a re-run with nothing new', async () => {
+    const h = await setUp({ model: null });
+    const run = await h.service.runOnOpen();
+    if (run.kind !== 'not_reviewed') throw new Error(run.kind);
+    const before = (await h.service.progress())?.changes;
+    expect(before?.isNew).toBe(true);
+    expect(await h.service.markSeen({ reviewId: run.review.id, expectedVersion: (before?.version ?? 0) - 1, opId: 'seen-0' })).toBe(false);
+    expect(await h.service.markSeen({ reviewId: run.review.id, expectedVersion: before?.version ?? 0, opId: 'seen-1' })).toBe(true);
+    expect(await h.service.markSeen({ reviewId: run.review.id, expectedVersion: before?.version ?? 0, opId: 'seen-1' })).toBe(true);
+    expect((await h.service.progress())?.changes?.isNew).toBe(false);
+    // A pain flag re-runs the review with nothing new to show: still seen.
+    await h.store.repos.painFlags.save(newPainFlag({ id: id(9503), ownerId: OWNER, opId: 'pain-4', exerciseId: CURL.id, exerciseName: CURL.name, area: null, source: 'check_in', checkInId: null, at: at(0) }), null);
+    const again = await h.service.runOnOpen();
+    if (again.kind !== 'not_reviewed') throw new Error(again.kind);
+    expect(again.review.id).not.toBe(run.review.id);
+    expect((await h.service.progress())?.changes?.isNew).toBe(false);
+  });
+
+  it('the coach’s part arriving later is news: NEW again', async () => {
+    const model = new StepModel([verdict({ verdict: 'Solid week' })], { weekly: true });
+    const h = await setUp({ model, availability: () => OFFLINE });
+    const run = await h.service.runOnOpen();
+    if (run.kind !== 'not_reviewed') throw new Error(run.kind);
+    await h.service.markSeen({ reviewId: run.review.id, expectedVersion: run.review.version, opId: 'seen-1' });
+    expect((await h.service.progress())?.changes?.isNew).toBe(false);
+    h.setAvailability(() => ONLINE);
+    await h.service.runOnOpen();
+    expect((await h.service.progress())?.changes).toMatchObject({ isNew: true, note: 'Solid week', tag: 'Coach' });
   });
 });

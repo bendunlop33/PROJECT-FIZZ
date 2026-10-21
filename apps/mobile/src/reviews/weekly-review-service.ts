@@ -11,9 +11,15 @@
  * - **Coach:** the ChatGPT-plan route only (the coach's own availability; never a paid route, rule 7), the
  *   stronger model (`builderModelFor('weekly')`), one strict tool. Every number in its words is checked
  *   (`checkWeeklyReview`); a wrong one hides its sentence. Its plan tweaks are offers (rule 3).
- * - **Proposals:** code's own (the same edit repeated, §6.1) and the coach's, each Apply / Skip; Apply is
- *   the routine's versioned write with an `update_routine` record (Undo restores the version before),
- *   refused when the template moved since (rule 5).
+ * - **Changes (Progress v3, rule 3):** code's own (the same edit repeated, §6.1) and the coach's. A small
+ *   change on the same exercises (working sets on a plan-day template) is applied for the next sessions as
+ *   soon as the review stores it, recorded with its reason and author, each with Undo (and Redo); a
+ *   structural one (swap, add, remove, day move) is only ever asked (Apply / Keep as is). Every write is the
+ *   routine's versioned write with an `update_routine` record, refused when the template moved since
+ *   (rule 5) or the movement is pain-flagged (rule 9). An apply is one deterministic op per proposal, so a
+ *   force-close between the write and its mark is finished on the next open, never written twice.
+ * - **Progress page (v3):** This week, Lifts, Muscles (live, from stored records) and Coach's changes (the
+ *   newest stored review), `progress()`.
  * - **Your data** (rule 10): reviews are their own records (migration 30), facts apart from coach text, in
  *   backups, export and Delete my data with the rest of Ben's data.
  *
@@ -35,9 +41,14 @@ import {
 } from '@fizz/coach';
 import {
   addDays,
+  coachChangesView,
   deriveId,
-  goalView,
   isDeleted,
+  isStructuralProposal,
+  liftsView,
+  musclesView,
+  templateWorkingSets,
+  thisWeekView,
   isInHistory,
   liftTargetsInUse,
   liveRoutines,
@@ -47,38 +58,34 @@ import {
   planInUseUntilUtc,
   planRoutines,
   pausedDates,
-  proposalView,
   reviewCardView,
-  reviewConsistencyView,
   reviewFactLines,
   reviewHistoryRow,
   reviewProposalText,
   reviewSessionOf,
-  setsBarsView,
-  liftChartView,
   splitInUse,
   stableStringify,
   toIso,
   toMs,
   weekDataOfReview,
-  weekRangeText,
   weeklyFacts,
   weeklyReviewFacts,
   weeklyReviewWeek,
   weeklyReviewWorthwhile,
   withTemplateWorkingSets,
   WEEKLY_REVIEW,
-  type GoalView,
-  type LiftChartView,
+  proposalView,
+  type CoachChangesView,
+  type LiftsView,
+  type MuscleTrackerView,
   type ReviewCardView,
-  type ReviewConsistencyView,
+  type ThisWeekView,
   type ReviewHistoryRow,
   type ReviewPlan,
   type ReviewProposalView,
   type ReviewSession,
   type ReviewTemplate,
   type ReviewWeekData,
-  type SetsBarsView,
   type WeeklyFacts,
   type WeeklyReviewInput,
 } from '@fizz/domain';
@@ -114,27 +121,30 @@ export interface LiftChoice {
   exerciseId: string;
   name: string;
   shown: boolean;
+  /** Not in the plan and no lift target: adding it asks for the reps to track it at (once). */
+  needsReps: boolean;
+  /** The reps picked before, else the reps of Ben's newest top set (the picker's starting value). */
+  reps: number | null;
 }
 
-export interface ReviewsData {
-  /** The newest weekly review, as the Latest card. Null: none yet. */
-  latest: ReviewCardView | null;
-  goal: GoalView;
-  /** `13–19 Oct` for the Goal view's live week. */
-  weekRange: string;
-  liftsShown: { exerciseId: string; name: string }[];
+/** Progress v3 (one page for every goal): This week → Lifts → Muscles → Coach's changes. */
+export interface ProgressData {
+  week: ThisWeekView;
+  lifts: LiftsView;
+  muscles: MuscleTrackerView;
+  /** The newest weekly review's changes; null with no review yet. */
+  changes: CoachChangesView | null;
+  /** Whether any earlier review exists (`Past weeks ›`). */
+  hasPast: boolean;
   /** Whether Ben chose the lifts (false: the plan's main lifts). */
   liftsChosen: boolean;
-  /** Older weekly reviews, newest first. */
-  history: ReviewHistoryRow[];
-  trainingVersion: number | null;
+  trainingVersion: number;
 }
 
+/** One stored week (Past weeks › a week): its facts and the changes it made. */
 export interface ReviewDetail {
   card: ReviewCardView;
-  consistency: ReviewConsistencyView;
-  sets: SetsBarsView;
-  lifts: LiftChartView[];
+  changes: CoachChangesView | null;
 }
 
 export type ProposalOutcome = { ok: true; line: string; proposal: ReviewProposalView } | { ok: false; reason: 'out_of_date' | 'changed_since' | 'missing' | 'failed'; message: string };
@@ -187,7 +197,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
   }
 
   /** Every plan Ben applied (in use now or before), with its days and paused dates. */
-  async function plansOf(owner: UserProfile, routines: readonly Routine[], pool: Map<string, Exercise>, training: TrainingProfile | null, from: string, to: string): Promise<{ plans: ReviewPlan[]; current: PlanDraft | null; currentDays: Routine[] }> {
+  async function plansOf(owner: UserProfile, routines: readonly Routine[], pool: Map<string, Exercise>, training: TrainingProfile | null, from: string, to: string): Promise<{ plans: ReviewPlan[]; current: PlanDraft | null; currentDays: Routine[]; previousDays: Routine[] }> {
     const drafts = await repos()
       .planDrafts.listByOwner(owner.id)
       .catch(() => [] as PlanDraft[]);
@@ -198,6 +208,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     const plans: ReviewPlan[] = [];
     let current: PlanDraft | null = null;
     let currentDays: Routine[] = [];
+    const ended: { at: string; days: Routine[] }[] = [];
     for (const d of drafts) {
       if (d.applied === null || (d.status !== 'applied' && d.status !== 'superseded' && d.status !== 'ended')) continue;
       const days = d.status === 'applied' ? planRoutines(d, live) : d.applied.made.map((m) => byId.get(m.routineId)).filter((r): r is Routine => r !== undefined);
@@ -205,6 +216,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         current = d;
         currentDays = days;
       }
+      if (d.status !== 'applied') ended.push({ at: d.applied.atUtc, days });
       plans.push({
         planId: d.id,
         appliedAtUtc: d.applied.atUtc,
@@ -213,7 +225,24 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         pausedDates: pausedDates(d.pauses, from, to, owner.timezone, planInUseUntilUtc(d)),
       });
     }
-    return { plans, current, currentDays };
+    // The plan before the current one (for the `now × n` marker when its reps differ).
+    const before = ended.filter((e) => current === null || e.at < (current.applied?.atUtc ?? '')).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+    return { plans, current, currentDays, previousDays: before?.days ?? [] };
+  }
+
+  /** Each exercise's top-set reps in a plan's days (the main lift's day first): a single target, or the low end. */
+  function topRepsOf(days: readonly Routine[]): Map<string, number> {
+    const out = new Map<string, number>();
+    const ordered = [...days].sort((a, b) => Number(b.planDay?.mainLiftExerciseId != null) - Number(a.planDay?.mainLiftExerciseId != null));
+    for (const r of ordered) {
+      for (const e of r.exercises) {
+        if (out.has(e.exerciseId) && r.planDay?.mainLiftExerciseId !== e.exerciseId) continue;
+        const working = e.setTemplates.filter((t) => t.setType !== 'warmup');
+        const top = working.find((t) => t.setType === 'top') ?? working[0];
+        if (top?.targetReps != null) out.set(e.exerciseId, top.targetReps.min);
+      }
+    }
+    return out;
   }
 
   function templatesOf(plan: PlanDraft | null, days: readonly Routine[], pool: Map<string, Exercise>): ReviewTemplate[] {
@@ -223,7 +252,11 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       routineId: r.id,
       name: r.name,
       version: r.version,
-      exercises: r.exercises.map((e) => ({ exerciseId: e.exerciseId, name: pool.get(e.exerciseId)?.name ?? 'Exercise', workingSets: e.setTemplates.filter((t) => t.setType !== 'warmup').length })),
+      exercises: r.exercises.map((e) => {
+        const working = e.setTemplates.filter((t) => t.setType !== 'warmup');
+        const top = working.find((t) => t.setType === 'top') ?? working[0];
+        return { exerciseId: e.exerciseId, name: pool.get(e.exerciseId)?.name ?? 'Exercise', workingSets: working.length, topReps: top?.targetReps?.min ?? null };
+      }),
     }));
   }
 
@@ -234,6 +267,12 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     pool: Map<string, Exercise>;
     liftsChosen: boolean;
     nameOf: (id: string) => string;
+    /** The plan's (and split's) main lifts. */
+    mains: Set<string>;
+    planReps: Map<string, number>;
+    previousPlanReps: Map<string, number> | null;
+    /** Local date the plan in use was applied. */
+    planAppliedDate: string | null;
   }
 
   /** Everything the facts are made from, for one week, read from the store (local only). */
@@ -252,7 +291,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       .catch(() => [] as Routine[]);
     const from = addDays(monday, -7 * SESSION_WEEKS);
     const to = addDays(monday, 7);
-    const { plans, current, currentDays } = await plansOf(owner, routines, pool, training, from, to);
+    const { plans, current, currentDays, previousDays } = await plansOf(owner, routines, pool, training, from, to);
     const templates = templatesOf(current, currentDays, pool);
     const sessions = await sessionsUpTo(owner, nowMs);
     const activities = (
@@ -267,17 +306,16 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       .catch(() => []);
     const chosen = training?.progressLifts ?? [];
     const liftTargets = liftTargetsInUse(training);
+    const mains = new Set<string>();
+    for (const r of currentDays) {
+      const m = r.planDay?.mainLiftExerciseId ?? r.exercises.find((e) => e.main === true)?.exerciseId;
+      if (m != null) mains.add(m);
+    }
+    for (const m of (await deps.mainLiftIds?.().catch(() => null)) ?? []) mains.add(m);
     let lifts: string[] = [...chosen];
     if (lifts.length === 0) {
-      const mains = new Set<string>();
-      for (const r of currentDays) {
-        const m = r.planDay?.mainLiftExerciseId ?? r.exercises.find((e) => e.main === true)?.exerciseId;
-        if (m != null) mains.add(m);
-      }
-      for (const m of (await deps.mainLiftIds?.().catch(() => null)) ?? []) mains.add(m);
       // A lift with a target is shown by default too, after the main lifts (review b3-wave3-ux S3).
-      for (const t of liftTargets) mains.add(t.exerciseId);
-      lifts = [...mains];
+      lifts = [...new Set([...mains, ...liftTargets.map((t) => t.exerciseId)])];
     }
     const logged = new Map<string, string>();
     for (const s of sessions) for (const e of s.exercises) logged.set(e.exerciseId, e.name);
@@ -288,6 +326,10 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       pool,
       liftsChosen: chosen.length > 0,
       nameOf,
+      mains,
+      planReps: topRepsOf(currentDays),
+      previousPlanReps: previousDays.length === 0 ? null : topRepsOf(previousDays),
+      planAppliedDate: current?.applied == null ? null : localDateOf(toMs(current.applied.atUtc), tz),
       input: {
         monday,
         nowMs,
@@ -377,6 +419,8 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       opIds: [opId],
       createdAt: now,
       proposals,
+      // Ben's `Got it` carries over a re-run with nothing new to show (no new change).
+      ...(previous?.seenAtUtc !== undefined && fresh.length === 0 ? { seenAtUtc: previous.seenAtUtc } : {}),
     };
     const w = await repos()
       .reviews.record(owner.id, review)
@@ -394,7 +438,10 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     // Still offline (or not connected) on a later open: nothing new to write.
     if (asked.status !== 'ok' && asked.status !== 'failed' && latest.coach.status === asked.coach.status && asked.proposals.length === 0) return { kind: 'not_reviewed', review: latest, status: asked.status };
     const mergedProposals = [...(latest.proposals ?? []), ...asked.proposals.filter((p) => !(latest.proposals ?? []).some((q) => keyOf(q) === keyOf(p)))].slice(0, 4);
-    const next: TrainingReview = { ...latest, coach: asked.coach, proposals: mergedProposals, version: latest.version + 1, updatedAtUtc: deps.now().utc, opIds: [...latest.opIds, coachOp].slice(-20) };
+    // The coach's sentence (or new changes) is news: `NEW` again until `Got it`.
+    const { seenAtUtc, ...unseen } = latest;
+    const keepSeen = seenAtUtc !== undefined && asked.status !== 'ok' && mergedProposals.length === (latest.proposals ?? []).length;
+    const next: TrainingReview = { ...(keepSeen ? latest : unseen), coach: asked.coach, proposals: mergedProposals, version: latest.version + 1, updatedAtUtc: deps.now().utc, opIds: [...latest.opIds, coachOp].slice(-20) };
     const u = await repos()
       .reviews.update(owner.id, next, latest.version, coachOp)
       .catch(() => null);
@@ -438,6 +485,100 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
 
   const viewsOf = (r: TrainingReview, nameOf: (id: string) => string): ReviewWeekData | null => weekDataOfReview(r, nameOf);
 
+  const mondayOf = (r: TrainingReview): string => (r.subject.kind === 'weekly' ? r.subject.weekMonday : '');
+
+  async function storedWeekly(ownerId: string): Promise<TrainingReview[]> {
+    const stored = await repos()
+      .reviews.listCurrent(ownerId, 'weekly', HISTORY_LIMIT + 1)
+      .catch(() => [] as TrainingReview[]);
+    return [...stored].sort((a, b) => (mondayOf(a) < mondayOf(b) ? 1 : -1));
+  }
+
+  /**
+   * One template write for a proposal (Apply, the automatic apply of a small change, or Redo): the routine's
+   * next version with an `update_routine` record, at `expectedVersion` (rule 5), never on a pain-flagged
+   * movement (rule 9). `stale`: refused, nothing written.
+   */
+  async function writeChange(owner: UserProfile, p: ReviewProposal, opId: string, author: ActionRecord['author'], expected: (routine: Routine) => number | null): Promise<{ kind: 'written'; actionId: string } | { kind: 'stale' } | { kind: 'changed_since' } | { kind: 'failed' }> {
+    const pain = await repos()
+      .painFlags.listActive(owner.id)
+      .catch(() => null);
+    if (pain === null) return { kind: 'failed' };
+    if (pain.some((f) => f.exerciseId === p.change.exerciseId)) return { kind: 'stale' };
+    const routine = await repos()
+      .routines.get(p.change.routineId)
+      .catch(() => null);
+    if (routine === null || routine.ownerId !== owner.id || isDeleted(routine)) return { kind: 'stale' };
+    const version = expected(routine);
+    if (version === null) return { kind: 'changed_since' };
+    const at = deps.now();
+    const c = withTemplateWorkingSets(routine, { exerciseId: p.change.exerciseId, toSets: p.change.toSets, expectedVersion: version, opId, atUtc: at.utc });
+    if (c.kind !== 'write') return { kind: 'stale' };
+    const action: ActionRecord = {
+      actionId: deriveId(opId),
+      turnId: null,
+      opId,
+      status: 'committed',
+      author,
+      detail: { kind: 'update_routine', routineId: routine.id, routineName: routine.name, changes: [{ change: 'edit', text: reviewProposalText(p).slice(0, 200) }], before: routine, versionBefore: routine.version, versionAfter: c.next.version, draft: null },
+      failure: null,
+      reason: p.reason,
+      evidenceRefs: [],
+      guardNotes: [],
+      entityVersions: [{ entity: 'routine', id: routine.id, before: routine.version, after: c.next.version }],
+      undoneBy: null,
+      createdAt: at,
+    };
+    const w = await repos()
+      .drafts.applyRoutineChange({ ownerId: owner.id, routine: c.next, expectedRoutineVersion: routine.version, action, at })
+      .catch(() => null);
+    if (w === null) return { kind: 'failed' };
+    if (w.status === 'stale' || w.status === 'missing') return { kind: 'stale' };
+    return { kind: 'written', actionId: w.action.actionId };
+  }
+
+  /** Apply (Ben's tap on a structural change, or the review's own apply of a small one, rule 3). */
+  async function applyOne(req: { reviewId: string; proposalId: string; opId: string }, author: ActionRecord['author']): Promise<ProposalOutcome> {
+    const found = await proposalOf(req.reviewId, req.proposalId);
+    if (found === null) return { ok: false, reason: 'missing', message: REVIEW_SERVICE_COPY.missing };
+    const { owner, proposal: p } = found;
+    const line = reviewProposalText(p);
+    if (p.status === 'applied') return outcome(p, line);
+    if (p.status !== 'open') return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
+    // One template write per proposal, whatever the tap: its op ID and record come from the proposal, so a
+    // tap after a force-close between the write and the mark finds the write and marks it (review
+    // b3-wave3-truth S3), never a second write or a stale refusal of its own change.
+    const applyOp = `review-apply:${deriveId(`${req.reviewId}|${p.id}`)}`;
+    const actionId = deriveId(applyOp);
+    const prior = await repos()
+      .coach.getAction(actionId)
+      .catch(() => null);
+    if (prior !== null) {
+      const undone = prior.undoneBy !== null;
+      return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: undone ? 'undone' : 'applied', actionId })), line);
+    }
+    const w = await writeChange(owner, p, applyOp, author, () => p.change.expectedVersion);
+    if (w.kind === 'failed') return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
+    if (w.kind !== 'written') {
+      await changeProposal(req.reviewId, req.proposalId, `${req.opId}:stale`, (x) => ({ ...x, status: 'stale' }));
+      return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
+    }
+    return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'applied', actionId: w.actionId })), line);
+  }
+
+  /**
+   * (Rule 3, Progress v3) The review's small changes are applied for the next sessions as soon as it stores
+   * them (each with its reason and Undo); structural ones wait for Ben. Runs after every open, so a change a
+   * force-close left open is applied then (one deterministic op per proposal: never twice).
+   */
+  async function autoApply(review: TrainingReview): Promise<TrainingReview> {
+    const open = (review.proposals ?? []).filter((p) => p.status === 'open' && !isStructuralProposal(p));
+    if (open.length === 0) return review;
+    for (const p of open) await applyOne({ reviewId: review.id, proposalId: p.id, opId: `auto:${deriveId(`${review.id}|${p.id}`)}` }, p.source === 'coach' ? 'coach' : 'checks');
+    emit();
+    return (await repos().reviews.get(review.id).catch(() => null)) ?? review;
+  }
+
   return {
     /** Called after each review a run stores (the pending one, then the coach's part); returns the unsubscribe. */
     subscribe(listener: () => void): () => void {
@@ -447,9 +588,13 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       };
     },
 
-    /** On app open (§6.1). One run at a time; never throws. */
+    /** On app open (§6.1). One run at a time; never throws. Small changes are applied after the run (rule 3). */
     runOnOpen(opts: { signal?: AbortSignal } = {}): Promise<WeeklyRun> {
       running ??= run(opts)
+        .then(async (r): Promise<WeeklyRun> => {
+          if (r.kind === 'nothing' || r.kind === 'failed') return r;
+          return { ...r, review: await autoApply(r.review) };
+        })
         .catch((): WeeklyRun => ({ kind: 'failed' }))
         .finally(() => {
           running = null;
@@ -457,40 +602,43 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       return running;
     },
 
-    /** Progress › Reviews: the Latest card, the Goal view (this week, live), Lifts shown, History. Local only. */
-    async reviews(): Promise<ReviewsData | null> {
+    /** Progress (v3): This week, Lifts and Muscles live from stored records; Coach's changes from the newest review. Local only. */
+    async progress(): Promise<ProgressData | null> {
       const owner = await deps.profile();
       if (owner === null) return null;
-      const now = deps.now();
-      const nowMs = toMs(now.utc);
+      const nowMs = toMs(deps.now().utc);
       const today = localDateOf(nowMs, owner.timezone);
-      // The Goal view is this week so far (live); the Latest card is the stored review.
       const monday = localWeekBounds(nowMs, owner.timezone).mondayLocalDate;
       const g = await gather(monday);
       if (g === null) return null;
-      const live = weeklyFacts(g.input);
-      const stored = await repos()
-        .reviews.listCurrent(owner.id, 'weekly', HISTORY_LIMIT + 1)
-        .catch(() => [] as TrainingReview[]);
-      const sorted = [...stored].sort((a, b) => (a.subject.kind === 'weekly' && b.subject.kind === 'weekly' ? (a.subject.weekMonday < b.subject.weekMonday ? 1 : -1) : 0));
-      const [newest, ...older] = sorted;
-      const newestData = newest === undefined ? null : viewsOf(newest, g.nameOf);
+      const stored = await storedWeekly(owner.id);
+      const newest = stored[0];
       return {
-        latest: newest === undefined || newestData === null ? null : reviewCardView(newest, newestData, today),
-        goal: goalView(live, g.input.goal, today),
-        weekRange: weekRangeText(monday),
-        liftsShown: g.input.lifts.map((id) => ({ exerciseId: id, name: g.nameOf(id) })),
+        week: thisWeekView(g.input, { today, reviewIds: new Map(stored.map((r) => [mondayOf(r), r.id])) }),
+        lifts: liftsView(g.input, { today, mains: g.mains, planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, previousPlanReps: g.previousPlanReps, planAppliedDate: g.planAppliedDate, nameOf: g.nameOf }),
+        muscles: musclesView(g.input, { today }),
+        changes: newest === undefined ? null : coachChangesView(newest, today),
+        hasPast: stored.length > 1,
         liftsChosen: g.liftsChosen,
-        history: older.flatMap((r) => {
-          const d = viewsOf(r, g.nameOf);
-          return d === null ? [] : [reviewHistoryRow(r, d, today)];
-        }),
         // No row yet: the defaults are version 1 (the first change writes them).
         trainingVersion: g.training?.version ?? 1,
       };
     },
 
-    /** One stored review in full (History › a week). */
+    /** Past weeks: every stored weekly review but the newest, newest first. */
+    async pastWeeks(): Promise<ReviewHistoryRow[]> {
+      const owner = await deps.profile();
+      if (owner === null) return [];
+      const today = localDateOf(toMs(deps.now().utc), owner.timezone);
+      const pool = await exercisePool();
+      const [, ...older] = await storedWeekly(owner.id);
+      return older.flatMap((r) => {
+        const d = viewsOf(r, (id) => pool.get(id)?.name ?? 'Exercise');
+        return d === null ? [] : [reviewHistoryRow(r, d, today)];
+      });
+    },
+
+    /** One stored week in full (Past weeks › a week): facts as stored, and its changes. */
     async review(reviewId: string): Promise<ReviewDetail | null> {
       const owner = await deps.profile();
       if (owner === null) return null;
@@ -502,10 +650,31 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const pool = await exercisePool();
       const d = weekDataOfReview(r, (id) => pool.get(id)?.name ?? 'Exercise');
       if (d === null) return null;
-      return { card: reviewCardView(r, d, today, 99), consistency: reviewConsistencyView(d, today), sets: setsBarsView(d.groups), lifts: d.lifts.map((l) => liftChartView(l, today)) };
+      return { card: reviewCardView(r, d, today, 99), changes: coachChangesView(r, today) };
     },
 
-    /** `Lifts shown` editor: every exercise Ben has logged in the window (newest first) and whether it is shown. */
+    /**
+     * `Got it` on Coach's changes: the section collapses to one line. Versioned and idempotent (rule 5): a
+     * review that moved since the tap (the coach's part landed) isn't marked, so news is never hidden unseen.
+     */
+    async markSeen(req: { reviewId: string; expectedVersion: number; opId: string }): Promise<boolean> {
+      const owner = await deps.profile();
+      if (owner === null) return false;
+      const r = await repos()
+        .reviews.get(req.reviewId)
+        .catch(() => null);
+      if (r === null || r.ownerId !== owner.id) return false;
+      if (r.opIds.includes(req.opId) || r.seenAtUtc !== undefined) return true;
+      if (r.version !== req.expectedVersion) return false;
+      const at = deps.now().utc;
+      const u = await repos()
+        .reviews.update(owner.id, { ...r, seenAtUtc: at, version: r.version + 1, updatedAtUtc: at, opIds: [...r.opIds.slice(-19), req.opId] }, r.version, req.opId)
+        .catch(() => null);
+      if (u !== null && (u.status === 'written' || u.status === 'replayed')) emit();
+      return u !== null && (u.status === 'written' || u.status === 'replayed');
+    },
+
+    /** `Edit` (lifts): every exercise Ben has logged in the window (newest first), whether it is shown, and whether adding it asks for reps. */
     async liftChoices(): Promise<LiftChoice[]> {
       const owner = await deps.profile();
       if (owner === null) return [];
@@ -513,82 +682,41 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const g = await gather(weeklyReviewWeek(nowMs, owner.timezone));
       if (g === null) return [];
       const shown = new Set(g.input.lifts);
+      const picked = g.training?.progressLiftReps ?? {};
+      const targeted = new Set(g.input.liftTargets.map((t) => t.exerciseId));
       const newest = [...g.input.sessions].sort((a, b) => b.startedMs - a.startedMs);
       const seen = new Set<string>();
       const out: LiftChoice[] = [];
+      const lastReps = (id: string): number | null => {
+        for (const s of newest) {
+          const sets = s.exercises.filter((e) => e.exerciseId === id).flatMap((e) => e.sets.filter((x) => x.setType !== 'warmup' && x.reps !== null && x.reps > 0));
+          const top = [...sets].sort((a, b) => (b.load?.value ?? 0) - (a.load?.value ?? 0))[0];
+          if (top?.reps != null) return Math.min(30, top.reps);
+        }
+        return null;
+      };
+      const choice = (id: string, isShown: boolean): LiftChoice => {
+        const needsReps = !g.planReps.has(id) && !targeted.has(id);
+        return { exerciseId: id, name: g.nameOf(id), shown: isShown, needsReps, reps: needsReps ? (picked[id] ?? lastReps(id)) : null };
+      };
       for (const s of newest)
         for (const e of s.exercises) {
           if (seen.has(e.exerciseId) || !e.sets.some((x) => x.setType !== 'warmup')) continue;
           const info = g.pool.get(e.exerciseId);
           if (info?.measurement === 'cardio') continue;
           seen.add(e.exerciseId);
-          out.push({ exerciseId: e.exerciseId, name: g.nameOf(e.exerciseId), shown: shown.has(e.exerciseId) });
+          out.push(choice(e.exerciseId, shown.has(e.exerciseId)));
         }
-      for (const id of g.input.lifts) if (!seen.has(id)) out.unshift({ exerciseId: id, name: g.nameOf(id), shown: true });
+      for (const id of g.input.lifts) if (!seen.has(id)) out.unshift(choice(id, true));
       return out;
     },
 
-    /** Apply on a proposal (Ben's tap, rule 3): the template's next version, refused when it moved since (rule 5). */
-    async applyProposal(req: { reviewId: string; proposalId: string; opId: string }): Promise<ProposalOutcome> {
-      const found = await proposalOf(req.reviewId, req.proposalId);
-      if (found === null) return { ok: false, reason: 'missing', message: REVIEW_SERVICE_COPY.missing };
-      const { owner, proposal: p } = found;
-      const line = reviewProposalText(p);
-      if (p.status === 'applied') return outcome(p, line);
-      if (p.status !== 'open') return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
-      // One template write per proposal, whatever the tap: its op ID and record come from the proposal, so a
-      // tap after a force-close between the write and the mark finds the write and marks it (review
-      // b3-wave3-truth S3), never a second write or a stale refusal of its own change.
-      const applyOp = `review-apply:${deriveId(`${req.reviewId}|${p.id}`)}`;
-      const actionId = deriveId(applyOp);
-      const prior = await repos()
-        .coach.getAction(actionId)
-        .catch(() => null);
-      if (prior !== null) {
-        const undone = prior.undoneBy !== null;
-        return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: undone ? 'undone' : 'applied', actionId })), line);
-      }
-      const markStale = async (): Promise<ProposalOutcome> => {
-        await changeProposal(req.reviewId, req.proposalId, `${req.opId}:stale`, (x) => ({ ...x, status: 'stale' }));
-        return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
-      };
-      // A pain flag since the review: no more volume on that movement (rule 9; review b3-wave3-truth B5).
-      const pain = await repos()
-        .painFlags.listActive(owner.id)
-        .catch(() => null);
-      if (pain === null) return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
-      if (pain.some((f) => f.exerciseId === p.change.exerciseId)) return markStale();
-      const routine = await repos()
-        .routines.get(p.change.routineId)
-        .catch(() => null);
-      if (routine === null || routine.ownerId !== owner.id || isDeleted(routine)) return markStale();
-      const at = deps.now();
-      const c = withTemplateWorkingSets(routine, { exerciseId: p.change.exerciseId, toSets: p.change.toSets, expectedVersion: p.change.expectedVersion, opId: applyOp, atUtc: at.utc });
-      if (c.kind !== 'write') return markStale();
-      const action: ActionRecord = {
-        actionId,
-        turnId: null,
-        opId: applyOp,
-        status: 'committed',
-        author: 'ben',
-        detail: { kind: 'update_routine', routineId: routine.id, routineName: routine.name, changes: [{ change: 'edit', text: line.slice(0, 200) }], before: routine, versionBefore: routine.version, versionAfter: c.next.version, draft: null },
-        failure: null,
-        reason: p.reason,
-        evidenceRefs: [],
-        guardNotes: [],
-        entityVersions: [{ entity: 'routine', id: routine.id, before: routine.version, after: c.next.version }],
-        undoneBy: null,
-        createdAt: at,
-      };
-      const w = await repos()
-        .drafts.applyRoutineChange({ ownerId: owner.id, routine: c.next, expectedRoutineVersion: routine.version, action, at })
-        .catch(() => null);
-      if (w === null) return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
-      if (w.status === 'stale' || w.status === 'missing') return markStale();
-      return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'applied', actionId: w.action.actionId })), line);
+    /** Apply on a structural change (Ben's tap, rule 3): the template's next version, refused when it moved since (rule 5). */
+    applyProposal(req: { reviewId: string; proposalId: string; opId: string }): Promise<ProposalOutcome> {
+      return applyOne(req, 'ben');
     },
 
-    /** Skip: nothing changes in the plan. */
+    /** Keep as is (Skip): nothing changes in the plan. */
     async skipProposal(req: { reviewId: string; proposalId: string; opId: string }): Promise<ProposalOutcome> {
       const found = await proposalOf(req.reviewId, req.proposalId);
       if (found === null) return { ok: false, reason: 'missing', message: REVIEW_SERVICE_COPY.missing };
@@ -596,7 +724,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       return outcome(await changeProposal(req.reviewId, req.proposalId, req.opId, (x) => ({ ...x, status: 'skipped' })), reviewProposalText(found.proposal));
     },
 
-    /** Undo of an Apply: the template's version before, while it is still at the version Apply made (rule 5). */
+    /** Undo of an applied change: the template's version before, while it is still at the version the apply made (rule 5). */
     async undoProposal(req: { reviewId: string; proposalId: string; opId: string }): Promise<ProposalOutcome> {
       const found = await proposalOf(req.reviewId, req.proposalId);
       if (found === null || found.proposal.actionId === null) return { ok: false, reason: 'missing', message: REVIEW_SERVICE_COPY.missing };
@@ -627,7 +755,31 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'undone' })), reviewProposalText(p));
     },
 
-    /** The coach status word for the Reviews header (`● Coach`, `Offline`, `Coach not connected`). No provider call. */
+    /**
+     * Redo of an undone small change: written again on the template as it is now, only while its working sets
+     * are still what the change started from (rule 5: refused once Ben changed them since; rule 9: never on a
+     * pain-flagged movement).
+     */
+    async redoProposal(req: { reviewId: string; proposalId: string; opId: string }): Promise<ProposalOutcome> {
+      const found = await proposalOf(req.reviewId, req.proposalId);
+      if (found === null) return { ok: false, reason: 'missing', message: REVIEW_SERVICE_COPY.missing };
+      const { owner, proposal: p } = found;
+      const line = reviewProposalText(p);
+      if (p.status === 'applied') return outcome(p, line);
+      if (p.status !== 'undone' || isStructuralProposal(p)) return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
+      const redoOp = `review-redo:${deriveId(req.opId)}`;
+      const prior = await repos()
+        .coach.getAction(deriveId(redoOp))
+        .catch(() => null);
+      if (prior !== null) return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'applied', actionId: prior.actionId })), line);
+      const w = await writeChange(owner, p, redoOp, 'ben', (routine) => (templateWorkingSets(routine, p.change.exerciseId) === p.change.fromSets ? routine.version : null));
+      if (w.kind === 'failed') return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
+      if (w.kind === 'changed_since') return { ok: false, reason: 'changed_since', message: REVIEW_SERVICE_COPY.changedSince(p.change.routineName) };
+      if (w.kind === 'stale') return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
+      return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'applied', actionId: w.actionId })), line);
+    },
+
+    /** The coach status word (`● Coach`, `Offline`, `Coach not connected`). No provider call. */
     async status(): Promise<string> {
       if (deps.model === undefined) return BUILDER_STATUS_WORD.not_connected;
       const a = await deps.availability().catch((): CoachAvailability => ({ status: 'not_connected', model: null }));

@@ -48,10 +48,11 @@ describe('weekly review in the app', () => {
     if (run.kind !== 'reviewed') return;
     expect(run.review.facts).toContainEqual({ kind: 'feel', easy: 0, good: 0, hard: 1 });
     expect(run.review.coach).toMatchObject({ verdict: 'Felt hard.', lines: ['1 session felt hard.'] });
-    expect((await s.reviews.reviews())?.latest?.facts).toContain('Felt: 1 hard');
+    expect(s.reviews.factLinesOf(run.review, () => 'Exercise')).toContain('Felt: 1 hard');
+    expect((await s.reviews.progress())?.changes?.note).toBe('Felt hard.');
   });
 
-  it('Lifts shown: any logged exercise, up to 6, Your data; the review survives a force-close and is backed up', async () => {
+  it('Lifts: any logged exercise, up to 6, with picked reps when not in the plan, Your data; the review survives a force-close and is backed up', async () => {
     let { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     await logWorkout(h, s, gymId, [
@@ -61,14 +62,16 @@ describe('weekly review in the app', () => {
     const choices = await s.reviews.liftChoices();
     expect(choices.map((c) => c.name)).toEqual(expect.arrayContaining(['Bench press', 'Lat pulldown']));
     const pulldown = choices.find((c) => c.name === 'Lat pulldown');
-    const version = (await s.reviews.reviews())?.trainingVersion ?? null;
+    expect(pulldown).toMatchObject({ needsReps: true, reps: 10 });
+    const version = (await s.reviews.progress())?.trainingVersion ?? null;
     if (pulldown === undefined || version === null) throw new Error('setup');
-    expect(await s.training.change({ kind: 'progress_lifts', exerciseIds: [pulldown.exerciseId] }, version, 'lifts-1')).toMatchObject({ ok: true });
-    const data = await s.reviews.reviews();
-    expect(data?.liftsShown.map((l) => l.name)).toEqual(['Lat pulldown']);
+    expect(await s.training.change({ kind: 'progress_lifts', exerciseIds: [pulldown.exerciseId], reps: { [pulldown.exerciseId]: 12 } }, version, 'lifts-1')).toMatchObject({ ok: true });
+    const data = await s.reviews.progress();
+    expect(data?.lifts.lifts.map((l) => [l.name, l.reps, l.repsSource])).toEqual([['Lat pulldown', 12, 'picked']]);
     expect(data?.liftsChosen).toBe(true);
-    const lifts = data?.goal.sections.find((x) => x.kind === 'lifts');
-    expect(lifts?.kind === 'lifts' && lifts.charts.map((c) => c.title)).toEqual(['Lat pulldown']);
+    // 50 × 10 is short of 12 reps: an estimate (hollow) from the same set, by the e1RM formula.
+    expect(data?.lifts.lifts[0]?.points.at(-1)).toMatchObject({ value: 47.5, estimate: true });
+    expect((await s.reviews.liftChoices()).find((c) => c.name === 'Lat pulldown')?.reps).toBe(12);
     // Seven is refused (max 6).
     expect(await s.training.change({ kind: 'progress_lifts', exerciseIds: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }, version + 1, 'lifts-2')).toMatchObject({ ok: false, reason: 'invalid' });
 
@@ -78,8 +81,8 @@ describe('weekly review in the app', () => {
     expect(await s.reviews.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'offline' });
     await h.forceClose();
     ({ services: s } = await h.launch());
-    const again = await s.reviews.reviews();
-    expect(again?.latest?.verdict).toBe('Not reviewed · Offline');
+    const again = await s.reviews.progress();
+    expect(again?.changes?.tag).toBe('Not reviewed · Offline');
     expect(await s.backups.backUpOnPhone('manual')).toMatchObject({ ok: true });
     const files = [...h.backupFiles.values()];
     expect(files.some((t) => t.includes('"reviews"') && t.includes('weekly'))).toBe(true);
