@@ -38,6 +38,7 @@ import {
   deriveId,
   goalView,
   isDeleted,
+  isInHistory,
   liftTargetsInUse,
   liveRoutines,
   localDateOf,
@@ -591,7 +592,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const a = await repos()
         .sessions.get(sessionId)
         .catch(() => null);
-      if (owner === null || a === null || a.session.ownerId !== owner.id || a.session.status !== 'finished') return null;
+      if (owner === null || a === null || a.session.ownerId !== owner.id || !isInHistory(a.session)) return null;
       return { feel: a.session.feel?.value ?? null, version: a.session.version };
     },
 

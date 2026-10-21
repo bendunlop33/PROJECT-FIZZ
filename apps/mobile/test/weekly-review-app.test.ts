@@ -13,7 +13,7 @@ describe('weekly review in the app', () => {
   let h: Harness;
   let model: StepModel;
   beforeEach(() => {
-    model = new StepModel([]);
+    model = new StepModel([], { weekly: true });
     // Tue 13 Oct (London); the reviewed week is Mon 12 – Sun 18 Oct, opened Mon 19 Oct.
     h = createHarness('2026-10-13T07:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(CONNECTED) } });
   });
@@ -33,7 +33,7 @@ describe('weekly review in the app', () => {
     // A stale version is refused (rule 5).
     expect((await s.workout.dispatch(sessionId, { type: 'set_feel', at: h.now(), opId: 'feel-2', feel: 'easy', expectedVersion: before?.version ?? 0 })).ok).toBe(false);
 
-    model = new StepModel([() => toolCall('weekly_review', { verdict: 'Felt hard.', lines: ['1 session felt hard.'], tweaks: [] })]);
+    model = new StepModel([() => toolCall('weekly_review', { verdict: 'Felt hard.', lines: ['1 session felt hard.'], tweaks: [] })], { weekly: true });
     h.clockMs = Date.parse('2026-10-19T08:00:00.000Z');
     const run = await s.reviews.runOnOpen();
     expect(run.kind).toBe('reviewed');
@@ -65,7 +65,7 @@ describe('weekly review in the app', () => {
     expect(await s.training.change({ kind: 'progress_lifts', exerciseIds: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }, version + 1, 'lifts-2')).toMatchObject({ ok: false, reason: 'invalid' });
 
     // Offline: facts only; after a force-close the stored review is still there.
-    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]], { weekly: true });
     h.clockMs = Date.parse('2026-10-19T08:00:00.000Z');
     expect(await s.reviews.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'offline' });
     await h.forceClose();

@@ -63,7 +63,7 @@ async function setUp(opts: { model?: StepModel | null; availability?: () => Coac
   let clock = OPEN_MS;
   let n = 0;
   let availability = opts.availability ?? (() => ONLINE);
-  const model = opts.model === null ? undefined : (opts.model ?? new StepModel([]));
+  const model = opts.model === null ? undefined : (opts.model ?? new StepModel([], { weekly: true }));
   const service = createWeeklyReviewService({
     store: () => store,
     profile: async () => store.repos.profiles.get(OWNER),
@@ -90,7 +90,7 @@ const verdict = (args: { verdict: string; lines?: string[]; tweaks?: unknown[] }
 
 describe('the weekly review on open', () => {
   it('offline: facts only, `Not reviewed · Offline`; online later: the coach looks once; then cached (no new call)', async () => {
-    const model = new StepModel([verdict({ verdict: 'Solid week, 2 workouts.', lines: ['Bench press est. 1RM 114 kg.', 'Bench press hit 130 kg.'] })]);
+    const model = new StepModel([verdict({ verdict: 'Solid week, 2 workouts.', lines: ['Bench press est. 1RM 114 kg.', 'Bench press hit 130 kg.'] })], { weekly: true });
     const h = await setUp({ model, availability: () => OFFLINE });
     const first = await h.service.runOnOpen();
     expect(first).toMatchObject({ kind: 'not_reviewed', status: 'offline' });
@@ -121,7 +121,7 @@ describe('the weekly review on open', () => {
   });
 
   it('new inputs (a workout logged into the week) make a new review that supersedes the old one', async () => {
-    const model = new StepModel([verdict({ verdict: 'Good week' }), verdict({ verdict: 'Better week' })]);
+    const model = new StepModel([verdict({ verdict: 'Good week' }), verdict({ verdict: 'Better week' })], { weekly: true });
     const h = await setUp({ model });
     const a = await h.service.runOnOpen();
     if (a.kind !== 'reviewed') throw new Error(a.kind);
@@ -139,7 +139,7 @@ describe('the weekly review on open', () => {
     const none = await setUp({ model: null });
     expect(await none.service.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'not_connected' });
     expect(await none.service.status()).toBe('Coach not connected');
-    const failing = await setUp({ model: new StepModel([() => [{ type: 'error', error: 'usage_limit' }], verdict({ verdict: 'Fine week' })]) });
+    const failing = await setUp({ model: new StepModel([() => [{ type: 'error', error: 'usage_limit' }], verdict({ verdict: 'Fine week' })], { weekly: true }) });
     expect(await failing.service.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'failed' });
     expect(await failing.service.runOnOpen()).toMatchObject({ kind: 'reviewed' });
   });
@@ -153,7 +153,7 @@ describe('the weekly review on open', () => {
   });
 
   it('Progress › Reviews: Goal view is this week live (consistency first), lifts default to the main lifts, any logged exercise can be chosen', async () => {
-    const h = await setUp({ model: new StepModel([verdict({ verdict: 'ok' })]) });
+    const h = await setUp({ model: new StepModel([verdict({ verdict: 'ok' })], { weekly: true }) });
     await h.service.runOnOpen();
     const data = await h.service.reviews();
     expect(data?.goal.sections[0]?.kind).toBe('consistency');

@@ -23,6 +23,8 @@ class NeverModel implements CoachModelPort {
   readonly requests: ModelRequest[] = [];
   // eslint-disable-next-line require-yield
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    // The weekly review the app starts by itself on open (workout-builder-v3 §6.1) isn't part of this flow.
+    if (typeof request.toolChoice === 'object' && request.toolChoice.name === 'weekly_review') return;
     this.requests.push(request);
     await Promise.resolve();
     throw new Error('the overview never calls the coach');

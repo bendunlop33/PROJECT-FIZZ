@@ -4,8 +4,23 @@ import type { TextCoachState } from '@fizz/providers';
 /** A scripted model for the coach tests: each step is computed from the request (so it can name real set IDs and versions). */
 export class StepModel implements CoachModelPort {
   readonly requests: ModelRequest[] = [];
-  constructor(private readonly steps: ((req: ModelRequest) => ModelEvent[])[]) {}
+  /**
+   * The weekly reviews the app starts by itself on open (workout-builder-v3 §6.1): kept apart, answered
+   * `unavailable`, so a background review never takes a step scripted for the flow under test. `weekly:
+   * true` scripts them like any other request (the weekly review's own tests).
+   */
+  readonly background: ModelRequest[] = [];
+  constructor(
+    private readonly steps: ((req: ModelRequest) => ModelEvent[])[],
+    private readonly opts: { weekly?: boolean } = {},
+  ) {}
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    if (this.opts.weekly !== true && typeof request.toolChoice === 'object' && request.toolChoice.name === 'weekly_review') {
+      this.background.push(request);
+      await Promise.resolve();
+      yield { type: 'error', error: 'unavailable' };
+      return;
+    }
     this.requests.push(request);
     const step = this.steps[this.requests.length - 1];
     const events = step === undefined ? [{ type: 'error' as const, error: 'unavailable' as const }] : step(request);
