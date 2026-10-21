@@ -69,6 +69,7 @@ import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherShee
 import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
 import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
+import { timeFitPrompt } from '../../workout/time-fit';
 import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
 import { UNDO_TOAST } from '../../workout/undo-op';
@@ -1132,6 +1133,46 @@ export function WorkoutScreen() {
     if (set?.status !== 'completed') return;
     const n = rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).find((r) => r.setId === setId);
     void undo(set.id, `undo:${set.id}:${String(set.undoCount)}`, n?.stepName ?? 'Set');
+  }
+
+  /**
+   * v3 §5: `+N min` offers the builder's fit steps over the sets left as one
+   * change, applied only on Apply (rule 3), with Undo. False when there is
+   * nothing to offer (the Time left sheet opens instead).
+   */
+  function offerTimeFit(): boolean {
+    const over = timeLeft?.view.estimate.overByMinutes ?? null;
+    if (over === null || over <= 0) return false;
+    const offer = services.workout.timeFit(loaded, over);
+    if (offer === null) return false;
+    const p = timeFitPrompt(offer, over);
+    Alert.alert(p.title, p.message, [
+      { text: 'Not now', style: 'cancel' },
+      {
+        text: 'Time left',
+        onPress: () => {
+          setTimeLeftOpen(true);
+        },
+      },
+      {
+        text: p.apply,
+        onPress: () => {
+          closeCellEditors();
+          const opId = newUuid();
+          void services.workout.applyTimeFit({ sessionId: session.id, offer, opId }).then((r) => {
+            if (!r.ok) {
+              void reload();
+              showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'Not applied. The workout changed.' : refusalText(r.error.code, r.error.message) });
+              return;
+            }
+            setData((cur) => withCommandResult(cur, loaded, r.aggregate));
+            changed();
+            toastUndoOp(p.applied, opId, session.id);
+          });
+        },
+      },
+    ]);
+    return true;
   }
 
   /** Swipe left on a row (v3 §2): delete at once with Undo; a done set's delete is a versioned, audited change too. */
@@ -2542,9 +2583,10 @@ export function WorkoutScreen() {
           <Pressable
             accessibilityRole={timeLeft ? 'button' : 'text'}
             accessibilityLabel={`${view.paused ? 'Paused, ' : ''}active time ${formatElapsed(view.elapsedMs)}${overTime !== null ? `, ${overTime.replace('\u00a0', ' ')} over` : ''}`}
-            accessibilityHint={timeLeft ? 'Shows the time left' : undefined}
+            accessibilityHint={overTime !== null ? 'Offers a shorter rest of the workout' : timeLeft ? 'Shows the time left' : undefined}
             disabled={!timeLeft}
             onPress={() => {
+              if (overTime !== null && offerTimeFit()) return;
               setTimeLeftOpen(true);
             }}
             hitSlop={8}

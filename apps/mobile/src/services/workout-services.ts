@@ -230,6 +230,11 @@ import {
   type ResolvedPace,
   recentPaceSamples,
   timeLeftSheet,
+  timeFitOffer,
+  fitTodayCommand,
+  builderInfoOf,
+  type BuilderExerciseInfo,
+  type TimeFitOffer,
   type ActiveSetView,
   type WorkoutTableView,
   type SetEditView,
@@ -570,6 +575,8 @@ export interface ActiveWorkoutData {
   bodyweightExercises?: ReadonlySet<string>;
   /** The builder's `works` line per exercise ID (`Chest, front delts, triceps`; workout-table-v3 §2); null when none. */
   worksLines?: Readonly<Record<string, string | null>>;
+  /** The builder's group and role per exercise ID, for the `+N min` fit (workout-table-v3 §5); null when the builder has none. */
+  builderInfo?: Readonly<Record<string, BuilderExerciseInfo | null>>;
 }
 
 /**
@@ -2843,16 +2850,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const exerciseInfo: Record<string, RuleExerciseInfo | null> = {};
       const bodyweightExercises = new Set<string>();
       const worksLines: Record<string, string | null> = {};
+      const builderInfo: Record<string, BuilderExerciseInfo | null> = {};
       for (const id of new Set(aggregate.exercises.map((e) => e.exerciseId))) {
         const e = await exerciseById(id).catch(() => null);
         exerciseInfo[id] = e;
         worksLines[id] = e === null ? null : worksLine(e);
+        builderInfo[id] = e === null ? null : builderInfoOf(e);
         if (e?.defaultLoadConvention === 'bodyweight') bodyweightExercises.add(id);
       }
       return {
         exerciseInfo,
         bodyweightExercises,
         worksLines,
+        builderInfo,
         aggregate,
         gymName: gym?.name ?? null,
         gymNames: await gymNamesOf(p.id),
@@ -2934,6 +2944,23 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     timeLeft(data: ActiveWorkoutData, nowMs: number): { view: TimeLeftView; sheet: TimeLeftSheetView } | null {
       const view = buildTimeLeftView(data.aggregate, nowMs, data.recentPace);
       return view === null ? null : { view, sheet: timeLeftSheet(view.estimate, data.aggregate, nowMs, data.aggregate.session.startedAt.tz) };
+    },
+
+    /**
+     * `+N min` (workout-table-v3 §5): the builder's fit ladder over the sets
+     * left, as one offer. Nothing changes until `applyTimeFit` (rule 3).
+     */
+    timeFit(data: ActiveWorkoutData, overByMinutes: number): TimeFitOffer | null {
+      const info = data.builderInfo ?? {};
+      const o = timeFitOffer({ aggregate: data.aggregate, overByMinutes, info: (id) => info[id] ?? null, painFlagged: new Set(data.painFlagged) });
+      return o.status === 'none' ? null : o;
+    },
+
+    /** Ben's Apply on the `+N min` offer: one `fit_today_to_time`, refused once the workout moved on (rule 5). Undo is `undo_op` on `opId`. */
+    applyTimeFit: async (req: { sessionId: string; offer: TimeFitOffer; opId: string }): Promise<CommandOutcome> => {
+      const cmd = fitTodayCommand(req.offer, { opId: req.opId, at: ctx.now() });
+      if (cmd === null) return { ok: false, error: { code: 'invalid_values', message: 'Nothing to change.' } };
+      return ctx.afterCommand(await domain().dispatch(req.sessionId, cmd));
     },
 
     /** `Finish by` (§2.15.3): today only; null = `Not set`. Changes only the line's wording. */
