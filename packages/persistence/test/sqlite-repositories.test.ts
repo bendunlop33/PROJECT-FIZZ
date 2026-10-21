@@ -145,7 +145,7 @@ describe('restart recovery on a database file', () => {
     await service.recover(OWNER, at(afterS));
     const undone = await service.dispatch(sessionId, { type: 'undo_log', at: at(afterS), opId: 'undo-2', setId: second.id, expectedSetVersion: 2 });
     if (!undone.ok) throw new Error(undone.error.code);
-    expect(undone.aggregate.restTimer).toMatchObject({ id: rest.id, status: 'expired', deadlineUtc: rest.deadlineUtc, endedAtUtc: rest.deadlineUtc });
+    expect(undone.aggregate.restTimer).toMatchObject({ id: rest.id, status: 'expired', deadlineUtc: rest.deadlineUtc, endedAtUtc: rest.deadlineUtc, restoredFinished: true });
     expect(undone.events.some((e) => e.type === 'RestStarted')).toBe(false);
     await store.close();
 

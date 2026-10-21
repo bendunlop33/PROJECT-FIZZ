@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SqlDriver, SqlExecutor, SqlValue } from '../src/index';
 import { openNodeDriver } from '../src/node/index';
+import type { SessionAggregate } from '@fizz/schemas';
 
 export function memoryDriver(): SqlDriver {
   return openNodeDriver(':memory:');
@@ -47,9 +48,17 @@ export function failingDriver(inner: SqlDriver, failOn: (sql: string) => boolean
   });
 }
 
+/** A session as a build before migration 31 saved it: no rest marked as put back finished by an undo. */
+export function beforeSchema31(a: SessionAggregate): SessionAggregate {
+  if (a.restTimer?.restoredFinished === undefined) return a;
+  const restTimer = { ...a.restTimer };
+  delete restTimer.restoredFinished;
+  return { ...a, restTimer };
+}
+
 /**
  * A backup's tables as a schema-30 build wrote them: no `rest_timers.resume_on_undo`
- * (migration 31, unticking keeps the rest).
+ * or `restored_finished` (migration 31, unticking keeps the rest).
  */
 export function withoutSchema31<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
   const out: Record<string, Record<string, unknown>[]> = { ...tables };
@@ -57,6 +66,7 @@ export function withoutSchema31<T extends Record<string, Record<string, unknown>
     out.rest_timers = out.rest_timers.map((row) => {
       const copy = { ...row };
       delete copy.resume_on_undo;
+      delete copy.restored_finished;
       return copy;
     });
   }

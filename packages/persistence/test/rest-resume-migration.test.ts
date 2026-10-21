@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { apply, kg, logCmd, profile, richFinishedSession, startFixture, values } from '@fizz/domain/testing';
+import { apply, at, kg, logCmd, profile, richFinishedSession, startFixture, values } from '@fizz/domain/testing';
 import { checkIntegrity, exportTables, migrate, MIGRATIONS, openStore } from '../src/index';
-import { memoryDriver } from './helpers';
+import { beforeSchema31, memoryDriver } from './helpers';
 
 /** Migration 31: the rest a log replaced is kept with the timer, so Undo can put it back after a force-close. */
 describe('migration 31 (rest kept for undo)', () => {
@@ -9,13 +9,13 @@ describe('migration 31 (rest kept for undo)', () => {
     const db = memoryDriver();
     const at30 = await openStore(db, { migrations: MIGRATIONS.filter((m) => m.version <= 30) });
     await at30.repos.profiles.save(profile(), null);
-    await at30.repos.sessions.save(richFinishedSession(), null);
+    await at30.repos.sessions.save(beforeSchema31(richFinishedSession()), null);
     const before = await at30.db.read((q) => exportTables(q));
     expect(before.rest_timers?.length).toBe(1);
     expect(await migrate(db)).toMatchObject({ from: 30, applied: [31] });
     const at31 = await openStore(db);
     const after = await at31.db.read((q) => exportTables(q));
-    expect(after.rest_timers).toEqual((before.rest_timers ?? []).map((r) => ({ ...r, resume_on_undo: null })));
+    expect(after.rest_timers).toEqual((before.rest_timers ?? []).map((r) => ({ ...r, resume_on_undo: null, restored_finished: null })));
     expect((await at31.repos.sessions.get(richFinishedSession().session.id))?.restTimer?.resumeOnUndo).toBeUndefined();
     expect((await checkIntegrity(at31.db)).ok).toBe(true);
     await at31.close();
@@ -46,6 +46,14 @@ describe('migration 31 (rest kept for undo)', () => {
     expect(s.restTimer?.resumeOnUndo?.[0]?.timer).toMatchObject({ status: 'expired', endedAtUtc: s.restTimer?.resumeOnUndo?.[0]?.timer.deadlineUtc });
     await store.repos.sessions.save(s, null);
     expect((await store.repos.sessions.get(s.session.id))?.restTimer).toEqual(s.restTimer);
+    // Undone: back finished, marked so no late end cue speaks after a relaunch (review rest-undo-sp1 B1).
+    const back = apply(s, { type: 'undo_log', at: at(125), opId: 'undo', setId: b1.id, expectedSetVersion: 2 });
+    expect(back.restTimer).toMatchObject({ status: 'expired', restoredFinished: true });
+    await store.repos.sessions.save(back, s.session.version);
+    expect((await store.repos.sessions.get(s.session.id))?.restTimer).toEqual(back.restTimer);
+    const rows = await store.db.read((q) => q.getAll('SELECT restored_finished FROM rest_timers'));
+    expect(rows).toEqual([{ restored_finished: 1 }]);
+    await expect(store.db.write((tx) => tx.run('UPDATE rest_timers SET restored_finished = 0'))).rejects.toThrow();
     await store.close();
   });
 });
