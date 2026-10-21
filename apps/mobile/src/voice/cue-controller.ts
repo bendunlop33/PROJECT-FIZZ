@@ -30,8 +30,6 @@ export interface PlannedCue {
   key: string;
   kind: CueKind;
   fireAtMs: number;
-  /** The end cue of a rest already marked expired: it only speaks if it was waiting when the rest ran out. */
-  ended?: true;
 }
 
 /**
@@ -51,12 +49,13 @@ export function planCues(state: SessionAggregate | null): PlannedCue[] {
     out.push({ key: `${base}:end`, kind: 'work_end', fireAtMs: deadline });
   }
   const t = state.restTimer;
-  if (t && (t.status === 'running' || t.status === 'expired')) {
+  // A rest an undo put back already finished has no end to announce (workout-table-v3 §3).
+  if (t && (t.status === 'running' || (t.status === 'expired' && t.restoredFinished !== true))) {
     const deadline = toMs(t.deadlineUtc);
     // Keyed by the deadline, not the version: the tick that saves the expiry bumps the version.
     const base = `rest:${t.id}:${t.deadlineUtc}`;
     if (t.status === 'running' && t.durationS >= WARNING_MIN_DURATION_S) out.push({ key: `${base}:warn`, kind: 'warning', fireAtMs: deadline - WARNING_LEAD_S * 1000 });
-    out.push(t.status === 'expired' ? { key: `${base}:end`, kind: 'rest_end', fireAtMs: deadline, ended: true } : { key: `${base}:end`, kind: 'rest_end', fireAtMs: deadline });
+    out.push({ key: `${base}:end`, kind: 'rest_end', fireAtMs: deadline });
   }
   return out;
 }
@@ -115,13 +114,6 @@ export interface CuePorts {
 export function createSpokenCueController(ports: CuePorts) {
   const timers = new Map<string, { cue: PlannedCue; handle: unknown }>();
   const played = new Set<string>();
-  /**
-   * Cues that were waiting and then called off before they spoke (the rest was
-   * replaced by a log, skipped, paused, re-timed). An undo can bring such a
-   * rest back already finished (workout-table-v3 §3): its end is history, so
-   * its end cue never speaks late.
-   */
-  const dropped = new Set<string>();
   let latest: SessionAggregate | null = null;
   let spoken = 0;
   let historyPort = ports.history ?? null;
@@ -173,13 +165,10 @@ export function createSpokenCueController(ports: CuePorts) {
         if (!keys.has(key)) {
           ports.clock.clearTimeout(t.handle);
           timers.delete(key);
-          dropped.add(key);
         }
       }
       for (const cue of planned) {
         if (played.has(cue.key) || timers.has(cue.key)) continue;
-        // A rest put back already finished by an undo: no late "Rest done".
-        if (cue.ended === true && dropped.has(cue.key)) continue;
         // Long past (a deadline that went by while the app was closed): never scheduled at all.
         if (nowMs - cue.fireAtMs > lateLimitMs(cue.kind)) {
           played.add(cue.key);
