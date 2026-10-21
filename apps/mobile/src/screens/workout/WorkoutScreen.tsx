@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
+import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -127,7 +127,12 @@ export function WorkoutScreen() {
   const [data, setData] = useState<ActiveWorkoutData | null | 'loading'>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(clockNow);
-  const [edits, setEdits] = useState<DraftEdits | null>(null);
+  const [rawEdits, setEdits] = useState<DraftEdits | null>(null);
+  // Ben's unsaved edits against the workout as stored now: his own newer target replaces them, any other change keeps them (21 Oct).
+  const edits = useMemo(() => (data === 'loading' || data === null ? rawEdits : reconcileDraftEdits(rawEdits, data.aggregate)), [rawEdits, data]);
+  useEffect(() => {
+    if (edits !== rawEdits) setEdits(edits);
+  }, [edits, rawEdits]);
   const [guard, setGuard] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -570,16 +575,17 @@ export function WorkoutScreen() {
   }, [view?.focus?.setId, whyEvent]);
 
   // Debounced draft save (300 ms): unsaved edits survive a force-close without counting as results.
+  // Only a change to the edits saves: a refresh, tick or coach change never sends old values again (21 Oct).
+  const editsSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
   useEffect(() => {
-    if (!edits || data === 'loading' || data === null) return;
-    const sessionId = data.aggregate.session.id;
+    if (!edits || editsSessionId === null) return;
     const t = setTimeout(() => {
-      void services.workout.dispatch(sessionId, saveDraftCommand(edits, services.now()));
+      void services.workout.dispatch(editsSessionId, saveDraftCommand(edits, services.now()));
     }, 300);
     return () => {
       clearTimeout(t);
     };
-  }, [edits, data, services]);
+  }, [edits, editsSessionId, services]);
 
   // Work timer end in the foreground (§2.7): one haptic at 0, then a tick saves the planned time as the draft.
   useEffect(() => {
@@ -783,7 +789,7 @@ export function WorkoutScreen() {
   function setValues(values: SetValues, side?: SetSide) {
     if (!focus) return;
     const base: DraftEdits = edits?.setId === focus.setId ? edits : { setId: focus.setId, values: focus.draft };
-    const next: DraftEdits = { setId: focus.setId, values };
+    const next: DraftEdits = { setId: focus.setId, values, setVersion: focus.setVersion };
     const s = side ?? base.side;
     if (s !== undefined) next.side = s;
     setEdits(next);
@@ -794,7 +800,7 @@ export function WorkoutScreen() {
   function copyLast(f: FocusView) {
     const prev = f.previous;
     if (!prev) return;
-    setEdits({ setId: f.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+    setEdits({ setId: f.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, setVersion: f.setVersion, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
   }
 
   function editLoad(f: FocusView, v: number | null) {
@@ -2013,7 +2019,7 @@ export function WorkoutScreen() {
               onPress={() => {
                 const prev = focus.previous;
                 if (!prev) return;
-                setEdits({ setId: focus.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+                setEdits({ setId: focus.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, setVersion: focus.setVersion, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
               }}
             >
               <AppText variant="callout" color="text.secondary" numeric>
