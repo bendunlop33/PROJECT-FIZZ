@@ -23,7 +23,8 @@ import {
   startWorkout,
   stepRoundCommand,
   stepSetCommand,
-  supersetMidRound,
+  canRemoveExercise,
+  pairWithCommand,
   supersetNextCommand,
   typeRestCommand,
   warmupGap,
@@ -215,6 +216,42 @@ describe('add_warmup (＋ Warm-up mid-workout)', () => {
     expect(canAddWarmupNow(s, curl)).toBe(false);
   });
 
+  it('not inside a superset: a warm-up there would shift every round (integrity B1); the reducer refuses too', () => {
+    const s0 = startFixture().state;
+    const row = rowId(s0, ROW);
+    expect(addWarmupCommand(s0, row, { ...op('warm-ss'), newSetId: id(94001) })).toEqual({ ok: false, reason: 'superset' });
+    expect(canAddWarmupNow(s0, row)).toBe(false);
+    const forced: SessionCommand = { type: 'add_warmup', at: at(400), opId: 'warm-ss', sessionExerciseId: row, newSetId: id(94001), planned: { load: kg(25, 'stack'), reps: { min: 10, max: 10 }, durationS: null, rpe: null, rir: null }, restS: 60, expectedVersion: s0.session.version };
+    expectError(reduceSession(s0, forced), 'invalid_values');
+    // The rounds still pair Row 1 · Face 1 · Row 2 · Face 2.
+    const [r1, r2] = setsFor(s0, ROW).map((x) => x.id);
+    const [f1, f2] = setsFor(s0, FACE).map((x) => x.id);
+    expect(buildExecutionOrder(s0.exercises, s0.sets).filter((x) => [r1, r2, f1, f2].includes(x))).toEqual([r1, f1, r2, f2]);
+  });
+
+  it('not offered when the only sets not done sit before a done one (the reducer would refuse; review S7)', () => {
+    let s = startFixture().state;
+    const [, , b2] = setsFor(s, BENCH);
+    // Ben logs Bench set 2 first: the warm-up and set 1 are still pending, before a done set.
+    s = apply(s, logCmd(b2?.id ?? '', values(kg(100), 5), 100));
+    const bench = rowId(s, BENCH);
+    expect(addWarmupCommand(s, bench, { ...op('warm-x'), newSetId: id(94002) })).toEqual({ ok: false, reason: 'done' });
+    expect(canAddWarmupNow(s, bench)).toBe(false);
+  });
+
+  it('a later set Ben made current stays current (N3)', () => {
+    let s = startFixture().state;
+    const [, b1, b2] = setsFor(s, BENCH);
+    s = apply(s, logCmd(setsFor(s, BENCH)[0]?.id ?? '', values(kg(60), 10), 60));
+    s = apply(s, { type: 'set_active_set', at: at(70), opId: 'pick-b2', setId: b2?.id ?? '', expectedVersion: s.session.version });
+    expect(s.session.activeSetId).toBe(b2?.id);
+    const built = addWarmupCommand(s, rowId(s, BENCH), { ...op('warm-n3'), newSetId: id(94003) });
+    if (!built.ok) throw new Error(built.reason);
+    const s1 = apply(s, built.command);
+    expect(s1.session.activeSetId).toBe(b2?.id);
+    expect(b1).toBeDefined();
+  });
+
   it('warmupGap is the builder’s rule: biggest gap, rounded down, reps by closeness; null with no room', () => {
     const down = (v: number) => Math.floor(v / 2.5) * 2.5;
     expect(warmupGap([], 100, down)).toEqual({ load: 50, reps: 5 });
@@ -244,13 +281,17 @@ describe('set_rest_after by set type (pop-up rest per type)', () => {
     expectError(reduceSession(s1, { ...cmd, opId: 'rest-2' }), 'stale_version');
   });
 
-  it('a superset’s After each round is the last member’s rest', () => {
+  it('a superset’s After each round is the last member’s rest, labelled as Ben’s round rest, never as a saved default (review S3)', () => {
     const s0 = startFixture().state;
     const cmd = typeRestCommand(s0, rowId(s0, ROW), 'round', 75, op('rest-r'));
-    expect(cmd?.scope).toBe('exercise');
+    expect(cmd?.scope).toBe('round');
     const s1 = apply(s0, cmd as SessionCommand);
-    expect(setsFor(s1, FACE).every((x) => x.rest.seconds === 75)).toBe(true);
+    for (const x of setsFor(s1, FACE)) {
+      expect(x.rest).toEqual({ seconds: 75, source: 'set_override', sourceLabel: 'After each round (yours)', byOpId: 'rest-r' });
+    }
     expect(setsFor(s1, ROW)).toEqual(setsFor(s0, ROW));
+    expect(expectOk(reduceSession(s1, cmd as SessionCommand)).duplicate).toBe(true);
+    expectError(reduceSession(s1, { ...(cmd as SessionCommand & { opId: string }), opId: 'rest-r2' }), 'stale_version');
   });
 });
 
@@ -274,6 +315,50 @@ describe('remove_exercise with logged sets (asks first, keeps them in history)',
     const back = apply(reload(s1), undo('remove-1'));
     expect(setsFor(back, BENCH).map((x) => x.status)).toEqual(setsFor(s0, BENCH).map((x) => x.status));
     expect(expectOk(reduceSession(back, command)).superseded).toBe(true);
+  });
+
+  it('a confirmation built when the dialog opened is refused once the workout moved on (integrity B2)', () => {
+    const s0 = benchStarted();
+    const bench = rowId(s0, BENCH);
+    // The dialog opens: the command (and its count) is fixed now.
+    const asked = removeExerciseCommand(s0, bench, op('remove-1'));
+    // Before Ben confirms, the next set is logged from the lock screen.
+    const moved = apply(s0, logCmd(setsFor(s0, BENCH)[2]?.id ?? '', values(kg(100), 6), 500));
+    expectError(reduceSession(moved, asked.command), 'stale_version');
+    expect(moved.sets).toEqual(apply(s0, logCmd(setsFor(s0, BENCH)[2]?.id ?? '', values(kg(100), 6), 500)).sets);
+  });
+
+  it('a superset member with logged sets: its rest goes, the partner keeps its rounds, the logged sets stay grouped; Undo (S7)', () => {
+    let s0 = startFixture().state;
+    for (const x of setsFor(s0, BENCH)) s0 = apply(s0, logCmd(x.id, values(x.planned.load, 8), 100));
+    s0 = apply(s0, logCmd(setsFor(s0, ROW)[0]?.id ?? '', values(kg(50, 'stack'), 10), 200));
+    s0 = apply(s0, logCmd(setsFor(s0, FACE)[0]?.id ?? '', values(kg(20, 'stack'), 12), 260));
+    const row = rowId(s0, ROW);
+    const { command, loggedSets } = removeExerciseCommand(s0, row, op('remove-row'));
+    expect(loggedSets).toBe(1);
+    const s1 = apply(s0, command);
+    // Row 1 stays, logged and still in superset A; Row 2 is gone.
+    expect(setsFor(s1, ROW).map((x) => x.status)).toEqual(['completed', 'deleted']);
+    expect(s1.exercises.find((e) => e.id === row)?.supersetGroup).toBe('A');
+    expect(setsFor(s1, ROW)[0]).toEqual(setsFor(s0, ROW)[0]);
+    // Face pull's round 2 is next, then Dead hang; Face's offset is unchanged.
+    const face2 = setsFor(s1, FACE)[1]?.id;
+    expect(s1.session.activeSetId).toBe(face2);
+    expect(s1.exercises.find((e) => e.exerciseId === FACE)?.roundOffset).toBe(s0.exercises.find((e) => e.exerciseId === FACE)?.roundOffset);
+    const order = buildExecutionOrder(s1.exercises, s1.sets).filter((x) => s1.sets.find((y) => y.id === x)?.status === 'pending');
+    expect(order).toEqual([face2, ...setsFor(s1, HANG).map((x) => x.id)]);
+    const back = apply(reload(s1), undo('remove-row'));
+    expect(setsFor(back, ROW).map((x) => x.status)).toEqual(['completed', 'pending']);
+    expect(canRemoveExercise(back, row)).toBe(true);
+  });
+
+  it('Remove is only offered when it would do something (review S5)', () => {
+    const s0 = startFixture().state;
+    expect(canRemoveExercise(s0, rowId(s0, BENCH))).toBe(true);
+    let done = s0;
+    for (const x of setsFor(done, BENCH)) done = apply(done, logCmd(x.id, values(x.planned.load, 8), 100));
+    expect(canRemoveExercise(done, rowId(done, BENCH))).toBe(false);
+    expectError(reduceSession(done, removeExerciseCommand(done, rowId(done, BENCH), op('r')).command), 'set_not_pending');
   });
 
   it('a confirmation for logged sets that were unticked since is stale', () => {
@@ -352,18 +437,95 @@ describe('rounds: move, superset with next, unlink mid-round', () => {
     expect(supersetNextCommand(s0, rowId(s0, HANG), op('pair-2'))).toBeNull();
   });
 
-  it('Unlink mid-round: the half-done round finishes first (the partner stays current); logged sets untouched', () => {
+  it('Unlink mid-round: the half-done round finishes first (the partner stays current), then the rest go one by one; logged sets untouched', () => {
     let s = startFixture().state;
     for (const x of setsFor(s, BENCH)) s = apply(s, logCmd(x.id, values(x.planned.load, 8), 100));
-    const [r1] = setsFor(s, ROW);
+    const [r1, r2] = setsFor(s, ROW);
     s = apply(s, logCmd(r1?.id ?? '', values(kg(50, 'stack'), 10), 200));
-    expect(supersetMidRound(s, rowId(s, ROW))).toBe(true);
-    const f1 = setsFor(s, FACE)[0]?.id;
+    const [f1, f2] = setsFor(s, FACE).map((x) => x.id);
     expect(s.session.activeSetId).toBe(f1);
     const split = apply(s, { type: 'split_superset', at: at(210), opId: 'split-1', expectedVersion: s.session.version, sessionExerciseId: rowId(s, ROW) });
     expect(split.session.activeSetId).toBe(f1);
     expect(split.sets).toEqual(s.sets);
-    expect(supersetMidRound(split, rowId(split, ROW))).toBe(false);
+    // The member behind (Face pull) comes first, so nothing is left behind until the end.
+    expect(sessionRounds(split).map((r) => r.members.map((m) => m.exerciseName).join('+'))).toEqual(['Bench press', 'Face pull', 'Cable row', 'Dead hang']);
+    // The partner's set finishes the half-done round; then Face 2, then Row 2, then Dead hang.
+    const afterF1 = apply(split, logCmd(f1 ?? '', values(kg(20, 'stack'), 12), 260));
+    expect(afterF1.session.activeSetId).toBe(f2);
+    const afterF2 = apply(afterF1, logCmd(f2 ?? '', values(kg(20, 'stack'), 12), 320));
+    expect(afterF2.session.activeSetId).toBe(r2?.id);
+    const afterR2 = apply(afterF2, logCmd(r2?.id ?? '', values(kg(50, 'stack'), 10), 380));
+    expect(afterR2.sets.find((x) => x.id === afterR2.session.activeSetId)?.sessionExerciseId).toBe(rowId(s, HANG));
+    // Undo (after a reload) puts the superset back in its old order.
+    const back = apply(reload(split), undo('split-1'));
+    expect(sessionRounds(back).map((r) => r.members.map((m) => m.exerciseName).join('+'))).toEqual(['Bench press', 'Cable row+Face pull', 'Dead hang']);
+    expect(buildExecutionOrder(back.exercises, back.sets)).toEqual(buildExecutionOrder(s.exercises, s.sets));
+    // Every logged value is exactly as logged.
+    for (const x of afterF2.sets.filter((y) => y.status === 'completed' && s.sets.some((z) => z.id === y.id && z.status === 'completed'))) {
+      expect(x).toEqual(s.sets.find((y) => y.id === x.id));
+    }
+  });
+
+  it('Superset with next is not offered when both sides are already supersets, or when the next exercise is done (review S5)', () => {
+    const s0 = startFixture().state;
+    expect(supersetNextCommand(s0, rowId(s0, BENCH), op('p1'))).not.toBeNull();
+    // Hang up one, then Bench + Hang: two supersets side by side.
+    const up = stepRoundCommand(s0, rowId(s0, HANG), 'up', op('m-h'));
+    if (!up.ok) throw new Error(up.reason);
+    const hangFirst = apply(s0, up.command);
+    const linked = apply(hangFirst, supersetNextCommand(hangFirst, rowId(hangFirst, BENCH), op('p2')) as SessionCommand);
+    expect(sessionRounds(linked).map((r) => r.members.length)).toEqual([2, 2]);
+    expect(supersetNextCommand(linked, rowId(linked, HANG), op('p3'))).toBeNull();
+    expect(supersetNextCommand(linked, rowId(linked, BENCH), op('p3'))).toBeNull();
+    // Next exercise done: nothing to pair.
+    let done = s0;
+    for (const x of setsFor(done, HANG)) done = apply(done, logCmd(x.id, values(null, null, { durationS: 45 }), 500));
+    expect(supersetNextCommand(done, rowId(done, FACE), op('p4'))).toBeNull();
+  });
+
+  it('a drop onto another exercise never moves a round past a started one, nor onto a done round (integrity S1, parity S5)', () => {
+    let s = startFixture().state;
+    // Ben swiped ahead and logged Row 1: the Row+Face round is started.
+    s = apply(s, logCmd(setsFor(s, ROW)[0]?.id ?? '', values(kg(50, 'stack'), 10), 100));
+    const bench = rowId(s, BENCH);
+    const hang = rowId(s, HANG);
+    expect(sessionRounds(s).map((r) => r.started)).toEqual([false, true, false]);
+    // Hang onto Bench would move Hang above the started superset: refused, and not a drop target.
+    expect(pairWithCommand(s, hang, bench, op('o1'))).toBeNull();
+    expect(canDropRound(s, hang, bench, 'onto')).toBe(false);
+    expect(dropRoundCommand(s, hang, bench, 'onto', op('o1'))).toBeNull();
+    // Bench onto Hang: Bench (behind on a tie, the earlier row leads) — Hang would move up past the started round too.
+    expect(canDropRound(s, bench, hang, 'onto')).toBe(false);
+    // Neighbours still pair.
+    const fresh = startFixture().state;
+    expect(canDropRound(fresh, rowId(fresh, HANG), rowId(fresh, BENCH), 'onto')).toBe(true);
+    // A done round is never a target.
+    let done = fresh;
+    for (const x of setsFor(done, BENCH)) done = apply(done, logCmd(x.id, values(x.planned.load, 8), 100));
+    expect(canDropRound(done, rowId(done, HANG), rowId(done, BENCH), 'onto')).toBe(false);
+    expect(canDropRound(done, rowId(done, BENCH), rowId(done, HANG), 'onto')).toBe(false);
+  });
+});
+
+describe('a logged set’s Type (pop-up Type picker on a done set)', () => {
+  it('changes the label and counting only: the logged numbers are byte-identical, audited, and Undo puts the type back (rule 2)', () => {
+    const s0 = benchStarted();
+    const done = setsFor(s0, BENCH).find((x) => x.status === 'completed' && x.setType === 'working');
+    if (done === undefined) throw new Error('no logged set');
+    const cmd: SessionCommand = { type: 'correct_set', at: at(500), opId: 'type-1', setId: done.id, expectedSetVersion: done.version, patch: { setType: 'top' } };
+    const s1 = apply(s0, cmd);
+    const after = s1.sets.find((x) => x.id === done.id);
+    expect(after?.setType).toBe('top');
+    expect(JSON.stringify(after?.actual)).toBe(JSON.stringify(done.actual));
+    expect(after?.completedAt).toEqual(done.completedAt);
+    expect(s1.audit.some((e) => e.opId === 'type-1' && e.setId === done.id && e.kind === 'corrected')).toBe(true);
+    // A stale correction is refused; a repeat is a no-op.
+    expectError(reduceSession(s1, { ...cmd, opId: 'type-2' }), 'stale_version');
+    expect(expectOk(reduceSession(s1, cmd)).duplicate).toBe(true);
+    const back = apply(reload(s1), undo('type-1'));
+    const restored = back.sets.find((x) => x.id === done.id);
+    expect(restored?.setType).toBe('working');
+    expect(JSON.stringify(restored?.actual)).toBe(JSON.stringify(done.actual));
   });
 });
 

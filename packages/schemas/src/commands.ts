@@ -291,7 +291,9 @@ export const AddExerciseCommandSchema = z.object({
  * this set's rest only; `exercise` changes every pending set of its exercise
  * (the service also saves it as Ben's default for that exercise); `type`
  * (workout-table-v3 §7, the exercise pop-up's rest per set type) changes the
- * pending sets of its exercise with the same set type as `setId`, today only.
+ * pending sets of its exercise with the same set type as `setId`, today only;
+ * `round` (the pop-up's `After each round` in a superset) changes every pending
+ * set of the superset's last member, today only (nothing saved as a default).
  * Never changes a completed set or a running timer. Versioned on the session.
  */
 export const SetRestAfterCommandSchema = z.object({
@@ -300,7 +302,7 @@ export const SetRestAfterCommandSchema = z.object({
   opId: OperationIdSchema,
   setId: IdSchema,
   seconds: DurationSecondsSchema.refine((s) => s <= 3600, { message: 'At most an hour' }),
-  scope: z.enum(['set', 'exercise', 'type']),
+  scope: z.enum(['set', 'exercise', 'type', 'round']),
   expectedVersion: z.int().min(1),
 });
 

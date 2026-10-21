@@ -1,10 +1,12 @@
 import { BUILD_LIMITS, type CommandOf, type EquipmentInstance, type Load, type PlannedSet, type SessionAggregate, type SessionExercise, type SetType, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 import { adviseAfter, adviseBuilder, type AdviceBlock, type BuilderAdvice } from '../builder/advise';
+import { BUILDER_MAX_SUPERSET } from '../builder/arrange';
 import { BUILDER_REST_DEFAULTS } from '../builder/rest';
 import { warmupGap } from '../builder/edit';
 import type { BuilderInfoLookup, BuilderSetRow } from '../builder/types';
 import { isLoadAchievable, isPresenceOnly, loadDirection, roundToAvailableLoad } from '../equipment';
 import { equipmentOfRow } from './equipment-snapshot';
+import { supersetLinkSides } from './order';
 
 /**
  * Same editing as the builder, mid-workout (workout-table-v3 §7; Ben, 20
@@ -125,28 +127,54 @@ export function roundSteps(state: Pick<SessionAggregate, 'exercises' | 'sets'>, 
 }
 
 /**
+ * Whether `link_superset` would pair these two rows (the reducer's own preconditions, so a button,
+ * menu item or drop target is only offered when it works, review S5): different rounds, both with a
+ * set not done yet, not both already in a superset, not split across gyms, at most the builder's
+ * members per superset, and the side that moves (the one behind, `supersetLinkSides`) never passes
+ * a started round and isn't started itself when it has to move (§7: done rounds stay put).
+ */
+function canLink(state: SessionAggregate, aId: string, bId: string): boolean {
+  const rounds = sessionRounds(state);
+  const ai = roundIndexOf(rounds, aId);
+  const bi = roundIndexOf(rounds, bId);
+  const ra = rounds[ai];
+  const rb = rounds[bi];
+  if (ra === undefined || rb === undefined || ai === bi || ra.parted || rb.parted) return false;
+  const a = ra.members.find((m) => m.id === aId);
+  const b = rb.members.find((m) => m.id === bId);
+  if (a === undefined || b === undefined) return false;
+  if (a.supersetGroup !== null && b.supersetGroup !== null) return false;
+  const pending = (id: string) => state.sets.some((s) => s.sessionExerciseId === id && s.status === 'pending');
+  if (!pending(a.id) || !pending(b.id)) return false;
+  if (ra.members.length + rb.members.length > BUILDER_MAX_SUPERSET) return false;
+  const { lag } = supersetLinkSides(state.exercises, state.sets, a, b);
+  const lagIndex = roundIndexOf(rounds, lag[0]?.id ?? '');
+  const leadIndex = lagIndex === ai ? bi : ai;
+  // The lag side lands straight after the lead: it passes every round between them.
+  const crossed = rounds.slice(Math.min(lagIndex, leadIndex) + 1, Math.max(lagIndex, leadIndex));
+  if (crossed.length === 0) return true;
+  return rounds[lagIndex]?.started !== true && crossed.every((r) => !r.started && !r.parted);
+}
+
+/**
  * `Superset with next` (§7): this exercise and the next round's first exercise, as `link_superset`
- * (the reducer keeps each side's done rounds and pairs from the current one). Null when there is no
- * next round, or either side has nothing left to do.
+ * (the reducer keeps each side's done rounds and pairs from the current one). Null when it would be
+ * refused (`canLink`).
  */
 export function supersetNextCommand(state: SessionAggregate, sessionExerciseId: string, op: Op): CommandOf<'link_superset'> | null {
   const rounds = sessionRounds(state);
   const at = roundIndexOf(rounds, sessionExerciseId);
-  const next = rounds[at + 1];
-  const target = next?.members[0];
-  if (at < 0 || target === undefined) return null;
-  const pending = (id: string) => state.sets.some((s) => s.sessionExerciseId === id && s.status === 'pending');
-  if (!pending(sessionExerciseId) || !next?.members.some((m) => pending(m.id))) return null;
+  const target = rounds[at + 1]?.members[0];
+  if (at < 0 || target === undefined || !canLink(state, sessionExerciseId, target.id)) return null;
   return { type: 'link_superset', at: op.at, opId: op.opId, expectedVersion: state.session.version, sessionExerciseId: target.id, withSessionExerciseId: sessionExerciseId };
 }
 
 /**
  * The drag's drop onto another exercise in the Workout sheet (§7): a superset of the two, as
- * `link_superset`. Null when it's the same round.
+ * `link_superset`. Null when it would be refused or would move a round past a started one (`canLink`).
  */
 export function pairWithCommand(state: SessionAggregate, sessionExerciseId: string, withSessionExerciseId: string, op: Op): CommandOf<'link_superset'> | null {
-  const rounds = sessionRounds(state);
-  if (roundIndexOf(rounds, sessionExerciseId) === roundIndexOf(rounds, withSessionExerciseId)) return null;
+  if (!canLink(state, sessionExerciseId, withSessionExerciseId)) return null;
   return { type: 'link_superset', at: op.at, opId: op.opId, expectedVersion: state.session.version, sessionExerciseId, withSessionExerciseId };
 }
 
@@ -183,15 +211,6 @@ export function roundDraggable(state: Pick<SessionAggregate, 'exercises' | 'sets
   const rounds = sessionRounds(state);
   const r = rounds[roundIndexOf(rounds, sessionExerciseId)];
   return r !== undefined && !r.started && !r.parted && rounds.length > 1;
-}
-
-/** A superset whose current round is half done (a member done in it, another not): `Unlink` finishes that round first (§7). */
-export function supersetMidRound(state: Pick<SessionAggregate, 'exercises' | 'sets'>, sessionExerciseId: string): boolean {
-  const rounds = sessionRounds(state);
-  const round = rounds[roundIndexOf(rounds, sessionExerciseId)];
-  if (round === undefined || round.members.length < 2) return false;
-  const doneCounts = round.members.map((m) => state.sets.filter((s) => s.sessionExerciseId === m.id && s.pairedWithSetId === null && (s.status === 'completed' || s.status === 'skipped')).length + (m.roundOffset ?? 0));
-  return new Set(doneCounts).size > 1 && round.members.some((m) => state.sets.some((s) => s.sessionExerciseId === m.id && s.status === 'pending'));
 }
 
 // ---------------------------------------------------------------------------
@@ -235,24 +254,30 @@ export function setMoveSteps(state: Pick<SessionAggregate, 'sets'>, setId: strin
   return { up: at > 0, down: at >= 0 && at < ids.length - 1 };
 }
 
-export type AddWarmupRefusal = 'not_found' | 'done' | 'max_warmups' | 'no_load' | 'no_gap';
+export type AddWarmupRefusal = 'not_found' | 'done' | 'max_warmups' | 'no_load' | 'no_gap' | 'superset';
 
 const RAMP_CONVENTIONS: ReadonlySet<Load['convention']> = new Set(['total', 'per_hand', 'stack']);
 
 /**
  * `＋ Warm-up` mid-workout (§7, the builder's rule `warmupGap`): the biggest gap in the ramp up to
  * the first working load, rounded down on the row's own item (rule 4). Only for loads on an item
- * with the reps/RPE formula (not assisted, added weight or bodyweight), at most 4 warm-ups.
+ * with the reps/RPE formula (not assisted, added weight or bodyweight), at most 4 warm-ups. Not in
+ * a superset: a warm-up there would count as a round and shift every pairing (review B1; neither
+ * spec says how warm-ups run in a superset). Mirrors the reducer's placement (never before a done
+ * set), so the button is only offered when the write works.
  */
 export function addWarmupCommand(state: SessionAggregate, sessionExerciseId: string, op: Op & { newSetId: string }): { ok: true; command: CommandOf<'add_warmup'> } | { ok: false; reason: AddWarmupRefusal } {
   const ex = state.exercises.find((e) => e.id === sessionExerciseId && e.removed === undefined);
   if (ex === undefined) return { ok: false, reason: 'not_found' };
+  if (ex.supersetGroup !== null) return { ok: false, reason: 'superset' };
   const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);
-  if (!own.some((s) => s.status === 'pending' && s.setType !== 'warmup')) return { ok: false, reason: 'done' };
+  const lastDone = own.reduce((at, s, i) => (s.status === 'pending' ? at : i), -1);
+  // A warm-up never goes before a done set: something not done yet after the last done one to warm up for.
+  if (!own.some((s, i) => i > lastDone && s.status === 'pending' && s.setType !== 'warmup')) return { ok: false, reason: 'done' };
   const warm = own.filter((s) => s.setType === 'warmup');
   if (warm.length >= BUILD_LIMITS.maxWarmups) return { ok: false, reason: 'max_warmups' };
   const loadOf = (s: WorkoutSet): Load | null => s.actual?.load ?? s.draft?.load ?? s.planned.load;
-  const work = own.find((s) => s.status === 'pending' && s.setType !== 'warmup') ?? own.find((s) => s.setType !== 'warmup');
+  const work = own.find((s, i) => i > lastDone && s.status === 'pending' && s.setType !== 'warmup');
   const top = work === undefined ? null : loadOf(work);
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
   if (top === null || eq === null || !RAMP_CONVENTIONS.has(top.convention) || loadDirection(top.convention) !== 'resistance' || top.convention !== eq.loadConvention || top.unit !== ex.unit) {
@@ -301,13 +326,28 @@ export function removeExerciseCommand(state: SessionAggregate, sessionExerciseId
   };
 }
 
-/** `set_rest_after` for the pop-up's rest per set type; in a superset, `After each round` (the last member's rest). */
+/**
+ * Whether `Remove` would do anything (review S5, the reducer's preconditions): a live row not split
+ * across gyms, and either nothing logged (the whole row goes) or something still to do (the rest
+ * goes, the logged sets stay). A finished exercise has nothing to remove.
+ */
+export function canRemoveExercise(state: Pick<SessionAggregate, 'exercises' | 'sets'>, sessionExerciseId: string): boolean {
+  const ex = state.exercises.find((e) => e.id === sessionExerciseId && e.removed === undefined);
+  if (ex === undefined || ex.continuesFromId !== undefined || state.exercises.some((e) => e.continuesFromId === ex.id && e.removed === undefined)) return false;
+  const own = state.sets.filter((s) => s.sessionExerciseId === ex.id);
+  return !own.some((s) => s.status === 'completed') || own.some((s) => s.status === 'pending');
+}
+
+/**
+ * `set_rest_after` for the pop-up's rest per set type; in a superset, `After each round` (the last
+ * member's rest, scope `round`: today only, labelled as Ben's round rest, never as a saved default).
+ */
 export function typeRestCommand(state: SessionAggregate, sessionExerciseId: string, kind: SetType | 'round', seconds: number, op: Op): CommandOf<'set_rest_after'> | null {
   if (kind === 'round') {
     const rounds = sessionRounds(state);
     const last = rounds[roundIndexOf(rounds, sessionExerciseId)]?.members.at(-1);
     const set = last === undefined ? undefined : state.sets.find((s) => s.sessionExerciseId === last.id && s.status === 'pending');
-    return set === undefined ? null : { type: 'set_rest_after', at: op.at, opId: op.opId, setId: set.id, seconds, scope: 'exercise', expectedVersion: state.session.version };
+    return set === undefined ? null : { type: 'set_rest_after', at: op.at, opId: op.opId, setId: set.id, seconds, scope: 'round', expectedVersion: state.session.version };
   }
   const set = state.sets.filter((s) => s.sessionExerciseId === sessionExerciseId && s.status === 'pending' && s.setType === kind).sort((a, b) => a.index - b.index)[0];
   return set === undefined ? null : { type: 'set_rest_after', at: op.at, opId: op.opId, setId: set.id, seconds, scope: 'type', expectedVersion: state.session.version };

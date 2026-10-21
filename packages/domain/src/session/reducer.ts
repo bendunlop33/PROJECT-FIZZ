@@ -44,7 +44,7 @@ import { toIso, toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { pendingSetsOf } from './mid-swap';
-import { buildExecutionOrder, effectiveOffset, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
+import { buildExecutionOrder, effectiveOffset, firstPendingRound, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
 
 export type SessionErrorCode =
   | 'operation_id_reused'
@@ -1542,12 +1542,14 @@ function handleSetRestAfter(state: SessionAggregate, cmd: CommandOf<'set_rest_af
       ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: 'This set', byOpId: cmd.opId }
       : cmd.scope === 'type'
         ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: `${REST_TYPE_LABEL[set.setType]} (yours)`, byOpId: cmd.opId }
-        : { seconds: cmd.seconds, source: 'exercise_default' as const, sourceLabel: `${ex.exerciseName} default (yours)`, byOpId: cmd.opId };
+        : cmd.scope === 'round'
+          ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: 'After each round (yours)', byOpId: cmd.opId }
+          : { seconds: cmd.seconds, source: 'exercise_default' as const, sourceLabel: `${ex.exerciseName} default (yours)`, byOpId: cmd.opId };
   // Only sets not done yet; completed sets and the running timer are never touched.
   const targets =
     cmd.scope === 'set'
       ? [set]
-      : state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending' && (cmd.scope === 'exercise' || s.setType === set.setType));
+      : state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending' && (cmd.scope === 'exercise' || cmd.scope === 'round' || s.setType === set.setType));
   const ids = new Set(targets.map((s) => s.id));
   const sets = state.sets.map((s) => (ids.has(s.id) ? { ...s, rest, version: s.version + 1 } : s));
   return { ok: true, state: bumpVersion({ ...state, sets }), events: [{ type: 'RestPlanChanged', setIds: [...ids], seconds: cmd.seconds }] };
@@ -2058,6 +2060,8 @@ function handleAddWarmup(state: SessionAggregate, cmd: CommandOf<'add_warmup'>):
   const ex = state.exercises.find((e) => e.id === cmd.sessionExerciseId);
   if (!ex || ex.removed !== undefined) return fail('exercise_not_found', 'Exercise not found in this workout.');
   if (!rowIsAtCurrentGym(state.session, ex)) return fail('equipment_not_found', `${ex.exerciseName}'s equipment isn't at this gym.`);
+  // A warm-up in a superset would count as a round and shift every pairing (review B1).
+  if (ex.supersetGroup !== null) return fail('invalid_values', `No warm-ups inside a superset: ${ex.exerciseName}.`);
   const load = cmd.planned.load;
   if (load !== null) {
     if (load.convention !== ex.loadConvention) return fail('convention_mismatch', `Load convention ${load.convention} does not match ${ex.loadConvention}.`);
@@ -2097,7 +2101,9 @@ function handleAddWarmup(state: SessionAggregate, cmd: CommandOf<'add_warmup'>):
   const events: SessionEvent[] = [{ type: 'SetAdded', setId: added.id, sessionExerciseId: ex.id }];
   let activeSetId = state.session.activeSetId;
   const active = activeSetId === null ? undefined : state.sets.find((s) => s.id === activeSetId);
-  if (activeSetId === null || (active?.sessionExerciseId === ex.id && active.index >= from)) {
+  // Only when Log was on the set it now warms up for (the exercise's first set not done yet): a later set Ben made current stays current.
+  const firstPending = own.find((s) => s.status === 'pending');
+  if (activeSetId === null || (active?.sessionExerciseId === ex.id && active.index >= from && active.id === firstPending?.id)) {
     activeSetId = added.id;
     events.push({ type: 'ActiveSetChanged', setId: added.id });
   }
@@ -2542,7 +2548,13 @@ function handleLinkSuperset(state: SessionAggregate, cmd: CommandOf<'link_supers
   return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...lagIds, ...leadIds], undo: false }] };
 }
 
-/** `split_superset` (Ben, 19 Oct, `Remove superset`): every member back to a single exercise, order kept. No set changes. */
+/**
+ * `split_superset` (Ben, 19 Oct, `Remove superset`; workout-table-v3 §7 `Unlink`): every member back to
+ * a single exercise. No set changes. Mid-round (a member is a round ahead of another), the members
+ * behind come first, so the half-done round finishes and each then runs its own sets before the next
+ * exercise (a set left behind would otherwise only come back after the rest of the workout); else
+ * the order is kept.
+ */
 function handleSplitSuperset(state: SessionAggregate, cmd: CommandOf<'split_superset'>): Handled {
   if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
   const row = liveExercises(state.exercises).find((e) => e.id === cmd.sessionExerciseId);
@@ -2550,7 +2562,12 @@ function handleSplitSuperset(state: SessionAggregate, cmd: CommandOf<'split_supe
   if (row.supersetGroup === null) return { ok: true, state, events: [] };
   const group = row.supersetGroup;
   const members = state.exercises.filter((e) => e.supersetGroup === group).map((e) => e.id);
-  const exercises = state.exercises.map((e) => (e.supersetGroup === group ? { ...e, supersetGroup: null } : e));
+  const live = liveExercises(state.exercises).filter((e) => e.supersetGroup === group).sort(byOrder);
+  const round = new Map(live.map((m) => [m.id, firstPendingRound(state.sets, m)]));
+  // Behind first (stable: same round keeps its order); the members keep the order slots they held.
+  const sequence = [...live].sort((a, b) => (round.get(a.id) ?? 0) - (round.get(b.id) ?? 0));
+  const slot = new Map(sequence.map((m, i) => [m.id, live[i]?.order ?? m.order]));
+  const exercises = state.exercises.map((e) => (e.supersetGroup === group ? { ...e, supersetGroup: null, order: slot.get(e.id) ?? e.order } : e));
   return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: members, undo: false }] };
 }
 
@@ -2590,19 +2607,28 @@ function undoLinkSuperset(state: SessionAggregate, prior: ProcessedOperation): H
   return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...joined], undo: true }] };
 }
 
-/** Undo of `split_superset`: the members grouped again (a free letter), only while none is in a superset or moved since. */
+/**
+ * Undo of `split_superset`: the members grouped again (a free letter) in the order they had, only
+ * while none is in a superset or moved since. Record: the order after, the members, then (when the
+ * split reordered them, review wo-v3b) the order before.
+ */
 function undoSplitSuperset(state: SessionAggregate, prior: ProcessedOperation): Handled {
   const ids = prior.createdIds ?? [];
   const n = state.exercises.length;
   const order = ids.slice(0, n);
-  const members = new Set(ids.slice(n));
+  const reordered = ids.length > 2 * n;
+  const members = new Set(ids.slice(n, reordered ? ids.length - n : undefined));
+  const before = reordered ? ids.slice(ids.length - n) : null;
   if (n === 0 || members.size < 2 || stableStringify(rowOrder(state.exercises)) !== stableStringify(order)) return fail('stale_version', STALE_UNDO);
   const rows = state.exercises.filter((e) => members.has(e.id));
   if (rows.length !== members.size || rows.some((e) => e.supersetGroup !== null)) return fail('stale_version', STALE_UNDO);
   const used = new Set(state.exercises.map((e) => e.supersetGroup));
   const letter = GROUP_LETTERS.find((l) => !used.has(l));
   if (letter === undefined) return fail('stale_version', STALE_UNDO);
-  const exercises = state.exercises.map((e) => (members.has(e.id) ? { ...e, supersetGroup: letter } : e));
+  // The order slots the members hold now, given back in the order they had before.
+  const slots = [...rows].sort(byOrder).map((e) => e.order);
+  const back = before === null ? null : new Map(before.filter((id) => members.has(id)).map((id, i) => [id, slots[i]]));
+  const exercises = state.exercises.map((e) => (members.has(e.id) ? { ...e, supersetGroup: letter, order: back?.get(e.id) ?? e.order } : e));
   return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...members], undo: true }] };
 }
 
@@ -2628,7 +2654,7 @@ function processedRecord(command: SessionCommand & { opId: string }, before: Ses
           : command.type === 'link_superset'
             ? [...rowOrder(before.exercises), ...rowOrder(after.exercises), ...linkedRows(before, after)]
             : command.type === 'split_superset'
-              ? [...rowOrder(after.exercises), ...splitRows(before, after)]
+              ? [...rowOrder(after.exercises), ...splitRows(before, after), ...(stableStringify(rowOrder(before.exercises)) === stableStringify(rowOrder(after.exercises)) ? [] : rowOrder(before.exercises))]
           : command.type === 'adjust_pending_targets' && command.addSets.length > 0
             ? command.addSets.map((a) => a.newSetId)
             : command.type === 'add_warmup'
