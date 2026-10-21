@@ -39,9 +39,13 @@ export interface AskBarView {
 const LABEL: Readonly<Record<AskBarPage, string>> = { today: 'Ask the coach', setup: 'Describe the workout', workout: 'Ask the coach to change it' };
 
 /** §2.6 table: what each bar shows per connection and mic state. */
-export function askBarView(page: AskBarPage, reach: BuilderCoachReach, mic: MicState, opts: { compact?: boolean } = {}): AskBarView {
-  const status = reach === 'ok' ? null : BUILDER_STATUS_WORD[reach];
-  const disabled = page === 'workout' && reach !== 'ok';
+/** The bar's word while the coach works on a request (copy for Ben; wiring S3). */
+export const ASK_BAR_ASKING = 'Asking…';
+
+export function askBarView(page: AskBarPage, reach: BuilderCoachReach, mic: MicState, opts: { compact?: boolean; /** A request is with the coach: one at a time (wiring S3). */ asking?: boolean } = {}): AskBarView {
+  const asking = opts.asking === true;
+  const status = asking ? ASK_BAR_ASKING : reach === 'ok' ? null : BUILDER_STATUS_WORD[reach];
+  const disabled = asking || (page === 'workout' && reach !== 'ok');
   const label = page === 'today' && opts.compact === true ? 'Coach' : LABEL[page];
   return {
     label,
@@ -192,7 +196,9 @@ export const EDIT_ASK_COPY = { noAnswer: 'No answer. Try again.', notApplied: 'N
 export type EditAskView =
   /** The proposal sheet: before/after lines, `Apply` / `Skip` (rule 3: nothing changes until Apply). */
   | { kind: 'proposal'; proposal: BuilderProposal }
-  /** The coach's own words (checked), or code's note on what it couldn't do; never a canned reply (rule 1). */
+  /** The coach's own words (checked), or code's note on what it couldn't do: in the sheet with no actions, never a timed toast (rule 1; wiring S3). */
+  | { kind: 'reply'; text: string }
+  /** The call didn't answer (`No answer. Try again.`). */
   | { kind: 'toast'; text: string }
   /** Offline or not connected: the bar shows the word and is disabled; manual edits all still work. */
   | { kind: 'reach'; reach: Exclude<BuilderCoachReach, 'ok'> }
@@ -206,7 +212,7 @@ export function editAskView(r: EditAsk): EditAskView {
       return { kind: 'proposal', proposal: r.proposal };
     case 'reply': {
       const text = r.text ?? r.notes[0] ?? null;
-      return text === null || text.trim() === '' ? { kind: 'none' } : { kind: 'toast', text };
+      return text === null || text.trim() === '' ? { kind: 'none' } : { kind: 'reply', text };
     }
     case 'unavailable':
       return r.status === 'offline' || r.status === 'not_connected' ? { kind: 'reach', reach: r.status } : { kind: 'toast', text: EDIT_ASK_COPY.noAnswer };
@@ -235,6 +241,11 @@ export function todayAskFirst(words: string): TodayAskRoute | null {
 /** After `askSetup`: only a fill opens Set up. A reply, `Not understood` or a failure opens the coach with the words, never a toast (rule 1). */
 export function todayAskRoute(words: string, r: SetupAsk): TodayAskRoute {
   return r.kind === 'filled' ? { kind: 'setup' } : { kind: 'coach', draft: words };
+}
+
+/** A coach reply with nothing to apply, shown in the proposal sheet (no lines, no actions). */
+export function replyCardView(text: string): ProposalCardView {
+  return { lines: [], warnings: [], reason: text, notes: [], minutes: '', actions: null, state: null, undo: false };
 }
 
 /** The offer's lines for an Apply on Today (proposal state from the card). */

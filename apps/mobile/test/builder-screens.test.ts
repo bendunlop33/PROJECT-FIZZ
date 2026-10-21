@@ -329,6 +329,8 @@ describe('Start prompt, advice, coach status and review (§2.6, §2.8, §2.9, §
     shown.length = 0;
     const failed = await runReview(snapshot(W), 'ok', failing, (r) => shown.push(r));
     expect(shown.map((r) => reviewHeaderWord(r.status))).toEqual(['Reviewing…', 'Not reviewed']);
+    // No numbers while the provider is asked (one counting rule; wiring S2).
+    expect(shown[0]?.counts).toEqual([]);
     expect(failed.verdict).toBeNull();
     expect(failed.suggestions).toEqual([]);
 

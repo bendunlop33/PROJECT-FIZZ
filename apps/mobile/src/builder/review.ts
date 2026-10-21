@@ -82,15 +82,21 @@ export function reviewStartStatus(coach: CoachBarStatus, hasProvider: boolean): 
 }
 
 /**
- * Coach review on Your workout: the code-only facts at once, then the
- * provider's review. A missing provider or a failed call ends `Not
+ * Coach review on Your workout: the status word at once, then the
+ * provider's review. With a provider the first paint has no counts, so
+ * the numbers Ben sees come from one counting rule and never change under
+ * him (wiring S2). A missing provider or a failed call ends `Not
  * reviewed`, never a status that suggests a review is coming (rule 1).
+ * `coach` is the bar's reach on the same page (one status source).
  */
 export async function runReview(snap: BuilderSnapshot, coach: CoachBarStatus, provider: BuilderReviewProvider | null, show: (r: BuilderReview) => void): Promise<BuilderReview> {
   const status = reviewStartStatus(coach, provider !== null);
   const facts = { ...reviewFacts(snap, status), ...(status === 'not_reviewed' ? { whyNot: REVIEW_WHY.unavailable } : {}) };
-  show(facts);
-  if (provider === null) return facts;
+  if (provider === null) {
+    show(facts);
+    return facts;
+  }
+  show({ ...facts, counts: [], variety: null });
   // The provider is asked offline too: its counts (per muscle focus) and Plan section (with `Add back`) are code's
   // and need no coach; with no coach it returns no verdict, suggestions or notes (§2.9, rule 1).
   const r = await provider.review(snap.draftId).catch(() => null);

@@ -11,8 +11,8 @@ import type { BuilderGroup, CheckInScore, PlanChangeUndo, SessionCheckIn } from 
 import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWriteResult, type StartChoice, type StartPrompt } from '../../builder/builder-service';
 import { reviewAfterApply } from '../../builder/review';
 import { UPDATE_PLAN_DAY_ACTION } from '../../coach/builder-review-provider';
-import { editAskView, EDIT_ASK_COPY, proposalCardView, type ProposalState } from '../../coach/builder-coach-view';
-import { coachStatusOf, editsFromText, promptView, workoutView, WORKOUT_COPY, type CoachBarStatus, type WorkoutRowView } from '../../builder/builder-view';
+import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type ProposalState } from '../../coach/builder-coach-view';
+import { editsFromText, promptView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
 import { builderPage, openStartedWorkout } from '../../navigation/actions';
@@ -60,9 +60,12 @@ export function BuilderWorkoutScreen() {
     queue.current = p.catch(() => undefined);
     return p;
   }, []);
-  const [coach, setCoach] = useState<CoachBarStatus>('not_connected');
   // The bar's reach (builder coach) and on-device speech (§2.6); a message returns a proposal, applied only on Apply.
   const [reach, setReach] = useState<BuilderCoachReach>('not_connected');
+  // One request with the coach at a time (wiring S3): the ref guards a second submit before the state lands.
+  const [asking, setAsking] = useState(false);
+  const askingRef = useRef(false);
+  const [reply, setReply] = useState<string | null>(null);
   const [speech] = useState(createOnDeviceSpeech);
   const [proposal, setProposal] = useState<{ proposal: BuilderProposal; state: ProposalState } | null>(null);
   const [applying, setApplying] = useState(false);
@@ -109,8 +112,6 @@ export function BuilderWorkoutScreen() {
       showToastRef.current(toastLater.current);
       toastLater.current = null;
     }
-    const a = await services.coach.availability().catch(() => null);
-    setCoach(coachStatusOf(a?.status ?? 'not_connected'));
     setReach(await services.builderCoach.status().catch((): BuilderCoachReach => 'not_connected'));
     setEarlier((await services.builder.earlierEdits().catch(() => [])).filter((e) => e.draftId !== draftId));
   }, [services, draftId, inTurn, setSnap]);
@@ -192,15 +193,31 @@ export function BuilderWorkoutScreen() {
     });
   }
 
-  /** Your workout's bar (§2.6): the words go to the coach (`propose_workout_edit`); its proposal opens the sheet. */
+  /**
+   * Your workout's bar (§2.6): the words go to the coach (`propose_workout_edit`); its proposal opens the sheet.
+   * One request at a time, with `Asking…` on the bar meanwhile (wiring S3); a reply with nothing to apply stays
+   * in the sheet until Ben closes it.
+   */
   async function askWorkout(words: string) {
     const cur = snapRef.current;
-    if (cur === null || words.trim() === '') return;
-    const r = await services.builderCoach.askEdit({ draftId: cur.draftId, words: words.trim(), opId: newUuid() }).catch(() => null);
+    if (cur === null || words.trim() === '' || askingRef.current) return;
+    askingRef.current = true;
+    setAsking(true);
+    let r: Awaited<ReturnType<typeof services.builderCoach.askEdit>> | null;
+    try {
+      r = await services.builderCoach.askEdit({ draftId: cur.draftId, words: words.trim(), opId: newUuid() }).catch(() => null);
+    } finally {
+      askingRef.current = false;
+      setAsking(false);
+    }
     const v = r === null ? ({ kind: 'toast', text: EDIT_ASK_COPY.noAnswer } as const) : editAskView(r);
     switch (v.kind) {
       case 'proposal':
+        setReply(null);
         setProposal({ proposal: v.proposal, state: 'open' });
+        return;
+      case 'reply':
+        setReply(v.text);
         return;
       case 'toast':
         showToast({ text: v.text, undoOpId: null, why: null });
@@ -351,7 +368,8 @@ export function BuilderWorkoutScreen() {
 
   async function openReview() {
     if (snap === null) return;
-    await runReview(snap, coach, builderReviewProvider(), setReview);
+    // The bar's reach is the sheet's status too (one source on the page; wiring S2).
+    await runReview(snap, reach, builderReviewProvider(), setReview);
   }
 
   async function pickScore(n: CheckInScore) {
@@ -581,6 +599,7 @@ export function BuilderWorkoutScreen() {
         <CoachAskBar
           page="workout"
           reach={reach}
+          asking={asking}
           speech={speech}
           onOpen={(heard) => {
             if (heard !== undefined && heard.trim() !== '') {
@@ -662,10 +681,13 @@ export function BuilderWorkoutScreen() {
         />
       </BottomCard>
       <ProposalSheet
-        card={proposal === null ? null : proposalCardView(proposal.proposal, proposal.state)}
+        card={proposal === null ? (reply === null ? null : replyCardView(reply)) : proposalCardView(proposal.proposal, proposal.state)}
         busy={applying}
         onApply={() => void applyProposal()}
-        onSkip={() => { setProposal(null); }}
+        onSkip={() => {
+          setProposal(null);
+          setReply(null);
+        }}
       />
       <ReviewSheet
         visible={review !== null}

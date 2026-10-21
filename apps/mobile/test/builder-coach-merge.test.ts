@@ -9,7 +9,7 @@ import { currentDraftVersion, slotsOf, workingCount } from '@fizz/domain';
 import type { BuilderSnapshot, SetupInput } from '../src/builder/builder-service';
 import { registerSetupPage, setTodaySetupDay, takePendingSetupFill } from '../src/builder/coach-ports';
 import { builderReviewProvider, runReview, type BuilderReview } from '../src/builder/review';
-import { EDIT_ASK_COPY, editAskView, proposalCardView, todayAskFirst, todayAskRoute } from '../src/coach/builder-coach-view';
+import { ASK_BAR_ASKING, askBarView, EDIT_ASK_COPY, editAskView, proposalCardView, replyCardView, todayAskFirst, todayAskRoute } from '../src/coach/builder-coach-view';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, setUpGym, type Harness } from './harness';
 
@@ -60,8 +60,10 @@ describe('Coach review provider (registered at app start)', () => {
     expect(out.counts.every((c) => c.trained === c.sets > 0)).toBe(true);
     const total = slotsOf(snap.workout.blocks).reduce((n, x) => n + workingCount(x), 0);
     expect(out.counts.every((c) => c.sets <= total)).toBe(true);
-    // The code-only facts showed first, then the provider's.
+    // The status first with no numbers, then the provider's: one counting rule, never changing under Ben (wiring S2).
     expect(shown.length).toBe(2);
+    expect(shown[0]?.counts).toEqual([]);
+    expect(shown[1]?.counts).toEqual(out.counts);
   });
 });
 
@@ -219,11 +221,12 @@ describe('Your workout’s bar (§2.6): words to the coach, a proposal with Appl
     expect((await s.coachDrafts.get(snap.draftId))?.version).toBe(before?.version);
   });
 
-  it('editAskView: proposal → sheet; the coach’s words or code’s note → toast; failed → No answer; gone → reload', () => {
+  it('editAskView: proposal → sheet; the coach’s words or code’s note → the sheet with no actions (never a timed toast); failed → No answer; gone → reload', () => {
     const proposal = { id: 'p', draftId: 'd', baseVersion: 1, ops: [], lines: ['Cable fly → Incline barbell press'], warnings: [], notes: [], preconditions: [], estimate: 50, reason: null } as unknown as BuilderProposal;
     expect(editAskView({ kind: 'proposal', proposal, status: 'ok' })).toEqual({ kind: 'proposal', proposal });
-    expect(editAskView({ kind: 'reply', text: 'Bench is already first.', notes: [], status: 'ok' })).toEqual({ kind: 'toast', text: 'Bench is already first.' });
-    expect(editAskView({ kind: 'reply', text: null, notes: ['Not more: shoulder'], status: 'ok' })).toEqual({ kind: 'toast', text: 'Not more: shoulder' });
+    expect(editAskView({ kind: 'reply', text: 'Bench is already first.', notes: [], status: 'ok' })).toEqual({ kind: 'reply', text: 'Bench is already first.' });
+    expect(editAskView({ kind: 'reply', text: null, notes: ['Not more: shoulder'], status: 'ok' })).toEqual({ kind: 'reply', text: 'Not more: shoulder' });
+    expect(replyCardView('Bench is already first.')).toMatchObject({ lines: [], reason: 'Bench is already first.', actions: null, undo: false });
     expect(editAskView({ kind: 'reply', text: null, notes: [], status: 'ok' })).toEqual({ kind: 'none' });
     expect(editAskView({ kind: 'unavailable', status: 'offline' })).toEqual({ kind: 'reach', reach: 'offline' });
     expect(editAskView({ kind: 'unavailable', status: 'not_connected' })).toEqual({ kind: 'reach', reach: 'not_connected' });
@@ -232,6 +235,13 @@ describe('Your workout’s bar (§2.6): words to the coach, a proposal with Appl
     // The sheet: Apply / Skip while open; Out of date has no Apply (rule 5).
     expect(proposalCardView(proposal, 'open').actions).toEqual({ apply: 'Apply', skip: 'Skip' });
     expect(proposalCardView(proposal, 'out_of_date')).toMatchObject({ actions: null, state: 'Out of date. Ask again.' });
+  });
+
+  it('askBarView while asking: `Asking…` and disabled, on every page (one request at a time; wiring S3)', () => {
+    for (const page of ['workout', 'setup', 'today'] as const) {
+      expect(askBarView(page, 'ok', 'idle', { asking: true })).toMatchObject({ status: ASK_BAR_ASKING, disabled: true });
+      expect(askBarView(page, 'ok', 'idle').status).toBeNull();
+    }
   });
 
   it('the screen: shared CoachAskBar on Your workout; askEdit, Apply through the builder coach, Undo under the apply op ID', () => {
@@ -244,5 +254,12 @@ describe('Your workout’s bar (§2.6): words to the coach, a proposal with Appl
     expect(ws).toContain('<ProposalSheet');
     // The bar no longer opens the general coach chat.
     expect(ws).not.toContain("navigate('Coach'");
+    // One request at a time with `Asking…` on the bar; a reply stays in the sheet (wiring S3).
+    expect(ws).toContain('askingRef.current) return;');
+    expect(ws).toContain('asking={asking}');
+    expect(ws).toContain('replyCardView(reply)');
+    // The review sheet's status is the bar's reach (one source; wiring S2).
+    expect(ws).toContain('runReview(snap, reach,');
+    expect(ws).not.toContain('services.coach.availability()');
   });
 });

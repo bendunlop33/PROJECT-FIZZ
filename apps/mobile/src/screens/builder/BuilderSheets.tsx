@@ -622,16 +622,18 @@ export function ProposalSheet({ card, busy, onApply, onSkip }: { card: ProposalC
             </AppText>
             {card.notes.length > 0 && !whyOpen ? <TextButton label={WORKOUT_COPY.why} tone="secondary" onPress={() => { setWhyOpen(true); }} /> : null}
           </View>
-          <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, padding: theme.space['3'], gap: theme.space['1'] }}>
-            {card.lines.map((l) => (
-              <AppText key={l} variant="callout" numeric>
-                {l}
+          {card.lines.length > 0 ? (
+            <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, padding: theme.space['3'], gap: theme.space['1'] }}>
+              {card.lines.map((l) => (
+                <AppText key={l} variant="callout" numeric>
+                  {l}
+                </AppText>
+              ))}
+              <AppText variant="label" color="text.secondary" numeric>
+                {card.minutes}
               </AppText>
-            ))}
-            <AppText variant="label" color="text.secondary" numeric>
-              {card.minutes}
-            </AppText>
-          </View>
+            </View>
+          ) : null}
           {card.warnings.map((w) => (
             <StatusLine key={w} icon="exclamationmark.triangle" tone="warning" text={w} />
           ))}

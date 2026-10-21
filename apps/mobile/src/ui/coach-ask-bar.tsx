@@ -40,16 +40,18 @@ export interface CoachAskBarProps {
   onSubmit?: (words: string) => void;
   /** `createOnDeviceSpeech()` in the app; a fake in tests. */
   speech: SpeechInputPort;
+  /** A request is with the coach: `Asking…`, and the bar and mic wait (wiring S3). */
+  asking?: boolean;
 }
 
 const BAR_HEIGHT = 48;
 
-export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, speech }: CoachAskBarProps) {
+export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, speech, asking = false }: CoachAskBarProps) {
   const theme = useTheme();
   const [mic, setMic] = useState<MicState>('idle');
   const [heard, setHeard] = useState('');
   const [typed, setTyped] = useState('');
-  const view = askBarView(page, reach, mic, { compact });
+  const view = askBarView(page, reach, mic, { compact, asking });
   const inline = view.inline && onSubmit !== undefined;
   const send = useRef<(text: string) => void>(onOpen);
   send.current = inline
