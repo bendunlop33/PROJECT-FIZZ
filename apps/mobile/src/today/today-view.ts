@@ -124,4 +124,36 @@ export const TODAY_SCREEN_COPY = {
   activity: 'Add an activity',
   addActivity: '＋ Activity',
   daySheetEmpty: 'Nothing logged',
+  /** Today's session couldn't be read: said, never shown as `No plan`. */
+  sessionFailed: 'Couldn’t load',
+  /** No plan in use: the old Today's Up next (split, rotation) still offered (review today-fix-21oct B1). */
+  upNext: 'Up next',
+  upNextLabel: (title: string) => `Start ${title}, up next`,
 } as const;
+
+/** What Today's session area offers in each state of its read (review today-fix-21oct B1, S2, S3). */
+export interface TodayActions {
+  /** The gym chip on the `Today's session` row: shown while it loads and after a failed read too. */
+  gymRow: boolean;
+  /** `Couldn't load · Try again`. */
+  failed: boolean;
+  /** The resolver's Up next with Start (No plan only). */
+  upNext: boolean;
+  /** `Build your own`: primary when nothing else is the main action. */
+  buildYourOwn: 'primary' | 'secondary' | null;
+  /** `Empty workout` as its own action (No plan shows it among the chips instead). */
+  emptyWorkout: boolean;
+}
+
+/**
+ * Pure: the session area's actions. A failed read never removes the ways to start a workout (Build your own,
+ * Empty workout); No plan with an Up next makes that the main action and Build your own secondary.
+ */
+export function todayActions(input: { openWorkout: boolean; read: 'loading' | 'failed' | 'ready'; noPlan: boolean; cardShown: boolean; upNext: boolean }): TodayActions {
+  if (input.openWorkout) return { gymRow: false, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false };
+  if (input.read === 'loading') return { gymRow: true, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false };
+  if (input.read === 'failed') return { gymRow: true, failed: true, upNext: false, buildYourOwn: 'primary', emptyWorkout: true };
+  const noPlanList = input.noPlan && !input.cardShown;
+  const upNext = noPlanList && input.upNext;
+  return { gymRow: true, failed: false, upNext, buildYourOwn: noPlanList && !upNext ? 'primary' : 'secondary', emptyWorkout: false };
+}

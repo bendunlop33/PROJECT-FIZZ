@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { defaultTodayControls, type TodayDay } from '@fizz/domain';
 
-import { breakdownLabel, MAX_DAY_SEGMENTS, TIME_LABELS, todayCardReducer, todaySegments, todayTitle, type TodayCardState } from '../src/today/today-view';
+import { breakdownLabel, MAX_DAY_SEGMENTS, TIME_LABELS, todayActions, todayCardReducer, todaySegments, todayTitle, type TodayCardState } from '../src/today/today-view';
 
 /**
  * Today (v2) screen (workout-builder-v3 §2.0, §2.0.8; prototypes/today-v2.html): the day control's
@@ -166,7 +166,9 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(parts).not.toMatch(/<View hitSlop=\{HIT\}>\s*<Switch/);
     expect(parts).toMatch(/minHeight: 34,[\s\S]*?hitSlop=\{HIT\}|hitSlop=\{HIT\}[\s\S]*?minHeight: 34,/);
     expect(parts).toContain('minHeight: 48,');
-    expect(parts).toContain('minWidth: 44,');
+    // Strip cells: seven equal columns (flex 1, basis 0), each ≥ 44 pt at 375 pt (20 pt margins, 2 pt gaps, the divider).
+    expect(parts).toMatch(/flex: 1,\s*flexBasis: 0,\s*minWidth: 0,/);
+    expect((375 - 2 * 20 - 6 * 2 - 1) / 7).toBeGreaterThanOrEqual(44);
     expect(parts).toContain("accessibilityRole=\"adjustable\"");
     expect(parts).toContain('fontScale >= AX_FONT_SCALE');
     expect(parts.match(/if \(ax\) \{/g)).toHaveLength(2);
@@ -191,7 +193,98 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
 
   it('no plan: the Other sessions stay a day control after one is picked, with Build your own (review S3)', () => {
     expect(screen).toContain("todaySegments({ days: session.others, others: [], nextKey: null");
-    expect(screen).toContain("session.status !== 'no_plan' || view !== null");
+    expect(screen).toContain("noPlan: session?.status === 'no_plan', cardShown: view !== null");
+    // A picked Other session keeps Build your own (secondary beside the card's Start).
+    expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: true, upNext: false }).buildYourOwn).toBe('secondary');
+  });
+
+  it('no plan is compact (§2.0.4; Ben 21 Oct): `No plan` and `Set up a plan ›` on one row, Other sessions as chips, Build your own primary beside ＋ Activity', () => {
+    const block = screen.slice(screen.indexOf('const sessionBlock = '), screen.indexOf('return (\n    <View style={{ flex: 1, backgroundColor'));
+    const noPlan = block.slice(block.indexOf('view === null ? ('), block.indexOf(') : (', block.indexOf('view === null ? (')));
+    expect(noPlan).toContain('TODAY_V2_COPY.noPlan');
+    expect(noPlan).toContain('TODAY_V2_COPY.setUpPlan');
+    expect(noPlan).toContain('<OtherSessionChips');
+    // The old tall list (one 52 pt row per session, then Empty workout) is gone.
+    expect(noPlan).not.toContain('session.others.map(');
+    expect(noPlan).not.toContain('<PrimaryButton');
+    const chips = parts.slice(parts.indexOf('export function OtherSessionChips('), parts.indexOf('// The session card'));
+    expect(chips).toContain("flexWrap: 'wrap'");
+    expect(chips).toContain('minHeight: theme.target.min.height');
+    expect(chips).toContain('accessibilityRole="button"');
+    expect(chips).toContain('chip(\'empty\', emptyLabel, onEmpty)');
+    const bottom = screen.slice(screen.indexOf("{actions.buildYourOwn === 'primary' ? ("));
+    expect(bottom.slice(0, 400)).toContain('<PrimaryButton label={TODAY_V2_COPY.buildYourOwn}');
+    expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: false, upNext: false })).toEqual({ gymRow: true, failed: false, upNext: false, buildYourOwn: 'primary', emptyWorkout: false });
+  });
+
+  it('a failed read of Today’s session says Couldn’t load with Try again, never `No plan` (as Library, review planview S5)', () => {
+    const hook = screen.slice(screen.indexOf('function useTodaySessionData('));
+    expect(hook).not.toContain('.catch(() => null)');
+    expect(hook).toContain('setFailed(bad)');
+    expect(screen).toContain('actions.failed ? <StatusLine');
+    expect(screen).toContain('TODAY_SCREEN_COPY.sessionFailed');
+    const svc = read('services/today-session.ts');
+    expect(svc).toContain('await repos().planDrafts.applied(p.id);');
+    expect(svc).not.toContain('planDrafts.applied(p.id).catch');
+    expect(svc).toContain('await repos().routines.listByOwner(p.id));');
+  });
+
+  it('session area actions by state (review today-fix-21oct B1, S2, S3, S4): a failed read still offers Build your own (primary) and Empty workout; the gym chip shows while loading and after a failure; No plan with Up next makes it the main action', () => {
+    const failed = todayActions({ openWorkout: false, read: 'failed', noPlan: false, cardShown: false, upNext: false });
+    expect(failed).toEqual({ gymRow: true, failed: true, upNext: false, buildYourOwn: 'primary', emptyWorkout: true });
+    const loading = todayActions({ openWorkout: false, read: 'loading', noPlan: false, cardShown: false, upNext: false });
+    expect(loading).toMatchObject({ gymRow: true, failed: false, buildYourOwn: null });
+    const withNext = todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: false, upNext: true });
+    expect(withNext).toMatchObject({ upNext: true, buildYourOwn: 'secondary' });
+    // A picked Other session replaces Up next with its card.
+    expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: true, upNext: true }).upNext).toBe(false);
+    // With a plan the fallback never shows (the service gives none either).
+    expect(todayActions({ openWorkout: false, read: 'ready', noPlan: false, cardShown: true, upNext: true }).upNext).toBe(false);
+    expect(todayActions({ openWorkout: true, read: 'failed', noPlan: true, cardShown: false, upNext: true })).toEqual({ gymRow: false, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false });
+    // The screen draws what this says: the Up next row starts it in one tap through Today's one Start (gym, alerts,
+    // check-in gate, op ID kept per intent), never the overview (OV11).
+    expect(screen).toContain("void start({ kind: 'routine', routineId: upNext.routineId })");
+    expect(screen).toContain("void start({ kind: 'next', sourceSessionId: upNext.sourceSessionId })");
+    expect(screen).toContain("navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, ...of });");
+    expect(screen).not.toContain("navigate('WorkoutOverview'");
+    expect(screen).toContain('accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNext.title)}');
+    expect(screen).toContain("{actions.emptyWorkout ? (");
+  });
+
+  it('the header clears the status bar: the safe-area top inset pads the scroll content (Ben 21 Oct: Wednesday ran under the clock)', () => {
+    expect(screen).toContain("import { useSafeAreaInsets } from 'react-native-safe-area-context';");
+    expect(screen).toContain('const insets = useSafeAreaInsets();');
+    expect(screen).toContain("paddingTop: insets.top + theme.space['3']");
+    // Every Today state, the error screen too (review today-fix-21oct S1): no fixed top padding left.
+    const errorScreen = screen.slice(screen.indexOf("if (data.state === 'error') {"), screen.indexOf('const { gym, view: todayView'));
+    expect(errorScreen).toContain("paddingTop: insets.top + theme.space['3']");
+    expect(screen).not.toContain("paddingTop: theme.space['8']");
+    // A bare tab screen has no navigation controller, so `automatic` never insets it; Today pads itself.
+    expect(screen).toContain('contentInsetAdjustmentBehavior="never"');
+    expect(screen).not.toContain('contentInsetAdjustmentBehavior="automatic"');
+  });
+
+  it('header is one line (§2.0.2, prototype `.hdr`): day name left (shrinks to fit), compact `✦ Coach` + mic right; the gym chip on the session row', () => {
+    const header = parts.slice(parts.indexOf('export function TodayHeader('), parts.indexOf('// The 7-day strip'));
+    expect(header).toContain("flexDirection: 'row'");
+    expect(header).not.toContain('flexWrap');
+    expect(header).toContain('numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}');
+    expect(header).not.toContain('gym');
+    const call = screen.slice(screen.indexOf('<TodayHeader'), screen.indexOf('{strip.length > 0'));
+    expect(call).toContain('<CoachAskBar');
+    expect(call).toMatch(/page="today"\s+compact/);
+    expect(call).not.toContain('GymChip');
+    const row = screen.slice(screen.indexOf('const gymRow = '));
+    expect(row.indexOf('<Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>')).toBeGreaterThan(0);
+    expect(row.indexOf('<Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>')).toBeLessThan(row.indexOf('<GymChip'));
+  });
+
+  it('strip labels: centred, one line, shrink to fit (no `…`), pill colours from strip-style', () => {
+    const strip = parts.slice(parts.indexOf('function StripPill('), parts.indexOf('/** A day’s sheet'));
+    expect(strip).toContain('{...STRIP_LABEL_FIT}');
+    expect(strip).toContain('align="center"');
+    expect(strip).toContain('stripPillStyle(item, theme)');
+    expect(strip).not.toContain('status.done.subtle');
   });
 
   it('the scroll position survives re-renders (one ScrollView, never keyed)', () => {

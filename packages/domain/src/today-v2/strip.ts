@@ -6,15 +6,17 @@ import { formatNumber } from '../display';
 /**
  * Today (v2)'s 7-day strip (workout-builder-v3 §2.0.2 region 3, Q19): 3 days
  * back, today, 3 ahead. Only what happened or what Ben said:
- * - done workouts `✓ Shoulders`;
+ * - done workouts `Shoulders` (Ben, 21 Oct: no ✓ in the cell; the soft-green
+ *   fill and `done` in the VoiceOver label say it);
  * - activities Ben logged (`＋ Activity`) or told the coach (`log_activity`),
  *   done or planned: `Run 12k`;
  * - planned plan days only when dated (a week change Ben applied, or days he
  *   told the coach). The rotation has no dates, so with none dated the
  *   future cells stay empty (never inferred);
  * - a past day with nothing: `Rest`.
- * Colour is never the only signal: `✓`, the dashed outline and the word
- * `Planned` in the VoiceOver label.
+ * Colour is never the only signal: a done pill is filled, a planned one a
+ * dashed outline, and VoiceOver says `done` / `Planned`. The large-text list
+ * (no pills) keeps `✓` for done workouts.
  */
 
 export interface StripWorkoutInput {
@@ -110,7 +112,7 @@ export function buildTodayStrip(input: TodayStripInput): StripCell[] {
     const items: StripItem[] = [];
     const spoken: string[] = [];
     for (const w of input.workouts.filter((x) => x.localDate === date)) {
-      items.push({ kind: 'workout', text: `✓ ${w.title}`, sessionId: w.sessionId, planned: false });
+      items.push({ kind: 'workout', text: w.title, sessionId: w.sessionId, planned: false });
       spoken.push(`${w.title}, done`);
     }
     if (isToday && items.length === 0 && input.chosen !== null) {
@@ -145,7 +147,7 @@ export function buildTodayStrip(input: TodayStripInput): StripCell[] {
       items: shown,
       more: items.length - shown.length,
       accessibilityLabel: spoken.length === 0 ? head : `${head}: ${spoken.join('. ')}`,
-      listText: `${TITLE[wd] ?? ''} ${String(Number(date.slice(8, 10)))}${items.length === 0 ? '' : ` · ${items.map((i) => i.text).join(' · ')}`}`,
+      listText: `${TITLE[wd] ?? ''} ${String(Number(date.slice(8, 10)))}${items.length === 0 ? '' : ` · ${items.map((i) => (i.kind === 'workout' ? `✓ ${i.text}` : i.text)).join(' · ')}`}`,
     };
   });
 }

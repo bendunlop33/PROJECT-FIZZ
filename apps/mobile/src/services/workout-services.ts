@@ -5374,6 +5374,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const up = await resolveUpNext(p, gymId, gymEquipment).catch(() => null);
       return up?.kind === 'routine' ? up.routine.id : null;
     },
+    /**
+     * (review today-fix-21oct B1) With no plan in use, what the old Today's Up next named: the same resolver (the
+     * Profile split's due day, the routines in rotation, the longest gap). Its title, and its routine when it is one.
+     */
+    async upNext(gymId: string): Promise<{ title: string; routineId: string | null; sourceSessionId: string | null } | null> {
+      const v = await next.preview(gymId).catch(() => null);
+      if (v === null || (v.routine === null && v.sourceSessionId === null)) return null;
+      return { title: v.title, routineId: v.routine?.id ?? null, sourceSessionId: v.routine === null ? v.sourceSessionId : null };
+    },
     plannedDay: (routineId: string, gymId: string) => routines.planned(routineId, gymId),
     /** The plan day Up next would name after `routineId` is done today (a prediction; saves nothing). */
     async nextAfter(gymId: string, routineId: string): Promise<string | null> {

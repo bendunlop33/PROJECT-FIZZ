@@ -123,6 +123,8 @@ export interface TodaySessionPort {
   historyFor: (ownerId: string, exerciseId: string) => Promise<HistorySession[]>;
   substituteCtx: (p: UserProfile, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, exerciseIds: Iterable<string>) => Promise<SubstituteContext>;
   upNextRoutineId: (gymId: string, gymEquipment?: readonly EquipmentInstance[]) => Promise<string | null>;
+  /** No plan in use: the app's Up next (split, rotation, longest gap), as the old Today named it; null: none. */
+  upNext: (gymId: string) => Promise<TodayUpNext | null>;
   plannedDay: (routineId: string, gymId: string) => Promise<{ aggregate: SessionAggregate } | null>;
   nextAfter: (gymId: string, routineId: string) => Promise<string | null>;
   start: (req: WorkoutStartRequest) => Promise<WorkoutStartOutcome>;
@@ -163,6 +165,14 @@ const RECENT_ON_DAY = 4;
 
 export type TodaySessionStatus = 'plan' | 'paused' | 'no_plan';
 
+/** The app's Up next with no plan in use: a routine (Start starts it) or the last workout's next session (`nextOf`). */
+export interface TodayUpNext {
+  title: string;
+  routineId: string | null;
+  /** The workout a next session repeats; null for a routine. */
+  sourceSessionId: string | null;
+}
+
 /** An open builder draft for today that Ben changed in the builder (`Chest · edited`), or the coach's offer he applied. */
 export interface TodayEditedDraft {
   draftId: string;
@@ -189,6 +199,11 @@ export interface TodaySessionData {
   others: TodayDay[];
   /** The plan's next day (null: no plan, or paused). */
   nextKey: string | null;
+  /**
+   * (review today-fix-21oct B1) No plan in use: Up next from the Profile split or the routines in rotation (else the
+   * longest gap), so Ben's own workouts stay one tap from Today, as on the old Today. Null with a plan, or none.
+   */
+  upNext: TodayUpNext | null;
   /** The controls each day opens with (its last-used main lift, the goal's accessories, the plan's length). */
   initial: Readonly<Record<string, TodayControls>>;
   goal: 'strength' | 'muscle' | 'both' | null;
@@ -374,9 +389,11 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const typical = gymId === null ? ((await deps.typicalEquipment().catch(() => null)) ?? []) : undefined;
     const training: TrainingProfile | null = await repos().trainingProfiles.get(p.id).catch(() => null);
     const goal = training?.goal ?? null;
-    const plan = await repos().planDrafts.applied(p.id).catch(() => null);
+    // The plan in use and its workouts are read as Library › Your plan reads them, and a failed read throws (the screen
+    // says Couldn't load): never swallowed into `No plan` (as review planview S5 for Library).
+    const plan = await repos().planDrafts.applied(p.id);
     const paused = activePause(plan, nowMs, tz) !== null;
-    const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => []));
+    const live = liveRoutines(await repos().routines.listByOwner(p.id));
     const templates = planRoutines(plan, live);
     const exercises = await exerciseIndex();
     const infoCache = new Map<string, BuilderExerciseInfo | null>();
@@ -568,8 +585,13 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const coach = await deps.coachStatus().catch((): CoachStatus => 'not_connected');
     const review = reviewOf(coach);
     const equipmentVersion = deriveId(stableStringify(sub.gym.equipment.map((e) => [e.id, e.version])));
+    // An applied plan with no live workouts left is no plan in use (Library › Your plan shows none either).
+    const status: TodaySessionStatus = plan === null || days.length === 0 ? 'no_plan' : paused ? 'paused' : 'plan';
+    // No plan: the old Today's Up next (split, rotation, longest gap) is still one tap away. Only at a saved gym, as
+    // the overview it opens starts there; a failed read is no Up next (the rest of Today still loads).
+    const fallbackNext = status === 'no_plan' && gymId !== null ? await deps.port.upNext(gymId).catch(() => null) : null;
     return {
-      status: plan === null ? 'no_plan' : paused ? 'paused' : 'plan',
+      status,
       ownerId: p.id,
       localDate: today,
       tz,
@@ -579,6 +601,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       days,
       others,
       nextKey: nextDay?.key ?? null,
+      upNext: fallbackNext,
       initial,
       goal,
       review,
