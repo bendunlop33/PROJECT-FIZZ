@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { slotsOf, workingCount } from '@fizz/domain';
+import { latestCommittedSetId, slotsOf, toMs, workingCount } from '@fizz/domain';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 
 import type { BuilderSnapshot, SetupInput } from '../src/builder/builder-service';
 import type { AppServices } from '../src/services/app-services';
+import { buildRounds } from '../src/workout/rounds';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -444,5 +445,62 @@ describe('plan-day templates and the Start prompt (§2.8, Q11)', () => {
     const sixth = await s.builder.start(last.draftId, { choice: { kind: 'variation', label: 'v6' }, opId: 'var-6', expectedVersion: last.version, gymId });
     expect(sixth).toEqual({ ok: false, reason: 'variation_limit', message: 'Limit reached' });
     expect(await s.sessions.active()).toBeNull();
+  });
+});
+
+/**
+ * b3 merge: a workout started from the builder reads the same in the v3
+ * round page (workout-table-v3 §1–§2): one round per builder block, supersets
+ * as `3a` / `3b`, warm-ups as `W` (not counted), `Top` / `Back-off` under the
+ * number, the builder's target RPE as `@9`, its loads and its load source.
+ */
+describe('builder Start → the v3 rounds (b3 merge)', () => {
+  it('rounds, labels, set types, target RPE and loads are the builder’s', async () => {
+    const { s, gymId } = await ben();
+    const snap = ok(await s.builder.create(await pushSetup(s, { minutes: 60, supersets: true }), 'c-v3')).snapshot;
+    const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-v3', expectedVersion: snap.version, gymId });
+    if (!started.ok) throw new Error('not started');
+    const data = await s.workout.load(started.sessionId);
+    if (!data) throw new Error('no workout');
+    const table = s.workout.tableView(data, toMs(h.now().utc), null);
+    const rounds = buildRounds(table, (id) => data.worksLines?.[id] ?? null, latestCommittedSetId(data.aggregate));
+
+    // One round per builder block; a superset's members are `Na` / `Nb`.
+    expect(rounds.map((r) => r.exercises.map((e) => e.label))).toEqual(snap.workout.blocks.map((b, i) => (b.slots.length > 1 ? b.slots.map((_, j) => `${String(i + 1)}${String.fromCharCode(97 + j)}`) : [String(i + 1)])));
+    expect(snap.workout.blocks.some((b) => b.slots.length > 1)).toBe(true);
+
+    for (const [i, block] of snap.workout.blocks.entries()) {
+      for (const [j, slot] of block.slots.entries()) {
+        const ex = rounds[i]?.exercises[j];
+        expect(ex?.exerciseId).toBe(slot.exerciseId);
+        expect(ex?.subline).not.toBeNull();
+        expect(ex?.rows.map((r) => r.warmup)).toEqual(slot.rows.map((r) => r.type === 'warmup'));
+        expect(ex?.rows.filter((r) => r.warmup).every((r) => r.label === 'W' && r.number === null && r.rpe === null)).toBe(true);
+        expect(ex?.rows.filter((r) => !r.warmup).map((r) => r.number)).toEqual(slot.rows.filter((r) => r.type !== 'warmup').map((_, k) => k + 1));
+        expect(ex?.rows.map((r) => r.typeLabel)).toEqual(slot.rows.map((r) => (r.type === 'top' ? 'Top' : r.type === 'backoff' ? 'Back-off' : r.type === 'drop' ? 'Drop' : null)));
+        expect(ex?.rows.map((r) => r.rpe)).toEqual(slot.rows.map((r) => (r.type === 'warmup' || r.rpe === null ? null : `@${String(r.rpe)}`)));
+        expect(ex?.progress).toEqual({ done: 0, total: slot.rows.filter((r) => r.type !== 'warmup').length });
+        // The builder's load stands, with its source kept on the set.
+        const sets = data.aggregate.sets.filter((x) => x.sessionExerciseId === ex?.sessionExerciseId).sort((x, y) => x.index - y.index);
+        expect(sets.map((x) => x.planned.load?.value ?? null)).toEqual(slot.rows.map((r) => r.load));
+      }
+    }
+    // The main lift's Top set and back-offs, as built.
+    const main = slotsOf(snap.workout.blocks).find((x) => x.main);
+    expect(main?.rows.some((r) => r.type === 'top' || r.type === 'backoff') ?? true).toBe(true);
+  });
+
+  it('a plan-day Start keeps its provenance, and the +N min fit never trims the plan’s main lifts', async () => {
+    const { s, gymId, push } = await benWithPlan();
+    const snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-v3')).snapshot;
+    const r = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-v3-plan', expectedVersion: snap.version, gymId });
+    if (!r.ok) throw new Error('not started');
+    const data = await s.workout.load(r.sessionId);
+    if (!data) throw new Error('no workout');
+    expect(data.aggregate.session.planDay).toMatchObject({ splitDayId: 'push', dayIndex: 0, templateRoutineId: push });
+    const offer = s.workout.timeFit(data, 30);
+    const mains = new Set(slotsOf(snap.workout.blocks).filter((x) => x.main).map((x) => x.exerciseId));
+    const mainRows = new Set(data.aggregate.exercises.filter((e) => mains.has(e.exerciseId)).map((e) => e.id));
+    for (const l of offer?.lines ?? []) if (l.kind === 'sets' || l.kind === 'drop') expect(mainRows.has(l.sessionExerciseId)).toBe(false);
   });
 });
