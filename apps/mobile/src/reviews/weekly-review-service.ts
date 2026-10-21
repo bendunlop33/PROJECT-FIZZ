@@ -359,10 +359,15 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
   /**
    * The inputs a review is made from (§6.1 cache key): the stored facts (not code's own tweak suggestions,
    * so Apply doesn't re-run it), goal, lifts, and the active pain flags (a new flag re-runs it, so no tweak
-   * stands on a flagged movement; rule 9, review b3-wave3-truth B5).
+   * stands on a flagged movement; rule 9, review b3-wave3-truth B5). Never the plan's set counts
+   * (`group_sets.planned`, only whether there is a plan line): the review's own changes move them, and a re-run
+   * on that would ask the coach again, drop Ben's open asks, bring `NEW` back after his `Got it` and let the
+   * coach add another automatic change on every open (rule 3; review build-b-21oct B1). The reviewed week
+   * keeps the plan it was reviewed against.
    */
   function inputsHashOf(g: Gathered, facts: ReturnType<typeof weeklyReviewFacts>): string {
-    return deriveId(`weekly:${stableStringify({ facts: facts.filter((f) => f.kind !== 'template_edit'), goal: g.input.goal, lifts: g.input.lifts, templates: g.input.templates.map((t) => t.routineId), pain: [...g.input.painFlagged].sort() })}`).slice(0, 128);
+    const kept = facts.filter((f) => f.kind !== 'template_edit').map((f) => (f.kind === 'group_sets' ? { ...f, planned: f.planned === null ? null : 'plan' } : f));
+    return deriveId(`weekly:${stableStringify({ facts: kept, goal: g.input.goal, lifts: g.input.lifts, templates: g.input.templates.map((t) => t.routineId), pain: [...g.input.painFlagged].sort() })}`).slice(0, 128);
   }
 
   const keyOf = (p: Pick<ReviewProposal, 'change'>): string => `${p.change.routineId}|${p.change.exerciseId}`;
