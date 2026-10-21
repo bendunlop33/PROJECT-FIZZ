@@ -55,6 +55,10 @@ describe('builderLoad: source order (§9 Q12)', () => {
     expect(r.anchorE1rm).not.toBeNull();
     // A coach target still converts both ways (the coach chose it for its reps).
     expect(builderLoad(loadInput({ coachTarget: { value: 50, reps: 8, rpe: 8 } }), { reps: 6, rpe: 8 }).working).toBeGreaterThan(50);
+    // (21 Oct) The one exception: a rule load marked `yieldsToHistory` that is clearly below Ben's recent
+    // est. max gives way to it (builder-loads-history.test.ts). Unmarked (a miss, a reduction, pain), B3 stands.
+    expect(builderLoad(loadInput({ e1rm: 126, ruleTarget: { value: 50, reps: 8, rpe: 8 } }), { reps: 6, rpe: 8 }).working).toBe(50);
+    expect(builderLoad(loadInput({ e1rm: 126, ruleTarget: { value: 50, reps: 8, rpe: 8, yieldsToHistory: true } }), { reps: 6, rpe: 8 }).source).toBe('calc');
   });
 });
 

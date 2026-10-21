@@ -57,7 +57,7 @@ async function doRows(s: AppServices, gymId: string, snap: BuilderSnapshot, opId
   for (const set of sets) {
     const v = set.setType === 'top' ? topSet : { ...backoff, rpe: null };
     h.clockMs += 120_000;
-    const r = await s.workout.dispatch(started.sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load: { value: v.load, unit: ex.unit, convention: ex.loadConvention }, reps: v.reps, durationS: null, rpe: v.rpe as never, rir: null }, restTimerId: h.ids() });
+    const r = await s.workout.dispatch(started.sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load: { value: v.load, unit: ex.unit, convention: ex.loadConvention }, reps: v.reps, durationS: null, rpe: v.rpe, rir: null }, restTimerId: h.ids() });
     expect(r.ok).toBe(true);
   }
   h.clockMs += 60_000;

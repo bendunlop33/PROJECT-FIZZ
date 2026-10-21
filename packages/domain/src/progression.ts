@@ -482,7 +482,7 @@ function countedTypes(rule: ProgressionRule): SetType[] {
  */
 const BUILDER_FORMAT_TYPES: readonly SetType[] = ['top', 'backoff'];
 
-function builderFormatSets<T extends Pick<HistorySet, 'setType'>>(rule: ProgressionRule, s: Pick<HistorySession, 'imported'>, kept: readonly T[]): boolean {
+function builderFormatSets(rule: ProgressionRule, s: Pick<HistorySession, 'imported'>, kept: readonly Pick<HistorySet, 'setType'>[]): boolean {
   return rule.method === 'double_progression' && !s.imported && !kept.some((x) => x.setType === 'working') && kept.some((x) => x.setType === 'top');
 }
 

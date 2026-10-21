@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { EquipmentInstance, Load, PainFlag, SetType } from '@fizz/schemas';
+import type { EquipmentInstance, PainFlag, SetType } from '@fizz/schemas';
 
 import {
   builderLoad,
@@ -60,7 +60,7 @@ function session(n: number, daysAgo: number, eq: EquipmentInstance | null, sets:
     equipmentId: imported ? null : (eq?.id ?? null),
     gymId: imported ? null : (eq?.gymId ?? null),
     imported,
-    sets: sets.map((s) => ({ setType: s.type, side: null, load: kg(s.load) as Load, reps: s.reps, rpe: (s.rpe ?? null) as HistorySession['sets'][number]['rpe'], rir: null })),
+    sets: sets.map((s) => ({ setType: s.type, side: null, load: kg(s.load), reps: s.reps, rpe: s.rpe ?? null, rir: null })),
     tz: TZ,
   };
 }
@@ -193,7 +193,7 @@ describe("Ben's rows (Build B, 21 Oct): a new workout's loads come from his rece
       updatedAtUtc: at(-86_400).utc,
       exerciseId: ROW.id,
       exerciseName: ROW.name,
-      area: 'lower back',
+      area: 'back',
       source: 'workout',
       checkInId: null,
       reportedAt: at(-86_400),
