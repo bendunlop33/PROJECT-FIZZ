@@ -289,8 +289,10 @@ export const AddExerciseCommandSchema = z.object({
 /**
  * `Rest after` editor (rest-state §2.4) for sets not yet done: `set` changes
  * this set's rest only; `exercise` changes every pending set of its exercise
- * (the service also saves it as Ben's default for that exercise). Never
- * changes a completed set or a running timer. Versioned on the session.
+ * (the service also saves it as Ben's default for that exercise); `type`
+ * (workout-table-v3 §7, the exercise pop-up's rest per set type) changes the
+ * pending sets of its exercise with the same set type as `setId`, today only.
+ * Never changes a completed set or a running timer. Versioned on the session.
  */
 export const SetRestAfterCommandSchema = z.object({
   type: z.literal('set_rest_after'),
@@ -298,7 +300,7 @@ export const SetRestAfterCommandSchema = z.object({
   opId: OperationIdSchema,
   setId: IdSchema,
   seconds: DurationSecondsSchema.refine((s) => s <= 3600, { message: 'At most an hour' }),
-  scope: z.enum(['set', 'exercise']),
+  scope: z.enum(['set', 'exercise', 'type']),
   expectedVersion: z.int().min(1),
 });
 
@@ -522,6 +524,52 @@ export const RemoveExerciseCommandSchema = z.object({
   ...base,
   opId: OperationIdSchema,
   sessionExerciseId: IdSchema,
+  expectedVersion: z.int().min(1),
+  /**
+   * (workout-table-v3 §7, `Remove` from `⋯`) An exercise with logged sets:
+   * the number of logged sets Ben was asked about (the UI asks first). When
+   * it matches, the sets not done yet are deleted (audited tombstones) and
+   * the logged ones stay on the row, in history (rule 2); the row stays.
+   * Absent or not matching: refused as `exercise_logged`, as before.
+   */
+  confirmedLoggedSets: z.int().min(1).optional(),
+});
+
+/**
+ * (workout-table-v3 §7, press-and-hold drag of a set row) The exercise's
+ * sets not done yet in a new order. `setIds` must be exactly its pending
+ * sets (an other-side row stays with its partner and isn't listed); they
+ * take the places pending sets held, so done and skipped sets keep their
+ * logged order (rule 2). No value or set version changes. Versioned on the
+ * session (rule 5); Undo (`undo_op`) puts the old order back while nothing
+ * moved since.
+ */
+export const ReorderSetsCommandSchema = z.object({
+  type: z.literal('reorder_sets'),
+  ...base,
+  opId: OperationIdSchema,
+  sessionExerciseId: IdSchema,
+  setIds: z.array(IdSchema).min(2).max(60),
+  expectedVersion: z.int().min(1),
+});
+
+/**
+ * (workout-table-v3 §7, the exercise pop-up's `＋ Warm-up`) A pending
+ * warm-up set, placed in the ramp by load: before the first pending set
+ * heavier than it (or the first pending working set), never before a set
+ * already done. The target is worked out by the service (`warmupGap`) and
+ * must be achievable on the row's equipment (rule 4). Versioned on the
+ * session; Undo (`undo_op`) takes it out again while it's still pending.
+ * `newSetId` is excluded from the fingerprint, like `add_set`.
+ */
+export const AddWarmupCommandSchema = z.object({
+  type: z.literal('add_warmup'),
+  ...base,
+  opId: OperationIdSchema,
+  sessionExerciseId: IdSchema,
+  newSetId: IdSchema,
+  planned: PlannedSetSchema,
+  restS: DurationSecondsSchema.refine((x) => x <= 3600, { message: 'At most an hour' }),
   expectedVersion: z.int().min(1),
 });
 
@@ -799,6 +847,8 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   CoachEditTodayCommandSchema,
   RevertCoachEditCommandSchema,
   FitTodayToTimeCommandSchema,
+  ReorderSetsCommandSchema,
+  AddWarmupCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];

@@ -145,7 +145,9 @@ export type SessionEvent =
   /** Ben edited a set not done yet (target, type, rest), or its Undo put the old one back. Cue layers rebuild the rest-end line. */
   | { type: 'PlannedSetEdited'; setId: string; undo: boolean }
   /** (Coach v3) Rows moved (`move_exercise`), or put back by its Undo. Cue layers rebuild what's next. */
-  | { type: 'ExercisesMoved'; sessionExerciseIds: string[]; undo: boolean };
+  | { type: 'ExercisesMoved'; sessionExerciseIds: string[]; undo: boolean }
+  /** (workout-table-v3 §7) Ben dragged a set row: the exercise's pending sets in a new order (or its Undo). */
+  | { type: 'SetsReordered'; sessionExerciseId: string; setIds: string[]; undo: boolean };
 
 export type ReduceResult =
   | {
@@ -1525,6 +1527,9 @@ function handleDiscard(state: SessionAggregate, cmd: CommandOf<'discard'>, nowMs
   return { ok: true, state: next, events };
 }
 
+/** How a `type` rest names its sets (`Back-offs (yours)`). */
+const REST_TYPE_LABEL: Readonly<Record<WorkoutSet['setType'], string>> = { warmup: 'Warm-ups', working: 'Working sets', top: 'Top set', backoff: 'Back-offs', drop: 'Drop sets' };
+
 function handleSetRestAfter(state: SessionAggregate, cmd: CommandOf<'set_rest_after'>): Handled {
   if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed since this was opened.');
   const set = state.sets.find((s) => s.id === cmd.setId);
@@ -1535,9 +1540,14 @@ function handleSetRestAfter(state: SessionAggregate, cmd: CommandOf<'set_rest_af
   const rest =
     cmd.scope === 'set'
       ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: 'This set', byOpId: cmd.opId }
-      : { seconds: cmd.seconds, source: 'exercise_default' as const, sourceLabel: `${ex.exerciseName} default (yours)`, byOpId: cmd.opId };
+      : cmd.scope === 'type'
+        ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: `${REST_TYPE_LABEL[set.setType]} (yours)`, byOpId: cmd.opId }
+        : { seconds: cmd.seconds, source: 'exercise_default' as const, sourceLabel: `${ex.exerciseName} default (yours)`, byOpId: cmd.opId };
   // Only sets not done yet; completed sets and the running timer are never touched.
-  const targets = cmd.scope === 'set' ? [set] : state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending');
+  const targets =
+    cmd.scope === 'set'
+      ? [set]
+      : state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending' && (cmd.scope === 'exercise' || s.setType === set.setType));
   const ids = new Set(targets.map((s) => s.id));
   const sets = state.sets.map((s) => (ids.has(s.id) ? { ...s, rest, version: s.version + 1 } : s));
   return { ok: true, state: bumpVersion({ ...state, sets }), events: [{ type: 'RestPlanChanged', setIds: [...ids], seconds: cmd.seconds }] };
@@ -1926,7 +1936,14 @@ function handleRemoveExercise(state: SessionAggregate, cmd: CommandOf<'remove_ex
     return fail('invalid_values', `${ex.exerciseName} has sets at another gym. Skip it instead.`);
   }
   const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted');
-  if (own.some((s) => s.status === 'completed')) return fail('exercise_logged', `${ex.exerciseName} has a logged set. Skip it instead.`);
+  const logged = own.filter((s) => s.status === 'completed').length;
+  // Asked about logged sets that are gone since (an untick): what Ben agreed to no longer matches (rule 5).
+  if (logged === 0 && cmd.confirmedLoggedSets !== undefined) return fail('stale_version', 'The workout changed. Try again.');
+  if (logged > 0) {
+    // workout-table-v3 §7: Ben was asked first ("keeps N logged sets"): the rest goes, the logged sets stay (rule 2).
+    if (cmd.confirmedLoggedSets !== logged) return fail('exercise_logged', `${ex.exerciseName} has ${String(logged)} logged ${logged === 1 ? 'set' : 'sets'}. Confirm to keep ${logged === 1 ? 'it' : 'them'} and remove the rest.`);
+    return removeRestOfExercise(state, cmd, ex);
+  }
   if (isWorkLive(state, own.map((s) => s.id))) return fail('work_interval_running', 'Stop the work timer first.');
   const audit = [...state.audit];
   const events: SessionEvent[] = [];
@@ -1942,6 +1959,149 @@ function handleRemoveExercise(state: SessionAggregate, cmd: CommandOf<'remove_ex
   events.push({ type: 'ExerciseRemoved', sessionExerciseId: ex.id, undo: false });
   const activeSetId = repointActive(state, sets, events);
   return { ok: true, state: bumpVersion({ ...state, exercises, sets, audit }, activeSetId), events };
+}
+
+/**
+ * `Remove` on an exercise with logged sets, after Ben confirmed (workout-table-v3 §7): every set not
+ * done yet becomes an audited tombstone; the logged and skipped sets and the row stay, so history keeps
+ * them. Undo (`undo_op`) puts the tombstones back while each is as this left it.
+ */
+function removeRestOfExercise(state: SessionAggregate, cmd: CommandOf<'remove_exercise'>, ex: SessionExercise): Handled {
+  const pending = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending');
+  if (pending.length === 0) return fail('set_not_pending', `Nothing left to remove: ${ex.exerciseName} is done.`);
+  if (isWorkLive(state, pending.map((s) => s.id))) return fail('work_interval_running', 'Stop the work timer first.');
+  const audit = [...state.audit];
+  const events: SessionEvent[] = [];
+  const gone = new Map<string, WorkoutSet>();
+  for (const p of pending) {
+    const deleted: WorkoutSet = { ...p, status: 'deleted', version: p.version + 1 }; // draft kept for Undo (N6)
+    gone.set(p.id, deleted);
+    audit.push(auditEntry(state, cmd, 'deleted', p, deleted, 'deleted'));
+    events.push({ type: 'SetDeleted', setId: p.id });
+  }
+  const sets = state.sets.map((s) => gone.get(s.id) ?? s);
+  events.push({ type: 'ExerciseRemoved', sessionExerciseId: ex.id, undo: false });
+  const activeSetId = repointActive(state, sets, events);
+  return { ok: true, state: bumpVersion({ ...state, sets, audit }, activeSetId), events };
+}
+
+/**
+ * `reorder_sets` (workout-table-v3 §7, set-row drag): the exercise's pending sets take the places
+ * pending sets held, in Ben's order; done, skipped and other-side rows never move (rule 2). When the
+ * set Log was on was the exercise's first pending set, the new first one takes its place.
+ */
+function handleReorderSets(state: SessionAggregate, cmd: CommandOf<'reorder_sets'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
+  const ex = state.exercises.find((e) => e.id === cmd.sessionExerciseId);
+  if (!ex || ex.removed !== undefined) return fail('exercise_not_found', 'Exercise not found in this workout.');
+  const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);
+  const movable = own.filter((s) => s.status === 'pending' && s.pairedWithSetId === null && !own.some((c) => c.pairedWithSetId === s.id));
+  const wanted = new Set(cmd.setIds);
+  if (wanted.size !== cmd.setIds.length || wanted.size !== movable.length || movable.some((s) => !wanted.has(s.id))) {
+    return fail('stale_version', 'The sets changed since they were shown.');
+  }
+  if (isWorkLive(state, cmd.setIds)) return fail('work_interval_running', 'Stop the work timer first.');
+  const slots = movable.map((s) => s.index);
+  const pos = new Map(cmd.setIds.map((id, i) => [id, slots[i] ?? 0]));
+  if (movable.every((s) => pos.get(s.id) === s.index)) return { ok: true, state, events: [] };
+  // Only the position changes: never a value or a set version (as `Insert set after`).
+  const sets = state.sets.map((s) => (pos.has(s.id) ? { ...s, index: pos.get(s.id) ?? s.index } : s));
+  const events: SessionEvent[] = [{ type: 'SetsReordered', sessionExerciseId: ex.id, setIds: [...cmd.setIds], undo: false }];
+  let activeSetId = state.session.activeSetId;
+  const first = cmd.setIds[0] ?? null;
+  if (activeSetId !== null && activeSetId === movable[0]?.id && first !== null && first !== activeSetId) {
+    activeSetId = first;
+    events.push({ type: 'ActiveSetChanged', setId: first });
+  }
+  return { ok: true, state: bumpVersion({ ...state, sets }, activeSetId), events };
+}
+
+/** The pending, non-companion set IDs of a row in index order (`reorder_sets`' record and its Undo). */
+function pendingOrder(state: SessionAggregate, sessionExerciseId: string, ids: ReadonlySet<string>): string[] {
+  return state.sets
+    .filter((s) => s.sessionExerciseId === sessionExerciseId && ids.has(s.id))
+    .sort((a, b) => a.index - b.index)
+    .map((s) => s.id);
+}
+
+/** Undo of `reorder_sets`: the old order back, only while the sets are still pending and in the order it left. */
+function undoReorderSets(state: SessionAggregate, prior: ProcessedOperation): Handled {
+  const ids = prior.createdIds ?? [];
+  const n = ids.length / 2;
+  const before = ids.slice(0, n);
+  const after = ids.slice(n);
+  const sets = after.map((id) => state.sets.find((s) => s.id === id));
+  const rowId = sets[0]?.sessionExerciseId;
+  if (n === 0 || rowId === undefined || sets.some((s) => s?.status !== 'pending' || s.sessionExerciseId !== rowId)) return fail('stale_version', STALE_UNDO);
+  if (stableStringify(pendingOrder(state, rowId, new Set(after))) !== stableStringify(after)) return fail('stale_version', STALE_UNDO);
+  if (isWorkLive(state, after)) return fail('work_interval_running', 'Stop the work timer first.');
+  const slots = sets.map((s) => s?.index ?? 0);
+  const pos = new Map(before.map((id, i) => [id, slots[i] ?? 0]));
+  const next = state.sets.map((s) => (pos.has(s.id) ? { ...s, index: pos.get(s.id) ?? s.index } : s));
+  const events: SessionEvent[] = [{ type: 'SetsReordered', sessionExerciseId: rowId, setIds: before, undo: true }];
+  let activeSetId = state.session.activeSetId;
+  if (activeSetId !== null && activeSetId === after[0] && before[0] !== undefined && before[0] !== activeSetId) {
+    activeSetId = before[0];
+    events.push({ type: 'ActiveSetChanged', setId: activeSetId });
+  }
+  return { ok: true, state: bumpVersion({ ...state, sets: next }, activeSetId), events };
+}
+
+/**
+ * `add_warmup` (workout-table-v3 §7, `＋ Warm-up`): a pending warm-up in the ramp by load, never before
+ * a set already done; achievable on the row's item (rule 4). When it lands before the set Log is on
+ * in the same exercise, it becomes that set (the warm-up is done first).
+ */
+function handleAddWarmup(state: SessionAggregate, cmd: CommandOf<'add_warmup'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
+  if (state.sets.some((s) => s.id === cmd.newSetId)) return fail('invalid_values', 'That set ID is already used.');
+  const ex = state.exercises.find((e) => e.id === cmd.sessionExerciseId);
+  if (!ex || ex.removed !== undefined) return fail('exercise_not_found', 'Exercise not found in this workout.');
+  if (!rowIsAtCurrentGym(state.session, ex)) return fail('equipment_not_found', `${ex.exerciseName}'s equipment isn't at this gym.`);
+  const load = cmd.planned.load;
+  if (load !== null) {
+    if (load.convention !== ex.loadConvention) return fail('convention_mismatch', `Load convention ${load.convention} does not match ${ex.loadConvention}.`);
+    if (load.unit !== ex.unit) return fail('unit_mismatch', `Load unit ${load.unit} does not match ${ex.unit}; convert explicitly first.`);
+    const eq = nothingAdded(load, state, ex) ? undefined : checkEquipmentOf(state, ex);
+    if (eq && !isLoadAchievable(load, eq)) return fail('invalid_values', `${eq.name} can’t make that load.`);
+  }
+  const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);
+  const lastDone = own.reduce((at, s, i) => (s.status === 'pending' ? at : i), -1);
+  const value = load?.value ?? 0;
+  // In the ramp: before the first later pending set that is a working set or a heavier warm-up.
+  const before = own.find((s, i) => i > lastDone && s.status === 'pending' && (s.setType !== 'warmup' || (s.planned.load?.value ?? 0) > value));
+  if (before === undefined) return fail('set_not_pending', `Nothing left to warm up for: ${ex.exerciseName} is done.`);
+  const from = before.index;
+  const shifted = state.sets.map((s) => (s.sessionExerciseId === ex.id && s.index >= from ? { ...s, index: s.index + 1 } : s));
+  const planned = withRpeOverride({ ...cmd.planned, rpe: null, rir: null, addedInWorkout: true }, undefined);
+  const added: WorkoutSet = {
+    id: cmd.newSetId,
+    sessionId: state.session.id,
+    sessionExerciseId: ex.id,
+    index: from,
+    setType: 'warmup',
+    status: 'pending',
+    side: ex.laterality === 'unilateral' ? 'both' : null,
+    pairedWithSetId: null,
+    planned,
+    rest: { seconds: cmd.restS, source: 'set_override', sourceLabel: 'Warm-ups (yours)', byOpId: cmd.opId },
+    actual: null,
+    draft: null,
+    completedAt: null,
+    completedByOpId: null,
+    undoCount: 0,
+    flags: [],
+    edited: false,
+    version: 1,
+  };
+  const events: SessionEvent[] = [{ type: 'SetAdded', setId: added.id, sessionExerciseId: ex.id }];
+  let activeSetId = state.session.activeSetId;
+  const active = activeSetId === null ? undefined : state.sets.find((s) => s.id === activeSetId);
+  if (activeSetId === null || (active?.sessionExerciseId === ex.id && active.index >= from)) {
+    activeSetId = added.id;
+    events.push({ type: 'ActiveSetChanged', setId: added.id });
+  }
+  return { ok: true, state: bumpVersion({ ...state, sets: [...shifted, added] }, activeSetId), events };
 }
 
 const STALE_UNDO = 'Can’t undo: it changed since.';
@@ -2020,7 +2180,17 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs:
     }
     case 'remove_exercise': {
       const ex = state.exercises.find((e) => e.removed?.opId === cmd.targetOpId);
-      if (!ex) return fail('stale_version', STALE_UNDO);
+      if (!ex) {
+        // The rest of an exercise with logged sets (the row stayed): its tombstones come back.
+        const r = restoreAudited(state, cmd.targetOpId, 'deleted', cmd);
+        if (r === null) return fail('stale_version', STALE_UNDO);
+        const sets = state.sets.map((s) => r.sets.get(s.id) ?? s);
+        const ids = [...r.sets.keys()];
+        const rowId = state.sets.find((s) => s.id === ids[0])?.sessionExerciseId ?? '';
+        events.push({ type: 'ExerciseRemoved', sessionExerciseId: rowId, undo: true }, { type: 'SetsRestored', opId: cmd.targetOpId, setIds: ids });
+        const activeSetId = activeAfterRestore(state, sets, ids, events);
+        return { ok: true, state: bumpVersion({ ...state, sets, audit: [...state.audit, ...r.audit] }, activeSetId), events };
+      }
       const r = restoreAudited(state, cmd.targetOpId, 'deleted', cmd);
       const sets = r === null ? state.sets : state.sets.map((s) => r.sets.get(s.id) ?? s);
       const kept = { ...ex };
@@ -2126,6 +2296,9 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs:
       return undoLinkSuperset(state, prior);
     case 'split_superset':
       return undoSplitSuperset(state, prior);
+    case 'reorder_sets':
+      return undoReorderSets(state, prior);
+    case 'add_warmup':
     case 'add_set': {
       // `Set 4 added` [Undo]: the added set goes again, only while it's still pending (a logged set is real).
       const set = state.sets.find((s) => s.id === prior.createdIds?.[0]);
@@ -2458,7 +2631,11 @@ function processedRecord(command: SessionCommand & { opId: string }, before: Ses
               ? [...rowOrder(after.exercises), ...splitRows(before, after)]
           : command.type === 'adjust_pending_targets' && command.addSets.length > 0
             ? command.addSets.map((a) => a.newSetId)
-            : null;
+            : command.type === 'add_warmup'
+              ? [command.newSetId]
+              : command.type === 'reorder_sets'
+                ? [...pendingOrder(before, command.sessionExerciseId, new Set(command.setIds)), ...pendingOrder(after, command.sessionExerciseId, new Set(command.setIds))]
+                : null;
   return {
     opId: command.opId,
     commandType: command.type,
@@ -2656,6 +2833,10 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleRevertCoachEdit(state, command, nowMs);
     case 'fit_today_to_time':
       return handleFitTodayToTime(state, command, nowMs);
+    case 'reorder_sets':
+      return handleReorderSets(state, command);
+    case 'add_warmup':
+      return handleAddWarmup(state, command);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -2723,8 +2904,24 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'swap_exercise':
       // Undone since: the new row was taken out again.
       return state.exercises.find((e) => e.swappedFrom?.opId === command.opId)?.removed !== undefined;
-    case 'remove_exercise':
-      return state.exercises.find((e) => e.id === command.sessionExerciseId)?.removed?.opId !== command.opId;
+    case 'remove_exercise': {
+      const row = state.exercises.find((e) => e.id === command.sessionExerciseId);
+      if (row?.removed?.opId === command.opId) return false;
+      // The rest of an exercise with logged sets: undone once a set it deleted is back.
+      if (row !== undefined && row.removed === undefined && command.confirmedLoggedSets !== undefined) {
+        const entries = state.audit.filter((e) => e.opId === command.opId && e.kind === 'deleted');
+        return entries.length === 0 || entries.some((e) => state.sets.find((s) => s.id === e.setId)?.status !== 'deleted');
+      }
+      return true;
+    }
+    case 'reorder_sets': {
+      // Moved again (or put back) since.
+      const ids = state.processedOps[command.opId]?.createdIds ?? [];
+      const after = ids.slice(ids.length / 2);
+      return stableStringify(pendingOrder(state, command.sessionExerciseId, new Set(after))) !== stableStringify(after);
+    }
+    case 'add_warmup':
+      return state.sets.find((s) => s.id === command.newSetId)?.status === 'deleted';
     case 'add_exercise':
       // Taken out since (its Undo, or Remove).
       return state.exercises.find((e) => e.id === command.newSessionExerciseId)?.removed !== undefined;

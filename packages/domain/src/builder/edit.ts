@@ -206,6 +206,29 @@ export function canAddWarmup(slot: BuilderSlot): boolean {
 }
 
 /**
+ * The warm-up `＋ Warm-up` adds (§2.4), shared by the builder and the
+ * active workout (workout-table-v3 §7): the middle of the biggest gap in the
+ * ramp (from nothing, through the warm-ups there are, up to the first
+ * working load), rounded DOWN by `roundDown` to what the gym can load; reps
+ * by how close it sits to the working load. Null when no load fits in the gap.
+ */
+export function warmupGap(warmLoads: readonly number[], top: number, roundDown: (value: number) => number | null): { load: number; reps: number } | null {
+  if (!(top > 0)) return null;
+  const points = [0, ...[...warmLoads].filter((l) => l < top).sort((a, b) => a - b), top];
+  let best: [number, number] | null = null;
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1] ?? 0;
+    const b = points[i] ?? 0;
+    if (best === null || b - a > best[1] - best[0]) best = [a, b];
+  }
+  if (best === null) return null;
+  const k = roundDown((best[0] + best[1]) / 2);
+  if (k === null || k <= best[0] + 1e-9 || k >= best[1] - 1e-9) return null;
+  const pct = k / top;
+  return { load: k, reps: pct < 0.4 ? 10 : pct < 0.6 ? 5 : pct < 0.8 ? 3 : 1 };
+}
+
+/**
  * `＋ Warm-up` (§2.4): fills the biggest gap in the ramp, from nothing (or
  * the lightest warm-up) up to the first working load, rounded DOWN to what
  * this gym can load. Reps by how close it sits to the working load. Max 4.
@@ -215,20 +238,14 @@ export function addWarmup(slot: BuilderSlot, ctx: BuilderContext): { ok: true; s
   if (warm.length >= BUILDER_SET_RULES.maxWarmups) return { ok: false, reason: 'max_warmups' };
   const top = slot.rows.find((r) => r.type !== 'warmup')?.load ?? null;
   if (top === null || top <= 0) return { ok: false, reason: 'no_load' };
-  const points = [0, ...warm.map((r) => r.load ?? 0).sort((a, b) => a - b), top];
-  let best: [number, number] | null = null;
-  for (let i = 1; i < points.length; i += 1) {
-    const a = points[i - 1] ?? 0;
-    const b = points[i] ?? 0;
-    if (best === null || b - a > best[1] - best[0]) best = [a, b];
-  }
-  if (best === null) return { ok: false, reason: 'no_gap' };
   const rc = { ...roundContextOf(ctx.loads(slot.exerciseId)), painCap: null };
-  const k = roundDownHere((best[0] + best[1]) / 2, rc)?.value ?? null;
-  if (k === null || k <= best[0] + 1e-9 || k >= best[1] - 1e-9) return { ok: false, reason: 'no_gap' };
-  const pct = k / top;
-  const reps = pct < 0.4 ? 10 : pct < 0.6 ? 5 : pct < 0.8 ? 3 : 1;
-  const row: BuilderSetRow = { type: 'warmup', reps, load: k, rpe: null };
+  const gap = warmupGap(
+    warm.map((r) => r.load ?? 0),
+    top,
+    (v) => roundDownHere(v, rc)?.value ?? null,
+  );
+  if (gap === null) return { ok: false, reason: 'no_gap' };
+  const row: BuilderSetRow = { type: 'warmup', reps: gap.reps, load: gap.load, rpe: null };
   const rest = slot.rows.filter((r) => r.type !== 'warmup');
   const ramp = [...warm, row].sort((a, b) => (a.load ?? 0) - (b.load ?? 0));
   return { ok: true, slot: { ...slot, rows: [...ramp, ...rest] } };
