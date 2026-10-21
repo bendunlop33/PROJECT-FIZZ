@@ -15,7 +15,7 @@ describe('set_rest_after', () => {
     if (!r.ok) throw new Error(r.error.message);
     const after = setsFor(r.state, BENCH);
     expect(after.map((x) => x.rest.seconds)).toEqual([w?.rest.seconds, b1?.rest.seconds, 240]);
-    expect(after[2]?.rest).toEqual({ seconds: 240, source: 'set_override', sourceLabel: 'This set' });
+    expect(after[2]?.rest).toEqual({ seconds: 240, source: 'set_override', sourceLabel: 'This set', byOpId: 'rest-1' });
     expect(r.state.restTimer).toEqual(timer);
     expect(r.state.session.version).toBe(s.session.version + 1);
     expect(r.events).toEqual([{ type: 'RestPlanChanged', setIds: [b2?.id], seconds: 240 }]);
@@ -33,6 +33,7 @@ describe('set_rest_after', () => {
     if (!r.ok) throw new Error(r.error.message);
     expect(setsFor(r.state, BENCH).map((x) => x.rest.seconds)).toEqual([w?.rest.seconds, 150, 150]);
     expect(setsFor(r.state, BENCH)[1]?.rest.sourceLabel).toBe('Bench press default (yours)');
+    expect(setsFor(r.state, BENCH)[1]?.rest.byOpId).toBe('rest-2');
     expectError(reduceSession(r.state, { type: 'set_rest_after', at: at(30), opId: 'rest-3', setId: w?.id ?? '', seconds: 90, scope: 'set', expectedVersion: r.state.session.version }), 'set_not_pending');
     expectError(reduceSession(r.state, { type: 'set_rest_after', at: at(30), opId: 'rest-4', setId: pending?.id ?? '', seconds: 90, scope: 'set', expectedVersion: s.session.version }), 'stale_version');
   });
