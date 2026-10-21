@@ -90,3 +90,106 @@ Ben's exact case is fixed. But the same defect class (back-offs derived low from
 - **S6.** `docs/design/workout-builder-v3.md` §3.1 now describes the implemented order and is marked PROPOSED, awaiting Ben.
 - **Not done (need Ben):** approval of the order and the 90 % share, the CHANGELOG entry, and the ADR 0006 amendment. Also still open: whether "recent history" means the last session or the best of 3, and the exercise-ID check on Ben's device data.
 - **Seen while testing, not investigated:** a builder workout whose main lift had no load at all (no history) seemed to log rows the next build didn't read. The new end-to-end case seeds plain history first to avoid it. This may be an equipment-ID-less session being skipped by `comparableSessions`, and it is worth a check.
+
+---
+
+# Reps follow-up (commits a8402b4..32a72fa)
+
+**Verdict: CHANGES NEEDED**
+
+The rep range now follows Ben's last session on every new-workout path, and the shrugs case is fixed: 30 × 15 now plans 32.5 kg × 12 (range 12–15), not 8. Two problems block it. First, the broadened "Ben asked" gate turns plain statements into applied changes. Second, the builder's planned reps stop progressing after the first load step.
+
+## Checks run
+
+- `npm run typecheck`: exit 0. `NODE_OPTIONS=--max-old-space-size=6144 npm run lint`: exit 0.
+- `npx vitest run --maxWorkers=2`, per package:
+  - domain: 155 files, 3252 passed.
+  - coach: 39 files, 2190 passed.
+  - mobile: 198 files, 2218 passed, 1 todo.
+- Probes:
+  - A throwaway domain test (deleted, not committed) ran `slotLoads` → `makeSlot` and `nextTargetsFor` on these histories: high-rep, low-rep, mixed, two-set, 200-day gap, deload after heavy, 30 reps, equipment max at 15 and 20 reps, pain flag, a barbell row as main and as secondary at 12 and 20 reps, and assisted at 12 and 6.
+  - It also ran an 8-week loop in which Ben does exactly what the builder plans.
+  - A throwaway coach test called `quoteAsks` / `verifyAsked` / `liftTargetAsked` on realistic statements.
+
+## Blocking
+
+**B1. The correction cue makes plain statements count as "Ben asked", for every today tool and for `set_lift_target`.**
+- Where: `packages/coach/src/intent.ts:82` and `:98`.
+- What's wrong: `CORRECTION_CUE` matches bare `last time`, `wrong`, `mistake` and `i did|got|hit`. It's checked inside `quoteAsks`, which `verifyAsked` uses for all tools: `edit_today` with structural ops (`setsOnly: false`), and `liftTargetAsked` (`lift-target.ts:72`).
+- Probe results: each of these is now `asked: true`, and each was a statement before this branch.
+  - "Squats felt heavy last time"
+  - "Done, I did all the reps"
+  - "My knee felt wrong on squats"
+  - "I did 100 kg on bench last time, felt strong", which as `set_lift_target` sets a lasting lift target.
+- Failure: Ben says "Done, I did all the reps". The model raises a load increase or a swap on its own and quotes his words. It is applied immediately instead of offered ("Want me to adjust?"). That breaks rule 3, and the review S3 / ADR 0027 statement-vs-request split no longer holds.
+- Fix:
+  - Scope the cue to `edit_today` calls with `setsOnly === true`, and never `set_lift_target`.
+  - Require a real contradiction about a target: a number plus "I did / I got / should be / last time" in a question or objection about a planned value (e.g. `/\b(?:i (?:did|got|hit|do)|should be|supposed to be)\b[^.?!]*\b\d+\b/`). Drop bare `wrong`, `mistake` and `last time`.
+  - Add negative tests for the four statements above.
+  - Ben still has to approve this rule-3 change (developer's item 3).
+
+**B2. After a load step, the builder's plan never adds reps. Double progression stalls at the Epley rep count.**
+- Where: `packages/domain/src/rep-range.ts:116` (`aimReps`: `hold` returns `last`), and the single-count rows in `builder/set-rows.ts:84` / `codec.ts:77`.
+- Probe (shrugs, rack, Ben logs exactly what is planned at RPE 8):
+
+  | Week | Decision | Plan |
+  |---|---|---|
+  | 1 | `increase_load` | 32.5 × 12 |
+  | 2 | `increase_load` | 35 × 9 |
+  | 3–8 | `hold` | 35 × 9 every week |
+
+- Why it stalls: inside the goal range the rule's decision is `hold` ("work toward 12"), not `increase_reps`. `aim` = last reps, and the builder writes a fixed `{min: 9, max: 9}` target.
+- This is the opposite of requirement 1 ("add reps up to the top of the range, then load") and of the developer's claim "double progression then runs on that range". Today (non-builder) shows 8–12, so only the builder, plan-day and Start paths stall, and those are the main new-workout paths.
+- Fix:
+  - On `hold` where the last session's effort was within the limit (or not recorded) and reps were below the top, plan `min(range.max, last + 1)`.
+  - Repeat `last` only when effort was over the limit.
+  - Add a multi-session loop test like the probe that asserts reps rise to the top, then the load rises.
+
+## Should fix
+
+**S1. At equipment max, "toward goal" cuts reps while the load can't rise.**
+- Where: `packages/domain/src/rep-range.ts:81-84` and `next-target.ts:78`.
+- Failure: the short rack has a 30 kg max, and he did 30 × 20. The plan goes 30 × 18, then 16, then 15. Each session is fewer reps at the same load, so he regresses. (At 15 reps it correctly holds 30 × 15.)
+- Fix: when the rule's next step is `at_max`, `jump_too_big` or `no_assistance_left`, don't move toward the goal; treat it like bodyweight (`loadable: false`). Add a test.
+
+**S2. A main lift's reps and load still contradict history outside the builder.**
+- `ruleRepsFact` returns null for `fixed` (`rep-range.ts:131`). So Today, Summary "Next time" and `get_progression_targets` show a main barbell lift at 3–6 with nothing saying he did 12 or 20. Only the builder's `slotRepsWhy` says it.
+- The main-lift loads don't match his reps either. Barbell row as the main lift after 40 × 20 plans a top set of 42.5 × 6 and back-offs of 40 × 8, against an Epley e1RM of about 66 kg. Requirement 1 says the load must match the reps.
+- Fix: add a `fixed` fact when last is outside the range (`Last time 12 reps · 3–6`). When last is far above the scheme's reps, derive the top set from the last-session e1RM rather than the rule's +step load (or cap the gap). Test both.
+
+**S3. `get_progression_targets` doesn't show what the builder uses.**
+- Where: `apps/mobile/src/coach/coach-service.ts:849-866`, `domain/src/coach/training-view.ts:608`.
+- The view carries no `reps.last`, kind or Why? fact. It plans on the latest session's own context with no `accessory` reading, so a barbell row used as a secondary lift reads 3–6 to the coach and 9–12 in the builder.
+- Requirement 2 asks for the same numbers. A coach that sees 3–6 can "correct" the builder's 9–12 back down.
+- Fix: add `lastReps`, `aim` and the rule fact to the view, and pass `accessory` when the exercise isn't the session's main lift.
+
+**S4. The coach-admits-wrong path is enforced only by instructions, and the test can't fail.**
+- Where: `packages/coach/test/target-correction.test.ts:349-372`. The fake model is scripted to call `edit_today`, so the test passes whatever the instructions say.
+- The real failure ("Nothing changed · 1 line hidden") is `reply.ts:69`: a change-claim sentence was hidden and nothing was committed. The developer didn't diagnose which happened in Ben's turn (no tool call, or a refused or offered call).
+- Given the `claude/coach-fail-21oct` constraint, this isn't blocking.
+- Fix: record the root cause from Ben's turn log if it's available. Add a deterministic fallback that doesn't touch tool forcing: when the claim note would say "Nothing changed", Ben's words contradict a planned target for a named today exercise, and the rule's from-history target differs, attach that target as an offer (Apply/Undo). Or hand the case to the coach-fail branch explicitly.
+
+## Nits
+
+- N1. With two working sets, the lower median is the lower set: [15, 8] plans 30 × 8. Consider the upper median, or the best set when there are only two.
+- N2. Only the newest session counts. A light deload (15 × 20 after 35 × 10) moves the plan to 15 kg × 18 "toward goal". A 200-day gap still plans an increase (32.5 × 12). Both follow the requirement's wording, but they're worth a Why? or a gap guard (see the spec issues).
+- N3. Tests don't cover the pain flag together with history in the builder (the probe shows `halted_pain` correctly holds 30 × 15), the two-set case, the gap, the deload, or a multi-session sequence (B2).
+- N4. The lb probe in my throwaway file didn't pick up history (my fixture, probably). The developer's lb test passes. Not a finding, noted for completeness.
+- N5. Personalised rules keep the built-in rule's ID and version with a different range and name. Provenance stores name and facts, so Why? stays right. But "rule vN" no longer pins one rep range. Note it in the ADR amendment.
+
+## Product rules
+
+- Rule 2: untouched. The test shows done sets unchanged and Undo restoring 8–10.
+- Rule 4: holds on the max-load cases (30 × 15 is never exceeded).
+- Rule 5: a stale edit is refused (tested). No write paths changed.
+- Rule 9: `halted_pain` holds the load (probed).
+- Rule 1: pure local code, offline unaffected.
+- Rule 3: broken by B1.
+- Rule 6: Epley "same effort" reps are an estimate. They're shown only as a planned count, which is acceptable.
+- No secrets, no new logging.
+
+## Spec issues
+
+1. **Plan days now override a plan's prescribed reps with history** (`today-session.test.ts`: the plan says 6–8 and the row plans 9–12). Requirement 2 asks for this. But a coach-built plan Ben applied (e.g. a strength block on 5s) is quietly replaced for every non-main slot. Ben should decide whether an applied plan's reps outrank history the way his own routine rules do.
+2. **"Most recent session" versus deloads, gaps and best-of-3** is still open (see N2 and the earlier spec issue 3).
+3. **Unapproved rule numbers**: the width of 3, the cap as "wildly outside", the 2-rep step, Epley reps, the lower median, the unbounded bodyweight range, and stale plan loads always yielding. They need a CHANGELOG entry and ADR 0006/0010 amendments before merge (the developer's own list).
