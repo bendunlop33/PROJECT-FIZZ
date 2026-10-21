@@ -461,7 +461,8 @@ describe('Done today and the in-place switch (§5, SP9, SP11, r2 S1)', () => {
     const done = today.slice(today.indexOf('const doneLine ='), today.indexOf('const sessionBlock ='));
     expect(done).toContain("navigation.navigate('Summary', { sessionId: main.sessionId })");
     // The session block (day control, card) shows unless a workout is open; done today keeps it.
-    expect(today).toContain('if (openWorkout || session === null) return null;');
+    expect(today).toContain('if (openWorkout) return null;');
+    expect(today).not.toMatch(/if \(openWorkout[^)]*done/i);
     expect(today).toContain("const openWorkout = main.kind === 'resume' || main.kind === 'stale';");
   });
 });
