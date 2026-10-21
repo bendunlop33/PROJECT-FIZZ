@@ -223,13 +223,35 @@ describe('pop-up edits as the workout’s own writes', () => {
     const s = startFixture().state;
     const [w, b1] = setsFor(s, BENCH);
     expect(popupCellWrite(s, b1?.id ?? '', 'reps', 7)).toMatchObject({ kind: 'planned', patch: { reps: { min: 7, max: 7 } } });
-    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 101)).toMatchObject({ kind: 'planned', patch: { load: kg(100) }, note: 'Rounded to 100 kg' });
+    // 21 Oct (R4): rounded back onto the row's own 100 is no change: said where Ben typed, never `updated · Undo`.
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 101)).toEqual({ kind: 'unchanged', note: 'Nearest here: 100 kg' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 100)).toEqual({ kind: 'unchanged', note: null });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 103)).toMatchObject({ kind: 'planned', patch: { load: kg(102.5) }, note: 'Rounded to 102.5 kg' });
     expect(popupCellWrite(s, b1?.id ?? '', 'kg', 102.5)).toMatchObject({ kind: 'planned', note: null });
     expect(popupCellWrite(s, b1?.id ?? '', 'kg', 5)).toEqual({ kind: 'refused', text: 'Lighter than this gym can load' });
     expect(popupCellWrite(s, b1?.id ?? '', 'rpe', 9)).toMatchObject({ kind: 'planned', patch: { targetRpe: 9 } });
     expect(popupCellWrite(s, w?.id ?? '', 'rpe', 9)).toEqual({ kind: 'refused', text: 'Warm-ups have no target effort' });
     expect(popupCellWrite(s, b1?.id ?? '', 'rpe', 9.3)).toEqual({ kind: 'refused', text: 'RPE 1–10' });
     expect(popupCellWrite(s, b1?.id ?? '', 'reps', 0)).toEqual({ kind: 'refused', text: 'Reps 1–100' });
+  });
+
+  it('21 Oct: a row with Ben’s own draft shows it in the pop-up; typing the preset back is a real write that clears it', () => {
+    let s = startFixture().state;
+    const [, b1, b2] = setsFor(s, BENCH);
+    s = apply(s, { type: 'save_draft', at: at(20), setId: b1?.id ?? '', values: values(kg(105), 7) });
+    const rows = popup(s, BENCH).rows;
+    expect(rows.find((r) => r.key === b1?.id)).toMatchObject({ load: 105, reps: 7, repsText: '7' });
+    expect(rows.find((r) => r.key === b2?.id)).toMatchObject({ load: 100, repsText: '6–8' });
+    // The table's round page agrees (one source).
+    expect(exOf(s, BENCH).rows.find((r) => r.setId === b1?.id)?.row.cells.load).toBe('105');
+    const w = popupCellWrite(s, b1?.id ?? '', 'kg', 101);
+    expect(w).toMatchObject({ kind: 'planned', patch: { load: kg(100) }, note: 'Rounded to 100 kg' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'reps', 8)).toMatchObject({ kind: 'planned' });
+    const after = apply(s, { type: 'edit_planned_set', at: at(30), opId: 'pop-1', setId: b1?.id ?? '', expectedSetVersion: w.kind === 'planned' ? w.expectedSetVersion : 0, patch: { load: kg(100) } });
+    expect(popup(after, BENCH).rows.find((r) => r.key === b1?.id)).toMatchObject({ load: 100 });
+    // Reps already exactly the target: nothing to write.
+    const exact = apply(after, { type: 'edit_planned_set', at: at(31), opId: 'pop-2', setId: b1?.id ?? '', expectedSetVersion: after.sets.find((x) => x.id === b1?.id)?.version ?? 0, patch: { reps: { min: 8, max: 8 } } });
+    expect(popupCellWrite(exact, b1?.id ?? '', 'reps', 8)).toEqual({ kind: 'unchanged', note: null });
   });
 
   it('a logged set: a correction of what was done, versioned on the set, never rounded (rule 2)', () => {

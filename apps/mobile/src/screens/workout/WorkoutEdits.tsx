@@ -366,6 +366,8 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
       switch (w.kind) {
         case 'refused':
           return w.text;
+        case 'unchanged':
+          return w.note;
         case 'correct': {
           const r = await latest.current.services.workout.correctSet({ sessionId: latest.current.sessionId, setId: w.setId, expectedSetVersion: w.expectedSetVersion, patch: w.patch, opId });
           if (!r.ok) {
