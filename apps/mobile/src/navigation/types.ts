@@ -86,6 +86,8 @@ export type ProgressStackParams = {
   ProgressExerciseInfo: ExerciseInfoParams;
   /** (Workout builder v3 §6.2) Progress › Reviews › a past week's review in full. */
   ProgressReview: { reviewId: string };
+  /** (Progress v3) Coach's changes › `Past weeks ›`: earlier weekly reviews, newest first. */
+  ProgressPastWeeks: undefined;
 };
 
 /** The Library tab's stack (exercise-library §9, EL10). */

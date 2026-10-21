@@ -4,66 +4,74 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Progress › Reviews screens (workout-builder-v3 §6.2): layout-only checks on the source, since the
- * rendered result goes on Ben's iPhone. The view models are tested in `@fizz/domain`.
+ * Progress v3 screens (progress-goals.md "Progress v3 (agreed)", prototype progress-simple.html):
+ * layout-only checks on the source, since the rendered result goes on Ben's iPhone. The view models are
+ * tested in `@fizz/domain` (progress-page.test.ts), the chart geometry in lifts-layout.test.ts.
  */
 
 const SRC = join(__dirname, '..', 'src');
 const read = (...p: string[]) => readFileSync(join(SRC, ...p), 'utf8');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 
-describe('Progress › Reviews screens', () => {
+describe('Progress v3 screens', () => {
   const charts = read('reviews', 'charts.tsx');
   const section = read('reviews', 'ReviewsSection.tsx');
   const progress = read('screens', 'progress', 'ProgressScreen.tsx');
+  const detail = read('screens', 'progress', 'ReviewDetailScreen.tsx');
 
-  it('Reviews sits at the top of Progress, above the segments', () => {
+  it('sits at the top of Progress, above the segments', () => {
     expect(progress.indexOf('<ReviewsSection />')).toBeGreaterThan(-1);
     expect(progress.indexOf('<ReviewsSection />')).toBeLessThan(progress.indexOf('<Segmented'));
   });
 
-  it('every chart has a VoiceOver summary and a table view; states carry a mark, not colour alone', () => {
-    expect(charts).toContain('accessibilityLabel={view.words}');
-    expect(charts).toContain('accessibilityLabel={chart.words}');
-    expect(charts.match(/<TableToggle /g)?.length).toBe(3);
-    expect(charts).toContain('r.mark');
-    expect(charts).toContain("accessibilityLabel={d.accessibilityLabel}");
+  it('one page for every goal: This week → Progress (Lifts, Muscles) → Coach’s changes at the bottom', () => {
+    const order = ['<WeekCard', '<LiftsCard', '<MusclesCard', '<ChangesSection'].map((t) => section.indexOf(t));
+    expect(order.every((i) => i > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Dropped by the agreed design: goal-ordered sections, the Latest card, the 6-week consistency bars.
+    for (const gone of ['goal.sections', 'ReviewCard', 'ConsistencyBlock', 'SetsBars', 'LiftTile', 'd.latest']) expect(code(section) + code(charts)).not.toContain(gone);
   });
 
-  it('no projection or predicted date anywhere in the Reviews UI (lift-targets rule, rule 6)', () => {
-    // Code and copy only: the doc comments say there is none.
-    const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
-    for (const src of [charts, section]) expect(code(src)).not.toMatch(/projection|predict|at this rate|on track/i);
-    // The lift target is a level line only.
-    expect(charts).toContain('targetColor=');
+  it('a done chip opens that workout’s Summary; a past week opens its review; Past weeks has its screen', () => {
+    expect(section).toContain("navigation.navigate('Summary', { sessionId, back: true })");
+    expect(section).toContain("screen: 'ProgressReview'");
+    expect(section).toContain("screen: 'ProgressPastWeeks'");
+    expect(read('navigation', 'AppNavigator.tsx')).toContain('name="ProgressPastWeeks"');
   });
 
-  it('proposals are offers: Apply and Skip, Undo after Apply, one op ID per tap', () => {
-    expect(section).toContain('REVIEW_COPY.apply');
-    expect(section).toContain('REVIEW_COPY.skip');
-    expect(section).toContain('REVIEW_COPY.undo');
+  it('accessibility: VoiceOver summaries on every visual, 44 pt targets around small ones, Dynamic Type stacking', () => {
+    expect(charts).toContain('accessibilityLabel={chip.accessibilityLabel}');
+    expect(charts).toContain('accessibilityLabel={r.accessibilityLabel}');
+    expect(charts).toContain('accessibilityLabel={one === null ? view.chartLabel : one.chartLabel}');
+    expect(charts).toContain('accessibilityState={{ expanded: open }}');
+    // Lift rows, past-week rows, links: at least 44 pt even where the visual is smaller.
+    expect(charts.match(/minHeight: 44/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(section.match(/minHeight: 44/g)?.length).toBeGreaterThanOrEqual(2);
+    // Large text: chips two a row, muscle rows wrap.
+    expect(charts).toContain('const perRow = ax ? 2 : 4;');
+    expect(charts).toContain("flexWrap: ax ? 'wrap' : 'nowrap'");
+    // No Skia: the table still lists every lift (the chart is skipped, never a blank box).
+    expect(charts).toContain('&& Drawing !== null;');
+  });
+
+  it('changes: small ones Undo / Redo, structural ones Apply / Keep as is; one op ID per tap; Got it is versioned', () => {
+    expect(section).toContain('PROGRESS_COPY.apply');
+    expect(section).toContain('PROGRESS_COPY.keep');
+    expect(charts).toContain('PROGRESS_COPY.undo');
+    expect(charts).toContain('PROGRESS_COPY.redo');
     expect(section).toContain('opId: newUuid()');
+    expect(section).toContain('expectedVersion: view.version');
+    expect(detail).toContain('<ChangeRow');
   });
 
-  it('Summary carries `How did it feel?`; Today’s nudge links to Reviews', () => {
-    expect(read('screens', 'workout', 'SummaryScreen.tsx')).toContain('<FeelRow sessionId={sessionId} />');
-    expect(read('screens', 'TodayScreen.tsx')).toContain("onReviews: () => {");
+  it('the `at this rate` estimate is always labelled `est.`; minimal copy (no rule labels)', () => {
+    expect(charts).toContain('one.focus.eta !== null ? (');
+    expect(charts).toContain('PROGRESS_COPY.estWord');
+    for (const src of [charts, section]) expect(code(src)).not.toMatch(/built-in rule|snapped to|Nothing changes unless/i);
   });
 
-  it('review fixes (b3-wave3 UX): label once, table falls back with no chart engine, Sets table words, screens told when a run stores a review, Today lands on Reviews', () => {
-    // B3: the line under the title is the view model's `header` (pinned in the domain tests), never metric + now.
-    expect(charts).toContain('{chart.empty ?? chart.header}');
-    expect(charts).not.toContain('`${chart.metric} · ${chart.now}`');
-    // S5: no Skia, the table (never a blank box).
-    expect(charts).toContain('table || !canvas.ok ?');
-    // S8: words, not codes.
-    expect(charts).toContain('r.statusWord');
-    // S4: no fixed 96 pt label that cuts names off.
-    expect(charts).not.toContain('width: 96 }');
-    // S2: one full chart, the rest tiles.
-    expect(section).toContain('<LiftsBlock charts={section.charts} />');
-    // B2: the app reloads screens when a run stores a review.
+  it('the app reloads screens when a run stores a review or applies its changes', () => {
     expect(read('shell', 'context.tsx')).toContain('services.reviews.subscribe(changed)');
-    // S9: Today's link scrolls Progress to Reviews.
     expect(read('screens', 'TodayScreen.tsx')).toContain("params: { focus: 'reviews', n: (reviewsTaps += 1) }");
     expect(progress).toContain('scroll.current?.scrollTo({ y: 0, animated: false })');
   });
