@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { ReviewFactSchema, type BuilderMuscleInfo, type LiftTarget, type Load, type Routine } from '@fizz/schemas';
 import {
-  goalView,
   isStalled,
-  liftChartView,
+  liftNowText,
+  missedText,
   reviewCardView,
-  reviewConsistencyView,
   reviewFactLines,
   reviewHistoryRow,
   reviewSessionOf,
-  setsBarsView,
+  sessionsText,
   sparkPoints,
+  wasNowTarget,
   toMs,
   weekDataOfReview,
   weeklyFacts,
@@ -68,6 +68,8 @@ function sess(date: string, exercises: { exerciseId: string; sets: ReviewSet[]; 
     routineId: null,
     template: null,
     feel: null,
+    plannedReps: null,
+    doneReps: 0,
     exercises: exercises.map((e) => ({ exerciseId: e.exerciseId, name: `Ex ${e.exerciseId.slice(-2)}`, equipmentKind: null, sets: e.sets, plannedWorking: e.planned ?? e.sets.filter((s) => s.setType !== 'warmup').length })),
     ...more,
   };
@@ -148,7 +150,6 @@ describe('weekly review facts: edge cases (rule 6: from stored records only)', (
     const f = weeklyFacts(input({ sessions: [a, b], aim: 3 }));
     expect(f.basis).toBe('aim');
     expect(f.week).toMatchObject({ done: 1, planned: 3, workouts: 2 });
-    expect(reviewConsistencyView(f, '2026-10-19').dots.filter((d) => d.kind === 'todo')).toHaveLength(2);
   });
 
   it('sets per muscle by the builder’s convention: full credit to the first primary muscle, nothing to secondaries; warm-ups and cardio out', () => {
@@ -163,10 +164,6 @@ describe('weekly review facts: edge cases (rule 6: from stored records only)', (
       { group: 'Chest', sets: 3, planned: 4, range: { min: 6, max: 20 } },
       { group: 'Shoulders', sets: 2, planned: 3, range: { min: 6, max: 20 } },
     ]);
-    const bars = setsBarsView(f.groups);
-    expect(bars.rows.map((r) => [r.label, r.mark, r.status])).toEqual([['Chest', '▼', 'below'], ['Shoulders', '▼', 'below']]);
-    // Never colour alone: each row says its state in words too.
-    expect(bars.rows[0]?.accessibilityLabel).toBe('Chest: 3 sets, plan 4, range 6 to 20, below');
     expect(weeklyFacts(input({ sessions: [s], goal: 'strength' })).groups[0]?.range).toEqual({ min: 4, max: 10 });
     expect(weeklyFacts(input({ sessions: [s] })).groups[0]?.range).toBeNull();
   });
@@ -182,20 +179,9 @@ describe('lift trends for the lifts Ben chose (§6.2): est. 1RM labelled, target
     const l = f.lifts[0];
     expect(l?.metric).toBe('e1rm');
     expect(l?.points.map((p) => p.value)).toEqual([108, 111, 114]);
-    const view = liftChartView(l ?? (undefined as never), '2026-10-19');
-    expect(plain(view.metric)).toBe('est. 1RM · kg');
-    expect(plain(view.now)).toBe('est. 1RM 114 kg');
     // `was` and `now` are estimates: the line says so, as it is read alone (review b3-wave3-truth S1).
-    expect(plain(view.progress)).toBe('est. 1RM was 105 → now 114 → target 120 kg');
-    // The label once (review b3-wave3-ux B3).
-    expect(plain(view.header)).toBe('est. 1RM · 114 kg');
-    // The table's value says unit and estimate, as VoiceOver reads each row alone (review b3-wave3-ux B4).
-    expect(view.table.map((r) => plain(r.value))).toEqual(['est. 114 kg', 'est. 111 kg', 'est. 108 kg']);
-    expect(view.target).toBe(120);
-    expect(view.words).toContain('estimated one-rep max');
-    expect(view.table.map((r) => plain(r.set))).toEqual(['95 kg × 6', '92.5 kg × 6', '90 kg × 6']);
-    // No projection anywhere: the view has no projected point, date or line.
-    expect(JSON.stringify(view)).not.toMatch(/project|predict|at this rate|mid-/i);
+    expect(plain(wasNowTarget(l ?? (undefined as never)))).toBe('est. 1RM was 105 → now 114 → target 120 kg');
+    expect(plain(liftNowText(l ?? (undefined as never)))).toBe('est. 1RM 114 kg');
   });
 
   it('no target needed to see a trend; any exercise Ben logs; at most 6, in his order', () => {
@@ -203,12 +189,9 @@ describe('lift trends for the lifts Ben chose (§6.2): est. 1RM labelled, target
     const f = weeklyFacts(input({ sessions, lifts: [CURL, SQUAT, BENCH, id(90), id(91), id(92), id(93)] }));
     expect(f.lifts.map((l) => l.exerciseId)).toEqual([CURL, SQUAT, BENCH, id(90), id(91), id(92)]);
     expect(f.lifts.every((l) => l.target === null)).toBe(true);
-    expect(liftChartView(f.lifts[0] ?? (undefined as never), '2026-10-19').sparse).toBe(true);
-    // A chosen lift with no sets in the window stays, saying so (review b3-wave3-ux S3), never silently dropped.
-    const empty = liftChartView(f.lifts[2] ?? (undefined as never), '2026-10-19');
-    expect(empty.empty).toBe('No sets in 16 weeks');
-    expect(empty.points).toEqual([]);
-    expect(empty.now).toBeNull();
+    // A chosen lift with no sets in the window stays (review b3-wave3-ux S3), never silently dropped.
+    expect(f.lifts[2]?.points).toEqual([]);
+    expect(f.lifts[2]?.now).toBeNull();
     expect(reviewFactLines(f).some((l) => l.includes('Ex 01'))).toBe(false);
   });
 
@@ -216,7 +199,6 @@ describe('lift trends for the lifts Ben chose (§6.2): est. 1RM labelled, target
     const sessions = history(BENCH, [['2026-10-13', kg(100), 1]]);
     const f = weeklyFacts(input({ sessions, lifts: [BENCH], unit: 'lb' }));
     expect(f.lifts[0]).toMatchObject({ unit: 'lb', now: 220 });
-    expect(plain(liftChartView(f.lifts[0] ?? (undefined as never), '2026-10-19').metric)).toBe('est. 1RM · lb');
   });
 
   it('a weight × reps target plots the best set at those reps or more; per-hand dumbbells say `each`', () => {
@@ -226,16 +208,13 @@ describe('lift trends for the lifts Ben chose (§6.2): est. 1RM labelled, target
     const l = f.lifts[0];
     expect(l?.metric).toBe('best_set');
     expect(l?.points.map((p) => p.value)).toEqual([30, 28]);
-    const v = liftChartView(l ?? (undefined as never), '2026-10-19');
-    expect(plain(v.metric)).toBe('Best set · kg each');
-    expect(plain(v.progress)).toBe('now 28 → target 34 kg each × 8');
+    expect(plain(wasNowTarget(l ?? (undefined as never)))).toBe('now 28 → target 34 kg each × 8');
   });
 
   it('assisted: less assistance is stronger (stall check inverted); bodyweight plots reps', () => {
     const sessions = [...history(PULLUP, [['2026-09-22', kg(30, 'assistance'), 8], ['2026-09-29', kg(25, 'assistance'), 8], ['2026-10-06', kg(25, 'assistance'), 8], ['2026-10-13', kg(27.5, 'assistance'), 8], ['2026-10-14', kg(25, 'assistance'), 8]]), ...history(PUSHUP, [['2026-10-13', kg(0, 'bodyweight'), 20]])];
     const f = weeklyFacts(input({ sessions, lifts: [PULLUP, PUSHUP] }));
     expect(f.lifts[0]).toMatchObject({ metric: 'best_set', lowerIsBetter: true, now: 25 });
-    expect(plain(liftChartView(f.lifts[0] ?? (undefined as never), '2026-10-19').metric)).toBe('Best set · kg assist');
     expect(f.lifts[1]).toMatchObject({ metric: 'reps', unit: null, now: 20 });
     expect(f.stalled.map((x) => x.exerciseId)).toEqual([PULLUP]);
   });
@@ -375,25 +354,6 @@ describe('Progress › Reviews views', () => {
   ];
   const f = weeklyFacts(input({ sessions, plans: [plan()], lifts: [BENCH], goal: 'muscle' }));
 
-  it('consistency always first; the goal orders the rest (muscle: sets lead; strength / both / none: lifts lead)', () => {
-    expect(goalView(f, 'muscle', '2026-10-19').sections.map((s) => s.kind)).toEqual(['consistency', 'sets', 'lifts']);
-    expect(goalView(f, 'strength', '2026-10-19').sections.map((s) => s.kind)).toEqual(['consistency', 'lifts', 'sets']);
-    expect(goalView(f, 'both', '2026-10-19').sections.map((s) => s.kind)).toEqual(['consistency', 'lifts', 'sets']);
-    expect(goalView(f, null, '2026-10-19').goal).toBe('Goal not set');
-  });
-
-  it('consistency: day dots with a letter and a word, 6 weekly bars planned vs done, runs apart, and a table', () => {
-    const c = reviewConsistencyView(f, '2026-10-19');
-    expect(c.summary).toBe('2 of 4');
-    expect(c.dots.map((d) => `${d.label}:${d.kind}`)).toEqual(['C:done', 'B:todo', 'L:done', 'S:todo']);
-    expect(c.dots[1]?.accessibilityLabel).toBe('Back, not done');
-    expect(c.missed).toBe('Missed: Back, Shoulders');
-    expect(c.bars.map((b) => b.value)).toEqual(['0 of 4', '0 of 4', '0 of 4', '1 of 4', '1 of 4', '2 of 4']);
-    expect(c.bars.at(-1)?.accessibilityLabel).toBe('Week of 12 October: 2 of 4 sessions');
-    expect(c.table).toHaveLength(6);
-    expect(c.words).toBe('Last 6 weeks: all planned sessions done in 0 of 6');
-  });
-
   it('stored facts read back into the same views; the card shows 3–5 facts, the verdict or `Not reviewed`, and proposals', () => {
     const facts = weeklyReviewFacts(f);
     const review = {
@@ -482,7 +442,7 @@ describe('review fixes (b3-wave3 truth and UX reviews, 21 Oct)', () => {
     const d = read(stored(weeklyReviewFacts(f)));
     expect(d.missedCount).toBe(1);
     expect(d.missed).toEqual([]);
-    expect(reviewConsistencyView(d, '2026-10-19').missed).toBe('Missed: 1 day');
+    expect(missedText(d)).toBe('Missed: 1 day');
   });
 
   it('truth B4: everything planned done in a part-paused week: nothing missed on the stored card, row or full review', () => {
@@ -497,7 +457,7 @@ describe('review fixes (b3-wave3 truth and UX reviews, 21 Oct)', () => {
     expect(d.missedCount).toBe(0);
     expect(reviewCardView(r, d, '2026-10-19').facts.some((x) => x.startsWith('Missed'))).toBe(false);
     expect(reviewHistoryRow(r, d, '2026-10-19').detail).not.toContain('Missed');
-    expect(reviewConsistencyView(d, '2026-10-19').missed).toBeNull();
+    expect(missedText(d)).toBeNull();
   });
 
   it('truth B4: a Sunday-evening review names no day missed, stored or live (days still to come)', () => {
@@ -518,7 +478,7 @@ describe('review fixes (b3-wave3 truth and UX reviews, 21 Oct)', () => {
     const days = ['2026-10-12', '2026-10-13', '2026-10-15', '2026-10-17'].map((d) => sess(d, [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }]));
     const f = weeklyFacts(input({ sessions: days, aim: 3 }));
     expect(f.week).toMatchObject({ done: 4, planned: 3 });
-    expect(reviewConsistencyView(f, '2026-10-19').summary).toBe('4 of 3');
+    expect(sessionsText(f.week)).toBe('4 of 3');
     expect(read(stored(weeklyReviewFacts(f))).basis).toBe('aim');
   });
 
@@ -557,21 +517,7 @@ describe('review fixes (b3-wave3 truth and UX reviews, 21 Oct)', () => {
     expect(reviewCardView(pending, read(pending), '2026-10-19').verdict).toBe('Reviewing…');
   });
 
-  it('UX B3/B4: a best-set chart’s header names its label once; table cells carry their units', () => {
-    const sessions = [sess('2026-10-06', [{ exerciseId: PULLUP, sets: [work(kg(25, 'assistance'), 8)] }]), sess('2026-10-13', [{ exerciseId: PULLUP, sets: [work(kg(20, 'assistance'), 8)] }])];
-    const f = weeklyFacts(input({ sessions, lifts: [PULLUP, PUSHUP] }));
-    const v = liftChartView(f.lifts[0] ?? (undefined as never), '2026-10-19');
-    expect(plain(v.header)).toBe('Best set · Assist 20 kg × 8');
-    expect(v.table.map((r) => plain(r.value))).toEqual(['Assist 20 kg', 'Assist 25 kg']);
-    const bw = weeklyFacts(input({ sessions: [sess('2026-10-13', [{ exerciseId: PUSHUP, sets: [work(kg(0, 'bodyweight'), 20)] }])], lifts: [PUSHUP] }));
-    const r = liftChartView(bw.lifts[0] ?? (undefined as never), '2026-10-19');
-    expect(plain(r.header)).toBe('Best reps · 20 reps');
-    expect(r.table.map((x) => plain(x.value))).toEqual(['20 reps']);
-  });
-
-  it('UX S8: the Sets table says `in range`, `below`, `above`; UX N4: an assisted sparkline rises as assistance falls', () => {
-    const rows = setsBarsView([{ group: 'Chest', sets: 8, planned: null, range: { min: 6, max: 20 } }, { group: 'Quads', sets: 2, planned: null, range: { min: 6, max: 20 } }]).rows;
-    expect(rows.map((r) => r.statusWord)).toEqual(['in range', 'below']);
+  it('UX N4: an assisted sparkline rises as assistance falls', () => {
     const sessions = ['2026-09-29', '2026-10-06', '2026-10-13'].map((d, i) => sess(d, [{ exerciseId: PULLUP, sets: [work(kg(30 - 5 * i, 'assistance'), 8)] }]));
     const f = weeklyFacts(input({ sessions, lifts: [PULLUP] }));
     const r = stored(weeklyReviewFacts(f));

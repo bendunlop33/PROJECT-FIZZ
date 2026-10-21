@@ -194,5 +194,10 @@ export const TrainingReviewSchema = RecordMetaSchema.extend({
   createdAt: ZonedTimestampSchema,
   /** (Weekly) Plan tweaks offered with Apply / Skip. Absent: none (every review before them). */
   proposals: z.array(ReviewProposalSchema).max(REVIEW_LIMITS.maxProposals).optional(),
+  /**
+   * (Weekly, Progress v3) When Ben tapped `Got it` on Coach's changes: the section shows one line after it,
+   * and `NEW` until it. Absent: not seen.
+   */
+  seenAtUtc: UtcTimestampSchema.optional(),
 }).refine((r) => (r.status === 'superseded') === (r.supersededById !== null), { message: 'Only a superseded review names its successor', path: ['supersededById'] });
 export type TrainingReview = z.infer<typeof TrainingReviewSchema>;

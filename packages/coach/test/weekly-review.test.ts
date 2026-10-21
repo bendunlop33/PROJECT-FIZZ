@@ -19,7 +19,7 @@ const names: Record<string, string> = { [BENCH]: 'Barbell bench press', [SQUAT]:
 let n = 200;
 const sess = (date: string, ex: { exerciseId: string; sets: ReviewSet[]; planned?: number }[], routineId: string | null = null): ReviewSession => {
   n += 1;
-  return { sessionId: id(n), name: null, date, startedMs: toMs(`${date}T17:00:00.000Z`), startedAtUtc: `${date}T17:00:00.000Z`, routineId, template: routineId === null ? null : { routineId }, feel: null, exercises: ex.map((e) => ({ exerciseId: e.exerciseId, name: names[e.exerciseId] ?? 'X', equipmentKind: null, sets: e.sets, plannedWorking: e.planned ?? e.sets.length })) };
+  return { sessionId: id(n), name: null, date, startedMs: toMs(`${date}T17:00:00.000Z`), startedAtUtc: `${date}T17:00:00.000Z`, routineId, template: routineId === null ? null : { routineId }, feel: null, plannedReps: null, doneReps: 0, exercises: ex.map((e) => ({ exerciseId: e.exerciseId, name: names[e.exerciseId] ?? 'X', equipmentKind: null, sets: e.sets, plannedWorking: e.planned ?? e.sets.length })) };
 };
 
 const templates: ReviewTemplate[] = [

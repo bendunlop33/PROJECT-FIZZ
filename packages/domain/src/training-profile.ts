@@ -194,6 +194,15 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
       const next = { ...p };
       if (ids.length === 0) delete next.progressLifts;
       else next.progressLifts = ids;
+      // Picked reps are kept only for lifts still shown; a new pick replaces the old one.
+      const reps: Record<string, number> = {};
+      for (const [id, n] of Object.entries({ ...(p.progressLiftReps ?? {}), ...(c.reps ?? {}) })) {
+        if (!ids.includes(id)) continue;
+        if (!Number.isInteger(n) || n < 1 || n > 30) return null;
+        reps[id] = n;
+      }
+      if (Object.keys(reps).length === 0) delete next.progressLiftReps;
+      else next.progressLiftReps = reps;
       return next;
     }
   }

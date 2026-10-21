@@ -1,4 +1,4 @@
-import type { LoadConvention, MuscleGroup, ReviewFact, ReviewProposal, TrainingGoal, TrainingReview, WeightUnit } from '@fizz/schemas';
+import type { LoadConvention, MuscleGroup, ReviewFact, ReviewProposal, TrainingReview, WeightUnit } from '@fizz/schemas';
 import { addDays } from '../calendar';
 import { formatNumber, loadText, localDateText, NBSP } from '../display';
 import { longDate, shortDate } from '../progress/exercise-view';
@@ -6,11 +6,10 @@ import { reviewProposalText } from './template-sets';
 import type { GroupSets, LiftMetric, LiftTrend, ReviewWeekCount, WeeklyFacts } from './weekly';
 
 /**
- * Progress › Reviews view models (workout-builder-v3 §6.2; the approved visual prototype
- * `progress-reviews.html`, minus its fakes). Pure: screens lay these out and compute nothing. Every number
- * is from code's facts; an est. 1RM says so; there is no projection line and no predicted date anywhere
- * (lift-targets rule, rule 6); a status is a mark plus a word, never colour alone. Copy is minimal (values
- * and actions only). Every chart carries a VoiceOver summary and a table.
+ * A stored weekly review read back (its facts as week data, the verdict, fact lines, past-week rows) for
+ * Progress › Past weeks and the coach (workout-builder-v3 §6.1). Pure. The page itself is Progress v3
+ * (`progress-page.ts`, agreed 21 Oct): goal-ordered sections, the Latest card and the 6-week consistency
+ * bars are gone. Every number is from code's facts; an est. 1RM says so. Copy is minimal.
  */
 
 /** What a view needs of the week: the live facts, or the facts stored on a review. */
@@ -321,195 +320,6 @@ export function reviewHistoryRow(r: TrainingReview, d: ReviewWeekData, today: st
 // ---------------------------------------------------------------------------
 // Charts
 
-export interface DotView {
-  key: string;
-  /** One letter (`C`), or `R` for a run. */
-  label: string;
-  kind: 'done' | 'todo' | 'run';
-  accessibilityLabel: string;
-}
-
-export interface WeekBarView {
-  key: string;
-  /** Day of month of the Monday (`13`). */
-  label: string;
-  done: number;
-  planned: number | null;
-  runs: number;
-  /** `3 of 4` / `3` with no plan. */
-  value: string;
-  accessibilityLabel: string;
-}
-
-export interface ReviewConsistencyView {
-  title: string;
-  /** `3 of 4 · 2 runs`. */
-  summary: string;
-  dots: DotView[];
-  /** Missed plan days, named. */
-  missed: string | null;
-  bars: WeekBarView[];
-  /** The scale's top (the most planned or done in any week, at least 1). */
-  scaleMax: number;
-  /** VoiceOver summary of the bars. */
-  words: string;
-  /** Table view rows: week, done, planned, runs. */
-  table: { key: string; week: string; sessions: string; runs: string }[];
-}
-
-export function reviewConsistencyView(d: ReviewWeekData, today: string): ReviewConsistencyView {
-  const dots: DotView[] = d.days.map((x, i) => ({
-    key: `d${String(i)}`,
-    label: (x.name.trim()[0] ?? '•').toUpperCase(),
-    kind: x.done ? 'done' : 'todo',
-    accessibilityLabel: `${x.name}, ${x.done ? `done${x.date === null ? '' : ` ${longDate(x.date, today)}`}` : 'not done'}`,
-  }));
-  if (d.basis === 'aim' && d.week.planned !== null) {
-    for (let i = d.week.done; i < d.week.planned; i += 1) dots.push({ key: `a${String(i)}`, label: '', kind: 'todo', accessibilityLabel: 'Not done' });
-  }
-  for (let i = 0; i < d.runs.count && i < 7; i += 1) dots.push({ key: `r${String(i)}`, label: 'R', kind: 'run', accessibilityLabel: 'Run' });
-  const summary = [sessionsText(d.week), d.runs.count > 0 ? runsText(d.runs.count) : null].filter((x): x is string => x !== null).join(' · ');
-  const bars: WeekBarView[] = d.weeks.map((w) => ({
-    key: w.monday,
-    label: String(Number(w.monday.slice(8, 10))),
-    done: w.done,
-    planned: w.planned,
-    runs: w.runs,
-    value: w.planned === null ? String(w.done) : `${String(w.done)} of ${String(w.planned)}`,
-    accessibilityLabel: `Week of ${longDate(w.monday, today)}: ${w.planned === null ? `${String(w.workouts)} ${w.workouts === 1 ? 'workout' : 'workouts'}` : `${String(w.done)} of ${String(w.planned)} sessions`}${w.runs > 0 ? `, ${runsText(w.runs)}` : ''}`,
-  }));
-  const scaleMax = Math.max(1, ...d.weeks.map((w) => Math.max(w.done, w.planned ?? 0)));
-  const judged = d.weeks.filter((w) => w.planned !== null);
-  const met = judged.filter((w) => w.planned !== null && w.done >= w.planned).length;
-  const words = judged.length === 0 ? `Last ${String(d.weeks.length)} weeks: ${d.weeks.map((w) => String(w.workouts)).join(', ')} workouts` : `Last ${String(d.weeks.length)} weeks: all planned sessions done in ${String(met)} of ${String(judged.length)}`;
-  return {
-    title: REVIEW_COPY.consistency,
-    summary,
-    dots,
-    missed: missedText(d),
-    bars,
-    scaleMax,
-    words,
-    table: d.weeks.map((w) => ({ key: w.monday, week: shortDate(w.monday, today), sessions: w.planned === null ? String(w.workouts) : `${String(w.done)} of ${String(w.planned)}`, runs: String(w.runs) })),
-  };
-}
-
-export interface SetsRowView {
-  key: string;
-  label: string;
-  sets: number;
-  planned: number | null;
-  range: { min: number; max: number } | null;
-  /** Fractions of the scale (0–1) for the bar, range band and plan tick. */
-  fill: number;
-  band: { from: number; to: number } | null;
-  plannedAt: number | null;
-  /** `✓` / `▼` / `▲` with its word, never colour alone. */
-  mark: string | null;
-  status: GroupStatus | null;
-  /** `in range`, `below`, `above` (the table's words; never the raw code, review b3-wave3-ux S8). */
-  statusWord: string | null;
-  accessibilityLabel: string;
-}
-
-export interface SetsBarsView {
-  title: string;
-  rows: SetsRowView[];
-  scaleMax: number;
-  legend: { done: string; range: string | null; plan: string | null };
-  words: string;
-  empty: string | null;
-}
-
-export function setsBarsView(groups: readonly GroupSets[]): SetsBarsView {
-  const scaleMax = Math.max(10, ...groups.map((g) => Math.max(g.sets, g.planned ?? 0, g.range?.max ?? 0)));
-  const rows = groups.map((g): SetsRowView => {
-    const st = groupStatus(g);
-    const label = groupLabel(g.group);
-    const words = [`${label}: ${String(g.sets)} ${g.sets === 1 ? 'set' : 'sets'}`, g.planned === null ? null : `plan ${String(g.planned)}`, g.range === null ? null : `range ${String(g.range.min)} to ${String(g.range.max)}`, st === null ? null : STATUS_MARK[st].word].filter((x): x is string => x !== null);
-    return {
-      key: g.group,
-      label,
-      sets: g.sets,
-      planned: g.planned,
-      range: g.range,
-      fill: Math.min(1, g.sets / scaleMax),
-      band: g.range === null ? null : { from: Math.min(1, g.range.min / scaleMax), to: Math.min(1, g.range.max / scaleMax) },
-      plannedAt: g.planned === null ? null : Math.min(1, g.planned / scaleMax),
-      mark: st === null ? null : STATUS_MARK[st].mark,
-      status: st,
-      statusWord: st === null ? null : STATUS_MARK[st].word,
-      accessibilityLabel: words.join(', '),
-    };
-  });
-  const out = rows.filter((r) => r.status === 'below' || r.status === 'above').map((r) => `${r.label} ${r.status === 'below' ? 'below' : 'above'}`);
-  return {
-    title: REVIEW_COPY.sets,
-    rows,
-    scaleMax,
-    legend: { done: REVIEW_COPY.legendDone, range: groups.some((g) => g.range !== null) ? REVIEW_COPY.legendRange : null, plan: groups.some((g) => g.planned !== null) ? REVIEW_COPY.legendPlan : null },
-    words: rows.length === 0 ? REVIEW_COPY.noSets : `${String(rows.length)} muscle groups${out.length === 0 ? '' : `; ${out.join(', ')}`}`,
-    empty: rows.length === 0 ? REVIEW_COPY.noSets : null,
-  };
-}
-
-export interface LiftChartView {
-  exerciseId: string;
-  title: string;
-  /** `est. 1RM · kg`, `Best set · kg each`, `Best reps`. */
-  metric: string;
-  /** The newest value with what it is. */
-  now: string | null;
-  /** The line under the title, its label once (review b3-wave3-ux B3): `est. 1RM · 97.5 kg`, `Best set · 100 kg × 5`, `est. 1RM · kg` with no sets. */
-  header: string;
-  /** No sets in the window: `No sets in 16 weeks` (review b3-wave3-ux S3); null otherwise. */
-  empty: string | null;
-  /** `was 90 → now 97.5 → target 110 kg`; null without a target. */
-  progress: string | null;
-  points: { key: string; date: string; value: number; breakBefore: false }[];
-  from: string;
-  to: string;
-  /** The lift target's level (a dotted line); null without one. Never a projection. */
-  target: number | null;
-  /** Too few points for a line: the value alone. */
-  sparse: boolean;
-  words: string;
-  /** Table rows: each value with its unit and, for an est. 1RM, `est.` (VoiceOver reads a row alone; review b3-wave3-ux B4). */
-  table: { key: string; date: string; value: string; set: string }[];
-}
-
-export function liftChartView(l: LiftTrend, today: string): LiftChartView {
-  const first = l.points[0];
-  const last = l.points.at(-1);
-  const metric = l.unit === null ? METRIC_LABEL[l.metric] : `${METRIC_LABEL[l.metric]} · ${liftUnitText(l.unit, l.convention)}`;
-  const nowValue = liftNowValue(l);
-  const header = nowValue === null ? metric : `${METRIC_LABEL[l.metric]} · ${nowValue}`;
-  const progress = wasNowTarget(l);
-  const cell = (p: LiftTrend['points'][number]): string => (l.metric === 'e1rm' ? `est. ${valueText(l, p.value)}` : l.metric === 'reps' ? `${String(p.reps)}${NBSP}reps` : p.load === null ? valueText(l, p.value) : loadText(p.load, p.load.convention));
-  const words = [
-    `${l.name}, ${l.metric === 'e1rm' ? 'estimated one-rep max' : METRIC_LABEL[l.metric].toLowerCase()}`,
-    first === undefined || last === undefined ? 'no sets in 16 weeks' : l.points.length === 1 ? `${valueText(l, last.value)} on ${longDate(last.date, today)}` : `${String(l.points.length)} sessions, ${valueText(l, first.value)} on ${longDate(first.date, today)} to ${valueText(l, last.value)} on ${longDate(last.date, today)}`,
-    l.target === null ? null : `target ${valueText(l, l.target.value)}`,
-    l.lowerIsBetter ? 'less assistance is stronger' : null,
-  ].filter((x): x is string => x !== null);
-  return {
-    exerciseId: l.exerciseId,
-    title: l.name,
-    metric,
-    now: liftNowText(l),
-    header,
-    empty: l.points.length === 0 ? REVIEW_COPY.noRecentSets : null,
-    progress,
-    points: l.points.map((p) => ({ key: p.sessionId, date: p.date, value: p.value, breakBefore: false as const })),
-    from: first?.date ?? today,
-    to: last === undefined ? today : last.date < today ? last.date : today,
-    target: l.target?.value ?? null,
-    sparse: l.points.length < 2,
-    words: words.join('. ').replaceAll(NBSP, ' '),
-    table: [...l.points].reverse().map((p) => ({ key: p.sessionId, date: shortDate(p.date, today), value: cell(p), set: p.load === null ? `${String(p.reps)}${NBSP}reps` : `${loadText(p.load, p.load.convention)}${NBSP}×${NBSP}${String(p.reps)}` })),
-  };
-}
-
 /** A sparkline's points in a W × H box (2 pt inset); flat data sits mid-height. */
 export function sparkPoints(values: readonly number[], width: number, height: number): { x: number; y: number }[] {
   if (values.length === 0) return [];
@@ -517,28 +327,6 @@ export function sparkPoints(values: readonly number[], width: number, height: nu
   const mx = Math.max(...values);
   const span = mx - mn;
   return values.map((v, i) => ({ x: 2 + (values.length === 1 ? (width - 4) / 2 : (i * (width - 4)) / (values.length - 1)), y: span === 0 ? height / 2 : 2 + (height - 4) * (1 - (v - mn) / span) }));
-}
-
-// ---------------------------------------------------------------------------
-// Goal view (§6.2, Ben 21 Oct): consistency first; the training goal orders what follows
-
-export type GoalSection = { kind: 'consistency'; view: ReviewConsistencyView } | { kind: 'sets'; view: SetsBarsView } | { kind: 'lifts'; charts: LiftChartView[]; empty: string | null };
-
-export interface GoalView {
-  /** `Muscle`, `Strength`, `Strength and muscle`, `Goal not set`. */
-  goal: string;
-  sections: GoalSection[];
-}
-
-const GOAL_WORD: Readonly<Record<TrainingGoal, string>> = { strength: 'Strength', muscle: 'Muscle', both: 'Strength and muscle' };
-
-export function goalView(d: ReviewWeekData, goal: TrainingGoal | null, today: string): GoalView {
-  const consistency: GoalSection = { kind: 'consistency', view: reviewConsistencyView(d, today) };
-  const sets: GoalSection = { kind: 'sets', view: setsBarsView(d.groups) };
-  const charts = d.lifts.map((l) => liftChartView(l, today));
-  const lifts: GoalSection = { kind: 'lifts', charts, empty: charts.length === 0 ? REVIEW_COPY.noLifts : null };
-  const rest = goal === 'muscle' ? [sets, lifts] : [lifts, sets];
-  return { goal: goal === null ? REVIEW_COPY.goalNotSet : GOAL_WORD[goal], sections: [consistency, ...rest] };
 }
 
 /** `13–19 Oct`. */

@@ -113,6 +113,11 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
    * exercises he logs, at most 6, in his order. Absent: the plan's main lifts. Your data (rule 10).
    */
   progressLifts: z.array(z.string().min(1).max(64)).max(TRAINING_LIMITS.progressLiftsMax).optional(),
+  /**
+   * (Progress v3, Ben 21 Oct) The reps Ben picked for a lift he added that isn't in the plan, by exercise ID
+   * (1–30). Lifts with a target or in the plan are tracked at those reps instead. Absent: none picked.
+   */
+  progressLiftReps: z.record(z.string().min(1).max(64), z.int().min(1).max(30)).optional(),
   /** Operation IDs already applied, newest last (a repeat is a no-op; rule 5). */
   recentOps: z.array(OperationIdSchema).max(TRAINING_LIMITS.recentOpsMax),
 });
@@ -140,4 +145,5 @@ export type TrainingChange =
   | { kind: 'set_lift_target'; target: LiftTarget }
   | { kind: 'remove_lift_target'; exerciseId: string }
   /** (Ben, 21 Oct) The lifts Progress › Reviews shows (up to 6, in order); an empty list goes back to the plan's main lifts. */
-  | { kind: 'progress_lifts'; exerciseIds: readonly string[] };
+  /** `reps`: the reps to track a lift at that isn't in the plan (asked once when adding it; Progress v3). */
+  | { kind: 'progress_lifts'; exerciseIds: readonly string[]; reps?: Readonly<Record<string, number>> };

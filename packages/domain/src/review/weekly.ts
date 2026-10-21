@@ -117,6 +117,14 @@ export interface ReviewSession {
   template: { routineId: string } | null;
   feel: SessionFeelValue | null;
   exercises: readonly ReviewExercise[];
+  /**
+   * (Progress v3, Ben 21 Oct) Reps the workout planned: each planned working set's target reps (a single
+   * target, or the low end of a range), warm-ups, sets added in the workout and sets taken out before Start
+   * left out. Null: nothing planned in reps (an empty start, an import).
+   */
+  plannedReps: number | null;
+  /** Reps done in working sets, sets Ben added included (so the % can go over 100). */
+  doneReps: number;
 }
 
 /** A finished workout as the review reads it (corrections applied; null when it isn't in history). */
@@ -132,6 +140,18 @@ export function reviewSessionOf(a: SessionAggregate, ownerTz: string, nowMs: num
     planned.set(s.sessionExerciseId, (planned.get(s.sessionExerciseId) ?? 0) + 1);
   }
   const removed = new Set(a.exercises.filter((e) => e.removed !== undefined).map((e) => e.id));
+  let plannedReps = 0;
+  let plannedAny = false;
+  for (const s of a.sets) {
+    if (s.setType === 'warmup' || s.status === 'deleted' || s.pairedWithSetId !== null || s.skippedBy === 'before_start' || s.planned.addedInWorkout === true || s.planned.reps === null) continue;
+    // A single target is min = max; a range counts its low end.
+    plannedReps += s.planned.reps.min;
+    plannedAny = true;
+  }
+  // An other-side companion is the same prescribed set: its reps aren't counted twice.
+  const companions = new Set(a.sets.filter((s) => s.pairedWithSetId !== null).map((s) => s.id));
+  let doneReps = 0;
+  for (const e of p.exercises) for (const s of e.sets) if (s.setType !== 'warmup' && !companions.has(s.setId) && s.reps !== null && s.reps > 0) doneReps += s.reps;
   return {
     sessionId: p.sessionId,
     name: p.name,
@@ -141,6 +161,8 @@ export function reviewSessionOf(a: SessionAggregate, ownerTz: string, nowMs: num
     routineId: a.session.routineId ?? null,
     template: a.session.planDay?.templateRoutineId != null ? { routineId: a.session.planDay.templateRoutineId } : null,
     feel: a.session.feel?.value ?? null,
+    plannedReps: plannedAny ? plannedReps : null,
+    doneReps,
     exercises: p.exercises
       .filter((e) => !removed.has(e.sessionExerciseId))
       .map((e) => ({
@@ -173,7 +195,8 @@ export interface ReviewTemplate {
   routineId: string;
   name: string;
   version: number;
-  exercises: readonly { exerciseId: string; name: string; workingSets: number }[];
+  /** `topReps`: the reps of its top set (the first `top` working set, else the first working set): a single target, or the low end. */
+  exercises: readonly { exerciseId: string; name: string; workingSets: number; topReps?: number | null }[];
 }
 
 export interface ReviewActivity {
@@ -347,6 +370,14 @@ function planFor(plans: readonly ReviewPlan[], startMs: number, endMs: number): 
     if (best === null || from > toMs(best.appliedAtUtc)) best = p;
   }
   return best;
+}
+
+/**
+ * One week's count (the consistency card's): the plan in use that week, its days done (routine ID → the
+ * start of the workout that did it), and the plan days that count after pauses. Pure.
+ */
+export function reviewWeekCount(input: WeeklyReviewInput, monday: string): { count: ReviewWeekCount; plan: ReviewPlan | null; done: Map<string, string> } {
+  return weekCount(input, monday);
 }
 
 function weekCount(input: WeeklyReviewInput, monday: string): { count: ReviewWeekCount; plan: ReviewPlan | null; done: Map<string, string> } {
