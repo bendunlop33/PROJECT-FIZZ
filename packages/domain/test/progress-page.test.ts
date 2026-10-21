@@ -11,6 +11,10 @@ import {
   musclePlanOfReview,
   musclesView,
   percentOfPlan,
+  planDayLetters,
+  sessionNewBests,
+  liftHistorySessions,
+  weeksOnPlan,
   thisWeekView,
   toMs,
   type LiftsOptions,
@@ -109,7 +113,7 @@ describe('This week: sessions, one chip per planned session with day and % of pl
     const v = thisWeekView(input({ sessions: [chest, back], plans: [plan()], activities: [{ id: 'r1', date: '2026-10-13', kind: 'run', status: 'done', distanceM: 5000 }, { id: 'r2', date: '2026-10-14', kind: 'run', status: 'done', distanceM: null }] }), { today: TODAY });
     expect(v.range).toBe('12–18 Oct');
     expect(v.sessions).toBe('2 of 4');
-    expect(v.runs).toBe('2 runs');
+    expect(v.cardio).toBe('2 cardio');
     expect(v.chips.map((c) => [c.name, c.line, c.state])).toEqual([
       ['Chest', 'Mon – 100%', 'done'],
       ['Back', 'Wed – 92%', 'done'],
@@ -149,25 +153,73 @@ describe('This week: sessions, one chip per planned session with day and % of pl
     expect(thisWeekView(input(), { today: TODAY }).empty).toBe(true);
   });
 
-  it('Last 4 weeks: one square per planned session (done, missed, paused), `n of m` right, newest first, the week’s review to open', () => {
+  it('Month: this week first, then 4 weeks; done sessions on the day logged with their letter, cardio a dot, open sessions listed with no day (rule 6)', () => {
     const s = [
       sess('2026-10-05', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }], { routineId: CHEST }),
       sess('2026-10-07', [{ exerciseId: ROW, sets: [work(kg(90), 8)] }], { routineId: BACK }),
       sess('2026-10-09', [{ exerciseId: DB_PRESS, sets: [work(kg(20, 'per_hand'), 10)] }], { routineId: SHOULDERS }),
       sess('2026-09-22', [{ exerciseId: BENCH, sets: [work(kg(95), 6)] }], { routineId: CHEST }),
+      sess('2026-10-12', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }], { routineId: CHEST }),
     ];
     const pausedWeek = new Set(['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']);
-    const v = thisWeekView(input({ sessions: s, plans: [plan({ pausedDates: pausedWeek })], activities: [{ id: 'r', date: '2026-10-06', kind: 'run', status: 'done', distanceM: null }] }), { today: TODAY, reviewIds: new Map([['2026-10-05', 'rev-1']]) });
-    expect(v.past.map((r) => [r.week, r.squares.join(','), r.right])).toEqual([
-      ['5 Oct', 'done,done,done,missed', '3 of 4'],
-      ['28 Sep', 'paused,paused,paused,paused', 'Paused'],
-      ['21 Sep', 'done,missed,missed,missed', '1 of 4'],
-      ['14 Sep', 'missed,missed,missed,missed', '0 of 4'],
+    const activities = [
+      { id: 'r', date: '2026-10-06', kind: 'run' as const, status: 'done' as const, distanceM: null },
+      { id: 'b', date: '2026-10-13', kind: 'ride' as const, status: 'done' as const, distanceM: null },
+      { id: 'y', date: '2026-10-14', kind: 'other' as const, status: 'done' as const, distanceM: null },
+      { id: 'p', date: '2026-10-17', kind: 'run' as const, status: 'planned' as const, distanceM: null },
+    ];
+    const v = thisWeekView(input({ sessions: s, plans: [plan({ pausedDates: pausedWeek })], activities }), { today: TODAY, reviewIds: new Map([['2026-10-05', 'rev-1']]) });
+    // Rides and swims are cardio too; `other` and planned ones aren't counted.
+    expect(v.cardio).toBe('1 cardio');
+    const rows = v.month.rows;
+    expect(rows.map((r) => [r.label, r.right, r.now, r.paused])).toEqual([
+      ['This wk', '1 of 4', true, false],
+      ['5 Oct', '3 of 4', false, false],
+      ['28 Sep', 'Paused', false, true],
+      ['21 Sep', '1 of 4', false, false],
+      ['14 Sep', '0 of 4', false, false],
     ]);
-    expect(v.past[0]?.accessibilityLabel).toBe('Week of 5 October: 3 of 4 sessions, 1 run');
-    expect(v.past[1]?.accessibilityLabel).toBe('Week of 28 September: paused');
-    expect(v.past[0]?.reviewId).toBe('rev-1');
-    expect(v.past[2]?.reviewId).toBeNull();
+    const cell = (r: number) => rows[r]?.cells.map((c) => `${c.done.map((d) => d.letter).join('')}${c.cardio ? '•' : ''}`).join('|');
+    expect(cell(0)).toBe('C|•|||||');
+    expect(cell(1)).toBe('C|•|B||S||');
+    expect(cell(2)).toBe('||||||');
+    // Plan days have no weekday: missed (week over) and planned (to come) are listed after the row, never on a day.
+    expect(rows[0]?.open.map((o) => [o.letter, o.state])).toEqual([['B', 'planned'], ['S', 'planned'], ['L', 'planned']]);
+    expect(rows[1]?.open.map((o) => [o.letter, o.state])).toEqual([['L', 'missed']]);
+    expect(rows[2]?.open).toEqual([]);
+    expect(rows[1]?.accessibilityLabel).toBe('Week of 5 October: 3 of 4 sessions; Mon Chest, Tue cardio, Wed Back, Fri Shoulders; Legs missed');
+    expect(rows[0]?.accessibilityLabel).toBe('This week: 1 of 4 sessions; Mon Chest, Tue cardio; Back planned, Shoulders planned, Legs planned');
+    expect(rows[2]?.accessibilityLabel).toBe('Week of 28 September: paused');
+    expect(rows[1]?.reviewId).toBe('rev-1');
+    expect(rows[3]?.reviewId).toBeNull();
+    expect(rows[0]?.reviewId).toBeNull();
+  });
+
+  it('an off-plan workout shows its own letter on its day; no plan or aim: the workouts done', () => {
+    const v = thisWeekView(input({ sessions: [sess('2026-10-13', [{ exerciseId: CURL, sets: [work(kg(15, 'per_hand'), 10)] }], { name: 'Arms' })] }), { today: TODAY });
+    expect(v.month.rows[0]?.cells[1]?.done).toEqual([{ letter: 'A', name: 'Arms' }]);
+    expect(v.month.rows[0]?.right).toBe('1');
+    expect(v.month.rows[0]?.accessibilityLabel).toBe('This week: 1 workout; Tue Arms');
+    expect(v.month.weeksOnPlan).toBeNull();
+  });
+
+  it('plan-day letters: first letter, plus the one that tells two days apart, numbered when even that clashes', () => {
+    expect(planDayLetters(['Chest', 'Back', 'Shoulders', 'Legs'])).toEqual(['C', 'B', 'S', 'L']);
+    expect(planDayLetters(['Push', 'Pull', 'Legs'])).toEqual(['Ps', 'Pl', 'L']);
+    expect(planDayLetters(['Upper A', 'Upper B'])).toEqual(['UA', 'UB']);
+    expect(planDayLetters(['Full body', 'Full body'])).toEqual(['F1', 'F2']);
+  });
+
+  it('`n weeks on plan`: complete weeks with done ≥ planned in a row; a paused week neither adds nor breaks; a short week ends it', () => {
+    const full = (monday: string) => [CHEST, BACK, SHOULDERS, LEGS].map((r, i) => sess(addDays(monday, i), [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }], { routineId: r }));
+    const paused = new Set(Array.from({ length: 7 }, (_, i) => addDays('2026-09-28', i)));
+    const sessions = [...full('2026-10-05'), ...full('2026-09-21'), ...full('2026-09-14'), ...full('2026-09-07').slice(0, 3), ...full('2026-08-31')];
+    const v = thisWeekView(input({ sessions, plans: [plan({ pausedDates: paused })] }), { today: TODAY });
+    expect(v.month.weeksOnPlan).toBe('3 weeks on plan');
+    expect(weeksOnPlan(input({ sessions, plans: [plan({ pausedDates: paused })] }), 2)).toBe(1);
+    // The plan applied only lately: weeks before it end the count.
+    expect(thisWeekView(input({ sessions, plans: [plan({ appliedAtUtc: '2026-10-04T08:00:00.000Z' })] }), { today: TODAY }).month.weeksOnPlan).toBe('1 week on plan');
+    expect(thisWeekView(input({ sessions: full('2026-09-28'), plans: [plan()] }), { today: TODAY }).month.weeksOnPlan).toBeNull();
   });
 });
 
@@ -320,6 +372,77 @@ describe('Lifts: top set at each lift’s reps, real kg, est. points hollow', ()
   });
 });
 
+describe('PBs: a real top set beyond every earlier real one at the tracked reps (chart rings, table tag, Summary)', () => {
+  const weeks = ['2026-08-24', '2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12'];
+  const opts = (more: Partial<LiftsOptions> = {}): LiftsOptions => ({ today: TODAY, mains: new Set([BENCH, SQUAT, ROW]), planReps: new Map([[BENCH, 6], [SQUAT, 5], [ROW, 8], [DB_PRESS, 10], [PULLUP, 8]]), pickedReps: {}, nameOf: (x) => NAMES[x] ?? 'Exercise', ...more });
+  const series = (exerciseId: string, sets: readonly (ReviewSet | null)[], more: { equipmentId?: string; equipmentKind?: 'weight_stack' } = {}) => sets.flatMap((s, i) => (s === null ? [] : [sess(addDays(weeks[i] ?? MONDAY, 1), [{ exerciseId, sets: [s], ...more }])]));
+
+  it('real points heavier than every earlier real one are PBs; the first ever isn’t; estimates never are and never set the bar', () => {
+    const sessions = series(BENCH, [work(kg(90), 6), work(kg(92.5), 6), work(kg(92.5), 6), work(kg(110), 4), work(kg(95), 6), null, work(kg(95), 6), work(kg(100), 6)]);
+    const l = liftsView(input({ sessions, lifts: [BENCH] }), opts()).lifts[0];
+    expect(l?.points.map((p) => [p.week, p.value, p.estimate, p.pb])).toEqual([
+      [0, 90, false, false],
+      [1, 92.5, false, true],
+      [2, 92.5, false, false],
+      [3, 104, true, false],
+      [4, 95, false, true],
+      [6, 95, false, false],
+      [7, 100, false, true],
+    ]);
+    expect(l?.points[7 - 1]?.pbDetail).toBe('PB · Bench 100 × 6 · week of 12 Oct');
+    expect(l?.latestPb).toBe(true);
+    expect(l?.accessibilityLabel).toContain('current 100 kg, a personal best');
+    expect(l?.chartLabel).toContain('3 personal bests');
+  });
+
+  it('history before the window counts: an older heavier set means no PB now', () => {
+    const sessions = series(BENCH, [null, null, null, null, null, null, work(kg(95), 6), work(kg(100), 6)]);
+    const older = liftHistorySessions(BENCH, [{ sessionId: 'old', performedAtUtc: '2025-03-01T17:00:00.000Z', equipmentId: null, sets: [{ setType: 'working', load: kg(105), reps: 6 }] }], TZ);
+    expect(liftsView(input({ sessions, lifts: [BENCH] }), opts()).lifts[0]?.latestPb).toBe(true);
+    expect(liftsView(input({ sessions, lifts: [BENCH] }), opts({ earlier: older })).lifts[0]?.points.map((p) => p.pb)).toEqual([false, false]);
+    // An excluded old set (e.g. `Spotted`) doesn't set the bar.
+    const flagged = liftHistorySessions(BENCH, [{ sessionId: 'old', performedAtUtc: '2025-03-01T17:00:00.000Z', equipmentId: null, sets: [{ setType: 'working', load: kg(105), reps: 6, exclusions: ['spotted'] }] }], TZ);
+    expect(liftsView(input({ sessions, lifts: [BENCH] }), opts({ earlier: flagged })).lifts[0]?.points.map((p) => p.pb)).toEqual([false, true]);
+  });
+
+  it('assisted: less assistance is the PB; per-hand dumbbells and stacks say their load (`each`, `stack`); kg sets on a lb profile compare in lb', () => {
+    const pull = liftsView(input({ sessions: series(PULLUP, [work(kg(30, 'assistance'), 8), work(kg(25, 'assistance'), 8), work(kg(27.5, 'assistance'), 8)]), lifts: [PULLUP] }), opts()).lifts[0];
+    expect(pull?.points.map((p) => p.pb)).toEqual([false, true, false]);
+    expect(pull?.loadSuffix).toBe('assist');
+    const db = liftsView(input({ sessions: series(DB_PRESS, [work(kg(30, 'per_hand'), 10), work(kg(32.5, 'per_hand'), 10)]), lifts: [DB_PRESS] }), opts()).lifts[0];
+    expect(db?.loadSuffix).toBe('each');
+    expect(db?.points[1]?.pbDetail).toBe('PB · DB press 32.5 each × 10 · week of 31 Aug');
+    const lbs = liftsView(input({ sessions: series(BENCH, [work(kg(100), 6), work(lb(225), 6)]), lifts: [BENCH], unit: 'lb' }), opts()).lifts[0];
+    expect(lbs?.points.map((p) => [p.value, p.pb])).toEqual([[220, false], [225, true]]);
+    expect(liftsView(input({ sessions: series(BENCH, [work(kg(100), 6)]), lifts: [BENCH] }), opts()).lifts[0]?.loadSuffix).toBeNull();
+  });
+
+  it('stacks: only the same machine sets the bar (a lighter set on another stack isn’t a PB, nor a heavier one beaten)', () => {
+    const A = id(700);
+    const B = id(701);
+    const sessions = [...series(ROW, [work(kg(80, 'stack'), 8), work(kg(85, 'stack'), 8)], { equipmentId: A, equipmentKind: 'weight_stack' }), ...series(ROW, [null, null, work(kg(60, 'stack'), 8), work(kg(62.5, 'stack'), 8)], { equipmentId: B, equipmentKind: 'weight_stack' })];
+    const l = liftsView(input({ sessions, lifts: [ROW] }), opts()).lifts[0];
+    expect(l?.points.map((p) => [p.value, p.pb])).toEqual([[60, false], [62.5, true]]);
+    expect(l?.loadSuffix).toBe('stack');
+  });
+
+  it('Summary: `New best · Bench 100 × 6` for a tracked lift beating every earlier real top set; none on the first ever, an estimate, or a tie', () => {
+    const a = sess('2026-10-05', [{ exerciseId: BENCH, sets: [work(kg(95), 6)] }, { exerciseId: DB_PRESS, sets: [work(kg(30, 'per_hand'), 10)] }]);
+    const b = sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6), work(kg(110), 3)] }, { exerciseId: DB_PRESS, sets: [work(kg(32.5, 'per_hand'), 10)] }, { exerciseId: SQUAT, sets: [work(kg(120), 5)] }]);
+    const c = sess('2026-10-14', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }]);
+    const inp = input({ sessions: [a, b, c], lifts: [BENCH, DB_PRESS, SQUAT] });
+    const bests = sessionNewBests(inp, opts(), b.sessionId);
+    expect(bests.map((x) => x.text.replaceAll('\u00a0', ' '))).toEqual(['New best · Bench 100 × 6', 'New best · DB press 32.5 each × 10']);
+    expect(bests[1]?.accessibilityLabel).toBe('New best: DB press, 32.5 kg each for 10 reps');
+    expect(sessionNewBests(inp, opts(), a.sessionId)).toEqual([]);
+    expect(sessionNewBests(inp, opts(), c.sessionId)).toEqual([]);
+    expect(sessionNewBests(inp, opts(), 'nope')).toEqual([]);
+    // Older history beyond the window sets the bar too.
+    const older = liftHistorySessions(BENCH, [{ sessionId: 'old', performedAtUtc: '2025-03-01T17:00:00.000Z', equipmentId: null, sets: [{ setType: 'working', load: kg(102.5), reps: 6 }] }], TZ);
+    expect(sessionNewBests(inp, opts({ earlier: older }), b.sessionId).map((x) => x.exerciseId)).toEqual([DB_PRESS]);
+  });
+});
+
 describe('Muscles: sets per week per muscle vs plan, 8 complete weeks', () => {
   const templates: ReviewTemplate[] = [
     { planId: PLAN, routineId: CHEST, name: 'Chest', version: 1, exercises: [{ exerciseId: BENCH, name: 'Bench', workingSets: 4 }] },
@@ -396,7 +519,17 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
     expect(row).toMatchObject({ exercise: 'Row', before: '3 sets', after: '4 sets', when: 'next Pull', why: 'Stuck at 92.5 × 8 for 3 weeks', canUndo: true, canRedo: false, statusText: null });
     expect(row.accessibilityLabel).toBe('Row: 3 sets to 4 sets, next Pull. Stuck at 92.5 × 8 for 3 weeks');
     expect(changeRowView(proposal({ status: 'undone' }))).toMatchObject({ canUndo: false, canRedo: true, statusText: 'Undone' });
-    expect(changeRowView(proposal({ status: 'stale' }))).toMatchObject({ canUndo: false, canRedo: false, statusText: 'Out of date' });
+    expect(changeRowView(proposal({ status: 'stale' }))).toMatchObject({ canUndo: false, canRedo: false, statusText: 'Out of date' });    // Held by a pain flag: named, never `Out of date`, no Apply (rule 9; review build-b-21oct S3).
+    expect(changeRowView(proposal({ status: 'stale', held: 'pain' }))).toMatchObject({ statusText: 'Held · pain', canApply: false });
+    const flagged = changeRowView(proposal({ status: 'open', actionId: null }), { painFlagged: new Set([ROW]) });
+    expect(flagged).toMatchObject({ statusText: 'Held · pain', canApply: false });
+    expect(flagged.accessibilityLabel).toContain('Held for a pain flag');
+    expect(changeRowView(proposal({ status: 'undone' }), { painFlagged: new Set([ROW]) }).canRedo).toBe(false);
+  });
+
+  it('`Reviewing…` while the coach is being asked, not the last stored result (review build-b-21oct S2)', () => {
+    expect(coachChangesView(review({ coach: { status: 'offline' } }), TODAY, { reviewing: true })?.tag).toBe('Reviewing…');
+    expect(coachChangesView(review(), TODAY, { reviewing: true })?.tag).toBe('Coach');
   });
 
   it('the coach’s sentence, the changes, NEW until `Got it`; collapsed to `1 change for next week`', () => {
