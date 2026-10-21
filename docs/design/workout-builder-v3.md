@@ -742,7 +742,12 @@ Code drafts and enforces; the AI adds judgement at fixed points; code checks eve
 Progress gets a **Reviews** section at the top, next to the goal-progress view:
 - **Latest:** this week's review (or the block review when one is due) as a card: verdict line, 3–5 facts, any open proposals with Apply/Skip.
 - **History:** a list by week (and block), each opening the full review; session reviews open from that workout in history.
-- **Goal:** goal, plan/block position, main-lift trend vs target, weekly sets per muscle vs range (facts only, est. 1RM labelled).
+- **Goal** (Ben, 21 Oct: "will this also allow for different exercises? and also just to track sessions vs plan, as a set weight target might not be the goal per se"): the view follows what Ben is actually aiming for, not only a weight:
+  - **Consistency, always shown first:** sessions done vs planned this week (day dots), and over the last 6 weeks (bars per week, planned vs done, with runs shown separately); missed planned days named, not scored.
+  - **Training goal** from Profile (strength / muscle / both) picks what comes next: *muscle* → weekly sets per muscle vs range bars lead; *strength* → lift trends lead; *both* → both.
+  - **Lifts, any exercise:** trend lines for the lifts Ben chooses (default: the plan's main lifts; add or remove any exercise he logs, up to 6). Each shows est. 1RM (labelled) or best set, and the existing **lift targets** (up to 3, on/off setting, any exercise) as a target line with `was → now → target` when set. No target needed to see a trend.
+  - **No predictions:** no projected date or projection line (lift-targets rule: the app never predicts when a target is reached; rule 6). This replaces the projection in the prototype.
+  - Facts only, no scores; est. 1RM labelled.
 - Today only ever shows the one-line pre-session nudge, linking here.
 Reviews are Your data (rule 10): stored as their own records with facts separate from coach text; included in backup/export/delete.
 
