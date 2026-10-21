@@ -166,6 +166,9 @@ describe('rep range from history (pure)', () => {
     expect(ruleRepsFact({ last: 15, goal: ISO, range: { min: 12, max: 15 }, kind: 'history' })).toBe('Reps follow your last session (15 reps): 12–15.');
     expect(ruleRepsFact({ last: 20, goal: ISO, range: { min: 15, max: 18 }, kind: 'toward_goal' })).toBe('Last session 20 reps, well above 8–12: 15–18 this time, moving toward 8–12.');
     expect(ruleRepsFact({ last: 10, goal: ISO, range: ISO, kind: 'goal' })).toBeNull();
+    // Review S2: a fixed range (main lift, his own rule) names his last reps when they were outside it.
+    expect(ruleRepsFact({ last: 12, goal: { min: 3, max: 6 }, range: { min: 3, max: 6 }, kind: 'fixed' })).toBe('Last time 12 reps · 3–6');
+    expect(ruleRepsFact({ last: 5, goal: { min: 3, max: 6 }, range: { min: 3, max: 6 }, kind: 'fixed' })).toBeNull();
   });
 });
 
@@ -307,7 +310,10 @@ describe('secondary compounds and main lifts', () => {
 
   it('a barbell row as a secondary lift (main lift rule read as a compound’s): his 12 reps → about 11 at the next load, not 3–6', () => {
     const load = slotLoads(ROW, ROWS_12, [bar]);
-    // The main-lift reading keeps 3–6 (`fixed`); the secondary reading follows his reps.
+    // The main-lift reading keeps its scheme (`fixed`) and says so behind Why? (review S2); the secondary reading follows his reps.
+    const main = nextTargetsFor({ ownerId: OWNER, exerciseId: ROW.id, exerciseName: ROW.name, measurement: 'reps', unit: 'kg', convention: 'total', equipment: bar, exercise: ROW, rule: null, workingSets: 3, history: ROWS_12, painFlags: [], sessionPain: { active: false, reportedAtUtc: null } }).result;
+    expect(main.reps?.kind).toBe('fixed');
+    expect(main.explanation.facts[0]).toMatch(/^Last time 12 reps · \d+–\d+$/);
     expect(load.ruleReps?.kind).toBe('fixed');
     expect(load.secondary?.ruleReps).toMatchObject({ last: 12, range: { min: 9, max: 12 }, kind: 'history' });
     const slot = makeSlot(ROW.id, { main: false }, ctxFor(ROW, load, 'compound', true));

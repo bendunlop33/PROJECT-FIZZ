@@ -134,11 +134,13 @@ export function aimReps(decision: ProgressionDecision, range: RepRangeValue, las
 
 const rangeText = (r: RepRangeValue): string => (r.min === r.max ? String(r.min) : `${String(r.min)}–${String(r.max)}`);
 
-/** The fact behind `Why?` when the range came from history; null when it's the goal range. */
+/** The fact behind `Why?` when the range came from history, or a fixed range his last reps were outside; else null. */
 export function ruleRepsFact(r: Pick<RuleReps, 'last' | 'goal' | 'range' | 'kind'>): string | null {
   if (r.last === null) return null;
   if (r.kind === 'history') return `Reps follow your last session (${String(r.last)} reps): ${rangeText(r.range)}.`;
   if (r.kind === 'toward_goal') return `Last session ${String(r.last)} reps, well above ${rangeText(r.goal)}: ${rangeText(r.range)} this time, moving toward ${rangeText(r.goal)}.`;
+  // Review S2: a main lift's scheme (or a rule of his own) stands, but never silently against his history.
+  if (r.kind === 'fixed' && (r.last < r.range.min || r.last > r.range.max)) return `Last time ${String(r.last)} reps · ${rangeText(r.range)}`;
   return null;
 }
 
