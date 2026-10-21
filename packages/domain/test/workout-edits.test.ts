@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type Exercise, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
 import {
+  fitPlanToItem,
+  snapTypedLoadEasier,
   addWarmupCommand,
   adviseSessionChange,
   buildExecutionOrder,
@@ -347,5 +349,31 @@ describe('builder loads for an added or swapped exercise', () => {
     expect(plan.map((p) => p.planned.load)).toEqual([lb(15, 'per_hand'), lb(25, 'per_hand'), null]);
     expect(plan.map((p) => p.planned.rpe)).toEqual([null, 8, 9]);
     expect(plan[1]?.planned.reps).toEqual({ min: 8, max: 8 });
+  });
+});
+
+describe('loads typed or planned on the gym’s kit (rule 4)', () => {
+  it('fitPlanToItem keeps what the item makes, rounds toward easier, never past the max, and blanks what only fits harder', () => {
+    const plan = [
+      { planned: { load: kg(50, 'stack'), reps: null, durationS: null, rpe: null, rir: null } },
+      { planned: { load: kg(52, 'stack'), reps: null, durationS: null, rpe: null, rir: null } },
+      { planned: { load: kg(80, 'stack'), reps: null, durationS: null, rpe: null, rir: null } },
+      { planned: { load: kg(2, 'stack'), reps: null, durationS: null, rpe: null, rir: null } },
+    ];
+    const fitted = fitPlanToItem(plan, startFixture().input.gymEquipment[1] ?? null);
+    expect(fitted.map((p) => p.planned.load?.value ?? null)).toEqual([50, 50, 50, null]);
+    // Assisted: easier is more assistance; past the most assistance there is it can't go.
+    const machine = assisted();
+    const a = fitPlanToItem([{ planned: { load: kg(22, 'assistance'), reps: null, durationS: null, rpe: null, rir: null } }, { planned: { load: kg(60, 'assistance'), reps: null, durationS: null, rpe: null, rir: null } }], machine);
+    expect(a.map((p) => p.planned.load?.value ?? null)).toEqual([25, null]);
+  });
+
+  it('a kg typed in the pop-up rounds down on the bar, never up past what was typed', () => {
+    const s0 = startFixture().state;
+    const [, b1] = setsFor(s0, BENCH);
+    expect(snapTypedLoadEasier(s0, b1?.id ?? '', 101)).toBe(100);
+    // Past the bar's max (every plate on): the max, never more.
+    expect(snapTypedLoadEasier(s0, b1?.id ?? '', 1000)).toBe(187.5);
+    expect(snapTypedLoadEasier(s0, b1?.id ?? '', 10)).toBeUndefined();
   });
 });

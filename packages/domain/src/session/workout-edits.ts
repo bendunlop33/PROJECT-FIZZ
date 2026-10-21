@@ -1,9 +1,9 @@
-import { BUILD_LIMITS, type CommandOf, type Load, type PlannedSet, type SessionAggregate, type SessionExercise, type SetType, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
+import { BUILD_LIMITS, type CommandOf, type EquipmentInstance, type Load, type PlannedSet, type SessionAggregate, type SessionExercise, type SetType, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 import { adviseAfter, adviseBuilder, type AdviceBlock, type BuilderAdvice } from '../builder/advise';
 import { BUILDER_REST_DEFAULTS } from '../builder/rest';
 import { warmupGap } from '../builder/edit';
 import type { BuilderInfoLookup, BuilderSetRow } from '../builder/types';
-import { loadDirection, roundToAvailableLoad } from '../equipment';
+import { isLoadAchievable, isPresenceOnly, loadDirection, roundToAvailableLoad } from '../equipment';
 import { equipmentOfRow } from './equipment-snapshot';
 
 /**
@@ -313,4 +313,25 @@ export function plannedFromBuilderRows(rows: readonly BuilderSetRow[], frame: { 
       rir: null,
     },
   }));
+}
+
+/**
+ * Every planned load made achievable on the item the session will use (rule 4): kept when the item
+ * makes it, else rounded toward easier on it; a load that would only fit by going harder (below the
+ * lightest step) or in another convention is left blank (`—`, Ben enters it). No item: kept as is
+ * (bodyweight, or a free load in the row's own unit).
+ */
+export function fitPlanToItem<T extends { planned: PlannedSet }>(plan: readonly T[], eq: EquipmentInstance | null): T[] {
+  if (eq === null) return [...plan];
+  return plan.map((p) => {
+    const load = p.planned.load;
+    if (load === null) return p;
+    if (isPresenceOnly(eq)) return { ...p, planned: { ...p.planned, load: load.value === 0 && load.convention === eq.loadConvention ? load : null } };
+    if (isLoadAchievable(load, eq)) return p;
+    const r = roundToAvailableLoad(load, eq, 'easier');
+    if (!r.ok) return { ...p, planned: { ...p.planned, load: null } };
+    // Toward easier stays in range except below the lightest step (more assistance than the most): that would be harder.
+    const harder = r.bounded === (loadDirection(eq.loadConvention) === 'resistance' ? 'min' : 'max');
+    return { ...p, planned: { ...p.planned, load: harder ? null : r.load } };
+  });
 }
