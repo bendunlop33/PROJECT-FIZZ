@@ -9,7 +9,7 @@
  * `buildWorkoutTableView` (domain). This file only groups, numbers and words
  * what the session already holds.
  */
-import { toMs, type RestView, type TableColumns, type TableRow, type TopSet, type WorkoutTableView } from '@fizz/domain';
+import { setSteps, toMs, type RestView, type TableColumns, type TableRow, type TopSet, type WorkoutTableView } from '@fizz/domain';
 import type { SetType } from '@fizz/schemas';
 
 const NBSP = ' ';
@@ -28,6 +28,8 @@ export interface RoundRow {
   /** `Top`, `Back-off`, `Drop` under the number; null for plain working sets and warm-ups. */
   typeLabel: string | null;
   warmup: boolean;
+  /** The other side of a single-side log: shares its partner's number, not counted in progress. */
+  companion: boolean;
   /** The set Log logs now (the open row). */
   current: boolean;
   done: boolean;
@@ -103,14 +105,20 @@ function spokenEffort(r: RoundRow['rpe'], state: TableRow['state']): string | nu
   return `target RPE ${r.slice(1)}`;
 }
 
-/** Numbers working sets 1..n (warm-ups `W`, not counted), with the set-type label and RPE cell (§2). */
+/**
+ * Numbers working sets 1..n (warm-ups `W`, not counted; the other side of a
+ * single-side log shares its partner's number) with the domain's `setSteps`,
+ * the same numbering every toast and sheet uses, plus the set-type label and
+ * RPE cell (§2).
+ */
 export function roundRows(rows: readonly TableRow[]): RoundRow[] {
-  let n = 0;
+  const steps = setSteps(rows.map((r) => ({ id: r.setId, setType: r.setType, pairedWithSetId: r.pairedWithSetId })));
   return rows.map((row) => {
+    const step = steps.get(row.setId);
     const warmup = row.setType === 'warmup';
-    const number = warmup ? null : (n += 1);
+    const number = step?.number ?? null;
     const side = row.badges.includes('L') ? 'L' : row.badges.includes('R') ? 'R' : '';
-    const stepName = warmup ? 'Warm-up' : `Set ${String(number)}`;
+    const stepName = step?.name ?? (warmup ? 'Warm-up' : 'Set');
     const rpe = rpeCellText(row);
     const status = row.state === 'done' ? 'done' : row.state === 'skipped' ? 'skipped' : row.state === 'open' ? 'current, not done' : 'not done';
     const typeLabel = TYPE_LABEL[row.setType];
@@ -120,10 +128,11 @@ export function roundRows(rows: readonly TableRow[]): RoundRow[] {
     return {
       row,
       setId: row.setId,
-      label: `${warmup ? 'W' : String(number)}${side}`,
+      label: `${number === null ? 'W' : String(number)}${side}`,
       number,
       typeLabel,
       warmup,
+      companion: step?.companion ?? false,
       current: row.state === 'open',
       done: row.state === 'done',
       skipped: row.state === 'skipped',
@@ -134,9 +143,14 @@ export function roundRows(rows: readonly TableRow[]): RoundRow[] {
   });
 }
 
+/**
+ * Working sets done / total: warm-ups and skipped sets aren't counted, and a
+ * single-side pair is one set, done once both sides are (review B2).
+ */
 function progressOf(rows: readonly RoundRow[]): { done: number; total: number } {
-  const counted = rows.filter((r) => !r.warmup && !r.skipped);
-  return { done: counted.filter((r) => r.done).length, total: counted.length };
+  const counted = rows.filter((r) => !r.warmup && !r.skipped && !r.companion);
+  const sides = (head: RoundRow) => rows.filter((r) => r.companion && r.row.pairedWithSetId === head.setId && !r.skipped);
+  return { done: counted.filter((r) => r.done && sides(r).every((c) => c.done)).length, total: counted.length };
 }
 
 function anchorOf(rows: readonly RoundRow[]): number {
@@ -220,8 +234,7 @@ export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf
         };
       });
     }
-    const live = order.filter((r) => r.state !== 'skipped');
-    const counted = live.filter((r) => r.setType !== 'warmup');
+    const totals = exercises.reduce((t, e) => ({ done: t.done + e.progress.done, total: t.total + e.progress.total }), { done: 0, total: 0 });
     const first = order.find((r) => r.state === 'open') ?? order.find((r) => r.state === 'pending');
     return {
       key: block.key,
@@ -232,8 +245,8 @@ export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf
       current: order.some((r) => r.state === 'open'),
       hasPending: order.some((r) => r.state === 'pending' || r.state === 'open'),
       firstPendingSetId: first?.setId ?? null,
-      doneSets: counted.filter((r) => r.state === 'done').length,
-      totalSets: counted.length,
+      doneSets: totals.done,
+      totalSets: totals.total,
     };
   });
 }
@@ -384,7 +397,11 @@ export interface BoxFit {
 export interface RoundFit {
   boxes: BoxFit[];
   upNext: boolean;
-  /** Even 2 rows each can't fit (largest text sizes): every row shows and the page scrolls. */
+  /**
+   * Even 2 rows each can't fit (largest text sizes, or the keypad is up on a
+   * small phone): the boxes stay at 2 rows, Up next hides, and the page
+   * scrolls (to the cell being typed in, `pageOffsetFor`).
+   */
   pageScroll: boolean;
 }
 
@@ -393,7 +410,8 @@ export interface RoundFit {
  * `available` (§2): when everything fits nothing scrolls; else the box with
  * the most rows shrinks first, row by row, aiming for 3 rows each; the `Up
  * next` line gives way before any box goes below 3; never below 2. If even
- * that can't fit, every row shows and the page scrolls. `fixed` is all the
+ * that can't fit, the boxes keep 2 rows, Up next hides and the page scrolls
+ * (never full lists: the round would reflow while Ben types; review B3). `fixed` is all the
  * rest of the round (headers, column labels, compact rows, card padding,
  * after-set block); `upNext` the Up next line's height.
  */
@@ -435,7 +453,27 @@ export function fitRoundBoxes(p: { available: number; fixed: number; upNext: num
   if (fits(aim, false)) return result(aim, false, false);
   const least = shrink(BOX_MIN_ROWS, false);
   if (fits(least, false)) return result(least, false, false);
-  return result(n, true, true);
+  return result(least, false, true);
+}
+
+/**
+ * The row a box positions on: a set just added with `＋ Set` while it's
+ * pinned (until the next log, untick or round change; review B2), else the
+ * exercise's anchor (the open row, the first set to do, the last row).
+ */
+export function boxAnchor(ex: Pick<RoundExercise, 'rows' | 'anchor'>, pinnedSetId: string | null): number {
+  if (pinnedSetId === null) return ex.anchor;
+  const i = ex.rows.findIndex((r) => r.setId === pinnedSetId);
+  return i >= 0 ? i : ex.anchor;
+}
+
+/**
+ * Page-scroll fallback with the keypad up (review B3): the page offset that
+ * brings the row being typed in into view. Window coordinates: the page's
+ * visible top and height, the row's top (box top + row y − box offset).
+ */
+export function pageOffsetFor(p: { pageOffset: number; pageTop: number; pageHeight: number; rowTop: number; rowHeight: number }): number {
+  return keepInView(p.pageOffset, p.pageHeight, p.pageOffset + (p.rowTop - p.pageTop), p.rowHeight);
 }
 
 /** The offset that keeps a row (the cell being typed in) inside its box: the smallest move, none when it's already in view. */

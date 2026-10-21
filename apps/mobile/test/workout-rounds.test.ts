@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SupersetCard, TableBlock, TableCard, TableRow, WorkoutTableView } from '@fizz/domain';
 
 import {
+  boxAnchor,
   boxFades,
   boxFirstRow,
   buildRounds,
@@ -13,6 +14,7 @@ import {
   overTimeText,
   overviewRows,
   overviewTitle,
+  pageOffsetFor,
   positionKey,
   roundPrimary,
   roundRows,
@@ -40,6 +42,7 @@ function row(over: Partial<TableRow> = {}): TableRow {
   return {
     setId: `s${String(seq)}`,
     number: seq,
+    pairedWithSetId: null,
     badges: [],
     note: null,
     status: 'pending',
@@ -158,8 +161,31 @@ describe('rows: numbering, set types and the RPE cell (§2)', () => {
     ]);
   });
 
-  it('a fixed side follows the number', () => {
-    expect(roundRows([row({ badges: ['L'] }), row({ badges: ['R'] })]).map((r) => r.label)).toEqual(['1L', '1R'].map((x, i) => (i === 0 ? x : '2R')));
+  it('the other side of a single-side log shares its partner\'s number and is not a set of its own (logic B2)', () => {
+    const left = row({ badges: ['L'], state: 'done', status: 'done' });
+    const right = row({ badges: ['R'], pairedWithSetId: left.setId, state: 'open' });
+    const rows = [left, right, row(), row()];
+    expect(roundRows(rows).map((r) => [r.label, r.stepName, r.companion])).toEqual([
+      ['1L', 'Set 1', false],
+      ['1R', 'Set 1', true],
+      ['2', 'Set 2', false],
+      ['3', 'Set 3', false],
+    ]);
+    const [ex] = buildRounds(view([card('Split squat', rows)]), works)[0]?.exercises ?? [];
+    // The pair is one set, not done until both sides are.
+    expect(ex?.progressText).toBe('0/3');
+    const both = [left, { ...right, state: 'done' as const }, row(), row()];
+    const [ex2] = buildRounds(view([card('Split squat', both)]), works)[0]?.exercises ?? [];
+    expect(ex2?.progressText).toBe('1/3');
+    // The pill names the right side as set 1.
+    const p = roundPrimary({ rounds: buildRounds(view([card('Split squat', rows)]), works), shown: 0, primary: { kind: 'log', label: 'Log 20 kg × 8' } });
+    expect(p).toEqual({ kind: 'step', label: 'Set 1 · Log 20 kg × 8' });
+  });
+
+  it('a warm-up\'s other side stays a warm-up', () => {
+    const left = row({ badges: ['L'], setType: 'warmup', state: 'done' });
+    const right = row({ badges: ['R'], setType: 'warmup', pairedWithSetId: left.setId });
+    expect(roundRows([left, right, row()]).map((r) => r.label)).toEqual(['WL', 'WR', '1']);
   });
 
   it('RPE column: the target @9 until logged, then the logged RPE (or RIR); none for warm-ups', () => {
@@ -333,14 +359,57 @@ describe('row boxes: the round fits one screen (§2)', () => {
     expect(fit.upNext).toBe(false);
   });
 
-  it('never below 2 rows; when even that can’t fit, every row shows and the page scrolls', () => {
+  it('never below 2 rows; when even that can’t fit, boxes keep 2 rows, Up next hides and the page scrolls (spec B3)', () => {
     const two = fitRoundBoxes({ available: 300 + 4 * 45, fixed: 300, upNext: 20, boxes: [{ heights: h(5), anchor: 0 }, { heights: h(5), anchor: 0 }] });
     expect(two.boxes.map((b) => b.rows)).toEqual([2, 2]);
     expect(two.pageScroll).toBe(false);
     const none = fitRoundBoxes({ available: 300 + 3 * 45, fixed: 300, upNext: 20, boxes: [{ heights: h(5), anchor: 0 }, { heights: h(5), anchor: 0 }] });
     expect(none.pageScroll).toBe(true);
-    expect(none.boxes.every((b) => b.height === null)).toBe(true);
-    expect(none.upNext).toBe(true);
+    expect(none.boxes.map((b) => [b.rows, b.height])).toEqual([
+      [2, 90],
+      [2, 90],
+    ]);
+    expect(none.upNext).toBe(false);
+  });
+
+  it('keypad open on a small phone, superset round 3a + 3b: the page scrolls, boxes keep 2 rows around the open row, the round never reflows to full lists (spec B3)', () => {
+    // SE: 667 pt; the round page has ~470 pt with the keypad closed and ~210 pt once the keypad and its bar are up.
+    const boxes = [
+      { heights: [45, 45, 45, 45], anchor: 2 },
+      { heights: [45, 45, 96, 45], anchor: 2 }, // 3b's open row is taller (cells and links)
+    ];
+    const closed = fitRoundBoxes({ available: 470, fixed: 230, upNext: 28, boxes });
+    expect(closed.pageScroll).toBe(false);
+    const open = fitRoundBoxes({ available: 210, fixed: 230, upNext: 28, boxes });
+    expect(open.pageScroll).toBe(true);
+    expect(open.upNext).toBe(false);
+    expect(open.boxes.map((b) => b.rows)).toEqual([2, 2]);
+    // 3b's open row (index 2) is in its box's 2 rows.
+    const b = open.boxes[1];
+    expect(b !== undefined && b.first <= 2 && 2 < b.first + b.rows).toBe(true);
+    // The page then scrolls so the row being typed in clears the keypad: the page shows 210 pt from y 100 (window).
+    expect(pageOffsetFor({ pageOffset: 0, pageTop: 100, pageHeight: 210, rowTop: 100 + 380, rowHeight: 96 })).toBe(380 + 96 - 210);
+    // Already in view: no move.
+    expect(pageOffsetFor({ pageOffset: 40, pageTop: 100, pageHeight: 210, rowTop: 150, rowHeight: 45 })).toBe(40);
+    // Above the view: scroll up to it.
+    expect(pageOffsetFor({ pageOffset: 200, pageTop: 100, pageHeight: 210, rowTop: 60, rowHeight: 45 })).toBe(160);
+  });
+
+  it('＋ Set: the box anchors on the new row until the next log, untick or round change, so it never lands out of sight (spec B2)', () => {
+    const rs = buildRounds(view([card('Bench', [row({ state: 'open' }), row({}), row({}), row({ setId: 'added' })])]), works);
+    const ex = rs[0]?.exercises[0];
+    if (!ex) throw new Error('no exercise');
+    expect(ex.anchor).toBe(0);
+    expect(boxAnchor(ex, null)).toBe(0);
+    expect(boxAnchor(ex, 'added')).toBe(3);
+    expect(boxAnchor(ex, 'not-here')).toBe(0);
+    // 3 sets all fitted; the 4th makes the box scroll at 3 rows. Anchored on the current set it would hide the new row…
+    const onCurrent = fitRoundBoxes({ available: 300 + 3 * 45, fixed: 300, upNext: 0, boxes: [{ heights: h(4), anchor: boxAnchor(ex, null) }] }).boxes[0];
+    expect(onCurrent?.first).toBe(0);
+    expect(onCurrent !== undefined && 3 < onCurrent.first + onCurrent.rows).toBe(false);
+    // …anchored on the new row, it shows it.
+    const pinned = fitRoundBoxes({ available: 300 + 3 * 45, fixed: 300, upNext: 0, boxes: [{ heights: h(4), anchor: boxAnchor(ex, 'added') }] }).boxes[0];
+    expect(pinned).toEqual({ rows: 3, first: 1, offset: 45, height: 135 });
   });
 
   it('a box with only 1 or 2 rows never shrinks', () => {

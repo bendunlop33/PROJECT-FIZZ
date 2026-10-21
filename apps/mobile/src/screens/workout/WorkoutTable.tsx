@@ -9,7 +9,7 @@ import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, StepperTileRow, TextButton, TEXT_PRESSED_OPACITY, type SymbolName } from '../../ui';
 import { CARDIO_TIME_FORMAT } from '../../ui/number-text';
 import { cellInputA11y, editsInPlace, loadCellA11y, runRowTap, valueCellA11y, type CellField, type RowPart, type RowTap, type TileId } from '../../workout/table';
-import { boxFades, fitRoundBoxes, keepInView, ROW_HEIGHT_DEFAULT, type Round, type RoundExercise, type RoundFit, type RoundRow } from '../../workout/rounds';
+import { boxAnchor, boxFades, fitRoundBoxes, keepInView, pageOffsetFor, ROW_HEIGHT_DEFAULT, type Round, type RoundExercise, type RoundFit, type RoundRow } from '../../workout/rounds';
 import { claimsDrag, swipeIntent } from '../../workout/set-pager';
 import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
@@ -109,6 +109,21 @@ export function RoundPage(props: RoundPageProps) {
   const [fades, setFades] = useState<Partial<Record<number, { top: boolean; bottom: boolean }>>>({});
   const applied = useRef(new Map<number, string>());
   const upNextShown = props.upNext !== null && (fit?.upNext ?? true);
+  /** The page's own scroll (fallback only) and its visible frame in the window. */
+  const pageY = useRef(0);
+  const outer = useRef<View>(null);
+  /**
+   * `＋ Set` (review B2): the new row stays the box's anchor until the next
+   * log, untick or round change, so the box never scrolls back off it when
+   * the extra row makes it start scrolling.
+   */
+  const [pin, setPin] = useState<{ setId: string; key: string } | null>(null);
+  if (props.highlightSetId !== null && pin?.setId !== props.highlightSetId) setPin({ setId: props.highlightSetId, key: props.positionKey });
+  const pinned = pin !== null && pin.key === props.positionKey ? pin.setId : null;
+  /** Bumped when the pinned row lays out, so the box positions on it once it's really there. */
+  const [pinLaidOut, setPinLaidOut] = useState(0);
+  const highlightShown = useRef(props.onHighlightShown);
+  highlightShown.current = props.onHighlightShown;
 
   const heightsOf = useCallback(
     (i: number): number[] => {
@@ -129,10 +144,10 @@ export function RoundPage(props: RoundPageProps) {
       let boxTotal = 0;
       for (let i = 0; i < round.exercises.length; i += 1) boxTotal += x.boxFrames.get(i) ?? 0;
       const fixed = Math.max(0, x.content - boxTotal - (upNextShown ? x.upNext : 0));
-      const next = fitRoundBoxes({ available: x.available, fixed, upNext: props.upNext === null ? 0 : x.upNext, boxes: round.exercises.map((e, i) => ({ heights: heightsOf(i), anchor: e.anchor })) });
+      const next = fitRoundBoxes({ available: x.available, fixed, upNext: props.upNext === null ? 0 : x.upNext, boxes: round.exercises.map((e, i) => ({ heights: heightsOf(i), anchor: boxAnchor(e, pinned) })) });
       setFit((cur) => (sameFit(cur, next) ? cur : next));
     });
-  }, [round, heightsOf, props.upNext, upNextShown]);
+  }, [round, heightsOf, props.upNext, upNextShown, pinned]);
   useEffect(() => {
     recompute();
   }, [recompute, props.afterSet, props.keyboardHeight]);
@@ -143,20 +158,26 @@ export function RoundPage(props: RoundPageProps) {
     [],
   );
 
-  // Position each box on its current set (§2): on a log, untick or round change, and when its height changes; never while typing.
+  // Position each box on its current set (§2), or on a set just added: on a log, untick or round change, and when its height changes; never while typing.
   useEffect(() => {
     if (fit === null || props.editingSetId !== null) return;
     fit.boxes.forEach((b, i) => {
-      const key = `${props.positionKey}|${String(b.height)}`;
+      const hasPin = pinned !== null && (round.exercises[i]?.rows.some((r) => r.setId === pinned) ?? false);
+      // The added row must be laid out (and in this fit) before the box can show it.
+      const pinReady = hasPin && (m.current.rows.get(i)?.has(pinned) ?? false) && b.rows > 0;
+      const key = `${props.positionKey}|${String(b.height)}|${hasPin ? `${pinned}:${String(pinReady)}:${String(pinLaidOut)}` : ''}`;
       if (applied.current.get(i) === key) return;
       // The first placement in a round is a jump; later ones (a log, an untick) move with the motion setting.
       const animated = !props.reduceMotion && applied.current.has(i);
       applied.current.set(i, key);
-      if (b.height === null) return;
-      boxes.current.get(i)?.scrollTo({ y: b.offset, animated });
-      scrollY.current.set(i, b.offset);
+      if (b.height !== null) {
+        boxes.current.get(i)?.scrollTo({ y: b.offset, animated });
+        scrollY.current.set(i, b.offset);
+      }
+      // `＋ Set`: the flash runs once the box shows the new row.
+      if (pinReady && props.highlightSetId === pinned) highlightShown.current();
     });
-  }, [fit, props.positionKey, props.editingSetId, props.reduceMotion]);
+  }, [fit, props.positionKey, props.editingSetId, props.reduceMotion, pinned, pinLaidOut, round, props.highlightSetId]);
 
   // VoiceOver: the open row after a Log or a round change (§6).
   useEffect(() => {
@@ -168,21 +189,35 @@ export function RoundPage(props: RoundPageProps) {
     };
   }, [props.positionKey]);
 
-  // The cell being typed in stays in its box as the keypad (and the slim rest strip) take room.
+  // The cell being typed in stays in its box as the keypad (and the slim rest strip) take room;
+  // in the page-scroll fallback the page also scrolls so the row clears the keypad (review B3).
   useEffect(() => {
     if (props.editingSetId === null || fit === null) return;
     round.exercises.forEach((_ex, i) => {
       const r = m.current.rows.get(i)?.get(props.editingSetId ?? '');
       const b = fit.boxes[i];
       if (r === undefined || b === undefined) return;
+      let offset = 0;
       if (b.height !== null) {
         const cur = scrollY.current.get(i) ?? b.offset;
-        const to = keepInView(cur, b.height, r.y, r.h);
-        if (to !== cur) {
-          boxes.current.get(i)?.scrollTo({ y: to, animated: !props.reduceMotion });
-          scrollY.current.set(i, to);
+        offset = keepInView(cur, b.height, r.y, r.h);
+        if (offset !== cur) {
+          boxes.current.get(i)?.scrollTo({ y: offset, animated: !props.reduceMotion });
+          scrollY.current.set(i, offset);
         }
       }
+      if (!fit.pageScroll) return;
+      const box = boxes.current.get(i)?.getNativeScrollRef() ?? null;
+      const view = outer.current;
+      if (box === null || view === null) return;
+      view.measureInWindow((_x, pageTop, _w, pageHeight) => {
+        box.measureInWindow((_bx, boxTop) => {
+          const to = pageOffsetFor({ pageOffset: pageY.current, pageTop, pageHeight, rowTop: boxTop + r.y - offset, rowHeight: r.h });
+          if (to === pageY.current) return;
+          page.current?.scrollTo({ y: to, animated: !props.reduceMotion });
+          pageY.current = to;
+        });
+      });
     });
   }, [props.editingSetId, props.keyboardHeight, fit, round, props.reduceMotion]);
 
@@ -204,6 +239,7 @@ export function RoundPage(props: RoundPageProps) {
 
   return (
     <View
+      ref={outer}
       style={{ flex: 1 }}
       onLayout={(e) => {
         m.current.available = e.nativeEvent.layout.height;
@@ -213,6 +249,10 @@ export function RoundPage(props: RoundPageProps) {
       <ScrollView
         ref={page}
         scrollEnabled={fit?.pageScroll ?? false}
+        scrollEventThrottle={32}
+        onScroll={(e) => {
+          pageY.current = e.nativeEvent.contentOffset.y;
+        }}
         onContentSizeChange={(_w, h) => {
           m.current.content = h;
           recompute();
@@ -244,13 +284,8 @@ export function RoundPage(props: RoundPageProps) {
                     rows.set(setId, { y, h });
                     m.current.rows.set(i, rows);
                     if (prev?.h !== h) recompute();
-                    if (props.highlightSetId === setId) {
-                      // `＋ Set` (Ben, 20 Oct): its box shows the new row, never out of sight.
-                      requestAnimationFrame(() => {
-                        boxes.current.get(i)?.scrollToEnd({ animated: !props.reduceMotion });
-                        props.onHighlightShown();
-                      });
-                    }
+                    // `＋ Set` (Ben, 20 Oct): once the new row is laid out its box positions on it (the effect above).
+                    if (pinned === setId && prev === undefined) setPinLaidOut((n) => n + 1);
                   }}
                   onBoxScroll={(y, vh, ch) => {
                     onBoxScroll(i, y, vh, ch);
@@ -264,7 +299,8 @@ export function RoundPage(props: RoundPageProps) {
         {props.upNext !== null && upNextShown ? (
           <View
             onLayout={(e) => {
-              m.current.upNext = e.nativeEvent.layout.height;
+              // With the container's gap before it: hiding Up next frees both (review S1: no flicker, no 8 pt clip).
+              m.current.upNext = e.nativeEvent.layout.height + theme.space['2'];
               recompute();
             }}
             style={{ paddingHorizontal: theme.space['1'] }}
@@ -927,18 +963,18 @@ export function OpenSetRow(p: OpenSetRowProps) {
   const valueField: TileId | null = f.reps ? 'reps' : f.duration ? 'time' : f.distance ? 'distance' : null;
   const valueText = working && !cardio ? workTimerText(f.workTimer?.remainingMs ?? null) : plainSpaces(f.cells.value);
   const sideTag = f.side?.kind === 'fixed' ? (f.side.value === 'left' ? 'L' : 'R') : null;
-  const setLabel = ctx?.row.label ?? `${String(f.setNumber)}${sideTag ?? ''}`;
-  const stepName = ctx?.row.stepName ?? `Set ${String(f.setNumber)}`;
+  const setLabel = ctx?.row.label ?? `${f.stepName === 'Warm-up' ? 'W' : f.stepName.replace(/^Set /, '')}${sideTag ?? ''}`;
+  const stepName = ctx?.row.stepName ?? f.stepName;
   // Ben, 20 Oct: the tapped cell is the field itself (value selected, keypad up); − + Next Done ride the keypad bar.
   const inPlace = (id: TileId): ReactNode => {
     const common = { variant: 'cell' as const, autoFocus: p.keypadOpen, onFocus: tileFocus(id), flex: null, onSurface: false };
     if (id === 'load' && f.loadField) {
       const l = f.loadField;
-      return <NumberStepper key="load" {...common} inputRef={p.loadRef} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ setLabel, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} warning={f.offProfileWarning !== null} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+      return <NumberStepper key="load" {...common} inputRef={p.loadRef} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ stepName, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} warning={f.offProfileWarning !== null} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
     }
-    if (id === 'reps' && f.reps) return <NumberStepper key="reps" {...common} inputRef={p.repsRef} label="Reps" fieldLabel={cellInputA11y({ setLabel, field: 'reps', value: f.reps.value })} unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
-    if (id === 'time' && f.duration && !working) return <NumberStepper key="time" {...common} inputRef={p.timeRef} label="Time" fieldLabel={cellInputA11y({ setLabel, field: 'time', value: f.duration.value })} unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
-    if (id === 'distance' && f.distance) return <NumberStepper key="dist" {...common} inputRef={p.distanceRef} label="Distance, metres" fieldLabel={cellInputA11y({ setLabel, field: 'distance', value: f.distance.value })} unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
+    if (id === 'reps' && f.reps) return <NumberStepper key="reps" {...common} inputRef={p.repsRef} label="Reps" fieldLabel={cellInputA11y({ stepName, field: 'reps', value: f.reps.value })} unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
+    if (id === 'time' && f.duration && !working) return <NumberStepper key="time" {...common} inputRef={p.timeRef} label="Time" fieldLabel={cellInputA11y({ stepName, field: 'time', value: f.duration.value })} unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
+    if (id === 'distance' && f.distance) return <NumberStepper key="dist" {...common} inputRef={p.distanceRef} label="Distance, metres" fieldLabel={cellInputA11y({ stepName, field: 'distance', value: f.distance.value })} unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
     return null;
   };
 
@@ -1149,8 +1185,8 @@ function InlineEditor({ ax, stack = false, onDone, children }: { ax: boolean; st
 export interface CorrectionEditorProps {
   field: CellField;
   ax: boolean;
-  /** The row's set label (`3`, `A2`), for VoiceOver's `Set 3 weight, 100 kg`. */
-  setLabel: string;
+  /** The row's step name (`Set 3`, `Warm-up`), for VoiceOver's `Set 3 weight, 100 kg`. */
+  stepName: string;
   loadField: LoadField | null;
   reps: StepField | null;
   duration: StepField | null;
@@ -1205,13 +1241,13 @@ export function CorrectionEditor(p: CorrectionEditorProps) {
     );
   } else if (p.field === 'load' && p.loadField) {
     const l = p.loadField;
-    return <NumberStepper key="load" {...cellProps} onFocus={focusOf('load')} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+    return <NumberStepper key="load" {...cellProps} onFocus={focusOf('load')} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ stepName: p.stepName, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
   } else if (p.field === 'reps' && p.reps) {
-    return <NumberStepper key="reps" {...cellProps} onFocus={focusOf('reps')} label="Reps" fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'reps', value: p.reps.value })} unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;
+    return <NumberStepper key="reps" {...cellProps} onFocus={focusOf('reps')} label="Reps" fieldLabel={cellInputA11y({ stepName: p.stepName, field: 'reps', value: p.reps.value })} unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;
   } else if (p.field === 'time' && p.duration) {
-    return <NumberStepper key="time" {...cellProps} onFocus={focusOf('time')} label="Time" fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'time', value: p.duration.value })} unit="s" value={p.duration.value} decimals={false} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />;
+    return <NumberStepper key="time" {...cellProps} onFocus={focusOf('time')} label="Time" fieldLabel={cellInputA11y({ stepName: p.stepName, field: 'time', value: p.duration.value })} unit="s" value={p.duration.value} decimals={false} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />;
   } else if (p.field === 'distance' && p.distance) {
-    return <NumberStepper key="dist" {...cellProps} onFocus={focusOf('distance')} label="Distance, metres" fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'distance', value: p.distance.value })} unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />;
+    return <NumberStepper key="dist" {...cellProps} onFocus={focusOf('distance')} label="Distance, metres" fieldLabel={cellInputA11y({ stepName: p.stepName, field: 'distance', value: p.distance.value })} unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />;
   }
   if (editor === null) return null;
   return (
