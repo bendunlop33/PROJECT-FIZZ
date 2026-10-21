@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest';
 
 import { defaultTodayControls, type TodayDay } from '@fizz/domain';
 
-import { breakdownLabel, MAX_DAY_SEGMENTS, routeAvailable, TIME_LABELS, todayCardReducer, todaySegments, todayTitle, type TodayCardState } from '../src/today/today-view';
+import { breakdownLabel, MAX_DAY_SEGMENTS, TIME_LABELS, todayCardReducer, todaySegments, todayTitle, type TodayCardState } from '../src/today/today-view';
 
 /**
  * Today (v2) screen (workout-builder-v3 §2.0, §2.0.8; prototypes/today-v2.html): the day control's
- * segments and VoiceOver labels, the card's selection reducer, the builder routes' guard, and source
+ * segments and VoiceOver labels, the card's selection reducer, and source
  * checks for what the screen must (and must never) do.
  */
 
@@ -92,10 +92,8 @@ describe('the card’s selection (the five controls, Mix it up, breakdown)', () 
     expect([TIME_LABELS.less, TIME_LABELS.more]).toEqual(['5 minutes less', '5 minutes more']);
   });
 
-  it('title is the weekday; the builder routes are checked before navigating', () => {
+  it('title is the weekday', () => {
     expect(todayTitle('2026-10-20T08:00:00.000Z', 'Europe/London')).toBe('Tuesday');
-    expect(routeAvailable([{ routeNames: ['Today', 'Library'] }, { routeNames: ['Tabs', 'Workout'] }], 'BuilderWorkout')).toBe(false);
-    expect(routeAvailable([{ routeNames: ['Today'] }, { routeNames: ['Tabs', 'BuilderWorkout'] }], 'BuilderWorkout')).toBe(true);
   });
 });
 
@@ -116,7 +114,9 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
   it('Edit → `BuilderWorkout` { draftId }; Build your own → `BuilderSetup`; both guarded until the builder ships', () => {
     expect(screen).toContain("navigation.navigate('BuilderWorkout', { draftId: c.draftId })");
     expect(screen).toContain("navigation.navigate('BuilderSetup'");
-    expect(screen.match(/routeAvailable\(navStates\(navigation\), 'Builder(Workout|Setup)'\)/g)).toHaveLength(2);
+    // The builder's routes are in this build: no placeholder toast, no route guard.
+    expect(screen).not.toContain('routeAvailable');
+    expect(read('today/today-view.ts')).not.toMatch(/isn.t in this build/);
   });
 
   it('the card is the service’s: the screen never builds, fits or progresses a workout itself', () => {

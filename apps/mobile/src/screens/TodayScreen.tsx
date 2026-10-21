@@ -20,7 +20,7 @@ import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import { routeAvailable, todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
 import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
@@ -53,17 +53,6 @@ import type { StartChoice, StartPrompt } from '../builder/builder-service';
 
 type StartIntent = { kind: 'empty' };
 type Nav = NavigationProp<ParamListBase>;
-
-/** The navigator states from this screen up (the builder's routes arrive with the builder stream). */
-function navStates(navigation: Nav): { routeNames?: readonly string[] }[] {
-  const out: { routeNames?: readonly string[] }[] = [];
-  let n: Nav | undefined = navigation;
-  while (n !== undefined) {
-    out.push(n.getState());
-    n = n.getParent();
-  }
-  return out;
-}
 
 export function TodayScreen() {
   const theme = useTheme();
@@ -507,10 +496,6 @@ export function TodayScreen() {
   /** `Edit`: the builder on Your workout with this draft (the builder stream's screen). */
   async function editCard() {
     if (session === null || selection === null) return;
-    if (!routeAvailable(navStates(navigation), 'BuilderWorkout')) {
-      setToast({ text: TODAY_SCREEN_COPY.builderUnavailable });
-      return;
-    }
     const sel: TodaySelection = { dayKey: selection.dayKey, controls: selection.controls };
     // Keyed on what the card was built from too (gym, items), and cleared once saved (review S6): a later Edit with the
     // same controls never gets back an older draft.
@@ -526,10 +511,6 @@ export function TodayScreen() {
 
   /** `Build your own`: the builder on Set up, Day = the card's day. */
   function buildYourOwn() {
-    if (!routeAvailable(navStates(navigation), 'BuilderSetup')) {
-      setToast({ text: TODAY_SCREEN_COPY.builderUnavailable });
-      return;
-    }
     const day = selection === null || session === null ? null : ([...session.days, ...session.others].find((d) => d.key === selection.dayKey) ?? null);
     navigation.navigate('BuilderSetup', day === null ? undefined : { dayId: day.splitDayId });
   }

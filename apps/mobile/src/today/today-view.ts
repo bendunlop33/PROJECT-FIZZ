@@ -114,23 +114,9 @@ export function breakdownLabel(title: string, mainLift: string | null, open: boo
 /** `5 minutes less` / `5 minutes more`, and the value read out as `60 minutes`. */
 export const TIME_LABELS = { less: '5 minutes less', more: '5 minutes more', value: (m: number) => `Time, ${String(m)} minutes` } as const;
 
-/** A navigator state as React Navigation gives it (only what the check reads). */
-export interface NavStateLike {
-  routeNames?: readonly string[];
-}
-
-/**
- * Whether any navigator from here up has `route` (the builder's screens arrive with the builder stream's
- * merge): Edit and Build your own never fire a navigation nothing handles; until then they say so.
- */
-export function routeAvailable(states: readonly (NavStateLike | undefined)[], route: string): boolean {
-  return states.some((s) => s?.routeNames?.includes(route) === true);
-}
-
 export const TODAY_SCREEN_COPY = {
   /** The coach's offer couldn't be applied (not out of date: the write failed). */
   offerFailed: 'Not applied',
-  builderUnavailable: 'The builder isn’t in this build yet.',
   started: 'A workout is already in progress.',
   notStarted: (m: string) => `Couldn’t start the workout: ${m}. Try again.`,
   speak: 'Speak to the coach',
