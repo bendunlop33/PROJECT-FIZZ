@@ -296,7 +296,7 @@ export function ReviewsSection() {
   }
   if (data.state !== 'ready' || data.value === null) return null;
   const d: ReviewsData = data.value;
-  const goalHasData = d.goal.sections.some((s) => (s.kind === 'consistency' ? s.view.bars.some((b) => b.done > 0 || b.planned !== null) : s.kind === 'lifts' ? s.charts.length > 0 : s.view.rows.length > 0));
+  const goalHasData = d.goal.sections.some((s) => (s.kind === 'consistency' ? s.view.bars.some((b) => b.done > 0 || b.planned !== null) : s.kind === 'lifts' ? s.charts.some((c) => c.empty === null) : s.view.rows.length > 0));
   if (d.latest === null && !goalHasData) return null;
   const history = allWeeks ? d.history : d.history.slice(0, 4);
   return (
