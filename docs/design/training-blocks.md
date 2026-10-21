@@ -1,6 +1,6 @@
 # Training blocks (light)
 
-Status: **Proposal, 20 Oct 2026.** Backlog H4. Ben decides §8. **§1–§3 are for Ben; §4–§8 are for the developer.**
+Status: **Approved by Ben, 21 Oct 2026** (answers in §8). Backlog H4. **§1–§3 are for Ben; §4–§8 are for the developer.**
 
 Builds on the approved [workout-builder-v3.md](workout-builder-v3.md) (§1 chain, §4 data, §6 reviews, §8 order), prototypes [today-v2.html](prototypes/today-v2.html) and [progress-reviews.html](prototypes/progress-reviews.html), research [plans-and-plan-progress.md](../research/plans-and-plan-progress.md) (proposals 4 and 6), and the plan pause (`PlanPauseSchema`). Tokens: [design-system.md](design-system.md). Nothing here adds a step to Active set, Rest or Summary.
 
