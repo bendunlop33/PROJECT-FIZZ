@@ -4,6 +4,7 @@ import { targetRpeOf } from '../coach/target-rpe';
 import { DEFAULT_COACH_TRIGGER_THRESHOLDS, evaluateCoachTrigger } from '../coach/trigger';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets } from './gym-switch';
+import { pendingOwnValues, shownPlanned } from './pending-values';
 import { buildExecutionOrder } from './order';
 import { latestCommittedSetId } from './reducer';
 
@@ -55,13 +56,16 @@ export function setGlance(state: SessionAggregate, setId: string, ruleTargetRpe:
   const setNumber = own.findIndex((s) => s.id === set.id) + 1;
   let value: string;
   let effort: SetGlance['effort'] = null;
+  let ownValues = false;
   if (status === 'done' && set.actual) {
     value = valuesText(set.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq });
     effort = { rpe: set.actual.rpe, rir: set.actual.rir };
   } else if (status === 'skipped') {
     value = 'Skipped';
   } else {
-    const target = targetShort({ ...set.planned, source: undefined }, { convention: ex.loadConvention, ...(eq ? { equipment: eq } : {}) });
+    // Ben's own draft values over the target, as the table shows them (B2, 21 Oct).
+    ownValues = Object.keys(pendingOwnValues(set, ex)).length > 0;
+    const target = targetShort({ ...shownPlanned(set, ex), source: undefined }, { convention: ex.loadConvention, ...(eq ? { equipment: eq } : {}) });
     const rpe = targetRpeOf(set, ruleTargetRpe[ex.id] ?? null);
     const base = target === null ? 'No target' : target.replace(TARGET_WORD, '');
     value = rpe === null ? base : `${base} @RPE${NBSP}${formatNumber(rpe.rpe)}`;
@@ -70,7 +74,7 @@ export function setGlance(state: SessionAggregate, setId: string, ruleTargetRpe:
   const typeLabel = SET_TYPE_WORD[set.setType];
   const plain = value.replaceAll(NBSP, ' ');
   const effortWords = effort?.rpe != null ? `, RPE ${formatNumber(effort.rpe)}` : effort?.rir != null ? `, ${String(effort.rir)} reps in reserve` : '';
-  const stateWord = status === 'done' ? 'done' : status === 'skipped' ? 'skipped' : isCurrent ? 'current, target' : 'target';
+  const stateWord = status === 'done' ? 'done' : status === 'skipped' ? 'skipped' : isCurrent ? (ownValues ? 'current, your edit' : 'current, target') : ownValues ? 'your edit' : 'target';
   return {
     setId: set.id,
     setVersion: set.version,

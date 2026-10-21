@@ -45,6 +45,7 @@ import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { pendingSetsOf } from './mid-swap';
 import { buildExecutionOrder, effectiveOffset, firstPendingRound, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
+import { draftWithNewTarget, pendingOwnValues, type TargetValueField } from './pending-values';
 
 export type SessionErrorCode =
   | 'operation_id_reused'
@@ -1235,6 +1236,18 @@ function withoutEditRecords(planned: WorkoutSet['planned']): WorkoutSet['planned
   return copy;
 }
 
+/**
+ * The draft after `edit_planned_set` changed some target values (B1, 21 Oct):
+ * the changed fields take the new target, the rest of Ben's draft stays.
+ * Nothing of his own left (every value equals what the new target prefills):
+ * no draft, so the row shows the target.
+ */
+function draftAfterTargetEdit(set: WorkoutSet, ex: SessionExercise, planned: WorkoutSet['planned'], fields: readonly TargetValueField[]): SetValues | null {
+  if (set.draft === null) return null;
+  const draft = draftWithNewTarget(set.draft, planned, fields);
+  return Object.keys(pendingOwnValues({ status: set.status, draft, planned }, ex)).length === 0 ? null : draft;
+}
+
 const NO_TARGET_TYPES: ReadonlySet<WorkoutSet['setType']> = new Set(['warmup', 'drop']);
 
 /**
@@ -1266,7 +1279,9 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
   const noTarget = NO_TARGET_TYPES.has(setType);
   if (p.targetRpe != null && noTarget) return fail('invalid_values', 'Warm-up and drop sets have no target effort.');
 
-  const valuesTouched = p.load !== undefined || p.reps !== undefined || p.durationS !== undefined || p.distanceM !== undefined;
+  // The values Ben set (even to what the target already was: over his draft that is a change, 21 Oct).
+  const fields: TargetValueField[] = (['load', 'reps', 'durationS', 'distanceM'] as const).filter((f) => p[f] !== undefined);
+  const valuesTouched = fields.length > 0;
   let planned: WorkoutSet['planned'] = { ...set.planned };
   delete planned.edit;
   if (valuesTouched) {
@@ -1291,12 +1306,13 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
     ...set,
     setType,
     rest,
-    // The unsaved draft held the old target; the new one prefills Log.
-    draft: valuesTouched ? null : set.draft,
-    planned: { ...planned, edit: { opId: cmd.opId, version, before: { planned: beforePlanned, setType: set.setType, rest: set.rest, draft: set.draft } } },
+    // Only the fields Ben set a new target for leave his draft; any other value he typed stays (B1, 21 Oct).
+    draft: valuesTouched ? draftAfterTargetEdit(set, ex, planned, fields) : set.draft,
+    planned: { ...planned, edit: { opId: cmd.opId, version, before: { planned: beforePlanned, setType: set.setType, rest: set.rest, draft: set.draft }, ...(valuesTouched ? { fields } : {}) } },
     version,
   };
-  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds])) {
+  // Setting a target back to the preset over Ben's draft clears the draft: a change, so the row shows it (21 Oct).
+  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds, edited.draft]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds, set.draft])) {
     return { ok: true, state, events: [] };
   }
   const events: SessionEvent[] = [{ type: 'PlannedSetEdited', setId: set.id, undo: false }];
@@ -1627,6 +1643,8 @@ function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>):
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'Drafts are only for sets not yet logged.');
+  // A save made on an older version of the set never puts its values back over a newer write (21 Oct).
+  if (cmd.expectedSetVersion !== undefined && cmd.expectedSetVersion !== set.version) return fail('stale_version', 'This set changed since it was edited.');
   // The side chosen before logging is kept on the pending set, so it survives a minimise or restart.
   if (cmd.side !== undefined) {
     const ex = exerciseOf(state, set);

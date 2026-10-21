@@ -1,9 +1,10 @@
 import type { SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { clockText } from '../calendar';
-import { formatDuration, NBSP, targetShort } from '../display';
+import { formatDuration, NBSP } from '../display';
 import { toMs } from '../time';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, partRootOf } from './gym-switch';
+import { shownTargetShort } from './pending-values';
 import { STALE_SESSION_MS } from './recovery';
 import { getSessionPhase } from './view';
 
@@ -24,7 +25,7 @@ export interface LockScreenContent {
   title: string;
   /** `Until 18:42 · Bench press · Set 3 of 4 next`; '' when none. */
   line1: string;
-  /** `Target 100 kg × 6–8`; '' when none. */
+  /** `Target 100 kg × 6–8` (Ben's own draft: `Your edit 105 kg × 6–8`); '' when none. */
   line2: string;
   /** The system-rendered countdown (epoch ms); null when nothing counts. */
   countdown: { startMs: number; endMs: number } | null;
@@ -55,15 +56,20 @@ function nextSetOf(state: SessionAggregate, setId: string | null): NextSet | nul
   // The whole block (every gym part), so numbering matches the in-app header (review ben-bugs N4).
   const own = blockSets(state, ex.id);
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
-  const target = targetShort(set.planned, { convention: ex.loadConvention, equipment: eq });
+  // Ben's own draft values over the target, as the table shows them (B2, 21 Oct): `Your edit 105 kg × 6–8`.
+  const target = shownTargetShort(set, ex, { convention: ex.loadConvention, equipment: eq });
   const perSide = target !== null && ex.laterality === 'unilateral' && set.planned.reps !== null ? `${NBSP}per side` : '';
   return { set, ex, number: own.indexOf(set) + 1, of: own.length, target: target === null ? null : `${target}${perSide}` };
 }
 
-/** `Target 100 kg × 6–8` read aloud: `target 100 kilograms, 6 to 8 reps`. */
+/** `Target 100 kg × 6–8` read aloud: `target 100 kilograms, 6 to 8 reps` (`Your edit …`: `your edit …`). */
 export function lockScreenTargetWords(target: string): string {
   const plain = target.replaceAll(NBSP, ' ');
-  const [word, rest] = plain.startsWith('Coach target ') ? ['coach target', plain.slice('Coach target '.length)] : ['target', plain.replace(/^Target /, '')];
+  const [word, rest] = plain.startsWith('Coach target ')
+    ? ['coach target', plain.slice('Coach target '.length)]
+    : plain.startsWith('Your edit ')
+      ? ['your edit', plain.slice('Your edit '.length)]
+      : ['target', plain.replace(/^Target /, '')];
   const spoken = rest
     .replace(/\s*×\s*(\d+)(?:–(\d+))?/g, (_m, a: string, b: string | undefined) => (b === undefined ? `, ${a} reps` : `, ${a} to ${b} reps`))
     .replace(/(\d+)–(\d+)/g, '$1 to $2')

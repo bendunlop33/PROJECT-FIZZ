@@ -54,6 +54,12 @@ export const SaveDraftCommandSchema = z.object({
   values: SetValuesSchema,
   /** The side chosen for a unilateral set before it is logged; absent = unchanged. */
   side: SetSideSchema.optional(),
+  /**
+   * The set's version the edits were made on (rule 5, 21 Oct). A newer write
+   * to the set refuses this save (`stale_version`), so an old value is never
+   * put back over Ben's newer target. Absent: unchecked (older callers).
+   */
+  expectedSetVersion: z.int().min(1).optional(),
 });
 
 export const SetActiveSetCommandSchema = z.object({
