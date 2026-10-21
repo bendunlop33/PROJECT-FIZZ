@@ -28,9 +28,8 @@ export interface ProgressPalette {
   doneEdge: string;
   /** Missed chips: a faint grey fill. */
   missedFill: string;
-  /** Last 4 weeks: done and missed squares. */
-  doneSquare: string;
-  missedSquare: string;
+  /** Month calendar: a rest day's faint square. */
+  restFill: string;
 }
 
 export function progressPalette(theme: Pick<ResolvedTheme, 'colors' | 'scheme'>): ProgressPalette {
@@ -43,7 +42,6 @@ export function progressPalette(theme: Pick<ResolvedTheme, 'colors' | 'scheme'>)
     doneFill: withAlpha(done, theme.scheme === 'dark' ? 0.2 : 0.14),
     doneEdge: withAlpha(done, 0.55),
     missedFill: withAlpha(theme.colors['text.primary'], 0.05),
-    doneSquare: withAlpha(done, 0.45),
-    missedSquare: withAlpha(theme.colors['text.primary'], 0.1),
+    restFill: withAlpha(theme.colors['text.primary'], 0.025),
   };
 }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { toMs, weeklyFacts, type ReviewSession, type ReviewSet, type ReviewTemplate, type WeeklyReviewInput } from '@fizz/domain';
-import { BUILDER_COACH_TOOL_ARGS, type BuilderMuscleInfo, type Load } from '@fizz/schemas';
-import { buildWeeklyRequest, builderModelFor, checkWeeklyReview, codeProposals, weeklyContextText, weeklyFactTexts } from '../src/index';
+import { BUILDER_COACH_TOOL_ARGS, type BuilderMuscleInfo, type Load, type ReviewProposal } from '@fizz/schemas';
+import { buildWeeklyRequest, builderModelFor, carriedProposals, checkWeeklyReview, codeProposals, mergeCoachAsks, unansweredAsk, weeklyContextText, weeklyFactTexts } from '../src/index';
 
 /** The weekly review's coach part (workout-builder-v3 §6.1, §6.2): every number checked, tweaks checked and offered only. */
 
@@ -154,5 +154,41 @@ describe('weekly review claim check: review fixes (b3-wave3-truth B1, B2)', () =
     const r = checkWeeklyReview({ verdict: 'Back squat has stalled for 3 sessions.', lines: ['Back squat: 3 sets.'], tweaks: [] }, { ...ctx, facts: f });
     expect(r.verdict).toBe('Back squat has stalled for 3 sessions.');
     expect(r.lines).toEqual([]);
+  });
+});
+
+describe('a re-run review: the coach’s unanswered asks (review build-b-21oct S1, progress-v3b-data B1)', () => {
+  const ask = (over: Partial<ReviewProposal> = {}): ReviewProposal => ({ id: 'old:coach:0', source: 'coach', change: { kind: 'template_sets', routineId: LEGS, routineName: 'Legs', expectedVersion: 4, exerciseId: CURL, exerciseName: 'Leg curl', fromSets: 3, toSets: 4 }, reason: 'You missed 1 session. Leg curl: keep going.', status: 'open', actionId: null, ...over });
+  // The Back day done on Sat: 3 of 3, nothing missed now.
+  const after = weeklyFacts({ ...input, sessions: [...sessions, sess('2026-10-17', [{ exerciseId: BENCH, sets: [work(kg(60), 10)] }], id(52))] });
+
+  it('a carried ask’s reason is checked again against the new facts: a number that no longer holds is hidden (rule 6)', () => {
+    expect(after.missedCount).toBe(0);
+    expect(carriedProposals([ask()], { facts, painFlagged: new Set() })[0]?.reason).toBe('You missed 1 session. Leg curl: keep going.');
+    expect(carriedProposals([ask()], { facts: after, painFlagged: new Set() })[0]?.reason).toBe('Leg curl: keep going.');
+    expect(carriedProposals([ask({ reason: 'You missed 1 session.' })], { facts: after, painFlagged: new Set() })[0]?.reason).toBeNull();
+    // Out of date (not answered by Ben): checked too. Ben's answers keep their words as he saw them.
+    expect(carriedProposals([ask({ status: 'stale' })], { facts: after, painFlagged: new Set() })[0]?.reason).toBe('Leg curl: keep going.');
+    expect(carriedProposals([ask({ status: 'applied', actionId: 'a' })], { facts: after, painFlagged: new Set() })[0]?.reason).toBe('You missed 1 session. Leg curl: keep going.');
+  });
+
+  it('an open ask on a movement with a pain flag now is dropped (rule 9); code’s open and out-of-date ones are made again, not carried', () => {
+    expect(carriedProposals([ask()], { facts, painFlagged: new Set([CURL]) })).toEqual([]);
+    const code = codeProposals([{ routineId: LEGS, routineName: 'Legs', exerciseId: CURL, exerciseName: 'Leg curl', fromSets: 3, toSets: 4, sessions: 2, expectedVersion: 4 }], 'old');
+    expect(carriedProposals([...code, ...code.map((p) => ({ ...p, id: `${p.id}:s`, status: 'stale' as const }))], { facts, painFlagged: new Set() })).toEqual([]);
+    expect(carriedProposals([ask({ status: 'skipped' })], { facts, painFlagged: new Set([CURL]) }).map((p) => p.status)).toEqual(['skipped']);
+  });
+
+  it('a fresh coach tweak replaces an unanswered ask for the same exercise; never one Ben answered, or code’s', () => {
+    const fresh = ask({ id: 'new:coach:0', change: { ...ask().change, toSets: 2 }, reason: 'Fresh.' });
+    expect(mergeCoachAsks([ask()], [fresh]).map((p) => [p.id, p.change.toSets])).toEqual([['new:coach:0', 2]]);
+    expect(mergeCoachAsks([ask({ status: 'stale', held: 'pain' })], [fresh]).map((p) => p.id)).toEqual(['new:coach:0']);
+    for (const status of ['applied', 'skipped', 'undone'] as const) expect(mergeCoachAsks([ask({ status })], [fresh]).map((p) => p.id)).toEqual(['old:coach:0']);
+    expect(mergeCoachAsks([ask({ source: 'code' })], [fresh]).map((p) => p.id)).toEqual(['old:coach:0']);
+    // Another exercise is added; at most 4.
+    const other = (n: number) => ask({ id: `o${String(n)}`, change: { ...ask().change, exerciseId: id(400 + n) } });
+    expect(mergeCoachAsks([ask(), other(1), other(2)], [fresh, other(3), other(4)]).map((p) => p.id)).toEqual(['new:coach:0', 'o1', 'o2', 'o3']);
+    expect(unansweredAsk(ask())).toBe(true);
+    expect(unansweredAsk(ask({ source: 'code' }))).toBe(false);
   });
 });
