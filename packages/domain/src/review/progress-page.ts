@@ -281,6 +281,8 @@ export interface LiftView {
     onTrack: boolean;
     /** `about mid-Nov at this rate` (always shown with `est.`); null when the agreed conditions aren't met. */
     eta: string | null;
+    /** `mid-Nov`: the chart's label at the end of the dotted line; null with no eta. */
+    etaShort: string | null;
     /** Columns past the last week the dotted line runs to (0 with no eta). */
     etaWeeks: number;
   };
@@ -344,7 +346,7 @@ function loggedReps(sessions: readonly ReviewSession[], exerciseId: string): num
 
 const nf = (n: number): string => formatNumber(n);
 
-function liftEta(points: readonly LiftPointView[], target: number | null, mondays: readonly string[], today: string): { text: string; weeks: number } | null {
+function liftEta(points: readonly LiftPointView[], target: number | null, mondays: readonly string[], today: string): { text: string; short: string; weeks: number } | null {
   if (target === null) return null;
   const real = points.filter((p) => !p.estimate);
   const last4 = real.slice(-LIFT_ETA.risingWeeks);
@@ -365,7 +367,8 @@ function liftEta(points: readonly LiftPointView[], target: number | null, monday
   if (date <= today || daysBetween(today, date) > LIFT_ETA.maxDays) return null;
   const day = Number(date.slice(8, 10));
   const part = day <= 10 ? 'early' : day <= 20 ? 'mid' : 'late';
-  return { text: `about ${part}-${MONTH[Number(date.slice(5, 7)) - 1] ?? ''} at this rate`, weeks: ETA_COLUMNS };
+  const short = `${part}-${MONTH[Number(date.slice(5, 7)) - 1] ?? ''}`;
+  return { text: `about ${short} at this rate`, short, weeks: ETA_COLUMNS };
 }
 
 /**
@@ -481,7 +484,7 @@ export function liftsView(input: WeeklyReviewInput, opts: LiftsOptions): LiftsVi
       lowerIsBetter,
       points,
       marker,
-      focus: { subtitle: plain(subtitle), onTrack: eta !== null, eta: eta?.text ?? null, etaWeeks: eta?.weeks ?? 0 },
+      focus: { subtitle: plain(subtitle), onTrack: eta !== null, eta: eta?.text ?? null, etaShort: eta?.short ?? null, etaWeeks: eta?.weeks ?? 0 },
       accessibilityLabel: plain(accessibilityLabel),
       chartLabel: plain(chartLabel),
     };
@@ -619,11 +622,10 @@ export function musclesView(input: WeeklyReviewInput, opts: { today: string }): 
  * Keep as is; rule 3) or a small change on the same exercises (load, reps, sets: applied for the next
  * sessions, shown with its reason and Undo).
  */
+const SMALL_CHANGES: ReadonlySet<ReviewProposal['change']['kind']> = new Set(['template_sets']);
+
 export function isStructuralProposal(p: Pick<ReviewProposal, 'change'>): boolean {
-  switch (p.change.kind) {
-    case 'template_sets':
-      return false;
-  }
+  return !SMALL_CHANGES.has(p.change.kind);
 }
 
 export interface ChangeRowView {

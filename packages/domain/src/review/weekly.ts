@@ -41,7 +41,7 @@ import { convertMass } from '../units';
  *   sets and the goal range (playbook V4, Coaching knowledge).
  * - **Lifts Ben chose** (default: the plan's main lifts; up to 6): a trend of est. 1RM (labelled), best
  *   set, or reps for bodyweight work; an assisted lift is better with less assistance. The lift target,
- *   when one is set, is a level line with was → now → target. Never a projection or a predicted date.
+ *   when one is set, is a level line with was → now → target (the stored facts; Progress v3's lift chart is `liftsView`).
  * - **Flags**: lifts with no progress over 3 sessions; RPE against the sessions' own targets; Ben's
  *   `How did it feel?`; and (§6.1 feedback loop) the same edit repeated on a plan-day template.
  */
