@@ -1,3 +1,4 @@
+import { createWeeklyReviewService } from '../reviews/weekly-review-service';
 import { createCustomExercises } from './custom-exercises';
 import {
   buildPresetDraft,
@@ -1014,10 +1015,26 @@ export function createAppServices(deps: AppServicesDeps) {
   });
   setBuilderReviewProvider(createBuilderReviewProvider(builderCoach, builderPorts.review, { newId: deps.newId }));
 
+  /**
+   * (Workout builder v3 §6.1, §6.2) The weekly auto-review and Progress › Reviews: code's facts always,
+   * the coach's verdict and plan tweaks when reachable (the plan route only, rule 7). Runs on app open.
+   */
+  const reviews = createWeeklyReviewService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    newId: deps.newId,
+    availability: () => coach.availability(),
+    ...(deps.coach === undefined ? {} : { model: deps.coach.model }),
+    catalogueExercises,
+    mainLiftIds: () => training.splitMainLiftIds(),
+  });
+
   return {
     ...loop,
     builder,
     builderCoach,
+    reviews,
     library,
     customExercises,
     history,
