@@ -69,6 +69,23 @@ describe('Set up main lift with no plan day (Ben, 21 Oct)', () => {
   });
 });
 
+describe('one default main lift for Set up and the coach (review builder-order S2)', () => {
+  it('for every day, the coach’s day change brings the main lift Set up opens with, which leads Set up’s list', async () => {
+    for (const make of [ben, benWithPlan]) {
+      const { s } = await make();
+      const base = await s.builder.initialSetup({ dayId: 'push' });
+      const { ctx } = await s.builder.coachSetupContext(base);
+      expect(ctx.days.length).toBeGreaterThan(0);
+      for (const d of ctx.days) {
+        const opened = await s.builder.initialSetup({ dayId: d.id });
+        expect(d.defaultMainLiftExerciseId, d.id).toBe(opened.mainLiftExerciseId);
+        const facts = await s.builder.setupFacts(opened);
+        if (opened.mainLiftExerciseId !== null) expect(facts.mainLifts[0]?.id, d.id).toBe(opened.mainLiftExerciseId);
+      }
+    }
+  });
+});
+
 describe('Set up → Your workout → Start, offline (§8 S3)', () => {
   it('builds Push from Set up, starts with no network, and the first set logs at the top set Ben saw', async () => {
     const { s, gymId } = await ben();

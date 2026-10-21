@@ -25,6 +25,8 @@ export interface SetupDayOption {
   name: string;
   /** The day's main lifts, the Profile's first (`From Profile`). */
   mainLifts: readonly SetupMainLiftOption[];
+  /** The main lift a change to this day brings, as Set up opens it (null: none, a plan template with no main lift). Absent: the first of `mainLifts`. */
+  defaultMainLiftExerciseId?: string | null;
 }
 
 export interface SetupState {
@@ -111,7 +113,8 @@ export function checkFillSetup(args: FillSetupArgs, ctx: SetupCoachContext, benW
   }
 
   let main = cur.mainLiftExerciseId;
-  if (dayChanged) main = day?.mainLifts[0]?.exerciseId ?? null;
+  const dayDefault = day === null ? null : day.defaultMainLiftExerciseId !== undefined ? day.defaultMainLiftExerciseId : (day.mainLifts[0]?.exerciseId ?? null);
+  if (dayChanged) main = dayDefault;
   if (args.mainLiftCatalogueId !== null && day !== null) {
     if (norm(args.mainLiftCatalogueId) === 'none') main = null;
     else {
@@ -121,7 +124,7 @@ export function checkFillSetup(args: FillSetupArgs, ctx: SetupCoachContext, benW
     }
   }
   // A new day brings its first main lift; only a different one (or none) is news for the toast.
-  const defaultMain = dayChanged ? (day?.mainLifts[0]?.exerciseId ?? null) : cur.mainLiftExerciseId;
+  const defaultMain = dayChanged ? dayDefault : cur.mainLiftExerciseId;
   if (main !== cur.mainLiftExerciseId) changed.push('main_lift');
   if (main !== defaultMain) toast.push(main === null ? 'no main lift' : (day?.mainLifts.find((m) => m.exerciseId === main)?.name ?? 'main lift'));
 
