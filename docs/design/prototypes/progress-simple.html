@@ -36,12 +36,12 @@ h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .pill i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .sub { color: var(--text2); font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .lifts { display: flex; flex-direction: column; }
-.lift { display: grid; grid-template-columns: 12px 56px auto 1fr; gap: 8px; align-items: center; min-height: 44px; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font: 15px var(--ui); text-align: left; cursor: pointer; padding: 0 2px; border-radius: 8px; }
+.lift { display: grid; grid-template-columns: 10px 46px auto 1fr; gap: 6px; align-items: center; min-height: 34px; font-size: 13px !important; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font: 15px var(--ui); text-align: left; cursor: pointer; padding: 0 2px; border-radius: 8px; }
 .lift:first-child { border-top: 0; }
-.lift i { width: 10px; height: 10px; border-radius: 50%; }
+.lift i { width: 8px; height: 8px; border-radius: 50%; }
 .lift .ln { font-weight: 600; }
 .lift .lv { font-variant-numeric: tabular-nums; font-weight: 600; }
-.lift .lc { color: var(--text2); font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.lift .lc { color: var(--text2); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
 .lift.on { background: var(--raised); }
 .lift.dim { opacity: .5; }
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -54,16 +54,17 @@ h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .pd { min-height: 48px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; gap: 1px; }
-.pd { white-space: nowrap; padding: 0 2px; overflow: hidden; }
+.pd { position: relative; white-space: nowrap; padding: 0 2px; overflow: hidden; font-size: 12px !important; letter-spacing: -.02em; }
 .pd small { font-size: 11px; letter-spacing: -.02em; font-weight: 500; font-variant-numeric: tabular-nums; }
+.pd .tk { position: absolute; top: 3px; right: 5px; font-size: 10px; font-weight: 700; }
 button.pd { border: 0; font-family: inherit; cursor: pointer; color: inherit; background: none; }
 button.pd.done { background: var(--data); color: var(--on-accent); }
 button.pd.next { border: 1.5px solid var(--text2); color: var(--text); }
 .pd.done { background: var(--data); color: var(--on-accent); }
 .pd.next { border: 1.5px solid var(--text2); }
 .pd.next small { color: var(--text2); }
-.mus { display: grid; grid-template-columns: 78px 1fr 54px; gap: 10px; align-items: center; font-size: 15px; }
-.mus .n { text-align: right; font-variant-numeric: tabular-nums; }
+.mus { display: grid; grid-template-columns: 78px 1fr 64px; gap: 10px; align-items: center; font-size: 15px; }
+.mus .n { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 .bar { position: relative; height: 10px; border-radius: 5px; background: var(--raised); }
 .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--data); }
 .bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text2); }
@@ -103,9 +104,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const WEEKS = ['25 Aug', '1 Sep', '8 Sep', '15 Sep', '22 Sep', '29 Sep', '6 Oct', '13 Oct'];
   // Main lifts (default: the plan's main lifts; editable, typically up to 3). Colours: dataviz categorical slots 1–3 (dark), validated all-pairs.
   const LIFTS = [
-    { n: 'Bench', reps: 6, c: '#3987e5', series: [90, 92.5, 92.5, 95, 95, 97.5, 97.5, 100], target: 110, est: 'mid-Nov' },
-    { n: 'Squat', reps: 5, c: '#d95926', series: [105, 107.5, 107.5, 110, 112.5, 112.5, 115, 117.5], target: null },
-    { n: 'Row', reps: 8, c: '#199e70', series: [85, 87.5, 87.5, 90, 92.5, 92.5, 92.5, 92.5], target: null },
+    { n: 'Bench', reps: 6, c: '#3987e5', series: [90, 92.5, 92.5, 95, 95, 97.5, 97.5, 100], target: 110, est: 'mid-Nov', estW: { 3: '100 × 4', 6: '92.5 × 9' } },
+    { n: 'Squat', reps: 5, c: '#d95926', series: [105, 107.5, 107.5, 110, 112.5, 112.5, 115, 117.5], target: 125, estW: { 1: '115 × 3' } },
+    { n: 'Row', reps: 8, c: '#199e70', series: [85, 87.5, 87.5, 90, 92.5, 92.5, 92.5, 92.5], target: null, estW: {} },
   ];
   const MUSCLE = { title: 'Weekly sets vs plan', sub: '58 of 62 last week · last 8 weeks', series: [48, 52, 50, 55, 57, 0, 54, 58], plan: [56, 56, 56, 60, 60, 60, 62, 62] };
   const NOTE = 'Good week. Legs light: Legs moved to Saturday.';
@@ -125,11 +126,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const change = (l) => { const d = l.series[l.series.length - 1] - l.series[0]; return d === 0 ? 'level' : `${d > 0 ? '+' : ''}${d} kg`; };
   const stalled = (l) => { const t = l.series.slice(-3); return t.every((v) => v === t[0]); };
   function liftChart() {
-    const W = 320, H = 170, L = 36, R = 12, T = 16, B = 24;
+    const W = 320, H = 160, L = 30, T = 14, B = 22;
+    const R = s.focus === null ? 34 : 12;
     const shown = s.focus === null ? LIFTS : [LIFTS[s.focus]];
     const one = s.focus !== null ? LIFTS[s.focus] : null;
     const cols = one && one.est ? 10 : 8;
-    const vals = shown.flatMap((l) => l.series).concat(one && one.target ? [one.target] : []);
+    const vals = shown.flatMap((l) => l.series).concat(shown.filter((l) => l.target).map((l) => l.target));
     const step = one ? 5 : 10;
     const lo = Math.floor((Math.min(...vals) - 1) / step) * step, hi = Math.ceil((Math.max(...vals) + 1) / step) * step;
     const x = (i) => L + (i * (W - L - R)) / (cols - 1), y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
@@ -140,7 +142,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       const idx = LIFTS.indexOf(l), last = l.series.length - 1;
       if (one && one.est) g += `<line x1="${x(last)}" y1="${y(l.series[last])}" x2="${x(cols - 1)}" y2="${y(one.target)}" stroke="${l.c}" stroke-dasharray="2 4" stroke-width="2"/>`;
       g += `<polyline points="${l.series.map((v, i) => `${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="${l.c}" stroke-width="2.4" stroke-linejoin="round"/>`;
-      g += l.series.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="${i === last ? 4.5 : 2.6}" fill="${i === last ? l.c : '#181615'}" stroke="${l.c}" stroke-width="1.6"/>`).join('');
+      g += l.series.map((v, i) => { const est = l.estW[i] !== undefined; return `<circle cx="${x(i)}" cy="${y(v)}" r="${i === last ? 4.5 : est ? 3.4 : 2.8}" fill="${est ? '#181615' : l.c}" stroke="${l.c}" stroke-width="1.6"${est ? ` data-a="estpt" data-v="${LIFTS.indexOf(l)}:${i}" style="cursor:pointer"` : ''}><title>${est ? `est. from ${l.estW[i]}` : `${v} × ${l.reps}`}</title></circle>`; }).join('');
+      if (!one && l.target) g += `<line x1="${W - R + 6}" x2="${W - R + 14}" y1="${y(l.target)}" y2="${y(l.target)}" stroke="${l.c}" stroke-width="3" stroke-linecap="round"/><text x="${W - 2}" y="${y(l.target) + 4}" text-anchor="end" fill="${l.c}" font-size="10" font-weight="700">${l.target}</text><line x1="${x(last)}" x2="${W - R + 4}" y1="${y(l.target)}" y2="${y(l.target)}" stroke="${l.c}" stroke-opacity=".35" stroke-dasharray="2 3"/>`;
       g += `<polyline points="${l.series.map((v, i) => `${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="transparent" stroke-width="18" data-a="focus" data-v="${idx}" style="cursor:pointer"><title>${l.n}</title></polyline>`;
     });
     const last = LIFTS[0].series.length - 1;
@@ -152,7 +155,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function liftRows() {
     return LIFTS.map((l, i) => {
       const now = l.series[l.series.length - 1];
-      const tgt = l.target ? ` · target ${l.target}` : '';
+      const tgt = l.target ? ` · → ${l.target}` : '';
       const st = stalled(l) ? ' · level 3 wk' : '';
       const on = s.focus === i;
       return `<button class="lift${on ? ' on' : ''}${s.focus !== null && !on ? ' dim' : ''}" data-a="focus" data-v="${i}" aria-pressed="${on}" aria-label="${l.n}, ${now} kg for ${l.reps}, ${change(l)} in 8 weeks${tgt}. ${on ? 'Showing alone' : 'Show alone'}">
@@ -162,14 +165,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function strengthCard() {
     const one = s.focus !== null ? LIFTS[s.focus] : null;
     const pill = one && one.target ? '<span class="pill"><i style="background:var(--good)"></i>On track</span>' : '';
-    const sub = one ? `Top set, ${one.reps} reps · ${one.series[one.series.length - 1]} now${one.est ? ` · about ${one.est} at this rate <span class="tag" style="margin:0">est.</span>` : ''}` : 'Top set at your usual reps · last 8 weeks';
+    const sub = one ? `Top set × ${one.reps} (${one.target ? 'target' : 'plan'} reps) · ${one.series[one.series.length - 1]} now${one.est ? ` · about ${one.est} at this rate <span class="tag" style="margin:0">est.</span>` : ''}` : 'Top set at each lift\u2019s reps · ○ est.';
     return `<div class="card">
       <div class="head"><span class="title">Strength tracker</span>${one ? `<button class="link" data-a="all" style="min-height:28px">All lifts</button>` : ''}</div>
-      <div class="sub">${one ? `<b style="color:var(--text)">${one.n}</b> · ` : ''}${sub}</div>
+      <div class="sub" style="font-size:13px">${one ? `<b style="color:var(--text)">${one.n}</b> · ` : ''}${sub}</div>
       ${pill ? `<div style="display:flex">${pill}</div>` : ''}
       ${liftChart()}
       <div class="lifts">${liftRows()}</div>
-      <button class="link" data-a="edit" style="align-self:flex-start;min-height:32px">Edit lifts</button>
+      <button class="link" data-a="edit" style="align-self:flex-start;min-height:30px;font-size:13px">Edit lifts</button>
     </div>`;
   }
   function barChart(g) {
@@ -200,8 +203,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="card">
       <div class="row"><span class="k">Sessions</span><span class="v">3 of 4 <span style="font-size:14px;font-weight:500;color:var(--text2)">· 2 runs</span></span></div>
       <div class="strip" role="group" aria-label="Chest done Monday, 100% of planned reps; Back done Wednesday, 92%; Shoulders done Friday, 104%; Legs moved to Saturday">
-        <button class="pd done" data-a="sess" data-v="Chest">Chest ✓<small>Mon – 100%</small></button><button class="pd done" data-a="sess" data-v="Back">Back ✓<small>Wed – 92%</small></button>
-        <button class="pd done" data-a="sess" data-v="Shoulders">Shldrs ✓<small>Fri – 104%</small></button><button class="pd next" data-a="sess" data-v="Legs">Legs<small>Sat – moved</small></button>
+        <button class="pd done" data-a="sess" data-v="Chest">Chest<b class="tk" aria-hidden="true">✓</b><small>Mon – 100%</small></button><button class="pd done" data-a="sess" data-v="Back">Back<b class="tk" aria-hidden="true">✓</b><small>Wed – 92%</small></button>
+        <button class="pd done" data-a="sess" data-v="Shoulders">Shoulders<b class="tk" aria-hidden="true">✓</b><small>Fri – 104%</small></button><button class="pd next" data-a="sess" data-v="Legs">Legs<small>Sat – moved</small></button>
       </div>
       ${mus.map(([m, n, p]) => `<div class="mus" aria-label="${m} ${n} of ${p} planned sets"><span>${m}</span><div class="bar"><i style="width:${Math.min(n / 18, 1) * 100}%"></i><b style="left:${(p / 18) * 100}%"></b></div><span class="n">${n} of ${p}</span></div>`).join('')}
     </div>`;
@@ -239,6 +242,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'goal') { s.goal = v; s.focus = null; }
     if (a === 'focus') s.focus = s.focus === Number(v) ? null : Number(v);
     if (a === 'all') s.focus = null;
+    if (a === 'estpt') { const [li, wi] = v.split(':').map(Number); const l = LIFTS[li]; s.toast = `${l.n}, week of ${WEEKS[wi]}: est. ${l.series[wi]} × ${l.reps} from ${l.estW[wi]}`; }
     if (a === 'edit') s.toast = 'Pick the lifts to track (default: your plan\u2019s main lifts)';
     if (a === 'coach') s.coach = !s.coach;
     if (a === 'undo') { s.undone[v] = true; s.toast = 'Undone: next session keeps the old target'; }
