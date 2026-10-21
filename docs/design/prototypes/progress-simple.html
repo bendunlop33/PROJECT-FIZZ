@@ -29,9 +29,10 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .sec { display: flex; justify-content: space-between; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); font-weight: 600; margin: 6px 2px -4px; }
 .sec span:last-child { letter-spacing: 0; text-transform: none; font-weight: 500; color: var(--text3); }
-.card { background: var(--surface); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--surface); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.title { font-size: 21px; font-weight: 700; }
+.title { font-size: 18px; font-weight: 700; }
+.hk { font-size: 12px; color: var(--text2); white-space: nowrap; }
 .pill { font-size: 13px; padding: 5px 10px; border-radius: 999px; background: var(--raised); white-space: nowrap; display: flex; align-items: center; gap: 6px; }
 .pill i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .sub { color: var(--text2); font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; }
@@ -197,12 +198,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const pill = one && one.target ? '<span class="pill"><i style="background:var(--good)"></i>On track</span>' : '';
     const sub = one ? `Top set × ${one.reps} (${one.target ? 'target' : 'plan'} reps) · ${one.series[one.series.length - 1]} now${one.est ? ` · about ${one.est} at this rate <span class="tag" style="margin:0">est.</span>` : ''}` : 'Top set at each lift\u2019s reps · ○ est.';
     return `<div class="card">
-      <div class="head"><span class="title">Lifts</span>${one ? `<button class="link" data-a="all" style="min-height:28px">All lifts</button>` : ''}</div>
-      <div class="sub" style="font-size:13px">${one ? `<b style="color:var(--text)">${one.n}</b> · ` : ''}${sub}</div>
+      <div class="head" style="align-items:center"><span class="title">Lifts</span>${one ? `<button class="link" data-a="all" style="min-height:28px;font-size:13px">All lifts</button>` : `<span class="hk">Top set · <span aria-label="hollow dot means estimated">○ est.</span> · <button class="link" data-a="edit" style="min-height:28px;font-size:13px">Edit</button></span>`}</div>
+      ${one ? `<div class="sub" style="font-size:13px"><b style="color:var(--text)">${one.n}</b> · ${sub}</div>` : ''}
       ${pill ? `<div style="display:flex">${pill}</div>` : ''}
       ${liftChart()}
       <div class="lifts">${liftRows()}</div>
-      <button class="link" data-a="edit" style="align-self:flex-start;min-height:30px;font-size:13px">Edit lifts</button>
     </div>`;
   }
   function barChart(g) {
@@ -239,10 +239,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <span>${m}</span>${spark(v, p)}<span class="mn">${last}<small> of ${p}</small></span></div>`;
     }).join('');
     return `<div class="card">
-      <div class="head"><span class="title">Muscles</span></div>
-      <div class="sub" style="font-size:13px">Sets per week vs plan · last 8 weeks</div>
-      <div class="sub" style="font-size:12px;display:flex;gap:12px;align-items:center" aria-hidden="true"><span><i style="display:inline-block;width:8px;height:10px;border-radius:2px;background:#E8C9A0;margin-right:4px"></i>At plan</span><span><i style="display:inline-block;width:8px;height:10px;border-radius:2px;background:rgba(232,201,160,.45);margin-right:4px"></i>Under</span><span>┄ Plan</span></div>
-      <div class="mrow mh" aria-hidden="true"><span>Muscle</span><span>8 weeks</span><span style="text-align:right">Last week</span></div>
+      <div class="head" style="align-items:center"><span class="title">Muscles</span><span class="hk" style="display:flex;gap:10px;align-items:center" aria-hidden="true"><span><i style="display:inline-block;width:8px;height:10px;border-radius:2px;background:#E8C9A0;margin-right:4px"></i>At plan</span><span><i style="display:inline-block;width:8px;height:10px;border-radius:2px;background:rgba(232,201,160,.45);margin-right:4px"></i>Under</span><span>┄ Plan</span></span></div>
+      <div class="mrow mh" aria-hidden="true"><span>Muscle</span><span>Sets vs plan</span><span style="text-align:right">Last week</span></div>
       <div role="table" aria-label="Sets per muscle per week">${rows}</div>
     </div>`;
   }
