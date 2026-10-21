@@ -148,6 +148,8 @@ export const REVIEW_SERVICE_COPY = {
 
 const SESSION_WEEKS = WEEKLY_REVIEW.trendWeeks + WEEKLY_REVIEW.weeks + 1;
 const HISTORY_LIMIT = 26;
+/** A coach call that failed isn't made again for the same inputs before this (review b3-wave3-truth S4: Ben's plan allowance). */
+export const FAILED_RETRY_MS = 6 * 3_600_000;
 
 function reachOf(a: CoachAvailability): BuilderCoachReach {
   if (a.status === 'ok' && a.model !== null) return 'ok';
@@ -157,6 +159,17 @@ function reachOf(a: CoachAvailability): BuilderCoachReach {
 export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
   const repos = () => deps.store().repos;
   let running: Promise<WeeklyRun> | null = null;
+  // Screens reload when a run stores a review (pending, then the coach's part; review b3-wave3-ux B2).
+  const listeners = new Set<() => void>();
+  const emit = () => {
+    for (const l of listeners) {
+      try {
+        l();
+      } catch {
+        // A listener's failure never stops the run.
+      }
+    }
+  };
 
   async function exercisePool(): Promise<Map<string, Exercise>> {
     const pool = new Map<string, Exercise>();
@@ -253,6 +266,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       .painFlags.listActive(owner.id)
       .catch(() => []);
     const chosen = training?.progressLifts ?? [];
+    const liftTargets = liftTargetsInUse(training);
     let lifts: string[] = [...chosen];
     if (lifts.length === 0) {
       const mains = new Set<string>();
@@ -261,6 +275,8 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         if (m != null) mains.add(m);
       }
       for (const m of (await deps.mainLiftIds?.().catch(() => null)) ?? []) mains.add(m);
+      // A lift with a target is shown by default too, after the main lifts (review b3-wave3-ux S3).
+      for (const t of liftTargets) mains.add(t.exerciseId);
       lifts = [...mains];
     }
     const logged = new Map<string, string>();
@@ -282,7 +298,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         goal: training?.goal ?? null,
         info: (id) => pool.get(id) ?? null,
         lifts: lifts.slice(0, WEEKLY_REVIEW.maxLifts),
-        liftTargets: liftTargetsInUse(training),
+        liftTargets,
         activities,
         templates,
         painFlagged: new Set(pain.map((p) => p.exerciseId)),
@@ -291,9 +307,13 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     };
   }
 
-  /** The inputs a review is made from (§6.1 cache key): the stored facts (not code's own tweak suggestions, so Apply doesn't re-run it), goal and lifts. */
+  /**
+   * The inputs a review is made from (§6.1 cache key): the stored facts (not code's own tweak suggestions,
+   * so Apply doesn't re-run it), goal, lifts, and the active pain flags (a new flag re-runs it, so no tweak
+   * stands on a flagged movement; rule 9, review b3-wave3-truth B5).
+   */
   function inputsHashOf(g: Gathered, facts: ReturnType<typeof weeklyReviewFacts>): string {
-    return deriveId(`weekly:${stableStringify({ facts: facts.filter((f) => f.kind !== 'template_edit'), goal: g.input.goal, lifts: g.input.lifts, templates: g.input.templates.map((t) => t.routineId) })}`).slice(0, 128);
+    return deriveId(`weekly:${stableStringify({ facts: facts.filter((f) => f.kind !== 'template_edit'), goal: g.input.goal, lifts: g.input.lifts, templates: g.input.templates.map((t) => t.routineId), pain: [...g.input.painFlagged].sort() })}`).slice(0, 128);
   }
 
   const keyOf = (p: Pick<ReviewProposal, 'change'>): string => `${p.change.routineId}|${p.change.exerciseId}`;
@@ -314,7 +334,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     const answer = await requestBuilderTool(port, buildWeeklyRequest(text, builderModelFor('weekly', { main: a.model, light: a.workoutModelGone === true ? null : (a.workoutModel ?? null) })), BUILDER_COACH_TOOL.weeklyReview, signal === undefined ? {} : { signal });
     if (!answer.ok) {
       const status = answer.error === 'network' || answer.error === 'timeout' ? 'offline' : answer.error === 'auth_expired' || answer.error === 'not_eligible' || answer.error === 'model_gone' || answer.error === 'unavailable' ? 'not_connected' : 'failed';
-      return { coach: { status }, proposals: [], status };
+      return { coach: status === 'failed' ? { status, atUtc: deps.now().utc } : { status }, proposals: [], status };
     }
     const checked = checkWeeklyReview(answer.args, { facts: f, templates: g.input.templates, painFlagged: g.input.painFlagged, prefix: reviewId, taken });
     return { coach: { status: 'reviewed', verdict: checked.verdict, lines: checked.lines.slice(0, 10), actionIds: [], numbersChecked: true }, proposals: checked.proposals, status: 'ok' };
@@ -336,8 +356,9 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     const previous = await repos()
       .reviews.current(owner.id, subject)
       .catch(() => null);
-    // Ben's answers carry over (applied, skipped, undone, out of date); code's open suggestions are made again.
-    const carried = (previous?.proposals ?? []).filter((p) => p.status !== 'open');
+    // Ben's answers carry over (applied, skipped, undone, out of date); code's open suggestions are made
+    // again, and so is code's out-of-date one (its template moved; review b3-wave3-truth N1).
+    const carried = (previous?.proposals ?? []).filter((p) => p.status !== 'open' && !(p.status === 'stale' && p.source === 'code'));
     const taken = new Set(carried.map(keyOf));
     const fresh = codeProposals(f.edits, reviewId).filter((p) => !taken.has(keyOf(p)));
     const proposals = [...carried, ...fresh].slice(0, 4);
@@ -362,18 +383,23 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       .catch(() => null);
     if (w === null || w.status === 'invalid' || w.status === 'stale') return { kind: 'failed' };
     if (w.status === 'unchanged' || w.status === 'replayed') return { kind: 'cached', review: w.review };
+    // The same inputs whose coach call failed lately: not asked again yet (review b3-wave3-truth S4).
+    const c = w.review.coach;
+    if (w.status === 'retry_coach' && c.status === 'failed' && c.atUtc !== undefined && toMs(now.utc) - toMs(c.atUtc) < FAILED_RETRY_MS) return { kind: 'not_reviewed', review: w.review, status: 'failed' };
+    if (w.status === 'written') emit();
     const stored = w.review;
     const asked = await askCoach(g, f, stored.id, stored.proposals ?? [], opts.signal);
     const coachOp = `${opId}:coach`;
     const latest = (await repos().reviews.get(stored.id).catch(() => null)) ?? stored;
     // Still offline (or not connected) on a later open: nothing new to write.
-    if (asked.status !== 'ok' && latest.coach.status === asked.coach.status && asked.proposals.length === 0) return { kind: 'not_reviewed', review: latest, status: asked.status };
+    if (asked.status !== 'ok' && asked.status !== 'failed' && latest.coach.status === asked.coach.status && asked.proposals.length === 0) return { kind: 'not_reviewed', review: latest, status: asked.status };
     const mergedProposals = [...(latest.proposals ?? []), ...asked.proposals.filter((p) => !(latest.proposals ?? []).some((q) => keyOf(q) === keyOf(p)))].slice(0, 4);
     const next: TrainingReview = { ...latest, coach: asked.coach, proposals: mergedProposals, version: latest.version + 1, updatedAtUtc: deps.now().utc, opIds: [...latest.opIds, coachOp].slice(-20) };
     const u = await repos()
       .reviews.update(owner.id, next, latest.version, coachOp)
       .catch(() => null);
     const saved = u !== null && (u.status === 'written' || u.status === 'replayed') ? u.review : latest;
+    if (u?.status === 'written') emit();
     return asked.status === 'ok' ? { kind: 'reviewed', review: saved } : { kind: 'not_reviewed', review: saved, status: asked.status };
   }
 
@@ -413,6 +439,14 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
   const viewsOf = (r: TrainingReview, nameOf: (id: string) => string): ReviewWeekData | null => weekDataOfReview(r, nameOf);
 
   return {
+    /** Called after each review a run stores (the pending one, then the coach's part); returns the unsubscribe. */
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+
     /** On app open (§6.1). One run at a time; never throws. */
     runOnOpen(opts: { signal?: AbortSignal } = {}): Promise<WeeklyRun> {
       running ??= run(opts)
@@ -502,27 +536,39 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const line = reviewProposalText(p);
       if (p.status === 'applied') return outcome(p, line);
       if (p.status !== 'open') return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
-      const actionId = deriveId(`review-apply:${req.opId}`);
-      // A double tap, or a retry after a force-close: the write under this op ID already happened.
+      // One template write per proposal, whatever the tap: its op ID and record come from the proposal, so a
+      // tap after a force-close between the write and the mark finds the write and marks it (review
+      // b3-wave3-truth S3), never a second write or a stale refusal of its own change.
+      const applyOp = `review-apply:${deriveId(`${req.reviewId}|${p.id}`)}`;
+      const actionId = deriveId(applyOp);
       const prior = await repos()
         .coach.getAction(actionId)
         .catch(() => null);
-      if (prior !== null) return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'applied', actionId })), line);
+      if (prior !== null) {
+        const undone = prior.undoneBy !== null;
+        return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: undone ? 'undone' : 'applied', actionId })), line);
+      }
       const markStale = async (): Promise<ProposalOutcome> => {
         await changeProposal(req.reviewId, req.proposalId, `${req.opId}:stale`, (x) => ({ ...x, status: 'stale' }));
         return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
       };
+      // A pain flag since the review: no more volume on that movement (rule 9; review b3-wave3-truth B5).
+      const pain = await repos()
+        .painFlags.listActive(owner.id)
+        .catch(() => null);
+      if (pain === null) return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
+      if (pain.some((f) => f.exerciseId === p.change.exerciseId)) return markStale();
       const routine = await repos()
         .routines.get(p.change.routineId)
         .catch(() => null);
       if (routine === null || routine.ownerId !== owner.id || isDeleted(routine)) return markStale();
       const at = deps.now();
-      const c = withTemplateWorkingSets(routine, { exerciseId: p.change.exerciseId, toSets: p.change.toSets, expectedVersion: p.change.expectedVersion, opId: req.opId, atUtc: at.utc });
+      const c = withTemplateWorkingSets(routine, { exerciseId: p.change.exerciseId, toSets: p.change.toSets, expectedVersion: p.change.expectedVersion, opId: applyOp, atUtc: at.utc });
       if (c.kind !== 'write') return markStale();
       const action: ActionRecord = {
         actionId,
         turnId: null,
-        opId: req.opId,
+        opId: applyOp,
         status: 'committed',
         author: 'ben',
         detail: { kind: 'update_routine', routineId: routine.id, routineName: routine.name, changes: [{ change: 'edit', text: line.slice(0, 200) }], before: routine, versionBefore: routine.version, versionAfter: c.next.version, draft: null },
@@ -575,6 +621,8 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         .drafts.undoRoutineChange({ ownerId: owner.id, undo, at, newRoutineAtUtc: at.utc })
         .catch(() => null);
       if (r === null) return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
+      // Undone already (a force-close after the undo, before the mark): mark it, never `changed since` (review b3-wave3-truth S3).
+      if (r.status === 'not_possible' && r.reason === 'already_undone') return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'undone' })), reviewProposalText(p));
       if (r.status === 'not_possible') return { ok: false, reason: 'changed_since', message: REVIEW_SERVICE_COPY.changedSince(p.change.routineName) };
       return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'undone' })), reviewProposalText(p));
     },

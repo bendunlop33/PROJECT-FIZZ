@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CONNECTED, StepModel, toolCall } from './coach-model';
+import { sendFeel } from '../src/reviews/feel';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -32,6 +33,13 @@ describe('weekly review in the app', () => {
     expect((await s.reviews.feelOf(sessionId))?.feel).toBe('hard');
     // A stale version is refused (rule 5).
     expect((await s.workout.dispatch(sessionId, { type: 'set_feel', at: h.now(), opId: 'feel-2', feel: 'easy', expectedVersion: before?.version ?? 0 })).ok).toBe(false);
+    // The row's tap after another Summary write moved the version: re-read once and stored, never silent (review b3-wave3-ux S7).
+    let n = 0;
+    expect(await sendFeel(s, sessionId, 'good', before?.version ?? 0, () => `feel-retry-${String((n += 1))}`)).toBe(true);
+    expect((await s.reviews.feelOf(sessionId))?.feel).toBe('good');
+    expect(await sendFeel(s, sessionId, 'hard', (await s.reviews.feelOf(sessionId))?.version ?? 0, () => `feel-retry-${String((n += 1))}`)).toBe(true);
+    // An unknown workout: reported as failed.
+    expect(await sendFeel(s, 'missing', 'easy', 1, () => 'feel-x')).toBe(false);
 
     model = new StepModel([() => toolCall('weekly_review', { verdict: 'Felt hard.', lines: ['1 session felt hard.'], tweaks: [] })], { weekly: true });
     h.clockMs = Date.parse('2026-10-19T08:00:00.000Z');

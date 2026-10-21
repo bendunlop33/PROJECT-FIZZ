@@ -48,4 +48,23 @@ describe('Progress › Reviews screens', () => {
     expect(read('screens', 'workout', 'SummaryScreen.tsx')).toContain('<FeelRow sessionId={sessionId} />');
     expect(read('screens', 'TodayScreen.tsx')).toContain("onReviews: () => {");
   });
+
+  it('review fixes (b3-wave3 UX): label once, table falls back with no chart engine, Sets table words, screens told when a run stores a review, Today lands on Reviews', () => {
+    // B3: the line under the title is the view model's `header` (pinned in the domain tests), never metric + now.
+    expect(charts).toContain('{chart.empty ?? chart.header}');
+    expect(charts).not.toContain('`${chart.metric} · ${chart.now}`');
+    // S5: no Skia, the table (never a blank box).
+    expect(charts).toContain('table || !canvas.ok ?');
+    // S8: words, not codes.
+    expect(charts).toContain('r.statusWord');
+    // S4: no fixed 96 pt label that cuts names off.
+    expect(charts).not.toContain('width: 96 }');
+    // S2: one full chart, the rest tiles.
+    expect(section).toContain('<LiftsBlock charts={section.charts} />');
+    // B2: the app reloads screens when a run stores a review.
+    expect(read('shell', 'context.tsx')).toContain('services.reviews.subscribe(changed)');
+    // S9: Today's link scrolls Progress to Reviews.
+    expect(read('screens', 'TodayScreen.tsx')).toContain("params: { focus: 'reviews', n: (reviewsTaps += 1) }");
+    expect(progress).toContain('scroll.current?.scrollTo({ y: 0, animated: false })');
+  });
 });

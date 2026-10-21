@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { FEEL_COPY, feelOptions } from '@fizz/domain';
@@ -6,8 +6,12 @@ import { FEEL_COPY, feelOptions } from '@fizz/domain';
 import { haptic } from '../device/haptics';
 import { newUuid } from '../device/runtime';
 import { useDataChanged, useScreenData, useServices } from '../shell/context';
+import { FEEL_ROW_COPY, sendFeel } from './feel';
 import { useTheme } from '../theme';
 import { AppText, Icon } from '../ui';
+
+/** The row's height while it loads, so the Summary doesn't jump when it appears (review b3-wave3-ux S7). */
+const ROW_HEIGHT = 72;
 
 /**
  * Summary's one-tap `How did it feel?` (Ben, 21 Oct; workout-builder-v3 §6.2): Easy, Good or Hard, stored
@@ -19,11 +23,13 @@ export function FeelRow({ sessionId }: { sessionId: string }) {
   const services = useServices();
   const changed = useDataChanged();
   const [data, reload] = useScreenData((s) => s.reviews.feelOf(sessionId));
+  const [failed, setFailed] = useState(false);
   const busy = useRef(false);
+  if (data.state === 'loading') return <View style={{ minHeight: ROW_HEIGHT }} />;
   if (data.state !== 'ready' || data.value === null) return null;
   const { feel, version } = data.value;
   return (
-    <View style={{ gap: theme.space['2'] }}>
+    <View style={{ gap: theme.space['2'], minHeight: ROW_HEIGHT }}>
       <AppText variant="callout" color="text.secondary">
         {FEEL_COPY.question}
       </AppText>
@@ -38,8 +44,10 @@ export function FeelRow({ sessionId }: { sessionId: string }) {
               if (busy.current) return;
               busy.current = true;
               haptic('step');
-              void services.workout
-                .dispatch(sessionId, { type: 'set_feel', at: services.now(), opId: newUuid(), feel: o.next, expectedVersion: version })
+              void sendFeel(services, sessionId, o.next, version, newUuid)
+                .then((ok) => {
+                  setFailed(!ok);
+                })
                 .finally(() => {
                   busy.current = false;
                   changed();
@@ -66,6 +74,11 @@ export function FeelRow({ sessionId }: { sessionId: string }) {
           </Pressable>
         ))}
       </View>
+      {failed ? (
+        <AppText variant="callout" color="text.secondary" accessibilityLiveRegion="polite">
+          {FEEL_ROW_COPY.failed}
+        </AppText>
+      ) : null}
     </View>
   );
 }

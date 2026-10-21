@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { REVIEW_COPY, type GoalSection, type ReviewCardView, type ReviewProposalView } from '@fizz/domain';
+import { REVIEW_COPY, type GoalSection, type LiftChartView, type ReviewCardView, type ReviewProposalView } from '@fizz/domain';
 
 import { haptic } from '../device/haptics';
 import { newUuid } from '../device/runtime';
@@ -10,7 +10,7 @@ import type { LiftChoice, ProposalOutcome, ReviewsData } from './weekly-review-s
 import { useDataChanged, useScreenData, useServices } from '../shell/context';
 import { useTheme } from '../theme';
 import { AppText, BottomCard, Card, ChecklistRow, Icon, PrimaryButton, SecondaryButton, TextButton } from '../ui';
-import { ConsistencyBlock, HistorySpark, LiftTrend, SetsBars } from './charts';
+import { ConsistencyBlock, HistorySpark, LiftTile, LiftTrend, SetsBars } from './charts';
 
 /**
  * Progress › Reviews (workout-builder-v3 §6.2; Ben 20–21 Oct; the approved `progress-reviews.html` look):
@@ -111,13 +111,13 @@ export function ReviewCard({ card, onReload }: { card: ReviewCardView; onReload:
         <AppText variant="headline" color={card.reviewed ? 'text.primary' : 'text.secondary'}>
           {card.verdict}
         </AppText>
-        {card.lines.map((l) => (
-          <AppText key={l} variant="callout" numeric>
+        {card.lines.map((l, i) => (
+          <AppText key={`l${String(i)}`} variant="callout" numeric>
             {l}
           </AppText>
         ))}
-        {card.facts.map((f) => (
-          <AppText key={f} variant="callout" color="text.secondary" numeric>
+        {card.facts.map((f, i) => (
+          <AppText key={`f${String(i)}`} variant="callout" color="text.secondary" numeric>
             {f}
           </AppText>
         ))}
@@ -146,6 +146,47 @@ export function ReviewCard({ card, onReload }: { card: ReviewCardView; onReload:
   );
 }
 
+/**
+ * The lifts Ben chose: the first as a full chart, the rest as small tiles that open in place (the
+ * prototype's hero chart and lift tiles), so Progress isn't six full charts long (review b3-wave3-ux S2).
+ */
+function LiftsBlock({ charts }: { charts: readonly LiftChartView[] }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const [first, ...rest] = charts;
+  if (first === undefined) return null;
+  const tiles = rest.filter((c) => !open.has(c.exerciseId));
+  return (
+    <View style={{ gap: theme.space['4'] }}>
+      <LiftTrend chart={first} />
+      {rest
+        .filter((c) => open.has(c.exerciseId))
+        .map((c) => (
+          <LiftTrend
+            key={c.exerciseId}
+            chart={c}
+            onCollapse={() => {
+              setOpen((o) => new Set([...o].filter((x) => x !== c.exerciseId)));
+            }}
+          />
+        ))}
+      {tiles.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+          {tiles.map((c) => (
+            <LiftTile
+              key={c.exerciseId}
+              chart={c}
+              onOpen={() => {
+                setOpen((o) => new Set([...o, c.exerciseId]));
+              }}
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function GoalSectionView({ section, onEditLifts }: { section: GoalSection; onEditLifts: (() => void) | null }) {
   const theme = useTheme();
   switch (section.kind) {
@@ -162,9 +203,7 @@ function GoalSectionView({ section, onEditLifts }: { section: GoalSection; onEdi
               {section.empty}
             </AppText>
           ) : null}
-          {section.charts.map((c) => (
-            <LiftTrend key={c.exerciseId} chart={c} />
-          ))}
+          <LiftsBlock charts={section.charts} />
         </View>
       );
   }
@@ -247,6 +286,14 @@ export function ReviewsSection() {
   const [data, reload] = useScreenData((s) => s.reviews.reviews());
   const [liftsOpen, setLiftsOpen] = useState(false);
   const [allWeeks, setAllWeeks] = useState(false);
+  if (data.state === 'error') {
+    // One honest line when the reviews can't be read, never nothing (review b3-wave3-ux N7).
+    return (
+      <AppText variant="callout" color="text.secondary">
+        Reviews couldn’t be read.
+      </AppText>
+    );
+  }
   if (data.state !== 'ready' || data.value === null) return null;
   const d: ReviewsData = data.value;
   const goalHasData = d.goal.sections.some((s) => (s.kind === 'consistency' ? s.view.bars.some((b) => b.done > 0 || b.planned !== null) : s.kind === 'lifts' ? s.charts.length > 0 : s.view.rows.length > 0));
@@ -301,7 +348,9 @@ export function ReviewsSection() {
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], minHeight: 56, paddingVertical: theme.space['2'], borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderColor: theme.colors['border.divider'], opacity: pressed ? 0.7 : 1 })}
               >
                 <View style={{ flex: 1, gap: 2 }}>
-                  <AppText variant="body">{h.title}</AppText>
+                  <AppText variant="body" numeric>
+                    {h.title}
+                  </AppText>
                   <AppText variant="callout" color="text.secondary" numeric>
                     {h.detail}
                   </AppText>

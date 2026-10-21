@@ -1,4 +1,4 @@
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
@@ -12,6 +12,7 @@ import { useDeleteToast, type ToastState } from '../../history/useDeleteToast';
 import { runCountIt, type CountItToast } from '../../progress/count-it';
 import { consistencyCardView, type ConsistencyCardView } from '../../progress/consistency-view';
 import { ActivityChart, FrequencyHeader, FrequencyRow, FrequencySubRows, PeriodPicker, ResumeBar, Segmented, useAx } from '../../progress/components';
+import type { ProgressStackParams } from '../../navigation/types';
 import type { ProgressHome } from '../../services/progress-service';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -60,6 +61,13 @@ export function ProgressScreen() {
   // A workout deleted from a Summary opened here comes back with Undo (delete-workouts DW1).
   const deleted = useDeleteToast();
   const toastShown = toast !== null || deleted.toast !== null;
+  // Today's `Reviews ›` lands on Reviews, at the top, whatever the scroll was (review b3-wave3-ux S9).
+  const route = useRoute<RouteProp<ProgressStackParams, 'ProgressHome'>>();
+  const scroll = useRef<ScrollView>(null);
+  const focusN = route.params?.focus === 'reviews' ? (route.params.n ?? 0) : null;
+  useEffect(() => {
+    if (focusN !== null) scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [focusN]);
 
   useEffect(() => {
     // Loading: nothing for `timing.placeholderDelay`, then still grey blocks (no shimmer).
@@ -240,6 +248,7 @@ export function ProgressScreen() {
       {/* Everything that floats (Ask, toast) lives in this area, which ends above the ResumeBar, so the bar never covers them (review S1). */}
       <View style={{ flex: 1 }}>
         <ScrollView
+          ref={scroll}
           contentInsetAdjustmentBehavior="automatic"
           // Design pass 6.2: one tap on a search result opens it; a drag hides the keyboard.
           keyboardShouldPersistTaps="handled"

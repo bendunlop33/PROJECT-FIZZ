@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { View, type DimensionValue } from 'react-native';
+import { Pressable, View, type DimensionValue } from 'react-native';
 
 import { REVIEW_COPY, sparkPoints, type LiftChartView, type ReviewConsistencyView, type SetsBarsView } from '@fizz/domain';
 
 import { useAxisWidth } from '../progress/axis-measure';
 import { TICK_MAX_SCALE } from '../progress/axis-width';
-import { XLabels } from '../progress/components';
+import { useAx, XLabels } from '../progress/components';
 import { loadTrendCanvas } from '../progress/load-charts';
 import { trendLayout } from '../progress/trend-layout';
 import { useTheme } from '../theme';
@@ -115,8 +115,14 @@ export function ConsistencyBlock({ view }: { view: ReviewConsistencyView }) {
                   <View style={{ height: Math.max(b.done > 0 ? 3 : 0, done), backgroundColor: theme.colors['text.primary'], borderRadius: 4 }} />
                 </View>
                 <AppText variant="label" color="text.tertiary" numeric numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                  {b.runs > 0 ? `${b.label} · R${String(b.runs)}` : b.label}
+                  {b.label}
                 </AppText>
+                {/* Runs on their own line, so a large text size never cuts them off (review b3-wave3-ux S4). */}
+                {b.runs > 0 ? (
+                  <AppText variant="label" color="text.tertiary" numeric numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                    {`R${String(b.runs)}`}
+                  </AppText>
+                ) : null}
               </View>
             );
           })}
@@ -130,6 +136,8 @@ export function ConsistencyBlock({ view }: { view: ReviewConsistencyView }) {
 export function SetsBars({ view }: { view: SetsBarsView }) {
   const theme = useTheme();
   const [table, setTable] = useState(false);
+  // Large text: the name above its bar, never cut off (review b3-wave3-ux S4).
+  const stacked = useAx();
   if (view.empty !== null) {
     return (
       <View style={{ gap: theme.space['2'] }}>
@@ -144,15 +152,15 @@ export function SetsBars({ view }: { view: SetsBarsView }) {
     <View style={{ gap: theme.space['2'] }}>
       <Header title={view.title} right={<TableToggle table={table} onToggle={() => { setTable((t) => !t); }} what={view.title} />} />
       {table ? (
-        <TableRows rows={view.rows.map((r) => ({ key: r.key, cells: [r.label, `${String(r.sets)} sets`, r.planned === null ? '' : `plan ${String(r.planned)}`, r.range === null ? '' : `${String(r.range.min)}–${String(r.range.max)}`, r.status ?? ''].filter((c) => c !== '') }))} />
+        <TableRows rows={view.rows.map((r) => ({ key: r.key, cells: [r.label, `${String(r.sets)} sets`, r.planned === null ? '' : `plan ${String(r.planned)}`, r.range === null ? '' : `range ${String(r.range.min)}–${String(r.range.max)}`, r.statusWord ?? ''].filter((c) => c !== '') }))} />
       ) : (
         <View accessible accessibilityLabel={`${view.title}: ${view.words}`}>
           {view.rows.map((r) => (
-            <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: 32 }}>
-              <AppText variant="callout" numberOfLines={1} style={{ width: 96 }}>
+            <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel} style={{ flexDirection: 'row', flexWrap: stacked ? 'wrap' : 'nowrap', alignItems: 'center', columnGap: theme.space['2'], rowGap: 2, minHeight: 32 }}>
+              <AppText variant="callout" style={stacked ? { width: '100%' } : { minWidth: 96, flexShrink: 0 }}>
                 {r.label}
               </AppText>
-              <View style={{ flex: 1, height: 12, borderRadius: 6, backgroundColor: theme.colors['bg.raised'] }}>
+              <View style={{ flex: 1, minWidth: 80, height: 12, borderRadius: 6, backgroundColor: theme.colors['bg.raised'] }}>
                 {r.band !== null ? <View style={{ position: 'absolute', top: 0, bottom: 0, left: pct(r.band.from), width: pct(r.band.to - r.band.from), backgroundColor: theme.colors['chart.bandFill'], borderWidth: 1, borderColor: theme.colors['chart.bandEdge'], borderRadius: 3 }} /> : null}
                 <View style={{ position: 'absolute', top: 3, bottom: 3, left: 0, width: pct(r.fill), backgroundColor: theme.colors['text.primary'], borderRadius: 3 }} />
                 {r.plannedAt !== null ? <View style={{ position: 'absolute', top: -2, bottom: -2, left: pct(r.plannedAt), width: 2, backgroundColor: theme.colors['text.secondary'] }} /> : null}
@@ -186,8 +194,37 @@ export function SetsBars({ view }: { view: SetsBarsView }) {
 const LIFT_HEIGHT = 150;
 const INSET = 10;
 
+function liftTableRows(chart: LiftChartView) {
+  return chart.table.map((r) => ({ key: r.key, cells: [r.date, r.value, r.set] }));
+}
+
+/** A lift as a small tile (the prototype's lift tiles): name, now, was → now → target, a sparkline; tap for the full chart. */
+export function LiftTile({ chart, onOpen }: { chart: LiftChartView; onOpen: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={[chart.title, chart.empty ?? chart.header, chart.progress].filter((x): x is string => x !== null).join('. ').replaceAll('\u00a0', ' ')}
+      accessibilityHint="Shows the chart"
+      onPress={onOpen}
+      style={({ pressed }) => ({ flexGrow: 1, flexBasis: 150, minHeight: 44, gap: 2, padding: theme.space['3'], borderRadius: theme.radius.md, backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent', borderWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'] })}
+    >
+      <AppText variant="callout">{chart.title}</AppText>
+      <AppText variant="label" color="text.secondary" numeric>
+        {chart.empty ?? chart.header}
+      </AppText>
+      {chart.progress !== null ? (
+        <AppText variant="label" numeric>
+          {chart.progress}
+        </AppText>
+      ) : null}
+      {chart.points.length >= 2 ? <HistorySpark values={chart.points.map((p) => p.value)} /> : null}
+    </Pressable>
+  );
+}
+
 /** One lift's trend: est. 1RM (labelled), best set or reps; the target as a dotted level line. No projection. */
-export function LiftTrend({ chart }: { chart: LiftChartView }) {
+export function LiftTrend({ chart, onCollapse }: { chart: LiftChartView; onCollapse?: () => void }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
   const [table, setTable] = useState(false);
@@ -202,18 +239,22 @@ export function LiftTrend({ chart }: { chart: LiftChartView }) {
         <AppText variant="headline" accessibilityRole="header" style={{ flexShrink: 1 }}>
           {chart.title}
         </AppText>
-        <TableToggle table={table} onToggle={() => { setTable((t) => !t); }} what={chart.title} />
+        <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+          {chart.empty === null ? <TableToggle table={table} onToggle={() => { setTable((t) => !t); }} what={chart.title} /> : null}
+          {onCollapse !== undefined ? <TextButton label="Less" tone="secondary" onPress={onCollapse} accessibilityLabel={`Hide the chart: ${chart.title}`} /> : null}
+        </View>
       </View>
       <AppText variant="label" color="text.secondary" numeric>
-        {chart.now === null ? chart.metric : `${chart.metric} · ${chart.now}`}
+        {chart.empty ?? chart.header}
       </AppText>
       {chart.progress !== null ? (
         <AppText variant="callout" numeric>
           {chart.progress}
         </AppText>
       ) : null}
-      {table ? (
-        <TableRows rows={chart.table.map((r) => ({ key: r.key, cells: [r.date, r.value, r.set] }))} />
+      {chart.empty !== null ? null : table || !canvas.ok ? (
+        // No chart engine (Skia didn't load): the table, never a blank box (review b3-wave3-ux S5).
+        <TableRows rows={liftTableRows(chart)} />
       ) : chart.sparse ? null : (
         <View accessible accessibilityLabel={chart.words}>
           <View
@@ -224,7 +265,7 @@ export function LiftTrend({ chart }: { chart: LiftChartView }) {
               setWidth(Math.floor(e.nativeEvent.layout.width));
             }}
           >
-            {width > 0 && canvas.ok ? (
+            {width > 0 ? (
               <canvas.value
                 layout={layout}
                 width={width}

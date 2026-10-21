@@ -76,7 +76,8 @@ export type ProfileStackParams = {
 
 /** The Progress tab's stack (progress.md §2.1, slice A). */
 export type ProgressStackParams = {
-  ProgressHome: undefined;
+  /** `focus: 'reviews'` (Today's Reviews link): scroll to the top, where Reviews are; `n` makes a repeat tap do it again. */
+  ProgressHome: { focus?: 'reviews'; n?: number } | undefined;
   /** `group`: the row to open expanded (a body-part group such as `Chest`, or `push` / `pull` / `legs` / `core` / `other`). */
   ProgressMuscles: { group?: string };
   /** Exercise detail inside the Progress tab (slice B, §2.7). */

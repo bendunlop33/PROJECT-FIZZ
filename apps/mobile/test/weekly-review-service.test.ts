@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { reduceSession, startWorkout, toIso } from '@fizz/domain';
+import { newPainFlag, reduceSession, startWorkout, toIso } from '@fizz/domain';
 import { at, barbell, exercise, GYM, id, idGen, kg, OWNER, profile, routine, routineExercise, stack, template, T0_MS, TZ, values } from '@fizz/domain/testing';
 import { openStore, type Store } from '@fizz/persistence';
 import { openNodeDriver } from '@fizz/persistence/node';
@@ -135,13 +135,64 @@ describe('the weekly review on open', () => {
     expect((await h.service.reviews())?.latest?.verdict).toBe('Better week');
   });
 
-  it('no coach in the build: `Coach not connected`, never a canned reply; a failed call is `failed` and retried next open', async () => {
+  it('no coach in the build: `Coach not connected`, never a canned reply; a failed call is `failed`, not asked again for 6 h (review b3-wave3-truth S4)', async () => {
     const none = await setUp({ model: null });
     expect(await none.service.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'not_connected' });
     expect(await none.service.status()).toBe('Coach not connected');
-    const failing = await setUp({ model: new StepModel([() => [{ type: 'error', error: 'usage_limit' }], verdict({ verdict: 'Fine week' })], { weekly: true }) });
+    const model = new StepModel([() => [{ type: 'error', error: 'usage_limit' }], () => [{ type: 'error', error: 'usage_limit' }], verdict({ verdict: 'Fine week' })], { weekly: true });
+    const failing = await setUp({ model });
+    const first = await failing.service.runOnOpen();
+    expect(first).toMatchObject({ kind: 'not_reviewed', status: 'failed' });
+    if (first.kind !== 'not_reviewed') return;
+    expect(first.review.coach).toMatchObject({ status: 'failed', atUtc: expect.any(String) as unknown });
+    // Back in the app soon after: no new call (Ben's plan allowance).
+    failing.advance(60_000);
     expect(await failing.service.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'failed' });
+    expect(model.requests).toHaveLength(1);
+    // 6 h later it asks again; failing again restarts the wait.
+    failing.advance(6 * 3_600_000);
+    expect(await failing.service.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'failed' });
+    expect(model.requests).toHaveLength(2);
+    failing.advance(60_000);
+    expect(await failing.service.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'failed' });
+    expect(model.requests).toHaveLength(2);
+    failing.advance(6 * 3_600_000);
     expect(await failing.service.runOnOpen()).toMatchObject({ kind: 'reviewed' });
+    expect(model.requests).toHaveLength(3);
+  });
+
+  it('each stored write tells the screens (pending, then the coach’s part); a cached run tells nothing (review b3-wave3-ux B2)', async () => {
+    const h = await setUp({ model: new StepModel([verdict({ verdict: 'Good week' })], { weekly: true }) });
+    const seen: string[] = [];
+    const off = h.service.subscribe(() => {
+      seen.push('changed');
+    });
+    expect(await h.service.runOnOpen()).toMatchObject({ kind: 'reviewed' });
+    expect(seen).toEqual(['changed', 'changed']);
+    expect(await h.service.runOnOpen()).toMatchObject({ kind: 'cached' });
+    expect(seen).toHaveLength(2);
+    off();
+    // Offline: the pending write is told; the offline part with nothing new isn't rewritten.
+    const o = await setUp({ model: new StepModel([], { weekly: true }), availability: () => OFFLINE });
+    let n = 0;
+    o.service.subscribe(() => {
+      n += 1;
+    });
+    await o.service.runOnOpen();
+    expect(n).toBe(2);
+    await o.service.runOnOpen();
+    expect(n).toBe(2);
+  });
+
+  it('a new pain flag re-runs the review (its inputs changed; rule 9, review b3-wave3-truth B5)', async () => {
+    const h = await setUp({ model: null });
+    const a = await h.service.runOnOpen();
+    if (a.kind !== 'not_reviewed') throw new Error(a.kind);
+    expect(await h.service.runOnOpen()).toMatchObject({ kind: 'not_reviewed' });
+    await h.store.repos.painFlags.save(newPainFlag({ id: id(9500), ownerId: OWNER, opId: 'pain-1', exerciseId: CURL.id, exerciseName: CURL.name, area: null, source: 'check_in', checkInId: null, at: at(0) }), null);
+    const b = await h.service.runOnOpen();
+    if (b.kind !== 'not_reviewed') throw new Error(b.kind);
+    expect(b.review.id).not.toBe(a.review.id);
   });
 
   it('nothing to review with no history', async () => {
@@ -217,6 +268,36 @@ describe('weekly proposals: Apply / Skip / Undo, refused when stale (rule 5)', (
     await h.store.repos.routines.save({ ...now, name: 'Legs B', version: now.version + 1 }, now.version);
     expect(await h.service.undoProposal({ reviewId: id(9400), proposalId: 'p1', opId: 'undo-1' })).toMatchObject({ ok: false, reason: 'changed_since' });
     expect(await workingOf(h.store, h.legs.id)).toBe(4);
+  });
+
+  it('Apply is refused once the exercise is pain-flagged after the review (rule 9; review b3-wave3-truth B5)', async () => {
+    const h = await withProposal();
+    await h.store.repos.painFlags.save(newPainFlag({ id: id(9501), ownerId: OWNER, opId: 'pain-2', exerciseId: CURL.id, exerciseName: CURL.name, area: null, source: 'check_in', checkInId: null, at: at(0) }), null);
+    expect(await h.service.applyProposal({ reviewId: id(9400), proposalId: 'p1', opId: 'tap-1' })).toMatchObject({ ok: false, reason: 'out_of_date' });
+    expect(await workingOf(h.store, h.legs.id)).toBe(3);
+    expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(h.legs.version);
+    expect((await h.store.repos.reviews.get(id(9400)))?.proposals?.find((p) => p.id === 'p1')?.status).toBe('stale');
+  });
+
+  it('a force-close between Apply’s write and its mark: the next tap marks it applied (one write, Undo kept); the same for Undo (review b3-wave3-truth S3)', async () => {
+    const h = await withProposal();
+    await h.service.applyProposal({ reviewId: id(9400), proposalId: 'p1', opId: 'tap-1' });
+    // The mark lost: put the proposal back to open, as if the app died after the template write.
+    const lose = async (status: 'open' | 'applied') => {
+      const r = await h.store.repos.reviews.get(id(9400));
+      if (r === null) throw new Error('missing');
+      const actionId = r.proposals?.find((p) => p.id === 'p1')?.actionId ?? null;
+      await h.store.repos.reviews.update(OWNER, { ...r, version: r.version + 1, proposals: (r.proposals ?? []).map((p) => (p.id === 'p1' ? { ...p, status, actionId: status === 'open' ? null : actionId } : p)) }, r.version, `lose-${status}`);
+    };
+    await lose('open');
+    const again = await h.service.applyProposal({ reviewId: id(9400), proposalId: 'p1', opId: 'tap-2' });
+    expect(again).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
+    expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(h.legs.version + 1);
+    expect(await workingOf(h.store, h.legs.id)).toBe(4);
+    await h.service.undoProposal({ reviewId: id(9400), proposalId: 'p1', opId: 'undo-1' });
+    await lose('applied');
+    expect(await h.service.undoProposal({ reviewId: id(9400), proposalId: 'p1', opId: 'undo-2' })).toMatchObject({ ok: true, proposal: { status: 'undone' } });
+    expect(await workingOf(h.store, h.legs.id)).toBe(3);
   });
 
   it('Skip changes nothing in the plan and survives a re-run of the review', async () => {
