@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Load, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 
-import { consistency, exercisePlanRow, exerciseTargetHistory, PLAN_VERDICT_WORD, plannedVsDone, toIso, toMs } from '../src/index';
+import { consistency, exercisePlanRow, exerciseTargetHistory, PLAN_VERDICT_WORD, plannedRepsOf, plannedVsDone, toIso, toMs } from '../src/index';
 import { id, kg, TZ } from './fixtures';
 
 /**
@@ -41,6 +41,40 @@ function set(e: SessionExercise, index: number, planned: { load?: Load | null; r
     ...over,
   };
 }
+
+describe('planned reps (Progress v3: `Mon – 92%`, Summary `156 of 170 planned reps`; reviews progress-v3 S2/S4, S6, S7)', () => {
+  const bench = ex(110, 'Bench press');
+  const row = ex(120, 'Cable row', { loadConvention: 'stack' });
+  const curl = ex(130, 'Curl', { loadConvention: 'per_hand' });
+
+  it('warm-ups out; a skipped planned set counts 0; an added set counts done only; one taken out before Start is out; a companion isn’t counted twice; a single target (min = max) counts as planned, a range its low end', () => {
+    const a = set(row, 0, { reps: [8, 12] }, { reps: 10 });
+    const sets = [
+      set(bench, 0, { reps: [10, 10] }, { reps: 10 }, { setType: 'warmup' }),
+      set(bench, 1, { reps: [10, 10] }, { reps: 10 }),
+      set(bench, 2, { reps: [10, 10] }, null),
+      set(bench, 3, { reps: [10, 10] }, { reps: 12 }, { planned: { load: null, reps: { min: 10, max: 10 }, durationS: null, rpe: null, rir: null, addedInWorkout: true } }),
+      set(bench, 4, { reps: [10, 10] }, null, { skippedBy: 'before_start' }),
+      a,
+      set(row, 0, { reps: [8, 12] }, { reps: 10 }, { pairedWithSetId: a.id }),
+      set(curl, 0, { reps: [8, 12] }, null),
+    ];
+    // Planned: bench 10 + 10 (skipped), row 8, curl 8 = 36. Done: 10 + 12 (added) + 10 = 32.
+    expect(plannedRepsOf({ sets })).toEqual({ planned: 36, done: 32 });
+    const r = plannedVsDone({ exercises: [bench, row, curl], sets });
+    expect(r?.reps).toEqual({ planned: 36, done: 32, text: '32 of 36 planned reps', short: 'Short: Bench press · Skipped: Curl' });
+  });
+
+  it('extras can lift the % past 100, but the skipped exercise is still named', () => {
+    const sets = [set(bench, 0, {}, { reps: 8 }), set(bench, 1, {}, { reps: 8 }), set(bench, 2, {}, { reps: 8 }, { planned: { load: null, reps: { min: 8, max: 8 }, durationS: null, rpe: null, rir: null, addedInWorkout: true } }), set(curl, 0, { reps: [8, 8] }, null)];
+    const r = plannedVsDone({ exercises: [bench, curl], sets });
+    expect(r?.reps).toMatchObject({ planned: 24, done: 24, short: 'Skipped: Curl' });
+  });
+
+  it('nothing planned in reps: no line', () => {
+    expect(plannedRepsOf({ sets: [set(bench, 0, { reps: null, durationS: 45 }, { durationS: 45 })] })).toEqual({ planned: null, done: 0 });
+  });
+});
 
 describe('plannedVsDone: the Summary’s plan vs done (proposal 1)', () => {
   const bench = ex(10, 'Bench press');

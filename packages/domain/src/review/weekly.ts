@@ -20,7 +20,7 @@ import {
 import { addDays, localDateOf, localHourUtcMs, localMidnightUtcMs, localWeekBounds } from '../calendar';
 import { isSetCountable } from '../exclusions';
 import { e1rmConventionAllowed, estimateOneRepMax, roundEstimate } from '../progress/e1rm';
-import { planDaysDoneThisWeek, planWeekOf, pausedInWeek, type PlanWeekDay } from '../progress/plan-tracker';
+import { planDaysDoneThisWeek, plannedRepsOf, planWeekOf, pausedInWeek, type PlanWeekDay } from '../progress/plan-tracker';
 import { toProgressSession } from '../progress/projection';
 import { isInHistory } from '../session/deletion';
 import { toMs } from '../time';
@@ -99,6 +99,8 @@ export interface ReviewExercise {
   exerciseId: string;
   name: string;
   equipmentKind: EquipmentKind | null;
+  /** The equipment item it was done on (Progress v3's same-machine rule for stacks and plate-loaded machines); absent or null: none recorded. */
+  equipmentId?: string | null;
   /** Completed sets with a result, in order. */
   sets: readonly ReviewSet[];
   /** Working sets the workout was set up with (Ben's edits before Start included): the template comparison. */
@@ -140,18 +142,8 @@ export function reviewSessionOf(a: SessionAggregate, ownerTz: string, nowMs: num
     planned.set(s.sessionExerciseId, (planned.get(s.sessionExerciseId) ?? 0) + 1);
   }
   const removed = new Set(a.exercises.filter((e) => e.removed !== undefined).map((e) => e.id));
-  let plannedReps = 0;
-  let plannedAny = false;
-  for (const s of a.sets) {
-    if (s.setType === 'warmup' || s.status === 'deleted' || s.pairedWithSetId !== null || s.skippedBy === 'before_start' || s.planned.addedInWorkout === true || s.planned.reps === null) continue;
-    // A single target is min = max; a range counts its low end.
-    plannedReps += s.planned.reps.min;
-    plannedAny = true;
-  }
-  // An other-side companion is the same prescribed set: its reps aren't counted twice.
-  const companions = new Set(a.sets.filter((s) => s.pairedWithSetId !== null).map((s) => s.id));
-  let doneReps = 0;
-  for (const e of p.exercises) for (const s of e.sets) if (s.setType !== 'warmup' && !companions.has(s.setId) && s.reps !== null && s.reps > 0) doneReps += s.reps;
+  // The same count as the Summary's `156 of 170 planned reps` (`plannedRepsOf`).
+  const reps = plannedRepsOf(a);
   return {
     sessionId: p.sessionId,
     name: p.name,
@@ -161,14 +153,15 @@ export function reviewSessionOf(a: SessionAggregate, ownerTz: string, nowMs: num
     routineId: a.session.routineId ?? null,
     template: a.session.planDay?.templateRoutineId != null ? { routineId: a.session.planDay.templateRoutineId } : null,
     feel: a.session.feel?.value ?? null,
-    plannedReps: plannedAny ? plannedReps : null,
-    doneReps,
+    plannedReps: reps.planned,
+    doneReps: reps.done,
     exercises: p.exercises
       .filter((e) => !removed.has(e.sessionExerciseId))
       .map((e) => ({
         exerciseId: e.exerciseId,
         name: e.exerciseName,
         equipmentKind: e.equipmentKind,
+        equipmentId: e.equipmentId,
         plannedWorking: planned.get(e.sessionExerciseId) ?? 0,
         sets: e.sets.map((s) => ({ setType: s.setType, load: s.load, reps: s.reps, rpe: s.rpe, targetRpe: targetRpe.get(s.setId) ?? null, counts: isSetCountable(s, 'record') })),
       })),

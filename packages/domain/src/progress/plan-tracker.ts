@@ -60,6 +60,34 @@ export interface PlannedVsDone {
   doneSets: number;
   /** `14/15 planned sets`. */
   header: string;
+  /**
+   * (Progress v3) The reps behind This week's `Mon – 92%`: `156 of 170 planned reps`, and what was short or
+   * skipped (`Short: Row · Skipped: Curl`), because sets added in the workout can lift the % past a skipped
+   * one. Null: nothing planned in reps.
+   */
+  reps: { planned: number; done: number; text: string; short: string | null } | null;
+}
+
+/**
+ * (Progress v3, Ben 21 Oct) Reps a finished workout planned and did. Planned: each planned working set's
+ * target reps (a single target, stored as min = max, or the low end of a range; there is no other stored
+ * single target), warm-ups, other-side companions, sets added in the workout and sets taken out before
+ * Start left out; skipped planned sets still count (they score 0). Done: reps of every completed working
+ * set, added ones included, a companion not counted twice. Planned null: nothing planned in reps.
+ */
+export function plannedRepsOf(a: Pick<SessionAggregate, 'sets'>): { planned: number | null; done: number } {
+  let planned = 0;
+  let any = false;
+  let done = 0;
+  for (const s of a.sets) {
+    if (!isWorking(s)) continue;
+    if (s.skippedBy !== 'before_start' && s.planned.addedInWorkout !== true && s.planned.reps !== null) {
+      planned += s.planned.reps.min;
+      any = true;
+    }
+    if (s.status === 'completed' && s.actual?.reps != null && s.actual.reps > 0) done += s.actual.reps;
+  }
+  return { planned: any ? planned : null, done };
 }
 
 /** A working set that is one prescribed set (warm-ups, tombstones and other-side companions aren't). */
@@ -208,7 +236,12 @@ export function plannedVsDone(a: Pick<SessionAggregate, 'exercises' | 'sets'>): 
   if (rows.length === 0) return null;
   const plannedSets = rows.reduce((n, r) => n + r.plannedSets, 0);
   const doneSets = rows.reduce((n, r) => n + Math.min(r.doneSets, r.plannedSets), 0);
-  return { rows, plannedSets, doneSets, header: `${String(doneSets)}/${String(plannedSets)} planned sets` };
+  const r = plannedRepsOf(a);
+  const skipped = rows.filter((x) => x.doneSets === 0).map((x) => x.name);
+  const short = rows.filter((x) => x.verdict === 'short' && x.doneSets > 0).map((x) => x.name);
+  const shortText = [short.length > 0 ? `Short: ${short.join(', ')}` : null, skipped.length > 0 ? `Skipped: ${skipped.join(', ')}` : null].filter((x): x is string => x !== null).join(' · ');
+  const reps = r.planned === null || r.planned <= 0 ? null : { planned: r.planned, done: r.done, text: `${String(r.done)} of ${String(r.planned)} planned reps`, short: shortText === '' ? null : shortText };
+  return { rows, plannedSets, doneSets, header: `${String(doneSets)}/${String(plannedSets)} planned sets`, reps };
 }
 
 // ---------------------------------------------------------------------------

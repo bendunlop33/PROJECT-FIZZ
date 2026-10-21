@@ -473,6 +473,19 @@ export function SummaryScreen() {
         {/* D: the shared stat strip (design pass 3.3): one row of light numerals between hairlines, so the exercises start higher. */}
         <FadeIn motion={follow(0)}>
           <StatStrip ax={ax} accessibilityLabel={statItems.map((it) => `${it.label} ${it.value}`).join(', ')} items={statItems} />
+          {/* Progress v3: the reps behind This week's `Mon – 92%`, and what was short or skipped (extras can't hide it). */}
+          {pvd?.reps != null ? (
+            <View accessible accessibilityLabel={[pvd.reps.text, pvd.reps.short].filter((x): x is string => x !== null).join('. ')} style={{ paddingTop: theme.space['2'], gap: 2 }}>
+              <AppText variant="callout" color="text.secondary" numeric>
+                {pvd.reps.text}
+              </AppText>
+              {pvd.reps.short !== null ? (
+                <AppText variant="callout" color="text.secondary">
+                  {pvd.reps.short}
+                </AppText>
+              ) : null}
+            </View>
+          ) : null}
         </FadeIn>
 
         {sum.comparison ? (
