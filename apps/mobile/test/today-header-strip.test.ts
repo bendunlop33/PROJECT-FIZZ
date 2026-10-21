@@ -7,7 +7,7 @@ import { buildTodayStrip } from '@fizz/domain';
 
 import { progressPalette } from '../src/reviews/palette';
 import { PREMIUM_DIRECTION, resolveTheme } from '../src/theme/tokens';
-import { RUN_TINT, STRIP_LABEL_FIT, stripPillStyle } from '../src/today/strip-style';
+import { estimateLabelWidth, RUN_TINT, STRIP_LABEL_FIT, STRIP_LAYOUT, stripLabelBudget, stripLabelFits, stripPillStyle } from '../src/today/strip-style';
 
 /**
  * Today (v2) fixes from Ben's Build B screenshot (21 Oct): the strip's pills (no ✓; done soft green as
@@ -35,7 +35,7 @@ describe('strip pills (§2.0.2 region 3, Ben 21 Oct)', () => {
   }
 
   it('labels are one line and shrink to 75 % instead of `…`; no ✓ in any cell', () => {
-    expect(STRIP_LABEL_FIT).toEqual({ numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.75 });
+    expect(STRIP_LABEL_FIT).toMatchObject({ numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.75 });
     const cells = buildTodayStrip({
       today: '2026-10-21',
       workouts: [
@@ -48,6 +48,34 @@ describe('strip pills (§2.0.2 region 3, Ben 21 Oct)', () => {
     expect(cells.flatMap((c) => c.items.map((i) => i.text))).toEqual(['Rest', 'Legs', 'Chest', 'Run 8k']);
     expect(cells[1]?.accessibilityLabel).toContain('Legs, done');
     expect(cells[5]?.accessibilityLabel).toContain('Planned');
+  });
+});
+
+describe('strip labels fit their column at 375 pt (review today-fix-21oct B2)', () => {
+  const margin = resolveTheme(PREMIUM_DIRECTION, 'dark').components.screenMargin;
+  // Split day names, Other sessions and runs: what a strip pill shows.
+  const LABELS = ['Shoulders', 'Full body', 'Chest', 'Back', 'Legs', 'Arms', 'Upper', 'Lower', 'Push', 'Pull', 'Run 12k', 'Run 21k', 'Rest'];
+  it('the estimator agrees with the reviewer’s measure (`Shoulders` ≈ 55 pt at 12 pt, untracked)', () => {
+    expect(estimateLabelWidth('Shoulders', 12, 0)).toBeGreaterThan(54);
+    expect(estimateLabelWidth('Shoulders', 12, 0)).toBeLessThan(58);
+  });
+  it('the old 12 pt base could not fit `Shoulders` even at the 0.75 floor (the bug)', () => {
+    const oldBudget = (375 - 2 * margin - 12 - 1) / 7 - 2 * 2 - 2 * 2 - 2;
+    expect(estimateLabelWidth('Shoulders', 12 * 0.75, 0)).toBeGreaterThan(oldBudget);
+  });
+  for (const width of [375, 390, 393, 430]) {
+    it(`${String(width)} pt: every day label fits a column at the largest strip text, after shrinking (no …), today’s outlined cell too`, () => {
+      expect(stripLabelBudget(width, margin)).toBeGreaterThan(36);
+      for (const label of LABELS) {
+        expect(stripLabelFits(label, width, margin), label).toBe(true);
+        expect(stripLabelFits(label, width, margin, true), `${label} (today)`).toBe(true);
+      }
+    });
+  }
+  it('at the default text size `Chest` fits without shrinking; the label never grows past 1.1× (fixed column; AX sizes get the list)', () => {
+    expect(estimateLabelWidth('Chest', STRIP_LAYOUT.fontSize)).toBeLessThanOrEqual(stripLabelBudget(375, margin, true));
+    expect(STRIP_LABEL_FIT.maxFontSizeMultiplier).toBeLessThanOrEqual(1.1);
+    expect(STRIP_LAYOUT.fontSize).toBeLessThanOrEqual(10);
   });
 });
 

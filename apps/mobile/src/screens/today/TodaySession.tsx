@@ -7,7 +7,7 @@ import type { TodayCardView } from '../../services/today-session';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Icon, PrimaryButton, SecondaryButton, TextButton } from '../../ui';
 import { AX_FONT_SCALE } from '../../workout/overview';
-import { STRIP_LABEL_FIT, stripPillStyle } from '../../today/strip-style';
+import { STRIP_LABEL_FIT, STRIP_LAYOUT, stripPillStyle } from '../../today/strip-style';
 import { breakdownLabel, TIME_LABELS, TODAY_SCREEN_COPY, type TodayCardAction, type TodaySegment } from '../../today/today-view';
 
 /**
@@ -53,7 +53,7 @@ function StripPill({ item }: { item: StripItem }) {
       style={{
         alignSelf: 'stretch',
         borderRadius: theme.radius.sm,
-        paddingHorizontal: 2,
+        paddingHorizontal: STRIP_LAYOUT.pillPadding,
         paddingVertical: 2,
         backgroundColor: st.backgroundColor,
         borderWidth: st.borderWidth,
@@ -61,7 +61,7 @@ function StripPill({ item }: { item: StripItem }) {
         borderColor: st.borderColor,
       }}
     >
-      <AppText variant="callout" align="center" {...STRIP_LABEL_FIT} style={{ fontSize: 12, lineHeight: 15, color: st.color }}>
+      <AppText variant="callout" align="center" {...STRIP_LABEL_FIT} style={{ fontSize: STRIP_LAYOUT.fontSize, lineHeight: STRIP_LAYOUT.lineHeight, letterSpacing: STRIP_LAYOUT.letterSpacing, color: st.color }}>
         {item.text}
       </AppText>
     </View>
@@ -85,10 +85,10 @@ export function WeekStrip({ cells, onDay }: { cells: readonly StripCell[]; onDay
     );
   }
   return (
-    <View style={{ flexDirection: 'row', gap: 2 }}>
+    <View style={{ flexDirection: 'row', gap: STRIP_LAYOUT.cellGap }}>
       {cells.map((c) => (
         <Fragment key={c.date}>
-          {c.weekStart ? <View accessible={false} style={{ width: 1, backgroundColor: theme.colors['border.divider'] }} /> : null}
+          {c.weekStart ? <View accessible={false} style={{ width: STRIP_LAYOUT.divider, backgroundColor: theme.colors['border.divider'] }} /> : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={c.accessibilityLabel}
@@ -102,11 +102,11 @@ export function WeekStrip({ cells, onDay }: { cells: readonly StripCell[]; onDay
               minWidth: 0,
               minHeight: 64,
               paddingVertical: theme.space['1'],
-              paddingHorizontal: 2,
+              paddingHorizontal: STRIP_LAYOUT.cellPadding,
               alignItems: 'center',
               gap: 2,
               borderRadius: theme.radius.sm,
-              borderWidth: c.today ? 1 : 0,
+              borderWidth: c.today ? STRIP_LAYOUT.todayBorder : 0,
               borderColor: theme.colors.accent,
               opacity: pressed ? 0.7 : 1,
             })}
