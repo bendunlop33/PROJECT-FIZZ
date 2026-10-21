@@ -92,13 +92,13 @@ export function ChangesSection({ view, hasPast, onReload, onPast }: { view: Coac
   const gotIt = () => {
     haptic('step');
     setExpanded(false);
-    void services.reviews.markSeen({ reviewId: view.reviewId, expectedVersion: view.version, opId: seenOp.current }).then(() => {
+    void services.reviews.markSeen({ reviewId: view.reviewId, expectedVersion: view.version, opId: seenOp.current, contentKey: view.contentKey }).then(() => {
       seenOp.current = newUuid();
       changed();
       onReload();
     });
   };
-  const head = <SectionHead title={PROGRESS_COPY.changes} right={PROGRESS_COPY.forNextWeek} badge={view.isNew ? PROGRESS_COPY.new : null} />;
+  const head = <SectionHead title={PROGRESS_COPY.changes} right={view.right} badge={view.isNew ? PROGRESS_COPY.new : null} />;
   if (!view.isNew && !expanded) {
     return (
       <>

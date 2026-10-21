@@ -551,10 +551,15 @@ export function MusclesCard({ view }: { view: MuscleTrackerView }) {
 // ---------------------------------------------------------------------------
 // Coach's changes
 
-/** One change: `Row 3 sets → 4 sets`, `next Pull · reason`, Undo (or, undone, Redo). */
-export function ChangeRow({ row, first, onUndo, onRedo }: { row: ChangeRowView; first: boolean; onUndo: () => void; onRedo: () => void }) {
+/**
+ * One change: `Row 3 sets → 4 sets`, `next Pull · reason`, Undo (or, undone, Redo). One not made (`Not
+ * applied`, `Out of date`, `Skipped`) is drawn in the secondary colour, never like a made one, with Apply
+ * while it is still open.
+ */
+export function ChangeRow({ row, first, onUndo, onRedo, onApply }: { row: ChangeRowView; first: boolean; onUndo: () => void; onRedo: () => void; onApply?: () => void }) {
   const theme = useTheme();
   const undone = row.status === 'undone';
+  const made = row.status === 'applied';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: first ? 2 : 10, borderTopWidth: first ? 0 : theme.dividerWidth, borderColor: theme.colors['border.divider'] }}>
       <View style={{ flex: 1, gap: 2 }} accessible accessibilityLabel={row.accessibilityLabel}>
@@ -566,7 +571,7 @@ export function ChangeRow({ row, first, onUndo, onRedo }: { row: ChangeRowView; 
             {` kept ${row.before}`}
           </AppText>
         ) : (
-          <AppText variant="headline" numeric style={PROGRESS_TEXT.chg}>
+          <AppText variant="headline" numeric color={made ? 'text.primary' : 'text.secondary'} style={PROGRESS_TEXT.chg}>
             {`${row.exercise} `}
             <AppText variant="headline" color="text.tertiary" style={[PROGRESS_TEXT.chg, { fontWeight: '500', textDecorationLine: 'line-through' }]}>
               {row.before}
@@ -580,6 +585,7 @@ export function ChangeRow({ row, first, onUndo, onRedo }: { row: ChangeRowView; 
       </View>
       {row.canUndo ? <TextButton label={PROGRESS_COPY.undo} onPress={onUndo} accessibilityLabel={`${PROGRESS_COPY.undo}: ${row.exercise}`} /> : null}
       {row.canRedo ? <TextButton label={PROGRESS_COPY.redo} onPress={onRedo} accessibilityLabel={`${PROGRESS_COPY.redo}: ${row.exercise}`} /> : null}
+      {row.canApply && onApply !== undefined ? <TextButton label={PROGRESS_COPY.apply} onPress={onApply} accessibilityLabel={`${PROGRESS_COPY.apply}: ${row.exercise}`} /> : null}
     </View>
   );
 }

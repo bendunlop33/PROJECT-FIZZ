@@ -153,11 +153,12 @@ export function reviewCoachSettled(c: ReviewCoach): boolean {
 export const REVIEW_LIMITS = { maxFacts: 60, maxOpIds: 20, inputsHashMax: 128, maxProposals: 4 } as const;
 
 /**
- * (Weekly, §6.1, §6.2) A plan tweak the review offers with Apply / Skip: code's own (a repeated edit,
- * `source: 'code'`) or the coach's, checked by code. Only a working-set count on one exercise of a
- * plan-day template (no loads, so nothing to snap; rule 4 is untouched). Applied through the routine's
- * versioned write with an `update_routine` record (`actionId`, so Undo restores the version before);
- * refused when the template moved past `expectedVersion` (rule 5).
+ * (Weekly, §6.1, §6.2) A plan tweak: code's own (a repeated edit, `source: 'code'`) or the coach's, checked
+ * by code. Only a working-set count on one exercise of a plan-day template (no loads, so nothing to snap;
+ * rule 4 is untouched). Progress v3 (rule 3): applied by the review itself when it has a reason, else asked
+ * (Apply / Keep as is). Written through the routine's versioned write with an `update_routine` record
+ * (`actionId`: Undo reverses that exercise's count); refused once that exercise's working sets are no
+ * longer `fromSets` (rule 5). `expectedVersion`: the template's version the review saw (provenance).
  */
 export const ReviewProposalSchema = z.object({
   id: z.string().min(1).max(128),

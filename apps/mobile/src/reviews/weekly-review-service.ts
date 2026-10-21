@@ -14,10 +14,14 @@
  * - **Changes (Progress v3, rule 3):** code's own (the same edit repeated, §6.1) and the coach's. A small
  *   change on the same exercises (working sets on a plan-day template) is applied for the next sessions as
  *   soon as the review stores it, recorded with its reason and author, each with Undo (and Redo); a
- *   structural one (swap, add, remove, day move) is only ever asked (Apply / Keep as is). Every write is the
- *   routine's versioned write with an `update_routine` record, refused when the template moved since
- *   (rule 5) or the movement is pain-flagged (rule 9). An apply is one deterministic op per proposal, so a
- *   force-close between the write and its mark is finished on the next open, never written twice.
+ *   structural one (swap, add, remove, day move), and a small one whose reason the number check hid, is
+ *   only ever asked (Apply / Keep as is). Small changes land before the page is told; until then (or if the
+ *   apply failed, or on an older week) they read `Not applied`. Every write is the routine's versioned write
+ *   with an `update_routine` record, guarded per exercise (refused once that exercise's working sets moved
+ *   from the change's `fromSets`, rule 5; the same review's change to another exercise doesn't block it)
+ *   and never on a pain-flagged movement (rule 9). Apply, Undo and Redo each have one deterministic op
+ *   (from the review, the change and the record before), so a force-close between a write and its mark is
+ *   finished on the next open or tap, never written twice.
  * - **Progress page (v3):** This week, Lifts, Muscles (live, from stored records) and Coach's changes (the
  *   newest stored review), `progress()`.
  * - **Your data** (rule 10): reviews are their own records (migration 30), facts apart from coach text, in
@@ -41,9 +45,12 @@ import {
 } from '@fizz/coach';
 import {
   addDays,
+  changesContentKey,
   coachChangesView,
+  musclePlanOfReview,
   deriveId,
   isDeleted,
+  autoApplicable,
   isStructuralProposal,
   liftsView,
   musclesView,
@@ -430,8 +437,9 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     // The same inputs whose coach call failed lately: not asked again yet (review b3-wave3-truth S4).
     const c = w.review.coach;
     if (w.status === 'retry_coach' && c.status === 'failed' && c.atUtc !== undefined && toMs(now.utc) - toMs(c.atUtc) < FAILED_RETRY_MS) return { kind: 'not_reviewed', review: w.review, status: 'failed' };
-    if (w.status === 'written') emit();
-    const stored = w.review;
+    // Small changes land in the plan before the page is told (review progress-v3-design B1).
+    const stored = await autoApply(w.review);
+    if (w.status === 'written' || stored.version !== w.review.version) emit();
     const asked = await askCoach(g, f, stored.id, stored.proposals ?? [], opts.signal);
     const coachOp = `${opId}:coach`;
     const latest = (await repos().reviews.get(stored.id).catch(() => null)) ?? stored;
@@ -445,7 +453,8 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     const u = await repos()
       .reviews.update(owner.id, next, latest.version, coachOp)
       .catch(() => null);
-    const saved = u !== null && (u.status === 'written' || u.status === 'replayed') ? u.review : latest;
+    const wrote = u !== null && (u.status === 'written' || u.status === 'replayed') ? u.review : latest;
+    const saved = u?.status === 'written' ? await autoApply(wrote) : wrote;
     if (u?.status === 'written') emit();
     return asked.status === 'ok' ? { kind: 'reviewed', review: saved } : { kind: 'not_reviewed', review: saved, status: asked.status };
   }
@@ -557,7 +566,10 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const undone = prior.undoneBy !== null;
       return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: undone ? 'undone' : 'applied', actionId })), line);
     }
-    const w = await writeChange(owner, p, applyOp, author, () => p.change.expectedVersion);
+    // Guarded per exercise, not by the routine's version (review progress-v3-data B1): the same review's change
+    // to another exercise on this plan day moves the version but not this exercise. Refused once this
+    // exercise's working sets aren't what the change started from (rule 5).
+    const w = await writeChange(owner, p, applyOp, author, (routine) => (templateWorkingSets(routine, p.change.exerciseId) === p.change.fromSets ? routine.version : null));
     if (w.kind === 'failed') return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
     if (w.kind !== 'written') {
       await changeProposal(req.reviewId, req.proposalId, `${req.opId}:stale`, (x) => ({ ...x, status: 'stale' }));
@@ -568,15 +580,33 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
 
   /**
    * (Rule 3, Progress v3) The review's small changes are applied for the next sessions as soon as it stores
-   * them (each with its reason and Undo); structural ones wait for Ben. Runs after every open, so a change a
-   * force-close left open is applied then (one deterministic op per proposal: never twice).
+   * them (each with its reason and Undo), before the page is told; structural ones, and a small one whose
+   * reason was hidden, wait for Ben. Runs after every open too, so a change a force-close left open is
+   * applied then (one deterministic op per proposal: never twice). Until then the page shows it `Not applied`.
    */
   async function autoApply(review: TrainingReview): Promise<TrainingReview> {
-    const open = (review.proposals ?? []).filter((p) => p.status === 'open' && !isStructuralProposal(p));
+    const open = (review.proposals ?? []).filter((p) => p.status === 'open' && autoApplicable(p));
     if (open.length === 0) return review;
     for (const p of open) await applyOne({ reviewId: review.id, proposalId: p.id, opId: `auto:${deriveId(`${review.id}|${p.id}`)}` }, p.source === 'coach' ? 'coach' : 'checks');
-    emit();
     return (await repos().reviews.get(review.id).catch(() => null)) ?? review;
+  }
+
+  /**
+   * The changes Ben acted on himself: Keep as is, Undo, and an Apply or Redo whose record is his (an
+   * automatic apply is the coach's or the checks'). When every change is his, Coach's changes collapse.
+   */
+  async function actedOn(r: TrainingReview): Promise<Set<string>> {
+    const out = new Set<string>();
+    for (const p of r.proposals ?? []) {
+      if (p.status === 'skipped' || p.status === 'undone') out.add(p.id);
+      else if (p.status === 'applied' && p.actionId !== null) {
+        const a = await repos()
+          .coach.getAction(p.actionId)
+          .catch(() => null);
+        if (a?.author === 'ben') out.add(p.id);
+      }
+    }
+    return out;
   }
 
   return {
@@ -593,7 +623,9 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       running ??= run(opts)
         .then(async (r): Promise<WeeklyRun> => {
           if (r.kind === 'nothing' || r.kind === 'failed') return r;
-          return { ...r, review: await autoApply(r.review) };
+          const review = await autoApply(r.review);
+          if (review.version !== r.review.version) emit();
+          return { ...r, review };
         })
         .catch((): WeeklyRun => ({ kind: 'failed' }))
         .finally(() => {
@@ -613,11 +645,14 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       if (g === null) return null;
       const stored = await storedWeekly(owner.id);
       const newest = stored[0];
+      // Only the latest reviewable week's review is `for next week` (review progress-v3-data S5).
+      const current = newest !== undefined && mondayOf(newest) === weeklyReviewWeek(nowMs, owner.timezone);
       return {
         week: thisWeekView(g.input, { today, reviewIds: new Map(stored.map((r) => [mondayOf(r), r.id])) }),
         lifts: liftsView(g.input, { today, mains: g.mains, planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, previousPlanReps: g.previousPlanReps, planAppliedDate: g.planAppliedDate, nameOf: g.nameOf }),
-        muscles: musclesView(g.input, { today }),
-        changes: newest === undefined ? null : coachChangesView(newest, today),
+        // Reviewed weeks keep the plan they were reviewed against (review progress-v3-design S4).
+        muscles: musclesView(g.input, { today, storedPlans: new Map(stored.map((r) => [mondayOf(r), musclePlanOfReview(r)])) }),
+        changes: newest === undefined ? null : coachChangesView(newest, today, { current, actedOn: await actedOn(newest) }),
         hasPast: stored.length > 1,
         liftsChosen: g.liftsChosen,
         // No row yet: the defaults are version 1 (the first change writes them).
@@ -650,14 +685,14 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const pool = await exercisePool();
       const d = weekDataOfReview(r, (id) => pool.get(id)?.name ?? 'Exercise');
       if (d === null) return null;
-      return { card: reviewCardView(r, d, today, 99), changes: coachChangesView(r, today) };
+      return { card: reviewCardView(r, d, today, 99), changes: coachChangesView(r, today, { current: mondayOf(r) === weeklyReviewWeek(toMs(deps.now().utc), owner.timezone) }) };
     },
 
     /**
      * `Got it` on Coach's changes: the section collapses to one line. Versioned and idempotent (rule 5): a
      * review that moved since the tap (the coach's part landed) isn't marked, so news is never hidden unseen.
      */
-    async markSeen(req: { reviewId: string; expectedVersion: number; opId: string }): Promise<boolean> {
+    async markSeen(req: { reviewId: string; expectedVersion: number; opId: string; /** `CoachChangesView.contentKey`: what Ben saw. */ contentKey?: string }): Promise<boolean> {
       const owner = await deps.profile();
       if (owner === null) return false;
       const r = await repos()
@@ -665,7 +700,9 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         .catch(() => null);
       if (r === null || r.ownerId !== owner.id) return false;
       if (r.opIds.includes(req.opId) || r.seenAtUtc !== undefined) return true;
-      if (r.version !== req.expectedVersion) return false;
+      // Moved since the page loaded: still marked when only statuses moved (the automatic apply landing; review
+      // progress-v3-design S5); never when the coach's words or the changes are new to Ben.
+      if (r.version !== req.expectedVersion && (req.contentKey === undefined || changesContentKey(r) !== req.contentKey)) return false;
       const at = deps.now().utc;
       const u = await repos()
         .reviews.update(owner.id, { ...r, seenAtUtc: at, version: r.version + 1, updatedAtUtc: at, opIds: [...r.opIds.slice(-19), req.opId] }, r.version, req.opId)
@@ -724,41 +761,55 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       return outcome(await changeProposal(req.reviewId, req.proposalId, req.opId, (x) => ({ ...x, status: 'skipped' })), reviewProposalText(found.proposal));
     },
 
-    /** Undo of an applied change: the template's version before, while it is still at the version the apply made (rule 5). */
+    /**
+     * Undo of an applied change: that exercise's working sets back to what the change started from, while it
+     * still has the change's count (rule 5), leaving the routine's other changes since (the same review's
+     * change to another exercise) in place (review progress-v3-data B1). One undo per apply: its op comes from
+     * the apply's record, so a force-close between the write and the mark is finished on the next tap.
+     */
     async undoProposal(req: { reviewId: string; proposalId: string; opId: string }): Promise<ProposalOutcome> {
       const found = await proposalOf(req.reviewId, req.proposalId);
       if (found === null || found.proposal.actionId === null) return { ok: false, reason: 'missing', message: REVIEW_SERVICE_COPY.missing };
       const { owner, proposal: p } = found;
       if (p.status === 'undone') return outcome(p, reviewProposalText(p));
+      if (p.status !== 'applied') return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
       const target = await repos()
         .coach.getAction(p.actionId ?? '')
         .catch(() => null);
       if (target === null || target.detail.kind !== 'update_routine') return { ok: false, reason: 'missing', message: REVIEW_SERVICE_COPY.missing };
+      const undoOp = `review-undo:${deriveId(`${req.reviewId}|${p.id}|${target.actionId}`)}`;
       const at = deps.now();
       const undo: ActionRecord = {
         ...target,
-        actionId: deriveId(`review-undo:${req.opId}`),
-        opId: req.opId,
+        actionId: deriveId(undoOp),
+        opId: undoOp,
         author: 'ben',
         detail: { kind: 'undo', undoneActionId: target.actionId, what: `the change to ${target.detail.routineName}`.slice(0, 200), restored: [], alreadyLogged: [] },
         entityVersions: [],
         undoneBy: null,
         createdAt: at,
       };
+      const inverse = (current: Routine): Routine | null => {
+        if (templateWorkingSets(current, p.change.exerciseId) !== p.change.toSets) return null;
+        const c = withTemplateWorkingSets(current, { exerciseId: p.change.exerciseId, toSets: p.change.fromSets, expectedVersion: current.version, opId: undoOp, atUtc: at.utc });
+        return c.kind === 'write' ? c.next : null;
+      };
       const r = await repos()
-        .drafts.undoRoutineChange({ ownerId: owner.id, undo, at, newRoutineAtUtc: at.utc })
+        .drafts.undoRoutineChange({ ownerId: owner.id, undo, at, newRoutineAtUtc: at.utc, inverse })
         .catch(() => null);
       if (r === null) return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
       // Undone already (a force-close after the undo, before the mark): mark it, never `changed since` (review b3-wave3-truth S3).
-      if (r.status === 'not_possible' && r.reason === 'already_undone') return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'undone' })), reviewProposalText(p));
+      if (r.status === 'not_possible' && r.reason === 'already_undone') return outcome(await changeProposal(req.reviewId, req.proposalId, `${undoOp}:mark`, (x) => ({ ...x, status: 'undone' })), reviewProposalText(p));
       if (r.status === 'not_possible') return { ok: false, reason: 'changed_since', message: REVIEW_SERVICE_COPY.changedSince(p.change.routineName) };
-      return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'undone' })), reviewProposalText(p));
+      return outcome(await changeProposal(req.reviewId, req.proposalId, `${undoOp}:mark`, (x) => ({ ...x, status: 'undone' })), reviewProposalText(p));
     },
 
     /**
      * Redo of an undone small change: written again on the template as it is now, only while its working sets
      * are still what the change started from (rule 5: refused once Ben changed them since; rule 9: never on a
-     * pain-flagged movement).
+     * pain-flagged movement). One redo per undone apply: its op comes from the review, the change and the
+     * record it undid (review progress-v3-design B2), so a force-close between the write and the mark is
+     * found and marked on the next tap, never refused as `changed since` with no Undo.
      */
     async redoProposal(req: { reviewId: string; proposalId: string; opId: string }): Promise<ProposalOutcome> {
       const found = await proposalOf(req.reviewId, req.proposalId);
@@ -767,16 +818,16 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const line = reviewProposalText(p);
       if (p.status === 'applied') return outcome(p, line);
       if (p.status !== 'undone' || isStructuralProposal(p)) return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
-      const redoOp = `review-redo:${deriveId(req.opId)}`;
+      const redoOp = `review-redo:${deriveId(`${req.reviewId}|${p.id}|${p.actionId ?? ''}`)}`;
       const prior = await repos()
         .coach.getAction(deriveId(redoOp))
         .catch(() => null);
-      if (prior !== null) return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'applied', actionId: prior.actionId })), line);
+      if (prior !== null) return outcome(await changeProposal(req.reviewId, req.proposalId, `${redoOp}:mark`, (x) => ({ ...x, status: 'applied', actionId: prior.actionId })), line);
       const w = await writeChange(owner, p, redoOp, 'ben', (routine) => (templateWorkingSets(routine, p.change.exerciseId) === p.change.fromSets ? routine.version : null));
       if (w.kind === 'failed') return { ok: false, reason: 'failed', message: REVIEW_SERVICE_COPY.failed };
       if (w.kind === 'changed_since') return { ok: false, reason: 'changed_since', message: REVIEW_SERVICE_COPY.changedSince(p.change.routineName) };
       if (w.kind === 'stale') return { ok: false, reason: 'out_of_date', message: REVIEW_SERVICE_COPY.outOfDate };
-      return outcome(await changeProposal(req.reviewId, req.proposalId, `${req.opId}:mark`, (x) => ({ ...x, status: 'applied', actionId: w.actionId })), line);
+      return outcome(await changeProposal(req.reviewId, req.proposalId, `${redoOp}:mark`, (x) => ({ ...x, status: 'applied', actionId: w.actionId })), line);
     },
 
     /** The coach status word (`● Coach`, `Offline`, `Coach not connected`). No provider call. */

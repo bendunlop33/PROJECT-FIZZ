@@ -93,6 +93,9 @@ export function ReviewDetailScreen({ route }: NativeStackScreenProps<ProgressSta
                   onRedo={() => {
                     actions.redo(r);
                   }}
+                  onApply={() => {
+                    actions.apply(r);
+                  }}
                 />
               ))}
               {actions.message !== null ? (

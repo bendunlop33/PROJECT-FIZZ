@@ -265,8 +265,12 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
    * Otherwise nothing changes (`changed_since`: `Can't undo: Push A changed
    * since.`). The undo is its own `ActionRecord` (author `ben`), written with
    * the original's `undoneBy` in the same transaction; idempotent on its opId.
+   *
+   * `inverse` (a weekly review's small change, Progress v3): instead of the whole snapshot, the routine as
+   * it is now with only that change reversed (pure; null: it no longer holds the change, `changed_since`).
+   * Its other changes since, such as the same review's change to another exercise, stay.
    */
-  undoRoutineChange(req: { ownerId: string; undo: ActionRecord; at: ZonedTimestamp; newRoutineAtUtc: string }): Promise<RoutineChangeUndo> {
+  undoRoutineChange(req: { ownerId: string; undo: ActionRecord; at: ZonedTimestamp; newRoutineAtUtc: string; inverse?: (current: Routine) => Routine | null }): Promise<RoutineChangeUndo> {
     if (req.undo.detail.kind !== 'undo') throw new TypeError('undoRoutineChange() takes an undo record');
     const targetId = req.undo.detail.undoneActionId;
     return this.db.write(async (tx): Promise<RoutineChangeUndo> => {
@@ -282,9 +286,9 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
       if (target.record.undoneBy !== null) return { status: 'not_possible', reason: 'already_undone' };
       const routine = await getRoutine(tx, d.routineId);
       if (routine === null || routine.ownerId !== req.ownerId) return { status: 'not_possible', reason: 'missing' };
-      if (routine.version !== d.versionAfter) return { status: 'not_possible', reason: 'changed_since' };
-      const back = routineBefore(routine, d, req.undo.opId, req.newRoutineAtUtc);
-      if (back === null) return { status: 'not_possible', reason: 'changed_since' };
+      if (req.inverse === undefined && routine.version !== d.versionAfter) return { status: 'not_possible', reason: 'changed_since' };
+      const back = req.inverse === undefined ? routineBefore(routine, d, req.undo.opId, req.newRoutineAtUtc) : req.inverse(routine);
+      if (back === null || back.id !== routine.id || back.version !== routine.version + 1) return { status: 'not_possible', reason: 'changed_since' };
       const saved = await saveDocumentIn(tx, ROUTINE_SPEC, back, routine.version);
       if (!saved.ok) return { status: 'not_possible', reason: 'changed_since' };
       let draft: PreStartDraft | null = null;

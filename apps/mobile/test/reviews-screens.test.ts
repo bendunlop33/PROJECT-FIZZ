@@ -62,6 +62,19 @@ describe('Progress v3 screens', () => {
     expect(section).toContain('opId: newUuid()');
     expect(section).toContain('expectedVersion: view.version');
     expect(detail).toContain('<ChangeRow');
+    // A change not made is never drawn as made: secondary colour, Apply while open (review progress-v3-design B1).
+    expect(charts).toContain("color={made ? 'text.primary' : 'text.secondary'}");
+    expect(charts).toContain('row.canApply && onApply !== undefined');
+    expect(detail).toContain('actions.apply(r)');
+    // Got it carries what Ben saw, so a status-only update since doesn't refuse it (review progress-v3-design S5).
+    expect(section).toContain('contentKey: view.contentKey');
+    expect(section).toContain('right={view.right}');
+  });
+
+  it('the Summary a chip opens shows `n of m planned reps` and what was short or skipped (review progress-v3-design S2)', () => {
+    const summary = read('screens', 'workout', 'SummaryScreen.tsx');
+    expect(summary).toContain('pvd.reps.text');
+    expect(summary).toContain('pvd.reps.short');
   });
 
   it('the `at this rate` estimate is always labelled `est.`; minimal copy (no rule labels)', () => {
