@@ -13,9 +13,10 @@ import { classifyPainMention } from '@fizz/domain';
 import type { BuilderReviewResult, EditAsk, NudgeResult, SetupAsk } from './builder-coach-service';
 
 // ---------------------------------------------------------------------------
-// The ask bar (`✦ <label>` + mic), on Today, Set up and Your workout
+// The ask bar (`✦ <label>` + mic), on Today, Set up, Your workout and the active workout
 
-export type AskBarPage = 'today' | 'setup' | 'workout';
+/** `active`: the workout in progress (workout-table-v3 §1.6): `✦` + mic in place of the old Chat; opens the workout's coach sheet. */
+export type AskBarPage = 'today' | 'setup' | 'workout' | 'active';
 
 /** On-device speech, as the mic shows it. `unavailable`: no on-device recogniser for Ben's language; `denied`: mic or speech permission refused. */
 export type MicState = 'idle' | 'listening' | 'unavailable' | 'denied';
@@ -25,6 +26,8 @@ export interface AskBarView {
   label: string;
   /** The one status word when the coach can't answer (`Offline`, `Coach not connected`); null when connected. */
   status: string | null;
+  /** The shortest word for the active workout's `✦` (`Coach`, `Offline`, `No coach`; `Asking…` while asking). */
+  short: string;
   /** Your workout's bar is disabled offline (every manual edit still works); Set up's still fills by code. */
   disabled: boolean;
   /**
@@ -36,7 +39,8 @@ export interface AskBarView {
   mic: { glyph: 'mic' | 'mic.fill' | '⊘'; accessibilityLabel: string; disabled: boolean; why: string | null; settingsLink: boolean };
 }
 
-const LABEL: Readonly<Record<AskBarPage, string>> = { today: 'Ask the coach', setup: 'Describe the workout', workout: 'Ask the coach to change it' };
+const LABEL: Readonly<Record<AskBarPage, string>> = { today: 'Ask the coach', setup: 'Describe the workout', workout: 'Ask the coach to change it', active: 'Ask the coach' };
+const SHORT: Readonly<Record<BuilderCoachReach, string>> = { ok: 'Coach', offline: 'Offline', not_connected: 'No coach' };
 
 /** §2.6 table: what each bar shows per connection and mic state. */
 /** The bar's word while the coach works on a request (copy for Ben; wiring S3). */
@@ -50,6 +54,7 @@ export function askBarView(page: AskBarPage, reach: BuilderCoachReach, mic: MicS
   return {
     label,
     status,
+    short: asking ? ASK_BAR_ASKING : SHORT[reach],
     disabled,
     inline: page === 'setup' && reach !== 'ok',
     accessibilityLabel: status === null ? LABEL[page] : `${LABEL[page]}, ${status}`,
