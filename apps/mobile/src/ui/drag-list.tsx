@@ -25,7 +25,8 @@ interface DragContext {
   phase: DragPhase;
   target: DropTarget | null;
   enabled: boolean;
-  frames: { current: Map<string, DragFrame> };
+  /** Each row's view, measured in the window when a hold fires (rows may sit in nested boxes). */
+  items: { current: Map<string, View | null> };
   arm: (key: string, draggable: boolean) => void;
   touch: (kind: 'down' | 'move' | 'up' | 'cancel', key: string, e: GestureResponderEvent | null) => void;
   offset: Animated.Value;
@@ -55,8 +56,7 @@ export function DragList(p: DragListProps) {
   const phaseRef = useRef<DragPhase>({ kind: 'idle' });
   const [target, setTarget] = useState<DropTarget | null>(null);
   const frames = useRef(new Map<string, DragFrame>());
-  const listRef = useRef<View>(null);
-  const listTop = useRef<number | null>(null);
+  const items = useRef(new Map<string, View | null>());
   const startPage = useRef(0);
   const offset = useRef(new Animated.Value(0)).current;
   const latest = useRef(p);
@@ -71,9 +71,9 @@ export function DragList(p: DragListProps) {
   };
 
   const targetFor = (key: string, pageY: number): DropTarget | null => {
-    if (listTop.current === null) return null;
+    if (frames.current.size === 0) return null;
     const canDrop = latest.current.canDrop;
-    return dropTargetAt([...frames.current.values()], key, pageY - listTop.current, { allowOnto: latest.current.allowOnto === true, ...(canDrop === undefined ? {} : { canDrop: (t: DropTarget) => canDrop(key, t) }) });
+    return dropTargetAt([...frames.current.values()], key, pageY, { allowOnto: latest.current.allowOnto === true, ...(canDrop === undefined ? {} : { canDrop: (t: DropTarget) => canDrop(key, t) }) });
   };
 
   const ctx = useMemo<Omit<DragContext, 'phase' | 'target' | 'enabled'>>(() => {
@@ -82,10 +82,13 @@ export function DragList(p: DragListProps) {
       switch (r.effect.kind) {
         case 'armed':
           haptic('step');
-          listTop.current = null;
-          listRef.current?.measureInWindow((_x, y) => {
-            listTop.current = y;
-          });
+          // Where every row is now, in the window (the touch's page y is in the same space).
+          frames.current = new Map();
+          for (const [key, view] of items.current) {
+            view?.measureInWindow((_x, y, _w, h) => {
+              frames.current.set(key, { key, y, h });
+            });
+          }
           break;
         case 'menu':
           offset.setValue(0);
@@ -109,7 +112,7 @@ export function DragList(p: DragListProps) {
       return r.phase;
     };
     return {
-      frames,
+      items,
       offset,
       arm: (key, draggable) => {
         if (phaseRef.current.kind === 'pressing' && phaseRef.current.key === key) step({ kind: 'hold', atMs: nowMs(), draggable });
@@ -137,9 +140,7 @@ export function DragList(p: DragListProps) {
   const value: DragContext = { ...ctx, phase, target, enabled: p.enabled };
   return (
     <Ctx.Provider value={value}>
-      <View ref={listRef} style={p.style}>
-        {p.children}
-      </View>
+      <View style={p.style}>{p.children}</View>
     </Ctx.Provider>
   );
 }
@@ -167,8 +168,9 @@ export function DragItem({ dragKey, draggable, children }: { dragKey: string; dr
   return (
     <ItemCtx.Provider value={{ key: dragKey, draggable }}>
       <Animated.View
-        onLayout={(e) => {
-          c.frames.current.set(dragKey, { key: dragKey, y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height });
+        ref={(v: View | null) => {
+          if (v === null) c.items.current.delete(dragKey);
+          else c.items.current.set(dragKey, v);
         }}
         onTouchStart={(e) => {
           c.touch('down', dragKey, e);

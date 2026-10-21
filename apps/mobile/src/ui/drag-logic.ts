@@ -54,8 +54,8 @@ export type DragEvent =
 export type DragEffect = { kind: 'none' } | { kind: 'armed'; key: string } | { kind: 'menu'; key: string } | { kind: 'drop'; key: string; y: number } | { kind: 'cancelled' };
 
 /**
- * The gesture as a small state machine. `y` values are in the list's own coordinates
- * (page y minus the list's top) so the drop is found against the rows' frames.
+ * The gesture as a small state machine. `y` values are the touch's page y; the rows' frames
+ * are measured in the same space when the hold fires, so the drop is found against them.
  */
 export function dragStep(phase: DragPhase, e: DragEvent): { phase: DragPhase; effect: DragEffect } {
   const none = { kind: 'none' } as const;

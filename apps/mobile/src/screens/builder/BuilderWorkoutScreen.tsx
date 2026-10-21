@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert, Pressable, ScrollView, View } from 'react-native';
+import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native';
 import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -25,6 +25,8 @@ import { saveScore, scoreStepOf } from '../../workout/overview-start';
 import { CoachAskBar } from '../../ui/coach-ask-bar';
 import { createOnDeviceSpeech } from '../../voice/on-device-speech';
 import { SwipeRow } from './BuilderParts';
+import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
+import { holdMenu } from '../../ui/exercise-popup-model';
 import { ExerciseSheet, PromptSheet, ProposalSheet, ReviewSheet, SwapSheet, type ChoiceSection } from './BuilderSheets';
 
 /**
@@ -71,6 +73,7 @@ export function BuilderWorkoutScreen() {
   const [applying, setApplying] = useState(false);
   const [toast, setToast] = useState<(BuilderToast & { whyOpen: boolean }) | null>(null);
   const [popup, setPopup] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [swap, setSwap] = useState<{ slotKey: string | null; group: BuilderGroup; groups: BuilderGroup[]; sections: ChoiceSection[] } | null>(null);
   const [prompt, setPrompt] = useState<StartPrompt | null>(null);
   const [startBusy, setStartBusy] = useState(false);
@@ -442,8 +445,8 @@ export function BuilderWorkoutScreen() {
     );
 
   const row = (r: WorkoutRowView) => (
-    <SwipeRow
-      key={r.slotKey}
+    <DragItem key={r.slotKey} dragKey={r.slotKey} draggable>
+      <HeldSwipeRow
       onPress={() => { setPopup(r.slotKey); }}
       accessibilityLabel={r.accessibilityLabel}
       actions={r.actions}
@@ -493,8 +496,20 @@ export function BuilderWorkoutScreen() {
           {r.topText}
         </AppText>
       </View>
-    </SwipeRow>
+      </HeldSwipeRow>
+    </DragItem>
   );
+
+  /** A hold released without a drag (§2.3's fallback): the row's own actions, as VoiceOver has them. */
+  const rowMenu = (slotKey: string) => {
+    const r = v.rounds.flatMap((x) => x.rows).find((x) => x.slotKey === slotKey);
+    if (r === undefined) return;
+    const m = holdMenu(r.actions);
+    ActionSheetIOS.showActionSheetWithOptions({ title: r.name, options: m.options, cancelButtonIndex: m.cancelButtonIndex, destructiveButtonIndex: m.destructiveButtonIndex }, (i) => {
+      const a = m.actionAt(i);
+      if (a !== null) rowAction(r, a);
+    });
+  };
 
   const popupSlot = popup;
   return (
@@ -514,7 +529,7 @@ export function BuilderWorkoutScreen() {
             </AppText>
           ) : null}
         </View>
-        <ScrollArea>
+        <ScrollArea scrollEnabled={!dragging}>
           {earlier.map((e) => (
             <StatusLine key={e.draftId} icon="clock" tone="info" text={editsFromText(e.localDate)} action={<TextButton label={WORKOUT_COPY.useEdits} onPress={() => { navigation.dispatch(builderPage('BuilderWorkout', { draftId: e.draftId })); }} />} />
           ))}
@@ -574,14 +589,24 @@ export function BuilderWorkoutScreen() {
               {v.topHeader}
             </AppText>
           </View>
-          {v.rounds.map((round) => (
-            <View
-              key={`${String(round.n)}:${round.rows[0]?.slotKey ?? ''}`}
-              style={{ borderRadius: theme.radius.md, overflow: 'hidden', backgroundColor: theme.colors['bg.surface'], borderWidth: round.superset ? 1.5 : 0, borderColor: theme.colors['text.tertiary'] }}
-            >
-              {round.rows.map(row)}
-            </View>
-          ))}
+          {/* Press and hold a row, then drag (§2.3, Q18): an edge = move there, the middle = superset. Built once, shared with the workout (workout-table-v3 §7). */}
+          <DragList
+            enabled
+            allowOnto
+            onDrop={(slotKey, t) => void edit({ kind: 'drop', slotKey, targetKey: t.key, edge: t.edge })}
+            onMenu={rowMenu}
+            onDragChange={setDragging}
+            style={{ gap: theme.space['3'] }}
+          >
+            {v.rounds.map((round) => (
+              <View
+                key={`${String(round.n)}:${round.rows[0]?.slotKey ?? ''}`}
+                style={{ borderRadius: theme.radius.md, overflow: dragging ? 'visible' : 'hidden', backgroundColor: theme.colors['bg.surface'], borderWidth: round.superset ? 1.5 : 0, borderColor: theme.colors['text.tertiary'] }}
+              >
+                {round.rows.map(row)}
+              </View>
+            ))}
+          </DragList>
           {v.canAdd ? (
             <Pressable
               accessibilityRole="button"
@@ -723,11 +748,17 @@ export function BuilderWorkoutScreen() {
   );
 }
 
-function ScrollArea({ children }: { children: ReactNode }) {
+/** A row's swipe and tap, with the drag's hold on its own press (`useDragHandle`, inside its `DragItem`). */
+function HeldSwipeRow(p: Omit<Parameters<typeof SwipeRow>[0], 'holdProps'>) {
+  const hold = useDragHandle();
+  return <SwipeRow {...p} holdProps={hold} />;
+}
+
+function ScrollArea({ children, scrollEnabled }: { children: ReactNode; scrollEnabled: boolean }) {
   const theme = useTheme();
-  // A plain scroll view: the list is short (≤ 10 exercises) and the bottom bar stays visible.
+  // A plain scroll view: the list is short (≤ 10 exercises) and the bottom bar stays visible. It holds still while a row is dragged.
   return (
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingVertical: theme.space['3'], gap: theme.space['3'] }}>
+    <ScrollView scrollEnabled={scrollEnabled} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingVertical: theme.space['3'], gap: theme.space['3'] }}>
       {children}
     </ScrollView>
   );
