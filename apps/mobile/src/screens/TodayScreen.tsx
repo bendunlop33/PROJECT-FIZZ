@@ -21,7 +21,7 @@ import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import { todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { todayActions, todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
 import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
@@ -579,7 +579,7 @@ export function TodayScreen() {
   if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
   if (data.state === 'error') {
     return (
-      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], padding: theme.components.screenMargin, paddingTop: theme.space['8'] }}>
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], padding: theme.components.screenMargin, paddingTop: insets.top + theme.space['3'] }}>
         <View style={{ gap: theme.space['3'] }}>
           <StatusLine icon="exclamationmark.triangle" tone="warning" text={launch.recoveryError ? 'Your unfinished workout couldn’t be read.' : 'Couldn’t open your training data.'} detail="Data unchanged" info={data.message} infoLabel="Error details" />
           <SecondaryButton label="Try again" onPress={reload} />
@@ -702,25 +702,42 @@ export function TodayScreen() {
       </Pressable>
     ) : null;
 
+  const actions = todayActions({ openWorkout, read: session !== null ? 'ready' : sessionFailed ? 'failed' : 'loading', noPlan: session?.status === 'no_plan', cardShown: view !== null, upNext: session?.upNext != null });
+  // The gym sits on the session's row (its loads are this gym's), so the header stays one line at 375 pt. It shows
+  // while the session loads and after a failed read too (review today-fix-21oct S3).
+  const gymRow = actions.gymRow ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'] }}>
+      <Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>
+      <GymChip
+        gymName={gym?.name ?? null}
+        onPress={() => {
+          if (!gym) navigation.navigate('AddGym');
+          else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: gym.id }, initial: false } });
+        }}
+      />
+    </View>
+  ) : null;
   const sessionBlock = (() => {
     if (openWorkout) return null;
     if (session === null) {
-      return sessionFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={TODAY_SCREEN_COPY.sessionFailed} action={<TextButton label="Try again" tone="secondary" onPress={reload} />} /> : null;
+      // A failed read keeps every way to start (review S2): Build your own below, Empty workout here.
+      return (
+        <View style={{ gap: theme.space['2'] }}>
+          {gymRow}
+          {actions.failed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={TODAY_SCREEN_COPY.sessionFailed} action={<TextButton label="Try again" tone="secondary" onPress={reload} />} /> : null}
+          {actions.emptyWorkout ? (
+            <View style={{ alignSelf: 'flex-start' }}>
+              <TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" onPress={() => void start({ kind: 'empty' })} />
+            </View>
+          ) : null}
+        </View>
+      );
     }
     const noPlan = session.status === 'no_plan';
+    const upNext = actions.upNext ? session.upNext : null;
     return (
       <View style={{ gap: theme.space['2'] }}>
-        {/* The gym sits on the session's row (its loads are this gym's), so the header stays one line at 375 pt. */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'] }}>
-          <Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>
-          <GymChip
-            gymName={gym?.name ?? null}
-            onPress={() => {
-              if (!gym) navigation.navigate('AddGym');
-              else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: gym.id }, initial: false } });
-            }}
-          />
-        </View>
+        {gymRow}
         {noPlan ? (
           view === null ? (
             // No plan (§2.0.4), compact: `No plan` with `Set up a plan ›` on one row, the Other sessions as one row of
@@ -738,6 +755,31 @@ export function TodayScreen() {
                   }}
                 />
               </View>
+              {upNext !== null ? (
+                // The old Today's Up next (Profile split, routines in rotation): his own workout, one tap to its overview.
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNext.title)}
+                  onPress={() => {
+                    navigation.navigate('WorkoutOverview', { target: { kind: 'next' } });
+                  }}
+                  style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingLeft: theme.space['4'], paddingRight: theme.space['2'], borderRadius: theme.radius.lg, backgroundColor: theme.colors['bg.surface'], opacity: pressed ? 0.7 : 1 })}
+                >
+                  <View style={{ flex: 1 }}>
+                    <AppText variant="sectionLabel" color="text.secondary" accessible={false}>
+                      {TODAY_SCREEN_COPY.upNext}
+                    </AppText>
+                    <AppText variant="headline" numberOfLines={1} accessible={false}>
+                      {upNext.title}
+                    </AppText>
+                  </View>
+                  <View pointerEvents="none" style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, backgroundColor: theme.colors.accent }}>
+                    <AppText variant="headline" color="on.accent" accessible={false}>
+                      {TODAY_V2_COPY.start}
+                    </AppText>
+                  </View>
+                </Pressable>
+              ) : null}
               <OtherSessionChips
                 days={session.others}
                 emptyLabel={TODAY_V2_COPY.emptyWorkout}
@@ -904,11 +946,11 @@ export function TodayScreen() {
 
         {!openWorkout ? (
           <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
-            {session !== null && session.status === 'no_plan' && view === null ? (
+            {actions.buildYourOwn === 'primary' ? (
               <View style={{ flex: 1 }}>
                 <PrimaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} />
               </View>
-            ) : session !== null ? (
+            ) : actions.buildYourOwn === 'secondary' ? (
               <SecondaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} grow />
             ) : null}
             <SecondaryButton

@@ -59,6 +59,8 @@ export interface CoachAskBarProps {
 const BAR_HEIGHT = 48;
 /** `icons` and `compact`: the minimum target (44 pt). */
 const ICON_SIZE = 44;
+/** The compact pill's text grows with Dynamic Type only this far, so the day name keeps the header line (review today-fix-21oct N1). */
+const COMPACT_MAX_SCALE = 1.3;
 
 export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, speech, asking = false, icons = false }: CoachAskBarProps) {
   const theme = useTheme();
@@ -200,10 +202,10 @@ export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, sp
             opacity: view.disabled ? 0.6 : pressed ? 0.7 : 1,
           })}
         >
-          <AppText variant="callout" color={view.status === null ? 'accent' : 'text.secondary'} accessible={false}>
+          <AppText variant="callout" color={view.status === null ? 'accent' : 'text.secondary'} accessible={false} maxFontSizeMultiplier={COMPACT_MAX_SCALE}>
             ✦
           </AppText>
-          <AppText variant="callout" color={view.status === null ? 'text.primary' : 'text.secondary'} accessible={false}>
+          <AppText variant="callout" color={view.status === null ? 'text.primary' : 'text.secondary'} accessible={false} maxFontSizeMultiplier={COMPACT_MAX_SCALE} numberOfLines={1}>
             {listening ? 'Listening…' : view.short}
           </AppText>
         </Pressable>

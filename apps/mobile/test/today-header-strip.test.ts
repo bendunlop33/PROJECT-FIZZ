@@ -88,6 +88,8 @@ describe('compact coach in the header (§2.0.2, prototype `.askbar.sm` + `.mic`)
     expect(compact).toContain('accessibilityLabel={listening ? `Listening. ${heard}` : view.accessibilityLabel}');
     expect(compact).toContain('{micButton}');
     expect(compact).toContain('borderRadius: theme.radius.pill');
+    // At larger text sizes the pill stops growing, so the day name keeps the line (review N1).
+    expect(compact.match(/maxFontSizeMultiplier=\{COMPACT_MAX_SCALE\}/g)?.length).toBe(2);
     // The same mic (on-device dictation, ⊘ when unavailable), round and 44 pt in this layout.
     expect(bar).toContain('width: icons || compact ? ICON_SIZE : BAR_HEIGHT');
     expect(bar).toContain('borderRadius: compact ? ICON_SIZE / 2 : theme.radius.md');
