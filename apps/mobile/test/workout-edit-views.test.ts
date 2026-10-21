@@ -152,7 +152,8 @@ describe('the workout’s exercise pop-up (sessionPopupView)', () => {
     expect(v.rows.map((r) => [r.mark, r.repsText, r.load, r.rpe, r.done, r.draggable])).toEqual([
       ['W', '10', 60, null, true, false],
       ['1', '7', 97.5, 9, true, false],
-      ['2', '6–8', 100, null, false, false],
+      // Set 1 logged at 97.5 against 100: set 2 starts at his 97.5 (last set carries, 21 Oct).
+      ['2', '6–8', 97.5, null, false, false],
     ]);
     expect(v.rows[1]?.accessibilityLabel).toContain('RPE 9');
     expect(v.rows[1]?.accessibilityLabel).toContain('done');

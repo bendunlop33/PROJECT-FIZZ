@@ -18,6 +18,7 @@ export * from './session/active-view';
 export * from './session/set-glance';
 export * from './session/table-view';
 export * from './session/pending-values';
+export * from './session/carry';
 export * from './session/time-fit-today';
 export * from './session/summary';
 export * from './session/today';

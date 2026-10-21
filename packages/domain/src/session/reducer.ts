@@ -46,6 +46,7 @@ import { isOpenEndedWorkout } from './first-run';
 import { pendingSetsOf } from './mid-swap';
 import { buildExecutionOrder, effectiveOffset, firstPendingRound, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
 import { draftWithNewTarget, pendingOwnValues, type TargetValueField } from './pending-values';
+import { carriedLoad } from './carry';
 
 export type SessionErrorCode =
   | 'operation_id_reused'
@@ -1242,10 +1243,12 @@ function withoutEditRecords(planned: WorkoutSet['planned']): WorkoutSet['planned
  * Nothing of his own left (every value equals what the new target prefills):
  * no draft, so the row shows the target.
  */
-function draftAfterTargetEdit(set: WorkoutSet, ex: SessionExercise, planned: WorkoutSet['planned'], fields: readonly TargetValueField[]): SetValues | null {
-  if (set.draft === null) return null;
-  const draft = draftWithNewTarget(set.draft, planned, fields);
-  return Object.keys(pendingOwnValues({ status: set.status, draft, planned }, ex)).length === 0 ? null : draft;
+function draftAfterTargetEdit(state: SessionAggregate, edited: WorkoutSet, ex: SessionExercise, before: SetValues | null, fields: readonly TargetValueField[]): SetValues | null {
+  if (before === null) return null;
+  const draft = draftWithNewTarget(before, edited.planned, fields);
+  // Against what the row shows without a draft: the load his last logged set carries, else the target (21 Oct).
+  const carry = carriedLoad(state, { ...edited, draft });
+  return Object.keys(pendingOwnValues({ status: edited.status, draft, planned: edited.planned }, ex, carry)).length === 0 ? null : draft;
 }
 
 const NO_TARGET_TYPES: ReadonlySet<WorkoutSet['setType']> = new Set(['warmup', 'drop']);
@@ -1302,17 +1305,18 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
   // An earlier edit's record stays in `before`, so undoing this one gives that one its Undo back (review S5).
   const beforePlanned = { ...set.planned };
   const version = set.version + 1;
-  const edited: WorkoutSet = {
+  const withEdit: WorkoutSet = {
     ...set,
     setType,
     rest,
-    // Only the fields Ben set a new target for leave his draft; any other value he typed stays (B1, 21 Oct).
-    draft: valuesTouched ? draftAfterTargetEdit(set, ex, planned, fields) : set.draft,
     planned: { ...planned, edit: { opId: cmd.opId, version, before: { planned: beforePlanned, setType: set.setType, rest: set.rest, draft: set.draft }, ...(valuesTouched ? { fields } : {}) } },
     version,
   };
+  // Only the fields Ben set a new target for leave his draft; any other value he typed stays (B1, 21 Oct).
+  const edited: WorkoutSet = { ...withEdit, draft: valuesTouched ? draftAfterTargetEdit(state, withEdit, ex, set.draft, fields) : set.draft };
   // Setting a target back to the preset over Ben's draft clears the draft: a change, so the row shows it (21 Oct).
-  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds, edited.draft]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds, set.draft])) {
+  // So is setting the plan's load over a load his last set carries (the carry stops for this set).
+  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds, edited.draft, carriedLoad(state, edited)]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds, set.draft, carriedLoad(state, set)])) {
     return { ok: true, state, events: [] };
   }
   const events: SessionEvent[] = [{ type: 'PlannedSetEdited', setId: set.id, undo: false }];

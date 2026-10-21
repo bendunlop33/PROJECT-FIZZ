@@ -4,7 +4,7 @@ import { targetRpeOf } from '../coach/target-rpe';
 import { DEFAULT_COACH_TRIGGER_THRESHOLDS, evaluateCoachTrigger } from '../coach/trigger';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets } from './gym-switch';
-import { pendingOwnValues, shownPlanned } from './pending-values';
+import { shownPlannedIn, showsBensValuesIn, type CarryOptions } from './carry';
 import { buildExecutionOrder } from './order';
 import { latestCommittedSetId } from './reducer';
 
@@ -44,8 +44,11 @@ function statusOf(set: WorkoutSet): SetGlance['status'] | null {
   return null;
 }
 
-/** `ruleTargetRpe`: the built-in rule's target RPE per session exercise (`ruleTargetRpes`), the default shown. */
-export function setGlance(state: SessionAggregate, setId: string, ruleTargetRpe: Readonly<Record<string, number>> = {}): SetGlance | null {
+/**
+ * `ruleTargetRpe`: the built-in rule's target RPE per session exercise (`ruleTargetRpes`), the default shown.
+ * `carry.painFlagged`: movements with an active pain flag (no heavier load carries from the last set).
+ */
+export function setGlance(state: SessionAggregate, setId: string, ruleTargetRpe: Readonly<Record<string, number>> = {}, carry: CarryOptions = {}): SetGlance | null {
   const set = state.sets.find((s) => s.id === setId);
   if (!set) return null;
   const status = statusOf(set);
@@ -64,8 +67,9 @@ export function setGlance(state: SessionAggregate, setId: string, ruleTargetRpe:
     value = 'Skipped';
   } else {
     // Ben's own draft values over the target, as the table shows them (B2, 21 Oct).
-    ownValues = Object.keys(pendingOwnValues(set, ex)).length > 0;
-    const target = targetShort({ ...shownPlanned(set, ex), source: undefined }, { convention: ex.loadConvention, ...(eq ? { equipment: eq } : {}) });
+    // A load carried from his last logged set is his too (21 Oct).
+    ownValues = showsBensValuesIn(state, set, ex, carry);
+    const target = targetShort({ ...shownPlannedIn(state, set, ex, carry), source: undefined }, { convention: ex.loadConvention, ...(eq ? { equipment: eq } : {}) });
     const rpe = targetRpeOf(set, ruleTargetRpe[ex.id] ?? null);
     const base = target === null ? 'No target' : target.replace(TARGET_WORD, '');
     value = rpe === null ? base : `${base} @RPE${NBSP}${formatNumber(rpe.rpe)}`;
@@ -97,12 +101,12 @@ export function setGlance(state: SessionAggregate, setId: string, ruleTargetRpe:
  * (`Last set`, compact, editable, with its effort) and the next set Log
  * will log (prominent). Either is null when there's none.
  */
-export function restSetsView(state: SessionAggregate, ruleTargetRpe: Readonly<Record<string, number>> = {}): { last: SetGlance | null; next: SetGlance | null } {
+export function restSetsView(state: SessionAggregate, ruleTargetRpe: Readonly<Record<string, number>> = {}, carry: CarryOptions = {}): { last: SetGlance | null; next: SetGlance | null } {
   const lastId = latestCommittedSetId(state);
   const nextId = state.session.activeSetId;
   return {
-    last: lastId === null ? null : setGlance(state, lastId, ruleTargetRpe),
-    next: nextId === null ? null : setGlance(state, nextId, ruleTargetRpe),
+    last: lastId === null ? null : setGlance(state, lastId, ruleTargetRpe, carry),
+    next: nextId === null ? null : setGlance(state, nextId, ruleTargetRpe, carry),
   };
 }
 
