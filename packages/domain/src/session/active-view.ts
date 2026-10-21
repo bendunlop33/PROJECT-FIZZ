@@ -37,6 +37,7 @@ import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
+import { shownPlanned } from './pending-values';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -113,11 +114,49 @@ export interface DraftEdits {
   side?: SetSide;
   /** Set by "copy last time" (`Copied from 1 Oct`). */
   copied?: boolean;
+  /**
+   * The set's version when these edits were made (rule 5). The debounced
+   * `save_draft` carries it, so a save that lands after a newer write to the
+   * set (Ben's own `Edit set`, a pop-up target) is refused instead of putting
+   * the old values back (21 Oct, weight flicking back).
+   */
+  setVersion?: number;
 }
 
 /** The `save_draft` for the screen's edits: the values and, when chosen, the side (so it survives a minimise or restart). */
 export function saveDraftCommand(edits: DraftEdits, at: ZonedTimestamp): CommandOf<'save_draft'> {
-  return { type: 'save_draft', at, setId: edits.setId, values: edits.values, ...(edits.side !== undefined ? { side: edits.side } : {}) };
+  return {
+    type: 'save_draft',
+    at,
+    setId: edits.setId,
+    values: edits.values,
+    ...(edits.side !== undefined ? { side: edits.side } : {}),
+    ...(edits.setVersion !== undefined ? { expectedSetVersion: edits.setVersion } : {}),
+  };
+}
+
+/**
+ * The screen's unsaved edits against the stored workout as it is now (21 Oct,
+ * "it keeps flicking back to before"). Pure; the screen applies it on every
+ * new workout state:
+ * - the set is gone, done or skipped: no edits (null);
+ * - the set is unchanged since the edits began: the same edits;
+ * - Ben's own newer target for the set (`edit_planned_set` with values, which
+ *   clears the draft): null, so his new target shows and no stale value is
+ *   saved back over it;
+ * - any other change (a coach change, a rest or target-RPE edit, Undo): the
+ *   edits stay (Ben's edit is kept, coach-adjustments §4.3), re-based on the
+ *   new version so the next save isn't refused.
+ */
+export function reconcileDraftEdits(edits: DraftEdits | null, state: Pick<SessionAggregate, 'sets'>): DraftEdits | null {
+  if (edits === null) return null;
+  const set = state.sets.find((s) => s.id === edits.setId);
+  if (!set || set.status !== 'pending') return null;
+  // Same version, or an older copy of the workout still on screen: nothing newer to reconcile with.
+  if (edits.setVersion === undefined || set.version <= edits.setVersion) return edits;
+  const ownNewerTarget = set.draft === null && set.planned.edit !== undefined && set.planned.edit.version === set.version;
+  if (ownNewerTarget) return null;
+  return { ...edits, setVersion: set.version };
 }
 
 export interface ActiveViewInput {
@@ -548,7 +587,7 @@ function rowText(set: WorkoutSet, ex: SessionExercise, eq: EquipmentInstance | n
   }
   if (set.status === 'skipped') return { status: 'skipped', text: 'Skipped' };
   if (active) return { status: 'active', text: 'now' };
-  return { status: 'pending', text: targetShort(set.planned, { convention: ex.loadConvention, equipment: eq }) ?? 'No target' };
+  return { status: 'pending', text: targetShort(shownPlanned(set, ex), { convention: ex.loadConvention, equipment: eq }) ?? 'No target' };
 }
 
 /** A done row's exclusion fields (§2.13); empty for any other row. */
@@ -1314,11 +1353,13 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
   if (!ex) return null;
   const eq = equipmentOf(state, ex);
   const p = set.planned;
-  const storedLoad = p.load === null || p.load.convention === 'bodyweight' ? null : p.load.value;
+  // The sheet opens on what the row shows: Ben's own draft values over the target (21 Oct); Save makes them the target.
+  const shown = shownPlanned(set, ex);
+  const storedLoad = shown.load === null || shown.load.convention === 'bodyweight' ? null : shown.load.value;
   const loadValue = edits.load === undefined ? storedLoad : edits.load;
-  const reps = edits.reps === undefined ? p.reps : edits.reps;
-  const durationS = edits.durationS === undefined ? p.durationS : edits.durationS;
-  const distanceM = edits.distanceM === undefined ? (p.distanceM ?? null) : edits.distanceM;
+  const reps = edits.reps === undefined ? shown.reps : edits.reps;
+  const durationS = edits.durationS === undefined ? shown.durationS : edits.durationS;
+  const distanceM = edits.distanceM === undefined ? (shown.distanceM ?? null) : edits.distanceM;
   const setType = edits.setType ?? set.setType;
   const working = setType !== 'warmup' && setType !== 'drop';
   const storedOverride = p.rpeOverride ?? null;

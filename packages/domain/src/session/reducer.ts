@@ -1296,7 +1296,8 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
     planned: { ...planned, edit: { opId: cmd.opId, version, before: { planned: beforePlanned, setType: set.setType, rest: set.rest, draft: set.draft } } },
     version,
   };
-  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds])) {
+  // Setting a target back to the preset over Ben's draft clears the draft: a change, so the row shows it (21 Oct).
+  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds, edited.draft]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds, set.draft])) {
     return { ok: true, state, events: [] };
   }
   const events: SessionEvent[] = [{ type: 'PlannedSetEdited', setId: set.id, undo: false }];
@@ -1627,6 +1628,8 @@ function handleSaveDraft(state: SessionAggregate, cmd: CommandOf<'save_draft'>):
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'Drafts are only for sets not yet logged.');
+  // A save made on an older version of the set never puts its values back over a newer write (21 Oct).
+  if (cmd.expectedSetVersion !== undefined && cmd.expectedSetVersion !== set.version) return fail('stale_version', 'This set changed since it was edited.');
   // The side chosen before logging is kept on the pending set, so it survives a minimise or restart.
   if (cmd.side !== undefined) {
     const ex = exerciseOf(state, set);
