@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type BuilderGroup, type Exercise, type SessionAggregate, type WorkoutSet } from '@fizz/schemas';
-import { fitTodayCommand, reduceSession, startWorkout, timeFitLineText, timeFitOffer, type BuilderExerciseInfo, type TimeFitOffer } from '../src/index';
+import { fitTodayCommand, reduceSession, startWorkout, timeFitLineText, timeFitOffer, undoableTimeFit, type BuilderExerciseInfo, type TimeFitOffer } from '../src/index';
 import { at, barbell, dumbbells, exercise, GYM, idGen, kg, lb, profile, routine, routineExercise, stack, template, values } from './fixtures';
 import { apply, expectError, expectOk, HANG, logCmd, setsFor, startFixture } from './session-fixture';
 
@@ -15,6 +15,7 @@ const BENCH = exercise(701, 'Bench press', { compatibleEquipment: ['barbell'] })
 const RAISE = exercise(702, 'Lateral raise', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
 const FLY = exercise(703, 'Cable fly', { compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' });
 const CRUNCH = exercise(704, 'Cable crunch', { compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' });
+const PLANK = exercise(705, 'Plank', { measurement: 'duration', compatibleEquipment: ['bodyweight_station'], defaultLoadConvention: 'bodyweight' });
 
 const infoOf = (e: Exercise, group: BuilderGroup, role: 'compound' | 'isolation'): BuilderExerciseInfo => ({ exerciseId: e.id, name: e.name, group, role, heavy: role === 'compound', part: group, muscles: [group.toLowerCase()], angle: group, barbell: role === 'compound' });
 const INFO = new Map<string, BuilderExerciseInfo>([
@@ -22,13 +23,14 @@ const INFO = new Map<string, BuilderExerciseInfo>([
   [RAISE.id, infoOf(RAISE, 'Shoulders', 'isolation')],
   [FLY.id, infoOf(FLY, 'Chest', 'isolation')],
   [CRUNCH.id, infoOf(CRUNCH, 'Abs', 'isolation')],
+  [PLANK.id, infoOf(PLANK, 'Abs', 'isolation')],
 ]);
 const info = (id: string) => INFO.get(id) ?? null;
 
 const three = (n: number, load: ReturnType<typeof kg>, lastRpe = 9) => [n + 1, n + 2, n + 3].map((k, i) => template(k, { targetLoad: load, targetReps: { min: 12, max: 12 }, targetRpe: i === 2 ? lastRpe : 8 }));
 
-/** Bench (warm-up, top, 2 back-offs) then lateral raise (lb, per hand), cable fly, cable crunch: 3 sets each. */
-function start(): SessionAggregate {
+/** Bench (warm-up, top, 2 back-offs) then lateral raise (lb, per hand), cable fly, cable crunch: 3 sets each; `plank`: then a timed plank, 3 × 45 s. */
+function start(opts: { plank?: boolean } = {}): SessionAggregate {
   const r = routine([
     routineExercise(710, {
       exerciseId: BENCH.id,
@@ -45,13 +47,16 @@ function start(): SessionAggregate {
     routineExercise(711, { exerciseId: RAISE.id, equipmentId: dumbbells({ unit: 'lb' } as never).id, order: 1, setTemplates: three(7110, lb(20, 'per_hand'), 8), restBySetType: { working: { seconds: 90, presetName: 'Iso' } } }),
     routineExercise(712, { exerciseId: FLY.id, equipmentId: stack().id, order: 2, setTemplates: three(7120, kg(25, 'stack')), restBySetType: { working: { seconds: 90, presetName: 'Iso' } } }),
     routineExercise(713, { exerciseId: CRUNCH.id, equipmentId: stack().id, order: 3, setTemplates: three(7130, kg(30, 'stack')), restBySetType: { working: { seconds: 90, presetName: 'Iso' } } }),
+    ...(opts.plank === true
+      ? [routineExercise(714, { exerciseId: PLANK.id, order: 4, setTemplates: [7141, 7142, 7143].map((k) => template(k, { targetReps: null, targetDurationS: 45 })), restBySetType: { working: { seconds: 90, presetName: 'Iso' } } })]
+      : []),
   ]);
   return startWorkout({
     opId: 'fit-start',
     owner: profile(),
     gymId: GYM,
     routine: r,
-    exercises: new Map([BENCH, RAISE, FLY, CRUNCH].map((e) => [e.id, e])),
+    exercises: new Map([BENCH, RAISE, FLY, CRUNCH, PLANK].map((e) => [e.id, e])),
     gymEquipment: [barbell(), dumbbells(), stack()],
     at: at(0),
     newId: idGen(72_000),
@@ -67,8 +72,8 @@ const applyOffer = (s: SessionAggregate, o: TimeFitOffer, opId = 'fit-1', t = 40
   return { cmd, r: reduceSession(s, cmd) };
 };
 /** The bench warm-up and top set done, so the workout is under way. */
-function underWay(): SessionAggregate {
-  let s = start();
+function underWay(opts: { plank?: boolean } = {}): SessionAggregate {
+  let s = start(opts);
   const [w, top] = setsOf(s, BENCH);
   s = apply(s, logCmd(w?.id ?? '', values(kg(60), 8), 30));
   s = apply(s, logCmd(top?.id ?? '', values(kg(100), 5), 120));
@@ -85,8 +90,10 @@ describe('timeFitOffer: the builder ladder over the sets left (v3 §5)', () => {
     const s = underWay();
     const o = offer(s, 1);
     expect(o.status).toBe('fitted');
-    expect(o.lines).toEqual([{ kind: 'rest', sets: expect.any(Number) as number }]);
-    expect(o.lines.map(timeFitLineText)).toEqual(['Shorter rests']);
+    expect(o.lines.length).toBeGreaterThan(0);
+    expect(o.lines.every((l) => l.kind === 'rest')).toBe(true);
+    // One line per exercise with before → after (rule 2: the change is shown, not summarised).
+    for (const t of o.lines.map(timeFitLineText)) expect(t).toMatch(/ rest \d+:\d\d → \d+:\d\d$/);
     for (const st of o.steps) {
       expect(st.type).toBe('edit_planned_set');
       if (st.type !== 'edit_planned_set') continue;
@@ -102,7 +109,18 @@ describe('timeFitOffer: the builder ladder over the sets left (v3 §5)', () => {
   it('more over: the ladder in order — rests, then RPE 9 on an accessory’s last set, then fewer accessory sets', () => {
     const s = underWay();
     const o = offer(s, 8);
-    expect(o.lines.map(timeFitLineText)).toEqual(['Shorter rests', 'Lateral raise · last set @ 9', 'Cable fly · 3 → 2 sets', 'Cable crunch · 3 → 2 sets']);
+    expect(o.lines.map(timeFitLineText)).toEqual([
+      'Bench press rest 3:00 → 2:00',
+      'Lateral raise rest 1:30 → 1:00',
+      'Cable fly rest 1:30 → 1:00',
+      'Cable crunch rest 1:30 → 1:00',
+      'Lateral raise last set @8 → @9',
+      // Review S2: an exercise that loses a set and has its new last set pushed shows both.
+      'Cable fly 3 → 2 sets',
+      'Cable fly last set @8 → @9',
+      'Cable crunch 3 → 2 sets',
+      'Cable crunch last set @8 → @9',
+    ]);
     const after = expectOk(applyOffer(s, o).r).state;
     const raise = setsOf(after, RAISE);
     expect(raise.map((x) => x.planned.rpeOverride ?? x.planned.rpe)).toEqual([8, 8, 9]);
@@ -116,9 +134,10 @@ describe('timeFitOffer: the builder ladder over the sets left (v3 §5)', () => {
     const s = underWay();
     const o = offer(s, 12);
     const text = o.lines.map(timeFitLineText);
-    expect(text[0]).toBe('Shorter rests');
-    expect(text).toContain('Cable crunch · skip');
-    expect(text.some((t) => t.startsWith('Bench press'))).toBe(false);
+    expect(text[0]).toBe('Bench press rest 3:00 → 2:00');
+    expect(text).toContain('Skip: Cable crunch');
+    // The main lift: its rests may shorten (the builder's rule); its sets and loads never change for time.
+    expect(text.filter((t) => t.startsWith('Bench press')).every((t) => t.includes(' rest '))).toBe(true);
     const benchIds = new Set(setsOf(s, BENCH).map((x) => x.id));
     for (const st of o.steps) {
       if (st.type === 'delete_set') expect(benchIds.has(st.setId)).toBe(false);
@@ -149,6 +168,97 @@ describe('timeFitOffer: the builder ladder over the sets left (v3 §5)', () => {
     }
     // Nothing left but rests: the most it can do, honestly `over`.
     expect(o.status).toBe('over');
+  });
+});
+
+describe('left exactly as they are: Ben’s own edits, pain flags, timed exercises (review build-a B1)', () => {
+  const touchedSets = (o: TimeFitOffer): Set<string> => new Set(o.steps.flatMap((st) => (st.type === 'edit_planned_set' || st.type === 'delete_set' ? [st.setId] : [])));
+
+  it('a rest Ben set himself is never shortened, nor anything else on that exercise', () => {
+    let s = underWay();
+    const b1 = setsOf(s, BENCH)[2];
+    s = apply(s, { type: 'edit_planned_set', at: at(200), opId: 'ben-rest', setId: b1?.id ?? '', expectedSetVersion: b1?.version ?? 0, patch: { restS: 300 } });
+    for (const over of [1, 8, 12]) {
+      const o = offer(s, over);
+      const hit = touchedSets(o);
+      for (const set of setsOf(s, BENCH)) expect(hit.has(set.id)).toBe(false);
+      expect(o.lines.some((l) => l.name === 'Bench press')).toBe(false);
+      if (o.steps.length > 0) {
+        const after = expectOk(applyOffer(s, o).r).state;
+        expect(after.sets.find((x) => x.id === b1?.id)?.rest.seconds).toBe(300);
+      }
+    }
+  });
+
+  it('a pain-flagged exercise’s rests are never shortened (rule 9: no added density)', () => {
+    const s = underWay();
+    const flyIds = new Set(setsOf(s, FLY).map((x) => x.id));
+    for (const over of [1, 8, 30]) {
+      const o = offer(s, over, new Set([FLY.id]));
+      for (const id of touchedSets(o)) expect(flyIds.has(id)).toBe(false);
+      expect(o.lines.some((l) => l.name === 'Cable fly')).toBe(false);
+    }
+  });
+
+  it('a timed exercise’s rests are never shortened', () => {
+    const s = underWay({ plank: true });
+    const plankIds = new Set(setsOf(s, PLANK).map((x) => x.id));
+    expect(plankIds.size).toBe(3);
+    for (const over of [1, 8, 30]) {
+      const o = offer(s, over);
+      for (const id of touchedSets(o)) expect(plankIds.has(id)).toBe(false);
+      expect(o.steps.some((st) => st.type === 'skip_exercise' && st.sessionExerciseId === exId(s, PLANK))).toBe(false);
+      expect(o.lines.some((l) => l.name === 'Plank')).toBe(false);
+    }
+  });
+
+  it('the fit’s own earlier change isn’t taken for Ben’s: a second offer can still trim (review N4)', () => {
+    const s = underWay();
+    const first = offer(s, 1);
+    const after = expectOk(applyOffer(s, first).r).state;
+    const second = offer(after, 8);
+    expect(second.lines.some((l) => l.kind === 'sets' || l.kind === 'effort')).toBe(true);
+  });
+});
+
+describe('the target never collapses (review S3)', () => {
+  it('far more over than the ladder should save: fitted to half the sets left, honestly `over`, the main lift kept', () => {
+    const s = underWay();
+    const o = offer(s, 300);
+    expect(o.status).toBe('over');
+    expect(o.targetMinutes).toBeGreaterThanOrEqual(Math.floor(o.beforeMinutes / 2));
+    expect(o.afterMinutes).toBeGreaterThanOrEqual(Math.floor(o.beforeMinutes / 2) - 1);
+    expect(o.savedMinutes).toBeGreaterThan(0);
+    // Not everything droppable goes: at least one accessory stays.
+    const skipped = new Set(o.steps.flatMap((st) => (st.type === 'skip_exercise' ? [st.sessionExerciseId] : [])));
+    expect(skipped.has(exId(s, BENCH))).toBe(false);
+    expect([RAISE, FLY, CRUNCH].some((e) => !skipped.has(exId(s, e)))).toBe(true);
+  });
+
+  it('within what it should save: `fitted`, target = sets left − overrun', () => {
+    const o = offer(underWay(), 2);
+    expect(o.status).toBe('fitted');
+    expect(o.targetMinutes).toBeLessThan(o.beforeMinutes);
+  });
+});
+
+describe('undoableTimeFit: `⋯ › Undo fit to time` while Undo would go through (review S1)', () => {
+  it('none before a fit; the fit after Apply (also after a relaunch); none once undone', () => {
+    const s = underWay();
+    expect(undoableTimeFit(s, at(390))).toBeNull();
+    const after = expectOk(applyOffer(s, offer(s, 12)).r).state;
+    expect(undoableTimeFit(after, at(410))).toBe('fit-1');
+    const stored = SessionAggregateSchema.parse(JSON.parse(JSON.stringify(after)));
+    expect(undoableTimeFit(stored, at(410))).toBe('fit-1');
+    const back = expectOk(reduceSession(stored, { type: 'undo_op', at: at(420), opId: 'undo-fit-1', targetOpId: 'fit-1' })).state;
+    expect(undoableTimeFit(back, at(430))).toBeNull();
+  });
+
+  it('the latest fit only', () => {
+    const s = underWay();
+    const one = expectOk(applyOffer(s, offer(s, 1), 'fit-a', 400).r).state;
+    const two = expectOk(applyOffer(one, offer(one, 8), 'fit-b', 500).r).state;
+    expect(undoableTimeFit(two, at(510))).toBe('fit-b');
   });
 });
 
