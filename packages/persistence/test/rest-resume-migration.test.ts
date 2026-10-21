@@ -34,4 +34,18 @@ describe('migration 31 (rest kept for undo)', () => {
     await expect(store.db.write((tx) => tx.run("UPDATE rest_timers SET resume_on_undo = '{nope'"))).rejects.toThrow();
     await store.close();
   });
+
+  it('stores and reads back a kept rest that had already finished (expired, ended at its deadline)', async () => {
+    const store = await openStore(memoryDriver());
+    await store.repos.profiles.save(profile(), null);
+    const { state } = startFixture();
+    const [w, b1] = state.sets;
+    if (!w || !b1) throw new Error('fixture');
+    // W's 60 s rest ran out at 1:30; B1 logged at 2:00.
+    const s = apply(apply(state, logCmd(w.id, values(kg(60), 10), 30)), logCmd(b1.id, values(kg(100), 8), 120));
+    expect(s.restTimer?.resumeOnUndo?.[0]?.timer).toMatchObject({ status: 'expired', endedAtUtc: s.restTimer?.resumeOnUndo?.[0]?.timer.deadlineUtc });
+    await store.repos.sessions.save(s, null);
+    expect((await store.repos.sessions.get(s.session.id))?.restTimer).toEqual(s.restTimer);
+    await store.close();
+  });
 });

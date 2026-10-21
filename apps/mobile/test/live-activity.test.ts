@@ -146,6 +146,25 @@ describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
     expect(fake.only().staleAtMs).toBe(deadline);
   });
 
+  it('unticking after the earlier rest ran out: the same activity goes to Ready with no countdown (workout-table-v3 §3)', async () => {
+    const fake = fakeActivities();
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
+    const resting = loggedWarmup();
+    await la.reconcile(resting, ms(31));
+    const deadlineMs = toMs(resting.restTimer?.deadlineUtc ?? '');
+    const b1 = setsFor(resting, BENCH)[1]?.id ?? '';
+    const ticked = apply(resting, logCmd(b1, values(kg(100), 8), 40));
+    await la.reconcile(ticked, ms(40));
+    expect(fake.only().props.state).toBe('resting');
+    // Unticked after the warm-up rest's deadline: it comes back finished.
+    const t = (deadlineMs - ms(0)) / 1000 + 10;
+    const back = apply(ticked, { type: 'undo_log', at: at(t), opId: 'undo', setId: b1, expectedSetVersion: 2 });
+    expect(back.restTimer).toMatchObject({ id: resting.restTimer?.id, status: 'expired' });
+    await la.reconcile(back, ms(t));
+    expect(fake.only().props).toMatchObject({ state: 'ready', startMs: 0, endMs: 0 });
+    expect(fake.only().staleAtMs).toBeNull();
+  });
+
   it('the same state again changes nothing (no redundant update); a duplicate reconcile is idempotent', async () => {
     const fake = fakeActivities();
     const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });

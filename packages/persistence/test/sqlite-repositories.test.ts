@@ -119,6 +119,41 @@ describe('restart recovery on a database file', () => {
     await store.close();
   });
 
+  it('an accidental tick undone after a force-close, once the earlier rest has run out, puts it back finished (workout-table-v3 §3)', async () => {
+    const path = join(dir, 'training.db');
+    let store = await openStore(openNodeDriver(path));
+    await seed(store);
+    let service = createSessionService(store.repos, idGen(80_000));
+    const started = await service.start({ ownerId: OWNER, gymId: GYM, routineId: id(300), opId: 'start-1', at: at(0) });
+    if (!started.ok) throw new Error(started.error.code);
+    const sessionId = started.aggregate.session.id;
+    const [first, second] = started.aggregate.sets;
+    if (!first || !second) throw new Error('fixture');
+    const logged = await service.dispatch(sessionId, logCmd(first.id, values(kg(15, 'per_hand'), 10), 60, 'log-1'));
+    if (!logged.ok) throw new Error(logged.error.code);
+    const rest = logged.aggregate.restTimer;
+    if (rest?.status !== 'running') throw new Error('no rest');
+    const accidental = await service.dispatch(sessionId, logCmd(second.id, values(kg(15, 'per_hand'), 10), 65, 'log-2'));
+    if (!accidental.ok) throw new Error(accidental.error.code);
+    await store.close();
+
+    // Reopened after the earlier rest's deadline.
+    const afterMs = Date.parse(rest.deadlineUtc) + 20_000;
+    const afterS = (afterMs - Date.parse(at(0).utc)) / 1000;
+    store = await openStore(openNodeDriver(path));
+    service = createSessionService(store.repos, idGen(90_000));
+    await service.recover(OWNER, at(afterS));
+    const undone = await service.dispatch(sessionId, { type: 'undo_log', at: at(afterS), opId: 'undo-2', setId: second.id, expectedSetVersion: 2 });
+    if (!undone.ok) throw new Error(undone.error.code);
+    expect(undone.aggregate.restTimer).toMatchObject({ id: rest.id, status: 'expired', deadlineUtc: rest.deadlineUtc, endedAtUtc: rest.deadlineUtc });
+    expect(undone.events.some((e) => e.type === 'RestStarted')).toBe(false);
+    await store.close();
+
+    store = await openStore(openNodeDriver(path));
+    expect((await store.repos.sessions.get(sessionId))?.restTimer).toEqual(undone.aggregate.restTimer);
+    await store.close();
+  });
+
   it('a write killed mid-transaction leaves no partial set, and the retry lands once', async () => {
     const path = join(dir, 'training.db');
     const failing = failingDriver(openNodeDriver(path), (sql) => sql.includes('INSERT INTO "set_audit"'));
