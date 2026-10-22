@@ -8,7 +8,7 @@ Status: **Draft for Ben, 22 Oct 2026.** Prototype: [prototypes/plan-builder.html
 
 One screen flow that turns your goals and week into a plan you can adjust before applying. It's the same screen for a new plan and for editing the one you have.
 
-1. **Goals**: main focus (Strength / Muscle / Both / Fitness / Maintain), lift targets with optional dates (Bench 110 by 15 Dec), priority muscles, runs on/off.
+1. **Goals**: main focus (Strength / Muscle / Both / Fitness / Maintain, each defined behind an ⓘ), lift targets with optional dates (Bench 110 by 15 Dec), priority muscles, runs on/off.
 2. **Length and effort** (Ben, 22 Oct): plan length (4 / 6 / 8 / 12 weeks, or to a target date) and how hard to push:
    - **Steady**: RPE 6–8, lower set bands, add load only when reps top out; deload only if needed. For busy spells or heavy run weeks.
    - **Standard**: RPE 7–9, middle bands, one step when you hit the plan; deload in the last week.
@@ -25,7 +25,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 - **Priority, up to 2 groups** (Chest, Back, Shoulders, Legs, Arms, Core); none picked = Balanced. A priority does three things: top of its set range, trained at least twice a week, and its exercises come straight after the main lift. When time is short, non-priority work is cut first; nothing drops below maintenance. Sub-muscles ("more upper chest") only through the coach.
 - **Coach suggestion line**, only when logs show a real gap: `✦ Back: 8 sets a week vs Chest 15 · Use`. Code computes the facts (last 8 weeks: sets/week vs range and vs comparable groups, sessions/week, stalled main lift < 1% over 4+ weeks with 3+ exposures, push:pull > 1.5 : 1); a group needs one strong or two medium signals; at most 2; pain-flagged muscles never. Relative strength between lifts never counts on its own. Offline, code makes the same pick.
-- **Check your lifts** (step 2, shown only when needed): main lifts with no history or nothing in 8 weeks. Stale: `Still right` / `Edit`. None: `Enter` one recent set (weight × reps, saved as Your data, labelled "you entered") or `Not sure` (estimate from his other lifts, e.g. OHP ≈ 0.6 × bench, labelled est., planned a step lighter; replaced by the first logged session). Recent lifts show with ✓ and need nothing.
+- **Check your lifts** (step 2, shown only when needed): main lifts with no history or nothing in 8 weeks. Stale: `Still right` / `Edit`. None: an estimate from his **closest similar lift first** (Ben, 22 Oct), e.g. OHP from DB shoulder press (both dumbbells × 1.2), then machine shoulder press, then another main lift (OHP ≈ 0.6 × bench); `Use`, `Other lift` (pick the source) or `Enter` one recent set (saved as Your data, "you entered"). Estimates are labelled est., planned a step lighter, and replaced by the first logged session. Read-across factors are practice-level rules of thumb, listed per lift in code with tests. Recent lifts show with ✓ and need nothing.
 
 ## 2. How the plan is made (code, deterministic; the coach may adjust within these rules)
 

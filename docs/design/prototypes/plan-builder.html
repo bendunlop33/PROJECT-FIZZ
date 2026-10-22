@@ -147,7 +147,9 @@ const HIST = {
   'Barbell row': { kg: 90, reps: 12, last: '90 × 12', date: '18 Oct' },
   'Back squat': { kg: 120, reps: 5, last: 'top 120 × 5', date: '3 Aug', stale: true },
   'Romanian deadlift': { kg: 100, reps: 8, last: '100 × 8' },
-  'Overhead press': { kg: 57.5, reps: 6, last: 'est. from bench', none: true, ratio: 0.6 },
+  'Overhead press': { kg: 57.5, reps: 6, last: 'est.', none: true },
+  'DB shoulder press': { kg: 24, each: true, reps: 8, date: '15 Oct' },
+  'Machine shoulder press': { kg: 50, reps: 10, date: '2 Oct' },
   'Incline DB press': { kg: 30, reps: 10, last: '30 each × 10' },
   'Lat pulldown': { kg: 70, reps: 10, last: '70 × 10' },
   'Leg press': { kg: 200, reps: 10, last: '200 × 10' },
@@ -288,7 +290,7 @@ function render() {
 function renderGoals() {
   $('scroll').innerHTML = `
     <h1>Your goals</h1>
-    <div class="label">Main focus</div>
+    <div class="label" style="display:flex;align-items:center;gap:4px">Main focus <button class="link dim" id="focusInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>
     <div class="chips">${['Strength','Muscle','Both','Fitness','Maintain'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
     <div class="label">Priority · up to 2</div>
     <div class="chips">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m}</button>`).join('')}</div>
@@ -297,6 +299,13 @@ function renderGoals() {
     <div class="card"><div class="row"><span>Runs</span><span class="chips"><button class="chip sm" id="runsToggle" aria-pressed="${S.runs}">${S.runs ? 'On' : 'Off'}</button></span></div></div>`;
   $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
   document.querySelectorAll('[data-focus]').forEach((b) => b.onclick = () => { S.focus = b.dataset.focus; render(); });
+  $('focusInfo').onclick = () => sheet(`<h2>Main focus</h2><div class="card" style="padding:4px 16px">${[
+    ['Strength', 'Lift heavier on your main lifts. Heavy top sets of 3–6 reps, longer rests, fewer extras.'],
+    ['Muscle', 'Build size. Mostly 6–15 reps, more sets per muscle, each muscle twice a week.'],
+    ['Both', 'Heavy main lifts first, then muscle-building work. The default.'],
+    ['Fitness', 'All-round health. Full-body sessions, 8–15 reps at moderate effort, every muscle twice a week; fits well with cardio.'],
+    ['Maintain', 'Keep what you have on less time. Fewer sets, same weights, no push to progress.'],
+  ].map(([k, v]) => `<div style="padding:10px 0;border-bottom:1px solid var(--divider)"><div style="font-weight:600">${k}</div><div style="font-size:14px;color:var(--text2);line-height:1.4">${v}</div></div>`).join('')}</div>`);
   const addPri = (m) => { if (S.priority.includes(m)) S.priority = S.priority.filter((x) => x !== m); else if (S.priority.length >= 2) { toast('Up to 2', false); return; } else S.priority = [...S.priority, m]; render(); };
   document.querySelectorAll('[data-pri]').forEach((b) => b.onclick = () => addPri(b.dataset.pri));
   if ($('useSug')) { $('useSug').onclick = () => addPri('Back'); $('noSug').onclick = () => { S.sugGone = true; render(); }; }
@@ -304,6 +313,17 @@ function renderGoals() {
   $('next').onclick = () => go(1);
 }
 
+// Read-across (Ben, 22 Oct): a main lift with no history is estimated from his closest similar lift first, then
+// from another main lift. Factors are practice-level rules of thumb, always labelled est., replaced by the first session.
+const SIMILAR = {
+  'Overhead press': [
+    { from: 'DB shoulder press', f: (h) => snap(h.kg * 2 * 1.2), note: (h) => `${h.kg} each × ${h.reps}` },
+    { from: 'Machine shoulder press', f: (h) => snap(h.kg * 1.05), note: (h) => `${h.kg} × ${h.reps}` },
+    { from: 'Bench press', f: (h) => snap(h.kg * 0.6), note: (h) => `${h.kg} × ${h.reps}` },
+  ],
+};
+const estFrom = (l, i) => { const r = SIMILAR[l]?.[i]; if (!r || !HIST[r.from]) return null; const h = HIST[r.from]; return { kg: r.f(h), reps: h.reps, from: r.from, note: r.note(h), i }; };
+const shortName = (l) => SHORT[l] ?? l.replace('DB ', 'DB ').replace('Machine ', 'Machine ');
 // Pages: "Check your lifts" only when a main lift has no history or none in 8 weeks.
 const needsCheck = () => MAIN.some((l) => HIST[l].none || HIST[l].stale);
 const flow = () => ['goals', needsCheck() || S.checkSeen ? 'check' : null, 'effort', 'week', 'plan'].filter(Boolean);
@@ -315,14 +335,24 @@ function renderCheck() {
     const h = HIST[l], c = S.check[l], nm = SHORT[l];
     if (c === 'yes' || c === 'entered' || (!h.none && !h.stale)) return `<div class="target"><span>${nm}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">${h.kg} × ${h.reps}${c === 'entered' ? ' · you entered' : h.date ? ' · ' + h.date : ''} <span style="color:var(--done)">✓</span></span></div>`;
     if (h.stale) return `<div class="target" style="flex-wrap:wrap"><span>${nm} <span style="color:var(--text2)">${h.kg} × ${h.reps} · ${h.date}</span></span><span style="display:flex"><button class="link" data-yes="${l}">Still right</button><button class="link dim" data-enter="${l}">Edit</button></span></div>`;
-    return `<div class="target" style="flex-wrap:wrap"><span>${nm} <span style="color:var(--text2)">${c === 'est' ? `est. ${h.kg} from bench` : 'no history'}</span></span><span style="display:flex"><button class="link" data-enter="${l}">Enter</button>${c === 'est' ? '' : `<button class="link dim" data-est="${l}">Not sure</button>`}</span></div>`;
+    const e = estFrom(l, S.src?.[l] ?? 0);
+    if (c === 'est') return `<div class="target"><span>${nm}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">est. ${h.kg} × ${h.reps} <span style="color:var(--done)">✓</span></span></div>`;
+    return `<div style="border-bottom:1px solid var(--divider);padding:10px 0;display:flex;flex-direction:column;gap:2px"><span style="display:flex;justify-content:space-between;gap:8px"><span>${nm} <span style="color:var(--text2)">no history</span></span>${e ? `<span style="font-variant-numeric:tabular-nums">est. ${e.kg} × ${e.reps}</span>` : ''}</span>
+      ${e ? `<span style="font-size:13px;color:var(--text3)">from ${esc(e.from)} ${esc(e.note)}</span>` : ''}
+      <span style="display:flex;gap:2px;flex-wrap:wrap">${e ? `<button class="link" data-use="${l}" style="font-weight:600">Use</button>` : ''}${(SIMILAR[l] ?? []).length > 1 ? `<button class="link dim" data-other="${l}">Other lift</button>` : ''}<button class="link dim" data-enter="${l}">Enter</button></span></div>`;
   }).join('');
   $('scroll').innerHTML = `<h1>Check your lifts</h1><div class="card">${rows}</div>`;
   $('footer').innerHTML = `<button class="primary" id="next">Next</button>`;
   document.querySelectorAll('[data-yes]').forEach((b) => b.onclick = () => { S.check[b.dataset.yes] = 'yes'; render(); });
-  document.querySelectorAll('[data-est]').forEach((b) => b.onclick = () => { S.check[b.dataset.est] = 'est'; render(); });
+  document.querySelectorAll('[data-use]').forEach((b) => b.onclick = () => { const l = b.dataset.use; const e = estFrom(l, S.src?.[l] ?? 0); Object.assign(HIST[l], { kg: e.kg, reps: e.reps, last: `est. from ${e.from}` }); S.check[l] = 'est'; render(); });
+  document.querySelectorAll('[data-other]').forEach((b) => b.onclick = () => openOtherSheet(b.dataset.other));
   document.querySelectorAll('[data-enter]').forEach((b) => b.onclick = () => openLiftSheet(b.dataset.enter));
   $('next').onclick = () => go(1);
+}
+function openOtherSheet(l) {
+  const opts = (SIMILAR[l] ?? []).map((_, i) => estFrom(l, i)).filter(Boolean);
+  sheet(`<h2>Estimate ${SHORT[l]} from</h2><div class="card">${opts.map((e) => `<button class="row" data-pick="${e.i}" style="background:none;border:0;border-bottom:1px solid var(--divider);color:var(--text);font:inherit;width:100%;cursor:pointer;text-align:left"><span>${esc(e.from)}<br><span style="font-size:13px;color:var(--text3)">${esc(e.note)}</span></span><span class="v">est. ${e.kg}</span></button>`).join('')}</div>`);
+  document.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => { S.src = { ...(S.src ?? {}), [l]: +b.dataset.pick }; closeSheet(); render(); });
 }
 function openLiftSheet(l) {
   const h = HIST[l]; let kg = h.kg, reps = h.reps;
