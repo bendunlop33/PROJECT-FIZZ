@@ -366,7 +366,7 @@ describe('swap and add follow the builder order and pairing rules (review builde
   });
 });
 
-describe('a saved rep range through the coach (retire-overview final re-review F1, S1, S2)', () => {
+describe('a saved rep range through the coach (retire-overview final re-review F1, S1, S2; verification F2, S4)', () => {
   /** Bench as a library workout's `Five` opens it: 5 × 3–6 @ 100, with the saved workout's reasons. */
   function ranged() {
     const t = setup({ askedHeavier: true });
@@ -375,6 +375,8 @@ describe('a saved rep range through the coach (retire-overview final re-review F
       ...bench,
       source: 'saved',
       why: ['Saved workout', 'Max here'],
+      // As `fromPlannedWorkout` opens a saved workout: no e1RM anchor, so a reps edit keeps the saved kg.
+      anchorE1rm: null,
       rows: [...bench.rows.filter((r) => r.type === 'warmup'), ...[0, 1, 2, 3, 4].map(() => ({ type: 'working' as const, reps: 3, repsMax: 6, load: 100, rpe: 8 }))],
     };
     const w: BuilderWorkout = { ...t.w, blocks: t.w.blocks.map((b) => ({ ...b, slots: b.slots.map((x) => (x.key === bench.key ? saved : x)) })) };
@@ -428,5 +430,68 @@ describe('a saved rep range through the coach (retire-overview final re-review F
     expect(check('Keep bench press at 6 reps.', null).shown).toBe('Keep bench press at 6 reps.');
     expect(check('Keep bench press at 3–8 reps.', null).shown).toBeNull();
     expect(check('Bench press is 5 × 3–8 at 100 kg.', null).shown).toBeNull();
+  });
+
+  const benchRows = (o: { workout: BuilderWorkout }, key: string) => slotsOf(o.workout.blocks).find((x) => x.key === key)?.rows.filter((r) => r.type !== 'warmup') ?? [];
+
+  it('F2: a coach `reps` op at the range’s bottom shows `3–6 → 3 reps` beside the load, and Start reads what the card shows', () => {
+    const { snap, env, ctx, benchKey } = ranged();
+    const o = applyBuilderEdits(snap, [{ op: 'reps', slotKey: benchKey, reps: 3 }, { op: 'load', slotKey: benchKey, direction: 'heavier', value: null, unit: null }], env);
+    expect(o.lines).toEqual(['Barbell bench press: 3–6 → 3 reps', 'Barbell bench press: 100 → 102.5 kg']);
+    const enc = toDraftPlan(o.workout, codec(ctx)).slots.find((x) => x.slotKey === benchKey);
+    expect(enc?.setTemplates.filter((t) => t.setType !== 'warmup').map((t) => t.reps)).toEqual(Array.from({ length: 5 }, () => ({ min: 3, max: 3 })));
+    // With a sets change, both lines.
+    expect(applyBuilderEdits(snap, [{ op: 'reps', slotKey: benchKey, reps: 3 }, { op: 'sets', slotKey: benchKey, workingSets: 6 }], env).lines).toEqual(['Barbell bench press: 5 → 6 sets', 'Barbell bench press: 3–6 → 3 reps']);
+    // The before is the range, not its bottom.
+    expect(applyBuilderEdits(snap, [{ op: 'reps', slotKey: benchKey, reps: 6 }], env).lines[0]).toBe('Barbell bench press: 3–6 → 6 reps');
+  });
+
+  it('F2: a lone `reps 3` on 3–6 is a change with a line, so it comes back as a proposal (it used to give nothing)', () => {
+    const { snap, env, benchKey } = ranged();
+    const r = makeBuilderProposal({ id: 'p-reps', snapshot: snap, ops: [{ op: 'reps', slotKey: benchKey, reps: 3 }], words: null, check: NO_NUMBERS, env });
+    expect(r.proposal?.lines).toEqual(['Barbell bench press: 3–6 → 3 reps']);
+    expect(benchRows(r.outcome, benchKey).map((x) => [x.reps, x.repsMax ?? null])).toEqual(Array.from({ length: 5 }, () => [3, null]));
+    // Ops that leave the reps alone still give no reps line.
+    expect(applyBuilderEdits(snap, [{ op: 'rpe', slotKey: benchKey, rpe: 7 }], env).lines.some((l) => l.endsWith(' reps'))).toBe(false);
+  });
+
+  it('F2: back-offs changed by a `reps` or `rpe` op show even when the Top set’s value stays (no change behind another line)', () => {
+    const { env, w, benchKey } = ranged();
+    const bench = slotsOf(w.blocks).find((x) => x.key === benchKey) as BuilderSlot;
+    const topBack: BuilderSlot = {
+      ...bench,
+      rows: [...bench.rows.filter((r) => r.type === 'warmup'), { type: 'top', reps: 5, load: 100, rpe: 8 }, ...[0, 1, 2].map(() => ({ type: 'backoff' as const, reps: 8, load: 85, rpe: 7 }))],
+    };
+    const tw: BuilderWorkout = { ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((x) => (x.key === benchKey ? topBack : x)) })) };
+    const s = snapshotOf(tw);
+    expect(applyBuilderEdits(s, [{ op: 'reps', slotKey: benchKey, reps: 5 }], env).lines).toContain('Barbell bench press: 5 / 8 → 5 reps');
+    expect(applyBuilderEdits(s, [{ op: 'rpe', slotKey: benchKey, rpe: 8 }], env).lines).toContain('Barbell bench press: RPE 8 / 7 → 8');
+    // Fewer sets drops back-offs: that's the sets line alone.
+    expect(applyBuilderEdits(s, [{ op: 'sets', slotKey: benchKey, workingSets: 1 }], env).lines).toEqual(['Barbell bench press: 4 → 1 sets']);
+  });
+
+  it('S4: a sets change written `from 4 × 6 to 5 × 6` passes (its `5` is sets, not a range’s top); a wrong count is still hidden', () => {
+    const { snap, env, ctx, w, benchKey } = ranged();
+    const bench = slotsOf(w.blocks).find((x) => x.key === benchKey) as BuilderSlot;
+    const four: BuilderSlot = { ...bench, rows: [...bench.rows.filter((r) => r.type === 'warmup'), ...[0, 1, 2, 3].map(() => ({ type: 'working' as const, reps: 6, load: 100, rpe: 8 }))] };
+    const fw: BuilderWorkout = { ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((x) => (x.key === benchKey ? four : x)) })) };
+    const o = applyBuilderEdits({ ...snap, workout: fw }, [{ op: 'sets', slotKey: benchKey, workingSets: 5 }], env);
+    expect(o.lines).toEqual(['Barbell bench press: 4 → 5 sets']);
+    const check = workoutClaimCheck(fw, { ctx, minutes: [60] });
+    expect(check('Bench press goes from 4 × 6 to 5 × 6.', o).shown).toBe('Bench press goes from 4 × 6 to 5 × 6.');
+    expect(check('Bench press goes from 4 × 6 to 7 × 6.', o).shown).toBeNull();
+    // A range's top with nothing after it is still checked as reps.
+    expect(check('Bench press goes from 4 × 6 to 5 × 6–9.', o).shown).toBeNull();
+  });
+
+  it('`@` before a load is the load: the form the coach is shown passes, a wrong load is hidden, `@ 8` is still RPE', () => {
+    const { ctx, w } = ranged();
+    const check = workoutClaimCheck(w, { ctx, minutes: [60] });
+    expect(check('Bench press is 5 × 3–6 @ 100 kg.', null).shown).toBe('Bench press is 5 × 3–6 @ 100 kg.');
+    expect(check('Bench press is 5 × 3–6 @ 100kg.', null).shown).toBe('Bench press is 5 × 3–6 @ 100kg.');
+    expect(check('Bench press is 5 × 3–6 @ 105 kg.', null).shown).toBeNull();
+    expect(check('Bench press is 5 × 3–6 @ 8.', null).shown).toBe('Bench press is 5 × 3–6 @ 8.');
+    expect(check('Bench press is 5 × 3–6 @ 9.', null).shown).toBeNull();
+    expect(check('Bench press is 5 × 3–6 @ 8 kg.', null).shown).toBeNull();
   });
 });

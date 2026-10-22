@@ -3,7 +3,7 @@ import { BUILDER_COACH_TOOL, BUILDER_COACH_TOOL_ARGS, type BuilderCoachToolArgs,
 import { strictJsonSchema, type FunctionToolDefinition } from '../function-tools';
 import type { CoachModelPort, ModelErrorKind, ModelRequest } from '../model-port';
 import { DEFAULT_COACH_TIMING, runModelStep, type CoachTiming } from '../turn';
-import { builderLoadText, type BuilderCoachSnapshot } from './edit-ops';
+import { builderLoadText, builderRepsText, type BuilderCoachSnapshot } from './edit-ops';
 import { topLoad } from './load-guard';
 import type { SetupCoachContext } from './setup';
 import { BUILDER_TARGET_CORRECTION_LINES } from '../corrections';
@@ -133,10 +133,9 @@ export function builderWorkoutView(snapshot: BuilderCoachSnapshot, ctx: BuilderC
       const i = infoOrDefault(ctx.info, s.exerciseId);
       const work = s.rows.filter((r) => r.type !== 'warmup');
       const top = topLoad(s);
-      const reps = work[0]?.reps ?? s.repRange.min;
       // A saved range reads as one (`5 × 3–6`), not its bottom (final re-review S2).
-      const repsMax = work[0]?.repsMax;
-      const repsText = repsMax !== undefined && repsMax > reps ? `${String(reps)}–${String(repsMax)}` : String(reps);
+      const first = work[0];
+      const repsText = first === undefined ? String(s.repRange.min) : builderRepsText(first);
       slots.push({
         slotKey: s.key,
         exerciseId: s.exerciseId,

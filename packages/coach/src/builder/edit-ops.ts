@@ -131,6 +131,11 @@ const blockIndexOf = (w: BuilderWorkout, key: string): number => w.blocks.findIn
 const replaceSlot = (w: BuilderWorkout, key: string, next: BuilderSlot): BuilderWorkout => ({ ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === key ? next : s)) })) });
 const working = (s: BuilderSlot): BuilderSetRow[] => s.rows.filter((r) => r.type !== 'warmup');
 
+/** A set's reps as Ben reads them: `3–6` for a saved range, else `8`. */
+export function builderRepsText(row: Pick<BuilderSetRow, 'reps' | 'repsMax'>): string {
+  return row.repsMax !== undefined && row.repsMax > row.reps ? `${String(row.reps)}–${String(row.repsMax)}` : String(row.reps);
+}
+
 /**
  * The slot with a new working load: Top / working sets at it, back-offs by the formula, warm-ups rebuilt, all rounded
  * down here. Each row keeps its reps (a saved `3–6` range included; final re-review F1); a typed kg gives way to the
@@ -440,18 +445,31 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
   }
 }
 
+/**
+ * Before → after for one per-set value (reps, RPE) when any set both sides have changed it, as the distinct values in
+ * order (`3–6 → 3`, `5 / 8 → 5`). Drops are left out: no reps or RPE op touches them, and a set added or removed
+ * is the sets line's. Compared as text, so a saved `3–6` made `3` is a change too (final re-review F2).
+ */
+function perSetChange(before: BuilderSlot, after: BuilderSlot, text: (r: BuilderSetRow) => string | null): [string, string] | null {
+  const straight = (s: BuilderSlot): (string | null)[] => working(s).filter((r) => r.type !== 'drop').map(text);
+  const a = straight(before);
+  const b = straight(after);
+  if (!a.some((v, i) => i < b.length && v !== b[i])) return null;
+  const shown = (xs: (string | null)[]): string => [...new Set(xs.filter((x): x is string => x !== null))].join(' / ');
+  const [x, y] = [shown(a), shown(b)];
+  return x === '' || y === '' || x === y ? null : [x, y];
+}
+
 /** Lines for one surviving slot: sets, reps, RPE and load, before → after. */
 function slotLines(before: BuilderSlot, after: BuilderSlot, name: string): string[] {
   const out: string[] = [];
   const a = workingCount(before);
   const b = workingCount(after);
   if (a !== b) out.push(`${name}: ${String(a)} → ${String(b)} sets`);
-  const ra = working(before)[0]?.reps;
-  const rb = working(after)[0]?.reps;
-  if (ra !== undefined && rb !== undefined && ra !== rb) out.push(`${name}: ${String(ra)} → ${String(rb)} reps`);
-  const pa = working(before)[0]?.rpe;
-  const pb = working(after)[0]?.rpe;
-  if (pa != null && pb != null && pa !== pb) out.push(`${name}: RPE ${fmt(pa)} → ${fmt(pb)}`);
+  const reps = perSetChange(before, after, builderRepsText);
+  if (reps !== null) out.push(`${name}: ${reps[0]} → ${reps[1]} reps`);
+  const rpe = perSetChange(before, after, (r) => (r.rpe == null ? null : fmt(r.rpe)));
+  if (rpe !== null) out.push(`${name}: RPE ${rpe[0]} → ${rpe[1]}`);
   const la = topLoad(before);
   const lb = topLoad(after);
   if (la !== null && lb !== null && Math.abs(la - lb) > EPS) out.push(`${name}: ${loadChange(la, lb, after.unit, after.convention)}`);

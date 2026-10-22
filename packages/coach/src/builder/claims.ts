@@ -170,8 +170,9 @@ export function claimFacts(workouts: readonly BuilderWorkout[], base: ClaimBase)
 
 type Kind = 'plan' | 'load' | 'sets' | 'exercises' | 'compound' | 'isolation' | 'minutes' | 'reps' | 'rpe' | 'of' | 'sessions' | 'runs' | 'bare' | 'never';
 
+const LOAD_UNIT = /^\s?(?:kgs?|kilos?|lbs?|pounds?)\b/;
 const AFTER: readonly [RegExp, Kind][] = [
-  [/^\s?(?:kgs?|kilos?|lbs?|pounds?)\b/, 'load'],
+  [LOAD_UNIT, 'load'],
   [/^\s?%/, 'never'],
   [/^\s?[×x]\s?\d/, 'sets'],
   [/^\s?(?:(?:hard|working|work|total|more|fewer|extra|direct|weekly)\s+)?sets?\b/, 'sets'],
@@ -260,13 +261,12 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
     const before = masked.slice(Math.max(0, at - 12), at);
     let kind: Kind = 'bare';
     const of = /^\s?of\s(\d+)/.exec(masked.slice(end, end + 12));
-    const top = rangeTops.get(at);
-    if (top !== undefined) kind = top;
-    else if (of !== null) {
+    if (of !== null) {
       kind = 'of';
       pairEnds.add(end + of[0].length - (of[1] ?? '').length);
     }
-    else if (/(?:rpe|@)\s?(?:of\s)?$/.test(before)) kind = 'rpe';
+    // `RPE 8`, `@ 8`; not `@ 100 kg`, the load (the form the coach is shown: `5 × 3–6 @ 100 kg`).
+    else if (/rpe\s?(?:of\s)?$/.test(before) || (/@\s?$/.test(before) && !LOAD_UNIT.test(after))) kind = 'rpe';
     else if (/plan(?:'s)?\s?$/.test(before)) kind = 'plan';
     // `5×8`, `5 x 8` (not the `x` ending `max`).
     else if (/(?:×|(?<![a-z])x)\s?$/.test(before)) kind = 'reps';
@@ -274,6 +274,9 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
       kind = k;
       break;
     }
+    // A range's top with nothing of its own takes its bottom's kind (`5 × 3–6 @`); its own wins (`from 4 × 6 to 5 × 6`, S4).
+    const top = rangeTops.get(at);
+    if (kind === 'bare' && top !== undefined) kind = top;
     if (kind === 'never') return false;
     if (range !== null) rangeTops.set(end + range[0].length - (range[1] ?? '').length, kind);
     const [lo, hi] = clauseOf(at);
