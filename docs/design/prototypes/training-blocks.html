@@ -94,7 +94,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pill { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 999px; min-height: 52px; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .ghost { background: none; color: var(--text); border: 1.5px solid var(--text3); border-radius: 999px; min-height: 52px; padding: 0 20px; font-size: 15px; cursor: pointer; font-family: inherit; }
 .seg { display: grid; grid-template-columns: repeat(4, 1fr) minmax(44px, auto); gap: 4px; background: var(--surface); border-radius: 14px; padding: 4px; }
-.kn { font-size: 12px; color: var(--warn); opacity: .8; } /* fit note after Time, in the row, so nothing moves (Ben, 22 Oct) */
+.kn { font-size: 12px; color: var(--warn); opacity: .8; background: none; border: 0; padding: 0; font-family: inherit; cursor: pointer; }
+.fitwhy { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--text2); padding: 2px 4px; }
+.fitwhy .carry { color: var(--text); margin-top: 2px; } /* fit note after Time, in the row, so nothing moves (Ben, 22 Oct) */
 .todayonly { font-size: 12px; font-weight: 600; color: var(--warn); }
 .startask { display: flex; flex-direction: column; gap: 8px; } .startask b { font-size: 14px; color: var(--text2); font-weight: 500; }
 .seg[role="tablist"] { margin-bottom: 8px; } /* gap above the session card so the tabs don't run into it (Ben, 22 Oct) */
@@ -360,22 +362,39 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     let ex = [{ name: mn, kind: 'main', sets: 4, kg: mkg, comp: true }, ...acc, { name: d.extra[0], kind: 'extra', sets: 3, kg: d.extra[1] }, ...(s.abs ? [{ name: 'Cable crunch', kind: 'abs', sets: 3, kg: 40 }] : [])];
     // Deload transform (deloadDraft): loads × 0.9 rounded down, 1 set fewer (min 2). Today's draft only.
     if (deloadOn()) ex = ex.map((e) => ({ ...e, sets: Math.max(2, e.sets - 1), kg: e.kg == null ? null : floor25(e.kg) }));
-    const mins = (list, rest = 1) => { let m = 4; list.forEach((e) => { m += e.sets * (e.kind === 'main' ? 4 : e.comp ? 3 : 2.2) * rest + 1.5; }); if (s.ss && s.abs) m -= 5; return m; };
-    // Fit to time (fit-to-time.md; Ben, 22 Oct: the card really changes): shorter rests for a small gap, then accessory
-    // sets down to 2 (abs last), then the last accessories drop; the main lift is never cut.
-    let fitNote = '';
+    const mins = (list, rest = 1, ss = s.ss) => { let m = 4; list.forEach((e) => { m += e.sets * (e.kind === 'main' ? 4 : e.comp ? 3 : 2.2) * rest + 1.5; }); if (ss && s.abs && list.some((e) => e.kind === 'extra') && list.some((e) => e.kind === 'abs')) m -= 5; return m; };
+    // Fit to time, optimised (fit-to-time.md; Ben, 22 Oct). Free savings first: shorter rests, then supersets (no work
+    // lost). Then, one step at a time, the cut that loses the least training per minute saved: a set off an exercise
+    // (never below 2) or a whole exercise (saves its changeover too). Value per set: compound accessory 3, isolation 2,
+    // abs 2.5 (his choice), extra 1.5; the main lift is never cut. Sets lost are offered on the next Chest day.
+    const fit = { steps: [], ss: false, lost: 0 };
     if (mins(ex) > s.min) {
-      if (mins(ex, 0.85) <= s.min) fitNote = 'shorter rests';
-      else {
-        let cut = 0, dropped = 0;
-        const trimmable = () => ex.filter((e) => e.kind !== 'main' && e.sets > 2).sort((a, b) => (a.kind === 'abs') - (b.kind === 'abs'));
-        while (mins(ex, 0.85) > s.min && trimmable().length) { const e = trimmable().at(-1); e.sets -= 1; cut++; }
-        while (mins(ex, 0.85) > s.min && ex.filter((e) => e.kind !== 'main').length > 1) { const i = ex.map((e) => e.kind !== 'main' && e.kind !== 'abs').lastIndexOf(true); ex.splice(i >= 0 ? i : ex.length - 1, 1); dropped++; }
-        fitNote = dropped ? `${dropped} exercise${dropped > 1 ? 's' : ''} dropped` : `${cut} set${cut > 1 ? 's' : ''} fewer`;
+      let rest = 0.85; fit.steps.push('Shorter rests');
+      if (mins(ex, rest) > s.min && !s.ss && s.abs && mins(ex, rest, true) < mins(ex, rest)) { fit.ss = true; fit.steps.push('Supersets on (extra + abs)'); }
+      const val = (e) => e.kind === 'abs' ? 2.5 : e.kind === 'extra' ? 1.5 : e.comp ? 3 : 2;
+      const per = (e) => (e.kind === 'main' ? 4 : e.comp ? 3 : 2.2) * rest;
+      const before = Object.fromEntries(ex.map((e) => [e.name, e.sets]));
+      while (mins(ex, rest, s.ss || fit.ss) > s.min) {
+        const opts = [];
+        const over = mins(ex, rest, s.ss || fit.ss) - s.min;
+        ex.forEach((e, k) => { if (e.kind === 'main') return;
+          if (e.sets > 2) opts.push({ k, drop: false, lost: val(e), saves: per(e) });
+          if (ex.filter((x) => x.kind !== 'main').length > 1) opts.push({ k, drop: true, lost: val(e) * e.sets, saves: per(e) * e.sets + 1.5 }); });
+        if (!opts.length) break;
+        // If one cut is enough, take the one that loses least; otherwise the least lost per minute saved.
+        const enough = opts.filter((o) => o.saves >= over).sort((a, b) => a.lost - b.lost);
+        const o = enough[0] ?? opts.sort((a, b) => a.lost / a.saves - b.lost / b.saves)[0];
+        if (o.drop) ex.splice(o.k, 1); else ex[o.k].sets -= 1;
       }
-      return { mk, ex, mix, est: Math.min(s.min, Math.round(mins(ex, 0.85))), fitNote };
+      Object.entries(before).forEach(([n, b]) => { const e = ex.find((x) => x.name === n); if (!e) { fit.steps.push(`Dropped ${n}`); fit.lost += b; } else if (e.sets < b) { fit.steps.push(`${n} ${b} → ${e.sets} sets`); fit.lost += b - e.sets; } });
+      if (fit.ss && !(ex.some((e) => e.kind === 'extra') && ex.some((e) => e.kind === 'abs'))) { fit.ss = false; fit.steps = fit.steps.filter((t) => !t.startsWith('Supersets')); }
+      const cuts = fit.steps.filter((t) => /^Dropped|sets$/.test(t)).length;
+      const dropped = fit.steps.filter((t) => t.startsWith('Dropped')).length;
+      // The row shows the biggest change; tapping it lists everything that was combined.
+      fit.note = dropped ? `−${dropped} exercise${dropped > 1 ? 's' : ''}` : cuts ? `−${fit.lost} set${fit.lost > 1 ? 's' : ''}` : fit.ss ? 'supersets' : 'shorter rests';
+      return { mk, ex, mix, est: Math.min(s.min, Math.round(mins(ex, rest, s.ss || fit.ss))), fit, fitNote: fit.note };
     }
-    return { mk, ex, mix, est: Math.round(mins(ex)), fitNote };
+    return { mk, ex, mix, est: Math.round(mins(ex)), fit, fitNote: '' };
   }
   function weekStrip() {
     const [y, mo, dd] = TODAY[cur()];
@@ -390,7 +409,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const dr = draft(); const wt = weekText(); const mains = Object.keys(D[s.day].mains);
     const shown = Math.min(dr.est, s.min);
     let bl = dr.ex.map((e) => [e]);
-    if (s.ss && s.abs) { const ei = dr.ex.findIndex((e) => e.kind === 'extra'); if (ei >= 0 && dr.ex[ei + 1]) bl = [...dr.ex.slice(0, ei).map((e) => [e]), [dr.ex[ei], dr.ex[ei + 1]], ...dr.ex.slice(ei + 2).map((e) => [e])]; }
+    if ((s.ss || dr.fit?.ss) && s.abs) { const ei = dr.ex.findIndex((e) => e.kind === 'extra'); if (ei >= 0 && dr.ex[ei + 1]) bl = [...dr.ex.slice(0, ei).map((e) => [e]), [dr.ex[ei], dr.ex[ei + 1]], ...dr.ex.slice(ei + 2).map((e) => [e])]; }
     let n = 0;
     const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${WORKS[e.name] ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${fmt(e.kg)}</span></div>`;
     // Early-deload offer: one line, Apply (proposal verb) + ✕ (dismiss for the week). The reason sits in the card's Why?.
@@ -425,10 +444,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <div class="ctl">
           <div class="cr"><span class="k">Main lift</span><div class="types">${mains.map((m) => `<button class="ty${m === dr.mk ? ' on' : ''}" data-a="main" data-v="${m}">${m}</button>`).join('')}</div></div>
           <div class="cr"><span class="k">Accessories</span><div class="types">${['Focused', 'Varied'].map((m) => `<button class="ty${m === s.style ? ' on' : ''}" data-a="style" data-v="${m}">${m}</button>`).join('')}</div></div>
-          <div class="cr"><span class="k">Time${dr.fitNote ? `<span class="kn"> · ${dr.fitNote}</span>` : ''}</span><div class="val"><button class="mnb" data-a="min" data-v="-5" aria-label="5 minutes less">−</button><span class="tv">${s.min} min</span><button class="mnb" data-a="min" data-v="5" aria-label="5 minutes more">+</button></div></div>
+          <div class="cr"><span class="k">Time${dr.fitNote ? `<button class="kn" data-a="fitwhy">&nbsp;· ${dr.fitNote} ›</button>` : ''}</span><div class="val"><button class="mnb" data-a="min" data-v="-5" aria-label="5 minutes less">−</button><span class="tv">${s.min} min</span><button class="mnb" data-a="min" data-v="5" aria-label="5 minutes more">+</button></div></div>
           <div class="cr"><span class="k">Abs</span><button class="sw" data-a="abs" role="switch" aria-checked="${s.abs}" aria-label="Abs"><span class="switch${s.abs ? ' on' : ''}"><i></i></span></button></div>
           <div class="cr"><span class="k">Supersets</span><button class="sw" data-a="ss" role="switch" aria-checked="${s.ss}" aria-label="Supersets"><span class="switch${s.ss ? ' on' : ''}"><i></i></span></button></div>
         </div>
+        ${s.fitWhy && dr.fit.steps.length ? `<div class="fitwhy">${dr.fit.steps.map((t) => `<span>${t}</span>`).join('')}${dr.fit.lost >= 2 ? `<span class="carry">${s.noCarry ? `Not carried over <button class="link" data-a="carry">Carry over</button>` : `+${Math.min(4, dr.fit.lost)} sets on your next Chest day <button class="link" data-a="carry">Undo</button>`}</span>` : ''}</div>` : ''}
         <button class="bdt" data-a="toggle" aria-expanded="${s.open}"><span>Session breakdown</span><span class="chev">›</span></button>
         <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${bl.map((b) => { n++; const rows = b.map((e, i) => row(e, `${n}${b.length > 1 ? 'ab'[i] : ''}`)).join(''); return b.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join('')}</div>
         <details class="whyd"><summary>Why?</summary>${why}</details>
@@ -663,6 +683,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'style') { s.style = v; s.mix = false; }
     if (a === 'min') s.min = Math.max(20, Math.min(120, s.min + Number(v)));
     if (a === 'abs') s.abs = !s.abs;
+    if (a === 'fitwhy') s.fitWhy = !s.fitWhy;
+    if (a === 'carry') s.noCarry = !s.noCarry;
     if (a === 'ss') s.ss = !s.ss;
     if (a === 'mix') s.mix = true;
     if (a === 'unmix') s.mix = false;

@@ -1,5 +1,11 @@
 # Fit to time (How long? on the overview; built-in trim and coach fit)
 
+> **Revision 22 Oct (Ben): optimised built-in fit, plan-aware.** When the time is shorter than the session:
+> 1. **Free savings first:** shorter rests, then supersets if they're off (pairs work, loses none).
+> 2. **Then the cheapest cut, step by step:** a set off an exercise (never below 2) or a whole exercise (saves its changeover). If one cut is enough, the one that loses least; otherwise the least training lost per minute saved. Value per set: compound accessory 3, isolation 2, abs 2.5 (his choice), extra 1.5. The main lift is never cut.
+> 3. **The week is protected:** sets lost (2 or more) are offered on the next day for that muscle, capped at 4 (`+4 sets on your next Chest day · Undo`).
+> 4. **Honest, without moving the screen:** the Time row shows the biggest change in light orange after the label (`Time · −1 exercise ›`); tapping it lists everything combined (shorter rests, supersets, `Incline DB press 3 → 2 sets`, `Dropped Triceps pushdown`, the carry-over with Undo). The card's exercise count and minutes update. Prototype: training-blocks.html (Today with a plan).
+
 Status: v1.0 draft, 11 Oct 2026. Build slice C of the Workouts library change ([routines.md](routines.md) §A8). Ben: "on the edit before starting … an option to choose how long the session should be, and then using GPT or a pre-existing option the session gets updated to reflect that time period". Research: [workout-library-and-duration.md](../research/workout-library-and-duration.md) R2, R3. Mockup: [mockups/workout-library.html](mockups/workout-library.html) frames 3 and 4.
 
 Builds on [workout-overview.md](workout-overview.md) (TIME tile, OV3), [overview-today-edits.md](overview-today-edits.md) (pre-start draft, TE2, TE3, §11), [active-workout.md](active-workout.md) §2.15 (`estimateRemainingDuration`, Time left, `Finish by`, coach Shorten), [coach-adjustments.md](coach-adjustments.md) (CA1–CA3) and playbook v1 ("Session length: when time is short, keep the goal's priority order and cut sets, not load"). Rules: CLAUDE.md 1, 2, 3, 4, 5, 6, 9 and the minimal-copy convention.
