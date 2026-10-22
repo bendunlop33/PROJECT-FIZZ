@@ -1,14 +1,15 @@
 import { Fragment, type ReactNode } from 'react';
-import { Pressable, Switch, View, useWindowDimensions, type AccessibilityActionEvent } from 'react-native';
+import { Pressable, Switch, View, useWindowDimensions } from 'react-native';
 
 import { TODAY_V2_COPY, type StripCell, type StripItem, type TodayBreakdownRow, type TodayDay } from '@fizz/domain';
 
 import type { TodayCardView } from '../../services/today-session';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Icon, PrimaryButton, SecondaryButton, TextButton } from '../../ui';
+import { TimeStepper } from '../../ui/time-stepper';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { STRIP_LABEL_FIT, STRIP_LAYOUT, stripPillStyle } from '../../today/strip-style';
-import { breakdownLabel, TIME_LABELS, TODAY_SCREEN_COPY, type TodayCardAction, type TodaySegment } from '../../today/today-view';
+import { breakdownLabel, TODAY_SCREEN_COPY, type TodayCardAction, type TodaySegment } from '../../today/today-view';
 
 /**
  * Today (v2)'s pieces (workout-builder-v3 §2.0, prototypes/today-v2.html). They only lay out what
@@ -371,34 +372,6 @@ function ToggleRow({ label, sub, value, onChange }: { label: string; sub?: strin
         <Switch value={value} accessible={false} />
       </View>
     </Pressable>
-  );
-}
-
-function TimeStepper({ minutes, onStep }: { minutes: number; onStep: (d: -1 | 1) => void }) {
-  const theme = useTheme();
-  const btn = (d: -1 | 1) => (
-    <Pressable accessibilityRole="button" accessibilityLabel={d < 0 ? TIME_LABELS.less : TIME_LABELS.more} hitSlop={HIT} onPress={() => { onStep(d); }} style={({ pressed }) => ({ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors['border.divider'], opacity: pressed ? 0.7 : 1 })}>
-      <AppText variant="label">{d < 0 ? '−' : '+'}</AppText>
-    </Pressable>
-  );
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-      {btn(-1)}
-      <View
-        accessible
-        accessibilityRole="adjustable"
-        accessibilityLabel={TIME_LABELS.value(minutes)}
-        accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-        onAccessibilityAction={(e: AccessibilityActionEvent) => {
-          onStep(e.nativeEvent.actionName === 'increment' ? 1 : -1);
-        }}
-      >
-        <AppText variant="label" numeric style={{ minWidth: 64, textAlign: 'center' }}>
-          {TODAY_V2_COPY.minutesValue(minutes)}
-        </AppText>
-      </View>
-      {btn(1)}
-    </View>
   );
 }
 

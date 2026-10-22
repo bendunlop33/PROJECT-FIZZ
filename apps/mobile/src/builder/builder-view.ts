@@ -1,4 +1,4 @@
-import { canAddWarmup, cardioValuesText, clampBuilderRest, isTimedRow, slotsOf, spokenDistance, spokenDuration, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
+import { canAddWarmup, cardioValuesText, clampBuilderRest, FIT_RULES, isTimedRow, slotsOf, spokenDistance, spokenDuration, stepTimeMinutes, TODAY_V2_COPY, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderGroup } from '@fizz/schemas';
 
 import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from './builder-service';
@@ -84,6 +84,17 @@ export const WORKOUT_COPY = {
   saveToWorkouts: 'Save to Workouts',
   saved: (name: string) => `Saved ${name}`,
   nothingToSave: 'Nothing to save',
+} as const;
+
+/** (22 Oct) Your workout's Time row and the detail behind its note (minimal copy: values and actions). */
+export const TIME_COPY = {
+  label: 'Time',
+  undo: 'Undo',
+  done: 'Done',
+  shorter: 'Shorter rests',
+  shortest: 'Shortest rests',
+  sets: (name: string, from: number, to: number) => `${name} ${String(from)} → ${String(to)} sets`,
+  dropped: (name: string) => `Dropped ${name}`,
 } as const;
 
 export const PROMPT_COPY = {
@@ -231,8 +242,27 @@ export interface WorkoutRoundView {
   rows: WorkoutRowView[];
 }
 
+/** (22 Oct) Your workout's Time: `Time · −1 exercise ›  [−] 45 min [+]`, the same control as Today's. */
+export interface TimeRowView {
+  minutes: number;
+  /** `45 min`. */
+  valueText: string;
+  /** The biggest change a live fit made, after the label in light orange (`−1 exercise`, `−2 sets`, `shorter rests`); null: none. */
+  note: string | null;
+  /** Everything it changed, behind the note: `Shorter rests`, `Incline DB press 3 → 2 sets`, `Dropped Triceps pushdown`. */
+  lines: string[];
+  /** The detail's `Undo`: back to this length and the workout as it was before the first change; null: nothing to undo. */
+  undoMinutes: number | null;
+  /** The next length down and up (5-minute steps, 15–180); null at a limit. */
+  less: number | null;
+  more: number | null;
+  /** VoiceOver for the note: `Time changes: −1 exercise`. */
+  noteLabel: string | null;
+}
+
 export interface WorkoutPageView {
   title: string;
+  time: TimeRowView;
   /** `⚠ Over 20 min` when even the minimum is over the length. */
   overLine: string | null;
   topHeader: string;
@@ -308,6 +338,7 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
   });
   return {
     title: `${snap.setup.dayName} · about ${String(snap.minutes)} min`,
+    time: timeRowView(snap),
     overLine: snap.over ? `⚠ Over ${String(snap.setup.minutes)} min` : null,
     topHeader: `${WORKOUT_COPY.topSet} (${snap.unit})`,
     rounds,
@@ -330,6 +361,54 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
           return { text: `Not applied: ${n(op.exerciseId)} sets`, add: [] };
       }
     }),
+  };
+}
+
+/**
+ * The Time row (22 Oct): the length, its steps, and what a live fit changed (from the service's `time`). The note is
+ * the biggest change: exercises left out, else sets fewer, else shorter rests. Values only.
+ */
+export function timeRowView(snap: BuilderSnapshot): TimeRowView {
+  const minutes = snap.setup.minutes;
+  const changes = snap.time?.changes ?? [];
+  const name = (id: string) => snap.facts[id]?.name ?? 'Exercise';
+  const lines: string[] = [];
+  let rest: string | null = null;
+  let sets = 0;
+  let dropped = 0;
+  for (const c of changes) {
+    switch (c.kind) {
+      case 'rest':
+        if (c.to === 'shorter' || c.to === 'shortest') {
+          rest = c.to === 'shorter' ? 'shorter rests' : 'shortest rests';
+          lines.unshift(c.to === 'shorter' ? TIME_COPY.shorter : TIME_COPY.shortest);
+        }
+        break;
+      case 'sets':
+        sets += c.from - c.to;
+        lines.push(TIME_COPY.sets(name(c.exerciseId), c.from, c.to));
+        break;
+      case 'drop':
+        dropped += 1;
+        lines.push(TIME_COPY.dropped(name(c.exerciseId)));
+        break;
+      case 'effort':
+      case 'add':
+        break;
+    }
+  }
+  const note = dropped > 0 ? `−${String(dropped)} ${dropped === 1 ? 'exercise' : 'exercises'}` : sets > 0 ? `−${String(sets)} ${sets === 1 ? 'set' : 'sets'}` : rest;
+  const less = stepTimeMinutes(minutes, -1);
+  const more = stepTimeMinutes(minutes, 1);
+  return {
+    minutes,
+    valueText: TODAY_V2_COPY.minutesValue(minutes),
+    note,
+    lines,
+    undoMinutes: note === null || snap.time === null ? null : snap.time.fromMinutes,
+    less: minutes <= FIT_RULES.minMinutes || less === minutes ? null : less,
+    more: minutes >= FIT_RULES.maxMinutes || more === minutes ? null : more,
+    noteLabel: note === null ? null : `Time changes: ${note}`,
   };
 }
 

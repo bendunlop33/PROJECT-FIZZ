@@ -169,7 +169,9 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     // Strip cells: seven equal columns (flex 1, basis 0), each ≥ 44 pt at 375 pt (20 pt margins, 2 pt gaps, the divider).
     expect(parts).toMatch(/flex: 1,\s*flexBasis: 0,\s*minWidth: 0,/);
     expect((375 - 2 * 20 - 6 * 2 - 1) / 7).toBeGreaterThanOrEqual(44);
-    expect(parts).toContain("accessibilityRole=\"adjustable\"");
+    // The Time stepper (shared with Your workout since 22 Oct): one adjustable element.
+    expect(parts).toContain('<TimeStepper minutes={view.controls.minutes}');
+    expect(read('ui/time-stepper.tsx')).toContain("accessibilityRole=\"adjustable\"");
     expect(parts).toContain('fontScale >= AX_FONT_SCALE');
     expect(parts.match(/if \(ax\) \{/g)).toHaveLength(2);
     // No swipe gestures on Today (§2.0.5): every action is a tap.

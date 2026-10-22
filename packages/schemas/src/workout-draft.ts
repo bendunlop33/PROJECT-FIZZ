@@ -371,6 +371,20 @@ export const BuilderSetupSchema = z.object({
   sourceVersion: z.int().min(1).optional(),
   /** (Review B1) Exercises of that workout Your workout can't hold (one it can't find, past its limits): `N left out`. Cardio, timed sets and a second copy are held (22 Oct). */
   leftOut: z.array(IdSchema).max(BUILD_LIMITS.maxExercises * 3).optional(),
+  /**
+   * (22 Oct, Your workout's Time) A live fit to a shorter time: the workout before the first Time change (`base`,
+   * its rest level), its length then, and the slots the fit left out (they come back when the time allows). Today's
+   * draft only: Start creates the fitted workout; the saved workout and the plan never get it. Cleared when the
+   * gym, the source or the coach rebuilds the workout.
+   */
+  timeFit: z
+    .object({
+      base: DraftPlanSchema,
+      baseRestLevel: z.enum(['normal', 'shorter', 'shortest']).optional(),
+      fromMinutes: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes),
+      dropped: z.array(IdSchema).max(BUILD_LIMITS.maxExercises),
+    })
+    .optional(),
 });
 export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
 

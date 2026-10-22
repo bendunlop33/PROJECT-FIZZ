@@ -58,6 +58,11 @@ import {
   checkedOnOf,
   draftSavedRoutineId,
   plannedAsDraftPlan,
+  fitWorkoutToTime,
+  timeFitChanges,
+  unfitWorkout,
+  type BuilderFitStep,
+  type BuilderTimeFit,
   type BuilderAdvice,
   type BuilderEditBasis,
   type BuilderEditOp,
@@ -225,6 +230,11 @@ export interface BuilderSnapshot {
   canSave: boolean;
   /** (Review B1) Names of the exercises of that workout Your workout can't hold (one it can't find, past its limits): `N left out`. */
   leftOut: string[];
+  /**
+   * (22 Oct) Your workout's Time with a live fit: what it changed against the workout before the first Time change
+   * (Ben's later edits counted) and the length the detail's `Undo` goes back to. Null: no fit (the original stands).
+   */
+  time: { fromMinutes: number; changes: BuilderFitStep[] } | null;
 }
 
 export type BuilderWriteResult =
@@ -697,6 +707,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     for (const x of notApplied) for (const id of x.op.kind === 'add_slot' ? [x.op.slot.exerciseId] : x.op.kind === 'pair' ? [x.op.a, x.op.b] : [x.op.exerciseId]) facts[id] ??= { name: env.nameOf(id), works: env.worksOf(id), group: env.info(id)?.group ?? null, compound: env.info(id)?.role === 'compound', mayHurt: env.painFlagged(id), notHere: false, hasHistory: env.hasHistory(id) };
     const here = d.status === 'open' ? await deps.currentGym().catch(() => null) : null;
     const gymChanged = here !== null && here.id !== v.request.gymId && here.id !== stored?.gymKept;
+    // (22 Oct) Your workout's Time: what a live fit changed, with names for what it left out.
+    const fit = timeFitOf(stored);
+    const time = fit === null ? null : { fromMinutes: fit.fromMinutes, changes: timeFitChanges(fit, workout) };
+    for (const st of time?.changes ?? []) if (st.kind === 'drop') facts[st.exerciseId] ??= { name: env.nameOf(st.exerciseId), works: env.worksOf(st.exerciseId), group: env.info(st.exerciseId)?.group ?? null, compound: env.info(st.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(st.exerciseId), notHere: false, hasHistory: env.hasHistory(st.exerciseId) };
     return {
       draftId: d.id,
       version: d.version,
@@ -721,6 +735,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       from: key?.from ?? null,
       canSave: planDay === null && stored?.templateRoutineId === undefined && key?.from?.kind !== 'routine' && !chatSaved,
       leftOut,
+      time,
     };
   }
 
@@ -798,14 +813,16 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const template = stored?.templateRoutineId === undefined ? null : await repos().routines.get(stored.templateRoutineId).catch(() => null);
     // The template Ben's edits were made on must be the one stored now (rule 5; review S2).
     if (template === null || stored?.templateVersion === undefined || template.version !== stored.templateVersion) return { ok: false, reason: 'plan_changed', message: BUILDER_COPY.planChanged };
-    const current = fromDraftPlan(v.plan, stored.restLevel ?? 'normal');
+    // (22 Oct) Time is today's only: the plan gets Ben's changes, never what a Time fit cut.
+    const current = untimed(stored, fromDraftPlan(v.plan, stored.restLevel ?? 'normal'));
     const env = await envFor(p, { exerciseIds: [...template.exercises.map((e) => e.exerciseId), ...exerciseIdsOf(current)], keySeed: 'start' });
+    const plan = stored.timeFit === undefined ? v.plan : toDraftPlan(current, env.codec);
     const variations = await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId);
     const open = setup.variationId === null ? null : (variations.find((x) => x.id === setup.variationId) ?? null);
     const t = await deps.training().catch(() => null);
     const label = planLabel(setup, env, null);
     if (choice.kind === 'update' && open === null) {
-      const exercises = templateExercisesOf(template, d, opId, at.utc);
+      const exercises = templateExercisesOf(template, d, opId, at.utc, plan);
       // An older plan workout gains its `planDay` key on this write (§4.2: derived on read, written only by a change);
       // the plan day's length becomes the set-up's (review S8).
       const planDayField = template.planDay !== undefined ? { ...template.planDay, minutes: setup.minutes } : key?.planId != null && key.dayIndex !== null && key.splitDayId !== null ? { planId: key.planId, dayIndex: key.dayIndex, splitDayId: key.splitDayId, mainLiftExerciseId: key.mainLiftExerciseId, minutes: setup.minutes } : undefined;
@@ -965,6 +982,31 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         return { status: 'refused', reason: 'no_such_exercise', message: BUILDER_COPY.failed, snapshot: null };
     }
   }
+
+  /** (22 Oct) The live Time fit a stored set-up holds, as the builder's workout; null: none. */
+  const timeFitOf = (stored: BuilderSetup | null | undefined): BuilderTimeFit | null => {
+    const t = stored?.timeFit;
+    return t === undefined ? null : { base: fromDraftPlan(t.base, t.baseRestLevel ?? 'normal'), fromMinutes: t.fromMinutes, dropped: t.dropped };
+  };
+
+  /** (22 Oct) The workout with what a live Time fit cut put back (Start prompt and plan writes never see the fit). */
+  const untimed = (stored: BuilderSetup | null | undefined, w: BuilderWorkout): BuilderWorkout => {
+    const t = timeFitOf(stored);
+    return t === null ? w : unfitWorkout(t, w);
+  };
+
+  /**
+   * (22 Oct) A set-up whose workout is being rebuilt (Reload, the coach's version): no live Time fit; when one was
+   * live, back to its length and rest level before the first Time change (the rebuilt workout isn't fitted).
+   */
+  const withoutTimeFit = (stored: BuilderSetup): BuilderSetup => {
+    const out: BuilderSetup = { ...stored };
+    const t = stored.timeFit;
+    delete out.timeFit;
+    if (t === undefined) return out;
+    delete out.restLevel;
+    return { ...out, minutes: t.fromMinutes, ...(t.baseRestLevel === undefined || t.baseRestLevel === 'normal' ? {} : { restLevel: t.baseRestLevel }) };
+  };
 
   /** A stored set-up with the version and the left-out exercises of what it was opened on. */
   const withSource = (stored: BuilderSetup, src: { sourceVersion: number | null; leftOut: string[] }): BuilderSetup => {
@@ -1225,8 +1267,44 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const plan = withSlotRevs(v.plan, withItems).plan;
         const setup: BuilderSetup = { ...stored };
         delete setup.gymKept;
-        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, gymId: gym.id, undoSetup: { ...setup, gymKept: gym.id }, undoable: true });
+        // (22 Oct) The loads were worked out again here: a live Time fit's original (old gym's loads) can't come back;
+        // the fitted workout stands. Undo puts the gym, the workout and the fit back.
+        delete setup.timeFit;
+        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, gymId: gym.id, undoSetup: { ...stored, gymKept: gym.id }, undoable: true });
         return { change, env, toast: { text: BUILDER_COPY.gymChanged, undoOpId: w.opId, why: null } };
+      });
+    },
+
+    /**
+     * (22 Oct, Ben: "add option to reduce time") Your workout's Time: the same built-in fit as Today's Time control
+     * (`fitWorkoutToTime` over `fitToMinutes`; no coach call, works offline), on today's draft only, never the saved
+     * workout or the plan. Shorter: rests first, then accessory sets, then whole exercises, never the main lift, no
+     * supersets made. Longer brings back what it cut, up to the workout as it was before the first change, never
+     * more. One versioned write under `opId` (rule 5), undoable like any edit; the detail's `Undo` is
+     * `setTime(fromMinutes)`, which puts the original back with Ben's later edits kept.
+     */
+    async setTime(draftId: string, minutes: number, w: { opId: string; expectedVersion: number }): Promise<BuilderWriteResult> {
+      const p = await owner();
+      return writeDraft(p, draftId, async (current) => {
+        const v = currentDraftVersion(current);
+        const stored = builderSetupOf(current) ?? storedSetup(pageSetup(current), {});
+        const workout = fromDraftPlan(v.plan, stored.restLevel ?? 'normal');
+        const fit = timeFitOf(stored);
+        const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(workout), ...exerciseIdsOf(fit?.base ?? null)], keySeed: `${current.id}:${w.opId}` });
+        if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env, toast: null };
+        const main = slotsOf(workout.blocks).find((x) => x.main);
+        const mainGroup = (main === undefined ? undefined : env.info(main.exerciseId)?.group) ?? ruleSetupOf(stored).groups[0]?.group ?? null;
+        const r = fitWorkoutToTime({ current: workout, fit, minutes: stored.minutes, to: minutes, ctx: env.ctx, mainGroup, supersets: stored.supersets });
+        const plan = withSlotRevs(v.plan, toDraftPlan(r.workout, env.codec)).plan;
+        const setup: BuilderSetup = { ...stored, minutes: r.minutes };
+        delete setup.timeFit;
+        delete setup.restLevel;
+        if (r.workout.restLevel !== 'normal') setup.restLevel = r.workout.restLevel;
+        if (r.fit !== null) setup.timeFit = { base: toDraftPlan(r.fit.base, env.codec), ...(r.fit.base.restLevel === 'normal' ? {} : { baseRestLevel: r.fit.base.restLevel }), fromMinutes: r.fit.fromMinutes, dropped: [...r.fit.dropped] };
+        // The same length and workout again (a repeated tap at a limit): nothing to write.
+        if (stableStringify(setup) === stableStringify(stored) && stableStringify(plan) === stableStringify(v.plan)) return { change: { kind: 'duplicate', current }, env, toast: null };
+        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, undoable: true });
+        return { change, env, toast: null };
       });
     },
 
@@ -1332,7 +1410,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           const env = await envFor(p, { gymId: 'closed' in src ? v.request.gymId : src.gymId, exerciseIds: ids, keySeed: `${current.id}:${w.opId}` });
           if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env, toast: null };
           if ('closed' in src || src.plan.slots.length === 0) return { refused: 'changed_since', env };
-          const prev = builderSetupOf(current) ?? storedSetup(pageSetup(current), {});
+          const prev = withoutTimeFit(builderSetupOf(current) ?? storedSetup(pageSetup(current), {}));
           const workout = fromDraftPlan(src.plan);
           const setup = withSource({ ...prev, groups: storedGroupsOf(groupsOfWorkout(workout, env)), mainLiftExerciseId: src.main !== null && slotsOf(workout.blocks).some((x) => x.exerciseId === src.main) ? src.main : null }, src);
           const plan = withSlotRevs(v.plan, src.plan).plan;
@@ -1348,11 +1426,14 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           });
           return { change, env, toast: w.silent === true ? null : { text: BUILDER_COPY.reloaded, undoOpId: w.opId, why: null } };
         }
-        const setup = pageSetup(current);
+        // (22 Oct) A live Time fit doesn't carry over to the reloaded day: its length and rests before the first change.
+        const before = builderSetupOf(current);
+        const back = before === null ? null : withoutTimeFit(before);
+        const setup = { ...pageSetup(current), ...(back === null ? {} : { minutes: back.minutes }) };
         const built = await buildFor(p, { ...setup, groupsEdited: false }, `${current.id}:${w.opId}`, v.request.gymId);
         if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env: built.env, toast: null };
         if (built.plan === null) return { refused: 'changed_since', env: built.env };
-        const stored = storedSetup({ ...setup, groups: groupsOfWorkout(built.workout, built.env), groupsEdited: false }, { ...openedVersions(built), ...(builderSetupOf(current)?.restLevel === undefined ? {} : { restLevel: builderSetupOf(current)?.restLevel }) });
+        const stored = storedSetup({ ...setup, groups: groupsOfWorkout(built.workout, built.env), groupsEdited: false }, { ...openedVersions(built), ...(back?.restLevel === undefined ? {} : { restLevel: back.restLevel }) });
         const plan = withSlotRevs(v.plan, toDraftPlan(built.workout, built.env.codec)).plan;
         const day = buildDayOf(setup);
         const change = builderDraftEdit(current, {
@@ -1470,7 +1551,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       if (stored?.templateRoutineId === undefined) return null;
       const template = await repos().routines.get(stored.templateRoutineId).catch(() => null);
       if (template === null) return null;
-      const current = fromDraftPlan(currentDraftVersion(d).plan, stored.restLevel ?? 'normal');
+      // (22 Oct) A Time fit is today's only: it never makes Start ask to change the plan.
+      const current = untimed(stored, fromDraftPlan(currentDraftVersion(d).plan, stored.restLevel ?? 'normal'));
       const setup = pageSetup(d);
       const variations = await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId);
       const variation = setup.variationId === null ? null : (variations.find((v) => v.id === setup.variationId) ?? null);
@@ -1752,6 +1834,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const stored = builderSetupOf(d) ?? storedSetup(pageSetup(d), {});
       const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: exerciseIdsOf(req.workout), keySeed: `${d.id}:${req.opId}` });
       const setup: BuilderSetup = { ...stored, minutes: Math.max(BUILD_LIMITS.minMinutes, Math.min(BUILD_LIMITS.maxMinutes, Math.round(req.minutes))) };
+      // (22 Oct) The coach's version is the workout now: a live Time fit's original no longer matches it.
+      delete setup.timeFit;
       const plan = withSlotRevs(v.plan, toDraftPlan(req.workout, env.codec)).plan;
       // The pre-session offer over Today's own content stays Today's card (integrity B2); over Ben's edit it's an edit.
       const own = req.nudge === true ? todayDraftState(d) : { state: 'edited' as const };
@@ -1873,8 +1957,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   };
 
   /** The template's exercises after `Update … in your plan`: the draft's structure, loads left to the rules each week (Q6: typed kg stays today only). */
-  function templateExercisesOf(template: Routine, d: WorkoutDraft, opId: string, atUtc: string): RoutineExercise[] {
-    const v = currentDraftVersion(d);
+  function templateExercisesOf(template: Routine, d: WorkoutDraft, opId: string, atUtc: string, plan: DraftPlan): RoutineExercise[] {
+    const v = { ...currentDraftVersion(d), plan };
     const asRoutine = draftAsRoutine(d, v);
     const old = new Map(template.exercises.map((e) => [e.exerciseId, e]));
     const slots = new Map(v.plan.slots.map((s) => [s.slotKey, s]));

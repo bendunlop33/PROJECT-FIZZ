@@ -6,24 +6,31 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { catalogueExerciseId, slotsOf } from '@fizz/domain';
 import type { Routine, RoutineExercise } from '@fizz/schemas';
 
+import type { ModelEvent, ModelRequest } from '@fizz/coach';
+
 import type { BuilderSnapshot, BuilderWriteResult } from '../src/builder/builder-service';
-import { popupLinks } from '../src/builder/builder-view';
+import { popupLinks, timeRowView, workoutView } from '../src/builder/builder-view';
 import type { AppServices } from '../src/services/app-services';
 import { swapPainConfirm } from '../src/ui/swap-sheet-model';
+import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
  * Your workout, Ben's 22 Oct batch (the Workout overview's retirement follow-ups), on real SQLite, offline:
  * - the `May hurt` confirm before swapping to a flagged exercise (rule 9), as the overview had it;
  * - `How to` and `History` in the row pop-up, where the overview's rows had them;
- * - cardio, timed sets and the same exercise twice on Your workout, as saved (more in builder-open-sources B1).
+ * - cardio, timed sets and the same exercise twice on Your workout, as saved (more in builder-open-sources B1);
+ * - Time on Your workout (Ben: "add option to reduce time"): Today's built-in fit on today's draft only, no coach.
  */
 
 const DAY = 86_400_000;
 const read = (p: string) => readFileSync(join(__dirname, '..', 'src', p), 'utf8');
 let h: Harness;
+let model: StepModel;
 beforeEach(() => {
-  h = createHarness('2026-10-05T07:00:00.000Z');
+  // A connected coach that is only used to build a plan: Your workout's Time never calls it.
+  model = new StepModel([]);
+  h = createHarness('2026-10-05T07:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(CONNECTED) } });
 });
 afterEach(async () => {
   await h.cleanup();
@@ -145,5 +152,313 @@ describe('cardio, timed sets and an exercise twice (as saved)', () => {
     if (moved.status !== 'written') throw new Error(moved.status);
     expect(moved.snapshot.gymId).toBe(other);
     expect(work(moved.snapshot)).toEqual([[42.5], [50, 50, 50], [60]]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Time (22 Oct, Ben: "add option to reduce time")
+
+async function bigPush(s: AppServices) {
+  const gymId = await setUpGym(h, s);
+  const three = (load: number, reps: number) => [0, 1, 2].map(() => ({ load, reps, rpe: 8 }));
+  const sid = await logWorkout(h, s, gymId, [
+    { exercise: 'Bench press', sets: three(100, 6) },
+    { exercise: 'Incline dumbbell press', sets: three(27.5, 9) },
+    { exercise: 'Face pull', sets: three(20, 12) },
+    { exercise: 'Triceps pushdown', sets: three(30, 12) },
+    { exercise: 'Lateral raise', sets: three(8, 12) },
+  ]);
+  h.clockMs += DAY;
+  return { gymId, routine: await saved(s, sid, 'Push B') };
+}
+
+/** Every slot as it would start: exercise, then each set's type, reps, load and RPE; and the rest level. */
+const shapeOf = (x: BuilderSnapshot) => ({ rest: x.workout.restLevel, blocks: x.workout.blocks.map((b) => b.slots.map((sl) => `${x.facts[sl.exerciseId]?.name ?? '?'}:${sl.rows.map((r) => `${r.type}/${String(r.reps)}/${String(r.load)}/${String(r.rpe)}`).join(',')}`)) });
+
+async function cutUntilDropped(s: AppServices, snap0: BuilderSnapshot): Promise<BuilderSnapshot> {
+  let snap = snap0;
+  for (let i = 0; i < 12 && snap.time?.changes.some((c) => c.kind === 'drop') !== true; i += 1) {
+    const to = workoutView(snap).time.less;
+    if (to === null) break;
+    snap = opened(await s.builder.setTime(snap.draftId, to, { opId: `less-${String(snap.version)}`, expectedVersion: snap.version }));
+  }
+  return snap;
+}
+
+describe('Time on Your workout: the same built-in fit as Today’s, today’s draft only, no coach', () => {
+  it('a saved workout gets shorter (rests, then sets, then a whole exercise, never the main lift), with a note and its detail; Start creates the shorter workout; the saved workout is untouched; no coach call', async () => {
+    const { services: s } = await h.launch();
+    const { routine } = await bigPush(s);
+    const saved0 = (await s.routines.editor({ routineId: routine.id, gymId: null }))?.routine;
+    const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: routine.id }, 'open-time'));
+    const v0 = workoutView(snap0);
+    expect(v0.time).toMatchObject({ minutes: snap0.setup.minutes, note: null, lines: [], undoMinutes: null });
+    expect(snap0.time).toBeNull();
+    const asked = model.requests.length;
+
+    // One step: the length drops; rests go first.
+    const one = opened(await s.builder.setTime(snap0.draftId, v0.time.less ?? 0, { opId: 'less-first', expectedVersion: snap0.version }));
+    expect(one.setup.minutes).toBe(v0.time.less);
+    expect(one.time?.changes[0]).toMatchObject({ kind: 'rest', from: 'normal' });
+
+    const short = await cutUntilDropped(s, one);
+    const v = workoutView(short);
+    expect(v.time.note).toMatch(/^−\d+ exercises?$/);
+    expect(v.time.lines.some((l) => l === 'Shorter rests' || l === 'Shortest rests')).toBe(true);
+    expect(v.time.lines.some((l) => l.startsWith('Dropped '))).toBe(true);
+    expect(v.time.undoMinutes).toBe(snap0.setup.minutes);
+    expect(short.minutes).toBeLessThan(snap0.minutes);
+    expect(v.title).toBe(`Push B · about ${String(short.minutes)} min`);
+    // The main lift stays with all its sets; nothing is ever added or made heavier.
+    const benchBefore = slotsOf(snap0.workout.blocks).find((x) => snap0.facts[x.exerciseId]?.name === 'Bench press');
+    const benchAfter = slotsOf(short.workout.blocks).find((x) => short.facts[x.exerciseId]?.name === 'Bench press');
+    expect(benchAfter?.rows.map((r) => [r.type, r.reps, r.load, r.rpe])).toEqual(benchBefore?.rows.map((r) => [r.type, r.reps, r.load, r.rpe]));
+    const before = new Map(slotsOf(snap0.workout.blocks).map((x) => [x.key, x]));
+    for (const sl of slotsOf(short.workout.blocks)) {
+      const was = before.get(sl.key);
+      expect(was).toBeDefined();
+      expect(sl.rows.length).toBeLessThanOrEqual(was?.rows.length ?? 0);
+      sl.rows.forEach((r, i) => {
+        expect(r.load).toBe(was?.rows[i]?.load);
+        expect(r.rpe).toBe(was?.rows[i]?.rpe);
+      });
+    }
+    // Supersets were off: none made.
+    expect(short.workout.blocks.every((b) => b.slots.length === 1)).toBe(true);
+    expect(model.requests.length).toBe(asked);
+
+    // Start creates the shorter workout, as shown.
+    const started = await s.builder.start(short.draftId, { choice: { kind: 'today' }, opId: 'start-short', expectedVersion: short.version, checkIn: null });
+    if (!started.ok) throw new Error(started.message);
+    const a = (await s.workout.load(started.sessionId))?.aggregate;
+    const live = [...(a?.exercises ?? [])].filter((e) => e.removed === undefined).sort((x, y) => x.order - y.order);
+    expect(live.map((e) => e.exerciseId)).toEqual(slotsOf(short.workout.blocks).map((x) => x.exerciseId));
+    for (const [i, sl] of slotsOf(short.workout.blocks).entries()) expect(a?.sets.filter((x) => x.sessionExerciseId === live[i]?.id && x.setType !== 'warmup').length).toBe(sl.rows.filter((r) => r.type !== 'warmup').length);
+    // Today only: the saved workout is as it was.
+    const saved1 = (await s.routines.editor({ routineId: routine.id, gymId: null }))?.routine;
+    expect(saved1?.version).toBe(saved0?.version);
+    expect(saved1?.exercises).toEqual(saved0?.exercises);
+  });
+
+  it('more time brings back what it cut, up to the original (never more); the detail’s Undo puts the original back in one step', async () => {
+    const { services: s } = await h.launch();
+    const { routine } = await bigPush(s);
+    const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: routine.id }, 'open-back'));
+    const short = await cutUntilDropped(s, snap0);
+    expect(shapeOf(short)).not.toEqual(shapeOf(snap0));
+    // Step back up: each step brings back some; at the original length it is the original exactly.
+    let snap = short;
+    for (let i = 0; i < 12 && workoutView(snap).time.note !== null; i += 1) {
+      const to = workoutView(snap).time.more;
+      if (to === null) break;
+      snap = opened(await s.builder.setTime(snap.draftId, to, { opId: `more-${String(i)}`, expectedVersion: snap.version }));
+    }
+    expect(shapeOf(snap)).toEqual(shapeOf(snap0));
+    expect(snap.time).toBeNull();
+    // Longer still: nothing added.
+    const longer = opened(await s.builder.setTime(snap.draftId, snap.setup.minutes + 30, { opId: 'longer', expectedVersion: snap.version }));
+    expect(shapeOf(longer)).toEqual(shapeOf(snap0));
+    // Cut again, then the detail's Undo: one write, the original back at the last length that needed no cut (the
+    // steps down from 75 that changed nothing aren't a fit).
+    const again = await cutUntilDropped(s, longer);
+    const undoTo = workoutView(again).time.undoMinutes;
+    expect(undoTo).toBe(again.time?.fromMinutes);
+    expect(undoTo ?? 0).toBeLessThan(longer.setup.minutes);
+    const undone = opened(await s.builder.setTime(again.draftId, undoTo ?? 0, { opId: 'undo-time', expectedVersion: again.version }));
+    expect(undone.version).toBe(again.version + 1);
+    expect(shapeOf(undone)).toEqual(shapeOf(snap0));
+    expect(undone.setup.minutes).toBe(undoTo);
+    expect(undone.over).toBe(false);
+    expect(workoutView(undone).time.note).toBeNull();
+  });
+
+  it('idempotent and versioned: a retried op ID writes once; a stale version writes nothing; a force-close keeps the fit, and more time still restores after relaunch', async () => {
+    let { services: s } = await h.launch();
+    const { routine } = await bigPush(s);
+    const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: routine.id }, 'open-ops'));
+    const to = workoutView(snap0).time.less ?? 0;
+    const first = await s.builder.setTime(snap0.draftId, to - 10, { opId: 'time-1', expectedVersion: snap0.version });
+    expect(first.status).toBe('written');
+    const retry = await s.builder.setTime(snap0.draftId, to - 10, { opId: 'time-1', expectedVersion: snap0.version });
+    expect(retry.status).toBe('replayed');
+    const cut = opened(first);
+    expect(opened(retry).version).toBe(cut.version);
+    const stale = await s.builder.setTime(snap0.draftId, to - 20, { opId: 'time-2', expectedVersion: snap0.version });
+    expect(stale.status).toBe('stale');
+    expect((await s.builder.read(snap0.draftId))?.version).toBe(cut.version);
+    // The same length again writes nothing.
+    expect((await s.builder.setTime(cut.draftId, cut.setup.minutes, { opId: 'same', expectedVersion: cut.version })).status).toBe('replayed');
+
+    await h.forceClose();
+    ({ services: s } = await h.launch());
+    const read = await s.builder.read(cut.draftId);
+    if (read === null) throw new Error('gone');
+    expect(shapeOf(read)).toEqual(shapeOf(cut));
+    expect(read.time?.fromMinutes).toBe(snap0.setup.minutes);
+    expect(workoutView(read).time.note).toBe(workoutView(cut).time.note);
+    const back = opened(await s.builder.setTime(read.draftId, snap0.setup.minutes, { opId: 'back', expectedVersion: read.version }));
+    expect(shapeOf(back)).toEqual(shapeOf(snap0));
+  });
+
+  it('Ben’s edit after a fit stays when time comes back; Gym changed keeps the shorter workout (its loads worked out again) and its Undo brings the fit back', async () => {
+    const { services: s } = await h.launch();
+    const { routine } = await bigPush(s);
+    const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: routine.id }, 'open-edit'));
+    const short = await cutUntilDropped(s, snap0);
+    const dropped = (short.time?.changes ?? []).flatMap((c) => (c.kind === 'drop' ? [c.slotKey] : []));
+    const bench = slotsOf(short.workout.blocks).find((x) => short.facts[x.exerciseId]?.name === 'Bench press');
+    if (bench === undefined) throw new Error('no bench');
+    const edited = opened(await s.builder.edit(short.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'bench-set', basis: { version: short.version } }));
+    const benchRows = slotsOf(edited.workout.blocks).find((x) => x.key === bench.key)?.rows.length ?? 0;
+    expect(benchRows).toBe(bench.rows.length + 1);
+    expect(workoutView(edited).time.note).toBe(workoutView(short).time.note);
+    const back = opened(await s.builder.setTime(edited.draftId, snap0.setup.minutes, { opId: 'back-edit', expectedVersion: edited.version }));
+    for (const k of dropped) expect(slotsOf(back.workout.blocks).some((x) => x.key === k)).toBe(true);
+    expect(slotsOf(back.workout.blocks).find((x) => x.key === bench.key)?.rows.length).toBe(benchRows);
+
+    // Gym changed: the shorter workout stands at the new gym (no fit to undo by time); Undo puts the gym and the fit back.
+    const again = await cutUntilDropped(s, back);
+    const other = h.ids();
+    expect((await s.setup.saveGym({ gymId: other, name: 'Second gym', draft: s.coachingKnowledge.buildGymDraft('commercial', 'kg') })).ok).toBe(true);
+    expect((await s.gyms.select(other)).ok).toBe(true);
+    const moved = await s.builder.changeGym(again.draftId, { opId: 'gym-time', expectedVersion: again.version });
+    if (moved.status !== 'written') throw new Error(moved.status);
+    expect(moved.snapshot.time).toBeNull();
+    expect(slotsOf(moved.snapshot.workout.blocks).map((x) => x.key)).toEqual(slotsOf(again.workout.blocks).map((x) => x.key));
+    const undone = await s.builder.undo(again.draftId, 'gym-time', 'undo-gym-time');
+    if (undone.snapshot === null) throw new Error('no undo');
+    expect(undone.snapshot.time?.fromMinutes).toBe(again.time?.fromMinutes);
+    expect(workoutView(undone.snapshot).time.note).toBe(workoutView(again).time.note);
+  });
+});
+
+// A plan day: a Time fit is today's only, never a plan change.
+function usableOf(req: ModelRequest): { catalogueId: string; name: string }[] {
+  const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+  if (block?.type !== 'message') throw new Error('no context');
+  const data = JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { build?: { usable: { catalogueId: string; name: string }[] } };
+  if (data.build === undefined) throw new Error('not a build turn');
+  return data.build.usable;
+}
+const planEx = (catalogueId: string) => ({ catalogueId, warmups: null, workingSets: 3, reps: { min: 8, max: 10 }, workSeconds: null, targetRpe: 8, topSet: null, restSeconds: null, superset: null, load: null });
+const DAYS: [string, string, string[]][] = [
+  ['Push', 'push', ['Bench press', 'Incline dumbbell press', 'Dumbbell shoulder press', 'Triceps pushdown', 'Lateral raise']],
+  ['Pull', 'pull', ['Lat pulldown', 'Barbell row']],
+  ['Legs', 'legs', ['Back squat', 'Leg curl']],
+];
+const planStub = (req: ModelRequest): ModelEvent[] => {
+  const usable = usableOf(req);
+  const idOf = (name: string) => usable.find((u) => u.name === name)?.catalogueId ?? `missing-${name}`;
+  return toolCall('propose_plan', { days: DAYS.map(([dayName, splitDayId, exs]) => ({ dayName, splitDayId, focus: null, minutes: null, exercises: exs.map((n) => planEx(idOf(n))) })), message: 'Push, pull, legs.', minutes: null, gymName: null });
+};
+
+describe('Time on a plan day: today only, never a plan change', () => {
+  it('a Time fit alone doesn’t make Start ask about the plan; with Ben’s own change, Update writes his change and none of the cuts', async () => {
+    const { services: s } = await h.launch();
+    await bigPush(s);
+    model = new StepModel([planStub, () => replyWith('Here is your week.')]);
+    const result = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Build me a 3-day plan', spoken: false }, turnId: h.ids() });
+    const card = result.cards[0]?.record;
+    if (card?.detail.kind !== 'build_plan') throw new Error('no plan');
+    const c = await s.plans.card({ planId: card.detail.planId, versionN: 1 });
+    expect(await s.plans.apply({ planId: card.detail.planId, versionN: 1, expectedVersion: c?.planVersion ?? 0, mode: 'replace', opId: 'apply-1' })).toMatchObject({ ok: true });
+    const push = (await s.plans.active())?.days[0]?.routineId;
+    if (push === undefined) throw new Error('no push day');
+    const template0 = (await s.routines.editor({ routineId: push, gymId: null }))?.routine;
+    const asked = model.requests.length;
+
+    const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: push }, 'open-plan-day'));
+    expect(snap0.planDay).not.toBeNull();
+    const short = await cutUntilDropped(s, snap0);
+    expect(short.time?.changes.length ?? 0).toBeGreaterThan(0);
+    expect(await s.builder.startPrompt(short.draftId)).toBeNull();
+    expect(model.requests.length).toBe(asked);
+
+    // Ben adds a set to the main lift: the prompt names only that; Update writes it, and every exercise and set count
+    // the fit cut stays in the plan.
+    const bench = slotsOf(short.workout.blocks).find((x) => x.main);
+    if (bench === undefined) throw new Error('no main');
+    const edited = opened(await s.builder.edit(short.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'plan-set', basis: { version: short.version } }));
+    const prompt = await s.builder.startPrompt(edited.draftId);
+    expect(prompt?.lines).toHaveLength(1);
+    expect(prompt?.lines[0]).toMatch(/sets$/);
+    const r = await s.builder.start(edited.draftId, { choice: { kind: 'update' }, opId: 'start-update', expectedVersion: edited.version });
+    if (!r.ok) throw new Error(r.message);
+    const template1 = (await s.routines.editor({ routineId: push, gymId: null }))?.routine;
+    expect(template1?.exercises.map((e) => e.exerciseId)).toEqual(template0?.exercises.map((e) => e.exerciseId));
+    const work = (rt: typeof template0) => rt?.exercises.map((e) => e.setTemplates.filter((t) => t.setType !== 'warmup').length) ?? [];
+    const changed = work(template1).map((n, i) => n - (work(template0)[i] ?? 0));
+    expect(changed.filter((d) => d !== 0)).toEqual([1]);
+    // The session is today's shorter workout.
+    const a = (await s.workout.load(r.sessionId))?.aggregate;
+    expect(a?.exercises.filter((e) => e.removed === undefined)).toHaveLength(slotsOf(edited.workout.blocks).length);
+  });
+});
+
+describe('Time on Your workout (source): the same control as Today’s; the screen only shows the service’s fit', () => {
+  it('one TimeStepper for Today and Your workout; the note opens the detail with Undo; no fit or coach call on the screen', () => {
+    const stepper = read('ui/time-stepper.tsx');
+    expect(stepper).toContain('accessibilityRole="adjustable"');
+    expect(stepper).toContain('TIME_LABELS.less');
+    expect(read('screens/today/TodaySession.tsx')).toContain("import { TimeStepper } from '../../ui/time-stepper';");
+    expect(read('screens/today/TodaySession.tsx')).not.toContain('function TimeStepper(');
+    const page = read('screens/builder/BuilderWorkoutScreen.tsx');
+    expect(page).toContain('<TimeStepper minutes={view.minutes} onStep={onStep} />');
+    expect(page).toContain('services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version })');
+    expect(page).toContain('color="status.warning"');
+    expect(page).toContain('if (back !== null) void setTime({ to: back });');
+    for (const banned of ['fitToMinutes', 'fitWorkoutToTime', 'unfitWorkout', 'builderCoach.askEdit({ draftId: cur.draftId, words: `']) expect(page).not.toContain(banned);
+  });
+});
+
+describe('the Time row’s view', () => {
+  const base = (minutes: number, time: BuilderSnapshot['time']): BuilderSnapshot => ({
+    draftId: 'd',
+    version: 1,
+    setup: { dayId: 'custom', dayName: 'Push', dayParts: [], minutes, mainLiftExerciseId: null, supersets: false, groups: [], variationId: null, groupsEdited: true },
+    workout: { blocks: [], restLevel: 'normal' },
+    minutes,
+    over: false,
+    name: 'Push',
+    planDay: null,
+    variationLabel: null,
+    undo: null,
+    facts: { inc: { name: 'Incline DB press', works: null, group: 'Chest', compound: true, mayHurt: false, notHere: false, hasHistory: true }, pd: { name: 'Triceps pushdown', works: null, group: 'Triceps', compound: false, mayHurt: false, notHere: false, hasHistory: true } },
+    unit: 'kg',
+    skipped: [],
+    revs: {},
+    planDayChanged: null,
+    gymChanged: false,
+    rests: {},
+    items: {},
+    startable: true,
+    gymId: null,
+    from: null,
+    canSave: false,
+    leftOut: [],
+    time,
+  });
+
+  it('the note is the biggest change (exercises, else sets, else rests); the detail lists them all; steps stop at 15 and 180', () => {
+    const v = timeRowView(
+      base(45, {
+        fromMinutes: 60,
+        changes: [
+          { kind: 'rest', from: 'normal', to: 'shortest' },
+          { kind: 'sets', slotKey: 'a', exerciseId: 'inc', from: 3, to: 2 },
+          { kind: 'drop', slotKey: 'b', exerciseId: 'pd' },
+        ],
+      }),
+    );
+    expect(v).toMatchObject({ minutes: 45, note: '−1 exercise', lines: ['Shortest rests', 'Incline DB press 3 → 2 sets', 'Dropped Triceps pushdown'], undoMinutes: 60, less: 40, more: 50, noteLabel: 'Time changes: −1 exercise' });
+    expect(v.valueText.replace('\u00a0', ' ')).toBe('45 min');
+    expect(timeRowView(base(50, { fromMinutes: 60, changes: [{ kind: 'sets', slotKey: 'a', exerciseId: 'inc', from: 3, to: 2 }, { kind: 'sets', slotKey: 'c', exerciseId: 'pd', from: 3, to: 2 }] })).note).toBe('−2 sets');
+    expect(timeRowView(base(55, { fromMinutes: 60, changes: [{ kind: 'rest', from: 'normal', to: 'shorter' }] })).note).toBe('shorter rests');
+    // No live fit, or a fit whose cuts Ben has since undone himself: no note, no Undo.
+    expect(timeRowView(base(60, null))).toMatchObject({ note: null, lines: [], undoMinutes: null });
+    expect(timeRowView(base(60, { fromMinutes: 60, changes: [] }))).toMatchObject({ note: null, undoMinutes: null });
+    expect(timeRowView(base(15, null)).less).toBeNull();
+    expect(timeRowView(base(180, null)).more).toBeNull();
+    expect(timeRowView(base(47, null))).toMatchObject({ less: 45, more: 50 });
   });
 });
