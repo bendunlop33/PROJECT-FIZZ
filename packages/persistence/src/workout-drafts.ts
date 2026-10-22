@@ -171,6 +171,22 @@ export async function startWorkoutDraftIn(tx: SqlExecutor, draftId: string, owne
  * kind `coach_draft`), the chat draft is started with the same session, in the same transaction, so its card no
  * longer offers it. Already started, discarded or expired: left as it is (the start still stands).
  */
+/**
+ * (Review B2, retire-workout-overview) Whether a builder draft opened on a coach chat draft was opened on an older
+ * version of it than the chat draft's current one (`setup.sourceVersion`): its Start is refused as stale (rule 5),
+ * so a revised chat draft is never marked Started with the version before it. False for every other draft, and for
+ * a chat draft no longer open (the start stands, as `startChatSourceIn`).
+ */
+export async function chatSourceStaleIn(tx: SqlExecutor, builderDraftId: string): Promise<boolean> {
+  const d = await getWorkoutDraftIn(tx, builderDraftId);
+  const from = d?.builderKey?.from;
+  if (d === null || from?.kind !== 'coach_draft' || from.id === builderDraftId) return false;
+  const chat = await getWorkoutDraftIn(tx, from.id);
+  if (chat === null || chat.builderKey !== undefined || chat.status !== 'open') return false;
+  const opened = d.versions.find((v) => v.n === d.currentVersion)?.request.setup?.sourceVersion;
+  return opened !== undefined && opened !== chat.currentVersion;
+}
+
 export async function startChatSourceIn(tx: SqlExecutor, builderDraftId: string, ownerId: string, sessionId: string, atUtc: string): Promise<void> {
   const d = await getWorkoutDraftIn(tx, builderDraftId);
   const from = d?.builderKey?.from;

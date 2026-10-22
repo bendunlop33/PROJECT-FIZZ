@@ -223,7 +223,8 @@ export const BuilderRestKindSchema = z.enum(['warmup', 'top', 'backoff', 'workin
 export type BuilderRestKind = z.infer<typeof BuilderRestKindSchema>;
 
 /** (v3) Where a builder slot's working load came from (§3.1, Q12). `typed` rows carry `ben` on their own load. */
-export const BuilderSlotSourceSchema = z.enum(['coach_target', 'plan', 'rule', 'calc', 'none']);
+/** `saved` (review B1, 22 Oct): a library or past workout's own planned load (its Fixed load, its last time), opened as the overview planned it. */
+export const BuilderSlotSourceSchema = z.enum(['coach_target', 'plan', 'rule', 'calc', 'none', 'saved']);
 
 /**
  * (v3 §2.3–§2.4) What the builder needs to keep about a slot across a
@@ -357,6 +358,14 @@ export const BuilderSetupSchema = z.object({
   groupsEdited: z.literal(true).optional(),
   /** (v3 §2.3 `Gym changed · Undo`) Ben undid the move to this gym: the draft stays at its own gym, and isn't moved there again. */
   gymKept: IdSchema.optional(),
+  /**
+   * (Review B2, retire-workout-overview) The version of what the draft was opened on (`BuilderDraftKey.from`): the
+   * library workout's version, or the chat draft's version number. Moved since: Your workout reloads (silently with
+   * no edits, else `… changed · Reload`), and a chat draft's Start is refused as stale (rule 5).
+   */
+  sourceVersion: z.int().min(1).optional(),
+  /** (Review B1) Exercises of that workout Your workout can't hold (cardio, timed sets, a second copy): `N left out`. */
+  leftOut: z.array(IdSchema).max(BUILD_LIMITS.maxExercises * 3).optional(),
 });
 export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
 

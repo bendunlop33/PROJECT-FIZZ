@@ -28,7 +28,7 @@ import type { Database } from './database';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
 import { CorruptDataError, HistoryRewriteError } from './errors';
 import { bool, checkRead, checkWrite, inHistorySql, insert, int, mismatch, parseJson, parseJsonOrNull, rowId, upsert } from './sql';
-import { startChatSourceIn, startWorkoutDraftIn } from './workout-drafts';
+import { chatSourceStaleIn, startChatSourceIn, startWorkoutDraftIn } from './workout-drafts';
 
 const T = 'sessions';
 
@@ -536,6 +536,8 @@ async function closeDraftsOnStart(tx: SqlExecutor, a: SessionAggregate): Promise
   const at = a.session.lastActivityAtUtc;
   // A coach draft it starts from becomes `started` with this session (workout-builder §6.3); one closed since: stale.
   const coach = a.session.coachDraft;
+  // A builder draft opened on an older version of a chat draft than its current one: stale, nothing written (review B2).
+  if (coach !== undefined && (await chatSourceStaleIn(tx, coach.draftId))) return false;
   if (coach !== undefined && !(await startWorkoutDraftIn(tx, coach.draftId, owner, a.session.id, startedAt)).ok) return false;
   // (22 Oct) A coach chat draft opened on Your workout is started with it: its card reads `Started`, as before.
   if (coach !== undefined) await startChatSourceIn(tx, coach.draftId, owner, a.session.id, startedAt);

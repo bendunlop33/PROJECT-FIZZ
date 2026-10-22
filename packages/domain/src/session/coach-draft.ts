@@ -980,7 +980,7 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
     const kind = slot.builder?.source ?? null;
     const notes = [...(typed ? ['Typed by you'] : []), ...prov.guardNotes].slice(0, 10);
     const base = { ...prov, guardNotes: notes, ...(held ? { held: true as const } : {}) };
-    if (typed || kind === null || kind === 'plan' || kind === 'none') return { ...set, planned: { ...set.planned, provenance: base } };
+    if (typed || kind === null || kind === 'plan' || kind === 'none' || kind === 'saved') return { ...set, planned: { ...set.planned, provenance: base } };
     if (kind === 'coach_target') return { ...set, planned: { ...set.planned, source: 'coach' as const, provenance: { ...base, source: 'coach' as const } } };
     if (kind === 'rule') return { ...set, planned: { ...set.planned, source: 'built_in_rule' as const, provenance: { ...base, source: 'rule' as const } } };
     return { ...set, planned: { ...set.planned, provenance: { ...base, estimate: true as const } } };

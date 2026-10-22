@@ -73,9 +73,9 @@ export interface AnchorLoad {
  * Where today's working load came from (§3.1, §9 Q12). Stored as
  * `DraftLoadSchema.source` through `draftLoadSourceOf` (a typed kg is `ben`).
  */
-export type BuilderLoadSourceKind = 'coach_target' | 'plan' | 'rule' | 'calc' | 'none';
+export type BuilderLoadSourceKind = 'coach_target' | 'plan' | 'rule' | 'calc' | 'none' | 'saved';
 
-const DRAFT_SOURCE: Readonly<Record<BuilderLoadSourceKind, DraftLoadSource>> = { coach_target: 'coach', plan: 'plan', rule: 'rule', calc: 'calc', none: 'none' };
+const DRAFT_SOURCE: Readonly<Record<BuilderLoadSourceKind, DraftLoadSource>> = { coach_target: 'coach', plan: 'plan', rule: 'rule', calc: 'calc', none: 'none', saved: 'plan' };
 
 /** A row's stored load source: Ben's typed kg is `ben`; every other row is its slot's source. */
 export function draftLoadSourceOf(source: BuilderLoadSourceKind, typed: boolean): DraftLoadSource {

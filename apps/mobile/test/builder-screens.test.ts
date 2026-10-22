@@ -164,6 +164,7 @@ function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): Build
     gymId: 'g1',
     from: null,
     canSave: false,
+    leftOut: [],
     ...over,
   };
 }

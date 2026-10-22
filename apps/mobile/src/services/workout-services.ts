@@ -1875,6 +1875,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return draftSavedRoutineId(d, r !== null && !isDeleted(r) ? r : null);
   }
 
+  /** The coach chat draft a builder draft was opened on (`builderKey.from`), or null. */
+  async function chatSourceOf(draftId: string): Promise<string | null> {
+    const d = await ctx.store().repos.workoutDrafts.get(draftId).catch(() => null);
+    const from = d?.builderKey?.from;
+    return from?.kind === 'coach_draft' && from.id !== draftId ? from.id : null;
+  }
+
   async function liveDraftRoutineId(draftId: string): Promise<string | null> {
     const d = await ctx.store().repos.workoutDrafts.get(draftId).catch(() => null);
     return d === null ? null : liveRoutineOf(d);
@@ -2687,6 +2694,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const b = req.builder;
         const fenced: WriteFence | undefined = b === undefined ? draftFence : { rows: [...(draftFence?.rows ?? []), { table: 'workout_drafts', id: resolvedD.draft.id, version: b.expectedVersion }], sets: draftFence?.sets ?? [] };
         // (22 Oct) Your workout opened on a library workout or a past one: the workout its targets follow on from is noted, as those Starts always did.
+        // Before the start, by design (persistence `noteStartFrom`): the note counts only while a session with this op ID exists, so a refused start
+        // leaves it inert, and a force-close after the start can't leave the coach's targets unused for a second workout (review S2: no change).
         const from = resolvedD.draft.builderKey?.from;
         if (from?.kind === 'session') await noteStartFrom(p.id, from.id, req.opId);
         else if (from?.kind === 'routine') {
@@ -3969,7 +3978,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // Review r2 S2: one save per draft version. A draft whose current version is already a live workout isn't saved again (the link stays on the first);
         // review r3 S1: a version revised after Save may be saved, and the link moves to the new workout.
         const fromDraft = savedDraftIdOf(req.from);
-        if (!existing && fromDraft !== null && (await liveDraftRoutineId(fromDraft)) !== null) {
+        // Review S1 (retire-workout-overview): Your workout opened on a chat draft already saved is that saved workout too.
+        const chat = fromDraft === null ? null : await chatSourceOf(fromDraft);
+        if (!existing && fromDraft !== null && ((await liveDraftRoutineId(fromDraft)) !== null || (chat !== null && (await liveDraftRoutineId(chat)) !== null))) {
           return { ok: false, message: LIBRARY_COPY.alreadySaved, reason: 'already_saved' };
         }
         if (existing) return await linked(existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed });
@@ -5434,7 +5445,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview, sessionTypes, coachDrafts, todayPort };
+  /**
+   * (Review B1, retire-workout-overview) What Your workout opens a library workout or a past workout with: the
+   * overview's own dry run (the routine's next targets with its own rule, Fixed loads, set types and reps, or last
+   * time's next session), fitted to this gym's items (rule 4; the typical gym's when there is none). Saves nothing;
+   * never an AI call. Null: the workout is gone or has nothing to plan.
+   */
+  const builderSources = {
+    async planned(req: { target: { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string }; gymId: string | null; typicalEquipment?: readonly EquipmentInstance[] }): Promise<SessionAggregate | null> {
+      const p = await ctx.profile();
+      if (!p) return null;
+      const resolved = req.target.kind === 'routine' ? await resolveRoutine(p, req.target.routineId, null).catch(() => null) : await resolveNext(p, req.target.sourceSessionId).catch(() => null);
+      if (resolved === null) return null;
+      const run = await overviewDryRun(p, resolved, req.gymId ?? 'typical-gym-preview', null, req.gymId === null ? req.typicalEquipment : undefined).catch(() => null);
+      return run?.aggregate ?? null;
+    },
+  };
+
+  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview, sessionTypes, coachDrafts, todayPort, builderSources };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;

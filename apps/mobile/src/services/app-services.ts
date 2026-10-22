@@ -988,6 +988,11 @@ export function createAppServices(deps: AppServicesDeps) {
     upNextRoutineId: (gymId) => loop.todayPort.upNextRoutineId(gymId),
     upNext: (gymId) => loop.todayPort.upNext(gymId ?? 'typical-gym-preview'),
     sessionTitle: (sessionId) => loop.todayPort.sessionTitle(sessionId),
+    planned: async (target, gymId) => {
+      const typical = gymId === null ? await typicalEquipment().catch(() => null) : null;
+      if (gymId === null && typical === null) return null;
+      return loop.builderSources.planned({ target, gymId, ...(typical ? { typicalEquipment: typical } : {}) });
+    },
     ensureGym: async () => {
       const made = await setup.useTypicalGym();
       return made.ok && made.gymId !== undefined ? made.gymId : null;

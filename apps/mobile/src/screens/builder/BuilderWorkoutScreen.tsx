@@ -654,6 +654,22 @@ export function BuilderWorkoutScreen() {
                 : {})}
             />
           ))}
+          {/* Review B1: what this workout has that Your workout can't hold (cardio, timed sets, a second copy) is named, never dropped silently. */}
+          {snap.leftOut.length > 0 ? (
+            <StatusLine
+              icon="info.circle"
+              tone="info"
+              text={services.builder.copy.leftOut(snap.leftOut.length)}
+              action={
+                <TextButton
+                  label={WORKOUT_COPY.why}
+                  onPress={() => {
+                    Alert.alert(services.builder.copy.leftOut(snap.leftOut.length), snap.leftOut.join('\n'));
+                  }}
+                />
+              }
+            />
+          ) : null}
           <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', gap: theme.space['2'], paddingHorizontal: theme.space['3'] }}>
             <View style={{ width: 28 }} />
             <AppText variant="label" color="text.secondary" style={{ flex: 1 }}>
