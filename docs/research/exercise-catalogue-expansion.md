@@ -1,11 +1,11 @@
 # Exercise catalogue expansion: what to add next
 
-Researcher, 22 Oct 2026. Research only: nothing has been added to the catalogue. Ben decides what goes in.
+Researcher, 22 Oct 2026; reviewed and corrected the same day (see "Review notes"). Research only: nothing has been added to the catalogue. Ben decides what goes in.
 
 ## Summary
 
-1. I propose **182 new exercises**: **29 Must**, **65 Should** and **88 Could**. That would take the catalogue from 144 to about 326, close to the ~290–400 plan in `exercise-bank-and-visuals.md` §8.
-2. The biggest gaps are **abs**, **common machines and accessories**, and **prehab and runner work**. On abs, the catalogue has bracing work and hanging raises but no crunch, sit-up, reverse crunch, ab machine, captain's chair, side bend, Russian twist or suitcase carry. The machines and accessories missing include the ab crunch machine, preacher curl, front raise, upright row, decline bench, T-bar row, dip machine and Smith incline. Prehab and runner work is mostly absent: rotator cuff, band work, single-leg calf raise, tibialis raise, plyometrics.
+1. I propose **175 new exercises**: **28 Must**, **65 Should** and **82 Could**. That would take the catalogue from 144 to about 319, close to the ~290–400 plan in `exercise-bank-and-visuals.md` §8.
+2. The biggest gaps are **abs**, **common machines and accessories**, and **prehab and runner work**. On abs, the catalogue has bracing work and hanging raises but no crunch, sit-up, reverse crunch, ab machine, captain's chair, side bend, Russian twist or suitcase carry. The machines and accessories missing include the ab crunch machine, preacher curl, front raise, upright row, T-bar row, dip machine and Smith incline. Prehab and runner work is mostly absent: rotator cuff, band work, single-leg calf raise, tibialis raise, plyometrics.
 3. Many of the "nuanced" PT variations should be **tags on a set**, not new exercises. These are Paused, Tempo, 1½ reps, Negative, Partial, Deficit or Elevated, Offset, Grip, Stance and Attachment. Only equipment, set-up or load-counting changes get their own entry.
 4. **Before any entries can be written, several vocabulary and schema decisions are needed:**
    - New muscle words: `hip_flexors`, `rotator_cuff`, `serratus`, `tibialis`, `neck`.
@@ -16,11 +16,11 @@ Researcher, 22 Oct 2026. Research only: nothing has been added to the catalogue.
 
 ## Recommendations
 
-1. **Approve batch 1 = the 29 Must entries.** About 40% of them are abs. These are what a UK gym-goer or PT expects to find, and what Ben's FitNotes history will most likely contain.
+1. **Approve batch 1 = the 28 Must entries.** About 40% of them are abs. These are what a UK gym-goer or PT expects to find, and what Ben's FitNotes history will most likely contain.
 2. **Run the FitNotes import preview before writing the Should and Could entries** (brief build step 3). Ben's own exercise names should decide which Should and Could items are worth adding. Names that mean an existing exercise become aliases, not near-duplicates (`exercise-bank-and-visuals.md` §8).
 3. **Adopt the modifier model (section 4)** instead of adding "Tempo squat", "Spoto press", "1½ goblet squat" and similar as separate entries. This needs a developer ADR. Modified sets must keep their own records line and never feed the base lift's estimated 1RM (rule 6).
 4. **Decide the vocabulary gaps (section 5, Q1–Q3) before writing entries.** Otherwise leg raises get tagged as "abs only" and cuff work as "rear delts", which overstates what they train (rule 6).
-5. **Write prehab entries as training exercises only, with no injury or condition claims** (rule 9). Recent runner-specific evidence shows no injury reduction from exercise programmes ([WU]). Strength training in general does reduce sports injuries ([LAU]).
+5. **Write prehab entries as training exercises only, with no injury or condition claims** (rule 9). A 2024 meta-analysis of runner prevention programmes found no overall injury reduction, though a post hoc subgroup of three supervised programmes did better ([WU]). Strength training in general does reduce sports injuries ([LAU]).
 
 ## 1. How this was researched
 
@@ -56,7 +56,7 @@ Researcher, 22 Oct 2026. Research only: nothing has been added to the catalogue.
 
 **Muscle words** use the catalogue vocabulary. A `*` marks a word not yet in the vocabulary (Q1). **Load** is the default convention where it isn't obvious.
 
-### Must (29)
+### Must (28)
 
 | # | Name | Group | Equipment | Primary muscles | Why |
 |---|---|---|---|---|---|
@@ -65,30 +65,29 @@ Researcher, 22 Oct 2026. Research only: nothing has been added to the catalogue.
 | 3 | Decline crunch | Core | Decline or ab bench, optional plate | abs | JEFIT top-3 core exercise [J]. Progress by bench angle or a plate. |
 | 4 | Decline sit-up | Core | Decline bench | abs, hip_flexors* | Very common. ExRx files it under hip flexors [E]. Keep flexion volume moderate [CS]. |
 | 5 | Reverse crunch | Core | Mat or bench | abs | Teaches tucking the pelvis under (posterior tilt). Step before hanging leg raises [A][REI]. |
-| 6 | Captain's chair knee raise | Core | Captain's chair / dip station | abs, hip_flexors* | In almost every gym and easier on grip than hanging. Top-ranked in an ACE study, though only a press release [ACE01]. |
+| 6 | Captain's chair knee raise | Core | Captain's chair / dip station | abs, hip_flexors* | In almost every gym and easier on grip than hanging. Different station from Hanging knee raise, so its own entry. Top-ranked in an ACE study, though only a press release [ACE01]. |
 | 7 | Lying leg raise | Core | Mat or flat bench | abs, hip_flexors* | JEFIT #2 core exercise [J]. Regression for Hanging leg raise. |
 | 8 | Bicycle crunch | Core | Mat | obliques, abs | JEFIT #1 core exercise, listed there as "Air Bike" (an import name clash, see Q6) [J]. Top in ACE 2001 [ACE01]. |
 | 9 | Russian twist | Core | Optional plate, dumbbell or med ball | obliques, abs | Widely logged. Coaches dispute combined flexion and rotation [LM], so use cautious cues and offer Pallof press or Landmine rotation as swaps. |
 | 10 | Dumbbell side bend | Core | Dumbbell (per_hand, unilateral) | obliques | JEFIT #1 dumbbell core exercise [J]. The simplest loaded oblique exercise. |
-| 11 | Suitcase carry | Core | One dumbbell or kettlebell (per_hand, unilateral; time or distance) | obliques, core, grip | The clearest exercise for resisting side-bending; a PT staple [NSCA][NFPT]. Every research pass flagged it. |
+| 11 | Suitcase carry | Core | One dumbbell or kettlebell (per_hand, unilateral; time or distance) | obliques, core, grip | The clearest exercise for resisting side-bending; a PT staple [NSCA][NFPT]. One implement changes load counting, so it is an entry, not an Offset tag on Farmer's carry. |
 | 12 | Bird dog | Core | Mat | core, spinal_erectors, glutes | One of McGill's "Big 3" [HC]. Common PT warm-up [A]. |
 | 13 | Mountain climber | Conditioning | None (timed) | core, front_delts, hip_flexors* | Class and circuit staple [NASM]. |
-| 14 | Decline bench press | Chest | Barbell, decline bench | chest, triceps | JEFIT #3 barbell chest exercise [J]. |
-| 15 | Incline chest press machine | Chest | Machine (stack or plate) | upper_chest, front_delts, triceps | Standard in larger gyms. The upper-chest option when the incline bench is taken [J][E]. |
-| 16 | Smith machine incline press | Chest | Smith machine (added) | upper_chest, front_delts, triceps | Very common UK hypertrophy staple [J][S][E]. Smith bar weight varies by gym, so record it per gym and never assume it. |
-| 17 | T-bar row (landmine) | Back | Barbell in landmine + V-handle | lats, upper_back | Landmines are in most UK gyms. JEFIT #3 barbell back exercise [J][S]. Load convention needs deciding (Q3). |
-| 18 | Rack pull | Back | Barbell + rack pins or blocks | upper_back, glutes, hamstrings | Common PT deadlift variant [J][S]. Record pull height as a modifier, not separate entries. |
-| 19 | Dumbbell front raise | Shoulders | Dumbbells | front_delts | In every app [J][S]. |
-| 20 | Upright row | Shoulders | EZ bar or barbell | side_delts, traps | JEFIT #3 barbell shoulder exercise [J][E]. |
-| 21 | Cable rear-delt fly | Shoulders | Cable crossover | rear_delts, upper_back | A staple alongside face pulls, with constant tension [S][BW]. |
-| 22 | Preacher curl | Arms | EZ bar + preacher bench | biceps, brachialis | JEFIT #2 barbell biceps exercise; preacher benches are everywhere [J][S]. |
-| 23 | Machine preacher curl | Arms | Machine (stack) | biceps, brachialis | JEFIT #1 machine biceps exercise [J][E]. |
-| 24 | Seated dip machine | Arms | Machine (stack) | triceps | JEFIT #1 machine triceps exercise ("Machine Dip") [J]. |
-| 25 | Leg-press calf raise | Legs | Leg press | calves | Very common when there's no calf machine. ExRx calls it the "sled calf press" [S][E]. |
-| 26 | Single-leg calf raise | Legs | Step, optional dumbbell (unilateral) | calves | Core runner exercise. Single-leg heel raises to fatigue are a standard calf test with published norms [HL]. |
-| 27 | Cable external rotation | Prehab | Cable + D-handle | rotator_cuff*, rear_delts | The standard rotator-cuff exercise [REI][E]. Stack-loaded, so it suits the feasible-load rules. |
-| 28 | Band pull-apart | Prehab | Long band (no load recorded) | rear_delts, upper_back | The most common upper-back warm-up [S]. |
-| 29 | Lateral band walk | Prehab | Mini-band | abductors, glutes | Common PT warm-up. A small EMG study found a band at the ankles or feet works the glute med more than at the knees [PB]. Record band position as a modifier. |
+| 14 | Incline chest press machine | Chest | Machine (stack or plate) | upper_chest, front_delts, triceps | Standard in larger gyms. The upper-chest option when the incline bench is taken [J][E]. |
+| 15 | Smith machine incline press | Chest | Smith machine (added) | upper_chest, front_delts, triceps | Very common UK hypertrophy staple [J][S][E]. Smith bar weight varies by gym, so record it per gym and never assume it. |
+| 16 | T-bar row (landmine) | Back | Barbell in landmine + V-handle | lats, upper_back | Landmines are in most UK gyms. JEFIT #3 barbell back exercise [J][S]. Load convention needs deciding (Q3). |
+| 17 | Rack pull | Back | Barbell + rack pins or blocks | upper_back, traps, spinal_erectors, glutes | Common PT deadlift variant [J][S]. Record pull height as a modifier, not separate entries. |
+| 18 | Dumbbell front raise | Shoulders | Dumbbells | front_delts | In every app [J][S]. |
+| 19 | Upright row | Shoulders | EZ bar or barbell | side_delts, traps | JEFIT #3 barbell shoulder exercise [J][E]. |
+| 20 | Cable rear-delt fly | Shoulders | Cable crossover | rear_delts, upper_back | A staple alongside face pulls, with constant tension [S][BW]. |
+| 21 | Preacher curl | Arms | EZ bar + preacher bench | biceps, brachialis | JEFIT #2 barbell biceps exercise; preacher benches are everywhere [J][S]. |
+| 22 | Machine preacher curl | Arms | Machine (stack) | biceps, brachialis | JEFIT #1 machine biceps exercise [J][E]. |
+| 23 | Seated dip machine | Arms | Machine (stack) | triceps | JEFIT #1 machine triceps exercise ("Machine Dip") [J]. |
+| 24 | Leg-press calf raise | Legs | Leg press | calves | Very common when there's no calf machine. ExRx calls it the "sled calf press" [S][E]. Already named as an unlinked variation in Standing barbell calf raise. |
+| 25 | Single-leg calf raise | Legs | Step, optional dumbbell (unilateral) | calves | Core runner exercise. Single-leg heel raises to fatigue are a standard calf test with published norms [HL]. |
+| 26 | Cable external rotation | Prehab | Cable + D-handle | rotator_cuff*, rear_delts | The standard rotator-cuff exercise [REI][E]. Stack-loaded, so it suits the feasible-load rules. |
+| 27 | Band pull-apart | Prehab | Long band (no load recorded) | rear_delts, upper_back | The most common upper-back warm-up [S]. |
+| 28 | Lateral band walk | Prehab | Mini-band | abductors, glutes | Common PT warm-up. A small EMG study found a band at the ankles or feet works the glute med more than at the knees [PB]. Record band position as a modifier. |
 
 ### Should (65)
 
@@ -104,6 +103,7 @@ Researcher, 22 Oct 2026. Research only: nothing has been added to the catalogue.
 | McGill curl-up | Core | Mat | abs | One of McGill's "Big 3". Low-range alternative to the crunch [HC]. |
 | Toes-to-bar | Core | Pull-up bar | abs, hip_flexors*, lats | Progression from Hanging leg raise. Strict, not kipping. |
 | Body saw | Core | Sliders or suspension straps | abs, core | Anti-extension progression beyond the plank [FV]. |
+| Decline bench press | Chest | Barbell, decline bench | chest, triceps | JEFIT #3 barbell chest exercise [J]. Moved from Must: decline benches are less common in UK chains, and it adds little for Ben over flat and incline pressing (inference). |
 | Incline dumbbell fly | Chest | Dumbbells, incline bench | upper_chest | JEFIT top dumbbell chest exercise [J]. |
 | Plate-loaded chest press | Chest | Iso-lateral plate machine | chest, triceps | Common in UK gyms [E]. Load convention to decide (Q3). |
 | Single-arm dumbbell bench press | Chest | One dumbbell (unilateral) | chest, triceps, obliques | PTs use it deliberately for rotation control. |
@@ -112,32 +112,31 @@ Researcher, 22 Oct 2026. Research only: nothing has been added to the catalogue.
 | Incline push-up | Chest | Bench or bar | chest, triceps | Regression for Push-up. |
 | Decline push-up | Chest | Bench (feet up) | upper_chest, front_delts, triceps | Push-up progression. |
 | Chest-supported T-bar row machine | Back | Plate-loaded machine | lats, upper_back, rear_delts | Very common UK row machine [E][LF]. |
-| Reverse-grip lat pulldown | Back | Cable + straight bar | lats, biceps | A real change of emphasis; JEFIT ranks it separately [J]. |
+| Reverse-grip lat pulldown | Back | Cable + straight bar | lats, biceps | A real change of emphasis; JEFIT ranks it separately [J]. Kept as an entry to mirror the existing Pull-up / Chin-up split. |
 | Neutral-grip pull-up | Back | Parallel handles | lats, biceps, brachialis | Needs a different station from Pull-up. |
 | Meadows row | Back | Landmine, one arm | lats, upper_back, rear_delts | Distinct set-up; heavy grip demand [MR]. |
-| Plate-loaded high row | Back | Iso-lateral plate machine | lats, traps | Common plate-loaded back machine [E]. |
-| Deficit deadlift | Back | Barbell + plate or platform | glutes, hamstrings, spinal_erectors | Standard strength accessory [S]. |
-| Back extension machine | Back | Seated machine (stack) | spinal_erectors | Common in selectorised ranges [J]. The 45° bench version already exists. |
-| Dead hang | Back | Pull-up bar (timed) | grip, lats | Grip and shoulder position. Commonly programmed. |
+| Plate-loaded high row | Back | Iso-lateral plate machine | lats, upper_back | Common plate-loaded back machine [E]. |
+| Back extension machine | Back | Seated machine (stack) | spinal_erectors | Common in selectorised ranges [J]. The 45° bench version already exists, and "Back extension" is its alias, so import must not auto-match this name to it. |
+| Dead hang | Back | Pull-up bar (timed) | grip | Grip and shoulder position. Commonly programmed. The lats are stretched, not trained. |
 | Machine lateral raise | Shoulders | Machine (stack) | side_delts | Common selectorised machine [S][E]. |
 | Smith machine shoulder press | Shoulders | Smith machine (added) | front_delts, triceps | Common [S]. |
 | Reverse curl | Arms | EZ bar or barbell, overhand grip | forearms, brachialis | Shifts work to the forearm (brachioradialis) [S]. The catalogue has no forearm exercises yet. |
 | Bayesian cable curl | Arms | Cable, facing away (unilateral) | biceps | PT favourite for training the biceps in a stretched position. I couldn't read the 2025 trial's results [BAY], so the evidence is uncertain. |
 | Dumbbell skull crusher | Arms | Dumbbells, flat bench | triceps | JEFIT top dumbbell triceps exercise [J]. Named to avoid the existing "Lying triceps extension" alias. |
-| EZ-bar overhead triceps extension | Arms | EZ bar | triceps | Overhead triceps work grew the long head more than arm-by-side work [MAEO]. |
+| EZ-bar overhead triceps extension | Arms | EZ bar | triceps | Overhead triceps work grew the long head more than arm-by-side work (21 mostly untrained adults) [MAEO]. |
 | Wrist curl | Arms | Dumbbell or barbell, bench | forearms | Standard forearm exercise [S][FB2]. |
 | Reverse wrist curl | Arms | Dumbbell or barbell, bench | forearms | Balances the wrist curl. |
 | Bench dip | Arms | Bench | triceps | Hotel and home staple. |
 | Barbell reverse lunge | Legs | Barbell | quads, glutes | JEFIT #2 barbell leg exercise is a lunge [J]. |
 | Dumbbell forward lunge | Legs | Dumbbells | quads, glutes | Only reverse and walking lunges exist so far [J]. |
-| Smith machine calf raise | Legs | Smith machine (added) | calves | Common substitute calf station. |
+| Smith machine calf raise | Legs | Smith machine (added) | calves | Common substitute calf station. Already named as an unlinked variation in Standing barbell calf raise. |
 | Single-leg leg extension | Legs | Leg extension (stack, unilateral) | quads | Fixes left-right differences. Follows the Single-leg press precedent. |
 | Single-leg leg curl | Legs | Lying or seated leg curl (stack, unilateral) | hamstrings | As above. |
 | Landmine squat | Legs | Landmine (added) | quads, glutes | Front-loaded and easy to learn [S]. |
 | Lateral lunge | Legs | Bodyweight or goblet dumbbell | adductors, quads, glutes | PT staple for side-to-side movement [S]. |
 | Wall sit | Legs | Wall (timed) | quads | Simple isometric. |
 | Step-down | Legs | Box or step | quads, abductors | Common physio knee-control exercise. No outcome evidence found, so uncertain. |
-| Tibialis raise | Legs | Wall, tib bar or slant board | tibialis* | Popular with runners. No evidence it prevents shin pain [MTSS], so make no claims. |
+| Tibialis raise | Legs | Wall, tib bar or slant board | tibialis* | Popular with runners. A 2025 meta-analysis found neuromuscular training programmes helped prevent shin splints (MTSS), but it does not isolate tibialis raises [MTSS], so make no claims for this exercise. |
 | Reverse Nordic | Legs | Pad, kneeling | quads | Common knee-dominant eccentric in PT and football programmes. |
 | Pin squat | Legs | Barbell + rack safeties | quads, glutes | Squatting up from a dead stop [NFPT2]. |
 | Hip thrust machine | Glutes | Plate or stack machine | glutes | Increasingly standard in UK gyms. Much quicker to set up than a barbell hip thrust [E]. |
@@ -157,10 +156,10 @@ Researcher, 22 Oct 2026. Research only: nothing has been added to the catalogue.
 | Pogo jumps | Conditioning | None (contacts or time) | calves | Basic runner plyometric. Plyometrics plus strength training improves running economy (tentative) [DB]. |
 | Broad jump | Conditioning | None | glutes, quads | Horizontal power; simple self-test. |
 | Squat jump | Conditioning | None, optional dumbbells | quads, glutes | Basic vertical jump. |
-| Lateral bound | Conditioning | None | glutes, abductors | Single-leg sideways power and landing control for runners. |
-| Dumbbell thruster | Conditioning | Dumbbells | quads, front_delts | Common in HYROX-style and class sessions [S]. |
+| Lateral bound | Conditioning | None | glutes, abductors, quads | Single-leg sideways power and landing control for runners. |
+| Dumbbell thruster | Conditioning | Dumbbells | quads, glutes, front_delts | Common in HYROX-style and class sessions [S]. |
 
-### Could (88)
+### Could (82)
 
 The "Why" column is kept short. Most of these are gym-specific, advanced, or mainly useful for import mapping.
 
@@ -177,20 +176,15 @@ The "Why" column is kept short. Most of these are gym-specific, advanced, or mai
 | Rotary torso machine | Core | Machine (stack) | obliques | Some UK gyms only. Add for logging, not to recommend. |
 | Plank shoulder taps | Core | Mat | core, obliques | Plank progression [NASM]. |
 | Hollow rock | Core | Mat | abs | Dynamic version of the hollow hold. |
-| Kettlebell windmill | Core | Kettlebell | obliques, side_delts | Advanced kettlebell skill. |
+| Kettlebell windmill | Core | Kettlebell | obliques, glutes | Advanced kettlebell skill; the shoulder stabilises rather than lifts. |
 | Barbell floor press | Chest | Barbell, rack | chest, triceps | Lockout work. |
 | Decline dumbbell press | Chest | Dumbbells, decline bench | chest | Less common [J]. |
-| Larsen press | Chest | Barbell, bench (feet up) | chest, triceps | Powerlifting accessory. Could be a stance modifier instead (Q4). |
 | Cable chest press | Chest | Cables (stack) | chest | Standing press. |
-| Underhand barbell row | Back | Barbell | lats, upper_back, biceps | "Yates row"; a grip change with a clear emphasis shift. |
-| Snatch-grip Romanian deadlift | Back | Barbell | hamstrings, glutes, upper_back | Lower load, different set-up. |
-| Stiff-leg deadlift | Back | Barbell | hamstrings, spinal_erectors | JEFIT lists it separately [J], but "Dumbbell stiff-leg deadlift" is already an alias of Dumbbell RDL (Q5). |
 | Plate-loaded low row | Back | Iso-lateral plate machine | upper_back, lats | Common [E]. Load convention (Q3). |
 | Plate-loaded pulldown | Back | Iso-lateral plate machine | lats | Load convention (Q3). |
 | Smith machine row | Back | Smith machine | upper_back | [J] |
 | Suspension row | Back | TRX or rings | upper_back, lats | Hevy lists suspension equipment [H]. |
-| Flexed-arm hang | Back | Pull-up bar (timed) | lats, biceps | Pull-up regression. |
-| Reverse hyperextension | Back | Reverse hyper machine | glutes, hamstrings | Rare in commercial gyms [E]. |
+| Reverse hyperextension | Back | Reverse hyper machine | glutes, hamstrings | Rare in commercial gyms [E]. "Hyperextension" is an alias of 45° back extension, so import must not auto-match. |
 | Machine pullover | Back | Machine (stack) | lats | Older gyms only; uncertain. |
 | Cable front raise | Shoulders | Cable | front_delts | [J] |
 | Cable upright row | Shoulders | Cable | side_delts, traps | [J] |
@@ -198,7 +192,7 @@ The "Why" column is kept short. Most of these are gym-specific, advanced, or mai
 | Pike push-up | Shoulders | None | front_delts, triceps | Bodyweight pressing progression. |
 | Overhead carry | Shoulders | Kettlebell or dumbbell | front_delts, core | Shoulder stability while walking. |
 | Bottoms-up kettlebell press | Shoulders | Kettlebell | front_delts, grip | Shoulder and grip control. |
-| Machine shrug | Shoulders | Machine | traps | [J] |
+| Machine shrug | Shoulders | Machine | traps | [J]. Already named as an unlinked variation in Barbell shrug. |
 | Kettlebell halo | Shoulders | Kettlebell | front_delts, core | Warm-up and mobility. |
 | Cable triceps kickback | Arms | Cable | triceps | Cable version of an existing exercise. |
 | Cross-body cable triceps extension | Arms | Cable | triceps | Trending [S]. |
@@ -220,8 +214,7 @@ The "Why" column is kept short. Most of these are gym-specific, advanced, or mai
 | Zercher squat | Legs | Barbell | quads, upper_back | [S] |
 | Smith machine Romanian deadlift | Legs | Smith machine | hamstrings, glutes | [J][S] |
 | Smith machine reverse lunge | Legs | Smith machine | quads, glutes | [S] |
-| Dumbbell sumo squat | Legs | One dumbbell | quads, adductors, glutes | [J] |
-| Glute kickback machine | Glutes | Machine (stack) | glutes | The cable version already exists [S]. |
+| Glute kickback machine | Glutes | Machine (stack) | glutes | The cable version already exists [S], and "Glute kickback" is its alias, so import must not auto-match. |
 | Frog pump | Glutes | None or dumbbell | glutes | High-rep filler. |
 | Hip airplane | Glutes | None | glutes, abductors | Balance and hip control; evidence uncertain. |
 | Single-leg hip thrust | Glutes | Bench | glutes | Unilateral hip thrust. |
@@ -262,6 +255,18 @@ The "Why" column is kept short. Most of these are gym-specific, advanced, or mai
 - GHD sit-up: GHDs are rare in UK gyms.
 - Power Wheel pike: needs foot straps, which UK gyms rarely have.
 
+**Moved to modifiers or aliases (not new entries):**
+
+| Former proposal | Becomes | Why |
+|---|---|---|
+| Deficit deadlift (Should) | Deadlift + Elevation: Deficit | Same bar and station; the doc's own rule makes deficit a tag. Deficit Romanian deadlift stays as-is only to keep existing history. |
+| Larsen press (Could) | Bench press + Stance: feet up | Stance change on the same bench and bar. |
+| Underhand barbell row / "Yates row" (Could) | Barbell row + Grip: underhand | Grip change on the same bar. |
+| Snatch-grip Romanian deadlift (Could) | Romanian deadlift + Grip: wide | Grip-width change on the same bar. |
+| Stiff-leg deadlift (Could) | Alias of Romanian deadlift (Q5), unless Ben's FitNotes history logs both separately | Its dumbbell form is already an RDL alias; a separate barbell entry would split records for what most gyms treat as the same lift. |
+| Flexed-arm hang (Could) | Chin-up + Isometric hold (top) | The modifier table already lists "chin-up top hold". |
+| Dumbbell sumo squat (Could) | Goblet squat + Stance: wide | Same single dumbbell held in front; only the stance changes. |
+
 ## 3. Abs and core by function
 
 Bold = proposed (priority in brackets). Plain = already in the catalogue. *Italic* = better as a variation or modifier of an existing entry.
@@ -300,21 +305,21 @@ Otherwise it is a **modifier tag** on the planned or logged set. This matches wh
 | 1½ reps | 1½ | 1½ goblet squat, 1½ split squat |
 | Eccentric only | Negative | Negative chin-up, negative dip |
 | Range (lengthened partial, top half, bottom half) | Partial | Half squat, lengthened-partial leg extension |
-| Elevation (what, height) | Elevated / Deficit | Deficit reverse lunge, heels-elevated goblet squat, front-foot-elevated split squat |
+| Elevation (what, height) | Elevated / Deficit | Deficit deadlift, deficit reverse lunge, heels-elevated goblet squat, front-foot-elevated split squat |
 | Offset (one implement or uneven loads) | Offset | Offset reverse lunge, one-sided goblet squat |
 | Alternating (reps per side) | Alt | Alternating dumbbell curl or press |
-| Grip width | Wide / Close | Wide-grip bench, close-grip pulldown variants |
-| Stance (half-kneeling, tall-kneeling, split, feet-up) | Half-kneel | Half-kneeling Pallof, half-kneeling landmine press |
+| Grip (width and orientation) | Wide / Close / Under | Wide-grip bench, snatch-grip RDL, underhand (Yates) row |
+| Stance (half-kneeling, tall-kneeling, split, feet-up, wide) | Half-kneel | Half-kneeling Pallof, half-kneeling landmine press, Larsen press, dumbbell sumo squat |
 | Foot position | High feet | Leg press and hack squat foot placement |
 | Attachment and pulley height | Rope / Low | Cable rows, pulldowns, cable fly angles |
 | Accommodating resistance (bands or chains, label only) | Bands | Banded squat. Never invent band tension in kg (rule 6). |
 | Band assist (label) | Band-assist | Band-assisted pull-up |
-| Isometric hold (position, seconds) | Hold 5s | Split-squat bottom hold, chin-up top hold |
+| Isometric hold (position, seconds) | Hold 5s | Split-squat bottom hold, chin-up top hold (flexed-arm hang) |
 | Pull height | Below knee | Rack pull height |
 
 **How the model works:**
 - **Records.** Modifiers that change how much you can lift (pause, tempo, 1½ reps, negative, range, elevation, bands, assist, offset, pull height) get **their own records line** and never feed the base lift's estimated 1RM or progression comparisons. They still count towards weekly muscle volume.
-- **Allowed modifiers per entry.** Each catalogue entry lists which modifiers it allows, so no one can attach a grip tag to a leg press. Named presets such as "Spoto press" or "Anderson squat" become search aliases that resolve to base exercise + modifier.
+- **Allowed modifiers per entry.** Each catalogue entry lists which modifiers it allows, so no one can attach a grip tag to a leg press. Named presets such as "Spoto press", "Anderson squat", "Larsen press" or "Yates row" become search aliases that resolve to base exercise + modifier.
 - **Rules 3 and 9.** Adding or removing a load-affecting modifier on future sessions is a **proposal** (Apply/Undo). A pain flag applies to the movement whatever its modifiers.
 - **Guides.** No new animations are needed: tempo and pause retime the existing guide.
 - **Existing entries.** Keep Paused back squat, Paused bench press, Deficit Romanian deadlift and Box squat as they are, so no history moves.
@@ -332,14 +337,16 @@ Otherwise it is a **modifier tag** on the planned or logged set. This matches wh
 2. **New patterns and equipment.** Add `power` (jumps, throws) and `mobility` movement patterns? Add equipment kinds for landmine, mini-band, Swiss ball, suspension trainer, slant board and GHD?
 3. **Plate-loaded iso-lateral machines and landmines.** How should their loads be logged? My suggestion is `added` (plates loaded, per side stated) with no estimated 1RM, because the real resistance isn't the plate weight. This needs a developer ADR.
 4. **Modifier model.** Approve tags (section 4) instead of separate entries for paused, tempo, 1½, negative, partial, deficit, grip, stance and attachment variants? Should grip, attachment and foot position split records, or only the load-affecting ones?
-5. **Near-duplicates.** Should "Stiff-leg deadlift" (barbell) be a new entry or an alias of Romanian deadlift? Its dumbbell form is already an RDL alias. Should "Kettlebell single-leg RDL" and "Single-arm kettlebell swing" be aliases or entries?
+5. **Near-duplicates.** The review recommends "Stiff-leg deadlift" (barbell) as an alias of Romanian deadlift by default (its dumbbell form already is). Should "Kettlebell single-leg RDL" and "Single-arm kettlebell swing" be aliases or entries?
 6. **Name clashes for FitNotes import.**
    - JEFIT and ExRx use "Air bike" for the **bicycle crunch**, while ours is the fan bike.
    - UK gyms often call the captain's chair a "Roman chair", which is already an alias of 45° back extension.
-   - Should import matching ask Ben to confirm both?
+   - "Knee raise" is an alias of Hanging knee raise but is also how people log the captain's chair version.
+   - "Back extension", "Hyperextension", "Glute kickback" and "Rear delt fly" are existing aliases that collide with proposed machine or cable entries.
+   - Should import matching ask Ben to confirm all of these?
 7. **Mobility drills.** Include them at all (8 Could entries)? They would be excluded from volume and progression counts.
 8. **Neck work.** Include it (2 Could entries, with extra review), or leave it out?
-9. **Batch order.** Approve the 29 Must entries now, and decide on Should and Could after the FitNotes import shows which names you actually use?
+9. **Batch order.** Approve the 28 Must entries now, and decide on Should and Could after the FitNotes import shows which names you actually use?
 
 ## Proposed brief changes
 
@@ -347,6 +354,33 @@ These need Ben's approval. Record them in `docs/brief/CHANGELOG.md`, with an ADR
 
 1. **Brief §6 data model.** Add an optional `modifiers` list (a discriminated union) to planned and logged sets and to routine exercise defaults. Records and progression compare like with like (section 4). This extends the brief; it doesn't contradict it.
 2. **Catalogue vocabulary (Q1–Q3).** Add the new muscle words, `power` and `mobility` patterns, and equipment kinds. Also decide the plate-loaded and landmine load convention.
+
+## Review notes
+
+Reviewer pass, 22 Oct 2026. Checked against all 144 catalogue names, aliases and listed variations, and `packages/catalogue/src/muscles.ts`.
+
+**Duplicates and trivial variants (7 removed from the tables, all Could except one Should):**
+- Moved to the modifier model: Deficit deadlift (Should), Larsen press, Underhand barbell row, Snatch-grip Romanian deadlift, Flexed-arm hang, Dumbbell sumo squat. Each is the same bar or station with a grip, stance, elevation or hold change, which the section 4 rule makes a tag. Grip and Stance modifier rows were widened to cover them.
+- Stiff-leg deadlift: moved to an alias of Romanian deadlift by default (Q5).
+- Kept as entries after checking: Captain's chair knee raise (different station from Hanging knee raise), Suitcase carry and Suitcase deadlift (one implement changes load counting), Reverse-grip lat pulldown (mirrors the Pull-up / Chin-up split; borderline). Noted that Leg-press calf raise, Smith machine calf raise and Machine shrug already appear as unlinked variations in existing entries, and flagged four alias collisions for import (Q6).
+
+**Muscles corrected:**
+- Rack pull: hamstrings replaced by traps and spinal_erectors (an above-knee pull is mostly upper back, traps and erectors).
+- Plate-loaded high row: traps → upper_back.
+- Dead hang: lats removed (stretched, not trained); grip only.
+- Kettlebell windmill: side_delts → glutes.
+- Lateral bound and Dumbbell thruster: added quads and glutes respectively.
+
+**Priority:** Decline bench press moved from Must to Should (less common in UK chains, low value for Ben next to flat and incline pressing; inference). Counts are now 28 Must, 65 Should, 82 Could (175 total).
+
+**Source spot-check (6):**
+- [J] JEFIT core list: confirmed. Ranks Air Bike #1, Leg Raise #2, Decline Crunch #3, Hanging Leg Raise #4, Oblique Crunch #5, Crunch as bonus.
+- [REI] Reinold 2004: citation confirmed (J Orthop Sports Phys Ther 34(7):385–94). Side-lying ER as the top exercise is supported only by a secondary source in this check.
+- [HL] Hébert-Losier 2017: confirmed (566 adults, excellent reliability, published norms). It is an original study, not a review.
+- [MAEO] Maeo 2023: confirmed. Note the 21 participants were mostly untrained; wording updated.
+- [MTSS] 2025 meta-analysis: exists, but the original wording ("no evidence it prevents shin pain") misrepresented it. It found neuromuscular training effective for prevention. Tibialis raise note rewritten.
+- [WU] Wu 2024: exists; no overall reduction, but supervised programmes did better in a post hoc analysis. Recommendation 5 reworded.
+- [P] PureGym equipment page: returned HTTP 502 twice on 22 Oct 2026, so the "ab crunch machine in almost every UK chain" claim is **unverified** in this pass.
 
 ## Sources (all checked 22 Oct 2026)
 
@@ -356,7 +390,7 @@ These need Ben's approval. Record them in `docs/brief/CHANGELOG.md`, with an ADR
 - [H] Hevy: https://help.hevyapp.com/hc/en-us/articles/35688251991575-Hevy-Exercise-Library-400-Exercises-and-Custom-Exercises ; https://www.hevyapp.com/exercises/ ; https://www.hevyapp.com/compound-isolation-abs-exercises/
 - [F] Fitbod: https://fitbod.me/about-fitbod-exercises ; [FBH] https://help.fitbod.me/hc/en-us/articles/28062570249623 ; [FB] https://fitbod.me/exercises/landmine-core-rotation ; [FB2] https://fitbod.me/workouts/forearms-workouts-to-build-strength
 - [W] wger: https://wger.de/api/v2/exerciseinfo/?format=json&limit=1
-- [P] PureGym equipment: https://one.puregym.com/equipment
+- [P] PureGym equipment: https://one.puregym.com/equipment (HTTP 502 on re-check, 22 Oct 2026)
 - [A] ACE library: https://www.acefitness.org/resources/everyone/exercise-library/76/reverse-crunch/ ; https://www.acefitness.org/resources/everyone/exercise-library/14/bird-dog/
 - [ACE01] ACE 2001 ab study (press release): https://www.acefitness.org/about-ace/press-room/press-releases/246/american-council-on-exercise-ace-sponsored-study-reveals-best-and-worst-abdominal-exercises/
 - [ESC] Escamilla 2010: https://pubmed.ncbi.nlm.nih.gov/20436242/ ; [REI-core] https://mikereinold.com/core-stability-abdominal-exercises/
@@ -397,4 +431,4 @@ These need Ben's approval. Record them in `docs/brief/CHANGELOG.md`, with an ADR
 - [DB] Plyometrics and running economy: https://hrcak.srce.hr/clanak/447258
 - [SF] Med ball rotational throw: https://simplifaster.com/articles/donatucci-medicine-ball-rotational-throw/
 
-Repo files checked: all 144 `packages/catalogue/data/exercises/*.json` names and aliases; `packages/catalogue/src/muscles.ts`, `vocab.ts`, `entry-schema.ts`; `packages/schemas/src/common.ts`; `docs/research/exercise-bank-and-visuals.md` §8.
+Repo files checked: all 144 `packages/catalogue/data/exercises/*.json` names, aliases and variations; `packages/catalogue/src/muscles.ts`, `vocab.ts`, `entry-schema.ts`; `packages/schemas/src/common.ts`; `docs/research/exercise-bank-and-visuals.md` §8.
