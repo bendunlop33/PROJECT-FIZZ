@@ -27,7 +27,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **What to expect follows Main focus (Ben, 22 Oct):** one simple table, the weight for the focus's reference reps now → end of plan (est.): Strength × 3, Balanced × 6, Muscle × 8, Fitness × 10. Each is worked out from the lift's est. 1RM, which rises at focus × effort rate (Strength fastest, Muscle about 0.7×, Fitness slowest; Maintain flat), so no 1RM figures are shown. With ★ sports, lifting progress is about 0.6×, and lower-body lifts about 0.7× again when a starred sport is hard on the legs (running, cycling, football, HIIT), with one line saying so. Rates are placeholders until his own trend replaces them.
 
-**Yes/No first (Ben, 22 Oct):** `Any priorities?` and `Any other training?` start as No / Yes; the chips appear only after Yes (Yes on priorities pre-selects the coach's suggestion). The ✦ suggestion line stays under the question with `Add` until answered No. Each newly revealed section scrolls to near the top of the screen.
+**Yes/No first (Ben, 22 Oct):** `Any priorities?` and `Any other training?` start as No / Yes; the chips appear only after Yes (Yes on priorities pre-selects the coach's suggestion). The ✦ suggestion line stays under the question with `Add` until answered No. Each newly revealed section scrolls to near the top of the screen. Yes and the chip picks never move on (pick up to 2 first); Continue or No reveals the next section.
 
 **Declutter (Ben, 22 Oct):** What to expect is always shown (no tap): a label and one small table. The suggestion line is short (`✦ Suggested: Back, fewest sets lately`), with the full reason behind Priority's ⓘ. Other training's how-to (tap once to add, again for ★) moved behind its own ⓘ.
 

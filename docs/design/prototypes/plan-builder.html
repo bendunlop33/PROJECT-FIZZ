@@ -395,7 +395,9 @@ function applyReveal() {
 }
 $('scroll').addEventListener('click', (ev) => {
   if (S.page !== 'goals') return;
-  const btn = ev.target.closest('button'); if (!btn || /Info$/.test(btn.id) || false) return;
+  const btn = ev.target.closest('button'); if (!btn || /Info$/.test(btn.id)) return;
+  // Multi-pick sections (priority, other training) don't advance on Yes or on a pick; Continue or No moves on.
+  if (btn.dataset.priask === 'Yes' || btn.dataset.actask === 'Yes' || btn.dataset.pri || btn.dataset.act || btn.id === 'addAct' || btn.id === 'reSug') return;
   const host = ev.target.closest('[data-sec]'); if (!host) return;
   if (+host.dataset.sec === (S.rev ?? 0) && (S.rev ?? 0) < 5) { S.rev = (S.rev ?? 0) + 1; S.scrollTo = S.rev; }
 }, true);
