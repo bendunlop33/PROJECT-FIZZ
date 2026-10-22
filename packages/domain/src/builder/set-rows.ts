@@ -357,6 +357,25 @@ export function addDropSet(slot: BuilderSlot, load: SlotLoadInput): SetRowEdit {
 }
 
 /**
+ * (Rule 4) A timed or cardio slot at another gym: its times and distances as saved; a load it carries (a weighted
+ * plank, a carry) rounded down to what this gym's item makes, never past its max, and held on pain (rule 9). A load
+ * nothing here can make, or in another convention, is dropped (no load target), never kept from the old gym. Pure.
+ */
+function timedLoadsHere(slot: BuilderSlot, load: SlotLoadInput): BuilderSlot {
+  if (!slot.rows.some((r) => r.load !== null)) return slot;
+  const ctx = roundCtx(load);
+  const same = ctx.convention === slot.convention;
+  const rows = slot.rows.map((r): BuilderSetRow => {
+    if (r.load === null) return r;
+    const plain: BuilderSetRow = { ...r, load: same ? rounded(convertValue(r.load, slot.unit, ctx.unit), ctx) : null };
+    delete plain.typed;
+    delete plain.roundedFrom;
+    return plain;
+  });
+  return { ...slot, rows, unit: ctx.unit, convention: ctx.convention };
+}
+
+/**
  * `reloadSlotLoads` (§2.3 `Gym changed`): one slot's loads worked out again
  * on another gym's item, keeping Ben's rows (types, reps, RPE, set count).
  * Every calculated load is re-derived and rounded down there; a kg Ben
@@ -365,7 +384,7 @@ export function addDropSet(slot: BuilderSlot, load: SlotLoadInput): SetRowEdit {
  */
 export function reloadSlotLoads(slot: BuilderSlot, info: Pick<SetRowsInput, 'role' | 'barbell'>, load: SlotLoadInput): BuilderSlot {
   // (22 Oct) A timed or cardio slot keeps its saved sets: there is no reps formula to work its loads out from.
-  if (isTimedSlot(slot)) return slot;
+  if (isTimedSlot(slot)) return timedLoadsHere(slot, load);
   const fresh = setRowsFor({ main: slot.main, role: info.role, barbell: info.barbell, workingSets: workingCount(slot), repRange: slot.repRange, load });
   const ctx = roundCtx(load);
   const typedHere = (v: number): boolean => {

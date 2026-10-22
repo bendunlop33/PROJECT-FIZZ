@@ -143,6 +143,28 @@ describe('plannedAsDraftPlan', () => {
     ]);
   });
 
+  it('(22 Oct review) a set with both reps and a time or distance is left out and named, not opened as reps only', () => {
+    const r = convert(
+      [ex(1, BENCH), ex(2, 'carry')],
+      [set(1, 0, 'working', planned({ value: 60 }, { min: 8, max: 8 })), set(2, 0, 'working', planned({ value: 24 }, { min: 10, max: 10 }, { durationS: 30 })), set(2, 1, 'working', planned({ value: 24 }, { min: 10, max: 10 }, { distanceM: 40 }))],
+    );
+    expect(r.leftOut).toEqual(['carry']);
+    expect(r.plan.slots.map((x) => x.exerciseId)).toEqual([BENCH]);
+  });
+
+  it('(22 Oct review) the main lift listed twice: only its first copy is the main slot (one main row, as saved)', () => {
+    const r = convert(
+      [ex(1, BENCH), ex(2, BENCH), ex(3, SQUAT)],
+      [set(1, 0, 'working', planned({ value: 80 }, { min: 3, max: 3 })), set(2, 0, 'working', planned({ value: 50 }, { min: 10, max: 10 })), set(3, 0, 'working', planned({ value: 100 }, { min: 5, max: 5 }))],
+      { main: BENCH },
+    );
+    expect(r.plan.slots.map((x) => [x.exerciseId, x.main])).toEqual([
+      [BENCH, true],
+      [BENCH, false],
+      [SQUAT, false],
+    ]);
+  });
+
   it('keeps Ben’s own rests (clamped to the builder’s limits); default rests stay the builder’s', () => {
     const r = convert(
       [ex(1, 'bench'), ex(2, 'fly')],

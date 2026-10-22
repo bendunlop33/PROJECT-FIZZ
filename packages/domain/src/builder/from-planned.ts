@@ -15,7 +15,8 @@ import type { BuilderLoadSourceKind, BuilderSetRow, BuilderSlot, RestKind, SlotL
  * (22 Oct) Cardio, timed sets and an exercise listed twice open as saved: a timed or cardio set keeps its work time and
  * distance (no reps), and each copy of an exercise is its own slot, so Start creates them exactly as the saved workout
  * has them. What the builder still can't hold is left out and named, never dropped silently: an exercise it can't
- * find, a set with no target at all, one past the builder's limits (10 exercises, 4 warm-ups, 10 working sets, 3 drops).
+ * find, a set with no target at all or with both reps and a time or distance, one past the builder's limits (10
+ * exercises, 4 warm-ups, 10 working sets, 3 drops). Only the first copy of the main lift is the main slot.
  */
 
 /** One exercise of the planned workout, as `plannedAsDraftPlan` reads it (a `SessionAggregate`'s rows). */
@@ -123,8 +124,9 @@ export function plannedAsDraftPlan(input: PlannedAsDraftInput): PlannedAsDraft {
       .filter((s) => s.sessionExerciseId === e.id && s.pairedWithSetId === null && s.status !== 'deleted' && s.status !== 'skipped')
       .sort((a, b) => a.index - b.index);
     if (sets.length === 0) continue;
-    // A set with neither reps nor a time or distance has no target the builder could keep.
-    const noTarget = sets.some((s) => s.planned.reps === null && !timedSet(s.planned));
+    // A set with neither reps nor a time or distance has no target the builder could keep; one with both (reps and a
+    // time or distance) can't be held as saved either (the builder keeps one or the other): named, not cut to reps.
+    const noTarget = sets.some((s) => (s.planned.reps === null ? !timedSet(s.planned) : s.planned.durationS !== null || s.planned.distanceM != null));
     const warmups = sets.filter((s) => s.setType === 'warmup').length;
     const drops = sets.filter((s) => s.setType === 'drop').length;
     const working = sets.length - warmups;
@@ -179,7 +181,8 @@ export function plannedAsDraftPlan(input: PlannedAsDraftInput): PlannedAsDraft {
       exerciseId: e.exerciseId,
       catalogueId: input.catalogueIdOf(e.exerciseId),
       order: slots.length,
-      main: input.mainExerciseId === e.exerciseId,
+      // One main slot: the first copy of the main lift (an exercise listed twice has one main row, as saved).
+      main: input.mainExerciseId === e.exerciseId && !slots.some((x) => x.main),
       supersetGroup: e.supersetGroup,
       setTemplates,
       checkedOn: input.checkedOnOf(e.equipmentId, unit, convention),
