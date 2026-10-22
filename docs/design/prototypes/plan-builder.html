@@ -329,7 +329,7 @@ function render() {
 function renderGoals() {
   $('scroll').innerHTML = `
     <h1>Gym goals</h1>
-    <div class="label" style="display:flex;align-items:center;gap:4px">Main focus <button class="link dim" id="focusInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>
+    <div class="label" style="display:flex;align-items:center;gap:4px">Main focus <button class="link dim" id="focusInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
     <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
     <div class="label">Priority · up to 2 · none = all equal</div>
     <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m === SUG.group ? '✦ ' : ''}${m}</button>`).join('')}</div>
@@ -338,7 +338,7 @@ function renderGoals() {
     <div class="chips">${[...ACTS, ...(S.customActs ?? [])].map((a) => `<button class="chip sm" data-act="${esc(a)}" aria-pressed="${a === 'Running' ? S.runs : !!S.acts[a]}">${S.pri.includes(a) ? '★ ' : ''}${esc(a)}</button>`).join('')}<button class="chip sm" id="addAct">＋ Other</button></div>
     ${S.pri.length ? `<div class="note" style="line-height:1.4">★ ${S.pri.map(esc).join(', ')} come${S.pri.length === 1 ? 's' : ''} first: lifting supports ${S.pri.length === 1 ? 'it' : 'them'}, with fewer, shorter sessions planned around ${S.pri.length === 1 ? 'its' : 'their'} hard days.</div>` : ''}`;
   const ef = EFFORT[S.effort], lifts = MAIN.filter((l) => HIST[l] && !HIST[l].none);
-  $('scroll').insertAdjacentHTML('beforeend', `
+  $('scroll').querySelector('h1').insertAdjacentHTML('afterend', `
     <div class="label">Plan length</div>
     <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w}">${w} weeks</button>`).join('')}</div>
     <div class="label">Effort</div>
