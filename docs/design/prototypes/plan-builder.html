@@ -143,11 +143,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 <script>
 // ---------- Example history (made up) ----------
 const HIST = {
-  'Bench press': { kg: 97.5, reps: 6, last: 'top 97.5 × 6' },
-  'Barbell row': { kg: 90, reps: 12, last: '90 × 12' },
-  'Back squat': { kg: 120, reps: 5, last: 'top 120 × 5' },
+  'Bench press': { kg: 97.5, reps: 6, last: 'top 97.5 × 6', date: '12 Oct' },
+  'Barbell row': { kg: 90, reps: 12, last: '90 × 12', date: '18 Oct' },
+  'Back squat': { kg: 120, reps: 5, last: 'top 120 × 5', date: '3 Aug', stale: true },
   'Romanian deadlift': { kg: 100, reps: 8, last: '100 × 8' },
-  'Overhead press': { kg: 55, reps: 6, last: '55 × 6' },
+  'Overhead press': { kg: 57.5, reps: 6, last: 'est. from bench', none: true, ratio: 0.6 },
   'Incline DB press': { kg: 30, reps: 10, last: '30 each × 10' },
   'Lat pulldown': { kg: 70, reps: 10, last: '70 × 10' },
   'Leg press': { kg: 200, reps: 10, last: '200 × 10' },
@@ -182,7 +182,7 @@ const WD = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 // ---------- State ----------
 const S = {
-  ai: true, step: 0, focus: 'Both', targets: [],
+  ai: true, page: 'goals', check: {}, focus: 'Both', targets: [],
   priority: ['Chest'], runs: true, longRunDay: 6, runDays: [2, 6],
   days: [0, 1, 3, 5], freq: 4, schedule: 'fixed', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
@@ -231,7 +231,8 @@ function balance(plan) {
 function exercisesFor(focus) {
   const t = DAYS[focus];
   const cap = S.length <= 45 ? 4 : S.length <= 60 ? 6 : 7;
-  return t.ex.slice(0, cap).map(([n, m, role]) => {
+  const ex = [...t.ex].sort((a, b) => (a[2] === 'main' ? -2 : isPri(a[1]) ? -1 : 0) - (b[2] === 'main' ? -2 : isPri(b[1]) ? -1 : 0));
+  return ex.slice(0, cap).map(([n, m, role]) => {
     const h = HIST[n];
     const pri = isPri(m);
     if (role === 'main') {
@@ -278,9 +279,10 @@ function whenReached(lift, kg, lvl) {
 // ---------- Render ----------
 function render() {
   const steps = ['Goals', 'Week', 'Your plan'];
-  $('steps').textContent = S.applied ? 'Your plan' : `${S.step + 1} of 4`;
-  $('back').style.visibility = S.step === 0 || S.applied ? 'hidden' : 'visible';
-  [renderGoals, renderAmbition, renderWeek, renderPlan][S.step]();
+  const f = flow(); const i = f.indexOf(S.page);
+  $('steps').textContent = S.applied ? 'Your plan' : `${i + 1} of ${f.length}`;
+  $('back').style.visibility = i === 0 || S.applied ? 'hidden' : 'visible';
+  ({ goals: renderGoals, check: renderCheck, effort: renderAmbition, week: renderWeek, plan: renderPlan })[S.page]();
 }
 
 function renderGoals() {
@@ -288,15 +290,52 @@ function renderGoals() {
     <h1>Your goals</h1>
     <div class="label">Main focus</div>
     <div class="chips">${['Strength','Muscle','Both','Fitness','Maintain'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
-    <div class="label">Priority muscles</div>
+    <div class="label">Priority · up to 2</div>
     <div class="chips">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m}</button>`).join('')}</div>
+    ${S.ai && !S.priority.includes('Back') && !S.sugGone ? `<div class="offer" style="display:flex;align-items:center;background:var(--raised);border-radius:12px;padding-left:12px;font-size:15px;gap:4px"><span style="flex:1">✦ Back: 8 sets a week vs Chest 15</span><button class="link" id="useSug" style="font-weight:600">Use</button><button class="link dim" id="noSug" aria-label="Dismiss" style="text-decoration:none">✕</button></div>` : ''}
     <div class="label">Other training</div>
     <div class="card"><div class="row"><span>Runs</span><span class="chips"><button class="chip sm" id="runsToggle" aria-pressed="${S.runs}">${S.runs ? 'On' : 'Off'}</button></span></div></div>`;
   $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
   document.querySelectorAll('[data-focus]').forEach((b) => b.onclick = () => { S.focus = b.dataset.focus; render(); });
-  document.querySelectorAll('[data-pri]').forEach((b) => b.onclick = () => { const m = b.dataset.pri; S.priority = S.priority.includes(m) ? S.priority.filter((x) => x !== m) : [...S.priority, m]; render(); });
+  const addPri = (m) => { if (S.priority.includes(m)) S.priority = S.priority.filter((x) => x !== m); else if (S.priority.length >= 2) { toast('Up to 2', false); return; } else S.priority = [...S.priority, m]; render(); };
+  document.querySelectorAll('[data-pri]').forEach((b) => b.onclick = () => addPri(b.dataset.pri));
+  if ($('useSug')) { $('useSug').onclick = () => addPri('Back'); $('noSug').onclick = () => { S.sugGone = true; render(); }; }
   $('runsToggle').onclick = () => { S.runs = !S.runs; render(); };
-  $('next').onclick = () => { S.step = 1; render(); };
+  $('next').onclick = () => go(1);
+}
+
+// Pages: "Check your lifts" only when a main lift has no history or none in 8 weeks.
+const needsCheck = () => MAIN.some((l) => HIST[l].none || HIST[l].stale);
+const flow = () => ['goals', needsCheck() || S.checkSeen ? 'check' : null, 'effort', 'week', 'plan'].filter(Boolean);
+function go(d) { const f = flow(); const i = Math.max(0, Math.min(f.length - 1, f.indexOf(S.page) + d)); S.page = f[i]; render(); }
+
+function renderCheck() {
+  S.checkSeen = true;
+  const rows = MAIN.map((l) => {
+    const h = HIST[l], c = S.check[l], nm = SHORT[l];
+    if (c === 'yes' || c === 'entered' || (!h.none && !h.stale)) return `<div class="target"><span>${nm}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">${h.kg} × ${h.reps}${c === 'entered' ? ' · you entered' : h.date ? ' · ' + h.date : ''} <span style="color:var(--done)">✓</span></span></div>`;
+    if (h.stale) return `<div class="target" style="flex-wrap:wrap"><span>${nm} <span style="color:var(--text2)">${h.kg} × ${h.reps} · ${h.date}</span></span><span style="display:flex"><button class="link" data-yes="${l}">Still right</button><button class="link dim" data-enter="${l}">Edit</button></span></div>`;
+    return `<div class="target" style="flex-wrap:wrap"><span>${nm} <span style="color:var(--text2)">${c === 'est' ? `est. ${h.kg} from bench` : 'no history'}</span></span><span style="display:flex"><button class="link" data-enter="${l}">Enter</button>${c === 'est' ? '' : `<button class="link dim" data-est="${l}">Not sure</button>`}</span></div>`;
+  }).join('');
+  $('scroll').innerHTML = `<h1>Check your lifts</h1><div class="card">${rows}</div>`;
+  $('footer').innerHTML = `<button class="primary" id="next">Next</button>`;
+  document.querySelectorAll('[data-yes]').forEach((b) => b.onclick = () => { S.check[b.dataset.yes] = 'yes'; render(); });
+  document.querySelectorAll('[data-est]').forEach((b) => b.onclick = () => { S.check[b.dataset.est] = 'est'; render(); });
+  document.querySelectorAll('[data-enter]').forEach((b) => b.onclick = () => openLiftSheet(b.dataset.enter));
+  $('next').onclick = () => go(1);
+}
+function openLiftSheet(l) {
+  const h = HIST[l]; let kg = h.kg, reps = h.reps;
+  const draw = () => {
+    sheet(`<h2>${SHORT[l]}: a recent set</h2>
+      <div class="card"><div class="row"><span>Weight</span><span class="stepper"><button id="wD" aria-label="Lighter">−</button><span>${kg} kg</span><button id="wU" aria-label="Heavier">＋</button></span></div>
+      <div class="row"><span>Reps</span><span class="stepper"><button id="rD" aria-label="Fewer">−</button><span>${reps}</span><button id="rU" aria-label="More">＋</button></span></div></div>
+      <button class="primary" id="saveL">Save</button>`);
+    $('wD').onclick = () => { kg = Math.max(0, kg - 2.5); draw(); }; $('wU').onclick = () => { kg += 2.5; draw(); };
+    $('rD').onclick = () => { reps = Math.max(1, reps - 1); draw(); }; $('rU').onclick = () => { reps += 1; draw(); };
+    $('saveL').onclick = () => { Object.assign(HIST[l], { kg, reps, last: `${kg} × ${reps} (you entered)`, none: false, stale: false }); S.check[l] = 'entered'; closeSheet(); render(); };
+  };
+  draw();
 }
 
 function renderAmbition() {
@@ -320,7 +359,7 @@ function renderAmbition() {
   document.querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { S.targets.splice(+b.dataset.rm, 1); render(); });
   document.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => { S.weeks = +b.dataset.wk; S.toDate = !!b.dataset.todate; render(); });
   document.querySelectorAll('[data-eff]').forEach((b) => b.onclick = () => { S.effort = b.dataset.eff; render(); });
-  $('next').onclick = () => { S.step = 2; render(); };
+  $('next').onclick = () => go(1);
 }
 
 function renderWeek() {
@@ -350,7 +389,7 @@ function renderWeek() {
   $('next').onclick = () => {
     if (S.schedule === 'fixed' && S.days.length !== S.freq) { toast(`Pick ${S.freq} days`, false); return; }
     if (S.schedule === 'flexible') S.days = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] }[S.freq];
-    S.plan = build(); S.step = 3; S.chat = []; S.open = -1;
+    S.plan = build(); S.page = 'plan'; S.chat = []; S.open = -1;
     if (S.ai) S.chat.push({ who: 'co', text: coachIntro() });
     render();
   };
@@ -493,13 +532,13 @@ function toast(text, canUndo, fn) {
 $('undo').onclick = () => { $('toast').classList.remove('on'); if (undoFn) undoFn(); };
 
 // ---------- Header + controls ----------
-$('back').onclick = () => { if (S.step > 0) { S.step -= 1; render(); } };
+$('back').onclick = () => go(-1);
 $('close').onclick = () => toast('Closes without changing your plan', false);
-function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.step === 3 && !on) S.chat = []; render(); }
+function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.page === 'plan' && !on) S.chat = []; render(); }
 $('aiOn').onclick = () => setAi(true);
 $('aiOff').onclick = () => setAi(false);
-$('restart').onclick = () => { Object.assign(S, { step: 0, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
-$('editExisting').onclick = () => { S.plan = build(); S.step = 3; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
+$('restart').onclick = () => { Object.assign(S, { page: 'goals', check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
+$('editExisting').onclick = () => { S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
 render();
 </script>
 </body>

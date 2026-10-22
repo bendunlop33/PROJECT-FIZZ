@@ -21,6 +21,12 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **Offline:** the app builds the same plan from its rules, marked **Not reviewed**; tap edits still work, the coach box is disabled.
 
+## 1a. Priority and lift check (Ben, 22 Oct)
+
+- **Priority, up to 2 groups** (Chest, Back, Shoulders, Legs, Arms, Core); none picked = Balanced. A priority does three things: top of its set range, trained at least twice a week, and its exercises come straight after the main lift. When time is short, non-priority work is cut first; nothing drops below maintenance. Sub-muscles ("more upper chest") only through the coach.
+- **Coach suggestion line**, only when logs show a real gap: `✦ Back: 8 sets a week vs Chest 15 · Use`. Code computes the facts (last 8 weeks: sets/week vs range and vs comparable groups, sessions/week, stalled main lift < 1% over 4+ weeks with 3+ exposures, push:pull > 1.5 : 1); a group needs one strong or two medium signals; at most 2; pain-flagged muscles never. Relative strength between lifts never counts on its own. Offline, code makes the same pick.
+- **Check your lifts** (step 2, shown only when needed): main lifts with no history or nothing in 8 weeks. Stale: `Still right` / `Edit`. None: `Enter` one recent set (weight × reps, saved as Your data, labelled "you entered") or `Not sure` (estimate from his other lifts, e.g. OHP ≈ 0.6 × bench, labelled est., planned a step lighter; replaced by the first logged session). Recent lifts show with ✓ and need nothing.
+
 ## 2. How the plan is made (code, deterministic; the coach may adjust within these rules)
 
 - **Split from days and focus** (GA2–GA4, GA9): 2 days → full body ×2; 3 → push/pull/legs (Strength: full body ×3); 4 → push/pull/legs/upper (Strength: upper/lower ×2); 5 → PPL + upper + lower; 6 → PPL ×2. [Proposal]
