@@ -23,6 +23,8 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **Layout update (Ben, 22 Oct):** Plan length and Effort moved onto Gym goals as two compact rows (4 / 6 / 8 / 12 weeks; Steady / Standard / Push), with a collapsed `What to expect in N weeks` panel for the chosen pair (what the level means, RPE, sets, deload, and each main lift now → week N est.). The separate length-and-effort step is gone: Check your lifts (if needed) → Gym goals → Your week → Your plan. Option boxes are 36 pt, same corners and text size.
 
+**Focus vs effort (Ben, 22 Oct):** Main focus is what you build (Strength / Muscle / Balanced / Fitness); Effort is how hard (Maintain / Standard / Push). Maintain moved from focus to effort; Steady dropped (★ sports already give the lighter dose). Maintain: fewer sets (others 4–8, priority 8–12), same weights, reps only if easy, no deload, no projected gain.
+
 ## 1a. Priority and lift check (Ben, 22 Oct)
 
 - **Priority, up to 2 groups** (Chest, Back, Shoulders, Legs, Arms, Core); none picked = Balanced. A priority does three things: top of its set range, trained at least twice a week, and its exercises come straight after the main lift. When time is short, non-priority work is cut first; nothing drops below maintenance. Sub-muscles ("more upper chest") only through the coach.

@@ -255,7 +255,7 @@ function exercisesFor(focus) {
     if (role === 'main') {
       const step = h.each ? 2 : 2.5, top = snapFor(n, h.kg + step), back = snapFor(n, top * 0.9);
       const strength = S.focus === 'Strength';
-      const backs = (strength ? 3 : 2) + (S.effort === 'Push' ? 1 : 0) - (S.effort === 'Steady' ? 1 : 0);
+      const backs = (strength ? 3 : 2) + (S.effort === 'Push' ? 1 : 0) - (S.effort === 'Maintain' ? 1 : 0);
       return { n, m, role, sets: backs + 1, line: `Top ${fmtKg(n, top)} × ${strength ? 5 : 6} · ${backs} × ${fmtKg(n, back)} × 8`, why: `Last time ${h.last || fmtKg(n, h.kg) + ' × ' + h.reps} → +${step}` };
     }
     const reps = Math.max(8, Math.min(15, h.reps));
@@ -271,12 +271,14 @@ function weeklySets(plan) {
 }
 // Effort levels: how hard the plan pushes. Bands are weekly hard sets (V4/GA3), shifted by level. [Proposal]
 const EFFORT = {
-  Steady:   { pri: [10, 14], oth: [6, 10],  sm: [4, 6],  rpe: '6–8', step: 'Add load when reps top out at RPE ≤ 8', deload: 'Only if needed', pct: 0.006, line: 'Keep progressing with less fatigue. Good alongside runs or a busy spell.' },
-  Standard: { pri: [12, 20], oth: [8, 14],  sm: [4, 10], rpe: '7–9', step: 'One step when you hit the plan',          deload: 'Last week',      pct: 0.012, line: 'Steady weekly progress you can keep up block after block.' },
+  Maintain: { pri: [8, 12], oth: [4, 8], sm: [3, 6], rpe: '7–8', step: 'Same weights; reps only if easy', deload: 'No deload', pct: 0, line: 'Keep what you have on less time. Fewer sets, same weights, no push to progress.' },
+  Standard: { pri: [12, 20], oth: [8, 14],  sm: [4, 10], rpe: '7–9', step: 'One step when you hit the plan',          deload: 'Last week',      pct: 0.012, line: 'Regular weekly progress you can keep up block after block.' },
   Push:     { pri: [16, 22], oth: [10, 16], sm: [6, 12], rpe: '8–9.5', step: 'One step every session you hit it',    deload: 'Every 4th week', pct: 0.018, line: 'Faster progress, more sets and harder sets. Needs sleep, food and fewer hard runs.' },
 };
-const range = (m) => { const e = S.pri.length ? EFFORT.Steady : EFFORT[S.effort]; const small = ['Calves','Biceps','Triceps','Core'].includes(m); if (small) return isPri(m) ? [e.sm[0] + 4, e.sm[1] + 4] : e.sm; return isPri(m) ? e.pri : e.oth; };
-const deloadText = () => S.effort === 'Steady' ? 'no set deload' : S.effort === 'Push' ? 'deload every 4th week' : `deload week ${S.weeks}`;
+const range = (m) => { const e = S.pri.length && S.effort !== 'Maintain' ? SPORT_BANDS : EFFORT[S.effort]; const small = ['Calves','Biceps','Triceps','Core'].includes(m); if (small) return isPri(m) ? [e.sm[0] + 4, e.sm[1] + 4] : e.sm; return isPri(m) ? e.pri : e.oth; };
+// With ★ sports, lifting drops to these bands unless already Maintain (GA6).
+const SPORT_BANDS = { pri: [10, 14], oth: [6, 10], sm: [4, 6] };
+const deloadText = () => S.effort === 'Maintain' ? 'no deload' : S.effort === 'Push' ? 'deload every 4th week' : `deload week ${S.weeks}`;
 // Estimate only (rule 6): the main target lift's top set after the plan, at the level's typical weekly gain.
 // Estimates only (rule 6). Weekly gain = a share of the current top set by level (placeholder until his own trend, history-targets).
 const MAIN = ['Bench press', 'Back squat', 'Barbell row', 'DB shoulder press'];
@@ -291,7 +293,7 @@ const fmtKg = (l, kg) => HIST[l]?.each ? `${kg} each` : `${kg}`;
 const e1rm = (kg, reps) => kg * (1 + reps / 30);
 const nearest = (l, kg) => { const st = HIST[l]?.each ? 2 : 2.5; return Math.round(kg / st) * st; };
 const at6 = (l, kg, reps) => reps === 6 ? kg : nearest(l, e1rm(kg, reps) / 1.2);
-const gainWk = (lift, lvl) => Math.max(0.25, HIST[lift].kg * EFFORT[lvl].pct);
+const gainWk = (lift, lvl) => EFFORT[lvl].pct === 0 ? 0 : Math.max(0.25, HIST[lift].kg * EFFORT[lvl].pct);
 const projected = (lvl, lift = 'Bench press') => nearest(lift, HIST[lift].kg + gainWk(lift, lvl) * S.weeks);
 const TODAY = new Date(2026, 9, 22);
 function whenReached(lift, kg, lvl) {
@@ -328,7 +330,7 @@ function renderGoals() {
   $('scroll').innerHTML = `
     <h1>Gym goals</h1>
     <div class="label" style="display:flex;align-items:center;gap:4px">Main focus <button class="link dim" id="focusInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>
-    <div class="seg" style="grid-template-columns:repeat(5,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness','Maintain'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
+    <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
     <div class="label">Priority · up to 2 · none = all equal</div>
     <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m === SUG.group ? '✦ ' : ''}${m}</button>`).join('')}</div>
     <div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested: <b style="color:var(--text)">${SUG.group}</b>. ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>
@@ -340,7 +342,7 @@ function renderGoals() {
     <div class="label">Plan length</div>
     <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w}">${w} weeks</button>`).join('')}</div>
     <div class="label">Effort</div>
-    <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['Steady', 'Standard', 'Push'].map((l) => `<button class="chip" data-eff="${l}" aria-pressed="${S.effort === l}">${l}</button>`).join('')}</div>
+    <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['Maintain', 'Standard', 'Push'].map((l) => `<button class="chip" data-eff="${l}" aria-pressed="${S.effort === l}">${l}</button>`).join('')}</div>
     <div class="card" style="padding:0 14px">
       <button class="row" id="expTog" style="background:none;border:0;color:var(--text);font:inherit;font-size:15px;width:100%;cursor:pointer;min-height:44px" aria-expanded="${!!S.expOpen}"><span>What to expect in ${S.weeks} weeks</span><span class="chev" style="transform:rotate(${S.expOpen ? 90 : 0}deg)">›</span></button>
       ${S.expOpen ? `<div style="display:flex;flex-direction:column;gap:6px;padding:4px 0 12px">
@@ -361,7 +363,6 @@ function renderGoals() {
     ['Muscle', 'Build size. Mostly 6–15 reps, more sets per muscle, each muscle twice a week.'],
     ['Balanced', 'Strength and size together: heavy main lifts first, then muscle-building work. The default.'],
     ['Fitness', 'All-round health. Full-body sessions, 8–15 reps at moderate effort, every muscle twice a week; fits well with cardio.'],
-    ['Maintain', 'Keep what you have on less time. Fewer sets, same weights, no push to progress.'],
   ].map(([k, v]) => `<div style="padding:10px 0;border-bottom:1px solid var(--divider)"><div style="font-weight:600">${k}</div><div style="font-size:14px;color:var(--text2);line-height:1.4">${v}</div></div>`).join('')}</div>`);
   const addPri = (m) => { if (S.priority.includes(m)) S.priority = S.priority.filter((x) => x !== m); else if (S.priority.length >= 2) { toast('Up to 2', false); return; } else S.priority = [...S.priority, m]; render(); };
   document.querySelectorAll('[data-pri]').forEach((b) => b.onclick = () => addPri(b.dataset.pri));
@@ -518,7 +519,7 @@ function renderAmbition() {
     <div class="label">Length</div>
     <div class="chips">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w && !S.toDate}">${w} weeks</button>`).join('')}${fixed ? `<button class="chip" data-wk="8" data-todate="1" aria-pressed="${!!S.toDate}">To ${esc(fixed.by)}</button>` : ''}</div>
     <div class="label" style="display:flex;justify-content:space-between"><span>Effort</span><span>kg · now → week ${S.weeks} (est.)</span></div>
-    ${['Steady', 'Standard', 'Push'].map((l) => { const e = EFFORT[l]; return `<button class="card" data-eff="${l}" style="text-align:left;border:${S.effort === l ? '2px solid var(--accent)' : '2px solid transparent'};color:var(--text);cursor:pointer;padding:12px 14px;font:inherit;display:grid;grid-template-columns:minmax(0,1fr);gap:8px">
+    ${['Maintain', 'Standard', 'Push'].map((l) => { const e = EFFORT[l]; return `<button class="card" data-eff="${l}" style="text-align:left;border:${S.effort === l ? '2px solid var(--accent)' : '2px solid transparent'};color:var(--text);cursor:pointer;padding:12px 14px;font:inherit;display:grid;grid-template-columns:minmax(0,1fr);gap:8px">
       <span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font-size:17px;font-weight:600">${l}</span>
         <span style="font-size:14px;color:var(--text2);line-height:1.35">${e.line}</span>
         <span style="font-size:12px;color:var(--text3)">RPE ${e.rpe} · ${e.oth[0]}–${e.oth[1]} sets · ${e.deload.toLowerCase()}</span></span>
