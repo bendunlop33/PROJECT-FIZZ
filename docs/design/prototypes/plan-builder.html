@@ -177,7 +177,7 @@ const WD = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 // ---------- State ----------
 const S = {
-  ai: true, step: 0, focus: 'Both', targets: [{ lift: 'Bench press', kg: 110, by: '15 Dec' }],
+  ai: true, step: 0, focus: 'Both', targets: [{ lift: 'Bench press', kg: 110, by: null }],
   priority: ['Chest'], runs: true, longRunDay: 6, runDays: [2, 6],
   days: [0, 1, 3, 5], freq: 4, schedule: 'fixed', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
@@ -248,14 +248,27 @@ function weeklySets(plan) {
 }
 // Effort levels: how hard the plan pushes. Bands are weekly hard sets (V4/GA3), shifted by level. [Proposal]
 const EFFORT = {
-  Steady:   { pri: [10, 14], oth: [6, 10],  sm: [4, 6],  rpe: '6–8', step: 'Add load when reps top out at RPE ≤ 8', deload: 'Only if needed', perWk: 0.6, line: 'Keep progressing with less fatigue. Good alongside runs or a busy spell.' },
-  Standard: { pri: [12, 20], oth: [8, 14],  sm: [4, 10], rpe: '7–9', step: 'One step when you hit the plan',          deload: 'Last week',      perWk: 1.25, line: 'Steady weekly progress you can keep up block after block.' },
-  Push:     { pri: [16, 22], oth: [10, 16], sm: [6, 12], rpe: '8–9.5', step: 'One step every session you hit it',    deload: 'Every 4th week', perWk: 2, line: 'Faster progress, more sets and harder sets. Needs sleep, food and fewer hard runs.' },
+  Steady:   { pri: [10, 14], oth: [6, 10],  sm: [4, 6],  rpe: '6–8', step: 'Add load when reps top out at RPE ≤ 8', deload: 'Only if needed', pct: 0.006, line: 'Keep progressing with less fatigue. Good alongside runs or a busy spell.' },
+  Standard: { pri: [12, 20], oth: [8, 14],  sm: [4, 10], rpe: '7–9', step: 'One step when you hit the plan',          deload: 'Last week',      pct: 0.012, line: 'Steady weekly progress you can keep up block after block.' },
+  Push:     { pri: [16, 22], oth: [10, 16], sm: [6, 12], rpe: '8–9.5', step: 'One step every session you hit it',    deload: 'Every 4th week', pct: 0.018, line: 'Faster progress, more sets and harder sets. Needs sleep, food and fewer hard runs.' },
 };
 const range = (m) => { const e = EFFORT[S.effort]; return S.priority.includes(m) ? e.pri : (['Calves','Biceps','Triceps'].includes(m) ? e.sm : e.oth); };
 const deloadText = () => S.effort === 'Steady' ? 'no set deload' : S.effort === 'Push' ? 'deload every 4th week' : `deload week ${S.weeks}`;
 // Estimate only (rule 6): the main target lift's top set after the plan, at the level's typical weekly gain.
-const projected = (lvl) => snap(HIST['Bench press'].kg + EFFORT[lvl].perWk * S.weeks);
+// Estimates only (rule 6). Weekly gain = a share of the current top set by level (placeholder until his own trend, history-targets).
+const MAIN = ['Bench press', 'Back squat', 'Barbell row', 'Overhead press'];
+const SHORT = { 'Bench press': 'Bench', 'Back squat': 'Squat', 'Barbell row': 'Row', 'Overhead press': 'OHP', 'Romanian deadlift': 'RDL' };
+const gainWk = (lift, lvl) => Math.max(0.25, HIST[lift].kg * EFFORT[lvl].pct);
+const projected = (lvl, lift = 'Bench press') => snap(HIST[lift].kg + gainWk(lift, lvl) * S.weeks);
+const TODAY = new Date(2026, 9, 22);
+function whenReached(lift, kg, lvl) {
+  const wks = Math.ceil((kg - HIST[lift].kg) / gainWk(lift, lvl));
+  if (wks <= 0) return 'now';
+  if (wks > 52) return null;
+  const d = new Date(TODAY.getTime() + wks * 7 * 86400000);
+  const part = d.getDate() <= 10 ? 'early' : d.getDate() <= 20 ? 'mid' : 'late';
+  return `${part}-${d.toLocaleString('en-GB', { month: 'short' })}`;
+}
 
 // ---------- Render ----------
 function render() {
@@ -287,18 +300,22 @@ function renderGoals() {
 }
 
 function renderAmbition() {
-  const t = S.targets.find((x) => x.lift === 'Bench press');
-  const need = t ? ['Steady', 'Standard', 'Push'].find((l) => projected(l) >= t.kg) : null;
+  const lifts = [...new Set([...S.targets.map((t) => t.lift), ...MAIN])].filter((l) => HIST[l]).slice(0, 4);
+  const tgt = (l) => S.targets.find((t) => t.lift === l);
+  const fixed = S.targets.find((t) => t.by);
   $('scroll').innerHTML = `
     <h1>Plan length and effort</h1>
     <div class="label">Length</div>
-    <div class="chips">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w && !S.toDate}">${w} weeks</button>`).join('')}${t?.by ? `<button class="chip" data-wk="8" data-todate="1" aria-pressed="${!!S.toDate}">To ${esc(t.by)}</button>` : ''}</div>
-    <div class="label">Effort</div>
-    ${['Steady', 'Standard', 'Push'].map((l) => { const e = EFFORT[l]; return `<button class="card" data-eff="${l}" style="text-align:left;border:${S.effort === l ? '2px solid var(--accent)' : '2px solid transparent'};color:var(--text);cursor:pointer;padding:12px 16px;gap:4px;font:inherit">
-      <span style="display:flex;justify-content:space-between;font-size:17px;font-weight:600"><span>${l}${need === l ? ' <span class="badge">· reaches your target</span>' : ''}</span><span style="font-size:14px;color:var(--text2);font-weight:400">Bench est. ${projected(l)}</span></span>
-      <span style="font-size:14px;color:var(--text2)">${e.line}</span>
-      <span style="font-size:13px;color:var(--text3)">RPE ${e.rpe} · ${e.oth[0]}–${e.oth[1]} sets a muscle · ${e.deload.toLowerCase()}</span></button>`; }).join('')}
-    ${t ? `<div class="note">Bench ${t.kg}${t.by ? ' by ' + esc(t.by) : ''}: ${need ? `${need} gets there (est.)` : 'not reachable in this length (est.); try longer or Push'}</div>` : ''}`;
+    <div class="chips">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w && !S.toDate}">${w} weeks</button>`).join('')}${fixed ? `<button class="chip" data-wk="8" data-todate="1" aria-pressed="${!!S.toDate}">To ${esc(fixed.by)}</button>` : ''}</div>
+    <div class="label" style="display:flex;justify-content:space-between"><span>Effort</span><span>Now → week ${S.weeks} (est.)</span></div>
+    ${['Steady', 'Standard', 'Push'].map((l) => { const e = EFFORT[l]; return `<button class="card" data-eff="${l}" style="text-align:left;border:${S.effort === l ? '2px solid var(--accent)' : '2px solid transparent'};color:var(--text);cursor:pointer;padding:12px 14px;font:inherit;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:start">
+      <span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font-size:17px;font-weight:600">${l}</span>
+        <span style="font-size:14px;color:var(--text2);line-height:1.35">${e.line}</span>
+        <span style="font-size:12px;color:var(--text3)">RPE ${e.rpe} · ${e.oth[0]}–${e.oth[1]} sets · ${e.deload.toLowerCase()}</span></span>
+      <span style="display:grid;grid-template-columns:auto auto auto;gap:3px 6px;font-size:13px;font-variant-numeric:tabular-nums;justify-items:end;align-content:start;padding-top:3px">
+        ${lifts.map((lf) => { const t = tgt(lf); const end = projected(l, lf); const hit = t && end >= t.kg; return `<span style="color:var(--text2);justify-self:start">${SHORT[lf] ?? lf}</span><span style="color:var(--text3)">${HIST[lf].kg} →</span><span style="font-weight:600;color:${hit ? 'var(--done)' : 'var(--text)'}">${end}</span>`; }).join('')}
+      </span>
+      ${S.targets.length ? `<span style="grid-column:1 / -1;font-size:13px;color:var(--text2);border-top:1px solid var(--divider);padding-top:6px">${S.targets.map((t) => { const w = whenReached(t.lift, t.kg, l); return `${SHORT[t.lift] ?? t.lift} ${t.kg}: ${w === 'now' ? 'already there' : w ? w + ' (est.)' : 'not within a year'}`; }).join(' · ')}</span>` : ''}</button>`; }).join('')}`;
   $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
   document.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => { S.weeks = +b.dataset.wk; S.toDate = !!b.dataset.todate; render(); });
   document.querySelectorAll('[data-eff]').forEach((b) => b.onclick = () => { S.effort = b.dataset.eff; render(); });
