@@ -25,7 +25,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **Focus vs effort (Ben, 22 Oct):** Main focus is what you build (Strength / Muscle / Balanced / Fitness); Effort is how hard (Maintain / Standard / Push). Maintain moved from focus to effort; Steady dropped (★ sports already give the lighter dose). Maintain: fewer sets (others 4–8, priority 8–12), same weights, reps only if easy, no deload, no projected gain.
 
-**What to expect follows Main focus (Ben, 22 Oct):** Strength shows top sets (kg) rising fastest; Balanced shows top sets at the middle rate; Muscle shows working sets as weight × reps, reps first (about one per fortnight, Push one a week) to 12, then the weight steps up and reps drop back; Fitness shows small steady gains. Rates are placeholders (focus × effort) until his own trend replaces them; always est.
+**What to expect follows Main focus (Ben, 22 Oct):** Strength shows top sets (kg) rising fastest; Balanced shows top sets at the middle rate; Muscle shows working sets as weight × reps, reps first (about one per fortnight, Push one a week) to 12, then the weight steps up and reps drop back, with the est. 1RM change shown under each (strength still rises, at about 0.7× the Strength rate); Fitness shows small steady gains. Rates are placeholders (focus × effort) until his own trend replaces them; always est.
 
 ## 1a. Priority and lift check (Ben, 22 Oct)
 

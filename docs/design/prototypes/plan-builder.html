@@ -303,10 +303,13 @@ const projected = (lvl, lift = 'Bench press') => nearest(lift, HIST[lift].kg + g
 function muscleEnd(lift) {
   const h = HIST[lift];
   if (S.effort === 'Maintain') return { kg: h.kg, reps: h.reps };
-  const add = Math.floor(S.weeks / (S.effort === 'Push' ? 1 : 2)), reps = h.reps + add;
-  if (reps <= 12) return { kg: h.kg, reps };
-  const st = h.each ? 2 : 2.5, steps = Math.ceil((reps - 12) / 3);
-  return { kg: h.kg + st * steps, reps: Math.max(8, 12 - 2) };
+  // Target strength gain at the Muscle rate; reps rise first (to 12), then the weight steps up with reps back at 10.
+  const e0 = e1rm(h.kg, h.reps), e1 = e0 * (1 + EFFORT[S.effort].pct * FOCUS_GAIN.Muscle * S.weeks);
+  const st = h.each ? 2 : 2.5, down = (x) => Math.floor(x / st) * st;
+  let reps = Math.min(12, h.reps + Math.floor(S.weeks / (S.effort === 'Push' ? 1 : 2)));
+  while (reps > h.reps + 1 && e1rm(h.kg, reps) > e1 * 1.02) reps--; // no faster than the Muscle rate
+  if (e1rm(h.kg, reps) >= e1 || reps < 12) return { kg: h.kg, reps };
+  return { kg: Math.max(h.kg + st, down(e1 / (1 + 10 / 30))), reps: 10 };
 }
 const TODAY = new Date(2026, 9, 22);
 function whenReached(lift, kg, lvl) {
@@ -350,7 +353,7 @@ function expectBody(lifts) {
   let table;
   if (S.focus === 'Muscle') {
     table = `<span style="${cell}"><span class="lab" style="justify-self:start">Working sets</span><span class="lab">Now</span><span class="lab">Week ${S.weeks} (est.)</span>
-      ${lifts.map((lf) => { const m = muscleEnd(lf); return `${name(lf)}<span style="color:var(--text3)">${HIST[lf].kg} × ${HIST[lf].reps}</span><span style="font-weight:600">${m.kg} × ${m.reps}${each(lf)}</span>`; }).join('')}</span>`;
+      ${lifts.map((lf) => { const m = muscleEnd(lf); const d = Math.round((e1rm(m.kg, m.reps) - e1rm(HIST[lf].kg, HIST[lf].reps)) * 2) / 2; return `${name(lf)}<span style="color:var(--text3)">${HIST[lf].kg} × ${HIST[lf].reps}</span><span style="font-weight:600;display:flex;flex-direction:column;align-items:flex-end;line-height:1.15"><span>${m.kg} × ${m.reps}${each(lf)}</span><span style="font-size:11px;font-weight:400;color:var(--text3)">1RM ${d > 0 ? '+' + d : d === 0 ? '±0' : d} kg</span></span>`; }).join('')}</span>`;
   } else {
     table = `<span style="${cell}"><span class="lab" style="justify-self:start">${S.focus === 'Strength' ? 'Top set, kg' : 'kg'}</span><span class="lab">Now</span><span class="lab">Week ${S.weeks} (est.)</span>
       ${lifts.map((lf) => `${name(lf)}<span style="color:var(--text3)">${HIST[lf].kg}</span><span style="font-weight:600">${projected(S.effort, lf)}${each(lf)}</span>`).join('')}</span>`;
