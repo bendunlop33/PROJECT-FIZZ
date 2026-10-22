@@ -149,9 +149,12 @@ const HIST = {
   'Barbell row': { kg: 90, reps: 12, last: '90 × 12', date: '18 Oct' },
   'Back squat': { kg: 120, reps: 5, last: 'top 120 × 5', date: '3 Aug', stale: true },
   'Romanian deadlift': { kg: 100, reps: 8, last: '100 × 8' },
-  'Overhead press': { kg: 55, reps: 6, last: '55 × 6', date: '2 Jun' },
+  'Overhead press': { kg: 55, reps: 6, last: '55 × 6', date: '2 Jun', stale: true },
   'DB shoulder press': { kg: 24, each: true, reps: 8, last: '24 each × 8', date: '15 Oct' },
   'Machine shoulder press': { kg: 50, reps: 10, date: '2 Oct' },
+  'Deadlift': { kg: 150, reps: 5, none: true },
+  'Front squat': { kg: 100, reps: 5, none: true },
+  'Incline bench press': { kg: 80, reps: 8, none: true },
   'Incline DB press': { kg: 30, reps: 10, last: '30 each × 10' },
   'Lat pulldown': { kg: 70, reps: 10, last: '70 × 10' },
   'Leg press': { kg: 200, reps: 10, last: '200 × 10' },
@@ -185,11 +188,16 @@ const GROUPS = { Chest: ['Chest'], Back: ['Back'], Shoulders: ['Shoulders'], Leg
 const SUG = { group: 'Back', why: 'Fewest sets lately (8 a week vs Chest 15) and your row has stalled for 5 weeks.' };
 const isPri = (m) => S.priority.some((g) => GROUPS[g].includes(m));
 const WD = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+// Other training (Ben, 22 Oct). legs: hard on the legs, so no heavy leg day the day before (GA11).
+const ACTS = ['Running', 'Cycling', 'Swimming', 'Boxing', 'Football', 'HIIT', 'Climbing', 'Yoga'];
+const ACT_SHORT = { Running: 'Run', Cycling: 'Ride', Swimming: 'Swim', Boxing: 'Box', Football: 'Football', HIIT: 'HIIT', Climbing: 'Climb', Yoga: 'Yoga' };
+const ACT_LEGS = new Set(['Cycling', 'Football', 'HIIT']);
+const ACT_DEFAULT_DAY = { Cycling: 5, Swimming: 2, Boxing: 3, Football: 6, HIIT: 4, Climbing: 3, Yoga: 6 };
 
 // ---------- State ----------
 const S = {
   ai: true, page: 'check', check: {}, focus: 'Balanced', targets: [],
-  priority: ['Back'], runs: true, longRunDay: 6, runDays: [2, 6],
+  acts: {}, priority: ['Back'], runs: true, longRunDay: 6, runDays: [2, 6],
   days: [0, 1, 3, 5], freq: 4, schedule: 'fixed', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
 };
@@ -212,10 +220,13 @@ function build() {
   const names = splitFor(days.length, S.focus);
   let plan = days.map((d, i) => ({ day: d, focus: names[i] }));
   // No heavy legs the day before the long run: swap with the furthest non-leg day (rule 11/GA15).
-  if (S.runs) {
-    const before = (S.longRunDay + 6) % 7;
-    const legs = plan.find((p) => p.day === before && (p.focus === 'Legs' || p.focus === 'Lower' || p.focus === 'Full body'));
-    const other = plan.find((p) => p.day !== before && !['Legs', 'Lower', 'Full body'].includes(p.focus));
+  // No heavy legs the day before a long run or a leg-heavy session (cycling, football, HIIT).
+  const hard = [...(S.runs ? [S.longRunDay] : []), ...Object.keys(S.acts).filter((x) => ACT_LEGS.has(x)).flatMap((x) => S.acts[x])];
+  const LEGGY = ['Legs', 'Lower', 'Full body'];
+  const blocked = new Set(hard.map((d) => (d + 6) % 7));
+  for (const before of blocked) {
+    const legs = plan.find((p) => p.day === before && LEGGY.includes(p.focus));
+    const other = plan.find((p) => !blocked.has(p.day) && !LEGGY.includes(p.focus));
     if (legs && other) { const f = legs.focus; legs.focus = other.focus; other.focus = f; legs.moved = true; }
   }
   return balance(plan.map((p) => ({ ...p, ex: exercisesFor(p.focus) })));
@@ -269,7 +280,7 @@ const deloadText = () => S.effort === 'Steady' ? 'no set deload' : S.effort === 
 // Estimate only (rule 6): the main target lift's top set after the plan, at the level's typical weekly gain.
 // Estimates only (rule 6). Weekly gain = a share of the current top set by level (placeholder until his own trend, history-targets).
 const MAIN = ['Bench press', 'Back squat', 'Barbell row', 'DB shoulder press'];
-const SHORT = { 'Bench press': 'Bench press', 'Back squat': 'Back squat', 'Barbell row': 'Barbell row', 'DB shoulder press': 'DB shoulder press', 'Overhead press': 'Overhead press', 'Romanian deadlift': 'RDL' };
+const SHORT = { 'Bench press': 'Bench press', 'Back squat': 'Back squat', 'Barbell row': 'Barbell row', 'DB shoulder press': 'DB shoulder press', 'Overhead press': 'Overhead press', 'Romanian deadlift': 'Romanian deadlift', 'Deadlift': 'Deadlift', 'Front squat': 'Front squat', 'Incline bench press': 'Incline bench press' };
 const CARD = { 'Bench press': 'Bench', 'Back squat': 'Squat', 'Barbell row': 'BB row', 'DB shoulder press': 'DB shoulder' };
 // Dumbbells are per hand and move in 2 kg steps; bars in 2.5 kg (gym kit decides in the app).
 const snapFor = (l, kg) => HIST[l]?.each ? Math.floor(kg / 2) * 2 : snap(kg);
@@ -322,7 +333,7 @@ function renderGoals() {
     <div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested for you: <b style="color:var(--text)">${SUG.group}</b>. ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>
     ${false ? `<div class="offer" style="display:flex;align-items:center;background:var(--raised);border-radius:12px;padding-left:12px;font-size:15px;gap:4px"><span style="flex:1">✦ Back: 8 sets a week vs Chest 15</span><button class="link" id="useSug" style="font-weight:600">Use</button><button class="link dim" id="noSug" aria-label="Dismiss" style="text-decoration:none">✕</button></div>` : ''}
     <div class="label">Other training</div>
-    <div class="card"><div class="row"><span>Runs</span><span class="chips"><button class="chip sm" id="runsToggle" aria-pressed="${S.runs}">${S.runs ? 'On' : 'Off'}</button></span></div></div>`;
+    <div class="chips">${[...ACTS, ...(S.customActs ?? [])].map((a) => `<button class="chip sm" data-act="${esc(a)}" aria-pressed="${a === 'Running' ? S.runs : !!S.acts[a]}">${esc(a)}</button>`).join('')}<button class="chip sm" id="addAct">＋ Other</button></div>`;
   $('footer').innerHTML = `<button class="primary" id="next">Next: length and effort</button>`;
   document.querySelectorAll('[data-focus]').forEach((b) => b.onclick = () => { S.focus = b.dataset.focus; render(); });
   $('focusInfo').onclick = () => sheet(`<h2>Main focus</h2><div class="card" style="padding:4px 16px">${[
@@ -336,29 +347,48 @@ function renderGoals() {
   document.querySelectorAll('[data-pri]').forEach((b) => b.onclick = () => addPri(b.dataset.pri));
   if ($('reSug')) $('reSug').onclick = () => addPri(SUG.group);
   if ($('useSug')) { $('useSug').onclick = () => addPri('Back'); $('noSug').onclick = () => { S.sugGone = true; render(); }; }
-  $('runsToggle').onclick = () => { S.runs = !S.runs; render(); };
+  document.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => { const a = b.dataset.act; if (a === 'Running') S.runs = !S.runs; else if (S.acts[a]) delete S.acts[a]; else S.acts[a] = [ACT_DEFAULT_DAY[a] ?? 3]; render(); });
+  $('addAct').onclick = () => { const n = (prompt('Other training') || '').trim(); if (n) { S.customActs = [...(S.customActs ?? []), n]; S.acts[n] = [3]; render(); } };
   $('next').onclick = () => go(1);
 }
 
 // Strength balance (Ben, 22 Oct): each main lift's est. 1RM ÷ bench est. 1RM against a rough usual band.
 // Rules of thumb only; shown as information and a supporting signal for the priority pick, never a reason alone.
-const BAL = [
-  { l: 'Back squat', lo: 1.2, hi: 1.5, f: 1 },
-  { l: 'Barbell row', lo: 0.7, hi: 1.0, f: 1 },
-  { l: 'DB shoulder press', lo: 0.22, hi: 0.30, f: 1, each: true },
-];
+// Usual range of each lift's est. 1RM ÷ bench est. 1RM (crowd-sourced strength standards and coaching rules of thumb;
+// shown as information, a supporting signal only). Extra lifts can be added on Check your lifts.
+const BAL = {
+  'Back squat': [1.2, 1.5], 'Barbell row': [0.7, 1.0], 'DB shoulder press': [0.22, 0.30],
+  'Deadlift': [1.5, 1.9], 'Front squat': [0.95, 1.2], 'Romanian deadlift': [1.0, 1.3],
+  'Overhead press': [0.6, 0.7], 'Incline bench press': [0.8, 0.9],
+};
+const EXTRA = ['Deadlift', 'Front squat', 'Romanian deadlift', 'Overhead press', 'Incline bench press'];
+const checkLifts = () => [...MAIN, ...(S.extra ?? [])];
+const hasData = (l) => !HIST[l].none || S.check[l] === 'entered' || S.check[l] === 'est';
+const ratio = (l) => e1rm(HIST[l].kg, HIST[l].reps) / e1rm(HIST['Bench press'].kg, HIST['Bench press'].reps);
+const balWord = (l) => { const v = ratio(l), [lo, hi] = BAL[l]; return v < lo ? 'Below' : v > hi ? 'Above' : 'In range'; };
 function balanceCard() {
-  const b1 = e1rm(HIST['Bench press'].kg, HIST['Bench press'].reps);
-  const rows = BAL.map((r) => {
-    const h = HIST[r.l]; const v = e1rm(h.kg, h.reps) / b1;
-    const min = r.lo * 0.6, max = r.hi * 1.4, pos = (x) => Math.max(0, Math.min(100, (x - min) / (max - min) * 100));
-    const word = v < r.lo ? 'Below' : v > r.hi ? 'Above' : 'In range';
-    return `<div class="vol" style="grid-template-columns:96px 1fr 64px"><span class="mn" style="font-size:13px">${CARD[r.l]}</span>
-      <span class="bar" style="height:10px"><span class="rng" style="left:${pos(r.lo)}%;width:${pos(r.hi) - pos(r.lo)}%"></span><span style="position:absolute;top:-2px;left:calc(${pos(v)}% - 7px);width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--surface)"></span></span>
-      <span class="n" style="font-size:12px;color:${word === 'Below' ? 'var(--warn)' : 'var(--text2)'}">${(Math.floor(v * 100) / 100).toFixed(2)}×<br>${word}</span></div>`;
+  const lifts = checkLifts().filter((l) => l !== 'Bench press' && BAL[l] && hasData(l));
+  const rows = lifts.map((l) => {
+    const [lo, hi] = BAL[l]; const v = ratio(l);
+    const min = lo * 0.6, max = hi * 1.4, pos = (x) => Math.max(0, Math.min(100, (x - min) / (max - min) * 100));
+    const word = balWord(l);
+    return `<div class="vol" style="grid-template-columns:132px 1fr 64px;min-height:40px"><span class="mn" style="font-size:14px">${SHORT[l]}</span>
+      <span class="bar" style="height:10px"><span class="rng" style="left:${pos(lo)}%;width:${pos(hi) - pos(lo)}%"></span><span style="position:absolute;top:-2px;left:calc(${pos(v)}% - 7px);width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--surface)"></span></span>
+      <span class="n" style="font-size:13px;color:${word === 'Below' ? 'var(--warn)' : 'var(--text2)'}">${word}</span></div>`;
   }).join('');
-  return `<div class="label" style="display:flex;align-items:center;gap:4px">Strength balance · vs bench (est.) <button class="link dim" id="balInfo" aria-label="What this shows" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>
-    <div class="card" style="padding:10px 16px;gap:6px">${rows}</div>`;
+  return `<div class="label" style="display:flex;align-items:center;gap:4px">Strength balance <button class="link dim" id="balInfo" aria-label="How this is worked out" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>
+    <div class="card" style="padding:10px 16px;gap:6px">
+      <div class="vol" style="grid-template-columns:132px 1fr 64px;min-height:40px"><span class="mn" style="font-size:14px">Bench press</span><span style="height:10px;border-top:1px dashed var(--divider);margin-top:5px"></span><span class="n" style="font-size:13px;color:var(--text2)">Baseline</span></div>
+      ${rows}</div>`;
+}
+function balanceInfo() {
+  const lifts = checkLifts().filter((l) => l !== 'Bench press' && BAL[l] && hasData(l));
+  sheet(`<h2>Strength balance</h2>
+    <div class="note" style="display:block;line-height:1.45">Each lift's estimated 1RM divided by your bench press estimated 1RM. The shaded band is the usual range for lifters, from crowd-sourced strength standards and coaching rules of thumb. It's not a target: build, technique and how strictly you lift all move it. It only counts toward a priority with another sign, like low sets or a stalled lift.</div>
+    <div class="card" style="padding:4px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:16px">
+      <span class="lab" style="padding:8px 0">Lift</span><span class="lab" style="padding:8px 0;text-align:center">You</span><span class="lab" style="padding:8px 0;text-align:center">Usual</span>
+      ${lifts.map((l) => `<span style="padding:8px 0;border-top:1px solid var(--divider)">${SHORT[l]}</span><span style="padding:8px 0;border-top:1px solid var(--divider);text-align:center;font-variant-numeric:tabular-nums">${(Math.floor(ratio(l) * 100) / 100).toFixed(2)}×</span><span style="padding:8px 0;border-top:1px solid var(--divider);text-align:center;color:var(--text2);font-variant-numeric:tabular-nums">${BAL[l][0]}–${BAL[l][1]}×</span>`).join('')}
+    </div>${S.ai ? '' : ''}`);
 }
 
 // Read-across (Ben, 22 Oct): a main lift with no history is estimated from his closest similar lift first, then
@@ -380,7 +410,7 @@ function go(d) { const f = flow(); const i = Math.max(0, Math.min(f.length - 1, 
 function renderCheck() {
   S.checkSeen = true;
   const C = 'display:flex;align-items:center;justify-content:center;min-height:52px;font-variant-numeric:tabular-nums;border-bottom:1px solid var(--divider)';
-  const rows = MAIN.map((l) => {
+  const rows = checkLifts().map((l) => {
     const h = HIST[l], c = S.check[l];
     const e = (h.none && c !== 'entered') ? estFrom(l, S.src?.[l] ?? 0) : null;
     const kg = e ? e.kg : h.kg, reps = e ? e.reps : h.reps;
@@ -388,16 +418,22 @@ function renderCheck() {
     const open = (h.stale && c !== 'yes' && c !== 'entered') || (h.none && !c);
     return `<button data-lift="${l}" style="display:contents;font:inherit;color:inherit;cursor:pointer">
       <span style="${C};justify-content:flex-start;gap:6px;text-align:left">${SHORT[l]}${open ? '<span style="width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none" aria-label="Check"></span>' : ''}</span>
-      <span style="${C};flex-direction:column;color:${reps === 6 && !e ? 'var(--text)' : 'var(--text2)'}">${kgCell(l, six)}</span>
-      <span style="${C};flex-direction:column;color:var(--text2)">${kgCell(l, one)}</span></button>`;
+      ${h.none && !e && c !== 'entered' ? `<span style="${C};color:var(--text3)">—</span><span style="${C};color:var(--text3)">—</span>` : `<span style="${C};flex-direction:column;color:${reps === 6 && !e ? 'var(--text)' : 'var(--text2)'}">${kgCell(l, six)}</span>
+      <span style="${C};flex-direction:column;color:var(--text2)">${kgCell(l, one)}</span>`}</button>`;
   }).join('');
   $('scroll').innerHTML = `<h1>Check your lifts</h1>
     <div class="card" style="display:grid;grid-template-columns:minmax(0,1fr) 84px 84px;padding:4px 16px">
       <span class="lab" style="display:flex;align-items:center;min-height:32px">Lift</span><span class="lab" style="text-align:center;align-self:center">6 reps</span><span class="lab" style="text-align:center;align-self:center">1RM est.</span>
-      ${rows}</div>
+      ${rows}
+      <button class="link" id="addLift" style="grid-column:1 / -1;justify-self:start">＋ Add a lift</button></div>
     <div class="note">Tap a lift to change it. Grey = estimate.</div>
     ${balanceCard()}`;
-  if ($('balInfo')) $('balInfo').onclick = () => sheet(`<h2>Strength balance</h2><div class="note" style="display:block;line-height:1.45">Each lift's estimated 1RM divided by your bench. The shaded band is the usual range for lifters (crowd-sourced strength standards and coaching rules of thumb), not a target: build, technique and how strictly you lift all shift it. It only counts toward a priority alongside another sign, like low sets or a stalled lift.</div>`);
+  if ($('balInfo')) $('balInfo').onclick = balanceInfo;
+  if ($('addLift')) $('addLift').onclick = () => {
+    const left = EXTRA.filter((l) => !(S.extra ?? []).includes(l));
+    sheet(`<h2>Add a lift</h2><div class="card">${left.map((l) => `<button class="row" data-add="${l}" style="background:none;border:0;border-bottom:1px solid var(--divider);color:var(--text);font:inherit;width:100%;cursor:pointer;text-align:left"><span>${SHORT[l]}</span><span class="v">${HIST[l].none ? 'Enter' : '›'}</span></button>`).join('')}</div>`);
+    document.querySelectorAll('[data-add]').forEach((b) => b.onclick = () => { const l = b.dataset.add; S.extra = [...(S.extra ?? []), l]; closeSheet(); render(); if (HIST[l].none) openLiftSheet(l); });
+  };
   $('footer').innerHTML = `<button class="primary" id="next">Next</button>`;
   document.querySelectorAll('[data-lift]').forEach((b) => b.onclick = () => openLiftSheet(b.dataset.lift));
   $('next').onclick = () => go(1);
@@ -411,7 +447,7 @@ function openLiftSheet(l) {
   const h = HIST[l]; const c = S.check[l];
   const e = (h.none && c !== 'entered') ? estFrom(l, S.src?.[l] ?? 0) : null;
   let kg = e ? e.kg : h.kg, reps = e ? e.reps : h.reps;
-  const from = c === 'entered' ? 'You entered' : e ? `Estimated from ${e.from} ${e.note}` : `Last set: ${fmtKg(l, h.kg)} × ${h.reps} · ${h.date}`;
+  const from = c === 'entered' ? 'You entered' : e ? `Estimated from ${e.from} ${e.note}` : h.none ? 'No history. Enter a recent set.' : `Last set: ${fmtKg(l, h.kg)} × ${h.reps} · ${h.date}`;
   const draw = () => {
     sheet(`<h2>${SHORT[l]}</h2><div class="note">${esc(from)}</div>
       <div class="card"><div class="row"><span>Weight</span><span class="stepper"><button id="wD" aria-label="Lighter">−</button><span>${fmtKg(l, kg)}</span><button id="wU" aria-label="Heavier">＋</button></span></div>
@@ -442,12 +478,12 @@ function renderAmbition() {
     <div class="label">Length</div>
     <div class="chips">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w && !S.toDate}">${w} weeks</button>`).join('')}${fixed ? `<button class="chip" data-wk="8" data-todate="1" aria-pressed="${!!S.toDate}">To ${esc(fixed.by)}</button>` : ''}</div>
     <div class="label" style="display:flex;justify-content:space-between"><span>Effort</span><span>kg · now → week ${S.weeks} (est.)</span></div>
-    ${['Steady', 'Standard', 'Push'].map((l) => { const e = EFFORT[l]; return `<button class="card" data-eff="${l}" style="text-align:left;border:${S.effort === l ? '2px solid var(--accent)' : '2px solid transparent'};color:var(--text);cursor:pointer;padding:12px 14px;font:inherit;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:start">
+    ${['Steady', 'Standard', 'Push'].map((l) => { const e = EFFORT[l]; return `<button class="card" data-eff="${l}" style="text-align:left;border:${S.effort === l ? '2px solid var(--accent)' : '2px solid transparent'};color:var(--text);cursor:pointer;padding:12px 14px;font:inherit;display:grid;grid-template-columns:minmax(0,1fr);gap:8px">
       <span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font-size:17px;font-weight:600">${l}</span>
         <span style="font-size:14px;color:var(--text2);line-height:1.35">${e.line}</span>
         <span style="font-size:12px;color:var(--text3)">RPE ${e.rpe} · ${e.oth[0]}–${e.oth[1]} sets · ${e.deload.toLowerCase()}</span></span>
-      <span style="display:grid;grid-template-columns:auto auto auto;gap:3px 6px;font-size:13px;font-variant-numeric:tabular-nums;justify-items:end;align-content:start;padding-top:3px">
-        ${lifts.map((lf) => { const t = tgt(lf); const end = projected(l, lf); const hit = t && end >= t.kg; return `<span style="color:var(--text2);justify-self:start">${CARD[lf] ?? lf}</span><span style="color:var(--text3)">${HIST[lf].kg} →</span><span style="font-weight:600;color:${hit ? 'var(--done)' : 'var(--text)'}">${end}</span>`; }).join('')}
+      <span style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;font-size:14px;font-variant-numeric:tabular-nums;justify-items:end;border-top:1px solid var(--divider);padding-top:8px">
+        ${lifts.map((lf) => { const t = tgt(lf); const end = projected(l, lf); const hit = t && end >= t.kg; const each = HIST[lf].each ? ' <span style="font-size:11px;color:var(--text3)">each</span>' : ''; return `<span style="color:var(--text2);justify-self:start">${SHORT[lf] ?? lf}</span><span style="color:var(--text3)">${HIST[lf].kg} →</span><span style="font-weight:600;color:${hit ? 'var(--done)' : 'var(--text)'}">${end}${each}</span>`; }).join('')}
       </span>
       ${S.targets.length ? `<span style="grid-column:1 / -1;font-size:13px;color:var(--text2);border-top:1px solid var(--divider);padding-top:6px">${S.targets.map((t) => { const w = whenReached(t.lift, t.kg, l); return `${SHORT[t.lift] ?? t.lift} ${t.kg}: ${w === 'now' ? 'already there' : w ? w + ' (est.)' : 'not within a year'}`; }).join(' · ')}</span>` : ''}</button>`; }).join('')}`;
   $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
@@ -467,6 +503,8 @@ function renderWeek() {
     ${S.runs ? `<div class="label">Runs</div>
     <div class="week daypick">${WD.map((d, i) => `<button class="day" data-run="${i}" aria-pressed="${S.runDays.includes(i)}" style="${S.runDays.includes(i) ? 'background:var(--run-sub);color:var(--run)' : ''}"><span class="dn" style="${S.runDays.includes(i) ? 'color:var(--run)' : ''}">${d}${i === S.longRunDay ? ' ·L' : ''}</span></button>`).join('')}</div>
     <div class="note">Long run: ${WD[S.longRunDay]} <button class="link dim" id="longRun">Change</button></div>` : ''}
+    ${Object.keys(S.acts).map((a) => `<div class="label">${esc(a)}</div>
+    <div class="week daypick">${WD.map((d, i) => `<button class="day" data-actday="${esc(a)}|${i}" aria-pressed="${S.acts[a].includes(i)}" style="${S.acts[a].includes(i) ? 'background:var(--run-sub);color:var(--run)' : ''}"><span class="dn" style="${S.acts[a].includes(i) ? 'color:var(--run)' : ''}">${d}</span></button>`).join('')}</div>`).join('')}
     <div class="card">
       <div class="row"><span>Length</span><span class="stepper"><button id="lenDown" aria-label="Shorter">−</button><span>${S.length} min</span><button id="lenUp" aria-label="Longer">＋</button></span></div>
       <div class="row"><span>Gym</span><span class="v">${esc(S.gym)} ›</span></div>
@@ -477,6 +515,7 @@ function renderWeek() {
   const PREF = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] };
   $('fDown').onclick = () => { S.freq = Math.max(2, S.freq - 1); S.days = PREF[S.freq]; render(); };
   $('fUp').onclick = () => { S.freq = Math.min(6, S.freq + 1); S.days = PREF[S.freq]; render(); };
+  document.querySelectorAll('[data-actday]').forEach((b) => b.onclick = () => { const [a, d] = b.dataset.actday.split('|'); const n = +d; S.acts[a] = S.acts[a].includes(n) ? S.acts[a].filter((x) => x !== n) : [...S.acts[a], n]; render(); });
   document.querySelectorAll('[data-run]').forEach((b) => b.onclick = () => { const d = +b.dataset.run; S.runDays = S.runDays.includes(d) ? S.runDays.filter((x) => x !== d) : [...S.runDays, d]; if (!S.runDays.includes(S.longRunDay)) S.longRunDay = S.runDays.at(-1) ?? 6; render(); });
   if ($('longRun')) $('longRun').onclick = () => { const i = S.runDays.indexOf(S.longRunDay); S.longRunDay = S.runDays[(i + 1) % S.runDays.length]; render(); };
   $('lenDown').onclick = () => { S.length = Math.max(30, S.length - 15); render(); };
@@ -495,7 +534,7 @@ function coachIntro() {
   const split = [...new Set(S.plan.map((d) => d.focus))].join(' / ').toLowerCase();
   const chestDays = S.plan.filter((d) => d.ex.some((e) => e.m === 'Chest')).length;
   const ws = weeklySets(S.plan); const short = MUSCLES.filter((m) => ws[m] < range(m)[0]);
-  return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before your long run.` : ''}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}: add a day, longer sessions, or Standard.` : ''}`;
+  return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}: add a day, longer sessions, or Standard.` : ''}`;
 }
 
 function renderPlan() {
@@ -504,7 +543,7 @@ function renderPlan() {
   const byDay = Object.fromEntries(p.map((d) => [d.day, d]));
   const strip = WD.map((d, i) => {
     const lift = byDay[i], run = S.runs && S.runDays.includes(i);
-    return `<button class="day ${S.open >= 0 && p[S.open]?.day === i ? 'sel' : ''}" data-strip="${i}"><span class="dn">${d}</span>${lift ? `<span class="pip lift">${esc(lift.focus)}</span>` : ''}${run ? `<span class="pip run">${i === S.longRunDay ? 'Long run' : 'Run'}</span>` : ''}${!lift && !run ? '<span class="pip rest">Rest</span>' : ''}</button>`;
+    return `<button class="day ${S.open >= 0 && p[S.open]?.day === i ? 'sel' : ''}" data-strip="${i}"><span class="dn">${d}</span>${lift ? `<span class="pip lift">${esc(lift.focus)}</span>` : ''}${run ? `<span class="pip run">${i === S.longRunDay ? 'Long run' : 'Run'}</span>` : ''}${Object.keys(S.acts).filter((a) => S.acts[a].includes(i)).map((a) => `<span class="pip run">${esc(ACT_SHORT[a] ?? a)}</span>`).join('')}${!lift && !run && !Object.keys(S.acts).some((a) => S.acts[a].includes(i)) ? '<span class="pip rest">Rest</span>' : ''}</button>`;
   }).join('');
   $('scroll').innerHTML = `
     <div class="hdr" style="min-height:0"><h1>Your plan</h1>${S.ai ? '' : '<span class="badge">Not reviewed</span>'}</div>
