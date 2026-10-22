@@ -12,7 +12,8 @@ import { TIMING, useTheme } from '../../theme';
 import { AppText, HeroHeader, PrimaryButton, StatusLine, TextButton, Toast } from '../../ui';
 
 export const PLAN_DAY_COPY = {
-  start: (name: string) => `Start ${name}`,
+  /** (22 Oct) It opens Your workout (nothing starts until Start there), so it says Open, not Start. */
+  open: (name: string) => `Open ${name}`,
   edit: 'Edit',
   askCoach: 'Ask coach',
   coachDraft: (name: string) => `Change ${name} in my plan: `,
@@ -28,9 +29,9 @@ export const PLAN_DAY_COPY = {
  * Your plan › a day (Ben, 19 Oct; mockup approved): the day's name, `Day 2
  * of 4 · Main gym · about 60 min`, each exercise's planned sets × reps ·
  * load at this gym with last time's sets and targets hit (or `est.`), then
- * `Start` (the Workout overview, where every start begins), `Edit` (the
- * saved workout) and `Ask coach` (the coach sheet with a draft; nothing is
- * sent). Every value comes from `services.plans.planDay`; nothing is
+ * `Open <day>` (Your workout for that day, where Start is; 22 Oct), `Edit`
+ * (the saved workout) and `Ask coach` (the coach sheet with a draft; nothing
+ * is sent). Every value comes from `services.plans.planDay`; nothing is
  * computed here. Local only (rule 1).
  */
 export function PlanDayScreen() {
@@ -119,7 +120,7 @@ export function PlanDayScreen() {
             </View>
           ) : null}
           <PrimaryButton
-            label={PLAN_DAY_COPY.start(name)}
+            label={PLAN_DAY_COPY.open(name)}
             onPress={() => {
               navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: day.routineId }, back: 'Library' });
             }}
