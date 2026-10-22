@@ -396,6 +396,12 @@ const targetAim = () => S.effort === 'Maintain' ? 4 : S.effort === 'Push' ? 8 : 
 const isSpec = (m) => S.spec.includes(m);
 const chartMuscles = () => [...MUSCLES, ...OWN.filter(isSpec)];
 const LEG_M = ['Quads', 'Hamstrings', 'Calves', 'Glutes', 'Adductors', 'Abductors'];
+// When a priority needs a second day its split doesn't give, it borrows the most compatible day first (Ben, 22 Oct:
+// no bench on leg day), then the lightest.
+const UPPER_D = ['Upper', 'Full body'];
+const COMPAT = { Chest: ['Shoulders', 'Push', ...UPPER_D, 'Arms', 'Back'], Back: ['Shoulders', 'Pull', ...UPPER_D, 'Arms', 'Chest'], Shoulders: ['Chest', 'Back', 'Push', ...UPPER_D, 'Arms'],
+  Biceps: ['Back', 'Pull', 'Shoulders', ...UPPER_D, 'Arms', 'Chest'], Triceps: ['Chest', 'Push', 'Shoulders', ...UPPER_D, 'Arms', 'Back'], Forearms: ['Back', 'Pull', 'Arms', ...UPPER_D] };
+const compatRank = (m, focus) => { const l = LEG_M.includes(m) ? ['Legs', 'Lower', 'Full body'] : (COMPAT[m] ?? []); const i = l.indexOf(focus); return i < 0 ? 99 : i; };
 function aimFor(m) {
   if (OWN.includes(m)) return isSpec(m) ? targetAim() : 0;
   const [lo, hi] = range(m);
@@ -499,7 +505,7 @@ function build() {
     const E = plan.filter((p) => (ELIG[p.focus] ?? []).includes(m));
     const want = need2 && plan.length >= 2 ? 2 : 1;
     while (E.length < want) {
-      const extra = plan.filter((p) => !E.includes(p) && !(LEG_M.includes(m) && blocked.has(p.day))).sort((a, b) => load.get(a) - load.get(b))[0];
+      const extra = plan.filter((p) => !E.includes(p) && !(LEG_M.includes(m) && blocked.has(p.day))).sort((a, b) => compatRank(m, a.focus) - compatRank(m, b.focus) || load.get(a) - load.get(b))[0];
       if (!extra) break; E.push(extra);
     }
     return E;
@@ -516,7 +522,7 @@ function build() {
         .sort((a, b) => m === 'Core' ? (b.room - a.room || onDay(a.d, m) - onDay(b.d, m)) : (onDay(a.d, m) - onDay(b.d, m) || b.room - a.room));
       // A priority whose own days are full borrows the lightest other day (e.g. rows on a leg day), up to 3 days.
       if (!opts.length && prioritised(m) && D[m].length < Math.min(3, plan.length)) {
-        const extra = plan.filter((p) => !D[m].includes(p) && !(LEG_M.includes(m) && blocked.has(p.day)) && cap - load.get(p) >= 2).sort((a, b) => load.get(a) - load.get(b))[0];
+        const extra = plan.filter((p) => !D[m].includes(p) && !(LEG_M.includes(m) && blocked.has(p.day)) && cap - load.get(p) >= 2).sort((a, b) => compatRank(m, a.focus) - compatRank(m, b.focus) || load.get(a) - load.get(b))[0];
         if (extra) { D[m] = [...D[m], extra]; continue; }
       }
       const o = opts[0]; if (!o) return;
@@ -552,7 +558,14 @@ function build() {
       const list = ranked(EX[m]).filter(([, , tags = [], skip = []]) => !skip.includes(d.focus) && (!t || tags.includes(t)));
       // First day for this muscle takes his top-ranked exercise, the next day the second; extra chunks go down the list.
       const occ = (seenM[m + (t ?? '')] = (seenM[m + (t ?? '')] ?? -1) + 1), start = occ % Math.min(2, list.length);
-      const rot = [...list.slice(start), ...list.slice(0, start)];
+      let rot = [...list.slice(start), ...list.slice(0, start)];
+      // Editing a plan keeps what's there (Ben, 22 Oct): this day's current exercises for this muscle go first, unless he
+      // has just picked something else for it (a new like). Only what the change needs moves.
+      if (S.basePlan) {
+        const kept = (S.basePlan[di]?.ex ?? []).filter((e) => e.m === m && e.role !== 'main' && (!t || e.tags.includes(t))).map((e) => e.n);
+        const newLike = rot.some(([n]) => allLikes().includes(n) && !kept.includes(n));
+        if (!newLike) rot = [...rot.filter(([n]) => kept.includes(n)), ...rot.filter(([n]) => !kept.includes(n))];
+      }
       chunks(s).forEach((c, j) => add(d, m, rot.find(([n]) => !used(d, n)) ?? rot[j % rot.length], c));
     });
     const imp = (e) => e.role === 'main' ? 99 : isPri(e.m) ? 9 : (isSpec(e.m) || e.tags.some(isSpec)) ? 8 : e.m === 'Core' ? 3 : e.role === 'c' ? 5 : 4;
@@ -998,7 +1011,7 @@ function renderWeek() {
   };
 }
 function startPlan() {
-  S.plan = build(); S.page = 'plan'; S.chat = []; S.open = -1; S.pageTop = true; S.week = 1;
+  S.plan = build(); S.page = 'plan'; S.chat = []; S.open = -1; S.pageTop = true; if (!S.editing) S.week = 1;
   if (S.ai) S.chat.push({ who: 'co', text: coachIntro() });
   render();
 }
@@ -1041,6 +1054,25 @@ function coachIntro() {
   return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${alt}${seven}${once}${sport}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}${S.effort === 'Standard' || S.pri.length ? ': add a day or longer sessions.' : ': add a day, longer sessions, or Standard.'}` : ''}`;
 }
 
+// What an edit changes, against the plan as it was (rule 2: before/after before Apply changes). Weeks done and weights carry on.
+function planDiff(a, b) {
+  const out = [];
+  b.forEach((d, i) => {
+    const o = a[i]; const name = `${S.schedule === 'flexible' ? i + 1 : WD[d.day]} · ${d.focus}${d.variant ? ' ' + d.variant : ''}`;
+    if (!o) { out.push(`${name}: new day`); return; }
+    const lines = [];
+    if (o.focus !== d.focus) lines.push(`was ${o.focus}`);
+    d.ex.forEach((e) => { const x = o.ex.find((y) => y.n === e.n); if (!x) lines.push(`+ ${e.n} ${e.sets}`); else if (x.sets !== e.sets) lines.push(`${e.n} ${x.sets} → ${e.sets}`); });
+    o.ex.forEach((x) => { if (!d.ex.some((e) => e.n === x.n)) lines.push(`− ${x.n}`); });
+    if (lines.length) out.push(`${name}: ${lines.join(' · ')}`);
+  });
+  a.slice(b.length).forEach((o) => out.push(`${o.focus}: removed`));
+  return out;
+}
+function changesCard() {
+  const d = planDiff(S.basePlan, S.plan);
+  return `<div class="card" style="padding:10px 14px;gap:6px"><div style="display:flex;justify-content:space-between;align-items:baseline"><b style="font-size:15px">Changes</b><span style="font-size:13px;color:var(--text2)">${d.length ? `${d.length} day${d.length === 1 ? '' : 's'}` : 'None yet'}</span></div>${d.map((l) => `<div style="font-size:13.5px;color:var(--text2);line-height:1.4">${esc(l)}</div>`).join('')}</div>`;
+}
 function renderPlan() {
   const p = S.plan;
   if (S.week > S.weeks) S.week = 1;
@@ -1053,6 +1085,7 @@ function renderPlan() {
   $('scroll').innerHTML = `
     <div class="hdr" style="min-height:0"><h1>Your plan</h1>${S.ai ? '' : '<span class="badge">Not reviewed</span>'}</div>
     <div class="blk"><span>${S.weeks} weeks · ${esc(S.effort)} · ${deloadText()}</span><span>${S.length} min</span></div>
+    ${S.editing && S.basePlan ? changesCard() : ''}
     <div class="label" style="display:flex;justify-content:space-between;align-items:baseline">Week${isDeload(S.week) ? '<span style="letter-spacing:0;text-transform:none;font-size:12px">Deload: lighter, fewer sets</span>' : ''}</div>
     <div class="seg wkstrip">${Array.from({ length: S.weeks }, (_, i) => i + 1).map((w) => `<button class="chip" data-week="${w}" aria-pressed="${S.week === w}">${w}${isDeload(w) ? '<span class="dl">D</span>' : ''}</button>`).join('')}</div>
     ${S.schedule === 'flexible' ? `<div class="chips">${p.map((d, i) => `<button class="chip sm" data-toggle="${i}" aria-pressed="${S.open === i}">${i + 1} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</button>`).join('')}</div>` : `<div class="week">${strip}</div>`}
@@ -1089,7 +1122,7 @@ function renderPlan() {
   document.querySelectorAll('[data-choice]').forEach((el) => el.onclick = () => { S.chat = S.chat.filter((c) => c.who !== 'choice'); const pending = S.pendingAsk; S.pendingAsk = null; el.dataset.choice === 'new' ? rebuild(pending) : editPlan(pending); });
   $('absChange').onclick = () => { sheet(`<h2>Ab sets a week</h2><div class="seg">${ABS_OPTS.map((n) => `<button class="chip" data-absn="${n}" style="min-width:0;flex:1 1 0" aria-pressed="${absPerWeek() === n}">${n === absAuto() ? '✦ ' : ''}${n}</button>`).join('')}</div>`); document.querySelectorAll('[data-absn]').forEach((b) => b.onclick = () => { const before = snapshot(); S.absWk = +b.dataset.absn; S.plan = build(); closeSheet(); render(); toast(`Abs ${S.absWk} sets a week`, true, () => { restore(before); render(); }); }); };
   $('whyBtn').onclick = () => $('why').classList.toggle('on');
-  if ($('apply')) $('apply').onclick = () => { S.applied = true; S.editing = false; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
+  if ($('apply')) $('apply').onclick = () => { S.applied = true; S.editing = false; S.basePlan = null; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
   const ask = $('ask');
   if (ask) ask.onkeydown = (e) => { if (e.key === 'Enter' && ask.value.trim()) { coach(ask.value.trim()); } };
   const sc = $('scroll'); if (S.chatScroll) { sc.scrollTop = sc.scrollHeight; S.chatScroll = false; } else if (S.pageTop) { sc.scrollTop = 0; S.pageTop = false; }
@@ -1205,7 +1238,7 @@ function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('a
 $('aiOn').onclick = () => setAi(true);
 $('aiOff').onclick = () => setAi(false);
 $('restart').onclick = () => { Object.assign(S, { ans: {}, flagged: false, spec: [], focusOver: {}, prefAns: {}, prefFlag: false, likes: [], never: [], priAsk: null, actAsk: null, runs: false, acts: {}, pri: [], page: 'check', priority: [], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
-$('editExisting').onclick = () => { S.ans = { wk: true, eff: true, focus: true }; S.priAsk = S.priAsk ?? 'No'; S.actAsk = S.actAsk ?? 'No'; S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
+$('editExisting').onclick = () => { S.ans = { wk: true, eff: true, focus: true }; S.priAsk = S.priAsk ?? 'No'; S.actAsk = S.actAsk ?? 'No'; S.basePlan = null; S.plan = build(); S.basePlan = JSON.parse(JSON.stringify(S.plan)); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
 render();
 </script>
 </body>
