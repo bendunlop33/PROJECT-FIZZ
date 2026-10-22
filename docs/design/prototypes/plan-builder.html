@@ -200,7 +200,7 @@ const ACT_DEFAULT_DAY = { Cycling: 5, Swimming: 2, Boxing: 3, Football: 6, HIIT:
 // ---------- State ----------
 const S = {
   ai: true, page: 'check', check: {}, focus: 'Balanced', targets: [],
-  acts: {}, pri: [], priority: ['Back'], runs: true, longRunDay: 6, runDays: [2, 6],
+  acts: {}, pri: [], priority: [], runs: false, longRunDay: 6, runDays: [2, 6],
   days: [0, 1, 3, 5], freq: 4, schedule: 'fixed', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
 };
@@ -347,6 +347,7 @@ function fitSegs() {
   all.forEach((b) => { b.style.minWidth = w + 'px'; });
 }
 function render() {
+  $('scroll').style.paddingBottom = '';
   const steps = ['Goals', 'Week', 'Your plan'];
   const f = flow(); const i = f.indexOf(S.page);
   $('steps').textContent = S.applied ? 'Your plan' : `${i + 1} of ${f.length}`;
@@ -389,7 +390,8 @@ function goalSections() {
 function applyReveal() {
   const rev = S.rev ?? 0;
   goalSections().forEach(([el, sec]) => { el.style.display = sec > rev ? 'none' : ''; el.dataset.sec = sec; });
-  if (S.scrollTo != null) { const t = $('scroll').querySelector(`[data-sec="${S.scrollTo}"]`); S.scrollTo = null; if (t) requestAnimationFrame(() => t.scrollIntoView({ behavior: 'smooth', block: 'start' })); }
+  $('scroll').style.paddingBottom = rev < 5 ? '60vh' : '';
+  if (S.scrollTo != null) { const t = $('scroll').querySelector(`[data-sec="${S.scrollTo}"]`); S.scrollTo = null; if (t) requestAnimationFrame(() => { const sc = $('scroll'); sc.scrollTo({ top: t.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 4, behavior: 'smooth' }); }); }
 }
 $('scroll').addEventListener('click', (ev) => {
   if (S.page !== 'goals') return;
@@ -402,11 +404,13 @@ function renderGoals() {
     <h1>Gym goals</h1>
     <div class="label" style="display:flex;align-items:center;gap:4px">Main focus <button class="link dim" id="focusInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
     <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
-    <div class="label" style="display:flex;align-items:center;gap:4px">Priority · up to 2 <button class="link dim" id="priInfo" aria-label="What priority does" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
-    <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m === SUG.group ? '✦ ' : ''}${m}</button>`).join('')}</div>
-    <div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested: <b style="color:var(--text)">${SUG.group}</b>, ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>
-    <div class="label" style="display:flex;align-items:center;gap:4px">Other training <button class="link dim" id="actInfo" aria-label="How this works" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
-    <div class="chips">${[...ACTS, ...(S.customActs ?? [])].map((a) => `<button class="chip sm" data-act="${esc(a)}" aria-pressed="${a === 'Running' ? S.runs : !!S.acts[a]}">${S.pri.includes(a) ? '★ ' : ''}${esc(a)}</button>`).join('')}<button class="chip sm" id="addAct">＋ Other</button></div>
+    <div class="label" style="display:flex;align-items:center;gap:4px">Any priorities? <button class="link dim" id="priInfo" aria-label="What priority does" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
+    <div class="seg">${['No', 'Yes'].map((o) => `<button class="chip" data-priask="${o}" aria-pressed="${S.priAsk === o}">${o}</button>`).join('')}</div>
+    ${S.priAsk === 'Yes' ? `<div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m === SUG.group ? '✦ ' : ''}${m}</button>`).join('')}</div>` : ''}
+    ${S.priAsk !== 'No' ? `<div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested: <b style="color:var(--text)">${SUG.group}</b>, ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>` : ''}
+    <div class="label" style="display:flex;align-items:center;gap:4px">Any other training? <button class="link dim" id="actInfo" aria-label="How this works" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
+    <div class="seg">${['No', 'Yes'].map((o) => `<button class="chip" data-actask="${o}" aria-pressed="${S.actAsk === o}">${o}</button>`).join('')}</div>
+    ${S.actAsk === 'Yes' ? `<div class="chips">${[...ACTS, ...(S.customActs ?? [])].map((a) => `<button class="chip sm" data-act="${esc(a)}" aria-pressed="${a === 'Running' ? S.runs : !!S.acts[a]}">${S.pri.includes(a) ? '★ ' : ''}${esc(a)}</button>`).join('')}<button class="chip sm" id="addAct">＋ Other</button></div>` : ''}
     ${S.pri.length ? `<div class="note" style="line-height:1.4">★ ${S.pri.map(esc).join(', ')} come${S.pri.length === 1 ? 's' : ''} first: lifting supports ${S.pri.length === 1 ? 'it' : 'them'}, with fewer, shorter sessions planned around ${S.pri.length === 1 ? 'its' : 'their'} hard days.</div>` : ''}`;
   const ef = EFFORT[S.effort], lifts = MAIN.filter((l) => HIST[l] && !HIST[l].none);
   $('scroll').querySelector('h1').insertAdjacentHTML('afterend', `
@@ -436,9 +440,11 @@ function renderGoals() {
     ['Balanced', 'Strength and size together: heavy main lifts first, then muscle-building work. The default.'],
     ['Fitness', 'All-round health. Full-body sessions, 8–15 reps at moderate effort, every muscle twice a week; fits well with cardio.'],
   ].map(([k, v]) => `<div style="padding:10px 0;border-bottom:1px solid var(--divider)"><div style="font-weight:600">${k}</div><div style="font-size:14px;color:var(--text2);line-height:1.4">${v}</div></div>`).join('')}</div>`);
+  document.querySelectorAll('[data-priask]').forEach((b) => b.onclick = () => { S.priAsk = b.dataset.priask; S.priority = S.priAsk === 'Yes' ? (S.priority.length ? S.priority : [SUG.group]) : []; render(); });
+  document.querySelectorAll('[data-actask]').forEach((b) => b.onclick = () => { S.actAsk = b.dataset.actask; if (S.actAsk === 'No') { S.runs = false; S.acts = {}; S.pri = []; } render(); });
   const addPri = (m) => { if (S.priority.includes(m)) S.priority = S.priority.filter((x) => x !== m); else if (S.priority.length >= 2) { toast('Up to 2', false); return; } else S.priority = [...S.priority, m]; render(); };
   document.querySelectorAll('[data-pri]').forEach((b) => b.onclick = () => addPri(b.dataset.pri));
-  if ($('reSug')) $('reSug').onclick = () => addPri(SUG.group);
+  if ($('reSug')) $('reSug').onclick = () => { S.priAsk = 'Yes'; if (!S.priority.includes(SUG.group)) S.priority = [...S.priority, SUG.group].slice(-2); render(); };
   if ($('useSug')) { $('useSug').onclick = () => addPri('Back'); $('noSug').onclick = () => { S.sugGone = true; render(); }; }
   document.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => {
     const a = b.dataset.act; const on = a === 'Running' ? S.runs : !!S.acts[a];
@@ -446,7 +452,7 @@ function renderGoals() {
     if (!on) setOn(true); else if (!S.pri.includes(a)) S.pri = [...S.pri, a]; else { S.pri = S.pri.filter((x) => x !== a); setOn(false); }
     render();
   });
-  $('addAct').onclick = () => { const n = (prompt('Other training') || '').trim(); if (n) { S.customActs = [...(S.customActs ?? []), n]; S.acts[n] = [3]; render(); } };
+  if ($('addAct')) $('addAct').onclick = () => { const n = (prompt('Other training') || '').trim(); if (n) { S.customActs = [...(S.customActs ?? []), n]; S.acts[n] = [3]; render(); } };
   $('next').onclick = () => { if ((S.rev ?? 0) < 5) { S.rev = (S.rev ?? 0) + 1; S.scrollTo = S.rev; render(); } else go(1); };
 }
 
@@ -790,7 +796,7 @@ $('close').onclick = () => toast('Closes without changing your plan', false);
 function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.page === 'plan' && !on) S.chat = []; render(); }
 $('aiOn').onclick = () => setAi(true);
 $('aiOff').onclick = () => setAi(false);
-$('restart').onclick = () => { Object.assign(S, { rev: 0, page: 'check', priority: ['Back'], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
+$('restart').onclick = () => { Object.assign(S, { rev: 0, priAsk: null, actAsk: null, runs: false, acts: {}, pri: [], page: 'check', priority: [], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
 $('editExisting').onclick = () => { S.rev = 5; S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
 render();
 </script>
