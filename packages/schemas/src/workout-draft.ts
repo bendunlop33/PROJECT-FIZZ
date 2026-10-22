@@ -367,6 +367,13 @@ export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
  * `dayIndex` are null together (a split day with no plan, or no day): a plan
  * that repeats a split day keeps its days' drafts apart (review b3-data B1).
  */
+/** (22 Oct) What a builder draft was opened on, other than Set up, Today or a plan day (`BuilderDraftKey.from`). */
+export const BuilderDraftFromSchema = z.object({
+  kind: z.enum(['routine', 'session', 'coach_draft']),
+  id: IdSchema,
+});
+export type BuilderDraftFrom = z.infer<typeof BuilderDraftFromSchema>;
+
 export const BuilderDraftKeySchema = z
   .object({
     planId: IdSchema.nullable(),
@@ -374,13 +381,22 @@ export const BuilderDraftKeySchema = z
     splitDayId: SplitDayIdSchema.nullable(),
     mainLiftExerciseId: MainLiftIdSchema.nullable(),
     localDate: LocalDateSchema,
+    /**
+     * (22 Oct, Workout overview retired) The workout Your workout was opened on when it isn't a plan day or
+     * Set up: a library workout (`routine`), a past workout to do again (`session`) or a coach chat draft
+     * (`coach_draft`). Part of the key (migration 33), so each opens its own draft and reopening resumes it.
+     * Absent on Set up, Today and plan-day drafts.
+     */
+    from: BuilderDraftFromSchema.optional(),
   })
-  .refine((k) => (k.planId === null) === (k.dayIndex === null), { message: 'A plan day is named with its index', path: ['dayIndex'] });
+  .refine((k) => (k.planId === null) === (k.dayIndex === null), { message: 'A plan day is named with its index', path: ['dayIndex'] })
+  .refine((k) => k.from === undefined || k.planId === null, { message: 'A plan day draft names no other source', path: ['from'] });
 export type BuilderDraftKey = z.infer<typeof BuilderDraftKeySchema>;
 
 /** The text key of a builder draft, as the unique index `workout_drafts_open_builder` holds it. */
 export function builderDraftKeyText(k: BuilderDraftKey): string {
-  return `${k.planId ?? '-'}|${k.dayIndex === null ? '-' : String(k.dayIndex)}|${k.splitDayId ?? '-'}|${k.mainLiftExerciseId ?? '-'}|${k.localDate}`;
+  const base = `${k.planId ?? '-'}|${k.dayIndex === null ? '-' : String(k.dayIndex)}|${k.splitDayId ?? '-'}|${k.mainLiftExerciseId ?? '-'}|${k.localDate}`;
+  return k.from === undefined ? base : `${base}|${k.from.kind}:${k.from.id}`;
 }
 
 /** The split day a Build card chip asked for (F19): its name and body parts. */

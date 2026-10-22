@@ -6,6 +6,7 @@ import {
   ActionRecordSchema,
   hideDayNoteOn,
   RoutineSchema,
+  WorkoutDraftSchema,
   type ActionRecord,
   type Memory,
   type BuilderDraftKey,
@@ -30,6 +31,7 @@ import {
   openStore,
   parseBackup,
   sha256Hex,
+  startChatSourceIn,
   startWorkoutDraftIn,
   type BackupFile,
   type Store,
@@ -221,7 +223,7 @@ describe('migration 30 in place on a schema-29 database', () => {
     await appliedPlan(at29, PLAN);
     await at29.repos.sessions.save(beforeSchema31(richFinishedSession()), null);
     const before = await at29.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toEqual({ from: 29, to: 32, applied: [30, 31, 32] });
+    expect(await migrate(db)).toEqual({ from: 29, to: 33, applied: [30, 31, 32, 33] });
     const at30 = await openStore(db);
     const after = await at30.db.read((q) => exportTables(q));
     // Every older table keeps its rows; sessions gain only an empty `plan_day`.
@@ -431,6 +433,50 @@ describe('builder drafts (§4.4)', () => {
     expect((await d.get(id(9700)))?.undo).toMatchObject({ opId: 'add-bench', atVersion: 2 });
     expect(await d.createBuilderDraft(id(99), builderDraft(9708))).toMatchObject({ status: 'invalid' });
     expect((await checkIntegrity(store.db)).ok).toBe(true);
+    await store.close();
+  });
+});
+
+describe('builder drafts opened on a workout (migration 33, 22 Oct: the Workout overview is retired)', () => {
+  const NONE = { planId: null, dayIndex: null, splitDayId: null, mainLiftExerciseId: null, localDate: '2026-10-09' } as const;
+  it('a library workout, a past workout and a chat draft each have their own open draft per date, apart from Set up’s; the same one resumes', async () => {
+    const store = await openStore(memoryDriver());
+    await store.repos.profiles.save(profile(), null);
+    const d = store.repos.workoutDrafts;
+    expect(await d.createBuilderDraft(OWNER, builderDraft(9720, [], NONE))).toMatchObject({ status: 'written' });
+    const pushA = { ...NONE, from: { kind: 'routine' as const, id: id(9790) } };
+    expect(await d.createBuilderDraft(OWNER, builderDraft(9721, [], pushA))).toMatchObject({ status: 'written' });
+    expect(await d.createBuilderDraft(OWNER, builderDraft(9722, [], { ...NONE, from: { kind: 'routine', id: id(9791) } }))).toMatchObject({ status: 'written' });
+    expect(await d.createBuilderDraft(OWNER, builderDraft(9723, [], { ...NONE, from: { kind: 'session', id: id(9790) } }))).toMatchObject({ status: 'written' });
+    expect(await d.createBuilderDraft(OWNER, builderDraft(9724, [], { ...NONE, from: { kind: 'coach_draft', id: id(9792) } }))).toMatchObject({ status: 'written' });
+    // Reopening Push A the same day resumes its draft; Set up's draft with no source is its own.
+    expect(await d.createBuilderDraft(OWNER, builderDraft(9725, [], pushA))).toMatchObject({ status: 'exists', draft: { id: id(9721) } });
+    expect((await d.openBuilderDraft(OWNER, pushA))?.id).toBe(id(9721));
+    expect((await d.openBuilderDraft(OWNER, NONE))?.id).toBe(id(9720));
+    // The unique index holds on any path, with the source in it.
+    await expect(d.save(builderDraft(9726, [], pushA), null)).rejects.toThrow(/UNIQUE/);
+    expect((await checkIntegrity(store.db)).ok).toBe(true);
+    await store.close();
+  });
+  it('a plan-day key names no other source (schema)', () => {
+    expect(WorkoutDraftSchema.safeParse(builderDraft(9727, [], { ...KEY, from: { kind: 'routine', id: id(9790) } })).success).toBe(false);
+    expect(WorkoutDraftSchema.safeParse(builderDraft(9728, [], { ...NONE, from: { kind: 'session', id: id(9790) } })).success).toBe(true);
+  });
+  it('a chat draft started through its builder draft is started with the same session, in the same write', async () => {
+    const store = await openStore(memoryDriver());
+    await store.repos.profiles.save(profile(), null);
+    const d = store.repos.workoutDrafts;
+    const chat: WorkoutDraft = { ...builderDraft(9730, [benchSlot]), builderKey: undefined, versions: [{ ...builderVersion([benchSlot]), turnId: 'turn-1', rawArgs: '{}', request: { ...builderVersion([benchSlot]).request, origin: 'text', setup: undefined } }] };
+    delete (chat as { builderKey?: unknown }).builderKey;
+    expect(await d.save(chat, null)).toMatchObject({ ok: true });
+    const opened: WorkoutDraft = builderDraft(9731, [benchSlot], { ...NONE, from: { kind: 'coach_draft', id: id(9730) } });
+    expect(await d.createBuilderDraft(OWNER, opened)).toMatchObject({ status: 'written' });
+    expect(await store.db.write((tx) => startWorkoutDraftIn(tx, id(9731), OWNER, id(9799), at(10).utc, 1))).toEqual({ ok: true });
+    await store.db.write((tx) => startChatSourceIn(tx, id(9731), OWNER, id(9799), at(10).utc));
+    expect(await d.get(id(9730))).toMatchObject({ status: 'started', sessionId: id(9799) });
+    // Run again (a retry): the chat draft is already started and stays so.
+    await store.db.write((tx) => startChatSourceIn(tx, id(9731), OWNER, id(9799), at(11).utc));
+    expect(await d.get(id(9730))).toMatchObject({ status: 'started', sessionId: id(9799), version: 2 });
     await store.close();
   });
 });

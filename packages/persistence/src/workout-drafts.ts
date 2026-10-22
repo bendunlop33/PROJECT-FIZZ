@@ -14,10 +14,10 @@ import type { SqlExecutor } from './driver';
  * transaction (`sessions.ts`).
  */
 
-/** SQL over `workout_drafts` matching the unique index `workout_drafts_open_builder` (migration 30): the open builder draft with this key. */
+/** SQL over `workout_drafts` matching the unique index `workout_drafts_open_builder` (migrations 30, 33): the open builder draft with this key. */
 const OPEN_BUILDER_SQL =
-  "status = 'open' AND json_extract(data, '$.builderKey') IS NOT NULL AND coalesce(json_extract(data, '$.builderKey.planId'), '-') = ? AND coalesce(json_extract(data, '$.builderKey.dayIndex'), -1) = ? AND coalesce(json_extract(data, '$.builderKey.splitDayId'), '-') = ? AND coalesce(json_extract(data, '$.builderKey.mainLiftExerciseId'), '-') = ? AND json_extract(data, '$.builderKey.localDate') = ?";
-const builderKeyParams = (k: BuilderDraftKey): (string | number)[] => [k.planId ?? '-', k.dayIndex ?? -1, k.splitDayId ?? '-', k.mainLiftExerciseId ?? '-', k.localDate];
+  "status = 'open' AND json_extract(data, '$.builderKey') IS NOT NULL AND coalesce(json_extract(data, '$.builderKey.planId'), '-') = ? AND coalesce(json_extract(data, '$.builderKey.dayIndex'), -1) = ? AND coalesce(json_extract(data, '$.builderKey.splitDayId'), '-') = ? AND coalesce(json_extract(data, '$.builderKey.mainLiftExerciseId'), '-') = ? AND json_extract(data, '$.builderKey.localDate') = ? AND coalesce(json_extract(data, '$.builderKey.from.kind'), '-') = ? AND coalesce(json_extract(data, '$.builderKey.from.id'), '-') = ?";
+const builderKeyParams = (k: BuilderDraftKey): (string | number)[] => [k.planId ?? '-', k.dayIndex ?? -1, k.splitDayId ?? '-', k.mainLiftExerciseId ?? '-', k.localDate, k.from?.kind ?? '-', k.from?.id ?? '-'];
 
 export const WORKOUT_DRAFT_SPEC: DocumentSpec<WorkoutDraft> = {
   table: 'workout_drafts',
@@ -164,4 +164,18 @@ export async function startWorkoutDraftIn(tx: SqlExecutor, draftId: string, owne
   const next: WorkoutDraft = { ...d, status: 'started', sessionId, startedAtUtc: atUtc, version: d.version + 1, updatedAtUtc: atUtc };
   const r = await saveDocumentIn(tx, WORKOUT_DRAFT_SPEC, next, d.version);
   return r.ok ? { ok: true } : { ok: false, reason: 'stale' };
+}
+
+/**
+ * (22 Oct, Workout overview retired) After a builder draft opened on a coach chat draft starts (`builderKey.from`
+ * kind `coach_draft`), the chat draft is started with the same session, in the same transaction, so its card no
+ * longer offers it. Already started, discarded or expired: left as it is (the start still stands).
+ */
+export async function startChatSourceIn(tx: SqlExecutor, builderDraftId: string, ownerId: string, sessionId: string, atUtc: string): Promise<void> {
+  const d = await getWorkoutDraftIn(tx, builderDraftId);
+  const from = d?.builderKey?.from;
+  if (from?.kind !== 'coach_draft' || from.id === builderDraftId) return;
+  const chat = await getWorkoutDraftIn(tx, from.id);
+  if (chat === null || chat.builderKey !== undefined) return;
+  await startWorkoutDraftIn(tx, from.id, ownerId, sessionId, atUtc);
 }
