@@ -669,7 +669,7 @@ function fitSegs() {
   const all = [...document.querySelectorAll('#scroll .seg .chip, #scroll .chips .chip.sm')];
   if (!all.length) return;
   // Four to a row of the box they sit in.
-  all.filter((b) => !b.dataset.freq && !b.dataset.wk && !b.dataset.focus && !b.dataset.eff && !b.dataset.pq && !b.dataset.week).forEach((b) => { const row = b.parentElement.clientWidth; b.style.minWidth = Math.floor((row - 3 * 6) / 4) + 'px'; });
+  all.filter((b) => !b.dataset.freq && !b.dataset.wk && !b.dataset.focus && !b.dataset.eff && !b.dataset.pq && !b.dataset.week && !b.dataset.scope).forEach((b) => { const row = b.parentElement.clientWidth; b.style.minWidth = Math.floor((row - 3 * 6) / 4) + 'px'; });
 }
 function render() {
   $('scroll').style.paddingBottom = '';
@@ -1026,7 +1026,7 @@ function renderPrefs() {
     <h2 class="grp">Anything else</h2>
     <div class="label">Others I like</div>
     <div class="chips">${(S.likes ?? []).map((n) => `<button class="chip sm" data-unlike="${esc(n)}" aria-pressed="true">${esc(n)} ×</button>`).join('')}<button class="chip sm" id="addLike">＋ Add</button></div>`;
-  $('footer').innerHTML = `<button class="primary" id="next">Build my plan</button>`;
+  $('footer').innerHTML = `<button class="primary" id="next">${S.editing ? 'Review changes' : 'Build my plan'}</button>`;
   document.querySelectorAll('[data-pq]').forEach((b) => b.onclick = () => {
     const [id, i] = b.dataset.pq.split('|'); const q = PREF_Q.find((x) => x.id === id);
     if (i !== 'other') { ans[id] = i === 'either' ? 'either' : +i; render(); return; }
@@ -1054,27 +1054,63 @@ function coachIntro() {
   return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${alt}${seven}${once}${sport}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}${S.effort === 'Standard' || S.pri.length ? ': add a day or longer sessions.' : ': add a day, longer sessions, or Standard.'}` : ''}`;
 }
 
-// What an edit changes, against the plan as it was (rule 2: before/after before Apply changes). Weeks done and weights carry on.
-function planDiff(a, b) {
+// Editing a running plan (Ben, 22 Oct). Weeks already done, and workouts done this week, never change. An edit is a list
+// of changes against the current plan; each can be accepted or rejected (or all at once), and the accepted ones apply
+// to the weeks he picks (default: every week from now on). Any week can be viewed before Apply changes.
+const isDoneDay = (w, di) => S.curWeek != null && (w < S.curWeek || (w === S.curWeek && (S.doneDays ?? []).includes(di)));
+const dayName = (d, i) => `${S.schedule === 'flexible' ? i + 1 : WD[d.day]} · ${d.focus}${d.variant ? ' ' + d.variant : ''}`;
+function diffItems(a, b) {
   const out = [];
   b.forEach((d, i) => {
-    const o = a[i]; const name = `${S.schedule === 'flexible' ? i + 1 : WD[d.day]} · ${d.focus}${d.variant ? ' ' + d.variant : ''}`;
-    if (!o) { out.push(`${name}: new day`); return; }
-    const lines = [];
-    if (o.focus !== d.focus) lines.push(`was ${o.focus}`);
-    d.ex.forEach((e) => { const x = o.ex.find((y) => y.n === e.n); if (!x) lines.push(`+ ${e.n} ${e.sets}`); else if (x.sets !== e.sets) lines.push(`${e.n} ${x.sets} → ${e.sets}`); });
-    o.ex.forEach((x) => { if (!d.ex.some((e) => e.n === x.n)) lines.push(`− ${x.n}`); });
-    if (lines.length) out.push(`${name}: ${lines.join(' · ')}`);
+    const o = a[i]; if (!o) { out.push({ id: `${i}|day`, di: i, kind: 'day', text: `${dayName(d, i)}: new day` }); return; }
+    // A day that changed type (a swap) is one change, accepted or rejected whole.
+    if (o.focus !== d.focus) { out.push({ id: `${i}|focus`, di: i, kind: 'focus', text: `${dayName(d, i)}: was ${o.focus}` }); return; }
+    d.ex.forEach((e) => { const x = o.ex.find((y) => y.n === e.n);
+      if (!x) out.push({ id: `${i}|+${e.n}`, di: i, kind: 'add', n: e.n, e, text: `${dayName(d, i)}: + ${e.n} ${e.sets}` });
+      else if (x.sets !== e.sets) out.push({ id: `${i}|=${e.n}`, di: i, kind: 'sets', n: e.n, to: e.sets, text: `${dayName(d, i)}: ${e.n} ${x.sets} → ${e.sets}` }); });
+    o.ex.forEach((x) => { if (!d.ex.some((e) => e.n === x.n)) out.push({ id: `${i}|-${x.n}`, di: i, kind: 'remove', n: x.n, text: `${dayName(d, i)}: − ${x.n}` }); });
   });
-  a.slice(b.length).forEach((o) => out.push(`${o.focus}: removed`));
+  a.slice(b.length).forEach((o, k) => out.push({ id: `${b.length + k}|gone`, di: b.length + k, kind: 'gone', text: `${o.focus}: removed` }));
   return out;
 }
+// The plan with only the accepted changes: whole-day changes take the new day; others are applied one by one.
+function compose(base, next, items, rejected) {
+  const acc = items.filter((it) => !rejected.has(it.id));
+  return next.map((d, i) => {
+    const b = base[i]; if (!b) return acc.some((it) => it.di === i) ? d : null;
+    if (acc.some((it) => it.di === i && it.kind === 'focus')) return d;
+    const ex = b.ex.map((e) => ({ ...e }));
+    acc.filter((it) => it.di === i).forEach((it) => {
+      if (it.kind === 'add') ex.splice(Math.max(0, ex.findIndex((x) => x.m === 'Core') < 0 ? ex.length : ex.findIndex((x) => x.m === 'Core')), 0, { ...it.e });
+      if (it.kind === 'remove') { const k = ex.findIndex((x) => x.n === it.n); if (k >= 0) ex.splice(k, 1); }
+      if (it.kind === 'sets') { const x = ex.find((y) => y.n === it.n); if (x) { x.sets = it.to; setLine(x); } }
+    });
+    return { ...b, ex };
+  }).filter(Boolean).concat(base.slice(next.length).filter((_, k) => rejected.has(`${next.length + k}|gone`)));
+}
+// Any change made from the plan overview starts an edit, so it always goes through the Changes review.
+function ensureEditing() { if (S.applied) { S.editing = true; S.applied = false; S.basePlan = JSON.parse(JSON.stringify(S.plan)); S.rejected = new Set(); S.scope = null; } }
+const prevFor = (w) => S.weekPlans?.[w] ?? S.basePlan ?? S.plan;
+function planFor(w) {
+  if (!(S.editing && S.basePlan)) return S.weekPlans?.[w] ?? S.plan;
+  const prev = prevFor(w);
+  if (S.curWeek != null && w < S.curWeek) return prev;
+  if (S.scope && !S.scope.has(w)) return prev;
+  const items = diffItems(S.basePlan, S.plan), next = compose(prev, S.plan, items, S.rejected ?? new Set());
+  return next.map((d, i) => isDoneDay(w, i) && prev[i] ? prev[i] : d);
+}
 function changesCard() {
-  const d = planDiff(S.basePlan, S.plan);
-  return `<div class="card" style="padding:10px 14px;gap:6px"><div style="display:flex;justify-content:space-between;align-items:baseline"><b style="font-size:15px">Changes</b><span style="font-size:13px;color:var(--text2)">${d.length ? `${d.length} day${d.length === 1 ? '' : 's'}` : 'None yet'}</span></div>${d.map((l) => `<div style="font-size:13.5px;color:var(--text2);line-height:1.4">${esc(l)}</div>`).join('')}</div>`;
+  const items = diffItems(S.basePlan, S.plan), rj = S.rejected ?? (S.rejected = new Set());
+  const weeks = Array.from({ length: S.weeks }, (_, k) => k + 1), sc = S.scope ?? (S.scope = new Set(weeks.filter((w) => w >= (S.curWeek ?? 1))));
+  const n = items.filter((it) => !rj.has(it.id)).length;
+  return `<div class="card" style="padding:10px 14px;gap:8px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><b style="font-size:15px">Changes</b>${items.length ? `<span style="display:flex;gap:14px"><button class="link" id="accAll" style="font-size:14px">Accept all</button><button class="link dim" id="rejAll" style="font-size:14px">Reject all</button></span>` : '<span style="font-size:13px;color:var(--text2)">None yet</span>'}</div>
+    ${items.map((it) => { const on = !rj.has(it.id); return `<button data-chg="${esc(it.id)}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:none;border:0;padding:2px 0;color:${on ? 'var(--text)' : 'var(--text3)'};font:14px var(--ui);text-align:left;cursor:pointer"><span style="${on ? '' : 'text-decoration:line-through'}">${esc(it.text)}</span><span style="flex:none;font-size:13px;color:${on ? 'var(--done)' : 'var(--text3)'}">${on ? '✓ Accept' : '✕ Reject'}</span></button>`; }).join('')}
+    ${items.length ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-top:4px;border-top:1px solid var(--divider)"><span style="font-size:13px;color:var(--text2);margin-right:2px">Weeks</span>${weeks.map((w) => { const done = S.curWeek != null && w < S.curWeek; return `<button class="chip sm" data-scope="${w}" aria-pressed="${!done && sc.has(w)}" ${done ? 'disabled' : ''} style="min-width:32px;padding:0 6px;${done ? 'opacity:.4' : ''}">${w}</button>`; }).join('')}<span style="font-size:12px;color:var(--text3)">${n} of ${items.length}</span></div>` : ''}
+  </div>`;
 }
 function renderPlan() {
-  const p = S.plan;
+  const p = planFor(S.week);
   if (S.week > S.weeks) S.week = 1;
   const ws = weeklySets(p);
   const byDay = Object.fromEntries(p.map((d) => [d.day, d]));
@@ -1090,10 +1126,10 @@ function renderPlan() {
     <div class="seg wkstrip">${Array.from({ length: S.weeks }, (_, i) => i + 1).map((w) => `<button class="chip" data-week="${w}" aria-pressed="${S.week === w}">${w}${isDeload(w) ? '<span class="dl">D</span>' : ''}</button>`).join('')}</div>
     ${S.schedule === 'flexible' ? `<div class="chips">${p.map((d, i) => `<button class="chip sm" data-toggle="${i}" aria-pressed="${S.open === i}">${i + 1} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</button>`).join('')}</div>` : `<div class="week">${strip}</div>`}
     ${p.map((d, i) => `<div class="dcard ${S.open === i ? 'open' : ''}" data-card="${i}">
-      <div class="dtop" data-toggle="${i}"><span><div class="nm">${S.schedule === 'flexible' ? i + 1 : WD[d.day]} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</div><div class="sub">${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
+      <div class="dtop" data-toggle="${i}"><span><div class="nm">${S.schedule === 'flexible' ? i + 1 : WD[d.day]} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</div><div class="sub">${isDoneDay(S.week, i) ? '<span style="color:var(--done)">✓ Done</span> · ' : ''}${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
         <span class="rt">${d.ex.length} ex · ~${S.length}′<span class="chev">›</span></span></div>
       <div class="ex"><div class="rows">${d.ex.map((e, k) => { const ss = S.supersets && e.pair; const x = atWeek(e, S.week); return `<div data-exw="${i}|${k}" style="display:grid;grid-template-columns:${ss ? '18px ' : ''}minmax(0,1fr) auto 70px;gap:8px;align-items:center;min-height:40px;border-bottom:1px solid var(--divider);font-size:15px">${ss ? `<span style="color:var(--text3);font-size:12px">${e.pair}</span>` : ''}<span style="${e.role === 'main' ? 'font-weight:600' : ''}">${esc(e.n)}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">${esc(x.short)}</span><span style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(x.kg))}${/^[\d.]+$/.test(String(x.kg)) ? ' kg' : ''}</span></div>`; }).join('')}</div>
-        <div class="dact"><button class="link" data-swap="${i}">Change focus</button>${S.schedule === 'fixed' ? `<button class="link" data-move="${i}">Move day</button>` : ''}<button class="link dim" data-open="${i}">Open in builder ›</button></div>
+        <div class="dact">${isDoneDay(S.week, i) ? '' : `<button class="link" data-swap="${i}">Swap day</button>${S.schedule === 'fixed' ? `<button class="link" data-move="${i}">Move day</button>` : ''}`}<button class="link dim" data-open="${i}">Open in builder ›</button></div>
       </div></div>`).join('')}
     <div class="label">Sets per week</div>
     <div class="card" style="padding:10px 16px">${chartMuscles().map((m) => { const [lo, hi] = range(m); const n = ws[m]; const max = 24; return `<div class="vol ${isPri(m) || isSpec(m) ? 'pri' : ''}"><span class="mn">${m}</span><span class="bar"><span class="rng" style="left:${lo / max * 100}%;width:${(hi - lo) / max * 100}%"></span><span class="fill" style="width:${Math.min(n, max) / max * 100}%"></span></span><span class="n">${n}${n < lo ? ' ↓' : n > hi ? ' ↑' : ''}</span></div>`; }).join('')}
@@ -1108,7 +1144,7 @@ function renderPlan() {
   document.querySelectorAll('[data-week]').forEach((b) => b.onclick = () => { S.week = +b.dataset.week; render(); });
   // Tap an exercise: its targets week by week across the plan.
   document.querySelectorAll('[data-exw]').forEach((el) => el.onclick = () => {
-    const [di, k] = el.dataset.exw.split('|').map(Number), e = S.plan[di].ex[k];
+    const [di, k] = el.dataset.exw.split('|').map(Number), e = p[di].ex[k];
     sheet(`<h2>${esc(e.n)}</h2><div class="card" style="padding:4px 14px 8px"><div style="display:grid;grid-template-columns:auto 1fr auto;gap:0 14px;font-variant-numeric:tabular-nums;font-size:15px">
       <span class="lab" style="padding:8px 0 4px">Week</span><span class="lab" style="padding:8px 0 4px">Sets × reps</span><span class="lab" style="padding:8px 0 4px;text-align:right">kg</span>
       ${Array.from({ length: S.weeks }, (_, j) => j + 1).map((w) => { const x = atWeek(e, w), cur = w === S.week, st = `padding:7px 0;border-top:1px solid var(--divider);${cur ? 'color:var(--text);font-weight:600' : x.dl ? 'color:var(--text3)' : 'color:var(--text2)'}`;
@@ -1121,13 +1157,17 @@ function renderPlan() {
   document.querySelectorAll('[data-move]').forEach((el) => el.onclick = () => openMoveSheet(+el.dataset.move));
   document.querySelectorAll('[data-open]').forEach((el) => el.onclick = () => toast('Opens this day in the workout builder', false));
   document.querySelectorAll('[data-choice]').forEach((el) => el.onclick = () => { S.chat = S.chat.filter((c) => c.who !== 'choice'); const pending = S.pendingAsk; S.pendingAsk = null; el.dataset.choice === 'new' ? rebuild(pending) : editPlan(pending); });
-  $('absChange').onclick = () => { sheet(`<h2>Ab sets a week</h2><div class="seg">${ABS_OPTS.map((n) => `<button class="chip" data-absn="${n}" style="min-width:0;flex:1 1 0" aria-pressed="${absPerWeek() === n}">${n === absAuto() ? '✦ ' : ''}${n}</button>`).join('')}</div>`); document.querySelectorAll('[data-absn]').forEach((b) => b.onclick = () => { const before = snapshot(); S.absWk = +b.dataset.absn; S.plan = build(); closeSheet(); render(); toast(`Abs ${S.absWk} sets a week`, true, () => { restore(before); render(); }); }); };
+  $('absChange').onclick = () => { sheet(`<h2>Ab sets a week</h2><div class="seg">${ABS_OPTS.map((n) => `<button class="chip" data-absn="${n}" style="min-width:0;flex:1 1 0" aria-pressed="${absPerWeek() === n}">${n === absAuto() ? '✦ ' : ''}${n}</button>`).join('')}</div>`); document.querySelectorAll('[data-absn]').forEach((b) => b.onclick = () => { ensureEditing(); const before = snapshot(); S.absWk = +b.dataset.absn; S.plan = build(); closeSheet(); render(); toast(`Abs ${S.absWk} sets a week`, true, () => { restore(before); render(); }); }); };
   $('whyBtn').onclick = () => $('why').classList.toggle('on');
   // The plan overview (Library › your plan, Ben 22 Oct): Edit plan starts an edit in place; Pause and End sit at the bottom.
-  if ($('editPlan')) $('editPlan').onclick = () => { S.editing = true; S.applied = false; S.basePlan = JSON.parse(JSON.stringify(S.plan)); S.pageTop = true; render(); };
+  if ($('editPlan')) $('editPlan').onclick = () => { S.editing = true; S.applied = false; S.basePlan = JSON.parse(JSON.stringify(S.plan)); S.rejected = new Set(); S.scope = null; S.pageTop = true; render(); };
+  document.querySelectorAll('[data-chg]').forEach((b) => b.onclick = () => { const id = b.dataset.chg; S.rejected.has(id) ? S.rejected.delete(id) : S.rejected.add(id); render(); });
+  if ($('accAll')) $('accAll').onclick = () => { S.rejected = new Set(); render(); };
+  if ($('rejAll')) $('rejAll').onclick = () => { S.rejected = new Set(diffItems(S.basePlan, S.plan).map((it) => it.id)); render(); };
+  document.querySelectorAll('[data-scope]').forEach((b) => b.onclick = () => { if (b.disabled) return; const w = +b.dataset.scope; S.scope.has(w) ? S.scope.delete(w) : S.scope.add(w); render(); });
   if ($('pausePlan')) $('pausePlan').onclick = () => { S.paused = !S.paused; render(); toast(S.paused ? 'Plan paused' : 'Plan resumed', false); };
   if ($('endPlan')) $('endPlan').onclick = () => toast('Plan ended', false);
-  if ($('apply')) $('apply').onclick = () => { S.applied = true; S.editing = false; S.basePlan = null; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
+  if ($('apply')) $('apply').onclick = () => { if (S.editing && S.basePlan) { const wp = {}; for (let w = 1; w <= S.weeks; w++) wp[w] = planFor(w); const last = wp[S.weeks]; S.weekPlans = wp; S.plan = last; } S.applied = true; S.editing = false; S.basePlan = null; S.rejected = null; S.scope = null; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
   const ask = $('ask');
   if (ask) ask.onkeydown = (e) => { if (e.key === 'Enter' && ask.value.trim()) { coach(ask.value.trim()); } };
   const sc = $('scroll'); if (S.chatScroll) { sc.scrollTop = sc.scrollHeight; S.chatScroll = false; } else if (S.pageTop) { sc.scrollTop = 0; S.pageTop = false; }
@@ -1137,6 +1177,7 @@ function renderPlan() {
 function snapshot() { return JSON.parse(JSON.stringify({ plan: S.plan, days: S.days, focus: S.focus, priority: S.priority, length: S.length, absWk: S.absWk, spec: S.spec, focusOver: S.focusOver, likes: S.likes, never: S.never, prefAns: S.prefAns })); }
 function restore(s) { Object.assign(S, s); }
 function coach(text) {
+  ensureEditing();
   S.chatScroll = true;
   S.chat.push({ who: 'ben', text });
   const t = text.toLowerCase();
@@ -1203,9 +1244,16 @@ function openSpecSheet() {
 function sheet(html) { $('sheet').innerHTML = `<div style="display:flex;justify-content:flex-end;margin:-6px -4px -10px"><button class="link" id="sheetClose">Done</button></div>` + html; $('sheetClose').onclick = closeSheet; $('sheet').classList.add('on'); $('scrim').classList.add('on'); }
 function closeSheet() { $('sheet').classList.remove('on'); $('scrim').classList.remove('on'); }
 $('scrim').onclick = closeSheet;
+// Swap day (Ben, 22 Oct; replaces Change focus, which could make two days the same): this day trades places with another
+// plan day, so the week keeps the same sessions. Days already done aren't offered.
 function openFocusSheet(i) {
-  sheet(`<h2>${WD[S.plan[i].day]} focus</h2><div class="chips">${Object.keys(DAYS).map((f) => `<button class="chip" data-f="${f}" aria-pressed="${S.plan[i].focus === f}">${f}</button>`).join('')}</div>`);
-  document.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => { const before = snapshot(); S.focusOver = { ...S.focusOver, [i]: b.dataset.f }; S.plan = build(); closeSheet(); render(); toast(`${WD[S.plan[i].day]} is ${b.dataset.f}`, true, () => { restore(before); render(); }); });
+  const p = S.plan, name = (d, k) => `${S.schedule === 'flexible' ? k + 1 : WD[d.day]} · ${d.focus}${d.variant ? ' ' + d.variant : ''}`;
+  sheet(`<h2>Swap ${esc(name(p[i], i))} with</h2><div class="card" style="padding:2px 14px">${p.map((d, k) => k === i || isDoneDay(S.week, k) ? '' : `<button class="row" data-swapwith="${k}" style="display:flex;justify-content:space-between;width:100%;min-height:48px;background:none;border:0;border-bottom:1px solid var(--divider);color:var(--text);font:16px var(--ui);cursor:pointer;text-align:left">${esc(name(d, k))}<span style="color:var(--text3)">⇄</span></button>`).join('')}</div>`);
+  document.querySelectorAll('[data-swapwith]').forEach((b) => b.onclick = () => {
+    ensureEditing(); const before = snapshot(), k = +b.dataset.swapwith, a = p[i].focus, c = p[k].focus;
+    S.focusOver = { ...S.focusOver, [i]: c, [k]: a }; S.plan = build(); closeSheet(); render();
+    toast(`Swapped ${a} and ${c}`, true, () => { restore(before); render(); });
+  });
 }
 function openMoveSheet(i) {
   const used = S.plan.map((d) => d.day);

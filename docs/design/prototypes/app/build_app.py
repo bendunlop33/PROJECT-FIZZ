@@ -21,15 +21,16 @@ GO = {
     'workout-builder-v3.html': {'Start': 'active', 'Start with no muscle groups': 'active'},
     'workout-active-v3.html': {'Finish workout': 'finished', 'Discard workout': 'discarded'},
     # '~' = tell the shell but let the prototype handle the tap too.
-    'plan-builder.html': {'Apply plan': 'applied', 'Apply changes': '~changed', 'Close': 'back', 'End plan': 'endplan', 'Pause plan': '~paused', 'Resume plan': '~resumed'},
+    'plan-builder.html': {'Apply plan': 'applied', 'Apply changes': '~changed', 'Close': 'back', 'End plan': 'endplan', 'Pause plan': '~paused', 'Resume plan': '~resumed', 'Open in builder ›': 'builder'},
     'progress-simple.html': {},
 }
 
 # Per-file additions.
 EXTRA = {
     'plan-builder.html': """
-  // #view opens the plan you have, as the Your plan overview (Library › your plan).
-  if (location.hash === '#view') addEventListener('load', () => { Object.assign(S, { ans: { wk: true, eff: true, focus: true }, priAsk: 'No', actAsk: 'No', page: 'plan', applied: true, editing: false, chat: [], open: -1 }); S.plan = build(); render(); });
+  // #view opens the plan you have, as the Your plan overview (Library › your plan): week 3 of 6, this week's first workout done,
+  // and every answer it was built from kept for Edit plan.
+  if (location.hash === '#view') addEventListener('load', () => { Object.assign(S, { ans: { wk: true, eff: true, focus: true }, priAsk: 'No', actAsk: 'No', prefAns: Object.fromEntries(PREF_Q.map((q) => [q.id, 'either'])), page: 'plan', applied: true, editing: false, chat: [], open: -1, curWeek: 3, week: 3, doneDays: [0] }); S.plan = build(); render(); });
 """,
     'training-blocks.html': """
   // #progress opens the block's progress screen (the shell's Progress → Block).
