@@ -773,7 +773,15 @@ export type SaveFrom =
   | { kind: 'session'; sessionId: string }
   /** Repeat's `Save to Workouts` (§A2.6): the Repeat preview at this gym, its fitted loads as Fixed (review S4). */
   | { kind: 'repeat'; sessionId: string; gymId: string }
-  | { kind: 'preview'; target: OverviewTarget; gymId: string | null; checkInId?: string | null; typicalEquipment?: readonly EquipmentInstance[]; previewKey: string };
+  | { kind: 'preview'; target: OverviewTarget; gymId: string | null; checkInId?: string | null; typicalEquipment?: readonly EquipmentInstance[]; previewKey: string }
+  /** (22 Oct, §7) Your workout's `⋯ Save to Workouts`: the builder draft as it stands, planned at its gym (loads `Auto`). */
+  | { kind: 'draft'; draftId: string; gymId: string | null };
+
+/** The draft a save source names (a coach draft or Your workout's), so the saved workout is linked to it (BD12). */
+function savedDraftIdOf(from: SaveFrom): string | null {
+  if (from.kind === 'draft') return from.draftId;
+  return from.kind === 'preview' && from.target.kind === 'coach_draft' ? from.target.draftId : null;
+}
 
 /** The save sheet's prefill (§A2.5): name and `5 exercises · 15 sets`; null = `Nothing to save`. */
 export interface SaveSource {
@@ -1775,6 +1783,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return run === null ? null : { aggregate: run.aggregate, resolved, today: run.today };
   }
 
+  /** (22 Oct) Your workout's draft planned as its Start would plan it (no check-in), for `Save to Workouts`. Gone or started: stale. */
+  async function draftSavePlan(p: UserProfile, from: Extract<SaveFrom, { kind: 'draft' }>): Promise<{ aggregate: SessionAggregate; resolved: ResolvedOverview; today: TodayPlanInfo | null } | 'stale' | null> {
+    const resolved = await resolveCoachDraft(p, from.draftId);
+    if (resolved === null) return 'stale';
+    const run = await overviewDryRun(p, resolved, from.gymId ?? 'typical-gym-preview', null);
+    return run === null ? null : { aggregate: run.aggregate, resolved, today: run.today };
+  }
+
   /** A workout from a save source, not saved: what the sheet shows and what `saveFrom` writes. */
   /** `notSaved`, when given, gets what the workout leaves out (distance sets, review S1), for the save sheet. */
   async function routineFromSource(p: UserProfile, from: SaveFrom, req: { id: string; name: string; opId: string; inRotation: boolean }, notSaved?: NotCopied[]): Promise<Routine | 'stale' | null> {
@@ -1796,7 +1812,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       notSaved?.push(...mergeNotCopied(r.out.notCopied.filter((n) => n.kind === 'distance'), notSavedFromPlan(r.plan)));
       return routineFromPlan({ id: req.id, ownerId: p.id, name: req.name, opId: req.opId, plan: r.plan, at, newId: ctx.newId, isCompound, inRotation: req.inRotation, fixedSetIds, createdFromSessionId: r.source.session.id });
     }
-    const plan = await previewPlan(p, from);
+    const plan = from.kind === 'draft' ? await draftSavePlan(p, from) : await previewPlan(p, from);
     if (plan === null || plan === 'stale') return plan;
     const isCompound = await compoundOf(plan.aggregate.exercises.map((e) => e.exerciseId));
     notSaved?.push(...notSavedFromPlan(plan.aggregate));
@@ -2670,6 +2686,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // A builder draft's version is pinned in the write: an edit since the page loaded creates nothing (rule 5).
         const b = req.builder;
         const fenced: WriteFence | undefined = b === undefined ? draftFence : { rows: [...(draftFence?.rows ?? []), { table: 'workout_drafts', id: resolvedD.draft.id, version: b.expectedVersion }], sets: draftFence?.sets ?? [] };
+        // (22 Oct) Your workout opened on a library workout or a past one: the workout its targets follow on from is noted, as those Starts always did.
+        const from = resolvedD.draft.builderKey?.from;
+        if (from?.kind === 'session') await noteStartFrom(p.id, from.id, req.opId);
+        else if (from?.kind === 'routine') {
+          const r = await repos().routines.get(from.id).catch(() => null);
+          const ref = r === null ? null : ((await finishedRefs(p.id)).find((f) => isFromRoutine(f, r)) ?? null);
+          if (ref !== null) await noteStartFrom(p.id, ref.sessionId, req.opId);
+        }
         const r = await coachDraftStart(p, resolvedD.draft, { gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, todayEdits: t.input, ...(fenced ? { fence: fenced } : {}), ...(b?.planDay === undefined ? {} : { planDay: b.planDay }), ...(b?.alongside === undefined ? {} : { alongside: b.alongside }) });
         if (!r.ok) {
           // Two taps raced and the other one's start landed (OV5): this tap is its duplicate.
@@ -3928,14 +3952,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // A coach draft names the workout it was saved as (BD12); it stays open, so Ben may still start it.
         // Review S8: the link runs on a replay too, so a link lost to a failure or a force-close is made by the retry.
         const linked = async (saved: LibrarySaveWrite): Promise<LibrarySaveWrite> => {
-          if (saved.ok && req.from.kind === 'preview' && req.from.target.kind === 'coach_draft' && saved.routine.createdFromDraft?.draftId === req.from.target.draftId) {
+          const draftId = savedDraftIdOf(req.from);
+          if (saved.ok && draftId !== null && saved.routine.createdFromDraft?.draftId === draftId) {
             const versionN = saved.routine.createdFromDraft.version;
             const routineId = saved.routine.id;
-            const live = await liveDraftRoutineId(req.from.target.draftId);
+            const live = await liveDraftRoutineId(draftId);
             if (live !== null && live !== routineId) return saved;
             await ctx
               .store()
-              .repos.workoutDrafts.write(p.id, req.from.target.draftId, (c) => linkDraftRoutine(c, { routineId, opId: `save:${req.opId}`, at: ctx.now(), versionN }))
+              .repos.workoutDrafts.write(p.id, draftId, (c) => linkDraftRoutine(c, { routineId, opId: `save:${req.opId}`, at: ctx.now(), versionN }))
               .catch(() => null);
           }
           return saved;
@@ -3943,7 +3968,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const existing = await repos().routines.get(id).catch(() => null);
         // Review r2 S2: one save per draft version. A draft whose current version is already a live workout isn't saved again (the link stays on the first);
         // review r3 S1: a version revised after Save may be saved, and the link moves to the new workout.
-        if (!existing && req.from.kind === 'preview' && req.from.target.kind === 'coach_draft' && (await liveDraftRoutineId(req.from.target.draftId)) !== null) {
+        const fromDraft = savedDraftIdOf(req.from);
+        if (!existing && fromDraft !== null && (await liveDraftRoutineId(fromDraft)) !== null) {
           return { ok: false, message: LIBRARY_COPY.alreadySaved, reason: 'already_saved' };
         }
         if (existing) return await linked(existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed });
@@ -5395,6 +5421,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return { title: v.title, routineId: v.routine?.id ?? null, sourceSessionId: v.routine === null ? v.sourceSessionId : null };
     },
     plannedDay: (routineId: string, gymId: string) => routines.planned(routineId, gymId),
+    /** (22 Oct) A past workout's name as Up next names it (`Push`; the source's own name, else its derived title). Null: not found. */
+    async sessionTitle(sessionId: string): Promise<string | null> {
+      const source = await repos().sessions.get(sessionId).catch(() => null);
+      if (!source) return null;
+      return upNextName(source) ?? (await titleFor(liveExercises(source.exercises).map((e) => e.exerciseId))).title;
+    },
     /** The plan day Up next would name after `routineId` is done today (a prediction; saves nothing). */
     async nextAfter(gymId: string, routineId: string): Promise<string | null> {
       const r = await next.planAhead(gymId, routineId, 1).catch(() => null);

@@ -161,6 +161,9 @@ function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): Build
     rests: { 'k-bench': { warmup: 60, top: 210, backoff: 180 }, 'k-fly': { working: 90, round: 90 }, 'k-crunch': { working: 90, round: 90 }, 'k-incline': { warmup: 60, working: 120 } },
     items: {},
     startable: true,
+    gymId: 'g1',
+    from: null,
+    canSave: false,
     ...over,
   };
 }

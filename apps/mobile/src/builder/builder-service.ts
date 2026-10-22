@@ -48,6 +48,9 @@ import {
   withSlotRevs,
   workingCount,
   workoutFromTemplate,
+  specsFromSession,
+  specsFromWorkout,
+  isDeleted,
   type BuilderAdvice,
   type BuilderEditBasis,
   type BuilderEditOp,
@@ -61,7 +64,7 @@ import {
   type TemplateSlotSpec,
   defaultBuilderMainLift,
 } from '@fizz/domain';
-import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftKey, type BuilderGroup, type BuilderSetup, type Gym, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
+import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type Gym, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
 
 import type { WorkoutStartOutcome, WorkoutStartRequest } from '../services/workout-services';
@@ -100,7 +103,19 @@ export interface BuilderServiceDeps {
   start: (req: WorkoutStartRequest) => Promise<WorkoutStartOutcome>;
   /** (Coach review's Plan section) The plan's next routine at this gym, Up next's own resolver; absent: not known. */
   upNextRoutineId?: (gymId: string) => Promise<string | null>;
+  /** (22 Oct) Up next with no plan (a routine, or the last workout's next session), for `openTarget({ kind: 'next' })`. */
+  upNext?: (gymId: string | null) => Promise<{ routineId: string | null; sourceSessionId: string | null } | null>;
+  /** (22 Oct) A past workout's name as Today and the history show it (`Push`), for `Do again`. Null: not known. */
+  sessionTitle?: (sessionId: string) => Promise<string | null>;
+  /** (22 Oct) No gym yet at Start: the typical gym is saved first, as Today's Start does (audit B4). Null: couldn't. */
+  ensureGym?: () => Promise<string | null>;
 }
+
+/**
+ * (22 Oct, Ben: the Workout overview is retired) What Your workout opens on besides Set up: Up next, a workout
+ * (plan day or library), a past workout to do again, or a coach chat draft.
+ */
+export type BuilderOpenTarget = { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } | { kind: 'coach_draft'; draftId: string };
 
 /** A day on Set up's Day sheet (§2.2). */
 export interface BuilderDayOption {
@@ -186,6 +201,12 @@ export interface BuilderSnapshot {
   /** The item each slot's loads are worked out on (the keyboard's kg steps, §2.7). */
   items: Record<string, string | null>;
   startable: boolean;
+  /** The gym the draft's loads were worked out at (null: none yet). */
+  gymId: string | null;
+  /** (22 Oct) The library workout, past workout or chat draft this was opened on; null: Set up, Today or a plan day. */
+  from: BuilderDraftFrom | null;
+  /** (22 Oct, §7) `⋯ Save to Workouts`: not a plan day and not already a saved workout. */
+  canSave: boolean;
 }
 
 export type BuilderWriteResult =
@@ -225,7 +246,9 @@ export type { PlanChangeUndo };
 
 export type BuilderStartResult =
   | { ok: true; sessionId: string; duplicate: boolean; planChange: PlanChangeUndo | null }
-  | { ok: false; reason: 'stale' | 'plan_changed' | 'variation_limit' | 'variation_label' | 'empty' | 'gone' | 'failed'; message: string };
+  | { ok: false; reason: 'stale' | 'plan_changed' | 'variation_limit' | 'variation_label' | 'empty' | 'gone' | 'failed'; message: string }
+  /** Another workout is in progress: nothing was created; the page goes to Today, where it resumes. */
+  | { ok: false; reason: 'active'; message: string; sessionId: string };
 
 /** Every builder group, in the builder's order (the coach's usable list and Set up context). */
 const BUILDER_GROUP_ORDER: readonly BuilderGroup[] = BUILDER_GROUPS;
@@ -250,6 +273,8 @@ export const BUILDER_COPY = {
   outOfDate: 'Out of date',
   cantUndo: 'Can’t undo',
   closed: 'This workout was started or closed.',
+  notFound: 'That workout wasn’t found.',
+  noGym: 'Couldn’t set up a gym. Try again.',
   planChanged: 'Your plan changed. Today only?',
   limitReached: 'Limit reached',
   labelTaken: 'Name already used',
@@ -585,6 +610,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       rests: restsOf(workout, env),
       items: Object.fromEntries(v.plan.slots.map((s) => [s.slotKey, s.checkedOn?.equipmentId ?? null])),
       startable: d.status === 'open' && v.plan.slots.length > 0,
+      gymId: v.request.gymId,
+      from: key?.from ?? null,
+      canSave: planDay === null && stored?.templateRoutineId === undefined && key?.from?.kind !== 'routine',
     };
   }
 
@@ -770,6 +798,66 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     }
   }
 
+  /**
+   * Today's open builder draft for a workout that isn't a plan day or Set up (`builderKey.from`): created from
+   * `specs` (a template, loads from §3.1, rounded down to this gym) or a coach chat draft's checked `plan` as it
+   * stands; or the open one for the same target and date, resumed as it is. A custom day named after the workout.
+   */
+  async function openFrom(p: UserProfile, from: BuilderDraftFrom, name: string, source: { specs: TemplateSlotSpec[] } | { plan: DraftPlan; gymId: string | null }, main: string | null, opId: string): Promise<BuilderWriteResult> {
+    const key: BuilderDraftKey = { planId: null, dayIndex: null, splitDayId: null, mainLiftExerciseId: null, localDate: localToday(), from };
+    const open = await repos().workoutDrafts.openBuilderDraft(p.id, key).catch(() => null);
+    if (open !== null) {
+      const snap = await service.read(open.id);
+      if (snap !== null) return { status: 'replayed', snapshot: snap, toast: null };
+    }
+    const at = deps.now();
+    const id = deriveId(`builder-draft:${opId}`);
+    const ids = 'specs' in source ? source.specs.map((x) => x.exerciseId) : source.plan.slots.map((x) => x.exerciseId);
+    // A chat draft stays at the gym it was checked at (`Gym changed` moves it, §2.3); the others are worked out here.
+    const env = await envFor(p, { ...('plan' in source && source.gymId !== null ? { gymId: source.gymId } : {}), exerciseIds: ids, keySeed: `${id}:${opId}` });
+    let plan: DraftPlan;
+    let workout: BuilderWorkout;
+    if ('specs' in source) {
+      workout = workoutFromTemplate(source.specs, env.ctx);
+      plan = withSlotRevs(null, toDraftPlan(workout, env.codec)).plan;
+    } else {
+      plan = withSlotRevs(null, source.plan).plan;
+      workout = fromDraftPlan(plan);
+    }
+    if (slotsOf(workout.blocks).length === 0) return { status: 'closed', snapshot: null, message: BUILDER_COPY.notFound };
+    const t = await deps.training().catch(() => null);
+    const groups = groupsOfWorkout(workout, env);
+    const minutes = Math.max(BUILD_LIMITS.minMinutes, Math.min(BUILD_LIMITS.maxMinutes, Math.ceil(estimateBuilderMinutes(workout, env.ctx)) || (t?.sessionMinutes ?? 60)));
+    const s: SetupInput = { dayId: CUSTOM_DAY_ID, dayName: name.slice(0, 30), dayParts: [], minutes, mainLiftExerciseId: main !== null && slotsOf(workout.blocks).some((x) => x.exerciseId === main) ? main : null, supersets: workout.blocks.some((b) => b.slots.length > 1), groups, variationId: null, groupsEdited: true };
+    const stored = storedSetup(s, {});
+    const draft = newBuilderDraft({
+      id,
+      ownerId: p.id,
+      opId,
+      actionId: deriveId(`builder-action:${opId}`),
+      name: name.slice(0, 120),
+      key,
+      setup: stored,
+      plan,
+      focus: 'split_day',
+      ...dayField(s),
+      gymId: env.gymId,
+      equipmentVersion: env.equipmentVersion,
+      contextHash: contextHash(stored, env.gymId, env.equipmentVersion),
+      at,
+    });
+    const r = await repos().workoutDrafts.createBuilderDraft(p.id, draft);
+    switch (r.status) {
+      case 'written':
+        return { status: 'written', snapshot: await snapshotOf(p, r.draft, env), toast: null };
+      case 'replayed':
+      case 'exists':
+        return { status: 'replayed', snapshot: await snapshotOf(p, r.draft, env), toast: null };
+      case 'invalid':
+        return { status: 'refused', reason: 'no_such_exercise', message: BUILDER_COPY.failed, snapshot: null };
+    }
+  }
+
   const service = {
     copy: BUILDER_COPY,
 
@@ -897,6 +985,54 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const ids = [...r.exercises.map((e) => e.exerciseId), ...(variation?.extras ?? []).flatMap((o) => (o.kind === 'add_slot' ? [o.slot.exerciseId] : []))];
       const env = await envFor(p, { exerciseIds: ids, keySeed: 'groups' });
       return service.create({ ...s, groups: groupsOfWorkout(openTemplate(r, variation, env).workout, env) }, opId);
+    },
+
+    /**
+     * (22 Oct, Ben: the Workout overview is retired) Your workout opened on a target the overview took: a plan-day
+     * template (as Today's `Edit`), a library workout, a past workout to do again, a coach chat draft, or Up next.
+     * Each is today's open builder draft for that target (created, or resumed with every edit kept), so Start
+     * starts exactly what the page shows. Idempotent on `opId`. `closed`: the target is gone or has nothing to do.
+     */
+    async openTarget(target: BuilderOpenTarget, opId: string): Promise<BuilderWriteResult> {
+      const p = await owner();
+      switch (target.kind) {
+        case 'next': {
+          const gym = await deps.currentGym().catch(() => null);
+          const up = deps.upNext === undefined ? null : await deps.upNext(gym?.id ?? null).catch(() => null);
+          if (up?.routineId != null) return service.openTarget({ kind: 'routine', routineId: up.routineId }, opId);
+          if (up?.sourceSessionId != null) return service.openTarget({ kind: 'session', sourceSessionId: up.sourceSessionId }, opId);
+          return { status: 'closed', snapshot: null, message: BUILDER_COPY.notFound };
+        }
+        case 'routine': {
+          const r = await repos().routines.get(target.routineId).catch(() => null);
+          if (r === null || r.ownerId !== p.id || isDeleted(r)) return { status: 'closed', snapshot: null, message: BUILDER_COPY.notFound };
+          const t = await deps.training().catch(() => null);
+          // A plan day opens as Today's `Edit` does (its template, its plan-day key, the Start prompt).
+          if (planDayKeyOf(r, t?.split ?? null, t?.mainLifts) !== null) return service.openTemplate({ routineId: r.id }, opId);
+          const main = r.exercises.find((e) => e.main === true)?.exerciseId ?? null;
+          return openFrom(p, { kind: 'routine', id: r.id }, r.name, { specs: specsFromWorkout(r.exercises) }, main, opId);
+        }
+        case 'session': {
+          const a = await repos().sessions.get(target.sourceSessionId).catch(() => null);
+          if (a === null || a.session.ownerId !== p.id) return { status: 'closed', snapshot: null, message: BUILDER_COPY.notFound };
+          const title = (deps.sessionTitle === undefined ? null : await deps.sessionTitle(a.session.id).catch(() => null)) ?? a.session.routineName ?? 'Workout';
+          return openFrom(p, { kind: 'session', id: a.session.id }, title, { specs: specsFromSession(a) }, null, opId);
+        }
+        case 'coach_draft': {
+          const d = await repos().workoutDrafts.get(target.draftId).catch(() => null);
+          if (d === null || d.ownerId !== p.id) return { status: 'closed', snapshot: null, message: BUILDER_COPY.notFound };
+          // Already one of the builder's own (Today's card, Set up): that draft.
+          if (d.builderKey !== undefined) {
+            const snap = await service.read(d.id);
+            return snap === null ? { status: 'closed', snapshot: null, message: BUILDER_COPY.closed } : { status: 'replayed', snapshot: snap, toast: null };
+          }
+          if (d.status !== 'open' || toMs(d.expiresAtUtc) <= toMs(deps.now().utc)) return { status: 'closed', snapshot: null, message: BUILDER_COPY.closed };
+          // The coach's checked plan as it stands (its loads and their reasons), not rebuilt.
+          const v = currentDraftVersion(d);
+          const main = v.plan.slots.find((x) => x.main)?.exerciseId ?? null;
+          return openFrom(p, { kind: 'coach_draft', id: d.id }, d.name, { plan: v.plan, gymId: v.request.gymId }, main, opId);
+        }
+      }
     },
 
     /** Your workout for a draft (reopen after leaving or a force-close: every edit kept). */
@@ -1193,8 +1329,14 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       if (v.plan.slots.length === 0) return { ok: false, reason: 'empty', message: BUILDER_COPY.empty };
       const stored = builderSetupOf(d);
       const setup = pageSetup(d);
-      const gymId = req.gymId ?? v.request.gymId ?? (await deps.currentGym().catch(() => null))?.id ?? null;
-      if (gymId === null) return { ok: false, reason: 'failed', message: 'Add a gym first' };
+      let gymId = req.gymId ?? v.request.gymId ?? (await deps.currentGym().catch(() => null))?.id ?? null;
+      // No gym yet (first run): the typical gym is saved first, as Today's Start does; Start's re-check fits the loads to it (rule 4).
+      if (gymId === null) {
+        const already = await repos().sessions.findByStartOperation(p.id, req.opId).catch(() => null);
+        if (already !== null) return { ok: true, sessionId: already.session.id, duplicate: true, planChange: null };
+        gymId = deps.ensureGym === undefined ? null : await deps.ensureGym().catch(() => null);
+        if (gymId === null) return { ok: false, reason: 'failed', message: BUILDER_COPY.noGym };
+      }
       const at = deps.now();
       let alongside: StartAlongside | undefined;
       let planChange: PlanChangeUndo | null = null;
@@ -1232,6 +1374,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       }
       if (e.code === 'stale_preview') return { ok: false, reason: 'stale', message: BUILDER_COPY.outOfDate };
       if (e.code === 'not_found') return { ok: false, reason: 'gone', message: BUILDER_COPY.closed };
+      if (e.code === 'session_already_active') return { ok: false, reason: 'active', message: e.message, sessionId: e.sessionId };
       return { ok: false, reason: 'failed', message: 'message' in e && typeof e.message === 'string' ? e.message : BUILDER_COPY.failed };
     },
 

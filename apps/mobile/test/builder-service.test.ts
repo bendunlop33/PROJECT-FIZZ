@@ -336,6 +336,14 @@ async function swapOne(s: AppServices, snap: BuilderSnapshot, name: string, opId
 }
 
 describe('plan-day templates and the Start prompt (§2.8, Q11)', () => {
+  it('(22 Oct) a plan day opened from the Library (`openTarget` routine) is Today’s Edit: its template, its plan day, the same draft', async () => {
+    const { s, push } = await benWithPlan();
+    const fromLibrary = ok(await s.builder.openTarget({ kind: 'routine', routineId: push }, 'lib-open')).snapshot;
+    expect(fromLibrary.planDay).toMatchObject({ splitDayId: 'push', dayIndex: 0, templateRoutineId: push });
+    expect(fromLibrary.from).toBeNull();
+    expect(fromLibrary.canSave).toBe(false);
+    expect(ok(await s.builder.openTemplate({ routineId: push }, 'today-edit')).snapshot.draftId).toBe(fromLibrary.draftId);
+  });
   it('Edit opens the template with no rebuild; load-only edits skip the prompt; Today only leaves the template alone and records the plan day', async () => {
     const { s, gymId, push } = await benWithPlan();
     const before = await template(s, push);

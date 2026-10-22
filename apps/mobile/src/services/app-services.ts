@@ -986,6 +986,12 @@ export function createAppServices(deps: AppServicesDeps) {
     currentGym: () => yourData.currentGym(),
     start: (req) => loop.workout.start(req),
     upNextRoutineId: (gymId) => loop.todayPort.upNextRoutineId(gymId),
+    upNext: (gymId) => loop.todayPort.upNext(gymId ?? 'typical-gym-preview'),
+    sessionTitle: (sessionId) => loop.todayPort.sessionTitle(sessionId),
+    ensureGym: async () => {
+      const made = await setup.useTypicalGym();
+      return made.ok && made.gymId !== undefined ? made.gymId : null;
+    },
   });
 
   /**
