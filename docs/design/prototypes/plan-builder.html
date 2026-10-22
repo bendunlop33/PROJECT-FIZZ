@@ -676,7 +676,7 @@ function renderWeek() {
     <div class="seg">${Object.entries(SPLITS).map(([k, t]) => `<button class="chip" data-split="${k}" aria-pressed="${splitKind() === k}">${k === suggestedSplit(S.freq) ? '✦ ' : ''}${t}</button>`).join('')}</div>
     ${nextWeekStart() ? `<div class="note">Rotates: next week starts with ${nextWeekStart()}</div>` : ''}
     <div class="label">Days</div>
-    <div class="yn" role="group">${[['fixed', 'Set days'], ['flexible', 'Any days']].map(([k, t]) => `<button data-sch="${k}" aria-pressed="${S.schedule === k}">${t}</button>`).join('')}</div>
+    <div class="yn" role="group">${[['flexible', 'Any days'], ['fixed', 'Set days']].map(([k, t]) => `<button data-sch="${k}" aria-pressed="${S.schedule === k}">${t}</button>`).join('')}</div>
     ${S.schedule === 'fixed' ? dayRow('data-day', (i) => S.days.includes(i), false) : ''}
     ${S.runs ? `<div class="label">Runs · long run ${WD[S.longRunDay]} <button class="link dim" id="longRun" style="min-height:24px;padding:0 0 0 6px;font-size:12px;letter-spacing:0;text-transform:none">Change</button></div>${dayRow('data-run', (i) => S.runDays.includes(i), true)}` : ''}
     ${Object.keys(S.acts).map((a) => `<div class="label">${esc(a)}</div>${dayRow('data-actday-' + a.replace(/\W/g, ''), (i) => S.acts[a].includes(i), true).replaceAll('data-actday-' + a.replace(/\W/g, '') + '="', `data-actday="${esc(a)}|`)}`).join('')}
