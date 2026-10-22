@@ -46,25 +46,6 @@ describe('Finish sheet (2.2)', () => {
   });
 });
 
-describe('Overview sheets (2.3–2.5)', () => {
-  it('the reps sheet’s scrim reads Close (it doesn’t save)', () => {
-    const reps = read('OverviewEditSheets.tsx');
-    const sheet = reps.slice(reps.indexOf('export function RepsSheet'), reps.indexOf('export function', reps.indexOf('export function RepsSheet') + 10));
-    expect(sheet).toContain('<BottomCard visible={row !== null} onClose={onClose}>');
-    expect(sheet).not.toContain('closeLabel={EDIT_MODE_COPY.done}');
-  });
-  const overview = read('WorkoutOverviewScreen.tsx');
-  it('the Why sheet keeps its name and Close; the panel scrolls', () => {
-    const why = overview.slice(overview.indexOf('visible={whyVisible}'), overview.indexOf('</BottomCard>', overview.indexOf('visible={whyVisible}')));
-    expect(why).toContain('scroll={false}');
-    expect(why).toContain('label={TODAY_EDITS_COPY.close}');
-    expect(why).toContain('<ScrollView style={{ flexShrink: 1 }}>{why ? <TargetWhyPanel');
-  });
-  it('a long gym name stays on one line', () => {
-    expect(flat(overview)).toContain('<AppText variant="label" numberOfLines={1} style={{ flexShrink: 1 }}> {page.view.gym?.name ?? OVERVIEW_COPY.addGym}');
-  });
-});
-
 describe('check-in, gym switch, picker, Why? link (2.6–2.9)', () => {
   it('the pain step puts Flag n under the title and grows it', () => {
     const src = read('CheckInScreen.tsx');

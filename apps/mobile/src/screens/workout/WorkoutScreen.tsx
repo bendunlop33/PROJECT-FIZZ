@@ -79,7 +79,7 @@ import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../
 import { UNDO_TOAST, undoRefusalText } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
-import { AX_FONT_SCALE } from '../../workout/overview';
+import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { createDraftSaver } from '../../workout/draft-saver';
 import { cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
 import { buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockMs, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';

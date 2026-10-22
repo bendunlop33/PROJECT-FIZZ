@@ -218,7 +218,7 @@ export function ExerciseInfoScreen() {
                 flush
                 title={u.name}
                 onPress={() => {
-                  navigation.navigate('WorkoutOverview', { target: { kind: 'routine', routineId: u.routineId } });
+                  navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: u.routineId }, back: 'Back' });
                 }}
               />
             ))}

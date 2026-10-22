@@ -415,15 +415,15 @@ export function CoachSheetScreen() {
     }
   }
 
-  /** `Open ›` (§4.2): close the sheet, then present the draft's overview. */
+  /** `Open ›` (§4.2): close the sheet, then the draft on Your workout (22 Oct: the Workout overview is retired). */
   function openDraft(draftId: string) {
     navigation.goBack();
-    navigation.navigate('WorkoutOverview', { target: { kind: 'coach_draft', draftId } });
+    navigation.navigate('BuilderWorkout', { open: { kind: 'coach_draft', draftId }, back: 'Back' });
   }
 
   function openRoutine(routineId: string) {
     navigation.goBack();
-    navigation.navigate('WorkoutOverview', { target: { kind: 'routine', routineId } });
+    navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId }, back: 'Back' });
   }
 
   /** `Try again` on a turn's row: that turn's own words as a new turn; a cut-off summary review runs again. */

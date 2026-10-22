@@ -284,37 +284,11 @@ export function TodayScreen() {
   }, []);
 
   const handed = route.params?.toast;
-  const undoRoutine = route.params?.undoRoutine;
-  const undoDraft = route.params?.undoDraft;
   useEffect(() => {
     if (!handed) return;
-    setToast({
-      text: handed,
-      ...(undoDraft
-        ? {
-            action: 'Undo',
-            onAction: () => {
-              void services.coachDrafts.restore({ draftId: undoDraft.id, expectedVersion: undoDraft.version, opId: `restore:${undoDraft.id}:${String(undoDraft.version)}` }).then(() => {
-                changed();
-                setToast(null);
-              });
-            },
-          }
-        : undoRoutine
-          ? {
-              action: 'Undo',
-              onAction: () => {
-                void services.routines.restore({ routineId: undoRoutine.id, expectedVersion: undoRoutine.version, opId: newUuid() }).then((u) => {
-                  if (!u.ok) setError(u.message);
-                  changed();
-                  setToast(null);
-                });
-              },
-            }
-          : {}),
-    });
-    navigation.setParams({ toast: undefined, undoRoutine: undefined, undoDraft: undefined });
-  }, [handed, undoRoutine, undoDraft, navigation, services, changed]);
+    setToast({ text: handed });
+    navigation.setParams({ toast: undefined });
+  }, [handed, navigation]);
 
   const startEmpty = route.params?.startEmpty;
   const startedEmpty = useRef<string | null>(null);
@@ -519,7 +493,7 @@ export function TodayScreen() {
       return;
     }
     startOps.current.delete(editKey);
-    navigation.navigate('BuilderWorkout', { draftId: c.draftId });
+    navigation.navigate('BuilderWorkout', { draftId: c.draftId, back: 'Today' });
   }
 
   /** `Build your own`: the builder on Set up, Day = the card's day. */

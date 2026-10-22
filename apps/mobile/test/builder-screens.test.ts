@@ -363,7 +363,32 @@ describe('source checks', () => {
     expect(nav).toContain('name="BuilderSetup"');
     expect(nav).toContain('name="BuilderWorkout"');
     const types = read('navigation/types.ts');
-    expect(types).toMatch(/BuilderWorkout: \{ draftId: string;/);
+    expect(types).toMatch(/BuilderWorkout: \{ draftId\?: string; open\?: BuilderOpenTarget; back\?: BuilderBack;/);
+    expect(nav).not.toContain('WorkoutOverview');
+  });
+  it('(22 Oct) the Workout overview is gone: every pre-start entry opens Your workout with its back control; no `‹ Set up` there', () => {
+    const entry = (f: string) => read(f);
+    expect(entry('screens/coach/CoachSheetScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'coach_draft', draftId }, back: 'Back' });");
+    expect(entry('screens/coach/CoachSheetScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId }, back: 'Back' });");
+    expect(entry('screens/library/ExerciseInfoScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: u.routineId }, back: 'Back' });");
+    expect(entry('screens/library/PlanDayScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: day.routineId }, back: 'Library' });");
+    expect(entry('screens/routines/WorkoutsScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: row.routineId }, back: 'Library' });");
+    expect(entry('screens/routines/WorkoutsScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'session', sourceSessionId: h.sourceSessionId }, back: 'Library' });");
+    expect(entry('screens/workout/SummaryScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: savedAs.id }, back: 'Summary' });");
+    expect(entry('screens/TodayScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { draftId: c.draftId, back: 'Today' });");
+    for (const f of ['screens/coach/CoachSheetScreen.tsx', 'screens/library/ExerciseInfoScreen.tsx', 'screens/library/PlanDayScreen.tsx', 'screens/routines/WorkoutsScreen.tsx', 'screens/workout/SummaryScreen.tsx', 'screens/TodayScreen.tsx', 'navigation/types.ts', 'navigation/actions.ts']) expect(entry(f), f).not.toContain("'WorkoutOverview'");
+    const page = read('screens/builder/BuilderWorkoutScreen.tsx');
+    // Opened on a target: today's draft for it first (one op ID per page), then the draft ID is kept for a relaunch.
+    expect(page).toContain('.openTarget(target, openOp)');
+    expect(page).toContain('navigation.setParams({ draftId: r.snapshot.draftId });');
+    // `‹ Today` / `‹ Library` instead of `‹ Set up` (and Close) when it wasn't opened from Set up.
+    expect(page).toContain('{back !== undefined || snap.from !== null ? (');
+    // A workout in progress: back to Today, where it resumes; nothing was created.
+    expect(page).toContain("if (r.reason === 'active') {");
+    expect(page).toContain('navigation.dispatch(popToToday(r.message));');
+    // `⋯ Save to Workouts` only for a workout that isn't a plan day or a saved workout (§7).
+    expect(page).toContain('{snap.canSave ? <TextButton label="⋯"');
+    expect(page).toContain("void save.open({ kind: 'draft', draftId: snap.draftId, gymId: snap.gymId }, snap.name);");
   });
   it('swipes and steppers carry VoiceOver actions; the keyboard bar has − + Next Done', () => {
     expect(screens).toContain('accessibilityActions');

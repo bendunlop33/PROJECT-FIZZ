@@ -1,7 +1,7 @@
 import { useWindowDimensions, View } from 'react-native';
 
 import { useTheme } from '../theme';
-import { AX_FONT_SCALE } from '../workout/overview';
+import { AX_FONT_SCALE } from '../workout/screen-rules';
 import { AppText } from './Text';
 
 /**

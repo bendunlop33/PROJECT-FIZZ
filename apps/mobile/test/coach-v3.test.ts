@@ -8,7 +8,7 @@ import { CONNECTED, contextWorkout, replyWith, StepModel, toolCall } from './coa
 import { chipRoute } from '../src/coach/offer-check';
 import { statusView } from '../src/coach/sheet-view';
 import { slotAfterTurn } from '../src/coach/slot-view';
-import { overviewGymId } from '../src/workout/overview-start';
+import { overviewGymId } from './overview-driver';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**

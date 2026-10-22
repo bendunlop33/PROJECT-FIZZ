@@ -121,7 +121,7 @@ export function PlanDayScreen() {
           <PrimaryButton
             label={PLAN_DAY_COPY.start(name)}
             onPress={() => {
-              navigation.navigate('WorkoutOverview', { target: { kind: 'routine', routineId: day.routineId } });
+              navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: day.routineId }, back: 'Library' });
             }}
           />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>

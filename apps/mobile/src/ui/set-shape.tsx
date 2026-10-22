@@ -4,8 +4,8 @@ import { Pressable, useWindowDimensions, View, type AccessibilityActionEvent } f
 import type { StepTarget } from '@fizz/domain';
 
 import { useTheme } from '../theme';
-import { AX_FONT_SCALE } from '../workout/overview';
-import { cardioDraftWith, repsDraftValid, repsDraftWith, repsSteps, type RepsDraft } from '../workout/overview-edits';
+import { AX_FONT_SCALE } from '../workout/screen-rules';
+import { cardioDraftWith, repsDraftValid, repsDraftWith, repsSteps, type RepsDraft } from '../workout/reps-draft';
 import { countSteps, effortChoices, SET_SHAPE_COPY, setShapeStacked } from '../workout/set-shape-view';
 import { TextButton } from './buttons';
 import { Icon } from './Icon';

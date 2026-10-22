@@ -26,7 +26,7 @@ import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
 import { NO_REASONS_WRITTEN, skipReasons, submitReasons, type ReasonsSheetState } from '../../workout/check-in-sheet';
-import { checkInSheetEnd } from '../../workout/overview';
+import { checkInSheetEnd } from '../../workout/screen-rules';
 
 type Step = 'score' | 'reasons' | 'pain' | 'ill';
 const CHECK_IN_NOT_SAVED = 'Check-in not saved';

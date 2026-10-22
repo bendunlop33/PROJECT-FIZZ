@@ -1,7 +1,7 @@
 import { cardioValuesText, formatDuration, formatNumber, NBSP, repRangeText, type AddDestination, type SlotShapeInput } from '@fizz/domain';
 
 import type { LibraryAddShape } from '../services/library-service';
-import type { RepsDraft } from './overview-edits';
+import type { RepsDraft } from './reps-draft';
 import { SET_SHAPE_COPY } from './set-shape-view';
 
 /**

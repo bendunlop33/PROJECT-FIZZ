@@ -6,12 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
 import { loadCell, NBSP, type OverviewRow } from '@fizz/domain';
 import type { TextCoachState } from '@fizz/providers';
-import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
+import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData, OverviewTarget, SessionList, SessionPickerRow } from '../src/services/workout-services';
-import { startFromOverview } from '../src/workout/overview-start';
-import { allRows, hasChoice, isShownRow, lastDoneText, pickerRowDetail, pickerRowLabel, pickerSections, SESSION_PICKER_COPY, switchSession, todaySessions } from '../src/workout/session-picker';
+import { startFromOverview } from './overview-driver';
+import { allRows, hasChoice, isShownRow, lastDoneText, pickerRowDetail, pickerRowLabel, pickerSections, SESSION_PICKER_COPY, switchSession, todaySessions } from './session-picker-driver';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
 
 /**
@@ -135,7 +135,6 @@ const ports = (s: AppServices, target: OverviewTarget, gymId: string) => ({
   reload: () => s.overview.load({ target, gymId }),
 });
 
-const NOW: ZonedTimestamp = { utc: '2026-10-11T08:00:00.000Z', tz: TZ };
 
 describe('services.sessions.list (session-picker §3, §7)', () => {
   it('SP1, SP2: named sessions in picker order, Up next the same as Today’s card; an unnamed workout is not a row', async () => {
@@ -510,49 +509,6 @@ describe('SP7: coach targets on a picked session (D21, rule 3)', () => {
     expect(offline.view.rows.every((r) => r.coach === null)).toBe(true);
     expect(offline.coachTargets).toEqual({});
     expect(offline.view.rows.map((r) => r.load)).toEqual(none.view.rows.map((r) => r.load));
-  });
-});
-
-describe('Picker view helpers', () => {
-  const row = (o: Partial<SessionPickerRow>): SessionPickerRow => ({
-    key: 'name:legs',
-    label: 'Legs',
-    kind: 'named',
-    target: { kind: 'session', sourceSessionId: 's1' },
-    routineId: null,
-    sourceSessionId: 's1',
-    lastDone: { utc: '2026-10-05T17:00:00.000Z', tz: TZ },
-    exerciseCount: 5,
-    recommended: false,
-    edited: false,
-    ...o,
-  });
-
-  it('reads New for a routine never done, and up next for the recommendation', () => {
-    const arms = row({ key: 'routine:r', label: 'Arms', kind: 'routine', routineId: 'r', sourceSessionId: null, lastDone: null, exerciseCount: 4 });
-    expect(pickerRowDetail(arms, NOW)).toBe('New · 4 exercises');
-    expect(pickerRowLabel(row({ recommended: true }), NOW, false)).toBe('Legs, up next, last done 6 days ago, 5 exercises');
-    expect(pickerRowLabel(arms, NOW, false)).toBe('Arms, new, not done yet, 4 exercises');
-  });
-
-  it('checks the row the overview shows: the same routine, or the same source workout', () => {
-    expect(isShownRow(row({}), { nextOf: 's1' })).toBe(true);
-    expect(isShownRow(row({}), { nextOf: 's2' })).toBe(false);
-    expect(isShownRow(row({ routineId: 'r', sourceSessionId: 's1' }), { nextOf: 's1' })).toBe(false);
-    expect(isShownRow(row({ routineId: 'r' }), { routineOf: 'r' })).toBe(true);
-    expect(isShownRow(row({}), null)).toBe(false);
-  });
-
-  it('a single session that is not Up next is still listed on Today (a routine never done stays reachable)', () => {
-    const arms = row({ key: 'routine:r', label: 'Arms', kind: 'routine', routineId: 'r', sourceSessionId: null, lastDone: null, target: { kind: 'routine', routineId: 'r' } });
-    expect(todaySessions({ upNext: null, workouts: [arms], fromHistory: [], older: [], recommendedKey: null }, { includeUpNext: false })).toEqual({ rows: [arms], more: false });
-    expect(todaySessions({ upNext: { ...arms, recommended: true }, workouts: [], fromHistory: [], older: [], recommendedKey: 'routine:r' }, { includeUpNext: true }).rows).toEqual([]);
-    expect(hasChoice({ upNext: null, workouts: [arms], fromHistory: [], older: [], recommendedKey: null })).toBe(false);
-  });
-
-  it('no list (unreadable) means no Change and no Sessions', () => {
-    expect(hasChoice(null)).toBe(false);
-    expect(todaySessions(null, { includeUpNext: false })).toEqual({ rows: [], more: false });
   });
 });
 

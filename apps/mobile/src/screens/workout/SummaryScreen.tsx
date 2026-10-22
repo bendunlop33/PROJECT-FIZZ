@@ -360,7 +360,7 @@ export function SummaryScreen() {
               <LinkLine
                 accessibilityLabel={`Saved to Workouts as ${savedAs.name}. Opens it.`}
                 onPress={() => {
-                  navigation.navigate('WorkoutOverview', { target: { kind: 'routine', routineId: savedAs.id } });
+                  navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: savedAs.id }, back: 'Summary' });
                 }}
               >
                 <AppText variant="callout" color="text.secondary">

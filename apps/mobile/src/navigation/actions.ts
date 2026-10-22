@@ -72,16 +72,14 @@ export function replaceWithSummary(sessionId: string) {
 }
 
 /**
- * The editor's `Save` (routines.md §A3): back to the list or the overview it
- * was opened from, handing over the toast (`Saved Push A` [Undo]). The
- * overview keeps its target (params merge).
+ * The editor's `Save` (routines.md §A3): back to the list it was opened
+ * from, handing over the toast (`Saved Push A` [Undo]).
  */
 export function popToFromEditor(from: EditorFrom, toast: LibraryToastParam) {
   if (from === 'Library') return openLibrary('workouts', toast);
   // Exercise detail sits right under the editor: back to it (its toast is handed off in memory, `library-toast.ts`).
   // The Save sheet's `Edit ›`: back to the screen under the sheet, which takes the result (`save-edit-handoff.ts`).
-  if (from === 'ExerciseInfo' || from === 'SaveSheet') return { type: 'GO_BACK' } as const;
-  return { type: 'POP_TO', payload: { name: from, params: { toast }, merge: true } } as const;
+  return { type: 'GO_BACK' } as const;
 }
 
 /**

@@ -6,7 +6,7 @@ import { TODAY_V2_COPY, type StripCell, type StripItem, type TodayBreakdownRow, 
 import type { TodayCardView } from '../../services/today-session';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Icon, PrimaryButton, SecondaryButton, TextButton } from '../../ui';
-import { AX_FONT_SCALE } from '../../workout/overview';
+import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { STRIP_LABEL_FIT, STRIP_LAYOUT, stripPillStyle } from '../../today/strip-style';
 import { breakdownLabel, TIME_LABELS, TODAY_SCREEN_COPY, type TodayCardAction, type TodaySegment } from '../../today/today-view';
 

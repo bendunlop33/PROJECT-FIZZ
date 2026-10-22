@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 
 import { threadRows } from '../src/coach/sheet-view';
-import { startFromOverview } from '../src/workout/overview-start';
+import { startFromOverview } from './overview-driver';
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';

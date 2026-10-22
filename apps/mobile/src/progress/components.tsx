@@ -20,7 +20,7 @@ import type { ProgressPeriodKey } from '@fizz/schemas';
 import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
 import { AppText, Icon, PrimaryButton } from '../ui';
-import { AX_FONT_SCALE } from '../workout/overview';
+import { AX_FONT_SCALE } from '../workout/screen-rules';
 import { useAxisWidth } from './axis-measure';
 import { TICK_MAX_SCALE } from './axis-width';
 import { ACTIVITY_LINE_DIMS, activityLineLayout, countBarWidth, guessLabelWidth, measuredLabelBox, thinLabelsByWidth } from './chart-layout';

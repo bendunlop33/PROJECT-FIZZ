@@ -1,12 +1,12 @@
 import { formatLastDone } from '@fizz/domain';
 import type { ZonedTimestamp } from '@fizz/schemas';
 
-import type { OverviewData, OverviewStartOf, OverviewTarget, SessionList, SessionPickerRow } from '../services/workout-services';
+import type { OverviewData, OverviewStartOf, OverviewTarget, SessionList, SessionPickerRow } from '../src/services/workout-services';
 
 /**
- * The session picker's view (session-picker.md §2, §4.5, §6): words and
- * which rows show where. Pure; the service groups, orders and recommends,
- * and these only format.
+ * Test driver: the Workout overview's session picker view (session-picker.md §2, §4.5, §6), retired with the
+ * overview (22 Oct). Its last version, so the session-type service tests (`services.sessions.list`, kept until
+ * the overview service layer's clean-up) read the list as the picker did. Test code only.
  */
 
 export const SESSION_PICKER_COPY = {

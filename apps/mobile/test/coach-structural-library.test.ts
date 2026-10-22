@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
-import { pageToast } from '../src/workout/overview-edits';
+import { pageToast } from './overview-driver';
 
 /**
  * Merge of coach tools with the Workouts library: a structural proposal Ben

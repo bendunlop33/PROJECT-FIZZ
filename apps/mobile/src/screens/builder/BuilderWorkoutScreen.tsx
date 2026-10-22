@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { builderApplyOpId, type BuilderCoachReach, type BuilderProposal } from '@fizz/coach';
 import { dropBuilderSlot, slotsOf, type BuilderEditOp } from '@fizz/domain';
-import type { BuilderGroup, CheckInScore, PlanChangeUndo, SessionCheckIn } from '@fizz/schemas';
+import type { BuilderGroup, CheckInScore, PlanChangeUndo, Routine, SessionCheckIn } from '@fizz/schemas';
 
 import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWriteResult, type StartChoice, type StartPrompt } from '../../builder/builder-service';
 import { reviewAfterApply } from '../../builder/review';
@@ -15,13 +15,14 @@ import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type Propo
 import { editsFromText, promptView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
-import { builderPage, openStartedWorkout } from '../../navigation/actions';
-import type { RootStackParams } from '../../navigation/types';
+import { builderPage, openStartedWorkout, popToToday } from '../../navigation/actions';
+import type { BuilderBack, RootStackParams } from '../../navigation/types';
+import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, CheckInScale, PrimaryButton, SecondaryButton, StatusLine, TextButton, Toast, ToastHost } from '../../ui';
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
-import { saveScore, scoreStepOf } from '../../workout/overview-start';
+import { saveScore, scoreStepOf } from '../../workout/check-in-score';
 import { CoachAskBar } from '../../ui/coach-ask-bar';
 import { createOnDeviceSpeech } from '../../voice/on-device-speech';
 import { SwipeRow } from './BuilderParts';
@@ -47,7 +48,10 @@ export function BuilderWorkoutScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const params = useRoute<RouteProp<RootStackParams, 'BuilderWorkout'>>().params;
-  const draftId = params.draftId;
+  // (22 Oct) Opened on a workout, a past workout, a chat draft or Up next: today's draft for it is opened first.
+  const [draftId, setDraftId] = useState<string | null>(params.draftId ?? null);
+  const [openFailed, setOpenFailed] = useState<string | null>(null);
+  const [openOp] = useState(newUuid);
   const [snap, setSnapState] = useState<BuilderSnapshot | null>(null);
   // The latest snapshot, for edits that run after the ones before them (review S4).
   const snapRef = useRef<BuilderSnapshot | null>(null);
@@ -88,6 +92,15 @@ export function BuilderWorkoutScreen() {
   const toastLater = useRef<BuilderToast | null>(null);
   const showToastRef = useRef<(t: BuilderToast | null) => void>(() => undefined);
   const alertsAsk = useStartAlertsAsk();
+  const save = useSaveToWorkouts(
+    (r: Routine) => {
+      changed();
+      showToastRef.current({ text: WORKOUT_COPY.saved(r.name), undoOpId: null, why: null });
+    },
+    () => {
+      showToastRef.current({ text: WORKOUT_COPY.nothingToSave, undoOpId: null, why: null });
+    },
+  );
   const [checkInSheet, setCheckInSheet] = useState<{ choice: StartChoice } | null>(null);
   const [scoring, setScoring] = useState(false);
   const [checkInId] = useState(newUuid);
@@ -95,7 +108,31 @@ export function BuilderWorkoutScreen() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shownKey = useRef<string | null>(null);
 
+  useEffect(() => {
+    const target = params.open;
+    if (draftId !== null || target === undefined) return;
+    let live = true;
+    void services.builder
+      .openTarget(target, openOp)
+      .catch(() => null)
+      .then((r) => {
+        if (!live) return;
+        if (r?.snapshot == null) {
+          setOpenFailed(r !== null && 'message' in r ? r.message : services.builder.copy.failed);
+          return;
+        }
+        changed();
+        setDraftId(r.snapshot.draftId);
+        // A relaunch or a re-render reopens this draft, not a new one.
+        navigation.setParams({ draftId: r.snapshot.draftId });
+      });
+    return () => {
+      live = false;
+    };
+  }, [draftId, params.open, openOp, services, changed, navigation]);
+
   const reload = useCallback(async () => {
+    if (draftId === null) return;
     let s = await inTurn(() => services.builder.read(draftId));
     // The plan day changed elsewhere and Ben hasn't edited this draft: it reloads without a word (§2.3).
     if (s?.planDayChanged?.silent === true) {
@@ -314,6 +351,13 @@ export function BuilderWorkoutScreen() {
     }
     // Nothing was created: the same op ID may try again only for the same choice.
     startOp.current = newUuid();
+    // Another workout is in progress: Today, where it resumes.
+    if (r.reason === 'active') {
+      setPrompt(null);
+      setCheckInSheet(null);
+      navigation.dispatch(popToToday(r.message));
+      return;
+    }
     if (r.reason === 'stale') {
       setPrompt(null);
       await reload();
@@ -404,8 +448,32 @@ export function BuilderWorkoutScreen() {
     return t !== null && t.enabled ? t.value : null;
   };
 
-  if (snap === null) return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
+  const back = params.back;
+  const backControl = (
+    <TextButton
+      label={backLabel(back)}
+      tone="secondary"
+      onPress={() => {
+        navigation.goBack();
+      }}
+    />
+  );
+  if (snap === null)
+    return (
+      <View style={{ flex: 1, paddingTop: insets.top, paddingHorizontal: theme.components.screenMargin, gap: theme.space['3'], backgroundColor: theme.colors['bg.canvas'] }}>
+        {openFailed !== null || back !== undefined ? <View style={{ flexDirection: 'row' }}>{backControl}</View> : null}
+        {openFailed !== null ? <StatusLine icon="info.circle" tone="info" text={openFailed} /> : null}
+      </View>
+    );
   const v = workoutView(snap);
+
+  /** `⋯` (§7): `Save to Workouts` for a workout that isn't a plan day or a saved workout already. */
+  const openMore = () => {
+    const options = [WORKOUT_COPY.saveToWorkouts, 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 1 }, (i) => {
+      if (i === 0) void save.open({ kind: 'draft', draftId: snap.draftId, gymId: snap.gymId }, snap.name);
+    });
+  };
 
   const rowAction = (row: WorkoutRowView, name: string) => {
     switch (name) {
@@ -518,8 +586,16 @@ export function BuilderWorkoutScreen() {
       <View style={{ flex: 1 }}>
         <View style={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <TextButton label={WORKOUT_COPY.back} tone="secondary" onPress={() => { navigation.dispatch(builderPage('BuilderSetup', { draftId: snap.draftId })); }} />
-            <TextButton label="Close" tone="secondary" onPress={() => { navigation.goBack(); }} />
+            {/* Opened from Today, the Library, a chat draft or a Summary: only `‹ Today` / `‹ Library` (§2.3, review V1); no Set up. */}
+            {back !== undefined || snap.from !== null ? (
+              backControl
+            ) : (
+              <TextButton label={WORKOUT_COPY.back} tone="secondary" onPress={() => { navigation.dispatch(builderPage('BuilderSetup', { draftId: snap.draftId })); }} />
+            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {snap.canSave ? <TextButton label="⋯" accessibilityLabel={WORKOUT_COPY.more} tone="secondary" onPress={openMore} /> : null}
+              {back === undefined && snap.from === null ? <TextButton label="Close" tone="secondary" onPress={() => { navigation.goBack(); }} /> : null}
+            </View>
           </View>
           <AppText variant="title1" accessibilityRole="header" numeric>
             {v.title}
@@ -692,6 +768,7 @@ export function BuilderWorkoutScreen() {
         }}
       />
       {alertsAsk.sheet}
+      {save.sheet}
       <BottomCard visible={checkInSheet !== null} onClose={() => { setCheckInSheet(null); }}>
         <AppText variant="title2" accessibilityRole="header">
           {WORKOUT_COPY.checkIn}
@@ -765,6 +842,11 @@ function ScrollArea({ children, scrollEnabled }: { children: ReactNode; scrollEn
       {children}
     </ScrollView>
   );
+}
+
+/** `‹ Today`, `‹ Library`, `‹ Summary`, else `‹ Back`. */
+function backLabel(back: BuilderBack | undefined): string {
+  return `‹ ${back ?? 'Back'}`;
 }
 
 function StartButton({ enabled, busy, onPress }: { enabled: boolean; busy: boolean; onPress: () => void }) {

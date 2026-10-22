@@ -112,8 +112,8 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(start).not.toContain('Builder');
   });
 
-  it('Edit → `BuilderWorkout` { draftId }; Build your own → `BuilderSetup`; no placeholder or route guard (the builder is in this build)', () => {
-    expect(screen).toContain("navigation.navigate('BuilderWorkout', { draftId: c.draftId })");
+  it('Edit → `BuilderWorkout` { draftId, back: Today } (no Set up, review V1); Build your own → `BuilderSetup`; no placeholder or route guard (the builder is in this build)', () => {
+    expect(screen).toContain("navigation.navigate('BuilderWorkout', { draftId: c.draftId, back: 'Today' })");
     expect(screen).toContain("navigation.navigate('BuilderSetup'");
     // The builder's routes are in this build: no placeholder toast, no route guard.
     expect(screen).not.toContain('routeAvailable');

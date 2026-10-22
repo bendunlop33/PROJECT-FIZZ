@@ -10,7 +10,7 @@ import { backFromEditor, openLibrary, openYourPlan, popToFromEditor } from '../s
 import { addEffortRow, addPrimary, addRepsRow, initialAddShape, posterSize, repsDraftOfShape, slotShapeOfAdd } from '../src/workout/exercise-info-view';
 import { filterChipLabel, filterOptions, toggled, withFilter } from '../src/workout/library-browse-view';
 import { countSteps, effortChoices, SET_BAR, setShapeStacked, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../src/workout/set-shape-view';
-import { AX_FONT_SCALE } from '../src/workout/overview';
+import { AX_FONT_SCALE } from '../src/workout/screen-rules';
 import { handOffLibraryToast, takeLibraryToast } from '../src/workout/library-toast';
 import { beginSaveEdit, saveEditRequest, settleSaveEdit, type SaveEditOutcome } from '../src/workout/save-edit-handoff';
 
@@ -114,7 +114,7 @@ describe('Add to a workout sheet (§9.5)', () => {
 });
 
 describe('navigation (EL10)', () => {
-  const routeNames = ['Tabs', 'WorkoutOverview', 'WorkoutEditor', 'Workout', 'ExerciseInfo'];
+  const routeNames = ['Tabs', 'BuilderWorkout', 'WorkoutEditor', 'Workout', 'ExerciseInfo'];
   const router = StackRouter({});
   const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
   type State = StackNavigationState<ParamListBase>;
@@ -127,7 +127,7 @@ describe('navigation (EL10)', () => {
   const toast = { key: 'k', text: 'Saved Push A', undo: null };
 
   it('Edit workouts and the editor’s Save land on Library › Workouts on the one Tabs, with the toast', () => {
-    let s = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'next' } }));
+    let s = apply(router.getInitialState(options), navigate('BuilderWorkout', { open: { kind: 'next' } }));
     s = apply(s, openLibrary('workouts'));
     expect(s.routes.map((r) => r.name)).toEqual(['Tabs']);
     expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts' }, pop: true } });
@@ -138,7 +138,7 @@ describe('navigation (EL10)', () => {
   });
 
   it('Today’s `Day 2 of 4 ›` lands on Library › Workouts (Your plan at the top) on the one Tabs, once per tap (Ben, 19 Oct)', () => {
-    let s = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'next' } }));
+    let s = apply(router.getInitialState(options), navigate('BuilderWorkout', { open: { kind: 'next' } }));
     s = apply(s, openYourPlan('tap-1'));
     expect(s.routes.map((r) => r.name)).toEqual(['Tabs']);
     expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', plan: 'tap-1' }, pop: true } });
@@ -161,7 +161,8 @@ describe('navigation (EL10)', () => {
     expect(today).not.toMatch(/navigate\('Workouts'\)/);
     // Today (v2, workout-builder-v3 §2.0.9): no session picker on Today any more (the day control and `⋯` replace it).
     expect(today).not.toContain('SessionPickerSheet');
-    expect(code(read('screens/workout/WorkoutOverviewScreen.tsx'))).toMatch(/openLibrary\('workouts'\)/);
+    // (22 Oct) The Workout overview and its session picker are gone: no screen opens it.
+    expect(nav).not.toContain('WorkoutOverview');
   });
 });
 
@@ -169,8 +170,6 @@ describe('source checks (EL-B16, EL-B24, rules 1 and 2)', () => {
   it('every creation path sends the Sets count', () => {
     expect(code(read('screens/workout/ExercisePickerScreen.tsx'))).toMatch(/shape: \{ workingSets: sets \}/);
     expect(code(read('screens/workout/ExercisePickerScreen.tsx'))).toMatch(/<SetCountBar /);
-    expect(code(read('screens/workout/WorkoutOverviewScreen.tsx'))).toMatch(/kind: 'add', exerciseId: row\.exerciseId, workingSets: addSets/);
-    expect(code(read('screens/workout/OverviewEditSheets.tsx'))).toMatch(/<SetCountBar /);
     const editor = code(read('screens/routines/WorkoutEditorScreen.tsx'));
     expect(editor).toMatch(/\{ \.\.\.x\.defaultShape, workingSets: sets \}/);
     expect(editor).toMatch(/<SetShapeControl/);

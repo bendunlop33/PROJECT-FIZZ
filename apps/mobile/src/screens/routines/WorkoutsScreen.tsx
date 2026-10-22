@@ -140,7 +140,7 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
   );
 
   function openRow(row: LibraryRow) {
-    navigation.navigate('WorkoutOverview', { target: { kind: 'routine', routineId: row.routineId } });
+    navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: row.routineId }, back: 'Library' });
   }
 
   async function act(row: LibraryRow, action: string) {
@@ -324,7 +324,7 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
                 onPress={
                   h.startable
                     ? () => {
-                        navigation.navigate('WorkoutOverview', { target: { kind: 'session', sourceSessionId: h.sourceSessionId } });
+                        navigation.navigate('BuilderWorkout', { open: { kind: 'session', sourceSessionId: h.sourceSessionId }, back: 'Library' });
                       }
                     : null
                 }

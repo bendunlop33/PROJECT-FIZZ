@@ -7,8 +7,6 @@ import { isRefusedDistanceSlot, removeExercise, routineIssues } from '@fizz/doma
 import type { RoutineExercise } from '@fizz/schemas';
 
 import { conflictLines, conflictText, deleteConfirm, EDITOR_COPY, editorPrimary, editorSlotIssue, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices, rowMenu } from '../src/workout/library-view';
-import { allRows, pickerSections, SESSION_PICKER_COPY } from '../src/workout/session-picker';
-import type { SessionList, SessionPickerRow } from '../src/services/workout-services';
 
 /**
  * The Workouts library's screen rules and words (routines.md §A2–§A5):
@@ -56,21 +54,6 @@ describe('editor primary (§3.3)', () => {
     const c = restChoices([{ seconds: 180, presetName: 'Heavy' }]);
     expect(c.find((x) => x.seconds === 180)?.label).toBe('Heavy 3:00');
     expect(c.map((x) => x.seconds)).toEqual([...c.map((x) => x.seconds)].sort((a, b) => a - b));
-  });
-});
-
-describe('picker sections (§A2.4, WL-A3)', () => {
-  const row = (label: string): SessionPickerRow => ({ key: label, label, kind: 'routine', target: { kind: 'next' }, routineId: null, sourceSessionId: null, lastDone: null, exerciseCount: 1, recommended: false, edited: false });
-  it('Up next first, then labelled sections; empty ones hidden; one section alone has no label', () => {
-    const list: SessionList = { upNext: row('Legs A'), workouts: [row('Push A')], fromHistory: [row('Shoulders')], older: [row('Full body')], recommendedKey: 'Legs A' };
-    expect(pickerSections(list).map((s) => [s.title, s.rows.map((r) => r.label)])).toEqual([
-      [null, ['Legs A']],
-      [SESSION_PICKER_COPY.yourWorkouts, ['Push A']],
-      [SESSION_PICKER_COPY.fromHistory, ['Shoulders']],
-      [SESSION_PICKER_COPY.older, ['Full body']],
-    ]);
-    expect(allRows(list).map((r) => r.label)).toEqual(['Legs A', 'Push A', 'Shoulders', 'Full body']);
-    expect(pickerSections({ upNext: null, workouts: [row('Push A'), row('Arms')], fromHistory: [], older: [], recommendedKey: null }).map((s) => s.title)).toEqual([null]);
   });
 });
 

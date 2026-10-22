@@ -8,7 +8,7 @@ import { dateAt } from '../../clock';
 import { formatShortDate, formatTime } from '../../format/dates';
 import { useTheme } from '../../theme';
 import { AppText, Group, Icon, StatusLine, TEXT_PRESSED_OPACITY } from '../../ui';
-import { AX_FONT_SCALE } from '../../workout/overview';
+import { AX_FONT_SCALE } from '../../workout/screen-rules';
 
 /**
  * Started / Ended (Ben, 19 Oct: "Option to change start and end by scrolling when finish

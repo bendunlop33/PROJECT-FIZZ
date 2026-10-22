@@ -5,9 +5,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
-import { OVERVIEW_COPY } from '../src/workout/overview';
-import { pageToast, TODAY_EDITS_COPY } from '../src/workout/overview-edits';
-import { staleStartToast, startFromOverview } from '../src/workout/overview-start';
+import { OVERVIEW_COPY, pageToast, staleStartToast, startFromOverview, TODAY_EDITS_COPY } from './overview-driver';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**

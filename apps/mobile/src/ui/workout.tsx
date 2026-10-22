@@ -13,7 +13,7 @@ import { AppText } from './Text';
 import { accessoryAction, bottomBarPadding } from './keyboard-state';
 import { CARDIO_TIME_FORMAT, NUMBER_FORMAT, nextFieldText } from './number-text';
 import { effortInfoLabel, effortInfoLines, type EffortScale } from '../workout/effort-info';
-import { AX_FONT_SCALE } from '../workout/overview';
+import { AX_FONT_SCALE } from '../workout/screen-rules';
 import { stepperNumeralSize, stepperTexts, tileFit, tileRowLayout, type TileSpec } from '../workout/tile-fit';
 
 /** Shared keyboard toolbar for number fields (the system decimal pad has no Done key). */

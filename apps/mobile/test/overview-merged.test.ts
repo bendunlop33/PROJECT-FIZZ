@@ -7,8 +7,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
-import { coachPill, coachTapOf, coachUndoneText } from '../src/workout/overview';
-import { createGuard, startFromOverview, undoGymSwitch } from '../src/workout/overview-start';
+import { coachPill, coachTapOf, coachUndoneText, createGuard, startFromOverview, undoGymSwitch } from './overview-driver';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**

@@ -79,6 +79,11 @@ export const WORKOUT_COPY = {
   outOfDate: 'Out of date',
   addAnyway: 'Add anyway',
   reload: 'Reload',
+  /** (§7) `⋯` for a workout that isn't a plan day: `Save to Workouts`. */
+  more: 'More',
+  saveToWorkouts: 'Save to Workouts',
+  saved: (name: string) => `Saved ${name}`,
+  nothingToSave: 'Nothing to save',
 } as const;
 
 export const PROMPT_COPY = {

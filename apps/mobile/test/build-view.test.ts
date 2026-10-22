@@ -6,8 +6,7 @@ import { buildBlockOf } from '../src/coach/coach-service';
 import { DEFAULT_SPLIT, PRESET_SPLITS } from '@fizz/domain';
 import { BUILD_COPY, buildCardView, buildDayChips, draftCardView, draftChangeView, draftWhyView, fromCoachRowText, needsCoachView, pendingBuildView } from '../src/coach/build-view';
 import { cardView } from '../src/coach/sheet-view';
-import type { CoachDraftCard, CoachDraftRow, SessionList } from '../src/services/workout-services';
-import { allRows, isShownRow, pickerRowDetail, pickerRowLabel, pickerSections, todaySessions } from '../src/workout/session-picker';
+import type { CoachDraftCard, CoachDraftRow } from '../src/services/workout-services';
 
 /**
  * The workout builder's views (workout-builder.md §4, §5.4, §6.6, §7): the
@@ -204,17 +203,8 @@ describe('`FROM COACH` in the picker and Today (§4.4, WB29)', () => {
     name: 'Push · 45 min',
     createdAt: { utc: '2026-10-12T17:02:00.000Z', tz: 'Europe/London' },
   };
-  const routineRow = { key: 'routine:r1', label: 'Legs A', kind: 'routine' as const, target: { kind: 'routine' as const, routineId: 'r1' }, routineId: 'r1', sourceSessionId: null, lastDone: { utc: '2026-10-08T17:00:00.000Z', tz: 'Europe/London' }, exerciseCount: 5, recommended: true, edited: false };
-  const list: SessionList = { upNext: routineRow, workouts: [], fromHistory: [], older: [], recommendedKey: 'routine:r1', fromCoach: [draftRow] };
 
-  it('sits between Up next and `YOUR WORKOUTS`; Today lists it first after Up next; its row says when it was made', () => {
-    expect(pickerSections(list).map((s) => [s.title, s.rows.map((r) => r.label)])).toEqual([[null, ['Legs A']], ['From coach', ['Push · 45 min']]]);
-    expect(allRows(list).map((r) => r.label)).toEqual(['Legs A', 'Push · 45 min']);
-    expect(todaySessions(list, { includeUpNext: false }).rows.map((r) => r.label)).toEqual(['Push · 45 min']);
-    expect(pickerRowDetail(draftRow, NOW)).toBe('Today · 6 exercises');
-    expect(pickerRowLabel(draftRow, NOW, false)).toBe('Push · 45 min, coach draft, made Today, 6 exercises');
-    expect(isShownRow(draftRow, { coachDraftOf: 'd1' })).toBe(true);
-    expect(isShownRow(routineRow, { coachDraftOf: 'd1' })).toBe(false);
+  it('its row says when it was made', () => {
     expect(fromCoachRowText(draftRow, 'Today 18:02')).toEqual({ title: 'Push · 45 min', detail: 'Today 18:02 · 6 exercises' });
   });
 });

@@ -8,18 +8,8 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData, OverviewTarget } from '../src/services/workout-services';
-import { checkInRow, startCheckIn } from '../src/workout/overview';
-import {
-  checkInAtStart,
-  createGuard,
-  samePage,
-  saveScore,
-  scoreStepOf,
-  startEmptyFromOverview,
-  startFromOverview,
-  type OverviewStartPorts,
-  type ScoreStep,
-} from '../src/workout/overview-start';
+import { saveScore, scoreStepOf, type ScoreStep } from '../src/workout/check-in-score';
+import { checkInAtStart, checkInRow, createGuard, samePage, startCheckIn, startEmptyFromOverview, startFromOverview, type OverviewStartPorts } from './overview-driver';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**

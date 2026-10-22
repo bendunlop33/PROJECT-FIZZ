@@ -1,4 +1,4 @@
-import type { StartChoice } from '../builder/builder-service';
+import type { BuilderOpenTarget, StartChoice } from '../builder/builder-service';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { CustomExerciseFields, EquipmentKind, RoutineExercise, SetExclusion } from '@fizz/schemas';
 
@@ -131,13 +131,9 @@ export type ImportQuestionKind = 'per_hand' | 'total' | 'bodyweight' | 'unit' | 
 export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise' | 'not_a_set' | 'value_to_check';
 
 export type TabParams = {
-  /**
-   * `toast`: a one-off message after returning from the check-in (e.g. Skip workout).
-   * `undoRoutine`: the toast offers Undo for a routine deleted from the Workout overview.
-   */
+  /** `toast`: a one-off message after returning from the check-in (e.g. Skip workout), or Your workout's Start with a workout in progress. */
   /** `startEmpty`: `Empty workout` on the Workouts list, once per nonce (Today's own start, with its check-in gate). */
-  /** `undoDraft`: a coach draft discarded from its overview (workout-builder §6.2): the toast's Undo restores it. */
-  Today: { toast?: string; undoRoutine?: { id: string; version: number }; undoDraft?: { id: string; version: number }; startEmpty?: string } | undefined;
+  Today: { toast?: string; startEmpty?: string } | undefined;
   Library: NavigatorScreenParams<LibraryStackParams> | undefined;
   Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
@@ -161,17 +157,11 @@ export type RootStackParams = {
     | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string; /** (Today v2) Today's session card: the builder draft it committed. */ coachDraftOf?: string; /** That draft's version as committed: pinned in the Start's write (rule 5). */ coachDraftVersion?: number; /** (v3 §2.8) An edited card's prompt choice: the check-in, then the builder's Start with it. */ builderStart?: { choice: StartChoice; expectedVersion: number } }
     | { mode: 'edit'; checkInId: string }
     /**
-     * Over the Workout overview (workout-overview §2.2): `What's up?` for a
-     * score already saved there (`checkInId`), or the whole check-in from the
-     * score at AX sizes (null). Every exit returns to the overview; nothing starts.
+     * Over Your workout (its check-in before Start; first made for the Workout overview, retired 22 Oct):
+     * `What's up?` for a score already saved there (`checkInId`), or the whole check-in from the score at AX
+     * sizes (null). Every exit returns to the page; nothing starts.
      */
     | { mode: 'overview'; checkInId: string | null; atScore?: boolean };
-  /**
-   * The one page before the first set (workout-overview.md): Up next, or a
-   * routine from the list. Creates nothing until Start.
-   */
-  /** Up next, a routine, or a session type picked from its history (session-picker §7). */
-  WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } | { kind: 'coach_draft'; draftId: string }; toast?: LibraryToastParam };
   /**
    * The workout editor (§A2.3): a stored workout, or `New workout` (null).
    * `from`: where `Save` returns with its toast. `selectName`: a fresh copy
@@ -231,9 +221,17 @@ export type RootStackParams = {
    * (Day = the card's day). `draftId`: `‹ Set up` from Your workout (its changes merge into that draft).
    */
   BuilderSetup: { dayId?: string; draftId?: string } | undefined;
-  /** Your workout (§2.3): one builder draft. `toast`: a write's toast handed back from Set up (`Rebuilt · Undo`). */
-  BuilderWorkout: { draftId: string; toast?: BuilderToastParam };
+  /**
+   * Your workout (§2.3): one builder draft. `toast`: a write's toast handed back from Set up (`Rebuilt · Undo`).
+   * (22 Oct, Ben: the Workout overview is retired) `open`: what to open when there is no draft yet (a workout,
+   * a past workout to do again, a coach chat draft, Up next); the page opens today's draft for it. `back`: the
+   * page it came from (`‹ Today`, `‹ Library`), shown instead of `‹ Set up` (§2.3, design review V1).
+   */
+  BuilderWorkout: { draftId?: string; open?: BuilderOpenTarget; back?: BuilderBack; toast?: BuilderToastParam };
 };
+
+/** Your workout's back control when it wasn't opened from Set up: `‹ Today`, `‹ Library`, `‹ Summary`, else `‹ Back`. */
+export type BuilderBack = 'Today' | 'Library' | 'Summary' | 'Back';
 
 /** A builder toast handed between the builder's pages (`key`: shown once). */
 export interface BuilderToastParam {
@@ -247,7 +245,7 @@ export interface BuilderToastParam {
  * Where the workout editor returns to. `SaveSheet`: the Save sheet's `Edit ›`
  * (routines.md §A2.5): back to the screen under the sheet, which shows the result.
  */
-export type EditorFrom = 'WorkoutOverview' | 'Library' | 'ExerciseInfo' | 'SaveSheet';
+export type EditorFrom = 'Library' | 'ExerciseInfo' | 'SaveSheet';
 
 /** A library toast handed back to the screen below (`key`: shown once). */
 export interface LibraryToastParam {

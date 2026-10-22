@@ -7,7 +7,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
-import { startFromOverview } from '../src/workout/overview-start';
+import { startFromOverview } from './overview-driver';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
