@@ -366,7 +366,7 @@ function fitSegs() {
   const all = [...document.querySelectorAll('#scroll .seg .chip, #scroll .chips .chip.sm')];
   if (!all.length) return;
   const row = $('scroll').clientWidth, w = Math.floor((row - 3 * 6) / 4);
-  all.forEach((b) => { b.style.minWidth = w + 'px'; });
+  all.filter((b) => !b.dataset.freq && !/^len/.test(b.id)).forEach((b) => { b.style.minWidth = w + 'px'; });
 }
 function render() {
   $('scroll').style.paddingBottom = '';
@@ -642,31 +642,31 @@ function renderAmbition() {
 }
 
 function renderWeek() {
+  // Same pattern as Gym goals (Ben, 22 Oct): small label, one row of equal boxes, details only where needed.
+  const dayRow = (attr, on, tint) => `<div class="week daypick">${WD.map((d, i) => `<button class="day" ${attr}="${i}" aria-pressed="${on(i)}" style="min-height:40px;${tint && on(i) ? 'background:var(--run-sub);color:var(--run)' : ''}"><span class="dn" style="${tint && on(i) ? 'color:var(--run)' : ''}">${d}</span></button>`).join('')}</div>`;
   $('scroll').innerHTML = `
     <h1>Your week</h1>
-    <div class="card"><div class="row"><span>Sessions a week</span><span class="stepper"><button id="fDown" aria-label="Fewer">−</button><span>${S.freq}</span><button id="fUp" aria-label="More">＋</button></span></div></div>
+    <div class="label">Sessions a week</div>
+    <div class="seg">${[2, 3, 4, 5, 6, 7].map((n) => `<button class="chip" data-freq="${n}" aria-pressed="${S.freq === n}" style="min-width:0;flex:1 1 0">${n}</button>`).join('')}</div>
     <div class="label">Split</div>
-    <div class="chips">${Object.entries(SPLITS).map(([k, t]) => `<button class="chip sm" data-split="${k}" aria-pressed="${splitKind() === k}">${k === suggestedSplit(S.freq) ? '✦ ' : ''}${t}</button>`).join('')}</div>
+    <div class="seg">${Object.entries(SPLITS).map(([k, t]) => `<button class="chip" data-split="${k}" aria-pressed="${splitKind() === k}">${k === suggestedSplit(S.freq) ? '✦ ' : ''}${t}</button>`).join('')}</div>
     ${nextWeekStart() ? `<div class="note">Rotates: next week starts with ${nextWeekStart()}</div>` : ''}
-    <div class="chips"><button class="chip" data-sch="fixed" aria-pressed="${S.schedule === 'fixed'}">Set days</button><button class="chip" data-sch="flexible" aria-pressed="${S.schedule === 'flexible'}">Fit them in</button></div>
-    ${S.schedule === 'fixed' ? `<div class="label">Gym days · ${S.days.length} of ${S.freq}</div>
-    <div class="week daypick">${WD.map((d, i) => `<button class="day ${S.runs && S.runDays.includes(i) ? 'runday' : ''}" data-day="${i}" aria-pressed="${S.days.includes(i)}"><span class="dn">${d}</span></button>`).join('')}</div>` : `<div class="note">Next session in order whenever you train. No legs the day before a long run.</div>`}
-    ${S.runs ? `<div class="label">Runs</div>
-    <div class="week daypick">${WD.map((d, i) => `<button class="day" data-run="${i}" aria-pressed="${S.runDays.includes(i)}" style="${S.runDays.includes(i) ? 'background:var(--run-sub);color:var(--run)' : ''}"><span class="dn" style="${S.runDays.includes(i) ? 'color:var(--run)' : ''}">${d}${i === S.longRunDay ? ' ·L' : ''}</span></button>`).join('')}</div>
-    <div class="note">Long run: ${WD[S.longRunDay]} <button class="link dim" id="longRun">Change</button></div>` : ''}
-    ${Object.keys(S.acts).map((a) => `<div class="label">${esc(a)}</div>
-    <div class="week daypick">${WD.map((d, i) => `<button class="day" data-actday="${esc(a)}|${i}" aria-pressed="${S.acts[a].includes(i)}" style="${S.acts[a].includes(i) ? 'background:var(--run-sub);color:var(--run)' : ''}"><span class="dn" style="${S.acts[a].includes(i) ? 'color:var(--run)' : ''}">${d}</span></button>`).join('')}</div>`).join('')}
-    <div class="card">
-      <div class="row"><span>Length</span><span class="stepper"><button id="lenDown" aria-label="Shorter">−</button><span>${S.length} min</span><button id="lenUp" aria-label="Longer">＋</button></span></div>
-      <div class="row"><span>Gym</span><span class="v">${esc(S.gym)} ›</span></div>
-    </div>`;
+    <div class="label">Days</div>
+    <div class="yn" role="group">${[['fixed', 'Set days'], ['flexible', 'Any days']].map(([k, t]) => `<button data-sch="${k}" aria-pressed="${S.schedule === k}">${t}</button>`).join('')}</div>
+    ${S.schedule === 'fixed' ? dayRow('data-day', (i) => S.days.includes(i), false) : ''}
+    ${S.runs ? `<div class="label">Runs · long run ${WD[S.longRunDay]} <button class="link dim" id="longRun" style="min-height:24px;padding:0 0 0 6px;font-size:12px;letter-spacing:0;text-transform:none">Change</button></div>${dayRow('data-run', (i) => S.runDays.includes(i), true)}` : ''}
+    ${Object.keys(S.acts).map((a) => `<div class="label">${esc(a)}</div>${dayRow('data-actday-' + a.replace(/\W/g, ''), (i) => S.acts[a].includes(i), true).replaceAll('data-actday-' + a.replace(/\W/g, '') + '="', `data-actday="${esc(a)}|`)}`).join('')}
+    <div class="label">Session length</div>
+    <div class="seg" style="align-items:center"><button class="chip" id="lenDown" aria-label="Shorter" style="min-width:44px">−</button><span style="min-width:72px;text-align:center;font-variant-numeric:tabular-nums">${S.length} min</span><button class="chip" id="lenUp" aria-label="Longer" style="min-width:44px">＋</button></div>
+    <div class="label">Gym</div>
+    <div class="seg"><button class="chip" style="padding:0 12px">${esc(S.gym)} ›</button></div>
+    <div class="note">Days and length are your usual. On the day you can start any session or change its length.</div>`;
   $('footer').innerHTML = `<button class="primary" id="next">${S.ai ? 'Build my plan' : 'Build my plan'}</button>`;
   document.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { const d = +b.dataset.day; if (S.days.includes(d)) S.days = S.days.filter((x) => x !== d); else if (S.days.length < S.freq) S.days = [...S.days, d]; else S.days = [...S.days.slice(1), d]; render(); });
   document.querySelectorAll('[data-split]').forEach((b) => b.onclick = () => { S.split = b.dataset.split; render(); });
   document.querySelectorAll('[data-sch]').forEach((b) => b.onclick = () => { S.schedule = b.dataset.sch; render(); });
   const PREF = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
-  $('fDown').onclick = () => { S.freq = Math.max(2, S.freq - 1); S.days = PREF[S.freq]; render(); };
-  $('fUp').onclick = () => { S.freq = Math.min(7, S.freq + 1); S.days = PREF[S.freq]; render(); };
+  document.querySelectorAll('[data-freq]').forEach((b) => b.onclick = () => { S.freq = +b.dataset.freq; S.days = PREF[S.freq]; render(); });
   document.querySelectorAll('[data-actday]').forEach((b) => b.onclick = () => { const [a, d] = b.dataset.actday.split('|'); const n = +d; S.acts[a] = S.acts[a].includes(n) ? S.acts[a].filter((x) => x !== n) : [...S.acts[a], n]; render(); });
   document.querySelectorAll('[data-run]').forEach((b) => b.onclick = () => { const d = +b.dataset.run; S.runDays = S.runDays.includes(d) ? S.runDays.filter((x) => x !== d) : [...S.runDays, d]; if (!S.runDays.includes(S.longRunDay)) S.longRunDay = S.runDays.at(-1) ?? 6; render(); });
   if ($('longRun')) $('longRun').onclick = () => { const i = S.runDays.indexOf(S.longRunDay); S.longRunDay = S.runDays[(i + 1) % S.runDays.length]; render(); };
