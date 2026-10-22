@@ -288,10 +288,18 @@ Unchanged: Resume card, stale card, check-in line, pain check line, banners, che
 | Today, `⋯` row, then `Edit` | Your workout, for that workout | [Ben] |
 | Today, `Build your own` (below the card or in `⋯`) / no plan | Set up, Day = the card's day | [Ben] |
 | Coach (Today bar, or chat) "build me a push workout" | Set up, filled from the words (§2.6) | [Ben] |
+| Coach sheet, workout card `Open ›` | Your workout, the coach's draft (`‹ Back`) | [Ben, 22 Oct]; Your workout vs Set up open (§7) |
+| Coach sheet, a saved workout | Your workout, that workout (`‹ Back`) | [Ben, 22 Oct] |
+| Library › Workouts, a workout row | Your workout, that workout (`‹ Library`) | [Ben, 22 Oct] |
+| Library › Workouts › History, a past workout (do again) | Your workout, that workout as done (`‹ Library`) | [Ben, 22 Oct] |
+| Library › plan day, `Start <name>` | Your workout, that day (`‹ Library`) | [Ben, 22 Oct]. [Proposal] Rename to `Open <name>`: the button says Start but doesn't start |
+| Exercise detail, `Used in` row | Your workout, that workout (`‹ Back`) | [Ben, 22 Oct] |
+| Summary, `Saved · <name> ›` | Your workout, the saved workout (`‹ Summary`) | [Ben, 22 Oct] |
+| Up next with no plan (`next` target) | Your workout, the routine or last workout's next session. Built in the service; no screen uses it yet | [Ben, 22 Oct] |
 | Reopen today after leaving (or a force-close) before Start | The same unstarted workout, with every edit kept | [Proposal] |
 | Resuming a workout in progress | **Never** the builder (unchanged) | — |
 
-[Proposal] Your workout becomes the one pre-workout page for plan days, replacing the Workout overview there. The overview's gym chip and check-in move onto it (§9 Q1). **(Ben, 22 Oct) For every pre-start entry, not only plan days: the Workout overview is retired. Its gym chip, `done by` time, target arrows and `after …` header are not carried over (CHANGELOG 2026-10-22).**
+**Your workout is the only pre-start page (Ben, 22 Oct).** The Workout overview (`WorkoutOverviewScreen`, route `WorkoutOverview`) is retired. Every row above that opens a workout before Start opens Your workout. Its gym chip, `done by` time, `↑ UP` / `SAME` / `↑ REPS` arrows and `after …` header are not carried over. Loads are still rounded to the gym and capped at a machine's max, with nothing shown (rule 4). See CHANGELOG 2026-10-22 and `docs/reviews/retire-workout-overview.md`.
 
 [Ben, 20 Oct] Today's session card keeps a one-tap `Start`; tapping the card expands it; `Edit` opens the builder (§2.0). Active `From last review` notes are already applied in the draft (§2.0.3), so a one-tap Start never skips them.
 
@@ -373,7 +381,7 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 - `Top set` is a **target**, never an actual. Loads use tabular numerals.
 - [Proposal, Q14] A small `MAIN` tag on the main-lift row. Off unless Ben wants it.
 - `Start` is disabled when the workout is empty [Ben]. Start and Coach review sit in the bottom bar, always visible.
-- **Opened from Today's Edit or a plan day's `Open in builder ›` (22 Oct, design review V1/V2/V4/V6):** no `‹ Set up` link and no step counter; the only back control is `‹ Today` / `‹ Library`. Opened from the coach sheet or an exercise's detail, it is `‹ Back` [Proposal, review nit 22 Oct]. The title's minutes match what Today or the plan showed, and edits change them from there. The top set shown equals the draft's; back-offs never exceed it (matters in deload weeks).
+- **Opened from Today's Edit or a plan day's `Open in builder ›` (22 Oct, design review V1/V2/V4/V6):** no `‹ Set up` link and no step counter; the only back control is `‹ Today` / `‹ Library`. The same holds for every other entry in §2.1: `‹ Summary` from the Summary, `‹ Back` from the coach sheet or an exercise's detail (there is no Today or Library to name) [Proposal, review S3 22 Oct]. The title's minutes match what Today or the plan showed, and edits change them from there. The top set shown equals the draft's; back-offs never exceed it (matters in deload weeks).
 
 | Gesture | Result | Accessible alternative |
 |---|---|---|
@@ -867,7 +875,7 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 - Old Q4, merge on Set up changes: yes ("agreed"). Edits are kept; length, supersets and groups merge; a new day, main lift or variation builds a new workout with Undo (§2.3).
 
 **Answered 20 Oct (Ben: "go", with these recommended answers)**
-1. Your workout replaces the Workout overview for plan days: **yes**.
+1. Your workout replaces the Workout overview for plan days: **yes**. (22 Oct: for every pre-start entry; the overview is retired, §2.1.)
 2. Two main-lift templates: **no auto-alternation**; Today opens the last-used one; Ben picks with the Main lift chips.
 3. `Variation` row under Main lift on Set up, shown only when variations exist: **yes**.
 4. Offline, the Set up bar still fills day, minutes, supersets and groups by code (no coach): **yes**.
