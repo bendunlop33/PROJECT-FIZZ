@@ -82,6 +82,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 ## 3. Entry points
 
 - Today: `Set up a plan ›` only when there is no plan (Ben, 22 Oct); with a plan, Today shows the plan's session instead.
+- **One split source at a time (Ben, 22 Oct).** No plan: Profile › Split (PPL, Chest/Legs/Shoulders/Back or Custom) drives Up next on Today. Plan builder: Your week pre-selects the Profile split as ✦ when it fits the sessions (PPL from 3, Chest/Legs/Shoulders/Back from 4; Custom keeps the default). With a plan: the plan's split is used and Profile › Split shows `Set by your plan`, opening Library › Your plan.
 - **Managing a plan lives in Library (Ben, 22 Oct).** Library › Workouts › `Your plan` (header shows `Week 3 of 6` or `Paused`): the plan's days, then `Edit plan` (opens this at Your plan, edits apply with `Apply changes`), `Pause` / `Resume`, `End` (Today goes back to `Set up a plan`). No plan: a `Set up a plan` row. Profile no longer has a plan row.
 - Profile › Goal: changing the goal offers `Update plan?` → step 3 with the new goal.
 - Coach chat: "build me a plan" opens this screen pre-filled instead of a card in chat.

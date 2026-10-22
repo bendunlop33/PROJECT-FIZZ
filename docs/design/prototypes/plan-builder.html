@@ -283,7 +283,11 @@ const snap = (kg, step = 2.5) => Math.floor(kg / step) * step;
 // 5-day week of a 3-day cycle evens out over time (Push, Pull, Legs, Push, Pull → Legs, Push, Pull, Legs, Push …).
 const SPLITS = { ul: 'Upper / Lower', ppl: 'Push / Pull / Legs', body: 'Chest / Legs / Shoulders / Back', full: 'Full body' };
 const CYCLES = { ul: ['Upper', 'Lower'], ppl: ['Push', 'Pull', 'Legs'], body: ['Chest', 'Legs', 'Shoulders', 'Back'], full: ['Full body'] };
-const suggestedSplit = (n) => n <= 2 ? 'full' : n <= 4 ? 'ul' : 'ppl';
+// Your Profile › Split is the ✦ pick when it fits the sessions (Ben, 22 Oct: one source at a time); else the default
+// for the number of sessions. Example profile: Chest / Legs / Shoulders / Back. Custom splits keep the default here.
+const PROFILE_SPLIT = 'body';
+const MIN_DAYS = { ppl: 3, body: 4, ul: 2, full: 1 };
+const suggestedSplit = (n) => (PROFILE_SPLIT && n >= MIN_DAYS[PROFILE_SPLIT]) ? PROFILE_SPLIT : n <= 2 ? 'full' : n <= 4 ? 'ul' : 'ppl';
 const splitKind = () => S.split ?? suggestedSplit(S.freq);
 function splitOf(kind, n) {
   const c = CYCLES[kind]; if (!c) return null;
