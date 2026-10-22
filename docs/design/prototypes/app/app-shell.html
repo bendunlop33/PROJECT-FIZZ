@@ -58,6 +58,11 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
 .primary { flex: 1; min-height: 52px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font: 600 17px var(--ui); cursor: pointer; }
 .secondary { flex: 1; min-height: 52px; border-radius: 999px; border: 1px solid var(--divider); background: none; color: var(--text); font: 600 17px var(--ui); cursor: pointer; }
 .ctl { background: var(--raised); border-radius: 14px; }
+.daypick { display: grid; grid-template-columns: repeat(4, 1fr) 44px; gap: 4px; background: var(--surface); border-radius: 14px; padding: 4px; }
+.daypick button { min-height: 46px; border: 0; border-radius: 10px; background: none; color: var(--text3); font: 500 14px var(--ui); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+.daypick button.on { background: var(--raised); color: var(--text); font-weight: 600; }
+.daypick i { font-style: normal; font-size: 10px; letter-spacing: .08em; color: var(--text3); }
+.daypick button.on i { color: var(--accent); }
 .cr { display: grid; grid-template-columns: 1fr auto; align-items: center; min-height: 40px; padding: 0 8px 0 12px; }
 .cr + .cr { border-top: 1px solid #34302C; }
 .cr .k { font-size: 13px; color: var(--text2); white-space: nowrap; }
@@ -169,11 +174,20 @@ addEventListener('message', (e) => {
 const STRIP = [['SAT', 17, 'Shoulders', 'done'], ['SUN', 18, 'Run 12k', 'run'], ['MON', 19, '', ''], ['TODAY', 20, '', 'today'], ['WED', 21, '', ''], ['THU', 22, '', ''], ['FRI', 23, '', '']];
 // No plan, Up next still adjustable before Start (Ben, 22 Oct): same controls as Today with a plan, today only, with the
 // same fit-to-time (rests, supersets, then the cheapest cut; main lift kept; note after Time in light orange).
-const TN = { main: 'Row', style: 'Focused', min: 60, abs: true, ss: true };
-const tnChanged = () => TN.main !== 'Row' || TN.style !== 'Focused' || TN.min !== 60 || !TN.abs || !TN.ss;
+// Days come from Profile › Split; the suggested one is marked NEXT. Picking another is today only (the suggestion moves on).
+const TN_DAYS = {
+  Back: { mains: [['Row', 'Barbell row'], ['Pull-up', 'Pull-up']], last: 'last Back 13 Oct', focused: [['Lat pulldown', 1], ['Chest-supported row', 1], ['Hammer curl', 0]], varied: [['Single-arm DB row', 1], ['Straight-arm pulldown', 0], ['Incline DB curl', 0]] },
+  Chest: { mains: [['Bench', 'Bench press'], ['Incline', 'Incline bench press']], last: 'last Chest 19 Oct', focused: [['Incline DB press', 1], ['Cable fly', 0], ['Triceps pushdown', 0]], varied: [['Machine chest press', 1], ['Pec deck', 0], ['Overhead triceps extension', 0]] },
+  Legs: { mains: [['Squat', 'Back squat'], ['Leg press', 'Leg press']], last: 'last Legs 17 Oct', focused: [['Romanian deadlift', 1], ['Leg curl', 0], ['Calf raise', 0]], varied: [['Hack squat', 1], ['Seated leg curl', 0], ['Seated calf raise', 0]] },
+  Shoulders: { mains: [['DB press', 'DB shoulder press'], ['Machine', 'Machine shoulder press']], last: 'last Shoulders 17 Oct', focused: [['Lateral raise', 0], ['Face pull', 0], ['Barbell curl', 0]], varied: [['Cable lateral raise', 0], ['Rear delt fly', 0], ['Hammer curl', 0]] },
+};
+const TN_NEXT = 'Back';
+const TN = { day: TN_NEXT, main: null, style: 'Focused', min: 60, abs: true, ss: true };
+const tnMain = () => TN.main ?? TN_DAYS[TN.day].mains[0][0];
+const tnChanged = () => TN.day !== TN_NEXT || tnMain() !== TN_DAYS[TN.day].mains[0][0] || TN.style !== 'Focused' || TN.min !== 60 || !TN.abs || !TN.ss;
 function tnWorkout() {
-  const acc = TN.style === 'Focused' ? [['Lat pulldown', 1], ['Chest-supported row', 1], ['Hammer curl', 0]] : [['Single-arm DB row', 1], ['Straight-arm pulldown', 0], ['Incline DB curl', 0]];
-  let ex = [{ n: TN.main === 'Row' ? 'Barbell row' : 'Pull-up', main: true, sets: 4, comp: 1 }, ...acc.map(([n, c]) => ({ n, sets: 3, comp: c })), ...(TN.abs ? [{ n: 'Cable crunch', abs: true, sets: 3 }] : [])];
+  const D = TN_DAYS[TN.day], acc = TN.style === 'Focused' ? D.focused : D.varied;
+  let ex = [{ n: D.mains.find(([k]) => k === tnMain())[1], main: true, sets: 4, comp: 1 }, ...acc.map(([n, c]) => ({ n, sets: 3, comp: c })), ...(TN.abs ? [{ n: 'Cable crunch', abs: true, sets: 3 }] : [])];
   const mins = (l, rest = 1, ss = TN.ss) => 4 + l.reduce((m, e) => m + e.sets * (e.main ? 4 : e.comp ? 3 : 2.2) * rest * (ss && !e.main ? 0.85 : 1) + 1.5, 0);
   if (mins(ex) <= TN.min) return { ex, est: Math.round(mins(ex)), note: '' };
   const rest = 0.85; let note = 'shorter rests', ssOn = TN.ss;
@@ -196,12 +210,13 @@ function renderTodayNo() {
   $('todayNo').innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h1>Tuesday</h1><button class="secondary" style="flex:none;min-height:40px;padding:0 16px;font-size:15px" id="tnCoach">✦ Coach</button></div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${STRIP.map(([d, n, t, k]) => `<div style="border-radius:12px;padding:6px 0;text-align:center;background:var(--surface);${k === 'today' ? 'box-shadow:inset 0 0 0 1.5px var(--text)' : ''}"><div style="font-size:10px;color:var(--text2);letter-spacing:.06em">${d}</div><div style="font-size:17px;font-weight:600">${n}</div><div style="font-size:9.5px;min-height:14px;margin:2px 3px 0;border-radius:6px;${k === 'done' ? 'background:var(--done-sub);color:var(--done)' : k === 'run' ? 'background:#172636;color:#7FB2E5' : ''}">${t}</div></div>`).join('')}</div>
     <div class="card"><div class="row" id="tnSetup"><span><div class="nm">No plan</div></span><span style="display:flex;gap:6px;align-items:center">Set up a plan <span class="chev">›</span></span></div></div>
+    <div class="daypick">${[TN_NEXT, ...Object.keys(TN_DAYS).filter((d) => d !== TN_NEXT)].map((d) => `<button class="${TN.day === d ? 'on' : ''}" data-tnday="${d}">${d}${d === TN_NEXT ? '<i>NEXT</i>' : ''}</button>`).join('')}<button data-tnmore="1" aria-label="Other workouts">⋯</button></div>
     <div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
-      <div class="label" style="margin:0">Up next</div>
-      <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:28px;font-weight:600">Back</span><span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;color:var(--text2);font-size:13px"><span>${w.ex.length} exercises · ~${w.est} min</span>${tnChanged() ? '<span style="color:var(--warn);font-weight:600;font-size:12px">Today only</span>' : ''}</span></div>
-      <div style="color:var(--text2);font-size:14px">Longest since you trained it · last Back 13 Oct</div>
+      <div class="label" style="margin:0">${TN.day === TN_NEXT ? 'Up next' : 'Today'}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:28px;font-weight:600">${TN.day}</span><span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;color:var(--text2);font-size:13px"><span>${w.ex.length} exercises · ~${w.est} min</span>${tnChanged() ? '<span style="color:var(--warn);font-weight:600;font-size:12px">Today only</span>' : ''}</span></div>
+      <div style="color:var(--text2);font-size:14px">${TN.day === TN_NEXT ? 'Longest since you trained it' : 'Picked by you'} · ${TN_DAYS[TN.day].last}</div>
       <div class="ctl">
-        <div class="cr"><span class="k">Main lift</span><span class="opts">${['Row', 'Pull-up'].map((m) => `<button class="${TN.main === m ? 'on' : ''}" data-tn="main" data-v="${m}">${m}</button>`).join('')}</span></div>
+        <div class="cr"><span class="k">Main lift</span><span class="opts">${TN_DAYS[TN.day].mains.map(([m]) => `<button class="${tnMain() === m ? 'on' : ''}" data-tn="main" data-v="${m}">${m}</button>`).join('')}</span></div>
         <div class="cr"><span class="k">Accessories</span><span class="opts">${['Focused', 'Varied'].map((m) => `<button class="${TN.style === m ? 'on' : ''}" data-tn="style" data-v="${m}">${m}</button>`).join('')}</span></div>
         <div class="cr"><span class="k">Time${w.note ? `<span class="kn">&nbsp;· ${w.note}</span>` : ''}</span><span class="tv"><button data-tn="min" data-v="-5">−</button><b>${TN.min} min</b><button data-tn="min" data-v="5">+</button></span></div>
         <div class="cr"><span class="k">Abs</span><button class="sw${TN.abs ? ' on' : ''}" data-tn="abs" aria-label="Abs"><i></i></button></div>
@@ -213,6 +228,8 @@ function renderTodayNo() {
     <div style="display:flex;gap:6px;flex-wrap:wrap">${['Full body', 'Upper', 'Push', 'Empty workout'].map((t) => `<button class="secondary" style="flex:none;min-height:34px;padding:0 12px;font-size:13px" data-tnother="${t}">${t}</button>`).join('')}</div>`;
   $('tnSetup').onclick = () => push('plan');
   $('tnStart').onclick = () => push('active');
+  $('todayNo').querySelectorAll('[data-tnday]').forEach((b) => b.onclick = () => { TN.day = b.dataset.tnday; TN.main = null; renderTodayNo(); });
+  $('todayNo').querySelector('[data-tnmore]').onclick = () => toast('Other workouts: Full body, Upper, Push, saved workouts');
   $('todayNo').querySelectorAll('[data-tn]').forEach((b) => b.onclick = () => { const k = b.dataset.tn, v = b.dataset.v; if (k === 'min') TN.min = Math.max(20, Math.min(120, TN.min + +v)); else if (k === 'abs' || k === 'ss') TN[k] = !TN[k]; else TN[k] = v; renderTodayNo(); });
   $('tnBuild').onclick = () => push('builder');
   $('tnAct').onclick = () => toast('Log a run or activity (weekly-plan.md)');
