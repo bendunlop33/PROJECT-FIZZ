@@ -224,14 +224,16 @@ describe('add an exercise from chat', () => {
     expect(curl?.row.supersetGroup).toBe(raise?.row.supersetGroup);
   });
 
-  it('a next-time add (review B2) never offers or commits today’s add; it opens the proposal tool instead', async () => {
+  it('a next-time add (review B2) never commits today’s add (the next-workout proposal tool is withheld: retire-workout-overview B3)', async () => {
     const { s, sessionId } = await benchWorkout();
     for (const text of ['add curls next time', 'can you add lateral raises to my routine', 'add face pulls from now on']) {
       model = new StepModel([addFromContext('Lateral raise'), () => replyWith('Ok.')]);
       const r = await say(s, sessionId, text);
       const tools = model.requests[0]?.tools.map((t) => t.name) ?? [];
-      // (14 Oct) Offered on every live turn, but a next-time add is never applied to today.
-      expect(tools).toContain('propose_next_workout_change');
+      // (14 Oct) Today's tools are offered on every live turn, but a next-time add is never applied to today. The
+      // next-workout proposal tool is withheld (retire-workout-overview B3: an Apply would land nowhere).
+      expect(tools).toContain('edit_today');
+      expect(tools).not.toContain('propose_next_workout_change');
       expect(r.cards.some((c) => c.record.detail.kind === 'edit_today' && c.record.status === 'committed')).toBe(false);
       expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
     }
@@ -250,10 +252,11 @@ describe('add an exercise from chat', () => {
     expect(r.note).toBe('No change made.');
     expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
 
-    // An unclear scope ("to the plan") offers both; the model picks.
+    // An unclear scope ("to the plan") offers today's tool; the next-workout one stays withheld (retire-workout-overview B3).
     model = new StepModel([() => replyWith('Ok.')]);
     await say(s, sessionId, 'add curls to the plan');
-    expect(model.requests[0]?.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['edit_today', 'propose_next_workout_change']));
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('edit_today');
+    expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('propose_next_workout_change');
   });
 
   it('a refused or stale add saves no exercise row (review S3); the committed add saves it with the add', async () => {

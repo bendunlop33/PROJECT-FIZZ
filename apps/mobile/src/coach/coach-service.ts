@@ -646,11 +646,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       const dismissed = taps.some((a) => a.status === 'rejected');
       const since = apply?.createdAt.utc ?? proposal.createdAt.utc;
       const startedSince = await coachStore().basisStartedSince(p.id, basis, since).catch(() => false);
-      let basisChanged = false;
-      if (apply === null && basis.kind === 'routine' && d.basisVersion !== undefined) {
-        const routine = await repos().routines.get(basis.routineId).catch(() => null);
-        basisChanged = routine === null || routine.version !== d.basisVersion;
-      }
+      // Review B3 (retire-workout-overview): an older suggestion's Apply would change nothing now, so it reads `Out of date` (no Apply).
+      const basisChanged = true;
       const refusedHere = apply !== null && refusedApplies.has(apply.actionId);
       out.set(id, { state: structuralProposalState({ apply: apply === null ? null : { undone: apply.undoneBy !== null }, dismissed, startedSince, basisChanged, refusedHere }), apply });
     }
@@ -894,6 +891,13 @@ export function createCoachService(deps: CoachServiceDeps) {
     };
   }
 
+  /** Review B3: the structural executors less `propose_next_workout_change` (withheld until an Apply lands in the next workout again). */
+  function withoutNextWorkoutChange(x: CoachExecutors): CoachExecutors {
+    const out: CoachExecutors = { ...x };
+    delete out.propose_next_workout_change;
+    return out;
+  }
+
   async function executorsFor(p: UserProfile, entry: CoachEntry, kind: CoachTurnKind, session: SessionAggregate | null, gymName: string | null, checkIn: CheckIn | null, benAskedForMoreSets: boolean, onlySessionExerciseId: string | null = null): Promise<CoachExecutors> {
     const store = coachStore();
     const reads = createTrainingReadExecutors(trainingReads(p, session));
@@ -901,7 +905,10 @@ export function createCoachService(deps: CoachServiceDeps) {
       ...reads,
       // (20 Oct, ADR 0029) "This gym has no leg press": applied with Undo when Ben said it, else a card he applies.
       update_gym: createGymUpdateExecutor({ store, gym: (name) => gymForUpdate(p, session, name), exercise: exerciseByIdOrKey }),
-      ...createStructuralExecutors(structuralDeps(p, session)),
+      // Review B3 (retire-workout-overview): `get_substitutions` only. With the Workout overview retired, nothing writes an
+      // applied `propose_next_workout_change` into the next workout (Your workout and Today's Start don't read the overview's
+      // draft), so the tool is withheld (`not_in_build`) rather than offer an Apply that changes nothing (rules 1-3).
+      ...withoutNextWorkoutChange(createStructuralExecutors(structuralDeps(p, session))),
       ...createStoreExecutors({
       store,
       exercises: { exerciseName: async (id) => (await repos().exercises.get(id).catch(() => null))?.name ?? session?.exercises.find((e) => e.exerciseId === id)?.exerciseName ?? null },
@@ -1870,6 +1877,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const proposal = await coachStore().getAction(proposalId);
       if (proposal === null || proposal.detail.kind !== 'propose_next_workout_change' || proposal.status !== 'proposed' || proposal.detail.basis === undefined) return { ok: false, state: null };
+      // Review B3: an older card's Apply would change nothing now (no next-workout draft reads it): refused, `Out of date`.
+      if (tap === 'apply') return { ok: false, state: 'out_of_date' };
       const r = await coachStore().commitStructuralTap(p.id, structuralTapRecord(proposal, tap, { now: deps.now() }));
       if (r.status !== 'conflict') return { ok: true, record: r.action };
       return { ok: false, state: (await proposalStates([proposalId])).get(proposalId)?.state ?? null };
