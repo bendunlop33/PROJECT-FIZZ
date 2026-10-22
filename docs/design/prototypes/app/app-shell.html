@@ -72,6 +72,7 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
     <div class="top"><span id="topL">9:41</span><span>●●● 100%</span></div>
     <div class="psub" id="psub"></div>
     <div class="view" id="view">
+      <section class="native" id="todayNo"></section>
       <section class="native" id="library"></section>
       <section class="native" id="profile"></section>
       <section class="native" id="summary"></section>
@@ -85,14 +86,14 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
 <script>
 // Screens: a tab root or a pushed screen. Prototype screens are iframes kept alive, so their state survives switching.
 const PAGES = {
-  today: () => (A.plan ? 'training-blocks.html' : 'today-v2.html'),
+  today: () => (A.plan ? 'training-blocks.html' : null), // no plan: the native Today below (workout-builder-v3.md, No plan)
   progress: () => ({ overview: 'progress-simple.html', block: 'training-blocks.html#progress' })[A.ptab],
   plan: () => 'plan-builder.html',
   planedit: () => 'plan-builder.html#edit',
   builder: () => 'workout-builder-v3.html',
   active: () => 'workout-active-v3.html',
 };
-const NATIVE = ['library', 'profile', 'summary'];
+const NATIVE = ['todayNo', 'library', 'profile', 'summary'];
 const A = { tab: 'today', stack: [], plan: false, ptab: 'overview' };
 const $ = (id) => document.getElementById(id);
 const frames = {};
@@ -107,8 +108,9 @@ function show() {
   if (!A.plan) A.ptab = 'overview';
   Object.values(frames).forEach((f) => f.classList.remove('on'));
   NATIVE.forEach((n) => $(n).classList.remove('on'));
-  if (PAGES[cur]) frame(PAGES[cur]()).classList.add('on');
-  else { $(cur).classList.add('on'); ({ library: renderLibrary, profile: renderProfile, summary: renderSummary })[cur](); }
+  const src = PAGES[cur]?.(), nat = src ? null : (cur === 'today' ? 'todayNo' : cur);
+  if (src) frame(src).classList.add('on');
+  else { $(nat).classList.add('on'); ({ todayNo: renderTodayNo, library: renderLibrary, profile: renderProfile, summary: renderSummary })[nat](); }
   $('tabs').style.display = pushed ? 'none' : '';
   // Progress is v3 (agreed 21 Oct; the older Goals and Reviews drafts are superseded). With a plan, Block sits one tap away.
   const ps = cur === 'progress' && A.plan;
@@ -136,6 +138,30 @@ addEventListener('message', (e) => {
   if (to === 'library' || to === 'profile' || to === 'progress') { A.tab = to; A.stack = []; return show(); }
   push(to);
 });
+
+// ---------- Today with no plan (workout-builder-v3.md §states, No plan) ----------
+// No day tabs. One row: No plan · Set up a plan. Up next comes from the old resolver: Profile split, else routines in
+// rotation, else the longest gap; here the longest gap (Back, last trained 13 Oct). Start is one tap.
+const STRIP = [['SAT', 17, 'Shoulders', 'done'], ['SUN', 18, 'Run 12k', 'run'], ['MON', 19, '', ''], ['TODAY', 20, '', 'today'], ['WED', 21, '', ''], ['THU', 22, '', ''], ['FRI', 23, '', '']];
+function renderTodayNo() {
+  $('todayNo').innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h1>Tuesday</h1><button class="secondary" style="flex:none;min-height:40px;padding:0 16px;font-size:15px" id="tnCoach">✦ Coach</button></div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${STRIP.map(([d, n, t, k]) => `<div style="border-radius:12px;padding:6px 0;text-align:center;background:var(--surface);${k === 'today' ? 'box-shadow:inset 0 0 0 1.5px var(--text)' : ''}"><div style="font-size:10px;color:var(--text2);letter-spacing:.06em">${d}</div><div style="font-size:17px;font-weight:600">${n}</div><div style="font-size:9.5px;min-height:14px;margin:2px 3px 0;border-radius:6px;${k === 'done' ? 'background:var(--done-sub);color:var(--done)' : k === 'run' ? 'background:#172636;color:#7FB2E5' : ''}">${t}</div></div>`).join('')}</div>
+    <div class="card"><div class="row" id="tnSetup"><span><div class="nm">No plan</div></span><span style="display:flex;gap:6px;align-items:center">Set up a plan <span class="chev">›</span></span></div></div>
+    <div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+      <div class="label" style="margin:0">Up next</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:28px;font-weight:600">Back</span><span style="color:var(--text2);font-size:14px">5 exercises · ~50 min</span></div>
+      <div style="color:var(--text2);font-size:14px">Longest since you trained it · last Back 13 Oct</div>
+      <button class="primary" id="tnStart">Start</button>
+    </div>
+    <div class="foot" style="margin-top:0"><button class="secondary" id="tnBuild">Build your own</button><button class="secondary" id="tnAct">＋ Activity</button></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${['Full body', 'Upper', 'Push', 'Empty workout'].map((t) => `<button class="secondary" style="flex:none;min-height:34px;padding:0 12px;font-size:13px" data-tnother="${t}">${t}</button>`).join('')}</div>`;
+  $('tnSetup').onclick = () => push('plan');
+  $('tnStart').onclick = () => push('active');
+  $('tnBuild').onclick = () => push('builder');
+  $('tnAct').onclick = () => toast('Log a run or activity (weekly-plan.md)');
+  $('tnCoach').onclick = () => toast('Ask the coach');
+  $('todayNo').querySelectorAll('[data-tnother]').forEach((b) => b.onclick = () => push(b.dataset.tnother === 'Empty workout' ? 'active' : 'builder'));
+}
 
 // ---------- Library (exercise-library.md, routines.md): workouts and exercises ----------
 const LIB = { tab: 'workouts' };

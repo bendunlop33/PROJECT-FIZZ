@@ -17,7 +17,6 @@ PROTOS = HERE.parent
 
 # Button text (exact) -> where the shell goes.
 GO = {
-    'today-v2.html': {'Start': 'active', 'Build your own': 'builder', 'Edit': 'builder'},
     'training-blocks.html': {'Start': 'active', 'Build your own': 'builder', 'Edit': 'builder'},
     'workout-builder-v3.html': {'Start': 'active', 'Start with no muscle groups': 'active'},
     'workout-active-v3.html': {'Finish workout': 'finished', 'Discard workout': 'discarded'},
@@ -25,22 +24,8 @@ GO = {
     'progress-simple.html': {},
 }
 
-# Today without a plan gets the entry point the plan-builder spec asks for (plan-builder.md §3).
+# Per-file additions.
 EXTRA = {
-    'today-v2.html': """
-  const card = () => {
-    const sc = document.querySelector('.phone .scroll');
-    if (!sc || sc.querySelector('#appSetupPlan')) return;
-    const b = document.createElement('button');
-    b.id = 'appSetupPlan';
-    b.textContent = 'Set up a plan ›';
-    b.style.cssText = 'min-height:44px;border-radius:14px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font:600 15px var(--ui);cursor:pointer;flex-shrink:0';
-    b.onclick = () => parent.postMessage({ app: 'plan' }, '*');
-    sc.prepend(b);
-  };
-  new MutationObserver(card).observe(document.documentElement, { childList: true, subtree: true });
-  addEventListener('DOMContentLoaded', card);
-""",
     'plan-builder.html': """
   // #edit opens the plan you have (Library › Your plan › Edit plan).
   if (location.hash === '#edit') addEventListener('load', () => document.getElementById('editExisting')?.click());
