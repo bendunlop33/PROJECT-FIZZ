@@ -240,7 +240,7 @@ function splitFor(n, focus) {
   const chosen = splitOf(S.split ?? 'auto', n); if (chosen) return chosen;
   if (n <= 2) return ['Full body', 'Full body'].slice(0, n);
   if (n === 3) return focus === 'Strength' ? ['Full body', 'Full body', 'Full body'] : ['Push', 'Pull', 'Legs'];
-  if (n === 4) return focus === 'Strength' ? ['Upper', 'Lower', 'Upper', 'Lower'] : ['Push', 'Pull', 'Legs', 'Upper'];
+  if (n === 4) return ['Upper', 'Lower', 'Upper', 'Lower']; // every muscle twice a week (Ben, 22 Oct)
   if (n === 5) return ['Push', 'Pull', 'Legs', 'Upper', 'Lower'];
   if (n === 6) return ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs'];
   // 7 days (Ben, 22 Oct): allowed; the 7th is a light Arms & core day so something stays easy.
