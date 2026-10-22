@@ -48,7 +48,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 - **Main lift first** on each day; heavy lifts never superset (workout-builder-v3 §3.4–3.5).
 - **Priority** is picked by group: Chest, Back, Shoulders, Legs (quads, hamstrings, calves), Arms (biceps, triceps), Core (Ben, 22 Oct). Sets are still counted per muscle.
 - **Sets per muscle per week** balanced into the effort level's band (Standard: priority 12–20, others 8–14, small 4–10; Steady and Push shift down/up, §1) (V4, GA3) by adding or removing a set on that muscle's accessories (2–5 sets each). Bands shown as a shaded range; ↑/↓ only when outside. [Proposal]
-- **Length** caps exercises per day (≤ 45 min: 4, ≤ 60: 6, longer: 7); time budget per playbook D17.
+- **Length** goes in 5-minute steps, 20–150 min (Ben, 22 Oct), and caps exercises per day (≤ 45 min: 4, ≤ 60: 6, longer: 7); time budget per playbook D17.
 - **Runs** (GA11, GA15): no legs the day before the long run; swapped with the furthest non-leg day.
 - **Weights** from history per exercise (history-targets HT rules once approved; until then the Build C load order). Why? per exercise: "Last time 90 × 12".
 - **Block**: 6 weeks, deload week 6 (training-blocks §2); lift-target dates fit the block length there.

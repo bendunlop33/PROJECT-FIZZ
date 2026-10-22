@@ -640,8 +640,8 @@ function renderWeek() {
   document.querySelectorAll('[data-actday]').forEach((b) => b.onclick = () => { const [a, d] = b.dataset.actday.split('|'); const n = +d; S.acts[a] = S.acts[a].includes(n) ? S.acts[a].filter((x) => x !== n) : [...S.acts[a], n]; render(); });
   document.querySelectorAll('[data-run]').forEach((b) => b.onclick = () => { const d = +b.dataset.run; S.runDays = S.runDays.includes(d) ? S.runDays.filter((x) => x !== d) : [...S.runDays, d]; if (!S.runDays.includes(S.longRunDay)) S.longRunDay = S.runDays.at(-1) ?? 6; render(); });
   if ($('longRun')) $('longRun').onclick = () => { const i = S.runDays.indexOf(S.longRunDay); S.longRunDay = S.runDays[(i + 1) % S.runDays.length]; render(); };
-  $('lenDown').onclick = () => { S.length = Math.max(30, S.length - 15); render(); };
-  $('lenUp').onclick = () => { S.length = Math.min(120, S.length + 15); render(); };
+  $('lenDown').onclick = () => { S.length = Math.max(20, S.length - 5); render(); };
+  $('lenUp').onclick = () => { S.length = Math.min(150, S.length + 5); render(); };
   $('next').onclick = () => {
     if (S.schedule === 'fixed' && S.days.length !== S.freq) { toast(`Pick ${S.freq} days`, false); return; }
     if (S.schedule === 'flexible') S.days = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] }[S.freq];
@@ -745,7 +745,7 @@ function editPlan(text) {
     if (i >= 0 && f) { S.plan[i] = { ...S.plan[i], focus: f, ex: exercisesFor(f) }; balance(S.plan); S.open = i; said = `${WD[di]} is ${f} now. Everything else stays.`; }
     else said = 'Which day, and to what? e.g. "swap Saturday to arms".';
   } else if (/shorter|longer/.test(t)) {
-    S.length = Math.max(30, Math.min(120, S.length + (/shorter/.test(t) ? -15 : 15))); S.plan = build(); said = `${S.length} min sessions; ${S.length < 60 ? 'accessories trimmed first' : 'one more accessory a day'}.`;
+    S.length = Math.max(20, Math.min(150, S.length + (/shorter/.test(t) ? -10 : 10))); S.plan = build(); said = `${S.length} min sessions; ${S.length < 60 ? 'accessories trimmed first' : 'one more accessory a day'}.`;
   } else {
     said = 'Changed only what you asked; the rest stays.';
   }
