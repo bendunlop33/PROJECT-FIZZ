@@ -227,17 +227,23 @@ const snap = (kg, step = 2.5) => Math.floor(kg / step) * step;
 
 // ---------- Deterministic plan (the offline code path; the coach may adjust it) ----------
 // Split chosen on Your week (Ben, 22 Oct): Suggested picks from days and focus; the others are fixed patterns.
-const SPLITS = { auto: 'Suggested', ppl: 'Push / Pull / Legs', ul: 'Upper / Lower', full: 'Full body', body: 'Chest / Legs / Shoulders / Back' };
+// No separate "Suggested" option (Ben, 22 Oct): the suggested split comes pre-selected with ✦ and follows the day count until he picks one.
+const SPLITS = { ul: 'Upper / Lower', ppl: 'Push / Pull / Legs', pplul: 'Push / Pull / Legs + Upper / Lower', body: 'Chest / Legs / Shoulders / Back', full: 'Full body' };
+const suggestedSplit = (n) => n <= 2 ? 'full' : n <= 4 ? 'ul' : n === 5 ? 'pplul' : 'ppl';
+const splitKind = () => S.split ?? suggestedSplit(S.freq);
 function splitOf(kind, n) {
   const cycle = (pat) => Array.from({ length: n }, (_, i) => pat[i % pat.length]);
   if (kind === 'ppl') return cycle(['Push', 'Pull', 'Legs']);
   if (kind === 'ul') return cycle(['Upper', 'Lower']);
   if (kind === 'full') return cycle(['Full body']);
+  if (kind === 'pplul') return cycle(['Push', 'Pull', 'Legs', 'Upper', 'Lower']);
+  if (kind === 'ul' && n === 3) return ['Upper', 'Lower', 'Upper'];
+  if (kind === 'ppl' && n === 7) return ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs', 'Arms'];
   if (kind === 'body') return n < 4 ? cycle(['Full body']) : ['Chest', 'Legs', 'Shoulders', 'Back', 'Legs', 'Chest', 'Back'].slice(0, n);
   return null;
 }
 function splitFor(n, focus) {
-  const chosen = splitOf(S.split ?? 'auto', n); if (chosen) return chosen;
+  const chosen = splitOf(S.split ?? suggestedSplit(n), n); if (chosen) return chosen;
   if (n <= 2) return ['Full body', 'Full body'].slice(0, n);
   if (n === 3) return ['Upper', 'Lower', 'Upper']; // alternates weekly: next week Lower / Upper / Lower (Ben, 22 Oct)
   if (n === 4) return ['Upper', 'Lower', 'Upper', 'Lower']; // every muscle twice a week (Ben, 22 Oct)
@@ -641,8 +647,8 @@ function renderWeek() {
     <h1>Your week</h1>
     <div class="card"><div class="row"><span>Sessions a week</span><span class="stepper"><button id="fDown" aria-label="Fewer">−</button><span>${S.freq}</span><button id="fUp" aria-label="More">＋</button></span></div></div>
     <div class="label">Split</div>
-    <div class="chips">${Object.entries(SPLITS).map(([k, t]) => `<button class="chip sm" data-split="${k}" aria-pressed="${(S.split ?? 'auto') === k}">${t}</button>`).join('')}</div>
-    <div class="note">${(S.split ?? 'auto') === 'auto' ? `Suggested for ${S.freq} days, ${esc(S.focus)}: ` : ''}${(() => { const l = splitFor(S.freq, S.focus); return S.freq === 3 && l.join() === 'Upper,Lower,Upper' ? 'Upper / Lower / Upper, then Lower / Upper / Lower' : [...new Set(l)].join(' / '); })()}</div>
+    <div class="chips">${Object.entries(SPLITS).filter(([k]) => k !== 'pplul' || S.freq === 5).map(([k, t]) => `<button class="chip sm" data-split="${k}" aria-pressed="${splitKind() === k}">${k === suggestedSplit(S.freq) ? '✦ ' : ''}${t}</button>`).join('')}</div>
+    ${splitKind() === 'ul' && S.freq === 3 ? `<div class="note">Alternates: Upper / Lower / Upper, then Lower / Upper / Lower</div>` : ''}
     <div class="chips"><button class="chip" data-sch="fixed" aria-pressed="${S.schedule === 'fixed'}">Set days</button><button class="chip" data-sch="flexible" aria-pressed="${S.schedule === 'flexible'}">Fit them in</button></div>
     ${S.schedule === 'fixed' ? `<div class="label">Gym days · ${S.days.length} of ${S.freq}</div>
     <div class="week daypick">${WD.map((d, i) => `<button class="day ${S.runs && S.runDays.includes(i) ? 'runday' : ''}" data-day="${i}" aria-pressed="${S.days.includes(i)}"><span class="dn">${d}</span></button>`).join('')}</div>` : `<div class="note">Next session in order whenever you train. No legs the day before a long run.</div>`}
@@ -681,9 +687,9 @@ function coachIntro() {
   const split = [...new Set(S.plan.map((d) => d.focus))].join(' / ').toLowerCase();
   const chestDays = S.plan.filter((d) => d.ex.some((e) => e.m === 'Chest')).length;
   const ws = weeklySets(S.plan); const short = MUSCLES.filter((m) => ws[m] < range(m)[0]);
-  const alt = S.days.length === 3 && (S.split ?? 'auto') !== 'ppl' && S.plan.filter((d) => d.focus === 'Upper').length === 2 ? ' Next week flips to Lower / Upper / Lower, so both get the same over two weeks.' : '';
+  const alt = S.days.length === 3 && splitKind() === 'ul' && S.plan.filter((d) => d.focus === 'Upper').length === 2 ? ' Next week flips to Lower / Upper / Lower, so both get the same over two weeks.' : '';
   const once = S.split === 'body' && S.days.length >= 4 ? ' Chest / Legs / Shoulders / Back: most muscles once a week, so each session does more for them.' : '';
-  const seven = S.days.length === 7 && (S.split ?? 'auto') === 'auto' ? ' No rest day, so one day is light (arms and core).' : '';
+  const seven = S.days.length === 7 && splitKind() === 'ppl' ? ' No rest day, so one day is light (arms and core).' : '';
   const sport = S.pri.length ? ` Lifting supports ${S.pri.join(' and ')}: lower volume${S.days.length > 3 ? `, and ${S.days.length} lifting days is a lot alongside ${S.pri.length > 1 ? 'them' : 'it'}; 2–3 is usual` : ''}.` : '';
   return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${alt}${seven}${once}${sport}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}${S.effort === 'Standard' || S.pri.length ? ': add a day or longer sessions.' : ': add a day, longer sessions, or Standard.'}` : ''}`;
 }
