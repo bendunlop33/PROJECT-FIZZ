@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyBuilderEdit,
   estimateBuilderMinutes,
+  fitToMinutes,
   fitWorkoutToTime,
   slotsOf,
   stepTimeMinutes,
@@ -117,7 +118,7 @@ describe('fitWorkoutToTime', () => {
     expect(pair?.roundRestS).toBe(75);
   });
 
-  it('Ben’s edits after a fit stay: his set edit, a slot he deleted, a slot he added; only what the fit cut comes back', () => {
+  it('Ben’s edits after a fit stay: his set edit, a slot he deleted, a slot he added; only what the fit cut comes back (a set it took from a slot he edited too)', () => {
     const short = at(base, full - 20, null, full);
     const fit = short.fit;
     if (fit === null) throw new Error('no fit');
@@ -137,7 +138,12 @@ describe('fitWorkoutToTime', () => {
     expect(ids(back.workout)).not.toContain('assisted_pullup');
     for (const k of fit.dropped) if (k !== pull.key) expect(slotsOf(back.workout.blocks).some((s) => s.key === k)).toBe(true);
     const mine = slotsOf(back.workout.blocks).find((s) => s.key === incline.key);
-    expect(mine?.rows).toEqual(slotsOf(e1.workout.blocks).find((s) => s.key === incline.key)?.rows);
+    const his = slotsOf(e1.workout.blocks).find((s) => s.key === incline.key)?.rows ?? [];
+    const was = slotsOf(base.blocks).find((s) => s.key === incline.key)?.rows ?? [];
+    // His rows as he left them, then the original's sets the fit took (as they were).
+    expect(fit.cut?.[incline.key] ?? 0).toBeGreaterThan(0);
+    expect(mine?.rows).toEqual([...his, ...was.slice(his.length)]);
+    expect(mine?.rows).toHaveLength(was.length);
     expect(back.workout.restLevel).toBe('normal');
   });
 
@@ -151,7 +157,7 @@ describe('fitWorkoutToTime', () => {
 });
 
 describe('timeFitChanges', () => {
-  it('lists the rest level, sets fewer on an untouched slot and what it left out; a slot Ben touched since isn’t listed', () => {
+  it('lists the rest level, sets fewer and what it left out; a slot Ben touched since still lists the sets the fit took', () => {
     const base = push();
     const full = estimateBuilderMinutes(base, ctx);
     const short = at(base, full - 20, null, full);
@@ -164,10 +170,80 @@ describe('timeFitChanges', () => {
     if (cut?.kind === 'sets') {
       const s = slotsOf(short.workout.blocks).find((x) => x.key === cut.slotKey);
       const touched = { ...short.workout, blocks: short.workout.blocks.map((b) => ({ ...b, slots: b.slots.map((x) => (x.key === s?.key ? { ...x, touched: true as const } : x)) })) };
-      expect(timeFitChanges(fit, touched).some((c) => c.kind === 'sets' && c.slotKey === cut.slotKey)).toBe(false);
+      expect(timeFitChanges(fit, touched).find((c) => c.kind === 'sets' && c.slotKey === cut.slotKey)).toEqual(cut);
     }
     // With the original back there is nothing to list.
     expect(timeFitChanges({ ...fit, dropped: [] }, base)).toEqual([]);
+  });
+});
+
+describe('a slot Ben edits after the fit cut it (22 Oct review)', () => {
+  /** bench (main) ×4, incline ×4, fly ×4, pushdown ×4: as the reviewer's probe. */
+  const four = (): BuilderWorkout => ({
+    restLevel: 'normal',
+    blocks: [slot('bench', { main: true, sets: 4 }), slot('incline_db', { sets: 4 }), slot('cable_fly', { sets: 4 }), slot('pushdown', { sets: 4 })].map((x) => ({ slots: [x], auto: false })),
+  });
+  const base = four();
+  const full = estimateBuilderMinutes(base, ctx);
+  const pushdownOf = (w: BuilderWorkout) => slotsOf(w.blocks).find((s) => s.exerciseId === 'pushdown');
+
+  it('an RPE edit doesn’t lock the cut in: the detail still lists it, and more time (or Undo) brings the set back with his RPE kept', () => {
+    const short = at(base, full - 12, null, full);
+    const fit = short.fit;
+    const pd = pushdownOf(short.workout);
+    if (fit === null || pd === undefined) throw new Error('no fit');
+    expect(workingCount(pd)).toBe(3);
+    expect(fit.cut).toEqual({ [pd.key]: 1 });
+    const e = applyBuilderEdit(short.workout, { kind: 'edit_row', slotKey: pd.key, index: 0, patch: { kind: 'rpe', rpe: 7 } }, ctx);
+    if (!e.ok) throw new Error(e.reason);
+    expect(timeFitChanges(fit, e.workout)).toContainEqual({ kind: 'sets', slotKey: pd.key, exerciseId: 'pushdown', from: 4, to: 3 });
+    const back = at(e.workout, full, fit, full);
+    const mine = pushdownOf(back.workout);
+    expect(workingCount(mine ?? pd)).toBe(4);
+    expect(mine?.rows[0]?.rpe).toBe(7);
+    expect(mine?.rows.slice(1)).toEqual(slotsOf(base.blocks).find((s) => s.key === pd.key)?.rows.slice(1));
+    expect(back.fit).toBeNull();
+  });
+
+  it('never past the original: a set Ben added back himself isn’t added again; one he removed himself stays removed', () => {
+    const short = at(base, full - 12, null, full);
+    const fit = short.fit;
+    const pd = pushdownOf(short.workout);
+    if (fit === null || pd === undefined) throw new Error('no fit');
+    const added = applyBuilderEdit(short.workout, { kind: 'add_set', slotKey: pd.key }, ctx);
+    if (!added.ok) throw new Error(added.reason);
+    expect(workingCount(pushdownOf(unfitWorkout(fit, added.workout)) ?? pd)).toBe(4);
+    expect(timeFitChanges(fit, added.workout).some((c) => c.kind === 'sets' && c.slotKey === pd.key)).toBe(false);
+    const removed = applyBuilderEdit(short.workout, { kind: 'delete_set', slotKey: pd.key, index: pd.rows.length - 1 }, ctx);
+    if (!removed.ok) throw new Error(removed.reason);
+    expect(workingCount(pushdownOf(unfitWorkout(fit, removed.workout)) ?? pd)).toBe(3);
+  });
+
+  it('a fit stored before `cut` was recorded reads as before (his slot as he left it)', () => {
+    const short = at(base, full - 12, null, full);
+    const fit = short.fit;
+    const pd = pushdownOf(short.workout);
+    if (fit === null || pd === undefined) throw new Error('no fit');
+    const e = applyBuilderEdit(short.workout, { kind: 'edit_row', slotKey: pd.key, index: 0, patch: { kind: 'rpe', rpe: 7 } }, ctx);
+    if (!e.ok) throw new Error(e.reason);
+    const old = { base: fit.base, fromMinutes: fit.fromMinutes, dropped: fit.dropped };
+    expect(workingCount(pushdownOf(unfitWorkout(old, e.workout)) ?? pd)).toBe(3);
+  });
+});
+
+describe('Today’s card fit is unchanged by Your workout’s Time (22 Oct review)', () => {
+  it('an exercise with no builder group goes first only for Your workout’s Time (`noGroupFirst`); Today’s fit reads it as before', () => {
+    const w: BuilderWorkout = {
+      restLevel: 'normal',
+      blocks: [slot('bench', { main: true, sets: 4 }), slot('incline_db', { sets: 3 }), slot('cable_fly', { sets: 3 }), slot('pushdown', { sets: 3 }), { ...slot('pushdown', { sets: 3 }), key: 'ride', exerciseId: 'rowing_machine' }].map((x) => ({ slots: [x], auto: false })),
+    };
+    const n = estimateBuilderMinutes(w, ctx);
+    const today = fitToMinutes(w, ctx, { minutes: n - 20, mainGroup: 'Chest', grow: false, supersets: false });
+    const yours = fitToMinutes(w, ctx, { minutes: n - 20, mainGroup: 'Chest', grow: false, supersets: false, pushEffort: false, noGroupFirst: true });
+    const drops = (r: typeof today) => r.steps.flatMap((x) => (x.kind === 'drop' ? [x.slotKey] : []));
+    expect(drops(yours)[0]).toBe('ride');
+    // Today's card: the no-group exercise is read as the default (an isolation), not first.
+    expect(drops(today)[0]).not.toBe('ride');
   });
 });
 

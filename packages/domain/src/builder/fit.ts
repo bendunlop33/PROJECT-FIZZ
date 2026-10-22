@@ -86,6 +86,11 @@ export interface BuilderFitOptions {
    * false: the 22 Oct fit-to-time revision has no effort step, and a saved workout's own targets aren't raised.
    */
   pushEffort?: boolean;
+  /**
+   * Step (d): an exercise with no builder group (cardio, a carry: `ctx.info` null) goes first, with the abs (default
+   * false: Today's card reads it as an isolation, as before). Your workout's Time (22 Oct) passes true.
+   */
+  noGroupFirst?: boolean;
 }
 
 const cloneW = (w: BuilderWorkout): BuilderWorkout => ({ restLevel: w.restLevel, blocks: w.blocks.map((b) => ({ ...b, slots: [...b.slots] })) });
@@ -154,8 +159,8 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
 
   // (d) drop exercises: abs → other group's isolations → accessory isolations → compounds.
   const band = (s: BuilderSlot): number => {
-    // (22 Oct) Cardio or anything else with no builder group (a saved workout's ride, carry): with the abs, first.
-    if (ctx.info(s.exerciseId) === null) return 0;
+    // (22 Oct, Your workout's Time only) Cardio or anything else with no builder group (a saved workout's ride, carry): with the abs, first.
+    if (opts.noGroupFirst === true && ctx.info(s.exerciseId) === null) return 0;
     const i = infoOrDefault(ctx.info, s.exerciseId);
     if (i.group === 'Abs') return 0;
     if (i.role === 'isolation') return i.group !== opts.mainGroup ? 1 : 2;

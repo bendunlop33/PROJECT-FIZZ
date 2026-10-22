@@ -17,7 +17,7 @@ import {
   type BuilderWorkout,
   type DraftCodecContext,
 } from '../src/index';
-import { context, info, loadsFor } from './builder-v3-fixture';
+import { context, info, lbRack, loadInput, loadsFor, rack } from './builder-v3-fixture';
 import { id } from './fixtures';
 
 /**
@@ -87,13 +87,30 @@ describe('a timed or cardio slot', () => {
     expect(reloadSlotLoads(ride, { role: 'isolation', barbell: false }, loadsFor(RIDE))).toBe(ride);
   });
 
+  it('(rule 4; 22 Oct review) a load it carries (a farmer’s carry) is fitted to the new gym: rounded down, never past its max, in its unit; none here: no load target', () => {
+    const carry: BuilderSlot = { ...timed(id(304), id(206), [{ durationS: 60 }, { durationS: 60 }]), convention: 'per_hand', rows: [45, 21].map((load) => ({ type: 'working' as const, reps: 1, load, rpe: null, durationS: 60, typed: true as const })) };
+    const here = reloadSlotLoads(carry, { role: 'isolation', barbell: false }, loadInput({ equipment: rack, convention: 'per_hand' }));
+    expect(here.rows.map((r) => [r.load, r.durationS, r.typed])).toEqual([
+      [40, 60, undefined],
+      [20, 60, undefined],
+    ]);
+    expect([here.unit, here.convention]).toEqual(['kg', 'per_hand']);
+    // An lb rack: the same carry in lb, rounded down there.
+    const lb = reloadSlotLoads(carry, { role: 'isolation', barbell: false }, loadInput({ equipment: lbRack, convention: 'per_hand', unit: 'lb' }));
+    expect(lb.unit).toBe('lb');
+    expect(lb.rows.map((r) => r.load)).toEqual([95, 45]);
+    // No dumbbells at this gym: nothing here can make it, so no load (never the old gym's).
+    expect(reloadSlotLoads(carry, { role: 'isolation', barbell: false }, loadInput({ equipment: null, convention: 'per_hand' })).rows.map((r) => r.load)).toEqual([null, null]);
+  });
+
   it('fit to time: cardio with no builder group goes first with the abs; its effort isn’t pushed; a timed set keeps its time', () => {
     const bench = makeSlot('bench', { main: true }, ctx);
     const fly = makeSlot('cable_fly', { main: false }, ctx);
     const w: BuilderWorkout = { blocks: [{ slots: [bench], auto: false }, { slots: [fly], auto: false }, { slots: [ride], auto: false }], restLevel: 'normal' };
     const minutes = Math.round(estimateBuilderSeconds(w, ctx) / 60);
     // Rests alone can't save 20 minutes: the ride (no group) is the first exercise to go; the fly and bench stay.
-    const r = fitToMinutes(w, ctx, { minutes: minutes - 15, mainGroup: 'Chest', grow: false, supersets: false });
+    // Your workout's Time (`noGroupFirst`); Today's card fit reads a no-group exercise as before.
+    const r = fitToMinutes(w, ctx, { minutes: minutes - 15, mainGroup: 'Chest', grow: false, supersets: false, noGroupFirst: true });
     expect(r.steps.filter((s) => s.kind === 'drop').map((s) => s.slotKey)).toEqual([ride.key]);
     expect(slotsOf(r.workout.blocks).map((s) => s.exerciseId)).toEqual(['bench', 'cable_fly']);
     expect(r.steps.flatMap((s) => (s.kind === 'effort' ? s.slotKeys : []))).not.toContain(ride.key);

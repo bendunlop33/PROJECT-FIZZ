@@ -15,7 +15,8 @@ import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderSlot, Build
  *   step fits from that, so more time brings back what it cut, up to the original, never more. At or above the
  *   length it had then, the original is back as it was.
  * - Ben's edits after a fit stay: a slot he touched keeps his version (fit-to-time FT5), a slot he deleted stays
- *   deleted, his order and pairs stand; only what the fit cut comes back.
+ *   deleted, his order and pairs stand; only what the fit cut comes back. A slot he touched after the fit cut its sets
+ *   (an RPE, a rep) still gets the cut sets back, up to the original count (review: an edit doesn't lock in a cut).
  */
 
 export interface BuilderTimeFit {
@@ -25,6 +26,32 @@ export interface BuilderTimeFit {
   fromMinutes: number;
   /** Slots the fit left out, in no particular order (they come back when the time allows). */
   dropped: readonly string[];
+  /** Working sets the fit took from each slot it kept (slot key → sets); they come back even if Ben edits the slot later. */
+  cut?: Readonly<Record<string, number>>;
+}
+
+/**
+ * Working sets a touched slot gets back: the fit's cut, never past the original count (or Ben's own count, if he
+ * added sets himself). Zero for an untouched slot (its rows come back whole) or another exercise.
+ */
+function setsBack(fit: Pick<BuilderTimeFit, 'cut'>, was: BuilderSlot, s: BuilderSlot): number {
+  const cut = fit.cut?.[s.key] ?? 0;
+  if (cut <= 0 || s.touched !== true || was.exerciseId !== s.exerciseId) return 0;
+  const now = workingCount(s);
+  return Math.max(0, Math.min(now + cut, Math.max(now, workingCount(was))) - now);
+}
+
+/** `back` of the original's working sets after Ben's count, in place: a set before his trailing drops, a drop last. */
+function withSetsBack(s: BuilderSlot, was: BuilderSlot, back: number): BuilderSlot {
+  const now = workingCount(s);
+  const extra = was.rows.filter((r) => r.type !== 'warmup').slice(now, now + back);
+  const rows = s.rows.map((r) => ({ ...r }));
+  for (const r of extra) {
+    let at = rows.length;
+    if (r.type !== 'drop') while (at > 0 && rows[at - 1]?.type === 'drop') at -= 1;
+    rows.splice(at, 0, { ...r });
+  }
+  return { ...s, rows };
 }
 
 /**
@@ -33,13 +60,17 @@ export interface BuilderTimeFit {
  * superset (and Ben didn't unlink it), else as its own round after the slot before it in the original order. Rests
  * go back to the original level. At most `maxExercises`.
  */
-export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped'>, current: BuilderWorkout): BuilderWorkout {
+export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut'>, current: BuilderWorkout): BuilderWorkout {
   const baseSlots = new Map(slotsOf(fit.base.blocks).map((s) => [s.key, s]));
   let blocks: BuilderBlock[] = current.blocks.map((b) => ({
     ...b,
     slots: b.slots.map((s) => {
       const was = baseSlots.get(s.key);
-      return s.touched === true || was === undefined || was.exerciseId !== s.exerciseId ? s : { ...s, rows: was.rows.map((r) => ({ ...r })) };
+      if (was === undefined || was.exerciseId !== s.exerciseId) return s;
+      if (s.touched !== true) return { ...s, rows: was.rows.map((r) => ({ ...r })) };
+      // Ben's version, with the sets the fit took added back as they were (the original's, from his count on).
+      const back = setsBack(fit, was, s);
+      return back === 0 ? s : withSetsBack(s, was, back);
     }),
   }));
   const order = slotsOf(fit.base.blocks).map((s) => s.key);
@@ -74,7 +105,7 @@ export interface WorkoutTimeFitInput {
   current: BuilderWorkout;
   /** The live fit, if any. */
   fit: BuilderTimeFit | null;
-  /** The length now (before this change). */
+  /** The length before the first Time change (the set-up's; at or above it, the original is back). */
   minutes: number;
   /** The length asked for. */
   to: number;
@@ -121,9 +152,11 @@ export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome 
   const base = i.fit === null ? i.current : unfitWorkout(i.fit, i.current);
   const fromMinutes = i.fit?.fromMinutes ?? clampMinutes(i.minutes);
   if (to >= fromMinutes) return { workout: base, fit: null, minutes: to, over: false };
-  const r = fitToMinutes(base, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: false, supersets: i.supersets, pushEffort: false });
+  const r = fitToMinutes(base, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: false, supersets: i.supersets, pushEffort: false, noGroupFirst: true });
   if (r.steps.length === 0) return { workout: base, fit: null, minutes: to, over: r.status === 'over' };
-  return { workout: keepEffort(r.workout, base), fit: { base, fromMinutes, dropped: r.steps.flatMap((s) => (s.kind === 'drop' ? [s.slotKey] : [])) }, minutes: to, over: r.status === 'over' };
+  const cut: Record<string, number> = {};
+  for (const st of r.steps) if (st.kind === 'sets' && st.from > st.to) cut[st.slotKey] = st.from - st.to;
+  return { workout: keepEffort(r.workout, base), fit: { base, fromMinutes, dropped: r.steps.flatMap((s) => (s.kind === 'drop' ? [s.slotKey] : [])), cut }, minutes: to, over: r.status === 'over' };
 }
 
 /**
@@ -140,9 +173,10 @@ export function timeFitChanges(fit: BuilderTimeFit, current: BuilderWorkout): Bu
       if (fit.dropped.includes(was.key)) out.push({ kind: 'drop', slotKey: was.key, exerciseId: was.exerciseId });
       continue;
     }
-    if (s.touched === true || s.exerciseId !== was.exerciseId) continue;
-    const from = workingCount(was);
+    if (s.exerciseId !== was.exerciseId) continue;
     const to = workingCount(s);
+    // A slot Ben touched since: only what the fit took (his own changes aren't the fit's).
+    const from = s.touched === true ? to + setsBack(fit, was, s) : workingCount(was);
     if (to < from) out.push({ kind: 'sets', slotKey: s.key, exerciseId: s.exerciseId, from, to });
   }
   return out;
