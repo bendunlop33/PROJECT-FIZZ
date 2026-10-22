@@ -1,8 +1,10 @@
 # Review: Your workout Time control and the 22 Oct overview follow-ups
 
-**Verdict: CHANGES NEEDED** (22 Oct 2026)
+**Verdict: CHANGES NEEDED** (re-review round 1, 22 Oct 2026: B1–B3 fixed; one new blocking regression, R1. See [Re-review (round 1)](#re-review-round-1-22-oct-2026).)
 
-Scope: `fe5c67a..90daca6` on `claude/yourworkout-time-22oct` (3e1def9, a5310e4, 484d28d, 8ad1f25, ade79a6, 90daca6).
+First review verdict: CHANGES NEEDED (22 Oct 2026).
+
+Scope (first review): `fe5c67a..90daca6` on `claude/yourworkout-time-22oct` (3e1def9, a5310e4, 484d28d, 8ad1f25, ade79a6, 90daca6).
 Checked against the six items in the task, `docs/design/fit-to-time.md` (22 Oct revision), `docs/design/workout-builder-v3.md` §2.1 and §2.3–§2.5, CLAUDE.md rules 1–5 and 9, and the minimal-copy convention.
 
 ## Checks I ran
@@ -230,3 +232,121 @@ Commits: `316f9cf`, `49a70ff`, `9bec090`, `fe3c4e4`, plus this doc.
 - SP2–SP6: the meaning of the single length field; the old FT3/FT8 rules in `fit-to-time.md`; the superset wording; whether Today's card moves to the 22 Oct revision; what "the original" means for a Today-fitted draft.
 - Pre-existing, seen while fixing: a Set up merge drops `sourceVersion`, `leftOut` and `gymKept` from the stored set-up (only `slotSeed` is now carried).
 - Nothing here has run on a device: the Time row, the detail sheet, the pop-up links and both confirms are covered only by service, view and source tests.
+
+## Re-review (round 1, 22 Oct 2026)
+
+**Verdict: CHANGES NEEDED.** B1, B2 and B3 are fixed, and so are the medium and low items, but the fix for "a later edit locks in a cut" added a new bug (R1, blocking): stepping Time down can now *add* sets to an exercise Ben edited, with nothing on the page saying so.
+
+Scope: `a671f10..524403b` (316f9cf, 49a70ff, 9bec090, fe3c4e4, 524403b) on `claude/yourworkout-time-22oct`, in `/home/user/wt-yw-time`.
+
+### Checks I ran
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` | exit 0 |
+| `npx vitest run` (full suite) | 472 files, 8767 passed, 2 todo, exit 0 |
+| Reviewer probe: a temporary real-SQLite test file with 3 cases, removed afterwards (tree clean) | Reproduced R1 and R2 below |
+
+I didn't check the claim that 10 of the new tests fail on the old service code. That would mean editing source.
+
+### Fixes verified
+
+| Item | Status | How checked |
+|---|---|---|
+| B1: Time's length saved into the plan | Fixed | `planWriteFor` saves `setupMinutesOf(stored)` (`timeFrom`, else the legacy `timeFit.fromMinutes`, else `minutes`). `setTime`, the Set up merge, `Gym changed` and the coach version all keep `timeFrom`. Tests cover a cut with Start › Update, no cut with Start › Update, and Coach review's `Update plan day`. |
+| B2: back to Set up dropped the fit | Fixed | `changeSetup` undoes the fit, merges at the set-up's own length and fits Time again (`retimed`). A new Length ends Time. Rest level always comes from the merged or fitted workout. Two tests. |
+| B3: do-again main lift trimmed | Fixed | A session source gets one main by WL9 (`defaultMain` over the slots that open). A routine with no stored `Main` uses `mainFlags`. The test checks bench's rows stay the same at every step. The `deps.planned === undefined` fallback (`builder-service.ts:645`) still gives a session no main, but the app always passes `planned` (`app-services.ts:991`), so this only affects tests. |
+| Gym changed keeps the fit | Fixed for a gym that has everything; see R2 | Undoes the fit, moves it to the new gym, fits again. The existing test uses a commercial gym. |
+| Copies of an exercise matched by order | Fixed | `slotSeed` re-plans the source with the same slot keys. Matching is by `exerciseId@key`, and a stale key can't land on another exercise. Reorder and delete tests. |
+| A later edit locks in a cut | Fixed for more time and Undo; see R1 | `cut` record plus `setsBack`. Domain tests cover the cap and a legacy record. |
+| Coach version keeps shortened rests silently | Fixed | A rests-only record with Undo. Test. |
+| One main per lift listed twice; `Add anyway` confirm; detail keys; Today's ladder (`noGroupFirst` opt-in); reps+time sets named; loaded timed sets fitted at a new gym (rule 4, pain cap through `roundCtx`) | Fixed | Code read plus domain and view tests. `snapshotOf` builds facts with `mayHurt` for the `Not applied` exercises (`builder-service.ts:720`), so the `Add anyway` confirm does see the flag for an exercise that isn't in the workout yet. |
+| SP1 markings | Done | Items 2–6 and the saved rep ranges are marked "pending Ben" in `workout-builder-v3.md`. No CHANGELOG entry claims Ben's approval. |
+
+### Blocking
+
+#### R1. Stepping Time down after Ben edits an exercise the fit cut gives that exercise its sets back and cuts the others harder, with nothing said
+
+**Where:**
+- `packages/domain/src/builder/time-fit.ts:72`: `unfitWorkout` adds a touched slot's cut sets back (`setsBack`).
+- `time-fit.ts:152-155`: every Time step, including a step *down*, fits from `unfitWorkout(fit, current)`.
+- `packages/domain/src/builder/fit.ts:133`: the fit never cuts a touched slot.
+
+So once Ben edits an exercise the fit trimmed, the next step down restores its full original set count and leaves it there.
+
+**Repro (probe, real SQLite):**
+1. Saved Push: bench (main), incline DB press, face pull, triceps pushdown and lateral raise, 4 sets each. It opens at 53 min.
+2. Time 50: `Shortest rests` · `Lateral raise 4 → 2 sets`.
+3. Change the RPE on lateral raise's first set to 7. Lateral raise is now 2 sets and touched.
+4. Time 45: **lateral raise is back to 4 sets**. Incline goes 4 → 3, face pull 4 → 2, pushdown 4 → 2. The detail no longer mentions lateral raise.
+5. Time 40: triceps pushdown is dropped. Lateral raise still has 4 sets.
+
+**Why it blocks:** Ben asked for less time and an exercise he had just edited got longer, with no line saying so. This breaks:
+- FT5: a slot Ben touched keeps his version, and his version had 2 sets.
+- The spec's own line in `workout-builder-v3.md` §2.3: the sets "come back with more time".
+- The honest note and visible-change requirement (rule 3, minimal but honest copy).
+
+The same thing happens when Ben removed a set himself. A slot cut 4 → 2, then trimmed by Ben to 1, goes to 3 sets on the next step down.
+
+**Fix:**
+- When fitting to a shorter time, fit from a working copy in which touched slots stay as Ben has them, without `setsBack`.
+- Keep `base` as the full original.
+- Carry the old `cut` entries for touched slots into the new fit's `cut`, so the sets come back only with more time or Undo.
+- Add a domain test: fit, edit the cut slot, step down again. Its count must not rise and the detail must still list its cut. Then step up to `fromMinutes`: it's back to the original.
+
+### Should fix
+
+#### R2. Gym changed to a gym that lacks exercises brings back the exercise Time dropped, undoes the set cuts, and leaves Time unable to shorten anything
+
+**Where:**
+- `apps/mobile/src/builder/builder-service.ts:1276`: the fit is undone *before* the "lacking" check, so the dropped exercises are back in the workout.
+- `:1283-1294`: lacking slots, including ones the fit had dropped, are swapped. A swap marks the slot `touched` (`packages/domain/src/builder/edit.ts:110`) and keeps the restored, uncut set count.
+- `:1333`: `retimed` can't cut touched slots (`fit.ts:133`).
+
+**Repro (probe):**
+1. Push B: 5 exercises × 3 sets, 41 min.
+2. Step Time down until lateral raise is dropped: 30 min, with incline, face pull and pushdown going 3 → 2.
+3. Add a gym `Home: barbell, rack and plates`, select it, then `changeGym`.
+
+Result:
+- The workout is bench ×3, dip ×3, 45° back extension ×3, close-grip bench ×3, landmine press ×3, all touched.
+- The estimate is 41 min against Time 30. The detail shows only `Shortest rests`.
+- Landmine press stands in for the lateral raise that Time had dropped.
+- More `−` steps can't cut anything, because every accessory is touched.
+
+It's honest (`Over` shows), but the shortened workout is gone after a gym change, and Time can't rebuild it. Before this round, the dropped exercise stayed out and the swapped slots kept their cut set counts. The developer's test only uses a gym that has everything.
+
+**Fix:**
+- A gym-change swap isn't Ben's edit. Either don't mark it `touched` for the fit, or swap a fit-dropped slot only inside the stored original and keep it out of the visible workout.
+- Then fit again.
+- Add a test with a gym that lacks a dropped exercise and a trimmed one.
+
+#### R3. Test gaps still open from S4
+
+Not covered yet:
+- stepping down after editing a cut slot (R1)
+- a gym missing exercises after a fit (R2)
+- "no superset made" with Supersets **on**. The B2 test turns Supersets on but doesn't assert that no pair was made.
+- a timed or cardio slot trimmed and restored by Time
+- `keepEffort` with Ben's own RPEs
+- a draft from Today's `Edit` (S1)
+- a workout that was already over its length (S2)
+
+There's still no render test and no device run for the Time row, the detail sheet, the pop-up links and the two confirms.
+
+#### Carried over, acknowledged as open by the developer
+
+S1, S2, N1, N3, N6, N7 above. Also found while fixing: a Set up merge drops `sourceVersion`, `leftOut` and `gymKept`.
+
+### Nits
+
+- **N8.** `docs/design/workout-builder-v3.md:384` still says `N left out` covers "only an exercise the app can't find, a set with no target, or a workout past the builder's limits". It now also covers a set with both reps and a time or distance (`packages/domain/src/builder/from-planned.ts:129`).
+- **N9.** `workout-builder-v3.md:383` labels the post-fit behaviour "(review fixes, Ben, 22 Oct request; behaviour as reviewed)". Given SP1, mark it `[Proposal]` or "review fix". Otherwise it reads as Ben's decision.
+- **N10.** `builder-service.ts:1439`: a Set up rebuild (new Day or Main lift) with Length left at Time's value builds at Time's length but records `timeFrom`. Stepping Time back up to the original then only clears the record, so the short build stays under a longer Time. This belongs with S2.
+- **N11.** `builder-service.ts:1906`: when the coach's version sets a length while `timeFrom` is recorded, `Update … in your plan` saves `timeFrom` and ignores the coach's length. That's probably right, since Time and the coach are today-only, but the spec doesn't say so. Add a line to SP2.
+
+### Spec issues
+
+- **SP1 (still open, confirm before merge).** The only request from Ben in this run is "can you add option to reduce time?". Items 2–6 (cardio, timed sets and an exercise twice as saved; `Open <name>`; the rep-range display; the `May hurt` confirms; `How to` / `History` in the pop-up) are built, and are now correctly marked as pending Ben's confirmation. Ben needs to confirm them before this branch merges. If he declines, revert those commits (3e1def9, a5310e4, 484d28d, 8ad1f25 and the related parts of 49a70ff and fe3c4e4).
+- **SP2–SP6** are unchanged from the first review.
