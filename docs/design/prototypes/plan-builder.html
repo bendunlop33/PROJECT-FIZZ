@@ -34,6 +34,8 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text2); font: 600 15px var(--ui); cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.seg { display: grid; gap: 4px; }
+.seg .chip { padding: 0 5px; min-width: 0; white-space: nowrap; overflow: hidden; border-radius: 12px; font-size: 14px; }
 .chip.sm { min-height: 36px; font-size: 14px; padding: 0 12px; }
 .stepper { display: flex; align-items: center; gap: 8px; }
 .stepper button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); font-size: 20px; cursor: pointer; }
@@ -279,11 +281,22 @@ function whenReached(lift, kg, lvl) {
 }
 
 // ---------- Render ----------
+// One font size per row, shrunk until every label fits its equal-width box (min 10px), like the Today strip.
+function fitSegs() {
+  document.querySelectorAll('.seg').forEach((row) => {
+    const bs = [...row.querySelectorAll('.chip')];
+    let size = 14;
+    const fits = () => bs.every((b) => b.scrollWidth <= b.clientWidth);
+    bs.forEach((b) => { b.style.fontSize = size + 'px'; });
+    while (!fits() && size > 10) { size -= 0.5; bs.forEach((b) => { b.style.fontSize = size + 'px'; }); }
+  });
+}
 function render() {
   const steps = ['Goals', 'Week', 'Your plan'];
   const f = flow(); const i = f.indexOf(S.page);
   $('steps').textContent = S.applied ? 'Your plan' : `${i + 1} of ${f.length}`;
   $('back').style.visibility = i === 0 || S.applied ? 'hidden' : 'visible';
+  requestAnimationFrame(fitSegs);
   ({ goals: renderGoals, check: renderCheck, effort: renderAmbition, week: renderWeek, plan: renderPlan })[S.page]();
 }
 
@@ -291,9 +304,9 @@ function renderGoals() {
   $('scroll').innerHTML = `
     <h1>Your goals</h1>
     <div class="label" style="display:flex;align-items:center;gap:4px">Main focus <button class="link dim" id="focusInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>
-    <div class="chips">${['Strength','Muscle','Both','Fitness','Maintain'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
+    <div class="seg" style="grid-template-columns:repeat(5,minmax(0,1fr))">${['Strength','Muscle','Both','Fitness','Maintain'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
     <div class="label">Priority · up to 2</div>
-    <div class="chips">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m}</button>`).join('')}</div>
+    <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m}</button>`).join('')}</div>
     ${S.ai && !S.priority.includes('Back') && !S.sugGone ? `<div class="offer" style="display:flex;align-items:center;background:var(--raised);border-radius:12px;padding-left:12px;font-size:15px;gap:4px"><span style="flex:1">✦ Back: 8 sets a week vs Chest 15</span><button class="link" id="useSug" style="font-weight:600">Use</button><button class="link dim" id="noSug" aria-label="Dismiss" style="text-decoration:none">✕</button></div>` : ''}
     <div class="label">Other training</div>
     <div class="card"><div class="row"><span>Runs</span><span class="chips"><button class="chip sm" id="runsToggle" aria-pressed="${S.runs}">${S.runs ? 'On' : 'Off'}</button></span></div></div>`;
