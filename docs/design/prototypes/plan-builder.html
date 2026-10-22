@@ -340,6 +340,27 @@ function renderGoals() {
   $('next').onclick = () => go(1);
 }
 
+// Strength balance (Ben, 22 Oct): each main lift's est. 1RM ÷ bench est. 1RM against a rough usual band.
+// Rules of thumb only; shown as information and a supporting signal for the priority pick, never a reason alone.
+const BAL = [
+  { l: 'Back squat', lo: 1.2, hi: 1.5, f: 1 },
+  { l: 'Barbell row', lo: 0.7, hi: 1.0, f: 1 },
+  { l: 'DB shoulder press', lo: 0.22, hi: 0.30, f: 1, each: true },
+];
+function balanceCard() {
+  const b1 = e1rm(HIST['Bench press'].kg, HIST['Bench press'].reps);
+  const rows = BAL.map((r) => {
+    const h = HIST[r.l]; const v = e1rm(h.kg, h.reps) / b1;
+    const min = r.lo * 0.6, max = r.hi * 1.4, pos = (x) => Math.max(0, Math.min(100, (x - min) / (max - min) * 100));
+    const word = v < r.lo ? 'Below' : v > r.hi ? 'Above' : 'In range';
+    return `<div class="vol" style="grid-template-columns:96px 1fr 64px"><span class="mn" style="font-size:13px">${CARD[r.l]}</span>
+      <span class="bar" style="height:10px"><span class="rng" style="left:${pos(r.lo)}%;width:${pos(r.hi) - pos(r.lo)}%"></span><span style="position:absolute;top:-2px;left:calc(${pos(v)}% - 7px);width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--surface)"></span></span>
+      <span class="n" style="font-size:12px;color:${word === 'Below' ? 'var(--warn)' : 'var(--text2)'}">${(Math.floor(v * 100) / 100).toFixed(2)}×<br>${word}</span></div>`;
+  }).join('');
+  return `<div class="label" style="display:flex;align-items:center;gap:4px">Strength balance · vs bench (est.) <button class="link dim" id="balInfo" aria-label="What this shows" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>
+    <div class="card" style="padding:10px 16px;gap:6px">${rows}</div>`;
+}
+
 // Read-across (Ben, 22 Oct): a main lift with no history is estimated from his closest similar lift first, then
 // from another main lift. Factors are practice-level rules of thumb, always labelled est., replaced by the first session.
 const SIMILAR = {
@@ -374,7 +395,9 @@ function renderCheck() {
     <div class="card" style="display:grid;grid-template-columns:minmax(0,1fr) 84px 84px;padding:4px 16px">
       <span class="lab" style="display:flex;align-items:center;min-height:32px">Lift</span><span class="lab" style="text-align:center;align-self:center">6 reps</span><span class="lab" style="text-align:center;align-self:center">1RM est.</span>
       ${rows}</div>
-    <div class="note">Tap a lift to change it. Grey = estimate.</div>`;
+    <div class="note">Tap a lift to change it. Grey = estimate.</div>
+    ${balanceCard()}`;
+  if ($('balInfo')) $('balInfo').onclick = () => sheet(`<h2>Strength balance</h2><div class="note" style="display:block;line-height:1.45">Each lift's estimated 1RM divided by your bench. The shaded band is the usual range for lifters (crowd-sourced strength standards and coaching rules of thumb), not a target: build, technique and how strictly you lift all shift it. It only counts toward a priority alongside another sign, like low sets or a stalled lift.</div>`);
   $('footer').innerHTML = `<button class="primary" id="next">Next</button>`;
   document.querySelectorAll('[data-lift]').forEach((b) => b.onclick = () => openLiftSheet(b.dataset.lift));
   $('next').onclick = () => go(1);
