@@ -105,7 +105,8 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
 // Screens: a tab root or a pushed screen. Prototype screens are iframes kept alive, so their state survives switching.
 const PAGES = {
   today: () => (A.plan ? 'training-blocks.html' : null), // no plan: the native Today below (workout-builder-v3.md, No plan)
-  progress: () => ({ overview: 'progress-simple.html', block: 'training-blocks.html#progress' })[A.ptab],
+  // One Progress page (Ben, 22 Oct): with a plan it carries the block (header, plan lines); without, the plain v3 page.
+  progress: () => (A.plan ? 'training-blocks.html#progress' : 'progress-simple.html'),
   plan: () => 'plan-builder.html',
   planview: () => 'plan-builder.html#view',
   builder: () => 'workout-builder-v3.html',
@@ -123,20 +124,13 @@ function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add(
 function current() { return A.stack.at(-1) ?? A.tab; }
 function show() {
   const cur = current(), pushed = A.stack.length > 0;
-  if (!A.plan) A.ptab = 'overview';
   Object.values(frames).forEach((f) => f.classList.remove('on'));
   NATIVE.forEach((n) => $(n).classList.remove('on'));
   const src = PAGES[cur]?.(), nat = src ? null : (cur === 'today' ? 'todayNo' : cur);
   if (src) frame(src).classList.add('on');
   else { $(nat).classList.add('on'); ({ todayNo: renderTodayNo, library: renderLibrary, profile: renderProfile, summary: renderSummary })[nat](); }
   $('tabs').style.display = pushed ? 'none' : '';
-  // Progress is v3 (agreed 21 Oct; the older Goals and Reviews drafts are superseded). With a plan, Block sits one tap away.
-  const ps = cur === 'progress' && A.plan;
-  $('psub').classList.toggle('on', ps);
-  if (ps) {
-    $('psub').innerHTML = [['overview', 'Overview'], ['block', 'Block']].map(([k, t]) => `<button data-pt="${k}" class="${A.ptab === k ? 'on' : ''}">${t}</button>`).join('');
-    $('psub').querySelectorAll('[data-pt]').forEach((b) => b.onclick = () => { A.ptab = b.dataset.pt; show(); });
-  }
+  $('psub').classList.remove('on');
   document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === A.tab));
   $('topL').innerHTML = pushed && cur !== 'summary' ? `<button class="back" id="backBtn">‹ ${A.tab === 'today' ? 'Today' : A.tab[0].toUpperCase() + A.tab.slice(1)}</button>` : '9:41';
   if ($('backBtn')) $('backBtn').onclick = pop;
