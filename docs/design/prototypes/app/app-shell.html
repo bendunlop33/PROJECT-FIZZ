@@ -191,7 +191,7 @@ function renderLibrary() {
 function renderProfile() {
   const sec = (t, rows) => `<div class="label">${t}</div><div class="card">${rows.map(([n, s, go]) => `<div class="row" ${go ? `data-go="${go}"` : 'data-na="1"'}><span><div class="nm">${n}</div>${s ? `<div class="sub">${s}</div>` : ''}</span><span class="chev">›</span></div>`).join('')}</div>`;
   $('profile').innerHTML = `<h1>Profile</h1>
-    ${sec('Training', [['Pain flags', 'None'], ['Logging', 'kg · RPE after the set'], ['Rest presets', '1:00 · 1:30 · 3:00']])}
+    ${sec('Training', [['Split', 'Chest · Legs · Shoulders · Back'], ['Pain flags', 'None'], ['Logging', 'kg · RPE after the set'], ['Rest presets', '1:00 · 1:30 · 3:00']])}
     ${sec('Gyms', [['Main gym', 'Default · full gym'], ['＋ Add gym', '']])}
     ${sec('Voice & alerts', [['Voice & alerts', 'Set cues · Apple voice']])}
     ${sec('Coach', [['Coach connection', 'Connected'], ['What the coach remembers', '7 confirmed'], ['Guides & playbook', 'Playbook v1']])}
