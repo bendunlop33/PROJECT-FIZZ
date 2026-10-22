@@ -134,7 +134,7 @@ const crunch = slot('k-crunch', 'crunch', { rows: [{ type: 'working', reps: 10, 
 const pullup = slot('k-pull', 'pullup', { convention: 'assistance', rows: [{ type: 'working', reps: 8, load: 25, rpe: 8 }] });
 
 function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): BuilderSnapshot {
-  const f = (name: string, works: string | null, group: BuilderSnapshot['facts'][string]['group'], compound = false) => ({ name, works, group, compound, mayHurt: false, notHere: false });
+  const f = (name: string, works: string | null, group: BuilderSnapshot['facts'][string]['group'], compound = false) => ({ name, works, group, compound, mayHurt: false, notHere: false, hasHistory: false });
   return {
     draftId: 'd1',
     version: 3,

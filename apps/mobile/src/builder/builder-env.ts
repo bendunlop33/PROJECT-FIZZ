@@ -67,6 +67,8 @@ export interface BuilderEnv {
   itemNameOf: (exerciseId: string) => string | null;
   /** The last comparable session's top working set, in the slot's unit (for `Why this weight?`). */
   lastTopOf: (exerciseId: string) => { value: number; reps: number } | null;
+  /** (22 Oct) Ben has logged this exercise (the pop-up's `History` link); false for one not read up front. */
+  hasHistory: (exerciseId: string) => boolean;
   /** Exercises of a group this gym has, best first (Ben's history, then the catalogue), pain-flagged ones included (Swap shows `May hurt`). */
   candidates: (group: BuilderGroup) => readonly string[];
   /** Compound lifts whose builder group is one of these (Main lift on a Custom day, §2.2). */
@@ -302,6 +304,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         return eq === null ? null : eq.name;
       },
       lastTopOf: (id) => lastTop.get(id) ?? null,
+      hasHistory: (id) => (histories.get(id)?.length ?? 0) > 0,
       candidates,
       compoundsOf: (groups) =>
         [...byId.values()]

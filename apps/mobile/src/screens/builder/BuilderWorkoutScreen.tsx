@@ -12,7 +12,8 @@ import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWr
 import { reviewAfterApply } from '../../builder/review';
 import { UPDATE_PLAN_DAY_ACTION } from '../../coach/builder-review-provider';
 import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type ProposalState } from '../../coach/builder-coach-view';
-import { editsFromText, promptView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
+import { editsFromText, popupLinks, promptView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
+import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
 import { builderPage, openStartedWorkout, popToToday } from '../../navigation/actions';
@@ -581,6 +582,10 @@ export function BuilderWorkoutScreen() {
   };
 
   const popupSlot = popup;
+  // (22 Oct) The pop-up's `How to` and `History`, where the overview's rows had them; the sheet closes first.
+  const links = popupSlot === null ? null : popupLinks(snap, popupSlot, (x) => howToRouteFor(x, bundledHowToSources()));
+  const howTo = links?.howTo ?? null;
+  const history = links?.history ?? null;
   return (
     <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
       <View style={{ flex: 1 }}>
@@ -756,6 +761,22 @@ export function BuilderWorkoutScreen() {
         onClose={() => { setPopup(null); }}
         why={(k) => services.builder.whyWeight(snap.draftId, k)}
         kgStep={kgStep}
+        onHowTo={
+          howTo === null
+            ? undefined
+            : () => {
+                setPopup(null);
+                navigation.navigate('HowTo', howTo);
+              }
+        }
+        onHistory={
+          history === null
+            ? undefined
+            : () => {
+                setPopup(null);
+                navigation.navigate('ExerciseProgress', history);
+              }
+        }
         toast={toastNode}
       />
       <SwapSheet

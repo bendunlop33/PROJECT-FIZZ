@@ -56,6 +56,10 @@ export interface ExercisePopupProps {
   why: () => Promise<string[]>;
   /** The next weight this gym can load for the set's item, up or down (§2.7). */
   kgStep: (row: PopupSetRow, value: number | null, dir: 1 | -1) => Promise<number | null>;
+  /** (22 Oct) `How to`: the exercise guide; absent when it has none (or the page doesn't link it). */
+  onHowTo?: (() => void) | undefined;
+  /** (22 Oct) `History`: the exercise's history; absent when it was never logged (or the page doesn't link it). */
+  onHistory?: (() => void) | undefined;
   toast?: ReactNode;
 }
 
@@ -306,6 +310,12 @@ export function ExercisePopup(p: ExercisePopupProps) {
             {view.canSupersetNext ? <SecondaryButton label={POPUP_COPY.supersetNext} onPress={p.onSupersetNext} /> : null}
             {view.canUnlink ? <SecondaryButton label={POPUP_COPY.unlink} onPress={p.onUnlink} /> : null}
           </View>
+          {p.onHowTo !== undefined || p.onHistory !== undefined ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
+              {p.onHowTo !== undefined ? <TextButton label={POPUP_COPY.howTo} icon="chevron.right" tone="secondary" accessibilityLabel={`How to, ${view.name}`} onPress={p.onHowTo} /> : null}
+              {p.onHistory !== undefined ? <TextButton label={POPUP_COPY.history} icon="chevron.right" tone="secondary" accessibilityLabel={`History, ${view.name}`} onPress={p.onHistory} /> : null}
+            </View>
+          ) : null}
           <TextButton
             label={`${POPUP_COPY.whyWeight}${whyLines === null ? ' ›' : ''}`}
             tone="secondary"

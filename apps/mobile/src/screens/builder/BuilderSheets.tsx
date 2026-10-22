@@ -35,6 +35,8 @@ export function ExerciseSheet({
   onClose,
   why,
   kgStep,
+  onHowTo,
+  onHistory,
   toast,
 }: {
   snap: BuilderSnapshot;
@@ -47,6 +49,9 @@ export function ExerciseSheet({
   why: (slotKey: string) => Promise<string[]>;
   /** The next weight this gym can load for the item, up or down (§2.7). */
   kgStep: (slotKey: string, value: number | null, dir: 1 | -1) => Promise<number | null>;
+  /** (22 Oct) `How to` / `History` for this slot; absent: no link. */
+  onHowTo?: (() => void) | undefined;
+  onHistory?: (() => void) | undefined;
   toast?: ReactNode;
 }) {
   const view = slotKey === null ? null : popupView(snap, slotKey, (k) => snap.rests[slotKey]?.[k] ?? 0);
@@ -90,6 +95,8 @@ export function ExerciseSheet({
       onClose={onClose}
       why={() => (slotKey === null ? Promise.resolve([]) : why(slotKey))}
       kgStep={(_row, value, dir) => (slotKey === null ? Promise.resolve(null) : kgStep(slotKey, value, dir))}
+      onHowTo={onHowTo}
+      onHistory={onHistory}
       toast={toast}
     />
   );

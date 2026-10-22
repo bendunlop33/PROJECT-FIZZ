@@ -179,6 +179,8 @@ export interface ExerciseFacts {
   mayHurt: boolean;
   /** This gym doesn't have what it needs, and nothing here could replace it (`Not at this gym`, §2.3). */
   notHere: boolean;
+  /** (22 Oct) Ben has logged it: the pop-up's `History` link shows (as on the overview's rows). */
+  hasHistory: boolean;
 }
 
 /** Everything Your workout and the pop-ups show for one draft. */
@@ -661,7 +663,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const minutes = estimateBuilderMinutes(workout, env.ctx);
     const variation = setup.variationId === null ? null : ((await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId)).find((x) => x.id === setup.variationId) ?? null);
     const facts: Record<string, ExerciseFacts> = {};
-    for (const s of slotsOf(workout.blocks)) facts[s.exerciseId] = { name: env.nameOf(s.exerciseId), works: env.worksOf(s.exerciseId), group: env.info(s.exerciseId)?.group ?? null, compound: env.info(s.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(s.exerciseId), notHere: env.gymId !== null && !env.doable(s.exerciseId) };
+    for (const s of slotsOf(workout.blocks)) facts[s.exerciseId] = { name: env.nameOf(s.exerciseId), works: env.worksOf(s.exerciseId), group: env.info(s.exerciseId)?.group ?? null, compound: env.info(s.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(s.exerciseId), notHere: env.gymId !== null && !env.doable(s.exerciseId), hasHistory: env.hasHistory(s.exerciseId) };
     const key = d.builderKey;
     const planDay =
       key !== undefined && key.planId !== null && key.dayIndex !== null && key.splitDayId !== null
@@ -689,7 +691,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     // Review S1: opened on a chat draft whose current version is already a saved workout: not saved twice.
     const chatSaved = key?.from?.kind === 'coach_draft' ? await chatSavedRoutine(key.from.id) : false;
     // Names for the `Not applied` lines' exercises too.
-    for (const x of notApplied) for (const id of x.op.kind === 'add_slot' ? [x.op.slot.exerciseId] : x.op.kind === 'pair' ? [x.op.a, x.op.b] : [x.op.exerciseId]) facts[id] ??= { name: env.nameOf(id), works: env.worksOf(id), group: env.info(id)?.group ?? null, compound: env.info(id)?.role === 'compound', mayHurt: env.painFlagged(id), notHere: false };
+    for (const x of notApplied) for (const id of x.op.kind === 'add_slot' ? [x.op.slot.exerciseId] : x.op.kind === 'pair' ? [x.op.a, x.op.b] : [x.op.exerciseId]) facts[id] ??= { name: env.nameOf(id), works: env.worksOf(id), group: env.info(id)?.group ?? null, compound: env.info(id)?.role === 'compound', mayHurt: env.painFlagged(id), notHere: false, hasHistory: env.hasHistory(id) };
     const here = d.status === 'open' ? await deps.currentGym().catch(() => null) : null;
     const gymChanged = here !== null && here.id !== v.request.gymId && here.id !== stored?.gymKept;
     return {

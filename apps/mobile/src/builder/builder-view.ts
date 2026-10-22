@@ -397,6 +397,29 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
   };
 }
 
+/** (22 Oct) Where the pop-up's `How to` and `History` go, as the overview's rows had them; null: no link. */
+export interface PopupLinks {
+  howTo: { catalogueKey: string; name: string } | null;
+  /** This gym's item for the exercise, else a series at this gym (ExerciseProgress). */
+  history: { exerciseId: string; name: string; equipmentId?: string; gymId?: string } | null;
+}
+
+/**
+ * The pop-up's links for one slot: `How to` when the exercise has a guide (`howToOf`, the bundled guides), `History`
+ * when Ben has logged it. Pure.
+ */
+export function popupLinks(snap: BuilderSnapshot, slotKey: string, howToOf: (x: { exerciseId: string; exerciseName: string }) => { catalogueKey: string; name: string } | null): PopupLinks {
+  const slot = slotsOf(snap.workout.blocks).find((s) => s.key === slotKey);
+  if (slot === undefined) return { howTo: null, history: null };
+  const f = snap.facts[slot.exerciseId];
+  const name = f?.name ?? 'Exercise';
+  const item = snap.items[slotKey] ?? null;
+  return {
+    howTo: howToOf({ exerciseId: slot.exerciseId, exerciseName: name }),
+    history: f?.hasHistory === true ? { exerciseId: slot.exerciseId, name, ...(item === null ? {} : { equipmentId: item }), ...(snap.gymId === null ? {} : { gymId: snap.gymId }) } : null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Start prompt (§2.8)
 

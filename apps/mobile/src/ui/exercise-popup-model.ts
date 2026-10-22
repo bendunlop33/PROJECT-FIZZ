@@ -36,6 +36,9 @@ export const POPUP_COPY = {
   deleteSet: 'Delete set',
   type: 'Type',
   cancel: 'Cancel',
+  /** (22 Oct) The links the overview's rows had: the exercise guide and its history. */
+  howTo: 'How to',
+  history: 'History',
 } as const;
 
 export type PopupField = 'reps' | 'kg' | 'rpe';
