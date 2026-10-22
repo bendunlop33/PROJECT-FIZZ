@@ -59,6 +59,8 @@ import {
   draftSavedRoutineId,
   plannedAsDraftPlan,
   fitWorkoutToTime,
+  refitWorkoutToTime,
+  withOriginalRows,
   timeFitChanges,
   unfitWorkout,
   defaultMain,
@@ -1010,6 +1012,16 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   };
 
   /**
+   * (22 Oct, review R1) The two copies a change under Time works on: `original`, the whole workout (what the length
+   * before the first Time change brings back), and `work`, the same with each exercise Ben edited after a fit as he
+   * has it (the sets the fit took from it held). Time fits `work`; with no fit both are the workout as it stands.
+   */
+  const untimedParts = (stored: BuilderSetup | null | undefined, w: BuilderWorkout): { original: BuilderWorkout; work: BuilderWorkout } => {
+    const t = timeFitOf(stored);
+    return t === null ? { original: w, work: w } : { original: unfitWorkout(t, w), work: unfitWorkout(t, w, { hold: true }) };
+  };
+
+  /**
    * (22 Oct) A set-up whose workout is being rebuilt (Reload, the coach's version): no live Time fit; when one was
    * live, back to its length and rest level before the first Time change (the rebuilt workout isn't fitted).
    */
@@ -1050,18 +1062,20 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   };
 
   /**
-   * (22 Oct, review B2 and Gym changed) Time again on a changed original: `original` is the workout with the fit undone
-   * and the change made (Set up merged in, the new gym's loads); with Time in use it's fitted to Time's length from
-   * the set-up's, so the note, its Undo and more time keep working. Time not in use: the original as it is.
+   * (22 Oct, review B2, R1 and Gym changed) Time again on a changed workout: `parts` are the two copies
+   * (`untimedParts`) with the change made to both (Set up merged in, the new gym's loads); with Time in use, `work` is
+   * fitted to Time's length from the set-up's, so the note, its Undo and more time keep working and an exercise Ben
+   * edited after a fit keeps his sets (what the fit took from it stays held). Time not in use: the original as it is.
    */
-  const retimed = (setup: BuilderSetup, original: BuilderWorkout, env: BuilderEnv): { workout: BuilderWorkout; setup: BuilderSetup } => {
+  const retimed = (setup: BuilderSetup, parts: { original: BuilderWorkout; work: BuilderWorkout }, env: BuilderEnv): { workout: BuilderWorkout; setup: BuilderSetup } => {
+    const { original, work } = parts;
     const out: BuilderSetup = { ...setup };
     const from = setup.timeFrom ?? setup.timeFit?.fromMinutes;
     delete out.timeFit;
     delete out.restLevel;
     if (original.restLevel !== 'normal') out.restLevel = original.restLevel;
     if (from === undefined) return { workout: original, setup: out };
-    const r = fitWorkoutToTime({ current: original, fit: null, minutes: from, to: setup.minutes, ctx: env.ctx, mainGroup: mainGroupOf(original, setup, env), supersets: setup.supersets });
+    const r = refitWorkoutToTime({ original, work, fromMinutes: from, to: setup.minutes, ctx: env.ctx, mainGroup: mainGroupOf(original, setup, env), supersets: setup.supersets });
     return { workout: r.workout, setup: withTimeFields(out, from, r, env) };
   };
 
@@ -1272,26 +1286,41 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const v = currentDraftVersion(current);
         const stored = builderSetupOf(current) ?? storedSetup(pageSetup(current), {});
         // (22 Oct review) A live Time fit is undone first: the whole original moves to the new gym (what the fit cut
-        // included), then it's fitted to Time again there, so the note, its Undo and more time keep working.
-        let workout = untimed(stored, fromDraftPlan(v.plan, stored.restLevel ?? 'normal'));
-        const missing = await envFor(p, { gymId: gym?.id ?? null, exerciseIds: exerciseIdsOf(workout), keySeed: `${current.id}:${w.opId}:gym` });
-        const lacking = slotsOf(workout.blocks).filter((s) => !missing.doable(s.exerciseId));
+        // included), then it's fitted to Time again there, so the note, its Undo and more time keep working. The move
+        // is made to both copies (review R1): an exercise Ben edited after a fit keeps his sets; the fit's stay held.
+        const parts = untimedParts(stored, fromDraftPlan(v.plan, stored.restLevel ?? 'normal'));
+        const missing = await envFor(p, { gymId: gym?.id ?? null, exerciseIds: exerciseIdsOf(parts.original), keySeed: `${current.id}:${w.opId}:gym` });
+        const lacking = slotsOf(parts.original.blocks).filter((s) => !missing.doable(s.exerciseId));
         const groups = [...new Set(lacking.flatMap((s) => (missing.info(s.exerciseId)?.group === undefined ? [] : [missing.info(s.exerciseId)?.group as BuilderGroup])))];
-        const env = await envFor(p, { gymId: gym?.id ?? null, exerciseIds: exerciseIdsOf(workout), groups, keySeed: `${current.id}:${w.opId}` });
+        const env = await envFor(p, { gymId: gym?.id ?? null, exerciseIds: exerciseIdsOf(parts.original), groups, keySeed: `${current.id}:${w.opId}` });
         if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env, toast: null };
         if (gym === null || gym.id === v.request.gymId) return { refused: 'changed_since', env };
-        const swapped = new Set<string>();
-        for (const s of lacking) {
-          const g = env.info(s.exerciseId)?.group;
-          const inWorkout = new Set(slotsOf(workout.blocks).map((x) => x.exerciseId));
-          const to = g === undefined ? undefined : env.pool(g).find((id) => !inWorkout.has(id) && env.doable(id));
-          if (to === undefined) continue;
-          const r = applyBuilderEdit(workout, { kind: 'swap', slotKey: s.key, exerciseId: to }, env.ctx);
-          if (r.ok) {
-            workout = r.workout;
+        /**
+         * Each exercise this gym can't do, swapped for its group's best one here. (Review R2) The gym's swap, not Ben's
+         * edit: the slot keeps its own `touched` (an exercise he edited stays his), so Time can still shorten or leave
+         * out what it swapped in.
+         */
+        const swapIn = (start: BuilderWorkout): { workout: BuilderWorkout; swapped: Set<string> } => {
+          let workout = start;
+          const swapped = new Set<string>();
+          for (const s of lacking) {
+            const g = env.info(s.exerciseId)?.group;
+            const inWorkout = new Set(slotsOf(workout.blocks).map((x) => x.exerciseId));
+            const to = g === undefined ? undefined : env.pool(g).find((id) => !inWorkout.has(id) && env.doable(id));
+            if (to === undefined) continue;
+            const r = applyBuilderEdit(workout, { kind: 'swap', slotKey: s.key, exerciseId: to }, env.ctx);
+            if (!r.ok) continue;
+            const asItWas = (x: BuilderSlot): BuilderSlot => {
+              if (x.key !== s.key || s.touched === true) return x;
+              const out: BuilderSlot = { ...x };
+              delete out.touched;
+              return out;
+            };
+            workout = { ...r.workout, blocks: r.workout.blocks.map((b) => ({ ...b, slots: b.slots.map(asItWas) })) };
             swapped.add(s.key);
           }
-        }
+          return { workout, swapped };
+        };
         // (R2) Opened on a library or past workout: its own planner at the new gym (Fixed loads, its rule's targets), Ben's edits kept.
         const from = current.builderKey?.from;
         // Planned with the seed the draft's slots were made with (22 Oct review): each slot meets its own planned slot by key.
@@ -1313,24 +1342,29 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const plannedKeys = copyKeys(plannedList);
         const plannedSlots = new Map(plannedList.map((x, i) => [plannedKeys[i] ?? '', x] as const));
         const plannedItem = new Map(plannedList.map((x, i) => [plannedKeys[i] ?? '', srcPlan?.slots.find((y) => y.slotKey === x.key)?.checkedOn ?? null] as const));
-        const currentKeys = new Map(slotsOf(workout.blocks).map((x, i, all) => [x.key, copyKeys(all)[i] ?? ''] as const));
         const fromPlanned = new Map<string, string>();
-        const regym = (s: BuilderSlot): BuilderSlot => {
-          if (swapped.has(s.key)) return s;
-          const base = reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), slotLoadOf(env.ctx.loads(s.exerciseId), s.main));
-          const copy = currentKeys.get(s.key) ?? '';
-          const planned = plannedSlots.get(copy);
-          if (planned === undefined) return base;
-          const r = slotAtNewGym(s, planned, base);
-          if (r.fromPlanned) fromPlanned.set(s.key, copy);
-          return r.slot;
+        /** One copy at the new gym: swapped where this gym lacks an exercise, every other load worked out again here. */
+        const move = (start: BuilderWorkout): BuilderWorkout => {
+          const { workout, swapped } = swapIn(start);
+          const currentKeys = new Map(slotsOf(workout.blocks).map((x, i, all) => [x.key, copyKeys(all)[i] ?? ''] as const));
+          const regym = (s: BuilderSlot): BuilderSlot => {
+            if (swapped.has(s.key)) return s;
+            const base = reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), slotLoadOf(env.ctx.loads(s.exerciseId), s.main));
+            const copy = currentKeys.get(s.key) ?? '';
+            const planned = plannedSlots.get(copy);
+            if (planned === undefined) return base;
+            const r = slotAtNewGym(s, planned, base);
+            if (r.fromPlanned) fromPlanned.set(s.key, copy);
+            return r.slot;
+          };
+          return { ...workout, blocks: workout.blocks.map((b) => ({ ...b, slots: b.slots.map(regym) })) };
         };
-        workout = { ...workout, blocks: workout.blocks.map((b) => ({ ...b, slots: b.slots.map(regym) })) };
+        const moved = parts.work === parts.original ? { original: move(parts.original), work: null } : { original: move(parts.original), work: move(parts.work) };
         const kept: BuilderSetup = { ...stored };
         delete kept.gymKept;
         // (22 Oct review) Time again at the new gym (the original there is what more time brings back). Undo puts the
         // gym, the workout and the fit as they were back.
-        const timed = retimed(kept, workout, env);
+        const timed = retimed(kept, { original: moved.original, work: moved.work ?? moved.original }, env);
         const encoded = toDraftPlan(timed.workout, env.codec);
         const withItems: DraftPlan = { slots: encoded.slots.map((x) => (fromPlanned.has(x.slotKey) ? { ...x, checkedOn: plannedItem.get(fromPlanned.get(x.slotKey) ?? '') ?? null } : x)) };
         const plan = withSlotRevs(v.plan, withItems).plan;
@@ -1425,19 +1459,25 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         // (22 Oct review B2) Time in use: Set up's Length showed Time's. Left as it was, the change merges into the
         // original (the fit undone, its rests back) at the set-up's own length, then Time fits it again; a new Length
         // is Ben's set-up length and ends Time. Never a fit's rest level without its record.
+        // (Review R1) Merged into Ben's version (`work`: an exercise he edited after a fit keeps his sets, the fit's
+        // stay held) and the whole original alike; a new Length merges into the whole original (Time ends).
         const timeFrom = stored === null ? undefined : (stored.timeFrom ?? stored.timeFit?.fromMinutes);
         const lengthKept = timeFrom !== undefined && next.minutes === prev.minutes;
-        const workout = untimed(stored, fromDraftPlan(v.plan, stored?.restLevel ?? 'normal'));
+        const parts = untimedParts(stored, fromDraftPlan(v.plan, stored?.restLevel ?? 'normal'));
+        const workout = lengthKept ? parts.work : parts.original;
         const nextStored = storedSetup(lengthKept ? { ...next, minutes: timeFrom } : next, { ...(stored?.templateRoutineId === undefined ? {} : { templateRoutineId: stored.templateRoutineId }), ...(stored?.templateVersion === undefined ? {} : { templateVersion: stored.templateVersion }), ...(stored?.variationVersion === undefined ? {} : { variationVersion: stored.variationVersion }) });
         const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: exerciseIdsOf(workout), groups: next.groups.map((g) => g.group), keySeed: `${current.id}:${w.opId}` });
         if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env, toast: null };
         const m = mergeSetupChange(ruleSetupOf(storedSetup(timeFrom === undefined ? prev : { ...prev, minutes: timeFrom }, {})), ruleSetupOf(nextStored), workout, env.pool, env.ctx);
         const basis = { version: w.expectedVersion };
         if (m.kind === 'rebuild') {
-          const built = await buildFor(p, next, `${current.id}:${w.opId}`, v.request.gymId);
-          // A new workout, not fitted; with Length left as Time's, the set-up's own length still stands for the plan.
-          const setup = { ...storedSetup(next, openedVersions(built)), ...(lengthKept && timeFrom !== next.minutes ? { timeFrom } : {}) };
-          const plan = withSlotRevs(v.plan, toDraftPlan(built.workout, built.env.codec)).plan;
+          // A new workout. With Length left as Time's (review N10): built at the set-up's own length (it still stands
+          // for the plan), then Time fits it again, so its note, Undo and more time work as on any fit.
+          const built = await buildFor(p, lengthKept ? { ...next, minutes: timeFrom } : next, `${current.id}:${w.opId}`, v.request.gymId);
+          const asBuilt = { ...storedSetup(next, openedVersions(built)), ...(lengthKept && timeFrom !== next.minutes ? { timeFrom } : {}) };
+          const fitted = lengthKept ? retimed(asBuilt, { original: built.workout, work: built.workout }, built.env) : { workout: built.workout, setup: asBuilt };
+          const setup = fitted.setup;
+          const plan = withSlotRevs(v.plan, toDraftPlan(fitted.workout, built.env.codec)).plan;
           const day = buildDayOf(next);
           const change = builderDraftEdit(current, {
             opId: w.opId,
@@ -1456,7 +1496,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         // Length left as Time's: back to Time's length, fitted again from the merged original.
         // The slots keep their keys in a merge, so Gym changed still meets each one's planned slot (`slotSeed`).
         const merged: BuilderSetup = { ...nextStored, ...(stored?.slotSeed === undefined ? {} : { slotSeed: stored.slotSeed }) };
-        const timed = retimed(lengthKept ? { ...merged, minutes: next.minutes, timeFrom } : merged, after, env);
+        const original = lengthKept ? withOriginalRows(parts.original, after) : after;
+        const timed = retimed(lengthKept ? { ...merged, minutes: next.minutes, timeFrom } : merged, { original, work: after }, env);
         const plan = withSlotRevs(v.plan, toDraftPlan(timed.workout, env.codec)).plan;
         const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis, plan, setup: timed.setup, undoable: true });
         return { change, env, toast: null };
