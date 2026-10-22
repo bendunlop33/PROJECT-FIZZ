@@ -216,7 +216,7 @@ const ACT_DEFAULT_DAY = { Cycling: 5, Swimming: 2, Boxing: 3, Football: 6, HIIT:
 const S = {
   ai: true, page: 'check', check: {}, focus: 'Balanced', targets: [],
   acts: {}, pri: [], priority: [], runs: false, supersets: false, absWk: null, longRunDay: 6, runDays: [2, 6],
-  days: [0, 1, 3, 5], freq: 4, schedule: 'fixed', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
+  days: [0, 1, 3, 5], freq: 4, schedule: 'flexible', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
 };
 let undoStack = [];
@@ -381,12 +381,14 @@ function whenReached(lift, kg, lvl) {
 
 // ---------- Render ----------
 // One font size per row, shrunk until every label fits its equal-width box (min 10px), like the Today strip.
+// Session length buttons, 5-min steps (Ben, 22 Oct); Other takes any number.
+const LENS = [30, 35, 40, 45, 50, 55, 60];
 function fitSegs() {
   // One box width for every option on the page (Ben, 22 Oct): the width four fit in a row; a longer label grows its own box only.
   const all = [...document.querySelectorAll('#scroll .seg .chip, #scroll .chips .chip.sm')];
   if (!all.length) return;
   const row = $('scroll').clientWidth, w = Math.floor((row - 3 * 6) / 4);
-  all.filter((b) => !b.dataset.freq && !/^len/.test(b.id)).forEach((b) => { b.style.minWidth = w + 'px'; });
+  all.filter((b) => !b.dataset.freq).forEach((b) => { b.style.minWidth = w + 'px'; });
 }
 function render() {
   $('scroll').style.paddingBottom = '';
@@ -668,6 +670,8 @@ function renderWeek() {
     <h1>Your week</h1>
     <div class="label">Sessions a week</div>
     <div class="seg">${[2, 3, 4, 5, 6, 7].map((n) => `<button class="chip" data-freq="${n}" aria-pressed="${S.freq === n}" style="min-width:0;flex:1 1 0">${n}</button>`).join('')}</div>
+    ${(() => { S.lenOther = S.lenOther || !LENS.includes(S.length); return ''; })()}<div class="label">Session length (min)</div>
+    <div class="seg">${LENS.map((n) => `<button class="chip" data-len="${n}" aria-pressed="${!S.lenOther && S.length === n}">${n}</button>`).join('')}${S.lenOther ? `<input id="lenIn" class="chip" type="number" inputmode="numeric" min="15" max="180" step="5" value="${S.length}" aria-label="Minutes" style="width:78px;text-align:center;font:inherit;font-size:13.5px;border-radius:12px;min-height:36px;background:var(--accent-sub,var(--surface2));color:var(--text);border:1px solid var(--accent,var(--text))">` : `<button class="chip" id="lenOther" aria-pressed="false">Other</button>`}</div>
     <div class="label">Split</div>
     <div class="seg">${Object.entries(SPLITS).map(([k, t]) => `<button class="chip" data-split="${k}" aria-pressed="${splitKind() === k}">${k === suggestedSplit(S.freq) ? '✦ ' : ''}${t}</button>`).join('')}</div>
     ${nextWeekStart() ? `<div class="note">Rotates: next week starts with ${nextWeekStart()}</div>` : ''}
@@ -676,8 +680,6 @@ function renderWeek() {
     ${S.schedule === 'fixed' ? dayRow('data-day', (i) => S.days.includes(i), false) : ''}
     ${S.runs ? `<div class="label">Runs · long run ${WD[S.longRunDay]} <button class="link dim" id="longRun" style="min-height:24px;padding:0 0 0 6px;font-size:12px;letter-spacing:0;text-transform:none">Change</button></div>${dayRow('data-run', (i) => S.runDays.includes(i), true)}` : ''}
     ${Object.keys(S.acts).map((a) => `<div class="label">${esc(a)}</div>${dayRow('data-actday-' + a.replace(/\W/g, ''), (i) => S.acts[a].includes(i), true).replaceAll('data-actday-' + a.replace(/\W/g, '') + '="', `data-actday="${esc(a)}|`)}`).join('')}
-    <div class="label">Session length</div>
-    <div class="seg" style="align-items:center"><button class="chip" id="lenDown" aria-label="Shorter" style="min-width:44px">−</button><span style="min-width:72px;text-align:center;font-variant-numeric:tabular-nums">${S.length} min</span><button class="chip" id="lenUp" aria-label="Longer" style="min-width:44px">＋</button></div>
     <div class="label">Supersets</div>
     <div class="yn" role="group">${['No', 'Yes'].map((o) => `<button data-ss="${o}" aria-pressed="${(S.supersets ? 'Yes' : 'No') === o}">${o}</button>`).join('')}</div>
     <div class="label">Gym</div>
@@ -693,8 +695,9 @@ function renderWeek() {
   document.querySelectorAll('[data-actday]').forEach((b) => b.onclick = () => { const [a, d] = b.dataset.actday.split('|'); const n = +d; S.acts[a] = S.acts[a].includes(n) ? S.acts[a].filter((x) => x !== n) : [...S.acts[a], n]; render(); });
   document.querySelectorAll('[data-run]').forEach((b) => b.onclick = () => { const d = +b.dataset.run; S.runDays = S.runDays.includes(d) ? S.runDays.filter((x) => x !== d) : [...S.runDays, d]; if (!S.runDays.includes(S.longRunDay)) S.longRunDay = S.runDays.at(-1) ?? 6; render(); });
   if ($('longRun')) $('longRun').onclick = () => { const i = S.runDays.indexOf(S.longRunDay); S.longRunDay = S.runDays[(i + 1) % S.runDays.length]; render(); };
-  $('lenDown').onclick = () => { S.length = Math.max(20, S.length - 5); render(); };
-  $('lenUp').onclick = () => { S.length = Math.min(150, S.length + 5); render(); };
+  document.querySelectorAll('[data-len]').forEach((b) => b.onclick = () => { S.length = +b.dataset.len; S.lenOther = false; render(); });
+  if ($('lenOther')) $('lenOther').onclick = () => { S.lenOther = true; render(); $('lenIn').focus(); $('lenIn').select(); };
+  if ($('lenIn')) $('lenIn').onchange = (e) => { const v = Math.round(+e.target.value); if (v > 0) S.length = Math.max(15, Math.min(180, v)); if (LENS.includes(S.length)) S.lenOther = false; render(); };
   $('next').onclick = () => {
     if (S.schedule === 'fixed' && S.days.length !== S.freq) { toast(`Pick ${S.freq} days`, false); return; }
     if (S.schedule === 'flexible') S.days = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] }[S.freq];
