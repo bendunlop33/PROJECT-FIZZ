@@ -35,8 +35,8 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .chip { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text2); font: 600 15px var(--ui); cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .seg { display: grid; gap: 4px; }
-.seg .chip { padding: 0 5px; min-width: 0; white-space: nowrap; overflow: hidden; border-radius: 12px; font-size: 14px; }
-.chip.sm { min-height: 36px; font-size: 14px; padding: 0 12px; }
+.seg .chip { min-height: 40px; padding: 0 5px; min-width: 0; white-space: nowrap; overflow: hidden; border-radius: 12px; font-size: 14px; }
+.chip.sm { min-height: 40px; font-size: 14px; padding: 0 12px; border-radius: 12px; }
 .stepper { display: flex; align-items: center; gap: 8px; }
 .stepper button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); font-size: 20px; cursor: pointer; }
 .stepper span { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -306,13 +306,14 @@ function whenReached(lift, kg, lvl) {
 // ---------- Render ----------
 // One font size per row, shrunk until every label fits its equal-width box (min 10px), like the Today strip.
 function fitSegs() {
-  document.querySelectorAll('.seg').forEach((row) => {
-    const bs = [...row.querySelectorAll('.chip')];
-    let size = 14;
-    const fits = () => bs.every((b) => b.scrollWidth <= b.clientWidth);
-    bs.forEach((b) => { b.style.fontSize = size + 'px'; });
-    while (!fits() && size > 10) { size -= 0.5; bs.forEach((b) => { b.style.fontSize = size + 'px'; }); }
-  });
+  // One text size for every option box on the page: the largest size at which every equal-width box fits (min 11px).
+  const segs = [...document.querySelectorAll('.seg .chip')];
+  const all = [...segs, ...document.querySelectorAll('#scroll .chips .chip.sm')];
+  if (!segs.length) return;
+  let size = 14;
+  const set = () => all.forEach((b) => { b.style.fontSize = size + 'px'; });
+  set();
+  while (!segs.every((b) => b.scrollWidth <= b.clientWidth) && size > 11) { size -= 0.5; set(); }
 }
 function render() {
   const steps = ['Goals', 'Week', 'Your plan'];
