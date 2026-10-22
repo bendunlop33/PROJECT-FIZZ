@@ -182,14 +182,14 @@ const HIST = {
   'Deadlift': { kg: 150, reps: 5, none: true },
   'Front squat': { kg: 100, reps: 5, none: true },
   'Incline bench press': { kg: 80, reps: 8, none: true },
-  'Incline DB press': { kg: 30, reps: 10, last: '30 each × 10', uses: 14 },
+  'Incline DB press': { each: true, kg: 30, reps: 10, last: '30 each × 10', uses: 14 },
   'Lat pulldown': { kg: 70, reps: 10, last: '70 × 10' },
   'Leg press': { kg: 200, reps: 10, last: '200 × 10' },
-  'Shrugs': { kg: 30, reps: 15, last: '30 each × 15', uses: 2, skips: 3 },
+  'Shrugs': { each: true, kg: 30, reps: 15, last: '30 each × 15', uses: 2, skips: 3 },
   'Cable fly': { kg: 20, reps: 12, last: '20 × 12', uses: 9 },
-  'Lateral raise': { kg: 10, reps: 15, last: '10 each × 15' },
+  'Lateral raise': { each: true, kg: 10, reps: 15, last: '10 each × 15' },
   'Triceps pushdown': { kg: 35, reps: 12, last: '35 × 12' },
-  'Hammer curl': { kg: 16, reps: 12, last: '16 each × 12' },
+  'Hammer curl': { each: true, kg: 16, reps: 12, last: '16 each × 12' },
   'Leg curl': { kg: 50, reps: 12, last: '50 × 12' },
   'Calf raise': { kg: 80, reps: 15, last: '80 × 15' },
   'Pull-up': { kg: 0, reps: 8, last: 'BW × 8' },
@@ -206,6 +206,8 @@ const HIST = {
   'Copenhagen plank': { kg: 0, reps: 8, none: true }, 'Hip abduction': { kg: 50, reps: 15, none: true },
   'Cable hip abduction': { kg: 7.5, reps: 12, none: true }, 'Wrist curl': { kg: 20, reps: 15, none: true },
   'Reverse curl': { kg: 20, reps: 12, none: true }, 'Cable woodchop': { kg: 15, reps: 12, none: true },
+  'DB bench press': { kg: 34, each: true, reps: 8, none: true }, 'Hack squat': { kg: 100, reps: 10, none: true },
+  'Bulgarian split squat': { kg: 16, each: true, reps: 10, none: true }, 'Assisted pull-up': { kg: 0, reps: 10, none: true, assist: true },
 };
 // Day templates: [exercise, muscle, role]
 const DAYS = {
@@ -304,10 +306,10 @@ const ELIG = {
 };
 // Exercises per muscle: [name, role (c compound / i isolation), specific targets it covers, day types it skips].
 const EX = {
-  Chest: [['Incline DB press', 'c', ['Upper chest']], ['Cable fly', 'i'], ['Bench press', 'c'], ['Incline bench press', 'c', ['Upper chest']], ['Low-to-high cable fly', 'i', ['Upper chest']]],
-  Back: [['Lat pulldown', 'c', ['Lats']], ['Chest-supported row', 'c', ['Upper back']], ['Pull-up', 'c', ['Lats']], ['Barbell row', 'c', ['Upper back']], ['Shrugs', 'i', ['Traps']]],
-  Shoulders: [['Lateral raise', 'i', ['Side delts']], ['Face pull', 'i', ['Rear delts']], ['DB shoulder press', 'c', [], ['Pull']], ['Rear delt fly', 'i', ['Rear delts']]],
-  Quads: [['Leg press', 'c'], ['Leg extension', 'i'], ['Front squat', 'c']],
+  Chest: [['Incline DB press', 'c', ['Upper chest']], ['Cable fly', 'i'], ['Bench press', 'c'], ['Incline bench press', 'c', ['Upper chest']], ['Low-to-high cable fly', 'i', ['Upper chest']], ['DB bench press', 'c']],
+  Back: [['Lat pulldown', 'c', ['Lats']], ['Chest-supported row', 'c', ['Upper back']], ['Pull-up', 'c', ['Lats']], ['Barbell row', 'c', ['Upper back']], ['Shrugs', 'i', ['Traps']], ['Assisted pull-up', 'c', ['Lats']]],
+  Shoulders: [['Lateral raise', 'i', ['Side delts']], ['Face pull', 'i', ['Rear delts']], ['DB shoulder press', 'c', [], ['Pull']], ['Rear delt fly', 'i', ['Rear delts']], ['Machine shoulder press', 'c', [], ['Pull']]],
+  Quads: [['Leg press', 'c'], ['Leg extension', 'i'], ['Front squat', 'c'], ['Hack squat', 'c'], ['Bulgarian split squat', 'c']],
   Hamstrings: [['Romanian deadlift', 'c'], ['Leg curl', 'i']],
   Calves: [['Calf raise', 'i'], ['Seated calf raise', 'i']],
   Biceps: [['Barbell curl', 'i'], ['Hammer curl', 'i'], ['Incline DB curl', 'i']],
@@ -326,12 +328,39 @@ const PRIOR = { 'Incline DB press': 0.8, 'Cable fly': 0.7, 'Bench press': 0.9, '
   'Lateral raise': 0.85, 'Face pull': 0.7, 'DB shoulder press': 0.75, 'Rear delt fly': 0.6,
   'Leg press': 0.8, 'Leg extension': 0.7, 'Front squat': 0.5, 'Romanian deadlift': 0.8, 'Leg curl': 0.8, 'Calf raise': 0.7, 'Seated calf raise': 0.6,
   'Barbell curl': 0.7, 'Hammer curl': 0.7, 'Incline DB curl': 0.65, 'Triceps pushdown': 0.8, 'Overhead triceps extension': 0.7,
-  'Hip thrust': 0.75, 'Cable kickback': 0.5, 'Hip adduction': 0.7, 'Copenhagen plank': 0.5, 'Hip abduction': 0.7, 'Cable hip abduction': 0.5, 'Wrist curl': 0.6, 'Reverse curl': 0.5 };
+  'Hip thrust': 0.75, 'Cable kickback': 0.5, 'Hip adduction': 0.7, 'Copenhagen plank': 0.5, 'Hip abduction': 0.7, 'Cable hip abduction': 0.5, 'Wrist curl': 0.6, 'Reverse curl': 0.5,
+  'DB bench press': 0.8, 'Hack squat': 0.7, 'Bulgarian split squat': 0.6, 'Assisted pull-up': 0.6, 'Machine shoulder press': 0.7, 'Back squat': 0.85 };
+// Your exercises (Ben, 22 Oct): up to 8 quick either/or questions before the plan is built, so it's personal from day one.
+// Each option is one or more exercises; the pick becomes a like (first choice for that muscle, and a main lift where it
+// is one). Either = no preference. ✦ marks what his history already favours.
+const PREF_Q = [
+  { id: 'flat', q: 'Flat press', m: 'Chest', opts: [['Bench press'], ['DB bench press']], labels: ['Barbell', 'Dumbbell'] },
+  { id: 'incline', q: 'Incline press', m: 'Chest', opts: [['Incline bench press'], ['Incline DB press']], labels: ['Barbell', 'Dumbbell'] },
+  { id: 'squat', q: 'Main leg lift', m: 'Quads', opts: [['Back squat'], ['Leg press'], ['Hack squat']], labels: ['Squat', 'Leg press', 'Hack squat'] },
+  { id: 'quads', q: 'Quad extra', m: 'Quads', opts: [['Leg extension'], ['Bulgarian split squat']], labels: ['Leg extension', 'Split squat'] },
+  { id: 'vpull', q: 'Pull-ups', m: 'Back', opts: [['Pull-up'], ['Assisted pull-up'], ['Lat pulldown']], labels: ['Bodyweight', 'Assisted', 'Pulldown'] },
+  { id: 'row', q: 'Row', m: 'Back', opts: [['Barbell row'], ['Chest-supported row']], labels: ['Barbell', 'Supported'] },
+  { id: 'hips', q: 'Hips', m: 'Glutes', opts: [['Hip thrust'], ['Hip adduction', 'Hip abduction']], labels: ['Hip thrust', 'In/out machines'], when: () => S.spec.some((t) => ['Glutes', 'Adductors', 'Abductors'].includes(t)) || S.priority.includes('Legs') },
+  { id: 'ham', q: 'Hamstrings', m: 'Hamstrings', opts: [['Romanian deadlift'], ['Leg curl']], labels: ['RDL', 'Leg curl'] },
+  { id: 'shp', q: 'Shoulder press', m: 'Shoulders', opts: [['DB shoulder press'], ['Machine shoulder press']], labels: ['Dumbbell', 'Machine'] },
+  { id: 'bi', q: 'Biceps', m: 'Biceps', opts: [['Barbell curl'], ['Hammer curl'], ['Incline DB curl']], labels: ['Barbell', 'Hammer', 'Incline DB'] },
+  { id: 'tri', q: 'Triceps', m: 'Triceps', opts: [['Triceps pushdown'], ['Overhead triceps extension']], labels: ['Pushdown', 'Overhead'] },
+  { id: 'calf', q: 'Calves', m: 'Calves', opts: [['Calf raise'], ['Seated calf raise']], labels: ['Standing', 'Seated'] },
+];
+// Priorities and targets first, then the usual order; at most 8.
+const prefQs = () => PREF_Q.filter((q) => !q.when || q.when()).sort((a, b) => ((isPri(b.m) || isSpec(b.m)) ? 1 : 0) - ((isPri(a.m) || isSpec(a.m)) ? 1 : 0)).slice(0, 8);
+const prefLikes = () => Object.entries(S.prefAns ?? {}).flatMap(([id, i]) => i === 'either' ? [] : (PREF_Q.find((q) => q.id === id)?.opts[i] ?? []));
+const allLikes = () => [...(S.likes ?? []), ...prefLikes()];
+// The options he didn't pick rank below everything else for that muscle (still usable if nothing else fits).
+const prefLosers = () => Object.entries(S.prefAns ?? {}).flatMap(([id, i]) => i === 'either' ? [] : (PREF_Q.find((q) => q.id === id)?.opts ?? []).filter((_, j) => j !== i).flat());
+// ✦: the option his history favours most, when he has history on any of them.
+const prefSug = (q) => { const sc = q.opts.map((o) => Math.max(...o.map((n) => HIST[n] && !HIST[n].none ? (HIST[n].uses ?? 4) * (HIST[n].stale ? 0.5 : 1) : 0))); const best = Math.max(...sc); return best > 0 ? sc.indexOf(best) : -1; };
 const PREF_K = 5; // sessions of his own before his evidence and the default weigh the same
 function prefScore(n) {
   const h = HIST[n] ?? {}, prior = PRIOR[n] ?? 0.5;
   if ((S.never ?? []).includes(n)) return -1;
-  if ((S.likes ?? []).includes(n)) return 2;
+  if (allLikes().includes(n)) return 2;
+  if (prefLosers().includes(n)) return 0.01;
   const uses = h.none ? 0 : (h.uses ?? (h.last ? 4 : 0)) * (h.stale ? 0.5 : 1), skips = h.skips ?? 0;
   const mine = uses + skips ? uses / (uses + skips) : 0;
   return (prior * PREF_K + mine * (uses + skips)) / (PREF_K + uses + skips);
@@ -354,9 +383,22 @@ function aimFor(m) {
 }
 // Working sets that fit a session: ~3 min per set with rest, ~2.3 with supersets, after an 8-minute warm-up.
 const capSets = () => Math.floor((S.length - 8) / (S.supersets ? 2.3 : 3));
-const mainOf = (focus, variant) => ((variant === 'B' && DAYS_B[focus]) || DAYS[focus]).ex.find((x) => x[2] === 'main') ?? null;
+// A main lift follows his answers on Your exercises (Ben, 22 Oct): a liked alternative replaces it, a never moves it on.
+const MAIN_ALT = { 'Bench press': ['DB bench press'], 'Back squat': ['Leg press', 'Hack squat'], 'Incline bench press': ['Incline DB press'], 'Pull-up': ['Assisted pull-up', 'Lat pulldown'], 'DB shoulder press': ['Machine shoulder press'] };
+const mainOf = (focus, variant) => {
+  const mn = ((variant === 'B' && DAYS_B[focus]) || DAYS[focus]).ex.find((x) => x[2] === 'main'); if (!mn) return null;
+  const alts = MAIN_ALT[mn[0]] ?? [], liked = alts.find((a) => allLikes().includes(a));
+  if (liked && !allLikes().includes(mn[0])) return [liked, mn[1], 'main'];
+  if ((S.never ?? []).includes(mn[0])) return alts[0] ? [alts[0], mn[1], 'main'] : null;
+  return mn;
+};
 function mkEx(n, m, role, sets, tags = []) {
   const h = HIST[n];
+  if (role === 'main' && h.kg === 0) {
+    // Bodyweight main lift (pull-ups): sets of reps, adding reps week to week.
+    const backs = 2 + (S.effort === 'Push' ? 1 : 0) - (S.effort === 'Maintain' ? 1 : 0);
+    return { n, m, role, tags, bw: true, sets: backs + 1, reps: h.reps, kgv: 'BW', kg: h.assist ? 'Assist' : 'BW', short: `${backs + 1} × ${h.reps}`, line: `${backs + 1} × ${h.reps}`, why: h.last ? `Last time ${h.last}` : 'No history yet (est.)' };
+  }
   if (role === 'main') {
     const step = h.each ? 2 : 2.5, top = snapFor(n, h.kg + step), back = snapFor(n, top * 0.9);
     const strength = S.focus === 'Strength';
@@ -365,7 +407,7 @@ function mkEx(n, m, role, sets, tags = []) {
   }
   const reps = Math.max(8, Math.min(15, h.reps));
   const kg = h.kg === 0 ? 'BW' : (h.reps >= 15 && !h.none ? snap(h.kg + 2.5) : h.kg);
-  return { n, m, role, tags, sets, reps, kgv: kg, short: `${sets} × ${reps}`, kg: kg === 'BW' ? 'BW' : `${kg}${h.each ? ' each' : ''}`, line: `${sets} × ${kg}${kg === 'BW' ? '' : ' kg'} × ${reps}`, why: h.none || !h.last ? 'No history yet (est.)' : `Last time ${h.last}` };
+  return { n, m, role, tags, sets, reps, kgv: kg, short: `${sets} × ${reps}`, kg: kg === 'BW' ? (h.assist ? 'Assist' : 'BW') : `${kg}${h.each ? ' each' : ''}`, line: `${sets} × ${kg}${kg === 'BW' ? '' : ' kg'} × ${reps}`, why: h.none || !h.last ? 'No history yet (est.)' : `Last time ${h.last}` };
 }
 const setLine = (e) => { if (e.role === 'main') return; e.short = `${e.sets} × ${e.reps}`; e.line = `${e.sets} × ${e.kgv}${e.kgv === 'BW' ? '' : ' kg'} × ${e.reps}`; };
 const daySets = (d) => d.ex.reduce((s, e) => s + e.sets, 0);
@@ -379,6 +421,10 @@ const isDeload = (w) => S.effort === 'Standard' ? (S.weeks >= 4 && w === S.weeks
 const progWeeks = (w) => { let k = 0; for (let i = 1; i < w; i++) if (!isDeload(i)) k++; return k; };
 function atWeek(e, w) {
   const k = S.effort === 'Maintain' ? 0 : progWeeks(w), dl = isDeload(w);
+  if (e.role === 'main' && e.bw) {
+    const reps = e.reps + Math.min(k, 4), sets = dl ? Math.max(2, e.sets - 1) : e.sets;
+    return { sets, reps, short: `${sets} × ${reps}`, kg: e.kg, dl };
+  }
   if (e.role === 'main') {
     // Barbell: weight rises at the weekly rate. Dumbbell (2 kg jumps are big): reps first, 6 → 7 → 8, then the next dumbbell.
     const rate = EFFORT[S.effort].pct * (FOCUS_GAIN[S.focus] ?? 1), db = HIST[e.n]?.each;
@@ -392,7 +438,7 @@ function atWeek(e, w) {
   for (let i = 0; i < k; i++) { if (reps < hi || kg === 'BW') reps = Math.min(hi, reps + 1); else { kg += step; reps = lo; } }
   if (dl && kg !== 'BW') kg = snap(kg * 0.9, h.each ? 2 : 2.5);
   const sets = dl ? Math.max(1, Math.round(e.sets * 0.66)) : e.sets;
-  return { sets, short: `${sets} × ${reps}`, kg: kg === 'BW' ? 'BW' : `${kg}${h.each ? ' each' : ''}`, dl };
+  return { sets, short: `${sets} × ${reps}`, kg: kg === 'BW' ? (h.assist ? 'Assist' : 'BW') : `${kg}${h.each ? ' each' : ''}`, dl };
 }
 function build() {
   const days = [...S.days].sort((a, b) => a - b);
@@ -471,6 +517,7 @@ function build() {
   // Turn each day's sets into exercises of 2–4 sets, rotating through the muscle's list so repeat days differ.
   const used = (d, n) => d.ex.some((e) => e.n === n);
   const add = (d, m, o, sets) => { const ex = d.ex.find((e) => e.n === o[0]); if (ex) { ex.sets += sets; setLine(ex); } else d.ex.push(mkEx(o[0], m, o[1], sets, o[2] ?? [])); };
+  const seenM = {};
   plan.forEach((d, di) => {
     [...cnt].filter(([k]) => k.startsWith(`${di}|`)).sort(([a], [b]) => (b.split('|')[2] ? 1 : 0) - (a.split('|')[2] ? 1 : 0)).forEach(([k, v]) => {
       const [, m, t] = k.split('|');
@@ -482,7 +529,8 @@ function build() {
       const main = d.ex.find((e) => e.role === 'main' && e.m === m); let s = v - (main && !t ? main.sets : 0);
       if (s <= 0) return;
       const list = ranked(EX[m]).filter(([, , tags = [], skip = []]) => !skip.includes(d.focus) && (!t || tags.includes(t)));
-      const start = (di + (d.variant === 'B' ? 1 : 0)) % list.length;
+      // First day for this muscle takes his top-ranked exercise, the next day the second; extra chunks go down the list.
+      const occ = (seenM[m + (t ?? '')] = (seenM[m + (t ?? '')] ?? -1) + 1), start = occ % Math.min(2, list.length);
       const rot = [...list.slice(start), ...list.slice(0, start)];
       chunks(s).forEach((c, j) => add(d, m, rot.find(([n]) => !used(d, n)) ?? rot[j % rot.length], c));
     });
@@ -587,7 +635,7 @@ function fitSegs() {
   const all = [...document.querySelectorAll('#scroll .seg .chip, #scroll .chips .chip.sm')];
   if (!all.length) return;
   // Four to a row of the box they sit in.
-  all.filter((b) => !b.dataset.freq && !b.dataset.wk && !b.dataset.focus && !b.dataset.eff).forEach((b) => { const row = b.parentElement.clientWidth; b.style.minWidth = Math.floor((row - 3 * 6) / 4) + 'px'; });
+  all.filter((b) => !b.dataset.freq && !b.dataset.wk && !b.dataset.focus && !b.dataset.eff && !b.dataset.pq && !b.dataset.week).forEach((b) => { const row = b.parentElement.clientWidth; b.style.minWidth = Math.floor((row - 3 * 6) / 4) + 'px'; });
 }
 function render() {
   $('scroll').style.paddingBottom = '';
@@ -596,8 +644,8 @@ function render() {
   $('steps').textContent = S.applied ? 'Your plan' : `${i + 1} of ${f.length}`;
   $('back').style.visibility = i === 0 || S.applied ? 'hidden' : 'visible';
   requestAnimationFrame(fitSegs);
-  ({ goals: renderGoals, check: renderCheck, effort: renderAmbition, week: renderWeek, plan: renderPlan })[S.page]();
-  if (S.page === 'goals' || S.page === 'week') boxSections();
+  ({ goals: renderGoals, check: renderCheck, effort: renderAmbition, week: renderWeek, prefs: renderPrefs, plan: renderPlan })[S.page]();
+  if (S.page === 'goals' || S.page === 'week' || S.page === 'prefs') boxSections();
 }
 // Group each heading with its options; groups are separated by divider lines. Sections holding a card (What to expect) and a closing note stay as they are.
 function boxSections() {
@@ -797,7 +845,7 @@ const estFrom = (l, i) => { const r = SIMILAR[l]?.[i]; if (!r || !HIST[r.from]) 
 const shortName = (l) => SHORT[l] ?? l.replace('DB ', 'DB ').replace('Machine ', 'Machine ');
 // Pages: "Check your lifts" only when a main lift has no history or none in 8 weeks.
 const needsCheck = () => MAIN.some((l) => HIST[l].none || HIST[l].stale);
-const flow = () => [needsCheck() || S.checkSeen ? 'check' : null, 'goals', 'week', 'plan'].filter(Boolean);
+const flow = () => [needsCheck() || S.checkSeen ? 'check' : null, 'goals', 'week', 'prefs', 'plan'].filter(Boolean);
 function go(d) { const f = flow(); const i = Math.max(0, Math.min(f.length - 1, f.indexOf(S.page) + d)); S.page = f[i]; render(); }
 
 function renderCheck() {
@@ -907,7 +955,7 @@ function renderWeek() {
     <div class="label">Gym</div>
     <div class="seg"><button class="chip" style="padding:0 12px">${esc(S.gym)} ›</button></div>
     <div class="note">Days and length are your usual. On the day you can start any session or change its length.</div>`;
-  $('footer').innerHTML = `<button class="primary" id="next">${S.ai ? 'Build my plan' : 'Build my plan'}</button>`;
+  $('footer').innerHTML = `<button class="primary" id="next">Next: your exercises</button>`;
   document.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { const d = +b.dataset.day; if (S.days.includes(d)) S.days = S.days.filter((x) => x !== d); else if (S.days.length < S.freq) S.days = [...S.days, d]; else S.days = [...S.days.slice(1), d]; render(); });
   document.querySelectorAll('[data-split]').forEach((b) => b.onclick = () => { S.split = b.dataset.split; S.focusOver = {}; render(); });
   document.querySelectorAll('[data-sch]').forEach((b) => b.onclick = () => { S.schedule = b.dataset.sch; render(); });
@@ -924,10 +972,31 @@ function renderWeek() {
   $('next').onclick = () => {
     if (S.schedule === 'fixed' && S.days.length !== S.freq) { toast(`Pick ${S.freq} days`, false); return; }
     if (S.schedule === 'flexible') S.days = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] }[S.freq];
-    S.plan = build(); S.page = 'plan'; S.chat = []; S.open = -1; S.pageTop = true;
-    if (S.ai) S.chat.push({ who: 'co', text: coachIntro() });
-    render();
+    go(1);
   };
+}
+function startPlan() {
+  S.plan = build(); S.page = 'plan'; S.chat = []; S.open = -1; S.pageTop = true; S.week = 1;
+  if (S.ai) S.chat.push({ who: 'co', text: coachIntro() });
+  render();
+}
+function renderPrefs() {
+  const qs = prefQs(), ans = S.prefAns ?? (S.prefAns = {}), done = qs.every((q) => q.id in ans);
+  const dot = (ok) => `<span class="qdot${ok ? ' done' : S.prefFlag ? ' miss' : ''}" role="img" aria-label="${ok ? 'Answered' : 'Not answered'}"></span>`;
+  $('scroll').innerHTML = `
+    <h1>Your exercises</h1>
+    ${qs.map((q) => { const sug = prefSug(q); return `<div class="label q">${q.q}${dot(q.id in ans)}</div>
+    <div class="seg">${q.opts.map((o, i) => `<button class="chip" style="min-width:0;flex:1 1 0;padding:0 4px" data-pq="${q.id}|${i}" aria-pressed="${ans[q.id] === i}">${i === sug && !(q.id in ans) ? '✦ ' : ''}${esc(q.labels?.[i] ?? o[0])}</button>`).join('')}<button class="chip" style="min-width:0;flex:1 1 0;padding:0 4px" data-pq="${q.id}|either" aria-pressed="${ans[q.id] === 'either'}">Either</button></div>`; }).join('')}
+    <div class="label">Others I like</div>
+    <div class="chips">${(S.likes ?? []).map((n) => `<button class="chip sm" data-unlike="${esc(n)}" aria-pressed="true">${esc(n)} ×</button>`).join('')}<button class="chip sm" id="addLike">＋ Add</button></div>`;
+  $('footer').innerHTML = `<button class="primary" id="next">Build my plan</button>`;
+  document.querySelectorAll('[data-pq]').forEach((b) => b.onclick = () => { const [id, i] = b.dataset.pq.split('|'); ans[id] = i === 'either' ? 'either' : +i; render(); });
+  document.querySelectorAll('[data-unlike]').forEach((b) => b.onclick = () => { S.likes = S.likes.filter((x) => x !== b.dataset.unlike); render(); });
+  $('addLike').onclick = () => {
+    sheet(`<h2>Exercises you like</h2>${Object.entries(EX).filter(([m]) => !OWN.includes(m) || isSpec(m)).map(([m, l]) => `<div class="label">${m}</div><div class="chips">${l.map(([n]) => `<button class="chip sm" data-like="${esc(n)}" aria-pressed="${S.likes.includes(n)}">${esc(n)}</button>`).join('')}</div>`).join('')}`);
+    document.querySelectorAll('[data-like]').forEach((b) => b.onclick = () => { const n = b.dataset.like; S.likes = S.likes.includes(n) ? S.likes.filter((x) => x !== n) : [...S.likes, n]; b.setAttribute('aria-pressed', S.likes.includes(n)); render(); });
+  };
+  $('next').onclick = () => { if (done) { S.prefFlag = false; startPlan(); } else { S.prefFlag = true; render(); const t = [...document.querySelectorAll('.qdot.miss')][0]; if (t) t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } };
 }
 
 function coachIntro() {
@@ -960,7 +1029,7 @@ function renderPlan() {
     ${p.map((d, i) => `<div class="dcard ${S.open === i ? 'open' : ''}" data-card="${i}">
       <div class="dtop" data-toggle="${i}"><span><div class="nm">${S.schedule === 'flexible' ? i + 1 : WD[d.day]} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</div><div class="sub">${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
         <span class="rt">${d.ex.length} ex · ~${S.length}′<span class="chev">›</span></span></div>
-      <div class="ex"><div class="rows">${d.ex.map((e, k) => { const ss = S.supersets && e.pair; const x = atWeek(e, S.week); return `<div data-exw="${i}|${k}" style="display:grid;grid-template-columns:${ss ? '18px ' : ''}minmax(0,1fr) auto 70px;gap:8px;align-items:center;min-height:40px;border-bottom:1px solid var(--divider);font-size:15px">${ss ? `<span style="color:var(--text3);font-size:12px">${e.pair}</span>` : ''}<span style="${e.role === 'main' ? 'font-weight:600' : ''}">${esc(e.n)}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">${esc(x.short)}</span><span style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(x.kg))}${x.kg !== 'BW' && !String(x.kg).includes('each') ? ' kg' : ''}</span></div>`; }).join('')}</div>
+      <div class="ex"><div class="rows">${d.ex.map((e, k) => { const ss = S.supersets && e.pair; const x = atWeek(e, S.week); return `<div data-exw="${i}|${k}" style="display:grid;grid-template-columns:${ss ? '18px ' : ''}minmax(0,1fr) auto 70px;gap:8px;align-items:center;min-height:40px;border-bottom:1px solid var(--divider);font-size:15px">${ss ? `<span style="color:var(--text3);font-size:12px">${e.pair}</span>` : ''}<span style="${e.role === 'main' ? 'font-weight:600' : ''}">${esc(e.n)}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">${esc(x.short)}</span><span style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(x.kg))}${/^[\d.]+$/.test(String(x.kg)) ? ' kg' : ''}</span></div>`; }).join('')}</div>
         <div class="dact"><button class="link" data-swap="${i}">Change focus</button>${S.schedule === 'fixed' ? `<button class="link" data-move="${i}">Move day</button>` : ''}<button class="link dim" data-open="${i}">Open in builder ›</button></div>
       </div></div>`).join('')}
     <div class="label">Sets per week</div>
@@ -997,7 +1066,7 @@ function renderPlan() {
 }
 
 // ---------- Coach (simulated). Words decide: full description → build new; change request → edit; unclear → ask. ----------
-function snapshot() { return JSON.parse(JSON.stringify({ plan: S.plan, days: S.days, focus: S.focus, priority: S.priority, length: S.length, absWk: S.absWk, spec: S.spec, focusOver: S.focusOver, likes: S.likes, never: S.never })); }
+function snapshot() { return JSON.parse(JSON.stringify({ plan: S.plan, days: S.days, focus: S.focus, priority: S.priority, length: S.length, absWk: S.absWk, spec: S.spec, focusOver: S.focusOver, likes: S.likes, never: S.never, prefAns: S.prefAns })); }
 function restore(s) { Object.assign(S, s); }
 function coach(text) {
   S.chatScroll = true;
@@ -1105,7 +1174,7 @@ $('close').onclick = () => toast('Closes without changing your plan', false);
 function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.page === 'plan' && !on) S.chat = []; render(); }
 $('aiOn').onclick = () => setAi(true);
 $('aiOff').onclick = () => setAi(false);
-$('restart').onclick = () => { Object.assign(S, { ans: {}, flagged: false, spec: [], focusOver: {}, priAsk: null, actAsk: null, runs: false, acts: {}, pri: [], page: 'check', priority: [], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
+$('restart').onclick = () => { Object.assign(S, { ans: {}, flagged: false, spec: [], focusOver: {}, prefAns: {}, prefFlag: false, likes: [], never: [], priAsk: null, actAsk: null, runs: false, acts: {}, pri: [], page: 'check', priority: [], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
 $('editExisting').onclick = () => { S.ans = { wk: true, eff: true, focus: true }; S.priAsk = S.priAsk ?? 'No'; S.actAsk = S.actAsk ?? 'No'; S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
 render();
 </script>
