@@ -147,7 +147,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <button class="chip sm" id="editExisting" aria-pressed="false">Edit existing plan</button>
     </div>
   </div>
-  <p class="hint">Opens from Today "Set up a plan ›", Library › Your plan, Profile › Goal and the coach. Example data only. Try the coach: "make it 3 days", "no legs before my long run", "more chest", "swap Saturday to arms".</p>
+  <p class="hint">Opens from Today "Set up a plan ›", Library › Your plan, Profile › Goal and the coach. Example data only. Try the coach: "make it 3 days", "never leg extension", "I like hip thrust", "no legs before my long run", "more chest", "swap Saturday to arms".</p>
 
   <div class="phone" id="phone">
     <div class="status"><span>9:41</span><span>●●● 100%</span></div>
@@ -178,11 +178,11 @@ const HIST = {
   'Deadlift': { kg: 150, reps: 5, none: true },
   'Front squat': { kg: 100, reps: 5, none: true },
   'Incline bench press': { kg: 80, reps: 8, none: true },
-  'Incline DB press': { kg: 30, reps: 10, last: '30 each × 10' },
+  'Incline DB press': { kg: 30, reps: 10, last: '30 each × 10', uses: 14 },
   'Lat pulldown': { kg: 70, reps: 10, last: '70 × 10' },
   'Leg press': { kg: 200, reps: 10, last: '200 × 10' },
-  'Shrugs': { kg: 30, reps: 15, last: '30 each × 15' },
-  'Cable fly': { kg: 20, reps: 12, last: '20 × 12' },
+  'Shrugs': { kg: 30, reps: 15, last: '30 each × 15', uses: 2, skips: 3 },
+  'Cable fly': { kg: 20, reps: 12, last: '20 × 12', uses: 9 },
   'Lateral raise': { kg: 10, reps: 15, last: '10 each × 15' },
   'Triceps pushdown': { kg: 35, reps: 12, last: '35 × 12' },
   'Hammer curl': { kg: 16, reps: 12, last: '16 each × 12' },
@@ -242,7 +242,7 @@ const ACT_DEFAULT_DAY = { Cycling: 5, Swimming: 2, Boxing: 3, Football: 6, HIIT:
 
 // ---------- State ----------
 const S = {
-  ai: true, ans: {}, page: 'check', check: {}, focus: 'Balanced', targets: [], spec: [], focusOver: {},
+  ai: true, ans: {}, page: 'check', check: {}, focus: 'Balanced', targets: [], spec: [], focusOver: {}, likes: [], never: [],
   acts: {}, pri: [], priority: [], runs: false, supersets: false, absWk: null, longRunDay: 6, runDays: [2, 6],
   days: [0, 1, 3, 5], freq: 4, schedule: 'flexible', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
@@ -313,6 +313,26 @@ const EX = {
   Abductors: [['Hip abduction', 'i'], ['Cable hip abduction', 'i']],
   Forearms: [['Wrist curl', 'i'], ['Reverse curl', 'i']],
 };
+// Exercise preference (Ben, 22 Oct): a default score per exercise to start from, adapting to his own use.
+// PRIOR is a curated default (how effective, popular and easy to set up it is; researched catalogue values later).
+// His evidence: sessions done (recent ones count more), minus skips/swaps; it outweighs the default after ~5 sessions.
+// Explicit likes/never from the coach override both. Imported history (FitNotes etc.) counts as his evidence from day one.
+const PRIOR = { 'Incline DB press': 0.8, 'Cable fly': 0.7, 'Bench press': 0.9, 'Incline bench press': 0.7, 'Low-to-high cable fly': 0.5,
+  'Lat pulldown': 0.85, 'Chest-supported row': 0.75, 'Pull-up': 0.75, 'Barbell row': 0.7, 'Shrugs': 0.5,
+  'Lateral raise': 0.85, 'Face pull': 0.7, 'DB shoulder press': 0.75, 'Rear delt fly': 0.6,
+  'Leg press': 0.8, 'Leg extension': 0.7, 'Front squat': 0.5, 'Romanian deadlift': 0.8, 'Leg curl': 0.8, 'Calf raise': 0.7, 'Seated calf raise': 0.6,
+  'Barbell curl': 0.7, 'Hammer curl': 0.7, 'Incline DB curl': 0.65, 'Triceps pushdown': 0.8, 'Overhead triceps extension': 0.7,
+  'Hip thrust': 0.75, 'Cable kickback': 0.5, 'Hip adduction': 0.7, 'Copenhagen plank': 0.5, 'Hip abduction': 0.7, 'Cable hip abduction': 0.5, 'Wrist curl': 0.6, 'Reverse curl': 0.5 };
+const PREF_K = 5; // sessions of his own before his evidence and the default weigh the same
+function prefScore(n) {
+  const h = HIST[n] ?? {}, prior = PRIOR[n] ?? 0.5;
+  if ((S.never ?? []).includes(n)) return -1;
+  if ((S.likes ?? []).includes(n)) return 2;
+  const uses = h.none ? 0 : (h.uses ?? (h.last ? 4 : 0)) * (h.stale ? 0.5 : 1), skips = h.skips ?? 0;
+  const mine = uses + skips ? uses / (uses + skips) : 0;
+  return (prior * PREF_K + mine * (uses + skips)) / (PREF_K + uses + skips);
+}
+const ranked = (list) => [...list].filter(([n]) => prefScore(n) >= 0).sort((a, b) => prefScore(b[0]) - prefScore(a[0]));
 // Specific targets (Ben, 22 Oct), by group: "make sure this gets trained". Upper chest, delts and back parts are covered by
 // choosing exercises within their muscle; Glutes, Adductors, Abductors and Forearms are muscles of their own.
 const TARGETS = { Chest: ['Upper chest'], Back: ['Lats', 'Upper back', 'Traps'], Shoulders: ['Side delts', 'Rear delts'], Legs: ['Glutes', 'Adductors', 'Abductors'], Arms: ['Forearms'], Core: ['Obliques'] };
@@ -433,7 +453,7 @@ function build() {
       }
       const main = d.ex.find((e) => e.role === 'main' && e.m === m); let s = v - (main && !t ? main.sets : 0);
       if (s <= 0) return;
-      const list = EX[m].filter(([, , tags = [], skip = []]) => !skip.includes(d.focus) && (!t || tags.includes(t)));
+      const list = ranked(EX[m]).filter(([, , tags = [], skip = []]) => !skip.includes(d.focus) && (!t || tags.includes(t)));
       const start = (di + (d.variant === 'B' ? 1 : 0)) % list.length;
       const rot = [...list.slice(start), ...list.slice(0, start)];
       chunks(s).forEach((c, j) => add(d, m, rot.find(([n]) => !used(d, n)) ?? rot[j % rot.length], c));
@@ -451,7 +471,7 @@ function build() {
     const ex = plan.flatMap((d) => d.ex.filter((e) => e.m === m && e.role !== 'main' && e.sets < 4 && daySets(d) < cap).map((e) => [d, e])).sort(([a], [b]) => daySets(a) - daySets(b))[0];
     if (ex) { ex[1].sets += 1; setLine(ex[1]); continue; }
     const d = (D[m] ?? []).filter((x) => cap - daySets(x) >= 2).sort((a, b) => daySets(a) - daySets(b))[0];
-    const o = d && EX[m].find(([n, , , skip = []]) => !skip.includes(d.focus) && !d.ex.some((e) => e.n === n));
+    const o = d && ranked(EX[m]).find(([n, , , skip = []]) => !skip.includes(d.focus) && !d.ex.some((e) => e.n === n));
     if (!o) break;
     const e = mkEx(o[0], m, o[1], 2, o[2] ?? []); const ci = d.ex.findIndex((x) => x.m === 'Core'); d.ex.splice(ci < 0 ? d.ex.length : ci, 0, e);
   }
@@ -936,7 +956,7 @@ function renderPlan() {
 }
 
 // ---------- Coach (simulated). Words decide: full description → build new; change request → edit; unclear → ask. ----------
-function snapshot() { return JSON.parse(JSON.stringify({ plan: S.plan, days: S.days, focus: S.focus, priority: S.priority, length: S.length, absWk: S.absWk, spec: S.spec, focusOver: S.focusOver })); }
+function snapshot() { return JSON.parse(JSON.stringify({ plan: S.plan, days: S.days, focus: S.focus, priority: S.priority, length: S.length, absWk: S.absWk, spec: S.spec, focusOver: S.focusOver, likes: S.likes, never: S.never })); }
 function restore(s) { Object.assign(S, s); }
 function coach(text) {
   S.chatScroll = true;
@@ -945,7 +965,7 @@ function coach(text) {
   const nDays = t.match(/(\d)\s*(day|days)/);
   if (nDays && /plan|week|days/.test(t) && !/swap|change|move/.test(t)) {
     rebuild(text);
-  } else if (/swap|change|move|more|less|no legs|lighter|shorter|longer|add|remove|drop/.test(t)) {
+  } else if (/swap|change|move|more|less|no legs|lighter|shorter|longer|add|remove|drop|never|like|love/.test(t)) {
     editPlan(text);
   } else {
     S.pendingAsk = text;
@@ -968,6 +988,12 @@ function editPlan(text) {
   let said = '';
   if (/no legs.*(long run|run)|legs.*before.*run/.test(t)) {
     S.plan = build(); said = `Legs aren't the day before ${WD[S.longRunDay]}'s long run.`;
+  } else if (/^(never|no more|i like|i love|more of) /.test(t) && Object.keys(PRIOR).some((n) => t.includes(n.toLowerCase()))) {
+    // Explicit preference (Ben, 22 Oct): overrides the default and his history straight away.
+    const n = Object.keys(PRIOR).filter((x) => t.includes(x.toLowerCase())).sort((x, y) => y.length - x.length)[0];
+    const no = /^(never|no more)/.test(t);
+    S.never = no ? [...new Set([...S.never, n])] : S.never.filter((x) => x !== n); S.likes = no ? S.likes.filter((x) => x !== n) : [...new Set([...S.likes, n])];
+    S.plan = build(); said = no ? `No more ${n.toLowerCase()}; swapped for the next best for that muscle.` : `${n} is picked first whenever ${(Object.entries(EX).find(([, l]) => l.some(([x]) => x === n))?.[0] ?? 'its muscle').toLowerCase()} are trained.`;
   } else if (/more (chest|back|shoulders|arms|legs|core|abs)/.test(t)) {
     const m = t.match(/more (\w+)/)[1]; const M = m === 'abs' ? 'Core' : m[0].toUpperCase() + m.slice(1);
     if (!S.priority.includes(M)) S.priority.push(M);
