@@ -23,6 +23,9 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .phone { position: relative; width: 390px; max-width: 100%; height: min(820px, 100vh); height: min(820px, 100dvh); background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
 .status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
 .scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; padding-bottom: 8px; }
+/* Scroll bars float like on iPhone, so content never changes width when a page starts to scroll */
+.scroll, .sheet { scrollbar-width: none; }
+.scroll::-webkit-scrollbar, .sheet::-webkit-scrollbar { display: none; }
 .hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; }
 h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .steps { color: var(--text3); font-size: 13px; font-variant-numeric: tabular-nums; }
