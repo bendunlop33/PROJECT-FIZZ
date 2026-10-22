@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plan Builder Prototype</title>
+<style>
+/* Plan builder (draft spec docs/design/plan-builder.md, 22 Oct 2026). Example data only, never Ben's real history.
+   Flow: Goals → Week → Your plan (proposal, edit by tap or coach chat) → Apply (Undo). Direction D tokens, single dark. */
+:root {
+  --canvas: #0D0C0B; --surface: #181615; --raised: #23201E; --divider: #302C29;
+  --text: #F3EEE8; --text2: #B5ADA5; --text3: #948C84; --accent: #EDE5DA; --on-accent: #0D0C0B;
+  --done: #5CC98A; --run: #7FB2E5; --run-sub: #172636; --warn: #F2B84B; --page: #1B1917;
+  --ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--text); font-family: var(--ui); margin: 0; }
+.wrap { padding: 16px 12px 40px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.ctrl { width: 390px; max-width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.lab { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text3); }
+.hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 390px; line-height: 1.45; }
+.phone { position: relative; width: 390px; max-width: 100%; height: 820px; background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 8px; }
+.hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; }
+h1 { font-size: 26px; font-weight: 600; margin: 0; }
+.steps { color: var(--text3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); margin-top: 4px; }
+.card { background: var(--surface); border-radius: 20px; padding: 6px 16px; display: flex; flex-direction: column; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; border-bottom: 1px solid var(--divider); font-size: 16px; }
+.row:last-child { border-bottom: 0; }
+.row .v { color: var(--text2); font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text2); font: 600 15px var(--ui); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.chip.sm { min-height: 36px; font-size: 14px; padding: 0 12px; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); font-size: 20px; cursor: pointer; }
+.stepper span { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+.link { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 15px; cursor: pointer; padding: 0 4px; min-height: 44px; }
+.link.dim { color: var(--text2); }
+.primary { min-height: 52px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font: 600 17px var(--ui); cursor: pointer; width: 100%; }
+.footer { display: flex; flex-direction: column; gap: 6px; }
+.askrow { display: flex; gap: 8px; }
+.askbar { flex: 1; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; border-radius: 16px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text); font: 16px var(--ui); }
+.askbar input { flex: 1; background: none; border: 0; color: var(--text); font: 16px var(--ui); outline: none; min-width: 0; }
+.mic { width: 48px; height: 48px; border-radius: 16px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text); cursor: pointer; }
+.target { display: flex; align-items: center; justify-content: space-between; min-height: 52px; border-bottom: 1px solid var(--divider); font-size: 16px; gap: 8px; }
+.target:last-child { border-bottom: 0; }
+.target .x { color: var(--text3); background: none; border: 0; font-size: 18px; min-width: 44px; min-height: 44px; cursor: pointer; }
+/* week strip */
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.day { background: var(--surface); border: 0; border-radius: 12px; padding: 6px 1px; display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text); cursor: pointer; font-family: var(--ui); min-height: 64px; }
+.day .dn { font-size: 11px; color: var(--text2); letter-spacing: .06em; }
+.pip { font-size: 10px; line-height: 1.2; padding: 3px 1px; border-radius: 6px; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; }
+.pip.lift { background: rgba(237,229,218,.12); color: var(--text); }
+.pip.run { background: var(--run-sub); color: var(--run); }
+.pip.rest { color: var(--text3); }
+.day.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+.daypick .day { min-height: 52px; justify-content: center; font-size: 13px; font-weight: 600; }
+.daypick .day[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.daypick .day[aria-pressed="true"] .dn { color: var(--on-accent); }
+.daypick .day.runday { box-shadow: inset 0 0 0 1.5px var(--run); }
+/* plan */
+.blk { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: var(--text2); }
+.dcard { background: var(--surface); border-radius: 18px; padding: 4px 14px; }
+.dtop { display: flex; justify-content: space-between; align-items: center; min-height: 56px; cursor: pointer; gap: 8px; }
+.dtop .nm { font-size: 17px; font-weight: 600; }
+.dtop .sub { font-size: 13px; color: var(--text2); }
+.dtop .rt { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.chev { color: var(--text3); font-size: 18px; transition: transform .15s; }
+.open .chev { transform: rotate(90deg); }
+.ex { display: none; border-top: 1px solid var(--divider); padding: 4px 0 8px; }
+.open .ex { display: block; }
+.exr { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 0; border-bottom: 1px solid var(--divider); font-size: 15px; }
+.exr:last-of-type { border-bottom: 0; }
+.exr .w { color: var(--text2); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+.exr .m { color: var(--text3); font-size: 12px; }
+.exr.main .n { font-weight: 600; }
+.dact { display: flex; gap: 4px; flex-wrap: wrap; }
+.vol { display: grid; grid-template-columns: 92px 1fr 52px; align-items: center; gap: 8px; min-height: 30px; font-size: 14px; }
+.bar { position: relative; height: 8px; background: var(--raised); border-radius: 4px; }
+.bar .rng { position: absolute; top: 0; bottom: 0; background: rgba(237,229,218,.16); border-radius: 4px; }
+.bar .fill { position: absolute; top: 2px; height: 4px; left: 0; background: var(--accent); border-radius: 2px; }
+.vol .n { text-align: right; color: var(--text2); font-variant-numeric: tabular-nums; }
+.vol.pri .mn::after { content: " ★"; color: var(--warn); font-size: 11px; }
+.note { font-size: 13px; color: var(--text2); display: flex; gap: 6px; align-items: center; }
+.why { background: var(--raised); border-radius: 14px; padding: 10px 12px; font-size: 14px; color: var(--text2); line-height: 1.45; display: none; }
+.why.on { display: block; }
+.chat { display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 85%; padding: 8px 12px; border-radius: 16px; font-size: 15px; line-height: 1.4; }
+.msg.ben { align-self: flex-end; background: var(--raised); }
+.msg.co { align-self: flex-start; color: var(--text); padding-left: 0; }
+.msg.co b { color: var(--text2); font-weight: 500; font-size: 12px; display: block; }
+.choice { display: flex; gap: 8px; }
+.choice button { flex: 1; min-height: 44px; border-radius: 12px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text); font: 600 15px var(--ui); cursor: pointer; }
+/* sheet + toast */
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.5); display: none; z-index: 20; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: 24px 24px 0 0; padding: 14px 16px 24px; z-index: 21; display: none; flex-direction: column; gap: 10px; }
+.sheet.on, .scrim.on { display: flex; }
+.sheet h2 { font-size: 18px; margin: 0; }
+.toast { position: absolute; left: 14px; right: 14px; bottom: 84px; background: var(--raised); border: 1px solid var(--divider); border-radius: 14px; padding: 4px 6px 4px 14px; font-size: 15px; z-index: 30; display: none; justify-content: space-between; align-items: center; }
+.toast.on { display: flex; }
+.badge { font-size: 12px; color: var(--text3); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 420px) {
+  .wrap { padding: 12px 0 40px; }
+  .ctrl, .hint { padding: 0 12px; }
+  .phone { border-radius: 0; border-left: 0; border-right: 0; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="ctrl">
+    <span class="lab">Prototype controls</span>
+    <div class="chips">
+      <button class="chip sm" id="aiOn" aria-pressed="true">Coach on</button>
+      <button class="chip sm" id="aiOff" aria-pressed="false">Offline</button>
+      <button class="chip sm" id="restart" aria-pressed="false">Start again</button>
+      <button class="chip sm" id="editExisting" aria-pressed="false">Edit existing plan</button>
+    </div>
+  </div>
+  <p class="hint">Opens from Today "Set up a plan ›", Library › Your plan, Profile › Goal and the coach. Example data only. Try the coach: "make it 3 days", "no legs before my long run", "more chest", "swap Saturday to arms".</p>
+
+  <div class="phone" id="phone">
+    <div class="status"><span>9:41</span><span>●●● 100%</span></div>
+    <div class="hdr">
+      <button class="link dim" id="back" aria-label="Back">‹ Back</button>
+      <span class="steps" id="steps">1 of 3</span>
+      <button class="link dim" id="close">Close</button>
+    </div>
+    <div class="scroll" id="scroll"></div>
+    <div class="footer" id="footer"></div>
+
+    <div class="scrim" id="scrim"></div>
+    <div class="sheet" id="sheet"></div>
+    <div class="toast" id="toast"><span id="toastText"></span><button class="link" id="undo">Undo</button></div>
+  </div>
+</div>
+
+<script>
+// ---------- Example history (made up) ----------
+const HIST = {
+  'Bench press': { kg: 97.5, reps: 6, last: 'top 97.5 × 6' },
+  'Barbell row': { kg: 90, reps: 12, last: '90 × 12' },
+  'Back squat': { kg: 120, reps: 5, last: 'top 120 × 5' },
+  'Romanian deadlift': { kg: 100, reps: 8, last: '100 × 8' },
+  'Overhead press': { kg: 55, reps: 6, last: '55 × 6' },
+  'Incline DB press': { kg: 30, reps: 10, last: '30 each × 10' },
+  'Lat pulldown': { kg: 70, reps: 10, last: '70 × 10' },
+  'Leg press': { kg: 200, reps: 10, last: '200 × 10' },
+  'Shrugs': { kg: 30, reps: 15, last: '30 each × 15' },
+  'Cable fly': { kg: 20, reps: 12, last: '20 × 12' },
+  'Lateral raise': { kg: 10, reps: 15, last: '10 each × 15' },
+  'Triceps pushdown': { kg: 35, reps: 12, last: '35 × 12' },
+  'Hammer curl': { kg: 16, reps: 12, last: '16 each × 12' },
+  'Leg curl': { kg: 50, reps: 12, last: '50 × 12' },
+  'Calf raise': { kg: 80, reps: 15, last: '80 × 15' },
+  'Pull-up': { kg: 0, reps: 8, last: 'BW × 8' },
+  'Face pull': { kg: 25, reps: 15, last: '25 × 15' },
+  'Barbell curl': { kg: 35, reps: 10, last: '35 × 10' },
+};
+// Day templates: [exercise, muscle, role]
+const DAYS = {
+  Push:  { main: 'Bench press', ex: [['Bench press','Chest','main'],['Overhead press','Shoulders','c'],['Incline DB press','Chest','c'],['Cable fly','Chest','i'],['Lateral raise','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
+  Pull:  { main: 'Barbell row', ex: [['Barbell row','Back','main'],['Lat pulldown','Back','c'],['Face pull','Shoulders','i'],['Shrugs','Back','i'],['Hammer curl','Biceps','i']] },
+  Legs:  { main: 'Back squat', ex: [['Back squat','Quads','main'],['Romanian deadlift','Hamstrings','c'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i']] },
+  Upper: { main: 'Overhead press', ex: [['Overhead press','Shoulders','main'],['Pull-up','Back','c'],['Incline DB press','Chest','c'],['Lat pulldown','Back','c'],['Lateral raise','Shoulders','i'],['Barbell curl','Biceps','i']] },
+  Lower: { main: 'Romanian deadlift', ex: [['Romanian deadlift','Hamstrings','main'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i']] },
+  'Full body': { main: 'Back squat', ex: [['Back squat','Quads','main'],['Bench press','Chest','c'],['Barbell row','Back','c'],['Lateral raise','Shoulders','i'],['Hammer curl','Biceps','i']] },
+  Arms:  { main: null, ex: [['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i'],['Lateral raise','Shoulders','i']] },
+};
+const MUSCLES = ['Chest','Back','Shoulders','Quads','Hamstrings','Biceps','Triceps','Calves'];
+const WD = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+// ---------- State ----------
+const S = {
+  ai: true, step: 0, focus: 'Both', targets: [{ lift: 'Bench press', kg: 110, by: '15 Dec' }],
+  priority: ['Chest'], runs: true, longRunDay: 6, runDays: [2, 6],
+  days: [0, 1, 3, 5], length: 60, gym: 'PureGym Leeds',
+  plan: null, open: -1, chat: [], applied: false, editing: false,
+};
+let undoStack = [];
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const snap = (kg, step = 2.5) => Math.floor(kg / step) * step;
+
+// ---------- Deterministic plan (the offline code path; the coach may adjust it) ----------
+function splitFor(n, focus) {
+  if (n <= 2) return ['Full body', 'Full body'].slice(0, n);
+  if (n === 3) return focus === 'Strength' ? ['Full body', 'Full body', 'Full body'] : ['Push', 'Pull', 'Legs'];
+  if (n === 4) return focus === 'Strength' ? ['Upper', 'Lower', 'Upper', 'Lower'] : ['Push', 'Pull', 'Legs', 'Upper'];
+  if (n === 5) return ['Push', 'Pull', 'Legs', 'Upper', 'Lower'];
+  return ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs'];
+}
+function build() {
+  const days = [...S.days].sort((a, b) => a - b);
+  const names = splitFor(days.length, S.focus);
+  let plan = days.map((d, i) => ({ day: d, focus: names[i] }));
+  // No heavy legs the day before the long run: swap with the furthest non-leg day (rule 11/GA15).
+  if (S.runs) {
+    const before = (S.longRunDay + 6) % 7;
+    const legs = plan.find((p) => p.day === before && (p.focus === 'Legs' || p.focus === 'Lower' || p.focus === 'Full body'));
+    const other = plan.find((p) => p.day !== before && !['Legs', 'Lower', 'Full body'].includes(p.focus));
+    if (legs && other) { const f = legs.focus; legs.focus = other.focus; other.focus = f; legs.moved = true; }
+  }
+  return balance(plan.map((p) => ({ ...p, ex: exercisesFor(p.focus) })));
+}
+// Nudge sets per exercise (2–5, never the main lift's scheme) until each muscle trained this week sits in its range.
+function balance(plan) {
+  for (let pass = 0; pass < 12; pass++) {
+    const ws = weeklySets(plan); let moved = false;
+    for (const m of MUSCLES) {
+      const [lo, hi] = range(m); const exs = plan.flatMap((d) => d.ex).filter((e) => e.m === m && e.role !== 'main');
+      if (ws[m] < lo) { const e = exs.find((x) => x.sets < 5); if (e) { e.sets += 1; moved = true; } }
+      else if (ws[m] > hi) { const e = exs.find((x) => x.sets > 2); if (e) { e.sets -= 1; moved = true; } }
+    }
+    if (!moved) break;
+  }
+  plan.forEach((d) => d.ex.forEach((e) => { if (e.role !== 'main') e.line = e.line.replace(/^\d+ ×/, `${e.sets} ×`); }));
+  return plan;
+}
+function exercisesFor(focus) {
+  const t = DAYS[focus];
+  const cap = S.length <= 45 ? 4 : S.length <= 60 ? 6 : 7;
+  return t.ex.slice(0, cap).map(([n, m, role]) => {
+    const h = HIST[n];
+    const pri = S.priority.includes(m);
+    if (role === 'main') {
+      const top = snap(h.kg + 2.5), back = snap(top * 0.9);
+      const strength = S.focus === 'Strength';
+      return { n, m, role, sets: strength ? 4 : 3, line: `Top ${top} × ${strength ? 5 : 6} · ${strength ? 3 : 2} × ${back} × 8`, why: `Last time ${h.last} → +2.5` };
+    }
+    const reps = Math.max(8, Math.min(15, h.reps));
+    const sets = pri ? 4 : 3;
+    const kg = h.kg === 0 ? 'BW' : (h.reps >= 15 ? snap(h.kg + 2.5) : h.kg);
+    return { n, m, role, sets, line: `${sets} × ${kg}${kg === 'BW' ? '' : ' kg'} × ${reps}`, why: `Last time ${h.last}` };
+  });
+}
+function weeklySets(plan) {
+  const out = Object.fromEntries(MUSCLES.map((m) => [m, 0]));
+  plan.forEach((d) => d.ex.forEach((e) => { out[e.m] += e.sets; }));
+  return out;
+}
+const range = (m) => S.priority.includes(m) ? [12, 20] : (['Calves','Biceps','Triceps'].includes(m) ? [4, 10] : [8, 14]);
+
+// ---------- Render ----------
+function render() {
+  const steps = ['Goals', 'Week', 'Your plan'];
+  $('steps').textContent = S.applied ? 'Your plan' : `${S.step + 1} of 3`;
+  $('back').style.visibility = S.step === 0 || S.applied ? 'hidden' : 'visible';
+  [renderGoals, renderWeek, renderPlan][S.step]();
+}
+
+function renderGoals() {
+  $('scroll').innerHTML = `
+    <h1>Your goals</h1>
+    <div class="label">Main focus</div>
+    <div class="chips">${['Strength','Muscle','Both','Fitness','Maintain'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
+    <div class="label">Lift targets</div>
+    <div class="card">${S.targets.map((t, i) => `<div class="target"><span>${esc(t.lift)}</span><span class="v" style="color:var(--text2)">${t.kg} kg${t.by ? ' · by ' + esc(t.by) : ''}</span><button class="x" data-rm="${i}" aria-label="Remove ${esc(t.lift)} target">×</button></div>`).join('')}
+      <div class="row"><button class="link" id="addTarget">＋ Target</button></div></div>
+    <div class="label">Priority muscles</div>
+    <div class="chips">${MUSCLES.map((m) => `<button class="chip sm" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m}</button>`).join('')}</div>
+    <div class="label">Other training</div>
+    <div class="card"><div class="row"><span>Runs</span><span class="chips"><button class="chip sm" id="runsToggle" aria-pressed="${S.runs}">${S.runs ? 'On' : 'Off'}</button></span></div></div>`;
+  $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
+  document.querySelectorAll('[data-focus]').forEach((b) => b.onclick = () => { S.focus = b.dataset.focus; render(); });
+  document.querySelectorAll('[data-pri]').forEach((b) => b.onclick = () => { const m = b.dataset.pri; S.priority = S.priority.includes(m) ? S.priority.filter((x) => x !== m) : [...S.priority, m]; render(); });
+  document.querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { S.targets.splice(+b.dataset.rm, 1); render(); });
+  $('addTarget').onclick = openTargetSheet;
+  $('runsToggle').onclick = () => { S.runs = !S.runs; render(); };
+  $('next').onclick = () => { S.step = 1; render(); };
+}
+
+function renderWeek() {
+  $('scroll').innerHTML = `
+    <h1>Your week</h1>
+    <div class="label">Gym days · ${S.days.length}</div>
+    <div class="week daypick">${WD.map((d, i) => `<button class="day ${S.runs && S.runDays.includes(i) ? 'runday' : ''}" data-day="${i}" aria-pressed="${S.days.includes(i)}"><span class="dn">${d}</span></button>`).join('')}</div>
+    ${S.runs ? `<div class="label">Runs</div>
+    <div class="week daypick">${WD.map((d, i) => `<button class="day" data-run="${i}" aria-pressed="${S.runDays.includes(i)}" style="${S.runDays.includes(i) ? 'background:var(--run-sub);color:var(--run)' : ''}"><span class="dn" style="${S.runDays.includes(i) ? 'color:var(--run)' : ''}">${d}${i === S.longRunDay ? ' ·L' : ''}</span></button>`).join('')}</div>
+    <div class="note">Long run: ${WD[S.longRunDay]} <button class="link dim" id="longRun">Change</button></div>` : ''}
+    <div class="card">
+      <div class="row"><span>Length</span><span class="stepper"><button id="lenDown" aria-label="Shorter">−</button><span>${S.length} min</span><button id="lenUp" aria-label="Longer">＋</button></span></div>
+      <div class="row"><span>Gym</span><span class="v">${esc(S.gym)} ›</span></div>
+    </div>`;
+  $('footer').innerHTML = `<button class="primary" id="next">${S.ai ? 'Build my plan' : 'Build my plan'}</button>`;
+  document.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { const d = +b.dataset.day; S.days = S.days.includes(d) ? S.days.filter((x) => x !== d) : [...S.days, d]; render(); });
+  document.querySelectorAll('[data-run]').forEach((b) => b.onclick = () => { const d = +b.dataset.run; S.runDays = S.runDays.includes(d) ? S.runDays.filter((x) => x !== d) : [...S.runDays, d]; if (!S.runDays.includes(S.longRunDay)) S.longRunDay = S.runDays.at(-1) ?? 6; render(); });
+  if ($('longRun')) $('longRun').onclick = () => { const i = S.runDays.indexOf(S.longRunDay); S.longRunDay = S.runDays[(i + 1) % S.runDays.length]; render(); };
+  $('lenDown').onclick = () => { S.length = Math.max(30, S.length - 15); render(); };
+  $('lenUp').onclick = () => { S.length = Math.min(120, S.length + 15); render(); };
+  $('next').onclick = () => {
+    if (S.days.length === 0) return;
+    S.plan = build(); S.step = 2; S.chat = []; S.open = -1;
+    if (S.ai) S.chat.push({ who: 'co', text: coachIntro() });
+    render();
+  };
+}
+
+function coachIntro() {
+  const moved = S.plan.find((p) => p.moved);
+  const split = [...new Set(S.plan.map((d) => d.focus))].join(' / ').toLowerCase();
+  return `${S.days.length} days, ${split}: chest twice a week toward bench 110.${moved ? ` Legs moved off ${WD[moved.day]}, the day before your long run.` : ''}`;
+}
+
+function renderPlan() {
+  const p = S.plan;
+  const ws = weeklySets(p);
+  const byDay = Object.fromEntries(p.map((d) => [d.day, d]));
+  const strip = WD.map((d, i) => {
+    const lift = byDay[i], run = S.runs && S.runDays.includes(i);
+    return `<button class="day ${S.open >= 0 && p[S.open]?.day === i ? 'sel' : ''}" data-strip="${i}"><span class="dn">${d}</span>${lift ? `<span class="pip lift">${esc(lift.focus)}</span>` : ''}${run ? `<span class="pip run">${i === S.longRunDay ? 'Long run' : 'Run'}</span>` : ''}${!lift && !run ? '<span class="pip rest">Rest</span>' : ''}</button>`;
+  }).join('');
+  $('scroll').innerHTML = `
+    <div class="hdr" style="min-height:0"><h1>Your plan</h1>${S.ai ? '' : '<span class="badge">Not reviewed</span>'}</div>
+    <div class="blk"><span>6 weeks · deload week 6</span><span>${esc(S.focus)} · ${S.length} min</span></div>
+    <div class="week">${strip}</div>
+    ${p.map((d, i) => `<div class="dcard ${S.open === i ? 'open' : ''}" data-card="${i}">
+      <div class="dtop" data-toggle="${i}"><span><div class="nm">${WD[d.day]} · ${esc(d.focus)}</div><div class="sub">${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
+        <span class="rt">${d.ex.length} ex · ~${S.length}′<span class="chev">›</span></span></div>
+      <div class="ex">${d.ex.map((e) => `<div class="exr ${e.role === 'main' ? 'main' : ''}"><span class="n">${esc(e.n)}</span><span class="w">${esc(e.line)}</span><span class="m">${esc(e.m)}</span><span class="m" style="text-align:right">${esc(e.why)}</span></div>`).join('')}
+        <div class="dact"><button class="link" data-swap="${i}">Change focus</button><button class="link" data-move="${i}">Move day</button><button class="link dim" data-open="${i}">Open in builder ›</button></div>
+      </div></div>`).join('')}
+    <div class="label">Sets per week</div>
+    <div class="card" style="padding:10px 16px">${MUSCLES.map((m) => { const [lo, hi] = range(m); const n = ws[m]; const max = 24; return `<div class="vol ${S.priority.includes(m) ? 'pri' : ''}"><span class="mn">${m}</span><span class="bar"><span class="rng" style="left:${lo / max * 100}%;width:${(hi - lo) / max * 100}%"></span><span class="fill" style="width:${Math.min(n, max) / max * 100}%"></span></span><span class="n">${n}${n < lo ? ' ↓' : n > hi ? ' ↑' : ''}</span></div>`; }).join('')}
+      <div style="display:flex;justify-content:flex-end"><button class="link dim" id="whyBtn">Why?</button></div>
+      <div class="why" id="why">Split from ${S.days.length} days and ${esc(S.focus)} focus. Shaded band = target sets for each muscle (priority ★ higher). Weights from your last sessions; bench path aims at 110 by 15 Dec. ${S.runs ? 'No legs the day before the long run.' : ''}</div>
+    </div>
+    ${S.chat.length ? `<div class="label">Coach</div><div class="chat">${S.chat.map((c) => c.who === 'ben' ? `<div class="msg ben">${esc(c.text)}</div>` : c.who === 'choice' ? `<div class="choice"><button data-choice="new">Build new</button><button data-choice="edit">Change this one</button></div>` : `<div class="msg co"><b>Coach</b>${esc(c.text)}</div>`).join('')}</div>` : ''}`;
+  $('footer').innerHTML = `
+    <div class="askrow"><label class="askbar">✦<input id="ask" placeholder="${S.ai ? 'Tell the coach…' : 'Coach offline'}" ${S.ai ? '' : 'disabled'} aria-label="Tell the coach"></label><button class="mic" aria-label="Speak" ${S.ai ? '' : 'disabled'}>🎙</button></div>
+    ${S.applied ? '' : `<button class="primary" id="apply">${S.editing ? 'Apply changes' : 'Apply plan'}</button>`}`;
+  document.querySelectorAll('[data-toggle]').forEach((el) => el.onclick = () => { const i = +el.dataset.toggle; S.open = S.open === i ? -1 : i; render(); });
+  document.querySelectorAll('[data-strip]').forEach((el) => el.onclick = () => { const i = p.findIndex((d) => d.day === +el.dataset.strip); S.open = i; render(); });
+  document.querySelectorAll('[data-swap]').forEach((el) => el.onclick = () => openFocusSheet(+el.dataset.swap));
+  document.querySelectorAll('[data-move]').forEach((el) => el.onclick = () => openMoveSheet(+el.dataset.move));
+  document.querySelectorAll('[data-open]').forEach((el) => el.onclick = () => toast('Opens this day in the workout builder', false));
+  document.querySelectorAll('[data-choice]').forEach((el) => el.onclick = () => { S.chat = S.chat.filter((c) => c.who !== 'choice'); const pending = S.pendingAsk; S.pendingAsk = null; el.dataset.choice === 'new' ? rebuild(pending) : editPlan(pending); });
+  $('whyBtn').onclick = () => $('why').classList.toggle('on');
+  if ($('apply')) $('apply').onclick = () => { S.applied = true; S.editing = false; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
+  const ask = $('ask');
+  if (ask) ask.onkeydown = (e) => { if (e.key === 'Enter' && ask.value.trim()) { coach(ask.value.trim()); } };
+  const sc = $('scroll'); if (S.chat.length) sc.scrollTop = sc.scrollHeight;
+}
+
+// ---------- Coach (simulated). Words decide: full description → build new; change request → edit; unclear → ask. ----------
+function snapshot() { return JSON.parse(JSON.stringify({ plan: S.plan, days: S.days, focus: S.focus, priority: S.priority, length: S.length })); }
+function restore(s) { Object.assign(S, s); }
+function coach(text) {
+  S.chat.push({ who: 'ben', text });
+  const t = text.toLowerCase();
+  const nDays = t.match(/(\d)\s*(day|days)/);
+  if (nDays && /plan|week|days/.test(t) && !/swap|change|move/.test(t)) {
+    rebuild(text);
+  } else if (/swap|change|move|more|less|no legs|lighter|shorter|longer|add|remove|drop/.test(t)) {
+    editPlan(text);
+  } else {
+    S.pendingAsk = text;
+    S.chat.push({ who: 'co', text: 'Build a new plan from that, or change this one?' });
+    S.chat.push({ who: 'choice' });
+    render();
+  }
+}
+function rebuild(text) {
+  const before = snapshot();
+  const n = +((text || '').match(/(\d)\s*day/)?.[1] ?? S.days.length);
+  const pref = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] }[n] ?? S.days;
+  S.days = pref; S.plan = build(); S.open = -1;
+  S.chat.push({ who: 'co', text: `Rebuilt for ${n} days: ${S.plan.map((d) => WD[d.day] + ' ' + d.focus).join(', ')}.` });
+  render(); toast('Plan rebuilt', true, () => { restore(before); S.chat.pop(); render(); });
+}
+function editPlan(text) {
+  const before = snapshot();
+  const t = (text || '').toLowerCase();
+  let said = '';
+  if (/no legs.*(long run|run)|legs.*before.*run/.test(t)) {
+    S.plan = build(); said = `Legs aren't the day before ${WD[S.longRunDay]}'s long run.`;
+  } else if (/more (chest|back|shoulders|arms|legs|quads|biceps|triceps)/.test(t)) {
+    const m = t.match(/more (\w+)/)[1]; const M = m === 'arms' ? 'Biceps' : m[0].toUpperCase() + m.slice(1);
+    if (!S.priority.includes(M)) S.priority.push(M);
+    S.plan = build(); said = `${M} is a priority now: +1 set on its exercises (${weeklySets(S.plan)[M]} sets a week).`;
+  } else if (/swap|change/.test(t)) {
+    const di = WD.findIndex((d) => t.includes(d.toLowerCase()) || t.includes({ Mon: 'monday', Tue: 'tuesday', Wed: 'wednesday', Thu: 'thursday', Fri: 'friday', Sat: 'saturday', Sun: 'sunday' }[d]));
+    const f = Object.keys(DAYS).find((k) => t.includes(k.toLowerCase()));
+    const i = S.plan.findIndex((d) => d.day === di);
+    if (i >= 0 && f) { S.plan[i] = { ...S.plan[i], focus: f, ex: exercisesFor(f) }; balance(S.plan); S.open = i; said = `${WD[di]} is ${f} now. Everything else stays.`; }
+    else said = 'Which day, and to what? e.g. "swap Saturday to arms".';
+  } else if (/shorter|longer/.test(t)) {
+    S.length = Math.max(30, Math.min(120, S.length + (/shorter/.test(t) ? -15 : 15))); S.plan = build(); said = `${S.length} min sessions; ${S.length < 60 ? 'accessories trimmed first' : 'one more accessory a day'}.`;
+  } else {
+    said = 'Changed only what you asked; the rest stays.';
+  }
+  S.chat.push({ who: 'co', text: said });
+  render(); toast('Plan changed', true, () => { restore(before); S.chat.pop(); render(); });
+}
+
+// ---------- Sheets ----------
+function sheet(html) { $('sheet').innerHTML = html; $('sheet').classList.add('on'); $('scrim').classList.add('on'); }
+function closeSheet() { $('sheet').classList.remove('on'); $('scrim').classList.remove('on'); }
+$('scrim').onclick = closeSheet;
+function openFocusSheet(i) {
+  sheet(`<h2>${WD[S.plan[i].day]} focus</h2><div class="chips">${Object.keys(DAYS).map((f) => `<button class="chip" data-f="${f}" aria-pressed="${S.plan[i].focus === f}">${f}</button>`).join('')}</div>`);
+  document.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => { const before = snapshot(); S.plan[i] = { ...S.plan[i], focus: b.dataset.f, ex: exercisesFor(b.dataset.f) }; balance(S.plan); closeSheet(); render(); toast(`${WD[S.plan[i].day]} is ${b.dataset.f}`, true, () => { restore(before); render(); }); });
+}
+function openMoveSheet(i) {
+  const used = S.plan.map((d) => d.day);
+  sheet(`<h2>Move ${esc(S.plan[i].focus)}</h2><div class="week daypick">${WD.map((d, k) => `<button class="day" data-to="${k}" aria-pressed="${S.plan[i].day === k}" ${used.includes(k) && k !== S.plan[i].day ? 'disabled style="opacity:.35"' : ''}><span class="dn">${d}</span></button>`).join('')}</div>`);
+  document.querySelectorAll('[data-to]').forEach((b) => b.onclick = () => { if (b.disabled) return; const before = snapshot(); const to = +b.dataset.to; S.plan[i].day = to; S.days = S.plan.map((d) => d.day); S.plan.sort((a, c) => a.day - c.day); closeSheet(); S.open = S.plan.findIndex((d) => d.day === to); render(); toast(`Moved to ${WD[to]}`, true, () => { restore(before); render(); }); });
+}
+function openTargetSheet() {
+  sheet(`<h2>Lift target</h2><div class="chips">${['Bench press','Back squat','Overhead press','Barbell row','Romanian deadlift'].map((l) => `<button class="chip sm" data-t="${l}">${l}</button>`).join('')}</div><div class="note">Weight and an optional date come next (not in this prototype).</div>`);
+  document.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { const l = b.dataset.t; if (!S.targets.find((x) => x.lift === l)) S.targets.push({ lift: l, kg: snap(HIST[l].kg * 1.1), by: null }); closeSheet(); render(); });
+}
+
+// ---------- Toast ----------
+let toastTimer = null, undoFn = null;
+function toast(text, canUndo, fn) {
+  $('toastText').textContent = text; $('undo').style.display = canUndo ? '' : 'none'; undoFn = fn || null;
+  $('toast').classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('on'), 4000);
+}
+$('undo').onclick = () => { $('toast').classList.remove('on'); if (undoFn) undoFn(); };
+
+// ---------- Header + controls ----------
+$('back').onclick = () => { if (S.step > 0) { S.step -= 1; render(); } };
+$('close').onclick = () => toast('Closes without changing your plan', false);
+function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.step === 2 && !on) S.chat = []; render(); }
+$('aiOn').onclick = () => setAi(true);
+$('aiOff').onclick = () => setAi(false);
+$('restart').onclick = () => { Object.assign(S, { step: 0, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
+$('editExisting').onclick = () => { S.plan = build(); S.step = 2; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
+render();
+</script>
+</body>
+</html>
