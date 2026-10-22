@@ -649,7 +649,9 @@ export function createCoachService(deps: CoachServiceDeps) {
       // Review B3 (retire-workout-overview): an older suggestion's Apply would change nothing now, so it reads `Out of date` (no Apply).
       const basisChanged = true;
       const refusedHere = apply !== null && refusedApplies.has(apply.actionId);
-      out.set(id, { state: structuralProposalState({ apply: apply === null ? null : { undone: apply.undoneBy !== null }, dismissed, startedSince, basisChanged, refusedHere }), apply });
+      // Nit 3: one applied before this build was written where nothing reads it now (the overview): `Out of date`, no Undo.
+      const shownApply = apply === null || apply.undoneBy === null ? null : { undone: true };
+      out.set(id, { state: structuralProposalState({ apply: shownApply, dismissed, startedSince, basisChanged, refusedHere }), apply });
     }
     return out;
   }

@@ -948,7 +948,8 @@ const ADD_NOT_EXERCISE = /^(?:top ?sets?|back ?-?off(?: sets?)?|drop ?sets?|warm
  * Review B2, r2 B1: an add with a future scope ("add curls next time", "to my routine", "from now on",
  * "to every push day", "permanently") changes the plan, not today: a structural proposal (rule 3),
  * never `add_exercise_today`. The list can't be complete, so the today tool's description says it is
- * today only. An add whose scope is unclear (`unclearAddScope`) also opens `propose_next_workout_change`;
+ * today only. An add whose scope is unclear (`unclearAddScope`) also opens `propose_next_workout_change` (withheld
+ * in this build since the Workout overview was retired, 22 Oct: not offered to the model);
  * a plain today add doesn't (review r3 S1).
  */
 const ADD_FUTURE_TIME =
