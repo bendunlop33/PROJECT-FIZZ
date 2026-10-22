@@ -373,7 +373,7 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 - `Top set` is a **target**, never an actual. Loads use tabular numerals.
 - [Proposal, Q14] A small `MAIN` tag on the main-lift row. Off unless Ben wants it.
 - `Start` is disabled when the workout is empty [Ben]. Start and Coach review sit in the bottom bar, always visible.
-- **Opened from Today's Edit or a plan day's `Open in builder ›` (22 Oct, design review V1/V2/V4/V6):** no `‹ Set up` link and no step counter; the only back control is `‹ Today` / `‹ Library`. The title's minutes match what Today or the plan showed, and edits change them from there. The top set shown equals the draft's; back-offs never exceed it (matters in deload weeks).
+- **Opened from Today's Edit or a plan day's `Open in builder ›` (22 Oct, design review V1/V2/V4/V6):** no `‹ Set up` link and no step counter; the only back control is `‹ Today` / `‹ Library`. Opened from the coach sheet or an exercise's detail, it is `‹ Back` [Proposal, review nit 22 Oct]. The title's minutes match what Today or the plan showed, and edits change them from there. The top set shown equals the draft's; back-offs never exceed it (matters in deload weeks).
 
 | Gesture | Result | Accessible alternative |
 |---|---|---|
@@ -443,6 +443,8 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 - Rest per set type, 15 s steps (§3.2). If the exercise has a drop set: row `Before drop` (0:15). In a superset, one row: `After each round`.
 - `Move up` / `Move down` / `Superset with next` (hidden when the next one is the main lift) / `Unlink` (in a superset) [Ben].
 - `Why this weight?` (collapsed, numbers from code only): where the load came from (`Coach target`, `Plan, week 1`, `Last time + 2.5`, `Est. max 127 kg (estimate) · 6 reps @ RPE 8`), plus `Rounded down: 1.25 kg plates` or `Typed by you` when they apply.
+- A saved or past workout's rep range shows as a range in Reps (`3–6`) and Start plans that range; editing that set's reps makes it fixed [Proposal, review R1 22 Oct; pending Ben].
+- `Why this weight?` on a saved or past workout says what the overview said: `Saved workout`, its own rule's line or `Coach target`, plus `Held · pain` and the gym's fit (`Max here`, `Rounded down`) when they apply [Proposal, review R3 22 Oct].
 - Editing: reps or RPE recalculates kg unless Ben typed kg in that set [Ben]. Assisted and weighted-bodyweight lifts keep their kg (no estimated max) [Proposal]. A typed kg rounds **down** to what this gym can load when the field closes; if it moved, the cell shows the new value and `Why?` names the item (rule 4).
 
 ### 2.5 Swap / Add exercise (sheet) [Ben]
