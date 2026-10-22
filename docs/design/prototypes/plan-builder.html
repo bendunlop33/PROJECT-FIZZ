@@ -273,6 +273,8 @@ const SHORT = { 'Bench press': 'Bench press', 'Back squat': 'Back squat', 'Barbe
 const CARD = { 'Bench press': 'Bench', 'Back squat': 'Squat', 'Barbell row': 'BB row', 'DB shoulder press': 'DB shoulder' };
 // Dumbbells are per hand and move in 2 kg steps; bars in 2.5 kg (gym kit decides in the app).
 const snapFor = (l, kg) => HIST[l]?.each ? Math.floor(kg / 2) * 2 : snap(kg);
+// Table cell: "26 kg", with "each" on a smaller line below for dumbbells (Ben, 22 Oct).
+const kgCell = (l, kg) => `<span>${kg} kg</span>${HIST[l]?.each ? '<span style="font-size:11px;color:var(--text3);line-height:1.1">each</span>' : ''}`;
 const fmtKg = (l, kg) => HIST[l]?.each ? `${kg} each` : `${kg}`;
 // Epley, labelled est.: a set's 1RM, and the weight for 6 reps at the same effort.
 const e1rm = (kg, reps) => kg * (1 + reps / 30);
@@ -365,8 +367,8 @@ function renderCheck() {
     const open = (h.stale && c !== 'yes' && c !== 'entered') || (h.none && !c);
     return `<button data-lift="${l}" style="display:contents;font:inherit;color:inherit;cursor:pointer">
       <span style="${C};justify-content:flex-start;gap:6px;text-align:left">${SHORT[l]}${open ? '<span style="width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none" aria-label="Check"></span>' : ''}</span>
-      <span style="${C};color:${reps === 6 && !e ? 'var(--text)' : 'var(--text2)'}">${fmtKg(l, six)}</span>
-      <span style="${C};color:var(--text2)">${fmtKg(l, one)}</span></button>`;
+      <span style="${C};flex-direction:column;color:${reps === 6 && !e ? 'var(--text)' : 'var(--text2)'}">${kgCell(l, six)}</span>
+      <span style="${C};flex-direction:column;color:var(--text2)">${kgCell(l, one)}</span></button>`;
   }).join('');
   $('scroll').innerHTML = `<h1>Check your lifts</h1>
     <div class="card" style="display:grid;grid-template-columns:minmax(0,1fr) 84px 84px;padding:4px 16px">
@@ -416,7 +418,7 @@ function renderAmbition() {
     <h1>Plan length and effort</h1>
     <div class="label">Length</div>
     <div class="chips">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w && !S.toDate}">${w} weeks</button>`).join('')}${fixed ? `<button class="chip" data-wk="8" data-todate="1" aria-pressed="${!!S.toDate}">To ${esc(fixed.by)}</button>` : ''}</div>
-    <div class="label" style="display:flex;justify-content:space-between"><span>Effort</span><span>Now → week ${S.weeks} (est.)</span></div>
+    <div class="label" style="display:flex;justify-content:space-between"><span>Effort</span><span>kg · now → week ${S.weeks} (est.)</span></div>
     ${['Steady', 'Standard', 'Push'].map((l) => { const e = EFFORT[l]; return `<button class="card" data-eff="${l}" style="text-align:left;border:${S.effort === l ? '2px solid var(--accent)' : '2px solid transparent'};color:var(--text);cursor:pointer;padding:12px 14px;font:inherit;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:start">
       <span style="display:flex;flex-direction:column;gap:4px;min-width:0"><span style="font-size:17px;font-weight:600">${l}</span>
         <span style="font-size:14px;color:var(--text2);line-height:1.35">${e.line}</span>
