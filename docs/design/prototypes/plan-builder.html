@@ -380,6 +380,8 @@ function renderGoals() {
     <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w}">${w} weeks</button>`).join('')}</div>
     <div class="label">Effort</div>
     <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['Maintain', 'Standard', 'Push'].map((l) => `<button class="chip" data-eff="${l}" aria-pressed="${S.effort === l}">${l}</button>`).join('')}</div>
+`);
+  $('scroll').insertAdjacentHTML('beforeend', `
     <div class="card" style="padding:0 14px">
       <button class="row" id="expTog" style="background:none;border:0;color:var(--text);font:inherit;font-size:15px;width:100%;cursor:pointer;min-height:44px" aria-expanded="${!!S.expOpen}"><span>What to expect in ${S.weeks} weeks</span><span class="chev" style="transform:rotate(${S.expOpen ? 90 : 0}deg)">›</span></button>
       ${S.expOpen ? `<div style="display:flex;flex-direction:column;gap:6px;padding:4px 0 12px">

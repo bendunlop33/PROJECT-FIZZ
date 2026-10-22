@@ -21,7 +21,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **Offline:** the app builds the same plan from its rules, marked **Not reviewed**; tap edits still work, the coach box is disabled.
 
-**Layout update (Ben, 22 Oct):** Plan length and Effort moved onto Gym goals as two compact rows (4 / 6 / 8 / 12 weeks; Steady / Standard / Push), at the top of the page (Ben, 22 Oct), with a collapsed `What to expect in N weeks` panel for the chosen pair (what the level means, RPE, sets, deload, and each main lift now → week N est.). The separate length-and-effort step is gone: Check your lifts (if needed) → Gym goals → Your week → Your plan. Option boxes are 36 pt, same corners and text size.
+**Layout update (Ben, 22 Oct):** Plan length and Effort moved onto Gym goals as two compact rows (4 / 6 / 8 / 12 weeks; Steady / Standard / Push), at the top of the page (Ben, 22 Oct), then Main focus, Priority and Other training, and a collapsed `What to expect in N weeks` panel at the bottom for the chosen pair (what the level means, RPE, sets, deload, and each main lift now → week N est.). The separate length-and-effort step is gone: Check your lifts (if needed) → Gym goals → Your week → Your plan. Option boxes are 36 pt, same corners and text size.
 
 **Focus vs effort (Ben, 22 Oct):** Main focus is what you build (Strength / Muscle / Balanced / Fitness); Effort is how hard (Maintain / Standard / Push). Maintain moved from focus to effort; Steady dropped (★ sports already give the lighter dose). Maintain: fewer sets (others 4–8, priority 8–12), same weights, reps only if easy, no deload, no projected gain.
 
