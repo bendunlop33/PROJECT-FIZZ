@@ -48,6 +48,7 @@ Goal (Profile) → Plan (days, order, rotation; training blocks later)
 - Each template can have saved **variations**: `Chest · bench · arms superset`, `Chest · bench · abs superset` (Ben: "also have variations saved, such as including arm supersets or abs superset, so it doesn't lose stuff and have to redo unnecessarily"). Picked on Today's session-type chips or on Set up.
 - [Proposal] A variation is stored as **the template plus its extras** (the added exercises and pairings), not as a full copy. So when the template changes, every variation picks up the change and nothing has to be redone (§4.3).
 - **`Save as default` is removed.** Edits are **today only** by default. On Start after edits, one prompt: `Today only` / `Update Chest · bench in your plan` / `Save as new variation` (§2.8). This is rule 2's scope choice.
+  - **With a plan (Ben, 22 Oct):** once any control differs from the plan's version of the day, the card shows a small `Today only` tag. `Update in your plan` no longer writes the plan directly: it opens Library › your plan with today's changes as items in its **Changes** review (accept or reject each, choose the weeks; done weeks and workouts untouched; plan-builder.md §2).
 - Name format everywhere: `<Day> · <main lift>` and `<Day> · <main lift> · <variation>`.
 
 ---

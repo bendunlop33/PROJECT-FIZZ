@@ -98,7 +98,7 @@ const A = { tab: 'today', stack: [], plan: false, ptab: 'overview' };
 const $ = (id) => document.getElementById(id);
 const frames = {};
 function frame(src) {
-  if (!frames[src]) { const f = document.createElement('iframe'); const [file, hash] = src.split('#'); f.src = file + '?embed=1' + (hash ? '#' + hash : ''); f.title = src; $('view').appendChild(f); frames[src] = f; }
+  if (!frames[src]) { const f = document.createElement('iframe'); f.addEventListener('load', () => { f.dataset.ready = '1'; }); const [file, hash] = src.split('#'); f.src = file + '?embed=1' + (hash ? '#' + hash : ''); f.title = src; $('view').appendChild(f); frames[src] = f; }
   return frames[src];
 }
 function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2200); }
@@ -134,6 +134,13 @@ addEventListener('message', (e) => {
   if (to === 'back') return A.stack.length ? pop() : home();
   if (to === 'applied') { A.plan = true; ['plan-builder.html', 'plan-builder.html#view'].forEach((k) => { frames[k]?.remove(); delete frames[k]; }); return home('Plan applied'); }
   if (to === 'changed') return; // edits apply inside the overview
+  if (to === 'planupdate') {
+    // Today's Start prompt › Update in your plan: open the plan overview with today's changes as changes to review.
+    A.tab = 'library'; A.stack = ['planview']; show();
+    const f = frame(PAGES.planview()), send = () => f.contentWindow.postMessage({ cmd: 'edit', change: e.data.change }, '*');
+    if (f.dataset.ready) send(); else f.addEventListener('load', () => { f.dataset.ready = '1'; setTimeout(send, 50); }, { once: true });
+    return;
+  }
   if (to === 'paused' || to === 'resumed') { A.paused = to === 'paused'; return; }
   if (to === 'endplan') { A.plan = false; A.paused = false; frames['plan-builder.html#view']?.remove(); delete frames['plan-builder.html#view']; A.stack = []; A.tab = 'library'; show(); return toast('Plan ended'); }
   if (to === 'finished') { A.stack = ['summary']; return show(); }

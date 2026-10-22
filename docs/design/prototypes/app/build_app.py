@@ -17,7 +17,7 @@ PROTOS = HERE.parent
 
 # Button text (exact) -> where the shell goes.
 GO = {
-    'training-blocks.html': {'Start': 'active', 'Build your own': 'builder', 'Edit': 'builder'},
+    'training-blocks.html': {'Build your own': 'builder', 'Edit': 'builder'},  # Start asks first when today changed (handled inside)
     'workout-builder-v3.html': {'Start': 'active', 'Start with no muscle groups': 'active'},
     'workout-active-v3.html': {'Finish workout': 'finished', 'Discard workout': 'discarded'},
     # '~' = tell the shell but let the prototype handle the tap too.
@@ -30,7 +30,17 @@ EXTRA = {
     'plan-builder.html': """
   // #view opens the plan you have, as the Your plan overview (Library › your plan): week 3 of 6, this week's first workout done,
   // and every answer it was built from kept for Edit plan.
-  if (location.hash === '#view') addEventListener('load', () => { Object.assign(S, { ans: { wk: true, eff: true, focus: true }, priAsk: 'No', actAsk: 'No', prefAns: Object.fromEntries(PREF_Q.map((q) => [q.id, 'either'])), page: 'plan', applied: true, editing: false, chat: [], open: -1, curWeek: 3, week: 3, doneDays: [0] }); S.plan = build(); render(); });
+  if (location.hash === '#view') addEventListener('load', () => { Object.assign(S, { ans: { wk: true, eff: true, focus: true }, priAsk: 'No', actAsk: 'No', prefAns: Object.fromEntries(PREF_Q.map((q) => [q.id, 'either'])), page: 'plan', applied: true, editing: false, chat: [], open: -1, curWeek: 3, week: 3, doneDays: [3] }); S.plan = build(); render(); });
+  // From Today's Start prompt, Update in your plan: today's changes become plan changes to review (Ben, 22 Oct).
+  addEventListener('message', (e) => {
+    const c = e.data?.cmd === 'edit' && e.data.change; if (!c) return;
+    ensureEditing();
+    if (c.min) S.length = c.min;
+    if (typeof c.ss === 'boolean') S.supersets = c.ss;
+    if (c.abs === false) S.absWk = 0;
+    if (c.main === 'Incline') S.likes = [...new Set([...S.likes, 'Incline bench press'])];
+    S.plan = build(); S.pageTop = true; render();
+  });
 """,
     'training-blocks.html': """
   // #progress opens the block's progress screen (the shell's Progress → Block).

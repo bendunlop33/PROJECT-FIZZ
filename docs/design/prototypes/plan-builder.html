@@ -411,7 +411,7 @@ function aimFor(m) {
 // Working sets that fit a session: ~3 min per set with rest, ~2.3 with supersets, after an 8-minute warm-up.
 const capSets = () => Math.floor((S.length - 8) / (S.supersets ? 2.3 : 3));
 // A main lift follows his answers on Any preferences (Ben, 22 Oct): a liked alternative replaces it, a never moves it on.
-const MAIN_ALT = { 'Bench press': ['DB bench press', 'Machine chest press', 'Smith bench press'], 'Back squat': ['Leg press', 'Hack squat', 'Front squat', 'Smith squat'], 'Incline bench press': ['Incline DB press', 'Incline machine press', 'Incline Smith press'], 'Pull-up': ['Lat pulldown', 'Assisted pull-up', 'Chin-up'], 'DB shoulder press': ['Machine shoulder press', 'Overhead press', 'Arnold press', 'Smith shoulder press'], 'Barbell row': ['Chest-supported row', 'Seated cable row', 'T-bar row', 'Single-arm DB row'] };
+const MAIN_ALT = { 'Bench press': ['DB bench press', 'Machine chest press', 'Smith bench press', 'Incline bench press'], 'Back squat': ['Leg press', 'Hack squat', 'Front squat', 'Smith squat'], 'Incline bench press': ['Incline DB press', 'Incline machine press', 'Incline Smith press'], 'Pull-up': ['Lat pulldown', 'Assisted pull-up', 'Chin-up'], 'DB shoulder press': ['Machine shoulder press', 'Overhead press', 'Arnold press', 'Smith shoulder press'], 'Barbell row': ['Chest-supported row', 'Seated cable row', 'T-bar row', 'Single-arm DB row'] };
 const mainOf = (focus, variant) => {
   const mn = ((variant === 'B' && DAYS_B[focus]) || DAYS[focus]).ex.find((x) => x[2] === 'main'); if (!mn) return null;
   const alts = MAIN_ALT[mn[0]] ?? [], liked = alts.find((a) => allLikes().includes(a));

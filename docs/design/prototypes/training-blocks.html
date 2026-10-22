@@ -94,6 +94,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pill { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 999px; min-height: 52px; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .ghost { background: none; color: var(--text); border: 1.5px solid var(--text3); border-radius: 999px; min-height: 52px; padding: 0 20px; font-size: 15px; cursor: pointer; font-family: inherit; }
 .seg { display: grid; grid-template-columns: repeat(4, 1fr) minmax(44px, auto); gap: 4px; background: var(--surface); border-radius: 14px; padding: 4px; }
+.todayonly { font-size: 12px; font-weight: 600; color: var(--warn); }
+.startask { display: flex; flex-direction: column; gap: 8px; } .startask b { font-size: 14px; color: var(--text2); font-weight: 500; }
 .seg[role="tablist"] { margin-bottom: 8px; } /* gap above the session card so the tabs don't run into it (Ben, 22 Oct) */
 .sg { border: 0; background: none; color: #6E6761; border-radius: 10px; min-height: 48px; font-size: 14.5px; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
 .sg i { font-style: normal; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); }
@@ -311,6 +313,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   // Start-a-block draft (no block running): start = today's working top set, one step a week to week 5
   const DRAFT = [['Bench', 102.5, 112.5], ['Squat', 117.5, 127.5], ['Row', 92.5, 102.5]];
 
+  // Changed from the plan's version of today's session (the defaults below)?
+  const todayChanged = () => (s.main != null && s.main !== Object.keys(D[s.day]?.mains ?? {})[0]) || s.style !== 'Focused' || s.min !== 60 || !s.abs || !s.ss;
   const fresh = () => ({ early: 'offer', started: false, notNow: false, sw: { row: true, c1: true, c2: true, b1: true, l1: true }, bdraft: false, bstart: false, focus: null, mix: false, open: false, day: 'Chest', main: null, style: 'Focused', min: 60, abs: true, ss: true, undone: {}, toast: null });
   let s = { scr: 'today', st: 'build', off: false, hist: false, ...fresh() };
 
@@ -401,7 +405,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === 'Chest' ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other sessions">⋯</button></div>
       </div>
       <div class="card${s.open ? ' open' : ''}">
-        <div class="top"><div class="big">${s.day}</div><div class="meta"><span>${dr.ex.length} exercises · ~${shown} min</span></div></div>
+        <div class="top"><div class="big">${s.day}</div><div class="meta"><span>${dr.ex.length} exercises · ~${shown} min</span>${todayChanged() ? '<span class="todayonly">Today only</span>' : ''}</div></div>
         ${offer}
         ${dr.est > s.min ? `<div class="fitline">To fit ${s.min} min: shorter rests</div>` : ''}
         <div class="ctl">
@@ -415,7 +419,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${bl.map((b) => { n++; const rows = b.map((e, i) => row(e, `${n}${b.length > 1 ? 'ab'[i] : ''}`)).join(''); return b.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join('')}</div>
         <details class="whyd"><summary>Why?</summary>${why}</details>
         <div class="mixrow">${dr.mix ? `<span>${dr.mix.from} → <b>${dr.mix.to}</b> · today only</span><button class="link" data-a="unmix">Undo</button>` : '<button class="link" data-a="mix">↻ Mix it up</button>'}</div>
-        <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
+        ${s.startAsk ? `<div class="startask"><b>Keep these changes for</b><button class="pill" data-a="go">Today only</button><button class="ghost" data-a="toplan">Update in your plan</button><button class="ghost" data-a="savevar">Save as a variation</button></div>` : `<div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>`}
       </div>
       <div class="rowlinks"><button data-a="build">Build your own</button><button data-a="activity">＋ Activity</button></div>
     </div>`;
@@ -623,6 +627,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   let tt;
   const say = (t, u) => { s.toast = { t, u }; };
+  const embedded = () => document.documentElement.classList.contains('embed');
+  const startNow = () => { if (embedded()) parent.postMessage({ app: 'active' }, '*'); else say(`Started ${s.day} (prototype)`); };
   document.body.addEventListener('click', (ev) => {
     const el = ev.target.closest('[data-a]'); if (!el || !el.dataset.a) return;
     if (el.tagName === 'SUMMARY') return;
@@ -646,7 +652,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'ss') s.ss = !s.ss;
     if (a === 'mix') s.mix = true;
     if (a === 'unmix') s.mix = false;
-    if (a === 'start') say(`Started ${s.day} (prototype)`);
+    // Today's controls change today only (Ben, 22 Oct). Start after a change asks once; Update in your plan opens the
+    // plan's Changes review (accept or reject, choose weeks) rather than changing the plan directly.
+    if (a === 'start') { if (todayChanged()) s.startAsk = true; else startNow(); }
+    if (a === 'go') { s.startAsk = false; startNow(); }
+    if (a === 'savevar') { s.startAsk = false; say(`Saved as Chest · ${s.main ?? 'Bench'} variation`); startNow(); }
+    if (a === 'toplan') { s.startAsk = false; const ch = { min: s.min, ss: s.ss, abs: s.abs, main: s.main, style: s.style }; if (embedded()) parent.postMessage({ app: 'planupdate', change: ch }, '*'); else say('Opens Your plan with these as changes to review'); }
     if (a === 'edit') say('Opens the builder (prototype)');
     if (a === 'build') say('Opens the builder (prototype)');
     if (a === 'activity') say('Log or plan a run (prototype)');
