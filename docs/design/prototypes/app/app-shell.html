@@ -58,7 +58,7 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
 .primary { flex: 1; min-height: 52px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font: 600 17px var(--ui); cursor: pointer; }
 .secondary { flex: 1; min-height: 52px; border-radius: 999px; border: 1px solid var(--divider); background: none; color: var(--text); font: 600 17px var(--ui); cursor: pointer; }
 .ctl { background: var(--raised); border-radius: 14px; }
-.mfilter { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.mfilter { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; }
 .mfilter button { flex: 1 0 auto; min-height: 32px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--divider); background: none; color: var(--text2); font: 600 13px var(--ui); cursor: pointer; }
 .mfilter button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .daypick { display: grid; grid-template-columns: repeat(4, 1fr) 44px; gap: 4px; background: var(--surface); border-radius: 14px; padding: 4px; }
@@ -79,7 +79,9 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
 .sw i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--text2); transition: left .15s; }
 .sw.on { background: var(--accent); } .sw.on i { left: 21px; background: var(--canvas); }
 .toast { position: absolute; left: 16px; right: 16px; bottom: 96px; background: var(--raised); border-radius: 14px; padding: 12px 14px; font-size: 14px; display: none; z-index: 5; }
-.toast.on { display: block; }
+.toast.on { display: flex; justify-content: space-between; align-items: center; }
+.toast.undo { padding: 4px 6px 4px 14px; }
+.toast .link { min-height: 40px; padding: 0 8px; font-size: 15px; }
 @media (max-width: 440px) {
   .wrap { padding: 0; gap: 0; }
   .hint, .ctrl { display: none; }
@@ -105,6 +107,8 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
   </div>
 </div>
 <script>
+// Shared example facts (V1): the same in every screen of the whole-app prototype; build_app.py checks them.
+const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 92.5, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 92.5", "last": "12 Oct · 100 × 6"};
 // Screens: a tab root or a pushed screen. Prototype screens are iframes kept alive, so their state survives switching.
 const PAGES = {
   today: () => (A.plan ? 'training-blocks.html' : null), // no plan: the native Today below (workout-builder-v3.md, No plan)
@@ -113,6 +117,8 @@ const PAGES = {
   plan: () => 'plan-builder.html',
   planview: () => 'plan-builder.html#view',
   builder: () => 'workout-builder-v3.html',
+  // Edit on Today and Open in builder › on the plan (V6): the builder on Your workout with that workout (its own copy).
+  draft: () => 'workout-builder-v3.html#draft',
   active: () => 'workout-active-v3.html',
 };
 const NATIVE = ['todayNo', 'library', 'profile', 'summary'];
@@ -123,7 +129,31 @@ function frame(src) {
   if (!frames[src]) { const f = document.createElement('iframe'); f.addEventListener('load', () => { f.dataset.ready = '1'; }); const [file, hash] = src.split('#'); f.src = file + '?embed=1' + (hash ? '#' + hash : ''); f.title = src; $('view').appendChild(f); frames[src] = f; }
   return frames[src];
 }
-function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2200); }
+// A toast can offer Undo (V4): undo() puts things back; done() runs once it can no longer be undone (timeout or the next toast).
+let pending = null;
+function settle() { const p = pending; pending = null; p?.done?.(); }
+function toast(t, undo, done) {
+  settle();
+  const el = $('toast'); el.innerHTML = `<span></span>${undo ? '<button class="link" id="toastUndo">Undo</button>' : ''}`; el.firstChild.textContent = t;
+  el.classList.toggle('undo', !!undo); el.classList.add('on'); pending = undo ? { undo, done } : null;
+  if (undo) $('toastUndo').onclick = () => { const p = pending; pending = null; clearTimeout(toast.t); el.classList.remove('on'); p?.undo(); };
+  clearTimeout(toast.t); toast.t = setTimeout(() => { el.classList.remove('on'); settle(); }, undo ? 4000 : 2200);
+}
+// Take screens out of the app but keep them (with their state) until Undo is no longer possible.
+function stash(keys) {
+  const kept = {}; keys.forEach((k) => { if (frames[k]) { kept[k] = frames[k]; kept[k].classList.remove('on'); delete frames[k]; } });
+  return {
+    // Undo: screens opened since (e.g. the plan overview after Apply) go, the kept ones come back.
+    back: () => keys.forEach((k) => { if (frames[k] && frames[k] !== kept[k]) { frames[k].remove(); delete frames[k]; } if (kept[k]) frames[k] = kept[k]; }),
+    drop: () => Object.values(kept).forEach((f) => f.remove()),
+  };
+}
+// Leave the current state with Undo: restores the plan flags, where you were, and the stashed screens.
+function undoable(msg, keys, change) {
+  const prev = { plan: A.plan, paused: A.paused, live: A.live, tab: A.tab, stack: [...A.stack] }, kept = stash(keys);
+  change(); show();
+  toast(msg, () => { kept.back(); Object.assign(A, prev, { stack: [...prev.stack] }); show(); }, kept.drop);
+}
 function current() { return A.stack.at(-1) ?? A.tab; }
 function show() {
   const cur = current(), pushed = A.stack.length > 0;
@@ -147,7 +177,7 @@ document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { A.tab
 addEventListener('message', (e) => {
   const to = e.data?.app; if (!to) return;
   if (to === 'back') return A.stack.length ? pop() : home();
-  if (to === 'applied') { A.plan = true; ['plan-builder.html', 'plan-builder.html#view'].forEach((k) => { frames[k]?.remove(); delete frames[k]; }); return home('Plan applied'); }
+  if (to === 'applied') return undoable('Plan applied', ['plan-builder.html', 'plan-builder.html#view'], () => { A.plan = true; A.stack = []; A.tab = 'today'; });
   if (to === 'changed') return; // edits apply inside the overview
   if (to === 'dotoday') { A.tab = 'today'; A.stack = []; show(); const f = frame(PAGES.today()); const send = () => f.contentWindow.postMessage({ cmd: 'day', day: e.data.day }, '*'); if (f.dataset.ready) send(); else f.addEventListener('load', () => setTimeout(send, 50), { once: true }); return; }
   if (to === 'planupdate') {
@@ -158,38 +188,69 @@ addEventListener('message', (e) => {
     return;
   }
   if (to === 'paused' || to === 'resumed') { A.paused = to === 'paused'; return; }
-  if (to === 'endplan') { A.plan = false; A.paused = false; frames['plan-builder.html#view']?.remove(); delete frames['plan-builder.html#view']; A.stack = []; A.tab = 'library'; show(); return toast('Plan ended'); }
-  if (to === 'finished') { A.stack = ['summary']; return show(); }
-  if (to === 'discarded') return home('Workout discarded');
+  // End plan is confirmed inside the plan overview first (V4).
+  if (to === 'endplan') return undoable('Plan ended', ['plan-builder.html#view'], () => { A.plan = false; A.paused = false; A.stack = []; A.tab = 'library'; });
+  if (to === 'builder' && e.data.draft) {
+    push('draft');
+    const f = frame(PAGES.draft()), send = () => f.contentWindow.postMessage({ cmd: 'draft', draft: e.data.draft }, '*');
+    if (f.dataset.ready) send(); else f.addEventListener('load', send, { once: true });
+    return;
+  }
+  if (to === 'active' && e.data.session) return start(e.data.session);
+  if (to === 'finished') { A.live = false; A.log = e.data.log ?? null; SUM.undone = {}; A.stack = ['summary']; return show(); }
+  // Discard is confirmed inside the workout first (Discard N logged sets?). Undo brings the same workout back (V4).
+  if (to === 'discarded') return undoable('Workout discarded', ['workout-active-v3.html'], () => { A.live = false; A.stack = []; A.tab = 'today'; });
   if (to === 'library' || to === 'profile' || to === 'progress') { A.tab = to; A.stack = []; return show(); }
   push(to);
 });
 
+// Start: the active workout opens with exactly this session (V1): same name, exercises, order, sets, reps and kg.
+// Starting ends a pending Undo (a discarded workout can't come back over a new one). A workout in progress is
+// resumed, never replaced: its logged sets stay (rule 2).
+function start(session) {
+  settle(); clearTimeout(toast.t); $('toast').classList.remove('on');
+  if (A.live && frames[PAGES.active()]) { push('active'); if (session.name !== A.session?.name) toast(`${A.session.name} in progress`); return; }
+  A.session = session; A.log = null; A.live = true; push('active');
+  const f = frame(PAGES.active()), send = () => f.contentWindow.postMessage({ cmd: 'session', session }, '*');
+  if (f.dataset.ready) send(); else f.addEventListener('load', send, { once: true });
+}
+// Main lift in one format everywhere (V1): top set + back-offs · loads, e.g. 1 × 6 + 2 × 8 · 100 / 90.
+const EACH = new Set(['Incline dumbbell press', 'Dumbbell shoulder press', 'Lateral raise', 'Rear-delt fly', 'Chest-supported row', 'Hammer curl', 'Single-arm DB row', 'Incline DB curl']);
+const snap25 = (v) => Math.round(v / 2.5) * 2.5;
+const mainLine = (e) => (e.kg == null ? `${e.sets} × ${e.reps}` : `1 × ${e.reps}${e.sets > 1 ? ` + ${e.sets - 1} × ${e.backReps}` : ''} · ${e.kg}${e.sets > 1 ? ` / ${e.back}` : ''}${EACH.has(e.name ?? e.n) ? ' each' : ''}`);
+
 // ---------- Today with no plan (workout-builder-v3.md §states, No plan) ----------
 // No day tabs. One row: No plan · Set up a plan. Up next comes from the old resolver: Profile split, else routines in
-// rotation, else the longest gap; here the longest gap (Back, last trained 13 Oct). Start is one tap.
-const STRIP = [['SAT', 17, 'Shoulders', 'done'], ['SUN', 18, 'Run 12k', 'run'], ['MON', 19, '', ''], ['TODAY', 20, '', 'today'], ['WED', 21, '', ''], ['THU', 22, '', ''], ['FRI', 23, '', '']];
+// rotation, else the longest gap; here the longest gap (Chest, last trained 12 Oct: the shared fixture's session). Start is one tap.
+const STRIP = [['SAT', 17, 'Legs', 'done'], ['SUN', 18, 'Run 12k', 'run'], ['MON', 19, '', ''], ['TODAY', 20, '', 'today'], ['WED', 21, '', ''], ['THU', 22, '', ''], ['FRI', 23, '', '']];
 // No plan, Up next still adjustable before Start (Ben, 22 Oct): same controls as Today with a plan, today only, with the
 // same fit-to-time (rests, supersets, then the cheapest cut; main lift kept; note after Time in light orange).
 // Days come from Profile › Split; the suggested one is marked NEXT. Picking another is today only (the suggestion moves on).
+// [label, exercise, kg] for main lifts (kg null = bodyweight); accessories [exercise, kg, compound?] and the extra [exercise, kg],
+// as Today with a plan (training-blocks.html D): the same day reads the same with or without a plan (V1).
 const TN_DAYS = {
-  Back: { mains: [['Row', 'Barbell row'], ['Pull-up', 'Pull-up']], last: 'last Back 13 Oct', focused: [['Lat pulldown', 1], ['Chest-supported row', 1], ['Hammer curl', 0]], varied: [['Single-arm DB row', 1], ['Straight-arm pulldown', 0], ['Incline DB curl', 0]] },
-  Chest: { mains: [['Bench', 'Bench press'], ['Incline', 'Incline bench press']], last: 'last Chest 19 Oct', focused: [['Incline DB press', 1], ['Cable fly', 0], ['Triceps pushdown', 0]], varied: [['Machine chest press', 1], ['Pec deck', 0], ['Overhead triceps extension', 0]] },
-  Legs: { mains: [['Squat', 'Back squat'], ['Leg press', 'Leg press']], last: 'last Legs 17 Oct', focused: [['Romanian deadlift', 1], ['Leg curl', 0], ['Calf raise', 0]], varied: [['Hack squat', 1], ['Seated leg curl', 0], ['Seated calf raise', 0]] },
-  Shoulders: { mains: [['DB press', 'DB shoulder press'], ['Machine', 'Machine shoulder press']], last: 'last Shoulders 17 Oct', focused: [['Lateral raise', 0], ['Face pull', 0], ['Barbell curl', 0]], varied: [['Cable lateral raise', 0], ['Rear delt fly', 0], ['Hammer curl', 0]] },
+  Back: { mains: [['Row', 'Barbell row', 92.5], ['Pull-up', 'Pull-up', null]], last: 'last Back 14 Oct', focused: [['Lat pulldown', 60, 1], ['Chest-supported row', 22.5, 1]], varied: [['Lat pulldown', 60, 1], ['Seated cable row', 60, 1], ['Face pull', 22.5]], extra: ['EZ-bar curl', 30] },
+  Chest: { mains: [['Bench', FIXTURE.main, FIXTURE.top], ['Incline', 'Incline barbell press', 82.5]], last: 'last Chest 12 Oct', focused: [['Incline dumbbell press', 27.5, 1], ['Cable fly', 15]], varied: [['Incline dumbbell press', 27.5, 1], ['Cable crossover', 12.5], ['Dips', null, 1]], extra: ['Triceps pushdown', 30] },
+  Legs: { mains: [['Squat', 'Back squat', 117.5], ['Leg press', 'Leg press', 195]], last: 'last Legs 17 Oct', focused: [['Romanian deadlift', 105, 1], ['Leg press', 195, 1]], varied: [['Romanian deadlift', 105, 1], ['Leg press', 180, 1], ['Leg curl', 47.5]], extra: ['Seated calf raise', 40] },
+  Shoulders: { mains: [['DB press', 'Dumbbell shoulder press', 32.5], ['Machine', 'Machine shoulder press', 60]], last: 'last Shoulders 16 Oct', focused: [['Lateral raise', 10], ['Rear-delt fly', 7.5]], varied: [['Lateral raise', 10], ['Face pull', 22.5], ['Cable lateral raise', 5]], extra: ['Triceps pushdown', 30] },
 };
-const TN_NEXT = 'Back';
+const TN_NEXT = FIXTURE.session;
 const TN = { day: TN_NEXT, main: null, style: 'Focused', min: 60, abs: true, ss: true };
 const tnMain = () => TN.main ?? TN_DAYS[TN.day].mains[0][0];
 const tnChanged = () => TN.day !== TN_NEXT || tnMain() !== TN_DAYS[TN.day].mains[0][0] || TN.style !== 'Focused' || TN.min !== 60 || !TN.abs || !TN.ss;
+// Same session and the same time and fit-to-time as Today with a plan (training-blocks.html draft()), so a day's
+// exercises, sets and minutes match with or without a plan (V1). A main lift that is also an accessory isn't repeated.
 function tnWorkout() {
-  const D = TN_DAYS[TN.day], acc = TN.style === 'Focused' ? D.focused : D.varied;
-  let ex = [{ n: D.mains.find(([k]) => k === tnMain())[1], main: true, sets: 4, comp: 1 }, ...acc.map(([n, c]) => ({ n, sets: 3, comp: c })), ...(TN.abs ? [{ n: 'Cable crunch', abs: true, sets: 3 }] : [])];
-  const mins = (l, rest = 1, ss = TN.ss) => 4 + l.reduce((m, e) => m + e.sets * (e.main ? 4 : e.comp ? 3 : 2.2) * rest * (ss && !e.main ? 0.85 : 1) + 1.5, 0);
-  if (mins(ex) <= TN.min) return { ex, est: Math.round(mins(ex)), note: '' };
+  const D = TN_DAYS[TN.day], [, mn, mkg] = D.mains.find(([k]) => k === tnMain()), accSets = TN.style === 'Varied' ? 2 : 3;
+  const ex = [{ n: mn, main: true, sets: 3, reps: mkg == null ? 8 : 6, backReps: 8, kg: mkg, back: mkg == null ? null : snap25(mkg * 0.9), comp: 1 },
+    ...(TN.style === 'Varied' ? D.varied : D.focused).filter(([n]) => n !== mn).map(([n, kg, c]) => ({ n, sets: accSets, comp: c ? 1 : 0, kg, reps: c ? 8 : 12 })),
+    { n: D.extra[0], extra: true, sets: 3, comp: 0, kg: D.extra[1], reps: 12 }, ...(TN.abs ? [{ n: 'Cable crunch', abs: true, sets: 3, kg: 40, reps: 12 }] : [])];
+  const pair = (l) => l.some((e) => e.extra) && l.some((e) => e.abs);
+  const mins = (l, rest = 1, ss = TN.ss) => 4 + l.reduce((m, e) => m + e.sets * (e.main ? 4 : e.comp ? 3 : 2.2) * rest + 1.5, 0) - (ss && TN.abs && pair(l) ? 5 : 0);
+  if (mins(ex) <= TN.min) return { ex, est: Math.round(mins(ex)), note: '', ss: TN.ss };
   const rest = 0.85; let note = 'shorter rests', ssOn = TN.ss;
-  if (mins(ex, rest) > TN.min && !TN.ss) { ssOn = true; note = 'supersets'; }
-  const val = (e) => e.abs ? 2.5 : e.comp ? 3 : 2, per = (e) => (e.comp ? 3 : 2.2) * rest;
+  if (mins(ex, rest) > TN.min && !TN.ss && TN.abs && mins(ex, rest, true) < mins(ex, rest)) { ssOn = true; note = 'supersets'; }
+  const val = (e) => e.abs ? 2.5 : e.extra ? 1.5 : e.comp ? 3 : 2, per = (e) => (e.comp ? 3 : 2.2) * rest;
   const n0 = ex.length, s0 = ex.reduce((a, e) => a + e.sets, 0);
   while (mins(ex, rest, ssOn) > TN.min) {
     const over = mins(ex, rest, ssOn) - TN.min, opts = [];
@@ -198,9 +259,20 @@ function tnWorkout() {
     const o = opts.filter((x) => x.saves >= over).sort((a, b) => a.lost - b.lost)[0] ?? opts.sort((a, b) => a.lost / a.saves - b.lost / b.saves)[0];
     if (o.drop) ex.splice(o.k, 1); else ex[o.k].sets -= 1;
   }
+  if (ssOn && !TN.ss && !pair(ex)) { ssOn = false; note = 'shorter rests'; }
   const dropped = n0 - ex.length, cut = s0 - ex.reduce((a, e) => a + e.sets, 0);
   if (dropped) note = `−${dropped} exercise${dropped > 1 ? 's' : ''}`; else if (cut) note = `−${cut} set${cut > 1 ? 's' : ''}`;
-  return { ex, est: Math.min(TN.min, Math.round(mins(ex, rest, ssOn))), note };
+  return { ex, est: Math.min(TN.min, Math.round(mins(ex, rest, ssOn))), note, ss: ssOn };
+}
+const WORKS = { 'Cable crossover': 'Lower chest', Dips: 'Lower chest, triceps', 'Seated cable row': 'Mid-back, lats, biceps', 'EZ-bar curl': 'Biceps', 'Barbell bench press': 'Chest, front delts, triceps', 'Incline barbell press': 'Upper chest, front delts, triceps', 'Incline dumbbell press': 'Upper chest, front delts, triceps', 'Cable fly': 'Chest', 'Machine chest press': 'Chest, triceps', 'Pec deck': 'Chest', 'Triceps pushdown': 'Triceps', 'Overhead triceps extension': 'Triceps', 'Cable crunch': 'Upper abs', 'Barbell row': 'Mid-back, lats, rear delts', 'Pull-up': 'Lats, biceps', 'Lat pulldown': 'Lats, biceps', 'Chest-supported row': 'Mid-back, rear delts', 'Single-arm DB row': 'Lats, mid-back', 'Straight-arm pulldown': 'Lats', 'Hammer curl': 'Biceps, forearms', 'Incline DB curl': 'Biceps', 'Barbell curl': 'Biceps', 'Back squat': 'Quads, glutes, adductors', 'Leg press': 'Quads, glutes', 'Hack squat': 'Quads, glutes', 'Romanian deadlift': 'Hamstrings, glutes', 'Leg curl': 'Hamstrings', 'Seated leg curl': 'Hamstrings', 'Calf raise': 'Calves', 'Seated calf raise': 'Calves', 'Dumbbell shoulder press': 'Front delts, triceps', 'Machine shoulder press': 'Front delts, triceps', 'Lateral raise': 'Side delts', 'Cable lateral raise': 'Side delts', 'Face pull': 'Rear delts, upper back', 'Rear-delt fly': 'Rear delts' };
+// The no-plan session as Start sends it: supersets pair the extra with abs (as Today with a plan).
+function tnSession() {
+  const w = tnWorkout();
+  const ex = w.ex.map((e) => ({ name: e.n, main: !!e.main, sets: e.sets, kg: e.kg ?? null, reps: e.reps, back: e.back, backReps: e.backReps, comp: !!e.comp, each: EACH.has(e.n), works: WORKS[e.n], ...(e.main && e.n === FIXTURE.main ? { last: FIXTURE.last } : {}) }));
+  let blocks = ex.map((e) => [e]);
+  const xi = w.ex.findIndex((e) => e.extra);
+  if (w.ss && TN.abs && xi >= 0 && w.ex[xi + 1]?.abs) blocks = [...ex.slice(0, xi).map((e) => [e]), [ex[xi], ex[xi + 1]], ...ex.slice(xi + 2).map((e) => [e])];
+  return { name: TN.day, date: FIXTURE.today, min: TN.min, est: w.est, ss: w.ss, lastDate: TN_DAYS[TN.day].last.split(' ').slice(-2).join(' '), blocks };
 }
 function renderTodayNo() {
   const w = tnWorkout();
@@ -212,6 +284,7 @@ function renderTodayNo() {
       <div class="label" style="margin:0">${TN.day === TN_NEXT ? 'Up next' : 'Today'}</div>
       <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:28px;font-weight:600">${TN.day}</span><span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;color:var(--text2);font-size:13px"><span>${w.ex.length} exercises · ~${w.est} min</span>${tnChanged() ? '<span style="color:var(--warn);font-weight:600;font-size:12px">Today only</span>' : ''}</span></div>
       <div style="color:var(--text2);font-size:14px">${TN.day === TN_NEXT ? 'Longest since you trained it' : 'Picked by you'} · ${TN_DAYS[TN.day].last}</div>
+      <div style="font-size:15px" id="tnMainLine">${w.ex[0].n}<div style="color:var(--text2);font-size:13px;font-variant-numeric:tabular-nums;margin-top:2px">${mainLine(w.ex[0])}</div></div>
       <div class="ctl">
         <div class="cr"><span class="k">Main lift</span><span class="opts">${TN_DAYS[TN.day].mains.map(([m]) => `<button class="${tnMain() === m ? 'on' : ''}" data-tn="main" data-v="${m}">${m}</button>`).join('')}</span></div>
         <div class="cr"><span class="k">Accessories</span><span class="opts">${['Focused', 'Varied'].map((m) => `<button class="${TN.style === m ? 'on' : ''}" data-tn="style" data-v="${m}">${m}</button>`).join('')}</span></div>
@@ -224,19 +297,20 @@ function renderTodayNo() {
     <div class="foot" style="margin-top:0"><button class="secondary" id="tnBuild">Build your own</button><button class="secondary" id="tnAct">＋ Activity</button></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${['Full body', 'Upper', 'Push', 'Empty workout'].map((t) => `<button class="secondary" style="flex:none;min-height:34px;padding:0 12px;font-size:13px" data-tnother="${t}">${t}</button>`).join('')}</div>`;
   $('tnSetup').onclick = () => push('plan');
-  $('tnStart').onclick = () => push('active');
+  $('tnStart').onclick = () => start(tnSession());
   $('todayNo').querySelectorAll('[data-tnday]').forEach((b) => b.onclick = () => { TN.day = b.dataset.tnday; TN.main = null; renderTodayNo(); });
   $('todayNo').querySelector('[data-tnmore]').onclick = () => toast('Other workouts: Full body, Upper, Push, saved workouts');
   $('todayNo').querySelectorAll('[data-tn]').forEach((b) => b.onclick = () => { const k = b.dataset.tn, v = b.dataset.v; if (k === 'min') TN.min = Math.max(20, Math.min(120, TN.min + +v)); else if (k === 'abs' || k === 'ss') TN[k] = !TN[k]; else TN[k] = v; renderTodayNo(); });
   $('tnBuild').onclick = () => push('builder');
   $('tnAct').onclick = () => toast('Log a run or activity (weekly-plan.md)');
   $('tnCoach').onclick = () => toast('Ask the coach');
-  $('todayNo').querySelectorAll('[data-tnother]').forEach((b) => b.onclick = () => push(b.dataset.tnother === 'Empty workout' ? 'active' : 'builder'));
+  $('todayNo').querySelectorAll('[data-tnother]').forEach((b) => b.onclick = () => (b.dataset.tnother === 'Empty workout' ? start({ name: 'Workout', date: FIXTURE.today, blocks: [] }) : push('builder')));
 }
 
 // ---------- Library (exercise-library.md, routines.md): workouts and exercises ----------
 const LIB = { tab: 'plan' };
-const EXS = { Chest: ['Bench press', 'Incline DB press', 'Cable fly', 'DB bench press'], Back: ['Barbell row', 'Lat pulldown', 'Pull-up', 'Chest-supported row'], Shoulders: ['DB shoulder press', 'Lateral raise', 'Face pull'], Legs: ['Back squat', 'Romanian deadlift', 'Leg press', 'Leg curl', 'Calf raise'], Arms: ['Barbell curl', 'Hammer curl', 'Triceps pushdown'], Core: ['Cable crunch', 'Hanging leg raise', 'Plank'] };
+// One muscle list everywhere (V1): the plan's (plan-builder MUSCLES).
+const EXS = { Chest: ['Barbell bench press', 'Incline dumbbell press', 'Cable fly', 'DB bench press'], Back: ['Barbell row', 'Lat pulldown', 'Pull-up', 'Chest-supported row'], Shoulders: ['Dumbbell shoulder press', 'Lateral raise', 'Face pull'], Quads: ['Back squat', 'Leg press'], Hamstrings: ['Romanian deadlift', 'Leg curl'], Calves: ['Calf raise'], Biceps: ['Barbell curl', 'Hammer curl'], Triceps: ['Triceps pushdown'], Core: ['Cable crunch', 'Hanging leg raise', 'Plank'] };
 // Your own exercises (exercise-library.md §2.6): added here, tagged Yours, usable by plans and the coach.
 const MINE = [];
 function renderLibrary() {
@@ -248,7 +322,7 @@ function renderLibrary() {
     <div class="seg" style="grid-template-columns:repeat(3,1fr)">${tabs.map(([k, t]) => `<button data-lt="${k}" class="${LIB.tab === k ? 'on' : ''}">${t}</button>`).join('')}</div>
     ${LIB.tab === 'plan' ? `
       <div class="label">Current</div>
-      <div class="card">${A.plan ? `<div class="row" data-go="planview"><span><div class="nm">Strength block <span class="tag" style="margin-left:6px">${A.paused ? 'Paused' : 'Active'}</span></div><div class="sub">Chest / Legs / Shoulders / Back · week 3 of 6</div></span><span class="chev">›</span></div>` : `<div class="row" data-go="plan"><span><div class="nm">Set up a plan</div><div class="sub">Goals, week, preferences</div></span><span class="chev">›</span></div>`}</div>
+      <div class="card">${A.plan ? `<div class="row" data-go="planview"><span><div class="nm">Strength block <span class="tag" style="margin-left:6px">${A.paused ? 'Paused' : 'Active'}</span></div><div class="sub">Back / Chest / Legs / Shoulders · week 3 of 6</div></span><span class="chev">›</span></div>` : `<div class="row" data-go="plan"><span><div class="nm">Set up a plan</div><div class="sub">Goals, week, preferences</div></span><span class="chev">›</span></div>`}</div>
       <div class="label">Previous and saved</div>
       ${rows([['Summer PPL', 'Push / Pull / Legs · ended 20 Sep'], ['Hotel weeks', 'Full body · 3 days · saved']], 'data-oldplan')}`
     : LIB.tab === 'workouts' ? `
@@ -287,24 +361,39 @@ function renderProfile() {
 }
 
 // ---------- Workout summary (workout-summary.md §2) ----------
+// The workout that was started and what was logged in it (V1): same name, today's date, its exercises.
 const SUM = { undone: {} };
 function renderSummary() {
-  const next = [['Bench press', 'Target 105 kg × 6', '+2.4%', 'All sets hit at RPE 8.'], ['Incline DB press', 'Target 32 kg each × 8–10', '+6.7%', '10 reps on every set at 30 kg.'], ['Triceps pushdown', 'Same: 35 kg × 10–12', '0%', 'Only 1 of 3 sets logged; holding.']];
+  const ses = A.session ?? { name: 'Workout', blocks: [] }, log = A.log ?? { ex: [], start: Date.now(), end: Date.now() };
+  const work = log.ex.flatMap((e) => e.sets), done = work.filter((z) => z.done).length, mins = Math.round((log.end - log.start) / 60000);
+  const kgs = (kg, each) => (kg === 'BW' ? 'BW' : `${kg} kg${each ? ' each' : ''}`);
+  // Next time (built-in rule shown as before): every set done → one step up; otherwise hold.
+  const next = log.ex.map((e) => {
+    const sets = e.sets, top = sets.find((z) => z.t === 'Top') ?? sets[0], n = sets.filter((z) => z.done).length;
+    if (!top) return null;
+    const up = n === sets.length && top.kg !== 'BW', kg = up ? top.kg + 2.5 : top.kg;
+    return [e.name, up ? `Target ${kgs(kg, e.each)} × ${top.r}` : `Same: ${kgs(kg, e.each)} × ${top.r}`, up ? `+${Math.round((2.5 / top.kg) * 1000) / 10}%` : '0%', up ? 'All sets done.' : `${n} of ${sets.length} sets logged; holding.`];
+  }).filter(Boolean);
+  // Main lift's top set against last time (only when it was logged).
+  const me = log.ex.find((e) => e.main), mt = me?.sets.find((z) => z.t === 'Top' && z.done), last = ses.blocks.flat().find((x) => x.main)?.last;
+  const lm = /^(.*) · ([\d.]+) × (\d+)$/.exec(last ?? ''), pb = mt && lm && (mt.kg > +lm[2] || (mt.kg === +lm[2] && mt.r > +lm[3]));
   $('summary').innerHTML = `<div class="banner">✓ Workout saved on this phone</div>
-    <h1>Upper B</h1><div style="color:var(--text2);font-size:14px;margin-top:-6px">Thu 22 Oct · Main gym · 18:02–19:04</div>
-    <div class="stats"><div class="stat"><b>54 min</b><span>Active</span></div><div class="stat"><b>16</b><span>Sets</span></div><div class="stat"><b>14/15</b><span>Planned</span></div></div>
-    <div class="label">Compared with last time</div>
-    <div class="card" style="padding:10px 16px"><div style="display:flex;justify-content:space-between"><span>Bench press · top set</span><span class="tag pb">PB</span></div>
-      <div style="display:grid;grid-template-columns:1fr auto;gap:4px;margin-top:8px;font-variant-numeric:tabular-nums"><span style="color:var(--text2)">Today</span><b>102.5 kg × 6</b><span style="color:var(--text2)">15 Oct</span><span>100 kg × 6</span></div></div>
-    <div class="label">Next time · Upper B</div>
-    <div class="card">${next.map(([n, t, pct, why], i) => `<div class="row" style="cursor:default;align-items:flex-start;padding:10px 0"><span><div class="nm">${n}</div><div class="sub">${SUM.undone[i] ? 'Back to rule: same as today' : `${t} · ${pct}`}</div><div class="sub" style="color:var(--text3)">${why}</div></span>${SUM.undone[i] ? '' : `<button class="link" data-undo="${i}">Undo</button>`}</div>`).join('')}</div>
+    <h1>${ses.name}</h1><div style="color:var(--text2);font-size:14px;margin-top:-6px">${FIXTURE.today} · Main gym</div>
+    <div class="stats"><div class="stat"><b>${mins < 1 ? '<1' : mins} min</b><span>Active</span></div><div class="stat"><b>${done}</b><span>Sets</span></div><div class="stat"><b>${done}/${work.length}</b><span>Planned</span></div></div>
+    ${mt ? `<div class="label">Compared with last time</div>
+    <div class="card" style="padding:10px 16px"><div style="display:flex;justify-content:space-between"><span>${me.name} · top set</span>${pb ? '<span class="tag pb">PB</span>' : ''}</div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:4px;margin-top:8px;font-variant-numeric:tabular-nums"><span style="color:var(--text2)">Today</span><b>${kgs(mt.kg, me.each)} × ${mt.r}</b>${lm ? `<span style="color:var(--text2)">${lm[1]}</span><span>${kgs(+lm[2], me.each)} × ${lm[3]}</span>` : ''}</div></div>` : ''}
+    <div class="label">Logged</div>
+    <div class="card">${log.ex.map((e) => { const d = e.sets.filter((z) => z.done); return `<div class="row" style="cursor:default"><span><div class="nm">${e.name}</div><div class="sub">${d.length ? d.map((z) => `${z.kg === 'BW' ? 'BW' : z.kg} × ${z.r}`).join(', ') : 'Not logged'}${d.length && e.each ? ' · kg each' : ''}</div></span><span class="sub">${d.length}/${e.sets.length}</span></div>`; }).join('') || '<div class="row" style="cursor:default"><span class="sub">Nothing logged</span></div>'}</div>
+    ${next.length ? `<div class="label">Next time · ${ses.name}</div>
+    <div class="card">${next.map(([n, t, pct, why], i) => `<div class="row" style="cursor:default;align-items:flex-start;padding:10px 0"><span><div class="nm">${n}</div><div class="sub">${SUM.undone[i] ? 'Back to rule: same as today' : `${t} · ${pct}`}</div><div class="sub" style="color:var(--text3)">${why}</div></span>${SUM.undone[i] ? '' : `<button class="link" data-undo="${i}">Undo</button>`}</div>`).join('')}</div>` : ''}
     <div class="foot"><button class="secondary" id="sumEdit">Edit</button><button class="primary" id="sumDone">Done</button></div>`;
   $('summary').querySelectorAll('[data-undo]').forEach((b) => b.onclick = () => { SUM.undone[+b.dataset.undo] = true; renderSummary(); });
   $('sumDone').onclick = () => home();
   $('sumEdit').onclick = () => toast('Edit workout (delete-workouts.md)');
 }
 
-$('reset').onclick = () => { Object.values(frames).forEach((f) => f.remove()); for (const k in frames) delete frames[k]; Object.assign(A, { tab: 'today', stack: [], plan: false }); SUM.undone = {}; show(); };
+$('reset').onclick = () => { settle(); $('toast').classList.remove('on'); Object.values(frames).forEach((f) => f.remove()); for (const k in frames) delete frames[k]; Object.assign(A, { tab: 'today', stack: [], plan: false, session: null, log: null, live: false }); SUM.undone = {}; show(); };
 $('withPlan').onclick = () => { A.plan = true; home(); };
 $('noPlan').onclick = () => { A.plan = false; home(); };
 show();

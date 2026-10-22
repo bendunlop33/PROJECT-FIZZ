@@ -118,7 +118,8 @@ Expanded (tap anywhere on the card except the buttons):
 │ │ Chest · Bench                      ⌄ │ │
 │ │ 5 exercises · ~55 min · plan day 1/4 │ │
 │ │ Target          sets × reps · kg     │ │
-│ │ 1  Barbell bench press  4 × 6 · 102.5│ │
+│ │ 1  Barbell bench press               │ │
+│ │    1 × 6 + 2 × 8 · 102.5 / 92.5      │ │  main-lift format
 │ │ 2  Incline DB press  3 × 8 · 27.5 ea │ │
 │ │ 3  Cable fly             3 × 8 · 15  │ │
 │ │ 4a Triceps pushdown      3 × 8 · 30  │ │  superset a/b
@@ -188,6 +189,8 @@ Other workouts sheet (`⋯`), half height [Proto]:
 - **Other workouts (`⋯`)** [Ben]: other split days (`Push`, `Pull`, tagged `PPL day`), recent non-plan workouts from the last 14 days (`Recent · 17 Oct`), then `Build your own`. Tapping a row puts it on the card; the day control then shows no selected segment [Proposal]. `Empty workout` is the last row [Proposal].
 - **Clash warning** [Ben]: one line on the card when the chosen session clashes with the week: `! Long run Saturday: legs fit better Thursday`. From the weekflex run rule (CHANGELOG 2026-10-20), so it only fires on runs Ben logged or told the coach. Never blocks Start.
 - The card's workout **is the builder draft** (§4.4): Edit, Start and the builder all use the same draft, so edits made in the builder show on the card, which then reads `Chest · Bench · edited` [Proposal].
+- **Edit opens Today's draft (22 Oct, design review V1/V2/V4/V6).** With a plan, `Edit` opens Your workout with exactly what the card shows: day, time, minutes, supersets (including any fit-to-time added), exercises, sets, reps and kg, and any today-only changes (main lift, Mix it up, abs). It never opens Set up or a different fixture. Back returns to Today with the card unchanged. Start from there goes straight to the active workout. `Open in builder ›` on a plan day does the same with that day for the week being viewed.
+- **One main-lift format (22 Oct, design review V1/V2/V4/V6).** The main lift reads `1 × 6 + 2 × 8 · 102.5 / 92.5` (top set + back-offs · top / back-off kg; dumbbells add `each`) on Today, in the builder, in the plan's day view and week sheet, and in the active workout header. A bodyweight main lift reads `3 × 8`. All values are targets.
 
 #### 2.0.3 How the recommendation is made [Ben asked; steps Proposal]
 
@@ -230,7 +233,7 @@ Picking another day or session type drafts that one the same way (steps 1, 3, 4)
 | Tap a type chip | That template or variation on the card, collapsed |
 | `⋯` | Other workouts sheet; a row puts it on the card; `Build your own` → Set up |
 | Tap card | Expand / collapse. VoiceOver: one button `Chest, Bench, details, collapsed` |
-| `Edit` | Builder, Your workout (page 2) with this draft |
+| `Edit` | Builder, Your workout (page 2) with this draft, today-only changes included. Back returns to Today unchanged (22 Oct, design review V1/V2/V4/V6) |
 | `✕` on a review note | Note off for today; toast `Note hidden · Undo` |
 | `Undo` on a coach line | Restores the code draft value (versioned, rule 5) |
 | `Build your own` | Builder Set up, Day = the card's day |
@@ -370,6 +373,7 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 - `Top set` is a **target**, never an actual. Loads use tabular numerals.
 - [Proposal, Q14] A small `MAIN` tag on the main-lift row. Off unless Ben wants it.
 - `Start` is disabled when the workout is empty [Ben]. Start and Coach review sit in the bottom bar, always visible.
+- **Opened from Today's Edit or a plan day's `Open in builder ›` (22 Oct, design review V1/V2/V4/V6):** no `‹ Set up` link and no step counter; the only back control is `‹ Today` / `‹ Library`. The title's minutes match what Today or the plan showed, and edits change them from there. The top set shown equals the draft's; back-offs never exceed it (matters in deload weeks).
 
 | Gesture | Result | Accessible alternative |
 |---|---|---|
@@ -559,7 +563,7 @@ Ben's direction: every set's load comes from est. 1RM + reps + target RPE, round
 6. Editing reps or RPE recalculates kg unless Ben typed kg; a type change recalculates [Ben]. Assisted and weighted-bodyweight lifts keep their kg.
 7. Pain-flagged movement: no heavier than the last comparable working load (rule 9).
 8. Est. max appears only behind `Why this weight?`, always `(estimate)` (rule 6).
-9. Defaults [Proto]: main lift 4 sets (1 top set of 6 + 3 back-offs of 8); others 3 sets × 8–12.
+9. Defaults [Proto]: main lift 3 sets (1 top set of 6 + 2 back-offs of 8; was 4, changed 22 Oct, design review V1/V2/V4/V6 so Today, the builder and the plan agree); isolation exercises 3 × 12, others 3 × 8–12. **Open for Ben:** the prototypes now show back-offs at about 90 % of the top set (102.5 → 92.5), as the plan does; step 2's RPE rule gives about 95 %. One of the two should win.
 
 Whether step 4 should replace steps 1–3 ("est. 1RM everywhere") is still open in the backlog: §9 Q12.
 
@@ -706,6 +710,7 @@ Advice never blocks or undoes Ben's change. He sometimes pairs things on purpose
 - Units per row from `CheckedOnSchema.unit`; the keyboard ± step from that item; assisted shows `assist`, per-hand `each`.
 - Rear delts: the builder uses its own mapping `builderGroupOf` (rear delts → Back). The shared `MUSCLE_TO_GROUP` is unchanged unless Ben says yes to Q13. If he does, update and test every caller: catalogue validator, library filters, `mainLiftOptions`, split matching, Progress charts.
 - `BuilderGroup = Chest | Back | Shoulders | Legs | Biceps | Triceps | Abs` is display only: Legs = Quads + Hamstrings + Glutes + Calves; Abs = Core. Stored data is always `SplitBodyPart`.
+  - **22 Oct, design review V1/V2/V4/V6:** the prototypes now share one muscle list everywhere (Chest, Back, Shoulders, Quads, Hamstrings, Calves, Biceps, Triceps, Core), including the builder's. This conflicts with "Legs is one group" in §2.2 [Ben]; Ben to confirm which the app uses.
 - Time: one shared constants module used by `duration.ts`, `time-left.ts` and the builder estimate (Q15).
 - Limits: drops count against `maxWorkingSets` (10), max 3 drops per slot; `maxSuperset` 4; `maxWarmups` 4; `maxExercises` 10; length 15–180; `maxRestS` 300 → 360 only if Q7 is yes.
 - `heavy?: boolean` on catalogue entries; `builderFocusOf(exercise)` for the focus headings.

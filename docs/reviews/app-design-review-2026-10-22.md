@@ -113,6 +113,13 @@ The core loop is sound and in places ahead of the market: real-equipment loads, 
 | V5 | `workout-builder-v3.md:173,197`; `progress-goals.md:28`; `progress-simple` | Small changes are applied in the background, with the reason hidden behind Why?. A weekly review applies a stall reset and an extra set without being asked. | Make these offers (Apply/Skip). Stall resets and added sets always need Apply. |
 | V6 | Today with a plan; Edit; `WorkoutOverviewScreen.tsx` | The card is mostly controls. Edit opens "1 of 2 Set up" with a different 60-minute fixture. The shipped app keeps a third pre-start screen. Q1 in `plan-builder.md:103` is unresolved. | Session rows + Start + Time + Edit. Edit opens Your workout. Retire the overview screen. |
 
+**Status (22 Oct, prototypes only, not committed):**
+
+- **V1 – Fixed.** One shared session from Today (with or without a plan) through the active workout to the Summary (`Chest`, `Tue 20 Oct · Main gym`). This week's plan overview uses the same data as Today. One main-lift format (`1 × 6 + 2 × 8 · 102.5 / 92.5`), one muscle list, Monday-start week labels, `each` on dumbbells. `build_app.py` now fails when screens disagree (fixture check plus a headless click-through). Still open: one time model for Build your own (only Chest matches), the Progress chart's dotted plan line, and Check your lifts history versus Today's.
+- **V2 – Fixed.** Week-1 top sets come from the 6-rep estimate on Check your lifts, a step lighter when estimated or stale and not confirmed (stale squat 120 × 5 → 115 × 6). The shipped app doesn't have this flaw. Still open for Ben: whether a confirmed stale lift should also start a step lighter, and the gap cut in the no-AI `builderLoad` fallback.
+- **V4 – Fixed.** Apply plan and End plan show Undo toasts; End plan asks `End plan?` first. Discard asks `Discard N logged sets?`, then shows Undo. Start ends a pending Undo and resumes a workout already in progress. Still open: the End plan confirm button isn't styled as destructive in the prototype.
+- **V6 – Partly fixed.** Edit on Today, and `Open in builder ›` in the plan, open Your workout with that day's current draft; Back returns unchanged. Hiding Today's controls when there is a plan, and retiring `WorkoutOverviewScreen.tsx`, await Ben.
+
 **Plan setup and plan overview**
 
 | ID | Severity | What's wrong | Fix |

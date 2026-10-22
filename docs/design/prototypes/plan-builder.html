@@ -181,17 +181,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 <script>
 // ---------- Example history (made up) ----------
 const HIST = {
-  'Bench press': { kg: 97.5, reps: 6, last: 'top 97.5 × 6', date: '12 Oct' },
+  'Barbell bench press': { kg: 100, reps: 6, last: 'top 100 × 6', date: '12 Oct' },
   'Barbell row': { kg: 90, reps: 12, last: '90 × 12', date: '18 Oct' },
   'Back squat': { kg: 120, reps: 5, last: 'top 120 × 5', date: '3 Aug', stale: true },
   'Romanian deadlift': { kg: 100, reps: 8, last: '100 × 8' },
   'Overhead press': { kg: 55, reps: 6, last: '55 × 6', date: '2 Jun', stale: true },
-  'DB shoulder press': { kg: 24, each: true, reps: 8, last: '24 each × 8', date: '15 Oct' },
+  'Dumbbell shoulder press': { kg: 24, each: true, reps: 8, last: '24 each × 8', date: '15 Oct' },
   'Machine shoulder press': { kg: 50, reps: 10, date: '2 Oct' },
   'Deadlift': { kg: 150, reps: 5, none: true },
   'Front squat': { kg: 100, reps: 5, none: true },
   'Incline bench press': { kg: 80, reps: 8, none: true },
-  'Incline DB press': { each: true, kg: 30, reps: 10, last: '30 each × 10', uses: 14 },
+  'Incline dumbbell press': { each: true, kg: 30, reps: 10, last: '30 each × 10', uses: 14 },
   'Lat pulldown': { kg: 70, reps: 10, last: '70 × 10' },
   'Leg press': { kg: 200, reps: 10, last: '200 × 10' },
   'Shrugs': { each: true, kg: 30, reps: 15, last: '30 each × 15', uses: 2, skips: 3 },
@@ -208,7 +208,7 @@ const HIST = {
   'Hanging leg raise': { kg: 0, reps: 12, last: 'BW × 12' },
   // No history yet: starting estimates (est.) until the first session.
   'Low-to-high cable fly': { kg: 12.5, reps: 12, none: true }, 'Chest-supported row': { kg: 60, reps: 10, none: true },
-  'Rear delt fly': { kg: 8, each: true, reps: 15, none: true }, 'Leg extension': { kg: 50, reps: 12, none: true },
+  'Rear-delt fly': { kg: 8, each: true, reps: 15, none: true }, 'Leg extension': { kg: 50, reps: 12, none: true },
   'Seated calf raise': { kg: 40, reps: 15, none: true }, 'Incline DB curl': { kg: 12, each: true, reps: 12, none: true },
   'Overhead triceps extension': { kg: 25, reps: 12, none: true }, 'Hip thrust': { kg: 80, reps: 10, none: true },
   'Cable kickback': { kg: 10, reps: 12, none: true }, 'Hip adduction': { kg: 50, reps: 12, none: true },
@@ -228,26 +228,26 @@ const HIST = {
 };
 // Day templates: [exercise, muscle, role]
 const DAYS = {
-  Push:  { main: 'Bench press', ex: [['Bench press','Chest','main'],['DB shoulder press','Shoulders','c'],['Incline DB press','Chest','c'],['Cable fly','Chest','i'],['Lateral raise','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
+  Push:  { main: 'Barbell bench press', ex: [['Barbell bench press','Chest','main'],['Dumbbell shoulder press','Shoulders','c'],['Incline dumbbell press','Chest','c'],['Cable fly','Chest','i'],['Lateral raise','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
   Pull:  { main: 'Barbell row', ex: [['Barbell row','Back','main'],['Lat pulldown','Back','c'],['Face pull','Shoulders','i'],['Shrugs','Back','i'],['Hammer curl','Biceps','i'],['Hanging leg raise','Core','i']] },
   Legs:  { main: 'Back squat', ex: [['Back squat','Quads','main'],['Romanian deadlift','Hamstrings','c'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
-  Upper: { main: 'DB shoulder press', ex: [['DB shoulder press','Shoulders','main'],['Pull-up','Back','c'],['Incline DB press','Chest','c'],['Lat pulldown','Back','c'],['Lateral raise','Shoulders','i'],['Barbell curl','Biceps','i']] },
+  Upper: { main: 'Dumbbell shoulder press', ex: [['Dumbbell shoulder press','Shoulders','main'],['Pull-up','Back','c'],['Incline dumbbell press','Chest','c'],['Lat pulldown','Back','c'],['Lateral raise','Shoulders','i'],['Barbell curl','Biceps','i']] },
   Lower: { main: 'Romanian deadlift', ex: [['Romanian deadlift','Hamstrings','main'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
-  'Full body': { main: 'Back squat', ex: [['Back squat','Quads','main'],['Bench press','Chest','c'],['Barbell row','Back','c'],['Lateral raise','Shoulders','i'],['Hammer curl','Biceps','i']] },
-  Chest: { main: 'Bench press', ex: [['Bench press','Chest','main'],['Incline DB press','Chest','c'],['Incline bench press','Chest','c'],['Triceps pushdown','Triceps','i'],['Cable fly','Chest','i'],['Cable crunch','Core','i']] },
+  'Full body': { main: 'Back squat', ex: [['Back squat','Quads','main'],['Barbell bench press','Chest','c'],['Barbell row','Back','c'],['Lateral raise','Shoulders','i'],['Hammer curl','Biceps','i']] },
+  Chest: { main: 'Barbell bench press', ex: [['Barbell bench press','Chest','main'],['Incline dumbbell press','Chest','c'],['Incline bench press','Chest','c'],['Triceps pushdown','Triceps','i'],['Cable fly','Chest','i'],['Cable crunch','Core','i']] },
   Back:  { main: 'Barbell row', ex: [['Barbell row','Back','main'],['Pull-up','Back','c'],['Lat pulldown','Back','c'],['Hammer curl','Biceps','i'],['Barbell curl','Biceps','i'],['Shrugs','Back','i']] },
-  Shoulders: { main: 'DB shoulder press', ex: [['DB shoulder press','Shoulders','main'],['Lateral raise','Shoulders','i'],['Face pull','Shoulders','i'],['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i']] },
+  Shoulders: { main: 'Dumbbell shoulder press', ex: [['Dumbbell shoulder press','Shoulders','main'],['Lateral raise','Shoulders','i'],['Face pull','Shoulders','i'],['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i']] },
   Arms:  { main: null, ex: [['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i'],['Lateral raise','Shoulders','i'],['Cable crunch','Core','i']] },
 };
 // When a day type repeats in the week, the second is a B variation: a different main lift and angles (Ben, 22 Oct).
 const DAYS_B = {
-  Push:  { ex: [['DB shoulder press','Shoulders','main'],['Incline bench press','Chest','c'],['Lateral raise','Shoulders','i'],['Cable fly','Chest','i'],['Face pull','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
+  Push:  { ex: [['Dumbbell shoulder press','Shoulders','main'],['Incline bench press','Chest','c'],['Lateral raise','Shoulders','i'],['Cable fly','Chest','i'],['Face pull','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
   Pull:  { ex: [['Pull-up','Back','main'],['Romanian deadlift','Hamstrings','c'],['Lat pulldown','Back','c'],['Face pull','Shoulders','i'],['Barbell curl','Biceps','i'],['Hanging leg raise','Core','i']] },
   Legs:  { ex: [['Romanian deadlift','Hamstrings','main'],['Front squat','Quads','c'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
-  Upper: { ex: [['Bench press','Chest','main'],['Barbell row','Back','c'],['DB shoulder press','Shoulders','c'],['Lat pulldown','Back','c'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i']] },
+  Upper: { ex: [['Barbell bench press','Chest','main'],['Barbell row','Back','c'],['Dumbbell shoulder press','Shoulders','c'],['Lat pulldown','Back','c'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i']] },
   Lower: { ex: [['Back squat','Quads','main'],['Romanian deadlift','Hamstrings','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
-  'Full body': { ex: [['Romanian deadlift','Hamstrings','main'],['DB shoulder press','Shoulders','c'],['Lat pulldown','Back','c'],['Incline DB press','Chest','c'],['Lateral raise','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
-  Chest: { ex: [['Incline bench press','Chest','main'],['Bench press','Chest','c'],['Cable fly','Chest','i'],['Triceps pushdown','Triceps','i'],['Cable crunch','Core','i']] },
+  'Full body': { ex: [['Romanian deadlift','Hamstrings','main'],['Dumbbell shoulder press','Shoulders','c'],['Lat pulldown','Back','c'],['Incline dumbbell press','Chest','c'],['Lateral raise','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
+  Chest: { ex: [['Incline bench press','Chest','main'],['Barbell bench press','Chest','c'],['Cable fly','Chest','i'],['Triceps pushdown','Triceps','i'],['Cable crunch','Core','i']] },
   Back: { ex: [['Pull-up','Back','main'],['Barbell row','Back','c'],['Barbell curl','Biceps','i'],['Hammer curl','Biceps','i'],['Face pull','Shoulders','i'],['Hanging leg raise','Core','i']] },
 };
 const MUSCLES = ['Chest','Back','Shoulders','Quads','Hamstrings','Calves','Biceps','Triceps','Core'];
@@ -327,9 +327,9 @@ const ELIG = {
 };
 // Exercises per muscle: [name, role (c compound / i isolation), specific targets it covers, day types it skips].
 const EX = {
-  Chest: [['Incline DB press', 'c', ['Upper chest']], ['Cable fly', 'i'], ['Bench press', 'c'], ['Incline bench press', 'c', ['Upper chest']], ['Low-to-high cable fly', 'i', ['Upper chest']], ['DB bench press', 'c'], ['Machine chest press', 'c'], ['Smith bench press', 'c'], ['Push-up', 'c'], ['Incline machine press', 'c', ['Upper chest']], ['Incline Smith press', 'c', ['Upper chest']]],
+  Chest: [['Incline dumbbell press', 'c', ['Upper chest']], ['Cable fly', 'i'], ['Barbell bench press', 'c'], ['Incline bench press', 'c', ['Upper chest']], ['Low-to-high cable fly', 'i', ['Upper chest']], ['DB bench press', 'c'], ['Machine chest press', 'c'], ['Smith bench press', 'c'], ['Push-up', 'c'], ['Incline machine press', 'c', ['Upper chest']], ['Incline Smith press', 'c', ['Upper chest']]],
   Back: [['Lat pulldown', 'c', ['Lats']], ['Chest-supported row', 'c', ['Upper back']], ['Pull-up', 'c', ['Lats']], ['Barbell row', 'c', ['Upper back']], ['Shrugs', 'i', ['Traps']], ['Assisted pull-up', 'c', ['Lats']], ['Chin-up', 'c', ['Lats']], ['Single-arm pulldown', 'c', ['Lats']], ['Seated cable row', 'c', ['Upper back']], ['Single-arm DB row', 'c', ['Upper back']], ['T-bar row', 'c', ['Upper back']]],
-  Shoulders: [['Lateral raise', 'i', ['Side delts']], ['Face pull', 'i', ['Rear delts']], ['DB shoulder press', 'c', [], ['Pull']], ['Rear delt fly', 'i', ['Rear delts']], ['Machine shoulder press', 'c', [], ['Pull']], ['Overhead press', 'c', [], ['Pull']], ['Arnold press', 'c', [], ['Pull']], ['Smith shoulder press', 'c', [], ['Pull']], ['Reverse pec deck', 'i', ['Rear delts']], ['Cable rear delt fly', 'i', ['Rear delts']], ['Band pull-apart', 'i', ['Rear delts']]],
+  Shoulders: [['Lateral raise', 'i', ['Side delts']], ['Face pull', 'i', ['Rear delts']], ['Dumbbell shoulder press', 'c', [], ['Pull']], ['Rear-delt fly', 'i', ['Rear delts']], ['Machine shoulder press', 'c', [], ['Pull']], ['Overhead press', 'c', [], ['Pull']], ['Arnold press', 'c', [], ['Pull']], ['Smith shoulder press', 'c', [], ['Pull']], ['Reverse pec deck', 'i', ['Rear delts']], ['Cable rear delt fly', 'i', ['Rear delts']], ['Band pull-apart', 'i', ['Rear delts']]],
   Quads: [['Leg press', 'c'], ['Leg extension', 'i'], ['Front squat', 'c'], ['Hack squat', 'c'], ['Bulgarian split squat', 'c'], ['Smith squat', 'c'], ['Walking lunge', 'c'], ['Goblet squat', 'c'], ['Step-up', 'c']],
   Hamstrings: [['Romanian deadlift', 'c'], ['Leg curl', 'i'], ['Seated leg curl', 'i'], ['Nordic curl', 'i'], ['Good morning', 'c']],
   Calves: [['Calf raise', 'i'], ['Seated calf raise', 'i']],
@@ -344,9 +344,9 @@ const EX = {
 // PRIOR is a curated default (how effective, popular and easy to set up it is; researched catalogue values later).
 // His evidence: sessions done (recent ones count more), minus skips/swaps; it outweighs the default after ~5 sessions.
 // Explicit likes/never from the coach override both. Imported history (FitNotes etc.) counts as his evidence from day one.
-const PRIOR = { 'Incline DB press': 0.8, 'Cable fly': 0.7, 'Bench press': 0.9, 'Incline bench press': 0.7, 'Low-to-high cable fly': 0.5,
+const PRIOR = { 'Incline dumbbell press': 0.8, 'Cable fly': 0.7, 'Barbell bench press': 0.9, 'Incline bench press': 0.7, 'Low-to-high cable fly': 0.5,
   'Lat pulldown': 0.85, 'Chest-supported row': 0.75, 'Pull-up': 0.75, 'Barbell row': 0.7, 'Shrugs': 0.5,
-  'Lateral raise': 0.85, 'Face pull': 0.7, 'DB shoulder press': 0.75, 'Rear delt fly': 0.6,
+  'Lateral raise': 0.85, 'Face pull': 0.7, 'Dumbbell shoulder press': 0.75, 'Rear-delt fly': 0.6,
   'Leg press': 0.8, 'Leg extension': 0.7, 'Front squat': 0.5, 'Romanian deadlift': 0.8, 'Leg curl': 0.8, 'Calf raise': 0.7, 'Seated calf raise': 0.6,
   'Barbell curl': 0.7, 'Hammer curl': 0.7, 'Incline DB curl': 0.65, 'Triceps pushdown': 0.8, 'Overhead triceps extension': 0.7,
   'Hip thrust': 0.75, 'Cable kickback': 0.5, 'Hip adduction': 0.7, 'Copenhagen plank': 0.5, 'Hip abduction': 0.7, 'Cable hip abduction': 0.5, 'Wrist curl': 0.6, 'Reverse curl': 0.5,
@@ -357,16 +357,16 @@ const PRIOR = { 'Incline DB press': 0.8, 'Cable fly': 0.7, 'Bench press': 0.9, '
 // the listed option not picked ranks below everything else. ✦ marks what his history already favours.
 const PREF_GROUPS = ['Chest', 'Legs', 'Back', 'Shoulders'];
 const PREF_Q = [
-  { id: 'flat', g: 'Chest', q: 'Flat press', m: 'Chest', opts: [['Bench press'], ['DB bench press']], labels: ['Barbell', 'Dumbbell'], other: ['Machine chest press', 'Smith bench press', 'Push-up'] },
-  { id: 'incline', g: 'Chest', q: 'Incline press', m: 'Chest', opts: [['Incline bench press'], ['Incline DB press']], labels: ['Barbell', 'Dumbbell'], other: ['Incline machine press', 'Incline Smith press', 'Low-to-high cable fly'] },
+  { id: 'flat', g: 'Chest', q: 'Flat press', m: 'Chest', opts: [['Barbell bench press'], ['DB bench press']], labels: ['Barbell', 'Dumbbell'], other: ['Machine chest press', 'Smith bench press', 'Push-up'] },
+  { id: 'incline', g: 'Chest', q: 'Incline press', m: 'Chest', opts: [['Incline bench press'], ['Incline dumbbell press']], labels: ['Barbell', 'Dumbbell'], other: ['Incline machine press', 'Incline Smith press', 'Low-to-high cable fly'] },
   { id: 'squat', g: 'Legs', q: 'Main leg lift', m: 'Quads', opts: [['Back squat'], ['Leg press']], labels: ['Squat', 'Leg press'], other: ['Hack squat', 'Front squat', 'Smith squat'] },
   { id: 'quads', g: 'Legs', q: 'Quad extra', m: 'Quads', opts: [['Leg extension'], ['Bulgarian split squat']], labels: ['Leg extension', 'Split squat'], other: ['Walking lunge', 'Goblet squat', 'Step-up'] },
   { id: 'ham', g: 'Legs', q: 'Hamstrings', m: 'Hamstrings', opts: [['Romanian deadlift'], ['Leg curl']], labels: ['RDL', 'Leg curl'], other: ['Seated leg curl', 'Nordic curl', 'Good morning'] },
   { id: 'hips', g: 'Legs', q: 'Hips', m: 'Glutes', opts: [['Hip thrust'], ['Hip adduction', 'Hip abduction']], labels: ['Hip thrust', 'In/out machines'], when: () => S.spec.some((t) => ['Glutes', 'Adductors', 'Abductors'].includes(t)) || S.priority.includes('Legs'), other: ['Glute bridge', 'Cable kickback', 'Cable hip abduction'] },
   { id: 'vpull', g: 'Back', q: 'Lats', m: 'Back', opts: [['Pull-up'], ['Lat pulldown']], labels: ['Pull-ups', 'Lat pulldown'], other: ['Assisted pull-up', 'Chin-up', 'Single-arm pulldown'] },
   { id: 'row', g: 'Back', q: 'Row', m: 'Back', opts: [['Barbell row'], ['Chest-supported row']], labels: ['Barbell', 'Chest-supported'], other: ['Seated cable row', 'Single-arm DB row', 'T-bar row'] },
-  { id: 'shp', g: 'Shoulders', q: 'Shoulder press', m: 'Shoulders', opts: [['DB shoulder press'], ['Machine shoulder press']], labels: ['Dumbbell', 'Machine'], other: ['Overhead press', 'Arnold press', 'Smith shoulder press'] },
-  { id: 'rear', g: 'Shoulders', q: 'Rear delts', m: 'Shoulders', opts: [['Face pull'], ['Rear delt fly']], labels: ['Face pull', 'Rear delt fly'], other: ['Reverse pec deck', 'Cable rear delt fly', 'Band pull-apart'] },
+  { id: 'shp', g: 'Shoulders', q: 'Shoulder press', m: 'Shoulders', opts: [['Dumbbell shoulder press'], ['Machine shoulder press']], labels: ['Dumbbell', 'Machine'], other: ['Overhead press', 'Arnold press', 'Smith shoulder press'] },
+  { id: 'rear', g: 'Shoulders', q: 'Rear delts', m: 'Shoulders', opts: [['Face pull'], ['Rear-delt fly']], labels: ['Face pull', 'Rear-delt fly'], other: ['Reverse pec deck', 'Cable rear delt fly', 'Band pull-apart'] },
 ];
 const prefQs = () => PREF_Q.filter((q) => !q.when || q.when());
 // Answer: 0 / 1 (listed option), 'o:<exercise>' (Other), 'either' (No preference).
@@ -411,7 +411,7 @@ function aimFor(m) {
 // Working sets that fit a session: ~3 min per set with rest, ~2.3 with supersets, after an 8-minute warm-up.
 const capSets = () => Math.floor((S.length - 8) / (S.supersets ? 2.3 : 3));
 // A main lift follows his answers on Any preferences (Ben, 22 Oct): a liked alternative replaces it, a never moves it on.
-const MAIN_ALT = { 'Bench press': ['DB bench press', 'Machine chest press', 'Smith bench press', 'Incline bench press'], 'Back squat': ['Leg press', 'Hack squat', 'Front squat', 'Smith squat'], 'Incline bench press': ['Incline DB press', 'Incline machine press', 'Incline Smith press'], 'Pull-up': ['Lat pulldown', 'Assisted pull-up', 'Chin-up'], 'DB shoulder press': ['Machine shoulder press', 'Overhead press', 'Arnold press', 'Smith shoulder press'], 'Barbell row': ['Chest-supported row', 'Seated cable row', 'T-bar row', 'Single-arm DB row'] };
+const MAIN_ALT = { 'Barbell bench press': ['DB bench press', 'Machine chest press', 'Smith bench press', 'Incline bench press'], 'Back squat': ['Leg press', 'Hack squat', 'Front squat', 'Smith squat'], 'Incline bench press': ['Incline dumbbell press', 'Incline machine press', 'Incline Smith press'], 'Pull-up': ['Lat pulldown', 'Assisted pull-up', 'Chin-up'], 'Dumbbell shoulder press': ['Machine shoulder press', 'Overhead press', 'Arnold press', 'Smith shoulder press'], 'Barbell row': ['Chest-supported row', 'Seated cable row', 'T-bar row', 'Single-arm DB row'] };
 const mainOf = (focus, variant) => {
   const mn = ((variant === 'B' && DAYS_B[focus]) || DAYS[focus]).ex.find((x) => x[2] === 'main'); if (!mn) return null;
   const alts = MAIN_ALT[mn[0]] ?? [], liked = alts.find((a) => allLikes().includes(a));
@@ -427,10 +427,11 @@ function mkEx(n, m, role, sets, tags = []) {
     return { n, m, role, tags, bw: true, sets: backs + 1, reps: h.reps, kgv: 'BW', kg: h.assist ? 'Assist' : 'BW', short: `${backs + 1} × ${h.reps}`, line: `${backs + 1} × ${h.reps}`, why: h.last ? `Last time ${h.last}` : 'No history yet (est.)' };
   }
   if (role === 'main') {
-    const step = h.each ? 2 : 2.5, top = snapFor(n, h.kg + step), back = snapFor(n, top * 0.9);
+    // Week 1 starts from the 6-rep estimate shown on Check your lifts, one step lighter when stale or estimated (V2).
+    const st = startLoad(n), step = h.each ? 2 : 2.5, top = snapFor(n, st.six - (st.light ? step : 0)), back = snapFor(n, top * 0.9);
     const strength = S.focus === 'Strength';
     const backs = (strength ? 3 : 2) + (S.effort === 'Push' ? 1 : 0) - (S.effort === 'Maintain' ? 1 : 0);
-    return { n, m, role, tags, top, back, step, reps: strength ? 5 : 6, backs, sets: backs + 1, short: `1 × ${strength ? 5 : 6} + ${backs} × 8`, kg: fmtKg(n, top), line: `Top ${fmtKg(n, top)} × ${strength ? 5 : 6} · ${backs} × ${fmtKg(n, back)} × 8`, why: `Last time ${h.last || fmtKg(n, h.kg) + ' × ' + h.reps} → +${step}` };
+    return { n, m, role, tags, top, back, step, reps: strength ? 5 : 6, backs, sets: backs + 1, short: `1 × ${strength ? 5 : 6} + ${backs} × 8`, kg: fmtKg(n, top), line: mainFmt(n, top, back, strength ? 5 : 6, backs), why: st.est ? `${fmtKg(n, st.kg)} × ${st.reps} (est.)` : `Last time ${h.last || fmtKg(n, h.kg) + ' × ' + h.reps}${h.date ? ` · ${h.date}` : ''}` };
   }
   const reps = Math.max(8, Math.min(15, h.reps));
   const kg = h.kg === 0 ? 'BW' : (h.reps >= 15 && !h.none ? snap(h.kg + 2.5) : h.kg);
@@ -455,6 +456,7 @@ function warmUp(n, W, R) {
   return out.join(' · ');
 }
 function atWeek(e, w) {
+  if (e.rec) return recWeek(e, w);
   const k = S.effort === 'Maintain' ? 0 : progWeeks(w), dl = isDeload(w);
   if (e.role === 'main' && e.bw) {
     const reps = e.reps + Math.min(k, 4), sets = dl ? Math.max(2, e.sets - 1) : e.sets;
@@ -466,7 +468,7 @@ function atWeek(e, w) {
     let top = db ? e.top + e.step * Math.floor(k / 3) : snapFor(e.n, e.top * (1 + rate * k)), reps = db ? e.reps + (k % 3) : e.reps;
     if (dl) top = snapFor(e.n, top * 0.9);
     const backs = dl ? Math.max(1, e.backs - 1) : e.backs, back = snapFor(e.n, top * 0.9);
-    return { sets: backs + 1, reps, top, back, backs, short: `1 × ${reps} + ${backs} × 8`, kg: fmtKg(e.n, top), line: `Top ${fmtKg(e.n, top)} × ${reps} · ${backs} × ${fmtKg(e.n, back)} × 8`, dl };
+    return { sets: backs + 1, reps, top, back, backs, short: `1 × ${reps} + ${backs} × 8`, kg: fmtKg(e.n, top), line: mainFmt(e.n, top, back, reps, backs), dl };
   }
   const h = HIST[e.n] ?? {}, lo = e.reps <= 12 ? 8 : 12, hi = e.reps <= 12 ? 12 : 15, step = h.each ? 2 : 2.5;
   let reps = Math.max(lo, Math.min(hi, e.reps)), kg = e.kgv;
@@ -474,6 +476,45 @@ function atWeek(e, w) {
   if (dl && kg !== 'BW') kg = snap(kg * 0.9, h.each ? 2 : 2.5);
   const sets = dl ? Math.max(1, Math.round(e.sets * 0.66)) : e.sets;
   return { sets, short: `${sets} × ${reps}`, kg: kg === 'BW' ? (h.assist ? 'Assist' : 'BW') : `${kg}${h.each ? ' each' : ''}`, dl };
+}
+// ---------- Your plan (the plan you have: Library › your plan) ----------
+// This week of the plan (V1): each day as Today shows it by default (sets, reps, kg; A1/A2 = superset), the order of the
+// week and what's done. Shared with training-blocks.html (Today); build_app.py checks the copies.
+const PLAN_WEEK = {"week": 3, "days": [{"focus": "Back", "done": true, "est": 50, "hist": [92.5, 92.5], "ex": [{"n": "Barbell row", "role": "main", "m": "Back", "sets": 3, "reps": 6, "kg": 92.5, "back": 82.5}, {"n": "Lat pulldown", "role": "c", "m": "Back", "sets": 3, "reps": 8, "kg": 60}, {"n": "Chest-supported row", "role": "c", "m": "Back", "sets": 3, "reps": 8, "kg": 22.5, "each": true}, {"n": "EZ-bar curl", "role": "i", "m": "Biceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Chest", "est": 47, "hist": [97.5, 100], "ex": [{"n": "Barbell bench press", "role": "main", "m": "Chest", "sets": 3, "reps": 6, "kg": 102.5, "back": 92.5}, {"n": "Incline dumbbell press", "role": "c", "m": "Chest", "sets": 3, "reps": 8, "kg": 27.5, "each": true}, {"n": "Cable fly", "role": "i", "m": "Chest", "sets": 3, "reps": 12, "kg": 15}, {"n": "Triceps pushdown", "role": "i", "m": "Triceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Legs", "est": 50, "hist": [112.5, 115], "ex": [{"n": "Back squat", "role": "main", "m": "Quads", "sets": 3, "reps": 6, "kg": 117.5, "back": 105}, {"n": "Romanian deadlift", "role": "c", "m": "Hamstrings", "sets": 3, "reps": 8, "kg": 105}, {"n": "Leg press", "role": "c", "m": "Quads", "sets": 3, "reps": 8, "kg": 195}, {"n": "Seated calf raise", "role": "i", "m": "Calves", "sets": 3, "reps": 12, "kg": 40, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Shoulders", "est": 45, "hist": [30, 30], "ex": [{"n": "Dumbbell shoulder press", "role": "main", "m": "Shoulders", "sets": 3, "reps": 6, "kg": 32.5, "back": 30, "each": true}, {"n": "Lateral raise", "role": "i", "m": "Shoulders", "sets": 3, "reps": 12, "kg": 10, "each": true}, {"n": "Rear-delt fly", "role": "i", "m": "Shoulders", "sets": 3, "reps": 12, "kg": 7.5, "each": true}, {"n": "Triceps pushdown", "role": "i", "m": "Triceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}]};
+// Other weeks follow from this one, as the plan follows what he lifts: earlier main-lift weeks are what was lifted, later
+// ones a step a week (dumbbells reps first, 6 → 7 → 8, then the next weight); accessories one rep a week to the top of
+// their range, then a step. Deload as atWeek.
+function recWeek(e, w) {
+  const r = e.rec, W = PLAN_WEEK.week, dl = isDeload(w), k = progWeeks(w) - progWeeks(W), kgS = (v) => (v == null ? 'BW' : `${v}${r.each ? ' each' : ''}`);
+  if (e.role === 'main') {
+    let top = w < W ? (r.hist?.[w - 1] ?? r.kg) : r.each ? r.kg + 2.5 * Math.floor(k / 3) : r.kg + 2.5 * k;
+    const reps = w > W && r.each ? r.reps + (k % 3) : r.reps;
+    if (dl) top = Math.floor((top * 0.9) / 2.5) * 2.5;
+    const backs = dl ? Math.max(1, e.backs - 1) : e.backs, back = w === W ? r.back : Math.round((top * 0.9) / 2.5) * 2.5;
+    return { sets: backs + 1, reps, top, back, backs, short: `1 × ${reps} + ${backs} × 8`, kg: kgS(top), line: `1 × ${reps}${backs ? ` + ${backs} × 8` : ''} · ${top}${backs ? ` / ${back}` : ''}${r.each ? ' each' : ''}`, dl };
+  }
+  const lo = r.reps <= 12 ? 8 : 12, hi = r.reps <= 12 ? 12 : 15;
+  let reps = w < W ? Math.max(lo, r.reps - (W - w)) : r.reps, kg = r.kg;
+  for (let i = 0; i < k; i++) { if (reps < hi || kg == null) reps = Math.min(hi, reps + 1); else { kg += 2.5; reps = lo; } }
+  if (dl && kg != null) kg = Math.floor((kg * 0.9) / 2.5) * 2.5;
+  const sets = dl ? Math.max(1, Math.round(e.sets * 0.66)) : e.sets;
+  return { sets, reps, short: `${sets} × ${reps}`, kg: kgS(kg), dl };
+}
+function recordPlan() {
+  return PLAN_WEEK.days.map((d, i) => ({ day: S.days[i], focus: d.focus, variant: null, est: d.est, ex: d.ex.map((x) => {
+    const rec = { ...x, hist: d.hist }, kg = x.kg == null ? 'BW' : `${x.kg}${x.each ? ' each' : ''}`, base = { n: x.n, m: x.m, role: x.role, tags: [], rec, sets: x.sets, reps: x.reps, ...(x.pair ? { pair: x.pair } : {}), why: '' };
+    return x.role === 'main' ? { ...base, top: x.kg, back: x.back, backs: x.sets - 1, step: 2.5, short: `1 × ${x.reps} + ${x.sets - 1} × 8`, kg, line: recWeek({ ...base, backs: x.sets - 1 }, PLAN_WEEK.week).line }
+      : { ...base, kgv: x.kg ?? 'BW', short: `${x.sets} × ${x.reps}`, kg, line: `${x.sets} × ${kg} × ${x.reps}` };
+  }) }));
+}
+// Opens the plan you have: week 3 of 6, this week's days as Today shows them, every answer it was built from kept for
+// Edit plan. Edits are worked out by the deterministic plan (S.plan, the same days in the same order) and applied on top.
+function openYourPlan() {
+  Object.assign(S, { ans: { wk: true, eff: true, focus: true }, priAsk: 'No', actAsk: 'No', prefAns: Object.fromEntries(PREF_Q.map((q) => [q.id, 'either'])), page: 'plan', applied: true, editing: false, chat: [], open: -1,
+    curWeek: PLAN_WEEK.week, week: PLAN_WEEK.week, supersets: true, days: [0, 1, 3, 4], focusOver: Object.fromEntries(PLAN_WEEK.days.map((d, i) => [i, d.focus])), doneDays: PLAN_WEEK.days.flatMap((d, i) => (d.done ? [i] : [])), record: true });
+  S.plan = build();
+  const rec = recordPlan(); S.weekPlans = Object.fromEntries(Array.from({ length: S.weeks }, (_, k) => [k + 1, rec]));
+  render();
 }
 function build() {
   const days = [...S.days].sort((a, b) => a - b);
@@ -598,7 +639,7 @@ function build() {
 }
 // Supersets (Ben, 22 Oct): when on, accessories are paired A1/A2, B1/B2 …; the main lift and heavy barbell
 // compounds are never paired (workout-builder-v3 §3.5). Pairing saves time, so one more accessory fits.
-const HEAVY = new Set(['Bench press', 'Back squat', 'Barbell row', 'Romanian deadlift', 'Front squat', 'Incline bench press', 'Deadlift', 'Overhead press']);
+const HEAVY = new Set(['Barbell bench press', 'Back squat', 'Barbell row', 'Romanian deadlift', 'Front squat', 'Incline bench press', 'Deadlift', 'Overhead press']);
 function pairUp(list) {
   if (!S.supersets) return list;
   const free = list.filter((e) => e.role !== 'main' && !HEAVY.has(e.n));
@@ -607,7 +648,7 @@ function pairUp(list) {
 }
 // Indirect work counts as half a set (presses → triceps, rows and pulldowns → biceps, squats and hinges → glutes),
 // the fractional counting that best predicts growth in volume meta-regressions (Pelland et al. 2024).
-const SEC = { 'Bench press': { Triceps: 0.5 }, 'Incline bench press': { Triceps: 0.5 }, 'Incline DB press': { Triceps: 0.5 }, 'DB shoulder press': { Triceps: 0.5 },
+const SEC = { 'Barbell bench press': { Triceps: 0.5 }, 'Incline bench press': { Triceps: 0.5 }, 'Incline dumbbell press': { Triceps: 0.5 }, 'Dumbbell shoulder press': { Triceps: 0.5 },
   'Barbell row': { Biceps: 0.5 }, 'Chest-supported row': { Biceps: 0.5 }, 'Lat pulldown': { Biceps: 0.5 }, 'Pull-up': { Biceps: 0.5 },
   'Back squat': { Glutes: 0.5 }, 'Machine chest press': { Triceps: 0.5 }, 'Smith bench press': { Triceps: 0.5 }, 'Push-up': { Triceps: 0.5 }, 'Incline machine press': { Triceps: 0.5 }, 'Incline Smith press': { Triceps: 0.5 }, 'Overhead press': { Triceps: 0.5 }, 'Arnold press': { Triceps: 0.5 }, 'Smith shoulder press': { Triceps: 0.5 }, 'Chin-up': { Biceps: 0.5 }, 'Seated cable row': { Biceps: 0.5 }, 'T-bar row': { Biceps: 0.5 }, 'Single-arm DB row': { Biceps: 0.5 }, 'Smith squat': { Glutes: 0.5 }, 'Walking lunge': { Glutes: 0.5 }, 'Goblet squat': { Glutes: 0.5 }, 'Step-up': { Glutes: 0.5 }, 'Front squat': { Glutes: 0.5 }, 'Leg press': { Glutes: 0.5 }, 'Romanian deadlift': { Glutes: 0.5 }, 'Hip thrust': { Hamstrings: 0.5 } };
 function weeklySets(plan) {
@@ -628,23 +669,32 @@ const SPORT_BANDS = { pri: [10, 14], oth: [6, 10], sm: [4, 6] };
 const deloadText = () => S.effort === 'Maintain' ? 'no deload' : S.effort === 'Push' ? 'deload every 4th week' : `deload week ${S.weeks}`;
 // Estimate only (rule 6): the main target lift's top set after the plan, at the level's typical weekly gain.
 // Estimates only (rule 6). Weekly gain = a share of the current top set by level (placeholder until his own trend, history-targets).
-const MAIN = ['Bench press', 'Back squat', 'Barbell row', 'DB shoulder press'];
-const SHORT = { 'Bench press': 'Bench press', 'Back squat': 'Back squat', 'Barbell row': 'Barbell row', 'DB shoulder press': 'DB shoulder press', 'Overhead press': 'Overhead press', 'Romanian deadlift': 'Romanian deadlift', 'Deadlift': 'Deadlift', 'Front squat': 'Front squat', 'Incline bench press': 'Incline bench press' };
-const CARD = { 'Bench press': 'Bench', 'Back squat': 'Squat', 'Barbell row': 'BB row', 'DB shoulder press': 'DB shoulder' };
+const MAIN = ['Barbell bench press', 'Back squat', 'Barbell row', 'Dumbbell shoulder press'];
+const SHORT = { 'Barbell bench press': 'Barbell bench press', 'Back squat': 'Back squat', 'Barbell row': 'Barbell row', 'Dumbbell shoulder press': 'Dumbbell shoulder press', 'Overhead press': 'Overhead press', 'Romanian deadlift': 'Romanian deadlift', 'Deadlift': 'Deadlift', 'Front squat': 'Front squat', 'Incline bench press': 'Incline bench press' };
+const CARD = { 'Barbell bench press': 'Bench', 'Back squat': 'Squat', 'Barbell row': 'BB row', 'Dumbbell shoulder press': 'DB shoulder' };
 // Dumbbells are per hand and move in 2 kg steps; bars in 2.5 kg (gym kit decides in the app).
 const snapFor = (l, kg) => HIST[l]?.each ? Math.floor(kg / 2) * 2 : snap(kg);
 // Table cell: "26 kg", with "each" on a smaller line below for dumbbells (Ben, 22 Oct).
 const kgCell = (l, kg) => `<span>${kg} kg</span>${HIST[l]?.each ? '<span style="font-size:11px;color:var(--text3);line-height:1.1">each</span>' : ''}`;
 const fmtKg = (l, kg) => HIST[l]?.each ? `${kg} each` : `${kg}`;
+// Main lift in one format everywhere (V1): top set + back-offs · loads, e.g. 1 × 6 + 2 × 8 · 100 / 90.
+const mainFmt = (l, top, back, reps, backs) => `1 × ${reps}${backs ? ` + ${backs} × 8` : ''} · ${top}${backs ? ` / ${back}` : ''}${HIST[l]?.each ? ' each' : ''}`;
 // Epley, labelled est.: a set's 1RM, and the weight for 6 reps at the same effort.
 const e1rm = (kg, reps) => kg * (1 + reps / 30);
 const nearest = (l, kg) => { const st = HIST[l]?.each ? 2 : 2.5; return Math.round(kg / st) * st; };
 const at6 = (l, kg, reps) => reps === 6 ? kg : nearest(l, e1rm(kg, reps) / 1.2);
+// One source for Check your lifts and week 1 (V2): the set it starts from (history, entered or estimated), its 6-rep
+// weight, and whether week 1 goes a step lighter (stale and not confirmed, or an estimate).
+const startLoad = (l) => {
+  const h = HIST[l] ?? {}, c = S.check[l], e = (h.none && c !== 'entered') ? estFrom(l, S.src?.[l] ?? 0) : null;
+  const kg = e ? e.kg : h.kg, reps = e ? e.reps : h.reps, est = !!e || (h.none && c !== 'entered');
+  return { kg, reps, e, est, six: at6(l, kg, reps), light: est || (h.stale && c !== 'yes' && c !== 'entered') };
+};
 const gainWk = (lift, lvl) => EFFORT[lvl].pct === 0 ? 0 : Math.max(0.25, HIST[lift].kg * EFFORT[lvl].pct);
 // Main focus changes what progress looks like (Ben, 22 Oct): Strength moves top sets fastest; Muscle moves reps first,
 // then weight; Fitness is slow and steady. Multipliers are placeholders until his own trend (history-targets).
 const FOCUS_GAIN = { Strength: 1.3, Balanced: 1.0, Muscle: 0.7, Fitness: 0.5 };
-const projected = (lvl, lift = 'Bench press') => nearest(lift, HIST[lift].kg + gainWk(lift, lvl) * (FOCUS_GAIN[S.focus] ?? 1) * S.weeks);
+const projected = (lvl, lift = 'Barbell bench press') => nearest(lift, HIST[lift].kg + gainWk(lift, lvl) * (FOCUS_GAIN[S.focus] ?? 1) * S.weeks);
 // Muscle: working sets at his reps; reps climb about one a fortnight (to 12), weight follows.
 // Reps first (about one every two weeks, Push one a week) up to 12; past that the weight steps up and reps drop back.
 function muscleEnd(lift) {
@@ -826,14 +876,14 @@ function renderGoals() {
 // Usual range of each lift's est. 1RM ÷ bench est. 1RM (crowd-sourced strength standards and coaching rules of thumb;
 // shown as information, a supporting signal only). Extra lifts can be added on Check your lifts.
 const BAL = {
-  'Back squat': [1.2, 1.5], 'Barbell row': [0.7, 1.0], 'DB shoulder press': [0.22, 0.30],
+  'Back squat': [1.2, 1.5], 'Barbell row': [0.7, 1.0], 'Dumbbell shoulder press': [0.22, 0.30],
   'Deadlift': [1.5, 1.9], 'Front squat': [0.95, 1.2], 'Romanian deadlift': [1.0, 1.3],
   'Overhead press': [0.6, 0.7], 'Incline bench press': [0.8, 0.9],
 };
 const EXTRA = ['Deadlift', 'Front squat', 'Romanian deadlift', 'Overhead press', 'Incline bench press'];
 const checkLifts = () => [...MAIN, ...(S.extra ?? [])];
 const hasData = (l) => !HIST[l].none || S.check[l] === 'entered' || S.check[l] === 'est';
-const ratio = (l) => e1rm(HIST[l].kg, HIST[l].reps) / e1rm(HIST['Bench press'].kg, HIST['Bench press'].reps);
+const ratio = (l) => e1rm(HIST[l].kg, HIST[l].reps) / e1rm(HIST['Barbell bench press'].kg, HIST['Barbell bench press'].reps);
 const balWord = (l) => { const v = ratio(l), [lo, hi] = BAL[l]; return v < lo ? 'Below' : v > hi ? 'Above' : 'In range'; };
 // Bench against the others: each other lift implies a usual bench range (its 1RM ÷ its usual ratio); bench's band is
 // the average of those, so bench gets a Below / In range / Above like the rest (Ben, 22 Oct).
@@ -844,16 +894,16 @@ function benchRange(lifts) {
 }
 function benchRow(lifts, row, dot) {
   if (!lifts.length) return '';
-  const [lo, hi] = benchRange(lifts), b = e1rm(HIST['Bench press'].kg, HIST['Bench press'].reps);
+  const [lo, hi] = benchRange(lifts), b = e1rm(HIST['Barbell bench press'].kg, HIST['Barbell bench press'].reps);
   const min = lo * 0.6, max = hi * 1.4, pos = (x) => Math.max(0, Math.min(100, (x - min) / (max - min) * 100));
   const word = b < lo ? 'Below' : b > hi ? 'Above' : 'In range';
-  return row('Bench press', `<span class="rng" style="left:${pos(lo)}%;width:${pos(hi) - pos(lo)}%"></span>${dot(pos(b))}`, word, word === 'Below');
+  return row('Barbell bench press', `<span class="rng" style="left:${pos(lo)}%;width:${pos(hi) - pos(lo)}%"></span>${dot(pos(b))}`, word, word === 'Below');
 }
 function balanceCard() {
   const head = `<div class="label" style="display:flex;align-items:center;gap:4px">Strength balance <button class="link dim" id="balInfo" aria-label="How this is worked out" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>`;
   const dot = (p) => `<span style="position:absolute;top:-2px;left:calc(${p}% - 7px);width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--surface)"></span>`;
   const row = (name, bar, word, warn) => `<div class="vol" style="grid-template-columns:132px 1fr 84px;min-height:40px"><span class="mn" style="font-size:14px">${name}</span><span class="bar" style="height:10px">${bar}</span><span class="n" style="font-size:13px;color:${warn ? 'var(--warn)' : 'var(--text2)'}">${word}</span></div>`;
-  const lifts = checkLifts().filter((l) => l !== 'Bench press' && BAL[l] && hasData(l));
+  const lifts = checkLifts().filter((l) => l !== 'Barbell bench press' && BAL[l] && hasData(l));
   const rows = lifts.map((l) => {
     const [lo, hi] = BAL[l]; const v = ratio(l);
     const min = lo * 0.6, max = hi * 1.4, pos = (x) => Math.max(0, Math.min(100, (x - min) / (max - min) * 100));
@@ -865,12 +915,12 @@ function balanceCard() {
       ${rows}</div>`;
 }
 function balanceInfo() {
-  const lifts = checkLifts().filter((l) => l !== 'Bench press' && BAL[l] && hasData(l));
+  const lifts = checkLifts().filter((l) => l !== 'Barbell bench press' && BAL[l] && hasData(l));
   sheet(`<h2>Strength balance</h2>
     <div class="note" style="display:block;line-height:1.45">Each lift's estimated 1RM divided by your bench press estimated 1RM. The shaded band is the usual range for lifters, from crowd-sourced strength standards and coaching rules of thumb. It's not a target: build, technique and how strictly you lift all move it. It only counts toward a priority with another sign, like low sets or a stalled lift.<br><br>Bench press is checked the other way round: the range your other lifts would usually go with.</div>
     <div class="card" style="padding:4px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:16px">
       <span class="lab" style="padding:8px 0">Lift</span><span class="lab" style="padding:8px 0;text-align:center">You</span><span class="lab" style="padding:8px 0;text-align:center">Usual</span>
-      ${(() => { if (!lifts.length) return ''; const [lo, hi] = benchRange(lifts), b = e1rm(HIST['Bench press'].kg, HIST['Bench press'].reps), r5 = (x) => Math.round(x / 2.5) * 2.5; const c = 'padding:8px 0;border-top:1px solid var(--divider)'; return `<span style="${c}">Bench press</span><span style="${c};text-align:center;font-variant-numeric:tabular-nums">${r5(b)} kg</span><span style="${c};text-align:center;color:var(--text2);font-variant-numeric:tabular-nums">${r5(lo)}–${r5(hi)} kg</span>`; })()}
+      ${(() => { if (!lifts.length) return ''; const [lo, hi] = benchRange(lifts), b = e1rm(HIST['Barbell bench press'].kg, HIST['Barbell bench press'].reps), r5 = (x) => Math.round(x / 2.5) * 2.5; const c = 'padding:8px 0;border-top:1px solid var(--divider)'; return `<span style="${c}">Barbell bench press</span><span style="${c};text-align:center;font-variant-numeric:tabular-nums">${r5(b)} kg</span><span style="${c};text-align:center;color:var(--text2);font-variant-numeric:tabular-nums">${r5(lo)}–${r5(hi)} kg</span>`; })()}
       ${lifts.map((l) => `<span style="padding:8px 0;border-top:1px solid var(--divider)">${SHORT[l]}</span><span style="padding:8px 0;border-top:1px solid var(--divider);text-align:center;font-variant-numeric:tabular-nums">${(Math.floor(ratio(l) * 100) / 100).toFixed(2)}×</span><span style="padding:8px 0;border-top:1px solid var(--divider);text-align:center;color:var(--text2);font-variant-numeric:tabular-nums">${BAL[l][0]}–${BAL[l][1]}×</span>`).join('')}
     </div>${S.ai ? '' : ''}`);
 }
@@ -878,10 +928,10 @@ function balanceInfo() {
 // Read-across (Ben, 22 Oct): a main lift with no history is estimated from his closest similar lift first, then
 // from another main lift. Factors are practice-level rules of thumb, always labelled est., replaced by the first session.
 const SIMILAR = {
-  'DB shoulder press': [
+  'Dumbbell shoulder press': [
     { from: 'Machine shoulder press', f: (h) => Math.floor(h.kg / 2 / 1.1 / 2) * 2, note: (h) => `${h.kg} × ${h.reps}` },
     { from: 'Overhead press', f: (h) => Math.floor(h.kg / 1.2 / 2 / 2) * 2, note: (h) => `${h.kg} × ${h.reps}` },
-    { from: 'Bench press', f: (h) => Math.floor(h.kg * 0.6 / 1.2 / 2 / 2) * 2, note: (h) => `${h.kg} × ${h.reps}` },
+    { from: 'Barbell bench press', f: (h) => Math.floor(h.kg * 0.6 / 1.2 / 2 / 2) * 2, note: (h) => `${h.kg} × ${h.reps}` },
   ],
 };
 const estFrom = (l, i) => { const r = SIMILAR[l]?.[i]; if (!r || !HIST[r.from]) return null; const h = HIST[r.from]; return { kg: r.f(h), reps: h.reps, from: r.from, note: r.note(h), i }; };
@@ -896,9 +946,7 @@ function renderCheck() {
   const C = 'display:flex;align-items:center;justify-content:center;min-height:52px;font-variant-numeric:tabular-nums;border-bottom:1px solid var(--divider)';
   const rows = checkLifts().map((l) => {
     const h = HIST[l], c = S.check[l];
-    const e = (h.none && c !== 'entered') ? estFrom(l, S.src?.[l] ?? 0) : null;
-    const kg = e ? e.kg : h.kg, reps = e ? e.reps : h.reps;
-    const six = at6(l, kg, reps), one = nearest(l, e1rm(kg, reps));
+    const { e, kg, reps, six } = startLoad(l), one = nearest(l, e1rm(kg, reps));
     const open = (h.stale && c !== 'yes' && c !== 'entered') || (h.none && !c);
     return `<button data-lift="${l}" style="display:contents;font:inherit;color:inherit;cursor:pointer">
       <span style="${C};justify-content:flex-start;gap:6px;text-align:left">${SHORT[l]}${open ? '<span style="width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none" aria-label="Check"></span>' : ''}</span>
@@ -1099,16 +1147,26 @@ function compose(base, next, items, rejected) {
 // Any change made from the plan overview starts an edit, so it always goes through the Changes review.
 function ensureEditing() { if (S.applied) { S.editing = true; S.applied = false; S.basePlan = JSON.parse(JSON.stringify(S.plan)); S.rejected = new Set(); S.scope = null; } }
 const prevFor = (w) => S.weekPlans?.[w] ?? S.basePlan ?? S.plan;
+// The changes an edit makes. On the plan you have, only those that apply to its days (an exercise it has, or adds one it hasn't).
+function changeItems() {
+  const items = diffItems(S.basePlan, S.plan); if (!S.record) return items;
+  const ref = prevFor(S.curWeek ?? 1), ex = (it) => ref[it.di]?.ex.find((e) => e.n === it.n);
+  // A muscle the edit takes out of the week altogether (e.g. abs to 0) goes from every day of it.
+  const wb = weeklySets(S.basePlan), wn = weeklySets(S.plan);
+  ref.forEach((d, di) => d.ex.forEach((e) => { if (e.role !== 'main' && wb[e.m] > 0 && !wn[e.m] && !items.some((it) => it.di === di && it.kind === 'remove' && it.n === e.n)) items.push({ id: `${di}|-${e.n}`, di, kind: 'remove', n: e.n, text: `${dayName(d, di)}: − ${e.n}` }); }));
+  items.sort((a, b) => a.di - b.di);
+  return items.filter((it) => (it.kind === 'sets' ? ex(it) && ex(it).sets !== it.to : it.kind === 'remove' ? !!ex(it) : it.kind === 'add' ? !ex(it) : true));
+}
 function planFor(w) {
   if (!(S.editing && S.basePlan)) return S.weekPlans?.[w] ?? S.plan;
   const prev = prevFor(w);
   if (S.curWeek != null && w < S.curWeek) return prev;
   if (S.scope && !S.scope.has(w)) return prev;
-  const items = diffItems(S.basePlan, S.plan), next = compose(prev, S.plan, items, S.rejected ?? new Set());
+  const items = changeItems(), next = compose(prev, S.plan, items, S.rejected ?? new Set());
   return next.map((d, i) => isDoneDay(w, i) && prev[i] ? prev[i] : d);
 }
 function changesCard() {
-  const items = diffItems(S.basePlan, S.plan), rj = S.rejected ?? (S.rejected = new Set());
+  const items = changeItems(), rj = S.rejected ?? (S.rejected = new Set());
   const weeks = Array.from({ length: S.weeks }, (_, k) => k + 1), sc = S.scope ?? (S.scope = new Set(weeks.filter((w) => w >= (S.curWeek ?? 1))));
   const n = items.filter((it) => !rj.has(it.id)).length;
   return `<div class="card" style="padding:10px 14px;gap:8px">
@@ -1116,6 +1174,17 @@ function changesCard() {
     ${items.map((it) => { const on = !rj.has(it.id); return `<button data-chg="${esc(it.id)}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:none;border:0;padding:2px 0;color:${on ? 'var(--text)' : 'var(--text3)'};font:14px var(--ui);text-align:left;cursor:pointer"><span style="${on ? '' : 'text-decoration:line-through'}">${esc(it.text)}</span><span style="flex:none;font-size:13px;color:${on ? 'var(--done)' : 'var(--text3)'}">${on ? '✓ Accept' : '✕ Reject'}</span></button>`; }).join('')}
     ${items.length ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-top:4px;border-top:1px solid var(--divider)"><span style="font-size:13px;color:var(--text2);margin-right:2px">Weeks</span>${weeks.map((w) => { const done = S.curWeek != null && w < S.curWeek; return `<button class="chip sm" data-scope="${w}" aria-pressed="${!done && sc.has(w)}" ${done ? 'disabled' : ''} style="min-width:32px;padding:0 6px;${done ? 'opacity:.4' : ''}">${w}</button>`; }).join('')}<span style="font-size:12px;color:var(--text3)">${n} of ${items.length}</span></div>` : ''}
   </div>`;
+}
+// A plan day as the builder's draft (V6): exercises, sets, top set (back-off) and reps for the week shown; supersets as paired.
+function dayDraft(d) {
+  const blocks = [], at = {}; let main = false;
+  d.ex.forEach((e) => {
+    const x = atWeek(e, S.week), kg = parseFloat(x.top ?? x.kg), isMain = e.role === 'main' && !main; main ||= isMain;
+    const it = { name: e.n, main: isMain, sets: x.sets, kg: Number.isNaN(kg) ? null : kg, reps: x.reps ?? (Number(String(x.short).split('× ').pop()) || undefined), back: x.back, each: e.rec?.each ?? !!HIST[e.n]?.each };
+    const L = S.supersets && e.pair ? e.pair[0] : null;
+    if (L && at[L]) at[L].push(it); else { const b = [it]; blocks.push(b); if (L) at[L] = b; }
+  });
+  return { day: d.focus + (d.variant ? ' ' + d.variant : ''), min: S.length, est: d.est ?? S.length, ss: !!S.supersets && blocks.some((b) => b.length > 1), blocks };
 }
 function renderPlan() {
   const p = planFor(S.week);
@@ -1135,8 +1204,8 @@ function renderPlan() {
     ${S.schedule === 'flexible' ? `<div class="chips">${p.map((d, i) => `<button class="chip sm" data-toggle="${i}" aria-pressed="${S.open === i}">${i + 1} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</button>`).join('')}</div>` : `<div class="week">${strip}</div>`}
     ${p.map((d, i) => `<div class="dcard ${S.open === i ? 'open' : ''}" data-card="${i}">
       <div class="dtop" data-toggle="${i}"><span><div class="nm">${S.schedule === 'flexible' ? i + 1 : WD[d.day]} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</div><div class="sub">${isDoneDay(S.week, i) ? '<span style="color:var(--done)">✓ Done</span> · ' : ''}${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
-        <span class="rt">${d.ex.length} ex · ~${S.length}′<span class="chev">›</span></span></div>
-      <div class="ex"><div class="rows">${d.ex.map((e, k) => { const ss = S.supersets && e.pair; const x = atWeek(e, S.week); return `<div data-exw="${i}|${k}" style="display:grid;grid-template-columns:${ss ? '18px ' : ''}minmax(0,1fr) auto 70px;gap:8px;align-items:center;min-height:40px;border-bottom:1px solid var(--divider);font-size:15px">${ss ? `<span style="color:var(--text3);font-size:12px">${e.pair}</span>` : ''}<span style="${e.role === 'main' ? 'font-weight:600' : ''}">${esc(e.n)}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">${esc(x.short)}</span><span style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(x.kg))}${/^[\d.]+$/.test(String(x.kg)) ? ' kg' : ''}</span></div>`; }).join('')}</div>
+        <span class="rt">${d.ex.length} ex · ~${d.est ?? S.length}′<span class="chev">›</span></span></div>
+      <div class="ex"><div class="rows">${d.ex.map((e, k) => { const ss = S.supersets && e.pair; const x = atWeek(e, S.week); return `<div data-exw="${i}|${k}" style="display:grid;grid-template-columns:${ss ? '18px ' : ''}minmax(0,1fr) auto 70px;gap:8px;align-items:center;min-height:40px;border-bottom:1px solid var(--divider);font-size:15px">${ss ? `<span style="color:var(--text3);font-size:12px">${e.pair}</span>` : ''}${e.role === 'main' && !e.bw ? `<span style="font-weight:600;grid-column:span 3">${esc(e.n)}<small style="display:block;font-weight:400;font-size:13px;color:var(--text2);font-variant-numeric:tabular-nums">${esc(x.line)}</small></span>` : `<span style="${e.role === 'main' ? 'font-weight:600' : ''}">${esc(e.n)}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">${esc(x.short)}</span><span style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(x.kg))}${/^[\d.]+$/.test(String(x.kg)) ? ' kg' : ''}</span>`}</div>`; }).join('')}</div>
         <div class="dact">${isDoneDay(S.week, i) ? '' : `<button class="link" data-swap="${i}">Swap day</button>${S.schedule === 'fixed' ? `<button class="link" data-move="${i}">Move day</button>` : ''}`}${S.applied && S.curWeek != null && S.week === S.curWeek && !isDoneDay(S.week, i) ? `<button class="link" data-dotoday="${esc(d.focus)}">Do today ›</button>` : ''}<button class="link dim" data-open="${i}">Open in builder ›</button></div>
       </div></div>`).join('')}
     <div class="label">Sets per week</div>
@@ -1154,9 +1223,9 @@ function renderPlan() {
   document.querySelectorAll('[data-exw]').forEach((el) => el.onclick = () => {
     const [di, k] = el.dataset.exw.split('|').map(Number), e = p[di].ex[k];
     sheet(`<h2>${esc(e.n)}</h2><div class="card" style="padding:4px 14px 8px"><div style="display:grid;grid-template-columns:auto 1fr auto;gap:0 14px;font-variant-numeric:tabular-nums;font-size:15px">
-      <span class="lab" style="padding:8px 0 4px">Week</span><span class="lab" style="padding:8px 0 4px">${e.role === 'main' && !e.bw ? 'Top set' : 'Sets × reps'}</span><span class="lab" style="padding:8px 0 4px;text-align:right">${e.role === 'main' && !e.bw ? 'Back-offs' : 'kg'}</span>
+      <span class="lab" style="padding:8px 0 4px">Week</span><span class="lab" style="padding:8px 0 4px">Sets × reps</span><span class="lab" style="padding:8px 0 4px;text-align:right">${e.role === 'main' && !e.bw ? '' : 'kg'}</span>
       ${Array.from({ length: S.weeks }, (_, j) => j + 1).map((w) => { const x = atWeek(e, w), cur = w === S.week, st = `padding:7px 0;border-top:1px solid var(--divider);${cur ? 'color:var(--text);font-weight:600' : x.dl ? 'color:var(--text3)' : 'color:var(--text2)'}`;
-        return e.role === 'main' && !e.bw ? `<span style="${st}">${w}${x.dl ? ' · Deload' : ''}</span><span style="${st}">${esc(fmtKg(e.n, x.top))} × ${x.reps}</span><span style="${st};text-align:right">${x.backs} × ${esc(fmtKg(e.n, x.back))} × 8</span>`
+        return e.role === 'main' && !e.bw ? `<span style="${st}">${w}${x.dl ? ' · Deload' : ''}</span><span style="${st};grid-column:span 2">${esc(x.line)}</span>`
           : `<span style="${st}">${w}${x.dl ? ' · Deload' : ''}</span><span style="${st}">${x.short}</span><span style="${st};text-align:right">${esc(String(x.kg))}</span>`; }).join('')}
     </div></div>${e.role === 'main' && !e.bw ? `<div class="note" style="display:block">Warm-up this week: ${esc(warmUp(e.n, atWeek(e, S.week).top, atWeek(e, S.week).reps))}</div>` : ''}<div class="note">Planned. Each week follows what you actually lift.</div>`);
   });
@@ -1166,7 +1235,8 @@ function renderPlan() {
   document.querySelectorAll('[data-move]').forEach((el) => el.onclick = () => openMoveSheet(+el.dataset.move));
   // Do today (Ben, 22 Oct): this week's not-done days open on Today with its controls (shorten, main lift…; today only).
   document.querySelectorAll('[data-dotoday]').forEach((el) => el.onclick = () => { if (document.documentElement.classList.contains('embed')) parent.postMessage({ app: 'dotoday', day: el.dataset.dotoday }, '*'); else toast(`Opens ${el.dataset.dotoday} on Today`, false); });
-  document.querySelectorAll('[data-open]').forEach((el) => el.onclick = () => toast('Opens this day in the workout builder', false));
+  // Open in builder: that day's workout for the week shown, on the builder's Your workout page (V6).
+  document.querySelectorAll('[data-open]').forEach((el) => el.onclick = () => { if (document.documentElement.classList.contains('embed')) parent.postMessage({ app: 'builder', draft: dayDraft(p[+el.dataset.open]) }, '*'); else toast('Opens this day in the workout builder', false); });
   document.querySelectorAll('[data-choice]').forEach((el) => el.onclick = () => { S.chat = S.chat.filter((c) => c.who !== 'choice'); const pending = S.pendingAsk; S.pendingAsk = null; el.dataset.choice === 'new' ? rebuild(pending) : editPlan(pending); });
   $('absChange').onclick = () => { sheet(`<h2>Ab sets a week</h2><div class="seg">${ABS_OPTS.map((n) => `<button class="chip" data-absn="${n}" style="min-width:0;flex:1 1 0" aria-pressed="${absPerWeek() === n}">${n === absAuto() ? '✦ ' : ''}${n}</button>`).join('')}</div>`); document.querySelectorAll('[data-absn]').forEach((b) => b.onclick = () => { ensureEditing(); const before = snapshot(); S.absWk = +b.dataset.absn; S.plan = build(); closeSheet(); render(); toast(`Abs ${S.absWk} sets a week`, true, () => { restore(before); render(); }); }); };
   $('whyBtn').onclick = () => $('why').classList.toggle('on');
@@ -1174,11 +1244,19 @@ function renderPlan() {
   if ($('editPlan')) $('editPlan').onclick = () => { S.editing = true; S.applied = false; S.basePlan = JSON.parse(JSON.stringify(S.plan)); S.rejected = new Set(); S.scope = null; S.pageTop = true; render(); };
   document.querySelectorAll('[data-chg]').forEach((b) => b.onclick = () => { const id = b.dataset.chg; S.rejected.has(id) ? S.rejected.delete(id) : S.rejected.add(id); render(); });
   if ($('accAll')) $('accAll').onclick = () => { S.rejected = new Set(); render(); };
-  if ($('rejAll')) $('rejAll').onclick = () => { S.rejected = new Set(diffItems(S.basePlan, S.plan).map((it) => it.id)); render(); };
+  if ($('rejAll')) $('rejAll').onclick = () => { S.rejected = new Set(changeItems().map((it) => it.id)); render(); };
   document.querySelectorAll('[data-scope]').forEach((b) => b.onclick = () => { if (b.disabled) return; const w = +b.dataset.scope; S.scope.has(w) ? S.scope.delete(w) : S.scope.add(w); render(); });
   if ($('pausePlan')) $('pausePlan').onclick = () => { S.paused = !S.paused; render(); toast(S.paused ? 'Plan paused' : 'Plan resumed', false); };
-  if ($('endPlan')) $('endPlan').onclick = () => toast('Plan ended', false);
-  if ($('apply')) $('apply').onclick = () => { if (S.editing && S.basePlan) { const wp = {}; for (let w = 1; w <= S.weeks; w++) wp[w] = planFor(w); const last = wp[S.weeks]; S.weekPlans = wp; S.plan = last; } S.applied = true; S.editing = false; S.basePlan = null; S.rejected = null; S.scope = null; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
+  // End plan: a title-only confirm, then Undo (V4). In the app the shell ends it and keeps this screen for Undo.
+  if ($('endPlan')) $('endPlan').onclick = () => confirmSheet('End plan?', 'End plan', () => {
+    if (document.documentElement.classList.contains('embed')) { parent.postMessage({ app: 'endplan' }, '*'); return; }
+    const before = { applied: S.applied, paused: S.paused }; S.applied = false; S.paused = false; render();
+    toast('Plan ended', true, () => { Object.assign(S, before); render(); });
+  });
+  if ($('apply')) $('apply').onclick = () => {
+    // Undo puts back exactly what was there before Apply (V4).
+    const before = { plan: S.plan, weekPlans: S.weekPlans, basePlan: S.basePlan, rejected: S.rejected, scope: S.scope, editing: S.editing, applied: S.applied };
+    if (S.editing && S.basePlan) { const wp = {}; for (let w = 1; w <= S.weeks; w++) wp[w] = planFor(w); const last = wp[S.weeks]; S.weekPlans = wp; if (!S.record) S.plan = last; } S.applied = true; S.editing = false; S.basePlan = null; S.rejected = null; S.scope = null; render(); toast('Plan applied', true, () => { Object.assign(S, before); render(); }); };
   const ask = $('ask');
   if (ask) ask.onkeydown = (e) => { if (e.key === 'Enter' && ask.value.trim()) { coach(ask.value.trim()); } };
   const sc = $('scroll'); if (S.chatScroll) { sc.scrollTop = sc.scrollHeight; S.chatScroll = false; } else if (S.pageTop) { sc.scrollTop = 0; S.pageTop = false; }
@@ -1254,6 +1332,8 @@ function openSpecSheet() {
 }
 function sheet(html) { $('sheet').innerHTML = `<div style="display:flex;justify-content:flex-end;margin:-6px -4px -10px"><button class="link" id="sheetClose">Done</button></div>` + html; $('sheetClose').onclick = closeSheet; $('sheet').classList.add('on'); $('scrim').classList.add('on'); }
 function closeSheet() { $('sheet').classList.remove('on'); $('scrim').classList.remove('on'); }
+// Confirm: title and buttons only (V4).
+function confirmSheet(title, ok, fn) { clearTimeout(toastTimer); $('toast').classList.remove('on'); $('sheet').innerHTML = `<h2>${esc(title)}</h2><button class="primary" id="cfOk">${esc(ok)}</button><button class="link" id="cfCancel" style="align-self:center">Cancel</button>`; $('cfOk').onclick = () => { closeSheet(); fn(); }; $('cfCancel').onclick = closeSheet; $('sheet').classList.add('on'); $('scrim').classList.add('on'); }
 $('scrim').onclick = closeSheet;
 // Swap day (Ben, 22 Oct; replaces Change focus, which could make two days the same): this day trades places with another
 // plan day, so the week keeps the same sessions. Days already done aren't offered.

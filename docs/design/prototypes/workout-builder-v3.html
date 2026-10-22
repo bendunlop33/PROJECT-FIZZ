@@ -168,19 +168,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 <script>
 (() => {
-  const E1RM = { 'Leg extension': 90, 'Hip thrust': 180, 'Bulgarian split squat': 40, 'Barbell bench press': 127, 'Incline dumbbell press': 39, 'Incline barbell press': 105, 'Cable fly': 22, 'Machine chest press': 105, 'Triceps pushdown': 41, 'Overhead triceps extension': 30, 'Cable crunch': 55, 'Hanging knee raise': null, 'Barbell row': 118, 'Lat pulldown': 82, 'Chest-supported row': 30, 'Seated cable row': 80, 'EZ-bar curl': 40, 'Hammer curl': 18, 'Back squat': 150, 'Romanian deadlift': 140, 'Leg press': 260, 'Leg curl': 65, 'Seated calf raise': 60, 'Lateral raise': 14, 'Dumbbell shoulder press': 42, 'Rear-delt fly': 12, 'Face pull': 30 };
+  // Shared example facts (V1): the same in every screen of the whole-app prototype; build_app.py checks them.
+  const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 92.5, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 92.5", "last": "12 Oct · 100 × 6"};
+  const E1RM = { 'Leg extension': 90, 'Hip thrust': 180, 'Bulgarian split squat': 40, 'Barbell bench press': 130, 'Incline dumbbell press': 39, 'Incline barbell press': 105, 'Cable fly': 23, 'Machine chest press': 105, 'Triceps pushdown': 45, 'Overhead triceps extension': 30, 'Cable crunch': 60, 'Hanging knee raise': null, 'Barbell row': 118, 'Lat pulldown': 82, 'Chest-supported row': 30, 'Seated cable row': 80, 'EZ-bar curl': 45, 'Hammer curl': 18, 'Back squat': 150, 'Romanian deadlift': 140, 'Leg press': 260, 'Leg curl': 65, 'Seated calf raise': 60, 'Lateral raise': 15, 'Dumbbell shoulder press': 42, 'Rear-delt fly': 12, 'Face pull': 30 };
   const EACH = new Set(['Bulgarian split squat', 'Incline dumbbell press', 'Hammer curl', 'Lateral raise', 'Dumbbell shoulder press', 'Rear-delt fly', 'Chest-supported row']);
-  const GROUPS = ['Chest', 'Back', 'Shoulders', 'Legs', 'Biceps', 'Triceps', 'Abs'];
+  // One muscle list everywhere (V1): the plan's (plan-builder MUSCLES).
+  const GROUPS = ['Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Calves', 'Biceps', 'Triceps', 'Core'];
   const DAYS = {
-    Chest: { sub: 'Chest, triceps', main: ['Barbell bench press', 'Incline dumbbell press', 'Incline barbell press'], rec: { Chest: 4, Triceps: 1, Abs: 1 } },
-    Back: { sub: 'Back, rear delts, biceps', main: ['Barbell row', 'Lat pulldown'], rec: { Back: 4, Biceps: 1, Abs: 1 } },
-    Legs: { sub: 'Quads, hamstrings, glutes, calves', main: ['Back squat', 'Leg press'], rec: { Legs: 5, Abs: 1 } },
-    Shoulders: { sub: 'Shoulders, triceps', main: ['Dumbbell shoulder press'], rec: { Shoulders: 4, Triceps: 1, Abs: 1 } },
+    Chest: { sub: 'Chest, triceps', main: ['Barbell bench press', 'Incline dumbbell press', 'Incline barbell press'], rec: { Chest: 3, Triceps: 1, Core: 1 } },
+    Back: { sub: 'Back, rear delts, biceps', main: ['Barbell row', 'Lat pulldown'], rec: { Back: 3, Biceps: 1, Core: 1 } },
+    Legs: { sub: 'Quads, hamstrings, glutes, calves', main: ['Back squat', 'Leg press'], rec: { Quads: 2, Hamstrings: 1, Calves: 1, Core: 1 } },
+    Shoulders: { sub: 'Shoulders, triceps', main: ['Dumbbell shoulder press'], rec: { Shoulders: 3, Triceps: 1, Core: 1 } },
   };
   const PPL = {
-    Push: { sub: 'Chest, shoulders, triceps', main: ['Barbell bench press', 'Dumbbell shoulder press', 'Incline dumbbell press'], rec: { Chest: 3, Shoulders: 2, Triceps: 1, Abs: 1 } },
-    Pull: { sub: 'Back, rear delts, biceps', main: ['Barbell row', 'Lat pulldown'], rec: { Back: 4, Biceps: 1, Abs: 1 } },
-    'Legs ': { sub: 'Quads, hamstrings, glutes, calves', main: ['Back squat', 'Leg press'], rec: { Legs: 5, Abs: 1 } },
+    Push: { sub: 'Chest, shoulders, triceps', main: ['Barbell bench press', 'Dumbbell shoulder press', 'Incline dumbbell press'], rec: { Chest: 3, Shoulders: 2, Triceps: 1, Core: 1 } },
+    Pull: { sub: 'Back, rear delts, biceps', main: ['Barbell row', 'Lat pulldown'], rec: { Back: 4, Biceps: 1, Core: 1 } },
+    'Legs ': { sub: 'Quads, hamstrings, glutes, calves', main: ['Back squat', 'Leg press'], rec: { Quads: 2, Hamstrings: 2, Calves: 1, Core: 1 } },
   };
   Object.assign(DAYS, PPL);
   const MINE = ['Chest', 'Back', 'Legs', 'Shoulders'];
@@ -209,13 +212,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const item = (n) => `<button class="opt" data-a="${act}" data-v="${n}" data-g="${g}"><span>${n}<br><small>${works(n)}</small></span></button>`;
     return foci.map((f) => `${foci.length > 1 ? `<div class="label" style="padding:4px 4px 0;font-size:11.5px">${f}</div>` : ''}<div class="table">${opts.filter((n) => (W[n]?.[0] ?? g) === f).map(item).join('')}</div>`).join('');
   }
-  const POOL = { Chest: ['Incline dumbbell press', 'Cable fly', 'Machine chest press', 'Incline barbell press', 'Barbell bench press'], Back: ['Lat pulldown', 'Chest-supported row', 'Face pull', 'Seated cable row', 'Rear-delt fly', 'Barbell row'], Shoulders: ['Lateral raise', 'Dumbbell shoulder press', 'Rear-delt fly', 'Face pull'], Legs: ['Leg press', 'Romanian deadlift', 'Leg curl', 'Leg extension', 'Seated calf raise', 'Hip thrust', 'Bulgarian split squat', 'Back squat'], Biceps: ['EZ-bar curl', 'Hammer curl'], Triceps: ['Triceps pushdown', 'Overhead triceps extension'], Abs: ['Cable crunch', 'Hanging knee raise'] };
+  const POOL = { Chest: ['Incline dumbbell press', 'Cable fly', 'Machine chest press', 'Incline barbell press', 'Barbell bench press'], Back: ['Lat pulldown', 'Chest-supported row', 'Face pull', 'Seated cable row', 'Rear-delt fly', 'Barbell row'], Shoulders: ['Lateral raise', 'Dumbbell shoulder press', 'Rear-delt fly', 'Face pull'], Quads: ['Leg press', 'Leg extension', 'Bulgarian split squat', 'Back squat'], Hamstrings: ['Romanian deadlift', 'Leg curl', 'Hip thrust'], Calves: ['Seated calf raise'], Biceps: ['EZ-bar curl', 'Hammer curl'], Triceps: ['Triceps pushdown', 'Overhead triceps extension'], Core: ['Cable crunch', 'Hanging knee raise'] };
   const snap = (kg) => Math.round(kg / 2.5) * 2.5;
   // Load for a set from est. 1RM, reps and target RPE (reps in reserve = 10 − RPE), rounded DOWN so the target stays doable.
   // The real build rounds to the gym's actual plates, dumbbells and stack steps instead of 2.5 kg.
   const loadFor = (name, reps, rpe) => { const e = E1RM[name]; if (e == null) return null; return Math.max(2.5, Math.floor(e / (1 + (reps + (10 - (rpe ?? 8))) / 30) / 2.5) * 2.5); };
   function target(name, main) {
-    const reps = main ? [6, 8] : [8, 12];
+    const reps = main ? [6, 8] : isCompound(name) ? [8, 12] : [12, 15]; // isolation 12–15, as Today and the plan
     return { reps, load: loadFor(name, reps[0], 8) };
   }
   // Per-set rows (reps, kg), filled from the target; the table shows the heaviest (top set).
@@ -230,7 +233,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (e.main) { if (isBar(e.name)) wu.push({ type: 'W', reps: 10, kg: 20, rpe: null }); for (const [f, r] of [[0.5, 5], [0.7, 3], [0.85, 1]]) { const k = snap(L0 * f); if (k > (wu[wu.length - 1]?.kg ?? 0)) wu.push({ type: 'W', reps: r, kg: k, rpe: null }); } }
     else if (COMPOUND.has(e.name)) wu.push({ type: 'W', reps: 8, kg: snap(L0 * 0.6), rpe: null });
     const work = e.main
-      ? [{ type: 'T', reps: r0, kg: L0, rpe: 8 }, ...Array.from({ length: e.sets - 1 }, () => ({ type: 'B', reps: r1, kg: loadFor(e.name, r1, 8), rpe: 8 }))]
+      ? [{ type: 'T', reps: r0, kg: L0, rpe: 8 }, ...Array.from({ length: e.sets - 1 }, () => ({ type: 'B', reps: r1, kg: snap(L0 * 0.9), rpe: 8 }))] // back-offs about 90 % of the top set
       : Array.from({ length: e.sets }, (_, i) => ({ type: 'N', reps: r0, kg: L0, rpe: i === e.sets - 1 ? 9 : 8 }));
     return [...wu, ...work];
   }
@@ -247,8 +250,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const wtText = (e) => { const top = topOf(e); return e.load == null ? (top ? `BW+${top}` : 'BW') : `${top ?? e.load}`; };
   const mmss = (m) => `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}`;
   const wtSub = (e) => (e.load != null && EACH.has(e.name) ? 'each' : '');
+  // Main lift in one format everywhere (V1): top set + back-offs · loads, e.g. 1 × 6 + 2 × 8 · 100 / 90.
+  const mainLine = (e) => { const w = workRows(e), top = w.find((p) => p.type === 'T') ?? w[0], b = w.filter((p) => p !== top); if (!top) return ''; const kg = (v) => (v == null ? 'BW' : v); if (!w.some((p) => p.type === 'T')) return `${w.length} × ${top.reps}${top.kg == null ? '' : ` · ${top.kg}${wtSub(e) ? ' each' : ''}`}`; return `1 × ${top.reps}${b.length ? ` + ${b.length} × ${b[0].reps}` : ''} · ${kg(top.kg)}${b.length ? ` / ${kg(b[0].kg)}` : ''}${wtSub(e) ? ' each' : ''}`; };
+  // Start: the active workout opens with exactly this workout (V1): name, order, supersets, every set row.
+  const session = () => ({ name: s.day.trim(), date: FIXTURE.today, min: s.minutes, est: est(), ss: s.blocks.some((b) => b.length > 1),
+    blocks: s.blocks.map((b) => b.map((e) => ({ name: e.name, main: !!e.main, works: works(e.name), each: !!wtSub(e), comp: isCompound(e.name), rows: perOf(e).map((p) => ({ type: p.type, kg: p.kg ?? null, reps: p.reps, rpe: p.rpe })), ...(e.main && e.name === FIXTURE.main ? { last: FIXTURE.last } : {}) }))) });
 
-  let s = { defaults: {}, useDef: true, notes: {}, noteOff: [], openRow: null, edited: false, builtSig: null, chat: [], page: 1, day: 'Chest', minutes: 60, main: DAYS.Chest.main[0], groups: { ...DAYS.Chest.rec }, ss: true, blocks: [], sheet: null, toast: null, undo: null, sugs: [] };
+  let s = { defaults: {}, useDef: true, notes: {}, noteOff: [], openRow: null, edited: false, builtSig: null, chat: [], page: 1, day: FIXTURE.session, minutes: 60, main: DAYS[FIXTURE.session].main[0], groups: { ...DAYS[FIXTURE.session].rec }, ss: true, blocks: [], sheet: null, toast: null, undo: null, sugs: [] };
   const app = document.getElementById('app');
   const total = () => Object.values(s.groups).reduce((a, b) => a + b, 0);
   // Recommended mix for N exercises: the day's mix scaled to N (largest remainder; the first group always keeps one).
@@ -284,7 +292,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   // Main lift first, then compounds (alternating quads and hinge on leg days), then isolations, abs last.
   function orderEx(list) {
     const main = list.filter((e) => e.main), rest = list.filter((e) => !e.main);
-    const comp = rest.filter((e) => isCompound(e.name) && e.g !== 'Abs'), iso = rest.filter((e) => !isCompound(e.name) && e.g !== 'Abs'), abs = rest.filter((e) => e.g === 'Abs');
+    const comp = rest.filter((e) => isCompound(e.name) && e.g !== 'Core'), iso = rest.filter((e) => !isCompound(e.name) && e.g !== 'Core'), abs = rest.filter((e) => e.g === 'Core');
     const outC = []; let prev = main[0];
     while (comp.length) { const k = comp.findIndex((e) => !prev || part(e) !== part(prev)); const e = comp.splice(k < 0 ? 0 : k, 1)[0]; outC.push(e); prev = e; }
     return [...main, ...outC, ...iso, ...abs];
@@ -293,7 +301,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function mergeSetup(m0, ss0, g0) {
     for (const g of new Set([...Object.keys(g0), ...Object.keys(s.groups)])) {
       let diff = (s.groups[g] ?? 0) - (g0[g] ?? 0);
-      while (diff > 0) { const n = (POOL[g] ?? []).find((x) => !all().some((y) => y.name === x)); if (!n) break; const at = s.blocks.findIndex((b) => b.every((e) => e.g === 'Abs')); const blk = [{ name: n, g, main: false, sets: 3, ...target(n, false) }]; if (at < 0 || g === 'Abs') s.blocks.push(blk); else s.blocks.splice(at, 0, blk); diff--; }
+      while (diff > 0) { const n = (POOL[g] ?? []).find((x) => !all().some((y) => y.name === x)); if (!n) break; const at = s.blocks.findIndex((b) => b.every((e) => e.g === 'Core')); const blk = [{ name: n, g, main: false, sets: 3, ...target(n, false) }]; if (at < 0 || g === 'Core') s.blocks.push(blk); else s.blocks.splice(at, 0, blk); diff--; }
       while (diff < 0) { const cand = [...all()].reverse().filter((x) => x.g === g && !x.main); const e = cand.find((x) => !x.touched) ?? cand[0]; if (!e) break; const b = blockOf(e); b.splice(b.indexOf(e), 1); s.blocks = s.blocks.filter((x) => x.length); diff++; }
     }
     if (ss0 && !s.ss) s.blocks = s.blocks.flatMap((b) => b.map((e) => [e]));
@@ -305,7 +313,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function build(trim = true) {
     const out = []; const used = new Set();
     const mg = mainGroup();
-    const add = (name, g, main) => { used.add(name); out.push({ name, g, main, sets: main ? 4 : 3, ...target(name, main) }); };
+    const add = (name, g, main) => { used.add(name); out.push({ name, g, main, sets: 3, ...target(name, main) }); };
     if (s.main !== 'None') add(s.main, mg ?? Object.keys(s.groups)[0], true);
     for (const [g, n] of Object.entries(s.groups)) { let need = n - (g === mg && s.main !== 'None' ? 1 : 0); for (const name of POOL[g] ?? []) { if (need <= 0) break; if (used.has(name)) continue; add(name, g, false); need--; } }
     s.blocks = orderEx(out).map((e) => [e]);
@@ -318,11 +326,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   // Never two heavy compound lifts back to back.
   const HEAVY = new Set(['Back squat', 'Leg press', 'Romanian deadlift', 'Hip thrust', 'Bulgarian split squat', 'Barbell row', 'Incline barbell press']);
   const part = (e) => LEG_PART[e.name] ?? e.g;
-  const canPair = (a, b) => !a.main && !b.main && !(HEAVY.has(a.name) && HEAVY.has(b.name)) && !((a.g === 'Abs' || b.g === 'Abs') && (HEAVY.has(a.name) || HEAVY.has(b.name))) && part(a) !== part(b) && !overlap(a, b);
+  const canPair = (a, b) => !a.main && !b.main && !(HEAVY.has(a.name) && HEAVY.has(b.name)) && !((a.g === 'Core' || b.g === 'Core') && (HEAVY.has(a.name) || HEAVY.has(b.name))) && part(a) !== part(b) && !overlap(a, b);
   function autoPair() {
     const singles = s.blocks.filter((b) => b.length === 1 && !b[0].main).map((b) => b[0]);
-    const abs = singles.filter((e) => e.g === 'Abs');
-    const rest = singles.filter((e) => e.g !== 'Abs');
+    const abs = singles.filter((e) => e.g === 'Core');
+    const rest = singles.filter((e) => e.g !== 'Core');
     const pairs = []; const taken = new Set();
     for (const ab of abs) { const p = [...rest].reverse().find((x) => !taken.has(x) && canPair(x, ab)); if (p) { pairs.push([p, ab]); taken.add(p); } }
     const left = rest.filter((x) => !taken.has(x));
@@ -336,12 +344,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     for (let i = 0; i < flat.length; i++) for (let j = i + 1; j < flat.length; j++) {
       const a = flat[i], b = flat[j];
       if (blockOf(a) === blockOf(b)) continue;
-      if (!isCompound(a.name) && isCompound(b.name) && (overlap(a, b) || a.g === b.g) && a.g !== 'Abs') { out.push({ key: `ord:${a.name}>${b.name}`, text: `${a.name} before ${b.name} is not recommended`, why: `It tires your ${(muscles(a.name).find((m) => muscles(b.name).includes(m)) ?? a.g).toLowerCase()} before the heavier lift, so ${b.name} suffers.`, fix: () => { const x = all().find((q) => q.name === b.name), y = all().find((q) => q.name === a.name); if (x && y) move(x, blockOf(y), false); }, fixLabel: `Move ${b.name} first` }); }
+      if (!isCompound(a.name) && isCompound(b.name) && (overlap(a, b) || a.g === b.g) && a.g !== 'Core') { out.push({ key: `ord:${a.name}>${b.name}`, text: `${a.name} before ${b.name} is not recommended`, why: `It tires your ${(muscles(a.name).find((m) => muscles(b.name).includes(m)) ?? a.g).toLowerCase()} before the heavier lift, so ${b.name} suffers.`, fix: () => { const x = all().find((q) => q.name === b.name), y = all().find((q) => q.name === a.name); if (x && y) move(x, blockOf(y), false); }, fixLabel: `Move ${b.name} first` }); }
     }
     for (const b of s.blocks.filter((x) => x.length > 1)) for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++) {
       const x = b[i], y = b[j]; let why = null;
       if (HEAVY.has(x.name) && HEAVY.has(y.name)) why = 'Two heavy lifts back to back: both get weaker and form slips.';
-      else if ((x.g === 'Abs' && HEAVY.has(y.name)) || (y.g === 'Abs' && HEAVY.has(x.name))) why = `Ab work between ${HEAVY.has(x.name) ? x.name : y.name} sets tires the bracing that protects your lower back.`;
+      else if ((x.g === 'Core' && HEAVY.has(y.name)) || (y.g === 'Core' && HEAVY.has(x.name))) why = `Ab work between ${HEAVY.has(x.name) ? x.name : y.name} sets tires the bracing that protects your lower back.`;
       else if (overlap(x, y)) why = `Both work your ${muscles(x.name).find((m) => muscles(y.name).includes(m)).toLowerCase()}, so the second one suffers.`;
       if (why) out.push({ key: `ss:${x.name}+${y.name}`, text: `Superset ${x.name} + ${y.name} is not recommended`, why, fix: () => { const q = all().find((z) => z.name === y.name); const bb = q && blockOf(q); if (bb && bb.length > 1) move(q, bb, true); }, fixLabel: `Unlink ${y.name}` });
     }
@@ -383,8 +391,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const soloTime = (e) => wuTime(e) + perOf(e).filter((p) => p.type !== 'W').reduce((m, p) => m + WORK + restOf(e, p.type), 0);
   const blockTime = (b) => (b.length === 1 ? soloTime(b[0]) : Math.max(...b.map((e) => e.sets)) * (b.length * WORK + (b.length - 1) * SWITCH + roundRest(b)) + b.reduce((m, e) => m + wuTime(e), 0));
   // 2 min to set up.
-  const est = () => Math.round(s.blocks.reduce((m, b) => m + blockTime(b), 2 + CHANGE * Math.max(0, s.blocks.length - 1)));
-  const estSolo = () => Math.round(all().reduce((m, e) => m + soloTime(e), 2 + CHANGE * Math.max(0, all().length - 1)));
+  // A workout opened from Today or the plan (s.estK) keeps its time there: the estimate is scaled to match it (V6).
+  const est = () => Math.round(s.blocks.reduce((m, b) => m + blockTime(b), 2 + CHANGE * Math.max(0, s.blocks.length - 1)) * (s.estK ?? 1));
+  const estSolo = () => Math.round(all().reduce((m, e) => m + soloTime(e), 2 + CHANGE * Math.max(0, all().length - 1)) * (s.estK ?? 1));
 
   function page1() {
     return `<div class="top"><span></span><span class="pg">1 of 2</span></div><h2>Set up</h2>
@@ -409,13 +418,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   function page2() {
     const anySs = s.blocks.some((b) => b.length > 1);
-    return `<div class="top"><button class="back" data-a="to1">‹ Set up</button><span class="pg">2 of 2</span></div>
+    return `${s.from ? '' : '<div class="top"><button class="back" data-a="to1">‹ Set up</button><span class="pg">2 of 2</span></div>'}
     <h2>${s.day.trim()} · about ${est()} min</h2>
     ${anySs ? `<div class="sub">Supersets save about ${Math.max(0, estSolo() - est())} min</div>` : ''}
     <div class="scroll">
       <div class="cols"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>
       ${(s.notes[s.day] ?? []).length ? `<div class="notes"><div class="label">From last review</div>${s.notes[s.day].map((n, i) => `<div class="note"><span>${n}</span><button data-a="dnote" data-v="${i}" aria-label="Dismiss">✕</button></div>`).join('')}</div>` : ''}
-      <div class="wk" id="wk">${s.blocks.map((b, bi) => `<div class="blk ${b.length > 1 ? 'ss' : ''}" data-b="${bi}">${b.map((e, ei) => `<div class="erw${s.openRow?.key === `${bi}-${ei}` ? (s.openRow.side === 'L' ? ' openL' : ' openR') : ''}"><button class="qL" data-a="qswap" data-b="${bi}" data-e="${ei}">Swap</button><button class="qR" data-a="qdel" data-b="${bi}" data-e="${ei}">Delete</button><div class="er" data-b="${bi}" data-e="${ei}" role="button" tabindex="0" aria-label="${bi + 1}${b.length > 1 ? 'abcdef'[ei] : ''} ${e.name}, ${e.sets} sets, ${wtText(e)}"><span class="n">${bi + 1}${b.length > 1 ? 'abcdef'[ei] : ''}</span><span class="nm">${e.name}${e.main ? '<span class="tag">Main</span>' : ''}<small>${works(e.name)}</small></span><span class="sets">${e.sets}${wuCount(e) ? `<small class="wsub">+${wuCount(e)} W</small>` : ''}</span><span class="wt">${wtText(e)}${wtSub(e) ? `<small>${wtSub(e)}</small>` : ''}</span></div></div>`).join('')}</div>`).join('')}
+      <div class="wk" id="wk">${s.blocks.map((b, bi) => `<div class="blk ${b.length > 1 ? 'ss' : ''}" data-b="${bi}">${b.map((e, ei) => `<div class="erw${s.openRow?.key === `${bi}-${ei}` ? (s.openRow.side === 'L' ? ' openL' : ' openR') : ''}"><button class="qL" data-a="qswap" data-b="${bi}" data-e="${ei}">Swap</button><button class="qR" data-a="qdel" data-b="${bi}" data-e="${ei}">Delete</button><div class="er" data-b="${bi}" data-e="${ei}" role="button" tabindex="0" aria-label="${bi + 1}${b.length > 1 ? 'abcdef'[ei] : ''} ${e.name}, ${e.sets} sets, ${wtText(e)}"><span class="n">${bi + 1}${b.length > 1 ? 'abcdef'[ei] : ''}</span><span class="nm">${e.name}${e.main ? '<span class="tag">Main</span>' : ''}<small>${e.main ? mainLine(e) : works(e.name)}</small></span><span class="sets">${e.sets}${wuCount(e) ? `<small class="wsub">+${wuCount(e)} W</small>` : ''}</span><span class="wt">${wtText(e)}${wtSub(e) ? `<small>${wtSub(e)}</small>` : ''}</span></div></div>`).join('')}</div>`).join('')}
         <button class="addrow" data-a="sheet-pick">＋ Add exercise</button>
       </div>
     </div>
@@ -470,7 +479,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   // ── Coach chat (prototype stand-in: simple keyword reading instead of the AI) ──
   // Page 1: a message fills in the set-up (applied, with Undo). Page 2: a message becomes a proposal (before → after, Apply / Skip).
   const ALLN = [...new Set(Object.values(POOL).flat())];
-  const GROUP_WORDS = [[/bicep|curl/, 'Biceps'], [/tricep/, 'Triceps'], [/\babs\b|core/, 'Abs'], [/shoulder|delt/, 'Shoulders'], [/chest|pec/, 'Chest'], [/\bback\b|lats?\b/, 'Back'], [/legs?\b|quad|hamstring|glute|calf|calves/, 'Legs']];
+  const GROUP_WORDS = [[/bicep|curl/, 'Biceps'], [/tricep/, 'Triceps'], [/\babs\b|core/, 'Core'], [/shoulder|delt/, 'Shoulders'], [/chest|pec/, 'Chest'], [/\bback\b|lats?\b/, 'Back'], [/hamstring|glute/, 'Hamstrings'], [/calf|calves/, 'Calves'], [/legs?\b|quad/, 'Quads']];
   const groupIn = (t) => { const out = []; for (const [re, g] of GROUP_WORDS) if (re.test(t)) out.push(g); if (/\barms\b/.test(t)) out.push('Biceps', 'Triceps'); return [...new Set(out)]; };
   const findEx = (q) => { q = q.trim().toLowerCase(); const ws = q.split(/\s+/).filter((w) => w.length > 2); return all().find((e) => e.name.toLowerCase().includes(q)) ?? all().find((e) => ws.length && ws.every((w) => e.name.toLowerCase().includes(w))) ?? all().find((e) => ws.some((w) => w.length > 3 && e.name.toLowerCase().includes(w))); };
   const findName = (q) => { q = q.trim().toLowerCase(); const ws = q.split(/\s+/).filter((w) => w.length > 2); return ALLN.find((n) => n.toLowerCase().includes(q)) ?? ALLN.find((n) => ws.length && ws.every((w) => n.toLowerCase().includes(w))); };
@@ -541,7 +550,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   // Coach review (prototype: rule-based; the real one is the AI, with these facts checked by code).
   const TARGETS = { Chest: ['Upper chest', 'Mid chest', 'Triceps', 'Abs'], Back: ['Lats', 'Mid-back', 'Rear delts', 'Biceps', 'Abs'], Pull: ['Lats', 'Mid-back', 'Rear delts', 'Biceps', 'Abs'], Legs: ['Quads', 'Hamstrings', 'Glutes', 'Calves', 'Abs'], Shoulders: ['Front delts', 'Side delts', 'Rear delts', 'Triceps', 'Abs'], Push: ['Upper chest', 'Mid chest', 'Front delts', 'Side delts', 'Triceps', 'Abs'] };
-  const GROUP_T = { Chest: ['Upper chest', 'Mid chest'], Back: ['Lats', 'Mid-back'], Shoulders: ['Front delts', 'Side delts', 'Rear delts'], Legs: ['Quads', 'Hamstrings', 'Glutes', 'Calves'], Biceps: ['Biceps'], Triceps: ['Triceps'], Abs: ['Abs'] };
+  const GROUP_T = { Chest: ['Upper chest', 'Mid chest'], Back: ['Lats', 'Mid-back'], Shoulders: ['Front delts', 'Side delts', 'Rear delts'], Quads: ['Quads'], Hamstrings: ['Hamstrings', 'Glutes'], Calves: ['Calves'], Biceps: ['Biceps'], Triceps: ['Triceps'], Core: ['Abs'] };
   const isMachine = (n) => /machine|cable|pulldown|leg press|leg curl|leg extension|pushdown|crunch|calf|face pull/i.test(n);
   // Example plan in use (prototype): your 4-day split, 60 min, Chest next. Each plan day is what the builder recommends for it.
   const PLAN = { name: '4-day split', since: '13 Oct', order: ['Chest', 'Back', 'Legs', 'Shoulders'], next: 'Chest', minutes: 60, days: {}, vars: {} };
@@ -561,8 +570,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   // A short name for a variation, from what's different: arms superset, abs superset…
   function varName() {
     const ss = s.blocks.filter((b) => b.length > 1); const tags = [];
-    if (ss.some((b) => b.some((e) => ['Biceps', 'Triceps'].includes(e.g)) && b.every((e) => ['Biceps', 'Triceps', 'Abs'].includes(e.g) || e === b[0]))) tags.push('arms superset');
-    if (ss.some((b) => b.some((e) => e.g === 'Abs'))) tags.push('abs superset');
+    if (ss.some((b) => b.some((e) => ['Biceps', 'Triceps'].includes(e.g)) && b.every((e) => ['Biceps', 'Triceps', 'Core'].includes(e.g) || e === b[0]))) tags.push('arms superset');
+    if (ss.some((b) => b.some((e) => e.g === 'Core'))) tags.push('abs superset');
     if (!ss.length) tags.push('no supersets');
     const m = all().find((e) => e.main)?.name ?? s.main;
     return `${s.day} · ${m.replace('Barbell ', '').replace('Dumbbell ', '').toLowerCase()} · ${tags[0] ?? `version ${(PLAN.vars[pk(s.day)]?.length ?? 0) + 2}`}`;
@@ -813,7 +822,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       case 'rvdone': { const r = reviewNow(); const keep = r.next.filter((n) => !s.noteOff.includes(n)); if (keep.length) { s.notes[s.day] = keep; s.toast = `Remembered for next ${s.day.trim()} day`; } s.sheet = null; break; }
       case 'dnote': s.notes[s.day].splice(Number(v), 1); break;
       case 'save': { const prev = s.defaults[s.day]; s.defaults[s.day] = { blocks: snapBlocks(), setup: { minutes: s.minutes, main: s.main, ss: s.ss, groups: { ...s.groups } } }; s.undo = { def: { day: s.day, prev } }; s.toast = `Saved as your ${s.day.trim()} default`; break; }
-      case 'start': if (!s.blocks.length) break; if (s.edited && PLAN.order.includes(s.day)) { s.sheet = { k: 'scope' }; break; } s.undo = null; s.toast = 'Started (prototype)'; break;
+      case 'start': if (!s.blocks.length) break; if (document.documentElement.classList.contains('embed')) { parent.postMessage({ app: 'active', session: session() }, '*'); break; } if (s.edited && PLAN.order.includes(s.day)) { s.sheet = { k: 'scope' }; break; } s.undo = null; s.toast = 'Started (prototype)'; break;
       case 'scope-today': s.sheet = null; s.edited = false; s.undo = null; s.toast = `Started. ${s.day} plan unchanged`; break;
       case 'scope-var': { const name = varName(); (PLAN.vars[pk(s.day)] ??= []).push({ name, bl: shape() }); s.variant = PLAN.vars[pk(s.day)].length - 1; s.builtSig = setupSig(); s.sheet = null; s.edited = false; s.undo = null; s.toast = `Started. Saved “${name}”`; break; }
       case 'sheet-var': s.sheet = { k: 'var' }; break;
@@ -875,7 +884,30 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   window.visualViewport?.addEventListener('scroll', placeKb);
   // Tapping the chat history (not a button) puts the keyboard away.
   app.addEventListener('pointerdown', (ev) => { if (ev.target.closest('.chatlog') && !ev.target.closest('button,u')) document.activeElement?.blur?.(); });
+  // Edit on Today, or Open in builder › on the plan (V6): the app sends that workout as it stands and the builder opens
+  // on Your workout with it: same exercises, sets, top sets, supersets and time. Set-up stays with Today and the plan.
+  const groupOf = (n, day) => Object.keys(POOL).find((g) => POOL[g].includes(n))
+    ?? [[/crunch|knee raise|leg raise|plank/i, 'Core'], [/calf/i, 'Calves'], [/leg curl|deadlift|hip|glute/i, 'Hamstrings'], [/leg ext|squat|leg press|lunge/i, 'Quads'], [/curl/i, 'Biceps'], [/tricep|pushdown|dip|skull/i, 'Triceps'], [/row|pulldown|pull-up|chin|shrug|face pull/i, 'Back'], [/lateral|shoulder|rear|overhead press|delt/i, 'Shoulders'], [/bench|chest|fly|pec|crossover|incline/i, 'Chest']].find(([re]) => re.test(n))?.[1]
+    ?? (GROUPS.includes(day) ? day : 'Chest');
+  function openDraft(d) {
+    const blocks = d.blocks.map((b) => b.map((x) => {
+      if (x.each) EACH.add(x.name);
+      if (x.works && !W[x.name]) W[x.name] = [groupOf(x.name, d.day), x.works];
+      const e = { name: x.name, g: groupOf(x.name, d.day), main: !!x.main, sets: x.sets, reps: x.main ? [x.reps ?? 6, 8] : [x.reps ?? 8, 12], load: x.kg ?? null };
+      e.per = genRows(e); e.per.forEach((q) => { if (q.type === 'B') q.kg = x.back ?? (e.load == null ? q.kg : Math.min(q.kg ?? e.load, e.load)); });
+      return e;
+    }));
+    const groups = {}; blocks.flat().forEach((e) => { groups[e.g] = (groups[e.g] ?? 0) + 1; });
+    Object.assign(s, { from: d, day: d.day, minutes: d.min, ss: !!d.ss, main: blocks.flat().find((e) => e.main)?.name ?? 'None', groups, custom: true, variant: null, blocks, estK: 1, page: 2, sheet: null, toast: null, undo: null, chat: [], openRow: null, edited: false, skipped: [] });
+    s.builtSig = setupSig();
+    if (d.est) s.estK = d.est / est();
+    view();
+  }
+  addEventListener('message', (ev) => { if (ev.data?.cmd === 'draft' && ev.data.draft) openDraft(ev.data.draft); });
+  // The default main lift must read as the shared fixture (V1).
+  { const e = { name: FIXTURE.main, main: true, sets: 3, ...target(FIXTURE.main, true) }; e.per = genRows(e); if (mainLine(e) !== FIXTURE.mainLine) console.error(`Fixture mismatch: ${mainLine(e)}`); }
   follow();
-  view();
+  // #draft: the app's copy for opened workouts; it shows nothing until the workout arrives.
+  if (location.hash !== '#draft') view();
 })();
 </script>

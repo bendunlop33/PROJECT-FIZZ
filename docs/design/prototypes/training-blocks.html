@@ -261,6 +261,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 <script>
 (() => {
   const app = document.getElementById('app');
+  // Shared example facts (V1): the same in every screen of the whole-app prototype; build_app.py checks them.
+  const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 92.5, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 92.5", "last": "12 Oct · 100 × 6"};
+  // This week of the plan (V1): each day as Today shows it by default (sets, reps, kg; A1/A2 = superset), the
+  // order of the week and what's done. The plan overview (plan-builder.html, Your plan) shows the same; build_app.py checks the copies.
+  const PLAN_WEEK = {"week": 3, "days": [{"focus": "Back", "done": true, "est": 50, "hist": [92.5, 92.5], "ex": [{"n": "Barbell row", "role": "main", "m": "Back", "sets": 3, "reps": 6, "kg": 92.5, "back": 82.5}, {"n": "Lat pulldown", "role": "c", "m": "Back", "sets": 3, "reps": 8, "kg": 60}, {"n": "Chest-supported row", "role": "c", "m": "Back", "sets": 3, "reps": 8, "kg": 22.5, "each": true}, {"n": "EZ-bar curl", "role": "i", "m": "Biceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Chest", "est": 47, "hist": [97.5, 100], "ex": [{"n": "Barbell bench press", "role": "main", "m": "Chest", "sets": 3, "reps": 6, "kg": 102.5, "back": 92.5}, {"n": "Incline dumbbell press", "role": "c", "m": "Chest", "sets": 3, "reps": 8, "kg": 27.5, "each": true}, {"n": "Cable fly", "role": "i", "m": "Chest", "sets": 3, "reps": 12, "kg": 15}, {"n": "Triceps pushdown", "role": "i", "m": "Triceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Legs", "est": 50, "hist": [112.5, 115], "ex": [{"n": "Back squat", "role": "main", "m": "Quads", "sets": 3, "reps": 6, "kg": 117.5, "back": 105}, {"n": "Romanian deadlift", "role": "c", "m": "Hamstrings", "sets": 3, "reps": 8, "kg": 105}, {"n": "Leg press", "role": "c", "m": "Quads", "sets": 3, "reps": 8, "kg": 195}, {"n": "Seated calf raise", "role": "i", "m": "Calves", "sets": 3, "reps": 12, "kg": 40, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Shoulders", "est": 45, "hist": [30, 30], "ex": [{"n": "Dumbbell shoulder press", "role": "main", "m": "Shoulders", "sets": 3, "reps": 6, "kg": 32.5, "back": 30, "each": true}, {"n": "Lateral raise", "role": "i", "m": "Shoulders", "sets": 3, "reps": 12, "kg": 10, "each": true}, {"n": "Rear-delt fly", "role": "i", "m": "Shoulders", "sets": 3, "reps": 12, "kg": 7.5, "each": true}, {"n": "Triceps pushdown", "role": "i", "m": "Triceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}]};
   const MIC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
 
   // ── Calendar: Monday of each week (index), block weeks, which week "today" is in per state ──
@@ -268,7 +273,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const BW = { 6: 1, 7: 2, 8: 3, 9: 4, 11: 5, 12: 6 }; // 10 (2 Nov) = no lifting → doesn't count
   const CUR = { build: 8, early: 8, pain: 8, noblock: 8, deload: 12, done: 13, stale: 13 };
   const TODAY = { 8: [2026, 9, 20], 12: [2026, 10, 17], 13: [2026, 10, 24] };
-  const RANGE = { 8: '19–25 Oct', 12: '16–22 Nov', 13: '23–29 Nov' };
+  const RANGE = { 8: FIXTURE.week, 12: '16–22 Nov', 13: '23–29 Nov' };
   // Mon–Sun per week: letter = session done, r = cardio, mX = planned X missed, nX = planned (this week), '' = nothing.
   const PAT = {
     4: ['C', '', 'B', 'r', 'S', 'L', ''], 5: 'paused', 6: ['C', 'r', 'B', '', 'S', '', 'L'], 7: ['C', 'r', 'B', '', 'S', 'mL', 'r'],
@@ -285,7 +290,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     { n: 'Squat', reps: 5, c: '#d95926', full: [105, 107.5, 110, 110, 112.5, null, 112.5, 115, 117.5, 120, null, 122.5, null, null], plan: { 6: 112.5, 7: 115, 8: 117.5, 9: 120, 11: 122.5 }, target: 125, est: { 8: 'early Dec', 12: 'late Nov', 13: 'early Dec' } },
     { n: 'Row', reps: 8, c: '#199e70', full: [85, 87.5, 87.5, 90, 92.5, null, 92.5, 92.5, 92.5, 92.5, null, 95, null, null], plan: { 6: 92.5, 7: 95, 8: 97.5, 9: 100, 11: 102.5 }, target: null, est: {} },
   ];
-  const MUSCLES = [['Chest', [10, 11, 12, 12, 12, null, 11, 14], 12], ['Back', [12, 13, 12, 14, 14, null, 12, 13], 14], ['Shoulders', [8, 8, 9, 9, 10, null, 9, 10], 10], ['Legs', [12, 14, 13, 14, 14, null, 10, 9], 14], ['Arms', [8, 9, 8, 10, 10, null, 9, 10], 10]];
+  // One muscle list everywhere (V1): the plan's (plan-builder MUSCLES).
+  const MUSCLES = [['Chest', [10, 11, 12, 12, 12, null, 11, 14], 12], ['Back', [12, 13, 12, 14, 14, null, 12, 13], 14], ['Shoulders', [8, 8, 9, 9, 10, null, 9, 10], 10], ['Quads', [6, 7, 7, 7, 7, null, 5, 5], 7], ['Hamstrings', [4, 5, 4, 5, 5, null, 3, 2], 5], ['Calves', [2, 2, 2, 2, 2, null, 2, 2], 2], ['Biceps', [4, 4, 4, 5, 5, null, 4, 5], 5], ['Triceps', [4, 5, 4, 5, 5, null, 5, 5], 5], ['Core', [6, 6, 6, 6, 6, null, 6, 6], 6]];
   const CHANGES = [
     { id: 'row', t: 'Row', b: '3 × 8', a: '4 × 6', when: 'next Back', why: 'Stuck at 92.5 × 8 for 3 weeks' },
     { id: 'squat', t: 'Squat', b: '117.5 kg', a: '120 kg', when: 'next Legs', why: 'All sets done at RPE 8' },
@@ -304,7 +310,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   // ── Block review (block 1) ──
   const RLIFTS = [['Bench', 6, 97.5, 105, 107.5], ['Squat', 5, 112.5, 122.5, 122.5], ['Row', 8, 92.5, 95, 102.5]];
-  const RMUS = [['Chest', 12, 12], ['Back', 12, 14], ['Shoulders', 10, 10], ['Legs', 13, 14], ['Arms', 9, 10]];
+  const RMUS = [['Chest', 12, 12], ['Back', 12, 14], ['Shoulders', 10, 10], ['Quads', 7, 7], ['Hamstrings', 4, 5], ['Calves', 2, 2], ['Biceps', 4, 5], ['Triceps', 5, 5], ['Core', 6, 6]];
   // Built-in path = one step a week. Coach's Row item = one step every 2 weeks (95, 95, 97.5, 97.5, 100): loadable with 1.25 kg plates.
   const NEXT_T = [['Bench', 105, 115], ['Squat', 122.5, 132.5]];
   const SWAPS = [
@@ -318,7 +324,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   // Changed from the plan's version of today's session (the defaults below)?
   const todayChanged = () => (s.main != null && s.main !== Object.keys(D[s.day]?.mains ?? {})[0]) || s.style !== 'Focused' || s.min !== 60 || !s.abs || !s.ss;
-  const fresh = () => ({ early: 'offer', started: false, notNow: false, sw: { row: true, c1: true, c2: true, b1: true, l1: true }, bdraft: false, bstart: false, focus: null, mix: false, open: false, day: 'Chest', main: null, style: 'Focused', min: 60, abs: true, ss: true, undone: {}, toast: null });
+  const fresh = () => ({ early: 'offer', started: false, notNow: false, sw: { row: true, c1: true, c2: true, b1: true, l1: true }, bdraft: false, bstart: false, focus: null, mix: false, open: false, day: FIXTURE.session, main: null, style: 'Focused', min: 60, abs: true, ss: true, undone: {}, toast: null });
   let s = { scr: 'today', st: 'build', off: false, hist: false, ...fresh() };
 
   const cur = () => CUR[s.st];
@@ -328,6 +334,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const offerOn = () => s.st === 'early' && s.early === 'offer';
   const floor25 = (v) => Math.floor((v * 0.9) / 2.5 + 1e-9) * 2.5;
   const fmt = (v) => (v == null ? 'BW' : String(v));
+  // Dumbbells are per hand: their kg says "each" (V1).
+  const EACH = new Set(['Incline dumbbell press', 'Dumbbell shoulder press', 'Lateral raise', 'Rear-delt fly', 'Chest-supported row']);
+  const snap25 = (v) => Math.round(v / 2.5) * 2.5;
+  // Main lift in one format everywhere (V1): top set + back-offs · loads, e.g. 1 × 6 + 2 × 8 · 100 / 90.
+  const mainLine = (e) => e.kg == null ? `${e.sets} × ${e.reps}` : `1 × ${e.reps}${e.sets > 1 ? ` + ${e.sets - 1} × ${e.backReps}` : ''} · ${fmt(e.kg)}${e.sets > 1 ? ` / ${fmt(e.back)}` : ''}${EACH.has(e.name) ? ' each' : ''}`;
 
   // ═════════ Controls above the phone ═════════
   function controls() {
@@ -347,7 +358,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function mainNow(key) {
     const late = s.st === 'deload' || isDone();
     // early: last Chest was RPE 9.5, so bench holds at 100. pain: bench held at 100 (rule 9).
-    const bench = late ? 105 : s.st === 'early' || s.st === 'pain' ? 100 : 102.5;
+    const bench = late ? 105 : s.st === 'early' || s.st === 'pain' ? 100 : FIXTURE.top;
     return { Bench: bench, Squat: late ? 122.5 : 117.5, Row: late ? 95 : 92.5 }[key];
   }
   function draft() {
@@ -356,12 +367,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const [mn, base] = d.mains[mk];
     const mkg = typeof base === 'string' ? mainNow(base) : base;
     const accSets = s.style === 'Varied' ? 2 : 3;
-    let acc = (s.style === 'Varied' ? d.varied : d.focused).map(([n, kg, c]) => ({ name: n, kind: 'acc', sets: accSets, kg, comp: !!c }));
+    let acc = (s.style === 'Varied' ? d.varied : d.focused).filter(([n]) => n !== mn).map(([n, kg, c]) => ({ name: n, kind: 'acc', sets: accSets, kg, comp: !!c, reps: c ? 8 : 12 }));
     let mix = null;
     if (s.mix) { const i = acc.map((x) => !!ALTS[x.name]).lastIndexOf(true); if (i >= 0) { const [to, kg] = ALTS[acc[i].name]; mix = { from: acc[i].name, to }; acc[i] = { ...acc[i], name: to, kg }; } }
-    let ex = [{ name: mn, kind: 'main', sets: 4, kg: mkg, comp: true }, ...acc, { name: d.extra[0], kind: 'extra', sets: 3, kg: d.extra[1] }, ...(s.abs ? [{ name: 'Cable crunch', kind: 'abs', sets: 3, kg: 40 }] : [])];
+    let ex = [{ name: mn, kind: 'main', sets: 3, reps: 6, backReps: 8, kg: mkg, comp: true }, ...acc, { name: d.extra[0], kind: 'extra', sets: 3, kg: d.extra[1], reps: 12 }, ...(s.abs ? [{ name: 'Cable crunch', kind: 'abs', sets: 3, kg: 40, reps: 12 }] : [])];
     // Deload transform (deloadDraft): loads × 0.9 rounded down, 1 set fewer (min 2). Today's draft only.
     if (deloadOn()) ex = ex.map((e) => ({ ...e, sets: Math.max(2, e.sets - 1), kg: e.kg == null ? null : floor25(e.kg) }));
+    ex.forEach((e) => { if (e.kind === 'main' && e.kg != null) e.back = snap25(e.kg * 0.9); }); // back-offs about 90 % of the top set
     const mins = (list, rest = 1, ss = s.ss) => { let m = 4; list.forEach((e) => { m += e.sets * (e.kind === 'main' ? 4 : e.comp ? 3 : 2.2) * rest + 1.5; }); if (ss && s.abs && list.some((e) => e.kind === 'extra') && list.some((e) => e.kind === 'abs')) m -= 5; return m; };
     // Fit to time, optimised (fit-to-time.md; Ben, 22 Oct). Free savings first: shorter rests, then supersets (no work
     // lost). Then, one step at a time, the cut that loses the least training per minute saved: a set off an exercise
@@ -398,20 +410,34 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   function weekStrip() {
     const [y, mo, dd] = TODAY[cur()];
-    const items = [[{ k: 'lift', t: 'Shoulders' }], [{ k: 'run', t: 'Run 12k' }], [{ k: 'lift', t: 'Back' }], null, [{ k: 'runp', t: 'Run 8k' }], [{ k: 'liftp', t: 'Legs' }], [{ k: 'liftp', t: 'Shoulders' }]];
+    const items = [[], [{ k: 'run', t: 'Run 12k' }], [{ k: 'lift', t: 'Back' }], null, [{ k: 'runp', t: 'Run 8k' }], [{ k: 'liftp', t: 'Legs' }], [{ k: 'liftp', t: 'Shoulders' }]];
     const DN = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     return `<div class="week">${items.map((it, i) => {
       const dt = new Date(y, mo, dd + i - 3); const today = i === 3;
       return `<button class="day${today ? ' today' : ''}" data-a="dayinfo" data-v="${i}" aria-label="${DN[dt.getDay()]} ${dt.getDate()}"><span class="dn">${today ? 'TODAY' : DN[dt.getDay()]}</span><span class="dd">${dt.getDate()}</span>${today ? `<span class="pip pliftp">${s.day}</span>` : it.map((x) => `<span class="pip p${x.k}">${x.t}</span>`).join('')}</button>`;
     }).join('')}</div>`;
   }
+  // The session as blocks: supersets (extra + abs) grouped, as the card's breakdown shows them.
+  function blocksOf(dr) {
+    let bl = dr.ex.map((e) => [e]);
+    if ((s.ss || dr.fit?.ss) && s.abs) { const ei = dr.ex.findIndex((e) => e.kind === 'extra'); if (ei >= 0 && dr.ex[ei + 1]) bl = [...dr.ex.slice(0, ei).map((e) => [e]), [dr.ex[ei], dr.ex[ei + 1]], ...dr.ex.slice(ei + 2).map((e) => [e])]; }
+    return bl;
+  }
+  // When each day was last done (this week Mon 19 Back; last week Mon 12 Chest, Fri 16 Shoulders, Sat 17 Legs missed, so Sun 11).
+  const lastOf = (d) => ({ Chest: '12 Oct', Back: '19 Oct', Shoulders: '16 Oct', Legs: '11 Oct' })[d];
+  // Today's draft as it stands (today-only changes included), for Edit: the builder opens it on Your workout (V6),
+  // and for Start: the active workout opens with exactly this session (V1).
+  function todayDraft() {
+    const dr = draft();
+    return { day: s.day, name: s.day, date: FIXTURE.today, min: s.min, est: Math.min(dr.est, s.min), ss: !!(s.ss || dr.fit?.ss), lastDate: lastOf(s.day),
+      blocks: blocksOf(dr).map((b) => b.map((e) => ({ name: e.name, main: e.kind === 'main', sets: e.sets, kg: e.kg, reps: e.reps, back: e.back, backReps: e.backReps, comp: !!e.comp, each: EACH.has(e.name), works: WORKS[e.name], ...(e.kind === 'main' && s.day === FIXTURE.session && dr.mk === 'Bench' ? { last: FIXTURE.last } : {}) }))) };
+  }
   function today() {
     const dr = draft(); const wt = weekText(); const mains = Object.keys(D[s.day].mains);
     const shown = Math.min(dr.est, s.min);
-    let bl = dr.ex.map((e) => [e]);
-    if ((s.ss || dr.fit?.ss) && s.abs) { const ei = dr.ex.findIndex((e) => e.kind === 'extra'); if (ei >= 0 && dr.ex[ei + 1]) bl = [...dr.ex.slice(0, ei).map((e) => [e]), [dr.ex[ei], dr.ex[ei + 1]], ...dr.ex.slice(ei + 2).map((e) => [e])]; }
+    const bl = blocksOf(dr);
     let n = 0;
-    const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${WORKS[e.name] ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${fmt(e.kg)}</span></div>`;
+    const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${e.kind === 'main' ? mainLine(e) : WORKS[e.name] ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${fmt(e.kg)}${e.kg != null && EACH.has(e.name) ? '<small>each</small>' : ''}</span></div>`;
     // Early-deload offer: one line, Apply (proposal verb) + ✕ (dismiss for the week). The reason sits in the card's Why?.
     const offer = offerOn()
       ? `<div class="offer" role="group" aria-label="Offer: deload this week"><span><span class="gl" aria-hidden="true">◐</span>Deload this week?</span><button class="link b" data-a="eApply">Apply</button><button class="link x" data-a="eNo" aria-label="Not this week">✕</button></div>` : '';
@@ -662,7 +688,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   let tt;
   const say = (t, u) => { s.toast = { t, u }; };
   const embedded = () => document.documentElement.classList.contains('embed');
-  const startNow = () => { if (embedded()) parent.postMessage({ app: 'active' }, '*'); else say(`Started ${s.day} (prototype)`); };
+  const startNow = () => { if (embedded()) parent.postMessage({ app: 'active', session: todayDraft() }, '*'); else say(`Started ${s.day} (prototype)`); };
   document.body.addEventListener('click', (ev) => {
     const el = ev.target.closest('[data-a]'); if (!el || !el.dataset.a) return;
     if (el.tagName === 'SUMMARY') return;
@@ -694,7 +720,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'go') { s.startAsk = false; startNow(); }
     if (a === 'savevar') { s.startAsk = false; say(`Saved as Chest · ${s.main ?? 'Bench'} variation`); startNow(); }
     if (a === 'toplan') { s.startAsk = false; const ch = { min: s.min, ss: s.ss, abs: s.abs, main: s.main, style: s.style }; if (embedded()) parent.postMessage({ app: 'planupdate', change: ch }, '*'); else say('Opens Your plan with these as changes to review'); }
-    if (a === 'edit') say('Opens the builder (prototype)');
+    if (a === 'edit') { if (embedded()) parent.postMessage({ app: 'builder', draft: todayDraft() }, '*'); else say('Opens the builder (prototype)'); }
     if (a === 'build') say('Opens the builder (prototype)');
     if (a === 'activity') say('Log or plan a run (prototype)');
     if (a === 'other') say('Other sessions (see today-v2)');
@@ -723,6 +749,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     clearTimeout(tt); if (s.toast) tt = setTimeout(() => { s.toast = null; view(); }, s.toast.u ? 5000 : 2500);
     view();
   });
+  // The default session must read as the shared fixture (V1), and each day's default as this week of the plan.
+  { const m = draft().ex[0]; if (m.name !== FIXTURE.main || mainLine(m) !== FIXTURE.mainLine) console.error(`Fixture mismatch: ${m.name} ${mainLine(m)}`); }
+  { const day = s.day; PLAN_WEEK.days.forEach((pd) => { s.day = pd.focus; const dr = draft(), got = JSON.stringify([dr.est, dr.ex.map((e) => [e.name, e.sets, e.reps, e.kg, e.back ?? null])]), want = JSON.stringify([pd.est, pd.ex.map((e) => [e.n, e.sets, e.reps, e.kg, e.back ?? null])]);
+    if (got !== want) console.error(`Plan week mismatch (${pd.focus}): Today ${got}, plan ${want}`); }); s.day = day; }
   view();
 })();
   function fitPips() { document.querySelectorAll(".pip").forEach((x) => { let f = 9.5; x.style.fontSize = ""; while (x.scrollWidth > x.clientWidth + 0.5 && f > 7) { f -= 0.25; x.style.fontSize = f + "px"; } }); }

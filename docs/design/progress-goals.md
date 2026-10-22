@@ -24,7 +24,7 @@
    - **Tap a line or its row** → that lift alone, axis rescaled to it: its target as a dashed line, `On track` when the trend reaches the target, and `about mid-Nov at this rate` (labelled `est.`) as a dotted line — only after ≥ 4 weeks of rising top sets and only if the date is within 6 months (Ben liked it; overrides the earlier no-projection note and the `lift-targets.ts` comment). `All lifts` returns.
    - **Reps each lift is tracked at (Ben, 21 Oct):** the lift target's reps if a target is set, else the plan's reps for that lift's top set (or the reps Ben picked when adding it). Every point is comparable at those reps: a **real** point (solid) when a set was done at those reps (heaviest load for ≥ those reps), otherwise an **estimated** point (hollow, `est.`, tap → `est. from 105 × 4`) converted from the best set of 3–12 reps that session (same e1RM formula the app already uses); singles and >12-rep sets never drive an estimate. History before the plan is shown the same way. When the tracked reps change (new target / plan change), the whole chart is recomputed at the new reps and a small marker shows the date (`now × 4`). Change words and `On track` use real points; if a window has only estimates they are labelled `est.` too. Same-machine rule for stacks/plate-loaded kept.
    - *Muscles* (formerly Muscle tracker; always shown; reworked Ben 21 Oct, the single total-sets chart was unclear): subtitle `Sets per week vs plan · last 8 weeks` and a key (`At plan` full colour, `Under` faded, `┄ Plan`). One row per muscle group (Chest, Back, Shoulders, Legs, Arms; the builder's groups and set-counting convention): name · 8 small weekly bars with the plan as a dotted line (bar full colour when at or over plan, faded when under; paused weeks a flat grey stub) · last week right-aligned `9 of 14`. VoiceOver per row: `Legs: 9 sets last week, plan 14. At plan in 4 of 7 weeks.`
-2. **This week (13–19 Oct).** `Sessions 3 of 4 · 2 runs`; one chip per planned session with **day and % of planned reps done** (names spelled out, no ✓: **done = soft green** chip, **missed = faint grey** (`Thu – missed`, no red; Ben 21 Oct), upcoming/moved = outline; colour is never the only signal, the second line says `– 92%`, `– missed` or `– moved`; 12 pt: `Chest` over `Mon – 100%`, `Back` over `Wed – 92%`, `Shoulders` over `Fri – 104%`, `Legs` over `Sat – moved`; day and % always on one line, no wrapping at 320 pt; Ben, 21 Oct). % = all working reps done ÷ reps planned (warm-ups excluded; planned reps = each set's target reps as planned for that session, e.g. 10 for an 8–12 set planned at 10; only a set with no single target uses the low end of its range); **it can go over 100%** (Ben, 21 Oct): extra reps and sets you added count. Skipped planned sets count 0. Because extras can offset a skipped set, the Summary detail always names what was short or skipped. Tap → that workout's Summary with `156 of 170 planned reps` and what was short. Never write sets/reps as `15/15` (reads as a date); tap → that workout's Summary (or `planned Thu, moved to Sat`). No sets-per-muscle bars here (Ben, 21 Oct): they live once, in Muscles below. A small **Week | Month** segmented switch in the section header (right side, replacing the dates; header reads `THIS WEEK · 13–19 OCT` or `LAST 5 WEEKS`; Ben, 21 Oct) switches the card to a **calendar** (Ben, 21 Oct; replaces the chips while open): columns M T W T F S S, rows `This wk` (bold, first) then the 4 previous weeks (`6 Oct` …); each day a small rounded square: session done = soft green with the session's letter (C, B, S, L), planned but missed = faint grey with its letter, planned and still to come = outlined with its letter, cardio = a small dot (named **Cardio**, not runs), rest = empty; a paused week is outlined and empty with `Paused` on the right; other rows show `3 of 4` on the right. A key underneath (`Done · Missed · Planned · Cardio`). `Week` returns to the chips; no extra links in the card. The header count reads `3 of 4 · 2 cardio`. VoiceOver reads each row (`Week of 6 Oct: 3 of 4 sessions; Mon Chest, Tue cardio, …`). Tapping a row opens that week's past review. More informative than Today's strip, which stays as-is (3 back / 3 ahead, name + day + ✓) for spacing.
+2. **Last week (12–18 Oct)** (was "This week (13–19 Oct)": not Monday-start, and a finished week; 22 Oct, design review V1/V2/V4/V6). `Sessions 3 of 4 · 2 runs`; one chip per planned session with **day and % of planned reps done** (names spelled out, no ✓: **done = soft green** chip, **missed = faint grey** (`Thu – missed`, no red; Ben 21 Oct), upcoming/moved = outline; colour is never the only signal, the second line says `– 92%`, `– missed` or `– moved`; 12 pt: `Chest` over `Mon – 100%`, `Back` over `Wed – 92%`, `Shoulders` over `Fri – 104%`, `Legs` over `Sat – moved`; day and % always on one line, no wrapping at 320 pt; Ben, 21 Oct). % = all working reps done ÷ reps planned (warm-ups excluded; planned reps = each set's target reps as planned for that session, e.g. 10 for an 8–12 set planned at 10; only a set with no single target uses the low end of its range); **it can go over 100%** (Ben, 21 Oct): extra reps and sets you added count. Skipped planned sets count 0. Because extras can offset a skipped set, the Summary detail always names what was short or skipped. Tap → that workout's Summary with `156 of 170 planned reps` and what was short. Never write sets/reps as `15/15` (reads as a date); tap → that workout's Summary (or `planned Thu, moved to Sat`). No sets-per-muscle bars here (Ben, 21 Oct): they live once, in Muscles below. A small **Week | Month** segmented switch in the section header (right side, replacing the dates; header reads `THIS WEEK · 13–19 OCT` or `LAST 5 WEEKS`; Ben, 21 Oct) switches the card to a **calendar** (Ben, 21 Oct; replaces the chips while open): columns M T W T F S S, rows `This wk` (bold, first) then the 4 previous weeks (`6 Oct` …); each day a small rounded square: session done = soft green with the session's letter (C, B, S, L), planned but missed = faint grey with its letter, planned and still to come = outlined with its letter, cardio = a small dot (named **Cardio**, not runs), rest = empty; a paused week is outlined and empty with `Paused` on the right; other rows show `3 of 4` on the right. A key underneath (`Done · Missed · Planned · Cardio`). `Week` returns to the chips; no extra links in the card. The header count reads `3 of 4 · 2 cardio`. VoiceOver reads each row (`Week of 6 Oct: 3 of 4 sessions; Mon Chest, Tue cardio, …`). Tapping a row opens that week's past review. More informative than Today's strip, which stays as-is (3 back / 3 ahead, name + day + ✓) for spacing.
 3. **Coach's changes (for next week).** One coach sentence, then the changes the coach **already made** to next sessions (rule 3: small load/reps/sets changes on the same exercises are automatic, with reason and Undo), e.g. `Row 3 × 8 → 4 × 6 · next Pull · Stuck at 92.5 × 8 for 3 weeks  Undo`. Only structural changes are asked (day moves, swaps, add/remove), e.g. `Legs has moved to Saturday 3 weeks running. Make Saturday its day in your plan?` [Move Legs to Sat] [Keep as is]. Offline: the built-in rule's changes with `Not reviewed · Offline`. `Past weeks ›` lists earlier weeks (facts + changes).
 
 **Today vs Progress:** Today looks forward (today's session, the spacing strip, the one change that touches today under `Why?`); Progress looks back (trends, the plan week in detail, all of next week's changes with Undo).
@@ -150,9 +150,9 @@ Progress keeps its tabs (`Reviews` · `Lifts` · `Training`).
 │ Muscles  Chest 12/12 · Back 13/14 · …     ›  │  collapsed (goal = strength)
 │                                              │
 │ HISTORY                                      │
-│ Week of 13 Oct   4 of 4 · 58/62           ›  │
-│ Week of 6 Oct    3 of 4 · 44/46           ›  │
-│ Week of 29 Sep   ⏸ Paused                 ›  │
+│ Week of 12 Oct   4 of 4 · 58/62           ›  │
+│ Week of 5 Oct    3 of 4 · 44/46           ›  │
+│ Week of 28 Sep   ⏸ Paused                 ›  │
 └──────────────────────────────────────────────┘
 ```
 
@@ -202,6 +202,8 @@ Progress keeps its tabs (`Reviews` · `Lifts` · `Training`).
 
 - The bars are `VolumeBandRow` with a 2 pt `chart.bandEdge` tick marking planned. There are no status words and no colour coding.
 - Rows follow the plan's split order. Muscles not in the plan come last, with no tick.
+- **One muscle list (22 Oct, design review V1/V2/V4/V6):** Chest, Back, Shoulders, Quads, Hamstrings, Calves, Biceps, Triceps, Core, the same list as the plan, the block review and Library › Exercises.
+- **Week labels (22 Oct, design review V1/V2/V4/V6):** weeks run Monday–Sunday and are labelled by their Monday (`Week of 12 Oct`, `Last week · 12–18 Oct`). A week that has finished is never called "this week".
 - `So far` shows this week's sets done with no planned tick until the week ends.
 - **Range band:** a general range (e.g. 10–20) is drawn behind a row only if Ben has approved a playbook rule that supplies it. The on/off switch lives in Settings › Progress, not on this card. `Why?` names the rule's source.
 
@@ -218,7 +220,7 @@ Progress keeps its tabs (`Reviews` · `Lifts` · `Training`).
 
 ```
 ┌──────────────────────────────────────────────┐
-│ Week of 13 Oct                      Done     │
+│ Week of 12 Oct                      Done     │
 │ 4 of 4 days, 58 of 62 planned sets.   Coach  │
 │ FACTS                         this · last    │
 │ Days                          4 of 4 · 3 of 4│
@@ -301,7 +303,7 @@ Transitions:
   - Offline, the app says `Offline` and nothing more.
 - **VoiceOver:**
   - Plan card: "This week, 2 of 4 sessions. Push done Monday, Pull done Wednesday, Legs next."
-  - Each bar: "Week of 6 October, 3 of 4."
+  - Each bar: "Week of 5 October, 3 of 4."
   - Lift row: "Bench Press, 102.5 kilograms for 6, up 2.5 kilograms in 3 weeks. Target 110 for 6, 7.5 kilograms to go, 8 weeks left."
   - `Held · pain` is always spoken.
 - **Keyboard:** none on this screen.
@@ -323,7 +325,7 @@ All values are **actual** unless marked target.
 - **Option only:** `about mid-Dec at this rate`
 - **Muscles:** `12 / 12` (done / planned) · `incl. 2 held sets`
 - **Review:**
-  - `Week of 13 Oct` · `NEW` · `Open review` · `Done` · `this` · `last`
+  - `Week of 12 Oct` (always the week's Monday) · `NEW` · `Open review` · `Done` · `this` · `last`
   - `Days` · `Planned sets` · `Targets hit` · `top set` · `Runs` · `Felt`
   - `Not reviewed` · `Offline` · `Not connected`
   - `Apply` · `Skip` · `Why?` · `Next Pull` · `Future Pulls` · `Applied · Undo` · `Out of date. Ask again.`

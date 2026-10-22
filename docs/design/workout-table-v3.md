@@ -13,6 +13,17 @@ Goal: the workout reads like the builder (`workout-builder-v3.md` §2): numbered
 5. **Timer bar, always shown** (Ben, 20 Oct: "where is timer for sets … make timer a bit bigger"), just above the action bar, 64 pt tall, numerals about 36 pt tabular: while resting `REST 1:29` with `−30` `+30` `Skip` (the existing drain line; rest alerts, notification and Live Activity unchanged); otherwise `SET 0:25`, counting up from when the rest ended (or the last log), in secondary ink. Timed sets keep their own work timer in the row. The header number stays the elapsed session time. Undo toast slot above the bar.
 6. **Action bar**: `Chat` + Log pill. Log names the step: `3a · Set 3 · Log 7.5 kg each × 12`, `Set 2 · Log 100 kg × 6`. After a round ends: `Next round`. When the coach ask bar (`apps/mobile/src/ui/coach-ask-bar.tsx`, Wave 2) is on this branch, the Chat button becomes that bar's mic + ✦ entry, same as Today.
 
+### 1.1 Same session from Start to Summary (22 Oct, design review V1/V2/V4/V6)
+
+- **Start passes the session.** Today (with or without a plan), the builder and Edit → builder all hand the active workout the same session: name, order, supersets, sets, reps, kg, plus warm-ups. The header shows that day's name and starts at 0:00, round 1. The main lift's header subline uses the shared format `1 × 6 + 2 × 8 · 102.5 / 92.5`; dumbbell loads say `each` here and in the Workout sheet; a bodyweight lift shows `BW`.
+- **Start with a workout in progress resumes it**, logged sets kept. Picking a different day still opens the one in progress, with a `Chest in progress` toast. A workout is in progress until Finish or Discard.
+- **Why?** shows the main lift's target, and `Last time` only when that history exists.
+- **Summary** is for the same session: its name, its date and gym (`Tue 20 Oct · Main gym`), and what was logged.
+
+### 1.2 Discard (22 Oct, design review V1/V2/V4/V6)
+
+`⋯` › `Discard workout` asks a title-only sheet, `Discard 6 logged sets?` (every ticked set, warm-ups included), with `Discard` (destructive) / `Cancel`. With no sets logged it discards at once. Either way the screen closes with `Workout discarded · Undo` (4 s); Undo brings back the same workout with its logged sets. Once the toast ends, or Start is tapped, the workout is gone and Undo with it.
+
 ## 2. Exercise block
 
 - Header row: label (`1`, `3a`; bold) · name (`title3`) with one subline under it: **works line · rep target** (`Rear delts · 8–12 reps`, `Chest, front delts, triceps · 6 top · 8 back-offs`) · progress `2/3` on the right (working sets only). Name tap opens the exercise pop-up (§7); `⋯` gives Swap, Move up / Move down, Superset with next / Unlink, Remove (today only, with Undo; same `adviseBuilder` "not recommended because…" toast as the builder).
@@ -40,7 +51,7 @@ Goal: the workout reads like the builder (`workout-builder-v3.md` §2): numbered
 
 ## 4. Workout overview sheet
 
-`Workout` opens a sheet with the builder's table: `#` · Exercise + works line · `Sets` (done/total) · `Top set (kg)`. Supersets shown as `3a`/`3b` rows (no box). Done rounds dimmed with ✓, current round bright. Title `Upper body · about 55 min`. Row tap jumps to that round. Reorder/Swap/Add exercise stay available from here as today-only edits (existing OverviewEditSheets).
+`Workout` opens a sheet with the builder's table: `#` · Exercise + works line · `Sets` (done/total) · `Top set (kg)`. Supersets shown as `3a`/`3b` rows (no box). Done rounds dimmed with ✓, current round bright. Title `<Day> · about N min` from the session (e.g. `Chest · about 47 min`). Row tap jumps to that round. Reorder/Swap/Add exercise stay available from here as today-only edits (existing OverviewEditSheets).
 
 ## 5. Time
 

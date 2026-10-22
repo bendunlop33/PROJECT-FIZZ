@@ -45,7 +45,7 @@ No rebuilds: a new block reuses the same plan days. Only the targets move on, pl
 - After a gap of 14 days or more, Today offers `Light first session?` (research proposal 6; the existing −10 % fallback, ADR 0010). It's an offer with Undo.
 
 ### 2.5 End of block
-- The block review runs on first open after the block's last week. **Facts** (code): weeks done, sessions vs his aim, each main lift's planned vs done, targets hit (`5 of 6`), est. 1RM start → end (labelled `est.`), and weekly sets per muscle.
+- The block review runs on first open after the block's last week. **Facts** (code): weeks done, sessions vs his aim, each main lift's planned vs done, targets hit (`5 of 6`), est. 1RM start → end (labelled `est.`), and weekly sets per muscle (the shared list: Chest, Back, Shoulders, Quads, Hamstrings, Calves, Biceps, Triceps, Core; weeks labelled by their Monday; 22 Oct, design review V1/V2/V4/V6).
 - **How did it feel?** `Too easy` · `About right` · `Too hard` (one tap, optional).
 - **The coach proposes the next block:** new path, length, and up to 2 accessory swaps per plan day (same muscles and role as `Mix it up`). Main lifts stay, unless Ben asks or a lift has stalled for 2 blocks (then it's an offer only). Ben gets `Apply` / `Skip` per item, and Undo.
 - **No AI:** the facts show, with `Not reviewed`. Code offers `Start next block`: same days and accessories, path from the built-in rule, labelled.

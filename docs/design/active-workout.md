@@ -1333,8 +1333,8 @@ The view returns `draftSource` (`draft | target | last_set | this_session | last
 | Gym switch (2026-10-09) | Toast `Undo` (8 s) restores the gym, exercise rows, pending targets and drafts exactly. If anything changed since, it shows `Can't undo: your workout changed since the switch.` and a `Switch back to Main Gym` card, which restores the planned loads. Undoing a coach change or a swap after a switch fits the restored target to the current gym (gym-switch §4.5) |
 | Coach adjustment | `Undo` on the banner; later, `Why?` on a coach-marked set → `Undo this change`, or exercise `⋯` → `Undo coach change`. `undoAction` restores only sets still pending (coach-adjustments §4.4) |
 | Pain flag | Undo on the pain card or toast (8 s); after that, tap `Pain` again or the `PainFlagNote`, which opens the pain flag sheet (§2.14.4) → `Clear flag…` → confirm (§2.14.3; coach-memory.md §2.7). Never cleared automatically, by a check or by the coach |
-| Discard workout (0 sets) | Discards at once. Toast `Workout discarded` (no Undo: nothing was logged; start again from Today) |
-| Discard workout (≥1 set) | Confirmation alert first: `Discard Push A? 7 logged sets will be discarded.` [Discard] [Cancel]. No undo afterwards, which is why the confirmation is needed |
+| Discard workout (0 sets) | Discards at once. Toast `Workout discarded · Undo` (4 s) (22 Oct, design review V1/V2/V4/V6; was no Undo) |
+| Discard workout (≥1 set) | Title-only alert first: `Discard 7 logged sets?` [Discard] [Cancel] (count includes warm-ups). Then `Workout discarded · Undo` (4 s); Undo restores the workout with its sets. Start from Today ends the Undo (22 Oct, design review V1/V2/V4/V6; was no Undo) |
 | Exclusion flag (2026-10-09) | Toast `Undo` (8 s), or the voice strip's Undo for a voice mark. After that, open the set and untick (a versioned correction, kept in `Edit history`) |
 | `Use built-in rule` (AW4) | Toast `Undo` (8 s). After that, the change is visible in `Why?` (`Built-in rule · you chose it today`) and lasts only for today |
 | `Still hurts` answer | `Undo` on the outcome line, until the next Log |

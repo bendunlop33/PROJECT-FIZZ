@@ -158,25 +158,34 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </div>
 <script>
 (() => {
+  // Shared example facts (V1): the same in every screen of the whole-app prototype; build_app.py checks them.
+  // Today is Tue 20 Oct; weeks run Monday to Sunday, so the last full week is 12–18 Oct.
+  const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 92.5, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 92.5", "last": "12 Oct · 100 × 6"};
   const GOALS = [['strength', 'Get stronger'], ['muscle', 'Build muscle'], ['both', 'Both']];
-  const WEEKS = ['25 Aug', '1 Sep', '8 Sep', '15 Sep', '22 Sep', '29 Sep', '6 Oct', '13 Oct'];
+  const WEEKS = ['24 Aug', '31 Aug', '7 Sep', '14 Sep', '21 Sep', '28 Sep', '5 Oct', '12 Oct'];
   // Main lifts (default: the plan's main lifts; editable, typically up to 3). Colours: dataviz categorical slots 1–3 (dark), validated all-pairs.
   const LIFTS = [
     { n: 'Bench', reps: 6, c: '#3987e5', series: [90, 92.5, 92.5, 95, 95, 97.5, 97.5, 100], target: 110, est: 'mid-Nov', estW: { 3: '100 × 4', 6: '92.5 × 9' } },
     { n: 'Squat', reps: 5, c: '#d95926', series: [105, 107.5, 107.5, 110, 112.5, 112.5, 115, 117.5], target: 125, estW: { 1: '115 × 3' } },
     { n: 'Row', reps: 8, c: '#199e70', series: [85, 87.5, 87.5, 90, 92.5, 92.5, 92.5, 92.5], target: null, estW: {} },
     // Key accessories: listed in the table, not drawn on the all-lifts chart; tap to see one alone.
-    { n: 'Incline DB', reps: 10, c: '#B5ADA5', acc: true, series: [27.5, 27.5, 30, 30, 30, 30, 30, 32.5], target: null, estW: {} },
-    { n: 'Pulldown', reps: 10, c: '#B5ADA5', acc: true, series: [57.5, 60, 60, 60, 62.5, 62.5, 62.5, 65], target: null, estW: { 4: '67.5 × 7' } },
-    { n: 'Lat raise', reps: 12, c: '#B5ADA5', acc: true, series: [10, 10, 10, 12, 12, 12, 12, 12], target: null, estW: {} },
+    // Same exercises and loads as Today (V1): incline DB press 27.5 each × 8, pulldown 60 × 8, lateral raise 10 each × 12. Dumbbells are per hand.
+    { n: 'Incline DB', reps: 8, c: '#B5ADA5', acc: true, each: true, series: [25, 25, 25, 25, 27.5, 27.5, 27.5, 27.5], target: null, estW: {} },
+    { n: 'Pulldown', reps: 8, c: '#B5ADA5', acc: true, series: [52.5, 55, 55, 55, 57.5, 57.5, 57.5, 60], target: null, estW: { 4: '60 × 6' } },
+    { n: 'Lat raise', reps: 12, c: '#B5ADA5', acc: true, each: true, series: [8, 8, 8, 10, 10, 10, 10, 10], target: null, estW: {} },
   ];
   // Working sets per muscle per week (main muscle 1, helpers ½ — the builder's convention), last 8 weeks; plan = what the plan's sessions call for. null = paused week.
   const MUSCLES = [
     ['Chest', [10, 11, 12, 12, 12, null, 11, 14], 12],
     ['Back', [12, 13, 12, 14, 14, null, 12, 13], 14],
     ['Shoulders', [8, 8, 9, 9, 10, null, 9, 10], 10],
-    ['Legs', [12, 14, 13, 14, 14, null, 10, 9], 14],
-    ['Arms', [8, 9, 8, 10, 10, null, 9, 10], 10],
+    // One muscle list everywhere (V1): the plan's (plan-builder MUSCLES).
+    ['Quads', [6, 7, 7, 7, 7, null, 5, 5], 7],
+    ['Hamstrings', [4, 5, 4, 5, 5, null, 3, 2], 5],
+    ['Calves', [2, 2, 2, 2, 2, null, 2, 2], 2],
+    ['Biceps', [4, 4, 4, 5, 5, null, 4, 5], 5],
+    ['Triceps', [4, 5, 4, 5, 5, null, 5, 5], 5],
+    ['Core', [6, 6, 6, 6, 6, null, 6, 6], 6],
   ];
   const NOTE = 'Good week. Legs light: Legs moved to Saturday.';
   const CHANGES = [
@@ -232,14 +241,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       const now = l.series[l.series.length - 1];
       const d = l.series[l.series.length - 1] - l.series[0];
       const on = s.focus === i;
-      return `<button class="lift${on ? ' on' : ''}${s.focus !== null && !on ? ' dim' : ''}" data-a="focus" data-v="${i}" aria-pressed="${on}" aria-label="${l.n}, ${l.reps} reps, current ${now} kg, ${d === 0 ? 'level' : (d > 0 ? 'up ' : 'down ') + Math.abs(d) + ' kg'} in 8 weeks, ${l.target ? 'target ' + l.target + ' kg' : 'no target'}. ${on ? 'Showing alone' : 'Show alone'}">
-        <i style="${l.acc ? 'border:1.5px solid #948C84;background:none' : `background:${l.c}`}"></i><span class="ln">${l.n}</span><span class="lr">× ${l.reps}</span><span class="lv">${latestPB(l) ? '<span class="pb">PB</span>' : ''}${now}</span><span class="lt">${l.target ?? '–'}</span></button>`;
+      return `<button class="lift${on ? ' on' : ''}${s.focus !== null && !on ? ' dim' : ''}" data-a="focus" data-v="${i}" aria-pressed="${on}" aria-label="${l.n}, ${l.reps} reps, current ${now} kg${l.each ? ' each' : ''}, ${d === 0 ? 'level' : (d > 0 ? 'up ' : 'down ') + Math.abs(d) + ' kg'} in 8 weeks, ${l.target ? 'target ' + l.target + ' kg' : 'no target'}. ${on ? 'Showing alone' : 'Show alone'}">
+        <i style="${l.acc ? 'border:1.5px solid #948C84;background:none' : `background:${l.c}`}"></i><span class="ln">${l.n}</span><span class="lr">× ${l.reps}</span><span class="lv">${latestPB(l) ? '<span class="pb">PB</span>' : ''}${now}${l.each ? '<small style="font-weight:400;color:var(--text2)">each</small>' : ''}</span><span class="lt">${l.target ?? '–'}</span></button>`;
     })()).join('');
   }
   function strengthCard() {
     const one = s.focus !== null ? LIFTS[s.focus] : null;
     const pill = one && one.target ? '<span class="pill"><i style="background:var(--good)"></i>On track</span>' : '';
-    const sub = one ? `Top set × ${one.reps} (${one.target ? 'target' : 'plan'} reps) · ${one.series[one.series.length - 1]} now${one.est ? ` · about ${one.est} at this rate <span class="tag" style="margin:0">est.</span>` : ''}` : 'Top set at each lift\u2019s reps · ○ est.';
+    const sub = one ? `Top set × ${one.reps} (${one.target ? 'target' : 'plan'} reps) · ${one.series[one.series.length - 1]}${one.each ? ' each' : ''} now${one.est ? ` · about ${one.est} at this rate <span class="tag" style="margin:0">est.</span>` : ''}` : 'Top set at each lift\u2019s reps · ○ est.';
     return `<div class="card">
       <div class="head" style="align-items:center"><span class="title">Lifts</span>${one ? `<button class="link" data-a="all" style="min-height:28px;font-size:13px">All lifts</button>` : `<span class="hk">Top set · <span aria-label="ring means personal best">◎ PB</span> · <span aria-label="hollow dot means estimated">○ est.</span> · <button class="link" data-a="edit" style="min-height:28px;font-size:13px">Edit</button></span>`}</div>
       ${one ? `<div class="sub" style="font-size:13px"><b style="color:var(--text)">${one.n}</b> · ${sub}</div>` : ''}
@@ -294,28 +303,28 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   function weekCard() {
     // Sets per muscle live in Muscles below (no duplicate here).
-    return `<div class="sec" style="align-items:center"><span>${s.hist ? 'Last 5 weeks' : 'This week \u00b7 13–19 Oct'}</span><span class="segm" role="group" aria-label="Period"><button data-a="wk" aria-pressed="${!s.hist}">Week</button><button data-a="mo" aria-pressed="${!!s.hist}">Month</button></span></div>
+    return `<div class="sec" style="align-items:center"><span>${s.hist ? 'Last 5 weeks' : `Last week \u00b7 ${FIXTURE.lastWeek}`}</span><span class="segm" role="group" aria-label="Period"><button data-a="wk" aria-pressed="${!s.hist}">Week</button><button data-a="mo" aria-pressed="${!!s.hist}">Month</button></span></div>
     <div class="card">
-      <div class="row"><span class="k">Sessions</span><span class="v">3 of 4 <span style="font-size:14px;font-weight:500;color:var(--text2)">· 2 cardio</span></span></div>
+      <div class="row"><span class="k">Sessions</span><span class="v">${s.missed ? 3 : 4} of 4 <span style="font-size:14px;font-weight:500;color:var(--text2)">· 2 cardio</span></span></div>
       ${s.hist ? histGrid() : `<div class="strip" role="group" aria-label="Chest done Monday, 100% of planned reps; Back done Wednesday, 92%; Shoulders done Friday, 104%; Legs moved to Saturday or missed">
         <button class="pd done" data-a="sess" data-v="Chest">Chest<small>Mon – 100%</small></button><button class="pd done" data-a="sess" data-v="Back">Back<small>Wed – 92%</small></button>
-        <button class="pd done" data-a="sess" data-v="Shoulders">Shoulders<small>Fri – 104%</small></button>${s.missed ? `<button class="pd miss" data-a="sess" data-v="LegsMissed">Legs<small>Thu – missed</small></button>` : `<button class="pd next" data-a="sess" data-v="Legs">Legs<small>Sat – moved</small></button>`}
+        <button class="pd done" data-a="sess" data-v="Shoulders">Shoulders<small>Fri – 104%</small></button>${s.missed ? `<button class="pd miss" data-a="sess" data-v="LegsMissed">Legs<small>Thu – missed</small></button>` : `<button class="pd done" data-a="sess" data-v="Legs">Legs<small>Sat – moved</small></button>`}
       </div>`}
     </div>`;
   }
   // Past weeks: one row per week, one square per planned session (d = done, m = missed, p = paused), runs on the right.
   // Past weeks, Mon–Sun. C/B/S/L = session done (letter), r = run, mX = planned X missed, '' = rest. Paused weeks flagged.
   const HISTCAL = [
-    ['13 Oct', ['C', 'r', 'B', '', 'S', 'nL', 'r'], false, '3 of 4', true],
-    ['6 Oct', ['C', 'r', 'B', '', 'S', 'mL', 'r'], false, '3 of 4'],
-    ['29 Sep', ['', '', '', '', '', '', ''], true, 'Paused'],
-    ['22 Sep', ['C', '', 'B', 'r', 'S', 'L', ''], false, '4 of 4'],
-    ['15 Sep', ['C', 'r', 'B', '', 'S', 'r', 'L'], false, '4 of 4'],
+    ['19 Oct', ['', '', '', '', '', '', ''], false, '0 of 4', true],
+    ['12 Oct', ['C', 'r', 'B', '', 'S', 'L', 'r'], false, '4 of 4'],
+    ['5 Oct', ['C', 'r', 'B', '', 'S', 'mL', 'r'], false, '3 of 4'],
+    ['28 Sep', ['', '', '', '', '', '', ''], true, 'Paused'],
+    ['21 Sep', ['C', '', 'B', 'r', 'S', 'L', ''], false, '4 of 4'],
   ];
   const HISTCHIPS = [
-    ['6 Oct', [['Chest', 'Mon – 98%', 'd'], ['Back', 'Wed – 100%', 'd'], ['Shoulders', 'Fri – 95%', 'd'], ['Legs', 'Sat – missed', 'm']]],
-    ['29 Sep', null],
-    ['22 Sep', [['Chest', 'Mon – 100%', 'd'], ['Back', 'Wed – 96%', 'd'], ['Shoulders', 'Fri – 102%', 'd'], ['Legs', 'Sat – 91%', 'd']]],
+    ['5 Oct', [['Chest', 'Mon – 98%', 'd'], ['Back', 'Wed – 100%', 'd'], ['Shoulders', 'Fri – 95%', 'd'], ['Legs', 'Sat – missed', 'm']]],
+    ['28 Sep', null],
+    ['21 Sep', [['Chest', 'Mon – 100%', 'd'], ['Back', 'Wed – 96%', 'd'], ['Shoulders', 'Fri – 102%', 'd'], ['Legs', 'Sat – 91%', 'd']]],
   ];
   const NAMES = { C: 'Chest', B: 'Back', S: 'Shoulders', L: 'Legs' };
   function histGrid() {
