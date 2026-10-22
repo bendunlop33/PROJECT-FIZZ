@@ -58,6 +58,9 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
 .primary { flex: 1; min-height: 52px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font: 600 17px var(--ui); cursor: pointer; }
 .secondary { flex: 1; min-height: 52px; border-radius: 999px; border: 1px solid var(--divider); background: none; color: var(--text); font: 600 17px var(--ui); cursor: pointer; }
 .ctl { background: var(--raised); border-radius: 14px; }
+.mfilter { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.mfilter button { flex: 1 0 auto; min-height: 32px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--divider); background: none; color: var(--text2); font: 600 13px var(--ui); cursor: pointer; }
+.mfilter button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .daypick { display: grid; grid-template-columns: repeat(4, 1fr) 44px; gap: 4px; background: var(--surface); border-radius: 14px; padding: 4px; }
 .daypick button { min-height: 46px; border: 0; border-radius: 10px; background: none; color: var(--text3); font: 500 14px var(--ui); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
 .daypick button.on { background: var(--raised); color: var(--text); font-weight: 600; }
@@ -233,7 +236,9 @@ function renderTodayNo() {
 
 // ---------- Library (exercise-library.md, routines.md): workouts and exercises ----------
 const LIB = { tab: 'plan' };
-const EXS = { Chest: ['Bench press', 'Incline DB press', 'Cable fly', 'DB bench press'], Back: ['Barbell row', 'Lat pulldown', 'Pull-up', 'Chest-supported row'], Shoulders: ['DB shoulder press', 'Lateral raise', 'Face pull'], Legs: ['Back squat', 'Romanian deadlift', 'Leg press', 'Leg curl', 'Calf raise'], Arms: ['Barbell curl', 'Hammer curl', 'Triceps pushdown'] };
+const EXS = { Chest: ['Bench press', 'Incline DB press', 'Cable fly', 'DB bench press'], Back: ['Barbell row', 'Lat pulldown', 'Pull-up', 'Chest-supported row'], Shoulders: ['DB shoulder press', 'Lateral raise', 'Face pull'], Legs: ['Back squat', 'Romanian deadlift', 'Leg press', 'Leg curl', 'Calf raise'], Arms: ['Barbell curl', 'Hammer curl', 'Triceps pushdown'], Core: ['Cable crunch', 'Hanging leg raise', 'Plank'] };
+// Your own exercises (exercise-library.md §2.6): added here, tagged Yours, usable by plans and the coach.
+const MINE = [];
 function renderLibrary() {
   // Library tabs Plan | Workouts | Exercises (Ben, 22 Oct). Plan: the active plan opens its overview (Edit plan, Pause,
   // End there); previous and saved plans below.
@@ -249,8 +254,15 @@ function renderLibrary() {
     : LIB.tab === 'workouts' ? `
       ${rows([['Push A', 'Last done Mon'], ['Pull A', 'Last done Wed'], ['Legs', 'Last done Sat'], ['Arms & core', '3 weeks ago']], 'data-wo')}
       <div class="foot"><button class="secondary" data-go="builder">＋ Build a workout</button></div>`
-    : `<div class="search">Search exercises</div>
-      ${Object.entries(EXS).map(([g, l]) => `<div class="label">${g}</div><div class="card">${l.map((n) => `<div class="row" data-ex="${n}"><span class="nm">${n}</span><span class="chev">›</span></div>`).join('')}</div>`).join('')}`}`;
+    : `<div class="mfilter">${['All', ...Object.keys(EXS)].map((g) => `<button class="${(LIB.muscle ?? 'All') === g ? 'on' : ''}" data-mf="${g}">${g}</button>`).join('')}</div>
+      <div class="search">Search exercises</div>
+      ${LIB.adding ? `<div class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px"><b>Add your own</b><input id="ownName" placeholder="Exercise name" style="min-height:42px;border-radius:10px;border:1px solid var(--divider);background:var(--canvas);color:var(--text);padding:0 12px;font:15px var(--ui)"><div class="mfilter">${Object.keys(EXS).map((g) => `<button class="${LIB.ownMuscle === g ? 'on' : ''}" data-om="${g}">${g}</button>`).join('')}</div><div class="foot" style="margin-top:0"><button class="secondary" style="min-height:44px" id="ownCancel">Cancel</button><button class="primary" style="min-height:44px" id="ownSave">Save</button></div></div>` : `<button class="secondary" style="min-height:44px;flex:none" id="ownAdd">＋ Add your own</button>`}
+      ${Object.entries(EXS).filter(([g]) => (LIB.muscle ?? 'All') === 'All' || LIB.muscle === g).map(([g, l]) => { const all = [...MINE.filter((m) => m.g === g).map((m) => [m.n, true]), ...l.map((n) => [n, false])]; return `<div class="label">${g}</div><div class="card">${all.map(([n, mine]) => `<div class="row" data-ex="${n}"><span class="nm">${n}${mine ? ' <span class="tag" style="margin-left:6px">Yours</span>' : ''}</span><span class="chev">›</span></div>`).join('')}</div>`; }).join('')}`}`;
+  $('library').querySelectorAll('[data-mf]').forEach((b) => b.onclick = () => { LIB.muscle = b.dataset.mf; renderLibrary(); });
+  $('library').querySelectorAll('[data-om]').forEach((b) => b.onclick = () => { LIB.ownName = $('ownName').value; LIB.ownMuscle = b.dataset.om; renderLibrary(); $('ownName').value = LIB.ownName; });
+  if ($('ownAdd')) $('ownAdd').onclick = () => { LIB.adding = true; LIB.ownMuscle = LIB.muscle && LIB.muscle !== 'All' ? LIB.muscle : 'Chest'; LIB.ownName = ''; renderLibrary(); $('ownName').focus(); };
+  if ($('ownCancel')) $('ownCancel').onclick = () => { LIB.adding = false; renderLibrary(); };
+  if ($('ownSave')) $('ownSave').onclick = () => { const n = $('ownName').value.trim(); if (!n) return toast('Name it first'); MINE.push({ n, g: LIB.ownMuscle }); LIB.adding = false; renderLibrary(); toast(`${n} added`); };
   $('library').querySelectorAll('[data-lt]').forEach((b) => b.onclick = () => { LIB.tab = b.dataset.lt; renderLibrary(); });
   $('library').querySelectorAll('[data-go]').forEach((b) => b.onclick = () => push(b.dataset.go));
   $('library').querySelectorAll('[data-wo]').forEach((b) => b.onclick = () => push('builder'));
