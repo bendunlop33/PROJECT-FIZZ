@@ -1,5 +1,7 @@
 # Workout overview (the page before the first set)
 
+> **Superseded (Ben, 22 Oct 2026).** The Workout overview is retired: every pre-start entry opens the builder's Your workout ([workout-builder-v3.md](workout-builder-v3.md) §2.3). Kept for history; see `docs/brief/CHANGELOG.md` 2026-10-22 and `docs/reviews/retire-workout-overview.md`.
+
 Status: v0.1, 10 Oct 2026. Asked for by Ben ("a one page overview ahead of doing a session"). Synthesised from three concepts. The base is "The plan at a glance", with grafts from "Ready in one place" and "The coach's briefing". Research: [competitor-first-pages.md](../research/competitor-first-pages.md) ideas 2–8 (13 later). Its idea 1 ("no separate page") is overruled by Ben's ask. Mockup: [mockups/workout-overview.html](mockups/workout-overview.html).
 
 Rules: CLAUDE.md 1 (offline, no canned coach), 2 (no silent changes), 3 / D21 (coach's small next-session changes shown with reason and Undo), 4 (achievable loads), 5 (versioned, op IDs, stale rejected), 6 (targets vs actuals vs estimates), 9 (pain holds progression), and the minimal-copy convention. Look: Direction D dark (`PREMIUM_DIRECTION` in `apps/mobile/src/theme/tokens.ts`). It adds no colour values and no web fonts.

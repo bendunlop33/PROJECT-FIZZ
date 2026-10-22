@@ -1,5 +1,7 @@
 # Workout overview: today's edits (Swap today, Skip today, Do first, Reorder)
 
+> **Superseded (Ben, 22 Oct 2026).** The Workout overview is retired: every pre-start entry opens the builder's Your workout ([workout-builder-v3.md](workout-builder-v3.md) §2.3). Kept for history; see `docs/brief/CHANGELOG.md` 2026-10-22 and `docs/reviews/retire-workout-overview.md`.
+
 > **v0.3, 11 Oct 2026 (Ben: "an option to edit before starting the workout").** New §11: **full edit before start** (build slice B of the Workouts library change, [routines.md](routines.md) §A8). The overview gets a visible `Edit` mode that puts sets, reps, today's target load, add exercise, swap, skip and order in one place, and `Update Push A ›` turns today's edits into one change-review card. The `How long?` control on the TIME tile is specified in [fit-to-time.md](fit-to-time.md) (slice C). §1–§10 are unchanged and built; where §11 differs, §11 wins. Mockup: [mockups/workout-library.html](mockups/workout-library.html) frame 3.
 
 Status: v0.2, 11 Oct 2026. **Ready to build; PM defaults pending Ben** (§10). Schema: [ADR 0022](../decisions/0022-pre-start-draft.md) (pre-start draft, migration 7). Reconciled with the merged overview (`apps/mobile/src/screens/workout/WorkoutOverviewScreen.tsx`, `packages/domain/src/session/overview.ts`).

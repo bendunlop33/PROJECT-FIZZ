@@ -291,7 +291,7 @@ Unchanged: Resume card, stale card, check-in line, pain check line, banners, che
 | Reopen today after leaving (or a force-close) before Start | The same unstarted workout, with every edit kept | [Proposal] |
 | Resuming a workout in progress | **Never** the builder (unchanged) | — |
 
-[Proposal] Your workout becomes the one pre-workout page for plan days, replacing the Workout overview there. The overview's gym chip and check-in move onto it (§9 Q1).
+[Proposal] Your workout becomes the one pre-workout page for plan days, replacing the Workout overview there. The overview's gym chip and check-in move onto it (§9 Q1). **(Ben, 22 Oct) For every pre-start entry, not only plan days: the Workout overview is retired. Its gym chip, `done by` time, target arrows and `after …` header are not carried over (CHANGELOG 2026-10-22).**
 
 [Ben, 20 Oct] Today's session card keeps a one-tap `Start`; tapping the card expands it; `Edit` opens the builder (§2.0). Active `From last review` notes are already applied in the draft (§2.0.3), so a one-tap Start never skips them.
 
@@ -784,12 +784,12 @@ Reviews are Your data (rule 10): stored as their own records with facts separate
 
 | Older spec / item | Superseded by |
 |---|---|
-| workout-builder.md §3–§4 Build card, length chips, Draft card `Open` → overview | Set up + Your workout (chat build fills Set up) |
+| workout-builder.md §3–§4 Build card, length chips, Draft card `Open` → overview | Set up + Your workout (chat build fills Set up). **Open for Ben:** the built app opens a chat draft's `Open ›` on Your workout with the coach's checked plan, not on Set up (review S4) |
 | workout-builder.md BD17 `ask_build_question` in the builder | Set up rows ask nothing; [Proposal] keep the tool only for free chat builds |
 | workout-builder.md BD19 main-lift insertion | Main lift row on Set up |
 | workout-builder.md BD12 `Save to Workouts` from a draft | Start prompt; `Save to Workouts` stays in `⋯` for non-plan workouts |
 | Backlog H5: `Save as day default`, default workout per day, Supersets review sheet | Removed [Ben]: today-only edits + Start prompt + variations; pairing in the pop-up (drag later) |
-| workout-overview.md for plan days | Your workout (pending Q1) |
+| workout-overview.md (every pre-start entry; Ben, 22 Oct) | Your workout. A library or past workout opens as the overview planned it; what Your workout can't hold is `N left out` (review B1, pending Ben) |
 | today.md Up next card, alternatives row, This week / Recent, `Then:` row, Ask pill | Today (v2), §2.0.9 |
 | routines.md editor for plan-day routines | Builder edits templates through the Start prompt; the library editor stays for other workouts [Proposal] |
 | weekly-plan.md / plan Apply making one routine per day | One template per day **per main lift**; variations kept separately |
