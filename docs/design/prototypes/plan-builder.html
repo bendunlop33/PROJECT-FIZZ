@@ -215,7 +215,7 @@ const ACT_DEFAULT_DAY = { Cycling: 5, Swimming: 2, Boxing: 3, Football: 6, HIIT:
 // ---------- State ----------
 const S = {
   ai: true, page: 'check', check: {}, focus: 'Balanced', targets: [],
-  acts: {}, pri: [], priority: [], runs: false, supersets: false, abs: true, longRunDay: 6, runDays: [2, 6],
+  acts: {}, pri: [], priority: [], runs: false, supersets: false, absWk: null, longRunDay: 6, runDays: [2, 6],
   days: [0, 1, 3, 5], freq: 4, schedule: 'fixed', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
 };
@@ -251,6 +251,9 @@ function splitFor(n, focus) {
   // 7 days (Ben, 22 Oct): allowed; the 7th is a light Arms & core day so something stays easy.
   return ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs', 'Arms'];
 }
+// Abs per week is set by the plan (Ben, 22 Oct): 2 by default, 3 with Core as a priority or a Fitness focus; editable on Your plan.
+const absAuto = () => (S.priority.includes('Core') || S.focus === 'Fitness') ? 3 : 2;
+const absPerWeek = () => S.absWk ?? absAuto();
 function build() {
   const days = [...S.days].sort((a, b) => a - b);
   const names = splitFor(days.length, S.focus);
@@ -267,7 +270,14 @@ function build() {
   }
   const seen = {};
   plan = plan.map((p) => { seen[p.focus] = (seen[p.focus] ?? 0) + 1; const v = seen[p.focus] > 1 && DAYS_B[p.focus] ? 'B' : (plan.filter((q) => q.focus === p.focus).length > 1 && DAYS_B[p.focus] ? 'A' : null); return { ...p, variant: v }; });
-  return balance(plan.map((p) => ({ ...p, ex: exercisesFor(p.focus, p.variant) })));
+  const built = plan.map((p) => ({ ...p, ex: exercisesFor(p.focus, p.variant) }));
+  // Abs: N sessions a week (Ben, 22 Oct), spread evenly across the training days, alternating two core exercises, last in the session.
+  const n = Math.min(absPerWeek(), built.length), CORE = ['Cable crunch', 'Hanging leg raise'];
+  for (let k = 0; k < n; k++) {
+    const d = built[Math.floor((k * built.length) / n)]; const name = CORE[k % 2]; const h = HIST[name];
+    d.ex.push({ n: name, m: 'Core', role: 'i', sets: 3, short: `3 × ${h.reps}`, kg: h.kg === 0 ? 'BW' : `${h.kg}`, line: `3 × ${h.kg === 0 ? 'BW' : h.kg + ' kg'} × ${h.reps}`, why: h.last ? `Last time ${h.last}` : 'No history yet (est.)' });
+  }
+  return balance(built);
 }
 // Nudge sets per exercise (2–5, never the main lift's scheme) until each muscle trained this week sits in its range.
 function balance(plan) {
@@ -287,7 +297,7 @@ function exercisesFor(focus, variant) {
   const t = (variant === 'B' && DAYS_B[focus]) || DAYS[focus];
   const cap = S.length <= 45 ? 4 : S.length <= 60 ? 6 : 7;
   const ex = [...t.ex].sort((a, b) => (a[2] === 'main' ? -2 : isPri(a[1]) ? -1 : 0) - (b[2] === 'main' ? -2 : isPri(b[1]) ? -1 : 0));
-  const picked = ex.filter((x) => S.abs !== false || x[1] !== 'Core').slice(0, S.supersets ? cap + 1 : cap);
+  const picked = ex.filter((x) => x[1] !== 'Core').slice(0, S.supersets ? cap + 1 : cap);
   return pairUp(picked.map(([n, m, role]) => {
     const h = HIST[n];
     const pri = isPri(m);
@@ -670,8 +680,6 @@ function renderWeek() {
     <div class="seg" style="align-items:center"><button class="chip" id="lenDown" aria-label="Shorter" style="min-width:44px">−</button><span style="min-width:72px;text-align:center;font-variant-numeric:tabular-nums">${S.length} min</span><button class="chip" id="lenUp" aria-label="Longer" style="min-width:44px">＋</button></div>
     <div class="label">Supersets</div>
     <div class="yn" role="group">${['No', 'Yes'].map((o) => `<button data-ss="${o}" aria-pressed="${(S.supersets ? 'Yes' : 'No') === o}">${o}</button>`).join('')}</div>
-    <div class="label">Abs</div>
-    <div class="yn" role="group">${['No', 'Yes'].map((o) => `<button data-abs="${o}" aria-pressed="${(S.abs !== false ? 'Yes' : 'No') === o}">${o}</button>`).join('')}</div>
     <div class="label">Gym</div>
     <div class="seg"><button class="chip" style="padding:0 12px">${esc(S.gym)} ›</button></div>
     <div class="note">Days and length are your usual. On the day you can start any session or change its length.</div>`;
@@ -681,7 +689,6 @@ function renderWeek() {
   document.querySelectorAll('[data-sch]').forEach((b) => b.onclick = () => { S.schedule = b.dataset.sch; render(); });
   const PREF = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
   document.querySelectorAll('[data-ss]').forEach((b) => b.onclick = () => { S.supersets = b.dataset.ss === 'Yes'; render(); });
-  document.querySelectorAll('[data-abs]').forEach((b) => b.onclick = () => { S.abs = b.dataset.abs === 'Yes'; render(); });
   document.querySelectorAll('[data-freq]').forEach((b) => b.onclick = () => { S.freq = +b.dataset.freq; S.days = PREF[S.freq]; render(); });
   document.querySelectorAll('[data-actday]').forEach((b) => b.onclick = () => { const [a, d] = b.dataset.actday.split('|'); const n = +d; S.acts[a] = S.acts[a].includes(n) ? S.acts[a].filter((x) => x !== n) : [...S.acts[a], n]; render(); });
   document.querySelectorAll('[data-run]').forEach((b) => b.onclick = () => { const d = +b.dataset.run; S.runDays = S.runDays.includes(d) ? S.runDays.filter((x) => x !== d) : [...S.runDays, d]; if (!S.runDays.includes(S.longRunDay)) S.longRunDay = S.runDays.at(-1) ?? 6; render(); });
@@ -729,7 +736,7 @@ function renderPlan() {
       </div></div>`).join('')}
     <div class="label">Sets per week</div>
     <div class="card" style="padding:10px 16px">${MUSCLES.map((m) => { const [lo, hi] = range(m); const n = ws[m]; const max = 24; return `<div class="vol ${isPri(m) ? 'pri' : ''}"><span class="mn">${m}</span><span class="bar"><span class="rng" style="left:${lo / max * 100}%;width:${(hi - lo) / max * 100}%"></span><span class="fill" style="width:${Math.min(n, max) / max * 100}%"></span></span><span class="n">${n}${n < lo ? ' ↓' : n > hi ? ' ↑' : ''}</span></div>`; }).join('')}
-      <div style="display:flex;justify-content:flex-end"><button class="link dim" id="whyBtn">Why?</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px;color:var(--text2)">Abs: ${absPerWeek()} a week <button class="link" id="absChange" style="font-size:14px">Change</button></span><button class="link dim" id="whyBtn">Why?</button></div>
       <div class="why" id="why">Split from ${S.days.length} days and ${esc(S.focus)} focus. Shaded band = target sets for each muscle (priority ★ higher). Weights from your last sessions; each main lift's weekly path aims at its week-${S.weeks} estimate. ${S.runs ? 'No legs the day before the long run.' : ''}</div>
     </div>
     ${S.chat.length ? `<div class="label">Coach</div><div class="chat">${S.chat.map((c) => c.who === 'ben' ? `<div class="msg ben">${esc(c.text)}</div>` : c.who === 'choice' ? `<div class="choice"><button data-choice="new">Build new</button><button data-choice="edit">Change this one</button></div>` : `<div class="msg co"><b>Coach</b>${esc(c.text)}</div>`).join('')}</div>` : ''}`;
@@ -742,6 +749,7 @@ function renderPlan() {
   document.querySelectorAll('[data-move]').forEach((el) => el.onclick = () => openMoveSheet(+el.dataset.move));
   document.querySelectorAll('[data-open]').forEach((el) => el.onclick = () => toast('Opens this day in the workout builder', false));
   document.querySelectorAll('[data-choice]').forEach((el) => el.onclick = () => { S.chat = S.chat.filter((c) => c.who !== 'choice'); const pending = S.pendingAsk; S.pendingAsk = null; el.dataset.choice === 'new' ? rebuild(pending) : editPlan(pending); });
+  $('absChange').onclick = () => { sheet(`<h2>Abs sessions a week</h2><div class="seg">${[0, 1, 2, 3, 4].map((n) => `<button class="chip" data-absn="${n}" aria-pressed="${absPerWeek() === n}">${n}</button>`).join('')}</div>`); document.querySelectorAll('[data-absn]').forEach((b) => b.onclick = () => { const before = snapshot(); S.absWk = +b.dataset.absn; S.plan = build(); closeSheet(); render(); toast(`Abs ${S.absWk} a week`, true, () => { restore(before); render(); }); }); };
   $('whyBtn').onclick = () => $('why').classList.toggle('on');
   if ($('apply')) $('apply').onclick = () => { S.applied = true; S.editing = false; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
   const ask = $('ask');
@@ -750,7 +758,7 @@ function renderPlan() {
 }
 
 // ---------- Coach (simulated). Words decide: full description → build new; change request → edit; unclear → ask. ----------
-function snapshot() { return JSON.parse(JSON.stringify({ plan: S.plan, days: S.days, focus: S.focus, priority: S.priority, length: S.length })); }
+function snapshot() { return JSON.parse(JSON.stringify({ plan: S.plan, days: S.days, focus: S.focus, priority: S.priority, length: S.length, absWk: S.absWk })); }
 function restore(s) { Object.assign(S, s); }
 function coach(text) {
   S.chatScroll = true;
