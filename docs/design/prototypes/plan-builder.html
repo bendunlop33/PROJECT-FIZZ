@@ -99,7 +99,7 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .choice button { flex: 1; min-height: 44px; border-radius: 12px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text); font: 600 15px var(--ui); cursor: pointer; }
 /* sheet + toast */
 .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.5); display: none; z-index: 20; }
-.sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: 24px 24px 0 0; padding: 14px 16px 24px; z-index: 21; display: none; flex-direction: column; gap: 10px; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 85%; overflow-y: auto; background: var(--surface); border-radius: 24px 24px 0 0; padding: 14px 16px 24px; z-index: 21; display: none; flex-direction: column; gap: 10px; }
 .sheet.on, .scrim.on { display: flex; }
 .sheet h2 { font-size: 18px; margin: 0; }
 .toast { position: absolute; left: 14px; right: 14px; bottom: 84px; background: var(--raised); border: 1px solid var(--divider); border-radius: 14px; padding: 4px 6px 4px 14px; font-size: 15px; z-index: 30; display: none; justify-content: space-between; align-items: center; }
@@ -179,6 +179,9 @@ const DAYS = {
   Upper: { main: 'DB shoulder press', ex: [['DB shoulder press','Shoulders','main'],['Pull-up','Back','c'],['Incline DB press','Chest','c'],['Lat pulldown','Back','c'],['Lateral raise','Shoulders','i'],['Barbell curl','Biceps','i']] },
   Lower: { main: 'Romanian deadlift', ex: [['Romanian deadlift','Hamstrings','main'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
   'Full body': { main: 'Back squat', ex: [['Back squat','Quads','main'],['Bench press','Chest','c'],['Barbell row','Back','c'],['Lateral raise','Shoulders','i'],['Hammer curl','Biceps','i']] },
+  Chest: { main: 'Bench press', ex: [['Bench press','Chest','main'],['Incline DB press','Chest','c'],['Incline bench press','Chest','c'],['Cable fly','Chest','i'],['Triceps pushdown','Triceps','i'],['Cable crunch','Core','i']] },
+  Back:  { main: 'Barbell row', ex: [['Barbell row','Back','main'],['Pull-up','Back','c'],['Lat pulldown','Back','c'],['Shrugs','Back','i'],['Hammer curl','Biceps','i'],['Hanging leg raise','Core','i']] },
+  Shoulders: { main: 'DB shoulder press', ex: [['DB shoulder press','Shoulders','main'],['Lateral raise','Shoulders','i'],['Face pull','Shoulders','i'],['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i']] },
   Arms:  { main: null, ex: [['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i'],['Lateral raise','Shoulders','i'],['Cable crunch','Core','i']] },
 };
 const MUSCLES = ['Chest','Back','Shoulders','Quads','Hamstrings','Calves','Biceps','Triceps','Core'];
@@ -208,7 +211,18 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const snap = (kg, step = 2.5) => Math.floor(kg / step) * step;
 
 // ---------- Deterministic plan (the offline code path; the coach may adjust it) ----------
+// Split chosen on Your week (Ben, 22 Oct): Suggested picks from days and focus; the others are fixed patterns.
+const SPLITS = { auto: 'Suggested', ppl: 'Push / Pull / Legs', ul: 'Upper / Lower', full: 'Full body', body: 'Body part' };
+function splitOf(kind, n) {
+  const cycle = (pat) => Array.from({ length: n }, (_, i) => pat[i % pat.length]);
+  if (kind === 'ppl') return cycle(['Push', 'Pull', 'Legs']);
+  if (kind === 'ul') return cycle(['Upper', 'Lower']);
+  if (kind === 'full') return cycle(['Full body']);
+  if (kind === 'body') return n < 4 ? cycle(['Full body']) : ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Legs', 'Chest'].slice(0, n);
+  return null;
+}
 function splitFor(n, focus) {
+  const chosen = splitOf(S.split ?? 'auto', n); if (chosen) return chosen;
   if (n <= 2) return ['Full body', 'Full body'].slice(0, n);
   if (n === 3) return focus === 'Strength' ? ['Full body', 'Full body', 'Full body'] : ['Push', 'Pull', 'Legs'];
   if (n === 4) return focus === 'Strength' ? ['Upper', 'Lower', 'Upper', 'Lower'] : ['Push', 'Pull', 'Legs', 'Upper'];
@@ -365,12 +379,30 @@ function expectBody(lifts) {
       ${lifts.map((lf) => { const e0 = e1rm(HIST[lf].kg, HIST[lf].reps); return `<span style="color:var(--text2);justify-self:start">${SHORT[lf]}</span><span style="color:var(--text3)">${atReps(lf, e0, reps)}</span><span style="font-weight:600">${atReps(lf, e0 * (1 + rateFor(lf)), reps)}${each(lf)}</span>`; }).join('')}
     </span>`;
 }
+// Progressive reveal on Gym goals (Ben, 22 Oct): sections appear one at a time (length → effort → focus → priority →
+// other training → what to expect). Choosing in the newest section shows the next and scrolls to it. Editing a plan shows all.
+function goalSections() {
+  const kids = [...$('scroll').children]; let sec = -1; const out = [];
+  for (const el of kids) { if (el.tagName === 'H1') continue; if (el.classList.contains('label') || (el.classList.contains('card') && el.querySelector('#expTog'))) sec++; out.push([el, Math.max(0, sec)]); }
+  return out;
+}
+function applyReveal() {
+  const rev = S.rev ?? 0;
+  goalSections().forEach(([el, sec]) => { el.style.display = sec > rev ? 'none' : ''; el.dataset.sec = sec; });
+  if (S.scrollTo != null) { const t = $('scroll').querySelector(`[data-sec="${S.scrollTo}"]`); S.scrollTo = null; if (t) requestAnimationFrame(() => t.scrollIntoView({ behavior: 'smooth', block: 'start' })); }
+}
+$('scroll').addEventListener('click', (ev) => {
+  if (S.page !== 'goals') return;
+  const btn = ev.target.closest('button'); if (!btn || /Info$/.test(btn.id) || btn.id === 'expTog') return;
+  const host = ev.target.closest('[data-sec]'); if (!host) return;
+  if (+host.dataset.sec === (S.rev ?? 0) && (S.rev ?? 0) < 5) { S.rev = (S.rev ?? 0) + 1; S.scrollTo = S.rev; }
+}, true);
 function renderGoals() {
   $('scroll').innerHTML = `
     <h1>Gym goals</h1>
     <div class="label" style="display:flex;align-items:center;gap:4px">Main focus <button class="link dim" id="focusInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
     <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
-    <div class="label">Priority · up to 2 · none = all equal</div>
+    <div class="label" style="display:flex;align-items:center;gap:4px">Priority · up to 2 <button class="link dim" id="priInfo" aria-label="What priority does" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
     <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m === SUG.group ? '✦ ' : ''}${m}</button>`).join('')}</div>
     <div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested: <b style="color:var(--text)">${SUG.group}</b>. ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>
     <div class="label">Other training · tap twice for ★</div>
@@ -380,7 +412,7 @@ function renderGoals() {
   $('scroll').querySelector('h1').insertAdjacentHTML('afterend', `
     <div class="label">Plan length</div>
     <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w}">${w} weeks</button>`).join('')}</div>
-    <div class="label">Effort</div>
+    <div class="label" style="display:flex;align-items:center;gap:4px">Effort <button class="link dim" id="effInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
     <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['Maintain', 'Standard', 'Push'].map((l) => `<button class="chip" data-eff="${l}" aria-pressed="${S.effort === l}">${l}</button>`).join('')}</div>
 `);
   $('scroll').insertAdjacentHTML('beforeend', `
@@ -392,10 +424,17 @@ function renderGoals() {
         ${expectBody(lifts)}
 </div>` : ''}
     </div>`);
-  $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
+  $('footer').innerHTML = `<button class="primary" id="next">${(S.rev ?? 0) < 5 ? 'Continue' : 'Next: your week'}</button>`;
+  applyReveal();
   document.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => { S.weeks = +b.dataset.wk; render(); });
   document.querySelectorAll('[data-eff]').forEach((b) => b.onclick = () => { S.effort = b.dataset.eff; render(); });
   $('expTog').onclick = () => { S.expOpen = !S.expOpen; render(); };
+  $('priInfo').onclick = () => sheet(`<h2>Priority</h2><div class="note" style="display:block;line-height:1.45">A priority gets more of your gym time:<br>· more sets (top of its range)<br>· trained at least twice a week<br>· its exercises straight after the main lift<br><br>Other muscles drop towards maintenance, never below it, and are cut first when time is short. Weights and effort don't change.<br><br>None picked = all muscles equal. ✦ marks the coach's suggestion, from your recent training.</div>`);
+  $('effInfo').onclick = () => sheet(`<h2>Effort</h2><div class="card" style="padding:4px 16px">${[
+    ['Maintain', 'Keep what you have with less time and effort.'],
+    ['Standard', 'Steady progress you can keep up, block after block.'],
+    ['Push', 'Faster progress from harder training. Needs more recovery.'],
+  ].map(([k, v]) => `<div style="padding:10px 0;border-bottom:1px solid var(--divider)"><div style="font-weight:600">${k}</div><div style="font-size:14px;color:var(--text2);line-height:1.4">${v}</div></div>`).join('')}</div>`);
   document.querySelectorAll('[data-focus]').forEach((b) => b.onclick = () => { S.focus = b.dataset.focus; render(); });
   $('focusInfo').onclick = () => sheet(`<h2>Main focus</h2><div class="card" style="padding:4px 16px">${[
     ['Strength', 'Lift heavier on your main lifts. Heavy top sets of 3–6 reps, longer rests, fewer extras.'],
@@ -414,7 +453,7 @@ function renderGoals() {
     render();
   });
   $('addAct').onclick = () => { const n = (prompt('Other training') || '').trim(); if (n) { S.customActs = [...(S.customActs ?? []), n]; S.acts[n] = [3]; render(); } };
-  $('next').onclick = () => go(1);
+  $('next').onclick = () => { if ((S.rev ?? 0) < 5) { S.rev = (S.rev ?? 0) + 1; S.scrollTo = S.rev; render(); } else go(1); };
 }
 
 // Strength balance (Ben, 22 Oct): each main lift's est. 1RM ÷ bench est. 1RM against a rough usual band.
@@ -576,6 +615,8 @@ function renderAmbition() {
 function renderWeek() {
   $('scroll').innerHTML = `
     <h1>Your week</h1>
+    <div class="label">Split</div>
+    <div class="chips">${Object.entries(SPLITS).map(([k, t]) => `<button class="chip sm" data-split="${k}" aria-pressed="${(S.split ?? 'auto') === k}">${t}</button>`).join('')}</div>
     <div class="card"><div class="row"><span>Sessions a week</span><span class="stepper"><button id="fDown" aria-label="Fewer">−</button><span>${S.freq}</span><button id="fUp" aria-label="More">＋</button></span></div></div>
     <div class="chips"><button class="chip" data-sch="fixed" aria-pressed="${S.schedule === 'fixed'}">Set days</button><button class="chip" data-sch="flexible" aria-pressed="${S.schedule === 'flexible'}">Fit them in</button></div>
     ${S.schedule === 'fixed' ? `<div class="label">Gym days · ${S.days.length} of ${S.freq}</div>
@@ -591,6 +632,7 @@ function renderWeek() {
     </div>`;
   $('footer').innerHTML = `<button class="primary" id="next">${S.ai ? 'Build my plan' : 'Build my plan'}</button>`;
   document.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { const d = +b.dataset.day; if (S.days.includes(d)) S.days = S.days.filter((x) => x !== d); else if (S.days.length < S.freq) S.days = [...S.days, d]; else S.days = [...S.days.slice(1), d]; render(); });
+  document.querySelectorAll('[data-split]').forEach((b) => b.onclick = () => { S.split = b.dataset.split; render(); });
   document.querySelectorAll('[data-sch]').forEach((b) => b.onclick = () => { S.schedule = b.dataset.sch; render(); });
   const PREF = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
   $('fDown').onclick = () => { S.freq = Math.max(2, S.freq - 1); S.days = PREF[S.freq]; render(); };
@@ -614,9 +656,10 @@ function coachIntro() {
   const split = [...new Set(S.plan.map((d) => d.focus))].join(' / ').toLowerCase();
   const chestDays = S.plan.filter((d) => d.ex.some((e) => e.m === 'Chest')).length;
   const ws = weeklySets(S.plan); const short = MUSCLES.filter((m) => ws[m] < range(m)[0]);
-  const seven = S.days.length === 7 ? ' No rest day, so one day is light (arms and core).' : '';
+  const once = S.split === 'body' && S.days.length >= 4 ? ' Body part: most muscles once a week, so each session does more for them.' : '';
+  const seven = S.days.length === 7 && (S.split ?? 'auto') === 'auto' ? ' No rest day, so one day is light (arms and core).' : '';
   const sport = S.pri.length ? ` Lifting supports ${S.pri.join(' and ')}: lower volume${S.days.length > 3 ? `, and ${S.days.length} lifting days is a lot alongside ${S.pri.length > 1 ? 'them' : 'it'}; 2–3 is usual` : ''}.` : '';
-  return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${seven}${sport}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}${S.effort === 'Standard' || S.pri.length ? ': add a day or longer sessions.' : ': add a day, longer sessions, or Standard.'}` : ''}`;
+  return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${seven}${once}${sport}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}${S.effort === 'Standard' || S.pri.length ? ': add a day or longer sessions.' : ': add a day, longer sessions, or Standard.'}` : ''}`;
 }
 
 function renderPlan() {
@@ -711,7 +754,7 @@ function editPlan(text) {
 }
 
 // ---------- Sheets ----------
-function sheet(html) { $('sheet').innerHTML = html; $('sheet').classList.add('on'); $('scrim').classList.add('on'); }
+function sheet(html) { $('sheet').innerHTML = `<div style="display:flex;justify-content:flex-end;margin:-6px -4px -10px"><button class="link" id="sheetClose">Done</button></div>` + html; $('sheetClose').onclick = closeSheet; $('sheet').classList.add('on'); $('scrim').classList.add('on'); }
 function closeSheet() { $('sheet').classList.remove('on'); $('scrim').classList.remove('on'); }
 $('scrim').onclick = closeSheet;
 function openFocusSheet(i) {
@@ -753,8 +796,8 @@ $('close').onclick = () => toast('Closes without changing your plan', false);
 function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.page === 'plan' && !on) S.chat = []; render(); }
 $('aiOn').onclick = () => setAi(true);
 $('aiOff').onclick = () => setAi(false);
-$('restart').onclick = () => { Object.assign(S, { page: 'check', priority: ['Back'], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
-$('editExisting').onclick = () => { S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
+$('restart').onclick = () => { Object.assign(S, { rev: 0, page: 'check', priority: ['Back'], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
+$('editExisting').onclick = () => { S.rev = 5; S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
 render();
 </script>
 </body>
