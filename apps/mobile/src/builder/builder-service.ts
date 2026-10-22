@@ -1371,7 +1371,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     },
 
     /** Swap / Add (§2.5): this gym's exercises of a group by focus, minus what's in the workout; pain-flagged ones marked. */
-    async exerciseChoices(draftId: string, req: { slotKey: string | null; group?: BuilderGroup }): Promise<{ group: BuilderGroup; groups: BuilderGroup[]; sections: { focus: string; items: { exerciseId: string; name: string; works: string | null; mayHurt: boolean }[] }[] } | null> {
+    async exerciseChoices(draftId: string, req: { slotKey: string | null; group?: BuilderGroup }): Promise<{ group: BuilderGroup; groups: BuilderGroup[]; sections: { focus: string; items: { exerciseId: string; name: string; works: string | null; mayHurt: boolean; painLine: string | null }[] }[] } | null> {
       const snap = await service.read(draftId);
       if (snap === null) return null;
       const p = await owner();
@@ -1388,7 +1388,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         }),
         (e) => e,
         group,
-      ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id) })) }));
+      ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id) })) }));
       return { group, groups: ['Chest', 'Back', 'Shoulders', 'Legs', 'Biceps', 'Triceps', 'Abs'], sections };
     },
 

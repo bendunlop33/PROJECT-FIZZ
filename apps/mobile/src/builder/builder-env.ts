@@ -13,6 +13,7 @@ import {
   ruleAnchorOf,
   ruleCategory,
   lastSessionE1rm,
+  mayHurtConfirm,
   stableStringify,
   deriveId,
   toMs,
@@ -56,6 +57,8 @@ export interface BuilderEnv {
   painFlagged: (exerciseId: string) => boolean;
   /** The pain that holds a movement (`shoulder flagged 6 Oct`), else null (rule 9; the coach's checks name it). */
   painText: (exerciseId: string) => string | null;
+  /** (Rule 9) The `May hurt` confirm's line for a flagged exercise (`Shoulder pain flagged 6 Oct.`), else null. */
+  painLine: (exerciseId: string) => string | null;
   /** The load references read for an exercise (its loads were worked out from them); null when none were read. */
   refsOf: (exerciseId: string) => LoadReferences | null;
   /** This gym has what the exercise needs (`Not at this gym` otherwise, §2.3). */
@@ -285,6 +288,10 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       },
       painFlagged,
       painText: (id) => painHoldFor(id, flags, { active: false }, nowMs, at.tz)?.text ?? null,
+      painLine: (id) => {
+        const covering = painFlagCovering(flags, id, nowMs, at.tz);
+        return covering === null ? null : mayHurtConfirm({ ...covering.flag, exerciseName: byId.get(id)?.name ?? covering.flag.exerciseName }).message;
+      },
       refsOf: (id) => refsCache.get(id) ?? null,
       doable: (id) => {
         const e = byId.get(id);
