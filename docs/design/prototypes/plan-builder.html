@@ -33,7 +33,7 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 /* Gym goals: every question shows; a circle right of each heading fills once answered, amber if Next is tapped first (Ben, 22 Oct) */
 .label.q { display: flex; align-items: center; gap: 4px; }
 .grp { font-size: 20px; font-weight: 600; margin: 10px 0 0; }
-/* Your exercises, compact (Ben, 22 Oct): shorter boxes, tighter rows and headings */
+/* Any preferences, compact (Ben, 22 Oct): shorter boxes, tighter rows and headings */
 .scroll.prefs { gap: 6px; }
 .prefs .grp { font-size: 17px; margin: 6px 0 0; }
 .prefs .qbox { gap: 5px; padding: 0 0 8px; }
@@ -347,7 +347,7 @@ const PRIOR = { 'Incline DB press': 0.8, 'Cable fly': 0.7, 'Bench press': 0.9, '
   'Barbell curl': 0.7, 'Hammer curl': 0.7, 'Incline DB curl': 0.65, 'Triceps pushdown': 0.8, 'Overhead triceps extension': 0.7,
   'Hip thrust': 0.75, 'Cable kickback': 0.5, 'Hip adduction': 0.7, 'Copenhagen plank': 0.5, 'Hip abduction': 0.7, 'Cable hip abduction': 0.5, 'Wrist curl': 0.6, 'Reverse curl': 0.5,
   'DB bench press': 0.8, 'Hack squat': 0.7, 'Bulgarian split squat': 0.6, 'Assisted pull-up': 0.6, 'Machine shoulder press': 0.7, 'Back squat': 0.85 };
-// Your exercises (Ben, 22 Oct): quick either/or questions before the plan is built, so it's personal from day one.
+// Any preferences (Ben, 22 Oct): quick either/or questions before the plan is built, so it's personal from day one.
 // Grouped Chest, Legs, Back, Shoulders. Each question has four boxes in two rows: #1, #2, Other (any exercise for that
 // muscle), No preference. The pick becomes a like (first choice for that muscle, and the main lift where it is one);
 // the listed option not picked ranks below everything else. ✦ marks what his history already favours.
@@ -400,7 +400,7 @@ function aimFor(m) {
 }
 // Working sets that fit a session: ~3 min per set with rest, ~2.3 with supersets, after an 8-minute warm-up.
 const capSets = () => Math.floor((S.length - 8) / (S.supersets ? 2.3 : 3));
-// A main lift follows his answers on Your exercises (Ben, 22 Oct): a liked alternative replaces it, a never moves it on.
+// A main lift follows his answers on Any preferences (Ben, 22 Oct): a liked alternative replaces it, a never moves it on.
 const MAIN_ALT = { 'Bench press': ['DB bench press', 'Machine chest press', 'Smith bench press'], 'Back squat': ['Leg press', 'Hack squat', 'Front squat', 'Smith squat'], 'Incline bench press': ['Incline DB press', 'Incline machine press', 'Incline Smith press'], 'Pull-up': ['Lat pulldown', 'Assisted pull-up', 'Chin-up'], 'DB shoulder press': ['Machine shoulder press', 'Overhead press', 'Arnold press', 'Smith shoulder press'], 'Barbell row': ['Chest-supported row', 'Seated cable row', 'T-bar row', 'Single-arm DB row'] };
 const mainOf = (focus, variant) => {
   const mn = ((variant === 'B' && DAYS_B[focus]) || DAYS[focus]).ex.find((x) => x[2] === 'main'); if (!mn) return null;
@@ -973,7 +973,7 @@ function renderWeek() {
     <div class="label">Gym</div>
     <div class="seg"><button class="chip" style="padding:0 12px">${esc(S.gym)} ›</button></div>
     <div class="note">Days and length are your usual. On the day you can start any session or change its length.</div>`;
-  $('footer').innerHTML = `<button class="primary" id="next">Next: your exercises</button>`;
+  $('footer').innerHTML = `<button class="primary" id="next">Next: any preferences</button>`;
   document.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { const d = +b.dataset.day; if (S.days.includes(d)) S.days = S.days.filter((x) => x !== d); else if (S.days.length < S.freq) S.days = [...S.days, d]; else S.days = [...S.days.slice(1), d]; render(); });
   document.querySelectorAll('[data-split]').forEach((b) => b.onclick = () => { S.split = b.dataset.split; S.focusOver = {}; render(); });
   document.querySelectorAll('[data-sch]').forEach((b) => b.onclick = () => { S.schedule = b.dataset.sch; render(); });
@@ -1003,7 +1003,7 @@ function renderPrefs() {
   const dot = (ok) => `<span class="qdot${ok ? ' done' : S.prefFlag ? ' miss' : ''}" role="img" aria-label="${ok ? 'Answered' : 'Not answered'}"></span>`;
   const box = (q, a, label) => `<button class="chip" data-pq="${q.id}|${a}" aria-pressed="${ans[q.id] === a || (a === 'other' && typeof ans[q.id] === 'string' && ans[q.id].startsWith('o:'))}">${label}</button>`;
   $('scroll').innerHTML = `
-    <h1>Your exercises</h1>
+    <h1>Any preferences</h1>
     ${PREF_GROUPS.map((g) => { const gq = qs.filter((q) => q.g === g); return gq.length ? `<h2 class="grp">${g}</h2>` + gq.map((q) => { const sug = prefSug(q), a = ans[q.id], other = typeof a === 'string' && a.startsWith('o:') ? a.slice(2) : null; return `<div class="label q">${q.q}${dot(q.id in ans)}</div>
     <div class="grid2">${q.opts.map((o, i) => box(q, i, `${i === sug && !(q.id in ans) ? '✦ ' : ''}${esc(q.labels?.[i] ?? o[0])}`)).join('')}${box(q, 'other', other ? esc(other) : 'Other')}${box(q, 'either', 'No preference')}</div>`; }).join('') : ''; }).join('')}
     <h2 class="grp">Anything else</h2>
