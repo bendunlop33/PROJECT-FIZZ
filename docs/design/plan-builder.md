@@ -9,10 +9,15 @@ Status: **Draft for Ben, 22 Oct 2026.** Prototype: [prototypes/plan-builder.html
 One screen flow that turns your goals and week into a plan you can adjust before applying. It's the same screen for a new plan and for editing the one you have.
 
 1. **Goals**: main focus (Strength / Muscle / Both / Fitness / Maintain), lift targets with optional dates (Bench 110 by 15 Dec), priority muscles, runs on/off.
-2. **Week**: which days you lift, which days you run (and the long run), session length, gym.
-3. **Your plan**: proposed split, each day's focus and main lift, sets per muscle per week against target bands, and the 6-week block with a deload. Each day opens to its exercises with weights from your history (and opens in the workout builder).
-4. **Adjust**: tap (change a day's focus, move a day) or tell the coach ("make it 3 days", "no legs before my long run", "more chest"). The words decide: a full description rebuilds the plan, a change request edits only that part, unclear asks **Build new / Change this one**. Every change has Undo.
-5. **Apply** (Undo). Today, Library › Your plan and Progress then follow it.
+2. **Length and effort** (Ben, 22 Oct): plan length (4 / 6 / 8 / 12 weeks, or to a target date) and how hard to push:
+   - **Steady**: RPE 6–8, lower set bands, add load only when reps top out; deload only if needed. For busy spells or heavy run weeks.
+   - **Standard**: RPE 7–9, middle bands, one step when you hit the plan; deload in the last week.
+   - **Push**: RPE 8–9.5, higher bands (+1 back-off on main lifts), a step every session you hit it; deload every 4th week. Needs sleep, food and fewer hard runs.
+   Each shows the main target lift's estimated top set at the end (`Bench est. 105`, labelled est., rule 6) and which level reaches a dated target, or says it isn't reachable in that length.
+3. **Week** (Ben, 22 Oct): sessions a week, then **Set days** (pick them) or **Fit them in** (next session in order whenever you train; no legs the day before a long run). Runs and long run, session length, gym.
+4. **Your plan**: proposed split, each day's focus and main lift, sets per muscle per week against target bands, and the 6-week block with a deload. Each day opens to its exercises with weights from your history (and opens in the workout builder).
+5. **Adjust**: tap (change a day's focus, move a day) or tell the coach ("make it 3 days", "no legs before my long run", "more chest"). The words decide: a full description rebuilds the plan, a change request edits only that part, unclear asks **Build new / Change this one**. Every change has Undo.
+6. **Apply** (Undo). Today, Library › Your plan and Progress then follow it.
 
 **Offline:** the app builds the same plan from its rules, marked **Not reviewed**; tap edits still work, the coach box is disabled.
 
@@ -20,7 +25,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 - **Split from days and focus** (GA2–GA4, GA9): 2 days → full body ×2; 3 → push/pull/legs (Strength: full body ×3); 4 → push/pull/legs/upper (Strength: upper/lower ×2); 5 → PPL + upper + lower; 6 → PPL ×2. [Proposal]
 - **Main lift first** on each day; heavy lifts never superset (workout-builder-v3 §3.4–3.5).
-- **Sets per muscle per week** balanced into the target band: priority muscles 12–20, others 8–14, small muscles 4–10 (V4, GA3) by adding or removing a set on that muscle's accessories (2–5 sets each). Bands shown as a shaded range; ↑/↓ only when outside. [Proposal]
+- **Sets per muscle per week** balanced into the effort level's band (Standard: priority 12–20, others 8–14, small 4–10; Steady and Push shift down/up, §1) (V4, GA3) by adding or removing a set on that muscle's accessories (2–5 sets each). Bands shown as a shaded range; ↑/↓ only when outside. [Proposal]
 - **Length** caps exercises per day (≤ 45 min: 4, ≤ 60: 6, longer: 7); time budget per playbook D17.
 - **Runs** (GA11, GA15): no legs the day before the long run; swapped with the furthest non-leg day.
 - **Weights** from history per exercise (history-targets HT rules once approved; until then the Build C load order). Why? per exercise: "Last time 90 × 12".
@@ -43,5 +48,7 @@ Writes the existing plan model (coach plan draft → applied, plan days as routi
 1. **Today with a plan (Ben, 22 Oct):** "if we have a defined plan, the plan tweaker on Today is just editing what we already planned, so it shouldn't be the default." Proposal: with a plan, Today shows the planned workout ready to **Start**; changing it is behind **Edit** (one-off for today) or **Edit plan** (here). The Set up screen only appears for a workout outside the plan (no plan, or "＋ New workout"). Agree?
 2. Split defaults per days/focus (§2), OK?
 3. Sets bands (priority 12–20, others 8–14, small 4–10), OK?
-4. Should the plan carry fixed weekdays (Mon/Tue/Thu/Sat) or a rotation (A, B, C, D in order whenever you train)? Current app: rotation (D19). Runs need weekdays.
+4. ~~Fixed weekdays or rotation?~~ Answered (22 Oct): Ben chooses per plan, Set days or Fit them in.
+6. Effort level names and numbers (Steady / Standard / Push, §1), and the estimated weekly gain behind `Bench est.` (Steady +0.6, Standard +1.25, Push +2 kg a week on the top set, an assumption to be replaced by his own trend once history-targets is built)?
+7. Also ask in the flow? Proposed extras, all optional and prefilled from Profile/history: experience (sets starting volume), exercises to always include or avoid, variety (keep the same accessories vs rotate each block), supersets on/off, abs/cardio finishers, injuries (existing pain flags shown, not re-asked), start date.
 5. Coach-in-chat "build me a plan": open this screen (proposed) or keep the chat card?

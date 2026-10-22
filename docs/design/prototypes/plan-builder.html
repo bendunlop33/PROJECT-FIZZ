@@ -128,7 +128,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="status"><span>9:41</span><span>●●● 100%</span></div>
     <div class="hdr">
       <button class="link dim" id="back" aria-label="Back">‹ Back</button>
-      <span class="steps" id="steps">1 of 3</span>
+      <span class="steps" id="steps">1 of 4</span>
       <button class="link dim" id="close">Close</button>
     </div>
     <div class="scroll" id="scroll"></div>
@@ -179,7 +179,7 @@ const WD = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const S = {
   ai: true, step: 0, focus: 'Both', targets: [{ lift: 'Bench press', kg: 110, by: '15 Dec' }],
   priority: ['Chest'], runs: true, longRunDay: 6, runDays: [2, 6],
-  days: [0, 1, 3, 5], length: 60, gym: 'PureGym Leeds',
+  days: [0, 1, 3, 5], freq: 4, schedule: 'fixed', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
 };
 let undoStack = [];
@@ -232,7 +232,8 @@ function exercisesFor(focus) {
     if (role === 'main') {
       const top = snap(h.kg + 2.5), back = snap(top * 0.9);
       const strength = S.focus === 'Strength';
-      return { n, m, role, sets: strength ? 4 : 3, line: `Top ${top} × ${strength ? 5 : 6} · ${strength ? 3 : 2} × ${back} × 8`, why: `Last time ${h.last} → +2.5` };
+      const backs = (strength ? 3 : 2) + (S.effort === 'Push' ? 1 : 0) - (S.effort === 'Steady' ? 1 : 0);
+      return { n, m, role, sets: backs + 1, line: `Top ${top} × ${strength ? 5 : 6} · ${backs} × ${back} × 8`, why: `Last time ${h.last} → +2.5` };
     }
     const reps = Math.max(8, Math.min(15, h.reps));
     const sets = pri ? 4 : 3;
@@ -245,14 +246,23 @@ function weeklySets(plan) {
   plan.forEach((d) => d.ex.forEach((e) => { out[e.m] += e.sets; }));
   return out;
 }
-const range = (m) => S.priority.includes(m) ? [12, 20] : (['Calves','Biceps','Triceps'].includes(m) ? [4, 10] : [8, 14]);
+// Effort levels: how hard the plan pushes. Bands are weekly hard sets (V4/GA3), shifted by level. [Proposal]
+const EFFORT = {
+  Steady:   { pri: [10, 14], oth: [6, 10],  sm: [4, 6],  rpe: '6–8', step: 'Add load when reps top out at RPE ≤ 8', deload: 'Only if needed', perWk: 0.6, line: 'Keep progressing with less fatigue. Good alongside runs or a busy spell.' },
+  Standard: { pri: [12, 20], oth: [8, 14],  sm: [4, 10], rpe: '7–9', step: 'One step when you hit the plan',          deload: 'Last week',      perWk: 1.25, line: 'Steady weekly progress you can keep up block after block.' },
+  Push:     { pri: [16, 22], oth: [10, 16], sm: [6, 12], rpe: '8–9.5', step: 'One step every session you hit it',    deload: 'Every 4th week', perWk: 2, line: 'Faster progress, more sets and harder sets. Needs sleep, food and fewer hard runs.' },
+};
+const range = (m) => { const e = EFFORT[S.effort]; return S.priority.includes(m) ? e.pri : (['Calves','Biceps','Triceps'].includes(m) ? e.sm : e.oth); };
+const deloadText = () => S.effort === 'Steady' ? 'no set deload' : S.effort === 'Push' ? 'deload every 4th week' : `deload week ${S.weeks}`;
+// Estimate only (rule 6): the main target lift's top set after the plan, at the level's typical weekly gain.
+const projected = (lvl) => snap(HIST['Bench press'].kg + EFFORT[lvl].perWk * S.weeks);
 
 // ---------- Render ----------
 function render() {
   const steps = ['Goals', 'Week', 'Your plan'];
-  $('steps').textContent = S.applied ? 'Your plan' : `${S.step + 1} of 3`;
+  $('steps').textContent = S.applied ? 'Your plan' : `${S.step + 1} of 4`;
   $('back').style.visibility = S.step === 0 || S.applied ? 'hidden' : 'visible';
-  [renderGoals, renderWeek, renderPlan][S.step]();
+  [renderGoals, renderAmbition, renderWeek, renderPlan][S.step]();
 }
 
 function renderGoals() {
@@ -276,11 +286,32 @@ function renderGoals() {
   $('next').onclick = () => { S.step = 1; render(); };
 }
 
+function renderAmbition() {
+  const t = S.targets.find((x) => x.lift === 'Bench press');
+  const need = t ? ['Steady', 'Standard', 'Push'].find((l) => projected(l) >= t.kg) : null;
+  $('scroll').innerHTML = `
+    <h1>Plan length and effort</h1>
+    <div class="label">Length</div>
+    <div class="chips">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w && !S.toDate}">${w} weeks</button>`).join('')}${t?.by ? `<button class="chip" data-wk="8" data-todate="1" aria-pressed="${!!S.toDate}">To ${esc(t.by)}</button>` : ''}</div>
+    <div class="label">Effort</div>
+    ${['Steady', 'Standard', 'Push'].map((l) => { const e = EFFORT[l]; return `<button class="card" data-eff="${l}" style="text-align:left;border:${S.effort === l ? '2px solid var(--accent)' : '2px solid transparent'};color:var(--text);cursor:pointer;padding:12px 16px;gap:4px;font:inherit">
+      <span style="display:flex;justify-content:space-between;font-size:17px;font-weight:600"><span>${l}${need === l ? ' <span class="badge">· reaches your target</span>' : ''}</span><span style="font-size:14px;color:var(--text2);font-weight:400">Bench est. ${projected(l)}</span></span>
+      <span style="font-size:14px;color:var(--text2)">${e.line}</span>
+      <span style="font-size:13px;color:var(--text3)">RPE ${e.rpe} · ${e.oth[0]}–${e.oth[1]} sets a muscle · ${e.deload.toLowerCase()}</span></button>`; }).join('')}
+    ${t ? `<div class="note">Bench ${t.kg}${t.by ? ' by ' + esc(t.by) : ''}: ${need ? `${need} gets there (est.)` : 'not reachable in this length (est.); try longer or Push'}</div>` : ''}`;
+  $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
+  document.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => { S.weeks = +b.dataset.wk; S.toDate = !!b.dataset.todate; render(); });
+  document.querySelectorAll('[data-eff]').forEach((b) => b.onclick = () => { S.effort = b.dataset.eff; render(); });
+  $('next').onclick = () => { S.step = 2; render(); };
+}
+
 function renderWeek() {
   $('scroll').innerHTML = `
     <h1>Your week</h1>
-    <div class="label">Gym days · ${S.days.length}</div>
-    <div class="week daypick">${WD.map((d, i) => `<button class="day ${S.runs && S.runDays.includes(i) ? 'runday' : ''}" data-day="${i}" aria-pressed="${S.days.includes(i)}"><span class="dn">${d}</span></button>`).join('')}</div>
+    <div class="card"><div class="row"><span>Sessions a week</span><span class="stepper"><button id="fDown" aria-label="Fewer">−</button><span>${S.freq}</span><button id="fUp" aria-label="More">＋</button></span></div></div>
+    <div class="chips"><button class="chip" data-sch="fixed" aria-pressed="${S.schedule === 'fixed'}">Set days</button><button class="chip" data-sch="flexible" aria-pressed="${S.schedule === 'flexible'}">Fit them in</button></div>
+    ${S.schedule === 'fixed' ? `<div class="label">Gym days · ${S.days.length} of ${S.freq}</div>
+    <div class="week daypick">${WD.map((d, i) => `<button class="day ${S.runs && S.runDays.includes(i) ? 'runday' : ''}" data-day="${i}" aria-pressed="${S.days.includes(i)}"><span class="dn">${d}</span></button>`).join('')}</div>` : `<div class="note">Next session in order whenever you train. No legs the day before a long run.</div>`}
     ${S.runs ? `<div class="label">Runs</div>
     <div class="week daypick">${WD.map((d, i) => `<button class="day" data-run="${i}" aria-pressed="${S.runDays.includes(i)}" style="${S.runDays.includes(i) ? 'background:var(--run-sub);color:var(--run)' : ''}"><span class="dn" style="${S.runDays.includes(i) ? 'color:var(--run)' : ''}">${d}${i === S.longRunDay ? ' ·L' : ''}</span></button>`).join('')}</div>
     <div class="note">Long run: ${WD[S.longRunDay]} <button class="link dim" id="longRun">Change</button></div>` : ''}
@@ -289,14 +320,19 @@ function renderWeek() {
       <div class="row"><span>Gym</span><span class="v">${esc(S.gym)} ›</span></div>
     </div>`;
   $('footer').innerHTML = `<button class="primary" id="next">${S.ai ? 'Build my plan' : 'Build my plan'}</button>`;
-  document.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { const d = +b.dataset.day; S.days = S.days.includes(d) ? S.days.filter((x) => x !== d) : [...S.days, d]; render(); });
+  document.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { const d = +b.dataset.day; if (S.days.includes(d)) S.days = S.days.filter((x) => x !== d); else if (S.days.length < S.freq) S.days = [...S.days, d]; else S.days = [...S.days.slice(1), d]; render(); });
+  document.querySelectorAll('[data-sch]').forEach((b) => b.onclick = () => { S.schedule = b.dataset.sch; render(); });
+  const PREF = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] };
+  $('fDown').onclick = () => { S.freq = Math.max(2, S.freq - 1); S.days = PREF[S.freq]; render(); };
+  $('fUp').onclick = () => { S.freq = Math.min(6, S.freq + 1); S.days = PREF[S.freq]; render(); };
   document.querySelectorAll('[data-run]').forEach((b) => b.onclick = () => { const d = +b.dataset.run; S.runDays = S.runDays.includes(d) ? S.runDays.filter((x) => x !== d) : [...S.runDays, d]; if (!S.runDays.includes(S.longRunDay)) S.longRunDay = S.runDays.at(-1) ?? 6; render(); });
   if ($('longRun')) $('longRun').onclick = () => { const i = S.runDays.indexOf(S.longRunDay); S.longRunDay = S.runDays[(i + 1) % S.runDays.length]; render(); };
   $('lenDown').onclick = () => { S.length = Math.max(30, S.length - 15); render(); };
   $('lenUp').onclick = () => { S.length = Math.min(120, S.length + 15); render(); };
   $('next').onclick = () => {
-    if (S.days.length === 0) return;
-    S.plan = build(); S.step = 2; S.chat = []; S.open = -1;
+    if (S.schedule === 'fixed' && S.days.length !== S.freq) { toast(`Pick ${S.freq} days`, false); return; }
+    if (S.schedule === 'flexible') S.days = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] }[S.freq];
+    S.plan = build(); S.step = 3; S.chat = []; S.open = -1;
     if (S.ai) S.chat.push({ who: 'co', text: coachIntro() });
     render();
   };
@@ -305,7 +341,9 @@ function renderWeek() {
 function coachIntro() {
   const moved = S.plan.find((p) => p.moved);
   const split = [...new Set(S.plan.map((d) => d.focus))].join(' / ').toLowerCase();
-  return `${S.days.length} days, ${split}: chest twice a week toward bench 110.${moved ? ` Legs moved off ${WD[moved.day]}, the day before your long run.` : ''}`;
+  const chestDays = S.plan.filter((d) => d.ex.some((e) => e.m === 'Chest')).length;
+  const ws = weeklySets(S.plan); const short = MUSCLES.filter((m) => ws[m] < range(m)[0]);
+  return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week toward bench 110.${moved ? ` Legs moved off ${WD[moved.day]}, the day before your long run.` : ''}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}: add a day, longer sessions, or Standard.` : ''}`;
 }
 
 function renderPlan() {
@@ -318,13 +356,13 @@ function renderPlan() {
   }).join('');
   $('scroll').innerHTML = `
     <div class="hdr" style="min-height:0"><h1>Your plan</h1>${S.ai ? '' : '<span class="badge">Not reviewed</span>'}</div>
-    <div class="blk"><span>6 weeks · deload week 6</span><span>${esc(S.focus)} · ${S.length} min</span></div>
-    <div class="week">${strip}</div>
+    <div class="blk"><span>${S.weeks} weeks · ${esc(S.effort)} · ${deloadText()}</span><span>${S.length} min</span></div>
+    ${S.schedule === 'flexible' ? `<div class="chips">${p.map((d, i) => `<button class="chip sm" data-toggle="${i}" aria-pressed="${S.open === i}">${'ABCDEF'[i]} · ${esc(d.focus)}</button>`).join('')}</div>` : `<div class="week">${strip}</div>`}
     ${p.map((d, i) => `<div class="dcard ${S.open === i ? 'open' : ''}" data-card="${i}">
-      <div class="dtop" data-toggle="${i}"><span><div class="nm">${WD[d.day]} · ${esc(d.focus)}</div><div class="sub">${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
+      <div class="dtop" data-toggle="${i}"><span><div class="nm">${S.schedule === 'flexible' ? 'ABCDEF'[i] : WD[d.day]} · ${esc(d.focus)}</div><div class="sub">${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
         <span class="rt">${d.ex.length} ex · ~${S.length}′<span class="chev">›</span></span></div>
       <div class="ex">${d.ex.map((e) => `<div class="exr ${e.role === 'main' ? 'main' : ''}"><span class="n">${esc(e.n)}</span><span class="w">${esc(e.line)}</span><span class="m">${esc(e.m)}</span><span class="m" style="text-align:right">${esc(e.why)}</span></div>`).join('')}
-        <div class="dact"><button class="link" data-swap="${i}">Change focus</button><button class="link" data-move="${i}">Move day</button><button class="link dim" data-open="${i}">Open in builder ›</button></div>
+        <div class="dact"><button class="link" data-swap="${i}">Change focus</button>${S.schedule === 'fixed' ? `<button class="link" data-move="${i}">Move day</button>` : ''}<button class="link dim" data-open="${i}">Open in builder ›</button></div>
       </div></div>`).join('')}
     <div class="label">Sets per week</div>
     <div class="card" style="padding:10px 16px">${MUSCLES.map((m) => { const [lo, hi] = range(m); const n = ws[m]; const max = 24; return `<div class="vol ${S.priority.includes(m) ? 'pri' : ''}"><span class="mn">${m}</span><span class="bar"><span class="rng" style="left:${lo / max * 100}%;width:${(hi - lo) / max * 100}%"></span><span class="fill" style="width:${Math.min(n, max) / max * 100}%"></span></span><span class="n">${n}${n < lo ? ' ↓' : n > hi ? ' ↑' : ''}</span></div>`; }).join('')}
@@ -428,11 +466,11 @@ $('undo').onclick = () => { $('toast').classList.remove('on'); if (undoFn) undoF
 // ---------- Header + controls ----------
 $('back').onclick = () => { if (S.step > 0) { S.step -= 1; render(); } };
 $('close').onclick = () => toast('Closes without changing your plan', false);
-function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.step === 2 && !on) S.chat = []; render(); }
+function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.step === 3 && !on) S.chat = []; render(); }
 $('aiOn').onclick = () => setAi(true);
 $('aiOff').onclick = () => setAi(false);
 $('restart').onclick = () => { Object.assign(S, { step: 0, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
-$('editExisting').onclick = () => { S.plan = build(); S.step = 2; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
+$('editExisting').onclick = () => { S.plan = build(); S.step = 3; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
 render();
 </script>
 </body>
