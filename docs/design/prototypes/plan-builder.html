@@ -215,7 +215,15 @@ const HIST = {
   'Copenhagen plank': { kg: 0, reps: 8, none: true }, 'Hip abduction': { kg: 50, reps: 15, none: true },
   'Cable hip abduction': { kg: 7.5, reps: 12, none: true }, 'Wrist curl': { kg: 20, reps: 15, none: true },
   'Reverse curl': { kg: 20, reps: 12, none: true }, 'Cable woodchop': { kg: 15, reps: 12, none: true },
-  'DB bench press': { kg: 34, each: true, reps: 8, none: true }, 'Hack squat': { kg: 100, reps: 10, none: true },
+  'DB bench press': { kg: 34, each: true, reps: 8, none: true },
+  'Machine chest press': { kg: 70, reps: 10, none: true }, 'Smith bench press': { kg: 80, reps: 8, none: true }, 'Push-up': { kg: 0, reps: 15, none: true },
+  'Incline machine press': { kg: 60, reps: 10, none: true }, 'Incline Smith press': { kg: 70, reps: 8, none: true },
+  'Smith squat': { kg: 100, reps: 8, none: true }, 'Walking lunge': { kg: 16, each: true, reps: 10, none: true }, 'Goblet squat': { kg: 30, reps: 10, none: true }, 'Step-up': { kg: 14, each: true, reps: 10, none: true },
+  'Seated leg curl': { kg: 50, reps: 12, none: true }, 'Nordic curl': { kg: 0, reps: 5, none: true }, 'Good morning': { kg: 50, reps: 10, none: true }, 'Glute bridge': { kg: 80, reps: 12, none: true },
+  'Chin-up': { kg: 0, reps: 8, none: true }, 'Single-arm pulldown': { kg: 30, reps: 12, none: true }, 'Seated cable row': { kg: 65, reps: 10, none: true },
+  'Single-arm DB row': { kg: 36, reps: 10, none: true }, 'T-bar row': { kg: 60, reps: 10, none: true },
+  'Arnold press': { kg: 20, each: true, reps: 10, none: true }, 'Smith shoulder press': { kg: 50, reps: 8, none: true },
+  'Reverse pec deck': { kg: 40, reps: 15, none: true }, 'Cable rear delt fly': { kg: 7.5, reps: 15, none: true }, 'Band pull-apart': { kg: 0, reps: 20, none: true }, 'Hack squat': { kg: 100, reps: 10, none: true },
   'Bulgarian split squat': { kg: 16, each: true, reps: 10, none: true }, 'Assisted pull-up': { kg: 0, reps: 10, none: true, assist: true },
 };
 // Day templates: [exercise, muscle, role]
@@ -315,15 +323,15 @@ const ELIG = {
 };
 // Exercises per muscle: [name, role (c compound / i isolation), specific targets it covers, day types it skips].
 const EX = {
-  Chest: [['Incline DB press', 'c', ['Upper chest']], ['Cable fly', 'i'], ['Bench press', 'c'], ['Incline bench press', 'c', ['Upper chest']], ['Low-to-high cable fly', 'i', ['Upper chest']], ['DB bench press', 'c']],
-  Back: [['Lat pulldown', 'c', ['Lats']], ['Chest-supported row', 'c', ['Upper back']], ['Pull-up', 'c', ['Lats']], ['Barbell row', 'c', ['Upper back']], ['Shrugs', 'i', ['Traps']], ['Assisted pull-up', 'c', ['Lats']]],
-  Shoulders: [['Lateral raise', 'i', ['Side delts']], ['Face pull', 'i', ['Rear delts']], ['DB shoulder press', 'c', [], ['Pull']], ['Rear delt fly', 'i', ['Rear delts']], ['Machine shoulder press', 'c', [], ['Pull']]],
-  Quads: [['Leg press', 'c'], ['Leg extension', 'i'], ['Front squat', 'c'], ['Hack squat', 'c'], ['Bulgarian split squat', 'c']],
-  Hamstrings: [['Romanian deadlift', 'c'], ['Leg curl', 'i']],
+  Chest: [['Incline DB press', 'c', ['Upper chest']], ['Cable fly', 'i'], ['Bench press', 'c'], ['Incline bench press', 'c', ['Upper chest']], ['Low-to-high cable fly', 'i', ['Upper chest']], ['DB bench press', 'c'], ['Machine chest press', 'c'], ['Smith bench press', 'c'], ['Push-up', 'c'], ['Incline machine press', 'c', ['Upper chest']], ['Incline Smith press', 'c', ['Upper chest']]],
+  Back: [['Lat pulldown', 'c', ['Lats']], ['Chest-supported row', 'c', ['Upper back']], ['Pull-up', 'c', ['Lats']], ['Barbell row', 'c', ['Upper back']], ['Shrugs', 'i', ['Traps']], ['Assisted pull-up', 'c', ['Lats']], ['Chin-up', 'c', ['Lats']], ['Single-arm pulldown', 'c', ['Lats']], ['Seated cable row', 'c', ['Upper back']], ['Single-arm DB row', 'c', ['Upper back']], ['T-bar row', 'c', ['Upper back']]],
+  Shoulders: [['Lateral raise', 'i', ['Side delts']], ['Face pull', 'i', ['Rear delts']], ['DB shoulder press', 'c', [], ['Pull']], ['Rear delt fly', 'i', ['Rear delts']], ['Machine shoulder press', 'c', [], ['Pull']], ['Overhead press', 'c', [], ['Pull']], ['Arnold press', 'c', [], ['Pull']], ['Smith shoulder press', 'c', [], ['Pull']], ['Reverse pec deck', 'i', ['Rear delts']], ['Cable rear delt fly', 'i', ['Rear delts']], ['Band pull-apart', 'i', ['Rear delts']]],
+  Quads: [['Leg press', 'c'], ['Leg extension', 'i'], ['Front squat', 'c'], ['Hack squat', 'c'], ['Bulgarian split squat', 'c'], ['Smith squat', 'c'], ['Walking lunge', 'c'], ['Goblet squat', 'c'], ['Step-up', 'c']],
+  Hamstrings: [['Romanian deadlift', 'c'], ['Leg curl', 'i'], ['Seated leg curl', 'i'], ['Nordic curl', 'i'], ['Good morning', 'c']],
   Calves: [['Calf raise', 'i'], ['Seated calf raise', 'i']],
   Biceps: [['Barbell curl', 'i'], ['Hammer curl', 'i'], ['Incline DB curl', 'i']],
   Triceps: [['Triceps pushdown', 'i'], ['Overhead triceps extension', 'i']],
-  Glutes: [['Hip thrust', 'c'], ['Cable kickback', 'i']],
+  Glutes: [['Hip thrust', 'c'], ['Cable kickback', 'i'], ['Glute bridge', 'c']],
   Adductors: [['Hip adduction', 'i'], ['Copenhagen plank', 'i']],
   Abductors: [['Hip abduction', 'i'], ['Cable hip abduction', 'i']],
   Forearms: [['Wrist curl', 'i'], ['Reverse curl', 'i']],
@@ -345,16 +353,16 @@ const PRIOR = { 'Incline DB press': 0.8, 'Cable fly': 0.7, 'Bench press': 0.9, '
 // the listed option not picked ranks below everything else. ✦ marks what his history already favours.
 const PREF_GROUPS = ['Chest', 'Legs', 'Back', 'Shoulders'];
 const PREF_Q = [
-  { id: 'flat', g: 'Chest', q: 'Flat press', m: 'Chest', opts: [['Bench press'], ['DB bench press']], labels: ['Barbell', 'Dumbbell'] },
-  { id: 'incline', g: 'Chest', q: 'Incline press', m: 'Chest', opts: [['Incline bench press'], ['Incline DB press']], labels: ['Barbell', 'Dumbbell'] },
-  { id: 'squat', g: 'Legs', q: 'Main leg lift', m: 'Quads', opts: [['Back squat'], ['Leg press']], labels: ['Squat', 'Leg press'] },
-  { id: 'quads', g: 'Legs', q: 'Quad extra', m: 'Quads', opts: [['Leg extension'], ['Bulgarian split squat']], labels: ['Leg extension', 'Split squat'] },
-  { id: 'ham', g: 'Legs', q: 'Hamstrings', m: 'Hamstrings', opts: [['Romanian deadlift'], ['Leg curl']], labels: ['RDL', 'Leg curl'] },
-  { id: 'hips', g: 'Legs', q: 'Hips', m: 'Glutes', opts: [['Hip thrust'], ['Hip adduction', 'Hip abduction']], labels: ['Hip thrust', 'In/out machines'], when: () => S.spec.some((t) => ['Glutes', 'Adductors', 'Abductors'].includes(t)) || S.priority.includes('Legs') },
-  { id: 'vpull', g: 'Back', q: 'Lats', m: 'Back', opts: [['Pull-up'], ['Lat pulldown']], labels: ['Pull-ups', 'Lat pulldown'] },
-  { id: 'row', g: 'Back', q: 'Row', m: 'Back', opts: [['Barbell row'], ['Chest-supported row']], labels: ['Barbell', 'Chest-supported'] },
-  { id: 'shp', g: 'Shoulders', q: 'Shoulder press', m: 'Shoulders', opts: [['DB shoulder press'], ['Machine shoulder press']], labels: ['Dumbbell', 'Machine'] },
-  { id: 'rear', g: 'Shoulders', q: 'Rear delts', m: 'Shoulders', opts: [['Face pull'], ['Rear delt fly']], labels: ['Face pull', 'Rear delt fly'] },
+  { id: 'flat', g: 'Chest', q: 'Flat press', m: 'Chest', opts: [['Bench press'], ['DB bench press']], labels: ['Barbell', 'Dumbbell'], other: ['Machine chest press', 'Smith bench press', 'Push-up'] },
+  { id: 'incline', g: 'Chest', q: 'Incline press', m: 'Chest', opts: [['Incline bench press'], ['Incline DB press']], labels: ['Barbell', 'Dumbbell'], other: ['Incline machine press', 'Incline Smith press', 'Low-to-high cable fly'] },
+  { id: 'squat', g: 'Legs', q: 'Main leg lift', m: 'Quads', opts: [['Back squat'], ['Leg press']], labels: ['Squat', 'Leg press'], other: ['Hack squat', 'Front squat', 'Smith squat'] },
+  { id: 'quads', g: 'Legs', q: 'Quad extra', m: 'Quads', opts: [['Leg extension'], ['Bulgarian split squat']], labels: ['Leg extension', 'Split squat'], other: ['Walking lunge', 'Goblet squat', 'Step-up'] },
+  { id: 'ham', g: 'Legs', q: 'Hamstrings', m: 'Hamstrings', opts: [['Romanian deadlift'], ['Leg curl']], labels: ['RDL', 'Leg curl'], other: ['Seated leg curl', 'Nordic curl', 'Good morning'] },
+  { id: 'hips', g: 'Legs', q: 'Hips', m: 'Glutes', opts: [['Hip thrust'], ['Hip adduction', 'Hip abduction']], labels: ['Hip thrust', 'In/out machines'], when: () => S.spec.some((t) => ['Glutes', 'Adductors', 'Abductors'].includes(t)) || S.priority.includes('Legs'), other: ['Glute bridge', 'Cable kickback', 'Cable hip abduction'] },
+  { id: 'vpull', g: 'Back', q: 'Lats', m: 'Back', opts: [['Pull-up'], ['Lat pulldown']], labels: ['Pull-ups', 'Lat pulldown'], other: ['Assisted pull-up', 'Chin-up', 'Single-arm pulldown'] },
+  { id: 'row', g: 'Back', q: 'Row', m: 'Back', opts: [['Barbell row'], ['Chest-supported row']], labels: ['Barbell', 'Chest-supported'], other: ['Seated cable row', 'Single-arm DB row', 'T-bar row'] },
+  { id: 'shp', g: 'Shoulders', q: 'Shoulder press', m: 'Shoulders', opts: [['DB shoulder press'], ['Machine shoulder press']], labels: ['Dumbbell', 'Machine'], other: ['Overhead press', 'Arnold press', 'Smith shoulder press'] },
+  { id: 'rear', g: 'Shoulders', q: 'Rear delts', m: 'Shoulders', opts: [['Face pull'], ['Rear delt fly']], labels: ['Face pull', 'Rear delt fly'], other: ['Reverse pec deck', 'Cable rear delt fly', 'Band pull-apart'] },
 ];
 const prefQs = () => PREF_Q.filter((q) => !q.when || q.when());
 // Answer: 0 / 1 (listed option), 'o:<exercise>' (Other), 'either' (No preference).
@@ -393,7 +401,7 @@ function aimFor(m) {
 // Working sets that fit a session: ~3 min per set with rest, ~2.3 with supersets, after an 8-minute warm-up.
 const capSets = () => Math.floor((S.length - 8) / (S.supersets ? 2.3 : 3));
 // A main lift follows his answers on Your exercises (Ben, 22 Oct): a liked alternative replaces it, a never moves it on.
-const MAIN_ALT = { 'Bench press': ['DB bench press'], 'Back squat': ['Leg press', 'Hack squat'], 'Incline bench press': ['Incline DB press'], 'Pull-up': ['Assisted pull-up', 'Lat pulldown'], 'DB shoulder press': ['Machine shoulder press'] };
+const MAIN_ALT = { 'Bench press': ['DB bench press', 'Machine chest press', 'Smith bench press'], 'Back squat': ['Leg press', 'Hack squat', 'Front squat', 'Smith squat'], 'Incline bench press': ['Incline DB press', 'Incline machine press', 'Incline Smith press'], 'Pull-up': ['Lat pulldown', 'Assisted pull-up', 'Chin-up'], 'DB shoulder press': ['Machine shoulder press', 'Overhead press', 'Arnold press', 'Smith shoulder press'], 'Barbell row': ['Chest-supported row', 'Seated cable row', 'T-bar row', 'Single-arm DB row'] };
 const mainOf = (focus, variant) => {
   const mn = ((variant === 'B' && DAYS_B[focus]) || DAYS[focus]).ex.find((x) => x[2] === 'main'); if (!mn) return null;
   const alts = MAIN_ALT[mn[0]] ?? [], liked = alts.find((a) => allLikes().includes(a));
@@ -576,7 +584,7 @@ function pairUp(list) {
 // the fractional counting that best predicts growth in volume meta-regressions (Pelland et al. 2024).
 const SEC = { 'Bench press': { Triceps: 0.5 }, 'Incline bench press': { Triceps: 0.5 }, 'Incline DB press': { Triceps: 0.5 }, 'DB shoulder press': { Triceps: 0.5 },
   'Barbell row': { Biceps: 0.5 }, 'Chest-supported row': { Biceps: 0.5 }, 'Lat pulldown': { Biceps: 0.5 }, 'Pull-up': { Biceps: 0.5 },
-  'Back squat': { Glutes: 0.5 }, 'Front squat': { Glutes: 0.5 }, 'Leg press': { Glutes: 0.5 }, 'Romanian deadlift': { Glutes: 0.5 }, 'Hip thrust': { Hamstrings: 0.5 } };
+  'Back squat': { Glutes: 0.5 }, 'Machine chest press': { Triceps: 0.5 }, 'Smith bench press': { Triceps: 0.5 }, 'Push-up': { Triceps: 0.5 }, 'Incline machine press': { Triceps: 0.5 }, 'Incline Smith press': { Triceps: 0.5 }, 'Overhead press': { Triceps: 0.5 }, 'Arnold press': { Triceps: 0.5 }, 'Smith shoulder press': { Triceps: 0.5 }, 'Chin-up': { Biceps: 0.5 }, 'Seated cable row': { Biceps: 0.5 }, 'T-bar row': { Biceps: 0.5 }, 'Single-arm DB row': { Biceps: 0.5 }, 'Smith squat': { Glutes: 0.5 }, 'Walking lunge': { Glutes: 0.5 }, 'Goblet squat': { Glutes: 0.5 }, 'Step-up': { Glutes: 0.5 }, 'Front squat': { Glutes: 0.5 }, 'Leg press': { Glutes: 0.5 }, 'Romanian deadlift': { Glutes: 0.5 }, 'Hip thrust': { Hamstrings: 0.5 } };
 function weeklySets(plan) {
   const out = Object.fromEntries(chartMuscles().map((m) => [m, 0]));
   plan.forEach((d) => d.ex.forEach((e) => { out[e.m] = (out[e.m] ?? 0) + e.sets; Object.entries(SEC[e.n] ?? {}).forEach(([m, f]) => { if (m in out) out[m] += e.sets * f; }); }));
@@ -1005,9 +1013,8 @@ function renderPrefs() {
   document.querySelectorAll('[data-pq]').forEach((b) => b.onclick = () => {
     const [id, i] = b.dataset.pq.split('|'); const q = PREF_Q.find((x) => x.id === id);
     if (i !== 'other') { ans[id] = i === 'either' ? 'either' : +i; render(); return; }
-    // Other: any exercise for that muscle not already listed.
-    const listed = q.opts.flat();
-    sheet(`<h2>${esc(q.q)}: other</h2><div class="chips">${(EX[q.m] ?? []).map(([n]) => n).filter((n) => !listed.includes(n)).map((n) => `<button class="chip sm" data-po="${esc(n)}" aria-pressed="${ans[id] === 'o:' + n}">${esc(n)}</button>`).join('')}</div>`);
+    // Other: the same movement, so it never overlaps another question (Ben, 22 Oct).
+    sheet(`<h2>${esc(q.q)}: other</h2><div class="chips">${q.other.map((n) => `<button class="chip sm" data-po="${esc(n)}" aria-pressed="${ans[id] === 'o:' + n}">${esc(n)}</button>`).join('')}</div>`);
     document.querySelectorAll('[data-po]').forEach((x) => x.onclick = () => { ans[id] = 'o:' + x.dataset.po; closeSheet(); render(); });
   });
   document.querySelectorAll('[data-unlike]').forEach((b) => b.onclick = () => { S.likes = S.likes.filter((x) => x !== b.dataset.unlike); render(); });
