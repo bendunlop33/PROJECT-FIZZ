@@ -45,6 +45,8 @@ EXTRA = {
     'training-blocks.html': """
   // #progress opens the block's progress screen (the shell's Progress → Block).
   if (location.hash === '#progress') addEventListener('load', () => document.querySelector('[data-a="tab"][data-v="progress"]')?.click());
+  // Do today from the plan view: show that day on Today's card.
+  addEventListener('message', (e) => { if (e.data?.cmd === 'day') document.querySelector(`[data-a="dayp"][data-v="${e.data.day}"]`)?.click(); });
 """,
 }
 
