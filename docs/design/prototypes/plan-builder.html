@@ -254,8 +254,9 @@ function splitFor(n, focus) {
   // 7 days (Ben, 22 Oct): allowed; the 7th is a light Arms & core day so something stays easy.
   return ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs', 'Arms'];
 }
-// Abs per week is set by the plan (Ben, 22 Oct): 2 by default, 3 with Core as a priority or a Fitness focus; editable on Your plan.
-const absAuto = () => (S.priority.includes('Core') || S.focus === 'Fitness') ? 3 : 2;
+// Ab sets a week, set by the plan (Ben, 22 Oct): 10 by default, 14 with Core as a priority or a Fitness focus, 6 on Maintain; editable on Your plan.
+const ABS_OPTS = [0, 6, 10, 14, 18];
+const absAuto = () => S.effort === 'Maintain' ? 6 : (S.priority.includes('Core') || S.focus === 'Fitness') ? 14 : 10;
 const absPerWeek = () => S.absWk ?? absAuto();
 function build() {
   const days = [...S.days].sort((a, b) => a - b);
@@ -275,10 +276,13 @@ function build() {
   plan = plan.map((p) => { seen[p.focus] = (seen[p.focus] ?? 0) + 1; const v = seen[p.focus] > 1 && DAYS_B[p.focus] ? 'B' : (plan.filter((q) => q.focus === p.focus).length > 1 && DAYS_B[p.focus] ? 'A' : null); return { ...p, variant: v }; });
   const built = plan.map((p) => ({ ...p, ex: exercisesFor(p.focus, p.variant) }));
   // Abs: N sessions a week (Ben, 22 Oct), spread evenly across the training days, alternating two core exercises, last in the session.
-  const n = Math.min(absPerWeek(), built.length), CORE = ['Cable crunch', 'Hanging leg raise'];
+  // Spread ab sets over 2 sessions (3 above 10 sets), up to 3 sets per exercise.
+  const T = absPerWeek(), n = Math.min(T === 0 ? 0 : T <= 10 ? 2 : 3, built.length), CORE = ['Cable crunch', 'Hanging leg raise'];
+  const coreEx = (name, sets) => { const h = HIST[name], w = h.kg === 0 ? 'BW' : `${h.kg}`; return { n: name, m: 'Core', role: 'i', sets, short: `${sets} × ${h.reps}`, kg: w, line: `${sets} × ${h.kg === 0 ? 'BW' : h.kg + ' kg'} × ${h.reps}`, why: h.last ? `Last time ${h.last}` : 'No history yet (est.)' }; };
   for (let k = 0; k < n; k++) {
-    const d = built[Math.floor((k * built.length) / n)]; const name = CORE[k % 2]; const h = HIST[name];
-    d.ex.push({ n: name, m: 'Core', role: 'i', sets: 3, short: `3 × ${h.reps}`, kg: h.kg === 0 ? 'BW' : `${h.kg}`, line: `3 × ${h.kg === 0 ? 'BW' : h.kg + ' kg'} × ${h.reps}`, why: h.last ? `Last time ${h.last}` : 'No history yet (est.)' });
+    const d = built[Math.floor((k * built.length) / n)], sets = Math.floor(T / n) + (k < T % n ? 1 : 0);
+    if (sets <= 3) d.ex.push(coreEx(CORE[k % 2], sets));
+    else { d.ex.push(coreEx(CORE[k % 2], Math.ceil(sets / 2))); d.ex.push(coreEx(CORE[(k + 1) % 2], Math.floor(sets / 2))); }
   }
   return balance(built);
 }
@@ -287,6 +291,7 @@ function balance(plan) {
   for (let pass = 0; pass < 12; pass++) {
     const ws = weeklySets(plan); let moved = false;
     for (const m of MUSCLES) {
+      if (m === 'Core') continue; // ab sets are set directly (absPerWeek)
       const [lo, hi] = range(m); const exs = plan.flatMap((d) => d.ex).filter((e) => e.m === m && e.role !== 'main');
       if (ws[m] < lo) { const e = exs.find((x) => x.sets < 5); if (e) { e.sets += 1; moved = true; } }
       else if (ws[m] > hi) { const e = exs.find((x) => x.sets > 2); if (e) { e.sets -= 1; moved = true; } }
@@ -336,7 +341,7 @@ const EFFORT = {
   Standard: { pri: [12, 20], oth: [8, 14],  sm: [4, 10], rpe: '7–9', step: 'One step when you hit the plan',          deload: 'Last week',      pct: 0.012, line: 'Regular weekly progress you can keep up block after block.' },
   Push:     { pri: [16, 22], oth: [10, 16], sm: [6, 12], rpe: '8–9.5', step: 'One step every session you hit it',    deload: 'Every 4th week', pct: 0.018, line: 'Faster progress, more sets and harder sets. Needs sleep, food and fewer hard runs.' },
 };
-const range = (m) => { const e = S.pri.length && S.effort !== 'Maintain' ? SPORT_BANDS : EFFORT[S.effort]; const small = ['Calves','Biceps','Triceps','Core'].includes(m); if (small) return isPri(m) ? [e.sm[0] + 4, e.sm[1] + 4] : e.sm; return isPri(m) ? e.pri : e.oth; };
+const range = (m) => { if (m === 'Core') { const a = absAuto(); return [a - 2, a + 2]; } const e = S.pri.length && S.effort !== 'Maintain' ? SPORT_BANDS : EFFORT[S.effort]; const small = ['Calves','Biceps','Triceps'].includes(m); if (small) return isPri(m) ? [e.sm[0] + 4, e.sm[1] + 4] : e.sm; return isPri(m) ? e.pri : e.oth; };
 // With ★ sports, lifting drops to these bands unless already Maintain (GA6).
 const SPORT_BANDS = { pri: [10, 14], oth: [6, 10], sm: [4, 6] };
 const deloadText = () => S.effort === 'Maintain' ? 'no deload' : S.effort === 'Push' ? 'deload every 4th week' : `deload week ${S.weeks}`;
@@ -741,7 +746,7 @@ function renderPlan() {
       </div></div>`).join('')}
     <div class="label">Sets per week</div>
     <div class="card" style="padding:10px 16px">${MUSCLES.map((m) => { const [lo, hi] = range(m); const n = ws[m]; const max = 24; return `<div class="vol ${isPri(m) ? 'pri' : ''}"><span class="mn">${m}</span><span class="bar"><span class="rng" style="left:${lo / max * 100}%;width:${(hi - lo) / max * 100}%"></span><span class="fill" style="width:${Math.min(n, max) / max * 100}%"></span></span><span class="n">${n}${n < lo ? ' ↓' : n > hi ? ' ↑' : ''}</span></div>`; }).join('')}
-      <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px;color:var(--text2)">Abs: ${absPerWeek()} a week <button class="link" id="absChange" style="font-size:14px">Change</button></span><button class="link dim" id="whyBtn">Why?</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px;color:var(--text2)">Abs: ${absPerWeek()} sets a week <button class="link" id="absChange" style="font-size:14px">Change</button></span><button class="link dim" id="whyBtn">Why?</button></div>
       <div class="why" id="why">Split from ${S.days.length} days and ${esc(S.focus)} focus. Shaded band = target sets for each muscle (priority ★ higher). Weights from your last sessions; each main lift's weekly path aims at its week-${S.weeks} estimate. ${S.runs ? 'No legs the day before the long run.' : ''}</div>
     </div>
     ${S.chat.length ? `<div class="label">Coach</div><div class="chat">${S.chat.map((c) => c.who === 'ben' ? `<div class="msg ben">${esc(c.text)}</div>` : c.who === 'choice' ? `<div class="choice"><button data-choice="new">Build new</button><button data-choice="edit">Change this one</button></div>` : `<div class="msg co"><b>Coach</b>${esc(c.text)}</div>`).join('')}</div>` : ''}`;
@@ -754,7 +759,7 @@ function renderPlan() {
   document.querySelectorAll('[data-move]').forEach((el) => el.onclick = () => openMoveSheet(+el.dataset.move));
   document.querySelectorAll('[data-open]').forEach((el) => el.onclick = () => toast('Opens this day in the workout builder', false));
   document.querySelectorAll('[data-choice]').forEach((el) => el.onclick = () => { S.chat = S.chat.filter((c) => c.who !== 'choice'); const pending = S.pendingAsk; S.pendingAsk = null; el.dataset.choice === 'new' ? rebuild(pending) : editPlan(pending); });
-  $('absChange').onclick = () => { sheet(`<h2>Abs sessions a week</h2><div class="seg">${[0, 1, 2, 3, 4].map((n) => `<button class="chip" data-absn="${n}" aria-pressed="${absPerWeek() === n}">${n}</button>`).join('')}</div>`); document.querySelectorAll('[data-absn]').forEach((b) => b.onclick = () => { const before = snapshot(); S.absWk = +b.dataset.absn; S.plan = build(); closeSheet(); render(); toast(`Abs ${S.absWk} a week`, true, () => { restore(before); render(); }); }); };
+  $('absChange').onclick = () => { sheet(`<h2>Ab sets a week</h2><div class="seg">${ABS_OPTS.map((n) => `<button class="chip" data-absn="${n}" style="min-width:0;flex:1 1 0" aria-pressed="${absPerWeek() === n}">${n === absAuto() ? '✦ ' : ''}${n}</button>`).join('')}</div>`); document.querySelectorAll('[data-absn]').forEach((b) => b.onclick = () => { const before = snapshot(); S.absWk = +b.dataset.absn; S.plan = build(); closeSheet(); render(); toast(`Abs ${S.absWk} sets a week`, true, () => { restore(before); render(); }); }); };
   $('whyBtn').onclick = () => $('why').classList.toggle('on');
   if ($('apply')) $('apply').onclick = () => { S.applied = true; S.editing = false; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
   const ask = $('ask');
