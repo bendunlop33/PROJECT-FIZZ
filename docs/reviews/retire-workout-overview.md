@@ -267,3 +267,25 @@ Verified fixed:
 - Fix: in the shared planner, in its own slice with a test.
 
 Spec issues: unchanged. bac61da records saved rep ranges, the planned Why lines and `‹ Back` as [Proposal], pending Ben.
+
+## Final fixes (developer, 22 Oct 2026)
+
+Commit `407a7bf` on `claude/gracious-knuth-joxqpw`. O1 and N1–N3 are not touched.
+
+| Issue | What changed | Test |
+|---|---|---|
+| F1: a coach load change collapses a saved range | `withWorkingLoad` (`packages/coach/src/builder/edit-ops.ts`) builds each row as `{ ...r, load }`, so `repsMax` is kept. It drops `typed` and `roundedFrom`, because the coach's load replaces a typed kg. The `reps`/`rpe` ops' held-load path uses the same function, so an RPE change keeps the range too. A reps op still fixes the reps, as Ben's own edit does (R1). | `builder-coach-edits.test.ts` › "a saved rep range through the coach": bench 5 × 3–6 @ 100, op `load heavier`. The only line is `Barbell bench press: 100 → 102.5 kg`, and `toDraftPlan` writes `{min:3,max:6}` × 5. A typed kg on the slot leaves no `typed` or `roundedFrom`. |
+| S1: stale saved-workout reasons after a coach load | `withWorkingLoad` deletes `slot.why`, as `reloadSlotLoads` does. `whyWeight` then reads `Coach target` (source `coach_target`), and encoded sets carry no notes or `held`. | Same block, S1: `why` is undefined, `builder.why` isn't encoded, and every set has `notes: []` and `held: false`. A `sets` op that doesn't move the load keeps the reasons. |
+| S2: the coach sees `5 × 3` for a 3–6 slot | `builderWorkoutView` renders `5 × 3–6 @ 100 kg` (fixed reps unchanged). `claimFacts` adds `repsMax` to the exercise's reps. In `claimSentenceOk` the top of a range now takes its bottom's kind, so in `5 × 3–6` the 6 is checked as reps. Before, it fell through to `bare` and was hidden even with the fact present. | Same block, S2: view text; `Bench press is 5 × 3–6 at 100 kg.`, `… 3–6 reps.` and `… 6 reps.` pass. `3–8` in either form is hidden. |
+| S3: Gym changed mixes loads from two items | `slotAtNewGym` takes `sameItem`. An edited slot that would take any load from `base` (a kept typed kg, or a set the planner has no match for) returns `base` whole when the planner's item differs from the builder's. An edited slot whose loads all come from the planner keeps them. `changeGym` compares the planner's `checkedOn.equipmentId` with `env.codec.checkedOnOf` (`builder-service.ts`). | `builder-from-planned-review2.test.ts` › S3: an extra set and a kept typed kg on another item each give `{ slot: base, fromPlanned: false }`; reps-only edits keep the planner's 40 kg. The existing R1–R5 tests pass `sameItem: true`. No app-level test with two items for one exercise (pure function tested; the wiring is one comparison). |
+
+Checks (this branch, after the fixes):
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` | exit 0 |
+| `npm run test` (full suite) | exit 0. 468 files, 8725 passed, 2 todo |
+
+Open (not fixed here):
+- The claim check reads `@` as RPE, so `Bench press is 4 × 6 @ 100 kg.` is hidden even for fixed reps, though the coach is shown that same `@ 100 kg` form. This predates this slice. The coach's prose usually says "at", so the impact is low. It needs its own change and test.
