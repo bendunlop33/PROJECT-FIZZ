@@ -7,6 +7,8 @@
 4. Proposed: code builds warm-ups from a table, within the approved 10-min warm-up allowance (D17); they never count, trigger offers or progress, and the coach changes them only when Ben asks.
 5. Trigger case: rows 90 kg × 12, first pull of the day → **45 kg × 8, 70 kg × 5** (~2 min); already warm → **70 kg × 5**.
 
+> **Approved by Ben, 22 Oct 2026: WU1–WU12 as drafted** ("look good", after a plain-English walk-through of each). They are now playbook rules; defaults marked *default* stay editable.
+
 *Library file with **candidate** rules (Coaching knowledge, CLAUDE.md rule 10). Nothing here is in the playbook until Ben approves it. Not medical advice: pain or injury stops progression on that movement and the coach suggests seeing a professional; it never diagnoses (CLAUDE.md rule 9). Compiled by the training researcher on 2026-10-21; revised the same day after a fact-check review (16 findings, all applied; see "Review log"). Sources checked 2026-10-21 unless stated.*
 
 **Trigger:** the coach gave barbell rows (working 90 kg × 12) a warm-up of a single rep. No source supports that. The playbook has no warm-up rule yet; it only says warm-ups aren't working sets (rule 1 counting, rule T) and allows ~10 min for warm-ups (D17, default approved 9 Oct 2026).

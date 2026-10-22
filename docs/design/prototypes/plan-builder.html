@@ -430,7 +430,7 @@ function mkEx(n, m, role, sets, tags = []) {
     const step = h.each ? 2 : 2.5, top = snapFor(n, h.kg + step), back = snapFor(n, top * 0.9);
     const strength = S.focus === 'Strength';
     const backs = (strength ? 3 : 2) + (S.effort === 'Push' ? 1 : 0) - (S.effort === 'Maintain' ? 1 : 0);
-    return { n, m, role, tags, top, back, step, reps: strength ? 5 : 6, backs, sets: backs + 1, short: `${backs + 1} × ${strength ? 5 : 6}`, kg: fmtKg(n, top), line: `Top ${fmtKg(n, top)} × ${strength ? 5 : 6} · ${backs} × ${fmtKg(n, back)} × 8`, why: `Last time ${h.last || fmtKg(n, h.kg) + ' × ' + h.reps} → +${step}` };
+    return { n, m, role, tags, top, back, step, reps: strength ? 5 : 6, backs, sets: backs + 1, short: `1 × ${strength ? 5 : 6} + ${backs} × 8`, kg: fmtKg(n, top), line: `Top ${fmtKg(n, top)} × ${strength ? 5 : 6} · ${backs} × ${fmtKg(n, back)} × 8`, why: `Last time ${h.last || fmtKg(n, h.kg) + ' × ' + h.reps} → +${step}` };
   }
   const reps = Math.max(8, Math.min(15, h.reps));
   const kg = h.kg === 0 ? 'BW' : (h.reps >= 15 && !h.none ? snap(h.kg + 2.5) : h.kg);
@@ -446,6 +446,14 @@ const chunks = (s) => s <= 0 ? [] : s <= 4 ? [Math.max(2, s)] : s <= 8 ? [Math.c
 // in the app each week's numbers follow what he actually lifted.
 const isDeload = (w) => S.effort === 'Standard' ? (S.weeks >= 4 && w === S.weeks) : S.effort === 'Push' ? w % 4 === 0 : false;
 const progWeeks = (w) => { let k = 0; for (let i = 1; i < w; i++) if (!isDeload(i)) k++; return k; };
+// Warm-ups (WU1–WU12, approved by Ben 22 Oct): a ladder from the first working set's load W and reps R, snapped down
+// to real plates (WU8); floor lifts skip the empty bar (WU9); dumbbells start at 40%. Never counted as sets.
+function warmUp(n, W, R) {
+  const db = HIST[n]?.each, floor = /deadlift|row/i.test(n), sn = (x) => db ? Math.floor(x / 2) * 2 : snap(x);
+  const steps = R <= 6 ? [[0.4, 5], [0.6, 3], [0.8, 2]] : [[0.5, 8], [0.8, R >= 10 ? 5 : 4]];
+  const out = (!db && !floor && R <= 6 ? ['bar × 5'] : []).concat(steps.map(([p, r]) => `${Math.max(db ? 2 : 20, sn(W * p))}${db ? ' each' : ''} × ${r}`));
+  return out.join(' · ');
+}
 function atWeek(e, w) {
   const k = S.effort === 'Maintain' ? 0 : progWeeks(w), dl = isDeload(w);
   if (e.role === 'main' && e.bw) {
@@ -458,7 +466,7 @@ function atWeek(e, w) {
     let top = db ? e.top + e.step * Math.floor(k / 3) : snapFor(e.n, e.top * (1 + rate * k)), reps = db ? e.reps + (k % 3) : e.reps;
     if (dl) top = snapFor(e.n, top * 0.9);
     const backs = dl ? Math.max(1, e.backs - 1) : e.backs, back = snapFor(e.n, top * 0.9);
-    return { sets: backs + 1, reps, short: `${backs + 1} × ${reps}`, kg: fmtKg(e.n, top), line: `Top ${fmtKg(e.n, top)} × ${reps} · ${backs} × ${fmtKg(e.n, back)} × 8`, dl };
+    return { sets: backs + 1, reps, top, back, backs, short: `1 × ${reps} + ${backs} × 8`, kg: fmtKg(e.n, top), line: `Top ${fmtKg(e.n, top)} × ${reps} · ${backs} × ${fmtKg(e.n, back)} × 8`, dl };
   }
   const h = HIST[e.n] ?? {}, lo = e.reps <= 12 ? 8 : 12, hi = e.reps <= 12 ? 12 : 15, step = h.each ? 2 : 2.5;
   let reps = Math.max(lo, Math.min(hi, e.reps)), kg = e.kgv;
@@ -1146,10 +1154,11 @@ function renderPlan() {
   document.querySelectorAll('[data-exw]').forEach((el) => el.onclick = () => {
     const [di, k] = el.dataset.exw.split('|').map(Number), e = p[di].ex[k];
     sheet(`<h2>${esc(e.n)}</h2><div class="card" style="padding:4px 14px 8px"><div style="display:grid;grid-template-columns:auto 1fr auto;gap:0 14px;font-variant-numeric:tabular-nums;font-size:15px">
-      <span class="lab" style="padding:8px 0 4px">Week</span><span class="lab" style="padding:8px 0 4px">Sets × reps</span><span class="lab" style="padding:8px 0 4px;text-align:right">kg</span>
+      <span class="lab" style="padding:8px 0 4px">Week</span><span class="lab" style="padding:8px 0 4px">${e.role === 'main' && !e.bw ? 'Top set' : 'Sets × reps'}</span><span class="lab" style="padding:8px 0 4px;text-align:right">${e.role === 'main' && !e.bw ? 'Back-offs' : 'kg'}</span>
       ${Array.from({ length: S.weeks }, (_, j) => j + 1).map((w) => { const x = atWeek(e, w), cur = w === S.week, st = `padding:7px 0;border-top:1px solid var(--divider);${cur ? 'color:var(--text);font-weight:600' : x.dl ? 'color:var(--text3)' : 'color:var(--text2)'}`;
-        return `<span style="${st}">${w}${x.dl ? ' · Deload' : ''}</span><span style="${st}">${x.short}</span><span style="${st};text-align:right">${esc(String(x.kg))}</span>`; }).join('')}
-    </div></div>${e.role === 'main' ? '<div class="note">kg = top set; back-off sets at about 90%.</div>' : ''}<div class="note">Planned. Each week follows what you actually lift.</div>`);
+        return e.role === 'main' && !e.bw ? `<span style="${st}">${w}${x.dl ? ' · Deload' : ''}</span><span style="${st}">${esc(fmtKg(e.n, x.top))} × ${x.reps}</span><span style="${st};text-align:right">${x.backs} × ${esc(fmtKg(e.n, x.back))} × 8</span>`
+          : `<span style="${st}">${w}${x.dl ? ' · Deload' : ''}</span><span style="${st}">${x.short}</span><span style="${st};text-align:right">${esc(String(x.kg))}</span>`; }).join('')}
+    </div></div>${e.role === 'main' && !e.bw ? `<div class="note" style="display:block">Warm-up this week: ${esc(warmUp(e.n, atWeek(e, S.week).top, atWeek(e, S.week).reps))}</div>` : ''}<div class="note">Planned. Each week follows what you actually lift.</div>`);
   });
   document.querySelectorAll('[data-toggle]').forEach((el) => el.onclick = () => { const i = +el.dataset.toggle; S.open = S.open === i ? -1 : i; render(); });
   document.querySelectorAll('[data-strip]').forEach((el) => el.onclick = () => { const i = p.findIndex((d) => d.day === +el.dataset.strip); S.open = i; render(); });
