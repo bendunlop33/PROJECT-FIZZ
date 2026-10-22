@@ -339,26 +339,25 @@ function render() {
   ({ goals: renderGoals, check: renderCheck, effort: renderAmbition, week: renderWeek, plan: renderPlan })[S.page]();
 }
 
+// One simple table per focus (Ben, 22 Oct): weight for the focus's reference reps, now → end of plan (est.).
+// Strength 3 reps, Balanced 6, Muscle 8, Fitness 10. Same est. 1RM underneath, so it always rises at the focus's rate.
+const FOCUS_REPS = { Strength: 3, Balanced: 6, Muscle: 8, Fitness: 10 };
+const atReps = (lf, e, reps) => nearest(lf, e / (1 + reps / 30));
 function expectBody(lifts) {
-  const cell = 'display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;font-size:14px;font-variant-numeric:tabular-nums;justify-items:end;border-top:1px solid var(--divider);padding-top:8px';
-  const each = (lf) => HIST[lf].each ? ' <span style="font-size:11px;color:var(--text3)">each</span>' : '';
-  const name = (lf) => `<span style="color:var(--text2);justify-self:start">${SHORT[lf]}</span>`;
-  const ws = S.plan ? weeklySets(S.plan) : null;
+  const reps = FOCUS_REPS[S.focus] ?? 6;
   const what = {
-    Strength: 'Heavier top sets on your main lifts.',
-    Muscle: 'More reps at your working weights, then more weight; more sets per muscle.',
-    Balanced: 'Heavier top sets and more work for each muscle.',
+    Strength: 'Heavier low-rep sets on your main lifts.',
+    Muscle: 'More reps, then more weight; more sets per muscle.',
+    Balanced: 'Heavier sets and more work for each muscle.',
     Fitness: 'Every muscle twice a week; small steady gains.',
   }[S.focus];
-  let table;
-  if (S.focus === 'Muscle') {
-    table = `<span style="${cell}"><span class="lab" style="justify-self:start">Working sets</span><span class="lab">Now</span><span class="lab">Week ${S.weeks} (est.)</span>
-      ${lifts.map((lf) => { const m = muscleEnd(lf); const d = Math.round((e1rm(m.kg, m.reps) - e1rm(HIST[lf].kg, HIST[lf].reps)) * 2) / 2; return `${name(lf)}<span style="color:var(--text3)">${HIST[lf].kg} × ${HIST[lf].reps}</span><span style="font-weight:600;display:flex;flex-direction:column;align-items:flex-end;line-height:1.15"><span>${m.kg} × ${m.reps}${each(lf)}</span><span style="font-size:11px;font-weight:400;color:var(--text3)">1RM ${d > 0 ? '+' + d : d === 0 ? '±0' : d} kg</span></span>`; }).join('')}</span>`;
-  } else {
-    table = `<span style="${cell}"><span class="lab" style="justify-self:start">${S.focus === 'Strength' ? 'Top set, kg' : 'kg'}</span><span class="lab">Now</span><span class="lab">Week ${S.weeks} (est.)</span>
-      ${lifts.map((lf) => `${name(lf)}<span style="color:var(--text3)">${HIST[lf].kg}</span><span style="font-weight:600">${projected(S.effort, lf)}${each(lf)}</span>`).join('')}</span>`;
-  }
-  return `<span style="font-size:14px;color:var(--text);line-height:1.35">${what}</span>${table}`;
+  const each = (lf) => HIST[lf].each ? ' <span style="font-size:11px;color:var(--text3)">each</span>' : '';
+  const rate = S.effort === 'Maintain' ? 0 : EFFORT[S.effort].pct * (FOCUS_GAIN[S.focus] ?? 1) * S.weeks;
+  return `<span style="font-size:14px;color:var(--text);line-height:1.35">${what}</span>
+    <span style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;font-size:14px;font-variant-numeric:tabular-nums;justify-items:end;border-top:1px solid var(--divider);padding-top:8px">
+      <span class="lab" style="justify-self:start">kg × ${reps} reps</span><span class="lab">Now</span><span class="lab">Week ${S.weeks} (est.)</span>
+      ${lifts.map((lf) => { const e0 = e1rm(HIST[lf].kg, HIST[lf].reps); return `<span style="color:var(--text2);justify-self:start">${SHORT[lf]}</span><span style="color:var(--text3)">${atReps(lf, e0, reps)}</span><span style="font-weight:600">${atReps(lf, e0 * (1 + rate), reps)}${each(lf)}</span>`; }).join('')}
+    </span>`;
 }
 function renderGoals() {
   $('scroll').innerHTML = `
