@@ -352,11 +352,15 @@ function expectBody(lifts) {
     Fitness: 'Every muscle twice a week; small steady gains.',
   }[S.focus];
   const each = (lf) => HIST[lf].each ? ' <span style="font-size:11px;color:var(--text3)">each</span>' : '';
-  const rate = S.effort === 'Maintain' ? 0 : EFFORT[S.effort].pct * (FOCUS_GAIN[S.focus] ?? 1) * S.weeks;
-  return `<span style="font-size:14px;color:var(--text);line-height:1.35">${what}</span>
+  // ★ sports take recovery: lifting progresses at about 0.6×, and lower-body lifts about 0.7× again when a starred sport is hard on the legs (C rules).
+  const sportMul = S.pri.length ? 0.6 : 1, legSport = S.pri.some((a) => a === 'Running' || ACT_LEGS.has(a));
+  const LOWER = new Set(['Back squat', 'Deadlift', 'Front squat', 'Romanian deadlift']);
+  const rateFor = (lf) => S.effort === 'Maintain' ? 0 : EFFORT[S.effort].pct * (FOCUS_GAIN[S.focus] ?? 1) * S.weeks * sportMul * (legSport && LOWER.has(lf) ? 0.7 : 1);
+  const sportNote = S.pri.length && S.effort !== 'Maintain' ? `<span style="font-size:13px;color:var(--text2)">★ ${S.pri.map(esc).join(', ')}: slower lifting progress${legSport ? ', legs most' : ''}.</span>` : '';
+  return `<span style="font-size:14px;color:var(--text);line-height:1.35">${what}</span>${sportNote}
     <span style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;font-size:14px;font-variant-numeric:tabular-nums;justify-items:end;border-top:1px solid var(--divider);padding-top:8px">
       <span class="lab" style="justify-self:start">kg × ${reps} reps</span><span class="lab">Now</span><span class="lab">Week ${S.weeks} (est.)</span>
-      ${lifts.map((lf) => { const e0 = e1rm(HIST[lf].kg, HIST[lf].reps); return `<span style="color:var(--text2);justify-self:start">${SHORT[lf]}</span><span style="color:var(--text3)">${atReps(lf, e0, reps)}</span><span style="font-weight:600">${atReps(lf, e0 * (1 + rate), reps)}${each(lf)}</span>`; }).join('')}
+      ${lifts.map((lf) => { const e0 = e1rm(HIST[lf].kg, HIST[lf].reps); return `<span style="color:var(--text2);justify-self:start">${SHORT[lf]}</span><span style="color:var(--text3)">${atReps(lf, e0, reps)}</span><span style="font-weight:600">${atReps(lf, e0 * (1 + rateFor(lf)), reps)}${each(lf)}</span>`; }).join('')}
     </span>`;
 }
 function renderGoals() {

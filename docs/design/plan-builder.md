@@ -25,7 +25,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **Focus vs effort (Ben, 22 Oct):** Main focus is what you build (Strength / Muscle / Balanced / Fitness); Effort is how hard (Maintain / Standard / Push). Maintain moved from focus to effort; Steady dropped (★ sports already give the lighter dose). Maintain: fewer sets (others 4–8, priority 8–12), same weights, reps only if easy, no deload, no projected gain.
 
-**What to expect follows Main focus (Ben, 22 Oct):** one simple table, the weight for the focus's reference reps now → end of plan (est.): Strength × 3, Balanced × 6, Muscle × 8, Fitness × 10. Each is worked out from the lift's est. 1RM, which rises at focus × effort rate (Strength fastest, Muscle about 0.7×, Fitness slowest; Maintain flat), so no 1RM figures are shown. Rates are placeholders until his own trend replaces them.
+**What to expect follows Main focus (Ben, 22 Oct):** one simple table, the weight for the focus's reference reps now → end of plan (est.): Strength × 3, Balanced × 6, Muscle × 8, Fitness × 10. Each is worked out from the lift's est. 1RM, which rises at focus × effort rate (Strength fastest, Muscle about 0.7×, Fitness slowest; Maintain flat), so no 1RM figures are shown. With ★ sports, lifting progress is about 0.6×, and lower-body lifts about 0.7× again when a starred sport is hard on the legs (running, cycling, football, HIIT), with one line saying so. Rates are placeholders until his own trend replaces them.
 
 ## 1a. Priority and lift check (Ben, 22 Oct)
 
