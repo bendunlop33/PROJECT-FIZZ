@@ -348,7 +348,7 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
       type: r.type,
       typeText: SET_TYPE_LABEL[r.type],
       reps: r.reps,
-      repsText: String(r.reps),
+      repsText: r.repsMax === undefined ? String(r.reps) : `${String(r.reps)}–${String(r.repsMax)}`,
       kgText,
       load: r.load,
       rpeText: r.rpe === null ? '–' : trim(r.rpe),
@@ -361,7 +361,7 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
       canMoveUp: false,
       canMoveDown: false,
       draggable: false,
-      accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[r.type]}, ${String(r.reps)} reps, ${loadSpoken(r.load, slot.unit, slot.convention)}${r.rpe === null ? '' : `, RPE ${trim(r.rpe)}`}`,
+      accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[r.type]}, ${r.repsMax === undefined ? String(r.reps) : `${String(r.reps)} to ${String(r.repsMax)}`} reps, ${loadSpoken(r.load, slot.unit, slot.convention)}${r.rpe === null ? '' : `, RPE ${trim(r.rpe)}`}`,
       spokenName,
     };
   });

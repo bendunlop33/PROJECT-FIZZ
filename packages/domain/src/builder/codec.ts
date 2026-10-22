@@ -1,5 +1,6 @@
 import { slotRev, type CheckedOnRecord, type DraftLoad, type DraftPlan, type DraftSetTemplate, type DraftSlot, type DraftSlotBuilder } from '@fizz/schemas';
 import { stableStringify } from '../stable';
+import { PLANNED_HELD_LINE } from './from-planned';
 import { restAfterRows, roundRestOf } from './rest';
 import type { BuilderBlock, BuilderInfoLookup, BuilderSetRow, BuilderSlot, BuilderWorkout, RestLevel } from './types';
 import { draftLoadSourceOf } from './types';
@@ -27,13 +28,15 @@ export interface DraftCodecContext {
 const LETTERS = 'ABCDEFGHIJ';
 
 function draftLoadOf(slot: BuilderSlot, row: BuilderSetRow): DraftLoad {
+  // (R3) A load the saved workout's planner made keeps its reasons (held on pain, capped or rounded here) until Ben types one.
+  const why = row.typed === true || row.load === null ? undefined : slot.why;
   return {
     load: row.load === null ? null : { value: row.load, unit: slot.unit, convention: slot.convention },
     source: row.load === null ? 'none' : draftLoadSourceOf(slot.source, row.typed === true),
     basis: null,
     basisFromCoach: false,
-    held: false,
-    notes: [],
+    held: why?.includes(PLANNED_HELD_LINE) === true,
+    notes: (why ?? []).slice(1).map((n) => n.slice(0, 200)),
     notUsed: null,
     ...(row.typed === true && row.roundedFrom !== undefined ? { requested: row.roundedFrom } : {}),
   };
@@ -53,6 +56,7 @@ function metaOf(slot: BuilderSlot, block: BuilderBlock, first: boolean): DraftSl
     ...(first && block.auto && block.slots.length > 1 ? { autoPair: true as const } : {}),
     ...(first && block.roundRestS !== undefined && block.slots.length > 1 ? { roundRestS: block.roundRestS } : {}),
     ...(slot.restS !== undefined && Object.keys(slot.restS).length > 0 ? { restS: { ...slot.restS } } : {}),
+    ...(slot.why !== undefined && slot.why.length > 0 ? { why: [...slot.why] } : {}),
   };
 }
 
@@ -74,7 +78,7 @@ export function toDraftPlan(w: BuilderWorkout, ctx: DraftCodecContext): DraftPla
         const restS = group === null || row.type === 'warmup' || beforeDrop ? (solo[i] ?? null) : last ? round : null;
         return {
           setType: row.type,
-          reps: { min: row.reps, max: row.reps },
+          reps: { min: row.reps, max: Math.max(row.reps, row.repsMax ?? row.reps) },
           durationS: null,
           targetRpe: row.type === 'warmup' ? null : row.rpe,
           restS,
@@ -124,6 +128,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
   const rows: BuilderSetRow[] = s.setTemplates.map((t) => ({
     type: t.setType,
     reps: t.reps?.min ?? 1,
+    ...(t.reps != null && t.reps.max > t.reps.min ? { repsMax: t.reps.max } : {}),
     load: t.load?.load?.value ?? null,
     rpe: t.setType === 'warmup' ? null : t.targetRpe,
     ...(t.load?.source === 'ben' ? { typed: true as const } : {}),
@@ -145,6 +150,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
   if (meta?.touched === true) out.touched = true;
   if (meta?.unlinked === true) out.unlinked = true;
   if (meta?.origin !== undefined) out.origin = meta.origin;
+  if (meta?.why !== undefined && meta.why.length > 0) out.why = [...meta.why];
   if (s.checkedHistoryVersion != null) out.historyVersion = s.checkedHistoryVersion;
   return out;
 }

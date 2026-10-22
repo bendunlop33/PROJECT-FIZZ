@@ -254,6 +254,11 @@ export const DraftSlotBuilderSchema = z.object({
   roundRestS: z.int().min(BUILD_LIMITS.minRestS).max(BUILD_LIMITS.maxRestS).optional(),
   /** Ben's own rest per kind (seconds). */
   restS: z.partialRecord(BuilderRestKindSchema, z.int().min(0).max(BUILD_LIMITS.maxRestS)).optional(),
+  /**
+   * (Retire-overview R3) Why the slot's loads are what they are, from the library or past workout it was opened on
+   * (its own rule's line, held on pain, capped or rounded at this gym). Shown under `Why this weight?`.
+   */
+  why: z.array(z.string().min(1).max(200)).min(1).max(4).optional(),
 });
 export type DraftSlotBuilder = z.infer<typeof DraftSlotBuilderSchema>;
 

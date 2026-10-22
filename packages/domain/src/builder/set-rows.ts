@@ -266,10 +266,14 @@ export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, lo
       const mayHurt = cap !== null && compareDifficulty(r.load.value, cap, loadDirection(ctx.convention)) > 0;
       return { ok: true, slot: { ...slot, rows, touched: true }, rounded: r.load, ...(mayHurt ? { mayHurt: true as const } : {}) };
     }
-    case 'reps':
+    case 'reps': {
       if (!validReps(patch.reps)) return { ok: false, reason: 'reps_out_of_range' };
-      rows[index] = { ...cur, reps: Math.round(patch.reps) };
+      // Ben set the reps: a saved range on this set becomes his number (R1).
+      const fixed: BuilderSetRow = { ...cur, reps: Math.round(patch.reps) };
+      delete fixed.repsMax;
+      rows[index] = fixed;
       break;
+    }
     case 'rpe':
       if (row.type === 'warmup' || !validRpe(patch.rpe)) return { ok: false, reason: 'rpe_out_of_range' };
       rows[index] = { ...cur, rpe: patch.rpe };
@@ -350,6 +354,8 @@ export function reloadSlotLoads(slot: BuilderSlot, info: Pick<SetRowsInput, 'rol
   };
   const next: BuilderSlot = { ...slot, unit: fresh.unit, convention: fresh.convention, source: fresh.source, anchorE1rm: fresh.anchorE1rm, startLight: fresh.startLight };
   delete next.historyVersion;
+  // Worked out again here: what it was opened on no longer explains these loads (R3).
+  delete next.why;
   if (load.historyVersion != null) next.historyVersion = load.historyVersion;
   const work = builderLoad(load, { reps: slot.repRange.min, rpe: R.workRpe });
   const rows: BuilderSetRow[] = [];

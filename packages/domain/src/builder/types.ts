@@ -152,7 +152,13 @@ export interface RoundedLoad {
 
 export interface BuilderSetRow {
   type: SetType;
+  /** Target reps; with `repsMax`, the bottom of a rep range. */
   reps: number;
+  /**
+   * Top of a saved rep range (a library or past workout's `3–6`; retire-overview R1), above `reps`. Absent = fixed
+   * reps. Kept through the codec so Start plans the range Ben saved; a reps edit on the set fixes it.
+   */
+  repsMax?: number;
   /** Target load in the slot's unit and convention; null = `—` (unknown, or no load). */
   load: number | null;
   /** Target RPE; null on warm-ups. */
@@ -197,6 +203,12 @@ export interface BuilderSlot {
   origin?: string;
   /** The comparable history its loads were worked out from (stored as `checkedHistoryVersion`; review B4). */
   historyVersion?: string;
+  /**
+   * (Retire-overview R3) Why its loads are what they are, from what it was opened on (a library or past workout's
+   * own rule, held on pain, capped or rounded at this gym). Shown by `Why this weight?`; dropped when the builder
+   * works the loads out again (gym change, swap).
+   */
+  why?: string[];
 }
 
 export interface BuilderBlock {

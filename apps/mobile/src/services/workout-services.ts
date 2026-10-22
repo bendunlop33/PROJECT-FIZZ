@@ -147,6 +147,7 @@ import {
   deleteRoutine,
   isFromRoutine,
   liveRoutines,
+  builderSetupOf,
   nextInRotation,
   nextTargetSourceBasis,
   renameRoutine,
@@ -1870,9 +1871,28 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   /** The live workout a coach draft was saved as, or null (not saved, or that workout was deleted). */
   /** Review r3 S1: the live workout the draft's current version was saved as; one saved from an earlier version doesn't count. */
   async function liveRoutineOf(d: WorkoutDraft): Promise<string | null> {
-    if (d.routineId === null) return null;
-    const r = await ctx.store().repos.routines.get(d.routineId).catch(() => null);
-    return draftSavedRoutineId(d, r !== null && !isDeleted(r) ? r : null);
+    const own = d.routineId === null ? null : await ctx.store().repos.routines.get(d.routineId).catch(() => null);
+    const saved = draftSavedRoutineId(d, own !== null && !isDeleted(own) ? own : null);
+    return saved ?? (d.builderKey === undefined ? await savedOnYourWorkout(d) : null);
+  }
+
+  /**
+   * Review R4 (S1 in reverse): a chat draft whose current version Ben saved from Your workout (a builder draft opened
+   * on it, at that version) is already that saved workout, so the chat card shows it saved and isn't saved twice.
+   */
+  async function savedOnYourWorkout(chat: WorkoutDraft): Promise<string | null> {
+    const all = liveRoutines(await ctx.store().repos.routines.listByOwner(chat.ownerId).catch(() => [] as Routine[]));
+    for (const r of all) {
+      const fromId = r.createdFromDraft?.draftId;
+      if (fromId === undefined || fromId === chat.id) continue;
+      const b = await ctx.store().repos.workoutDrafts.get(fromId).catch(() => null);
+      const from = b?.builderKey?.from;
+      if (b === null || from?.kind !== 'coach_draft' || from.id !== chat.id) continue;
+      if (builderSetupOf(b)?.sourceVersion !== chat.currentVersion) continue;
+      const own = b.routineId === null ? null : await ctx.store().repos.routines.get(b.routineId).catch(() => null);
+      if (draftSavedRoutineId(b, own !== null && !isDeleted(own) ? own : null) === r.id) return r.id;
+    }
+    return null;
   }
 
   /** The coach chat draft a builder draft was opened on (`builderKey.from`), or null. */

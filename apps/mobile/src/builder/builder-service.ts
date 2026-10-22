@@ -8,6 +8,9 @@ import {
   slotRepsWhy,
   infoOrDefault,
   reloadSlotLoads,
+  slotAtNewGym,
+  fitPlannedSlotHere,
+  PLANNED_HELD_LINE,
   buildFromSetup,
   builderChangeLine,
   builderChanges,
@@ -59,6 +62,7 @@ import {
   type BuilderEditOp,
   type BuilderEditRefusal,
   type BuilderWorkout,
+  type BuilderSlot,
   type DraftLifeChange,
   type RestKind,
   type GroupCount,
@@ -634,7 +638,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           checkedOnOf: (equipmentId, unit, convention) => checkedOnOf({ equipment: items.find((x) => x.id === equipmentId) ?? null, unit, convention }),
         });
         if (out.plan.slots.length === 0) return { closed: out.leftOut.length > 0 ? BUILDER_COPY.cantOpen : BUILDER_COPY.notFound };
-        return { plan: out.plan, gymId: env.gymId, sourceVersion, leftOut: out.leftOut.slice(0, BUILD_LIMITS.maxExercises * 3), main, name };
+        // Rule 4: an exercise the planner put on no item is fitted to the builder's item here (never past its max).
+        const fitted: DraftPlan = { slots: out.plan.slots.map((x) => fitPlannedSlotHere(x, slotLoadOf(env.ctx.loads(x.exerciseId), x.main), env.codec.checkedOnOf(x.exerciseId))) };
+        return { plan: fitted, gymId: env.gymId, sourceVersion, leftOut: out.leftOut.slice(0, BUILD_LIMITS.maxExercises * 3), main, name };
       }
       case 'coach_draft': {
         const d = await repos().workoutDrafts.get(from.id).catch(() => null);
@@ -1179,8 +1185,26 @@ export function createBuilderService(deps: BuilderServiceDeps) {
             swapped.add(s.key);
           }
         }
-        workout = { ...workout, blocks: workout.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (swapped.has(s.key) ? s : reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), slotLoadOf(env.ctx.loads(s.exerciseId), s.main)))) })) };
-        const plan = withSlotRevs(v.plan, toDraftPlan(workout, env.codec)).plan;
+        // (R2) Opened on a library or past workout: its own planner at the new gym (Fixed loads, its rule's targets), Ben's edits kept.
+        const from = current.builderKey?.from;
+        const src = from === undefined || from.kind === 'coach_draft' ? null : await sourcePlanOf(p, from, gym.id, `${current.id}:${w.opId}:gym-source`);
+        const srcPlan = src === null || 'closed' in src ? null : src.plan;
+        const plannedSlots = new Map(srcPlan === null ? [] : slotsOf(fromDraftPlan(srcPlan).blocks).map((x) => [x.exerciseId, x] as const));
+        const plannedItem = new Map((srcPlan?.slots ?? []).map((x) => [x.exerciseId, x.checkedOn ?? null] as const));
+        const fromPlanned = new Set<string>();
+        const regym = (s: BuilderSlot): BuilderSlot => {
+          if (swapped.has(s.key)) return s;
+          const base = reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), slotLoadOf(env.ctx.loads(s.exerciseId), s.main));
+          const planned = plannedSlots.get(s.exerciseId);
+          if (planned === undefined) return base;
+          const r = slotAtNewGym(s, planned, base);
+          if (r.fromPlanned) fromPlanned.add(s.key);
+          return r.slot;
+        };
+        workout = { ...workout, blocks: workout.blocks.map((b) => ({ ...b, slots: b.slots.map(regym) })) };
+        const encoded = toDraftPlan(workout, env.codec);
+        const withItems: DraftPlan = { slots: encoded.slots.map((x) => (fromPlanned.has(x.slotKey) ? { ...x, checkedOn: plannedItem.get(x.exerciseId) ?? null } : x)) };
+        const plan = withSlotRevs(v.plan, withItems).plan;
         const setup: BuilderSetup = { ...stored };
         delete setup.gymKept;
         const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, gymId: gym.id, undoSetup: { ...setup, gymKept: gym.id }, undoable: true });
@@ -1379,7 +1403,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const u = slot.unit;
       const lines: string[] = [];
       const work = slot.rows.find((r) => r.type !== 'warmup');
-      switch (slot.source) {
+      // (R3) Opened on a library or past workout: its planner's reasons (own rule, held, capped or rounded here).
+      const planned = slot.why ?? [];
+      if (planned.length > 0) lines.push(...planned.filter((l) => !(l === PLANNED_HELD_LINE && env.painFlagged(slot.exerciseId))));
+      else switch (slot.source) {
         case 'coach_target':
           lines.push('Coach target');
           break;
@@ -1407,7 +1434,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const item = env.itemNameOf(slot.exerciseId);
       const typedRounded = slot.rows.some((r) => r.typed === true && r.roundedFrom !== undefined);
       const calcRounded = work !== undefined && work.typed !== true && work.load !== null && slot.source !== 'none' && !env.painFlagged(slot.exerciseId) && builderWorkingRounded(slotLoadOf(env.ctx.loads(slot.exerciseId), slot.main), slot, work.load);
-      if (item !== null && (typedRounded || calcRounded)) lines.push(`Rounded down: ${item}`);
+      if (item !== null && (typedRounded || (calcRounded && planned.length === 0))) lines.push(`Rounded down: ${item}`);
       if (env.painFlagged(slot.exerciseId)) lines.push('May hurt · held at last time');
       return lines;
     },

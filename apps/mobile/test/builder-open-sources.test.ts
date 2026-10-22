@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { catalogueExerciseId, defaultSlotShape, slotsOf } from '@fizz/domain';
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
-import type { Routine, RoutineExercise, SessionAggregate } from '@fizz/schemas';
+import type { LoadConvention, Routine, RoutineExercise, SessionAggregate } from '@fizz/schemas';
 
 import type { BuilderSnapshot, BuilderWriteResult } from '../src/builder/builder-service';
+import { popupView } from '../src/builder/builder-view';
 import type { AppServices } from '../src/services/app-services';
 import { initialAddShape } from '../src/workout/exercise-info-view';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
@@ -241,6 +242,180 @@ describe('B2 / high: what a draft was opened on moved since', () => {
     const after = await s.builder.read(before.draftId);
     expect(after?.canSave).toBe(false);
     expect(await s.routines.saveFrom({ from: { kind: 'draft', draftId: before.draftId, gymId }, name: 'Push 2', addToRotation: false, opId: 'save-builder' })).toMatchObject({ ok: false, reason: 'already_saved' });
+    expect((await s.routines.list()).filter((r) => r.name.startsWith('Push'))).toHaveLength(1);
+  });
+});
+
+describe('Re-review (R1–R5)', () => {
+  const fixedSlot = (exerciseId: string, value: number, reps = { min: 5, max: 5 }, convention: LoadConvention = 'total'): RoutineExercise => ({
+    id: h.ids(),
+    exerciseId,
+    equipmentId: null,
+    order: 0,
+    supersetGroup: null,
+    setTemplates: [0, 1].map(() => ({ id: h.ids(), setType: 'working' as const, targetLoad: { value, unit: 'kg' as const, convention }, targetReps: reps, targetDurationS: null, targetRpe: null, targetRir: null, restOverrideS: null })),
+    restBySetType: {},
+    transitionRestS: null,
+    progressionRuleId: null,
+  });
+
+  it('R1: the reviewer’s probe: 5 × (3–6) squat shows 3–6 and, after an edit elsewhere, Start plans 3–6 (not 3 × 3); a reps edit fixes only that set', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const sid = await logWorkout(h, s, gymId, [
+      { exercise: 'Back squat', sets: [1, 2, 3, 4, 5].map(() => ({ load: 100, reps: 5, rpe: 8 })) },
+      { exercise: 'Lateral raise', sets: [{ load: 8, reps: 20 }, { load: 8, reps: 20 }] },
+    ]);
+    h.clockMs += DAY;
+    const five = await saved(s, sid, 'Five');
+    const planned = await s.routines.planned(five.id, gymId);
+    const squatEx = planned?.aggregate.exercises.find((e) => e.exerciseName === 'Back squat');
+    const plannedReps = planned?.aggregate.sets.filter((x) => x.sessionExerciseId === squatEx?.id && x.setType !== 'warmup').map((x) => x.planned.reps) ?? [];
+    expect(plannedReps.length).toBe(5);
+    expect(plannedReps.some((r) => r !== null && r.max > r.min)).toBe(true);
+
+    let snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: five.id }, 'open-r1'));
+    const squatRows = () => rowsOf(snap, 'Back squat').filter((r) => r.type !== 'warmup');
+    expect(squatRows().map((r) => ({ min: r.reps, max: r.repsMax ?? r.reps }))).toEqual(plannedReps);
+    const squatKey = slotsOf(snap.workout.blocks).find((x) => snap.facts[x.exerciseId]?.name === 'Back squat')?.key ?? '';
+    const latKey = slotsOf(snap.workout.blocks).find((x) => snap.facts[x.exerciseId]?.name === 'Lateral raise')?.key ?? '';
+    // The exercise pop-up shows the range, and says it.
+    const pop = popupView(snap, squatKey, () => 120)?.rows.filter((r) => r.type !== 'warmup') ?? [];
+    const range = plannedReps[0];
+    expect(pop[0]?.repsText).toBe(range === null || range === undefined ? '' : `${String(range.min)}–${String(range.max)}`);
+    expect(pop[0]?.accessibilityLabel).toContain(`${String(range?.min)} to ${String(range?.max)} reps`);
+    snap = opened(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: latKey }, { opId: 'r1-add', basis: { version: snap.version } }));
+    // Ben sets the last squat set to 5 reps.
+    const lastSquat = rowsOf(snap, 'Back squat').length - 1;
+    snap = opened(await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: squatKey, index: lastSquat, patch: { kind: 'reps', reps: 5 } }, { opId: 'r1-reps', basis: { version: snap.version } }));
+    // Force-close and relaunch: the range is stored, not just on screen.
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    const read = await s2.builder.read(snap.draftId);
+    expect(read).not.toBeNull();
+    if (read === null) return;
+    const started = await s2.builder.start(read.draftId, { choice: { kind: 'today' }, opId: 'start-r1', expectedVersion: read.version, checkIn: null });
+    if (!started.ok) throw new Error(started.message);
+    const a = (await s2.workout.load(started.sessionId))?.aggregate;
+    const ex = a?.exercises.find((e) => e.exerciseName === 'Back squat');
+    const reps = [...(a?.sets.filter((x) => x.sessionExerciseId === ex?.id && x.setType !== 'warmup') ?? [])].sort((x, y) => x.index - y.index).map((x) => x.planned.reps);
+    expect(reps).toEqual([...plannedReps.slice(0, 4), { min: 5, max: 5 }]);
+  });
+
+  it('R2: `Gym changed` on a saved workout keeps its Fixed load at the new gym (the planner’s, not the builder’s rule); Undo puts it back', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const push = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 8 }] }]);
+    const bench = (await s.workout.load(push))?.aggregate.exercises.find((e) => e.exerciseName === 'Bench press')?.exerciseId ?? '';
+    h.clockMs += DAY;
+    const made = await s.routines.create({ edit: { name: 'Fixed', exercises: [fixedSlot(bench, 42.5)] }, opId: 'new-fixed-r2' });
+    if (!made.ok) throw new Error(made.message);
+    const snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: made.routine.id }, 'open-r2'));
+    expect(rowsOf(snap, 'Bench press').filter((r) => r.type !== 'warmup').map((r) => r.load)).toEqual([42.5, 42.5]);
+    const other = h.ids();
+    expect((await s.setup.saveGym({ gymId: other, name: 'Second gym', draft: s.coachingKnowledge.buildGymDraft('commercial', 'kg') })).ok).toBe(true);
+    expect((await s.gyms.select(other)).ok).toBe(true);
+    const at = await s.builder.read(snap.draftId);
+    expect(at?.gymChanged).toBe(true);
+    const moved = await s.builder.changeGym(snap.draftId, { opId: 'gym-r2', expectedVersion: at?.version ?? 0 });
+    if (moved.status !== 'written') throw new Error(moved.status);
+    expect(moved.snapshot.gymId).toBe(other);
+    expect(rowsOf(moved.snapshot, 'Bench press').filter((r) => r.type !== 'warmup').map((r) => r.load)).toEqual([42.5, 42.5]);
+    expect(await s.builder.whyWeight(snap.draftId, slotsOf(moved.snapshot.workout.blocks)[0]?.key ?? '')).toContain('Saved workout');
+
+    // Edited first (an extra set), then the gym changes: Ben's three sets stay, the saved ones at 42.5.
+    const back = await s.builder.undo(snap.draftId, 'gym-r2', 'u-gym-r2');
+    if (back.snapshot === null) throw new Error('no undo');
+    const key = slotsOf(back.snapshot.workout.blocks)[0]?.key ?? '';
+    const edited = opened(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: key }, { opId: 'r2-add', basis: { version: back.snapshot.version } }));
+    const again = await s.builder.changeGym(snap.draftId, { opId: 'gym-r2b', expectedVersion: edited.version });
+    if (again.status !== 'written') throw new Error(again.status);
+    const rows = rowsOf(again.snapshot, 'Bench press').filter((r) => r.type !== 'warmup');
+    expect(rows).toHaveLength(3);
+    expect(rows.slice(0, 2).map((r) => r.load)).toEqual([42.5, 42.5]);
+  });
+
+  it('R3 / R5: a Fixed load over a machine’s max opens capped at the max (rule 4) and `Why this weight?` says so', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const sid = await logWorkout(h, s, gymId, [
+      { exercise: 'Triceps pushdown', sets: [{ load: 30, reps: 10, rpe: 8 }] },
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 8 }] },
+    ]);
+    const a0 = (await s.workout.load(sid))?.aggregate;
+    const pushdown = a0?.exercises.find((e) => e.exerciseName === 'Triceps pushdown')?.exerciseId ?? '';
+    h.clockMs += DAY;
+    const pd = a0?.exercises.find((e) => e.exerciseName === 'Triceps pushdown');
+    // On the gym's cable stack (the item Ben used), Fixed at 400 kg: past the stack's max.
+    const made = await s.routines.create({ edit: { name: 'Heavy pushdown', exercises: [{ ...fixedSlot(pushdown, 400, { min: 10, max: 12 }, pd?.loadConvention ?? 'stack'), equipmentId: pd?.equipmentId ?? null }] }, opId: 'new-max' });
+    if (!made.ok) throw new Error(made.message);
+    const planned = await s.routines.planned(made.routine.id, gymId);
+    const cap = planned?.aggregate.sets.find((x) => x.setType !== 'warmup')?.planned;
+    expect(cap?.snap?.outcome).toBe('capped');
+    const snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: made.routine.id }, 'open-max'));
+    const rows = rowsOf(snap, 'Triceps pushdown').filter((r) => r.type !== 'warmup');
+    expect(rows.map((r) => r.load)).toEqual(rows.map(() => cap?.load?.value ?? null));
+    for (const r of rows) expect(r.load ?? 0).toBeLessThan(400);
+    const why = await s.builder.whyWeight(snap.draftId, slotsOf(snap.workout.blocks)[0]?.key ?? '');
+    expect(why[0]).toBe('Saved workout');
+    expect(why.some((l) => l.startsWith('Max here'))).toBe(true);
+    // Start keeps the cap (never extrapolated past the max).
+    const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-max', expectedVersion: snap.version, checkIn: null });
+    if (!started.ok) throw new Error(started.message);
+    startedAsShown(snap, (await s.workout.load(started.sessionId))?.aggregate);
+  });
+
+  it('R3: the reviewer’s repro: bench flagged for pain, its library workout’s `Why this weight?` says it is held, not just `Saved workout`', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const sid = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 8 }, { load: 60, reps: 8, rpe: 8 }] }]);
+    h.clockMs += DAY;
+    const routine = await saved(s, sid, 'Bench day');
+    const bench = routine.exercises[0]?.exerciseId ?? '';
+    expect((await s.pain.flagMovement({ exerciseId: bench, exerciseName: 'Bench press', opId: 'pain-r3' })).ok).toBe(true);
+    const snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: routine.id }, 'open-r3'));
+    const why = await s.builder.whyWeight(snap.draftId, slotsOf(snap.workout.blocks)[0]?.key ?? '');
+    expect(why.some((l) => /held/i.test(l))).toBe(true);
+    expect(why).not.toEqual(['Saved workout']);
+  });
+
+  it('rule 4: a saved exercise with no item opens on this gym’s item, capped at its max (not 400 kg on a stack), and Start plans that', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const sid = await logWorkout(h, s, gymId, [{ exercise: 'Triceps pushdown', sets: [{ load: 30, reps: 10, rpe: 8 }] }]);
+    const pd = (await s.workout.load(sid))?.aggregate.exercises[0];
+    h.clockMs += DAY;
+    const made = await s.routines.create({ edit: { name: 'No item', exercises: [fixedSlot(pd?.exerciseId ?? '', 400, { min: 10, max: 12 }, pd?.loadConvention ?? 'stack')] }, opId: 'new-null' });
+    if (!made.ok) throw new Error(made.message);
+    const snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: made.routine.id }, 'open-null'));
+    const rows = rowsOf(snap, 'Triceps pushdown').filter((r) => r.type !== 'warmup');
+    expect(rows.length).toBe(2);
+    for (const r of rows) {
+      expect(r.load).not.toBeNull();
+      expect(r.load ?? 400).toBeLessThan(400);
+    }
+    expect(Object.values(snap.items).every((x) => x !== null)).toBe(true);
+    expect(await s.builder.whyWeight(snap.draftId, slotsOf(snap.workout.blocks)[0]?.key ?? '')).toContain('Max here');
+    const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-null', expectedVersion: snap.version, checkIn: null });
+    if (!started.ok) throw new Error(started.message);
+    startedAsShown(snap, (await s.workout.load(started.sessionId))?.aggregate);
+  });
+
+  it('R4: saved from Your workout first, the chat card’s Save is refused and the card reads saved: one workout, not two', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 8 }] }]);
+    h.clockMs += DAY;
+    model = new StepModel([stub(['Bench press', 'Lateral raise']), () => replyWith('Here it is.')]);
+    const r1 = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'build me a 45-minute push session', spoken: false }, turnId: h.ids() });
+    const card = r1.cards[0]?.record;
+    if (card?.detail.kind !== 'build_workout') throw new Error('no draft');
+    const chatId = card.detail.draftId;
+    const page = opened(await s.builder.openTarget({ kind: 'coach_draft', draftId: chatId }, 'open-r4'));
+    expect(page.canSave).toBe(true);
+    const fromPage = await s.routines.saveFrom({ from: { kind: 'draft', draftId: page.draftId, gymId }, name: 'Push', addToRotation: false, opId: 'save-page' });
+    expect(fromPage.ok).toBe(true);
+    expect(await s.routines.saveFrom({ from: { kind: 'draft', draftId: chatId, gymId }, name: 'Push 2', addToRotation: false, opId: 'save-chat-after' })).toMatchObject({ ok: false, reason: 'already_saved' });
     expect((await s.routines.list()).filter((r) => r.name.startsWith('Push'))).toHaveLength(1);
   });
 });

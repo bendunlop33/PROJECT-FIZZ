@@ -459,3 +459,21 @@ describe('S10: gym changed, plan day reloaded silently, Not applied · Add anywa
     expect(added.skipped).toEqual([]);
   });
 });
+
+describe('Re-review R5 (retire-workout-overview): a plan day from a plan no longer in use', () => {
+  it('opens as a library workout (no plan-day key, no Start prompt); while the plan is in use it opens as its plan day', async () => {
+    const { s, push } = await benWithPlan();
+    const inUse = ok(await s.builder.openTarget({ kind: 'routine', routineId: push }, 'open-in-use')).snapshot;
+    expect(inUse.planDay).not.toBeNull();
+    expect(inUse.from).toBeNull();
+    const planId = (await s.plans.active())?.planId ?? '';
+    const v = await s.plans.overview();
+    expect(await s.plans.end({ planId, expectedVersion: v?.planVersion ?? 0, opId: 'end-r5' })).toMatchObject({ ok: true });
+    const old = ok(await s.builder.openTarget({ kind: 'routine', routineId: push }, 'open-old-plan')).snapshot;
+    expect(old.draftId).not.toBe(inUse.draftId);
+    expect(old.planDay).toBeNull();
+    expect(old.from).toEqual({ kind: 'routine', id: push });
+    expect(names(old).length).toBeGreaterThan(0);
+    expect(await s.builder.startPrompt(old.draftId)).toBeNull();
+  });
+});

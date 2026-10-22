@@ -1,5 +1,9 @@
 import { BUILD_LIMITS, type CheckedOnRecord, type DraftLoadSource, type DraftPlan, type DraftSetTemplate, type DraftSlot, type LoadConvention, type PlannedSet, type SetType, type TargetSource, type WeightUnit } from '@fizz/schemas';
-import type { BuilderLoadSourceKind, RestKind } from './types';
+import { setSnapNote } from '../session/snap-text';
+import { briefLine } from '../session/target-why';
+import { loadDirection } from '../equipment';
+import { convertValue, fitHere, roundContextOf } from './loads';
+import type { BuilderLoadSourceKind, BuilderSetRow, BuilderSlot, RestKind, SlotLoadInput } from './types';
 
 /**
  * (Review B1, retire-workout-overview) A library workout or a past workout opened on Your workout as the Workout
@@ -75,6 +79,31 @@ export function builderSourceOfPlanned(source: TargetSource | undefined, hasLoad
   }
 }
 
+/** `Why this weight?`'s line for a load the planner held on pain (rule 9). */
+export const PLANNED_HELD_LINE = 'Held · pain';
+
+/**
+ * (Retire-overview R3) Why a planned load is what it is, as the overview's `Why?` said it: where it came from (its own
+ * rule's line, not the built-in rule's; the coach; the saved workout), held on pain (rule 9), and capped, converted,
+ * dropped or rounded at this gym (rule 4). Values only.
+ */
+export function plannedWhyLines(planned: PlannedSet): string[] {
+  const p = planned.provenance;
+  const lines: string[] = [];
+  const ruleLine = p?.source === 'rule' && p.rule !== undefined ? briefLine(p.rule.summary).replace(/,? because .*$/, '').trim() : '';
+  const hasLoad = planned.load !== null;
+  if (ruleLine !== '') lines.push(ruleLine.slice(0, 200));
+  else if (hasLoad) lines.push(p?.source === 'coach' ? 'Coach target' : p?.source === 'rule' ? (p.rule?.name.slice(0, 200) ?? 'Rule') : 'Saved workout');
+  if (p?.held === true || planned.snap?.painHeld === true || (planned.snap?.outcome === 'dropped' && planned.snap.reason === 'pain_flag')) lines.push(PLANNED_HELD_LINE);
+  const snap = planned.snap;
+  if (snap !== undefined) {
+    const note = setSnapNote(snap, planned.load, { gymName: null, equipment: null, unit: planned.load?.unit ?? snap.intended?.unit ?? 'kg' });
+    if (note !== null && !(snap.outcome === 'dropped' && snap.reason === 'pain_flag')) lines.push(note.text.slice(0, 200));
+    else if (snap.outcome === 'rounded') lines.push('Rounded down');
+  }
+  return lines.slice(0, 4);
+}
+
 const DRAFT_LOAD_SOURCE: Readonly<Record<BuilderLoadSourceKind, DraftLoadSource>> = { coach_target: 'coach', plan: 'plan', rule: 'rule', calc: 'calc', none: 'none', saved: 'plan' };
 
 const clampRest = (kind: RestKind, s: number): number => Math.min(BUILD_LIMITS.maxRestS, Math.max(kind === 'before_drop' ? 0 : BUILD_LIMITS.minRestS, Math.round(s)));
@@ -101,6 +130,8 @@ export function plannedAsDraftPlan(input: PlannedAsDraftInput): PlannedAsDraft {
     seen.add(e.exerciseId);
     const firstWork = sets.find((s) => s.setType !== 'warmup' && s.planned.load !== null) ?? sets.find((s) => s.planned.load !== null);
     const source = builderSourceOfPlanned(firstWork?.planned.provenance?.source, firstWork !== undefined);
+    const whySet = sets.find((s) => s.setType !== 'warmup') ?? sets[0];
+    const why = whySet === undefined ? [] : plannedWhyLines(whySet.planned);
     const restS: Partial<Record<RestKind, number>> = {};
     for (const s of sets) {
       const kind = REST_KIND[s.setType];
@@ -124,8 +155,9 @@ export function plannedAsDraftPlan(input: PlannedAsDraftInput): PlannedAsDraft {
           source: load === null ? 'none' : DRAFT_LOAD_SOURCE[source],
           basis: null,
           basisFromCoach: false,
-          held: false,
-          notes: [],
+          // The slot's reasons on every loaded set, as the codec writes them back (R3).
+          held: load !== null && why.includes(PLANNED_HELD_LINE),
+          notes: load === null ? [] : why.slice(1),
           notUsed: null,
         },
       };
@@ -152,6 +184,7 @@ export function plannedAsDraftPlan(input: PlannedAsDraftInput): PlannedAsDraft {
         startLight: null,
         origin: e.exerciseId,
         ...(Object.keys(restS).length > 0 ? { restS } : {}),
+        ...(why.length > 0 ? { why } : {}),
       },
     });
   }
@@ -163,4 +196,96 @@ export function plannedAsDraftPlan(input: PlannedAsDraftInput): PlannedAsDraft {
     return n < BUILD_LIMITS.minSuperset || n > BUILD_LIMITS.maxSuperset ? { ...s, supersetGroup: null } : s;
   });
   return { plan: { slots: fixed }, leftOut };
+}
+
+/**
+ * (Retire-overview R2) `Gym changed` on a library or past workout: one slot at the new gym, from what its planner
+ * made there (`planned`: the saved workout's own Fixed loads and rule targets, fitted to the new gym's items, rule 4)
+ * rather than the builder's §3.1 rules. `base` is the builder's own reload of the slot (`reloadSlotLoads`), used for a
+ * kg Ben typed (kept when that weight exists here) and for any set the saved workout has no match for.
+ * - A slot Ben didn't edit becomes the planned one (its key, superset and rests kept).
+ * - An edited slot keeps his rows (set types, count, reps, RPE); each set takes the planned load of the same type and
+ *   position, else `base`'s. If the planned slot is in another unit or convention than `base`, `base` is used.
+ * Returns the slot and whether any load came from `planned` (its item is then the planner's). Pure.
+ */
+export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: BuilderSlot): { slot: BuilderSlot; fromPlanned: boolean } {
+  const keep = (s: BuilderSlot): BuilderSlot => {
+    const out: BuilderSlot = { ...s, key: slot.key, main: slot.main };
+    delete out.restS;
+    delete out.unlinked;
+    if (slot.restS !== undefined) out.restS = { ...slot.restS };
+    else if (s.restS !== undefined) out.restS = { ...s.restS };
+    if (slot.unlinked === true) out.unlinked = true;
+    if (slot.origin !== undefined) out.origin = slot.origin;
+    return out;
+  };
+  if (slot.touched !== true) return { slot: keep({ ...planned, rows: planned.rows.map((r) => ({ ...r })) }), fromPlanned: true };
+  if (planned.unit !== base.unit || planned.convention !== base.convention) return { slot: base, fromPlanned: false };
+  const nth = (rows: readonly BuilderSetRow[], type: BuilderSetRow['type'], k: number): BuilderSetRow | undefined => rows.filter((r) => r.type === type)[k];
+  const seen = new Map<BuilderSetRow['type'], number>();
+  const used: boolean[] = [];
+  const rows = slot.rows.map((r): BuilderSetRow => {
+    const k = seen.get(r.type) ?? 0;
+    seen.set(r.type, k + 1);
+    const fromBase = nth(base.rows, r.type, k);
+    if (r.typed === true && fromBase?.typed === true) return { ...r, load: fromBase.load, ...(fromBase.roundedFrom === undefined ? {} : { roundedFrom: fromBase.roundedFrom }) };
+    const p = nth(planned.rows, r.type, k);
+    const plain: BuilderSetRow = { ...r };
+    delete plain.typed;
+    delete plain.roundedFrom;
+    if (p !== undefined) {
+      used.push(true);
+      return { ...plain, load: p.load };
+    }
+    return { ...plain, load: fromBase?.load ?? null };
+  });
+  if (used.length === 0) return { slot: base, fromPlanned: false };
+  const out: BuilderSlot = { ...slot, rows, unit: planned.unit, convention: planned.convention, source: planned.source, anchorE1rm: planned.anchorE1rm, startLight: planned.startLight };
+  delete out.why;
+  delete out.historyVersion;
+  if (planned.why !== undefined) out.why = [...planned.why];
+  return { slot: out, fromPlanned: true };
+}
+
+/**
+ * (Rule 4) A planned exercise the planner put on no item (a library workout's exercise with no item saved): its
+ * loads fitted to the item the builder uses for it at this gym (`load`, as `slotLoadOf` gives it; `checkedOn` that
+ * item), rounded down and never past the item's max. A load nothing here can make is dropped (`No load target`).
+ * The fit is named in the slot's reasons (`Max here`, `Rounded down`). A slot already on an item, or one with no item
+ * here, is returned as it is. Pure.
+ */
+export function fitPlannedSlotHere(slot: DraftSlot, load: SlotLoadInput, checkedOn: CheckedOnRecord | null): DraftSlot {
+  if (slot.checkedOn != null) return slot;
+  const ctx = roundContextOf(load);
+  if (ctx.equipment === null) return slot;
+  const fitLines: string[] = [];
+  const add = (l: string) => {
+    if (!fitLines.includes(l)) fitLines.push(l);
+  };
+  let unit = slot.builder?.unit;
+  const setTemplates = slot.setTemplates.map((t): DraftSetTemplate => {
+    const l = t.load?.load;
+    if (t.load === undefined || l == null || l.convention !== ctx.convention) return t;
+    const asked = convertValue(l.value, l.unit, ctx.unit);
+    const fit = fitHere(asked, { ...ctx, painCap: null });
+    if (!fit.ok) {
+      add('No load target');
+      return { ...t, load: { ...t.load, load: null, source: 'none' } };
+    }
+    unit = fit.load.unit;
+    if (fit.load.bounded !== null && Math.abs(fit.load.value - convertValue(asked, ctx.unit, fit.load.unit)) > 1e-6) add(loadDirection(ctx.convention) === 'resistance' ? 'Max here' : 'Least assistance here');
+    else if (fit.load.rounded) add('Rounded down');
+    return { ...t, load: { ...t.load, load: { value: fit.load.value, unit: fit.load.unit, convention: l.convention } } };
+  });
+  const meta = slot.builder;
+  const why = [...(meta?.why ?? [])];
+  for (const l of fitLines) if (!why.includes(l)) why.push(l);
+  const shown = why.slice(0, 4);
+  const notes = shown.slice(1);
+  return {
+    ...slot,
+    checkedOn,
+    setTemplates: setTemplates.map((t) => (t.load === undefined || t.load.load === null ? t : { ...t, load: { ...t.load, notes } })),
+    ...(meta === undefined ? {} : { builder: { ...meta, ...(unit === undefined ? {} : { unit }), ...(shown.length > 0 ? { why: shown } : {}) } }),
+  };
 }
