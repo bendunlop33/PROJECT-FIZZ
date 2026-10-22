@@ -1,6 +1,6 @@
 # Review: retire WorkoutOverview (Ben, 22 Oct 2026)
 
-**Verdict: CHANGES NEEDED**
+**Verdict: CHANGES NEEDED** (re-review 22 Oct 2026, after 62b1202, a1af70e, c7a4750, 0a356e4: B2, B3, B4 and S1 fixed; B1 only partly fixed, new blocking R1 below)
 
 Scope: `216a402..847729b` on `claude/gracious-knuth-joxqpw` (84d5ea1, cb342fc, 77f16ef, df0ef78, 847729b).
 Checked against `docs/design/workout-builder-v3.md` §2.1, §2.3, §3.1, §7, the CLAUDE.md product rules, and the parity audit in the task.
@@ -167,3 +167,49 @@ Still open for Ben:
 2. B3: rebuild the next-workout proposal on Your workout, or drop it.
 3. Cardio, timed and distance sets, and one exercise twice, on Your workout. Until then they show as `left out`.
 4. Chat `Open ›`: Your workout (as built) or Set up (as specced).
+
+## Re-review (reviewer, 22 Oct 2026)
+
+Scope: `847729b..0a356e4` (62b1202, a1af70e, c7a4750, 0a356e4).
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` (default env; the script now sets a 5 GB heap) | exit 0 |
+| `npx vitest run` | 467 files, 8705 passed, 2 todo, exit 0 |
+| Reviewer probe (temporary test on real SQLite, deleted afterwards) | Reproduced R1 below |
+
+Verified as fixed:
+- **B2 / high (stale source):** `sourceVersion` is stored on open. A source that changed reloads silently when there are no edits, and shows `… changed · Reload` with Undo when there are. `chatSourceStaleIn` (`packages/persistence/src/workout-drafts.ts:180`) refuses a stale chat start inside the start transaction, before `startWorkoutDraftIn` and `startChatSourceIn`. On `stale`, the screen reloads and shows the Reload line. The test covers v1, v2 and v3.
+- **B3:** `propose_next_workout_change` is withheld (`not_in_build`), an unapplied card reads Out of date, and Apply is refused. The tests now use `builder.openTarget`.
+- **B4:** `npm run lint` passes at the default env. A GitHub runner still needs to confirm it.
+- **S1:** the Save to Workouts entry is hidden, and `saveFrom` refuses when the chat draft is already saved. The reverse order is still open (see R4).
+- **Old plan's routine:** it opens as a library workout unless its plan is `planInUse`.
+- **S2:** I accept the developer's reasoning. `noteStartFrom` is inert without a session that has that op ID (`packages/persistence/src/coach.ts:909-920`).
+
+### Blocking
+
+**R1. Saved rep ranges are shown as their minimum, and any edit turns them into fixed reps at Start (B1 is only partly fixed).**
+`packages/domain/src/builder/codec.ts:126` (`reps: t.reps?.min ?? 1`), `:77` (`reps: { min: row.reps, max: row.reps }`), `apps/mobile/src/builder/builder-view.ts:351`.
+`plannedAsDraftPlan` keeps the planner's `{min:3,max:6}` in the set templates, but Your workout's rows hold one rep number. The page shows `3`. The first edit of any kind re-encodes every slot through `toDraftPlan`, so Start then logs `{3,3}`.
+Probe: log back squat 5 × 5 @ 100 kg and lateral raise 2 × 20 @ 8 kg, then save as `Five`. The routine is 5 × (3–6), and `routines.planned` gives 5 × (3–6) @ 100. Open it from Library: the rows read `100 × 3` five times. Add one set to lateral raise, then Start: the session's squat sets are planned `{min:3,max:3}` @ 100.
+This is not the workout Ben saved. It also feeds progression: a range-based rule sees 3 reps as the top of the range. The B1 test checks only set types and loads, not reps.
+Fix: carry a per-row rep range, or at least `repsMax`, through `BuilderSetRow` and the codec for slots from `plannedAsDraftPlan`. Show `3–6` on the row. Add the reps check to the B1 test, with an edit before Start.
+
+### Should fix
+
+- **R2. `Gym changed` on a library or past workout rebuilds its loads with the builder's §3.1 rules** (`builder-service.ts:1182` → `reloadSlotLoads`). Fixed loads and the workout's own rule targets are replaced by the builder's calculation. Fix: for a draft with `builderKey.from` of kind routine or session, re-run `sourcePlanOf` at the new gym, keeping Ben's edits as in Reload.
+- **R3. Held and capped loads lose their reason.** `from-planned.ts:127-128` writes `held: false, notes: []`, and the planner's `provenance.held` and `snap` are dropped. `Why this weight?` says `Saved workout` for a load the planner held on pain or capped at a machine's max (rules 4, 6, 9 honesty). A load from Ben's own progression rule is explained with the built-in rule's line (`ruleLine`).
+- **R4. S1 in reverse is still open.** Save from Your workout first, then save from the chat card, and you get two identical workouts (the developer acknowledged this).
+- **R5. Tests still missing:** machine max through `openTarget`, an old plan's routine, and `Gym changed` on a saved workout. Screen tests are still source greps.
+
+### Nits
+
+- `workout-drafts.ts:170-189`: `startChatSourceIn`'s doc comment now sits above `chatSourceStaleIn`, so the two comments are stacked.
+- `registry.ts:212` (`edit_today` description) and `request.ts:951` still point the model to `propose_next_workout_change`, which is withheld. The model is told to use a tool it doesn't have.
+- `coach-service.ts:650` `basisChanged = true`: a card applied before this build still reads `Applied` (with Undo) although nothing applies it. This affects old data only.
+- `‹ Back` from the coach sheet and Exercise detail: fine, but the spec (§2.3) should say so.
+
+### Spec issues (still open for Ben)
+
+The four decisions in the developer's list stand: saved workouts as planned vs builder rules; the next-workout change rebuilt or dropped; cardio, timed and duplicate rows on Your workout; and chat `Open ›` going to Your workout or Set up. R1 needs a design call too: Your workout has no way to show a rep range per row.
