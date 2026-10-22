@@ -7,6 +7,7 @@ import {
   slotLoadOf,
   slotRepsWhy,
   infoOrDefault,
+  isTimedSlot,
   reloadSlotLoads,
   slotAtNewGym,
   fitPlannedSlotHere,
@@ -222,7 +223,7 @@ export interface BuilderSnapshot {
   from: BuilderDraftFrom | null;
   /** (22 Oct, §7) `⋯ Save to Workouts`: not a plan day and not already a saved workout. */
   canSave: boolean;
-  /** (Review B1) Names of the exercises of that workout Your workout can't hold (cardio, timed sets, a second copy): `N left out`. */
+  /** (Review B1) Names of the exercises of that workout Your workout can't hold (one it can't find, past its limits): `N left out`. */
   leftOut: string[];
 }
 
@@ -291,7 +292,7 @@ export const BUILDER_COPY = {
   cantUndo: 'Can’t undo',
   closed: 'This workout was started or closed.',
   notFound: 'That workout wasn’t found.',
-  /** (Review B1) Every exercise of that workout is one Your workout can't hold yet (cardio, timed sets). */
+  /** (Review B1) Every exercise of that workout is one Your workout can't hold (none it can find, or past its limits). */
   cantOpen: 'Can’t open this workout here yet.',
   leftOut: (n: number) => `${String(n)} left out`,
   noGym: 'Couldn’t set up a gym. Try again.',
@@ -325,6 +326,7 @@ const REFUSAL_TEXT: Partial<Record<BuilderEditRefusal, string>> = {
   cannot_superset: 'Can’t superset',
   lightest_is_harder: 'Lighter than this gym can load',
   not_loadable: 'Not at this gym',
+  timed_set: 'Timed sets stay as saved',
   reps_out_of_range: 'Reps 1–100',
   rpe_out_of_range: 'RPE 1–10',
 };
@@ -634,7 +636,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           exercises: planned.exercises,
           sets: planned.sets,
           mainExerciseId: main,
-          holds: (id) => env.info(id) !== null,
+          // (22 Oct) Cardio, timed sets and a second copy open as saved; only an exercise it can't find is left out.
+          holds: (id) => env.exercise(id) !== null,
           slotKey: (n) => deriveId(`builder-slot:${keySeed}:${String(n)}`),
           catalogueIdOf: (id) => env.codec.catalogueIdOf(id),
           checkedOnOf: (equipmentId, unit, convention) => checkedOnOf({ equipment: items.find((x) => x.id === equipmentId) ?? null, unit, convention }),
@@ -1191,21 +1194,34 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const from = current.builderKey?.from;
         const src = from === undefined || from.kind === 'coach_draft' ? null : await sourcePlanOf(p, from, gym.id, `${current.id}:${w.opId}:gym-source`);
         const srcPlan = src === null || 'closed' in src ? null : src.plan;
-        const plannedSlots = new Map(srcPlan === null ? [] : slotsOf(fromDraftPlan(srcPlan).blocks).map((x) => [x.exerciseId, x] as const));
-        const plannedItem = new Map((srcPlan?.slots ?? []).map((x) => [x.exerciseId, x.checkedOn ?? null] as const));
-        const fromPlanned = new Set<string>();
+        // An exercise listed twice (22 Oct): each copy takes the planned slot of the same copy (`id#0`, `id#1`).
+        const copyKeys = (slots: readonly { exerciseId: string }[]): string[] => {
+          const seen = new Map<string, number>();
+          return slots.map((x) => {
+            const n = seen.get(x.exerciseId) ?? 0;
+            seen.set(x.exerciseId, n + 1);
+            return `${x.exerciseId}#${String(n)}`;
+          });
+        };
+        const plannedList = srcPlan === null ? [] : slotsOf(fromDraftPlan(srcPlan).blocks);
+        const plannedKeys = copyKeys(plannedList);
+        const plannedSlots = new Map(plannedList.map((x, i) => [plannedKeys[i] ?? '', x] as const));
+        const plannedItem = new Map(plannedList.map((x, i) => [plannedKeys[i] ?? '', srcPlan?.slots.find((y) => y.slotKey === x.key)?.checkedOn ?? null] as const));
+        const currentKeys = new Map(slotsOf(workout.blocks).map((x, i, all) => [x.key, copyKeys(all)[i] ?? ''] as const));
+        const fromPlanned = new Map<string, string>();
         const regym = (s: BuilderSlot): BuilderSlot => {
           if (swapped.has(s.key)) return s;
           const base = reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), slotLoadOf(env.ctx.loads(s.exerciseId), s.main));
-          const planned = plannedSlots.get(s.exerciseId);
+          const copy = currentKeys.get(s.key) ?? '';
+          const planned = plannedSlots.get(copy);
           if (planned === undefined) return base;
           const r = slotAtNewGym(s, planned, base);
-          if (r.fromPlanned) fromPlanned.add(s.key);
+          if (r.fromPlanned) fromPlanned.set(s.key, copy);
           return r.slot;
         };
         workout = { ...workout, blocks: workout.blocks.map((b) => ({ ...b, slots: b.slots.map(regym) })) };
         const encoded = toDraftPlan(workout, env.codec);
-        const withItems: DraftPlan = { slots: encoded.slots.map((x) => (fromPlanned.has(x.slotKey) ? { ...x, checkedOn: plannedItem.get(x.exerciseId) ?? null } : x)) };
+        const withItems: DraftPlan = { slots: encoded.slots.map((x) => (fromPlanned.has(x.slotKey) ? { ...x, checkedOn: plannedItem.get(fromPlanned.get(x.slotKey) ?? '') ?? null } : x)) };
         const plan = withSlotRevs(v.plan, withItems).plan;
         const setup: BuilderSetup = { ...stored };
         delete setup.gymKept;
@@ -1425,7 +1441,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           if (slot.anchorE1rm !== null && work !== undefined) lines.push(`Est. max ${String(Math.round(slot.anchorE1rm))} ${u} (estimate) · ${String(work.reps)} reps @ RPE ${String(work.rpe ?? 8)}`);
           break;
         case 'none':
-          lines.push(slot.startLight === null ? 'Start light' : `Start light · up to ${String(slot.startLight)} ${u}`);
+          // A timed or cardio set with no load (22 Oct): its time is what it was opened on, not a light start.
+          if (isTimedSlot(slot)) lines.push(snap.from?.kind === 'coach_draft' ? 'Coach target' : 'Saved workout');
+          else lines.push(slot.startLight === null ? 'Start light' : `Start light · up to ${String(slot.startLight)} ${u}`);
           break;
       }
       // Reps from history (21 Oct): what he did last time, so the reps never contradict it silently.

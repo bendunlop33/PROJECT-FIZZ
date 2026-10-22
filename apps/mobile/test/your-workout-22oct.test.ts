@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { catalogueExerciseId, slotsOf } from '@fizz/domain';
-import type { Routine } from '@fizz/schemas';
+import type { Routine, RoutineExercise } from '@fizz/schemas';
 
 import type { BuilderSnapshot, BuilderWriteResult } from '../src/builder/builder-service';
 import { popupLinks } from '../src/builder/builder-view';
@@ -15,7 +15,8 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 /**
  * Your workout, Ben's 22 Oct batch (the Workout overview's retirement follow-ups), on real SQLite, offline:
  * - the `May hurt` confirm before swapping to a flagged exercise (rule 9), as the overview had it;
- * - `How to` and `History` in the row pop-up, where the overview's rows had them.
+ * - `How to` and `History` in the row pop-up, where the overview's rows had them;
+ * - cardio, timed sets and the same exercise twice on Your workout, as saved (more in builder-open-sources B1).
  */
 
 const DAY = 86_400_000;
@@ -116,5 +117,33 @@ describe('`How to` and `History` in the row pop-up', () => {
     expect(page).toMatch(/setPopup\(null\);\s*navigation\.navigate\('ExerciseProgress', history\);/);
     // The active workout's pop-up is unchanged: it has its own menu's How to and History.
     expect(read('screens/workout/WorkoutScreen.tsx')).not.toContain('onHowTo=');
+  });
+});
+
+describe('cardio, timed sets and an exercise twice (as saved)', () => {
+  it('`Gym changed` on a saved workout with bench twice and a plank: each copy keeps its own Fixed load and set count at the new gym; the plank keeps its time', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const push = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 8 }] }]);
+    const bench = (await s.workout.load(push))?.aggregate.exercises.find((e) => e.exerciseName === 'Bench press')?.exerciseId ?? '';
+    h.clockMs += DAY;
+    const plank = catalogueExerciseId('bodyweight-plank');
+    const template = (t: Partial<RoutineExercise['setTemplates'][number]>): RoutineExercise['setTemplates'][number] => ({ id: h.ids(), setType: 'working', targetLoad: null, targetReps: { min: 5, max: 5 }, targetDurationS: null, targetRpe: null, targetRir: null, restOverrideS: null, ...t });
+    const ex = (exerciseId: string, order: number, sets: RoutineExercise['setTemplates']): RoutineExercise => ({ id: h.ids(), exerciseId, equipmentId: null, order, supersetGroup: null, setTemplates: sets, restBySetType: {}, transitionRestS: null, progressionRuleId: null });
+    const fixed = (v: number) => template({ targetLoad: { value: v, unit: 'kg', convention: 'total' } });
+    const made = await s.routines.create({ edit: { name: 'Twice', exercises: [ex(bench, 0, [fixed(42.5)]), ex(bench, 1, [fixed(50), fixed(50), fixed(50)]), ex(plank, 2, [template({ targetReps: null, targetDurationS: 60 })])] }, opId: 'new-twice' });
+    if (!made.ok) throw new Error(made.message);
+    const snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: made.routine.id }, 'open-twice'));
+    const work = (x: BuilderSnapshot) => slotsOf(x.workout.blocks).map((sl) => sl.rows.filter((r) => r.type !== 'warmup').map((r) => r.durationS ?? r.load));
+    expect(work(snap)).toEqual([[42.5], [50, 50, 50], [60]]);
+    const other = h.ids();
+    expect((await s.setup.saveGym({ gymId: other, name: 'Second gym', draft: s.coachingKnowledge.buildGymDraft('commercial', 'kg') })).ok).toBe(true);
+    expect((await s.gyms.select(other)).ok).toBe(true);
+    const at = await s.builder.read(snap.draftId);
+    expect(at?.gymChanged).toBe(true);
+    const moved = await s.builder.changeGym(snap.draftId, { opId: 'gym-twice', expectedVersion: at?.version ?? 0 });
+    if (moved.status !== 'written') throw new Error(moved.status);
+    expect(moved.snapshot.gymId).toBe(other);
+    expect(work(moved.snapshot)).toEqual([[42.5], [50, 50, 50], [60]]);
   });
 });

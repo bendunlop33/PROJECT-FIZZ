@@ -1,7 +1,7 @@
 import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
 import { estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { makeSlot } from './slot';
-import { BUILDER_SET_RULES, setWorkingCount, workingCount } from './set-rows';
+import { BUILDER_SET_RULES, isTimedSlot, setWorkingCount, workingCount } from './set-rows';
 import { ARM_GROUPS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout, type RestLevel } from './types';
 
 /**
@@ -124,6 +124,8 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
   // (b) push effort: each accessory's last working set @ RPE 9.
   const pushed: string[] = [];
   for (const s of accessories()) {
+    // A timed or cardio set has no effort target to push (22 Oct).
+    if (isTimedSlot(s)) continue;
     const rows = s.rows.map((r) => ({ ...r }));
     const last = [...rows].reverse().find((r) => r.type === 'working');
     if (last === undefined || last.rpe === BUILDER_SET_RULES.lastWorkRpe) continue;
@@ -147,6 +149,8 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
 
   // (d) drop exercises: abs → other group's isolations → accessory isolations → compounds.
   const band = (s: BuilderSlot): number => {
+    // (22 Oct) Cardio or anything else with no builder group (a saved workout's ride, carry): with the abs, first.
+    if (ctx.info(s.exerciseId) === null) return 0;
     const i = infoOrDefault(ctx.info, s.exerciseId);
     if (i.group === 'Abs') return 0;
     if (i.role === 'isolation') return i.group !== opts.mainGroup ? 1 : 2;

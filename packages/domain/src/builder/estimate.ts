@@ -34,16 +34,25 @@ function warmupSeconds(slot: BuilderSlot, ctx: EstimateContext, w: BuilderWorkou
   return n * (T.warmupSetS + rest) + T.afterWarmupsS;
 }
 
+/**
+ * (22 Oct) What a timed set takes beyond a set's `setS`: its work time past 45 s (a 20:00 ride counts 20 minutes). A
+ * distance alone has no time to count (none is invented). Zero for every rep-based set, so their estimate is unchanged.
+ */
+function timedExtraS(slot: BuilderSlot): number {
+  return slot.rows.reduce((m, r) => (r.type === 'warmup' || r.durationS === undefined ? m : m + Math.max(0, r.durationS - T.setS)), 0);
+}
+
 /** Seconds for one block (solo or superset). */
 export function blockSeconds(block: BuilderBlock, w: BuilderWorkout, ctx: EstimateContext): number {
   const warm = block.slots.reduce((m, s) => m + warmupSeconds(s, ctx, w), 0);
+  const timed = block.slots.reduce((m, s) => m + timedExtraS(s), 0);
   const only = block.slots.length === 1 ? block.slots[0] : undefined;
   if (only !== undefined) {
     const rests = restAfterRows(only, ctx.info, w.restLevel, ctx.restPresetsS);
-    return warm + only.rows.reduce((m, r, i) => (r.type === 'warmup' ? m : m + T.setS + (rests[i] ?? 0)), 0);
+    return warm + timed + only.rows.reduce((m, r, i) => (r.type === 'warmup' ? m : m + T.setS + (rests[i] ?? 0)), 0);
   }
   const rounds = Math.max(0, ...block.slots.map((s) => s.rows.filter((r) => r.type !== 'warmup').length));
-  return warm + rounds * (T.setS * block.slots.length + roundRestOf(block, w.restLevel, ctx.restPresetsS));
+  return warm + timed + rounds * (T.setS * block.slots.length + roundRestOf(block, w.restLevel, ctx.restPresetsS));
 }
 
 /** Estimated seconds for the whole workout; 0 when it's empty. */

@@ -1,4 +1,4 @@
-import { slotRev, type CheckedOnRecord, type DraftLoad, type DraftPlan, type DraftSetTemplate, type DraftSlot, type DraftSlotBuilder } from '@fizz/schemas';
+import { BUILD_LIMITS, slotRev, type CheckedOnRecord, type DraftLoad, type DraftPlan, type DraftSetTemplate, type DraftSlot, type DraftSlotBuilder } from '@fizz/schemas';
 import { stableStringify } from '../stable';
 import { PLANNED_HELD_LINE } from './from-planned';
 import { restAfterRows, roundRestOf } from './rest';
@@ -14,7 +14,18 @@ import { draftLoadSourceOf } from './types';
  * Rest (§4.5): each set's rest runs after it. A solo slot's set templates
  * carry `restAfterRows`; in a superset only the round's last exercise rests
  * (`After each round`), the others carry none (no rest inside a round).
+ *
+ * (22 Oct) A timed or cardio set (a library workout's plank or ride) is stored as saved: no reps, its work time
+ * and its distance; reading it back gives the row its time and distance again.
  */
+
+const clampWorkS = (s: number): number => Math.min(BUILD_LIMITS.maxCardioS, Math.max(BUILD_LIMITS.minWorkS, Math.round(s)));
+
+/** A row's reps, or its work time and distance (a timed or cardio set). */
+function amountOf(row: BuilderSetRow): Pick<DraftSetTemplate, 'reps' | 'durationS' | 'distanceM'> {
+  if (row.durationS === undefined && row.distanceM === undefined) return { reps: { min: row.reps, max: Math.max(row.reps, row.repsMax ?? row.reps) }, durationS: null };
+  return { reps: null, durationS: row.durationS === undefined ? null : clampWorkS(row.durationS), ...(row.distanceM === undefined ? {} : { distanceM: row.distanceM }) };
+}
 
 export interface DraftCodecContext {
   info: BuilderInfoLookup;
@@ -78,8 +89,7 @@ export function toDraftPlan(w: BuilderWorkout, ctx: DraftCodecContext): DraftPla
         const restS = group === null || row.type === 'warmup' || beforeDrop ? (solo[i] ?? null) : last ? round : null;
         return {
           setType: row.type,
-          reps: { min: row.reps, max: Math.max(row.reps, row.repsMax ?? row.reps) },
-          durationS: null,
+          ...amountOf(row),
           targetRpe: row.type === 'warmup' ? null : row.rpe,
           restS,
           load: draftLoadOf(slot, row),
@@ -129,6 +139,9 @@ function slotOf(s: DraftSlot): BuilderSlot {
     type: t.setType,
     reps: t.reps?.min ?? 1,
     ...(t.reps != null && t.reps.max > t.reps.min ? { repsMax: t.reps.max } : {}),
+    // A timed or cardio set (no reps): its time and distance as saved (22 Oct); `reps` is only a placeholder then.
+    ...(t.reps === null && t.durationS !== null ? { durationS: t.durationS } : {}),
+    ...(t.reps === null && t.distanceM != null ? { distanceM: t.distanceM } : {}),
     load: t.load?.load?.value ?? null,
     rpe: t.setType === 'warmup' ? null : t.targetRpe,
     ...(t.load?.source === 'ben' ? { typed: true as const } : {}),

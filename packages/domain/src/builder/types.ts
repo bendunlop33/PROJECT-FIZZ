@@ -167,6 +167,13 @@ export interface BuilderSetRow {
   typed?: true;
   /** A typed kg this gym's item rounded down: what Ben typed, in the slot's unit (`Why?` names the item; review S6). */
   roundedFrom?: number;
+  /**
+   * (22 Oct) A timed set's work time, seconds (a plank, a ride): the set is counted in time, not reps (`reps` is
+   * then only a placeholder). Kept through the codec as the saved workout has it, so Start plans it as saved.
+   */
+  durationS?: number;
+  /** (22 Oct) Cardio: a distance to aim for, metres, with or without a time (`20:00 · 5,000 m`). */
+  distanceM?: number;
 }
 
 export interface RepRangeT {

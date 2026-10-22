@@ -1,4 +1,4 @@
-import { canAddWarmup, clampBuilderRest, slotsOf, workingCount, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
+import { canAddWarmup, cardioValuesText, clampBuilderRest, isTimedRow, slotsOf, spokenDistance, spokenDuration, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderGroup } from '@fizz/schemas';
 
 import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from './builder-service';
@@ -246,6 +246,16 @@ export interface WorkoutPageView {
 
 const topRowOf = (s: BuilderSlot) => s.rows.find((r) => r.type === 'top') ?? s.rows.find((r) => r.type !== 'warmup') ?? null;
 
+/** (22 Oct) A timed or cardio set's target as the overview showed it: `0:45`, `20:00 · 5,000 m`, `5,000 m`. */
+export function timedText(r: Pick<BuilderSetRow, 'durationS' | 'distanceM'>): string {
+  return cardioValuesText({ durationS: r.durationS ?? null, distanceM: r.distanceM ?? null });
+}
+
+/** VoiceOver's words for it: `45 seconds`, `20 minutes, 5 kilometres`. */
+export function timedSpoken(r: Pick<BuilderSetRow, 'durationS' | 'distanceM'>): string {
+  return [r.durationS === undefined ? null : spokenDuration(r.durationS), r.distanceM === undefined ? null : spokenDistance(r.distanceM)].filter((x): x is string => x !== null).join(', ');
+}
+
 export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
   const blocks = snap.workout.blocks.filter((b) => b.slots.length > 0);
   const flat = slotsOf(blocks);
@@ -260,7 +270,10 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
         const label = superset ? `${String(bi + 1)}${'abcd'.charAt(si)}` : String(bi + 1);
         const warm = s.rows.filter((r) => r.type === 'warmup').length;
         const top = topRowOf(s);
-        const topText = loadText(top?.load ?? null, s.unit, s.convention, snap.unit);
+        // A timed or cardio set shows its time and distance (and a load only when it has one).
+        const timed = top !== null && isTimedRow(top) ? top : null;
+        const topLoad = loadText(top?.load ?? null, s.unit, s.convention, snap.unit);
+        const topText = timed === null ? topLoad : timed.load === null ? timedText(timed) : `${timedText(timed)} · ${topLoad}`;
         const at = flat.indexOf(s);
         const nextBlock = blocks[bi + 1];
         const nextIsMain = nextBlock?.slots[0]?.main === true;
@@ -273,7 +286,7 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
           ...(superset ? [{ name: 'unlink' as const, label: WORKOUT_COPY.unlink }] : []),
         ];
         const n = workingCount(s);
-        const spoken = [label, name, superset ? 'superset' : null, s.main ? 'main lift' : null, `${String(n)} ${n === 1 ? 'set' : 'sets'}`, warm > 0 ? `plus ${String(warm)} warm-up` : null, `top set ${loadSpoken(top?.load ?? null, s.unit, s.convention)}`, f?.mayHurt === true ? WORKOUT_COPY.mayHurt : null, f?.notHere === true ? WORKOUT_COPY.notHere : null].filter((x): x is string => x !== null);
+        const spoken = [label, name, superset ? 'superset' : null, s.main ? 'main lift' : null, `${String(n)} ${n === 1 ? 'set' : 'sets'}`, warm > 0 ? `plus ${String(warm)} warm-up` : null, timed !== null ? timedSpoken(timed) : `top set ${loadSpoken(top?.load ?? null, s.unit, s.convention)}`, f?.mayHurt === true ? WORKOUT_COPY.mayHurt : null, f?.notHere === true ? WORKOUT_COPY.notHere : null].filter((x): x is string => x !== null);
         return {
           slotKey: s.key,
           exerciseId: s.exerciseId,
@@ -341,27 +354,29 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
     const mark = r.type === 'warmup' ? 'W' : String((n += 1));
     const spokenName = r.type === 'warmup' ? `Warm-up ${String((w += 1))}` : `Set ${mark}`;
     const kgText = loadText(r.load, slot.unit, slot.convention, slot.unit);
+    // (22 Oct) A timed or cardio set: its time and distance in Reps, as saved; not typed over here.
+    const timed = isTimedRow(r);
     return {
       key: String(i),
       index: i,
       mark,
       type: r.type,
       typeText: SET_TYPE_LABEL[r.type],
-      reps: r.reps,
-      repsText: r.repsMax === undefined ? String(r.reps) : `${String(r.reps)}–${String(r.repsMax)}`,
+      reps: timed ? null : r.reps,
+      repsText: timed ? timedText(r) : r.repsMax === undefined ? String(r.reps) : `${String(r.reps)}–${String(r.repsMax)}`,
       kgText,
       load: r.load,
       rpeText: r.rpe === null ? '–' : trim(r.rpe),
       rpe: r.rpe,
       done: false,
-      editable: true,
+      editable: !timed,
       noRpe: r.type === 'warmup',
       canDelete: r.type === 'warmup' || work > 1,
       // The builder keeps sets in type order (warm-ups first): no set drag here.
       canMoveUp: false,
       canMoveDown: false,
       draggable: false,
-      accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[r.type]}, ${r.repsMax === undefined ? String(r.reps) : `${String(r.reps)} to ${String(r.repsMax)}`} reps, ${loadSpoken(r.load, slot.unit, slot.convention)}${r.rpe === null ? '' : `, RPE ${trim(r.rpe)}`}`,
+      accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[r.type]}, ${timed ? timedSpoken(r) : `${r.repsMax === undefined ? String(r.reps) : `${String(r.reps)} to ${String(r.repsMax)}`} reps`}, ${loadSpoken(r.load, slot.unit, slot.convention)}${r.rpe === null ? '' : `, RPE ${trim(r.rpe)}`}`,
       spokenName,
     };
   });

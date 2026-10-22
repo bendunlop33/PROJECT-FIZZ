@@ -147,7 +147,9 @@ export type SetRowEditRefusal =
   /** A typed kg the item can't make without going harder (below a stack's lightest, more assistance than it has): `lightest` is the easiest load here (review S3). */
   | 'lightest_is_harder'
   /** No item here to load (an equipped lift whose item isn't at this gym). */
-  | 'not_loadable';
+  | 'not_loadable'
+  /** (22 Oct) A timed or cardio set (a library workout's plank, a ride): shown and started as saved, not edited here. */
+  | 'timed_set';
 
 export type SetRowEdit =
   | {
@@ -163,6 +165,19 @@ const validRpe = (rpe: number): boolean => Number.isFinite(rpe) && rpe >= R.minR
 const validReps = (reps: number): boolean => Number.isFinite(reps) && Math.round(reps) >= R.minReps && Math.round(reps) <= R.maxReps;
 
 const workRows = (rows: readonly BuilderSetRow[]): BuilderSetRow[] => rows.filter((r) => r.type !== 'warmup');
+
+/** (22 Oct) A set counted in time or distance (a plank, a ride), not reps. */
+export function isTimedRow(r: Pick<BuilderSetRow, 'durationS' | 'distanceM'>): boolean {
+  return r.durationS !== undefined || r.distanceM !== undefined;
+}
+
+/**
+ * (22 Oct) A slot with a timed or cardio set: Your workout shows it, counts its time and starts it exactly as saved;
+ * its sets aren't edited, retyped, ramped or re-derived here (set count, delete, move, swap and remove still work).
+ */
+export function isTimedSlot(slot: Pick<BuilderSlot, 'rows'>): boolean {
+  return slot.rows.some(isTimedRow);
+}
 const topLoadOf = (slot: BuilderSlot): number | null => {
   const t = slot.rows.find((r) => r.type === 'top') ?? workRows(slot.rows)[0];
   return t?.load ?? null;
@@ -194,6 +209,7 @@ function workingLoadOf(slot: BuilderSlot): number | null {
 export function changeSetType(slot: BuilderSlot, index: number, type: SetType, load: SlotLoadInput): SetRowEdit {
   const row = slot.rows[index];
   if (row === undefined) return { ok: false, reason: 'no_such_set' };
+  if (isTimedSlot(slot)) return { ok: false, reason: 'timed_set' };
   if (row.type === type) return { ok: true, slot, rounded: null };
   if (type === 'warmup' && workRows(slot.rows).length <= 1) return { ok: false, reason: 'keep_one_set' };
   if (type === 'drop') {
@@ -250,6 +266,7 @@ export type RowPatch = { kind: 'reps'; reps: number } | { kind: 'rpe'; rpe: numb
 export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, load: SlotLoadInput): SetRowEdit {
   const row = slot.rows[index];
   if (row === undefined) return { ok: false, reason: 'no_such_set' };
+  if (isTimedRow(row)) return { ok: false, reason: 'timed_set' };
   const rows = slot.rows.map((r) => ({ ...r }));
   const cur = rows[index] ?? row;
   switch (patch.kind) {
@@ -329,6 +346,7 @@ export function workingCount(slot: Pick<BuilderSlot, 'rows'>): number {
 
 /** `＋ drop`: a drop set after the last set, ~78 % of it, rounded down. Max 3 per exercise, 10 sets in all. */
 export function addDropSet(slot: BuilderSlot, load: SlotLoadInput): SetRowEdit {
+  if (isTimedSlot(slot)) return { ok: false, reason: 'timed_set' };
   if (slot.rows.filter((r) => r.type === 'drop').length >= R.maxDrops) return { ok: false, reason: 'max_drops' };
   if (workingCount(slot) >= R.maxWorkingSets) return { ok: false, reason: 'max_sets' };
   const before = slot.rows[slot.rows.length - 1];
@@ -346,6 +364,8 @@ export function addDropSet(slot: BuilderSlot, load: SlotLoadInput): SetRowEdit {
  * warm-ups are made again from the new top set. Pure.
  */
 export function reloadSlotLoads(slot: BuilderSlot, info: Pick<SetRowsInput, 'role' | 'barbell'>, load: SlotLoadInput): BuilderSlot {
+  // (22 Oct) A timed or cardio slot keeps its saved sets: there is no reps formula to work its loads out from.
+  if (isTimedSlot(slot)) return slot;
   const fresh = setRowsFor({ main: slot.main, role: info.role, barbell: info.barbell, workingSets: workingCount(slot), repRange: slot.repRange, load });
   const ctx = roundCtx(load);
   const typedHere = (v: number): boolean => {

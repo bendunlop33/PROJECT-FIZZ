@@ -369,7 +369,7 @@ export const BuilderSetupSchema = z.object({
    * no edits, else `… changed · Reload`), and a chat draft's Start is refused as stale (rule 5).
    */
   sourceVersion: z.int().min(1).optional(),
-  /** (Review B1) Exercises of that workout Your workout can't hold (cardio, timed sets, a second copy): `N left out`. */
+  /** (Review B1) Exercises of that workout Your workout can't hold (one it can't find, past its limits): `N left out`. Cardio, timed sets and a second copy are held (22 Oct). */
   leftOut: z.array(IdSchema).max(BUILD_LIMITS.maxExercises * 3).optional(),
 });
 export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;

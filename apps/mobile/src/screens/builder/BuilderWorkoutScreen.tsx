@@ -659,7 +659,7 @@ export function BuilderWorkoutScreen() {
                 : {})}
             />
           ))}
-          {/* Review B1: what this workout has that Your workout can't hold (cardio, timed sets, a second copy) is named, never dropped silently. */}
+          {/* Review B1: what this workout has that Your workout can't hold (an exercise it can't find, past its limits) is named, never dropped silently; cardio, timed sets and a second copy show as saved (22 Oct). */}
           {snap.leftOut.length > 0 ? (
             <StatusLine
               icon="info.circle"
