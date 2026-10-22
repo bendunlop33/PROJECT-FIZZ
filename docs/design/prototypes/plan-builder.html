@@ -372,27 +372,42 @@ const checkLifts = () => [...MAIN, ...(S.extra ?? [])];
 const hasData = (l) => !HIST[l].none || S.check[l] === 'entered' || S.check[l] === 'est';
 const ratio = (l) => e1rm(HIST[l].kg, HIST[l].reps) / e1rm(HIST['Bench press'].kg, HIST['Bench press'].reps);
 const balWord = (l) => { const v = ratio(l), [lo, hi] = BAL[l]; return v < lo ? 'Below' : v > hi ? 'Above' : 'In range'; };
+// Bench against the others: each other lift implies a usual bench range (its 1RM ÷ its usual ratio); bench's band is
+// the average of those, so bench gets a Below / In range / Above like the rest (Ben, 22 Oct).
+function benchRange(lifts) {
+  const imp = lifts.map((l) => { const e = e1rm(HIST[l].kg, HIST[l].reps), [lo, hi] = BAL[l]; return [e / hi, e / lo]; });
+  const avg = (i) => imp.reduce((t, r) => t + r[i], 0) / imp.length;
+  return [avg(0), avg(1)];
+}
+function benchRow(lifts, row, dot) {
+  if (!lifts.length) return '';
+  const [lo, hi] = benchRange(lifts), b = e1rm(HIST['Bench press'].kg, HIST['Bench press'].reps);
+  const min = lo * 0.6, max = hi * 1.4, pos = (x) => Math.max(0, Math.min(100, (x - min) / (max - min) * 100));
+  const word = b < lo ? 'Below' : b > hi ? 'Above' : 'In range';
+  return row('Bench press', `<span class="rng" style="left:${pos(lo)}%;width:${pos(hi) - pos(lo)}%"></span>${dot(pos(b))}`, word, word === 'Below');
+}
 function balanceCard() {
+  const head = `<div class="label" style="display:flex;align-items:center;gap:4px">Strength balance <button class="link dim" id="balInfo" aria-label="How this is worked out" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>`;
+  const dot = (p) => `<span style="position:absolute;top:-2px;left:calc(${p}% - 7px);width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--surface)"></span>`;
+  const row = (name, bar, word, warn) => `<div class="vol" style="grid-template-columns:132px 1fr 84px;min-height:40px"><span class="mn" style="font-size:14px">${name}</span><span class="bar" style="height:10px">${bar}</span><span class="n" style="font-size:13px;color:${warn ? 'var(--warn)' : 'var(--text2)'}">${word}</span></div>`;
   const lifts = checkLifts().filter((l) => l !== 'Bench press' && BAL[l] && hasData(l));
   const rows = lifts.map((l) => {
     const [lo, hi] = BAL[l]; const v = ratio(l);
     const min = lo * 0.6, max = hi * 1.4, pos = (x) => Math.max(0, Math.min(100, (x - min) / (max - min) * 100));
     const word = balWord(l);
-    return `<div class="vol" style="grid-template-columns:132px 1fr 64px;min-height:40px"><span class="mn" style="font-size:14px">${SHORT[l]}</span>
-      <span class="bar" style="height:10px"><span class="rng" style="left:${pos(lo)}%;width:${pos(hi) - pos(lo)}%"></span><span style="position:absolute;top:-2px;left:calc(${pos(v)}% - 7px);width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--surface)"></span></span>
-      <span class="n" style="font-size:13px;color:${word === 'Below' ? 'var(--warn)' : 'var(--text2)'}">${word}</span></div>`;
+    return row(SHORT[l], `<span class="rng" style="left:${pos(lo)}%;width:${pos(hi) - pos(lo)}%"></span>${dot(pos(v))}`, word, word === 'Below');
   }).join('');
-  return `<div class="label" style="display:flex;align-items:center;gap:4px">Strength balance <button class="link dim" id="balInfo" aria-label="How this is worked out" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>
-    <div class="card" style="padding:10px 16px;gap:6px">
-      <div class="vol" style="grid-template-columns:132px 1fr 64px;min-height:40px"><span class="mn" style="font-size:14px">Bench press</span><span style="height:10px;border-top:1px dashed var(--divider);margin-top:5px"></span><span class="n" style="font-size:13px;color:var(--text2)">Baseline</span></div>
+  return `${head}<div class="card" style="padding:10px 16px;gap:6px">
+      ${benchRow(lifts, row, dot)}
       ${rows}</div>`;
 }
 function balanceInfo() {
   const lifts = checkLifts().filter((l) => l !== 'Bench press' && BAL[l] && hasData(l));
   sheet(`<h2>Strength balance</h2>
-    <div class="note" style="display:block;line-height:1.45">Each lift's estimated 1RM divided by your bench press estimated 1RM. The shaded band is the usual range for lifters, from crowd-sourced strength standards and coaching rules of thumb. It's not a target: build, technique and how strictly you lift all move it. It only counts toward a priority with another sign, like low sets or a stalled lift.</div>
+    <div class="note" style="display:block;line-height:1.45">Each lift's estimated 1RM divided by your bench press estimated 1RM. The shaded band is the usual range for lifters, from crowd-sourced strength standards and coaching rules of thumb. It's not a target: build, technique and how strictly you lift all move it. It only counts toward a priority with another sign, like low sets or a stalled lift.<br><br>Bench press is checked the other way round: the range your other lifts would usually go with.</div>
     <div class="card" style="padding:4px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:16px">
       <span class="lab" style="padding:8px 0">Lift</span><span class="lab" style="padding:8px 0;text-align:center">You</span><span class="lab" style="padding:8px 0;text-align:center">Usual</span>
+      ${(() => { if (!lifts.length) return ''; const [lo, hi] = benchRange(lifts), b = e1rm(HIST['Bench press'].kg, HIST['Bench press'].reps), r5 = (x) => Math.round(x / 2.5) * 2.5; const c = 'padding:8px 0;border-top:1px solid var(--divider)'; return `<span style="${c}">Bench press</span><span style="${c};text-align:center;font-variant-numeric:tabular-nums">${r5(b)} kg</span><span style="${c};text-align:center;color:var(--text2);font-variant-numeric:tabular-nums">${r5(lo)}–${r5(hi)} kg</span>`; })()}
       ${lifts.map((l) => `<span style="padding:8px 0;border-top:1px solid var(--divider)">${SHORT[l]}</span><span style="padding:8px 0;border-top:1px solid var(--divider);text-align:center;font-variant-numeric:tabular-nums">${(Math.floor(ratio(l) * 100) / 100).toFixed(2)}×</span><span style="padding:8px 0;border-top:1px solid var(--divider);text-align:center;color:var(--text2);font-variant-numeric:tabular-nums">${BAL[l][0]}–${BAL[l][1]}×</span>`).join('')}
     </div>${S.ai ? '' : ''}`);
 }
