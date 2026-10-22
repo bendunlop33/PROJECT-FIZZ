@@ -25,6 +25,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 - **Split from days and focus** (GA2–GA4, GA9): 2 days → full body ×2; 3 → push/pull/legs (Strength: full body ×3); 4 → push/pull/legs/upper (Strength: upper/lower ×2); 5 → PPL + upper + lower; 6 → PPL ×2. [Proposal]
 - **Main lift first** on each day; heavy lifts never superset (workout-builder-v3 §3.4–3.5).
+- **Priority** is picked by group: Chest, Back, Shoulders, Legs (quads, hamstrings, calves), Arms (biceps, triceps), Core (Ben, 22 Oct). Sets are still counted per muscle.
 - **Sets per muscle per week** balanced into the effort level's band (Standard: priority 12–20, others 8–14, small 4–10; Steady and Push shift down/up, §1) (V4, GA3) by adding or removing a set on that muscle's accessories (2–5 sets each). Bands shown as a shaded range; ↑/↓ only when outside. [Proposal]
 - **Length** caps exercises per day (≤ 45 min: 4, ≤ 60: 6, longer: 7); time budget per playbook D17.
 - **Runs** (GA11, GA15): no legs the day before the long run; swapped with the furthest non-leg day.

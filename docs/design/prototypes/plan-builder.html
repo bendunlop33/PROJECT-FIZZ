@@ -161,18 +161,23 @@ const HIST = {
   'Pull-up': { kg: 0, reps: 8, last: 'BW × 8' },
   'Face pull': { kg: 25, reps: 15, last: '25 × 15' },
   'Barbell curl': { kg: 35, reps: 10, last: '35 × 10' },
+  'Cable crunch': { kg: 40, reps: 15, last: '40 × 15' },
+  'Hanging leg raise': { kg: 0, reps: 12, last: 'BW × 12' },
 };
 // Day templates: [exercise, muscle, role]
 const DAYS = {
   Push:  { main: 'Bench press', ex: [['Bench press','Chest','main'],['Overhead press','Shoulders','c'],['Incline DB press','Chest','c'],['Cable fly','Chest','i'],['Lateral raise','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
-  Pull:  { main: 'Barbell row', ex: [['Barbell row','Back','main'],['Lat pulldown','Back','c'],['Face pull','Shoulders','i'],['Shrugs','Back','i'],['Hammer curl','Biceps','i']] },
-  Legs:  { main: 'Back squat', ex: [['Back squat','Quads','main'],['Romanian deadlift','Hamstrings','c'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i']] },
+  Pull:  { main: 'Barbell row', ex: [['Barbell row','Back','main'],['Lat pulldown','Back','c'],['Face pull','Shoulders','i'],['Shrugs','Back','i'],['Hammer curl','Biceps','i'],['Hanging leg raise','Core','i']] },
+  Legs:  { main: 'Back squat', ex: [['Back squat','Quads','main'],['Romanian deadlift','Hamstrings','c'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
   Upper: { main: 'Overhead press', ex: [['Overhead press','Shoulders','main'],['Pull-up','Back','c'],['Incline DB press','Chest','c'],['Lat pulldown','Back','c'],['Lateral raise','Shoulders','i'],['Barbell curl','Biceps','i']] },
-  Lower: { main: 'Romanian deadlift', ex: [['Romanian deadlift','Hamstrings','main'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i']] },
+  Lower: { main: 'Romanian deadlift', ex: [['Romanian deadlift','Hamstrings','main'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
   'Full body': { main: 'Back squat', ex: [['Back squat','Quads','main'],['Bench press','Chest','c'],['Barbell row','Back','c'],['Lateral raise','Shoulders','i'],['Hammer curl','Biceps','i']] },
   Arms:  { main: null, ex: [['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i'],['Lateral raise','Shoulders','i']] },
 };
-const MUSCLES = ['Chest','Back','Shoulders','Quads','Hamstrings','Biceps','Triceps','Calves'];
+const MUSCLES = ['Chest','Back','Shoulders','Quads','Hamstrings','Calves','Biceps','Triceps','Core'];
+// Priority is chosen by group (Ben, 22 Oct); sets are still counted per muscle.
+const GROUPS = { Chest: ['Chest'], Back: ['Back'], Shoulders: ['Shoulders'], Legs: ['Quads','Hamstrings','Calves'], Arms: ['Biceps','Triceps'], Core: ['Core'] };
+const isPri = (m) => S.priority.some((g) => GROUPS[g].includes(m));
 const WD = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 // ---------- State ----------
@@ -228,7 +233,7 @@ function exercisesFor(focus) {
   const cap = S.length <= 45 ? 4 : S.length <= 60 ? 6 : 7;
   return t.ex.slice(0, cap).map(([n, m, role]) => {
     const h = HIST[n];
-    const pri = S.priority.includes(m);
+    const pri = isPri(m);
     if (role === 'main') {
       const top = snap(h.kg + 2.5), back = snap(top * 0.9);
       const strength = S.focus === 'Strength';
@@ -252,7 +257,7 @@ const EFFORT = {
   Standard: { pri: [12, 20], oth: [8, 14],  sm: [4, 10], rpe: '7–9', step: 'One step when you hit the plan',          deload: 'Last week',      pct: 0.012, line: 'Steady weekly progress you can keep up block after block.' },
   Push:     { pri: [16, 22], oth: [10, 16], sm: [6, 12], rpe: '8–9.5', step: 'One step every session you hit it',    deload: 'Every 4th week', pct: 0.018, line: 'Faster progress, more sets and harder sets. Needs sleep, food and fewer hard runs.' },
 };
-const range = (m) => { const e = EFFORT[S.effort]; return S.priority.includes(m) ? e.pri : (['Calves','Biceps','Triceps'].includes(m) ? e.sm : e.oth); };
+const range = (m) => { const e = EFFORT[S.effort]; const small = ['Calves','Biceps','Triceps','Core'].includes(m); if (small) return isPri(m) ? [e.sm[0] + 4, e.sm[1] + 4] : e.sm; return isPri(m) ? e.pri : e.oth; };
 const deloadText = () => S.effort === 'Steady' ? 'no set deload' : S.effort === 'Push' ? 'deload every 4th week' : `deload week ${S.weeks}`;
 // Estimate only (rule 6): the main target lift's top set after the plan, at the level's typical weekly gain.
 // Estimates only (rule 6). Weekly gain = a share of the current top set by level (placeholder until his own trend, history-targets).
@@ -284,7 +289,7 @@ function renderGoals() {
     <div class="label">Main focus</div>
     <div class="chips">${['Strength','Muscle','Both','Fitness','Maintain'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
     <div class="label">Priority muscles</div>
-    <div class="chips">${MUSCLES.map((m) => `<button class="chip sm" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m}</button>`).join('')}</div>
+    <div class="chips">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m}</button>`).join('')}</div>
     <div class="label">Other training</div>
     <div class="card"><div class="row"><span>Runs</span><span class="chips"><button class="chip sm" id="runsToggle" aria-pressed="${S.runs}">${S.runs ? 'On' : 'Off'}</button></span></div></div>`;
   $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
@@ -378,7 +383,7 @@ function renderPlan() {
         <div class="dact"><button class="link" data-swap="${i}">Change focus</button>${S.schedule === 'fixed' ? `<button class="link" data-move="${i}">Move day</button>` : ''}<button class="link dim" data-open="${i}">Open in builder ›</button></div>
       </div></div>`).join('')}
     <div class="label">Sets per week</div>
-    <div class="card" style="padding:10px 16px">${MUSCLES.map((m) => { const [lo, hi] = range(m); const n = ws[m]; const max = 24; return `<div class="vol ${S.priority.includes(m) ? 'pri' : ''}"><span class="mn">${m}</span><span class="bar"><span class="rng" style="left:${lo / max * 100}%;width:${(hi - lo) / max * 100}%"></span><span class="fill" style="width:${Math.min(n, max) / max * 100}%"></span></span><span class="n">${n}${n < lo ? ' ↓' : n > hi ? ' ↑' : ''}</span></div>`; }).join('')}
+    <div class="card" style="padding:10px 16px">${MUSCLES.map((m) => { const [lo, hi] = range(m); const n = ws[m]; const max = 24; return `<div class="vol ${isPri(m) ? 'pri' : ''}"><span class="mn">${m}</span><span class="bar"><span class="rng" style="left:${lo / max * 100}%;width:${(hi - lo) / max * 100}%"></span><span class="fill" style="width:${Math.min(n, max) / max * 100}%"></span></span><span class="n">${n}${n < lo ? ' ↓' : n > hi ? ' ↑' : ''}</span></div>`; }).join('')}
       <div style="display:flex;justify-content:flex-end"><button class="link dim" id="whyBtn">Why?</button></div>
       <div class="why" id="why">Split from ${S.days.length} days and ${esc(S.focus)} focus. Shaded band = target sets for each muscle (priority ★ higher). Weights from your last sessions; each main lift's weekly path aims at its week-${S.weeks} estimate. ${S.runs ? 'No legs the day before the long run.' : ''}</div>
     </div>
@@ -431,10 +436,10 @@ function editPlan(text) {
   let said = '';
   if (/no legs.*(long run|run)|legs.*before.*run/.test(t)) {
     S.plan = build(); said = `Legs aren't the day before ${WD[S.longRunDay]}'s long run.`;
-  } else if (/more (chest|back|shoulders|arms|legs|quads|biceps|triceps)/.test(t)) {
-    const m = t.match(/more (\w+)/)[1]; const M = m === 'arms' ? 'Biceps' : m[0].toUpperCase() + m.slice(1);
+  } else if (/more (chest|back|shoulders|arms|legs|core|abs)/.test(t)) {
+    const m = t.match(/more (\w+)/)[1]; const M = m === 'abs' ? 'Core' : m[0].toUpperCase() + m.slice(1);
     if (!S.priority.includes(M)) S.priority.push(M);
-    S.plan = build(); said = `${M} is a priority now: +1 set on its exercises (${weeklySets(S.plan)[M]} sets a week).`;
+    S.plan = build(); said = `${M} is a priority now: more sets on its exercises (${GROUPS[M].map((x) => x + ' ' + weeklySets(S.plan)[x]).join(', ')} a week).`;
   } else if (/swap|change/.test(t)) {
     const di = WD.findIndex((d) => t.includes(d.toLowerCase()) || t.includes({ Mon: 'monday', Tue: 'tuesday', Wed: 'wednesday', Thu: 'thursday', Fri: 'friday', Sat: 'saturday', Sun: 'sunday' }[d]));
     const f = Object.keys(DAYS).find((k) => t.includes(k.toLowerCase()));
