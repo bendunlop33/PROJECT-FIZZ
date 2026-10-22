@@ -32,6 +32,9 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); margin-top: 4px; }
 /* Gym goals: every question shows; a circle right of each heading fills once answered, amber if Next is tapped first (Ben, 22 Oct) */
 .label.q { display: flex; align-items: center; gap: 4px; }
+/* Each question in a very faint box (Ben, 22 Oct), on Gym goals and Your week */
+.qbox { display: flex; flex-direction: column; gap: 9px; padding: 10px 12px 12px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--text) 7%, transparent); background: color-mix(in srgb, var(--text) 2%, transparent); }
+.qbox > .label { margin-top: 0; }
 .qdot { margin-left: auto; flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid var(--text); }
 .qdot.done { background: var(--text); }
 .qdot.miss { border: 2px solid var(--warn); }
@@ -403,8 +406,8 @@ function fitSegs() {
   // One box width for every option on the page (Ben, 22 Oct): the width four fit in a row; a longer label grows its own box only.
   const all = [...document.querySelectorAll('#scroll .seg .chip, #scroll .chips .chip.sm')];
   if (!all.length) return;
-  const row = $('scroll').clientWidth, w = Math.floor((row - 3 * 6) / 4);
-  all.filter((b) => !b.dataset.freq && !b.dataset.wk && !b.dataset.focus && !b.dataset.eff).forEach((b) => { b.style.minWidth = w + 'px'; });
+  // Four to a row of the box they sit in.
+  all.filter((b) => !b.dataset.freq && !b.dataset.wk && !b.dataset.focus && !b.dataset.eff).forEach((b) => { const row = b.parentElement.clientWidth; b.style.minWidth = Math.floor((row - 3 * 6) / 4) + 'px'; });
 }
 function render() {
   $('scroll').style.paddingBottom = '';
@@ -414,6 +417,19 @@ function render() {
   $('back').style.visibility = i === 0 || S.applied ? 'hidden' : 'visible';
   requestAnimationFrame(fitSegs);
   ({ goals: renderGoals, check: renderCheck, effort: renderAmbition, week: renderWeek, plan: renderPlan })[S.page]();
+  if (S.page === 'goals' || S.page === 'week') boxSections();
+}
+// Wrap each heading and its options in a faint box. Sections holding a card (What to expect) and a closing note stay as they are.
+function boxSections() {
+  const sc = $('scroll'), kids = [...sc.children]; let box = null;
+  kids.forEach((el, i) => {
+    if (el.classList.contains('label')) {
+      const group = [el]; for (let j = i + 1; j < kids.length && !kids[j].classList.contains('label'); j++) group.push(kids[j]);
+      if (group.some((g) => g.classList.contains('card'))) { box = null; return; }
+      box = document.createElement('div'); box.className = 'qbox'; box.dataset.sec = el.dataset.sec ?? ''; el.before(box); box.append(el);
+    } else if (box && el.tagName !== 'H1' && !(el.classList.contains('note') && i === kids.length - 1)) box.append(el);
+    else box = null;
+  });
 }
 
 // One simple table per focus (Ben, 22 Oct): weight for the focus's reference reps, now → end of plan (est.).
