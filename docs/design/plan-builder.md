@@ -31,7 +31,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **Declutter (Ben, 22 Oct):** What to expect is always shown (no tap): a label and one small table. The suggestion line is short (`✦ Suggested: Back, fewest sets lately`), with the full reason behind Priority's ⓘ. Other training's how-to (tap once to add, again for ★) moved behind its own ⓘ.
 
-**Question boxes (Ben, 22 Oct):** on Gym goals and Your week each question (heading + its options) sits in a very faint box (hairline border, near-transparent fill); What to expect and closing notes stay unboxed.
+**Question dividers (Ben, 22 Oct):** on Gym goals and Your week each question (heading + its options) is separated from the next by a thin divider line, no boxes (chosen over faint boxes and tight outline boxes: least clutter and height, iOS Settings pattern). What to expect and closing notes sit below without a line.
 
 **All questions shown, unanswered in focus (Ben, 22 Oct; replaces the step-by-step reveal):** Gym goals shows every question from the start. A circle at the right of each heading shows its state: empty white ring = not answered, filled white = answered, amber ring = still unanswered after Next was tapped (Ben, 22 Oct; no box or ring around the options); suggestions are marked ✦ but not picked, so each gets a real answer. Answering scrolls the next unanswered one into view if needed. `Next: your week` only moves on once all five are answered (Plan length, Effort, Main focus, Any priorities? = No or Yes with a pick, Any other training? = No or Yes with a sport); tapping it early turns the unanswered circles amber and scrolls to the first. What to expect always shows, from the current or ✦ values. Editing an existing plan opens with everything answered.
 

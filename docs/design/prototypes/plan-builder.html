@@ -32,13 +32,10 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); margin-top: 4px; }
 /* Gym goals: every question shows; a circle right of each heading fills once answered, amber if Next is tapped first (Ben, 22 Oct) */
 .label.q { display: flex; align-items: center; gap: 4px; }
-/* Each question in a very faint box (Ben, 22 Oct), on Gym goals and Your week */
-.qbox { display: flex; flex-direction: column; gap: 9px; padding: 10px 12px 12px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--text) 7%, transparent); background: color-mix(in srgb, var(--text) 2%, transparent); }
+/* Questions separated by thin divider lines (Ben, 22 Oct: chosen over faint or tight boxes), on Gym goals and Your week */
+.qbox { display: flex; flex-direction: column; gap: 9px; padding: 2px 0 12px; border-bottom: 1px solid var(--divider); }
 .qbox > .label { margin-top: 0; }
-/* Comparing styles (Ben, 22 Oct): A faint boxes, B tight outline-only boxes, C thin divider lines */
-.q-tight .qbox { background: none; padding: 7px 10px 9px; gap: 7px; border-radius: 14px; border-color: color-mix(in srgb, var(--text) 9%, transparent); }
-.q-lines .qbox { background: none; border: 0; border-radius: 0; padding: 2px 0 12px; border-bottom: 1px solid var(--divider); }
-.q-lines .qbox:has(+ :not(.qbox)), .q-lines .qbox:last-child { border-bottom: 0; }
+.qbox:has(+ :not(.qbox)), .qbox:last-child { border-bottom: 0; }
 .qdot { margin-left: auto; flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid var(--text); }
 .qdot.done { background: var(--text); }
 .qdot.miss { border: 2px solid var(--warn); }
@@ -145,16 +142,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <button class="chip sm" id="restart" aria-pressed="false">Start again</button>
       <button class="chip sm" id="editExisting" aria-pressed="false">Edit existing plan</button>
     </div>
-    <span class="lab">Question style</span>
-    <div class="chips">
-      <button class="chip sm" data-qstyle="q-box" aria-pressed="false">A · Faint boxes</button>
-      <button class="chip sm" data-qstyle="q-tight" aria-pressed="false">B · Tight boxes</button>
-      <button class="chip sm" data-qstyle="q-lines" aria-pressed="true">C · Lines</button>
-    </div>
   </div>
   <p class="hint">Opens from Today "Set up a plan ›", Library › Your plan, Profile › Goal and the coach. Example data only. Try the coach: "make it 3 days", "no legs before my long run", "more chest", "swap Saturday to arms".</p>
 
-  <div class="phone q-lines" id="phone">
+  <div class="phone" id="phone">
     <div class="status"><span>9:41</span><span>●●● 100%</span></div>
     <div class="hdr">
       <button class="link dim" id="back" aria-label="Back">‹ Back</button>
@@ -429,7 +420,7 @@ function render() {
   ({ goals: renderGoals, check: renderCheck, effort: renderAmbition, week: renderWeek, plan: renderPlan })[S.page]();
   if (S.page === 'goals' || S.page === 'week') boxSections();
 }
-// Wrap each heading and its options in a faint box. Sections holding a card (What to expect) and a closing note stay as they are.
+// Group each heading with its options; groups are separated by divider lines. Sections holding a card (What to expect) and a closing note stay as they are.
 function boxSections() {
   const sc = $('scroll'), kids = [...sc.children]; let box = null;
   kids.forEach((el, i) => {
@@ -904,10 +895,6 @@ $('close').onclick = () => toast('Closes without changing your plan', false);
 function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.page === 'plan' && !on) S.chat = []; render(); }
 $('aiOn').onclick = () => setAi(true);
 $('aiOff').onclick = () => setAi(false);
-document.querySelectorAll('[data-qstyle]').forEach((b) => b.onclick = () => {
-  const ph = $('phone'); ph.classList.remove('q-box', 'q-tight', 'q-lines'); ph.classList.add(b.dataset.qstyle);
-  document.querySelectorAll('[data-qstyle]').forEach((x) => x.setAttribute('aria-pressed', x === b)); requestAnimationFrame(fitSegs);
-});
 $('restart').onclick = () => { Object.assign(S, { ans: {}, flagged: false, priAsk: null, actAsk: null, runs: false, acts: {}, pri: [], page: 'check', priority: [], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
 $('editExisting').onclick = () => { S.ans = { wk: true, eff: true, focus: true }; S.priAsk = S.priAsk ?? 'No'; S.actAsk = S.actAsk ?? 'No'; S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
 render();
