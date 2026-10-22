@@ -215,7 +215,7 @@ const ACT_DEFAULT_DAY = { Cycling: 5, Swimming: 2, Boxing: 3, Football: 6, HIIT:
 // ---------- State ----------
 const S = {
   ai: true, page: 'check', check: {}, focus: 'Balanced', targets: [],
-  acts: {}, pri: [], priority: [], runs: false, longRunDay: 6, runDays: [2, 6],
+  acts: {}, pri: [], priority: [], runs: false, supersets: false, abs: true, longRunDay: 6, runDays: [2, 6],
   days: [0, 1, 3, 5], freq: 4, schedule: 'fixed', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
 };
@@ -280,27 +280,37 @@ function balance(plan) {
     }
     if (!moved) break;
   }
-  plan.forEach((d) => d.ex.forEach((e) => { if (e.role !== 'main') e.line = e.line.replace(/^\d+ ×/, `${e.sets} ×`); }));
+  plan.forEach((d) => d.ex.forEach((e) => { if (e.role !== 'main') { e.line = e.line.replace(/^\d+ ×/, `${e.sets} ×`); if (e.short) e.short = e.short.replace(/^\d+ ×/, `${e.sets} ×`); } }));
   return plan;
 }
 function exercisesFor(focus, variant) {
   const t = (variant === 'B' && DAYS_B[focus]) || DAYS[focus];
   const cap = S.length <= 45 ? 4 : S.length <= 60 ? 6 : 7;
   const ex = [...t.ex].sort((a, b) => (a[2] === 'main' ? -2 : isPri(a[1]) ? -1 : 0) - (b[2] === 'main' ? -2 : isPri(b[1]) ? -1 : 0));
-  return ex.slice(0, cap).map(([n, m, role]) => {
+  const picked = ex.filter((x) => S.abs !== false || x[1] !== 'Core').slice(0, S.supersets ? cap + 1 : cap);
+  return pairUp(picked.map(([n, m, role]) => {
     const h = HIST[n];
     const pri = isPri(m);
     if (role === 'main') {
       const step = h.each ? 2 : 2.5, top = snapFor(n, h.kg + step), back = snapFor(n, top * 0.9);
       const strength = S.focus === 'Strength';
       const backs = (strength ? 3 : 2) + (S.effort === 'Push' ? 1 : 0) - (S.effort === 'Maintain' ? 1 : 0);
-      return { n, m, role, sets: backs + 1, line: `Top ${fmtKg(n, top)} × ${strength ? 5 : 6} · ${backs} × ${fmtKg(n, back)} × 8`, why: `Last time ${h.last || fmtKg(n, h.kg) + ' × ' + h.reps} → +${step}` };
+      return { n, m, role, sets: backs + 1, short: `${backs + 1} × ${strength ? 5 : 6}`, kg: fmtKg(n, top), line: `Top ${fmtKg(n, top)} × ${strength ? 5 : 6} · ${backs} × ${fmtKg(n, back)} × 8`, why: `Last time ${h.last || fmtKg(n, h.kg) + ' × ' + h.reps} → +${step}` };
     }
     const reps = Math.max(8, Math.min(15, h.reps));
     const sets = pri ? 4 : 3;
     const kg = h.kg === 0 ? 'BW' : (h.reps >= 15 ? snap(h.kg + 2.5) : h.kg);
-    return { n, m, role, sets, line: `${sets} × ${kg}${kg === 'BW' ? '' : ' kg'} × ${reps}`, why: h.none || !h.last ? 'No history yet (est.)' : `Last time ${h.last}` };
-  });
+    return { n, m, role, sets, short: `${sets} × ${reps}`, kg: kg === 'BW' ? 'BW' : `${kg}${h.each ? ' each' : ''}`, line: `${sets} × ${kg}${kg === 'BW' ? '' : ' kg'} × ${reps}`, why: h.none || !h.last ? 'No history yet (est.)' : `Last time ${h.last}` };
+  }));
+}
+// Supersets (Ben, 22 Oct): when on, accessories are paired A1/A2, B1/B2 …; the main lift and heavy barbell
+// compounds are never paired (workout-builder-v3 §3.5). Pairing saves time, so one more accessory fits.
+const HEAVY = new Set(['Bench press', 'Back squat', 'Barbell row', 'Romanian deadlift', 'Front squat', 'Incline bench press', 'Deadlift', 'Overhead press']);
+function pairUp(list) {
+  if (!S.supersets) return list;
+  const free = list.filter((e) => e.role !== 'main' && !HEAVY.has(e.n));
+  for (let i = 0; i + 1 < free.length; i += 2) { const L = 'ABCD'[i / 2]; free[i].pair = L + '1'; free[i + 1].pair = L + '2'; }
+  return list;
 }
 function weeklySets(plan) {
   const out = Object.fromEntries(MUSCLES.map((m) => [m, 0]));
@@ -658,6 +668,10 @@ function renderWeek() {
     ${Object.keys(S.acts).map((a) => `<div class="label">${esc(a)}</div>${dayRow('data-actday-' + a.replace(/\W/g, ''), (i) => S.acts[a].includes(i), true).replaceAll('data-actday-' + a.replace(/\W/g, '') + '="', `data-actday="${esc(a)}|`)}`).join('')}
     <div class="label">Session length</div>
     <div class="seg" style="align-items:center"><button class="chip" id="lenDown" aria-label="Shorter" style="min-width:44px">−</button><span style="min-width:72px;text-align:center;font-variant-numeric:tabular-nums">${S.length} min</span><button class="chip" id="lenUp" aria-label="Longer" style="min-width:44px">＋</button></div>
+    <div class="label">Supersets</div>
+    <div class="yn" role="group">${['No', 'Yes'].map((o) => `<button data-ss="${o}" aria-pressed="${(S.supersets ? 'Yes' : 'No') === o}">${o}</button>`).join('')}</div>
+    <div class="label">Abs</div>
+    <div class="yn" role="group">${['No', 'Yes'].map((o) => `<button data-abs="${o}" aria-pressed="${(S.abs !== false ? 'Yes' : 'No') === o}">${o}</button>`).join('')}</div>
     <div class="label">Gym</div>
     <div class="seg"><button class="chip" style="padding:0 12px">${esc(S.gym)} ›</button></div>
     <div class="note">Days and length are your usual. On the day you can start any session or change its length.</div>`;
@@ -666,6 +680,8 @@ function renderWeek() {
   document.querySelectorAll('[data-split]').forEach((b) => b.onclick = () => { S.split = b.dataset.split; render(); });
   document.querySelectorAll('[data-sch]').forEach((b) => b.onclick = () => { S.schedule = b.dataset.sch; render(); });
   const PREF = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
+  document.querySelectorAll('[data-ss]').forEach((b) => b.onclick = () => { S.supersets = b.dataset.ss === 'Yes'; render(); });
+  document.querySelectorAll('[data-abs]').forEach((b) => b.onclick = () => { S.abs = b.dataset.abs === 'Yes'; render(); });
   document.querySelectorAll('[data-freq]').forEach((b) => b.onclick = () => { S.freq = +b.dataset.freq; S.days = PREF[S.freq]; render(); });
   document.querySelectorAll('[data-actday]').forEach((b) => b.onclick = () => { const [a, d] = b.dataset.actday.split('|'); const n = +d; S.acts[a] = S.acts[a].includes(n) ? S.acts[a].filter((x) => x !== n) : [...S.acts[a], n]; render(); });
   document.querySelectorAll('[data-run]').forEach((b) => b.onclick = () => { const d = +b.dataset.run; S.runDays = S.runDays.includes(d) ? S.runDays.filter((x) => x !== d) : [...S.runDays, d]; if (!S.runDays.includes(S.longRunDay)) S.longRunDay = S.runDays.at(-1) ?? 6; render(); });
@@ -675,7 +691,7 @@ function renderWeek() {
   $('next').onclick = () => {
     if (S.schedule === 'fixed' && S.days.length !== S.freq) { toast(`Pick ${S.freq} days`, false); return; }
     if (S.schedule === 'flexible') S.days = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] }[S.freq];
-    S.plan = build(); S.page = 'plan'; S.chat = []; S.open = -1;
+    S.plan = build(); S.page = 'plan'; S.chat = []; S.open = -1; S.pageTop = true;
     if (S.ai) S.chat.push({ who: 'co', text: coachIntro() });
     render();
   };
@@ -708,7 +724,7 @@ function renderPlan() {
     ${p.map((d, i) => `<div class="dcard ${S.open === i ? 'open' : ''}" data-card="${i}">
       <div class="dtop" data-toggle="${i}"><span><div class="nm">${S.schedule === 'flexible' ? i + 1 : WD[d.day]} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</div><div class="sub">${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
         <span class="rt">${d.ex.length} ex · ~${S.length}′<span class="chev">›</span></span></div>
-      <div class="ex">${d.ex.map((e) => `<div class="exr ${e.role === 'main' ? 'main' : ''}"><span class="n">${esc(e.n)}</span><span class="w">${esc(e.line)}</span><span class="m">${esc(e.m)}</span><span class="m" style="text-align:right">${esc(e.why)}</span></div>`).join('')}
+      <div class="ex">${d.ex.map((e, k) => { const ss = S.supersets && e.pair; return `<div style="display:grid;grid-template-columns:${ss ? '18px ' : ''}minmax(0,1fr) auto 70px;gap:8px;align-items:center;min-height:40px;border-bottom:1px solid var(--divider);font-size:15px">${ss ? `<span style="color:var(--text3);font-size:12px">${e.pair}</span>` : ''}<span style="${e.role === 'main' ? 'font-weight:600' : ''}">${esc(e.n)}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">${esc(e.short ?? '')}</span><span style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(e.kg ?? ''))}${e.kg && e.kg !== 'BW' && !String(e.kg).includes('each') ? ' kg' : ''}</span></div>`; }).join('')}
         <div class="dact"><button class="link" data-swap="${i}">Change focus</button>${S.schedule === 'fixed' ? `<button class="link" data-move="${i}">Move day</button>` : ''}<button class="link dim" data-open="${i}">Open in builder ›</button></div>
       </div></div>`).join('')}
     <div class="label">Sets per week</div>
@@ -730,13 +746,14 @@ function renderPlan() {
   if ($('apply')) $('apply').onclick = () => { S.applied = true; S.editing = false; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
   const ask = $('ask');
   if (ask) ask.onkeydown = (e) => { if (e.key === 'Enter' && ask.value.trim()) { coach(ask.value.trim()); } };
-  const sc = $('scroll'); if (S.chat.length) sc.scrollTop = sc.scrollHeight;
+  const sc = $('scroll'); if (S.chatScroll) { sc.scrollTop = sc.scrollHeight; S.chatScroll = false; } else if (S.pageTop) { sc.scrollTop = 0; S.pageTop = false; }
 }
 
 // ---------- Coach (simulated). Words decide: full description → build new; change request → edit; unclear → ask. ----------
 function snapshot() { return JSON.parse(JSON.stringify({ plan: S.plan, days: S.days, focus: S.focus, priority: S.priority, length: S.length })); }
 function restore(s) { Object.assign(S, s); }
 function coach(text) {
+  S.chatScroll = true;
   S.chat.push({ who: 'ben', text });
   const t = text.toLowerCase();
   const nDays = t.match(/(\d)\s*(day|days)/);
