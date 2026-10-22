@@ -27,12 +27,11 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .steps { color: var(--text3); font-size: 13px; font-variant-numeric: tabular-nums; }
 .label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); margin-top: 4px; }
-/* Gym goals: every question shows; unanswered ones get a light focus (Ben, 22 Oct) */
-.label.todo { color: var(--text); }
-.label.todo::before { content: ''; flex: 0 0 auto; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 8px; vertical-align: middle; }
-.todo-ctl { border-radius: 16px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--text) 4%, transparent), 0 0 0 5px var(--divider); }
-.yn.todo-ctl { border-radius: 999px; }
-.primary.locked { opacity: .4; }
+/* Gym goals: every question shows; a circle right of each heading fills once answered, amber if Next is tapped first (Ben, 22 Oct) */
+.label.q { display: flex; align-items: center; gap: 4px; }
+.qdot { margin-left: auto; flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid var(--text); }
+.qdot.done { background: var(--text); }
+.qdot.miss { border: 2px solid var(--warn); }
 .card { background: var(--surface); border-radius: 20px; padding: 6px 16px; display: flex; flex-direction: column; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; border-bottom: 1px solid var(--divider); font-size: 16px; }
 .row:last-child { border-bottom: 0; }
@@ -455,9 +454,10 @@ function goalSections() {
 }
 function applyFocus() {
   goalSections().forEach(([el, sec]) => {
-    el.dataset.sec = sec; const todo = sec < GOAL_KEYS.length && !answered(GOAL_KEYS[sec]);
-    if (el.classList.contains('label')) el.classList.toggle('todo', todo);
-    else if (todo && (el.classList.contains('seg') || el.classList.contains('yn'))) el.classList.add('todo-ctl');
+    el.dataset.sec = sec;
+    if (!el.classList.contains('label') || sec >= GOAL_KEYS.length) return;
+    const ok = answered(GOAL_KEYS[sec]);
+    el.classList.add('q'); el.insertAdjacentHTML('beforeend', `<span class="qdot${ok ? ' done' : S.flagged ? ' miss' : ''}" role="img" aria-label="${ok ? 'Answered' : 'Not answered'}"></span>`);
   });
   if (S.scrollTo != null) { const t = $('scroll').querySelector(`[data-sec="${S.scrollTo}"]`); S.scrollTo = null; if (t) requestAnimationFrame(() => {
     // Bring the next unanswered question into view, scrolling only as far as needed.
@@ -492,7 +492,7 @@ function renderGoals() {
   $('scroll').insertAdjacentHTML('beforeend', `
     <div class="label">What to expect in ${S.weeks} weeks</div>
     <div class="card" style="padding:4px 14px 12px;gap:6px">${expectBody(lifts)}</div>`);
-  $('footer').innerHTML = `<button class="primary${allAnswered() ? '' : ' locked'}" id="next" aria-disabled="${!allAnswered()}">Next: your week</button>`;
+  $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
   applyFocus();
   document.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => { S.weeks = +b.dataset.wk; answer('wk'); render(); });
   document.querySelectorAll('[data-eff]').forEach((b) => b.onclick = () => { S.effort = b.dataset.eff; answer('eff'); render(); });
@@ -524,7 +524,7 @@ function renderGoals() {
     render();
   });
   if ($('addAct')) $('addAct').onclick = () => { const n = (prompt('Other training') || '').trim(); if (n) { S.customActs = [...(S.customActs ?? []), n]; S.acts[n] = [3]; render(); } };
-  $('next').onclick = () => { if (allAnswered()) go(1); else { S.scrollTo = nextTodo(); render(); } };
+  $('next').onclick = () => { if (allAnswered()) { S.flagged = false; go(1); } else { S.flagged = true; S.scrollTo = nextTodo(); render(); } };
 }
 
 // Strength balance (Ben, 22 Oct): each main lift's est. 1RM ÷ bench est. 1RM against a rough usual band.
@@ -875,7 +875,7 @@ $('close').onclick = () => toast('Closes without changing your plan', false);
 function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.page === 'plan' && !on) S.chat = []; render(); }
 $('aiOn').onclick = () => setAi(true);
 $('aiOff').onclick = () => setAi(false);
-$('restart').onclick = () => { Object.assign(S, { ans: {}, priAsk: null, actAsk: null, runs: false, acts: {}, pri: [], page: 'check', priority: [], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
+$('restart').onclick = () => { Object.assign(S, { ans: {}, flagged: false, priAsk: null, actAsk: null, runs: false, acts: {}, pri: [], page: 'check', priority: [], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
 $('editExisting').onclick = () => { S.ans = { wk: true, eff: true, focus: true }; S.priAsk = S.priAsk ?? 'No'; S.actAsk = S.actAsk ?? 'No'; S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
 render();
 </script>
