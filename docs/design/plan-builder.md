@@ -21,6 +21,8 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **Offline:** the app builds the same plan from its rules, marked **Not reviewed**; tap edits still work, the coach box is disabled.
 
+**Layout update (Ben, 22 Oct):** Plan length and Effort moved onto Gym goals as two compact rows (4 / 6 / 8 / 12 weeks; Steady / Standard / Push), with a collapsed `What to expect in N weeks` panel for the chosen pair (what the level means, RPE, sets, deload, and each main lift now → week N est.). The separate length-and-effort step is gone: Check your lifts (if needed) → Gym goals → Your week → Your plan. Option boxes are 36 pt, same corners and text size.
+
 ## 1a. Priority and lift check (Ben, 22 Oct)
 
 - **Priority, up to 2 groups** (Chest, Back, Shoulders, Legs, Arms, Core); none picked = Balanced. A priority does three things: top of its set range, trained at least twice a week, and its exercises come straight after the main lift. When time is short, non-priority work is cut first; nothing drops below maintenance. Sub-muscles ("more upper chest") only through the coach.

@@ -22,7 +22,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 390px; line-height: 1.45; }
 .phone { position: relative; width: 390px; max-width: 100%; height: min(820px, 100vh); height: min(820px, 100dvh); background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
 .status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
-.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 8px; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; padding-bottom: 8px; }
 .hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; }
 h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .steps { color: var(--text3); font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -35,8 +35,8 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .chip { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text2); font: 600 15px var(--ui); cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .seg { display: grid; gap: 4px; }
-.seg .chip { min-height: 40px; padding: 0 5px; min-width: 0; white-space: nowrap; overflow: hidden; border-radius: 12px; font-size: 14px; }
-.chip.sm { min-height: 40px; font-size: 14px; padding: 0 12px; border-radius: 12px; }
+.seg .chip { min-height: 36px; padding: 0 5px; min-width: 0; white-space: nowrap; overflow: hidden; border-radius: 12px; font-size: 14px; }
+.chip.sm { min-height: 36px; font-size: 14px; padding: 0 12px; border-radius: 12px; }
 .stepper { display: flex; align-items: center; gap: 8px; }
 .stepper button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); font-size: 20px; cursor: pointer; }
 .stepper span { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -185,7 +185,7 @@ const MUSCLES = ['Chest','Back','Shoulders','Quads','Hamstrings','Calves','Bicep
 // Priority is chosen by group (Ben, 22 Oct); sets are still counted per muscle.
 const GROUPS = { Chest: ['Chest'], Back: ['Back'], Shoulders: ['Shoulders'], Legs: ['Quads','Hamstrings','Calves'], Arms: ['Biceps','Triceps'], Core: ['Core'] };
 // The coach's priority pick (code computes the facts from the last 8 weeks; offline, code picks the same). Example data.
-const SUG = { group: 'Back', why: 'Fewest sets lately (8 a week vs Chest 15) and your row has stalled for 5 weeks.' };
+const SUG = { group: 'Back', why: 'Fewest sets lately (8 a week vs Chest 15); row stalled 5 weeks.' };
 const isPri = (m) => S.priority.some((g) => GROUPS[g].includes(m));
 const WD = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 // Other training (Ben, 22 Oct). legs: hard on the legs, so no heavy leg day the day before (GA11).
@@ -331,12 +331,30 @@ function renderGoals() {
     <div class="seg" style="grid-template-columns:repeat(5,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness','Maintain'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
     <div class="label">Priority · up to 2 · none = all equal</div>
     <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m === SUG.group ? '✦ ' : ''}${m}</button>`).join('')}</div>
-    <div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested for you: <b style="color:var(--text)">${SUG.group}</b>. ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>
-    ${false ? `<div class="offer" style="display:flex;align-items:center;background:var(--raised);border-radius:12px;padding-left:12px;font-size:15px;gap:4px"><span style="flex:1">✦ Back: 8 sets a week vs Chest 15</span><button class="link" id="useSug" style="font-weight:600">Use</button><button class="link dim" id="noSug" aria-label="Dismiss" style="text-decoration:none">✕</button></div>` : ''}
-    <div class="label">Other training · tap again for ★ priority</div>
+    <div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested: <b style="color:var(--text)">${SUG.group}</b>. ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>
+    <div class="label">Other training · tap twice for ★</div>
     <div class="chips">${[...ACTS, ...(S.customActs ?? [])].map((a) => `<button class="chip sm" data-act="${esc(a)}" aria-pressed="${a === 'Running' ? S.runs : !!S.acts[a]}">${S.pri.includes(a) ? '★ ' : ''}${esc(a)}</button>`).join('')}<button class="chip sm" id="addAct">＋ Other</button></div>
     ${S.pri.length ? `<div class="note" style="line-height:1.4">★ ${S.pri.map(esc).join(', ')} come${S.pri.length === 1 ? 's' : ''} first: lifting supports ${S.pri.length === 1 ? 'it' : 'them'}, with fewer, shorter sessions planned around ${S.pri.length === 1 ? 'its' : 'their'} hard days.</div>` : ''}`;
-  $('footer').innerHTML = `<button class="primary" id="next">Next: length and effort</button>`;
+  const ef = EFFORT[S.effort], lifts = MAIN.filter((l) => HIST[l] && !HIST[l].none);
+  $('scroll').insertAdjacentHTML('beforeend', `
+    <div class="label">Plan length</div>
+    <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w}">${w} weeks</button>`).join('')}</div>
+    <div class="label">Effort</div>
+    <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['Steady', 'Standard', 'Push'].map((l) => `<button class="chip" data-eff="${l}" aria-pressed="${S.effort === l}">${l}</button>`).join('')}</div>
+    <div class="card" style="padding:0 14px">
+      <button class="row" id="expTog" style="background:none;border:0;color:var(--text);font:inherit;font-size:15px;width:100%;cursor:pointer;min-height:44px" aria-expanded="${!!S.expOpen}"><span>What to expect in ${S.weeks} weeks</span><span class="chev" style="transform:rotate(${S.expOpen ? 90 : 0}deg)">›</span></button>
+      ${S.expOpen ? `<div style="display:flex;flex-direction:column;gap:6px;padding:4px 0 12px">
+        <span style="font-size:14px;color:var(--text2);line-height:1.35">${ef.line}</span>
+        <span style="font-size:12px;color:var(--text3)">RPE ${ef.rpe} · ${ef.oth[0]}–${ef.oth[1]} sets a muscle · ${ef.deload.toLowerCase()}</span>
+        <span style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;font-size:14px;font-variant-numeric:tabular-nums;justify-items:end;border-top:1px solid var(--divider);padding-top:8px">
+          <span class="lab" style="justify-self:start">kg</span><span class="lab">Now</span><span class="lab">Week ${S.weeks} (est.)</span>
+          ${lifts.map((lf) => `<span style="color:var(--text2);justify-self:start">${SHORT[lf]}</span><span style="color:var(--text3)">${HIST[lf].kg}</span><span style="font-weight:600">${projected(S.effort, lf)}${HIST[lf].each ? ' <span style="font-size:11px;color:var(--text3)">each</span>' : ''}</span>`).join('')}
+        </span></div>` : ''}
+    </div>`);
+  $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
+  document.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => { S.weeks = +b.dataset.wk; render(); });
+  document.querySelectorAll('[data-eff]').forEach((b) => b.onclick = () => { S.effort = b.dataset.eff; render(); });
+  $('expTog').onclick = () => { S.expOpen = !S.expOpen; render(); };
   document.querySelectorAll('[data-focus]').forEach((b) => b.onclick = () => { S.focus = b.dataset.focus; render(); });
   $('focusInfo').onclick = () => sheet(`<h2>Main focus</h2><div class="card" style="padding:4px 16px">${[
     ['Strength', 'Lift heavier on your main lifts. Heavy top sets of 3–6 reps, longer rests, fewer extras.'],
@@ -426,7 +444,7 @@ const estFrom = (l, i) => { const r = SIMILAR[l]?.[i]; if (!r || !HIST[r.from]) 
 const shortName = (l) => SHORT[l] ?? l.replace('DB ', 'DB ').replace('Machine ', 'Machine ');
 // Pages: "Check your lifts" only when a main lift has no history or none in 8 weeks.
 const needsCheck = () => MAIN.some((l) => HIST[l].none || HIST[l].stale);
-const flow = () => [needsCheck() || S.checkSeen ? 'check' : null, 'goals', 'effort', 'week', 'plan'].filter(Boolean);
+const flow = () => [needsCheck() || S.checkSeen ? 'check' : null, 'goals', 'week', 'plan'].filter(Boolean);
 function go(d) { const f = flow(); const i = Math.max(0, Math.min(f.length - 1, f.indexOf(S.page) + d)); S.page = f[i]; render(); }
 
 function renderCheck() {
