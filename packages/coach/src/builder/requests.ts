@@ -109,7 +109,7 @@ export interface BuilderSlotView {
   /** Superset letter (`a`, `b` share a round), or null. */
   superset: string | null;
   workingSets: number;
-  /** `4 × 6 @ 100 kg`, `3 × 8 @ 30 kg each`, `3 × 8 · no load`. */
+  /** `4 × 6 @ 100 kg`, `5 × 3–6 @ 100 kg`, `3 × 8 @ 30 kg each`, `3 × 8 · no load`. */
   sets: string;
   warmups: number;
 }
@@ -134,6 +134,9 @@ export function builderWorkoutView(snapshot: BuilderCoachSnapshot, ctx: BuilderC
       const work = s.rows.filter((r) => r.type !== 'warmup');
       const top = topLoad(s);
       const reps = work[0]?.reps ?? s.repRange.min;
+      // A saved range reads as one (`5 × 3–6`), not its bottom (final re-review S2).
+      const repsMax = work[0]?.repsMax;
+      const repsText = repsMax !== undefined && repsMax > reps ? `${String(reps)}–${String(repsMax)}` : String(reps);
       slots.push({
         slotKey: s.key,
         exerciseId: s.exerciseId,
@@ -142,7 +145,7 @@ export function builderWorkoutView(snapshot: BuilderCoachSnapshot, ctx: BuilderC
         main: s.main,
         superset: tag,
         workingSets: workingCount(s),
-        sets: `${String(workingCount(s))} × ${String(reps)}${top === null ? ' · no load' : ` @ ${builderLoadText(top, s.unit, s.convention)}`}`,
+        sets: `${String(workingCount(s))} × ${repsText}${top === null ? ' · no load' : ` @ ${builderLoadText(top, s.unit, s.convention)}`}`,
         warmups: s.rows.length - work.length,
       });
     }

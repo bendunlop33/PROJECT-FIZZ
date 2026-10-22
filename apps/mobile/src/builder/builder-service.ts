@@ -1197,7 +1197,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           const base = reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), slotLoadOf(env.ctx.loads(s.exerciseId), s.main));
           const planned = plannedSlots.get(s.exerciseId);
           if (planned === undefined) return base;
-          const r = slotAtNewGym(s, planned, base);
+          // (S3) One item per slot: the planner's loads mix with the builder's only when both fitted to the same item.
+          const sameItem = (plannedItem.get(s.exerciseId)?.equipmentId ?? null) === (env.codec.checkedOnOf(s.exerciseId)?.equipmentId ?? null);
+          const r = slotAtNewGym(s, planned, base, sameItem);
           if (r.fromPlanned) fromPlanned.add(s.key);
           return r.slot;
         };

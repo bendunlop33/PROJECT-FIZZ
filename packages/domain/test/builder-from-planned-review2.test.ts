@@ -113,7 +113,7 @@ describe('R2: a saved workout at a new gym', () => {
     const slot = at(42.5);
     const there = { ...at(40), key: 'other-key', why: ['Saved workout', 'Max here'] };
     const base = { ...slot, rows: slot.rows.map((r) => ({ ...r, load: 77 })) };
-    const r = slotAtNewGym(slot, there, base);
+    const r = slotAtNewGym(slot, there, base, true);
     expect(r.fromPlanned).toBe(true);
     expect(r.slot.key).toBe(slot.key);
     expect(r.slot.rows.map((x) => x.load)).toEqual([40, 40]);
@@ -127,15 +127,35 @@ describe('R2: a saved workout at a new gym', () => {
     slot.rows[1] = { ...(slot.rows[1] ?? { type: 'working', reps: 8, load: 42.5, rpe: 8 }), load: 50, typed: true };
     const there = at(40);
     const base: BuilderSlot = { ...slot, rows: [{ type: 'working', reps: 10, load: 77, rpe: 8 }, { type: 'working', reps: 8, load: 50, rpe: 8, typed: true }, { type: 'working', reps: 6, load: 70, rpe: 8 }] };
-    const r = slotAtNewGym(slot, there, base);
+    const r = slotAtNewGym(slot, there, base, true);
     expect(r.fromPlanned).toBe(true);
     expect(r.slot.rows.map((x) => [x.reps, x.load, x.typed ?? false])).toEqual([[10, 40, false], [8, 50, true], [6, 70, false]]);
+  });
+
+  it('S3: edited, and the planner fitted to another item than the builder: one item per slot (the builder’s reload whole) when any load would come from it', () => {
+    const slot: BuilderSlot = { ...at(42.5), touched: true };
+    slot.rows = [...slot.rows, { type: 'working', reps: 6, load: 42.5, rpe: 8 }];
+    const there = at(40);
+    const base: BuilderSlot = { ...slot, rows: [{ type: 'working', reps: 8, load: 45, rpe: 8 }, { type: 'working', reps: 8, load: 45, rpe: 8 }, { type: 'working', reps: 6, load: 47.5, rpe: 8 }] };
+    // The extra set's load is the builder's: on another item, the whole slot is the builder's.
+    expect(slotAtNewGym(slot, there, base, false)).toEqual({ slot: base, fromPlanned: false });
+    // A kept typed kg is the builder's too.
+    const typed: BuilderSlot = { ...at(42.5), touched: true };
+    typed.rows[1] = { ...(typed.rows[1] ?? { type: 'working', reps: 8, load: 42.5, rpe: 8 }), load: 50, typed: true };
+    const typedBase: BuilderSlot = { ...typed, rows: [{ type: 'working', reps: 8, load: 45, rpe: 8 }, { type: 'working', reps: 8, load: 50, rpe: 8, typed: true }] };
+    expect(slotAtNewGym(typed, there, typedBase, false)).toEqual({ slot: typedBase, fromPlanned: false });
+    // Edited (his reps) but every load from the planner: no mix, so the planner’s loads stand on its item.
+    const reps: BuilderSlot = { ...at(42.5), touched: true };
+    reps.rows[0] = { ...(reps.rows[0] ?? { type: 'working', reps: 8, load: 42.5, rpe: 8 }), reps: 10 };
+    const r = slotAtNewGym(reps, there, { ...reps, rows: reps.rows.map((x) => ({ ...x, load: 45 })) }, false);
+    expect(r.fromPlanned).toBe(true);
+    expect(r.slot.rows.map((x) => [x.reps, x.load])).toEqual([[10, 40], [8, 40]]);
   });
 
   it('a planned slot in another unit or convention than the builder’s: the builder’s reload stands', () => {
     const slot: BuilderSlot = { ...at(42.5), touched: true };
     const there: BuilderSlot = { ...at(90), unit: 'lb' };
-    const r = slotAtNewGym(slot, there, slot);
+    const r = slotAtNewGym(slot, there, slot, true);
     expect(r).toEqual({ slot, fromPlanned: false });
   });
 });

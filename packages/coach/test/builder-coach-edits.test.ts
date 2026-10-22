@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildFromSetup, getAchievableLoads, referenceE1rm, slotsOf, type BuilderSetup, type BuilderWorkout, type LoadReferences, type RefSession } from '@fizz/domain';
+import { buildFromSetup, getAchievableLoads, referenceE1rm, slotsOf, toDraftPlan, type BuilderSetup, type BuilderSlot, type BuilderWorkout, type DraftCodecContext, type LoadReferences, type RefSession } from '@fizz/domain';
 import { builderFixture as F } from '@fizz/domain/testing';
 import { BUILDER_COACH_TOOL_ARGS, BuilderEditOpSchema, FillSetupArgsSchema, ProposeWorkoutEditArgsSchema, ReviewWorkoutArgsSchema, type BuilderEditOp } from '@fizz/schemas';
 import {
   OUT_OF_DATE_LINE,
   applyBuilderEdits,
+  builderWorkoutView,
   NO_NUMBERS,
   workoutClaimCheck,
   builderToolDefinition,
@@ -362,5 +363,70 @@ describe('swap and add follow the builder order and pairing rules (review builde
     const i = iso.workout.blocks.findIndex((b) => b.slots.some((s) => s.exerciseId === 'hammer'));
     expect(iso.workout.blocks.slice(i + 1).every((b) => b.slots.some((s) => F.info(s.exerciseId)?.group === 'Abs')), names(iso.workout).join(' | ')).toBe(true);
     expect(iso.workout.blocks.slice(0, i).every((b) => b.slots.every((s) => rank(s.exerciseId) <= 3 || s.main) || b.slots.some((s) => rank(s.exerciseId) < 3)), names(iso.workout).join(' | ')).toBe(true);
+  });
+});
+
+describe('a saved rep range through the coach (retire-overview final re-review F1, S1, S2)', () => {
+  /** Bench as a library workout's `Five` opens it: 5 × 3–6 @ 100, with the saved workout's reasons. */
+  function ranged() {
+    const t = setup({ askedHeavier: true });
+    const bench = slotsOf(t.w.blocks).find((x) => x.exerciseId === 'bench') as BuilderSlot;
+    const saved: BuilderSlot = {
+      ...bench,
+      source: 'saved',
+      why: ['Saved workout', 'Max here'],
+      rows: [...bench.rows.filter((r) => r.type === 'warmup'), ...[0, 1, 2, 3, 4].map(() => ({ type: 'working' as const, reps: 3, repsMax: 6, load: 100, rpe: 8 }))],
+    };
+    const w: BuilderWorkout = { ...t.w, blocks: t.w.blocks.map((b) => ({ ...b, slots: b.slots.map((x) => (x.key === bench.key ? saved : x)) })) };
+    return { ...t, w, snap: snapshotOf(w), benchKey: bench.key };
+  }
+  const codec = (ctx: ReturnType<typeof F.context>): DraftCodecContext => ({ info: ctx.info, catalogueIdOf: (e) => e, checkedOnOf: () => null });
+
+  it('F1: a coach load change keeps 3–6: the only line is the load, and the encoded plan Start reads is 5 × {3, 6}', () => {
+    const { snap, env, ctx, benchKey } = ranged();
+    const o = applyBuilderEdits(snap, [{ op: 'load', slotKey: benchKey, direction: 'heavier', value: null, unit: null }], env);
+    expect(o.lines).toEqual(['Barbell bench press: 100 → 102.5 kg']);
+    const after = slotsOf(o.workout.blocks).find((x) => x.key === benchKey);
+    expect(after?.rows.filter((r) => r.type !== 'warmup').map((r) => [r.reps, r.repsMax, r.load])).toEqual(Array.from({ length: 5 }, () => [3, 6, 102.5]));
+    const enc = toDraftPlan(o.workout, codec(ctx)).slots.find((x) => x.slotKey === benchKey);
+    expect(enc?.setTemplates.filter((t) => t.setType !== 'warmup').map((t) => t.reps)).toEqual(Array.from({ length: 5 }, () => ({ min: 3, max: 6 })));
+  });
+
+  it('F1: a typed kg gives way to the coach’s load (no `typed`, no `roundedFrom` left behind)', () => {
+    const { snap, env, benchKey } = ranged();
+    const bench = slotsOf(snap.workout.blocks).find((x) => x.key === benchKey) as BuilderSlot;
+    const i = bench.rows.findIndex((r) => r.type !== 'warmup');
+    bench.rows[i] = { ...(bench.rows[i] as BuilderSlot['rows'][number]), typed: true, roundedFrom: 101 };
+    const o = applyBuilderEdits(snap, [{ op: 'load', slotKey: benchKey, direction: null, value: 102.5, unit: 'kg' }], env);
+    const rows = slotsOf(o.workout.blocks).find((x) => x.key === benchKey)?.rows.filter((r) => r.type !== 'warmup') ?? [];
+    expect(rows.map((r) => [r.load, r.typed ?? null, r.roundedFrom ?? null, r.repsMax ?? null])).toEqual(Array.from({ length: 5 }, () => [102.5, null, null, 6]));
+  });
+
+  it('S1: after the coach’s load change the saved workout’s reasons are gone, from the slot and from every encoded set', () => {
+    const { snap, env, ctx, benchKey } = ranged();
+    const o = applyBuilderEdits(snap, [{ op: 'load', slotKey: benchKey, direction: 'heavier', value: null, unit: null }], env);
+    const after = slotsOf(o.workout.blocks).find((x) => x.key === benchKey);
+    expect(after?.why).toBeUndefined();
+    expect(after?.source).toBe('coach_target');
+    const enc = toDraftPlan(o.workout, codec(ctx)).slots.find((x) => x.slotKey === benchKey);
+    expect(enc?.builder?.why).toBeUndefined();
+    for (const t of enc?.setTemplates ?? []) expect([t.load?.notes, t.load?.held]).toEqual([[], false]);
+    // A slot the coach didn't touch keeps its reasons.
+    const untouched = applyBuilderEdits(snap, [{ op: 'sets', slotKey: benchKey, workingSets: 5 }], env);
+    expect(slotsOf(untouched.workout.blocks).find((x) => x.key === benchKey)?.why).toEqual(['Saved workout', 'Max here']);
+  });
+
+  it('S2: the coach is shown `5 × 3–6`, and a reply quoting the range passes the claim check (a wrong top is still hidden)', () => {
+    const { snap, ctx, w, benchKey } = ranged();
+    expect(builderWorkoutView(snap, ctx, 52).slots.find((x) => x.slotKey === benchKey)?.sets).toBe('5 × 3–6 @ 100 kg');
+    // Fixed reps still read as one number.
+    const fly = slotsOf(w.blocks).find((x) => x.exerciseId === 'cable_fly');
+    expect(builderWorkoutView(snap, ctx, 52).slots.find((x) => x.slotKey === fly?.key)?.sets).toMatch(/^\d+ × \d+ @ /);
+    const check = workoutClaimCheck(w, { ctx, minutes: [60] });
+    expect(check('Bench press is 5 × 3–6 at 100 kg.', null).shown).toBe('Bench press is 5 × 3–6 at 100 kg.');
+    expect(check('Keep bench press at 3–6 reps.', null).shown).toBe('Keep bench press at 3–6 reps.');
+    expect(check('Keep bench press at 6 reps.', null).shown).toBe('Keep bench press at 6 reps.');
+    expect(check('Keep bench press at 3–8 reps.', null).shown).toBeNull();
+    expect(check('Bench press is 5 × 3–8 at 100 kg.', null).shown).toBeNull();
   });
 });

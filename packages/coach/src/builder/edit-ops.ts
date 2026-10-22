@@ -131,7 +131,11 @@ const blockIndexOf = (w: BuilderWorkout, key: string): number => w.blocks.findIn
 const replaceSlot = (w: BuilderWorkout, key: string, next: BuilderSlot): BuilderWorkout => ({ ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === key ? next : s)) })) });
 const working = (s: BuilderSlot): BuilderSetRow[] => s.rows.filter((r) => r.type !== 'warmup');
 
-/** The slot with a new working load: Top / working sets at it, back-offs by the formula, warm-ups rebuilt, all rounded down here. */
+/**
+ * The slot with a new working load: Top / working sets at it, back-offs by the formula, warm-ups rebuilt, all rounded
+ * down here. Each row keeps its reps (a saved `3–6` range included; final re-review F1); a typed kg gives way to the
+ * coach's load, and the saved workout's reasons no longer explain it (S1).
+ */
 function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext): BuilderSlot {
   const input = ctx.loads(slot.exerciseId);
   const rc = roundContextOf(input);
@@ -139,15 +143,23 @@ function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext):
   const first = working(slot)[0];
   const anchor = first !== undefined && formulaApplies(slot.convention) ? anchorE1rmOf({ value, reps: first.reps, rpe: first.rpe ?? BUILDER_SET_RULES.workRpe }) : null;
   const down = (v: number | null): number | null => (v === null ? null : (roundDownHere(v, rc)?.value ?? null));
+  const at = (r: BuilderSetRow, load: number | null): BuilderSetRow => {
+    const row: BuilderSetRow = { ...r, load };
+    delete row.typed;
+    delete row.roundedFrom;
+    return row;
+  };
   const work: BuilderSetRow[] = [];
   for (const r of working(slot)) {
     const prev = work[work.length - 1];
-    if (r.type === 'top' || r.type === 'working') work.push({ type: r.type, reps: r.reps, rpe: r.rpe, load: value });
-    else if (r.type === 'backoff') work.push({ type: r.type, reps: r.reps, rpe: r.rpe, load: down(loadForSet(anchor, value, r.reps, r.rpe ?? BUILDER_SET_RULES.workRpe)) });
-    else work.push({ type: r.type, reps: r.reps, rpe: r.rpe, load: prev?.load == null ? null : down(prev.load * BUILDER_SET_RULES.dropPct) });
+    if (r.type === 'top' || r.type === 'working') work.push(at(r, value));
+    else if (r.type === 'backoff') work.push(at(r, down(loadForSet(anchor, value, r.reps, r.rpe ?? BUILDER_SET_RULES.workRpe))));
+    else work.push(at(r, prev?.load == null ? null : down(prev.load * BUILDER_SET_RULES.dropPct)));
   }
   const warm = warmupsFor({ main: slot.main, role: info.role, barbell: info.barbell, load: input }, value);
-  return { ...slot, rows: [...warm, ...work], anchorE1rm: anchor, source: 'coach_target', startLight: null, touched: true };
+  const out: BuilderSlot = { ...slot, rows: [...warm, ...work], anchorE1rm: anchor, source: 'coach_target', startLight: null, touched: true };
+  delete out.why;
+  return out;
 }
 
 /** Where a new single goes when no anchor is named: in its §3.4 band, after its own group (the builder's rule, `bandInsertIndex`; review builder-order S1). */

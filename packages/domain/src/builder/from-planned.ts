@@ -206,9 +206,12 @@ export function plannedAsDraftPlan(input: PlannedAsDraftInput): PlannedAsDraft {
  * - A slot Ben didn't edit becomes the planned one (its key, superset and rests kept).
  * - An edited slot keeps his rows (set types, count, reps, RPE); each set takes the planned load of the same type and
  *   position, else `base`'s. If the planned slot is in another unit or convention than `base`, `base` is used.
+ * - (Final re-review S3) `sameItem`: the planner fitted its loads to the item the builder's `base` was fitted to. When
+ *   it didn't, an edited slot that would take any load from `base` (a kept typed kg, an extra set) is `base` whole, so
+ *   every load on the page is fitted to the one item Start plans it on.
  * Returns the slot and whether any load came from `planned` (its item is then the planner's). Pure.
  */
-export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: BuilderSlot): { slot: BuilderSlot; fromPlanned: boolean } {
+export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: BuilderSlot, sameItem: boolean): { slot: BuilderSlot; fromPlanned: boolean } {
   const keep = (s: BuilderSlot): BuilderSlot => {
     const out: BuilderSlot = { ...s, key: slot.key, main: slot.main };
     delete out.restS;
@@ -224,11 +227,16 @@ export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: Buil
   const nth = (rows: readonly BuilderSetRow[], type: BuilderSetRow['type'], k: number): BuilderSetRow | undefined => rows.filter((r) => r.type === type)[k];
   const seen = new Map<BuilderSetRow['type'], number>();
   const used: boolean[] = [];
+  /** Sets whose load comes from `base` (fitted to the builder's item). */
+  const mixed: boolean[] = [];
   const rows = slot.rows.map((r): BuilderSetRow => {
     const k = seen.get(r.type) ?? 0;
     seen.set(r.type, k + 1);
     const fromBase = nth(base.rows, r.type, k);
-    if (r.typed === true && fromBase?.typed === true) return { ...r, load: fromBase.load, ...(fromBase.roundedFrom === undefined ? {} : { roundedFrom: fromBase.roundedFrom }) };
+    if (r.typed === true && fromBase?.typed === true) {
+      if (fromBase.load !== null) mixed.push(true);
+      return { ...r, load: fromBase.load, ...(fromBase.roundedFrom === undefined ? {} : { roundedFrom: fromBase.roundedFrom }) };
+    }
     const p = nth(planned.rows, r.type, k);
     const plain: BuilderSetRow = { ...r };
     delete plain.typed;
@@ -237,9 +245,10 @@ export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: Buil
       used.push(true);
       return { ...plain, load: p.load };
     }
+    if (fromBase?.load != null) mixed.push(true);
     return { ...plain, load: fromBase?.load ?? null };
   });
-  if (used.length === 0) return { slot: base, fromPlanned: false };
+  if (used.length === 0 || (mixed.length > 0 && !sameItem)) return { slot: base, fromPlanned: false };
   const out: BuilderSlot = { ...slot, rows, unit: planned.unit, convention: planned.convention, source: planned.source, anchorE1rm: planned.anchorE1rm, startLight: planned.startLight };
   delete out.why;
   delete out.historyVersion;

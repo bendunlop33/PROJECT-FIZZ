@@ -145,6 +145,8 @@ export function claimFacts(workouts: readonly BuilderWorkout[], base: ClaimBase)
       for (const r of s.rows) {
         if (r.type === 'warmup') continue;
         e.reps.add(r.reps);
+        // A saved range's top (`3–6`) is a fact too (final re-review S2).
+        if (r.repsMax !== undefined) e.reps.add(r.repsMax);
         if (r.rpe != null) e.rpe.add(r.rpe);
         if (r.load != null) e.loads.push({ value: r.load, unit: s.unit });
       }
@@ -241,6 +243,8 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
   };
 
   const pairEnds = new Set<number>();
+  /** Where a range's top starts → its bottom's kind (`5 × 3–6`: the 6 is reps too; final re-review S2). */
+  const rangeTops = new Map<number, Kind>();
   for (const m of masked.matchAll(/(?<![\d.])(\d+(?:\.\d+)?)(?![\d])/g)) {
     const raw = m[1] ?? '';
     const n = Number(raw);
@@ -251,12 +255,14 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
     if (has(f.ben, n)) continue;
     // `8–10 reps`: the bottom of a range takes the unit after its top.
     let after = masked.slice(end, end + 40);
-    const range = /^\s?(?:–|-|to)\s?\d+(?:\.\d+)?/.exec(after);
+    const range = /^\s?(?:–|-|to)\s?(\d+(?:\.\d+)?)/.exec(after);
     if (range !== null) after = after.slice(range[0].length);
     const before = masked.slice(Math.max(0, at - 12), at);
     let kind: Kind = 'bare';
     const of = /^\s?of\s(\d+)/.exec(masked.slice(end, end + 12));
-    if (of !== null) {
+    const top = rangeTops.get(at);
+    if (top !== undefined) kind = top;
+    else if (of !== null) {
       kind = 'of';
       pairEnds.add(end + of[0].length - (of[1] ?? '').length);
     }
@@ -269,6 +275,7 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
       break;
     }
     if (kind === 'never') return false;
+    if (range !== null) rangeTops.set(end + range[0].length - (range[1] ?? '').length, kind);
     const [lo, hi] = clauseOf(at);
     const named = mentions.filter((x) => x.at >= lo && x.at < hi).map((x) => x.e);
     let ok = false;
