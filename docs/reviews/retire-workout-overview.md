@@ -1,6 +1,6 @@
 # Review: retire WorkoutOverview (Ben, 22 Oct 2026)
 
-**Verdict: CHANGES NEEDED** (verification of the final fixes 22 Oct 2026, after 407a7bf, a937d99: F1, S1, S2 and S3 fixed; a coach reps op equal to the range's bottom still makes a saved range fixed reps with no line on the card, F2 below)
+**Verdict: PASS** (verification of round 2, 22 Oct 2026, after 2801b7d: F2, S4 and the `@` claim item are fixed; I found no remaining path where a saved rep range becomes fixed reps without the card or page showing it. Still open, not blocking: N4 and the spec issues for Ben, O1, N1–N3)
 
 Scope: `216a402..847729b` on `claude/gracious-knuth-joxqpw` (84d5ea1, cb342fc, 77f16ef, df0ef78, 847729b).
 Checked against `docs/design/workout-builder-v3.md` §2.1, §2.3, §3.1, §7, the CLAUDE.md product rules, and the parity audit in the task.
@@ -328,3 +328,45 @@ Verified fixed:
 - **Developer's open item:** the claim check reads `@` as RPE. This predates the slice and isn't counted here. It matters more now: the coach is shown `5 × 3–6 @ 100 kg`, exactly the form the check hides. It needs its own small change and test.
 
 Still open and not counted here: O1, N1–N3, and the spec issues for Ben.
+
+## Verification of round 2 (reviewer, 22 Oct 2026)
+
+Scope: `eab9d40..2801b7d` (2801b7d: `edit-ops.ts`, `claims.ts`, `requests.ts`, `builder-coach-edits.test.ts`). The developer didn't add a fixes section for this round; 2801b7d's commit message and the report give the changes.
+
+**Verdict: PASS.** F2 and S4 are fixed, and so is the developer's open `@` item. My probe found no remaining route where a saved range turns into fixed reps unseen, and no regression from this round. The items below are nits or belong outside this slice.
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| eslint (5 GB heap, as `npm run lint`) on the 4 files in 2801b7d | exit 0 |
+| `npx vitest run` on 15 related files (coach builder-coach-edits, -review, -setup, claims-corpus; domain builder-from-planned-review2; mobile builder-coach-merge, builder-coach, builder-open-sources, builder-open-targets, builder-review-fixes, builder-service, coach-structural, fit-to-time-coach, library-coach-target, workout-builder) | 15 files, 701 passed |
+| The 5 new tests against eab9d40's `edit-ops.ts`, `claims.ts` and `requests.ts` (restored afterwards) | all 5 fail; with 2801b7d all pass |
+| Reviewer probe (temporary test, deleted) | 7 scenarios below |
+
+Verified fixed:
+- **F2:** `slotLines` compares every straight set's reps as text through `perSetChange` (`edit-ops.ts:453`, `:464`). On 5 × 3–6 @ 100, `reps 3` + `load heavier` reads `3–6 → 3 reps` and `100 → 102.5 kg`, and Start encodes {3,3} × 5. `reps 6` reads `3–6 → 6 reps`, and a lone `reps 3` is a proposal. From the probe:
+  - **Anchored slot** (a builder anchor, or one left by an applied coach load change): `reps 3` + heavier reads `3–6 → 3 reps` and `100 → 110 kg`. On a second proposal after an applied load change, `reps 3` keeps 102.5, and `reps 5` reads `3–6 → 5 reps` and `102.5 → 95 kg`. Every load change shows.
+  - **Pain flag:** `reps 3` shows its line. `reps 5` and `reps 6` are refused (`Not more`), which errs towards blocking.
+  - **Top 3–5, back-offs 6–8, a drop:** `reps 5` reads `3–5 / 6–8 → 5 reps`, and the drop is untouched. `rpe`, `minutes 30/90`, `sets 6` and `load lighter` keep both ranges.
+  - **One set Ben fixed at 4:** `reps 3` reads `4 / 3–6 → 3 reps`. A coach load keeps the other four at 3–6.
+  - **Stale proposals (rule 5):** Apply's recheck re-runs the ops and compares lines, so a card stored before this build that hid the collapse is refused as `Out of date. Ask again.` (probe on the same snapshot). A fresh card passes.
+- **Back-offs and RPE:** this also fixes an older hidden change. A `sets` op that lowers an all-RPE-8 saved slot now shows `RPE 8 → 8 / 9`, because `lastAtNine` moves the new last set to 9. On builder slots ([8, 8, 9]) the before and after sets match, so no RPE line is added.
+- **S4:** the top takes its bottom's kind only when it's `bare` (`claims.ts:279`). `from 4 × 6 to 5 × 6` passes, while `to 7 × 6` and `to 5 × 6–9` are hidden.
+- **`@` claim item:** `claims.ts:269` reads `@ N kg|lb` as a load. Probe results:
+  - Passes: `5 × 3–6 @ 100 kg`, `@ 102.5 kg for 5 × 3`, `@ 8 for 5 × 3`, `5 × 3 @ RPE 8`, `100–102.5 kg` and `from 100 to 102.5 kg`.
+  - Hidden: `@ 105 kg`, `@ 100 lb` (on a kg slot), `@ 8 to 9`, `@ 7–8` and `from 100 to 105 kg`, when those numbers aren't facts.
+- **Other routes checked** (from the code, no change this round): Gym changed (`slotAtNewGym` and `reloadSlotLoads` copy rows), Reload, force-close (codec), Add set (`setWorkingCount` copies the last row), saving to the Library (DraftPlan `{min,max}`), the nudge (`sets −1` and `load lighter`) and Coach review suggestions. All of these use the same functions. Swap makes a new exercise with defaults, as before.
+- **Rules 2 and 5:** 2801b7d doesn't touch sessions, logged sets, op IDs or version fences.
+
+### Blocking
+
+None.
+
+### Nits (not counted)
+
+- **N5. The claim check hides the coach's natural sentence for the new line.** `Bench press goes from 3–6 to 3 reps.` and `Bench press: 3–6 → 3 reps.` are hidden, though every number is a fact. The range's bottom `3` is followed by `to 3 reps` / `→ 3 reps` rather than a unit, so it falls to `bare` (`claims.ts:259`). This errs towards hiding, and the card line is code's, so it's safe. It goes to `Not shown` where Ben would expect the coach's reason. Fix if it shows up in use: let a range's bottom take the kind of a unit after a second number joined by `to`/`→`.
+- **N6. The coach sees only the first set's reps** (`requests.ts:137-138`). After Ben fixes one set at 4, the coach is shown `5 × 4 @ 100 kg` while the other four are 3–6. On a Top/back-off slot the back-offs' own reps and loads aren't shown either. This predates the slice: S2 fixed the uniform case. The card lines stay honest whatever the coach then asks for.
+- **N7. A set-type change resets the reps of two sets** (`set-rows.ts:221-225`). If Ben makes a 6–8 back-off the Top, it becomes fixed `3` (the slot's `repRange.min`), and the old Top becomes a fresh back-off at `repRange.max`. This is Ben's own visible edit and older builder behaviour, so it isn't silent. The spec's saved-range line (`workout-builder-v3.md` §2.4) covers a reps edit, not a type change, so it's worth adding to the pending decision.
+- The pain check on a `reps` op compares against the range's bottom (`edit-ops.ts:307`). This errs towards blocking, as the developer noted.
+
+Still open and not counted here: N4 (part of Ben's decision on saved workouts), O1, N1–N3, and the spec issues for Ben (saved rep ranges, planned Why lines and `‹ Back` are [Proposal], pending Ben).
