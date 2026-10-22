@@ -197,7 +197,7 @@ const ACT_DEFAULT_DAY = { Cycling: 5, Swimming: 2, Boxing: 3, Football: 6, HIIT:
 // ---------- State ----------
 const S = {
   ai: true, page: 'check', check: {}, focus: 'Balanced', targets: [],
-  acts: {}, priority: ['Back'], runs: true, longRunDay: 6, runDays: [2, 6],
+  acts: {}, pri: [], priority: ['Back'], runs: true, longRunDay: 6, runDays: [2, 6],
   days: [0, 1, 3, 5], freq: 4, schedule: 'fixed', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
 };
@@ -221,7 +221,7 @@ function build() {
   let plan = days.map((d, i) => ({ day: d, focus: names[i] }));
   // No heavy legs the day before the long run: swap with the furthest non-leg day (rule 11/GA15).
   // No heavy legs the day before a long run or a leg-heavy session (cycling, football, HIIT).
-  const hard = [...(S.runs ? [S.longRunDay] : []), ...Object.keys(S.acts).filter((x) => ACT_LEGS.has(x)).flatMap((x) => S.acts[x])];
+  const hard = [...(S.runs ? (S.pri.includes('Running') ? S.runDays : [S.longRunDay]) : []), ...Object.keys(S.acts).filter((x) => ACT_LEGS.has(x) || S.pri.includes(x)).flatMap((x) => S.acts[x])];
   const LEGGY = ['Legs', 'Lower', 'Full body'];
   const blocked = new Set(hard.map((d) => (d + 6) % 7));
   for (const before of blocked) {
@@ -275,7 +275,7 @@ const EFFORT = {
   Standard: { pri: [12, 20], oth: [8, 14],  sm: [4, 10], rpe: '7–9', step: 'One step when you hit the plan',          deload: 'Last week',      pct: 0.012, line: 'Steady weekly progress you can keep up block after block.' },
   Push:     { pri: [16, 22], oth: [10, 16], sm: [6, 12], rpe: '8–9.5', step: 'One step every session you hit it',    deload: 'Every 4th week', pct: 0.018, line: 'Faster progress, more sets and harder sets. Needs sleep, food and fewer hard runs.' },
 };
-const range = (m) => { const e = EFFORT[S.effort]; const small = ['Calves','Biceps','Triceps','Core'].includes(m); if (small) return isPri(m) ? [e.sm[0] + 4, e.sm[1] + 4] : e.sm; return isPri(m) ? e.pri : e.oth; };
+const range = (m) => { const e = S.pri.length ? EFFORT.Steady : EFFORT[S.effort]; const small = ['Calves','Biceps','Triceps','Core'].includes(m); if (small) return isPri(m) ? [e.sm[0] + 4, e.sm[1] + 4] : e.sm; return isPri(m) ? e.pri : e.oth; };
 const deloadText = () => S.effort === 'Steady' ? 'no set deload' : S.effort === 'Push' ? 'deload every 4th week' : `deload week ${S.weeks}`;
 // Estimate only (rule 6): the main target lift's top set after the plan, at the level's typical weekly gain.
 // Estimates only (rule 6). Weekly gain = a share of the current top set by level (placeholder until his own trend, history-targets).
@@ -332,8 +332,9 @@ function renderGoals() {
     <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m === SUG.group ? '✦ ' : ''}${m}</button>`).join('')}</div>
     <div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested for you: <b style="color:var(--text)">${SUG.group}</b>. ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>
     ${false ? `<div class="offer" style="display:flex;align-items:center;background:var(--raised);border-radius:12px;padding-left:12px;font-size:15px;gap:4px"><span style="flex:1">✦ Back: 8 sets a week vs Chest 15</span><button class="link" id="useSug" style="font-weight:600">Use</button><button class="link dim" id="noSug" aria-label="Dismiss" style="text-decoration:none">✕</button></div>` : ''}
-    <div class="label">Other training</div>
-    <div class="chips">${[...ACTS, ...(S.customActs ?? [])].map((a) => `<button class="chip sm" data-act="${esc(a)}" aria-pressed="${a === 'Running' ? S.runs : !!S.acts[a]}">${esc(a)}</button>`).join('')}<button class="chip sm" id="addAct">＋ Other</button></div>`;
+    <div class="label">Other training · tap again for ★ priority</div>
+    <div class="chips">${[...ACTS, ...(S.customActs ?? [])].map((a) => `<button class="chip sm" data-act="${esc(a)}" aria-pressed="${a === 'Running' ? S.runs : !!S.acts[a]}">${S.pri.includes(a) ? '★ ' : ''}${esc(a)}</button>`).join('')}<button class="chip sm" id="addAct">＋ Other</button></div>
+    ${S.pri.length ? `<div class="note" style="line-height:1.4">★ ${S.pri.map(esc).join(', ')} come${S.pri.length === 1 ? 's' : ''} first: lifting supports ${S.pri.length === 1 ? 'it' : 'them'}, with fewer, shorter sessions planned around ${S.pri.length === 1 ? 'its' : 'their'} hard days.</div>` : ''}`;
   $('footer').innerHTML = `<button class="primary" id="next">Next: length and effort</button>`;
   document.querySelectorAll('[data-focus]').forEach((b) => b.onclick = () => { S.focus = b.dataset.focus; render(); });
   $('focusInfo').onclick = () => sheet(`<h2>Main focus</h2><div class="card" style="padding:4px 16px">${[
@@ -347,7 +348,12 @@ function renderGoals() {
   document.querySelectorAll('[data-pri]').forEach((b) => b.onclick = () => addPri(b.dataset.pri));
   if ($('reSug')) $('reSug').onclick = () => addPri(SUG.group);
   if ($('useSug')) { $('useSug').onclick = () => addPri('Back'); $('noSug').onclick = () => { S.sugGone = true; render(); }; }
-  document.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => { const a = b.dataset.act; if (a === 'Running') S.runs = !S.runs; else if (S.acts[a]) delete S.acts[a]; else S.acts[a] = [ACT_DEFAULT_DAY[a] ?? 3]; render(); });
+  document.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => {
+    const a = b.dataset.act; const on = a === 'Running' ? S.runs : !!S.acts[a];
+    const setOn = (v) => { if (a === 'Running') S.runs = v; else if (v) S.acts[a] = S.acts[a] ?? [ACT_DEFAULT_DAY[a] ?? 3]; else delete S.acts[a]; };
+    if (!on) setOn(true); else if (!S.pri.includes(a)) S.pri = [...S.pri, a]; else { S.pri = S.pri.filter((x) => x !== a); setOn(false); }
+    render();
+  });
   $('addAct').onclick = () => { const n = (prompt('Other training') || '').trim(); if (n) { S.customActs = [...(S.customActs ?? []), n]; S.acts[n] = [3]; render(); } };
   $('next').onclick = () => go(1);
 }
@@ -534,7 +540,8 @@ function coachIntro() {
   const split = [...new Set(S.plan.map((d) => d.focus))].join(' / ').toLowerCase();
   const chestDays = S.plan.filter((d) => d.ex.some((e) => e.m === 'Chest')).length;
   const ws = weeklySets(S.plan); const short = MUSCLES.filter((m) => ws[m] < range(m)[0]);
-  return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}: add a day, longer sessions, or Standard.` : ''}`;
+  const sport = S.pri.length ? ` Lifting supports ${S.pri.join(' and ')}: lower volume${S.days.length > 3 ? `, and ${S.days.length} lifting days is a lot alongside ${S.pri.length > 1 ? 'them' : 'it'}; 2–3 is usual` : ''}.` : '';
+  return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${sport}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}${S.effort === 'Standard' || S.pri.length ? ': add a day or longer sessions.' : ': add a day, longer sessions, or Standard.'}` : ''}`;
 }
 
 function renderPlan() {
