@@ -1,4 +1,4 @@
-import { PLAN_DAY_LIMITS, type VariationOp } from '@fizz/schemas';
+import { BUILD_LIMITS, PLAN_DAY_LIMITS, type VariationOp } from '@fizz/schemas';
 import { infoOrDefault, slotsOf } from './arrange';
 import { BUILDER_SET_RULES, workingCount } from './set-rows';
 import { makeSlot } from './slot';
@@ -38,6 +38,58 @@ export function workoutFromTemplate(specs: readonly TemplateSlotSpec[], ctx: Bui
     prev = s.group;
   }
   return { blocks, restLevel: 'normal' };
+}
+
+/** The exercises of a stored workout as `specsFromWorkout` reads them (a library workout's `RoutineExercise`s). */
+export interface WorkoutSpecSource {
+  exerciseId: string;
+  order: number;
+  main?: boolean | undefined;
+  supersetGroup: string | null;
+  setTemplates: readonly { setType: string }[];
+}
+
+/**
+ * (22 Oct, Workout overview retired) A library workout opened on Your workout: its exercises in order, its main
+ * lift (`main`), set counts and Ben's own pairs, as a plan-day template opens (no rebuild; loads from §3.1). An
+ * exercise listed twice opens once (the builder holds an exercise once).
+ */
+export function specsFromWorkout(exercises: readonly WorkoutSpecSource[], mainLiftExerciseId: string | null = null): TemplateSlotSpec[] {
+  const seen = new Set<string>();
+  const out: TemplateSlotSpec[] = [];
+  for (const e of [...exercises].sort((a, b) => a.order - b.order)) {
+    if (seen.has(e.exerciseId)) continue;
+    seen.add(e.exerciseId);
+    const working = e.setTemplates.filter((t) => t.setType !== 'warmup').length;
+    out.push({ exerciseId: e.exerciseId, main: e.main === true || mainLiftExerciseId === e.exerciseId, workingSets: Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, working)), group: e.supersetGroup });
+  }
+  return out;
+}
+
+/** A past workout's rows and sets as `specsFromSession` reads them. */
+export interface SessionSpecSource {
+  exercises: readonly { id: string; exerciseId: string; order: number; supersetGroup: string | null; removed?: unknown }[];
+  sets: readonly { sessionExerciseId: string; setType: string; status: string }[];
+}
+
+/**
+ * (22 Oct) A past workout to do again, on Your workout: its exercises in order and its pairs; each with the working
+ * sets Ben did (none done: the ones it planned and he didn't skip). Rows removed, or with no working set left, are
+ * left out; an exercise done twice opens once. No main lift is assumed. Loads come from §3.1, as for any template.
+ */
+export function specsFromSession(a: SessionSpecSource): TemplateSlotSpec[] {
+  const seen = new Set<string>();
+  const out: TemplateSlotSpec[] = [];
+  for (const e of [...a.exercises].filter((x) => x.removed === undefined).sort((x, y) => x.order - y.order)) {
+    if (seen.has(e.exerciseId)) continue;
+    const working = a.sets.filter((s) => s.sessionExerciseId === e.id && s.setType !== 'warmup' && s.status !== 'deleted');
+    const done = working.filter((s) => s.status === 'completed').length;
+    const n = done > 0 ? done : working.filter((s) => s.status !== 'skipped').length;
+    if (n === 0) continue;
+    seen.add(e.exerciseId);
+    out.push({ exerciseId: e.exerciseId, main: false, workingSets: Math.min(BUILD_LIMITS.maxWorkingSets, n), group: e.supersetGroup });
+  }
+  return out;
 }
 
 export type BuilderChange =

@@ -819,6 +819,16 @@ export function recheckDraftSlot(slot: DraftSlot, exercise: Exercise, history: r
 }
 
 /**
+ * (22 Oct, Workout overview retired) The library workout a builder draft was opened on (`builderKey.from`), which
+ * the session it starts names as its routine, so Up next's rotation and the workout's `last done` credit it. Null
+ * for every other draft (Set up, Today, a plan day, a past workout, a chat draft).
+ */
+export function routineOfBuilderDraft(draft: Pick<WorkoutDraft, 'builderKey'>): string | null {
+  const from = draft.builderKey?.from;
+  return from?.kind === 'routine' ? from.id : null;
+}
+
+/**
  * (Workout builder v3 §4.2, Today v2) The plan day a builder draft starts as: its key's plan and day index, split day
  * and main lift, with the template and variation its set-up names. Up next credits it by plan day, so a `Today only`
  * start (no routine) still moves the plan on. Empty for a draft that isn't a plan day (an Other session, Set up with
@@ -1004,7 +1014,8 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
     sets,
     session: {
       ...out.aggregate.session,
-      routineId: null,
+      // A library workout opened on Your workout (22 Oct) is that workout's session: rotation and `last done` move on, as its Start always did.
+      routineId: builder ? routineOfBuilderDraft(input.draft) : null,
       routineName: input.draft.name,
       coachDraft: { draftId: input.draft.id, version: version.n, name: input.draft.name },
       ...(builder ? planDayOfBuilderDraft(input.draft, version) : {}),

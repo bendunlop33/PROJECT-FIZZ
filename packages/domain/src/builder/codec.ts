@@ -105,6 +105,19 @@ const repRangeOf = (s: DraftSlot): { min: number; max: number } => {
   return { min: Math.min(...work.map((t) => t.reps?.min ?? 0)), max: Math.max(...work.map((t) => t.reps?.max ?? 0)) };
 };
 
+/**
+ * Where a coach-built slot's load came from (a chat draft opened on Your workout, 22 Oct): the coach chose it
+ * (`coach`, or `coach_est` labelled an estimate on the session) → `Coach target`; the plan's first week → `plan`;
+ * none → `none`; else the built-in rule.
+ */
+function coachSlotSource(s: DraftSlot): BuilderSlot['source'] {
+  const first = s.setTemplates.find((t) => t.setType !== 'warmup' && t.load?.load != null)?.load ?? s.setTemplates.find((t) => t.load?.load != null)?.load;
+  if (first === undefined) return 'none';
+  if (first.source === 'coach' || first.source === 'coach_est') return 'coach_target';
+  if (first.source === 'plan') return 'plan';
+  return 'rule';
+}
+
 function slotOf(s: DraftSlot): BuilderSlot {
   const meta = s.builder;
   const firstLoad = s.setTemplates.find((t) => t.load?.load != null)?.load?.load ?? null;
@@ -124,7 +137,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
     rows,
     unit: meta?.unit ?? firstLoad?.unit ?? s.checkedOn?.unit ?? 'kg',
     convention: meta?.convention ?? firstLoad?.convention ?? s.checkedOn?.convention ?? 'total',
-    source: meta?.source ?? (firstLoad === null ? 'none' : 'rule'),
+    source: meta?.source ?? coachSlotSource(s),
     startLight: meta?.startLight ?? null,
     anchorE1rm: meta?.anchorE1rm ?? null,
   };
