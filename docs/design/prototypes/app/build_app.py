@@ -41,6 +41,10 @@ EXTRA = {
   new MutationObserver(card).observe(document.documentElement, { childList: true, subtree: true });
   addEventListener('DOMContentLoaded', card);
 """,
+    'plan-builder.html': """
+  // #edit opens the plan you have (Library › Your plan › Edit plan).
+  if (location.hash === '#edit') addEventListener('load', () => document.getElementById('editExisting')?.click());
+""",
     'training-blocks.html': """
   // #progress opens the block's progress screen (the shell's Progress → Block).
   if (location.hash === '#progress') addEventListener('load', () => document.querySelector('[data-a="tab"][data-v="progress"]')?.click());

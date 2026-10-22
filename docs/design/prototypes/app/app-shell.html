@@ -88,6 +88,7 @@ const PAGES = {
   today: () => (A.plan ? 'training-blocks.html' : 'today-v2.html'),
   progress: () => ({ overview: 'progress-simple.html', block: 'training-blocks.html#progress' })[A.ptab],
   plan: () => 'plan-builder.html',
+  planedit: () => 'plan-builder.html#edit',
   builder: () => 'workout-builder-v3.html',
   active: () => 'workout-active-v3.html',
 };
@@ -129,7 +130,7 @@ document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { A.tab
 addEventListener('message', (e) => {
   const to = e.data?.app; if (!to) return;
   if (to === 'back') return A.stack.length ? pop() : home();
-  if (to === 'applied') { A.plan = true; delete frames['plan-builder.html']; document.querySelector('iframe[title="plan-builder.html"]')?.remove(); return home('Plan applied'); }
+  if (to === 'applied') { const edit = current() === 'planedit'; A.plan = true; ['plan-builder.html', 'plan-builder.html#edit'].forEach((k) => { frames[k]?.remove(); delete frames[k]; }); if (edit) { A.stack = []; A.tab = 'library'; show(); return toast('Plan updated'); } return home('Plan applied'); }
   if (to === 'finished') { A.stack = ['summary']; return show(); }
   if (to === 'discarded') return home('Workout discarded');
   if (to === 'library' || to === 'profile' || to === 'progress') { A.tab = to; A.stack = []; return show(); }
@@ -144,7 +145,9 @@ function renderLibrary() {
   $('library').innerHTML = `<h1>Library</h1>
     <div class="seg"><button data-lt="workouts" class="${LIB.tab === 'workouts' ? 'on' : ''}">Workouts</button><button data-lt="exercises" class="${LIB.tab === 'exercises' ? 'on' : ''}">Exercises</button></div>
     ${LIB.tab === 'workouts' ? `
-      ${plan.length ? `<div class="label">Your plan · week 3 of 6</div><div class="card">${plan.map(([n, s]) => `<div class="row" data-go="builder"><span><div class="nm">${n}</div><div class="sub">${s}</div></span><span class="chev">›</span></div>`).join('')}</div>` : `<div class="card"><div class="row" data-go="plan"><span><div class="nm">Set up a plan</div><div class="sub">Goals, week, preferences</div></span><span class="chev">›</span></div></div>`}
+      ${plan.length ? `<div class="label" style="display:flex;justify-content:space-between">Your plan<span style="letter-spacing:0;text-transform:none">${A.paused ? 'Paused' : 'Week 3 of 6'}</span></div>
+      <div class="card">${plan.map(([n, s]) => `<div class="row" data-go="builder"><span><div class="nm">${n}</div><div class="sub">${s}</div></span><span class="chev">›</span></div>`).join('')}</div>
+      <div class="foot" style="margin-top:0"><button class="secondary" style="min-height:44px;font-size:15px" data-go="planedit">Edit plan</button><button class="secondary" style="min-height:44px;font-size:15px" id="planPause">${A.paused ? 'Resume' : 'Pause'}</button><button class="secondary" style="min-height:44px;font-size:15px" id="planEnd">End</button></div>` : `<div class="card"><div class="row" data-go="plan"><span><div class="nm">Set up a plan</div><div class="sub">Goals, week, preferences</div></span><span class="chev">›</span></div></div>`}
       <div class="label">Saved workouts</div>
       <div class="card">${[['Push A', 'Last done Mon'], ['Pull A', 'Last done Wed'], ['Legs', 'Last done Sat'], ['Arms & core', '3 weeks ago']].map(([n, s]) => `<div class="row" data-go="builder"><span><div class="nm">${n}</div><div class="sub">${s}</div></span><span class="chev">›</span></div>`).join('')}</div>
       <div class="foot"><button class="secondary" data-go="builder">＋ Build a workout</button></div>`
@@ -152,6 +155,9 @@ function renderLibrary() {
       ${Object.entries(EXS).map(([g, l]) => `<div class="label">${g}</div><div class="card">${l.map((n) => `<div class="row" data-ex="${n}"><span class="nm">${n}</span><span class="chev">›</span></div>`).join('')}</div>`).join('')}`}`;
   $('library').querySelectorAll('[data-lt]').forEach((b) => b.onclick = () => { LIB.tab = b.dataset.lt; renderLibrary(); });
   $('library').querySelectorAll('[data-go]').forEach((b) => b.onclick = () => push(b.dataset.go));
+  // Managing a plan lives in Library (Ben, 22 Oct): edit, pause/resume, end. Today only offers Set up a plan when there is none.
+  if ($('planPause')) $('planPause').onclick = () => { A.paused = !A.paused; renderLibrary(); toast(A.paused ? 'Plan paused' : 'Plan resumed'); };
+  if ($('planEnd')) $('planEnd').onclick = () => { A.plan = false; A.paused = false; renderLibrary(); toast('Plan ended'); };
   $('library').querySelectorAll('[data-ex]').forEach((b) => b.onclick = () => toast(`${b.dataset.ex}: guide, history and swaps (exercise-library.md §2.4)`));
 }
 
@@ -159,7 +165,7 @@ function renderLibrary() {
 function renderProfile() {
   const sec = (t, rows) => `<div class="label">${t}</div><div class="card">${rows.map(([n, s, go]) => `<div class="row" ${go ? `data-go="${go}"` : 'data-na="1"'}><span><div class="nm">${n}</div>${s ? `<div class="sub">${s}</div>` : ''}</span><span class="chev">›</span></div>`).join('')}</div>`;
   $('profile').innerHTML = `<h1>Profile</h1>
-    ${sec('Training', [[A.plan ? 'Your plan' : 'Set up a plan', A.plan ? 'Upper / lower · 4 days · week 3 of 6' : 'Goals, week, preferences', 'plan'], ['Pain flags', 'None'], ['Logging', 'kg · RPE after the set'], ['Rest presets', '1:00 · 1:30 · 3:00']])}
+    ${sec('Training', [['Pain flags', 'None'], ['Logging', 'kg · RPE after the set'], ['Rest presets', '1:00 · 1:30 · 3:00']])}
     ${sec('Gyms', [['Main gym', 'Default · full gym'], ['＋ Add gym', '']])}
     ${sec('Voice & alerts', [['Voice & alerts', 'Set cues · Apple voice']])}
     ${sec('Coach', [['Coach connection', 'Connected'], ['What the coach remembers', '7 confirmed'], ['Guides & playbook', 'Playbook v1']])}
