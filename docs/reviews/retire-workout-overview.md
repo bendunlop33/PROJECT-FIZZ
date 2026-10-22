@@ -1,6 +1,6 @@
 # Review: retire WorkoutOverview (Ben, 22 Oct 2026)
 
-**Verdict: CHANGES NEEDED** (re-review 22 Oct 2026, after 62b1202, a1af70e, c7a4750, 0a356e4: B2, B3, B4 and S1 fixed; B1 only partly fixed, new blocking R1 below)
+**Verdict: CHANGES NEEDED** (final re-review 22 Oct 2026, after 81c77e2, 247a215, bac61da: R2–R5 fixed; R1 fixed for Ben's edits but a coach load change still collapses a saved range, F1 below)
 
 Scope: `216a402..847729b` on `claude/gracious-knuth-joxqpw` (84d5ea1, cb342fc, 77f16ef, df0ef78, 847729b).
 Checked against `docs/design/workout-builder-v3.md` §2.1, §2.3, §3.1, §7, the CLAUDE.md product rules, and the parity audit in the task.
@@ -213,3 +213,57 @@ Fix: carry a per-row rep range, or at least `repsMax`, through `BuilderSetRow` a
 ### Spec issues (still open for Ben)
 
 The four decisions in the developer's list stand: saved workouts as planned vs builder rules; the next-workout change rebuilt or dropped; cardio, timed and duplicate rows on Your workout; and chat `Open ›` going to Your workout or Set up. R1 needs a design call too: Your workout has no way to show a rep range per row.
+
+## Final re-review (22 Oct)
+
+Scope: `20a15d8..bac61da` (81c77e2, 247a215, bac61da). fe5c67a (another agent's docs) is not reviewed here.
+
+**Verdict: CHANGES NEEDED.** R2–R5 and the three nits are fixed. R1 is fixed for Ben's own edits, but a coach load change still collapses a saved rep range: the same failure by another route (F1). The fix is small.
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| eslint (5 GB heap) on the 15 TS files changed since 20a15d8 | exit 0. Full lint and the full suite were not run (another process was running the suite). |
+| `npx vitest run` builder-from-planned-review2, builder-open-sources, builder-review-fixes | 3 files, 41 passed |
+| `npx vitest run` on 10 related files (coach-structural, builder-coach, builder-screens, coach-add-exercise, library-tab, today-v2-screen, coach registry/request/builder-coach-edits, persistence workout-drafts) | 615 passed |
+| Reviewer probes (temporary tests, deleted) | F1 and O1 reproduced |
+
+Verified fixed:
+- **R1 (Ben's edits):** `repsMax` goes through the codec both ways (`codec.ts:81`, `:131`). The pop-up reads `3–6` and says "3 to 6 reps". Tapping into a range cell and out sends nothing (`exercise-popup.tsx:85-86`). A reps edit fixes only that set, and Add set copies the range. The probe test now edits, force-closes, relaunches and Starts, and the session plans the range. Chat drafts' ranges now survive edits too.
+- **R2:** Gym changed on a library or past workout re-runs its own planner at the new gym (`builder-service.ts:1188-1207`). The replay check still runs first, and the planner call is a dry run.
+- **R3:** the Why lines are its own rule's line, `Held · pain`, `Max here` and `Rounded down`. Reload and swap drop them.
+- **R4:** the chat card reads saved, and its Save returns `already_saved` (`workout-services.ts:1883`).
+- **R5:** tests added for the machine max through `openTarget`, a no-item fit, the pain-held Why, Gym changed on a saved workout, and an old plan's routine. Screen tests are still source greps (accepted).
+- **Nits:** the doc comment order is fixed. `edit_today` no longer names the withheld tool. An applied card from before this build reads `Out of date` with no Undo.
+- **Rules 2 and 5:** none of the three commits touch sessions or logged sets, and the draft writes stay op-ID and version fenced.
+- **Leftover references:** no `'WorkoutOverview'` route, `WorkoutOverviewScreen`, navigation type or action remains in `apps/` or `packages/` (internal names: N1).
+
+### Blocking
+
+**F1. A coach load change still turns a saved rep range into fixed reps at Start.**
+`packages/coach/src/builder/edit-ops.ts:143-150` (`withWorkingLoad`, called at `:308`, `:314`, `:346`). The rows are rebuilt as `{ type, reps, rpe, load }`, which drops `repsMax`.
+- Probe: a bench slot of 5 × 3–6 @ 100, then the op `load heavier`. The only change line is `Barbell bench press: 100 → 102.5 kg`, and `toDraftPlan` writes `{min:3,max:3}` × 5.
+- Failure: Ben opens his saved `Five` from the Library, Coach review suggests heavier squats, and he taps Apply. Start then plans 5 × 3, and the before/after never showed that (rules 2, 3).
+- Why it matters: the planned reps feed the coach's rep-miss trigger and its next-session targets (`domain/src/coach/trigger.ts:163`, `next-session.ts:254`).
+- Fix: build each row as `{ ...r, load }`, keeping `repsMax` and dropping `typed`/`roundedFrom`. Add a test: ranged slot, coach load op, encode, then assert `{3,6}`.
+
+### Should fix
+
+- **S1. After a coach load change, `Why this weight?` still shows the saved workout's reasons.** The same function keeps `slot.why`, so `whyWeight` (`builder-service.ts:1407-1408`) shows `Saved workout · Max here` for the coach's 102.5. `draftLoadOf` (`codec.ts:32-39`) also copies those notes into every set. Fix: delete `why` in `withWorkingLoad`, as `reloadSlotLoads` does.
+- **S2. The coach is told a saved range is its minimum.** `packages/coach/src/builder/requests.ts:136,145` sends `5 × 3 @ 100 kg` for 5 × 3–6. The claim check (`builder/claims.ts:147`) only knows the 3, so a correct "3–6" reply gets flagged. Fix: render the range, and add `repsMax` to the claim facts.
+- **S3. Gym changed on an edited saved-workout slot can mix loads from two items.** `from-planned.ts:231,240` and `builder-service.ts:1206`. An extra set, or a kept typed kg, is fitted to the builder's item, but the slot is pinned to the planner's item. If those items differ, Start re-snaps the load, so the page and Start disagree (Start itself stays within rule 4). Fix: when the items differ, use `base` for the whole slot.
+
+### Nits
+
+- **N1.** Internal leftovers: `WorkoutOverview`/`buildWorkoutOverview` (`domain/src/session/overview.ts:811,1007`); `services.overview` (`app-services.ts:749`, still used for `loadKeypad` at `BuilderWorkoutScreen.tsx:446` and `WorkoutEdits.tsx:457`); `CheckIn mode:'overview'` (`navigation/types.ts:164`); `test/workout-overview.test.ts` and `overview-driver.ts`. This is the tracked follow-up.
+- **N2.** `fitPlannedSlotHere` (`from-planned.ts:268`) leaves a load in another convention unfitted, but still stamps the builder's item as `checkedOn`. This is rare.
+- **N3.** `held` and the notes are written on warm-up sets too (`from-planned.ts:159-160`). Harmless.
+
+### Outside this slice (not counted in the verdict)
+
+**O1. Today's one-tap Start plans a no-item Fixed load past the machine's max (rule 4).**
+- Probe on real SQLite: a pushdown saved with `equipmentId: null` and Fixed 400 kg. `routines.planned` and `workout.start({ routineOf })` (the path at `TodayScreen.tsx:365`) both plan 400 kg on the stack, with no item and no snap.
+- 81c77e2 fits this only on Your workout.
+- Fix: in the shared planner, in its own slice with a test.
+
+Spec issues: unchanged. bac61da records saved rep ranges, the planned Why lines and `‹ Back` as [Proposal], pending Ben.
