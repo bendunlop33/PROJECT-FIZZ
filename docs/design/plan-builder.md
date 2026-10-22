@@ -8,7 +8,7 @@ Status: **Draft for Ben, 22 Oct 2026.** Prototype: [prototypes/plan-builder.html
 
 One screen flow that turns your goals and week into a plan you can adjust before applying. It's the same screen for a new plan and for editing the one you have.
 
-1. **Goals**: main focus (Strength / Muscle / Balanced / Fitness / Maintain, each defined behind an ⓘ), lift targets with optional dates (Bench 110 by 15 Dec), priority muscles, runs on/off.
+1. **Gym goals** (title renamed, Ben 22 Oct): main focus (Strength / Muscle / Balanced / Fitness / Maintain, each defined behind an ⓘ), lift targets with optional dates (Bench 110 by 15 Dec), priority muscles, runs on/off.
 2. **Length and effort** (Ben, 22 Oct): plan length (4 / 6 / 8 / 12 weeks, or to a target date) and how hard to push:
    - **Steady**: RPE 6–8, lower set bands, add load only when reps top out; deload only if needed. For busy spells or heavy run weeks.
    - **Standard**: RPE 7–9, middle bands, one step when you hit the plan; deload in the last week.

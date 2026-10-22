@@ -325,7 +325,7 @@ function render() {
 
 function renderGoals() {
   $('scroll').innerHTML = `
-    <h1>Your goals</h1>
+    <h1>Gym goals</h1>
     <div class="label" style="display:flex;align-items:center;gap:4px">Main focus <button class="link dim" id="focusInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px">ⓘ</button></div>
     <div class="seg" style="grid-template-columns:repeat(5,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness','Maintain'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
     <div class="label">Priority · up to 2 · none = all equal</div>
