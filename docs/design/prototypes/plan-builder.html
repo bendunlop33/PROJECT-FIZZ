@@ -188,7 +188,7 @@ const MUSCLES = ['Chest','Back','Shoulders','Quads','Hamstrings','Calves','Bicep
 // Priority is chosen by group (Ben, 22 Oct); sets are still counted per muscle.
 const GROUPS = { Chest: ['Chest'], Back: ['Back'], Shoulders: ['Shoulders'], Legs: ['Quads','Hamstrings','Calves'], Arms: ['Biceps','Triceps'], Core: ['Core'] };
 // The coach's priority pick (code computes the facts from the last 8 weeks; offline, code picks the same). Example data.
-const SUG = { group: 'Back', why: 'Fewest sets lately (8 a week vs Chest 15); row stalled 5 weeks.' };
+const SUG = { group: 'Back', why: 'fewest sets lately', full: 'Back: 8 sets a week vs Chest 15 over the last 8 weeks, and your row has stalled for 5 weeks.' };
 const isPri = (m) => S.priority.some((g) => GROUPS[g].includes(m));
 const WD = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 // Other training (Ben, 22 Oct). legs: hard on the legs, so no heavy leg day the day before (GA11).
@@ -373,8 +373,8 @@ function expectBody(lifts) {
   const LOWER = new Set(['Back squat', 'Deadlift', 'Front squat', 'Romanian deadlift']);
   const rateFor = (lf) => S.effort === 'Maintain' ? 0 : EFFORT[S.effort].pct * (FOCUS_GAIN[S.focus] ?? 1) * S.weeks * sportMul * (legSport && LOWER.has(lf) ? 0.7 : 1);
   const sportNote = S.pri.length && S.effort !== 'Maintain' ? `<span style="font-size:13px;color:var(--text2)">★ ${S.pri.map(esc).join(', ')}: slower lifting progress${legSport ? ', legs most' : ''}.</span>` : '';
-  return `<span style="font-size:14px;color:var(--text);line-height:1.35">${what}</span>${sportNote}
-    <span style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;font-size:14px;font-variant-numeric:tabular-nums;justify-items:end;border-top:1px solid var(--divider);padding-top:8px">
+  return `${sportNote}
+    <span style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;font-size:14px;font-variant-numeric:tabular-nums;justify-items:end;padding-top:4px">
       <span class="lab" style="justify-self:start">kg × ${reps} reps</span><span class="lab">Now</span><span class="lab">Week ${S.weeks} (est.)</span>
       ${lifts.map((lf) => { const e0 = e1rm(HIST[lf].kg, HIST[lf].reps); return `<span style="color:var(--text2);justify-self:start">${SHORT[lf]}</span><span style="color:var(--text3)">${atReps(lf, e0, reps)}</span><span style="font-weight:600">${atReps(lf, e0 * (1 + rateFor(lf)), reps)}${each(lf)}</span>`; }).join('')}
     </span>`;
@@ -383,7 +383,7 @@ function expectBody(lifts) {
 // other training → what to expect). Choosing in the newest section shows the next and scrolls to it. Editing a plan shows all.
 function goalSections() {
   const kids = [...$('scroll').children]; let sec = -1; const out = [];
-  for (const el of kids) { if (el.tagName === 'H1') continue; if (el.classList.contains('label') || (el.classList.contains('card') && el.querySelector('#expTog'))) sec++; out.push([el, Math.max(0, sec)]); }
+  for (const el of kids) { if (el.tagName === 'H1') continue; if (el.classList.contains('label')) sec++; out.push([el, Math.max(0, sec)]); }
   return out;
 }
 function applyReveal() {
@@ -393,7 +393,7 @@ function applyReveal() {
 }
 $('scroll').addEventListener('click', (ev) => {
   if (S.page !== 'goals') return;
-  const btn = ev.target.closest('button'); if (!btn || /Info$/.test(btn.id) || btn.id === 'expTog') return;
+  const btn = ev.target.closest('button'); if (!btn || /Info$/.test(btn.id) || false) return;
   const host = ev.target.closest('[data-sec]'); if (!host) return;
   if (+host.dataset.sec === (S.rev ?? 0) && (S.rev ?? 0) < 5) { S.rev = (S.rev ?? 0) + 1; S.scrollTo = S.rev; }
 }, true);
@@ -404,8 +404,8 @@ function renderGoals() {
     <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
     <div class="label" style="display:flex;align-items:center;gap:4px">Priority · up to 2 <button class="link dim" id="priInfo" aria-label="What priority does" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
     <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m === SUG.group ? '✦ ' : ''}${m}</button>`).join('')}</div>
-    <div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested: <b style="color:var(--text)">${SUG.group}</b>. ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>
-    <div class="label">Other training · tap twice for ★</div>
+    <div class="note" style="align-items:flex-start;line-height:1.4">✦ <span>Suggested: <b style="color:var(--text)">${SUG.group}</b>, ${SUG.why}${S.priority.includes(SUG.group) ? '' : ` <button class="link" id="reSug" style="min-height:0;padding:0">Add</button>`}</span></div>
+    <div class="label" style="display:flex;align-items:center;gap:4px">Other training <button class="link dim" id="actInfo" aria-label="How this works" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
     <div class="chips">${[...ACTS, ...(S.customActs ?? [])].map((a) => `<button class="chip sm" data-act="${esc(a)}" aria-pressed="${a === 'Running' ? S.runs : !!S.acts[a]}">${S.pri.includes(a) ? '★ ' : ''}${esc(a)}</button>`).join('')}<button class="chip sm" id="addAct">＋ Other</button></div>
     ${S.pri.length ? `<div class="note" style="line-height:1.4">★ ${S.pri.map(esc).join(', ')} come${S.pri.length === 1 ? 's' : ''} first: lifting supports ${S.pri.length === 1 ? 'it' : 'them'}, with fewer, shorter sessions planned around ${S.pri.length === 1 ? 'its' : 'their'} hard days.</div>` : ''}`;
   const ef = EFFORT[S.effort], lifts = MAIN.filter((l) => HIST[l] && !HIST[l].none);
@@ -416,20 +416,14 @@ function renderGoals() {
     <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['Maintain', 'Standard', 'Push'].map((l) => `<button class="chip" data-eff="${l}" aria-pressed="${S.effort === l}">${l}</button>`).join('')}</div>
 `);
   $('scroll').insertAdjacentHTML('beforeend', `
-    <div class="card" style="padding:0 14px">
-      <button class="row" id="expTog" style="background:none;border:0;color:var(--text);font:inherit;font-size:15px;width:100%;cursor:pointer;min-height:44px" aria-expanded="${!!S.expOpen}"><span>What to expect in ${S.weeks} weeks</span><span class="chev" style="transform:rotate(${S.expOpen ? 90 : 0}deg)">›</span></button>
-      ${S.expOpen ? `<div style="display:flex;flex-direction:column;gap:6px;padding:4px 0 12px">
-        <span style="font-size:14px;color:var(--text2);line-height:1.35">${ef.line}</span>
-        <span style="font-size:12px;color:var(--text3)">RPE ${ef.rpe} · ${ef.oth[0]}–${ef.oth[1]} sets a muscle · ${ef.deload.toLowerCase()}</span>
-        ${expectBody(lifts)}
-</div>` : ''}
-    </div>`);
+    <div class="label">What to expect in ${S.weeks} weeks</div>
+    <div class="card" style="padding:4px 14px 12px;gap:6px">${expectBody(lifts)}</div>`);
   $('footer').innerHTML = `<button class="primary" id="next">${(S.rev ?? 0) < 5 ? 'Continue' : 'Next: your week'}</button>`;
   applyReveal();
   document.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => { S.weeks = +b.dataset.wk; render(); });
   document.querySelectorAll('[data-eff]').forEach((b) => b.onclick = () => { S.effort = b.dataset.eff; render(); });
-  $('expTog').onclick = () => { S.expOpen = !S.expOpen; render(); };
-  $('priInfo').onclick = () => sheet(`<h2>Priority</h2><div class="note" style="display:block;line-height:1.45">A priority gets more of your gym time:<br>· more sets (top of its range)<br>· trained at least twice a week<br>· its exercises straight after the main lift<br><br>Other muscles drop towards maintenance, never below it, and are cut first when time is short. Weights and effort don't change.<br><br>None picked = all muscles equal. ✦ marks the coach's suggestion, from your recent training.</div>`);
+  $('actInfo').onclick = () => sheet(`<h2>Other training</h2><div class="note" style="display:block;line-height:1.45">Tap once to add a sport, again to make it a ★ priority, again to remove it.<br><br>Added sports show on your week, and heavy legs stay off the day before leg-heavy ones. ★ sports come first: lifting is lighter and fitted around them.</div>`);
+  $('priInfo').onclick = () => sheet(`<h2>Priority</h2><div class="note" style="display:block;line-height:1.45">A priority gets more of your gym time:<br>· more sets (top of its range)<br>· trained at least twice a week<br>· its exercises straight after the main lift<br><br>Other muscles drop towards maintenance, never below it, and are cut first when time is short. Weights and effort don't change.<br><br>None picked = all muscles equal.<br><br>✦ Suggested: ${SUG.full}</div>`);
   $('effInfo').onclick = () => sheet(`<h2>Effort</h2><div class="card" style="padding:4px 16px">${[
     ['Maintain', 'Keep what you have with less time and effort.'],
     ['Standard', 'Steady progress you can keep up, block after block.'],
