@@ -27,6 +27,12 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .steps { color: var(--text3); font-size: 13px; font-variant-numeric: tabular-nums; }
 .label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); margin-top: 4px; }
+/* Gym goals: every question shows; unanswered ones get a light focus (Ben, 22 Oct) */
+.label.todo { color: var(--text); }
+.label.todo::before { content: ''; flex: 0 0 auto; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 8px; vertical-align: middle; }
+.todo-ctl { border-radius: 16px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--text) 4%, transparent), 0 0 0 5px var(--divider); }
+.yn.todo-ctl { border-radius: 999px; }
+.primary.locked { opacity: .4; }
 .card { background: var(--surface); border-radius: 20px; padding: 6px 16px; display: flex; flex-direction: column; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; border-bottom: 1px solid var(--divider); font-size: 16px; }
 .row:last-child { border-bottom: 0; }
@@ -217,7 +223,7 @@ const ACT_DEFAULT_DAY = { Cycling: 5, Swimming: 2, Boxing: 3, Football: 6, HIIT:
 
 // ---------- State ----------
 const S = {
-  ai: true, page: 'check', check: {}, focus: 'Balanced', targets: [],
+  ai: true, ans: {}, page: 'check', check: {}, focus: 'Balanced', targets: [],
   acts: {}, pri: [], priority: [], runs: false, supersets: false, absWk: null, longRunDay: 6, runDays: [2, 6],
   days: [0, 1, 3, 5], freq: 4, schedule: 'flexible', weeks: 6, effort: 'Standard', length: 60, gym: 'PureGym Leeds',
   plan: null, open: -1, chat: [], applied: false, editing: false,
@@ -396,7 +402,7 @@ function fitSegs() {
   const all = [...document.querySelectorAll('#scroll .seg .chip, #scroll .chips .chip.sm')];
   if (!all.length) return;
   const row = $('scroll').clientWidth, w = Math.floor((row - 3 * 6) / 4);
-  all.filter((b) => !b.dataset.freq).forEach((b) => { b.style.minWidth = w + 'px'; });
+  all.filter((b) => !b.dataset.freq && !b.dataset.wk && !b.dataset.focus && !b.dataset.eff).forEach((b) => { b.style.minWidth = w + 'px'; });
 }
 function render() {
   $('scroll').style.paddingBottom = '';
@@ -432,37 +438,42 @@ function expectBody(lifts) {
       ${lifts.map((lf) => { const e0 = e1rm(HIST[lf].kg, HIST[lf].reps); return `<span style="color:var(--text2);justify-self:start">${SHORT[lf]}</span><span style="color:var(--text3)">${atReps(lf, e0, reps)}</span><span style="font-weight:600">${atReps(lf, e0 * (1 + rateFor(lf)), reps)}${each(lf)}</span>`; }).join('')}
     </span>`;
 }
-// Progressive reveal on Gym goals (Ben, 22 Oct): sections appear one at a time (length → effort → focus → priority →
-// other training → what to expect). Choosing in the newest section shows the next and scrolls to it. Editing a plan shows all.
+// Gym goals show every question at once (Ben, 22 Oct). Unanswered ones carry a light focus; Next waits until all are answered.
+// Suggestions are marked ✦ but not picked for you here, so each question gets a real answer.
+const GOAL_KEYS = ['wk', 'eff', 'focus', 'pri', 'act'];
+const SUGGEST = { weeks: 6, effort: 'Standard', focus: 'Balanced' };
+function answered(k) {
+  if (k === 'pri') return S.priAsk === 'No' || (S.priAsk === 'Yes' && S.priority.length > 0);
+  if (k === 'act') return S.actAsk === 'No' || (S.actAsk === 'Yes' && (S.runs || Object.keys(S.acts).length > 0));
+  return !!S.ans[k];
+}
+const allAnswered = () => GOAL_KEYS.every(answered);
 function goalSections() {
   const kids = [...$('scroll').children]; let sec = -1; const out = [];
   for (const el of kids) { if (el.tagName === 'H1') continue; if (el.classList.contains('label')) sec++; out.push([el, Math.max(0, sec)]); }
   return out;
 }
-function applyReveal() {
-  const rev = S.rev ?? 0;
-  goalSections().forEach(([el, sec]) => { el.style.display = sec > rev ? 'none' : ''; el.dataset.sec = sec; });
+function applyFocus() {
+  goalSections().forEach(([el, sec]) => {
+    el.dataset.sec = sec; const todo = sec < GOAL_KEYS.length && !answered(GOAL_KEYS[sec]);
+    if (el.classList.contains('label')) el.classList.toggle('todo', todo);
+    else if (todo && (el.classList.contains('seg') || el.classList.contains('yn'))) el.classList.add('todo-ctl');
+  });
   if (S.scrollTo != null) { const t = $('scroll').querySelector(`[data-sec="${S.scrollTo}"]`); S.scrollTo = null; if (t) requestAnimationFrame(() => {
-    // Scroll only as far as needed for the new section's bottom to show; earlier answers stay in view where they fit (Ben, 22 Oct).
-    const sc = $('scroll'), els = [...sc.querySelectorAll(`[data-sec="${t.dataset.sec}"]`)].filter((e) => e.style.display !== 'none');
+    // Bring the next unanswered question into view, scrolling only as far as needed.
+    const sc = $('scroll'), els = [...sc.querySelectorAll(`[data-sec="${t.dataset.sec}"]`)];
     const last = els[els.length - 1] ?? t, box = sc.getBoundingClientRect();
-    const over = last.getBoundingClientRect().bottom - box.bottom + 12;
-    if (over > 0) sc.scrollTo({ top: sc.scrollTop + over, behavior: 'smooth' });
+    const over = last.getBoundingClientRect().bottom - box.bottom + 12, under = box.top - t.getBoundingClientRect().top + 12;
+    if (over > 0) sc.scrollTo({ top: sc.scrollTop + over, behavior: 'smooth' }); else if (under > 0) sc.scrollTo({ top: sc.scrollTop - under, behavior: 'smooth' });
   }); }
 }
-$('scroll').addEventListener('click', (ev) => {
-  if (S.page !== 'goals') return;
-  const btn = ev.target.closest('button'); if (!btn || /Info$/.test(btn.id)) return;
-  // Multi-pick sections (priority, other training) don't advance on Yes or on a pick; Continue or No moves on.
-  if (btn.dataset.priask === 'Yes' || btn.dataset.actask === 'Yes' || btn.dataset.pri || btn.dataset.act || btn.id === 'addAct' || btn.id === 'reSug') return;
-  const host = ev.target.closest('[data-sec]'); if (!host) return;
-  if (+host.dataset.sec === (S.rev ?? 0) && (S.rev ?? 0) < 5) { S.rev = (S.rev ?? 0) + 1; S.scrollTo = S.rev; }
-}, true);
+const nextTodo = () => GOAL_KEYS.findIndex((k) => !answered(k));
+function answer(k) { S.ans[k] = true; const n = nextTodo(); if (n >= 0) S.scrollTo = n; }
 function renderGoals() {
   $('scroll').innerHTML = `
     <h1>Gym goals</h1>
     <div class="label" style="display:flex;align-items:center;gap:4px">Main focus <button class="link dim" id="focusInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
-    <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness'].map((f) => `<button class="chip" data-focus="${f}" aria-pressed="${S.focus === f}">${f}</button>`).join('')}</div>
+    <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${['Strength','Muscle','Balanced','Fitness'].map((f) => `<button class="chip" style="min-width:0;flex:1 1 0;padding:0 2px" data-focus="${f}" aria-pressed="${!!S.ans.focus && S.focus === f}">${!S.ans.focus && f === SUGGEST.focus ? '✦ ' : ''}${f}</button>`).join('')}</div>
     <div class="label" style="display:flex;align-items:center;gap:4px">Any priorities? <button class="link dim" id="priInfo" aria-label="What priority does" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
     <div class="yn" role="group">${['No', 'Yes'].map((o) => `<button data-priask="${o}" aria-pressed="${S.priAsk === o}">${o}</button>`).join('')}</div>
     ${S.priAsk === 'Yes' ? `<div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(GROUPS).map((m) => `<button class="chip" data-pri="${m}" aria-pressed="${S.priority.includes(m)}">${m === SUG.group ? '✦ ' : ''}${m}</button>`).join('')}</div>` : ''}
@@ -474,17 +485,17 @@ function renderGoals() {
   const ef = EFFORT[S.effort], lifts = MAIN.filter((l) => HIST[l] && !HIST[l].none);
   $('scroll').querySelector('h1').insertAdjacentHTML('afterend', `
     <div class="label">Plan length</div>
-    <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${[4, 6, 8, 12].map((w) => `<button class="chip" data-wk="${w}" aria-pressed="${S.weeks === w}">${w} weeks</button>`).join('')}</div>
+    <div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))">${[4, 6, 8, 12].map((w) => `<button class="chip" style="min-width:0;flex:1 1 0;padding:0 2px" data-wk="${w}" aria-pressed="${!!S.ans.wk && S.weeks === w}">${!S.ans.wk && w === SUGGEST.weeks ? '✦ ' : ''}${w} weeks</button>`).join('')}</div>
     <div class="label" style="display:flex;align-items:center;gap:4px">Effort <button class="link dim" id="effInfo" aria-label="What these mean" style="text-decoration:none;font-size:16px;min-width:44px;min-height:24px;padding:0">ⓘ</button></div>
-    <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['Maintain', 'Standard', 'Push'].map((l) => `<button class="chip" data-eff="${l}" aria-pressed="${S.effort === l}">${l}</button>`).join('')}</div>
+    <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['Maintain', 'Standard', 'Push'].map((l) => `<button class="chip" style="min-width:0;flex:1 1 0;padding:0 2px" data-eff="${l}" aria-pressed="${!!S.ans.eff && S.effort === l}">${!S.ans.eff && l === SUGGEST.effort ? '✦ ' : ''}${l}</button>`).join('')}</div>
 `);
   $('scroll').insertAdjacentHTML('beforeend', `
     <div class="label">What to expect in ${S.weeks} weeks</div>
     <div class="card" style="padding:4px 14px 12px;gap:6px">${expectBody(lifts)}</div>`);
-  $('footer').innerHTML = `<button class="primary" id="next">${(S.rev ?? 0) < 5 ? 'Continue' : 'Next: your week'}</button>`;
-  applyReveal();
-  document.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => { S.weeks = +b.dataset.wk; render(); });
-  document.querySelectorAll('[data-eff]').forEach((b) => b.onclick = () => { S.effort = b.dataset.eff; render(); });
+  $('footer').innerHTML = `<button class="primary${allAnswered() ? '' : ' locked'}" id="next" aria-disabled="${!allAnswered()}">Next: your week</button>`;
+  applyFocus();
+  document.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => { S.weeks = +b.dataset.wk; answer('wk'); render(); });
+  document.querySelectorAll('[data-eff]').forEach((b) => b.onclick = () => { S.effort = b.dataset.eff; answer('eff'); render(); });
   $('actInfo').onclick = () => sheet(`<h2>Other training</h2><div class="note" style="display:block;line-height:1.45">Tap once to add a sport, again to make it a ★ priority, again to remove it.<br><br>Added sports show on your week, and heavy legs stay off the day before leg-heavy ones. ★ sports come first: lifting is lighter and fitted around them.</div>`);
   $('priInfo').onclick = () => sheet(`<h2>Priority</h2><div class="note" style="display:block;line-height:1.45">A priority gets more of your gym time:<br>· more sets (top of its range)<br>· trained at least twice a week<br>· its exercises straight after the main lift<br><br>Other muscles drop towards maintenance, never below it, and are cut first when time is short. Weights and effort don't change.<br><br>None picked = all muscles equal.<br><br>✦ Suggested: ${SUG.full}</div>`);
   $('effInfo').onclick = () => sheet(`<h2>Effort</h2><div class="card" style="padding:4px 16px">${[
@@ -492,15 +503,15 @@ function renderGoals() {
     ['Standard', 'Steady progress you can keep up, block after block.'],
     ['Push', 'Faster progress from harder training. Needs more recovery.'],
   ].map(([k, v]) => `<div style="padding:10px 0;border-bottom:1px solid var(--divider)"><div style="font-weight:600">${k}</div><div style="font-size:14px;color:var(--text2);line-height:1.4">${v}</div></div>`).join('')}</div>`);
-  document.querySelectorAll('[data-focus]').forEach((b) => b.onclick = () => { S.focus = b.dataset.focus; render(); });
+  document.querySelectorAll('[data-focus]').forEach((b) => b.onclick = () => { S.focus = b.dataset.focus; answer('focus'); render(); });
   $('focusInfo').onclick = () => sheet(`<h2>Main focus</h2><div class="card" style="padding:4px 16px">${[
     ['Strength', 'Lift heavier on your main lifts. Heavy top sets of 3–6 reps, longer rests, fewer extras.'],
     ['Muscle', 'Build size. Mostly 6–15 reps, more sets per muscle, each muscle twice a week.'],
     ['Balanced', 'Strength and size together: heavy main lifts first, then muscle-building work. The default.'],
     ['Fitness', 'All-round health. Full-body sessions, 8–15 reps at moderate effort, every muscle twice a week; fits well with cardio.'],
   ].map(([k, v]) => `<div style="padding:10px 0;border-bottom:1px solid var(--divider)"><div style="font-weight:600">${k}</div><div style="font-size:14px;color:var(--text2);line-height:1.4">${v}</div></div>`).join('')}</div>`);
-  document.querySelectorAll('[data-priask]').forEach((b) => b.onclick = () => { S.priAsk = b.dataset.priask; S.priority = S.priAsk === 'Yes' ? (S.priority.length ? S.priority : [SUG.group]) : []; render(); });
-  document.querySelectorAll('[data-actask]').forEach((b) => b.onclick = () => { S.actAsk = b.dataset.actask; if (S.actAsk === 'No') { S.runs = false; S.acts = {}; S.pri = []; } render(); });
+  document.querySelectorAll('[data-priask]').forEach((b) => b.onclick = () => { S.priAsk = b.dataset.priask; S.priority = S.priAsk === 'Yes' ? (S.priority.length ? S.priority : [SUG.group]) : []; answer('pri'); render(); });
+  document.querySelectorAll('[data-actask]').forEach((b) => b.onclick = () => { S.actAsk = b.dataset.actask; if (S.actAsk === 'No') { S.runs = false; S.acts = {}; S.pri = []; answer('act'); } render(); });
   const addPri = (m) => { if (S.priority.includes(m)) S.priority = S.priority.filter((x) => x !== m); else if (S.priority.length >= 2) { toast('Up to 2', false); return; } else S.priority = [...S.priority, m]; render(); };
   document.querySelectorAll('[data-pri]').forEach((b) => b.onclick = () => addPri(b.dataset.pri));
   if ($('reSug')) $('reSug').onclick = () => { S.priAsk = 'Yes'; if (!S.priority.includes(SUG.group)) S.priority = [...S.priority, SUG.group].slice(-2); render(); };
@@ -509,10 +520,11 @@ function renderGoals() {
     const a = b.dataset.act; const on = a === 'Running' ? S.runs : !!S.acts[a];
     const setOn = (v) => { if (a === 'Running') S.runs = v; else if (v) S.acts[a] = S.acts[a] ?? [ACT_DEFAULT_DAY[a] ?? 3]; else delete S.acts[a]; };
     if (!on) setOn(true); else if (!S.pri.includes(a)) S.pri = [...S.pri, a]; else { S.pri = S.pri.filter((x) => x !== a); setOn(false); }
+    if (answered('act')) answer('act');
     render();
   });
   if ($('addAct')) $('addAct').onclick = () => { const n = (prompt('Other training') || '').trim(); if (n) { S.customActs = [...(S.customActs ?? []), n]; S.acts[n] = [3]; render(); } };
-  $('next').onclick = () => { if ((S.rev ?? 0) < 5) { S.rev = (S.rev ?? 0) + 1; S.scrollTo = S.rev; render(); } else go(1); };
+  $('next').onclick = () => { if (allAnswered()) go(1); else { S.scrollTo = nextTodo(); render(); } };
 }
 
 // Strength balance (Ben, 22 Oct): each main lift's est. 1RM ÷ bench est. 1RM against a rough usual band.
@@ -863,8 +875,8 @@ $('close').onclick = () => toast('Closes without changing your plan', false);
 function setAi(on) { S.ai = on; $('aiOn').setAttribute('aria-pressed', on); $('aiOff').setAttribute('aria-pressed', !on); if (S.page === 'plan' && !on) S.chat = []; render(); }
 $('aiOn').onclick = () => setAi(true);
 $('aiOff').onclick = () => setAi(false);
-$('restart').onclick = () => { Object.assign(S, { rev: 0, priAsk: null, actAsk: null, runs: false, acts: {}, pri: [], page: 'check', priority: [], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
-$('editExisting').onclick = () => { S.rev = 5; S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
+$('restart').onclick = () => { Object.assign(S, { ans: {}, priAsk: null, actAsk: null, runs: false, acts: {}, pri: [], page: 'check', priority: [], check: {}, checkSeen: false, plan: null, applied: false, editing: false, chat: [], open: -1 }); render(); };
+$('editExisting').onclick = () => { S.ans = { wk: true, eff: true, focus: true }; S.priAsk = S.priAsk ?? 'No'; S.actAsk = S.actAsk ?? 'No'; S.plan = build(); S.page = 'plan'; S.applied = false; S.editing = true; S.chat = []; S.open = -1; render(); };
 render();
 </script>
 </body>
