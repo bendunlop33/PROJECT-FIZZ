@@ -32,6 +32,7 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); margin-top: 4px; }
 /* Gym goals: every question shows; a circle right of each heading fills once answered, amber if Next is tapped first (Ben, 22 Oct) */
 .label.q { display: flex; align-items: center; gap: 4px; }
+.grp { font-size: 20px; font-weight: 600; margin: 10px 0 0; }
 /* Questions separated by thin divider lines (Ben, 22 Oct: chosen over faint or tight boxes), on Gym goals and Your week */
 .qbox { display: flex; flex-direction: column; gap: 9px; padding: 2px 0 12px; border-bottom: 1px solid var(--divider); }
 .qbox > .label { margin-top: 0; }
@@ -330,29 +331,29 @@ const PRIOR = { 'Incline DB press': 0.8, 'Cable fly': 0.7, 'Bench press': 0.9, '
   'Barbell curl': 0.7, 'Hammer curl': 0.7, 'Incline DB curl': 0.65, 'Triceps pushdown': 0.8, 'Overhead triceps extension': 0.7,
   'Hip thrust': 0.75, 'Cable kickback': 0.5, 'Hip adduction': 0.7, 'Copenhagen plank': 0.5, 'Hip abduction': 0.7, 'Cable hip abduction': 0.5, 'Wrist curl': 0.6, 'Reverse curl': 0.5,
   'DB bench press': 0.8, 'Hack squat': 0.7, 'Bulgarian split squat': 0.6, 'Assisted pull-up': 0.6, 'Machine shoulder press': 0.7, 'Back squat': 0.85 };
-// Your exercises (Ben, 22 Oct): up to 8 quick either/or questions before the plan is built, so it's personal from day one.
-// Each option is one or more exercises; the pick becomes a like (first choice for that muscle, and a main lift where it
-// is one). Either = no preference. ✦ marks what his history already favours.
+// Your exercises (Ben, 22 Oct): quick either/or questions before the plan is built, so it's personal from day one.
+// Grouped Chest, Legs, Back, Shoulders. Each question has four boxes in two rows: #1, #2, Other (any exercise for that
+// muscle), No preference. The pick becomes a like (first choice for that muscle, and the main lift where it is one);
+// the listed option not picked ranks below everything else. ✦ marks what his history already favours.
+const PREF_GROUPS = ['Chest', 'Legs', 'Back', 'Shoulders'];
 const PREF_Q = [
-  { id: 'flat', q: 'Flat press', m: 'Chest', opts: [['Bench press'], ['DB bench press']], labels: ['Barbell', 'Dumbbell'] },
-  { id: 'incline', q: 'Incline press', m: 'Chest', opts: [['Incline bench press'], ['Incline DB press']], labels: ['Barbell', 'Dumbbell'] },
-  { id: 'squat', q: 'Main leg lift', m: 'Quads', opts: [['Back squat'], ['Leg press'], ['Hack squat']], labels: ['Squat', 'Leg press', 'Hack squat'] },
-  { id: 'quads', q: 'Quad extra', m: 'Quads', opts: [['Leg extension'], ['Bulgarian split squat']], labels: ['Leg extension', 'Split squat'] },
-  { id: 'vpull', q: 'Pull-ups', m: 'Back', opts: [['Pull-up'], ['Assisted pull-up'], ['Lat pulldown']], labels: ['Bodyweight', 'Assisted', 'Pulldown'] },
-  { id: 'row', q: 'Row', m: 'Back', opts: [['Barbell row'], ['Chest-supported row']], labels: ['Barbell', 'Supported'] },
-  { id: 'hips', q: 'Hips', m: 'Glutes', opts: [['Hip thrust'], ['Hip adduction', 'Hip abduction']], labels: ['Hip thrust', 'In/out machines'], when: () => S.spec.some((t) => ['Glutes', 'Adductors', 'Abductors'].includes(t)) || S.priority.includes('Legs') },
-  { id: 'ham', q: 'Hamstrings', m: 'Hamstrings', opts: [['Romanian deadlift'], ['Leg curl']], labels: ['RDL', 'Leg curl'] },
-  { id: 'shp', q: 'Shoulder press', m: 'Shoulders', opts: [['DB shoulder press'], ['Machine shoulder press']], labels: ['Dumbbell', 'Machine'] },
-  { id: 'bi', q: 'Biceps', m: 'Biceps', opts: [['Barbell curl'], ['Hammer curl'], ['Incline DB curl']], labels: ['Barbell', 'Hammer', 'Incline DB'] },
-  { id: 'tri', q: 'Triceps', m: 'Triceps', opts: [['Triceps pushdown'], ['Overhead triceps extension']], labels: ['Pushdown', 'Overhead'] },
-  { id: 'calf', q: 'Calves', m: 'Calves', opts: [['Calf raise'], ['Seated calf raise']], labels: ['Standing', 'Seated'] },
+  { id: 'flat', g: 'Chest', q: 'Flat press', m: 'Chest', opts: [['Bench press'], ['DB bench press']], labels: ['Barbell', 'Dumbbell'] },
+  { id: 'incline', g: 'Chest', q: 'Incline press', m: 'Chest', opts: [['Incline bench press'], ['Incline DB press']], labels: ['Barbell', 'Dumbbell'] },
+  { id: 'squat', g: 'Legs', q: 'Main leg lift', m: 'Quads', opts: [['Back squat'], ['Leg press']], labels: ['Squat', 'Leg press'] },
+  { id: 'quads', g: 'Legs', q: 'Quad extra', m: 'Quads', opts: [['Leg extension'], ['Bulgarian split squat']], labels: ['Leg extension', 'Split squat'] },
+  { id: 'ham', g: 'Legs', q: 'Hamstrings', m: 'Hamstrings', opts: [['Romanian deadlift'], ['Leg curl']], labels: ['RDL', 'Leg curl'] },
+  { id: 'hips', g: 'Legs', q: 'Hips', m: 'Glutes', opts: [['Hip thrust'], ['Hip adduction', 'Hip abduction']], labels: ['Hip thrust', 'In/out machines'], when: () => S.spec.some((t) => ['Glutes', 'Adductors', 'Abductors'].includes(t)) || S.priority.includes('Legs') },
+  { id: 'vpull', g: 'Back', q: 'Pull-ups', m: 'Back', opts: [['Pull-up'], ['Assisted pull-up']], labels: ['Bodyweight', 'Assisted'] },
+  { id: 'row', g: 'Back', q: 'Row', m: 'Back', opts: [['Barbell row'], ['Chest-supported row']], labels: ['Barbell', 'Chest-supported'] },
+  { id: 'shp', g: 'Shoulders', q: 'Shoulder press', m: 'Shoulders', opts: [['DB shoulder press'], ['Machine shoulder press']], labels: ['Dumbbell', 'Machine'] },
+  { id: 'rear', g: 'Shoulders', q: 'Rear delts', m: 'Shoulders', opts: [['Face pull'], ['Rear delt fly']], labels: ['Face pull', 'Rear delt fly'] },
 ];
-// Priorities and targets first, then the usual order; at most 8.
-const prefQs = () => PREF_Q.filter((q) => !q.when || q.when()).sort((a, b) => ((isPri(b.m) || isSpec(b.m)) ? 1 : 0) - ((isPri(a.m) || isSpec(a.m)) ? 1 : 0)).slice(0, 8);
-const prefLikes = () => Object.entries(S.prefAns ?? {}).flatMap(([id, i]) => i === 'either' ? [] : (PREF_Q.find((q) => q.id === id)?.opts[i] ?? []));
+const prefQs = () => PREF_Q.filter((q) => !q.when || q.when());
+// Answer: 0 / 1 (listed option), 'o:<exercise>' (Other), 'either' (No preference).
+const prefLikes = () => Object.entries(S.prefAns ?? {}).flatMap(([id, a]) => a === 'either' ? [] : typeof a === 'string' ? [a.slice(2)] : (PREF_Q.find((q) => q.id === id)?.opts[a] ?? []));
 const allLikes = () => [...(S.likes ?? []), ...prefLikes()];
-// The options he didn't pick rank below everything else for that muscle (still usable if nothing else fits).
-const prefLosers = () => Object.entries(S.prefAns ?? {}).flatMap(([id, i]) => i === 'either' ? [] : (PREF_Q.find((q) => q.id === id)?.opts ?? []).filter((_, j) => j !== i).flat());
+// The listed options he didn't pick rank below everything else for that muscle (still usable if nothing else fits).
+const prefLosers = () => Object.entries(S.prefAns ?? {}).flatMap(([id, a]) => a === 'either' ? [] : (PREF_Q.find((q) => q.id === id)?.opts ?? []).filter((_, j) => j !== a).flat());
 // ✦: the option his history favours most, when he has history on any of them.
 const prefSug = (q) => { const sc = q.opts.map((o) => Math.max(...o.map((n) => HIST[n] && !HIST[n].none ? (HIST[n].uses ?? 4) * (HIST[n].stale ? 0.5 : 1) : 0))); const best = Math.max(...sc); return best > 0 ? sc.indexOf(best) : -1; };
 const PREF_K = 5; // sessions of his own before his evidence and the default weigh the same
@@ -655,7 +656,7 @@ function boxSections() {
       const group = [el]; for (let j = i + 1; j < kids.length && !kids[j].classList.contains('label'); j++) group.push(kids[j]);
       if (group.some((g) => g.classList.contains('card'))) { box = null; return; }
       box = document.createElement('div'); box.className = 'qbox'; box.dataset.sec = el.dataset.sec ?? ''; el.before(box); box.append(el);
-    } else if (box && el.tagName !== 'H1' && !(el.classList.contains('note') && i === kids.length - 1)) box.append(el);
+    } else if (box && el.tagName !== 'H1' && !el.classList.contains('grp') && !(el.classList.contains('note') && i === kids.length - 1)) box.append(el);
     else box = null;
   });
 }
@@ -983,14 +984,23 @@ function startPlan() {
 function renderPrefs() {
   const qs = prefQs(), ans = S.prefAns ?? (S.prefAns = {}), done = qs.every((q) => q.id in ans);
   const dot = (ok) => `<span class="qdot${ok ? ' done' : S.prefFlag ? ' miss' : ''}" role="img" aria-label="${ok ? 'Answered' : 'Not answered'}"></span>`;
+  const box = (q, a, label) => `<button class="chip" data-pq="${q.id}|${a}" aria-pressed="${ans[q.id] === a || (a === 'other' && typeof ans[q.id] === 'string' && ans[q.id].startsWith('o:'))}">${label}</button>`;
   $('scroll').innerHTML = `
     <h1>Your exercises</h1>
-    ${qs.map((q) => { const sug = prefSug(q); return `<div class="label q">${q.q}${dot(q.id in ans)}</div>
-    <div class="seg">${q.opts.map((o, i) => `<button class="chip" style="min-width:0;flex:1 1 0;padding:0 4px" data-pq="${q.id}|${i}" aria-pressed="${ans[q.id] === i}">${i === sug && !(q.id in ans) ? '✦ ' : ''}${esc(q.labels?.[i] ?? o[0])}</button>`).join('')}<button class="chip" style="min-width:0;flex:1 1 0;padding:0 4px" data-pq="${q.id}|either" aria-pressed="${ans[q.id] === 'either'}">Either</button></div>`; }).join('')}
+    ${PREF_GROUPS.map((g) => { const gq = qs.filter((q) => q.g === g); return gq.length ? `<h2 class="grp">${g}</h2>` + gq.map((q) => { const sug = prefSug(q), a = ans[q.id], other = typeof a === 'string' && a.startsWith('o:') ? a.slice(2) : null; return `<div class="label q">${q.q}${dot(q.id in ans)}</div>
+    <div class="grid2">${q.opts.map((o, i) => box(q, i, `${i === sug && !(q.id in ans) ? '✦ ' : ''}${esc(q.labels?.[i] ?? o[0])}`)).join('')}${box(q, 'other', other ? esc(other) : 'Other')}${box(q, 'either', 'No preference')}</div>`; }).join('') : ''; }).join('')}
+    <h2 class="grp">Anything else</h2>
     <div class="label">Others I like</div>
     <div class="chips">${(S.likes ?? []).map((n) => `<button class="chip sm" data-unlike="${esc(n)}" aria-pressed="true">${esc(n)} ×</button>`).join('')}<button class="chip sm" id="addLike">＋ Add</button></div>`;
   $('footer').innerHTML = `<button class="primary" id="next">Build my plan</button>`;
-  document.querySelectorAll('[data-pq]').forEach((b) => b.onclick = () => { const [id, i] = b.dataset.pq.split('|'); ans[id] = i === 'either' ? 'either' : +i; render(); });
+  document.querySelectorAll('[data-pq]').forEach((b) => b.onclick = () => {
+    const [id, i] = b.dataset.pq.split('|'); const q = PREF_Q.find((x) => x.id === id);
+    if (i !== 'other') { ans[id] = i === 'either' ? 'either' : +i; render(); return; }
+    // Other: any exercise for that muscle not already listed.
+    const listed = q.opts.flat();
+    sheet(`<h2>${esc(q.q)}: other</h2><div class="chips">${(EX[q.m] ?? []).map(([n]) => n).filter((n) => !listed.includes(n)).map((n) => `<button class="chip sm" data-po="${esc(n)}" aria-pressed="${ans[id] === 'o:' + n}">${esc(n)}</button>`).join('')}</div>`);
+    document.querySelectorAll('[data-po]').forEach((x) => x.onclick = () => { ans[id] = 'o:' + x.dataset.po; closeSheet(); render(); });
+  });
   document.querySelectorAll('[data-unlike]').forEach((b) => b.onclick = () => { S.likes = S.likes.filter((x) => x !== b.dataset.unlike); render(); });
   $('addLike').onclick = () => {
     sheet(`<h2>Exercises you like</h2>${Object.entries(EX).filter(([m]) => !OWN.includes(m) || isSpec(m)).map(([m, l]) => `<div class="label">${m}</div><div class="chips">${l.map(([n]) => `<button class="chip sm" data-like="${esc(n)}" aria-pressed="${S.likes.includes(n)}">${esc(n)}</button>`).join('')}</div>`).join('')}`);
