@@ -1,6 +1,6 @@
 # Review: retire WorkoutOverview (Ben, 22 Oct 2026)
 
-**Verdict: CHANGES NEEDED** (final re-review 22 Oct 2026, after 81c77e2, 247a215, bac61da: R2–R5 fixed; R1 fixed for Ben's edits but a coach load change still collapses a saved range, F1 below)
+**Verdict: CHANGES NEEDED** (verification of the final fixes 22 Oct 2026, after 407a7bf, a937d99: F1, S1, S2 and S3 fixed; a coach reps op equal to the range's bottom still makes a saved range fixed reps with no line on the card, F2 below)
 
 Scope: `216a402..847729b` on `claude/gracious-knuth-joxqpw` (84d5ea1, cb342fc, 77f16ef, df0ef78, 847729b).
 Checked against `docs/design/workout-builder-v3.md` §2.1, §2.3, §3.1, §7, the CLAUDE.md product rules, and the parity audit in the task.
@@ -289,3 +289,42 @@ Checks (this branch, after the fixes):
 
 Open (not fixed here):
 - The claim check reads `@` as RPE, so `Bench press is 4 × 6 @ 100 kg.` is hidden even for fixed reps, though the coach is shown that same `@ 100 kg` form. This predates this slice. The coach's prose usually says "at", so the impact is low. It needs its own change and test.
+
+## Verification of the final fixes (reviewer, 22 Oct 2026)
+
+Scope: `da8eaf2..a937d99` (407a7bf, a937d99).
+
+**Verdict: CHANGES NEEDED.** F1, S1, S2 and S3 are fixed. Another coach op can still make a saved range fixed reps without the card showing it (F2). The S2 claim change also hides a correct sentence that used to pass (S4). Both fixes are small.
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` | exit 0 |
+| `npm run test` | exit 0. 469 files, 8728 passed, 2 todo (the developer's 468 / 8725, plus my probe's 1 file and 3 tests) |
+| Reviewer probe (a temporary test plus a copy of the old `claims.ts`, both deleted) | F2 and S4 reproduced |
+
+Verified fixed:
+- **F1:** `withWorkingLoad` builds rows as `{ ...r, load }` and drops `typed` and `roundedFrom` (`edit-ops.ts:146-157`). On a 5 × 3–6 @ 100 bench slot, all of these encode `{3,6}` × 5: `load` heavier, lighter and 97.5; `rpe` 7 and 9; `sets` 6 and 3; `minutes` 30 and 90; and a load change then an RPE change. A top set of 3–5 with back-offs of 6–8 keeps both ranges through a load change. Ranges also survive Gym changed (`reloadSlotLoads` and `slotAtNewGym` copy each row), Reload (it uses the source plan as is), force-close (`codec.ts:81`, `:131`) and Add set. Swap makes a new exercise with the builder's defaults, as expected.
+- **S1:** `why` is deleted (`edit-ops.ts:160-161`). `whyWeight` then reads `Coach target` (`builder-service.ts:1409-1413`), and the codec writes no notes and no `held`.
+- **S2:** the coach sees `5 × 3–6 @ 100 kg` (`requests.ts:137-139`), and the claim facts include the top (`claims.ts:149`). `5 × 3–6 at 100 kg` and `3–6 reps` pass, and a wrong top is hidden.
+- **S3:** `slotAtNewGym(…, sameItem)` (`from-planned.ts:214-251`) and the comparison in `changeGym` (`builder-service.ts:1201`) match the item stamp at `:1208`. A slot pinned to the planner's item now holds only the planner's loads. The test covers the pure function only. From reading the wiring, I accept it.
+- **Rules 2 and 5:** 407a7bf doesn't touch sessions, logged sets, op IDs or version fences.
+
+### Blocking
+
+**F2. A coach `reps` op equal to the range's bottom still turns 3–6 into fixed 3, and the card doesn't show it.**
+`packages/coach/src/builder/edit-ops.ts:449-451`: `slotLines` compares and prints only `reps`, the bottom of the range. Meanwhile `editSetRow`'s reps edit makes the set fixed reps (`packages/domain/src/builder/set-rows.ts:271-274`; intended since R1).
+- Probe: a bench slot of 5 × 3–6 @ 100, with ops `reps 3` + `load heavier`. The only line is `Barbell bench press: 100 → 102.5 kg`, but `toDraftPlan` writes `{min:3,max:3}` × 5. `reps 3` + `sets 6` does the same (the only line is `5 → 6 sets`). `reps 6` alone shows `3 → 6 reps` for a change from 3–6 to 6, so the before is wrong too.
+- Failure: Ben asks for heavier bench, and the coach repeats the reps it read in `5 × 3–6` (reps 3). The card shows only the load. He taps Apply, and Start plans 5 × 3. This is F1's failure through another op (rules 2, 3). The planned reps also feed the rep-miss trigger and the next-session targets.
+- Fix: in `slotLines`, render reps as text (`3–6` when `repsMax` is set) and compare the text, so the line reads `Barbell bench press: 3–6 → 3 reps`. A lone `reps 3` then gives a line and a proposal too, where today it gives nothing. Add a test on a ranged slot: `reps 3` + `load heavier` gives both lines, and `reps 6` reads `3–6 → 6 reps`.
+
+### Should fix
+
+- **S4. The S2 claim change hides a correct sentence that used to pass.** `claims.ts:263-264`, `:278`. The top of a range now takes its bottom's kind before any other check, and `to` counts as a range marker. So in `Bench press goes from 4 × 6 to 5 × 6.` (a 4 → 5 sets proposal), the `5` is checked as reps and the sentence is hidden. The same sentence passes at da8eaf2 (probe: old and new `claimSentenceOk` on the same facts). Fix: take the bottom's kind only when the top's own kind would be `bare` (for example, not when `×` follows the top). Add this sentence to the S2 test.
+
+### Nits
+
+- **N4.** S3 changes behaviour: when the two items differ, one extra set on a saved-workout slot replaces all of that slot's Fixed loads with the builder's own. The review asked for this fix, but whether it's the right behaviour is part of Ben's open decision on saved workouts (Spec issues).
+- **Developer's open item:** the claim check reads `@` as RPE. This predates the slice and isn't counted here. It matters more now: the coach is shown `5 × 3–6 @ 100 kg`, exactly the form the check hides. It needs its own small change and test.
+
+Still open and not counted here: O1, N1–N3, and the spec issues for Ben.
