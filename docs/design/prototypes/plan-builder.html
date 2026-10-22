@@ -188,6 +188,17 @@ const DAYS = {
   Shoulders: { main: 'DB shoulder press', ex: [['DB shoulder press','Shoulders','main'],['Lateral raise','Shoulders','i'],['Face pull','Shoulders','i'],['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i']] },
   Arms:  { main: null, ex: [['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i'],['Lateral raise','Shoulders','i'],['Cable crunch','Core','i']] },
 };
+// When a day type repeats in the week, the second is a B variation: a different main lift and angles (Ben, 22 Oct).
+const DAYS_B = {
+  Push:  { ex: [['DB shoulder press','Shoulders','main'],['Incline bench press','Chest','c'],['Lateral raise','Shoulders','i'],['Cable fly','Chest','i'],['Face pull','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
+  Pull:  { ex: [['Pull-up','Back','main'],['Romanian deadlift','Hamstrings','c'],['Lat pulldown','Back','c'],['Face pull','Shoulders','i'],['Barbell curl','Biceps','i'],['Hanging leg raise','Core','i']] },
+  Legs:  { ex: [['Romanian deadlift','Hamstrings','main'],['Front squat','Quads','c'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
+  Upper: { ex: [['Bench press','Chest','main'],['Barbell row','Back','c'],['DB shoulder press','Shoulders','c'],['Lat pulldown','Back','c'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i']] },
+  Lower: { ex: [['Back squat','Quads','main'],['Romanian deadlift','Hamstrings','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
+  'Full body': { ex: [['Romanian deadlift','Hamstrings','main'],['DB shoulder press','Shoulders','c'],['Lat pulldown','Back','c'],['Incline DB press','Chest','c'],['Lateral raise','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
+  Chest: { ex: [['Incline bench press','Chest','main'],['Bench press','Chest','c'],['Cable fly','Chest','i'],['Triceps pushdown','Triceps','i'],['Cable crunch','Core','i']] },
+  Legs2: null,
+};
 const MUSCLES = ['Chest','Back','Shoulders','Quads','Hamstrings','Calves','Biceps','Triceps','Core'];
 // Priority is chosen by group (Ben, 22 Oct); sets are still counted per muscle.
 const GROUPS = { Chest: ['Chest'], Back: ['Back'], Shoulders: ['Shoulders'], Legs: ['Quads','Hamstrings','Calves'], Arms: ['Biceps','Triceps'], Core: ['Core'] };
@@ -249,7 +260,9 @@ function build() {
     const other = plan.find((p) => !blocked.has(p.day) && !LEGGY.includes(p.focus));
     if (legs && other) { const f = legs.focus; legs.focus = other.focus; other.focus = f; legs.moved = true; }
   }
-  return balance(plan.map((p) => ({ ...p, ex: exercisesFor(p.focus) })));
+  const seen = {};
+  plan = plan.map((p) => { seen[p.focus] = (seen[p.focus] ?? 0) + 1; const v = seen[p.focus] > 1 && DAYS_B[p.focus] ? 'B' : (plan.filter((q) => q.focus === p.focus).length > 1 && DAYS_B[p.focus] ? 'A' : null); return { ...p, variant: v }; });
+  return balance(plan.map((p) => ({ ...p, ex: exercisesFor(p.focus, p.variant) })));
 }
 // Nudge sets per exercise (2–5, never the main lift's scheme) until each muscle trained this week sits in its range.
 function balance(plan) {
@@ -265,8 +278,8 @@ function balance(plan) {
   plan.forEach((d) => d.ex.forEach((e) => { if (e.role !== 'main') e.line = e.line.replace(/^\d+ ×/, `${e.sets} ×`); }));
   return plan;
 }
-function exercisesFor(focus) {
-  const t = DAYS[focus];
+function exercisesFor(focus, variant) {
+  const t = (variant === 'B' && DAYS_B[focus]) || DAYS[focus];
   const cap = S.length <= 45 ? 4 : S.length <= 60 ? 6 : 7;
   const ex = [...t.ex].sort((a, b) => (a[2] === 'main' ? -2 : isPri(a[1]) ? -1 : 0) - (b[2] === 'main' ? -2 : isPri(b[1]) ? -1 : 0));
   return ex.slice(0, cap).map(([n, m, role]) => {
@@ -281,7 +294,7 @@ function exercisesFor(focus) {
     const reps = Math.max(8, Math.min(15, h.reps));
     const sets = pri ? 4 : 3;
     const kg = h.kg === 0 ? 'BW' : (h.reps >= 15 ? snap(h.kg + 2.5) : h.kg);
-    return { n, m, role, sets, line: `${sets} × ${kg}${kg === 'BW' ? '' : ' kg'} × ${reps}`, why: `Last time ${h.last}` };
+    return { n, m, role, sets, line: `${sets} × ${kg}${kg === 'BW' ? '' : ' kg'} × ${reps}`, why: h.none || !h.last ? 'No history yet (est.)' : `Last time ${h.last}` };
   });
 }
 function weeklySets(plan) {
@@ -674,14 +687,14 @@ function renderPlan() {
   const byDay = Object.fromEntries(p.map((d) => [d.day, d]));
   const strip = WD.map((d, i) => {
     const lift = byDay[i], run = S.runs && S.runDays.includes(i);
-    return `<button class="day ${S.open >= 0 && p[S.open]?.day === i ? 'sel' : ''}" data-strip="${i}"><span class="dn">${d}</span>${lift ? `<span class="pip lift">${esc(lift.focus)}</span>` : ''}${run ? `<span class="pip run">${i === S.longRunDay ? 'Long run' : 'Run'}</span>` : ''}${Object.keys(S.acts).filter((a) => S.acts[a].includes(i)).map((a) => `<span class="pip run">${esc(ACT_SHORT[a] ?? a)}</span>`).join('')}${!lift && !run && !Object.keys(S.acts).some((a) => S.acts[a].includes(i)) ? '<span class="pip rest">Rest</span>' : ''}</button>`;
+    return `<button class="day ${S.open >= 0 && p[S.open]?.day === i ? 'sel' : ''}" data-strip="${i}"><span class="dn">${d}</span>${lift ? `<span class="pip lift">${esc(lift.focus)}${lift.variant ? ' ' + lift.variant : ''}</span>` : ''}${run ? `<span class="pip run">${i === S.longRunDay ? 'Long run' : 'Run'}</span>` : ''}${Object.keys(S.acts).filter((a) => S.acts[a].includes(i)).map((a) => `<span class="pip run">${esc(ACT_SHORT[a] ?? a)}</span>`).join('')}${!lift && !run && !Object.keys(S.acts).some((a) => S.acts[a].includes(i)) ? '<span class="pip rest">Rest</span>' : ''}</button>`;
   }).join('');
   $('scroll').innerHTML = `
     <div class="hdr" style="min-height:0"><h1>Your plan</h1>${S.ai ? '' : '<span class="badge">Not reviewed</span>'}</div>
     <div class="blk"><span>${S.weeks} weeks · ${esc(S.effort)} · ${deloadText()}</span><span>${S.length} min</span></div>
-    ${S.schedule === 'flexible' ? `<div class="chips">${p.map((d, i) => `<button class="chip sm" data-toggle="${i}" aria-pressed="${S.open === i}">${'ABCDEF'[i]} · ${esc(d.focus)}</button>`).join('')}</div>` : `<div class="week">${strip}</div>`}
+    ${S.schedule === 'flexible' ? `<div class="chips">${p.map((d, i) => `<button class="chip sm" data-toggle="${i}" aria-pressed="${S.open === i}">${i + 1} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</button>`).join('')}</div>` : `<div class="week">${strip}</div>`}
     ${p.map((d, i) => `<div class="dcard ${S.open === i ? 'open' : ''}" data-card="${i}">
-      <div class="dtop" data-toggle="${i}"><span><div class="nm">${S.schedule === 'flexible' ? 'ABCDEF'[i] : WD[d.day]} · ${esc(d.focus)}</div><div class="sub">${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
+      <div class="dtop" data-toggle="${i}"><span><div class="nm">${S.schedule === 'flexible' ? i + 1 : WD[d.day]} · ${esc(d.focus)}${d.variant ? ' ' + d.variant : ''}</div><div class="sub">${d.ex[0].role === 'main' ? esc(d.ex[0].n) : esc(d.ex.length + ' exercises')}</div></span>
         <span class="rt">${d.ex.length} ex · ~${S.length}′<span class="chev">›</span></span></div>
       <div class="ex">${d.ex.map((e) => `<div class="exr ${e.role === 'main' ? 'main' : ''}"><span class="n">${esc(e.n)}</span><span class="w">${esc(e.line)}</span><span class="m">${esc(e.m)}</span><span class="m" style="text-align:right">${esc(e.why)}</span></div>`).join('')}
         <div class="dact"><button class="link" data-swap="${i}">Change focus</button>${S.schedule === 'fixed' ? `<button class="link" data-move="${i}">Move day</button>` : ''}<button class="link dim" data-open="${i}">Open in builder ›</button></div>

@@ -35,6 +35,8 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **Split (Ben, 22 Oct):** Your week has Split: Suggested · Push/Pull/Legs · Upper/Lower · Full body · Chest/Legs/Shoulders/Back. The last = Chest, Legs, Shoulders, Back in that order, then Arms (5 days), Legs and Chest again (6–7 days); full body under 4 days, with an honest line that most muscles get one session a week. Any day's focus can be changed to Chest, Back, Shoulders, Arms as well as the others.
 
+**A/B variations (Ben, 22 Oct):** when a day type repeats in the week (e.g. Push twice), the second is a B variation with a different main lift and angles: Push A bench-led (chest), Push B DB-shoulder-press-led (shoulders, incline); Pull B pull-up-led with RDL; Legs B RDL-led with front squat; Upper/Lower/Full body/Chest likewise. Labels read `Push A` / `Push B`. Repeating the exact same session is also fine (strength practice), so either day can be changed.
+
 ## 1a. Priority and lift check (Ben, 22 Oct)
 
 - **Priority, up to 2 groups** (Chest, Back, Shoulders, Legs, Arms, Core); none picked = Balanced. A priority does three things: top of its set range, trained at least twice a week, and its exercises come straight after the main lift. When time is short, non-priority work is cut first; nothing drops below maintenance. Sub-muscles ("more upper chest") only through the coach.
