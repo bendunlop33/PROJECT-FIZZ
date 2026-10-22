@@ -351,7 +351,7 @@ const PREF_Q = [
   { id: 'quads', g: 'Legs', q: 'Quad extra', m: 'Quads', opts: [['Leg extension'], ['Bulgarian split squat']], labels: ['Leg extension', 'Split squat'] },
   { id: 'ham', g: 'Legs', q: 'Hamstrings', m: 'Hamstrings', opts: [['Romanian deadlift'], ['Leg curl']], labels: ['RDL', 'Leg curl'] },
   { id: 'hips', g: 'Legs', q: 'Hips', m: 'Glutes', opts: [['Hip thrust'], ['Hip adduction', 'Hip abduction']], labels: ['Hip thrust', 'In/out machines'], when: () => S.spec.some((t) => ['Glutes', 'Adductors', 'Abductors'].includes(t)) || S.priority.includes('Legs') },
-  { id: 'vpull', g: 'Back', q: 'Pull-ups', m: 'Back', opts: [['Pull-up'], ['Assisted pull-up']], labels: ['Bodyweight', 'Assisted'] },
+  { id: 'vpull', g: 'Back', q: 'Lats', m: 'Back', opts: [['Pull-up'], ['Lat pulldown']], labels: ['Pull-ups', 'Lat pulldown'] },
   { id: 'row', g: 'Back', q: 'Row', m: 'Back', opts: [['Barbell row'], ['Chest-supported row']], labels: ['Barbell', 'Chest-supported'] },
   { id: 'shp', g: 'Shoulders', q: 'Shoulder press', m: 'Shoulders', opts: [['DB shoulder press'], ['Machine shoulder press']], labels: ['Dumbbell', 'Machine'] },
   { id: 'rear', g: 'Shoulders', q: 'Rear delts', m: 'Shoulders', opts: [['Face pull'], ['Rear delt fly']], labels: ['Face pull', 'Rear delt fly'] },
