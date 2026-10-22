@@ -258,11 +258,12 @@ describe('Time on Your workout: the same built-in fit as Today’s, today’s dr
     // Longer still: nothing added.
     const longer = opened(await s.builder.setTime(snap.draftId, snap.setup.minutes + 30, { opId: 'longer', expectedVersion: snap.version }));
     expect(shapeOf(longer)).toEqual(shapeOf(snap0));
-    // Cut again, then the detail's Undo: one write, the original back at the last length that needed no cut (the
-    // steps down from 75 that changed nothing aren't a fit).
+    // Cut again, then the detail's Undo: one write, the original back at the length before the first Time change
+    // (review B1: the set-up's length; the longer step in between was Time's, today's only).
     const again = await cutUntilDropped(s, longer);
     const undoTo = workoutView(again).time.undoMinutes;
     expect(undoTo).toBe(again.time?.fromMinutes);
+    expect(undoTo).toBe(snap0.setup.minutes);
     expect(undoTo ?? 0).toBeLessThan(longer.setup.minutes);
     const undone = opened(await s.builder.setTime(again.draftId, undoTo ?? 0, { opId: 'undo-time', expectedVersion: again.version }));
     expect(undone.version).toBe(again.version + 1);

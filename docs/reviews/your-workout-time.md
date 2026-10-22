@@ -172,3 +172,61 @@ The new screen parts (Time row, detail sheet, pop-up links, swap confirm) are on
 
 - The developer reported running `pkill -f` on typecheck command patterns around 22:04. That could have killed a run in `/home/user/PROJECT-FIZZ`. It's not a code issue, but anything there that failed around that time should be rerun.
 - Plan-day templates still drop cardio and timed rows without saying so. This was already the case, the developer flagged it, and it's out of scope here.
+
+## Fixes (22 Oct 2026)
+
+Each issue from the review round was checked in the code first. The service-level ones were reproduced by new real-SQLite tests that fail on the reviewed service (10 failures) and pass after the fix.
+
+Commits: `316f9cf`, `49a70ff`, `9bec090`, `fe3c4e4`, plus this doc.
+
+### Blocking and High
+
+| Issue | Confirmed | Fix |
+|---|---|---|
+| **B1 / High: Time length saved as the plan day's length** | Yes. `planWriteFor` wrote `setup.minutes`, and nothing recorded the length before Time when there was no cut. | The set-up stores `timeFrom`, the length before the first Time change. `setTime` writes it and drops it once Time is back at that length with nothing cut. `planWriteFor` saves `timeFrom` (or a legacy `timeFit.fromMinutes`, else `minutes`), so Start's `Update … in your plan` and Coach review's `Update plan day` never save Time's length. Every Time step also fits from that length. Tests: `planDay.minutes` is asserted in the plan-day test (cut case), plus a no-cut case (Time raised, then lowered without a cut) and the Coach review path (`your-workout-time-fixes`). |
+| **B2: back to Set up dropped the fit and kept its rests** | Yes. `changeSetup` rebuilt the set-up from `storedSetup` (no `timeFit`) and copied the fit's `restLevel`. | `changeSetup` first undoes the fit (`untimed`, base rest level). If Length is left as Set up showed it (Time's), the change merges into the original at the set-up's length and Time fits it again (`retimed`): the note, Undo and more time keep working. A new Length in Set up is Ben's set-up length and ends Time. The rest level always comes from the merged or fitted workout, never a stale stored one. On a new Day or Main lift (a rebuild), the set-up's length stays recorded for the plan. Tests: Supersets turned on after a fit; a new Length after a fit. |
+| **B3 / High: a do-again main lift was trimmed** | Yes. For a session, `sourcePlanOf` always gave `main = null`, so `fit.ts` treated bench as an accessory. | A past workout gets its main by the WL9 rule at read (`defaultMain` over the slots that open, with compound read from the exercise's mechanic, as `saveFrom` does). A library workout with no stored `Main` uses `mainFlags` (Ben's flags, else WL9). Test: do-again with bench 5×100; every Time step leaves bench's rows unchanged and the detail never names it. |
+
+### Medium
+
+| Issue | Confirmed | Fix |
+|---|---|---|
+| **Gym change after a fit left set cuts restored, rests shortened, no note** | Yes (`changeGym` deleted `timeFit` after `regym`). | `changeGym` undoes the fit, moves the whole original (dropped exercises included) to the new gym, then fits it to Time again. The note, more time and Undo keep working. The toast's Undo still puts the old gym and the fit back. The existing test now asserts this, including more time at the new gym bringing everything back. |
+| Coach version / Reload dropped the record | Coach version: yes. Reload: by design. | An applied coach version keeps a rests-only record (base = the coach's version at the original rest level): `shorter rests` shows with Undo, and Undo puts normal rests back on the coach's version. The fit's cuts are not re-applied over the coach's workout because they can't be told apart from the coach's own changes. **Reload** already resets to the source at the set-up's length and rest level (`withoutTimeFit`, which now also clears `timeFrom`). Nothing trimmed remains after a Reload, so there's nothing to restore. Test: coach version over a fit. |
+| **Copies of an exercise matched by order on Gym changed** | Yes (`copyKeys` was `id#n`). | The seed the source's slot keys were made with is stored (`slotSeed`, set at open and Reload, kept through a Set up merge). `changeGym` re-plans the source with that seed and matches each slot to its own planned slot by key and exercise. A reordered or deleted copy keeps its own sets. Drafts opened before this fix have no seed and keep the old order matching; they are today-only and expire in 14 days. Tests: reorder, and delete the first copy (both fail on the old code). |
+| **A later edit made a set cut permanent** | Yes (`unfitWorkout` and `timeFitChanges` skipped touched slots). | The fit records `cut` (working sets taken per kept slot). For a slot Ben touched afterwards, the cut sets come back as they were in the original (after his rows, drops last), never past the original count or his own added sets, and a set he removed himself stays removed. The detail keeps listing them. A fit stored without `cut` reads as before. If Time is stepped down again after such an edit, that slot is Ben's (FT5) and is not cut again. Domain tests: the RPE-edit probe, the cap, the legacy record. |
+
+### Low
+
+| Issue | Confirmed | Fix |
+|---|---|---|
+| Both copies marked main | Yes. | `plannedAsDraftPlan` marks only the first copy of the main lift. Domain test added. |
+| `Add anyway` skipped the May hurt confirm | Yes (screen path). | `addAnywayConfirm` (pure, in `builder-view`) gives the same `swapPainConfirm` words (`Cable fly may hurt` · `Choose another` / `Add anyway`), and the screen asks before adding. The service's `add_exercise` doesn't refuse flagged exercises: like every other add or swap path, the confirm is Ben's choice in the UI, and loads stay held by the pain rules. Tests: the helper, real facts, and the screen source. |
+| Time detail `key={l}` collides | Yes. | Lines are keyed by place (`${i}:${l}`). Source test. |
+| Today's fit ladder changed | Yes (`band()` gave 0 for any no-group slot, for every caller). | Now opt-in: `noGroupFirst`, passed only by Your workout's Time. Today's card reads a no-group exercise as before this batch. Domain test compares both. |
+| Reps + time/distance set opened as reps only | Yes. | Such an exercise is left out and named (`N left out`), as before this batch. Domain test. |
+| A loaded timed set kept the old gym's load (plausible) | Yes (`reloadSlotLoads` returned timed slots unchanged). | Its loads are fitted at the new gym: rounded down, never past the item's max, held on pain, in the item's unit, or dropped when nothing there can make them (rule 4). Times and distances are kept. Domain test covers kg, an lb rack, and no item. |
+
+### Spec
+
+- **SP1. Only item 1 (Time) is Ben's own request in this run.**
+  - In `workout-builder-v3.md`, items 2–6 (cardio, timed sets and twice; How to / History; the May hurt confirm; `Open <name>`) are now marked "relayed by the PM as Ben's decision, pending Ben's confirmation".
+  - Saved rep ranges (`3–6`) are back to "[Proposal …; pending Ben]".
+  - The code for items 2–6 is still built. **Ben needs to confirm before merge**, or those commits should be reverted.
+  - `fit-to-time.md` notes the fixes and that no-group-first applies to Your workout only.
+
+### Behaviour change to note
+
+- The detail's `Undo` now goes back to the length before the first Time change. Before, it went back to the length just before the first cut.
+
+### Still open (not in this round's list)
+
+- S1: a draft from Today's `Edit` only restores Your workout's own cuts.
+- S2: a workout already over its length jumps back to the long original at the original length.
+- N1: distance-only cardio counts 45 s.
+- N3: a dropped exercise re-added by hand comes back twice; drops past 10 exercises are skipped silently.
+- N6: one Undo record per draft.
+- N7: Today's and Your workout's wording differ.
+- SP2–SP6: the meaning of the single length field; the old FT3/FT8 rules in `fit-to-time.md`; the superset wording; whether Today's card moves to the 22 Oct revision; what "the original" means for a Today-fitted draft.
+- Pre-existing, seen while fixing: a Set up merge drops `sourceVersion`, `leftOut` and `gymKept` from the stored set-up (only `slotSeed` is now carried).
+- Nothing here has run on a device: the Time row, the detail sheet, the pop-up links and both confirms are covered only by service, view and source tests.
