@@ -300,7 +300,7 @@ describe('Time on Your workout: the same built-in fit as Today’s, today’s dr
     expect(shapeOf(back)).toEqual(shapeOf(snap0));
   });
 
-  it('Ben’s edit after a fit stays when time comes back; Gym changed keeps the shorter workout (its loads worked out again) and its Undo brings the fit back', async () => {
+  it('Ben’s edit after a fit stays when time comes back; Gym changed moves the original and fits it to Time again (note, more time and Undo still work)', async () => {
     const { services: s } = await h.launch();
     const { routine } = await bigPush(s);
     const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: routine.id }, 'open-edit'));
@@ -316,19 +316,33 @@ describe('Time on Your workout: the same built-in fit as Today’s, today’s dr
     for (const k of dropped) expect(slotsOf(back.workout.blocks).some((x) => x.key === k)).toBe(true);
     expect(slotsOf(back.workout.blocks).find((x) => x.key === bench.key)?.rows.length).toBe(benchRows);
 
-    // Gym changed: the shorter workout stands at the new gym (no fit to undo by time); Undo puts the gym and the fit back.
+    // Gym changed (22 Oct review): the fit is undone, the original moves to the new gym and is fitted to Time again
+    // there, so the shorter workout, its note and more time all still work; Undo puts the gym and the fit back.
     const again = await cutUntilDropped(s, back);
     const other = h.ids();
     expect((await s.setup.saveGym({ gymId: other, name: 'Second gym', draft: s.coachingKnowledge.buildGymDraft('commercial', 'kg') })).ok).toBe(true);
     expect((await s.gyms.select(other)).ok).toBe(true);
     const moved = await s.builder.changeGym(again.draftId, { opId: 'gym-time', expectedVersion: again.version });
     if (moved.status !== 'written') throw new Error(moved.status);
-    expect(moved.snapshot.time).toBeNull();
-    expect(slotsOf(moved.snapshot.workout.blocks).map((x) => x.key)).toEqual(slotsOf(again.workout.blocks).map((x) => x.key));
+    expect(moved.snapshot.setup.minutes).toBe(again.setup.minutes);
+    expect(moved.snapshot.time?.fromMinutes).toBe(again.time?.fromMinutes);
+    expect(workoutView(moved.snapshot).time.note).toBe(workoutView(again).time.note);
+    const counts = (x: BuilderSnapshot) => slotsOf(x.workout.blocks).map((sl) => `${sl.key}×${String(sl.rows.filter((r) => r.type !== 'warmup').length)}`);
+    expect(counts(moved.snapshot)).toEqual(counts(again));
+    expect(moved.snapshot.workout.restLevel).toBe(again.workout.restLevel);
     const undone = await s.builder.undo(again.draftId, 'gym-time', 'undo-gym-time');
+    expect(undone.status).toBe('written');
     if (undone.snapshot === null) throw new Error('no undo');
     expect(undone.snapshot.time?.fromMinutes).toBe(again.time?.fromMinutes);
     expect(workoutView(undone.snapshot).time.note).toBe(workoutView(again).time.note);
+    // Moved again, then more time at the new gym: everything the fit cut is back (the new gym's loads), rests normal.
+    const moved2 = await s.builder.changeGym(undone.snapshot.draftId, { opId: 'gym-time-2', expectedVersion: undone.snapshot.version });
+    if (moved2.status !== 'written') throw new Error(moved2.status);
+    const whole = opened(await s.builder.setTime(moved2.snapshot.draftId, moved2.snapshot.time?.fromMinutes ?? 0, { opId: 'whole-at-new-gym', expectedVersion: moved2.snapshot.version }));
+    expect(whole.gymId).toBe(other);
+    expect(whole.time).toBeNull();
+    expect(whole.workout.restLevel).toBe('normal');
+    expect(counts(whole)).toEqual(counts(back));
   });
 });
 
@@ -385,6 +399,9 @@ describe('Time on a plan day: today only, never a plan change', () => {
     const r = await s.builder.start(edited.draftId, { choice: { kind: 'update' }, opId: 'start-update', expectedVersion: edited.version });
     if (!r.ok) throw new Error(r.message);
     const template1 = (await s.routines.editor({ routineId: push, gymId: null }))?.routine;
+    // (22 Oct review B1) The plan day keeps its own length, never Time's.
+    expect(short.setup.minutes).toBeLessThan(snap0.setup.minutes);
+    expect(template1?.planDay?.minutes).toBe(snap0.setup.minutes);
     expect(template1?.exercises.map((e) => e.exerciseId)).toEqual(template0?.exercises.map((e) => e.exerciseId));
     const work = (rt: typeof template0) => rt?.exercises.map((e) => e.setTemplates.filter((t) => t.setType !== 'warmup').length) ?? [];
     const changed = work(template1).map((n, i) => n - (work(template0)[i] ?? 0));

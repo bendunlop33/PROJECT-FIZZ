@@ -12,7 +12,7 @@ import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWr
 import { reviewAfterApply } from '../../builder/review';
 import { UPDATE_PLAN_DAY_ACTION } from '../../coach/builder-review-provider';
 import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type ProposalState } from '../../coach/builder-coach-view';
-import { editsFromText, popupLinks, promptView, TIME_COPY, workoutView, WORKOUT_COPY, type TimeRowView, type WorkoutRowView } from '../../builder/builder-view';
+import { addAnywayConfirm, editsFromText, popupLinks, promptView, TIME_COPY, workoutView, WORKOUT_COPY, type TimeRowView, type WorkoutRowView } from '../../builder/builder-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
@@ -681,7 +681,19 @@ export function BuilderWorkoutScreen() {
                       <TextButton
                         label={WORKOUT_COPY.addAnyway}
                         onPress={() => {
-                          for (const id of l.add) void edit({ kind: 'add_exercise', exerciseId: id });
+                          const add = () => {
+                            for (const id of l.add) void edit({ kind: 'add_exercise', exerciseId: id });
+                          };
+                          // Rule 9: a flagged exercise asks first, as the Swap and Add sheets do.
+                          const c = addAnywayConfirm(snap, l.add);
+                          if (c === null) {
+                            add();
+                            return;
+                          }
+                          Alert.alert(c.title, c.message ?? undefined, [
+                            { text: c.cancel, style: 'cancel' },
+                            { text: c.confirm, onPress: add },
+                          ]);
                         }}
                       />
                     ),
@@ -851,8 +863,9 @@ export function BuilderWorkoutScreen() {
         <AppText variant="title2" accessibilityRole="header" numeric>
           {`${TIME_COPY.label} · ${v.time.valueText}`}
         </AppText>
-        {v.time.lines.map((l) => (
-          <AppText key={l} variant="body" numeric>
+        {v.time.lines.map((l, i) => (
+          // An exercise listed twice can give the same line twice: keyed by place.
+          <AppText key={`${String(i)}:${l}`} variant="body" numeric>
             {l}
           </AppText>
         ))}

@@ -374,8 +374,9 @@ export const BuilderSetupSchema = z.object({
   /**
    * (22 Oct, Your workout's Time) A live fit to a shorter time: the workout before the first Time change (`base`,
    * its rest level), its length then, and the slots the fit left out (they come back when the time allows). Today's
-   * draft only: Start creates the fitted workout; the saved workout and the plan never get it. Cleared when the
-   * gym, the source or the coach rebuilds the workout.
+   * draft only: Start creates the fitted workout; the saved workout and the plan never get it. A Set up change or
+   * Gym changed undoes it, changes the original and fits again; Reload and a new Day or Main lift clear it; the
+   * coach's version keeps only shorter rests (review fixes, 22 Oct). `cut`: working sets taken from each kept slot.
    */
   timeFit: z
     .object({
@@ -383,8 +384,20 @@ export const BuilderSetupSchema = z.object({
       baseRestLevel: z.enum(['normal', 'shorter', 'shortest']).optional(),
       fromMinutes: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes),
       dropped: z.array(IdSchema).max(BUILD_LIMITS.maxExercises),
+      cut: z.record(IdSchema, z.int().min(1).max(BUILD_LIMITS.maxWorkingSets)).optional(),
     })
     .optional(),
+  /**
+   * (22 Oct, review B1) The set-up's length before the first Time change on Your workout (`minutes` is then Time's,
+   * today's only). `Update … in your plan` saves this as the plan day's length, never Time's. Absent: Time unused.
+   */
+  timeFrom: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes).optional(),
+  /**
+   * (22 Oct) The seed the source's slot keys were made with (opened on a library or past workout), so `Gym changed`
+   * matches each slot to its own planned slot by key: two copies of an exercise keep their own sets however Ben
+   * reorders or deletes them.
+   */
+  slotSeed: z.string().min(1).max(300).optional(),
 });
 export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
 

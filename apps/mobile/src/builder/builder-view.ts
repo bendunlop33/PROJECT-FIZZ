@@ -3,6 +3,7 @@ import { BUILD_LIMITS, type BuilderGroup } from '@fizz/schemas';
 
 import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from './builder-service';
 import { loadSpoken, loadText, REST_STEP_S, restText, SET_TYPE_LABEL, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
+import { swapPainConfirm } from '../ui/swap-sheet-model';
 
 /**
  * What the builder's screens show (workout-builder-v3 §2.2–§2.8,
@@ -496,6 +497,15 @@ export interface PopupLinks {
   howTo: { catalogueKey: string; name: string } | null;
   /** This gym's item for the exercise, else a series at this gym (ExerciseProgress). */
   history: { exerciseId: string; name: string; equipmentId?: string; gymId?: string } | null;
+}
+
+/**
+ * (Rule 9; 22 Oct review) `Add anyway` on a `Not applied` line asks first when what it adds is flagged `May hurt`, as
+ * the Swap and Add sheets do: `Cable fly may hurt` · `Choose another` / `Add anyway`. Null: nothing flagged. Pure.
+ */
+export function addAnywayConfirm(snap: Pick<BuilderSnapshot, 'facts'>, exerciseIds: readonly string[]): ReturnType<typeof swapPainConfirm> {
+  const flagged = exerciseIds.filter((id) => snap.facts[id]?.mayHurt === true).map((id) => snap.facts[id]?.name ?? 'Exercise');
+  return flagged.length === 0 ? null : swapPainConfirm({ name: flagged.join(' and '), mayHurt: true, painLine: null }, 'Add');
 }
 
 /**
