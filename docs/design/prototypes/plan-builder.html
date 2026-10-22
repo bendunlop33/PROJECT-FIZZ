@@ -356,31 +356,25 @@ function go(d) { const f = flow(); const i = Math.max(0, Math.min(f.length - 1, 
 
 function renderCheck() {
   S.checkSeen = true;
-  const cell = (t, muted) => `<span style="text-align:right;font-variant-numeric:tabular-nums;color:${muted ? 'var(--text2)' : 'var(--text)'}">${t}</span>`;
+  const C = 'display:flex;align-items:center;justify-content:center;min-height:52px;font-variant-numeric:tabular-nums;border-bottom:1px solid var(--divider)';
   const rows = MAIN.map((l) => {
-    const h = HIST[l], c = S.check[l], nm = SHORT[l];
-    const e = (h.none && c !== 'est' && c !== 'entered') ? estFrom(l, S.src?.[l] ?? 0) : null;
+    const h = HIST[l], c = S.check[l];
+    const e = (h.none && c !== 'entered') ? estFrom(l, S.src?.[l] ?? 0) : null;
     const kg = e ? e.kg : h.kg, reps = e ? e.reps : h.reps;
     const six = at6(l, kg, reps), one = nearest(l, e1rm(kg, reps));
-    const done = c === 'yes' || c === 'entered' || c === 'est' || (!h.none && !h.stale);
-    const when = h.none ? (c === 'entered' ? 'you entered' : `est. from ${esc(e?.from ?? h.last.replace('est. from ', ''))}`) : (c === 'entered' ? 'you entered' : `${fmtKg(l, h.kg)} × ${h.reps} · ${h.date}`);
-    const acts = done ? '' : h.stale
-      ? `<button class="link" data-yes="${l}">Still right</button><button class="link dim" data-enter="${l}">Edit</button>`
-      : `${e ? `<button class="link" data-use="${l}" style="font-weight:600">Use</button>` : ''}${(SIMILAR[l] ?? []).length > 1 ? `<button class="link dim" data-other="${l}">Other lift</button>` : ''}<button class="link dim" data-enter="${l}">Enter</button>`;
-    return `<div style="display:contents"><span style="padding-top:10px">${nm}${done ? ' <span style="color:var(--done)">✓</span>' : ''}</span>${cell(fmtKg(l, six), reps !== 6 || !!e)}${cell(fmtKg(l, one), true)}
-      <span style="grid-column:1 / -1;font-size:12px;color:var(--text3);padding-bottom:${acts ? 0 : 10}px;border-bottom:${acts ? 0 : 1}px solid var(--divider)">${when}</span>
-      ${acts ? `<span style="grid-column:1 / -1;display:flex;gap:2px;border-bottom:1px solid var(--divider)">${acts}</span>` : ''}</div>`;
+    const open = (h.stale && c !== 'yes' && c !== 'entered') || (h.none && !c);
+    return `<button data-lift="${l}" style="display:contents;font:inherit;color:inherit;cursor:pointer">
+      <span style="${C};justify-content:flex-start;gap:6px;text-align:left">${SHORT[l]}${open ? '<span style="width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none" aria-label="Check"></span>' : ''}</span>
+      <span style="${C};color:${reps === 6 && !e ? 'var(--text)' : 'var(--text2)'}">${fmtKg(l, six)}</span>
+      <span style="${C};color:var(--text2)">${fmtKg(l, one)}</span></button>`;
   }).join('');
   $('scroll').innerHTML = `<h1>Check your lifts</h1>
-    <div class="card" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:16px;padding:8px 16px">
-      <span class="lab" style="padding-top:6px">Lift</span><span class="lab" style="text-align:right;padding-top:6px">6 reps</span><span class="lab" style="text-align:right;padding-top:6px">1RM est.</span>
+    <div class="card" style="display:grid;grid-template-columns:minmax(0,1fr) 84px 84px;padding:4px 16px">
+      <span class="lab" style="display:flex;align-items:center;min-height:32px">Lift</span><span class="lab" style="text-align:center;align-self:center">6 reps</span><span class="lab" style="text-align:center;align-self:center">1RM est.</span>
       ${rows}</div>
-    <div class="note">Worked out from your last set. Grey = estimate.</div>`;
+    <div class="note">Tap a lift to change it. Grey = estimate.</div>`;
   $('footer').innerHTML = `<button class="primary" id="next">Next</button>`;
-  document.querySelectorAll('[data-yes]').forEach((b) => b.onclick = () => { S.check[b.dataset.yes] = 'yes'; render(); });
-  document.querySelectorAll('[data-use]').forEach((b) => b.onclick = () => { const l = b.dataset.use; const e = estFrom(l, S.src?.[l] ?? 0); Object.assign(HIST[l], { kg: e.kg, reps: e.reps, last: `est. from ${e.from}` }); S.check[l] = 'est'; render(); });
-  document.querySelectorAll('[data-other]').forEach((b) => b.onclick = () => openOtherSheet(b.dataset.other));
-  document.querySelectorAll('[data-enter]').forEach((b) => b.onclick = () => openLiftSheet(b.dataset.enter));
+  document.querySelectorAll('[data-lift]').forEach((b) => b.onclick = () => openLiftSheet(b.dataset.lift));
   $('next').onclick = () => go(1);
 }
 function openOtherSheet(l) {
@@ -389,15 +383,27 @@ function openOtherSheet(l) {
   document.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => { S.src = { ...(S.src ?? {}), [l]: +b.dataset.pick }; closeSheet(); render(); });
 }
 function openLiftSheet(l) {
-  const h = HIST[l]; let kg = h.kg, reps = h.reps;
+  const h = HIST[l]; const c = S.check[l];
+  const e = (h.none && c !== 'entered') ? estFrom(l, S.src?.[l] ?? 0) : null;
+  let kg = e ? e.kg : h.kg, reps = e ? e.reps : h.reps;
+  const from = c === 'entered' ? 'You entered' : e ? `Estimated from ${e.from} ${e.note}` : `Last set: ${fmtKg(l, h.kg)} × ${h.reps} · ${h.date}`;
   const draw = () => {
-    sheet(`<h2>${SHORT[l]}: a recent set</h2>
-      <div class="card"><div class="row"><span>Weight</span><span class="stepper"><button id="wD" aria-label="Lighter">−</button><span>${kg} kg</span><button id="wU" aria-label="Heavier">＋</button></span></div>
+    sheet(`<h2>${SHORT[l]}</h2><div class="note">${esc(from)}</div>
+      <div class="card"><div class="row"><span>Weight</span><span class="stepper"><button id="wD" aria-label="Lighter">−</button><span>${fmtKg(l, kg)}</span><button id="wU" aria-label="Heavier">＋</button></span></div>
       <div class="row"><span>Reps</span><span class="stepper"><button id="rD" aria-label="Fewer">−</button><span>${reps}</span><button id="rU" aria-label="More">＋</button></span></div></div>
-      <button class="primary" id="saveL">Save</button>`);
-    $('wD').onclick = () => { kg = Math.max(0, kg - 2.5); draw(); }; $('wU').onclick = () => { kg += 2.5; draw(); };
+      ${h.none && (SIMILAR[l] ?? []).length > 1 ? `<button class="link dim" id="otherL" style="align-self:flex-start">Estimate from another lift</button>` : ''}
+      <div class="choice">${h.stale && c !== 'yes' ? `<button id="okL">Still right</button>` : ''}<button id="saveL" style="background:var(--accent);color:var(--on-accent);border-color:var(--accent)">Save</button></div>`);
+    const st = h.each ? 2 : 2.5;
+    $('wD').onclick = () => { kg = Math.max(0, kg - st); draw(); }; $('wU').onclick = () => { kg += st; draw(); };
     $('rD').onclick = () => { reps = Math.max(1, reps - 1); draw(); }; $('rU').onclick = () => { reps += 1; draw(); };
-    $('saveL').onclick = () => { Object.assign(HIST[l], { kg, reps, last: `${kg} × ${reps} (you entered)`, none: false, stale: false }); S.check[l] = 'entered'; closeSheet(); render(); };
+    if ($('okL')) $('okL').onclick = () => { S.check[l] = 'yes'; closeSheet(); render(); };
+    if ($('otherL')) $('otherL').onclick = () => openOtherSheet(l);
+    $('saveL').onclick = () => {
+      const changed = kg !== (e ? e.kg : h.kg) || reps !== (e ? e.reps : h.reps);
+      if (changed || h.none) { Object.assign(HIST[l], { kg, reps, last: `${fmtKg(l, kg)} × ${reps} (you entered)`, none: false, stale: false }); S.check[l] = 'entered'; }
+      else S.check[l] = 'yes';
+      closeSheet(); render();
+    };
   };
   draw();
 }
