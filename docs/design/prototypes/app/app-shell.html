@@ -1,0 +1,197 @@
+<title>GymSmarter App Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Whole-app prototype (Ben, 22 Oct): one phone with the app's tab bar, built from the existing screen prototypes
+   (Today, plan builder, workout builder, active workout, progress, training blocks). Each runs inside the phone in
+   embed mode; their main buttons move through the app. Library, Profile and the workout Summary are simple screens
+   from their specs (exercise-library.md, profile-and-settings.md, workout-summary.md). Example data only. */
+:root {
+  --canvas: #0D0C0B; --surface: #181615; --raised: #23201E; --divider: #302C29;
+  --text: #F3EEE8; --text2: #B5ADA5; --text3: #948C84; --accent: #EDE5DA; --on-accent: #0D0C0B;
+  --done: #5CC98A; --done-sub: #15301F; --warn: #F2B84B; --page: #1B1917;
+  --ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--text); font-family: var(--ui); margin: 0; }
+.wrap { padding: 20px max(16px, env(safe-area-inset-left, 0px)) 32px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 400px; line-height: 1.45; margin: 0; }
+.ctrl { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 420px; }
+.ctrl button { min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--divider); background: var(--surface); color: var(--text2); font: 600 13px var(--ui); cursor: pointer; }
+.phone { width: 390px; max-width: 100%; height: min(844px, 100dvh); background: var(--canvas); border: 1px solid var(--divider); border-radius: 44px; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+.top { display: flex; justify-content: space-between; align-items: center; min-height: 44px; padding: 12px 22px 2px; font-size: 13px; font-weight: 600; }
+.top .back { background: none; border: 0; color: var(--text); font: 500 15px var(--ui); padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.psub { display: none; gap: 6px; padding: 6px 16px 4px; overflow-x: auto; scrollbar-width: none; }
+.psub.on { display: flex; }
+.psub button { flex: 1 0 auto; min-height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--divider); background: none; color: var(--text2); font: 600 13px var(--ui); cursor: pointer; }
+.psub button.on { background: var(--raised); color: var(--text); border-color: var(--text3); }
+.view { flex: 1; position: relative; min-height: 0; }
+.view iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: var(--canvas); }
+.view iframe.on { display: block; }
+.native { position: absolute; inset: 0; overflow-y: auto; padding: 4px 16px 16px; display: none; flex-direction: column; gap: 10px; scrollbar-width: none; }
+.native.on { display: flex; }
+.native::-webkit-scrollbar { display: none; }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--divider); padding: 8px 6px 22px; }
+.tabs button { background: none; border: 0; color: var(--text3); font: 600 11px var(--ui); letter-spacing: .1em; padding: 8px 0; cursor: pointer; }
+.tabs button.on { color: var(--text); }
+h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
+.label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); margin-top: 6px; }
+.card { background: var(--surface); border-radius: 18px; padding: 2px 16px; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 52px; border-bottom: 1px solid var(--divider); cursor: pointer; }
+.row:last-child { border-bottom: 0; }
+.row .nm { font-size: 16px; }
+.row .sub { font-size: 13px; color: var(--text2); margin-top: 2px; }
+.row .chev { color: var(--text3); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px; background: var(--surface); border: 1px solid var(--divider); }
+.seg button { min-height: 34px; border: 0; border-radius: 999px; background: none; color: var(--text2); font: 600 14px var(--ui); cursor: pointer; }
+.seg button.on { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--text3); }
+.search { min-height: 42px; border-radius: 12px; background: var(--surface); border: 1px solid var(--divider); color: var(--text3); display: flex; align-items: center; padding: 0 14px; font-size: 15px; }
+.banner { background: var(--done-sub); color: var(--done); border-radius: 14px; padding: 10px 14px; font-size: 15px; font-weight: 600; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { background: var(--surface); border-radius: 14px; padding: 10px 12px; }
+.stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--text2); }
+.tag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--raised); color: var(--text2); }
+.tag.pb { background: var(--done-sub); color: var(--done); }
+.link { background: none; border: 0; color: var(--text); font: 500 14px var(--ui); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 0; }
+.foot { display: flex; gap: 8px; margin-top: 6px; }
+.primary { flex: 1; min-height: 52px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font: 600 17px var(--ui); cursor: pointer; }
+.secondary { flex: 1; min-height: 52px; border-radius: 999px; border: 1px solid var(--divider); background: none; color: var(--text); font: 600 17px var(--ui); cursor: pointer; }
+.toast { position: absolute; left: 16px; right: 16px; bottom: 96px; background: var(--raised); border-radius: 14px; padding: 12px 14px; font-size: 14px; display: none; z-index: 5; }
+.toast.on { display: block; }
+@media (max-width: 440px) {
+  .wrap { padding: 0; gap: 0; }
+  .hint, .ctrl { display: none; }
+  .phone { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+}
+</style>
+<div class="wrap">
+  <div class="ctrl"><button id="reset">Start again</button><button id="withPlan">With a plan</button><button id="noPlan">No plan yet</button></div>
+  <p class="hint">The whole app with example data. Today → Set up a plan, Start a workout, or Build your own. Each screen is the latest design prototype.</p>
+  <div class="phone" id="phone">
+    <div class="top"><span id="topL">9:41</span><span>●●● 100%</span></div>
+    <div class="psub" id="psub"></div>
+    <div class="view" id="view">
+      <section class="native" id="library"></section>
+      <section class="native" id="profile"></section>
+      <section class="native" id="summary"></section>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="today">TODAY</button><button data-tab="library">LIBRARY</button><button data-tab="progress">PROGRESS</button><button data-tab="profile">PROFILE</button>
+    </nav>
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+<script>
+// Screens: a tab root or a pushed screen. Prototype screens are iframes kept alive, so their state survives switching.
+const PAGES = {
+  today: () => (A.plan ? 'training-blocks.html' : 'today-v2.html'),
+  progress: () => ({ overview: 'progress-simple.html', goals: 'progress-goals.html', reviews: 'progress-reviews.html', block: 'training-blocks.html#progress' })[A.ptab],
+  plan: () => 'plan-builder.html',
+  builder: () => 'workout-builder-v3.html',
+  active: () => 'workout-active-v3.html',
+  reviews: () => 'progress-reviews.html',
+  goals: () => 'progress-goals.html',
+};
+const NATIVE = ['library', 'profile', 'summary'];
+const TITLES = { plan: 'Plan', builder: 'Build', active: 'Workout', reviews: 'Reviews', goals: 'Goals', summary: 'Summary' };
+const A = { tab: 'today', stack: [], plan: false, ptab: 'overview' };
+const $ = (id) => document.getElementById(id);
+const frames = {};
+function frame(src) {
+  if (!frames[src]) { const f = document.createElement('iframe'); const [file, hash] = src.split('#'); f.src = file + '?embed=1' + (hash ? '#' + hash : ''); f.title = src; $('view').appendChild(f); frames[src] = f; }
+  return frames[src];
+}
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2200); }
+function current() { return A.stack.at(-1) ?? A.tab; }
+function show() {
+  const cur = current(), pushed = A.stack.length > 0;
+  Object.values(frames).forEach((f) => f.classList.remove('on'));
+  NATIVE.forEach((n) => $(n).classList.remove('on'));
+  if (PAGES[cur]) frame(PAGES[cur]()).classList.add('on');
+  else { $(cur).classList.add('on'); ({ library: renderLibrary, profile: renderProfile, summary: renderSummary })[cur](); }
+  $('tabs').style.display = pushed ? 'none' : '';
+  // Progress trackers (Ben, 22 Oct): Overview, Goals, Reviews and, with a plan, the training block, one tap apart.
+  const ps = cur === 'progress';
+  $('psub').classList.toggle('on', ps);
+  if (ps) {
+    if (!A.plan && A.ptab === 'block') A.ptab = 'overview';
+    $('psub').innerHTML = [['overview', 'Overview'], ['goals', 'Goals'], ['reviews', 'Reviews'], ...(A.plan ? [['block', 'Block']] : [])].map(([k, t]) => `<button data-pt="${k}" class="${A.ptab === k ? 'on' : ''}">${t}</button>`).join('');
+    $('psub').querySelectorAll('[data-pt]').forEach((b) => b.onclick = () => { A.ptab = b.dataset.pt; show(); });
+  }
+  document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === A.tab));
+  $('topL').innerHTML = pushed && cur !== 'summary' ? `<button class="back" id="backBtn">‹ ${A.tab === 'today' ? 'Today' : A.tab[0].toUpperCase() + A.tab.slice(1)}</button>` : '9:41';
+  if ($('backBtn')) $('backBtn').onclick = pop;
+}
+function push(r) { A.stack.push(r); show(); }
+function pop() { A.stack.pop(); show(); }
+function home(msg) { A.stack = []; A.tab = 'today'; show(); if (msg) toast(msg); }
+document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { A.tab = b.dataset.tab; A.stack = []; show(); });
+
+// Buttons inside the screen prototypes send where to go (see build_app.py for which button goes where).
+addEventListener('message', (e) => {
+  const to = e.data?.app; if (!to) return;
+  if (to === 'back') return A.stack.length ? pop() : home();
+  if (to === 'applied') { A.plan = true; delete frames['plan-builder.html']; document.querySelector('iframe[title="plan-builder.html"]')?.remove(); return home('Plan applied'); }
+  if (to === 'finished') { A.stack = ['summary']; return show(); }
+  if (to === 'discarded') return home('Workout discarded');
+  if (to === 'library' || to === 'profile' || to === 'progress') { A.tab = to; A.stack = []; return show(); }
+  push(to);
+});
+
+// ---------- Library (exercise-library.md, routines.md): workouts and exercises ----------
+const LIB = { tab: 'workouts' };
+const EXS = { Chest: ['Bench press', 'Incline DB press', 'Cable fly', 'DB bench press'], Back: ['Barbell row', 'Lat pulldown', 'Pull-up', 'Chest-supported row'], Shoulders: ['DB shoulder press', 'Lateral raise', 'Face pull'], Legs: ['Back squat', 'Romanian deadlift', 'Leg press', 'Leg curl', 'Calf raise'], Arms: ['Barbell curl', 'Hammer curl', 'Triceps pushdown'] };
+function renderLibrary() {
+  const plan = A.plan ? [['Upper A', 'DB shoulder press · 6 exercises'], ['Lower A', 'Romanian deadlift · 6 exercises'], ['Upper B', 'Bench press · 7 exercises'], ['Lower B', 'Back squat · 6 exercises']] : [];
+  $('library').innerHTML = `<h1>Library</h1>
+    <div class="seg"><button data-lt="workouts" class="${LIB.tab === 'workouts' ? 'on' : ''}">Workouts</button><button data-lt="exercises" class="${LIB.tab === 'exercises' ? 'on' : ''}">Exercises</button></div>
+    ${LIB.tab === 'workouts' ? `
+      ${plan.length ? `<div class="label">Your plan · week 3 of 6</div><div class="card">${plan.map(([n, s]) => `<div class="row" data-go="builder"><span><div class="nm">${n}</div><div class="sub">${s}</div></span><span class="chev">›</span></div>`).join('')}</div>` : `<div class="card"><div class="row" data-go="plan"><span><div class="nm">Set up a plan</div><div class="sub">Goals, week, preferences</div></span><span class="chev">›</span></div></div>`}
+      <div class="label">Saved workouts</div>
+      <div class="card">${[['Push A', 'Last done Mon'], ['Pull A', 'Last done Wed'], ['Legs', 'Last done Sat'], ['Arms & core', '3 weeks ago']].map(([n, s]) => `<div class="row" data-go="builder"><span><div class="nm">${n}</div><div class="sub">${s}</div></span><span class="chev">›</span></div>`).join('')}</div>
+      <div class="foot"><button class="secondary" data-go="builder">＋ Build a workout</button></div>`
+    : `<div class="search">Search exercises</div>
+      ${Object.entries(EXS).map(([g, l]) => `<div class="label">${g}</div><div class="card">${l.map((n) => `<div class="row" data-ex="${n}"><span class="nm">${n}</span><span class="chev">›</span></div>`).join('')}</div>`).join('')}`}`;
+  $('library').querySelectorAll('[data-lt]').forEach((b) => b.onclick = () => { LIB.tab = b.dataset.lt; renderLibrary(); });
+  $('library').querySelectorAll('[data-go]').forEach((b) => b.onclick = () => push(b.dataset.go));
+  $('library').querySelectorAll('[data-ex]').forEach((b) => b.onclick = () => toast(`${b.dataset.ex}: guide, history and swaps (exercise-library.md §2.4)`));
+}
+
+// ---------- Profile (profile-and-settings.md §2.1) ----------
+function renderProfile() {
+  const sec = (t, rows) => `<div class="label">${t}</div><div class="card">${rows.map(([n, s, go]) => `<div class="row" ${go ? `data-go="${go}"` : 'data-na="1"'}><span><div class="nm">${n}</div>${s ? `<div class="sub">${s}</div>` : ''}</span><span class="chev">›</span></div>`).join('')}</div>`;
+  $('profile').innerHTML = `<h1>Profile</h1>
+    ${sec('Training', [[A.plan ? 'Your plan' : 'Set up a plan', A.plan ? 'Upper / lower · 4 days · week 3 of 6' : 'Goals, week, preferences', 'plan'], ['Goals', 'Lift goals and progress', 'goals'], ['Reviews', 'Weekly reviews', 'reviews'], ['Pain flags', 'None'], ['Logging', 'kg · RPE after the set'], ['Rest presets', '1:00 · 1:30 · 3:00']])}
+    ${sec('Gyms', [['Main gym', 'Default · full gym'], ['＋ Add gym', '']])}
+    ${sec('Voice & alerts', [['Voice & alerts', 'Set cues · Apple voice']])}
+    ${sec('Coach', [['Coach connection', 'Connected'], ['What the coach remembers', '7 confirmed'], ['Guides & playbook', 'Playbook v1']])}
+    ${sec('Data', [['Data & backup', 'Backed up on this phone · 19:05'], ['Import', 'FitNotes or any app']])}
+    ${sec('App', [['Appearance', 'System'], ['About this build', '0.1.0']])}`;
+  $('profile').querySelectorAll('[data-go]').forEach((b) => b.onclick = () => push(b.dataset.go));
+  $('profile').querySelectorAll('[data-na]').forEach((b) => b.onclick = () => toast('Not in this prototype'));
+}
+
+// ---------- Workout summary (workout-summary.md §2) ----------
+const SUM = { undone: {} };
+function renderSummary() {
+  const next = [['Bench press', 'Target 105 kg × 6', '+2.4%', 'All sets hit at RPE 8.'], ['Incline DB press', 'Target 32 kg each × 8–10', '+6.7%', '10 reps on every set at 30 kg.'], ['Triceps pushdown', 'Same: 35 kg × 10–12', '0%', 'Only 1 of 3 sets logged; holding.']];
+  $('summary').innerHTML = `<div class="banner">✓ Workout saved on this phone</div>
+    <h1>Upper B</h1><div style="color:var(--text2);font-size:14px;margin-top:-6px">Thu 22 Oct · Main gym · 18:02–19:04</div>
+    <div class="stats"><div class="stat"><b>54 min</b><span>Active</span></div><div class="stat"><b>16</b><span>Sets</span></div><div class="stat"><b>14/15</b><span>Planned</span></div></div>
+    <div class="label">Compared with last time</div>
+    <div class="card" style="padding:10px 16px"><div style="display:flex;justify-content:space-between"><span>Bench press · top set</span><span class="tag pb">PB</span></div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:4px;margin-top:8px;font-variant-numeric:tabular-nums"><span style="color:var(--text2)">Today</span><b>102.5 kg × 6</b><span style="color:var(--text2)">15 Oct</span><span>100 kg × 6</span></div></div>
+    <div class="label">Next time · Upper B</div>
+    <div class="card">${next.map(([n, t, pct, why], i) => `<div class="row" style="cursor:default;align-items:flex-start;padding:10px 0"><span><div class="nm">${n}</div><div class="sub">${SUM.undone[i] ? 'Back to rule: same as today' : `${t} · ${pct}`}</div><div class="sub" style="color:var(--text3)">${why}</div></span>${SUM.undone[i] ? '' : `<button class="link" data-undo="${i}">Undo</button>`}</div>`).join('')}</div>
+    <div class="foot"><button class="secondary" id="sumEdit">Edit</button><button class="primary" id="sumDone">Done</button></div>`;
+  $('summary').querySelectorAll('[data-undo]').forEach((b) => b.onclick = () => { SUM.undone[+b.dataset.undo] = true; renderSummary(); });
+  $('sumDone').onclick = () => home();
+  $('sumEdit').onclick = () => toast('Edit workout (delete-workouts.md)');
+}
+
+$('reset').onclick = () => { Object.values(frames).forEach((f) => f.remove()); for (const k in frames) delete frames[k]; Object.assign(A, { tab: 'today', stack: [], plan: false }); SUM.undone = {}; show(); };
+$('withPlan').onclick = () => { A.plan = true; home(); };
+$('noPlan').onclick = () => { A.plan = false; home(); };
+show();
+</script>
