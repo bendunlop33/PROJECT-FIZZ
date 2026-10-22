@@ -23,8 +23,6 @@ GO = {
     'workout-active-v3.html': {'Finish workout': 'finished', 'Discard workout': 'discarded'},
     'plan-builder.html': {'Apply plan': 'applied', 'Apply changes': 'applied', 'Close': 'back'},
     'progress-simple.html': {},
-    'progress-goals.html': {},
-    'progress-reviews.html': {},
 }
 
 # Today without a plan gets the entry point the plan-builder spec asks for (plan-builder.md §3).

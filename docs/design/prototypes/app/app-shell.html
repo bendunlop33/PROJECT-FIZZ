@@ -86,15 +86,12 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
 // Screens: a tab root or a pushed screen. Prototype screens are iframes kept alive, so their state survives switching.
 const PAGES = {
   today: () => (A.plan ? 'training-blocks.html' : 'today-v2.html'),
-  progress: () => ({ overview: 'progress-simple.html', goals: 'progress-goals.html', reviews: 'progress-reviews.html', block: 'training-blocks.html#progress' })[A.ptab],
+  progress: () => ({ overview: 'progress-simple.html', block: 'training-blocks.html#progress' })[A.ptab],
   plan: () => 'plan-builder.html',
   builder: () => 'workout-builder-v3.html',
   active: () => 'workout-active-v3.html',
-  reviews: () => 'progress-reviews.html',
-  goals: () => 'progress-goals.html',
 };
 const NATIVE = ['library', 'profile', 'summary'];
-const TITLES = { plan: 'Plan', builder: 'Build', active: 'Workout', reviews: 'Reviews', goals: 'Goals', summary: 'Summary' };
 const A = { tab: 'today', stack: [], plan: false, ptab: 'overview' };
 const $ = (id) => document.getElementById(id);
 const frames = {};
@@ -106,17 +103,17 @@ function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add(
 function current() { return A.stack.at(-1) ?? A.tab; }
 function show() {
   const cur = current(), pushed = A.stack.length > 0;
+  if (!A.plan) A.ptab = 'overview';
   Object.values(frames).forEach((f) => f.classList.remove('on'));
   NATIVE.forEach((n) => $(n).classList.remove('on'));
   if (PAGES[cur]) frame(PAGES[cur]()).classList.add('on');
   else { $(cur).classList.add('on'); ({ library: renderLibrary, profile: renderProfile, summary: renderSummary })[cur](); }
   $('tabs').style.display = pushed ? 'none' : '';
-  // Progress trackers (Ben, 22 Oct): Overview, Goals, Reviews and, with a plan, the training block, one tap apart.
-  const ps = cur === 'progress';
+  // Progress is v3 (agreed 21 Oct; the older Goals and Reviews drafts are superseded). With a plan, Block sits one tap away.
+  const ps = cur === 'progress' && A.plan;
   $('psub').classList.toggle('on', ps);
   if (ps) {
-    if (!A.plan && A.ptab === 'block') A.ptab = 'overview';
-    $('psub').innerHTML = [['overview', 'Overview'], ['goals', 'Goals'], ['reviews', 'Reviews'], ...(A.plan ? [['block', 'Block']] : [])].map(([k, t]) => `<button data-pt="${k}" class="${A.ptab === k ? 'on' : ''}">${t}</button>`).join('');
+    $('psub').innerHTML = [['overview', 'Overview'], ['block', 'Block']].map(([k, t]) => `<button data-pt="${k}" class="${A.ptab === k ? 'on' : ''}">${t}</button>`).join('');
     $('psub').querySelectorAll('[data-pt]').forEach((b) => b.onclick = () => { A.ptab = b.dataset.pt; show(); });
   }
   document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === A.tab));
@@ -162,7 +159,7 @@ function renderLibrary() {
 function renderProfile() {
   const sec = (t, rows) => `<div class="label">${t}</div><div class="card">${rows.map(([n, s, go]) => `<div class="row" ${go ? `data-go="${go}"` : 'data-na="1"'}><span><div class="nm">${n}</div>${s ? `<div class="sub">${s}</div>` : ''}</span><span class="chev">›</span></div>`).join('')}</div>`;
   $('profile').innerHTML = `<h1>Profile</h1>
-    ${sec('Training', [[A.plan ? 'Your plan' : 'Set up a plan', A.plan ? 'Upper / lower · 4 days · week 3 of 6' : 'Goals, week, preferences', 'plan'], ['Goals', 'Lift goals and progress', 'goals'], ['Reviews', 'Weekly reviews', 'reviews'], ['Pain flags', 'None'], ['Logging', 'kg · RPE after the set'], ['Rest presets', '1:00 · 1:30 · 3:00']])}
+    ${sec('Training', [[A.plan ? 'Your plan' : 'Set up a plan', A.plan ? 'Upper / lower · 4 days · week 3 of 6' : 'Goals, week, preferences', 'plan'], ['Pain flags', 'None'], ['Logging', 'kg · RPE after the set'], ['Rest presets', '1:00 · 1:30 · 3:00']])}
     ${sec('Gyms', [['Main gym', 'Default · full gym'], ['＋ Add gym', '']])}
     ${sec('Voice & alerts', [['Voice & alerts', 'Set cues · Apple voice']])}
     ${sec('Coach', [['Coach connection', 'Connected'], ['What the coach remembers', '7 confirmed'], ['Guides & playbook', 'Playbook v1']])}
