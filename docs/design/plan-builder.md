@@ -33,7 +33,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 
 **Step-by-step reveal (Ben, 22 Oct):** Gym goals opens with Plan length only; each choice (or Continue) reveals the next section, Effort → Main focus → Priority → Other training → What to expect, and scrolls to it. Editing an existing plan shows everything. Effort, Main focus and Priority each have an ⓘ: Effort is one plain line per level (Maintain: keep what you have with less time and effort; Standard: steady progress you can keep up; Push: faster progress from harder training, needs more recovery); Priority explains what it does. Every sheet has Done and a height cap.
 
-**Split (Ben, 22 Oct):** Your week has Split: Suggested · Push/Pull/Legs · Upper/Lower · Full body · Body part. Body part = Chest, Back, Legs, Shoulders, Arms (+ Legs, Chest for 6–7 days; full body under 4 days), with an honest line that most muscles get one session a week. Any day's focus can be changed to Chest, Back, Shoulders, Arms as well as the others.
+**Split (Ben, 22 Oct):** Your week has Split: Suggested · Push/Pull/Legs · Upper/Lower · Full body · Chest/Legs/Shoulders/Back. The last = Chest, Legs, Shoulders, Back in that order, then Arms (5 days), Legs and Chest again (6–7 days); full body under 4 days, with an honest line that most muscles get one session a week. Any day's focus can be changed to Chest, Back, Shoulders, Arms as well as the others.
 
 ## 1a. Priority and lift check (Ben, 22 Oct)
 
