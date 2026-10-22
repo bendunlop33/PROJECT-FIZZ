@@ -407,8 +407,13 @@ function goalSections() {
 function applyReveal() {
   const rev = S.rev ?? 0;
   goalSections().forEach(([el, sec]) => { el.style.display = sec > rev ? 'none' : ''; el.dataset.sec = sec; });
-  $('scroll').style.paddingBottom = rev < 5 ? '60vh' : '';
-  if (S.scrollTo != null) { const t = $('scroll').querySelector(`[data-sec="${S.scrollTo}"]`); S.scrollTo = null; if (t) requestAnimationFrame(() => { const sc = $('scroll'); sc.scrollTo({ top: t.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 4, behavior: 'smooth' }); }); }
+  if (S.scrollTo != null) { const t = $('scroll').querySelector(`[data-sec="${S.scrollTo}"]`); S.scrollTo = null; if (t) requestAnimationFrame(() => {
+    // Scroll only as far as needed for the new section's bottom to show; earlier answers stay in view where they fit (Ben, 22 Oct).
+    const sc = $('scroll'), els = [...sc.querySelectorAll(`[data-sec="${t.dataset.sec}"]`)].filter((e) => e.style.display !== 'none');
+    const last = els[els.length - 1] ?? t, box = sc.getBoundingClientRect();
+    const over = last.getBoundingClientRect().bottom - box.bottom + 12;
+    if (over > 0) sc.scrollTo({ top: sc.scrollTop + over, behavior: 'smooth' });
+  }); }
 }
 $('scroll').addEventListener('click', (ev) => {
   if (S.page !== 'goals') return;
