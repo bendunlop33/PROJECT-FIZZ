@@ -149,8 +149,8 @@ const HIST = {
   'Barbell row': { kg: 90, reps: 12, last: '90 × 12', date: '18 Oct' },
   'Back squat': { kg: 120, reps: 5, last: 'top 120 × 5', date: '3 Aug', stale: true },
   'Romanian deadlift': { kg: 100, reps: 8, last: '100 × 8' },
-  'Overhead press': { kg: 57.5, reps: 6, last: 'est.', none: true },
-  'DB shoulder press': { kg: 24, each: true, reps: 8, date: '15 Oct' },
+  'Overhead press': { kg: 55, reps: 6, last: '55 × 6', date: '2 Jun' },
+  'DB shoulder press': { kg: 24, each: true, reps: 8, last: '24 each × 8', date: '15 Oct' },
   'Machine shoulder press': { kg: 50, reps: 10, date: '2 Oct' },
   'Incline DB press': { kg: 30, reps: 10, last: '30 each × 10' },
   'Lat pulldown': { kg: 70, reps: 10, last: '70 × 10' },
@@ -170,10 +170,10 @@ const HIST = {
 };
 // Day templates: [exercise, muscle, role]
 const DAYS = {
-  Push:  { main: 'Bench press', ex: [['Bench press','Chest','main'],['Overhead press','Shoulders','c'],['Incline DB press','Chest','c'],['Cable fly','Chest','i'],['Lateral raise','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
+  Push:  { main: 'Bench press', ex: [['Bench press','Chest','main'],['DB shoulder press','Shoulders','c'],['Incline DB press','Chest','c'],['Cable fly','Chest','i'],['Lateral raise','Shoulders','i'],['Triceps pushdown','Triceps','i']] },
   Pull:  { main: 'Barbell row', ex: [['Barbell row','Back','main'],['Lat pulldown','Back','c'],['Face pull','Shoulders','i'],['Shrugs','Back','i'],['Hammer curl','Biceps','i'],['Hanging leg raise','Core','i']] },
   Legs:  { main: 'Back squat', ex: [['Back squat','Quads','main'],['Romanian deadlift','Hamstrings','c'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
-  Upper: { main: 'Overhead press', ex: [['Overhead press','Shoulders','main'],['Pull-up','Back','c'],['Incline DB press','Chest','c'],['Lat pulldown','Back','c'],['Lateral raise','Shoulders','i'],['Barbell curl','Biceps','i']] },
+  Upper: { main: 'DB shoulder press', ex: [['DB shoulder press','Shoulders','main'],['Pull-up','Back','c'],['Incline DB press','Chest','c'],['Lat pulldown','Back','c'],['Lateral raise','Shoulders','i'],['Barbell curl','Biceps','i']] },
   Lower: { main: 'Romanian deadlift', ex: [['Romanian deadlift','Hamstrings','main'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
   'Full body': { main: 'Back squat', ex: [['Back squat','Quads','main'],['Bench press','Chest','c'],['Barbell row','Back','c'],['Lateral raise','Shoulders','i'],['Hammer curl','Biceps','i']] },
   Arms:  { main: null, ex: [['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i'],['Lateral raise','Shoulders','i']] },
@@ -242,10 +242,10 @@ function exercisesFor(focus) {
     const h = HIST[n];
     const pri = isPri(m);
     if (role === 'main') {
-      const top = snap(h.kg + 2.5), back = snap(top * 0.9);
+      const step = h.each ? 2 : 2.5, top = snapFor(n, h.kg + step), back = snapFor(n, top * 0.9);
       const strength = S.focus === 'Strength';
       const backs = (strength ? 3 : 2) + (S.effort === 'Push' ? 1 : 0) - (S.effort === 'Steady' ? 1 : 0);
-      return { n, m, role, sets: backs + 1, line: `Top ${top} × ${strength ? 5 : 6} · ${backs} × ${back} × 8`, why: `Last time ${h.last} → +2.5` };
+      return { n, m, role, sets: backs + 1, line: `Top ${fmtKg(n, top)} × ${strength ? 5 : 6} · ${backs} × ${fmtKg(n, back)} × 8`, why: `Last time ${h.last || fmtKg(n, h.kg) + ' × ' + h.reps} → +${step}` };
     }
     const reps = Math.max(8, Math.min(15, h.reps));
     const sets = pri ? 4 : 3;
@@ -268,10 +268,18 @@ const range = (m) => { const e = EFFORT[S.effort]; const small = ['Calves','Bice
 const deloadText = () => S.effort === 'Steady' ? 'no set deload' : S.effort === 'Push' ? 'deload every 4th week' : `deload week ${S.weeks}`;
 // Estimate only (rule 6): the main target lift's top set after the plan, at the level's typical weekly gain.
 // Estimates only (rule 6). Weekly gain = a share of the current top set by level (placeholder until his own trend, history-targets).
-const MAIN = ['Bench press', 'Back squat', 'Barbell row', 'Overhead press'];
-const SHORT = { 'Bench press': 'Bench', 'Back squat': 'Squat', 'Barbell row': 'Row', 'Overhead press': 'OHP', 'Romanian deadlift': 'RDL' };
+const MAIN = ['Bench press', 'Back squat', 'Barbell row', 'DB shoulder press'];
+const SHORT = { 'Bench press': 'Bench press', 'Back squat': 'Back squat', 'Barbell row': 'Barbell row', 'DB shoulder press': 'DB shoulder press', 'Overhead press': 'Overhead press', 'Romanian deadlift': 'RDL' };
+const CARD = { 'Bench press': 'Bench', 'Back squat': 'Squat', 'Barbell row': 'BB row', 'DB shoulder press': 'DB shoulder' };
+// Dumbbells are per hand and move in 2 kg steps; bars in 2.5 kg (gym kit decides in the app).
+const snapFor = (l, kg) => HIST[l]?.each ? Math.floor(kg / 2) * 2 : snap(kg);
+const fmtKg = (l, kg) => HIST[l]?.each ? `${kg} each` : `${kg}`;
+// Epley, labelled est.: a set's 1RM, and the weight for 6 reps at the same effort.
+const e1rm = (kg, reps) => kg * (1 + reps / 30);
+const nearest = (l, kg) => { const st = HIST[l]?.each ? 2 : 2.5; return Math.round(kg / st) * st; };
+const at6 = (l, kg, reps) => reps === 6 ? kg : nearest(l, e1rm(kg, reps) / 1.2);
 const gainWk = (lift, lvl) => Math.max(0.25, HIST[lift].kg * EFFORT[lvl].pct);
-const projected = (lvl, lift = 'Bench press') => snap(HIST[lift].kg + gainWk(lift, lvl) * S.weeks);
+const projected = (lvl, lift = 'Bench press') => nearest(lift, HIST[lift].kg + gainWk(lift, lvl) * S.weeks);
 const TODAY = new Date(2026, 9, 22);
 function whenReached(lift, kg, lvl) {
   const wks = Math.ceil((kg - HIST[lift].kg) / gainWk(lift, lvl));
@@ -333,10 +341,10 @@ function renderGoals() {
 // Read-across (Ben, 22 Oct): a main lift with no history is estimated from his closest similar lift first, then
 // from another main lift. Factors are practice-level rules of thumb, always labelled est., replaced by the first session.
 const SIMILAR = {
-  'Overhead press': [
-    { from: 'DB shoulder press', f: (h) => snap(h.kg * 2 * 1.2), note: (h) => `${h.kg} each × ${h.reps}` },
-    { from: 'Machine shoulder press', f: (h) => snap(h.kg * 1.05), note: (h) => `${h.kg} × ${h.reps}` },
-    { from: 'Bench press', f: (h) => snap(h.kg * 0.6), note: (h) => `${h.kg} × ${h.reps}` },
+  'DB shoulder press': [
+    { from: 'Machine shoulder press', f: (h) => Math.floor(h.kg / 2 / 1.1 / 2) * 2, note: (h) => `${h.kg} × ${h.reps}` },
+    { from: 'Overhead press', f: (h) => Math.floor(h.kg / 1.2 / 2 / 2) * 2, note: (h) => `${h.kg} × ${h.reps}` },
+    { from: 'Bench press', f: (h) => Math.floor(h.kg * 0.6 / 1.2 / 2 / 2) * 2, note: (h) => `${h.kg} × ${h.reps}` },
   ],
 };
 const estFrom = (l, i) => { const r = SIMILAR[l]?.[i]; if (!r || !HIST[r.from]) return null; const h = HIST[r.from]; return { kg: r.f(h), reps: h.reps, from: r.from, note: r.note(h), i }; };
@@ -348,17 +356,26 @@ function go(d) { const f = flow(); const i = Math.max(0, Math.min(f.length - 1, 
 
 function renderCheck() {
   S.checkSeen = true;
+  const cell = (t, muted) => `<span style="text-align:right;font-variant-numeric:tabular-nums;color:${muted ? 'var(--text2)' : 'var(--text)'}">${t}</span>`;
   const rows = MAIN.map((l) => {
     const h = HIST[l], c = S.check[l], nm = SHORT[l];
-    if (c === 'yes' || c === 'entered' || (!h.none && !h.stale)) return `<div class="target"><span>${nm}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">${h.kg} × ${h.reps}${c === 'entered' ? ' · you entered' : h.date ? ' · ' + h.date : ''} <span style="color:var(--done)">✓</span></span></div>`;
-    if (h.stale) return `<div class="target" style="flex-wrap:wrap"><span>${nm} <span style="color:var(--text2)">${h.kg} × ${h.reps} · ${h.date}</span></span><span style="display:flex"><button class="link" data-yes="${l}">Still right</button><button class="link dim" data-enter="${l}">Edit</button></span></div>`;
-    const e = estFrom(l, S.src?.[l] ?? 0);
-    if (c === 'est') return `<div class="target"><span>${nm}</span><span style="color:var(--text2);font-variant-numeric:tabular-nums">est. ${h.kg} × ${h.reps} <span style="color:var(--done)">✓</span></span></div>`;
-    return `<div style="border-bottom:1px solid var(--divider);padding:10px 0;display:flex;flex-direction:column;gap:2px"><span style="display:flex;justify-content:space-between;gap:8px"><span>${nm} <span style="color:var(--text2)">no history</span></span>${e ? `<span style="font-variant-numeric:tabular-nums">est. ${e.kg} × ${e.reps}</span>` : ''}</span>
-      ${e ? `<span style="font-size:13px;color:var(--text3)">from ${esc(e.from)} ${esc(e.note)}</span>` : ''}
-      <span style="display:flex;gap:2px;flex-wrap:wrap">${e ? `<button class="link" data-use="${l}" style="font-weight:600">Use</button>` : ''}${(SIMILAR[l] ?? []).length > 1 ? `<button class="link dim" data-other="${l}">Other lift</button>` : ''}<button class="link dim" data-enter="${l}">Enter</button></span></div>`;
+    const e = (h.none && c !== 'est' && c !== 'entered') ? estFrom(l, S.src?.[l] ?? 0) : null;
+    const kg = e ? e.kg : h.kg, reps = e ? e.reps : h.reps;
+    const six = at6(l, kg, reps), one = nearest(l, e1rm(kg, reps));
+    const done = c === 'yes' || c === 'entered' || c === 'est' || (!h.none && !h.stale);
+    const when = h.none ? (c === 'entered' ? 'you entered' : `est. from ${esc(e?.from ?? h.last.replace('est. from ', ''))}`) : (c === 'entered' ? 'you entered' : `${fmtKg(l, h.kg)} × ${h.reps} · ${h.date}`);
+    const acts = done ? '' : h.stale
+      ? `<button class="link" data-yes="${l}">Still right</button><button class="link dim" data-enter="${l}">Edit</button>`
+      : `${e ? `<button class="link" data-use="${l}" style="font-weight:600">Use</button>` : ''}${(SIMILAR[l] ?? []).length > 1 ? `<button class="link dim" data-other="${l}">Other lift</button>` : ''}<button class="link dim" data-enter="${l}">Enter</button>`;
+    return `<div style="display:contents"><span style="padding-top:10px">${nm}${done ? ' <span style="color:var(--done)">✓</span>' : ''}</span>${cell(fmtKg(l, six), reps !== 6 || !!e)}${cell(fmtKg(l, one), true)}
+      <span style="grid-column:1 / -1;font-size:12px;color:var(--text3);padding-bottom:${acts ? 0 : 10}px;border-bottom:${acts ? 0 : 1}px solid var(--divider)">${when}</span>
+      ${acts ? `<span style="grid-column:1 / -1;display:flex;gap:2px;border-bottom:1px solid var(--divider)">${acts}</span>` : ''}</div>`;
   }).join('');
-  $('scroll').innerHTML = `<h1>Check your lifts</h1><div class="card">${rows}</div>`;
+  $('scroll').innerHTML = `<h1>Check your lifts</h1>
+    <div class="card" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:16px;padding:8px 16px">
+      <span class="lab" style="padding-top:6px">Lift</span><span class="lab" style="text-align:right;padding-top:6px">6 reps</span><span class="lab" style="text-align:right;padding-top:6px">1RM est.</span>
+      ${rows}</div>
+    <div class="note">Worked out from your last set. Grey = estimate.</div>`;
   $('footer').innerHTML = `<button class="primary" id="next">Next</button>`;
   document.querySelectorAll('[data-yes]').forEach((b) => b.onclick = () => { S.check[b.dataset.yes] = 'yes'; render(); });
   document.querySelectorAll('[data-use]').forEach((b) => b.onclick = () => { const l = b.dataset.use; const e = estFrom(l, S.src?.[l] ?? 0); Object.assign(HIST[l], { kg: e.kg, reps: e.reps, last: `est. from ${e.from}` }); S.check[l] = 'est'; render(); });
@@ -399,7 +416,7 @@ function renderAmbition() {
         <span style="font-size:14px;color:var(--text2);line-height:1.35">${e.line}</span>
         <span style="font-size:12px;color:var(--text3)">RPE ${e.rpe} · ${e.oth[0]}–${e.oth[1]} sets · ${e.deload.toLowerCase()}</span></span>
       <span style="display:grid;grid-template-columns:auto auto auto;gap:3px 6px;font-size:13px;font-variant-numeric:tabular-nums;justify-items:end;align-content:start;padding-top:3px">
-        ${lifts.map((lf) => { const t = tgt(lf); const end = projected(l, lf); const hit = t && end >= t.kg; return `<span style="color:var(--text2);justify-self:start">${SHORT[lf] ?? lf}</span><span style="color:var(--text3)">${HIST[lf].kg} →</span><span style="font-weight:600;color:${hit ? 'var(--done)' : 'var(--text)'}">${end}</span>`; }).join('')}
+        ${lifts.map((lf) => { const t = tgt(lf); const end = projected(l, lf); const hit = t && end >= t.kg; return `<span style="color:var(--text2);justify-self:start">${CARD[lf] ?? lf}</span><span style="color:var(--text3)">${HIST[lf].kg} →</span><span style="font-weight:600;color:${hit ? 'var(--done)' : 'var(--text)'}">${end}</span>`; }).join('')}
       </span>
       ${S.targets.length ? `<span style="grid-column:1 / -1;font-size:13px;color:var(--text2);border-top:1px solid var(--divider);padding-top:6px">${S.targets.map((t) => { const w = whenReached(t.lift, t.kg, l); return `${SHORT[t.lift] ?? t.lift} ${t.kg}: ${w === 'now' ? 'already there' : w ? w + ' (est.)' : 'not within a year'}`; }).join(' · ')}</span>` : ''}</button>`; }).join('')}`;
   $('footer').innerHTML = `<button class="primary" id="next">Next: your week</button>`;
