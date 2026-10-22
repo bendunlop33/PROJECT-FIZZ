@@ -16,7 +16,9 @@ import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderSlot, Build
  *   length it had then, the original is back as it was.
  * - Ben's edits after a fit stay: a slot he touched keeps his version (fit-to-time FT5), a slot he deleted stays
  *   deleted, his order and pairs stand; only what the fit cut comes back. A slot he touched after the fit cut its sets
- *   (an RPE, a rep) still gets the cut sets back, up to the original count (review: an edit doesn't lock in a cut).
+ *   (an RPE, a rep) keeps his version at every shorter length, never longer than he left it (review R1); the sets the
+ *   fit took from it are held and come back at the length before the first Time change, or with Undo, never past the
+ *   original count (review: an edit doesn't lock in a cut).
  */
 
 export interface BuilderTimeFit {
@@ -55,12 +57,23 @@ function withSetsBack(s: BuilderSlot, was: BuilderSlot, back: number): BuilderSl
 }
 
 /**
+ * A dropped slot whose exercise Ben has put back himself (added it again, or swapped another exercise to it): it
+ * doesn't come back a second time, and the detail doesn't list it (review N3).
+ */
+function readded(fit: Pick<BuilderTimeFit, 'base'>, current: BuilderWorkout, dropped: BuilderSlot): boolean {
+  const baseSlots = new Map(slotsOf(fit.base.blocks).map((s) => [s.key, s]));
+  return slotsOf(current.blocks).some((s) => s.exerciseId === dropped.exerciseId && baseSlots.get(s.key)?.exerciseId !== s.exerciseId);
+}
+
+/**
  * The workout with what the fit cut put back (`fit.base` with Ben's later edits): an untouched slot gets its sets
  * back (the fit changes only rows), a dropped slot returns to its superset when what's left of it still is that
  * superset (and Ben didn't unlink it), else as its own round after the slot before it in the original order. Rests
  * go back to the original level. At most `maxExercises`.
+ * `hold`: a slot Ben touched since the fit stays as he has it, the sets the fit took from it held back (what a
+ * shorter Time fits from; review R1). Without it they're added back (the whole original: Undo, the full length).
  */
-export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut'>, current: BuilderWorkout): BuilderWorkout {
+export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut'>, current: BuilderWorkout, opts: { hold?: boolean } = {}): BuilderWorkout {
   const baseSlots = new Map(slotsOf(fit.base.blocks).map((s) => [s.key, s]));
   let blocks: BuilderBlock[] = current.blocks.map((b) => ({
     ...b,
@@ -68,6 +81,7 @@ export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut
       const was = baseSlots.get(s.key);
       if (was === undefined || was.exerciseId !== s.exerciseId) return s;
       if (s.touched !== true) return { ...s, rows: was.rows.map((r) => ({ ...r })) };
+      if (opts.hold === true) return s;
       // Ben's version, with the sets the fit took added back as they were (the original's, from his count on).
       const back = setsBack(fit, was, s);
       return back === 0 ? s : withSetsBack(s, was, back);
@@ -78,7 +92,7 @@ export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut
   const present = () => new Set(blocks.flatMap((b) => b.slots.map((s) => s.key)));
   for (const key of order) {
     const slot = baseSlots.get(key);
-    if (slot === undefined || !dropped.has(key) || present().has(key)) continue;
+    if (slot === undefined || !dropped.has(key) || present().has(key) || readded(fit, current, slot)) continue;
     if (blocks.reduce((n, b) => n + b.slots.length, 0) >= BUILD_LIMITS.maxExercises) break;
     const home = fit.base.blocks.find((b) => b.slots.some((s) => s.key === key));
     const mates = new Set((home?.slots ?? []).map((s) => s.key));
@@ -126,7 +140,7 @@ export interface WorkoutTimeFitOutcome {
 /**
  * The sets a fit kept, with their own effort targets: fewer sets re-mark the last straight set @ RPE 9 (the builder's
  * default-effort convention, `setWorkingCount`), which would raise a saved workout's own target. The kept rows are the
- * original's in order (a fit only removes rows), so each takes back its original RPE. Nothing else changes.
+ * fitted copy's in order (a fit only removes rows), so each takes back its own RPE, Ben's included. Nothing else changes.
  */
 function keepEffort(fitted: BuilderWorkout, base: BuilderWorkout): BuilderWorkout {
   const was = new Map(slotsOf(base.blocks).map((s) => [s.key, s]));
@@ -146,17 +160,78 @@ function keepEffort(fitted: BuilderWorkout, base: BuilderWorkout): BuilderWorkou
   return { ...fitted, blocks: fitted.blocks.map((b) => ({ ...b, slots: b.slots.map(fix) })) };
 }
 
+/**
+ * The working sets held back from each slot Ben touched (slot key → sets): its count in `original` (the whole
+ * workout) less its count in `work` (his version). Only a touched slot of the same exercise in both.
+ */
+export function heldSets(original: BuilderWorkout, work: BuilderWorkout): Record<string, number> {
+  const was = new Map(slotsOf(original.blocks).map((s) => [s.key, s]));
+  const out: Record<string, number> = {};
+  for (const s of slotsOf(work.blocks)) {
+    const o = was.get(s.key);
+    if (s.touched !== true || o === undefined || o.exerciseId !== s.exerciseId) continue;
+    const n = workingCount(o) - workingCount(s);
+    if (n > 0) out[s.key] = n;
+  }
+  return out;
+}
+
+export interface WorkoutRefitInput {
+  /** The whole workout: what the length before the first Time change (or Undo) brings back, Ben's edits kept. */
+  original: BuilderWorkout;
+  /**
+   * The same workout with each slot Ben touched since a fit as he has it (`unfitWorkout(…, { hold: true })`): what a
+   * shorter Time fits from. Without a fit, or with nothing held, the same as `original`.
+   */
+  work: BuilderWorkout;
+  /** The length before the first Time change (at or above it, `original` is back). */
+  fromMinutes: number;
+  /** The length asked for. */
+  to: number;
+  ctx: BuilderContext;
+  mainGroup: BuilderGroupName | null;
+  supersets: boolean;
+}
+
+/**
+ * Time on a workout as two copies (`original`, `work`): at or above `fromMinutes` the original; shorter, Today's
+ * built-in fit on `work`, so a slot Ben touched keeps his version and never gets longer for less time (review R1).
+ * The sets held from his slots stay in the record's `cut` (the note lists them; the full length or Undo brings them
+ * back). Used by `fitWorkoutToTime`, and by the service when a change (Set up, Gym changed) is made to both copies.
+ */
+export function refitWorkoutToTime(i: WorkoutRefitInput): WorkoutTimeFitOutcome {
+  const to = clampMinutes(i.to);
+  const fromMinutes = clampMinutes(i.fromMinutes);
+  if (to >= fromMinutes) return { workout: i.original, fit: null, minutes: to, over: false };
+  const held = heldSets(i.original, i.work);
+  const r = fitToMinutes(i.work, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: false, supersets: i.supersets, pushEffort: false, noGroupFirst: true });
+  if (r.steps.length === 0 && Object.keys(held).length === 0) return { workout: i.original, fit: null, minutes: to, over: r.status === 'over' };
+  // The fit never cuts a touched slot (fit.ts), so its own cuts and the held sets never share a key.
+  const cut: Record<string, number> = { ...held };
+  for (const st of r.steps) if (st.kind === 'sets' && st.from > st.to) cut[st.slotKey] = st.from - st.to;
+  const dropped = r.steps.flatMap((s) => (s.kind === 'drop' ? [s.slotKey] : []));
+  return { workout: keepEffort(r.workout, i.work), fit: { base: i.original, fromMinutes, dropped, cut }, minutes: to, over: r.status === 'over' };
+}
+
+/**
+ * The whole original for a copy changed only by adding, removing or pairing exercises (a Set up merge into `work`):
+ * each exercise it kept takes the original's rows back (with what the fit holds from Ben's), at the original's rests.
+ */
+export function withOriginalRows(original: BuilderWorkout, changed: BuilderWorkout): BuilderWorkout {
+  const was = new Map(slotsOf(original.blocks).map((s) => [s.key, s]));
+  const rowsOf = (s: BuilderSlot): BuilderSlot => {
+    const o = was.get(s.key);
+    return o === undefined || o.exerciseId !== s.exerciseId ? s : { ...s, rows: o.rows.map((r) => ({ ...r })) };
+  };
+  return { ...changed, restLevel: original.restLevel, blocks: changed.blocks.map((b) => ({ ...b, slots: b.slots.map(rowsOf) })) };
+}
+
 /** `fitWorkoutToTime`: Your workout at a new length (see the module comment). */
 export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome {
-  const to = clampMinutes(i.to);
-  const base = i.fit === null ? i.current : unfitWorkout(i.fit, i.current);
-  const fromMinutes = i.fit?.fromMinutes ?? clampMinutes(i.minutes);
-  if (to >= fromMinutes) return { workout: base, fit: null, minutes: to, over: false };
-  const r = fitToMinutes(base, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: false, supersets: i.supersets, pushEffort: false, noGroupFirst: true });
-  if (r.steps.length === 0) return { workout: base, fit: null, minutes: to, over: r.status === 'over' };
-  const cut: Record<string, number> = {};
-  for (const st of r.steps) if (st.kind === 'sets' && st.from > st.to) cut[st.slotKey] = st.from - st.to;
-  return { workout: keepEffort(r.workout, base), fit: { base, fromMinutes, dropped: r.steps.flatMap((s) => (s.kind === 'drop' ? [s.slotKey] : [])), cut }, minutes: to, over: r.status === 'over' };
+  const original = i.fit === null ? i.current : unfitWorkout(i.fit, i.current);
+  const work = i.fit === null ? i.current : unfitWorkout(i.fit, i.current, { hold: true });
+  const fromMinutes = i.fit?.fromMinutes ?? i.minutes;
+  return refitWorkoutToTime({ original, work, fromMinutes, to: i.to, ctx: i.ctx, mainGroup: i.mainGroup, supersets: i.supersets });
 }
 
 /**
@@ -170,7 +245,7 @@ export function timeFitChanges(fit: BuilderTimeFit, current: BuilderWorkout): Bu
   for (const was of slotsOf(fit.base.blocks)) {
     const s: BuilderSlot | undefined = now.get(was.key);
     if (s === undefined) {
-      if (fit.dropped.includes(was.key)) out.push({ kind: 'drop', slotKey: was.key, exerciseId: was.exerciseId });
+      if (fit.dropped.includes(was.key) && !readded(fit, current, was)) out.push({ kind: 'drop', slotKey: was.key, exerciseId: was.exerciseId });
       continue;
     }
     if (s.exerciseId !== was.exerciseId) continue;
