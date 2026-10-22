@@ -179,7 +179,7 @@ const DAYS = {
   Upper: { main: 'DB shoulder press', ex: [['DB shoulder press','Shoulders','main'],['Pull-up','Back','c'],['Incline DB press','Chest','c'],['Lat pulldown','Back','c'],['Lateral raise','Shoulders','i'],['Barbell curl','Biceps','i']] },
   Lower: { main: 'Romanian deadlift', ex: [['Romanian deadlift','Hamstrings','main'],['Leg press','Quads','c'],['Leg curl','Hamstrings','i'],['Calf raise','Calves','i'],['Cable crunch','Core','i']] },
   'Full body': { main: 'Back squat', ex: [['Back squat','Quads','main'],['Bench press','Chest','c'],['Barbell row','Back','c'],['Lateral raise','Shoulders','i'],['Hammer curl','Biceps','i']] },
-  Arms:  { main: null, ex: [['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i'],['Lateral raise','Shoulders','i']] },
+  Arms:  { main: null, ex: [['Barbell curl','Biceps','i'],['Triceps pushdown','Triceps','i'],['Hammer curl','Biceps','i'],['Lateral raise','Shoulders','i'],['Cable crunch','Core','i']] },
 };
 const MUSCLES = ['Chest','Back','Shoulders','Quads','Hamstrings','Calves','Biceps','Triceps','Core'];
 // Priority is chosen by group (Ben, 22 Oct); sets are still counted per muscle.
@@ -213,7 +213,9 @@ function splitFor(n, focus) {
   if (n === 3) return focus === 'Strength' ? ['Full body', 'Full body', 'Full body'] : ['Push', 'Pull', 'Legs'];
   if (n === 4) return focus === 'Strength' ? ['Upper', 'Lower', 'Upper', 'Lower'] : ['Push', 'Pull', 'Legs', 'Upper'];
   if (n === 5) return ['Push', 'Pull', 'Legs', 'Upper', 'Lower'];
-  return ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs'];
+  if (n === 6) return ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs'];
+  // 7 days (Ben, 22 Oct): allowed; the 7th is a light Arms & core day so something stays easy.
+  return ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs', 'Arms'];
 }
 function build() {
   const days = [...S.days].sort((a, b) => a - b);
@@ -590,9 +592,9 @@ function renderWeek() {
   $('footer').innerHTML = `<button class="primary" id="next">${S.ai ? 'Build my plan' : 'Build my plan'}</button>`;
   document.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { const d = +b.dataset.day; if (S.days.includes(d)) S.days = S.days.filter((x) => x !== d); else if (S.days.length < S.freq) S.days = [...S.days, d]; else S.days = [...S.days.slice(1), d]; render(); });
   document.querySelectorAll('[data-sch]').forEach((b) => b.onclick = () => { S.schedule = b.dataset.sch; render(); });
-  const PREF = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] };
+  const PREF = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
   $('fDown').onclick = () => { S.freq = Math.max(2, S.freq - 1); S.days = PREF[S.freq]; render(); };
-  $('fUp').onclick = () => { S.freq = Math.min(6, S.freq + 1); S.days = PREF[S.freq]; render(); };
+  $('fUp').onclick = () => { S.freq = Math.min(7, S.freq + 1); S.days = PREF[S.freq]; render(); };
   document.querySelectorAll('[data-actday]').forEach((b) => b.onclick = () => { const [a, d] = b.dataset.actday.split('|'); const n = +d; S.acts[a] = S.acts[a].includes(n) ? S.acts[a].filter((x) => x !== n) : [...S.acts[a], n]; render(); });
   document.querySelectorAll('[data-run]').forEach((b) => b.onclick = () => { const d = +b.dataset.run; S.runDays = S.runDays.includes(d) ? S.runDays.filter((x) => x !== d) : [...S.runDays, d]; if (!S.runDays.includes(S.longRunDay)) S.longRunDay = S.runDays.at(-1) ?? 6; render(); });
   if ($('longRun')) $('longRun').onclick = () => { const i = S.runDays.indexOf(S.longRunDay); S.longRunDay = S.runDays[(i + 1) % S.runDays.length]; render(); };
@@ -600,7 +602,7 @@ function renderWeek() {
   $('lenUp').onclick = () => { S.length = Math.min(120, S.length + 15); render(); };
   $('next').onclick = () => {
     if (S.schedule === 'fixed' && S.days.length !== S.freq) { toast(`Pick ${S.freq} days`, false); return; }
-    if (S.schedule === 'flexible') S.days = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] }[S.freq];
+    if (S.schedule === 'flexible') S.days = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] }[S.freq];
     S.plan = build(); S.page = 'plan'; S.chat = []; S.open = -1;
     if (S.ai) S.chat.push({ who: 'co', text: coachIntro() });
     render();
@@ -612,8 +614,9 @@ function coachIntro() {
   const split = [...new Set(S.plan.map((d) => d.focus))].join(' / ').toLowerCase();
   const chestDays = S.plan.filter((d) => d.ex.some((e) => e.m === 'Chest')).length;
   const ws = weeklySets(S.plan); const short = MUSCLES.filter((m) => ws[m] < range(m)[0]);
+  const seven = S.days.length === 7 ? ' No rest day, so one day is light (arms and core).' : '';
   const sport = S.pri.length ? ` Lifting supports ${S.pri.join(' and ')}: lower volume${S.days.length > 3 ? `, and ${S.days.length} lifting days is a lot alongside ${S.pri.length > 1 ? 'them' : 'it'}; 2–3 is usual` : ''}.` : '';
-  return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${sport}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}${S.effort === 'Standard' || S.pri.length ? ': add a day or longer sessions.' : ': add a day, longer sessions, or Standard.'}` : ''}`;
+  return `${S.days.length} days, ${split}: chest ${chestDays === 1 ? 'once' : chestDays === 2 ? 'twice' : chestDays + ' times'} a week, bench est. ${projected(S.effort)} by week ${S.weeks}.${moved ? ` Legs moved off ${WD[moved.day]}, the day before a hard leg session.` : ''}${seven}${sport}${short.length ? ` ${S.effort} needs more sets than ${S.days.length} × ${S.length} min fits for ${short.slice(0, 3).join(', ').toLowerCase()}${short.length > 3 ? '…' : ''}${S.effort === 'Standard' || S.pri.length ? ': add a day or longer sessions.' : ': add a day, longer sessions, or Standard.'}` : ''}`;
 }
 
 function renderPlan() {
@@ -677,7 +680,7 @@ function coach(text) {
 function rebuild(text) {
   const before = snapshot();
   const n = +((text || '').match(/(\d)\s*day/)?.[1] ?? S.days.length);
-  const pref = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] }[n] ?? S.days;
+  const pref = { 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] }[n] ?? S.days;
   S.days = pref; S.plan = build(); S.open = -1;
   S.chat.push({ who: 'co', text: `Rebuilt for ${n} days: ${S.plan.map((d) => WD[d.day] + ' ' + d.focus).join(', ')}.` });
   render(); toast('Plan rebuilt', true, () => { restore(before); S.chat.pop(); render(); });
