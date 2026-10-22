@@ -1084,7 +1084,7 @@ function renderPlan() {
   }).join('');
   $('scroll').innerHTML = `
     <div class="hdr" style="min-height:0"><h1>Your plan</h1>${S.ai ? '' : '<span class="badge">Not reviewed</span>'}</div>
-    <div class="blk"><span>${S.weeks} weeks · ${esc(S.effort)} · ${deloadText()}</span><span>${S.length} min</span></div>
+    <div class="blk"><span>${S.paused ? 'Paused · ' : ''}${S.weeks} weeks · ${esc(S.effort)} · ${deloadText()}</span><span>${S.length} min</span></div>
     ${S.editing && S.basePlan ? changesCard() : ''}
     <div class="label" style="display:flex;justify-content:space-between;align-items:baseline">Week${isDeload(S.week) ? '<span style="letter-spacing:0;text-transform:none;font-size:12px">Deload: lighter, fewer sets</span>' : ''}</div>
     <div class="seg wkstrip">${Array.from({ length: S.weeks }, (_, i) => i + 1).map((w) => `<button class="chip" data-week="${w}" aria-pressed="${S.week === w}">${w}${isDeload(w) ? '<span class="dl">D</span>' : ''}</button>`).join('')}</div>
@@ -1100,10 +1100,11 @@ function renderPlan() {
       <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px;color:var(--text2)">Abs: ${absPerWeek()} sets a week <button class="link" id="absChange" style="font-size:14px">Change</button></span><button class="link dim" id="whyBtn">Why?</button></div>
       <div class="why" id="why">Split from ${S.days.length} days and ${esc(S.focus)} focus. Shaded band = target sets for each muscle (priority ★ higher). Weights from your last sessions; each main lift's weekly path aims at its week-${S.weeks} estimate. ${S.runs ? 'No legs the day before the long run.' : ''}</div>
     </div>
+    ${S.applied ? `<div style="display:flex;gap:18px;justify-content:center;padding:4px 0 2px"><button class="link dim" id="pausePlan">${S.paused ? 'Resume plan' : 'Pause plan'}</button><button class="link dim" id="endPlan">End plan</button></div>` : ''}
     ${S.chat.length ? `<div class="label">Coach</div><div class="chat">${S.chat.map((c) => c.who === 'ben' ? `<div class="msg ben">${esc(c.text)}</div>` : c.who === 'choice' ? `<div class="choice"><button data-choice="new">Build new</button><button data-choice="edit">Change this one</button></div>` : `<div class="msg co"><b>Coach</b>${esc(c.text)}</div>`).join('')}</div>` : ''}`;
   $('footer').innerHTML = `
     <div class="askrow"><label class="askbar">✦<input id="ask" placeholder="${S.ai ? 'Tell the coach…' : 'Coach offline'}" ${S.ai ? '' : 'disabled'} aria-label="Tell the coach"></label><button class="mic" aria-label="Speak" ${S.ai ? '' : 'disabled'}>🎙</button></div>
-    ${S.applied ? '' : `<button class="primary" id="apply">${S.editing ? 'Apply changes' : 'Apply plan'}</button>`}`;
+    ${S.applied ? `<button class="primary" id="editPlan">Edit plan</button>` : `<button class="primary" id="apply">${S.editing ? 'Apply changes' : 'Apply plan'}</button>`}`;
   document.querySelectorAll('[data-week]').forEach((b) => b.onclick = () => { S.week = +b.dataset.week; render(); });
   // Tap an exercise: its targets week by week across the plan.
   document.querySelectorAll('[data-exw]').forEach((el) => el.onclick = () => {
@@ -1122,6 +1123,10 @@ function renderPlan() {
   document.querySelectorAll('[data-choice]').forEach((el) => el.onclick = () => { S.chat = S.chat.filter((c) => c.who !== 'choice'); const pending = S.pendingAsk; S.pendingAsk = null; el.dataset.choice === 'new' ? rebuild(pending) : editPlan(pending); });
   $('absChange').onclick = () => { sheet(`<h2>Ab sets a week</h2><div class="seg">${ABS_OPTS.map((n) => `<button class="chip" data-absn="${n}" style="min-width:0;flex:1 1 0" aria-pressed="${absPerWeek() === n}">${n === absAuto() ? '✦ ' : ''}${n}</button>`).join('')}</div>`); document.querySelectorAll('[data-absn]').forEach((b) => b.onclick = () => { const before = snapshot(); S.absWk = +b.dataset.absn; S.plan = build(); closeSheet(); render(); toast(`Abs ${S.absWk} sets a week`, true, () => { restore(before); render(); }); }); };
   $('whyBtn').onclick = () => $('why').classList.toggle('on');
+  // The plan overview (Library › your plan, Ben 22 Oct): Edit plan starts an edit in place; Pause and End sit at the bottom.
+  if ($('editPlan')) $('editPlan').onclick = () => { S.editing = true; S.applied = false; S.basePlan = JSON.parse(JSON.stringify(S.plan)); S.pageTop = true; render(); };
+  if ($('pausePlan')) $('pausePlan').onclick = () => { S.paused = !S.paused; render(); toast(S.paused ? 'Plan paused' : 'Plan resumed', false); };
+  if ($('endPlan')) $('endPlan').onclick = () => toast('Plan ended', false);
   if ($('apply')) $('apply').onclick = () => { S.applied = true; S.editing = false; S.basePlan = null; render(); toast('Plan applied', true, () => { S.applied = false; render(); }); };
   const ask = $('ask');
   if (ask) ask.onkeydown = (e) => { if (e.key === 'Enter' && ask.value.trim()) { coach(ask.value.trim()); } };

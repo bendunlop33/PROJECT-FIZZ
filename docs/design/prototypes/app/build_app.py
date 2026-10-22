@@ -20,15 +20,16 @@ GO = {
     'training-blocks.html': {'Start': 'active', 'Build your own': 'builder', 'Edit': 'builder'},
     'workout-builder-v3.html': {'Start': 'active', 'Start with no muscle groups': 'active'},
     'workout-active-v3.html': {'Finish workout': 'finished', 'Discard workout': 'discarded'},
-    'plan-builder.html': {'Apply plan': 'applied', 'Apply changes': 'applied', 'Close': 'back'},
+    # '~' = tell the shell but let the prototype handle the tap too.
+    'plan-builder.html': {'Apply plan': 'applied', 'Apply changes': '~changed', 'Close': 'back', 'End plan': 'endplan', 'Pause plan': '~paused', 'Resume plan': '~resumed'},
     'progress-simple.html': {},
 }
 
 # Per-file additions.
 EXTRA = {
     'plan-builder.html': """
-  // #edit opens the plan you have (Library › Your plan › Edit plan).
-  if (location.hash === '#edit') addEventListener('load', () => document.getElementById('editExisting')?.click());
+  // #view opens the plan you have, as the Your plan overview (Library › your plan).
+  if (location.hash === '#view') addEventListener('load', () => { Object.assign(S, { ans: { wk: true, eff: true, focus: true }, priAsk: 'No', actAsk: 'No', page: 'plan', applied: true, editing: false, chat: [], open: -1 }); S.plan = build(); render(); });
 """,
     'training-blocks.html': """
   // #progress opens the block's progress screen (the shell's Progress → Block).
@@ -45,6 +46,7 @@ SNIPPET = """<script>
   document.addEventListener('click', (e) => {{
     const b = e.target.closest('button'); if (!b) return;
     const to = GO[b.textContent.trim()]; if (!to) return;
+    if (to[0] === '~') {{ parent.postMessage({{ app: to.slice(1) }}, '*'); return; }}
     e.preventDefault(); e.stopPropagation(); parent.postMessage({{ app: to }}, '*');
   }}, true);
 {extra}}})();

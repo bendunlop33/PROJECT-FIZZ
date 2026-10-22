@@ -89,7 +89,7 @@ const PAGES = {
   today: () => (A.plan ? 'training-blocks.html' : null), // no plan: the native Today below (workout-builder-v3.md, No plan)
   progress: () => ({ overview: 'progress-simple.html', block: 'training-blocks.html#progress' })[A.ptab],
   plan: () => 'plan-builder.html',
-  planedit: () => 'plan-builder.html#edit',
+  planview: () => 'plan-builder.html#view',
   builder: () => 'workout-builder-v3.html',
   active: () => 'workout-active-v3.html',
 };
@@ -132,7 +132,10 @@ document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { A.tab
 addEventListener('message', (e) => {
   const to = e.data?.app; if (!to) return;
   if (to === 'back') return A.stack.length ? pop() : home();
-  if (to === 'applied') { const edit = current() === 'planedit'; A.plan = true; ['plan-builder.html', 'plan-builder.html#edit'].forEach((k) => { frames[k]?.remove(); delete frames[k]; }); if (edit) { A.stack = []; A.tab = 'library'; show(); return toast('Plan updated'); } return home('Plan applied'); }
+  if (to === 'applied') { A.plan = true; ['plan-builder.html', 'plan-builder.html#view'].forEach((k) => { frames[k]?.remove(); delete frames[k]; }); return home('Plan applied'); }
+  if (to === 'changed') return; // edits apply inside the overview
+  if (to === 'paused' || to === 'resumed') { A.paused = to === 'paused'; return; }
+  if (to === 'endplan') { A.plan = false; A.paused = false; frames['plan-builder.html#view']?.remove(); delete frames['plan-builder.html#view']; A.stack = []; A.tab = 'library'; show(); return toast('Plan ended'); }
   if (to === 'finished') { A.stack = ['summary']; return show(); }
   if (to === 'discarded') return home('Workout discarded');
   if (to === 'library' || to === 'profile' || to === 'progress') { A.tab = to; A.stack = []; return show(); }
@@ -164,26 +167,30 @@ function renderTodayNo() {
 }
 
 // ---------- Library (exercise-library.md, routines.md): workouts and exercises ----------
-const LIB = { tab: 'workouts' };
+const LIB = { tab: 'plan' };
 const EXS = { Chest: ['Bench press', 'Incline DB press', 'Cable fly', 'DB bench press'], Back: ['Barbell row', 'Lat pulldown', 'Pull-up', 'Chest-supported row'], Shoulders: ['DB shoulder press', 'Lateral raise', 'Face pull'], Legs: ['Back squat', 'Romanian deadlift', 'Leg press', 'Leg curl', 'Calf raise'], Arms: ['Barbell curl', 'Hammer curl', 'Triceps pushdown'] };
 function renderLibrary() {
-  const plan = A.plan ? [['Upper A', 'DB shoulder press · 6 exercises'], ['Lower A', 'Romanian deadlift · 6 exercises'], ['Upper B', 'Bench press · 7 exercises'], ['Lower B', 'Back squat · 6 exercises']] : [];
+  // Library tabs Plan | Workouts | Exercises (Ben, 22 Oct). Plan: the active plan opens its overview (Edit plan, Pause,
+  // End there); previous and saved plans below.
+  const tabs = [['plan', 'Plan'], ['workouts', 'Workouts'], ['exercises', 'Exercises']];
+  const rows = (list, attr) => `<div class="card">${list.map(([n, sub, v]) => `<div class="row" ${attr}="${v ?? n}"><span><div class="nm">${n}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</span><span class="chev">›</span></div>`).join('')}</div>`;
   $('library').innerHTML = `<h1>Library</h1>
-    <div class="seg"><button data-lt="workouts" class="${LIB.tab === 'workouts' ? 'on' : ''}">Workouts</button><button data-lt="exercises" class="${LIB.tab === 'exercises' ? 'on' : ''}">Exercises</button></div>
-    ${LIB.tab === 'workouts' ? `
-      ${plan.length ? `<div class="label" style="display:flex;justify-content:space-between">Your plan<span style="letter-spacing:0;text-transform:none">${A.paused ? 'Paused' : 'Week 3 of 6'}</span></div>
-      <div class="card">${plan.map(([n, s]) => `<div class="row" data-go="builder"><span><div class="nm">${n}</div><div class="sub">${s}</div></span><span class="chev">›</span></div>`).join('')}</div>
-      <div class="foot" style="margin-top:0"><button class="secondary" style="min-height:44px;font-size:15px" data-go="planedit">Edit plan</button><button class="secondary" style="min-height:44px;font-size:15px" id="planPause">${A.paused ? 'Resume' : 'Pause'}</button><button class="secondary" style="min-height:44px;font-size:15px" id="planEnd">End</button></div>` : `<div class="card"><div class="row" data-go="plan"><span><div class="nm">Set up a plan</div><div class="sub">Goals, week, preferences</div></span><span class="chev">›</span></div></div>`}
-      <div class="label">Saved workouts</div>
-      <div class="card">${[['Push A', 'Last done Mon'], ['Pull A', 'Last done Wed'], ['Legs', 'Last done Sat'], ['Arms & core', '3 weeks ago']].map(([n, s]) => `<div class="row" data-go="builder"><span><div class="nm">${n}</div><div class="sub">${s}</div></span><span class="chev">›</span></div>`).join('')}</div>
+    <div class="seg" style="grid-template-columns:repeat(3,1fr)">${tabs.map(([k, t]) => `<button data-lt="${k}" class="${LIB.tab === k ? 'on' : ''}">${t}</button>`).join('')}</div>
+    ${LIB.tab === 'plan' ? `
+      <div class="label">Current</div>
+      <div class="card">${A.plan ? `<div class="row" data-go="planview"><span><div class="nm">Strength block <span class="tag" style="margin-left:6px">${A.paused ? 'Paused' : 'Active'}</span></div><div class="sub">Chest / Legs / Shoulders / Back · week 3 of 6</div></span><span class="chev">›</span></div>` : `<div class="row" data-go="plan"><span><div class="nm">Set up a plan</div><div class="sub">Goals, week, preferences</div></span><span class="chev">›</span></div>`}</div>
+      <div class="label">Previous and saved</div>
+      ${rows([['Summer PPL', 'Push / Pull / Legs · ended 20 Sep'], ['Hotel weeks', 'Full body · 3 days · saved']], 'data-oldplan')}`
+    : LIB.tab === 'workouts' ? `
+      ${rows([['Push A', 'Last done Mon'], ['Pull A', 'Last done Wed'], ['Legs', 'Last done Sat'], ['Arms & core', '3 weeks ago']], 'data-wo')}
       <div class="foot"><button class="secondary" data-go="builder">＋ Build a workout</button></div>`
     : `<div class="search">Search exercises</div>
       ${Object.entries(EXS).map(([g, l]) => `<div class="label">${g}</div><div class="card">${l.map((n) => `<div class="row" data-ex="${n}"><span class="nm">${n}</span><span class="chev">›</span></div>`).join('')}</div>`).join('')}`}`;
   $('library').querySelectorAll('[data-lt]').forEach((b) => b.onclick = () => { LIB.tab = b.dataset.lt; renderLibrary(); });
   $('library').querySelectorAll('[data-go]').forEach((b) => b.onclick = () => push(b.dataset.go));
-  // Managing a plan lives in Library (Ben, 22 Oct): edit, pause/resume, end. Today only offers Set up a plan when there is none.
-  if ($('planPause')) $('planPause').onclick = () => { A.paused = !A.paused; renderLibrary(); toast(A.paused ? 'Plan paused' : 'Plan resumed'); };
-  if ($('planEnd')) $('planEnd').onclick = () => { A.plan = false; A.paused = false; renderLibrary(); toast('Plan ended'); };
+  $('library').querySelectorAll('[data-wo]').forEach((b) => b.onclick = () => push('builder'));
+  // Plans live in Library (Ben, 22 Oct): the active plan opens its overview (Edit plan, Pause, End there); old and saved plans below.
+  $('library').querySelectorAll('[data-oldplan]').forEach((b) => b.onclick = () => toast(`${b.dataset.oldplan}: view, or start it again`));
   $('library').querySelectorAll('[data-ex]').forEach((b) => b.onclick = () => toast(`${b.dataset.ex}: guide, history and swaps (exercise-library.md §2.4)`));
 }
 
