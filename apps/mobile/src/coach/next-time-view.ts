@@ -36,7 +36,15 @@ export interface NextTimeRowView {
    * (Ben, 23 Oct) The built-in rule's own stall reset on this row, for its taps (`tapRuleReset`): the reset, the hold
    * and Ben's answer so far (null: none yet). Absent: no reset here.
    */
-  reset?: { exerciseId: string; exerciseName: string; target: CoachTarget; hold: CoachTarget | null; row: NextSessionTargetRecord | null };
+  reset?: {
+    exerciseId: string;
+    exerciseName: string;
+    target: CoachTarget;
+    hold: CoachTarget | null;
+    row: NextSessionTargetRecord | null;
+    /** (Review ben-8-decisions S1) Ben's Apply no longer fits the workout (a set corrected since): asked again. */
+    again?: true;
+  };
 }
 
 export interface NextTimeView {
@@ -90,6 +98,11 @@ function coachRow(r: NextSessionTargetRecord, builtIn: NextTimeRow | undefined, 
   }
 }
 
+export const NEXT_TIME_COPY = {
+  /** (Review ben-8-decisions S1) An applied reset the workout no longer fits. */
+  changedSince: 'Changed since',
+} as const;
+
 /**
  * (Ben, 23 Oct; review v5offers SP2) A built-in rule row. A stall reset is an offer: `Reset to 90 kg × 6–8?` with
  * `Skip` / `Apply` (offered, or offered again after an Undo); once applied the row is the reset with `Undo`; skipped,
@@ -102,8 +115,12 @@ function ruleRow(b: NextTimeRow, sourceTag: string, answer: NextSessionTargetRec
     return { ...base, note: used ? 'Used' : null, actions: used ? [] : [{ label: 'Undo', tap: 'undo' }], reset: { exerciseId: b.exerciseId, exerciseName: b.exerciseName, target: answer.target, hold: answer.builtIn, row: answer } };
   }
   const offer = b.resetOffer;
-  if (offer === undefined) return base;
-  const reset = { exerciseId: b.exerciseId, exerciseName: b.exerciseName, target: { load: offer.load, reps: offer.reps }, hold: { load: offer.hold.load, reps: offer.hold.reps }, row: answer };
+  // (Review ben-8-decisions S1) His Apply no longer fits the workout as it is (a set corrected since): it isn't used,
+  // and says so; while the rule still offers a reset, it asks again (a new answer at the row's version).
+  const changedSince = answer !== null && answer.status === 'applied' && !used && b.resetApplied !== true;
+  if (offer === undefined) return changedSince ? { ...base, note: NEXT_TIME_COPY.changedSince } : base;
+  const reset = { exerciseId: b.exerciseId, exerciseName: b.exerciseName, target: { load: offer.load, reps: offer.reps }, hold: { load: offer.hold.load, reps: offer.hold.reps }, row: answer, ...(changedSince ? { again: true as const } : {}) };
+  if (changedSince) return { ...base, note: `${NEXT_TIME_COPY.changedSince} · ${offer.text}`, actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }], reset };
   const open = !used && (answer === null || answer.status === 'proposed');
   return open ? { ...base, note: offer.text, actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }], reset } : { ...base, note: used ? 'Used' : null, reset };
 }

@@ -950,6 +950,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         gymName,
         workoutLabel: session.session.routineName ?? 'workout',
         benAskedForMoreSets,
+        // (Review ben-8-decisions B1) Ben's answer to the rule's reset stands for that exercise.
+        ruleAnswered: async () => new Set((await coachStore().listNextTargets(p.id, session.session.id).catch(() => [])).filter(isRuleResetRow).map((r) => r.exerciseId)),
       });
     }
     return out;
@@ -2114,8 +2116,16 @@ export function createCoachService(deps: CoachServiceDeps) {
      * Apply or Skip saves Ben's answer with its record (`ruleResetWrite`); later taps (Undo, then Apply or Skip again)
      * move that row as any `Next time` row moves. Offline: works (no coach call). One op ID per row version and tap.
      */
-    async tapRuleReset(sessionId: string, offer: { exerciseId: string; exerciseName: string; target: CoachTarget; hold: CoachTarget | null; row: NextSessionTargetRecord | null }, tap: NextTargetTap): Promise<{ status: 'written' | 'replayed' } | { status: 'not_possible'; reason: string }> {
+    async tapRuleReset(sessionId: string, offer: { exerciseId: string; exerciseName: string; target: CoachTarget; hold: CoachTarget | null; row: NextSessionTargetRecord | null; again?: true }, tap: NextTargetTap): Promise<{ status: 'written' | 'replayed' } | { status: 'not_possible'; reason: string }> {
       const p = await owner();
+      // (Review ben-8-decisions S1) His Apply no longer fits the workout: a new answer, at the row's version he saw.
+      if (offer.row !== null && offer.again === true && (tap === 'apply' || tap === 'not_now')) {
+        const source = await repos().sessions.get(sessionId).catch(() => null);
+        if (source === null || source.session.ownerId !== p.id) return { status: 'not_possible', reason: 'missing' };
+        const opId = deriveId(`rule-reset:${tap}:${sessionId}:${offer.exerciseId}:v${String(offer.row.version)}`);
+        const w = await coachStore().commit(p.id, ruleResetWrite({ ownerId: p.id, source, exerciseId: offer.exerciseId, exerciseName: offer.exerciseName, target: offer.target, hold: offer.hold, tap, opId, now: deps.now(), expectedVersion: offer.row.version }));
+        return w.status === 'conflict' ? { status: 'not_possible', reason: w.reason === 'stale_version' ? 'changed_since' : w.reason } : { status: w.status };
+      }
       if (offer.row !== null) {
         const { status, record } = nextTargetTapRecord(offer.row, tap, { opId: nextTargetTapOpId(offer.row, tap), now: deps.now() });
         const r = await coachStore().setNextTargetStatus(p.id, { rowId: offer.row.id, expectedVersion: offer.row.version, status, record });

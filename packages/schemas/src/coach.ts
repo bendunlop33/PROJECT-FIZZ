@@ -1429,7 +1429,19 @@ export type CoachWrite =
    * source and exercise. Refused as stale when the source workout changed or
    * a workout has started since it ended (CA10).
    */
-  | { kind: 'next_session_targets'; action: ActionRecord; rows: readonly NextSessionTargetRecord[]; sourceVersion: number; sourceBasis: string }
+  | {
+      kind: 'next_session_targets';
+      action: ActionRecord;
+      rows: readonly NextSessionTargetRecord[];
+      sourceVersion: number;
+      sourceBasis: string;
+      /**
+       * (Review ben-8-decisions S2) Ben's answer to the rule's reset, at the row version he saw: null, no row yet (his
+       * first answer); a number, that row's version (an answer again after the workout changed). Any other row there is
+       * stale (refused, never overwritten). Absent: the coach's review (a newer review replaces the rows).
+       */
+      answerAt?: number | null;
+    }
   /**
    * Today's pending sets (`adjust_pending_sets`): the session command runs
    * through the reducer inside the same transaction as the record, so the

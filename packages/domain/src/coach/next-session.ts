@@ -165,6 +165,11 @@ export interface NextSessionValidationInput {
   painFlags: readonly PainFlag[];
   gymName: string | null;
   ctx: NextSessionChangeContext;
+  /**
+   * (Review ben-8-decisions B1) Exercises whose built-in stall reset Ben already answered on this workout's Summary
+   * (Apply or Skip): his answer stands for them, so the coach's target is left out with a note; the others are kept.
+   */
+  answeredByBen?: ReadonlySet<string>;
 }
 
 function pct(last: CoachTarget, after: CoachTarget): number | null {
@@ -196,6 +201,10 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
     }
     seen.add(t.exerciseId);
     const ex = basis.exercise;
+    if (input.answeredByBen?.has(t.exerciseId) === true) {
+      drop('not_pending', `Not used: Ben already answered the reset for ${ex.exerciseName}.`);
+      continue;
+    }
     const notes: GuardNote[] = [];
     let load = basis.last.load;
     if (t.target.load !== null) {

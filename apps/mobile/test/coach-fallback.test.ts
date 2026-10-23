@@ -942,3 +942,90 @@ async function plannedLoadsOf(s: S, sessionId: string, ids: string[]) {
   return ids.map((id) => a?.sets.find((x) => x.id === id)?.planned.load?.value);
 }
 
+
+describe('review ben-8-decisions: the rule’s reset answer and the coach’s review (B1, S1, S2)', () => {
+  /** Two short Bench workouts offline: the Summary of the second offers `Reset to 55 kg × 3–6?`. */
+  async function stalled() {
+    const { s, gymId, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    for (const [i, set] of work.entries()) await log(s, sessionId, set.id, 2, `log-${String(i)}`);
+    h.clockMs += 60_000;
+    const d = await s.workout.load(sessionId);
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'fin-2', expectedVersion: d?.aggregate.session.version ?? 0, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    await h.settle(s);
+    h.clockMs += 2 * 86_400_000;
+    const third = await s.workout.start({ gymId, opId: 'start-3', checkIn: null, nextOf: sessionId });
+    if (!third.ok) throw new Error(third.error.message);
+    const work3 = third.aggregate.sets.filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index);
+    for (const [i, set] of work3.entries()) await log(s, third.aggregate.session.id, set.id, 2, `log3-${String(i)}`);
+    h.clockMs += 60_000;
+    const d3 = await s.workout.load(third.aggregate.session.id);
+    const fin3 = await s.workout.dispatch(third.aggregate.session.id, { type: 'finish', at: h.now(), opId: 'fin-3', expectedVersion: d3?.aggregate.session.version ?? 0, endedAt: null });
+    if (!fin3.ok) throw new Error(fin3.error.message);
+    await h.settle(s);
+    const thirdId = third.aggregate.session.id;
+    const viewOf = async () => {
+      const sum = await s.workout.summary(thirdId, 'not_connected');
+      return nextTimeView({ title: 'Workout', builtIn: sum?.nextTime ?? null, coachRows: await s.coach.nextTargets(thirdId), ruleRows: await s.coach.ruleResets(thirdId), availability: await s.coach.availability(), reviewing: false })?.rows.find((r) => r.exerciseName === 'Bench press');
+    };
+    return { s, gymId, thirdId, viewOf, work3 };
+  }
+
+  it('B1: Apply the reset, then the coach’s Summary review runs: the turn completes, Ben’s answer stands for Bench, and the review is recorded (no silent failure)', async () => {
+    const { s, gymId, thirdId, viewOf } = await stalled();
+    const reset = (await viewOf())?.reset;
+    if (reset === undefined) throw new Error('no reset');
+    expect(await s.coach.tapRuleReset(thirdId, reset, 'apply')).toEqual({ status: 'written' });
+    connection = CONNECTED;
+    model = new StepModel([
+      (req) => {
+        const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+        if (block?.type !== 'message') throw new Error('no context');
+        const w = (JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { workout: { sessionId: string; version: number; exercises: { exerciseId: string }[] } }).workout;
+        return [{ type: 'tool_call', callId: 'c-t', name: 'set_next_session_targets', arguments: JSON.stringify({ sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: w.exercises[0]?.exerciseId, target: { load: { value: 57.5, unit: 'kg', convention: 'total' }, reps: null }, sets: null, reason: 'Gentler.' }] }) }, { type: 'completed' }];
+      },
+      () => [{ type: 'tool_call', callId: 'c-r', name: 'reply', arguments: JSON.stringify({ message: 'Your reset stands.', offer: null }) }, { type: 'completed' }],
+    ]);
+    const turn = await s.coach.runSummaryTurn(thirdId);
+    expect(turn).not.toBeNull();
+    // Ben's answer wins for Bench: no coach row over it, and next time is his 55.
+    expect(await s.coach.nextTargets(thirdId)).toEqual([]);
+    expect((await s.coach.ruleResets(thirdId)).map((r) => r.status)).toEqual(['applied']);
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).toContain('55');
+  });
+
+  it('S2: a Skip from a view drawn before Apply landed is refused, never overwriting the Apply', async () => {
+    const { s, thirdId, viewOf } = await stalled();
+    const reset = (await viewOf())?.reset;
+    if (reset === undefined) throw new Error('no reset');
+    expect(await s.coach.tapRuleReset(thirdId, reset, 'apply')).toEqual({ status: 'written' });
+    // The same (stale) row, no answer on it yet as drawn: Skip.
+    expect(await s.coach.tapRuleReset(thirdId, reset, 'not_now')).toEqual({ status: 'not_possible', reason: 'changed_since' });
+    expect((await s.coach.ruleResets(thirdId)).map((r) => r.status)).toEqual(['applied']);
+  });
+
+  it('S1: an applied reset the workout no longer fits (a set corrected) says so and asks again; Apply again plans it', async () => {
+    const { s, gymId, thirdId, viewOf, work3 } = await stalled();
+    const reset = (await viewOf())?.reset;
+    if (reset === undefined) throw new Error('no reset');
+    expect(await s.coach.tapRuleReset(thirdId, reset, 'apply')).toEqual({ status: 'written' });
+    const set = (await s.workout.load(thirdId))?.aggregate.sets.find((x) => x.id === work3[0]?.id);
+    if (set === undefined) throw new Error('no set');
+    const fixed = await s.workout.dispatch(thirdId, { type: 'correct_set', at: h.now(), opId: 'fix-1', setId: set.id, expectedSetVersion: set.version, patch: { reps: 1 } });
+    if (!fixed.ok) throw new Error(fixed.error.message);
+    await h.settle(s);
+    // Not used any more (rule 5), and not silent: `Changed since`, Skip / Apply again.
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('55');
+    const again = await viewOf();
+    expect(plain(again?.note)).toMatch(/^Changed since · Reset to [\d.]+ kg × 3–6\?$/);
+    expect(again?.actions).toEqual([{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }]);
+    const r2 = again?.reset;
+    if (r2 === undefined) throw new Error('no reset');
+    expect(await s.coach.tapRuleReset(thirdId, r2, 'apply')).toEqual({ status: 'written' });
+    expect(await s.coach.tapRuleReset(thirdId, r2, 'apply')).toEqual({ status: 'replayed' });
+    const applied = await viewOf();
+    expect(applied?.actions).toEqual([{ label: 'Undo', tap: 'undo' }]);
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).toContain(String(r2.target.load?.value ?? 'none'));
+  });
+});

@@ -441,6 +441,9 @@ export class SqliteCoachStore {
       })
       .catch((e: unknown) => {
         if (e instanceof Rollback) return { status: 'conflict', reason: e.reason };
+        // (Review ben-8-decisions B1) A constraint the checks above didn't foresee is a conflict the caller reports, not a
+        // thrown error a turn swallows.
+        if (e instanceof Error && /constraint failed/i.test(e.message)) return { status: 'conflict', reason: 'already_exists' };
         throw e;
       });
   }
@@ -502,7 +505,12 @@ export class SqliteCoachStore {
         // The earlier review's card can't revert them after that (`changed_since`).
         for (const row of write.rows) {
           if (row.ownerId !== ownerId) throw new Error('Next-target owner differs from the store owner');
+          // (Review ben-8-decisions B1) One row per source workout and exercise: another row there (Ben's answer to the
+          // rule's reset, written since the review read it) is a conflict, never a thrown UNIQUE error.
+          const other = await tx.getFirst('SELECT id FROM next_session_targets WHERE owner_id = ? AND source_session_id = ? AND exercise_id = ? AND id != ?', [ownerId, row.sourceSessionId, row.exerciseId, row.id]);
+          if (other !== null) throw new Rollback('stale_version');
           const current = await getDoc(tx, NEXT_TARGET_SPEC, row.id);
+          if (write.answerAt !== undefined && (current?.version ?? null) !== write.answerAt) throw new Rollback('stale_version');
           const r = await saveDocumentIn(tx, NEXT_TARGET_SPEC, current === null ? row : { ...row, version: current.version + 1, createdAtUtc: current.createdAtUtc }, current?.version ?? null);
           if (!r.ok) throw new Rollback('stale_version');
         }

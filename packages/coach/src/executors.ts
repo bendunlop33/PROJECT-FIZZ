@@ -577,6 +577,11 @@ export interface NextTargetsDeps {
   workoutLabel: string;
   /** Ben asked for more sets or volume in this conversation (D1). */
   benAskedForMoreSets: boolean;
+  /**
+   * (Review ben-8-decisions B1) The exercises whose built-in stall reset Ben already answered on this workout (his
+   * answer row): the coach's target for them is left out with a note, never written over his answer. Absent: none.
+   */
+  ruleAnswered?: () => Promise<ReadonlySet<string>>;
 }
 
 /** One row per source workout and exercise, so a later answer replaces it rather than adding a second. */
@@ -601,7 +606,8 @@ export function createNextTargetsExecutor(deps: NextTargetsDeps): ToolExecutor {
     };
     if (a.sourceSessionId !== deps.source.session.id) return refuse('rejected', 'it named a different workout');
     if (a.sourceVersion !== deps.source.session.version) return refuse('stale', null);
-    const v = validateNextSessionTargets({ source: deps.source, bases: deps.bases, targets: a.targets, painFlags: await deps.painFlags(), gymName: deps.gymName, ctx: { benAskedForMoreSets: deps.benAskedForMoreSets } });
+    const answeredByBen = deps.ruleAnswered === undefined ? new Set<string>() : await deps.ruleAnswered();
+    const v = validateNextSessionTargets({ source: deps.source, bases: deps.bases, targets: a.targets, painFlags: await deps.painFlags(), gymName: deps.gymName, ctx: { benAskedForMoreSets: deps.benAskedForMoreSets }, answeredByBen });
     const notes = [...v.rows.flatMap((r) => r.guardNotes.map((n) => ({ ...n, text: `${r.exerciseName}: ${n.text}` }))), ...v.dropped];
     if (v.rows.length === 0) return refuse('rejected', v.dropped[0]?.text.replace(/\.$/, '').slice(0, 200) ?? 'no change from the built-in rule', notes);
     const lastSets = (exerciseId: string): number | null => deps.bases.find((b) => b.exercise.exerciseId === exerciseId)?.lastSets ?? null;
@@ -679,6 +685,11 @@ export function ruleResetWrite(input: {
   tap: 'apply' | 'not_now';
   opId: string;
   now: ZonedTimestamp;
+  /**
+   * (Review ben-8-decisions S1, S2) The answer row's version Ben saw: null (default), his first answer (refused if one
+   * was written since); a version, his answer again after the workout changed under an applied reset.
+   */
+  expectedVersion?: number | null;
 }): CoachWrite {
   const ctx = { turnId: '', opId: input.opId, now: input.now };
   const detail: ActionDetail = {
@@ -716,7 +727,7 @@ export function ruleResetWrite(input: {
     usedBySessionId: null,
     origin: 'rule',
   };
-  return { kind: 'next_session_targets', action: record, rows: [row], sourceVersion: input.source.session.version, sourceBasis: basis };
+  return { kind: 'next_session_targets', action: record, rows: [row], sourceVersion: input.source.session.version, sourceBasis: basis, answerAt: input.expectedVersion ?? null };
 }
 
 /**
