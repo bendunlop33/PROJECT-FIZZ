@@ -5,7 +5,7 @@ import { BUILDER_VOLUME } from './build';
 import { removeSlot } from './fit';
 import { roundContextOf, roundDownHere } from './loads';
 import { clampBuilderRest } from './rest';
-import { addDropSet, BUILDER_SET_RULES, changeSetType, editSetRow, setWorkingCount, workingCount, type RowPatch, type SetRowEditRefusal } from './set-rows';
+import { addDropSet, BUILDER_SET_RULES, changeSetType, editSetRow, isTimedSlot, setWorkingCount, workingCount, type RowPatch, type SetRowEditRefusal } from './set-rows';
 import { makeSlot } from './slot';
 import type { BuilderBlock, BuilderContext, BuilderSetRow, BuilderSlot, BuilderWorkout, RestKind, RoundedLoad } from './types';
 import { slotLoadOf } from './reps';
@@ -257,7 +257,7 @@ export function dropBuilderSlot(blocks: readonly BuilderBlock[], slotKey: string
 
 /** Whether `＋ Warm-up` can add one (§2.4: disabled at 4, or with no load to ramp to). */
 export function canAddWarmup(slot: BuilderSlot): boolean {
-  return slot.rows.filter((r) => r.type === 'warmup').length < BUILDER_SET_RULES.maxWarmups && slot.rows.some((r) => r.type !== 'warmup' && r.load !== null);
+  return !isTimedSlot(slot) && slot.rows.filter((r) => r.type === 'warmup').length < BUILDER_SET_RULES.maxWarmups && slot.rows.some((r) => r.type !== 'warmup' && r.load !== null);
 }
 
 /**
@@ -288,7 +288,8 @@ export function warmupGap(warmLoads: readonly number[], top: number, roundDown: 
  * the lightest warm-up) up to the first working load, rounded DOWN to what
  * this gym can load. Reps by how close it sits to the working load. Max 4.
  */
-export function addWarmup(slot: BuilderSlot, ctx: BuilderContext): { ok: true; slot: BuilderSlot } | { ok: false; reason: 'max_warmups' | 'no_load' | 'no_gap' } {
+export function addWarmup(slot: BuilderSlot, ctx: BuilderContext): { ok: true; slot: BuilderSlot } | { ok: false; reason: 'max_warmups' | 'no_load' | 'no_gap' | 'timed_set' } {
+  if (isTimedSlot(slot)) return { ok: false, reason: 'timed_set' };
   const warm = slot.rows.filter((r) => r.type === 'warmup');
   if (warm.length >= BUILDER_SET_RULES.maxWarmups) return { ok: false, reason: 'max_warmups' };
   const top = slot.rows.find((r) => r.type !== 'warmup')?.load ?? null;

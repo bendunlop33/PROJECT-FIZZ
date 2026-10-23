@@ -20,3 +20,4 @@ export * from './draft-life';
 export * from './info';
 export * from './setup';
 export * from './main-lift';
+export * from './time-fit';

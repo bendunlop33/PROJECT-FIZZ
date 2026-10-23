@@ -102,7 +102,7 @@ export function createWorkoutEditService(deps: WorkoutEditDeps) {
         }),
         (e) => e,
         group,
-      ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id) })) }));
+      ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id) })) }));
       return { group, groups: GROUPS, sections };
     },
 

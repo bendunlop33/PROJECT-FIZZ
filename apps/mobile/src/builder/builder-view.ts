@@ -1,8 +1,9 @@
-import { canAddWarmup, clampBuilderRest, slotsOf, workingCount, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
+import { canAddWarmup, cardioValuesText, clampBuilderRest, FIT_RULES, isTimedRow, slotsOf, spokenDistance, spokenDuration, stepTimeMinutes, TODAY_V2_COPY, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderGroup } from '@fizz/schemas';
 
 import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from './builder-service';
 import { loadSpoken, loadText, REST_STEP_S, restText, SET_TYPE_LABEL, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
+import { swapPainConfirm } from '../ui/swap-sheet-model';
 
 /**
  * What the builder's screens show (workout-builder-v3 §2.2–§2.8,
@@ -84,6 +85,17 @@ export const WORKOUT_COPY = {
   saveToWorkouts: 'Save to Workouts',
   saved: (name: string) => `Saved ${name}`,
   nothingToSave: 'Nothing to save',
+} as const;
+
+/** (22 Oct) Your workout's Time row and the detail behind its note (minimal copy: values and actions). */
+export const TIME_COPY = {
+  label: 'Time',
+  undo: 'Undo',
+  done: 'Done',
+  shorter: 'Shorter rests',
+  shortest: 'Shortest rests',
+  sets: (name: string, from: number, to: number) => `${name} ${String(from)} → ${String(to)} sets`,
+  dropped: (name: string) => `Dropped ${name}`,
 } as const;
 
 export const PROMPT_COPY = {
@@ -231,8 +243,27 @@ export interface WorkoutRoundView {
   rows: WorkoutRowView[];
 }
 
+/** (22 Oct) Your workout's Time: `Time · −1 exercise ›  [−] 45 min [+]`, the same control as Today's. */
+export interface TimeRowView {
+  minutes: number;
+  /** `45 min`. */
+  valueText: string;
+  /** The biggest change a live fit made, after the label in light orange (`−1 exercise`, `−2 sets`, `shorter rests`); null: none. */
+  note: string | null;
+  /** Everything it changed, behind the note: `Shorter rests`, `Incline DB press 3 → 2 sets`, `Dropped Triceps pushdown`. */
+  lines: string[];
+  /** The detail's `Undo`: back to this length and the workout as it was before the first change; null: nothing to undo. */
+  undoMinutes: number | null;
+  /** The next length down and up (5-minute steps, 15–180); null at a limit. */
+  less: number | null;
+  more: number | null;
+  /** VoiceOver for the note: `Time changes: −1 exercise`. */
+  noteLabel: string | null;
+}
+
 export interface WorkoutPageView {
   title: string;
+  time: TimeRowView;
   /** `⚠ Over 20 min` when even the minimum is over the length. */
   overLine: string | null;
   topHeader: string;
@@ -245,6 +276,16 @@ export interface WorkoutPageView {
 }
 
 const topRowOf = (s: BuilderSlot) => s.rows.find((r) => r.type === 'top') ?? s.rows.find((r) => r.type !== 'warmup') ?? null;
+
+/** (22 Oct) A timed or cardio set's target as the overview showed it: `0:45`, `20:00 · 5,000 m`, `5,000 m`. */
+export function timedText(r: Pick<BuilderSetRow, 'durationS' | 'distanceM'>): string {
+  return cardioValuesText({ durationS: r.durationS ?? null, distanceM: r.distanceM ?? null });
+}
+
+/** VoiceOver's words for it: `45 seconds`, `20 minutes, 5 kilometres`. */
+export function timedSpoken(r: Pick<BuilderSetRow, 'durationS' | 'distanceM'>): string {
+  return [r.durationS === undefined ? null : spokenDuration(r.durationS), r.distanceM === undefined ? null : spokenDistance(r.distanceM)].filter((x): x is string => x !== null).join(', ');
+}
 
 export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
   const blocks = snap.workout.blocks.filter((b) => b.slots.length > 0);
@@ -260,7 +301,10 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
         const label = superset ? `${String(bi + 1)}${'abcd'.charAt(si)}` : String(bi + 1);
         const warm = s.rows.filter((r) => r.type === 'warmup').length;
         const top = topRowOf(s);
-        const topText = loadText(top?.load ?? null, s.unit, s.convention, snap.unit);
+        // A timed or cardio set shows its time and distance (and a load only when it has one).
+        const timed = top !== null && isTimedRow(top) ? top : null;
+        const topLoad = loadText(top?.load ?? null, s.unit, s.convention, snap.unit);
+        const topText = timed === null ? topLoad : timed.load === null ? timedText(timed) : `${timedText(timed)} · ${topLoad}`;
         const at = flat.indexOf(s);
         const nextBlock = blocks[bi + 1];
         const nextIsMain = nextBlock?.slots[0]?.main === true;
@@ -273,7 +317,7 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
           ...(superset ? [{ name: 'unlink' as const, label: WORKOUT_COPY.unlink }] : []),
         ];
         const n = workingCount(s);
-        const spoken = [label, name, superset ? 'superset' : null, s.main ? 'main lift' : null, `${String(n)} ${n === 1 ? 'set' : 'sets'}`, warm > 0 ? `plus ${String(warm)} warm-up` : null, `top set ${loadSpoken(top?.load ?? null, s.unit, s.convention)}`, f?.mayHurt === true ? WORKOUT_COPY.mayHurt : null, f?.notHere === true ? WORKOUT_COPY.notHere : null].filter((x): x is string => x !== null);
+        const spoken = [label, name, superset ? 'superset' : null, s.main ? 'main lift' : null, `${String(n)} ${n === 1 ? 'set' : 'sets'}`, warm > 0 ? `plus ${String(warm)} warm-up` : null, timed !== null ? timedSpoken(timed) : `top set ${loadSpoken(top?.load ?? null, s.unit, s.convention)}`, f?.mayHurt === true ? WORKOUT_COPY.mayHurt : null, f?.notHere === true ? WORKOUT_COPY.notHere : null].filter((x): x is string => x !== null);
         return {
           slotKey: s.key,
           exerciseId: s.exerciseId,
@@ -295,6 +339,7 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
   });
   return {
     title: `${snap.setup.dayName} · about ${String(snap.minutes)} min`,
+    time: timeRowView(snap),
     overLine: snap.over ? `⚠ Over ${String(snap.setup.minutes)} min` : null,
     topHeader: `${WORKOUT_COPY.topSet} (${snap.unit})`,
     rounds,
@@ -320,6 +365,54 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
   };
 }
 
+/**
+ * The Time row (22 Oct): the length, its steps, and what a live fit changed (from the service's `time`). The note is
+ * the biggest change: exercises left out, else sets fewer, else shorter rests. Values only.
+ */
+export function timeRowView(snap: BuilderSnapshot): TimeRowView {
+  const minutes = snap.setup.minutes;
+  const changes = snap.time?.changes ?? [];
+  const name = (id: string) => snap.facts[id]?.name ?? 'Exercise';
+  const lines: string[] = [];
+  let rest: string | null = null;
+  let sets = 0;
+  let dropped = 0;
+  for (const c of changes) {
+    switch (c.kind) {
+      case 'rest':
+        if (c.to === 'shorter' || c.to === 'shortest') {
+          rest = c.to === 'shorter' ? 'shorter rests' : 'shortest rests';
+          lines.unshift(c.to === 'shorter' ? TIME_COPY.shorter : TIME_COPY.shortest);
+        }
+        break;
+      case 'sets':
+        sets += c.from - c.to;
+        lines.push(TIME_COPY.sets(name(c.exerciseId), c.from, c.to));
+        break;
+      case 'drop':
+        dropped += 1;
+        lines.push(TIME_COPY.dropped(name(c.exerciseId)));
+        break;
+      case 'effort':
+      case 'add':
+        break;
+    }
+  }
+  const note = dropped > 0 ? `−${String(dropped)} ${dropped === 1 ? 'exercise' : 'exercises'}` : sets > 0 ? `−${String(sets)} ${sets === 1 ? 'set' : 'sets'}` : rest;
+  const less = stepTimeMinutes(minutes, -1);
+  const more = stepTimeMinutes(minutes, 1);
+  return {
+    minutes,
+    valueText: TODAY_V2_COPY.minutesValue(minutes),
+    note,
+    lines,
+    undoMinutes: note === null || snap.time === null ? null : snap.time.fromMinutes,
+    less: minutes <= FIT_RULES.minMinutes || less === minutes ? null : less,
+    more: minutes >= FIT_RULES.maxMinutes || more === minutes ? null : more,
+    noteLabel: note === null ? null : `Time changes: ${note}`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Exercise pop-up (§2.4)
 
@@ -341,27 +434,29 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
     const mark = r.type === 'warmup' ? 'W' : String((n += 1));
     const spokenName = r.type === 'warmup' ? `Warm-up ${String((w += 1))}` : `Set ${mark}`;
     const kgText = loadText(r.load, slot.unit, slot.convention, slot.unit);
+    // (22 Oct) A timed or cardio set: its time and distance in Reps, as saved; not typed over here.
+    const timed = isTimedRow(r);
     return {
       key: String(i),
       index: i,
       mark,
       type: r.type,
       typeText: SET_TYPE_LABEL[r.type],
-      reps: r.reps,
-      repsText: r.repsMax === undefined ? String(r.reps) : `${String(r.reps)}–${String(r.repsMax)}`,
+      reps: timed ? null : r.reps,
+      repsText: timed ? timedText(r) : r.repsMax === undefined ? String(r.reps) : `${String(r.reps)}–${String(r.repsMax)}`,
       kgText,
       load: r.load,
       rpeText: r.rpe === null ? '–' : trim(r.rpe),
       rpe: r.rpe,
       done: false,
-      editable: true,
+      editable: !timed,
       noRpe: r.type === 'warmup',
       canDelete: r.type === 'warmup' || work > 1,
       // The builder keeps sets in type order (warm-ups first): no set drag here.
       canMoveUp: false,
       canMoveDown: false,
       draggable: false,
-      accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[r.type]}, ${r.repsMax === undefined ? String(r.reps) : `${String(r.reps)} to ${String(r.repsMax)}`} reps, ${loadSpoken(r.load, slot.unit, slot.convention)}${r.rpe === null ? '' : `, RPE ${trim(r.rpe)}`}`,
+      accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[r.type]}, ${timed ? timedSpoken(r) : `${r.repsMax === undefined ? String(r.reps) : `${String(r.reps)} to ${String(r.repsMax)}`} reps`}, ${loadSpoken(r.load, slot.unit, slot.convention)}${r.rpe === null ? '' : `, RPE ${trim(r.rpe)}`}`,
       spokenName,
     };
   });
@@ -394,6 +489,38 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
     canSwap: true,
     deleteLabel: WORKOUT_COPY.delete,
     canDeleteExercise: true,
+  };
+}
+
+/** (22 Oct) Where the pop-up's `How to` and `History` go, as the overview's rows had them; null: no link. */
+export interface PopupLinks {
+  howTo: { catalogueKey: string; name: string } | null;
+  /** This gym's item for the exercise, else a series at this gym (ExerciseProgress). */
+  history: { exerciseId: string; name: string; equipmentId?: string; gymId?: string } | null;
+}
+
+/**
+ * (Rule 9; 22 Oct review) `Add anyway` on a `Not applied` line asks first when what it adds is flagged `May hurt`, as
+ * the Swap and Add sheets do: `Cable fly may hurt` · `Choose another` / `Add anyway`. Null: nothing flagged. Pure.
+ */
+export function addAnywayConfirm(snap: Pick<BuilderSnapshot, 'facts'>, exerciseIds: readonly string[]): ReturnType<typeof swapPainConfirm> {
+  const flagged = exerciseIds.filter((id) => snap.facts[id]?.mayHurt === true).map((id) => snap.facts[id]?.name ?? 'Exercise');
+  return flagged.length === 0 ? null : swapPainConfirm({ name: flagged.join(' and '), mayHurt: true, painLine: null }, 'Add');
+}
+
+/**
+ * The pop-up's links for one slot: `How to` when the exercise has a guide (`howToOf`, the bundled guides), `History`
+ * when Ben has logged it. Pure.
+ */
+export function popupLinks(snap: BuilderSnapshot, slotKey: string, howToOf: (x: { exerciseId: string; exerciseName: string }) => { catalogueKey: string; name: string } | null): PopupLinks {
+  const slot = slotsOf(snap.workout.blocks).find((s) => s.key === slotKey);
+  if (slot === undefined) return { howTo: null, history: null };
+  const f = snap.facts[slot.exerciseId];
+  const name = f?.name ?? 'Exercise';
+  const item = snap.items[slotKey] ?? null;
+  return {
+    howTo: howToOf({ exerciseId: slot.exerciseId, exerciseName: name }),
+    history: f?.hasHistory === true ? { exerciseId: slot.exerciseId, name, ...(item === null ? {} : { equipmentId: item }), ...(snap.gymId === null ? {} : { gymId: snap.gymId }) } : null,
   };
 }
 

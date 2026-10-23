@@ -134,7 +134,7 @@ const crunch = slot('k-crunch', 'crunch', { rows: [{ type: 'working', reps: 10, 
 const pullup = slot('k-pull', 'pullup', { convention: 'assistance', rows: [{ type: 'working', reps: 8, load: 25, rpe: 8 }] });
 
 function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): BuilderSnapshot {
-  const f = (name: string, works: string | null, group: BuilderSnapshot['facts'][string]['group'], compound = false) => ({ name, works, group, compound, mayHurt: false, notHere: false });
+  const f = (name: string, works: string | null, group: BuilderSnapshot['facts'][string]['group'], compound = false) => ({ name, works, group, compound, mayHurt: false, notHere: false, hasHistory: false });
   return {
     draftId: 'd1',
     version: 3,
@@ -165,6 +165,7 @@ function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): Build
     from: null,
     canSave: false,
     leftOut: [],
+    time: null,
     ...over,
   };
 }
@@ -373,6 +374,10 @@ describe('source checks', () => {
     expect(entry('screens/coach/CoachSheetScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId }, back: 'Back' });");
     expect(entry('screens/library/ExerciseInfoScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: u.routineId }, back: 'Back' });");
     expect(entry('screens/library/PlanDayScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: day.routineId }, back: 'Library' });");
+    // (22 Oct) The plan day's button opens Your workout, so it says `Open <day>`, never `Start <day>`.
+    expect(entry('screens/library/PlanDayScreen.tsx')).toContain('open: (name: string) => `Open ${name}`,');
+    expect(entry('screens/library/PlanDayScreen.tsx')).toContain('label={PLAN_DAY_COPY.open(name)}');
+    expect(entry('screens/library/PlanDayScreen.tsx')).not.toContain('`Start ${name}`');
     expect(entry('screens/routines/WorkoutsScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: row.routineId }, back: 'Library' });");
     expect(entry('screens/routines/WorkoutsScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'session', sourceSessionId: h.sourceSessionId }, back: 'Library' });");
     expect(entry('screens/workout/SummaryScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: savedAs.id }, back: 'Summary' });");

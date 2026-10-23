@@ -81,22 +81,87 @@ describe('plannedAsDraftPlan', () => {
     ]);
   });
 
-  it('leaves out and names what the builder can’t hold: cardio, a timed set, a second copy; a partner left alone is solo', () => {
+  it('(22 Oct) holds cardio, a timed set and a second copy as saved: time and distance with no reps, each copy its own slot; the pair stays a pair', () => {
+    const [ROWER, PLANK, ROW, SKI] = [id(103), id(104), id(105), id(106)];
     const r = convert(
-      [ex(1, 'rower'), ex(2, 'bench', { supersetGroup: 'A' }), ex(3, 'plank', { supersetGroup: 'A' }), ex(4, 'row'), ex(5, 'bench')],
+      [ex(1, ROWER, { loadConvention: 'bodyweight' }), ex(2, BENCH, { supersetGroup: 'A' }), ex(3, PLANK, { supersetGroup: 'A', loadConvention: 'bodyweight' }), ex(4, ROW), ex(5, BENCH), ex(6, SKI, { loadConvention: 'bodyweight' })],
       [
-        set(1, 0, 'working', planned(null, null, { durationS: 600, distanceM: 2000 })),
+        set(1, 0, 'working', planned(null, null, { durationS: 600, distanceM: 2000, rpe: null })),
         set(2, 0, 'working', planned({ value: 60 }, { min: 8, max: 8 })),
         set(3, 0, 'working', planned(null, null, { durationS: 45 })),
+        set(3, 1, 'working', planned(null, null, { durationS: 45 })),
         set(4, 0, 'working', planned({ value: 50 }, { min: 10, max: 10 })),
         set(5, 0, 'working', planned({ value: 50 }, { min: 10, max: 10 })),
+        set(6, 0, 'working', planned(null, null, { distanceM: 1000, rpe: null })),
       ],
-      { holds: (x) => x !== 'rower' },
     );
-    expect(r.leftOut).toEqual(['rower', 'plank', 'bench']);
+    expect(r.leftOut).toEqual([]);
+    expect(DraftPlanSchema.safeParse(r.plan).error?.issues).toBeUndefined();
+    expect(r.plan.slots.map((s) => [s.exerciseId, s.supersetGroup])).toEqual([
+      [ROWER, null],
+      [BENCH, 'A'],
+      [PLANK, 'A'],
+      [ROW, null],
+      [BENCH, null],
+      [SKI, null],
+    ]);
+    const t = (i: number) => r.plan.slots[i]?.setTemplates.map((x) => ({ reps: x.reps, durationS: x.durationS, distanceM: x.distanceM }));
+    expect(t(0)).toEqual([{ reps: null, durationS: 600, distanceM: 2000 }]);
+    expect(t(2)).toEqual([
+      { reps: null, durationS: 45, distanceM: undefined },
+      { reps: null, durationS: 45, distanceM: undefined },
+    ]);
+    expect(t(5)).toEqual([{ reps: null, durationS: null, distanceM: 1000 }]);
+    // Two copies of bench: two slots, each with its own sets and key.
+    expect(r.plan.slots.filter((s) => s.exerciseId === BENCH).map((s) => s.slotKey)).toEqual([id(9001), id(9004)]);
+    // Read back: the rows keep their time and distance (no reps target), so a re-encode stores them as saved.
+    const w = fromDraftPlan(r.plan);
+    const rows = slotsOf(w.blocks).map((s) => s.rows.map((x) => [x.durationS, x.distanceM]));
+    expect(rows[0]).toEqual([[600, 2000]]);
+    expect(rows[2]).toEqual([
+      [45, undefined],
+      [45, undefined],
+    ]);
+    expect(rows[5]).toEqual([[undefined, 1000]]);
+  });
+
+  it('still leaves out and names what it can’t hold: an exercise it doesn’t know, a set with no target; a partner left alone is solo', () => {
+    const r = convert(
+      [ex(1, 'gone'), ex(2, 'bench', { supersetGroup: 'A' }), ex(3, 'mystery', { supersetGroup: 'A' }), ex(4, 'row')],
+      [
+        set(1, 0, 'working', planned({ value: 10 }, { min: 8, max: 8 })),
+        set(2, 0, 'working', planned({ value: 60 }, { min: 8, max: 8 })),
+        set(3, 0, 'working', planned(null, null)),
+        set(4, 0, 'working', planned({ value: 50 }, { min: 10, max: 10 })),
+      ],
+      { holds: (x) => x !== 'gone' },
+    );
+    expect(r.leftOut).toEqual(['gone', 'mystery']);
     expect(r.plan.slots.map((s) => [s.exerciseId, s.supersetGroup])).toEqual([
       ['bench', null],
       ['row', null],
+    ]);
+  });
+
+  it('(22 Oct review) a set with both reps and a time or distance is left out and named, not opened as reps only', () => {
+    const r = convert(
+      [ex(1, BENCH), ex(2, 'carry')],
+      [set(1, 0, 'working', planned({ value: 60 }, { min: 8, max: 8 })), set(2, 0, 'working', planned({ value: 24 }, { min: 10, max: 10 }, { durationS: 30 })), set(2, 1, 'working', planned({ value: 24 }, { min: 10, max: 10 }, { distanceM: 40 }))],
+    );
+    expect(r.leftOut).toEqual(['carry']);
+    expect(r.plan.slots.map((x) => x.exerciseId)).toEqual([BENCH]);
+  });
+
+  it('(22 Oct review) the main lift listed twice: only its first copy is the main slot (one main row, as saved)', () => {
+    const r = convert(
+      [ex(1, BENCH), ex(2, BENCH), ex(3, SQUAT)],
+      [set(1, 0, 'working', planned({ value: 80 }, { min: 3, max: 3 })), set(2, 0, 'working', planned({ value: 50 }, { min: 10, max: 10 })), set(3, 0, 'working', planned({ value: 100 }, { min: 5, max: 5 }))],
+      { main: BENCH },
+    );
+    expect(r.plan.slots.map((x) => [x.exerciseId, x.main])).toEqual([
+      [BENCH, true],
+      [BENCH, false],
+      [SQUAT, false],
     ]);
   });
 

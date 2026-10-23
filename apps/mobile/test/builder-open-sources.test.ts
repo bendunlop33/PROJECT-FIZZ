@@ -5,7 +5,7 @@ import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import type { LoadConvention, Routine, RoutineExercise, SessionAggregate } from '@fizz/schemas';
 
 import type { BuilderSnapshot, BuilderWriteResult } from '../src/builder/builder-service';
-import { popupView } from '../src/builder/builder-view';
+import { popupView, workoutView } from '../src/builder/builder-view';
 import type { AppServices } from '../src/services/app-services';
 import { initialAddShape } from '../src/workout/exercise-info-view';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
@@ -88,7 +88,7 @@ describe('B1: a library workout opens as saved, not rebuilt', () => {
     expect(a?.session.routineId).toBe(five.id);
   });
 
-  it('Fixed loads stand; cardio, a timed set and a second copy are left out and named; a workout of only cardio says so', async () => {
+  it('(22 Oct) Fixed loads stand; cardio, a timed set and a second copy show on Your workout and Start creates them exactly as saved; a workout of only a timed set opens too', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const push = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 8 }] }]);
@@ -113,28 +113,71 @@ describe('B1: a library workout opens as saved, not rebuilt', () => {
       expect((await s.library.addToWorkout({ exerciseId, shape, to: { kind: 'routine', routineId: made.routine.id, expectedVersion: version }, opId })).ok).toBe(true);
       version += 1;
     };
-    await addTo(catalogueExerciseId('bodyweight-plank'), { workingSets: 1, warmups: 0, reps: null, durationS: 45, effort: { scale: 'rpe', value: null }, repsTouched: true }, 'add-plank');
+    await addTo(catalogueExerciseId('bodyweight-plank'), { workingSets: 2, warmups: 0, reps: null, durationS: 45, effort: { scale: 'rpe', value: null }, repsTouched: true }, 'add-plank');
     const bike = { movementPattern: 'conditioning' as const, measurement: 'cardio' as const, defaultLoadConvention: 'bodyweight' as const, compatibleEquipment: ['erg' as const] };
     await addTo(catalogueExerciseId('exercise-bike'), { ...initialAddShape(defaultSlotShape(bike), null, 'cardio'), durationS: 1200, distanceM: 5000, repsTouched: true }, 'add-bike');
     const plank = (await s.routines.editor({ routineId: made.routine.id, gymId: null }))?.routine?.exercises.find((e) => e.setTemplates.some((t) => t.targetDurationS === 45))?.exerciseId ?? '';
     expect(plank).not.toBe('');
 
     const snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: made.routine.id }, 'open-fixed'));
-    expect(names(snap)).toEqual(['Bench press']);
-    expect(rowsOf(snap, 'Bench press').filter((r) => r.type !== 'warmup').map((r) => [r.reps, r.load])).toEqual([[5, 42.5]]);
-    expect(snap.leftOut).toHaveLength(3);
-    expect(snap.leftOut).toContain('Plank');
-    expect(snap.leftOut.filter((n) => n === 'Bench press')).toHaveLength(1);
-    expect(await s.builder.whyWeight(snap.draftId, slotsOf(snap.workout.blocks)[0]?.key ?? '')).toContain('Saved workout');
-    const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-fixed', expectedVersion: snap.version, checkIn: null });
-    if (!started.ok) throw new Error(started.message);
-    startedAsShown(snap, (await s.workout.load(started.sessionId))?.aggregate);
-    await s.workout.dispatch(started.sessionId, { type: 'discard', at: h.now(), opId: 'discard-fixed', confirmedLoggedSets: 0, expectedVersion: (await s.workout.load(started.sessionId))?.aggregate.session.version ?? 0 }).catch(() => null);
+    expect(names(snap)).toEqual(['Bench press', 'Bench press', 'Plank', 'Exercise bike']);
+    expect(snap.leftOut).toEqual([]);
+    const slots = slotsOf(snap.workout.blocks);
+    expect(slots[0]?.rows.filter((r) => r.type !== 'warmup').map((r) => [r.reps, r.load])).toEqual([[5, 42.5]]);
+    expect(slots[1]?.rows.filter((r) => r.type !== 'warmup').map((r) => r.reps)).toEqual([5]);
+    expect(slots[0]?.key).not.toBe(slots[1]?.key);
+    expect(rowsOf(snap, 'Plank').map((r) => [r.durationS, r.distanceM])).toEqual([
+      [45, undefined],
+      [45, undefined],
+    ]);
+    expect(rowsOf(snap, 'Exercise bike').map((r) => [r.durationS, r.distanceM])).toEqual([[1200, 5000]]);
+    // The page shows them as the overview did: the time (and distance) where a load would be.
+    const shown = workoutView(snap).rounds.flatMap((r) => r.rows);
+    expect(shown.map((r) => r.topText.replaceAll('\u00a0', ' '))).toEqual(['42.5', expect.any(String), '0:45', '20:00 · 5,000 m']);
+    expect(shown[2]?.accessibilityLabel).toContain('45 seconds');
+    expect(shown[3]?.accessibilityLabel).toContain('20 minutes, 5 kilometres');
+    // The pop-up shows the time in Reps and doesn't take typing there; no warm-up ramp for a timed set.
+    const plankPop = popupView(snap, slots[2]?.key ?? '', () => 60);
+    expect(plankPop?.rows.map((r) => [r.reps, r.repsText, r.editable])).toEqual([
+      [null, '0:45', false],
+      [null, '0:45', false],
+    ]);
+    expect(plankPop?.canAddWarmup).toBe(false);
+    expect(popupView(snap, slots[3]?.key ?? '', () => 60)?.rows[0]?.repsText.replaceAll('\u00a0', ' ')).toBe('20:00 · 5,000 m');
+    // The estimate counts the ride's 20 minutes.
+    expect(snap.minutes).toBeGreaterThanOrEqual(22);
+    expect(await s.builder.whyWeight(snap.draftId, slots[0]?.key ?? '')).toContain('Saved workout');
+    // A ride has no load: its time is the saved workout's, never `Start light`.
+    expect(await s.builder.whyWeight(snap.draftId, slots[3]?.key ?? '')).toEqual(['Saved workout']);
 
-    // Only cardio: honest, not `wasn't found`.
-    const rideOnly = await s.routines.create({ edit: { name: 'Ride', exercises: [slot(plank, 0, { targetReps: null, targetDurationS: 60 })] }, opId: 'new-ride' });
-    if (!rideOnly.ok) throw new Error(rideOnly.message);
-    expect(await s.builder.openTarget({ kind: 'routine', routineId: rideOnly.routine.id }, 'open-ride')).toMatchObject({ status: 'closed', message: 'Can’t open this workout here yet.' });
+    // An edit elsewhere on the page re-encodes every slot: the timed and cardio sets stay as saved.
+    const edited = opened(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: slots[1]?.key ?? '' }, { opId: 'edit-copy', basis: { version: snap.version } }));
+    expect(rowsOf(edited, 'Exercise bike').map((r) => [r.durationS, r.distanceM])).toEqual([[1200, 5000]]);
+    expect(slotsOf(edited.workout.blocks).map((x) => x.rows.filter((r) => r.type !== 'warmup').length)).toEqual([1, 2, 2, 1]);
+
+    const started = await s.builder.start(edited.draftId, { choice: { kind: 'today' }, opId: 'start-fixed', expectedVersion: edited.version, checkIn: null });
+    if (!started.ok) throw new Error(started.message);
+    const a = (await s.workout.load(started.sessionId))?.aggregate;
+    const rowsIn = (order: number) => {
+      const ex = [...(a?.exercises ?? [])].filter((e) => e.removed === undefined).sort((x, y) => x.order - y.order)[order];
+      return { exerciseId: ex?.exerciseId, sets: [...(a?.sets.filter((x) => x.sessionExerciseId === ex?.id && x.setType !== 'warmup') ?? [])].sort((x, y) => x.index - y.index) };
+    };
+    expect([0, 1, 2, 3].map((i) => rowsIn(i).exerciseId)).toEqual([bench, bench, plank, catalogueExerciseId('exercise-bike')]);
+    expect(rowsIn(0).sets.map((x) => [x.planned.reps, x.planned.load?.value ?? null])).toEqual([[{ min: 5, max: 5 }, 42.5]]);
+    expect(rowsIn(1).sets).toHaveLength(2);
+    expect(rowsIn(2).sets.map((x) => [x.planned.reps, x.planned.durationS])).toEqual([
+      [null, 45],
+      [null, 45],
+    ]);
+    expect(rowsIn(3).sets.map((x) => [x.planned.reps, x.planned.durationS, x.planned.distanceM])).toEqual([[null, 1200, 5000]]);
+    await s.workout.dispatch(started.sessionId, { type: 'discard', at: h.now(), opId: 'discard-fixed', confirmedLoggedSets: 0, expectedVersion: a?.session.version ?? 0 }).catch(() => null);
+
+    // Only a timed set: it opens (no `Can’t open`) and starts as saved.
+    const plankOnly = await s.routines.create({ edit: { name: 'Plank', exercises: [slot(plank, 0, { targetReps: null, targetDurationS: 60 })] }, opId: 'new-plank' });
+    if (!plankOnly.ok) throw new Error(plankOnly.message);
+    const only = opened(await s.builder.openTarget({ kind: 'routine', routineId: plankOnly.routine.id }, 'open-plank'));
+    expect(names(only)).toEqual(['Plank']);
+    expect(rowsOf(only, 'Plank').map((r) => r.durationS)).toEqual([60]);
   });
 });
 

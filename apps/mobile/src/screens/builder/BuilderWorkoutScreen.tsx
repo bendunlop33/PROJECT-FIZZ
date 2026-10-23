@@ -12,7 +12,8 @@ import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWr
 import { reviewAfterApply } from '../../builder/review';
 import { UPDATE_PLAN_DAY_ACTION } from '../../coach/builder-review-provider';
 import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type ProposalState } from '../../coach/builder-coach-view';
-import { editsFromText, promptView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
+import { addAnywayConfirm, editsFromText, popupLinks, promptView, TIME_COPY, workoutView, WORKOUT_COPY, type TimeRowView, type WorkoutRowView } from '../../builder/builder-view';
+import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
 import { builderPage, openStartedWorkout, popToToday } from '../../navigation/actions';
@@ -24,6 +25,7 @@ import { AppText, BottomCard, CheckInScale, PrimaryButton, SecondaryButton, Stat
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { saveScore, scoreStepOf } from '../../workout/check-in-score';
 import { CoachAskBar } from '../../ui/coach-ask-bar';
+import { TimeStepper } from '../../ui/time-stepper';
 import { createOnDeviceSpeech } from '../../voice/on-device-speech';
 import { SwipeRow } from './BuilderParts';
 import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
@@ -83,6 +85,8 @@ export function BuilderWorkoutScreen() {
   const [startBusy, setStartBusy] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [review, setReview] = useState<BuilderReview | null>(null);
+  // (22 Oct) The detail behind the Time note: what the fit changed, and its Undo.
+  const [timeDetail, setTimeDetail] = useState(false);
   // Coach review's `Update plan day` (§2.9): the §2.8 choice with no Start; its Undo is the plan change's inverse.
   const [planOnly, setPlanOnly] = useState(false);
   const planUndo = useRef<PlanChangeUndo | null>(null);
@@ -227,6 +231,26 @@ export function BuilderWorkoutScreen() {
       const cur = snapRef.current;
       if (cur === null) return;
       const r = await services.builder.undo(cur.draftId, opId, newUuid());
+      if (r.snapshot !== null) setSnap(r.snapshot);
+      if (r.status === 'written') changed();
+      else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
+    });
+  }
+
+  /**
+   * (22 Oct, Ben: "add option to reduce time") Time: the service fits today's draft to the new length (the same
+   * built-in fit as Today's; offline, no coach call). Steps run one at a time on the latest snapshot, so quick taps
+   * add up: `dir` steps from the length now (the view's next length down or up, none at a limit); `to` is the
+   * detail's Undo (back to the length before the first change).
+   */
+  function setTime(step: { dir: -1 | 1 } | { to: number }): Promise<void> {
+    return inTurn(async () => {
+      const cur = snapRef.current;
+      if (cur === null) return;
+      const t = workoutView(cur).time;
+      const to = 'to' in step ? step.to : step.dir < 0 ? t.less : t.more;
+      if (to === null) return;
+      const r = await services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version });
       if (r.snapshot !== null) setSnap(r.snapshot);
       if (r.status === 'written') changed();
       else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
@@ -581,6 +605,10 @@ export function BuilderWorkoutScreen() {
   };
 
   const popupSlot = popup;
+  // (22 Oct) The pop-up's `How to` and `History`, where the overview's rows had them; the sheet closes first.
+  const links = popupSlot === null ? null : popupLinks(snap, popupSlot, (x) => howToRouteFor(x, bundledHowToSources()));
+  const howTo = links?.howTo ?? null;
+  const history = links?.history ?? null;
   return (
     <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
       <View style={{ flex: 1 }}>
@@ -605,6 +633,13 @@ export function BuilderWorkoutScreen() {
               {v.overLine}
             </AppText>
           ) : null}
+          <TimeRow
+            view={v.time}
+            onStep={(d) => void setTime({ dir: d })}
+            onNote={() => {
+              setTimeDetail(true);
+            }}
+          />
         </View>
         <ScrollArea scrollEnabled={!dragging}>
           {earlier.map((e) => (
@@ -646,7 +681,19 @@ export function BuilderWorkoutScreen() {
                       <TextButton
                         label={WORKOUT_COPY.addAnyway}
                         onPress={() => {
-                          for (const id of l.add) void edit({ kind: 'add_exercise', exerciseId: id });
+                          const add = () => {
+                            for (const id of l.add) void edit({ kind: 'add_exercise', exerciseId: id });
+                          };
+                          // Rule 9: a flagged exercise asks first, as the Swap and Add sheets do.
+                          const c = addAnywayConfirm(snap, l.add);
+                          if (c === null) {
+                            add();
+                            return;
+                          }
+                          Alert.alert(c.title, c.message ?? undefined, [
+                            { text: c.cancel, style: 'cancel' },
+                            { text: c.confirm, onPress: add },
+                          ]);
                         }}
                       />
                     ),
@@ -654,7 +701,7 @@ export function BuilderWorkoutScreen() {
                 : {})}
             />
           ))}
-          {/* Review B1: what this workout has that Your workout can't hold (cardio, timed sets, a second copy) is named, never dropped silently. */}
+          {/* Review B1: what this workout has that Your workout can't hold (an exercise it can't find, past its limits) is named, never dropped silently; cardio, timed sets and a second copy show as saved (22 Oct). */}
           {snap.leftOut.length > 0 ? (
             <StatusLine
               icon="info.circle"
@@ -756,6 +803,22 @@ export function BuilderWorkoutScreen() {
         onClose={() => { setPopup(null); }}
         why={(k) => services.builder.whyWeight(snap.draftId, k)}
         kgStep={kgStep}
+        onHowTo={
+          howTo === null
+            ? undefined
+            : () => {
+                setPopup(null);
+                navigation.navigate('HowTo', howTo);
+              }
+        }
+        onHistory={
+          history === null
+            ? undefined
+            : () => {
+                setPopup(null);
+                navigation.navigate('ExerciseProgress', history);
+              }
+        }
         toast={toastNode}
       />
       <SwapSheet
@@ -783,6 +846,43 @@ export function BuilderWorkoutScreen() {
           setPlanOnly(false);
         }}
       />
+      <BottomCard
+        visible={timeDetail && v.time.note !== null}
+        onClose={() => {
+          setTimeDetail(false);
+        }}
+        footer={
+          <PrimaryButton
+            label={TIME_COPY.done}
+            onPress={() => {
+              setTimeDetail(false);
+            }}
+          />
+        }
+      >
+        <AppText variant="title2" accessibilityRole="header" numeric>
+          {`${TIME_COPY.label} · ${v.time.valueText}`}
+        </AppText>
+        {v.time.lines.map((l, i) => (
+          // An exercise listed twice can give the same line twice: keyed by place.
+          <AppText key={`${String(i)}:${l}`} variant="body" numeric>
+            {l}
+          </AppText>
+        ))}
+        {v.time.undoMinutes !== null ? (
+          <View style={{ alignSelf: 'flex-start' }}>
+            <TextButton
+              label={TIME_COPY.undo}
+              accessibilityLabel={`Undo, back to ${String(v.time.undoMinutes)} minutes`}
+              onPress={() => {
+                const back = v.time.undoMinutes;
+                setTimeDetail(false);
+                if (back !== null) void setTime({ to: back });
+              }}
+            />
+          </View>
+        ) : null}
+      </BottomCard>
       {alertsAsk.sheet}
       {save.sheet}
       <BottomCard visible={checkInSheet !== null} onClose={() => { setCheckInSheet(null); }}>
@@ -840,6 +940,34 @@ export function BuilderWorkoutScreen() {
         }}
         onClose={() => { setReview(null); }}
       />
+    </View>
+  );
+}
+
+/**
+ * (22 Oct) `Time · −1 exercise ›   [−] 45 min [+]`: the same stepper as Today's; the note after the label (light
+ * orange) is the biggest change a live fit made, and a tap opens everything it changed with its Undo.
+ */
+function TimeRow({ view, onStep, onNote }: { view: TimeRowView; onStep: (d: -1 | 1) => void; onNote: () => void }) {
+  const theme = useTheme();
+  const label = (
+    <AppText variant="callout" color="text.secondary">
+      {TIME_COPY.label}
+    </AppText>
+  );
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 44, flexWrap: 'wrap' }}>
+      {view.note === null ? (
+        label
+      ) : (
+        <Pressable accessibilityRole="button" accessibilityLabel={view.noteLabel ?? view.note} onPress={onNote} style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', flexShrink: 1, opacity: pressed ? 0.7 : 1 })}>
+          {label}
+          <AppText variant="callout" color="status.warning" numeric style={{ flexShrink: 1 }}>
+            {` · ${view.note} ›`}
+          </AppText>
+        </Pressable>
+      )}
+      <TimeStepper minutes={view.minutes} onStep={onStep} />
     </View>
   );
 }

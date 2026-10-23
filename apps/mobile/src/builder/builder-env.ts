@@ -13,6 +13,7 @@ import {
   ruleAnchorOf,
   ruleCategory,
   lastSessionE1rm,
+  mayHurtConfirm,
   stableStringify,
   deriveId,
   toMs,
@@ -56,6 +57,8 @@ export interface BuilderEnv {
   painFlagged: (exerciseId: string) => boolean;
   /** The pain that holds a movement (`shoulder flagged 6 Oct`), else null (rule 9; the coach's checks name it). */
   painText: (exerciseId: string) => string | null;
+  /** (Rule 9) The `May hurt` confirm's line for a flagged exercise (`Shoulder pain flagged 6 Oct.`), else null. */
+  painLine: (exerciseId: string) => string | null;
   /** The load references read for an exercise (its loads were worked out from them); null when none were read. */
   refsOf: (exerciseId: string) => LoadReferences | null;
   /** This gym has what the exercise needs (`Not at this gym` otherwise, §2.3). */
@@ -64,6 +67,8 @@ export interface BuilderEnv {
   itemNameOf: (exerciseId: string) => string | null;
   /** The last comparable session's top working set, in the slot's unit (for `Why this weight?`). */
   lastTopOf: (exerciseId: string) => { value: number; reps: number } | null;
+  /** (22 Oct) Ben has logged this exercise (the pop-up's `History` link); false for one not read up front. */
+  hasHistory: (exerciseId: string) => boolean;
   /** Exercises of a group this gym has, best first (Ben's history, then the catalogue), pain-flagged ones included (Swap shows `May hurt`). */
   candidates: (group: BuilderGroup) => readonly string[];
   /** Compound lifts whose builder group is one of these (Main lift on a Custom day, §2.2). */
@@ -285,6 +290,10 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       },
       painFlagged,
       painText: (id) => painHoldFor(id, flags, { active: false }, nowMs, at.tz)?.text ?? null,
+      painLine: (id) => {
+        const covering = painFlagCovering(flags, id, nowMs, at.tz);
+        return covering === null ? null : mayHurtConfirm({ ...covering.flag, exerciseName: byId.get(id)?.name ?? covering.flag.exerciseName }).message;
+      },
       refsOf: (id) => refsCache.get(id) ?? null,
       doable: (id) => {
         const e = byId.get(id);
@@ -295,6 +304,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         return eq === null ? null : eq.name;
       },
       lastTopOf: (id) => lastTop.get(id) ?? null,
+      hasHistory: (id) => (histories.get(id)?.length ?? 0) > 0,
       candidates,
       compoundsOf: (groups) =>
         [...byId.values()]

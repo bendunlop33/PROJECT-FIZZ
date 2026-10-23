@@ -8,7 +8,7 @@ import { Eyebrow, StatusLine } from './layout';
 import { BottomCard } from './sheet';
 import { AppText } from './Text';
 import { POPUP_COPY } from './exercise-popup-model';
-import type { ChoiceSection } from './swap-sheet-model';
+import { swapPainConfirm, type ChoiceSection } from './swap-sheet-model';
 import { ChoiceRow, Divider, Table } from './table-parts';
 
 /**
@@ -31,7 +31,7 @@ export function SwapSheet({
   group: BuilderGroup;
   groups: readonly BuilderGroup[];
   sections: readonly ChoiceSection[];
-  /** `Swap` or `Add` (the `May hurt` confirm's button). */
+  /** `Swap` or `Add` (the `May hurt` confirm's `Swap anyway` / `Add anyway`). */
   actionWord: string;
   onGroup: (g: BuilderGroup) => void;
   onPick: (exerciseId: string) => void;
@@ -67,14 +67,16 @@ export function SwapSheet({
                   line={it.works}
                   tag={it.mayHurt ? POPUP_COPY.mayHurt : null}
                   onPress={() => {
-                    if (!it.mayHurt) {
+                    // Rule 9: a flagged exercise asks first; `Choose another` keeps the sheet open and changes nothing.
+                    const c = swapPainConfirm(it, actionWord);
+                    if (c === null) {
                       onPick(it.exerciseId);
                       return;
                     }
-                    Alert.alert(POPUP_COPY.mayHurt, it.name, [
-                      { text: 'Cancel', style: 'cancel' },
+                    Alert.alert(c.title, c.message ?? undefined, [
+                      { text: c.cancel, style: 'cancel' },
                       {
-                        text: actionWord,
+                        text: c.confirm,
                         onPress: () => {
                           onPick(it.exerciseId);
                         },

@@ -292,7 +292,7 @@ Unchanged: Resume card, stale card, check-in line, pain check line, banners, che
 | Coach sheet, a saved workout | Your workout, that workout (`‹ Back`) | [Ben, 22 Oct] |
 | Library › Workouts, a workout row | Your workout, that workout (`‹ Library`) | [Ben, 22 Oct] |
 | Library › Workouts › History, a past workout (do again) | Your workout, that workout as done (`‹ Library`) | [Ben, 22 Oct] |
-| Library › plan day, `Start <name>` | Your workout, that day (`‹ Library`) | [Ben, 22 Oct]. [Proposal] Rename to `Open <name>`: the button says Start but doesn't start |
+| Library › plan day, `Open <name>` | Your workout, that day (`‹ Library`) | [Ben, 22 Oct]. Renamed from `Start <name>` (the button opens Your workout; Start is there) (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation) |
 | Exercise detail, `Used in` row | Your workout, that workout (`‹ Back`) | [Ben, 22 Oct] |
 | Summary, `Saved · <name> ›` | Your workout, the saved workout (`‹ Summary`) | [Ben, 22 Oct] |
 | Up next with no plan (`next` target) | Your workout, the routine or last workout's next session. Built in the service; no screen uses it yet | [Ben, 22 Oct] |
@@ -300,6 +300,8 @@ Unchanged: Resume card, stale card, check-in line, pain check line, banners, che
 | Resuming a workout in progress | **Never** the builder (unchanged) | — |
 
 **Your workout is the only pre-start page (Ben, 22 Oct).** The Workout overview (`WorkoutOverviewScreen`, route `WorkoutOverview`) is retired. Every row above that opens a workout before Start opens Your workout. Its gym chip, `done by` time, `↑ UP` / `SAME` / `↑ REPS` arrows and `after …` header are not carried over. Loads are still rounded to the gym and capped at a machine's max, with nothing shown (rule 4). See CHANGELOG 2026-10-22 and `docs/reviews/retire-workout-overview.md`.
+
+**What the overview had that Your workout now has too.** A Time control to shorten the workout before Start (§2.3; Ben, 22 Oct: "add option to reduce time"). Also built, relayed by the PM as Ben's decisions on 22 Oct and **pending Ben's confirmation**: cardio, timed sets and the same exercise twice show and start exactly as the saved workout has them (no `N left out` for them; §2.3); `How to` and `History` in the exercise pop-up (§2.4); the `May hurt` confirm before a swap or `Add anyway` (§2.5); the plan-day button renamed `Open <name>` (§2.1).
 
 [Ben, 20 Oct] Today's session card keeps a one-tap `Start`; tapping the card expands it; `Edit` opens the builder (§2.0). Active `From last review` notes are already applied in the draft (§2.0.3), so a one-tap Start never skips them.
 
@@ -352,6 +354,7 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 ┌──────────────────────────────────────────┐
 │ ‹ Set up                                 │
 │ Chest · about 58 min                     │
+│ Time · −1 exercise ›     [−] 45 min [+]  │  22 Oct: note only with a live fit
 │ FROM LAST REVIEW                         │
 │ │ Include abs                       ✕ │  │
 │     Exercise              Sets  Top set  │
@@ -376,6 +379,10 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 ```
 
 - Title `<Day> · about N min` (§3.6). Numbered rounds 1, 2, 3; a superset is one box lettered `a, b, c` with a connecting line. Columns `Exercise | Sets | Top set (kg)` [Ben].
+- **Time (Ben, 22 Oct: "add option to reduce time").** Under the title, the same `[−] 45 min [+]` stepper as Today's card (5-min steps, 15–180). Each step fits **today's draft only** with Today's built-in fit (`fitToMinutes`, shrink only; no coach call, works offline): shorter rests first, then accessory sets (never below 2), then whole exercises (abs and exercises with no builder group first, compounds last), never the main lift. No superset is made (Supersets off is a hard rule, design review V14), no effort is pushed and kept sets keep their own RPE, and no load changes. Every step fits from the workout as it was before the first Time change, so more time brings back what it cut, up to that workout and never more; Ben's edits made after a fit stay. With a live fit a short note follows the label in light orange: the biggest change (`−1 exercise`, else `−2 sets`, else `shorter rests`); a tap shows everything it changed (`Shorter rests`, `Incline DB press 3 → 2 sets`, `Dropped Triceps pushdown`) and `Undo`, which puts that workout back in one step (at the length before the first Time change). Start creates the fitted workout; the saved workout and the plan never change: on a plan day the Start prompt and `Update … in your plan` ignore the cuts and keep the plan day's own length (the length before the first Time change), never Time's. Built 22 Oct; how this differs from fit-to-time.md's 22 Oct revision is listed there.
+  - **After a fit [Proposal; review fixes 22 Oct, not Ben's decisions].** `Undo` goes back to the length before the first Time change. An exercise Ben edits after the fit trimmed it (an RPE, a rep) keeps his version at every shorter length: less time never gives it sets back or makes it longer, and nothing else is cut harder to pay for it. What the fit took from it stays in the detail (`Lateral raise 4 → 2 sets`) and comes back at the length before the first Time change, or with `Undo`, never past the original count (re-review R1, 22 Oct). An exercise the fit left out that Ben adds back himself doesn't come back a second time and drops out of the detail. `‹ Set up` with Length left as shown merges the change into the workout and fits it to Time again (note and Undo stay); a new Length there is the set-up's length and ends Time. A new Day or Main lift with Length left as shown builds at the set-up's own length and fits it to Time again, so more time brings the work back (re-review N10, 22 Oct). `Gym changed` moves the workout and fits it to Time again at the new gym (its Undo puts the old gym and the fit back); the exercises it swaps in for ones the gym lacks aren't Ben's edits, so Time can still trim or leave them out (re-review R2, 22 Oct). An applied coach version keeps shortened rests with their note and Undo (`shorter rests`); if it sets its own length while Time is in use, `Update … in your plan` still saves the set-up's length from before Time (Time and the coach's version are today-only; part of SP2, pending Ben; re-review N11). `Reload` starts again without a fit. A past workout opened with `do again` protects the main lift the WL9 rule picks (fit-to-time §4.2).
+  - **Open, pending Ben (re-review 22 Oct).** A draft from Today's `Edit`: Your workout's Time works on the draft as Today committed it (less time cuts it; `Undo` and more time bring back Today's version, never the plan day's full workout; SP6). A workout already over its length: `⚠ Over` shows whenever the estimate passes Time, but stepping back up to the length it opened at gives back the over-length workout, not a fit to that length (S2).
+- **Cardio, timed sets and an exercise twice (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation).** A library or past workout opens with them as saved: a timed or cardio set shows its time (and distance) where the top set would be (`0:45`, `20:00 · 5,000 m`) and counts its time in the estimate; each copy of an exercise listed twice is its own row. Start creates them exactly as saved. Their sets aren't typed over, retyped, ramped or given drops here (set count, delete, move, swap and remove still work). `N left out` now covers only an exercise the app can't find, a set with no target, a set with both reps and a time or distance, or a workout past the builder's limits.
 - Units [Proposal]: the header carries Ben's unit once. A row whose equipment uses the other unit shows it inline (`45 lb`). Per dumbbell shows `each`, assisted `25 assist`, bodyweight `BW` or `BW+10`, no history `—`.
 - `+N W` under Sets counts warm-ups. Each exercise has a `works` line (`Chest, front delts, triceps`) [Ben].
 - `Top set` is a **target**, never an actual. Loads use tabular numerals.
@@ -451,7 +458,8 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 - Rest per set type, 15 s steps (§3.2). If the exercise has a drop set: row `Before drop` (0:15). In a superset, one row: `After each round`.
 - `Move up` / `Move down` / `Superset with next` (hidden when the next one is the main lift) / `Unlink` (in a superset) [Ben].
 - `Why this weight?` (collapsed, numbers from code only): where the load came from (`Coach target`, `Plan, week 1`, `Last time + 2.5`, `Est. max 127 kg (estimate) · 6 reps @ RPE 8`), plus `Rounded down: 1.25 kg plates` or `Typed by you` when they apply.
-- A saved or past workout's rep range shows as a range in Reps (`3–6`) and Start plans that range; editing that set's reps makes it fixed [Proposal, review R1 22 Oct; pending Ben].
+- A saved or past workout's rep range shows as a range in Reps (`3–6`) and Start plans that range; editing that set's reps makes it fixed [Proposal, review R1 22 Oct; pending Ben (built; the PM relayed approval on 22 Oct, not yet confirmed by Ben)].
+- `How to` and `History` links in the pop-up, where the overview's rows had them (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation): `How to` when the exercise has a guide, `History` when Ben has logged it (that gym's item). The pop-up closes and the guide or the exercise's history opens.
 - `Why this weight?` on a saved or past workout says what the overview said: `Saved workout`, its own rule's line or `Coach target`, plus `Held · pain` and the gym's fit (`Max here`, `Rounded down`) when they apply [Proposal, review R3 22 Oct].
 - Editing: reps or RPE recalculates kg unless Ben typed kg in that set [Ben]. Assisted and weighted-bodyweight lifts keep their kg (no estimated max) [Proposal]. A typed kg rounds **down** to what this gym can load when the field closes; if it moved, the cell shows the new value and `Why?` names the item (rule 4).
 
@@ -470,7 +478,7 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 ```
 
 - The group dropdown defaults to the exercise's group (Add: today's first group). Exercises are grouped by focus (`Upper chest` / `Mid chest`; `Lats` / `Mid-back` / `Rear delts`; `Quads` / `Hamstrings & glutes` / `Calves`; …), each with its `works` line. **No est. 1RM** [Ben].
-- [Proposal] Lists only exercises this gym has. Ones already in the workout are hidden. Pain-flagged ones show `May hurt` and ask to confirm.
+- [Proposal] Lists only exercises this gym has. Ones already in the workout are hidden. Pain-flagged ones show `May hurt` and ask to confirm (rule 9), as the overview did (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation): `Overhead press may hurt` · `Shoulder pain flagged 6 Oct.` · `Choose another` / `Swap anyway` (`Add anyway` when adding). The active workout's Swap sheet uses the same words.
 - Swap keeps the position, superset, set count and set types; loads recalculate. Toast `Swapped · Undo`. Add appends 3 sets; disabled at 10 exercises.
 
 ### 2.6 Coach chat and voice [Ben]
@@ -799,7 +807,7 @@ Reviews are Your data (rule 10): stored as their own records with facts separate
 | workout-builder.md BD19 main-lift insertion | Main lift row on Set up |
 | workout-builder.md BD12 `Save to Workouts` from a draft | Start prompt; `Save to Workouts` stays in `⋯` for non-plan workouts |
 | Backlog H5: `Save as day default`, default workout per day, Supersets review sheet | Removed [Ben]: today-only edits + Start prompt + variations; pairing in the pop-up (drag later) |
-| workout-overview.md (every pre-start entry; Ben, 22 Oct) | Your workout. A library or past workout opens as the overview planned it; what Your workout can't hold is `N left out` (review B1, pending Ben) |
+| workout-overview.md (every pre-start entry; Ben, 22 Oct) | Your workout. A library or past workout opens as the overview planned it, cardio, timed sets and an exercise twice included (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation); `N left out` only for an exercise it can't find, a set with no target or past the limits (review B1). The overview's TIME tile is Your workout's Time row (§2.3) |
 | today.md Up next card, alternatives row, This week / Recent, `Then:` row, Ask pill | Today (v2), §2.0.9 |
 | routines.md editor for plan-day routines | Builder edits templates through the Start prompt; the library editor stays for other workouts [Proposal] |
 | weekly-plan.md / plan Apply making one routine per day | One template per day **per main lift**; variations kept separately |
