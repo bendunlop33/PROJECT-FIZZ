@@ -193,6 +193,34 @@ export interface ExerciseFilters {
 
 export const NO_FILTERS: ExerciseFilters = { muscles: [], movements: [], equipment: [], atGym: false };
 
+/**
+ * (D5, Ben 22–23 Oct) Library › Exercises' muscle chip row: `All` + six broad
+ * groups. Each is its detailed groups (OR). Legs takes Glutes and Arms takes
+ * Forearms here, so no exercise is reachable only under `All`.
+ */
+export const BROAD_MUSCLE_GROUPS = ['Chest', 'Back', 'Shoulders', 'Legs', 'Arms', 'Core'] as const;
+export type BroadMuscleGroup = (typeof BROAD_MUSCLE_GROUPS)[number];
+
+export const BROAD_GROUP_MUSCLES = {
+  Chest: ['Chest'],
+  Back: ['Back'],
+  Shoulders: ['Shoulders'],
+  Legs: ['Quads', 'Hamstrings', 'Glutes', 'Calves'],
+  Arms: ['Biceps', 'Triceps', 'Forearms'],
+  Core: ['Core'],
+} as const satisfies Record<BroadMuscleGroup, readonly MuscleGroup[]>;
+
+/** The filters with the muscle chip set to `group` (null: `All`); the other filters kept. */
+export function withBroadGroup(f: ExerciseFilters, group: BroadMuscleGroup | null): ExerciseFilters {
+  return { ...f, muscles: group === null ? [] : [...BROAD_GROUP_MUSCLES[group]] };
+}
+
+/** The chip that is on: null (`All`) with no muscle filter, or when the muscles aren't exactly one broad group. */
+export function broadGroupOfFilters(f: ExerciseFilters): BroadMuscleGroup | null {
+  const on = new Set<MuscleGroup>(f.muscles);
+  return BROAD_MUSCLE_GROUPS.find((g) => BROAD_GROUP_MUSCLES[g].length === on.size && BROAD_GROUP_MUSCLES[g].every((m) => on.has(m))) ?? null;
+}
+
 /** How many filters are on (for `Clear filters`). `At <gym>` counts. */
 export function activeFilterCount(f: ExerciseFilters): number {
   return f.muscles.length + f.movements.length + f.equipment.length + (f.atGym ? 1 : 0);
