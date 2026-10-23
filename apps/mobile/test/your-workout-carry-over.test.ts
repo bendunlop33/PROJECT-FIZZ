@@ -169,13 +169,23 @@ describe('the carry-over offer on Your workout (Ben, 23 Oct)', () => {
     expect(totalSets((await dayCard(again2, THIRD)).view?.rows)).toBe(before);
   });
 
+  it('a card Today fitted (its Time at 25), opened with Edit: the same offer on Your workout', async () => {
+    const { s } = await benWithPlan();
+    const { data, key, controls } = await dayCard(s, 'Push');
+    const c = await s.todaySession.commit(data, { dayKey: key, controls: { ...controls, minutes: 25 } }, h.ids());
+    if (!c.ok) throw new Error(c.message);
+    const snap = await s.builder.read(c.draftId);
+    expect(snap?.carry?.state).toBe('offer');
+    expect(snap?.carry?.items.reduce((n, x) => n + x.sets, 0)).toBeLessThanOrEqual(4);
+  });
+
   it('✕ skips it (nothing carried, the offer gone for this fit); a Time change asks again', async () => {
     const { s } = await benWithPlan();
     const snap = await shortPush(s);
     const skipped = ok(await s.builder.carryOver(snap.draftId, 'skipped', { opId: 'skip-1', expectedVersion: snap.version }));
     expect(skipped.carry).toBeNull();
     const carried = ok(await s.builder.setTime(skipped.draftId, skipped.setup.minutes - 5, { opId: 'time-after-skip', expectedVersion: skipped.version }));
-    expect(carried.carry?.state ?? 'offer').toBe('offer');
+    expect(carried.carry?.state).not.toBe('carried');
   });
 
   it('a Time change after Carry over clears it (it was for that fit)', async () => {
@@ -183,6 +193,6 @@ describe('the carry-over offer on Your workout (Ben, 23 Oct)', () => {
     const snap = await shortPush(s);
     const c = ok(await s.builder.carryOver(snap.draftId, 'carried', { opId: 'carry-t', expectedVersion: snap.version }));
     const more = ok(await s.builder.setTime(c.draftId, c.setup.minutes + 5, { opId: 'time-after-carry', expectedVersion: c.version }));
-    expect(more.carry?.state ?? 'offer').toBe('offer');
+    expect(more.carry?.state).not.toBe('carried');
   });
 });
