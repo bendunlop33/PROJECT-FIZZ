@@ -206,3 +206,103 @@ Missing:
 - options refreshing after Undo (S1);
 - option parity with Today (S2);
 - the half floor of the `+N min` offer (S5, weakened).
+
+---
+
+## Fixes (23 Oct, builder)
+
+Six commits on `526312b`: `c19d55b`, `c2b6eca`, `4e8c3e9`, `55c5a74`, `60e1c2f`, `146d4f7`. I confirmed each finding with a probe before fixing it. The probes were temporary test files and are deleted. Neither probe the reviewer mentioned (`zz-review-probe.test.ts`) is in the worktree.
+
+### Checks (in `/home/user/wt-todaylean`)
+
+- `npm run typecheck`: exit 0.
+- `npm run lint`: exit 0.
+- `npm run test`: 477 files, 8,845 passed, 2 todo, exit 0.
+
+### Blocking
+
+**B1 (fixed, `c19d55b`).**
+- Confirmed: against a brute-force search on the domain fixture's five day shapes, with Supersets on and off, the old fit kept less training at 133 of 396 fitted minute values. I also prototyped the first fix option, a re-add pass, and it still lost at 106 of 396.
+- Fix: step (c) is now an exact search for the least training lost. It weighs every way of keeping each accessory at 2+ sets or leaving it out, block by block, because the estimate is a sum over blocks.
+  - Ties go to more sets kept, then more of the time used, then the earlier exercises.
+  - The free savings are unchanged: rests first, and pairing only with Supersets on.
+  - The main lift and slots Ben edited are never cut.
+- Result: 0 of 396 lose training against brute force, at about 2 ms per fit on the fixture.
+- Tests:
+  - no dropped exercise (at 2 sets) or cut set can come back and still fit, at every minute of every day shape;
+  - a brute-force comparison;
+  - the review's examples.
+  - Expectations that encoded the greedy order are updated.
+- This is the design track's 23 Oct "least training lost" proposal, so **SP2 still needs Ben**: results are less nested as Time drops (see LOW nested below).
+
+**B2 and the HIGH B2 repro (fixed, `c2b6eca`).**
+- Today's commit now writes the fit record:
+  - `timeFit`: the draft before Time (`TodayDraft.unfitted`), plus what Time dropped, cut and paired (`todayTimeFit`, pure);
+  - `timeFrom` = the plan day's length;
+  - Ben's Supersets choice;
+  - the groups before Time's cuts.
+- What this fixes:
+  - Today Time 20 → Edit shows Time 20 with Today's own note and detail, and Undo goes back to the plan's length.
+  - Time 60 brings back the plan day's full workout. This is SP6 as the PM resolved it.
+  - Start's prompt lists no Time cut. It lists exactly what it lists at the plan's length.
+  - A plan write keeps the plan's length.
+- Your workout's Undo goes back to the length before Time changed it (`timeFrom`), as Today's own Undo does, and is hidden at that length. When a plan day runs longer than its own length, Undo lands on the plan's length and the card is still fitted there, as Today's card is.
+- The SP6 test now asserts the resolved behaviour.
+
+### HIGH and MEDIUM
+
+**Options don't give Today's draft at Time / Main lift drops edits (fixed, `4e8c3e9`).** This follows the §2.3a data model; SP5 stays Ben's to confirm.
+- `todaySession.draftFor` gives Today's own code draft for a key and controls at their Time.
+- `replayTodayEdits` (domain, pure) replays Ben's edits on it:
+  - What he deleted stays deleted. The new `BuilderSetup.todayRemoved` records it on a Today draft, and Undo puts it back.
+  - What he changed, swapped or added carries over as he has it.
+  - Not carried: the old main lift on a new Main lift, and his ab exercises on Abs off.
+- Time's cuts stay Time's: the record is rebuilt from Today's steps.
+- A new Main lift moves the draft to that lift's key. If that lift's draft is already open, it opens instead (unchanged).
+- Toasts: `Accessories: Varied`, `Main lift: Incline`.
+- Tests on real SQLite, offline:
+  - exercises, sets and pairs equal Today's card for Abs on, Varied and Supersets on, at 45 min and at the plan's length;
+  - Undo is exact;
+  - Abs on at Time 20 stays within 20;
+  - a deleted accessory stays deleted through Abs on and off;
+  - Main lift keeps Ben's deletion;
+  - stale and duplicate op IDs;
+  - force-close.
+
+**Supersets switch state (fixed, `c2b6eca`).** Today stores Ben's choice, not whether a pair survived the fit.
+
+**Controls stale after Undo (fixed, `4e8c3e9` + `55c5a74`).** Every write and Undo returns the options' state in the snapshot (`snap.today`). The rows read it through `todayOptionsView`, and only the day's main-lift list is read on focus.
+
+**Abs switch with Ben's own ab exercise (fixed, `4e8c3e9`).** Abs reads the workout with Time's cuts put back, his own ab exercise included. Abs off removes it.
+
+**Layout and the no-plan duplicate (fixed, `55c5a74`, `4e8c3e9`).** The options are the first rows under the title and Time, above the table. `todayOptions` is null for a no-plan Today draft (N3).
+
+**Edited lean card loses Time (fixed, `60e1c2f`).**
+- D3 lists Time as one of the lean card's parts, so an edited card with a plan now keeps the draft's own Time: its note, detail, Undo, and `⚠ Over` when Ben's edits pass Time.
+- A step on the card, or the detail's Undo, is Your workout's Time on that draft. It never cuts his edits (FT5).
+- Unchanged, Ben's call (Q-R7): the `Push · edited` title and `Back to plan`.
+
+### LOW
+
+- **Copy (fixed, `146d4f7`, `4e8c3e9`).** The no-plan `↻ Mix it up` line has no `· today only` (VoiceOver either). The toasts follow the spec.
+- **Stepper range (not changed).** Today and Your workout both use 15–180. The spec has 20–120 on Today (SP4), which needs Ben or the designer.
+- **Nested fits (not changed, Ben's call, SP2).** The exact search is less nested than the greedy one. On the domain Push fixture, 50 → 49 → 48 min alternates between cutting fly and pushdown sets and cutting pull-up and crunch sets. Each is the least training lost at its minute. If Ben prefers stability, the alternative is greedy plus a re-add pass, which stays nested more often but loses training at about 1 in 4 minute values on the fixture.
+
+### Not built (open spec)
+
+- **D9 carry-over offer.** Still only the pure `fitCarryOver`, which returns one group. SP1/SP3 are open: where the offer waits, which day is "next" for arms and abs, the version it is checked against, expiry, and the 23 Oct per-muscle routing. The offer needs those answers before it can be built honestly.
+
+### Merge gate (still stands)
+
+Don't merge ahead of `claude/v3summary-23oct` (D1).
+- Start on an edited card still shows the old `Use these changes for` prompt.
+- It no longer carries Time's cuts, but it still lists every way Today's draft differs from the raw template. Examples on the test plan: `Add Pendlay row` (Accessories Focused) and `Lat pulldown: 3 → 4 sets` (the main lift's builder sets), at any Time.
+- v3summary's `Keep for next time?` should compare against Today's draft for the plan's controls, or it will count Today's own drafting as Ben's structure change.
+
+### Other open points
+
+- **Coach changes across an option change.** A coach version Ben applied (`applyCoachWorkout`, or the pre-session offer) isn't replayed. Only Ben's own edits are. §2.3a keeps an applied offer while its exercise still reads as offered; that belongs with D2 (`v5offers`).
+- **Order and link edits.** Moves and links on slots Ben didn't otherwise change aren't replayed: Today's order and pairs for the new choice stand.
+- **A card Time filled.** When Time is above the plan's length, the filled draft is the draft itself at that length and carries no fit record. Start's old prompt would list the added exercise (merge gate).
+- **S5 (the workout's `+N min` offer).** Not in this batch's list. It now uses the exact cut, so the 8-minute overshoot is gone, but its half-floor assertion is still the weakened one.
+- **Device.** Nothing here needs a native rebuild. I haven't checked the moved option rows or the edited card's Time on the iPhone.
