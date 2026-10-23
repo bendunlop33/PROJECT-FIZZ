@@ -160,6 +160,11 @@ export interface TodayWhyInput {
   nextDayName: string | null;
   /** The day is an Other session (not in the plan). */
   other: boolean;
+  /**
+   * (§2.0.4 No plan) The day is a Profile split day: `Chest: up next` on the day NEXT marks (`longest since trained`
+   * when the split rule picked it), else `Chest: picked by you; Back stays next`.
+   */
+  split?: { due: boolean } | null;
   /** Last time this day was done, with the main lift's top working set (actuals). */
   last: { dateText: string; lift: string; value: string; reps: number; rpe: number | null } | null;
   /** The main lift's top set today (target). */
@@ -183,7 +188,10 @@ const GOAL_WORD = { strength: 'strength', muscle: 'muscle', both: 'strength and 
 /** `Why?` lines: plan position, last session → today's load, goal/target, accessories and time, then the review line. */
 export function todayWhy(input: TodayWhyInput): string[] {
   const lines: string[] = [];
-  if (input.other) lines.push(`${input.dayName}: picked by you${input.nextDayName === null ? '' : `; ${input.nextDayName} stays next`}`);
+  if (input.split != null) {
+    if (input.nextDayName === input.dayName) lines.push(`${input.dayName}: up next${input.split.due ? ' · longest since trained' : ''}`);
+    else lines.push(`${input.dayName}: picked by you${input.nextDayName === null ? '' : `; ${input.nextDayName} stays next`}`);
+  } else if (input.other) lines.push(`${input.dayName}: picked by you${input.nextDayName === null ? '' : `; ${input.nextDayName} stays next`}`);
   else if (input.nextDayName === null) lines.push(`${input.dayName}: picked by you`);
   else if (input.nextDayName === input.dayName) lines.push(`Plan: ${input.dayName} is next`);
   else lines.push(`${input.dayName} picked by you; the plan moves on`);
