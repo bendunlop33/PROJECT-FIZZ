@@ -21,7 +21,7 @@ import {
   stepTodayMinutes,
   TODAY_OTHER_SESSIONS,
   todayBreakdown,
-  todayFitLine,
+  fitNoteOf,
   todayMixLine,
   todayPlanDays,
   todayWhy,
@@ -162,8 +162,10 @@ describe('controls → draft (§2.0.2 controls 1–5)', () => {
     expect(short.minutes).toBeLessThanOrEqual(45);
     const mainOf = (x: typeof base) => x.workout.blocks.flatMap((b) => b.slots).find((s) => s.main);
     expect(mainOf(short)?.rows).toEqual(mainOf(base)?.rows);
-    const line = todayFitLine(short.fit, 45, 60, name);
-    expect(sp(line)).toMatch(/^To fit 45 min: /);
+    // The Time note (fit-to-time 22 Oct revision): the biggest change, rests first in the detail.
+    const note = fitNoteOf(short.fit.steps, name, (k) => name(short.workout.blocks.flatMap((b) => b.slots).find((s) => s.key === k)?.exerciseId ?? ''));
+    expect(note.note).not.toBeNull();
+    expect(note.lines[0]).toMatch(/^(Shorter|Shortest) rests$/);
   });
 
   it('Time steps of 5 within 15–180', () => {
@@ -173,11 +175,11 @@ describe('controls → draft (§2.0.2 controls 1–5)', () => {
     expect(stepTodayMinutes(180, 1)).toBe(180);
   });
 
-  it('Time +: fills beyond the plan (exercises before sets), with a `With N min` line', () => {
+  it('Time +: fills beyond the plan (exercises before sets), with a `+N` note', () => {
     const long = draft({ minutes: 90 }).d;
     const base = draft().d;
     expect(long.exerciseCount + long.workout.blocks.flatMap((b) => b.slots).reduce((n, s) => n + s.rows.length, 0)).toBeGreaterThan(base.exerciseCount + base.workout.blocks.flatMap((b) => b.slots).reduce((n, s) => n + s.rows.length, 0));
-    expect(sp(todayFitLine(long.fit, 90, 60, name))).toMatch(/^With 90 min: /);
+    expect(fitNoteOf(long.fit.steps, name, () => '').note).toMatch(/^\+\d+ (exercise|exercises|set|sets)$/);
   });
 
   it('Abs: off removes the ab exercise; supersets on gives the arm exercise an arm partner (same slot)', () => {
@@ -196,8 +198,8 @@ describe('controls → draft (§2.0.2 controls 1–5)', () => {
     const { d } = draft({ abs: false, supersets: false });
     const arms = ids(d).filter((id) => ['Biceps', 'Triceps'].includes(info(id)?.group ?? ''));
     expect(arms.length).toBeGreaterThanOrEqual(1);
-    const line = todayFitLine(d.fit, 60, 60, name);
-    if (d.fit.steps.some((s) => s.kind === 'add')) expect(line).toContain('in the time freed');
+    const note = fitNoteOf(d.fit.steps, name, () => '');
+    if (d.fit.steps.some((s) => s.kind === 'add')) expect(note.lines.some((l) => l.startsWith('Added '))).toBe(true);
   });
 
   it('Abs on for a day the plan has none: added, last', () => {
@@ -237,7 +239,8 @@ describe('↻ Mix it up (today only)', () => {
     expect(wrap.mix?.toExerciseId).toBe(one.mix?.toExerciseId);
     expect(wrap.mix?.k).toBe(1);
     const line = todayMixLine(one.mix ?? { fromExerciseId: '', toExerciseId: '', k: 0, n: 0 }, name);
-    expect(line.text).toBe(`Cable fly → ${name(one.mix?.toExerciseId ?? '')} · today only`);
+    // No `today only` tag (D1/D3, Ben 22–23 Oct).
+    expect(line.text).toBe(`Cable fly → ${name(one.mix?.toExerciseId ?? '')}`);
     expect(line.another).toBe(`Another (1/${String(n)})`);
     expect(line.notReviewed).toBe(true);
     // Pain-flagged options are never offered.

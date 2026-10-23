@@ -22,8 +22,8 @@ import { makeSlot } from '../src/builder/slot';
  * Your workout's Time control (22 Oct, Ben: "add option to reduce time"; fit-to-time.md 22 Oct revision): Today's
  * built-in fit (`fitToMinutes`, shrink only) on today's draft, fitting every step from the workout as it was before
  * the first change, so more time brings back what it cut, up to the original and never more. Shorter rests first,
- * then accessory sets (not below 2), then whole exercises (abs first, compounds last), never the main lift; no
- * supersets made, no effort pushed, no load changed (kg, per-hand dumbbells, assisted machines alike).
+ * then (Supersets on only) pairs, then the least training lost (sets, never below 2, or whole exercises), never the main
+ * lift; no effort pushed, no load changed (kg, per-hand dumbbells, assisted machines alike).
  */
 
 const ctx = context();
@@ -59,7 +59,7 @@ describe('fitWorkoutToTime', () => {
     expect(r.minutes).toBe(full - 2);
   });
 
-  it('much shorter: sets, then the abs and the other group’s isolation go first; never the main lift; no effort pushed; loads, units and conventions as they were', () => {
+  it('much shorter: the cheapest cuts (22 Oct revision); never the main lift; no effort pushed; loads, units and conventions as they were', () => {
     const r = at(base, full - 20, null, full);
     const fit = r.fit;
     if (fit === null) throw new Error('no fit');
@@ -67,11 +67,10 @@ describe('fitWorkoutToTime', () => {
     const bench = slotsOf(r.workout.blocks).find((s) => s.exerciseId === 'bench');
     expect(bench?.rows).toEqual(slotsOf(base.blocks).find((s) => s.exerciseId === 'bench')?.rows);
     expect(fit.dropped.length).toBeGreaterThan(0);
-    // Abs are the first exercise to go, before any compound.
-    const order = slotsOf(base.blocks);
-    expect(order.find((s) => s.key === fit.dropped[0])?.exerciseId).toBe('crunch');
-    expect(ids(r.workout)).toContain('incline_db');
+    expect(r.minutes).toBe(full - 20);
+    expect(estimateBuilderMinutes(r.workout, ctx)).toBeLessThanOrEqual(full - 20);
     // Accessories never below 2 sets; no RPE pushed; every kept row's load, unit and convention unchanged.
+    const order = slotsOf(base.blocks);
     for (const s of slotsOf(r.workout.blocks)) {
       const was = order.find((x) => x.key === s.key);
       if (was === undefined) throw new Error('new slot');
@@ -83,7 +82,13 @@ describe('fitWorkoutToTime', () => {
         expect(row.reps).toBe(was.rows[i]?.reps);
       });
     }
-    expect(slotsOf(r.workout.blocks).find((s) => s.exerciseId === 'incline_db')?.convention).toBe('per_hand');
+    // A little shorter, the abs (2.5 a set, Ben's choice) go before the compounds; a minute longer, sets go instead
+    // (a fly, a pushdown and a crunch set lose 6, the crunch 7.5: the least training lost).
+    const crunchKey = order.find((s) => s.exerciseId === 'crunch')?.key;
+    expect(at(base, full - 16, null, full).fit?.dropped).toEqual([crunchKey]);
+    expect(at(base, full - 15, null, full).fit?.dropped).toEqual([]);
+    expect(slotsOf(at(base, full - 16, null, full).workout.blocks).find((s) => s.exerciseId === 'assisted_pullup')?.convention).toBe('assistance');
+    expect(slotsOf(at(base, full - 16, null, full).workout.blocks).find((s) => s.exerciseId === 'incline_db')?.convention).toBe('per_hand');
   });
 
   it('no superset is ever made (Supersets off is a hard rule, review V14): pairs only stay or shrink', () => {
@@ -121,14 +126,17 @@ describe('fitWorkoutToTime', () => {
   });
 
   it('Ben’s edits after a fit stay: his set edit, a slot he deleted, a slot he added; only what the fit cut comes back (a set it took from a slot he edited too)', () => {
-    const short = at(base, full - 20, null, full);
+    // 11 minutes shorter: rests, then one crunch set (the least lost when one cut is enough).
+    const short = at(base, full - 11, null, full);
     const fit = short.fit;
     if (fit === null) throw new Error('no fit');
-    const incline = slotsOf(short.workout.blocks).find((s) => s.exerciseId === 'incline_db');
+    const cutKey = Object.keys(fit.cut ?? {})[0] ?? '';
+    const edited = slotsOf(short.workout.blocks).find((s) => s.key === cutKey);
     const pull = slotsOf(short.workout.blocks).find((s) => s.exerciseId === 'assisted_pullup');
-    if (incline === undefined || pull === undefined) throw new Error('missing');
+    if (edited === undefined || pull === undefined) throw new Error('missing');
+    expect(edited.exerciseId).toBe('crunch');
     let w = short.workout;
-    const e1 = applyBuilderEdit(w, { kind: 'edit_row', slotKey: incline.key, index: incline.rows.length - 1, patch: { kind: 'reps', reps: 12 } }, ctx);
+    const e1 = applyBuilderEdit(w, { kind: 'edit_row', slotKey: edited.key, index: edited.rows.length - 1, patch: { kind: 'reps', reps: 12 } }, ctx);
     if (!e1.ok) throw new Error(e1.reason);
     const e2 = applyBuilderEdit(e1.workout, { kind: 'delete_exercise', slotKey: pull.key }, ctx);
     if (!e2.ok) throw new Error(e2.reason);
@@ -139,11 +147,11 @@ describe('fitWorkoutToTime', () => {
     expect(ids(back.workout)).toContain('curl');
     expect(ids(back.workout)).not.toContain('assisted_pullup');
     for (const k of fit.dropped) if (k !== pull.key) expect(slotsOf(back.workout.blocks).some((s) => s.key === k)).toBe(true);
-    const mine = slotsOf(back.workout.blocks).find((s) => s.key === incline.key);
-    const his = slotsOf(e1.workout.blocks).find((s) => s.key === incline.key)?.rows ?? [];
-    const was = slotsOf(base.blocks).find((s) => s.key === incline.key)?.rows ?? [];
+    const mine = slotsOf(back.workout.blocks).find((s) => s.key === edited.key);
+    const his = slotsOf(e1.workout.blocks).find((s) => s.key === edited.key)?.rows ?? [];
+    const was = slotsOf(base.blocks).find((s) => s.key === edited.key)?.rows ?? [];
     // His rows as he left them, then the original's sets the fit took (as they were).
-    expect(fit.cut?.[incline.key] ?? 0).toBeGreaterThan(0);
+    expect(fit.cut?.[edited.key] ?? 0).toBeGreaterThan(0);
     expect(mine?.rows).toEqual([...his, ...was.slice(his.length)]);
     expect(mine?.rows).toHaveLength(was.length);
     expect(back.workout.restLevel).toBe('normal');
@@ -323,18 +331,27 @@ describe('review R1: less time never makes an exercise Ben edited after a fit lo
   });
 });
 
-describe('Time with Supersets on (review R3, V14): Time never pairs exercises', () => {
-  it('singles stay singles and pairs only stay or shrink, at every length, with Supersets on', () => {
+describe('Time with Supersets on (D9, 22 Oct revision): pairs are a free saving only when on', () => {
+  const pairOf = (w: BuilderWorkout) => w.blocks.filter((b) => b.slots.length > 1).map((b) => b.slots.map((s) => s.key));
+  it('Supersets on: singles may be paired before any cut, as builder pairs; Ben’s own pairs only stay or shrink; Supersets off: never', () => {
     const solo: BuilderWorkout = { restLevel: 'normal', blocks: slotsOf(push().blocks).map((s) => ({ slots: [s], auto: false })) };
     const n = estimateBuilderMinutes(solo, ctx);
-    const on = (w: BuilderWorkout, m: number, from: number) => fitWorkoutToTime({ current: w, fit: null, minutes: from, to: m, ctx, mainGroup: 'Chest', supersets: true });
-    for (const m of [n - 2, n - 10, n - 25, 15]) expect(on(solo, m, n).workout.blocks.every((b) => b.slots.length === 1)).toBe(true);
-    const paired = push();
-    const p = estimateBuilderMinutes(paired, ctx);
-    const pairOf = (w: BuilderWorkout) => w.blocks.filter((b) => b.slots.length > 1).map((b) => b.slots.map((s) => s.key));
+    const fitAt = (w: BuilderWorkout, m: number, from: number, supersets: boolean) => fitWorkoutToTime({ current: w, fit: null, minutes: from, to: m, ctx, mainGroup: 'Chest', supersets });
+    for (const m of [n - 2, n - 10, n - 25, 15]) expect(fitAt(solo, m, n, false).workout.blocks.every((b) => b.slots.length === 1)).toBe(true);
+    const on = fitAt(solo, n - 15, n, true);
+    expect(on.fit?.paired?.length ?? 0).toBeGreaterThan(0);
+    for (const b of on.workout.blocks) if (b.slots.length > 1) expect(b.auto).toBe(true);
+    expect(timeFitChanges(on.fit ?? { base: solo, fromMinutes: n, dropped: [] }, on.workout).some((c) => c.kind === 'pair')).toBe(true);
+    // More time takes the pairs apart again: the original exactly.
+    const back = fitWorkoutToTime({ current: on.workout, fit: on.fit, minutes: n, to: n, ctx, mainGroup: 'Chest', supersets: true });
+    expect(back.workout).toEqual(solo);
+    expect(unfitWorkout(on.fit ?? { base: solo, dropped: [] }, on.workout).blocks.every((b) => b.slots.length === 1)).toBe(true);
+    // A workout with Ben's own pair: it stays or shrinks; any new pair is a builder pair.
+    const own: BuilderWorkout = { ...push(), blocks: push().blocks.map((b) => (b.slots.length > 1 ? { ...b, auto: false } : b)) };
+    const p = estimateBuilderMinutes(own, ctx);
     for (const m of [p - 2, p - 10, p - 25, 15]) {
-      const r = on(paired, m, p);
-      for (const pair of pairOf(r.workout)) expect(pairOf(paired)).toContainEqual(pair);
+      const r = fitAt(own, m, p, true);
+      for (const b of r.workout.blocks) if (b.slots.length > 1 && !b.auto) expect(pairOf(own)).toContainEqual(b.slots.map((s) => s.key));
     }
   });
 });
@@ -420,7 +437,7 @@ describe('review N3: an exercise the fit left out that Ben added back himself', 
   it('doesn’t come back a second time, and the detail stops listing it as dropped', () => {
     const base = push();
     const full = estimateBuilderMinutes(base, ctx);
-    const short = at(base, full - 20, null, full);
+    const short = at(base, full - 16, null, full);
     const fit = short.fit;
     const crunchKey = slotsOf(base.blocks).find((s) => s.exerciseId === 'crunch')?.key ?? '';
     if (fit === null || !fit.dropped.includes(crunchKey)) throw new Error('crunch not dropped');
@@ -438,19 +455,21 @@ describe('review N3: an exercise the fit left out that Ben added back himself', 
   });
 });
 
-describe('Today’s card fit is unchanged by Your workout’s Time (22 Oct review)', () => {
-  it('an exercise with no builder group goes first only for Your workout’s Time (`noGroupFirst`); Today’s fit reads it as before', () => {
+describe('one shared fit for Today and Your workout (22 Oct revision, D9)', () => {
+  it('an exercise with no builder group is an extra (1.5 a set): cut first by Today’s fit and Your workout’s Time alike', () => {
     const w: BuilderWorkout = {
       restLevel: 'normal',
       blocks: [slot('bench', { main: true, sets: 4 }), slot('incline_db', { sets: 3 }), slot('cable_fly', { sets: 3 }), slot('pushdown', { sets: 3 }), { ...slot('pushdown', { sets: 3 }), key: 'ride', exerciseId: 'rowing_machine' }].map((x) => ({ slots: [x], auto: false })),
     };
     const n = estimateBuilderMinutes(w, ctx);
-    const today = fitToMinutes(w, ctx, { minutes: n - 20, mainGroup: 'Chest', grow: false, supersets: false });
-    const yours = fitToMinutes(w, ctx, { minutes: n - 20, mainGroup: 'Chest', grow: false, supersets: false, pushEffort: false, noGroupFirst: true });
-    const drops = (r: typeof today) => r.steps.flatMap((x) => (x.kind === 'drop' ? [x.slotKey] : []));
-    expect(drops(yours)[0]).toBe('ride');
-    // Today's card: the no-group exercise is read as the default (an isolation), not first.
-    expect(drops(today)[0]).not.toBe('ride');
+    const today = fitToMinutes(w, ctx, { minutes: n - 16, mainGroup: 'Chest', grow: false, supersets: false });
+    const yours = fitToMinutes(w, ctx, { minutes: n - 16, mainGroup: 'Chest', grow: false, supersets: false, pushEffort: false });
+    expect(yours).toEqual(today);
+    const cuts = today.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop');
+    expect(cuts).toEqual([{ kind: 'drop', slotKey: 'ride', exerciseId: 'rowing_machine' }]);
+    // A little shorter, a set off the ride first.
+    const less = fitToMinutes(w, ctx, { minutes: n - 12, mainGroup: 'Chest', grow: false, supersets: false });
+    expect(less.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop').map((x) => ('slotKey' in x ? x.slotKey : ''))).toEqual(['ride']);
   });
 });
 

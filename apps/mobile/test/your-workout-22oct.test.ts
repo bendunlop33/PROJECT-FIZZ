@@ -427,13 +427,16 @@ describe('Time on Your workout (source): the same control as Today’s; the scre
     const stepper = read('ui/time-stepper.tsx');
     expect(stepper).toContain('accessibilityRole="adjustable"');
     expect(stepper).toContain('TIME_LABELS.less');
-    expect(read('screens/today/TodaySession.tsx')).toContain("import { TimeStepper } from '../../ui/time-stepper';");
+    // One Time row with its note (fit-to-time 22 Oct revision) for Today's card and Your workout.
+    expect(read('screens/today/TodaySession.tsx')).toContain("import { TimeNoteRow } from '../../ui/time-stepper';");
     expect(read('screens/today/TodaySession.tsx')).not.toContain('function TimeStepper(');
+    expect(stepper).toContain('<TimeStepper minutes={minutes} onStep={onStep} />');
+    expect(stepper).toContain('color="status.warning"');
     const page = read('screens/builder/BuilderWorkoutScreen.tsx');
-    expect(page).toContain('<TimeStepper minutes={view.minutes} onStep={onStep} />');
+    expect(page).toContain("import { TimeDetailSheet, TimeNoteRow } from '../../ui/time-stepper';");
+    expect(page).toContain('<TimeNoteRow');
     expect(page).toContain('services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version })');
-    expect(page).toContain('color="status.warning"');
-    expect(page).toContain('if (back !== null) void setTime({ to: back });');
+    expect(page).toContain('onUndo={(back) => void setTime({ to: back })}');
     for (const banned of ['fitToMinutes', 'fitWorkoutToTime', 'unfitWorkout', 'builderCoach.askEdit({ draftId: cur.draftId, words: `']) expect(page).not.toContain(banned);
   });
 });
@@ -465,6 +468,7 @@ describe('the Time row’s view', () => {
     leftOut: [],
     time,
     coachLanded: null,
+    today: null,
   });
 
   it('the note is the biggest change (exercises, else sets, else rests); the detail lists them all; steps stop at 15 and 180', () => {

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
+import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, stepTimeMinutes, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
@@ -21,7 +21,7 @@ import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import { todayActions, todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { followLatestDraft, todayActions, todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
 import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
@@ -33,6 +33,7 @@ import { setTodaySetupDay } from '../builder/coach-ports';
 import type { NudgeResult } from '../coach/builder-coach-service';
 import { nudgeCardView, todayAskFirst, todayAskRoute } from '../coach/builder-coach-view';
 import { CoachAskBar } from '../ui/coach-ask-bar';
+import { TimeDetailSheet } from '../ui/time-stepper';
 import { createOnDeviceSpeech } from '../voice/on-device-speech';
 
 /**
@@ -72,6 +73,8 @@ export function TodayScreen() {
   const [interrupted, setInterrupted] = useState(() => launch.restoreInterrupted && firstTime('restore-interrupted'));
   // One opId per Start intent, kept until it succeeds: a double tap or retry starts one workout.
   const startOps = useRef(new Map<string, string>());
+  const timeBusy = useRef(false);
+  const timeWritten = useRef<{ draftId: string; version: number } | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
@@ -96,6 +99,8 @@ export function TodayScreen() {
   const [activitySheet, setActivitySheet] = useState<{ activity: Activity | null } | null>(null);
   const [daySheet, setDaySheet] = useState<StripCell | null>(null);
   const [listSheet, setListSheet] = useState<'other' | 'all' | null>(null);
+  // The Time note's detail (fit-to-time 22 Oct revision): what the fit changed, and Undo back to the plan's length.
+  const [timeDetail, setTimeDetail] = useState(false);
   const [listAfter] = useState(() => createAfterDismiss());
 
   const [selection, setSelection] = useState<TodayCardState | null>(null);
@@ -110,13 +115,17 @@ export function TodayScreen() {
   // The card's selection: the plan's next day on open (or as Ben left it while the data reloads). Once today's
   // workout is done, no day is selected until Ben picks one for a second session (§2.0.4 Done today).
   const wasDone = useRef<boolean | null>(null);
+  // (D3) When each day's latest draft was last seen: a newer one from Your workout (its Main lift) moves the card to it.
+  const seenDraft = useRef<Readonly<Record<string, string>>>({});
   useEffect(() => {
     if (session === null) return;
     const justDone = wasDone.current === false && session.doneToday;
     wasDone.current = session.doneToday;
+    const seen = seenDraft.current;
+    seenDraft.current = Object.fromEntries(Object.entries(session.latestDraft).map(([k, v]) => [k, v.atUtc]));
     setSelection((cur) => {
       if (justDone) return null;
-      if (cur !== null && session.initial[cur.dayKey] !== undefined) return cur;
+      if (cur !== null && session.initial[cur.dayKey] !== undefined) return followLatestDraft(cur, session.latestDraft[cur.dayKey], seen[cur.dayKey], session.initial[cur.dayKey]?.mainLiftExerciseId);
       const key = session.doneToday ? null : (session.nextKey ?? (session.status === 'no_plan' ? null : (session.days[0]?.key ?? null)));
       const initial = key === null ? undefined : session.initial[key];
       return key === null || initial === undefined ? null : { dayKey: key, controls: initial, open: false, why: false };
@@ -480,6 +489,28 @@ export function TodayScreen() {
     navigation.navigate('BuilderSetup', day === null ? undefined : { dayId: day.splitDayId });
   }
 
+  /**
+   * (Review todaylean S4) Time on an edited card: Your workout's Time on that draft (the same fit, Ben's edits never
+   * cut; versioned, one op ID), then Today reads it back. Offline, no coach call.
+   */
+  async function editedTime(minutes: number) {
+    const e = view?.edited;
+    // (Review todaylean N1) One Time write at a time, each from the version the last one wrote (the card reloads after).
+    if (!e || timeBusy.current) return;
+    timeBusy.current = true;
+    try {
+      const last = timeWritten.current;
+      const expectedVersion = last !== null && last.draftId === e.draftId ? Math.max(e.version, last.version) : e.version;
+      const r = await services.builder.setTime(e.draftId, minutes, { opId: newUuid(), expectedVersion });
+      if (r.status !== 'written' && r.status !== 'replayed') setError(r.message);
+      else timeWritten.current = { draftId: e.draftId, version: r.snapshot.version };
+    } finally {
+      timeBusy.current = false;
+    }
+    changed();
+    reload();
+  }
+
   /** `Back to plan day` on an edited card: the edited draft is discarded (versioned), with Undo. */
   async function backToPlan() {
     const e = view?.edited;
@@ -813,6 +844,13 @@ export function TodayScreen() {
             onStart={() => void startCard()}
             onEdit={() => void editCard()}
             onBackToPlan={() => void backToPlan()}
+            onTimeNote={() => {
+              setTimeDetail(true);
+            }}
+            onEditedTime={(dir) => {
+              const t = view.time;
+              if (t !== null) void editedTime(stepTimeMinutes(t.minutes, dir));
+            }}
           />
         ) : null}
       </View>
@@ -965,6 +1003,19 @@ export function TodayScreen() {
         }}
         onClose={() => {
           setListSheet(null);
+        }}
+      />
+      <TimeDetailSheet
+        visible={timeDetail && view?.time?.note != null}
+        minutes={view?.time?.minutes ?? 0}
+        lines={view?.time?.lines ?? []}
+        undoMinutes={view?.time?.undoMinutes ?? null}
+        onUndo={(minutes) => {
+          if (view?.edited != null) void editedTime(minutes);
+          else act({ kind: 'minutes_to', minutes });
+        }}
+        onClose={() => {
+          setTimeDetail(false);
         }}
       />
       {alertsAsk.sheet}

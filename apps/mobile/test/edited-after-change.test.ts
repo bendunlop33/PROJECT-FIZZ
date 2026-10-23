@@ -104,7 +104,7 @@ describe('`· edited` only once something changed the draft (review batch23 S3, 
     const view = s.todaySession.card(data, sel(data, pushKey));
     expect(view?.title).toBe('Push');
     expect(view?.edited).toBeNull();
-    expect(s.todaySession.card(data, sel(data, pushKey, { minutes: 20 }))?.fitLine).not.toBeNull();
+    expect(s.todaySession.card(data, sel(data, pushKey, { minutes: 20 }))?.time?.note ?? null).not.toBeNull();
     const pd = slotNamed(snap, 'Triceps pushdown');
     ok(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: pd.key }, { opId: 'set-lib', basis: { version: snap.version } }));
     const after = await loaded(s);

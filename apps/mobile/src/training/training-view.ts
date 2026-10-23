@@ -41,6 +41,9 @@ export const TRAINING_COPY = {
   dayName: 'Name',
   bodyParts: 'BODY PARTS',
   useRecommended: 'Use recommended',
+  /** (D7) With a plan in use: the split, days a week and session length are the plan's. */
+  setByPlan: 'Set by your plan',
+  yourPlan: 'Your plan',
 } as const;
 
 export const GENDER_CHOICES: readonly { value: Gender | null; label: string }[] = [
@@ -76,6 +79,8 @@ export interface TrainingRow {
   key: TrainingRowKey;
   title: string;
   value: string;
+  /** (D7) The plan in use owns it (`Set by your plan`): the row opens Library › Your plan, not an edit sheet. */
+  byPlan?: true;
 }
 
 export interface WeightRowView {
@@ -98,7 +103,7 @@ export interface TrainingDetailsView {
  * Ben's unit. Check-in and Self next-time targets are stored but not shown
  * until the check-in prompt and Self sessions exist (review B1, S3).
  */
-export function trainingDetailsView(p: TrainingProfile, s: { nowYear: number; unit: WeightUnit }): TrainingDetailsView {
+export function trainingDetailsView(p: TrainingProfile, s: { nowYear: number; unit: WeightUnit; /** (D7) A plan is in use: its days a week and session length are the plan's. */ planInUse?: boolean }): TrainingDetailsView {
   const a = p.about;
   const latest = latestWeight(p.weights);
   const weights = [...p.weights].reverse().map((w) => {
@@ -119,10 +124,12 @@ export function trainingDetailsView(p: TrainingProfile, s: { nowYear: number; un
       { key: 'experience', title: TRAINING_COPY.experience, value: labelOf(EXPERIENCE_CHOICES, a.experience) },
     ],
     weights,
+    // (D7, Ben 22–23 Oct) One owner per setting: with a plan in use, days a week and session length are the plan's
+    // (its Your week); the goal stays Ben's here (a change offers to update the plan).
     training: [
       { key: 'goal', title: TRAINING_COPY.goal, value: labelOf(GOAL_CHOICES, p.goal) },
-      { key: 'days', title: TRAINING_COPY.days, value: p.daysPerWeek === undefined ? TRAINING_COPY.notSet : String(p.daysPerWeek) },
-      { key: 'length', title: TRAINING_COPY.length, value: `${String(p.sessionMinutes)} min` },
+      s.planInUse === true ? { key: 'days', title: TRAINING_COPY.days, value: TRAINING_COPY.setByPlan, byPlan: true } : { key: 'days', title: TRAINING_COPY.days, value: p.daysPerWeek === undefined ? TRAINING_COPY.notSet : String(p.daysPerWeek) },
+      s.planInUse === true ? { key: 'length', title: TRAINING_COPY.length, value: TRAINING_COPY.setByPlan, byPlan: true } : { key: 'length', title: TRAINING_COPY.length, value: `${String(p.sessionMinutes)} min` },
     ],
     summary: summaryParts.length === 0 ? TRAINING_COPY.notSet : summaryParts.join(' · '),
   };
@@ -184,6 +191,14 @@ export function splitView(p: TrainingProfile | null, mainLifts: Readonly<Record<
     canAddDay: split.kind === 'custom' && split.days.length < TRAINING_LIMITS.splitDaysMax,
     summary: split.kind === 'custom' ? split.days.map((d) => d.name).join('/') : (SPLIT_CHOICES.find((c) => c.kind === split.kind)?.label ?? ''),
   };
+}
+
+/**
+ * (D7, Ben 22–23 Oct: one split source) Profile's `Split` row: without a plan, the split (it drives Up next); with a
+ * plan in use, `Set by your plan`, and the row opens Library › Your plan.
+ */
+export function profileSplitRow(p: TrainingProfile | null, mainLifts: Readonly<Record<string, MainLift>>, planInUse: boolean): { subtitle: string; opens: 'split' | 'your_plan' } {
+  return planInUse ? { subtitle: TRAINING_COPY.setByPlan, opens: 'your_plan' } : { subtitle: splitView(p, mainLifts).summary, opens: 'split' };
 }
 
 /** The body-part checklist for a custom day. */

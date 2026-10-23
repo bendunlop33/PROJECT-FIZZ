@@ -169,8 +169,9 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     // Strip cells: seven equal columns (flex 1, basis 0), each ≥ 44 pt at 375 pt (20 pt margins, 2 pt gaps, the divider).
     expect(parts).toMatch(/flex: 1,\s*flexBasis: 0,\s*minWidth: 0,/);
     expect((375 - 2 * 20 - 6 * 2 - 1) / 7).toBeGreaterThanOrEqual(44);
-    // The Time stepper (shared with Your workout since 22 Oct): one adjustable element.
-    expect(parts).toContain('<TimeStepper minutes={view.controls.minutes}');
+    // The Time row (shared with Your workout since 22 Oct; its note per fit-to-time's 22 Oct revision): one adjustable element.
+    expect(parts).toContain('<TimeNoteRow');
+    expect(read('ui/time-stepper.tsx')).toContain('<TimeStepper minutes={minutes} onStep={onStep} />');
     expect(read('ui/time-stepper.tsx')).toContain("accessibilityRole=\"adjustable\"");
     expect(parts).toContain('fontScale >= AX_FONT_SCALE');
     expect(parts.match(/if \(ax\) \{/g)).toHaveLength(2);
@@ -185,9 +186,12 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(screen).toContain('if (!enabled) return;');
   });
 
-  it('an edited card keeps the Main lift chips (review S2); Edit’s op ID is cleared once saved (review S6)', () => {
+  it('no plan: an edited card keeps the Main lift chips (review S2); Edit’s op ID is cleared once saved (review S6)', () => {
     const card = parts.slice(parts.indexOf('export function SessionCard('));
-    expect(card.indexOf('TODAY_V2_COPY.mainLift')).toBeLessThan(card.indexOf('view.edited === null ?'));
+    const noPlan = card.slice(card.indexOf('{view.lean ? ('));
+    const rest = noPlan.slice(noPlan.indexOf(') : ('));
+    expect(rest.indexOf('TODAY_V2_COPY.mainLift')).toBeGreaterThan(-1);
+    expect(rest.indexOf('TODAY_V2_COPY.mainLift')).toBeLessThan(rest.indexOf('view.edited === null ?'));
     const edit = screen.slice(screen.indexOf('async function editCard()'), screen.indexOf('function buildYourOwn()'));
     expect(edit).toContain('startOps.current.delete(editKey)');
     expect(edit).toContain('session.equipmentVersion');

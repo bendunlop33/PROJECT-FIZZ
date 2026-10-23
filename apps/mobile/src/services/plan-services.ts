@@ -305,6 +305,19 @@ export function createPlanServices(deps: PlanServicesDeps) {
     get,
     active,
 
+    /**
+     * (D7, Ben 22–23 Oct: one split source) The plan in use, paused or not: an applied plan with live workouts, as
+     * Today and Library › Your plan read it. Null: none (Profile › Split and its defaults are then the source). Local
+     * reads only; a failed read throws (never taken for no plan).
+     */
+    async inUse(): Promise<{ planId: string; name: string } | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const plan = await repo().applied(p.id);
+      if (plan === null || plan.applied === null) return null;
+      return planRoutines(plan, liveRoutines(await deps.store().repos.routines.listByOwner(p.id))).length === 0 ? null : { planId: plan.id, name: plan.name };
+    },
+
     /** The plan card for one version: every value from the stored plan. Null: the plan isn't Ben's. */
     async card(req: { planId: string; versionN: number }): Promise<PlanCardData | null> {
       const p = await owner();

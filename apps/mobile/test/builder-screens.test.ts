@@ -166,6 +166,7 @@ function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): Build
     leftOut: [],
     time: null,
     coachLanded: null,
+    today: null,
     ...over,
   };
 }

@@ -381,6 +381,17 @@ export const BuilderSetupSchema = z.object({
   restLevel: z.enum(['normal', 'shorter', 'shortest']).optional(),
   /** (v3 §2.3) Ben changed a group count, so Set up shows `Use recommended` instead of `Recommended`. */
   groupsEdited: z.literal(true).optional(),
+  /**
+   * (D3, Ben 22–23 Oct) Today's Accessories control for this workout (`focused` 2 × 3, `varied` 3 × 2): written by
+   * Today's card, changed on Your workout opened from Today. Absent: a Set up or library workout (group counts rule).
+   */
+  accessories: z.enum(['focused', 'varied']).optional(),
+  /**
+   * (D3 §2.3a; review todaylean S2/S3) Slots Ben deleted from a workout Today drafted. Today's slot keys name an
+   * exercise for the day, so when one of Today's options loads Today's draft for another choice, what he deleted stays
+   * deleted (his changed and added exercises carry over as they are). Undo puts the list back with the workout.
+   */
+  todayRemoved: z.array(IdSchema).max(BUILD_LIMITS.maxExercises * 3).optional(),
   /** (v3 §2.3 `Gym changed · Undo`) Ben undid the move to this gym: the draft stays at its own gym, and isn't moved there again. */
   gymKept: IdSchema.optional(),
   /**
@@ -397,6 +408,7 @@ export const BuilderSetupSchema = z.object({
    * draft only: Start creates the fitted workout; the saved workout and the plan never get it. A Set up change or
    * Gym changed undoes it, changes the original and fits again; Reload and a new Day or Main lift clear it; the
    * coach's version keeps only shorter rests (review fixes, 22 Oct). `cut`: working sets taken from each kept slot.
+   * `paired`: pairs the fit made with Supersets on (fit-to-time 22 Oct revision).
    */
   timeFit: z
     .object({
@@ -405,8 +417,23 @@ export const BuilderSetupSchema = z.object({
       fromMinutes: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes),
       dropped: z.array(IdSchema).max(BUILD_LIMITS.maxExercises),
       cut: z.record(IdSchema, z.int().min(1).max(BUILD_LIMITS.maxWorkingSets)).optional(),
+      /** (22 Oct revision, D9) Singles the fit paired (Supersets on), each pair's slot keys: they stand alone again when it's undone. */
+      paired: z.array(z.array(IdSchema).min(2).max(BUILD_LIMITS.maxSuperset)).max(BUILD_LIMITS.maxExercises).optional(),
+      /**
+       * (Review todaylean B3) Today's card filled above the plan's length (`base` the plan day's draft, `fromMinutes`
+       * the plan's length): the exercises the fill added, the working sets it added to plan slots, and the Time it
+       * filled to. Time at or below the plan's length, the Start prompt and the plan never get the fill.
+       */
+      added: z.array(z.object({ slotKey: IdSchema, why: z.enum(['arm', 'main_group', 'arm_partner']) })).max(BUILD_LIMITS.maxExercises).optional(),
+      raised: z.record(IdSchema, z.int().min(1).max(BUILD_LIMITS.maxWorkingSets)).optional(),
+      filledTo: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes).optional(),
     })
     .optional(),
+  /**
+   * (Review todaylean B3) The Time Today's card filled to above the plan's length: Your workout's Time brings Today's
+   * fill back up to it (Today's draft at that Time, Ben's edits replayed), never past it. Today's draft only.
+   */
+  timeFill: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes).optional(),
   /**
    * (22 Oct, review B1) The set-up's length before the first Time change on Your workout (`minutes` is then Time's,
    * today's only). `Update … in your plan` saves this as the plan day's length, never Time's. Absent: Time unused.

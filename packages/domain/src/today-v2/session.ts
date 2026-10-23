@@ -113,6 +113,11 @@ export interface TodayMix {
 export interface TodayDraft {
   template: TodayTemplate;
   workout: BuilderWorkout;
+  /**
+   * The same draft before Time's fit (review todaylean B2): what Your workout's Time brings back, so a card Today
+   * fitted is committed with its fit record (`timeFit.base`), never as if the fit were the plan.
+   */
+  unfitted: BuilderWorkout;
   fit: BuilderFitResult;
   /** `about N min`. */
   minutes: number;
@@ -292,6 +297,7 @@ export function assembleTodayDraft(input: TodayAssembleInput): TodayDraft | null
   return {
     template: t,
     workout,
+    unfitted: withTemplateMarks(built.workout, t.exerciseIds, []),
     fit: { ...fit, workout },
     minutes: fit.minutes,
     exerciseCount: slotCount(fit.workout),

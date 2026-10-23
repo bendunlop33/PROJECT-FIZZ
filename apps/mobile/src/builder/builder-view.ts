@@ -1,7 +1,7 @@
-import { canAddWarmup, cardioValuesText, clampBuilderRest, FIT_RULES, isTimedRow, slotsOf, spokenDistance, spokenDuration, stepTimeMinutes, TODAY_V2_COPY, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
+import { canAddWarmup, cardioValuesText, clampBuilderRest, FIT_RULES, fitNoteOf, isTimedRow, slotsOf, spokenDistance, spokenDuration, stepTimeMinutes, TODAY_V2_COPY, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderGroup } from '@fizz/schemas';
 
-import type { BuilderSnapshot, SetupFacts, SetupInput } from './builder-service';
+import type { BuilderSnapshot, SetupFacts, SetupInput, TodayOptions } from './builder-service';
 import { loadSpoken, loadText, REST_STEP_S, restText, SET_TYPE_LABEL, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
 import { swapPainConfirm } from '../ui/swap-sheet-model';
 
@@ -90,10 +90,6 @@ export const TIME_COPY = {
   label: 'Time',
   undo: 'Undo',
   done: 'Done',
-  shorter: 'Shorter rests',
-  shortest: 'Shortest rests',
-  sets: (name: string, from: number, to: number) => `${name} ${String(from)} → ${String(to)} sets`,
-  dropped: (name: string) => `Dropped ${name}`,
 } as const;
 
 const trim = (n: number): string => String(Math.round(n * 100) / 100);
@@ -354,39 +350,26 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
 }
 
 /**
+ * (D3, §2.3a) Today's options on Your workout as the rows show them: the day's main lifts (read on focus) with the
+ * draft's own state from the snapshot (`snap.today`), so a write, an Undo or a swipe never leaves a switch or chip
+ * behind (review todaylean S1). Null: not a workout Today drafted for a plan day.
+ */
+export function todayOptionsView(list: TodayOptions | null, snap: BuilderSnapshot): TodayOptions | null {
+  const t = snap.today;
+  if (list === null || t === null) return null;
+  return { mainLifts: list.mainLifts.map((m) => ({ ...m, selected: m.exerciseId === t.mainLiftExerciseId })), accessories: t.accessories, abs: t.abs, supersets: t.supersets };
+}
+
+/**
  * The Time row (22 Oct): the length, its steps, and what a live fit changed (from the service's `time`). The note is
- * the biggest change: exercises left out, else sets fewer, else shorter rests. Values only.
+ * the biggest change: exercises left out, else sets fewer, else supersets, else shorter rests (`fitNoteOf`). Values only.
  */
 export function timeRowView(snap: BuilderSnapshot): TimeRowView {
   const minutes = snap.setup.minutes;
-  const changes = snap.time?.changes ?? [];
   const name = (id: string) => snap.facts[id]?.name ?? 'Exercise';
-  const lines: string[] = [];
-  let rest: string | null = null;
-  let sets = 0;
-  let dropped = 0;
-  for (const c of changes) {
-    switch (c.kind) {
-      case 'rest':
-        if (c.to === 'shorter' || c.to === 'shortest') {
-          rest = c.to === 'shorter' ? 'shorter rests' : 'shortest rests';
-          lines.unshift(c.to === 'shorter' ? TIME_COPY.shorter : TIME_COPY.shortest);
-        }
-        break;
-      case 'sets':
-        sets += c.from - c.to;
-        lines.push(TIME_COPY.sets(name(c.exerciseId), c.from, c.to));
-        break;
-      case 'drop':
-        dropped += 1;
-        lines.push(TIME_COPY.dropped(name(c.exerciseId)));
-        break;
-      case 'effort':
-      case 'add':
-        break;
-    }
-  }
-  const note = dropped > 0 ? `−${String(dropped)} ${dropped === 1 ? 'exercise' : 'exercises'}` : sets > 0 ? `−${String(sets)} ${sets === 1 ? 'set' : 'sets'}` : rest;
+  const slotName = (key: string) => name(slotsOf(snap.workout.blocks).find((s) => s.key === key)?.exerciseId ?? '');
+  // One wording with Today's card (fit-to-time 22 Oct revision): rests, supersets the fit made, sets, exercises left out.
+  const { note, lines } = fitNoteOf(snap.time?.changes ?? [], name, slotName);
   const less = stepTimeMinutes(minutes, -1);
   const more = stepTimeMinutes(minutes, 1);
   return {
@@ -394,7 +377,8 @@ export function timeRowView(snap: BuilderSnapshot): TimeRowView {
     valueText: TODAY_V2_COPY.minutesValue(minutes),
     note,
     lines,
-    undoMinutes: note === null || snap.time === null ? null : snap.time.fromMinutes,
+    // Hidden at the length it goes back to (as Today's card's Undo).
+    undoMinutes: note === null || snap.time === null || snap.time.fromMinutes === minutes ? null : snap.time.fromMinutes,
     less: minutes <= FIT_RULES.minMinutes || less === minutes ? null : less,
     more: minutes >= FIT_RULES.maxMinutes || more === minutes ? null : more,
     noteLabel: note === null ? null : `Time changes: ${note}`,

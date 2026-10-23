@@ -16,3 +16,16 @@ export async function finishWorkout(h: Harness, s: AppServices, sessionId: strin
   if (!fin.ok) throw new Error(fin.error.message);
   await h.settle(s);
 }
+
+/**
+ * (D1) Start a builder draft as it stands (one tap), log a set and finish, then read the Summary's `Keep for next
+ * time?` lines (none: no row). Replaces the retired Start prompt in tests that check Time and Today's own drafting are
+ * never offered for the plan.
+ */
+export async function keepLinesAfterStart(h: Harness, s: AppServices, snap: { draftId: string; version: number }, gymId: string): Promise<string[]> {
+  const r = await s.builder.start(snap.draftId, { opId: h.ids(), expectedVersion: snap.version, gymId, checkIn: null });
+  if (!r.ok) throw new Error(r.message);
+  await finishWorkout(h, s, r.sessionId);
+  const view = await s.builder.keepNextTimeOf(r.sessionId);
+  return view?.state === 'open' ? view.lines : [];
+}

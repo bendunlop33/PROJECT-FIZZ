@@ -74,6 +74,7 @@ export function ruleSetupOf(s: StoredSetup): BuilderSetup & SetupIdentity {
     supersets: s.supersets,
     groups,
     ...(legParts === undefined ? {} : { legParts }),
+    ...(s.accessories === undefined ? {} : { accessories: s.accessories }),
     dayId: s.dayId,
     variationId: s.variationId ?? null,
   };

@@ -164,7 +164,9 @@ describe('B2: back to Set up after a Time fit', () => {
     const { routine } = await bigPush(s);
     const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: routine.id }, 'open-b2'));
     expect(snap0.setup.supersets).toBe(false);
-    const short = await cutUntilDropped(s, snap0);
+    let short = await cutUntilDropped(s, snap0);
+    // Far enough under that pairs alone (Supersets on: a free saving, fit-to-time 22 Oct revision) can't fit it.
+    for (let i = 0; i < 3 && workoutView(short).time.less !== null; i += 1) short = await step(s, short, 'less', `deeper-${String(i)}`);
     expect(workoutView(short).time.note).toMatch(/^−\d+ exercises?$/);
     const merged = opened(await s.builder.changeSetup(short.draftId, { ...short.setup, supersets: true }, { opId: 'supersets-on', expectedVersion: short.version }));
     expect(merged.setup.supersets).toBe(true);
@@ -311,8 +313,11 @@ describe('`Add anyway` asks first for a `May hurt` exercise (rule 9)', () => {
     const page = read('screens/builder/BuilderWorkoutScreen.tsx');
     expect(page).toContain('const c = addAnywayConfirm(snap, l.add);');
     expect(page).toContain('{ text: c.confirm, onPress: add },');
-    expect(page).toContain('key={`${String(i)}:${l}`}');
-    expect(page).not.toContain('<AppText key={l} variant="body" numeric>');
+    // The detail is the shared Time sheet (Today's card and Your workout).
+    const sheet = read('ui/time-stepper.tsx');
+    expect(page).toContain('<TimeDetailSheet');
+    expect(sheet).toContain('key={`${String(i)}:${l}`}');
+    expect(sheet).not.toContain('<AppText key={l} variant="body" numeric>');
   });
 
   it('a flagged exercise on the page is `May hurt` in its facts (what the confirm reads)', async () => {

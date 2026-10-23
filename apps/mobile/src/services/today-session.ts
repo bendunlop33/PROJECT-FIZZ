@@ -11,6 +11,7 @@ import {
   convertValue,
   ruleYieldsToHistory,
   builtInTargetRpe,
+  clampMinutes,
   lastSessionE1rm,
   mainFocusOf,
   ruleCategory,
@@ -23,6 +24,7 @@ import {
   deriveId,
   doableHere,
   estimateBuilderMinutes,
+  estimateBuilderSeconds,
   formatNumber,
   fromDraftPlan,
   isInHistory,
@@ -44,18 +46,24 @@ import {
   TODAY_OTHER_SESSIONS,
   TODAY_V2_COPY,
   todayBreakdown,
-  todayFitLine,
+  fitNoteOf,
   todayMixLine,
   todayPlanDays,
   todayWhy,
   toIso,
   toDraftPlan,
   toMs,
+  timeFitChanges,
+  timeFitFromStored,
+  timeFitToStored,
+  todayTimeFit,
   withSlotRevs,
   type AnchorLoad,
   type BuilderContext,
   type BuilderExerciseInfo,
+  type BuilderFitStep,
   type BuilderGroupName,
+  type BuilderTimeFit,
   type BuilderWorkout,
   type FinishedRef,
   type HistorySession,
@@ -192,6 +200,16 @@ export interface TodayEditedDraft {
   version: number;
   name: string;
   workout: BuilderWorkout;
+  /** (Review todaylean S4) Its Time: the length, the length before Time changed it (null: unchanged) and Time's fit. */
+  minutes: number;
+  timeFrom: number | null;
+  fit: BuilderTimeFit | null;
+}
+
+/** (D3) A day's latest open builder draft today: the main lift it is for and when it was last written. */
+export interface TodayLatestDraft {
+  mainLiftExerciseId: string | null;
+  atUtc: string;
 }
 
 /** Today's draft with the coach's pre-session offer applied (still Today's card): shown while the controls are the ones it was applied over. */
@@ -217,8 +235,10 @@ export interface TodaySessionData {
    * longest gap), so Ben's own workouts stay one tap from Today, as on the old Today. Null with a plan, or none.
    */
   upNext: TodayUpNext | null;
-  /** The controls each day opens with (its last-used main lift, the goal's accessories, the plan's length). */
+  /** The controls each day opens with (today's latest draft's main lift, else its last-used one; the goal's accessories, the plan's length). */
   initial: Readonly<Record<string, TodayControls>>;
+  /** (D3) Each day's latest open draft today (by `dayKey`): its main lift and when it was written, so Today follows Your workout's Main lift. */
+  latestDraft: Readonly<Record<string, TodayLatestDraft>>;
   goal: 'strength' | 'muscle' | 'both' | null;
   review: TodayReviewStatus;
   coachLabel: string;
@@ -264,8 +284,30 @@ export interface TodaySelection {
   controls: TodayControls;
 }
 
+/**
+ * The card's Time row (fit-to-time 22 Oct revision, item 4): `Time · −1 exercise ›  [−] 45 min [+]`. The note after the
+ * label (light orange) is the biggest change the fit made; a tap lists everything with `Undo` (back to the plan's length).
+ */
+export interface TodayTimeView {
+  minutes: number;
+  /** `−1 exercise`, `−2 sets`, `supersets`, `shorter rests`, `+1 exercise`; null: the plan as it is. */
+  note: string | null;
+  noteLabel: string | null;
+  lines: string[];
+  /** `⚠ Over 30 min`: even every cut allowed is over this length. */
+  overText: string | null;
+  /** The detail's `Undo`: the plan's own length; null when Time is at it. */
+  undoMinutes: number | null;
+}
+
 export interface TodayCardView {
   dayKey: string;
+  /**
+   * (D3, Ben 22–23 Oct) Lean card: with a plan in use (or paused), Today shows the session's rows, the Time control with
+   * its note, Why?, Start and Edit; main lift, accessories, abs and supersets are in Edit (Your workout), and `↻ Mix it
+   * up` is gone (Your workout's Swap). No plan: the controls and Mix it up.
+   */
+  lean: boolean;
   /** `Chest`, or `Chest · edited`. */
   title: string;
   edited: TodayEditedDraft | null;
@@ -275,8 +317,8 @@ export interface TodayCardView {
   summary: string;
   minutes: number;
   exerciseCount: number;
-  fitLine: string | null;
-  over: boolean;
+  /** The Time row; on an edited card with a plan, the draft's own Time (steps go to Your workout's Time on it); null on an edited no-plan card. */
+  time: TodayTimeView | null;
   clashLine: string | null;
   controls: {
     mainLifts: { exerciseId: string | null; label: string; selected: boolean }[];
@@ -297,6 +339,21 @@ export interface TodayCardView {
   startable: boolean;
   /** For `commit` (the code draft; null when edited). */
   draft: TodayDraft | null;
+}
+
+/** (D3 §2.3a) Today's code draft for a key and controls (`draftFor`): what Your workout's options load. */
+export interface TodayDraftFor {
+  /** Fitted to the controls' Time. */
+  workout: BuilderWorkout;
+  /** The same before Time's fit. */
+  unfitted: BuilderWorkout;
+  steps: BuilderFitStep[];
+  /** The plan day's own length. */
+  planMinutes: number;
+  template: { routineId: string | null; version: number | null; mainLiftExerciseId: string | null; label: string };
+  /** `Push · Bench press`. */
+  name: string;
+  key: BuilderDraftKey;
 }
 
 export type TodayCommitResult = { ok: true; draftId: string; version: number } | { ok: false; message: string };
@@ -339,6 +396,19 @@ function ruleAnchorFromPlan(sp: SwapPlan, convention: string, unit: 'kg' | 'lb',
   const yields = ruleYieldsToHistory(first.planned.provenance?.rule?.decision);
   const reps = first.planned.reps;
   return { value: convertValue(first.planned.load.value, first.planned.load.unit, unit), reps: reps?.min ?? 8, rpe, ...(reps === null ? {} : { repsMax: Math.max(reps.min, reps.max) }), ...(yields ? { yieldsToHistory: true } : {}) };
+}
+
+/** The card's Time row from the fit's note (`fitNoteOf`), the length shown and the plan's own length. */
+export function timeView(minutes: number, planMinutes: number, fit: { note: string | null; lines: string[] }, over: boolean): TodayTimeView {
+  const plan = clampMinutes(planMinutes);
+  return {
+    minutes,
+    note: fit.note,
+    noteLabel: fit.note === null ? null : `Time changes: ${fit.note}`,
+    lines: fit.lines,
+    overText: over ? `⚠ Over ${TODAY_V2_COPY.minutesValue(minutes)}` : null,
+    undoMinutes: minutes === plan ? null : plan,
+  };
 }
 
 export function createTodaySessionService(deps: TodaySessionDeps) {
@@ -597,27 +667,50 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       return e === undefined ? null : worksLine(e);
     };
 
-    // The controls each day opens with.
-    const initial: Record<string, TodayControls> = {};
-    for (const d of days) {
-      const nextMain = d.key === nextDay?.key ? (d.templates.find((t) => t.routineId === upNext)?.mainLiftExerciseId ?? null) : null;
-      const lastUsed = lastUsedMainLift(d, refs);
-      initial[d.key] = defaultTodayControls(d, { mainLiftExerciseId: lastUsed ?? nextMain, goal });
-    }
-    for (const d of others) initial[d.key] = defaultTodayControls(d, { goal });
-
     // Open builder drafts for today: an edited one shows on the card (`Chest · edited`).
     const edited: Record<string, TodayEditedDraft> = {};
     const nudged: Record<string, TodayNudgedDraft> = {};
     const open = (await repos().workoutDrafts.listByOwner(p.id).catch(() => [] as WorkoutDraft[])).filter((d) => d.status === 'open' && d.builderKey?.localDate === today && toMs(d.expiresAtUtc) > nowMs);
+    const dayKeyOfDraft = (k: BuilderDraftKey): string => (k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`);
+    // (D3) The main lift each day's latest draft today is for: Your workout's Main lift (it left Today's card) shows here.
+    const latestDraft: Record<string, TodayLatestDraft> = {};
+    for (const d of open) {
+      const k = d.builderKey;
+      if (k === undefined) continue;
+      const key = dayKeyOfDraft(k);
+      const was = latestDraft[key];
+      if (was === undefined || d.updatedAtUtc > was.atUtc) latestDraft[key] = { mainLiftExerciseId: k.mainLiftExerciseId ?? null, atUtc: d.updatedAtUtc };
+    }
+
+    // The controls each day opens with: the main lift of today's latest draft for it, else the last used one.
+    const initial: Record<string, TodayControls> = {};
+    for (const d of days) {
+      const nextMain = d.key === nextDay?.key ? (d.templates.find((t) => t.routineId === upNext)?.mainLiftExerciseId ?? null) : null;
+      const lastUsed = lastUsedMainLift(d, refs);
+      const drafted = latestDraft[d.key]?.mainLiftExerciseId;
+      const fromDraft = drafted !== undefined && d.templates.some((t) => t.mainLiftExerciseId === drafted) ? drafted : undefined;
+      initial[d.key] = defaultTodayControls(d, { mainLiftExerciseId: fromDraft ?? lastUsed ?? nextMain, goal });
+    }
+    for (const d of others) initial[d.key] = defaultTodayControls(d, { goal });
+
     for (const d of open) {
       const own = todayDraftState(d);
       // Today's own, or opened on Your workout and left as it was (review batch23 S3): not `· edited`.
       if (own.state === 'today' || draftOpenedUnchanged(d)) continue;
       const k = d.builderKey;
       if (k === undefined) continue;
-      const dayKey = k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`;
-      const shown = { draftId: d.id, version: d.version, name: d.name, workout: fromDraftPlan(currentDraftVersion(d).plan, builderSetupOf(d)?.restLevel ?? 'normal') };
+      const dayKey = dayKeyOfDraft(k);
+      const st = builderSetupOf(d);
+      const tf = st?.timeFit;
+      const shown: TodayEditedDraft = {
+        draftId: d.id,
+        version: d.version,
+        name: d.name,
+        workout: fromDraftPlan(currentDraftVersion(d).plan, st?.restLevel ?? 'normal'),
+        minutes: st?.minutes ?? currentDraftVersion(d).fitMinutes,
+        timeFrom: st?.timeFrom ?? tf?.fromMinutes ?? null,
+        fit: tf === undefined ? null : timeFitFromStored(tf),
+      };
       if (own.state === 'nudge') nudged[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = { ...shown, controls: own.controls };
       else edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = shown;
     }
@@ -688,6 +781,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       nextKey: nextDay?.key ?? null,
       upNext: fallbackNext === null ? null : { ...fallbackNext, ...(upNextDraft === null ? {} : { edited: { draftId: upNextDraft.id, version: upNextDraft.version } }) },
       initial,
+      latestDraft,
       goal,
       review,
       coachLabel: review === 'offline' ? TODAY_V2_COPY.offline : TODAY_V2_COPY.coach,
@@ -780,14 +874,16 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const unit = breakdownUnit(held.workout, data.unit);
       return {
         dayKey: day.key,
+        lean: data.status !== 'no_plan',
         title: edited === null ? day.name : `${day.name} · ${TODAY_V2_COPY.edited}`,
         edited,
         nudged: edited === null ? nudged : null,
         summary: TODAY_V2_COPY.summary(count, minutes),
         minutes,
         exerciseCount: count,
-        fitLine: null,
-        over: false,
+        // The coach's version Ben applied keeps Time (a step is Today's card again). (D3; review todaylean S4) An edited
+        // card with a plan keeps Time too: the draft's own (Your workout's Time on it, refitted around Ben's edits, FT5).
+        time: edited === null ? timeView(sel.controls.minutes, t.minutes, { note: null, lines: [] }, false) : data.status !== 'no_plan' ? editedTime(data, edited) : null,
         clashLine: clash,
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
@@ -801,36 +897,53 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         draft: null,
       };
     }
-    const pick = coach.mixPick ?? null;
-    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), ...(pick === null ? {} : { mixOrder: pick.order }) });
+    // (D3, Ben 22–23 Oct) `↻ Mix it up` left the lean card with the other Today-only controls (Your workout's Swap does
+    // the same job): with a plan the card never swaps an accessory, whatever an older selection carried.
+    const lean = data.status !== 'no_plan';
+    const pick = lean ? null : (coach.mixPick ?? null);
+    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId, ...(lean ? { mix: 0 } : {}) }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), ...(pick === null ? {} : { mixOrder: pick.order }) });
     if (d === null) return null;
     // The coach's reason only for the swap it picked (shown under the swap and in Why?).
     const mixReason = d.mix !== null && pick !== null && pick.exerciseId === d.mix.toExerciseId ? mixCoachReason(pick) : null;
     const unit = breakdownUnit(d.workout, data.unit);
     const advice = d.advice[0]?.reason ?? null;
     const mainSlot = d.workout.blocks.flatMap((b) => b.slots).find((s) => s.main) ?? null;
+    const slotName = (key: string) => nameOf(d.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === key)?.exerciseId ?? '');
     return {
       dayKey: day.key,
+      lean,
       title: day.name,
       edited: null,
       nudged: null,
       summary: TODAY_V2_COPY.summary(d.exerciseCount, d.minutes),
       minutes: d.minutes,
       exerciseCount: d.exerciseCount,
-      fitLine: todayFitLine(d.fit, sel.controls.minutes, t.minutes, nameOf),
-      over: d.fit.status === 'over',
+      time: timeView(sel.controls.minutes, t.minutes, fitNoteOf(d.fit.steps, nameOf, slotName), d.fit.status === 'over'),
       clashLine: clash ?? advice,
       controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: d.absOn, planOn: t.absPlan, differs: d.absOn !== t.absPlan }, supersets: sel.controls.supersets },
       unit,
       rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
       why: whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach, mixReason)),
       mix: d.mix === null ? null : todayMixLine(d.mix, nameOf, mixReason),
-      mixAvailable: d.mixOptions > 0,
-      mixShortlist: d.mixShortlist,
-      mixFromExerciseId: d.mixFromExerciseId,
+      mixAvailable: !lean && d.mixOptions > 0,
+      // No shortlist on the lean card: the coach is never asked for a Mix it up pick there.
+      mixShortlist: lean ? [] : d.mixShortlist,
+      mixFromExerciseId: lean ? null : d.mixFromExerciseId,
       startable: d.exerciseCount > 0,
       draft: d,
     };
+  }
+
+  /**
+   * (Review todaylean S4) An edited card's Time: the draft's length, what Time's fit changed against the workout before
+   * it (the same note and detail as Your workout's), Undo back to the length before Time changed it, and `⚠ Over` when
+   * Ben's own edits take it past Time.
+   */
+  function editedTime(data: TodaySessionData, e: TodayEditedDraft): TodayTimeView {
+    const { nameOf, ctx } = data.internal;
+    const changes = e.fit === null ? [] : timeFitChanges(e.fit, e.workout);
+    const slotName = (key: string) => nameOf(e.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === key)?.exerciseId ?? '');
+    return timeView(e.minutes, e.timeFrom ?? e.minutes, fitNoteOf(changes, nameOf, slotName), estimateBuilderSeconds(e.workout, ctx) > e.minutes * 60 + 29);
   }
 
   /** The coach's part of Why?: its nudge (`todayCoachWhy`), else the Mix it up reason; no nudge yet: the connection's status. */
@@ -887,29 +1000,50 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return todayDraftState(d).state === 'edited' && !draftOpenedUnchanged(d);
   }
 
+  /** The builder's codec over Today's facts (per-slot state, rests from the rest level, the history each load came from). */
+  function codecOf(data: TodaySessionData) {
+    return { info: data.internal.info, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }) };
+  }
+
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {
     return { planId: day.planId, dayIndex: day.dayIndex, splitDayId: day.splitDayId, mainLiftExerciseId: t.mainLiftExerciseId, localDate: data.localDate };
   }
 
   function versionOf(data: TodaySessionData, day: TodayDay, d: TodayDraft, controls: TodayControls, plan: DraftPlan, w: { draftId: string; n: number; parentN: number | null; draftVersion: number; at: ZonedTimestamp }): WorkoutDraftVersion {
-    const minutes = controls.minutes;
+    const minutes = clampInt(controls.minutes);
     const { draftId, n, parentN, at } = w;
+    // The groups Ben chose (before Time's cuts): Your workout's Abs reads them, and a Set up change merges from them.
     const counts = new Map<BuilderGroupName, number>();
-    for (const b of d.workout.blocks) for (const s of b.slots) {
+    for (const b of d.unfitted.blocks) for (const s of b.slots) {
       const g = data.internal.info(s.exerciseId)?.group;
       if (g !== undefined) counts.set(g, (counts.get(g) ?? 0) + 1);
     }
     const groups = storedGroupsOf([...counts].map(([group, count]) => ({ group, count })));
+    // (Review todaylean B2) Today's Time fit is Time's, never the plan's: its record (the draft before it, what it cut,
+    // dropped and paired) and the plan day's own length go with the draft, so Your workout's Time, its note and Undo,
+    // a refit after an option change, Start and the Summary all read the cuts as Time's (D1, D9; SP6: the original is
+    // the plan day's full workout).
+    const planMinutes = clampInt(d.template.minutes);
+    // (Review todaylean B3) A card Time filled keeps what the fill added too: the plan day's draft is the base.
+    const fit = todayTimeFit(d.unfitted, d.fit.steps, planMinutes, data.internal.ctx, minutes);
+    const codec = codecOf(data);
     const setup = {
       dayId: day.splitDayId,
-      minutes: clampInt(minutes),
+      minutes,
       mainLiftExerciseId: d.template.mainLiftExerciseId,
-      supersets: d.workout.blocks.some((b) => b.slots.length > 1),
+      // Ben's Supersets choice, not whether the fitted workout happens to have a pair (Your workout's switch and its
+      // Time fit read it; review todaylean S6).
+      supersets: controls.supersets,
       groups,
       ...(d.template.routineId !== null && d.template.version !== null ? { templateRoutineId: d.template.routineId, templateVersion: d.template.version } : {}),
       variationId: null,
       // The rest level lives only on the stored set-up (builder §4.5); the plan's rests are worked out from it.
       ...(d.workout.restLevel === 'normal' ? {} : { restLevel: d.workout.restLevel }),
+      // (D3) Accessories moved into Your workout: it shows and changes the style Today drafted with.
+      accessories: controls.accessories,
+      ...(minutes !== planMinutes || fit !== null ? { timeFrom: planMinutes } : {}),
+      ...(fit === null ? {} : { timeFit: timeFitToStored(fit, codec) }),
+      ...(fit?.filledTo === undefined ? {} : { timeFill: fit.filledTo }),
     };
     const bodyParts = [...new Set(groups.flatMap((g) => g.parts))];
     return {
@@ -957,7 +1091,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     if (d.exerciseCount === 0) return { ok: false, message: TODAY_SESSION_COPY.empty };
     // The builder's codec (per-slot state, rests from the rest level, the history each load came from), so the
     // builder reads Today's draft exactly as its own (§4.4).
-    const built = toDraftPlan(d.workout, { info: data.internal.info, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }) });
+    const built = toDraftPlan(d.workout, codecOf(data));
     const key = keyOf(data, day, d.template);
     const name = `${day.name} · ${d.template.label}`.slice(0, 120);
     const at = deps.now();
@@ -967,9 +1101,10 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         if (existing.opIds.includes(opId) || isEdited(existing)) return { ok: true, draftId: existing.id, version: existing.version };
         const cur = currentDraftVersion(existing);
         const plan = withSlotRevs(cur.plan, built).plan;
-        if (stableStringify(cur.plan) === stableStringify(plan)) return { ok: true, draftId: existing.id, version: existing.version };
         const n = Math.max(...existing.versions.map((v) => v.n)) + 1;
         const v = versionOf(data, day, d, sel.controls, plan, { draftId: existing.id, n, parentN: cur.n, draftVersion: existing.version + 1, at });
+        // The same workout and set-up (Time's length and fit record included): nothing to write.
+        if (stableStringify(cur.plan) === stableStringify(plan) && stableStringify(cur.request.setup ?? null) === stableStringify(v.request.setup ?? null)) return { ok: true, draftId: existing.id, version: existing.version };
         const kept = existing.versions.map((x) => (x.n === cur.n ? { ...x, status: 'replaced' as const } : x));
         while (kept.length >= MAX_WORKOUT_DRAFT_VERSIONS) kept.shift();
         const next: WorkoutDraft = { ...existing, name, versions: [...kept, v], currentVersion: n, version: existing.version + 1, updatedAtUtc: at.utc, opIds: [...existing.opIds, opId].slice(-MAX_WORKOUT_DRAFT_OPS) };
@@ -1005,6 +1140,34 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     } catch {
       return { ok: false, message: TODAY_SESSION_COPY.failed };
     }
+  }
+
+  /**
+   * (D3 §2.3a; review todaylean S2) Today's draft for one of its days (the builder draft's key) and these controls, at
+   * their Time: the code draft, never an edited or nudged one, from the same draft and fit code as the card. Your
+   * workout's options load it and replay Ben's edits on it. Null: the day or its template is gone, or the main lift
+   * asked for isn't one of the day's here.
+   */
+  async function draftFor(req: { key: BuilderDraftKey; controls: TodayControls }): Promise<TodayDraftFor | null> {
+    const data = await load();
+    if (data === null) return null;
+    const k = req.key;
+    const day = dayOf(data, k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`);
+    if (day === null) return null;
+    const found = templateHere(data, day, req.controls.mainLiftExerciseId);
+    if (found === null || (found.gap === null && found.t.mainLiftExerciseId !== req.controls.mainLiftExerciseId)) return null;
+    const { t, gap } = found;
+    const d = assembleTodayDraft({ day: gap === null ? day : { ...day, templates: [t] }, controls: { ...req.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx: data.internal.ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day) });
+    if (d === null) return null;
+    return {
+      workout: d.workout,
+      unfitted: d.unfitted,
+      steps: d.fit.steps,
+      planMinutes: clampInt(d.template.minutes),
+      template: { routineId: d.template.routineId, version: d.template.version, mainLiftExerciseId: d.template.mainLiftExerciseId, label: d.template.label },
+      name: `${day.name} · ${d.template.label}`.slice(0, 120),
+      key: { ...keyOf(data, day, d.template), localDate: k.localDate },
+    };
   }
 
   /** `start`: the draft as committed (version-checked, rule 5), through the one Start path. */
@@ -1053,6 +1216,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     card,
     movedLine,
     commit,
+    draftFor,
     start,
     review,
     mixPick,
