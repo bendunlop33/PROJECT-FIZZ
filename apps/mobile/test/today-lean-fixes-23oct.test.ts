@@ -375,7 +375,9 @@ describe('S4: an edited card with a plan keeps Time (D3: Time is one of the lean
     expect(workingCount(slotsOf(snap.workout.blocks).find((x) => x.key === mine.key) ?? { rows: [] })).toBe(workingCount(mine) + 1);
     // The screen: an edited card's steps and the detail's Undo go to Your workout's Time on the draft.
     const screen = readFileSync(join(__dirname, '..', 'src', 'screens', 'TodayScreen.tsx'), 'utf8');
-    expect(screen).toContain('services.builder.setTime(e.draftId, minutes, { opId: newUuid(), expectedVersion: e.version })');
+    expect(screen).toContain('services.builder.setTime(e.draftId, minutes, { opId: newUuid(), expectedVersion })');
+    // (Re-review N1) One write at a time, each from the version the last one wrote.
+    expect(screen).toContain('timeBusy.current');
     expect(screen).toContain('if (view?.edited != null) void editedTime(minutes);');
   });
 });

@@ -75,6 +75,8 @@ export function TodayScreen() {
   const [interrupted, setInterrupted] = useState(() => launch.restoreInterrupted && firstTime('restore-interrupted'));
   // One opId per Start intent, kept until it succeeds: a double tap or retry starts one workout.
   const startOps = useRef(new Map<string, string>());
+  const timeBusy = useRef(false);
+  const timeWritten = useRef<{ draftId: string; version: number } | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
@@ -515,9 +517,18 @@ export function TodayScreen() {
    */
   async function editedTime(minutes: number) {
     const e = view?.edited;
-    if (!e) return;
-    const r = await services.builder.setTime(e.draftId, minutes, { opId: newUuid(), expectedVersion: e.version });
-    if (r.status !== 'written' && r.status !== 'replayed') setError(r.message);
+    // (Review todaylean N1) One Time write at a time, each from the version the last one wrote (the card reloads after).
+    if (!e || timeBusy.current) return;
+    timeBusy.current = true;
+    try {
+      const last = timeWritten.current;
+      const expectedVersion = last !== null && last.draftId === e.draftId ? Math.max(e.version, last.version) : e.version;
+      const r = await services.builder.setTime(e.draftId, minutes, { opId: newUuid(), expectedVersion });
+      if (r.status !== 'written' && r.status !== 'replayed') setError(r.message);
+      else timeWritten.current = { draftId: e.draftId, version: r.snapshot.version };
+    } finally {
+      timeBusy.current = false;
+    }
     changed();
     reload();
   }
