@@ -15,6 +15,7 @@ import { createGuardedLoader } from '../guide/guarded-load';
 import { AddGymScreen } from '../screens/AddGymScreen';
 import { BuilderSetupScreen } from '../screens/builder/BuilderSetupScreen';
 import { BuilderWorkoutScreen } from '../screens/builder/BuilderWorkoutScreen';
+import { PlanSetupScreen } from '../screens/plan/PlanSetupScreen';
 import { CapabilityProbeScreen } from '../screens/CapabilityProbeScreen';
 import { DataBackupScreen } from '../screens/data/DataBackupScreen';
 import { EquipmentEditorScreen } from '../screens/gym/EquipmentEditorScreen';
@@ -372,6 +373,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               {/* The workout builder (workout-builder-v3 §2): Set up and Your workout, full-screen; the coach and the pop-ups are sheets over them. */}
               <RootStack.Screen name="BuilderSetup" component={BuilderSetupScreen} options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
               <RootStack.Screen name="BuilderWorkout" component={BuilderWorkoutScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
+              {/* (Plan builder, 23 Oct) Gym goals → Your week → Your plan, full-screen with its own one back control (D7). */}
+              <RootStack.Screen name="PlanSetup" component={PlanSetupScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
               <RootStack.Screen name="Coach" component={CoachSheetScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
             </>
           ) : (

@@ -12,7 +12,8 @@ import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
 import { formatShortDate, formatTime } from '../format/dates';
-import { openYourPlan } from '../navigation/actions';
+import { openPlanSetup } from '../navigation/actions';
+import { PB_COPY } from '../plan-builder/plan-builder-view';
 import type { TabParams } from '../navigation/types';
 import { DeleteToastView } from '../history/DeleteToastView';
 import { useDeleteToast } from '../history/useDeleteToast';
@@ -292,6 +293,27 @@ export function TodayScreen() {
     setToast({ text: handed });
     navigation.setParams({ toast: undefined });
   }, [handed, navigation]);
+
+  // (Plan builder) Back from Apply plan: `Plan applied · Undo`, once per Apply; Undo only at that plan version (rule 5).
+  const planApplied = route.params?.planApplied;
+  const planToastKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (planApplied === undefined || planToastKey.current === planApplied.key) return;
+    planToastKey.current = planApplied.key;
+    navigation.setParams({ planApplied: undefined });
+    setToast({
+      text: PB_COPY.applied,
+      action: PB_COPY.undo,
+      onAction: () => {
+        setToast(null);
+        void services.planBuilder.undo({ planId: planApplied.planId, expectedVersion: planApplied.version, opId: newUuid() }).then((r) => {
+          if (!r.ok) setToast({ text: r.message });
+          changed();
+          reload();
+        });
+      },
+    });
+  }, [planApplied, navigation]);
 
   const startEmpty = route.params?.startEmpty;
   const startedEmpty = useRef<string | null>(null);
@@ -789,7 +811,8 @@ export function TodayScreen() {
                   label={`${TODAY_V2_COPY.setUpPlan} ›`}
                   tone="secondary"
                   onPress={() => {
-                    navigation.dispatch(openYourPlan(newUuid()));
+                    // (Plan builder, 23 Oct) The builder, no longer the empty Library (gap T2).
+                    navigation.dispatch(openPlanSetup());
                   }}
                 />
               </View>
@@ -850,7 +873,7 @@ export function TodayScreen() {
                   label={`${TODAY_V2_COPY.setUpPlan} ›`}
                   tone="secondary"
                   onPress={() => {
-                    navigation.dispatch(openYourPlan(newUuid()));
+                    navigation.dispatch(openPlanSetup());
                   }}
                 />
               </View>
