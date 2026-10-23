@@ -315,6 +315,10 @@ describe('the build', () => {
       for (const e of d.exercises) if (e.role === 'main' || e.key === 'barbell-romanian-deadlift') expect(e.pair).toBeNull();
       const pairs = d.exercises.filter((e) => e.pair !== null).map((e) => e.pair);
       for (const p1 of pairs.filter((x) => x?.endsWith('1') === true)) expect(pairs).toContain(`${p1?.slice(0, 1) ?? ''}2`);
+      // Partners sit side by side.
+      d.exercises.forEach((e, i) => {
+        if (e.pair?.endsWith('1') === true) expect(d.exercises[i + 1]?.pair).toBe(`${e.pair.slice(0, 1)}2`);
+      });
     }
     expect(build({}, answers({ supersets: true })).cap).toBe(22);
   });

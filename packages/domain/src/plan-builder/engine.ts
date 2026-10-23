@@ -587,7 +587,10 @@ function sortDay(a: PlanBuilderAnswers, d: PbDay): void {
   d.exercises.sort((x, y) => rank(x) - rank(y));
 }
 
-/** Supersets: accessories paired A1/A2, B1/B2 …; never the main lift or heavy barbell compounds. */
+/**
+ * Supersets: accessories paired A1/A2, B1/B2 …; never the main lift or heavy barbell compounds. Each pair's second
+ * member moves up to sit right after its first, so the pair is done back to back (and stored adjacent).
+ */
 function pairUp(list: PbExercise[]): void {
   const free = list.filter((e) => e.role !== 'main' && !PB_HEAVY.has(e.key));
   for (let i = 0; i + 1 < free.length && i / 2 < 3; i += 2) {
@@ -597,6 +600,8 @@ function pairUp(list: PbExercise[]): void {
     if (x === undefined || y === undefined) break;
     x.pair = `${L}1`;
     y.pair = `${L}2`;
+    list.splice(list.indexOf(y), 1);
+    list.splice(list.indexOf(x) + 1, 0, y);
   }
 }
 

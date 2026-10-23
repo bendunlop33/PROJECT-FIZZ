@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, View, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { toMs, fmt, pbDaysReady, pbToggleDay, pbTapSport, pbTogglePriority, pbToggleSportDay, pbWarmUpText, pbWithSessions, pbExpect, pbPrefSuggestion, PB_EXTRA_LIFTS, PB_PREF_DAYS, type PbExercise, type PlanKit } from '@fizz/domain';
+import { toMs, fmt, pbDaysReady, pbToggleDay, pbTapSport, pbTogglePriority, pbToggleSportDay, pbWarmUpText, pbWithSessions,  PB_EXTRA_LIFTS, PB_PREF_DAYS, type PbExercise, type PlanKit } from '@fizz/domain';
 import type { PlanBuilderAnswers, PlanPrefAnswer, PlanTarget } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -78,7 +78,8 @@ export function PlanSetupScreen() {
   const buildOp = useRef(newUuid());
   const applyOp = useRef(newUuid());
 
-  const load = (): void => {
+  /** Reads Ben's records for the builder. `keep`: the answers on screen stay (a gym was just added). */
+  const load = (keep: PlanBuilderAnswers | null = null): void => {
     void services.planBuilder
       .open()
       .then((s) => {
@@ -87,15 +88,19 @@ export function PlanSetupScreen() {
           return;
         }
         setSession(s);
-        setAnswers(s.answers);
         setDraft(s.draft);
+        if (keep !== null) {
+          setAnswers(keep);
+          return;
+        }
+        setAnswers(s.answers);
         setPage(s.draft !== null ? 'plan' : s.needsCheck ? 'check' : 'goals');
       })
       .catch(() => {
         setSession('error');
       });
   };
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   useEffect(() => {
     if (toast === null) return;
@@ -109,7 +114,7 @@ export function PlanSetupScreen() {
   if (session === 'error') {
     return (
       <Screen>
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text={C.failed} action={<TextButton label="Try again" onPress={load} />} />
+        <StatusLine icon="exclamationmark.triangle" tone="warning" text={C.failed} action={<TextButton label="Try again" onPress={() => { load(); }} />} />
         <TextButton label={C.close} onPress={() => { navigation.goBack(); }} />
       </Screen>
     );
@@ -239,14 +244,7 @@ export function PlanSetupScreen() {
   // `Any priorities?`: Yes while a group or target is picked, or Ben tapped Yes (no ✦ pick yet: none is computed).
   const yes = priYes ?? (answers.priorities.length > 0 || answers.specific.length > 0);
   if (page === 'goals') {
-    const lifts = s.lifts(answers);
-    const expect = pbExpect(
-      answers,
-      lifts.flatMap((l) => {
-        const kit = kitOf(l.key);
-        return kit === null ? [] : [{ start: l, kit }];
-      }),
-    );
+    const expect = s.expect(answers);
     body = (
       <>
         {title(C.goals)}
@@ -415,7 +413,7 @@ export function PlanSetupScreen() {
         </Question>
         <Question label={C.gym}>
           {s.gym === null ? (
-            <StatusLine icon="info.circle" tone="info" text={C.noGym} action={<TextButton label={C.useTypicalGym} onPress={() => void services.setup.useTypicalGym().then(() => { load(); })} />} />
+            <StatusLine icon="info.circle" tone="info" text={C.noGym} action={<TextButton label={C.useTypicalGym} onPress={() => void services.setup.useTypicalGym().then(() => { changed(); load(answers); })} />} />
           ) : (
             <AppText variant="body">{s.gym.name}</AppText>
           )}
@@ -431,7 +429,7 @@ export function PlanSetupScreen() {
             <AppText variant="title2">{g.group}</AppText>
             {g.questions.map((q) => {
               const a = answers.prefs[q.id];
-              const sug = pbPrefSuggestion(q.id, s.historyOf);
+              const sug = s.prefSuggestion(q.id);
               const other = otherOf(answers, q.id);
               const pick = (v: PlanPrefAnswer): void => { set({ ...answers, prefs: { ...answers.prefs, [q.id]: v } }); };
               return (

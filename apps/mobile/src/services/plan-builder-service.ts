@@ -17,6 +17,8 @@ import {
   equipmentHere,
   painFlagCovering,
   pbDefaultAnswers,
+  pbExpect,
+  pbPrefSuggestion,
   pbHistoryOf,
   pbKitOfEquipment,
   pbLiftStart,
@@ -90,6 +92,10 @@ export interface PlanBuilderSession {
   lifts: (answers: PlanBuilderAnswers) => PbLiftStart[];
   needsCheck: boolean;
   build: (answers: PlanBuilderAnswers) => PbPlan;
+  /** What to expect in N weeks (est.): each checked lift's weight at the focus's reps, now and at the end. */
+  expect: (answers: PlanBuilderAnswers) => ReturnType<typeof pbExpect>;
+  /** ✦ on a preference question: the option his history favours, else null. */
+  prefSuggestion: (questionId: string) => 0 | 1 | null;
   equipmentVersion: string;
 }
 
@@ -174,6 +180,15 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
       lifts,
       needsCheck: pbNeedsLiftCheck(lifts(answers)),
       build: (a) => buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, painHeld, nowMs }),
+      expect: (a) =>
+        pbExpect(
+          a,
+          lifts(a).flatMap((l) => {
+            const kit = kitOf(l.key);
+            return kit === null || kit === 'bodyweight' ? [] : [{ start: l, kit }];
+          }),
+        ),
+      prefSuggestion: (q) => pbPrefSuggestion(q, historyOf),
       equipmentVersion: deriveId(`gym-items:${stableStringify(equipment.map((x) => [x.id, x.version]))}`),
     };
   }
