@@ -147,3 +147,37 @@ The same floor raises a back-off after Ben types a heavier top. With a typed top
 ## Other notes
 
 - During this review another process briefly created untracked probes in this worktree (`zz-adv-probe.test.ts` under `apps/mobile/test`, `packages/coach/test` and `packages/domain/test`). They weren't mine, so I didn't touch them; they were gone before this commit, and the tree is clean.
+
+## Fixes (23 Oct 2026, builder)
+
+Commits: `a2818c6` (B3), `31d4aa7` (B1, B2, domain), `45474c3` (B1, the coach), `7a7c791` (real SQLite).
+Every issue was reproduced first with temporary probes (domain and coach), which have been deleted. The numbers matched the review exactly: 95 → 85 → 75 with Gym changed back to 95; top 90 with back-offs at 95; 12 @ 8 and 15 @ 8 at 90; 97.5 after an easier back-off; a drop of 77.5 under a top of 70; the coach giving 92.5 and 85.
+
+**One rule on every path.** A back-off Ben didn't type is now a function of the slot's top as it is now. It never depends on the edits before.
+- `backoffTarget` (pure, `backoff.ts`): `built` is the back-off from its reps and RPE below `builtTop`, rounded down on the item. `builtTop` is the top worked out from the anchor at its own reps and RPE, rounded down here without the pain hold. The result is then `min(built, built × topNow / builtTop)`, rounded down. This is the review's formula and matches HT8's worked example, which scales the back-off as shown.
+- `setRowsFor`, `reloadSlotLoads` (Gym changed), `recalcLoad` and `backoffFromTop` all use it.
+- `settleBackoffs` runs after every `editSetRow`, `changeSetType` and `setWorkingCount` call that has load inputs.
+
+| Issue | Status | What changed / why not |
+|---|---|---|
+| **B1** ratchet | Fixed | 100 → 110 → 100 gives 95 again, in every focus. Toggles never compound. A lighter top gives the same back-offs whatever came before it. Pain hold (cap 90): built 85; typing 95 gives 90; typing 90 again gives 85 (was 80). A seeded run of 300 edits per focus matches Gym changed after every edit. Saved and coach-built back-offs have no anchor, so they now carry `backoffFrom` (the top they were set for). It is an optional `DraftLoad.backoffFrom`, kept through the codec and a force-close, and Start ignores it. A saved 100/90 workout goes 80 → 70, then back to 100 → 90. Gym changed on an edited saved slot (`slotAtNewGym`, now given load inputs) settles the planned back-offs against the top Ben kept, so a back-off of 90 no longer sits over a top of 80. |
+| **B1** coach | Fixed | `withWorkingLoad` first gives each back-off its basis (`withBackoffBases`), then settles. 'heavier' then 'set 100' gives 95 (was 92.5). Ben's typed 110, then coach 'set 100' or 'lighter' (107.5), gives 95 (was 85 / 92.5). 97.5 then 100 restores. |
+| **B2** top reps / RPE / type | Fixed | Bench rule 100 × 6 @ 8. Top reps 6 → 10: top 90, back-offs 87.5 / 85 / 82.5 (Strength / Balanced / Muscle). Top reps 6 → 8, or RPE 8 → 6: top 95, back-offs 92.5 / 90 / 85. Gym changed agrees. With an anchor, "never above top × (1 − band.min), rounded down" holds by construction and is tested after every seeded edit. A back-off made Top works too. Real SQLite: top reps 6 → 10, and Start plans the back-offs at least 4 % below the top. |
+| **B3** / MEDIUM-HIGH floor clamp | Fixed (SP1 still Ben's) | `backoffLoad` clamps only toward lighter. `belowBackoffBand` is a pure check with no UI copy. 12 @ 8 gives 85 and 15 @ 8 gives 80 in every focus. The wrong 12 @ 6 → 92 test now expects 82.6 (82.5 on the bar). Feasibility is tested for every focus, reps 3–15 and RPE 6–10. With a typed top of 115, re-entering 8 reps keeps 95. |
+| MEDIUM (a) easier back-off got heavier | Fixed | With a typed top of 110: back-off reps 10 gives 90 (was 97.5); RPE 7 gives 92.5 (was 97.5). |
+| MEDIUM (b) coach raise vs Ben's raise | Fixed toward HT8; **Ben to confirm (SP2)** | A heavier coach top now leaves the back-offs, as Ben typing one does. The coach's load still becomes the slot's anchor, so later reps or RPE edits follow it. If Ben prefers §3.1 step 2 ("every other set follows"), only `withBackoffBases` changes. |
+| MEDIUM (c) coach reps guard | Fixed for the reported case | With a typed heavier top, the coach's "more reps" never raises a back-off (tested). Still true and not changed: with fewer reps and a typed top, the back-offs follow the formula from the same anchor (≤ formula top × (1 − band.min), and the pain hold), but the guard still checks only the top. |
+| LOW-MEDIUM back-off RPE ≤ top's (SS4) | Not changed; **Ben** | The coach's `rpe` op sets one RPE on every working set, so only Ben's own typed RPE can break this. Blocking, capping or flagging his input is a product call that needs copy (SP5). SS4 is a candidate rule, and D4 approves its load part. |
+| LOW typed back-off above a lowered top | Not changed; **Ben / design** | Ben's own kg is kept, as before. A `May hurt`-style flag needs design copy (N2, SP5). |
+| LOW drop after the top | Fixed | A drop Ben didn't type follows the set it drops from whenever that set's load moves, in either direction, and is never at or above it. Top 100 + drop 77.5: typing 70 gives 52.5; typing 100 gives 77.5. This now also applies after Ben types a load on the set before a drop. |
+| LOW coarse items | Not changed; **Ben** | With B3 fixed the band no longer pulls back-offs up, but its top edge still keeps them strictly below the top. On 2.5 kg dumbbells or a 5 kg stack that can be a whole step. At the item's lightest load nothing is lighter, so there is no load (`—`), as before D4. Options: allow equal-to-top on coarse items, or use the lightest load. |
+| INFO chat-built back-offs | Partly | In Your workout they now follow the top by the same % and are never above it. `checkSlotLoads` still doesn't apply the band (S2). |
+| INFO `setWorkingCount` without loads | S3 fixed for the plan variation's `set_count`. Fit calls left | The fit only changes accessory set counts, never the main lift. The coach's swap and add use it on new non-main slots. |
+| INFO active workout, Ben's typed top with no source, CHANGELOG, §3.1 step 9 | Not changed | Respectively: SP6 (a rule 2/3 call for Ben); HT8 (2) needs a source and `est.` label decision; Ben's approvals are recorded by the PM; design track. |
+| N3 band mixing | Mostly fixed | Any edit re-derives every untyped back-off in an anchored slot with the current band. A slot nobody has touched keeps its build-time band until an edit or Gym changed. |
+
+**Behaviour changes to note:** a pain-held Muscle top now scales the back-off as shown. Built 90 under a top of 100, with the top held at 90, gives 80 (was 82.5).
+
+**Found, not changed (outside this review):** `reloadSlotLoads` works an untyped top out from the anchor. When the rule yields to history (rule 100 × 6 @ 8, own est. max 140), the build plans 100 but Gym changed to the same bar gives a top of 102.5, with back-offs of 97.5. The same applies to an accessory's last set @ 9, which Gym changed makes heavier than the others. This needs its own fix and review.
+
+**Checks:** `npm run typecheck` exit 0; `npm run lint` exit 0; `npm run test` 480 files, 8878 passed, 2 todo, exit 0.
