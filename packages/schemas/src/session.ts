@@ -593,6 +593,20 @@ export type SessionFeelValue = z.infer<typeof SessionFeelValueSchema>;
 export const SessionFeelSchema = z.object({ value: SessionFeelValueSchema.nullable(), at: ZonedTimestampSchema });
 export type SessionFeel = z.infer<typeof SessionFeelSchema>;
 
+/**
+ * (PM, 23 Oct) The workout was started in the applied plan's deload week (plan length = block 1): its sets were
+ * planned lighter on purpose. Written once, at Start, from the block as derived then (`pbDeloadAtStart`), so a later
+ * plan edit or a correction never re-labels it. The built-in rule, next-session targets, lift estimates and the
+ * coach's history read skip or label it; Progress volume and history show it as any workout.
+ */
+export const SessionDeloadSchema = z.object({
+  planId: IdSchema,
+  /** The block week (1-based) and the block's length when it started. */
+  week: z.int().min(1).max(52),
+  of: z.int().min(1).max(52),
+});
+export type SessionDeload = z.infer<typeof SessionDeloadSchema>;
+
 export const WorkoutSessionSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
@@ -679,6 +693,8 @@ export const WorkoutSessionSchema = z.object({
    * Ben tapped it (Your data; a weekly-review fact, never inferred). Absent or `value: null` = not answered.
    */
   feel: SessionFeelSchema.optional(),
+  /** (PM, 23 Oct) Started in the plan's deload week (`SessionDeloadSchema`). Absent = a normal workout. */
+  deload: SessionDeloadSchema.optional(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 

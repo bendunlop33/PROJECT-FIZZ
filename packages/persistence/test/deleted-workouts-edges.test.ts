@@ -165,7 +165,7 @@ describe('migration 9 on main’s schema 8 (review progress-merge S2)', () => {
     const old = memoryDriver();
     await copyInto(driver, old, 8);
     expect(await readUserVersion(old)).toBe(8);
-    expect(await migrate(old)).toMatchObject({ from: 8, to: latestVersion(), applied: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33] });
+    expect(await migrate(old)).toMatchObject({ from: 8, to: latestVersion(), applied: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] });
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -207,8 +207,8 @@ describe('migration 10 (workout gaps) on main’s schema 9', () => {
     await copyInto(driver, old, 9);
     expect(await readUserVersion(old)).toBe(9);
     expect(await old.getAll("SELECT duration_confirmed_at_utc AS u FROM sessions WHERE duration_confirmed_at_utc IS NOT NULL")).toEqual([{ u: NOW.utc }]);
-    expect(await migrate(old)).toMatchObject({ from: 9, to: latestVersion(), applied: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33] });
-    expect(latestVersion()).toBe(33);
+    expect(await migrate(old)).toMatchObject({ from: 9, to: latestVersion(), applied: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] });
+    expect(latestVersion()).toBe(34);
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -292,8 +292,8 @@ describe('migration 11 (coach set actions) on main’s schema 10', () => {
     expect(await readUserVersion(old)).toBe(10);
     // Schema 10 refuses what 11 adds.
     await expect(old.run("UPDATE playbook_candidates SET status = 'approved'")).rejects.toThrow();
-    expect(await migrate(old)).toMatchObject({ from: 10, to: latestVersion(), applied: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33] });
-    expect(latestVersion()).toBe(33);
+    expect(await migrate(old)).toMatchObject({ from: 10, to: latestVersion(), applied: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] });
+    expect(latestVersion()).toBe(34);
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -305,7 +305,7 @@ describe('migration 11 (coach set actions) on main’s schema 10', () => {
 
     const migrated = await openStore(old);
     cleanups.push(() => migrated.close());
-    expect(migrated.migration).toMatchObject({ from: 33, to: 33, applied: [] });
+    expect(migrated.migration).toMatchObject({ from: 34, to: 34, applied: [] });
     expect((await checkIntegrity(migrated.db)).ok).toBe(true);
     expect(await migrated.countRecords()).toEqual(await store.countRecords());
     expect((await migrated.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).sessions.map((x) => x.session.id)).toEqual([kept.session.id]);

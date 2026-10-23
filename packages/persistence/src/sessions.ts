@@ -100,6 +100,8 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     duration_confirmed_at_tz: s.durationConfirmedAt?.tz ?? null,
     // Only when set: the column is new in schema 32; a clear is `value: null`, so it is still written.
     ...(s.feel === undefined ? {} : { feel: JSON.stringify(s.feel) }),
+    // Only when set: the column is new in schema 34, written once at Start.
+    ...(s.deload === undefined ? {} : { deload: JSON.stringify(s.deload) }),
     deleted_at_utc: s.deletion?.at.utc ?? null,
     deleted_at_tz: s.deletion?.at.tz ?? null,
     deleted_by_op_id: s.deletion?.opId ?? null,
@@ -269,6 +271,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       ...(s.coach_draft === null || s.coach_draft === undefined ? {} : { coachDraft: parseJson(T, id, 'coach_draft', s.coach_draft) }),
       ...(s.plan_day === null || s.plan_day === undefined ? {} : { planDay: parseJson(T, id, 'plan_day', s.plan_day) }),
       ...(s.feel === null || s.feel === undefined ? {} : { feel: parseJson(T, id, 'feel', s.feel) }),
+      ...(s.deload === null || s.deload === undefined ? {} : { deload: parseJson(T, id, 'deload', s.deload) }),
       ...(s.duration_confirmed_at_utc === null || s.duration_confirmed_at_utc === undefined
         ? {}
         : { durationConfirmedAt: { utc: s.duration_confirmed_at_utc, tz: s.duration_confirmed_at_tz } }),

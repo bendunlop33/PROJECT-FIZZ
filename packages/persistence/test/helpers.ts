@@ -56,9 +56,22 @@ export function beforeSchema31(a: SessionAggregate): SessionAggregate {
   return { ...a, restTimer };
 }
 
-/** A backup's tables as a schema-31 build wrote them: no `sessions.feel` (migration 32, `How did it feel?`). */
-export function withoutSchema32<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+/** A backup's tables as a schema-33 build wrote them: no `sessions.deload` (migration 34, PM 23 Oct). */
+export function withoutSchema34<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
   const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  if (out.sessions) {
+    out.sessions = out.sessions.map((row) => {
+      const copy = { ...row };
+      delete copy.deload;
+      return copy;
+    });
+  }
+  return out as T;
+}
+
+/** A backup's tables as a schema-31 build wrote them: no `sessions.feel` (migration 32, `How did it feel?`), nor later columns. */
+export function withoutSchema32<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+  const out: Record<string, Record<string, unknown>[]> = withoutSchema34({ ...tables });
   if (out.sessions) {
     out.sessions = out.sessions.map((row) => {
       const copy = { ...row };

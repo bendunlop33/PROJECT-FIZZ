@@ -12,7 +12,7 @@ describe('migration 31 (rest kept for undo)', () => {
     await at30.repos.sessions.save(beforeSchema31(richFinishedSession()), null);
     const before = await at30.db.read((q) => exportTables(q));
     expect(before.rest_timers?.length).toBe(1);
-    expect(await migrate(db)).toMatchObject({ from: 30, applied: [31, 32, 33] });
+    expect(await migrate(db)).toMatchObject({ from: 30, applied: [31, 32, 33, 34] });
     const at31 = await openStore(db);
     const after = await at31.db.read((q) => exportTables(q));
     expect(after.rest_timers).toEqual((before.rest_timers ?? []).map((r) => ({ ...r, resume_on_undo: null, restored_finished: null })));

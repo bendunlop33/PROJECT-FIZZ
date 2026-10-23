@@ -37,6 +37,7 @@ import { MIGRATION_0030 } from './schema/0030-plan-day-templates';
 import { MIGRATION_0031 } from './schema/0031-rest-resume-on-undo';
 import { MIGRATION_0032 } from './schema/0032-session-feel';
 import { MIGRATION_0033 } from './schema/0033-builder-draft-from';
+import { MIGRATION_0034 } from './schema/0034-session-deload';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -90,6 +91,7 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(31, 'rest-resume-on-undo', MIGRATION_0031),
   sqlMigration(32, 'session-feel', MIGRATION_0032),
   sqlMigration(33, 'builder-draft-from', MIGRATION_0033),
+  sqlMigration(34, 'session-deload', MIGRATION_0034),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */
