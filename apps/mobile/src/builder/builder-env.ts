@@ -19,6 +19,8 @@ import {
   lastSessionE1rm,
   pbMainFocus,
   pbWarmupsOf,
+  pbBlockOfPlan,
+  activePause,
   mayHurtConfirm,
   stableStringify,
   deriveId,
@@ -131,6 +133,10 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     // a slot with Ben's own warm-ups keeps them.
     const warmups = pbWarmupsOf(appliedPlan);
     const warmupsOpt = warmups === 'full' ? {} : { warmups };
+    // (Ben, 23 Oct: plan length = block 1) The applied plan's deload week (derived from its Apply, pauses and his plan
+    // workouts): every load worked out here is ~10 % lighter and each slot a set fewer, as on Today's card and at Start.
+    const block = appliedPlan === null ? null : pbBlockOfPlan(appliedPlan, await repos.sessions.listFinishedRefs(p.id, 400).catch(() => []), nowMs, p.timezone);
+    const deloadOpt = block?.deload === true && activePause(appliedPlan, nowMs, p.timezone) === null ? { deload: true as const } : {};
     const snapGym = { id: req.gymId ?? 'no-gym', name: gym?.name ?? 'this gym', equipment };
     const substitute: SubstituteContext = { ownerId: p.id, unit: p.preferredUnit, gym: snapGym, knownEquipment: known, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, at };
 
@@ -284,6 +290,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         historyVersion: refs.historyVersion,
         ruleReps,
         ...(secondary === undefined ? {} : { secondary }),
+        ...deloadOpt,
       };
     };
     for (const id of exact) {
@@ -296,7 +303,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       // Not read up front (a candidate past the first few): the item and no reference; the service re-reads before keeping it.
       const e = byId.get(id);
       const eq = e === undefined ? null : equipmentHere(e, { gym: snapGym }).equipment;
-      return { mainFocus, unit: eq?.unit ?? p.preferredUnit, convention: eq?.loadConvention ?? e?.defaultLoadConvention ?? 'total', equipment: eq, bodyweightExercise: e?.defaultLoadConvention === 'bodyweight', gymEquipment: equipment, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: noReferenceCeiling(eq), painCap: null };
+      return { mainFocus, unit: eq?.unit ?? p.preferredUnit, convention: eq?.loadConvention ?? e?.defaultLoadConvention ?? 'total', equipment: eq, bodyweightExercise: e?.defaultLoadConvention === 'bodyweight', gymEquipment: equipment, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: noReferenceCeiling(eq), painCap: null, ...deloadOpt };
     };
 
     const presets = p.restPresets.map((r) => r.seconds);

@@ -1,4 +1,4 @@
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, View, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import type { PlanBuilderAnswers, PlanPrefAnswer, PlanTarget } from '@fizz/schem
 import { newUuid } from '../../device/runtime';
 import { formatShortDate } from '../../format/dates';
 import { todayAfterPlanApplied } from '../../navigation/actions';
+import type { RootStackParams } from '../../navigation/types';
 import {
   PB_ABS_OPTIONS,
   PB_COPY as C,
@@ -66,6 +67,8 @@ export function PlanSetupScreen() {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
+  // (Ben, 23 Oct: plan length = block 1) `Start next block ›`: the finished block's answers.
+  const fromPlanId = useRoute<RouteProp<RootStackParams, 'PlanSetup'>>().params?.fromPlanId;
   const insets = useSafeAreaInsets();
   const [session, setSession] = useState<PlanBuilderSession | null | 'error'>(null);
   const [answers, setAnswers] = useState<PlanBuilderAnswers | null>(null);
@@ -84,7 +87,7 @@ export function PlanSetupScreen() {
   /** Reads Ben's records for the builder. `keep`: the answers on screen stay (a gym was just added). */
   const load = (keep: PlanBuilderAnswers | null = null): void => {
     void services.planBuilder
-      .open()
+      .open(fromPlanId === undefined ? {} : { fromPlanId })
       .then((s) => {
         if (s === null) {
           setSession('error');

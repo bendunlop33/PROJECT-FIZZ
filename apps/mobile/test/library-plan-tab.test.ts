@@ -44,7 +44,10 @@ describe('tabs, links and the set-up hook', () => {
     expect(openPlanSetup()).toEqual({ type: 'NAVIGATE', payload: { name: 'PlanSetup' } });
     const today = code(read('screens/TodayScreen.tsx'));
     expect(today.match(/navigation\.dispatch\(openPlanSetup\(\)\)/g)).toHaveLength(1);
-    expect(today).not.toMatch(/openYourPlan|navigate\('Coach'[^)]*Build me a plan/);
+    expect(today).not.toMatch(/navigate\('Coach'[^)]*Build me a plan/);
+    // (Ben, 23 Oct: plan length = block 1) Today's only way to Your plan is the block week in the header, never Set up.
+    expect(today.match(/openYourPlan\(/g)).toHaveLength(1);
+    expect(today).toMatch(/onWeek=\{\(\) => \{\s*navigation\.dispatch\(openYourPlan\(newUuid\(\)\)\);/);
     expect(code(read('screens/profile/SplitScreen.tsx'))).toContain('navigation.dispatch(openYourPlan(newUuid()))');
   });
 

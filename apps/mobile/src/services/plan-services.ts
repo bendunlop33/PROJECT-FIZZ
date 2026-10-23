@@ -47,9 +47,15 @@ import {
   type PlanDayRow,
   type PlanEndChange,
   type PlanOverview,
+  pbAppliedBuilder,
+  pbBlockOfPlan,
+  pbBlockViews,
+  pbKitOfEquipment,
+  type PbBlockView,
+  type PlanKit,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
-import type { Exercise, MuscleGroup, PlanApplyMode, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { DraftSlot, EquipmentInstance, Exercise, MuscleGroup, PlanApplyMode, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Coach-built plans (Ben, 19 Oct): the plan card and its day view, Apply
@@ -75,6 +81,28 @@ export interface PlanServicesDeps {
   /** (Ben, 20 Oct) This week's activity lines and the week change in use (week-services); absent: none. */
   weekInfo?: () => Promise<{ lines: string[]; change: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][] } | null }>;
 }
+
+/**
+ * (Ben, 23 Oct: plan length = block 1) A builder plan's weeks on Library › Plan › Your plan: every week's view (the
+ * strip shows any of them; done weeks read-only), the current week, and whether the block is done (`Start next
+ * block ›` opens the builder with the plan's answers). Null on a coach plan (it has no length).
+ */
+export interface PlanBlockOverview {
+  views: PbBlockView[];
+  /** The week the strip opens on: the current one (the last once done). */
+  current: number;
+  done: boolean;
+  header: string;
+  /** `6 weeks · Standard · deload week 6`. */
+  line: string;
+}
+
+export interface PlanOverviewWithBlock extends PlanOverview {
+  /** Absent or null: no weeks to show (a coach plan). */
+  block?: PlanBlockOverview | null;
+}
+
+const EFFORT_WORD = { standard: 'Standard', push: 'Push', maintain: 'Maintain' } as const;
 
 export type PlanCardState =
   | { kind: 'open' }
@@ -188,6 +216,31 @@ export function createPlanServices(deps: PlanServicesDeps) {
 
   async function owner(): Promise<UserProfile | null> {
     return deps.profile();
+  }
+
+  /** (Ben, 23 Oct: plan length = block 1) The applied builder plan's weeks; null on a coach plan. */
+  async function blockOverview(p: UserProfile, plan: PlanDraft, refs: readonly { routineId: string | null; startedAtUtc: string; planDay?: { planId: string; dayIndex: number } | undefined }[], nowMs: number, tz: string, of: (id: string) => Exercise | null): Promise<PlanBlockOverview | null> {
+    const b = pbAppliedBuilder(plan);
+    const block = pbBlockOfPlan(plan, refs, nowMs, tz);
+    if (b === null || block === null) return null;
+    // Each slot's item wherever Ben set it up (the plan was checked at one gym; a later gym change doesn't move the plan).
+    const items = new Map<string, EquipmentInstance>();
+    for (const g of await deps.store().repos.gyms.listByOwner(p.id).catch(() => [])) for (const e of await deps.store().repos.equipment.listByGym(g.id).catch(() => [] as EquipmentInstance[])) items.set(e.id, e);
+    const kits = new Map<string, PlanKit | null>();
+    const kitOf = (slot: DraftSlot): PlanKit | null => {
+      const id = slot.checkedOn?.equipmentId ?? null;
+      if (id === null) return null;
+      if (!kits.has(id)) {
+        const eq = items.get(id);
+        kits.set(id, eq === undefined ? null : pbKitOfEquipment(eq));
+      }
+      return kits.get(id) ?? null;
+    };
+    const views = pbBlockViews({ version: b.version, builder: b.builder, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise' });
+    const a = b.builder.answers;
+    const deloads = views[0]?.deloadWeeks ?? [];
+    const line = [`${String(a.weeks)} weeks`, EFFORT_WORD[a.effort], ...(deloads.length === 0 ? [] : [`deload ${deloads.length === 1 ? 'week' : 'weeks'} ${deloads.join(', ')}`])].join(' · ');
+    return { views, current: Math.min(block.week, a.weeks), done: block.done, header: views[0] === undefined ? '' : views[0].header, line };
   }
 
   async function exerciseOf(): Promise<(id: string) => Exercise | null> {
@@ -482,7 +535,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
      * Throws when the plan or its workouts can't be read (review planview S5: never
      * shown as no plan).
      */
-    async overview(): Promise<PlanOverview | null> {
+    async overview(): Promise<PlanOverviewWithBlock | null> {
       const p = await owner();
       if (p === null) return null;
       const plan = await repo().applied(p.id);
@@ -506,7 +559,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const nextRoutineId = pause !== null ? null : ((await deps.upNextRoutineId?.(gym?.id ?? null).catch(() => null)) ?? null);
       const monday = localWeekBounds(nowMs, tz).mondayLocalDate;
       const info = (await deps.weekInfo?.().catch(() => null)) ?? null;
-      return planOverview({
+      const view = planOverview({
         activities: info?.lines ?? [],
         weekChange: info?.change ?? null,
         paused: pause === null ? null : { untilDate: pause.untilDate },
@@ -520,6 +573,8 @@ export function createPlanServices(deps: PlanServicesDeps) {
         nowMs,
         tz,
       });
+      if (view === null) return null;
+      return { ...view, block: await blockOverview(p, plan, workouts, nowMs, tz, of) };
     },
 
     /** One day of the plan in use (Library › Your plan › a day): its planned sets at this gym and last time's. Null: not a day of it. */

@@ -8,12 +8,15 @@ import { addDays, localDateOf, localDateText, localHourUtcMs, PLAN_OVERVIEW_COPY
 
 import { dateAt } from '../../clock';
 import { WEEK_COPY } from '../../services/week-services';
+import type { PlanOverviewWithBlock } from '../../services/plan-services';
+import { openNextBlock } from '../../navigation/actions';
 import { newUuid } from '../../device/runtime';
 import type { LibraryStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Eyebrow, Icon, TextButton } from '../../ui';
 import { LiftTargetsBlock } from './LiftTargetsBlock';
+import { PlanWeeksBlock } from './PlanWeeksBlock';
 
 /** `why`: a line behind the toast's `Why?` (End plan's `N workouts not restored`). */
 export type PlanToast = { text: string; action?: string; onAction?: () => void; why?: string };
@@ -27,7 +30,7 @@ export type PlanToast = { text: string; action?: string; onAction?: () => void; 
  * confirm, then a toast with Undo). Every value comes from
  * `services.plans.overview()`; this draws it. Local only (rule 1).
  */
-export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: (t: PlanToast | null) => void }) {
+export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; onToast: (t: PlanToast | null) => void }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -167,6 +170,16 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
         ) : null}
         <TextButton label={plan.goal.action} tone="secondary" accessibilityLabel={plan.goal.action === PLAN_OVERVIEW_COPY.edit ? 'Edit goal' : 'Set goal'} onPress={openTraining} />
       </View>
+      {/* (Ben, 23 Oct: plan length = block 1) A builder plan's weeks: the strip, that week's days, and the block's end. */}
+      {plan.block != null ? (
+        <PlanWeeksBlock
+          key={`${plan.planId}:${String(plan.block.current)}:${String(plan.block.done)}`}
+          block={plan.block}
+          onStartNext={() => {
+            navigation.dispatch(openNextBlock(plan.planId));
+          }}
+        />
+      ) : null}
       <View>
         {plan.days.map((d, i) => (
           <DayRow

@@ -112,6 +112,8 @@ import {
   carryItemText,
   landCarryOver,
   withCoachSetCounts,
+  withDeloadSets,
+  withDeloadLoads,
   carryOverOffer,
   fitLostByGroup,
   type CarryDay,
@@ -800,6 +802,13 @@ export function createBuilderService(deps: BuilderServiceDeps) {
    * rule 4), with what Your workout can't hold left out and named; a chat draft's checked plan as it stands. With
    * the version it was made from, so a later change reloads it and a stale chat start is refused (rule 5).
    */
+  /** (Ben, 23 Oct) A plan opened as Start planned it, in the applied plan's deload week: lighter loads, a set fewer. Else as is. */
+  function deloadedHere(plan: DraftPlan, env: BuilderEnv): DraftPlan {
+    if (!plan.slots.some((x) => env.ctx.loads(x.exerciseId).deload === true)) return plan;
+    const w = withDeloadSets(withDeloadLoads(fromDraftPlan(plan), env.ctx).workout, env.ctx).workout;
+    return toDraftPlan(w, env.codec);
+  }
+
   async function sourcePlanOf(p: UserProfile, from: BuilderDraftFrom, gymId: string | null | undefined, keySeed: string): Promise<{ plan: DraftPlan; gymId: string | null; sourceVersion: number | null; leftOut: string[]; main: string | null; name: string; slotSeed?: string } | { closed: string }> {
     switch (from.kind) {
       case 'routine':
@@ -844,8 +853,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         }
         // Rule 4: an exercise the planner put on no item is fitted to the builder's item here (never past its max).
         const fitted: DraftPlan = { slots: slots.map((x) => fitPlannedSlotHere(x, slotLoadOf(env.ctx.loads(x.exerciseId), x.main), env.codec.checkedOnOf(x.exerciseId))) };
+        // (Ben, 23 Oct: plan length = block 1) The plan's deload week: what opens is lighter and a set fewer, as on Today.
+        const lighter = deloadedHere(fitted, env);
         // (WU1–WU12) Its warm-ups as the builder plans them for each exercise's place (Ben's own kept), so what opens is what saves.
-        return { plan: settlePlanWarmups(fitted, { ...env.codec, loads: env.ctx.loads }), gymId: env.gymId, sourceVersion, leftOut: out.leftOut.slice(0, BUILD_LIMITS.maxExercises * 3), main, name, slotSeed: keySeed };
+        return { plan: settlePlanWarmups(lighter, { ...env.codec, loads: env.ctx.loads }), gymId: env.gymId, sourceVersion, leftOut: out.leftOut.slice(0, BUILD_LIMITS.maxExercises * 3), main, name, slotSeed: keySeed };
       }
       case 'coach_draft': {
         const d = await repos().workoutDrafts.get(from.id).catch(() => null);
@@ -988,6 +999,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     // (Ben, 23 Oct) The coach's set count for next time (a small change, or one Ben applied on the Summary), as Start
     // plans it; then, on a plan day, the sets Ben carried over to it (as on Today's card; Library's `Open in builder ›`).
     workout = withCoachSetCounts(workout, env.ctx).workout;
+    // (Ben, 23 Oct: plan length = block 1) The plan's deload week: a set fewer, RPE ≤ 7 (the loads are lighter already).
+    workout = withDeloadSets(workout, env.ctx).workout;
     if (plan !== null) workout = await landedForPlanDay(workout, plan, env);
     return { env, workout, skipped, plan, variation };
   }

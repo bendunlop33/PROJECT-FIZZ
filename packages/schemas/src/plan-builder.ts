@@ -121,5 +121,11 @@ export const PlanBuilderRecordSchema = z.object({
   answers: PlanBuilderAnswersSchema,
   /** The gym the loads were checked at (rule 4), when one is set up. */
   gymId: IdSchema.nullable(),
+  /**
+   * (Ben, 23 Oct: plan length = block 1) Each accessory slot's week-1 reps as the engine planned them (`3 × 10`), by
+   * slot key: the slot stores its rep range (8–12), so the weekly progression starts from the right rep. Absent on
+   * plans built before it: the range's bottom.
+   */
+  startReps: z.record(z.string().min(1).max(64), z.int().min(1).max(50)).optional(),
 });
 export type PlanBuilderRecord = z.infer<typeof PlanBuilderRecordSchema>;

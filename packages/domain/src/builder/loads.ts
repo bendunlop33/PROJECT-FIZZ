@@ -80,6 +80,30 @@ export interface BuilderLoadResult {
  * is, whatever the est. max says.
  */
 export function builderLoad(raw: SlotLoadInput, set: { reps: number; rpe: number }): BuilderLoadResult {
+  const r = plannedLoad(raw, set);
+  return raw.deload === true ? deloaded(r, raw) : r;
+}
+
+/** (Training-blocks §4.4, Q3) A deload week's loads: this share of the week's working load, rounded down after. */
+export const DELOAD_LOAD_SHARE = 0.9;
+
+/** Conventions the deload lightens by load: resistance and added weight (assisted lifts keep theirs; bodyweight has none). */
+const DELOAD_CONVENTIONS: ReadonlySet<LoadConvention> = new Set(['total', 'per_hand', 'stack', 'added']);
+
+/**
+ * (Training-blocks §4.4; D4, SS4, HT8) The week's load −10 %: the working load and the e1RM every other set derives
+ * from, so back-offs drop by the same %. Never below the item's lightest load (that one is kept instead, so a deload
+ * never leaves a set with no load). Assisted lifts keep their load (less assistance would be harder).
+ */
+function deloaded(r: BuilderLoadResult, raw: SlotLoadInput): BuilderLoadResult {
+  if (r.working === null || r.working <= 0 || !DELOAD_CONVENTIONS.has(r.convention)) return r;
+  let share = DELOAD_LOAD_SHARE;
+  const fit = fitHere(r.working * share, roundContextOf(raw));
+  if (!fit.ok && fit.reason === 'lightest_is_harder' && fit.lightest !== null) share = Math.min(1, fit.lightest / r.working);
+  return { ...r, working: tidy(r.working * share), anchorE1rm: r.anchorE1rm === null ? null : tidy(r.anchorE1rm * share) };
+}
+
+function plannedLoad(raw: SlotLoadInput, set: { reps: number; rpe: number }): BuilderLoadResult {
   const frame = loadFrameOf(raw);
   const input = inFrame(raw, frame);
   const u = { unit: frame.unit, convention: frame.convention };

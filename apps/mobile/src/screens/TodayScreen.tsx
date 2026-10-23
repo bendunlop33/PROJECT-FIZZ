@@ -12,7 +12,7 @@ import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
 import { formatShortDate, formatTime } from '../format/dates';
-import { openPlanSetup } from '../navigation/actions';
+import { openPlanSetup, openYourPlan } from '../navigation/actions';
 import { PB_COPY } from '../plan-builder/plan-builder-view';
 import type { TabParams } from '../navigation/types';
 import { DeleteToastView } from '../history/DeleteToastView';
@@ -884,6 +884,10 @@ export function TodayScreen() {
       >
         <TodayHeader
           title={todayTitle(zoned.utc, zoned.tz)}
+          week={session?.block ?? null}
+          onWeek={() => {
+            navigation.dispatch(openYourPlan(newUuid()));
+          }}
           coach={
             <CoachAskBar
               page="today"

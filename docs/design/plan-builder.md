@@ -100,7 +100,7 @@ One screen flow that turns your goals and week into a plan you can adjust before
 - **Runs** (GA11, GA15): no legs the day before the long run; swapped with the furthest non-leg day.
 - **Weights** from history per exercise (history-targets HT rules once approved; until then the Build C load order). Why? per exercise: "Last time 90 × 12". Main lifts start from the 6-rep estimate (§1a, 22 Oct).
 - **This week matches Today (22 Oct, design review V1/V2/V4/V6).** The plan overview's current week and Today read the same data: same day order, exercises, names (catalogue display names, e.g. Barbell bench press), sets, reps, kg and minutes. Done weeks show what was lifted; later weeks step on from there.
-- **Block**: 6 weeks, deload week 6 (training-blocks §2); lift-target dates fit the block length there.
+- **Block**: 6 weeks, deload week 6 (training-blocks §2); lift-target dates fit the block length there. **(Ben, 23 Oct: plan length = block 1.)** The plan's length is its first training block: Your plan's week strip, Today's `Week 3 of 6` and the deload week come from the plan's answers and Ben's plan workouts (derived, training-blocks §4.1); deload weeks per Effort (Standard: last; Push: every 4th; Maintain: none) draft −10 % and one set fewer (never below 2; Q3 supersedes "about a third of the sets" above). Done weeks are read-only. At the end, `Block done · Start next block ›` opens this builder with the same answers (no block review yet).
 - **Coach**: may reorder, swap accessories or adjust sets with a one-line reason; code checks every number (rule 3/4). Structural changes it suggests on its own are offers, never applied.
 
 ## 3. Entry points

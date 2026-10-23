@@ -7,3 +7,4 @@ export * from './expect';
 export * from './to-draft';
 export * from './answers';
 export * from './inputs';
+export * from './block';
