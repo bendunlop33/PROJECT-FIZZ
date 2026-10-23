@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-reverse-crunch",
+  "tier": "rich",
+  "name": "Reverse crunch",
+  "aliases": ["Reverse crunches", "Lying reverse crunch", "Floor reverse crunch", "Bench reverse crunch"],
+  "family": "crunch",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your back, arms by your sides",
+      "Lift your knees over your hips, bent to 90°",
+      "Palms resting lightly on the floor"
+    ],
+    "execution": [
+      "Curl your hips up off the floor toward your ribs",
+      "Roll your lower back up; knees stay bent",
+      "Pause, then lower your hips slowly",
+      "Stop when your knees are back over your hips"
+    ],
+    "faults": [
+      "Don't swing your legs for momentum",
+      "Don't let your knees drop past your hips",
+      "Don't shove the floor hard with your hands"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "This is a small movement: the pelvis curls toward the ribs. Swinging the legs turns it into a hip exercise.",
+      "Lower under control so your lower back doesn't drop onto the floor.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "Builds control of the lower back and pelvis without curling." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Decline reverse crunch", "reason": "Head-up on a decline bench adds range and difficulty." },
+      { "key": "bodyweight-captains-chair-knee-raise", "name": "Captain's chair knee raise", "reason": "Same pelvic curl with the legs hanging; harder." },
+      { "key": "bodyweight-hanging-knee-raise", "name": "Hanging knee raise", "reason": "Same pelvic curl while hanging; harder and adds grip." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-lying-leg-raise", "name": "Lying leg raise", "reason": "Straight-leg hip lift on the floor; more hip work, less curl." },
+      { "key": "bodyweight-crunch", "name": "Crunch", "reason": "Curls from the ribs down instead." },
+      { "key": "cable-crunch", "name": "Cable crunch", "reason": "Loaded ab curl with stack steps." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, figure lying along the frame with the head on the left. A thin mat line under the body.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Lying on the back, arms by the sides with palms down. Hips bent about 90° so the knees sit over the hips, knees bent about 90°. Lower back on the mat.",
+        "approxAnglesDeg": { "hipFlexion": 90, "kneeFlexion": 90, "pelvisLift": 0 }
+      },
+      {
+        "label": "Curled",
+        "describe": "Hips and lower back rolled up off the mat, knees drawn toward the chest, knee bend unchanged. Upper back, head and arms stay on the mat.",
+        "approxAnglesDeg": { "hipFlexion": 120, "kneeFlexion": 90, "pelvisLift": 30 }
+      }
+    ],
+    "ikHints": ["Shoulders, head and hands stay on the mat in every frame", "Knee angle stays about the same"],
+    "tempo": { "downMs": 1800, "holdMs": 300, "upMs": 1000 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "The pelvis curls up toward the ribs",
+      "Knees stay bent; legs don't swing",
+      "Slow lowering back to knees-over-hips"
+    ],
+    "doNotShow": ["Legs kicking or swinging", "Knees dropping to the floor", "Rolling onto the neck"]
+  },
+  "sources": [
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/76/reverse-crunch/",
+      "title": "ACE Exercise Library: Reverse Crunch",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-3]; cues.faults[0-1]; safety.notes[0-1]; primaryMuscles"
+    },
+    {
+      "url": "https://www.acefitness.org/about-ace/press-room/press-releases/246/american-council-on-exercise-ace-sponsored-study-reveals-best-and-worst-abdominal-exercises/",
+      "title": "ACE press release (2001): ACE-sponsored study reveals best and worst abdominal exercises",
+      "checkedOn": "2026-10-23",
+      "supports": "secondaryMuscles (reverse crunch ranked among the top three for oblique EMG in a 30-person study)",
+      "note": "Press release, not a peer-reviewed paper. Muscle activity is not the same as growth."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "The catalogue has no hip_flexors muscle word (expansion research Q1); ACE lists the hip flexors as assisting. They are left out rather than mapped to another muscle."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. pelvisLift is the tilt of the pelvis off the floor."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -44,8 +44,8 @@ const CASES: readonly Case[] = [
   ['Rear Delt Dumbbell Fly', 'Shoulders', ['matched', 'Dumbbell rear-delt fly']],
   // A misspelling is Ben's naming (Your data), not a catalogue alias: suggested, and his answer is remembered (review import-names S2).
   ['Rear Delt Dumbell Fly', 'Shoulders', ['check', 'Dumbbell rear-delt fly']],
-  // Can be a 45° extension, a Roman chair or a stack machine: Ben confirms.
-  ['Lower Back Extensions', 'Back', ['check', '45° back extension']],
+  // Can be a 45° extension, a Roman chair or a stack machine: Ben confirms. The machine's `Seated lower back extension` shares the most words.
+  ['Lower Back Extensions', 'Back', ['check', 'Back extension machine']],
   // Ambiguous (Ben's is a machine; the catalogue has dumbbell, cable and machine flies): never matched or guessed.
   ['Chest Fly', 'Chest', ['no_match', null]],
 ];
@@ -57,7 +57,7 @@ const IOS_CASES: readonly Case[] = [
   ['Lat Cable Pull', 'Lats', ['check', 'Lat pulldown']],
   ['Barbell Shrug', 'Trapezius', ['matched', 'Barbell shrug']],
   ['Barbell Calf Raise', 'Calves', ['check', 'Standing barbell calf raise']],
-  ['Lower Back Extensions', 'Back (Lower)', ['check', '45° back extension']],
+  ['Lower Back Extensions', 'Back (Lower)', ['check', 'Back extension machine']],
   ['Chest Fly', 'Pectorals', ['no_match', null]],
 ];
 

@@ -12,7 +12,16 @@ const byKey = (key: string): CatalogueEntry => {
 
 describe('builder groups on the catalogue', () => {
   it('every strength entry has a builder group and a focus inside it, and a works line', () => {
-    for (const e of entries.filter(isBuilderStrength)) {
+    // Forearms has no builder group (builder-groups.ts): forearm- or grip-only entries
+    // (wrist curls, dead hang) have none, but still have a works line.
+    const forearmOnly = (e: CatalogueEntry) => e.primaryMuscles.every((m) => m === 'forearms' || m === 'grip');
+    const forearm = entries.filter((e) => isBuilderStrength(e) && forearmOnly(e));
+    expect(forearm.map((e) => e.key).sort()).toEqual(['barbell-reverse-wrist-curl', 'barbell-wrist-curl', 'bodyweight-dead-hang']);
+    for (const e of forearm) {
+      expect(builderGroupOf(e), e.key).toBeNull();
+      expect(worksLine(e), e.key).not.toBeNull();
+    }
+    for (const e of entries.filter((x) => isBuilderStrength(x) && !forearmOnly(x))) {
       const g = builderGroupOf(e);
       expect(g, e.key).not.toBeNull();
       expect(BUILDER_FOCI[g as BuilderGroup] as readonly BuilderFocus[], e.key).toContain(builderFocusOf(e));

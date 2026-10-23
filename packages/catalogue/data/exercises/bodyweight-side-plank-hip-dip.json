@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-side-plank-hip-dip",
+  "tier": "rich",
+  "name": "Side plank hip dip",
+  "aliases": ["Side plank hip dips", "Side plank dips", "Side plank hip raise", "Side bridge hip dip"],
+  "family": "plank",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["obliques", "abductors"],
+  "secondaryMuscles": ["core", "glutes"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your side, forearm under your shoulder",
+      "Stack your feet and legs",
+      "Lift your hips into a straight line"
+    ],
+    "execution": [
+      "Lower your hips slowly toward the floor",
+      "Stop just before they touch",
+      "Drive your hips back up to the line",
+      "Push the floor away with your forearm"
+    ],
+    "faults": [
+      "Don't let your hips roll forward",
+      "Don't sink into your shoulder",
+      "Don't drop and bounce off the floor"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Keep the elbow directly under the shoulder so the shoulder stays stacked and supported.",
+      "Use a mat under the forearm and hip.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Hold the top position without the dips." },
+      { "key": null, "name": "Bent-knee side plank hip dip", "reason": "Knees bent and on the floor; a much shorter lever." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Star side plank hip dip", "reason": "Top leg raised and support on the hand; much harder balance and hip work." },
+      { "key": "bodyweight-copenhagen-plank", "name": "Copenhagen plank", "reason": "Side plank with the top leg on a bench; adds inner-thigh demand." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Same position held still." },
+      { "key": "cable-side-bend", "name": "Cable side bend", "reason": "Loaded side-bending, easy to progress on a stack." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Standing obliques work that resists twisting." },
+      { "key": "farmers-carry", "name": "Farmer's carry", "reason": "Trunk and hips stay level while walking under load." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "View facing the front of the body, camera at hip height, so the straight head-to-feet line and the hips dipping toward the floor read clearly. Supporting forearm nearest the floor.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Side plank on the lower forearm, elbow under the shoulder. Feet stacked, body straight from head to heels, hips lifted in line.",
+        "approxAnglesDeg": { "hipAbduction": 0, "trunkTiltFromFloor": 20, "elbowFlexion": 90 }
+      },
+      {
+        "label": "Dip",
+        "describe": "Hips lowered toward the floor so the body bends sideways at the waist, hip just short of touching. Shoulder still stacked over the elbow, no forward roll.",
+        "approxAnglesDeg": { "hipAbduction": -15, "trunkTiltFromFloor": 10, "elbowFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Forearm and feet stay fixed on the floor", "Shoulder stays over the elbow"],
+    "tempo": { "downMs": 1500, "holdMs": 200, "upMs": 1000 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Hips move straight down and up, not forward",
+      "Body returns to a straight line at the top",
+      "Controlled dip; no bounce"
+    ],
+    "doNotShow": ["Hips rotating toward the floor", "Hip resting on the floor", "Shoulder collapsing toward the ear"]
+  },
+  "sources": [
+    {
+      "url": "https://www.caliverse.app/exercises/37",
+      "title": "Caliverse: Side Plank Raises (side plank hip dips)",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-2]; cues.faults[0-2]; guideBrief.keyPositions"
+    },
+    {
+      "url": "https://theprehabguys.com/vimeo-video/star-side-plank-hip-dip/",
+      "title": "The Prehab Guys: Star Side Plank – Hip Dip",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.progressions[0]; cues.faults[0] (avoid rotating); primaryMuscles (outer hip and trunk on the down side)",
+      "note": "Describes the harder star version on the hand; used for the progression and shared cues only."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "Abductors as a primary follows the expansion research table; no EMG source was checked for this exact exercise."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

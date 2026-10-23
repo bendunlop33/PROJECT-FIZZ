@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-tibialis-raise",
+  "tier": "rich",
+  "name": "Tibialis raise",
+  "aliases": ["Tib raise", "Tib raises", "Tibialis raises", "Wall tibialis raise", "Wall tib raise", "Tibialis anterior raise"],
+  "family": "tibialis_raise",
+  "movementPattern": "calves",
+  "mechanic": "isolation",
+  "primaryMuscles": ["calves"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lean your back and hips on a wall",
+      "Feet out in front, legs straight",
+      "Heels down, about hip-width apart"
+    ],
+    "execution": [
+      "Pull your toes up toward your shins",
+      "Lift them as high as you can",
+      "Lower slowly until they almost touch",
+      "Keep your heels on the floor"
+    ],
+    "faults": [
+      "Don't bounce your toes off the floor",
+      "Don't bend your knees to help",
+      "Don't rush the lowering"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Feet further from the wall make it harder; start close and move out.",
+      "The front of the shin tires quickly and can burn. Stop the set when the range gets short.",
+      "This is a training exercise for the front of the shin. It makes no claim about preventing or treating shin pain.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "A cramp that won't ease",
+      "Pain that changes how you move"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Seated toe raises", "reason": "Sitting on a bench with feet flat; lighter and easier to control." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Feet further from the wall", "reason": "More body lean puts more weight through the shins." },
+      { "key": null, "name": "Single-leg tibialis raise", "reason": "One foot at a time." },
+      { "key": null, "name": "Tib bar raise", "reason": "Seated on a high bench with plates on a tib bar; loadable. Logs a weight, so it would be its own entry." }
+    ],
+    "substitutions": [
+      { "key": null, "name": "Band toe pull", "reason": "Seated with a band around the top of the foot, anchored in front." },
+      { "key": null, "name": "Heel walks", "reason": "Walking on the heels with toes up works the same muscle with no kit." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at shin height, figure facing right with the wall behind. Shows the lean on the wall and the toes lifting while the heels stay down.",
+    "keyPositions": [
+      {
+        "label": "Down",
+        "describe": "Back and hips resting on the wall, legs straight, feet about a foot-length or two from the wall. Heels and toes on the floor.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": -10, "kneeFlexion": 0, "ankleDorsiflexion": 10 }
+      },
+      {
+        "label": "Up",
+        "describe": "Toes lifted as high as possible toward the shins, heels still on the floor. Body still leaning on the wall.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": -10, "kneeFlexion": 0, "ankleDorsiflexion": 30 }
+      }
+    ],
+    "ikHints": ["Heels fixed on the floor", "Back fixed against the wall"],
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 800 },
+    "props": ["wall"],
+    "emphasise": [
+      "Only the ankles move",
+      "Heels stay down",
+      "Slow lowering"
+    ],
+    "doNotShow": ["Knees bending", "Toes slapping the floor"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/tibialis-raise/",
+      "title": "StrengthLog: Tibialis Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-3]; safety.notes[0]"
+    },
+    {
+      "url": "https://www.strengthlog.com/tibialis-anterior-exercises-workout/",
+      "title": "StrengthLog: How to train your tibialis anterior",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.progressions[2]; variations.substitutions[0]"
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/40633262/",
+      "title": "2025 meta-analysis on preventing medial tibial stress syndrome",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[2]: neuromuscular programmes helped prevent shin pain, but tibialis raises were not isolated, so no claim is made for this exercise",
+      "note": "Cited from the research file (exercise-catalogue-expansion [MTSS]); not re-read in this pass."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "The muscle trained is the tibialis anterior (front of the shin). The vocabulary has no 'tibialis' word (research Q1), so it is mapped to 'calves', the only lower-leg word. That is anatomically wrong (the calves are on the back of the shin) and will show the wrong area until Ben approves a new word."
+    },
+    {
+      "field": "movementPattern",
+      "note": "Mapped to 'calves' (the lower-leg pattern); no ankle-flexion pattern exists."
+    },
+    {
+      "field": "sources",
+      "note": "Both coaching sources are from one publisher."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets. Negative trunkLeanFromVertical means leaning back onto the wall."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

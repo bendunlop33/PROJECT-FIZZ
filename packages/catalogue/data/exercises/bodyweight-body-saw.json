@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-body-saw",
+  "tier": "rich",
+  "name": "Body saw",
+  "aliases": ["Body saws", "Slider body saw", "Plank saw", "Forearm plank saw"],
+  "family": "plank",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs", "core"],
+  "secondaryMuscles": ["obliques", "front_delts", "lats"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Forearm plank, elbows under shoulders",
+      "Toes on sliders or a towel",
+      "Brace abs and squeeze your glutes"
+    ],
+    "execution": [
+      "Push your body back past your elbows",
+      "Keep a straight line, hips level",
+      "Pull back until shoulders are over elbows",
+      "Only go as far as you can stay flat"
+    ],
+    "faults": [
+      "Don't let your hips sag",
+      "Don't pike your hips up",
+      "Don't hold your breath"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Range is the dial: reaching further back is harder. Stop each rep before your lower back starts to arch.",
+      "Use a smooth floor and proper sliders or a towel so the feet glide evenly.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-plank", "name": "Plank", "reason": "Hold the same position without sliding." },
+      { "key": null, "name": "Kneeling body saw", "reason": "Knees down shortens the lever." }
+    ],
+    "progressions": [
+      { "key": "bodyweight-ab-wheel-rollout", "name": "Ab-wheel rollout", "reason": "Longer lever and bigger range." },
+      { "key": null, "name": "Suspension-strap body saw", "reason": "Feet in straps add instability." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-ab-wheel-rollout", "name": "Ab-wheel rollout", "reason": "Similar anti-extension work with a wheel." },
+      { "key": "bodyweight-plank", "name": "Plank", "reason": "No sliders needed." },
+      { "key": "bodyweight-hollow-body-hold", "name": "Hollow body hold", "reason": "Anti-extension on your back." },
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "Easier anti-extension with a moving limb." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, head on the left, so the shoulder moving behind and back over the elbow is clear against the fixed forearms.",
+    "keyPositions": [
+      {
+        "label": "Plank",
+        "describe": "Forearm plank with elbows under the shoulders, toes on sliders. Straight line from head to heels.",
+        "approxAnglesDeg": { "shoulderFlexion": 90, "elbowFlexion": 90, "hipFlexion": 0 }
+      },
+      {
+        "label": "Back",
+        "describe": "Whole body slid backward so the shoulders are behind the elbows and the arms reach further overhead. Body still a straight line; hips not sagging.",
+        "approxAnglesDeg": { "shoulderFlexion": 120, "elbowFlexion": 90, "hipFlexion": 0 }
+      }
+    ],
+    "ikHints": ["Forearms fixed on the floor", "Toes glide on the floor; body stays rigid"],
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 1500 },
+    "props": ["floor_mat", "sliders"],
+    "emphasise": [
+      "Body moves as one straight piece",
+      "Shoulders travel behind the elbows",
+      "Small, controlled range"
+    ],
+    "doNotShow": ["Hips sagging", "Hips piking up", "Big range with an arched back"]
+  },
+  "sources": [
+    {
+      "url": "https://fitnessvolt.com/body-saw/",
+      "title": "Fitness Volt: Body Saw Exercise Guide",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-1,3]; cues.faults[0,2]; safety.notes[0]; variations.regressions[1]; variations.progressions[1]"
+    },
+    {
+      "url": "https://coachweb.com/core-exercises/6344/upgrade-your-plank-with-the-body-saw",
+      "title": "Coach: How To Do The Body Saw Exercise And Upgrade Your Plank",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[2]; guideBrief.keyPositions[1] (shoulders shift behind the elbows); cues.faults[0]",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "compatibleEquipment",
+      "note": "Sliders and suspension straps have no equipment kind yet (expansion research Q2), so it is filed as bodyweight_station."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -88,11 +88,14 @@ describe('FitNotes import: preview, answers, commit', () => {
     // Names needing Ben first; the catalogue's other names match exactly (`Incline DB press`).
     expect(draft.analysis.names.map((n) => [n.name, n.match.status])).toEqual([
       ['Bench Press (Barbell)', 'check'],
-      ['Hammer Strength Row', 'no_match'],
+      ['Hammer Strength Row', 'check'],
       ['Lat Pulldown', 'matched'],
       ['Hammer Curl', 'matched'],
       ['Incline DB Press', 'matched'],
     ]);
+    // Only a suggestion (the catalogue's `Hammer Strength high row`); Ben adds his own row below.
+    const hammer = draft.analysis.names.find((n) => n.name === 'Hammer Strength Row')?.match.exerciseId ?? '';
+    expect(s.imports.candidate(draft.draftId, hammer)?.name).toBe('Plate-loaded high row');
     // Nothing saved by a preview.
     expect(await s.yourData.counts()).toEqual(before);
     expect(await s.imports.list()).toEqual([]);

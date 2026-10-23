@@ -60,13 +60,13 @@
       { "key": "machine-standing-calf-raise", "name": "Standing calf raise (machine)", "reason": "The machine takes away balance, so the calves are the only limit." }
     ],
     "progressions": [
-      { "key": null, "name": "Single-leg calf raise", "reason": "One leg at a time with a dumbbell or a hand on the rack; much harder at the same load." }
+      { "key": "bodyweight-single-leg-calf-raise", "name": "Single-leg calf raise", "reason": "One leg at a time with a dumbbell or a hand on the rack; much harder at the same load." }
     ],
     "substitutions": [
       { "key": "machine-standing-calf-raise", "name": "Standing calf raise (machine)", "reason": "Same straight-knee movement; stack or plate loading." },
       { "key": "machine-seated-calf-raise", "name": "Seated calf raise", "reason": "Bent knees shift more work to the lower calf (soleus); weight added on the machine." },
       { "key": null, "name": "Smith machine calf raise", "reason": "Same movement with the bar on a guided track, so balance is easier." },
-      { "key": null, "name": "Leg-press calf raise", "reason": "Calves only, with the back supported." }
+      { "key": "machine-leg-press-calf-raise", "name": "Leg-press calf raise", "reason": "Calves only, with the back supported." }
     ]
   },
   "guideBrief": {

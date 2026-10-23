@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-captains-chair-knee-raise",
+  "tier": "rich",
+  "name": "Captain's chair knee raise",
+  "aliases": ["Captains chair knee raise", "Captain's chair", "Captain's chair knee raises", "Vertical knee raise", "VKR", "Roman chair knee raise", "Power tower knee raise"],
+  "family": "leg_raise",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["dip_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Back on the pad, forearms on the arm rests",
+      "Grip the handles; let your legs hang",
+      "Press your shoulders down, away from your ears"
+    ],
+    "execution": [
+      "Lift your knees up toward your chest",
+      "At the top, tilt your hips up off the back pad",
+      "Pause, then lower your legs slowly",
+      "Stop the legs before they swing"
+    ],
+    "faults": [
+      "Don't swing your legs up",
+      "Don't stop at hip height without the hip tilt",
+      "Don't shrug your shoulders up"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Climb on and off using the side steps; don't jump down.",
+      "Lower each rep under control so the legs don't swing into the next.",
+      "If your shoulders or elbows are uncomfortable on the pads, the reverse crunch trains the same curl lying down.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-reverse-crunch", "name": "Reverse crunch", "reason": "Same pelvic curl lying on the floor; easier." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Captain's chair straight-leg raise", "reason": "Straight legs make a longer lever; much harder." },
+      { "key": "bodyweight-hanging-knee-raise", "name": "Hanging knee raise", "reason": "No back pad, so more grip and control are needed." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-hanging-knee-raise", "name": "Hanging knee raise", "reason": "Same knee raise from a pull-up bar." },
+      { "key": "bodyweight-lying-leg-raise", "name": "Lying leg raise", "reason": "Hip lift on the floor when the station is busy." },
+      { "key": "bodyweight-reverse-crunch", "name": "Reverse crunch", "reason": "Pelvic curl with no equipment." },
+      { "key": "machine-ab-crunch", "name": "Ab crunch machine", "reason": "Stack-loaded ab work; curls from the ribs instead." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height of a figure in a captain's chair (vertical back pad, forearm rests with handles). Feet hang clear of the floor.",
+    "keyPositions": [
+      {
+        "label": "Hang",
+        "describe": "Back against the pad, forearms on the rests, hands on the handles, shoulders pressed down. Legs hang straight down with the knees soft.",
+        "approxAnglesDeg": { "hipFlexion": 5, "kneeFlexion": 10, "pelvisTilt": 0 }
+      },
+      {
+        "label": "Knees up",
+        "describe": "Knees raised above hip height toward the chest, knees bent. Pelvis tilted up so the lower back eases off the pad. Shoulders still down.",
+        "approxAnglesDeg": { "hipFlexion": 115, "kneeFlexion": 100, "pelvisTilt": 20 }
+      }
+    ],
+    "ikHints": ["Forearms fixed on the rests and upper back on the pad in every frame"],
+    "tempo": { "downMs": 1600, "holdMs": 300, "upMs": 900 },
+    "props": ["captains_chair"],
+    "emphasise": [
+      "Knees lift and the pelvis tilts up at the top",
+      "Slow lowering with no swing"
+    ],
+    "doNotShow": ["Legs swinging", "Shoulders shrugged to the ears", "Jumping down from the station"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/captains-chair-knee-raise/",
+      "title": "StrengthLog: Captain's Chair Knee Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; secondaryMuscles; cues.setup[0-1]; cues.execution[0,2]; cues.faults[0]"
+    },
+    {
+      "url": "https://www.acefitness.org/about-ace/press-room/press-releases/246/american-council-on-exercise-ace-sponsored-study-reveals-best-and-worst-abdominal-exercises/",
+      "title": "ACE press release (2001): ACE-sponsored study reveals best and worst abdominal exercises",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles and secondaryMuscles (captain's chair ranked in the top three for rectus abdominis and first for obliques by EMG, 30 adults)",
+      "note": "Press release, not a peer-reviewed paper. Muscle activity is not the same as growth."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "StrengthLog lists the hip flexors as a primary muscle. The catalogue has no hip_flexors word (expansion research Q1), so they are left out rather than mapped to another muscle."
+    },
+    {
+      "field": "aliases",
+      "note": "UK gyms often call this station a \"Roman chair\", but \"Roman chair back extension\" is an alias of the 45° back extension (expansion research Q6). Only the specific \"Roman chair knee raise\" is an alias here. Plain \"Knee raise\" stays with Hanging knee raise. \"Captain's chair\" alone names the station; most people log it for this exercise, but Ben should confirm."
+    },
+    {
+      "field": "requiresStation",
+      "note": "There is no captain's-chair station value. dip_station is the nearest, because the chair is usually part of a dip tower."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-bicycle-crunch",
+  "tier": "rich",
+  "name": "Bicycle crunch",
+  "aliases": ["Bicycle crunches", "Bicycles", "Bicycle maneuver", "Bicycle manoeuvre", "Supine bicycle crunch"],
+  "family": "crunch",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["obliques", "abs"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your back, hands lightly by your head",
+      "Lift your knees over your hips",
+      "Curl your head and shoulders slightly up"
+    ],
+    "execution": [
+      "Turn one shoulder toward the opposite knee",
+      "Straighten the other leg out, low and long",
+      "Switch sides slowly, like pedalling",
+      "Keep your lower back on the floor"
+    ],
+    "faults": [
+      "Don't yank your head with your hands",
+      "Don't just flap your elbows across",
+      "Don't race; slow reps work harder"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "The turn comes from the ribs, not from pulling the elbow across with the arm.",
+      "Move at a steady pace; fast, jerky reps are hard to control and easy to do badly.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-crunch", "name": "Crunch", "reason": "Learn the curl without the twist and leg work." },
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "Same alternating legs with the back still and no curl." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Bicycle crunch with a pause", "reason": "Hold each twist for a second or two." }
+    ],
+    "substitutions": [
+      { "key": "cable-woodchop", "name": "Cable woodchop", "reason": "Loaded rotation standing at a cable column." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Trains the obliques by resisting a twist." },
+      { "key": "bodyweight-russian-twist", "name": "Russian twist", "reason": "Seated rotation for the obliques." },
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Side-of-waist work with the spine still." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, figure lying along the frame with the head on the left. The near elbow reaching across toward the far knee shows the twist; keep the head end slightly raised so the shoulder lift reads.",
+    "keyPositions": [
+      {
+        "label": "Near knee in",
+        "describe": "Head and shoulders curled up. Near knee drawn toward the chest; far leg extended long and low, off the mat. Torso turned so the far elbow reaches toward the near knee.",
+        "approxAnglesDeg": { "trunkFlexion": 30, "trunkRotation": 30, "nearHipFlexion": 100, "nearKneeFlexion": 100, "farHipFlexion": 30, "farKneeFlexion": 10 }
+      },
+      {
+        "label": "Switch",
+        "describe": "Both knees passing at mid-range, torso turning through the middle, shoulders still curled up.",
+        "approxAnglesDeg": { "trunkFlexion": 30, "trunkRotation": 0, "nearHipFlexion": 65, "nearKneeFlexion": 60, "farHipFlexion": 65, "farKneeFlexion": 60 }
+      },
+      {
+        "label": "Far knee in",
+        "describe": "Mirror of Near knee in: far knee toward the chest, near leg extended long, torso turned the other way.",
+        "approxAnglesDeg": { "trunkFlexion": 30, "trunkRotation": -30, "nearHipFlexion": 30, "nearKneeFlexion": 10, "farHipFlexion": 100, "farKneeFlexion": 100 }
+      }
+    ],
+    "ikHints": ["Lower back and pelvis stay on the mat in every frame", "Hands rest lightly by the head; elbows stay wide"],
+    "tempo": { "stepMs": 1200, "stepsPerCycle": 2 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Shoulder turns toward the opposite knee",
+      "The straight leg stays low and long",
+      "Slow, even switching"
+    ],
+    "doNotShow": ["Hands pulling the head", "Lower back arching off the mat", "Fast flailing pace"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/bicycle-crunch/",
+      "title": "StrengthLog: Bicycle Crunch",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (obliques, abs); cues.setup[0-1]; cues.execution[0-2]"
+    },
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/241/supine-bicycle-crunches/",
+      "title": "ACE Exercise Library: Supine Bicycle Crunches",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-1,3]; cues.faults[0-2]; safety.notes[0-1]"
+    },
+    {
+      "url": "https://www.acefitness.org/about-ace/press-room/press-releases/246/american-council-on-exercise-ace-sponsored-study-reveals-best-and-worst-abdominal-exercises/",
+      "title": "ACE press release (2001): ACE-sponsored study reveals best and worst abdominal exercises",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (the bicycle ranked first for rectus abdominis and second for obliques by EMG, 30 adults)",
+      "note": "Press release, not a peer-reviewed paper. Muscle activity is not the same as growth."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "JEFIT and ExRx call this \"Air bike\", which is the catalogue name of the fan bike (expansion research Q6). It is deliberately not an alias here; an imported \"Air Bike\" filed under abs should be confirmed by Ben."
+    },
+    {
+      "field": "measurement",
+      "note": "Reps are usually counted as total touches (both sides). Some people count one per pair; the entry doesn't fix which."
+    },
+    {
+      "field": "secondaryMuscles",
+      "note": "StrengthLog lists the hip flexors as secondary. The catalogue has no hip_flexors word (expansion research Q1), so they are left out."
+    },
+    {
+      "field": "guideBrief.tempo",
+      "note": "Uses a stride tempo for the alternating legs. trunkRotation signs are drawing conventions only, and the angles are approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-decline-push-up",
+  "tier": "rich",
+  "name": "Decline push-up",
+  "aliases": ["Decline press-up", "Feet-elevated push-up", "Feet-elevated press-up", "Decline pushup"],
+  "family": "push_up",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["upper_chest", "chest", "front_delts"],
+  "secondaryMuscles": ["triceps", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Hands on the floor, a bit wider than shoulders",
+      "Feet up on a bench or box behind you",
+      "Brace so your body is one straight line"
+    ],
+    "execution": [
+      "Lower your chest toward the floor",
+      "Elbows angled back about 45°",
+      "Push the floor away to straight arms",
+      "Keep your hips in line all the way"
+    ],
+    "faults": [
+      "Don't let your hips sag toward the floor",
+      "Don't pike your hips up high",
+      "Don't drop your head first"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Start with a low step and raise the feet over time; the higher the feet, the more load on the shoulders.",
+      "Make sure the bench or box can't slide back.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-push-up", "name": "Push-up", "reason": "Feet on the floor; less load." },
+      { "key": null, "name": "Lower foot height", "reason": "A step instead of a bench." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Weighted decline push-up", "reason": "A plate on the upper back or a weight vest." },
+      { "key": null, "name": "Pike push-up", "reason": "Hips high; shifts more work to the shoulders." }
+    ],
+    "substitutions": [
+      { "key": "barbell-incline-bench-press", "name": "Incline bench press", "reason": "Loaded upper-chest press." },
+      { "key": "dumbbell-incline-bench-press", "name": "Incline dumbbell press", "reason": "Upper-chest press with dumbbells." },
+      { "key": "bodyweight-push-up", "name": "Push-up", "reason": "Easier flat version." },
+      { "key": "bodyweight-dip", "name": "Dip", "reason": "Hard bodyweight press for chest and triceps." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor-to-bench height, head on the left, feet on a flat bench on the right. Whole body in frame.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Hands on the floor slightly wider than the shoulders, arms straight. Feet on a bench, body straight from head to heels, angled down toward the head.",
+        "approxAnglesDeg": { "bodyAngleFromFloor": -20, "elbowFlexion": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Chest a few centimetres from the floor. Elbows bent and angled back about 45°. Hips still in line with the shoulders and feet.",
+        "approxAnglesDeg": { "bodyAngleFromFloor": -25, "elbowFlexion": 100 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the floor", "Toes fixed on the bench"],
+    "tempo": { "downMs": 1500, "holdMs": 200, "upMs": 1000 },
+    "props": ["bench_flat"],
+    "emphasise": [
+      "Straight body line, feet higher than hands",
+      "Chest lowers toward the floor",
+      "Elbows angled back"
+    ],
+    "doNotShow": ["Sagging hips", "Head touching the floor first", "Very high box"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/decline-push-up/",
+      "title": "StrengthLog: Decline Push-Up",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0,2-3]; primaryMuscles (chest, front_delts); secondaryMuscles"
+    },
+    {
+      "url": "https://www.nasm.org/resource-center/exercise-library/decline-push-up",
+      "title": "NASM Exercise Library: Decline Push-Up",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (upper chest emphasis, front delts); cues.setup[1]",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "safety.notes[0]",
+      "note": "Starting low and raising foot height comes from a general fitness source (Healthline) seen only in a search summary."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Negative bodyAngleFromFloor means head lower than feet."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

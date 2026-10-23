@@ -181,6 +181,8 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
         'Flat Dumbbell Bench Press',
         'Flat Dumbbell Fly',
         'Incline Dumbbell Bench Press',
+        // A catalogue alias of the incline dumbbell fly (a pair), so its own name.
+        'Incline Dumbbell Fly',
         // A catalogue alias of the lateral raise (a pair), so its own name.
         'Lateral Dumbbell Raise',
         'Seated Dumbbell Press',
@@ -191,7 +193,6 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
         'Dumbbell Preacher Curl',
         'Dumbbell Row',
         'Front Dumbbell Raise',
-        'Incline Dumbbell Fly',
         'Rear Delt Dumbbell Raise',
         'Seated Dumbbell Lateral Raise',
         'Seated Incline Dumbbell Curl',
@@ -279,7 +280,8 @@ describe('FitNotes’ default names: nothing stored differs from the file withou
       const c = n?.match.exerciseId ? s.imports.candidate(d.draftId, n.match.exerciseId) : null;
       return [n?.match.status, c?.name ?? null];
     };
-    expect(shown('Smith Machine Overhead Press')).toEqual(['no_match', null]);
+    // A catalogue alias of the Smith machine shoulder press: never the Smith machine bench press.
+    expect(shown('Smith Machine Overhead Press')).toEqual(['matched', 'Smith machine shoulder press']);
     expect(shown('Smith Machine Close Grip Bench Press')).toEqual(['check', 'Smith machine bench press']);
     // FitNotes defaults that are catalogue aliases now match exactly; ambiguous ones stay a Check.
     expect(shown('Parallel Bar Triceps Dip')).toEqual(['check', 'Dip']);

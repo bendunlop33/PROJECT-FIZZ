@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-toes-to-bar",
+  "tier": "rich",
+  "name": "Toes-to-bar",
+  "aliases": ["Toes to bar", "T2B", "TTB", "Strict toes-to-bar", "Hanging toes-to-bar"],
+  "family": "leg_raise",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs"],
+  "secondaryMuscles": ["lats", "obliques", "grip"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["pullup_bar"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Hang from the bar, hands shoulder width",
+      "Pull your shoulders down from your ears",
+      "Ribs down, legs together, no swing"
+    ],
+    "execution": [
+      "Press the bar down with straight arms",
+      "Fold at the hips, legs straight",
+      "Touch your toes to the bar",
+      "Lower slowly back to a still hang"
+    ],
+    "faults": [
+      "Don't kick or swing to get up",
+      "Don't lean far back instead of folding",
+      "Don't drop out of the top"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Strict reps only here; kipping toes-to-bar is a different skill with more swing.",
+      "Let the swing settle before each rep, and step down rather than drop if your grip goes.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-hanging-knee-raise", "name": "Hanging knee raise", "reason": "Bent knees; the first step on the ladder." },
+      { "key": "bodyweight-hanging-leg-raise", "name": "Hanging leg raise", "reason": "Straight legs to hip height; the step before the bar." },
+      { "key": null, "name": "Lying leg raise to a held bar", "reason": "Same fold lying on the floor, toes to a bar held overhead." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Slow-lowering toes-to-bar", "reason": "A 3–5 second lowering adds control." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-hanging-leg-raise", "name": "Hanging leg raise", "reason": "Same station with a shorter range." },
+      { "key": "bodyweight-v-up", "name": "V-up", "reason": "Same fold on the floor; no bar or grip needed." },
+      { "key": "cable-crunch", "name": "Cable crunch", "reason": "Loaded abs work on a stack, easy to progress." },
+      { "key": "bodyweight-ab-wheel-rollout", "name": "Ab-wheel rollout", "reason": "Hard abs work that doesn't depend on grip." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height with the bar near the top of frame. The whole body from hands to feet must stay in frame at the top position.",
+    "keyPositions": [
+      {
+        "label": "Hang",
+        "describe": "Hanging still from an overhand grip, arms straight, shoulders drawn down. Ribs down and legs together slightly in front of the body, a shallow hollow shape.",
+        "approxAnglesDeg": { "shoulderFlexion": 175, "hipFlexion": 10, "kneeFlexion": 0 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Straight legs raised to about horizontal; arms still straight and pressing the bar down so the torso tilts back a little.",
+        "approxAnglesDeg": { "shoulderFlexion": 150, "hipFlexion": 90, "kneeFlexion": 0 }
+      },
+      {
+        "label": "Top",
+        "describe": "Hips fully folded, toes touching the bar between the hands. Arms nearly straight, back rounded, torso tilted back under the bar.",
+        "approxAnglesDeg": { "shoulderFlexion": 120, "hipFlexion": 160, "kneeFlexion": 10 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the bar", "Legs stay together"],
+    "tempo": { "downMs": 2000, "holdMs": 300, "upMs": 1200 },
+    "props": ["pullup_bar"],
+    "emphasise": [
+      "Arms press the bar down to start the fold",
+      "Controlled lowering to a still hang",
+      "No swing between reps"
+    ],
+    "doNotShow": ["Kipping swing", "Bent-arm pull-up", "Dropping from the top"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strongfirst.com/how-to-train-your-way-to-owning-a-strict-hanging-leg-raise/",
+      "title": "StrongFirst: How to Train Your Way to Owning a Strict Hanging Leg Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1-2]; cues.execution[0-1,3]; cues.faults[0-1]; variations.regressions[2]"
+    },
+    {
+      "url": "https://fitnessvolt.com/crossfit-training-toes-to-bar/",
+      "title": "Fitness Volt: CrossFit Training Prep: Toes To Bar Workout Progression Routine",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.regressions[0-1] (knee raise, then leg raise, then strict toes-to-bar); safety.notes[0]",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "The hip flexors do much of the work but the catalogue has no hip_flexors muscle yet (expansion research Q1); they are left out. The research table listed lats as primary; here they are secondary (they press the bar down but don't move much)."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

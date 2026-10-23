@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-mountain-climber",
+  "tier": "rich",
+  "name": "Mountain climber",
+  "aliases": ["Mountain climbers", "Mountain-climber", "Running plank"],
+  "family": "mountain_climber",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["core", "abs"],
+  "secondaryMuscles": ["front_delts", "obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "duration",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "High plank, hands under your shoulders",
+      "Straight line from head to heels",
+      "Brace your trunk"
+    ],
+    "execution": [
+      "Drive one knee toward your chest",
+      "Switch legs in a quick, steady rhythm",
+      "Keep your hips level with your shoulders",
+      "Breathe steadily throughout"
+    ],
+    "faults": [
+      "Don't pike your hips up high",
+      "Don't let your hips sag",
+      "Don't let your shoulders drift behind your hands"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Pick a pace you can keep with a steady plank; speed up only while the hips stay level.",
+      "If your wrists are uncomfortable, put your hands on a step or bench, or use push-up handles.",
+      "Fast intervals raise breathing and heart rate quickly. Rest until your breathing settles.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Chest pain, faintness or unusual breathlessness",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Hands-elevated mountain climber", "reason": "Hands on a bench or step take some load off the arms." },
+      { "key": null, "name": "Slow mountain climber", "reason": "Step each knee in under control instead of running." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Longer intervals", "reason": "Add time before adding speed." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-plank", "name": "Plank", "reason": "Same body position held still." },
+      { "key": "bodyweight-bear-crawl", "name": "Bear crawl", "reason": "Timed trunk and shoulder work on hands and feet." },
+      { "key": "bodyweight-burpee", "name": "Burpee", "reason": "Bodyweight conditioning with a bigger range." },
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "Alternating legs lying down; calm and controlled." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure in a high plank facing right. Hands stay planted; only the legs alternate.",
+    "keyPositions": [
+      {
+        "label": "Near knee in",
+        "describe": "High plank, arms straight with hands under the shoulders. Near knee drawn toward the chest, foot off the floor. Far leg straight behind on the ball of the foot. Hips level with the shoulders.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 75, "nearHipFlexion": 100, "nearKneeFlexion": 100, "farHipFlexion": 5, "farKneeFlexion": 5, "shoulderFlexion": 80 }
+      },
+      {
+        "label": "Far knee in",
+        "describe": "Mirror: far knee drawn toward the chest, near leg straight behind. Hips still level; shoulders still over the hands.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 75, "nearHipFlexion": 5, "nearKneeFlexion": 5, "farHipFlexion": 100, "farKneeFlexion": 100, "shoulderFlexion": 80 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the floor in every frame", "Hip height constant within about ±3% of body height"],
+    "tempo": { "stepMs": 500, "stepsPerCycle": 2 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Hips level with the shoulders the whole time",
+      "Knees drive under the chest in turn",
+      "Shoulders stay over the hands"
+    ],
+    "doNotShow": ["Hips piked high", "Hips sagging", "Feet slapping far forward past the hands"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/mountain-climbers/",
+      "title": "StrengthLog: Mountain Climbers",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (abs); secondaryMuscles (obliques); cues.setup[0-2]; cues.execution[0-2]; cues.faults[1]"
+    },
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/258/mountain-climbers/",
+      "title": "ACE Exercise Library: Mountain Climbers",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0]; variations.regressions[0] (hands on a step); measurement (used as timed intervals in ACE circuits)",
+      "note": "Seen through a search-result summary; the library page and its RSS feed disagree on difficulty."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "The expansion research lists hip flexors as a primary muscle; the catalogue has no hip_flexors word (Q1), so they are left out. front_delts reflects the shoulders holding the plank, reasoned from the position rather than measured."
+    },
+    {
+      "field": "measurement",
+      "note": "Timed by default, as in class and circuit use. Some people count reps; logging those would need a reps entry or a change of measurement."
+    },
+    {
+      "field": "guideBrief.tempo",
+      "note": "Stride tempo, slowed for readability; real intervals often run faster. Angles are approximate drawing targets."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

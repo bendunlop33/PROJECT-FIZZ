@@ -303,14 +303,18 @@ describe('Swap today (TE-A4 – TE-A7, TE-A11)', () => {
     const { services: s } = await h.launch();
     const { gymId } = await withPushA(s);
     const page = await load(s, gymId);
-    const bench = rowNamed(page, 'Bench press');
-    const before = await s.overview.swapCandidates({ target: { kind: 'next' }, gymId, slotKey: bench.slotKey });
-    const db = before?.rows.find((r) => r.name === 'Dumbbell bench press');
+    // The pushdown's slot: fewer substitutes than the sheet's 8, so a flagged one stays on it (the bench's slot is full of safe ones).
+    const pushdown = rowNamed(page, 'Triceps pushdown');
+    const before = await s.overview.swapCandidates({ target: { kind: 'next' }, gymId, slotKey: pushdown.slotKey });
+    expect(before?.rows[0]?.name).toBe('Rope triceps pushdown');
+    expect(before?.rows.length).toBeLessThan(8);
+    const rope = before?.rows.find((r) => r.name === 'Rope triceps pushdown');
     const ci = await s.checkIns.record({ checkInId: h.ids(), opId: h.ids(), score: 2 });
     if (!ci.ok) throw new Error(ci.message);
-    expect((await s.pain.flagFromCheckIn({ checkIn: ci.checkIn, exercises: [{ id: db?.exerciseId ?? '', name: 'Dumbbell bench press' }], area: 'shoulder', opId: 'pain-1' })).ok).toBe(true);
-    const sheet = await s.overview.swapCandidates({ target: { kind: 'next' }, gymId, slotKey: bench.slotKey });
-    expect(sheet?.rows.at(-1)).toMatchObject({ name: 'Dumbbell bench press', mayHurt: { confirm: { title: 'Dumbbell bench press may hurt', confirm: 'Add anyway', cancel: 'Choose another' } } });
+    expect((await s.pain.flagFromCheckIn({ checkIn: ci.checkIn, exercises: [{ id: rope?.exerciseId ?? '', name: 'Rope triceps pushdown' }], area: 'shoulder', opId: 'pain-1' })).ok).toBe(true);
+    const sheet = await s.overview.swapCandidates({ target: { kind: 'next' }, gymId, slotKey: pushdown.slotKey });
+    expect(sheet?.rows.length).toBe(before?.rows.length);
+    expect(sheet?.rows.at(-1)).toMatchObject({ name: 'Rope triceps pushdown', mayHurt: { confirm: { title: 'Rope triceps pushdown may hurt', confirm: 'Add anyway', cancel: 'Choose another' } } });
     expect(sheet?.rows.slice(0, -1).every((r) => r.mayHurt === null)).toBe(true);
     // `Choose another` writes nothing.
     expect((await load(s, gymId)).draft).toBeNull();

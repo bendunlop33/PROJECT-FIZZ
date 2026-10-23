@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-reverse-wrist-curl",
+  "tier": "rich",
+  "name": "Barbell reverse wrist curl",
+  "aliases": ["Reverse wrist curl", "Reverse wrist curls", "Barbell wrist extension", "Wrist extension", "Palms-down wrist curl"],
+  "family": "wrist_curl",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["forearms"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["barbell", "ez_bar"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 45,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Forearms on a bench or your thighs",
+      "Palms down, wrists just past the edge",
+      "Grip about shoulder width"
+    ],
+    "execution": [
+      "Let your hands drop toward the floor",
+      "Lift the backs of your hands up",
+      "Raise as high as your wrists allow",
+      "Lower slowly; forearms stay down"
+    ],
+    "faults": [
+      "Don't lift your elbows to help",
+      "Don't swing the bar up",
+      "Don't go too heavy"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "This side of the forearm is much weaker than the palm side: start very light.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Dumbbell wrist extension", "reason": "One light dumbbell per hand; each wrist works alone." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Reverse wrist curl with a pause", "reason": "A hold at the top adds difficulty without more weight." }
+    ],
+    "substitutions": [
+      { "key": null, "name": "Dumbbell wrist extension", "reason": "Same movement; load is each dumbbell." },
+      { "key": "barbell-reverse-curl", "name": "Reverse curl", "reason": "Overhand curl; the wrist extensors hold the wrist straight." },
+      { "key": null, "name": "Wrist roller", "reason": "Rolling the weight up works both sides of the forearm." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Close side view at bench height, forearms along a flat bench with the hands just past the edge on the right, palms down. Hands and forearms fill most of the frame.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Forearms flat along the bench, palms down, wrists over the edge. Hands dropped so the bar hangs below the bench top.",
+        "approxAnglesDeg": { "wristExtension": -50, "elbowFlexion": 90 }
+      },
+      {
+        "label": "Top",
+        "describe": "Backs of the hands lifted so the knuckles point up, bar raised above the bench top. Forearms still flat.",
+        "approxAnglesDeg": { "wristExtension": 50, "elbowFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Forearms fixed on the bench", "Only the wrists move"],
+    "barPath": "A short arc around the wrists",
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 1000 },
+    "props": ["bench_flat", "barbell_light"],
+    "emphasise": [
+      "Palms down",
+      "Only the wrists move",
+      "Small, slow range"
+    ],
+    "doNotShow": ["Elbows lifting", "Swinging the bar", "Heavy plates"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/barbell-wrist-extension/",
+      "title": "StrengthLog: Barbell Wrist Extension",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1]; cues.execution[0-2]; primaryMuscles; variations.regressions[0]"
+    },
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/29/wrist-curl-extension/",
+      "title": "ACE Exercise Library: Wrist Curl - Extension",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-1] (elbows on a bench, palms down); cues.execution[3]; cues.faults[0]",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "\"Wrist extension\" is also used for the dumbbell version. If Ben logs the dumbbell version, an import should ask."
+    },
+    {
+      "field": "key",
+      "note": "Barbell is the default because it logs one unambiguous total; the dumbbell version has no entry yet."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Negative wristExtension means the hand has dropped below the forearm line."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

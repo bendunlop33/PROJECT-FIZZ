@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-upright-row",
+  "tier": "rich",
+  "name": "Upright row",
+  "aliases": ["Upright rows", "Barbell upright row", "BB upright row", "EZ-bar upright row", "EZ bar upright row"],
+  "family": "upright_row",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["side_delts", "traps"],
+  "secondaryMuscles": ["front_delts", "biceps"],
+  "compatibleEquipment": ["ez_bar", "barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Stand tall, bar resting on your thighs",
+      "Overhand grip about shoulder width",
+      "Chest up, shoulders relaxed"
+    ],
+    "execution": [
+      "Lead with your elbows, out to the sides",
+      "Lift the bar close to your body",
+      "Stop when your elbows reach shoulder height",
+      "Lower slowly to your thighs"
+    ],
+    "faults": [
+      "Don't pull your elbows above your shoulders",
+      "Don't swing with your hips",
+      "Don't let your wrists lead the bar"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Many lifters find the top of this lift uncomfortable on the shoulders. Keep the weight moderate, and stop the elbows at about shoulder height or lower if that feels better.",
+      "An EZ bar, or a grip a little wider than shoulder width, is often more comfortable on the wrists and shoulders.",
+      "Log the total including the bar. EZ bars and Olympic bars weigh different amounts, so loads aren't comparable between them.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Cable upright row", "reason": "Smoother resistance; easy to stop at a comfortable height." }
+    ],
+    "progressions": [],
+    "substitutions": [
+      { "key": "dumbbell-lateral-raise", "name": "Lateral raise", "reason": "Side delts without the high-elbow pull; often kinder to the shoulders." },
+      { "key": "cable-lateral-raise", "name": "Cable lateral raise", "reason": "Side delts with steady cable tension." },
+      { "key": "barbell-shrug", "name": "Barbell shrug", "reason": "Traps without raising the arms." },
+      { "key": "machine-shoulder-press", "name": "Machine shoulder press", "reason": "Shoulder work by pressing overhead on a fixed path." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at chest height, figure facing the camera, so the elbows can be seen rising out to the sides and stopping at shoulder height.",
+    "keyPositions": [
+      {
+        "label": "Down",
+        "describe": "Standing tall, bar resting on the thighs, arms straight, overhand grip about shoulder width.",
+        "approxAnglesDeg": { "shoulderAbduction": 10, "elbowFlexion": 5 }
+      },
+      {
+        "label": "Top",
+        "describe": "Elbows raised out to the sides to about shoulder height, higher than the hands. Bar close to the body at lower-chest level. Shoulders not shrugged to the ears.",
+        "approxAnglesDeg": { "shoulderAbduction": 85, "elbowFlexion": 100 }
+      }
+    ],
+    "ikHints": ["Hands fixed to the bar", "Bar stays close to the body"],
+    "barPath": "Straight up close to the body, from the thighs to the lower chest",
+    "tempo": { "downMs": 1600, "holdMs": 300, "upMs": 1000 },
+    "props": ["ez_bar_loaded"],
+    "emphasise": [
+      "Elbows lead and stay above the hands",
+      "Elbows stop at about shoulder height"
+    ],
+    "doNotShow": ["Elbows pulled far above the shoulders", "Body swinging", "Bar drifting away from the body"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/barbell-upright-row/",
+      "title": "StrengthLog: Barbell Upright Row",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (side delts); secondaryMuscles (front delts, traps, biceps); cues.setup[0-2]; cues.execution[0-1,3]; cues.faults[0]; safety.notes[0-1]"
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/DeltoidLateral/BBUprightRow",
+      "title": "ExRx.net: Barbell Upright Row",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (lateral deltoid target); mechanic (compound pull); cues.execution[0] (elbows lead)",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    },
+    {
+      "url": "https://www.acefitness.org/resources/pros/expert-articles/5277/train-this-not-that-the-upper-body-edition/",
+      "title": "ACE: Train This, Not That: The Upper-body Edition",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[0]; variations.substitutions[0] (lateral raise as the suggested swap)",
+      "note": "Seen only through a search-result summary. Coaching opinion."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "StrengthLog lists traps as secondary; the expansion research lists them as primary with the side delts. Kept primary because the shoulder blades rise through the top half."
+    },
+    {
+      "field": "movementPattern",
+      "note": "vertical_pull matches the shrug entries; there is no raise pattern."
+    },
+    {
+      "field": "aliases",
+      "note": "One entry covers the EZ bar and the straight bar (both total, each with its own bar weight). Smith and cable upright rows are separate proposals and aren't aliases."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

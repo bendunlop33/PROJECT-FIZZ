@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-pin-press",
+  "tier": "rich",
+  "name": "Pin press",
+  "aliases": ["Pin bench press", "Bench press off pins", "Dead-stop bench press", "Pin bench", "Barbell pin press"],
+  "family": "bench_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest", "triceps"],
+  "secondaryMuscles": ["front_delts"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["bench", "rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 150,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Bench inside the rack, pins set first",
+      "Pin height at the point you want to train",
+      "Set up exactly as for your bench press"
+    ],
+    "execution": [
+      "Lower the bar under control to the pins",
+      "Let it settle; keep your body tight",
+      "Press up hard from the dead stop",
+      "Finish at straight arms over shoulders"
+    ],
+    "faults": [
+      "Don't drop the bar onto the pins",
+      "Don't relax your back at the bottom",
+      "Don't let your elbows flare out"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Check both pins are at the same hole and fully seated before loading the bar.",
+      "Do warm-up sets to confirm the pin height before going heavy.",
+      "The pins catch a failed rep from that height, but a spotter is still sensible for the lift-off and racking.",
+      "Wrap your thumbs round the bar. Avoid a thumbless grip.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "barbell-paused-bench-press", "name": "Paused bench press", "reason": "Pause on the chest instead of the pins; full range." },
+      { "key": "dumbbell-floor-press", "name": "Dumbbell floor press", "reason": "Dead-stop pressing with dumbbells and no rack." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Lower pin height", "reason": "A longer range from a deeper start." }
+    ],
+    "substitutions": [
+      { "key": "barbell-bench-press", "name": "Bench press", "reason": "Full-range version with the stretch reflex." },
+      { "key": "barbell-close-grip-bench-press", "name": "Close-grip bench press", "reason": "Also builds lockout and triceps strength." },
+      { "key": null, "name": "Barbell floor press", "reason": "Dead stop with the floor as the pins." },
+      { "key": "dumbbell-floor-press", "name": "Dumbbell floor press", "reason": "Dead-stop press with dumbbells." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height inside a power rack, head on the left. One upright and its pin drawn in front of the bar so the bar resting on the pin is clear.",
+    "keyPositions": [
+      {
+        "label": "Lockout",
+        "describe": "Lying on a flat bench inside the rack, feet flat, upper back set. Arms straight and vertical, bar over the shoulders.",
+        "approxAnglesDeg": { "shoulderFlexion": 90, "elbowFlexion": 0 }
+      },
+      {
+        "label": "On the pins",
+        "describe": "Bar resting on the pins a few centimetres above the chest. Elbows bent, forearms near vertical, body still tight and arched as for a bench press.",
+        "approxAnglesDeg": { "shoulderFlexion": 30, "elbowFlexion": 75 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the bar", "Bar rests on the pins at the bottom"],
+    "barPath": "Straight up from the pins to over the shoulders",
+    "tempo": { "downMs": 1500, "holdMs": 1000, "upMs": 1000 },
+    "props": ["power_rack", "rack_pins", "bench_flat", "barbell_loaded"],
+    "emphasise": [
+      "Bar comes to a full stop on the pins",
+      "Body stays tight during the stop",
+      "Press from a dead start"
+    ],
+    "doNotShow": ["Bar crashing onto the pins", "Bouncing off the pins", "Pins at different heights"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/pin-bench-press/",
+      "title": "StrengthLog: Pin Bench Press",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0,2]; cues.execution[0-3]; primaryMuscles; secondaryMuscles"
+    },
+    {
+      "url": "https://barbend.com/news/pin-press-guide/",
+      "title": "BarBend: Pin Press Guide - Form, Muscles Worked, and Variations",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1]; cues.faults[0-2]; safety.notes[1]; primaryMuscles (triceps and lockout)"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "StrengthLog lists chest and front delts as primary with triceps assisting; BarBend stresses triceps and lockout. Triceps are primary here because the usual pin height cuts off the bottom of the range."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. The pin height varies; this draws a low-to-mid setting."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

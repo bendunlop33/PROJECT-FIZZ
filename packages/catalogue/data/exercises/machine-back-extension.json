@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-back-extension",
+  "tier": "rich",
+  "name": "Back extension machine",
+  "aliases": ["Seated back extension", "Machine back extension", "Lower back machine", "Seated lower back extension", "Lever back extension"],
+  "family": "back_extension",
+  "movementPattern": "hinge",
+  "mechanic": "isolation",
+  "primaryMuscles": ["spinal_erectors"],
+  "secondaryMuscles": ["glutes", "hamstrings"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Hips in line with the machine's pivot",
+      "Back pad just below your shoulder blades",
+      "Feet on the footrests, belt or pad on"
+    ],
+    "execution": [
+      "Brace and keep your spine long",
+      "Push back against the pad smoothly",
+      "Stop when your torso lines up with legs",
+      "Let it forward slowly, then repeat"
+    ],
+    "faults": [
+      "Don't lean back past upright",
+      "Don't throw yourself into the pad",
+      "Don't round over hard at the front"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Start light; the stack resists the whole time, including where the back is most bent.",
+      "Use a pain-free range. Stop each rep at upright rather than arching backward.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-bird-dog", "name": "Bird dog", "reason": "Back-extensor work on hands and knees with no load." },
+      { "key": "dowel-hip-hinge", "name": "Dowel hip hinge", "reason": "Learn to hinge with a neutral back." }
+    ],
+    "progressions": [
+      { "key": "bodyweight-45-degree-back-extension", "name": "45° back extension", "reason": "Body weight plus added plate; a longer range." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-45-degree-back-extension", "name": "45° back extension", "reason": "Bench version. Load is added weight, not a stack." },
+      { "key": "cable-pull-through", "name": "Cable pull-through", "reason": "Hip hinge on a cable; more glutes." },
+      { "key": "barbell-romanian-deadlift", "name": "Romanian deadlift", "reason": "Free-weight hinge; much more hamstrings." },
+      { "key": "barbell-good-morning", "name": "Good morning", "reason": "Barbell hinge with heavy lower-back demand." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at seat height, seat back pad on the right of the figure, machine pivot level with the hips. Pad and lever arm drawn behind the upper back.",
+    "keyPositions": [
+      {
+        "label": "Forward",
+        "describe": "Seated with hips at the pivot, feet on the footrests. Torso leaning forward from the hips, back long, pad resting just below the shoulder blades. Arms crossed or holding the handles.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 40, "hipFlexion": 110, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Upright",
+        "describe": "Torso pushed back to upright, in line with the thighs' upright seat line, pad pressed back. Spine long, not arched backward.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "hipFlexion": 80, "kneeFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Hips and feet fixed on the seat and footrests", "Back pad stays in contact with the upper back"],
+    "tempo": { "downMs": 1800, "holdMs": 300, "upMs": 1200 },
+    "props": ["back_extension_machine"],
+    "emphasise": [
+      "Movement from the hips with a long spine",
+      "Stops at upright",
+      "Slow forward lean"
+    ],
+    "doNotShow": ["Leaning back past upright", "Jerking into the pad", "Hard rounding at the front"]
+  },
+  "sources": [
+    {
+      "url": "https://fitbod.me/exercises/seated-back-extension",
+      "title": "Fitbod: Seated Back Extension",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1]; cues.execution[0-2]; primaryMuscles; secondaryMuscles (glutes, hamstrings)",
+      "note": "Commercial app library."
+    },
+    {
+      "url": "https://au.physitrack.com/home-exercise-video/seated-back-extension-machine",
+      "title": "Physitrack: Seated Back Extension Machine",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1,3]; guideBrief.keyPositions[0-1]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "\"Back extension\", \"Hyperextension\" and \"Lower back extension(s)\" are deliberately not aliases: the first two belong to the 45° back extension, and the third is ambiguous (batch-03). An import should ask Ben which machine he means."
+    },
+    {
+      "field": "cues.setup[0]",
+      "note": "Aligning the hips with the pivot comes from a search summary (Liftosaur and others), not from a fetched page."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Machine designs differ: some rotate the seat, some only the back pad."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

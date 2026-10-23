@@ -387,17 +387,21 @@ describe('import preview wording', () => {
     expect(shown('Flat Barbell Bench Press')).toEqual(['matched', 'Bench press']);
     expect(shown('EZ-Bar Skullcrusher')).toEqual(['check', 'Skull crusher']);
     // Never the EZ-bar skull crusher, the dumbbell shrug or the calf-raise machine for these: nothing, or one with the right equipment.
-    expect(shown('Dumbbell Skullcrusher')).toEqual(['no_match', null]);
+    // A catalogue alias of the dumbbell skull crusher, never the EZ-bar one.
+    expect(shown('Dumbbell Skullcrusher')).toEqual(['matched', 'Dumbbell skull crusher']);
     expect(shown('Barbell Shrug')).toEqual(['matched', 'Barbell shrug']);
     expect(shown('Machine Shrug')).toEqual(['no_match', null]);
     expect(shown('Barbell Calf Raise')).toEqual(['check', 'Standing barbell calf raise']);
-    expect(shown('Lateral Machine Raise')).toEqual(['check', 'Cable lateral raise']);
+    expect(shown('Lateral Machine Raise')).toEqual(['check', 'Machine lateral raise']);
     // A Smith machine is its own kind: only a Smith exercise, and only for the same movement (review r5 S3).
     expect(shown('Smith Machine Close Grip Bench Press')).toEqual(['check', 'Smith machine bench press']);
-    expect(shown('Smith Machine Overhead Press')).toEqual(['no_match', null]);
+    // A catalogue alias of the Smith machine shoulder press, never the Smith machine bench press.
+    expect(shown('Smith Machine Overhead Press')).toEqual(['matched', 'Smith machine shoulder press']);
     // A machine is never an assisted machine unless the name says assisted: 80 kg of stack is never 80 kg of help (review r5 S3).
-    expect(shown('Triceps Dip Machine')).toEqual(['no_match', null]);
-    expect(shown('Dip Machine')).toEqual(['no_match', null]);
+    // Both are catalogue aliases of the seated dip machine, a weight stack (load, not help).
+    expect(shown('Triceps Dip Machine')).toEqual(['matched', 'Seated dip machine']);
+    expect(shown('Dip Machine')).toEqual(['matched', 'Seated dip machine']);
+    expect(exercise(by.get('Dip Machine')?.match.exerciseId ?? null)?.defaultLoadConvention).toBe('stack');
     expect(shown('Assisted Dip')).toEqual(['matched', 'Assisted dip']);
     // A name that says two arms is never the one-arm row (review r5 N1).
     expect(shown('Two-Arm Dumbbell Row')[1]).not.toBe('One-arm dumbbell row');
@@ -431,11 +435,14 @@ describe('import preview wording', () => {
         ['Dumbbell Squat', 40, 10],
       ]),
     );
-    // Use this on the one Check (Dumbbell Squat → Goblet squat), then "Both together" for the pairs.
-    for (const n of d.analysis.names.filter((x) => x.needsAnswer && x.match.exerciseId)) d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId ?? '' } });
+    // Dumbbell Squat is the one name to check: Ben chooses the goblet squat (Choose…), then "Both together" for the pairs.
+    // (Its suggestion ties the goblet squat with the thruster's "Dumbbell squat to press"; this test is about dumbbells, not that suggestion.)
+    expect(d.analysis.names.filter((x) => x.needsAnswer).map((x) => x.name)).toEqual(['Dumbbell Squat']);
+    const goblet = s.imports.searchExercises(d.draftId, 'goblet squat').find((c) => c.name === 'Goblet squat');
+    d = await step(d, { kind: 'name', key: nameKey('Dumbbell Squat'), answer: { kind: 'exercise', exerciseId: goblet?.exerciseId ?? '' } });
     d = await step(d, { kind: 'per_hand', answer: 'both' });
     const q = perHandOptions(d.analysis, 'en-GB');
-    // `Dumbbell Row` is a name of the one-arm row and `Dumbbell Squat` was suggested as the goblet squat, but neither says one: asked, nothing selected.
+    // `Dumbbell Row` is a name of the one-arm row and `Dumbbell Squat` was answered as the goblet squat, but neither name says one: asked, nothing selected.
     expect(q?.ask?.rows.map((r) => [r.title, plain(r.conversion), r.choices.filter((c) => c.selected).length])).toEqual([
       ['Dumbbell Row', '30 kg → not answered yet', 0],
       ['Dumbbell Squat', '40 kg → not answered yet', 0],
@@ -591,11 +598,11 @@ describe('import preview wording', () => {
 
     it('names: an undone import’s `Use this` comes back as a suggestion to check; importing again with other answers teaches those', async () => {
       const rows: readonly Row[] = [
-        ['Front Dumbbell Raise', 16, 10],
+        ['Rear Delt Dumbbell Raise', 16, 10],
         ['Dumbbell Preacher Curl', 20, 10],
       ];
       let a = await useSuggestions(await open(fileOf(rows)));
-      a = await step(a, { kind: 'per_hand_override', key: nameKey('Front Dumbbell Raise'), answer: 'both' });
+      a = await step(a, { kind: 'per_hand_override', key: nameKey('Rear Delt Dumbbell Raise'), answer: 'both' });
       a = await step(a, { kind: 'per_hand_override', key: nameKey('Dumbbell Preacher Curl'), answer: 'one' });
       await undo(await commit(a, 'op-a'));
 
@@ -603,27 +610,27 @@ describe('import preview wording', () => {
       let again = await open(fileOf(rows));
       expect(names(again)).toEqual([
         ['Dumbbell Preacher Curl', 'check', 'words', true],
-        ['Front Dumbbell Raise', 'check', 'words', true],
+        ['Rear Delt Dumbbell Raise', 'check', 'words', true],
       ]);
       expect(previewView(again, 'en-GB').questions.map((q) => q.line.text)).toEqual(['2 exercise names to check']);
       again = await useSuggestions(again);
       expect(asked(again)).toEqual([
-        ['Front Dumbbell Raise', '16 kg → not answered yet', null, []],
+        ['Rear Delt Dumbbell Raise', '16 kg → not answered yet', null, []],
         ['Dumbbell Preacher Curl', '20 kg → not answered yet', null, []],
       ]);
       // This time Ben answers the other way round and imports.
-      again = await step(again, { kind: 'per_hand_override', key: nameKey('Front Dumbbell Raise'), answer: 'one' });
+      again = await step(again, { kind: 'per_hand_override', key: nameKey('Rear Delt Dumbbell Raise'), answer: 'one' });
       again = await step(again, { kind: 'per_hand_override', key: nameKey('Dumbbell Preacher Curl'), answer: 'each' });
       await commit(again, 'op-a2');
 
       // A newer export: the new answers are remembered; the undone ones never come back.
-      const newer = await open(`${fileOf(rows)}\n${withoutHeader(fileOf([['Front Dumbbell Raise', 18, 10], ['Dumbbell Preacher Curl', 22, 10]], '2026-10-08'))}`);
+      const newer = await open(`${fileOf(rows)}\n${withoutHeader(fileOf([['Rear Delt Dumbbell Raise', 18, 10], ['Dumbbell Preacher Curl', 22, 10]], '2026-10-08'))}`);
       expect(names(newer)).toEqual([
         ['Dumbbell Preacher Curl', 'matched', 'alias', false],
-        ['Front Dumbbell Raise', 'matched', 'alias', false],
+        ['Rear Delt Dumbbell Raise', 'matched', 'alias', false],
       ]);
       expect(asked(newer)).toEqual([
-        ['Front Dumbbell Raise', '18 kg → 18 kg (one dumbbell)', 'Your answer last time', ['One dumbbell']],
+        ['Rear Delt Dumbbell Raise', '18 kg → 18 kg (one dumbbell)', 'Your answer last time', ['One dumbbell']],
         ['Dumbbell Preacher Curl', '22 kg → 22 kg each', 'Your answer last time', ['Each']],
       ]);
       expect(newer.analysis.ready).toBe(true);
