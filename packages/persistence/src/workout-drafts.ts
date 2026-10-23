@@ -1,7 +1,7 @@
-import { WorkoutDraftSchema, type BuilderDraftKey, type WorkoutDraft } from '@fizz/schemas';
-import { expireWorkoutDraft, type DraftLifeChange, type SaveResult } from '@fizz/domain';
+import { WorkoutDraftSchema, type BuilderDraftKey, type Routine, type WorkoutDraft } from '@fizz/schemas';
+import { expireWorkoutDraft, type DraftLifeChange, type PlanDayKeySplit, type SaveResult } from '@fizz/domain';
 import type { Database } from './database';
-import { decodeDocument, DocumentRepository, erase, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
+import { decodeDocument, DocumentRepository, erase, saveDocumentIn, saveRoutineTemplateIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
 
 /**
@@ -38,6 +38,15 @@ export type WorkoutDraftWrite =
   | { status: 'stale' | 'closed'; draft: WorkoutDraft }
   | { status: 'missing' }
   | { status: 'invalid'; reason: string };
+
+/**
+ * What Summary's `Keep for next time?` wrote (D1): both writes, a retry of them, or neither (`stale`: the draft's
+ * answer or the plan day / saved workout moved since; rule 5).
+ */
+export type KeepNextTimeWrite = { status: 'written' | 'replayed'; draft: WorkoutDraft } | { status: 'stale' } | { status: 'missing' } | { status: 'invalid'; reason: string };
+
+/** Thrown inside the keep transaction to roll back the answer when the routine write is refused. */
+class KeepRollback extends Error {}
 
 /** Creating a builder draft: the new one, a retry of it, or the open one that already holds the key (resume it). */
 export type BuilderDraftCreate =
@@ -115,6 +124,39 @@ export class SqliteWorkoutDrafts extends DocumentRepository<WorkoutDraft> {
         }
       }
     });
+  }
+
+  /**
+   * (Ben, 23 Oct, D1) Summary's `Keep for next time?`: the started draft's answer (`change`, decided against the
+   * draft as stored) and, for Apply or its Undo, the plan day's or saved workout's write at `expectedVersion`, in one
+   * transaction: a force-close leaves both or neither, and a retry under the same op ID writes nothing more.
+   */
+  keepNextTime(ownerId: string, id: string, change: (current: WorkoutDraft) => DraftLifeChange, routine?: { next: Routine; expectedVersion: number; split: PlanDayKeySplit }): Promise<KeepNextTimeWrite> {
+    return this.db
+      .write(async (tx): Promise<KeepNextTimeWrite> => {
+        const current = await getWorkoutDraftIn(tx, id);
+        if (current === null || current.ownerId !== ownerId) return { status: 'missing' };
+        const c = change(current);
+        switch (c.kind) {
+          case 'duplicate':
+            return { status: 'replayed', draft: c.current };
+          case 'stale':
+          case 'closed':
+            return { status: 'stale' };
+          case 'invalid':
+            return { status: 'invalid', reason: c.reason };
+          case 'write': {
+            const r = await saveDocumentIn(tx, WORKOUT_DRAFT_SPEC, c.next, c.expectedVersion);
+            if (!r.ok) return { status: 'stale' };
+            if (routine !== undefined && (routine.next.ownerId !== ownerId || !(await saveRoutineTemplateIn(tx, routine.next, routine.expectedVersion, routine.split)).ok)) throw new KeepRollback();
+            return { status: 'written', draft: c.next };
+          }
+        }
+      })
+      .catch((e: unknown) => {
+        if (e instanceof KeepRollback) return { status: 'stale' as const };
+        throw e;
+      });
   }
 
   /**

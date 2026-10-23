@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IdSchema, LoadConventionSchema, LoadSchema, OperationIdSchema, RepRangeSchema, RpeSchema, TimeZoneSchema, UtcTimestampSchema, WeightUnitSchema, ZonedTimestampSchema } from './common';
 import { GymEquipmentKindSchema } from './equipment';
-import { MainLiftIdSchema, PlanDayIndexSchema, RestSettingSchema, SetTypeSchema, SplitDayIdSchema } from './routine';
+import { MainLiftIdSchema, PlanDayIndexSchema, RestSettingSchema, RoutineExerciseSchema, SetTypeSchema, SplitDayIdSchema } from './routine';
 import { SplitBodyPartSchema } from './training-profile';
 import { LocalDateSchema } from './import';
 
@@ -528,6 +528,24 @@ export const BuilderUndoSchema = z.object({
 });
 export type BuilderUndo = z.infer<typeof BuilderUndoSchema>;
 
+/**
+ * (Ben, 23 Oct, D1) Summary's `Keep for next time?` for the workout a started builder draft became: `kept` (Apply
+ * wrote the plan day or saved workout) or `skipped`. Written in the same transaction as that write, under one op ID
+ * (rule 5). `undo` is the write's versioned inverse (`Chest · bench updated · Undo`), the same shape as a Start's
+ * older `PlanChangeUndo` template change; `undoneOpId` is set once Undo ran. Absent: not answered.
+ */
+export const KeepNextTimeSchema = z
+  .object({
+    choice: z.enum(['kept', 'skipped']),
+    opId: OperationIdSchema,
+    atUtc: UtcTimestampSchema,
+    undo: z.object({ kind: z.literal('template'), routineId: IdSchema, version: z.int().min(1), restore: z.array(RoutineExerciseSchema).max(40), label: z.string().min(1).max(160) }).optional(),
+    undoneOpId: OperationIdSchema.optional(),
+  })
+  .refine((k) => (k.choice === 'kept') === (k.undo !== undefined), { message: 'A kept change carries its Undo', path: ['undo'] })
+  .refine((k) => k.undoneOpId === undefined || k.choice === 'kept', { message: 'Only a kept change is undone', path: ['undoneOpId'] });
+export type KeepNextTime = z.infer<typeof KeepNextTimeSchema>;
+
 export const WorkoutDraftStatusSchema = z.enum(['open', 'started', 'discarded', 'expired']);
 export type WorkoutDraftStatus = z.infer<typeof WorkoutDraftStatusSchema>;
 
@@ -567,9 +585,12 @@ export const WorkoutDraftSchema = z
     builderKey: BuilderDraftKeySchema.optional(),
     /** (v3 §4.4) The last undoable edit's before-state; absent or null: nothing to undo. */
     undo: BuilderUndoSchema.nullable().optional(),
+    /** (D1) A started builder draft: Summary's `Keep for next time?` answer. */
+    keepNextTime: KeepNextTimeSchema.optional(),
   })
   .refine((d) => d.versions.some((v) => v.n === d.currentVersion && v.status === 'current'), { message: 'The current version must exist', path: ['currentVersion'] })
   .refine((d) => (d.status === 'started') === (d.sessionId !== null), { message: 'Only a started draft names its session', path: ['sessionId'] })
+  .refine((d) => d.keepNextTime === undefined || d.status === 'started', { message: 'Only a started draft keeps its changes for next time', path: ['keepNextTime'] })
   // §4.4: Start refuses an empty workout, so a started draft always holds one.
   .refine((d) => d.status !== 'started' || (d.versions.find((v) => v.n === d.currentVersion)?.plan.slots.length ?? 0) > 0, { message: 'A started draft has at least one exercise', path: ['versions'] });
 export type WorkoutDraft = z.infer<typeof WorkoutDraftSchema>;
