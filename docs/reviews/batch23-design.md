@@ -165,19 +165,19 @@ Three things block:
 ## Spec issues (from the brief or spec, for Ben and the designer)
 
 - **SP1. What `Keep for next time?` compares against.** Defining `base` as "the plan day as drafted for today, Time cuts included" makes the row a diff of fitted states, which can't separate Ben's edits from the fit's cuts (B1). Proposed: list only Ben's own structure edits, measured against the un-fitted plan day.
-- **SP2. D4's band against coarse kit.** There's no rule for "no achievable load inside the band". This happens often with dumbbells at 20–30 kg and with sparse racks. Options:
+- **SP2. D4's band against coarse kit.** **Resolved (PM, 23 Oct):** the nearest lighter achievable load (rounding down below the band's top edge; never the top). Tested on 2 kg dumbbell steps (`builder-backoffs-d4.test.ts`). A top with nothing lighter below it is not handled (back-off shows `—`). There's no rule for "no achievable load inside the band". This happens often with dumbbells at 20–30 kg and with sparse racks. Options:
   - (a) the nearest load below the top, even if it's outside the band;
   - (b) keep the load and cut the back-off reps;
   - never equal to the top in either case.
-- **SP3. D9's carry-over against D2.** D9 calls it a "carry-over offer … with Undo", but the 22 Oct design and prototype apply up to 4 extra sets to a future day by default, shown only behind a tap. D2 says an extra set Ben didn't ask for "ALWAYS needs Apply". Ben to choose: a real offer (`Carry over` / ✕), or default-with-Undo shown on the visible note.
+- **SP3. D9's carry-over against D2.** **Resolved (Ben, 23 Oct):** a real offer (`Carry over` / ✕), never applied by default, ≤ 4 sets, version-fenced, Undo after Apply. Built on Your workout's Time detail; lands on the muscle's next Today card (fit-to-time.md revision 23 Oct). D9 calls it a "carry-over offer … with Undo", but the 22 Oct design and prototype apply up to 4 extra sets to a future day by default, shown only behind a tap. D2 says an extra set Ben didn't ask for "ALWAYS needs Apply". Ben to choose: a real offer (`Carry over` / ✕), or default-with-Undo shown on the visible note.
 - **SP4. D5's nine counting muscles against the plan's own rows for specific targets.** `plan-builder.md:91` and `plan-builder.html:412` give Glutes, Adductors, Abductors and Forearms their own Sets-per-week rows. With a Glutes target, hip-thrust sets count to Glutes and not Hamstrings, so Legs ≠ Quads + Hamstrings + Calves, and Progress (nine fixed rows) never shows them. Decide where each rolls up (e.g. Glutes under Hamstrings, Forearms under Biceps).
 - **SP5. Where a D8 change waits.** When Ben applies "swap fly next Chest" days ahead, there's no Your workout draft yet. The spec should say:
   - where the change is held, and what version it's checked against (the template version, then the draft's);
   - what happens if a Keep Apply or a plan edit lands first, or Ben does a different Chest variation;
   - when it expires.
-- **SP6. Variations after D1.** Nothing creates a new variation now (workout-builder-v3 §1.3 is open; the builder raised it).
-- **SP7. Main lift and Keep (S1).** Is picking Incline today a structure change to Chest · bench, or simply picking a different template?
-- **SP8. Band with no plan.** Profile goals are strength / muscle / both and the bands are Strength / Balanced / Muscle. The mapping (presumably both → Balanced) isn't written down.
+- **SP6. Variations after D1.** **Resolved (Ben, 23 Oct):** `Save as a variation` in Your workout's `⋯` for plan days (workout-builder-v3 §1.3). Nothing creates a new variation now (workout-builder-v3 §1.3 is open; the builder raised it).
+- **SP7. Main lift and Keep (S1).** **Resolved (Ben, 23 Oct):** a main lift Ben swaps is its own Summary row, `Make Incline … the main lift for Chest?` Apply/Skip; Apply makes the template that lift's in place and whole (entry, `Main`, key, name), with Undo (§2.8). Is picking Incline today a structure change to Chest · bench, or simply picking a different template?
+- **SP8. Band with no plan.** **Resolved (PM, 23 Oct):** goal `both` or not set → Balanced (`mainFocusOf`, tested). Profile goals are strength / muscle / both and the bands are Strength / Balanced / Muscle. The mapping (presumably both → Balanced) isn't written down.
 
 The builder's other assumptions (RPE 8 for top and back-offs, FT8 read as the retired fit, no `Today only` tag without a plan either, broad Library filters with a part picker, ✦ priority preselected as Back, Shoulders days recommending 1 Back exercise, Legs capped at 5) are reasonable. They are correctly listed for Ben.
 
@@ -528,3 +528,11 @@ SP-A, SP-B, SP-C and SP-D are unchanged.
 ### Process
 
 This commit adds only this review. The designer's 23 changed files under `docs/` are still uncommitted. With the gate green, they should now be committed on `claude/gracious-knuth-joxqpw` in the topic commits listed in the fixes notes, with the required trailer. Don't push.
+
+## Resolved by Ben's 23 Oct follow-up decisions
+
+- SP2: **Resolved (PM, 23 Oct):** the nearest lighter achievable load (rounding down below the band's top edge; never the top). Tested on 2 kg dumbbell steps (`builder-backoffs-d4.test.ts`). A top with nothing lighter below it is not handled (back-off shows `—`).
+- SP3: **Resolved (Ben, 23 Oct):** a real offer (`Carry over` / ✕), never applied by default, ≤ 4 sets, version-fenced, Undo after Apply. Built on Your workout's Time detail; lands on the muscle's next Today card (fit-to-time.md revision 23 Oct).
+- SP6: **Resolved (Ben, 23 Oct):** `Save as a variation` in Your workout's `⋯` for plan days (workout-builder-v3 §1.3).
+- SP7: **Resolved (Ben, 23 Oct):** a main lift Ben swaps is its own Summary row, `Make Incline … the main lift for Chest?` Apply/Skip; Apply makes the template that lift's in place and whole (entry, `Main`, key, name), with Undo (§2.8).
+- SP8: **Resolved (PM, 23 Oct):** goal `both` or not set → Balanced (`mainFocusOf`, tested).

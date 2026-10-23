@@ -216,14 +216,14 @@ The design track's review (`batch23-design.md` B1) found the same root cause in 
 - **SP2. Undo → "offer again" against rule 5.**
   - The draft says Undo brings the offer back. After Undo the template has moved two versions past the one the workout opened, so a second Apply would need re-basing.
   - The builder made Undo final (assumption 7). Ben to choose.
-- **SP3. Mid-workout structure changes.** The draft counts them ("on Your workout, or mid-workout"). The builder counts only changes before Start (assumption 1); a busy-machine swap is today's circumstance. Ben to choose.
+- **SP3. Mid-workout structure changes.** **Resolved (PM, 23 Oct):** swaps made mid-workout don't count for `Keep for next time?` (it reads the draft as it started; as built). The draft counts them ("on Your workout, or mid-workout"). The builder counts only changes before Start (assumption 1); a busy-machine swap is today's circumstance. Ben to choose.
 - **SP4. Leaving the Summary = Skip.** The draft says so. The builder keeps the row until the next workout from that plan day starts, which `batch23-design.md` N4 recommends. Ben to choose.
 - **SP5. D8 landing on a draft changed since.**
   - The draft says refuse (`Out of date. Ask again.`). The builder lands by exercise matching onto drafts Ben edited since.
   - The spec should also say where a waiting change is held, when it expires, and whether Today should create drafts for plan days Ben didn't pick (the builder does, assumption 6). See `batch23-design.md` SP5.
 - **SP6. D8 against D3 (lean Today).** If a landed coach change makes Today's card `edited`, the spec must say whether Today's inline Time still works on it (S1).
-- **SP7. Main lift and Keep.** Is a main-lift swap on Your workout a structure change to `Chest · bench`, or a different template? It currently corrupts the template (B3). See `batch23-design.md` SP7.
-- **SP8. Variations after D1.** Nothing creates a variation now, and a workout opened from one never gets the Keep row (assumption 3). See `batch23-design.md` SP6.
+- **SP7. Main lift and Keep.** **Resolved (Ben, 23 Oct; built):** its own row, `Make <lift> the main lift for <day>?` Apply/Skip, never a Keep line; Apply keeps the template whole (B3). Is a main-lift swap on Your workout a structure change to `Chest · bench`, or a different template? It currently corrupts the template (B3). See `batch23-design.md` SP7.
+- **SP8. Variations after D1.** **Resolved (Ben, 23 Oct; built):** `Save as a variation` in Your workout's `⋯` for plan days. Nothing creates a variation now, and a workout opened from one never gets the Keep row (assumption 3). See `batch23-design.md` SP6.
 
 ## What's done well
 
@@ -408,3 +408,9 @@ All blocking findings from both rounds (B1, B2, B3) are fixed in code and covere
 - Rule 5: op IDs are recorded for every landed apply (`alsoOpIds`). A Reload re-lands the coach's changes in the same write. Undo reconciles after a force-close on the next open.
 - Minimal copy: the new UI is one `✦ <change> · Undo` status line.
 - No secrets and no new logging of health data.
+
+## Resolved by Ben's 23 Oct follow-up decisions
+
+- SP3: **Resolved (PM, 23 Oct):** swaps made mid-workout don't count for `Keep for next time?` (it reads the draft as it started; as built).
+- SP7: **Resolved (Ben, 23 Oct; built):** its own row, `Make <lift> the main lift for <day>?` Apply/Skip, never a Keep line; Apply keeps the template whole (B3).
+- SP8: **Resolved (Ben, 23 Oct; built):** `Save as a variation` in Your workout's `⋯` for plan days.

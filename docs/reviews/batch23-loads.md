@@ -133,9 +133,9 @@ The same floor raises a back-off after Ben types a heavier top. With a typed top
 ## Spec issues
 
 - **SP1. What the sanity band does when the reps/RPE load falls outside it.** D4 and SS4 call it a "sanity band", and HT8 calls E9's band "a sanity check". Neither says whether it clamps, warns, or changes reps. My recommendation is to clamp toward lighter only (B3). Ben should confirm.
-- **SP2. HT8's "raising the top never raises back-offs" against the coach's load op.** When Ben asks the coach for a heavier bench, should the back-offs follow? `workout-builder-v3.md` §3.1 step 2 ("every other set follows from the working load") says yes; HT8 says no. Ben needs to choose one.
+- **SP2. HT8's "raising the top never raises back-offs" against the coach's load op.** **Resolved (Ben, 23 Oct):** §3.1 step 2 wins: when Ben asks the coach for a heavier or lighter top, the back-offs follow both ways by the same %, inside the D4 band, snapped down, never above the top. A top Ben types himself still never raises them (`followTop`). When Ben asks the coach for a heavier bench, should the back-offs follow? `workout-builder-v3.md` §3.1 step 2 ("every other set follows from the working load") says yes; HT8 says no. Ben needs to choose one.
 - **SP3. HT8's precedence (1), "last comparable back-offs → their own HT7 decision", is not implemented.** D4 reads as formula-only. The training guide and D4 should be reconciled.
-- **SP4. Goal → band mapping.** `both` / not set → Balanced, and there's no Fitness band. The plan builder's Main focus (Strength / Muscle / Balanced / Fitness) isn't in the app yet. When it is, the band should follow the plan's focus. Ben should confirm, and the decision should be recorded.
+- **SP4. Goal → band mapping.** **Resolved (PM, 23 Oct):** `both` / not set → Balanced (`mainFocusOf`). `both` / not set → Balanced, and there's no Fitness band. The plan builder's Main focus (Strength / Muscle / Balanced / Fitness) isn't in the app yet. When it is, the band should follow the plan's focus. Ben should confirm, and the decision should be recorded.
 - **SP5. SS4 says "back-off RPE is never above the top set's".** D4 doesn't mention it, and the builder lets Ben type it. Decide whether to block, cap, or allow it with a flag.
 - **SP6. Mid-session.** HT8 lists Ben lowering today's top as a trigger, but logging a lighter top in the active workout doesn't move pending back-offs. Changing pending sets automatically needs a rule 2/3 call from Ben.
 - **SP7. Doc updates for the design track.**
@@ -226,3 +226,8 @@ Scope: `c7b75ed..3a44b0e` (`a2818c6`, `31d4aa7`, `45474c3`, `7a7c791`, `3a44b0e`
 - Coarse items (2.5 kg dumbbells, 5 kg stacks): back-offs a whole step below the top, or no load at all at the item's minimum.
 - The active workout: a lighter logged top doesn't move the pending back-offs.
 - D4 and D6 still need CHANGELOG entries, and workout-builder-v3 §3.1 step 9 still needs its update.
+
+## Resolved by Ben's 23 Oct follow-up decisions
+
+- SP2: **Resolved (Ben, 23 Oct):** §3.1 step 2 wins: when Ben asks the coach for a heavier or lighter top, the back-offs follow both ways by the same %, inside the D4 band, snapped down, never above the top. A top Ben types himself still never raises them (`followTop`).
+- SP4: **Resolved (PM, 23 Oct):** `both` / not set → Balanced (`mainFocusOf`).

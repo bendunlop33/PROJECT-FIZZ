@@ -184,9 +184,9 @@ The builder flagged the prompt. The B2 interaction is new.
 
 ## Spec issues (for Ben and the designer)
 
-- **SP1. How a carry-over lands.** The builder's questions stand: where it waits before a draft exists and what version it's checked against, when it's written (today's fit isn't saved until Start), which day is "next" for arms or abs, what the next day's own Time fit may do to it, and when it expires. The design track's 23 Oct proposal settles some of this (an offer, per muscle, at most 4 in all) but not landing or expiry. It overlaps D8's waiting change (design review SP5).
+- **SP1. How a carry-over lands.** **Resolved (Ben, 23 Oct; built):** a real offer on Your workout's Time detail; waits on the started draft (`BuilderSetup.carryOver`), checked against the fit as it ended; next day per muscle in plan order (abs: the next day); lands after that day's own fit; expires after 14 days or when that day is started (fit-to-time.md revision 23 Oct). The builder's questions stand: where it waits before a draft exists and what version it's checked against, when it's written (today's fit isn't saved until Start), which day is "next" for arms or abs, what the next day's own Time fit may do to it, and when it expires. The design track's 23 Oct proposal settles some of this (an offer, per muscle, at most 4 in all) but not landing or expiry. It overlaps D8's waiting change (design review SP5).
 - **SP2. Fit optimality.** D9's wording ("the cheapest cut by training lost per minute") reads as a greedy cut. The design track's 23 Oct proposal is "the least training lost overall". B1 has to be fixed either way, but Ben should pick one: exhaustive (nested results aren't guaranteed, as the builder noted) or greedy with a re-add pass.
-- **SP3. `↻ Mix it up`.** Ben approved it on 20 Oct. It is now gone from Today with a plan and isn't on Your workout. D3 doesn't name it, and the design track lists it as pending (Q-R6).
+- **SP3. `↻ Mix it up`.** **Resolved (Ben, 23 Oct; built):** `↻ Mix it up` is the fifth row of Today's options on Your workout, with Undo (workout-builder-v3 §2.3a). Ben approved it on 20 Oct. It is now gone from Today with a plan and isn't on Your workout. D3 doesn't name it, and the design track lists it as pending (Q-R6).
 - **SP4. Time range.** Today is specified as 20–120 and Your workout as 15–180, for the same stepper. The app uses 15–180 for both.
 - **SP5. What an option change does.** The spec wants Today's draft for that choice at Today's Time, with Ben's edits replayed. The app uses Set up's merge, which keeps edits. Decide which.
 - **SP6. Mid-workout `+N min`.** Does it follow the 22 Oct revision too (S5)?
@@ -524,3 +524,7 @@ R2 (tie-break, with SP2), R3 (Start and Keep compare against the raw template; m
 
 Don't merge ahead of `claude/v3summary-23oct`. Its `Keep for next time?` must compare `untimed()` against `todaySession.draftFor(key, plan controls).unfitted`. It must not compare against the raw template.
 
+## Resolved by Ben's 23 Oct follow-up decisions
+
+- SP1: **Resolved (Ben, 23 Oct; built):** a real offer on Your workout's Time detail; waits on the started draft (`BuilderSetup.carryOver`), checked against the fit as it ended; next day per muscle in plan order (abs: the next day); lands after that day's own fit; expires after 14 days or when that day is started (fit-to-time.md revision 23 Oct).
+- SP3: **Resolved (Ben, 23 Oct; built):** `↻ Mix it up` is the fifth row of Today's options on Your workout, with Undo (workout-builder-v3 §2.3a).
