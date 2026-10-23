@@ -256,7 +256,8 @@ export async function basisStartedSince(q: SqlExecutor, ownerId: string, basis: 
   }
   const row =
     basis.kind === 'routine'
-      ? await q.getFirst<{ id: string }>(`SELECT id FROM sessions WHERE owner_id = ? AND routine_id = ? AND started_at_utc >= ? AND (status = 'active' OR ${inHistorySql()}) LIMIT 1`, [ownerId, basis.routineId, sinceUtc])
+      ? // (D8) A plan day's template is started as its plan day too (`plan_day.templateRoutineId`, no routine ID).
+        await q.getFirst<{ id: string }>(`SELECT id FROM sessions WHERE owner_id = ? AND (routine_id = ? OR json_extract(plan_day, '$.templateRoutineId') = ?) AND started_at_utc >= ? AND (status = 'active' OR ${inHistorySql()}) LIMIT 1`, [ownerId, basis.routineId, basis.routineId, sinceUtc])
       : await q.getFirst<{ id: string }>(
           `SELECT s.id AS id FROM next_target_uses u JOIN sessions s ON s.owner_id = u.owner_id AND s.start_operation_id = u.start_op_id WHERE u.owner_id = ? AND u.source_session_id = ? AND s.id != ? AND u.created_at_utc >= ? AND (s.status = 'active' OR ${inHistorySql('s')}) LIMIT 1`,
           [ownerId, basis.sourceSessionId, basis.sourceSessionId, sinceUtc],

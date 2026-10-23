@@ -13,7 +13,9 @@ import { newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolEx
  * `getStructuralChangeSignals`. The executor checks the request against the
  * plan the next workout starts from (`checkStructuralProposal`) and saves a
  * **proposal**: nothing changes until Ben taps Apply on the card. Apply,
- * Not now and Undo are Ben's own records (`structuralApplyRecord`).
+ * Not now and Undo are Ben's own records (`structuralApplyRecord`). An
+ * applied change lands on that workout's Your workout draft as today-only
+ * edits with Undo (Ben, 23 Oct, D8; the app's builder service).
  */
 
 export interface StructuralBasis {
@@ -96,6 +98,8 @@ export function createStructuralExecutors(deps: StructuralDeps): CoachExecutors 
       ops: check.ops,
       before: check.before,
       after: check.after,
+      // (Ben, 23 Oct, D8) Applied, it lands on the next workout's Your workout draft.
+      landsOn: 'your_workout',
     };
     const record = newActionRecord(ctx, detail, { status: 'proposed', reason, guardNotes: notes });
     const r = await deps.store.commit(ctx.ownerId, { kind: 'record', action: record });
@@ -124,9 +128,9 @@ export function proposalTapOpId(proposalId: string, tap: 'apply' | 'not_now'): s
 
 /**
  * Ben's own record of a tap on a structural proposal (author `ben`, no
- * turn): `apply` is a committed copy of the proposal that the next
- * workout's overview writes into its draft and that Undo reverses until
- * that workout starts; `not_now` is a rejected copy.
+ * turn): `apply` is a committed copy of the proposal that lands on the next
+ * workout's Your workout draft (D8) and that Undo reverses until that
+ * workout starts; `not_now` is a rejected copy.
  */
 export function structuralTapRecord(proposal: ActionRecord, tap: 'apply' | 'not_now', input: { now: ZonedTimestamp }): ActionRecord {
   if (proposal.detail.kind !== 'propose_next_workout_change') throw new TypeError('not a structural proposal');
