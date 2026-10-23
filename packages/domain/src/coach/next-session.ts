@@ -368,6 +368,25 @@ export function acceptedRuleResets(rows: readonly NextSessionTargetRecord[], sou
  * always the fallback. A pain flag set since, or pain in today's check-in,
  * means the built-in rule decides (it holds loads; rule 9).
  */
+/**
+ * A coach row that still plans the next workout from `source`: the coach's own (not Ben's answer to the rule's reset;
+ * that one the rule itself plans, `acceptReset`), saved or applied by Ben, not used by a workout started from it, and
+ * set on the workout as it still is (rule 5). The one test Start, Your workout and Today's card all use.
+ */
+export function coachTargetStands(row: NextSessionTargetRecord, source: SessionAggregate, fits: { version: number; basis: string } = { version: source.session.version, basis: nextTargetSourceBasis(source) }): boolean {
+  if (isRuleResetRow(row) || (row.status !== 'saved' && row.status !== 'applied')) return false;
+  return row.usedBySessionId === null && row.sourceSessionId === source.session.id && nextTargetFitsSource(row, fits);
+}
+
+/**
+ * (Ben, 23 Oct) The coach's standing next-session row for one exercise of `source` (`coachTargetStands`), or null: what
+ * Your workout and Today's card read for its load and its set count, as Start does.
+ */
+export function standingCoachTarget(rows: readonly NextSessionTargetRecord[], source: SessionAggregate, exerciseId: string): NextSessionTargetRecord | null {
+  const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
+  return rows.find((r) => r.exerciseId === exerciseId && coachTargetStands(r, source, fits)) ?? null;
+}
+
 export function withCoachTargets(
   builtIn: ReadonlyMap<string, readonly PlanEntry[]>,
   rows: readonly NextSessionTargetRecord[],
@@ -378,9 +397,7 @@ export function withCoachTargets(
   if (ctx.painToday) return out;
   const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
   for (const row of rows) {
-    // Ben's answer to the rule's own reset isn't a coach target: the rule itself plans it (`acceptReset`).
-    if (isRuleResetRow(row) || (row.status !== 'saved' && row.status !== 'applied')) continue;
-    if (row.usedBySessionId !== null || !nextTargetFitsSource(row, fits) || row.sourceSessionId !== source.session.id) continue;
+    if (!coachTargetStands(row, source, fits)) continue;
     if (ctx.flaggedExerciseIds.has(row.exerciseId)) continue;
     const plan = builtIn.get(row.exerciseId) ?? [];
     const warmups = plan.filter((p) => p.setType === 'warmup');

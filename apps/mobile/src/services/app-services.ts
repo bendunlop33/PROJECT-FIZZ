@@ -947,6 +947,8 @@ export function createAppServices(deps: AppServicesDeps) {
     todayMix: (key) => todaySession.mixFactsFor(key),
     // (Ben, 23 Oct) The carry-over routes the sets Time cut to each muscle's next plan day.
     carryDays: (key) => todaySession.carryDaysFor(key),
+    // (Ben, 23 Oct) Carried sets land on a plan day opened from the Library too, not only on Today's card.
+    carryFor: (day) => todaySession.carryItemsFor(day),
   });
 
   /**

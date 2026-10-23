@@ -4,6 +4,7 @@ import { fromDraftPlan, toDraftPlan, type DraftCodecContext } from './codec';
 import { estimateBuilderMinutes } from './estimate';
 import { clampMinutes, FIT_RULES, fitToMinutes, type BuilderFitStep } from './fit';
 import { workingCount } from './set-rows';
+import { carriedSets, withCarriedBack, withoutCarried, type CarriedHold } from './carried';
 import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
 
 /**
@@ -243,6 +244,14 @@ export interface WorkoutRefitInput {
  * back). Used by `fitWorkoutToTime`, and by the service when a change (Set up, Gym changed) is made to both copies.
  */
 export function refitWorkoutToTime(i: WorkoutRefitInput): WorkoutTimeFitOutcome {
+  // (Review ben-8-decisions S3) Carried-over sets aren't Time's to cut: the fit runs without them, then they go back.
+  const { workout: work, held } = withoutCarried(i.work, i.ctx);
+  const original = withoutCarried(i.original, i.ctx).workout;
+  if (work === i.work && original === i.original) return refitBare(i);
+  return withHeldBack(refitBare({ ...i, original, work }), held, i.ctx);
+}
+
+function refitBare(i: WorkoutRefitInput): WorkoutTimeFitOutcome {
   const to = clampMinutes(i.to);
   const fromMinutes = clampMinutes(i.fromMinutes);
   if (to >= fromMinutes) return { workout: i.original, fit: null, minutes: to, over: false };
@@ -274,10 +283,19 @@ export function withOriginalRows(original: BuilderWorkout, changed: BuilderWorko
 export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome {
   // (Review todaylean B3) Today's fill is live and Time is still at or above what it filled to: it stays as it is.
   if (i.fit?.filledTo !== undefined && clampMinutes(i.to) >= i.fit.filledTo) return { workout: i.current, fit: i.fit, minutes: clampMinutes(i.to), over: false };
-  const original = i.fit === null ? i.current : unfitWorkout(i.fit, i.current);
-  const work = i.fit === null ? i.current : unfitWorkout(i.fit, i.current, { hold: true });
-  const fromMinutes = i.fit?.fromMinutes ?? i.minutes;
-  return refitWorkoutToTime({ original, work, fromMinutes, to: i.to, ctx: i.ctx, mainGroup: i.mainGroup, supersets: i.supersets });
+  // (Review ben-8-decisions S3) Carried-over sets aren't Time's to cut: the fit runs without them, then they go back.
+  const { workout: current, held } = withoutCarried(i.current, i.ctx);
+  const fit = i.fit === null ? null : { ...i.fit, base: withoutCarried(i.fit.base, i.ctx).workout };
+  const original = fit === null ? current : unfitWorkout(fit, current);
+  const work = fit === null ? current : unfitWorkout(fit, current, { hold: true });
+  const fromMinutes = fit?.fromMinutes ?? i.minutes;
+  const r = refitBare({ original, work, fromMinutes, to: i.to, ctx: i.ctx, mainGroup: i.mainGroup, supersets: i.supersets });
+  return held.length === 0 ? r : withHeldBack(r, held, i.ctx);
+}
+
+/** A fit's outcome with the carried sets back on it, and its minutes as they now are. */
+function withHeldBack(r: WorkoutTimeFitOutcome, held: readonly CarriedHold[], ctx: BuilderContext): WorkoutTimeFitOutcome {
+  return { ...r, workout: withCarriedBack(r.workout, held, ctx) };
 }
 
 /**
@@ -358,9 +376,10 @@ export function timeFitChanges(fit: BuilderTimeFit, current: BuilderWorkout): Bu
       continue;
     }
     if (s.exerciseId !== was.exerciseId) continue;
-    const to = workingCount(s);
+    // (Review ben-8-decisions S3) Carried-over sets are neither the fit's nor Ben's: counted out on both sides.
+    const to = workingCount(s) - carriedSets(s);
     // A slot Ben touched since: only what the fit took (his own changes aren't the fit's).
-    const from = s.touched === true ? to + setsBack(fit, was, s) : workingCount(was);
+    const from = s.touched === true ? to + setsBack(fit, was, s) : workingCount(was) - carriedSets(was);
     if (to < from) out.push({ kind: 'sets', slotKey: s.key, exerciseId: s.exerciseId, from, to });
     // (Review todaylean B3) Sets Today's fill added to a slot Ben hasn't touched.
     else if (to > from && s.touched !== true && (fit.raised?.[s.key] ?? 0) > 0) out.push({ kind: 'sets', slotKey: s.key, exerciseId: s.exerciseId, from, to });

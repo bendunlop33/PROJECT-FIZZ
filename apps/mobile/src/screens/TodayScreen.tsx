@@ -16,7 +16,7 @@ import { openYourPlan } from '../navigation/actions';
 import type { TabParams } from '../navigation/types';
 import { DeleteToastView } from '../history/DeleteToastView';
 import { useDeleteToast } from '../history/useDeleteToast';
-import type { TodaySelection, TodaySessionData } from '../services/today-session';
+import { TODAY_SESSION_COPY, type TodaySelection, type TodaySessionData } from '../services/today-session';
 import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData, useServices } from '../shell/context';
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
@@ -509,6 +509,58 @@ export function TodayScreen() {
     }
     changed();
     reload();
+  }
+
+  /**
+   * (Ben, 23 Oct; fit-to-time SP3) The carry-over behind the Time note: `Carry over` (toast `Carried over · Undo`), `✕`,
+   * or `Undo`. Today's own card writes it with Today's draft; an edited card on its Your workout draft. Versioned, one op
+   * ID per tap; a stale answer is refused with a word.
+   */
+  async function carryOver(choice: 'carried' | 'skipped' | 'clear') {
+    const c = view?.carry;
+    if (!c || session === null || selection === null) return;
+    const sel: TodaySelection = { dayKey: selection.dayKey, controls: selection.controls };
+    const opId = newUuid();
+    let ok: boolean;
+    let undo: (() => Promise<unknown>) | null = null;
+    if (c.via.kind === 'builder') {
+      const r = await services.builder.carryOver(c.via.draftId, choice, { opId, expectedVersion: c.via.version });
+      ok = r.status === 'written' || r.status === 'replayed';
+      if (!ok) setError('message' in r ? r.message : TODAY_SESSION_COPY.stale);
+      if (ok && choice === 'carried' && 'snapshot' in r && r.snapshot !== null) {
+        const draftId = r.snapshot.draftId;
+        const version = r.snapshot.version;
+        undo = () => services.builder.carryOver(draftId, 'clear', { opId: newUuid(), expectedVersion: version });
+      }
+    } else {
+      const r = await services.todaySession.carryOver(session, sel, choice, { opId, basis: c.basis });
+      ok = r.status === 'written';
+      if (r.status !== 'written') setError(r.message);
+      if (ok && choice === 'carried') {
+        undo = async () => {
+          const fresh = await services.todaySession.load();
+          const now = fresh === null ? null : services.todaySession.card(fresh, sel);
+          if (fresh === null || now?.carry == null) return;
+          await services.todaySession.carryOver(fresh, sel, 'clear', { opId: newUuid(), basis: now.carry.basis });
+        };
+      }
+    }
+    changed();
+    reloadSession();
+    if (ok && undo !== null) {
+      const run = undo;
+      setToast({
+        text: TODAY_SESSION_COPY.carried,
+        action: TODAY_V2_COPY.undo,
+        onAction: () => {
+          setToast(null);
+          void run().then(() => {
+            changed();
+            reloadSession();
+          });
+        },
+      });
+    }
   }
 
   /** `Back to plan day` on an edited card: the edited draft is discarded (versioned), with Undo. */
@@ -1017,6 +1069,8 @@ export function TodayScreen() {
         onClose={() => {
           setTimeDetail(false);
         }}
+        carry={view?.carry == null ? null : { state: view.carry.state, lines: view.carry.lines }}
+        onCarry={(choice) => void carryOver(choice)}
       />
       {alertsAsk.sheet}
       {deleted.toast ? (

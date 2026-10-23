@@ -109,6 +109,8 @@ import {
   mixItUpPick,
   carriedItems,
   carryItemText,
+  landCarryOver,
+  withCoachSetCounts,
   carryOverOffer,
   fitLostByGroup,
   type CarryDay,
@@ -185,6 +187,8 @@ export interface BuilderServiceDeps {
   todayMix?: (key: BuilderDraftKey) => Promise<TodayMixFacts | null>;
   /** (Ben, 23 Oct) The plan's days as the carry-over routes to them (Today's). Absent or null: no carry-over offer. */
   carryDays?: (key: BuilderDraftKey) => Promise<CarryDay[] | null>;
+  /** (Ben, 23 Oct) The sets carried over to a plan day's next workout (Today's `pendingCarryOvers`). Absent: none land here. */
+  carryFor?: (day: { planId: string; dayIndex: number }) => Promise<CarryItem[]>;
 }
 
 /** (D3 §2.3a) Today's code draft for one choice (`todayDraft`), fitted to Time, with the draft before the fit. */
@@ -972,7 +976,17 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     } else {
       workout = buildFromSetup(ruleSetupOf(storedSetup(s, {})), env.pool, env.ctx).workout;
     }
+    // (Ben, 23 Oct) The coach's set count for next time (a small change, or one Ben applied on the Summary), as Start
+    // plans it; then, on a plan day, the sets Ben carried over to it (as on Today's card; Library's `Open in builder ›`).
+    workout = withCoachSetCounts(workout, env.ctx).workout;
+    if (plan !== null) workout = await landedForPlanDay(workout, plan, env);
     return { env, workout, skipped, plan, variation };
+  }
+
+  /** (Ben, 23 Oct) A plan day's workout with the sets carried over to it (Today's `pendingCarryOvers`), marked as carried. */
+  async function landedForPlanDay(workout: BuilderWorkout, day: { planId: string; dayIndex: number }, env: BuilderEnv): Promise<BuilderWorkout> {
+    const carry = deps.carryFor === undefined ? [] : await deps.carryFor(day).catch(() => [] as CarryItem[]);
+    return carry.length === 0 ? workout : landCarryOver(workout, carry, env.ctx).workout;
   }
 
   /** The template and variation versions a build opened (Start checks them, rule 5; review S2). */
@@ -1077,7 +1091,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
    * no edits it is reloaded silently; with edits the page shows `… changed · Reload` (Reload has Undo). A custom day
    * named after the workout.
    */
-  async function openFrom(p: UserProfile, from: BuilderDraftFrom, opId: string): Promise<BuilderWriteResult> {
+  async function openFrom(p: UserProfile, from: BuilderDraftFrom, opId: string, planDay: { planId: string; dayIndex: number } | null = null): Promise<BuilderWriteResult> {
     const key: BuilderDraftKey = { planId: null, dayIndex: null, splitDayId: null, mainLiftExerciseId: null, localDate: localToday(), from };
     const open = await repos().workoutDrafts.openBuilderDraft(p.id, key).catch(() => null);
     if (open !== null) {
@@ -1093,8 +1107,15 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const src = await sourcePlanOf(p, from, undefined, `${id}:${opId}`);
     if ('closed' in src) return { status: 'closed', snapshot: null, message: src.closed };
     const env = await envFor(p, { gymId: src.gymId, exerciseIds: src.plan.slots.map((x) => x.exerciseId), keySeed: `${id}:${opId}` });
-    const plan = withSlotRevs(null, src.plan).plan;
-    const workout = fromDraftPlan(plan);
+    let plan = withSlotRevs(null, src.plan).plan;
+    let workout = fromDraftPlan(plan);
+    if (planDay !== null) {
+      const landed = await landedForPlanDay(withCoachSetCounts(workout, env.ctx).workout, planDay, env);
+      if (landed !== workout) {
+        workout = landed;
+        plan = withSlotRevs(null, toDraftPlan(workout, env.codec)).plan;
+      }
+    }
     if (slotsOf(workout.blocks).length === 0) return { status: 'closed', snapshot: null, message: BUILDER_COPY.notFound };
     const t = await deps.training().catch(() => null);
     const groups = groupsOfWorkout(workout, env);
@@ -1741,8 +1762,13 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           // One from a plan no longer in use is a library workout like any other (review: low).
           const pk = planDayKeyOf(r, t?.split ?? null, t?.mainLifts);
           // (D8) With the coach's changes Ben applied for it in chat landed on the draft.
-          if (pk !== null && (await planInUse(p.id))?.plan.id === pk.planId) return withCoachLanded(await service.openTemplate({ routineId: r.id }, opId));
-          return withCoachLanded(await openFrom(p, { kind: 'routine', id: r.id }, opId));
+          const inUse = (await planInUse(p.id))?.plan.id ?? null;
+          if (pk !== null && inUse === pk.planId) return withCoachLanded(await service.openTemplate({ routineId: r.id }, opId));
+          // (Ben, 23 Oct) A day of the plan in use with no split day to key it by still gets what its next workout has:
+          // the coach's set counts and the sets carried over to it.
+          const link = r.planDay ?? r.createdFromPlan;
+          const day = link !== undefined && link.planId === inUse ? { planId: link.planId, dayIndex: link.dayIndex } : null;
+          return withCoachLanded(await openFrom(p, { kind: 'routine', id: r.id }, opId, day));
         }
         case 'session': {
           const a = await repos().sessions.get(target.sourceSessionId).catch(() => null);

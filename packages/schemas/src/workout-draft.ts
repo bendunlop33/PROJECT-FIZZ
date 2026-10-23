@@ -269,6 +269,11 @@ export const DraftSlotBuilderSchema = z.object({
     .optional(),
   /** (D1) Working sets Today's Time took from this slot (Today's card only), so Keep compares Ben's count like with like. */
   todayCut: z.int().min(1).max(BUILD_LIMITS.maxWorkingSets).optional(),
+  /**
+   * (Ben, 23 Oct; review ben-8-decisions S3) Working sets a carry-over landed on this slot (the app's change, never
+   * Ben's): Time on this workout fits without them and puts them back after, so what Ben carried isn't cut again.
+   */
+  carried: z.int().min(1).max(BUILD_LIMITS.maxWorkingSets).optional(),
   /** On a superset's first slot: the builder made this pair. */
   autoPair: z.literal(true).optional(),
   /** On a superset's first slot: Ben's `After each round` (seconds). */

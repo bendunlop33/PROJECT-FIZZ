@@ -77,6 +77,7 @@ function metaOf(slot: BuilderSlot, block: BuilderBlock, first: boolean): DraftSl
     ...(slot.origin === undefined ? {} : { origin: slot.origin }),
     ...(keepOf(slot.keep) === undefined ? {} : { keep: keepOf(slot.keep) }),
     ...(slot.todayCut === undefined || slot.todayCut < 1 ? {} : { todayCut: Math.min(BUILD_LIMITS.maxWorkingSets, Math.round(slot.todayCut)) }),
+    ...(slot.carried === undefined || slot.carried < 1 ? {} : { carried: Math.min(BUILD_LIMITS.maxWorkingSets, Math.round(slot.carried)) }),
     ...(first && block.auto && block.slots.length > 1 ? { autoPair: true as const } : {}),
     ...(first && block.roundRestS !== undefined && block.slots.length > 1 ? { roundRestS: block.roundRestS } : {}),
     ...(slot.restS !== undefined && Object.keys(slot.restS).length > 0 ? { restS: { ...slot.restS } } : {}),
@@ -180,6 +181,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
   const keep = keepOf(meta?.keep);
   if (keep !== undefined) out.keep = keep;
   if (meta?.todayCut !== undefined) out.todayCut = meta.todayCut;
+  if (meta?.carried !== undefined) out.carried = meta.carried;
   if (meta?.why !== undefined && meta.why.length > 0) out.why = [...meta.why];
   if (s.checkedHistoryVersion != null) out.historyVersion = s.checkedHistoryVersion;
   return out;

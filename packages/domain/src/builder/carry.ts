@@ -19,7 +19,8 @@ import { toMs } from '../time';
  * - `pendingCarryOvers`: the carry-overs that land on a day's next workout: from a workout Ben did (started from that
  *   draft), applied, within 14 days, and that day not done since.
  * - `landCarryOver`: the next workout with them: the sets on that group's first exercise that isn't the main lift (else
- *   the main lift, when it's the group's only one; at most 10 sets), else the exercise they were cut from, added. After that day's own fit: what Ben carried isn't cut again.
+ *   the main lift, when it's the group's only one; at most 10 sets), else the exercise they were cut from, added. After that day's own fit: what Ben carried isn't cut again
+ *   (each slot is marked `carried`, and Your workout's Time fits without those sets, `carried.ts`).
  */
 
 /** A plan day as the carry-over routes to it. */
@@ -117,12 +118,14 @@ export interface PendingCarryInput {
 /**
  * `pendingCarryOvers`: what lands on the next workout of (planId, dayIndex): each source workout Ben did (its session
  * is in `sessions`) of the same plan, applied within 14 days, whose items go to that day, while that day hasn't been
- * started since the source workout. Several sources add up per group, capped at 4 per group.
+ * started since the source workout. Several sources add up, at most 4 sets on the day in all (oldest first).
  */
 export function pendingCarryOvers(input: PendingCarryInput): CarryItem[] {
   const nowMs = toMs(input.nowUtc);
   const byGroup = new Map<BuilderGroupName, CarryItem>();
-  for (const src of input.sources) {
+  // (PM, 23 Oct; pending Ben's final OK) At most 4 carried sets land on one day in all, the oldest carry-overs first.
+  let left: number = FIT_CARRY.maxSets;
+  for (const src of [...input.sources].sort((a, b) => toMs(a.atUtc) - toMs(b.atUtc))) {
     if (src.draft.builderKey?.planId !== input.planId || src.draft.sessionId === null) continue;
     if (nowMs - toMs(src.atUtc) > CARRY_DAYS * 86_400_000) continue;
     const session = input.sessions.find((s) => s.sessionId === src.draft.sessionId);
@@ -130,9 +133,11 @@ export function pendingCarryOvers(input: PendingCarryInput): CarryItem[] {
     const done = input.sessions.some((s) => s.sessionId !== session.sessionId && s.planDay?.planId === input.planId && s.planDay.dayIndex === input.dayIndex && s.startedAtUtc > session.startedAtUtc);
     if (done) continue;
     for (const x of src.items) {
-      if (x.toDayIndex !== input.dayIndex) continue;
+      if (x.toDayIndex !== input.dayIndex || left <= 0) continue;
+      const n = Math.min(x.sets, left);
+      left -= n;
       const was = byGroup.get(x.group);
-      byGroup.set(x.group, was === undefined ? x : { ...was, sets: Math.min(FIT_CARRY.maxSets, was.sets + x.sets) });
+      byGroup.set(x.group, was === undefined ? { ...x, sets: n } : { ...was, sets: was.sets + n });
     }
   }
   return [...byGroup.values()];
@@ -153,7 +158,7 @@ export function landCarryOver(w: BuilderWorkout, items: readonly CarryItem[], ct
     if (slot !== undefined) {
       const n = Math.min(BUILD_LIMITS.maxWorkingSets, workingCount(slot) + x.sets);
       if (n === workingCount(slot)) continue;
-      const next = setWorkingCount(slot, n, ctx.loads(slot.exerciseId));
+      const next = { ...setWorkingCount(slot, n, ctx.loads(slot.exerciseId)), carried: (slot.carried ?? 0) + n - workingCount(slot) };
       workout = { ...workout, blocks: workout.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === slot.key ? next : s)) })) };
       changed.push(slot.key);
       continue;
@@ -163,7 +168,8 @@ export function landCarryOver(w: BuilderWorkout, items: readonly CarryItem[], ct
     if (!r.ok) continue;
     const added = slotsOf(r.workout.blocks).find((s) => !slotsOf(workout.blocks).some((o) => o.key === s.key));
     if (added === undefined) continue;
-    const next = setWorkingCount(added, Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, x.sets)), ctx.loads(added.exerciseId));
+    const n = Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, x.sets));
+    const next = { ...setWorkingCount(added, n, ctx.loads(added.exerciseId)), carried: n };
     workout = { ...r.workout, blocks: r.workout.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === added.key ? next : s)) })) };
     changed.push(added.key);
   }

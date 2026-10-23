@@ -8,6 +8,7 @@ import { workingCount } from '../builder/set-rows';
 import { makeSlot } from '../builder/slot';
 import { ARM_GROUPS, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
 import { landCarryOver, type CarryItem } from '../builder/carry';
+import { withCoachSetCounts } from '../builder/carried';
 
 /**
  * Today (v2), workout-builder-v3 §2.0 and its 20 Oct additions: today's
@@ -214,7 +215,8 @@ function build(input: TodayAssembleInput, t: TodayTemplate, c: TodayControls, ab
   const { ctx, pool } = input;
   const groups = groupsFor(t, absOn);
   const r = buildFromSetup({ minutes: c.minutes, mainLiftExerciseId: t.mainLiftExerciseId, supersets: c.supersets, groups, accessories: c.accessories }, pool, ctx, { trim: false });
-  let workout = r.workout;
+  // (Ben, 23 Oct) The coach's set count for next time (a small change, or one Ben applied on the Summary), as Start plans it.
+  let workout = withCoachSetCounts(r.workout, ctx).workout;
   if (!absOn && groups.some((g) => g.group === 'Abs')) workout = absOff(workout, ctx, { supersets: c.supersets, armCandidates: armCandidates(workout, pool, ctx) }).workout;
   return applyMix(workout, input, c);
 }

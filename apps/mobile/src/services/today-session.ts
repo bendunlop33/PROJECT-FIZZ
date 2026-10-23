@@ -55,6 +55,8 @@ import {
   toMs,
   timeFitChanges,
   carriedItems,
+  carryItemText,
+  carryOverOffer,
   fitLostByGroup,
   pendingCarryOvers,
   type CarryDay,
@@ -86,6 +88,8 @@ import {
   type TodayMixLine,
   type TodayReviewStatus,
   type TodayTemplate,
+  coachTargetRows,
+  standingCoachTarget,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import {
@@ -98,7 +102,9 @@ import {
   type DraftPlan,
   type EquipmentInstance,
   type Exercise,
+  type BuilderCarryOver,
   type Gym,
+  type NextSessionTargetRecord,
   type PainFlag,
   type SessionAggregate,
   type SessionCheckIn,
@@ -212,6 +218,30 @@ export interface TodayEditedDraft {
   minutes: number;
   timeFrom: number | null;
   fit: BuilderTimeFit | null;
+  /** (Ben, 23 Oct) Ben's answer to its carry-over offer (`BuilderSetup.carryOver`); null: not answered. */
+  carryOver?: BuilderCarryOver | null;
+}
+
+/** (Ben, 23 Oct) Today's own open draft for a card (not edited): its answer to the carry-over offer, for that Time. */
+export interface TodayCarryAnswer {
+  draftId: string;
+  version: number;
+  minutes: number;
+  carryOver: BuilderCarryOver;
+}
+
+/**
+ * (Ben, 23 Oct; fit-to-time SP3) The carry-over on Today's card: the sets Time cut, by muscle to each one's next plan
+ * day (`+3 Triceps sets on your next Shoulders day`), as an offer (`Carry over` / `✕`) or carried (`Undo`). `via`:
+ * Today's own card (written with Today's draft, `todaySession.carryOver`) or an edited card's draft (Your workout's
+ * `builder.carryOver`). `basis`: the offer as shown (a stale answer is refused, rule 5).
+ */
+export interface TodayCarryView {
+  state: 'offer' | 'carried';
+  items: CarryItem[];
+  lines: string[];
+  basis: string;
+  via: { kind: 'today' } | { kind: 'builder'; draftId: string; version: number };
 }
 
 /** (D3) A day's latest open builder draft today: the main lift it is for and when it was last written. */
@@ -254,6 +284,8 @@ export interface TodaySessionData {
   edited: Readonly<Record<string, TodayEditedDraft>>;
   /** Today's drafts with the coach's offer applied (not edited; integrity B2), by `dayKey|mainLift`. */
   nudged: Readonly<Record<string, TodayNudgedDraft>>;
+  /** (Ben, 23 Oct) Today's own drafts with an answer to the carry-over offer, by `dayKey|mainLift`. */
+  carryAnswers: Readonly<Record<string, TodayCarryAnswer>>;
   /** The long or hard run near today (the clash line). */
   near: LegRunNear | null;
   strip: { workouts: { sessionId: string; localDate: string; title: string }[]; activities: Activity[]; firstUse: boolean };
@@ -349,6 +381,8 @@ export interface TodayCardView {
   startable: boolean;
   /** For `commit` (the code draft; null when edited). */
   draft: TodayDraft | null;
+  /** (Ben, 23 Oct) The carry-over of the sets Time cut, behind the Time note; null: none (no cut, no plan, under 2 sets). */
+  carry: TodayCarryView | null;
 }
 
 /** (D3 §2.3a) Today's code draft for a key and controls (`draftFor`): what Your workout's options load. */
@@ -373,6 +407,9 @@ export const TODAY_SESSION_COPY = {
   stale: 'Changed since. Check it and try again.',
   failed: 'Couldn’t save. Try again.',
   empty: 'Add an exercise first.',
+  /** (Ben, 23 Oct) The carry-over. */
+  carried: 'Carried over',
+  nothingToCarry: 'Nothing to carry over',
 } as const;
 
 const titleOf = (name: string | null | undefined): string => (name ?? '').split('·')[0]?.trim() || 'Workout';
@@ -435,6 +472,16 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
   async function loadInputs(p: UserProfile, ids: readonly string[], exercises: ReadonlyMap<string, Exercise>, sub: SubstituteContext, planned: ReadonlyMap<string, PlannedAnchor>, flags: readonly PainFlag[], mainFocus: MainFocus) {
     const out = new Map<string, SlotLoadInput>();
     const nowMs = toMs(deps.now().utc);
+    // (Ben, 23 Oct) The coach's next-session rows per workout they were saved on, read once (its set count reaches the card).
+    const coachRows = new Map<string, Promise<{ source: SessionAggregate | null; rows: NextSessionTargetRecord[] }>>();
+    const coachRowsOf = (sessionId: string) => {
+      let got = coachRows.get(sessionId);
+      if (got === undefined) {
+        got = Promise.all([repos().sessions.get(sessionId).catch(() => null), repos().coach.listNextTargets(p.id, sessionId).catch(() => [] as NextSessionTargetRecord[])]).then(([source, rows]) => ({ source, rows: coachTargetRows(rows) }));
+        coachRows.set(sessionId, got);
+      }
+      return got;
+    };
     for (const id of ids) {
       const e = exercises.get(id);
       if (e === undefined) continue;
@@ -462,6 +509,11 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       // own there's nothing to hold to, so no target at all (`—`, Start light), never the plan's or an estimate.
       const held = flag !== null;
       const heldNoHistory = held && refs.latest === null;
+      // (Ben, 23 Oct) The coach's set count for next time, as Start and Your workout read it (`standingCoachTarget`);
+      // never on a pain-flagged movement (rule 9).
+      const newest = history[0];
+      const standing = held || newest === undefined ? null : await coachRowsOf(newest.sessionId).then((c) => (c.source === null ? null : standingCoachTarget(c.rows, c.source, id)));
+      const coachSets = standing?.sets ?? null;
       out.set(id, {
         mainFocus,
         unit: refs.unit,
@@ -470,6 +522,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         bodyweightExercise: e.defaultLoadConvention === 'bodyweight',
         gymEquipment: sub.gym.equipment,
         coachTarget: !heldNoHistory && fromPlan?.source === 'coach' ? anchorOf(fromPlan) : null,
+        ...(coachSets === null ? {} : { coachSets }),
         planFirstLoad: !heldNoHistory && fromPlan?.source === 'plan' ? planAnchor(anchorOf(fromPlan), fromPlan.planSetMs, refs.latest?.performedAtUtc ?? null) : null,
         ruleTarget: heldNoHistory ? null : ruleTarget,
         e1rm: heldNoHistory ? null : (refs.own?.e1rm ?? null),
@@ -718,8 +771,12 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     }
     for (const d of others) initial[d.key] = defaultTodayControls(d, { goal });
 
+    const carryAnswers: Record<string, TodayCarryAnswer> = {};
     for (const d of open) {
       const own = todayDraftState(d);
+      // (Ben, 23 Oct) Today's own draft keeps Ben's answer to the card's carry-over offer (it survives a force-close).
+      const ownSetup = own.state === 'today' ? builderSetupOf(d) : null;
+      if (ownSetup?.carryOver !== undefined && d.builderKey !== undefined) carryAnswers[`${dayKeyOfDraft(d.builderKey)}|${d.builderKey.mainLiftExerciseId ?? '-'}`] = { draftId: d.id, version: d.version, minutes: ownSetup.minutes, carryOver: ownSetup.carryOver };
       // Today's own, or opened on Your workout and left as it was (review batch23 S3): not `· edited`.
       if (own.state === 'today' || draftOpenedUnchanged(d)) continue;
       const k = d.builderKey;
@@ -735,6 +792,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         minutes: st?.minutes ?? currentDraftVersion(d).fitMinutes,
         timeFrom: st?.timeFrom ?? tf?.fromMinutes ?? null,
         fit: tf === undefined ? null : timeFitFromStored(tf),
+        carryOver: st?.carryOver ?? null,
       };
       if (own.state === 'nudge') nudged[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = { ...shown, controls: own.controls };
       else edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = shown;
@@ -812,6 +870,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       coachLabel: review === 'offline' ? TODAY_V2_COPY.offline : TODAY_V2_COPY.coach,
       edited,
       nudged,
+      carryAnswers,
       near,
       strip: { workouts: stripWorkouts, activities: acts, firstUse: newest.length === 0 && refs.length === 0 && acts.length === 0 },
       doneToday: stripWorkouts.some((w) => w.localDate === today),
@@ -921,6 +980,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         mixFromExerciseId: null,
         startable: count > 0,
         draft: null,
+        carry: edited !== null && data.status !== 'no_plan' ? editedCarry(data, day, edited) : null,
       };
     }
     // (D3, Ben 22–23 Oct) `↻ Mix it up` left the lean card with the other Today-only controls (Your workout's Swap does
@@ -958,7 +1018,57 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       mixFromExerciseId: lean ? null : d.mixFromExerciseId,
       startable: d.exerciseCount > 0,
       draft: d,
+      carry: lean ? todayCarry(data, day, d, sel.controls.minutes) : null,
     };
+  }
+
+  /** (Ben, 23 Oct) The plan's days as the carry-over routes to them (each day's groups over its templates). */
+  function carryDaysOf(data: TodaySessionData, planId: string): CarryDay[] {
+    return data.days.filter((x) => x.kind === 'plan' && x.planId === planId && x.dayIndex !== null).map((x) => ({ dayIndex: x.dayIndex ?? 0, name: x.name, groups: [...new Set(x.templates.flatMap((t) => t.groups.map((g) => g.group)))] }));
+  }
+
+  /**
+   * (Ben, 23 Oct; fit-to-time SP3) What Today's card Time cut, as the carry-over offer: the same record Start saves
+   * (`todayTimeFit`) and the same offer Your workout makes from it (`carryOverOffer`). Null: nothing to offer.
+   */
+  function todayCarryOffer(data: TodaySessionData, day: TodayDay, d: TodayDraft, minutes: number): CarryItem[] | null {
+    if (day.kind !== 'plan' || day.planId === null || day.dayIndex === null) return null;
+    const { ctx, info } = data.internal;
+    const fit = todayTimeFit(d.unfitted, d.fit.steps, clampInt(d.template.minutes), ctx, clampInt(minutes));
+    if (fit === null || fit.filledTo !== undefined) return null;
+    const items = carryOverOffer({ steps: timeFitChanges(fit, d.workout), base: fit.base, info, mainGroup: d.mainGroup, fromDayIndex: day.dayIndex, days: carryDaysOf(data, day.planId) });
+    return items.length === 0 ? null : items;
+  }
+
+  /** The offer as shown (minutes and items): what Ben's answer is checked against (rule 5). */
+  const carryBasis = (minutes: number, items: readonly CarryItem[]): string => deriveId(`today-carry:${stableStringify({ minutes: clampInt(minutes), items })}`);
+
+  /** (Ben, 23 Oct) Today's own card: its offer, or Ben's answer to it while it is for the offer the card shows. */
+  function todayCarry(data: TodaySessionData, day: TodayDay, d: TodayDraft, minutes: number): TodayCarryView | null {
+    const items = todayCarryOffer(data, day, d, minutes);
+    if (items === null) return null;
+    const answer = data.carryAnswers[`${day.key}|${d.template.mainLiftExerciseId ?? '-'}`];
+    const answered = answer !== undefined && answer.minutes === clampInt(minutes) && stableStringify(answer.carryOver.items) === stableStringify(items) ? answer.carryOver : null;
+    if (answered?.choice === 'skipped') return null;
+    return { state: answered === null ? 'offer' : 'carried', items, lines: items.map(carryItemText), basis: carryBasis(minutes, items), via: { kind: 'today' } };
+  }
+
+  /** (Ben, 23 Oct) An edited card's carry-over: as Your workout shows it on that draft (its fit, Ben's answer). */
+  function editedCarry(data: TodaySessionData, day: TodayDay, e: TodayEditedDraft): TodayCarryView | null {
+    if (e.fit === null || e.fit.filledTo !== undefined || day.kind !== 'plan' || day.planId === null || day.dayIndex === null) return null;
+    const { info } = data.internal;
+    const changes = timeFitChanges(e.fit, e.workout);
+    const via = { kind: 'builder' as const, draftId: e.draftId, version: e.version };
+    const answer = e.carryOver ?? null;
+    if (answer?.choice === 'skipped') return null;
+    if (answer?.choice === 'carried') {
+      const items = carriedItems(answer, fitLostByGroup(changes, e.fit.base, info));
+      return items.length === 0 ? null : { state: 'carried', items, lines: items.map(carryItemText), basis: carryBasis(e.minutes, items), via };
+    }
+    const main = e.workout.blocks.flatMap((b) => b.slots).find((x) => x.main);
+    const mainGroup = (main === undefined ? null : info(main.exerciseId)?.group) ?? null;
+    const items = carryOverOffer({ steps: changes, base: e.fit.base, info, mainGroup, fromDayIndex: day.dayIndex, days: carryDaysOf(data, day.planId) });
+    return items.length === 0 ? null : { state: 'offer', items, lines: items.map(carryItemText), basis: carryBasis(e.minutes, items), via };
   }
 
   /**
@@ -1036,7 +1146,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return { planId: day.planId, dayIndex: day.dayIndex, splitDayId: day.splitDayId, mainLiftExerciseId: t.mainLiftExerciseId, localDate: data.localDate };
   }
 
-  function versionOf(data: TodaySessionData, day: TodayDay, d: TodayDraft, controls: TodayControls, plan: DraftPlan, w: { draftId: string; n: number; parentN: number | null; draftVersion: number; at: ZonedTimestamp }): WorkoutDraftVersion {
+  function versionOf(data: TodaySessionData, day: TodayDay, d: TodayDraft, controls: TodayControls, plan: DraftPlan, w: { draftId: string; n: number; parentN: number | null; draftVersion: number; at: ZonedTimestamp; carryOver?: BuilderCarryOver | null }): WorkoutDraftVersion {
     const minutes = clampInt(controls.minutes);
     const { draftId, n, parentN, at } = w;
     // The groups Ben chose (before Time's cuts): Your workout's Abs reads them, and a Set up change merges from them.
@@ -1071,6 +1181,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       ...(minutes !== planMinutes || fit !== null ? { timeFrom: planMinutes } : {}),
       ...(fit === null ? {} : { timeFit: timeFitToStored(fit, codec) }),
       ...(fit?.filledTo === undefined ? {} : { timeFill: fit.filledTo }),
+      // (Ben, 23 Oct) Ben's answer to the card's carry-over offer, for this fit (Your workout and Start read it).
+      ...(w.carryOver == null || fit === null ? {} : { carryOver: w.carryOver }),
     };
     const bodyParts = [...new Set(groups.flatMap((g) => g.parts))];
     return {
@@ -1107,9 +1219,19 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
    * on `opId`.
    */
   async function commit(data: TodaySessionData, sel: TodaySelection, opId: string): Promise<TodayCommitResult> {
+    return commitWith(data, sel, opId, undefined);
+  }
+
+  /**
+   * `commit`, with Ben's answer to the card's carry-over offer (`answer`: his answer, null: cleared by Undo,
+   * undefined: kept as stored while it is for the offer the card shows; a new Time asks again). With an answer, a draft
+   * edited since on Your workout is refused (rule 5): the answer is written only on Today's own draft.
+   */
+  async function commitWith(data: TodaySessionData, sel: TodaySelection, opId: string, answer: BuilderCarryOver | null | undefined): Promise<TodayCommitResult> {
     const view = card(data, sel);
     const day = dayOf(data, sel.dayKey);
     if (view === null || day === null) return { ok: false, message: TODAY_SESSION_COPY.stale };
+    if (answer !== undefined && (view.edited !== null || view.nudged !== null)) return { ok: false, message: TODAY_SESSION_COPY.stale };
     if (view.edited !== null) return { ok: true, draftId: view.edited.draftId, version: view.edited.version };
     // The coach's offer Ben applied stands as it is (one-tap Start; integrity B2).
     if (view.nudged !== null) return { ok: true, draftId: view.nudged.draftId, version: view.nudged.version };
@@ -1125,11 +1247,16 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     try {
       const existing = await repos().workoutDrafts.openBuilderDraft(data.ownerId, key);
       if (existing !== null) {
-        if (existing.opIds.includes(opId) || isEdited(existing)) return { ok: true, draftId: existing.id, version: existing.version };
+        if (existing.opIds.includes(opId)) return { ok: true, draftId: existing.id, version: existing.version };
+        if (isEdited(existing)) return answer === undefined ? { ok: true, draftId: existing.id, version: existing.version } : { ok: false, message: TODAY_SESSION_COPY.stale };
         const cur = currentDraftVersion(existing);
         const plan = withSlotRevs(cur.plan, built).plan;
         const n = Math.max(...existing.versions.map((v) => v.n)) + 1;
-        const v = versionOf(data, day, d, sel.controls, plan, { draftId: existing.id, n, parentN: cur.n, draftVersion: existing.version + 1, at });
+        // Ben's answer stays with the draft while it's for the offer this card makes (the same Time, the same sets).
+        const offer = todayCarryOffer(data, day, d, sel.controls.minutes);
+        const was = builderSetupOf(existing)?.carryOver;
+        const keptAnswer = was !== undefined && offer !== null && cur.request.setup?.minutes === clampInt(sel.controls.minutes) && stableStringify(was.items) === stableStringify(offer) ? was : null;
+        const v = versionOf(data, day, d, sel.controls, plan, { draftId: existing.id, n, parentN: cur.n, draftVersion: existing.version + 1, at, carryOver: answer === undefined ? keptAnswer : answer });
         // The same workout and set-up (Time's length and fit record included): nothing to write.
         if (stableStringify(cur.plan) === stableStringify(plan) && stableStringify(cur.request.setup ?? null) === stableStringify(v.request.setup ?? null)) return { ok: true, draftId: existing.id, version: existing.version };
         const kept = existing.versions.map((x) => (x.n === cur.n ? { ...x, status: 'replaced' as const } : x));
@@ -1147,7 +1274,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         status: 'open',
         name,
         currentVersion: 1,
-        versions: [versionOf(data, day, d, sel.controls, plan, { draftId: id, n: 1, parentN: null, draftVersion: 1, at })],
+        versions: [versionOf(data, day, d, sel.controls, plan, { draftId: id, n: 1, parentN: null, draftVersion: 1, at, carryOver: answer ?? null })],
         sessionId: null,
         startedAtUtc: null,
         routineId: null,
@@ -1221,6 +1348,31 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return days.map((d) => ({ dayIndex: d.dayIndex ?? 0, name: d.name, groups: [...new Set(d.templates.flatMap((t) => t.groups.map((g) => g.group)))] }));
   }
 
+  /**
+   * (Ben, 23 Oct; fit-to-time SP3) Ben's answer to the carry-over offer on Today's own card: `carried` (`Carry over`),
+   * `skipped` (`✕`) or `clear` (`Undo`: offered again). Written with Today's draft for the card (one versioned write, op
+   * ID; the same op again is a replay), so Start, Edit and a force-close keep it. Refused when the offer is no longer
+   * the one Ben saw (`basis`; rule 5), or the card's draft was edited since on Your workout. Never applied by default:
+   * nothing lands until this workout is done.
+   */
+  async function carryOver(data: TodaySessionData, sel: TodaySelection, choice: 'carried' | 'skipped' | 'clear', req: { opId: string; basis: string }): Promise<{ status: 'written' } | { status: 'stale' | 'refused'; message: string }> {
+    const view = card(data, sel);
+    const c = view?.carry ?? null;
+    if (view === null || c === null || c.via.kind !== 'today') return { status: 'refused', message: TODAY_SESSION_COPY.nothingToCarry };
+    if (c.basis !== req.basis) return { status: 'stale', message: TODAY_SESSION_COPY.stale };
+    if (choice !== 'clear' && c.state !== 'offer') return { status: 'refused', message: TODAY_SESSION_COPY.nothingToCarry };
+    const answer: BuilderCarryOver | null = choice === 'clear' ? null : { choice, atUtc: deps.now().utc, items: c.items };
+    const r = await commitWith(data, sel, req.opId, answer);
+    return r.ok ? { status: 'written' } : { status: 'stale', message: r.message };
+  }
+
+  /** (Ben, 23 Oct) The sets carried over to a plan day's next workout (`pendingCarryOvers`); empty: none, or not Today's plan. */
+  async function carryItemsFor(req: { planId: string; dayIndex: number }): Promise<CarryItem[]> {
+    const data = await load();
+    const day = data === null ? null : dayOf(data, `plan:${req.planId}:${String(req.dayIndex)}`);
+    return data === null || day === null ? [] : data.internal.carryFor(day);
+  }
+
   /** `start`: the draft as committed (version-checked, rule 5), through the one Start path. */
   async function start(req: { draftId: string; expectedVersion: number; gymId: string; opId: string; checkIn: SessionCheckIn | null }): Promise<TodayStartResult> {
     const p = await deps.profile();
@@ -1270,6 +1422,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     draftFor,
     mixFactsFor,
     carryDaysFor,
+    carryItemsFor,
+    carryOver,
     start,
     review,
     mixPick,

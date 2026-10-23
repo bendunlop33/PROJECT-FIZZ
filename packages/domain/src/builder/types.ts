@@ -108,6 +108,12 @@ export interface SlotLoadInput {
   /** The gym's usable items, for added weight on a bodyweight lift (its dumbbells and plates). */
   gymEquipment?: readonly EquipmentInstance[];
   coachTarget: AnchorLoad | null;
+  /**
+   * (Ben, 23 Oct) The working-set count the coach set for this exercise's next session and that still stands (a small
+   * change, or a bigger one Ben applied on the Summary; not used, not stale, not pain-flagged). The plan day's slot
+   * takes it (`withCoachSetCounts`). Absent or null: the template's count.
+   */
+  coachSets?: number | null;
   planFirstLoad: AnchorLoad | null;
   ruleTarget: AnchorLoad | null;
   /** Est. max from Ben's own recent sets (an estimate, rule 6). */
@@ -243,6 +249,8 @@ export interface BuilderSlot {
   keep?: BuilderKeepMarks;
   /** (D1) Working sets Today's Time took from this slot (Today's card only): Keep compares Ben's count like with like. */
   todayCut?: number;
+  /** (Ben, 23 Oct; review ben-8-decisions S3) Working sets a carry-over landed here: Time fits without them, then puts them back. */
+  carried?: number;
   /** The comparable history its loads were worked out from (stored as `checkedHistoryVersion`; review B4). */
   historyVersion?: string;
   /**

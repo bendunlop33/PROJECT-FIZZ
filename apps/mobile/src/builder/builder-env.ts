@@ -1,6 +1,7 @@
 import {
   acceptedRuleResets,
   coachTargetRows,
+  standingCoachTarget,
   isRuleResetRow,
   builderInfoOf,
   builderWorksOf,
@@ -32,7 +33,7 @@ import {
   type SlotLoadInput,
   type SubstituteContext,
 } from '@fizz/domain';
-import { builderFocusOf, isBuilderStrength, type BuilderFocus, type BuilderGroup, type CheckedOnRecord, type EquipmentInstance, type Exercise, type PainFlag, type PlanDraft, type Routine, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
+import { builderFocusOf, isBuilderStrength, type BuilderFocus, type BuilderGroup, type CheckedOnRecord, type EquipmentInstance, type Exercise, type PainFlag, type PlanDraft, type Routine, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
 
 /**
@@ -202,6 +203,16 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     const loadCache = new Map<string, SlotLoadInput>();
     const refsCache = new Map<string, LoadReferences>();
     const lastTop = new Map<string, { value: number; reps: number }>();
+    // The workouts coach rows were saved on, read once per build.
+    const sources = new Map<string, Promise<SessionAggregate | null>>();
+    const sourceOf = (sessionId: string): Promise<SessionAggregate | null> => {
+      let got = sources.get(sessionId);
+      if (got === undefined) {
+        got = repos.sessions.get(sessionId).catch(() => null);
+        sources.set(sessionId, got);
+      }
+      return got;
+    };
     const computeLoad = async (id: string): Promise<SlotLoadInput | null> => {
       const e = byId.get(id);
       if (e === undefined) return null;
@@ -216,14 +227,18 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       let ruleReps: RuleReps | null = null;
       let secondary: SlotLoadInput['secondary'];
       let coachTarget: AnchorLoad | null = null;
+      let coachSets: number | null = null;
       if (history.length > 0) {
         const newest = history[0];
         const saved = newest === undefined ? [] : await repos.coach.listNextTargets(p.id, newest.sessionId).catch(() => []);
-        const mine = coachTargetRows(saved).find((x) => x.exerciseId === id && x.status === 'saved' && x.target.load !== null);
-        // (Ben, 23 Oct) The rule lowers a stalled lift only where Ben applied its reset on that workout's Summary.
-        const source = newest === undefined || !saved.some((x) => isRuleResetRow(x) && x.exerciseId === id && x.status === 'applied') ? null : await repos.sessions.get(newest.sessionId).catch(() => null);
-        const acceptReset = source !== null && acceptedRuleResets(saved, source).has(id);
+        // (Ben, 23 Oct) The coach's row as Start reads it (`standingCoachTarget`: saved, or a bigger one Ben applied on the
+        // Summary; not used, not stale), and the rule's reset only where Ben applied it on that workout's Summary.
+        const source = newest === undefined || saved.length === 0 ? null : await sourceOf(newest.sessionId);
+        const mine = source === null ? null : standingCoachTarget(coachTargetRows(saved), source, id);
+        const acceptReset = source !== null && saved.some((x) => isRuleResetRow(x) && x.exerciseId === id && x.status === 'applied') && acceptedRuleResets(saved, source).has(id);
         if (mine?.target.load != null && mine.target.load.convention === refs.convention) coachTarget = { value: mine.target.load.value, reps: mine.target.reps?.min ?? 8, rpe: mine.target.rpe ?? 8 };
+        // Its set count too, as Start plans it (never on a pain-flagged movement, rule 9).
+        if (mine !== null && mine.sets !== null && !flagged) coachSets = mine.sets;
         try {
           // The rule reads the same history as `loadReferences`: other items of the same kind and bar mass too (21 Oct).
           const comparableEquipmentIds = new Set(refs.comparableEquipmentIds ?? []);
@@ -251,6 +266,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         bodyweightExercise: e.defaultLoadConvention === 'bodyweight',
         gymEquipment: equipment,
         coachTarget,
+        ...(coachSets === null ? {} : { coachSets }),
         planFirstLoad: planned === null ? null : newerThanPlan ? { ...planned, yieldsToHistory: true } : planned,
         ruleTarget,
         e1rm,
