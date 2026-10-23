@@ -190,9 +190,9 @@ export const DraftLoadSchema = z.object({
   /**
    * (D4, HT8) A builder back-off not worked out from its slot's anchor (a saved or coach-built workout's own): its
    * load against the top it was set for, in the load's unit. Today's lower top is measured from here, so lowering it
-   * again never compounds. Start ignores it.
+   * again never compounds. Start ignores it. `follow` (Ben, 23 Oct): it follows a top the coach set both ways.
    */
-  backoffFrom: z.object({ load: z.number().nonnegative().max(5000), top: z.number().positive().max(5000) }).optional(),
+  backoffFrom: z.object({ load: z.number().nonnegative().max(5000), top: z.number().positive().max(5000), follow: z.literal(true).optional() }).optional(),
 });
 export type DraftLoad = z.infer<typeof DraftLoadSchema>;
 

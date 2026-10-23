@@ -81,6 +81,19 @@ export function lowerWithTop(load: number | null, from: number | null, to: numbe
   return tidy((load * to) / from);
 }
 
+/**
+ * `followTop` (Ben, 23 Oct; review batch23-loads SP2): a back-off when Ben asks the coach for a heavier or lighter
+ * top set. It follows the top both ways, by the same % from the top it was worked out from (`from`), as
+ * workout-builder-v3 §3.1 step 2 says ("every other set follows from the working load"); HT8's "raising the top never
+ * raises back-offs" stays for a top Ben types himself. Still inside the D4 band's top edge (never within `band.min`
+ * of the new top) and never above it. Round it down on the item after. Unchanged when any value is unknown.
+ */
+export function followTop(load: number | null, from: number | null, to: number | null, focus?: MainFocus): number | null {
+  if (load === null || from === null || to === null || !(from > 0) || !(to > 0)) return load;
+  const band = BACKOFF_BANDS[focus ?? DEFAULT_MAIN_FOCUS];
+  return tidy(Math.min((load * to) / from, to * (1 - band.min)));
+}
+
 export interface BackoffTargetInput {
   anchorE1rm: number;
   reps: number;

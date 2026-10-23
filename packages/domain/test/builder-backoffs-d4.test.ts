@@ -15,6 +15,7 @@ import {
   type SlotLoadInput,
 } from '../src/index';
 import { assist, bar, cable, lbRack, loadInput, rack } from './builder-v3-fixture';
+import { dumbbells, id } from './fixtures';
 
 /**
  * D4 (Ben, 22–23 Oct; set-structures SS4, HT8): back-offs from their reps and effort, snapped down to what the gym
@@ -120,6 +121,32 @@ describe('D4: the builder’s rows (setRowsFor)', () => {
     expect(top(rows)).toBe(30);
     // 30 × 0.95 = 28.5 → 27.5 on the rack.
     expect(backoffs(rows)).toEqual([27.5, 27.5]);
+  });
+
+  it('PM, 23 Oct: coarse dumbbells (2 kg steps 20–30) with nothing inside the band: the nearest lighter achievable load, never the top', () => {
+    const coarse = dumbbells({ id: id(7790), loads: [20, 22, 24, 26, 28, 30] });
+    for (const focus of ['strength', 'balanced', 'muscle'] as const) {
+      for (const t of [22, 24, 26, 28, 30]) {
+        const rows = setRowsFor({ main: true, role: 'compound', barbell: false, workingSets: 3, repRange: { min: 6, max: 8 }, load: loadInput({ equipment: coarse, convention: 'per_hand', ruleTarget: { value: t, reps: 6, rpe: 8 }, mainFocus: focus }) }).rows;
+        expect(top(rows)).toBe(t);
+        // Strength 24 → 2–8 % is 22.08–23.52: no 2 kg step inside, so the next one down (22), never 24.
+        for (const b of backoffs(rows)) {
+          expect(b).not.toBeNull();
+          expect(b ?? Infinity).toBeLessThan(t);
+          expect([20, 22, 24, 26, 28]).toContain(b);
+        }
+      }
+    }
+    const strength24 = setRowsFor({ main: true, role: 'compound', barbell: false, workingSets: 3, repRange: { min: 6, max: 8 }, load: loadInput({ equipment: coarse, convention: 'per_hand', ruleTarget: { value: 24, reps: 6, rpe: 8 }, mainFocus: 'strength' }) }).rows;
+    expect(backoffs(strength24)).toEqual([22, 22]);
+  });
+
+  it('PM, 23 Oct: goal both or not set maps to the Balanced band', () => {
+    expect(mainFocusOf('both')).toBe('balanced');
+    expect(mainFocusOf(null)).toBe('balanced');
+    expect(mainFocusOf(undefined)).toBe('balanced');
+    expect(mainFocusOf('strength')).toBe('strength');
+    expect(mainFocusOf('muscle')).toBe('muscle');
   });
 
   it('lb: a kg target on an lb rack is worked out in lb, back-offs below the top in lb', () => {

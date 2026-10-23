@@ -180,8 +180,10 @@ export interface BuilderSetRow {
    * workout's own back-off, or one the coach's load op kept): its load (`load`) against the top it was set for
    * (`top`), both in the slot's unit. Today's top lower than `top` lowers it by the same %; higher leaves it at
    * `load`. Measured from here, lowering the top again never compounds and putting it back puts the back-off back.
+   * `follow` (Ben, 23 Oct, SP2): the top is one Ben asked the coach for, so the back-off follows it both ways
+   * (`followTop`), inside the D4 band; a top Ben types himself ends it (`raising the top never raises` again).
    */
-  backoffFrom?: { load: number; top: number };
+  backoffFrom?: { load: number; top: number; follow?: true };
   /**
    * (22 Oct) A timed set's work time, seconds (a plank, a ride): the set is counted in time, not reps (`reps` is
    * then only a placeholder). Kept through the codec as the saved workout has it, so Start plans it as saved.

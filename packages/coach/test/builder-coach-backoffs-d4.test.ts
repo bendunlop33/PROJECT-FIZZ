@@ -5,8 +5,9 @@ import { applyBuilderEdits, createBuilderLoadGuard, topLoad, type BuilderCoachEn
 
 /**
  * D4 (Ben, 22–23 Oct) through the coach's typed edits: when the coach lowers today's top (Ben asked), the back-offs
- * drop by the same %, measured from the top they were worked out from, rounded down on the bar; a heavier top leaves
- * them (HT8: raising the top never raises back-offs, as when Ben types it), never at or above it. A load raised,
+ * drop by the same %, measured from the top they were worked out from, rounded down on the bar. (Ben, 23 Oct, SP2) A
+ * heavier top Ben asked the coach for raises them the same way (workout-builder-v3 §3.1 step 2 wins over HT8 here),
+ * inside the D4 band and never at or above it; a top Ben types himself still never raises them. A load raised,
  * lowered or put back never compounds (review B1).
  */
 
@@ -54,7 +55,38 @@ describe('D4: the coach lowers or raises today’s top', () => {
     for (const b of backoffs(o.workout)) expect(b ?? Infinity).toBeLessThan(90);
   });
 
-  it('heavier top (100 → 102.5): back-offs stay where they were worked out (HT8), 4–10 % below the new top', () => {
+  it('Ben, 23 Oct: a heavier top the coach sets (100 → 110) raises the back-offs by the same %, inside the band, snapped down', () => {
+    const { snap, env, key } = setup();
+    expect(backoffs(snap.workout).every((b) => b === 95)).toBe(true);
+    const o = applyBuilderEdits(snap, [{ op: 'load', slotKey: key, direction: null, value: 110, unit: 'kg' }], env);
+    expect(topLoad(benchOf(o.workout) as BuilderSlot)).toBe(110);
+    // 95 × 110 / 100 = 104.5, inside Balanced's 4 % edge (105.6) → 102.5 on the bar.
+    expect(backoffs(o.workout).every((b) => b === 102.5)).toBe(true);
+    for (const b of backoffs(o.workout)) {
+      expect(b ?? Infinity).toBeLessThanOrEqual(110 * 0.96 + 1e-9);
+      expect(b ?? 0).toBeGreaterThanOrEqual(110 * 0.9 - 2.5);
+    }
+  });
+
+  it('Ben, 23 Oct: a top Ben types after the coach raised it ends the follow (a heavier one he types never raises them)', () => {
+    const { snap, env, key } = setup();
+    const up = applyBuilderEdits(snap, [{ op: 'load', slotKey: key, direction: null, value: 110, unit: 'kg' }], env).workout;
+    const typed = withBench(up, (s) => {
+      const r = editSetRow(s, s.rows.findIndex((x) => x.type === 'top'), { kind: 'load', value: 120 }, env.ctx.loads('bench'));
+      if (!r.ok) throw new Error(r.reason);
+      return r.slot;
+    });
+    expect(backoffs(typed).every((b) => b === 102.5)).toBe(true);
+    const lower = withBench(typed, (s) => {
+      const r = editSetRow(s, s.rows.findIndex((x) => x.type === 'top'), { kind: 'load', value: 100 }, env.ctx.loads('bench'));
+      if (!r.ok) throw new Error(r.reason);
+      return r.slot;
+    });
+    // From 102.5 at 110: × 100 / 110 = 93.2 → 92.5.
+    expect(backoffs(lower).every((b) => b === 92.5)).toBe(true);
+  });
+
+  it('heavier top (100 → 102.5): back-offs follow by the same % (95 × 1.025 = 97.4 → 95 on the bar), 4–10 % below the new top', () => {
     const { snap, env, key } = setup();
     const o = applyBuilderEdits(snap, [{ op: 'load', slotKey: key, direction: 'heavier', value: null, unit: null }], env);
     const after = benchOf(o.workout);
@@ -84,7 +116,7 @@ describe('D4 review B1: the coach never ratchets the back-offs', () => {
     expect(backoffs(back)).toEqual(b0);
   });
 
-  it('Ben typed 110; the coach steps it down (lighter → 107.5) or sets 100: back-offs stay 95 (the top is still at or above the built 100)', () => {
+  it('Ben typed 110; the coach steps it down (lighter → 107.5): back-offs follow the coach’s top (100); set 100: back to 95', () => {
     const { snap, env, key } = setup();
     const b0 = backoffs(snap.workout);
     const typed = withBench(snap.workout, (s) => {
@@ -95,7 +127,8 @@ describe('D4 review B1: the coach never ratchets the back-offs', () => {
     expect(backoffs(typed)).toEqual(b0);
     const stepped = applyBuilderEdits(snapOf(snap, typed), [{ op: 'load', slotKey: key, direction: 'lighter', value: null, unit: null }], env).workout;
     expect(topLoad(benchOf(stepped) as BuilderSlot)).toBe(107.5);
-    expect(backoffs(stepped)).toEqual(b0);
+    // 95 × 107.5 / 100 = 102.1 → 100 on the bar (7 % below, inside Balanced).
+    expect(backoffs(stepped).every((b) => b === 100)).toBe(true);
     const set = applyBuilderEdits(snapOf(snap, typed), [setLoad(key, 100)], env).workout;
     expect(backoffs(set)).toEqual(b0);
   });

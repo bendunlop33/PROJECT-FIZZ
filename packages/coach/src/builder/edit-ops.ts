@@ -25,6 +25,7 @@ import {
   splitInvalidAutoPairs,
   warmupsFor,
   withBackoffBases,
+  followTop,
   workingCount,
   type BuilderBlock,
   type BuilderContext,
@@ -140,8 +141,9 @@ export function builderRepsText(row: Pick<BuilderSetRow, 'reps' | 'repsMax'>): s
 /**
  * The slot with a new working load: Top / working sets at it, warm-ups rebuilt, all rounded down here. Back-offs
  * (D4, HT8; review B1) keep the top they were worked out from (`withBackoffBases`): a lighter working load lowers them
- * by the same % from there, a heavier one leaves them (raising the top never raises back-offs, as when Ben types it),
- * so a load raised, lowered or put back never compounds. A drop follows a set that moved. Each row keeps its reps (a
+ * by the same % from there. (Ben, 23 Oct, SP2) Ben asked for this top, so the back-offs follow it both ways
+ * (`followTop`: §3.1 step 2 wins over HT8 here), inside the D4 band, snapped down and never above the top; a top Ben
+ * types himself still never raises them. A drop follows a set that moved. Each row keeps its reps (a
  * saved `3–6` range included; final re-review F1); a typed kg gives way to the coach's load, and the saved workout's
  * reasons no longer explain it (S1). No formula (assisted, added weight): every working set at the load, as before.
  */
@@ -161,11 +163,19 @@ function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext):
   };
   const before: BuilderSlot = { ...slot, rows: working(slot) };
   const based = formula ? withBackoffBases(before, input) : before;
+  const topWas = based.rows.find((r) => r.type === 'top')?.load ?? null;
   const work: BuilderSetRow[] = [];
   for (const r of based.rows) {
     const prev = work[work.length - 1];
     if (r.type === 'top' || r.type === 'working') work.push(at(r, value));
-    else if (formula) work.push(at(r, r.load));
+    else if (formula && r.type === 'backoff' && r.backoffFrom !== undefined && topWas !== null) {
+      // (Ben, 23 Oct; SP2) Ben asked the coach for this top: the back-offs follow it, up or down, by the same % from
+      // the top they were worked out from, inside the D4 band and never above the top, rounded down here. The basis
+      // stays the one they were worked out from (marked `follow`), so raising, lowering or putting it back never compounds.
+      const from = { load: r.backoffFrom.load, top: r.backoffFrom.top, follow: true as const };
+      const followed = down(followTop(from.load, from.top, value, input.mainFocus));
+      work.push({ ...at(r, followed ?? r.load), backoffFrom: from });
+    } else if (formula) work.push(at(r, r.load));
     else if (r.type === 'backoff') work.push(at(r, down(value)));
     else work.push(at(r, prev?.load == null ? null : down(prev.load * BUILDER_SET_RULES.dropPct)));
   }

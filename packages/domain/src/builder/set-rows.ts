@@ -1,6 +1,6 @@
 import { BUILD_LIMITS, type LoadConvention, type SetType, type WeightUnit } from '@fizz/schemas';
 import { compareDifficulty, isBarLoaded, loadDirection } from '../equipment';
-import { backoffTarget, lowerWithTop } from './backoff';
+import { backoffTarget, followTop, lowerWithTop } from './backoff';
 import { builderLoad, convertValue, fitHere, formulaApplies, loadForSet, loadFrameOf, roundContextOf, roundDownHere, type RoundContext } from './loads';
 import type { BuilderLoadSourceKind, BuilderRole, BuilderSetRow, BuilderSlot, RepRangeT, RoundedLoad, SlotLoadInput } from './types';
 
@@ -319,6 +319,15 @@ export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, lo
       delete plain.roundedFrom;
       delete plain.backoffFrom;
       rows[index] = { ...plain, ...(r.load.rounded ? { roundedFrom: convertValue(value, ctx.unit, slot.unit) } : {}) };
+      // (Ben, 23 Oct, SP2) Ben typed the top himself: back-offs that followed the coach's top stop following, measured
+      // from where they are now (a heavier top he types never raises them; a lighter one lowers them).
+      if (row.type === 'top') {
+        const topWas = row.load;
+        rows.forEach((x, i) => {
+          if (x.type !== 'backoff' || x.backoffFrom?.follow !== true) return;
+          rows[i] = topWas !== null && topWas > 0 && x.load !== null ? { ...x, backoffFrom: { load: x.load, top: topWas } } : { ...x, backoffFrom: { load: x.backoffFrom.load, top: x.backoffFrom.top } };
+        });
+      }
       const cap = ctx.painCap ?? null;
       const mayHurt = cap !== null && compareDifficulty(r.load.value, cap, loadDirection(ctx.convention)) > 0;
       // (D4, HT8; review B1) A lighter top lowers the back-offs by the same %, from the top they were worked out from
@@ -378,7 +387,11 @@ export function settleBackoffs(slot: BuilderSlot, load: SlotLoadInput, prior: Bu
   const notAbove = (r: BuilderSetRow): BuilderSetRow => (topNow !== null && r.load !== null && r.load > topNow + 1e-6 ? { ...r, load: topNow } : r);
   const backoff = (r: BuilderSetRow): BuilderSetRow => {
     const from = r.backoffFrom ?? (anchor === null && topMoved && r.load !== null && priorTop > 0 ? { load: r.load, top: priorTop } : undefined);
-    if (from !== undefined) return notAbove({ ...r, load: rounded(topNow === null ? from.load : lowerWithTop(from.load, from.top, topNow), ctx), backoffFrom: from });
+    if (from !== undefined) {
+      // (Ben, 23 Oct, SP2) A top the coach set: the back-off follows it both ways, inside the D4 band.
+      const moved = topNow === null ? from.load : from.follow === true ? followTop(from.load, from.top, topNow, load.mainFocus) : lowerWithTop(from.load, from.top, topNow);
+      return notAbove({ ...r, load: rounded(moved, ctx), backoffFrom: from });
+    }
     if (anchor === null) return notAbove(r);
     return { ...r, load: backoffKg(anchor, null, { reps: r.reps, rpe: r.rpe ?? R.workRpe }, builtTop, topNow, load) };
   };
