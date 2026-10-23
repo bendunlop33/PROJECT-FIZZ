@@ -231,3 +231,113 @@ The design track's review (`batch23-design.md` B1) found the same root cause in 
 - Apply writes only that plan day or saved workout, and leaves untouched exercises' set templates as stored (plan-day length kept).
 - D8's chat Apply re-checks the template version inside the transaction (`commitStructuralTap`). Pain-flag and not-doable refusals hold. Pre-D8 cards stay `Out of date` and never land.
 - The Start prompt, `Update plan day` and the CheckIn `builderStart` route are removed cleanly, with no dangling references.
+
+---
+
+## Fixes (builder, 23 Oct)
+
+Each item was confirmed first, on real SQLite. I ran the new tests for the review's scenarios against the reviewed code: they fail there and pass now. Nothing has run on a real iPhone. `docs/design/*` is untouched.
+
+### How Keep now decides (B1, B2, B3; second round B1, B2)
+
+Keep no longer diffs the workout against the stored routine. It lists only **Ben's own structure edits**, which his writes mark on the draft:
+
+- **Slot marks** (`BuilderSlot.keep`, stored as `DraftSlotBuilder.keep`): `added`, `from` (the exercise before his first swap) and `setsFrom` (the working-set count before his first change).
+- **Removals** live on the set-up (`BuilderSetup.keepRemoved`).
+- **Who writes them:**
+  - Only `builder.edit` (`markBenEdit`) and his own Set up group-count changes (`changeSetup` merges).
+  - Never Today's card or controls, Time (Today's or Your workout's), Gym changed, a Reload, or the coach (D8 landings, builder coach, review, nudge).
+  - A swap made by the app (gym or coach) builds a fresh slot, so it clears any mark on that slot.
+  - A Set up merge made by an open is the app's, not Ben's (`byApp`). This is the Library opening a plan day that Today already drafted.
+- **Undo restores the marks**, because they live in the plan and set-up that Undo snapshots.
+- **Like with like** (`keepDiff`): a set count is listed as the stored count plus Ben's change.
+  - `setsFrom` is taken with Your workout's Time cuts put back, plus the sets Today's Time took from that slot (`todayCut`, recorded by `withTemplateMarks` on Today's card).
+  - So Today's top set + back-offs (4 against the plan's 3) is never a change. A set Ben adds back after a Time cut is no change either.
+- **Swaps only count from the plan day's own exercise.** A swap is listed only when Ben swapped the exercise it opened with. After a gym swap, his later swap isn't a plan-day change.
+- **An add of an exercise the plan day already has isn't an add.** Example: Time dropped it and he put it back.
+- **Today's slots carry their template `origin`** (`withTemplateMarks`), so a swap from Today's Edit reads as a swap.
+- **The plan day's main lift is never swapped or removed through Keep.** That is the lift the template is keyed by (the draft key's main lift), not the WL9 `Main` flag. A plan template marks both compounds in places 1–2 as `Main`. A swap Ben makes still applies today.
+- **A swapped-in exercise's `Main` follows the rule.** It isn't copied from the exercise it replaced, so an isolation in a compound's place isn't a main lift.
+- **Apply** (`keptExercises`) writes only the listed changes. Unlisted differences (Today's picks, Time's drops, gym or coach swaps, Today's main-lift count) are left as stored.
+
+| Review scenario | Before | Now |
+|---|---|---|
+| R-A / 2nd B1(c): Today Time 20, Edit, load-only edit | four `Delete …`, `Bench press: 3 → 4 sets` | no row |
+| 2nd B1(c): Today Time 20, Edit, +1 Bench set | `Delete …` ×3, `Bench press: 3 → 5 sets` | exactly `Bench press: 3 → 4 sets`; Apply leaves every other exercise as stored |
+| R-G / 2nd B1(b): Today, Edit, swap one accessory | `Add …`, `Delete …`, `Bench press: 3 → 4 sets` | exactly `Triceps pushdown → X`; Apply puts X in its place with 3 sets; every other exercise and `source` as stored |
+| Today Time short + swap of a kept exercise | add + delete + Time's deletes | exactly that swap |
+| A set Today's Time cut, added back | `X: 3 → 4 sets` | no row |
+| R-H: swap the bench from Today's Edit | template loses its bench and main lift | no row; template unchanged |
+| R-B / 2nd S4: coach change landed on Today, no edits | add + delete + phantom set | no row |
+| Coach landing + Ben's own swap of another exercise | coach's swap listed too | exactly Ben's line |
+| R-D: plan day, Gym changed to dumbbells | three gym swaps | only Ben's own earlier swap, if the new gym kept it |
+| 2nd B2: saved Push A, Gym changed, no edit | `Bench press → Dip · …` | no row |
+| Today's Edit: Ben deletes Cable fly and adds a curl | Today's own lines too | exactly `Add …`, `Delete Cable fly`; Apply removes and adds only those |
+| Ben raises Chest on Set up (his own merge) | (new test) | exactly `Add …` |
+| Today drafted Push at 30 min, then the Library opens Push (the open merges the set-up) | (new test) | no row |
+
+### Should-fix and minor
+
+- **S4: fixed.** Apply keeps the routine's own `source`. A coach template stays `coach`, and a legacy routine's loads never become Fixed pins. Undo needs no `source` restore, since Apply no longer changes it.
+- **S7: fixed.**
+  - `today-session.test.ts` now asserts exact lines (`toEqual`).
+  - `builder-service.test.ts`'s Time test now really tests Ben's change under Time.
+  - New `keep-next-time-authorship.test.ts` covers every scenario in the table above.
+- **S3 / M2 (`· edited` when only opened): fixed.**
+  - A version the builder opened as it was carries its content hash (`request.opened`). This covers a library or past workout, a plan day opened from the Library or Today's Edit, and a silent reload.
+  - While the content still matches (`draftOpenedUnchanged`), Up next isn't `· edited` and its one-tap Start starts fresh.
+  - The same applies to Today's card for a plan day opened from the Library: its controls work, and Today may write its card over that draft.
+  - One change makes it edited. An Undo back to how it opened makes it plain again.
+  - The `planDayChanged.silent` reload uses the same test.
+- **S5 / second-round S3 (several D8 changes on one draft): fixed.**
+  - All waiting applies land as one undoable edit, in the order Ben applied them.
+  - That edit records every apply's op ID and keeps the applies and their combined line on the Undo (`BuilderUndo.coach`).
+  - Undo on Your workout, or the chat Undo of any one of them, takes the whole landing back and marks every apply in it undone. No card is left reading Applied with no Undo.
+- **S2 (D8 Undo not crash-safe): fixed by reconciling on every `landCoachChanges` open.**
+  - An Apply undone in chat whose landing is still the draft's last change comes off.
+  - A landing taken back on any Your workout (`coach-land-undo:*`) whose Apply wasn't marked gets marked, and doesn't land again.
+  - Tests stub out the second write to simulate the force-close in each order.
+- **S1 / second-round S1 (no Undo on Your workout for a Today-landed change): fixed.** Your workout shows `✦ <change> · Undo` while the landing is still the draft's last change (`snapshot.coachLanded`), not only as a toast.
+- **M1 (Reload wipes a landing): fixed.**
+  - Reload lands the coach's changes that draft held again, in the same write.
+  - One that can't land on the reloaded workout leaves the draft's record, so the next open retries it and the card says `Couldn't apply here`.
+  - Reload's Undo restores what was there, the change included.
+- **N1: fixed.** A copied top set becomes a back-off with no load of its own (D4).
+- **N3: fixed.** An open's own toast (`N left out`, `Reloaded`) wins over the landing's, because the landing line now stays on the page.
+
+### Not fixed, and why
+
+- **S1 (first round) / S2 (second round): Today's controls and Undo on a coach-landed Today card, and the change returning after `Back to plan day`. Still open.**
+  - A landing makes Today's card `· edited`, so Time, accessories, abs and supersets don't apply to it, and the card shows no `✦ … · Undo`.
+  - Fixing this properly means Today's card applying the waiting coach changes itself (a pure landing on the assembled card), with an Undo on the card.
+  - That collides with D3 (lean Today; the todaylean track moves these controls into Edit) and needs the SP5/SP6 decisions. Proposal for Ben and the designer: under D3, the landed change shows on the card as `✦ <change> · Undo` and Time refits on top of it.
+  - Your workout now has the Undo (above).
+  - `Back to plan day` still discards the draft and the change for today only.
+- **S6 (copy and placement against the §2.8 draft): left as built.** The §2.8 draft isn't committed in this worktree and I may not edit `docs/design`. Align when the design track commits it.
+- **N2:** the Start-time plan write (`StartAlongside`) is no longer used by the builder's Start, though `workout-services` still accepts it. Left for a separate clean-up so this batch doesn't touch the sessions store.
+- **N4:** the 200-op cap could still drop an old `coach-land:*` op. Not changed (unlikely in a one-day draft).
+- **N5:** a stale Skip still reads `Changed since · not kept`. The row's buttons are disabled while a tap saves, so it needs a race to show. Not changed.
+
+### For Ben (product decisions; no behaviour guessed beyond what's noted)
+
+1. **SP7, main-lift swap:** built as "never offered by Keep; applies today only". Should a main-lift swap on Your workout ever change the plan day? It renames the plan day's identity.
+2. **Coach changes and Keep:** built as "a coach change Ben applied for one workout never triggers Keep" (§2.8 draft, second-round S4). Confirm.
+3. **Second-round N1:**
+   - (i) No Keep row when a saved variation was open.
+   - (ii) Mid-workout structure changes (an added set, a busy-machine swap) never trigger Keep.
+   - (iii) When a Today-card draft opens on Your workout, Today's Time cuts don't become Your workout's Time fit (its Time starts at Today's length). Keep handles Today's Time through marks and `todayCut` instead. Whether Your workout's Time should continue from Today's fit (D9 "the same shared fit") is a fit-to-time decision.
+4. **Swap of a Today-picked accessory** (not in the plan day): not offered by Keep, since there's no plan-day exercise to replace. Should it be `Add <it>`?
+5. **Spec owner:** `workout-builder-v3` §2.8 and `workout-summary` still describe the Start prompt, and §2.8's `base` should read "Ben's own structure edits against what the workout opened as". Flagged; not edited here.
+
+### Commits
+
+- `2dd748f` `· edited` only once something changed the draft (S3, M2)
+- `ebbc0aa` Keep for next time lists only Ben's own structure edits (B1–B3, S4, S7, N1)
+- `1eb0bfb` The coach's next-workout changes land together, Undo stays on Your workout, Undo is crash-safe, Reload keeps them (S1, S2, S5, M1, N3)
+
+### Checks (on `1eb0bfb`)
+
+- `npm run typecheck`: exit 0.
+- `npm run lint`: exit 0.
+- `npm run test`: 477 files, 8849 passed, 2 todo, 0 failed. The review's baseline was 475 files and 8816 tests.
+- New test files: `apps/mobile/test/keep-next-time-authorship.test.ts` and `apps/mobile/test/edited-after-change.test.ts`.
