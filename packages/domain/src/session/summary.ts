@@ -1,4 +1,4 @@
-import type { CheckIn, EquipmentInstance, Load, PainFlag, ProgressionRule, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
+import type { CheckIn, EquipmentInstance, Load, PainFlag, ProgressionRule, RepRange, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { isSetCountable, notComparedText, withExclusionWords } from '../exclusions';
 import { painMentionedNotFlagged, reasonsText, scoreText } from '../checkin';
 import type { RuleExerciseInfo } from '../default-rule';
@@ -59,6 +59,20 @@ export interface SummaryInput {
   exerciseInfo?: Readonly<Record<string, RuleExerciseInfo>>;
   /** Gym names by ID, to name the compared workout's own gym (review r2 B1). A gym missing here isn't named. */
   gymNames?: Readonly<Record<string, string>>;
+  /**
+   * (Ben, 23 Oct; review v5offers SP2) Exercises whose rule stall reset Ben applied (its `Next time` row's Apply): the
+   * rule lowers their load; every other stall only holds and offers the reset.
+   */
+  acceptedResets?: ReadonlySet<string>;
+}
+
+/** (Ben, 23 Oct) The rule's stall reset, offered on its row: `Reset to 90 kg × 6–8?` and what Apply saves. */
+export interface NextTimeResetOffer {
+  text: string;
+  load: Load;
+  reps: RepRange;
+  /** What the rule holds at without it (its first working set). */
+  hold: { load: Load | null; reps: RepRange };
 }
 
 export interface NextTimeRow {
@@ -72,6 +86,10 @@ export interface NextTimeRow {
   facts: string[];
   ruleName: string;
   decision: NextTargets['decision'];
+  /** (Ben, 23 Oct) The rule's stall reset offered on this row (Apply / Skip); absent: none, or Ben applied it. */
+  resetOffer?: NextTimeResetOffer;
+  /** (Ben, 23 Oct) The row is the reset Ben applied (`reduce_load` with his Apply): `Undo` puts the hold back. */
+  resetApplied?: true;
 }
 
 export interface WorkoutSummary {
@@ -354,11 +372,14 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
         painFlags: input.painFlags,
         sessionPain: unspecifiedPain(input.checkIn),
         ...(secondary.has(ex.exerciseId) ? { accessory: true } : {}),
+        ...(input.acceptedResets?.has(ex.exerciseId) === true ? { acceptReset: true } : {}),
       },
       gymId === null ? null : (input.gymNames?.[gymId] ?? (gymId === s.gymId ? input.gymName : null)),
     );
     const kind = listedKind(result);
     if (kind === null) continue;
+    const first = result.sets.find((x) => x.setType === 'working' || x.setType === 'top') ?? result.sets[0];
+    const offer = result.resetOffer;
     rows.push({
       exerciseId: ex.exerciseId,
       exerciseName: block.root.exerciseName,
@@ -368,6 +389,8 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       facts: result.explanation.facts,
       ruleName: rule.name,
       decision: result.decision,
+      ...(offer !== undefined && first !== undefined ? { resetOffer: { text: `Reset to ${loadText(offer, ex.loadConvention, eq)}${NBSP}×${NBSP}${repRangeText(first.reps)}?`, load: offer, reps: first.reps, hold: { load: first.load, reps: first.reps } } } : {}),
+      ...(result.decision === 'reduce_load' && input.acceptedResets?.has(ex.exerciseId) === true ? { resetApplied: true as const } : {}),
     });
   }
 

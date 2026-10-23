@@ -261,6 +261,20 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
     expect(used?.rows[0]).toMatchObject({ actions: [], note: 'Used' });
   });
 
+  it('Ben, 23 Oct (v5offers SP2): the rule’s own stall reset is an offer: Skip / Apply; applied → Undo; skipped → no buttons; proposed again → Skip / Apply; used → no buttons', () => {
+    const stalled: NextTimeRow = { ...builtInRow('Bench press', 1), kind: 'held', target: 'Same target: 60 kg × 3–6', decision: 'hold_after_miss', resetOffer: { text: 'Reset to 55 kg × 3–6?', load: kg(55), reps: { min: 3, max: 6 }, hold: { load: kg(60), reps: { min: 3, max: 6 } } } };
+    const view = (rule: NextSessionTargetRecord[], row: NextTimeRow = stalled) => nextTimeView({ ...input([]), builtIn: { sourceTag: 'Built-in rule', rows: [row], emptyText: null }, ruleRows: rule })?.rows[0];
+    const offered = view([]);
+    expect(offered).toMatchObject({ tag: 'Built-in rule', target: 'Same target: 60 kg × 3–6', note: 'Reset to 55 kg × 3–6?', actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] });
+    expect(offered?.reset).toEqual({ exerciseId: ID(1001), exerciseName: 'Bench press', target: { load: kg(55), reps: { min: 3, max: 6 } }, hold: { load: kg(60), reps: { min: 3, max: 6 } }, row: null });
+    const answer = (status: NextSessionTargetRecord['status'], over: Partial<NextSessionTargetRecord> = {}) => coachRow(1, status, { origin: 'rule', target: { load: kg(55), reps: { min: 3, max: 6 } }, ...over });
+    const applied: NextTimeRow = { ...builtInRow('Bench press', 1), target: 'Target 55 kg × 3–6', decision: 'reduce_load', resetApplied: true };
+    expect(view([answer('applied')], applied)).toMatchObject({ target: 'Target 55 kg × 3–6', actions: [{ label: 'Undo', tap: 'undo' }] });
+    expect(view([answer('not_applied')])).toMatchObject({ note: null, actions: [] });
+    expect(view([answer('proposed')])).toMatchObject({ actions: [{ label: 'Skip' }, { label: 'Apply' }] });
+    expect(view([answer('proposed', { usedBySessionId: ID(99) })])).toMatchObject({ note: 'Used', actions: [] });
+  });
+
   it('no coach rows: the built-in rule’s rows with its own tag; reviewing shows while the turn runs', () => {
     const v = nextTimeView(input([], true));
     expect(v?.status).toBe('Coach reviewing…');

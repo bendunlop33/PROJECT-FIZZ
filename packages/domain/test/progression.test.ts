@@ -95,12 +95,25 @@ describe('double progression', () => {
     expect(t.explanation.facts.join(' ')).toMatch(/bad day, not a trend \(1 of 2/);
   });
 
-  it('a repeated trend reduces load, rounded down to an achievable load', () => {
+  it('a repeated trend reduces load, rounded down to an achievable load, once Ben applied the reset (Ben, 23 Oct)', () => {
     const history = [session(1, bar.id, working(kg(100), [5, 5, 4])), session(4, bar.id, working(kg(100), [5, 4, 4]))];
-    const t = calculateNextTargets(input(history, bar));
+    const t = calculateNextTargets(input(history, bar, doubleProgression(), { acceptReset: true }));
     expect(t.decision).toBe('reduce_load');
     expect(t.sets[0]?.load).toEqual(kg(90));
     expect(t.basedOnSessionIds).toHaveLength(2);
+    expect(t.resetOffer).toBeUndefined();
+  });
+
+  it('Ben, 23 Oct (v5offers SP2): the rule’s own reset is an offer: it holds and offers the reset until Ben applies it', () => {
+    const history = [session(1, bar.id, working(kg(100), [5, 5, 4])), session(4, bar.id, working(kg(100), [5, 4, 4]))];
+    const t = calculateNextTargets(input(history, bar));
+    expect(t.decision).toBe('hold_after_miss');
+    expect(t.sets.every((x) => x.load?.value === 100)).toBe(true);
+    expect(t.stalled).toBe(true);
+    expect(t.resetOffer).toEqual(kg(90));
+    expect(t.explanation.summary).toBe('Repeat 100 kg for 6–8 reps, or reset to 90 kg.');
+    // One bad day isn't a stall: no offer.
+    expect(calculateNextTargets(input([session(4, bar.id, working(kg(100), [5, 4, 4]))], bar)).resetOffer).toBeUndefined();
   });
 
   it('stalled is rule 8’s miss streak: set on a reduction and on a hold at the lightest load, never on one bad day (review v5offers 6)', () => {
@@ -258,9 +271,11 @@ describe('assisted machines (more assistance = easier)', () => {
     expect(t.sets[0]?.load).toEqual(a(15));
   });
 
-  it('a reduction after a trend means MORE assistance', () => {
+  it('a reduction after a trend means MORE assistance (offered: held at 20 until Ben applies 25)', () => {
     const history = [session(1, m.id, working(a(20), [4, 4, 4])), session(3, m.id, working(a(20), [5, 4, 4]))];
-    const t = calculateNextTargets(input(history, m));
+    const held = calculateNextTargets(input(history, m));
+    expect([held.decision, held.sets[0]?.load, held.resetOffer]).toEqual(['hold_after_miss', a(20), a(25)]);
+    const t = calculateNextTargets(input(history, m, doubleProgression(), { acceptReset: true }));
     expect(t.decision).toBe('reduce_load');
     expect(t.sets[0]?.load).toEqual(a(25));
   });
@@ -302,7 +317,8 @@ describe('top set / back-off', () => {
     const one = [session(1, bar.id, [top(140, 2)])];
     expect(calculateNextTargets(input(one, bar, topSetBackoff())).decision).toBe('hold_after_miss');
     const two = [...one, session(4, bar.id, [top(140, 2)])];
-    const t = calculateNextTargets(input(two, bar, topSetBackoff()));
+    expect(calculateNextTargets(input(two, bar, topSetBackoff())).resetOffer).toEqual(kg(125));
+    const t = calculateNextTargets(input(two, bar, topSetBackoff(), { acceptReset: true }));
     expect(t.decision).toBe('reduce_load');
     expect(t.sets[0]?.load).toEqual(kg(125));
   });
@@ -501,7 +517,7 @@ describe('determinism', () => {
       session(5, bar.id, working(kg(102.5), [5, 5, 4])),
       session(6, id(998), working(kg(120), [8, 8, 8])),
     ];
-    const outputs = permutations(history).map((h) => calculateNextTargets(input(h, bar)));
+    const outputs = permutations(history).map((h) => calculateNextTargets(input(h, bar, doubleProgression(), { acceptReset: true })));
     expect(outputs).toHaveLength(24);
     for (const o of outputs) expect(o).toEqual(outputs[0]);
     expect(outputs[0]?.decision).toBe('reduce_load');

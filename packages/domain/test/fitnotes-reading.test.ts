@@ -27,8 +27,10 @@ function fitnotes(sets: readonly [number, number][], o: { convention?: LoadConve
 }
 const read = (h: HistorySession) => comparableSetsOf(h).map((x) => [x.load?.value, x.reps]);
 
-function next(history: HistorySession[]) {
+/** `acceptReset`: Ben applied the rule's stall reset (Ben, 23 Oct: without it a stall holds and offers it). */
+function next(history: HistorySession[], acceptReset = false) {
   return calculateNextTargets({
+    ...(acceptReset ? { acceptReset: true } : {}),
     exerciseName: 'Dumbbell press',
     measurement: 'reps',
     history,
@@ -169,7 +171,9 @@ describe('two FitNotes sessions of a top single then back-offs (r2 B1)', () => {
 
   it('a genuine miss at the back-off load twice in a row: reduce, naming the load the miss was at', () => {
     const shape: [number, number][] = [[10, 10], [22.5, 3], [20, 7], [20, 7], [20, 7]];
-    const t = next([fitnotes(shape, { day: DAY1 }), fitnotes(shape, { day: DAY2 })]);
+    const offered = next([fitnotes(shape, { day: DAY1 }), fitnotes(shape, { day: DAY2 })]);
+    expect([offered.decision, offered.sets.every((x) => x.load?.value === 20), (offered.resetOffer?.value ?? 20) < 20]).toEqual(['hold_after_miss', true, true]);
+    const t = next([fitnotes(shape, { day: DAY1 }), fitnotes(shape, { day: DAY2 })], true);
     expect(t.decision).toBe('reduce_load');
     expect(t.explanation.facts.join(' ')).toMatch(/2 sessions in a row fell below 8 reps at 20 kg/);
     expect(t.sets.every((x) => x.load !== null && x.load.value < 20)).toBe(true);
@@ -284,7 +288,7 @@ describe('targets from FitNotes working sets with a lighter finisher (r3 B1)', (
 
   it('the same miss twice in a row: reduce, naming 20 kg', () => {
     const shape: [number, number][] = [[20, 7], [20, 7], [20, 7], [16, 12]];
-    const t = next([fitnotes(shape, { day: DAY1 }), fitnotes(shape, { day: DAY2 })]);
+    const t = next([fitnotes(shape, { day: DAY1 }), fitnotes(shape, { day: DAY2 })], true);
     expect(t.decision).toBe('reduce_load');
     expect(t.explanation.facts.join(' ')).toMatch(/2 sessions in a row fell below 8 reps at 20 kg each/);
     expect(t.sets.every((x) => x.load !== null && x.load.value < 20)).toBe(true);
@@ -462,7 +466,7 @@ describe('r4 S1: working sets followed by one heavier set are working sets, not 
     const t = next([fitnotes([[20, 7], [20, 7], [20, 7], [22.5, 4]])]);
     expect(t.decision).toBe('hold_after_miss');
     expect(t.sets.every((x) => x.load?.value === 20)).toBe(true);
-    const twice = next([fitnotes([[20, 7], [20, 7], [20, 7], [22.5, 4]], { day: DAY1 }), fitnotes([[20, 7], [20, 7], [20, 7], [22.5, 4]], { day: DAY2 })]);
+    const twice = next([fitnotes([[20, 7], [20, 7], [20, 7], [22.5, 4]], { day: DAY1 }), fitnotes([[20, 7], [20, 7], [20, 7], [22.5, 4]], { day: DAY2 })], true);
     expect(twice.decision).toBe('reduce_load');
     expect(facts(twice)).toMatch(/fell below 8 reps at 20 kg each/);
     expect(twice.sets.every((x) => x.load !== null && x.load.value < 20)).toBe(true);

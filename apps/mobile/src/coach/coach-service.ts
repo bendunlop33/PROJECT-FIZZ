@@ -33,6 +33,7 @@ import {
   describeCoachContext,
   nextTargetTapOpId,
   nextTargetTapRecord,
+  ruleResetWrite,
   recoverCoachTurns,
   runCoachTurn,
   undoCoachAction,
@@ -165,6 +166,8 @@ import {
   nextSessionBases,
   nextTargetFitsSource,
   nextTargetSourceBasis,
+  coachTargetRows,
+  isRuleResetRow,
   painFlagChoices,
   ruleTargetRpes,
   progressPeriodPhrase,
@@ -232,6 +235,7 @@ import type {
   CoachTurnKind,
   CustomExerciseFields,
   NextSessionTargetRecord,
+  CoachTarget,
   PlannedSet,
   ProgressPeriodKey,
   SessionAggregate,
@@ -2059,7 +2063,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       const [source, rows] = await Promise.all([repos().sessions.get(sessionId).catch(() => null), coachStore().listNextTargets(p.id, sessionId).catch(() => [])]);
       const names = [...new Set((source?.exercises ?? []).map((e) => e.exerciseName))];
       const fits = source === null ? null : { version: source.session.version, basis: nextTargetSourceBasis(source) };
-      const text = summaryNoteSentences(sentences, names, fits === null ? rows : rows.filter((r) => nextTargetFitsSource(r, fits))).join(' ');
+      const coachRows = coachTargetRows(rows);
+      const text = summaryNoteSentences(sentences, names, fits === null ? coachRows : coachRows.filter((r) => nextTargetFitsSource(r, fits))).join(' ');
       return text === '' ? null : text;
     },
 
@@ -2092,9 +2097,36 @@ export function createCoachService(deps: CoachServiceDeps) {
       return { choices: r.exerciseIds.map((id) => ({ exerciseId: id, name: name.get(id) ?? '' })), pick: r.pick };
     },
 
+    /** The coach's own next-session rows for a workout (never Ben's answers to the rule's reset: `ruleResets`). */
     async nextTargets(sessionId: string): Promise<NextSessionTargetRecord[]> {
       const p = await owner();
-      return coachStore().listNextTargets(p.id, sessionId);
+      return coachTargetRows(await coachStore().listNextTargets(p.id, sessionId));
+    },
+
+    /** (Ben, 23 Oct) Ben's answers to the built-in rule's stall resets on this workout's Summary. */
+    async ruleResets(sessionId: string): Promise<NextSessionTargetRecord[]> {
+      const p = await owner();
+      return (await coachStore().listNextTargets(p.id, sessionId)).filter(isRuleResetRow);
+    },
+
+    /**
+     * (Ben, 23 Oct; review v5offers SP2) A tap on the rule's own stall reset (`Reset to 90 kg × 6–8?`): the first
+     * Apply or Skip saves Ben's answer with its record (`ruleResetWrite`); later taps (Undo, then Apply or Skip again)
+     * move that row as any `Next time` row moves. Offline: works (no coach call). One op ID per row version and tap.
+     */
+    async tapRuleReset(sessionId: string, offer: { exerciseId: string; exerciseName: string; target: CoachTarget; hold: CoachTarget | null; row: NextSessionTargetRecord | null }, tap: NextTargetTap): Promise<{ status: 'written' | 'replayed' } | { status: 'not_possible'; reason: string }> {
+      const p = await owner();
+      if (offer.row !== null) {
+        const { status, record } = nextTargetTapRecord(offer.row, tap, { opId: nextTargetTapOpId(offer.row, tap), now: deps.now() });
+        const r = await coachStore().setNextTargetStatus(p.id, { rowId: offer.row.id, expectedVersion: offer.row.version, status, record });
+        return r.status === 'not_possible' ? { status: 'not_possible', reason: r.reason } : { status: r.status };
+      }
+      if (tap !== 'apply' && tap !== 'not_now') return { status: 'not_possible', reason: 'missing' };
+      const source = await repos().sessions.get(sessionId).catch(() => null);
+      if (source === null || source.session.ownerId !== p.id) return { status: 'not_possible', reason: 'missing' };
+      const opId = deriveId(`rule-reset:${tap}:${sessionId}:${offer.exerciseId}`);
+      const w = await coachStore().commit(p.id, ruleResetWrite({ ownerId: p.id, source, exerciseId: offer.exerciseId, exerciseName: offer.exerciseName, target: offer.target, hold: offer.hold, tap, opId, now: deps.now() }));
+      return w.status === 'conflict' ? { status: 'not_possible', reason: w.reason === 'stale_version' ? 'changed_since' : w.reason } : { status: w.status };
     },
 
     /** IDs of this workout's saved rows that no longer fit it (a set corrected since; a rename doesn't count). */

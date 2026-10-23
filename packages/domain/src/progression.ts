@@ -317,6 +317,11 @@ export interface NextTargetsInput {
    * same mass was skipped and older, lighter history planned the load.
    */
   comparableEquipmentIds?: ReadonlySet<string>;
+  /**
+   * (Ben, 23 Oct; review v5offers SP2) Ben applied the rule's own stall reset on the Summary (`Reset to … · Apply`). Only
+   * then does a stall lower the load (`reduce_load`); otherwise the rule holds and offers the reset (`resetOffer`).
+   */
+  acceptReset?: boolean;
 }
 
 export type ProgressionDecision =
@@ -359,6 +364,12 @@ export interface NextTargets {
    * Absent otherwise.
    */
   stalled?: true;
+  /**
+   * (Ben, 23 Oct; review v5offers SP2) The rule's stall reset, offered and not applied: the load it would reset to
+   * (playbook rule 8 / 7-F), for the Summary's `Reset to … ?` with `Apply` / `Skip`. Present only on a stall the rule
+   * could reduce and Ben hasn't applied (`acceptReset`); the plan itself holds.
+   */
+  resetOffer?: Load;
 }
 
 interface Criteria {
@@ -841,6 +852,8 @@ interface PrimaryDecision {
   summary: string;
   /** The miss streak reached `failuresBeforeReduce` at the same load (`NextTargets.stalled`). */
   stalled?: true;
+  /** The reset offered and not applied (`NextTargets.resetOffer`). */
+  resetTo?: number;
 }
 
 /** Starting point when there is no usable history. */
@@ -1049,12 +1062,24 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
       const reduced = reducedLoad(ctx, L);
       if (reduced !== null) {
         pushFact(ctx, `${streak} sessions in a row fell below ${criteria.repRange.min} reps at ${lastText}.`);
+        if (input.acceptReset === true) {
+          return {
+            decision: 'reduce_load',
+            load: reduced,
+            reps: criteria.repRange,
+            summary: `Repeated misses at ${lastText}: reduce to ${fmt(ctx, reduced)} and build back up.`,
+            stalled: true,
+          };
+        }
+        // (Ben, 23 Oct; review v5offers SP2) A reset is an offer: the rule holds until Ben applies it.
+        const held = feasibleHold(ctx, L);
         return {
-          decision: 'reduce_load',
-          load: reduced,
+          decision: 'hold_after_miss',
+          load: held,
           reps: criteria.repRange,
-          summary: `Repeated misses at ${lastText}: reduce to ${fmt(ctx, reduced)} and build back up.`,
+          summary: `${held === L ? 'Repeat' : 'Use'} ${fmt(ctx, held)} for ${range(criteria.repRange)} reps, or reset to ${fmt(ctx, reduced)}.`,
           stalled: true,
+          resetTo: reduced,
         };
       }
       pushFact(ctx, 'No easier load is available on this equipment.');
@@ -1197,6 +1222,7 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
   }
 
   const anyLoad = sets.some((s) => s.load !== null && s.load.convention !== 'bodyweight');
+  const resetOffer = primary.resetTo === undefined || unchecked ? null : asLoad(ctx, primary.resetTo);
   return {
     decision: primary.decision,
     sets,
@@ -1205,5 +1231,6 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
     explanation: { summary: primary.summary, facts: ctx.facts },
     basedOnSessionIds: sessions.map((s) => s.sessionId),
     ...(primary.stalled === true ? { stalled: true as const } : {}),
+    ...(resetOffer !== null ? { resetOffer } : {}),
   };
 }

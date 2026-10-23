@@ -48,6 +48,8 @@ export interface NextTargetRequest {
    * the main lift at his usual 12, not 3–6).
    */
   accessory?: boolean;
+  /** (Ben, 23 Oct) Ben applied the rule's stall reset on the Summary (`NextTargetsInput.acceptReset`). */
+  acceptReset?: boolean;
 }
 
 export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; rule: ProgressionRule } {
@@ -67,6 +69,7 @@ export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; r
     pain,
     ...(req.fitLater === true ? { fitLater: true } : {}),
     ...(req.comparableEquipmentIds !== undefined ? { comparableEquipmentIds: req.comparableEquipmentIds } : {}),
+    ...(req.acceptReset === true ? { acceptReset: true } : {}),
   };
   if (req.measurement !== 'reps' || base.method !== 'double_progression') return { result: calculateNextTargets(input), rule: base };
   // Reps from history (21 Oct): the built-in rule's range follows Ben's last session of this exercise, except

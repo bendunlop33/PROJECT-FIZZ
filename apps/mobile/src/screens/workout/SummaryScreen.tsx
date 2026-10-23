@@ -73,8 +73,8 @@ export function SummaryScreen() {
     // `Save to Workouts` (routines.md §A2.6): once saved from here, the link reads `Saved · Legs ›`.
     const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
-    const [coachRows, stale, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
-    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
+    const [coachRows, stale, availability, turnNote, ruleRows] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null), s.coach.ruleResets(sessionId).catch(() => [])]);
+    const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, ruleRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
     // A deleted (or purged) workout opens read-only with Restore (delete-workouts §3.2).
     // A presence read that fails offers no delete rather than one that would be refused (review r2 N2).
     const presence = await s.history.presence(sessionId).catch((): WorkoutPresence => ({ kind: 'hidden' }));
@@ -219,6 +219,16 @@ export function SummaryScreen() {
   }
 
   async function tapNext(row: NextTimeRowView, tap: NextTimeTap) {
+    // (Ben, 23 Oct) The built-in rule's own reset: Apply / Skip, then Undo. Offline too.
+    const reset = row.reset;
+    if (reset !== undefined) {
+      const r = await services.coach.tapRuleReset(sessionId, reset, tap).catch(() => null);
+      if (r === null) setToast({ text: tap === 'undo' ? 'Couldn’t undo.' : 'Couldn’t save.' });
+      else if (r.status === 'not_possible') setToast({ text: r.reason === 'used' ? 'Already used.' : 'Changed since. Check it again.' });
+      reload();
+      changed();
+      return;
+    }
     if (row.row === null) return;
     // One opId per tap on this version of the row: a double tap replays instead of reading as `Changed since`.
     const r = await services.coach.tapNextTarget(row.row, tap, nextTargetTapOpId(row.row, tap)).catch(() => null);

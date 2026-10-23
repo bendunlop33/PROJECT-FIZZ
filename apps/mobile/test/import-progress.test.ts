@@ -366,7 +366,7 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
       expect(why).toContain('all 3 judged sets reached 6+ reps at 60 kg');
     });
 
-    it('a miss at the working load twice, each followed by a finisher in range: Start next reduces from the working load', async () => {
+    it('a miss at the working load twice, each followed by a finisher in range: Start next holds the working load (Ben, 23 Oct: a reset waits for Apply)', async () => {
       const { services: s } = await h.launch();
       const gymId = await setUpGym(h, s);
       const rows: [string, number, number][] = [];
@@ -378,7 +378,8 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
       if (!started.ok) throw new Error(started.error.message);
       const plan = plannedOf(started.aggregate, bench);
       expect(plan.length).toBe(3);
-      for (const [load] of plan) expect(typeof load === 'number' && load < 60 && load > 40).toBe(true);
+      // Read from the working load (60), never the finisher (40); the rule's reset is only offered (Ben, 23 Oct).
+      for (const [load] of plan) expect(load).toBe(60);
       const set = started.aggregate.sets.find((x) => x.planned.load !== null);
       const why = JSON.stringify(set?.planned.provenance);
       expect(why).toContain('2 sessions in a row fell below 3 reps at 60 kg');

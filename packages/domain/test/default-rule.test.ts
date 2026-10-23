@@ -51,8 +51,10 @@ describe('built-in default rule by category', () => {
     // 5 reps is inside 3–6: keep the load and add reps; the 8–12 rule would have cut it.
     expect(main.decision).toBe('hold');
     expect(main.sets[0]?.load).toEqual(kg(100));
-    const old = calculateNextTargets({ ...base, rule: builtInDefaultRule(OWNER, 'kg', 5, 'isolation') });
+    // The 8–12 rule would have cut it (once Ben applied its reset; Ben, 23 Oct: otherwise it's only offered).
+    const old = calculateNextTargets({ ...base, rule: builtInDefaultRule(OWNER, 'kg', 5, 'isolation'), acceptReset: true });
     expect(old.decision).toBe('reduce_load');
+    expect(calculateNextTargets({ ...base, rule: builtInDefaultRule(OWNER, 'kg', 5, 'isolation') }).resetOffer).toBeDefined();
   });
 });
 

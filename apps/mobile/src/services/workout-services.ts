@@ -129,6 +129,8 @@ import {
   unspecifiedPain,
   painStatusFor,
   withCoachTargets,
+  acceptedRuleResets,
+  coachTargetRows,
   type NextTargetEntry,
   equipmentForExercise,
   missingStations,
@@ -1427,9 +1429,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * mentioned there holds every load, like `planFor` (rule 9; review B2).
    */
   async function nextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, NextTargetEntry[]>> {
-    const builtIn = await builtInNextTargetsOf(p, source, today);
+    const all = await ctx.store().repos.coach.listNextTargets(p.id, source.session.id).catch(() => []);
+    // (Ben, 23 Oct) The rule lowers a stalled lift only where Ben applied its reset on the Summary.
+    const builtIn = await builtInNextTargetsOf(p, source, today, undefined, acceptedRuleResets(all, source));
     // D21: the coach's saved next-session targets win where they are still valid; the built-in rule is the fallback.
-    const rows = await ctx.store().repos.coach.listNextTargets(p.id, source.session.id).catch(() => []);
+    const rows = coachTargetRows(all);
     if (rows.length === 0) return builtIn;
     const flags = await repos().painFlags.listActive(p.id);
     return withCoachTargets(builtIn, rows, source, { flaggedExerciseIds: new Set(flags.map((f) => f.exerciseId)), painToday: unspecifiedPain(today).active });
@@ -1467,7 +1471,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** The built-in rule's next targets only (playbook 7-F): the comparison and the fallback for the coach's. */
-  async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null, repsOut?: Map<string, RuleReps>): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
+  async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null, repsOut?: Map<string, RuleReps>, acceptedResets: ReadonlySet<string> = new Set()): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
     const out = new Map<string, { setType: SetType; planned: PlannedSet }[]>();
     const flags = await repos().painFlags.listActive(p.id);
     const now = unspecifiedPain(today);
@@ -1496,7 +1500,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const { result } = nextTargetsForBlock(
         block,
         // A FitNotes source recorded no item: its loads are fitted to the gym when the workout is built (B7; rule 4).
-        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain, ...(source.session.source === 'import' ? { fitLater: true } : {}), ...(secondary.has(sx.exerciseId) ? { accessory: true } : {}) },
+        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain, ...(source.session.source === 'import' ? { fitLater: true } : {}), ...(secondary.has(sx.exerciseId) ? { accessory: true } : {}), ...(acceptedResets.has(sx.exerciseId) ? { acceptReset: true } : {}) },
         null,
       );
       if (repsOut !== undefined && result.reps !== undefined) repsOut.set(sx.exerciseId, result.reps);
@@ -2295,7 +2299,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   /** The coach's stored next-session targets from a finished workout (D21), as saved. A read only; never calls the coach. */
   async function storedCoachTargets(ownerId: string, source: SessionAggregate | null): Promise<NextSessionTargetRecord[]> {
     if (source === null) return [];
-    return ctx.store().repos.coach.listNextTargets(ownerId, source.session.id);
+    return coachTargetRows(await ctx.store().repos.coach.listNextTargets(ownerId, source.session.id));
   }
 
   // -------------------------------------------------------------------------
@@ -3506,7 +3510,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
       // The compared workout is named by its own gym, never assumed to be this one (review r2 B1).
       const gymNames = Object.fromEntries((await repos().gyms.listByOwner(p.id).catch(() => [])).map((g) => [g.id, g.name]));
+      // (Ben, 23 Oct) The rule's stall resets Ben applied on this Summary: only those lower the load.
+      const acceptedResets = acceptedRuleResets(await ctx.store().repos.coach.listNextTargets(p.id, aggregate.session.id).catch(() => []), aggregate);
       const summary = buildWorkoutSummary({
+        acceptedResets,
         aggregate,
         nowMs: toMs(ctx.now().utc),
         gymName: gym?.name ?? null,

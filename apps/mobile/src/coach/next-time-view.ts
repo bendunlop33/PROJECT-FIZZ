@@ -10,7 +10,7 @@
 
 import { targetPhrase } from '@fizz/coach';
 import { briefLine, EXERCISE_SHORT_FORMS, pctText, shortFormMeans, type NextTimeRow } from '@fizz/domain';
-import type { NextSessionTargetRecord } from '@fizz/schemas';
+import type { CoachTarget, NextSessionTargetRecord } from '@fizz/schemas';
 
 import type { CoachAvailability } from './coach-service';
 
@@ -32,6 +32,11 @@ export interface NextTimeRowView {
   note: string | null;
   /** The saved row, for taps. Null on a built-in row. */
   row: NextSessionTargetRecord | null;
+  /**
+   * (Ben, 23 Oct) The built-in rule's own stall reset on this row, for its taps (`tapRuleReset`): the reset, the hold
+   * and Ben's answer so far (null: none yet). Absent: no reset here.
+   */
+  reset?: { exerciseId: string; exerciseName: string; target: CoachTarget; hold: CoachTarget | null; row: NextSessionTargetRecord | null };
 }
 
 export interface NextTimeView {
@@ -84,6 +89,24 @@ function coachRow(r: NextSessionTargetRecord, builtIn: NextTimeRow | undefined, 
   }
 }
 
+/**
+ * (Ben, 23 Oct; review v5offers SP2) A built-in rule row. A stall reset is an offer: `Reset to 90 kg × 6–8?` with
+ * `Skip` / `Apply` (offered, or offered again after an Undo); once applied the row is the reset with `Undo`; skipped,
+ * the hold with no buttons. A workout started from this one since: no buttons (`Used`).
+ */
+function ruleRow(b: NextTimeRow, sourceTag: string, answer: NextSessionTargetRecord | null): NextTimeRowView {
+  const base: NextTimeRowView = { key: b.exerciseId, exerciseName: b.exerciseName, target: b.target, pct: null, tag: sourceTag, why: [briefLine(b.summary)], actions: [], note: null, row: null };
+  const used = answer?.usedBySessionId != null;
+  if (b.resetApplied === true && answer !== null && answer.status === 'applied') {
+    return { ...base, note: used ? 'Used' : null, actions: used ? [] : [{ label: 'Undo', tap: 'undo' }], reset: { exerciseId: b.exerciseId, exerciseName: b.exerciseName, target: answer.target, hold: answer.builtIn, row: answer } };
+  }
+  const offer = b.resetOffer;
+  if (offer === undefined) return base;
+  const reset = { exerciseId: b.exerciseId, exerciseName: b.exerciseName, target: { load: offer.load, reps: offer.reps }, hold: { load: offer.hold.load, reps: offer.hold.reps }, row: answer };
+  const open = !used && (answer === null || answer.status === 'proposed');
+  return open ? { ...base, note: offer.text, actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }], reset } : { ...base, note: used ? 'Used' : null, reset };
+}
+
 export interface NextTimeInput {
   /** `Push A` or the workout's title. */
   title: string;
@@ -92,6 +115,8 @@ export interface NextTimeInput {
   coachRows: readonly NextSessionTargetRecord[];
   /** Rows whose workout changed since they were saved (`staleNextTargets`): shown as the built-in rule's. */
   stale?: ReadonlySet<string>;
+  /** (Ben, 23 Oct) Ben's answers to the rule's own stall resets (`ruleResets`). */
+  ruleRows?: readonly NextSessionTargetRecord[];
   availability: CoachAvailability;
   reviewing: boolean;
 }
@@ -107,7 +132,7 @@ export function nextTimeView(input: NextTimeInput): NextTimeView | null {
     seen.add(b.exerciseId);
     if (c !== undefined) rows.push(coachRow(c, b, stale.has(c.id)));
     // One short line (Ben, 18 Oct): the rule's facts stay stored and in the coach's context, not on screen (review B3).
-    else rows.push({ key: b.exerciseId, exerciseName: b.exerciseName, target: b.target, pct: null, tag: input.builtIn.sourceTag, why: [briefLine(b.summary)], actions: [], note: null, row: null });
+    else rows.push(ruleRow(b, input.builtIn.sourceTag, input.ruleRows?.find((r) => r.exerciseId === b.exerciseId) ?? null));
   }
   // Coach rows for exercises the built-in rule didn't list (it held them).
   for (const c of input.coachRows) if (!seen.has(c.exerciseId)) rows.push(coachRow(c, undefined, stale.has(c.id)));

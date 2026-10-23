@@ -6,6 +6,7 @@ import type {
   CoachToolCall,
   CoachToolName,
   CoachUndoResult,
+  CoachTarget,
   CoachWrite,
   CoachWriteResult,
   ExerciseTargetChanges,
@@ -657,6 +658,67 @@ export function createNextTargetsExecutor(deps: NextTargetsDeps): ToolExecutor {
 
 export type NextTargetTap = 'undo' | 'use_coach' | 'apply' | 'not_now';
 
+/** (Ben, 23 Oct) The rule's own reset has its own row per source workout and exercise, apart from the coach's. */
+export const ruleResetRowId = (sourceSessionId: string, exerciseId: string): string => deriveId(`rule-reset:${sourceSessionId}:${exerciseId}`);
+
+/**
+ * (Ben, 23 Oct; review v5offers SP2) Ben's first answer to the built-in rule's stall reset on the Summary (`Reset to
+ * 90 kg × 6–8?`): `apply` saves it (`applied`: the rule lowers the load next time), `not_now` is Skip (`not_applied`:
+ * it holds). His own record (author `ben`, no turn), with the row, in one write checked against the source workout as
+ * it is (CA10, rule 5). Later taps on the row go through `nextTargetTapRecord` (Undo → offered again).
+ */
+export function ruleResetWrite(input: {
+  ownerId: string;
+  source: SessionAggregate;
+  exerciseId: string;
+  exerciseName: string;
+  /** The reset the rule offered. */
+  target: CoachTarget;
+  /** What the rule holds at without it. */
+  hold: CoachTarget | null;
+  tap: 'apply' | 'not_now';
+  opId: string;
+  now: ZonedTimestamp;
+}): CoachWrite {
+  const ctx = { turnId: '', opId: input.opId, now: input.now };
+  const detail: ActionDetail = {
+    kind: 'set_next_session_targets',
+    sourceSessionId: input.source.session.id,
+    workoutLabel: (input.source.session.routineName ?? input.exerciseName).slice(0, 120),
+    rows: [{ exerciseId: input.exerciseId, exerciseName: input.exerciseName, before: input.hold, after: input.target, setsBefore: null, setsAfter: null, size: 'bigger' }],
+  };
+  const record = { ...newActionRecord(ctx, detail, input.tap === 'apply' ? { author: 'ben' } : { author: 'ben', status: 'rejected', failure: 'Skipped' }), turnId: null };
+  const basis = nextTargetSourceBasis(input.source);
+  const a = input.hold?.load ?? null;
+  const b = input.target.load;
+  const pctChange = a === null || b === null || a.unit !== b.unit || a.value === 0 ? null : Math.round(((b.value - a.value) / a.value) * 1000) / 10;
+  const row: NextSessionTargetRecord = {
+    id: ruleResetRowId(input.source.session.id, input.exerciseId),
+    ownerId: input.ownerId,
+    version: 1,
+    createdAtUtc: input.now.utc,
+    updatedAtUtc: input.now.utc,
+    sourceSessionId: input.source.session.id,
+    sourceVersion: input.source.session.version,
+    sourceBasis: basis,
+    exerciseId: input.exerciseId,
+    exerciseName: input.exerciseName,
+    actionId: record.actionId,
+    target: input.target,
+    sets: null,
+    builtIn: input.hold,
+    builtInSets: null,
+    size: 'bigger',
+    status: input.tap === 'apply' ? 'applied' : 'not_applied',
+    reason: null,
+    guardNotes: [],
+    pctChange,
+    usedBySessionId: null,
+    origin: 'rule',
+  };
+  return { kind: 'next_session_targets', action: record, rows: [row], sourceVersion: input.source.session.version, sourceBasis: basis };
+}
+
 /**
  * The record of Ben's tap on a `Next time` row (his own action, author
  * `ben`): Undo is an undo of the coach's target for that exercise; `Use
@@ -666,7 +728,8 @@ export function nextTargetTapRecord(row: NextSessionTargetRecord, tap: NextTarge
   const ctx = { turnId: '', opId: input.opId, now: input.now };
   const label = row.exerciseName;
   if (tap === 'undo' || tap === 'not_now') {
-    const detail: ActionDetail = { kind: 'undo', undoneActionId: row.actionId, what: `the coach's ${label} target for next time`, restored: [], alreadyLogged: [] };
+    const what = row.origin === 'rule' ? `the built-in reset of ${label} for next time` : `the coach's ${label} target for next time`;
+    const detail: ActionDetail = { kind: 'undo', undoneActionId: row.actionId, what, restored: [], alreadyLogged: [] };
     return { status: tap === 'undo' ? (row.status === 'applied' ? 'proposed' : 'undone') : 'not_applied', record: { ...newActionRecord(ctx, detail, { author: 'ben' }), turnId: null } };
   }
   const detail: ActionDetail = {

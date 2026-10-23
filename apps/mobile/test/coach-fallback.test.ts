@@ -6,7 +6,7 @@ import { StackRouter, type ParamListBase, type StackNavigationState } from '@rea
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
-import { NBSP } from '@fizz/domain';
+import { NBSP, slotsOf } from '@fizz/domain';
 import type { TextCoachState } from '@fizz/providers';
 import type { SessionAggregate } from '@fizz/schemas';
 
@@ -321,7 +321,7 @@ describe('Ben’s case: 62.5 kg × 3–6 planned, 2 reps logged', () => {
     expect(await offerFor(s, fixed.aggregate, s1.id)).toMatchObject({ by: 'rule', fact: '2 reps on set 1 (target 3–6)' });
   });
 
-  it('F5 + 7-F: the miss feeds next session; the Summary lists the hold; the next workout never raises; a second miss reduces', async () => {
+  it('F5 + 7-F: the miss feeds next session; the Summary lists the hold; the next workout never raises; a second miss offers the reset (Ben, 23 Oct)', async () => {
     const { s, gymId, sessionId, work } = await bensWorkout();
     connection = NOT_CONNECTED;
     for (const [i, set] of work.entries()) await log(s, sessionId, set.id, [2, 1, 2][i] ?? 2, `log-${String(i)}`);
@@ -349,10 +349,89 @@ describe('Ben’s case: 62.5 kg × 3–6 planned, 2 reps logged', () => {
     const fin3 = await s.workout.dispatch(third.aggregate.session.id, { type: 'finish', at: h.now(), opId: 'fin-3', expectedVersion: d3?.aggregate.session.version ?? 0, endedAt: null });
     if (!fin3.ok) throw new Error(fin3.error.message);
     await h.settle(s);
-    const summary3 = await s.workout.summary(third.aggregate.session.id, 'not_connected');
+    const thirdId = third.aggregate.session.id;
+    const summary3 = await s.workout.summary(thirdId, 'not_connected');
     const row3 = summary3?.nextTime?.rows.find((r) => r.exerciseName === 'Bench press');
-    expect(row3).toMatchObject({ kind: 'change', decision: 'reduce_load' });
-    expect(plain(row3?.target)).toBe('Target 55 kg × 3–6');
+    // (Ben, 23 Oct; v5offers SP2) The rule's own reset is an offer: it holds at 62.5 until Ben applies 55.
+    expect(row3).toMatchObject({ kind: 'held', decision: 'hold_after_miss' });
+    expect(plain(row3?.target)).toBe('Same target: 62.5 kg × 3–6');
+    expect(plain(row3?.resetOffer?.text)).toBe('Reset to 55 kg × 3–6?');
+    const viewOf = async (id: string) => {
+      const sum = await s.workout.summary(id, 'not_connected');
+      return nextTimeView({ title: 'Workout', builtIn: sum?.nextTime ?? null, coachRows: await s.coach.nextTargets(id), ruleRows: await s.coach.ruleResets(id), availability: await s.coach.availability(), reviewing: false })?.rows.find((r) => r.exerciseName === 'Bench press');
+    };
+    const offered = await viewOf(thirdId);
+    expect(offered).toMatchObject({ tag: 'Rule', actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] });
+    expect(plain(offered?.note)).toBe('Reset to 55 kg × 3–6?');
+    // Not applied: next time holds.
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('55');
+    const reset = offered?.reset;
+    if (reset === undefined) throw new Error('no reset');
+    // Apply (offline, no coach): next time is 55; a double tap writes once.
+    expect(await s.coach.tapRuleReset(thirdId, reset, 'apply')).toEqual({ status: 'written' });
+    expect(await s.coach.tapRuleReset(thirdId, reset, 'apply')).toEqual({ status: 'replayed' });
+    expect(await s.coach.nextTargets(thirdId)).toEqual([]);
+    const applied = await viewOf(thirdId);
+    expect(plain(applied?.target)).toBe('Target 55 kg × 3–6');
+    expect(applied).toMatchObject({ tag: 'Rule', actions: [{ label: 'Undo', tap: 'undo' }] });
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).toContain('55');
+    // Your workout plans from the same rule (builder loads): the bench is at most 55 now (62.5 before the Apply).
+    const opened = await s.builder.openTarget({ kind: 'session', sourceSessionId: thirdId }, 'open-after-reset');
+    if (opened.snapshot == null) throw new Error('no builder');
+    const benchTop = slotsOf(opened.snapshot.workout.blocks).find((x) => opened.snapshot?.facts[x.exerciseId]?.name === 'Bench press')?.rows.find((r) => r.type !== 'warmup')?.load ?? null;
+    expect(benchTop).not.toBeNull();
+    expect(benchTop ?? 99).toBeLessThanOrEqual(55);
+    // Undo: offered again, next time holds.
+    const r2 = applied?.reset;
+    if (r2 === undefined) throw new Error('no reset');
+    expect(await s.coach.tapRuleReset(thirdId, r2, 'undo')).toEqual({ status: 'written' });
+    const again = await viewOf(thirdId);
+    expect(again).toMatchObject({ actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] });
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('55');
+    // Skip: it holds, no buttons, never offered again for this workout.
+    const r3 = again?.reset;
+    if (r3 === undefined) throw new Error('no reset');
+    expect(await s.coach.tapRuleReset(thirdId, r3, 'not_now')).toEqual({ status: 'written' });
+    const skipped = await viewOf(thirdId);
+    expect(skipped?.actions).toEqual([]);
+    expect(plain(skipped?.target)).toBe('Same target: 62.5 kg × 3–6');
+    // After a relaunch the answer stands.
+    const { services: relaunched } = await h.launch();
+    const sum4 = await relaunched.workout.summary(thirdId, 'not_connected');
+    const v4 = nextTimeView({ title: 'Workout', builtIn: sum4?.nextTime ?? null, coachRows: await relaunched.coach.nextTargets(thirdId), ruleRows: await relaunched.coach.ruleResets(thirdId), availability: await relaunched.coach.availability(), reviewing: false });
+    expect(v4?.rows.find((r) => r.exerciseName === 'Bench press')?.actions).toEqual([]);
+  });
+
+  it('Ben, 23 Oct: Skip as the first answer holds; the next workout from it starts at the held load', async () => {
+    const { s, gymId, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    for (const [i, set] of work.entries()) await log(s, sessionId, set.id, 2, `log-${String(i)}`);
+    h.clockMs += 60_000;
+    const d = await s.workout.load(sessionId);
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'fin-2', expectedVersion: d?.aggregate.session.version ?? 0, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    await h.settle(s);
+    h.clockMs += 2 * 86_400_000;
+    const third = await s.workout.start({ gymId, opId: 'start-3', checkIn: null, nextOf: sessionId });
+    if (!third.ok) throw new Error(third.error.message);
+    const work3 = third.aggregate.sets.filter((x) => x.setType !== 'warmup').sort((a, b) => a.index - b.index);
+    for (const [i, set] of work3.entries()) await log(s, third.aggregate.session.id, set.id, 2, `log3-${String(i)}`);
+    h.clockMs += 60_000;
+    const d3 = await s.workout.load(third.aggregate.session.id);
+    const fin3 = await s.workout.dispatch(third.aggregate.session.id, { type: 'finish', at: h.now(), opId: 'fin-3', expectedVersion: d3?.aggregate.session.version ?? 0, endedAt: null });
+    if (!fin3.ok) throw new Error(fin3.error.message);
+    await h.settle(s);
+    const thirdId = third.aggregate.session.id;
+    const sum = await s.workout.summary(thirdId, 'not_connected');
+    const view = nextTimeView({ title: 'Workout', builtIn: sum?.nextTime ?? null, coachRows: [], ruleRows: [], availability: await s.coach.availability(), reviewing: false })?.rows.find((r) => r.exerciseName === 'Bench press');
+    const reset = view?.reset;
+    if (reset === undefined) throw new Error('no reset');
+    expect(await s.coach.tapRuleReset(thirdId, reset, 'not_now')).toEqual({ status: 'written' });
+    expect((await s.coach.ruleResets(thirdId)).map((r) => r.status)).toEqual(['not_applied']);
+    h.clockMs += 2 * 86_400_000;
+    const fourth = await s.workout.start({ gymId, opId: 'start-4', checkIn: null, nextOf: thirdId });
+    if (!fourth.ok) throw new Error(fourth.error.message);
+    expect(fourth.aggregate.sets.filter((x) => x.setType !== 'warmup').every((x) => x.planned.load?.value === 62.5)).toBe(true);
   });
 
   it('F5: after the rule lowered today’s sets, the hold is on the lighter load and reads `Target`, not `Same target`', async () => {

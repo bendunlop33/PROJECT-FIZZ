@@ -1396,6 +1396,12 @@ export const NextSessionTargetRecordSchema = RecordMetaSchema.extend({
   /** Load change from the last working target, in %, from the saved values. */
   pctChange: z.number().nullable(),
   usedBySessionId: IdSchema.nullable(),
+  /**
+   * (Ben, 23 Oct; review v5offers SP2) `rule`: not the coach's target but Ben's answer to the built-in rule's own stall
+   * reset (`Reset to … ?` on the Summary): `applied` (the rule lowers the load next time), `not_applied` (Skip: it
+   * holds), `proposed` (his Apply undone: offered again). Its `target` is the reset load. Absent: the coach's row.
+   */
+  origin: z.literal('rule').optional(),
 });
 export type NextSessionTargetRecord = z.infer<typeof NextSessionTargetRecordSchema>;
 export type NextSessionTargetStatus = NextSessionTargetRecord['status'];

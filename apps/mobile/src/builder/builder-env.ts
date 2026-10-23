@@ -1,4 +1,7 @@
 import {
+  acceptedRuleResets,
+  coachTargetRows,
+  isRuleResetRow,
   builderInfoOf,
   builderWorksOf,
   checkedOnOf,
@@ -216,18 +219,21 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       if (history.length > 0) {
         const newest = history[0];
         const saved = newest === undefined ? [] : await repos.coach.listNextTargets(p.id, newest.sessionId).catch(() => []);
-        const mine = saved.find((x) => x.exerciseId === id && x.status === 'saved' && x.target.load !== null);
+        const mine = coachTargetRows(saved).find((x) => x.exerciseId === id && x.status === 'saved' && x.target.load !== null);
+        // (Ben, 23 Oct) The rule lowers a stalled lift only where Ben applied its reset on that workout's Summary.
+        const source = newest === undefined || !saved.some((x) => isRuleResetRow(x) && x.exerciseId === id && x.status === 'applied') ? null : await repos.sessions.get(newest.sessionId).catch(() => null);
+        const acceptReset = source !== null && acceptedRuleResets(saved, source).has(id);
         if (mine?.target.load != null && mine.target.load.convention === refs.convention) coachTarget = { value: mine.target.load.value, reps: mine.target.reps?.min ?? 8, rpe: mine.target.rpe ?? 8 };
         try {
           // The rule reads the same history as `loadReferences`: other items of the same kind and bar mass too (21 Oct).
           const comparableEquipmentIds = new Set(refs.comparableEquipmentIds ?? []);
-          const { result, rule } = nextTargetsFor({ ownerId: p.id, exerciseId: id, exerciseName: e.name, measurement: e.measurement, unit: refs.unit, convention: refs.convention, equipment: eq, exercise: e, rule: null, workingSets: 3, history, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, comparableEquipmentIds });
+          const { result, rule } = nextTargetsFor({ ownerId: p.id, exerciseId: id, exerciseName: e.name, measurement: e.measurement, unit: refs.unit, convention: refs.convention, equipment: eq, exercise: e, rule: null, workingSets: 3, history, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, comparableEquipmentIds, ...(acceptReset ? { acceptReset: true } : {}) });
           ruleTarget = ruleAnchorOf(result, rule, refs.convention);
           // Reps from history (21 Oct): the rule's reps set the slot's reps (`slotRepRange`).
           ruleReps = result.reps ?? null;
           // A main barbell lift as a secondary lift: its rule read as a compound lift's (`slotLoadOf`).
           if (ruleCategory(e, eq?.kind ?? null, refs.convention) === 'main_barbell') {
-            const acc = nextTargetsFor({ ownerId: p.id, exerciseId: id, exerciseName: e.name, measurement: e.measurement, unit: refs.unit, convention: refs.convention, equipment: eq, exercise: e, rule: null, workingSets: 3, history, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, comparableEquipmentIds, accessory: true });
+            const acc = nextTargetsFor({ ownerId: p.id, exerciseId: id, exerciseName: e.name, measurement: e.measurement, unit: refs.unit, convention: refs.convention, equipment: eq, exercise: e, rule: null, workingSets: 3, history, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, comparableEquipmentIds, accessory: true, ...(acceptReset ? { acceptReset: true } : {}) });
             secondary = { ruleTarget: ruleAnchorOf(acc.result, acc.rule, refs.convention), ruleReps: acc.result.reps ?? null };
           }
         } catch {

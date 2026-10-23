@@ -341,6 +341,26 @@ export function nextTargetFitsSource(row: Pick<NextSessionTargetRecord, 'sourceV
   return row.sourceVersion === source.version;
 }
 
+/** (Ben, 23 Oct) Ben's answer to the built-in rule's own stall reset, stored with the coach's rows (`origin: 'rule'`). */
+export function isRuleResetRow(r: Pick<NextSessionTargetRecord, 'origin'>): boolean {
+  return r.origin === 'rule';
+}
+
+/** The coach's own next-session rows: never Ben's answers to the rule's reset. */
+export function coachTargetRows<T extends Pick<NextSessionTargetRecord, 'origin'>>(rows: readonly T[]): T[] {
+  return rows.filter((r) => !isRuleResetRow(r));
+}
+
+/**
+ * (Ben, 23 Oct; review v5offers SP2) The exercises whose rule stall reset Ben applied on this source workout's
+ * Summary and that still stand: `applied`, not used by a workout started from it, set on the workout as it still is
+ * (a corrected set makes the rule decide afresh). The rule lowers their load (`acceptReset`); every other stall holds.
+ */
+export function acceptedRuleResets(rows: readonly NextSessionTargetRecord[], source: SessionAggregate): Set<string> {
+  const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
+  return new Set(rows.filter((r) => isRuleResetRow(r) && r.status === 'applied' && r.usedBySessionId === null && r.sourceSessionId === source.session.id && nextTargetFitsSource(r, fits)).map((r) => r.exerciseId));
+}
+
 /**
  * `nextTargetsOf` with the coach's saved targets (D21): for each exercise
  * with a row that is in use (`saved`, or `applied` by Ben), not used yet and
@@ -360,7 +380,8 @@ export function withCoachTargets(
   if (ctx.painToday) return out;
   const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
   for (const row of rows) {
-    if (row.status !== 'saved' && row.status !== 'applied') continue;
+    // Ben's answer to the rule's own reset isn't a coach target: the rule itself plans it (`acceptReset`).
+    if (isRuleResetRow(row) || (row.status !== 'saved' && row.status !== 'applied')) continue;
     if (row.usedBySessionId !== null || !nextTargetFitsSource(row, fits) || row.sourceSessionId !== source.session.id) continue;
     if (ctx.flaggedExerciseIds.has(row.exerciseId)) continue;
     const plan = builtIn.get(row.exerciseId) ?? [];
