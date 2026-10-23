@@ -2,7 +2,7 @@
 
 Branch `claude/gracious-knuth-joxqpw`. I reviewed the builder's **uncommitted** working tree on top of `9261625`: 22 files under `docs/` (+971 / −387). Nothing in `apps/` or `packages/` changed. This commit adds only this review. The builder's changes are still unstaged, so the fix round should commit them, split by topic as the builder proposed.
 
-**Current verdict (re-review after fix round 1, 23 Oct): CHANGES NEEDED.** B1–B3 and the follow-ups are fixed and the gate passes, but the fix round's new edit tracking crashes Your workout on Add and Swap, and a swap still carries the fit's set count into `Keep for next time?`. See [Re-review 1](#re-review-1-23-oct-after-fix-round-1) at the end.
+**Current verdict (re-review after fix round 2, 23 Oct): CHANGES NEEDED.** R1 and R2 are fixed in the prototypes and I confirmed both by running them, but the gate still fails as delivered: a new `check_app.mjs` case taps an exercise row with a DOM `click()`, which never opens its sheet, so `build_app.py` times out and every check after it (R2 click-through, S2, S1) never runs. With that one test fixed in a scratch copy, the whole click-through passes. See [Re-review 2](#re-review-2-23-oct-after-fix-round-2) at the end.
 
 ## Verdict (round 1): CHANGES NEEDED
 
@@ -414,3 +414,74 @@ A set is lost from the plan for good because of a short session, and the row nev
 ### Process
 
 The fix round's 22 changed files are still uncommitted, and this commit adds only this review. Once R1 and R2 are fixed and `build_app.py` passes, commit them in the topic commits the fixes note lists. Don't push.
+
+## Fixes after re-review 1 (23 Oct, designer)
+
+Each finding was confirmed by reading the code paths the review cites before changing anything.
+
+**Not run yet:** this fix round had no shell, so `python3 docs/design/prototypes/app/build_app.py <out>` and the commit are still to do. Run the build, then commit (no push). The new checks are written but have not been executed.
+
+### Blocking
+
+- **R1, confirmed and fixed.** `rowOf` → `workRows` read `e.per` before an added or swapped-in exercise had rows. `workRows` now makes the rows first (`e.per ??= genRows(e)`), and `rowOf` calls `perOf(e)` so the row's sets match the screen (`workout-builder-v3.html`). That covers every path the review lists: pick, sheet Swap, swipe Swap, chat `papply` and review `sy`. **Test:** `check_app.mjs` runs Add, sheet Swap, swipe Swap, chat swap and a review suggestion (the first Add or Swap one) from `Edit` and from `Open in builder ›`. It checks for no page error. From Edit, it also checks that Today's card shows the change and `Edited`. In both cases the Summary's `Keep for next time?` must list exactly `+ <exercise> · 3 sets` or `<from> → <to>`.
+- **R2, confirmed and fixed.** A swapped-in exercise now takes the set count of the slot it replaces when it's replayed (`sets: o.n ?? was.sets`). Today's draft therefore keeps the fit's 2 and the template keeps 3. A count Ben sets himself is recorded on the swap as `n`: `syncEdits` stores it when the swap arrives with a count different from the slot's, and `mergeOps` stores it for a later `sets` edit and keeps it when swaps are chained. `structureLines` adds the count to the swap line when it differs (`Triceps pushdown → Overhead triceps extension · 3 → 4 sets`). The shared `EDITS` block is identical in both prototypes. **Tests:** a unit test of the shared code at Time 40 covers three cases: swap alone (today 2, kept 3, swap line only), swap then Ben sets 4, and swap then Ben sets 2. A click-through does the same on Today: Time 40 → Edit → swipe Swap Triceps pushdown, with and without setting it to 4. Spec: workout-builder-v3 §2.8 (new bullet, copy, acceptance 13–14).
+
+### Should fix
+
+- **S1, partly fixed, the rest goes to Ben (SP-B).** On Today, `draft()` now leaves out of the fit note, its detail and the carry-over anything the fit cut from an exercise Ben removed, swapped or set a count on. Removing Triceps pushdown then setting Time 35 no longer offers `+3 triceps sets` or lists `Dropped Triceps pushdown` (click-through test). The minutes are already the edited draft's. Running the fit **on** the edited draft (so added work could cost other cuts, and removals make Time 45 a no-op) is SP-B and is not changed. Noted in fit-to-time.md (re-review 1 fixes).
+- **S2, fixed.** If Ben types a top lighter than the one its back-offs came from, they drop by the same % (`lowerBackOff`, as Today's held top: 102.5 → 100 gives 95 → 92.5). Typing a heavier top, or the original, works them out again (D4). Back-offs he typed himself stay. **Test:** typing 100 on Your workout shows `1 × 6 + 2 × 8 · 100 / 92.5`, and typing 102.5 back shows the fixture line.
+- **S3, spec fixed.** fit-to-time.md now specifies an exact grouped knapsack in 15 s buckets, run once per candidate pair: about 0.9 M steps at Your workout's limits, and it keeps the monotonic property. The prototype keeps its exhaustive search, which is fine at 4–5 accessories.
+- **S4, spec fixed.** The saved-workout `Keep for next time?` is now marked spec only, not prototyped, in §2.8.
+
+### Nits
+
+- **N-a, fixed.** A set count that brings back an exercise the fit dropped now puts it back in its template place (shared `EDITS` code, unit test).
+- **N-b, not changed.** In the prototype, `backOff` returns only a load, so "1 rep fewer when no real load is below the top" needs a return-shape change in all four `BACKOFF` copies. It can't be reached at the fixture loads. It stays a domain requirement (spec §3.1 item 9) for `packages/domain`'s back-off function and its tests. It is related to SP-D.
+
+### Spec issues, still for Ben
+
+SP-A (absolute or relative set counts on top of a fit cut), SP-B (fit before or after his edits), SP-C (whether a chat change he asked for counts in Keep; the prototype currently counts it, as the R1 tests expect), SP-D (a floor on the back-off fallback). None of these is decided here.
+
+## Re-review 2 (23 Oct, after fix round 2)
+
+**Verdict: CHANGES NEEDED.** One blocking issue, and it's in the test, not the design. The R1 and R2 fixes work. I confirmed them by running the prototypes, not just by reading them.
+
+### Checks run by the reviewer
+
+- `python3 docs/design/prototypes/app/build_app.py <scratch>/appout` as delivered: the static checks pass (`fixture check: ok`, shared `BACKOFF`/`EDITS` copies match). The click-through **fails** after about 115 s: `locator.click: Timeout 30000ms exceeded … waiting for locator('.sheet [data-a="to-swap"]')` at `check_app.mjs:370` (R3 below). Exit code is non-zero.
+- Scratch copy of `check_app.mjs` with only the three row taps (`:370`, `:446`, `:452`) changed to Playwright pointer clicks (`b.locator('.er', { hasText: … }).first().click()`): **`click-through check: ok`** (about 158 s, no page or console errors). Every R1 case (Add, sheet Swap, swipe Swap, chat swap, review suggestion, each from Edit and from Open in builder ›), the R2 unit and click-through cases, S2 and S1 pass.
+- Mutation check: with the R1 fix taken out of the built `workout-builder-v3.html` (`workRows` without `??= genRows`, `rowOf` without `perOf`), the fixed check fails. So the new R1 cases do catch the regression, although it shows as a later timeout (the sheet left open) and not as the R1 message.
+- My own probes (Playwright, built app):
+  - Chained swap at Time 40 (Triceps pushdown → Overhead triceps extension → EZ-bar curl): today shows 2 sets, and Keep lists exactly `Triceps pushdown → EZ-bar curl`. Correct.
+  - Swap at Time 40, then back to Today and Time 60: the swapped-in exercise gets 3 sets on Today's card, and Keep lists the swap alone. Correct.
+- `git diff --check`: clean. No untracked files. Nothing in `apps/` or `packages/` was touched.
+
+### Blocking
+
+- **R3. `build_app.py` fails as delivered. The new sheet-Swap and S2 cases tap rows in a way the screen ignores.** Where: `docs/design/prototypes/app/check_app.mjs:370`, `:446`, `:452`, which do `b.evaluate(\`(${rowEl})('…').click()\`)`. Your workout opens an exercise's sheet on `pointerdown` → `pointerup` (`workout-builder-v3.html:836-837` and `:879-882`). There is no `click` handler on `.er`, so a synthetic `click()` does nothing. Failure: the `sheet Swap` case waits 30 s for `.sheet [data-a="to-swap"]` and then throws. That kills the run, so the R2 click-through (`:420-440`), the S2 typed-top case (`:443-455`) and the S1 case after it never execute in the delivered gate. This is the same kind of failure as round-1 B3: the batch's own gate is red. Fix: use a real pointer tap, as `addSetsTo` already does (`b.locator('.er', { hasText: name }).first().click()`). Better still, add a `tapRow(b, name)` helper that matches the name exactly, and use it at all three sites. Then run `build_app.py` to `click-through check: ok` before committing. I verified that this exact change makes the run pass.
+
+### Status of the re-review 1 findings
+
+- **R1: fixed.** `workRows` creates rows (`workout-builder-v3.html:304`) and `rowOf` calls `perOf` (`:365`). All five paths work from Edit and from Open in builder ›. Today's card shows the change and `Edited`, and Keep lists it. Verified by running.
+- **R2: fixed.** In the shared `EDITS` code, a swap takes the slot's count (`sets: o.n ?? was.sets`). `syncEdits` (`workout-builder-v3.html:404-412`) records `n` only when the count on screen differs from today's fitted slot. The swap line shows `· 3 → 4 sets` when it differs. The unit cases (swap, then 4, then 2) and the Time 40 click-through pass with R3 fixed. So do my chained-swap and swap-then-Time-60 probes.
+- **S1: partly fixed** (tested). Running the fit on the edited draft is still SP-B, for Ben.
+- **S2: fixed** (tested once R3 is fixed). Typing goes character by character: an intermediate `1` briefly lowers the back-offs to a tiny ratio. Each keystroke recomputes from the stored originals (`q.from`), so the final value is correct. It's a nit for the app's real input handling, not for the prototype.
+- **S3 and S4: spec only**, written in `fit-to-time.md` and §2.8. Acceptable.
+- **N-a: fixed** (unit-tested). **N-b: deferred** to `packages/domain`, linked to SP-D. Acceptable.
+
+### Should fix (non-blocking)
+
+- **S5. A count Ben sets that equals the fit's count is lost.** `syncEdits` compares the count on screen with today's **fitted** slot (`workout-builder-v3.html:408`). At Time 40, if Ben sets the swapped-in exercise to 4 and then back to 2, no `n` is recorded, and Keep writes 3. The unit case "swap, then Ben sets 2" assumes `n: 2` is stored, but the screen path can't store it. This is SP-A territory (absolute or relative counts on a fit cut), so I'm only noting it for Ben's answer and not treating it as blocking.
+- **S6. The R1 cases report a regression as a timeout, not as R1.** When a case hits a page error, it `continue`s with the sheet still open. The next case's state then breaks a later wait (seen in the mutation run at `:440`). Close any open sheet, or `reset`, before `continue`, so the failure names the case.
+
+### Nits
+
+- `rowEl` matches on `.nm`'s first text node, while `addSetsTo` matches with `hasText` (substring). Pick one exact-name helper for the whole file.
+
+### Spec issues, still for Ben
+
+SP-A, SP-B, SP-C and SP-D are unchanged (see the fixes note above). S5 depends on SP-A.
+
+### Process
+
+The designer's 23 changed files under `docs/` are still uncommitted. This commit adds only this review, as before. After R3 is fixed and `build_app.py` passes, commit the builder's work in the topic commits listed in the fixes notes, with the required trailer. Don't push.
