@@ -159,7 +159,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
     rpe: t.setType === 'warmup' ? null : t.targetRpe,
     ...(t.load?.source === 'ben' ? { typed: true as const } : {}),
     ...(t.load?.source === 'ben' && t.load.requested !== undefined ? { roundedFrom: t.load.requested } : {}),
-    ...(t.setType === 'backoff' && t.load !== undefined && t.load.source !== 'ben' && t.load.backoffFrom !== undefined ? { backoffFrom: { ...t.load.backoffFrom } } : {}),
+    ...(t.setType === 'backoff' && t.load !== undefined && t.load.source !== 'ben' && t.load.backoffFrom !== undefined ? { backoffFrom: { load: t.load.backoffFrom.load, top: t.load.backoffFrom.top, ...(t.load.backoffFrom.follow === true ? { follow: true as const } : {}) } } : {}),
   }));
   const out: BuilderSlot = {
     key: s.slotKey,

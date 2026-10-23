@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFromSetup, editSetRow, getAchievableLoads, referenceE1rm, slotsOf, type BuilderSetup, type BuilderSlot, type BuilderWorkout, type LoadReferences, type RefSession } from '@fizz/domain';
+import { buildFromSetup, editSetRow, fromDraftPlan, getAchievableLoads, toDraftPlan, type DraftCodecContext, referenceE1rm, slotsOf, type BuilderSetup, type BuilderSlot, type BuilderWorkout, type LoadReferences, type RefSession } from '@fizz/domain';
 import { builderFixture as F } from '@fizz/domain/testing';
 import { applyBuilderEdits, createBuilderLoadGuard, topLoad, type BuilderCoachEnv, type BuilderCoachSnapshot } from '../src/index';
 
@@ -84,6 +84,16 @@ describe('D4: the coach lowers or raises today’s top', () => {
     });
     // From 102.5 at 110: × 100 / 110 = 93.2 → 92.5.
     expect(backoffs(lower).every((b) => b === 92.5)).toBe(true);
+  });
+
+  it('Ben, 23 Oct: the follow survives a force-close (codec), so the back-offs still follow the coach’s top after a relaunch', () => {
+    const { snap, env, key } = setup();
+    const up = applyBuilderEdits(snap, [{ op: 'load', slotKey: key, direction: null, value: 110, unit: 'kg' }], env).workout;
+    const codec: DraftCodecContext = { info: env.ctx.info, catalogueIdOf: (e) => e, checkedOnOf: () => null };
+    const back = fromDraftPlan(toDraftPlan(up, codec));
+    expect(benchOf(back)?.rows.filter((r) => r.type === 'backoff').every((r) => r.backoffFrom?.follow === true)).toBe(true);
+    const down = applyBuilderEdits(snapOf(snap, back), [{ op: 'load', slotKey: key, direction: null, value: 100, unit: 'kg' }], env).workout;
+    expect(backoffs(down).every((b) => b === 95)).toBe(true);
   });
 
   it('heavier top (100 → 102.5): back-offs follow by the same % (95 × 1.025 = 97.4 → 95 on the bar), 4–10 % below the new top', () => {
