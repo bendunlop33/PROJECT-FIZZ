@@ -1,5 +1,6 @@
 import type { PlanBuilderAnswers, PlanGroup, PlanSplit, PlanTarget } from '@fizz/schemas';
 import { inKitUnit, kitAbove, kitBelow, kitDown, kitHasFormula, pbBackOff, pbMainLine, pbWarmUp, pbWeekOneTop, type PbWarmupSet, type PlanKit } from './loads';
+import type { WarmupExerciseFacts } from '../warmup/plan';
 import { pbLiftStart, type PbHistoryOf, type PbKitOf, type PbLiftStart } from './lifts';
 import {
   PB_COMPAT,
@@ -59,6 +60,8 @@ export interface PlanEngineInput {
   historyOf: PbHistoryOf;
   /** Exercises held for pain (rule 9): never planned. */
   painHeld?: ReadonlySet<string>;
+  /** The exercise's catalogue facts for the shared warm-up planner (WU9 floor start); absent: from the key. */
+  factsOf?: (key: string) => WarmupExerciseFacts | null;
   nowMs: number;
 }
 
@@ -341,7 +344,7 @@ export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
     const backs = (strength ? 3 : 2) + effortBacks;
     const top = start?.six == null ? null : pbWeekOneTop(kit, start.six, start.light);
     const bo = top === null ? null : pbBackOff(kit, top, reps, 8, a.focus);
-    const main: PbMainPlan = { top, back: bo?.back ?? null, reps, backs, backReps: bo?.reps ?? 8, estimate: start?.estimate ?? false, light: start?.light ?? false, start, warmup: top === null ? [] : pbWarmUp(kit, key, top, reps) };
+    const main: PbMainPlan = { top, back: bo?.back ?? null, reps, backs, backReps: bo?.reps ?? 8, estimate: start?.estimate ?? false, light: start?.light ?? false, start, warmup: top === null ? [] : pbWarmUp(kit, key, top, reps, input.factsOf?.(key) ?? null) };
     const load: PbLoad = top === null ? { kind: 'none' } : { kind: 'kg', value: top, unit: kit.unit, convention: kit.convention, equipmentId: kit.equipmentId };
     return { key, muscle, role: 'main', tags: [], sets: backs + 1, reps, load, bodyweightMain: false, main, estimate: start?.estimate ?? true, pair: null, why: whyOf(h, start) };
   };

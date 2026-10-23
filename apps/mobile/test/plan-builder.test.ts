@@ -111,5 +111,17 @@ describe('plan builder', () => {
     expect(benchRow).toBeDefined();
     // The app's load text uses non-breaking spaces.
     expect(benchRow?.line.replace(/\s/gu, ' ')).toBe('100 kg top, 2 × 8 · 95 kg');
+
+    // (WU1–WU12) The plan's warm-ups for the main lift are the ones Start plans: the shared planner, same loads and reps.
+    const shown = session.build(a).days.flatMap((d) => d.exercises).find((e) => e.key === 'barbell-bench-press' && e.role === 'main')?.main?.warmup ?? [];
+    expect(shown.length).toBeGreaterThan(0);
+    if (push === undefined) throw new Error('no Push day');
+    const started = await s.workout.start({ gymId, opId: h.ids(), checkIn: null, routineOf: push.routineId });
+    expect(started.ok).toBe(true);
+    const agg = await s.sessions.active();
+    if (agg == null) throw new Error('no workout');
+    const first = [...agg.exercises].sort((x, y) => x.order - y.order)[0];
+    const warm = agg.sets.filter((x) => x.sessionExerciseId === first?.id && x.setType === 'warmup').sort((x, y) => x.index - y.index);
+    expect(warm.map((x) => [x.planned.load?.value ?? null, x.planned.reps?.min ?? null])).toEqual(shown.map((w) => [w.load, w.reps]));
   });
 });

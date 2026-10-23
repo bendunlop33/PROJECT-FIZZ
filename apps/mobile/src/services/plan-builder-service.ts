@@ -157,6 +157,8 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     const kitOf = (k: string): PlanKit | 'bodyweight' | null => kits.get(k) ?? null;
     const historyOf = (k: string): PbHistory | null => hist.get(k) ?? null;
     const nameOf = (k: string): string => names.get(k) ?? k;
+    // (WU1–WU12) The catalogue facts Start's warm-up planner reads, so the plan's main-lift warm-ups match the workout's.
+    const factsOf = (k: string): Exercise | null => byId.get(catalogueExerciseId(k)) ?? null;
 
     const draft = await openDraft(p.id, at.utc);
     const v = draft === null ? null : currentPlanVersion(draft);
@@ -179,7 +181,7 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
       painHeld,
       lifts,
       needsCheck: pbNeedsLiftCheck(lifts(answers)),
-      build: (a) => buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, painHeld, nowMs }),
+      build: (a) => buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, factsOf, painHeld, nowMs }),
       expect: (a) =>
         pbExpect(
           a,

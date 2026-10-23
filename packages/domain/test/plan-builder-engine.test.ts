@@ -46,6 +46,7 @@ import {
   type PbHistory,
   type PbPlan,
   type PlanEngineInput,
+  planWarmups,
   type PlanKit,
 } from '../src/index';
 import { ASSIST, BAR, DB, HISTORY_OF, HIST, KIT_OF, NOW, STACK, answers, kitFor } from './plan-builder-fixture';
@@ -196,6 +197,31 @@ describe('warm-ups (WU4, WU5, WU8, WU9)', () => {
   });
   it('higher reps: two steps', () => {
     expect(pbWarmUp(BAR, 'barbell-bench-press', 80, 10).map((w) => w.reps)).toEqual([8, 5]);
+  });
+  it('the shared planner’s steps, with the inputs Start uses for a main lift (the plan view and the workout agree)', () => {
+    const lb: PlanKit = { ...BAR, unit: 'lb', loads: Array.from({ length: 120 }, (_, i) => 45 + i * 5), barMass: 45 };
+    const cases: [PlanKit, string, number, number][] = [
+      [BAR, 'barbell-bench-press', 100, 6],
+      [BAR, 'barbell-back-squat', 140, 3],
+      [BAR, 'barbell-overhead-press', 50, 8],
+      [lb, 'barbell-bench-press', 225, 5],
+      [DB, 'dumbbell-seated-shoulder-press', 26, 6],
+    ];
+    for (const [kit, key, W, R] of cases) {
+      const shared = planWarmups({ cls: 'heavy', reps: R, load: W, warmed: false, firstOfSession: true, floorStart: false, barMass: kit.kind === 'barbell' ? kit.barMass : null, loads: kit.loads });
+      expect(pbWarmUp(kit, key, W, R).map((w) => [w.load, w.reps])).toEqual(shared.map((w) => [w.load, w.reps]));
+    }
+    // R ≤ 3 (WU4): a single at 87.5 %; every step an achievable load below W (rule 4).
+    const squat = pbWarmUp(BAR, 'barbell-back-squat', 140, 3);
+    expect(squat.at(-1)).toMatchObject({ reps: 1 });
+    for (const w of squat) expect(BAR.loads.includes(w.load) && w.load < 140).toBe(true);
+  });
+  it('WU9 from the catalogue: deadlifts start from the floor (no bar step); a Romanian deadlift doesn’t', () => {
+    expect(pbWarmUp(BAR, 'barbell-deadlift', 160, 5)[0]?.bar).toBe(false);
+    expect(pbWarmUp(BAR, 'barbell-deadlift', 160, 5, { catalogueKey: 'barbell-deadlift', family: 'deadlift', mechanic: 'compound' })[0]?.bar).toBe(false);
+    expect(pbWarmUp(BAR, 'barbell-romanian-deadlift', 100, 6, { catalogueKey: 'barbell-romanian-deadlift', family: 'romanian_deadlift', mechanic: 'compound' })[0]).toEqual({ bar: true, load: 20, reps: 5 });
+    // Assisted / bodyweight conventions: no formula, no warm-up ladder.
+    expect(pbWarmUp(ASSIST, 'machine-assisted-pull-up', 30, 6)).toEqual([]);
   });
 });
 

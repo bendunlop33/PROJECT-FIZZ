@@ -185,9 +185,6 @@ export const PB_HEAVY: ReadonlySet<string> = new Set([
   'barbell-overhead-press',
 ]);
 
-/** Floor lifts: no empty-bar warm-up (WU9). */
-export const pbIsFloorLift = (key: string): boolean => /deadlift|row/.test(key);
-
 /** Curated default score per exercise (how effective, popular and simple to set up); 0.5 when not listed. */
 export const PB_PRIOR: Readonly<Record<string, number>> = {
   'dumbbell-incline-bench-press': 0.8,

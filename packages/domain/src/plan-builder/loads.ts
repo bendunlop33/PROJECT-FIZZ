@@ -1,6 +1,7 @@
 import type { GymEquipmentKind, LoadConvention, PlanFocus, WeightUnit } from '@fizz/schemas';
 import { convertMass } from '../units';
-import { PB_BACKOFF_BAND, pbIsFloorLift } from './tables';
+import { planWarmups, warmupProfileOf, type WarmupExerciseFacts } from '../warmup/plan';
+import { PB_BACKOFF_BAND } from './tables';
 
 /**
  * Loads for the plan builder (plan-builder.md §1a, §2, D4, D6; WU1–WU12). Pure. Every load the engine plans is one
@@ -126,19 +127,20 @@ export interface PbWarmupSet {
 }
 
 /**
- * Warm-ups (WU1–WU12, approved 22 Oct): a ladder from the first working set's load `W` and reps `R`, snapped down to
- * real loads (WU8); floor lifts skip the empty bar (WU9); dumbbells start at 40 %. Never counted as sets.
+ * Warm-ups (WU1–WU12, approved 22 Oct) for a plan day's main lift, from the shared planner (`planWarmups`) with the
+ * inputs Start uses for that lift (`planStartWarmups`): class `heavy` (the main lift), not warmed, first of the
+ * session, the floor start from the catalogue (WU9), the empty bar on a barbell, and this gym's achievable loads
+ * (WU8, rule 4). The plan stores the count; Start plans the same loads and reps, so the plan view and the workout
+ * agree. `facts`: the catalogue entry; null = only the key is known (a deadlift key reads as a floor lift). Never
+ * counted as sets.
  */
-export function pbWarmUp(kit: PlanKit, key: string, W: number, R: number): PbWarmupSet[] {
+export function pbWarmUp(kit: PlanKit, key: string, W: number, R: number, facts: WarmupExerciseFacts | null = null): PbWarmupSet[] {
   if (!kitHasFormula(kit)) return [];
-  const db = kit.convention === 'per_hand';
-  const floor = pbIsFloorLift(key);
-  const steps: [number, number][] = R <= 6 ? [[0.4, 5], [0.6, 3], [0.8, 2]] : [[0.5, 8], [0.8, R >= 10 ? 5 : 4]];
-  const min = kit.loads[0] ?? 0;
-  const out: PbWarmupSet[] = [];
-  if (!db && !floor && R <= 6 && kit.barMass !== null) out.push({ bar: true, load: kit.barMass, reps: 5 });
-  for (const [p, r] of steps) out.push({ bar: false, load: Math.max(min, kitDown(kit, W * p) ?? min), reps: r });
-  return out;
+  const known: WarmupExerciseFacts = facts ?? { catalogueKey: key, family: /(^|-)deadlift$/.test(key) && !key.includes('romanian') ? 'deadlift' : null, mechanic: 'compound', measurement: 'reps' };
+  const profile = warmupProfileOf(known, { main: true, itemKind: kit.kind, convention: kit.convention, fallback: { compound: true, barbell: kit.barMass !== null } });
+  const barMass = kit.kind === 'barbell' ? kit.barMass : null;
+  const steps = planWarmups({ cls: profile.cls, reps: R, load: W, warmed: false, firstOfSession: true, floorStart: profile.floorStart, barMass, loads: kit.loads });
+  return steps.map((st, k) => ({ bar: k === 0 && barMass !== null && Math.abs(st.load - barMass) < EPS, load: st.load, reps: st.reps }));
 }
 
 /** `bar × 5 · 40 × 5 · 60 × 3 · 80 × 2` (` each` on dumbbells). */
