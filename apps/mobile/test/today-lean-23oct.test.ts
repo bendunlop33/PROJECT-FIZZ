@@ -217,11 +217,11 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     // Undo puts the pairs back.
     const back = await s.builder.undo(snap.draftId, 'ss-off', 'undo-ss-off');
     expect(pairs(snapOf(back).workout).length).toBeGreaterThan(0);
-    // Today's card is the edited workout now (`Push · edited`), its Time on Your workout.
+    // Today's card is the edited workout now (`Push · edited`), with the draft's own Time (review todaylean S4).
     const after = await loaded(s);
     const card = s.todaySession.card(after, sel(after, key));
     expect(card?.edited?.draftId).toBe(snap.draftId);
-    expect(card?.time).toBeNull();
+    expect(card?.time?.minutes).toBe(snap.setup.minutes);
   });
 
   it('Abs on adds one ab exercise; off removes it; nothing else changes', async () => {

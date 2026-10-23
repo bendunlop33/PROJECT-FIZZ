@@ -22,6 +22,7 @@ import {
   deriveId,
   doableHere,
   estimateBuilderMinutes,
+  estimateBuilderSeconds,
   formatNumber,
   fromDraftPlan,
   isInHistory,
@@ -50,6 +51,7 @@ import {
   toIso,
   toDraftPlan,
   toMs,
+  timeFitChanges,
   todayTimeFit,
   withSlotRevs,
   type AnchorLoad,
@@ -57,6 +59,7 @@ import {
   type BuilderExerciseInfo,
   type BuilderFitStep,
   type BuilderGroupName,
+  type BuilderTimeFit,
   type BuilderWorkout,
   type FinishedRef,
   type HistorySession,
@@ -187,6 +190,10 @@ export interface TodayEditedDraft {
   version: number;
   name: string;
   workout: BuilderWorkout;
+  /** (Review todaylean S4) Its Time: the length, the length before Time changed it (null: unchanged) and Time's fit. */
+  minutes: number;
+  timeFrom: number | null;
+  fit: BuilderTimeFit | null;
 }
 
 /** (D3) A day's latest open builder draft today: the main lift it is for and when it was last written. */
@@ -300,7 +307,7 @@ export interface TodayCardView {
   summary: string;
   minutes: number;
   exerciseCount: number;
-  /** The Time row; null on an edited card (its Time is on Your workout). */
+  /** The Time row; on an edited card with a plan, the draft's own Time (steps go to Your workout's Time on it); null on an edited no-plan card. */
   time: TodayTimeView | null;
   clashLine: string | null;
   controls: {
@@ -679,7 +686,17 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const k = d.builderKey;
       if (k === undefined) continue;
       const dayKey = dayKeyOfDraft(k);
-      const shown = { draftId: d.id, version: d.version, name: d.name, workout: fromDraftPlan(currentDraftVersion(d).plan, builderSetupOf(d)?.restLevel ?? 'normal') };
+      const st = builderSetupOf(d);
+      const tf = st?.timeFit;
+      const shown: TodayEditedDraft = {
+        draftId: d.id,
+        version: d.version,
+        name: d.name,
+        workout: fromDraftPlan(currentDraftVersion(d).plan, st?.restLevel ?? 'normal'),
+        minutes: st?.minutes ?? currentDraftVersion(d).fitMinutes,
+        timeFrom: st?.timeFrom ?? tf?.fromMinutes ?? null,
+        fit: tf === undefined ? null : { base: fromDraftPlan(tf.base, tf.baseRestLevel ?? 'normal'), fromMinutes: tf.fromMinutes, dropped: tf.dropped, ...(tf.cut === undefined ? {} : { cut: tf.cut }), ...(tf.paired === undefined ? {} : { paired: tf.paired }) },
+      };
       if (own.state === 'nudge') nudged[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = { ...shown, controls: own.controls };
       else edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = shown;
     }
@@ -841,8 +858,9 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         summary: TODAY_V2_COPY.summary(count, minutes),
         minutes,
         exerciseCount: count,
-        // The coach's version Ben applied keeps Time (a step is Today's card again); an edited one has its Time on Your workout.
-        time: edited === null ? timeView(sel.controls.minutes, t.minutes, { note: null, lines: [] }, false) : null,
+        // The coach's version Ben applied keeps Time (a step is Today's card again). (D3; review todaylean S4) An edited
+        // card with a plan keeps Time too: the draft's own (Your workout's Time on it, refitted around Ben's edits, FT5).
+        time: edited === null ? timeView(sel.controls.minutes, t.minutes, { note: null, lines: [] }, false) : data.status !== 'no_plan' ? editedTime(data, edited) : null,
         clashLine: clash,
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
@@ -891,6 +909,18 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       startable: d.exerciseCount > 0,
       draft: d,
     };
+  }
+
+  /**
+   * (Review todaylean S4) An edited card's Time: the draft's length, what Time's fit changed against the workout before
+   * it (the same note and detail as Your workout's), Undo back to the length before Time changed it, and `⚠ Over` when
+   * Ben's own edits take it past Time.
+   */
+  function editedTime(data: TodaySessionData, e: TodayEditedDraft): TodayTimeView {
+    const { nameOf, ctx } = data.internal;
+    const changes = e.fit === null ? [] : timeFitChanges(e.fit, e.workout);
+    const slotName = (key: string) => nameOf(e.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === key)?.exerciseId ?? '');
+    return timeView(e.minutes, e.timeFrom ?? e.minutes, fitNoteOf(changes, nameOf, slotName), estimateBuilderSeconds(e.workout, ctx) > e.minutes * 60 + 29);
   }
 
   /** The coach's part of Why?: its nudge (`todayCoachWhy`), else the Mix it up reason; no nudge yet: the connection's status. */

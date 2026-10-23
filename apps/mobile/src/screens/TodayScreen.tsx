@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
+import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, stepTimeMinutes, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
@@ -509,6 +509,19 @@ export function TodayScreen() {
     navigation.navigate('BuilderSetup', day === null ? undefined : { dayId: day.splitDayId });
   }
 
+  /**
+   * (Review todaylean S4) Time on an edited card: Your workout's Time on that draft (the same fit, Ben's edits never
+   * cut; versioned, one op ID), then Today reads it back. Offline, no coach call.
+   */
+  async function editedTime(minutes: number) {
+    const e = view?.edited;
+    if (!e) return;
+    const r = await services.builder.setTime(e.draftId, minutes, { opId: newUuid(), expectedVersion: e.version });
+    if (r.status !== 'written' && r.status !== 'replayed') setError(r.message);
+    changed();
+    reload();
+  }
+
   /** `Back to plan day` on an edited card: the edited draft is discarded (versioned), with Undo. */
   async function backToPlan() {
     const e = view?.edited;
@@ -842,6 +855,10 @@ export function TodayScreen() {
             onTimeNote={() => {
               setTimeDetail(true);
             }}
+            onEditedTime={(dir) => {
+              const t = view.time;
+              if (t !== null) void editedTime(stepTimeMinutes(t.minutes, dir));
+            }}
           />
         ) : null}
       </View>
@@ -1002,7 +1019,8 @@ export function TodayScreen() {
         lines={view?.time?.lines ?? []}
         undoMinutes={view?.time?.undoMinutes ?? null}
         onUndo={(minutes) => {
-          act({ kind: 'minutes_to', minutes });
+          if (view?.edited != null) void editedTime(minutes);
+          else act({ kind: 'minutes_to', minutes });
         }}
         onClose={() => {
           setTimeDetail(false);

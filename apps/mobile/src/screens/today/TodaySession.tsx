@@ -483,6 +483,7 @@ export function SessionCard({
   onEdit,
   onBackToPlan,
   onTimeNote,
+  onEditedTime,
   offer = null,
 }: {
   /** (§6.1) The coach's pre-session line with code's offer (`Apply` / `Skip`, rule 3); null: nothing to say. */
@@ -498,6 +499,8 @@ export function SessionCard({
   onBackToPlan: () => void;
   /** The Time note's tap: everything the fit changed, with Undo (the screen's sheet). */
   onTimeNote: () => void;
+  /** (Review todaylean S4) An edited card's Time step: Your workout's Time on that draft (the screen writes it). */
+  onEditedTime: (dir: -1 | 1) => void;
 }) {
   const theme = useTheme();
   const main = view.controls.mainLifts.find((m) => m.selected)?.label ?? null;
@@ -510,7 +513,8 @@ export function SessionCard({
         note={time.note}
         noteLabel={time.noteLabel}
         onStep={(d) => {
-          dispatch({ kind: 'minutes', delta: d });
+          if (view.edited !== null) onEditedTime(d);
+          else dispatch({ kind: 'minutes', delta: d });
         }}
         onNote={onTimeNote}
       />
@@ -597,9 +601,10 @@ export function SessionCard({
 
       {view.lean ? (
         // (D3, Ben 22–23 Oct) With a plan: the rows, Time, Start and Edit. Main lift, accessories, abs and supersets are
-        // in Edit (Your workout); an edited card keeps its Time there too.
+        // in Edit (Your workout). An edited card keeps Time (the draft's own; review todaylean S4) and `Back to plan`.
         <>
-          {view.edited === null ? timeRow : backToPlan}
+          {timeRow}
+          {view.edited === null ? null : backToPlan}
           {details}
         </>
       ) : (

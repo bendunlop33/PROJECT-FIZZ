@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -344,5 +345,37 @@ describe('todayOptionsView (pure): the rows read the snapshot’s state, never a
     expect(v).toEqual({ mainLifts: list.mainLifts, accessories: snap.today.accessories, abs: true, supersets: true });
     expect(todayOptionsView(stale, { ...snap, today: null })).toBeNull();
     expect(todayOptionsView(null, snap)).toBeNull();
+  });
+});
+
+describe('S4: an edited card with a plan keeps Time (D3: Time is one of the lean card’s parts)', () => {
+  it('the draft’s Time, note and Undo on Today’s card; a step there is Your workout’s Time on that draft (Ben’s edits never cut)', async () => {
+    const { s } = await benWithPlan();
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const plan = data.initial[key]?.minutes ?? 60;
+    let snap = await edit(s, data, sel(data, key, { abs: false, supersets: false }));
+    const mine = slotsOf(snap.workout.blocks).find((x) => !x.main);
+    if (mine === undefined) throw new Error('no accessory');
+    snap = snapOf(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: mine.key }, { opId: 'mine', basis: { version: snap.version } }));
+    let card = s.todaySession.card(await loaded(s), sel(data, key));
+    expect(card?.edited?.draftId).toBe(snap.draftId);
+    expect(card?.time).toMatchObject({ minutes: plan, note: null, undoMinutes: null });
+    // A step down on Today's card (the screen calls Your workout's Time on the draft).
+    snap = snapOf(await s.builder.setTime(snap.draftId, 30, { opId: 'today-30', expectedVersion: snap.version }));
+    const after = await loaded(s);
+    card = s.todaySession.card(after, sel(after, key));
+    expect(card?.edited?.draftId).toBe(snap.draftId);
+    expect(card?.time?.minutes).toBe(30);
+    expect(card?.time?.note).toBe(workoutView(snap).time.note);
+    expect(card?.time?.lines).toEqual(workoutView(snap).time.lines);
+    expect(card?.time?.undoMinutes).toBe(plan);
+    expect(card?.rows.map((r) => r.exerciseId)).toEqual(ids(snap));
+    // His edited accessory is never cut by Time (FT5).
+    expect(workingCount(slotsOf(snap.workout.blocks).find((x) => x.key === mine.key) ?? { rows: [] })).toBe(workingCount(mine) + 1);
+    // The screen: an edited card's steps and the detail's Undo go to Your workout's Time on the draft.
+    const screen = readFileSync(join(__dirname, '..', 'src', 'screens', 'TodayScreen.tsx'), 'utf8');
+    expect(screen).toContain('services.builder.setTime(e.draftId, minutes, { opId: newUuid(), expectedVersion: e.version })');
+    expect(screen).toContain('if (view?.edited != null) void editedTime(minutes);');
   });
 });
