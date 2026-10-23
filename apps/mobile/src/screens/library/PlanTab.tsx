@@ -9,6 +9,7 @@ import type { PlanApplyMode } from '@fizz/schemas';
 import { PLAN_COPY as CARD_COPY } from '../../coach/plan-view';
 import { newUuid } from '../../device/runtime';
 import { PLAN_TAB_COPY, planSetupRoute, type PlanSetupRoute } from '../../library/plan-tab-view';
+import { openPlanSetup } from '../../navigation/actions';
 import { PLAN_COPY, type PreviousPlanRow } from '../../services/plan-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
@@ -47,7 +48,8 @@ export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined })
       s.plans.previous().catch(() => null),
       s.coach.availability().catch(() => null),
     ]);
-    return { ...planRead, previous, setup: planSetupRoute(coach) };
+    // (Plan builder, 23 Oct) `Set up a plan` opens the offline builder; the coach only if it were missing.
+    return { ...planRead, previous, setup: planSetupRoute(coach, 'planBuilder' in s) };
   });
 
   useEffect(() => {
@@ -71,9 +73,10 @@ export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined })
     };
   }, [toast]);
 
-  /** `Set up a plan ›`: the one hook the plan builder replaces (`planSetupRoute`). */
-  function openPlanSetup(route: PlanSetupRoute) {
-    if (route.kind === 'coach') navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: route.draft });
+  /** `Set up a plan ›`: the one hook (`planSetupRoute`): the plan builder; the coach only as the fallback. */
+  function setUpPlan(route: PlanSetupRoute) {
+    if (route.kind === 'builder') navigation.dispatch(openPlanSetup());
+    else if (route.kind === 'coach') navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: route.draft });
     else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'CoachConnection', initial: false } });
   }
 
@@ -130,7 +133,7 @@ export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined })
           <SetUpRow
             route={setup}
             onPress={() => {
-              openPlanSetup(setup);
+              setUpPlan(setup);
             }}
           />
         ) : null}

@@ -8,7 +8,7 @@ import { NBSP, NO_FILTERS, withBroadGroup } from '@fizz/domain';
 
 import { parsePrefs } from '../src/device/prefs';
 import { PLAN_TAB_COPY, planSetupRoute } from '../src/library/plan-tab-view';
-import { openYourPlan } from '../src/navigation/actions';
+import { openPlanSetup, openYourPlan } from '../src/navigation/actions';
 import type { AppServices } from '../src/services/app-services';
 import { LIBRARY_BROWSE_COPY, muscleChips } from '../src/workout/library-browse-view';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
@@ -33,25 +33,35 @@ describe('tabs, links and the set-up hook', () => {
     expect(LIBRARY_BROWSE_COPY.segments.map((s) => s.label)).toEqual(['Plan', 'Workouts', 'Exercises']);
     expect(parsePrefs('{"librarySegment":"plan"}').librarySegment).toBe('plan');
     expect(parsePrefs('{"librarySegment":"workouts"}').librarySegment).toBe('workouts');
-    expect(parsePrefs('{"librarySegment":"nope"}').librarySegment).toBe('exercises');
+    expect(parsePrefs('{"librarySegment":"exercises"}').librarySegment).toBe('exercises');
+    // (Ben, 23 Oct) Library opens on Plan until he picks another segment.
+    expect(parsePrefs('{"librarySegment":"nope"}').librarySegment).toBe('plan');
+    expect(parsePrefs(null).librarySegment).toBe('plan');
   });
 
-  it('Today’s `Set up a plan ›` / `Day 2 of 4 ›` and Profile’s `Set by your plan` open Library › Plan', () => {
+  it('Profile’s `Set by your plan` opens Library › Plan; Today’s `Set up a plan ›` opens the plan builder (23 Oct)', () => {
     expect(openYourPlan('t1').payload.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'plan', plan: 't1' }, pop: true } });
+    expect(openPlanSetup()).toEqual({ type: 'NAVIGATE', payload: { name: 'PlanSetup' } });
     const today = code(read('screens/TodayScreen.tsx'));
-    expect(today.match(/navigation\.dispatch\(openYourPlan\(newUuid\(\)\)\)/g)).toHaveLength(2);
+    expect(today.match(/navigation\.dispatch\(openPlanSetup\(\)\)/g)).toHaveLength(1);
+    expect(today).not.toMatch(/openYourPlan|navigate\('Coach'[^)]*Build me a plan/);
+    expect(code(read('screens/profile/SplitScreen.tsx'))).toContain('navigation.dispatch(openYourPlan(newUuid()))');
   });
 
-  it('`Set up a plan ›`: the coach with `Build me a plan` when it can answer, else the short state and Connect (never a dead end)', () => {
-    expect(planSetupRoute({ status: 'ok', model: 'm' })).toEqual({ kind: 'coach', draft: 'Build me a plan' });
-    // Offline: the coach says so itself and Send stays on (Ben can try again).
-    expect(planSetupRoute({ status: 'offline', model: 'm' })).toEqual({ kind: 'coach', draft: 'Build me a plan' });
-    expect(planSetupRoute({ status: 'not_connected', model: null })).toEqual({ kind: 'connect', state: 'Coach not connected' });
-    expect(planSetupRoute(null)).toEqual({ kind: 'connect', state: 'Coach not connected' });
-    expect(planSetupRoute({ status: 'limit', model: 'm' })).toEqual({ kind: 'connect', state: 'Coach paused' });
-    // One hook: the tab routes only through it; the coach gets the draft, not a sent message.
+  it('`Set up a plan ›`: the plan builder; the coach (or Connect) only as the fallback when the builder is missing', () => {
+    expect(planSetupRoute({ status: 'ok', model: 'm' })).toEqual({ kind: 'builder' });
+    expect(planSetupRoute(null)).toEqual({ kind: 'builder' });
+    expect(planSetupRoute({ status: 'not_connected', model: null }, true)).toEqual({ kind: 'builder' });
+    // Fallback (never a dead end): the coach with `Build me a plan` when it can answer, else the short state and Connect.
+    expect(planSetupRoute({ status: 'ok', model: 'm' }, false)).toEqual({ kind: 'coach', draft: 'Build me a plan' });
+    expect(planSetupRoute({ status: 'offline', model: 'm' }, false)).toEqual({ kind: 'coach', draft: 'Build me a plan' });
+    expect(planSetupRoute({ status: 'not_connected', model: null }, false)).toEqual({ kind: 'connect', state: 'Coach not connected' });
+    expect(planSetupRoute(null, false)).toEqual({ kind: 'connect', state: 'Coach not connected' });
+    expect(planSetupRoute({ status: 'limit', model: 'm' }, false)).toEqual({ kind: 'connect', state: 'Coach paused' });
+    // One hook: the tab routes only through it; the builder through `openPlanSetup`, the coach gets the draft, not a sent message.
     const tab = code(read('screens/library/PlanTab.tsx'));
-    expect(tab.match(/function openPlanSetup\(/g)).toHaveLength(1);
+    expect(tab.match(/function setUpPlan\(/g)).toHaveLength(1);
+    expect(tab).toContain("if (route.kind === 'builder') navigation.dispatch(openPlanSetup());");
     expect(tab).toContain("navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: route.draft })");
     expect(tab).toContain("screen: 'CoachConnection'");
     expect(tab).not.toMatch(/coach\.send\(/);

@@ -22,16 +22,17 @@ export const PLAN_TAB_COPY = {
 } as const;
 
 /**
- * Where `Set up a plan ›` goes. THE hook the plan builder (plan-builder.md
- * §3) replaces: it will always open the builder. Until then (PM interim,
- * rule 1): the coach with `Build me a plan` pre-typed when it can answer
- * (connected; Offline is said in the coach itself), else the short state
- * on the row (`Coach not connected`) and the row opens Coach connection,
- * so it is never a dead end.
+ * Where `Set up a plan ›` goes (plan-builder §3, 23 Oct): the offline plan
+ * builder (`PlanSetup`), always, since it needs no network or coach. The
+ * coach hand-off stays only as the fallback should the builder ever be
+ * unavailable (rule 1: never a dead end): the coach with `Build me a plan`
+ * pre-typed when it can answer (Offline is said in the coach itself), else
+ * the short state on the row (`Coach not connected`) and Coach connection.
  */
-export type PlanSetupRoute = { kind: 'coach'; draft: string } | { kind: 'connect'; state: string };
+export type PlanSetupRoute = { kind: 'builder' } | { kind: 'coach'; draft: string } | { kind: 'connect'; state: string };
 
-export function planSetupRoute(coach: CoachAvailability | null): PlanSetupRoute {
+export function planSetupRoute(coach: CoachAvailability | null, builderAvailable = true): PlanSetupRoute {
+  if (builderAvailable) return { kind: 'builder' };
   if (coach === null) return { kind: 'connect', state: 'Coach not connected' };
   const v = statusView(coach);
   return v.canSend ? { kind: 'coach', draft: PLAN_TAB_COPY.coachDraft } : { kind: 'connect', state: v.placeholder };
