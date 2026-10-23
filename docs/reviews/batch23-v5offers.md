@@ -157,3 +157,34 @@ The tool description says "Ben applies or skips each tweak". A one-set-fewer twe
 
   All of these need the D2 wording.
 - **SP6. Repeated-edit rule vs D1.** With D1's Summary "Keep for next time?" (not built on this branch), the weekly "same edit repeated" rule (§6.1) overlaps it. If Ben taps Skip twice on the Summary, the weekly review would still raise, or today apply, the same change. Decide whether to retire the weekly rule or have it respect Ben's Summary answers.
+
+## Fixes (builder, 23 Oct)
+
+Commits `a09fa2c`, `02f1e2c`, `3451920`, `2d0623c` on `claude/v5offers-23oct`. I confirmed each item against the code first. Items 1 and 5 need Ben, so they are not changed.
+
+| Item | Status | What changed |
+|---|---|---|
+| B1 (weekly part) | Fixed | `weeklyOfferReasons` adds `from_edits`: code's own (repeated-edit) change is always an offer and never applied by the review. Real-SQLite test: Ben's own set removed twice → one offer. No open and no relaunch applies it, and Apply writes it as Ben's, with Undo. |
+| B1 (Time fits) | Fixed | New `SessionPlanDay.notEdited` lists exercises whose working sets Ben didn't set himself, recorded at Start by `notEditedOfBuilderDraft`. It covers two sources: (1) Your workout's live Time fit (sets cut or exercises left out); (2) Today's card, meaning any count Ben left as the newest Today-written version on the draft's line had it. That includes Today's Time, the coach's applied pre-start offer, and the main lift's top set and back-offs. `reviewSessionOf` reads those as `plannedWorking: null`, so `repeatedEdits` never counts them. Real-SQLite tests: two Time-fitted days from Your workout, and two short days from Today's card, give no plan change and no offer. |
+| B2 / 2 | Fixed | One mapping decides each row's buttons: domain `changeRowTaps` gives open → Apply/Skip, applied → Undo, undone → Redo. One function runs them (`runChangeTap`), and Progress and Past weeks both use it. `ChangeRow` and `AskRow` take `onTap` only. Test: Apply → Undo → Redo → Undo through the same mapping and function the screens use. Redo writes once, as Ben's. |
+| 3 / S1 | Fixed | The collapsed line now counts open, answerable rows: `1 change for next week · 1 to review`, or `1 to review`. It never reads `No changes` while an offer is open. |
+| 4 | Fixed | New `ReviewProposal.offer` mark. It is stamped when a review stores a proposal, and on carry-over it is stamped under the previous review's facts. A fresh coach tweak that replaces an offer keeps the mark. Test: the reviewer's repro (stalled → re-run not stalled) stays open, and the plan doesn't move. |
+| N1 | Fixed | Code's open offer carries over with its ID kept, as long as the week still holds the same edit. A re-run doesn't make it again as new, and `Got it` is kept. Covered in the real-SQLite test. |
+| 6 / S2 | Fixed (part) | `NextTargets.stalled` and `TargetProvenance.rule.stalled` are set when the miss streak reaches `failuresBeforeReduce`, including at the lightest load (`hold_after_miss`). Summary bases read them. Still open: an exercise with no built-in plan (`builtIn` null) has no rule floor to measure a miss against. Also, weekly's "no new best in 3 sessions" and the Summary's "missed twice at the same load" remain two definitions. Unifying them is a spec call. |
+| 7 | Fixed | Review detail draws offers with `AskRow` (Apply/Skip, with the status in the line). On Progress, `AskRow` also hides Apply/Skip on a pain-held open row. |
+| 1 | Not changed (Ben) | Confirmed in code: on a stalled lift the built-in rule's `reduce_load` still plans next time with no Apply, both offline and after `Not now`. It is also used when the coach's target equals it (`validateNextSessionTargets` drops a same-as-rule row) or when the coach doesn't mention the lift. Holding by default and offering the reset with Apply would change ADR 0006's fallback. That is the review's SP2, and Ben needs to decide it. The rule's −12.5% at 60 kg comes from rounding a 10% reduction down to an achievable load, which is outside playbook rule 8's 5–10% band. That is also ADR 0006 / playbook territory. |
+| 5 | Not changed (Ben) | Confirmed: an unasked Summary +1 is still dropped and only noted behind `Why?` (`droppedExtraSet`). D2 vs CA8 is SP1. |
+
+Not in this list and not touched: S3 (`A reset after a stall.` not shown), S4 (the weekly tool description), N2, N3, SP3–SP6. SP6 still stands: the weekly repeated-edit rule now only offers, but it overlaps D1's unbuilt Summary `Keep for next time?`.
+
+**Limits:**
+- Workouts started before this change have no `notEdited`, so an old short day can still count toward one offer. It is never applied.
+- Today's card counts are compared per exercise by its first slot.
+
+**Checks after the fixes:**
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` | exit 0 |
+| `npm run test` | 474 files, 8824 passed, 2 todo, exit 0 |
