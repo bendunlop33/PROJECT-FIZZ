@@ -27,6 +27,8 @@ import {
   pbDeloadWeeks,
   pbExpect,
   pbLiftStart,
+  pbMainFocus,
+  BACKOFF_BANDS,
   pbMainWeekOneLine,
   pbNeedsLiftCheck,
   pbNewPlanDraft,
@@ -491,5 +493,18 @@ describe('the built plan as the app’s plan model', () => {
     const draft = pbNewPlanDraft({ plan: p, answers: a, kitOf: KIT_OF, ownerId: '00000000-0000-4000-8000-000000000001', gymId: null, equipmentVersion: 'v1', opId: '00000000-0000-4000-8000-0000000000ac', at });
     const sp = currentPlanVersion(draft).days.flatMap((d) => d.plan.slots).find((s) => s.catalogueId === 'dumbbell-seated-shoulder-press');
     expect(sp?.setTemplates.find((t) => t.setType === 'top')?.load?.estimate).toBe(true);
+  });
+});
+
+describe('the plan’s focus sets Today’s back-off band (S7)', () => {
+  it('an applied builder plan’s focus, else Profile’s goal', () => {
+    const a = answers({ focus: 'fitness' });
+    const draft = pbNewPlanDraft({ plan: build({}, a), answers: a, kitOf: KIT_OF, ownerId: '00000000-0000-4000-8000-000000000001', gymId: null, equipmentVersion: 'v1', opId: '00000000-0000-4000-8000-0000000000ad', at });
+    expect(pbMainFocus(draft, 'strength')).toBe('strength');
+    const applied = { ...draft, status: 'applied' as const };
+    expect(pbMainFocus(applied, 'strength')).toBe('fitness');
+    expect(BACKOFF_BANDS.fitness).toEqual({ min: 0.02, max: 0.15 });
+    expect(pbMainFocus(null, 'muscle')).toBe('muscle');
+    expect(pbMainFocus(null, null)).toBe('balanced');
   });
 });

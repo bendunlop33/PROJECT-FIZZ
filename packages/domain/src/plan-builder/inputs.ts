@@ -1,4 +1,6 @@
-import type { EquipmentInstance, LoadConvention } from '@fizz/schemas';
+import type { EquipmentInstance, LoadConvention, PlanDraft, TrainingGoal } from '@fizz/schemas';
+import { mainFocusOf } from '../builder/backoff';
+import type { MainFocus } from '../builder/types';
 import { getAchievableLoads, isBarLoaded, isPresenceOnly } from '../equipment';
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
@@ -40,4 +42,13 @@ export function pbHistoryOf(sessions: readonly HistorySession[], convention: Loa
     }
   }
   return { last, sessions: count, skips: 0 };
+}
+
+/**
+ * (D4, S7) The back-off band Today and the builder use: the applied builder plan's focus (the plan's own band, so the
+ * plan view, Today and the workout agree), else Profile's goal.
+ */
+export function pbMainFocus(plan: Pick<PlanDraft, 'status' | 'versions' | 'currentVersion'> | null, goal: TrainingGoal | null | undefined): MainFocus {
+  const focus = plan === null || plan.status !== 'applied' ? undefined : plan.versions.find((v) => v.n === plan.currentVersion)?.builder?.answers.focus;
+  return focus ?? mainFocusOf(goal);
 }

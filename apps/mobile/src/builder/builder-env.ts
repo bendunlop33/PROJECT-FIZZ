@@ -17,7 +17,7 @@ import {
   ruleAnchorOf,
   ruleCategory,
   lastSessionE1rm,
-  mainFocusOf,
+  pbMainFocus,
   mayHurtConfirm,
   stableStringify,
   deriveId,
@@ -123,7 +123,9 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     for (const g of await repos.gyms.listByOwner(p.id).catch(() => [])) for (const e of await repos.equipment.listByGym(g.id).catch(() => [] as EquipmentInstance[])) known.set(e.id, e);
     const flags: readonly PainFlag[] = await repos.painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
     // (D4) Back-offs sit in the band for Ben's goal (Strength / Balanced / Muscle); not set or unreadable: Balanced.
-    const mainFocus = mainFocusOf((await repos.trainingProfiles.get(p.id).catch(() => null))?.goal);
+    // (S7) A builder plan in use sets the band (its focus), so its days' back-offs match Your plan.
+    const appliedPlan = await repos.planDrafts.applied(p.id).catch(() => null);
+    const mainFocus = pbMainFocus(appliedPlan, (await repos.trainingProfiles.get(p.id).catch(() => null))?.goal);
     const snapGym = { id: req.gymId ?? 'no-gym', name: gym?.name ?? 'this gym', equipment };
     const substitute: SubstituteContext = { ownerId: p.id, unit: p.preferredUnit, gym: snapGym, knownEquipment: known, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, at };
 
