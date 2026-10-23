@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { builderApplyOpId, type BuilderCoachReach, type BuilderProposal } from '@fizz/coach';
-import { dropBuilderSlot, slotsOf, type BuilderEditOp } from '@fizz/domain';
+import { dropBuilderSlot, sessionCheckInForSkip, slotsOf, type BuilderEditOp } from '@fizz/domain';
 import type { BuilderGroup, CheckInScore, Routine, SessionCheckIn } from '@fizz/schemas';
 
 import type { BuilderSnapshot, BuilderToast, BuilderWriteResult, TodayOptionChange, TodayOptions } from '../../builder/builder-service';
@@ -400,7 +400,8 @@ export function BuilderWorkoutScreen() {
       case 'ask':
         return 'ask';
       case 'skip':
-        return gate.reason === 'off' || gate.reason === 'not_a_check_in_day' ? { kind: 'not_asked', reason: gate.reason } : null;
+        // (Ben, 23 Oct) Not asked by default: nothing is recorded about how he feels; the workout offers the check-in.
+        return sessionCheckInForSkip(gate.reason);
     }
   }
 

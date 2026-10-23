@@ -391,6 +391,12 @@ export function WorkoutScreen() {
     if (handed && handed.kind !== 'exclusion' && handed.kind !== 'undo_op' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id]);
 
+  // (Ben, 23 Oct) Back from the workout's own `How are you feeling?`: its toast, once.
+  const checkedIn = route.params?.checkedIn;
+  useEffect(() => {
+    if (checkedIn && firstTime(`toast:checked-in:${checkedIn.key}`)) showHanded(checkedIn.toast);
+  }, [checkedIn?.key]);
+
   // The correction sheet hands its exclusion toast back on return (§2.13); each save shows once.
   const handedExclusion = route.params?.toast?.kind === 'exclusion' ? route.params.toast : null;
   useEffect(() => {
@@ -693,6 +699,15 @@ export function WorkoutScreen() {
       if (d && id !== null) afterLog(d.aggregate, id);
     });
   }, [corrected?.key]);
+  // (Ben, 23 Oct) The check-in's lighter-session offer: read again when the check-in is linked and after
+  // each log or undo (it goes once a working set is logged). A pure check, no AI call.
+  const checkInKey =
+    data === 'loading' || data === null ? null : `${data.aggregate.session.id}:${data.aggregate.session.checkIn?.kind === 'answered' ? data.aggregate.session.checkIn.checkInId : '-'}:${String(data.aggregate.audit.length)}`;
+  const refreshCheckInOffer = coach.refreshCheckInOffer;
+  useEffect(() => {
+    if (checkInKey === null || data === 'loading' || data === null) return;
+    refreshCheckInOffer(data.aggregate);
+  }, [checkInKey]);
   // An unanswered offer goes when the rest ends (§3.2).
   const restRunning = data !== 'loading' && data !== null && data.aggregate.restTimer?.status === 'running';
   const clearOffer = coach.clearOffer;
@@ -1950,6 +1965,19 @@ export function WorkoutScreen() {
   ) : null;
 
   /** The coach slot's gym card (§2.1): under the rest timer, under the target lines, or under the all-done block. */
+  // (Ben, 23 Oct) Start no longer asks: the check-in is one quiet tap here until the first working set is logged.
+  const checkInPrompt = services.checkIns.offeredIn(loaded.aggregate) ? (
+    <View style={{ flexDirection: 'row' }}>
+      <TextButton
+        label="How are you feeling?"
+        tone="secondary"
+        accessibilityHint="Optional check-in before your first working set."
+        onPress={() => {
+          navigation.navigate('CheckIn', { mode: 'workout', sessionId: session.id });
+        }}
+      />
+    </View>
+  ) : null;
   const switchSlot =
     checkingGym !== null ? (
       <StatusLine icon="ellipsis" tone="progress" text={`Checking ${checkingGym}’s equipment…`} />
@@ -2100,8 +2128,9 @@ export function WorkoutScreen() {
       </View>
 
       <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} />
-      {/* In Ready the slot sits under the header; offers only ever show during rest (§2.3). */}
+      {/* In Ready the slot sits under the header; set offers only ever show during rest (§2.3); the check-in's offer shows here (CI5). */}
       {!resting && coach.slot !== null && coach.slot.kind !== 'offer' ? <CoachSlot>{<CoachSlotContent coach={coach} />}</CoachSlot> : null}
+      {!resting && coach.slot === null ? checkInPrompt : null}
 
       {rest?.kind === 'ended' && !resting ? (
         <StatusLine
@@ -2788,6 +2817,7 @@ export function WorkoutScreen() {
                 ))}
             </View>
           ) : null}
+          {!resting && checkInPrompt !== null ? <View style={{ paddingHorizontal: theme.space['4'] }}>{checkInPrompt}</View> : null}
           {shownRound !== undefined ? (
             <>
               <RoundStrip

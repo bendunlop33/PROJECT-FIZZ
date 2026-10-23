@@ -98,6 +98,7 @@ export * from './coach/trigger';
 export * from './coach/target-rpe';
 export * from './coach/adjust';
 export * from './coach/session-adjust';
+export * from './coach/lighter-session';
 export * from './coach/signals';
 export * from './coach/pain-words';
 export * from './coach/short-forms';

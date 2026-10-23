@@ -131,7 +131,8 @@ describe('check-in before the session exists (check-in.md)', () => {
   it('a score links to exactly one workout in the start write; a retried record is a duplicate', async () => {
     const { services: s } = await launch();
     const gymId = await setUp(s);
-    expect(await s.checkIns.gate()).toEqual({ kind: 'ask' });
+    // (Ben, 23 Oct) Start doesn't ask by default.
+    expect(await s.checkIns.gate()).toEqual({ kind: 'skip', reason: 'when_i_choose' });
     const rec = await s.checkIns.record({ checkInId: ids(), opId: 'ci-op', score: 4 });
     if (!rec.ok) throw new Error(rec.message);
     expect(await s.checkIns.record({ checkInId: rec.checkIn.id, opId: 'ci-op', score: 4 })).toMatchObject({ ok: true, duplicate: true });
@@ -145,7 +146,7 @@ describe('check-in before the session exists (check-in.md)', () => {
     expect(await s.checkIns.unlinked()).toBeNull();
   });
 
-  it('swiped away after a score: reused by the next Start within 2 h (Today shows the line), asked again after', async () => {
+  it('swiped away after a score: reused by the next Start within 2 h (Today shows the line), not asked after (only when Ben chooses)', async () => {
     const { services: s } = await launch();
     await setUp(s);
     const rec = await s.checkIns.record({ checkInId: ids(), opId: 'ci-1', score: 3 });
@@ -158,7 +159,7 @@ describe('check-in before the session exists (check-in.md)', () => {
     expect(await s.checkIns.gate()).toEqual({ kind: 'reuse', checkInId: rec.checkIn.id });
     expect((await s.today.view())?.unlinkedCheckIn?.id).toBe(rec.checkIn.id);
     clockMs += 2 * 3600_000;
-    expect(await s.checkIns.gate()).toEqual({ kind: 'ask' });
+    expect(await s.checkIns.gate()).toEqual({ kind: 'skip', reason: 'when_i_choose' });
   });
 
   it('pain with a movement flags it (progression stops); without one, the summary asks to choose', async () => {

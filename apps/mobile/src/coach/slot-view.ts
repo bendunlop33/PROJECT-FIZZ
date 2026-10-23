@@ -10,7 +10,7 @@ import { renderActionResult, type CoachTurnResult } from '@fizz/coach';
 import { coachUndoRefusal, type CoachTrigger } from '@fizz/domain';
 import type { ActionRecord, SessionAggregate } from '@fizz/schemas';
 
-import type { CoachAvailability, WorkoutOffer } from './coach-service';
+import type { CheckInLighterOffer, CoachAvailability, WorkoutOffer } from './coach-service';
 import { outcomeFor } from './sheet-view';
 
 export type SlotView =
@@ -19,7 +19,12 @@ export type SlotView =
   | { kind: 'banner'; actionId: string; title: string; detail: string | null; notes: string[]; canUndo: boolean; tag: 'Rule' | null }
   | { kind: 'outcome'; text: string; retry: boolean }
   /** `change`: the rule's concrete change (`Next sets: 57.5 kg × 3–6`), tagged `Rule`; null for the coach's offer. */
-  | { kind: 'offer'; prompt: string; fact: string; triggerKind: CoachTrigger['kind']; change: string | null; tag: 'Rule' | null };
+  | { kind: 'offer'; prompt: string; fact: string; triggerKind: CoachTrigger['kind']; change: string | null; tag: 'Rule' | null }
+  /**
+   * (Ben, 23 Oct) The lighter-session offer after a low check-in, in Ready before the first working set.
+   * `by: 'rule'`: the built-in change (`change`, tagged `Rule`), `Skip` / `Apply`. `coach`: `No thanks` / `Adjust`.
+   */
+  | { kind: 'check_in_offer'; prompt: string; fact: string; change: string | null; tag: 'Rule' | null; by: 'coach' | 'rule' };
 
 export interface SlotInput {
   pending: boolean;
@@ -28,6 +33,8 @@ export interface SlotInput {
   /** The latest turn's outcome when it changed nothing (refused, stale, failed). */
   outcome: { text: string; retry: boolean } | null;
   offer: WorkoutOffer | null;
+  /** (Ben, 23 Oct) The check-in's lighter-session offer; shown after a set offer (which replaces it while it lasts). */
+  checkInOffer?: CheckInLighterOffer | null;
   /** The workout as loaded, to hide Undo on a change that can't be undone now (gym changed since; review r2 B1). */
   workout?: Pick<SessionAggregate, 'session' | 'sets'> | null;
 }
@@ -63,6 +70,8 @@ export function slotView(input: SlotInput): SlotView | null {
     const o = input.offer;
     return { kind: 'offer', prompt: o.prompt, fact: o.fact, triggerKind: o.kind, change: o.by === 'rule' ? o.change : null, tag: o.by === 'rule' ? 'Rule' : null };
   }
+  const c = input.checkInOffer ?? null;
+  if (c !== null) return { kind: 'check_in_offer', prompt: c.prompt, fact: c.fact, change: c.by === 'rule' ? c.change : null, tag: c.by === 'rule' ? 'Rule' : null, by: c.by };
   return null;
 }
 

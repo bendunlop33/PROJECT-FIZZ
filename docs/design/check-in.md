@@ -6,6 +6,12 @@ Related specs: [today.md](today.md) (Start, Resume), [flow-first-milestone.md](f
 
 > **Revision 2026-10-10 (workout overview; [workout-overview.md](workout-overview.md)).** For Up next and routine starts, the check-in now sits on the Workout overview as an optional inline row of five tiles above its `Start workout`, shown only when `shouldAskCheckIn` returns `ask` or `reuse`. A tap saves the score at once (CI4) but **never starts the workout**. Starting without a score records `skipped`. A score at or below the "What's up?" setting opens Step 2 (and 2a/2b) as a sheet over the overview. Its exits return to the overview, apart from `Skip workout`, which closes to Today as before. CI1 and CI3 are unchanged: the session still doesn't exist until Start. **CI2 is amended for this path only** (Ben to confirm). The `CheckInSheet` Step 1 stays for `Empty workout`, Repeat, the builder's `Start now`, voice and the Resume case. At AX1+ the overview's tiles collapse to a `Check-in ›` button that opens Step 1, and choosing a score returns to the overview. Changed: §2.1 (first two entry rows), §3.1 (note), checks 1–3 and 5 (path note).
 
+> **Revision 2026-10-23: optional, never asked on Start (Ben, 23 Oct).** Start no longer asks. By default Ben is assumed fine: every Start (Today's card, `Empty workout`, Repeat, the builder's `Start`, routine and Up next starts) goes straight into the workout with no sheet, and **nothing is recorded** about how he feels (rule 6: "assumed fine" is no check-in record, never a fake 4 of 5). The session stores `checkIn: {kind: 'not_asked', reason: 'when_i_choose'}`. The check-in stays available, optional, in the workout: a quiet `How are you feeling?` text button in the first set card's coach slot area (Focus) or above the round (table view), shown until the first **working** set is logged (warm-ups don't close it; a working set logged and then undone still does), then it goes. It opens the same sheet (score, What's up?, pain, ill) over the workout; the score is saved at the tap and linked to the workout (`set_session_check_in`, versioned, idempotent per opId, refused after the first working set or when the workout already has a check-in). Every exit returns to the workout; in the ill step `Skip workout` is shown only while nothing is logged and discards the empty workout. The Summary's `CheckInLine` edit is unchanged. Downstream is unchanged when he uses it: pain flags, `pain_unspecified`, coach context, the lighter-session offer.
+>
+> **Built-in lighter session (Ben, 23 Oct).** A low score (≤ `offerAtOrBelow`, default 2) or `Tired` / `Poor sleep` used to do nothing without a connected coach. Now, when the coach can't answer (not connected **or** offline), the coach slot offers the built-in lighter session instead: `Want a lighter session today?` · the fact (`You said 2 of 5 · Tired`) · the concrete change tagged `Rule` (`2 fewer sets · loads 9–13% lighter`) · `Skip` / `Apply`. `Apply` writes, for **today's pending working sets only**: one fewer working set per exercise (never below one; the last pending one goes) and loads about 10% lighter, snapped to the nearest load the equipment can make that is actually lighter (never more than 20% lighter, otherwise the load stays; assisted machines one step more assistance; bodyweight unchanged; per-hand dumbbells and kg/lb racks in their own unit and convention). It goes through `validateTodayAdjustment` (`lighter_session`: no increases, pain blocks) and the same versioned, idempotent write as the rule's other changes, re-checked against what Ben was shown (stale → nothing changes), with the applied banner and `Undo` (which brings back removed sets and the loads). Logged sets are never touched. The offer is answered once per check-in (Skip, Apply, or the coach's Adjust) and stored, so it never returns, including after a relaunch. With the coach reachable the coach's offer stays (`No thanks` / `Adjust`, CI6). CI7's `Coach offline` line is replaced by the built-in offer.
+>
+> **Settings.** The schedule gains `Only when I choose` (`when_i_choose`), now the **default**: Start never asks. `Every workout` and `Only on these days` keep the old ask-on-Start behaviour. Changed: §0 CI2, CI7; §2.1; §2.8; §4.4; checks 1–3, 18. The sheet paths and checks below still describe `Every workout` / days.
+
 The check-in is **a record of what Ben said, not a measurement.** Fizz stores it as given and shows it as given. It never turns it into a score, never averages it, never puts it next to lift numbers, and the built-in progression rules ignore it.
 
 ---
@@ -49,6 +55,8 @@ It never blocks logging, never appears after the first set is logged, and adds n
 ## 2. Layout
 
 ### 2.1 When the check-in is asked
+
+(Ben, 23 Oct) With the default `Only when I choose`, the gate returns `skip: when_i_choose` at every entry below (an unlinked check-in from the last 2 h is still reused: it is what Ben said), Start opens the workout in one tap, and the check-in is offered in the workout instead (revision above). The table describes `Every workout` / days.
 
 The check-in is shown by one gate, `shouldAskCheckIn`, at every way of starting a workout:
 
@@ -288,6 +296,8 @@ No line at all when the check-in was skipped or not asked. Tapping the line open
 
 ### 2.8 Settings: Profile → Training → `Check-in` (profile-and-settings.md §2.4a)
 
+(Ben, 23 Oct) `When` gains a first option, `Only when I choose` (default): Start never asks; `How are you feeling?` is in the workout until the first working set. The settings screen isn't built yet; `DEFAULT_CHECK_IN_SETTINGS` carries the default. The coach-offer group's footer becomes `Without the coach, a built-in lighter session is offered.`
+
 ```
 ┌────────────────────────────────────────┐
 │ ‹ Profile      Check-in                │
@@ -440,6 +450,8 @@ After the workout opens, `evaluateCheckInOffer(checkIn, settings)` (pure, `packa
 4. The session has at least one pending working set.
 
 If 1 holds but 2 fails because the route exists and can't answer (offline, limit, error): the CI7 outcome line. If no route exists: nothing.
+
+(Ben, 23 Oct) Revised: condition 3 is "no **working** set has been logged". When 2 fails (not connected or can't answer) the built-in lighter session is offered instead (`evaluateCheckInOffer` → `by: 'rule'`; `evaluateLighterSession`, revision above); no `Coach offline` line, no AI call. The offer expires at the first working set.
 
 The offer is never spoken. A set-trigger offer (RPE 10, etc.) later in the first exercise replaces it (slot priority, coach-adjustments §2.1); the check-in offer then expires. After it expires or is dismissed, Ben can still ask any time ("make today lighter", `Adjust` → `Too hard`).
 

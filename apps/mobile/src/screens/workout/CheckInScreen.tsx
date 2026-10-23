@@ -43,6 +43,7 @@ export function CheckInScreen() {
   const p = route.params;
   if (p.mode === 'start') return <StartCheckIn gymId={p.gymId} repeatOf={p.repeatOf ?? null} nextOf={p.nextOf ?? null} routineOf={p.routineOf ?? null} coachDraftOf={p.coachDraftOf ?? null} coachDraftVersion={p.coachDraftVersion ?? null} />;
   if (p.mode === 'overview') return <StartCheckIn gymId={null} repeatOf={null} nextOf={null} routineOf={null} overview={{ checkInId: p.checkInId, atScore: p.atScore === true }} />;
+  if (p.mode === 'workout') return <WorkoutCheckIn sessionId={p.sessionId} />;
   return <EditCheckIn checkInId={p.checkInId} />;
 }
 
@@ -590,6 +591,309 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, coachDraftOf = null,
                 disabled={busy}
                 onPress={() => {
                   if (record) void start({ kind: 'answered', checkInId: record.id }, painToast ?? savedToast(record));
+                }}
+              />
+            </>
+          }
+        >
+          {errorLine}
+        </Sheet>
+      );
+  }
+}
+
+/**
+ * (Ben, 23 Oct) `How are you feeling?` from inside the workout, before its
+ * first working set. Optional: Start no longer asks. The score is saved at
+ * the tap and linked to this workout (CI4, `set_session_check_in`); What's
+ * up?, the pain step and the ill step follow as before. Every exit returns to
+ * the workout (swipe-down too, keeping anything saved), apart from `Skip
+ * workout`, which discards the still-empty workout. Back in the workout, a
+ * low score offers a lighter session (the coach's, or the built-in one).
+ */
+function WorkoutCheckIn({ sessionId }: { sessionId: string }) {
+  const services = useServices();
+  const changed = useDataChanged();
+  const navigation = useNavigation();
+  const noteRef = useRef<TextInput>(null);
+  // One ID per sheet: the check-in and its first write; a retry reuses them (rule 5).
+  const [checkInId] = useState(newUuid);
+  const [recordOp] = useState(newUuid);
+  const [skipOp] = useState(newUuid);
+  const reasonsWrites = useRef<ReasonsSheetState>(NO_REASONS_WRITTEN);
+  const [step, setStep] = useState<Step>('score');
+  const [record, setRecord] = useState<CheckIn | null>(null);
+  const [score, setScore] = useState<CheckInScore | null>(null);
+  const [reasons, setReasons] = useState<CheckInReason[]>([]);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [painToast, setPainToast] = useState<WorkoutToastParam | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [painPicked, setPainPicked] = useState<Exercise[]>([]);
+  const [painArea, setPainArea] = useState<PainArea | null>(null);
+  const [query, setQuery] = useState('');
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [canSkipWorkout, setCanSkipWorkout] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void Promise.all([services.coachingKnowledge.exercises(), services.workout.recentExerciseIds(), services.checkIns.canSkipWorkout(sessionId)]).then(([list, recent, canSkip]) => {
+      if (!alive) return;
+      setExercises(list);
+      setRecentIds(recent);
+      setCanSkipWorkout(canSkip);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [services, sessionId]);
+
+  const savedToast = (c: CheckIn): WorkoutToastParam => ({ kind: 'check_in', text: `Check-in saved · ${scoreText(c.score)}`, checkInId: c.id });
+
+  /** Back to the workout, with the toast (`Change`, or the pain flag's Undo). */
+  function back(toast: WorkoutToastParam | null) {
+    changed();
+    if (toast === null) navigation.goBack();
+    else navigation.navigate('Workout', { checkedIn: { key: newUuid(), toast } });
+  }
+
+  async function pickScore(n: CheckInScore) {
+    if (busy) return;
+    setScore(n);
+    setError(null);
+    setBusy(true);
+    let saved = record;
+    if (saved === null) {
+      const r = await services.checkIns.recordInWorkout({ checkInId, opId: recordOp, score: n, sessionId });
+      if (!r.ok) {
+        setBusy(false);
+        setError(r.message);
+        return;
+      }
+      saved = r.checkIn;
+    } else if (saved.score !== n) {
+      const r = await services.checkIns.update(saved.id, { score: n }, saved.version, newUuid());
+      saved = r.ok ? r.checkIn : saved;
+    }
+    setBusy(false);
+    setRecord(saved);
+    changed();
+    if (asksReasons(n, DEFAULT_CHECK_IN_SETTINGS)) {
+      setStep('reasons');
+      return;
+    }
+    back(savedToast(saved));
+  }
+
+  function reasonsFailed(r: { message: string; latest: CheckIn | null }) {
+    if (r.latest) {
+      setRecord(r.latest);
+      setScore(r.latest.score);
+      setReasons(r.latest.reasons);
+      setNote(r.latest.note ?? '');
+    }
+    setError(r.message);
+  }
+
+  async function done() {
+    if (record === null || busy) return;
+    setBusy(true);
+    setError(null);
+    const r = await submitReasons(services.checkIns, record, { reasons, note: note.trim() === '' ? null : note }, reasonsWrites.current, newUuid);
+    reasonsWrites.current = r.state;
+    setBusy(false);
+    if (!r.ok) {
+      reasonsFailed(r);
+      return;
+    }
+    setRecord(r.checkIn);
+    changed();
+    if (r.next === 'pain' || r.next === 'ill') setStep(r.next);
+    else back(savedToast(r.checkIn));
+  }
+
+  async function skipWithScore() {
+    if (record === null || busy) return;
+    setBusy(true);
+    setError(null);
+    const r = await skipReasons(services.checkIns, record, reasonsWrites.current, newUuid);
+    reasonsWrites.current = r.state;
+    setBusy(false);
+    if (!r.ok) {
+      reasonsFailed(r);
+      return;
+    }
+    back(savedToast(r.checkIn));
+  }
+
+  function afterPain(flagged: { flags: { id: string; version: number }[]; names: string[]; checkIn: CheckIn } | null) {
+    const current = flagged?.checkIn ?? record;
+    if (current === null) return;
+    const toast: WorkoutToastParam = flagged ? { kind: 'pain', text: `Pain noted for ${flagged.names.join(', ')}`, flags: flagged.flags } : savedToast(current);
+    if (current.reasons.includes('ill')) {
+      setRecord(current);
+      setPainToast(flagged ? toast : null);
+      setStep('ill');
+      return;
+    }
+    back(toast);
+  }
+
+  async function flagPain() {
+    if (record === null || painPicked.length === 0 || busy) return;
+    setBusy(true);
+    const r = await services.pain.flagFromCheckIn({ checkIn: record, exercises: painPicked, area: painArea, opId: `${recordOp}:pain` });
+    setBusy(false);
+    if (!r.ok) {
+      setError(r.message);
+      return;
+    }
+    changed();
+    afterPain({ flags: r.flags ?? [], names: painPicked.map((e) => e.name), checkIn: r.checkIn });
+  }
+
+  async function skipWorkout() {
+    if (busy) return;
+    setBusy(true);
+    const r = await services.checkIns.skipWorkoutFrom({ sessionId, opId: skipOp });
+    setBusy(false);
+    if (!r.ok) {
+      setError(r.message);
+      return;
+    }
+    changed();
+    navigation.dispatch(popToToday('Workout skipped'));
+  }
+
+  const errorLine = error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null;
+
+  const painList = useMemo(() => {
+    const found = searchExercises(exercises, query);
+    if (query.trim() !== '') return found.slice(0, 30);
+    const recent = recentIds.map((id) => exercises.find((e) => e.id === id)).filter((e): e is Exercise => e !== undefined);
+    return [...recent, ...found.filter((e) => !recentIds.includes(e.id))].slice(0, 30);
+  }, [exercises, query, recentIds]);
+
+  switch (step) {
+    case 'score':
+      return (
+        <Sheet
+          title="How are you feeling today?"
+          bar={
+            <SecondaryButton
+              label={record === null ? 'Not now' : 'Done'}
+              disabled={busy}
+              onPress={() => {
+                // A score already given (back from What's up?) is kept as it is.
+                back(record === null ? null : savedToast(record));
+              }}
+            />
+          }
+        >
+          <ScoreRow chosen={score} disabled={busy} onPick={(n) => void pickScore(n)} />
+          {errorLine}
+        </Sheet>
+      );
+
+    case 'reasons':
+      return (
+        <Sheet
+          title="What’s up?"
+          onBack={() => {
+            setStep('score');
+          }}
+          backLabel={score === null ? 'Back' : scoreText(score)}
+          barFirst
+          bar={
+            <>
+              <TextButton label="Skip" tone="secondary" accessibilityHint="Keeps your score." onPress={() => void skipWithScore()} />
+              <View style={{ flex: 1 }}>
+                <PrimaryButton label="Done" busy={busy} onPress={() => void done()} />
+              </View>
+            </>
+          }
+        >
+          <ReasonsEditor reasons={reasons} setReasons={setReasons} note={note} setNote={setNote} noteRef={noteRef} />
+          {errorLine}
+        </Sheet>
+      );
+
+    case 'pain':
+      return (
+        <Sheet
+          title="Which movements hurt?"
+          info="Flagged movements don’t go up until you clear the flag."
+          infoLabel="About pain flags"
+          onBack={() => {
+            setStep('reasons');
+          }}
+          backLabel="What’s up?"
+          barFirst
+          bar={
+            <>
+              <TextButton label="Not now" tone="secondary" onPress={() => { afterPain(null); }} />
+              <View style={{ flex: 1 }}>
+                <PrimaryButton
+                  label={painPicked.length === 0 ? 'Choose a movement' : `Flag ${String(painPicked.length)} ${painPicked.length === 1 ? 'movement' : 'movements'}`}
+                  disabled={painPicked.length === 0}
+                  busy={busy}
+                  onPress={() => void flagPain()}
+                />
+              </View>
+            </>
+          }
+        >
+          <TextField value={query} onChangeText={setQuery} placeholder="Search exercises" accessibilityLabel="Search exercises" />
+          {query.trim() === '' && recentIds.length > 0 ? <Eyebrow>Recent</Eyebrow> : null}
+          <ChipRow>
+            {painList.map((e) => (
+              <Chip
+                key={e.id}
+                label={e.name}
+                selected={painPicked.some((x) => x.id === e.id)}
+                onPress={() => {
+                  setPainPicked((cur) => (cur.some((x) => x.id === e.id) ? cur.filter((x) => x.id !== e.id) : [...cur, e]));
+                }}
+              />
+            ))}
+          </ChipRow>
+          <Eyebrow>Where? (optional)</Eyebrow>
+          <ChipRow>
+            {PAIN_AREAS.map((a) => (
+              <Chip
+                key={a}
+                label={PAIN_AREA_LABEL[a]}
+                selected={painArea === a}
+                onPress={() => {
+                  setPainArea((cur) => (cur === a ? null : a));
+                }}
+              />
+            ))}
+          </ChipRow>
+          <AppText variant="callout" color="text.secondary">
+            {PAIN_PROFESSIONAL_TEXT}
+          </AppText>
+          <AppText variant="callout" color="text.secondary">
+            {PAIN_RED_FLAG_TEXT}
+          </AppText>
+          {errorLine}
+        </Sheet>
+      );
+
+    case 'ill':
+      return (
+        <Sheet
+          title="Rest today?"
+          bar={
+            <>
+              {/* Only an empty workout can be skipped here (nothing logged); otherwise end it from the workout. */}
+              {canSkipWorkout ? <SecondaryButton label="Skip workout" disabled={busy} onPress={() => void skipWorkout()} /> : null}
+              <SecondaryButton
+                label="Train anyway"
+                disabled={busy}
+                onPress={() => {
+                  if (record) back(painToast ?? savedToast(record));
                 }}
               />
             </>

@@ -22,10 +22,14 @@ import { toMs } from './time';
  * built-in progression rules never read it (check 19).
  */
 
-/** check-in.md §2.8 defaults (open-decisions "Defaults", approved bulk defaults). */
+/**
+ * check-in.md §2.8 defaults (open-decisions "Defaults", approved bulk defaults). (Ben, 23 Oct) The
+ * schedule's default is `when_i_choose`: Start never asks; the check-in is one quiet tap away in the
+ * workout until the first working set is logged.
+ */
 export const DEFAULT_CHECK_IN_SETTINGS: CheckInSettings = {
   enabled: true,
-  schedule: { kind: 'every_workout' },
+  schedule: { kind: 'when_i_choose' },
   askReasonsAtOrBelow: 3,
   offerAtOrBelow: 2,
   offerOnTiredOrPoorSleep: true,
@@ -63,7 +67,7 @@ export const PAIN_AREA_LABEL: Record<PainArea, string> = {
 export type CheckInGate =
   | { kind: 'ask' }
   | { kind: 'reuse'; checkInId: string }
-  | { kind: 'skip'; reason: 'off' | 'not_a_check_in_day' | 'already_decided' | 'set_logged' };
+  | { kind: 'skip'; reason: 'off' | 'not_a_check_in_day' | 'when_i_choose' | 'already_decided' | 'set_logged' };
 
 /** A recent check-in as the gate sees it. */
 export interface RecentCheckIn {
@@ -104,10 +108,17 @@ export function shouldAskCheckIn(input: CheckInGateInput): CheckInGate {
     const reusable = reusableCheckIn(input.recent, input.nowMs);
     if (reusable) return { kind: 'reuse', checkInId: reusable.id };
   }
+  // (Ben, 23 Oct) Only when Ben chooses: never asked on Start or Resume. A check-in he already gave (reuse) still links.
+  if (settings.schedule.kind === 'when_i_choose') return { kind: 'skip', reason: 'when_i_choose' };
   if (settings.schedule.kind === 'days' && !settings.schedule.weekdays.includes(input.weekday)) {
     return { kind: 'skip', reason: 'not_a_check_in_day' };
   }
   return { kind: 'ask' };
+}
+
+/** How a Start records the gate's `skip`: the reasons Start itself decided (nothing about Ben's state is invented). */
+export function sessionCheckInForSkip(reason: Extract<CheckInGate, { kind: 'skip' }>['reason']): SessionCheckIn | null {
+  return reason === 'off' || reason === 'not_a_check_in_day' || reason === 'when_i_choose' ? { kind: 'not_asked', reason } : null;
 }
 
 /** The newest unlinked, undeleted, not-acted-on check-in from the last 2 h, if any (Today's region 4 line). */
@@ -128,6 +139,30 @@ export function asksReasons(score: CheckInScore, settings: CheckInSettings): boo
 /** True when any set was ever committed in the session, even if later undone or deleted (check 4). */
 export function anySetEverCommitted(aggregate: SessionAggregate): boolean {
   return aggregate.audit.some((e) => e.kind === 'logged');
+}
+
+/**
+ * (Ben, 23 Oct) True once a working set (not a warm-up) was ever committed in the session, even if
+ * later undone or deleted. A set no longer in the workout counts as a working set (the safe side).
+ * Until then the check-in is still on offer in the workout.
+ */
+export function anyWorkingSetEverLogged(aggregate: Pick<SessionAggregate, 'audit' | 'sets'>): boolean {
+  const type = new Map(aggregate.sets.map((s) => [s.id, s.setType]));
+  return aggregate.audit.some((e) => e.kind === 'logged' && type.get(e.setId) !== 'warmup');
+}
+
+/**
+ * (Ben, 23 Oct) The quiet `How are you feeling?` in the workout: offered while check-ins are on, the
+ * workout has no check-in answered or skipped, and no working set has been logged. Then it goes
+ * (a check-in already given stays editable on the Summary).
+ */
+export function offersCheckInInWorkout(input: { settings: CheckInSettings; session: Pick<SessionAggregate, 'audit' | 'sets'> & { session: { status: SessionAggregate['session']['status']; checkIn: SessionCheckIn | null } } }): boolean {
+  if (!input.settings.enabled) return false;
+  const { session } = input;
+  if (session.session.status !== 'active') return false;
+  const ci = session.session.checkIn;
+  if (ci?.kind === 'answered' || ci?.kind === 'skipped') return false;
+  return !anyWorkingSetEverLogged(session);
 }
 
 export function scoreText(score: number): string {
@@ -154,35 +189,37 @@ export function painMentionedNotFlagged(checkIn: Pick<CheckIn, 'reasons' | 'pain
 
 export type CoachReachability = 'not_connected' | 'offline' | 'available';
 
-export type CheckInOffer =
-  | { kind: 'offer'; triggerId: string; fact: string }
-  /** A route exists but can't answer (CI7). */
-  | { kind: 'offline_line'; text: string }
-  | null;
+/**
+ * The lighter-session offer after a low check-in. `coach`: the coach can
+ * answer, and `Adjust` asks it. `rule` (Ben, 23 Oct): it can't (not connected
+ * or offline), so the built-in lighter session is offered instead, with
+ * Apply / Skip and Undo; offline is no longer a dead `Coach offline` line.
+ */
+export type CheckInOffer = { kind: 'offer'; by: 'coach' | 'rule'; triggerId: string; fact: string } | null;
 
 /**
- * `evaluateCheckInOffer` (check-in.md §4.4). Coach not connected → nothing
- * (CI7: a permanent "not connected" line would nag). Never calls a model.
+ * `evaluateCheckInOffer` (check-in.md §4.4, revised 23 Oct). Never calls a
+ * model. Only before the first working set is logged and while a working
+ * set is still pending.
  */
 export function evaluateCheckInOffer(input: {
   checkIn: Pick<CheckIn, 'id' | 'score' | 'reasons'>;
   settings: CheckInSettings;
   coach: CoachReachability;
-  anySetLogged: boolean;
+  /** A working set (not a warm-up) was ever logged in this workout. */
+  anyWorkingSetLogged: boolean;
   hasPendingWorkingSet: boolean;
 }): CheckInOffer {
   const { checkIn, settings } = input;
+  if (!checkInAsksForLighter(checkIn, settings) || input.anyWorkingSetLogged || !input.hasPendingWorkingSet) return null;
+  return { kind: 'offer', by: input.coach === 'available' ? 'coach' : 'rule', triggerId: `check_in_low:${checkIn.id}`, fact: checkInFact(checkIn) };
+}
+
+/** A score at or below the offer setting, or `Tired` / `Poor sleep` when that setting is on. */
+export function checkInAsksForLighter(checkIn: Pick<CheckIn, 'score' | 'reasons'>, settings: CheckInSettings): boolean {
   const lowScore = settings.offerAtOrBelow !== null && checkIn.score <= settings.offerAtOrBelow;
   const tired = settings.offerOnTiredOrPoorSleep && (checkIn.reasons.includes('tired') || checkIn.reasons.includes('poor_sleep'));
-  if (!(lowScore || tired) || input.anySetLogged || !input.hasPendingWorkingSet) return null;
-  switch (input.coach) {
-    case 'not_connected':
-      return null;
-    case 'offline':
-      return { kind: 'offline_line', text: 'Coach offline' };
-    case 'available':
-      return { kind: 'offer', triggerId: `check_in_low:${checkIn.id}`, fact: checkInFact(checkIn) };
-  }
+  return lowScore || tired;
 }
 
 export function normaliseNote(note: string | null | undefined): string | undefined {

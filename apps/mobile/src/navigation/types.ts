@@ -148,7 +148,8 @@ export type RootStackParams = {
   /** Active workout (set, rest). `toast` after a start with a check-in (check-in.md §2.6). */
   /** `checkGym`: open the gym card for that gym (`[Use changes today]`, gym-editor §4.9); `nonce` makes it one-off. */
   /** `corrected`: a logged set's numbers were corrected; the coach offer check runs on it again (build 108 F4). */
-  Workout: { toast?: WorkoutToastParam; checkGym?: { gymId: string; nonce: string }; corrected?: { setId: string; key: string } } | undefined;
+  /** `checkedIn` (Ben, 23 Oct): back from the workout's own `How are you feeling?`; `key` makes its toast one-off. */
+  Workout: { toast?: WorkoutToastParam; checkGym?: { gymId: string; nonce: string }; corrected?: { setId: string; key: string }; checkedIn?: { key: string; toast: WorkoutToastParam } } | undefined;
   /** Pre-workout check-in sheet: before a start, or editing a saved one. */
   /**
    * `repeatOf`: start by repeating that finished workout (routines.md RT4). `nextOf`: its next session, with next targets (audit B2).
@@ -157,6 +158,8 @@ export type RootStackParams = {
   CheckIn:
     | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string; /** (Today v2) Today's session card: the builder draft it committed. */ coachDraftOf?: string; /** That draft's version as committed: pinned in the Start's write (rule 5). */ coachDraftVersion?: number }
     | { mode: 'edit'; checkInId: string }
+    /** (Ben, 23 Oct) `How are you feeling?` in the workout, before its first working set: saved and linked to it; every exit returns to it. */
+    | { mode: 'workout'; sessionId: string }
     /**
      * Over Your workout (its check-in before Start; first made for the Workout overview, retired 22 Oct):
      * `What's up?` for a score already saved there (`checkInId`), or the whole check-in from the score at AX

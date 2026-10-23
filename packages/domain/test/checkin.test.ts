@@ -17,6 +17,7 @@ import {
   painMentionedNotFlagged,
   painStatusFor,
   reasonsText,
+  sessionCheckInForSkip,
   shouldAskCheckIn,
   toIso,
   toMs,
@@ -26,7 +27,9 @@ import {
 } from '../src/index';
 import { at, barbell, doubleProgression, id, kg, ms, OWNER, T0_MS } from './fixtures';
 
-const base: CheckInGateInput = { settings: DEFAULT_CHECK_IN_SETTINGS, nowMs: T0_MS, weekday: 'thu', entry: 'start', recent: [] };
+/** The old "asks on Start" schedule, still a setting (the default is `when_i_choose` since 23 Oct). */
+const EVERY: typeof DEFAULT_CHECK_IN_SETTINGS = { ...DEFAULT_CHECK_IN_SETTINGS, schedule: { kind: 'every_workout' } };
+const base: CheckInGateInput = { settings: EVERY, nowMs: T0_MS, weekday: 'thu', entry: 'start', recent: [] };
 const recent = (minutesAgo: number, over: Partial<RecentCheckIn> = {}): RecentCheckIn => ({
   id: id(900 + minutesAgo),
   recordedAtUtc: toIso(T0_MS - minutesAgo * 60_000),
@@ -37,13 +40,25 @@ const recent = (minutesAgo: number, over: Partial<RecentCheckIn> = {}): RecentCh
 });
 
 describe('shouldAskCheckIn (check-in.md §2.1)', () => {
-  it('asks on Start when check-ins are on and nothing is reusable', () => {
+  it('(Ben, 23 Oct) by default never asks on Start or Resume: only when Ben chooses', () => {
+    expect(DEFAULT_CHECK_IN_SETTINGS.schedule).toEqual({ kind: 'when_i_choose' });
+    expect(shouldAskCheckIn({ ...base, settings: DEFAULT_CHECK_IN_SETTINGS })).toEqual({ kind: 'skip', reason: 'when_i_choose' });
+    expect(shouldAskCheckIn({ ...base, settings: DEFAULT_CHECK_IN_SETTINGS, entry: 'resume', session: { checkIn: { kind: 'pending' }, anySetEverCommitted: false } })).toEqual({ kind: 'skip', reason: 'when_i_choose' });
+    // A check-in Ben already gave (in the last 2 h) still links: it's what he said, not an invented one.
+    expect(shouldAskCheckIn({ ...base, settings: DEFAULT_CHECK_IN_SETTINGS, recent: [recent(10)] })).toEqual({ kind: 'reuse', checkInId: id(910) });
+    // Start records "not asked", never a score.
+    expect(sessionCheckInForSkip('when_i_choose')).toEqual({ kind: 'not_asked', reason: 'when_i_choose' });
+    expect(sessionCheckInForSkip('off')).toEqual({ kind: 'not_asked', reason: 'off' });
+    expect(sessionCheckInForSkip('set_logged')).toBeNull();
+  });
+
+  it('asks on Start with `Every workout` and nothing reusable', () => {
     expect(shouldAskCheckIn(base)).toEqual({ kind: 'ask' });
   });
 
   it('skips when off, or when today is not a check-in day', () => {
-    expect(shouldAskCheckIn({ ...base, settings: { ...DEFAULT_CHECK_IN_SETTINGS, enabled: false } })).toEqual({ kind: 'skip', reason: 'off' });
-    const days = { ...DEFAULT_CHECK_IN_SETTINGS, schedule: { kind: 'days' as const, weekdays: ['mon' as const, 'wed' as const] } };
+    expect(shouldAskCheckIn({ ...base, settings: { ...EVERY, enabled: false } })).toEqual({ kind: 'skip', reason: 'off' });
+    const days = { ...EVERY, schedule: { kind: 'days' as const, weekdays: ['mon' as const, 'wed' as const] } };
     expect(shouldAskCheckIn({ ...base, settings: days })).toEqual({ kind: 'skip', reason: 'not_a_check_in_day' });
     expect(shouldAskCheckIn({ ...base, settings: days, weekday: 'wed' })).toEqual({ kind: 'ask' });
   });
@@ -79,26 +94,29 @@ describe('What\'s up? threshold (check 7)', () => {
   });
 });
 
-describe('evaluateCheckInOffer (check-in.md §4.4, check 16)', () => {
+describe('evaluateCheckInOffer (check-in.md §4.4, check 16; revised 23 Oct)', () => {
   const ci = (score: 1 | 2 | 3 | 4 | 5, reasons: ('tired' | 'stressed' | 'poor_sleep')[] = []) => ({ id: id(5), score, reasons });
   const run = (checkIn: ReturnType<typeof ci>, coach: 'not_connected' | 'offline' | 'available' = 'available', over = {}) =>
-    evaluateCheckInOffer({ checkIn, settings: DEFAULT_CHECK_IN_SETTINGS, coach, anySetLogged: false, hasPendingWorkingSet: true, ...over });
+    evaluateCheckInOffer({ checkIn, settings: DEFAULT_CHECK_IN_SETTINGS, coach, anyWorkingSetLogged: false, hasPendingWorkingSet: true, ...over });
 
   it('offers at 2 or lower, or 3 + Tired; not 3 + Stressed or 4', () => {
-    expect(run(ci(2))).toEqual({ kind: 'offer', triggerId: `check_in_low:${id(5)}`, fact: 'You said 2 of 5' });
+    expect(run(ci(2))).toEqual({ kind: 'offer', by: 'coach', triggerId: `check_in_low:${id(5)}`, fact: 'You said 2 of 5' });
     expect(run(ci(3, ['tired']))).toMatchObject({ kind: 'offer', fact: 'You said 3 of 5 · Tired' });
+    expect(run(ci(3, ['poor_sleep']))).toMatchObject({ kind: 'offer', fact: 'You said 3 of 5 · Poor sleep' });
     expect(run(ci(3, ['stressed']))).toBeNull();
     expect(run(ci(4))).toBeNull();
-    expect(evaluateCheckInOffer({ checkIn: ci(1), settings: { ...DEFAULT_CHECK_IN_SETTINGS, offerAtOrBelow: null, offerOnTiredOrPoorSleep: false }, coach: 'available', anySetLogged: false, hasPendingWorkingSet: true })).toBeNull();
+    expect(evaluateCheckInOffer({ checkIn: ci(1), settings: { ...DEFAULT_CHECK_IN_SETTINGS, offerAtOrBelow: null, offerOnTiredOrPoorSleep: false }, coach: 'available', anyWorkingSetLogged: false, hasPendingWorkingSet: true })).toBeNull();
   });
 
-  it('is honest about the coach: nothing when not connected (CI7), one line when offline', () => {
-    expect(run(ci(1), 'not_connected')).toBeNull();
-    expect(run(ci(1), 'offline')).toEqual({ kind: 'offline_line', text: 'Coach offline' });
+  it('(Ben, 23 Oct) with no coach to answer (not connected or offline) the built-in lighter session is offered', () => {
+    expect(run(ci(1), 'not_connected')).toEqual({ kind: 'offer', by: 'rule', triggerId: `check_in_low:${id(5)}`, fact: 'You said 1 of 5' });
+    expect(run(ci(3, ['tired']), 'offline')).toMatchObject({ kind: 'offer', by: 'rule' });
+    expect(run(ci(4), 'not_connected')).toBeNull();
   });
 
-  it('never appears after a set is logged or with no pending working set', () => {
-    expect(run(ci(1), 'available', { anySetLogged: true })).toBeNull();
+  it('never appears after a working set is logged or with no pending working set', () => {
+    expect(run(ci(1), 'available', { anyWorkingSetLogged: true })).toBeNull();
+    expect(run(ci(1), 'not_connected', { anyWorkingSetLogged: true })).toBeNull();
     expect(run(ci(1), 'available', { hasPendingWorkingSet: false })).toBeNull();
   });
 });

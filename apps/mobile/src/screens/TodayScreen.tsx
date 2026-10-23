@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, stepTimeMinutes, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
+import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, sessionCheckInForSkip, stepTimeMinutes, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
@@ -330,7 +330,8 @@ export function TodayScreen() {
     const gate = await services.checkIns.gate();
     if (gate.kind === 'ask') return { ask: true };
     if (gate.kind === 'reuse') return { ask: false, checkIn: { kind: 'answered', checkInId: gate.checkInId }, reuseId: gate.checkInId };
-    return { ask: false, checkIn: gate.reason === 'off' || gate.reason === 'not_a_check_in_day' ? { kind: 'not_asked', reason: gate.reason } : null, reuseId: null };
+    // (Ben, 23 Oct) Not asked by default: Start goes straight in; nothing is recorded about how he feels.
+    return { ask: false, checkIn: sessionCheckInForSkip(gate.reason), reuseId: null };
   }
 
   /** After a start: the workout, with the reused check-in's toast (check-in.md §2.6) or the start's notice. */

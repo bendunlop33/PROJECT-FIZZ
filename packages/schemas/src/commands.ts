@@ -404,6 +404,20 @@ export const SetFeelCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
+/**
+ * (Ben, 23 Oct) A check-in Ben chose to give from inside the workout (`How are you feeling?`), linked
+ * to the workout it was given in. Only while the workout is active and before its first working set
+ * is logged; a workout already linked to a check-in keeps it (changes go through `updateCheckIn`).
+ * Versioned and idempotent like every session command.
+ */
+export const SetSessionCheckInCommandSchema = z.object({
+  type: z.literal('set_session_check_in'),
+  ...base,
+  opId: OperationIdSchema,
+  checkInId: IdSchema,
+  expectedVersion: z.int().min(1),
+});
+
 /** A pending set's new load and reps target (both explicit; unit and convention in the load), and the coach's target RPE if it set one. */
 const TargetValuesSchema = z.object({ load: LoadSchema.nullable(), reps: RepRangeSchema.nullable(), rpe: RpeSchema.nullable().optional() });
 
@@ -850,6 +864,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   RenameSessionCommandSchema,
   ConfirmSessionDurationCommandSchema,
   SetFeelCommandSchema,
+  SetSessionCheckInCommandSchema,
   SetFinishByCommandSchema,
   AdjustPendingTargetsCommandSchema,
   RevertTargetAdjustmentCommandSchema,
