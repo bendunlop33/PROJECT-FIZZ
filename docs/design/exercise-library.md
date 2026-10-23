@@ -710,6 +710,8 @@ Ben, build 126: "I'd also like to be able to view exercises etc even when not in
 
 Regions: large title · segmented control · search field · filter chips · hidden-count line (filter on) · `RECENT` · `ALL EXERCISES` · `New exercise` link · `ResumeBar` (workout unfinished) · tab bar.
 
+*(D5, Ben 22–23 Oct; built 23 Oct.)* `ALL EXERCISES · N` is replaced by one section per broad group in chip order (`CHEST`, `BACK`, `SHOULDERS`, `LEGS`, `ARMS`, `CORE`, A–Z within), Legs under `Quads` / `Hamstrings` / `Calves` and Arms under `Biceps` / `Triceps` / `Forearms` sub-headings, then `OTHER` (cardio, conditioning, carries). An exercise is listed by its first primary muscle: glutes under Hamstrings, shins under Calves, rear delts under Back.
+
 ```
 ┌────────────────────────────────────────┐
 │ Library                          ＋  ⋯ │ ＋ New exercise · ⋯ Show hidden
@@ -857,7 +859,7 @@ Rules:
 | Where | State | Shows |
 |---|---|---|
 | Library | Loading | Nothing for 300 ms, then static rows (local) |
-| Library | Normal, no query | `RECENT` (hidden with no history) then `ALL EXERCISES · N` |
+| Library | Normal, no query | `RECENT` (hidden with no history) then the broad-group sections, Legs and Arms by part, then `OTHER` (D5, Ben 22–23 Oct) |
 | Library | Query | `MATCHES` ranked; `Create "…"` last |
 | Library | No match | `No match for "landmine twst".` · `＋ Create "landmine twst" as a new exercise` · `Clear filters` (when any are on) |
 | Library | `At <gym>` on | Hidden count line `12 more not at Main Gym. Show ›` |
