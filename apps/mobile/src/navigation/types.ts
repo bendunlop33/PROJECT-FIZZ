@@ -100,7 +100,8 @@ export type LibraryStackParams = {
   LibraryPlanDay: { routineId: string; name?: string };
 };
 
-export type LibrarySegment = 'exercises' | 'workouts';
+/** (Ben, 22 Oct) Library tabs `Plan | Workouts | Exercises`. */
+export type LibrarySegment = 'plan' | 'workouts' | 'exercises';
 
 /** Exercise detail (exercise-library §9.4). `readOnly`: opened from the editor's `⋯`; `Add to a workout` is hidden. */
 export interface ExerciseInfoParams {

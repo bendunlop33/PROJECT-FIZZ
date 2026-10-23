@@ -22,7 +22,7 @@ export interface DevicePrefs {
   /** The workout screen's view (active-workout §4.5): Table by default; Ben's choice sticks on this phone. */
   workoutView: 'table' | 'focus';
   /** The Library tab's last segment (exercise-library EL10): a UI preference, not Your data, not backed up. */
-  librarySegment: 'exercises' | 'workouts';
+  librarySegment: 'plan' | 'workouts' | 'exercises';
   /** Settings › Voice: spoken cues, reading coach replies, the voice and its speed (this phone's voices). */
   voice: VoicePrefs;
   /** Profile › `Targets hit` (Ben, 20 Oct): `Targets hit 5 of last 6` on main lifts; off by default. */
@@ -52,7 +52,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
       guideAnimations: guideAnimations !== false,
       alertsAsk: alertsAsk === 'later' || alertsAsk === 'answered' ? alertsAsk : 'undetermined',
       workoutView: workoutView === 'focus' ? 'focus' : 'table',
-      librarySegment: librarySegment === 'workouts' ? 'workouts' : 'exercises',
+      librarySegment: librarySegment === 'workouts' || librarySegment === 'plan' ? librarySegment : 'exercises',
       voice: parseVoicePrefs(voice),
       targetsHit: targetsHit === true,
       ...(morningReminder === undefined ? {} : { morningReminder: parseMorningReminder(morningReminder) }),

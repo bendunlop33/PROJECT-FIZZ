@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { NO_FILTERS, toMs, type BrowseRowView, type ExerciseFilters } from '@fizz/domain';
+import { NO_FILTERS, toMs, withBroadGroup, type BrowseRowView, type ExerciseFilters } from '@fizz/domain';
 
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { EXERCISE_FORM_COPY } from '../../library/exercise-form-view';
@@ -13,16 +13,19 @@ import { ResumeBar, Segmented } from '../../progress/components';
 import { useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, BottomCard, Chip, ChipRow, Icon, StatusLine, TextButton, TextField } from '../../ui';
-import { filterChipLabel, filterOptions, filterValues, LIBRARY_BROWSE_COPY, toggled, withFilter, type FilterKind } from '../../workout/library-browse-view';
+import { filterChipLabel, filterOptions, filterValues, LIBRARY_BROWSE_COPY, muscleChips, toggled, withFilter, type FilterKind } from '../../workout/library-browse-view';
 import { NewWorkoutButton, WorkoutsList } from '../routines/WorkoutsScreen';
+import { PlanTab } from './PlanTab';
 
 /**
- * The Library tab (exercise-library §9, EL10): `Exercises` (every exercise,
- * search with aliases and typos, filters; a row opens Exercise detail) and
- * `Workouts` (the Workouts list; the header's `＋` is `New workout`). Remembers its last segment on
- * this phone. Nothing here needs a network or the coach (rule 1); it never
- * animates. The `ResumeBar` shows while a workout is unfinished. With a
- * plan in use, Workouts leads with `Your plan` (Ben, 19 Oct; `YourPlanBlock`).
+ * The Library tab (exercise-library §9, EL10; Ben, 22 Oct: `Plan | Workouts |
+ * Exercises`): `Plan` (Your plan, or `Set up a plan`; Previous plans with
+ * `Start again`, `PlanTab`), `Workouts` (the Workouts list; the header's `＋`
+ * is `New workout`) and `Exercises` (every exercise, the muscle chip row,
+ * search with aliases and typos, filters; a row opens Exercise detail).
+ * Remembers its last segment on this phone. Nothing here needs a network or
+ * the coach (rule 1) except Plan's coach hand-off; it never animates. The
+ * `ResumeBar` shows while a workout is unfinished.
  */
 export function LibraryScreen() {
   const theme = useTheme();
@@ -47,7 +50,7 @@ export function LibraryScreen() {
             {LIBRARY_BROWSE_COPY.title}
           </AppText>
           {/* `＋` (§9.3, review B1): `New workout` on Workouts; `New exercise` on Exercises (Ben, 19 Oct). */}
-          {segment === 'workouts' ? <NewWorkoutButton from="Library" /> : <NewExerciseButton />}
+          {segment === 'workouts' ? <NewWorkoutButton from="Library" /> : segment === 'exercises' ? <NewExerciseButton /> : null}
         </View>
         <Segmented
           options={LIBRARY_BROWSE_COPY.segments}
@@ -61,11 +64,12 @@ export function LibraryScreen() {
       </View>
       {segment === 'exercises' ? (
         <ExercisesBrowse />
+      ) : segment === 'plan' ? (
+        <PlanTab scrollTopKey={route.params?.plan} />
       ) : (
         <WorkoutsList
           from="Library"
           handedToast={route.params?.toast}
-          scrollTopKey={route.params?.plan}
           onHandedToast={() => {
             navigation.setParams({ toast: undefined } as never);
           }}
@@ -106,6 +110,19 @@ function ExercisesBrowse() {
   return (
     <>
       <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'], gap: theme.space['4'] }}>
+        {/* (D5) Muscle chips in one row: `All` + six broad groups, above search (prototype `renderLibrary`). */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" accessibilityLabel={LIBRARY_BROWSE_COPY.muscle} style={{ flexGrow: 0, marginHorizontal: -theme.components.screenMargin }} contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
+          {muscleChips(filters).map((c) => (
+            <Chip
+              key={c.label}
+              label={c.label}
+              selected={c.selected}
+              onPress={() => {
+                setFilters((f) => withBroadGroup(f, c.group));
+              }}
+            />
+          ))}
+        </ScrollView>
         <TextField value={query} onChangeText={setQuery} placeholder={LIBRARY_BROWSE_COPY.search} accessibilityLabel={LIBRARY_BROWSE_COPY.search} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
         {/* One horizontally scrolling chip row (Ben, 20 Oct; exercise-library.md §9). */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ flexGrow: 0, marginHorizontal: -theme.components.screenMargin }} contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
@@ -116,7 +133,7 @@ function ExercisesBrowse() {
               if (view?.gymChip.enabled === true) setFilters((f) => ({ ...f, atGym: !f.atGym }));
             }}
           />
-          {(['muscle', 'equipment', 'movement'] as const).map((k) => (
+          {(['equipment', 'movement'] as const).map((k) => (
             <Chip key={k} label={`${filterChipLabel(filters, k)} ▾`} selected={filterValues(filters, k).length > 0} onPress={() => { setSheet(k); }} accessibilityLabel={`${filterChipLabel(filters, k)}, filter`} />
           ))}
         </ScrollView>
