@@ -194,6 +194,8 @@ export const DraftLoadSchema = z.object({
    * again never compounds. Start ignores it. `follow` (Ben, 23 Oct): it follows a top the coach set both ways.
    */
   backoffFrom: z.object({ load: z.number().nonnegative().max(5000), top: z.number().positive().max(5000), follow: z.literal(true).optional() }).optional(),
+  /** (Plan builder) A `plan` load with no history of Ben's own behind it (est., rule 6): a similar lift's estimate. */
+  estimate: z.literal(true).optional(),
 });
 export type DraftLoad = z.infer<typeof DraftLoadSchema>;
 

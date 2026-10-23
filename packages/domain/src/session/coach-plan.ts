@@ -25,7 +25,7 @@ import type { HistorySession } from '../progression';
 import { deriveId } from '../stable';
 import { toIso, toMs } from '../time';
 import { loadText } from '../display';
-import { checkWorkoutProposal, draftSchemeText, draftWorkingSets, recheckDraftSlot, type WorkoutProposalContext } from './coach-draft';
+import { checkWorkoutProposal, draftSchemeText, draftWorkingSets, painHoldFor, recheckDraftSlot, type WorkoutProposalContext } from './coach-draft';
 import { setRoutineRotation } from './library';
 import { closePausesAt, reopenPausesClosedAt } from './plan-adapt';
 import { deleteRoutine, isDeleted, isFromRoutine, isInRotation, type FinishedRef, type RoutineChange } from './routines';
@@ -755,6 +755,13 @@ export function planFirstLoads(input: PlanFirstLoadsInput): Map<string, { exerci
     if (rex.setTemplates.length !== slot.setTemplates.length || rex.setTemplates.some((t, i) => t.setType !== slot.setTemplates[i]?.setType || t.targetLoad !== null)) continue;
     const exercise = input.exercises.get(slot.exerciseId);
     if (exercise === undefined) continue;
+    if (version.builder !== undefined) {
+      // (Plan builder) Week 1's `plan` loads, as built: not when the movement is held for pain (rule 9), or when Ben
+      // has done it since the plan was built (his newer sets win; the built-in rule plans from them).
+      const sets = builderFirstSets(slot, version, input, exercise.id);
+      if (sets !== null) out.set(rex.id, { exerciseId: rex.exerciseId, sets });
+      continue;
+    }
     const re = recheckDraftSlot(slot, exercise, input.histories.get(exercise.id) ?? [], input.substitute, version.createdAt.utc, input.nowMs);
     if (re?.kind !== 'coach') continue;
     const sets = slot.setTemplates.map((t, i): PlannedSet | null => {
@@ -776,6 +783,30 @@ export function planFirstLoads(input: PlanFirstLoadsInput): Map<string, { exerci
     if (sets.some((s) => s !== null)) out.set(rex.id, { exerciseId: rex.exerciseId, sets });
   }
   return out;
+}
+
+/** A builder plan slot's week-1 planned sets (`plan` loads), or null when they don't apply now. */
+function builderFirstSets(slot: PlanDayDraft['plan']['slots'][number], version: PlanDraftVersion, input: PlanFirstLoadsInput, exerciseId: string): (PlannedSet | null)[] | null {
+  const sub = input.substitute;
+  if (painHoldFor(exerciseId, sub.painFlags, sub.sessionPain, input.nowMs, sub.at.tz) !== null) return null;
+  const built = toMs(version.createdAt.utc);
+  if ((input.histories.get(exerciseId) ?? []).some((h) => toMs(h.performedAtUtc) > built)) return null;
+  const sets = slot.setTemplates.map((t): PlannedSet | null => {
+    const l = t.load;
+    if (t.setType === 'warmup' || l === undefined || l.source !== 'plan' || l.load === null) return null;
+    const provenance: TargetProvenance = {
+      source: 'plan',
+      setAt: version.createdAt,
+      routineName: input.routine.name,
+      requestedLoad: l.load,
+      basis: null,
+      ...(l.estimate === true ? { estimate: true as const } : {}),
+      guardNotes: l.basis === null ? [] : [l.basis.slice(0, 300)],
+    };
+    // No `source`: a plan's own target (as a routine template's), its provenance says `plan`.
+    return { load: l.load, reps: t.reps, durationS: t.durationS, rpe: t.targetRpe, rir: null, provenance };
+  });
+  return sets.some((x) => x !== null) ? sets : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -834,7 +865,7 @@ export function planDayRows(day: Pick<PlanDayDraft, 'plan'>, exerciseOf: (exerci
         name: ex?.name ?? 'Exercise',
         scheme: draftSchemeText(s),
         load,
-        estimate: loads.some((l) => l.source === 'coach_est'),
+        estimate: loads.some((l) => l.source === 'coach_est' || l.estimate === true),
         held: loads.some((l) => l.held),
         main: s.main,
         superset: s.supersetGroup,
