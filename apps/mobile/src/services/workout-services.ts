@@ -349,6 +349,7 @@ import type {
 
 import { undoOpId, undoRefusalText } from '../workout/undo-op';
 import { setActivePainFlagged } from '../workout/pain-flagged';
+import { deloadAtOf } from './deload-at';
 
 /** A past workout's title when it has no exercise (`Finish anyway` with nothing added). */
 export const EMPTY_WORKOUT_TITLE = 'Empty workout';
@@ -1026,7 +1027,9 @@ export type PreviewCheck = { kind: 'duplicate' } | { kind: 'stale' } | { kind: '
 
 export function createWorkoutServices(ctx: WorkoutServicesContext) {
   const repos = () => ctx.repos();
-  const domain = () => createSessionService(repos(), ctx.newId);
+  // (PM, 23 Oct) Every real start is marked when it falls in the plan's deload week.
+  const deloadAt = deloadAtOf(repos);
+  const domain = () => createSessionService(repos(), ctx.newId, { deloadAt });
 
   /**
    * The pain flag an op set on a movement, if it is still on (review r2 B1).
@@ -1688,7 +1691,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     if (req.noteSource === true && ref !== null && !req.preview) await noteStartFrom(p.id, ref.sessionId, req.opId);
     // (19 Oct) A coach plan's workout never done yet: its first workout takes the plan's checked loads, re-checked now.
     const firstLoads = routine && ref === null && routine.createdFromPlan !== undefined ? await planDayFirstLoads(p, routine, req.gymId, req.gymEquipment, req.today ?? null).catch(() => null) : null;
-    const service = req.newId ? createSessionService(repos(), req.newId) : domain();
+    const service = req.newId ? createSessionService(repos(), req.newId, { deloadAt }) : domain();
     const r = await service.startRoutine({
       ownerId: p.id,
       gymId: req.gymId,
@@ -1746,7 +1749,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     for (const id of exercises.keys()) histories.set(id, await historyFor(p.id, id).catch(() => [] as HistorySession[]));
     const substitute = await substituteCtx(p, req.gymId, req.gymEquipment, req.today ?? null, exercises.keys());
     const lastUsedHere = await lastUsedFor(p.id, [...exercises.keys(), ...swapExerciseIds(req.todayEdits)], req.gymId);
-    const service = req.newId ? createSessionService(repos(), req.newId) : domain();
+    const service = req.newId ? createSessionService(repos(), req.newId, { deloadAt }) : domain();
     return service.startCoachDraft({
       ownerId: p.id,
       gymId: req.gymId,
@@ -2641,7 +2644,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const targets = await nextTargetsOf(p, resolved.source, today).catch(() => null);
     // The same history mapping Start uses, so the preview is what Start creates (gym-switch GS3).
     const lastUsedHere = await lastUsedFor(p.id, [...resolved.source.exercises.map((e) => e.exerciseId), ...swapExerciseIds(todayEdits)], gymId);
-    const r = await createSessionService(repos(), newId).startFromSession({
+    const r = await createSessionService(repos(), newId, { deloadAt }).startFromSession({
       ownerId: p.id,
       gymId,
       routineId: null,

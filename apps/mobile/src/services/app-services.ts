@@ -67,6 +67,7 @@ import { createBuilderCoachPorts } from '../builder/coach-ports';
 import { setBuilderReviewProvider } from '../builder/review';
 import { createBuilderCoachService, createDayNotes } from '../coach/builder-coach-service';
 import { createBuilderReviewProvider } from '../coach/builder-review-provider';
+import { deloadAtOf } from './deload-at';
 
 /**
  * The app's in-process services (no HTTP layer). Screens call these and never
@@ -401,7 +402,7 @@ export function createAppServices(deps: AppServicesDeps) {
     return outcome;
   }
 
-  const domainSessions = () => createSessionService(repos(), deps.newId);
+  const domainSessions = () => createSessionService(repos(), deps.newId, { deloadAt: deloadAtOf(repos) });
 
   const sessions = {
     active: async (): Promise<SessionAggregate | null> => {

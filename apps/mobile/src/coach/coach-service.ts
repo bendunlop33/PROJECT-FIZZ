@@ -2428,7 +2428,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (set === undefined) return null;
     const live = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status !== 'deleted').sort((x, y) => x.index - y.index);
     const ruleRpe = (await ruleRpesOf(a))[set.sessionExerciseId] ?? null;
-    return evaluateCoachTrigger(set, live.findIndex((s) => s.id === set.id) + 1, DEFAULT_COACH_TRIGGER_THRESHOLDS, targetRpeOf(set, ruleRpe)?.rpe ?? null);
+    return evaluateCoachTrigger(set, live.findIndex((s) => s.id === set.id) + 1, DEFAULT_COACH_TRIGGER_THRESHOLDS, targetRpeOf(set, ruleRpe)?.rpe ?? null, { deload: a.session.deload !== undefined });
   }
 
   /** Whether the offer's logged set, as it is now, still triggers the offer's kind. */

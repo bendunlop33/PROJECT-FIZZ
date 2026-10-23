@@ -87,8 +87,9 @@ describe('plan length = block 1: the week, the deload, Your plan’s weeks', () 
     expect(ov?.block?.views).toHaveLength(6);
     const week1Before = JSON.stringify(ov?.block?.views[0]?.days.map((d) => d.rows));
 
-    // Week 1's Push, then the next Monday: week 2.
-    await doPush(s, gymId);
+    // Week 1's Push, then the next Monday: week 2. A normal week's workout is not marked (PM, 23 Oct).
+    const week1Push = await doPush(s, gymId);
+    expect((await s.workout.load(week1Push))?.aggregate.session.deload).toBeUndefined();
     nextMonday();
     expect((await loaded(s)).block?.text).toBe('Week 2 of 6');
     ov = await s.plans.overview();
@@ -135,7 +136,7 @@ describe('plan length = block 1: the week, the deload, Your plan’s weeks', () 
 
     // Force-close: the week is derived again, the same.
     await h.forceClose();
-    const { services: s2 } = await h.launch();
+    let { services: s2 } = await h.launch();
     expect((await loaded(s2)).block?.text).toBe('Week 6 of 6 · Deload');
 
     // The deload-week workout starts lighter; the plan day's template is never changed by it (rule 2).
@@ -158,6 +159,8 @@ describe('plan length = block 1: the week, the deload, Your plan’s weeks', () 
     const firstSets = agg?.sets.filter((x) => x.sessionExerciseId === first?.id && x.setType !== 'warmup') ?? [];
     expect(first?.exerciseId).toBe(main?.id);
     expect(firstSets).toHaveLength(deloadSetCount(main?.sets ?? 0));
+    // (PM, 23 Oct) Start marked it as the deload week's, stored with the workout (survives a relaunch).
+    expect(agg?.session.deload).toEqual({ planId: inUse.planId, week: 6, of: 6 });
     const startedTop = firstSets.find((x) => x.setType === 'top')?.planned.load?.value ?? null;
     if (main?.top != null && startedTop !== null) expect(startedTop).toBeLessThanOrEqual(main.top * 0.9 + 1e-6);
     expect(startedTop).not.toBeNull();
@@ -168,6 +171,9 @@ describe('plan length = block 1: the week, the deload, Your plan’s weeks', () 
 
     // Past week 6: the block is done; `Start next block` opens the builder with the same answers.
     nextMonday();
+    await h.forceClose();
+    ({ services: s2 } = await h.launch());
+    expect((await s2.workout.load(deloadSession))?.aggregate.session.deload).toEqual({ planId: inUse.planId, week: 6, of: 6 });
     expect((await loaded(s2)).block).toMatchObject({ text: 'Block done', done: true, deload: false });
     const done = await s2.plans.overview();
     expect(done?.block).toMatchObject({ done: true, current: 6 });
@@ -176,6 +182,10 @@ describe('plan length = block 1: the week, the deload, Your plan’s weeks', () 
     expect(next?.answers).toEqual(a);
     expect(next?.draft).toBeNull();
     if (next == null) throw new Error('no builder');
+    // (PM, 23 Oct) The next block's lift checks (6-rep estimate, week-1 loads) start from a normal week, never the deload.
+    const fromHistory = next.lifts(next.answers).flatMap((l) => (l.from?.kind === 'history' ? [l.from.atUtc] : []));
+    expect(fromHistory.length).toBeGreaterThan(0);
+    expect(fromHistory).not.toContain(agg?.session.startedAt.utc);
     const block2 = await s2.planBuilder.save(next, next.answers, null, h.ids());
     if (!block2.ok) throw new Error('not built');
     // A stale Apply (an older version) is refused; the right one applies and replaces the finished plan.
