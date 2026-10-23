@@ -17,6 +17,7 @@ import {
   equipmentHere,
   painFlagCovering,
   pbDefaultAnswers,
+  pbAppliedBuilder,
   pbExpect,
   pbPrefSuggestion,
   pbHistoryOf,
@@ -111,7 +112,11 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     return open.sort((a, b) => toMs(b.updatedAtUtc) - toMs(a.updatedAtUtc))[0] ?? null;
   }
 
-  async function open(): Promise<PlanBuilderSession | null> {
+  /**
+   * `fromPlanId` (Ben, 23 Oct: plan length = block 1): `Start next block ›` on a finished block: the builder starts
+   * from that plan's answers (a fresh build from his records now; nothing is written until `Build plan`).
+   */
+  async function open(opts: { fromPlanId?: string } = {}): Promise<PlanBuilderSession | null> {
     const p = await deps.profile();
     if (p === null) return null;
     const store = deps.store();
@@ -160,9 +165,11 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     // (WU1–WU12) The catalogue facts Start's warm-up planner reads, so the plan's main-lift warm-ups match the workout's.
     const factsOf = (k: string): Exercise | null => byId.get(catalogueExerciseId(k)) ?? null;
 
-    const draft = await openDraft(p.id, at.utc);
+    const from = opts.fromPlanId === undefined ? null : await repo().get(opts.fromPlanId).catch(() => null);
+    const fromAnswers = from === null || from.ownerId !== p.id ? null : (pbAppliedBuilder(from)?.builder.answers ?? currentPlanVersion(from).builder?.answers ?? null);
+    const draft = fromAnswers !== null ? null : await openDraft(p.id, at.utc);
     const v = draft === null ? null : currentPlanVersion(draft);
-    const answers = v?.builder?.answers ?? pbDefaultAnswers({ sessions: training?.daysPerWeek ?? null, minutes: training?.sessionMinutes ?? null });
+    const answers = fromAnswers ?? v?.builder?.answers ?? pbDefaultAnswers({ sessions: training?.daysPerWeek ?? null, minutes: training?.sessionMinutes ?? null });
     const lifts = (a: PlanBuilderAnswers): PbLiftStart[] =>
       [...PB_CHECK_LIFTS, ...a.extraLifts.filter((k) => !(PB_CHECK_LIFTS as readonly string[]).includes(k))].flatMap((k) => {
         const s = pbLiftStart(k, kitOf, historyOf, a.lifts[k], nowMs);

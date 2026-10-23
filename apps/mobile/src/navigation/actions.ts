@@ -129,6 +129,11 @@ export function openPlanSetup() {
   return { type: 'NAVIGATE', payload: { name: 'PlanSetup' } } as const;
 }
 
+/** (Ben, 23 Oct: plan length = block 1) `Start next block ›`: the plan builder with the finished block's answers. */
+export function openNextBlock(fromPlanId: string) {
+  return { type: 'NAVIGATE', payload: { name: 'PlanSetup', params: { fromPlanId } } } as const;
+}
+
 /** `Apply plan`: to Today with the plan, showing `Plan applied · Undo` (plan-builder §3). */
 export function todayAfterPlanApplied(planApplied: PlanAppliedToastParam): PopToTabsAction {
   return popToTabs({ screen: 'Today', params: { planApplied } });

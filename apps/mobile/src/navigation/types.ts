@@ -236,9 +236,10 @@ export type RootStackParams = {
   /**
    * (Plan builder, 23 Oct) Gym goals → Your week → Your plan (Check your lifts first when needed), offline. Opened from
    * Today's `Set up a plan ›` and Library › Plan's `Set up a plan` (`openPlanSetup`). An open plan built before (not
-   * applied) opens on Your plan.
+   * applied) opens on Your plan. `fromPlanId` (Ben, 23 Oct: plan length = block 1): `Block done · Start next block ›`
+   * on Your plan, the builder starting from that plan's answers.
    */
-  PlanSetup: undefined;
+  PlanSetup: { fromPlanId?: string } | undefined;
 };
 
 /** Your workout's back control when it wasn't opened from Set up: `‹ Today`, `‹ Library`, `‹ Summary`, else `‹ Back`. */
