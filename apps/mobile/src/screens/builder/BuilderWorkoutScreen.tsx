@@ -19,6 +19,7 @@ import { newUuid } from '../../device/runtime';
 import { builderPage, openStartedWorkout, popToToday } from '../../navigation/actions';
 import type { BuilderBack, RootStackParams } from '../../navigation/types';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
+import { NameSheet } from '../routines/NameSheet';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, CheckInScale, PrimaryButton, SecondaryButton, StatusLine, TextButton, Toast, ToastHost } from '../../ui';
@@ -75,7 +76,11 @@ export function BuilderWorkoutScreen() {
   const [speech] = useState(createOnDeviceSpeech);
   const [proposal, setProposal] = useState<{ proposal: BuilderProposal; state: ProposalState } | null>(null);
   const [applying, setApplying] = useState(false);
-  const [toast, setToast] = useState<(BuilderToast & { whyOpen: boolean }) | null>(null);
+  // `onUndo`: an Undo that isn't the draft's own (a variation saved from `⋯`).
+  const [toast, setToast] = useState<(BuilderToast & { whyOpen: boolean; onUndo?: () => void }) | null>(null);
+  // (Ben, 23 Oct) `⋯ Save as a variation`: the name sheet (its prefill), one op ID per opening.
+  const [variationName, setVariationName] = useState<string | null>(null);
+  const variationOp = useRef(newUuid());
   const [popup, setPopup] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [swap, setSwap] = useState<{ slotKey: string | null; group: BuilderGroup; groups: BuilderGroup[]; sections: ChoiceSection[] } | null>(null);
@@ -176,7 +181,7 @@ export function BuilderWorkoutScreen() {
   }, []);
 
   const showToast = useCallback(
-    (t: BuilderToast | null) => {
+    (t: (BuilderToast & { onUndo?: () => void }) | null) => {
       if (toastTimer.current !== null) clearTimeout(toastTimer.current);
       setToast(t === null ? null : { ...t, whyOpen: false });
       // With VoiceOver on, an Undo toast stays until dismissed (close button).
@@ -474,13 +479,47 @@ export function BuilderWorkoutScreen() {
   const v = workoutView(snap);
   const todayView = todayOptionsView(todayOpts, snap);
 
-  /** `⋯` (§7): `Save to Workouts` for a workout that isn't a plan day or a saved workout already. */
+  /**
+   * `⋯` (§7): `Save to Workouts` for a workout that isn't a plan day or a saved workout already; (Ben, 23 Oct) `Save as a
+   * variation` for a plan day (§1.3).
+   */
+  const moreItems: { label: string; run: () => void }[] = [
+    ...(snap.canSave ? [{ label: WORKOUT_COPY.saveToWorkouts, run: () => void save.open({ kind: 'draft', draftId: snap.draftId, gymId: snap.gymId }, snap.name) }] : []),
+    ...(snap.canSaveVariation ? [{ label: services.builder.copy.saveAsVariation, run: () => void openVariationName() }] : []),
+  ];
   const openMore = () => {
-    const options = [WORKOUT_COPY.saveToWorkouts, 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 1 }, (i) => {
-      if (i === 0) void save.open({ kind: 'draft', draftId: snap.draftId, gymId: snap.gymId }, snap.name);
+    const options = [...moreItems.map((m) => m.label), 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: moreItems.length }, (i) => {
+      moreItems[i]?.run();
     });
   };
+
+  async function openVariationName() {
+    const cur = snapRef.current;
+    if (cur === null) return;
+    const prefill = await services.builder.variationPrefill(cur.draftId).catch(() => null);
+    variationOp.current = newUuid();
+    setVariationName(prefill ?? '');
+  }
+
+  /** The name sheet's Save: one write; `<label> saved · Undo` (Undo deletes it). Null closes the sheet; text is its error. */
+  async function saveVariation(label: string): Promise<string | null> {
+    const cur = snapRef.current;
+    if (cur === null) return services.builder.copy.failed;
+    const r = await services.builder.saveAsVariation(cur.draftId, { label, opId: variationOp.current }).catch(() => ({ ok: false as const, message: services.builder.copy.failed }));
+    if (!r.ok) return r.message;
+    setVariationName(null);
+    changed();
+    const u = r.undo;
+    showToast({ text: services.builder.copy.saved(u.label), undoOpId: null, why: null, onUndo: () => {
+      showToast(null);
+      void services.builder.deleteVariation(u.id, { opId: newUuid(), expectedVersion: u.version }).then((d) => {
+        if (!d.ok) showToast({ text: d.message, undoOpId: null, why: null });
+        changed();
+      });
+    } });
+    return null;
+  }
 
   const rowAction = (row: WorkoutRowView, name: string) => {
     switch (name) {
@@ -512,7 +551,7 @@ export function BuilderWorkoutScreen() {
       <Toast
         icon="info.circle"
         text={toast.whyOpen && toast.why !== null ? toast.why : toast.text}
-        {...(toast.undoOpId !== null ? { action: WORKOUT_COPY.undo, onAction: () => void undo(toast.undoOpId ?? '') } : {})}
+        {...(toast.onUndo !== undefined ? { action: WORKOUT_COPY.undo, onAction: toast.onUndo } : toast.undoOpId !== null ? { action: WORKOUT_COPY.undo, onAction: () => void undo(toast.undoOpId ?? '') } : {})}
         {...(toast.why !== null && !toast.whyOpen ? { secondary: WORKOUT_COPY.why, onSecondary: () => { setToast({ ...toast, whyOpen: true }); } } : {})}
         onDismiss={() => { showToast(null); }}
         showClose={screenReader}
@@ -604,7 +643,7 @@ export function BuilderWorkoutScreen() {
               <TextButton label={WORKOUT_COPY.back} tone="secondary" onPress={() => { navigation.dispatch(builderPage('BuilderSetup', { draftId: snap.draftId })); }} />
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              {snap.canSave ? <TextButton label="⋯" accessibilityLabel={WORKOUT_COPY.more} tone="secondary" onPress={openMore} /> : null}
+              {moreItems.length > 0 ? <TextButton label="⋯" accessibilityLabel={WORKOUT_COPY.more} tone="secondary" onPress={openMore} /> : null}
               {back === undefined && snap.from === null ? <TextButton label="Close" tone="secondary" onPress={() => { navigation.goBack(); }} /> : null}
             </View>
           </View>
@@ -852,6 +891,17 @@ export function BuilderWorkoutScreen() {
       />
       {alertsAsk.sheet}
       {save.sheet}
+      <NameSheet
+        visible={variationName !== null}
+        title={services.builder.copy.saveAsVariation}
+        buttonLabel="Save"
+        initialName={variationName ?? ''}
+        check={(n) => Promise.resolve(n.trim() === '' ? { ok: false as const, message: 'Give it a name' as const } : { ok: true as const, name: n.trim(), note: null })}
+        onSubmit={saveVariation}
+        onClose={() => {
+          setVariationName(null);
+        }}
+      />
       <BottomCard visible={checkInSheet} onClose={() => { setCheckInSheet(false); }}>
         <AppText variant="title2" accessibilityRole="header">
           {WORKOUT_COPY.checkIn}

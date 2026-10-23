@@ -1,7 +1,11 @@
 import {
   adviseBuilder,
   applyBuilderEdit,
+  alignToDraft,
   applyVariation,
+  builderChanges,
+  suggestVariationLabel,
+  variationExtrasOf,
   builderLoad,
   slotLoadOf,
   slotRepsWhy,
@@ -298,6 +302,8 @@ export interface BuilderSnapshot {
   from: BuilderDraftFrom | null;
   /** (22 Oct, §7) `⋯ Save to Workouts`: not a plan day and not already a saved workout. */
   canSave: boolean;
+  /** (Ben, 23 Oct) `⋯ Save as a variation`: an open plan-day workout with its template (§1.3, §4.3). */
+  canSaveVariation: boolean;
   /** (Review B1) Names of the exercises of that workout Your workout can't hold (one it can't find, past its limits): `N left out`. */
   leftOut: string[];
   /**
@@ -445,6 +451,11 @@ export const BUILDER_COPY = {
   saved: (label: string) => `${label} saved`,
   /** (Ben, 23 Oct) `↻ Mix it up` with no fresh option for any accessory. */
   nothingToMix: 'No other option',
+  /** (Ben, 23 Oct) `⋯ Save as a variation`. */
+  saveAsVariation: 'Save as a variation',
+  notAVariation: 'Can’t save these changes as a variation',
+  sameAsPlan: 'Same as the plan day',
+  giveName: 'Give it a name',
   mixed: (from: string, to: string) => `${from} → ${to}`,
 } as const;
 
@@ -872,6 +883,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       gymId: v.request.gymId,
       from: key?.from ?? null,
       canSave: planDay === null && stored?.templateRoutineId === undefined && key?.from?.kind !== 'routine' && !chatSaved,
+      canSaveVariation: d.status === 'open' && planDay !== null && stored?.templateRoutineId !== undefined && stored.templateVersion !== undefined,
       leftOut,
       time,
       coachLanded: d.status === 'open' && d.undo?.coach !== undefined && d.undo.atVersion === d.version ? { text: d.undo.coach.text, undoOpId: d.undo.opId } : null,
@@ -1456,6 +1468,33 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       case 'invalid':
         return { ok: false, reason: 'gone', message: BUILDER_COPY.notFound };
     }
+  }
+
+  /**
+   * (Ben, 23 Oct; workout-builder-v3 §1.3, §4.3) What Your workout's `⋯ Save as a variation` would save: the open
+   * plan-day draft as Ben has it now (Time's cuts put back) as extras on the template it opened, at the version it
+   * opened (rule 5). Refused when the template moved, nothing differs, or the extras can't give this workout back
+   * (order alone, a template pair split, the main lift changed: §4.3 has no op for those).
+   */
+  async function variationFromDraft(p: UserProfile, draftId: string): Promise<{ ok: true; draft: WorkoutDraft; template: Routine; splitDayId: string; mainLiftExerciseId: string | null; extras: PlanDayVariation['extras']; suggested: string; templateVersion: number } | { ok: false; message: string }> {
+    const d = await repos().workoutDrafts.get(draftId).catch(() => null);
+    const stored = d === null ? null : builderSetupOf(d);
+    const key = d?.builderKey;
+    if (d === null || d.ownerId !== p.id || key === undefined || d.status !== 'open' || stored === null || stored.templateRoutineId === undefined || stored.templateVersion === undefined || key.planId === null || key.splitDayId === null) return { ok: false, message: BUILDER_COPY.notFound };
+    const template = await repos().routines.get(stored.templateRoutineId).catch(() => null);
+    if (template === null || template.ownerId !== p.id || isDeleted(template) || template.version !== stored.templateVersion) return { ok: false, message: BUILDER_COPY.planChanged };
+    const v = currentDraftVersion(d);
+    const current = untimed(stored, fromDraftPlan(v.plan, stored.restLevel ?? 'normal'));
+    const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...template.exercises.map((e) => e.exerciseId), ...exerciseIdsOf(current)], keySeed: `${d.id}:variation` });
+    const base = openTemplate(template, null, env).workout;
+    const x = variationExtrasOf(base, current);
+    if (!x.ok) return { ok: false, message: BUILDER_COPY.notAVariation };
+    if (x.extras.length === 0) return { ok: false, message: BUILDER_COPY.sameAsPlan };
+    const reopened = alignToDraft(applyVariation(base, x.extras, env.ctx).workout, current);
+    if (builderChanges(reopened, current).length > 0) return { ok: false, message: BUILDER_COPY.notAVariation };
+    const changes = builderChanges(alignToDraft(base, current), current);
+    const mainLiftExerciseId = stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null;
+    return { ok: true, draft: d, template, splitDayId: key.splitDayId, mainLiftExerciseId, extras: x.extras, suggested: suggestVariationLabel(changes, env.info).slice(0, PLAN_DAY_LIMITS.labelMax), templateVersion: stored.templateVersion };
   }
 
   const service = {
@@ -2541,6 +2580,37 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const next: PlanDayVariation = u.kind === 'variation_new' ? { ...v, deletedAtUtc: at.utc, version: v.version + 1, updatedAtUtc: at.utc, opIds: [...v.opIds, opId].slice(-PLAN_DAY_LIMITS.maxOpIds) } : { ...v, extras: u.restore, version: v.version + 1, updatedAtUtc: at.utc, opIds: [...v.opIds, opId].slice(-PLAN_DAY_LIMITS.maxOpIds) };
       const w = await repos().planDayVariations.saveVariation(p.id, next, v.version, opId);
       return w.status === 'written' || w.status === 'replayed' ? { ok: true } : { ok: false, message: BUILDER_COPY.changedSince };
+    },
+
+    /** (Ben, 23 Oct) `⋯ Save as a variation`'s name prefill (`arms superset`); null when there's nothing to save. */
+    async variationPrefill(draftId: string): Promise<string | null> {
+      const p = await owner();
+      const v = await variationFromDraft(p, draftId).catch(() => null);
+      return v === null || !v.ok ? null : v.suggested;
+    },
+
+    /**
+     * (Ben, 23 Oct; §1.3) `⋯ Save as a variation` on Your workout for a plan day: the workout as Ben has it saved as a new
+     * variation of its template (`Chest · bench · arms superset`), keyed by (split day, main lift), at most 5, one name
+     * each. One write under `opId` (a retry is the same save); the draft itself doesn't change (Start stays today only,
+     * D1). Undo deletes it (`deleteVariation` at the version returned).
+     */
+    async saveAsVariation(draftId: string, req: { label: string; opId: string }): Promise<{ ok: true; undo: { id: string; version: number; label: string } } | { ok: false; message: string }> {
+      const p = await owner();
+      const id = deriveId(`builder-variation:${req.opId}`);
+      const existing = (await repos().planDayVariations.listByOwner(p.id).catch(() => [] as PlanDayVariation[])).find((x) => x.id === id);
+      if (existing?.opIds.includes(req.opId) === true) return { ok: true, undo: { id, version: existing.version, label: existing.label } };
+      const label = req.label.trim().slice(0, PLAN_DAY_LIMITS.labelMax);
+      if (label.length === 0) return { ok: false, message: BUILDER_COPY.giveName };
+      const v = await variationFromDraft(p, draftId).catch(() => null);
+      if (v === null) return { ok: false, message: BUILDER_COPY.failed };
+      if (!v.ok) return v;
+      const at = deps.now().utc;
+      const next: PlanDayVariation = { id, ownerId: p.id, version: 1, createdAtUtc: at, updatedAtUtc: at, splitDayId: v.splitDayId, mainLiftExerciseId: v.mainLiftExerciseId, label, extras: v.extras, basedOn: { routineId: v.template.id, version: v.templateVersion }, deletedAtUtc: null, opIds: [req.opId] };
+      const w = await repos().planDayVariations.saveVariation(p.id, next, null, req.opId).catch(() => null);
+      if (w === null) return { ok: false, message: BUILDER_COPY.failed };
+      if (w.status === 'written' || w.status === 'replayed') return { ok: true, undo: { id, version: w.variation.version, label } };
+      return { ok: false, message: w.status === 'limit' ? BUILDER_COPY.limitReached : w.status === 'duplicate_label' ? BUILDER_COPY.labelTaken : BUILDER_COPY.failed };
     },
 
     /**
