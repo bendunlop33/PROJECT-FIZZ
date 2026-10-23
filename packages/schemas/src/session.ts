@@ -256,6 +256,8 @@ export const TargetProvenanceSchema = z.object({
       decision: RuleDecisionSchema,
       summary: z.string().max(600),
       facts: z.array(z.string().max(600)).max(20),
+      /** (Review v5offers 6) Rule 8's stall: repeated misses at the same load, even where no easier load exists. */
+      stalled: z.literal(true).optional(),
     })
     .optional(),
   step: TargetStepSchema.optional(),

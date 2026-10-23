@@ -41,8 +41,9 @@ export interface NextSessionBasis {
   builtIn: { target: CoachTarget; sets: number } | null;
   /**
    * The lift is stalled (playbook rule 8: 2–3 sessions failing the same target): the built-in rule found
-   * repeated misses at the same load (its `reduce_load` decision, `failuresBeforeReduce` sessions in a row).
-   * A coach change that eases the load or changes the rep target on it is then a stall reset.
+   * repeated misses at the same load (`failuresBeforeReduce` sessions in a row): its `reduce_load` decision, or
+   * its hold at the lightest load this equipment has (`rule.stalled`; review v5offers 6). A coach change that
+   * eases the load or changes the rep target on it is then a stall reset.
    */
   stalled?: boolean | undefined;
 }
@@ -258,7 +259,7 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
  */
 export function nextSessionBases(
   source: SessionAggregate,
-  builtIn: ReadonlyMap<string, readonly { setType: string; planned: { load: CoachTarget['load']; reps: CoachTarget['reps']; provenance?: { rule?: { decision: string } | undefined } | null | undefined } }[]>,
+  builtIn: ReadonlyMap<string, readonly { setType: string; planned: { load: CoachTarget['load']; reps: CoachTarget['reps']; provenance?: { rule?: { decision: string; stalled?: true | undefined } | undefined } | null | undefined } }[]>,
   /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), the last fallback of `last.rpe`. */
   ruleTargetRpe: Readonly<Record<string, number>> = {},
 ): NextSessionBasis[] {
@@ -296,8 +297,8 @@ export function nextSessionBases(
       ...(benRpe !== undefined ? { benRpe } : {}),
       lastSets: block.workingSets,
       builtIn: firstPlan === undefined ? null : { target: { load: firstPlan.planned.load, reps: firstPlan.planned.reps }, sets: workingPlan.length },
-      // Rule 8's stall, as the built-in rule saw it: repeated misses at the same load.
-      ...(firstPlan?.planned.provenance?.rule?.decision === 'reduce_load' ? { stalled: true } : {}),
+      // Rule 8's stall, as the built-in rule saw it: repeated misses at the same load, reduced or not (review v5offers 6).
+      ...(firstPlan?.planned.provenance?.rule?.decision === 'reduce_load' || firstPlan?.planned.provenance?.rule?.stalled === true ? { stalled: true } : {}),
     });
   }
   return out;

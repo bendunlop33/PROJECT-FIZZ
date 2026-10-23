@@ -139,15 +139,23 @@ describe('a stalled lift on the Summary: the coach’s reset is a suggestion, ne
     expect(same.rows).toEqual([]);
   });
 
-  it('nextSessionBases marks a lift stalled when the built-in rule reduces it for repeated misses', () => {
+  it('nextSessionBases marks a lift stalled when the built-in rule finds repeated misses, reduced or at the lightest load', () => {
     const agg = {
       session: { id: id(8000), equipmentSnapshot: [], gymChanges: [] },
       exercises: [{ ...BENCH, exerciseOrder: 0 }],
       sets: [0, 1, 2].map((i) => ({ id: id(8100 + i), sessionExerciseId: BENCH.id, setType: 'working', pairedWithSetId: null, status: 'completed', order: i, version: 1, planned: { load: kg(100), reps: { min: 6, max: 8 }, durationS: null, rpe: 8, rir: null }, actual: { load: kg(100), reps: 4 } })),
     } as unknown as SessionAggregate;
-    const plan = (decision: string) => new Map([[BENCH.exerciseId, [0, 1, 2].map(() => ({ setType: 'working', planned: { load: kg(97.5), reps: { min: 6, max: 8 }, provenance: { rule: { decision } } } }))]]);
+    const plan = (decision: string, stalled?: true) => new Map([[BENCH.exerciseId, [0, 1, 2].map(() => ({ setType: 'working', planned: { load: kg(97.5), reps: { min: 6, max: 8 }, provenance: { rule: { decision, ...(stalled === undefined ? {} : { stalled }) } } } }))]]);
     expect(nextSessionBases(agg, plan('reduce_load'))[0]?.stalled).toBe(true);
+    // One miss (a bad day): not stalled.
     expect(nextSessionBases(agg, plan('hold_after_miss'))[0]?.stalled).toBeUndefined();
+    // The streak reached at the lightest load (no easier one): still stalled (review v5offers 6).
+    const lightest = nextSessionBases(agg, plan('hold_after_miss', true))[0];
+    expect(lightest?.stalled).toBe(true);
+    // A rep-scheme change on it (within ±2, CA8-small otherwise) is a reset: bigger, a suggestion with Apply.
+    if (lightest === undefined) throw new Error('no basis');
+    const r = validateNextSessionTargets({ source, bases: [{ ...lightest, exercise: BENCH, equipment: barbell(), last: t(100, 6, 8), lastSets: 3, builtIn: { target: t(100, 6, 8), sets: 3 } }], targets: [ask(BENCH.exerciseId, t(100, 4, 6))], painFlags: [], gymName: null, ctx });
+    expect(r.rows[0]).toMatchObject({ size: 'bigger', reasons: [STALL_RESET_REASON], after: t(100, 4, 6) });
   });
 });
 
