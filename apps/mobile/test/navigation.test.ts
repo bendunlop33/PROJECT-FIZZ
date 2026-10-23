@@ -250,7 +250,7 @@ describe('Library stack: Your plan from Today (review planview S1)', () => {
   it('a plan day on top is popped: the stack is exactly [LibraryHome] on Workouts with the nonce', () => {
     const s = apply(withPlanDay(), nested(openYourPlan('n1')));
     expect(s.routes.map((r) => r.name)).toEqual(['LibraryHome']);
-    expect(s.routes[0]?.params).toEqual({ segment: 'workouts', plan: 'n1' });
+    expect(s.routes[0]?.params).toEqual({ segment: 'plan', plan: 'n1' });
     // Already there: a second tap stays one LibraryHome.
     expect(apply(s, nested(openYourPlan('n2'))).routes.map((r) => r.name)).toEqual(['LibraryHome']);
   });

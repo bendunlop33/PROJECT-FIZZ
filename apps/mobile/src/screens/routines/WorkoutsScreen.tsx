@@ -8,15 +8,12 @@ import type { Routine } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { popToTabs } from '../../navigation/actions';
-import { PLAN_COPY } from '../../services/plan-services';
 import type { EditorFrom, LibraryToastParam } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Banner, Eyebrow, Icon, SecondaryButton, StatusLine, Tag, TextButton, Toast, ToastHost, toastBottom } from '../../ui';
 import { deleteConfirm, LIBRARY_COPY_UI, LIBRARY_TOASTS, rowMenu } from '../../workout/library-view';
 import { useSaveToWorkouts } from './SaveWorkoutSheet';
-import { LiftTargetsBlock } from '../library/LiftTargetsBlock';
-import { YourPlanBlock } from '../library/YourPlanBlock';
 
 type Toasting = { text: string; action?: string; onAction?: () => void; why?: string } | null;
 
@@ -48,8 +45,8 @@ export function NewWorkoutButton({ from }: { from: EditorFrom }) {
 
 /**
  * The Workouts list's body: `from` is where the editor returns; `handedToast` is the editor's `Saved Push A` [Undo].
- * (Ben, 19 Oct) With a plan in use, `Your plan` leads and the list below is `Other workouts` (the plan's days are in the
- * block). `scrollTopKey`: a new value scrolls to the top (Today's `Day 2 of 4 ›`).
+ * With a plan in use the list is `Other workouts`: the plan's days are on Library › Plan (Ben, 22 Oct; Your plan moved
+ * there from the top of this list). `scrollTopKey`: a new value scrolls to the top.
  */
 export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }: { from: EditorFrom; handedToast: LibraryToastParam | undefined; onHandedToast: () => void; scrollTopKey?: string | undefined }) {
   const theme = useTheme();
@@ -64,15 +61,9 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
   const busy = useRef(false);
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym().catch(() => null);
-    // Review planview S5: a failed read is said, never shown as no plan.
-    const [library, planRead] = await Promise.all([
-      s.routines.library({ gymId: gym?.id ?? null, sort, showAllHistory: showAll }),
-      s.plans.overview().then(
-        (v) => ({ plan: v, planFailed: false }),
-        () => ({ plan: null, planFailed: true }),
-      ),
-    ]);
-    return { gym, library, ...planRead };
+    // The plan's days are on Library › Plan; a failed plan read is said there (review planview S5), and here every workout shows.
+    const [library, plan] = await Promise.all([s.routines.library({ gymId: gym?.id ?? null, sort, showAllHistory: showAll }), s.plans.overview().catch(() => null)]);
+    return { gym, library, plan };
   });
   useEffect(() => {
     reload();
@@ -271,10 +262,6 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
     const view = plan === null ? data.value.library.view : withoutRoutines(data.value.library.view, new Set(plan.days.map((d) => d.routineId)));
     return (
       <View style={{ gap: theme.space['5'] }}>
-        {plan !== null ? <YourPlanBlock plan={plan} onToast={setToast} /> : null}
-        {/* Review lift-targets S2: with no plan in use, the targets still have a home here (nothing while the setting is off). */}
-        {plan === null && !data.value.planFailed ? <LiftTargetsBlock onToast={setToast} /> : null}
-        {data.value.planFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_COPY.loadFailed} action={<TextButton label="Try again" onPress={reload} />} /> : null}
         {active ? (
           <Banner
             severity="info"

@@ -1,4 +1,4 @@
-import { EQUIPMENT_FILTER_LABEL, EQUIPMENT_FILTERS, MOVEMENT_FILTER_LABEL, MOVEMENT_FILTERS, MUSCLE_GROUPS, type EquipmentFilter, type ExerciseFilters, type MovementFilter, type MuscleGroup } from '@fizz/domain';
+import { BROAD_MUSCLE_GROUPS, broadGroupOfFilters, EQUIPMENT_FILTER_LABEL, EQUIPMENT_FILTERS, MOVEMENT_FILTER_LABEL, MOVEMENT_FILTERS, MUSCLE_GROUPS, type BroadMuscleGroup, type EquipmentFilter, type ExerciseFilters, type MovementFilter, type MuscleGroup } from '@fizz/domain';
 
 import type { LibrarySegment } from '../navigation/types';
 
@@ -10,13 +10,16 @@ import type { LibrarySegment } from '../navigation/types';
 
 export const LIBRARY_BROWSE_COPY = {
   title: 'Library',
+  // (Ben, 22 Oct) `Plan | Workouts | Exercises`.
   segments: [
-    { key: 'exercises', label: 'Exercises' },
+    { key: 'plan', label: 'Plan' },
     { key: 'workouts', label: 'Workouts' },
+    { key: 'exercises', label: 'Exercises' },
   ] as const satisfies readonly { key: LibrarySegment; label: string }[],
   segmentLabel: 'Library',
   search: 'Search exercises',
   muscle: 'Muscle',
+  all: 'All',
   equipment: 'Equipment',
   movement: 'Movement',
   clear: 'Clear',
@@ -62,4 +65,10 @@ export function filterChipLabel(f: ExerciseFilters, kind: FilterKind): string {
 /** Toggle one key in a multi-select list. */
 export function toggled(keys: readonly string[], key: string): string[] {
   return keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key];
+}
+
+/** (D5) The muscle chip row: `All` + Chest, Back, Shoulders, Legs, Arms, Core; exactly one on. `group` null: `All`. */
+export function muscleChips(f: ExerciseFilters): { label: string; group: BroadMuscleGroup | null; selected: boolean }[] {
+  const on = broadGroupOfFilters(f);
+  return [{ label: LIBRARY_BROWSE_COPY.all, group: null, selected: on === null }, ...BROAD_MUSCLE_GROUPS.map((g) => ({ label: g, group: g, selected: on === g }))];
 }

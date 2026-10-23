@@ -141,7 +141,7 @@ describe('navigation (EL10)', () => {
     let s = apply(router.getInitialState(options), navigate('BuilderWorkout', { open: { kind: 'next' } }));
     s = apply(s, openYourPlan('tap-1'));
     expect(s.routes.map((r) => r.name)).toEqual(['Tabs']);
-    expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', plan: 'tap-1' }, pop: true } });
+    expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'plan', plan: 'tap-1' }, pop: true } });
   });
 
   it('from Exercise detail, the editor’s Save and Cancel go back to it', () => {
@@ -206,7 +206,8 @@ describe('review library-browse B1: New workout from Library › Workouts', () =
   it('the header’s ＋ opens New workout on the Workouts segment whatever the list holds; the old root Workouts route is gone', () => {
     const lib = code(read('screens/library/LibraryScreen.tsx'));
     // Shown on the segment, not tied to the list being empty. (19 Oct) Exercises' ＋ is New exercise.
-    expect(lib).toMatch(/segment === 'workouts' \? <NewWorkoutButton from="Library" \/> : <NewExerciseButton \/>/);
+    // (22 Oct) Plan has no ＋.
+    expect(lib).toMatch(/segment === 'workouts' \? <NewWorkoutButton from="Library" \/> : segment === 'exercises' \? <NewExerciseButton \/> : null/);
     expect(lib).toMatch(/navigation\.navigate\('ExerciseForm', \{\}\)/);
     const list = code(read('screens/routines/WorkoutsScreen.tsx'));
     expect(list).toMatch(/navigation\.navigate\('WorkoutEditor', \{ routineId: null, from \}\)/);
@@ -267,9 +268,11 @@ describe('review library-browse S3: the sets control stacks at AX sizes (EL-B24)
 });
 
 describe('review lift-targets S2: lift targets have a home without a plan', () => {
-  it('Workouts shows the Lift targets block when no plan is in use (the block itself is empty while off)', () => {
-    const list = code(read('screens/routines/WorkoutsScreen.tsx'));
-    expect(list).toMatch(/plan === null && !data\.value\.planFailed \? <LiftTargetsBlock onToast=\{setToast\} \/> : null/);
+  it('Library › Plan shows the Lift targets block when no plan is in use (the block itself is empty while off)', () => {
+    // (22 Oct) Moved with Your plan from Workouts to Library › Plan.
+    const tab = code(read('screens/library/PlanTab.tsx'));
+    expect(tab).toMatch(/plan === null && !planFailed \? <LiftTargetsBlock onToast=\{setToast\} \/> : null/);
+    expect(code(read('screens/routines/WorkoutsScreen.tsx'))).not.toContain('LiftTargetsBlock');
     const block = code(read('screens/library/LiftTargetsBlock.tsx'));
     expect(block).toMatch(/if \(data\.state !== 'ready' \|\| data\.value === null \|\| !data\.value\.on\) return null;/);
   });
@@ -281,6 +284,11 @@ describe('filter chips on one row (Ben, 20 Oct; design pass 5.5)', () => {
     const filters = screen.slice(screen.indexOf('<TextField value={query}'), screen.indexOf("data.state === 'error'"));
     expect(filters).toMatch(/<ScrollView horizontal showsHorizontalScrollIndicator=\{false\}/);
     expect(filters).not.toContain('<ChipRow>');
-    for (const k of ['gymChip', "'muscle', 'equipment', 'movement'"]) expect(filters).toContain(k);
+    for (const k of ['gymChip', "'equipment', 'movement'"]) expect(filters).toContain(k);
+    // (D5) The muscle chips are their own row above search, not a sheet.
+    const muscles = screen.slice(screen.indexOf('<ScrollView keyboardShouldPersistTaps'), screen.indexOf('<TextField value={query}'));
+    expect(muscles).toMatch(/<ScrollView horizontal[^>]*accessibilityLabel=\{LIBRARY_BROWSE_COPY\.muscle\}/);
+    expect(muscles).toContain('muscleChips(filters)');
+    expect(filters).not.toContain("'muscle'");
   });
 });

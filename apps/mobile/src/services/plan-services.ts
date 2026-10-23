@@ -11,6 +11,10 @@ import {
   pausedInWeek,
   pausePlan,
   pinPlanDay,
+  previousPlanLine,
+  previousPlans,
+  restartedPlanIdFor,
+  restartPlan,
   planDayBodyParts,
   resumePlan,
   splitInUse,
@@ -164,6 +168,14 @@ export interface PlanDayScreenData {
   pinned: boolean;
   /** The plan is paused: `Make next` isn't offered. */
   paused: boolean;
+}
+
+/** Library › Plan › Previous: one row (`Summer PPL` / `Push / Pull / Legs · ended 20 Sep`). */
+export interface PreviousPlanRow {
+  planId: string;
+  planVersion: number;
+  name: string;
+  line: string;
 }
 
 /** What `End plan` did (Ben, 20 Oct): the workouts it couldn't put back (`N workouts not restored`, behind `Why?`). */
@@ -414,6 +426,48 @@ export function createPlanServices(deps: PlanServicesDeps) {
           return { ok: false, reason: 'closed', message: PLAN_COPY.closed };
         case 'changed_since':
           return { ok: false, reason: 'changed_since', message: PLAN_COPY.changedSince(r.names) };
+        case 'missing':
+        case 'invalid':
+          return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      }
+    },
+
+    /**
+     * Library › Plan › Previous (Ben, 22–23 Oct, D7): the plans Ben used before, newest first, each with the
+     * stored version `Start again` must find. Local reads only; a failed read throws (never shown as none).
+     */
+    async previous(): Promise<PreviousPlanRow[]> {
+      const p = await owner();
+      if (p === null) return [];
+      return previousPlans(await repo().listByOwner(p.id), p.id).map((x) => ({ planId: x.planId, planVersion: x.planVersion, name: x.name, line: previousPlanLine(x, p.timezone) }));
+    },
+
+    /**
+     * `Start again` on a previous plan (until the plan builder ships, which opens with its answers instead):
+     * a copy of it applied in `mode`, superseding any plan in use. Its Undo is `undo({ planId: copy })`,
+     * which puts the setup before back (the plan in use then, too). `expectedVersion`: the row's (rule 5).
+     * Idempotent by `opId` (minted at the tap).
+     */
+    async startAgain(req: { planId: string; expectedVersion: number; mode: PlanApplyMode; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const source = await repo().get(req.planId).catch(() => null);
+      if (source === null || source.ownerId !== p.id) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const exercises = await exercisesToSave(source);
+      if (exercises === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      const at = deps.now();
+      const r = await repo()
+        .restart(p.id, req.planId, restartedPlanIdFor(req.opId), (s, routines, applied) => restartPlan(s, { expectedVersion: req.expectedVersion, mode: req.mode, opId: req.opId, at, live: liveRoutines(routines), applied }), exercises)
+        .catch(() => null);
+      if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      switch (r.status) {
+        case 'written':
+        case 'replayed':
+          return { ok: true, plan: r.plan, duplicate: r.status === 'replayed' };
+        case 'stale':
+        case 'closed':
+        case 'changed_since':
+          return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
         case 'missing':
         case 'invalid':
           return { ok: false, reason: 'missing', message: PLAN_COPY.missing };

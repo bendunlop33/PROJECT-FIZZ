@@ -93,12 +93,13 @@ export function openLibrary(segment: LibrarySegment, toast?: LibraryToastParam):
 }
 
 /**
- * Today's `Day 2 of 4 ›` (Ben, 19 Oct): Library › Workouts, scrolled to the top where Your plan is. `nonce`: once per tap.
+ * Library › Plan (Ben, 22 Oct; review gaps V1): Today's `Day 2 of 4 ›` and no-plan `Set up a plan ›`, Profile's
+ * `Set by your plan`. Scrolled to the top, where Your plan (or `Set up a plan`) is. `nonce`: once per tap.
  * `pop` (review planview S1): a plan day left open in the Library stack is popped back to LibraryHome (React Navigation 7's
  * nested navigate otherwise pushes a second one on top of it).
  */
 export function openYourPlan(nonce: string): PopToTabsAction {
-  return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', plan: nonce }, pop: true } });
+  return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'plan', plan: nonce }, pop: true } });
 }
 
 /**
