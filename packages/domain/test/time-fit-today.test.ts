@@ -6,8 +6,9 @@ import { apply, BENCH as SS_BENCH, expectError, expectOk, FACE, HANG, logCmd, RO
 
 /*
  * workout-table-v3 §5 (b3 merge): `+N min` offers the builder's fit ladder
- * over the sets left — shorter rests → RPE 9 → fewer sets → drop an
- * exercise, never the main lift — as one offer. Applied only on Ben's Apply
+ * over the sets left — shorter rests → RPE 9 → the cheapest cut (fit-to-time
+ * 22 Oct revision: a set or a whole exercise, least training lost per minute),
+ * never the main lift — as one offer. Applied only on Ben's Apply
  * (rule 3), versioned (rule 5), one Undo; done sets never change (rule 2).
  */
 
@@ -106,36 +107,34 @@ describe('timeFitOffer: the builder ladder over the sets left (v3 §5)', () => {
     }
   });
 
-  it('more over: the ladder in order — rests, then RPE 9 on an accessory’s last set, then fewer accessory sets', () => {
+  it('more over: the ladder in order — rests, then RPE 9 on an accessory’s last set, then the cheapest cut (one lateral raise set is enough)', () => {
     const s = underWay();
-    const o = offer(s, 8);
+    const o = offer(s, 7);
     expect(o.lines.map(timeFitLineText)).toEqual([
       'Bench press rest 3:00 → 2:00',
       'Lateral raise rest 1:30 → 1:00',
       'Cable fly rest 1:30 → 1:00',
       'Cable crunch rest 1:30 → 1:00',
-      'Lateral raise last set @8 → @9',
       // Review S2: an exercise that loses a set and has its new last set pushed shows both.
-      'Cable fly 3 → 2 sets',
-      'Cable fly last set @8 → @9',
-      'Cable crunch 3 → 2 sets',
-      'Cable crunch last set @8 → @9',
+      'Lateral raise 3 → 2 sets',
+      'Lateral raise last set @8 → @9',
     ]);
     const after = expectOk(applyOffer(s, o).r).state;
     const raise = setsOf(after, RAISE);
-    expect(raise.map((x) => x.planned.rpeOverride ?? x.planned.rpe)).toEqual([8, 8, 9]);
+    expect(raise.filter((x) => x.status === 'pending').map((x) => x.planned.rpeOverride ?? x.planned.rpe)).toEqual([8, 9]);
+    expect(raise.filter((x) => x.status === 'deleted')).toHaveLength(1);
     // The lb, per-hand load is as it was (nothing snapped or converted).
-    expect(raise.map((x) => x.planned.load)).toEqual(setsOf(s, RAISE).map((x) => x.planned.load));
-    expect(setsOf(after, FLY).filter((x) => x.status === 'pending')).toHaveLength(2);
-    expect(setsOf(after, FLY).filter((x) => x.status === 'deleted')).toHaveLength(1);
+    expect(raise.filter((x) => x.status === 'pending').map((x) => x.planned.load)).toEqual(setsOf(s, RAISE).slice(0, 2).map((x) => x.planned.load));
+    expect(setsOf(after, FLY).filter((x) => x.status === 'pending')).toHaveLength(3);
   });
 
-  it('far over: rests, effort, fewer sets, then abs dropped first; the main lift is never trimmed or dropped', () => {
+  it('far over: rests, then the cheapest cut: the other group’s isolation (a lateral raise on a chest day) is skipped first; the main lift is never trimmed or dropped', () => {
     const s = underWay();
     const o = offer(s, 12);
     const text = o.lines.map(timeFitLineText);
     expect(text[0]).toBe('Bench press rest 3:00 → 2:00');
-    expect(text).toContain('Skip: Cable crunch');
+    expect(text).toContain('Skip: Lateral raise');
+    expect(text).not.toContain('Skip: Cable fly');
     // The main lift: its rests may shorten (the builder's rule); its sets and loads never change for time.
     expect(text.filter((t) => t.startsWith('Bench press')).every((t) => t.includes(' rest '))).toBe(true);
     const benchIds = new Set(setsOf(s, BENCH).map((x) => x.id));
@@ -284,7 +283,7 @@ describe('left exactly as they are: Ben’s own edits, pain flags, timed exercis
     const first = offer(s, 1);
     const after = expectOk(applyOffer(s, first).r).state;
     const second = offer(after, 8);
-    expect(second.lines.some((l) => l.kind === 'sets' || l.kind === 'effort')).toBe(true);
+    expect(second.lines.some((l) => l.kind === 'sets' || l.kind === 'effort' || l.kind === 'drop')).toBe(true);
   });
 });
 
@@ -294,7 +293,9 @@ describe('the target never collapses (review S3)', () => {
     const o = offer(s, 300);
     expect(o.status).toBe('over');
     expect(o.targetMinutes).toBeGreaterThanOrEqual(Math.floor(o.beforeMinutes / 2));
-    expect(o.afterMinutes).toBeGreaterThanOrEqual(Math.floor(o.beforeMinutes / 2) - 1);
+    // Fitted to that target, never past it by more than one cut (the cheapest cut can save more than needed).
+    expect(o.afterMinutes).toBeLessThanOrEqual(o.targetMinutes);
+    expect(o.afterMinutes).toBeGreaterThan(0);
     expect(o.savedMinutes).toBeGreaterThan(0);
     // Not everything droppable goes: at least one accessory stays.
     const skipped = new Set(o.steps.flatMap((st) => (st.type === 'skip_exercise' ? [st.sessionExerciseId] : [])));
@@ -339,7 +340,7 @@ describe('fit_today_to_time: Apply and Undo', () => {
     expect(SessionAggregateSchema.safeParse(after).success).toBe(true);
     // Done sets are as they were (rule 2).
     for (const done of s.sets.filter((x) => x.status === 'completed')) expect(after.sets.find((x) => x.id === done.id)).toEqual(done);
-    expect(setsOf(after, CRUNCH).every((x) => x.status === 'skipped')).toBe(true);
+    expect(setsOf(after, RAISE).every((x) => x.status === 'skipped')).toBe(true);
     // Undo, after a JSON round trip (a relaunch reads the stored workout).
     const stored = SessionAggregateSchema.parse(JSON.parse(JSON.stringify(after)));
     const back = expectOk(reduceSession(stored, { type: 'undo_op', at: at(420), opId: 'undo-fit-1', targetOpId: 'fit-1' })).state;
@@ -373,7 +374,7 @@ describe('fit_today_to_time: Apply and Undo', () => {
     const logged = apply(after, logCmd(b1?.id ?? '', values(kg(90), 8), 500));
     const back = expectOk(reduceSession(logged, { type: 'undo_op', at: at(520), opId: 'undo-fit-2', targetOpId: 'fit-1' })).state;
     expect(back.sets.find((x) => x.id === b1?.id)?.status).toBe('completed');
-    expect(setsOf(back, CRUNCH).every((x) => x.status === 'pending')).toBe(true);
+    expect(setsOf(back, RAISE).every((x) => x.status === 'pending')).toBe(true);
     const [, , , b2] = setsOf(back, BENCH);
     expect(b2?.rest.seconds).toBe(setsOf(s, BENCH)[3]?.rest.seconds);
   });

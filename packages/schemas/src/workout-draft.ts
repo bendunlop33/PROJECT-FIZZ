@@ -377,6 +377,7 @@ export const BuilderSetupSchema = z.object({
    * draft only: Start creates the fitted workout; the saved workout and the plan never get it. A Set up change or
    * Gym changed undoes it, changes the original and fits again; Reload and a new Day or Main lift clear it; the
    * coach's version keeps only shorter rests (review fixes, 22 Oct). `cut`: working sets taken from each kept slot.
+   * `paired`: pairs the fit made with Supersets on (fit-to-time 22 Oct revision).
    */
   timeFit: z
     .object({
@@ -385,6 +386,8 @@ export const BuilderSetupSchema = z.object({
       fromMinutes: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes),
       dropped: z.array(IdSchema).max(BUILD_LIMITS.maxExercises),
       cut: z.record(IdSchema, z.int().min(1).max(BUILD_LIMITS.maxWorkingSets)).optional(),
+      /** (22 Oct revision, D9) Singles the fit paired (Supersets on), each pair's slot keys: they stand alone again when it's undone. */
+      paired: z.array(z.array(IdSchema).min(2).max(BUILD_LIMITS.maxSuperset)).max(BUILD_LIMITS.maxExercises).optional(),
     })
     .optional(),
   /**

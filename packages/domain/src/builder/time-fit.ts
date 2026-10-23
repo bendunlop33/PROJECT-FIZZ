@@ -7,10 +7,10 @@ import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderSlot, Build
 /**
  * Your workout's Time control (22 Oct, Ben: "add option to reduce time"; fit-to-time.md, 22 Oct revision). Pure.
  *
- * - The fit is Today's built-in one (`fitToMinutes`, shrink only): shorter rests first, then fewer accessory sets
- *   (never below 2), then whole exercises (abs and no-group extras first, compounds last), never the main lift. No
- *   supersets are made (Supersets off is a hard rule, design review V14), no effort is pushed (the 22 Oct revision
- *   has no effort step; kept sets keep their own RPE), and nothing is ever added or raised.
+ * - The fit is Today's built-in one (`fitToMinutes`, shrink only; fit-to-time 22 Oct revision): shorter rests first,
+ *   then, only with Supersets on, pairs; then the cheapest cut by training lost per minute (a set, never below 2, or
+ *   a whole exercise), never the main lift. With Supersets off no superset is made (design review V14); no effort is
+ *   pushed (kept sets keep their own RPE), and nothing is ever added or raised.
  * - It works on today's draft only and keeps the workout as it was before the first Time change (`base`): every
  *   step fits from that, so more time brings back what it cut, up to the original, never more. At or above the
  *   length it had then, the original is back as it was.
@@ -30,6 +30,8 @@ export interface BuilderTimeFit {
   dropped: readonly string[];
   /** Working sets the fit took from each slot it kept (slot key → sets); they come back even if Ben edits the slot later. */
   cut?: Readonly<Record<string, number>>;
+  /** (22 Oct revision) Singles the fit paired (Supersets on), each pair's slot keys; they stand alone again when it's undone. */
+  paired?: readonly (readonly string[])[];
 }
 
 /**
@@ -73,7 +75,7 @@ function readded(fit: Pick<BuilderTimeFit, 'base'>, current: BuilderWorkout, dro
  * `hold`: a slot Ben touched since the fit stays as he has it, the sets the fit took from it held back (what a
  * shorter Time fits from; review R1). Without it they're added back (the whole original: Undo, the full length).
  */
-export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut'>, current: BuilderWorkout, opts: { hold?: boolean } = {}): BuilderWorkout {
+export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut' | 'paired'>, current: BuilderWorkout, opts: { hold?: boolean } = {}): BuilderWorkout {
   const baseSlots = new Map(slotsOf(fit.base.blocks).map((s) => [s.key, s]));
   let blocks: BuilderBlock[] = current.blocks.map((b) => ({
     ...b,
@@ -87,6 +89,8 @@ export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut
       return back === 0 ? s : withSetsBack(s, was, back);
     }),
   }));
+  // Pairs the fit made stand alone again, in place (only while still exactly that builder pair).
+  for (const keys of fit.paired ?? []) blocks = blocks.flatMap((b) => (madePair(b, keys) ? b.slots.map((x): BuilderBlock => ({ slots: [x], auto: false })) : [b]));
   const order = slotsOf(fit.base.blocks).map((s) => s.key);
   const dropped = new Set(fit.dropped);
   const present = () => new Set(blocks.flatMap((b) => b.slots.map((s) => s.key)));
@@ -114,6 +118,9 @@ export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut
   }
   return { ...current, blocks, restLevel: fit.base.restLevel };
 }
+
+/** A block that is still exactly the builder pair a fit made of these slots. */
+const madePair = (b: BuilderBlock, keys: readonly string[]): boolean => b.auto && b.slots.length === keys.length && b.slots.every((x) => keys.includes(x.key));
 
 export interface WorkoutTimeFitInput {
   current: BuilderWorkout;
@@ -204,13 +211,14 @@ export function refitWorkoutToTime(i: WorkoutRefitInput): WorkoutTimeFitOutcome 
   const fromMinutes = clampMinutes(i.fromMinutes);
   if (to >= fromMinutes) return { workout: i.original, fit: null, minutes: to, over: false };
   const held = heldSets(i.original, i.work);
-  const r = fitToMinutes(i.work, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: false, supersets: i.supersets, pushEffort: false, noGroupFirst: true });
+  const r = fitToMinutes(i.work, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: false, supersets: i.supersets });
   if (r.steps.length === 0 && Object.keys(held).length === 0) return { workout: i.original, fit: null, minutes: to, over: r.status === 'over' };
   // The fit never cuts a touched slot (fit.ts), so its own cuts and the held sets never share a key.
   const cut: Record<string, number> = { ...held };
   for (const st of r.steps) if (st.kind === 'sets' && st.from > st.to) cut[st.slotKey] = st.from - st.to;
   const dropped = r.steps.flatMap((s) => (s.kind === 'drop' ? [s.slotKey] : []));
-  return { workout: keepEffort(r.workout, i.work), fit: { base: i.original, fromMinutes, dropped, cut }, minutes: to, over: r.status === 'over' };
+  const paired = r.steps.flatMap((s) => (s.kind === 'pair' ? [[...s.slotKeys]] : []));
+  return { workout: keepEffort(r.workout, i.work), fit: { base: i.original, fromMinutes, dropped, cut, ...(paired.length === 0 ? {} : { paired }) }, minutes: to, over: r.status === 'over' };
 }
 
 /**
@@ -235,13 +243,15 @@ export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome 
 }
 
 /**
- * What a live fit changed against the original, now (Ben's later edits counted): shorter rests, fewer sets on a slot
- * he didn't touch, exercises it left out. For the note after Time and the detail behind it.
+ * What a live fit changed against the original, now (Ben's later edits counted): shorter rests, pairs it made (still
+ * as it made them), fewer sets on a slot he didn't touch, exercises it left out. For the note after Time and the detail behind it.
  */
 export function timeFitChanges(fit: BuilderTimeFit, current: BuilderWorkout): BuilderFitStep[] {
   const now = new Map(slotsOf(current.blocks).map((s) => [s.key, s]));
   const out: BuilderFitStep[] = [];
   if (fit.base.restLevel !== current.restLevel) out.push({ kind: 'rest', from: fit.base.restLevel, to: current.restLevel });
+  // Pairs the fit made that still stand as it made them.
+  for (const keys of fit.paired ?? []) if (current.blocks.some((x) => madePair(x, keys))) out.push({ kind: 'pair', slotKeys: [...keys] });
   for (const was of slotsOf(fit.base.blocks)) {
     const s: BuilderSlot | undefined = now.get(was.key);
     if (s === undefined) {

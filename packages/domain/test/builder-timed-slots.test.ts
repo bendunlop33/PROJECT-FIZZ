@@ -103,14 +103,13 @@ describe('a timed or cardio slot', () => {
     expect(reloadSlotLoads(carry, { role: 'isolation', barbell: false }, loadInput({ equipment: null, convention: 'per_hand' })).rows.map((r) => r.load)).toEqual([null, null]);
   });
 
-  it('fit to time: cardio with no builder group goes first with the abs; its effort isn’t pushed; a timed set keeps its time', () => {
+  it('fit to time: cardio with no builder group is cut first (an extra); its effort isn’t pushed; a timed set keeps its time', () => {
     const bench = makeSlot('bench', { main: true }, ctx);
     const fly = makeSlot('cable_fly', { main: false }, ctx);
     const w: BuilderWorkout = { blocks: [{ slots: [bench], auto: false }, { slots: [fly], auto: false }, { slots: [ride], auto: false }], restLevel: 'normal' };
     const minutes = Math.round(estimateBuilderSeconds(w, ctx) / 60);
-    // Rests alone can't save 20 minutes: the ride (no group) is the first exercise to go; the fly and bench stay.
-    // Your workout's Time (`noGroupFirst`); Today's card fit reads a no-group exercise as before.
-    const r = fitToMinutes(w, ctx, { minutes: minutes - 15, mainGroup: 'Chest', grow: false, supersets: false, noGroupFirst: true });
+    // Rests alone can't save 15 minutes: the ride (no group: an extra, 1.5 a set) is the cheapest cut; the fly and bench stay.
+    const r = fitToMinutes(w, ctx, { minutes: minutes - 15, mainGroup: 'Chest', grow: false, supersets: false, pushEffort: true });
     expect(r.steps.filter((s) => s.kind === 'drop').map((s) => s.slotKey)).toEqual([ride.key]);
     expect(slotsOf(r.workout.blocks).map((s) => s.exerciseId)).toEqual(['bench', 'cable_fly']);
     expect(r.steps.flatMap((s) => (s.kind === 'effort' ? s.slotKeys : []))).not.toContain(ride.key);

@@ -7,8 +7,8 @@ import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderInfoLookup,
 
 /**
  * The workout's `+N min` offer (workout-table-v3 §5; Ben, 20 Oct): the
- * builder's fit ladder (`fitToMinutes`: shorter rests → RPE 9 → fewer sets →
- * drop an exercise, never the main lift) over the sets not done yet, as one
+ * builder's fit ladder (`fitToMinutes`: shorter rests → RPE 9 → the cheapest
+ * cut, a set or an exercise, never the main lift) over the sets not done yet, as one
  * offer. Pure: the screen shows `lines`, and only Ben's Apply sends
  * `fitTodayCommand` (rule 3: never applied unasked). Done sets are never in
  * it (rule 2); it only shortens rests, raises no load and adds nothing.
@@ -275,7 +275,8 @@ export function timeFitOffer(input: TimeFitInput): TimeFitOffer {
   const none: TimeFitOffer = { ...base, status: 'none', afterMinutes: beforeMinutes, savedMinutes: 0, lines: [], steps: [] };
   if (w.blocks.length === 0 || input.overByMinutes <= 0) return none;
 
-  const fit = fitToMinutes(w, ctx, { minutes: targetMinutes, mainGroup, grow: false, supersets: false, floorMinutes: 1 });
+  // Its own spec keeps the effort step (workout-table-v3 §5); the cut itself is the shared one (fit-to-time 22 Oct).
+  const fit = fitToMinutes(w, ctx, { minutes: targetMinutes, mainGroup, grow: false, supersets: false, floorMinutes: 1, pushEffort: true });
   if (fit.status === 'fits') return none;
 
   const names = new Map(a.exercises.map((e) => [e.id, e.exerciseName]));

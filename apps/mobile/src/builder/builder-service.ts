@@ -1002,7 +1002,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   /** (22 Oct) The live Time fit a stored set-up holds, as the builder's workout; null: none. */
   const timeFitOf = (stored: BuilderSetup | null | undefined): BuilderTimeFit | null => {
     const t = stored?.timeFit;
-    return t === undefined ? null : { base: fromDraftPlan(t.base, t.baseRestLevel ?? 'normal'), fromMinutes: t.fromMinutes, dropped: t.dropped, ...(t.cut === undefined ? {} : { cut: t.cut }) };
+    return t === undefined ? null : { base: fromDraftPlan(t.base, t.baseRestLevel ?? 'normal'), fromMinutes: t.fromMinutes, dropped: t.dropped, ...(t.cut === undefined ? {} : { cut: t.cut }), ...(t.paired === undefined ? {} : { paired: t.paired }) };
   };
 
   /** (22 Oct) The workout with what a live Time fit cut put back (Start prompt and plan writes never see the fit). */
@@ -1056,7 +1056,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     delete out.timeFit;
     delete out.restLevel;
     if (r.workout.restLevel !== 'normal') out.restLevel = r.workout.restLevel;
-    if (r.fit !== null) out.timeFit = { base: toDraftPlan(r.fit.base, env.codec), ...(r.fit.base.restLevel === 'normal' ? {} : { baseRestLevel: r.fit.base.restLevel }), fromMinutes: r.fit.fromMinutes, dropped: [...r.fit.dropped], ...(r.fit.cut === undefined || Object.keys(r.fit.cut).length === 0 ? {} : { cut: { ...r.fit.cut } }) };
+    if (r.fit !== null) out.timeFit = { base: toDraftPlan(r.fit.base, env.codec), ...(r.fit.base.restLevel === 'normal' ? {} : { baseRestLevel: r.fit.base.restLevel }), fromMinutes: r.fit.fromMinutes, dropped: [...r.fit.dropped], ...(r.fit.cut === undefined || Object.keys(r.fit.cut).length === 0 ? {} : { cut: { ...r.fit.cut } }), ...(r.fit.paired === undefined || r.fit.paired.length === 0 ? {} : { paired: r.fit.paired.map((p) => [...p]) }) };
     if (r.fit === null && r.minutes === from) delete out.timeFrom;
     return out;
   };

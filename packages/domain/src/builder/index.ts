@@ -7,6 +7,7 @@ export * from './arrange';
 export * from './slot';
 export * from './reps';
 export * from './fit';
+export * from './fit-note';
 export * from './build';
 export * from './merge';
 export * from './advise';

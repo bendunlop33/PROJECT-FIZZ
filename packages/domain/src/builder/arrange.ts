@@ -207,12 +207,13 @@ export function sharedMuscle(x: BuilderExerciseInfo, y: BuilderExerciseInfo): st
  * are left as they are, and so is a slot Ben unlinked (`unlinked`): it is
  * never re-paired automatically (review B3). `only`: make only pairs that
  * include one of these slot keys (a newly added exercise), leaving every
- * other single as it is. Pairs the builder makes are `auto`.
+ * other single as it is. `skip`: singles never paired (the time fit leaves a
+ * slot Ben edited as he has it). Pairs the builder makes are `auto`.
  */
-export function pairSlots(blocks: readonly BuilderBlock[], info: BuilderInfoLookup, opts: { only?: ReadonlySet<string> } = {}): BuilderBlock[] {
+export function pairSlots(blocks: readonly BuilderBlock[], info: BuilderInfoLookup, opts: { only?: ReadonlySet<string>; skip?: (s: BuilderSlot) => boolean } = {}): BuilderBlock[] {
   const singles = blocks.flatMap((b) => {
     const s = b.slots.length === 1 ? b.slots[0] : undefined;
-    return s !== undefined && !s.main && s.unlinked !== true && !infoOrDefault(info, s.exerciseId).heavy ? [s] : [];
+    return s !== undefined && !s.main && s.unlinked !== true && !infoOrDefault(info, s.exerciseId).heavy && opts.skip?.(s) !== true ? [s] : [];
   });
   const only = opts.only;
   const allowed = (x: BuilderSlot, y: BuilderSlot): boolean => only === undefined || only.has(x.key) || only.has(y.key);
