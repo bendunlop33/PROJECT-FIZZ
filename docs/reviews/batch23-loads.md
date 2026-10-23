@@ -1,6 +1,6 @@
 # Review: batch 23 Oct, track `loads` (D4 back-offs, D6, O1)
 
-**Verdict: CHANGES NEEDED** (23 Oct 2026). Three blocking issues, all in the D4 back-off rule: B1, B2 and B3. O1 and the D6 finding hold up.
+**Verdict: PASS** (re-review after fix round 1, 23 Oct 2026). B1, B2 and B3 are fixed and verified; see "Re-review (fix round 1)" at the end. The first-round verdict (CHANGES NEEDED, three blocking issues in the D4 back-off rule) is kept below for history.
 
 Scope: `9261625..6de08ae` on `claude/loads-23oct` (1f23220 O1, 1b1eb2f D4, 6de08ae D4 wiring).
 Checked against Ben's decisions D1–D9 (22–23 Oct), `docs/training-guides/set-structures.md` SS4, `docs/training-guides/history-targets.md` HT8, `docs/design/workout-builder-v3.md` §3.1, CLAUDE.md rules 1–10 and the minimal-copy convention.
@@ -181,3 +181,48 @@ Every issue was reproduced first with temporary probes (domain and coach), which
 **Found, not changed (outside this review):** `reloadSlotLoads` works an untyped top out from the anchor. When the rule yields to history (rule 100 × 6 @ 8, own est. max 140), the build plans 100 but Gym changed to the same bar gives a top of 102.5, with back-offs of 97.5. The same applies to an accessory's last set @ 9, which Gym changed makes heavier than the others. This needs its own fix and review.
 
 **Checks:** `npm run typecheck` exit 0; `npm run lint` exit 0; `npm run test` 480 files, 8878 passed, 2 todo, exit 0.
+
+## Re-review (fix round 1), 23 Oct 2026
+
+**Verdict: PASS.** No blocking issues remain.
+
+Scope: `c7b75ed..3a44b0e` (`a2818c6`, `31d4aa7`, `45474c3`, `7a7c791`, `3a44b0e`).
+
+### Checks I ran
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` | exit 0 |
+| `npm run test` (full suite) | 480 files, 8878 passed, 2 todo, exit 0 |
+| Reviewer probe: one temporary domain test (top reps/RPE edits, a typed top then a reps edit, set-type changes, a back-off edit under a lowered top), deleted afterwards | Results below |
+| Commit trailers | All five end with the required two lines |
+| `docs/design/*` untouched; no UI copy changed; worktree clean | Yes |
+
+### Blocking issues from round 1
+
+- **B1 (ratchet): fixed.** Every untyped back-off in an anchored slot is now a function of the slot's current top. `backoffTarget` (`packages/domain/src/builder/backoff.ts:103`) calculates `min(built, built x topNow / builtTop)`, where `builtTop` comes from the anchor at the top's own reps and RPE. `settleBackoffs` (`packages/domain/src/builder/set-rows.ts:367`) runs after every `editSetRow`, `changeSetType` and `setWorkingCount` that has load inputs, and in the coach's `withWorkingLoad`. `reloadSlotLoads` and `setRowsFor` use the same helper, so the edit path and Gym changed can't disagree. The 300-step seeded test checks that against Gym changed after every edit, in each focus. Saved and coach-built back-offs have no anchor, so they carry `backoffFrom`. It is optional in `DraftLoadSchema`, so older drafts still parse. It is kept through the codec and stripped wherever a back-off is re-derived or typed (`editSetRow`, `reloadSlotLoads`, `timedLoadsHere`, `slotAtNewGym`). The real-SQLite test covers replaying the same op ID, a stale basis, a force-close and Start.
+- **B2 (top reps/RPE): fixed.** My probe matched the claims: top reps 6 -> 10 gives top 90 with back-offs 87.5 / 85 / 82.5 (Strength / Balanced / Muscle). In an anchored slot, "never above top x (1 - band.min)" holds by construction, and the seeded test asserts it.
+- **B3 (band floor): fixed.** `backoffLoad` (`backoff.ts:59-63`) now clamps only toward lighter. The old test now expects 82.5, and a feasibility sweep covers reps 3-15 and RPE 6-10 in every focus.
+- The round-1 MEDIUM (a), MEDIUM (b), MEDIUM (c) and LOW drop findings are fixed as the fix note says, and each one is tested.
+
+### Should fix (not blocking)
+
+1. **A top reps or RPE edit that makes the top heavier can still raise the back-offs. Ben typing a heavier top, or the coach raising it, never does.** In my probe (Muscle, top 100 x 6 @ 8, back-offs 90), top RPE 8 -> 9 gives top 102.5 with back-offs 92.5. Top reps 6 -> 4 gives top 105 with back-offs 95. The band's top edge moves with `builtTop` (`set-rows.ts:374`, `builtTopOf(anchor, top, ctx)`). Both loads are feasible for their reps and RPE (95 x 8 @ 8 is exactly what the est. max gives), so this isn't a safety problem. It is consistent and doesn't depend on edit history. It is, though, a third reading of HT8's "raising the top never raises back-offs". Fold it into SP2 for Ben. If he wants HT8 to apply here too, measure the band's top edge from the top as first built.
+2. **`belowBackoffBand` (`backoff.ts:70`) has no production caller.** The "lower edge is a check" exists only in tests. That is acceptable until Ben answers SP1, but either wire it to a Why? note or remove it once he does.
+3. **Edited slots at a new gym re-derive back-offs from the anchor (`from-planned.ts:268`).** When `planned.anchorE1rm` isn't null, `settleBackoffs` replaces the planner's back-off loads with the builder's formula. That only happens for a slot Ben edited; an untouched slot keeps the planned rows. Today `plannedAsDraftPlan` sets `anchorE1rm: null` (`from-planned.ts:195`), so this isn't reachable now. It becomes a mismatch if a planned anchor is ever added.
+4. **Pre-existing, found by the builder and confirmed as outside this diff.** When the rule yields to Ben's history, `reloadSlotLoads` derives an untyped top from the anchor, so Gym changed to the same bar gives a top 2.5 kg heavier (102.5) than the build planned (100). It is deterministic and snapped to the bar, but it should get its own ticket and review.
+
+### Nits
+
+- With Ben's typed top of 110 and the top reps then set to 10, the back-offs drop to 87.5 / 85 / 82.5. They are worked out below the top at 10 reps from the est. max, while the typed 110 x 10 stays. That is consistent with "never raised by a heavier top", but Ben may find it odd. No change needed.
+- The coach `reps` op still sets one rep count on the top and every back-off (pre-existing).
+
+### Spec issues (carried, for Ben)
+
+- SP1: what the band's lower edge means (a check, not a clamp, as implemented).
+- SP2: whether a heavier top, from the coach or a top reps/RPE edit (item 1 above), raises the back-offs. Workout-builder-v3 §3.1 step 2 conflicts with HT8 here.
+- SP5: back-off RPE above the top's (SS4), and a typed back-off above a lowered top. Both need a flag and copy.
+- Coarse items (2.5 kg dumbbells, 5 kg stacks): back-offs a whole step below the top, or no load at all at the item's minimum.
+- The active workout: a lighter logged top doesn't move the pending back-offs.
+- D4 and D6 still need CHANGELOG entries, and workout-builder-v3 §3.1 step 9 still needs its update.
