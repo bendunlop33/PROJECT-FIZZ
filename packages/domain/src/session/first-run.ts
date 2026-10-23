@@ -85,9 +85,9 @@ function startingPlanProvenance(why: StartingPlanWhy, ruleName: string, count: n
 
 export type MuscleRegion = 'push' | 'pull' | 'legs' | 'core';
 
-const PUSH_MUSCLES = new Set(['chest', 'upper_chest', 'lower_chest', 'front_delts', 'side_delts', 'triceps', 'shoulders', 'delts']);
-const PULL_MUSCLES = new Set(['lats', 'upper_back', 'mid_back', 'traps', 'rear_delts', 'biceps', 'forearms', 'brachialis', 'rhomboids']);
-const LEG_MUSCLES = new Set(['quads', 'glutes', 'hamstrings', 'calves', 'adductors', 'abductors', 'hip_flexors', 'spinal_erectors', 'lower_back']);
+const PUSH_MUSCLES = new Set(['chest', 'upper_chest', 'lower_chest', 'front_delts', 'side_delts', 'triceps', 'shoulders', 'delts', 'serratus']);
+const PULL_MUSCLES = new Set(['lats', 'upper_back', 'mid_back', 'traps', 'rear_delts', 'biceps', 'forearms', 'brachialis', 'rhomboids', 'rotator_cuff', 'neck']);
+const LEG_MUSCLES = new Set(['quads', 'glutes', 'hamstrings', 'calves', 'adductors', 'abductors', 'hip_flexors', 'spinal_erectors', 'lower_back', 'tibialis']);
 const CORE_MUSCLES = new Set(['abs', 'core', 'obliques', 'rectus_abdominis', 'transverse_abdominis']);
 const PATTERN_REGION: Readonly<Record<string, MuscleRegion>> = {
   horizontal_push: 'push',
@@ -142,6 +142,9 @@ const MUSCLE_WORD: Readonly<Record<string, string>> = {
   side_delts: 'Shoulders',
   shoulders: 'Shoulders',
   delts: 'Shoulders',
+  rotator_cuff: 'Shoulders',
+  serratus: 'Chest',
+  neck: 'Neck',
   triceps: 'Triceps',
   biceps: 'Biceps',
   lats: 'Back',
@@ -154,6 +157,8 @@ const MUSCLE_WORD: Readonly<Record<string, string>> = {
   glutes: 'Glutes',
   hamstrings: 'Hamstrings',
   calves: 'Calves',
+  tibialis: 'Shins',
+  hip_flexors: 'Hip flexors',
   spinal_erectors: 'Lower back',
   lower_back: 'Lower back',
   abs: 'Core',

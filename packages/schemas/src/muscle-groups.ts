@@ -31,8 +31,13 @@ export const MUSCLE_TO_GROUP = {
   // Rear delts count as Back everywhere (Ben, 20 Oct: workout-builder-v3 §9 Q13):
   // Progress counts, library filters, split matching and the coach all follow this.
   rear_delts: 'Back',
+  // Neck work sits with the traps (Ben, 23 Oct: catalogue expansion Q1).
+  neck: 'Back',
   front_delts: 'Shoulders',
   side_delts: 'Shoulders',
+  rotator_cuff: 'Shoulders',
+  // Serratus sits on the chest wall and is trained by pressing (push-up plus); Chest, not Core.
+  serratus: 'Chest',
   biceps: 'Biceps',
   brachialis: 'Biceps',
   triceps: 'Triceps',
@@ -42,9 +47,13 @@ export const MUSCLE_TO_GROUP = {
   adductors: 'Glutes',
   abductors: 'Glutes',
   calves: 'Calves',
+  // The front of the shin: the lower-leg group (Legs when picking), not the calves themselves.
+  tibialis: 'Calves',
   abs: 'Core',
   obliques: 'Core',
   core: 'Core',
+  // Hip flexors are trained by leg raises and sit-ups: Core, not a counting row of their own (D5's nine rows).
+  hip_flexors: 'Core',
   forearms: 'Forearms',
   grip: 'Forearms',
 } as const satisfies Record<string, MuscleGroup>;

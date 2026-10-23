@@ -23,12 +23,12 @@
  * hides a right suggestion.
  */
 
-const DELTS = ['front_delts', 'side_delts', 'rear_delts'] as const;
+const DELTS = ['front_delts', 'side_delts', 'rear_delts', 'rotator_cuff'] as const;
 // Hinges (deadlift, RDL, trap-bar deadlift, swing) are filed under Back by FitNotes' own defaults.
 const BACK = ['lats', 'upper_back', 'traps', 'spinal_erectors', 'rear_delts', 'glutes', 'hamstrings'] as const;
-const CHEST = ['chest', 'upper_chest'] as const;
-const LEGS = ['quads', 'hamstrings', 'glutes', 'adductors', 'abductors', 'calves'] as const;
-const CORE = ['abs', 'obliques', 'core'] as const;
+const CHEST = ['chest', 'upper_chest', 'serratus'] as const;
+const LEGS = ['quads', 'hamstrings', 'glutes', 'adductors', 'abductors', 'calves', 'tibialis', 'hip_flexors'] as const;
+const CORE = ['abs', 'obliques', 'core', 'hip_flexors', 'serratus'] as const;
 const BICEPS = ['biceps', 'brachialis', 'forearms', 'grip'] as const;
 const FOREARMS = ['forearms', 'grip', 'brachialis'] as const;
 const LOWER_BACK = ['spinal_erectors', 'glutes', 'hamstrings'] as const;
@@ -42,7 +42,7 @@ const CATEGORY_MUSCLES: Readonly<Record<string, readonly string[]>> = {
   bicep: BICEPS,
   chest: CHEST,
   leg: LEGS,
-  shoulder: [...DELTS, 'traps'],
+  shoulder: [...DELTS, 'traps', 'neck', 'serratus'],
   tricep: ['triceps'],
   // FitNotes 2 (iPhone) and other muscle-level names.
   abdominal: CORE,
@@ -54,13 +54,13 @@ const CATEGORY_MUSCLES: Readonly<Record<string, readonly string[]>> = {
   deltoid: DELTS,
   'front delt': ['front_delts'],
   'side delt': ['side_delts'],
-  'rear delt': ['rear_delts', 'upper_back'],
+  'rear delt': ['rear_delts', 'upper_back', 'rotator_cuff'],
   lat: ['lats', 'upper_back'],
   latissimus: ['lats', 'upper_back'],
   'latissimus dorsi': ['lats', 'upper_back'],
-  trap: ['traps', 'upper_back'],
-  trapezius: ['traps', 'upper_back'],
-  'upper trap': ['traps', 'upper_back'],
+  trap: ['traps', 'upper_back', 'neck'],
+  trapezius: ['traps', 'upper_back', 'neck'],
+  'upper trap': ['traps', 'upper_back', 'neck'],
   'lower back': LOWER_BACK,
   'back lower': LOWER_BACK,
   'upper back': UPPER_BACK,
@@ -72,8 +72,8 @@ const CATEGORY_MUSCLES: Readonly<Record<string, readonly string[]>> = {
   hamstring: ['hamstrings', 'glutes'],
   glute: ['glutes', 'adductors', 'abductors'],
   gluteus: ['glutes', 'adductors', 'abductors'],
-  calf: ['calves'],
-  calve: ['calves'],
+  calf: ['calves', 'tibialis'],
+  calve: ['calves', 'tibialis'],
   adductor: ['adductors'],
   abductor: ['abductors'],
   forearm: FOREARMS,

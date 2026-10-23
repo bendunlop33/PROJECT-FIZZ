@@ -10,6 +10,8 @@ import {
   loadCatalogue,
   MUSCLE_GROUPS,
   MUSCLE_TO_GROUP,
+  MUSCLES,
+  MuscleSchema,
   sha1,
   toExerciseRow,
   uuidV5,
@@ -78,7 +80,18 @@ describe('vocabularies', () => {
   });
   it('rear delts count as Back everywhere (Ben, 20 Oct, workout-builder-v3 §9 Q13)', () => {
     expect(MUSCLE_TO_GROUP.rear_delts).toBe('Back');
-    expect(Object.entries(MUSCLE_TO_GROUP).filter(([, g]) => g === 'Shoulders').map(([m]) => m)).toEqual(['front_delts', 'side_delts']);
+    // Rotator cuff (added 23 Oct) is the only other Shoulders word: cuff work is no longer filed as rear delts.
+    expect(Object.entries(MUSCLE_TO_GROUP).filter(([, g]) => g === 'Shoulders').map(([m]) => m)).toEqual(['front_delts', 'side_delts', 'rotator_cuff']);
+  });
+
+  it('the five words added 23 Oct (catalogue expansion Q1) map into the broad groups (D5)', () => {
+    expect(MUSCLE_TO_GROUP.hip_flexors).toBe('Core');
+    expect(MUSCLE_TO_GROUP.rotator_cuff).toBe('Shoulders');
+    expect(MUSCLE_TO_GROUP.serratus).toBe('Chest');
+    expect(MUSCLE_TO_GROUP.tibialis).toBe('Calves');
+    expect(MUSCLE_TO_GROUP.neck).toBe('Back');
+    for (const m of ['hip_flexors', 'rotator_cuff', 'serratus', 'tibialis', 'neck'] as const) expect(MUSCLES).toContain(m);
+    expect(MuscleSchema.safeParse('tibialis').success).toBe(true);
   });
 });
 

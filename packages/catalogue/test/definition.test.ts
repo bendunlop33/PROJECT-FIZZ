@@ -127,10 +127,13 @@ describe('definition map (§4.11.3, D1)', () => {
     expect(counts).toEqual([14, 12, 11]);
   });
 
-  it('every one of the 23 vocabulary muscles is in some replacedBy list; sub-parts and composites have no group of their own', () => {
+  it('every vocabulary muscle with region art is in some replacedBy list; sub-parts and composites have no group of their own', () => {
     const covered = new Set(DEFINITION_GROUPS.flatMap((g) => VIEWS.flatMap((v) => definitionReplacedBy(g, v))));
-    expect([...MUSCLES].filter((m) => !covered.has(m))).toEqual([]);
-    expect(MUSCLES).toHaveLength(23);
+    // The five words added 23 Oct (catalogue expansion Q1) have no region art yet: never coloured, so they replace no group.
+    const noArt = [...MUSCLES].filter((m) => VIEWS.every((v) => MUSCLE_REGION_TEXT[m][v] === null));
+    expect(noArt.sort()).toEqual(['hip_flexors', 'neck', 'rotator_cuff', 'serratus', 'tibialis']);
+    expect([...MUSCLES].filter((m) => !covered.has(m) && !noArt.includes(m))).toEqual([]);
+    expect(MUSCLES).toHaveLength(28);
     for (const m of ['upper_chest', 'brachialis', 'core', 'grip']) expect(DEFINITION_GROUPS as readonly string[]).not.toContain(m);
     // Core from behind is the erectors and obliques, so it replaces the lower back there only.
     expect(definitionReplacedBy('lowerBack', 'back')).toContain('core');

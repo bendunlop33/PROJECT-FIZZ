@@ -147,6 +147,13 @@ const MAP_TEXT: Record<Exclude<Muscle, 'core'>, Row> = {
   triceps: { side: ['upperArm.back 0.08–0.9 d1'], front: null, back: ['upperArm.face 0.10–0.85 c0 w0.75'] },
   upper_back: { side: ['thorax.back 0.58–0.95 d0.45'], front: null, back: ['thorax.face 0.55–0.95 c0 w0.5'] },
   upper_chest: { side: ['thorax.front 0.70–0.92 d0.45'], front: ['thorax.face 0.72–0.92 ±c0.45 w0.5'], back: null },
+  // Added 23 Oct (catalogue expansion Q1) with no region art yet: listed in the text and under `Not shown`, never
+  // drawn as a neighbouring muscle. Give each its §4.5 cells once the figure has the shapes.
+  hip_flexors: { side: null, front: null, back: null },
+  neck: { side: null, front: null, back: null },
+  rotator_cuff: { side: null, front: null, back: null },
+  serratus: { side: null, front: null, back: null },
+  tibialis: { side: null, front: null, back: null },
 };
 
 const join = (...cells: Cell[]): Cell => {
