@@ -411,3 +411,55 @@ Don't merge ahead of `claude/v3summary-23oct` (D1). After B3 and R3 are fixed, v
 ### Blocking for the next round
 
 - B3, plus its tests.
+
+## Fixes after re-review 1 (23 Oct, builder)
+
+Commits: `1801355`, `06785db`, `085369d` (on `d43d35a`).
+
+### Checks (run in /home/user/wt-todaylean on this tree)
+
+- `npm run typecheck`: exit 0.
+- `npm run lint`: exit 0.
+- `npm run test`: exit 0. 479 files, 8,860 tests passed, 2 todo.
+
+### B3: fixed
+
+Confirmed first. A new test on real SQLite failed 4 of 4 before the fix, with the reviewer's repro: Time 60 gave the filled workout, and Start at 90 listed `Add Close-grip bench press`, `Add Paused bench press` and raised accessory sets.
+
+- **Record** (`packages/domain/src/builder/time-fit.ts`): `todayTimeFit` returns a fill record when Today's fit grew the card. Its base is the plan day's draft and `fromMinutes` is the plan's length. It also stores `added` (the exercises the fill added), `raised` (the sets it added per plan slot) and `filledTo` (the Time it filled to).
+  - `unfitWorkout` removes the fill: an untouched added exercise goes, and an untouched slot takes back the plan's rows. If Ben edited a raised slot, only the fill's sets go (his own `+1` stays, and a count he cut below the plan's stays his). An added exercise he edited stays, as his.
+  - `timeFitChanges` lists the fill the way Today's note does.
+  - The stored `timeFit` gains these fields, and the set-up gains `timeFill`. One `timeFitToStored`/`timeFitFromStored` pair replaces the four copies.
+  - `replayedFitSteps` keeps the fill's add steps.
+- **Today's commit** (`today-session.ts` `versionOf`) stores the record and `timeFill`.
+- **Your workout's Time** (`builder-service.ts`):
+  - At or below the plan's length, Time fits from the plan day, as with any cut record.
+  - Above it, up to `timeFill`, Time loads Today's draft at that Time and replays Ben's edits. This uses the same `todayAt` helper as the options (now shared).
+  - Past `timeFill` it stays at the fill and never adds more. A Your workout opened at the plan's length still never fills (fit-to-time: "never more").
+- **Start**: `untimed()` now removes the fill, so the prompt lists none of Time's additions. It still lists Today's own drafting against the template (R3, below).
+- **Tests**: `apps/mobile/test/today-lean-b3-23oct.test.ts` (real SQLite, offline):
+  - Today 90 → Edit shows Today's card and note, with Undo to 60.
+  - Time 60, 30, 75, 90 and 120 each equal Today's card at that Time, with 120 capped at 90's fill.
+  - The note at 30 names only plan-day exercises.
+  - Undo from 60 restores the fill.
+  - Start at 90 equals Start at the plan's length, including after a force-close.
+  - Ben's extra main-lift set is kept through 60 and back to 90, and Start at 90 equals Start at 60.
+  - Pure tests are in `packages/domain/test/builder-time-fill.test.ts`. They cover the record, unfit with Ben's edits (raised, cut below plan, an edited added exercise), changes, `fitWorkoutToTime` at or above `filledTo` and at or below the plan, the stored round trip, and replayed add steps.
+
+### R1: fixed
+
+Confirmed with the new test. Without the refit it reads `expected 32 to be ≤ 30` (the reviewer's P1). If Today's draft for the choice plus Ben's replayed edits is over Time, and Time is below the plan's length, `todayAt` refits from the replayed base with `refitWorkoutToTime`. His touched slots are never cut, and the result is kept only if it's shorter. Test: Today 30 → +1 set on an accessory → Abs on → Varied stays ≤ 30 each time, keeps his set, Start lists no `Delete`, and Undo is exact. With no edits, Today's draft already fits, so the parity tests are unchanged.
+
+### N1: fixed
+
+The edited card's Time sends one write at a time, each against the version the last write returned (`TodayScreen.tsx` `editedTime`). A second quick tap that computes the same minutes from the not-yet-reloaded card is a no-op, not an error. This isn't checked on device.
+
+### Not fixed here (with reasons)
+
+- **R3 and the merge gate.** Start still compares against the raw template, so it lists Today's own drafting (for example `Add Incline bench press` at any Time). That is unchanged by B3 and is v3summary's to fix (D1 removes the Start prompt). `Keep for next time?` should compare against `todaySession.draftFor` for the plan's controls. The comparison base would be the result of `untimed()` (now free of Time's cuts and fill) against `draftFor(key, plan controls).unfitted`. Don't merge ahead of `claude/v3summary-23oct`.
+- **R2.** A tie-break in the shared fit changes Today's card too. It needs Ben or the designer with SP2.
+- **Gaps.**
+  - A Set up change or `Gym changed` on a filled card refits from the plan day, so the fill isn't redrawn until Time is stepped again, which brings it back from `timeFill`.
+  - Mix it up's pick isn't replayed when Time loads Today's draft (`mix: 0`, as for the options).
+  - A coach version applied over a filled card drops the fill record and `timeFill`, because the coach's version is the workout now.
+- **Still open.** Carry-over (SP1/SP3), SP2, SP4, SP5, coach or order/link replays across an option change, and the on-device check. Nothing here needs a native rebuild.
