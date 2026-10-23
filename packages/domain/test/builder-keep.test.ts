@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RoutineExerciseSchema, WorkoutDraftSchema, type BuilderSetup, type DraftPlan, type RoutineExercise, type SetTemplate } from '@fizz/schemas';
-import { benRemovalOf, deriveId, keepDiff, keepNextTimeMark, keptExercises, markBenEdit, newBuilderDraft, withBenAdded, withTemplateMarks, withWorkingSets, type BuilderKeepMarks, type BuilderSlot, type BuilderWorkout, type DraftLifeChange, type KeepBaseItem, type KeepCurrentItem } from '../src/index';
+import { benRemovalOf, deriveId, keepDiff, keepMainLiftSwap, keepNextTimeMark, withMainLift, keptExercises, markBenEdit, newBuilderDraft, withBenAdded, withTemplateMarks, withWorkingSets, type BuilderKeepMarks, type BuilderSlot, type BuilderWorkout, type DraftLifeChange, type KeepBaseItem, type KeepCurrentItem } from '../src/index';
 import { id } from './fixtures';
 
 /**
@@ -292,5 +292,40 @@ describe('keepNextTimeMark: one answer per workout, on the started draft', () =>
     expect(keepNextTimeMark(started, { sessionId: id(701), opId: 'k', at: at(2), mark: { kind: 'skipped' } }).kind).toBe('invalid');
     // The schema refuses an answer on a draft that isn't started.
     expect(WorkoutDraftSchema.safeParse({ ...open, keepNextTime: { choice: 'skipped', opId: 'x', atUtc: at(2).utc } }).success).toBe(false);
+  });
+});
+
+describe('a main lift Ben swapped (Ben, 23 Oct; SP7)', () => {
+  const base: KeepBaseItem[] = [
+    { exerciseId: id(1), workingSets: 3, ref: id(401), locked: true },
+    { exerciseId: id(2), workingSets: 3, ref: id(402) },
+  ];
+  it('keepMainLiftSwap: only Ben’s own swap of the locked main lift; Keep’s own lines never list it', () => {
+    const current: KeepCurrentItem[] = [
+      { key: 'a', exerciseId: id(9), workingSets: 3, origin: id(1), round: 0, ben: { from: id(1) } },
+      { key: 'b', exerciseId: id(2), workingSets: 3, origin: id(2), round: 1, ben: null },
+    ];
+    const diff = keepDiff(base, current);
+    expect(diff.changes).toEqual([]);
+    expect(keepMainLiftSwap(base, current, diff)).toEqual({ from: id(1), to: id(9), ref: id(401) });
+    // The app's swap (a gym change): no mark of Ben's, no row.
+    const app: KeepCurrentItem[] = [{ ...current[0], ben: null } as KeepCurrentItem, current[1] as KeepCurrentItem];
+    expect(keepMainLiftSwap(base, app, keepDiff(base, app))).toBeNull();
+    // An accessory swap isn't a main-lift swap.
+    const acc: KeepCurrentItem[] = [{ key: 'a', exerciseId: id(1), workingSets: 3, origin: id(1), round: 0, ben: null }, { key: 'b', exerciseId: id(8), workingSets: 3, origin: id(2), round: 1, ben: { from: id(2) } }];
+    expect(keepMainLiftSwap(base, acc, keepDiff(base, acc))).toBeNull();
+  });
+
+  it('withMainLift: in place, its sets kept with loads automatic, Main moved, key and name follow; the rest as stored', () => {
+    const exercises = [ex(1, 0, ['warmup', 'top', 'backoff', 'backoff'], { main: true }), ex(2, 1, ['working', 'working', 'working'])];
+    const r = withMainLift({ exercises, name: 'Chest · bench press', planDay: { planId: id(70), dayIndex: 0, splitDayId: 'chest', mainLiftExerciseId: id(1), minutes: 60 } }, { ref: id(401), to: id(9), toName: 'Incline Barbell Press', opId: 'op-main', atUtc: '2026-10-23T19:00:00.000Z' });
+    expect(r?.name).toBe('Chest · incline barbell press');
+    expect(r?.planDay?.mainLiftExerciseId).toBe(id(9));
+    const first = r?.exercises[0];
+    expect([first?.exerciseId, first?.main, first?.order, first?.setTemplates.map((t) => t.setType), first?.setTemplates.every((t) => t.targetLoad === null)]).toEqual([id(9), true, 0, ['warmup', 'top', 'backoff', 'backoff'], true]);
+    expect(r?.exercises[1]).toEqual(exercises[1]);
+    for (const e of r?.exercises ?? []) expect(RoutineExerciseSchema.safeParse(e).success).toBe(true);
+    expect(withMainLift({ exercises, name: 'Push', planDay: undefined }, { ref: id(499), to: id(9), toName: 'x', opId: 'o', atUtc: '2026-10-23T19:00:00.000Z' })).toBeNull();
+    expect(withMainLift({ exercises, name: 'Push', planDay: undefined }, { ref: id(401), to: id(9), toName: 'x', opId: 'o', atUtc: '2026-10-23T19:00:00.000Z' })?.name).toBe('Push');
   });
 });

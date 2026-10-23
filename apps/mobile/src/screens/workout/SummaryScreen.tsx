@@ -27,7 +27,7 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 import { LIBRARY_COPY_UI } from '../../workout/library-view';
-import { planChangeText, planChangeUndoOpId, type KeepNextTimeView } from '../../builder/builder-service';
+import { planChangeText, planChangeUndoOpId, type KeepMainLiftView, type KeepNextTimeView } from '../../builder/builder-service';
 import { DELETE_COPY, deletedToastText, restoredToastText, summaryCanDelete } from '../../history/delete-view';
 import { handOffDeleteToast } from '../../history/toast-handoff';
 import { DeletedWorkoutView } from './DeletedWorkoutView';
@@ -82,9 +82,11 @@ export function SummaryScreen() {
     const planChange = await s.builder.planChangeOf(sessionId).catch(() => null);
     // (Ben, 23 Oct, D1) `Keep for next time?`: only when the structure differs from the plan day or saved workout.
     const keep = await s.builder.keepNextTimeOf(sessionId).catch(() => null);
+    // (Ben, 23 Oct) A main lift Ben swapped on Your workout: its own row, `Make <lift> the main lift for <day>?`.
+    const mainLift = await s.builder.keepMainLiftOf(sessionId).catch(() => null);
     // Progress v3 (Ben, 21 Oct): new PBs at the tracked reps, the Lifts chart's definition. Local only.
     const newBests = await s.reviews.sessionBests(sessionId).catch(() => []);
-    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone, planChange, keep, newBests };
+    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone, planChange, keep, mainLift, newBests };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
   // its small changes are saved when it answers, until a workout starts from this one (CA10).
@@ -584,6 +586,26 @@ export function SummaryScreen() {
           </View>
         ) : null}
 
+        {data.value.mainLift !== null ? (
+          <MainLiftRow
+            view={data.value.mainLift}
+            busy={keepBusy}
+            onTap={(tap) => {
+              if (keepBusy) return;
+              setKeepBusy(true);
+              const run = tap === 'undo' ? services.builder.undoKeepMainLift(sessionId) : services.builder.keepMainLift(sessionId, tap);
+              void run
+                .catch(() => ({ ok: false as const, message: 'Couldn’t save. Try again.' }))
+                .then((r) => {
+                  setKeepBusy(false);
+                  if (!r.ok) setToast({ text: r.message });
+                  changed();
+                  reload();
+                });
+            }}
+          />
+        ) : null}
+
         {data.value.keep !== null ? (
           <KeepRow
             view={data.value.keep}
@@ -792,6 +814,26 @@ function KeepRow({ view, busy, onTap }: { view: KeepNextTimeView; busy: boolean;
 }
 
 const KEEP_COPY = { title: 'Keep for next time?', skip: 'Skip', apply: 'Apply' } as const;
+
+/**
+ * (Ben, 23 Oct) A main lift Ben swapped: `Make Incline barbell press the main lift for Chest?` with `Skip` and `Apply`;
+ * once kept, `<lift> · main lift for <day>` with `Undo`. Values from the builder service only.
+ */
+function MainLiftRow({ view, busy, onTap }: { view: KeepMainLiftView; busy: boolean; onTap: (tap: 'apply' | 'skip' | 'undo') => void }) {
+  const theme = useTheme();
+  if (view.state === 'kept') {
+    return <StatusLine icon="checkmark.circle" tone="info" text={view.text} {...(view.canUndo ? { action: <TextButton label="Undo" disabled={busy} onPress={() => { onTap('undo'); }} /> } : {})} />;
+  }
+  return (
+    <Card>
+      <AppText variant="headline">{view.text}</AppText>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
+        <TextButton label={KEEP_COPY.skip} tone="secondary" disabled={busy} onPress={() => { onTap('skip'); }} />
+        <TextButton label={KEEP_COPY.apply} accessibilityLabel={`${KEEP_COPY.apply}: ${view.text}`} disabled={busy} onPress={() => { onTap('apply'); }} />
+      </View>
+    </Card>
+  );
+}
 
 /**
  * One `Next time` row (D21): the target and its %, the source tag, `Why?`

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IdSchema, LoadConventionSchema, LoadSchema, OperationIdSchema, RepRangeSchema, RpeSchema, TimeZoneSchema, UtcTimestampSchema, WeightUnitSchema, ZonedTimestampSchema } from './common';
 import { GymEquipmentKindSchema } from './equipment';
-import { MainLiftIdSchema, PlanDayIndexSchema, RestSettingSchema, RoutineExerciseSchema, SetTypeSchema, SplitDayIdSchema } from './routine';
+import { MainLiftIdSchema, PlanDayIndexSchema, RestSettingSchema, RoutineExerciseSchema, RoutinePlanDaySchema, SetTypeSchema, SplitDayIdSchema } from './routine';
 import { SplitBodyPartSchema } from './training-profile';
 import { LocalDateSchema } from './import';
 
@@ -611,6 +611,36 @@ export const KeepNextTimeSchema = z
   .refine((k) => k.undoneOpId === undefined || k.choice === 'kept', { message: 'Only a kept change is undone', path: ['undoneOpId'] });
 export type KeepNextTime = z.infer<typeof KeepNextTimeSchema>;
 
+/**
+ * (Ben, 23 Oct; batch23-design SP7, v3summary SP7) Summary's own row for a main lift Ben swapped on Your workout:
+ * `Make Incline barbell press the main lift for Chest?` `Apply` / `Skip`. Apply makes the plan day's template that
+ * lift's (`Chest · incline barbell press`): the main lift's entry takes the new exercise (its sets, `Main`), and the
+ * template's key and name follow, in one transaction with this answer (rule 5). `undo` restores the exercises, the key
+ * (`restorePlanDay`, null: the template had none stored) and the name, only while the template is at `version`.
+ */
+export const KeepMainLiftSchema = z
+  .object({
+    choice: z.enum(['kept', 'skipped']),
+    opId: OperationIdSchema,
+    atUtc: UtcTimestampSchema,
+    from: IdSchema,
+    to: IdSchema,
+    undo: z
+      .object({
+        routineId: IdSchema,
+        version: z.int().min(1),
+        restore: z.array(RoutineExerciseSchema).max(40),
+        restorePlanDay: RoutinePlanDaySchema.nullable(),
+        restoreName: z.string().min(1).max(120),
+        label: z.string().min(1).max(160),
+      })
+      .optional(),
+    undoneOpId: OperationIdSchema.optional(),
+  })
+  .refine((k) => (k.choice === 'kept') === (k.undo !== undefined), { message: 'A kept main lift carries its Undo', path: ['undo'] })
+  .refine((k) => k.undoneOpId === undefined || k.choice === 'kept', { message: 'Only a kept main lift is undone', path: ['undoneOpId'] });
+export type KeepMainLift = z.infer<typeof KeepMainLiftSchema>;
+
 export const WorkoutDraftStatusSchema = z.enum(['open', 'started', 'discarded', 'expired']);
 export type WorkoutDraftStatus = z.infer<typeof WorkoutDraftStatusSchema>;
 
@@ -652,10 +682,13 @@ export const WorkoutDraftSchema = z
     undo: BuilderUndoSchema.nullable().optional(),
     /** (D1) A started builder draft: Summary's `Keep for next time?` answer. */
     keepNextTime: KeepNextTimeSchema.optional(),
+    /** (Ben, 23 Oct) A started builder draft: Summary's `Make <lift> the main lift for <day>?` answer. */
+    keepMainLift: KeepMainLiftSchema.optional(),
   })
   .refine((d) => d.versions.some((v) => v.n === d.currentVersion && v.status === 'current'), { message: 'The current version must exist', path: ['currentVersion'] })
   .refine((d) => (d.status === 'started') === (d.sessionId !== null), { message: 'Only a started draft names its session', path: ['sessionId'] })
   .refine((d) => d.keepNextTime === undefined || d.status === 'started', { message: 'Only a started draft keeps its changes for next time', path: ['keepNextTime'] })
+  .refine((d) => d.keepMainLift === undefined || d.status === 'started', { message: 'Only a started draft keeps a main lift', path: ['keepMainLift'] })
   // §4.4: Start refuses an empty workout, so a started draft always holds one.
   .refine((d) => d.status !== 'started' || (d.versions.find((v) => v.n === d.currentVersion)?.plan.slots.length ?? 0) > 0, { message: 'A started draft has at least one exercise', path: ['versions'] });
 export type WorkoutDraft = z.infer<typeof WorkoutDraftSchema>;

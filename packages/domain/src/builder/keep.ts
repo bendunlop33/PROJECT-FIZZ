@@ -1,4 +1,4 @@
-import { BUILD_LIMITS, MAX_WORKOUT_DRAFT_OPS, type KeepNextTime, type RoutineExercise, type SetTemplate, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
+import { BUILD_LIMITS, MAX_WORKOUT_DRAFT_OPS, type KeepMainLift, type KeepNextTime, type Routine, type RoutineExercise, type SetTemplate, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { DraftLifeChange } from '../session/coach-draft';
 import { deriveId } from '../stable';
 import { slotsOf } from './arrange';
@@ -343,6 +343,87 @@ export function keepNextTimeMark(current: WorkoutDraft, m: { sessionId: string; 
   return {
     kind: 'write',
     next: { ...current, keepNextTime: next, opIds: [...current.opIds, m.opId].slice(-MAX_WORKOUT_DRAFT_OPS), version: current.version + 1, updatedAtUtc: m.at.utc },
+    expectedVersion: current.version,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// (Ben, 23 Oct; batch23-design SP7, v3summary SP7) A main lift Ben swapped: its own Summary row.
+
+/**
+ * `keepMainLiftSwap`: the plan day's main lift (the locked base item) that Ben himself swapped on Your workout (his
+ * `from` mark names it), and what he swapped in. Null: none (the main lift is as it opened, or the app swapped it: a
+ * gym change, the coach). Keep's own row never lists it (`keepDiff` leaves the locked item); this row does.
+ */
+export function keepMainLiftSwap(base: readonly KeepBaseItem[], current: readonly KeepCurrentItem[], diff: Pick<KeepDiff, 'matchOf'>): { from: string; to: string; ref: string } | null {
+  for (const [i, c] of current.entries()) {
+    const j = diff.matchOf[i];
+    const b = j === null || j === undefined ? undefined : base[j];
+    if (b?.locked !== true || c.exerciseId === b.exerciseId || c.ben?.from !== b.exerciseId) continue;
+    return { from: b.exerciseId, to: c.exerciseId, ref: b.ref };
+  }
+  return null;
+}
+
+/**
+ * `withMainLift`: the template with `to` as its main lift, in place: the main lift's entry (`ref`) takes the new
+ * exercise with its own set structure (top set and back-offs, loads automatic: `targetLoad` null), `Main` on it and on
+ * no other entry, and the template's key (`planDay.mainLiftExerciseId`) and name (`Chest · incline barbell press`)
+ * follow, so the plan day's identity stays whole (review v3summary B3). Every other exercise is as stored. Null: the
+ * entry isn't there.
+ */
+export function withMainLift(r: Pick<Routine, 'exercises' | 'name' | 'planDay'>, m: { ref: string; to: string; toName: string; opId: string; atUtc: string }): { exercises: RoutineExercise[]; name: string; planDay: Routine['planDay'] } | null {
+  const at = r.exercises.findIndex((e) => e.id === m.ref);
+  const e = r.exercises[at];
+  if (e === undefined) return null;
+  const seed = `keep-main:${m.opId}:${e.id}`;
+  const entry: RoutineExercise = {
+    ...e,
+    id: deriveId(seed),
+    exerciseId: m.to,
+    main: true,
+    equipmentId: null,
+    progressionRuleId: null,
+    setTemplates: e.setTemplates.map((t, k) => ({ ...t, id: deriveId(`${seed}:set:${String(k)}`), targetLoad: null })),
+    structureChangedAtUtc: m.atUtc,
+  };
+  const exercises = r.exercises.map((x, k) => {
+    if (k === at) return entry;
+    if (x.main !== true) return x;
+    const plain: RoutineExercise = { ...x };
+    delete plain.main;
+    return plain;
+  });
+  const parts = r.name.split('·').map((x) => x.trim());
+  const day = parts[0] ?? '';
+  const name = parts.length > 1 && day !== '' ? `${day} · ${m.toName.toLowerCase()}`.slice(0, 120) : r.name;
+  const planDay = r.planDay === undefined ? undefined : { ...r.planDay, mainLiftExerciseId: m.to };
+  return { exercises, name, planDay };
+}
+
+/** What Summary's main-lift row wrote: Apply (with the write's inverse), Skip, or Undo of an Apply. */
+export type KeepMainLiftAnswer = { kind: 'kept'; from: string; to: string; undo: NonNullable<KeepMainLift['undo']> } | { kind: 'skipped'; from: string; to: string } | { kind: 'undone' };
+
+/**
+ * `keepMainLiftMark`: the main-lift row's answer on the started builder draft that became `sessionId`, as
+ * `keepNextTimeMark` does for Keep's row: one answer (Apply or Skip), Undo only of an Apply not undone yet, a repeated
+ * op ID is `duplicate`, an answer already there `stale` (rule 5).
+ */
+export function keepMainLiftMark(current: WorkoutDraft, m: { sessionId: string; opId: string; at: ZonedTimestamp; mark: KeepMainLiftAnswer }): DraftLifeChange {
+  if (current.opIds.includes(m.opId)) return { kind: 'duplicate', current };
+  if (current.builderKey === undefined || current.status !== 'started' || current.sessionId !== m.sessionId) return { kind: 'invalid', reason: 'not the started workout' };
+  const had = current.keepMainLift;
+  let next: KeepMainLift;
+  if (m.mark.kind === 'undone') {
+    if (had?.choice !== 'kept' || had.undoneOpId !== undefined) return { kind: 'stale', current };
+    next = { ...had, undoneOpId: m.opId };
+  } else {
+    if (had !== undefined) return { kind: 'stale', current };
+    next = m.mark.kind === 'kept' ? { choice: 'kept', opId: m.opId, atUtc: m.at.utc, from: m.mark.from, to: m.mark.to, undo: m.mark.undo } : { choice: 'skipped', opId: m.opId, atUtc: m.at.utc, from: m.mark.from, to: m.mark.to };
+  }
+  return {
+    kind: 'write',
+    next: { ...current, keepMainLift: next, opIds: [...current.opIds, m.opId].slice(-MAX_WORKOUT_DRAFT_OPS), version: current.version + 1, updatedAtUtc: m.at.utc },
     expectedVersion: current.version,
   };
 }

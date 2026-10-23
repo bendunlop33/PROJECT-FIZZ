@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { slotsOf, workingCount } from '@fizz/domain';
+import { catalogueExerciseId, slotsOf, workingCount } from '@fizz/domain';
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import type { Routine } from '@fizz/schemas';
 
@@ -257,6 +257,108 @@ describe('the main lift is never swapped or removed through Keep (review batch23
     await finishWorkout(h, s, r.sessionId);
     expect(await s.builder.keepNextTimeOf(r.sessionId)).toBeNull();
     expect(await s.builder.keepNextTime(r.sessionId, 'apply')).toMatchObject({ ok: false });
+    expect(await template(s, push)).toEqual(before);
+  });
+});
+
+describe('a main lift Ben swapped is its own Summary row (Ben, 23 Oct; SP7)', () => {
+  /** Ben swaps the plan day's bench for a compound on Today's Edit, starts and finishes. */
+  async function swappedMain(s: AppServices, gymId: string, want: 'compound' | 'isolation' = 'compound'): Promise<{ sessionId: string; to: string; toId: string }> {
+    const snap = await editFromToday(s);
+    const from = slotNamed(snap, 'Bench press');
+    const choices = await s.builder.exerciseChoices(snap.draftId, { slotKey: from.key });
+    const items = choices?.sections.flatMap((x) => x.items).filter((i) => !i.mayHurt) ?? [];
+    const pick = want === 'compound' ? items.find((i) => /press/i.test(i.name) && !/fly|raise/i.test(i.name)) : items.find((i) => /fly|crossover|pec deck/i.test(i.name));
+    if (pick === undefined) throw new Error(`no ${want} in ${items.map((i) => i.name).join(', ')}`);
+    const swapped = ok(await s.builder.edit(snap.draftId, { kind: 'swap', slotKey: from.key, exerciseId: pick.exerciseId }, { opId: h.ids(), basis: { version: snap.version } }));
+    expect(swapped.facts[pick.exerciseId]?.compound).toBe(want === 'compound');
+    return { sessionId: await startAndFinish(s, swapped, gymId), to: pick.name, toId: pick.exerciseId };
+  }
+
+  it('Make <lift> the main lift for Push? Apply makes the template that lift’s (entry, Main, key, name), Today’s next Push opens it; Undo puts the template back exactly', async () => {
+    const { s, gymId, push } = await benWithPlan();
+    const before = await template(s, push);
+    const { sessionId, to, toId } = await swappedMain(s, gymId);
+    expect(await s.builder.keepNextTimeOf(sessionId)).toBeNull();
+    expect(await s.builder.keepMainLiftOf(sessionId)).toEqual({ state: 'open', text: `Make ${to} the main lift for Push?` });
+    expect(await s.builder.keepMainLift(sessionId, 'apply')).toEqual({ ok: true });
+    // A double tap writes once.
+    expect(await s.builder.keepMainLift(sessionId, 'apply')).toEqual({ ok: true });
+    const after = await template(s, push);
+    expect(after?.version).toBe((before?.version ?? 0) + 1);
+    expect(after?.exercises.filter((e) => e.main === true).map((e) => e.exerciseId)).toEqual([toId]);
+    // In the bench's place; every other exercise as stored (no `Main` left on any).
+    const at = after?.exercises.findIndex((e) => e.exerciseId === toId) ?? -1;
+    const bench = before?.exercises[at];
+    expect(bench?.exerciseId).not.toBe(toId);
+    expect(after?.exercises.map((e) => e.exerciseId)).not.toContain(bench?.exerciseId);
+    expect(after?.exercises.length).toBe(before?.exercises.length);
+    expect(after?.exercises[at]?.setTemplates.map((t) => t.setType)).toEqual(bench?.setTemplates.map((t) => t.setType));
+    if (before?.planDay !== undefined) expect(after?.planDay?.mainLiftExerciseId).toBe(toId);
+    const plain = (e: NonNullable<typeof bench>) => {
+      const x = { ...e };
+      if (x.main === true) delete x.main;
+      return x;
+    };
+    expect(after?.exercises.filter((_, k) => k !== at)).toEqual(before?.exercises.filter((_, k) => k !== at).map(plain));
+    expect(await s.builder.keepMainLiftOf(sessionId)).toEqual({ state: 'kept', text: `${to} · main lift for Push`, canUndo: true });
+    const data = await loaded(s);
+    const key = data.days.find((d) => d.name === 'Push')?.key ?? '';
+    expect(data.initial[key]?.mainLiftExerciseId).toBe(toId);
+    expect(await s.builder.undoKeepMainLift(sessionId)).toEqual({ ok: true });
+    expect(await s.builder.undoKeepMainLift(sessionId)).toEqual({ ok: true });
+    const back = await template(s, push);
+    expect({ ...back, version: 0, updatedAtUtc: '', lastOpId: '' }).toEqual({ ...before, version: 0, updatedAtUtc: '', lastOpId: '' });
+    expect(await s.builder.keepMainLiftOf(sessionId)).toBeNull();
+  });
+
+  it('Skip: the row goes, the template is unchanged', async () => {
+    const { s, gymId, push } = await benWithPlan();
+    const before = await template(s, push);
+    const { sessionId } = await swappedMain(s, gymId);
+    expect(await s.builder.keepMainLift(sessionId, 'skip')).toEqual({ ok: true });
+    expect(await s.builder.keepMainLiftOf(sessionId)).toBeNull();
+    expect(await s.builder.keepMainLift(sessionId, 'apply')).toMatchObject({ ok: false });
+    expect(await template(s, push)).toEqual(before);
+  });
+
+  it('the template changed since the workout opened it: no row, Apply refused, nothing written (rule 5)', async () => {
+    const { s, gymId, push } = await benWithPlan();
+    const { sessionId } = await swappedMain(s, gymId);
+    const version = (await s.routines.editor({ routineId: push, gymId: null }))?.routine?.version ?? 0;
+    const w = await s.library.addToWorkout({ exerciseId: catalogueExerciseId('bodyweight-plank'), shape: { workingSets: 2, warmups: 0, reps: null, durationS: 45, effort: { scale: 'rpe', value: null }, repsTouched: true }, to: { kind: 'routine', routineId: push, expectedVersion: version }, opId: 'plank-to-push' });
+    expect(w?.ok).toBe(true);
+    const changed = await template(s, push);
+    expect(await s.builder.keepMainLiftOf(sessionId)).toBeNull();
+    expect(await s.builder.keepMainLift(sessionId, 'apply')).toMatchObject({ ok: false, reason: 'stale' });
+    expect(await template(s, push)).toEqual(changed);
+  });
+
+  it('Keep’s own row and the main-lift row both apply, in either order, at the version the other wrote', async () => {
+    const { s, gymId, push } = await benWithPlan();
+    const snap = await editFromToday(s);
+    const removed = ok(await s.builder.edit(snap.draftId, { kind: 'delete_exercise', slotKey: slotNamed(snap, 'Lateral raise').key }, { opId: h.ids(), basis: { version: snap.version } }));
+    const from = slotNamed(removed, 'Bench press');
+    const choices = await s.builder.exerciseChoices(removed.draftId, { slotKey: from.key });
+    const pick = choices?.sections.flatMap((x) => x.items).find((i) => !i.mayHurt && /press/i.test(i.name) && !/fly|raise/i.test(i.name));
+    if (pick === undefined) throw new Error('no press');
+    const swapped = ok(await s.builder.edit(removed.draftId, { kind: 'swap', slotKey: from.key, exerciseId: pick.exerciseId }, { opId: h.ids(), basis: { version: removed.version } }));
+    const sessionId = await startAndFinish(s, swapped, gymId);
+    expect((await s.builder.keepNextTimeOf(sessionId))?.state).toBe('open');
+    expect(await s.builder.keepMainLift(sessionId, 'apply')).toEqual({ ok: true });
+    expect((await s.builder.keepNextTimeOf(sessionId))?.state).toBe('open');
+    expect(await s.builder.keepNextTime(sessionId, 'apply')).toEqual({ ok: true });
+    const t = await template(s, push);
+    expect(t?.exercises.filter((e) => e.main === true).map((e) => e.exerciseId)).toEqual([pick.exerciseId]);
+    const nameOf = (id: string) => (id === pick.exerciseId ? pick.name : id);
+    expect(working(t, 'Lateral raise', nameOf)).toBeUndefined();
+  });
+
+  it('an isolation swapped in for the main lift: no row (today only)', async () => {
+    const { s, gymId, push } = await benWithPlan();
+    const before = await template(s, push);
+    const { sessionId } = await swappedMain(s, gymId, 'isolation');
+    expect(await s.builder.keepMainLiftOf(sessionId)).toBeNull();
     expect(await template(s, push)).toEqual(before);
   });
 });

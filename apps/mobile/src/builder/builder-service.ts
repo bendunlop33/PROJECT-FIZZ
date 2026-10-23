@@ -95,6 +95,9 @@ import {
   markBenEdit,
   benRemovalOf,
   withBenAdded,
+  keepMainLiftMark,
+  keepMainLiftSwap,
+  withMainLift,
   type KeepBaseItem,
   type KeepCurrentItem,
   type TemplateSlotSpec,
@@ -373,6 +376,14 @@ export function keepNextTimeOpId(sessionId: string, tap: 'apply' | 'skip' | 'und
   return deriveId(`keep-next-time:${tap}:${sessionId}`);
 }
 
+/** (Ben, 23 Oct) The main-lift row's op IDs: one Apply, one Skip, one Undo per workout. */
+export function keepMainLiftOpId(sessionId: string, tap: 'apply' | 'skip' | 'undo'): string {
+  return deriveId(`keep-main-lift:${tap}:${sessionId}`);
+}
+
+/** (Ben, 23 Oct) Summary's main-lift row: `Make <lift> the main lift for <day>?`, or once kept `<lift> · main lift for <day>` with Undo. */
+export type KeepMainLiftView = { state: 'open'; text: string } | { state: 'kept'; text: string; canUndo: boolean };
+
 /** (D8) The draft write that lands one applied coach change: one per apply and draft, so it lands once. */
 export function coachLandOpId(applyActionId: string): string {
   return `coach-land:${applyActionId}`;
@@ -448,6 +459,9 @@ export const BUILDER_COPY = {
   deleted: (name: string) => `Deleted ${name}`,
   roundedTo: (value: number, unit: string) => `Rounded to ${String(value)} ${unit}`,
   updated: (label: string) => `${label} updated`,
+  /** (Ben, 23 Oct) Summary's main-lift row. */
+  makeMainLift: (lift: string, day: string) => `Make ${lift} the main lift for ${day}?`,
+  mainLiftKept: (lift: string, day: string) => `${lift} · main lift for ${day}`,
   saved: (label: string) => `${label} saved`,
   /** (Ben, 23 Oct) `↻ Mix it up` with no fresh option for any accessory. */
   nothingToMix: 'No other option',
@@ -1434,8 +1448,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const leftOut = new Set(stored.leftOut ?? []);
     const opened = (id: string) => (target.plan ? env.info(id) !== null : !leftOut.has(id));
     // The plan day's main lift (the one its template is keyed by, Today's Main lift) names the plan day: Keep never
-    // swaps or removes it (SP7, open for Ben). A `Main` flag (WL9: compounds in places 1–2) alone doesn't lock.
-    const mainLift = key.mainLiftExerciseId ?? routine.planDay?.mainLiftExerciseId ?? null;
+    // swaps or removes it; a swap Ben made of it is its own row (Ben, 23 Oct, SP7: `keepMainLiftSwap`). Once that row
+    // is applied, the lift he made the main lift is. A `Main` flag (WL9: compounds in places 1–2) alone doesn't lock.
+    const mainKept = draft.keepMainLift?.choice === 'kept' && draft.keepMainLift.undoneOpId === undefined ? draft.keepMainLift : null;
+    const mainLift = mainKept?.to ?? key.mainLiftExerciseId ?? routine.planDay?.mainLiftExerciseId ?? null;
     const isMain = (e: RoutineExercise) => target.plan && mainLift !== null && e.exerciseId === mainLift;
     const base: KeepBaseItem[] = [...routine.exercises]
       .sort((x, y) => x.order - y.order)
@@ -1443,7 +1459,39 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       .map((e) => ({ exerciseId: e.exerciseId, workingSets: Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, e.setTemplates.filter((t) => t.setType !== 'warmup').length)), ref: e.id, ...(isMain(e) ? { locked: true } : {}) }));
     const current: KeepCurrentItem[] = workout.blocks.flatMap((b, round) => b.slots.map((x) => ({ key: x.key, exerciseId: x.exerciseId, workingSets: workingCount(x), origin: x.origin ?? null, round, ben: x.keep ?? null })));
     const label = target.plan ? planLabel(pageSetup(draft), env, null) : routine.name;
-    return { session: a, draft, version, routine, openedVersion: target.openedVersion, label, workout, env, base, current, diff: keepDiff(base, current, stored.keepRemoved ?? []) };
+    const diff = keepDiff(base, current, stored.keepRemoved ?? []);
+    // Each row writes at the version the workout opened, or the one the other row's Apply wrote (rule 5).
+    const keepKept = draft.keepNextTime?.choice === 'kept' && draft.keepNextTime.undoneOpId === undefined ? draft.keepNextTime.undo : undefined;
+    return {
+      session: a,
+      draft,
+      version,
+      routine,
+      openedVersion: target.openedVersion,
+      keepExpected: mainKept?.undo?.version ?? target.openedVersion,
+      mainExpected: keepKept?.version ?? target.openedVersion,
+      plan: target.plan,
+      dayName: pageSetup(draft).dayName,
+      label,
+      workout,
+      env,
+      base,
+      current,
+      diff,
+      mainSwap: target.plan ? keepMainLiftSwap(base, current, diff) : null,
+    };
+  }
+
+  /** (Ben, 23 Oct) Another live template of this plan day for `mainLift` (Today's Main lift picks it; a second one can't be made). */
+  async function otherTemplateFor(p: UserProfile, r: Routine, mainLift: string): Promise<boolean> {
+    const t = await deps.training().catch(() => null);
+    const k = planDayKeyOf(r, t?.split ?? null, t?.mainLifts);
+    if (k === null) return false;
+    const live = await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]);
+    return live.some((x) => x.id !== r.id && !isDeleted(x) && (() => {
+      const xk = planDayKeyOf(x, t?.split ?? null, t?.mainLifts);
+      return xk !== null && xk.planId === k.planId && xk.dayIndex === k.dayIndex && xk.mainLiftExerciseId === mainLift;
+    })());
   }
 
   /** (D1) The next workout from that plan day or saved workout has started since this one: `next time` is past. */
@@ -2672,7 +2720,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const now = await repos().routines.get(answer.undo.routineId).catch(() => null);
         return { state: 'kept', text: BUILDER_COPY.updated(answer.undo.label), canUndo: now !== null && now.version === answer.undo.version };
       }
-      if (c.routine.version !== c.openedVersion || c.diff.changes.length === 0 || (await nextAlreadyStarted(p, c))) return null;
+      if (c.routine.version !== c.keepExpected || c.diff.changes.length === 0 || (await nextAlreadyStarted(p, c))) return null;
       return { state: 'open', label: c.label, lines: c.diff.changes.map((x) => builderChangeLine(x, c.env.nameOf)) };
     },
 
@@ -2692,7 +2740,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const w = await repos().workoutDrafts.keepNextTime(p.id, c.draft.id, (cur) => keepNextTimeMark(cur, { sessionId, opId, at, mark: { kind: 'skipped' } })).catch(() => null);
         return keepWriteResult(w);
       }
-      if (c.routine.version !== c.openedVersion) return { ok: false, reason: 'stale', message: BUILDER_COPY.planChanged };
+      if (c.routine.version !== c.keepExpected) return { ok: false, reason: 'stale', message: BUILDER_COPY.planChanged };
       if (c.diff.changes.length === 0) return { ok: false, reason: 'gone', message: BUILDER_COPY.notFound };
       // New exercises' sets are the workout's, loads automatic (Q6: a typed kg stays today only).
       const asRoutine = draftAsRoutine(c.draft, { ...c.version, plan: toDraftPlan(c.workout, c.env.codec) });
@@ -2709,7 +2757,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const undo = { kind: 'template' as const, routineId: c.routine.id, version: next.version, restore: c.routine.exercises, label: c.label };
       const t = await deps.training().catch(() => null);
       const w = await repos()
-        .workoutDrafts.keepNextTime(p.id, c.draft.id, (cur) => keepNextTimeMark(cur, { sessionId, opId, at, mark: { kind: 'kept', undo } }), { next, expectedVersion: c.openedVersion, split: { split: t?.split ?? null, mainLifts: t?.mainLifts } })
+        .workoutDrafts.keepNextTime(p.id, c.draft.id, (cur) => keepNextTimeMark(cur, { sessionId, opId, at, mark: { kind: 'kept', undo } }), { next, expectedVersion: c.keepExpected, split: { split: t?.split ?? null, mainLifts: t?.mainLifts } })
         .catch(() => null);
       return keepWriteResult(w);
     },
@@ -2732,6 +2780,82 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const t = await deps.training().catch(() => null);
       const w = await repos()
         .workoutDrafts.keepNextTime(p.id, d.id, (cur) => keepNextTimeMark(cur, { sessionId, opId, at, mark: { kind: 'undone' } }), { next, expectedVersion: u.version, split: { split: t?.split ?? null, mainLifts: t?.mainLifts } })
+        .catch(() => null);
+      const out = keepWriteResult(w);
+      return out.ok || out.reason !== 'stale' ? out : { ...out, message: BUILDER_COPY.changedSince };
+    },
+
+    /**
+     * (Ben, 23 Oct; batch23-design SP7, v3summary SP7) Summary's main-lift row: Ben swapped the plan day's main lift on
+     * Your workout (his own swap, before Start) for a compound: `Make Incline barbell press the main lift for Chest?`.
+     * Its own row, never part of Keep's lines. Null when there's no such swap, it was answered (Skip, or an Apply
+     * undone), the template changed since, the next workout from it has started, or the day already has a template for
+     * that lift (Today's Main lift picks it). Local reads only.
+     */
+    async keepMainLiftOf(sessionId: string): Promise<KeepMainLiftView | null> {
+      const p = await owner();
+      const c = await keepContext(p, sessionId).catch(() => null);
+      if (c === null || !c.plan) return null;
+      const answer = c.draft.keepMainLift;
+      if (answer !== undefined) {
+        if (answer.choice !== 'kept' || answer.undo === undefined || answer.undoneOpId !== undefined) return null;
+        return { state: 'kept', text: BUILDER_COPY.mainLiftKept(c.env.nameOf(answer.to), c.dayName), canUndo: c.routine.version === answer.undo.version };
+      }
+      const swap = c.mainSwap;
+      if (swap === null || c.env.info(swap.to)?.role !== 'compound' || c.routine.version !== c.mainExpected || (await nextAlreadyStarted(p, c)) || (await otherTemplateFor(p, c.routine, swap.to))) return null;
+      return { state: 'open', text: BUILDER_COPY.makeMainLift(c.env.nameOf(swap.to), c.dayName) };
+    },
+
+    /**
+     * The main-lift row's `Apply` (the plan day's template takes the lift as its main lift, in place: the entry, its
+     * `Main`, the template's key and name; `withMainLift`) or `Skip`, with the answer on the started draft in the same
+     * transaction, at the version the workout opened (or Keep's Apply wrote; rule 5). One op ID per workout and tap.
+     */
+    async keepMainLift(sessionId: string, tap: 'apply' | 'skip'): Promise<KeepNextTimeResult> {
+      const p = await owner();
+      const c = await keepContext(p, sessionId).catch(() => null);
+      if (c === null || !c.plan) return { ok: false, reason: 'gone', message: BUILDER_COPY.notFound };
+      const opId = keepMainLiftOpId(sessionId, tap);
+      const at = deps.now();
+      if (c.draft.opIds.includes(opId)) return { ok: true };
+      const swap = c.mainSwap;
+      if (swap === null || c.env.info(swap.to)?.role !== 'compound') return { ok: false, reason: 'gone', message: BUILDER_COPY.notFound };
+      if (tap === 'skip') {
+        const w = await repos().workoutDrafts.keepNextTime(p.id, c.draft.id, (cur) => keepMainLiftMark(cur, { sessionId, opId, at, mark: { kind: 'skipped', from: swap.from, to: swap.to } })).catch(() => null);
+        return keepWriteResult(w);
+      }
+      if (c.routine.version !== c.mainExpected || (await otherTemplateFor(p, c.routine, swap.to))) return { ok: false, reason: 'stale', message: BUILDER_COPY.planChanged };
+      const m = withMainLift(c.routine, { ref: swap.ref, to: swap.to, toName: c.env.nameOf(swap.to), opId, atUtc: at.utc });
+      if (m === null) return { ok: false, reason: 'stale', message: BUILDER_COPY.planChanged };
+      const next: Routine = { ...c.routine, exercises: m.exercises, name: m.name, ...(m.planDay === undefined ? {} : { planDay: m.planDay }), version: c.routine.version + 1, updatedAtUtc: at.utc, lastOpId: opId };
+      const undo = { routineId: c.routine.id, version: next.version, restore: c.routine.exercises, restorePlanDay: c.routine.planDay ?? null, restoreName: c.routine.name, label: c.dayName.slice(0, 160) || c.routine.name };
+      const t = await deps.training().catch(() => null);
+      const w = await repos()
+        .workoutDrafts.keepNextTime(p.id, c.draft.id, (cur) => keepMainLiftMark(cur, { sessionId, opId, at, mark: { kind: 'kept', from: swap.from, to: swap.to, undo } }), { next, expectedVersion: c.mainExpected, split: { split: t?.split ?? null, mainLifts: t?.mainLifts } })
+        .catch(() => null);
+      return keepWriteResult(w);
+    },
+
+    /** The main-lift row's `Undo`: the template's exercises, key and name as they were, only while nothing changed it since (rule 5). */
+    async undoKeepMainLift(sessionId: string): Promise<KeepNextTimeResult> {
+      const p = await owner();
+      const a = await repos().sessions.get(sessionId).catch(() => null);
+      const draftId = a?.session.coachDraft?.draftId ?? null;
+      const d = a === null || a.session.ownerId !== p.id || draftId === null ? null : await repos().workoutDrafts.get(draftId).catch(() => null);
+      const kept = d?.keepMainLift;
+      const opId = keepMainLiftOpId(sessionId, 'undo');
+      if (d === null || kept?.choice !== 'kept' || kept.undo === undefined) return { ok: false, reason: 'gone', message: BUILDER_COPY.cantUndo };
+      if (kept.undoneOpId === opId) return { ok: true };
+      const u = kept.undo;
+      const r = await repos().routines.get(u.routineId).catch(() => null);
+      if (r === null || r.version !== u.version) return { ok: false, reason: 'stale', message: BUILDER_COPY.changedSince };
+      const at = deps.now();
+      const next: Routine = { ...r, exercises: u.restore, name: u.restoreName, version: r.version + 1, updatedAtUtc: at.utc, lastOpId: opId };
+      if (u.restorePlanDay === null) delete next.planDay;
+      else next.planDay = u.restorePlanDay;
+      const t = await deps.training().catch(() => null);
+      const w = await repos()
+        .workoutDrafts.keepNextTime(p.id, d.id, (cur) => keepMainLiftMark(cur, { sessionId, opId, at, mark: { kind: 'undone' } }), { next, expectedVersion: u.version, split: { split: t?.split ?? null, mainLifts: t?.mainLifts } })
         .catch(() => null);
       const out = keepWriteResult(w);
       return out.ok || out.reason !== 'stale' ? out : { ...out, message: BUILDER_COPY.changedSince };
