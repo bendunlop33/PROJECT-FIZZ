@@ -254,10 +254,8 @@ export function variationExtrasOf(template: BuilderWorkout, current: BuilderWork
 export function suggestVariationLabel(changes: readonly BuilderChange[], info: BuilderInfoLookup): string {
   const added = changes.flatMap((c) => (c.kind === 'add' ? [c.exerciseId] : c.kind === 'swap' ? [c.to] : []));
   const paired = new Set(changes.flatMap((c) => (c.kind === 'pair' ? [c.a, c.b] : [])));
-  const words = [...new Set(added.map((id) => {
-    const g = infoOrDefault(info, id).group;
-    return g === 'Biceps' || g === 'Triceps' ? 'arms' : g.toLowerCase();
-  }))];
+  // (D5) The broad group's word: a curl and a pushdown are both `arms`.
+  const words = [...new Set(added.map((id) => infoOrDefault(info, id).group.toLowerCase()))];
   const word = words.length === 1 ? (words[0] ?? 'extras') : words.length === 0 ? null : 'extras';
   if (word === null) return changes.some((c) => c.kind === 'sets') ? 'more sets' : 'variation';
   return added.some((id) => paired.has(id)) ? `${word} superset` : `with ${word}`;

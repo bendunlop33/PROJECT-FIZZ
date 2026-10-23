@@ -64,8 +64,8 @@ const chestDay = (over: Partial<TodayDay['templates'][number]> = {}): TodayDay =
       supersetsPlan: true,
       groups: [
         { group: 'Chest', count: 3 },
-        { group: 'Triceps', count: 1 },
-        { group: 'Abs', count: 1 },
+        { group: 'Arms', count: 1 },
+        { group: 'Core', count: 1 },
       ],
       ...over,
     },
@@ -80,7 +80,7 @@ const chestDay = (over: Partial<TodayDay['templates'][number]> = {}): TodayDay =
       supersetsPlan: true,
       groups: [
         { group: 'Chest', count: 3 },
-        { group: 'Triceps', count: 1 },
+        { group: 'Arms', count: 1 },
       ],
     },
   ],
@@ -133,7 +133,7 @@ describe('controls → draft (§2.0.2 controls 1–5)', () => {
     for (const b of d.workout.blocks) {
       if (b.slots.length < 2) continue;
       expect(b.slots.some((s) => s.main)).toBe(false);
-      expect(b.slots.some((s) => info(s.exerciseId)?.heavy === true) && b.slots.some((s) => info(s.exerciseId)?.group === 'Abs')).toBe(false);
+      expect(b.slots.some((s) => info(s.exerciseId)?.heavy === true) && b.slots.some((s) => info(s.exerciseId)?.group === 'Core')).toBe(false);
     }
     expect(d.advice).toEqual([]);
   });
@@ -187,7 +187,9 @@ describe('controls → draft (§2.0.2 controls 1–5)', () => {
     const { d, c } = draft({ abs: false });
     expect(ids(d)).not.toContain('crunch');
     const armPair = d.workout.blocks.find((b) => b.slots.some((s) => s.exerciseId === 'pushdown'));
-    expect(armPair?.slots.map((s) => info(s.exerciseId)?.group).sort()).toEqual(['Biceps', 'Triceps']);
+    // Arms (D5): the pushdown's partner is a curl (another arm part).
+    expect(armPair?.slots.map((s) => info(s.exerciseId)?.group)).toEqual(['Arms', 'Arms']);
+    expect(armPair?.slots.map((s) => info(s.exerciseId)?.part).sort()).toEqual(['biceps', 'triceps']);
     // `plan: on` shows while it differs; toggling back clears it.
     const t = day.templates[0];
     if (t === undefined) throw new Error('template');
@@ -196,7 +198,7 @@ describe('controls → draft (§2.0.2 controls 1–5)', () => {
 
   it('Abs off with supersets off: the freed time adds exercises first (a second arm exercise), said once', () => {
     const { d } = draft({ abs: false, supersets: false });
-    const arms = ids(d).filter((id) => ['Biceps', 'Triceps'].includes(info(id)?.group ?? ''));
+    const arms = ids(d).filter((id) => info(id)?.group === 'Arms');
     expect(arms.length).toBeGreaterThanOrEqual(1);
     const note = fitNoteOf(d.fit.steps, name, () => '');
     if (d.fit.steps.some((s) => s.kind === 'add')) expect(note.lines.some((l) => l.startsWith('Added '))).toBe(true);

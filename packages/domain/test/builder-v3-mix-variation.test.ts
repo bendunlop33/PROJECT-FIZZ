@@ -13,8 +13,8 @@ const chest = (supersets = true) =>
       supersets,
       groups: [
         { group: 'Chest', count: 3 },
-        { group: 'Triceps', count: 1 },
-        { group: 'Abs', count: 1 },
+        { group: 'Arms', count: 1 },
+        { group: 'Core', count: 1 },
       ],
     },
     pool,
@@ -92,7 +92,7 @@ describe('applyVariation (§4.3, Q17)', () => {
 
   it('a template change reaches the variation', () => {
     const ctx = context();
-    const t2 = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] }, pool, ctx).workout;
+    const t2 = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] }, pool, ctx).workout;
     const r = applyVariation(t2, armsSuperset, ctx);
     expect(ids(r.workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly+hammer', 'pushdown']);
   });

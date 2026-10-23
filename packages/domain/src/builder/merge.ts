@@ -95,7 +95,7 @@ export function mergeSetupChange(
       w = removeSlot(w, s.key);
       // Abs its partner leaves go back to the end (abs last, §3.4), free to pair again (review builder-order B1).
       const left = pair?.slots.find((x) => x.key !== s.key);
-      if (left !== undefined && groupOf(left) === 'Abs') {
+      if (left !== undefined && groupOf(left) === 'Core') {
         w = { ...w, blocks: [...w.blocks.filter((b) => !b.slots.some((x) => x.key === left.key)), { slots: [left], auto: false }] };
         added.add(left.key);
       } else if (left !== undefined) {

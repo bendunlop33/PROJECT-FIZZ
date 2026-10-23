@@ -23,8 +23,8 @@ const ctx: BuilderContext = { ...context(), newKey: (id) => `today:${id}` };
 const ids = (w: BuilderWorkout) => slotsOf(w.blocks).map((s) => s.exerciseId);
 const today = (groups: readonly GroupCount[], opts: { supersets?: boolean; accessories?: 'focused' | 'varied'; main?: string } = {}) =>
   buildFromSetup({ minutes: 999, mainLiftExerciseId: opts.main ?? 'bench', supersets: opts.supersets ?? false, groups, ...(opts.accessories === undefined ? {} : { accessories: opts.accessories }) }, pool, ctx, { trim: false }).workout;
-const noAbs: GroupCount[] = [{ group: 'Chest', count: 3 }, { group: 'Triceps', count: 1 }];
-const withAbs: GroupCount[] = [...noAbs, { group: 'Abs', count: 1 }];
+const noAbs: GroupCount[] = [{ group: 'Chest', count: 3 }, { group: 'Arms', count: 1 }];
+const withAbs: GroupCount[] = [...noAbs, { group: 'Core', count: 1 }];
 const edit = (w: BuilderWorkout, op: Parameters<typeof applyBuilderEdit>[1]) => {
   const r = applyBuilderEdit(w, op, ctx);
   if (!r.ok) throw new Error(r.reason);
@@ -71,7 +71,7 @@ describe('replayTodayEdits', () => {
     let now = edit(was, { kind: 'add_set', slotKey: keyOf(was, 'bench') });
     now = edit(now, { kind: 'add_exercise', exerciseId: 'knee_raise' });
     const incline = today(noAbs, { main: 'incline_bb' });
-    const r = replayTodayEdits({ next: incline, current: now, removed: [], info, skip: (s) => s.main || info(s.exerciseId)?.group === 'Abs' });
+    const r = replayTodayEdits({ next: incline, current: now, removed: [], info, skip: (s) => s.main || info(s.exerciseId)?.group === 'Core' });
     expect(slotsOf(r.blocks).filter((s) => s.main).map((s) => s.exerciseId)).toEqual(['incline_bb']);
     expect(ids(r)).not.toContain('knee_raise');
     expect(ids(r).filter((x) => x === 'bench')).toHaveLength(ids(incline).filter((x) => x === 'bench').length);

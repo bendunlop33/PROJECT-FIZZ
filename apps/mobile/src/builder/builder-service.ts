@@ -965,7 +965,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
 
   /** The workout has an ab exercise. */
   function hasAbs(w: BuilderWorkout, env: Pick<BuilderEnv, 'info'>): boolean {
-    return slotsOf(w.blocks).some((x) => env.info(x.exerciseId)?.group === 'Abs');
+    return slotsOf(w.blocks).some((x) => env.info(x.exerciseId)?.group === 'Core');
   }
 
   /** Build Your workout for a set-up: the template (and variation) when one is loaded and the groups weren't edited, else from the set-up. */
@@ -1298,7 +1298,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(now), ...exerciseIdsOf(original), ...exerciseIdsOf(t.unfitted), ...exerciseIdsOf(t.workout)], keySeed: `${current.id}:${o.opId}` });
     const mainMoved = t.template.mainLiftExerciseId !== (stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null);
     // His slots that don't belong to the new choice: the old main lift's, and his ab exercises with Abs off.
-    const skip = (x: BuilderSlot) => (mainMoved && x.main) || (next.abs === false && env.info(x.exerciseId)?.group === 'Abs');
+    const skip = (x: BuilderSlot) => (mainMoved && x.main) || (next.abs === false && env.info(x.exerciseId)?.group === 'Core');
     const removed = stored.todayRemoved ?? [];
     // Ben's edits on the draft before Time (what more Time brings back) and on the draft at Time (what he sees).
     const base = replayTodayEdits({ next: t.unfitted, current: original, removed, info: env.info, skip });
@@ -1649,7 +1649,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const groups = s.dayId === CUSTOM_DAY_ID ? s.groups.map((g) => g.group) : groupsOfParts(s.dayParts);
       const profileMain = s.dayId === CUSTOM_DAY_ID ? null : await profileMainLift(s.dayId);
       const env = await envFor(p, { groups, exerciseIds: [s.mainLiftExerciseId, profileMain].filter((x): x is string => x !== null), keySeed: 'setup' });
-      const compounds = env.compoundsOf(groups.filter((g) => g !== 'Abs'));
+      const compounds = env.compoundsOf(groups.filter((g) => g !== 'Core'));
       // The lift Set up opens the day with leads the list (none for a plan template with no main lift).
       const lead = s.dayId === CUSTOM_DAY_ID ? defaultMainOf(groups, env) : await setupMainFor(p.id, s.dayId, groups, () => Promise.resolve(env));
       const mainLifts = [...(lead === null ? [] : [{ id: lead, name: env.nameOf(lead), fromProfile: profileMain !== null }]), ...compounds.filter((id) => id !== lead).map((id) => ({ id, name: env.nameOf(id), fromProfile: false }))];
@@ -2211,14 +2211,14 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       // (D1 with D3) Today's options are Today's controls, not Ben's structure edits: a merge never leaves Keep marks.
       const todayW = { ...w, byApp: true };
       const mergeNext = (): SetupInput => {
-        const withoutAbs = s.groups.filter((g) => g.group !== 'Abs');
+        const withoutAbs = s.groups.filter((g) => g.group !== 'Core');
         switch (change.kind) {
           case 'supersets':
             return { ...s, supersets: change.on };
           case 'accessories':
             return { ...s, accessories: change.style };
           case 'abs':
-            return { ...s, groups: change.on ? [...withoutAbs, { group: 'Abs', count: 1 }] : withoutAbs };
+            return { ...s, groups: change.on ? [...withoutAbs, { group: 'Core', count: 1 }] : withoutAbs };
           case 'main_lift':
             return { ...s, mainLiftExerciseId: change.exerciseId, variationId: null };
         }
@@ -2438,7 +2438,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         (e) => e,
         group,
       ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id) })) }));
-      return { group, groups: ['Chest', 'Back', 'Shoulders', 'Legs', 'Biceps', 'Triceps', 'Abs'], sections };
+      return { group, groups: [...BUILDER_GROUPS], sections };
     },
 
     /** `Why this weight?` (§2.4): where the load came from, numbers from code only. */
@@ -2546,7 +2546,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const setup = pageSetup(d);
       const workout = fromDraftPlan(v.plan, stored?.restLevel ?? 'normal');
       const inWorkout = new Set(exerciseIdsOf(workout));
-      const groups = [...new Set<BuilderGroup>([...setup.groups.map((g) => g.group), 'Biceps', 'Triceps'])];
+      const groups = [...new Set<BuilderGroup>([...setup.groups.map((g) => g.group), 'Arms'])];
       const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...inWorkout], groups, keySeed: `${d.id}:coach:${String(d.version)}` });
       const main = slotsOf(workout.blocks).find((x) => x.main) ?? null;
       const mainGroup: BuilderGroup | null = (main === null ? undefined : env.info(main.exerciseId)?.group) ?? setup.groups[0]?.group ?? null;
@@ -2563,7 +2563,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           pain: env.painText,
           loads: createBuilderLoadGuard({ ctx: env.ctx, refs: env.refsOf, pain: env.painText }),
           mainGroup,
-          addCandidates: { arm: [...fresh('Biceps'), ...fresh('Triceps')].slice(0, 6), mainGroup: mainGroup === null ? [] : fresh(mainGroup).slice(0, 6) },
+          addCandidates: { arm: fresh('Arms').slice(0, 6), mainGroup: mainGroup === null ? [] : fresh(mainGroup).slice(0, 6) },
         },
         extras: {
           usable,
@@ -2636,7 +2636,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const dayGroups = groupsOfParts(d.parts);
         const opens = await setupMainFor(p.id, d.id, dayGroups, () => Promise.resolve(env));
         const lead = opens ?? defaultMainOf(dayGroups, env);
-        const ids = [...(lead === null ? [] : [lead]), ...env.compoundsOf(dayGroups.filter((g) => g !== 'Abs')).filter((id) => id !== lead).slice(0, 6)];
+        const ids = [...(lead === null ? [] : [lead]), ...env.compoundsOf(dayGroups.filter((g) => g !== 'Core')).filter((id) => id !== lead).slice(0, 6)];
         out.push({ id: d.id, name: d.name, mainLifts: ids.map((id) => ({ exerciseId: id, catalogueId: env.exercise(id)?.catalogueKey ?? null, name: env.nameOf(id) })), defaultMainLiftExerciseId: opens });
       }
       const ctx: SetupCoachContext = {

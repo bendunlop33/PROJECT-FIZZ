@@ -180,7 +180,7 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     ]);
     expect(o?.accessories).toBe('varied');
     expect(o?.supersets).toBe(snap.setup.supersets);
-    expect(o?.abs).toBe(slotsOf(snap.workout.blocks).some((x) => snap.facts[x.exerciseId]?.group === 'Abs'));
+    expect(o?.abs).toBe(slotsOf(snap.workout.blocks).some((x) => snap.facts[x.exerciseId]?.group === 'Core'));
     // Your workout shows them only when opened from Today (source).
     const page = read('screens/builder/BuilderWorkoutScreen.tsx');
     expect(page).toContain("params.back === 'Today' && s !== null ? await services.builder.todayOptions(s.draftId)");
@@ -224,7 +224,7 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     const key = dayKeyOf(data, 'Push');
     let snap = await edit(s, data, sel(data, key, { abs: false, supersets: false }));
     const before = names(snap);
-    const isAbs = (n: BuilderSnapshot) => slotsOf(n.workout.blocks).filter((x) => n.facts[x.exerciseId]?.group === 'Abs');
+    const isAbs = (n: BuilderSnapshot) => slotsOf(n.workout.blocks).filter((x) => n.facts[x.exerciseId]?.group === 'Core');
     expect(isAbs(snap)).toHaveLength(0);
     snap = snapOf(await s.builder.setTodayOption(snap.draftId, { kind: 'abs', on: true }, { opId: 'abs-on', expectedVersion: snap.version }));
     expect(isAbs(snap)).toHaveLength(1);

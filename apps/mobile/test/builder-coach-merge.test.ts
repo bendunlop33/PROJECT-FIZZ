@@ -162,7 +162,7 @@ describe('Set up words (offline: code reads them, no coach bubble)', () => {
     expect(r).toMatchObject({ kind: 'filled' });
     const pending = takePendingSetupFill();
     expect(pending?.setup).toMatchObject({ dayName: 'Full body', minutes: 45 });
-    expect(pending?.setup.groups.map((g) => g.group)).toEqual(['Legs', 'Back', 'Chest', 'Abs']);
+    expect(pending?.setup.groups.map((g) => g.group)).toEqual(['Legs', 'Back', 'Chest', 'Core']);
   });
 
   it('nothing it can read: `Not understood`, nothing applied', async () => {

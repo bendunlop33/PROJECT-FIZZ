@@ -51,7 +51,7 @@ export function adviseBuilder(blocks: readonly AdviceBlock[], info: BuilderInfoL
       const x = flat[a];
       const y = flat[b];
       if (x === undefined || y === undefined || x.bi === y.bi) continue;
-      if (x.i.role !== 'isolation' || y.i.role !== 'compound' || x.i.group === 'Abs') continue;
+      if (x.i.role !== 'isolation' || y.i.role !== 'compound' || x.i.group === 'Core') continue;
       const muscle = x.i.muscles.find((m) => y.i.muscles.includes(m)) ?? (x.i.group === y.i.group ? x.i.group.toLowerCase() : null);
       if (muscle === null) continue;
       out.push({

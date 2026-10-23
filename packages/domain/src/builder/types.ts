@@ -13,14 +13,16 @@ import type { WarmupExerciseFacts } from '../warmup/plan';
  */
 
 /**
- * The builder's muscle groups (§4.7): the schemas' `BuilderGroup`. Display
- * only: Legs = Quads + Hamstrings + Glutes + Calves; Abs = Core.
+ * The builder's muscle groups (§4.7; D5, Ben 22–23 Oct): the schemas'
+ * `BuilderGroup`. Display only: Legs = Quads + Hamstrings + Glutes + Calves;
+ * Arms = Biceps + Triceps (forearm work is found there too, never picked).
  */
 export type BuilderGroupName = BuilderGroup;
 
-export const ARM_GROUPS: readonly BuilderGroupName[] = ['Biceps', 'Triceps'];
+/** The parts of `Arms` (`BuilderExerciseInfo.part`), for pick order and pairing (a curl pairs with a pushdown). */
+export type ArmPart = 'biceps' | 'triceps' | 'forearms';
 
-/** Role for order, rest and warm-ups (§3.2–§3.4). Abs are isolations in group `Abs`. */
+/** Role for order, rest and warm-ups (§3.2–§3.4). Abs are isolations in group `Core`. */
 export type BuilderRole = 'compound' | 'isolation';
 
 /** What the injected lookup knows about one exercise. */
@@ -33,7 +35,8 @@ export interface BuilderExerciseInfo {
   heavy: boolean;
   /**
    * The part used for pairing and leg-day alternation (§3.4–§3.5): `quads`,
-   * `hamstrings_glutes`, `calves` on legs; the group name otherwise.
+   * `hamstrings_glutes`, `calves` on legs; `biceps`, `triceps`, `forearms` on
+   * arms (D5); the group name otherwise.
    */
   part: string;
   /** Muscles it works (lower-case words, e.g. `lats`, `upper chest`); shared muscle = no pair. */

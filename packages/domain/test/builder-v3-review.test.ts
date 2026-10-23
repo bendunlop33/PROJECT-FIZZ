@@ -24,8 +24,8 @@ const ids = (w: { blocks: readonly BuilderBlock[] }) => w.blocks.map((b) => b.sl
 const all = (w: BuilderWorkout) => w.blocks.flatMap((b) => b.slots);
 const chestGroups = [
   { group: 'Chest', count: 3 },
-  { group: 'Triceps', count: 1 },
-  { group: 'Abs', count: 1 },
+  { group: 'Arms', count: 1 },
+  { group: 'Core', count: 1 },
 ] as const;
 const setup = (over: Partial<BuilderSetup & SetupIdentity> = {}): BuilderSetup & SetupIdentity => ({ dayId: 'chest', mainLiftExerciseId: 'bench', variationId: null, minutes: 60, supersets: true, groups: chestGroups, ...over });
 
@@ -66,19 +66,20 @@ describe('B3: Unlink is remembered', () => {
     const ctx = context();
     const w = unlinkAll(buildFromSetup(setup(), pool, ctx).workout);
     expect(ids(w)).toEqual(['bench', 'incline_db', 'cable_fly', 'pushdown', 'crunch']);
-    const r = mergeSetupChange(setup(), setup({ groups: [chestGroups[0], { group: 'Triceps', count: 2 }, chestGroups[2]] }), w, pool, ctx);
+    const r = mergeSetupChange(setup(), setup({ groups: [chestGroups[0], { group: 'Arms', count: 2 }, chestGroups[2]] }), w, pool, ctx);
     expect(r.kind).toBe('merged');
     if (r.kind !== 'merged') return;
-    // Only oh_ext (new) gets a partner, a single that was never paired; pushdown and crunch (unlinked) stay
-    // single. The reported bug paired cable_fly+pushdown and oh_ext+crunch.
-    expect(ids(r.workout)).toEqual(['bench', 'incline_db', 'cable_fly+oh_ext', 'pushdown', 'crunch']);
+    // Only the curl (new; D5's Arms 2 on a chest day is a pushdown and a curl) gets a partner, a single that was
+    // never paired; pushdown and crunch (unlinked) stay single. The reported bug paired cable_fly+pushdown and the
+    // new one with crunch.
+    expect(ids(r.workout)).toEqual(['bench', 'incline_db+curl', 'cable_fly', 'pushdown', 'crunch']);
   });
 
   it('a new exercise pairs with a single nobody unlinked (abs first, as §3.5); the other singles stay as they are', () => {
     const ctx = context();
     const built = buildFromSetup(setup({ supersets: false }), pool, ctx).workout;
-    const r = mergeSetupChange(setup(), setup({ groups: [chestGroups[0], { group: 'Triceps', count: 2 }, chestGroups[2]] }), built, pool, ctx);
-    expect(r.kind === 'merged' && ids(r.workout)).toEqual(['bench', 'incline_db', 'cable_fly', 'pushdown', 'oh_ext+crunch']);
+    const r = mergeSetupChange(setup(), setup({ groups: [chestGroups[0], { group: 'Arms', count: 2 }, chestGroups[2]] }), built, pool, ctx);
+    expect(r.kind === 'merged' && ids(r.workout)).toEqual(['bench', 'incline_db', 'cable_fly', 'pushdown', 'curl+crunch']);
   });
 
   it('filling time with Supersets on pairs only the added exercise', () => {

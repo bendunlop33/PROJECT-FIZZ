@@ -453,7 +453,7 @@ describe('the Time row’s view', () => {
     planDay: null,
     variationLabel: null,
     undo: null,
-    facts: { inc: { name: 'Incline DB press', works: null, group: 'Chest', compound: true, mayHurt: false, notHere: false, hasHistory: true }, pd: { name: 'Triceps pushdown', works: null, group: 'Triceps', compound: false, mayHurt: false, notHere: false, hasHistory: true } },
+    facts: { inc: { name: 'Incline DB press', works: null, group: 'Chest', compound: true, mayHurt: false, notHere: false, hasHistory: true }, pd: { name: 'Triceps pushdown', works: null, group: 'Arms', compound: false, mayHurt: false, notHere: false, hasHistory: true } },
     unit: 'kg',
     skipped: [],
     revs: {},

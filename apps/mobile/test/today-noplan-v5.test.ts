@@ -199,7 +199,7 @@ describe('V5: Edit opens Your workout with today’s draft; Start is one tap', (
     const off = await s.builder.setTodayOption(c.draftId, { kind: 'abs', on: false }, { opId: 'abs-off', expectedVersion: snap.version });
     expect(off.status).toBe('written');
     const offSnap = snapOf(off);
-    expect(slotsOf(offSnap.workout.blocks).some((x) => offSnap.facts[x.exerciseId]?.group === 'Abs')).toBe(false);
+    expect(slotsOf(offSnap.workout.blocks).some((x) => offSnap.facts[x.exerciseId]?.group === 'Core')).toBe(false);
     expect(off.status === 'written' ? off.toast?.undoOpId : null).toBe('abs-off');
     // A stale write is refused (rule 5).
     const stale = await s.builder.setTodayOption(c.draftId, { kind: 'supersets', on: false }, { opId: 'ss-stale', expectedVersion: snap.version });

@@ -14,9 +14,8 @@ export const CORE_FOCI: Readonly<Record<BuilderGroupName, readonly string[]>> = 
   Back: ['Lats', 'Mid-back', 'Rear delts'],
   Shoulders: ['Front delts', 'Side delts'],
   Legs: ['Quads', 'Hamstrings & glutes', 'Calves'],
-  Biceps: ['Biceps'],
-  Triceps: ['Triceps'],
-  Abs: ['Abs'],
+  Arms: ['Biceps', 'Triceps'],
+  Core: ['Abs'],
 };
 
 /** A muscle word (`BuilderExerciseInfo.muscles`) → its focus heading; words with none (grip, hip flexors) count nowhere. */

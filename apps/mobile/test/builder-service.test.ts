@@ -391,7 +391,7 @@ describe('plan-day templates: Start today only, Keep for next time on the Summar
     let snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
     const pd = slotNamed(snap, 'Triceps pushdown');
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: pd.key }, { opId: 'set-1', basis: { version: snap.version } })).snapshot;
-    const choices = await s.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Biceps' });
+    const choices = await s.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Arms' });
     const curl = choices?.sections.flatMap((x) => x.items).find((i) => !i.mayHurt);
     if (curl === undefined) throw new Error('no biceps exercise');
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_exercise', exerciseId: curl.exerciseId }, { opId: 'add-1', basis: { version: snap.version } })).snapshot;
@@ -499,8 +499,8 @@ describe('builder Start → the v3 rounds (b3 merge)', () => {
     // Arm isolations: something the builder may pair (heavy lifts never pair, Ben 21 Oct).
     const groups = [
       { group: 'Chest' as const, count: 2 },
-      { group: 'Triceps' as const, count: 2 },
-      { group: 'Biceps' as const, count: 1 },
+      { group: 'Arms' as const, count: 2 },
+      { group: 'Arms' as const, count: 1 },
     ];
     const snap = ok(await s.builder.create(await pushSetup(s, { minutes: 60, supersets: true, groups, groupsEdited: true }), 'c-v3')).snapshot;
     const started = await s.builder.start(snap.draftId, { opId: 'start-v3', expectedVersion: snap.version, gymId });

@@ -34,7 +34,7 @@ import {
 } from '../src/index';
 import { ScriptedCoachModel } from './fake-model';
 
-const chest: BuilderSetup = { minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 3 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] };
+const chest: BuilderSetup = { minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 3 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] };
 
 function world(pain: Record<string, string> = {}) {
   const ctx = F.context();
@@ -73,7 +73,7 @@ const plan: ReviewPlanDay = {
 describe('review facts: every count from code (§2.9)', () => {
   it('coverage with set counts, variety, and the plan section', () => {
     const { ctx, snap } = world();
-    const f = reviewFacts({ snapshot: snap, ctx, groups: ['Chest', 'Triceps', 'Abs'], plan });
+    const f = reviewFacts({ snapshot: snap, ctx, groups: ['Chest', 'Arms', 'Core'], plan });
     expect(f.coverage.map((c) => c.focus)).toEqual(['Upper chest', 'Mid chest', 'Triceps', 'Abs']);
     // Bench 4 + fly 3 direct, mid chest; incline 3 direct, upper; triceps half from both presses + pushdown 3.
     expect(f.coverage).toEqual([
@@ -104,7 +104,7 @@ describe('review facts: every count from code (§2.9)', () => {
 describe('checkReview: a sentence with a wrong number is hidden', () => {
   it('verdict and reasons show only with numbers code gave; suggestions are proposals; notes code-worded', () => {
     const { ctx, snap, env, key } = world();
-    const f = reviewFacts({ snapshot: snap, ctx, groups: ['Chest', 'Triceps', 'Abs'], plan });
+    const f = reviewFacts({ snapshot: snap, ctx, groups: ['Chest', 'Arms', 'Core'], plan });
     const claims = reviewClaimBase(f, { ctx, minutes: [60, 52], plan });
     const args: ReviewWorkoutArgs = {
       verdict: 'Balanced, 16 working sets.',
@@ -134,7 +134,7 @@ describe('checkReview: a sentence with a wrong number is hidden', () => {
 
   it('each number is checked against the fact it names, not a pool (review b3-coach B2)', () => {
     const { ctx, snap, env } = world();
-    const f = reviewFacts({ snapshot: snap, ctx, groups: ['Chest', 'Triceps', 'Abs'], plan });
+    const f = reviewFacts({ snapshot: snap, ctx, groups: ['Chest', 'Arms', 'Core'], plan });
     const claims = reviewClaimBase(f, { ctx, minutes: [60, 52], plan });
     const verdict = (v: string) => checkReview({ reviewId: 'r', args: { verdict: v, suggestions: [], nextNotes: [] }, snapshot: snap, env, claims }).verdict;
     // Wrong: every one of these numbers appears SOMEWHERE in the context (reps, slot keys, loads), but not as this fact.

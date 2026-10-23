@@ -1,5 +1,5 @@
 import { BUILDER_GROUP_PARTS, BUILDER_GROUPS, builderGroupOfPart, builderGroupOfParts, type BuilderGroup, type BuilderSetup as StoredSetup, type SplitBodyPart } from '@fizz/schemas';
-import { BUILDER_DAY_MIXES, type BuilderSetup, type GroupCount, type LegPart } from './build';
+import { BUILDER_DAY_MIXES, type BuilderSetup, type GroupCount, type LegPart, type PickedArmPart } from './build';
 import type { SetupIdentity } from './merge';
 
 /**
@@ -17,7 +17,7 @@ const MIX_IDS: ReadonlySet<string> = new Set(Object.keys(BUILDER_DAY_MIXES));
 /**
  * The day's mix: the prototype's for the preset days (`chest`, `pull`…);
  * any other split day by its parts in order: the first group 4, every other
- * 1, abs 1 when the day has Core. A custom day: the groups Ben chose, the
+ * 1, Core 1 when the day has it (D5: Biceps and Triceps are one `Arms` row). A custom day: the groups Ben chose, the
  * first 4 and the rest 1.
  */
 export function mixForDay(dayId: string, parts: readonly SplitBodyPart[]): GroupCount[] {
@@ -27,9 +27,9 @@ export function mixForDay(dayId: string, parts: readonly SplitBodyPart[]): Group
     const g = builderGroupOfPart(p);
     if (!groups.includes(g)) groups.push(g);
   }
-  const main = groups.filter((g) => g !== 'Abs');
+  const main = groups.filter((g) => g !== 'Core');
   const out = main.map((g, i): GroupCount => ({ group: g, count: i === 0 ? (g === 'Legs' ? 5 : 4) : 1 }));
-  if (groups.includes('Abs')) out.push({ group: 'Abs', count: 1 });
+  if (groups.includes('Core')) out.push({ group: 'Core', count: 1 });
   return out;
 }
 
@@ -43,37 +43,56 @@ export function groupsOfParts(parts: readonly SplitBodyPart[]): BuilderGroup[] {
   return out;
 }
 
-/** `Chest, triceps` under a split option (§2.2). */
+/** `Chest, triceps` under a split option (§2.2): the day's parts, leg parts as `legs`. */
 export function partsLabel(parts: readonly SplitBodyPart[]): string {
-  const words = groupsOfParts(parts).map((g) => g.toLowerCase());
+  const words = [...new Set(parts.map((p) => (builderGroupOfPart(p) === 'Legs' ? 'legs' : p.toLowerCase())))];
   const text = words.join(', ');
   return text.length === 0 ? '' : `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 }
 
 const LEG_PART_OF: Readonly<Record<string, LegPart>> = { Quads: 'quads', Hamstrings: 'hamstrings_glutes', Glutes: 'hamstrings_glutes', Calves: 'calves' };
+const ARM_PART_OF: Readonly<Record<string, PickedArmPart>> = { Biceps: 'biceps', Triceps: 'triceps' };
 
-/** The parts a group row stores: the group's own parts, or a custom day's chosen leg parts. */
-export function partsOfGroup(group: BuilderGroup, legParts?: readonly SplitBodyPart[]): SplitBodyPart[] {
+/** The parts a group row stores: the group's own parts, or a custom day's chosen leg (or arm) parts. */
+export function partsOfGroup(group: BuilderGroup, legParts?: readonly SplitBodyPart[], armParts?: readonly SplitBodyPart[]): SplitBodyPart[] {
   if (group === 'Legs' && legParts !== undefined && legParts.length > 0) return [...legParts];
+  if (group === 'Arms' && armParts !== undefined && armParts.length > 0) return [...armParts];
   return [...BUILDER_GROUP_PARTS[group]];
 }
 
-/** Stored set-up → the rules' set-up and identity (§2.3 merge). Rows with no single group are skipped. */
+/**
+ * Stored set-up → the rules' set-up and identity (§2.3 merge). Rows with no single group are skipped. Rows stored
+ * before D5 (Ben, 22–23 Oct) read as today's groups: a `Biceps` and a `Triceps` row are one `Arms` row (counts
+ * added, at most 4; only those parts picked), `Core` is `Core`.
+ */
 export function ruleSetupOf(s: StoredSetup): BuilderSetup & SetupIdentity {
   const groups: GroupCount[] = [];
   let legParts: LegPart[] | undefined;
+  const armRows: SplitBodyPart[] = [];
   for (const row of s.groups) {
     const g = builderGroupOfParts(row.parts);
-    if (g === null || groups.some((x) => x.group === g)) continue;
+    if (g === null) continue;
+    const seen = groups.find((x) => x.group === g);
+    if (g === 'Arms') {
+      armRows.push(...row.parts);
+      if (seen !== undefined) {
+        seen.count = Math.min(4, seen.count + row.count);
+        continue;
+      }
+    }
+    if (seen !== undefined) continue;
     groups.push({ group: g, count: row.count });
     if (g === 'Legs' && row.parts.length < BUILDER_GROUP_PARTS.Legs.length) legParts = [...new Set(row.parts.map((p) => LEG_PART_OF[p]).filter((p): p is LegPart => p !== undefined))];
   }
+  const armSet = new Set(armRows.map((p) => ARM_PART_OF[p]).filter((p): p is PickedArmPart => p !== undefined));
+  const armParts = armSet.size > 0 && armSet.size < BUILDER_GROUP_PARTS.Arms.length ? [...armSet] : undefined;
   return {
     minutes: s.minutes,
     mainLiftExerciseId: s.mainLiftExerciseId,
     supersets: s.supersets,
     groups,
     ...(legParts === undefined ? {} : { legParts }),
+    ...(armParts === undefined ? {} : { armParts }),
     ...(s.accessories === undefined ? {} : { accessories: s.accessories }),
     dayId: s.dayId,
     variationId: s.variationId ?? null,
@@ -81,8 +100,8 @@ export function ruleSetupOf(s: StoredSetup): BuilderSetup & SetupIdentity {
 }
 
 /** Group counts in stored form, in display order. */
-export function storedGroupsOf(groups: readonly GroupCount[], legParts?: readonly SplitBodyPart[]): StoredSetup['groups'] {
-  return groups.filter((g) => g.count > 0).map((g) => ({ parts: partsOfGroup(g.group, legParts), count: Math.max(1, Math.min(4, Math.round(g.count))) }));
+export function storedGroupsOf(groups: readonly GroupCount[], legParts?: readonly SplitBodyPart[], armParts?: readonly SplitBodyPart[]): StoredSetup['groups'] {
+  return groups.filter((g) => g.count > 0).map((g) => ({ parts: partsOfGroup(g.group, legParts, armParts), count: Math.max(1, Math.min(4, Math.round(g.count))) }));
 }
 
 /** The groups `＋ Add muscle group` can still add (§2.2), in the builder's order. */

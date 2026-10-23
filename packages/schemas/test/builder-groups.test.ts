@@ -7,6 +7,7 @@ import {
   builderFocusOf,
   builderFocusSections,
   builderGroupOf,
+  builderGroupOfKey,
   builderGroupOfMuscleGroup,
   builderGroupOfPart,
   builderGroupOfParts,
@@ -31,12 +32,15 @@ const ex = (primaryMuscles: string[], secondaryMuscles: string[] = [], movementP
 });
 
 describe('BuilderGroup (display only, §4.7, §9 Q8)', () => {
-  it('seven groups; Legs = Quads + Hamstrings + Glutes + Calves; Abs = Core', () => {
-    expect(BUILDER_GROUPS).toEqual(['Chest', 'Back', 'Shoulders', 'Legs', 'Biceps', 'Triceps', 'Abs']);
+  it('D5 (Ben, 22–23 Oct): six broad groups; Legs = Quads + Hamstrings + Glutes + Calves; Arms = Biceps + Triceps', () => {
+    expect(BUILDER_GROUPS).toEqual(['Chest', 'Back', 'Shoulders', 'Legs', 'Arms', 'Core']);
     expect(BUILDER_GROUP_PARTS.Legs).toEqual(['Quads', 'Hamstrings', 'Glutes', 'Calves']);
-    expect(BUILDER_GROUP_PARTS.Abs).toEqual(['Core']);
+    expect(BUILDER_GROUP_PARTS.Arms).toEqual(['Biceps', 'Triceps']);
+    expect(BUILDER_GROUP_PARTS.Core).toEqual(['Core']);
     for (const p of ['Quads', 'Hamstrings', 'Glutes', 'Calves'] as const) expect(builderGroupOfPart(p)).toBe('Legs');
-    expect(builderGroupOfPart('Core')).toBe('Abs');
+    expect(builderGroupOfPart('Biceps')).toBe('Arms');
+    expect(builderGroupOfPart('Triceps')).toBe('Arms');
+    expect(builderGroupOfPart('Core')).toBe('Core');
     expect(builderGroupOfMuscleGroup('Forearms')).toBeNull();
   });
 
@@ -54,7 +58,9 @@ describe('BuilderGroup (display only, §4.7, §9 Q8)', () => {
 
   it('a stored parts list reads back as one group, else null', () => {
     expect(builderGroupOfParts(['Quads', 'Calves'])).toBe('Legs');
-    expect(builderGroupOfParts(['Core'])).toBe('Abs');
+    expect(builderGroupOfParts(['Core'])).toBe('Core');
+    expect(builderGroupOfParts(['Triceps'])).toBe('Arms');
+    expect(builderGroupOfParts(['Biceps', 'Triceps'])).toBe('Arms');
     expect(builderGroupOfParts(['Chest', 'Triceps'])).toBeNull();
     expect(builderGroupOfParts([])).toBeNull();
   });
@@ -64,8 +70,9 @@ describe('builderGroupOf (catalogue exercise)', () => {
   it('from the first primary muscle that has a builder group', () => {
     expect(builderGroupOf(ex(['chest'], ['front_delts', 'triceps']))).toBe('Chest');
     expect(builderGroupOf(ex(['hamstrings', 'glutes']))).toBe('Legs');
-    expect(builderGroupOf(ex(['obliques', 'core']))).toBe('Abs');
-    expect(builderGroupOf(ex(['brachialis', 'biceps']))).toBe('Biceps');
+    expect(builderGroupOf(ex(['obliques', 'core']))).toBe('Core');
+    expect(builderGroupOf(ex(['brachialis', 'biceps']))).toBe('Arms');
+    expect(builderGroupOf(ex(['triceps']))).toBe('Arms');
     // Grip has no builder group, so traps (Back) leads.
     expect(builderGroupOf(ex(['grip', 'traps'], [], 'pull'))).toBe('Back');
   });
@@ -84,7 +91,7 @@ describe('builderGroupOf (catalogue exercise)', () => {
       { focus: 'Quads', items: [ex(['quads'], [], 'squat', 'reps')] },
     ]);
     // Plank and walking lunge are strength.
-    expect(builderGroupOf(ex(['abs', 'core'], [], 'core', 'duration'))).toBe('Abs');
+    expect(builderGroupOf(ex(['abs', 'core'], [], 'core', 'duration'))).toBe('Core');
     expect(builderGroupOf(ex(['quads', 'glutes'], [], 'lunge', 'distance'))).toBe('Legs');
     expect(isBuilderStrength(ex(['quads'], [], 'squat', 'reps'))).toBe(true);
     expect(isBuilderStrength(ex(['quads'], [], 'conditioning', 'reps'))).toBe(false);
@@ -94,8 +101,8 @@ describe('builderGroupOf (catalogue exercise)', () => {
     expect(builderGroupOf(ex(['rhomboids']))).toBeNull();
   });
   it('forearm-only exercises are found under the arms group (D5), browse only and uncounted', () => {
-    expect(builderGroupOf(ex(['forearms']))).toBe('Biceps');
-    expect(builderGroupOf(ex(['grip'], ['forearms']))).toBe('Biceps');
+    expect(builderGroupOf(ex(['forearms']))).toBe('Arms');
+    expect(builderGroupOf(ex(['grip'], ['forearms']))).toBe('Arms');
     expect(builderFocusOf(ex(['forearms']))).toBe('Forearms');
     expect(isBuilderAutoPick(ex(['forearms']))).toBe(false);
     expect(builderFocusCounts('Forearms')).toBe(false);
@@ -106,7 +113,7 @@ describe('builderGroupOf (catalogue exercise)', () => {
     expect(builderGroupOfMuscleGroup('Forearms')).toBeNull();
   });
   it('the 23 Oct words map to their broad groups and foci; prehab foci are Swap / Add only', () => {
-    expect([builderGroupOf(ex(['hip_flexors'])), builderFocusOf(ex(['hip_flexors']))]).toEqual(['Abs', 'Abs']);
+    expect([builderGroupOf(ex(['hip_flexors'])), builderFocusOf(ex(['hip_flexors']))]).toEqual(['Core', 'Abs']);
     expect([builderGroupOf(ex(['rotator_cuff'])), builderFocusOf(ex(['rotator_cuff']))]).toEqual(['Shoulders', 'Rotator cuff']);
     expect([builderGroupOf(ex(['serratus'])), builderFocusOf(ex(['serratus']))]).toEqual(['Chest', 'Serratus']);
     expect([builderGroupOf(ex(['tibialis'])), builderFocusOf(ex(['tibialis']))]).toEqual(['Legs', 'Shins']);
@@ -124,7 +131,7 @@ describe('builderGroupOf (catalogue exercise)', () => {
   });
   it('Swap / Add: forearm work is its own heading under the arms group', () => {
     const items = [ex(['biceps']), ex(['forearms']), ex(['forearms', 'brachialis'])];
-    expect(builderFocusSections(items, (e) => e, 'Biceps').map((s) => [s.focus, s.items.length])).toEqual([
+    expect(builderFocusSections(items, (e) => e, 'Arms').map((s) => [s.focus, s.items.length])).toEqual([
       ['Biceps', 2],
       ['Forearms', 1],
     ]);
@@ -165,6 +172,17 @@ describe('builderFocusOf (Swap focus headings, §2.5)', () => {
   });
 });
 
+describe('pre-D5 group keys (stored carry-overs, older drafts)', () => {
+  it('read as today’s groups; anything else is null', () => {
+    expect(builderGroupOfKey('Biceps')).toBe('Arms');
+    expect(builderGroupOfKey('Triceps')).toBe('Arms');
+    expect(builderGroupOfKey('Abs')).toBe('Core');
+    for (const g of BUILDER_GROUPS) expect(builderGroupOfKey(g)).toBe(g);
+    expect(builderGroupOfKey('Forearms')).toBeNull();
+    expect(builderGroupOfKey(3)).toBeNull();
+  });
+});
+
 describe('builderFocusSections', () => {
   const items = [
     { id: 'fly', info: ex(['chest'], ['front_delts']) },
@@ -177,7 +195,7 @@ describe('builderFocusSections', () => {
       ['Upper chest', ['incline']],
       ['Mid chest', ['fly', 'press']],
     ]);
-    expect(builderFocusSections(items, (i) => i.info, 'Triceps').map((s) => s.focus)).toEqual(['Triceps']);
+    expect(builderFocusSections(items, (i) => i.info, 'Arms').map((s) => s.focus)).toEqual(['Triceps']);
     expect(builderFocusSections(items, (i) => i.info, 'Back')).toEqual([]);
   });
 });

@@ -31,7 +31,7 @@ describe('todaySplitDays: Profile › Split as Today days (no plan)', () => {
     // Set up's mix for the day (abs on), Ben's usual length, supersets on; no plan template behind it.
     const chest = d[0]?.templates[0];
     expect(chest).toMatchObject({ routineId: null, version: null, minutes: 60, absPlan: true, supersetsPlan: true });
-    expect(chest?.groups.map((x) => x.group)).toEqual(['Chest', 'Triceps', 'Abs']);
+    expect(chest?.groups.map((x) => x.group)).toEqual(['Chest', 'Arms', 'Core']);
   });
 
   it('main lifts: Ben’s saved one first, then the lead group’s defaults here (two, as the prototype’s Bench / Incline)', () => {
@@ -47,7 +47,7 @@ describe('todaySplitDays: Profile › Split as Today days (no plan)', () => {
   });
 
   it('a group with no compound here has no main lift (honest), one template', () => {
-    const out = splitDayMainOptions({ groups: ['Biceps'], saved: null, pool, info, catalogueKeyOf: keyOf });
+    const out = splitDayMainOptions({ groups: ['Arms'], saved: null, pool, info, catalogueKeyOf: keyOf });
     expect(out).toEqual([]);
     const arms: TrainingSplit = { kind: 'custom', days: [{ id: 'arms', name: 'Arms', bodyParts: ['Biceps', 'Triceps'] }] };
     const d = todaySplitDays({ split: arms, exercisesOf: () => [], pool, info, catalogueKeyOf: keyOf, defaultMinutes: 45 });

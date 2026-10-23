@@ -57,7 +57,7 @@ export function fitLostByGroup(steps: readonly BuilderFitStep[], base: BuilderWo
 export function carryTargetDay(group: BuilderGroupName, fromDayIndex: number, days: readonly CarryDay[]): CarryDay | null {
   const others = [...days].filter((d) => d.dayIndex !== fromDayIndex).sort((a, b) => a.dayIndex - b.dayIndex);
   const after = [...others.filter((d) => d.dayIndex > fromDayIndex), ...others.filter((d) => d.dayIndex < fromDayIndex)];
-  if (group === 'Abs') return after[0] ?? null;
+  if (group === 'Core') return after[0] ?? null;
   return after.find((d) => d.groups.includes(group)) ?? null;
 }
 
@@ -88,7 +88,7 @@ export function carryOverOffer(input: CarryOfferInput): CarryItem[] {
   return out;
 }
 
-/** `+3 Triceps sets on your next Shoulders day` (each item, minimal copy). */
+/** `+3 Arms sets on your next Shoulders day` (each item, minimal copy). */
 export function carryItemText(x: Pick<CarryItem, 'group' | 'sets' | 'toDayName'>): string {
   return `+${String(x.sets)} ${x.group} ${x.sets === 1 ? 'set' : 'sets'} on your next ${x.toDayName} day`;
 }
@@ -152,7 +152,12 @@ export function landCarryOver(w: BuilderWorkout, items: readonly CarryItem[], ct
   let workout = w;
   const changed: string[] = [];
   for (const x of items) {
-    const inGroup = slotsOf(workout.blocks).filter((s) => ctx.info(s.exerciseId)?.group === x.group);
+    // (D5) Arms is biceps + triceps: carried pushdown sets land on a triceps exercise, never on a curl.
+    const armPart = x.group === 'Arms' ? (ctx.info(x.exerciseId)?.part ?? null) : null;
+    const inGroup = slotsOf(workout.blocks).filter((s) => {
+      const i = ctx.info(s.exerciseId);
+      return i?.group === x.group && (armPart === null || i.part === armPart);
+    });
     // Its first exercise that isn't the main lift; when the main lift is the group's only one, the main lift (more back-offs).
     const slot = inGroup.find((s) => !s.main) ?? inGroup[0];
     if (slot !== undefined) {

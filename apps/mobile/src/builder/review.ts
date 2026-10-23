@@ -1,5 +1,5 @@
 import { slotsOf, workingCount } from '@fizz/domain';
-import type { BuilderGroup } from '@fizz/schemas';
+import { BUILDER_GROUPS, type BuilderGroup } from '@fizz/schemas';
 
 import type { BuilderSnapshot } from './builder-service';
 import type { CoachBarStatus } from './builder-view';
@@ -69,7 +69,7 @@ export function builderReviewProvider(): BuilderReviewProvider | null {
   return provider;
 }
 
-const CORE: readonly BuilderGroup[] = ['Chest', 'Back', 'Shoulders', 'Legs', 'Biceps', 'Triceps', 'Abs'];
+const CORE: readonly BuilderGroup[] = BUILDER_GROUPS;
 
 /**
  * The status a review opens with: the coach's own state when it isn't

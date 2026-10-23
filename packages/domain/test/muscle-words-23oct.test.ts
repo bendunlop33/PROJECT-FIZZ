@@ -24,10 +24,10 @@ describe('counting (Progress and the weekly review) with the new words', () => {
     expect(leadMuscleGroup(ex(['forearms'], [], 'arms'))).toBeNull();
   });
 
-  it('Progress rows: cuff → Shoulders (no longer Back), tibialis → Legs, forearms none', () => {
+  it('Progress rows (D5 detailed list): cuff → Shoulders (no longer Back), tibialis → Calves, forearms none', () => {
     expect(muscleRowOf(ex(['rotator_cuff'], ['rear_delts'], 'horizontal_pull'))).toBe('Shoulders');
     expect(muscleRowOf(ex(['rear_delts'], [], 'horizontal_pull'))).toBe('Back');
-    expect(muscleRowOf(ex(['tibialis'], [], 'calves'))).toBe('Legs');
+    expect(muscleRowOf(ex(['tibialis'], [], 'calves'))).toBe('Calves');
     expect(muscleRowOf(ex(['serratus'], [], 'horizontal_push'))).toBe('Chest');
     expect(muscleRowOf(ex(['neck'], [], 'vertical_pull'))).toBe('Back');
     expect(muscleRowOf(ex(['forearms'], [], 'arms'))).toBeNull();
@@ -48,22 +48,22 @@ describe('builder info and automatic picks', () => {
     const er = row('er', ['rotator_cuff'], 'horizontal_pull', ['rear_delts']);
     expect([er?.group, er?.angle]).toEqual(['Shoulders', 'Rotator cuff']);
     const wrist = row('wrist', ['forearms'], 'arms', ['grip']);
-    expect([wrist?.group, wrist?.angle]).toEqual(['Biceps', 'Forearms']);
+    expect([wrist?.group, wrist?.angle, wrist?.part]).toEqual(['Arms', 'Forearms', 'forearms']);
     for (const i of [tib, er, wrist]) expect(isAutoPickInfo(i ?? null)).toBe(false);
     const legRaise = row('lr', ['abs', 'hip_flexors'], 'core', ['obliques']);
-    expect([legRaise?.group, legRaise?.angle, isAutoPickInfo(legRaise ?? null)]).toEqual(['Abs', 'Abs', true]);
+    expect([legRaise?.group, legRaise?.angle, isAutoPickInfo(legRaise ?? null)]).toEqual(['Core', 'Abs', true]);
     expect(isAutoPickInfo(null)).toBe(false);
   });
 
   it('the build never picks a wrist curl, tibialis raise or cuff rotation by itself, even first in the pool', () => {
     const extra: Record<string, BuilderExerciseInfo> = {
-      wrist_curl: { exerciseId: 'wrist_curl', name: 'Wrist curl', group: 'Biceps', role: 'isolation', heavy: false, part: 'Biceps', muscles: ['forearms'], angle: 'Forearms', barbell: false },
+      wrist_curl: { exerciseId: 'wrist_curl', name: 'Wrist curl', group: 'Arms', role: 'isolation', heavy: false, part: 'forearms', muscles: ['forearms'], angle: 'Forearms', barbell: false },
       tib_raise: { exerciseId: 'tib_raise', name: 'Tibialis raise', group: 'Legs', role: 'isolation', heavy: false, part: 'calves', muscles: ['tibialis'], angle: 'Shins', barbell: false },
     };
     const base = context();
     const ctx: BuilderContext = { ...base, info: (id) => extra[id] ?? baseInfo(id) };
-    const pool: BuilderPool = (g) => (g === 'Biceps' ? ['wrist_curl', 'curl', 'hammer'] : g === 'Legs' ? ['tib_raise', 'calf', 'leg_ext', 'leg_curl'] : []);
-    const b = buildFromSetup({ minutes: 90, mainLiftExerciseId: null, supersets: false, groups: [{ group: 'Biceps', count: 2 }, { group: 'Legs', count: 3 }] }, pool, ctx);
+    const pool: BuilderPool = (g) => (g === 'Arms' ? ['wrist_curl', 'curl', 'hammer'] : g === 'Legs' ? ['tib_raise', 'calf', 'leg_ext', 'leg_curl'] : []);
+    const b = buildFromSetup({ minutes: 90, mainLiftExerciseId: null, supersets: false, groups: [{ group: 'Arms', count: 2 }, { group: 'Legs', count: 3 }] }, pool, ctx);
     const picked = slotsOf(b.workout.blocks).map((s) => s.exerciseId);
     expect(picked).toEqual(expect.arrayContaining(['curl', 'hammer', 'calf']));
     expect(picked).not.toContain('wrist_curl');

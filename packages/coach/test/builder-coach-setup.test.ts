@@ -19,11 +19,11 @@ const ctx = (): SetupCoachContext => ({
     supersets: true,
     groups: [
       { group: 'Chest', count: 4 },
-      { group: 'Triceps', count: 1 },
-      { group: 'Abs', count: 1 },
+      { group: 'Arms', count: 1 },
+      { group: 'Core', count: 1 },
     ],
   },
-  recommend: (s) => (s.dayId === 'pull' || s.dayId === 'back' ? [{ group: 'Back', count: 4 }, { group: 'Biceps', count: 1 }, { group: 'Abs', count: 1 }] : [{ group: 'Chest', count: 4 }]),
+  recommend: (s) => (s.dayId === 'pull' || s.dayId === 'back' ? [{ group: 'Back', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] : [{ group: 'Chest', count: 4 }]),
 });
 
 const none: FillSetupArgs = { dayId: null, minutes: null, mainLiftCatalogueId: null, supersets: null, groups: null, reply: null };
@@ -38,7 +38,7 @@ describe('offline Set up parser (no coach bubble, §9 Q4)', () => {
     expect(fill?.toast).toBe('Pull · 50 min · supersets off');
     expect(fill?.changed).toEqual(['day', 'minutes', 'main_lift', 'supersets', 'groups']);
     expect(fill?.next).toMatchObject({ dayId: 'pull', minutes: 50, mainLiftExerciseId: 'row', supersets: false });
-    expect(fill?.next.groups).toEqual([{ group: 'Back', count: 4 }, { group: 'Biceps', count: 1 }, { group: 'Abs', count: 1 }]);
+    expect(fill?.next.groups).toEqual([{ group: 'Back', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }]);
   });
 
   it('groups: add arms, no abs; “add chest” is not a day change', () => {
@@ -46,9 +46,27 @@ describe('offline Set up parser (no coach bubble, §9 Q4)', () => {
     const args = parseSetupWords('add arms and no abs', c);
     expect(args?.dayId).toBeNull();
     const fill = args === null ? null : checkFillSetup(args, c, 'add arms and no abs');
-    expect(fill?.next.groups).toEqual([{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 2 }, { group: 'Biceps', count: 1 }]);
-    expect(fill?.toast).toBe('+1 Biceps · +1 Triceps · no Abs');
+    expect(fill?.next.groups).toEqual([{ group: 'Chest', count: 4 }, { group: 'Arms', count: 2 }]);
+    expect(fill?.toast).toBe('+1 Arms · no Core');
     expect(parseSetupWords('add chest', c)?.dayId ?? null).toBeNull();
+  });
+
+  it('D5 (Ben, 22–23 Oct): a part Ben names is +1 on its broad group', () => {
+    const c = ctx();
+    for (const [words, group] of [
+      ['add biceps', 'Arms'],
+      ['add triceps', 'Arms'],
+      ['add curls', 'Arms'],
+      ['add hamstrings', 'Legs'],
+      ['add calves', 'Legs'],
+      ['add core', 'Core'],
+      ['add obliques', 'Core'],
+    ] as const) {
+      expect(parseSetupWords(words, c)?.groups, words).toEqual([{ group, delta: 1, count: null }]);
+    }
+    const fill = checkFillSetup(parseSetupWords('add biceps', c) ?? none, c, 'add biceps');
+    expect(fill?.next.groups).toEqual([{ group: 'Chest', count: 4 }, { group: 'Arms', count: 2 }, { group: 'Core', count: 1 }]);
+    expect(fill?.toast).toBe('+1 Arms');
   });
 
   it('main lift from the day’s options; words with nothing in them are not understood', () => {
@@ -83,8 +101,8 @@ describe('checkFillSetup (the coach’s fill_setup)', () => {
 
   it('counts 0–4 per group; at most 10 exercises', () => {
     const c = ctx();
-    const r = checkFillSetup({ ...none, groups: [{ group: 'Biceps', delta: null, count: 9 }, { group: 'Shoulders', delta: 3, count: null }, { group: 'Back', delta: null, count: 4 }] }, c, '');
-    expect(r?.notes).toContain('Biceps: 4 (limit 0–4)');
+    const r = checkFillSetup({ ...none, groups: [{ group: 'Arms', delta: null, count: 9 }, { group: 'Shoulders', delta: 3, count: null }, { group: 'Back', delta: null, count: 4 }] }, c, '');
+    expect(r?.notes).toContain('Arms: 4 (limit 0–4)');
     const total = r?.next.groups.reduce((m, g) => m + g.count, 0) ?? 0;
     expect(total).toBeLessThanOrEqual(10);
   });

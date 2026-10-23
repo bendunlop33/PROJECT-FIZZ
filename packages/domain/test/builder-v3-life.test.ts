@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WorkoutDraftSchema, type BuilderSetup, type DraftPlan } from '@fizz/schemas';
-import { builderDraftEdit, builderDraftUndo, builderInfoOf, draftOpenedUnchanged, mixForDay, newBuilderDraft, partsLabel, ruleSetupOf, storedGroupsOf, type DraftLifeChange } from '../src/index';
+import { builderDraftEdit, builderDraftUndo, builderInfoOf, draftOpenedUnchanged, mixForDay, armPartOrder, groupsToAdd, leadGroupOf, newBuilderDraft, partsLabel, ruleSetupOf, storedGroupsOf, type DraftLifeChange } from '../src/index';
 import { id } from './fixtures';
 
 /** Builder drafts' life (§4.4): idempotent op IDs, version or slot-revision staleness, Undo at the version it left. */
@@ -92,17 +92,49 @@ describe('opened as it was, and the coach’s landing (review batch23 S3, S5)', 
 
 describe('Set up helpers (§2.2, §3.7)', () => {
   it('day mixes: preset days use the prototype mix; other days their parts', () => {
-    expect(mixForDay('chest', [])).toEqual([{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }]);
-    expect(mixForDay('upper-1', ['Chest', 'Back', 'Biceps', 'Core'])).toEqual([{ group: 'Chest', count: 4 }, { group: 'Back', count: 1 }, { group: 'Biceps', count: 1 }, { group: 'Abs', count: 1 }]);
+    expect(mixForDay('chest', [])).toEqual([{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }]);
+    expect(mixForDay('upper-1', ['Chest', 'Back', 'Biceps', 'Core'])).toEqual([{ group: 'Chest', count: 4 }, { group: 'Back', count: 1 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }]);
     expect(partsLabel(['Chest', 'Triceps'])).toBe('Chest, triceps');
     expect(partsLabel(['Quads', 'Hamstrings', 'Calves'])).toBe('Legs');
   });
   it('stored groups (body parts) ↔ rule groups; a custom day with some leg parts keeps them', () => {
-    const stored = storedGroupsOf([{ group: 'Legs', count: 3 }, { group: 'Abs', count: 1 }], ['Quads', 'Calves']);
+    const stored = storedGroupsOf([{ group: 'Legs', count: 3 }, { group: 'Core', count: 1 }], ['Quads', 'Calves']);
     expect(stored).toEqual([{ parts: ['Quads', 'Calves'], count: 3 }, { parts: ['Core'], count: 1 }]);
     const r = ruleSetupOf({ ...setup, groups: stored });
-    expect(r.groups).toEqual([{ group: 'Legs', count: 3 }, { group: 'Abs', count: 1 }]);
+    expect(r.groups).toEqual([{ group: 'Legs', count: 3 }, { group: 'Core', count: 1 }]);
     expect(r.legParts).toEqual(['quads', 'calves']);
+  });
+  it('D5 (Ben, 22–23 Oct): one Arms row stores Biceps + Triceps; pre-D5 rows load as Arms (counts added, at most 4) and keep their parts', () => {
+    expect(storedGroupsOf([{ group: 'Arms', count: 2 }])).toEqual([{ parts: ['Biceps', 'Triceps'], count: 2 }]);
+    expect(ruleSetupOf({ ...setup, groups: [{ parts: ['Biceps', 'Triceps'], count: 2 }] })).toMatchObject({ groups: [{ group: 'Arms', count: 2 }] });
+    expect(ruleSetupOf({ ...setup, groups: [{ parts: ['Biceps', 'Triceps'], count: 2 }] }).armParts).toBeUndefined();
+    // A chest day saved before D5: Chest 4, Triceps 1, Abs (stored as Core) 1 → Arms 1 with triceps only.
+    const chest = ruleSetupOf({ ...setup, groups: [{ parts: ['Chest'], count: 4 }, { parts: ['Triceps'], count: 1 }, { parts: ['Core'], count: 1 }] });
+    expect(chest.groups).toEqual([{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }]);
+    expect(chest.armParts).toEqual(['triceps']);
+    // Biceps 3 + Triceps 2 rows: one Arms row of 4 (the per-group cap), either part.
+    const both = ruleSetupOf({ ...setup, groups: [{ parts: ['Back'], count: 2 }, { parts: ['Biceps'], count: 3 }, { parts: ['Triceps'], count: 2 }] });
+    expect(both.groups).toEqual([{ group: 'Back', count: 2 }, { group: 'Arms', count: 4 }]);
+    expect(both.armParts).toBeUndefined();
+    // A custom day with only triceps stores (and reads back) that part.
+    const tri = storedGroupsOf([{ group: 'Arms', count: 2 }], undefined, ['Triceps']);
+    expect(tri).toEqual([{ parts: ['Triceps'], count: 2 }]);
+    expect(ruleSetupOf({ ...setup, groups: tri }).armParts).toEqual(['triceps']);
+    expect(groupsToAdd(['Chest', 'Arms'])).toEqual(['Back', 'Shoulders', 'Legs', 'Core']);
+  });
+});
+
+describe('Arms pick order (D5): triceps first on pressing days, biceps first otherwise', () => {
+  it('by the lead group; only the allowed parts', () => {
+    expect(armPartOrder('Chest')).toEqual(['triceps', 'biceps']);
+    expect(armPartOrder('Shoulders')).toEqual(['triceps', 'biceps']);
+    expect(armPartOrder('Back')).toEqual(['biceps', 'triceps']);
+    expect(armPartOrder('Legs')).toEqual(['biceps', 'triceps']);
+    expect(armPartOrder(null)).toEqual(['biceps', 'triceps']);
+    expect(armPartOrder('Chest', ['biceps'])).toEqual(['biceps']);
+    expect(leadGroupOf({ groups: [{ group: 'Arms', count: 2 }, { group: 'Chest', count: 3 }] }, null)).toBe('Chest');
+    expect(leadGroupOf({ groups: [{ group: 'Chest', count: 3 }] }, { group: 'Shoulders' })).toBe('Shoulders');
+    expect(leadGroupOf({ groups: [{ group: 'Arms', count: 4 }] }, null)).toBe('Arms');
   });
 });
 

@@ -28,8 +28,8 @@ const chest: BuilderSetup = {
   supersets: true,
   groups: [
     { group: 'Chest', count: 3 },
-    { group: 'Triceps', count: 1 },
-    { group: 'Abs', count: 1 },
+    { group: 'Arms', count: 1 },
+    { group: 'Core', count: 1 },
   ],
 };
 
@@ -352,7 +352,7 @@ describe('swap and add follow the builder order and pairing rules (review builde
     const rank = (id: string) => {
       const i = F.info(id);
       if (i === null) return 3;
-      if (i.group === 'Abs') return 4;
+      if (i.group === 'Core') return 4;
       if (i.role !== 'compound') return 3;
       return i.heavy ? 1 : 2;
     };
@@ -361,7 +361,7 @@ describe('swap and add follow the builder order and pairing rules (review builde
     expect(heavy.workout.blocks.slice(0, at).every((b) => b.slots.every((s) => s.main || rank(s.exerciseId) <= 1)), names(heavy.workout).join(' | ')).toBe(true);
     const iso = applyBuilderEdits(snap, [{ op: 'add', exerciseId: 'hammer', afterSlotKey: null, workingSets: null }], env);
     const i = iso.workout.blocks.findIndex((b) => b.slots.some((s) => s.exerciseId === 'hammer'));
-    expect(iso.workout.blocks.slice(i + 1).every((b) => b.slots.some((s) => F.info(s.exerciseId)?.group === 'Abs')), names(iso.workout).join(' | ')).toBe(true);
+    expect(iso.workout.blocks.slice(i + 1).every((b) => b.slots.some((s) => F.info(s.exerciseId)?.group === 'Core')), names(iso.workout).join(' | ')).toBe(true);
     expect(iso.workout.blocks.slice(0, i).every((b) => b.slots.every((s) => rank(s.exerciseId) <= 3 || s.main) || b.slots.some((s) => rank(s.exerciseId) < 3)), names(iso.workout).join(' | ')).toBe(true);
   });
 });

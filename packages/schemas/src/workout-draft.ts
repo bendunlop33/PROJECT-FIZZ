@@ -3,7 +3,7 @@ import { IdSchema, LoadConventionSchema, LoadSchema, OperationIdSchema, RepRange
 import { GymEquipmentKindSchema } from './equipment';
 import { MainLiftIdSchema, PlanDayIndexSchema, RestSettingSchema, RoutineExerciseSchema, RoutinePlanDaySchema, SetTypeSchema, SplitDayIdSchema } from './routine';
 import { SplitBodyPartSchema } from './training-profile';
-import { BUILDER_GROUPS } from './builder-groups';
+import { BUILDER_GROUPS, builderGroupOfKey } from './builder-groups';
 import { LocalDateSchema } from './import';
 
 /**
@@ -370,6 +370,12 @@ export const BuildRequestOriginSchema = z.enum(['chip', 'card', 'text', 'voice']
 export const WorkoutDraftOriginSchema = z.enum([...BuildRequestOriginSchema.options, 'builder']);
 export type WorkoutDraftOrigin = z.infer<typeof WorkoutDraftOriginSchema>;
 
+/**
+ * (D5, Ben 22–23 Oct) A stored builder group key: today's six, and the pre-D5 keys (`Biceps`, `Triceps` → `Arms`,
+ * `Abs` → `Core`) mapped when read, so older drafts still load. Writes always use today's keys.
+ */
+export const StoredBuilderGroupSchema = z.preprocess((v) => builderGroupOfKey(v) ?? v, z.enum(BUILDER_GROUPS));
+
 /** (v3 §2.2, §4.4) One muscle-group row on Set up: stored as body parts (`Legs` = its parts), 1–4 exercises. */
 export const BuilderGroupCountSchema = z.object({
   parts: z.array(SplitBodyPartSchema).min(1).max(10),
@@ -475,7 +481,7 @@ export const BuilderSetupSchema = z.object({
       items: z
         .array(
           z.object({
-            group: z.enum(BUILDER_GROUPS),
+            group: StoredBuilderGroupSchema,
             sets: z.int().min(1).max(4),
             exerciseId: IdSchema,
             toDayIndex: PlanDayIndexSchema,

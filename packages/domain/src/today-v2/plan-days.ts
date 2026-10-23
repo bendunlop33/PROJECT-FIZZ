@@ -70,7 +70,7 @@ export function todayPlanDays(input: TodayPlanDaysInput): TodayDay[] {
       mainLiftExerciseId: mainLift,
       exerciseIds,
       minutes: r.planDay?.minutes ?? input.defaultMinutes,
-      absPlan: exerciseIds.some((id) => input.info(id)?.group === 'Abs'),
+      absPlan: exerciseIds.some((id) => input.info(id)?.group === 'Core'),
       supersetsPlan: r.exercises.some((e) => e.supersetGroup !== null),
       groups: groups.length > 0 ? groups : mix !== undefined ? BUILDER_DAY_MIXES[mix].map((g) => ({ ...g })) : [],
     };
@@ -118,8 +118,8 @@ export interface TodayOtherSession {
  * Mixes follow §3.7's style; Push is §3.7's own.
  */
 export const TODAY_OTHER_SESSIONS: readonly TodayOtherSession[] = [
-  { id: 'full_body', name: 'Full body', groups: [{ group: 'Legs', count: 1 }, { group: 'Back', count: 1 }, { group: 'Chest', count: 1 }, { group: 'Abs', count: 1 }], mainGroups: ['Legs', 'Chest'] },
-  { id: 'upper', name: 'Upper', groups: [{ group: 'Chest', count: 1 }, { group: 'Back', count: 1 }, { group: 'Shoulders', count: 1 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }], mainGroups: ['Chest', 'Back'] },
+  { id: 'full_body', name: 'Full body', groups: [{ group: 'Legs', count: 1 }, { group: 'Back', count: 1 }, { group: 'Chest', count: 1 }, { group: 'Core', count: 1 }], mainGroups: ['Legs', 'Chest'] },
+  { id: 'upper', name: 'Upper', groups: [{ group: 'Chest', count: 1 }, { group: 'Back', count: 1 }, { group: 'Shoulders', count: 1 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }], mainGroups: ['Chest', 'Back'] },
   { id: 'push', name: 'Push', groups: BUILDER_DAY_MIXES.push.map((g) => ({ ...g })), mainGroups: ['Chest', 'Shoulders'] },
 ];
 
@@ -143,7 +143,7 @@ export function otherSessionDay(s: TodayOtherSession, mainOptions: readonly { id
       mainLiftExerciseId: id,
       exerciseIds: [],
       minutes,
-      absPlan: s.groups.some((x) => x.group === 'Abs'),
+      absPlan: s.groups.some((x) => x.group === 'Core'),
       supersetsPlan: true,
       groups,
     };

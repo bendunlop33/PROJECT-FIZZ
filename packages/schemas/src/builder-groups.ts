@@ -3,11 +3,14 @@
  * (workout-builder-v3 §2.4, §2.5, §4.7; Ben 20 Oct, §9 Q8 and Q13).
  * Coaching knowledge, pure and dependency-free like `muscle-groups.ts`.
  *
- * Display only: stored data (split days, draft set-ups, templates) keeps
- * `SplitBodyPart` names. `Legs` = Quads + Hamstrings + Glutes + Calves and
- * `Abs` = Core are derived when read. Forearms count in no group, but
- * forearm-only exercises are found under `Biceps` › `Forearms` in Swap / Add
- * (D5: the arms group takes forearms when picking).
+ * D5 (Ben, 22–23 Oct): the broad picking groups `Chest`, `Back`, `Shoulders`,
+ * `Legs`, `Arms`, `Core`. Display only: stored data (split days, draft
+ * set-ups, templates) keeps `SplitBodyPart` names, so `Legs` = Quads +
+ * Hamstrings + Glutes + Calves and `Arms` = Biceps + Triceps are derived when
+ * read. Forearms count in no group, but forearm-only exercises are found
+ * under `Arms` › `Forearms` in Swap / Add (Arms takes forearms when picking).
+ * Group keys stored before D5 (`Biceps`, `Triceps`, `Abs`) read through
+ * `builderGroupOfKey`.
  */
 import type { Measurement } from './exercise';
 import { muscleGroupOf, type MUSCLE_TO_GROUP, type MuscleGroup } from './muscle-groups';
@@ -15,35 +18,44 @@ import type { SplitBodyPart } from './training-profile';
 
 type Muscle = keyof typeof MUSCLE_TO_GROUP;
 
-export const BUILDER_GROUPS = ['Chest', 'Back', 'Shoulders', 'Legs', 'Biceps', 'Triceps', 'Abs'] as const;
+export const BUILDER_GROUPS = ['Chest', 'Back', 'Shoulders', 'Legs', 'Arms', 'Core'] as const;
 export type BuilderGroup = (typeof BUILDER_GROUPS)[number];
 
-/** The stored body parts behind each builder group, in the order a Legs count is spread (§3.7). */
+/** Builder group keys stored before D5 (carry-over items, older drafts) and the group each is now. */
+export const LEGACY_BUILDER_GROUPS = { Biceps: 'Arms', Triceps: 'Arms', Abs: 'Core' } as const satisfies Record<string, BuilderGroup>;
+
+/** A stored or spoken group key as today's group (`Biceps` → `Arms`, `Abs` → `Core`); null for anything else. */
+export function builderGroupOfKey(key: unknown): BuilderGroup | null {
+  if (typeof key !== 'string') return null;
+  if ((BUILDER_GROUPS as readonly string[]).includes(key)) return key as BuilderGroup;
+  return Object.hasOwn(LEGACY_BUILDER_GROUPS, key) ? LEGACY_BUILDER_GROUPS[key as keyof typeof LEGACY_BUILDER_GROUPS] : null;
+}
+
+/** The stored body parts behind each builder group, in the order a Legs count is spread (§3.7). Arms = Biceps + Triceps (D5). */
 export const BUILDER_GROUP_PARTS = {
   Chest: ['Chest'],
   Back: ['Back'],
   Shoulders: ['Shoulders'],
   Legs: ['Quads', 'Hamstrings', 'Glutes', 'Calves'],
-  Biceps: ['Biceps'],
-  Triceps: ['Triceps'],
-  Abs: ['Core'],
+  Arms: ['Biceps', 'Triceps'],
+  Core: ['Core'],
 } as const satisfies Record<BuilderGroup, readonly SplitBodyPart[]>;
 
 const GROUP_TO_BUILDER = {
   Chest: 'Chest',
   Back: 'Back',
   Shoulders: 'Shoulders',
-  Biceps: 'Biceps',
-  Triceps: 'Triceps',
+  Biceps: 'Arms',
+  Triceps: 'Arms',
   Quads: 'Legs',
   Hamstrings: 'Legs',
   Glutes: 'Legs',
   Calves: 'Legs',
-  Core: 'Abs',
+  Core: 'Core',
   Forearms: null,
 } as const satisfies Record<MuscleGroup, BuilderGroup | null>;
 
-/** `Quads` → `Legs`, `Core` → `Abs`; `Forearms` → null (no builder group). */
+/** `Quads` → `Legs`, `Biceps` → `Arms`; `Forearms` → null (it counts in no group). */
 export function builderGroupOfMuscleGroup(g: MuscleGroup): BuilderGroup | null {
   return GROUP_TO_BUILDER[g];
 }
@@ -87,11 +99,10 @@ export function isBuilderStrength(e: BuilderMuscleInfo): boolean {
 
 /**
  * Forearms count in no builder group, but an exercise led by them (wrist
- * curl, dead hang) is still found in Swap / Add: under the arms group (D5,
- * Ben 22–23 Oct: Arms takes forearms when picking). Until the builder's
- * groups become D5's `Arms`, that is `Biceps`.
+ * curl, dead hang) is still found in Swap / Add: under `Arms` (D5, Ben
+ * 22–23 Oct: Arms takes forearms when picking).
  */
-const FOREARM_PICK_GROUP: BuilderGroup = 'Biceps';
+const FOREARM_PICK_GROUP: BuilderGroup = 'Arms';
 
 /**
  * The primary muscle that decides the exercise's builder group: the first
@@ -120,9 +131,8 @@ export const BUILDER_FOCI = {
   Back: ['Lats', 'Mid-back', 'Rear delts', 'Lower back', 'Neck'],
   Shoulders: ['Front delts', 'Side delts', 'Rotator cuff'],
   Legs: ['Quads', 'Hamstrings & glutes', 'Calves', 'Shins'],
-  Biceps: ['Biceps', 'Forearms'],
-  Triceps: ['Triceps'],
-  Abs: ['Abs'],
+  Arms: ['Biceps', 'Triceps', 'Forearms'],
+  Core: ['Abs'],
 } as const satisfies Record<BuilderGroup, readonly string[]>;
 export type BuilderFocus = (typeof BUILDER_FOCI)[BuilderGroup][number];
 

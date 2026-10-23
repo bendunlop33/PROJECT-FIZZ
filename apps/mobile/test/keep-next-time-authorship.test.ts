@@ -218,7 +218,7 @@ describe('Keep for next time lists only Ben’s own structure edits (review batc
     let snap = await editFromToday(s);
     const fly = slotNamed(snap, 'Cable fly');
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'delete_exercise', slotKey: fly.key }, { opId: 'del-1', basis: { version: snap.version } }));
-    const choices = await s.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Biceps' });
+    const choices = await s.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Arms' });
     const curl = choices?.sections.flatMap((x) => x.items).find((i) => !i.mayHurt);
     if (curl === undefined) throw new Error('no biceps exercise');
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_exercise', exerciseId: curl.exerciseId }, { opId: 'add-1', basis: { version: snap.version } }));

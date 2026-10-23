@@ -10,11 +10,11 @@ import { context, info, pool } from './builder-v3-fixture';
  */
 
 const ctx = context();
-const chest = (): BuilderWorkout => buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] }, pool, ctx).workout;
+const chest = (): BuilderWorkout => buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] }, pool, ctx).workout;
 const DAYS: CarryDay[] = [
-  { dayIndex: 0, name: 'Chest', groups: ['Chest', 'Triceps', 'Abs'] },
-  { dayIndex: 1, name: 'Back', groups: ['Back', 'Biceps'] },
-  { dayIndex: 2, name: 'Shoulders', groups: ['Shoulders', 'Triceps'] },
+  { dayIndex: 0, name: 'Chest', groups: ['Chest', 'Arms', 'Core'] },
+  { dayIndex: 1, name: 'Back', groups: ['Back', 'Arms'] },
+  { dayIndex: 2, name: 'Shoulders', groups: ['Shoulders', 'Arms'] },
   { dayIndex: 3, name: 'Legs', groups: ['Legs'] },
 ];
 
@@ -23,9 +23,9 @@ describe('carry-over offer (Ben, 23 Oct)', () => {
     const w = chest();
     const fit = fitToMinutes(w, ctx, { minutes: 50, mainGroup: 'Chest', grow: false, supersets: false });
     const offer = carryOverOffer({ steps: fit.steps, base: w, info, mainGroup: 'Chest', fromDayIndex: 0, days: DAYS });
-    // 50: a fly set and the whole pushdown went: 3 triceps sets to the next day with triceps (Shoulders).
-    expect(offer).toEqual([{ group: 'Triceps', sets: 3, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' }]);
-    expect(carryItemText(offer[0] as CarryItem)).toBe('+3 Triceps sets on your next Shoulders day');
+    // 50: a fly set and the whole pushdown went: 3 arm sets to the next day with Arms (D5: Back).
+    expect(offer).toEqual([{ group: 'Arms', sets: 3, exerciseId: 'pushdown', toDayIndex: 1, toDayName: 'Back' }]);
+    expect(carryItemText(offer[0] as CarryItem)).toBe('+3 Arms sets on your next Back day');
     // 25: nine chest sets went; at most 4 in all; chest goes to the next Chest day (wraps to itself? never: none other).
     const short = fitToMinutes(w, ctx, { minutes: 25, mainGroup: 'Chest', grow: false, supersets: false });
     const big = carryOverOffer({ steps: short.steps, base: w, info, mainGroup: 'Chest', fromDayIndex: 0, days: DAYS });
@@ -37,22 +37,22 @@ describe('carry-over offer (Ben, 23 Oct)', () => {
   });
 
   it('routing: the next day in plan order with that group (wrapping); abs to the next day; none: nothing', () => {
-    expect(carryTargetDay('Triceps', 2, DAYS)?.name).toBe('Chest');
-    expect(carryTargetDay('Biceps', 0, DAYS)?.name).toBe('Back');
-    expect(carryTargetDay('Abs', 3, DAYS)?.name).toBe('Chest');
+    expect(carryTargetDay('Arms', 2, DAYS)?.name).toBe('Chest');
+    expect(carryTargetDay('Arms', 0, DAYS)?.name).toBe('Back');
+    expect(carryTargetDay('Core', 3, DAYS)?.name).toBe('Chest');
     expect(carryTargetDay('Legs', 3, DAYS)).toBeNull();
   });
 
   it('what still carries: never more per group than the fit as it ended took; skipped carries nothing', () => {
-    const item: CarryItem = { group: 'Triceps', sets: 3, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' };
-    expect(carriedItems({ choice: 'carried', atUtc: '2026-10-23T10:00:00.000Z', items: [item] }, [{ group: 'Triceps', sets: 2 }])).toEqual([{ ...item, sets: 2 }]);
+    const item: CarryItem = { group: 'Arms', sets: 3, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' };
+    expect(carriedItems({ choice: 'carried', atUtc: '2026-10-23T10:00:00.000Z', items: [item] }, [{ group: 'Arms', sets: 2 }])).toEqual([{ ...item, sets: 2 }]);
     expect(carriedItems({ choice: 'carried', atUtc: '2026-10-23T10:00:00.000Z', items: [item] }, [])).toEqual([]);
-    expect(carriedItems({ choice: 'skipped', atUtc: '2026-10-23T10:00:00.000Z', items: [item] }, [{ group: 'Triceps', sets: 3 }])).toEqual([]);
+    expect(carriedItems({ choice: 'skipped', atUtc: '2026-10-23T10:00:00.000Z', items: [item] }, [{ group: 'Arms', sets: 3 }])).toEqual([]);
     expect(BuilderSetupSchema.shape.carryOver.safeParse({ choice: 'carried', atUtc: '2026-10-23T10:00:00.000Z', items: [{ ...item, exerciseId: '00000000-0000-4000-8000-000000000001' }] }).error?.issues ?? []).toEqual([]);
   });
 
   it('pending: from a workout done (its session), within 14 days, until that day is started after it; several add up, capped at 4', () => {
-    const item: CarryItem = { group: 'Triceps', sets: 3, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' };
+    const item: CarryItem = { group: 'Arms', sets: 3, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' };
     const src = (sessionId: string | null, atUtc = '2026-10-20T10:00:00.000Z') => ({ draft: { sessionId, builderKey: { planId: 'p', dayIndex: 0, splitDayId: 'chest', mainLiftExerciseId: null, localDate: '2026-10-20' } }, items: [item], atUtc });
     const base = { planId: 'p', dayIndex: 2, nowUtc: '2026-10-22T10:00:00.000Z' };
     const s1 = { sessionId: 's1', startedAtUtc: '2026-10-20T10:00:00.000Z', planDay: { planId: 'p', dayIndex: 0 } };
@@ -75,13 +75,28 @@ describe('carry-over offer (Ben, 23 Oct)', () => {
     const w = chest();
     const tri = slotsOf(w.blocks).find((s) => s.exerciseId === 'pushdown');
     const before = tri === undefined ? 0 : workingCount(tri);
-    const r = landCarryOver(w, [{ group: 'Triceps', sets: 3, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' }], ctx);
+    const r = landCarryOver(w, [{ group: 'Arms', sets: 3, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' }], ctx);
     expect(slotsOf(r.workout.blocks).find((s) => s.exerciseId === 'pushdown')?.rows.filter((x) => x.type !== 'warmup')).toHaveLength(before + 3);
     expect(r.changed).toEqual([tri?.key]);
     const noTri: BuilderWorkout = { ...w, blocks: w.blocks.flatMap((b) => { const slots = b.slots.filter((x) => x.exerciseId !== 'pushdown'); return slots.length === 0 ? [] : [{ ...b, slots }]; }) };
-    const added = landCarryOver(noTri, [{ group: 'Triceps', sets: 2, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' }], ctx);
+    const added = landCarryOver(noTri, [{ group: 'Arms', sets: 2, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' }], ctx);
     const slot = slotsOf(added.workout.blocks).find((s) => s.exerciseId === 'pushdown');
     expect(slot === undefined ? 0 : workingCount(slot)).toBe(2);
+    // (D5) Arms is biceps + triceps: carried pushdown sets never land on a curl; the pushdown is added instead.
+    const curlDay = buildFromSetup({ minutes: 999, mainLiftExerciseId: null, supersets: false, groups: [{ group: 'Back', count: 2 }, { group: 'Arms', count: 1 }] }, pool, ctx).workout;
+    const curl = slotsOf(curlDay.blocks).find((s) => info(s.exerciseId)?.group === 'Arms');
+    expect(info(curl?.exerciseId ?? '')?.part).toBe('biceps');
+    const landed = landCarryOver(curlDay, [{ group: 'Arms', sets: 3, exerciseId: 'pushdown', toDayIndex: 1, toDayName: 'Back' }], ctx);
+    expect(slotsOf(landed.workout.blocks).find((s) => s.key === curl?.key)?.rows).toEqual(curl?.rows);
+    const pd = slotsOf(landed.workout.blocks).find((s) => s.exerciseId === 'pushdown');
+    expect(pd === undefined ? 0 : workingCount(pd)).toBe(3);
+  });
+
+  it('a carry-over stored before D5 (`Triceps`, `Abs`) still reads, as Arms and Core', () => {
+    const old = { choice: 'carried', atUtc: '2026-10-23T10:00:00.000Z', items: [{ group: 'Triceps', sets: 3, exerciseId: '00000000-0000-4000-8000-000000000001', toDayIndex: 2, toDayName: 'Shoulders' }, { group: 'Abs', sets: 2, exerciseId: '00000000-0000-4000-8000-000000000002', toDayIndex: 1, toDayName: 'Back' }] };
+    const parsed = BuilderSetupSchema.shape.carryOver.parse(old);
+    expect(parsed?.items.map((x) => x.group)).toEqual(['Arms', 'Core']);
+    expect(BuilderSetupSchema.shape.carryOver.safeParse({ ...old, items: [{ ...old.items[0], group: 'Forearms' }] }).success).toBe(false);
   });
 
   it('lost by group counts a left-out exercise’s sets and a trimmed one’s loss', () => {
@@ -91,7 +106,7 @@ describe('carry-over offer (Ben, 23 Oct)', () => {
     if (fly === undefined || tri === undefined) throw new Error('fixture');
     expect(fitLostByGroup([{ kind: 'sets', slotKey: fly.key, exerciseId: 'cable_fly', from: 3, to: 2 }, { kind: 'drop', slotKey: tri.key, exerciseId: 'pushdown' }], w, info)).toEqual([
       { group: 'Chest', sets: 1, exerciseId: 'cable_fly' },
-      { group: 'Triceps', sets: workingCount(tri), exerciseId: 'pushdown' },
+      { group: 'Arms', sets: workingCount(tri), exerciseId: 'pushdown' },
     ]);
   });
 });

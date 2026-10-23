@@ -47,7 +47,7 @@ const yourData = (req: ModelRequest | undefined): Record<string, unknown> => {
 const DRAFT = '5f0c2a52-7b1e-4c1a-9d3e-2a4b6c8d0e1f';
 const CONNECTED: CoachAvailability = { status: 'ok', model: 'gpt-main', workoutModel: 'gpt-light' };
 const OFFLINE: CoachAvailability = { status: 'offline', model: 'gpt-main' };
-const chest: BuilderSetup = { minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 3 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] };
+const chest: BuilderSetup = { minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 3 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] };
 
 function setupCtx(): SetupCoachContext {
   return {
@@ -56,7 +56,7 @@ function setupCtx(): SetupCoachContext {
       { id: 'pull', name: 'Pull', mainLifts: [{ exerciseId: 'row', catalogueId: null, name: 'Barbell row' }] },
     ],
     current: { dayId: 'chest', minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: chest.groups },
-    recommend: () => [{ group: 'Back', count: 4 }, { group: 'Biceps', count: 1 }, { group: 'Abs', count: 1 }],
+    recommend: () => [{ group: 'Back', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }],
   };
 }
 
@@ -249,7 +249,7 @@ describe('Coach review (§2.9) and day notes', () => {
       },
     ]);
     const h = await harness({ model });
-    const r = await h.service.review({ draftId: DRAFT, opId: 'rv-1', groups: ['Chest', 'Triceps', 'Abs'], plan: null });
+    const r = await h.service.review({ draftId: DRAFT, opId: 'rv-1', groups: ['Chest', 'Arms', 'Core'], plan: null });
     expect(r?.status).toBe('reviewed');
     expect(h.model?.requests[0]).toMatchObject({ model: 'gpt-main', effort: 'high' });
     if (r === null) return;
@@ -466,7 +466,7 @@ describe('Mix it up and tap-to-talk', () => {
 
 describe('the BuilderReview provider the builder sheet consumes (review B6)', () => {
   const plan = { planName: '4-day split', since: '13 Oct', dayName: 'Chest', nextDayName: 'Chest', nextDayNumber: 1, dayCount: 4, minutes: 60, mainLiftExerciseId: 'bench', exercises: [{ exerciseId: 'bench', workingSets: 4 }, { exerciseId: 'machine_press', workingSets: 3 }] };
-  const inputs = { dayName: 'Chest', groups: ['Chest', 'Triceps', 'Abs'] as const, plan, splitDayId: 'chest', mainLiftExerciseId: 'bench' };
+  const inputs = { dayName: 'Chest', groups: ['Chest', 'Arms', 'Core'] as const, plan, splitDayId: 'chest', mainLiftExerciseId: 'bench' };
 
   it('review → the builder’s shape; apply by action ID (twice = once); Out of date after Ben’s edit; Done saves ticked notes', async () => {
     let fly = '';

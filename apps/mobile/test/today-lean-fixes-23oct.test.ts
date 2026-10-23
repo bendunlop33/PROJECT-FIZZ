@@ -251,7 +251,7 @@ describe('S2 / S3: an option on Your workout gives what Today’s card gives for
     const day = data.days.find((d) => d.key === key);
     const incline = day?.templates[1]?.mainLiftExerciseId ?? '';
     let snap = await edit(s, data, sel(data, key));
-    const pushdown = slotsOf(snap.workout.blocks).find((x) => snap.facts[x.exerciseId]?.group === 'Triceps');
+    const pushdown = slotsOf(snap.workout.blocks).find((x) => /triceps|pushdown/i.test(snap.facts[x.exerciseId]?.name ?? ''));
     if (pushdown === undefined) throw new Error('no pushdown');
     snap = snapOf(await s.builder.edit(snap.draftId, { kind: 'delete_exercise', slotKey: pushdown.key }, { opId: 'del-pd', basis: { version: snap.version } }));
     const r = await s.builder.setTodayOption(snap.draftId, { kind: 'main_lift', exerciseId: incline }, { opId: 'main-incline', expectedVersion: snap.version });
@@ -280,7 +280,7 @@ describe('S1 and the Abs switch: the options read the draft as it is after every
     expect((await s.builder.setTodayOption(snap.draftId, { kind: 'supersets', on: false }, { opId: 'ss-off-2', expectedVersion: snap.version })).status).toBe('written');
     const cur = await s.builder.read(snap.draftId);
     if (cur === null) throw new Error('gone');
-    const ab = slotsOf(cur.workout.blocks).find((x) => cur.facts[x.exerciseId]?.group === 'Abs');
+    const ab = slotsOf(cur.workout.blocks).find((x) => cur.facts[x.exerciseId]?.group === 'Core');
     if (ab === undefined) throw new Error('no abs');
     const swiped = snapOf(await s.builder.edit(cur.draftId, { kind: 'delete_exercise', slotKey: ab.key }, { opId: 'swipe-abs', basis: { version: cur.version } }));
     expect(swiped.today?.abs).toBe(false);
@@ -292,7 +292,7 @@ describe('S1 and the Abs switch: the options read the draft as it is after every
     const key = dayKeyOf(data, 'Push');
     let snap = await edit(s, data, sel(data, key, { abs: false }));
     expect(snap.today?.abs).toBe(false);
-    const choices = await s.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Abs' });
+    const choices = await s.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Core' });
     const pick = choices?.sections[0]?.items[0]?.exerciseId;
     if (pick === undefined) throw new Error('no ab exercise');
     snap = snapOf(await s.builder.edit(snap.draftId, { kind: 'add_exercise', exerciseId: pick }, { opId: 'add-ab', basis: { version: snap.version } }));

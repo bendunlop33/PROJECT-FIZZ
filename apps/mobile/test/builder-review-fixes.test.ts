@@ -40,7 +40,7 @@ const pushSetup = async (s: AppServices, over: Partial<SetupInput> = {}): Promis
 
 async function withPushdown(s: AppServices, snap: BuilderSnapshot): Promise<BuilderSnapshot> {
   if (names(snap).includes('Triceps pushdown')) return snap;
-  const c = await s.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Triceps' });
+  const c = await s.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Arms' });
   const pd = c?.sections.flatMap((x) => x.items).find((i) => i.name === 'Triceps pushdown');
   if (pd === undefined) throw new Error('no pushdown');
   return ok(await s.builder.edit(snap.draftId, { kind: 'add_exercise', exerciseId: pd.exerciseId }, { opId: 'add-pd', basis: { version: snap.version } })).snapshot;
@@ -423,7 +423,7 @@ describe('S10: gym changed, plan day reloaded silently, Not applied · Add anywa
     const { s: s0, gymId, push } = await benWithPlan();
     // A variation from before D1: a curl after Triceps pushdown, paired with it.
     const snap = ok(await s0.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
-    const c = await s0.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Biceps' });
+    const c = await s0.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Arms' });
     const curl = c?.sections.flatMap((x) => x.items).find((i) => !i.mayHurt);
     if (curl === undefined) throw new Error('no curl');
     const pdId = slotNamed(snap, 'Triceps pushdown').exerciseId;

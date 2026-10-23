@@ -22,7 +22,7 @@ export const BUILDER_DEFAULT_MAIN_LIFTS: Readonly<Partial<Record<BuilderGroupNam
 };
 
 export interface DefaultMainLiftInput {
-  /** The day's groups in order; the first that isn't Abs leads. */
+  /** The day's groups in order; the first that isn't Core leads. */
   groups: readonly BuilderGroupName[];
   pool: BuilderPool;
   info: BuilderInfoLookup;
@@ -38,8 +38,9 @@ export interface DefaultMainLiftInput {
  * compound here (an arms day): honestly no main lift.
  */
 export function defaultBuilderMainLift(input: DefaultMainLiftInput): string | null {
-  const lead = input.groups.find((g) => g !== 'Abs');
-  if (lead === undefined) return null;
+  const lead = input.groups.find((g) => g !== 'Core');
+  // An arms day has no main lift (D5: Arms takes in the close-grip bench, still never an arms day's main lift).
+  if (lead === undefined || lead === 'Arms') return null;
   const pool = input.pool(lead).filter((id) => {
     const i = input.info(id);
     return i !== null && i.group === lead && i.role === 'compound';

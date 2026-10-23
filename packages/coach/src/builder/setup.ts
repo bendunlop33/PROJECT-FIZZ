@@ -175,15 +175,14 @@ export function checkFillSetup(args: FillSetupArgs, ctx: SetupCoachContext, benW
 // ---------------------------------------------------------------------------
 // Offline: the words read by code (§9 Q4). No coach message, ever.
 
+/** Ben's words → the broad group (D5, Ben 22–23 Oct): a part he names (`biceps`, `hamstrings`) is +1 on its group. */
 const GROUP_WORDS: readonly [RegExp, readonly BuilderGroup[]][] = [
-  [/\b(?:biceps?|curls?)\b/, ['Biceps']],
-  [/\btriceps?\b/, ['Triceps']],
-  [/\b(?:abs|core)\b/, ['Abs']],
+  [/\b(?:arms?|biceps?|curls?|triceps?|forearms?)\b/, ['Arms']],
+  [/\b(?:abs|core|obliques?)\b/, ['Core']],
   [/\b(?:shoulders?|delts?)\b/, ['Shoulders']],
   [/\b(?:chest|pecs?)\b/, ['Chest']],
   [/\b(?:back|lats?)\b/, ['Back']],
   [/\b(?:legs?|quads?|hamstrings?|glutes?|calf|calves)\b/, ['Legs']],
-  [/\barms?\b/, ['Biceps', 'Triceps']],
 ];
 
 function groupsIn(t: string): BuilderGroup[] {

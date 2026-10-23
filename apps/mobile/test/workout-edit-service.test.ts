@@ -65,16 +65,16 @@ describe('Swap / Add with the builder’s sheet and loads (§7)', () => {
     expect((c?.sections ?? []).flatMap((x) => x.items).every((i) => i.works === null || i.works.length > 0)).toBe(true);
     const back = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null, group: 'Back' });
     expect(back?.group).toBe('Back');
-    expect(back?.groups).toContain('Abs');
+    expect(back?.groups).toContain('Core');
   });
 
   it('forearm and prehab work is findable (D5): wrist curls under the arms group › Forearms, cuff under Shoulders, tibialis under Legs; Add works', async () => {
     const { s, sessionId } = await started();
-    const heads = async (group: 'Biceps' | 'Shoulders' | 'Legs' | 'Back') => {
+    const heads = async (group: 'Arms' | 'Shoulders' | 'Legs' | 'Back') => {
       const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null, group });
       return new Map((c?.sections ?? []).map((x) => [x.focus, x.items.map((i) => i.name)]));
     };
-    const arms = await heads('Biceps');
+    const arms = await heads('Arms');
     expect(arms.get('Forearms')).toEqual(expect.arrayContaining(['Barbell wrist curl']));
     expect(arms.get('Biceps') ?? []).not.toContain('Barbell wrist curl');
     const shoulders = await heads('Shoulders');
@@ -85,7 +85,7 @@ describe('Swap / Add with the builder’s sheet and loads (§7)', () => {
     expect(legs.get('Shins')).toEqual(expect.arrayContaining(['Tibialis raise']));
     expect(legs.get('Calves') ?? []).not.toContain('Tibialis raise');
 
-    const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null, group: 'Biceps' });
+    const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null, group: 'Arms' });
     const wrist = (c?.sections ?? []).flatMap((x) => x.items).find((i) => i.name === 'Barbell wrist curl');
     if (wrist === undefined) throw new Error('no wrist curl in the sheet');
     const a = ok(await s.workoutEdit.add(sessionId, wrist.exerciseId, 'add-wrist'));

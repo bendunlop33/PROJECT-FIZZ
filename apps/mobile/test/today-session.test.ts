@@ -381,7 +381,7 @@ describe('Today (v2) session card from the plan', () => {
     }
     const fb = await s.builder.initialSetup({ dayId: 'full_body' });
     expect(fb).toMatchObject({ dayId: 'custom', dayName: 'Full body', groupsEdited: true });
-    expect(fb.groups.map((g) => g.group)).toEqual(['Legs', 'Back', 'Chest', 'Abs']);
+    expect(fb.groups.map((g) => g.group)).toEqual(['Legs', 'Back', 'Chest', 'Core']);
     expect((await s.builder.initialSetup({ dayId: 'push' })).dayId).toBe('push');
     // A day gone from the split: Custom with nothing picked, not Push.
     expect(await s.builder.initialSetup({ dayId: 'gone_day' })).toMatchObject({ dayId: 'custom', dayName: 'Custom', groups: [] });

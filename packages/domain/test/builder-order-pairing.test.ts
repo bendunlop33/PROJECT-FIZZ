@@ -44,7 +44,7 @@ function rank(s: BuilderSlot, info: (id: string) => BuilderExerciseInfo | null):
   const i = info(s.exerciseId);
   if (s.main) return 0;
   if (i === null) return 3;
-  if (i.group === 'Abs') return 4;
+  if (i.group === 'Core') return 4;
   if (i.role !== 'compound') return 3;
   return i.heavy ? 1 : 2;
 }
@@ -104,13 +104,7 @@ function expectRules(w: BuilderWorkout, world: CatalogueWorld, hasMain: boolean,
 const ALL_MIXES: readonly (readonly [string, readonly GroupCount[]])[] = [
   ...Object.entries(BUILDER_DAY_MIXES),
   ...TODAY_OTHER_SESSIONS.map((o) => [`other:${o.id}`, o.groups] as const),
-  [
-    'arms',
-    [
-      { group: 'Biceps', count: 2 },
-      { group: 'Triceps', count: 2 },
-    ],
-  ],
+  ['arms', [{ group: 'Arms', count: 4 }]],
 ];
 
 describe("Ben's Back day (Build B screenshot, 21 Oct)", () => {
@@ -118,12 +112,16 @@ describe("Ben's Back day (Build B screenshot, 21 Oct)", () => {
   const world = catalogueWorld({ starterFacts: true });
   const groups: GroupCount[] = [
     { group: 'Back', count: 4 },
-    { group: 'Biceps', count: 2 },
+    { group: 'Arms', count: 2 },
   ];
 
   it('exact case: before the fix this built "45° back extension + Dumbbell curl | Barbell row + Cable curl | Barbell shrug | Dumbbell rear-delt fly"', () => {
-    const w = buildFromSetup({ minutes: 40, mainLiftExerciseId: null, supersets: true, groups }, world.pool(BACK_HISTORY), world.ctx()).workout;
+    // His set-up then was Biceps 2 (pre-D5): a stored `Biceps` row reads as Arms with only biceps (`armParts`).
+    const w = buildFromSetup({ minutes: 40, mainLiftExerciseId: null, supersets: true, groups, armParts: ['biceps'] }, world.pool(BACK_HISTORY), world.ctx()).workout;
     expect(names(w, world.info)).toEqual(['Barbell row', '45° back extension + Dumbbell curl', 'Barbell shrug + Cable curl', 'Dumbbell rear-delt fly']);
+    // D5's Arms 2 on a back day: biceps first, then triceps.
+    const d5 = buildFromSetup({ minutes: 40, mainLiftExerciseId: null, supersets: true, groups }, world.pool(BACK_HISTORY), world.ctx()).workout;
+    expect(names(d5, world.info)).toEqual(['Barbell row', '45° back extension + Dumbbell curl', 'Barbell shrug + Band triceps pushdown', 'Dumbbell rear-delt fly']);
     // §3.5's canPair still allows heavy + a light lift (Ben's own pair, advice only); the builder never makes it.
     expect(canAutoPair({ exerciseId: ROW, main: false }, { exerciseId: 'cable-curl', main: false }, world.info)).toBe(false);
   });
@@ -143,7 +141,7 @@ describe("Ben's Back day (Build B screenshot, 21 Oct)", () => {
 
   it('Set up default main lift for Back with no plan day: Barbell row (never none)', () => {
     for (const history of [[], BACK_HISTORY]) {
-      expect(defaultBuilderMainLift({ groups: ['Back', 'Biceps', 'Abs'], pool: world.pool(history), info: world.info, catalogueKeyOf: (id) => id })).toBe(ROW);
+      expect(defaultBuilderMainLift({ groups: ['Back', 'Arms', 'Core'], pool: world.pool(history), info: world.info, catalogueKeyOf: (id) => id })).toBe(ROW);
     }
   });
 });
@@ -154,10 +152,10 @@ describe('defaultBuilderMainLift', () => {
     defaultBuilderMainLift({ groups, pool, info: world.info, catalogueKeyOf: keyOf });
 
   it('each lead group gets its main compound; abs are skipped; an arms day has none', () => {
-    expect(pick(['Chest', 'Triceps', 'Abs'])).toBe('barbell-bench-press');
-    expect(pick(['Abs', 'Legs'])).toBe('barbell-back-squat');
+    expect(pick(['Chest', 'Arms', 'Core'])).toBe('barbell-bench-press');
+    expect(pick(['Core', 'Legs'])).toBe('barbell-back-squat');
     expect(pick(['Shoulders'])).toBe('barbell-overhead-press');
-    expect(pick(['Biceps', 'Triceps'])).toBeNull();
+    expect(pick(['Arms'])).toBeNull();
     expect(pick([])).toBeNull();
   });
 
@@ -276,7 +274,7 @@ describe('the builder never re-pairs a heavy lift', () => {
     const ctx = world.ctx();
     const groups: GroupCount[] = [
       { group: 'Back', count: 4 },
-      { group: 'Biceps', count: 2 },
+      { group: 'Arms', count: 2 },
     ];
     const prev = { minutes: 40, mainLiftExerciseId: null, supersets: false, groups, dayId: 'back', variationId: null };
     const built = buildFromSetup(prev, pool, ctx).workout;
@@ -294,7 +292,7 @@ describe('heaviest bar lift first with no main lift (varied loads)', () => {
     for (const [day, mix] of ALL_MIXES) {
       for (const minutes of [20, 30, 45, 60, 90]) {
         for (const supersets of [true, false]) {
-          const groups = mix.map((g) => ({ ...g, count: g.group === 'Abs' ? g.count : g.count + 1 }));
+          const groups = mix.map((g) => ({ ...g, count: g.group === 'Core' ? g.count : g.count + 1 }));
           const r = buildFromSetup({ minutes, mainLiftExerciseId: null, supersets, groups }, pool, world.ctx());
           expectRules(r.workout, world, false, `${day} ${String(minutes)} ss ${String(supersets)}`, { order: true, heaviest: true });
         }
@@ -315,11 +313,11 @@ describe('Set up merges keep the order and pairing rules (review builder-order B
           for (const supersets of [true, false]) {
             for (const absOff of [false, true]) {
               for (const minutes of [30, 60]) {
-                const groups = mix.filter((g) => !absOff || g.group !== 'Abs').map((g) => ({ ...g, count: g.group === 'Abs' && !absOff ? Math.max(1, g.count) : g.count }));
+                const groups = mix.filter((g) => !absOff || g.group !== 'Core').map((g) => ({ ...g, count: g.group === 'Core' && !absOff ? Math.max(1, g.count) : g.count }));
                 const prev = { minutes, mainLiftExerciseId, supersets, groups, dayId: day, variationId: null };
                 const built = buildFromSetup(prev, pool, world.ctx()).workout;
                 const hasMain = mainLiftExerciseId !== null;
-                const targets = [...new Set([...groups.map((g) => g.group), 'Back' as const, 'Biceps' as const, 'Abs' as const])];
+                const targets = [...new Set([...groups.map((g) => g.group), 'Back' as const, 'Arms' as const, 'Core' as const])];
                 for (const g of targets) {
                   for (const delta of [1, 2, 3, -1]) {
                     const before = groups.find((x) => x.group === g)?.count ?? 0;
@@ -358,8 +356,8 @@ describe('Set up merges keep the order and pairing rules (review builder-order B
       supersets: true,
       groups: [
         { group: 'Back' as const, count: 1 },
-        { group: 'Biceps' as const, count: 1 },
-        { group: 'Abs' as const, count: 1 },
+        { group: 'Arms' as const, count: 1 },
+        { group: 'Core' as const, count: 1 },
       ],
       dayId: 'back',
       variationId: null,
@@ -385,7 +383,7 @@ describe('bandInsertIndex', () => {
   it('a heavy compound goes first; an isolation before the block holding abs; abs at the end; never above the main lift', () => {
     expect(bandInsertIndex(blocks, slot(ROW), world.info, ['Back'])).toBe(0);
     expect(bandInsertIndex(blocks, slot('dumbbell-rear-delt-fly'), world.info, ['Back'])).toBe(1);
-    expect(bandInsertIndex(blocks, slot('cable-crunch'), world.info, ['Abs'])).toBe(2);
+    expect(bandInsertIndex(blocks, slot('cable-crunch'), world.info, ['Core'])).toBe(2);
     const withMain = [{ slots: [slot(ROW, true)], auto: false }, ...blocks];
     expect(bandInsertIndex(withMain, slot('barbell-seal-row'), world.info, ['Back'])).toBe(1);
     // Same band as the back extension (a compound): after it.

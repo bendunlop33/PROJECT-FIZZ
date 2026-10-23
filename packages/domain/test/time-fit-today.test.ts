@@ -18,13 +18,13 @@ const FLY = exercise(703, 'Cable fly', { compatibleEquipment: ['weight_stack'], 
 const CRUNCH = exercise(704, 'Cable crunch', { compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' });
 const PLANK = exercise(705, 'Plank', { measurement: 'duration', compatibleEquipment: ['bodyweight_station'], defaultLoadConvention: 'bodyweight' });
 
-const infoOf = (e: Exercise, group: BuilderGroup, role: 'compound' | 'isolation'): BuilderExerciseInfo => ({ exerciseId: e.id, name: e.name, group, role, heavy: role === 'compound', part: group, muscles: [group.toLowerCase()], angle: group, barbell: role === 'compound' });
+const infoOf = (e: Exercise, group: BuilderGroup, role: 'compound' | 'isolation'): BuilderExerciseInfo => ({ exerciseId: e.id, name: e.name, group, role, heavy: role === 'compound', part: group, muscles: [group.toLowerCase()], angle: group === 'Core' ? 'Abs' : group, barbell: role === 'compound' });
 const INFO = new Map<string, BuilderExerciseInfo>([
   [BENCH.id, infoOf(BENCH, 'Chest', 'compound')],
   [RAISE.id, infoOf(RAISE, 'Shoulders', 'isolation')],
   [FLY.id, infoOf(FLY, 'Chest', 'isolation')],
-  [CRUNCH.id, infoOf(CRUNCH, 'Abs', 'isolation')],
-  [PLANK.id, infoOf(PLANK, 'Abs', 'isolation')],
+  [CRUNCH.id, infoOf(CRUNCH, 'Core', 'isolation')],
+  [PLANK.id, infoOf(PLANK, 'Core', 'isolation')],
 ]);
 const info = (id: string) => INFO.get(id) ?? null;
 

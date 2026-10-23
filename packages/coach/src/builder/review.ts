@@ -78,8 +78,10 @@ export function reviewFacts(input: ReviewFactsInput): BuilderReviewFacts {
   const slots = slotsOf(snapshot.workout.blocks);
   const info = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId);
   const groups = input.groups.length > 0 ? [...input.groups] : [...new Set(slots.map((s) => info(s).group))];
-  const foci = [...new Set(groups.flatMap((g) => CORE_FOCI[g]))];
   const raw = focusSets(slots, ctx);
+  // (D5) Arms is biceps + triceps: a day that trains one of them (a chest day's pushdown) isn't short of the other.
+  const armsDone = CORE_FOCI.Arms.filter((f) => (raw.get(f) ?? 0) > 0);
+  const foci = [...new Set(groups.flatMap((g) => (g === 'Arms' && armsDone.length > 0 ? armsDone : CORE_FOCI[g])))];
   const coverage = foci.map((focus) => ({ focus, sets: raw.get(focus) ?? 0 }));
 
   const compound = slots.filter((s) => info(s).role === 'compound').length;
@@ -95,7 +97,7 @@ export function reviewFacts(input: ReviewFactsInput): BuilderReviewFacts {
   const bySet = new Map<string, { group: BuilderGroupName; part: string | null; sets: number }>();
   for (const s of slots) {
     const i = info(s);
-    const part = i.group === 'Legs' ? i.part : null;
+    const part = i.group === 'Legs' || i.group === 'Arms' ? i.part : null;
     const k = `${i.group}|${part ?? ''}`;
     const cur = bySet.get(k) ?? { group: i.group, part, sets: 0 };
     cur.sets += workingCount(s);

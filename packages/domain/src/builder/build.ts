@@ -6,7 +6,7 @@ import { FIT_RULES, fitToMinutes, type BuilderFitResult } from './fit';
 import { isAutoPickInfo } from './info';
 import { makeSlot } from './slot';
 import { KG_PER_LB } from '../units';
-import type { BuilderContext, BuilderExerciseInfo, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
+import type { ArmPart, BuilderContext, BuilderExerciseInfo, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
 
 
 /**
@@ -29,37 +29,37 @@ export interface GroupCount {
   count: number;
 }
 
-/** Day mixes [Proto, §3.7], in order (the first group keeps at least one). */
+/** Day mixes [Proto, §3.7], in order (the first group keeps at least one). Arms picks triceps first on pressing days (D5). */
 export const BUILDER_DAY_MIXES: Readonly<Record<'chest' | 'back' | 'pull' | 'legs' | 'shoulders' | 'push', readonly GroupCount[]>> = {
   chest: [
     { group: 'Chest', count: 4 },
-    { group: 'Triceps', count: 1 },
-    { group: 'Abs', count: 1 },
+    { group: 'Arms', count: 1 },
+    { group: 'Core', count: 1 },
   ],
   back: [
     { group: 'Back', count: 4 },
-    { group: 'Biceps', count: 1 },
-    { group: 'Abs', count: 1 },
+    { group: 'Arms', count: 1 },
+    { group: 'Core', count: 1 },
   ],
   pull: [
     { group: 'Back', count: 4 },
-    { group: 'Biceps', count: 1 },
-    { group: 'Abs', count: 1 },
+    { group: 'Arms', count: 1 },
+    { group: 'Core', count: 1 },
   ],
   legs: [
     { group: 'Legs', count: 5 },
-    { group: 'Abs', count: 1 },
+    { group: 'Core', count: 1 },
   ],
   shoulders: [
     { group: 'Shoulders', count: 4 },
-    { group: 'Triceps', count: 1 },
-    { group: 'Abs', count: 1 },
+    { group: 'Arms', count: 1 },
+    { group: 'Core', count: 1 },
   ],
   push: [
     { group: 'Chest', count: 3 },
     { group: 'Shoulders', count: 2 },
-    { group: 'Triceps', count: 1 },
-    { group: 'Abs', count: 1 },
+    { group: 'Arms', count: 1 },
+    { group: 'Core', count: 1 },
   ],
 };
 
@@ -144,6 +144,24 @@ export type LegPart = 'quads' | 'hamstrings_glutes' | 'calves';
 /** §3.7: a Legs count spreads over the day's parts in this order. */
 export const LEG_PART_ORDER: readonly LegPart[] = ['quads', 'hamstrings_glutes', 'quads', 'hamstrings_glutes', 'calves'];
 
+/** The arm parts the builder picks by itself (forearm work is Swap / Add only). */
+export type PickedArmPart = Exclude<ArmPart, 'forearms'>;
+
+/**
+ * (D5, Ben 22–23 Oct) An Arms count alternates its parts: triceps first on a pressing day (the day's lead group is
+ * Chest or Shoulders), biceps first otherwise. `armParts` (a custom day's chosen parts, or a pre-D5 stored
+ * `Biceps` / `Triceps` row) keeps only those.
+ */
+export function armPartOrder(leadGroup: BuilderGroupName | null, armParts?: readonly PickedArmPart[]): PickedArmPart[] {
+  const first: PickedArmPart[] = leadGroup === 'Chest' || leadGroup === 'Shoulders' ? ['triceps', 'biceps'] : ['biceps', 'triceps'];
+  return armParts === undefined || armParts.length === 0 ? first : first.filter((p) => armParts.includes(p));
+}
+
+/** The group a day leads with: the main lift's, else its first group that isn't Arms or Core. */
+export function leadGroupOf(setup: Pick<BuilderSetup, 'groups'>, mainInfo: Pick<BuilderExerciseInfo, 'group'> | null): BuilderGroupName | null {
+  return mainInfo?.group ?? setup.groups.find((g) => g.group !== 'Arms' && g.group !== 'Core')?.group ?? setup.groups[0]?.group ?? null;
+}
+
 export interface BuilderSetup {
   minutes: number;
   mainLiftExerciseId: string | null;
@@ -154,6 +172,8 @@ export interface BuilderSetup {
   accessories?: AccessoryStyle;
   /** A custom day with only some leg parts: exercises come only from these (§2.2). */
   legParts?: readonly LegPart[];
+  /** (D5) A custom day with only some arm parts (or a pre-D5 `Biceps` / `Triceps` row): Arms picks only these. */
+  armParts?: readonly PickedArmPart[];
 }
 
 /**
@@ -164,7 +184,7 @@ export interface BuilderSetup {
 export type BuilderPool = (group: BuilderGroupName) => readonly string[];
 
 /** Pick a group's exercises from its pool. */
-function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used: Set<string>, ctx: BuilderContext, opts: { varied: boolean; legParts: readonly LegPart[] | undefined; mainInfo: BuilderExerciseInfo | null }): string[] {
+function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used: Set<string>, ctx: BuilderContext, opts: { varied: boolean; legParts: readonly LegPart[] | undefined; armOrder: readonly PickedArmPart[]; mainInfo: BuilderExerciseInfo | null }): string[] {
   if (need <= 0) return [];
   const candidates = pool(group).filter((id) => !used.has(id) && isAutoPickInfo(ctx.info(id)));
   const out: string[] = [];
@@ -188,6 +208,20 @@ function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used:
       if (used.has(c)) continue;
       if (opts.legParts !== undefined && !opts.legParts.includes(ctx.info(c)?.part as LegPart)) continue;
       take(c);
+    }
+    return out;
+  }
+  if (group === 'Arms') {
+    // Alternate the parts in the day's order (D5), then any other arm exercise of an allowed part.
+    const parts = opts.armOrder;
+    for (let i = 0; out.length < need && i < parts.length * BUILDER_VOLUME.maxPerGroup; i += 1) {
+      const part = parts[i % parts.length];
+      const id = candidates.find((c) => !used.has(c) && ctx.info(c)?.part === part);
+      if (id !== undefined) take(id);
+    }
+    for (const c of candidates) {
+      if (out.length >= need) break;
+      if (!used.has(c) && parts.includes(ctx.info(c)?.part as PickedArmPart)) take(c);
     }
     return out;
   }
@@ -234,12 +268,13 @@ export function buildFromSetup(setup: BuilderSetup, pool: BuilderPool, ctx: Buil
     slots.push(makeSlot(setup.mainLiftExerciseId, { main: true }, ctx));
   }
   const short: BuilderGroupName[] = [];
+  const armOrder = armPartOrder(leadGroupOf(setup, mainInfo), setup.armParts);
   let total = slots.length;
   for (const g of groups) {
     const want = Math.min(BUILDER_VOLUME.maxPerGroup, Math.max(0, Math.round(g.count))) - (mainInfo !== null && g.group === mainGroup ? 1 : 0);
     const room = BUILDER_VOLUME.maxExercises - total;
     const need = Math.min(want, room);
-    const ids = pickFor(g.group, need, pool, used, ctx, { varied: setup.accessories === 'varied', legParts: setup.legParts, mainInfo });
+    const ids = pickFor(g.group, need, pool, used, ctx, { varied: setup.accessories === 'varied', legParts: setup.legParts, armOrder, mainInfo });
     if (ids.length < need) short.push(g.group);
     for (const id of ids) {
       const sets = accessorySets !== undefined && g.group === mainGroup ? accessorySets : undefined;

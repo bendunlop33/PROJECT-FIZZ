@@ -52,8 +52,8 @@ const chest = (c: BuilderContext, supersets = true): BuilderWorkout =>
       supersets,
       groups: [
         { group: 'Chest', count: 3 },
-        { group: 'Triceps', count: 1 },
-        { group: 'Abs', count: 1 },
+        { group: 'Arms', count: 1 },
+        { group: 'Core', count: 1 },
       ],
     },
     pool,

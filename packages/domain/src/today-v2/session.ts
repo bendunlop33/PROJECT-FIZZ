@@ -6,7 +6,7 @@ import { absOff, clampMinutes, fitToMinutes, type BuilderFitResult, type Builder
 import { mixItUpShortlist, mixItUpTarget } from '../builder/mix';
 import { workingCount } from '../builder/set-rows';
 import { makeSlot } from '../builder/slot';
-import { ARM_GROUPS, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
+import { type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
 import { landCarryOver, type CarryItem } from '../builder/carry';
 import { withCoachSetCounts } from '../builder/carried';
 import { settleWarmups } from '../builder/warmups';
@@ -199,16 +199,16 @@ interface Built {
 
 /** The groups to build: the template's, with Abs in when it is on (and kept for `absOff` when the plan has them). */
 function groupsFor(t: TodayTemplate, absOn: boolean): GroupCount[] {
-  const groups = t.groups.filter((g) => g.group !== 'Abs' || absOn || t.absPlan).map((g) => ({ ...g }));
-  if (absOn && !groups.some((g) => g.group === 'Abs')) groups.push({ group: 'Abs', count: 1 });
+  const groups = t.groups.filter((g) => g.group !== 'Core' || absOn || t.absPlan).map((g) => ({ ...g }));
+  if (absOn && !groups.some((g) => g.group === 'Core')) groups.push({ group: 'Core', count: 1 });
   return groups;
 }
 
-/** Arm exercises to add, best first: the arm group with one exercise first. */
+/** Arm exercises to add, best first: an arm part the workout doesn't have yet first (D5: Arms = biceps + triceps). */
 function armCandidates(w: BuilderWorkout, pool: BuilderPool, ctx: BuilderContext): string[] {
-  const have = (g: BuilderGroupName) => w.blocks.reduce((n, b) => n + b.slots.filter((s) => infoOrDefault(ctx.info, s.exerciseId).group === g).length, 0);
-  const order = [...ARM_GROUPS].sort((a, b) => Number(have(b) === 1) - Number(have(a) === 1));
-  return [...new Set(order.flatMap((g) => pool(g)))];
+  const have = new Set(w.blocks.flatMap((b) => b.slots.map((s) => infoOrDefault(ctx.info, s.exerciseId)).filter((i) => i.group === 'Arms').map((i) => i.part)));
+  const ids = pool('Arms');
+  return [...ids.filter((id) => !have.has(infoOrDefault(ctx.info, id).part)), ...ids.filter((id) => have.has(infoOrDefault(ctx.info, id).part))];
 }
 
 /** Build (untrimmed), abs off, then the mix swap. */
@@ -218,7 +218,7 @@ function build(input: TodayAssembleInput, t: TodayTemplate, c: TodayControls, ab
   const r = buildFromSetup({ minutes: c.minutes, mainLiftExerciseId: t.mainLiftExerciseId, supersets: c.supersets, groups, accessories: c.accessories }, pool, ctx, { trim: false });
   // (Ben, 23 Oct) The coach's set count for next time (a small change, or one Ben applied on the Summary), as Start plans it.
   let workout = withCoachSetCounts(r.workout, ctx).workout;
-  if (!absOn && groups.some((g) => g.group === 'Abs')) workout = absOff(workout, ctx, { supersets: c.supersets, armCandidates: armCandidates(workout, pool, ctx) }).workout;
+  if (!absOn && groups.some((g) => g.group === 'Core')) workout = absOff(workout, ctx, { supersets: c.supersets, armCandidates: armCandidates(workout, pool, ctx) }).workout;
   return applyMix(workout, input, c);
 }
 

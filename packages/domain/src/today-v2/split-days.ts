@@ -52,7 +52,7 @@ export function splitDayMainOptions(input: SplitDayMainInput): string[] {
     out.push(id);
   };
   push(input.saved);
-  const lead = input.groups.find((g) => g !== 'Abs');
+  const lead = input.groups.find((g) => g !== 'Core');
   if (lead !== undefined) {
     const pool = input.pool(lead);
     for (const key of BUILDER_DEFAULT_MAIN_LIFTS[lead] ?? []) push(pool.find((id) => input.catalogueKeyOf(id) === key && input.info(id)?.group === lead));
@@ -82,7 +82,7 @@ export function todaySplitDays(input: TodaySplitDaysInput): TodayDay[] {
     const saved = input.mainLifts?.[day.id] ?? day.mainLiftExerciseId ?? null;
     const mains = splitDayMainOptions({ groups, saved, pool: input.pool, info: input.info, catalogueKeyOf: input.catalogueKeyOf });
     const exerciseIds = [...new Set(input.exercisesOf(day.id))].filter((id) => input.info(id) !== null);
-    const absPlan = groups.includes('Abs');
+    const absPlan = groups.includes('Core');
     const templates: TodayTemplate[] = (mains.length > 0 ? mains : [null]).map((id) => {
       const g = id === null ? null : (input.info(id)?.group ?? null);
       // The main lift's group leads (§3.7: the first group keeps at least one).

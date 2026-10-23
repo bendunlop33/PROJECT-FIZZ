@@ -235,15 +235,16 @@ export { BUILDER_STATUS_WORD };
 
 const OFFLINE_HOLD_MS = 60 * 1000;
 
-const PART_GROUP: Readonly<Record<string, MuscleGroup>> = { quads: 'Quads', hamstrings_glutes: 'Hamstrings', calves: 'Calves' };
-const GROUP_MUSCLE: Readonly<Record<BuilderGroupName, MuscleGroup | null>> = { Chest: 'Chest', Back: 'Back', Shoulders: 'Shoulders', Biceps: 'Biceps', Triceps: 'Triceps', Abs: 'Core', Legs: null };
+/** A Legs or Arms part's counting group (D5's detailed list); forearm work counts in none. */
+const PART_GROUP: Readonly<Record<string, MuscleGroup>> = { quads: 'Quads', hamstrings_glutes: 'Hamstrings', calves: 'Calves', biceps: 'Biceps', triceps: 'Triceps' };
+const GROUP_MUSCLE: Readonly<Record<BuilderGroupName, MuscleGroup | null>> = { Chest: 'Chest', Back: 'Back', Shoulders: 'Shoulders', Core: 'Core', Legs: null, Arms: null };
 
 /** The review's facts as stored (code only, rule 6). */
 export function sessionReviewFacts(f: BuilderReviewFacts): ReviewFact[] {
   const out: ReviewFact[] = [];
   const sets = new Map<MuscleGroup, number>();
   for (const g of f.groupSets) {
-    const m = g.group === 'Legs' ? (g.part === null ? null : (PART_GROUP[g.part] ?? null)) : GROUP_MUSCLE[g.group];
+    const m = g.group === 'Legs' || g.group === 'Arms' ? (g.part === null ? null : (PART_GROUP[g.part] ?? null)) : GROUP_MUSCLE[g.group];
     if (m !== null) sets.set(m, (sets.get(m) ?? 0) + g.sets);
   }
   for (const [group, n] of sets) out.push({ kind: 'group_sets', group, sets: Math.min(500, n), planned: null, range: null });

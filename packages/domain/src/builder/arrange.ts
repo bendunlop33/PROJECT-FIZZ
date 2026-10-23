@@ -23,7 +23,7 @@ export function infoOrDefault(info: BuilderInfoLookup, exerciseId: string): Buil
   );
 }
 
-const isAbs = (i: BuilderExerciseInfo): boolean => i.group === 'Abs';
+const isAbs = (i: BuilderExerciseInfo): boolean => i.group === 'Core';
 
 /** Leg parts that alternate on leg days (§3.4: quads and hinge). */
 const ALTERNATING_PARTS: ReadonlySet<string> = new Set(['quads', 'hamstrings_glutes']);
@@ -171,7 +171,7 @@ export function bandInsertIndex(blocks: readonly BuilderBlock[], slot: Pick<Buil
   const g = (s: BuilderSlot) => infoOrDefault(info, s.exerciseId).group;
   let at = -1;
   blocks.forEach((b, i) => {
-    if (b.slots.some((s) => groups.includes(g(s)) && g(s) !== 'Abs')) at = i;
+    if (b.slots.some((s) => groups.includes(g(s)) && g(s) !== 'Core')) at = i;
   });
   const rank = builderOrderRank(slot, info);
   if (at < 0) {

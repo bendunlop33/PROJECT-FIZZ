@@ -2,7 +2,7 @@ import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrang
 import { BUILDER_TIME, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { makeSlot } from './slot';
 import { BUILDER_SET_RULES, isTimedSlot, setWorkingCount, workingCount } from './set-rows';
-import { ARM_GROUPS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderInfoLookup, type BuilderSlot, type BuilderWorkout, type RestLevel } from './types';
+import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderInfoLookup, type BuilderSlot, type BuilderWorkout, type RestLevel } from './types';
 
 /**
  * Fit to the time: the one shared fit (Today's Time control, Your workout's Time, Set up's length, the coach's
@@ -57,7 +57,7 @@ export const FIT_SET_VALUE = { compound: 3, isolation: 2, abs: 2.5, extra: 1.5 }
 export function fitSetValue(exerciseId: string, info: BuilderInfoLookup, mainGroup: BuilderGroupName | null): number {
   const i = info(exerciseId);
   if (i === null) return FIT_SET_VALUE.extra;
-  if (i.group === 'Abs') return FIT_SET_VALUE.abs;
+  if (i.group === 'Core') return FIT_SET_VALUE.abs;
   if (i.role === 'compound') return FIT_SET_VALUE.compound;
   return mainGroup === null || i.group === mainGroup ? FIT_SET_VALUE.isolation : FIT_SET_VALUE.extra;
 }
@@ -407,13 +407,15 @@ function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOption
   const count = () => allSlots(w).length;
   const groupOf = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId).group;
 
-  // A second arm exercise: an arm group with exactly one exercise gets another.
-  const armGroups = ARM_GROUPS.filter((g) => allSlots(w).filter((s) => groupOf(s) === g).length === 1);
-  for (const id of opts.addCandidates?.arm ?? []) {
-    if (armGroups.length === 0 || count() >= FIT_RULES.maxExercises) break;
-    const g = infoOrDefault(ctx.info, id).group;
-    if (inWorkout(id) || !ARM_GROUPS.includes(g)) continue;
-    const next = insertAfterGroup(w, makeSlot(id, { main: false }, ctx), armGroups, ctx, opts.supersets);
+  // A second arm exercise: Arms with exactly one exercise gets another, from the other arm part first (D5: the
+  // pushdown gets a curl, as when Biceps and Triceps were groups of their own).
+  const arms = allSlots(w).filter((s) => groupOf(s) === 'Arms');
+  const armPart = arms.length === 1 && arms[0] !== undefined ? infoOrDefault(ctx.info, arms[0].exerciseId).part : null;
+  const armIds = (opts.addCandidates?.arm ?? []).filter((id) => !inWorkout(id) && infoOrDefault(ctx.info, id).group === 'Arms');
+  const armPick = [...armIds.filter((id) => infoOrDefault(ctx.info, id).part !== armPart), ...armIds.filter((id) => infoOrDefault(ctx.info, id).part === armPart)];
+  for (const id of armPick) {
+    if (armPart === null || count() >= FIT_RULES.maxExercises) break;
+    const next = insertAfterGroup(w, makeSlot(id, { main: false }, ctx), ['Arms'], ctx, opts.supersets);
     if (fits(next.w)) {
       w = next.w;
       steps.push({ kind: 'add', slotKey: next.key, exerciseId: id, why: 'arm' });
@@ -474,7 +476,7 @@ export interface AbsOffResult {
  * same. `armCandidates`: best first, injected.
  */
 export function absOff(w: BuilderWorkout, ctx: BuilderContext, opts: { supersets: boolean; armCandidates: readonly string[] }): AbsOffResult {
-  const isAbs = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId).group === 'Abs';
+  const isAbs = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId).group === 'Core';
   const removed = w.blocks.flatMap((b) => b.slots.filter(isAbs).map((s) => s.key));
   let partner: AbsOffResult['partner'] = null;
   const present = new Set(w.blocks.flatMap((b) => b.slots.map((s) => s.exerciseId)));
@@ -487,8 +489,8 @@ export function absOff(w: BuilderWorkout, ctx: BuilderContext, opts: { supersets
       continue;
     }
     const arm = kept.length === 1 ? kept[0] : undefined;
-    if (opts.supersets && partner === null && arm !== undefined && ARM_GROUPS.includes(infoOrDefault(ctx.info, arm.exerciseId).group)) {
-      const id = opts.armCandidates.find((c) => !present.has(c) && ARM_GROUPS.includes(infoOrDefault(ctx.info, c).group) && canAutoPair(arm, { exerciseId: c, main: false }, ctx.info));
+    if (opts.supersets && partner === null && arm !== undefined && infoOrDefault(ctx.info, arm.exerciseId).group === 'Arms') {
+      const id = opts.armCandidates.find((c) => !present.has(c) && infoOrDefault(ctx.info, c).group === 'Arms' && canAutoPair(arm, { exerciseId: c, main: false }, ctx.info));
       if (id !== undefined) {
         const slot = makeSlot(id, { main: false, workingSets: workingCount(arm) }, ctx);
         partner = { slotKey: slot.key, exerciseId: id };

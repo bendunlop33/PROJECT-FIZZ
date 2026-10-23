@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { discardWorkoutDraft, newWorkoutDraft, restoreWorkoutDraft, addDraftVersion, currentDraftVersion } from '@fizz/domain';
+import { discardWorkoutDraft, newBuilderDraft, newWorkoutDraft, restoreWorkoutDraft, addDraftVersion, builderSetupOf, currentDraftVersion, ruleSetupOf } from '@fizz/domain';
 import { at, hotelFixture, id, OWNER, profile } from '@fizz/domain/testing';
 import type { ActionRecord, SessionAggregate, WorkoutDraft, WorkoutDraftVersion } from '@fizz/schemas';
 
@@ -198,6 +198,61 @@ describe('Your data: backup, restore, relaunch (rule 10)', () => {
     const dst = await managerIn();
     expect(await dst.restore(made.text, at(200))).toMatchObject({ ok: true });
     expect(await dst.store.repos.workoutDrafts.get(DRAFT)).toEqual(draft);
+    expect((await checkIntegrity(dst.store.db)).ok).toBe(true);
+    await dst.close();
+  });
+});
+
+describe('a builder draft stored before D5 (Ben, 22–23 Oct: Arms and Core) still loads', () => {
+  it('Biceps and Triceps rows read as one Arms row, a `Triceps` / `Abs` carry-over as Arms / Core; through relaunch and a backup restore', async () => {
+    const d = tempDir();
+    dirs.push(d);
+    const src = await managerIn(d.dir);
+    await src.store.repos.profiles.save(profile(), null);
+    const setup = {
+      dayId: 'chest',
+      minutes: 60,
+      mainLiftExerciseId: null,
+      supersets: true,
+      groups: [
+        { parts: ['Chest' as const], count: 3 },
+        { parts: ['Triceps' as const], count: 1 },
+        { parts: ['Biceps' as const], count: 1 },
+        { parts: ['Core' as const], count: 1 },
+      ],
+      carryOver: { choice: 'carried' as const, atUtc: at(5).utc, items: [{ group: 'Arms' as const, sets: 3, exerciseId: id(6301), toDayIndex: 1, toDayName: 'Back' }, { group: 'Core' as const, sets: 2, exerciseId: id(6302), toDayIndex: 1, toDayName: 'Back' }] },
+    };
+    const draft = newBuilderDraft({ id: DRAFT, ownerId: OWNER, opId: 'build-d5', actionId: id(6201), name: 'Chest', key: { planId: null, dayIndex: null, splitDayId: 'chest', mainLiftExerciseId: null, localDate: '2026-10-20' }, setup, plan: version().plan, focus: 'chest', gymId: null, equipmentVersion: 'eq', contextHash: 'ctx', at: at(0) });
+    expect(await src.store.repos.workoutDrafts.createBuilderDraft(OWNER, draft)).toMatchObject({ status: 'written' });
+    // The row as an older build wrote it: pre-D5 group keys in the stored JSON.
+    await src.store.db.write((tx) => tx.run(`UPDATE workout_drafts SET data = replace(replace(data, '"group":"Arms"', '"group":"Triceps"'), '"group":"Core"', '"group":"Abs"') WHERE id = ?`, [DRAFT]));
+    const raw = await src.store.db.read((q) => q.getFirst<{ data: string }>('SELECT data FROM workout_drafts WHERE id = ?', [DRAFT]));
+    expect(raw?.data).toContain('"group":"Triceps"');
+    expect(raw?.data).toContain('"group":"Abs"');
+
+    const check = (got: Awaited<ReturnType<Store['repos']['workoutDrafts']['get']>>) => {
+      const st = got === null ? null : builderSetupOf(got);
+      expect(st?.carryOver?.items.map((x) => x.group)).toEqual(['Arms', 'Core']);
+      const rules = st === null ? null : ruleSetupOf(st);
+      expect(rules?.groups).toEqual([
+        { group: 'Chest', count: 3 },
+        { group: 'Arms', count: 2 },
+        { group: 'Core', count: 1 },
+      ]);
+      // Both arm parts were rows: Arms picks either.
+      expect(rules?.armParts).toBeUndefined();
+    };
+    check(await src.store.repos.workoutDrafts.get(DRAFT));
+    const made = await createBackup(src.store, { at: at(100), app: { name: 'GymSmarter', version: '0.1.0', build: null } });
+    await src.close();
+
+    const again = await managerIn(d.dir);
+    check(await again.store.repos.workoutDrafts.get(DRAFT));
+    await again.close();
+
+    const dst = await managerIn();
+    expect(await dst.restore(made.text, at(200))).toMatchObject({ ok: true });
+    check(await dst.store.repos.workoutDrafts.get(DRAFT));
     expect((await checkIntegrity(dst.store.db)).ok).toBe(true);
     await dst.close();
   });

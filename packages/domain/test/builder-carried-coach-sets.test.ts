@@ -11,8 +11,8 @@ import { context, info, pool } from './builder-v3-fixture';
  */
 
 const ctx = context();
-const chest = (): BuilderWorkout => buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] }, pool, ctx).workout;
-const TRI: CarryItem = { group: 'Triceps', sets: 3, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' };
+const chest = (): BuilderWorkout => buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] }, pool, ctx).workout;
+const TRI: CarryItem = { group: 'Arms', sets: 3, exerciseId: 'pushdown', toDayIndex: 2, toDayName: 'Shoulders' };
 const slot = (w: BuilderWorkout, id: string) => slotsOf(w.blocks).find((s) => s.exerciseId === id);
 const codec = { info, catalogueIdOf: (id: string) => id, checkedOnOf: () => null };
 

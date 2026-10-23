@@ -12,13 +12,13 @@ const byKey = (key: string): CatalogueEntry => {
 
 describe('builder groups on the catalogue', () => {
   it('every strength entry has a builder group and a focus inside it, and a works line', () => {
-    // Forearm- or grip-only entries (wrist curls, dead hang) are found under the arms group (`Biceps` until D5's `Arms`)
+    // Forearm- or grip-only entries (wrist curls, dead hang) are found under the arms group (D5: `Arms`)
     // with the `Forearms` focus: Swap / Add only, never picked by the builder, never counted (builder-groups.ts).
     const forearmOnly = (e: CatalogueEntry) => e.primaryMuscles.every((m) => m === 'forearms' || m === 'grip');
     const forearm = entries.filter((e) => isBuilderStrength(e) && forearmOnly(e));
     expect(forearm.map((e) => e.key).sort()).toEqual(['barbell-reverse-wrist-curl', 'barbell-wrist-curl', 'bodyweight-dead-hang']);
     for (const e of forearm) {
-      expect(builderGroupOf(e), e.key).toBe('Biceps');
+      expect(builderGroupOf(e), e.key).toBe('Arms');
       expect(builderFocusOf(e), e.key).toBe('Forearms');
       expect(isBuilderAutoPick(e), e.key).toBe(false);
       expect(builderFocusCounts(builderFocusOf(e)), e.key).toBe(false);
@@ -41,9 +41,9 @@ describe('builder groups on the catalogue', () => {
       expect(isBuilderAutoPick(byKey(k)), k).toBe(false);
     }
     expect(worksLine(byKey('cable-external-rotation'))).toBe('Rotator cuff, rear delts');
-    // Leg raises and sit-ups stay Abs-led (the abs are listed first), with hip flexors in the works line.
+    // Leg raises and sit-ups stay Core-led under Abs (the abs are listed first), with hip flexors in the works line.
     for (const k of ['bodyweight-decline-sit-up', 'bodyweight-captains-chair-knee-raise', 'bodyweight-lying-leg-raise', 'bodyweight-v-up', 'bodyweight-toes-to-bar', 'bodyweight-hollow-body-hold']) {
-      expect([builderGroupOf(byKey(k)), builderFocusOf(byKey(k))], k).toEqual(['Abs', 'Abs']);
+      expect([builderGroupOf(byKey(k)), builderFocusOf(byKey(k))], k).toEqual(['Core', 'Abs']);
       expect(isBuilderAutoPick(byKey(k)), k).toBe(true);
       expect(byKey(k).primaryMuscles, k).toContain('hip_flexors');
     }
@@ -87,11 +87,11 @@ describe('builder groups on the catalogue', () => {
     ['barbell-romanian-deadlift', 'Legs', 'Hamstrings & glutes', 'Hamstrings, glutes, lower back'],
     ['barbell-hip-thrust', 'Legs', 'Hamstrings & glutes', 'Glutes, hamstrings, quads'],
     ['machine-seated-calf-raise', 'Legs', 'Calves', 'Calves'],
-    ['dumbbell-hammer-curl', 'Biceps', 'Biceps', 'Biceps'],
-    ['bodyweight-plank', 'Abs', 'Abs', 'Abs, core, obliques'],
+    ['dumbbell-hammer-curl', 'Arms', 'Biceps', 'Biceps'],
+    ['bodyweight-plank', 'Core', 'Abs', 'Abs, core, obliques'],
     ['sandbag-lunge', 'Legs', 'Quads', 'Quads, glutes, hamstrings'],
-    ['cable-rope-triceps-pushdown', 'Triceps', 'Triceps', 'Triceps'],
-    ['cable-crunch', 'Abs', 'Abs', 'Abs, obliques'],
+    ['cable-rope-triceps-pushdown', 'Arms', 'Triceps', 'Triceps'],
+    ['cable-crunch', 'Core', 'Abs', 'Abs, obliques'],
   ] as const)('%s → %s · %s · %s', (key, group, focus, works) => {
     const e = byKey(key);
     expect(builderGroupOf(e)).toBe(group);

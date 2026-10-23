@@ -4,7 +4,7 @@ import type { BuilderExerciseInfo } from './types';
 /**
  * An exercise row (Ben's or the catalogue's) as the builder rules see it
  * (workout-builder-v3 §3.4, §3.5, §4.7). Pure. Null when it has no builder
- * group (conditioning, cardio, carries, forearms only).
+ * group (conditioning, cardio, carries). Forearm-only work is `Arms` › `Forearms` (D5).
  *
  * `heavy` (§3.5): marked per exercise in the catalogue once it carries the
  * flag; until then the spec's fallback, any compound on a barbell (incl. EZ
@@ -17,6 +17,7 @@ const BAR_KINDS: ReadonlySet<string> = new Set(['barbell', 'ez_bar', 'trap_bar']
 const QUIET: ReadonlySet<string> = new Set(['core', 'grip', 'forearms']);
 
 const LEG_PART: Readonly<Record<string, string>> = { Quads: 'quads', 'Hamstrings & glutes': 'hamstrings_glutes', Calves: 'calves', Shins: 'calves' };
+const ARM_PART: Readonly<Record<string, string>> = { Biceps: 'biceps', Triceps: 'triceps', Forearms: 'forearms' };
 
 export function builderInfoOf(
   e: Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'secondaryMuscles' | 'movementPattern' | 'measurement' | 'mechanic' | 'compatibleEquipment'> & Partial<Pick<Exercise, 'family' | 'catalogueKey' | 'defaultLoadConvention'>> & { heavy?: boolean },
@@ -31,9 +32,9 @@ export function builderInfoOf(
     exerciseId: e.id,
     name: e.name,
     group,
-    role: compound && group !== 'Abs' ? 'compound' : 'isolation',
+    role: compound && group !== 'Core' ? 'compound' : 'isolation',
     heavy: e.heavy ?? (compound && kinds.some((k) => HEAVY_KINDS.has(k))),
-    part: group === 'Legs' ? (LEG_PART[focus] ?? 'quads') : group,
+    part: group === 'Legs' ? (LEG_PART[focus] ?? 'quads') : group === 'Arms' ? (ARM_PART[focus] ?? 'biceps') : group,
     muscles,
     angle: focus,
     barbell: kinds.some((k) => BAR_KINDS.has(k)),

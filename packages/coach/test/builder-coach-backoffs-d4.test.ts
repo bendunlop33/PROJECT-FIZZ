@@ -11,7 +11,7 @@ import { applyBuilderEdits, createBuilderLoadGuard, topLoad, type BuilderCoachEn
  * lowered or put back never compounds (review B1).
  */
 
-const chest: BuilderSetup = { minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 3 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] };
+const chest: BuilderSetup = { minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 3 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] };
 
 function benchRefs(): LoadReferences {
   const top = { value: 100, reps: 8, rpe: 8 };

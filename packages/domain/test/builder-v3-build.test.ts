@@ -33,8 +33,8 @@ const ids = (w: BuilderWorkout) => w.blocks.map((b) => b.slots.map((s) => s.exer
 const all = (w: BuilderWorkout) => w.blocks.flatMap((b) => b.slots);
 const chestGroups = [
   { group: 'Chest', count: 3 },
-  { group: 'Triceps', count: 1 },
-  { group: 'Abs', count: 1 },
+  { group: 'Arms', count: 1 },
+  { group: 'Core', count: 1 },
 ] as const;
 
 describe('rest (§3.2, §9 Q7)', () => {
@@ -117,13 +117,13 @@ describe('recommendBuilderGroups / scaleMix (§3.7)', () => {
     expect(scaleMix(BUILDER_DAY_MIXES.chest, 5)).toEqual(chestGroups);
     expect(scaleMix(BUILDER_DAY_MIXES.chest, 7)).toEqual([
       { group: 'Chest', count: 4 },
-      { group: 'Triceps', count: 2 },
-      { group: 'Abs', count: 1 },
+      { group: 'Arms', count: 2 },
+      { group: 'Core', count: 1 },
     ]);
     expect(scaleMix(BUILDER_DAY_MIXES.chest, 1)).toEqual([{ group: 'Chest', count: 1 }]);
     expect(scaleMix(BUILDER_DAY_MIXES.chest, 3)).toEqual([
       { group: 'Chest', count: 2 },
-      { group: 'Triceps', count: 1 },
+      { group: 'Arms', count: 1 },
     ]);
   });
 
@@ -186,7 +186,7 @@ describe('recommendBuilderGroups / scaleMix (§3.7)', () => {
 describe('fitToMinutes (§2.0.2 control 3)', () => {
   const sixty = () => {
     const ctx = context();
-    const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] }, pool, ctx).workout;
+    const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] }, pool, ctx).workout;
     return { ctx, w };
   };
 
@@ -207,7 +207,7 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
   /** The same day with Supersets off: every exercise a single (bench, incline DB, machine press, fly, pushdown, crunch). */
   const solo = () => {
     const ctx = context();
-    const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] }, pool, ctx).workout;
+    const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] }, pool, ctx).workout;
     return { ctx, w };
   };
   const cuts = (r: { steps: readonly { kind: string }[] }) => r.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop');
@@ -274,12 +274,12 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
   });
 
   it('sweep (design review S2): one minute at a time from the full length to 15, less time never keeps more training (FIT_SET_VALUE), never touches the main lift, never pairs with Supersets off, and keeps every accessory at 2+ sets', () => {
-    const days: { main: string; mainGroup: 'Chest' | 'Legs' | 'Back'; groups: { group: 'Chest' | 'Legs' | 'Back' | 'Triceps' | 'Biceps' | 'Abs'; count: number }[] }[] = [
-      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] },
-      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 3 }, { group: 'Triceps', count: 2 }, { group: 'Biceps', count: 1 }, { group: 'Abs', count: 1 }] },
-      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 5 }, { group: 'Abs', count: 1 }] },
-      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 4 }, { group: 'Abs', count: 2 }] },
-      { main: 'row', mainGroup: 'Back', groups: [{ group: 'Back', count: 3 }, { group: 'Biceps', count: 2 }, { group: 'Abs', count: 1 }] },
+    const days: { main: string; mainGroup: 'Chest' | 'Legs' | 'Back'; groups: { group: 'Chest' | 'Legs' | 'Back' | 'Arms' | 'Core'; count: number }[] }[] = [
+      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] },
+      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 3 }, { group: 'Arms', count: 3 }, { group: 'Core', count: 1 }] },
+      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 5 }, { group: 'Core', count: 1 }] },
+      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 4 }, { group: 'Core', count: 2 }] },
+      { main: 'row', mainGroup: 'Back', groups: [{ group: 'Back', count: 3 }, { group: 'Arms', count: 2 }, { group: 'Core', count: 1 }] },
     ];
     const work = (s: { rows: readonly { type: string }[] }) => s.rows.filter((r) => r.type !== 'warmup').length;
     for (const d of days) {
@@ -305,12 +305,12 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
   });
 
   describe('review todaylean B1: the least training lost, only as far as needed', () => {
-    const days: { main: string; mainGroup: 'Chest' | 'Legs' | 'Back'; groups: { group: 'Chest' | 'Legs' | 'Back' | 'Triceps' | 'Biceps' | 'Abs'; count: number }[] }[] = [
-      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] },
-      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 3 }, { group: 'Triceps', count: 2 }, { group: 'Biceps', count: 1 }, { group: 'Abs', count: 1 }] },
-      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 5 }, { group: 'Abs', count: 1 }] },
-      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 4 }, { group: 'Abs', count: 2 }] },
-      { main: 'row', mainGroup: 'Back', groups: [{ group: 'Back', count: 3 }, { group: 'Biceps', count: 2 }, { group: 'Abs', count: 1 }] },
+    const days: { main: string; mainGroup: 'Chest' | 'Legs' | 'Back'; groups: { group: 'Chest' | 'Legs' | 'Back' | 'Arms' | 'Core'; count: number }[] }[] = [
+      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] },
+      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 3 }, { group: 'Arms', count: 3 }, { group: 'Core', count: 1 }] },
+      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 5 }, { group: 'Core', count: 1 }] },
+      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 4 }, { group: 'Core', count: 2 }] },
+      { main: 'row', mainGroup: 'Back', groups: [{ group: 'Back', count: 3 }, { group: 'Arms', count: 2 }, { group: 'Core', count: 1 }] },
     ];
     const work = (s: { rows: readonly { type: string }[] }) => s.rows.filter((r) => r.type !== 'warmup').length;
     /** The workout the cut works on (the fit's free savings made), each accessory at `counts` sets (0: left out). */
@@ -411,7 +411,7 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     expect(all(f.workout).some((s) => s.exerciseId === 'crunch')).toBe(true);
   });
 
-  it('abs off + longer: a second arm exercise first, then sets; the plan buffer is kept', () => {
+  it('abs off + longer: a second arm exercise first (the other arm part first, D5), then sets; the plan buffer is kept', () => {
     const ctx = context();
     // 62 min (WU1–WU12: the pushdown and crunch carry a warm-up each, so the day is 62 at normal rests).
     const b = buildFromSetup({ minutes: 62, mainLiftExerciseId: 'bench', supersets: false, groups: chestGroups }, pool, ctx).workout;
@@ -420,9 +420,13 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     expect(off.partner).toBeNull();
     expect(estimateBuilderMinutes(off.workout, ctx)).toBe(52);
     const grown = fitToMinutes(off.workout, ctx, { minutes: 62, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 0, addCandidates: { arm: ['oh_ext', 'hammer'], mainGroup: ['machine_press'] } });
-    expect(grown.steps[0]).toMatchObject({ kind: 'add', exerciseId: 'oh_ext', why: 'arm' });
+    // Arms is biceps + triceps (D5): the pushdown gets a curl before a second triceps exercise.
+    expect(grown.steps[0]).toMatchObject({ kind: 'add', exerciseId: 'hammer', why: 'arm' });
     expect(grown.minutes).toBeLessThanOrEqual(62);
-    expect(ids(grown.workout)).toEqual(['bench', 'incline_db', 'cable_fly', 'pushdown', 'oh_ext']);
+    expect(ids(grown.workout)).toEqual(['bench', 'incline_db', 'cable_fly', 'pushdown', 'hammer']);
+    // Only triceps left to add: the second arm exercise is one.
+    const tri = fitToMinutes(off.workout, ctx, { minutes: 62, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 0, addCandidates: { arm: ['oh_ext'], mainGroup: [] } });
+    expect(tri.steps[0]).toMatchObject({ kind: 'add', exerciseId: 'oh_ext', why: 'arm' });
     // With spare plan minutes kept as a buffer, only sets fit.
     const kept = fitToMinutes(off.workout, ctx, { minutes: 62, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 5, addCandidates: { arm: ['oh_ext'], mainGroup: ['machine_press'] } });
     expect(kept.steps.some((s) => s.kind === 'add')).toBe(false);
@@ -518,10 +522,10 @@ describe('fit value and the week’s carry-over (fit-to-time 22 Oct revision)', 
 
   it('carry-over: the group that lost most (2 or more), capped at 4; a tie goes to the day’s main group; the main lift never counts', () => {
     const ctx = context();
-    const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] }, pool, ctx).workout;
+    const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] }, pool, ctx).workout;
     const at = (m: number) => fitToMinutes(w, ctx, { minutes: m, mainGroup: 'Chest', grow: false, supersets: false }).workout;
     // 50: a fly set and the whole pushdown went: 3 triceps sets.
-    expect(fitCarryOver(w, at(50), info, 'Chest')).toEqual({ group: 'Triceps', sets: 3 });
+    expect(fitCarryOver(w, at(50), info, 'Chest')).toEqual({ group: 'Arms', sets: 3 });
     // 55: a set each from fly and pushdown: no group lost 2.
     expect(fitCarryOver(w, at(55), info, 'Chest')).toBeNull();
     // Fly and pushdown gone (3 sets each): the tie goes to Chest.

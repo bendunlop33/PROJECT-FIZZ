@@ -33,8 +33,8 @@ import { countText, reviewFacts, reviewHeaderWord, runReview, setBuilderReviewPr
 const SRC = join(__dirname, '..', 'src');
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
 
-const setup = (over: Partial<SetupInput> = {}): SetupInput => ({ dayId: 'chest', dayName: 'Chest', dayParts: ['Chest', 'Triceps'], minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }], variationId: null, groupsEdited: false, ...over });
-const facts = (over: Partial<SetupFacts> = {}): SetupFacts => ({ days: { split: [], ppl: [] }, mainLifts: [{ id: 'bench', name: 'Bench press', fromProfile: true }], variations: [], recommended: { count: 7, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 2 }, { group: 'Abs', count: 1 }] }, total: 6, template: null, loaded: null, addable: ['Back', 'Shoulders', 'Legs', 'Biceps'], canBuild: true, ...over });
+const setup = (over: Partial<SetupInput> = {}): SetupInput => ({ dayId: 'chest', dayName: 'Chest', dayParts: ['Chest', 'Triceps'], minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }], variationId: null, groupsEdited: false, ...over });
+const facts = (over: Partial<SetupFacts> = {}): SetupFacts => ({ days: { split: [], ppl: [] }, mainLifts: [{ id: 'bench', name: 'Bench press', fromProfile: true }], variations: [], recommended: { count: 7, groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 2 }, { group: 'Core', count: 1 }] }, total: 6, template: null, loaded: null, addable: ['Back', 'Shoulders', 'Legs'], canBuild: true, ...over });
 
 describe('Set up (§2.2)', () => {
   it('Total vs `Recommended for 60 min · 7`, the tag, and Next', () => {
@@ -64,22 +64,24 @@ describe('Set up (§2.2)', () => {
     expect(stepMinutes(setup({ minutes: 15 }), -1).minutes).toBe(15);
     expect(stepMinutes(setup({ minutes: 179 }), 5).minutes).toBe(180);
     expect(stepMinutes(setup(), 1).minutes).toBe(61);
-    const more = stepGroup(setup(), 'Triceps', 1);
-    expect(more.groups.find((g) => g.group === 'Triceps')?.count).toBe(2);
+    const more = stepGroup(setup(), 'Arms', 1);
+    expect(more.groups.find((g) => g.group === 'Arms')?.count).toBe(2);
     expect(more.groupsEdited).toBe(true);
     expect(setupView(more, facts(), null).groupsTag).toEqual({ kind: 'link', text: 'Use recommended' });
-    expect(stepGroup(setup(), 'Abs', -1).groups.map((g) => g.group)).toEqual(['Chest', 'Triceps']);
+    expect(stepGroup(setup(), 'Core', -1).groups.map((g) => g.group)).toEqual(['Chest', 'Arms']);
     expect(stepGroup(setup(), 'Chest', 1).groups[0]?.count).toBe(4);
     // Rows follow the recommendation until edited.
     expect(withRecommendation(setup(), facts()).groups[1]?.count).toBe(2);
     expect(withRecommendation(more, facts())).toBe(more);
     // A loaded template's own groups, not the recommendation (review B2); an open draft's rows stay.
-    const loaded = facts({ loaded: [{ group: 'Chest', count: 2 }, { group: 'Triceps', count: 1 }] });
-    expect(withRecommendation(setup(), loaded).groups).toEqual([{ group: 'Chest', count: 2 }, { group: 'Triceps', count: 1 }]);
+    const loaded = facts({ loaded: [{ group: 'Chest', count: 2 }, { group: 'Arms', count: 1 }] });
+    expect(withRecommendation(setup(), loaded).groups).toEqual([{ group: 'Chest', count: 2 }, { group: 'Arms', count: 1 }]);
     expect(withRecommendation(setup(), facts(), true)).toEqual(setup());
     expect(sameIdentity(setup(), setup({ minutes: 45 }))).toBe(true);
     expect(sameIdentity(setup(), setup({ mainLiftExerciseId: 'incline' }))).toBe(false);
-    expect(addGroup(setup(), 'Biceps').groups.at(-1)).toEqual({ group: 'Biceps', count: 1 });
+    expect(addGroup(setup({ groups: [{ group: 'Chest', count: 4 }] }), 'Arms').groups.at(-1)).toEqual({ group: 'Arms', count: 1 });
+    // D5: one Arms row; adding it again changes nothing.
+    expect(addGroup(setup(), 'Arms')).toEqual(setup());
   });
 
   it('Custom with no groups: Next disabled with `Add a muscle group`', () => {
@@ -151,7 +153,7 @@ function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): Build
       bench: f('Bench press', 'Chest, front delts, triceps', 'Chest', true),
       incline: f('Incline DB press', 'Upper chest, front delts, triceps', 'Chest', true),
       fly: f('Cable fly', 'Chest', 'Chest'),
-      crunch: f('Cable crunch', 'Abs', 'Abs'),
+      crunch: f('Cable crunch', 'Abs', 'Core'),
       pullup: f('Assisted pull-up', 'Lats, biceps', 'Back', true),
     },
     unit: 'kg',
@@ -311,18 +313,18 @@ describe('advice, coach status and review (§2.6, §2.9, §3.8)', () => {
     expect(r.suggestions).toEqual([]);
     expect(r.nextNotes).toEqual([]);
     expect(reviewHeaderWord(r.status)).toBe('Coach not connected');
-    expect(r.counts.map(countText)).toEqual(['✓ Chest 10', '· Triceps', '✓ Abs 3', '✓ Back 1']);
+    expect(r.counts.map(countText)).toEqual(['✓ Chest 10', '· Arms', '✓ Core 3', '✓ Back 1']);
     expect(r.variety).toBe('3 compound · 2 isolation');
     expect(reviewHeaderWord(reviewFacts(snapshot(W), 'offline').status)).toBe('Offline');
   });
 
   it('forearm work added under the arms group counts in no group: a wrist curl is never shown as biceps sets (D5)', () => {
     const base = snapshot(W);
-    const wrist = { name: 'Wrist curl', works: 'Forearms', group: 'Biceps' as const, counts: false, compound: false, mayHurt: false, notHere: false, hasHistory: false };
+    const wrist = { name: 'Wrist curl', works: 'Forearms', group: 'Arms' as const, counts: false, compound: false, mayHurt: false, notHere: false, hasHistory: false };
     const r = reviewFacts({ ...base, facts: { ...base.facts, pullup: wrist } }, 'not_connected');
-    expect(r.counts.map(countText)).toEqual(['✓ Chest 10', '· Triceps', '✓ Abs 3']);
+    expect(r.counts.map(countText)).toEqual(['✓ Chest 10', '· Arms', '✓ Core 3']);
     // Counted facts (absent or true) are unchanged.
-    expect(reviewFacts({ ...base, facts: { ...base.facts, pullup: { ...wrist, group: 'Back', counts: true } } }, 'not_connected').counts.map(countText)).toEqual(['✓ Chest 10', '· Triceps', '✓ Abs 3', '✓ Back 1']);
+    expect(reviewFacts({ ...base, facts: { ...base.facts, pullup: { ...wrist, group: 'Back', counts: true } } }, 'not_connected').counts.map(countText)).toEqual(['✓ Chest 10', '· Arms', '✓ Core 3', '✓ Back 1']);
   });
 
   it('connected with no provider, or a review that fails: `Not reviewed` with Why?, never `● Coach` (review B5)', async () => {

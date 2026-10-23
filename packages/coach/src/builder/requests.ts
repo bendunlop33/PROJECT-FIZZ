@@ -1,5 +1,5 @@
 import { ADVICE_TEXT, infoOrDefault, slotsOf, workingCount, type BuilderContext } from '@fizz/domain';
-import { BUILDER_COACH_TOOL, BUILDER_COACH_TOOL_ARGS, type BuilderCoachToolArgs, type BuilderCoachToolName } from '@fizz/schemas';
+import { BUILDER_COACH_TOOL, BUILDER_COACH_TOOL_ARGS, BUILDER_GROUPS, type BuilderCoachToolArgs, type BuilderCoachToolName } from '@fizz/schemas';
 import { strictJsonSchema, type FunctionToolDefinition } from '../function-tools';
 import type { CoachModelPort, ModelErrorKind, ModelRequest } from '../model-port';
 import { DEFAULT_COACH_TIMING, runModelStep, type CoachTiming } from '../turn';
@@ -49,7 +49,7 @@ const TOOL_OF: Readonly<Record<BuilderRequestKind, BuilderCoachToolName>> = {
 };
 
 const DESCRIPTIONS: Readonly<Record<BuilderCoachToolName, string>> = {
-  fill_setup: 'Fill in Set up from Ben’s words: day (a dayId from the context), minutes, main lift (an option ID, or "none"), supersets, and muscle-group counts (count, or delta). Unused fields are null. `reply`: a short answer when he asked a question instead; else null.',
+  fill_setup: 'Fill in Set up from Ben’s words: day (a dayId from the context), minutes, main lift (an option ID, or "none"), supersets, and muscle-group counts (count, or delta) by the context’s groups; a part Ben names is its group (biceps or triceps → Arms, hamstrings → Legs, abs → Core). Unused fields are null. `reply`: a short answer when he asked a question instead; else null.',
   propose_workout_edit: 'Propose changes to today’s workout, by slotKey: swap, add, remove, sets, reps, rpe, load (heavier/lighter or a value), move, superset, unlink, minutes. Ben applies or skips. `reply`: one or two sentences; an answer alone when ops is empty.',
   review_workout: 'Review today’s workout: a short verdict, up to 4 suggestions (ops by slotKey, each with a one-line reason), and up to 4 notes for the next time this day comes round (words, or a target load for one lift).',
   mix_pick: 'Pick one exercise from `shortlist` to swap in today, with a one-line reason.',
@@ -193,7 +193,7 @@ export function setupContextText(ctx: SetupCoachContext): string {
   return yourData('Ben’s Set up, shared because he asked', {
     current: ctx.current,
     days: ctx.days.map((d) => ({ dayId: d.id, name: d.name, mainLifts: d.mainLifts.map((m) => ({ id: m.exerciseId, name: m.name })) })),
-    groups: ['Chest', 'Back', 'Shoulders', 'Legs', 'Biceps', 'Triceps', 'Abs'],
+    groups: [...BUILDER_GROUPS],
   });
 }
 
