@@ -1,4 +1,4 @@
-import { builderGroupOfMuscleGroup, type LiftTarget, type LoadConvention, type ReviewProposal, type SetExclusion, type SetType, type TrainingReview, type WeightUnit } from '@fizz/schemas';
+import { type LiftTarget, type MuscleGroup, type LoadConvention, type ReviewProposal, type SetExclusion, type SetType, type TrainingReview, type WeightUnit } from '@fizz/schemas';
 import { addDays, daysBetween, localDateOf, localMidnightUtcMs, weekdayIndexOfDate } from '../calendar';
 import { formatNumber, NBSP } from '../display';
 import { deriveId, stableStringify } from '../stable';
@@ -822,16 +822,37 @@ export function liftHistorySessions(exerciseId: string, history: readonly { sess
 // ---------------------------------------------------------------------------
 // Muscles
 
-export const MUSCLE_ROWS = ['Chest', 'Back', 'Shoulders', 'Legs', 'Arms'] as const;
+/**
+ * (D5, Ben 22–23 Oct) Muscles counts by the detailed list, in this order. A broad group (Legs, Arms) is exactly the
+ * sum of its rows, so it has no row of its own. Glutes count as Hamstrings (the builder's `Hamstrings & glutes`),
+ * rear delts as Back, hip flexors as Core, shins as Calves; forearm work counts in no row.
+ */
+export const MUSCLE_ROWS = ['Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Calves', 'Biceps', 'Triceps', 'Core'] as const;
 export type MuscleRow = (typeof MUSCLE_ROWS)[number];
 
-/** The builder group's row (Biceps and Triceps are Arms; Abs isn't a row). */
+const ROW_OF_GROUP = {
+  Chest: 'Chest',
+  Back: 'Back',
+  Shoulders: 'Shoulders',
+  Quads: 'Quads',
+  Hamstrings: 'Hamstrings',
+  Glutes: 'Hamstrings',
+  Calves: 'Calves',
+  Biceps: 'Biceps',
+  Triceps: 'Triceps',
+  Core: 'Core',
+  Forearms: null,
+} as const satisfies Record<MuscleGroup, MuscleRow | null>;
+
+/** A muscle group's counting row (`Glutes` → `Hamstrings`); null for Forearms. */
+export function muscleRowOfGroup(g: MuscleGroup): MuscleRow | null {
+  return ROW_OF_GROUP[g];
+}
+
+/** The counting row an exercise's working sets go to: its lead muscle group's (`leadMuscleGroup`), or null. */
 export function muscleRowOf(exerciseInfo: Parameters<typeof leadMuscleGroup>[0]): MuscleRow | null {
   const g = leadMuscleGroup(exerciseInfo);
-  const b = g === null ? null : builderGroupOfMuscleGroup(g);
-  if (b === 'Biceps' || b === 'Triceps') return 'Arms';
-  if (b === 'Chest' || b === 'Back' || b === 'Shoulders' || b === 'Legs') return b;
-  return null;
+  return g === null ? null : muscleRowOfGroup(g);
 }
 
 export interface MuscleTrackerBarView {
@@ -877,8 +898,7 @@ export function musclePlanOfReview(r: Pick<TrainingReview, 'facts'>): Map<Muscle
   for (const f of r.facts) {
     if (f.kind !== 'group_sets' || f.planned === null) continue;
     any = true;
-    const b = builderGroupOfMuscleGroup(f.group);
-    const row: MuscleRow | null = b === 'Biceps' || b === 'Triceps' ? 'Arms' : b === 'Chest' || b === 'Back' || b === 'Shoulders' || b === 'Legs' ? b : null;
+    const row = muscleRowOfGroup(f.group);
     if (row !== null) out.set(row, (out.get(row) ?? 0) + f.planned);
   }
   return any ? out : null;

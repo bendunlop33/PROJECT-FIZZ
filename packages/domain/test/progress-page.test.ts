@@ -15,7 +15,10 @@ import {
   withOfferMark,
   liftsView,
   loadAtReps,
+  MUSCLE_ROWS,
   musclePlanOfReview,
+  muscleRowOf,
+  muscleRowOfGroup,
   musclesView,
   percentOfPlan,
   planDayLetters,
@@ -491,20 +494,22 @@ describe('Muscles: sets per week per muscle vs plan, 8 complete weeks', () => {
     { planId: PLAN, routineId: CHEST, name: 'Chest', version: 1, exercises: [{ exerciseId: BENCH, name: 'Bench', workingSets: 4 }] },
     { planId: PLAN, routineId: BACK, name: 'Back', version: 1, exercises: [{ exerciseId: ROW, name: 'Row', workingSets: 4 }, { exerciseId: CURL, name: 'Curl', workingSets: 3 }] },
   ];
-  it('rows Chest, Back, Shoulders, Legs, Arms; first primary muscle gets the set; every working set whatever RPE; warm-ups out', () => {
+  it('D5 (Ben, 22–23 Oct): the nine detailed rows; first primary muscle gets the set; every working set whatever RPE; warm-ups out', () => {
     const s = sess('2026-10-06', [
       { exerciseId: BENCH, sets: [work(kg(60), 10, { setType: 'warmup' }), work(kg(100), 6, { rpe: 6 }), work(kg(100), 6), work(kg(100), 6, { rpe: 10 }), work(kg(100), 6)] },
       { exerciseId: CURL, sets: [work(kg(15, 'per_hand'), 10)] },
     ]);
     const v = musclesView(input({ sessions: [s], plans: [plan()], templates }), { today: TODAY });
-    expect(v.rows.map((r) => r.key)).toEqual(['Chest', 'Back', 'Shoulders', 'Legs', 'Arms']);
+    expect(v.rows.map((r) => r.key)).toEqual(['Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Calves', 'Biceps', 'Triceps', 'Core']);
     expect(v.weeks.at(-1)).toBe('5 Oct');
     const chest = v.rows[0];
     expect(chest?.bars.at(-1)).toEqual({ value: 4, planned: 4, atPlan: true });
     expect(chest?.last).toBe('4 of 4');
-    const arms = v.rows[4];
-    expect(arms?.bars.at(-1)).toEqual({ value: 1, planned: 3, atPlan: false });
-    expect(arms?.accessibilityLabel).toBe('Arms: 1 set last week, plan 3. At plan in 0 of 8 weeks.');
+    const biceps = v.rows.find((r) => r.key === 'Biceps');
+    expect(biceps?.bars.at(-1)).toEqual({ value: 1, planned: 3, atPlan: false });
+    expect(biceps?.accessibilityLabel).toBe('Biceps: 1 set last week, plan 3. At plan in 0 of 8 weeks.');
+    // The bench's triceps help counts nowhere (first primary muscle only).
+    expect(v.rows.find((r) => r.key === 'Triceps')?.bars.at(-1)).toEqual({ value: 0, planned: 0, atPlan: true });
     // The live week isn't a bar (it would read as under plan mid-week).
     expect(musclesView(input({ sessions: [sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }])], plans: [plan()], templates }), { today: TODAY }).rows[0]?.bars.at(-1)?.value).toBe(0);
   });
@@ -513,7 +518,7 @@ describe('Muscles: sets per week per muscle vs plan, 8 complete weeks', () => {
     const s = sess('2026-10-06', [{ exerciseId: BENCH, sets: [work(kg(100), 6), work(kg(100), 6), work(kg(100), 6), work(kg(100), 6)] }]);
     const later: ReviewTemplate[] = [{ ...templates[0], exercises: [{ exerciseId: BENCH, name: 'Bench', workingSets: 5 }] } as ReviewTemplate, templates[1] as ReviewTemplate];
     const stored = musclePlanOfReview({ facts: [{ kind: 'group_sets', group: 'Chest', sets: 4, planned: 4, range: null }, { kind: 'group_sets', group: 'Biceps', sets: 1, planned: 3, range: null }] });
-    expect(stored).toEqual(new Map([['Chest', 4], ['Arms', 3]]));
+    expect(stored).toEqual(new Map([['Chest', 4], ['Biceps', 3]]));
     const v = musclesView(input({ sessions: [s], plans: [plan()], templates: later }), { today: TODAY, storedPlans: new Map([['2026-10-05', stored]]) });
     expect(v.rows[0]?.bars.at(-1)).toEqual({ value: 4, planned: 4, atPlan: true });
     // An unreviewed week uses the plan's templates as they are now.
@@ -533,6 +538,37 @@ describe('Muscles: sets per week per muscle vs plan, 8 complete weeks', () => {
     expect(none.rows[0]?.last).toBe('1');
     expect(none.rows[0]?.accessibilityLabel).toBe('Chest: 1 set last week.');
     expect(musclesView(input(), { today: TODAY }).empty).toBe(true);
+  });
+});
+
+describe('Muscles rows (D5): a broad group is exactly the sum of its rows', () => {
+  it('glutes count as Hamstrings, hip flexors as Core, tibialis as Calves, rear delts as Back; forearms in none', () => {
+    expect(MUSCLE_ROWS).toEqual(['Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Calves', 'Biceps', 'Triceps', 'Core']);
+    expect(muscleRowOf({ primaryMuscles: ['glutes'], secondaryMuscles: ['hamstrings'] })).toBe('Hamstrings');
+    expect(muscleRowOf({ primaryMuscles: ['adductors'] })).toBe('Hamstrings');
+    expect(muscleRowOf({ primaryMuscles: ['hip_flexors', 'abs'] })).toBe('Core');
+    expect(muscleRowOf({ primaryMuscles: ['tibialis'] })).toBe('Calves');
+    expect(muscleRowOf({ primaryMuscles: ['rear_delts'] })).toBe('Back');
+    expect(muscleRowOf({ primaryMuscles: ['triceps'] })).toBe('Triceps');
+    expect(muscleRowOf({ primaryMuscles: ['brachialis'] })).toBe('Biceps');
+    expect(muscleRowOf({ primaryMuscles: ['forearms'] })).toBeNull();
+    // Every counting group lands in exactly one row; Legs = Quads + Hamstrings + Calves and Arms = Biceps + Triceps.
+    const legs = (['Quads', 'Hamstrings', 'Glutes', 'Calves'] as const).map(muscleRowOfGroup);
+    expect([...new Set(legs)]).toEqual(['Quads', 'Hamstrings', 'Calves']);
+    expect((['Biceps', 'Triceps'] as const).map(muscleRowOfGroup)).toEqual(['Biceps', 'Triceps']);
+    expect(muscleRowOfGroup('Forearms')).toBeNull();
+  });
+
+  it('a week’s counts: a squat, an RDL and a hip thrust; a curl and a pushdown; a stored review’s plan by its detailed groups', () => {
+    const s = sess('2026-10-06', [
+      { exerciseId: SQUAT, sets: [work(kg(100), 5), work(kg(100), 5)] },
+      { exerciseId: CURL, sets: [work(kg(15, 'per_hand'), 10)] },
+    ]);
+    const v = musclesView(input({ sessions: [s] }), { today: TODAY });
+    const last = (k: string) => v.rows.find((r) => r.key === k)?.bars.at(-1)?.value;
+    expect([last('Quads'), last('Hamstrings'), last('Biceps'), last('Triceps'), last('Core')]).toEqual([2, 0, 1, 0, 0]);
+    const plan = musclePlanOfReview({ facts: [{ kind: 'group_sets', group: 'Glutes', sets: 2, planned: 3, range: null }, { kind: 'group_sets', group: 'Hamstrings', sets: 2, planned: 4, range: null }, { kind: 'group_sets', group: 'Forearms', sets: 2, planned: 2, range: null }] });
+    expect(plan).toEqual(new Map([['Hamstrings', 7]]));
   });
 });
 

@@ -296,7 +296,7 @@ describe('the weekly review on open', () => {
     expect(data.week.sessions).toBe('2');
     expect(data.lifts.lifts.map((l) => [l.name, l.colour, l.repsSource])).toEqual([['Bench press', 0, 'logged']]);
     expect(data.lifts.lifts[0]?.points.map((p) => p.value)).toEqual([90, 92.5, 95]);
-    expect(data.muscles.rows.map((r) => r.key)).toEqual(['Chest', 'Back', 'Shoulders', 'Legs', 'Arms']);
+    expect(data.muscles.rows.map((r) => r.key)).toEqual(['Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Calves', 'Biceps', 'Triceps', 'Core']);
     expect(data.liftsChosen).toBe(false);
     const choices = await h.service.liftChoices();
     expect(choices.map((c) => [c.name, c.shown, c.needsReps, c.reps])).toEqual([['Leg curl', false, true, 10], ['Bench press', true, true, 6]]);
