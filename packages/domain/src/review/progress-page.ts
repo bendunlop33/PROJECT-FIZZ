@@ -969,15 +969,21 @@ export function isStructuralProposal(p: Pick<ReviewProposal, 'change'>): boolean
  * - `sets_step`: the count moves by more than one (CA8).
  * - `stall`: the reviewed week flags this lift as stalled (`stalled_lift`), so any change to it is a stall
  *   response (playbook rule 8: resets are proposals; D2: stall resets always need Apply).
+ * - `from_edits`: code's own (§6.1, the same edit repeated). It is Ben's own structure, kept for next time only
+ *   by his Apply (D1; rule 3; workout-builder-v3 §6.1 "suggests"), never by the review (review v5offers B1).
+ * - `offered`: stored as an offer (`ReviewProposal.offer`): once it waited for Ben's Apply it stays an offer,
+ *   whatever a later run's facts say (review v5offers 4).
  */
-export type WeeklyOfferReason = 'structural' | 'no_reason' | 'added_sets' | 'sets_step' | 'stall';
+export type WeeklyOfferReason = 'structural' | 'no_reason' | 'added_sets' | 'sets_step' | 'stall' | 'from_edits' | 'offered';
 
 export interface WeeklyChangeContext {
   /** Exercises the reviewed week flags as stalled (`stalledOfReview`). */
   stalled: ReadonlySet<string>;
 }
 
-export function weeklyOfferReasons(p: Pick<ReviewProposal, 'change' | 'reason'>, ctx: WeeklyChangeContext): WeeklyOfferReason[] {
+type ClassifiedProposal = Pick<ReviewProposal, 'change' | 'reason' | 'source'> & Partial<Pick<ReviewProposal, 'offer'>>;
+
+export function weeklyOfferReasons(p: ClassifiedProposal, ctx: WeeklyChangeContext): WeeklyOfferReason[] {
   const out: WeeklyOfferReason[] = [];
   if (isStructuralProposal(p)) out.push('structural');
   if (p.reason === null) out.push('no_reason');
@@ -985,7 +991,19 @@ export function weeklyOfferReasons(p: Pick<ReviewProposal, 'change' | 'reason'>,
   if (delta > 0) out.push('added_sets');
   if (Math.abs(delta) > 1) out.push('sets_step');
   if (ctx.stalled.has(p.change.exerciseId)) out.push('stall');
+  if (p.source === 'code') out.push('from_edits');
+  if (p.offer === true) out.push('offered');
   return out;
+}
+
+/**
+ * A proposal as a review stores it (D2; review v5offers 4): marked `offer` when it waits for Ben's Apply under
+ * `ctx` (the facts of the review it belongs to), so a later run never re-classifies it as small and applies it.
+ * The mark is never removed.
+ */
+export function withOfferMark<P extends ClassifiedProposal>(p: P, ctx: WeeklyChangeContext): P {
+  if (p.offer === true || weeklyOfferReasons(p, ctx).length === 0) return p;
+  return { ...p, offer: true };
 }
 
 /** The lifts a stored weekly review flags as stalled (its `stalled_lift` facts: code's, from stored records). */
@@ -996,11 +1014,12 @@ export function stalledOfReview(r: Pick<TrainingReview, 'facts'>): Set<string> {
 }
 
 /**
- * Whether the review applies this change itself (rule 3, Progress v3, narrowed by D2 on 23 Oct): only a
- * CA8-small change with its reason, which for a plan day's working sets means one set fewer on a lift that
- * isn't stalled. Everything else is an offer (Apply / Skip), never written before Ben's tap.
+ * Whether the review applies this change itself (rule 3, Progress v3, narrowed by D2 on 23 Oct): only the
+ * coach's CA8-small change with its reason, which for a plan day's working sets means one set fewer on a lift
+ * that isn't stalled, never stored as an offer. Everything else (code's own included) is an offer (Apply /
+ * Skip), never written before Ben's tap.
  */
-export function autoApplicable(p: Pick<ReviewProposal, 'change' | 'reason'>, ctx: WeeklyChangeContext): boolean {
+export function autoApplicable(p: ClassifiedProposal, ctx: WeeklyChangeContext): boolean {
   return weeklyOfferReasons(p, ctx).length === 0;
 }
 

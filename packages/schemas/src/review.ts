@@ -156,8 +156,9 @@ export const REVIEW_LIMITS = { maxFacts: 60, maxOpIds: 20, inputsHashMax: 128, m
  * (Weekly, §6.1, §6.2) A plan tweak: code's own (a repeated edit, `source: 'code'`) or the coach's, checked
  * by code. Only a working-set count on one exercise of a plan-day template (no loads, so nothing to snap;
  * rule 4 is untouched). Progress v3 (rule 3), narrowed by Ben's D2 (23 Oct): applied by the review itself only
- * when CA8-small (one set fewer, with its reason, on a lift the week doesn't flag as stalled;
- * `autoApplicable` in `@fizz/domain`), else an offer (Apply / Skip). Written through the routine's versioned
+ * when it is the coach's and CA8-small (one set fewer, with its reason, on a lift the week doesn't flag as
+ * stalled; `autoApplicable` in `@fizz/domain`), else an offer (Apply / Skip). Code's own is always an offer: a
+ * repeated edit is Ben's own structure, kept only by his Apply (D1; review v5offers B1). Written through the routine's versioned
  * write with an `update_routine` record
  * (`actionId`: Undo reverses that exercise's count); refused once that exercise's working sets are no
  * longer `fromSets` (rule 5). `expectedVersion`: the template's version the review saw (provenance).
@@ -182,6 +183,12 @@ export const ReviewProposalSchema = z.object({
   actionId: IdSchema.nullable(),
   /** (Review build-b-21oct S3) Refused because the movement has an active pain flag (rule 9), not because the plan moved. */
   held: z.literal('pain').optional(),
+  /**
+   * (D2; review v5offers 4) An offer: it waited for Ben's Apply under the facts it was made with. Set when a review
+   * stores it and kept on every re-run, so a change Ben was shown with Apply / Skip never applies itself later
+   * because a newer week's facts would call it small. Absent: classified from its own review's facts.
+   */
+  offer: z.literal(true).optional(),
 });
 export type ReviewProposal = z.infer<typeof ReviewProposalSchema>;
 

@@ -9,6 +9,7 @@ import {
   isStructuralProposal,
   stalledOfReview,
   weeklyOfferReasons,
+  withOfferMark,
   liftsView,
   loadAtReps,
   musclePlanOfReview,
@@ -626,6 +627,26 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
       expect(weeklyOfferReasons(sets(5, 3), none)).toEqual(['sets_step']);
       expect(weeklyOfferReasons(sets(4, 3, { reason: null }), none)).toEqual(['no_reason']);
       expect(weeklyOfferReasons(sets(0, 1), none)).toEqual(['added_sets']);
+    });
+
+    it('code’s own change (Ben’s repeated edit) is always an offer, even one set fewer (D1; review v5offers B1)', () => {
+      const code = sets(4, 3, { source: 'code', reason: '3 sets the last 2 times' });
+      expect(weeklyOfferReasons(code, none)).toEqual(['from_edits']);
+      expect(autoApplicable(code, none)).toBe(false);
+      expect(changeRowView(code)).toMatchObject({ offer: true, statusText: null, canApply: true });
+    });
+
+    it('an offer stays an offer once stored: the mark is kept whatever later facts say (review v5offers 4)', () => {
+      const stalled = { stalled: new Set([ROW]) };
+      // Small under its own facts: not marked. A stall response: marked, and the mark outlives the stall.
+      expect(withOfferMark(sets(4, 3), none)).not.toHaveProperty('offer');
+      const marked = withOfferMark(sets(4, 3), stalled);
+      expect(marked.offer).toBe(true);
+      expect(weeklyOfferReasons(marked, none)).toEqual(['offered']);
+      expect(autoApplicable(marked, none)).toBe(false);
+      expect(withOfferMark(marked, none)).toBe(marked);
+      expect(changeRowView(marked)).toMatchObject({ offer: true, statusText: null, canApply: true });
+      expect(coachChangesView(review({ proposals: [marked] }), TODAY)?.asks.map((r) => r.id)).toEqual(['p1']);
     });
 
     it('any change on a lift the week flags as stalled is a stall response: always an offer (rule 8, D2)', () => {
