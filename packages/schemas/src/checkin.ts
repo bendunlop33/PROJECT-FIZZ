@@ -66,7 +66,11 @@ export type CheckIn = z.infer<typeof CheckInSchema>;
 export const SessionCheckInSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('answered'), checkInId: IdSchema }),
   z.object({ kind: z.literal('skipped'), atUtc: UtcTimestampSchema }),
-  z.object({ kind: z.literal('not_asked'), reason: z.enum(['off', 'not_a_check_in_day']) }),
+  /**
+   * `when_i_choose` (Ben, 23 Oct): Start doesn't ask; Ben is assumed fine and nothing is recorded. The
+   * check-in stays one quiet tap away in the workout until the first working set is logged.
+   */
+  z.object({ kind: z.literal('not_asked'), reason: z.enum(['off', 'not_a_check_in_day', 'when_i_choose']) }),
   /** Created by a path that couldn't ask (none in this build). */
   z.object({ kind: z.literal('pending') }),
 ]);
@@ -78,7 +82,12 @@ export type Weekday = z.infer<typeof WeekdaySchema>;
 /** Check-in settings (check-in.md §2.8). Not persisted yet: the defaults are used. */
 export const CheckInSettingsSchema = z.object({
   enabled: z.boolean(),
+  /**
+   * `when_i_choose` (Ben, 23 Oct; the default): never asked on Start. The check-in is offered quietly in
+   * the workout until the first working set is logged, and stays editable on the Summary.
+   */
   schedule: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('when_i_choose') }),
     z.object({ kind: z.literal('every_workout') }),
     z.object({ kind: z.literal('days'), weekdays: z.array(WeekdaySchema).max(7) }),
   ]),

@@ -525,7 +525,8 @@ export function builtInAdjustOpId(triggerId: string): string {
  */
 export async function applyBuiltInAdjustment(
   store: Pick<CoachWriteStore, 'commit'>,
-  input: { ownerId: string; sessionId: string; adjustment: SessionAdjustment; opId: string; now: ZonedTimestamp },
+  /** The rule's change to one exercise, or (Ben, 23 Oct) the built-in lighter session across the workout. */
+  input: { ownerId: string; sessionId: string; adjustment: Pick<SessionAdjustment, 'args' | 'plan' | 'guardNotes' | 'reason' | 'rule'>; opId: string; now: ZonedTimestamp },
 ): Promise<TodayTargetsWriteResult> {
   const a = input.adjustment;
   const exercises: ExerciseTargetChanges[] = a.plan.map((e) => ({ sessionExerciseId: e.sessionExerciseId, exerciseName: e.exerciseName, changes: e.changes }));
@@ -545,7 +546,8 @@ export async function applyBuiltInAdjustment(
     reason: a.reason,
     rule: a.rule,
     changes: a.plan.flatMap((e) => e.changes.flatMap((c) => (c.before !== null && c.after !== null ? [{ setId: c.setId, target: c.after }] : []))),
-    removeSetIds: [],
+    // Only the lighter session removes sets (one per exercise); Undo brings them back (`revert_target_adjustment`).
+    removeSetIds: a.plan.flatMap((e) => (e.removed === null ? [] : [e.removed.setId])),
     addSets: [],
   };
   const r = await store.commit(input.ownerId, { kind: 'session_command', action: record, sessionId: input.sessionId, command });

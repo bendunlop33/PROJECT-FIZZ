@@ -44,6 +44,7 @@ import { asCardioInterval, CARDIO_TIMER_CAP_S, cardioElapsedMs, cardioHasValue, 
 import { toIso, toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
+import { anyWorkingSetEverLogged } from '../checkin';
 import { pendingSetsOf } from './mid-swap';
 import { buildExecutionOrder, effectiveOffset, firstPendingRound, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
 import { draftWithNewTarget, type TargetValueField } from './pending-values';
@@ -82,7 +83,9 @@ export type SessionErrorCode =
   /** `undo_op` on an operation this workout never applied. */
   | 'operation_not_found'
   /** `undo_op` on an operation that has no Undo (a log has its own `undo_log`). */
-  | 'operation_not_undoable';
+  | 'operation_not_undoable'
+  /** (Ben, 23 Oct) `set_session_check_in` after the first working set, or on a workout already linked to a check-in. */
+  | 'check_in_closed';
 
 export interface SessionError {
   code: SessionErrorCode;
@@ -134,6 +137,8 @@ export type SessionEvent =
   /** `Count it` (or its Undo) on Progress's Time sheet (progress.md PG25a). */
   | { type: 'SessionDurationConfirmed'; confirmed: boolean }
   | { type: 'SessionFeelSet'; feel: 'easy' | 'good' | 'hard' | null }
+  /** (Ben, 23 Oct) A check-in Ben gave in the workout, now linked to it. */
+  | { type: 'SessionCheckInLinked'; checkInId: string }
   | { type: 'FinishByChanged'; finishByUtc: string | null }
   /** A coach adjustment changed (or its Undo restored) pending targets. Cue layers rebuild the rest-end line. */
   | { type: 'TargetsAdjusted'; actionId: string; setIds: string[]; reverted: boolean }
@@ -1599,6 +1604,22 @@ function handleRenameSession(state: SessionAggregate, cmd: CommandOf<'rename_ses
     events: [{ type: 'SessionRenamed', name }],  };
 }
 
+/**
+ * `set_session_check_in` (Ben, 23 Oct): the check-in Ben chose to give from inside the workout,
+ * linked to it. Only while active, before any working set was ever logged, and when the workout has
+ * no answered check-in yet (one link per workout; changes go through the check-in's own versioned edit).
+ * The same check-in again is a no-op.
+ */
+function handleSetSessionCheckIn(state: SessionAggregate, cmd: CommandOf<'set_session_check_in'>): Handled {
+  const now = state.session.checkIn;
+  if (now?.kind === 'answered' && now.checkInId === cmd.checkInId) return { ok: true, state, events: [] };
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed; reload.');
+  if (now?.kind === 'answered') return fail('check_in_closed', 'This workout already has a check-in.');
+  if (anyWorkingSetEverLogged(state)) return fail('check_in_closed', 'The check-in closes once a working set is logged.');
+  const session = { ...state.session, checkIn: { kind: 'answered' as const, checkInId: cmd.checkInId }, version: state.session.version + 1 };
+  return { ok: true, state: { ...state, session }, events: [{ type: 'SessionCheckInLinked', checkInId: cmd.checkInId }] };
+}
+
 /** `Count it` on Progress (progress.md PG25a): only a finished workout with real times; no set or time changes. */
 function handleConfirmDuration(state: SessionAggregate, cmd: CommandOf<'confirm_session_duration'>): Handled {
   if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed; reload.');
@@ -2869,6 +2890,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleConfirmDuration(state, command);
     case 'set_feel':
       return handleSetFeel(state, command);
+    case 'set_session_check_in':
+      return handleSetSessionCheckIn(state, command);
     case 'set_finish_by':
       return handleSetFinishBy(state, command, nowMs);
     case 'adjust_pending_targets':
@@ -2969,6 +2992,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'set_feel':
       // A later tap replaced this one.
       return (state.session.feel?.value ?? null) !== command.feel;
+    case 'set_session_check_in':
+      // One link per workout; nothing replaces it.
+      return state.session.checkIn?.kind !== 'answered' || state.session.checkIn.checkInId !== command.checkInId;
     case 'adjust_pending_targets':
       // Undone, or every set it set has since been logged or changed again, or the gym changed since.
       return coachUndoRefusal(state, command.actionId) !== null || !state.sets.some((s) => s.status === 'pending' && carriesTodayAdjustment(s.planned, command.actionId));
