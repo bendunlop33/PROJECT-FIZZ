@@ -123,7 +123,7 @@ describe('⋯ Save as a variation (Ben, 23 Oct)', () => {
     const routineId = snap.planDay?.templateRoutineId ?? '';
     const version = (await s.routines.editor({ routineId, gymId: null }))?.routine?.version ?? 0;
     const w = await s.library.addToWorkout({ exerciseId: catalogueExerciseId('bodyweight-plank'), shape: { workingSets: 2, warmups: 0, reps: null, durationS: 45, effort: { scale: 'rpe', value: null }, repsTouched: true }, to: { kind: 'routine', routineId, expectedVersion: version }, opId: 'plank-to-template' });
-    expect(w?.ok).toBe(true);
+    expect(w.ok).toBe(true);
     expect(await s.builder.saveAsVariation(snap.draftId, { label: 'late', opId: 'var-late' })).toEqual({ ok: false, message: 'Changed since · not kept' });
     expect((await s.builder.setupFacts(snap.setup)).variations).toEqual([]);
   });

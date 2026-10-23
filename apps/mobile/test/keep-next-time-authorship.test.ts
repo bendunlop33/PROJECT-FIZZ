@@ -327,7 +327,7 @@ describe('a main lift Ben swapped is its own Summary row (Ben, 23 Oct; SP7)', ()
     const { sessionId } = await swappedMain(s, gymId);
     const version = (await s.routines.editor({ routineId: push, gymId: null }))?.routine?.version ?? 0;
     const w = await s.library.addToWorkout({ exerciseId: catalogueExerciseId('bodyweight-plank'), shape: { workingSets: 2, warmups: 0, reps: null, durationS: 45, effort: { scale: 'rpe', value: null }, repsTouched: true }, to: { kind: 'routine', routineId: push, expectedVersion: version }, opId: 'plank-to-push' });
-    expect(w?.ok).toBe(true);
+    expect(w.ok).toBe(true);
     const changed = await template(s, push);
     expect(await s.builder.keepMainLiftOf(sessionId)).toBeNull();
     expect(await s.builder.keepMainLift(sessionId, 'apply')).toMatchObject({ ok: false, reason: 'stale' });

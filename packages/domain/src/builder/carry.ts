@@ -5,6 +5,7 @@ import { FIT_CARRY, type BuilderFitStep } from './fit';
 import { setWorkingCount, workingCount } from './set-rows';
 import type { BuilderContext, BuilderGroupName, BuilderInfoLookup, BuilderWorkout } from './types';
 import { BUILD_LIMITS } from '@fizz/schemas';
+import { toMs } from '../time';
 
 /**
  * The carry-over of the sets Time cut (Ben, 23 Oct; fit-to-time 22 Oct revision item 3, review SP3/SP1). Pure.
@@ -44,7 +45,7 @@ export function fitLostByGroup(steps: readonly BuilderFitStep[], base: BuilderWo
   for (const st of steps) {
     if (st.kind === 'drop') {
       const s = baseSlots.get(st.slotKey);
-      if (s !== undefined && s.main !== true) add(st.exerciseId, workingCount(s));
+      if (s !== undefined && !s.main) add(st.exerciseId, workingCount(s));
     } else if (st.kind === 'sets' && st.to < st.from && baseSlots.get(st.slotKey)?.main !== true) add(st.exerciseId, st.from - st.to);
   }
   const order = slotsOf(base.blocks).map((s) => info(s.exerciseId)?.group).filter((g): g is BuilderGroupName => g !== undefined);
@@ -119,11 +120,11 @@ export interface PendingCarryInput {
  * started since the source workout. Several sources add up per group, capped at 4 per group.
  */
 export function pendingCarryOvers(input: PendingCarryInput): CarryItem[] {
-  const nowMs = Date.parse(input.nowUtc);
+  const nowMs = toMs(input.nowUtc);
   const byGroup = new Map<BuilderGroupName, CarryItem>();
   for (const src of input.sources) {
     if (src.draft.builderKey?.planId !== input.planId || src.draft.sessionId === null) continue;
-    if (nowMs - Date.parse(src.atUtc) > CARRY_DAYS * 86_400_000) continue;
+    if (nowMs - toMs(src.atUtc) > CARRY_DAYS * 86_400_000) continue;
     const session = input.sessions.find((s) => s.sessionId === src.draft.sessionId);
     if (session === undefined) continue;
     const done = input.sessions.some((s) => s.sessionId !== session.sessionId && s.planDay?.planId === input.planId && s.planDay.dayIndex === input.dayIndex && s.startedAtUtc > session.startedAtUtc);
@@ -148,7 +149,7 @@ export function landCarryOver(w: BuilderWorkout, items: readonly CarryItem[], ct
   for (const x of items) {
     const inGroup = slotsOf(workout.blocks).filter((s) => ctx.info(s.exerciseId)?.group === x.group);
     // Its first exercise that isn't the main lift; when the main lift is the group's only one, the main lift (more back-offs).
-    const slot = inGroup.find((s) => s.main !== true) ?? inGroup[0];
+    const slot = inGroup.find((s) => !s.main) ?? inGroup[0];
     if (slot !== undefined) {
       const n = Math.min(BUILD_LIMITS.maxWorkingSets, workingCount(slot) + x.sets);
       if (n === workingCount(slot)) continue;
