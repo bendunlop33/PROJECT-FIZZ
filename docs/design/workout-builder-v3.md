@@ -752,8 +752,10 @@ Open for Ben: the width (3), the cap as "wildly outside", the 2-rep step, Epley 
 
 ### 3.3 Warm-ups [Ben]
 
-- Main lift: bar × 10 (barbells only, this gym's bar), then 50 % × 5, 70 % × 3, 85 % × 1 of the top-set load, each **rounded down**. A step no heavier than the one before is skipped. Max 4.
-- Compound accessory: 1 warm-up, 60 % × 8 [Proto %]. Isolation: none.
+> **Superseded (22–23 Oct): playbook WU1–WU12** ([warm-up.md](../training-guides/warm-up.md), approved by Ben 22 Oct). The builder, coach-built workouts, Start and the active workout share one planner (`packages/domain/src/warmup/`): ladders by class and band from the first working set's load and reps, each exercise's place in the workout (WU2), snapped down on this gym's loads (WU8), max 6 (WU4), within the session's 10-min warm-up budget (WU11). Warm-ups Ben edits himself are kept as he set them. The old rule below is kept for history.
+
+- ~~Main lift: bar × 10 (barbells only, this gym's bar), then 50 % × 5, 70 % × 3, 85 % × 1 of the top-set load, each **rounded down**. A step no heavier than the one before is skipped. Max 4.~~
+- ~~Compound accessory: 1 warm-up, 60 % × 8 [Proto %]. Isolation: none.~~
 
 ### 3.4 Order [Ben]
 
