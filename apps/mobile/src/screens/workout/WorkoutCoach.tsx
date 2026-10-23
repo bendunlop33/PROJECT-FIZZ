@@ -5,7 +5,7 @@ import { View } from 'react-native';
 import { renderActionResult, undoOpId, type CoachTurnResult } from '@fizz/coach';
 import type { ActionRecord, BenInput, SessionAggregate } from '@fizz/schemas';
 
-import type { CoachAvailability, WorkoutOffer } from '../../coach/coach-service';
+import { liveCoachReachable, type CheckInLighterOffer, type CoachAvailability, type WorkoutOffer } from '../../coach/coach-service';
 import { whyView, type WhyView } from '../../coach/sheet-view';
 import { findOffer, NO_HELD_SETS, routeChip, type ChipGate, planOfferCheck, settleTurn, type HeldSets, type RuleRequest } from '../../coach/offer-check';
 import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, ruleOfferOutcome, slotAfterFailure, slotAfterTurn, slotView, syncAdjustment, type SlotView } from '../../coach/slot-view';
@@ -49,6 +49,12 @@ export interface WorkoutCoach {
   dismissOffer: () => void;
   why: WhyView | null;
   toggleWhy: () => void;
+  /** (Ben, 23 Oct) The check-in's lighter-session offer, worked out again on the workout as loaded (no AI call). */
+  refreshCheckInOffer: (aggregate: SessionAggregate) => void;
+  /** `Apply` (the built-in lighter session, with Undo) or `Adjust` (asks the coach). */
+  acceptCheckInOffer: () => void;
+  /** `Skip` / `No thanks`: nothing changes; it won't come back for this check-in. */
+  skipCheckInOffer: () => void;
 }
 
 export function useWorkoutCoach(sessionId: string | null, onApplied: () => void, workout: SessionAggregate | null = null): WorkoutCoach {
@@ -58,6 +64,9 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
   const [adjustment, setAdjustment] = useState<ActionRecord | null>(null);
   const [outcome, setOutcome] = useState<{ text: string; retry: boolean } | null>(null);
   const [offer, setOffer] = useState<Offer | null>(null);
+  const [checkInOffer, setCheckInOffer] = useState<CheckInLighterOffer | null>(null);
+  /** Only the latest check-in offer read may set it. */
+  const checkInCheck = useRef(0);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [why, setWhy] = useState<WhyView | null>(null);
   const lastAsk = useRef<BenInput | null>(null);
@@ -191,7 +200,7 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
     [services, sessionId, pending],
   );
 
-  const slot = slotView({ pending: pending !== null, adjustment, outcome, offer, workout });
+  const slot = slotView({ pending: pending !== null, adjustment, outcome, offer, checkInOffer, workout });
 
   return {
     availability,
@@ -273,6 +282,52 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
     toggleWhy: () => {
       if (why !== null || adjustment === null) setWhy(null);
       else setWhy(whyView(adjustment));
+    },
+    refreshCheckInOffer: (aggregate) => {
+      const check = ++checkInCheck.current;
+      void (async () => {
+        const now = await services.coach.availability().catch(() => null);
+        const next = await services.coach.checkInOffer(aggregate, liveCoachReachable(now));
+        if (check !== checkInCheck.current) return;
+        if (now !== null) setAvailability(now);
+        setCheckInOffer(next);
+      })();
+    },
+    acceptCheckInOffer: () => {
+      const o = checkInOffer;
+      if (o === null || pending !== null || writing.current) return;
+      checkInCheck.current++;
+      setCheckInOffer(null);
+      if (o.by === 'coach') {
+        // CI6: Adjust is Ben asking, for today's pending sets (no increases: `lighter_no_increase`).
+        void services.coach.answerCheckInOffer(o);
+        ask({ kind: 'chip', chip: 'lighter_session' });
+        return;
+      }
+      writing.current = true;
+      setOutcome(null);
+      setWhy(null);
+      void services.coach
+        .applyLighterSession(o)
+        .then((r) => {
+          if (r.status === 'applied') {
+            setAdjustment(r.record);
+            appliedRef.current();
+          } else setOutcome(ruleOfferOutcome(r.status));
+        })
+        .catch(() => {
+          setOutcome(ruleOfferOutcome('failed'));
+        })
+        .finally(() => {
+          writing.current = false;
+        });
+    },
+    skipCheckInOffer: () => {
+      const o = checkInOffer;
+      if (o === null) return;
+      checkInCheck.current++;
+      setCheckInOffer(null);
+      void services.coach.answerCheckInOffer(o).catch(() => undefined);
     },
   };
 }
@@ -396,6 +451,27 @@ export function CoachSlotContent({ coach }: { coach: WorkoutCoach }) {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <TextButton label="No thanks" tone="secondary" onPress={coach.dismissOffer} />
             <TextButton label="Adjust" onPress={coach.acceptOffer} />
+          </View>
+        </View>
+      );
+    case 'check_in_offer':
+      return (
+        <View style={{ gap: theme.space['2'] }}>
+          <AppText variant="callout">{s.prompt}</AppText>
+          <AppText variant="callout" color="text.secondary" numeric>
+            {s.fact}
+          </AppText>
+          {s.change !== null ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }} accessible accessibilityLabel={`${s.tag ?? ''} ${s.change}`}>
+              <AppText variant="body" numeric style={{ flex: 1 }}>
+                {s.change}
+              </AppText>
+              {s.tag !== null ? <Tag text={s.tag} /> : null}
+            </View>
+          ) : null}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <TextButton label={s.by === 'rule' ? 'Skip' : 'No thanks'} tone="secondary" onPress={coach.skipCheckInOffer} />
+            <TextButton label={s.by === 'rule' ? 'Apply' : 'Adjust'} onPress={coach.acceptCheckInOffer} />
           </View>
         </View>
       );

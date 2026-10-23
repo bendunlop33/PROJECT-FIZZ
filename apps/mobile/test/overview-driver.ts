@@ -1,4 +1,4 @@
-import { type CheckInGate, type OverviewCoach, type OverviewRow, type WorkoutOverview } from '@fizz/domain';
+import { sessionCheckInForSkip, type CheckInGate, type OverviewCoach, type OverviewRow, type WorkoutOverview } from '@fizz/domain';
 import type { CheckIn, CheckInScore, NextSessionTargetRecord, SessionCheckIn } from '@fizz/schemas';
 
 import type { NextTimeTap } from '../src/coach/next-time-view';
@@ -42,7 +42,7 @@ export function checkInRow(gate: OverviewData['checkIn'], tapped: CheckIn | null
  */
 export function startCheckIn(gate: OverviewData['checkIn'], row: CheckInRowState, nowUtc: string): SessionCheckIn | null {
   if (row.record !== null) return { kind: 'answered', checkInId: row.record.id };
-  if (gate.kind === 'skip') return gate.reason === 'off' || gate.reason === 'not_a_check_in_day' ? { kind: 'not_asked', reason: gate.reason } : null;
+  if (gate.kind === 'skip') return sessionCheckInForSkip(gate.reason);
   return { kind: 'skipped', atUtc: nowUtc };
 }
 
@@ -362,7 +362,7 @@ export async function startEmptyFromOverview(ports: EmptyStartPorts, opId: strin
     const gate = await ports.gate();
     if (gate.kind === 'ask') return { kind: 'ask', gymId };
     const checkIn: SessionCheckIn | null =
-      gate.kind === 'reuse' ? { kind: 'answered', checkInId: gate.checkInId } : gate.reason === 'off' || gate.reason === 'not_a_check_in_day' ? { kind: 'not_asked', reason: gate.reason } : null;
+      gate.kind === 'reuse' ? { kind: 'answered', checkInId: gate.checkInId } : sessionCheckInForSkip(gate.reason);
     const r = await ports.start({ gymId, opId, checkIn });
     if (r.ok) return { kind: 'started' };
     return r.error.code === 'session_already_active' ? { kind: 'active' } : { kind: 'failed' };

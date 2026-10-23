@@ -55,9 +55,10 @@ describe('reasonsSubmission: one opId per distinct Done', () => {
     expect(src).not.toContain('`${recordOp}:reasons`');
     expect(src).toContain('submitReasons(services.checkIns');
     expect(src).toContain('skipReasons(services.checkIns');
-    // Both Skips with a saved score go through skipWithScore, never straight to start on `record`.
+    // Every Skip with a saved score goes through skipWithScore, never straight to start on `record`: the
+    // start sheet's two, and the workout's own check-in's What's up? (Ben, 23 Oct).
     expect(src).not.toMatch(/if \(record\) void start\(\{ kind: 'answered', checkInId: record\.id \}, savedToast\(record\)\)/);
-    expect(src.match(/void skipWithScore\(\)/g)?.length).toBe(2);
+    expect(src.match(/void skipWithScore\(\)/g)?.length).toBe(3);
   });
 });
 

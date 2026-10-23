@@ -68,6 +68,8 @@ export function createHarness(
     credentials?: StartupDeps['credentials'];
     personalFiles?: StartupDeps['personalFiles'];
     signOutTimeoutMs?: number;
+    /** Check-in settings other than the defaults (e.g. the old `Every workout`, which asks on Start). */
+    checkInSettings?: StartupDeps['checkInSettings'];
     /** The data ledger can be damaged or failing in a test. */
     ledger?: TextFile;
     /** A fake Live Activity system; each launch gets a fresh controller over it, as a relaunch does. */
@@ -185,6 +187,7 @@ export function createHarness(
         ...(opts.credentials === undefined ? {} : { credentials: opts.credentials }),
         personalFiles: opts.personalFiles ?? createPersonalFiles(containerOps),
         ...(opts.signOutTimeoutMs === undefined ? {} : { signOutTimeoutMs: opts.signOutTimeoutMs }),
+        ...(opts.checkInSettings === undefined ? {} : { checkInSettings: opts.checkInSettings }),
         ...extra,
       });
       if (o.kind === 'ready') open.push(o.services);

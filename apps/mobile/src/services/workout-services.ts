@@ -139,6 +139,9 @@ import {
   shapeAddPlan,
   type AddShape,
   type SlotShapeInput,
+  offersCheckInInWorkout,
+  discardCommand,
+  discardConfirmation,
   shouldAskCheckIn,
   toIso,
   toMs,
@@ -313,6 +316,7 @@ import type {
   PreStartDraft,
   CheckIn,
   CheckInScore,
+  CheckInSettings,
   EquipmentInstance,
   Gym,
   Exercise,
@@ -355,6 +359,11 @@ export const EMPTY_WORKOUT_TITLE = 'Empty workout';
  * chosen by the screen once per intent, and versioned where it edits.
  */
 export interface WorkoutServicesContext {
+  /**
+   * Check-in settings (check-in.md §2.8). Not persisted yet (no settings screen): absent, the
+   * defaults (`DEFAULT_CHECK_IN_SETTINGS`, `Only when I choose` since Ben, 23 Oct). Tests pass others.
+   */
+  checkInSettings?: () => CheckInSettings;
   repos: () => SqliteRepositories;
   store: () => Store;
   now: () => ZonedTimestamp;
@@ -890,7 +899,7 @@ export interface OverviewData {
    * The inline check-in row (§3.9): `ask` (no selection), `reuse` (an
    * unlinked check-in under 2 h, pre-selected), or `skip` (no row).
    */
-  checkIn: { kind: 'ask' } | { kind: 'reuse'; checkIn: CheckIn } | { kind: 'skip'; reason: 'off' | 'not_a_check_in_day' | 'already_decided' | 'set_logged' };
+  checkIn: { kind: 'ask' } | { kind: 'reuse'; checkIn: CheckIn } | Extract<CheckInGate, { kind: 'skip' }>;
   /** The answered check-in the targets were planned with (pain mentioned holds loads), when there is one. */
   planCheckIn: CheckIn | null;
   /** Ben's unit, for the `Typical equipment` preview. */
@@ -1058,29 +1067,93 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return r.ok;
   }
 
+  const checkInSettings = (): CheckInSettings => ctx.checkInSettings?.() ?? DEFAULT_CHECK_IN_SETTINGS;
+
+  /** `recordCheckIn` (CI4): idempotent per opId. */
+  async function recordCheckIn(req: { checkInId: string; opId: string; score: CheckInScore }): Promise<CheckInWrite> {
+    try {
+      const p = await owner();
+      const at = ctx.now();
+      const made = newCheckIn({ id: req.checkInId, ownerId: p.id, opId: req.opId, score: req.score, at, localDate: localDateOf(toMs(at.utc), at.tz) });
+      if (await saveCheckIn(made, null)) return { ok: true, checkIn: made, duplicate: false };
+      const existing = await repos().checkIns.get(req.checkInId);
+      if (existing?.createdByOpId === req.opId) return { ok: true, checkIn: existing, duplicate: true };
+      return { ok: false, message: CHECK_IN_WRITE_FAILED };
+    } catch {
+      return { ok: false, message: CHECK_IN_WRITE_FAILED };
+    }
+  }
+
   const checkIns = {
     /** `shouldAskCheckIn` for a Start (check-in.md §2.1). Defaults are used until the settings screen exists. */
     async gate(): Promise<CheckInGate> {
       const p = await owner();
       const at = ctx.now();
       const nowMs = toMs(at.utc);
-      return shouldAskCheckIn({ settings: DEFAULT_CHECK_IN_SETTINGS, nowMs, weekday: weekdayOf(nowMs, at.tz), entry: 'start', recent: await recentCheckIns(p.id, nowMs) });
+      return shouldAskCheckIn({ settings: checkInSettings(), nowMs, weekday: weekdayOf(nowMs, at.tz), entry: 'start', recent: await recentCheckIns(p.id, nowMs) });
     },
 
     get: (id: string): Promise<CheckIn | null> => repos().checkIns.get(id),
 
-    /** Written at the first score tap (CI4). `checkInId` is chosen once per sheet, so a retry is a duplicate. */
-    async record(req: { checkInId: string; opId: string; score: CheckInScore }): Promise<CheckInWrite> {
+    /**
+     * (Ben, 23 Oct) The quiet `How are you feeling?` in the workout: until the first working set is
+     * logged, when the workout has no check-in answered or skipped.
+     */
+    offeredIn(aggregate: SessionAggregate): boolean {
+      return offersCheckInInWorkout({ settings: checkInSettings(), session: aggregate });
+    },
+
+    /**
+     * (Ben, 23 Oct) The score from the workout's `How are you feeling?`: saved at the tap (CI4), then
+     * linked to that workout (`set_session_check_in`, versioned and idempotent per opId). Refused once a
+     * working set is logged; the check-in is then kept as Ben gave it, unlinked.
+     */
+    async recordInWorkout(req: { checkInId: string; opId: string; score: CheckInScore; sessionId: string }): Promise<CheckInWrite> {
+      const saved = await recordCheckIn(req);
+      if (!saved.ok) return saved;
       try {
-        const p = await owner();
-        const at = ctx.now();
-        const made = newCheckIn({ id: req.checkInId, ownerId: p.id, opId: req.opId, score: req.score, at, localDate: localDateOf(toMs(at.utc), at.tz) });
-        if (await saveCheckIn(made, null)) return { ok: true, checkIn: made, duplicate: false };
-        const existing = await repos().checkIns.get(req.checkInId);
-        if (existing?.createdByOpId === req.opId) return { ok: true, checkIn: existing, duplicate: true };
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const agg = await repos().sessions.get(req.sessionId);
+          if (agg === null) return { ok: false, message: 'That workout wasn’t found.' };
+          // Already linked (a retry after the write went through): nothing more to write.
+          if (agg.session.checkIn?.kind === 'answered' && agg.session.checkIn.checkInId === saved.checkIn.id) return saved;
+          const r = ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'set_session_check_in', at: ctx.now(), opId: `${req.opId}:link`, checkInId: saved.checkIn.id, expectedVersion: agg.session.version }));
+          if (r.ok) return saved;
+          // The workout moved on between the read and the write (a draft save): read it again once.
+          if (r.error.code === 'stale_version') continue;
+          return { ok: false, message: r.error.code === 'check_in_closed' ? 'Check-in closed: a working set is logged.' : CHECK_IN_WRITE_FAILED };
+        }
         return { ok: false, message: CHECK_IN_WRITE_FAILED };
       } catch {
         return { ok: false, message: CHECK_IN_WRITE_FAILED };
+      }
+    },
+
+    /** Written at the first score tap (CI4). `checkInId` is chosen once per sheet, so a retry is a duplicate. */
+    record: (req: { checkInId: string; opId: string; score: CheckInScore }): Promise<CheckInWrite> => recordCheckIn(req),
+
+    /** (Ben, 23 Oct) `Skip workout` is offered on the workout's own check-in only while nothing is logged in it. */
+    async canSkipWorkout(sessionId: string): Promise<boolean> {
+      const agg = await repos()
+        .sessions.get(sessionId)
+        .catch(() => null);
+      return agg !== null && agg.session.status === 'active' && !discardConfirmation(agg).required;
+    },
+
+    /**
+     * (Ben, 23 Oct) `Skip workout` on the workout's own check-in (ill step): the empty workout is
+     * discarded (nothing was logged, so no Undo, as today.md §4). Refused once a set is logged.
+     */
+    async skipWorkoutFrom(req: { sessionId: string; opId: string }): Promise<{ ok: true } | { ok: false; message: string }> {
+      try {
+        const agg = await repos().sessions.get(req.sessionId);
+        if (agg === null || agg.session.status !== 'active') return { ok: false, message: 'That workout wasn’t found.' };
+        const ask = discardConfirmation(agg);
+        if (ask.required) return { ok: false, message: 'Sets are logged. End it from the workout instead.' };
+        const r = ctx.afterCommand(await domain().dispatch(req.sessionId, discardCommand(ask, { opId: req.opId, at: ctx.now() })));
+        return r.ok ? { ok: true } : { ok: false, message: r.error.message };
+      } catch (e) {
+        return { ok: false, message: e instanceof Error ? e.message : String(e) };
       }
     },
 
@@ -1104,7 +1177,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const p = await ctx.profile();
       if (!p) return null;
       const nowMs = toMs(ctx.now().utc);
-      const gate = shouldAskCheckIn({ settings: DEFAULT_CHECK_IN_SETTINGS, nowMs, weekday: weekdayOf(nowMs, ctx.now().tz), entry: 'start', recent: await recentCheckIns(p.id, nowMs) });
+      const gate = shouldAskCheckIn({ settings: checkInSettings(), nowMs, weekday: weekdayOf(nowMs, ctx.now().tz), entry: 'start', recent: await recentCheckIns(p.id, nowMs) });
       return gate.kind === 'reuse' ? repos().checkIns.get(gate.checkInId) : null;
     },
   };

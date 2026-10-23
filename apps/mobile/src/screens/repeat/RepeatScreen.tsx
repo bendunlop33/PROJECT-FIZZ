@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useRef, useState } from 'react';
 import { View } from 'react-native';
 
-import { notCopiedText, scoreText, toMs } from '@fizz/domain';
+import { notCopiedText, scoreText, sessionCheckInForSkip, toMs } from '@fizz/domain';
 
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { newUuid } from '../../device/runtime';
@@ -111,12 +111,8 @@ export function RepeatScreen() {
       navigation.navigate('CheckIn', { mode: 'start', gymId: gym.id, repeatOf: sessionId });
       return;
     }
-    const checkIn =
-      gate.kind === 'reuse'
-        ? ({ kind: 'answered', checkInId: gate.checkInId } as const)
-        : gate.reason === 'off' || gate.reason === 'not_a_check_in_day'
-          ? ({ kind: 'not_asked', reason: gate.reason } as const)
-          : null;
+    // (Ben, 23 Oct) Not asked by default: nothing is recorded about how he feels; the workout offers the check-in.
+    const checkIn = gate.kind === 'reuse' ? ({ kind: 'answered', checkInId: gate.checkInId } as const) : sessionCheckInForSkip(gate.reason);
     const r = await services.workout.start({ gymId: gym.id, opId: startOp.current, checkIn, repeatOf: sessionId });
     if (!r.ok) {
       setError(r.error.code === 'session_already_active' ? 'A workout is already in progress. Resume it from Today.' : r.error.message);

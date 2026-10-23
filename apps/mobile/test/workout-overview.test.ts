@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { loadCell, NBSP, type OverviewRow } from '@fizz/domain';
+import { DEFAULT_CHECK_IN_SETTINGS, loadCell, NBSP, type OverviewRow } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
@@ -17,7 +17,8 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
  */
 let h: Harness;
 beforeEach(() => {
-  h = createHarness('2026-10-10T07:00:00.000Z');
+  // The overview's check-in row is asked only with `Every workout` (the default is `Only when I choose` since Ben, 23 Oct).
+  h = createHarness('2026-10-10T07:00:00.000Z', { checkInSettings: () => ({ ...DEFAULT_CHECK_IN_SETTINGS, schedule: { kind: 'every_workout' } }) });
 });
 afterEach(async () => {
   await h.cleanup();

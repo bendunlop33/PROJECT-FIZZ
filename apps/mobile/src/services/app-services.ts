@@ -36,7 +36,7 @@ import {
   type RecordCounts,
   type SqliteRepositories,
 } from '@fizz/persistence';
-import type { EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { CheckInSettings, EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachModelPort } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
@@ -112,6 +112,8 @@ export interface AppServicesDeps {
   personalFiles?: PersonalFilesPort;
   /** How long Delete waits for the online ChatGPT revoke (default 10 s). */
   signOutTimeoutMs?: number;
+  /** Check-in settings (check-in.md §2.8; not persisted yet). Absent: the defaults (`Only when I choose`, Ben 23 Oct). */
+  checkInSettings?: () => CheckInSettings;
   /** Resolves when the UI is idle; background backups wait for it so Finish's Summary appears first (backup review B1). */
   idle?: () => Promise<void>;
 }
@@ -517,6 +519,7 @@ export function createAppServices(deps: AppServicesDeps) {
   const customExercises = createCustomExercises({ repos, now: deps.now, profile: getProfile, catalogueExercises, catalogueAliases });
 
   const loop = createWorkoutServices({
+    ...(deps.checkInSettings === undefined ? {} : { checkInSettings: deps.checkInSettings }),
     repos,
     store: () => deps.manager.store,
     now: deps.now,
@@ -563,6 +566,7 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   const coach = createCoachService({
+    ...(deps.checkInSettings === undefined ? {} : { checkInSettings: deps.checkInSettings }),
     // (Ben, 20 Oct) Lift targets join the training details only while the setting is on.
     training: async () => {
       const t = await training.coachInput();
@@ -615,7 +619,7 @@ export function createAppServices(deps: AppServicesDeps) {
     // `builderCoach` is made below; these run only when Today asks (after startup).
     nudge: (req) => builderCoach.preSessionNudge(req),
     mixPick: (req) => builderCoach.mixPick(req),
-    offerAtOrBelow: () => DEFAULT_CHECK_IN_SETTINGS.offerAtOrBelow,
+    offerAtOrBelow: () => (deps.checkInSettings?.() ?? DEFAULT_CHECK_IN_SETTINGS).offerAtOrBelow,
   });
 
   /** Gyms and equipment (Your data): the minimal gym editor. */

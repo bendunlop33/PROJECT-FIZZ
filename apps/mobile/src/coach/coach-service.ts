@@ -158,6 +158,12 @@ import {
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
   evaluateCoachTrigger,
   evaluateSessionAdjustment,
+  evaluateCheckInOffer,
+  evaluateLighterSession,
+  anyWorkingSetEverLogged,
+  checkInFact,
+  DEFAULT_CHECK_IN_SETTINGS,
+  type LighterSessionAdjustment,
   exercisesNamedForPain,
   isInHistory,
   isTriggerKind,
@@ -212,6 +218,7 @@ import type { TextCoachState } from '@fizz/providers';
 import { muscleGroupOf } from '@fizz/schemas';
 import type {
   ActionDetail,
+  CheckInSettings,
   Gym,
   BuildDay,
   BuildFocus,
@@ -355,6 +362,35 @@ export function sameRuleChange(shown: RuleOfferBasis, now: RuleOfferBasis): bool
   return shown.touchedSetIds.length === now.touchedSetIds.length && shown.touchedSetIds.every((id, i) => now.touchedSetIds[i] === id) && shown.targets === now.targets;
 }
 
+/**
+ * (Ben, 23 Oct) The lighter-session offer after a low check-in, in Ready
+ * before the first working set (check-in CI5). `coach`: `Adjust` asks the
+ * coach (`lighter_session`). `rule`: the coach can't answer (not connected or
+ * offline), so the built-in lighter session is offered with its concrete
+ * change; `Apply` writes it with Undo, `Skip` changes nothing.
+ */
+export interface CheckInLighterOffer {
+  sessionId: string;
+  checkInId: string;
+  triggerId: string;
+  by: 'coach' | 'rule';
+  prompt: string;
+  fact: string;
+  change: string | null;
+  basis: RuleOfferBasis | null;
+  /** The workout's version when it was offered (recorded with the answer). */
+  atVersion: number;
+}
+
+/** The `coach_offers` row that marks the check-in offer as answered (one per check-in), so it never comes back. */
+const checkInOfferRow = (checkInId: string): string => `check_in:${checkInId}`;
+const CHECK_IN_OFFER_KIND = 'check_in_low';
+
+function lighterBasisOf(a: LighterSessionAdjustment): RuleOfferBasis {
+  const targets = a.plan.flatMap((e) => e.changes.map((c) => ({ setId: c.setId, after: c.after })));
+  return { baseVersion: a.args.baseVersion, touchedSetIds: [...a.touchedSetIds], targets: JSON.stringify(targets) };
+}
+
 /** What Ben's `Adjust` on the rule's offer did. */
 export type RuleOfferResult =
   | { status: 'applied'; record: ActionRecord }
@@ -384,6 +420,8 @@ export interface BuildChips {
 const WEEK_OFFER_LOOKBACK = 200;
 
 export interface CoachServiceDeps {
+  /** Check-in settings (check-in.md §2.8); absent, the defaults. */
+  checkInSettings?: () => CheckInSettings;
   /**
    * (Ben, 20 Oct) Lift targets: whether the setting is on, and `set_lift_target`'s checks. Absent, or
    * off: the tool is never offered and the coach doesn't see targets (they come through `training`).
@@ -2251,6 +2289,70 @@ export function createCoachService(deps: CoachServiceDeps) {
     },
 
     /**
+     * (Ben, 23 Oct; check-in.md §4.4 revised) The lighter-session offer for the workout's check-in, or
+     * null: no answered check-in, it doesn't ask for one (score, Tired / Poor sleep), a working set is
+     * already logged, nothing pending, already answered (`coach_offers`), or (rule) nothing the built-in
+     * lighter session can change. A pure check; no AI call. A failed read shows nothing.
+     */
+    async checkInOffer(aggregate: SessionAggregate, coachReachable: boolean): Promise<CheckInLighterOffer | null> {
+      try {
+        if (aggregate.session.status !== 'active') return null;
+        const checkIn = await checkInOf(aggregate);
+        if (checkIn === null || checkIn.deletedAtUtc !== undefined) return null;
+        const answered = (await coachStore().listOffers(aggregate.session.id)).some((o) => o.sessionExerciseId === checkInOfferRow(checkIn.id));
+        if (answered) return null;
+        const offer = evaluateCheckInOffer({
+          checkIn,
+          settings: deps.checkInSettings?.() ?? DEFAULT_CHECK_IN_SETTINGS,
+          coach: coachReachable ? 'available' : 'not_connected',
+          anyWorkingSetLogged: anyWorkingSetEverLogged(aggregate),
+          hasPendingWorkingSet: aggregate.sets.some((x) => x.status === 'pending' && x.setType !== 'warmup'),
+        });
+        if (offer === null) return null;
+        // Applied before (and maybe undone since): never offered again for this check-in.
+        if ((await coachStore().getAction(actionIdFor(builtInAdjustOpId(offer.triggerId)))) !== null) return null;
+        const base = { sessionId: aggregate.session.id, checkInId: checkIn.id, triggerId: offer.triggerId, prompt: 'Want a lighter session today?', fact: offer.fact, atVersion: aggregate.session.version };
+        if (offer.by === 'coach') return { ...base, by: 'coach', change: null, basis: null };
+        const adjustment = await lighterAdjustment(aggregate, checkIn);
+        return adjustment === null ? null : { ...base, by: 'rule', change: adjustment.change, basis: lighterBasisOf(adjustment) };
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * `Apply` on the built-in lighter session: worked out again on the workout as it is now and
+     * applied only if it is still the change Ben was shown (rule 5), today's pending sets only, with
+     * Undo. One opId per check-in, so a double tap applies once and replays.
+     */
+    async applyLighterSession(offer: CheckInLighterOffer): Promise<RuleOfferResult> {
+      const p = await owner();
+      const opId = builtInAdjustOpId(offer.triggerId);
+      const earlier = await coachStore()
+        .getAction(actionIdFor(opId))
+        .catch(() => null);
+      if (earlier !== null) return earlier.status === 'committed' ? { status: 'applied', record: earlier } : { status: 'stale' };
+      const session = await repos()
+        .sessions.getActive(p.id)
+        .catch(() => null);
+      if (session === null || session.session.id !== offer.sessionId || anyWorkingSetEverLogged(session)) return { status: 'stale' };
+      const checkIn = await checkInOf(session);
+      if (checkIn === null || checkIn.id !== offer.checkInId) return { status: 'stale' };
+      const adjustment = await lighterAdjustment(session, checkIn);
+      if (adjustment === null) return { status: 'unchanged' };
+      if (offer.basis === null || !sameRuleChange(offer.basis, lighterBasisOf(adjustment)) || adjustment.change !== offer.change) return { status: 'stale' };
+      const r = await writeRuleChange(p.id, session.session.id, adjustment, opId);
+      await answerCheckInOffer(p.id, offer, session.session.version);
+      return r;
+    },
+
+    /** `Skip` / `No thanks` (or the coach's `Adjust`, which asks it): the check-in offer is answered and won't come back. */
+    async answerCheckInOffer(offer: CheckInLighterOffer): Promise<void> {
+      const p = await owner();
+      await answerCheckInOffer(p.id, offer, null);
+    },
+
+    /**
      * Ben's own `Too hard` / `Too easy` chip when the coach can't answer
      * (review coach-fallback S1; CLAUDE.md rule 3: when Ben asks, today's
      * remaining sets change at once, with Undo; the built-in rule is the
@@ -2274,6 +2376,13 @@ export function createCoachService(deps: CoachServiceDeps) {
     },
   };
 
+  /** The built-in lighter session on the workout as it is now (pure `evaluateLighterSession` with Ben's pain flags, check-in and gym). */
+  async function lighterAdjustment(a: SessionAggregate, checkIn: CheckIn): Promise<LighterSessionAdjustment | null> {
+    const p = await owner();
+    const [painFlags, gymName] = await Promise.all([repos().painFlags.listActive(p.id), gymNameOf(a)]);
+    return evaluateLighterSession({ aggregate: a, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName, fact: checkInFact(checkIn) });
+  }
+
   /** The built-in rule's target RPE per session exercise, from each exercise's catalogue entry (unknown: the accessory profile). */
   async function ruleRpesOf(a: SessionAggregate): Promise<Record<string, number>> {
     const info = new Map<string, Awaited<ReturnType<ReturnType<typeof repos>['exercises']['get']>>>();
@@ -2281,6 +2390,12 @@ export function createCoachService(deps: CoachServiceDeps) {
       info.set(id, await repos().exercises.get(id).catch(() => null));
     }
     return ruleTargetRpes(a, (id) => info.get(id) ?? null);
+  }
+
+  async function answerCheckInOffer(ownerId: string, offer: CheckInLighterOffer, atVersion: number | null): Promise<void> {
+    await coachStore()
+      .recordOffer(ownerId, { sessionId: offer.sessionId, sessionExerciseId: checkInOfferRow(offer.checkInId), kind: CHECK_IN_OFFER_KIND, atVersion: Math.max(1, atVersion ?? offer.atVersion), atUtc: deps.now().utc })
+      .catch(() => undefined);
   }
 
   /** The active workout a logged set belongs to. */
@@ -2292,7 +2407,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     return active !== null && active.sets.some((x) => x.id === setId) ? active : null;
   }
 
-  async function writeRuleChange(ownerId: string, sessionId: string, adjustment: SessionAdjustment, opId: string): Promise<RuleOfferResult> {
+  async function writeRuleChange(ownerId: string, sessionId: string, adjustment: Pick<SessionAdjustment, 'args' | 'plan' | 'guardNotes' | 'reason' | 'rule'>, opId: string): Promise<RuleOfferResult> {
     const w = await applyBuiltInAdjustment(coachStore(), { ownerId, sessionId, adjustment, opId, now: deps.now() });
     if (w.status === 'stale') return { status: 'stale' };
     const fresh = await repos().sessions.get(sessionId).catch(() => null);
