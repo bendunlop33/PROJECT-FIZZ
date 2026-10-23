@@ -9,6 +9,7 @@ import { makeSlot } from '../builder/slot';
 import { ARM_GROUPS, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
 import { landCarryOver, type CarryItem } from '../builder/carry';
 import { withCoachSetCounts } from '../builder/carried';
+import { withDeloadSets } from '../builder/deload';
 import { settleWarmups } from '../builder/warmups';
 
 /**
@@ -218,6 +219,8 @@ function build(input: TodayAssembleInput, t: TodayTemplate, c: TodayControls, ab
   const r = buildFromSetup({ minutes: c.minutes, mainLiftExerciseId: t.mainLiftExerciseId, supersets: c.supersets, groups, accessories: c.accessories }, pool, ctx, { trim: false });
   // (Ben, 23 Oct) The coach's set count for next time (a small change, or one Ben applied on the Summary), as Start plans it.
   let workout = withCoachSetCounts(r.workout, ctx).workout;
+  // (Ben, 23 Oct: plan length = block 1) The plan's deload week: a set fewer and RPE ≤ 7 (loads are lighter already).
+  workout = withDeloadSets(workout, ctx).workout;
   if (!absOn && groups.some((g) => g.group === 'Abs')) workout = absOff(workout, ctx, { supersets: c.supersets, armCandidates: armCandidates(workout, pool, ctx) }).workout;
   return applyMix(workout, input, c);
 }
@@ -269,7 +272,8 @@ export function withTemplateMarks(w: BuilderWorkout, templateExerciseIds: readon
     if (out.origin === undefined && planned.has(s.exerciseId)) out.origin = s.exerciseId;
     const was = first.get(s.key);
     const cut = was === undefined ? 0 : was - workingCount(s);
-    if (cut > 0) out.todayCut = cut;
+    // A deload week's set already off this slot (`withDeloadSets`) stays counted as today's.
+    if (cut > 0) out.todayCut = (s.todayCut ?? 0) + cut;
     return out;
   };
   return { ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map(mark) })) };

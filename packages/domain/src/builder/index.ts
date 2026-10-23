@@ -28,4 +28,5 @@ export * from './land';
 export * from './today-replay';
 export * from './carry';
 export * from './carried';
+export * from './deload';
 export * from './warmups';

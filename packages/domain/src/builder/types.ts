@@ -121,6 +121,12 @@ export interface SlotLoadInput {
    * takes it (`withCoachSetCounts`). Absent or null: the template's count.
    */
   coachSets?: number | null;
+  /**
+   * (Ben, 23 Oct: plan length = block 1; training-blocks §4.4) This week is the applied plan's deload week: every load
+   * worked out from these inputs is ~10 % lighter, rounded down (`builderLoad`), and the slot has one working set fewer
+   * (`withDeloadSets`). Absent: a normal week.
+   */
+  deload?: true;
   planFirstLoad: AnchorLoad | null;
   ruleTarget: AnchorLoad | null;
   /** Est. max from Ben's own recent sets (an estimate, rule 6). */
