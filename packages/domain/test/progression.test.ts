@@ -317,10 +317,11 @@ describe('top set / back-off', () => {
     const one = [session(1, bar.id, [top(140, 2)])];
     expect(calculateNextTargets(input(one, bar, topSetBackoff())).decision).toBe('hold_after_miss');
     const two = [...one, session(4, bar.id, [top(140, 2)])];
-    expect(calculateNextTargets(input(two, bar, topSetBackoff())).resetOffer).toEqual(kg(125));
+    // Ben, 23 Oct: 127.5 (−8.9%) is in rule 8's 5–10% band; 125 (−10.7%) is not.
+    expect(calculateNextTargets(input(two, bar, topSetBackoff())).resetOffer).toEqual(kg(127.5));
     const t = calculateNextTargets(input(two, bar, topSetBackoff(), { acceptReset: true }));
     expect(t.decision).toBe('reduce_load');
-    expect(t.sets[0]?.load).toEqual(kg(125));
+    expect(t.sets[0]?.load).toEqual(kg(127.5));
   });
 
   it('pain halts the top set too', () => {

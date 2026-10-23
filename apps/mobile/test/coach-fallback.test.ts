@@ -352,42 +352,42 @@ describe('Ben’s case: 62.5 kg × 3–6 planned, 2 reps logged', () => {
     const thirdId = third.aggregate.session.id;
     const summary3 = await s.workout.summary(thirdId, 'not_connected');
     const row3 = summary3?.nextTime?.rows.find((r) => r.exerciseName === 'Bench press');
-    // (Ben, 23 Oct; v5offers SP2) The rule's own reset is an offer: it holds at 62.5 until Ben applies 55.
+    // (Ben, 23 Oct; v5offers SP2) The rule's own reset is an offer: it holds at 62.5 until Ben applies 57.5.
     expect(row3).toMatchObject({ kind: 'held', decision: 'hold_after_miss' });
     expect(plain(row3?.target)).toBe('Same target: 62.5 kg × 3–6');
-    expect(plain(row3?.resetOffer?.text)).toBe('Reset to 55 kg × 3–6?');
+    expect(plain(row3?.resetOffer?.text)).toBe('Reset to 57.5 kg × 3–6?');
     const viewOf = async (id: string) => {
       const sum = await s.workout.summary(id, 'not_connected');
       return nextTimeView({ title: 'Workout', builtIn: sum?.nextTime ?? null, coachRows: await s.coach.nextTargets(id), ruleRows: await s.coach.ruleResets(id), availability: await s.coach.availability(), reviewing: false })?.rows.find((r) => r.exerciseName === 'Bench press');
     };
     const offered = await viewOf(thirdId);
     expect(offered).toMatchObject({ tag: 'Rule', actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] });
-    expect(plain(offered?.note)).toBe('Reset to 55 kg × 3–6?');
+    expect(plain(offered?.note)).toBe('Reset to 57.5 kg × 3–6?');
     // Not applied: next time holds.
-    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('55');
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('57.5');
     const reset = offered?.reset;
     if (reset === undefined) throw new Error('no reset');
-    // Apply (offline, no coach): next time is 55; a double tap writes once.
+    // Apply (offline, no coach): next time is 57.5; a double tap writes once.
     expect(await s.coach.tapRuleReset(thirdId, reset, 'apply')).toEqual({ status: 'written' });
     expect(await s.coach.tapRuleReset(thirdId, reset, 'apply')).toEqual({ status: 'replayed' });
     expect(await s.coach.nextTargets(thirdId)).toEqual([]);
     const applied = await viewOf(thirdId);
-    expect(plain(applied?.target)).toBe('Target 55 kg × 3–6');
+    expect(plain(applied?.target)).toBe('Target 57.5 kg × 3–6');
     expect(applied).toMatchObject({ tag: 'Rule', actions: [{ label: 'Undo', tap: 'undo' }] });
-    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).toContain('55');
-    // Your workout plans from the same rule (builder loads): the bench is at most 55 now (62.5 before the Apply).
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).toContain('57.5');
+    // Your workout plans from the same rule (builder loads): the bench is at most 57.5 now (62.5 before the Apply).
     const opened = await s.builder.openTarget({ kind: 'session', sourceSessionId: thirdId }, 'open-after-reset');
     if (opened.snapshot == null) throw new Error('no builder');
     const benchTop = slotsOf(opened.snapshot.workout.blocks).find((x) => opened.snapshot?.facts[x.exerciseId]?.name === 'Bench press')?.rows.find((r) => r.type !== 'warmup')?.load ?? null;
     expect(benchTop).not.toBeNull();
-    expect(benchTop ?? 99).toBeLessThanOrEqual(55);
+    expect(benchTop ?? 99).toBeLessThanOrEqual(57.5);
     // Undo: offered again, next time holds.
     const r2 = applied?.reset;
     if (r2 === undefined) throw new Error('no reset');
     expect(await s.coach.tapRuleReset(thirdId, r2, 'undo')).toEqual({ status: 'written' });
     const again = await viewOf(thirdId);
     expect(again).toMatchObject({ actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] });
-    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('55');
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('57.5');
     // Skip: it holds, no buttons, never offered again for this workout.
     const r3 = again?.reset;
     if (r3 === undefined) throw new Error('no reset');
@@ -944,7 +944,7 @@ async function plannedLoadsOf(s: S, sessionId: string, ids: string[]) {
 
 
 describe('review ben-8-decisions: the rule’s reset answer and the coach’s review (B1, S1, S2)', () => {
-  /** Two short Bench workouts offline: the Summary of the second offers `Reset to 55 kg × 3–6?`. */
+  /** Two short Bench workouts offline: the Summary of the second offers `Reset to 57.5 kg × 3–6?`. */
   async function stalled() {
     const { s, gymId, sessionId, work } = await bensWorkout();
     connection = NOT_CONNECTED;
@@ -989,10 +989,10 @@ describe('review ben-8-decisions: the rule’s reset answer and the coach’s re
     ]);
     const turn = await s.coach.runSummaryTurn(thirdId);
     expect(turn).not.toBeNull();
-    // Ben's answer wins for Bench: no coach row over it, and next time is his 55.
+    // Ben's answer wins for Bench: no coach row over it, and next time is his 57.5.
     expect(await s.coach.nextTargets(thirdId)).toEqual([]);
     expect((await s.coach.ruleResets(thirdId)).map((r) => r.status)).toEqual(['applied']);
-    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).toContain('55');
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).toContain('57.5');
   });
 
   it('S2: a Skip from a view drawn before Apply landed is refused, never overwriting the Apply', async () => {
@@ -1016,7 +1016,7 @@ describe('review ben-8-decisions: the rule’s reset answer and the coach’s re
     if (!fixed.ok) throw new Error(fixed.error.message);
     await h.settle(s);
     // Not used any more (rule 5), and not silent: `Changed since`, Skip / Apply again.
-    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('55');
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('57.5');
     const again = await viewOf();
     expect(plain(again?.note)).toMatch(/^Changed since · Reset to [\d.]+ kg × 3–6\?$/);
     expect(again?.actions).toEqual([{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }]);

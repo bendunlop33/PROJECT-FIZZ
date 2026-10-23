@@ -1,6 +1,7 @@
 import type { CoachTarget, EquipmentInstance, GuardNote, GuardNoteKind, NextSessionTarget, NextSessionTargetRecord, PainFlag, PlannedSet, SessionAggregate, SessionExercise, SetType, TargetProvenance } from '@fizz/schemas';
-import { formatNumber } from '../display';
-import { compareDifficulty, loadDirection, stepLoad } from '../equipment';
+import { formatNumber, loadText } from '../display';
+import { compareDifficulty, getAchievableLoads, loadDirection, stepLoad } from '../equipment';
+import { deeperThanStallResetBand, stallResetLoad } from '../stall-reset';
 import { activeFlag, AREA_WORD, isIncrease, sameTarget, snapLoad, validReps } from './adjust';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 import { deriveId } from '../stable';
@@ -232,6 +233,16 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
     const after: CoachTarget = { load, reps, ...(t.target.rpe != null && !restated ? { rpe: t.target.rpe } : {}) };
     const wantSets = t.sets ?? basis.lastSets;
     const flag = activeFlag(input.painFlags, ex.exerciseId);
+    // (Ben, 23 Oct; ADR 0006 amendment) A stall reset goes no deeper than playbook rule 8's 5–10% band, as the built-in
+    // rule's doesn't: a deeper coach cut is moved to the rule's reset load (one step down on coarse kit). A pain flag
+    // leaves it alone.
+    if (basis.stalled === true && flag === null) {
+      const banded = bandedReset(basis.last.load, after.load, basis.equipment);
+      if (banded !== null && after.load !== null) {
+        notes.push({ kind: 'reset_band', setIds: [], text: `Reset limited to ${loadText(banded, banded.convention, basis.equipment)}` });
+        after.load = banded;
+      }
+    }
     if (flag !== null && (isIncrease(basis.last, after, ex.loadConvention) || wantSets > basis.lastSets)) {
       const area = flag.area ? AREA_WORD[flag.area] : '';
       drop('pain_blocked', area ? `Not increasing ${ex.exerciseName}: you flagged ${area} pain.` : `Not increasing ${ex.exerciseName}: you flagged pain on it.`);
@@ -256,6 +267,23 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
     });
   }
   return { rows, dropped };
+}
+
+/**
+ * (Ben, 23 Oct) On a stalled lift, the load a coach cut must use when it goes deeper than rule 8's 5–10% band: the
+ * built-in rule's reset load (`stallResetLoad`). Null when the coach's load is no cut or no deeper than the band
+ * allows (a lighter cut pairs with rule 8's rep-scheme change and is left as asked), or is the one-step fallback on
+ * kit with nothing in the band.
+ */
+export function bandedReset(last: CoachTarget['load'], after: CoachTarget['load'], equipment: EquipmentInstance | null): CoachTarget['load'] {
+  if (last === null || after === null || equipment === null) return null;
+  if (last.unit !== after.unit || last.convention !== after.convention || after.unit !== equipment.unit) return null;
+  const direction = loadDirection(after.convention);
+  if (compareDifficulty(after.value, last.value, direction) >= 0) return null;
+  if (!deeperThanStallResetBand(last.value, after.value, direction)) return null;
+  const reset = stallResetLoad(last.value, getAchievableLoads(equipment).loads, direction);
+  if (reset === null || reset === after.value) return null;
+  return { ...after, value: reset };
 }
 
 /**

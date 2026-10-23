@@ -688,6 +688,8 @@ export const GuardNoteKindSchema = z.enum([
   'rpe_overridden',
   /** (12 Oct) A workout-builder check (`checkWorkoutProposal`, BD9): left out, swapped, clamped or filled in. */
   'build_check',
+  /** (Ben, 23 Oct) A coach stall reset moved into playbook rule 8's 5–10% band (ADR 0006 amendment). */
+  'reset_band',
 ]);
 export type GuardNoteKind = z.infer<typeof GuardNoteKindSchema>;
 

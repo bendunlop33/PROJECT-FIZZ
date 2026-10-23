@@ -20,6 +20,7 @@ import {
   type LoadDirection,
 } from './equipment';
 import { allLeftOutFact, isSetCountable } from './exclusions';
+import { stallResetLoad } from './stall-reset';
 import { toMs } from './time';
 import { convertMass, convertMassExactly, fromScaled, toScaled } from './units';
 import type { RuleReps } from './rep-range';
@@ -818,18 +819,13 @@ function nextHarderLoad(ctx: Ctx, current: number): Step {
   return { kind: 'load', value: chosen };
 }
 
+/**
+ * The stall reset (7-F / ADR 0006, playbook rule 8): the achievable load nearest the rule's cut inside the 5–10% band,
+ * or one step easier when the kit has nothing in the band (Ben, 23 Oct; `stallResetLoad`).
+ */
 function reducedLoad(ctx: Ctx, current: number): number | null {
-  const pct = ctx.input.rule.reducePercent / 100;
   const eq = ctx.input.equipment;
-  const desired = ctx.direction === 'resistance' ? current * (1 - pct) : current * (1 + pct);
-  if (eq === null) return harder(current, desired, ctx.direction) ? desired : null;
-  const loads = getAchievableLoads(eq).loads;
-  const easier = loads.filter((l) => harder(current, l, ctx.direction));
-  if (easier.length === 0) return null;
-  const rounded = roundToAvailableLoad({ value: desired, unit: ctx.unit, convention: ctx.convention }, eq, 'easier');
-  if (rounded.ok && harder(current, rounded.load.value, ctx.direction)) return rounded.load.value;
-  // The percentage was smaller than the equipment step: use the next easier load.
-  return ctx.direction === 'resistance' ? Math.max(...easier) : Math.min(...easier);
+  return stallResetLoad(current, eq === null ? null : getAchievableLoads(eq).loads, ctx.direction, ctx.input.rule.reducePercent);
 }
 
 /** Equipment that can make no load: say so plainly and prescribe nothing (review R3). */
