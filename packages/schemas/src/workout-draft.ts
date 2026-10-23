@@ -187,6 +187,12 @@ export const DraftLoadSchema = z.object({
   notUsed: z.string().max(80).nullable(),
   /** (v3 §2.4) A kg Ben typed (`ben`) that this gym's item rounded down: what he typed, in the load's unit (`Why?`). */
   requested: z.number().nonnegative().max(5000).optional(),
+  /**
+   * (D4, HT8) A builder back-off not worked out from its slot's anchor (a saved or coach-built workout's own): its
+   * load against the top it was set for, in the load's unit. Today's lower top is measured from here, so lowering it
+   * again never compounds. Start ignores it.
+   */
+  backoffFrom: z.object({ load: z.number().nonnegative().max(5000), top: z.number().positive().max(5000) }).optional(),
 });
 export type DraftLoad = z.infer<typeof DraftLoadSchema>;
 

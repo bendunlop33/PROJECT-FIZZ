@@ -3,6 +3,7 @@ import { setSnapNote } from '../session/snap-text';
 import { briefLine } from '../session/target-why';
 import { loadDirection } from '../equipment';
 import { convertValue, fitHere, roundContextOf } from './loads';
+import { settleBackoffs } from './set-rows';
 import type { BuilderLoadSourceKind, BuilderSetRow, BuilderSlot, RestKind, SlotLoadInput } from './types';
 
 /**
@@ -220,9 +221,11 @@ export function plannedAsDraftPlan(input: PlannedAsDraftInput): PlannedAsDraft {
  * - (Final re-review S3) `sameItem`: the planner fitted its loads to the item the builder's `base` was fitted to. When
  *   it didn't, an edited slot that would take any load from `base` (a kept typed kg, an extra set) is `base` whole, so
  *   every load on the page is fitted to the one item Start plans it on.
+ * - (D4, review B1) `load` given: the back-offs follow the top the edited slot keeps (`settleBackoffs`). A saved
+ *   back-off was set for the planned top, so a lighter top Ben typed lowers it by the same %, as in Your workout.
  * Returns the slot and whether any load came from `planned` (its item is then the planner's). Pure.
  */
-export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: BuilderSlot, sameItem: boolean): { slot: BuilderSlot; fromPlanned: boolean } {
+export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: BuilderSlot, sameItem: boolean, load?: SlotLoadInput): { slot: BuilderSlot; fromPlanned: boolean } {
   const keep = (s: BuilderSlot): BuilderSlot => {
     const out: BuilderSlot = { ...s, key: slot.key, main: slot.main };
     delete out.restS;
@@ -252,6 +255,7 @@ export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: Buil
     const plain: BuilderSetRow = { ...r };
     delete plain.typed;
     delete plain.roundedFrom;
+    delete plain.backoffFrom;
     if (p !== undefined) {
       used.push(true);
       return { ...plain, load: p.load };
@@ -264,7 +268,7 @@ export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: Buil
   delete out.why;
   delete out.historyVersion;
   if (planned.why !== undefined) out.why = [...planned.why];
-  return { slot: out, fromPlanned: true };
+  return { slot: load === undefined ? out : settleBackoffs(out, load, planned), fromPlanned: true };
 }
 
 /**

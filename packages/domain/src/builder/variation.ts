@@ -85,7 +85,8 @@ export function applyVariation(template: BuilderWorkout, ops: readonly Variation
       case 'set_count': {
         const f = findSlot(op.exerciseId);
         if (f === null) return skip('anchor_missing');
-        const next = setWorkingCount(f.s, op.n);
+        // (D4, review S3) A main lift's Top set copied as a Back-off is worked out below the top, not at its kg.
+        const next = setWorkingCount(f.s, op.n, ctx.loads(f.s.exerciseId));
         w = { ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s === f.s ? next : s)) })) };
         return;
       }

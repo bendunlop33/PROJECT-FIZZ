@@ -176,6 +176,13 @@ export interface BuilderSetRow {
   /** A typed kg this gym's item rounded down: what Ben typed, in the slot's unit (`Why?` names the item; review S6). */
   roundedFrom?: number;
   /**
+   * (D4, HT8; review B1) A back-off whose load isn't worked out from the slot's anchor (a saved or coach-built
+   * workout's own back-off, or one the coach's load op kept): its load (`load`) against the top it was set for
+   * (`top`), both in the slot's unit. Today's top lower than `top` lowers it by the same %; higher leaves it at
+   * `load`. Measured from here, lowering the top again never compounds and putting it back puts the back-off back.
+   */
+  backoffFrom?: { load: number; top: number };
+  /**
    * (22 Oct) A timed set's work time, seconds (a plank, a ride): the set is counted in time, not reps (`reps` is
    * then only a placeholder). Kept through the codec as the saved workout has it, so Start plans it as saved.
    */

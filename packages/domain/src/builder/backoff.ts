@@ -8,11 +8,14 @@ import type { MainFocus } from './types';
  * - A back-off's load is worked out from its own reps and target RPE (the anchor's e1RM, Epley with RIR = 10 − RPE,
  *   as every other set: `loadForSet`), then rounded down to what this gym can load. Not a fixed 90 % or 95 %.
  * - Sanity band below the top set, by main focus: Strength 2–8 %, Balanced 4–10 %, Muscle 8–15 %. Its top edge is a
- *   limit: a back-off is never within `band.min` of the top. Its lower edge is only a check (review B3, SP1): a
- *   back-off of many reps or a low RPE keeps the lighter load its reps and RPE give, never one heavier than Ben can do
- *   for them (`belowBackoffBand` says when it's outside).
- * - When today's top is lowered (Ben types a lighter top, the coach lowers it, a pain hold), the back-offs drop by
- *   the same %, rounded down (`lowerWithTop`). Raising the top never raises them.
+ *   limit: a back-off is never within `band.min` of the top it was worked out from. Its lower edge is only a check
+ *   (review B3, SP1): a back-off of many reps or a low RPE keeps the lighter load its reps and RPE give, never one
+ *   heavier than Ben can do for them.
+ * - The top it was worked out from (`builtTop`) is the top set at its own reps and RPE from the same anchor. When
+ *   today's top is lower (Ben types a lighter top, the coach lowers it, a pain hold), the back-offs are that much
+ *   lower by the same %, rounded down (`lowerWithTop`). Raising the top never raises them. Always measured from the
+ *   top they were worked out from, never from the top before the last edit, so lowering again never compounds and
+ *   putting the top back puts them back (review B1).
  * - Assisted and added-weight lifts have no formula: their back-offs keep the working kg, as before (§3.1.6).
  */
 
@@ -76,4 +79,29 @@ export function belowBackoffBand(load: number | null, top: number | null, focus?
 export function lowerWithTop(load: number | null, from: number | null, to: number | null): number | null {
   if (load === null || from === null || to === null || !(from > 0) || !(to < from)) return load;
   return tidy((load * to) / from);
+}
+
+export interface BackoffTargetInput {
+  anchorE1rm: number;
+  reps: number;
+  rpe: number;
+  /** The top set at its own reps and RPE from the same anchor, rounded down here without the pain hold; null = no top set. */
+  builtTop: number | null;
+  /** Today's top set as it stands (Ben's kg, the coach's, a pain hold); null = unknown. */
+  topNow: number | null;
+  focus?: MainFocus | undefined;
+}
+
+/**
+ * `backoffTarget` (D4, HT8; review B1–B3): one back-off's load before the final rounding, as a function of the slot's
+ * anchor and its top now, never of the edits before. `built`: from its reps and RPE below `builtTop` (`backoffLoad`),
+ * rounded down on the item by `snapDown` (the back-off as built here, before any pain hold). When today's top is lower
+ * than `builtTop`, the same % lower: `min(built, built × topNow / builtTop)` (HT8's worked example scales the shown
+ * back-off). Round the result down after. Every path that works out a back-off (the build, Your workout's edits,
+ * `Gym changed`, the coach's edits) uses it, so they agree.
+ */
+export function backoffTarget(input: BackoffTargetInput, snapDown: (v: number) => number | null = (v) => v): number | null {
+  const raw = backoffLoad({ anchorE1rm: input.anchorE1rm, working: null, reps: input.reps, rpe: input.rpe, top: input.builtTop, focus: input.focus });
+  const built = raw === null ? null : snapDown(raw);
+  return lowerWithTop(built, input.builtTop, input.topNow);
 }
