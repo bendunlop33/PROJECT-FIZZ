@@ -452,3 +452,16 @@ Result: bench 4, incline 2, face pull 4, **lateral raise 4**. Triceps pushdown i
   - drop exercises
 
   Time now has a note and Undo for the same kinds of change. If Ben wants Set up's Length to say what it did too, that's a separate small change.
+
+## Resolution (23 Oct 2026, PM)
+
+Merged into `claude/gracious-knuth-joxqpw` (5e5cac8); typecheck, lint and the full suite pass on the merge (473 files, 8,794 tests). The merge ports S3's same-item check into the per-copy gym change.
+
+- **SP1:** items 2–6 were put to Ben on 22 Oct with "reply with any you disagree with"; he raised none, so they stand.
+- **SP2:** Time is today-only. `Update … in your plan` saves the plan day's own length, never Time.
+- **SP3:** FT3 and FT8 in `fit-to-time.md` are superseded by the 22 Oct revision (to mark in the next docs pass).
+- **SP4:** superset pairing happens only when Supersets is on (V14).
+- **SP5:** Today's card moves to the 22 Oct revision too (cheapest cut, superset saving when on, carry-over). Follow-up build.
+- **SP6:** for a draft Today's card already fitted, "the original" is the plan day's full workout.
+
+Told to Ben with "unless you object"; revisit if he does.
