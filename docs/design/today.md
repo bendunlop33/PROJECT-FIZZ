@@ -1,5 +1,7 @@
 # Today
 
+> **Superseded (Ben, 20–23 Oct 2026).** Today is now Today v2 ([workout-builder-v3.md](workout-builder-v3.md) §2.0), with a plan the lean card of 22–23 Oct (rows, Start, Time, Edit; §2.0.2) and the block week in the header ([training-blocks.md](training-blocks.md) §3.1). Kept for history and for the states v2 keeps unchanged (Resume, stale workout, check-in line, pain check line, banners; workout-builder-v3 §2.0.9).
+
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) S4 and S5: the stale card's Finish passes the chosen end time to `finishWorkout(…, endedAt)` in one call, and is blocked with a Stop prompt if a work timer was left running. `Empty workout` now opens the empty-workout state. Discard of a 0-set workout has no Undo.
 >
 > **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions" S8: the stale card's Stop → Finish path also completes when the workout was left paused (Stop ends the interval at the pause start and doesn't resume) (§3 transitions, §4).

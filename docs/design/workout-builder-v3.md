@@ -2,6 +2,23 @@
 
 Status: **Approved by Ben, 20 Oct 2026** ("go" with the designer's recommended answers to §9; later 20 Oct additions on Today, Mix it up, auto-reviews and Progress › Reviews included). Rev 3+.
 
+> **Revision (Ben, 22–23 Oct): decisions D1–D5, D8, D9.** These win where older text below differs. Prototypes: `prototypes/training-blocks.html` (Today with a plan), `prototypes/workout-builder-v3.html`, `prototypes/app/` (whole app).
+> - **D1 Start always just starts, today only.** No `Today only` / `Update in your plan` / `Save as a variation` prompt anywhere (§1.3, §2.0.4, §2.8 old prompt and §2.9 `Update plan day` are superseded). On the Summary, **only** when Ben changed the workout's structure (swapped, added or removed exercises, or changed set counts) one row: `Keep for next time?` `Apply` / `Skip`. Apply changes that plan day (or that saved workout) only, with Undo. A Time change never asks: a short day isn't a new plan. Spec: new §2.8.
+> - **D2 The coach never applies unasked changes.** The background review of a pre-start draft (§2.0.3 step 2) is an offer line (`✦ Cable fly 3 → 2 sets? Apply ✕`) on Today's card and on Your workout; nothing changes until Apply. Weekly-review changes outside coach-adjustments CA8 "small" are Apply / Skip; stall resets and extra sets Ben didn't ask for always need Apply. Small next-session load/reps/sets changes on the Summary stay as approved (CLAUDE.md rule 3).
+> - **D3 Lean Today with a plan.** The card shows the session rows, `Start`, an inline `Time` control (with the fit note) and `Edit`. Main lift, Accessories, Abs and Supersets move to Your workout (Edit, §2.3a). No `Today only` tag. *(Review 23 Oct: D3 doesn't name `↻ Mix it up` (approved 20 Oct) or the session-type chips. Both leave the lean card; the designer proposes `↻ Mix it up` as a fifth row on Your workout's controls, and a saved variation picked on Set up's `Variation` row. Pending Ben, §9 Q-R6; the prototype has neither yet.)*
+> - **D4 Back-offs** come from their reps and effort, then snap down: §3.1 item 9.
+> - **D5 Muscles.** Broad groups for picking: `Chest`, `Back`, `Shoulders`, `Legs`, `Arms`, `Core` (Legs is one group, rear delts count as Back). The detailed list for counting (plan weekly sets, Progress): Chest, Back, Shoulders, Quads, Hamstrings, Calves, Biceps, Triceps, Core. A broad group is exactly the sum of its detailed parts. Supersedes §4.7's 22 Oct note and Q8's `Abs` label (the group is `Core`).
+> - **D8 Coach "next time" changes.** When Ben applies a coach change for his next workout in chat, it lands on that workout's Your workout draft as today-only edits, visible there (and on Today's card) with Undo (§2.1 note). This rebuilds `propose_next_workout_change` after the overview's retirement (CHANGELOG 2026-10-22, B3).
+> - **D9 Time** on Today and on Your workout is the one shared fit of [fit-to-time.md](fit-to-time.md)'s 22 Oct revision: shorter rests first, superset pairing only when Supersets is on, then the cheapest cut by training lost per minute, never the main lift; a carry-over offer of up to 4 sets to the next same-muscle day, with Undo. Supersedes the order in §2.0.2 item 3.
+>
+> **Review fixes (23 Oct, `docs/reviews/batch23-design.md`).** Designer fixes inside D1–D9; the ones that choose between readings are proposals for Ben (§9, R-questions).
+> - **Keep for next time? lists only Ben's own changes (B1, S1; SP1).** It compares his structure, replayed on the plan day's template for his chosen controls, with the template for that main lift. The fit's cuts and what it gives back, pairing, a deload and the coach's changes never show; picking another main lift picks that template. §2.8.
+> - **Edits on Your workout stay on Today (D3 regression).** Back on Today the card shows the edited draft (`Edited`), Start starts it, Edit reopens it with every control and edit; a control change keeps Ben's earlier edits (S3). §2.0.4, §2.0.5, §2.3a.
+> - **A coach offer goes stale (rule 5).** It reads against the draft as shown; once Ben or the fit changes that exercise it's withdrawn on both screens, and Apply changes only it. §2.0.3.
+> - **Back-offs (B2, D4 vs SS4/HT8).** No achievable load in the band: the one nearest the band below the top, never the top; a lowered top (pain hold, coach, Ben, deload) lowers the back-offs by the same %; the plan's focus band on Today and in the workout too. §3.1 item 9.
+> - **Fit (S2, S5).** Pairing is a counted step; the cut that loses least training overall; the carry-over is an offer by muscle. fit-to-time.md revision.
+> - **Set up chat (D5 regression).** A part Ben names (`add hamstrings`) is the exercise added. §2.2.
+
 **§1–§3 are for Ben. §4, §5 and §8 are for the developer.**
 
 Source: Ben's iteration of the prototype [`prototypes/workout-builder-v3.html`](prototypes/workout-builder-v3.html) on 20 Oct, the Today prototype [`prototypes/today-v2.html`](prototypes/today-v2.html), and his decisions that day. Tags:
@@ -45,10 +62,11 @@ Goal (Profile) → Plan (days, order, rotation; training blocks later)
 ### 1.3 Templates per main lift, with variations [Ben]
 
 - A plan day is saved **per main lift**: `Chest · bench` and `Chest · incline` are separate templates (Ben: "have them saved depending on what the main lift is").
-- Each template can have saved **variations**: `Chest · bench · arms superset`, `Chest · bench · abs superset` (Ben: "also have variations saved, such as including arm supersets or abs superset, so it doesn't lose stuff and have to redo unnecessarily"). Picked on Today's session-type chips or on Set up.
+- Each template can have saved **variations**: `Chest · bench · arms superset`, `Chest · bench · abs superset` (Ben: "also have variations saved, such as including arm supersets or abs superset, so it doesn't lose stuff and have to redo unnecessarily"). Picked on Set up's `Variation` row. ~~Picked on Today's session-type chips~~ (D3: the lean card has no chips; how a variation reaches Today or Your workout is open, §9 Q-R6).
 - [Proposal] A variation is stored as **the template plus its extras** (the added exercises and pairings), not as a full copy. So when the template changes, every variation picks up the change and nothing has to be redone (§4.3).
-- **`Save as default` is removed.** Edits are **today only** by default. On Start after edits, one prompt: `Today only` / `Update Chest · bench in your plan` / `Save as new variation` (§2.8). This is rule 2's scope choice.
-  - **With a plan (Ben, 22 Oct):** once any control differs from the plan's version of the day, the card shows a small `Today only` tag. `Update in your plan` no longer writes the plan directly: it opens Library › your plan with today's changes as items in its **Changes** review (accept or reject each, choose the weeks; done weeks and workouts untouched; plan-builder.md §2).
+- **`Save as default` is removed.** Edits are **today only**. ~~On Start after edits, one prompt: `Today only` / `Update Chest · bench in your plan` / `Save as new variation` (§2.8).~~ **Superseded (Ben, 22–23 Oct, D1):** Start always just starts. After the workout, if Ben changed its structure, the Summary asks once: `Keep for next time?` (§2.8). That row is rule 2's scope choice now: Apply changes only that plan day (or that saved workout), with Undo.
+  - ~~**With a plan (Ben, 22 Oct):** `Today only` tag; `Update in your plan` opens the plan's Changes review.~~ Superseded by D1 and D3 (Ben, 22–23 Oct): no tag, no prompt.
+  - **Open for Ben:** with `Save as new variation` gone from Start, nothing creates a new variation. Existing ones still show. A third choice on the Summary row (`Save as a version`) is one option; not added here.
 - Name format everywhere: `<Day> · <main lift>` and `<Day> · <main lift> · <variation>`.
 
 ---
@@ -69,7 +87,41 @@ Goal (Profile) → Plan (days, order, rotation; training blocks later)
 
 #### 2.0.2 Layout
 
-Regions, top to bottom:
+**Today with a plan, lean card (Ben, 22–23 Oct, D3; supersedes the five session controls, the collapsed `Session breakdown`, `↻ Mix it up` and the `Today only` tag below).** One primary: `Start`. Everything else on the card is a value, the Time control or `Edit`.
+
+```
+┌──────────────────────────────────────────┐
+│ Tuesday · Week 3 of 6          (✦)  (🎙) │
+│ SAT  SUN  MON ┃TODAY WED  THU  FRI       │  7-day strip (unchanged)
+│ TODAY'S SESSION                          │
+│ [ Chest ] Back   Legs  Shoulders   ⋯     │  day control, NEXT under the plan's day
+│ ┌──────────────────────────────────────┐ │
+│ │ Chest              5 exercises · ~47 min│ estimate
+│ │ ✦ Cable fly 3 → 2 sets?   Apply   ✕  │ │  only with a coach offer (D2)
+│ │ Time                  [−] 60 min [+] │ │  live fit: "Time · −1 exercise ›" (D9)
+│ │     Exercise              Sets  Top set│ │  every value a target
+│ │ 1  Barbell bench press      3   102.5 │ │
+│ │    1 × 6 + 2 × 8 · 102.5 / 95         │ │  main-lift format (D4 back-offs)
+│ │ 2  Incline dumbbell press   3  27.5 ea│ │
+│ │ 3  Cable fly                3    15   │ │
+│ │ ┌ 4a Triceps pushdown       3    30 ┐ │ │  superset box
+│ │ └ 4b Cable crunch           3    40 ┘ │ │
+│ │ Why?                                  │ │  collapsed, reasons only
+│ │ [          Start          ] [ Edit ]  │ │
+│ └──────────────────────────────────────┘ │
+│ [  Build your own  ] [   ＋ Activity   ] │
+└──────────────────────────────────────────┘
+```
+
+- **Rows are always shown** (no expand step): Ben sees what he's about to do before the one tap. If the card doesn't fit at large text sizes, the page scrolls; `Start` stays on the card, and the tab bar stays.
+- **Time** is the only control: `[−] 60 min [+]`, 5-minute steps, 20–120. It fits today's draft only (D9, fit-to-time 22 Oct revision and its 23 Oct review fixes). With a live fit, a short note follows the label in light orange (`· −1 exercise ›`, else `· −3 sets ›`, else `· shorter rests ›`); a tap lists everything it changed and the carry-over offer, one muscle per line, to that muscle's next day (`+3 triceps sets on your next Shoulders day?` `Carry over`; after, `Undo`) [Proposal, review S5/SP3]. The control itself never moves.
+- **Edit** opens Your workout with this draft (§2.3), where Main lift, Accessories, Abs and Supersets now live (§2.3a).
+- **Back from Your workout (review 23 Oct; resolves §2.0.4 vs §2.0.5).** What Ben changed on Your workout is today's draft: the card shows it, with `Edited` under the minutes; `Start` starts it; `Edit` reopens it with every control and edit; Time refits around it (his edits always stand, FT5). Each plan day keeps its own edited draft while Ben looks at another day [Proposal]. The prototype carries controls and structure edits (exercises, set counts) back; loads, reps, order and pairing typed on Your workout stay in Your workout's draft in the build (§4.4) but not in the prototype's card.
+- **States added:** coach offer line (D2: `✦ <change>?` `Apply` `✕`; Apply changes that value on today's draft only, with an Undo toast; ✕ skips it, with Undo; withdrawn once the fit or Ben changes that exercise, §2.0.3); early-deload offer (training-blocks §3.1) above it when both apply. Offline or coach not connected: no coach line; `Why?` ends `Not reviewed · Offline`.
+- **Copy:** `Start` · `Edit` · `Edited` · `Time` · `45 min` · `−1 exercise` / `−3 sets` / `shorter rests` (estimate notes) · `+3 triceps sets on your next Shoulders day?` · `Carry over` · `Undo` · `Out of date` · `Why?`. No `Today only`, no `Session breakdown`.
+- **Acceptance (D3):** with a plan, Today's card has no Main lift, Accessories, Abs or Supersets control, no `Today only` tag and no Start prompt; it shows the rows, `Start`, `Time` and `Edit`. Changing only Time and tapping Start starts the workout at once. Edit → Abs off → `‹ Today`: the card has no Cable crunch and says `Edited`; Edit again shows Abs off; Start starts without abs.
+
+Regions, top to bottom (20 Oct; the session card is now the lean card above):
 
 1. **Day title** `Tuesday`, with the `GymChip` trailing [title Ben/Proto; GymChip kept from today.md, Proposal].
 2. **Coach bar + mic** `✦ Ask the coach` [Ben]. Opens the coach sheet (never full screen); the mic starts listening at once.
@@ -77,8 +129,8 @@ Regions, top to bottom:
 4. **Banners / rare lines** from today.md (failed backup, check-in line, pain `Still hurts?` line), unchanged, at most two [Proposal].
 5. **`Today's session`** [Ben]:
    - **Day segmented control**: the plan's days in plan order, `Chest` `Back` `Legs` `Shoulders` `⋯`. `NEXT` under the plan's next day, which is selected on open. Any day is one tap. `⋯` opens **Other workouts**.
-   - **Session-type chips** for the chosen day: its main-lift templates, then its saved variations (`Bench` `Incline` `Bench · arms superset`). Shown only when the day has more than one. The first is the last-used one [Proposal].
-   - **Session card**, collapsed by default.
+   - ~~**Session-type chips** for the chosen day: its main-lift templates, then its saved variations (`Bench` `Incline` `Bench · arms superset`). Shown only when the day has more than one. The first is the last-used one [Proposal].~~ (D3: none on the lean card; the main lift is on Your workout.)
+   - **Session card**, ~~collapsed by default~~ (D3: rows always shown, the lean card above).
 6. **`Build your own`** and **`＋ Activity`** side by side [Proto].
 7. Tab bar: Today · Library · Progress · Profile.
 
@@ -119,7 +171,7 @@ Expanded (tap anywhere on the card except the buttons):
 │ │ 5 exercises · ~55 min · plan day 1/4 │ │
 │ │ Target          sets × reps · kg     │ │
 │ │ 1  Barbell bench press               │ │
-│ │    1 × 6 + 2 × 8 · 102.5 / 92.5      │ │  main-lift format
+│ │    1 × 6 + 2 × 8 · 102.5 / 95        │ │  main-lift format
 │ │ 2  Incline DB press  3 × 8 · 27.5 ea │ │
 │ │ 3  Cable fly             3 × 8 · 15  │ │
 │ │ 4a Triceps pushdown      3 × 8 · 30  │ │  superset a/b
@@ -164,10 +216,10 @@ Other workouts sheet (`⋯`), half height [Proto]:
 - **Strip items** [Ben]: done workout `✓ Shoulders` (green fill), done activity `Run 12k` (run colour fill), planned plan day `Legs` and planned run `Run 8k` (dashed outline, same colour, plus `Planned` in the VoiceOver label and the sheet), rest `Rest` (text only). Colour is never the only signal (fill vs dashed outline, plus the VoiceOver word `done` / `Planned`); no ✓ in cells (Ben, 21 Oct; the accessibility list keeps it). Today's cell has the accent outline and shows the chosen day.
 - **Runs** (logged or planned) appear only when Ben logged them (`＋ Activity`) or told the coach (`log_activity`) [Ben]. Nothing is inferred or added by the plan. [Proposal] The same goes for future plan days: they show only when dated (a week change Ben applied, or days he told the coach); otherwise future cells stay empty, since the rotation has no dates.
 - **Cells** are ≥ 44 pt wide at 390 pt (7 × ~47 pt). At accessibility Dynamic Type sizes the strip becomes a 7-row list (`Sat 17 · ✓ Shoulders`) [Proposal].
-- **Session controls** [Ben, 20 Oct: "when click chest, it should say Main lift: bench, incline. and have option for superset on/off. these are the core crux of the session"]: under the day control, five compact rows (about 38 pt visible, small labels and chips; each control keeps a 44 pt tap area) [Ben, 20 Oct: "make the main lift through to supersets a bit smaller"], and the card rebuilds from them:
+- **Session controls** *(Ben, 22–23 Oct, D3: with a plan only Time stays on the card; Main lift, Accessories, Abs and Supersets are on Your workout, §2.3a. The no-plan card keeps all five.)* [Ben, 20 Oct: "when click chest, it should say Main lift: bench, incline. and have option for superset on/off. these are the core crux of the session"]: under the day control, five compact rows (about 38 pt visible, small labels and chips; each control keeps a 44 pt tap area) [Ben, 20 Oct: "make the main lift through to supersets a bit smaller"], and the card rebuilds from them:
   1. `Main lift`: one chip per main-lift template (Bench · Incline).
   2. `Accessories`: `Focused` (2 accessories × 3 sets) / `Varied` (3 accessories × 2 sets at different angles, e.g. incline press, cable crossover, dips) [Ben, 20 Oct]. Default from the Profile goal: Strength → Focused, Muscle/Both → Varied [Proposal].
-  3. `Time`: − / + in 5-min steps, default the plan's length [Ben, 20 Oct: "quickly adjust everything without me having to build a whole new workout"]. Shorter time applies, in order, only as far as needed: (a) shorter rests, then shortest (main 3:00→2:00, compound 2:00→1:15, isolation 1:30→1:00, superset round 1:30→1:00); (b) push effort: accessory last sets to RPE 9; (c) fewer accessory sets (not below 2); (d) drop exercises: abs, then the other group's isolation, then accessory isolations, compounds last; never the main lift. Longer than the plan: normal rests, +1 set on accessories (max 4), then add an exercise from the day's pool. The card shows one line, e.g. `To fit 45 min: shorter rests · 2 sets fewer`. Main-lift loads never change for time [Proposal].
+  3. `Time` *(the fit order below is superseded by D9, Ben 22–23 Oct: fit-to-time.md's 22 Oct revision; no pushed effort, supersets only when Supersets is on)*: − / + in 5-min steps, default the plan's length [Ben, 20 Oct: "quickly adjust everything without me having to build a whole new workout"]. Shorter time applies, in order, only as far as needed: (a) shorter rests, then shortest (main 3:00→2:00, compound 2:00→1:15, isolation 1:30→1:00, superset round 1:30→1:00); (b) push effort: accessory last sets to RPE 9; (c) fewer accessory sets (not below 2); (d) drop exercises: abs, then the other group's isolation, then accessory isolations, compounds last; never the main lift. Longer than the plan: normal rests, +1 set on accessories (max 4), then add an exercise from the day's pool. The card shows one line, e.g. `To fit 45 min: shorter rests · 2 sets fewer`. Main-lift loads never change for time [Proposal].
   - Freed time is filled [Ben, 20 Oct: "if you remove abs and we then have more time, we should be increasing the number of exercises, e.g. have 2 arm exercises, maybe another chest"]: when abs (or anything else) comes out and the time allows, exercises are added before sets: first a second arm exercise, then another accessory for the day's main group. With supersets on, abs off gives the arm exercise an arm partner in the same slot (pushdown + curl), so the time stays the same. The plan's own spare minutes are kept as a buffer; only time beyond that is filled.
   4. `Abs` on/off [Ben, 20 Oct]: default from the plan ("the coach should recommend whether abs are on or not based on the plan"); when Ben differs, a small `plan: on/off` shows under the label. Off removes the ab exercise and splits its superset.
   5. `Supersets` on/off.
@@ -188,16 +240,17 @@ Other workouts sheet (`⋯`), half height [Proto]:
 - **Session-type chips** [Ben]: ≥ 44 pt high (the prototype's 40 pt is too small). The selected chip is filled and carries `●` / selected trait. Labels: `<main lift>` for templates, `<main lift> · <variation>` for variations. They wrap to a second line rather than scroll.
 - **Other workouts (`⋯`)** [Ben]: other split days (`Push`, `Pull`, tagged `PPL day`), recent non-plan workouts from the last 14 days (`Recent · 17 Oct`), then `Build your own`. Tapping a row puts it on the card; the day control then shows no selected segment [Proposal]. `Empty workout` is the last row [Proposal].
 - **Clash warning** [Ben]: one line on the card when the chosen session clashes with the week: `! Long run Saturday: legs fit better Thursday`. From the weekflex run rule (CHANGELOG 2026-10-20), so it only fires on runs Ben logged or told the coach. Never blocks Start.
-- The card's workout **is the builder draft** (§4.4): Edit, Start and the builder all use the same draft, so edits made in the builder show on the card, which then reads `Chest · Bench · edited` [Proposal].
-- **Edit opens Today's draft (22 Oct, design review V1/V2/V4/V6).** With a plan, `Edit` opens Your workout with exactly what the card shows: day, time, minutes, supersets (including any fit-to-time added), exercises, sets, reps and kg, and any today-only changes (main lift, Mix it up, abs). It never opens Set up or a different fixture. Back returns to Today with the card unchanged. Start from there goes straight to the active workout. `Open in builder ›` on a plan day does the same with that day for the week being viewed.
-- **One main-lift format (22 Oct, design review V1/V2/V4/V6).** The main lift reads `1 × 6 + 2 × 8 · 102.5 / 92.5` (top set + back-offs · top / back-off kg; dumbbells add `each`) on Today, in the builder, in the plan's day view and week sheet, and in the active workout header. A bodyweight main lift reads `3 × 8`. All values are targets.
+- The card's workout **is the builder draft** (§4.4): Edit, Start and the builder all use the same draft, so edits made in the builder show on the card, which then shows `Edited` under its minutes (review 23 Oct; was `Chest · Bench · edited`).
+- **Edit opens Today's draft (22 Oct, design review V1/V2/V4/V6).** With a plan, `Edit` opens Your workout with exactly what the card shows: day, time, minutes, supersets (including any fit-to-time added), exercises, sets, reps and kg, and any today-only changes (main lift, Mix it up, abs). It never opens Set up or a different fixture. ~~Back returns to Today with the card unchanged.~~ `‹ Today` returns to Today with whatever Ben changed there on the card (`Edited`; review 23 Oct, D3). Start from there goes straight to the active workout. `Open in builder ›` on a plan day does the same with that day for the week being viewed.
+- **One main-lift format (22 Oct, design review V1/V2/V4/V6).** The main lift reads `1 × 6 + 2 × 8 · 102.5 / 95` (top set + back-offs · top / back-off kg; dumbbells add `each`; back-offs from D4, Ben 22–23 Oct) on Today, in the builder, in the plan's day view and week sheet, and in the active workout header. A bodyweight main lift reads `3 × 8`. All values are targets.
 
 #### 2.0.3 How the recommendation is made [Ben asked; steps Proposal]
 
 Plain words, for Ben:
 
 1. **Code drafts it.** Next plan day (adaptive Up next, after this week's runs rule) → that day's template, with the variation last used → loads from history (§3.1) → fitted to his usual length (§3.6) → active `From last review` notes applied (a numeric note sets the load; `Include abs` adds abs).
-2. **The coach reviews the draft**, with his goal, lift targets, recent RPE, pain flags and memories. It changes something only with a clear reason (rule 3): a small load/reps/sets change is applied and shown with its reason and Undo; a swap, add or remove is an offer (`✦ Swap Cable fly for Incline press? Apply`), never applied on its own.
+2. **The coach reviews the draft**, with his goal, lift targets, recent RPE, pain flags and memories. It speaks only with a clear reason (rule 3), and **everything it suggests is an offer** (Ben, 22–23 Oct, D2; supersedes "a small change is applied"): one line on Today's card and on Your workout, `✦ Bench 102.5 → 100? Apply ✕` or `✦ Swap Cable fly for Incline press? Apply ✕`. Nothing changes until Apply; Apply changes today's draft only, with an Undo toast; ✕ skips it (Undo brings the line back). The reason is behind `Why?` (Today) or a tap on the line (Your workout). Start ignores a pending offer.
+   - **An offer reads against the draft as shown (rule 5; review 23 Oct).** It carries the value it changes from (`Cable fly 3 → 2`). Once the fit (a new Time) or Ben changes that exercise so it no longer reads that way, the line is withdrawn on Today and on Your workout alike; an Apply that arrives stale is refused with `Out of date` and nothing changes. Apply changes only that value on the draft as shown: nothing is refitted around it. A load offer (`Bench 102.5 → 100`) lowers the back-offs by the same % (§3.1 item 9). Prototyped: `Cable fly 3 → 2 sets?`; the Bench load offer is spec only.
 3. **Code checks every number**: loads this gym can make, equipment min/max, pain flags, limits (rules 4, 9).
 4. **Based on shows it**: the facts code used, plus the coach's one-line reason when it changed something. If no coach review happened, the last line says so (`Not reviewed · Offline`).
 
@@ -208,18 +261,18 @@ Picking another day or session type drafts that one the same way (steps 1, 3, 4)
 | State | Behaviour |
 |---|---|
 | Normal | As the wireframes. The plan's next day selected, `NEXT` under it, its last-used type selected |
-| Loading | The code draft is local, so the card shows at once. No spinner; the coach's change, if any, arrives later as one Based on line + Undo, and the card never moves under a finger: if Ben has touched the card in the last 2 s it waits [Proposal] |
+| Loading | The code draft is local, so the card shows at once. No spinner; the coach's review, if it has anything, arrives later as one offer line (D2, Ben 22–23 Oct), and the card never moves under a finger: if Ben has touched the card in the last 2 s it waits [Proposal] |
 | Offline / AI unavailable | Card = code draft. Based on ends `Not reviewed · Offline` or `Not reviewed · Coach not connected`. Coach bar shows `Offline`; in the coach sheet, Set up words still fill the builder (§2.6) |
-| Other day or type picked | Card shows it, collapsed; no `plan day N of 4`. Tapping the `NEXT` segment goes back. [Ben, 20 Oct: "if you changed the session today it would change the calendar plan which it should"] The week's planned days reflow straight away in the strip: the skipped day moves into the next lifting slot in plan order (legs never the day before a long run), and the card's sub-line says so, e.g. `Chest moves to Thu`. Committed when the session starts; Up next is credited by what Ben does (§4.2) |
+| Other day picked | Card shows it (D3: rows always shown; no type chips); no `plan day N of 4`. Tapping the `NEXT` segment goes back. Each day keeps its own edited draft [Proposal]. [Ben, 20 Oct: "if you changed the session today it would change the calendar plan which it should"] The week's planned days reflow straight away in the strip: the skipped day moves into the next lifting slot in plan order (legs never the day before a long run), and the card's sub-line says so, e.g. `Chest moves to Thu`. Committed when the session starts; Up next is credited by what Ben does (§4.2) |
 | One type only | No chips; the card name still shows the main lift (`Legs · Squat`) |
 | From `⋯` | Card shows that workout (`Push`, `Hotel shoulders · 17 Oct`); no segment selected |
 | Clash | One `!` line (above); Start still works |
-| Coach offer pending | One `✦` offer line in the expanded card; Start ignores it (starts without it) |
-| Edited in builder | Card shows `Chest · Bench · edited`; Start = the edited draft, through the Start prompt (§2.8). Picking another day or type keeps the edited draft for when Ben comes back [Proposal] |
+| Coach offer pending | One `✦` offer line on the card, above Time; Start ignores it (starts without it). Withdrawn once the fit or Ben changes that exercise (§2.0.3) |
+| Edited on Your workout | Card shows the edited draft with `Edited` under the minutes (review 23 Oct; was `Chest · Bench · edited`); Start = the edited draft, straight away (D1: no Start prompt; the Summary may ask `Keep for next time?`, §2.8); Edit reopens it with every control and edit; Time refits around Ben's edits (FT5). Picking another day keeps the edited draft for when Ben comes back [Proposal]. Going back to the plan's own version: Edit and Undo, or the controls back to the plan's (open, §9 Q-R7) |
 | Workout in progress | Resume card replaces Today's session (today.md, unchanged); day control, chips and Build your own hidden; strip stays |
 | Stale unfinished workout | today.md's stale card, unchanged |
 | Done today | Card becomes `✓ Chest · 58 min ›` (opens Summary), no Start; day control and Build your own stay for a second session, no day selected |
-| No plan | **(Ben, 22 Oct) A day row from Profile › Split sits above the card** (`Back NEXT · Chest · Legs · Shoulders · ⋯`; NEXT = the Up next resolver's pick; picking another day shows it, `Picked by you`, today only, and the suggestion moves on; ⋯ = other workouts). This answers the pending SP4 question: a split without a plan shows as day tabs. **The card keeps the same controls as with a plan** (main lift, accessories, time with the fit note after it in light orange, abs, supersets; today only, `Today only` tag) so it can be shortened or changed before Start. No day control; `No plan` and `Set up a plan ›` on one row; when the app's Up next resolver names a workout (Profile split, routines in rotation, else the longest gap; as the old Today), an `Up next · <name>` row with `Start` (one tap, as the card; never the overview) is the main action and `Build your own` is secondary, otherwise `Build your own` is primary; the Other sessions and `Empty workout` as one row of chips; `＋ Activity` beside Build your own (built 21 Oct; **pending Ben**: whether a split or rotation without an applied plan should instead show as plan days, review today-fix-21oct SP4) |
+| No plan | *(Rewritten 23 Oct, review S4; Ben 22 Oct, D7.)* Top to bottom: `No plan` and `Set up a plan ›` on one row; **a day row from Profile › Split** (the one split source without a plan, D7): `Chest NEXT · Back · Legs · Shoulders · ⋯` (NEXT = the Up next resolver's pick: Profile split, routines in rotation, else the longest gap; picking another day shows it, `Picked by you`, today only, and the suggestion moves on; `⋯` = Other workouts: Full body, Upper, Push, `Empty workout`, saved workouts; no chip row under the card). Then the `Up next` card (`Today` when picked): day, `N exercises · ~M min`, the main-lift line, and its own today-only controls: Main lift, Accessories, Time (fit note in light orange, the shared fit, D9), Abs, Supersets; **no `Today only` tag** (D1: edits are always today only), and `Start` (one tap; never the overview). Below: `Build your own` and `＋ Activity` side by side. With no split and nothing to resolve, `Build your own` is the primary. The no-plan card keeps its controls (D3 is about Today with a plan). Back-offs use the band the Profile goal maps to (strength → Strength, muscle → Muscle, both → Balanced) [Proposal, review SP8]. **Pending Ben:** whether a split without an applied plan should show as plan days (review today-fix-21oct SP4) |
 | Plan paused | Day control shows the paused plan's days, none marked `NEXT`; `Plan paused` under the label |
 | First use | Strip shows today only; as No plan |
 | Large Dynamic Type | Strip as a list; day control as a `Day` row; chips wrap |
@@ -229,11 +282,11 @@ Picking another day or session type drafts that one the same way (steps 1, 3, 4)
 | Action | Result |
 |---|---|
 | `Start` | Starts the card's workout as is (check-in sheet when due). No builder, no overview |
-| Tap a day segment | That plan day on the card, its first type selected, collapsed. VoiceOver: tab `Chest, next, 1 of 5` |
-| Tap a type chip | That template or variation on the card, collapsed |
+| Tap a day segment | That plan day on the card (its own edited draft if Ben edited it today). VoiceOver: tab `Chest, next, 1 of 5` |
+| ~~Tap a type chip~~ | ~~That template or variation on the card, collapsed~~ (D3: no chips on the lean card) |
 | `⋯` | Other workouts sheet; a row puts it on the card; `Build your own` → Set up |
-| Tap card | Expand / collapse. VoiceOver: one button `Chest, Bench, details, collapsed` |
-| `Edit` | Builder, Your workout (page 2) with this draft, today-only changes included. Back returns to Today unchanged (22 Oct, design review V1/V2/V4/V6) |
+| ~~Tap card~~ | ~~Expand / collapse~~ (D3: rows always shown; the card isn't a button) |
+| `Edit` | Builder, Your workout (page 2) with this draft, its controls and Ben's earlier edits. `‹ Today` returns to Today with what he changed there on the card (`Edited`); nothing changed, the card is as it was (review 23 Oct; supersedes "Back returns to Today unchanged", 22 Oct) |
 | `✕` on a review note | Note off for today; toast `Note hidden · Undo` |
 | `Undo` on a coach line | Restores the code draft value (versioned, rule 5) |
 | `Build your own` | Builder Set up, Day = the card's day |
@@ -244,24 +297,24 @@ Picking another day or session type drafts that one the same way (steps 1, 3, 4)
 
 #### 2.0.6 Copy
 
-`Ask the coach` · `Today's session` · `NEXT` · `⋯` (VoiceOver `Other workouts`) · card `Chest · Bench` / `5 exercises · ~55 min · plan day 1 of 4` (the minutes are an estimate) · `Start` · `Edit` · `Target` (list header; every list value is a target) · `From last review` · `Based on` (dated lines are actuals, `target` lines are targets) · `Not reviewed · Offline` · `Other workouts` · `PPL day` · `Recent · 17 Oct` · `Build your own` · `＋ Activity` · `Move or change (coach)` · `Planned` · `Close`. No plan line, no run counter [Ben]. Est. 1RM never appears on Today (only behind `Why this weight?`, labelled estimate).
+`Ask the coach` · `Today's session` · `NEXT` · `⋯` (VoiceOver `Other workouts`) · card `Chest` / `5 exercises · ~47 min` (the minutes are an estimate; D3, was `Chest · Bench` / `… · plan day 1 of 4`) · `Edited` · `Start` · `Edit` · `Target` (list header; every list value is a target) · `From last review` · `Based on` (dated lines are actuals, `target` lines are targets) · `Not reviewed · Offline` · `Other workouts` · `PPL day` · `Recent · 17 Oct` · `Build your own` · `＋ Activity` · `Move or change (coach)` · `Planned` · `Close`. No plan line, no run counter [Ben]. Est. 1RM never appears on Today (only behind `Why this weight?`, labelled estimate).
 
 #### 2.0.7 Data needed
 
-`planUpNext` + the weekflex run rule (`NEXT`); `planRoutines` + variations per (splitDayId, mainLift) for the segments and chips (§4.2, §4.3); `checkScheduleConflicts` (clash line); Ben's activities (only those he logged or told the coach) and finished sessions for the strip; recent non-plan workouts and the Profile's other split for `⋯`; week plan (`propose_week` results); `buildFromSetup` / `applyVariation` / `fitPlanToMinutes` / `estimateBuilderMinutes` / `snapPlanToGym`; load sources (§4.1); day notes; `shouldAskCheckIn`; Resume via `estimateRemainingDuration`. New [Proposal]: `buildTodayWeekView` (7 cells, items, planned flag), `buildTodaySessionPicker` (days, `nextDayId`, types per day, other workouts) and `buildRecommendationView` (draft, `basedOn: BasedOnFact[]` from code only, `coachLines`, `reviewStatus: 'reviewed' | 'offline' | 'not_connected' | 'pending'`). The coach review uses `review_workout`'s fact checks; small changes go through `set_next_session_targets`, structural ones through `propose_workout_edit` as an offer.
+`planUpNext` + the weekflex run rule (`NEXT`); `planRoutines` + variations per (splitDayId, mainLift) for the segments and chips (§4.2, §4.3); `checkScheduleConflicts` (clash line); Ben's activities (only those he logged or told the coach) and finished sessions for the strip; recent non-plan workouts and the Profile's other split for `⋯`; week plan (`propose_week` results); `buildFromSetup` / `applyVariation` / `fitPlanToMinutes` / `estimateBuilderMinutes` / `snapPlanToGym`; load sources (§4.1); day notes; `shouldAskCheckIn`; Resume via `estimateRemainingDuration`. New [Proposal]: `buildTodayWeekView` (7 cells, items, planned flag), `buildTodaySessionPicker` (days, `nextDayId`, types per day, other workouts) and `buildRecommendationView` (draft, `basedOn: BasedOnFact[]` from code only, `coachLines`, `reviewStatus: 'reviewed' | 'offline' | 'not_connected' | 'pending'`). The coach review uses `review_workout`'s fact checks; **every change it suggests before Start is an offer** through `propose_workout_edit` (D2; carries the draft version and each changed value's `from`, so a stale Apply is refused, rule 5), never an applying tool. `set_next_session_targets` stays for the Summary's next-session targets only (CLAUDE.md rule 3). *(Review 23 Oct: was "small changes go through `set_next_session_targets`", which applied them.)*
 
 #### 2.0.8 Acceptance checks
 
 1. Airplane mode: Today shows the card, `Start` logs a first set with no network; Based on ends `Not reviewed · Offline`; no coach text anywhere.
 2. From cold open to the first set: 1 tap on Start (check-in not due).
-3. Collapsed card shows only `Day · Main lift`, exercise count, `~N min`, `plan day N of 4` (next day only), Start, Edit.
-4. Every Based on line matches stored data (dates, actuals, targets); a coach line appears only when the draft differs from the code draft, and Undo restores it.
+3. *(D3; was the collapsed card.)* The card shows the day, `N exercises · ~M min`, the rows, Time, Start and Edit; no `plan day N of 4`, no type chips, no Main lift / Accessories / Abs / Supersets controls.
+4. Every `Why?` line matches stored data (dates, actuals, targets). A coach line appears only as an offer (`✦ … ? Apply ✕`, D2) and changes nothing until Apply; Apply changes only that value, and Undo restores the code draft value. Once the fit or Ben changes that exercise, the offer is gone on Today and on Your workout.
 5. A coach structural change is never applied without `Apply`.
 6. Strip: done items are a filled soft-green pill (no ✓), planned ones a dashed outline and `Planned` in VoiceOver; a run logged in the Activity sheet appears at once. With no activities logged or told to the coach, no run appears anywhere on Today.
 7. With a long run Saturday logged, picking Legs on Friday shows the `!` line; Start still works. Without it, no line.
 8. Picking another day, type or `⋯` workout changes no plan data; doing Shoulders today moves Up next past Shoulders.
-9. Chest with Bench, Incline and one variation shows 3 chips; Legs with one template shows none. Each pick is one tap and changes the card name.
-10. Edit, change one exercise, back to Today: the card shows `Chest · Bench · edited`, and Start shows the §2.8 prompt.
+9. *(D3; was 3 type chips on Today.)* Chest with Bench and Incline: Today shows no chips; Your workout from Edit shows `Main lift (Bench) (Incline)`; Legs with one main lift shows no Main lift row.
+10. ~~Edit, change one exercise, back to Today: the card shows `Chest · Bench · edited`, and Start shows the §2.8 prompt.~~ (D1, Ben 22–23 Oct) Edit, change one exercise, Start: the workout starts with no prompt; after Finish the Summary shows `Keep for next time?` listing that change. Changing only Time never shows it.
 11. With a workout in progress, the Resume card replaces Today's session and is one tap.
 12. Segments, chips and buttons ≥ 44 pt; loads and times tabular; the strip and day control become lists at accessibility sizes.
 
@@ -296,6 +349,7 @@ Unchanged: Resume card, stale card, check-in line, pain check line, banners, che
 | Exercise detail, `Used in` row | Your workout, that workout (`‹ Back`) | [Ben, 22 Oct] |
 | Summary, `Saved · <name> ›` | Your workout, the saved workout (`‹ Summary`) | [Ben, 22 Oct] |
 | Up next with no plan (`next` target) | Your workout, the routine or last workout's next session. Built in the service; no screen uses it yet | [Ben, 22 Oct] |
+| Coach chat, `Apply` on a change for the next workout (`Swap fly for crossover next Chest`) | Nothing opens. The change lands on that workout's Your workout draft as today-only edits (author `coach`, one action ID), shown there and on Today's card when that day comes up, each with Undo. The plan day and saved workout don't change, and the Summary's `Keep for next time?` doesn't list coach edits (only Ben's own, §2.8); "from now on" is a template proposal (change-review). A draft that changed since the proposal refuses it (`Out of date. Ask again.`, rule 5). **Where it waits (review 23 Oct SP5, proposal for Ben):** applied days ahead, there is no draft yet, so it is stored as a pending coach `TodayEdit` on that plan day (template ID, main lift, template version, action ID). When that day's draft is first made (Today or Your workout) it is replayed with Undo, if the template version, main lift and the exercise it names still match; otherwise it isn't applied and Today shows once `Coach change for Chest out of date` (with `Why?`). A `Keep for next time?` Apply or a plan edit that lands first makes it stale the same way; it expires once that plan day is done or after 14 days. **Spec only: no prototype lands a chat change on a later Your workout (review S8).** | Ben, 22–23 Oct (D8). Rebuilds `propose_next_workout_change` (CHANGELOG 2026-10-22, B3) |
 | Reopen today after leaving (or a force-close) before Start | The same unstarted workout, with every edit kept | [Proposal] |
 | Resuming a workout in progress | **Never** the builder (unchanged) | — |
 
@@ -303,7 +357,7 @@ Unchanged: Resume card, stale card, check-in line, pain check line, banners, che
 
 **What the overview had that Your workout now has too.** A Time control to shorten the workout before Start (§2.3; Ben, 22 Oct: "add option to reduce time"). Also built, relayed by the PM as Ben's decisions on 22 Oct and **pending Ben's confirmation**: cardio, timed sets and the same exercise twice show and start exactly as the saved workout has them (no `N left out` for them; §2.3); `How to` and `History` in the exercise pop-up (§2.4); the `May hurt` confirm before a swap or `Add anyway` (§2.5); the plan-day button renamed `Open <name>` (§2.1).
 
-[Ben, 20 Oct] Today's session card keeps a one-tap `Start`; tapping the card expands it; `Edit` opens the builder (§2.0). Active `From last review` notes are already applied in the draft (§2.0.3), so a one-tap Start never skips them.
+[Ben, 20 Oct] Today's session card keeps a one-tap `Start`; `Edit` opens the builder (§2.0). ~~Tapping the card expands it~~ (D3: rows always shown). Active `From last review` notes are already applied in the draft (§2.0.3), so a one-tap Start never skips them.
 
 ### 2.2 Set up [Ben]
 
@@ -343,7 +397,7 @@ Unchanged: Resume card, stale card, check-in line, pain check line, banners, che
 | Variation | Sheet: `Standard` + this day and main lift's saved variations. Picking one loads it on Your workout. Each row has `⋯` → `Rename` / `Delete` (`Deleted arms superset · Undo`) | Picking on Set up [Ben]; row placement and rename/delete [Proposal, Q3] |
 | Length | Any minute, ±1 per tap; hold repeats. 15–180 min | ±1 [Ben]; bounds [Proposal] |
 | Supersets | Switch; on = the builder pairs exercises (§3.5) | [Ben] |
-| Muscle groups | Recommended for day + length + supersets; ± per group; `＋ Add muscle group`; once edited, the `Recommended` tag becomes a `Use recommended` link. Legs is one group; rear delts count as Back. Max 4 exercises per group (extras go to the other groups); the recommendation is at most 7 | [Ben] |
+| Muscle groups | Recommended for day + length + supersets; ± per group; `＋ Add muscle group`; once edited, the `Recommended` tag becomes a `Use recommended` link. **Broad groups (Ben, 22–23 Oct, D5): `Chest`, `Back`, `Shoulders`, `Legs`, `Arms`, `Core`.** Legs is one group; rear delts count as Back. Max 4 exercises per group (5 for Legs: [Proposal], review N7) (extras go to the other groups); the recommendation is at most 7. Within a group the day sets the pick order: Legs quads → hamstrings/glutes → quads → calves; Arms triceps first on pressing days, biceps first otherwise; Back rear delts first on shoulder and push days. A part Ben names in the Set up chat (`legs, add hamstrings`, `chest, add triceps`) is +1 on its broad group, and the exercise added comes from that part first (review 23 Oct: picking by broad group never overrides a part he named). The Add and Swap sheets pick by the same groups, with focus headings inside (`Quads`, `Hamstrings & glutes`, `Calves`) | [Ben]; D5 [Ben, 22–23 Oct]; pick order and named part [Proto] |
 | Next: exercises | Builds Your workout, or returns to it (§2.3, Back to Set up) | [Ben] |
 
 States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a muscle group`); **template loaded** (rows show the template; groups come from its exercises) [Proposal]; **custom day with only some leg parts** (row reads `Legs`; exercises come only from the chosen parts) [Proposal]; **offline / coach not connected** (bar shows `Offline`, §2.6).
@@ -381,6 +435,7 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 - Title `<Day> · about N min` (§3.6). Numbered rounds 1, 2, 3; a superset is one box lettered `a, b, c` with a connecting line. Columns `Exercise | Sets | Top set (kg)` [Ben].
 - **Time (Ben, 22 Oct: "add option to reduce time").** Under the title, the same `[−] 45 min [+]` stepper as Today's card (5-min steps, 15–180). Each step fits **today's draft only** with Today's built-in fit (`fitToMinutes`, shrink only; no coach call, works offline): shorter rests first, then accessory sets (never below 2), then whole exercises (abs and exercises with no builder group first, compounds last), never the main lift. No superset is made (Supersets off is a hard rule, design review V14), no effort is pushed and kept sets keep their own RPE, and no load changes. Every step fits from the workout as it was before the first Time change, so more time brings back what it cut, up to that workout and never more; Ben's edits made after a fit stay. With a live fit a short note follows the label in light orange: the biggest change (`−1 exercise`, else `−2 sets`, else `shorter rests`); a tap shows everything it changed (`Shorter rests`, `Incline DB press 3 → 2 sets`, `Dropped Triceps pushdown`) and `Undo`, which puts that workout back in one step (at the length before the first Time change). Start creates the fitted workout; the saved workout and the plan never change: on a plan day the Start prompt and `Update … in your plan` ignore the cuts and keep the plan day's own length (the length before the first Time change), never Time's. Built 22 Oct; how this differs from fit-to-time.md's 22 Oct revision is listed there.
   - **After a fit [Proposal; review fixes 22 Oct, not Ben's decisions].** `Undo` goes back to the length before the first Time change. An exercise Ben edits after the fit trimmed it (an RPE, a rep) keeps his version at every shorter length: less time never gives it sets back or makes it longer, and nothing else is cut harder to pay for it. What the fit took from it stays in the detail (`Lateral raise 4 → 2 sets`) and comes back at the length before the first Time change, or with `Undo`, never past the original count (re-review R1, 22 Oct). An exercise the fit left out that Ben adds back himself doesn't come back a second time and drops out of the detail. `‹ Set up` with Length left as shown merges the change into the workout and fits it to Time again (note and Undo stay); a new Length there is the set-up's length and ends Time. A new Day or Main lift with Length left as shown builds at the set-up's own length and fits it to Time again, so more time brings the work back (re-review N10, 22 Oct). `Gym changed` moves the workout and fits it to Time again at the new gym (its Undo puts the old gym and the fit back); the exercises it swaps in for ones the gym lacks aren't Ben's edits, so Time can still trim or leave them out (re-review R2, 22 Oct). An applied coach version keeps shortened rests with their note and Undo (`shorter rests`); if it sets its own length while Time is in use, `Update … in your plan` still saves the set-up's length from before Time (Time and the coach's version are today-only; part of SP2, pending Ben; re-review N11). `Reload` starts again without a fit. A past workout opened with `do again` protects the main lift the WL9 rule picks (fit-to-time §4.2).
+  - **Ben, 22–23 Oct (D9, D1).** Your workout's Time uses the same shared fit as Today (fit-to-time.md's 22 Oct revision): superset pairing only when Supersets is on, the cheapest cut by training lost per minute, the carry-over offer. The "not built" list in fit-to-time.md is now the plan. With no Start prompt, "the Start prompt and `Update … in your plan`" above reads: `Keep for next time?` on the Summary never counts Time's cuts, and Apply keeps the plan day's own length.
   - **Open, pending Ben (re-review 22 Oct).** A draft from Today's `Edit`: Your workout's Time works on the draft as Today committed it (less time cuts it; `Undo` and more time bring back Today's version, never the plan day's full workout; SP6). A workout already over its length: `⚠ Over` shows whenever the estimate passes Time, but stepping back up to the length it opened at gives back the over-length workout, not a fit to that length (S2).
 - **Cardio, timed sets and an exercise twice (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation).** A library or past workout opens with them as saved: a timed or cardio set shows its time (and distance) where the top set would be (`0:45`, `20:00 · 5,000 m`) and counts its time in the estimate; each copy of an exercise listed twice is its own row. Start creates them exactly as saved. Their sets aren't typed over, retyped, ramped or given drops here (set count, delete, move, swap and remove still work). `N left out` now covers only an exercise the app can't find, a set with no target, a set with both reps and a time or distance, or a workout past the builder's limits.
 - Units [Proposal]: the header carries Ben's unit once. A row whose equipment uses the other unit shows it inline (`45 lb`). Per dumbbell shows `each`, assisted `25 assist`, bodyweight `BW` or `BW+10`, no history `—`.
@@ -420,9 +475,40 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 | Pain check-in after loads were set | Loads for the flagged movement are recalculated (held). Kg Ben typed stays, with `May hurt` |
 | Gym changed | Every calculated load is re-rounded down for the new gym. A typed kg is kept if that weight exists there, else recalculated. Exercises this gym doesn't have are swapped for the closest one it has, marked `Swapped`; with none, the row shows `Not at this gym`. One toast `Gym changed · Undo` restores the gym and the workout |
 | Plan day updated elsewhere while open | No edits yet: reloads silently. With edits: line `Chest · bench changed · Reload` (Reload has Undo) |
-| Plan paused or ended while open | `Today only` and `Save as new variation` still work; `Update … in your plan` is hidden |
+| Plan paused or ended while open | Start still works (today only, D1). Paused: the Summary's `Keep for next time?` still shows; ended: it doesn't (§2.8). *(Was: `Today only` / `Save as new variation` still work, `Update … in your plan` hidden; superseded by D1.)* |
 | Unstarted edits from an earlier day | Line `Edits from Mon 19 Oct · Use` (Undo). They're deleted after 14 days |
 | Offline / coach not connected | §2.6 |
+
+### 2.3a Today's controls on Your workout (Ben, 22–23 Oct, D3)
+
+**Purpose.** Change today's session the way Today's card used to (main lift, accessories, abs, supersets) without building a new workout. Opened from Today's `Edit` with a plan. Primary action stays `Start`.
+
+```
+┌──────────────────────────────────────────┐
+│ ‹ Today                                  │  one back control
+│ Chest · about 47 min                     │  estimate
+│ ┌──────────────────────────────────────┐ │
+│ │ Main lift          (●Bench) (Incline)│ │  only when the day has 2+ main lifts
+│ │ Accessories     (●Focused) (Varied)  │ │
+│ │ Abs                            [ ●]  │ │
+│ │ Supersets                      [ ●]  │ │
+│ └──────────────────────────────────────┘ │
+│ ✦ Cable fly 3 → 2 sets?    Apply   ✕    │  coach offer, only when there is one (D2)
+│     Exercise              Sets  Top set  │
+│  1  Barbell bench press     3   102.5    │
+│ …                                        │
+│ [          Start          ] Coach review │
+└──────────────────────────────────────────┘
+```
+
+- **Layout.** A compact table under the title, rows ≥ 50 pt, chips and switches with 44 pt targets. Then the coach offer line (if any), then the workout table as §2.3.
+- **Interactions.** A chip or switch loads Today's draft for that choice at today's Time, from the same draft and fit code as Today (D9, one shared fit), then the coach's applied offer and **Ben's earlier edits replayed on it** (review 23 Oct S3, FT5: a control change never quietly undoes them; was "replaces earlier manual edits" [Proposal]). Toast `Abs off · Undo` (`Main lift: Incline`, `Accessories: Varied`, `Supersets off`); Undo puts back the workout as it was. A coach offer Ben applied is kept across a control change while its exercise still reads as offered. Everything here is today's draft: `‹ Today` shows it on Today's card (`Edited`), and Edit reopens it (§2.0.2).
+- **Coach offer line.** Shown while its exercise reads as offered (`Cable fly` at 3 sets); once Ben edits that exercise (sets, swap, remove) or a control loads a draft where it differs, the line is withdrawn; a stale Apply is refused with `Out of date` (rule 5).
+- **`↻ Mix it up` [Proposal, pending Ben, §9 Q-R6].** Approved for Today's card on 20 Oct, not named in D3. Proposed as a fifth row here (`↻ Mix it up`, the 20 Oct rules: one accessory swapped for a fresh one, same muscles and role, `Another (1/3)`, Undo). Its swap is Ben's own (he tapped it), so it's listed by `Keep for next time?`. Not in the prototype.
+- **States.** From Today's `Edit` with a plan: shown. From a plan day's `Open in builder ›`, Library, a past workout or Build your own: not shown (those have Set up or are fixed workouts). Offline: unchanged (no coach call). Supersets off: nothing is paired, ever (V14).
+- **Copy.** `Main lift` · `Accessories` · `Focused` · `Varied` · `Abs` · `Supersets` · `Out of date` · toasts above. VoiceOver: "Abs, switch, on".
+- **Data.** Today's draft per choice (`buildTodayDraft(planDay, {mainLift, style, abs, supersets}, minutes)` from the same domain function Today uses, then `fitToMinutes`); the template per choice and per main lift (`planDayTemplate(planDay, choice)`, un-fitted, before the deload and the coach); Ben's edits (`TodayEdit[]` with `author: 'ben'`: remove, add, swap, sets) replayed after the fit and the coach (`replayTodayEdits`); `structureChanges(template(mainLift), replayTodayEdits(template(choice), edits))` for §2.8.
+- **Acceptance.** (1) With a plan, Today has no Main lift / Accessories / Abs / Supersets controls and Your workout from Edit has all four (Main lift only with 2+ main lifts). (2) Abs off on Your workout removes the ab exercise and splits its superset; Start; the Summary asks `Keep for next time?` with exactly `− Cable crunch`, at 60, 40 or 35 min. (3) Undo after a control change restores the rows, minutes, the control and Ben's edits exactly. (4) The rows after any control change equal what Today would draft for that choice at that Time, with Ben's edits on top. (5) Delete Cable fly, then Abs off: Cable fly stays deleted. (6) Edit → Abs off → `‹ Today`: Today's card has no Cable crunch and says `Edited`; Edit shows Abs off.
 
 ### 2.4 Exercise pop-up (full-height sheet) [Ben]
 
@@ -503,7 +589,40 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 - Keyboard bar: `Done` always; for set cells also `−` `+` `Next`. Steps: reps 1, RPE 0.5, kg = the next weight this gym can load for that item [Proposal]. `Next` goes Reps → Kg → RPE → next set.
 - Tapping outside a field dismisses the keyboard. The sheet's `Done` stays visible above it.
 
-### 2.8 Start prompt (half-height sheet) [Ben]
+### 2.8 Keep for next time? (Summary row) (Ben, 22–23 Oct, D1; replaces the Start prompt)
+
+**Purpose.** After a workout whose structure Ben changed, ask once whether the next time that plan day (or saved workout) comes up it should look like this. **Primary action on the Summary stays `Done`**; this row is secondary.
+
+**When it shows.** Only when **Ben himself** changed the workout's structure: an exercise swapped, added or removed, or a set count changed (on Your workout, or mid-workout). *(Review 23 Oct, B1 and SP1, proposal for Ben: replaces "differs from `base`, the plan day as drafted for today, Time cuts included", which listed the fit's cuts and restorations as his.)*
+- **What it compares.** Ben's edits (`TodayEdit`s with `author: 'ben'`: remove, add, swap, set count) are replayed on the plan day's **template** for the controls he chose (Main lift, Accessories, Abs, Supersets), un-fitted, before the deload and before any coach change; the result is compared with the template for that main lift at the plan's own controls. A set count he chose counts as the number he chose (`Cable fly 2 → 3` in a deload week, or after the coach's `3 → 2`, is back to the template's 3, so nothing to keep).
+- **His control choices count** (Abs off → `− Cable crunch`; Varied → its accessories and set counts). **Picking another main lift is picking that template** (`Chest · incline`), never a change to `Chest · bench`; the row then names it (`Kept for next Chest · Incline`) (review S1, SP7).
+- **Never for:** Time or the fit (its cuts, what it gives back, the carry-over), pairing (Supersets on/off, the fit's re-pairing), a deload, loads, reps, RPE, rest, order, a coach edit (D2 offers, D8 next-time changes), or a workout with no plan day or saved workout behind it (Build your own, Empty workout, no-plan Today).
+- **From a plan day's `Open in builder ›`:** the same, against that plan day (prototyped, review S6). **Mid-workout** structure changes count the same way; the prototype's Summary only sees changes made before Start (known prototype gap). **A saved workout** (`Apply` changes that saved workout only) is **spec only, not prototyped** (re-review 1, S4): the same comparison against the saved workout's own exercises and set counts, with no Time or fit involved.
+- **A swap keeps the slot's set count** (re-review 1, R2). The exercise Ben swaps in takes the template slot's count, not today's fitted one, so a Time cut never rides into the plan through a swap. Only a count Ben sets on it himself counts, and the swap line then shows it (`Triceps pushdown → Overhead triceps extension · 3 → 4 sets`).
+
+**Layout (Summary, after `Next time`, above `Edit` / `Done`):**
+
+```
+┌──────────────────────────────────────────┐
+│ Keep for next time?        Skip  [Apply] │  48 pt row; Apply outline pill, 44 pt
+│ − Cable crunch                           │  one line per change, text.secondary
+│ Cable fly → Cable crossover              │
+│ Incline dumbbell press 3 → 2 sets        │
+└──────────────────────────────────────────┘
+ Applied:  Kept for next Chest          Undo
+```
+
+**States and transitions.** Offer → `Apply` → `Kept for next Chest` + `Undo` (Undo → offer again). Offer → `Skip` → row hidden, toast `Plan unchanged`. Leaving the Summary with the offer untouched = Skip [Proposal, review N4: or keep the row on that workout's Summary in history until the plan day next comes up; Ben to choose, §9 Q-R5]. Plan day changed since the workout started → Apply refused with `Your plan changed`, and the row lists Ben's changes again against the new version (hidden if none are left) (rule 5; review N3: was `Your plan changed. Ask again.`, with nothing to ask). Undo refused if the plan day changed again since: `Changed since · can't undo`. Offline: works (no coach call). Plan paused: the row shows. Plan ended since the workout started: no row.
+
+**Interactions.** `Apply` writes the change to that plan day's template for this main lift (or that saved workout) only, in one versioned write with an op ID; no other day, week or plan setting changes, and the plan day keeps its own length. `Undo` is a versioned inverse write. Voice: "keep it" / "skip" while the Summary is open (voice.md grammar, later).
+
+**Copy.** `Keep for next time?` · `Apply` · `Skip` · `Kept for next Chest` · `Undo` · `Plan unchanged` · `Your plan changed` · change lines `− <exercise>`, `+ <exercise> · 3 sets`, `<from> → <to>` (only when Ben swapped that slot, review N5), `<from> → <to> · 3 → 4 sets` (when he also set its count, R2), `<exercise> 3 → 2 sets`. No explanations.
+
+**Data.** `session.planDay` (planId, splitDayId, templateRoutineId, templateVersion, the chosen controls) or `routineId`; the session's `TodayEdit`s with `author: 'ben'` (before Start and mid-workout); `structureChanges(template(mainLift), replayTodayEdits(template(controls), benEdits))` (pure, `packages/domain`); `applyKeepForNextTime({ templateId, expectedVersion, changes, opId })` and its Undo. Apply writes the listed changes as absolute values (`Cable fly: 3 sets`), never deltas.
+
+**Acceptance.** (1) Today Start with no edits → no row. (2) Time 60 → 45 then Start → no prompt at Start and no row. (3) Edit → Abs off → Start → Finish → row lists `− Cable crunch`; Apply → `Kept for next Chest`, only that template's version moves; Undo restores it. (4) A load or reps edit alone → no row. (5) A stale template → Apply refused, nothing written. (6) The row never replaces `Done` as the primary; 44 pt targets; works at AX3 without sideways scroll. *(Review 23 Oct, B1:)* (7) Time 45, Supersets off on Your workout → no row. (8) Time 40 or 35, Abs off → exactly `− Cable crunch`. (9) The coach's `Cable fly 3 → 2` applied on Today, then Cable fly back to 3 on Your workout → no row. (10) Deload week, Cable fly 2 → 3 → no row. (11) Main lift Incline → no row (another template). (12) Varied → `− Cable fly`, `+ Cable crossover · 2 sets`, `+ Dips · 2 sets`, `Incline dumbbell press 3 → 2 sets`. *(Re-review 1, R1 and R2:)* (13) From Today's Edit and from a plan day's `Open in builder ›`: `＋ Add exercise`, sheet Swap, swipe Swap, the coach chat's swap and a review suggestion each work with no error; from Edit, Today's card shows the change and `Edited`; the row lists `+ <exercise> · 3 sets` or `<from> → <to>`. (14) Time 40 (Triceps pushdown trimmed to 2), swap it → today 2 sets, row `Triceps pushdown → <to>` and Apply writes 3; set it to 4 → `… · 3 → 4 sets`. `check_app.mjs` covers 1–3, 7–10 and 12–14.
+
+<details><summary>Superseded: the Start prompt (20 Oct)</summary>
 
 Shown on `Start` when today's workout differs from the plan day it came from [Ben]. [Proposal, Q11] Load-only edits don't prompt, because loads come from history every week.
 
@@ -526,7 +645,11 @@ Shown on `Start` when today's workout differs from the plan day it came from [Be
 - Not a plan day: no prompt [Proposal]. `Save to Workouts` stays in `⋯`.
 - [Proposal] **Summary:** when the finished workout differed from its plan day (including a superset added mid-workout), Summary offers `Save as variation`.
 
+</details>
+
 ### 2.9 Coach review (sheet) [Ben]
+
+> (Ben, 22–23 Oct, D1) The Plan section's `Update plan day` is removed: changes before Start are today only. `Add back` stays. The suggestions below are Ben-asked (he opened the review), so Apply / Skip as before.
 
 ```
 │ Coach review                   ● Coach   │
@@ -541,7 +664,6 @@ Shown on `Start` when today's workout differs from the plan day it came from [Be
 │ ! 5 of 6 planned · missing Cable crunch  │
 │ ✓ 16 working sets (plan 17)              │
 │ │ Add back Cable crunch   [Add] [Skip] │ │
-│ │ Update plan day        [Update][Skip]│ │
 │ SUGGESTED                                │
 │ │ Swap Cable fly for Incline barbell…  │ │
 │ │ 3 exercises lead with mid chest      │ │
@@ -553,8 +675,8 @@ Shown on `Start` when today's workout differs from the plan day it came from [Be
 │ [            Done            ]           │
 ```
 
-- Verdict line; ticks per core muscle with **set counts** (✓ trained, · missing; icon plus text, not colour alone); variety line; Plan section (is the day next, length, main lift, planned exercises kept/missing/added, working sets vs plan) with `Add back X` and `Update plan day`; suggestions, each with its own button (a proposal, Undo after); `For next <day> day` notes ticked by default, saved on `Done` [Ben].
-- `Update plan day` opens the same choice as §2.8: `Update Chest · bench in your plan` / `Save as new variation` / `Cancel`. This happens before Start, so Undo is a toast: `Chest · bench updated · Undo`.
+- Verdict line; ticks per core muscle with **set counts** (✓ trained, · missing; icon plus text, not colour alone); variety line; Plan section (is the day next, length, main lift, planned exercises kept/missing/added, working sets vs plan) with `Add back X`; suggestions, each with its own button (a proposal, Undo after); `For next <day> day` notes ticked by default, saved on `Done` [Ben].
+- ~~`Update plan day` opens the same choice as §2.8: `Update Chest · bench in your plan` / `Save as new variation` / `Cancel`.~~ Removed (D1, Ben 22–23 Oct): changes before Start are today only; a structure change Ben keeps is offered on the Summary (§2.8).
 - Each suggestion and `Add back` stays usable after another one is applied. It's only refused (`Out of date`) if an exercise it touches has changed.
 - **Swipe down = Done:** ticked notes are saved [Proposal].
 - Notes show at the top of that day's Your workout next time as `From last review`, each with ✕ [Ben]. They are **Your data** (rule 10). [Proposal] A note with a number in it (`Bench top set: 102.5 kg next`) is saved as the coach's target for that lift, so it actually sets next time's load (§3.1) and can be undone. Text notes (`Include abs`) are saved as notes.
@@ -581,7 +703,10 @@ Ben's direction: every set's load comes from est. 1RM + reps + target RPE, round
 6. Editing reps or RPE recalculates kg unless Ben typed kg; a type change recalculates [Ben]. Assisted and weighted-bodyweight lifts keep their kg.
 7. Pain-flagged movement: no heavier than the last comparable working load (rule 9).
 8. Est. max appears only behind `Why this weight?`, always `(estimate)` (rule 6).
-9. Defaults [Proto]: main lift 3 sets (1 top set of 6 + 2 back-offs of 8; was 4, changed 22 Oct, design review V1/V2/V4/V6 so Today, the builder and the plan agree); isolation exercises 3 × 12, others 3 × 8–12. **Open for Ben:** the prototypes now show back-offs at about 90 % of the top set (102.5 → 92.5), as the plan does; step 2's RPE rule gives about 95 %. One of the two should win.
+9. Defaults [Proto]: main lift 3 sets (1 top set of 6 + 2 back-offs of 8; was 4, changed 22 Oct, design review V1/V2/V4/V6 so Today, the builder and the plan agree); isolation exercises 3 × 12, others 3 × 8–12. ~~**Open for Ben:** back-offs at about 90 % vs step 2's RPE rule.~~ **Decided (Ben, 22–23 Oct, D4):** back-offs are worked out from their reps and effort (training guide SS4: RIR-adjusted Epley from today's top set, top and back-offs @ RPE 8 as item 4), snapped **down** to an achievable load, and kept in a sanity band below the top: Strength 2–8 %, Balanced 4–10 %, Muscle 8–15 % (other focuses 2–15 %); never above the top load. If snapping lands below the band, the next achievable load up is used when that is inside the band. Not a fixed 90 % or 95 %. Example: top 102.5 × 6 → back-offs 8 reps compute 97.4 → snap down 95 (7 % below, inside Balanced): `1 × 6 + 2 × 8 · 102.5 / 95`. Top 100 → 95; squat 117.5 → 110; row 92.5 → 87.5; DB press 32.5 each → 30 each. Domain: `backOffLoad(top, topReps, backReps, focus, { topRpe, backRpe }, kit)`. **Open for Ben:** HT4's Epley vs Nuzzo's tables (training guide SS question 2); the prototypes use Epley.
+   - **No achievable load inside the band (review 23 Oct B2; proposal for Ben, SP2).** Coarse kit (dumbbells at 20–30 kg on 2 kg steps, sparse racks) often has none. Then: the achievable load **nearest the band that is below the top**, on a tie the lighter; **never the top itself** (a back-off at the top load for more reps is harder than the top set, against SS4). If no achievable load is below the top at all, keep the top load and do 1 rep fewer than the top set. Examples: Strength DB 24 × 7 each → 22 (8.3 %; not 24); Muscle DB 26 × 6 → 24 (7.7 %, nearer the band than 22 at 15.4 %); Balanced 22.5 × 6 → 20; Muscle 32.5 → 30.
+   - **When today's top is lowered, the back-offs drop by the same % and snap down** (training guides SS4 and HT8; review 23 Oct: was "worked out again from the new top", which left them unchanged). Lowered = a pain hold (rule 9), a coach offer Ben applied (`Bench 102.5 → 100`), Ben's own lighter top, an R2 return offer, or a deload's −10 %. Bench `102.5 / 95` held at 100 → `100 / 92.5`; deload `105 / 97.5` → `92.5 / 87.5`. Always below the new top. Raising the top never raises them. A repeat (the top stays where it was after a hard session) is not a lowering: the back-offs are worked out from that top.
+   - **Which band (review 23 Oct S7, SP8).** With a plan, its Main focus, on Today, Your workout and the workout as on Your plan. With no plan, the band the Profile goal maps to: strength → Strength, muscle → Muscle, both → Balanced [Proposal].
 
 Whether step 4 should replace steps 1–3 ("est. 1RM everywhere") is still open in the backlog: §9 Q12.
 
@@ -727,8 +852,8 @@ Advice never blocks or undoes Ben's change. He sometimes pairs things on purpose
 
 - Units per row from `CheckedOnSchema.unit`; the keyboard ± step from that item; assisted shows `assist`, per-hand `each`.
 - Rear delts: the builder uses its own mapping `builderGroupOf` (rear delts → Back). The shared `MUSCLE_TO_GROUP` is unchanged unless Ben says yes to Q13. If he does, update and test every caller: catalogue validator, library filters, `mainLiftOptions`, split matching, Progress charts.
-- `BuilderGroup = Chest | Back | Shoulders | Legs | Biceps | Triceps | Abs` is display only: Legs = Quads + Hamstrings + Glutes + Calves; Abs = Core. Stored data is always `SplitBodyPart`.
-  - **22 Oct, design review V1/V2/V4/V6:** the prototypes now share one muscle list everywhere (Chest, Back, Shoulders, Quads, Hamstrings, Calves, Biceps, Triceps, Core), including the builder's. This conflicts with "Legs is one group" in §2.2 [Ben]; Ben to confirm which the app uses.
+- ~~`BuilderGroup = Chest | Back | Shoulders | Legs | Biceps | Triceps | Abs`~~ **(Ben, 22–23 Oct, D5)** `BuilderGroup = Chest | Back | Shoulders | Legs | Arms | Core` is the picking group, display only: Legs = Quads + Hamstrings + Calves (glutes count under Hamstrings & glutes); Arms = Biceps + Triceps; rear delts are Back. Counting uses the detailed list (Chest, Back, Shoulders, Quads, Hamstrings, Calves, Biceps, Triceps, Core) in the plan's weekly sets and Progress; a broad group's count is exactly the sum of its parts. Stored data is always `SplitBodyPart`. `build_app.py` checks every prototype against these two lists.
+  - ~~**22 Oct, design review V1/V2/V4/V6:** one muscle list everywhere.~~ Resolved by D5 above.
 - Time: one shared constants module used by `duration.ts`, `time-left.ts` and the builder estimate (Q15).
 - Limits: drops count against `maxWorkingSets` (10), max 3 drops per slot; `maxSuperset` 4; `maxWarmups` 4; `maxExercises` 10; length 15–180; `maxRestS` 300 → 360 only if Q7 is yes.
 - `heavy?: boolean` on catalogue entries; `builderFocusOf(exercise)` for the focus headings.
@@ -777,7 +902,7 @@ Code drafts and enforces; the AI adds judgement at fixed points; code checks eve
 - **When they run:** on app open (any connection; iOS background runs are unreliable on a free-provisioned app). The 7 am reminder makes the morning open the natural trigger. Results are cached; a review re-runs only when its inputs changed. Wi-Fi-only is an optional setting [Proposal].
 - **Pre-session (daily, opening Today):** readiness from real signals only: check-in score, yesterday's logged run, RPE drift vs target over recent sessions, missed reps, pain flags. Silent unless a clear signal (e.g. 3 sessions at RPE 9–10, a big rep miss, a hard run yesterday, a low check-in). When it speaks: one line on the session card with **Apply** (an offer, rule 3).
 - **Post-session (Summary):** next-session small changes applied with reason and Undo (existing rule 3 default).
-- **Weekly (Sunday evening or first open after):** sessions vs plan, sets per muscle vs plan, main-lift trends, runs; a short note plus any plan tweak as a proposal (Apply/Skip).
+- **Weekly (Sunday evening or first open after):** sessions vs plan, sets per muscle vs plan, main-lift trends, runs; a short note plus any plan tweak as a proposal (Apply/Skip). (Ben, 22–23 Oct, D2) Only changes inside coach-adjustments CA8 "small" are applied with Undo; anything bigger is Apply / Skip, and a stall reset or an extra set Ben didn't ask for always needs Apply (progress-goals.md, Coach's changes).
 - **Block (end of a training block, once blocks exist):** progress to goal, plateaus, deload due; next block proposed for approval.
 - **Feedback loops in code (no AI needed):** beating target RPE repeatedly nudges est. 1RM up, missing it nudges down; repeating the same edit suggests a template update; 3 stalled sessions flag the lift for the weekly review.
 - **Cost/honesty:** ChatGPT-plan route; light model for the daily check, stronger for weekly/block; never a paid route without asking (rule 7). No invented signals (rule 6). Not run → `Not reviewed` (rule 1); the code draft still stands.
@@ -848,11 +973,11 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 **S4b Drag (ADR: add `react-native-gesture-handler`, pinned, with Reanimated 4.5.1).** Tested on Ben's iPhone.
 - A slow vertical scroll never starts a drag; a still 320 ms hold does (haptic). Swipes left and right still work.
 
-**S5 Templates, variations, Start prompt, Today entry.**
+**S5 Templates, variations, Keep for next time?, Today entry** (revised Ben 22–23 Oct, D1: no Start prompt).
 - Today's session on Chest · Bench, `Edit`, opens `Chest · bench` (or its last-used variation) with no rebuild.
-- One swap, then Start: the prompt `Use these changes for` lists one line; `Today only` leaves the template's version unchanged and Up next moves on.
-- `Update Chest · bench in your plan` bumps only that template; `Chest · incline` is untouched; Summary Undo restores it, and is refused if the template changed again.
-- Force-close during `Save and start`: either both the variation and session exist, or neither; retrying never duplicates.
+- One swap, then Start: the workout starts with no prompt; the template's version is unchanged and Up next moves on. The Summary's `Keep for next time?` lists the swap.
+- `Apply` on it bumps only that template; `Chest · incline` is untouched; Undo restores it, and is refused if the template changed again.
+- Force-close during `Apply`: either the template's new version exists or it doesn't; retrying with the same op ID never duplicates.
 - Updating the template shows the change in `Chest · bench · arms superset` too.
 - Plan Undo leaves variations in place; a new plan with Chest · bench picks them up.
 - Rename and delete a variation (Undo works).
@@ -866,9 +991,9 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 **S7 Coach review and day notes.**
 - Every count matches a code recount; a coach sentence with a wrong number is hidden.
 - Applying one suggestion leaves the others usable.
-- `Update plan day` offers update or new variation; Undo toast restores.
+- ~~`Update plan day` offers update or new variation; Undo toast restores.~~ (D1) No `Update plan day` in the review.
 - Unticked notes aren't saved. Swiping the sheet down saves ticked notes, the same as `Done`.
-- A numeric note sets next time's load for that lift; text notes show on the next Chest day's Your workout and Today's expanded card, and ✕ stops them going to the coach.
+- A numeric note sets next time's load for that lift; text notes show on the next Chest day's Your workout and in Today's card's `Why?`, and ✕ stops them going to the coach.
 - Notes are exported and deleted with Your data, not with Coaching knowledge.
 - No AI: facts and Plan section show; no verdict; header `Offline`.
 
@@ -890,7 +1015,7 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 5. Main lift never joins a superset: **yes**.
 6. Typed weights stay today-only even when the plan day is updated: **yes**.
 7. Rest limits: 0–1:00 before a drop, up to 6:00 otherwise: **yes**.
-8. Group label: **Abs**.
+8. Group label: **Abs**. *(Superseded, Ben 22–23 Oct, D5: the group is `Core`.)*
 9. Before Start, coach changes Ben asks for are proposals (Apply/Skip); after Start they apply at once with Undo: **yes** (CLAUDE.md rule 3 wording updated; CHANGELOG).
 10. Variations per day and main lift: **5**.
 11. Load-only edits don't trigger the `Use these changes for` prompt: **yes**.
@@ -903,6 +1028,18 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 18. Drag ships after the pop-up buttons, once tested on iPhone: **yes**.
 19. Day strip: **3 back, today, 3 ahead**.
 
+**Open after the 23 Oct review (`docs/reviews/batch23-design.md`); each has the designer's recommendation, built in the prototypes where noted**
+- **Q-R1 (SP1) What `Keep for next time?` compares.** Recommended and built: only Ben's own edits, replayed on the plan day's template for his controls, against the template for that main lift (§2.8). Never the fit, pairing, a deload or the coach.
+- **Q-R2 (SP2) Back-offs with no achievable load in the band.** Recommended and built: the load nearest the band below the top, never the top; none below the top → top load, 1 rep fewer (§3.1 item 9). Alternative: always the next load down, even when further from the band (Muscle DB 26 → 22, 15.4 %).
+- **Q-R3 (SP3) The carry-over.** Recommended and built: a real offer (`Carry over`, then `Undo`), by muscle, to each muscle's next day; D2 says unasked extra sets always need Apply. Alternative: applied by default with Undo, shown on the visible note.
+- **Q-R4 (SP4) Specific targets and the nine counting rows.** Glutes, Adductors, Abductors and Forearms have their own Sets-per-week rows in the plan but not on Progress. Recommended: Progress adds a row for each target Ben set (below the nine), and the broad group sums its rows plus those (Legs = Quads + Hamstrings + Calves + Glutes …), so "broad = exact sum of its parts" holds. Not built.
+- **Q-R5 (N4) An untouched `Keep for next time?`.** Recommended: it stays on that workout's Summary in history until the plan day next comes up, then lapses. Now: leaving = Skip.
+- **Q-R6 (D3 scope, SP6) `↻ Mix it up`, session-type chips and variations.** D3 doesn't name them. Recommended: `↻ Mix it up` as a fifth row on Your workout's controls; a saved variation picked on Set up's `Variation` row or as a `Variation` row on Your workout; a new variation made from the Summary row (`Save as a version`), since nothing creates one after D1. Not built.
+- **Q-R7 Back to the plan's version from an edited Today card.** Recommended: Your workout's `Undo` and controls are enough; no reset on Today (lean card). Ben may want a `Back to plan` on Your workout.
+- **Q-R8 (S3) A control change keeps Ben's edits.** Built (FT5): his removals, additions, swaps and set counts are replayed on the new choice. Was a designer assumption (replace them).
+- **Q-R9 (SP5) Where a D8 change waits.** Recommended: a pending coach edit on the plan day, checked against the template version, main lift and exercise when that day's draft is made; stale → not applied, shown once; expires when the day is done or after 14 days (§2.1). Spec only.
+- **Q-R10 (SP8) Band with no plan.** Recommended: Profile goal strength → Strength, muscle → Muscle, both → Balanced. Built with "both".
+
 ---
 
 ## 10. Prototype clean-up before Ben's next test
@@ -910,7 +1047,7 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 Not done in this revision (spec only). For `prototypes/workout-builder-v3.html`:
 - Delete `Supersets save about 6 min` and the `1 of 2` / `2 of 2` counters.
 - `Version` → `Variation` everywhere; drop the picker subtext `Your plan's Chest day`; names as `Chest · bench · arms superset`.
-- Review: `Make this the plan's Chest day` → `Update plan day` (opening the §2.8 choice); delete "Future plan sessions start from this workout."
+- ~~Review: `Make this the plan's Chest day` → `Update plan day` (opening the §2.8 choice)~~ (D1: no `Update plan day`; the prototype's review has none); delete "Future plan sessions start from this workout."
 - `Why this weight?`: delete "Hit N reps → add weight next time".
 - `Remove` / `Removed …` → `Delete` / `Deleted … · Undo`.
 - Recommended line → `Recommended for 60 min · 7`; drop `Start with no muscle groups` under Custom.

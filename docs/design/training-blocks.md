@@ -2,6 +2,14 @@
 
 Status: **Approved by Ben, 21 Oct 2026** (answers in §8). Backlog H4. **§1–§3 are for Ben; §4–§8 are for the developer.**
 
+> **Revision (Ben, 22–23 Oct): what Ben's D1–D5 and D9 change here.** Prototype: `prototypes/training-blocks.html` (Today with a plan, Progress with a plan, block review).
+> - **Today with a plan is lean (D3):** the header with the block week (§3.1, unchanged), the strip, the day control, then one card: day, `N exercises · ~M min`, any offer line (`◐ Deload this week? Apply ✕`, `✦ <change>? Apply ✕`), `Time [−] 60 min [+]` with its fit note, the session rows, `Why?`, `Start` / `Edit`. Main lift, accessories, abs and supersets are on Your workout (workout-builder-v3 §2.3a). No `Today only` tag, no Start prompt (D1). Full spec: workout-builder-v3 §2.0.2.
+> - **Time (D9):** fit-to-time.md's 22 Oct revision; it runs after the deload transform (§4.4), so a deload week fits the lighter draft. The carry-over is an offer (`Carry over`, then `Undo`) and goes to each cut muscle's next day (triceps cut on Chest day → the next Shoulders day; abs → the next day), at most 4 sets in all (review 23 Oct S5, SP3: offer rather than default-on is a proposal for Ben).
+> - **Edits from Your workout stay (review 23 Oct, D3 regression):** what Ben changes on Your workout (controls, exercises, set counts) is today's draft; back on Today the card shows it with `Edited`, Start starts it and Edit reopens it. They're replayed after the fit and the coach, so Time never undoes them (FT5).
+> - **Coach offers (D2):** the coach's review of today's draft is an offer line, never applied until `Apply`. On Progress › Coach's changes, small next-session changes stay applied with Undo; the stall reset (`Row 3 × 8 → 4 × 6?`) and any extra set Ben didn't ask for are `Apply` / `Skip` (progress-goals.md).
+> - **Back-offs (D4):** worked out from their reps and effort against the planned top set, snapped down, inside the plan's Main focus band (Balanced 4–10 % under the top; review 23 Oct S7: Strength and Muscle plans use their own band on Today and in the workout too). **When today's top is lowered, the back-offs drop by the same % and snap down** (training guides SS4, HT8; review 23 Oct): a pain hold (bench 102.5 held at 100) gives `100 / 92.5`, not `100 / 95`; a deload week (§4.4) takes the same −10 % off both, bench `105 / 97.5` → `92.5 / 87.5`. A repeat after hard sessions (the early-deload state: 100 planned) is not a lowering: `100 / 95`.
+> - **Muscles (D5):** the block review and Progress count by the detailed list (§2.5, unchanged); rear delts count as Back.
+
 Builds on the approved [workout-builder-v3.md](workout-builder-v3.md) (§1 chain, §4 data, §6 reviews, §8 order), prototypes [today-v2.html](prototypes/today-v2.html) and [progress-reviews.html](prototypes/progress-reviews.html), research [plans-and-plan-progress.md](../research/plans-and-plan-progress.md) (proposals 4 and 6), and the plan pause (`PlanPauseSchema`). Tokens: [design-system.md](design-system.md). Nothing here adds a step to Active set, Rest or Summary.
 
 > Ben: "ideally we would have a longer term plan however which means we dont need to rebuild it much"; "i wouldn't imagine chest sessions should change much week on week, it's more about rotating".
@@ -150,7 +158,7 @@ Offer when either of these holds in the last 2 counted weeks:
 Never in week 1–2. At most one offer a week. `✕` stops the offer for that week. Thresholds go to the training-researcher as playbook candidates.
 
 ### 4.4 Deload transform (`deloadDraft`)
-Applied by the Today drafter after §3.1 and fitting: working loads × 0.9 rounded down; sets −1 per exercise (min 2; main lift keeps the top set, back-offs −1); RPE targets min(target, 7). Warm-ups follow. Only today's draft is touched. Templates and completed sets are never changed (rule 2).
+Applied by the Today drafter after §3.1 and **before** fitting (fitting runs on the deloaded draft; review 23 Oct S4): working loads × 0.9 rounded down, back-offs included (they drop by the same −10 % as the top, SS4/HT8; D4, Ben 22–23 Oct; workout-builder-v3 §3.1 item 9); sets −1 per exercise (min 2; main lift keeps the top set, back-offs −1); RPE targets min(target, 7). Warm-ups follow. Only today's draft is touched. Templates and completed sets are never changed (rule 2), and `Keep for next time?` measures Ben's changes against the template, not the deloaded draft (workout-builder-v3 §2.8).
 
 ### 4.5 Gym change, pain, units
 - Path values are stored with unit and convention, and re-snapped down for the gym Ben is using.

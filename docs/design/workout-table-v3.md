@@ -15,7 +15,7 @@ Goal: the workout reads like the builder (`workout-builder-v3.md` §2): numbered
 
 ### 1.1 Same session from Start to Summary (22 Oct, design review V1/V2/V4/V6)
 
-- **Start passes the session.** Today (with or without a plan), the builder and Edit → builder all hand the active workout the same session: name, order, supersets, sets, reps, kg, plus warm-ups. The header shows that day's name and starts at 0:00, round 1. The main lift's header subline uses the shared format `1 × 6 + 2 × 8 · 102.5 / 92.5`; dumbbell loads say `each` here and in the Workout sheet; a bodyweight lift shows `BW`.
+- **Start passes the session.** Today (with or without a plan), the builder and Edit → builder all hand the active workout the same session: name, order, supersets, sets, reps, kg, plus warm-ups. The header shows that day's name and starts at 0:00, round 1. The main lift's header subline uses the shared format `1 × 6 + 2 × 8 · 102.5 / 95` (back-offs from their reps and effort, Ben 22–23 Oct D4); dumbbell loads say `each` here and in the Workout sheet; a bodyweight lift shows `BW`.
 - **Start with a workout in progress resumes it**, logged sets kept. Picking a different day still opens the one in progress, with a `Chest in progress` toast. A workout is in progress until Finish or Discard.
 - **Why?** shows the main lift's target, and `Last time` only when that history exists.
 - **Summary** is for the same session: its name, its date and gym (`Tue 20 Oct · Main gym`), and what was logged.
