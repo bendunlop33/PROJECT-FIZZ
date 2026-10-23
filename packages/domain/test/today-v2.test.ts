@@ -8,6 +8,8 @@ import {
   coachDraftListed,
   defaultTodayControls,
   planDayOfBuilderDraft,
+  notEditedOfBuilderDraft,
+  todayContentHash,
   deriveId,
   fromDraftPlan,
   estimateBuilderMinutes,
@@ -390,6 +392,41 @@ describe('plan days, templates per main lift, last used, Other sessions', () => 
     expect(pushDay).toMatchObject({ key: 'other:push', kind: 'other', planId: null, dayIndex: null });
     expect(pushDay.templates[0]?.groups[0]?.group).toBe('Chest');
     expect(TODAY_OTHER_SESSIONS.map((s) => s.name)).toEqual(['Full body', 'Upper', 'Push']);
+  });
+});
+
+describe('Start provenance: the sets Ben didn’t set himself (D1; review v5offers B1)', () => {
+  const key = { planId: 'p1', dayIndex: 2, splitDayId: 'chest', mainLiftExerciseId: 'bench', localDate: '2026-10-20' };
+  const setup = { dayId: 'chest', minutes: 40, mainLiftExerciseId: 'bench', supersets: false, groups: [], templateRoutineId: 'r1', templateVersion: 4, variationId: null };
+  const slot = (slotKey: string, exerciseId: string, working = 3) => ({ slotKey, exerciseId, setTemplates: [{ setType: 'warmup' }, ...Array.from({ length: working }, () => ({ setType: 'working' })), { setType: 'drop' }] });
+  const plan = (...slots: ReturnType<typeof slot>[]) => ({ slots }) as never;
+  const version = (n: number, parentN: number | null, p: never, request: Record<string, unknown> = {}) => ({ n, parentN, plan: p, request: { setup, gymId: 'g1', ...request } }) as never;
+  /** A version Today wrote: its mark vouches for its content. */
+  const todays = (n: number, parentN: number | null, p: never) => version(n, parentN, p, { today: { by: 'today', controls: 'c', hash: todayContentHash({ plan: p, setup, gymId: 'g1' }) } });
+
+  it('Your workout’s live fit: the exercises it cut or left out, named by the workout before the fit', () => {
+    const timeFit = { base: plan(slot('k1', 'bench'), slot('k2', 'fly'), slot('k3', 'raise'), slot('k4', 'dips')), fromMinutes: 60, dropped: ['k3'], cut: { k2: 1 } };
+    const v = version(1, null, plan(slot('k1', 'bench'), slot('k2', 'fly', 2), slot('k4', 'dips')), { setup: { ...setup, timeFit } });
+    expect(notEditedOfBuilderDraft({ versions: [v] }, v)).toEqual(['fly', 'raise']);
+    expect(planDayOfBuilderDraft({ builderKey: key, versions: [v] }, v).planDay?.notEdited).toEqual(['fly', 'raise']);
+    // Rests only (nothing cut), opened on a template: no exercise, and no field.
+    const rests = version(1, null, plan(slot('k1', 'bench')), { setup: { ...setup, timeFit: { ...timeFit, dropped: [], cut: {} } } });
+    expect(planDayOfBuilderDraft({ builderKey: key, versions: [rests] }, rests).planDay).not.toHaveProperty('notEdited');
+  });
+
+  it('Today’s card: every count Ben left as Today built it (its Time, its main-lift sets) is Today’s; one he changed since is his', () => {
+    const card = todays(1, null, plan(slot('k1', 'bench', 4), slot('k2', 'fly', 2), slot('k3', 'raise')));
+    expect(notEditedOfBuilderDraft({ versions: [card] }, card)).toEqual(['bench', 'fly', 'raise']);
+    // Ben took a set off raise in Your workout: raise is his edit; the rest stay Today's.
+    const edited = version(2, 1, plan(slot('k1', 'bench', 4), slot('k2', 'fly', 2), slot('k3', 'raise', 2)));
+    expect(notEditedOfBuilderDraft({ versions: [card, edited] }, edited)).toEqual(['bench', 'fly']);
+    // A version whose mark no longer vouches for its content (edited, mark copied) isn't Today's; nor another line.
+    const stale = version(3, null, plan(slot('k1', 'bench', 4)), { today: { by: 'today', controls: 'c', hash: 'other' } });
+    expect(notEditedOfBuilderDraft({ versions: [card, edited, stale] }, stale)).toEqual([]);
+    // A loop in stored parents never hangs.
+    const a = version(4, 5, plan(slot('k1', 'bench')));
+    const b = version(5, 4, plan(slot('k1', 'bench')));
+    expect(notEditedOfBuilderDraft({ versions: [a, b] }, a)).toEqual([]);
   });
 });
 

@@ -99,6 +99,13 @@ export const SessionPlanDaySchema = z
     variationId: IdSchema.nullable(),
     /** (§2.8) The plan change this Start made, for Summary's Undo; absent: none. */
     planChange: PlanChangeUndoSchema.optional(),
+    /**
+     * (23 Oct, D1; review v5offers B1) Exercises whose working sets Ben didn't set himself before Start: Today's card as
+     * it built them (its Time and the coach's applied pre-start offer included) where he left them, and Your workout's
+     * Time fit (sets cut, exercises left out). A short day isn't a new plan, so the weekly review's same-edit-repeated
+     * rule never reads their counts as his edit. Absent: none (and every workout started before this existed).
+     */
+    notEdited: z.array(IdSchema).max(BUILD_LIMITS.maxExercises * 2).optional(),
     blockId: z.string().min(1).max(64).optional(),
     weekN: z.int().min(1).max(52).optional(),
   })

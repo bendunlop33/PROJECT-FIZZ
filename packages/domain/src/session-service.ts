@@ -360,7 +360,10 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, duplicate: false, fits: out.fits, today, draftWhy: draftSlotWhy(out) };
-    const aggregate = req.planDay === undefined ? out.aggregate : { ...out.aggregate, session: { ...out.aggregate.session, planDay: req.planDay } };
+    // The caller's plan day (Your workout's Start) keeps which sets Ben didn't set himself, which only the draft knows (review v5offers B1).
+    const notEdited = out.aggregate.session.planDay?.notEdited;
+    const planDay = req.planDay === undefined ? undefined : { ...req.planDay, ...(notEdited === undefined ? {} : { notEdited }) };
+    const aggregate = planDay === undefined ? out.aggregate : { ...out.aggregate, session: { ...out.aggregate.session, planDay } };
     const saved = await trySave(() => repos.sessions.save(aggregate, null, req.fence, req.alongside));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' }, ...(saved.error === 'stale_inputs' && saved.alongside !== undefined ? { alongside: saved.alongside } : {}) };
