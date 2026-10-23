@@ -295,6 +295,31 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     const back = snapOf(await s.builder.undo(now.draftId, 'main-incline', 'undo-main'));
     expect(slotsOf(back.workout.blocks).find((x) => x.main)?.exerciseId).toBe(bench);
   });
+
+  it('restart recovery: an option change survives a force-close (Your workout, its options and Today’s edited card read it back); its Undo still works after the relaunch, once', async () => {
+    const { s } = await benWithPlan();
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const snap = await edit(s, data, sel(data, key, { abs: false, supersets: false }));
+    const before = names(snap);
+    const on = snapOf(await s.builder.setTodayOption(snap.draftId, { kind: 'abs', on: true }, { opId: 'abs-on-rc', expectedVersion: snap.version }));
+    await h.forceClose();
+    const s2 = (await h.launch()).services;
+    const read = await s2.builder.read(on.draftId);
+    if (read === null) throw new Error('draft lost');
+    expect(read.version).toBe(on.version);
+    expect(names(read)).toEqual(names(on));
+    expect((await s2.builder.todayOptions(on.draftId))?.abs).toBe(true);
+    // A retry of the same op after the relaunch writes nothing more (rule 5).
+    expect((await s2.builder.setTodayOption(on.draftId, { kind: 'abs', on: true }, { opId: 'abs-on-rc', expectedVersion: on.version })).status).not.toBe('written');
+    expect((await s2.builder.read(on.draftId))?.version).toBe(on.version);
+    const after = await loaded(s2);
+    expect(s2.todaySession.card(after, sel(after, key))?.edited?.draftId).toBe(on.draftId);
+    // The toast is gone with the app, but the change's Undo is the draft's: it still puts the workout back, once.
+    const back = snapOf(await s2.builder.undo(on.draftId, 'abs-on-rc', 'undo-abs-rc'));
+    expect(names(back)).toEqual(before);
+    expect((await s2.builder.undo(on.draftId, 'abs-on-rc', 'undo-abs-rc')).status).not.toBe('written');
+  });
 });
 
 describe('followLatestDraft (pure)', () => {
