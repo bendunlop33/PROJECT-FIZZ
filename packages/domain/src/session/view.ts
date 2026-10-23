@@ -3,6 +3,7 @@ import { restOverrunMs, restRemainingMs } from '../rest';
 import { toMs } from '../time';
 import { carriedLoad, type CarryOptions } from './carry';
 import { draftAsValues } from './pending-values';
+import { warmupRampLoads } from './warmup-ramp';
 
 /**
  * Derived phase (flow §3.1). "Result saved" is not a stored phase: the commit
@@ -133,6 +134,8 @@ const EMPTY: SetValues = { load: null, reps: null, durationS: null, rpe: null, r
  * saved draft → target (top of rep range; its load replaced by the load
  * Ben's last logged set carries, rule 2a) → last set of this exercise this
  * session → matching set of the last comparable session → empty.
+ * A warm-up with no load target takes the ramp up to the working load
+ * (`warmupRampLoads`); its history is only this session's warm-ups.
  * Effort is never prefilled.
  */
 export function prefillDraft(
@@ -147,15 +150,18 @@ export function prefillDraft(
   if (set.draft) return { values: draftAsValues(set.draft, set.planned, set.draft.loadCarried === true ? carriedLoad(state, set, opts) : null), source: 'draft' };
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
 
+  const warmup = set.setType === 'warmup';
   const done = state.sets
-    .filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status === 'completed' && s.actual && s.completedAt)
+    // A warm-up never falls back to a working set's values (23 Oct: every warm-up prefilled the working weight).
+    .filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status === 'completed' && s.actual && s.completedAt && (!warmup || s.setType === 'warmup'))
     .sort((a, b) => toMs(b.completedAt?.utc ?? '') - toMs(a.completedAt?.utc ?? ''));
   const lastHere = done[0]?.actual ?? null;
-  const comparable =
-    (lastComparable.find((c) => c.index === set.index) ?? lastComparable[lastComparable.length - 1])?.values ?? null;
+  const comparable = warmup ? null : ((lastComparable.find((c) => c.index === set.index) ?? lastComparable[lastComparable.length - 1])?.values ?? null);
   // History in another unit or convention is never copied in as-is (review B1).
   const lastThere = comparable && ex ? { ...comparable, load: compatibleLoad(comparable.load, ex) } : comparable;
-  const fallback = lastHere ?? lastThere;
+  // A warm-up's load: its own target, else the ramp to the working load (`warmupRampLoads`), else this session's last warm-up.
+  const fallback = warmup ? lastHere : (lastHere ?? lastThere);
+  const ramp = warmup && set.planned.load === null ? (warmupRampLoads(state, set.sessionExerciseId, (w) => prefillDraft(state, w.id, lastComparable, opts).values.load).get(set.id) ?? null) : null;
 
   const p = set.planned;
   const plannedDistance = p.distanceM ?? null;
@@ -166,7 +172,7 @@ export function prefillDraft(
     return {
       values: {
         ...EMPTY,
-        load: carry ?? p.load ?? fallback?.load ?? null,
+        load: carry ?? p.load ?? ramp ?? fallback?.load ?? null,
         reps: p.reps?.max ?? fallback?.reps ?? null,
         durationS: p.durationS ?? fallback?.durationS ?? null,
         ...(distanceM !== null ? { distanceM } : {}),
@@ -174,6 +180,7 @@ export function prefillDraft(
       source: carry !== null ? 'last_set' : 'target',
     };
   }
+  if (ramp !== null) return { values: { ...EMPTY, load: ramp, reps: fallback?.reps ?? null }, source: 'target' };
   if (lastHere) return { values: { ...lastHere, rpe: null, rir: null }, source: 'this_session' };
   if (lastThere) return { values: { ...lastThere, rpe: null, rir: null }, source: 'last_session' };
   return { values: EMPTY, source: 'none' };

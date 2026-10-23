@@ -13,7 +13,7 @@ import { boxAnchor, boxFades, fitRoundBoxes, keepInView, pageOffsetFor, ROW_HEIG
 import { claimsDrag, swipeIntent } from '../../workout/set-pager';
 import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
-import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
+import { ROUND_TABLE_KEYBOARD } from '../../workout/keyboard';
 import { GymPartDivider, SnapNote } from './GymSwitch';
 import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
 import { dropIndex } from '../../ui/drag-logic';
@@ -280,7 +280,7 @@ export function RoundPage(props: RoundPageProps) {
           m.current.content = h;
           recompute();
         }}
-        {...WORKOUT_KEYBOARD}
+        {...ROUND_TABLE_KEYBOARD}
         contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['2'], gap: theme.space['2'] }}
       >
         <View {...swipe.panHandlers}>
@@ -430,8 +430,8 @@ function ExerciseBlock({
             contentH.current = h;
             onBoxScroll(0, viewH.current, h);
           }}
-          onScrollBeginDrag={p.onTapElsewhere}
-          {...WORKOUT_KEYBOARD}
+          // Ben, 23 Oct: scrolling a box keeps the cell being typed in and the number pad up.
+          {...ROUND_TABLE_KEYBOARD}
         >
           {/* §7: press and hold a set not done yet, then drag it among those (done sets keep their logged order). */}
           <DragList
@@ -779,7 +779,8 @@ function NumberCell({ row, current, todayChange }: { row: RoundRow; current: boo
 }
 
 /** A boxed value cell on a set not done yet; green text without a box on a done one (§2). */
-function CellBox({ text, done, warmup, on }: { text: string; done: boolean; warmup: boolean; on: boolean }) {
+/** A value cell. `dim`: a set that isn't current shows its target in secondary ink (Ben, 23 Oct); the current set's cells are full ink. */
+function CellBox({ text, done, warmup, on, dim = false }: { text: string; done: boolean; warmup: boolean; on: boolean; dim?: boolean }) {
   const theme = useTheme();
   if (done) {
     return (
@@ -790,7 +791,7 @@ function CellBox({ text, done, warmup, on }: { text: string; done: boolean; warm
   }
   return (
     <View style={{ minHeight: 36, borderRadius: 9, backgroundColor: theme.colors['bg.raised'], opacity: warmup ? 0.75 : 1, borderWidth: 1.5, borderColor: on ? theme.colors.accent : 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.space['1'] }}>
-      <AppText variant="rowValue" color={warmup ? 'text.secondary' : 'text.primary'} numeric numberOfLines={1} adjustsFontSizeToFit>
+      <AppText variant="rowValue" color={warmup || (dim && !on) ? 'text.secondary' : 'text.primary'} numeric numberOfLines={1} adjustsFontSizeToFit>
         {text}
       </AppText>
     </View>
@@ -947,7 +948,7 @@ export function TableSetRow({
         {...hold}
         style={({ pressed }) => ({ flex: 1, minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
       >
-        <CellBox text={text} done={done} warmup={r.warmup} on={on} />
+        <CellBox text={text} done={done} warmup={r.warmup} on={on} dim />
       </Pressable>
     );
   };
