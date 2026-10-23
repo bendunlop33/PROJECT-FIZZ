@@ -56,7 +56,7 @@ export interface TodayTemplate {
 export interface TodayDay {
   /** `plan:<planId>:<dayIndex>` or `other:<id>`. */
   key: string;
-  kind: 'plan' | 'other';
+  kind: 'plan' | 'split' | 'other';
   /** `Chest`. */
   name: string;
   planId: string | null;

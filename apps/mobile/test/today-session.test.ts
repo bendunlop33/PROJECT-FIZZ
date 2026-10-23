@@ -141,7 +141,6 @@ describe('Today (v2) session card from the plan', () => {
     expect(Number(push.rows[0]?.top)).toBeGreaterThan(0);
 
     // A plan in use: the lean card (D3); the plan's own length has no note and nothing to undo.
-    expect(push.lean).toBe(true);
     expect(push.time).toMatchObject({ note: null, lines: [], undoMinutes: null });
     // A length under the card's own estimate trims: the note after Time and the detail behind it (fit-to-time 22 Oct
     // revision); the main lift stays. (Rests follow Ben's presets, as the builder's do, so the estimate agrees with
@@ -249,43 +248,24 @@ describe('Today (v2) session card from the plan', () => {
     expect(kept).toEqual({ ok: true, draftId: c1.draftId, version: view?.edited?.version });
   });
 
-  it('Mix it up (no plan) cycles a shortlist (today only); Undo is the code draft again', async () => {
-    const s = await benNoPlan();
-    const data = await loaded(s);
-    expect(data.status).toBe('no_plan');
-    // Full body without abs: its last accessory has fresh options at this gym.
-    const key = dayKeyOf(data, 'Full body');
-    const base = s.todaySession.card(data, sel(data, key, { minutes: 75, abs: false }));
-    expect(base?.lean).toBe(false);
-    expect(base?.mixAvailable).toBe(true);
-    const one = s.todaySession.card(data, sel(data, key, { minutes: 75, abs: false, mix: 1 }));
-    expect(one?.mix?.text).toMatch(/ → /);
-    expect(one?.mix?.text).not.toContain('today only');
-    expect(one?.mix?.another).toMatch(/^Another \(1\/\d+\)$/);
-    expect(one?.mix?.notReviewed).toBe(true);
-    // Never the main lift.
-    expect(one?.rows[0]?.name).toBe(base?.rows[0]?.name);
-    expect(s.todaySession.card(data, sel(data, key, { minutes: 75, abs: false, mix: 0 }))?.rows.map((r) => r.name)).toEqual(base?.rows.map((r) => r.name));
-  });
-
-  it('(D3) with a plan the lean card has no Mix it up: no offer, no shortlist, and a mix count an older selection carried changes nothing', async () => {
+  it('(D3; V5) the card has no Mix it up, with or without a plan: a mix count an older selection carried changes nothing, and no model call', async () => {
     const { s } = await benWithPlan();
     const data = await loaded(s);
     for (const key of [dayKeyOf(data, 'Push'), data.others.find((d) => d.name === 'Push')?.key ?? '']) {
+      const calls = model.requests.length;
       const base = s.todaySession.card(data, sel(data, key, { minutes: 75 }));
-      expect(base?.lean).toBe(true);
-      expect(base?.mixAvailable).toBe(false);
-      expect(base?.mixShortlist).toEqual([]);
-      expect(base?.mixFromExerciseId).toBeNull();
       const carried = s.todaySession.card(data, sel(data, key, { minutes: 75, mix: 2 }));
       if (base === null || carried === null) throw new Error('no card');
-      expect(carried.mix).toBeNull();
       expect(carried.rows).toEqual(base.rows);
-      // Nothing for the coach to pick from: no model call.
-      const calls = model.requests.length;
-      expect(await s.todaySession.mixPick(data, carried)).toBeNull();
       expect(model.requests.length).toBe(calls);
     }
+  });
+
+  it('(V5) no plan: the card has no Mix it up either (it is on Your workout)', async () => {
+    const s = await benNoPlan();
+    const data = await loaded(s);
+    const full = dayKeyOf(data, 'Full body');
+    expect(s.todaySession.card(data, sel(data, full, { abs: false, mix: 1 }))?.rows).toEqual(s.todaySession.card(data, sel(data, full, { abs: false }))?.rows);
   });
 
   it('merge: Today’s draft is the builder’s (codec, per-slot state); an edit in the builder shows `· edited`; Start is one tap, today only; the Summary offers Keep for next time and its Undo restores the plan day once', async () => {
@@ -375,22 +355,6 @@ describe('Today (v2) session card from the plan', () => {
     const again = await s.todaySession.review(after, sel(after, key), 'nudge-2');
     expect(again?.kind).toBe('settled');
     expect(model.requests.length).toBe(calls);
-  });
-
-  it('Mix it up (no plan; D3 took it off the lean card) takes the coach’s pick from code’s shortlist with its reason', async () => {
-    const s = await benNoPlan();
-    const data = await loaded(s);
-    const full = dayKeyOf(data, 'Full body');
-    const base = s.todaySession.card(data, sel(data, full, { minutes: 75, abs: false, mix: 1 }));
-    if (base === null || base.mixShortlist.length < 2) throw new Error('no shortlist');
-    const want = base.mixShortlist[base.mixShortlist.length - 1] ?? '';
-    model = new StepModel([() => toolCall('mix_pick', { exerciseId: want, reason: 'A fresh angle for today.' })]);
-    const pick = await s.todaySession.mixPick(data, base);
-    expect(pick).toMatchObject({ by: 'coach', exerciseId: want });
-    const mixed = s.todaySession.card(data, sel(data, full, { minutes: 75, abs: false, mix: 1 }), { mixPick: pick });
-    expect(mixed?.mix?.notReviewed).toBe(false);
-    expect(mixed?.mix?.reason).toBe('A fresh angle for today.');
-    expect(mixed?.rows.some((row) => row.name === data.internal.nameOf(want))).toBe(true);
   });
 
   it('Other sessions: Push from ⋯ starts with no plan day (Up next is credited by what was trained)', async () => {
@@ -732,12 +696,16 @@ describe('Today (v2) session card from the plan', () => {
     expect(await s.plans.overview()).toBeNull();
     const data = await loaded(s);
     expect(data.status).toBe('no_plan');
-    expect(data.days).toEqual([]);
-    // The app's one Up next resolver (split due day, then rotation): Back was trained least recently.
+    // (V5) The Profile split is the day row; NEXT is the app's one Up next resolver's pick (split due day, then
+    // rotation): Back was trained least recently.
+    expect(data.days.map((d) => d.name)).toEqual(['Chest', 'Legs', 'Shoulders', 'Back']);
     const up = await s.next.preview(gymId);
     expect(up?.routine).not.toBeNull();
     expect(data.upNext).toEqual({ title: up?.title, routineId: up?.routine?.id ?? null, sourceSessionId: null });
     expect(data.upNext?.title).toBe('Back');
+    expect(data.days.find((d) => d.key === data.nextKey)?.name).toBe('Back');
+    // His own Back workout leads the card (the routine's exercise).
+    expect(s.todaySession.card(data, sel(data, data.nextKey ?? ''))?.rows.some((r) => r.name === 'Barbell row')).toBe(true);
   });
 
   it('B1: rotation only (no split, no plan) → Up next is the routine after the one done last', async () => {

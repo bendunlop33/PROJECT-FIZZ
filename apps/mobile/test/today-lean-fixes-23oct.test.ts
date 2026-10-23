@@ -304,13 +304,15 @@ describe('S1 and the Abs switch: the options read the draft as it is after every
     expect(snapOf(off).today?.abs).toBe(false);
   });
 
-  it('Your workout from a no-plan Today card has no Today options (the card keeps its own; review N3)', async () => {
+  it('(V5) Your workout from a no-plan Today card has Today’s options too (the card is the same lean card; was review N3)', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
     const data = await loaded(s);
     const snap = await edit(s, data, sel(data, dayKeyOf(data, 'Full body')));
-    expect(await s.builder.todayOptions(snap.draftId)).toBeNull();
-    expect(snap.today).toBeNull();
+    const o = await s.builder.todayOptions(snap.draftId);
+    expect(o).not.toBeNull();
+    expect(o?.accessories).toBe(data.initial[dayKeyOf(data, 'Full body')]?.accessories);
+    expect(snap.today).not.toBeNull();
   });
 
   it('restart recovery and rule 5: an option change under an op ID writes once, survives a force-close, and a stale one is refused', async () => {
