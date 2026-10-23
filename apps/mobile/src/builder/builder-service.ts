@@ -1349,13 +1349,15 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           const currentKeys = new Map(slotsOf(workout.blocks).map((x, i, all) => [x.key, copyKeys(all)[i] ?? ''] as const));
           const regym = (s: BuilderSlot): BuilderSlot => {
             if (swapped.has(s.key)) return s;
-            const base = reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), slotLoadOf(env.ctx.loads(s.exerciseId), s.main));
+            const here = slotLoadOf(env.ctx.loads(s.exerciseId), s.main);
+            const base = reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), here);
             const copy = currentKeys.get(s.key) ?? '';
             const planned = plannedSlots.get(copy);
             if (planned === undefined) return base;
             // (S3) One item per slot: the planner's loads mix with the builder's only when both fitted to the same item.
             const sameItem = (plannedItem.get(copy)?.equipmentId ?? null) === (env.codec.checkedOnOf(s.exerciseId)?.equipmentId ?? null);
-            const r = slotAtNewGym(s, planned, base, sameItem);
+            // (D4) The back-offs follow the top Ben kept, as in Your workout (review B1).
+            const r = slotAtNewGym(s, planned, base, sameItem, here);
             if (r.fromPlanned) fromPlanned.set(s.key, copy);
             return r.slot;
           };

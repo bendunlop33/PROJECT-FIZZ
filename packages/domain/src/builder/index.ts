@@ -1,5 +1,6 @@
 export * from './types';
 export * from './loads';
+export * from './backoff';
 export * from './rest';
 export * from './set-rows';
 export * from './estimate';

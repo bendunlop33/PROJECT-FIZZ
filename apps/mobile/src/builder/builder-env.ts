@@ -13,6 +13,7 @@ import {
   ruleAnchorOf,
   ruleCategory,
   lastSessionE1rm,
+  mainFocusOf,
   mayHurtConfirm,
   stableStringify,
   deriveId,
@@ -117,6 +118,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     const known = new Map<string, EquipmentInstance>();
     for (const g of await repos.gyms.listByOwner(p.id).catch(() => [])) for (const e of await repos.equipment.listByGym(g.id).catch(() => [] as EquipmentInstance[])) known.set(e.id, e);
     const flags: readonly PainFlag[] = await repos.painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
+    // (D4) Back-offs sit in the band for Ben's goal (Strength / Balanced / Muscle); not set or unreadable: Balanced.
+    const mainFocus = mainFocusOf((await repos.trainingProfiles.get(p.id).catch(() => null))?.goal);
     const snapGym = { id: req.gymId ?? 'no-gym', name: gym?.name ?? 'this gym', equipment };
     const substitute: SubstituteContext = { ownerId: p.id, unit: p.preferredUnit, gym: snapGym, knownEquipment: known, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, at };
 
@@ -235,6 +238,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       const planned = firstLoads.get(id) ?? null;
       const newerThanPlan = planned !== null && planSetMs !== null && refs.latest !== null && toMs(refs.latest.performedAtUtc) > planSetMs;
       return {
+        mainFocus,
         unit: refs.unit,
         convention: refs.convention,
         equipment: eq,
@@ -263,7 +267,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       // Not read up front (a candidate past the first few): the item and no reference; the service re-reads before keeping it.
       const e = byId.get(id);
       const eq = e === undefined ? null : equipmentHere(e, { gym: snapGym }).equipment;
-      return { unit: eq?.unit ?? p.preferredUnit, convention: eq?.loadConvention ?? e?.defaultLoadConvention ?? 'total', equipment: eq, bodyweightExercise: e?.defaultLoadConvention === 'bodyweight', gymEquipment: equipment, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: noReferenceCeiling(eq), painCap: null };
+      return { mainFocus, unit: eq?.unit ?? p.preferredUnit, convention: eq?.loadConvention ?? e?.defaultLoadConvention ?? 'total', equipment: eq, bodyweightExercise: e?.defaultLoadConvention === 'bodyweight', gymEquipment: equipment, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: noReferenceCeiling(eq), painCap: null };
     };
 
     const presets = p.restPresets.map((r) => r.seconds);

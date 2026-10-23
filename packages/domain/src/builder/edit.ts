@@ -160,7 +160,8 @@ function edit(w: BuilderWorkout, op: BuilderEditOp, ctx: BuilderContext): Builde
     }
     case 'add_set': {
       if (workingCount(slot) >= BUILDER_SET_RULES.maxWorkingSets) return { ok: false, reason: 'max_sets' };
-      return done(replace(w, slot.key, touched(setWorkingCount(slot, workingCount(slot) + 1))), [slot.key]);
+      // (D4) A Top set copied as a Back-off is worked out by the back-off rule, below the top.
+      return done(replace(w, slot.key, touched(setWorkingCount(slot, workingCount(slot) + 1, load()))), [slot.key]);
     }
     case 'add_drop': {
       const r = addDropSet(slot, load());

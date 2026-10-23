@@ -77,8 +77,12 @@ describe('startWorkout normalises planned loads (review B1)', () => {
     expect(expectOk(result).state.sets[0]?.status).toBe('completed');
   });
 
+  // Rows 2/2b: an exercise that lists no equipment kinds (nothing to map an item by), so its load stays unchecked in the
+  // slot's own unit (review SP5). An unpinned exercise with kinds is mapped to this gym's item instead (O1, below).
+  const NO_KINDS = exercise(215, 'Odd press', { compatibleEquipment: [], defaultLoadConvention: 'total' });
+
   it('row 2: no equipment, owner prefers lb, kg template that does not convert exactly: no planned load, warned', () => {
-    const out = start({ ex: BENCH, equipmentId: null, targetLoad: kg(100), gymEquipment: [], preferredUnit: 'lb' });
+    const out = start({ ex: NO_KINDS, equipmentId: null, targetLoad: kg(100), gymEquipment: [], preferredUnit: 'lb' });
     expect(out.aggregate.exercises[0]).toMatchObject({ unit: 'lb', loadConvention: 'total' });
     expect(out.aggregate.sets[0]?.planned.load).toBeNull();
     expect(out.warnings).toEqual([
@@ -94,7 +98,7 @@ describe('startWorkout normalises planned loads (review B1)', () => {
   });
 
   it('row 2b: no equipment, a template in another unit is dropped even when it converts exactly (gym-switch §6.1 rule 1, as Repeat; review SP5)', () => {
-    const out = start({ ex: BENCH, equipmentId: null, targetLoad: kg(45.359237), gymEquipment: [], preferredUnit: 'lb' });
+    const out = start({ ex: NO_KINDS, equipmentId: null, targetLoad: kg(45.359237), gymEquipment: [], preferredUnit: 'lb' });
     expect(out.aggregate.sets[0]?.planned.load).toBeNull();
     expect(out.warnings).toEqual([{ kind: 'target_dropped', setTemplateId: id(6001), requested: kg(45.359237), reason: 'unit_not_convertible' }]);
     // Nothing unchecked is planned: Ben enters an lb load and it logs.

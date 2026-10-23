@@ -83,6 +83,12 @@ export function draftLoadSourceOf(source: BuilderLoadSourceKind, typed: boolean)
 }
 
 /**
+ * (D4, Ben 22–23 Oct) The main focus a back-off's band follows (`BACKOFF_BANDS`): Ben's goal, Strength, Muscle, or
+ * both (Balanced).
+ */
+export type MainFocus = 'strength' | 'balanced' | 'muscle';
+
+/**
  * Resolved inputs for one exercise at the selected gym. The service fills
  * them from the existing code (§4.1): coach next-session targets / lift
  * targets, `planFirstLoads`, `nextTargetsFor`, `loadReferences` →
@@ -91,6 +97,8 @@ export function draftLoadSourceOf(source: BuilderLoadSourceKind, typed: boolean)
  * item's unit when it differs (`loadFrameOf`).
  */
 export interface SlotLoadInput {
+  /** (D4) The band back-offs sit in below the top set (`mainFocusOf` Ben's goal). Absent: Balanced. */
+  mainFocus?: MainFocus;
   unit: WeightUnit;
   convention: LoadConvention;
   /** The item this gym maps the exercise to; null = none (bodyweight, or not here). */
@@ -167,6 +175,13 @@ export interface BuilderSetRow {
   typed?: true;
   /** A typed kg this gym's item rounded down: what Ben typed, in the slot's unit (`Why?` names the item; review S6). */
   roundedFrom?: number;
+  /**
+   * (D4, HT8; review B1) A back-off whose load isn't worked out from the slot's anchor (a saved or coach-built
+   * workout's own back-off, or one the coach's load op kept): its load (`load`) against the top it was set for
+   * (`top`), both in the slot's unit. Today's top lower than `top` lowers it by the same %; higher leaves it at
+   * `load`. Measured from here, lowering the top again never compounds and putting it back puts the back-off back.
+   */
+  backoffFrom?: { load: number; top: number };
   /**
    * (22 Oct) A timed set's work time, seconds (a plank, a ride): the set is counted in time, not reps (`reps` is
    * then only a placeholder). Kept through the codec as the saved workout has it, so Start plans it as saved.
