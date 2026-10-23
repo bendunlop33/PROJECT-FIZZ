@@ -7,7 +7,7 @@ describe('device prefs', () => {
   it('guide animations default on, including for files saved before the setting existed', () => {
     expect(DEFAULT_PREFS.guideAnimations).toBe(true);
     expect(parsePrefs(null).guideAnimations).toBe(true);
-    expect(parsePrefs('{"themeDirection":"A"}')).toEqual({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
+    expect(parsePrefs('{"themeDirection":"A"}')).toEqual({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'plan', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
     expect(parsePrefs('garbage')).toEqual(DEFAULT_PREFS);
   });
 
@@ -19,9 +19,9 @@ describe('device prefs', () => {
   });
 
   it('the Library segment is `exercises` unless `workouts` was saved (EL10)', () => {
-    expect(parsePrefs(null).librarySegment).toBe('exercises');
+    expect(parsePrefs(null).librarySegment).toBe('plan');
     expect(parsePrefs('{"librarySegment":"workouts"}').librarySegment).toBe('workouts');
-    expect(parsePrefs('{"librarySegment":"x"}').librarySegment).toBe('exercises');
+    expect(parsePrefs('{"librarySegment":"x"}').librarySegment).toBe('plan');
   });
 
   it('Targets hit is off unless turned on (Ben, 20 Oct)', () => {
@@ -40,7 +40,7 @@ describe('device prefs', () => {
     const a = updatePrefs({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'later', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false }, { guideAnimations: false });
     expect(a).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'later', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
     expect(updatePrefs(a, { themeDirection: 'D' })).toEqual({ themeDirection: 'D', guideAnimations: false, alertsAsk: 'later', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
-    expect(updatePrefs(null, { guideAnimations: false })).toEqual({ themeDirection: null, guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
+    expect(updatePrefs(null, { guideAnimations: false })).toEqual({ themeDirection: null, guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'plan', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
   });
 });
 

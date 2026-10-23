@@ -21,7 +21,7 @@ export interface DevicePrefs {
   alertsAsk: AlertsAsk;
   /** The workout screen's view (active-workout §4.5): Table by default; Ben's choice sticks on this phone. */
   workoutView: 'table' | 'focus';
-  /** The Library tab's last segment (exercise-library EL10): a UI preference, not Your data, not backed up. */
+  /** The Library tab's last segment (exercise-library EL10): a UI preference, not Your data, not backed up. Plan until Ben picks another (Ben, 23 Oct). */
   librarySegment: 'plan' | 'workouts' | 'exercises';
   /** Settings › Voice: spoken cues, reading coach replies, the voice and its speed (this phone's voices). */
   voice: VoicePrefs;
@@ -38,7 +38,7 @@ export function morningReminderOf(prefs: Pick<DevicePrefs, 'morningReminder'>): 
 
 export type AlertsAsk = 'undetermined' | 'later' | 'answered';
 
-export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false };
+export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'plan', voice: DEFAULT_VOICE_PREFS, targetsHit: false };
 
 export function parsePrefs(text: string | null): DevicePrefs {
   if (text === null) return DEFAULT_PREFS;
@@ -52,7 +52,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
       guideAnimations: guideAnimations !== false,
       alertsAsk: alertsAsk === 'later' || alertsAsk === 'answered' ? alertsAsk : 'undetermined',
       workoutView: workoutView === 'focus' ? 'focus' : 'table',
-      librarySegment: librarySegment === 'workouts' || librarySegment === 'plan' ? librarySegment : 'exercises',
+      librarySegment: librarySegment === 'workouts' || librarySegment === 'exercises' ? librarySegment : 'plan',
       voice: parseVoicePrefs(voice),
       targetsHit: targetsHit === true,
       ...(morningReminder === undefined ? {} : { morningReminder: parseMorningReminder(morningReminder) }),
