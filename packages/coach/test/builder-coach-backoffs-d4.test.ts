@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildFromSetup, getAchievableLoads, referenceE1rm, slotsOf, type BuilderSetup, type BuilderWorkout, type LoadReferences, type RefSession } from '@fizz/domain';
+import { buildFromSetup, editSetRow, getAchievableLoads, referenceE1rm, slotsOf, type BuilderSetup, type BuilderSlot, type BuilderWorkout, type LoadReferences, type RefSession } from '@fizz/domain';
 import { builderFixture as F } from '@fizz/domain/testing';
 import { applyBuilderEdits, createBuilderLoadGuard, topLoad, type BuilderCoachEnv, type BuilderCoachSnapshot } from '../src/index';
 
 /**
  * D4 (Ben, 22–23 Oct) through the coach's typed edits: when the coach lowers today's top (Ben asked), the back-offs
- * drop by the same %, rounded down on the bar; a heavier top works them out from their reps and RPE, inside the band
- * below the new top (Balanced 4–10 %), never at or above it.
+ * drop by the same %, measured from the top they were worked out from, rounded down on the bar; a heavier top leaves
+ * them (HT8: raising the top never raises back-offs, as when Ben types it), never at or above it. A load raised,
+ * lowered or put back never compounds (review B1).
  */
 
 const chest: BuilderSetup = { minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 3 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] };
@@ -53,15 +54,95 @@ describe('D4: the coach lowers or raises today’s top', () => {
     for (const b of backoffs(o.workout)) expect(b ?? Infinity).toBeLessThan(90);
   });
 
-  it('heavier top (100 → 102.5): back-offs from their reps and RPE, inside 4–10 % below the new top', () => {
+  it('heavier top (100 → 102.5): back-offs stay where they were worked out (HT8), 4–10 % below the new top', () => {
     const { snap, env, key } = setup();
     const o = applyBuilderEdits(snap, [{ op: 'load', slotKey: key, direction: 'heavier', value: null, unit: null }], env);
     const after = benchOf(o.workout);
     const t = after === undefined ? 0 : (topLoad(after) ?? 0);
     expect(t).toBe(102.5);
+    expect(backoffs(o.workout)).toEqual(backoffs(snap.workout));
     for (const b of backoffs(o.workout)) {
       expect(b ?? Infinity).toBeLessThanOrEqual(t * 0.96 + 1e-9);
       expect(b ?? 0).toBeGreaterThan(t * 0.9 - 2.5);
     }
+  });
+});
+
+const snapOf = (snap: BuilderCoachSnapshot, w: BuilderWorkout): BuilderCoachSnapshot => ({ ...snap, workout: w, draftVersion: snap.draftVersion + 1 });
+const withBench = (w: BuilderWorkout, f: (s: BuilderSlot) => BuilderSlot): BuilderWorkout => ({ ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.exerciseId === 'bench' ? f(s) : s)) })) });
+
+describe('D4 review B1: the coach never ratchets the back-offs', () => {
+  const setLoad = (key: string, value: number) => ({ op: 'load' as const, slotKey: key, direction: null, value, unit: 'kg' as const });
+
+  it('heavier (102.5) then set 100: back-offs back to the built 95, not 92.5', () => {
+    const { snap, env, key } = setup();
+    const b0 = backoffs(snap.workout);
+    expect(b0.every((b) => b === 95)).toBe(true);
+    const up = applyBuilderEdits(snap, [{ op: 'load', slotKey: key, direction: 'heavier', value: null, unit: null }], env).workout;
+    const back = applyBuilderEdits(snapOf(snap, up), [setLoad(key, 100)], env).workout;
+    expect(topLoad(benchOf(back) as BuilderSlot)).toBe(100);
+    expect(backoffs(back)).toEqual(b0);
+  });
+
+  it('Ben typed 110; the coach steps it down (lighter → 107.5) or sets 100: back-offs stay 95 (the top is still at or above the built 100)', () => {
+    const { snap, env, key } = setup();
+    const b0 = backoffs(snap.workout);
+    const typed = withBench(snap.workout, (s) => {
+      const r = editSetRow(s, s.rows.findIndex((x) => x.type === 'top'), { kind: 'load', value: 110 }, env.ctx.loads('bench'));
+      if (!r.ok) throw new Error(r.reason);
+      return r.slot;
+    });
+    expect(backoffs(typed)).toEqual(b0);
+    const stepped = applyBuilderEdits(snapOf(snap, typed), [{ op: 'load', slotKey: key, direction: 'lighter', value: null, unit: null }], env).workout;
+    expect(topLoad(benchOf(stepped) as BuilderSlot)).toBe(107.5);
+    expect(backoffs(stepped)).toEqual(b0);
+    const set = applyBuilderEdits(snapOf(snap, typed), [setLoad(key, 100)], env).workout;
+    expect(backoffs(set)).toEqual(b0);
+  });
+
+  it('lighter (97.5) then heavier: 92.5, then back to 95; lighter twice lands where one lighter step to the same top does', () => {
+    const { snap, env, key } = setup();
+    const down1 = applyBuilderEdits(snap, [setLoad(key, 97.5)], env).workout;
+    // 95 × 97.5 / 100 = 92.6 → 92.5.
+    expect(backoffs(down1).every((b) => b === 92.5)).toBe(true);
+    const up = applyBuilderEdits(snapOf(snap, down1), [setLoad(key, 100)], env).workout;
+    expect(backoffs(up)).toEqual(backoffs(snap.workout));
+    const twice = applyBuilderEdits(snapOf(snap, applyBuilderEdits(snap, [setLoad(key, 95)], env).workout), [setLoad(key, 90)], env).workout;
+    const once = applyBuilderEdits(snap, [setLoad(key, 90)], env).workout;
+    expect(backoffs(twice)).toEqual(backoffs(once));
+  });
+
+  it('a saved workout’s own back-offs (no anchor): the coach’s 80 lowers 90 → 70 (same %), 100 again puts 90 back', () => {
+    const { snap, env, key } = setup();
+    const saved = withBench(snap.workout, (s) => ({
+      ...s,
+      source: 'saved',
+      anchorE1rm: null,
+      repRange: { min: 5, max: 5 },
+      rows: [
+        { type: 'top', reps: 5, load: 100, rpe: 8 },
+        { type: 'backoff', reps: 5, load: 90, rpe: 8 },
+        { type: 'backoff', reps: 5, load: 90, rpe: 8 },
+      ],
+    }));
+    const low = applyBuilderEdits(snapOf(snap, saved), [setLoad(key, 80)], env).workout;
+    expect(backoffs(low)).toEqual([70, 70]);
+    const back = applyBuilderEdits(snapOf(snap, low), [setLoad(key, 100)], env).workout;
+    expect(topLoad(benchOf(back) as BuilderSlot)).toBe(100);
+    expect(backoffs(back)).toEqual([90, 90]);
+  });
+
+  it('MEDIUM (c): with a heavier top Ben typed, the coach’s “more reps” never makes a back-off heavier', () => {
+    const { snap, env, key } = setup();
+    const typed = withBench(snap.workout, (s) => {
+      const r = editSetRow(s, s.rows.findIndex((x) => x.type === 'top'), { kind: 'load', value: 110 }, env.ctx.loads('bench'));
+      if (!r.ok) throw new Error(r.reason);
+      return r.slot;
+    });
+    const before = backoffs(typed);
+    const more = applyBuilderEdits(snapOf(snap, typed), [{ op: 'reps', slotKey: key, reps: 10 }], env).workout;
+    backoffs(more).forEach((b, i) => {
+      expect(b ?? Infinity).toBeLessThanOrEqual(before[i] ?? 0);
+    });
   });
 });

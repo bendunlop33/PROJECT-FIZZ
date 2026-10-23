@@ -4,7 +4,6 @@ import {
   adviseBuilder,
   bandInsertIndex,
   anchorE1rmOf,
-  backoffLoad,
   builderSupersetWithNext,
   builderUnlink,
   canPair,
@@ -16,15 +15,16 @@ import {
   formulaApplies,
   infoOrDefault,
   loadDirection,
-  lowerWithTop,
   makeSlot,
   removeSlot,
   roundContextOf,
   roundDownHere,
   setWorkingCount,
+  settleBackoffs,
   slotsOf,
   splitInvalidAutoPairs,
   warmupsFor,
+  withBackoffBases,
   workingCount,
   type BuilderBlock,
   type BuilderContext,
@@ -138,10 +138,12 @@ export function builderRepsText(row: Pick<BuilderSetRow, 'reps' | 'repsMax'>): s
 }
 
 /**
- * The slot with a new working load: Top / working sets at it, back-offs by the back-off rule (D4: from their reps and
- * RPE inside the focus's band below the new top; a lighter top lowers them by the same %), warm-ups rebuilt, all
- * rounded down here. Each row keeps its reps (a saved `3–6` range included; final re-review F1); a typed kg gives way
- * to the coach's load, and the saved workout's reasons no longer explain it (S1).
+ * The slot with a new working load: Top / working sets at it, warm-ups rebuilt, all rounded down here. Back-offs
+ * (D4, HT8; review B1) keep the top they were worked out from (`withBackoffBases`): a lighter working load lowers them
+ * by the same % from there, a heavier one leaves them (raising the top never raises back-offs, as when Ben types it),
+ * so a load raised, lowered or put back never compounds. A drop follows a set that moved. Each row keeps its reps (a
+ * saved `3–6` range included; final re-review F1); a typed kg gives way to the coach's load, and the saved workout's
+ * reasons no longer explain it (S1). No formula (assisted, added weight): every working set at the load, as before.
  */
 function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext): BuilderSlot {
   const input = ctx.loads(slot.exerciseId);
@@ -149,9 +151,7 @@ function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext):
   const info = infoOrDefault(ctx.info, slot.exerciseId);
   const first = working(slot)[0];
   const anchor = first !== undefined && formulaApplies(slot.convention) ? anchorE1rmOf({ value, reps: first.reps, rpe: first.rpe ?? BUILDER_SET_RULES.workRpe }) : null;
-  // (D4, HT8) Today's top lowered: each back-off drops by the same %.
-  const was = topLoad(slot);
-  const lighter = anchor !== null && was !== null && value < was;
+  const formula = formulaApplies(rc.convention);
   const down = (v: number | null): number | null => (v === null ? null : (roundDownHere(v, rc)?.value ?? null));
   const at = (r: BuilderSetRow, load: number | null): BuilderSetRow => {
     const row: BuilderSetRow = { ...r, load };
@@ -159,15 +159,19 @@ function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext):
     delete row.roundedFrom;
     return row;
   };
+  const before: BuilderSlot = { ...slot, rows: working(slot) };
+  const based = formula ? withBackoffBases(before, input) : before;
   const work: BuilderSetRow[] = [];
-  for (const r of working(slot)) {
+  for (const r of based.rows) {
     const prev = work[work.length - 1];
     if (r.type === 'top' || r.type === 'working') work.push(at(r, value));
-    else if (r.type === 'backoff') work.push(at(r, down(lighter && r.load !== null ? lowerWithTop(r.load, was, value) : backoffLoad({ anchorE1rm: anchor, working: value, reps: r.reps, rpe: r.rpe ?? BUILDER_SET_RULES.workRpe, top: value, focus: input.mainFocus }))));
+    else if (formula) work.push(at(r, r.load));
+    else if (r.type === 'backoff') work.push(at(r, down(value)));
     else work.push(at(r, prev?.load == null ? null : down(prev.load * BUILDER_SET_RULES.dropPct)));
   }
+  const rows = formula ? settleBackoffs({ ...based, rows: work, anchorE1rm: anchor }, input, based).rows : work;
   const warm = warmupsFor({ main: slot.main, role: info.role, barbell: info.barbell, load: input }, value);
-  const out: BuilderSlot = { ...slot, rows: [...warm, ...work], anchorE1rm: anchor, source: 'coach_target', startLight: null, touched: true };
+  const out: BuilderSlot = { ...slot, rows: [...warm, ...rows], anchorE1rm: anchor, source: 'coach_target', startLight: null, touched: true };
   delete out.why;
   return out;
 }
