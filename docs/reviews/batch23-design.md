@@ -2,7 +2,9 @@
 
 Branch `claude/gracious-knuth-joxqpw`. I reviewed the builder's **uncommitted** working tree on top of `9261625`: 22 files under `docs/` (+971 / −387). Nothing in `apps/` or `packages/` changed. This commit adds only this review. The builder's changes are still unstaged, so the fix round should commit them, split by topic as the builder proposed.
 
-## Verdict: CHANGES NEEDED
+**Current verdict (re-review after fix round 1, 23 Oct): CHANGES NEEDED.** B1–B3 and the follow-ups are fixed and the gate passes, but the fix round's new edit tracking crashes Your workout on Add and Swap, and a swap still carries the fit's set count into `Keep for next time?`. See [Re-review 1](#re-review-1-23-oct-after-fix-round-1) at the end.
+
+## Verdict (round 1): CHANGES NEEDED
 
 Most of D1–D9 is in place and reads well. Today with a plan is lean. Start just starts. The coach's pre-start review and its bigger weekly changes are offers. Picking uses broad groups and counting uses the detailed list. A stale lift confirmed `Still right` starts at full weight. Plan setup, Library and Profile match D7, and the shared fit has no pushed effort and no pairing when Supersets is off.
 
@@ -178,3 +180,237 @@ Three things block:
 - **SP8. Band with no plan.** Profile goals are strength / muscle / both and the bands are Strength / Balanced / Muscle. The mapping (presumably both → Balanced) isn't written down.
 
 The builder's other assumptions (RPE 8 for top and back-offs, FT8 read as the retired fit, no `Today only` tag without a plan either, broad Library filters with a part picker, ✦ priority preselected as Back, Shoulders days recommending 1 Back exercise, Legs capped at 5) are reasonable. They are correctly listed for Ben.
+
+---
+
+## Fixes (23 Oct, designer)
+
+Every finding above and in the follow-up list was checked against the source before fixing. All were confirmed by reading the code paths the review names; N8 is explained, not changed. Files: `docs/design/prototypes/{training-blocks,workout-builder-v3,plan-builder,workout-active-v3,progress-simple}.html`, `prototypes/app/{app-shell.html,build_app.py,check_app.mjs}`, and the specs `workout-builder-v3.md`, `training-blocks.md`, `plan-builder.md`, `fit-to-time.md`, `design-system.md`, `progress-goals.md`, `workout-summary.md`, `README.md`.
+
+**Not done in this session, and why.** This fix round had no shell, so I could not run `build_app.py`, `check_app.mjs` or `git diff --check`, and I could not commit. All checks below were written but **not run**. The builder's 22 files and this round's changes are still uncommitted. Next step for whoever has a shell: run `python3 docs/design/prototypes/app/build_app.py <scratch>/appout` (static checks, then the click-through), fix anything it reports, then commit by topic: (1) B3 label and shared-code checks; (2) Keep for next time? and Today's edits (B1, D3, S1, S3, S6); (3) coach offers (rule 5); (4) back-offs (B2, SS4/HT8, S7); (5) fit (S2, S5); (6) plan setup and app chrome (Any days, one back control, Profile); (7) Set up chat (D5); (8) specs. Do not push.
+
+### Blocking
+
+- **B3 (gate).** Confirmed: `check_text`'s week-range regex reads `22–23 Oct` as a week. Every prototype label now reads `(Ben, 22 and 23 Oct)` (HTML, `build_app.py`, `check_app.mjs`). The specs keep `22–23 Oct` (not checked). `build_app.py` also gains a check that each shared code block is the same in every copy: `BACKOFF` (5 files), `FIT` (Today with a plan, no-plan Today), `EDITS` (Today, the builder).
+- **B1 and its other triggers (Keep base).** Confirmed for all three Time cases, the coach-applied offer and the deload. Fix (SP1, proposal for Ben, workout-builder-v3 §2.8):
+  - Ben's changes are kept as a list of edits (remove, add, swap, set count) in Today's draft and in the builder (`EDITS` block).
+  - `Keep for next time?` replays them on the plan day's **template** for his chosen controls (un-fitted, before the deload and the coach) and compares that with the template for that main lift.
+  - Picking another main lift picks that template (S1). The `kept` name is then `Chest · Incline`.
+  - Tests added: 45 + Supersets off → no row; 40 and 35 + Abs off → exactly `− Cable crunch`; Varied → its four lines; coach offer applied then Cable fly back to 3 → no row; deload, Cable fly 2 → 3 → no row.
+- **B2 and "broader than dumbbells".** Confirmed (dumbbells on 2 kg steps and light barbell tops in every focus). Fix (SP2, proposal for Ben, §3.1 item 9): with no achievable load in the band, the one nearest the band that is below the top, on a tie the lighter; never the top. A top with nothing below it keeps its load and the back-offs do 1 rep fewer (spec; nothing in the prototypes is that light). One copy of `backOff` in all five prototypes, including the active workout's old simplified copy. Tests added:
+  - A property test of the shared code for Strength, Balanced and Muscle, steps 1, 1.25, 2, 2.5 and 5 kg, top-set reps 5–8, tops up to 250 kg.
+  - Every focus × effort × week × main lift in the plan builder, the dumbbell press included.
+  - Muscle 26 → 24 (7.7 %) is outside the band by design: it's nearer the band than 22 (15.4 %). Acceptance §3a.5 is reworded to match.
+
+### Follow-ups
+
+- **Rule 5 and rule 3: a stale offer applied over Ben's edit.** Confirmed. The offer line now shows only while its exercise reads `from` (Cable fly at 3 sets). Apply checks again and refuses with `Out of date`. Test: Edit, Cable fly to 4 → no offer on Your workout or on Today.
+- **Rule 5 and rule 2: Today's offer ignored the fit, and its Apply refitted.** Confirmed. The offer is now applied after the fit to the draft as shown (nothing is refitted). It's withdrawn when the fit changes Cable fly. With the new fit, 35 min keeps Cable fly at 3 (Triceps pushdown is dropped), so the offer stays and Apply changes only Cable fly (tested). At 30 min Cable fly is cut to 2 and neither screen offers it (tested).
+- **D4 vs SS4/HT8.** Confirmed. When today's top is lowered (pain hold, coach, Ben, R2, deload), the back-offs drop by the same factor and snap down (`lowerBackOff`). Pain-held bench now reads `100 / 92.5`, deload `92.5 / 87.5` (unchanged), early-deload repeat `100 / 95`. Specs fixed (workout-builder-v3 §3.1, training-blocks revision and §4.4, plan-builder §2). Tests added for all three. Note for Ben: deload is treated as a lowering (−10 % on both). HT8's list doesn't name deload, but SS4's general sentence covers it, and the numbers match the old rule here.
+- **D3 regression (today-only choices lost).** Confirmed. The builder sends Ben's controls and edits back to Today as he makes them (`todayedit` through the shell). Today's card shows the edited draft with `Edited`; Start and the next Edit use it; Time refits around it (FT5). Spec conflict resolved for "keep" (§2.0.4, §2.0.5, §2.1). Prototype gap: loads, reps, order and pairing typed on Your workout don't come back to Today's card. Tested: Abs off → `‹ Today` → no crunch, `Edited`, Edit shows Abs off, Start has no crunch, Summary `− Cable crunch`.
+- **D5 regression in the Set up chat.** Confirmed. A named part is recorded (`s.want`), and `poolFor` takes it first, so "add hamstrings" adds a hamstring exercise, "add triceps" a triceps one, "add biceps" a biceps one. Tested as "one more of that part than without the words".
+- **Plan builder Any days.** Confirmed. `Build plan` resets the days to the usual ones for Sessions a week when Any days doesn't match it. Tested.
+- **D7 one back control on Your plan's row pages.** Confirmed. The plan builder tells the shell when a row's page is open, and the app's `‹ Library` hides, so Ben can't leave mid-edit (which also removes the "reopens on Your week" path). Tested.
+- **Profile › Split and Workout defaults.** Confirmed. They now open Library › Your plan itself. Tested from Library › Exercises.
+- **Spec text contradicting D2 and D3.** Confirmed and fixed:
+  - §2.0.7: offers via `propose_workout_edit`, never `set_next_session_targets`.
+  - §2.0.8 #3, #4, #9.
+  - §2.0.4 rows: `Other day`, `Coach offer pending`, `Edited`, and `No plan` (S4).
+  - §2.0.5 type-chip and tap-card rows struck.
+  - §2.1 line about expanding.
+  - §2.3 paused/ended row.
+  - §2.9 wireframe and bullets without `Update plan day`.
+  - The region list's chips and collapsed card struck.
+- **`↻ Mix it up` removal not flagged.** Confirmed. The D3 note no longer presents it as Ben's decision. A proposal (a fifth row on Your workout) and the variation gap (chips gone; nothing creates a variation after D1) are listed for Ben as §9 Q-R6. Not built.
+
+### Should fix and nits
+
+- **S1:** fixed with B1.
+- **S2:** fixed. Pairing is a counted step, and the cut that loses the least training overall replaces the step-by-step greedy cut, so the result never improves as Time drops. Same code on both Todays. Sweep test: all four days, 60 → 20 min, sets lost never fall and the estimate fits down to 25 min. Chest at 35 now drops only Triceps pushdown.
+- **S3:** fixed. A control change replays Ben's edits on the new choice. Listed for Ben as Q-R8, since it reverses a builder assumption.
+- **S4:** fixed. No-plan row rewritten; training-blocks §4.4 now says the deload runs before the fit.
+- **S5:** fixed as an offer (`Carry over`, then `Undo`), by muscle, to each muscle's next day, at most 4 sets. Whether it's an offer or on by default is Q-R3 (SP3).
+- **S6:** `Open in builder ›` now sends the day's template, so Keep works from the plan. Mid-workout structure changes are listed in §2.8 as a known prototype gap.
+- **S7:** the plan's Main focus goes from the plan builder (Apply plan / Apply changes) through the shell to Today, the builder and the workout. With no plan, the Profile goal maps to a band (both → Balanced; Q-R10). Test: a Muscle plan reads `102.5 / 92.5` on Today and in the workout.
+- **S8:** README and specs now say what is spec only: D8, the Bench load offer, Mix it up, Your workout's Time, and mid-workout Keep.
+- **N1–N7:** fixed. N1: example reworded. N2: VoiceOver uses Quads. N3: `Your plan changed`, with the lines re-listed. N4: proposal Q-R5. N5: a swap line only for a real swap. N6: the ★ line removed. N7: `[Proposal]` tag added.
+- **N8:** explained, not changed. Your plan's recorded week uses the fixture's 2.5 kg dumbbells (32.5 / 30, as Today), and a plan built in setup uses the example gym's 2 kg dumbbells. These are two example kits. A comment says so in `recWeek`.
+
+### Spec issues for Ben
+
+SP1–SP8 are written up as workout-builder-v3 §9 Q-R1 to Q-R10, each with the designer's recommendation. SP1, SP2, SP3, SP7 and SP8 are built as recommended; SP4, SP5 and SP6 are spec only. Nothing was added to `docs/brief/CHANGELOG.md`: these are proposals until Ben approves them.
+
+---
+
+## Re-review 1 (23 Oct, after fix round 1)
+
+I reviewed the same uncommitted working tree after the designer's fix round: 23 files under `docs/`, nothing in `apps/` or `packages/`. This commit changes only this review. The other 22 files are still uncommitted.
+
+### Verdict: CHANGES NEEDED
+
+The round-1 blockers are fixed, and so are almost all of the follow-ups:
+- `Keep for next time?` no longer lists the fit, pairing, the deload or the coach.
+- Back-offs stay below the top in every focus and kit step.
+- The gate passes.
+- Coach offers go stale correctly.
+- Today keeps Your workout's choices.
+
+Two new problems block. Both come from the fix round's edit tracking:
+- **R1.** Add and Swap crash Your workout when it's opened from Today or the plan. Today's changes now live on that screen (D3).
+- **R2.** A swap on a slot the fit trimmed carries the fit's set count into `Keep for next time?`, without showing it. This is B1's failure through another path.
+
+### Checks run by the reviewer
+
+- `python3 docs/design/prototypes/app/build_app.py <scratch>/appout`: **passed** on a clean run: `fixture check: ok`, then `click-through check: ok` (about 2 min, no page or console errors). The fix round hadn't run it; it passes as delivered.
+- `git diff --check`: clean. No changes outside `docs/`. There's no typecheck, lint or vitest for a docs-only batch.
+- The six changed prototypes load standalone with no console errors.
+- I ran my own Playwright probes on the built app and the standalone prototypes, then deleted them. They covered:
+  - Keep after control changes, set changes and removals at 60, 40, 35 and 30 min.
+  - The coach offer applied on Your workout, then `‹ Today`.
+  - Undo of a control change.
+  - Switching days with edits.
+  - Removals and added sets followed by a Time change.
+  - Add and Swap from Today's `Edit` and from `Open in builder ›`.
+  - The stale offer in the standalone builder.
+  - Ben typing a lighter top.
+  - The shared `EDITS` and `BACKOFF` code run directly on edge cases.
+
+### Round-1 findings: status
+
+| Finding | Status |
+|---|---|
+| B1 Keep counts Time cuts, coach and deload | **Fixed** for controls, removals and set counts. `check_app.mjs` covers 45 + Supersets off, 40/35 + Abs off, Varied, coach-then-restore and deload. My probes also show no row for: 30 min with Incline put back to 3, and the coach offer applied on Your workout. **Open for swaps (R2).** |
+| B2 Back-off equals or leaves the band | **Fixed.** One shared `backOff` in five copies, identical by `build_app.py`. There's a property test over 3 bands × 5 steps × 4 rep counts, and a sweep over every focus, effort, week and main lift, including the DB press. |
+| B3 Gate fails | **Fixed.** Labels read `22 and 23 Oct`, and the shared-code check was added. |
+| Process: commit by topic | **Not done.** Still 22 builder files uncommitted. |
+| Stale offer in the builder | **Fixed.** `+ Set` on Cable fly withdraws the line, and Apply on a stale offer is refused with `Out of date`. |
+| Today's offer vs the fit | **Fixed.** At 35 min, Apply changes only Cable fly. At 30 min the offer is gone on both screens. |
+| D4 vs SS4/HT8 (lowered top) | **Fixed** for the pain hold (`100 / 92.5`) and the deload. Ben's own lighter top isn't prototyped (S2 below). |
+| D3 regression (edits lost going back) | **Fixed** for controls, removals and set counts, with day switching and Undo. **Add and Swap crash (R1).** |
+| D5 Set up chat names a part | **Fixed** (tested for triceps, biceps and hamstrings). |
+| Any days, one back control, Profile › Split / Workout defaults | **Fixed** (tested). |
+| Spec text contradicting D2 and D3 | **Fixed.** None of the listed lines remain unstruck, and `set_next_session_targets` is now Summary-only. |
+| `↻ Mix it up` removal not flagged | **Fixed** (§9 Q-R6). |
+| S1–S8, N1–N8 | **Fixed or explained.** S2's sweep passes. S5's carry-over is now an offer by muscle, but its content can be wrong (S1 below). S6's `Open in builder ›` path has the R1 crash. |
+
+---
+
+### Blocking
+
+#### R1. Add and Swap crash Your workout when it's opened from Today's `Edit` or a plan day's `Open in builder ›`
+
+**Where:**
+- `docs/design/prototypes/workout-builder-v3.html:363`: `rowOf` calls `workRows(e)` (`:303`), which reads `e.per.filter(...)`.
+- An added or swapped exercise has `per: undefined` until the next render runs `perOf`:
+  - Add: `pick`, `:964`.
+  - Swap: `swap`, `:1006` (sheet and swipe).
+  - Coach chat: `papply`, `:1054`.
+  - Review suggestions: `sy`, `:1019`.
+- `view()` runs `syncEdits()` (`:818`) **before** rendering. For a swap or add, `syncEdits` builds `{ op: 'swap' | 'add', row: rowOf(e) }` (`:403`, `:405`).
+
+**Failure (built app, every case reproduced):**
+- Today with a plan → `Edit` → `＋ Add exercise` → Machine chest press. Result: `TypeError: Cannot read properties of undefined (reading 'filter')`.
+  - The sheet stays open and the list doesn't change.
+  - Every later tap throws again, so the screen is stuck.
+  - `‹ Today` shows the card without the addition.
+- The same happens for:
+  - Swap from the exercise sheet and from the swipe.
+  - The coach chat's `Swap cable fly` → Apply.
+  - Library › Your plan › `Open in builder ›` → Swap.
+- The standalone builder (Build your own) works, because `syncEdits` returns early with no `s.from`.
+
+**Effect:**
+- D3 moved today-only work to this screen, and the spec's answer to `↻ Mix it up` is "Your workout's Swap does the same job". Neither works.
+- The B1 fix can't produce `+ X · 3 sets` or `A → B` in the app at all.
+- The gate passes only because `check_app.mjs` never adds or swaps on an opened draft.
+
+**Fix:**
+- In `rowOf`, use `perOf(e)`, or have `syncEdits` call `perOf` on every exercise first.
+- Add click-through cases, both from Today's `Edit` and from `Open in builder ›`:
+  - Add, Swap (sheet), Swap (swipe), chat swap Apply and a review suggestion.
+  - Each must give no page error and the change on the list.
+  - Then `‹ Today` shows the change with `Edited`, and Start → Summary lists `+ <exercise> · 3 sets` or `<from> → <to>`.
+
+#### R2. A swap on a slot the fit trimmed carries the fit's set count into `Keep for next time?`
+
+**Where:**
+- `syncEdits` stores the swapped-in row as shown, with `sets` from the fitted draft (`workout-builder-v3.html:403`, `row: rowOf(e)`).
+- `replayEdits` puts that row into the template's slot (`training-blocks.html:431`, the same `EDITS` block in the builder at `:337`).
+- `structureLines` prints only `<from> → <to>` for a swap (`:445` / `:351`).
+- `workout-builder-v3.md:620` (§2.8 Data) says Apply writes the result as absolute values.
+
+**Failure:** I ran the shared `EDITS` code directly; in the app, R1 hides this until it's fixed.
+1. The template has Triceps pushdown × 3.
+2. At Time 40 the fit trims it to 2.
+3. Ben swaps it for Overhead triceps extension. The replayed template now holds `Overhead triceps extension × 2`.
+4. The Summary row shows only `Triceps pushdown → Overhead triceps extension`.
+5. Apply writes a 2-set slot into the Chest day.
+
+A set is lost from the plan for good because of a short session, and the row never shows it. That breaks D1 ("Time changes never ask") and §2.8's "Never for: Time or the fit".
+
+**Fix:**
+- A swapped-in exercise takes the template slot's set count. Record a `sets` op only when Ben changes the count himself.
+- Alternatively, show the count on the swap line whenever it differs from the slot's template count (`… → Overhead triceps extension · 2 sets`).
+- Add the test: 40 min, swap Triceps pushdown → the replayed template has 3 sets, and the row shows only the swap.
+
+---
+
+### Should fix (non-blocking)
+
+#### S1. The fit runs on the plan template, not on the draft with Ben's edits, so the Time note, its detail and the carry-over describe a different workout
+
+**Where:** `training-blocks.html:507–519` (`draft()`: `core()` fits the template, then `replayEdits`) and `carryOf` (`:528`). `fit-to-time.md:14` calls this the design. `workout-builder-v3.md:119` and `:271` say "Time refits around it". FT4 (`fit-to-time.md:48`) says the fit re-runs after every other edit.
+
+**Failures** (built app):
+
+| Ben's edit on Your workout | Then on Today | What the card shows |
+|---|---|---|
+| Removes Triceps pushdown | Time 35 | `Time · −1 exercise ›`, `Dropped Triceps pushdown` and `+3 triceps sets on your next Shoulders day? Carry over`: a carry-over for sets he removed himself |
+| Triceps pushdown → 4 sets | Time 35 | Triceps pushdown × 4 (moved to the end), `~43 min` against 35. The detail still says `Dropped Triceps pushdown` and offers the same +3, so one tap gives 7 triceps sets that week. |
+| Removes Cable fly and Triceps pushdown (`~36 min`) | Time 45 | `shorter rests`, `~32 min`, though 36 fits |
+| Same removals | Time 40 | `−1 set` while no row changed |
+
+**Fix:**
+- At least, work out the note, the detail and the carry-over from what's actually cut from today's edited workout. Leave out exercises Ben removed or set himself.
+- Skip steps the edited draft doesn't need, such as shorter rests when it fits.
+- Better: fit the edited draft with Ben's slots fixed (FT5). Whether added work may cost other cuts is Ben's call (SP-B below).
+
+#### S2. Ben's own lighter top doesn't lower the back-offs on Your workout
+
+**Where:** `workout-builder-v3.html:946–948`. Typing a kg marks it manual and doesn't touch the back-off rows.
+
+**Failure:** standalone builder, bench top 102.5 → 100 reads `1 × 6 + 2 × 8 · 100 / 95`. §3.1 item 9 (`workout-builder-v3.md:707`) now lists "Ben's own lighter top" as a lowering, which gives `100 / 92.5`.
+
+**Fix:** lower the back-offs that aren't manual by the same factor, or add this case to the README's spec-only list.
+
+#### S3. The fit's search is exhaustive, and that won't scale to Your workout's limits
+
+**Where:** `fit-to-time.md:12` ("every way … is tried") and the `FIT` block (`training-blocks.html:396–411`).
+
+**Problem:** Today's 4–5 accessories × 3 sets is about 81 combinations. Your workout allows 10 exercises and up to 8 sets each (§8 limits), which is about 7⁹ ≈ 40 M combinations per Time tap on the phone.
+
+**Fix:** specify a bounded method for `fitPlanToMinutes` before the slice is handed off, e.g. a knapsack over minutes, or a cap with the greedy fallback. Keep the monotonic-sets property as an acceptance test.
+
+#### S4. Saved workouts have no `Keep for next time?`
+
+**Where:** D1 says "or that saved workout", but Library › Workouts opens a fresh builder (`app-shell.html`, `data-wo` → `push('builder')`).
+
+**Problem:** the README's spec-only list (`README.md:28`) doesn't mention it.
+
+**Fix:** add it to the spec-only list, or prototype it.
+
+### Nits
+
+- **N-a.** A `sets` edit on an exercise the fit dropped re-adds it at the end (`replayEdits`, `training-blocks.html:432`). Triceps pushdown jumped after Cable crunch. Put it back in its template position.
+- **N-b.** `backOff` returns the top itself when nothing is below it (top ≤ one step) but keeps 8 back-off reps. The spec says 1 rep fewer. The property test starts at 3 steps, so this is untested. Unreachable at the fixtures' loads, but Your workout lets Ben type any top.
+
+### Spec issues (for Ben and the designer)
+
+- **SP-A. A set cut on top of a fit cut.** At 40 min the fit takes Triceps pushdown 3 → 2. If Ben deletes one more set, the row lists `Triceps pushdown 3 → 1 sets`. That follows §2.8 ("the number he chose"), but Apply then keeps the fit's set too. Ben should choose: absolute counts (as now), or relative to what he saw (`3 → 2`).
+- **SP-B. Fit before or after Ben's edits.** The fit-to-time revision (replay after the fit; the estimate may go over Time) conflicts with FT4 and with "Time refits around it". Ben should choose whether added work can cost other cuts (S1).
+- **SP-C. A coach change Ben asked for in Your workout's chat.** After R1's fix, it would be diffed as Ben's own edit and listed by Keep. §2.8 says "Never for: … a coach edit (D2 offers, D8 next-time changes)", which doesn't say whether a change Ben asked for counts.
+- **SP-D. SP2's fallback can drop far.** "Nearest below the top" picks Strength DB 10 each → 8 (20 %) and a 10 kg top on a 5 kg stack → 5 (50 %). Consider: beyond a limit (e.g. the general 15 %), keep the load and do 1 rep fewer instead.
+
+### Process
+
+The fix round's 22 changed files are still uncommitted, and this commit adds only this review. Once R1 and R2 are fixed and `build_app.py` passes, commit them in the topic commits the fixes note lists. Don't push.
