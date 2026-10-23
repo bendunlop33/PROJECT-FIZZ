@@ -155,8 +155,10 @@ export const REVIEW_LIMITS = { maxFacts: 60, maxOpIds: 20, inputsHashMax: 128, m
 /**
  * (Weekly, §6.1, §6.2) A plan tweak: code's own (a repeated edit, `source: 'code'`) or the coach's, checked
  * by code. Only a working-set count on one exercise of a plan-day template (no loads, so nothing to snap;
- * rule 4 is untouched). Progress v3 (rule 3): applied by the review itself when it has a reason, else asked
- * (Apply / Keep as is). Written through the routine's versioned write with an `update_routine` record
+ * rule 4 is untouched). Progress v3 (rule 3), narrowed by Ben's D2 (23 Oct): applied by the review itself only
+ * when CA8-small (one set fewer, with its reason, on a lift the week doesn't flag as stalled;
+ * `autoApplicable` in `@fizz/domain`), else an offer (Apply / Skip). Written through the routine's versioned
+ * write with an `update_routine` record
  * (`actionId`: Undo reverses that exercise's count); refused once that exercise's working sets are no
  * longer `fromSets` (rule 5). `expectedVersion`: the template's version the review saw (provenance).
  */
