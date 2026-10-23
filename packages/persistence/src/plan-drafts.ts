@@ -1,5 +1,5 @@
 import { PlanDraftSchema, type Exercise, type PlanDraft, type Routine } from '@fizz/schemas';
-import { expirePlanDraft, type PlanApplyChange, type PlanControlChange, type PlanEndChange, type PlanLifeChange, type PlanUndoChange } from '@fizz/domain';
+import { expirePlanDraft, type PlanApplyChange, type PlanControlChange, type PlanEndChange, type PlanLifeChange, type PlanRestartChange, type PlanUndoChange } from '@fizz/domain';
 import type { Database } from './database';
 import { decodeDocument, DocumentRepository, erase, EXERCISE_SPEC, listDocuments, ROUTINE_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
@@ -228,6 +228,46 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
         }
       }
     });
+  }
+
+  /**
+   * (23 Oct) Library › Plan › Previous › `Start again`: the copy made and
+   * applied in one transaction (the copy, its workouts, the rotation changes
+   * and any plan it supersedes), or nothing. `copyId` comes from the op ID:
+   * a retry finds the copy and replays. `make` gets the source plan, Ben's
+   * workouts and his applied plans as stored inside the transaction.
+   */
+  restart(ownerId: string, sourceId: string, copyId: string, make: (source: PlanDraft, routines: readonly Routine[], applied: readonly PlanDraft[]) => PlanRestartChange, exercises: readonly Exercise[] = []): Promise<PlanWrite> {
+    return this.db
+      .write(async (tx): Promise<PlanWrite> => {
+        const made = await getPlanDraftIn(tx, copyId);
+        if (made !== null) return made.ownerId === ownerId ? { status: 'replayed', plan: made, routines: [] } : { status: 'missing' };
+        const source = await getPlanDraftIn(tx, sourceId);
+        if (source === null || source.ownerId !== ownerId) return { status: 'missing' };
+        const routines = await listDocuments(tx, ROUTINE_SPEC, 'owner_id = ?', [ownerId]);
+        const applied = await listDocuments(tx, PLAN_DRAFT_SPEC, "owner_id = ? AND status = 'applied'", [ownerId]);
+        const c = make(source, routines, applied);
+        if (c.kind === 'stale') return { status: 'stale', plan: c.current };
+        if (c.copy.id !== copyId || c.copy.ownerId !== ownerId) throw new Error('Restart copy differs from the request');
+        const a = c.apply;
+        for (const e of exercises) {
+          if ((await tx.getFirst('SELECT id FROM exercises WHERE id = ?', [e.id])) !== null) continue;
+          if (!(await saveDocumentIn(tx, EXERCISE_SPEC, e, null)).ok) throw new Conflict();
+        }
+        for (const r of a.create) {
+          if (r.ownerId !== ownerId) throw new Error('Routine owner differs from the store owner');
+          if (!(await saveDocumentIn(tx, ROUTINE_SPEC, r, null)).ok) throw new Conflict();
+        }
+        for (const u of a.update) if (!(await saveDocumentIn(tx, ROUTINE_SPEC, u.next, u.expectedVersion)).ok) throw new Conflict();
+        for (const o of a.supersede) if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, o.next, o.expectedVersion)).ok) throw new Conflict();
+        if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, a.next, null)).ok) throw new Conflict();
+        return { status: 'written', plan: a.next, routines: [...a.create, ...a.update.map((u) => u.next)] };
+      })
+      .catch(async (e: unknown) => {
+        if (!(e instanceof Conflict)) throw e;
+        const plan = await this.get(sourceId);
+        return plan === null ? { status: 'missing' as const } : { status: 'stale' as const, plan };
+      });
   }
 
   /** The 14-day expiry of open plans, run on read. Returns the plans it closed. */

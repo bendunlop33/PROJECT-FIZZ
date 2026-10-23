@@ -231,6 +231,11 @@ export const PlanDraftSchema = z
     supersededBy: z.object({ planId: IdSchema, opId: OperationIdSchema, atUtc: UtcTimestampSchema }).nullable().optional(),
     /** Ben's `End plan` (status `ended`); absent or null otherwise. */
     ended: PlanEndedSchema.nullable().optional(),
+    /**
+     * (23 Oct, Library › Plan › Previous) Library's `Start again`: this plan is a copy of an earlier
+     * plan (`planId`), made and applied by that op. Absent or null: not a copy.
+     */
+    restartedFrom: z.object({ planId: IdSchema, opId: OperationIdSchema, atUtc: UtcTimestampSchema }).nullable().optional(),
     /** (20 Oct) `Make next`; absent or null: none (Up next adapts). */
     pin: PlanPinSchema.nullable().optional(),
     /** (20 Oct) Every pause, oldest first; the last may still be running. Absent: never paused. */
