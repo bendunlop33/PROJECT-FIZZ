@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CoachTarget, NextSessionTarget, PainFlag, SessionAggregate, SessionExercise } from '@fizz/schemas';
-import { classifyNextSessionChange, nextTargetFitsSource, nextTargetSourceBasis, pctText, validateNextSessionTargets, type NextSessionBasis } from '../src/index';
+import { classifyNextSessionChange, isStallReset, nextSessionBases, nextTargetFitsSource, nextTargetSourceBasis, pctText, STALL_RESET_REASON, validateNextSessionTargets, type NextSessionBasis } from '../src/index';
 import { assisted, barbell, dumbbells, id, kg, lb, OWNER } from './fixtures';
 
 const t = (load: number | null, min: number, max: number, convention: 'total' | 'per_hand' | 'assistance' = 'total', unit: 'kg' | 'lb' = 'kg'): CoachTarget => ({
@@ -37,6 +37,37 @@ describe('classifyNextSessionChange (CA8, coach-adjustments check 27)', () => {
     expect(classifyNextSessionChange(t(30, 6, 8, 'assistance'), 3, t(25, 6, 8, 'assistance'), 3, assisted(), ctx).size).toBe('small');
     expect(classifyNextSessionChange(t(100, 6, 8), 3, t(102.5, 6, 8), 3, null, ctx).size).toBe('bigger');
     expect(classifyNextSessionChange(t(100, 6, 8), 3, t(225, 6, 8, 'total', 'lb'), 3, bar, ctx).size).toBe('bigger');
+  });
+});
+
+describe('stall resets are always bigger (playbook rule 8; CA8; Ben, 23 Oct, D2)', () => {
+  const bar = barbell();
+  const stalled = { benAskedForMoreSets: false, stalled: true };
+  it('on a stalled lift, one step lighter or a rep-scheme change is a reset: bigger, with its reason', () => {
+    // Small anywhere else…
+    expect(classifyNextSessionChange(t(100, 6, 8), 3, t(97.5, 6, 8), 3, bar, ctx).size).toBe('small');
+    // …a reset on a stalled lift.
+    expect(classifyNextSessionChange(t(100, 6, 8), 3, t(97.5, 6, 8), 3, bar, stalled)).toMatchObject({ size: 'bigger', reasons: [STALL_RESET_REASON] });
+    expect(classifyNextSessionChange(t(100, 6, 8), 3, t(100, 4, 6), 3, bar, stalled)).toMatchObject({ size: 'bigger', reasons: [STALL_RESET_REASON] });
+    // A 10% reset is bigger for both reasons.
+    expect(classifyNextSessionChange(t(100, 6, 8), 3, t(90, 6, 8), 3, bar, stalled).reasons).toEqual([STALL_RESET_REASON, 'The load moves more than one step.']);
+  });
+
+  it('holding, one set fewer, or one step heavier on a stalled lift isn’t a reset (CA8 as before)', () => {
+    expect(classifyNextSessionChange(t(100, 6, 8), 3, t(100, 6, 8), 3, bar, stalled).size).toBe('small');
+    expect(classifyNextSessionChange(t(100, 6, 8), 3, t(100, 6, 8), 2, bar, stalled).size).toBe('small');
+    expect(classifyNextSessionChange(t(100, 6, 8), 3, t(102.5, 6, 8), 3, bar, stalled).size).toBe('small');
+  });
+
+  it('assisted: more assistance is easier (a reset); less assistance isn’t; per-hand dumbbells and lb by their own unit', () => {
+    expect(isStallReset(t(30, 6, 8, 'assistance'), t(35, 6, 8, 'assistance'), true)).toBe(true);
+    expect(isStallReset(t(30, 6, 8, 'assistance'), t(25, 6, 8, 'assistance'), true)).toBe(false);
+    expect(isStallReset(t(12, 8, 10, 'per_hand'), t(10, 8, 10, 'per_hand'), true)).toBe(true);
+    expect(isStallReset(t(225, 5, 5, 'total', 'lb'), t(215, 5, 5, 'total', 'lb'), true)).toBe(true);
+    expect(isStallReset(t(12, 8, 10, 'per_hand'), t(10, 8, 10, 'per_hand'), false)).toBe(false);
+    const db = dumbbells({ loads: [8, 10, 12, 14] });
+    expect(classifyNextSessionChange(t(12, 8, 10, 'per_hand'), 3, t(10, 8, 10, 'per_hand'), 3, db, { benAskedForMoreSets: false, stalled: true }).size).toBe('bigger');
+    expect(classifyNextSessionChange(t(30, 6, 8, 'assistance'), 3, t(35, 6, 8, 'assistance'), 3, assisted(), { benAskedForMoreSets: false, stalled: true }).size).toBe('bigger');
   });
 });
 
@@ -94,6 +125,29 @@ describe('validateNextSessionTargets (rule 4 snap and cap, rule 9 pain, D21)', (
     const r = validateNextSessionTargets({ source, bases, targets: [ask(BENCH.exerciseId, t(97.5, 6, 8), 4)], painFlags: [], gymName: null, ctx });
     expect(r.rows[0]).toMatchObject({ sets: 3, size: 'small' });
     expect(r.rows[0]?.guardNotes.map((n) => n.kind)).toContain('too_many_sets');
+  });
+});
+
+describe('a stalled lift on the Summary: the coach’s reset is a suggestion, never saved by default (D2)', () => {
+  const stalledBench: NextSessionBasis = { exercise: BENCH, equipment: barbell(), last: t(100, 6, 8), lastSets: 3, builtIn: { target: t(97.5, 6, 8), sets: 3 }, stalled: true };
+  it('one step lighter with new reps is bigger (Apply); the same target as the built-in rule stays the rule’s; the other lift is unaffected', () => {
+    const r = validateNextSessionTargets({ source, bases: [stalledBench, bases[1] as NextSessionBasis], targets: [ask(BENCH.exerciseId, t(97.5, 5, 7)), ask(CURL.exerciseId, t(15, 9, 11, 'per_hand'))], painFlags: [], gymName: null, ctx });
+    expect(r.rows.find((x) => x.exerciseId === BENCH.exerciseId)).toMatchObject({ size: 'bigger', reasons: [STALL_RESET_REASON], after: t(97.5, 5, 7) });
+    // Curl isn't stalled, but its target is the built-in rule's own: nothing for the coach to change.
+    expect(r.rows.find((x) => x.exerciseId === CURL.exerciseId)).toBeUndefined();
+    const same = validateNextSessionTargets({ source, bases: [stalledBench], targets: [ask(BENCH.exerciseId, t(97.5, 6, 8))], painFlags: [], gymName: null, ctx });
+    expect(same.rows).toEqual([]);
+  });
+
+  it('nextSessionBases marks a lift stalled when the built-in rule reduces it for repeated misses', () => {
+    const agg = {
+      session: { id: id(8000), equipmentSnapshot: [], gymChanges: [] },
+      exercises: [{ ...BENCH, exerciseOrder: 0 }],
+      sets: [0, 1, 2].map((i) => ({ id: id(8100 + i), sessionExerciseId: BENCH.id, setType: 'working', pairedWithSetId: null, status: 'completed', order: i, version: 1, planned: { load: kg(100), reps: { min: 6, max: 8 }, durationS: null, rpe: 8, rir: null }, actual: { load: kg(100), reps: 4 } })),
+    } as unknown as SessionAggregate;
+    const plan = (decision: string) => new Map([[BENCH.exerciseId, [0, 1, 2].map(() => ({ setType: 'working', planned: { load: kg(97.5), reps: { min: 6, max: 8 }, provenance: { rule: { decision } } } }))]]);
+    expect(nextSessionBases(agg, plan('reduce_load'))[0]?.stalled).toBe(true);
+    expect(nextSessionBases(agg, plan('hold_after_miss'))[0]?.stalled).toBeUndefined();
   });
 });
 

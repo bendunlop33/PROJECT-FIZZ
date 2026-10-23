@@ -372,6 +372,37 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     expect(after?.rows.find((r) => r.exerciseName === 'Bench press')).toMatchObject({ actions: [], note: 'Used' });
   });
 
+  it('D2: on a stalled lift (misses at the same load twice) the coach’s one-step reset is a suggestion: not saved, the rule plans next time until Apply; Apply then Undo', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 2, rpe: 10 }, { load: 60, reps: 2, rpe: 10 }] }]);
+    h.clockMs += 2 * 86_400_000;
+    const second = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 2, rpe: 10 }, { load: 60, reps: 2, rpe: 10 }] }]);
+    model = new StepModel([
+      (req) => {
+        const w = yourData(req).workout;
+        return call('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: w.exercises[0]?.exerciseId, target: { load: { value: 57.5, unit: 'kg', convention: 'total' }, reps: null }, sets: null, reason: 'Two sessions short at 60.' }] });
+      },
+      () => reply('Two sessions short.'),
+    ]);
+    await s.coach.runSummaryTurn(second);
+    const [row] = await s.coach.nextTargets(second);
+    if (!row) throw new Error('no row');
+    // One step lighter would be small anywhere else; after a stall it is a reset: a suggestion (rule 8, CA8, D2).
+    expect(row).toMatchObject({ size: 'bigger', status: 'proposed' });
+    const summary = await s.workout.summary(second, 'connected');
+    const view = nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: [row], availability: await s.coach.availability(), reviewing: false });
+    expect(view?.rows.find((r) => r.exerciseName === 'Bench press')).toMatchObject({ tag: 'Suggested', actions: [{ label: 'Not now', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] });
+    // Until Ben applies it, next time is the built-in rule's, not 57.5.
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('57.5');
+    expect(await s.coach.tapNextTarget(row, 'apply', 'tap-apply')).toMatchObject({ status: 'written', row: { status: 'applied' } });
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).toContain('57.5');
+    const [applied] = await s.coach.nextTargets(second);
+    if (!applied) throw new Error('no row');
+    expect(await s.coach.tapNextTarget(applied, 'undo', 'tap-undo')).toMatchObject({ status: 'written', row: { status: 'proposed' } });
+    expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('57.5');
+  });
+
   it('Undo on the row puts the built-in rule back for the next session; offline or not connected, the built-in rule is labelled and no call is made', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
