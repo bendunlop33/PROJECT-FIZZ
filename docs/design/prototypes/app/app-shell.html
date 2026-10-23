@@ -82,6 +82,14 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
 .toast.on { display: flex; justify-content: space-between; align-items: center; }
 .toast.undo { padding: 4px 6px 4px 14px; }
 .toast .link { min-height: 40px; padding: 0 8px; font-size: 15px; }
+/* Keep for next time? (D1, Ben 22 and 23 Oct): one Summary row, Apply / Skip, never the screen's primary (Done is). */
+.keep { background: var(--surface); border-radius: 18px; padding: 6px 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+.keep .kh { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; }
+.keep .kh b { font-size: 16px; }
+.keep .kh span { display: flex; gap: 6px; align-items: center; }
+.keep .sub { font-size: 14px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.keep .link { min-height: 44px; padding: 0 10px; font-size: 15px; }
+.apply { min-height: 44px; padding: 0 18px; border-radius: 999px; border: 0; background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--text3); font: 600 15px var(--ui); cursor: pointer; }
 @media (max-width: 440px) {
   .wrap { padding: 0; gap: 0; }
   .hint, .ctrl { display: none; }
@@ -108,7 +116,7 @@ h1 { font-size: 28px; font-weight: 600; margin: 4px 0 2px; }
 </div>
 <script>
 // Shared example facts (V1): the same in every screen of the whole-app prototype; build_app.py checks them.
-const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 92.5, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 92.5", "last": "12 Oct · 100 × 6"};
+const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 95, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 95", "last": "12 Oct · 100 × 6"};
 // Screens: a tab root or a pushed screen. Prototype screens are iframes kept alive, so their state survives switching.
 const PAGES = {
   today: () => (A.plan ? 'training-blocks.html' : null), // no plan: the native Today below (workout-builder-v3.md, No plan)
@@ -126,7 +134,7 @@ const A = { tab: 'today', stack: [], plan: false, ptab: 'overview' };
 const $ = (id) => document.getElementById(id);
 const frames = {};
 function frame(src) {
-  if (!frames[src]) { const f = document.createElement('iframe'); f.addEventListener('load', () => { f.dataset.ready = '1'; }); const [file, hash] = src.split('#'); f.src = file + '?embed=1' + (hash ? '#' + hash : ''); f.title = src; $('view').appendChild(f); frames[src] = f; }
+  if (!frames[src]) { const f = document.createElement('iframe'); f.addEventListener('load', () => { f.dataset.ready = '1'; if (src.startsWith('training-blocks')) f.contentWindow.postMessage({ cmd: 'focus', focus: A.focus ?? 'Balanced' }, '*'); }); const [file, hash] = src.split('#'); f.src = file + '?embed=1' + (hash ? '#' + hash : ''); f.title = src; $('view').appendChild(f); frames[src] = f; }
   return frames[src];
 }
 // A toast can offer Undo (V4): undo() puts things back; done() runs once it can no longer be undone (timeout or the next toast).
@@ -149,11 +157,13 @@ function stash(keys) {
   };
 }
 // Leave the current state with Undo: restores the plan flags, where you were, and the stashed screens.
-function undoable(msg, keys, change) {
+function undoable(msg, keys, change, undoMore) {
   const prev = { plan: A.plan, paused: A.paused, live: A.live, tab: A.tab, stack: [...A.stack] }, kept = stash(keys);
   change(); show();
-  toast(msg, () => { kept.back(); Object.assign(A, prev, { stack: [...prev.stack] }); show(); }, kept.drop);
+  toast(msg, () => { kept.back(); Object.assign(A, prev, { stack: [...prev.stack] }); undoMore?.(); show(); }, kept.drop);
 }
+// The plan's Main focus to Today with a plan (both its frames), which passes it on to Your workout and the workout.
+function sendFocus() { ['training-blocks.html', 'training-blocks.html#progress'].forEach((k) => frames[k]?.contentWindow?.postMessage({ cmd: 'focus', focus: A.focus ?? 'Balanced' }, '*')); }
 function current() { return A.stack.at(-1) ?? A.tab; }
 function show() {
   const cur = current(), pushed = A.stack.length > 0;
@@ -165,7 +175,9 @@ function show() {
   $('tabs').style.display = pushed ? 'none' : '';
   $('psub').classList.remove('on');
   document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === A.tab));
-  $('topL').innerHTML = pushed && cur !== 'summary' ? `<button class="back" id="backBtn">‹ ${A.tab === 'today' ? 'Today' : A.tab[0].toUpperCase() + A.tab.slice(1)}</button>` : '9:41';
+  // One back control (D7): a plan page opened from Your plan's rows shows only its own ‹ Your plan / Done.
+  const ownBack = A.hideBack && (cur === 'planview' || cur === 'plan');
+  $('topL').innerHTML = pushed && cur !== 'summary' && !ownBack ? `<button class="back" id="backBtn">‹ ${A.tab === 'today' ? 'Today' : A.tab[0].toUpperCase() + A.tab.slice(1)}</button>` : '9:41';
   if ($('backBtn')) $('backBtn').onclick = pop;
 }
 function push(r) { A.stack.push(r); show(); }
@@ -177,16 +189,15 @@ document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { A.tab
 addEventListener('message', (e) => {
   const to = e.data?.app; if (!to) return;
   if (to === 'back') return A.stack.length ? pop() : home();
-  if (to === 'applied') return undoable('Plan applied', ['plan-builder.html', 'plan-builder.html#view'], () => { A.plan = true; A.stack = []; A.tab = 'today'; });
-  if (to === 'changed') return; // edits apply inside the overview
+  // The plan's Main focus picks the back-off band on Today and in the workout (review S7).
+  if (to === 'applied') { const was = A.focus; A.focus = e.data.focus ?? 'Balanced'; sendFocus(); return undoable('Plan applied', ['plan-builder.html', 'plan-builder.html#view'], () => { A.plan = true; A.stack = []; A.tab = 'today'; }, () => { A.focus = was; sendFocus(); }); }
+  if (to === 'changed') { if (e.data.focus) { A.focus = e.data.focus; sendFocus(); } return; } // edits apply inside the overview
+  // Your workout (from Today's Edit) sends what Ben changed there; Today keeps it (D3; review fixes 23 Oct).
+  if (to === 'todayedit') { frames['training-blocks.html']?.contentWindow?.postMessage({ cmd: 'edits', day: e.data.day, ctl: e.data.ctl, edits: e.data.edits, offer: e.data.offer }, '*'); return; }
+  // A page opened from Your plan has its own back (‹ Your plan / Done), so the app's back hides (D7: one back control).
+  if (to === 'chrome') { const hide = e.data.back === false; if (A.hideBack !== hide) { A.hideBack = hide; show(); } return; }
   if (to === 'dotoday') { A.tab = 'today'; A.stack = []; show(); const f = frame(PAGES.today()); const send = () => f.contentWindow.postMessage({ cmd: 'day', day: e.data.day }, '*'); if (f.dataset.ready) send(); else f.addEventListener('load', () => setTimeout(send, 50), { once: true }); return; }
-  if (to === 'planupdate') {
-    // Today's Start prompt › Update in your plan: open the plan overview with today's changes as changes to review.
-    A.tab = 'library'; A.stack = ['planview']; show();
-    const f = frame(PAGES.planview()), send = () => f.contentWindow.postMessage({ cmd: 'edit', change: e.data.change }, '*');
-    if (f.dataset.ready) send(); else f.addEventListener('load', () => { f.dataset.ready = '1'; setTimeout(send, 50); }, { once: true });
-    return;
-  }
+  // (D1, Ben 22 and 23 Oct) Start has no prompt, so there is no "Update in your plan" here: Keep for next time? is on the Summary.
   if (to === 'paused' || to === 'resumed') { A.paused = to === 'paused'; return; }
   // End plan is confirmed inside the plan overview first (V4).
   if (to === 'endplan') return undoable('Plan ended', ['plan-builder.html#view'], () => { A.plan = false; A.paused = false; A.stack = []; A.tab = 'library'; });
@@ -197,7 +208,7 @@ addEventListener('message', (e) => {
     return;
   }
   if (to === 'active' && e.data.session) return start(e.data.session);
-  if (to === 'finished') { A.live = false; A.log = e.data.log ?? null; SUM.undone = {}; A.stack = ['summary']; return show(); }
+  if (to === 'finished') { A.live = false; A.log = e.data.log ?? null; SUM.undone = {}; SUM.keep = null; A.stack = ['summary']; return show(); }
   // Discard is confirmed inside the workout first (Discard N logged sets?). Undo brings the same workout back (V4).
   if (to === 'discarded') return undoable('Workout discarded', ['workout-active-v3.html'], () => { A.live = false; A.stack = []; A.tab = 'today'; });
   if (to === 'library' || to === 'profile' || to === 'progress') { A.tab = to; A.stack = []; return show(); }
@@ -216,16 +227,93 @@ function start(session) {
 }
 // Main lift in one format everywhere (V1): top set + back-offs · loads, e.g. 1 × 6 + 2 × 8 · 100 / 90.
 const EACH = new Set(['Incline dumbbell press', 'Dumbbell shoulder press', 'Lateral raise', 'Rear-delt fly', 'Chest-supported row', 'Hammer curl', 'Single-arm DB row', 'Incline DB curl']);
-const snap25 = (v) => Math.round(v / 2.5) * 2.5;
+// BACKOFF-START (one copy in each prototype that needs it; build_app.py checks they match, check_app.mjs tests it)
+// Back-offs (D4, Ben 22 and 23 Oct; training guide SS4): worked out from the top set at their own reps and effort
+// (RIR-adjusted Epley; top set and back-offs @ RPE 8), kept in the focus's band below the top (Strength 2–8 %,
+// Balanced 4–10 %, Muscle 8–15 %; other focuses 2–15 %) and snapped down to a real load, or the next real load up
+// when that is still inside the band. Not a fixed 90 % or 95 %. No real load inside the band (coarse dumbbells, sparse
+// racks; review B2): the one nearest the band that is below the top, on a tie the lighter; never the top itself. A top
+// with no real load below it keeps its load and the back-offs do 1 rep fewer (spec §3.1 item 9; none here is that light).
+const BACKOFF_BAND = { Strength: [0.02, 0.08], Balanced: [0.04, 0.1], Muscle: [0.08, 0.15] };
+function backOff(top, topReps, backReps, focus = 'Balanced', step = 2.5, topRpe = 8, backRpe = 8) {
+  if (top == null || Number.isNaN(Number(top))) return null;
+  const raw = (top * (30 + topReps + 10 - topRpe)) / (30 + backReps + 10 - backRpe);
+  const [lo, hi] = BACKOFF_BAND[focus] ?? [0.02, 0.15], L = top * (1 - hi) - 1e-9, U = top * (1 - lo) + 1e-9;
+  const down = Math.floor(Math.min(U, Math.max(L, raw)) / step + 1e-9) * step;
+  const near = [down, down + step].filter((kg) => kg > 0 && kg < top - 1e-9);
+  const inBand = near.find((kg) => kg >= L && kg <= U);
+  if (inBand != null) return inBand;
+  const off = (kg) => (kg < L ? L - kg : kg - U);
+  return near.sort((a, b) => off(a) - off(b) || a - b)[0] ?? top;
+}
+// When today's top is lowered from the planned one (a pain hold, the coach, Ben, an R2 offer; a deload's −10 %), the
+// back-offs drop by the same factor and snap down, staying below the new top (SS4, HT8). Raising never raises them.
+function lowerBackOff(back, factor, newTop, step = 2.5) {
+  if (back == null || newTop == null || !(factor < 1)) return back;
+  return Math.max(step, Math.min(Math.floor((back * factor) / step + 1e-9) * step, newTop - step));
+}
+// BACKOFF-END
+// With no plan the band comes from the Profile goal (review S7, SP8, proposal): strength → Strength, muscle → Muscle,
+// both → Balanced. The example Profile goal is both.
+const GOAL_BAND = { strength: 'Strength', muscle: 'Muscle', both: 'Balanced' }.both;
+// FIT-START (the shared fit, D9: one copy in Today with a plan and the no-plan Today; build_app.py checks they match)
+// Fit to time (fit-to-time.md 22 Oct revision; Ben, 22 and 23 Oct, D9). Minutes: 4 to set up, then per exercise its sets
+// (main lift 4 min a set, compound 3, others 2.2, times the rest factor) plus 1.5 to change over; a superset saves 5.
+// 1. Shorter rests (×0.85). 2. Superset pairing, only when Supersets is on: the plan's extra + abs pair, else abs (or
+// the extra) with an isolation accessory, never the main lift or a compound. 3. Then the cuts that lose the least
+// training (value per set: compound accessory 3, isolation 2, abs 2.5, extra 1.5): every way of keeping each
+// accessory at 2 sets or more, or dropping it, is tried, so less time never costs less (review S2); on a tie, fewer
+// sets lost, then the most of the time used. The main lift is never cut and one accessory always stays.
+const FIT_PER = (e) => (e.kind === 'main' ? 4 : e.comp ? 3 : 2.2);
+const FIT_VAL = (e) => (e.kind === 'abs' ? 2.5 : e.kind === 'extra' ? 1.5 : e.comp ? 3 : 2);
+const fitMins = (list, rest, pair) => 4 + list.reduce((m, e) => m + e.sets * FIT_PER(e) * rest + 1.5, 0) - (pair ? 5 : 0);
+const planPair = (list, ss) => { const x = list.find((e) => e.kind === 'extra'), a = list.find((e) => e.kind === 'abs'); return ss && x && a ? [x.name, a.name] : null; };
+const fitPair = (list, ss) => {
+  if (!ss) return null;
+  const p = planPair(list, ss); if (p) return p;
+  const a = list.find((e) => e.kind === 'abs') ?? list.find((e) => e.kind === 'extra'), iso = list.filter((e) => e.kind === 'acc' && !e.comp).at(-1);
+  return a && iso ? [iso.name, a.name] : null;
+};
+function fitTo(ex, minutes, ss) {
+  const pair0 = planPair(ex, ss), none = { steps: [], lost: 0, cuts: [] };
+  if (fitMins(ex, 1, pair0) <= minutes) return { ex, pair: pair0, rest: 1, fit: none };
+  const rest = 0.85;
+  if (fitMins(ex, rest, pair0) <= minutes) return { ex, pair: pair0, rest, fit: { steps: ['Shorter rests'], lost: 0, cuts: [] } };
+  const idx = ex.map((e, i) => i).filter((i) => ex[i].kind !== 'main');
+  const opts = idx.map((i) => { const c = []; for (let n = ex[i].sets; n >= Math.min(2, ex[i].sets); n--) c.push(n); return [...c, 0]; });
+  const better = (a, b) => (a.ok !== b.ok ? a.ok : (a.ok ? a.value - b.value || a.sets - b.sets || b.m - a.m : a.m - b.m || a.value - b.value) < -1e-9);
+  let best = null;
+  const walk = (k, keep) => {
+    if (k === idx.length) {
+      if (idx.length && keep.every((n) => n === 0)) return;
+      const list = ex.flatMap((e, i) => { const j = idx.indexOf(i), n = j < 0 ? e.sets : keep[j]; return n ? [{ ...e, sets: n }] : []; });
+      const pair = fitPair(list, ss), m = fitMins(list, rest, pair);
+      const c = { list, pair, m, ok: m <= minutes + 1e-9, value: idx.reduce((a, i, j) => a + FIT_VAL(ex[i]) * (ex[i].sets - keep[j]), 0), sets: idx.reduce((a, i, j) => a + ex[i].sets - keep[j], 0) };
+      if (!best || better(c, best)) best = c;
+      return;
+    }
+    for (const n of opts[k]) { keep.push(n); walk(k + 1, keep); keep.pop(); }
+  };
+  walk(0, []);
+  if (!best) return { ex, pair: pair0, rest, fit: { steps: ['Shorter rests'], lost: 0, cuts: [] } };
+  const steps = ['Shorter rests'], cuts = [];
+  if (best.pair && String(best.pair) !== String(pair0)) steps.push(`Superset ${best.pair[0]} + ${best.pair[1]}`);
+  ex.forEach((e) => { if (e.kind === 'main') return; const k = best.list.find((x) => x.name === e.name);
+    if (!k) { steps.push(`Dropped ${e.name}`); cuts.push({ name: e.name, n: e.sets, dropped: true }); }
+    else if (k.sets < e.sets) { steps.push(`${e.name} ${e.sets} → ${k.sets} sets`); cuts.push({ name: e.name, n: e.sets - k.sets, dropped: false }); } });
+  return { ex: best.list, pair: best.pair, rest, fit: { steps, lost: best.sets, cuts } };
+}
+// FIT-END
 const mainLine = (e) => (e.kg == null ? `${e.sets} × ${e.reps}` : `1 × ${e.reps}${e.sets > 1 ? ` + ${e.sets - 1} × ${e.backReps}` : ''} · ${e.kg}${e.sets > 1 ? ` / ${e.back}` : ''}${EACH.has(e.name ?? e.n) ? ' each' : ''}`);
 
 // ---------- Today with no plan (workout-builder-v3.md §states, No plan) ----------
 // No day tabs. One row: No plan · Set up a plan. Up next comes from the old resolver: Profile split, else routines in
 // rotation, else the longest gap; here the longest gap (Chest, last trained 12 Oct: the shared fixture's session). Start is one tap.
 const STRIP = [['SAT', 17, 'Legs', 'done'], ['SUN', 18, 'Run 12k', 'run'], ['MON', 19, '', ''], ['TODAY', 20, '', 'today'], ['WED', 21, '', ''], ['THU', 22, '', ''], ['FRI', 23, '', '']];
-// No plan, Up next still adjustable before Start (Ben, 22 Oct): same controls as Today with a plan, today only, with the
-// same fit-to-time (rests, supersets, then the cheapest cut; main lift kept; note after Time in light orange).
-// Days come from Profile › Split; the suggested one is marked NEXT. Picking another is today only (the suggestion moves on).
+// No plan, Up next still adjustable before Start (Ben, 22 Oct): its own controls, today only, with the same fit-to-time
+// as Today with a plan (D9: shorter rests, supersets only when Supersets is on, then the cheapest cut; main lift kept;
+// note after Time in light orange). Start always just starts (D1). Days come from Profile › Split (the one split source
+// without a plan, D7); the suggested one is marked NEXT. Picking another is today only (the suggestion moves on).
 // [label, exercise, kg] for main lifts (kg null = bodyweight); accessories [exercise, kg, compound?] and the extra [exercise, kg],
 // as Today with a plan (training-blocks.html D): the same day reads the same with or without a plan (V1).
 const TN_DAYS = {
@@ -237,42 +325,26 @@ const TN_DAYS = {
 const TN_NEXT = FIXTURE.session;
 const TN = { day: TN_NEXT, main: null, style: 'Focused', min: 60, abs: true, ss: true };
 const tnMain = () => TN.main ?? TN_DAYS[TN.day].mains[0][0];
-const tnChanged = () => TN.day !== TN_NEXT || tnMain() !== TN_DAYS[TN.day].mains[0][0] || TN.style !== 'Focused' || TN.min !== 60 || !TN.abs || !TN.ss;
 // Same session and the same time and fit-to-time as Today with a plan (training-blocks.html draft()), so a day's
 // exercises, sets and minutes match with or without a plan (V1). A main lift that is also an accessory isn't repeated.
 function tnWorkout() {
   const D = TN_DAYS[TN.day], [, mn, mkg] = D.mains.find(([k]) => k === tnMain()), accSets = TN.style === 'Varied' ? 2 : 3;
-  const ex = [{ n: mn, main: true, sets: 3, reps: mkg == null ? 8 : 6, backReps: 8, kg: mkg, back: mkg == null ? null : snap25(mkg * 0.9), comp: 1 },
-    ...(TN.style === 'Varied' ? D.varied : D.focused).filter(([n]) => n !== mn).map(([n, kg, c]) => ({ n, sets: accSets, comp: c ? 1 : 0, kg, reps: c ? 8 : 12 })),
-    { n: D.extra[0], extra: true, sets: 3, comp: 0, kg: D.extra[1], reps: 12 }, ...(TN.abs ? [{ n: 'Cable crunch', abs: true, sets: 3, kg: 40, reps: 12 }] : [])];
-  const pair = (l) => l.some((e) => e.extra) && l.some((e) => e.abs);
-  const mins = (l, rest = 1, ss = TN.ss) => 4 + l.reduce((m, e) => m + e.sets * (e.main ? 4 : e.comp ? 3 : 2.2) * rest + 1.5, 0) - (ss && TN.abs && pair(l) ? 5 : 0);
-  if (mins(ex) <= TN.min) return { ex, est: Math.round(mins(ex)), note: '', ss: TN.ss };
-  const rest = 0.85; let note = 'shorter rests', ssOn = TN.ss;
-  if (mins(ex, rest) > TN.min && !TN.ss && TN.abs && mins(ex, rest, true) < mins(ex, rest)) { ssOn = true; note = 'supersets'; }
-  const val = (e) => e.abs ? 2.5 : e.extra ? 1.5 : e.comp ? 3 : 2, per = (e) => (e.comp ? 3 : 2.2) * rest;
-  const n0 = ex.length, s0 = ex.reduce((a, e) => a + e.sets, 0);
-  while (mins(ex, rest, ssOn) > TN.min) {
-    const over = mins(ex, rest, ssOn) - TN.min, opts = [];
-    ex.forEach((e, k) => { if (e.main) return; if (e.sets > 2) opts.push({ k, drop: false, lost: val(e), saves: per(e) }); if (ex.length > 2) opts.push({ k, drop: true, lost: val(e) * e.sets, saves: per(e) * e.sets + 1.5 }); });
-    if (!opts.length) break;
-    const o = opts.filter((x) => x.saves >= over).sort((a, b) => a.lost - b.lost)[0] ?? opts.sort((a, b) => a.lost / a.saves - b.lost / b.saves)[0];
-    if (o.drop) ex.splice(o.k, 1); else ex[o.k].sets -= 1;
-  }
-  if (ssOn && !TN.ss && !pair(ex)) { ssOn = false; note = 'shorter rests'; }
-  const dropped = n0 - ex.length, cut = s0 - ex.reduce((a, e) => a + e.sets, 0);
-  if (dropped) note = `−${dropped} exercise${dropped > 1 ? 's' : ''}`; else if (cut) note = `−${cut} set${cut > 1 ? 's' : ''}`;
-  return { ex, est: Math.min(TN.min, Math.round(mins(ex, rest, ssOn))), note, ss: ssOn };
+  const ex = [{ name: mn, kind: 'main', sets: 3, reps: mkg == null ? 8 : 6, backReps: 8, kg: mkg, back: mkg == null ? null : backOff(mkg, 6, 8, GOAL_BAND), comp: true },
+    ...(TN.style === 'Varied' ? D.varied : D.focused).filter(([n]) => n !== mn).map(([n, kg, c]) => ({ name: n, kind: 'acc', sets: accSets, comp: !!c, kg, reps: c ? 8 : 12 })),
+    { name: D.extra[0], kind: 'extra', sets: 3, comp: false, kg: D.extra[1], reps: 12 }, ...(TN.abs ? [{ name: 'Cable crunch', kind: 'abs', sets: 3, comp: false, kg: 40, reps: 12 }] : [])];
+  // The one shared fit (D9, FIT above): shorter rests, pairing only when Supersets is on, then the least training lost.
+  const f = fitTo(ex, TN.min, TN.ss), dropped = f.fit.cuts.filter((x) => x.dropped).length;
+  const note = !f.fit.steps.length ? '' : dropped ? `−${dropped} exercise${dropped > 1 ? 's' : ''}` : f.fit.lost ? `−${f.fit.lost} set${f.fit.lost > 1 ? 's' : ''}` : 'shorter rests';
+  return { ex: f.ex, pair: f.pair, est: Math.round(fitMins(f.ex, f.rest, f.pair)), note, ss: TN.ss };
 }
 const WORKS = { 'Cable crossover': 'Lower chest', Dips: 'Lower chest, triceps', 'Seated cable row': 'Mid-back, lats, biceps', 'EZ-bar curl': 'Biceps', 'Barbell bench press': 'Chest, front delts, triceps', 'Incline barbell press': 'Upper chest, front delts, triceps', 'Incline dumbbell press': 'Upper chest, front delts, triceps', 'Cable fly': 'Chest', 'Machine chest press': 'Chest, triceps', 'Pec deck': 'Chest', 'Triceps pushdown': 'Triceps', 'Overhead triceps extension': 'Triceps', 'Cable crunch': 'Upper abs', 'Barbell row': 'Mid-back, lats, rear delts', 'Pull-up': 'Lats, biceps', 'Lat pulldown': 'Lats, biceps', 'Chest-supported row': 'Mid-back, rear delts', 'Single-arm DB row': 'Lats, mid-back', 'Straight-arm pulldown': 'Lats', 'Hammer curl': 'Biceps, forearms', 'Incline DB curl': 'Biceps', 'Barbell curl': 'Biceps', 'Back squat': 'Quads, glutes, adductors', 'Leg press': 'Quads, glutes', 'Hack squat': 'Quads, glutes', 'Romanian deadlift': 'Hamstrings, glutes', 'Leg curl': 'Hamstrings', 'Seated leg curl': 'Hamstrings', 'Calf raise': 'Calves', 'Seated calf raise': 'Calves', 'Dumbbell shoulder press': 'Front delts, triceps', 'Machine shoulder press': 'Front delts, triceps', 'Lateral raise': 'Side delts', 'Cable lateral raise': 'Side delts', 'Face pull': 'Rear delts, upper back', 'Rear-delt fly': 'Rear delts' };
-// The no-plan session as Start sends it: supersets pair the extra with abs (as Today with a plan).
+// The no-plan session as Start sends it: the fit's superset pair in one block (as Today with a plan).
 function tnSession() {
   const w = tnWorkout();
-  const ex = w.ex.map((e) => ({ name: e.n, main: !!e.main, sets: e.sets, kg: e.kg ?? null, reps: e.reps, back: e.back, backReps: e.backReps, comp: !!e.comp, each: EACH.has(e.n), works: WORKS[e.n], ...(e.main && e.n === FIXTURE.main ? { last: FIXTURE.last } : {}) }));
-  let blocks = ex.map((e) => [e]);
-  const xi = w.ex.findIndex((e) => e.extra);
-  if (w.ss && TN.abs && xi >= 0 && w.ex[xi + 1]?.abs) blocks = [...ex.slice(0, xi).map((e) => [e]), [ex[xi], ex[xi + 1]], ...ex.slice(xi + 2).map((e) => [e])];
-  return { name: TN.day, date: FIXTURE.today, min: TN.min, est: w.est, ss: w.ss, lastDate: TN_DAYS[TN.day].last.split(' ').slice(-2).join(' '), blocks };
+  const row = (e) => ({ name: e.name, main: e.kind === 'main', sets: e.sets, kg: e.kg ?? null, reps: e.reps, back: e.back, backReps: e.backReps, comp: !!e.comp, each: EACH.has(e.name), works: WORKS[e.name], ...(e.kind === 'main' && e.name === FIXTURE.main ? { last: FIXTURE.last } : {}) });
+  const blocks = [];
+  w.ex.forEach((e) => { if (w.pair && e.name === w.pair[1]) return; blocks.push(w.pair && e.name === w.pair[0] ? [row(e), row(w.ex.find((x) => x.name === w.pair[1]))] : [row(e)]); });
+  return { name: TN.day, date: FIXTURE.today, min: TN.min, est: w.est, ss: w.ss, focus: GOAL_BAND, lastDate: TN_DAYS[TN.day].last.split(' ').slice(-2).join(' '), blocks };
 }
 function renderTodayNo() {
   const w = tnWorkout();
@@ -282,9 +354,9 @@ function renderTodayNo() {
     <div class="daypick">${[TN_NEXT, ...Object.keys(TN_DAYS).filter((d) => d !== TN_NEXT)].map((d) => `<button class="${TN.day === d ? 'on' : ''}" data-tnday="${d}">${d}${d === TN_NEXT ? '<i>NEXT</i>' : ''}</button>`).join('')}<button data-tnmore="1" aria-label="Other workouts">⋯</button></div>
     <div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
       <div class="label" style="margin:0">${TN.day === TN_NEXT ? 'Up next' : 'Today'}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:28px;font-weight:600">${TN.day}</span><span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;color:var(--text2);font-size:13px"><span>${w.ex.length} exercises · ~${w.est} min</span>${tnChanged() ? '<span style="color:var(--warn);font-weight:600;font-size:12px">Today only</span>' : ''}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:28px;font-weight:600">${TN.day}</span><span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;color:var(--text2);font-size:13px"><span>${w.ex.length} exercises · ~${w.est} min</span></span></div>
       <div style="color:var(--text2);font-size:14px">${TN.day === TN_NEXT ? 'Longest since you trained it' : 'Picked by you'} · ${TN_DAYS[TN.day].last}</div>
-      <div style="font-size:15px" id="tnMainLine">${w.ex[0].n}<div style="color:var(--text2);font-size:13px;font-variant-numeric:tabular-nums;margin-top:2px">${mainLine(w.ex[0])}</div></div>
+      <div style="font-size:15px" id="tnMainLine">${w.ex[0].name}<div style="color:var(--text2);font-size:13px;font-variant-numeric:tabular-nums;margin-top:2px">${mainLine(w.ex[0])}</div></div>
       <div class="ctl">
         <div class="cr"><span class="k">Main lift</span><span class="opts">${TN_DAYS[TN.day].mains.map(([m]) => `<button class="${tnMain() === m ? 'on' : ''}" data-tn="main" data-v="${m}">${m}</button>`).join('')}</span></div>
         <div class="cr"><span class="k">Accessories</span><span class="opts">${['Focused', 'Varied'].map((m) => `<button class="${TN.style === m ? 'on' : ''}" data-tn="style" data-v="${m}">${m}</button>`).join('')}</span></div>
@@ -294,54 +366,61 @@ function renderTodayNo() {
       </div>
       <button class="primary" id="tnStart">Start</button>
     </div>
-    <div class="foot" style="margin-top:0"><button class="secondary" id="tnBuild">Build your own</button><button class="secondary" id="tnAct">＋ Activity</button></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${['Full body', 'Upper', 'Push', 'Empty workout'].map((t) => `<button class="secondary" style="flex:none;min-height:34px;padding:0 12px;font-size:13px" data-tnother="${t}">${t}</button>`).join('')}</div>`;
+    <div class="foot" style="margin-top:0"><button class="secondary" id="tnBuild">Build your own</button><button class="secondary" id="tnAct">＋ Activity</button></div>`;
+  // (D7, Ben 22 and 23 Oct) No chip row under the card: Full body, Upper, Push and Empty workout are in ⋯ only.
   $('tnSetup').onclick = () => push('plan');
   $('tnStart').onclick = () => start(tnSession());
   $('todayNo').querySelectorAll('[data-tnday]').forEach((b) => b.onclick = () => { TN.day = b.dataset.tnday; TN.main = null; renderTodayNo(); });
-  $('todayNo').querySelector('[data-tnmore]').onclick = () => toast('Other workouts: Full body, Upper, Push, saved workouts');
+  $('todayNo').querySelector('[data-tnmore]').onclick = () => toast('Other workouts: Full body, Upper, Push, Empty workout, saved workouts');
   $('todayNo').querySelectorAll('[data-tn]').forEach((b) => b.onclick = () => { const k = b.dataset.tn, v = b.dataset.v; if (k === 'min') TN.min = Math.max(20, Math.min(120, TN.min + +v)); else if (k === 'abs' || k === 'ss') TN[k] = !TN[k]; else TN[k] = v; renderTodayNo(); });
   $('tnBuild').onclick = () => push('builder');
   $('tnAct').onclick = () => toast('Log a run or activity (weekly-plan.md)');
   $('tnCoach').onclick = () => toast('Ask the coach');
-  $('todayNo').querySelectorAll('[data-tnother]').forEach((b) => b.onclick = () => (b.dataset.tnother === 'Empty workout' ? start({ name: 'Workout', date: FIXTURE.today, blocks: [] }) : push('builder')));
 }
 
 // ---------- Library (exercise-library.md, routines.md): workouts and exercises ----------
 const LIB = { tab: 'plan' };
-// One muscle list everywhere (V1): the plan's (plan-builder MUSCLES).
-const EXS = { Chest: ['Barbell bench press', 'Incline dumbbell press', 'Cable fly', 'DB bench press'], Back: ['Barbell row', 'Lat pulldown', 'Pull-up', 'Chest-supported row'], Shoulders: ['Dumbbell shoulder press', 'Lateral raise', 'Face pull'], Quads: ['Back squat', 'Leg press'], Hamstrings: ['Romanian deadlift', 'Leg curl'], Calves: ['Calf raise'], Biceps: ['Barbell curl', 'Hammer curl'], Triceps: ['Triceps pushdown'], Core: ['Cable crunch', 'Hanging leg raise', 'Plank'] };
+// Muscles (D5, Ben 22 and 23 Oct): broad groups for picking (the filter and Add your own), the detailed list for counting.
+// Each broad group is exactly the sum of its detailed parts, as the plan's GROUPS; rear delts count as Back.
+const PICK = { Chest: ['Chest'], Back: ['Back'], Shoulders: ['Shoulders'], Legs: ['Quads', 'Hamstrings', 'Calves'], Arms: ['Biceps', 'Triceps'], Core: ['Core'] };
+// Exercises by the detailed list (what each counts toward): the plan's MUSCLES.
+const EXS = { Chest: ['Barbell bench press', 'Incline dumbbell press', 'Cable fly', 'DB bench press'], Back: ['Barbell row', 'Lat pulldown', 'Pull-up', 'Chest-supported row', 'Face pull'], Shoulders: ['Dumbbell shoulder press', 'Lateral raise'], Quads: ['Back squat', 'Leg press'], Hamstrings: ['Romanian deadlift', 'Leg curl'], Calves: ['Calf raise'], Biceps: ['Barbell curl', 'Hammer curl'], Triceps: ['Triceps pushdown'], Core: ['Cable crunch', 'Hanging leg raise', 'Plank'] };
 // Your own exercises (exercise-library.md §2.6): added here, tagged Yours, usable by plans and the coach.
 const MINE = [];
 function renderLibrary() {
   // Library tabs Plan | Workouts | Exercises (Ben, 22 Oct). Plan: the active plan opens its overview (Edit plan, Pause,
-  // End there); previous and saved plans below.
+  // End there); previous plans below, each with Start again. No saved plans (D7, Ben 22 and 23 Oct).
   const tabs = [['plan', 'Plan'], ['workouts', 'Workouts'], ['exercises', 'Exercises']];
   const rows = (list, attr) => `<div class="card">${list.map(([n, sub, v]) => `<div class="row" ${attr}="${v ?? n}"><span><div class="nm">${n}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</span><span class="chev">›</span></div>`).join('')}</div>`;
+  const ownGroup = LIB.ownGroup ?? 'Chest', ownParts = PICK[ownGroup];
   $('library').innerHTML = `<h1>Library</h1>
     <div class="seg" style="grid-template-columns:repeat(3,1fr)">${tabs.map(([k, t]) => `<button data-lt="${k}" class="${LIB.tab === k ? 'on' : ''}">${t}</button>`).join('')}</div>
     ${LIB.tab === 'plan' ? `
       <div class="label">Current</div>
       <div class="card">${A.plan ? `<div class="row" data-go="planview"><span><div class="nm">Strength block <span class="tag" style="margin-left:6px">${A.paused ? 'Paused' : 'Active'}</span></div><div class="sub">Back / Chest / Legs / Shoulders · week 3 of 6</div></span><span class="chev">›</span></div>` : `<div class="row" data-go="plan"><span><div class="nm">Set up a plan</div><div class="sub">Goals, week, preferences</div></span><span class="chev">›</span></div>`}</div>
-      <div class="label">Previous and saved</div>
-      ${rows([['Summer PPL', 'Push / Pull / Legs · ended 20 Sep'], ['Hotel weeks', 'Full body · 3 days · saved']], 'data-oldplan')}`
+      <div class="label">Previous</div>
+      <div class="card"><div class="row" data-oldplan="Summer PPL"><span><div class="nm">Summer PPL</div><div class="sub">Push / Pull / Legs · ended 20 Sep</div></span><button class="link" data-again="Summer PPL" style="min-height:44px">Start again</button></div></div>`
     : LIB.tab === 'workouts' ? `
       ${rows([['Push A', 'Last done Mon'], ['Pull A', 'Last done Wed'], ['Legs', 'Last done Sat'], ['Arms & core', '3 weeks ago']], 'data-wo')}
       <div class="foot"><button class="secondary" data-go="builder">＋ Build a workout</button></div>`
-    : `<div class="mfilter">${['All', ...Object.keys(EXS)].map((g) => `<button class="${(LIB.muscle ?? 'All') === g ? 'on' : ''}" data-mf="${g}">${g}</button>`).join('')}</div>
+    : `<div class="mfilter">${['All', ...Object.keys(PICK)].map((g) => `<button class="${(LIB.muscle ?? 'All') === g ? 'on' : ''}" data-mf="${g}">${g}</button>`).join('')}</div>
       <div class="search">Search exercises</div>
-      ${LIB.adding ? `<div class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px"><b>Add your own</b><input id="ownName" placeholder="Exercise name" style="min-height:42px;border-radius:10px;border:1px solid var(--divider);background:var(--canvas);color:var(--text);padding:0 12px;font:15px var(--ui)"><div class="mfilter">${Object.keys(EXS).map((g) => `<button class="${LIB.ownMuscle === g ? 'on' : ''}" data-om="${g}">${g}</button>`).join('')}</div><div class="foot" style="margin-top:0"><button class="secondary" style="min-height:44px" id="ownCancel">Cancel</button><button class="primary" style="min-height:44px" id="ownSave">Save</button></div></div>` : `<button class="secondary" style="min-height:44px;flex:none" id="ownAdd">＋ Add your own</button>`}
-      ${Object.entries(EXS).filter(([g]) => (LIB.muscle ?? 'All') === 'All' || LIB.muscle === g).map(([g, l]) => { const all = [...MINE.filter((m) => m.g === g).map((m) => [m.n, true]), ...l.map((n) => [n, false])]; return `<div class="label">${g}</div><div class="card">${all.map(([n, mine]) => `<div class="row" data-ex="${n}"><span class="nm">${n}${mine ? ' <span class="tag" style="margin-left:6px">Yours</span>' : ''}</span><span class="chev">›</span></div>`).join('')}</div>`; }).join('')}`}`;
+      ${LIB.adding ? `<div class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px"><b>Add your own</b><input id="ownName" placeholder="Exercise name" style="min-height:42px;border-radius:10px;border:1px solid var(--divider);background:var(--canvas);color:var(--text);padding:0 12px;font:15px var(--ui)"><div class="mfilter">${Object.keys(PICK).map((g) => `<button class="${ownGroup === g ? 'on' : ''}" data-om="${g}">${g}</button>`).join('')}</div>${ownParts.length > 1 ? `<div class="mfilter">${ownParts.map((p) => `<button class="${LIB.ownPart === p ? 'on' : ''}" data-op="${p}">${p}</button>`).join('')}</div>` : ''}<div class="foot" style="margin-top:0"><button class="secondary" style="min-height:44px" id="ownCancel">Cancel</button><button class="primary" style="min-height:44px" id="ownSave">Save</button></div></div>` : `<button class="secondary" style="min-height:44px;flex:none" id="ownAdd">＋ Add your own</button>`}
+      ${Object.entries(PICK).filter(([g]) => (LIB.muscle ?? 'All') === 'All' || LIB.muscle === g).map(([g, parts]) => `<div class="label">${g}</div>${parts.map((p) => { const all = [...MINE.filter((m) => m.g === p).map((m) => [m.n, true]), ...EXS[p].map((n) => [n, false])]; return `${parts.length > 1 ? `<div class="sub" style="color:var(--text2);font-size:13px;margin:0 2px -4px">${p}</div>` : ''}<div class="card">${all.map(([n, mine]) => `<div class="row" data-ex="${n}"><span class="nm">${n}${mine ? ' <span class="tag" style="margin-left:6px">Yours</span>' : ''}</span><span class="chev">›</span></div>`).join('')}</div>`; }).join('')}`).join('')}`}`;
   $('library').querySelectorAll('[data-mf]').forEach((b) => b.onclick = () => { LIB.muscle = b.dataset.mf; renderLibrary(); });
-  $('library').querySelectorAll('[data-om]').forEach((b) => b.onclick = () => { LIB.ownName = $('ownName').value; LIB.ownMuscle = b.dataset.om; renderLibrary(); $('ownName').value = LIB.ownName; });
-  if ($('ownAdd')) $('ownAdd').onclick = () => { LIB.adding = true; LIB.ownMuscle = LIB.muscle && LIB.muscle !== 'All' ? LIB.muscle : 'Chest'; LIB.ownName = ''; renderLibrary(); $('ownName').focus(); };
+  // Add your own: pick the broad group, then (Legs, Arms) which part it counts toward.
+  $('library').querySelectorAll('[data-om]').forEach((b) => b.onclick = () => { LIB.ownName = $('ownName').value; LIB.ownGroup = b.dataset.om; LIB.ownPart = PICK[b.dataset.om][0]; renderLibrary(); $('ownName').value = LIB.ownName; });
+  $('library').querySelectorAll('[data-op]').forEach((b) => b.onclick = () => { LIB.ownName = $('ownName').value; LIB.ownPart = b.dataset.op; renderLibrary(); $('ownName').value = LIB.ownName; });
+  if ($('ownAdd')) $('ownAdd').onclick = () => { LIB.adding = true; LIB.ownGroup = LIB.muscle && LIB.muscle !== 'All' ? LIB.muscle : 'Chest'; LIB.ownPart = PICK[LIB.ownGroup][0]; LIB.ownName = ''; renderLibrary(); $('ownName').focus(); };
   if ($('ownCancel')) $('ownCancel').onclick = () => { LIB.adding = false; renderLibrary(); };
-  if ($('ownSave')) $('ownSave').onclick = () => { const n = $('ownName').value.trim(); if (!n) return toast('Name it first'); MINE.push({ n, g: LIB.ownMuscle }); LIB.adding = false; renderLibrary(); toast(`${n} added`); };
+  if ($('ownSave')) $('ownSave').onclick = () => { const n = $('ownName').value.trim(); if (!n) return toast('Name it first'); MINE.push({ n, g: LIB.ownPart ?? PICK[ownGroup][0] }); LIB.adding = false; renderLibrary(); toast(`${n} added`); };
   $('library').querySelectorAll('[data-lt]').forEach((b) => b.onclick = () => { LIB.tab = b.dataset.lt; renderLibrary(); });
   $('library').querySelectorAll('[data-go]').forEach((b) => b.onclick = () => push(b.dataset.go));
   $('library').querySelectorAll('[data-wo]').forEach((b) => b.onclick = () => push('builder'));
-  // Plans live in Library (Ben, 22 Oct): the active plan opens its overview (Edit plan, Pause, End there); old and saved plans below.
-  $('library').querySelectorAll('[data-oldplan]').forEach((b) => b.onclick = () => toast(`${b.dataset.oldplan}: view, or start it again`));
+  // Plans live in Library (Ben, 22 Oct): the active plan opens its overview (Edit plan, Pause, End there); previous plans
+  // below with Start again, which opens the plan builder with that plan's answers (D7).
+  $('library').querySelectorAll('[data-oldplan]').forEach((b) => b.onclick = () => toast(`${b.dataset.oldplan}: its weeks and lifts`));
+  $('library').querySelectorAll('[data-again]').forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); push('plan'); toast(`Start again: ${b.dataset.again} (prototype shows example answers)`); });
   $('library').querySelectorAll('[data-ex]').forEach((b) => b.onclick = () => toast(`${b.dataset.ex}: guide, history and swaps (exercise-library.md §2.4)`));
 }
 
@@ -349,22 +428,32 @@ function renderLibrary() {
 function renderProfile() {
   const sec = (t, rows) => `<div class="label">${t}</div><div class="card">${rows.map(([n, s, go]) => `<div class="row" ${go ? `data-go="${go}"` : 'data-na="1"'}><span><div class="nm">${n}</div>${s ? `<div class="sub">${s}</div>` : ''}</span><span class="chev">›</span></div>`).join('')}</div>`;
   $('profile').innerHTML = `<h1>Profile</h1>
-    ${sec('Training', [['Split', A.plan ? 'Set by your plan' : 'Chest · Legs · Shoulders · Back', A.plan ? 'tab:library' : null], ['Pain flags', 'None'], ['Logging', 'kg · RPE after the set'], ['Rest presets', '1:00 · 1:30 · 3:00']])}
+    ${sec('Training', [['Split', A.plan ? 'Set by your plan' : 'Chest · Legs · Shoulders · Back', A.plan ? 'yourplan' : null], ['Workout defaults', A.plan ? 'Set by your plan' : '60 min · Supersets on · Abs on', A.plan ? 'yourplan' : null], ['Pain flags', 'None'], ['Logging', 'kg · RPE after the set'], ['Rest presets', '1:00 · 1:30 · 3:00']])}
     ${sec('Gyms', [['Main gym', 'Default · full gym'], ['＋ Add gym', '']])}
     ${sec('Voice & alerts', [['Voice & alerts', 'Set cues · Apple voice']])}
     ${sec('Coach', [['Coach connection', 'Connected'], ['What the coach remembers', '7 confirmed'], ['Guides & playbook', 'Playbook v1']])}
     ${sec('Data', [['Data & backup', 'Backed up on this phone · 19:05'], ['Import', 'FitNotes or any app']])}
     ${sec('App', [['Appearance', 'System'], ['About this build', '0.1.0']])}`;
-  // With a plan the plan's split is used: Profile › Split points to Library › Your plan (Ben, 22 Oct).
-  $('profile').querySelectorAll('[data-go]').forEach((b) => b.onclick = () => { const g = b.dataset.go; if (g.startsWith('tab:')) { A.tab = g.slice(4); A.stack = []; show(); } else push(g); });
+  // One source for the split and the workout defaults (length, supersets, abs) (D7, Ben 22 and 23 Oct): without a plan
+  // Profile's are used (Today's Up next days come from Profile › Split); with a plan they read Set by your plan and open
+  // Library › Your plan itself, not whichever Library tab was last open.
+  $('profile').querySelectorAll('[data-go]').forEach((b) => b.onclick = () => { const g = b.dataset.go; if (g === 'yourplan') { A.tab = 'library'; LIB.tab = 'plan'; A.stack = ['planview']; show(); } else if (g.startsWith('tab:')) { A.tab = g.slice(4); A.stack = []; show(); } else push(g); });
   $('profile').querySelectorAll('[data-na]').forEach((b) => b.onclick = () => toast('Not in this prototype'));
 }
 
 // ---------- Workout summary (workout-summary.md §2) ----------
 // The workout that was started and what was logged in it (V1): same name, today's date, its exercises.
-const SUM = { undone: {} };
+const SUM = { undone: {}, keep: null };
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function renderSummary() {
   const ses = A.session ?? { name: 'Workout', blocks: [] }, log = A.log ?? { ex: [], start: Date.now(), end: Date.now() };
+  // Keep for next time? (D1, Ben 22 and 23 Oct): only when Ben changed the workout's structure (swapped, added or removed
+  // exercises, or changed set counts) against the plan day it came from. Apply changes that plan day only, with Undo;
+  // Skip keeps the plan as it is. A Time change is never a change here (a short day isn't a new plan).
+  const changes = ses.changes ?? [];
+  const keep = changes.length && SUM.keep !== 'skip' ? `<div class="keep" id="keep">
+      <div class="kh"><b>${SUM.keep === 'applied' ? `Kept for next ${esc(ses.keepFor ?? ses.name)}` : 'Keep for next time?'}</b><span>${SUM.keep === 'applied' ? '<button class="link" id="keepUndo">Undo</button>' : '<button class="link" id="keepSkip">Skip</button><button class="apply" id="keepApply">Apply</button>'}</span></div>
+      ${changes.map((l) => `<div class="sub">${esc(l)}</div>`).join('')}</div>` : '';
   const work = log.ex.flatMap((e) => e.sets), done = work.filter((z) => z.done).length, mins = Math.round((log.end - log.start) / 60000);
   const kgs = (kg, each) => (kg === 'BW' ? 'BW' : `${kg} kg${each ? ' each' : ''}`);
   // Next time (built-in rule shown as before): every set done → one step up; otherwise hold.
@@ -387,13 +476,17 @@ function renderSummary() {
     <div class="card">${log.ex.map((e) => { const d = e.sets.filter((z) => z.done); return `<div class="row" style="cursor:default"><span><div class="nm">${e.name}</div><div class="sub">${d.length ? d.map((z) => `${z.kg === 'BW' ? 'BW' : z.kg} × ${z.r}`).join(', ') : 'Not logged'}${d.length && e.each ? ' · kg each' : ''}</div></span><span class="sub">${d.length}/${e.sets.length}</span></div>`; }).join('') || '<div class="row" style="cursor:default"><span class="sub">Nothing logged</span></div>'}</div>
     ${next.length ? `<div class="label">Next time · ${ses.name}</div>
     <div class="card">${next.map(([n, t, pct, why], i) => `<div class="row" style="cursor:default;align-items:flex-start;padding:10px 0"><span><div class="nm">${n}</div><div class="sub">${SUM.undone[i] ? 'Back to rule: same as today' : `${t} · ${pct}`}</div><div class="sub" style="color:var(--text3)">${why}</div></span>${SUM.undone[i] ? '' : `<button class="link" data-undo="${i}">Undo</button>`}</div>`).join('')}</div>` : ''}
+    ${keep}
     <div class="foot"><button class="secondary" id="sumEdit">Edit</button><button class="primary" id="sumDone">Done</button></div>`;
   $('summary').querySelectorAll('[data-undo]').forEach((b) => b.onclick = () => { SUM.undone[+b.dataset.undo] = true; renderSummary(); });
+  if ($('keepApply')) $('keepApply').onclick = () => { SUM.keep = 'applied'; renderSummary(); };
+  if ($('keepSkip')) $('keepSkip').onclick = () => { SUM.keep = 'skip'; renderSummary(); toast('Plan unchanged'); };
+  if ($('keepUndo')) $('keepUndo').onclick = () => { SUM.keep = null; renderSummary(); };
   $('sumDone').onclick = () => home();
   $('sumEdit').onclick = () => toast('Edit workout (delete-workouts.md)');
 }
 
-$('reset').onclick = () => { settle(); $('toast').classList.remove('on'); Object.values(frames).forEach((f) => f.remove()); for (const k in frames) delete frames[k]; Object.assign(A, { tab: 'today', stack: [], plan: false, session: null, log: null, live: false }); SUM.undone = {}; show(); };
+$('reset').onclick = () => { settle(); $('toast').classList.remove('on'); Object.values(frames).forEach((f) => f.remove()); for (const k in frames) delete frames[k]; Object.assign(A, { tab: 'today', stack: [], plan: false, session: null, log: null, live: false, focus: 'Balanced', hideBack: false }); SUM.undone = {}; SUM.keep = null; LIB.tab = 'plan'; show(); };
 $('withPlan').onclick = () => { A.plan = true; home(); };
 $('noPlan').onclick = () => { A.plan = false; home(); };
 show();

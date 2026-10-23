@@ -158,6 +158,16 @@ details.why summary::-webkit-details-marker { display: none; }
 .toast { position: absolute; left: 16px; right: 16px; bottom: 150px; background: var(--raised); border-radius: 12px; padding: 12px 14px; font-size: 14px; display: flex; justify-content: space-between; z-index: 25; }
 .toast { pointer-events: none; }
 .toast u { cursor: pointer; pointer-events: auto; }
+/* Your workout from Today's Edit: today-only controls (D3, Ben 22 and 23 Oct) */
+.tctl .tr { min-height: 50px; padding-left: 14px; }
+.tchips { display: flex; gap: 6px; }
+.tchip { min-height: 44px; padding: 0 12px; border-radius: 999px; border: 1.5px solid var(--divider); background: none; color: var(--text2); font: 600 14px var(--ui); cursor: pointer; }
+.tchip.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+/* The coach's background review as an offer line (D2, Ben 22 and 23 Oct): nothing changes until Apply */
+.offer { display: flex; align-items: center; gap: 2px; background: var(--raised); border-radius: 12px; padding: 0 0 0 4px; font-size: 15px; }
+.offer .otext { flex: 1; text-align: left; background: none; border: 0; color: var(--text); font: 15px var(--ui); min-height: 44px; padding: 0 8px; cursor: pointer; }
+.offer .link { min-height: 44px; min-width: 44px; padding: 0 10px; font-size: 15px; font-weight: 600; }
+.offer .x { text-decoration: none; color: var(--text2); font-size: 17px; font-weight: 400; }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
 
@@ -169,21 +179,25 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 <script>
 (() => {
   // Shared example facts (V1): the same in every screen of the whole-app prototype; build_app.py checks them.
-  const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 92.5, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 92.5", "last": "12 Oct · 100 × 6"};
-  const E1RM = { 'Leg extension': 90, 'Hip thrust': 180, 'Bulgarian split squat': 40, 'Barbell bench press': 130, 'Incline dumbbell press': 39, 'Incline barbell press': 105, 'Cable fly': 23, 'Machine chest press': 105, 'Triceps pushdown': 45, 'Overhead triceps extension': 30, 'Cable crunch': 60, 'Hanging knee raise': null, 'Barbell row': 118, 'Lat pulldown': 82, 'Chest-supported row': 30, 'Seated cable row': 80, 'EZ-bar curl': 45, 'Hammer curl': 18, 'Back squat': 150, 'Romanian deadlift': 140, 'Leg press': 260, 'Leg curl': 65, 'Seated calf raise': 60, 'Lateral raise': 15, 'Dumbbell shoulder press': 42, 'Rear-delt fly': 12, 'Face pull': 30 };
+  const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 95, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 95", "last": "12 Oct · 100 × 6"};
+  const E1RM = { 'Cable lateral raise': 8, 'Leg extension': 90, 'Hip thrust': 180, 'Bulgarian split squat': 40, 'Barbell bench press': 130, 'Incline dumbbell press': 39, 'Incline barbell press': 105, 'Cable fly': 23, 'Machine chest press': 105, 'Triceps pushdown': 45, 'Overhead triceps extension': 30, 'Cable crunch': 60, 'Hanging knee raise': null, 'Barbell row': 118, 'Lat pulldown': 82, 'Chest-supported row': 30, 'Seated cable row': 80, 'EZ-bar curl': 45, 'Hammer curl': 18, 'Back squat': 150, 'Romanian deadlift': 140, 'Leg press': 260, 'Leg curl': 65, 'Seated calf raise': 60, 'Lateral raise': 15, 'Dumbbell shoulder press': 42, 'Rear-delt fly': 12, 'Face pull': 30 };
   const EACH = new Set(['Bulgarian split squat', 'Incline dumbbell press', 'Hammer curl', 'Lateral raise', 'Dumbbell shoulder press', 'Rear-delt fly', 'Chest-supported row']);
-  // One muscle list everywhere (V1): the plan's (plan-builder MUSCLES).
-  const GROUPS = ['Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Calves', 'Biceps', 'Triceps', 'Core'];
+  // Muscles (D5, Ben 22 and 23 Oct): broad groups for PICKING (Set up, Add, Swap), the detailed list for COUNTING (the plan's
+  // weekly sets, Progress). Each broad group is exactly the sum of its detailed parts, as the plan's GROUPS: Legs is one
+  // group, Arms = biceps + triceps, rear delts count as Back. POOL below stays by detailed part, for the pick order.
+  const GROUPS = ['Chest', 'Back', 'Shoulders', 'Legs', 'Arms', 'Core'];
+  const BROAD = { Chest: ['Chest'], Back: ['Back'], Shoulders: ['Shoulders'], Legs: ['Quads', 'Hamstrings', 'Calves'], Arms: ['Biceps', 'Triceps'], Core: ['Core'] };
+  const broadOf = (part) => GROUPS.find((g) => BROAD[g].includes(part)) ?? part;
   const DAYS = {
-    Chest: { sub: 'Chest, triceps', main: ['Barbell bench press', 'Incline dumbbell press', 'Incline barbell press'], rec: { Chest: 3, Triceps: 1, Core: 1 } },
-    Back: { sub: 'Back, rear delts, biceps', main: ['Barbell row', 'Lat pulldown'], rec: { Back: 3, Biceps: 1, Core: 1 } },
-    Legs: { sub: 'Quads, hamstrings, glutes, calves', main: ['Back squat', 'Leg press'], rec: { Quads: 2, Hamstrings: 1, Calves: 1, Core: 1 } },
-    Shoulders: { sub: 'Shoulders, triceps', main: ['Dumbbell shoulder press'], rec: { Shoulders: 3, Triceps: 1, Core: 1 } },
+    Chest: { sub: 'Chest, triceps', main: ['Barbell bench press', 'Incline dumbbell press', 'Incline barbell press'], rec: { Chest: 3, Arms: 1, Core: 1 } },
+    Back: { sub: 'Back, rear delts, biceps', main: ['Barbell row', 'Lat pulldown'], rec: { Back: 3, Arms: 1, Core: 1 } },
+    Legs: { sub: 'Quads, hamstrings, glutes, calves', main: ['Back squat', 'Leg press'], rec: { Legs: 4, Core: 1 } },
+    Shoulders: { sub: 'Shoulders, rear delts, triceps', main: ['Dumbbell shoulder press'], rec: { Shoulders: 2, Back: 1, Arms: 1, Core: 1 } },
   };
   const PPL = {
-    Push: { sub: 'Chest, shoulders, triceps', main: ['Barbell bench press', 'Dumbbell shoulder press', 'Incline dumbbell press'], rec: { Chest: 3, Shoulders: 2, Triceps: 1, Core: 1 } },
-    Pull: { sub: 'Back, rear delts, biceps', main: ['Barbell row', 'Lat pulldown'], rec: { Back: 4, Biceps: 1, Core: 1 } },
-    'Legs ': { sub: 'Quads, hamstrings, glutes, calves', main: ['Back squat', 'Leg press'], rec: { Quads: 2, Hamstrings: 2, Calves: 1, Core: 1 } },
+    Push: { sub: 'Chest, shoulders, triceps', main: ['Barbell bench press', 'Dumbbell shoulder press', 'Incline dumbbell press'], rec: { Chest: 3, Shoulders: 2, Arms: 1, Core: 1 } },
+    Pull: { sub: 'Back, rear delts, biceps', main: ['Barbell row', 'Lat pulldown'], rec: { Back: 4, Arms: 1, Core: 1 } },
+    'Legs ': { sub: 'Quads, hamstrings, glutes, calves', main: ['Back squat', 'Leg press'], rec: { Legs: 5, Core: 1 } },
   };
   Object.assign(DAYS, PPL);
   const MINE = ['Chest', 'Back', 'Legs', 'Shoulders'];
@@ -193,7 +207,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     'Incline dumbbell press': ['Upper chest', 'Upper chest, front delts, triceps'], 'Incline barbell press': ['Upper chest', 'Upper chest, front delts, triceps'],
     'Lat pulldown': ['Lats', 'Lats, biceps'], 'Barbell row': ['Mid-back', 'Mid-back, lats, rear delts, biceps'], 'Chest-supported row': ['Mid-back', 'Mid-back, rear delts'], 'Seated cable row': ['Mid-back', 'Mid-back, lats, biceps'],
     'Face pull': ['Rear delts', 'Rear delts, upper back'], 'Rear-delt fly': ['Rear delts', 'Rear delts'],
-    'Lateral raise': ['Side delts', 'Side delts'], 'Dumbbell shoulder press': ['Front delts', 'Front delts, triceps'],
+    'Lateral raise': ['Side delts', 'Side delts'], 'Cable lateral raise': ['Side delts', 'Side delts'], 'Dumbbell shoulder press': ['Front delts', 'Front delts, triceps'],
     'Back squat': ['Quads', 'Quads, glutes, adductors'], 'Leg press': ['Quads', 'Quads, glutes'], 'Leg extension': ['Quads', 'Quads'], 'Bulgarian split squat': ['Quads', 'Quads, glutes'],
     'Romanian deadlift': ['Hamstrings & glutes', 'Hamstrings, glutes, lower back'], 'Leg curl': ['Hamstrings & glutes', 'Hamstrings'], 'Hip thrust': ['Hamstrings & glutes', 'Glutes, hamstrings'],
     'Seated calf raise': ['Calves', 'Calves (soleus)'],
@@ -212,8 +226,57 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const item = (n) => `<button class="opt" data-a="${act}" data-v="${n}" data-g="${g}"><span>${n}<br><small>${works(n)}</small></span></button>`;
     return foci.map((f) => `${foci.length > 1 ? `<div class="label" style="padding:4px 4px 0;font-size:11.5px">${f}</div>` : ''}<div class="table">${opts.filter((n) => (W[n]?.[0] ?? g) === f).map(item).join('')}</div>`).join('');
   }
-  const POOL = { Chest: ['Incline dumbbell press', 'Cable fly', 'Machine chest press', 'Incline barbell press', 'Barbell bench press'], Back: ['Lat pulldown', 'Chest-supported row', 'Face pull', 'Seated cable row', 'Rear-delt fly', 'Barbell row'], Shoulders: ['Lateral raise', 'Dumbbell shoulder press', 'Rear-delt fly', 'Face pull'], Quads: ['Leg press', 'Leg extension', 'Bulgarian split squat', 'Back squat'], Hamstrings: ['Romanian deadlift', 'Leg curl', 'Hip thrust'], Calves: ['Seated calf raise'], Biceps: ['EZ-bar curl', 'Hammer curl'], Triceps: ['Triceps pushdown', 'Overhead triceps extension'], Core: ['Cable crunch', 'Hanging knee raise'] };
+  // Exercises by detailed part (rear delts are Back's). The pick order for a broad group comes from poolFor below.
+  const POOL = { Chest: ['Incline dumbbell press', 'Cable fly', 'Machine chest press', 'Incline barbell press', 'Barbell bench press'], Back: ['Lat pulldown', 'Chest-supported row', 'Face pull', 'Seated cable row', 'Rear-delt fly', 'Barbell row'], Shoulders: ['Lateral raise', 'Dumbbell shoulder press', 'Cable lateral raise'], Quads: ['Leg press', 'Leg extension', 'Bulgarian split squat', 'Back squat'], Hamstrings: ['Romanian deadlift', 'Leg curl', 'Hip thrust'], Calves: ['Seated calf raise'], Biceps: ['EZ-bar curl', 'Hammer curl'], Triceps: ['Triceps pushdown', 'Overhead triceps extension'], Core: ['Cable crunch', 'Hanging knee raise'] };
+  const partOf = (n) => Object.keys(POOL).find((p) => POOL[p].includes(n));
+  const groupOfEx = (n) => { const p = partOf(n); return p ? broadOf(p) : undefined; };
+  const REAR_FIRST = ['Rear-delt fly', 'Face pull'];
+  // A broad group's exercises in the order a day picks them (minus what's already in): Legs runs quads, hamstrings/glutes,
+  // quads, calves, hamstrings…; Arms leads with triceps on pressing days, biceps otherwise; Back leads with rear delts on
+  // shoulder and push days. An exercise already in the workout (the main lift) takes the first slot of its part. A part
+  // Ben named ("add hamstrings", s.want) goes first, so the extra exercise is one he asked for (D5 regression fix).
+  function poolFor(g, day = s.day, have = []) {
+    const parts = BROAD[g] ?? [g], d = String(day).trim();
+    if (parts.length === 1) {
+      const p = (POOL[parts[0]] ?? []).filter((n) => !have.includes(n));
+      return g === 'Back' && /Shoulders|Push/.test(d) ? [...REAR_FIRST.filter((n) => p.includes(n)), ...p.filter((n) => !REAR_FIRST.includes(n))] : p;
+    }
+    const base = g === 'Legs' ? ['Quads', 'Hamstrings', 'Quads', 'Calves', 'Hamstrings', 'Quads', 'Hamstrings'] : /Chest|Shoulders|Push/.test(d) ? ['Triceps', 'Biceps', 'Triceps', 'Biceps'] : ['Biceps', 'Triceps', 'Biceps', 'Triceps'];
+    const q = Object.fromEntries(parts.map((p) => [p, (POOL[p] ?? []).filter((n) => !have.includes(n))]));
+    have.forEach((n) => { const k = base.indexOf(partOf(n)); if (k >= 0) base.splice(k, 1); });
+    const order = [...(s.want?.[g] ?? []).filter((p) => parts.includes(p)), ...base];
+    const out = [];
+    order.forEach((p) => { const n = q[p]?.shift(); if (n) out.push(n); });
+    parts.forEach((p) => out.push(...q[p]));
+    return out;
+  }
   const snap = (kg) => Math.round(kg / 2.5) * 2.5;
+  // BACKOFF-START (one copy in each prototype that needs it; build_app.py checks they match, check_app.mjs tests it)
+  // Back-offs (D4, Ben 22 and 23 Oct; training guide SS4): worked out from the top set at their own reps and effort
+  // (RIR-adjusted Epley; top set and back-offs @ RPE 8), kept in the focus's band below the top (Strength 2–8 %,
+  // Balanced 4–10 %, Muscle 8–15 %; other focuses 2–15 %) and snapped down to a real load, or the next real load up
+  // when that is still inside the band. Not a fixed 90 % or 95 %. No real load inside the band (coarse dumbbells, sparse
+  // racks; review B2): the one nearest the band that is below the top, on a tie the lighter; never the top itself. A top
+  // with no real load below it keeps its load and the back-offs do 1 rep fewer (spec §3.1 item 9; none here is that light).
+  const BACKOFF_BAND = { Strength: [0.02, 0.08], Balanced: [0.04, 0.1], Muscle: [0.08, 0.15] };
+  function backOff(top, topReps, backReps, focus = 'Balanced', step = 2.5, topRpe = 8, backRpe = 8) {
+    if (top == null || Number.isNaN(Number(top))) return null;
+    const raw = (top * (30 + topReps + 10 - topRpe)) / (30 + backReps + 10 - backRpe);
+    const [lo, hi] = BACKOFF_BAND[focus] ?? [0.02, 0.15], L = top * (1 - hi) - 1e-9, U = top * (1 - lo) + 1e-9;
+    const down = Math.floor(Math.min(U, Math.max(L, raw)) / step + 1e-9) * step;
+    const near = [down, down + step].filter((kg) => kg > 0 && kg < top - 1e-9);
+    const inBand = near.find((kg) => kg >= L && kg <= U);
+    if (inBand != null) return inBand;
+    const off = (kg) => (kg < L ? L - kg : kg - U);
+    return near.sort((a, b) => off(a) - off(b) || a - b)[0] ?? top;
+  }
+  // When today's top is lowered from the planned one (a pain hold, the coach, Ben, an R2 offer; a deload's −10 %), the
+  // back-offs drop by the same factor and snap down, staying below the new top (SS4, HT8). Raising never raises them.
+  function lowerBackOff(back, factor, newTop, step = 2.5) {
+    if (back == null || newTop == null || !(factor < 1)) return back;
+    return Math.max(step, Math.min(Math.floor((back * factor) / step + 1e-9) * step, newTop - step));
+  }
+  // BACKOFF-END
   // Load for a set from est. 1RM, reps and target RPE (reps in reserve = 10 − RPE), rounded DOWN so the target stays doable.
   // The real build rounds to the gym's actual plates, dumbbells and stack steps instead of 2.5 kg.
   const loadFor = (name, reps, rpe) => { const e = E1RM[name]; if (e == null) return null; return Math.max(2.5, Math.floor(e / (1 + (reps + (10 - (rpe ?? 8))) / 30) / 2.5) * 2.5); };
@@ -233,11 +296,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (e.main) { if (isBar(e.name)) wu.push({ type: 'W', reps: 10, kg: 20, rpe: null }); for (const [f, r] of [[0.5, 5], [0.7, 3], [0.85, 1]]) { const k = snap(L0 * f); if (k > (wu[wu.length - 1]?.kg ?? 0)) wu.push({ type: 'W', reps: r, kg: k, rpe: null }); } }
     else if (COMPOUND.has(e.name)) wu.push({ type: 'W', reps: 8, kg: snap(L0 * 0.6), rpe: null });
     const work = e.main
-      ? [{ type: 'T', reps: r0, kg: L0, rpe: 8 }, ...Array.from({ length: e.sets - 1 }, () => ({ type: 'B', reps: r1, kg: snap(L0 * 0.9), rpe: 8 }))] // back-offs about 90 % of the top set
+      ? [{ type: 'T', reps: r0, kg: L0, rpe: 8 }, ...Array.from({ length: e.sets - 1 }, () => ({ type: 'B', reps: r1, kg: backOff(L0, r0, r1, s.focus ?? 'Balanced'), rpe: 8 }))] // D4: from reps and effort, in the plan's focus band (S7)
       : Array.from({ length: e.sets }, (_, i) => ({ type: 'N', reps: r0, kg: L0, rpe: i === e.sets - 1 ? 9 : 8 }));
     return [...wu, ...work];
   }
-  const workRows = (e) => e.per.filter((p) => p.type !== 'W');
+  // An exercise just added or swapped in has no rows yet (per undefined until the next render): make them first (review R1).
+  const workRows = (e) => { e.per ??= genRows(e); return e.per.filter((p) => p.type !== 'W'); };
+  // A set's load from its reps and RPE: back-offs from this exercise's top set (D4) in the plan's focus band (review S7;
+  // with no plan, the band the Profile goal maps to, here Balanced), other sets from est. 1RM.
+  const calcKg = (e, q) => { const top = (e.per ?? []).find((p) => p.type === 'T' && p !== q); return q.type === 'B' && typeof top?.kg === 'number' ? backOff(top.kg, top.reps, q.reps, s.focus ?? 'Balanced', 2.5, top.rpe ?? 8, q.rpe ?? 8) : loadFor(e.name, q.reps, q.rpe ?? 8); };
   const perOf = (e) => {
     e.per ??= genRows(e);
     let w = workRows(e);
@@ -252,12 +319,113 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const wtSub = (e) => (e.load != null && EACH.has(e.name) ? 'each' : '');
   // Main lift in one format everywhere (V1): top set + back-offs · loads, e.g. 1 × 6 + 2 × 8 · 100 / 90.
   const mainLine = (e) => { const w = workRows(e), top = w.find((p) => p.type === 'T') ?? w[0], b = w.filter((p) => p !== top); if (!top) return ''; const kg = (v) => (v == null ? 'BW' : v); if (!w.some((p) => p.type === 'T')) return `${w.length} × ${top.reps}${top.kg == null ? '' : ` · ${top.kg}${wtSub(e) ? ' each' : ''}`}`; return `1 × ${top.reps}${b.length ? ` + ${b.length} × ${b[0].reps}` : ''} · ${kg(top.kg)}${b.length ? ` / ${kg(b[0].kg)}` : ''}${wtSub(e) ? ' each' : ''}`; };
-  // Start: the active workout opens with exactly this workout (V1): name, order, supersets, every set row.
-  const session = () => ({ name: s.day.trim(), date: FIXTURE.today, min: s.minutes, est: est(), ss: s.blocks.some((b) => b.length > 1),
+  // Start: the active workout opens with exactly this workout (V1): name, order, supersets, every set row. Start always
+  // just starts, today only (D1). changes = Ben's own structure changes against the plan day's template, which the
+  // Summary offers once as Keep for next time? (Apply / Skip, that plan day only; review B1).
+  const session = () => ({ name: s.day.trim(), date: FIXTURE.today, min: s.minutes, est: est(), ss: s.blocks.some((b) => b.length > 1), focus: s.focus ?? 'Balanced',
+    changes: keepLines(), keepFor: keepForName(),
     blocks: s.blocks.map((b) => b.map((e) => ({ name: e.name, main: !!e.main, works: works(e.name), each: !!wtSub(e), comp: isCompound(e.name), rows: perOf(e).map((p) => ({ type: p.type, kg: p.kg ?? null, reps: p.reps, rpe: p.rpe })), ...(e.main && e.name === FIXTURE.main ? { last: FIXTURE.last } : {}) }))) });
+  // EDITS-START (one copy in Today with a plan and the builder; build_app.py checks they match)
+  // Ben's own changes from Your workout (D3; review fixes 23 Oct): a list replayed on today's draft after the fit and the
+  // coach, so they stay when he goes back to Today and the fit never undoes them (FT5). Ops: remove, add, swap (in
+  // place; it takes the slot's set count, so a fit's trim never rides into the template, unless Ben chose a count: n,
+  // review R2), sets (the count he chose; brings back an exercise the fit left out). The builder has the same function.
+  function replayEdits(blocks, ops, tpl = []) {
+    let bl = blocks.map((b) => b.map((x) => ({ ...x })));
+    const find = (n) => { for (const b of bl) { const i = b.findIndex((x) => x.name === n); if (i >= 0) return [b, i]; } return null; };
+    for (const o of ops ?? []) {
+      if (o.op === 'remove') { const f = find(o.name); if (f && !f[0][f[1]].main && f[0][f[1]].kind !== 'main') f[0].splice(f[1], 1); }
+      else if (o.op === 'add') { const f = find(o.row.name); if (f) f[0][f[1]].sets = o.row.sets; else bl.push([{ ...o.row }]); }
+      else if (o.op === 'swap') { const f = find(o.from); if (f) { const was = f[0][f[1]]; f[0][f[1]] = { ...o.row, sets: o.n ?? was.sets, main: !!was.main || was.kind === 'main', kind: was.kind }; } else if (!find(o.row.name)) bl.push([{ ...o.row, sets: o.n ?? o.row.sets }]); }
+      else if (o.op === 'sets') { const f = find(o.name); if (f) f[0][f[1]].sets = o.n; else { const ti = tpl.findIndex((x) => x.name === o.name); if (ti >= 0) { let at = bl.length; for (let k = ti - 1; k >= 0; k--) { const p = find(tpl[k].name); if (p) { at = bl.indexOf(p[0]) + 1; break; } } bl.splice(at, 0, [{ ...tpl[ti], sets: o.n }]); } } } // back in its template place (re-review N-a)
+      bl = bl.filter((b) => b.length);
+    }
+    return bl;
+  }
+  // Keep for next time? (D1; review B1, S1): only Ben's own structure changes, measured against the plan day's template
+  // for the chosen main lift, before the fit, the deload and the coach. His choices on Your workout count (Abs off,
+  // Varied); Time, the fit's cuts, pairing, the deload and coach changes never do; another main lift is another template.
+  function structureLines(base, now, ops = []) {
+    const isMain = (e) => !!e && (e.main || e.kind === 'main');
+    const bn = base.map((e) => e.name), nn = now.map((e) => e.name), out = [];
+    const gone = base.filter((e) => !nn.includes(e.name) && !isMain(e)).map((e) => e.name), added = now.filter((e) => !bn.includes(e.name) && !isMain(e));
+    // A swap only when Ben swapped that slot (review N5); its set count too when it differs from the slot's (review R2).
+    for (const o of ops) if (o.op === 'swap' && gone.includes(o.from) && added.some((e) => e.name === o.row.name)) { const b = base.find((e) => e.name === o.from), w = now.find((e) => e.name === o.row.name); out.push(`${o.from} → ${o.row.name}${b && w && b.sets !== w.sets ? ` · ${b.sets} → ${w.sets} sets` : ''}`); gone.splice(gone.indexOf(o.from), 1); added.splice(added.findIndex((e) => e.name === o.row.name), 1); }
+    gone.forEach((n) => out.push(`− ${n}`));
+    added.forEach((e) => out.push(`+ ${e.name} · ${e.sets} sets`));
+    now.forEach((e) => { const b = base.find((x) => x.name === e.name); if (b && b.sets !== e.sets) out.push(`${e.name} ${b.sets} → ${e.sets} sets`); });
+    return out;
+  }
+  // EDITS-END
+  // Ben's edits on a workout opened from Today's Edit or a plan day (review B1, S3, S6): s.edits is the list above, kept in
+  // step with the screen by syncEdits(): what's on screen against the app's draft (Today's fit for the current controls,
+  // or the plan day, plus the coach's applied offer) replayed with the edits so far. Today gets the list back, so its card
+  // keeps them (D3 regression).
+  const ctlKey = (c) => `${c.main}|${c.style}|${c.abs ? 1 : 0}|${c.ss ? 1 : 0}`;
+  const rowOf = (e) => { perOf(e); const w = workRows(e), t = w.find((p) => p.type === 'T') ?? w[0], b = w.find((p) => p.type === 'B'); return { name: e.name, main: !!e.main, sets: e.sets, kg: topOf(e), reps: t?.reps ?? e.reps?.[0], back: b?.kg ?? null, backReps: b?.reps, comp: isCompound(e.name), each: !!wtSub(e), works: works(e.name) }; };
+  function appBlocks() {
+    const o = s.from?.opts, v = o && s.tctl ? o.variants[ctlKey(s.tctl)] : null;
+    const bl = (v ? v.blocks : s.from?.blocks ?? []).map((b) => b.map((x) => ({ ...x })));
+    const off = s.offer;
+    if (off?.state === 'applied') { const x = bl.flat().find((r) => r.name === off.name); if (x && x.sets === off.from) x.sets = off.to; }
+    return replayEdits(bl, s.edits, v?.tpl ?? s.from?.base ?? []);
+  }
+  // New edits on top of the list: a removal undoes an addition, a re-add undoes a removal, swaps chain, set counts merge.
+  function mergeOps(list, ops) {
+    let out = list.map((o) => ({ ...o }));
+    const dropSets = (n) => { out = out.filter((x) => !(x.op === 'sets' && x.name === n)); };
+    for (const o of ops) {
+      if (o.op === 'remove') {
+        const a = out.findIndex((x) => x.op === 'add' && x.row.name === o.name), w = out.findIndex((x) => x.op === 'swap' && x.row.name === o.name);
+        dropSets(o.name);
+        if (a >= 0) out.splice(out.findIndex((x) => x.op === 'add' && x.row.name === o.name), 1);
+        else if (w >= 0) { const k = out.findIndex((x) => x.op === 'swap' && x.row.name === o.name), from = out[k].from; out.splice(k, 1); out.push({ op: 'remove', name: from, sets: o.sets }); }
+        else out.push(o);
+      } else if (o.op === 'add') {
+        const r = out.findIndex((x) => x.op === 'remove' && x.name === o.row.name);
+        if (r >= 0) { const was = out[r].sets; out.splice(r, 1); if (o.row.sets !== was) out.push({ op: 'sets', name: o.row.name, n: o.row.sets }); }
+        else out.push(o);
+      } else if (o.op === 'swap') {
+        dropSets(o.from);
+        const a = out.findIndex((x) => x.op === 'add' && x.row.name === o.from), w = out.findIndex((x) => x.op === 'swap' && x.row.name === o.from);
+        if (a >= 0) out[a] = { op: 'add', row: o.row };
+        else if (w >= 0) { if (out[w].from === o.row.name) out.splice(w, 1); else { const n = o.n ?? out[w].n; out[w] = { op: 'swap', from: out[w].from, row: o.row, ...(n != null ? { n } : {}) }; } }
+        else out.push(o);
+      } else if (o.op === 'sets') {
+        // A count Ben sets on a swapped-in exercise is his (n); otherwise the swap keeps the slot's count (review R2).
+        const a = out.find((x) => (x.op === 'add' || x.op === 'swap') && x.row.name === o.name);
+        if (a?.op === 'swap') { a.n = o.n; a.row = { ...a.row, sets: o.n }; }
+        else if (a) a.row = { ...a.row, sets: o.n };
+        else { dropSets(o.name); out.push(o); }
+      }
+    }
+    return out;
+  }
+  function syncEdits() {
+    if (!s.from || (!s.from.opts && !s.from.base)) return;
+    const app = appBlocks().flat(), now = all(), an = app.map((r) => r.name), nn = now.map((e) => e.name), ops = [], swapped = new Set();
+    // A swap keeps the slot's count unless the count on screen differs from it (review R2: then it's Ben's, n).
+    now.forEach((e) => { if (!an.includes(e.name) && e.swapFrom && an.includes(e.swapFrom) && !nn.includes(e.swapFrom)) { const was = app.find((r) => r.name === e.swapFrom); ops.push({ op: 'swap', from: e.swapFrom, row: rowOf(e), ...(was && was.sets !== e.sets ? { n: e.sets } : {}) }); swapped.add(e.swapFrom); swapped.add(e.name); } });
+    app.forEach((r) => { if (!nn.includes(r.name) && !swapped.has(r.name)) ops.push({ op: 'remove', name: r.name, sets: r.sets }); });
+    now.forEach((e) => { if (!an.includes(e.name) && !swapped.has(e.name)) ops.push({ op: 'add', row: rowOf(e) }); });
+    now.forEach((e) => { const r = app.find((x) => x.name === e.name); if (r && r.sets !== e.sets) ops.push({ op: 'sets', name: e.name, n: e.sets }); });
+    if (ops.length) s.edits = mergeOps(s.edits ?? [], ops);
+  }
+  // Keep for next time? lines (D1): Ben's edits replayed on the template for his current choices, against the plan
+  // day's template for that main lift (from Today: opts.base; from a plan day: its own base). Nothing else.
+  function keepLines() {
+    if (!s.from) return [];
+    const o = s.from.opts, base = o ? o.base?.[s.tctl?.main] : s.from.base, tpl = o ? o.variants?.[ctlKey(s.tctl)]?.tpl : s.from.base;
+    if (!base || !tpl) return [];
+    syncEdits();
+    return structureLines(base, replayEdits(tpl.map((r) => [{ ...r }]), s.edits, tpl).flat(), s.edits ?? []);
+  }
+  // Another main lift picks that template (review S1): Keep then names it.
+  const keepForName = () => { const o = s.from?.opts; if (o && s.tctl && s.tctl.main !== o.mains[0]) return `${s.day.trim()} · ${s.tctl.main}`; return s.from?.keepFor ?? s.from?.day ?? null; };
 
-  let s = { defaults: {}, useDef: true, notes: {}, noteOff: [], openRow: null, edited: false, builtSig: null, chat: [], page: 1, day: FIXTURE.session, minutes: 60, main: DAYS[FIXTURE.session].main[0], groups: { ...DAYS[FIXTURE.session].rec }, ss: true, blocks: [], sheet: null, toast: null, undo: null, sugs: [] };
+  let s = { defaults: {}, useDef: true, notes: {}, noteOff: [], openRow: null, edited: false, builtSig: null, chat: [], page: 1, day: FIXTURE.session, minutes: 60, main: DAYS[FIXTURE.session].main[0], groups: { ...DAYS[FIXTURE.session].rec }, ss: true, blocks: [], sheet: null, toast: null, undo: null, sugs: [], focus: 'Balanced', edits: [], want: {} };
   const app = document.getElementById('app');
+  const embedded = () => document.documentElement.classList.contains('embed');
   const total = () => Object.values(s.groups).reduce((a, b) => a + b, 0);
   // Recommended mix for N exercises: the day's mix scaled to N (largest remainder; the first group always keeps one).
   function scaled(n) {
@@ -266,9 +434,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (parts[0].f === 0) { parts[0].f = 1; parts[0].r = -1; }
     let left = n - parts.reduce((a, p) => a + p.f, 0);
     for (const p of [...parts].sort((a, b) => b.r - a.r || a.i - b.i)) { if (left <= 0) break; p.f++; left--; }
-    // At most 4 exercises (about 12 sets) for one group in a session; the rest go to the other groups.
-    const CAP = 4; let spill = 0; for (const q of parts) if (q.f > CAP) { spill += q.f - CAP; q.f = CAP; }
-    for (const q of parts.slice(1)) while (spill > 0 && q.f < CAP) { q.f++; spill--; }
+    // At most 4 exercises (about 12 sets) for one group in a session, 5 for Legs (three parts as one group, D5); the
+    // rest go to the other groups.
+    const CAP = (k) => (k === 'Legs' ? 5 : 4); let spill = 0; for (const q of parts) if (q.f > CAP(q.k)) { spill += q.f - CAP(q.k); q.f = CAP(q.k); }
+    for (const q of parts.slice(1)) while (spill > 0 && q.f < CAP(q.k)) { q.f++; spill--; }
     const out = {}; for (const p of parts) if (p.f > 0) out[p.k] = p.f; return out;
   }
   // Recommended count: the most exercises (3 sets each, main lift 4) that fit the length, with supersets as set.
@@ -287,7 +456,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const all = () => s.blocks.flat();
   const setupSig = () => JSON.stringify([s.day, s.minutes, s.main, s.ss, s.groups, s.variant ?? null]);
 
-  const mainGroup = () => Object.keys(POOL).find((g) => POOL[g].includes(s.main) && g in s.groups) ?? Object.keys(POOL).find((g) => POOL[g].includes(s.main));
+  const mainGroup = () => groupOfEx(s.main);
   const isCompound = (n) => COMPOUND.has(n) || HEAVY.has(n) || /bench|squat|row|press/i.test(n) && !/pushdown|fly/i.test(n);
   // Main lift first, then compounds (alternating quads and hinge on leg days), then isolations, abs last.
   function orderEx(list) {
@@ -301,7 +470,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function mergeSetup(m0, ss0, g0) {
     for (const g of new Set([...Object.keys(g0), ...Object.keys(s.groups)])) {
       let diff = (s.groups[g] ?? 0) - (g0[g] ?? 0);
-      while (diff > 0) { const n = (POOL[g] ?? []).find((x) => !all().some((y) => y.name === x)); if (!n) break; const at = s.blocks.findIndex((b) => b.every((e) => e.g === 'Core')); const blk = [{ name: n, g, main: false, sets: 3, ...target(n, false) }]; if (at < 0 || g === 'Core') s.blocks.push(blk); else s.blocks.splice(at, 0, blk); diff--; }
+      while (diff > 0) { const n = poolFor(g, s.day, all().map((y) => y.name))[0]; if (!n) break; const at = s.blocks.findIndex((b) => b.every((e) => e.g === 'Core')); const blk = [{ name: n, g, main: false, sets: 3, ...target(n, false) }]; if (at < 0 || g === 'Core') s.blocks.push(blk); else s.blocks.splice(at, 0, blk); diff--; }
       while (diff < 0) { const cand = [...all()].reverse().filter((x) => x.g === g && !x.main); const e = cand.find((x) => !x.touched) ?? cand[0]; if (!e) break; const b = blockOf(e); b.splice(b.indexOf(e), 1); s.blocks = s.blocks.filter((x) => x.length); diff++; }
     }
     if (ss0 && !s.ss) s.blocks = s.blocks.flatMap((b) => b.map((e) => [e]));
@@ -315,7 +484,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const mg = mainGroup();
     const add = (name, g, main) => { used.add(name); out.push({ name, g, main, sets: 3, ...target(name, main) }); };
     if (s.main !== 'None') add(s.main, mg ?? Object.keys(s.groups)[0], true);
-    for (const [g, n] of Object.entries(s.groups)) { let need = n - (g === mg && s.main !== 'None' ? 1 : 0); for (const name of POOL[g] ?? []) { if (need <= 0) break; if (used.has(name)) continue; add(name, g, false); need--; } }
+    for (const [g, n] of Object.entries(s.groups)) { let need = n - (g === mg && s.main !== 'None' ? 1 : 0); for (const name of poolFor(g, s.day, [...used])) { if (need <= 0) break; if (used.has(name)) continue; add(name, g, false); need--; } }
     s.blocks = orderEx(out).map((e) => [e]);
     if (s.ss) autoPair();
     if (trim) while (est() > s.minutes && all().some((e) => !e.main && e.sets > 2)) { const e = [...all()].reverse().find((x) => !x.main && x.sets > 2); e.sets--; }
@@ -325,7 +494,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const LEG_PART = { 'Back squat': 'quads', 'Leg press': 'quads', 'Leg extension': 'quads', 'Bulgarian split squat': 'quads', 'Romanian deadlift': 'hams', 'Leg curl': 'hams', 'Hip thrust': 'hams', 'Seated calf raise': 'calves' };
   // Never two heavy compound lifts back to back.
   const HEAVY = new Set(['Back squat', 'Leg press', 'Romanian deadlift', 'Hip thrust', 'Bulgarian split squat', 'Barbell row', 'Incline barbell press']);
-  const part = (e) => LEG_PART[e.name] ?? e.g;
+  // Pairing and order checks look at the detailed part (biceps vs triceps, quads vs hamstrings), not the broad group.
+  const part = (e) => LEG_PART[e.name] ?? partOf(e.name) ?? e.g;
   const canPair = (a, b) => !a.main && !b.main && !(HEAVY.has(a.name) && HEAVY.has(b.name)) && !((a.g === 'Core' || b.g === 'Core') && (HEAVY.has(a.name) || HEAVY.has(b.name))) && part(a) !== part(b) && !overlap(a, b);
   function autoPair() {
     const singles = s.blocks.filter((b) => b.length === 1 && !b[0].main).map((b) => b[0]);
@@ -344,7 +514,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     for (let i = 0; i < flat.length; i++) for (let j = i + 1; j < flat.length; j++) {
       const a = flat[i], b = flat[j];
       if (blockOf(a) === blockOf(b)) continue;
-      if (!isCompound(a.name) && isCompound(b.name) && (overlap(a, b) || a.g === b.g) && a.g !== 'Core') { out.push({ key: `ord:${a.name}>${b.name}`, text: `${a.name} before ${b.name} is not recommended`, why: `It tires your ${(muscles(a.name).find((m) => muscles(b.name).includes(m)) ?? a.g).toLowerCase()} before the heavier lift, so ${b.name} suffers.`, fix: () => { const x = all().find((q) => q.name === b.name), y = all().find((q) => q.name === a.name); if (x && y) move(x, blockOf(y), false); }, fixLabel: `Move ${b.name} first` }); }
+      if (!isCompound(a.name) && isCompound(b.name) && (overlap(a, b) || part(a) === part(b)) && a.g !== 'Core') { out.push({ key: `ord:${a.name}>${b.name}`, text: `${a.name} before ${b.name} is not recommended`, why: `It tires your ${(muscles(a.name).find((m) => muscles(b.name).includes(m)) ?? a.g).toLowerCase()} before the heavier lift, so ${b.name} suffers.`, fix: () => { const x = all().find((q) => q.name === b.name), y = all().find((q) => q.name === a.name); if (x && y) move(x, blockOf(y), false); }, fixLabel: `Move ${b.name} first` }); }
     }
     for (const b of s.blocks.filter((x) => x.length > 1)) for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++) {
       const x = b[i], y = b[j]; let why = null;
@@ -416,12 +586,36 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     </div>
     <div class="foot"><button class="pill" data-a="build">Next: exercises</button></div>`;
   }
+  // Today-only controls on Your workout when it came from Today's Edit (D3, Ben 22 and 23 Oct): main lift, accessories, abs
+  // and supersets moved here off Today's card. A change loads Today's own draft for that choice at today's Time (one
+  // shared fit, D9); Undo brings back what was there, earlier edits included.
+  function todayCtl() {
+    const o = s.from?.opts, c = s.tctl; if (!o || !c) return '';
+    const chips = (k, list, cur) => list.map((v) => `<button class="tchip${v === cur ? ' on' : ''}" data-a="${k}" data-v="${v}" aria-pressed="${v === cur}">${v}</button>`).join('');
+    const sw = (k, on, label) => `<button class="chev" data-a="${k}" role="switch" aria-checked="${on}" aria-label="${label}"><span class="switch" style="background:${on ? 'var(--accent)' : 'var(--raised)'};justify-content:${on ? 'flex-end' : 'flex-start'}"><i style="background:${on ? 'var(--on-accent)' : 'var(--text3)'}"></i></span></button>`;
+    return `<div class="table tctl">
+      ${o.mains.length > 1 ? `<div class="tr"><span class="k">Main lift</span><span class="tchips">${chips('tmain', o.mains, c.main)}</span></div>` : ''}
+      <div class="tr"><span class="k">Accessories</span><span class="tchips">${chips('tstyle', ['Focused', 'Varied'], c.style)}</span></div>
+      <div class="tr"><span class="k">Abs</span>${sw('tabs', c.abs, 'Abs')}</div>
+      <div class="tr"><span class="k">Supersets</span>${sw('tss', c.ss, 'Supersets')}</div>
+    </div>`;
+  }
+  // The coach's background review of this draft as an offer line (D2, Ben 22 and 23 Oct): nothing changes until Apply; the
+  // reason is one tap on the line. It reads against the workout as shown: once Ben (or Today's fit) changes that
+  // exercise it no longer matches and is withdrawn; a stale Apply is refused (rule 5).
+  const offerLive = () => { const o = s.offer; return !!o && o.state == null && all().some((e) => e.name === o.name && e.sets === o.from); };
+  function offerLine() {
+    const o = s.offer; if (!offerLive()) return '';
+    return `<div class="offer" role="group" aria-label="Coach offer: ${o.name} ${o.from} to ${o.to} sets"><button class="otext" data-a="owhy">✦ ${o.name} ${o.from} → ${o.to} sets?</button><button class="link" data-a="oapply">Apply</button><button class="link x" data-a="oskip" aria-label="Skip">✕</button></div>`;
+  }
   function page2() {
     const anySs = s.blocks.some((b) => b.length > 1);
     return `${s.from ? '' : '<div class="top"><button class="back" data-a="to1">‹ Set up</button><span class="pg">2 of 2</span></div>'}
     <h2>${s.day.trim()} · about ${est()} min</h2>
     ${anySs ? `<div class="sub">Supersets save about ${Math.max(0, estSolo() - est())} min</div>` : ''}
     <div class="scroll">
+      ${todayCtl()}
+      ${offerLine()}
       <div class="cols"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>
       ${(s.notes[s.day] ?? []).length ? `<div class="notes"><div class="label">From last review</div>${s.notes[s.day].map((n, i) => `<div class="note"><span>${n}</span><button data-a="dnote" data-v="${i}" aria-label="Dismiss">✕</button></div>`).join('')}</div>` : ''}
       <div class="wk" id="wk">${s.blocks.map((b, bi) => `<div class="blk ${b.length > 1 ? 'ss' : ''}" data-b="${bi}">${b.map((e, ei) => `<div class="erw${s.openRow?.key === `${bi}-${ei}` ? (s.openRow.side === 'L' ? ' openL' : ' openR') : ''}"><button class="qL" data-a="qswap" data-b="${bi}" data-e="${ei}">Swap</button><button class="qR" data-a="qdel" data-b="${bi}" data-e="${ei}">Delete</button><div class="er" data-b="${bi}" data-e="${ei}" role="button" tabindex="0" aria-label="${bi + 1}${b.length > 1 ? 'abcdef'[ei] : ''} ${e.name}, ${e.sets} sets, ${wtText(e)}"><span class="n">${bi + 1}${b.length > 1 ? 'abcdef'[ei] : ''}</span><span class="nm">${e.name}${e.main ? '<span class="tag">Main</span>' : ''}<small>${e.main ? mainLine(e) : works(e.name)}</small></span><span class="sets">${e.sets}${wuCount(e) ? `<small class="wsub">+${wuCount(e)} W</small>` : ''}</span><span class="wt">${wtText(e)}${wtSub(e) ? `<small>${wtSub(e)}</small>` : ''}</span></div></div>`).join('')}</div>`).join('')}
@@ -433,7 +627,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   const sheets = {
     day: () => { const opt = (k) => `<button class="opt" data-a="day" data-v="${k}"><span>${k.trim()}<br><small>${DAYS[k].sub}</small></span><span>${k === s.day ? '✓' : ''}</span></button>`; return `<h3>Day</h3><div class="label" style="padding:0 4px">Your split</div><div class="table">${MINE.map(opt).join('')}</div><div class="label" style="padding:0 4px">Push / Pull / Legs</div><div class="table">${Object.keys(PPL).map(opt).join('')}</div><div class="table"><button class="opt" data-a="day" data-v="Custom"><span>Custom<br><small>Start with no muscle groups</small></span><span></span></button></div><button class="ghost" data-a="close">Cancel</button>`; },
-    main: () => `<h3>Main lift</h3><div class="table">${[...(DAYS[s.day]?.main ?? [...new Set(Object.keys(s.groups).flatMap((g) => (POOL[g] ?? []).filter(isCompound)))]), 'None'].map((m, i) => `<button class="opt" data-a="main" data-v="${m}"><span>${m}<br><small>${i === 0 && DAYS[s.day] ? 'From Profile' : m === 'None' ? 'No main lift today' : ''}</small></span><span>${m === s.main ? '✓' : ''}</span></button>`).join('')}</div><button class="ghost" data-a="close">Cancel</button>`,
+    main: () => `<h3>Main lift</h3><div class="table">${[...(DAYS[s.day]?.main ?? [...new Set(Object.keys(s.groups).flatMap((g) => poolFor(g).filter(isCompound)))]), 'None'].map((m, i) => `<button class="opt" data-a="main" data-v="${m}"><span>${m}<br><small>${i === 0 && DAYS[s.day] ? 'From Profile' : m === 'None' ? 'No main lift today' : ''}</small></span><span>${m === s.main ? '✓' : ''}</span></button>`).join('')}</div><button class="ghost" data-a="close">Cancel</button>`,
     add: () => `<h3>Add muscle group</h3><div class="table">${GROUPS.filter((g) => !(g in s.groups)).map((g) => `<button class="opt" data-a="add" data-v="${g}"><span>${g}</span><span>＋</span></button>`).join('')}</div><button class="ghost" data-a="close">Cancel</button>`,
     ex: (e) => { const t = target(e.name, e.main); const per = perOf(e); const inSs = blockOf(e)?.length > 1;
       return `<div class="shead"><div><h3>${e.name}</h3><div class="wk-t">${works(e.name)}</div></div><button class="link" data-a="to-swap">Swap exercise</button></div>
@@ -448,12 +642,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     ${e.load == null ? '' : `<details class="why"><summary>Why this weight?</summary>Est. 1RM <b>${E1RM[e.name]} kg</b> (estimate) → ${e.reps[0]} reps @ RPE 8 → <b>${t.load} kg</b>. Hit ${e.reps[1]} reps → add weight next time.</details>`}
     <div class="foot"><button class="pill" data-a="close">Done</button><button class="ghost" data-a="remove">Remove</button></div>`; },
     // Swap: muscle group (defaults to this exercise's), then that group's exercises.
-    swap: (e) => { const g = s.sheet.g ?? e.g; const opts = (POOL[g] ?? []).filter((n) => !all().some((x) => x.name === n));
+    swap: (e) => { const g = s.sheet.g ?? e.g; const opts = poolFor(g, s.day, all().map((x) => x.name));
       return `<h3>Swap ${e.name}</h3><div class="sh"><span class="label">Muscle group</span><select class="gsel" id="swapg" aria-label="Muscle group">${GROUPS.map((x) => `<option${x === g ? ' selected' : ''}>${x}</option>`).join('')}</select></div>
     ${exList(g, opts, 'swap')}
     <button class="ghost" data-a="to-ex">Back</button>`; },
     // Add: pick a muscle group (today's first group by default), then an exercise.
-    pick: () => { const g = s.sheet.g ?? Object.keys(s.groups)[0] ?? GROUPS[0]; const opts = (POOL[g] ?? []).filter((n) => !all().some((x) => x.name === n));
+    pick: () => { const g = s.sheet.g ?? Object.keys(s.groups)[0] ?? GROUPS[0]; const opts = poolFor(g, s.day, all().map((x) => x.name));
       return `<h3>Add exercise</h3><div class="sh"><span class="label">Muscle group</span><select class="gsel" id="swapg" aria-label="Muscle group">${GROUPS.map((x) => `<option${x === g ? ' selected' : ''}>${x}</option>`).join('')}</select></div>
     ${exList(g, opts, 'pick')}<button class="ghost" data-a="close">Cancel</button>`; },
     chat: () => { const chips = s.page === 1 ? ['Push, 45 min, supersets', 'Legs, no supersets, 60 min', 'Chest, add biceps'] : ['Make it 45 min', 'Swap cable fly', 'Bench heavier', 'Add biceps', 'No supersets'];
@@ -461,9 +655,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="chatlog">${s.chat.map((m, i) => `<div class="msg ${m.who}">${m.text}</div>${m.prop ? `<div class="sug"><div>${m.prop.lines.join('<br>')}</div>${m.prop.state ? `<div class="w">${({ applied: 'Applied', skipped: 'Skipped', stale: 'Out of date: the workout changed since. Ask again.' })[m.prop.state]}${m.prop.state === 'applied' && s.undo ? ' · <u data-a="undo">Undo</u>' : ''}</div>` : `<div class="acts"><button class="yes" data-a="papply" data-v="${i}">Apply</button><button data-a="pskip" data-v="${i}">Skip</button></div>`}</div>` : ''}`).join('')}</div>
     <div class="chips">${chips.map((c) => `<button class="chip" data-a="chip" data-v="${c}">${c}</button>`).join('')}</div>
     <div class="chatin"><input class="search" id="chatq" placeholder="Message" autocomplete="off" enterkeyhint="send"><button class="mini micb" data-a="mic" aria-label="Speak"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button><button class="mini" data-a="send" aria-label="Send">↑</button></div>`; },
-    scope: () => { planDay(s.day); const lines = diffLines(planBlocks(s.day), s.blocks).filter((l) => !/^(Superset|Split) /.test(l)).slice(0, 6);
-      return `<h3>Keep these changes?</h3><div class="sug"><div>${lines.join('<br>') || 'Only weights and sets'}</div></div>
-    <button class="pill" data-a="scope-today">Today only</button><button class="ghost" data-a="scope-plan">Update ${s.day} (${(all().find((e) => e.main)?.name ?? s.main).replace('Barbell ', '').replace('Dumbbell ', '')}) in your plan</button><button class="ghost" data-a="scope-var">Save as new variation</button>`; },
+    // (D1, Ben 22 and 23 Oct) No Start prompt: Start always starts, today only; Keep for next time? is on the Summary.
     var: () => { const vs = PLAN.vars[pk(s.day)] ?? []; return `<h3>Version</h3><div class="table"><button class="opt" data-a="var" data-v=""><span>Standard<br><small>Your plan's ${s.day} day</small></span><span>${s.variant == null ? '✓' : ''}</span></button>${vs.map((x, i) => `<button class="opt" data-a="var" data-v="${i}"><span>${x.name}</span><span>${s.variant === i ? '✓' : ''}</span></button>`).join('')}</div><button class="ghost" data-a="close">Cancel</button>`; },
     review: () => { const r = reviewNow(); s.sugs = r.sugs;
       return `<div class="shead"><h3>Coach review</h3><span class="aist">● Prototype rules</span></div>
@@ -493,9 +685,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (/no supersets?|without supersets?|supersets? off/.test(t)) { s.ss = false; done.push('supersets off'); } else if (/superset/.test(t)) { s.ss = true; done.push('supersets on'); }
     const ml = (DAYS[s.day]?.main ?? []).find((n) => t.includes(n.toLowerCase().replace('barbell ', '').replace('dumbbell ', '')) || (/bench/.test(t) && /bench/i.test(n) && !/incline/.test(t)) || (/incline/.test(t) && /incline/i.test(n)));
     if (ml && ml !== s.main) { s.main = ml; done.push(ml); }
-    if (!s.custom) s.groups = recGroups();
-    for (const mm of t.matchAll(/(?:add|more|extra|plus)\s+([a-z ]+?)(?:,|\.|$| and | with )/g)) for (const g of groupIn(mm[1])) { s.groups[g] = Math.min(6, (s.groups[g] ?? 0) + 1); s.custom = true; done.push(`+1 ${g}`); }
-    for (const mm of t.matchAll(/(?:no|skip|without)\s+([a-z]+)/g)) for (const g of groupIn(mm[1])) if (g in s.groups) { delete s.groups[g]; s.custom = true; done.push(`no ${g}`); }
+    if (!s.custom) { s.want = {}; s.groups = recGroups(); }
+    // Words name detailed muscles; the set-up counts broad groups (D5): "add biceps" is +1 Arms, and the extra exercise
+    // comes from the part he named (s.want, used by poolFor).
+    for (const mm of t.matchAll(/(?:add|more|extra|plus)\s+([a-z ]+?)(?:,|\.|$| and | with )/g)) {
+      const named = groupIn(mm[1]);
+      for (const g of new Set(named.map(broadOf))) { s.groups[g] = Math.min(6, (s.groups[g] ?? 0) + 1); s.custom = true; done.push(`+1 ${g}`); }
+      for (const p of named) { const g = broadOf(p); if ((BROAD[g] ?? []).length > 1) s.want = { ...s.want, [g]: [...(s.want?.[g] ?? []), p] }; }
+    }
+    for (const mm of t.matchAll(/(?:no|skip|without)\s+([a-z]+)/g)) for (const g of new Set(groupIn(mm[1]).map(broadOf))) if (g in s.groups) { delete s.groups[g]; s.custom = true; done.push(`no ${g}`); }
     return done.length ? { done, before } : null;
   }
   // Change lines between two block lists: added, removed, swapped, sets and top-set changes, order.
@@ -516,14 +714,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function editFrom(text) {
     const t = text.toLowerCase(); const adv0 = adviceKeys(); const before = snapBlocks(); const mBefore = s.minutes; let did = false;
     let m;
-    if ((m = t.match(/swap\s+(.+?)\s+(?:for|with|to)\s+(.+)/))) { const e = findEx(m[1]); const n = findName(m[2]); if (e && n && !all().some((x) => x.name === n)) { const g = Object.keys(POOL).find((k) => POOL[k].includes(n)) ?? e.g; Object.assign(e, { name: n, g, per: undefined, ...target(n, e.main) }); did = true; } }
-    else if ((m = t.match(/(?:swap|change|replace)\s+(?:the\s+)?(.+)/))) { const e = findEx(m[1]); if (e) { const n = (POOL[e.g] ?? []).find((x) => !all().some((y) => y.name === x)); if (n) { Object.assign(e, { name: n, per: undefined, ...target(n, e.main) }); did = true; } } }
+    if ((m = t.match(/swap\s+(.+?)\s+(?:for|with|to)\s+(.+)/))) { const e = findEx(m[1]); const n = findName(m[2]); if (e && n && !all().some((x) => x.name === n)) { const g = groupOfEx(n) ?? e.g; Object.assign(e, { swapFrom: e.name, name: n, g, per: undefined, ...target(n, e.main) }); did = true; } }
+    else if ((m = t.match(/(?:swap|change|replace)\s+(?:the\s+)?(.+)/))) { const e = findEx(m[1]); if (e) { const n = poolFor(e.g, s.day, all().map((y) => y.name))[0]; if (n) { Object.assign(e, { swapFrom: e.name, name: n, per: undefined, ...target(n, e.main) }); did = true; } } }
     const mins = minutesIn(t) ?? (/shorter|less time|quicker/.test(t) ? s.minutes - 10 : /longer|more time/.test(t) ? s.minutes + 10 : null);
     if (mins) { s.minutes = Math.max(15, Math.min(180, mins)); let guard = 50;
       while (est() > s.minutes && guard--) { const e = [...all()].reverse().find((x) => !x.main && x.sets > 2); if (e) { e.sets--; continue; } const b = [...s.blocks].reverse().find((x) => !x[0].main); if (!b) break; b.pop(); s.blocks = s.blocks.filter((x) => x.length); }
       while (est() < s.minutes - 5 && guard--) { const e = all().find((x) => !x.main && x.sets < 4); if (!e) break; e.sets++; if (est() > s.minutes) { e.sets--; break; } }
       did = true; }
-    for (const mm of t.matchAll(/(?:add|more|extra)\s+([a-z ]+?)(?:,|\.|$| and )/g)) for (const g of groupIn(mm[1])) { const n = (POOL[g] ?? []).find((x) => !all().some((y) => y.name === x)); if (n) { s.blocks.push([{ name: n, g, main: false, sets: 3, ...target(n, false) }]); did = true; } }
+    for (const mm of t.matchAll(/(?:add|more|extra)\s+([a-z ]+?)(?:,|\.|$| and )/g)) for (const g of groupIn(mm[1])) { const n = (POOL[g] ?? []).find((x) => !all().some((y) => y.name === x)); if (n) { s.blocks.push([{ name: n, g: broadOf(g), main: false, sets: 3, ...target(n, false) }]); did = true; } }
     if ((m = t.match(/(?:remove|drop|no)\s+(?:the\s+)?(.+)/)) && !/superset/.test(m[1])) { const e = findEx(m[1]); if (e && !e.main) { const b = blockOf(e); b.splice(b.indexOf(e), 1); s.blocks = s.blocks.filter((x) => x.length); did = true; } }
     if ((m = t.match(/(heavier|lighter|up|down)\s+(?:on\s+)?(.+)/)) || (m = t.match(/(.+?)\s+(heavier|lighter)/))) { const dir = /heavier|up/.test(m[1] + (m[2] ?? '')) ? 2.5 : -2.5; const e = findEx(/heavier|lighter|up|down/.test(m[1]) ? m[2] : m[1]); if (e && e.load != null) { perOf(e).forEach((p) => { if (p.kg != null) p.kg = Math.max(0, p.kg + dir); }); did = true; } }
     if (/no supersets?/.test(t)) { s.blocks = s.blocks.flatMap((b) => b.map((e) => [e])); did = true; }
@@ -550,7 +748,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   // Coach review (prototype: rule-based; the real one is the AI, with these facts checked by code).
   const TARGETS = { Chest: ['Upper chest', 'Mid chest', 'Triceps', 'Abs'], Back: ['Lats', 'Mid-back', 'Rear delts', 'Biceps', 'Abs'], Pull: ['Lats', 'Mid-back', 'Rear delts', 'Biceps', 'Abs'], Legs: ['Quads', 'Hamstrings', 'Glutes', 'Calves', 'Abs'], Shoulders: ['Front delts', 'Side delts', 'Rear delts', 'Triceps', 'Abs'], Push: ['Upper chest', 'Mid chest', 'Front delts', 'Side delts', 'Triceps', 'Abs'] };
-  const GROUP_T = { Chest: ['Upper chest', 'Mid chest'], Back: ['Lats', 'Mid-back'], Shoulders: ['Front delts', 'Side delts', 'Rear delts'], Quads: ['Quads'], Hamstrings: ['Hamstrings', 'Glutes'], Calves: ['Calves'], Biceps: ['Biceps'], Triceps: ['Triceps'], Core: ['Abs'] };
+  const GROUP_T = { Chest: ['Upper chest', 'Mid chest'], Back: ['Lats', 'Mid-back', 'Rear delts'], Shoulders: ['Front delts', 'Side delts'], Legs: ['Quads', 'Hamstrings', 'Glutes', 'Calves'], Arms: ['Biceps', 'Triceps'], Core: ['Abs'] };
   const isMachine = (n) => /machine|cable|pulldown|leg press|leg curl|leg extension|pushdown|crunch|calf|face pull/i.test(n);
   // Example plan in use (prototype): your 4-day split, 60 min, Chest next. Each plan day is what the builder recommends for it.
   const PLAN = { name: '4-day split', since: '13 Oct', order: ['Chest', 'Back', 'Legs', 'Shoulders'], next: 'Chest', minutes: 60, days: {}, vars: {} };
@@ -594,7 +792,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const ps = pd.ex.reduce((a, x) => a + x.sets, 0), ts = all().reduce((a, e) => a + e.sets, 0);
     lines.push(Math.abs(ts - ps) <= 2 ? { ok: true, t: `${ts} working sets (plan ${ps})` } : { ok: false, t: `${ts} working sets against the plan's ${ps}` });
     for (const x of missing.slice(0, 2)) if (!(s.skipped ?? []).includes(`plan:${x.name}`)) sugs.push({ key: `plan:${x.name}`, text: `Add back ${x.name}`, why: `It's in your plan's ${d} day.`, fix: () => s.blocks.push([{ name: x.name, g: x.g, main: false, sets: x.sets, ...target(x.name, false) }]), fixLabel: 'Add' });
-    if ((missing.length || extra.length) && !(s.skipped ?? []).includes('plan:update')) sugs.push({ key: 'plan:update', text: `Make this the plan's ${d} day`, why: 'Future plan sessions start from this workout.', fix: () => { PLAN.days[pk(d, m?.name ?? pd.main)] = { custom: true, main: m?.name ?? pd.main, minutes: s.minutes, ex: all().map((e) => ({ name: e.name, g: e.g, sets: e.sets })) }; }, fixLabel: 'Update plan' });
+    // (D1, Ben 22 and 23 Oct) No "Update plan day" before Start: changes are today only, and the Summary offers Keep for next time?.
     return { lines, sugs, title: `${PLAN.name} · since ${PLAN.since}` };
   }
   function reviewNow() {
@@ -604,9 +802,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const miss = cover.filter((c) => !c.n).map((c) => c.m), high = cover.filter((c) => c.n > 12);
     const issues = advise().filter((x) => !(s.skipped ?? []).includes(x.key));
     const sugs = [...issues];
-    for (const m of miss) { const n = Object.values(POOL).flat().find((x) => muscles(x)[0] === m && !all().some((y) => y.name === x)); if (n && !(s.skipped ?? []).includes(`add:${n}`)) { const g = Object.keys(POOL).find((k) => POOL[k].includes(n)); sugs.push({ key: `add:${n}`, text: `Add ${n}`, why: `Nothing today trains your ${m.toLowerCase()}.`, fix: () => s.blocks.push([{ name: n, g, main: false, sets: 3, ...target(n, false) }]), fixLabel: 'Add' }); } }
+    for (const m of miss) { const n = Object.values(POOL).flat().find((x) => muscles(x)[0] === m && !all().some((y) => y.name === x)); if (n && !(s.skipped ?? []).includes(`add:${n}`)) { const g = groupOfEx(n); sugs.push({ key: `add:${n}`, text: `Add ${n}`, why: `Nothing today trains your ${m.toLowerCase()}.`, fix: () => s.blocks.push([{ name: n, g, main: false, sets: 3, ...target(n, false) }]), fixLabel: 'Add' }); } }
     const foci = {}; for (const e of all()) { const f = muscles(e.name)[0]; if (f) (foci[f] ??= []).push(e); }
-    for (const [f, es] of Object.entries(foci)) if (es.length >= 3) { const last = es[es.length - 1]; const alt = (POOL[last.g] ?? []).find((x) => muscles(x)[0] !== f && !all().some((y) => y.name === x)); if (alt && !(s.skipped ?? []).includes(`var:${last.name}`)) sugs.push({ key: `var:${last.name}`, text: `Swap ${last.name} for ${alt}`, why: `${es.length} exercises lead with your ${f.toLowerCase()}; this adds a different angle.`, fix: () => { const e = all().find((q) => q.name === last.name); if (e) Object.assign(e, { name: alt, per: undefined, ...target(alt, e.main) }); }, fixLabel: 'Swap' }); }
+    for (const [f, es] of Object.entries(foci)) if (es.length >= 3) { const last = es[es.length - 1]; const alt = poolFor(last.g, s.day, all().map((y) => y.name)).find((x) => muscles(x)[0] !== f); if (alt && !(s.skipped ?? []).includes(`var:${last.name}`)) sugs.push({ key: `var:${last.name}`, text: `Swap ${last.name} for ${alt}`, why: `${es.length} exercises lead with your ${f.toLowerCase()}; this adds a different angle.`, fix: () => { const e = all().find((q) => q.name === last.name); if (e) Object.assign(e, { swapFrom: e.name, name: alt, per: undefined, ...target(alt, e.main) }); }, fixLabel: 'Swap' }); }
     const comp = all().filter((e) => isCompound(e.name)).length, iso = all().length - comp, mach = all().filter((e) => isMachine(e.name)).length;
     const variety = `${comp} compound · ${iso} isolation · ${mach === 0 ? 'all free weights' : mach === all().length ? 'all machines and cables' : 'free weights and machines'}`;
     const verdict = !miss.length && !issues.length && !high.length ? 'Balanced and varied' : !miss.length && !high.length ? `Good mix · ${issues.length} to look at` : miss.length ? `Missing ${miss.join(', ').toLowerCase()}` : 'High volume';
@@ -621,6 +819,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     return { cover, variety, verdict, sugs, next, plan };
   }
   function view() {
+    // Keep Ben's edits in step with the screen, and send them to Today when this came from Today's Edit (D3).
+    syncEdits();
+    if (embedded() && s.from?.opts) { const msg = JSON.stringify({ ctl: s.tctl, edits: s.edits, offer: s.offer?.state ?? null }); if (msg !== s.posted) { s.posted = msg; parent.postMessage({ app: 'todayedit', day: s.from.day, ...JSON.parse(msg) }, '*'); } }
     let h = s.page === 1 ? page1() : page2();
     if (s.sheet) h += `<div class="scrim" data-a="close"></div><div class="sheet">${sheets[s.sheet.k](s.sheet.e)}</div>`;
     if (s.toast) h += `<div class="toast"><span>${s.toast}</span>${s.undo ? '<u data-a="undo">Undo</u>' : ''}</div>`;
@@ -734,7 +935,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (ev.target.id === 'swapg' && s.sheet) { s.sheet.g = ev.target.value; view(); }
     if (ev.target.dataset?.f === 'type' && s.sheet?.e) {
       const e = s.sheet.e; const per = perOf(e); const i = Number(ev.target.dataset.i); const p = per[i]; const nt = ev.target.value;
-      const reload = (q) => { if (E1RM[e.name] != null) q.kg = loadFor(e.name, q.reps, q.rpe ?? 8); };
+      const reload = (q) => { if (E1RM[e.name] != null) q.kg = calcKg(e, q); };
       if (nt === 'T') per.forEach((q) => { if (q !== p && q.type === 'T') { q.type = 'B'; q.reps = e.reps[1]; q.kgMan = false; reload(q); } });
       p.type = nt;
       if (nt === 'W') p.rpe = null;
@@ -747,9 +948,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   app.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'chatq') { send(ev.target.value); view(); setTimeout(() => app.querySelector('#chatq')?.focus(), 0); } });
   app.addEventListener('input', (ev) => {
     const f = ev.target.dataset?.f;
-    if (f && s.sheet?.e) { const e = s.sheet.e; const i = Number(ev.target.dataset.i); const p = perOf(e)[i]; const n = parseFloat(ev.target.value); p[f] = ev.target.value.trim() === '' ? (f === 'kg' ? null : p[f]) : (Number.isNaN(n) ? p[f] : n); s.edited = true; e.touched = true;
+    if (f && s.sheet?.e) { const e = s.sheet.e; const i = Number(ev.target.dataset.i); const p = perOf(e)[i]; const was = p.kg; const n = parseFloat(ev.target.value); p[f] = ev.target.value.trim() === '' ? (f === 'kg' ? null : p[f]) : (Number.isNaN(n) ? p[f] : n); s.edited = true; e.touched = true;
       if (f === 'kg') p.kgMan = true;
-      else if (!p.kgMan && p.type !== 'W' && E1RM[e.name] != null) { p.kg = loadFor(e.name, p.reps, p.rpe ?? 8); const c = app.querySelector(`.cell[data-f="kg"][data-i="${i}"]`); if (c) c.value = p.kg; }
+      // A top set Ben types moves its back-offs with it (review S2; SS4, HT8): lighter than the top they came from lowers
+      // them by the same %, as Today's held top does (102.5 → 100: 95 → 92.5); heavier works them out again (D4). Back-offs
+      // he typed himself stay.
+      if (f === 'kg' && p.type === 'T') perOf(e).forEach((q, j) => {
+        if (q.type !== 'B' || q.kgMan) return;
+        q.from ??= { top: was, kg: q.kg };
+        const t = p.kg; if (typeof t !== 'number' || t <= 0 || typeof q.from.top !== 'number' || typeof q.from.kg !== 'number') return;
+        q.kg = t < q.from.top ? lowerBackOff(q.from.kg, t / q.from.top, t) : calcKg(e, q);
+        const c = app.querySelector(`.cell[data-f="kg"][data-i="${j}"]`); if (c) c.value = q.kg; });
+      else if (!p.kgMan && p.type !== 'W' && E1RM[e.name] != null) { p.kg = calcKg(e, p); const c = app.querySelector(`.cell[data-f="kg"][data-i="${i}"]`); if (c) c.value = p.kg; }
       return; }
     if (ev.target.id !== 'q') return;
     const q = ev.target.value.trim().toLowerCase();
@@ -767,15 +977,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       case 'sheet-pick': s.sheet = { k: 'pick', mode: 'add' }; break;
       case 'pick': s.edited = true; s.undo = snapBlocks(); s.blocks.push([{ touched: true, name: v, g: t.dataset.g, main: false, sets: 3, ...target(v, false) }]); s.toast = 'Added'; s.sheet = null; break;
       case 'rest': { const ty = t.dataset.t; if (ty === 'R') { const b = blockOf(cur); const r = Math.max(0.25, Math.min(5, roundRest(b) + Number(v))); b.forEach((x) => { x.roundRest = r; }); } else { cur.restBy = { ...(cur.restBy ?? {}), [ty]: Math.max(0, Math.min(6, restOf(cur, ty) + Number(v))) }; } break; }
-      case 'day': s.variant = null; if (v === 'Custom') { s.day = 'Custom'; s.groups = {}; s.custom = true; s.main = 'None'; } else { s.day = v; s.main = DAYS[v].main[0]; s.custom = false; follow(); if (s.defaults[v] && s.useDef) Object.assign(s, { ...s.defaults[v].setup, groups: { ...s.defaults[v].setup.groups }, custom: true }); } s.sheet = null; break;
+      case 'day': s.variant = null; s.want = {}; if (v === 'Custom') { s.day = 'Custom'; s.groups = {}; s.custom = true; s.main = 'None'; } else { s.day = v; s.main = DAYS[v].main[0]; s.custom = false; follow(); if (s.defaults[v] && s.useDef) Object.assign(s, { ...s.defaults[v].setup, groups: { ...s.defaults[v].setup.groups }, custom: true }); } s.sheet = null; break;
       case 'main': s.main = v; s.variant = null; s.sheet = null; break;
       case 'add': s.groups[v] = 1; s.custom = true; s.sheet = null; break;
-      case 'grp': { s.custom = true; const n = (s.groups[t.dataset.g] ?? 0) + Number(v); if (n <= 0) delete s.groups[t.dataset.g]; else s.groups[t.dataset.g] = Math.min(6, n); break; }
-      case 'reset': s.custom = false; follow(); break;
+      case 'grp': { s.custom = true; s.want = {}; const n = (s.groups[t.dataset.g] ?? 0) + Number(v); if (n <= 0) delete s.groups[t.dataset.g]; else s.groups[t.dataset.g] = Math.min(6, n); break; }
+      case 'reset': s.custom = false; s.want = {}; follow(); break;
       case 'min': s.minutes = Math.max(10, Math.min(180, s.minutes + Number(v))); follow(); break;
       case 'ss': s.ss = !s.ss; follow(); break;
       case 'usedef': s.useDef = !s.useDef; if (s.useDef && s.defaults[s.day]) Object.assign(s, { ...s.defaults[s.day].setup, groups: { ...s.defaults[s.day].setup.groups }, custom: true }); else { s.custom = false; follow(); } s.builtSig = null; break;
       case 'build': { if (total() === 0) { s.toast = 'Add a muscle group'; break; }
+        // Standalone demo of the coach's background review (D2): an offer on the first Chest workout. In the app the
+        // offer comes with Today's draft instead.
+        if (s.offer === undefined && !embedded()) s.offer = s.day === 'Chest' ? { name: 'Cable fly', from: 3, to: 2, why: 'Shoulder felt tight on fly last Chest', state: null } : null;
         const df = s.defaults[s.day]; if (df && s.useDef && setupSig() === JSON.stringify([s.day, df.setup.minutes, df.setup.main, df.setup.ss, df.setup.groups])) { if (s.builtSig !== setupSig() || !s.blocks.length) { s.blocks = df.blocks.map((b) => b.map((e) => ({ ...e, per: e.per?.map((q) => ({ ...q })) }))); s.builtSig = setupSig(); s.edited = false; } s.page = 2; break; }
         const sg = setupSig(); if (s.blocks.length && s.builtSig === sg) { s.page = 2; break; }
         // Same day, main lift and version: only redo what the set-up change affects, keep Ben's edits.
@@ -804,7 +1017,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         const kg = Math.max(2.5, snap((steps[gi] + steps[gi + 1]) / 2)); per.splice(gi, 0, { type: 'W', reps: Math.max(1, 8 - 2 * gi), kg, rpe: null }); break; }
       case 'delrow': { const per = perOf(cur); const last = per[per.length - 1]; if (last.type === 'W') per.pop(); else if (cur.sets > 1) cur.sets--; break; }
       case 'load': cur.load = Math.max(0, cur.load + Number(v)); break;
-      case 'swap': { s.edited = true; s.undo = snapBlocks(); Object.assign(cur, { touched: true, name: v, g: t.dataset.g ?? cur.g, per: undefined, ...target(v, cur.main) }); s.sheet = null; s.toast = 'Swapped'; break; }
+      case 'swap': { s.edited = true; s.undo = snapBlocks(); Object.assign(cur, { touched: true, swapFrom: cur.name, name: v, g: t.dataset.g ?? cur.g, per: undefined, ...target(v, cur.main) }); s.sheet = null; s.toast = 'Swapped'; break; }
       case 'remove': { s.edited = true; s.undo = snapBlocks(); const b = blockOf(cur); b.splice(b.indexOf(cur), 1); s.blocks = s.blocks.filter((x) => x.length); s.sheet = null; s.toast = 'Removed'; break; }
       case 'close': s.sheet = null; break;
       case 'to-swap': s.sheet = { k: 'swap', e: cur }; break;
@@ -822,13 +1035,30 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       case 'rvdone': { const r = reviewNow(); const keep = r.next.filter((n) => !s.noteOff.includes(n)); if (keep.length) { s.notes[s.day] = keep; s.toast = `Remembered for next ${s.day.trim()} day`; } s.sheet = null; break; }
       case 'dnote': s.notes[s.day].splice(Number(v), 1); break;
       case 'save': { const prev = s.defaults[s.day]; s.defaults[s.day] = { blocks: snapBlocks(), setup: { minutes: s.minutes, main: s.main, ss: s.ss, groups: { ...s.groups } } }; s.undo = { def: { day: s.day, prev } }; s.toast = `Saved as your ${s.day.trim()} default`; break; }
-      case 'start': if (!s.blocks.length) break; if (document.documentElement.classList.contains('embed')) { parent.postMessage({ app: 'active', session: session() }, '*'); break; } if (s.edited && PLAN.order.includes(s.day)) { s.sheet = { k: 'scope' }; break; } s.undo = null; s.toast = 'Started (prototype)'; break;
-      case 'scope-today': s.sheet = null; s.edited = false; s.undo = null; s.toast = `Started. ${s.day} plan unchanged`; break;
-      case 'scope-var': { const name = varName(); (PLAN.vars[pk(s.day)] ??= []).push({ name, bl: shape() }); s.variant = PLAN.vars[pk(s.day)].length - 1; s.builtSig = setupSig(); s.sheet = null; s.edited = false; s.undo = null; s.toast = `Started. Saved “${name}”`; break; }
+      // Start always just starts, today only (D1, Ben 22 and 23 Oct): no prompt. What changed in the structure goes with the
+      // session, and the Summary offers Keep for next time? once.
+      case 'start': if (!s.blocks.length) break; if (embedded()) { parent.postMessage({ app: 'active', session: session() }, '*'); break; } s.undo = null; s.toast = 'Started (prototype)'; break;
       case 'sheet-var': s.sheet = { k: 'var' }; break;
       case 'var': s.variant = v === '' ? null : Number(v); s.builtSig = null; s.sheet = null; break;
-      case 'scope-plan': { const m = all().find((e) => e.main); PLAN.days[pk(s.day, m?.name ?? s.main)] = { custom: true, main: m?.name ?? s.main, minutes: s.minutes, ex: all().map((e) => ({ name: e.name, g: e.g, sets: e.sets })), bl: shape() }; s.variant = null; s.sheet = null; s.edited = false; s.undo = null; s.toast = `Started. Future ${s.day} days with ${(m?.name ?? s.main).replace('Barbell ', '')} use this`; break; }
-      case 'undo': if (s.undo?.def) { const { day, prev } = s.undo.def; if (prev) s.defaults[day] = prev; else delete s.defaults[day]; s.undo = null; s.toast = null; break; }
+      // Today-only controls (D3): Today's own draft for the new choice, with Ben's earlier edits replayed on it (review
+      // S3, FT5: a control change never quietly undoes them); Undo brings back what was there.
+      case 'tmain': case 'tstyle': case 'tabs': case 'tss': {
+        syncEdits();
+        const c = { ...s.tctl };
+        if (a === 'tmain') c.main = v; else if (a === 'tstyle') c.style = v; else if (a === 'tabs') c.abs = !c.abs; else c.ss = !c.ss;
+        const vr = s.from?.opts?.variants?.[ctlKey(c)]; if (!vr) break;
+        s.undo = { tctl: { ...s.tctl }, blocks: snapBlocks(), estK: s.estK, ss: s.ss, groups: { ...s.groups }, main: s.main, edits: JSON.parse(JSON.stringify(s.edits ?? [])) };
+        s.tctl = c; loadVariant(vr); s.edited = true;
+        s.toast = a === 'tmain' ? `Main lift: ${v}` : a === 'tstyle' ? `Accessories: ${v}` : a === 'tabs' ? `Abs ${c.abs ? 'on' : 'off'}` : `Supersets ${c.ss ? 'on' : 'off'}`;
+        break; }
+      // The coach's offer (D2): Apply changes that exercise only, as shown; ✕ skips it. Both can be undone.
+      case 'owhy': s.toast = s.offer?.why ?? null; break;
+      case 'oapply': { if (!offerLive()) { if (s.offer) s.offer.state = 'stale'; s.toast = 'Out of date'; break; }
+        s.undo = { offer: s.offer.state, blocks: snapBlocks() }; const e = all().find((x) => x.name === s.offer.name); e.sets = s.offer.to; perOf(e); s.offer.state = 'applied'; s.toast = `${s.offer.name} ${s.offer.to} sets today`; break; }
+      case 'oskip': s.undo = { offer: s.offer.state, blocks: snapBlocks() }; s.offer.state = 'skipped'; s.toast = 'Skipped'; break;
+      case 'undo': if (s.undo?.tctl) { Object.assign(s, { tctl: s.undo.tctl, blocks: s.undo.blocks, estK: s.undo.estK, ss: s.undo.ss, groups: s.undo.groups, main: s.undo.main, edits: s.undo.edits }); s.builtSig = setupSig(); s.undo = null; s.toast = null; break; }
+        if (s.undo && 'offer' in s.undo) { s.offer.state = s.undo.offer; s.blocks = s.undo.blocks; s.undo = null; s.toast = null; break; }
+        if (s.undo?.def) { const { day, prev } = s.undo.def; if (prev) s.defaults[day] = prev; else delete s.defaults[day]; s.undo = null; s.toast = null; break; }
         if (s.undoSheet && s.sheet?.k === 'ex') { restore(s.undo); s.sheet.e = s.blocks[s.undoSheet.bi][s.undoSheet.ei]; s.undo = null; s.undoSheet = null; s.toast = null; break; } s.undoSheet = null; if (s.undo?.setup) Object.assign(s, { ...s.undo.setup, groups: { ...s.undo.setup.groups } }); else if (s.undo) restore(s.undo); s.undo = null; s.toast = null; break;
       case 'chat': s.sheet = { k: 'chat' }; break;
       case 'chip': send(v); break;
@@ -886,22 +1116,39 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   app.addEventListener('pointerdown', (ev) => { if (ev.target.closest('.chatlog') && !ev.target.closest('button,u')) document.activeElement?.blur?.(); });
   // Edit on Today, or Open in builder › on the plan (V6): the app sends that workout as it stands and the builder opens
   // on Your workout with it: same exercises, sets, top sets, supersets and time. Set-up stays with Today and the plan.
-  const groupOf = (n, day) => Object.keys(POOL).find((g) => POOL[g].includes(n))
-    ?? [[/crunch|knee raise|leg raise|plank/i, 'Core'], [/calf/i, 'Calves'], [/leg curl|deadlift|hip|glute/i, 'Hamstrings'], [/leg ext|squat|leg press|lunge/i, 'Quads'], [/curl/i, 'Biceps'], [/tricep|pushdown|dip|skull/i, 'Triceps'], [/row|pulldown|pull-up|chin|shrug|face pull/i, 'Back'], [/lateral|shoulder|rear|overhead press|delt/i, 'Shoulders'], [/bench|chest|fly|pec|crossover|incline/i, 'Chest']].find(([re]) => re.test(n))?.[1]
+  // The broad group an exercise is picked under (D5): from POOL, else by its name (rear delts are Back), else the day.
+  const groupOf = (n, day) => groupOfEx(n)
+    ?? broadOf([[/crunch|knee raise|leg raise|plank/i, 'Core'], [/calf/i, 'Calves'], [/leg curl|deadlift|hip|glute/i, 'Hamstrings'], [/leg ext|squat|leg press|lunge/i, 'Quads'], [/curl/i, 'Biceps'], [/tricep|pushdown|dip|skull/i, 'Triceps'], [/rear|face pull|row|pulldown|pull-up|chin|shrug/i, 'Back'], [/lateral|shoulder|overhead press|delt/i, 'Shoulders'], [/bench|chest|fly|pec|crossover|incline/i, 'Chest']].find(([re]) => re.test(n))?.[1])
     ?? (GROUPS.includes(day) ? day : 'Chest');
+  // A draft's rows as the builder's exercises (broad groups, D5).
+  const blocksFrom = (bl, day) => bl.map((b) => b.map((x) => {
+    if (x.each) EACH.add(x.name);
+    if (x.works && !W[x.name]) W[x.name] = [groupOf(x.name, day), x.works];
+    const e = { name: x.name, g: groupOf(x.name, day), main: !!x.main, sets: x.sets, reps: x.main ? [x.reps ?? 6, 8] : [x.reps ?? 8, 12], load: x.kg ?? null };
+    e.per = genRows(e); e.per.forEach((q) => { if (q.type === 'B') q.kg = x.back ?? (e.load == null ? q.kg : Math.min(q.kg ?? e.load, e.load)); });
+    return e;
+  }));
+  const groupsOf = (blocks) => { const groups = {}; blocks.flat().forEach((e) => { groups[e.g] = (groups[e.g] ?? 0) + 1; }); return groups; };
   function openDraft(d) {
-    const blocks = d.blocks.map((b) => b.map((x) => {
-      if (x.each) EACH.add(x.name);
-      if (x.works && !W[x.name]) W[x.name] = [groupOf(x.name, d.day), x.works];
-      const e = { name: x.name, g: groupOf(x.name, d.day), main: !!x.main, sets: x.sets, reps: x.main ? [x.reps ?? 6, 8] : [x.reps ?? 8, 12], load: x.kg ?? null };
-      e.per = genRows(e); e.per.forEach((q) => { if (q.type === 'B') q.kg = x.back ?? (e.load == null ? q.kg : Math.min(q.kg ?? e.load, e.load)); });
-      return e;
-    }));
-    const groups = {}; blocks.flat().forEach((e) => { groups[e.g] = (groups[e.g] ?? 0) + 1; });
-    Object.assign(s, { from: d, day: d.day, minutes: d.min, ss: !!d.ss, main: blocks.flat().find((e) => e.main)?.name ?? 'None', groups, custom: true, variant: null, blocks, estK: 1, page: 2, sheet: null, toast: null, undo: null, chat: [], openRow: null, edited: false, skipped: [] });
+    // The focus band for back-offs comes with the draft (review S7).
+    s.focus = d.focus ?? 'Balanced';
+    const blocks = blocksFrom(d.blocks, d.day);
+    // From Today's Edit: its today-only controls (D3), the coach's review offer (D2) and Ben's earlier edits come with
+    // the draft (d.blocks already shows them).
+    Object.assign(s, { from: d, day: d.day, minutes: d.min, ss: !!d.ss, main: blocks.flat().find((e) => e.main)?.name ?? 'None', groups: groupsOf(blocks), custom: true, variant: null, blocks, estK: 1, page: 2, sheet: null, toast: null, undo: null, chat: [], openRow: null, edited: false, skipped: [],
+      tctl: d.opts ? { main: d.opts.main, style: d.opts.style, abs: d.opts.abs, ss: d.opts.ss } : null, offer: d.offer ? { ...d.offer, state: d.offer.state ?? null } : null, edits: JSON.parse(JSON.stringify(d.opts?.edits ?? [])) });
+    s.posted = JSON.stringify({ ctl: s.tctl, edits: s.edits, offer: s.offer?.state ?? null });
     s.builtSig = setupSig();
     if (d.est) s.estK = d.est / est();
     view();
+  }
+  // One of Today's control choices (D3): Today's draft for it at today's Time, then the coach's applied offer and Ben's
+  // edits, as Today replays them (appBlocks).
+  function loadVariant(vr) {
+    s.estK = 1; s.blocks = blocksFrom(vr.blocks, s.day); if (vr.est) s.estK = vr.est / est();
+    s.blocks = blocksFrom(appBlocks(), s.day); s.ss = !!vr.ss; s.groups = groupsOf(s.blocks);
+    s.main = all().find((e) => e.main)?.name ?? 'None';
+    s.builtSig = setupSig();
   }
   addEventListener('message', (ev) => { if (ev.data?.cmd === 'draft' && ev.data.draft) openDraft(ev.data.draft); });
   // The default main lift must read as the shared fixture (V1).

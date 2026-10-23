@@ -6,6 +6,8 @@
 <title>Training Blocks Prototype</title>
 <style>
 /* Training blocks (approved spec docs/design/training-blocks.md, Ben 21 Oct 2026). Example data only. Direction D tokens, single dark.
+   Today with a plan is lean (Ben, 22 and 23 Oct, D3): the session rows, Start, Time inline with its fit note (D9) and Edit; main
+   lift, accessories, abs and supersets are on Your workout (Edit). Start always just starts (D1).
    Three screens: Today (today-v2 layout + block week in the header), Progress Overview (progress-simple layout + block week in
    the This week header, W labels on the Month calendar, dotted plan path + status glyph on Lifts) and Block review (facts,
    coach sentence, next-block proposal with per-item Apply/Skip). Deload = ◐ glyph + word, never the cardio blue. */
@@ -97,8 +99,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .kn { font-size: 12px; color: var(--warn); opacity: .8; background: none; border: 0; padding: 0; font-family: inherit; cursor: pointer; }
 .fitwhy { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--text2); padding: 2px 4px; }
 .fitwhy .carry { color: var(--text); margin-top: 2px; } /* fit note after Time, in the row, so nothing moves (Ben, 22 Oct) */
-.todayonly { font-size: 12px; font-weight: 600; color: var(--warn); }
-.startask { display: flex; flex-direction: column; gap: 8px; } .startask b { font-size: 14px; color: var(--text2); font-weight: 500; }
 .seg[role="tablist"] { margin-bottom: 8px; } /* gap above the session card so the tabs don't run into it (Ben, 22 Oct) */
 .sg { border: 0; background: none; color: #6E6761; border-radius: 10px; min-height: 48px; font-size: 14.5px; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
 .sg i { font-style: normal; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); }
@@ -204,6 +204,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chg .t s { color: var(--text3); font-weight: 500; }
 .chg .why { grid-column: 1; color: var(--text2); font-size: 14px; }
 .chg .u { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+.chg .u2 { grid-row: 1 / span 2; grid-column: 2; align-self: center; display: flex; gap: 14px; } /* an offer: Apply / Skip (D2) */
+.chg .u2 .link { min-height: 44px; }
 .note { font-size: 16px; line-height: 1.45; }
 
 /* ── Block review ── */
@@ -262,10 +264,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 (() => {
   const app = document.getElementById('app');
   // Shared example facts (V1): the same in every screen of the whole-app prototype; build_app.py checks them.
-  const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 92.5, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 92.5", "last": "12 Oct · 100 × 6"};
+  const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 95, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 95", "last": "12 Oct · 100 × 6"};
   // This week of the plan (V1): each day as Today shows it by default (sets, reps, kg; A1/A2 = superset), the
   // order of the week and what's done. The plan overview (plan-builder.html, Your plan) shows the same; build_app.py checks the copies.
-  const PLAN_WEEK = {"week": 3, "days": [{"focus": "Back", "done": true, "est": 50, "hist": [92.5, 92.5], "ex": [{"n": "Barbell row", "role": "main", "m": "Back", "sets": 3, "reps": 6, "kg": 92.5, "back": 82.5}, {"n": "Lat pulldown", "role": "c", "m": "Back", "sets": 3, "reps": 8, "kg": 60}, {"n": "Chest-supported row", "role": "c", "m": "Back", "sets": 3, "reps": 8, "kg": 22.5, "each": true}, {"n": "EZ-bar curl", "role": "i", "m": "Biceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Chest", "est": 47, "hist": [97.5, 100], "ex": [{"n": "Barbell bench press", "role": "main", "m": "Chest", "sets": 3, "reps": 6, "kg": 102.5, "back": 92.5}, {"n": "Incline dumbbell press", "role": "c", "m": "Chest", "sets": 3, "reps": 8, "kg": 27.5, "each": true}, {"n": "Cable fly", "role": "i", "m": "Chest", "sets": 3, "reps": 12, "kg": 15}, {"n": "Triceps pushdown", "role": "i", "m": "Triceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Legs", "est": 50, "hist": [112.5, 115], "ex": [{"n": "Back squat", "role": "main", "m": "Quads", "sets": 3, "reps": 6, "kg": 117.5, "back": 105}, {"n": "Romanian deadlift", "role": "c", "m": "Hamstrings", "sets": 3, "reps": 8, "kg": 105}, {"n": "Leg press", "role": "c", "m": "Quads", "sets": 3, "reps": 8, "kg": 195}, {"n": "Seated calf raise", "role": "i", "m": "Calves", "sets": 3, "reps": 12, "kg": 40, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Shoulders", "est": 45, "hist": [30, 30], "ex": [{"n": "Dumbbell shoulder press", "role": "main", "m": "Shoulders", "sets": 3, "reps": 6, "kg": 32.5, "back": 30, "each": true}, {"n": "Lateral raise", "role": "i", "m": "Shoulders", "sets": 3, "reps": 12, "kg": 10, "each": true}, {"n": "Rear-delt fly", "role": "i", "m": "Shoulders", "sets": 3, "reps": 12, "kg": 7.5, "each": true}, {"n": "Triceps pushdown", "role": "i", "m": "Triceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}]};
+  const PLAN_WEEK = {"week": 3, "days": [{"focus": "Back", "done": true, "est": 50, "hist": [92.5, 92.5], "ex": [{"n": "Barbell row", "role": "main", "m": "Back", "sets": 3, "reps": 6, "kg": 92.5, "back": 87.5}, {"n": "Lat pulldown", "role": "c", "m": "Back", "sets": 3, "reps": 8, "kg": 60}, {"n": "Chest-supported row", "role": "c", "m": "Back", "sets": 3, "reps": 8, "kg": 22.5, "each": true}, {"n": "EZ-bar curl", "role": "i", "m": "Biceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Chest", "est": 47, "hist": [97.5, 100], "ex": [{"n": "Barbell bench press", "role": "main", "m": "Chest", "sets": 3, "reps": 6, "kg": 102.5, "back": 95}, {"n": "Incline dumbbell press", "role": "c", "m": "Chest", "sets": 3, "reps": 8, "kg": 27.5, "each": true}, {"n": "Cable fly", "role": "i", "m": "Chest", "sets": 3, "reps": 12, "kg": 15}, {"n": "Triceps pushdown", "role": "i", "m": "Triceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Legs", "est": 50, "hist": [112.5, 115], "ex": [{"n": "Back squat", "role": "main", "m": "Quads", "sets": 3, "reps": 6, "kg": 117.5, "back": 110}, {"n": "Romanian deadlift", "role": "c", "m": "Hamstrings", "sets": 3, "reps": 8, "kg": 105}, {"n": "Leg press", "role": "c", "m": "Quads", "sets": 3, "reps": 8, "kg": 195}, {"n": "Seated calf raise", "role": "i", "m": "Calves", "sets": 3, "reps": 12, "kg": 40, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}, {"focus": "Shoulders", "est": 45, "hist": [30, 30], "ex": [{"n": "Dumbbell shoulder press", "role": "main", "m": "Shoulders", "sets": 3, "reps": 6, "kg": 32.5, "back": 30, "each": true}, {"n": "Lateral raise", "role": "i", "m": "Shoulders", "sets": 3, "reps": 12, "kg": 10, "each": true}, {"n": "Rear-delt fly", "role": "i", "m": "Back", "sets": 3, "reps": 12, "kg": 7.5, "each": true}, {"n": "Triceps pushdown", "role": "i", "m": "Triceps", "sets": 3, "reps": 12, "kg": 30, "pair": "A1"}, {"n": "Cable crunch", "role": "i", "m": "Core", "sets": 3, "reps": 12, "kg": 40, "pair": "A2"}]}]};
   const MIC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
 
   // ── Calendar: Monday of each week (index), block weeks, which week "today" is in per state ──
@@ -290,10 +292,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     { n: 'Squat', reps: 5, c: '#d95926', full: [105, 107.5, 110, 110, 112.5, null, 112.5, 115, 117.5, 120, null, 122.5, null, null], plan: { 6: 112.5, 7: 115, 8: 117.5, 9: 120, 11: 122.5 }, target: 125, est: { 8: 'early Dec', 12: 'late Nov', 13: 'early Dec' } },
     { n: 'Row', reps: 8, c: '#199e70', full: [85, 87.5, 87.5, 90, 92.5, null, 92.5, 92.5, 92.5, 92.5, null, 95, null, null], plan: { 6: 92.5, 7: 95, 8: 97.5, 9: 100, 11: 102.5 }, target: null, est: {} },
   ];
-  // One muscle list everywhere (V1): the plan's (plan-builder MUSCLES).
+  // Counting uses the detailed list everywhere (D5, Ben 22 and 23 Oct): the plan's MUSCLES. Rear delts count as Back.
   const MUSCLES = [['Chest', [10, 11, 12, 12, 12, null, 11, 14], 12], ['Back', [12, 13, 12, 14, 14, null, 12, 13], 14], ['Shoulders', [8, 8, 9, 9, 10, null, 9, 10], 10], ['Quads', [6, 7, 7, 7, 7, null, 5, 5], 7], ['Hamstrings', [4, 5, 4, 5, 5, null, 3, 2], 5], ['Calves', [2, 2, 2, 2, 2, null, 2, 2], 2], ['Biceps', [4, 4, 4, 5, 5, null, 4, 5], 5], ['Triceps', [4, 5, 4, 5, 5, null, 5, 5], 5], ['Core', [6, 6, 6, 6, 6, null, 6, 6], 6]];
+  // Weekly review (D2, Ben 22 and 23 Oct): small load/reps/sets changes are applied with Undo; a stall reset (Row) or an
+  // extra set Ben didn't ask for is an offer that needs Apply.
   const CHANGES = [
-    { id: 'row', t: 'Row', b: '3 × 8', a: '4 × 6', when: 'next Back', why: 'Stuck at 92.5 × 8 for 3 weeks' },
+    { id: 'row', t: 'Row', b: '3 × 8', a: '4 × 6', when: 'next Back', why: 'Stuck at 92.5 × 8 for 3 weeks', offer: true },
     { id: 'squat', t: 'Squat', b: '117.5 kg', a: '120 kg', when: 'next Legs', why: 'All sets done at RPE 8' },
   ];
 
@@ -322,9 +326,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   // Start-a-block draft (no block running): start = today's working top set, one step a week to week 5
   const DRAFT = [['Bench', 102.5, 112.5], ['Squat', 117.5, 127.5], ['Row', 92.5, 102.5]];
 
-  // Changed from the plan's version of today's session (the defaults below)?
-  const todayChanged = () => (s.main != null && s.main !== Object.keys(D[s.day]?.mains ?? {})[0]) || s.style !== 'Focused' || s.min !== 60 || !s.abs || !s.ss;
-  const fresh = () => ({ early: 'offer', started: false, notNow: false, sw: { row: true, c1: true, c2: true, b1: true, l1: true }, bdraft: false, bstart: false, focus: null, mix: false, open: false, day: FIXTURE.session, main: null, style: 'Focused', min: 60, abs: true, ss: true, undone: {}, toast: null });
+  // Today's draft follows the plan's day (main lift, accessories, abs, supersets as planned); those are changed for
+  // today on Your workout (Edit, D3). Only Time is on the card. rev = the coach's background review offer (D2).
+  // edits = Ben's own changes made on Your workout (review fixes 23 Oct): they stay on today's draft when he comes back
+  // to Today, per day (kept), and Start, Edit and Time all use them. carry = the carry-over offer taken (D9).
+  const fresh = () => ({ early: 'offer', started: false, notNow: false, sw: { row: true, c1: true, c2: true, b1: true, l1: true }, bdraft: false, bstart: false, focus: null, mix: false, day: FIXTURE.session, main: null, style: 'Focused', min: 60, abs: true, ss: true, edits: [], kept: {}, carry: false, undone: {}, cst: {}, rev: null, toast: null });
   let s = { scr: 'today', st: 'build', off: false, hist: false, ...fresh() };
 
   const cur = () => CUR[s.st];
@@ -336,8 +342,115 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const fmt = (v) => (v == null ? 'BW' : String(v));
   // Dumbbells are per hand: their kg says "each" (V1).
   const EACH = new Set(['Incline dumbbell press', 'Dumbbell shoulder press', 'Lateral raise', 'Rear-delt fly', 'Chest-supported row']);
-  const snap25 = (v) => Math.round(v / 2.5) * 2.5;
-  // Main lift in one format everywhere (V1): top set + back-offs · loads, e.g. 1 × 6 + 2 × 8 · 100 / 90.
+  // BACKOFF-START (one copy in each prototype that needs it; build_app.py checks they match, check_app.mjs tests it)
+  // Back-offs (D4, Ben 22 and 23 Oct; training guide SS4): worked out from the top set at their own reps and effort
+  // (RIR-adjusted Epley; top set and back-offs @ RPE 8), kept in the focus's band below the top (Strength 2–8 %,
+  // Balanced 4–10 %, Muscle 8–15 %; other focuses 2–15 %) and snapped down to a real load, or the next real load up
+  // when that is still inside the band. Not a fixed 90 % or 95 %. No real load inside the band (coarse dumbbells, sparse
+  // racks; review B2): the one nearest the band that is below the top, on a tie the lighter; never the top itself. A top
+  // with no real load below it keeps its load and the back-offs do 1 rep fewer (spec §3.1 item 9; none here is that light).
+  const BACKOFF_BAND = { Strength: [0.02, 0.08], Balanced: [0.04, 0.1], Muscle: [0.08, 0.15] };
+  function backOff(top, topReps, backReps, focus = 'Balanced', step = 2.5, topRpe = 8, backRpe = 8) {
+    if (top == null || Number.isNaN(Number(top))) return null;
+    const raw = (top * (30 + topReps + 10 - topRpe)) / (30 + backReps + 10 - backRpe);
+    const [lo, hi] = BACKOFF_BAND[focus] ?? [0.02, 0.15], L = top * (1 - hi) - 1e-9, U = top * (1 - lo) + 1e-9;
+    const down = Math.floor(Math.min(U, Math.max(L, raw)) / step + 1e-9) * step;
+    const near = [down, down + step].filter((kg) => kg > 0 && kg < top - 1e-9);
+    const inBand = near.find((kg) => kg >= L && kg <= U);
+    if (inBand != null) return inBand;
+    const off = (kg) => (kg < L ? L - kg : kg - U);
+    return near.sort((a, b) => off(a) - off(b) || a - b)[0] ?? top;
+  }
+  // When today's top is lowered from the planned one (a pain hold, the coach, Ben, an R2 offer; a deload's −10 %), the
+  // back-offs drop by the same factor and snap down, staying below the new top (SS4, HT8). Raising never raises them.
+  function lowerBackOff(back, factor, newTop, step = 2.5) {
+    if (back == null || newTop == null || !(factor < 1)) return back;
+    return Math.max(step, Math.min(Math.floor((back * factor) / step + 1e-9) * step, newTop - step));
+  }
+  // BACKOFF-END
+  // The plan's Main focus picks the back-off band (review S7); the shell sends it when a plan is applied or changed.
+  let PLAN_FOCUS = 'Balanced';
+  // FIT-START (the shared fit, D9: one copy in Today with a plan and the no-plan Today; build_app.py checks they match)
+  // Fit to time (fit-to-time.md 22 Oct revision; Ben, 22 and 23 Oct, D9). Minutes: 4 to set up, then per exercise its sets
+  // (main lift 4 min a set, compound 3, others 2.2, times the rest factor) plus 1.5 to change over; a superset saves 5.
+  // 1. Shorter rests (×0.85). 2. Superset pairing, only when Supersets is on: the plan's extra + abs pair, else abs (or
+  // the extra) with an isolation accessory, never the main lift or a compound. 3. Then the cuts that lose the least
+  // training (value per set: compound accessory 3, isolation 2, abs 2.5, extra 1.5): every way of keeping each
+  // accessory at 2 sets or more, or dropping it, is tried, so less time never costs less (review S2); on a tie, fewer
+  // sets lost, then the most of the time used. The main lift is never cut and one accessory always stays.
+  const FIT_PER = (e) => (e.kind === 'main' ? 4 : e.comp ? 3 : 2.2);
+  const FIT_VAL = (e) => (e.kind === 'abs' ? 2.5 : e.kind === 'extra' ? 1.5 : e.comp ? 3 : 2);
+  const fitMins = (list, rest, pair) => 4 + list.reduce((m, e) => m + e.sets * FIT_PER(e) * rest + 1.5, 0) - (pair ? 5 : 0);
+  const planPair = (list, ss) => { const x = list.find((e) => e.kind === 'extra'), a = list.find((e) => e.kind === 'abs'); return ss && x && a ? [x.name, a.name] : null; };
+  const fitPair = (list, ss) => {
+    if (!ss) return null;
+    const p = planPair(list, ss); if (p) return p;
+    const a = list.find((e) => e.kind === 'abs') ?? list.find((e) => e.kind === 'extra'), iso = list.filter((e) => e.kind === 'acc' && !e.comp).at(-1);
+    return a && iso ? [iso.name, a.name] : null;
+  };
+  function fitTo(ex, minutes, ss) {
+    const pair0 = planPair(ex, ss), none = { steps: [], lost: 0, cuts: [] };
+    if (fitMins(ex, 1, pair0) <= minutes) return { ex, pair: pair0, rest: 1, fit: none };
+    const rest = 0.85;
+    if (fitMins(ex, rest, pair0) <= minutes) return { ex, pair: pair0, rest, fit: { steps: ['Shorter rests'], lost: 0, cuts: [] } };
+    const idx = ex.map((e, i) => i).filter((i) => ex[i].kind !== 'main');
+    const opts = idx.map((i) => { const c = []; for (let n = ex[i].sets; n >= Math.min(2, ex[i].sets); n--) c.push(n); return [...c, 0]; });
+    const better = (a, b) => (a.ok !== b.ok ? a.ok : (a.ok ? a.value - b.value || a.sets - b.sets || b.m - a.m : a.m - b.m || a.value - b.value) < -1e-9);
+    let best = null;
+    const walk = (k, keep) => {
+      if (k === idx.length) {
+        if (idx.length && keep.every((n) => n === 0)) return;
+        const list = ex.flatMap((e, i) => { const j = idx.indexOf(i), n = j < 0 ? e.sets : keep[j]; return n ? [{ ...e, sets: n }] : []; });
+        const pair = fitPair(list, ss), m = fitMins(list, rest, pair);
+        const c = { list, pair, m, ok: m <= minutes + 1e-9, value: idx.reduce((a, i, j) => a + FIT_VAL(ex[i]) * (ex[i].sets - keep[j]), 0), sets: idx.reduce((a, i, j) => a + ex[i].sets - keep[j], 0) };
+        if (!best || better(c, best)) best = c;
+        return;
+      }
+      for (const n of opts[k]) { keep.push(n); walk(k + 1, keep); keep.pop(); }
+    };
+    walk(0, []);
+    if (!best) return { ex, pair: pair0, rest, fit: { steps: ['Shorter rests'], lost: 0, cuts: [] } };
+    const steps = ['Shorter rests'], cuts = [];
+    if (best.pair && String(best.pair) !== String(pair0)) steps.push(`Superset ${best.pair[0]} + ${best.pair[1]}`);
+    ex.forEach((e) => { if (e.kind === 'main') return; const k = best.list.find((x) => x.name === e.name);
+      if (!k) { steps.push(`Dropped ${e.name}`); cuts.push({ name: e.name, n: e.sets, dropped: true }); }
+      else if (k.sets < e.sets) { steps.push(`${e.name} ${e.sets} → ${k.sets} sets`); cuts.push({ name: e.name, n: e.sets - k.sets, dropped: false }); } });
+    return { ex: best.list, pair: best.pair, rest, fit: { steps, lost: best.sets, cuts } };
+  }
+  // FIT-END
+  // EDITS-START (one copy in Today with a plan and the builder; build_app.py checks they match)
+  // Ben's own changes from Your workout (D3; review fixes 23 Oct): a list replayed on today's draft after the fit and the
+  // coach, so they stay when he goes back to Today and the fit never undoes them (FT5). Ops: remove, add, swap (in
+  // place; it takes the slot's set count, so a fit's trim never rides into the template, unless Ben chose a count: n,
+  // review R2), sets (the count he chose; brings back an exercise the fit left out). The builder has the same function.
+  function replayEdits(blocks, ops, tpl = []) {
+    let bl = blocks.map((b) => b.map((x) => ({ ...x })));
+    const find = (n) => { for (const b of bl) { const i = b.findIndex((x) => x.name === n); if (i >= 0) return [b, i]; } return null; };
+    for (const o of ops ?? []) {
+      if (o.op === 'remove') { const f = find(o.name); if (f && !f[0][f[1]].main && f[0][f[1]].kind !== 'main') f[0].splice(f[1], 1); }
+      else if (o.op === 'add') { const f = find(o.row.name); if (f) f[0][f[1]].sets = o.row.sets; else bl.push([{ ...o.row }]); }
+      else if (o.op === 'swap') { const f = find(o.from); if (f) { const was = f[0][f[1]]; f[0][f[1]] = { ...o.row, sets: o.n ?? was.sets, main: !!was.main || was.kind === 'main', kind: was.kind }; } else if (!find(o.row.name)) bl.push([{ ...o.row, sets: o.n ?? o.row.sets }]); }
+      else if (o.op === 'sets') { const f = find(o.name); if (f) f[0][f[1]].sets = o.n; else { const ti = tpl.findIndex((x) => x.name === o.name); if (ti >= 0) { let at = bl.length; for (let k = ti - 1; k >= 0; k--) { const p = find(tpl[k].name); if (p) { at = bl.indexOf(p[0]) + 1; break; } } bl.splice(at, 0, [{ ...tpl[ti], sets: o.n }]); } } } // back in its template place (re-review N-a)
+      bl = bl.filter((b) => b.length);
+    }
+    return bl;
+  }
+  // Keep for next time? (D1; review B1, S1): only Ben's own structure changes, measured against the plan day's template
+  // for the chosen main lift, before the fit, the deload and the coach. His choices on Your workout count (Abs off,
+  // Varied); Time, the fit's cuts, pairing, the deload and coach changes never do; another main lift is another template.
+  function structureLines(base, now, ops = []) {
+    const isMain = (e) => !!e && (e.main || e.kind === 'main');
+    const bn = base.map((e) => e.name), nn = now.map((e) => e.name), out = [];
+    const gone = base.filter((e) => !nn.includes(e.name) && !isMain(e)).map((e) => e.name), added = now.filter((e) => !bn.includes(e.name) && !isMain(e));
+    // A swap only when Ben swapped that slot (review N5); its set count too when it differs from the slot's (review R2).
+    for (const o of ops) if (o.op === 'swap' && gone.includes(o.from) && added.some((e) => e.name === o.row.name)) { const b = base.find((e) => e.name === o.from), w = now.find((e) => e.name === o.row.name); out.push(`${o.from} → ${o.row.name}${b && w && b.sets !== w.sets ? ` · ${b.sets} → ${w.sets} sets` : ''}`); gone.splice(gone.indexOf(o.from), 1); added.splice(added.findIndex((e) => e.name === o.row.name), 1); }
+    gone.forEach((n) => out.push(`− ${n}`));
+    added.forEach((e) => out.push(`+ ${e.name} · ${e.sets} sets`));
+    now.forEach((e) => { const b = base.find((x) => x.name === e.name); if (b && b.sets !== e.sets) out.push(`${e.name} ${b.sets} → ${e.sets} sets`); });
+    return out;
+  }
+  // EDITS-END
+  // Main lift in one format everywhere (V1): top set + back-offs · loads, e.g. 1 × 6 + 2 × 8 · 100 / 95.
   const mainLine = (e) => e.kg == null ? `${e.sets} × ${e.reps}` : `1 × ${e.reps}${e.sets > 1 ? ` + ${e.sets - 1} × ${e.backReps}` : ''} · ${fmt(e.kg)}${e.sets > 1 ? ` / ${fmt(e.back)}` : ''}${EACH.has(e.name) ? ' each' : ''}`;
 
   // ═════════ Controls above the phone ═════════
@@ -345,7 +458,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const sc = [['today', 'Today'], ['progress', 'Progress'], ['review', 'Block review']];
     document.getElementById('scr').innerHTML = sc.map(([k, l]) => `<button class="chip" data-a="scr" data-v="${k}" aria-pressed="${s.scr === k}">${l}</button>`).join('');
     const st = [['build', 'Build week 3'], ['deload', 'Deload week 6'], ['early', 'Early-deload offer'], ['pain', 'Bench pain flag'], ['noblock', 'No block running'], ['done', 'Block done'], ['stale', 'Out of date']];
-    document.getElementById('sta').innerHTML = st.map(([k, l]) => `<button class="chip" data-a="st" data-v="${k}" aria-pressed="${s.st === k}">${l}</button>`).join('') + `<button class="chip" data-a="off" aria-pressed="${s.off}">Coach offline</button>`;
+    document.getElementById('sta').innerHTML = st.map(([k, l]) => `<button class="chip" data-a="st" data-v="${k}" aria-pressed="${s.st === k}">${l}</button>`).join('') + `<button class="chip" data-a="off" aria-pressed="${s.off}">Coach offline</button><button class="chip" data-a="revoff" aria-pressed="${s.rev != null}">Coach review offer</button>`;
   }
 
   // ═════════ TODAY ═════════
@@ -355,58 +468,75 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (isDone()) return s.started ? 'Week 1 of 6' : s.notNow ? '' : 'Block done ›';
     return 'Week 3 of 6';
   }
-  function mainNow(key) {
+  function mainNow(key, held = true) {
     const late = s.st === 'deload' || isDone();
-    // early: last Chest was RPE 9.5, so bench holds at 100. pain: bench held at 100 (rule 9).
-    const bench = late ? 105 : s.st === 'early' || s.st === 'pain' ? 100 : FIXTURE.top;
+    // early: last Chest was RPE 9.5, so bench repeats 100 (a repeat, not a lowering). pain: bench held at 100 (rule 9), so
+    // its back-offs drop with it (SS4, HT8); unheld it would be the planned 102.5.
+    const bench = late ? 105 : s.st === 'early' || (held && s.st === 'pain') ? 100 : FIXTURE.top;
     return { Bench: bench, Squat: late ? 122.5 : 117.5, Row: late ? 95 : 92.5 }[key];
   }
-  function draft() {
+  // The plan day's template for today's control choices (main lift, accessories, abs), un-fitted, before the deload and
+  // the coach: what Keep for next time? compares against (review B1). Back-offs from the planned top (D4, the plan's
+  // focus); a held top lowers them by the same % (SS4, HT8).
+  function templateEx() {
     const d = D[s.day];
     const mk = s.main && d.mains[s.main] ? s.main : Object.keys(d.mains)[0];
     const [mn, base] = d.mains[mk];
-    const mkg = typeof base === 'string' ? mainNow(base) : base;
+    const mkg = typeof base === 'string' ? mainNow(base) : base, planned = typeof base === 'string' ? mainNow(base, false) : base;
     const accSets = s.style === 'Varied' ? 2 : 3;
     let acc = (s.style === 'Varied' ? d.varied : d.focused).filter(([n]) => n !== mn).map(([n, kg, c]) => ({ name: n, kind: 'acc', sets: accSets, kg, comp: !!c, reps: c ? 8 : 12 }));
     let mix = null;
     if (s.mix) { const i = acc.map((x) => !!ALTS[x.name]).lastIndexOf(true); if (i >= 0) { const [to, kg] = ALTS[acc[i].name]; mix = { from: acc[i].name, to }; acc[i] = { ...acc[i], name: to, kg }; } }
-    let ex = [{ name: mn, kind: 'main', sets: 3, reps: 6, backReps: 8, kg: mkg, comp: true }, ...acc, { name: d.extra[0], kind: 'extra', sets: 3, kg: d.extra[1], reps: 12 }, ...(s.abs ? [{ name: 'Cable crunch', kind: 'abs', sets: 3, kg: 40, reps: 12 }] : [])];
-    // Deload transform (deloadDraft): loads × 0.9 rounded down, 1 set fewer (min 2). Today's draft only.
-    if (deloadOn()) ex = ex.map((e) => ({ ...e, sets: Math.max(2, e.sets - 1), kg: e.kg == null ? null : floor25(e.kg) }));
-    ex.forEach((e) => { if (e.kind === 'main' && e.kg != null) e.back = snap25(e.kg * 0.9); }); // back-offs about 90 % of the top set
-    const mins = (list, rest = 1, ss = s.ss) => { let m = 4; list.forEach((e) => { m += e.sets * (e.kind === 'main' ? 4 : e.comp ? 3 : 2.2) * rest + 1.5; }); if (ss && s.abs && list.some((e) => e.kind === 'extra') && list.some((e) => e.kind === 'abs')) m -= 5; return m; };
-    // Fit to time, optimised (fit-to-time.md; Ben, 22 Oct). Free savings first: shorter rests, then supersets (no work
-    // lost). Then, one step at a time, the cut that loses the least training per minute saved: a set off an exercise
-    // (never below 2) or a whole exercise (saves its changeover too). Value per set: compound accessory 3, isolation 2,
-    // abs 2.5 (his choice), extra 1.5; the main lift is never cut. Sets lost are offered on the next Chest day.
-    const fit = { steps: [], ss: false, lost: 0 };
-    if (mins(ex) > s.min) {
-      let rest = 0.85; fit.steps.push('Shorter rests');
-      if (mins(ex, rest) > s.min && !s.ss && s.abs && mins(ex, rest, true) < mins(ex, rest)) { fit.ss = true; fit.steps.push('Supersets on (extra + abs)'); }
-      const val = (e) => e.kind === 'abs' ? 2.5 : e.kind === 'extra' ? 1.5 : e.comp ? 3 : 2;
-      const per = (e) => (e.kind === 'main' ? 4 : e.comp ? 3 : 2.2) * rest;
-      const before = Object.fromEntries(ex.map((e) => [e.name, e.sets]));
-      while (mins(ex, rest, s.ss || fit.ss) > s.min) {
-        const opts = [];
-        const over = mins(ex, rest, s.ss || fit.ss) - s.min;
-        ex.forEach((e, k) => { if (e.kind === 'main') return;
-          if (e.sets > 2) opts.push({ k, drop: false, lost: val(e), saves: per(e) });
-          if (ex.filter((x) => x.kind !== 'main').length > 1) opts.push({ k, drop: true, lost: val(e) * e.sets, saves: per(e) * e.sets + 1.5 }); });
-        if (!opts.length) break;
-        // If one cut is enough, take the one that loses least; otherwise the least lost per minute saved.
-        const enough = opts.filter((o) => o.saves >= over).sort((a, b) => a.lost - b.lost);
-        const o = enough[0] ?? opts.sort((a, b) => a.lost / a.saves - b.lost / b.saves)[0];
-        if (o.drop) ex.splice(o.k, 1); else ex[o.k].sets -= 1;
-      }
-      Object.entries(before).forEach(([n, b]) => { const e = ex.find((x) => x.name === n); if (!e) { fit.steps.push(`Dropped ${n}`); fit.lost += b; } else if (e.sets < b) { fit.steps.push(`${n} ${b} → ${e.sets} sets`); fit.lost += b - e.sets; } });
-      if (fit.ss && !(ex.some((e) => e.kind === 'extra') && ex.some((e) => e.kind === 'abs'))) { fit.ss = false; fit.steps = fit.steps.filter((t) => !t.startsWith('Supersets')); }
-      const cuts = fit.steps.filter((t) => /^Dropped|sets$/.test(t)).length;
-      const dropped = fit.steps.filter((t) => t.startsWith('Dropped')).length;
-      // The row shows the biggest change; tapping it lists everything that was combined.
-      fit.note = dropped ? `−${dropped} exercise${dropped > 1 ? 's' : ''}` : cuts ? `−${fit.lost} set${fit.lost > 1 ? 's' : ''}` : fit.ss ? 'supersets' : 'shorter rests';
-      return { mk, ex, mix, est: Math.min(s.min, Math.round(mins(ex, rest, s.ss || fit.ss))), fit, fitNote: fit.note };
-    }
-    return { mk, ex, mix, est: Math.round(mins(ex)), fit, fitNote: '' };
+    const ex = [{ name: mn, kind: 'main', sets: 3, reps: 6, backReps: 8, kg: mkg, comp: true }, ...acc, { name: d.extra[0], kind: 'extra', sets: 3, kg: d.extra[1], reps: 12 }, ...(s.abs ? [{ name: 'Cable crunch', kind: 'abs', sets: 3, kg: 40, reps: 12 }] : [])];
+    ex.forEach((e) => { if (e.kind === 'main' && e.kg != null) { const b = backOff(planned, e.reps, e.backReps, PLAN_FOCUS); e.back = e.kg < planned ? lowerBackOff(b, e.kg / planned, e.kg) : backOff(e.kg, e.reps, e.backReps, PLAN_FOCUS); } });
+    return { mk, ex, mix };
+  }
+  // One control choice's draft before the coach and Ben: the template, the deload transform (loads × 0.9 rounded down,
+  // back-offs by the same −10 %, 1 set fewer, min 2; today only), then the shared fit at today's Time (D9).
+  function core() {
+    const { mk, ex: t, mix } = templateEx();
+    let ex = t.map((e) => ({ ...e }));
+    if (deloadOn()) ex = ex.map((e) => ({ ...e, sets: Math.max(2, e.sets - 1), kg: e.kg == null ? null : floor25(e.kg), back: e.back == null ? e.back : lowerBackOff(e.back, 0.9, floor25(e.kg)) }));
+    return { mk, mix, tpl: t, ...fitTo(ex, s.min, s.ss) };
+  }
+  // The coach's background review of today's draft (D2). An offer, never applied until Ben taps Apply; it reads against the
+  // draft as shown, so it is withdrawn once the fit or Ben changes that exercise (rule 5), and Apply changes only it.
+  const OFFER = { name: 'Cable fly', from: 3, to: 2, why: 'Shoulder felt tight on fly last Chest' };
+  const ren = (n) => { for (const o of s.edits ?? []) if (o.op === 'swap' && o.from === n) n = o.row.name; return n; };
+  // A list as blocks: the superset pair (if any) in one block at its first exercise's place.
+  const pairBlocks = (ex, pair) => (pair ? ex.reduce((acc, e) => { if (e.name === pair[1]) return acc; acc.push(e.name === pair[0] ? [e, ex.find((x) => x.name === pair[1])] : [e]); return acc; }, []) : ex.map((e) => [e])).map((b) => b.map((e) => ({ ...e })));
+  function draft() {
+    const c = core();
+    let bl = pairBlocks(c.ex, c.pair);
+    let applied = false;
+    if (s.rev === 'applied' && s.day === 'Chest') { const e = bl.flat().find((x) => x.name === OFFER.name); if (e && e.sets === OFFER.from) { e.sets = OFFER.to; applied = true; } }
+    bl = replayEdits(bl, s.edits, c.tpl);
+    const ex = bl.flat(), pair = c.pair && bl.some((b) => b.length > 1) ? c.pair.map(ren) : null;
+    // What the fit cut from an exercise Ben then removed, swapped or set a count on is his change, not the fit's (review
+    // S1, partial): it leaves the Time note, its detail and the carry-over. Whether the fit should run after his edits
+    // instead is Ben's call (SP-B).
+    const mine = new Set((s.edits ?? []).flatMap((o) => (o.op === 'remove' || o.op === 'sets' ? [o.name] : o.op === 'swap' ? [o.from] : [])));
+    const cuts = c.fit.cuts.filter((x) => !mine.has(x.name)), fit = { ...c.fit, cuts, lost: cuts.reduce((a, x) => a + x.n, 0), steps: c.fit.steps.filter((t) => ![...mine].some((n) => t === `Dropped ${n}` || t.startsWith(`${n} `))) };
+    const dropped = cuts.filter((x) => x.dropped).length;
+    // The Time row shows the biggest change the fit made; tapping it lists everything it combined.
+    const fitNote = !fit.steps.length ? '' : dropped ? `−${dropped} exercise${dropped > 1 ? 's' : ''}` : fit.lost ? `−${fit.lost} set${fit.lost > 1 ? 's' : ''}` : 'shorter rests';
+    const offerLive = s.rev === 'offer' && !s.off && s.day === 'Chest' && ex.some((e) => e.name === OFFER.name && e.sets === OFFER.from);
+    return { mk: c.mk, ex, bl, mix: c.mix, est: Math.round(fitMins(ex, c.rest, pair)), fit, fitNote, pair, tpl: c.tpl, applied, offerLive };
+  }
+  // Has today's draft been changed on Your workout (controls or Ben's own edits)? The card says Edited.
+  const isEdited = () => (s.edits ?? []).length > 0 || s.style !== 'Focused' || !s.abs || !s.ss || (s.main != null && s.main !== Object.keys(D[s.day].mains)[0]);
+  // The carry-over offer (D9; review S5): sets the fit lost, by muscle, to that muscle's next day, at most 4 in all.
+  const MUSCLE_OF = { 'Incline dumbbell press': 'Chest', 'Cable fly': 'Chest', 'Cable crossover': 'Chest', 'Pec deck': 'Chest', Dips: 'Chest', 'Triceps pushdown': 'Triceps', 'Cable crunch': 'Core', 'Lat pulldown': 'Back', 'Chest-supported row': 'Back', 'Seated cable row': 'Back', 'Face pull': 'Back', 'Rear-delt fly': 'Back', 'Reverse pec deck': 'Back', 'EZ-bar curl': 'Biceps', 'Romanian deadlift': 'Hamstrings', 'Leg curl': 'Hamstrings', 'Leg press': 'Quads', 'Hack squat': 'Quads', 'Seated calf raise': 'Calves', 'Lateral raise': 'Shoulders', 'Cable lateral raise': 'Shoulders', 'Barbell bench press': 'Chest', 'Incline barbell press': 'Chest', 'Barbell row': 'Back', 'Back squat': 'Quads', 'Dumbbell shoulder press': 'Shoulders' };
+  // The week from today in plan order (Mon Back done, Tue Chest today, Thu Legs, Fri Shoulders, then Back…).
+  const WEEK_ORDER = ['Back', 'Chest', 'Legs', 'Shoulders'];
+  const dayMuscles = (day) => { const d = D[day]; return new Set([...Object.values(d.mains).map(([n]) => n), ...d.focused.map(([n]) => n), d.extra[0], 'Cable crunch'].map((n) => MUSCLE_OF[n])); };
+  const nextDayFor = (m) => { const i = WEEK_ORDER.indexOf(s.day); for (let k = 1; k <= WEEK_ORDER.length; k++) { const d = WEEK_ORDER[(i + k) % WEEK_ORDER.length]; if (dayMuscles(d).has(m)) return d; } return s.day; };
+  function carryOf(fit) {
+    if (fit.lost < 2) return [];
+    const by = {}; fit.cuts.forEach((x) => { const m = MUSCLE_OF[x.name] ?? 'Core'; by[m] = (by[m] ?? 0) + x.n; });
+    let left = 4; const out = [];
+    Object.entries(by).sort((a, b) => b[1] - a[1]).forEach(([m, n]) => { const k = Math.min(n, left); if (k > 0) { out.push({ m, n: k, day: nextDayFor(m) }); left -= k; } });
+    return out;
   }
   function weekStrip() {
     const [y, mo, dd] = TODAY[cur()];
@@ -417,30 +547,57 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       return `<button class="day${today ? ' today' : ''}" data-a="dayinfo" data-v="${i}" aria-label="${DN[dt.getDay()]} ${dt.getDate()}"><span class="dn">${today ? 'TODAY' : DN[dt.getDay()]}</span><span class="dd">${dt.getDate()}</span>${today ? `<span class="pip pliftp">${s.day}</span>` : it.map((x) => `<span class="pip p${x.k}">${x.t}</span>`).join('')}</button>`;
     }).join('')}</div>`;
   }
-  // The session as blocks: supersets (extra + abs) grouped, as the card's breakdown shows them.
-  function blocksOf(dr) {
-    let bl = dr.ex.map((e) => [e]);
-    if ((s.ss || dr.fit?.ss) && s.abs) { const ei = dr.ex.findIndex((e) => e.kind === 'extra'); if (ei >= 0 && dr.ex[ei + 1]) bl = [...dr.ex.slice(0, ei).map((e) => [e]), [dr.ex[ei], dr.ex[ei + 1]], ...dr.ex.slice(ei + 2).map((e) => [e])]; }
-    return bl;
-  }
   // When each day was last done (this week Mon 19 Back; last week Mon 12 Chest, Fri 16 Shoulders, Sat 17 Legs missed, so Sun 11).
   const lastOf = (d) => ({ Chest: '12 Oct', Back: '19 Oct', Shoulders: '16 Oct', Legs: '11 Oct' })[d];
-  // Today's draft as it stands (today-only changes included), for Edit: the builder opens it on Your workout (V6),
-  // and for Start: the active workout opens with exactly this session (V1).
+  // A row as Start and the builder use it.
+  const rowOf = (e, mk) => ({ name: e.name, main: e.kind === 'main' || !!e.main, sets: e.sets, kg: e.kg ?? null, reps: e.reps, back: e.back, backReps: e.backReps, comp: !!e.comp, each: EACH.has(e.name) || !!e.each, works: WORKS[e.name] ?? e.works, ...((e.kind === 'main' || e.main) && s.day === FIXTURE.session && mk === 'Bench' && e.name === FIXTURE.main ? { last: FIXTURE.last } : {}) });
+  const blockRows = (bl, mk) => bl.map((b) => b.map((e) => rowOf(e, mk)));
+  // Your workout's today-only controls (D3, Ben 22 and 23 Oct): main lift, accessories, abs and supersets moved off Today's
+  // card. Every combination is worked out here with Today's own template, deload and fit at today's Time (D9: one shared
+  // fit), before the coach and Ben's edits, which the builder replays as Today does (EDITS). Key: main|style|abs|supersets.
+  // base = the plan day's template per main lift (its default controls) and tpl = the template for each choice, for Keep
+  // for next time? (review B1).
+  function todayOpts() {
+    const keep = { main: s.main, style: s.style, abs: s.abs, ss: s.ss }, mains = Object.keys(D[s.day].mains), variants = {}, base = {};
+    for (const main of mains) for (const style of ['Focused', 'Varied']) for (const abs of [true, false]) for (const ss of [true, false]) {
+      Object.assign(s, { main, style, abs, ss });
+      const c = core();
+      variants[`${main}|${style}|${abs ? 1 : 0}|${ss ? 1 : 0}`] = { est: Math.round(fitMins(c.ex, c.rest, c.pair)), ss, blocks: blockRows(pairBlocks(c.ex, c.pair), c.mk), tpl: c.tpl.map((e) => rowOf(e, c.mk)) };
+      if (style === 'Focused' && abs && ss) base[main] = c.tpl.map((e) => rowOf(e, c.mk));
+    }
+    Object.assign(s, keep);
+    return { mains, main: draft().mk, style: s.style, abs: s.abs, ss: s.ss, variants, base, edits: JSON.parse(JSON.stringify(s.edits ?? [])) };
+  }
+  // Keep for next time? for a Start from Today (D1; review B1, S1): Ben's edits replayed on the template for his choices,
+  // against the plan day's template for that main lift. Never the fit, the deload or the coach.
+  function keepLines(dr) {
+    const keep = { style: s.style, abs: s.abs, ss: s.ss }; Object.assign(s, { style: 'Focused', abs: true, ss: true });
+    const base = templateEx().ex; Object.assign(s, keep);
+    return structureLines(base, replayEdits(dr.tpl.map((e) => [e]), s.edits, dr.tpl).flat(), s.edits ?? []);
+  }
+  const keepFor = (dr) => (dr.mk === Object.keys(D[s.day].mains)[0] ? s.day : `${s.day} · ${dr.mk}`);
+  // Today's draft as it stands, for Edit: the builder opens it on Your workout (V6), and for Start: the active workout
+  // opens with exactly this session (V1), with the Summary's Keep for next time? lines (only Ben's own changes, D1).
   function todayDraft() {
     const dr = draft();
-    return { day: s.day, name: s.day, date: FIXTURE.today, min: s.min, est: Math.min(dr.est, s.min), ss: !!(s.ss || dr.fit?.ss), lastDate: lastOf(s.day),
-      blocks: blocksOf(dr).map((b) => b.map((e) => ({ name: e.name, main: e.kind === 'main', sets: e.sets, kg: e.kg, reps: e.reps, back: e.back, backReps: e.backReps, comp: !!e.comp, each: EACH.has(e.name), works: WORKS[e.name], ...(e.kind === 'main' && s.day === FIXTURE.session && dr.mk === 'Bench' ? { last: FIXTURE.last } : {}) }))) };
+    return { day: s.day, name: s.day, date: FIXTURE.today, min: s.min, est: dr.est, ss: !!s.ss, lastDate: lastOf(s.day), focus: PLAN_FOCUS,
+      blocks: blockRows(dr.bl, dr.mk), keepFor: keepFor(dr), changes: keepLines(dr),
+      // An applied or skipped offer goes with the draft even offline; a pending one only online (rule 1).
+      offer: s.day === 'Chest' && s.rev && (s.rev !== 'offer' || !s.off) ? { ...OFFER, state: s.rev === 'offer' ? null : s.rev } : null };
   }
   function today() {
-    const dr = draft(); const wt = weekText(); const mains = Object.keys(D[s.day].mains);
-    const shown = Math.min(dr.est, s.min);
-    const bl = blocksOf(dr);
+    const dr = draft(); const wt = weekText();
+    const shown = dr.est;
+    const bl = dr.bl;
     let n = 0;
-    const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${e.kind === 'main' ? mainLine(e) : WORKS[e.name] ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${fmt(e.kg)}${e.kg != null && EACH.has(e.name) ? '<small>each</small>' : ''}</span></div>`;
+    const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${e.kind === 'main' || e.main ? mainLine(e) : WORKS[e.name] ?? e.works ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${fmt(e.kg)}${e.kg != null && (EACH.has(e.name) || e.each) ? '<small>each</small>' : ''}</span></div>`;
     // Early-deload offer: one line, Apply (proposal verb) + ✕ (dismiss for the week). The reason sits in the card's Why?.
     const offer = offerOn()
       ? `<div class="offer" role="group" aria-label="Offer: deload this week"><span><span class="gl" aria-hidden="true">◐</span>Deload this week?</span><button class="link b" data-a="eApply">Apply</button><button class="link x" data-a="eNo" aria-label="Not this week">✕</button></div>` : '';
+    // The coach's background review as an offer line (D2, Ben 22 and 23 Oct): nothing changes until Apply. Shown only
+    // while Cable fly still reads 3 sets on the draft (not after the fit or Ben changed it).
+    const rev = dr.offerLive
+      ? `<div class="offer" role="group" aria-label="Coach offer: Cable fly 3 to 2 sets"><span><span class="gl" aria-hidden="true">✦</span>Cable fly 3 → 2 sets?</span><button class="link b" data-a="rApply">Apply</button><button class="link x" data-a="rNo" aria-label="Skip">✕</button></div>` : '';
     const mainKg = typeof D[s.day].mains[dr.mk][1] === 'string' ? mainNow(D[s.day].mains[dr.mk][1]) : D[s.day].mains[dr.mk][1];
     const why = deloadOn()
       ? `<span>· Deload week: −10 % load, 1 set fewer, ~RPE 7</span><span>· From your last ${s.day}: ${D[s.day].mains[dr.mk][0].toLowerCase()} ${mainKg} kg</span>${accepted() ? '<span>· Block 1 ends after this week</span>' : ''}`
@@ -451,6 +608,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
             ? '<span>· Plan: Chest is next</span><span>· Bench held · pain: 100 kg</span>'
             : '<span>· Plan: Chest is next</span><span>· Last Chest: bench 100 × 6 at RPE 8, so 102.5 kg</span>'
         : `<span>· ${s.day}${s.day === 'Chest' ? ' is next in your plan' : ' picked by you; the plan moves on'}</span><span>· Weights from your last ${s.day} session</span>`;
+    const whyRev = dr.applied ? '<span>· Coach: Cable fly 2 sets today, shoulder felt tight on fly last Chest</span>' : '';
+    const carry = carryOf(dr.fit), unit = (n) => (n === 1 ? 'set' : 'sets');
     // With the block week in the header, the Coach pill goes icon-only so "Tuesday · Week 3 of 6" stays on one line. Offline keeps an icon (⊘) + label.
     const ico = !!wt;
     const coachBtn = s.off
@@ -464,22 +623,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <div class="label" style="margin:0 2px 8px">Today's session</div>
         <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === 'Chest' ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other sessions">⋯</button></div>
       </div>
-      <div class="card${s.open ? ' open' : ''}">
-        <div class="top"><div class="big">${s.day}</div><div class="meta"><span>${dr.ex.length} exercises · ~${shown} min</span>${todayChanged() ? '<span class="todayonly">Today only</span>' : ''}</div></div>
-        ${offer}
+      <div class="card open">
+        <div class="top"><div class="big">${s.day}</div><div class="meta"><span>${dr.ex.length} exercises · ~${shown} min</span>${isEdited() ? '<span>Edited</span>' : ''}</div></div>
+        ${offer}${rev}
         <div class="ctl">
-          <div class="cr"><span class="k">Main lift</span><div class="types">${mains.map((m) => `<button class="ty${m === dr.mk ? ' on' : ''}" data-a="main" data-v="${m}">${m}</button>`).join('')}</div></div>
-          <div class="cr"><span class="k">Accessories</span><div class="types">${['Focused', 'Varied'].map((m) => `<button class="ty${m === s.style ? ' on' : ''}" data-a="style" data-v="${m}">${m}</button>`).join('')}</div></div>
           <div class="cr"><span class="k">Time${dr.fitNote ? `<button class="kn" data-a="fitwhy">&nbsp;· ${dr.fitNote} ›</button>` : ''}</span><div class="val"><button class="mnb" data-a="min" data-v="-5" aria-label="5 minutes less">−</button><span class="tv">${s.min} min</span><button class="mnb" data-a="min" data-v="5" aria-label="5 minutes more">+</button></div></div>
-          <div class="cr"><span class="k">Abs</span><button class="sw" data-a="abs" role="switch" aria-checked="${s.abs}" aria-label="Abs"><span class="switch${s.abs ? ' on' : ''}"><i></i></span></button></div>
-          <div class="cr"><span class="k">Supersets</span><button class="sw" data-a="ss" role="switch" aria-checked="${s.ss}" aria-label="Supersets"><span class="switch${s.ss ? ' on' : ''}"><i></i></span></button></div>
         </div>
-        ${s.fitWhy && dr.fit.steps.length ? `<div class="fitwhy">${dr.fit.steps.map((t) => `<span>${t}</span>`).join('')}${dr.fit.lost >= 2 ? `<span class="carry">${s.noCarry ? `Not carried over <button class="link" data-a="carry">Carry over</button>` : `+${Math.min(4, dr.fit.lost)} sets on your next Chest day <button class="link" data-a="carry">Undo</button>`}</span>` : ''}</div>` : ''}
-        <button class="bdt" data-a="toggle" aria-expanded="${s.open}"><span>Session breakdown</span><span class="chev">›</span></button>
+        ${s.fitWhy && dr.fit.steps.length ? `<div class="fitwhy">${dr.fit.steps.map((t) => `<span>${t}</span>`).join('')}${carry.length ? `<span class="carry">${carry.map((c) => `+${c.n} ${c.m.toLowerCase()} ${unit(c.n)} on your next ${c.day} day`).join(' · ')}${s.carry ? '' : '?'} <button class="link" data-a="carry">${s.carry ? 'Undo' : 'Carry over'}</button></span>` : ''}</div>` : ''}
         <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${bl.map((b) => { n++; const rows = b.map((e, i) => row(e, `${n}${b.length > 1 ? 'ab'[i] : ''}`)).join(''); return b.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join('')}</div>
-        <details class="whyd"><summary>Why?</summary>${why}</details>
-        <div class="mixrow">${dr.mix ? `<span>${dr.mix.from} → <b>${dr.mix.to}</b> · today only</span><button class="link" data-a="unmix">Undo</button>` : '<button class="link" data-a="mix">↻ Mix it up</button>'}</div>
-        ${s.startAsk ? `<div class="startask"><b>Keep these changes for</b><button class="pill" data-a="go">Today only</button><button class="ghost" data-a="toplan">Update in your plan</button><button class="ghost" data-a="savevar">Save as a variation</button></div>` : `<div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>`}
+        <details class="whyd"><summary>Why?</summary>${why}${whyRev}</details>
+        <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
       </div>
       <div class="rowlinks"><button data-a="build">Build your own</button><button data-a="activity">＋ Activity</button></div>
     </div>`;
@@ -622,7 +775,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const list = s.st === 'early' ? CHANGES.filter((c) => c.id !== 'squat') : CHANGES;
     // Accepted early deload: queued changes are kept and wait until after the deload week
     const when = (c) => (accepted() ? `${c.when} after deload` : c.when);
-    return `${sec}<div class="card">${list.map((c) => (s.undone[c.id]
+    // D2 (Ben, 22 and 23 Oct): a stall reset or an unasked extra set is an offer (Apply / Skip); small changes are applied with Undo.
+    const offerRow = (c) => (s.cst[c.id] === 'applied'
+      ? `<div class="chg"><span class="t">${c.t} <s>${c.b}</s> → ${c.a}</span><span class="why">${when(c)} · ${c.why}</span><button class="link u" data-a="cUndo" data-v="${c.id}">Undo</button></div>`
+      : s.cst[c.id] === 'skipped'
+        ? `<div class="chg"><span class="t">${c.t} ${c.b}</span><span class="why">Skipped</span><button class="link u" data-a="cUndo" data-v="${c.id}">Undo</button></div>`
+        : `<div class="chg"><span class="t">${c.t} ${c.b} → ${c.a}?</span><span class="why">${when(c)} · ${c.why}</span><span class="u2"><button class="link" data-a="cApply" data-v="${c.id}">Apply</button><button class="link" data-a="cSkip" data-v="${c.id}">Skip</button></span></div>`);
+    return `${sec}<div class="card">${list.map((c) => (c.offer ? offerRow(c) : s.undone[c.id]
       ? `<div class="chg"><span class="t"><s>${c.t} ${c.a}</s> kept ${c.b}</span><span class="why">Undone</span><button class="link u" data-a="redo" data-v="${c.id}">Redo</button></div>`
       : `<div class="chg"><span class="t">${c.t} <s>${c.b}</s> → ${c.a}</span><span class="why">${when(c)} · ${c.why}</span><button class="link u" data-a="undo" data-v="${c.id}">Undo</button></div>`)).join('')}</div>`;
   }
@@ -697,30 +856,29 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'scr') { s.scr = v; if (v === 'review' && !isDone()) { s = { ...s, ...fresh(), st: 'done', scr: 'review' }; } s.focus = null; }
     if (a === 'st') { s = { ...s, ...fresh(), st: v }; if (s.scr === 'review' && !isDone()) s.scr = 'progress'; }
     if (a === 'off') s.off = !s.off;
+    if (a === 'revoff') s.rev = s.rev ? null : 'offer';
     if (a === 'tab') { if (v === 'today' || v === 'progress') s.scr = v; else say(v === 'lib' ? 'Library (not in this prototype)' : 'Profile (not in this prototype)'); }
     // today
     if (a === 'hdr') s.scr = isDone() && !s.started ? 'review' : 'progress';
     if (a === 'eApply') { s.early = 'accepted'; say('Deload this week · block ends Sun', 'uEarly'); }
     if (a === 'eNo') { s.early = 'dismissed'; say('Not this week', 'uEarly'); }
     if (a === 'uEarly') s.early = 'offer';
-    if (a === 'toggle') s.open = !s.open;
-    if (a === 'dayp') { s.day = v; s.main = null; s.mix = false; }
-    if (a === 'main') { s.main = v; s.mix = false; }
-    if (a === 'style') { s.style = v; s.mix = false; }
-    if (a === 'min') s.min = Math.max(20, Math.min(120, s.min + Number(v)));
-    if (a === 'abs') s.abs = !s.abs;
+    // The coach's review offer (D2): Apply changes that exercise on today's draft only, as shown; ✕ skips it; both with
+    // Undo. An offer that no longer reads as offered is refused (rule 5).
+    if (a === 'rApply') { if (draft().offerLive) { s.rev = 'applied'; say(`${OFFER.name} ${OFFER.to} sets today`, 'uRev'); } else say('Out of date'); }
+    if (a === 'rNo') { s.rev = 'skipped'; say('Skipped', 'uRev'); }
+    if (a === 'uRev') s.rev = 'offer';
+    // Another day: today's draft for that day; each day keeps its own edits for when Ben comes back (§2.0.4).
+    if (a === 'dayp' && v !== s.day) { s.kept[s.day] = { main: s.main, style: s.style, abs: s.abs, ss: s.ss, edits: s.edits }; Object.assign(s, { main: null, style: 'Focused', abs: true, ss: true, edits: [] }, s.kept[v] ?? {}, { day: v, mix: false, carry: false }); }
+    if (a === 'min') { s.min = Math.max(20, Math.min(120, s.min + Number(v))); s.carry = false; }
     if (a === 'fitwhy') s.fitWhy = !s.fitWhy;
-    if (a === 'carry') s.noCarry = !s.noCarry;
-    if (a === 'ss') s.ss = !s.ss;
-    if (a === 'mix') s.mix = true;
-    if (a === 'unmix') s.mix = false;
-    // Today's controls change today only (Ben, 22 Oct). Start after a change asks once; Update in your plan opens the
-    // plan's Changes review (accept or reject, choose weeks) rather than changing the plan directly.
-    if (a === 'start') { if (todayChanged()) s.startAsk = true; else startNow(); }
-    if (a === 'go') { s.startAsk = false; startNow(); }
-    if (a === 'savevar') { s.startAsk = false; say(`Saved as Chest · ${s.main ?? 'Bench'} variation`); startNow(); }
-    if (a === 'toplan') { s.startAsk = false; const ch = { min: s.min, ss: s.ss, abs: s.abs, main: s.main, style: s.style }; if (embedded()) parent.postMessage({ app: 'planupdate', change: ch }, '*'); else say('Opens Your plan with these as changes to review'); }
-    if (a === 'edit') { if (embedded()) parent.postMessage({ app: 'builder', draft: todayDraft() }, '*'); else say('Opens the builder (prototype)'); }
+    // The carry-over is an offer (D9 with D2; review SP3): Carry over, then Undo.
+    if (a === 'carry') s.carry = !s.carry;
+    // Start always just starts, today only (D1, Ben 22 and 23 Oct): no prompt. A Time change never asks anything; a change to
+    // the workout's structure made on Your workout is offered once on the Summary (Keep for next time?).
+    if (a === 'start') startNow();
+    // Edit: Your workout with today's draft, its today-only controls (D3) and Ben's earlier edits.
+    if (a === 'edit') { if (embedded()) parent.postMessage({ app: 'builder', draft: { ...todayDraft(), opts: todayOpts() } }, '*'); else say('Opens Your workout with Main lift, Accessories, Abs and Supersets (prototype)'); }
     if (a === 'build') say('Opens the builder (prototype)');
     if (a === 'activity') say('Log or plan a run (prototype)');
     if (a === 'other') say('Other sessions (see today-v2)');
@@ -735,6 +893,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'sess') say(v === 'Back' ? 'Back: opens its Summary' : `${v}: planned`);
     if (a === 'undo') { s.undone[v] = true; say('Undone'); }
     if (a === 'redo') s.undone[v] = false;
+    if (a === 'cApply') s.cst[v] = 'applied';
+    if (a === 'cSkip') s.cst[v] = 'skipped';
+    if (a === 'cUndo') delete s.cst[v];
     if (a === 'review') s.scr = 'review';
     if (a === 'startblock') s.bdraft = true;
     if (a === 'bStart') { s.bstart = true; s.bdraft = false; say('Block 1 started', 'uBStart'); }
@@ -748,6 +909,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'uNotNow') s.notNow = false;
     clearTimeout(tt); if (s.toast) tt = setTimeout(() => { s.toast = null; view(); }, s.toast.u ? 5000 : 2500);
     view();
+  });
+  // Your workout (Edit) sends back what Ben changed there, so Today's card, Start and the next Edit keep it (D3; review
+  // fixes 23 Oct). The shell also sends the plan's Main focus (review S7).
+  addEventListener('message', (ev) => {
+    const m = ev.data; if (!m || !m.cmd) return;
+    if (m.cmd === 'edits' && m.day === s.day) {
+      if (m.ctl) Object.assign(s, { main: m.ctl.main, style: m.ctl.style, abs: m.ctl.abs, ss: m.ctl.ss });
+      s.edits = Array.isArray(m.edits) ? m.edits : [];
+      if (s.rev && m.offer !== undefined) s.rev = m.offer == null ? 'offer' : m.offer === 'stale' ? 'skipped' : m.offer;
+      view();
+    }
+    if (m.cmd === 'focus') { PLAN_FOCUS = m.focus || 'Balanced'; view(); }
   });
   // The default session must read as the shared fixture (V1), and each day's default as this week of the plan.
   { const m = draft().ex[0]; if (m.name !== FIXTURE.main || mainLine(m) !== FIXTURE.mainLine) console.error(`Fixture mismatch: ${m.name} ${mainLine(m)}`); }

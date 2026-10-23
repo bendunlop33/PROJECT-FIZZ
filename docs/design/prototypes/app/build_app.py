@@ -7,10 +7,15 @@ shell provides them), and its main buttons tell the shell where to go. The origi
 not changed.
 
 After building it checks that the screens agree (V1) and exits non-zero with a list of problems when
-they don't: first the shared example facts in the source (FIXTURE, PLAN_WEEK, the muscle list, dates;
-see check() below), then a headless click-through of the built app (check_app.mjs: one session reads the
-same on Today with and without a plan, the plan overview, the builder, the active workout and the Summary).
+they don't: first the shared example facts in the source (FIXTURE, PLAN_WEEK, the counting muscles and the
+broad picking groups, dates, and that every copy of the shared back-off and fit code is the same; see check()
+below), then a headless click-through of the built app (check_app.mjs: one session reads the same on Today with
+and without a plan, the plan overview, the builder, the active workout and the Summary, plus Ben's 22 and 23 Oct
+decisions D1–D9: Start just starts, Keep for next time? lists only Ben's own structure changes, lean Today that
+keeps Your workout's edits, coach offers that go stale, the back-off band and its fallback, the fit, broad picking
+groups, plan setup).
 The click-through needs Node and Playwright; without them it is reported as skipped, not passed.
+Decision labels in the prototypes read "(Ben, 22 and 23 Oct)": a range such as 22–23 Oct reads as a week here.
 
 Usage: python3 build_app.py OUT_DIR [--static-only]
 """
@@ -27,7 +32,7 @@ PROTOS = HERE.parent
 
 # Button text (exact) -> where the shell goes.
 GO = {
-    # Start asks first when today changed, and Edit sends today's draft to the builder (both handled inside).
+    # Start always just starts (D1, Ben 22 and 23 Oct) and Edit sends today's draft to the builder (both handled inside).
     'training-blocks.html': {'Build your own': 'builder'},
     # Start sends the workout itself, so the active workout opens with exactly that session (V1).
     'workout-builder-v3.html': {'Start with no muscle groups': 'active'},
@@ -44,16 +49,8 @@ EXTRA = {
   // #view opens the plan you have, as the Your plan overview (Library › your plan): week 3 of 6 as Today shows it,
   // this week's Back done (openYourPlan in plan-builder.html).
   if (location.hash === '#view') addEventListener('load', () => openYourPlan());
-  // From Today's Start prompt, Update in your plan: today's changes become plan changes to review (Ben, 22 Oct).
-  addEventListener('message', (e) => {
-    const c = e.data?.cmd === 'edit' && e.data.change; if (!c) return;
-    ensureEditing();
-    if (c.min) S.length = c.min;
-    if (typeof c.ss === 'boolean') S.supersets = c.ss;
-    if (c.abs === false) S.absWk = 0;
-    if (c.main === 'Incline') S.likes = [...new Set([...S.likes, 'Incline bench press'])];
-    S.plan = build(); S.pageTop = true; render();
-  });
+  // (D1, Ben 22 and 23 Oct) Today has no Start prompt, so nothing sends today's changes here any more: a structure
+  // change is offered once on the Summary (Keep for next time?) for that plan day only.
 """,
     'training-blocks.html': """
   // #progress opens the block's progress screen (the shell's Progress → Block).
@@ -69,11 +66,13 @@ SNIPPET = """<script>
   if (!new URLSearchParams(location.search).has('embed')) return;
   document.documentElement.classList.add('embed');
   const GO = {go};
+  // window.embedInfo (optional, set by a prototype) adds facts the shell needs, e.g. the plan's Main focus (review S7).
+  const info = (to) => (typeof window.embedInfo === 'function' ? window.embedInfo(to) : {{}});
   document.addEventListener('click', (e) => {{
     const b = e.target.closest('button'); if (!b) return;
     const to = GO[b.textContent.trim()]; if (!to) return;
-    if (to[0] === '~') {{ parent.postMessage({{ app: to.slice(1) }}, '*'); return; }}
-    e.preventDefault(); e.stopPropagation(); parent.postMessage({{ app: to }}, '*');
+    if (to[0] === '~') {{ parent.postMessage(Object.assign({{ app: to.slice(1) }}, info(to)), '*'); return; }}
+    e.preventDefault(); e.stopPropagation(); parent.postMessage(Object.assign({{ app: to }}, info(to)), '*');
   }}, true);
 {extra}}})();
 </script>
@@ -91,22 +90,42 @@ HEAD = '<!doctype html>\n<meta charset="utf-8">\n<meta name="viewport" content="
 # Shared example facts (V1): one session, one date, one main-lift format across the whole app. Every screen
 # that shows them declares the same `const FIXTURE = {...};` (one line of JSON) and renders from it; the screens
 # also check their own default session against it at load (console.error, which the click-through tests fail on).
+# Back-offs are worked out from their reps and effort (D4, Ben 22 and 23 Oct; training guide SS4): top 6 @ RPE 8 and
+# back-offs 8 @ RPE 8 give 97.4, snapped down to 95 (7 % below the top, inside Balanced's 4–10 %). Was a fixed 90 %.
 FIXTURE = {
     'today': 'Tue 20 Oct', 'week': '19–25 Oct', 'lastWeek': '12–18 Oct', 'session': 'Chest',
-    'main': 'Barbell bench press', 'top': 102.5, 'back': 92.5, 'mainLine': '1 × 6 + 2 × 8 · 102.5 / 92.5',
+    'main': 'Barbell bench press', 'top': 102.5, 'back': 95, 'mainLine': '1 × 6 + 2 × 8 · 102.5 / 95',
     'last': '12 Oct · 100 × 6',
 }
 YEAR = 2026
 USES_FIXTURE = ['app.html', 'training-blocks.html', 'workout-builder-v3.html', 'progress-simple.html']
 # This week of the plan (Today with a plan and the plan overview): one JSON line, the same in both.
 USES_PLAN_WEEK = ['training-blocks.html', 'plan-builder.html']
-# One muscle list everywhere (V1): the plan's MUSCLES, and where each screen lists muscles.
-MUSCLE_LISTS = {
+# Muscles (D5, Ben 22 and 23 Oct): the detailed list for COUNTING (plan weekly sets, Progress, Library's exercise lists) is
+# the plan's MUSCLES everywhere; the broad groups for PICKING (plan priorities, builder Set up / Add / Swap, Library
+# filters) are the plan's GROUPS everywhere, and each broad group is exactly the sum of its detailed parts.
+COUNT_LISTS = {
     'plan-builder.html': r"const MUSCLES = \[(.*?)\];",
-    'workout-builder-v3.html': r"const GROUPS = \[(.*?)\];",
     'progress-simple.html': r"const MUSCLES = \[(.*?)\];",
     'training-blocks.html': r"const MUSCLES = \[(.*?)\];",
     'app.html': r"const EXS = (\{.*?\});",
+}
+PICK_MAPS = {
+    'plan-builder.html': r"const GROUPS = (\{.*?\});",
+    'workout-builder-v3.html': r"const BROAD = (\{.*?\});",
+    'app.html': r"const PICK = (\{.*?\});",
+}
+PICK_LISTS = {
+    'workout-builder-v3.html': r"const GROUPS = \[(.*?)\];",
+}
+# Code that must be the same in every prototype that has it (review B1, B2, S2): the back-off rule (D4), the shared
+# fit (D9), and how Ben's own edits are replayed and listed for Keep for next time? (D1, D3). Each copy sits between
+# `// <TAG>-START` and `// <TAG>-END`; copies are compared line by line, indentation ignored, and check_app.mjs tests
+# the app's back-off copy.
+SHARED = {
+    'BACKOFF': ['app.html', 'training-blocks.html', 'plan-builder.html', 'workout-builder-v3.html', 'workout-active-v3.html'],
+    'FIT': ['app.html', 'training-blocks.html'],
+    'EDITS': ['training-blocks.html', 'workout-builder-v3.html'],
 }
 MONTHS = {m: i + 1 for i, m in enumerate(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])}
 MON = '(Aug|Sep|Oct|Nov|Dec)'
@@ -162,7 +181,7 @@ def check(out: pathlib.Path) -> list:
     if len({json.dumps(w, sort_keys=True) for w in weeks.values()}) > 1:
         bad.append(f'PLAN_WEEK differs between {" and ".join(weeks)}')
     muscles = {}
-    for n, pat in MUSCLE_LISTS.items():
+    for n, pat in COUNT_LISTS.items():
         m = re.search(pat, (out / n).read_text(), re.S)
         if not m:
             bad.append(f'{n}: muscle list not found')
@@ -170,7 +189,35 @@ def check(out: pathlib.Path) -> list:
         names = re.findall(r"\['(\w+)', \[", m[1]) or re.findall(r"(?:\{|\], )\s*'?(\w+)'?: \[", m[1]) or re.findall(r"'(\w+)'", m[1])
         muscles[n] = names
     ref = muscles.get('plan-builder.html')
-    bad += [f'{n}: muscles {v} differ from the plan\'s {ref}' for n, v in muscles.items() if v != ref]
+    bad += [f'{n}: counting muscles {v} differ from the plan\'s {ref}' for n, v in muscles.items() if v != ref]
+    # Broad picking groups (D5): one map everywhere, the plan's GROUPS; every detailed muscle in exactly one group.
+    maps = {}
+    for n, pat in PICK_MAPS.items():
+        m = re.search(pat, (out / n).read_text(), re.S)
+        if not m:
+            bad.append(f'{n}: picking groups not found')
+            continue
+        maps[n] = [(k, re.findall(r"'(\w+)'", v)) for k, v in re.findall(r"'?(\w+)'?\s*:\s*\[([^\]]*)\]", m[1])]
+    pick = maps.get('plan-builder.html')
+    bad += [f'{n}: picking groups {v} differ from the plan\'s {pick}' for n, v in maps.items() if v != pick]
+    if pick and ref and sorted(p for _, parts in pick for p in parts) != sorted(ref):
+        bad.append(f'plan-builder.html: broad groups {pick} are not exactly the sum of the counting list {ref}')
+    for n, pat in PICK_LISTS.items():
+        m = re.search(pat, (out / n).read_text(), re.S)
+        got = re.findall(r"'(\w+)'", m[1]) if m else None
+        if pick and got != [k for k, _ in pick]:
+            bad.append(f'{n}: picking list {got} differs from the plan\'s groups {[k for k, _ in pick]}')
+    # The shared back-off and fit code: one text everywhere.
+    for tag, files in SHARED.items():
+        seen = {}
+        for n in files:
+            m = re.search(rf'// {tag}-START.*?// {tag}-END', (out / n).read_text(), re.S)
+            if not m:
+                bad.append(f'{n}: no shared {tag} block (// {tag}-START … // {tag}-END)')
+                continue
+            seen[n] = '\n'.join(line.strip() for line in m[0].splitlines())
+        if len(set(seen.values())) > 1:
+            bad.append(f'shared {tag} block differs between {", ".join(seen)}')
     # The source prototypes not in the app (older or archived) are checked for dates too.
     bad += [x for f in sorted(PROTOS.glob('*.html')) if f.name not in GO for x in check_text(f.name, f.read_text())]
     return bad

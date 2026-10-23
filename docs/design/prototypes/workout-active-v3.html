@@ -116,7 +116,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 <script>
 (() => {
   // Opened alone: this example workout. In the app, Start sends the session it started (V1): {cmd: 'session'} below.
-  let NAME = 'Upper body', EST = 55, LAST = '16 Oct', FROM_APP = false;
+  let NAME = 'Upper body', EST = 55, LAST = '16 Oct', FROM_APP = false, FOCUS = 'Balanced';
   const W = 'Rear delts'; let ROUNDS = [
     { n: '1', ex: [{ name: 'Barbell bench press', main: true, works: 'Chest, front delts, triceps', rest: '3:00', target: '6 @ 8 top · 8 @ 8 back-offs', sets: [['W', 20, 10], ['W', 50, 5], ['W', 70, 3], ['W', 85, 1], ['Top', 100, 6, 8], ['B', 95, 8, 8], ['B', 95, 8, 8], ['B', 95, 8, 8]].map(([t, kg, r, rpe]) => ({ t, kg, r, rpe, done: true })) }] },
     { n: '2', ex: [{ name: 'Lat pulldown', works: 'Lats, biceps', rest: '2:00', target: '8–10 @ 8', sets: [['W', 35, 8], ['', 60, 9, 8], ['', 60, 9, 8], ['', 60, 8, 9]].map(([t, kg, r, rpe]) => ({ t, kg, r, rpe, done: true })) }] },
@@ -142,6 +142,33 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
   const kgTxt = (kg, each) => (kg === 'BW' ? 'BW' : `${kg}${each ? ' kg each' : ' kg'}`);
   // A session from Today, the builder or the plan: same name, exercises, order, sets, reps and kg; round 1 at 0:00.
   const snap = (kg) => Math.round(kg / 2.5) * 2.5;
+  // Back-offs when a session doesn't carry them: the shared rule, in the session's focus band (review S7).
+  // BACKOFF-START (one copy in each prototype that needs it; build_app.py checks they match, check_app.mjs tests it)
+  // Back-offs (D4, Ben 22 and 23 Oct; training guide SS4): worked out from the top set at their own reps and effort
+  // (RIR-adjusted Epley; top set and back-offs @ RPE 8), kept in the focus's band below the top (Strength 2–8 %,
+  // Balanced 4–10 %, Muscle 8–15 %; other focuses 2–15 %) and snapped down to a real load, or the next real load up
+  // when that is still inside the band. Not a fixed 90 % or 95 %. No real load inside the band (coarse dumbbells, sparse
+  // racks; review B2): the one nearest the band that is below the top, on a tie the lighter; never the top itself. A top
+  // with no real load below it keeps its load and the back-offs do 1 rep fewer (spec §3.1 item 9; none here is that light).
+  const BACKOFF_BAND = { Strength: [0.02, 0.08], Balanced: [0.04, 0.1], Muscle: [0.08, 0.15] };
+  function backOff(top, topReps, backReps, focus = 'Balanced', step = 2.5, topRpe = 8, backRpe = 8) {
+    if (top == null || Number.isNaN(Number(top))) return null;
+    const raw = (top * (30 + topReps + 10 - topRpe)) / (30 + backReps + 10 - backRpe);
+    const [lo, hi] = BACKOFF_BAND[focus] ?? [0.02, 0.15], L = top * (1 - hi) - 1e-9, U = top * (1 - lo) + 1e-9;
+    const down = Math.floor(Math.min(U, Math.max(L, raw)) / step + 1e-9) * step;
+    const near = [down, down + step].filter((kg) => kg > 0 && kg < top - 1e-9);
+    const inBand = near.find((kg) => kg >= L && kg <= U);
+    if (inBand != null) return inBand;
+    const off = (kg) => (kg < L ? L - kg : kg - U);
+    return near.sort((a, b) => off(a) - off(b) || a - b)[0] ?? top;
+  }
+  // When today's top is lowered from the planned one (a pain hold, the coach, Ben, an R2 offer; a deload's −10 %), the
+  // back-offs drop by the same factor and snap down, staying below the new top (SS4, HT8). Raising never raises them.
+  function lowerBackOff(back, factor, newTop, step = 2.5) {
+    if (back == null || newTop == null || !(factor < 1)) return back;
+    return Math.max(step, Math.min(Math.floor((back * factor) / step + 1e-9) * step, newTop - step));
+  }
+  // BACKOFF-END
   const TYPE = { W: 'W', T: 'Top', B: 'B', N: '', D: 'Drop' };
   function exOf(x, inSs, lastInSs) {
     const kg0 = x.kg ?? 'BW', each = !!x.each;
@@ -153,7 +180,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
       if (!Number.isNaN(top)) { if (!each && /barbell|squat|deadlift/i.test(x.name)) wu.push([20, 10]); [[0.5, 5], [0.7, 3], [0.85, 1]].forEach(([f, r]) => { const k = snap(top * f); if (k > (wu.at(-1)?.[0] ?? 0)) wu.push([k, r]); }); }
       sets = [...wu.map(([k, r]) => ({ t: 'W', kg: k, r, done: false })),
         { t: 'Top', kg: kg0, r: x.reps ?? 6, rpe: 8, done: false },
-        ...Array.from({ length: Math.max(0, x.sets - 1) }, () => ({ t: 'B', kg: x.back ?? (Number.isNaN(top) ? kg0 : snap(top * 0.9)), r: x.backReps ?? 8, rpe: 8, done: false }))];
+        ...Array.from({ length: Math.max(0, x.sets - 1) }, () => ({ t: 'B', kg: x.back ?? (Number.isNaN(top) ? kg0 : backOff(top, x.reps ?? 6, x.backReps ?? 8, FOCUS)), r: x.backReps ?? 8, rpe: 8, done: false }))];
     } else sets = [...(x.comp && typeof kg0 === 'number' ? [{ t: 'W', kg: snap(kg0 * 0.6), r: 8, done: false }] : []), // compounds: one warm-up, as the builder adds
       ...Array.from({ length: x.sets }, (_, i) => ({ t: '', kg: kg0, r: x.reps ?? (x.comp ? 8 : 12), rpe: i === x.sets - 1 ? 9 : 8, done: false }))];
     // Target as the sets say it: top set and back-offs for a main lift, else reps @ RPE. Last time only when the app
@@ -163,7 +190,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     return { name: x.name, main: !!x.main, works: x.works ?? '', each, rest: inSs ? (lastInSs ? '1:30 after round' : '') : x.main ? '3:00' : x.comp ? '2:00' : '1:30', target, last: x.last ?? null, why: x.why ?? null, sets };
   }
   function openSession(ss) {
-    FROM_APP = true; NAME = ss.name; EST = ss.est ?? ss.min ?? EST; LAST = ss.lastDate ?? LAST;
+    FROM_APP = true; NAME = ss.name; EST = ss.est ?? ss.min ?? EST; LAST = ss.lastDate ?? LAST; FOCUS = ss.focus ?? 'Balanced';
     ROUNDS = (ss.blocks ?? []).map((b, i) => ({ n: String(i + 1), ss: b.length > 1, ex: b.map((x, k) => exOf(x, b.length > 1, k === b.length - 1)) }));
     clearInterval(iv);
     s = { r: 0, sheet: false, toast: null, open: {}, rest: 0, restEnd: 0, since: Date.now(), t0: Date.now(), anchor: true, menu: false };

@@ -132,6 +132,8 @@ button.pd.next { border: 1.5px solid var(--text2); color: var(--text); }
 .chg .t s { color: var(--text3); font-weight: 500; }
 .chg .why { grid-column: 1; color: var(--text2); font-size: 14px; }
 .chg .u { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+.chg .acts2 { display: flex; gap: 14px; } /* an offer: Apply / Skip (D2) */
+.chg .acts2 .link { min-height: 44px; }
 .link { background: none; border: 0; color: var(--text); font: 600 15px var(--ui); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); cursor: pointer; min-height: 40px; padding: 0; }
 .note { font-size: 16px; line-height: 1.45; }
 .tag { color: var(--text3); font-size: 12px; margin-left: 6px; }
@@ -154,13 +156,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="chips" id="demo"></div>
   </div>
   <div class="phone" id="app"></div>
-  <div class="hint">Example data. <b>This week</b> first, then <b>Lifts</b> and <b>Muscles</b> (always both), then then <b>Coach's changes</b> at the bottom (full when new, one line after “Got it”) (tap a lift's line or row to see it alone on its own scale). <b>This week</b>: sessions and sets vs plan. <b>Coach's changes</b>: what the coach already adjusted for your next sessions and why, each with Undo. Bigger changes (your plan's days, swapping exercises) are the only things it asks about.</div>
+  <div class="hint">Example data. <b>This week</b> first, then <b>Lifts</b> and <b>Muscles</b> (always both), then then <b>Coach's changes</b> at the bottom (full when new, one line after “Got it”) (tap a lift's line or row to see it alone on its own scale). <b>This week</b>: sessions and sets vs plan. <b>Coach's changes</b>: small load, reps and sets changes the coach already made for your next sessions, each with Undo. A stall reset, an extra set you didn't ask for and plan changes are offers with Apply / Skip (Ben, 22 and 23 Oct).</div>
 </div>
 <script>
 (() => {
   // Shared example facts (V1): the same in every screen of the whole-app prototype; build_app.py checks them.
   // Today is Tue 20 Oct; weeks run Monday to Sunday, so the last full week is 12–18 Oct.
-  const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 92.5, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 92.5", "last": "12 Oct · 100 × 6"};
+  const FIXTURE = {"today": "Tue 20 Oct", "week": "19–25 Oct", "lastWeek": "12–18 Oct", "session": "Chest", "main": "Barbell bench press", "top": 102.5, "back": 95, "mainLine": "1 × 6 + 2 × 8 · 102.5 / 95", "last": "12 Oct · 100 × 6"};
   const GOALS = [['strength', 'Get stronger'], ['muscle', 'Build muscle'], ['both', 'Both']];
   const WEEKS = ['24 Aug', '31 Aug', '7 Sep', '14 Sep', '21 Sep', '28 Sep', '5 Oct', '12 Oct'];
   // Main lifts (default: the plan's main lifts; editable, typically up to 3). Colours: dataviz categorical slots 1–3 (dark), validated all-pairs.
@@ -175,11 +177,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     { n: 'Lat raise', reps: 12, c: '#B5ADA5', acc: true, each: true, series: [8, 8, 8, 10, 10, 10, 10, 10], target: null, estW: {} },
   ];
   // Working sets per muscle per week (main muscle 1, helpers ½ — the builder's convention), last 8 weeks; plan = what the plan's sessions call for. null = paused week.
+  // Counting uses the detailed list everywhere (D5, Ben 22 and 23 Oct): the plan's MUSCLES. Rear delts count as Back, and a
+  // broad group (Legs, Arms) is exactly the sum of its rows here.
   const MUSCLES = [
     ['Chest', [10, 11, 12, 12, 12, null, 11, 14], 12],
     ['Back', [12, 13, 12, 14, 14, null, 12, 13], 14],
     ['Shoulders', [8, 8, 9, 9, 10, null, 9, 10], 10],
-    // One muscle list everywhere (V1): the plan's (plan-builder MUSCLES).
     ['Quads', [6, 7, 7, 7, 7, null, 5, 5], 7],
     ['Hamstrings', [4, 5, 4, 5, 5, null, 3, 2], 5],
     ['Calves', [2, 2, 2, 2, 2, null, 2, 2], 2],
@@ -188,12 +191,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     ['Core', [6, 6, 6, 6, 6, null, 6, 6], 6],
   ];
   const NOTE = 'Good week. Legs light: Legs moved to Saturday.';
+  // Weekly review (D2, Ben 22 and 23 Oct): small load/reps/sets changes are applied with Undo (Squat). A stall reset (Row)
+  // and an extra set Ben didn't ask for (Lateral raise) are offers: nothing changes until Apply.
   const CHANGES = [
-    { id: 'row', t: 'Row', b: '3 × 8', a: '4 × 6', when: 'next Pull', why: 'Stuck at 92.5 × 8 for 3 weeks' },
-    { id: 'lat', t: 'Lateral raise', b: '3 sets', a: '4 sets', when: 'next Upper', why: 'Shoulders under plan 2 weeks running' },
+    { id: 'row', t: 'Row', b: '3 × 8', a: '4 × 6', when: 'next Back', why: 'Stuck at 92.5 × 8 for 3 weeks', offer: true },
+    { id: 'lat', t: 'Lateral raise', b: '3 sets', a: '4 sets', when: 'next Shoulders', why: 'Shoulders under plan 2 weeks running', offer: true },
     { id: 'squat', t: 'Squat', b: '117.5 kg', a: '120 kg', when: 'next Legs', why: 'All sets done at RPE 8' },
   ];
-  let s = { seen: false, goal: 'strength', coach: true, undone: {}, ask: 'open', toast: null, focus: null };
+  let s = { seen: false, goal: 'strength', coach: true, undone: {}, cst: {}, ask: 'open', toast: null, focus: null };
   const app = document.getElementById('app');
 
   function controls() {
@@ -350,14 +355,21 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       return `<div class="sec"><span>Coach's changes</span><span>for next week</span></div>
       <div class="card"><div class="note">Built-in rule: Squat 117.5 → 120 kg next Legs<span class="tag">Not reviewed · Offline</span></div></div>`;
     }
-    const rows = CHANGES.map((c) => s.undone[c.id]
+    // An offer (D2): Apply / Skip; once applied it reads like any applied change, with Undo.
+    const offerRow = (c) => (s.cst[c.id] === 'applied'
+      ? `<div class="chg"><span class="t">${c.t} <s>${c.b}</s> → ${c.a}</span><span class="why">${c.when} · ${c.why}</span><button class="link u" data-a="cUndo" data-v="${c.id}">Undo</button></div>`
+      : s.cst[c.id] === 'skipped'
+        ? `<div class="chg"><span class="t">${c.t} ${c.b}</span><span class="why">Skipped</span><button class="link u" data-a="cUndo" data-v="${c.id}">Undo</button></div>`
+        : `<div class="chg"><span class="t">${c.t} ${c.b} → ${c.a}?</span><span class="why">${c.when} · ${c.why}</span><span class="u acts2"><button class="link" data-a="cApply" data-v="${c.id}">Apply</button><button class="link" data-a="cSkip" data-v="${c.id}">Skip</button></span></div>`);
+    const rows = CHANGES.map((c) => (c.offer ? offerRow(c) : s.undone[c.id]
       ? `<div class="chg"><span class="t"><s>${c.t} ${c.a}</s> kept ${c.b}</span><span class="why">Undone</span><button class="link u" data-a="redo" data-v="${c.id}">Redo</button></div>`
-      : `<div class="chg"><span class="t">${c.t} <s>${c.b}</s> → ${c.a}</span><span class="why">${c.when} · ${c.why}</span><button class="link u" data-a="undo" data-v="${c.id}">Undo</button></div>`).join('');
-    const ask = s.ask === 'open' ? `<div class="ask"><div class="t">Legs has moved to Saturday 3 weeks running. Make Saturday its day in your plan?</div><div class="acts"><button class="btn yes" data-a="yes">Move Legs to Sat</button><button class="btn" data-a="no">Keep as is</button></div></div>`
+      : `<div class="chg"><span class="t">${c.t} <s>${c.b}</s> → ${c.a}</span><span class="why">${c.when} · ${c.why}</span><button class="link u" data-a="undo" data-v="${c.id}">Undo</button></div>`)).join('');
+    // A structural change is a proposal (Apply / Skip), as every proposal (design review V10).
+    const ask = s.ask === 'open' ? `<div class="ask"><div class="t">Legs on Saturday in your plan?</div><div class="sub">Moved there 3 weeks running</div><div class="acts"><button class="btn yes" data-a="yes">Apply</button><button class="btn" data-a="no">Skip</button></div></div>`
       : s.ask === 'yes' ? `<div class="chg"><span class="t">Legs → Saturday</span><span class="why">in your plan · your choice</span><button class="link u" data-a="askundo">Undo</button></div>` : '';
-    const n = CHANGES.filter((c) => !s.undone[c.id]).length;
+    const n = CHANGES.filter((c) => (c.offer ? s.cst[c.id] === 'applied' : !s.undone[c.id])).length, k = CHANGES.filter((c) => c.offer && !s.cst[c.id]).length + (s.ask === 'open' ? 1 : 0);
     if (s.seen) return `<div class="sec"><span>Coach's changes</span><span>for next week</span></div>
-    <button class="card collapsed" data-a="expandchg" aria-label="${n} changes for next week. Show"><span>${n} changes for next week</span><span class="chev">›</span></button>`;
+    <button class="card collapsed" data-a="expandchg" aria-label="${n} change${n === 1 ? '' : 's'} for next week${k ? `, ${k} to apply or skip` : ''}. Show"><span>${n} change${n === 1 ? '' : 's'} for next week${k ? ` · ${k} to review` : ''}</span><span class="chev">›</span></button>`;
     return `<div class="sec"><span>Coach's changes <span class="new">NEW</span></span><span>for next week</span></div>
     <div class="card">
       <div class="note">${NOTE}<span class="tag">Coach</span></div>
@@ -394,8 +406,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'expandchg') s.seen = false;
     if (a === 'undo') { s.undone[v] = true; s.toast = 'Undone: next session keeps the old target'; }
     if (a === 'redo') s.undone[v] = false;
+    if (a === 'cApply') s.cst[v] = 'applied';
+    if (a === 'cSkip') s.cst[v] = 'skipped';
+    if (a === 'cUndo') delete s.cst[v];
     if (a === 'yes') { s.ask = 'yes'; s.toast = 'Legs is now on Saturday'; }
-    if (a === 'no') { s.ask = 'no'; s.toast = 'Kept as is'; }
+    if (a === 'no') { s.ask = 'no'; s.toast = 'Plan unchanged'; }
     if (a === 'askundo') s.ask = 'open';
     if (a === 'sess') s.toast = v === 'LegsMissed' ? 'Legs: planned Thu, not done' : v === 'Legs' ? 'Legs: planned Thu, moved to Sat' : v === 'Back' ? 'Back: 156 of 170 planned reps (92%) \u00b7 Cable row short \u00b7 opens its Summary' : `${v}: opens that workout\u2019s Summary`;
     if (a === 'past') s.toast = 'Opens past weeks: each week’s facts and changes';
