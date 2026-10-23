@@ -4,7 +4,7 @@ import type { PlanEffort, PlanFocus, PlanGroup, PlanTarget } from '@fizz/schemas
  * The plan builder's tables (plan-builder.md §2; prototype `plan-builder.html`), with the prototype's exercise names
  * mapped to catalogue keys (`packages/catalogue/data/exercises/<key>.json`). Prototype exercises the catalogue has no
  * entry for are left out (Low-to-high cable fly, Incline machine/Smith press, T-bar row, Cable rear delt fly, Band
- * pull-apart, Smith shoulder press, Cable hip abduction, Wrist curl, Reverse curl); the order of the rest is kept.
+ * pull-apart, Smith shoulder press, Cable hip abduction); the order of the rest is kept.
  * Every number here is the prototype's default (Ben's open questions plan-builder §5 Q2, Q3, Q6 stand).
  */
 
@@ -130,8 +130,8 @@ export const PB_EX: Readonly<Record<Exclude<PbMuscle, 'Core'>, readonly PbExerci
   Glutes: [ex('barbell-hip-thrust', 'c'), ex('cable-glute-kickback', 'i'), ex('bodyweight-glute-bridge', 'c')],
   Adductors: [ex('machine-hip-adduction', 'i'), ex('bodyweight-copenhagen-plank', 'i')],
   Abductors: [ex('machine-hip-abduction', 'i')],
-  // No wrist or reverse curl in the catalogue yet: Forearms can't be a specific target until one is added.
-  Forearms: [],
+  // (D5, Ben 22–23 Oct) Forearms is a specific target now the catalogue has the wrist and reverse curls (prototype order).
+  Forearms: [ex('barbell-wrist-curl', 'i'), ex('barbell-reverse-curl', 'i'), ex('barbell-reverse-wrist-curl', 'i')],
 };
 
 /** Abs: alternating two exercises; the woodchop when Obliques is a specific target. */

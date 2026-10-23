@@ -17,6 +17,7 @@ import {
   PB_SIMILAR,
   applyPlan,
   buildPlanFromAnswers,
+  pbChartMuscles,
   catalogueExerciseId,
   chunks,
   currentPlanVersion,
@@ -359,6 +360,18 @@ describe('the build', () => {
     const rear = p.days.flatMap((d) => d.exercises).filter((e) => e.tags.includes('Rear delts'));
     expect(rear.length).toBeGreaterThan(0);
     for (const e of rear) expect(e.muscle).toBe('Back');
+  });
+
+  it('Forearms is a specific target (D5): wrist and reverse curls on a pulling or arms day, counted as Forearms only', () => {
+    const p = build({}, answers({ specific: ['Forearms'] }));
+    const forearm = p.days.flatMap((d) => d.exercises).filter((e) => e.muscle === 'Forearms');
+    expect(forearm.length).toBeGreaterThan(0);
+    for (const e of forearm) expect(['barbell-wrist-curl', 'barbell-reverse-curl', 'barbell-reverse-wrist-curl']).toContain(e.key);
+    expect(p.weekly.Forearms ?? 0).toBeGreaterThanOrEqual(4);
+    // Not targeted: no forearm work and no Forearms row.
+    expect(build().days.flatMap((d) => d.exercises).some((e) => e.muscle === 'Forearms')).toBe(false);
+    expect(pbChartMuscles(answers({ specific: ['Forearms'] }))).toContain('Forearms');
+    expect(pbChartMuscles(answers())).not.toContain('Forearms');
   });
 
   it('abs: 10 a week by default, 14 with Core or Fitness, 6 on Maintain, his number when he changes it', () => {

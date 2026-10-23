@@ -35,8 +35,9 @@ describe('plan builder view', () => {
     expect(prefQuestions(a).map((g) => g.group)).toEqual(['Chest', 'Legs', 'Back', 'Shoulders']);
     const all = targetChoices(() => true);
     expect(all).toContain('Rear delts');
-    // No forearm exercise in the catalogue yet: never offered.
-    expect(all).not.toContain('Forearms');
+    // (D5) Forearms is offered once the gym can do a wrist or reverse curl (barbell); never without one.
+    expect(all).toContain('Forearms');
+    expect(targetChoices((k) => !k.startsWith('barbell-'))).not.toContain('Forearms');
     expect(targetChoices((k) => k !== 'cable-woodchop')).not.toContain('Obliques');
   });
 
