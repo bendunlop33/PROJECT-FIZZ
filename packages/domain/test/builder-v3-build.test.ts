@@ -18,6 +18,7 @@ import {
   setWorkingCount,
   fitCarryOver,
   fitSetValue,
+  applyAccessoryStyleTo,
   type BuilderSetup,
   type BuilderWorkout,
   type SetupIdentity,
@@ -394,5 +395,49 @@ describe('fit value and the week’s carry-over (fit-to-time 22 Oct revision)', 
     if (bench === undefined) throw new Error('no bench');
     const lessMain: BuilderWorkout = { ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === bench.key ? setWorkingCount(s, 1) : s)) })) };
     expect(fitCarryOver(w, lessMain, info, 'Chest')).toBeNull();
+  });
+});
+
+describe('Accessories style on Your workout (D3: Today’s Accessories moved there)', () => {
+  const ctx = context();
+  const setup = (accessories: 'focused' | 'varied'): BuilderSetup & SetupIdentity => ({ minutes: 120, mainLiftExerciseId: 'bench', supersets: false, groups: chestGroups, accessories, dayId: 'chest', variationId: null });
+  const chestAcc = (w: BuilderWorkout) => all(w).filter((s) => !s.main && info(s.exerciseId)?.group === 'Chest');
+  const sets = (s: { rows: readonly { type: string }[] }) => s.rows.filter((r) => r.type !== 'warmup').length;
+
+  it('Focused → Varied: three main-group accessories at 2 sets, the new one at another angle; the main lift and other groups untouched', () => {
+    const focused = buildFromSetup(setup('focused'), pool, ctx, { trim: false }).workout;
+    expect(chestAcc(focused).map(sets)).toEqual([3, 3]);
+    const r = mergeSetupChange(setup('focused'), setup('varied'), focused, pool, ctx);
+    if (r.kind !== 'merged') throw new Error(r.kind);
+    expect(r.changes).toEqual([{ kind: 'accessories', style: 'varied' }]);
+    const acc = chestAcc(r.workout);
+    expect(acc.map(sets)).toEqual([2, 2, 2]);
+    expect(new Set(acc.map((s) => info(s.exerciseId)?.angle)).size).toBe(3);
+    expect(all(r.workout)[0]).toEqual(all(focused)[0]);
+    const others = (w: BuilderWorkout) => all(w).filter((s) => !s.main && info(s.exerciseId)?.group !== 'Chest');
+    expect(others(r.workout)).toEqual(others(focused));
+  });
+
+  it('Varied → Focused: one goes (one Ben didn’t edit, from the end); an accessory Ben edited keeps his sets', () => {
+    const varied = buildFromSetup(setup('varied'), pool, ctx, { trim: false }).workout;
+    const acc = chestAcc(varied);
+    const mine = acc[acc.length - 1];
+    if (mine === undefined) throw new Error('no accessory');
+    const edited: BuilderWorkout = { ...varied, blocks: varied.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === mine.key ? { ...setWorkingCount(s, 4), touched: true as const } : s)) })) };
+    const r = mergeSetupChange(setup('varied'), setup('focused'), edited, pool, ctx);
+    if (r.kind !== 'merged') throw new Error(r.kind);
+    const after = chestAcc(r.workout);
+    expect(after).toHaveLength(2);
+    expect(after.find((s) => s.key === mine.key)?.rows.filter((x) => x.type !== 'warmup')).toHaveLength(4);
+    expect(after.filter((s) => s.key !== mine.key).map(sets)).toEqual([3]);
+  });
+
+  it('the same style again changes nothing; a Set up with no style never gets one', () => {
+    const focused = buildFromSetup(setup('focused'), pool, ctx, { trim: false }).workout;
+    expect(mergeSetupChange(setup('focused'), setup('focused'), focused, pool, ctx).kind).toBe('unchanged');
+    const plain = { ...setup('focused') };
+    delete plain.accessories;
+    expect(mergeSetupChange(plain, { ...plain, supersets: true }, focused, pool, ctx).kind).toBe('merged');
+    expect(applyAccessoryStyleTo(focused, 'focused', 'Chest', pool, ctx).added).toEqual([]);
   });
 });
