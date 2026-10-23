@@ -19,6 +19,7 @@ import {
   pickerSections,
   searchExerciseRows,
   searchExercises,
+  withBroadGroup,
   type BrowseEntry,
   type ExerciseFilters,
   type ProgressExercise,
@@ -196,20 +197,65 @@ describe('Last on each row: an actual, in its own unit and convention (§9.3 lin
 describe('buildExerciseBrowseView (§9.3)', () => {
   const base = { entries: ENTRIES, filters: NO_FILTERS, gym: NO_CABLE, recentIds: [ARNOLD.id, RDL.id], last: lastActualByExercise(SESSIONS), gymNames: { [GYM]: 'Main Gym', [HOTEL]: 'Hotel Gym' }, today: '2026-10-08' };
 
-  it('no query: RECENT then ALL EXERCISES · N (every exercise, done or not); rows read `Last … · date`', () => {
+  it('no query: RECENT then every exercise by broad group (D5), done or not; rows read `Last … · date`', () => {
     const v = buildExerciseBrowseView({ ...base, query: '' });
-    expect(v.sections.map((s) => s.title)).toEqual(['RECENT', `ALL EXERCISES · ${String(ALL.length)}`]);
+    expect(v.sections[0]?.title).toBe('RECENT');
     expect(v.sections[0]?.rows.map((r) => r.name)).toEqual(['Arnold press', 'Romanian deadlift']);
-    const rdl = v.sections[1]?.rows.find((r) => r.name === 'Romanian deadlift');
+    const listed = v.sections.slice(1).flatMap((s) => s.rows);
+    expect(listed).toHaveLength(ALL.length);
+    const byName = (n: string) => listed.find((r) => r.name === n);
+    const rdl = byName('Romanian deadlift');
     expect(plain(rdl?.line2)).toBe('Barbell · Hamstrings');
     expect(plain(rdl?.line3)).toBe('Last 120 kg × 8 · 3 Oct');
     expect(rdl?.hasGuide).toBe(true);
     // Never done: no third line.
-    expect(v.sections[1]?.rows.find((r) => r.name === 'Cable fly')?.line3).toBeNull();
+    expect(byName('Cable fly')?.line3).toBeNull();
     // Done at another gym: says where.
-    expect(plain(v.sections[1]?.rows.find((r) => r.name === 'Dumbbell bench press')?.line3)).toBe('Last 32.5 kg each × 8 · 4 Oct at Hotel Gym');
+    expect(plain(byName('Dumbbell bench press')?.line3)).toBe('Last 32.5 kg each × 8 · 4 Oct at Hotel Gym');
     expect(v.gymChip).toEqual({ label: 'At Main Gym', enabled: true });
     expect(v.hiddenText).toBeNull();
+  });
+
+  it('D5: by broad group in chip order, A–Z within; Legs and Arms under part sub-headings; cardio and carries under OTHER', () => {
+    const more = [
+      exercise(20, 'Hip thrust', { movementPattern: 'hinge', primaryMuscles: ['glutes', 'hamstrings'] }),
+      exercise(21, 'Leg extension', { movementPattern: 'squat', primaryMuscles: ['quads'], compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' }),
+      exercise(22, 'Tibialis raise', { movementPattern: 'calves', primaryMuscles: ['tibialis'] }),
+      exercise(23, 'Triceps pushdown', { movementPattern: 'arms', primaryMuscles: ['triceps'], compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' }),
+      exercise(24, 'Wrist curl', { movementPattern: 'arms', primaryMuscles: ['forearms'] }),
+      exercise(25, 'Face pull', { movementPattern: 'horizontal_pull', primaryMuscles: ['rear_delts'], compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' }),
+      exercise(26, 'Rower', { movementPattern: 'conditioning', primaryMuscles: ['lats', 'quads'], compatibleEquipment: ['erg'], measurement: 'cardio' }),
+      exercise(27, 'Farmer carry', { movementPattern: 'carry', primaryMuscles: ['grip', 'traps'], compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand', measurement: 'distance' }),
+    ];
+    const v = buildExerciseBrowseView({ ...base, entries: [...ENTRIES, ...more.map((e) => entry(e))], recentIds: [], query: '' });
+    expect(v.sections.map((s) => [s.key, s.title])).toEqual([
+      ['group:Chest', 'CHEST'],
+      ['group:Back', 'BACK'],
+      ['group:Shoulders', 'SHOULDERS'],
+      ['group:Legs', 'LEGS'],
+      ['group:Arms', 'ARMS'],
+      ['group:Core', 'CORE'],
+      ['other', 'OTHER'],
+    ]);
+    const sec = (k: string) => v.sections.find((s) => s.key === k);
+    expect(sec('group:Chest')?.rows.map((r) => r.name)).toEqual(['Bench press', 'Cable fly', 'Dumbbell bench press', 'Push-up']);
+    expect(sec('group:Chest')?.parts).toBeNull();
+    // Rear delts are Back (D5).
+    expect(sec('group:Back')?.rows.map((r) => r.name)).toEqual(['Assisted pull-up', 'Face pull']);
+    expect(sec('group:Legs')?.parts?.map((p) => [p.title, p.rows.map((r) => r.name)])).toEqual([
+      ['Quads', ['Leg extension']],
+      ['Hamstrings', ['Dumbbell Romanian deadlift', 'Hip thrust', 'Romanian deadlift', 'Single-leg RDL']],
+      ['Calves', ['Tibialis raise']],
+    ]);
+    expect(sec('group:Legs')?.rows).toHaveLength(6);
+    expect(sec('group:Arms')?.parts?.map((p) => [p.title, p.rows.map((r) => r.name)])).toEqual([
+      ['Triceps', ['Triceps pushdown']],
+      ['Forearms', ['Wrist curl']],
+    ]);
+    expect(sec('other')?.rows.map((r) => r.name)).toEqual(['Farmer carry', 'Rower']);
+    // A chip narrows the list to that group's sections.
+    const legs = buildExerciseBrowseView({ ...base, entries: [...ENTRIES, ...more.map((e) => entry(e))], recentIds: [], query: '', filters: withBroadGroup(NO_FILTERS, 'Legs') });
+    expect(legs.sections.map((s) => s.key)).toEqual(['group:Legs', 'other']);
   });
 
   it('query: MATCHES with the alias shown; no match says so', () => {

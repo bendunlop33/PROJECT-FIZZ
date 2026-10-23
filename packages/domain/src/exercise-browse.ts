@@ -1,7 +1,7 @@
-import type { EquipmentInstance, Exercise, ExerciseEquipmentKind, WeightUnit } from '@fizz/schemas';
+import { isBuilderStrength, type EquipmentInstance, type Exercise, type ExerciseEquipmentKind, type MuscleGroup, type WeightUnit } from '@fizz/schemas';
 
 import { cardioValuesText, distanceLoadText, formatDistance, formatDuration, loadText, NBSP } from './display';
-import { activeFilterCount, MOVEMENT_FILTER_LABEL, muscleGroupsOf, searchExerciseRows, type ExerciseFilters, type ExerciseMatch, type MovementFilter, type SearchableEntry } from './exercise-search';
+import { activeFilterCount, BROAD_MUSCLE_GROUPS, MOVEMENT_FILTER_LABEL, muscleGroupsOf, searchExerciseRows, type BroadMuscleGroup, type ExerciseFilters, type ExerciseMatch, type MovementFilter, type SearchableEntry } from './exercise-search';
 import { collectExerciseSeries, type ExerciseSeries } from './progress/exercise';
 import { longDate, shortDate, type ExerciseDetailView } from './progress/exercise-view';
 import type { ProgressExercise, ProgressSession, ProgressSet } from './progress/projection';
@@ -143,11 +143,50 @@ export interface BrowseRowView {
   accessibilityLabel: string;
 }
 
-export interface BrowseSectionView {
-  key: 'recent' | 'all' | 'matches';
-  /** `RECENT`, `ALL EXERCISES · 142`, `MATCHES`. */
+/** A part's sub-heading inside a broad group (`Quads` under Legs, `Triceps` under Arms) and its rows. */
+export interface BrowsePartView {
   title: string;
   rows: BrowseRowView[];
+}
+
+export interface BrowseSectionView {
+  /** `group:Legs`: one broad muscle group (D5); `other`: cardio, conditioning and carries, or no known muscle. */
+  key: 'recent' | 'matches' | 'other' | `group:${BroadMuscleGroup}`;
+  /** `RECENT`, `CHEST`, `LEGS`, `OTHER`, `MATCHES`. */
+  title: string;
+  /** Every row of the section, in order (with `parts`, the parts' rows one after the other). */
+  rows: BrowseRowView[];
+  /** Legs and Arms: their parts under sub-headings, empty ones left out. Null: no sub-headings. */
+  parts: BrowsePartView[] | null;
+}
+
+/**
+ * (D5, Ben 22–23 Oct; prototype `renderLibrary`) Library › Exercises lists by broad group, and Legs and Arms by
+ * part. Glutes list under Hamstrings and shins under Calves (as they count); forearm work under Arms.
+ */
+const BROWSE_PARTS: Readonly<Partial<Record<BroadMuscleGroup, readonly string[]>>> = {
+  Legs: ['Quads', 'Hamstrings', 'Calves'],
+  Arms: ['Biceps', 'Triceps', 'Forearms'],
+};
+const BROWSE_PLACE: Readonly<Record<MuscleGroup, { group: BroadMuscleGroup; part: string | null }>> = {
+  Chest: { group: 'Chest', part: null },
+  Back: { group: 'Back', part: null },
+  Shoulders: { group: 'Shoulders', part: null },
+  Quads: { group: 'Legs', part: 'Quads' },
+  Hamstrings: { group: 'Legs', part: 'Hamstrings' },
+  Glutes: { group: 'Legs', part: 'Hamstrings' },
+  Calves: { group: 'Legs', part: 'Calves' },
+  Biceps: { group: 'Arms', part: 'Biceps' },
+  Triceps: { group: 'Arms', part: 'Triceps' },
+  Forearms: { group: 'Arms', part: 'Forearms' },
+  Core: { group: 'Core', part: null },
+};
+
+/** Where an exercise is listed: its first primary muscle's broad group (and part); null for cardio, conditioning, carries or no known muscle. */
+export function browsePlaceOf(e: Pick<Exercise, 'primaryMuscles' | 'movementPattern' | 'measurement'>): { group: BroadMuscleGroup; part: string | null } | null {
+  if (!isBuilderStrength(e)) return null;
+  const g = muscleGroupsOf(e)[0];
+  return g === undefined ? null : BROWSE_PLACE[g];
 }
 
 export interface ExerciseBrowseView {
@@ -219,7 +258,7 @@ export function buildExerciseBrowseView(input: BrowseInput): ExerciseBrowseView 
   const sections: BrowseSectionView[] = [];
   const searching = input.query.trim() !== '';
   if (searching) {
-    if (rows.length > 0) sections.push({ key: 'matches', title: 'MATCHES', rows: rows.map(view) });
+    if (rows.length > 0) sections.push({ key: 'matches', title: 'MATCHES', rows: rows.map(view), parts: null });
   } else {
     const byId = new Map(rows.map((r) => [r.entry.exercise.id, r]));
     const recent = input.recentIds.flatMap((id) => {
@@ -227,8 +266,25 @@ export function buildExerciseBrowseView(input: BrowseInput): ExerciseBrowseView 
       return r === undefined ? [] : [r];
     });
     const limited = recent.slice(0, input.recentLimit ?? 10);
-    if (limited.length > 0) sections.push({ key: 'recent', title: 'RECENT', rows: limited.map(view) });
-    if (rows.length > 0) sections.push({ key: 'all', title: `ALL EXERCISES · ${String(rows.length)}`, rows: rows.map(view) });
+    if (limited.length > 0) sections.push({ key: 'recent', title: 'RECENT', rows: limited.map(view), parts: null });
+    // (D5) Then every exercise by broad group (A–Z within), Legs and Arms by part.
+    const placed = rows.map((r) => ({ r, at: browsePlaceOf(r.entry.exercise) }));
+    for (const g of BROAD_MUSCLE_GROUPS) {
+      const inGroup = placed.filter((x) => x.at?.group === g);
+      if (inGroup.length === 0) continue;
+      const partNames = BROWSE_PARTS[g];
+      if (partNames === undefined) {
+        sections.push({ key: `group:${g}`, title: g.toUpperCase(), rows: inGroup.map((x) => view(x.r)), parts: null });
+        continue;
+      }
+      const parts = partNames.flatMap((title) => {
+        const list = inGroup.filter((x) => x.at?.part === title).map((x) => view(x.r));
+        return list.length === 0 ? [] : [{ title, rows: list }];
+      });
+      sections.push({ key: `group:${g}`, title: g.toUpperCase(), rows: parts.flatMap((p) => p.rows), parts });
+    }
+    const other = placed.filter((x) => x.at === null);
+    if (other.length > 0) sections.push({ key: 'other', title: 'OTHER', rows: other.map((x) => view(x.r)), parts: null });
   }
   const gymName = input.gym?.name ?? null;
   return {

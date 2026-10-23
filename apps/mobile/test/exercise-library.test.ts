@@ -43,10 +43,14 @@ describe('browse outside a workout (EL-B1–EL-B4, EL-B15)', () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
     const b = await browse(s);
-    const all = b.view.sections.find((x) => x.key === 'all');
-    expect(all?.title).toMatch(/^ALL EXERCISES · \d+$/);
-    expect(all?.rows.length).toBeGreaterThan(100);
-    expect(all?.rows.some((r) => r.name === 'Arnold press')).toBe(true);
+    // (D5) Every exercise by broad group, Legs and Arms by part, then cardio and carries under OTHER.
+    expect(b.view.sections.map((x) => x.title)).toEqual(['CHEST', 'BACK', 'SHOULDERS', 'LEGS', 'ARMS', 'CORE', 'OTHER']);
+    const rows = b.view.sections.flatMap((x) => x.rows);
+    expect(rows.length).toBeGreaterThan(100);
+    expect(new Set(rows.map((r) => r.exerciseId)).size).toBe(rows.length);
+    expect(b.view.sections.find((x) => x.key === 'group:Shoulders')?.rows.some((r) => r.name === 'Arnold press')).toBe(true);
+    expect(b.view.sections.find((x) => x.key === 'group:Legs')?.parts?.map((p) => p.title)).toEqual(['Quads', 'Hamstrings', 'Calves']);
+    expect(b.view.sections.find((x) => x.key === 'group:Arms')?.parts?.map((p) => p.title)).toEqual(['Biceps', 'Triceps', 'Forearms']);
     expect(b.view.sections.some((x) => x.key === 'recent')).toBe(false);
     expect(b.resume).toBeNull();
   });

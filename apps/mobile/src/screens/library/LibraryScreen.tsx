@@ -154,9 +154,19 @@ function ExercisesBrowse() {
                 <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header" numeric>
                   {section.title}
                 </AppText>
-                {section.rows.map((row, i) => (
-                  <BrowseRow key={row.exerciseId} row={row} first={i === 0} onPress={() => { open(row); }} />
-                ))}
+                {section.parts === null
+                  ? section.rows.map((row, i) => <BrowseRow key={row.exerciseId} row={row} first={i === 0} onPress={() => { open(row); }} />)
+                  : section.parts.map((part) => (
+                      // (D5) Legs and Arms by part: `Quads`, `Hamstrings`, `Calves`; `Biceps`, `Triceps`, `Forearms`.
+                      <View key={part.title} style={{ gap: theme.space['1'] }}>
+                        <AppText variant="label" color="text.secondary" accessibilityRole="header">
+                          {part.title}
+                        </AppText>
+                        {part.rows.map((row, i) => (
+                          <BrowseRow key={row.exerciseId} row={row} first={i === 0} onPress={() => { open(row); }} />
+                        ))}
+                      </View>
+                    ))}
               </View>
             ))}
             {view.hiddenText !== null ? (
