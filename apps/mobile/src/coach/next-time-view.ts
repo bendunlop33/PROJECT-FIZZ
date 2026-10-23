@@ -76,7 +76,8 @@ function coachRow(r: NextSessionTargetRecord, builtIn: NextTimeRow | undefined, 
         actions: used ? [] : [{ label: 'Use coach target', tap: 'use_coach' }],
       };
     case 'proposed':
-      return { ...base, target, tag: 'Suggested', why, actions: used ? [] : [{ label: 'Not now', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] };
+      // (Ben, 23 Oct; D2) An offer reads `Skip` / `Apply` (was `Not now`).
+      return { ...base, target, tag: 'Suggested', why, actions: used ? [] : [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] };
     case 'not_applied':
       return {
         ...base,

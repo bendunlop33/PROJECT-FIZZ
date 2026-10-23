@@ -392,7 +392,7 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     expect(row).toMatchObject({ size: 'bigger', status: 'proposed' });
     const summary = await s.workout.summary(second, 'connected');
     const view = nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: [row], availability: await s.coach.availability(), reviewing: false });
-    expect(view?.rows.find((r) => r.exerciseName === 'Bench press')).toMatchObject({ tag: 'Suggested', actions: [{ label: 'Not now', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] });
+    expect(view?.rows.find((r) => r.exerciseName === 'Bench press')).toMatchObject({ tag: 'Suggested', actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] });
     // Until Ben applies it, next time is the built-in rule's, not 57.5.
     expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('57.5');
     expect(await s.coach.tapNextTarget(row, 'apply', 'tap-apply')).toMatchObject({ status: 'written', row: { status: 'applied' } });
@@ -401,6 +401,40 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     if (!applied) throw new Error('no row');
     expect(await s.coach.tapNextTarget(applied, 'undo', 'tap-undo')).toMatchObject({ status: 'written', row: { status: 'proposed' } });
     expect(plain((await s.next.preview(gymId))?.targets[0]?.line)).not.toContain('57.5');
+  });
+
+  it('Ben, 23 Oct (v5offers SP1): an extra set the coach suggests unasked is offered on the Summary with Skip / Apply, never dropped or saved by default; Apply plans it, Skip keeps the count', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 6, rpe: 8 }, { load: 60, reps: 6, rpe: 8 }, { load: 60, reps: 6, rpe: 8 }] }]);
+    model = new StepModel([
+      (req) => {
+        const w = yourData(req).workout;
+        return call('set_next_session_targets', { sourceSessionId: w.sessionId, sourceVersion: w.version, targets: [{ exerciseId: w.exercises[0]?.exerciseId, target: { load: null, reps: null }, sets: 4, reason: 'Room for one more.' }] });
+      },
+      () => reply('Room for one more.'),
+    ]);
+    await s.coach.runSummaryTurn(first);
+    const [row] = await s.coach.nextTargets(first);
+    if (!row) throw new Error('no row');
+    expect(row).toMatchObject({ size: 'bigger', status: 'proposed', sets: 4 });
+    const summary = await s.workout.summary(first, 'connected');
+    const view = nextTimeView({ title: 'Workout', builtIn: summary?.nextTime ?? null, coachRows: [row], availability: await s.coach.availability(), reviewing: false });
+    expect(view?.rows.find((r) => r.exerciseName === 'Bench press')).toMatchObject({ tag: 'Suggested', actions: [{ label: 'Skip', tap: 'not_now' }, { label: 'Apply', tap: 'apply' }] });
+    expect(view?.rows.find((r) => r.exerciseName === 'Bench press')?.target).toContain('4 sets');
+    const workingNext = async () => {
+      h.clockMs += 86_400_000;
+      const st = await s.workout.start({ gymId, opId: h.ids(), checkIn: null, nextOf: first });
+      if (!st.ok) throw new Error(st.error.message);
+      const n = st.aggregate.sets.filter((x) => x.setType !== 'warmup').length;
+      const d = await s.workout.load(st.aggregate.session.id);
+      const r = await s.workout.dispatch(st.aggregate.session.id, { type: 'discard', at: h.now(), opId: h.ids(), expectedVersion: d?.aggregate.session.version ?? 0, confirmedLoggedSets: 0 });
+      if (!r.ok) throw new Error(r.error.message);
+      return n;
+    };
+    expect(await workingNext()).toBe(3);
+    expect(await s.coach.tapNextTarget(row, 'apply', 'tap-apply-extra')).toMatchObject({ status: 'written', row: { status: 'applied' } });
+    expect(await workingNext()).toBe(4);
   });
 
   it('Undo on the row puts the built-in rule back for the next session; offline or not connected, the built-in rule is labelled and no call is made', async () => {

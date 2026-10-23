@@ -15,7 +15,8 @@ import { nextTargetBlocks } from '../session/gym-switch';
  * - a pain-flagged movement never goes up (rule 9);
  * - `classifyNextSessionChange` decides what counts as a **small** change,
  *   which is saved by default, and what is **bigger**, which is a proposal
- *   Ben applies. An extra set he didn't ask for is dropped (D1). A stall
+ *   Ben applies. An extra set he didn't ask for is bigger: offered with Apply
+ *   (Ben, 23 Oct; was dropped, D1). A stall
  *   reset (playbook rule 8) is always bigger (Ben, 23 Oct, D2: stall resets
  *   always need Apply).
  */
@@ -80,21 +81,22 @@ export interface NextChangeClass {
   size: NextChangeSize;
   /** Why it isn't small (app text, for `Why?`); empty when small. */
   reasons: string[];
-  /** The set count to save: an unasked +1 is dropped back to the last count. */
+  /** The set count to save. */
   setsAfter: number;
-  /** An extra set was dropped (D1). */
-  droppedExtraSet: boolean;
 }
+
+/** (Ben, 23 Oct; review v5offers SP1) CA8's `bigger` reason for a +1 set Ben didn't ask for (app text, behind `Why?`). */
+export const EXTRA_SET_REASON = 'Extra set you didn’t ask for.';
 
 /**
  * CA8: small = the load stays or moves exactly one achievable step on this
  * equipment, the rep range moves by at most 2 at either end, the set
- * count changes by at most one (+1 only when Ben asked), and the target RPE
+ * count changes by at most one (+1 only when Ben asked: unasked it is bigger), and the target RPE
  * stays (a coach `rpe` that differs from the last target's is bigger, as CA8
  * says "effort targets … don't change"). Anything else is
  * bigger. With no equipment, any load change is bigger: a step can't be
  * measured (rule 4). A stall reset (`isStallReset`) is always bigger, even
- * one step (CA8; D2, 23 Oct).
+ * one step (CA8; D2, 23 Oct), and so is a +1 set Ben didn't ask for (Ben, 23 Oct).
  */
 export function classifyNextSessionChange(
   last: CoachTarget,
@@ -124,15 +126,12 @@ export function classifyNextSessionChange(
   }
   // CA8: effort targets don't change by default; a new target RPE is Ben's to apply.
   if (after.rpe != null && after.rpe !== (last.rpe ?? null)) reasons.push('The effort target changes.');
-  let setsAfter = afterSets;
-  let droppedExtraSet = false;
   const delta = afterSets - lastSets;
   if (Math.abs(delta) > 1) reasons.push('Sets change by more than one.');
-  else if (delta === 1 && !ctx.benAskedForMoreSets) {
-    setsAfter = lastSets;
-    droppedExtraSet = true;
-  }
-  return { size: reasons.length === 0 ? 'small' : 'bigger', reasons, setsAfter, droppedExtraSet };
+  // (Ben, 23 Oct; D2, v5offers SP1) A +1 Ben didn't ask for is offered on the Summary with Apply / Skip, never dropped
+  // and never saved by default; applying it counts as asking (playbook D1).
+  else if (delta === 1 && !ctx.benAskedForMoreSets) reasons.push(EXTRA_SET_REASON);
+  return { size: reasons.length === 0 ? 'small' : 'bigger', reasons, setsAfter: afterSets };
 }
 
 export interface NextSessionRow {
@@ -230,7 +229,6 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
       continue;
     }
     const cls = classifyNextSessionChange(basis.last, basis.lastSets, after, wantSets, basis.equipment, { ...input.ctx, stalled: basis.stalled === true });
-    if (cls.droppedExtraSet) notes.push({ kind: 'too_many_sets', setIds: [], text: 'No extra set: only when you ask for more.' });
     const builtIn = basis.builtIn?.target ?? null;
     // Same as the built-in rule and the same set count: nothing for the coach to change.
     if (builtIn !== null && sameTarget(builtIn, after) && cls.setsAfter === (basis.builtIn?.sets ?? basis.lastSets)) continue;

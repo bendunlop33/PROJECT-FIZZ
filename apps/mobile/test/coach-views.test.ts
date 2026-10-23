@@ -255,7 +255,7 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
   it('undone → the built-in rule with Use coach target; proposed → Not now / Apply; used → no buttons', () => {
     const v = nextTimeView(input([coachRow(1, 'undone'), coachRow(2, 'proposed')]));
     expect(v?.rows[0]).toMatchObject({ tag: 'Rule', target: 'Target 61 kg × 8–10', actions: [{ label: 'Use coach target' }] });
-    expect(v?.rows[1]).toMatchObject({ tag: 'Suggested', actions: [{ label: 'Not now' }, { label: 'Apply' }] });
+    expect(v?.rows[1]).toMatchObject({ tag: 'Suggested', actions: [{ label: 'Skip' }, { label: 'Apply' }] });
     expect(v?.undoAll).toBeNull();
     const used = nextTimeView(input([coachRow(1, 'saved', { usedBySessionId: ID(99) })]));
     expect(used?.rows[0]).toMatchObject({ actions: [], note: 'Used' });

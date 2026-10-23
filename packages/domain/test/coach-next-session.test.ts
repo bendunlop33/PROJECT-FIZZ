@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CoachTarget, NextSessionTarget, PainFlag, SessionAggregate, SessionExercise } from '@fizz/schemas';
-import { classifyNextSessionChange, isStallReset, nextSessionBases, nextTargetFitsSource, nextTargetSourceBasis, pctText, STALL_RESET_REASON, validateNextSessionTargets, type NextSessionBasis } from '../src/index';
+import { classifyNextSessionChange, isStallReset, nextSessionBases, nextTargetFitsSource, nextTargetSourceBasis, pctText, STALL_RESET_REASON, EXTRA_SET_REASON, validateNextSessionTargets, type NextSessionBasis } from '../src/index';
 import { assisted, barbell, dumbbells, id, kg, lb, OWNER } from './fixtures';
 
 const t = (load: number | null, min: number, max: number, convention: 'total' | 'per_hand' | 'assistance' = 'total', unit: 'kg' | 'lb' = 'kg'): CoachTarget => ({
@@ -24,12 +24,12 @@ describe('classifyNextSessionChange (CA8, coach-adjustments check 27)', () => {
     expect(pctText(-2.5)).toBe('−2.5%');
   });
 
-  it('reps by at most 2 at either end; sets by at most one, +1 only when Ben asked (D1)', () => {
+  it('reps by at most 2 at either end; sets by at most one; an unasked +1 is bigger (offered, Ben 23 Oct)', () => {
     expect(classifyNextSessionChange(t(100, 8, 10), 3, t(100, 8, 12), 3, bar, ctx).size).toBe('small');
     expect(classifyNextSessionChange(t(100, 8, 10), 3, t(100, 12, 15), 3, bar, ctx).size).toBe('bigger');
     expect(classifyNextSessionChange(t(100, 8, 10), 4, t(100, 8, 10), 3, bar, ctx).size).toBe('small');
-    expect(classifyNextSessionChange(t(100, 8, 10), 3, t(100, 8, 10), 4, bar, ctx)).toMatchObject({ size: 'small', setsAfter: 3, droppedExtraSet: true });
-    expect(classifyNextSessionChange(t(100, 8, 10), 3, t(100, 8, 10), 4, bar, { benAskedForMoreSets: true })).toMatchObject({ size: 'small', setsAfter: 4, droppedExtraSet: false });
+    expect(classifyNextSessionChange(t(100, 8, 10), 3, t(100, 8, 10), 4, bar, ctx)).toEqual({ size: 'bigger', reasons: [EXTRA_SET_REASON], setsAfter: 4 });
+    expect(classifyNextSessionChange(t(100, 8, 10), 3, t(100, 8, 10), 4, bar, { benAskedForMoreSets: true })).toEqual({ size: 'small', reasons: [], setsAfter: 4 });
     expect(classifyNextSessionChange(t(100, 8, 10), 3, t(100, 8, 10), 5, bar, ctx).size).toBe('bigger');
   });
 
@@ -121,10 +121,12 @@ describe('validateNextSessionTargets (rule 4 snap and cap, rule 9 pain, D21)', (
     expect(r.dropped.map((n) => n.kind)).toEqual(['convention_mismatch', 'unknown_target']);
   });
 
-  it('an extra set Ben didn’t ask for is dropped with a note; the rest of the change stays', () => {
+  it('Ben, 23 Oct (v5offers SP1): an extra set Ben didn’t ask for is offered (bigger, with the set), never dropped; the same change with only the extra set is kept too', () => {
     const r = validateNextSessionTargets({ source, bases, targets: [ask(BENCH.exerciseId, t(97.5, 6, 8), 4)], painFlags: [], gymName: null, ctx });
-    expect(r.rows[0]).toMatchObject({ sets: 3, size: 'small' });
-    expect(r.rows[0]?.guardNotes.map((n) => n.kind)).toContain('too_many_sets');
+    expect(r.rows[0]).toMatchObject({ sets: 4, size: 'bigger', reasons: [EXTRA_SET_REASON] });
+    expect(r.rows[0]?.guardNotes.map((n) => n.kind)).not.toContain('too_many_sets');
+    const only = validateNextSessionTargets({ source, bases, targets: [ask(BENCH.exerciseId, bases[0]?.builtIn?.target ?? t(0, 1, 1), 4)], painFlags: [], gymName: null, ctx });
+    expect(only.rows[0]).toMatchObject({ sets: 4, size: 'bigger', reasons: [EXTRA_SET_REASON] });
   });
 });
 
