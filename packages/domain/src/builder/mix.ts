@@ -1,5 +1,5 @@
 import { infoOrDefault } from './arrange';
-import type { BuilderInfoLookup, BuilderSlot, BuilderWorkout } from './types';
+import type { BuilderGroupName, BuilderInfoLookup, BuilderSlot, BuilderWorkout } from './types';
 
 /**
  * `↻ Mix it up` (workout-builder-v3 §2.0.2, Ben agreed 20 Oct). Code picks
@@ -107,4 +107,33 @@ export function mixItUpShortlist(input: MixShortlistInput): string[] {
 /** The offline pick: least recently done (labelled not reviewed by the UI). */
 export function mixItUpOfflinePick(shortlist: readonly string[]): string | null {
   return shortlist[0] ?? null;
+}
+
+export interface MixPickInput extends Omit<MixShortlistInput, 'target' | 'candidates' | 'inWorkout'> {
+  workout: BuilderWorkout;
+  /** Candidates of the target's group (Ben's list, then the catalogue). */
+  candidates: (group: BuilderGroupName) => readonly string[];
+  recentCountOnDay: ReadonlyMap<string, number>;
+  varied: boolean;
+}
+
+/**
+ * `mixItUpPick` (Ben, 23 Oct: `↻ Mix it up` on Your workout): the slot to swap and code's pick for it. The 20 Oct
+ * target first (`mixItUpTarget`); a target with no fresh option (every one here shares its angle, say) gives way to the
+ * next, never the main lift. The pick is the shortlist's first (least recently done). Null: no accessory has one.
+ */
+export function mixItUpPick(input: MixPickInput): { slot: BuilderSlot; exerciseId: string } | null {
+  const tried = new Set<string>();
+  const inWorkout = new Set(input.workout.blocks.flatMap((b) => b.slots.map((s) => s.exerciseId)));
+  for (;;) {
+    const masked: BuilderWorkout = { ...input.workout, blocks: input.workout.blocks.map((b) => ({ ...b, slots: b.slots.map((x) => (tried.has(x.key) ? { ...x, main: true } : x)) })) };
+    const target = mixItUpTarget({ workout: masked, info: input.info, recentCountOnDay: input.recentCountOnDay, varied: input.varied });
+    if (target === null) return null;
+    tried.add(target.key);
+    const group = input.info(target.exerciseId)?.group;
+    if (group === undefined) continue;
+    const pick = mixItUpShortlist({ ...input, target, candidates: input.candidates(group), inWorkout })[0];
+    const slot = input.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === target.key);
+    if (pick !== undefined && slot !== undefined) return { slot, exerciseId: pick };
+  }
 }

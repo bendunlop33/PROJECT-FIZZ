@@ -1170,6 +1170,18 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     };
   }
 
+  /**
+   * (Ben, 23 Oct; review todaylean SP3) `↻ Mix it up` on Your workout: the Mix it up facts of the day a builder draft is
+   * for (its recent sessions, when each exercise was last done, what's here and pain-flagged), the same ones Today's
+   * card used before D3. Null: not one of Today's days.
+   */
+  async function mixFactsFor(key: BuilderDraftKey): Promise<TodayMixFacts | null> {
+    const data = await load();
+    if (data === null) return null;
+    const day = dayOf(data, key.planId !== null && key.dayIndex !== null ? `plan:${key.planId}:${String(key.dayIndex)}` : `other:${key.splitDayId ?? '-'}`);
+    return day === null ? null : data.internal.mixFor(day);
+  }
+
   /** `start`: the draft as committed (version-checked, rule 5), through the one Start path. */
   async function start(req: { draftId: string; expectedVersion: number; gymId: string; opId: string; checkIn: SessionCheckIn | null }): Promise<TodayStartResult> {
     const p = await deps.profile();
@@ -1217,6 +1229,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     movedLine,
     commit,
     draftFor,
+    mixFactsFor,
     start,
     review,
     mixPick,

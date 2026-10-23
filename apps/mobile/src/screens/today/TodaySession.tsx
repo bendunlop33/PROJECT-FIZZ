@@ -381,7 +381,8 @@ function ToggleRow({ label, sub, value, onChange }: { label: string; sub?: strin
  * than one template), `Accessories` Focused | Varied, `Abs` and `Supersets`. The same 44 pt rows as the card had; each
  * tap is one change the service makes (with Undo), never computed here.
  */
-export function TodayOptionRows({ options, onChange }: { options: TodayOptions; onChange: (c: TodayOptionChange) => void }) {
+export function TodayOptionRows({ options, onChange, onMix }: { options: TodayOptions; onChange: (c: TodayOptionChange) => void; /** (Ben, 23 Oct) Your workout's fifth row, `↻ Mix it up`; absent: not shown. */ onMix?: () => void }) {
+  const theme = useTheme();
   return (
     <View>
       {options.mainLifts.length > 1 ? (
@@ -397,6 +398,13 @@ export function TodayOptionRows({ options, onChange }: { options: TodayOptions; 
       </ControlRow>
       <ToggleRow label={TODAY_V2_COPY.abs} value={options.abs} onChange={() => { onChange({ kind: 'abs', on: !options.abs }); }} />
       <ToggleRow label={TODAY_V2_COPY.supersets} value={options.supersets} onChange={() => { onChange({ kind: 'supersets', on: !options.supersets }); }} />
+      {onMix !== undefined ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Mix it up" onPress={onMix} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: ROW_H, opacity: pressed ? 0.7 : 1, gap: theme.space['2'] })}>
+          <AppText variant="callout" style={{ fontSize: 15 }}>
+            {TODAY_V2_COPY.mix}
+          </AppText>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

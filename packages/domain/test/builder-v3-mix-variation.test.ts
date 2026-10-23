@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyVariation, buildFromSetup, mixExclusion, mixItUpOfflinePick, mixItUpShortlist, mixItUpTarget, type BuilderWorkout, type MixShortlistInput, type VariationOp } from '../src/index';
+import { applyVariation, buildFromSetup, mixExclusion, mixItUpOfflinePick, mixItUpPick, mixItUpShortlist, mixItUpTarget, type BuilderWorkout, type MixShortlistInput, type VariationOp } from '../src/index';
 import { context, info, pool } from './builder-v3-fixture';
 
 const ids = (w: BuilderWorkout) => w.blocks.map((b) => b.slots.map((s) => s.exerciseId).join('+'));
@@ -133,5 +133,29 @@ describe('applyVariation (§4.3, Q17)', () => {
       [7, 'superset_full'],
     ]);
     expect(ids(r.workout)).toEqual(['bench', 'incline_db+cable_fly+pushdown+crunch', 'curl']);
+  });
+});
+
+describe('mixItUpPick (Ben, 23 Oct: ↻ Mix it up on Your workout)', () => {
+  const candidates = (g: string): readonly string[] => (g === 'Chest' ? ['crossover', 'pec_deck', 'incline_db', 'machine_press', 'cable_fly'] : g === 'Triceps' ? ['pushdown'] : g === 'Abs' ? ['crunch'] : []);
+  const facts = { info, candidates, availableHere: () => true, painFlagged: () => false, lastTwoOnDay: new Set<string>(), lastDoneMs: new Map<string, number>(), varied: false };
+
+  it('the 20 Oct target with its least recently done option; never the main lift', () => {
+    const w = chest(false);
+    const r = mixItUpPick({ ...facts, workout: w, recentCountOnDay: new Map([['cable_fly', 4]]), lastDoneMs: new Map([['crossover', 2], ['pec_deck', 1]]) });
+    expect([r?.slot.exerciseId, r?.exerciseId]).toEqual(['cable_fly', 'pec_deck']);
+  });
+
+  it('a target with no fresh option gives way to the next accessory', () => {
+    const w = chest(false);
+    // Pushdown is done most lately, but nothing else in Triceps here: Cable fly is mixed instead.
+    const r = mixItUpPick({ ...facts, workout: w, recentCountOnDay: new Map([['pushdown', 9], ['cable_fly', 1]]) });
+    expect(r?.slot.exerciseId).toBe('cable_fly');
+    expect(['crossover', 'pec_deck']).toContain(r?.exerciseId);
+  });
+
+  it('nothing fresh anywhere: null', () => {
+    const w = chest(false);
+    expect(mixItUpPick({ ...facts, workout: w, recentCountOnDay: new Map(), painFlagged: () => true })).toBeNull();
   });
 });

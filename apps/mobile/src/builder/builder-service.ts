@@ -98,6 +98,8 @@ import {
   templateLabel,
   type AccessoryStyle,
   type TodayControls,
+  type TodayMixFacts,
+  mixItUpPick,
 } from '@fizz/domain';
 import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { KeepNextTimeWrite, Store } from '@fizz/persistence';
@@ -166,6 +168,8 @@ export interface BuilderServiceDeps {
    * option merges into the workout as Set up's change does.
    */
   todayDraft?: (req: { key: BuilderDraftKey; controls: TodayControls }) => Promise<TodayOptionDraft | null>;
+  /** (Ben, 23 Oct) `↻ Mix it up` on Your workout: the Mix it up facts of the draft's day (Today's). Absent: not offered. */
+  todayMix?: (key: BuilderDraftKey) => Promise<TodayMixFacts | null>;
 }
 
 /** (D3 §2.3a) Today's code draft for one choice (`todayDraft`), fitted to Time, with the draft before the fit. */
@@ -319,7 +323,7 @@ export type BuilderWriteResult =
   | { status: 'written'; snapshot: BuilderSnapshot; toast: BuilderToast | null }
   | { status: 'replayed'; snapshot: BuilderSnapshot; toast: BuilderToast | null }
   | { status: 'stale' | 'closed'; snapshot: BuilderSnapshot | null; message: string }
-  | { status: 'refused'; reason: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since'; message: string; snapshot: BuilderSnapshot | null };
+  | { status: 'refused'; reason: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since' | 'nothing_to_mix'; message: string; snapshot: BuilderSnapshot | null };
 
 /** A toast after a write: text, and whether `Undo` goes with it. `why`: the advice's one-line reason. */
 export interface BuilderToast {
@@ -439,6 +443,9 @@ export const BUILDER_COPY = {
   roundedTo: (value: number, unit: string) => `Rounded to ${String(value)} ${unit}`,
   updated: (label: string) => `${label} updated`,
   saved: (label: string) => `${label} saved`,
+  /** (Ben, 23 Oct) `↻ Mix it up` with no fresh option for any accessory. */
+  nothingToMix: 'No other option',
+  mixed: (from: string, to: string) => `${from} → ${to}`,
 } as const;
 
 const REFUSAL_TEXT: Partial<Record<BuilderEditRefusal, string>> = {
@@ -1939,6 +1946,50 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         abs: hasAbs(untimed(stored, workout), env),
         supersets: stored.supersets,
       };
+    },
+
+    /**
+     * (Ben, 23 Oct; review todaylean SP3, workout-builder-v3 §2.3a) `↻ Mix it up` on Your workout (a workout Today drafted
+     * for a plan day): one accessory swapped for a fresh one with the 20 Oct rules (`mixItUpTarget`: never the main lift,
+     * a repeated angle first on Varied, then the one done most lately on this day; `mixItUpShortlist`: same group, another
+     * angle, same role, here, not pain-flagged, not in the day's last two sessions, not in the workout; least recently
+     * done first). Code's pick, offline; the swap is Ben's own (he tapped it), so Keep for next time lists it. One
+     * versioned write through `edit`, with `<from> → <to> · Undo`. Each tap mixes again from the workout as it now is.
+     */
+    async mixItUp(draftId: string, w: { opId: string; expectedVersion: number }): Promise<BuilderWriteResult> {
+      const p = await owner();
+      const d = await repos().workoutDrafts.get(draftId).catch(() => null);
+      const stored = d === null ? null : builderSetupOf(d);
+      const key = d?.builderKey;
+      const port = deps.todayMix;
+      if (d === null || d.ownerId !== p.id || key === undefined || !todayDrafted(stored) || key.planId === null || port === undefined) return { status: 'refused', reason: 'nothing_to_mix', message: BUILDER_COPY.nothingToMix, snapshot: null };
+      if (d.opIds.includes(w.opId)) {
+        // A retry of a mix already written: nothing more.
+        const now = await service.read(draftId);
+        return now === null ? { status: 'refused', reason: 'nothing_to_mix', message: BUILDER_COPY.nothingToMix, snapshot: null } : { status: 'replayed', snapshot: now, toast: null };
+      }
+      const facts = await port(key).catch(() => null);
+      const v = currentDraftVersion(d);
+      const workout = fromDraftPlan(v.plan, stored.restLevel ?? 'normal');
+      const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: exerciseIdsOf(workout), keySeed: `${d.id}:mix:${w.opId}` });
+      // The 20 Oct target first; one with no fresh option gives way to the next (`mixItUpPick`).
+      const mix =
+        facts === null
+          ? null
+          : mixItUpPick({
+              workout,
+              info: env.info,
+              candidates: facts.candidates,
+              recentCountOnDay: facts.recentCountOnDay,
+              varied: stored.accessories === 'varied',
+              availableHere: (id) => facts.availableHere(id) && env.doable(id),
+              painFlagged: (id) => facts.painFlagged(id) || env.painFlagged(id),
+              lastTwoOnDay: facts.lastTwoOnDay,
+              lastDoneMs: facts.lastDoneMs,
+            });
+      if (mix === null) return { status: 'refused', reason: 'nothing_to_mix', message: BUILDER_COPY.nothingToMix, snapshot: null };
+      const r = await service.edit(draftId, { kind: 'swap', slotKey: mix.slot.key, exerciseId: mix.exerciseId }, { opId: w.opId, basis: { version: w.expectedVersion } });
+      return r.status === 'written' ? { ...r, toast: { text: BUILDER_COPY.mixed(env.nameOf(mix.slot.exerciseId), env.nameOf(mix.exerciseId)), undoOpId: r.toast?.undoOpId ?? w.opId, why: r.toast?.why ?? null } } : r;
     },
 
     /**

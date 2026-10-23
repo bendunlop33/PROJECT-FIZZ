@@ -943,6 +943,8 @@ export function createAppServices(deps: AppServicesDeps) {
     coachUndone: (applyActionId) => coach.noteNextWorkoutChangeUndone(applyActionId),
     // (D3 §2.3a) Today's options on Your workout load Today's own draft for the choice (one draft and fit code).
     todayDraft: (req) => todaySession.draftFor(req),
+    // (Ben, 23 Oct) `↻ Mix it up` on Your workout reads the same Mix it up facts Today's card did.
+    todayMix: (key) => todaySession.mixFactsFor(key),
   });
 
   /**

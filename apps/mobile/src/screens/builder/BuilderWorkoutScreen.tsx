@@ -276,6 +276,20 @@ export function BuilderWorkoutScreen() {
     });
   }
 
+  /** (Ben, 23 Oct) `↻ Mix it up`: one accessory swapped for a fresh one, run after any edit in flight; `<from> → <to> · Undo`. */
+  function mixItUp(): Promise<void> {
+    return inTurn(async () => {
+      const cur = snapRef.current;
+      if (cur === null) return;
+      const r = await services.builder.mixItUp(cur.draftId, { opId: newUuid(), expectedVersion: cur.version });
+      if (r.snapshot !== null) setSnap(r.snapshot);
+      if (r.status === 'written') {
+        changed();
+        showToast(r.toast);
+      } else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
+    });
+  }
+
   /**
    * Your workout's bar (§2.6): the words go to the coach (`propose_workout_edit`); its proposal opens the sheet.
    * One request at a time, with `Asking…` on the bar meanwhile (wiring S3); a reply with nothing to apply stays
@@ -616,7 +630,7 @@ export function BuilderWorkoutScreen() {
           {/* (D3, §2.3a) Today's options in a compact table under the title, above the workout; their state is the snapshot's (review todaylean S1, S3). */}
           {todayView !== null ? (
             <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.space['3'] }}>
-              <TodayOptionRows options={todayView} onChange={(c) => void setTodayOption(c)} />
+              <TodayOptionRows options={todayView} onChange={(c) => void setTodayOption(c)} onMix={() => void mixItUp()} />
             </View>
           ) : null}
           {earlier.map((e) => (
