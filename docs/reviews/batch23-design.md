@@ -2,7 +2,7 @@
 
 Branch `claude/gracious-knuth-joxqpw`. I reviewed the builder's **uncommitted** working tree on top of `9261625`: 22 files under `docs/` (+971 / −387). Nothing in `apps/` or `packages/` changed. This commit adds only this review. The builder's changes are still unstaged, so the fix round should commit them, split by topic as the builder proposed.
 
-**Current verdict (re-review after fix round 2, 23 Oct): CHANGES NEEDED.** R1 and R2 are fixed in the prototypes and I confirmed both by running them, but the gate still fails as delivered: a new `check_app.mjs` case taps an exercise row with a DOM `click()`, which never opens its sheet, so `build_app.py` times out and every check after it (R2 click-through, S2, S1) never runs. With that one test fixed in a scratch copy, the whole click-through passes. See [Re-review 2](#re-review-2-23-oct-after-fix-round-2) at the end.
+**Current verdict (re-review 3, after fix round 3, 23 Oct): PASS.** R3 is fixed. `build_app.py` now reports `fixture check: ok` and `click-through check: ok` as delivered (about 158 s), so every R1, R2, S1 and S2 case runs and passes. The remaining items are not blocking: S5 and SP-A to SP-D are Ben's calls, and S6 is only partly fixed (a regression found in a later case still shows as a timeout). See [Re-review 3](#re-review-3-23-oct-after-fix-round-3) at the end.
 
 ## Verdict (round 1): CHANGES NEEDED
 
@@ -485,3 +485,46 @@ SP-A, SP-B, SP-C and SP-D are unchanged (see the fixes note above). S5 depends o
 ### Process
 
 The designer's 23 changed files under `docs/` are still uncommitted. This commit adds only this review, as before. After R3 is fixed and `build_app.py` passes, commit the builder's work in the topic commits listed in the fixes notes, with the required trailer. Don't push.
+
+## Fixes after re-review 2 (23 Oct, designer)
+
+Test-only changes, all in `docs/design/prototypes/app/check_app.mjs`. No design or prototype behaviour changed.
+
+- **R3: confirmed and fixed.** Your workout has no `click` handler on `.er`. It opens the sheet on `pointerdown` → `pointerup` (`workout-builder-v3.html:836-837`, `:879-882`), so the three `evaluate(... .click())` row taps never opened anything. New `tapRow(b, name)`: it finds the row whose `.nm` first text node matches the name exactly, taps it with a real Playwright pointer click on `.er` `nth(i)`, and returns whether a `.sheet` opened (`.sheet` is rendered only while a sheet is open, `workout-builder-v3.html:826`). It's used for `sheet Swap`, both S2 bench taps, and `addSetsTo`. The `qswap`/`qdel` taps stay as DOM clicks because they're `[data-a]` buttons served by the `click` handler.
+- **S6: fixed.** `sheet Swap` returns a named reason ("tapping Cable fly didn't open its sheet", "no Swap on Cable fly's sheet") instead of waiting 30 s. A case that throws is caught and reported under its own label. Any failing R1 case closes its open sheet (scrim) before `continue`, so later cases start clean.
+- **Nit (exact-name helper): fixed.** `addSetsTo` now uses `tapRow` (exact match) instead of the `hasText` substring.
+- **S5: not changed.** It depends on Ben's SP-A answer, as the reviewer noted.
+- **Not done in this round: running and committing.** This designer session had no shell, so `build_app.py` wasn't run here and nothing was committed. The change matches the reviewer's verified scratch fix (pointer clicks at the same three sites), plus the S6 guard. Next step for the orchestrator: run `python3 docs/design/prototypes/app/build_app.py <scratch>/appout` until it reports `click-through check: ok`, then commit the docs work with the required trailer. Don't push.
+
+## Re-review 3 (23 Oct, after fix round 3)
+
+**Verdict: PASS.** The gate is green as delivered. The one blocking issue (R3) was in the test, and it's fixed. No design or prototype behaviour changed in this round. I checked that by reading the diff, which only touches `check_app.mjs` and this review.
+
+### Checks run by the reviewer
+
+- `python3 docs/design/prototypes/app/build_app.py <scratch>/appout` on the delivered tree: `built 6 files`, `fixture check: ok`, **`click-through check: ok`** (2 min 38 s). That covers every R1 case (Add, sheet Swap, swipe Swap, chat swap and review suggestion, each from Edit and from Open in builder ›), the R2 unit and Time 40 click-through cases, S2 (typed top 100 → `100 / 92.5`, then back to 102.5) and S1.
+- Code read of `check_app.mjs`:
+  - `tapRow` (`:76-81`) matches `.nm`'s first text node exactly, taps `.er` `nth(i)` with a real Playwright pointer click, and returns whether `.sheet` opened.
+  - It's used by `sheet Swap` (`:378`), both S2 bench taps (`:458`, `:464`) and `addSetsTo` (`:84`). The `qswap`/`qdel` taps stay as DOM clicks on `[data-a]` buttons, which the click handler serves. That's correct.
+- Mutation check: I removed the R1 fix from the built `workout-builder-v3.html` (`workRows` without `??= genRows`, `rowOf` without `perOf`). The gate goes red (node exits non-zero), so the regression is still caught.
+- `git diff --check`: clean. No untracked files. Nothing outside `docs/` was touched.
+
+### Blocking
+
+None.
+
+### Status of earlier findings
+
+- **R3: fixed** and verified by running it.
+- **Exact-name nit: fixed.** `addSetsTo` uses `tapRow`.
+- **S6: partly fixed (not blocking).** The R1 loop now records a named reason and closes the sheet before `continue`. But in the mutation run, the swap's page error leaves a sheet open in the **R2 click-through** (`check_app.mjs:440-454`), which has no error or sheet guard. `b.locator('[data-a="start"]').click()` at `:452` then times out after 30 s, and the uncaught throw ends the run before the collected `bad` list (including the R1 messages) is printed. So a regression still shows as a timeout at `:452`, not under its own name. Suggested fix: wrap the click-through body in `try/finally` and print `bad` before rethrowing, or give the R2 loop the same `errors.length` check and `closeSheet` that the R1 loop has.
+- **S5: open**, depends on SP-A (Ben).
+- **R1, R2, S1 (partial, the rest is SP-B), S2, S3, S4, N-a, N-b:** unchanged from re-review 2 and still pass.
+
+### Spec issues, still for Ben
+
+SP-A, SP-B, SP-C and SP-D are unchanged.
+
+### Process
+
+This commit adds only this review. The designer's 23 changed files under `docs/` are still uncommitted. With the gate green, they should now be committed on `claude/gracious-knuth-joxqpw` in the topic commits listed in the fixes notes, with the required trailer. Don't push.
