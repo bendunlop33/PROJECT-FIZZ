@@ -12,6 +12,7 @@ import {
   ruleYieldsToHistory,
   builtInTargetRpe,
   lastSessionE1rm,
+  mainFocusOf,
   ruleCategory,
   currentDraftVersion,
   defaultTodayControls,
@@ -58,6 +59,7 @@ import {
   type FinishedRef,
   type HistorySession,
   type LegRunNear,
+  type MainFocus,
   type SlotLoadInput,
   type StripCell,
   type SubstituteContext,
@@ -344,7 +346,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
   }
 
   /** Each exercise's load inputs at this gym: the template's dry run first, else the rule on its own history. */
-  async function loadInputs(p: UserProfile, ids: readonly string[], exercises: ReadonlyMap<string, Exercise>, sub: SubstituteContext, planned: ReadonlyMap<string, PlannedAnchor>, flags: readonly PainFlag[]) {
+  async function loadInputs(p: UserProfile, ids: readonly string[], exercises: ReadonlyMap<string, Exercise>, sub: SubstituteContext, planned: ReadonlyMap<string, PlannedAnchor>, flags: readonly PainFlag[], mainFocus: MainFocus) {
     const out = new Map<string, SlotLoadInput>();
     const nowMs = toMs(deps.now().utc);
     for (const id of ids) {
@@ -375,6 +377,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const held = flag !== null;
       const heldNoHistory = held && refs.latest === null;
       out.set(id, {
+        mainFocus,
         unit: refs.unit,
         convention: refs.convention,
         equipment: refs.equipment,
@@ -538,8 +541,10 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       gymId,
     );
     const subAll = await deps.port.substituteCtx(p, planGymId, typical, ids);
-    const loads = await loadInputs(p, [...ids].filter((id) => info(id) !== null), exercises, subAll, anchors, flags);
-    const fallbackLoad = (id: string): SlotLoadInput => ({ unit: p.preferredUnit, convention: exercises.get(id)?.defaultLoadConvention ?? 'total', equipment: null, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: null, painCap: null });
+    // (D4) Back-offs sit in the band for Ben's goal (as Your workout's).
+    const mainFocus = mainFocusOf(goal);
+    const loads = await loadInputs(p, [...ids].filter((id) => info(id) !== null), exercises, subAll, anchors, flags, mainFocus);
+    const fallbackLoad = (id: string): SlotLoadInput => ({ mainFocus, unit: p.preferredUnit, convention: exercises.get(id)?.defaultLoadConvention ?? 'total', equipment: null, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: null, painCap: null });
     const ctx: BuilderContext = {
       info,
       loads: (id) => loads.get(id) ?? fallbackLoad(id),
