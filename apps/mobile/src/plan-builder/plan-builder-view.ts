@@ -19,7 +19,7 @@ import {
   type PbPlan,
   type PbPrefQuestion,
 } from '@fizz/domain';
-import type { PlanBuilderAnswers, PlanEffort, PlanFocus, PlanGroup, PlanSplit, PlanTarget } from '@fizz/schemas';
+import type { PlanBuilderAnswers, PlanEffort, PlanFocus, PlanGroup, PlanSplit, PlanTarget, PlanWarmups } from '@fizz/schemas';
 
 /**
  * The plan builder's screens as values (plan-builder.md, D7; minimal copy, Ben 10 Oct). Formatting only: every
@@ -47,6 +47,7 @@ export const PB_COPY = {
   setDays: 'Set days',
   other: 'Other training',
   supersets: 'Supersets',
+  warmups: 'Warm-ups',
   gym: 'Gym',
   noGym: 'No gym',
   useTypicalGym: 'Use a typical gym',
@@ -113,6 +114,12 @@ export const PB_SPLITS: readonly { key: PlanSplit; label: string }[] = [
   { key: 'full', label: 'Full body' },
 ];
 export const PB_LENGTHS = [30, 35, 40, 45, 50, 55, 60] as const;
+/** (Ben, 23 Oct) Your week › Warm-ups: the three options. */
+export const PB_WARMUPS: readonly { key: PlanWarmups; label: string }[] = [
+  { key: 'full', label: 'Full' },
+  { key: 'short', label: 'Short' },
+  { key: 'none', label: 'None' },
+];
 export const PB_ABS_OPTIONS = [0, 6, 10, 14, 18] as const;
 export const PB_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 export const PB_SPORT_CHIPS = ['Running', 'Cycling', 'Swimming', 'Boxing', 'Football', 'HIIT', 'Climbing', 'Yoga'] as const;
@@ -143,9 +150,10 @@ export function goalsRowValue(a: PlanBuilderAnswers): string {
   return [`${String(a.weeks)} weeks`, effortWord(a.effort), focusWord(a.focus), ...(a.priorities.length > 0 ? [`★ ${a.priorities.join(', ')}`] : [])].join(' · ');
 }
 
-/** `4 days · 60 min · supersets`. */
+/** `4 days · 60 min · supersets · short warm-ups` (Full warm-ups, the default, isn't named). */
 export function weekRowValue(a: PlanBuilderAnswers): string {
-  return [`${String(a.sessions)} days`, `${String(a.minutes)} min`, ...(a.supersets ? ['supersets'] : [])].join(' · ');
+  const w = a.warmups ?? 'full';
+  return [`${String(a.sessions)} days`, `${String(a.minutes)} min`, ...(a.supersets ? ['supersets'] : []), ...(w === 'short' ? ['short warm-ups'] : w === 'none' ? ['no warm-ups'] : [])].join(' · ');
 }
 
 /** `None`, `3 set`. */
@@ -202,16 +210,20 @@ function rowOf(e: PbExercise, nameOf: (k: string) => string): PbRowView {
   };
 }
 
-/** The day cards: `Mon · Upper A` (Set days) or `1 · Upper A` (Any days); the main lift under it; `5 ex · ~60′`. */
-export function dayViews(plan: PbPlan, a: PlanBuilderAnswers, nameOf: (k: string) => string): PbDayView[] {
+/**
+ * The day cards: `Mon · Upper A` (Set days) or `1 · Upper A` (Any days); the main lift under it, with the day's own
+ * warm-up time when it has one (`Barbell bench press · warm-up 9′`, Ben 23 Oct); `5 ex · ~58′`, the day's minutes with
+ * its warm-ups (the engine's estimate, not the session length).
+ */
+export function dayViews(plan: PbPlan, _a: PlanBuilderAnswers, nameOf: (k: string) => string): PbDayView[] {
   return plan.days.map((d) => {
     const main = d.exercises.find((e) => e.role === 'main');
     const lead = d.weekday === null ? String(d.index + 1) : (PB_WEEKDAYS[d.weekday] ?? String(d.index + 1));
     return {
       index: d.index,
       title: `${lead} · ${pbDayName(d)}`,
-      sub: main === undefined ? `${String(d.exercises.length)} exercises` : nameOf(main.key),
-      right: `${String(d.exercises.length)} ex · ~${String(a.minutes)}′`,
+      sub: [main === undefined ? `${String(d.exercises.length)} exercises` : nameOf(main.key), ...(d.warmupS > 0 ? [`warm-up ${String(Math.max(1, Math.round(d.warmupS / 60)))}′`] : [])].join(' · '),
+      right: `${String(d.exercises.length)} ex · ~${String(d.minutes)}′`,
       rows: d.exercises.map((e) => rowOf(e, nameOf)),
     };
   });

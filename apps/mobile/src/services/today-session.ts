@@ -14,6 +14,7 @@ import {
   clampMinutes,
   lastSessionE1rm,
   pbMainFocus,
+  pbWarmupsOf,
   ruleCategory,
   currentDraftVersion,
   defaultTodayControls,
@@ -732,6 +733,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const subAll = await deps.port.substituteCtx(p, planGymId, typical, ids);
     // (D4) Back-offs sit in the band for Ben's goal (as Your workout's); (S7) a builder plan in use: its focus's band.
     const mainFocus = pbMainFocus(plan, goal);
+    const warmups = pbWarmupsOf(plan);
     const loads = await loadInputs(p, [...ids].filter((id) => info(id) !== null), exercises, subAll, anchors, flags, mainFocus);
     const fallbackLoad = (id: string): SlotLoadInput => ({ mainFocus, unit: p.preferredUnit, convention: exercises.get(id)?.defaultLoadConvention ?? 'total', equipment: null, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: null, painCap: null });
     const ctx: BuilderContext = {
@@ -740,6 +742,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       newKey: (id) => deriveId(`today-slot:${today}:${id}`),
       // Ben's rest presets, as the builder's (rests and the ~N min agree with Your workout).
       ...(p.restPresets.length > 0 ? { restPresetsS: p.restPresets.map((r) => r.seconds) } : {}),
+      // (Ben, 23 Oct) The plan's Warm-ups setting (Full / Short / None), as Your workout and Start plan them.
+      ...(warmups === 'full' ? {} : { warmups }),
     };
 
     // Each day's own sessions (credited by plan day or by its templates), newest first.
@@ -1170,7 +1174,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
   /** The builder's codec over Today's facts (per-slot state, rests from the rest level, the history each load came from). */
   function codecOf(data: TodaySessionData) {
-    return { info: data.internal.info, loads: data.internal.ctx.loads, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }) };
+    return { info: data.internal.info, loads: data.internal.ctx.loads, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }), ...(data.internal.ctx.warmups === undefined ? {} : { warmups: data.internal.ctx.warmups }) };
   }
 
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {

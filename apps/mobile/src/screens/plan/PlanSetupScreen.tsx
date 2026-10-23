@@ -18,6 +18,7 @@ import {
   PB_INFO,
   PB_LENGTHS,
   PB_SPORT_CHIPS,
+  PB_WARMUPS,
   PB_WEEKDAYS,
   PB_WEEKS,
   balanceRows,
@@ -412,6 +413,9 @@ export function PlanSetupScreen() {
         </Question>
         <Question label={C.supersets} onInfo={() => { setSheet({ kind: 'info', title: C.supersets, lines: PB_INFO.supersets }); }}>
           <Boxes columns={2} items={[{ key: 'no', label: 'No', selected: !answers.supersets }, { key: 'yes', label: 'Yes', selected: answers.supersets }]} onPick={(k) => { set({ ...answers, supersets: k === 'yes' }); }} />
+        </Question>
+        <Question label={C.warmups}>
+          <Boxes columns={3} items={PB_WARMUPS.map((w) => ({ key: w.key, label: w.label, selected: (answers.warmups ?? 'full') === w.key }))} onPick={(k) => { const w = PB_WARMUPS.find((x) => x.key === k); if (w !== undefined) set({ ...answers, warmups: w.key }); }} />
         </Question>
         <Question label={C.gym}>
           {s.gym === null ? (
