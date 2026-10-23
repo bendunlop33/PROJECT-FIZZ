@@ -123,7 +123,7 @@ export interface PendingCarryInput {
 export function pendingCarryOvers(input: PendingCarryInput): CarryItem[] {
   const nowMs = toMs(input.nowUtc);
   const byGroup = new Map<BuilderGroupName, CarryItem>();
-  // (PM, 23 Oct; pending Ben's final OK) At most 4 carried sets land on one day in all, the oldest carry-overs first.
+  // (Ben, 23 Oct) At most 4 carried sets land on one day in all, the oldest carry-overs first.
   let left: number = FIT_CARRY.maxSets;
   for (const src of [...input.sources].sort((a, b) => toMs(a.atUtc) - toMs(b.atUtc))) {
     if (src.draft.builderKey?.planId !== input.planId || src.draft.sessionId === null) continue;
