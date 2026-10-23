@@ -18,6 +18,8 @@ import type {
 } from '@fizz/schemas';
 import { EQUIPMENT_WORD } from '../display';
 import { isLoadAchievable, roundToAvailableLoad } from '../equipment';
+import { needsNoEquipment } from '../exercise-equipment';
+import { swapSource } from './swap-plan';
 import { convertMassExactly } from '../units';
 import { resolveRestPreset } from '../rest';
 import { planTargetProvenance } from '../target-provenance';
@@ -216,14 +218,29 @@ function sourceFor(equipment: EquipmentInstance): SnapSource {
   return { id: equipment.id, kind: equipment.kind, name: equipment.name, gymId: equipment.gymId };
 }
 
+/** Load conventions only an item can make (a bar's plates, a rack, a stack, an assisted machine). */
+const ITEM_CONVENTIONS: ReadonlySet<LoadConvention> = new Set(['total', 'per_hand', 'stack', 'assistance']);
+
+/**
+ * (Rule 4, retire-overview O1) An exercise saved with no item whose load targets need one: an equipped exercise
+ * with a load in an item's convention. Bodyweight work (and weight held on it, fitted to the gym's own dumbbells and
+ * plates by `snapPlanToGym`) needs none.
+ */
+function needsAnItem(rex: Routine['exercises'][number], exercise: Exercise): boolean {
+  if (needsNoEquipment(exercise)) return false;
+  return rex.setTemplates.some((t) => t.targetLoad !== null && ITEM_CONVENTIONS.has(t.targetLoad.convention));
+}
+
 /**
  * Snapshot a routine and the gym's equipment into a new resumable session.
  * Rest durations are resolved and snapshotted per set. Every target goes
  * through `snapPlanToGym` (gym-switch GS1): the pinned item is mapped to this
  * gym's equipment (same item, else same kind, else another kind the exercise
  * lists, else none), and each load is rounded toward easier to what that
- * item can make, never above its max. An equipped plan with no equipment
- * here gets no load target, reps kept (closes the routine-start gap, §6.6).
+ * item can make, never above its max. An exercise saved with no item whose
+ * loads need one is mapped by its kinds the same way (O1). An equipped plan
+ * with no equipment here gets no load target, reps kept (closes the
+ * routine-start gap, §6.6).
  * Every fit is stored on the set (`planned.snap`) and reported as a warning.
  * Every set with a target records where it came from (`planned.provenance`,
  * source `plan`, with any fit or drop as a guard note) for `Why?`.
@@ -267,6 +284,13 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
       if (pinned) source = sourceFor(pinned);
       else if (kind !== undefined) source = { id: rex.equipmentId, kind, name: kind in EQUIPMENT_WORD ? EQUIPMENT_WORD[kind as EquipmentInstance['kind']] : 'Equipment', gymId: input.gymId };
       else unresolvable.add(rex.id);
+    } else if (needsAnItem(rex, exercise)) {
+      // (Rule 4, retire-overview O1) Saved with no item, but its loads need one (a pushdown Fixed at 400 kg): planned on
+      // the item this gym has for the exercise's kinds, as a swap with no history is (`swapSource`: last used here,
+      // else the first of its kind), so every load is rounded down and never past that item's max; with none of its
+      // kinds here, no load target. An exercise that lists no kinds has nothing to map by: its loads are kept in the
+      // slot's own unit and convention, as before (review SP5).
+      source = swapSource(exercise, null, input.gymId);
     }
     const unchecked = unresolvable.has(rex.id);
     return {

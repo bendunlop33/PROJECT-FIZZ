@@ -438,7 +438,8 @@ describe('Re-review (R1–R5)', () => {
       expect(r.load ?? 400).toBeLessThan(400);
     }
     expect(Object.values(snap.items).every((x) => x !== null)).toBe(true);
-    expect(await s.builder.whyWeight(snap.draftId, slotsOf(snap.workout.blocks)[0]?.key ?? '')).toContain('Max here');
+    // (O1) The shared planner now caps it on this gym's stack, so `Why?` names the planner's cap (`Max here …`), as for a pinned item.
+    expect((await s.builder.whyWeight(snap.draftId, slotsOf(snap.workout.blocks)[0]?.key ?? '')).some((l) => l.startsWith('Max here'))).toBe(true);
     const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-null', expectedVersion: snap.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     startedAsShown(snap, (await s.workout.load(started.sessionId))?.aggregate);
