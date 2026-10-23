@@ -20,6 +20,7 @@ import {
   TODAY_OTHER_SESSIONS,
   todayContentHash,
   todayDraftState,
+  draftOpenedUnchanged,
   currentDraftVersion,
   defaultRestS,
   deriveId,
@@ -737,12 +738,12 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         notApplied = applyVariation(workoutFromTemplate(specsOf(t), env.ctx), variation.extras, env.ctx).skipped.filter((x) => x.reason === 'anchor_missing' && missingOf(x, have).length > 0);
       }
       const moved = (t !== null && t.version !== stored.templateVersion) || (variation !== null && stored.variationVersion !== undefined && variation.version !== stored.variationVersion);
-      if (moved) planDayChanged = { text: `${planLabel(setup, env, variation?.label ?? null)} changed`, silent: d.version === 1 && d.versions.length === 1 };
+      if (moved) planDayChanged = { text: `${planLabel(setup, env, variation?.label ?? null)} changed`, silent: (d.version === 1 && d.versions.length === 1) || draftOpenedUnchanged(d) };
     }
     // (Review B2) What it was opened on moved since (the library workout was edited, the coach revised the chat draft).
     if (planDayChanged === null && key?.from !== undefined && stored?.sourceVersion !== undefined && d.status === 'open') {
       const now = await sourceVersionOf(key.from);
-      if (now !== null && now !== stored.sourceVersion) planDayChanged = { text: `${d.name} changed`, silent: d.version === 1 && d.versions.length === 1 };
+      if (now !== null && now !== stored.sourceVersion) planDayChanged = { text: `${d.name} changed`, silent: (d.version === 1 && d.versions.length === 1) || draftOpenedUnchanged(d) };
     }
     const leftOut: string[] = [];
     for (const id of stored?.leftOut ?? []) leftOut.push((await repos().exercises.get(id).catch(() => null))?.name ?? env.nameOf(id));
@@ -946,6 +947,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       equipmentVersion: env.equipmentVersion,
       contextHash: contextHash(stored, env.gymId, env.equipmentVersion),
       at,
+      // Opened as it is: not `· edited` on Up next until something changes it (review batch23 S3).
+      opened: true,
     });
     const r = await repos().workoutDrafts.createBuilderDraft(p.id, draft);
     switch (r.status) {
@@ -1250,7 +1253,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
      * `Next: exercises` (§2.2): the open draft for this day, main lift and
      * date (resumed, with Set up's change merged in), or a new one.
      */
-    async create(s: SetupInput, opId: string): Promise<BuilderWriteResult> {
+    async create(s: SetupInput, opId: string, opts: { opened?: boolean } = {}): Promise<BuilderWriteResult> {
       const p = await owner();
       const at = deps.now();
       const id = deriveId(`builder-draft:${opId}`);
@@ -1272,6 +1275,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         equipmentVersion: built.env.equipmentVersion,
         contextHash: contextHash(stored, built.env.gymId, built.env.equipmentVersion),
         at,
+        // A plan day's template opened as it is (no variation, groups as the template's): not an edit yet (S3).
+        opened: opts.opened === true && built.plan !== null && built.variation === null && !s.groupsEdited,
       });
       const r = await repos().workoutDrafts.createBuilderDraft(p.id, draft);
       switch (r.status) {
@@ -1312,7 +1317,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const variation = s.variationId === null ? null : ((await variationsFor(p.id, s.dayId, s.mainLiftExerciseId)).find((x) => x.id === s.variationId) ?? null);
       const ids = [...r.exercises.map((e) => e.exerciseId), ...(variation?.extras ?? []).flatMap((o) => (o.kind === 'add_slot' ? [o.slot.exerciseId] : []))];
       const env = await envFor(p, { exerciseIds: ids, keySeed: 'groups' });
-      return service.create({ ...s, groups: groupsOfWorkout(openTemplate(r, variation, env).workout, env) }, opId);
+      return service.create({ ...s, groups: groupsOfWorkout(openTemplate(r, variation, env).workout, env) }, opId, { opened: true });
     },
 
     /**
@@ -1633,7 +1638,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
             plan,
             setup,
             name: src.name.slice(0, 120),
-            rebuild: { actionId: deriveId(`builder-action:${w.opId}`), focus: 'split_day', ...(v.request.day === undefined ? {} : { day: v.request.day }), gymId: env.gymId, equipmentVersion: env.equipmentVersion, contextHash: contextHash(setup, env.gymId, env.equipmentVersion) },
+            rebuild: { actionId: deriveId(`builder-action:${w.opId}`), focus: 'split_day', ...(v.request.day === undefined ? {} : { day: v.request.day }), gymId: env.gymId, equipmentVersion: env.equipmentVersion, contextHash: contextHash(setup, env.gymId, env.equipmentVersion), ...(w.silent === true ? { opened: true } : {}) },
             undoable: w.silent !== true,
           });
           return { change, env, toast: w.silent === true ? null : { text: BUILDER_COPY.reloaded, undoOpId: w.opId, why: null } };
@@ -1655,7 +1660,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           plan,
           setup: stored,
           name: nameOf(setup, built.env, built.variation?.label ?? null),
-          rebuild: { actionId: deriveId(`builder-action:${w.opId}`), focus: focusOf(setup.dayId), ...(day === undefined ? {} : { day }), gymId: built.env.gymId, equipmentVersion: built.env.equipmentVersion, contextHash: contextHash(stored, built.env.gymId, built.env.equipmentVersion) },
+          rebuild: { actionId: deriveId(`builder-action:${w.opId}`), focus: focusOf(setup.dayId), ...(day === undefined ? {} : { day }), gymId: built.env.gymId, equipmentVersion: built.env.equipmentVersion, contextHash: contextHash(stored, built.env.gymId, built.env.equipmentVersion), ...(w.silent === true && built.variation === null ? { opened: true } : {}) },
           undoable: w.silent !== true,
         });
         return { change, env: built.env, toast: w.silent === true ? null : { text: BUILDER_COPY.reloaded, undoOpId: w.opId, why: null }, skipped: built.skipped };

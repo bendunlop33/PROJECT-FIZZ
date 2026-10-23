@@ -18,6 +18,7 @@ import {
   todayContentHash,
   todayControlsHash,
   todayDraftState,
+  draftOpenedUnchanged,
   deriveId,
   doableHere,
   estimateBuilderMinutes,
@@ -606,7 +607,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const open = (await repos().workoutDrafts.listByOwner(p.id).catch(() => [] as WorkoutDraft[])).filter((d) => d.status === 'open' && d.builderKey?.localDate === today && toMs(d.expiresAtUtc) > nowMs);
     for (const d of open) {
       const own = todayDraftState(d);
-      if (own.state === 'today') continue;
+      // Today's own, or opened on Your workout and left as it was (review batch23 S3): not `· edited`.
+      if (own.state === 'today' || draftOpenedUnchanged(d)) continue;
       const k = d.builderKey;
       if (k === undefined) continue;
       const dayKey = k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`;
@@ -666,7 +668,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         : (open.find((d) => {
             const f = d.builderKey?.from;
             const same = f !== undefined && ((f.kind === 'routine' && f.id === fallbackNext.routineId) || (f.kind === 'session' && f.id === fallbackNext.sourceSessionId));
-            return same && todayDraftState(d).state === 'edited';
+            return same && isEdited(d);
           }) ?? null);
     return {
       status,
@@ -876,7 +878,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
    * so any later write (an in-place edit, a new version, an Undo, a restore) bumps `version` and no longer matches.
    */
   function isEdited(d: WorkoutDraft): boolean {
-    return todayDraftState(d).state === 'edited';
+    // (Review batch23 S3, M2) Opened on Your workout and left as it was isn't an edit.
+    return todayDraftState(d).state === 'edited' && !draftOpenedUnchanged(d);
   }
 
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {

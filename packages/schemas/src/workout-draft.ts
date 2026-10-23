@@ -477,6 +477,12 @@ export const WorkoutDraftVersionSchema = z.object({
      * while the content still matches; any builder edit changes it (`edited`), and Undo puts it back.
      */
     today: TodayDraftMarkSchema.optional(),
+    /**
+     * (Review batch23 S3, M2) A version the builder opened as it was (a plan day from the Library, a saved or past
+     * workout, a silent reload): its content hash (plan, set-up, gym). While the content still matches, nothing has
+     * changed it, so Today and Up next don't read it as `· edited`.
+     */
+    opened: z.object({ hash: z.string().min(1).max(128) }).optional(),
   }),
   /** The model's arguments as received (data). */
   rawArgs: z.string().max(40_000),
