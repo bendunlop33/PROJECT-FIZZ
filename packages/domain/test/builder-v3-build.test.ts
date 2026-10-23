@@ -253,6 +253,37 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     expect(t.workout.blocks.some((b) => b.slots.length > 1 && b.slots.some((x) => x.exerciseId === 'crunch'))).toBe(false);
   });
 
+  it('sweep (design review S2): one minute at a time from the full length to 15, less time never keeps more training (FIT_SET_VALUE), never touches the main lift, never pairs with Supersets off, and keeps every accessory at 2+ sets', () => {
+    const days: { main: string; mainGroup: 'Chest' | 'Legs' | 'Back'; groups: { group: 'Chest' | 'Legs' | 'Back' | 'Triceps' | 'Biceps' | 'Abs'; count: number }[] }[] = [
+      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] },
+      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 3 }, { group: 'Triceps', count: 2 }, { group: 'Biceps', count: 1 }, { group: 'Abs', count: 1 }] },
+      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 5 }, { group: 'Abs', count: 1 }] },
+      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 4 }, { group: 'Abs', count: 2 }] },
+      { main: 'row', mainGroup: 'Back', groups: [{ group: 'Back', count: 3 }, { group: 'Biceps', count: 2 }, { group: 'Abs', count: 1 }] },
+    ];
+    const work = (s: { rows: readonly { type: string }[] }) => s.rows.filter((r) => r.type !== 'warmup').length;
+    for (const d of days) {
+      for (const supersets of [true, false]) {
+        const ctx = context();
+        const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: d.main, supersets, groups: d.groups }, pool, ctx).workout;
+        const main = all(w).find((s) => s.main);
+        let kept = Infinity;
+        for (let m = estimateBuilderMinutes(w, ctx); m >= 15; m -= 1) {
+          const r = fitToMinutes(w, ctx, { minutes: m, mainGroup: d.mainGroup, grow: false, supersets });
+          const value = all(r.workout)
+            .filter((s) => !s.main)
+            .reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, d.mainGroup), 0);
+          expect(value, `${d.main} ${String(m)} min, supersets ${String(supersets)}`).toBeLessThanOrEqual(kept + 1e-9);
+          kept = value;
+          expect(all(r.workout).find((s) => s.main)).toEqual(main);
+          expect(all(r.workout).filter((s) => !s.main).every((s) => work(s) >= 2)).toBe(true);
+          if (!supersets) expect(r.workout.blocks.every((b) => b.slots.length === 1)).toBe(true);
+          if (r.status !== 'over') expect(r.minutes).toBeLessThanOrEqual(m);
+        }
+      }
+    }
+  });
+
   it('no effort is pushed for time unless asked (the workout’s +N min offer): then accessory last sets go to RPE 9 after the free savings, before any cut', () => {
     const { ctx, w } = sixty();
     const easy: BuilderWorkout = { ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.main ? s : { ...s, rows: s.rows.map((r) => (r.type === 'working' ? { ...r, rpe: 8 } : r)) })) })) };
