@@ -1,4 +1,4 @@
-import { BUILDER_FOCI, builderFocusOf, builderGroupOf, isBuilderStrength, worksLine, type BuilderFocus, type BuilderGroup } from '@fizz/schemas';
+import { BUILDER_FOCI, builderFocusCounts, builderFocusOf, builderGroupOf, isBuilderAutoPick, isBuilderStrength, worksLine, type BuilderFocus, type BuilderGroup } from '@fizz/schemas';
 import { describe, expect, it } from 'vitest';
 import { bundledCatalogue, type CatalogueEntry } from '../src/index';
 
@@ -12,21 +12,46 @@ const byKey = (key: string): CatalogueEntry => {
 
 describe('builder groups on the catalogue', () => {
   it('every strength entry has a builder group and a focus inside it, and a works line', () => {
-    // Forearms has no builder group (builder-groups.ts): forearm- or grip-only entries
-    // (wrist curls, dead hang) have none, but still have a works line.
+    // Forearm- or grip-only entries (wrist curls, dead hang) are found under the arms group (`Biceps` until D5's `Arms`)
+    // with the `Forearms` focus: Swap / Add only, never picked by the builder, never counted (builder-groups.ts).
     const forearmOnly = (e: CatalogueEntry) => e.primaryMuscles.every((m) => m === 'forearms' || m === 'grip');
     const forearm = entries.filter((e) => isBuilderStrength(e) && forearmOnly(e));
     expect(forearm.map((e) => e.key).sort()).toEqual(['barbell-reverse-wrist-curl', 'barbell-wrist-curl', 'bodyweight-dead-hang']);
     for (const e of forearm) {
-      expect(builderGroupOf(e), e.key).toBeNull();
+      expect(builderGroupOf(e), e.key).toBe('Biceps');
+      expect(builderFocusOf(e), e.key).toBe('Forearms');
+      expect(isBuilderAutoPick(e), e.key).toBe(false);
+      expect(builderFocusCounts(builderFocusOf(e)), e.key).toBe(false);
       expect(worksLine(e), e.key).not.toBeNull();
     }
-    for (const e of entries.filter((x) => isBuilderStrength(x) && !forearmOnly(x))) {
+    for (const e of entries.filter(isBuilderStrength)) {
       const g = builderGroupOf(e);
       expect(g, e.key).not.toBeNull();
       expect(BUILDER_FOCI[g as BuilderGroup] as readonly BuilderFocus[], e.key).toContain(builderFocusOf(e));
       expect(worksLine(e), e.key).not.toBeNull();
     }
+  });
+
+  it('the 23 Oct muscle words: tibialis, cuff and hip-flexor entries land in the right group and focus', () => {
+    // The tibialis raise is Legs › Shins (not Calves); cuff rotations are Shoulders › Rotator cuff (not Back › Rear delts).
+    expect([builderGroupOf(byKey('bodyweight-tibialis-raise')), builderFocusOf(byKey('bodyweight-tibialis-raise'))]).toEqual(['Legs', 'Shins']);
+    expect(worksLine(byKey('bodyweight-tibialis-raise'))).toBe('Shins');
+    for (const k of ['cable-external-rotation', 'band-external-rotation', 'dumbbell-side-lying-external-rotation']) {
+      expect([builderGroupOf(byKey(k)), builderFocusOf(byKey(k))], k).toEqual(['Shoulders', 'Rotator cuff']);
+      expect(isBuilderAutoPick(byKey(k)), k).toBe(false);
+    }
+    expect(worksLine(byKey('cable-external-rotation'))).toBe('Rotator cuff, rear delts');
+    // Leg raises and sit-ups stay Abs-led (the abs are listed first), with hip flexors in the works line.
+    for (const k of ['bodyweight-decline-sit-up', 'bodyweight-captains-chair-knee-raise', 'bodyweight-lying-leg-raise', 'bodyweight-v-up', 'bodyweight-toes-to-bar', 'bodyweight-hollow-body-hold']) {
+      expect([builderGroupOf(byKey(k)), builderFocusOf(byKey(k))], k).toEqual(['Abs', 'Abs']);
+      expect(isBuilderAutoPick(byKey(k)), k).toBe(true);
+      expect(byKey(k).primaryMuscles, k).toContain('hip_flexors');
+    }
+    expect(worksLine(byKey('bodyweight-lying-leg-raise'))).toBe('Abs, hip flexors, obliques');
+    for (const k of ['bodyweight-reverse-crunch', 'bodyweight-bicycle-crunch', 'bodyweight-hanging-leg-raise', 'bodyweight-hanging-knee-raise']) expect(byKey(k).secondaryMuscles, k).toContain('hip_flexors');
+    // No entry still uses a stand-in for these.
+    expect(byKey('bodyweight-tibialis-raise').primaryMuscles).toEqual(['tibialis']);
+    for (const e of entries) expect(e.primaryMuscles.includes('rear_delts') && /external rotation/i.test(e.name), e.key).toBe(false);
   });
 
   it('conditioning, cardio and carry entries have no group or focus', () => {
