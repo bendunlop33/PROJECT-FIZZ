@@ -176,8 +176,13 @@ describe('review v5offers B1: two short days are never a plan change, nor an off
       const started = await s.todaySession.start({ draftId: committed.draftId, expectedVersion: committed.version, gymId, opId: `start-${tag}`, checkIn: null });
       if (!started.ok) throw new Error(started.error.message);
       expect(started.aggregate.session.planDay?.templateRoutineId).toBe(push);
-      // Today's card as built (its main lift's top set and back-offs, Time's cuts): none of it is Ben's edit.
-      expect(new Set(started.aggregate.session.planDay?.notEdited)).toEqual(new Set(slotsOf(snap.workout.blocks).map((sl) => sl.exerciseId)));
+      // Today's card as built (its main lift's top set and back-offs, Time's cuts): none of it is Ben's edit. With
+      // todaylean's fit record on the draft, what Today's Time left out is named too (never Ben's), and nothing else.
+      const notEdited = new Set(started.aggregate.session.planDay?.notEdited);
+      const onCard = slotsOf(snap.workout.blocks).map((sl) => sl.exerciseId);
+      for (const id of onCard) expect(notEdited.has(id), id).toBe(true);
+      const timeTook = new Set((snap.time?.changes ?? []).flatMap((st) => (st.kind === 'drop' || st.kind === 'sets' ? [st.exerciseId] : [])));
+      for (const id of notEdited) expect(onCard.includes(id) || timeTook.has(id), id).toBe(true);
       await logAndFinish(s, started.aggregate.session.id);
     }
     monday();
