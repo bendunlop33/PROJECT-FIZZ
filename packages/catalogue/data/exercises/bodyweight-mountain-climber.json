@@ -7,7 +7,7 @@
   "family": "mountain_climber",
   "movementPattern": "conditioning",
   "mechanic": "compound",
-  "primaryMuscles": ["core", "abs"],
+  "primaryMuscles": ["core", "abs", "hip_flexors"],
   "secondaryMuscles": ["front_delts", "obliques"],
   "compatibleEquipment": ["bodyweight_station"],
   "defaultLoadConvention": "bodyweight",
@@ -110,7 +110,7 @@
   "uncertain": [
     {
       "field": "primaryMuscles",
-      "note": "The expansion research lists hip flexors as a primary muscle; the catalogue has no hip_flexors word (Q1), so they are left out. front_delts reflects the shoulders holding the plank, reasoned from the position rather than measured."
+      "note": "The expansion research lists hip flexors as a primary muscle; they are now listed (vocabulary word added 23 Oct 2026, Q1). front_delts reflects the shoulders holding the plank, reasoned from the position rather than measured."
     },
     {
       "field": "measurement",

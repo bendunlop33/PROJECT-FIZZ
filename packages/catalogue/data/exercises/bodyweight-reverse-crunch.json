@@ -8,7 +8,7 @@
   "movementPattern": "core",
   "mechanic": "isolation",
   "primaryMuscles": ["abs"],
-  "secondaryMuscles": ["obliques"],
+  "secondaryMuscles": ["obliques", "hip_flexors"],
   "compatibleEquipment": ["bodyweight_station"],
   "defaultLoadConvention": "bodyweight",
   "measurement": "reps",
@@ -108,7 +108,7 @@
   "uncertain": [
     {
       "field": "secondaryMuscles",
-      "note": "The catalogue has no hip_flexors muscle word (expansion research Q1); ACE lists the hip flexors as assisting. They are left out rather than mapped to another muscle."
+      "note": "ACE lists the hip flexors as assisting, so they are secondary (vocabulary word added 23 Oct 2026, expansion research Q1)."
     },
     {
       "field": "guideBrief.keyPositions[*].approxAnglesDeg",

@@ -7,7 +7,7 @@
   "family": "leg_raise",
   "movementPattern": "core",
   "mechanic": "isolation",
-  "primaryMuscles": ["abs"],
+  "primaryMuscles": ["abs", "hip_flexors"],
   "secondaryMuscles": ["lats", "obliques", "grip"],
   "compatibleEquipment": ["bodyweight_station"],
   "requiresStation": ["pullup_bar"],
@@ -115,7 +115,7 @@
   "uncertain": [
     {
       "field": "secondaryMuscles",
-      "note": "The hip flexors do much of the work but the catalogue has no hip_flexors muscle yet (expansion research Q1); they are left out. The research table listed lats as primary; here they are secondary (they press the bar down but don't move much)."
+      "note": "The hip flexors do much of the work, so they are listed as primary with the abs (vocabulary word added 23 Oct 2026, expansion research Q1). The research table listed lats as primary; here they are secondary (they press the bar down but don't move much)."
     },
     {
       "field": "guideBrief.keyPositions[*].approxAnglesDeg",

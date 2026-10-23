@@ -8,7 +8,7 @@
   "movementPattern": "core",
   "mechanic": "isolation",
   "primaryMuscles": ["obliques", "abs"],
-  "secondaryMuscles": [],
+  "secondaryMuscles": ["hip_flexors"],
   "compatibleEquipment": ["bodyweight_station"],
   "defaultLoadConvention": "bodyweight",
   "measurement": "reps",
@@ -127,7 +127,7 @@
     },
     {
       "field": "secondaryMuscles",
-      "note": "StrengthLog lists the hip flexors as secondary. The catalogue has no hip_flexors word (expansion research Q1), so they are left out."
+      "note": "StrengthLog lists the hip flexors as secondary; they are listed as secondary here (vocabulary word added 23 Oct 2026, expansion research Q1)."
     },
     {
       "field": "guideBrief.tempo",

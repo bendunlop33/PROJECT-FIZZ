@@ -7,8 +7,8 @@
   "family": "external_rotation",
   "movementPattern": "horizontal_pull",
   "mechanic": "isolation",
-  "primaryMuscles": ["rear_delts"],
-  "secondaryMuscles": [],
+  "primaryMuscles": ["rotator_cuff"],
+  "secondaryMuscles": ["rear_delts"],
   "compatibleEquipment": ["weight_stack"],
   "requiresStation": ["cable_column"],
   "defaultLoadConvention": "stack",
@@ -109,7 +109,7 @@
   "uncertain": [
     {
       "field": "primaryMuscles",
-      "note": "The muscles this mainly trains are the rotator cuff (infraspinatus, teres minor). The catalogue has no rotator_cuff word (expansion research Q1); rear_delts (back of shoulders) is the nearest and overstates the deltoid's share."
+      "note": "The muscles this mainly trains are the rotator cuff (infraspinatus, teres minor), the catalogue's rotator_cuff word (added 23 Oct 2026, expansion research Q1; rear_delts was the stand-in before). The rear deltoid assists [Reinold 2004], so it is secondary."
     },
     {
       "field": "movementPattern",

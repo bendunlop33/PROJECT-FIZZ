@@ -7,7 +7,7 @@
   "family": "leg_raise",
   "movementPattern": "core",
   "mechanic": "isolation",
-  "primaryMuscles": ["abs"],
+  "primaryMuscles": ["abs", "hip_flexors"],
   "secondaryMuscles": ["obliques"],
   "compatibleEquipment": ["bodyweight_station"],
   "defaultLoadConvention": "bodyweight",
@@ -115,7 +115,7 @@
   "uncertain": [
     {
       "field": "primaryMuscles",
-      "note": "StrengthLog lists the hip flexors as a primary muscle, and they do much of the lifting. The catalogue has no hip_flexors word (expansion research Q1), so they are left out rather than mapped to another muscle."
+      "note": "StrengthLog lists the hip flexors as a primary muscle, and they do much of the lifting; they are listed as primary with the abs (vocabulary word added 23 Oct 2026, expansion research Q1)."
     },
     {
       "field": "aliases",

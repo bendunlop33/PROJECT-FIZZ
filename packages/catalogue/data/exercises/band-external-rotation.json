@@ -7,8 +7,8 @@
   "family": "shoulder_external_rotation",
   "movementPattern": "horizontal_pull",
   "mechanic": "isolation",
-  "primaryMuscles": ["rear_delts"],
-  "secondaryMuscles": ["upper_back"],
+  "primaryMuscles": ["rotator_cuff"],
+  "secondaryMuscles": ["rear_delts", "upper_back"],
   "compatibleEquipment": ["band"],
   "defaultLoadConvention": "bodyweight",
   "measurement": "reps",
@@ -116,7 +116,7 @@
   "uncertain": [
     {
       "field": "primaryMuscles",
-      "note": "The main muscles are the rotator cuff (infraspinatus, teres minor). The vocabulary has no 'rotator_cuff' word (research Q1), so the nearest word, 'rear_delts', is used. This overstates the rear-delt role; the research file flags exactly this problem."
+      "note": "The main muscles are the rotator cuff (infraspinatus, teres minor), the catalogue's rotator_cuff word (added 23 Oct 2026, expansion research Q1; rear_delts was the stand-in before). The rear deltoid assists [Reinold 2004], so it is secondary."
     },
     {
       "field": "movementPattern",

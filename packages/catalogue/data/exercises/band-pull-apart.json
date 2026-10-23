@@ -8,7 +8,7 @@
   "movementPattern": "horizontal_pull",
   "mechanic": "isolation",
   "primaryMuscles": ["rear_delts", "upper_back"],
-  "secondaryMuscles": ["traps"],
+  "secondaryMuscles": ["traps", "rotator_cuff"],
   "compatibleEquipment": ["band"],
   "defaultLoadConvention": "bodyweight",
   "measurement": "reps",
@@ -109,7 +109,7 @@
   "uncertain": [
     {
       "field": "primaryMuscles",
-      "note": "StrengthLog also lists the rotator cuff as primary. The catalogue has no rotator_cuff word (expansion research Q1), so it is left out."
+      "note": "StrengthLog also lists the rotator cuff as primary. It is listed as secondary here (vocabulary word added 23 Oct 2026, expansion research Q1): the rear delts and upper back do the visible work."
     },
     {
       "field": "defaultLoadConvention",

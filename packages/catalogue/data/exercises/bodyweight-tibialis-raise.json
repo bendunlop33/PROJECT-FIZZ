@@ -7,7 +7,7 @@
   "family": "tibialis_raise",
   "movementPattern": "calves",
   "mechanic": "isolation",
-  "primaryMuscles": ["calves"],
+  "primaryMuscles": ["tibialis"],
   "secondaryMuscles": [],
   "compatibleEquipment": ["bodyweight_station"],
   "defaultLoadConvention": "bodyweight",
@@ -114,7 +114,7 @@
   "uncertain": [
     {
       "field": "primaryMuscles",
-      "note": "The muscle trained is the tibialis anterior (front of the shin). The vocabulary has no 'tibialis' word (research Q1), so it is mapped to 'calves', the only lower-leg word. That is anatomically wrong (the calves are on the back of the shin) and will show the wrong area until Ben approves a new word."
+      "note": "The muscle trained is the tibialis anterior (front of the shin), the catalogue's tibialis word (added 23 Oct 2026, expansion research Q1; it was mapped to calves before). It counts under the lower-leg group (Calves; Legs when picking), though it is not a calf muscle. No guide art draws it yet."
     },
     {
       "field": "movementPattern",

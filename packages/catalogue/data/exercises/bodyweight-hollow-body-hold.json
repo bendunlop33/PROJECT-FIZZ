@@ -7,7 +7,7 @@
   "family": "hollow_body",
   "movementPattern": "core",
   "mechanic": "isolation",
-  "primaryMuscles": ["abs"],
+  "primaryMuscles": ["abs", "hip_flexors"],
   "secondaryMuscles": ["obliques"],
   "compatibleEquipment": ["bodyweight_station"],
   "defaultLoadConvention": "bodyweight",
@@ -110,7 +110,7 @@
   "uncertain": [
     {
       "field": "secondaryMuscles",
-      "note": "The hip flexors work hard here but the catalogue has no hip_flexors muscle yet (expansion research Q1), so they are left out rather than mapped to another muscle."
+      "note": "The hip flexors work hard holding the legs up, so they are listed as primary with the abs (vocabulary word added 23 Oct 2026, expansion research Q1). Reasoned from the position rather than measured."
     },
     {
       "field": "guideBrief.keyPositions[*].approxAnglesDeg",

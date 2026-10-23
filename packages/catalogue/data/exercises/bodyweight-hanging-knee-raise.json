@@ -8,7 +8,7 @@
   "movementPattern": "core",
   "mechanic": "isolation",
   "primaryMuscles": ["abs"],
-  "secondaryMuscles": ["obliques", "grip"],
+  "secondaryMuscles": ["obliques", "hip_flexors", "grip"],
   "compatibleEquipment": ["bodyweight_station"],
   "requiresStation": ["pullup_bar"],
   "defaultLoadConvention": "bodyweight",

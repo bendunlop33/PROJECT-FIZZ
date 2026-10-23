@@ -7,7 +7,7 @@
   "family": "sit_up",
   "movementPattern": "core",
   "mechanic": "isolation",
-  "primaryMuscles": ["abs"],
+  "primaryMuscles": ["abs", "hip_flexors"],
   "secondaryMuscles": ["obliques"],
   "compatibleEquipment": ["bodyweight_station"],
   "requiresStation": ["specific_machine"],
@@ -124,7 +124,7 @@
   "uncertain": [
     {
       "field": "primaryMuscles",
-      "note": "The catalogue has no hip_flexors muscle word (expansion research Q1). ExRx files this exercise under the hip flexors (iliopsoas target) with the abs as stabilisers unless the waist curls. The entry lists abs as primary because the cues ask for the curl; hip flexors are left out rather than mapped to another muscle, so this understates their share."
+      "note": "ExRx files this exercise under the hip flexors (iliopsoas target) with the abs as stabilisers unless the waist curls. The abs are listed first because the cues ask for the curl; hip_flexors is a primary too (vocabulary word added 23 Oct 2026, expansion research Q1). How the work splits between them depends on how much the waist curls."
     },
     {
       "field": "requiresStation",
