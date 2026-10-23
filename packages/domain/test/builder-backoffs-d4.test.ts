@@ -50,7 +50,7 @@ describe('D4: the band by focus', () => {
     expect(mainFocusOf('both')).toBe('balanced');
     expect(mainFocusOf(null)).toBe('balanced');
     expect(mainFocusOf(undefined)).toBe('balanced');
-    expect(BACKOFF_BANDS).toEqual({ strength: { min: 0.02, max: 0.08 }, balanced: { min: 0.04, max: 0.1 }, muscle: { min: 0.08, max: 0.15 } });
+    expect(BACKOFF_BANDS).toEqual({ strength: { min: 0.02, max: 0.08 }, balanced: { min: 0.04, max: 0.1 }, muscle: { min: 0.08, max: 0.15 }, fitness: { min: 0.02, max: 0.15 } });
   });
 
   it('from reps and RPE (Epley, RIR = 10 − RPE): 100 × 6 @ 8 → 8 @ 8 = 95, inside Balanced and Strength; Muscle holds it 8 % below', () => {

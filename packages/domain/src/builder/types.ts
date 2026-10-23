@@ -92,7 +92,8 @@ export function draftLoadSourceOf(source: BuilderLoadSourceKind, typed: boolean)
  * (D4, Ben 22–23 Oct) The main focus a back-off's band follows (`BACKOFF_BANDS`): Ben's goal, Strength, Muscle, or
  * both (Balanced).
  */
-export type MainFocus = 'strength' | 'balanced' | 'muscle';
+/** (Plan builder, D4) `fitness`: a builder plan's Fitness focus, band 2–15 %. Profile's goal never gives it. */
+export type MainFocus = 'strength' | 'balanced' | 'muscle' | 'fitness';
 
 /**
  * Resolved inputs for one exercise at the selected gym. The service fills

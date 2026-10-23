@@ -52,6 +52,20 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
     return rows.sort((a, b) => ((a.applied?.atUtc ?? '') < (b.applied?.atUtc ?? '') ? 1 : -1))[0] ?? null;
   }
 
+  /**
+   * (Plan builder) A new open plan Ben built himself, with no coach turn behind it. Idempotent: the plan's ID follows
+   * from the Build's op ID, so a retry after a force-close finds the plan already there (`replayed`).
+   */
+  create(ownerId: string, plan: PlanDraft): Promise<PlanWrite> {
+    return this.db.write(async (tx): Promise<PlanWrite> => {
+      if (plan.ownerId !== ownerId) return { status: 'invalid', reason: 'owner' };
+      const current = await getPlanDraftIn(tx, plan.id);
+      if (current !== null) return current.ownerId === ownerId ? { status: 'replayed', plan: current, routines: [] } : { status: 'missing' };
+      const r = await saveDocumentIn(tx, PLAN_DRAFT_SPEC, plan, null);
+      return r.ok ? { status: 'written', plan, routines: [] } : { status: 'stale', plan };
+    });
+  }
+
   /** A versioned write the domain decided against the stored plan (a coach version is the coach store's). */
   write(ownerId: string, id: string, change: (current: PlanDraft) => PlanLifeChange): Promise<PlanWrite> {
     return this.db.write(async (tx): Promise<PlanWrite> => {

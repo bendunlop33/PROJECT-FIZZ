@@ -134,7 +134,8 @@ export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exis
 export type TabParams = {
   /** `toast`: a one-off message after returning from the check-in (e.g. Skip workout), or Your workout's Start with a workout in progress. */
   /** `startEmpty`: `Empty workout` on the Workouts list, once per nonce (Today's own start, with its check-in gate). */
-  Today: { toast?: string; startEmpty?: string } | undefined;
+  /** `planApplied`: back from the plan builder's Apply: `Plan applied · Undo` once per `key` (Undo at that plan version, rule 5). */
+  Today: { toast?: string; startEmpty?: string; planApplied?: PlanAppliedToastParam } | undefined;
   Library: NavigatorScreenParams<LibraryStackParams> | undefined;
   Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
@@ -232,6 +233,12 @@ export type RootStackParams = {
    * page it came from (`‹ Today`, `‹ Library`), shown instead of `‹ Set up` (§2.3, design review V1).
    */
   BuilderWorkout: { draftId?: string; open?: BuilderOpenTarget; back?: BuilderBack; toast?: BuilderToastParam };
+  /**
+   * (Plan builder, 23 Oct) Gym goals → Your week → Your plan (Check your lifts first when needed), offline. Opened from
+   * Today's `Set up a plan ›` and Library › Plan's `Set up a plan` (`openPlanSetup`). An open plan built before (not
+   * applied) opens on Your plan.
+   */
+  PlanSetup: undefined;
 };
 
 /** Your workout's back control when it wasn't opened from Set up: `‹ Today`, `‹ Library`, `‹ Summary`, else `‹ Back`. */
@@ -250,6 +257,13 @@ export interface BuilderToastParam {
  * (routines.md §A2.5): back to the screen under the sheet, which shows the result.
  */
 export type EditorFrom = 'Library' | 'ExerciseInfo' | 'SaveSheet';
+
+/** `Plan applied · Undo` on Today (plan-builder §3): Undo of that Apply, only while the plan is still at `version`. */
+export interface PlanAppliedToastParam {
+  key: string;
+  planId: string;
+  version: number;
+}
 
 /** A library toast handed back to the screen below (`key`: shown once). */
 export interface LibraryToastParam {

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IdSchema, OperationIdSchema, TimeZoneSchema, UtcTimestampSchema, ZonedTimestampSchema } from './common';
-import { BUILD_LIMITS, BuildCheckSchema, BuildFocusSchema, BuildRequestOriginSchema, NonEmptyDraftPlanSchema, ProposedExerciseSchema } from './workout-draft';
+import { BUILD_LIMITS, BuildCheckSchema, BuildFocusSchema, NonEmptyDraftPlanSchema, ProposedExerciseSchema, WorkoutDraftOriginSchema } from './workout-draft';
+import { PlanBuilderRecordSchema } from './plan-builder';
 
 /**
  * Coach-built multi-day plans (Ben, 19 Oct: "Can it build plans across
@@ -97,7 +98,8 @@ export const PlanDraftVersionSchema = z.object({
     /** Ben's words, quoted: data, never instructions (rule 8). */
     text: z.string().max(4000),
     gymId: IdSchema.nullable(),
-    origin: BuildRequestOriginSchema,
+    /** `builder`: Ben's own plan builder (plan-builder.md), no coach turn behind it. */
+    origin: WorkoutDraftOriginSchema,
   }),
   /** The model's arguments as received (data). */
   rawArgs: z.string().max(80_000),
@@ -108,6 +110,8 @@ export const PlanDraftVersionSchema = z.object({
   contextHash: z.string().min(1).max(128),
   equipmentVersion: z.string().min(1).max(128),
   createdAt: ZonedTimestampSchema,
+  /** (Plan builder, 23 Oct) The answers a builder-made version was built from; absent on coach plans. */
+  builder: PlanBuilderRecordSchema.optional(),
 });
 export type PlanDraftVersion = z.infer<typeof PlanDraftVersionSchema>;
 

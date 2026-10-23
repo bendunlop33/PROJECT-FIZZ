@@ -13,7 +13,7 @@ import {
   builtInTargetRpe,
   clampMinutes,
   lastSessionE1rm,
-  mainFocusOf,
+  pbMainFocus,
   ruleCategory,
   currentDraftVersion,
   defaultTodayControls,
@@ -730,8 +730,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       gymId,
     );
     const subAll = await deps.port.substituteCtx(p, planGymId, typical, ids);
-    // (D4) Back-offs sit in the band for Ben's goal (as Your workout's).
-    const mainFocus = mainFocusOf(goal);
+    // (D4) Back-offs sit in the band for Ben's goal (as Your workout's); (S7) a builder plan in use: its focus's band.
+    const mainFocus = pbMainFocus(plan, goal);
     const loads = await loadInputs(p, [...ids].filter((id) => info(id) !== null), exercises, subAll, anchors, flags, mainFocus);
     const fallbackLoad = (id: string): SlotLoadInput => ({ mainFocus, unit: p.preferredUnit, convention: exercises.get(id)?.defaultLoadConvention ?? 'total', equipment: null, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: null, painCap: null });
     const ctx: BuilderContext = {

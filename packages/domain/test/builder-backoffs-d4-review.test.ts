@@ -61,7 +61,8 @@ const typeTop = (s: BuilderSlot, kg: number, load: SlotLoadInput) => edit(s, top
 const regym = (s: BuilderSlot, load: SlotLoadInput) => work(reloadSlotLoads(s, { role: 'compound', barbell: true }, load).rows).map((r) => r.load);
 /** Rounded down on the fixture bar (2.5 kg steps). */
 const down = (v: number) => Math.floor(v / 2.5 + 1e-9) * 2.5;
-const built: Record<MainFocus, number> = { strength: 95, balanced: 95, muscle: 90 };
+// Fitness (a builder plan's, 2–15 %) shares Strength's top edge.
+const built: Record<MainFocus, number> = { strength: 95, balanced: 95, muscle: 90, fitness: 95 };
 
 describe('B1: back-offs follow today’s top, measured from the top they were worked out from (no ratchet)', () => {
   for (const focus of FOCI) {
@@ -135,6 +136,7 @@ describe('B2: a top reps, RPE or type edit moves the back-offs with the top, nev
     strength: { 90: 87.5, 95: 92.5 },
     balanced: { 90: 85, 95: 90 },
     muscle: { 90: 82.5, 95: 85 },
+    fitness: { 90: 87.5, 95: 92.5 },
   };
   for (const focus of FOCI) {
     const load = loadInput({ ...rule100, mainFocus: focus });

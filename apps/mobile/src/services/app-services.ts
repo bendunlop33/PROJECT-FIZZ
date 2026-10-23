@@ -54,6 +54,7 @@ import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
 import { createLiftTargetService } from './lift-target-service';
 import { createPlanServices } from './plan-services';
+import { createPlanBuilderService } from './plan-builder-service';
 import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
 import { createTodaySessionService, type TodaySessionData } from './today-session';
@@ -865,6 +866,19 @@ export function createAppServices(deps: AppServicesDeps) {
     splitMainLiftIds: () => training.splitMainLiftIds(),
   });
 
+  /** (Plan builder, 23 Oct) Gym goals → Your week → Your plan, offline: the deterministic engine, Apply / Undo through `plans`. */
+  const planBuilder = createPlanBuilderService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    catalogueExercises,
+    currentGym: async () => {
+      const g = await yourData.currentGym();
+      return g === null ? null : { id: g.id, name: g.name };
+    },
+    plans,
+  });
+
   /** Library › Exercises (exercise-library §9): browse, detail, Add to a workout. Local only. */
   const library = createLibraryService({
     repos,
@@ -1057,6 +1071,7 @@ export function createAppServices(deps: AppServicesDeps) {
     routines,
     coachDrafts,
     plans,
+    planBuilder,
     /** (Ben, 20 Oct) Runs, rides, swims and sport: add, edit, delete, Undo; Recent and calendar rows. */
     activities: weekly.activities,
     /** (Ben, 20 Oct) This week's shape: the coach's proposal card, Apply, Undo. */

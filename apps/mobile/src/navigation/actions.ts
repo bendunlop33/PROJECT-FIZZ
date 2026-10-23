@@ -1,6 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
-import type { EditorFrom, LibrarySegment, LibraryToastParam, RootStackParams, TabParams } from './types';
+import type { EditorFrom, LibrarySegment, LibraryToastParam, PlanAppliedToastParam, RootStackParams, TabParams } from './types';
 
 /**
  * Root-stack actions that land on a tab (review workout-loop B1).
@@ -119,4 +119,17 @@ export function backFromEditor(from: EditorFrom, copyToast: LibraryToastParam | 
  */
 export function returnToWorkout(params: NonNullable<RootStackParams['Workout']>) {
   return { type: 'POP_TO', payload: { name: 'Workout', params, merge: true } } as const;
+}
+
+/**
+ * (Plan builder, 23 Oct) The plan builder: Today's `Set up a plan ›` and Library › Plan's `Set up a plan` (the single
+ * hook). A plain navigate (bubbles to the root stack, where `PlanSetup` lives).
+ */
+export function openPlanSetup() {
+  return { type: 'NAVIGATE', payload: { name: 'PlanSetup' } } as const;
+}
+
+/** `Apply plan`: to Today with the plan, showing `Plan applied · Undo` (plan-builder §3). */
+export function todayAfterPlanApplied(planApplied: PlanAppliedToastParam): PopToTabsAction {
+  return popToTabs({ screen: 'Today', params: { planApplied } });
 }
