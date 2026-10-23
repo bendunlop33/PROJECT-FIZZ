@@ -381,5 +381,11 @@ describe('D7: one split source — with a plan, Profile › Split and the duplic
     expect(details).toContain('if (r.byPlan === true) navigation.dispatch(openYourPlan(newUuid())); else open(r.key);');
     const split = read('screens/profile/SplitScreen.tsx');
     expect(split).toContain('text={C.setByPlan}');
+    // A failed plan read is never taken for no plan: neither editor opens on it (they'd change what the plan owns).
+    expect(split).toContain('s.plans.inUse().then((x) => x !== null));');
+    expect(split).toContain("planInUse.state === 'error'");
+    expect(split).not.toContain('() => false');
+    expect(details).toContain('s.plans.inUse()]);');
+    expect(details).not.toContain('s.plans.inUse().catch');
   });
 });

@@ -28,8 +28,9 @@ export function TrainingDetailsScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const [data, reload] = useScreenData(async (s) => {
-    // (D7) A plan in use owns days a week and session length; a failed read leaves them as Profile's (editable).
-    const [snap, owner, plan] = await Promise.all([s.training.snapshot(), s.yourData.profile(), s.plans.inUse().catch(() => null)]);
+    // (D7) A plan in use owns days a week and session length. A failed read is never taken for no plan (an edit here
+    // would change what the plan owns): the screen says it couldn't read, with Try again.
+    const [snap, owner, plan] = await Promise.all([s.training.snapshot(), s.yourData.profile(), s.plans.inUse()]);
     return { snap, unit: owner?.preferredUnit ?? 'kg', planInUse: plan !== null };
   });
   const [editing, setEditing] = useState<Editing>(null);

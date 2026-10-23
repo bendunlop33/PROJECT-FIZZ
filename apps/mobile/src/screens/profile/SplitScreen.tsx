@@ -24,8 +24,13 @@ export function SplitScreen() {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
-  const [planInUse] = useScreenData((s) => s.plans.inUse().then((x) => x !== null, () => false));
-  const [data, reload] = useScreenData((s) => s.training.snapshot());
+  // A failed read is never taken for no plan (the editor would change a split the plan owns): the screen says it couldn't read.
+  const [planInUse, reloadPlan] = useScreenData((s) => s.plans.inUse().then((x) => x !== null));
+  const [data, reloadSplit] = useScreenData((s) => s.training.snapshot());
+  const reload = () => {
+    reloadPlan();
+    reloadSplit();
+  };
   const [sheet, setSheet] = useState<Sheet>(null);
   const [opId, setOpId] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -40,7 +45,7 @@ export function SplitScreen() {
       </Screen>
     );
   }
-  if (data.state === 'error' || data.value === null) {
+  if (data.state === 'error' || data.value === null || planInUse.state === 'error') {
     return (
       <Screen>
         <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t read the split." action={<TextButton label="Try again" onPress={reload} />} />
