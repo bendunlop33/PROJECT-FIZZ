@@ -146,4 +146,76 @@ describe('D4: back-offs in Your workout follow Ben’s goal', () => {
     expect(sets.filter((x) => x.setType === 'top').map((x) => x.planned.load?.value)).toEqual([lighter]);
     expect(sets.filter((x) => x.setType === 'backoff').map((x) => x.planned.load?.value ?? null)).toEqual(b1);
   });
+
+  it('review B1: the top typed heavier then back restores the back-offs (no ratchet); same op ID replays; force-close; Start plans it', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    let snap = await buildPull(s, gymId, 'build-ratchet');
+    const t0 = topOf(snap) ?? 0;
+    const b0 = backoffsOf(snap);
+    expect(t0).toBeGreaterThan(0);
+    const main = mainOf(snap);
+    const ti = main.rows.findIndex((r) => r.type === 'top');
+    const typeTop = async (value: number, opId: string) => {
+      snap = ok(await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: main.key, index: ti, patch: { kind: 'load', value } }, { opId, basis: { version: snap.version } })).snapshot;
+    };
+    // Heavier, then back to the built top, three times over: the back-offs end where they were built.
+    for (let k = 0; k < 3; k += 1) {
+      await typeTop(t0 + 5, `up-${String(k)}`);
+      expect(backoffsOf(snap)).toEqual(b0);
+      await typeTop(t0, `back-${String(k)}`);
+      expect(topOf(snap)).toBe(t0);
+      expect(backoffsOf(snap)).toEqual(b0);
+    }
+    // Lighter by 5: the same % below the built back-offs whatever came before.
+    await typeTop(t0 - 5, 'down-5');
+    const lower = backoffsOf(snap);
+    lower.forEach((x, i) => {
+      expect(x ?? Infinity).toBeLessThanOrEqual(((b0[i] ?? 0) * (t0 - 5)) / t0 + 1e-9);
+      expect(x ?? 0).toBeGreaterThan(((b0[i] ?? 0) * (t0 - 5)) / t0 - 2.5);
+    });
+    await typeTop(t0 + 10, 'up-10');
+    await typeTop(t0 - 5, 'down-5-again');
+    expect(backoffsOf(snap)).toEqual(lower);
+    await typeTop(t0, 'back-final');
+    expect(backoffsOf(snap)).toEqual(b0);
+
+    // The last write again (a lost acknowledgement) is a replay: nothing moves twice.
+    const again = await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: main.key, index: ti, patch: { kind: 'load', value: t0 } }, { opId: 'back-final', basis: { version: snap.version - 1 } });
+    expect(again.status).toBe('replayed');
+    expect(backoffsOf(ok(again).snapshot)).toEqual(b0);
+
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    const read = await s2.builder.read(snap.draftId);
+    if (read === null) throw new Error('draft lost');
+    expect(backoffsOf(read)).toEqual(b0);
+    const started = await s2.builder.start(read.draftId, { choice: { kind: 'today' }, opId: 'start-ratchet', expectedVersion: read.version, checkIn: null });
+    if (!started.ok) throw new Error(started.message);
+    const a = (await s2.workout.load(started.sessionId))?.aggregate;
+    const ex = a?.exercises.find((e) => e.exerciseId === mainOf(read).exerciseId);
+    const sets = [...(a?.sets.filter((x) => x.sessionExerciseId === ex?.id && x.setType !== 'warmup') ?? [])].sort((x, y) => x.index - y.index);
+    expect(sets.filter((x) => x.setType === 'top').map((x) => x.planned.load?.value)).toEqual([t0]);
+    expect(sets.filter((x) => x.setType === 'backoff').map((x) => x.planned.load?.value ?? null)).toEqual(b0);
+  });
+
+  it('review B2: a top reps edit (6 → 10) lowers the top; the back-offs stay below it, and Start plans that', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const fresh = await buildPull(s, gymId, 'build-reps');
+    const fm = mainOf(fresh);
+    const fi = fm.rows.findIndex((r) => r.type === 'top');
+    const reps = ok(await s.builder.edit(fresh.draftId, { kind: 'edit_row', slotKey: fm.key, index: fi, patch: { kind: 'reps', reps: 10 } }, { opId: 'top-reps', basis: { version: fresh.version } })).snapshot;
+    const t1 = topOf(reps) ?? 0;
+    expect(t1).toBeGreaterThan(0);
+    expect(t1).toBeLessThan(topOf(fresh) ?? 0);
+    const b1 = backoffsOf(reps);
+    for (const x of b1) expect(x ?? Infinity).toBeLessThanOrEqual(t1 * 0.96 + 1e-9);
+    const started = await s.builder.start(reps.draftId, { choice: { kind: 'today' }, opId: 'start-reps', expectedVersion: reps.version, checkIn: null });
+    if (!started.ok) throw new Error(started.message);
+    const a = (await s.workout.load(started.sessionId))?.aggregate;
+    const ex = a?.exercises.find((e) => e.exerciseId === fm.exerciseId);
+    const sets = a?.sets.filter((x) => x.sessionExerciseId === ex?.id && x.setType === 'backoff') ?? [];
+    expect(sets.map((x) => x.planned.load?.value ?? null)).toEqual(b1);
+  });
 });
