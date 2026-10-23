@@ -115,10 +115,11 @@ describe('todayTimeFit', () => {
     expect(unfitWorkout(rec ?? { base: w, dropped: [] }, fit.workout)).toEqual(w);
   });
 
-  it('nothing cut, or a card Time filled: no record', () => {
+  it('nothing changed: no record; a card Time filled: a fill record from the plan day (re-review B3)', () => {
     const w = today(noAbs);
     expect(todayTimeFit(w, [], 60, ctx)).toBeNull();
-    expect(todayTimeFit(w, [{ kind: 'add', slotKey: 'x', exerciseId: 'hammer', why: 'arm' }], 60, ctx)).toBeNull();
+    const fill = todayTimeFit(w, [{ kind: 'add', slotKey: 'x', exerciseId: 'hammer', why: 'arm' }], 60, ctx, 90);
+    expect(fill).toMatchObject({ base: w, fromMinutes: 60, dropped: [], added: [{ slotKey: 'x', why: 'arm' }], filledTo: 90 });
   });
 
   it('a plan day longer than its own length: fitted at it, the record’s length is the draft’s own', () => {

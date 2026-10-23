@@ -1,5 +1,6 @@
-import { BUILD_LIMITS } from '@fizz/schemas';
+import { BUILD_LIMITS, type BuilderSetup } from '@fizz/schemas';
 import { slotsOf } from './arrange';
+import { fromDraftPlan, toDraftPlan, type DraftCodecContext } from './codec';
 import { estimateBuilderMinutes } from './estimate';
 import { clampMinutes, FIT_RULES, fitToMinutes, type BuilderFitStep } from './fit';
 import { workingCount } from './set-rows';
@@ -33,6 +34,33 @@ export interface BuilderTimeFit {
   cut?: Readonly<Record<string, number>>;
   /** (22 Oct revision) Singles the fit paired (Supersets on), each pair's slot keys; they stand alone again when it's undone. */
   paired?: readonly (readonly string[])[];
+  /**
+   * (Review todaylean B3) Today's card filled above the plan's length: `base` is the plan day's draft before the fill,
+   * `fromMinutes` the plan's length. `added`: exercises the fill added (they go at or below the plan's length, and
+   * the Start prompt never sees them); `raised`: working sets it added to a plan slot; `filledTo`: the Time it filled to.
+   */
+  added?: readonly { slotKey: string; why: 'arm' | 'main_group' | 'arm_partner' }[];
+  raised?: Readonly<Record<string, number>>;
+  filledTo?: number;
+}
+
+/** A fill record (Today's Time above the plan's length), not a cut. */
+export const isFillRecord = (fit: Pick<BuilderTimeFit, 'filledTo'> | null | undefined): boolean => fit?.filledTo !== undefined;
+
+/** Working sets Ben's version of a slot keeps once the fill's `raised` sets go: only sets above the plan's count. */
+function lessRaised(fit: Pick<BuilderTimeFit, 'raised'>, was: BuilderSlot, s: BuilderSlot): BuilderSlot {
+  const raised = fit.raised?.[s.key] ?? 0;
+  const now = workingCount(s);
+  const plan = workingCount(was);
+  if (raised <= 0 || now <= plan || was.exerciseId !== s.exerciseId) return s;
+  let off = now - Math.max(plan, now - raised);
+  const rows = [...s.rows];
+  for (let i = rows.length - 1; i >= 0 && off > 0; i -= 1) {
+    if (rows[i]?.type === 'warmup' || rows[i]?.type === 'drop') continue;
+    rows.splice(i, 1);
+    off -= 1;
+  }
+  return { ...s, rows };
 }
 
 /**
@@ -76,14 +104,21 @@ function readded(fit: Pick<BuilderTimeFit, 'base'>, current: BuilderWorkout, dro
  * `hold`: a slot Ben touched since the fit stays as he has it, the sets the fit took from it held back (what a
  * shorter Time fits from; review R1). Without it they're added back (the whole original: Undo, the full length).
  */
-export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut' | 'paired'>, current: BuilderWorkout, opts: { hold?: boolean } = {}): BuilderWorkout {
+export function unfitWorkout(fit: Pick<BuilderTimeFit, 'base' | 'dropped' | 'cut' | 'paired' | 'added' | 'raised'>, current: BuilderWorkout, opts: { hold?: boolean } = {}): BuilderWorkout {
   const baseSlots = new Map(slotsOf(fit.base.blocks).map((s) => [s.key, s]));
-  let blocks: BuilderBlock[] = current.blocks.map((b) => ({
+  // (Review todaylean B3) What Today's fill added goes, unless Ben has made it his (touched it).
+  const added = new Set((fit.added ?? []).map((a) => a.slotKey));
+  let blocks: BuilderBlock[] = current.blocks
+    .map((b) => ({ ...b, slots: b.slots.filter((s) => !(added.has(s.key) && !baseSlots.has(s.key) && s.touched !== true)) }))
+    .filter((b) => b.slots.length > 0)
+    .map((b) => ({
     ...b,
     slots: b.slots.map((s) => {
       const was = baseSlots.get(s.key);
       if (was === undefined || was.exerciseId !== s.exerciseId) return s;
       if (s.touched !== true) return { ...s, rows: was.rows.map((r) => ({ ...r })) };
+      // Sets the fill added to a slot Ben edited since are the fill's, not his.
+      if (fit.raised !== undefined) return lessRaised(fit, was, s);
       if (opts.hold === true) return s;
       // Ben's version, with the sets the fit took added back as they were (the original's, from his count on).
       const back = setsBack(fit, was, s);
@@ -237,6 +272,8 @@ export function withOriginalRows(original: BuilderWorkout, changed: BuilderWorko
 
 /** `fitWorkoutToTime`: Your workout at a new length (see the module comment). */
 export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome {
+  // (Review todaylean B3) Today's fill is live and Time is still at or above what it filled to: it stays as it is.
+  if (i.fit?.filledTo !== undefined && clampMinutes(i.to) >= i.fit.filledTo) return { workout: i.current, fit: i.fit, minutes: clampMinutes(i.to), over: false };
   const original = i.fit === null ? i.current : unfitWorkout(i.fit, i.current);
   const work = i.fit === null ? i.current : unfitWorkout(i.fit, i.current, { hold: true });
   const fromMinutes = i.fit?.fromMinutes ?? i.minutes;
@@ -244,23 +281,64 @@ export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome 
 }
 
 /**
- * (Review todaylean B2) Today's card fitted to its Time, as the record Your workout's Time keeps: the draft before the
- * fit (`base`), the length at which nothing is cut (the plan day's, or the draft's own when it is longer), and what
+ * (Review todaylean B2, B3) Today's card fitted to its Time, as the record Your workout's Time keeps: the draft before
+ * the fit (`base`), the length at which nothing is cut (the plan day's, or the draft's own when it is longer), and what
  * the fit left out, cut and paired. So Your workout opened from Today shows Time's note and Undo, more Time brings the
- * plan day's workout back, and Start (and the Summary) never take Time's cuts for Ben's. Null when the fit shrank
- * nothing (it fits, or Time filled it: a filled card is the draft itself at that length).
+ * plan day's workout back, and Start (and the Summary) never take Time's cuts for Ben's. A card Time filled (above the
+ * plan's length, `minutes`) keeps what the fill added and raised, with the plan day's draft as `base` and the plan's
+ * length as `fromMinutes`: Time at or below it gives the plan day back, and Start never offers the fill (D1).
+ * Null when the fit changed nothing.
  */
-export function todayTimeFit(unfitted: BuilderWorkout, steps: readonly BuilderFitStep[], planMinutes: number, ctx: Pick<BuilderContext, 'info' | 'restPresetsS'>): BuilderTimeFit | null {
+export function todayTimeFit(unfitted: BuilderWorkout, steps: readonly BuilderFitStep[], planMinutes: number, ctx: Pick<BuilderContext, 'info' | 'restPresetsS'>, minutes?: number): BuilderTimeFit | null {
   const rank = (l: BuilderWorkout['restLevel']) => (l === 'normal' ? 0 : l === 'shorter' ? 1 : 2);
   const grew = steps.some((st) => st.kind === 'add' || (st.kind === 'sets' && st.to > st.from) || (st.kind === 'rest' && rank(st.to) < rank(st.from)));
   const shrank = steps.some((st) => st.kind === 'drop' || st.kind === 'pair' || st.kind === 'effort' || (st.kind === 'sets' && st.to < st.from) || (st.kind === 'rest' && rank(st.to) > rank(st.from)));
-  if (grew || !shrank) return null;
+  if (grew) {
+    const added = steps.flatMap((st) => (st.kind === 'add' ? [{ slotKey: st.slotKey, why: st.why }] : []));
+    const isAdded = new Set(added.map((a) => a.slotKey));
+    const raised: Record<string, number> = {};
+    for (const st of steps) if (st.kind === 'sets' && st.to > st.from && !isAdded.has(st.slotKey)) raised[st.slotKey] = (raised[st.slotKey] ?? 0) + st.to - st.from;
+    const fromMinutes = clampMinutes(planMinutes);
+    return { base: unfitted, fromMinutes, dropped: [], ...(added.length === 0 ? {} : { added }), ...(Object.keys(raised).length === 0 ? {} : { raised }), filledTo: Math.max(fromMinutes, clampMinutes(minutes ?? planMinutes)) };
+  }
+  if (!shrank) return null;
   const cut: Record<string, number> = {};
   for (const st of steps) if (st.kind === 'sets' && st.from > st.to) cut[st.slotKey] = (cut[st.slotKey] ?? 0) + st.from - st.to;
   const dropped = steps.flatMap((st) => (st.kind === 'drop' ? [st.slotKey] : []));
   const paired = steps.flatMap((st) => (st.kind === 'pair' ? [[...st.slotKeys]] : []));
   const fromMinutes = Math.max(clampMinutes(planMinutes), clampMinutes(estimateBuilderMinutes(unfitted, ctx)));
   return { base: unfitted, fromMinutes, dropped, ...(Object.keys(cut).length === 0 ? {} : { cut }), ...(paired.length === 0 ? {} : { paired }) };
+}
+
+type StoredTimeFit = NonNullable<BuilderSetup['timeFit']>;
+
+/** A live fit as the set-up stores it (`timeFit`). */
+export function timeFitToStored(fit: BuilderTimeFit, codec: DraftCodecContext): StoredTimeFit {
+  return {
+    base: toDraftPlan(fit.base, codec),
+    ...(fit.base.restLevel === 'normal' ? {} : { baseRestLevel: fit.base.restLevel }),
+    fromMinutes: fit.fromMinutes,
+    dropped: [...fit.dropped],
+    ...(fit.cut === undefined || Object.keys(fit.cut).length === 0 ? {} : { cut: { ...fit.cut } }),
+    ...(fit.paired === undefined || fit.paired.length === 0 ? {} : { paired: fit.paired.map((p) => [...p]) }),
+    ...(fit.added === undefined || fit.added.length === 0 ? {} : { added: fit.added.map((a) => ({ ...a })) }),
+    ...(fit.raised === undefined || Object.keys(fit.raised).length === 0 ? {} : { raised: { ...fit.raised } }),
+    ...(fit.filledTo === undefined ? {} : { filledTo: fit.filledTo }),
+  };
+}
+
+/** The stored record (`timeFit`) as the builder's fit. */
+export function timeFitFromStored(t: StoredTimeFit): BuilderTimeFit {
+  return {
+    base: fromDraftPlan(t.base, t.baseRestLevel ?? 'normal'),
+    fromMinutes: t.fromMinutes,
+    dropped: t.dropped,
+    ...(t.cut === undefined ? {} : { cut: t.cut }),
+    ...(t.paired === undefined ? {} : { paired: t.paired }),
+    ...(t.added === undefined ? {} : { added: t.added }),
+    ...(t.raised === undefined ? {} : { raised: t.raised }),
+    ...(t.filledTo === undefined ? {} : { filledTo: t.filledTo }),
+  };
 }
 
 /**
@@ -284,6 +362,14 @@ export function timeFitChanges(fit: BuilderTimeFit, current: BuilderWorkout): Bu
     // A slot Ben touched since: only what the fit took (his own changes aren't the fit's).
     const from = s.touched === true ? to + setsBack(fit, was, s) : workingCount(was);
     if (to < from) out.push({ kind: 'sets', slotKey: s.key, exerciseId: s.exerciseId, from, to });
+    // (Review todaylean B3) Sets Today's fill added to a slot Ben hasn't touched.
+    else if (to > from && s.touched !== true && (fit.raised?.[s.key] ?? 0) > 0) out.push({ kind: 'sets', slotKey: s.key, exerciseId: s.exerciseId, from, to });
+  }
+  // What Today's fill added that is still there as it added it.
+  const inBase = new Set(slotsOf(fit.base.blocks).map((s) => s.key));
+  for (const a of fit.added ?? []) {
+    const s = now.get(a.slotKey);
+    if (s !== undefined && s.touched !== true && !inBase.has(a.slotKey)) out.push({ kind: 'add', slotKey: a.slotKey, exerciseId: s.exerciseId, why: a.why });
   }
   return out;
 }

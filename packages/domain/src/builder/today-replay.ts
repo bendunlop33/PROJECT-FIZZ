@@ -89,8 +89,10 @@ export function replayedFitSteps(steps: readonly BuilderFitStep[], replayedBase:
         return st.slotKeys.every((k) => base.get(k)?.touched !== true && base.has(k));
       case 'sets':
       case 'drop':
-      case 'add':
         return ours(st.slotKey, st.exerciseId);
+      case 'add':
+        // (Review todaylean B3) What the fill added isn't in the draft before it: it is Time's unless Ben's slot has its key.
+        return !base.has(st.slotKey) || ours(st.slotKey, st.exerciseId);
     }
   });
 }

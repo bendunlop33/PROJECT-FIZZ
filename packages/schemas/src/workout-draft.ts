@@ -399,8 +399,21 @@ export const BuilderSetupSchema = z.object({
       cut: z.record(IdSchema, z.int().min(1).max(BUILD_LIMITS.maxWorkingSets)).optional(),
       /** (22 Oct revision, D9) Singles the fit paired (Supersets on), each pair's slot keys: they stand alone again when it's undone. */
       paired: z.array(z.array(IdSchema).min(2).max(BUILD_LIMITS.maxSuperset)).max(BUILD_LIMITS.maxExercises).optional(),
+      /**
+       * (Review todaylean B3) Today's card filled above the plan's length (`base` the plan day's draft, `fromMinutes`
+       * the plan's length): the exercises the fill added, the working sets it added to plan slots, and the Time it
+       * filled to. Time at or below the plan's length, the Start prompt and the plan never get the fill.
+       */
+      added: z.array(z.object({ slotKey: IdSchema, why: z.enum(['arm', 'main_group', 'arm_partner']) })).max(BUILD_LIMITS.maxExercises).optional(),
+      raised: z.record(IdSchema, z.int().min(1).max(BUILD_LIMITS.maxWorkingSets)).optional(),
+      filledTo: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes).optional(),
     })
     .optional(),
+  /**
+   * (Review todaylean B3) The Time Today's card filled to above the plan's length: Your workout's Time brings Today's
+   * fill back up to it (Today's draft at that Time, Ben's edits replayed), never past it. Today's draft only.
+   */
+  timeFill: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes).optional(),
   /**
    * (22 Oct, review B1) The set-up's length before the first Time change on Your workout (`minutes` is then Time's,
    * today's only). `Update … in your plan` saves this as the plan day's length, never Time's. Absent: Time unused.
