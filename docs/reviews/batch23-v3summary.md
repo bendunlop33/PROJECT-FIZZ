@@ -2,7 +2,7 @@
 
 Branch `claude/v3summary-23oct`, commits `0d573be..7d507a7` (5 commits on top of `9261625`). Checked against Ben's decisions D1–D9 (22–23 Oct), CLAUDE.md rules 1–10, the committed `workout-builder-v3.md`, and the design track's uncommitted §2.8 draft (main tree, `docs/design/workout-builder-v3.md` §2.8 and the D8 row at line 342). Nothing has run on a real iPhone.
 
-## Verdict: CHANGES NEEDED
+## Verdict: PASS (re-review after fix round 1; first verdict CHANGES NEEDED, see "Re-review" at the end)
 
 The plumbing is good. Start no longer prompts anywhere. Keep's Apply, Skip and Undo are versioned, idempotent, and written in one SQLite transaction with the draft's answer, so they survive a force-close. D8's chat Apply is version-fenced, and the gym, pain and rule-3 gates hold.
 
@@ -341,3 +341,70 @@ Keep no longer diffs the workout against the stored routine. It lists only **Ben
 - `npm run lint`: exit 0.
 - `npm run test`: 477 files, 8849 passed, 2 todo, 0 failed. The review's baseline was 475 files and 8816 tests.
 - New test files: `apps/mobile/test/keep-next-time-authorship.test.ts` and `apps/mobile/test/edited-after-change.test.ts`.
+
+---
+
+## Re-review after fix round 1 (reviewer, 23 Oct)
+
+Reviewed `2dd748f`, `ebbc0aa`, `1eb0bfb` and `d732f04` against the first-round findings, D1, D8 and CLAUDE.md rules 2, 3 and 5. Nothing has run on a real iPhone.
+
+### Verdict: PASS
+
+All blocking findings from both rounds (B1, B2, B3) are fixed in code and covered by exact-line tests on real SQLite. No new blocking issue found. S1/S2 on Today's card stays open as a known should-fix that needs Ben's decision (below).
+
+### Checks run by the reviewer
+
+- `npm run typecheck`: exit 0.
+- `npm run lint`: exit 0.
+- `npm run test`: 477 files, 8849 passed, 2 todo, 0 failed. This matches the fix log.
+
+### Blocking findings, verified
+
+- **B1 (Today's own changes listed as Ben's): fixed.**
+  - `keepDiff` (`packages/domain/src/builder/keep.ts:139-192`) now reads only Ben's marks. Those are written only by `builder.edit` (`builder-service.ts:1630`) and by his own Set up merges (`:1702-1708`, `byApp` excluded).
+  - Set counts are compared like with like: the stored count + (current − `setsFrom`). `setsFrom` puts back Your workout's Time cuts (`unfittedSetsOf`, `:993-996`) and Today's (`todayCut`, `today-v2/session.ts:247-260`).
+  - I traced the cut-then-restore case through `setsBack` (`time-fit.ts:39-44`). It nets to zero.
+  - Tests at `keep-next-time-authorship.test.ts:136-232` assert exact lines for Time 20 + load edit (no row), Time 20 + one set (`Bench press: 3 → 4 sets` only), a set added back after a cut (no row), and remove + add.
+- **B2 (coach and gym changes listed): fixed.**
+  - D8 landings (`landAll`, `:1106-1132`) and gym swaps (`changeGym` `swapIn`, `:1503-1523`) go through `applyBuilderEdit` directly. `markBenEdit` never sees them.
+  - The builder's swap (`edit.ts:110`) makes a fresh slot without `keep`, so any older mark on the slot is cleared.
+  - Tests at `:295-370` cover both reported repros (coach on Today with no edits, a saved Push A after a gym change). Both return no row.
+- **B3 (swap reads as add + delete; main lift deleted): fixed.**
+  - Today's slots get their template `origin` (`withTemplateMarks`), so a swap from Today's Edit is one swap line.
+  - The plan day's main lift (the key's `mainLiftExerciseId`) is `locked` (`builder-service.ts:1252-1257`). `keepDiff` never swaps or deletes it (`keep.ts:171, 186`).
+  - Apply no longer rewrites `source` (S4). The test at `:146-167` checks every other exercise is `toEqual` to before.
+
+### Should-fix (non-blocking)
+
+1. **S1/S2 still open: a coach change landed on Today's card disables Today's Time and other controls for that day, and the card has no Undo** (`app-services.ts` `landCoachOnToday`, `today-session.ts` edited branch).
+   - Failure: Ben applies "swap triceps pushdown next time" in chat. The next day he picks 20 min on Today. The card stays at full length, and Start starts the full-length workout.
+   - Ben can still use Edit and Your workout's Time, and the `✦ … · Undo` line is now on Your workout. So this is a usability regression of D9 on a narrow path, not a data or plan-integrity problem.
+   - Needs Ben's SP5/SP6 call together with the todaylean (D3) track. Track it there; don't let it go unowned.
+2. **Ben's swap of an exercise the coach or gym already swapped is never offered** (`keep.ts:81` records `from` as the coach's or gym's pick; `:171` needs `from` to be the plan day's exercise).
+   - Failure: the coach lands Triceps pushdown → Rope pushdown. Ben swaps Rope → Dips on Your workout. Keep offers nothing.
+   - This is conservative and safe (nothing is written), and the fix log documents it as intended. Confirm with Ben alongside question 2.
+3. **The `✦ … · Undo` line on Your workout lasts only while the landing is the draft's last change** (`BuilderWorkoutScreen.tsx:588`; `landingOf`, `builder-service.ts:1156-1160`).
+   - After any edit by Ben, the coach's change can only be reversed by hand. Its chat card's Undo then returns `changed_since`. This is consistent with the builder's single-step Undo and stays honest (the card doesn't claim it can undo), but D8 says "visible, Undo".
+   - Worth a design note.
+
+### Nits
+
+- `keep-next-time-authorship.test.ts:336`: the gym-change test's expectation depends on whether the dumbbell gym kept Ben's swap, so one branch may never run. Pin the gym or the swap target so that the "Ben's own swap stays his" line is asserted for certain.
+- `keep-next-time-authorship.test.ts:150, 256, 305, 315` still use `toContain`. These are preconditions only; the Keep assertions are exact.
+- A set count Ben changes on a gym-swapped slot with no `origin` (a library open) is silently not offered (`keep.ts:164`, `b === undefined` with no `added`). This is safe.
+
+### Spec issues (for Ben and the spec owner)
+
+- SP7: the main lift is locked in Keep, so a deliberate main-lift swap is never offered, and the row says nothing about it. Ben should confirm "today only".
+- `workout-builder-v3` §2.8 and `workout-summary` still describe the retired Start prompt. §2.8's diff basis should read "Ben's own structure edits against what the workout opened as".
+- D9 "same shared fit": Today's Time cut doesn't become Your workout's `timeFit` when Edit opens a Today card (fix log question 3iii).
+- Open questions 1–4 in the fix log stand as written. They are product calls, not code defects.
+
+### Rule check (changed code)
+
+- Rule 2: Keep never touches completed sets. Apply writes only the listed changes, versioned, and Undo is fenced to the version.
+- Rule 3: coach changes stay today-only and are never turned into plan changes by Keep.
+- Rule 4: landings are still checked against the gym and pain flags (`landHere`).
+- Rule 5: op IDs are recorded for every landed apply (`alsoOpIds`). A Reload re-lands the coach's changes in the same write. Undo reconciles after a force-close on the next open.
+- Minimal copy: the new UI is one `✦ <change> · Undo` status line.
+- No secrets and no new logging of health data.
