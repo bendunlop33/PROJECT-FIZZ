@@ -57,8 +57,8 @@ export function useProposalActions(reviewId: string | null, after: () => void) {
   };
 }
 
-/** A structural change, asked: Apply / Keep as is (rule 3: never applied before Ben says). */
-function AskRow({ row, onApply, onKeep, onUndo }: { row: ChangeRowView; onApply: () => void; onKeep: () => void; onUndo: () => void }) {
+/** An offer, asked: Apply / Skip (rule 3, D2: never applied before Ben says). */
+function AskRow({ row, onApply, onSkip, onUndo }: { row: ChangeRowView; onApply: () => void; onSkip: () => void; onUndo: () => void }) {
   const theme = useTheme();
   if (row.status !== 'open') return <ChangeRow row={row} first={false} onUndo={onUndo} onRedo={onApply} />;
   return (
@@ -66,22 +66,20 @@ function AskRow({ row, onApply, onKeep, onUndo }: { row: ChangeRowView; onApply:
       <AppText variant="headline" numeric style={{ fontSize: 15, lineHeight: 21, fontWeight: '600' }}>
         {`${row.exercise}: ${row.before} → ${row.after}`}
       </AppText>
-      {row.why !== null ? (
-        <AppText variant="callout" color="text.secondary" style={PROGRESS_TEXT.why}>
-          {row.why}
-        </AppText>
-      ) : null}
+      <AppText variant="callout" color="text.secondary" numeric style={PROGRESS_TEXT.why}>
+        {[row.when, row.why].filter((x): x is string => x !== null).join(' · ')}
+      </AppText>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         <View style={{ flexGrow: 1 }}>
           <PrimaryButton label={PROGRESS_COPY.apply} onPress={onApply} accessibilityHint={row.accessibilityLabel} />
         </View>
-        <SecondaryButton label={PROGRESS_COPY.keep} onPress={onKeep} accessibilityLabel={`${PROGRESS_COPY.keep}: ${row.exercise}`} />
+        <SecondaryButton label={PROGRESS_COPY.skip} onPress={onSkip} accessibilityLabel={`${PROGRESS_COPY.skip}: ${row.exercise}`} />
       </View>
     </View>
   );
 }
 
-/** Coach's changes (bottom): the coach's sentence, the changes it already made (Undo), structural ones asked; `NEW` until `Got it`. */
+/** Coach's changes (bottom): the coach's sentence, the small changes it already made (Undo), offers asked (Apply / Skip); `NEW` until `Got it`. */
 export function ChangesSection({ view, hasPast, onReload, onPast }: { view: CoachChangesView; hasPast: boolean; onReload: () => void; onPast: (() => void) | null }) {
   const theme = useTheme();
   const services = useServices();
@@ -155,7 +153,7 @@ export function ChangesSection({ view, hasPast, onReload, onPast }: { view: Coac
             onApply={() => {
               actions.apply(r);
             }}
-            onKeep={() => {
+            onSkip={() => {
               actions.skip(r);
             }}
             onUndo={() => {

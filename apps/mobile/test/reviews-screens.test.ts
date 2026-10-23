@@ -107,9 +107,10 @@ describe('Progress v3 screens', () => {
     expect(summary).toContain('accessibilityLabel={b.accessibilityLabel}');
   });
 
-  it('changes: small ones Undo / Redo, structural ones Apply / Keep as is; one op ID per tap; Got it is versioned', () => {
+  it('changes: small ones Undo / Redo, offers Apply / Skip with their scope (D2); one op ID per tap; Got it is versioned', () => {
     expect(section).toContain('PROGRESS_COPY.apply');
-    expect(section).toContain('PROGRESS_COPY.keep');
+    expect(section).toContain('PROGRESS_COPY.skip');
+    expect(section).toContain('[row.when, row.why]');
     expect(charts).toContain('PROGRESS_COPY.undo');
     expect(charts).toContain('PROGRESS_COPY.redo');
     expect(section).toContain('opId: newUuid()');
