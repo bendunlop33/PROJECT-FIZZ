@@ -1,4 +1,4 @@
-import { isWarmed, planSessionWarmups, warmupTimeS, type SessionWarmupItem, type WarmupProfile } from '../warmup/plan';
+import { isWarmed, planSessionWarmupsAs, warmupTimeS, type SessionWarmupItem, type WarmupProfile } from '../warmup/plan';
 import { infoOrDefault } from './arrange';
 import { slotLoadOf } from './reps';
 import { builderWarmupInput, isTimedSlot } from './set-rows';
@@ -9,11 +9,13 @@ import type { BuilderContext, BuilderSetRow, BuilderSlot, BuilderWorkout } from 
  * slot's warm-ups follow its place in the workout and its load as they are now:
  * - WU2: warmed by an earlier slot with the same primary muscle group or pattern, or as a superset's later member;
  * - WU6: the workout's first exercise gets the extra 50 % step;
- * - WU11: the session's warm-ups fit the D17 budget (10 min), cut in WU11's order.
+ * - WU11: the session's warm-ups fit the D17 budget (10 min), cut in WU11's order;
+ * - (Ben, 23 Oct) the plan's Warm-ups setting (`ctx.warmups`): `short` takes every WU11 cut to its floors, `none`
+ *   plans none.
  * Slots Ben set his own warm-ups on (`ownWarmups`, or a warm-up kg he typed), timed slots and slots with no working
  * load keep theirs (their time still counts against the budget). Working sets are never touched. Pure.
  */
-export function settleWarmups(w: BuilderWorkout, ctx: Pick<BuilderContext, 'info' | 'loads'>): BuilderWorkout {
+export function settleWarmups(w: BuilderWorkout, ctx: Pick<BuilderContext, 'info' | 'loads' | 'warmups'>): BuilderWorkout {
   type Entry = { slot: BuilderSlot; item: SessionWarmupItem | null; fixedS: number; plannable: boolean };
   const entries: Entry[] = [];
   const earlier: WarmupProfile[] = [];
@@ -38,7 +40,10 @@ export function settleWarmups(w: BuilderWorkout, ctx: Pick<BuilderContext, 'info
   }
   const items = entries.flatMap((e) => (e.item === null ? [] : [e.item]));
   const fixedS = entries.reduce((n, e) => n + e.fixedS, 0);
-  const planned = planSessionWarmups(items.map((it, k) => (k === 0 ? { ...it, fixedS } : it)));
+  const planned = planSessionWarmupsAs(
+    items.map((it, k) => (k === 0 ? { ...it, fixedS } : it)),
+    ctx.warmups ?? 'full',
+  );
   let k = 0;
   const next = new Map<BuilderSlot, BuilderSlot>();
   for (const e of entries) {

@@ -1,6 +1,6 @@
-import type { PlanBuilderAnswers, PlanGroup, PlanSplit, PlanTarget } from '@fizz/schemas';
+import type { PlanBuilderAnswers, PlanGroup, PlanSplit, PlanTarget, PlanWarmups } from '@fizz/schemas';
 import { inKitUnit, kitAbove, kitBelow, kitDown, kitHasFormula, pbBackOff, pbMainLine, pbWarmUp, pbWeekOneTop, type PbWarmupSet, type PlanKit } from './loads';
-import type { WarmupExerciseFacts } from '../warmup/plan';
+import { generalWarmupMinutes, isWarmed, planSessionWarmupsAs, warmupProfileOf, type SessionWarmupItem, type WarmupExerciseFacts, type WarmupProfile } from '../warmup/plan';
 import { pbLiftStart, type PbHistoryOf, type PbKitOf, type PbLiftStart } from './lifts';
 import {
   PB_COMPAT,
@@ -46,6 +46,11 @@ import {
  *    their aim), at most 8 sets of a muscle a session, borrowing a compatible day for a priority; a top-up pass after.
  * 4. Sets become exercises of 2–4 sets, ranked by the preference score (default × 5 + his rate × his sessions) ÷
  *    (5 + his sessions), so A and B days differ; supersets pair accessories, never the main lift or heavy compounds.
+ *
+ * 5. (Ben, 23 Oct) Each day's set capacity is the session length less that day's own warm-ups (the shared WU1–WU12
+ *    planner over its exercises in order, with the general warm-up when the rules give one, under the plan's Warm-ups
+ *    setting) less ~3 min a working set (2.3 with supersets). Choosing exercises changes the warm-ups, so the build
+ *    repeats with each day's capacity lowered to what fits until every day fits (bounded, deterministic).
  *
  * Every load is one of the gym's achievable loads for that exercise (rule 4); an exercise held for pain or not usable
  * at the gym is never planned (rule 9).
@@ -114,13 +119,17 @@ export interface PbDay {
   /** Moved off the day before a hard leg session. */
   moved: boolean;
   exercises: PbExercise[];
+  /** Working sets this day fits: the session length less this day's warm-ups, ~3 min a set (2.3 with supersets). */
+  cap: number;
+  /** (Ben, 23 Oct) This day's planned warm-up time (seconds), general warm-up included, under the Warm-ups setting. */
+  warmupS: number;
+  /** The day's estimated minutes: its warm-ups plus its working sets. */
+  minutes: number;
 }
 
 export interface PbPlan {
   split: PlanSplit;
   days: PbDay[];
-  /** Working sets a session fits. */
-  cap: number;
   abs: number;
   /** Sets per week, half sets for indirect work, floored (§2). */
   weekly: Partial<Record<PbMuscle, number>>;
@@ -163,8 +172,17 @@ export function pbAbsAuto(a: Pick<PlanBuilderAnswers, 'effort' | 'priorities' | 
 
 export const pbTargetAim = (a: Pick<PlanBuilderAnswers, 'effort'>): number => (a.effort === 'maintain' ? 4 : a.effort === 'push' ? 8 : 6);
 
-/** Working sets that fit a session: ~3 min a set with rest (2.3 with supersets) after an 8-minute warm-up. */
-export const pbCapSets = (a: Pick<PlanBuilderAnswers, 'minutes' | 'supersets'>): number => Math.max(2, Math.floor((a.minutes - 8) / (a.supersets ? 2.3 : 3)));
+/** Minutes a working set takes with its rest: ~3, 2.3 with supersets (the rest before the first working set included, WU11). */
+export const pbSetMinutes = (a: Pick<PlanBuilderAnswers, 'supersets'>): number => (a.supersets ? 2.3 : 3);
+
+/**
+ * Working sets that fit a session (Ben, 23 Oct): the session length less that day's warm-up time (`warmupS`, from the
+ * day's own warm-ups; no longer a flat 8 minutes), ~3 min a set with rest (2.3 with supersets); at least 2.
+ */
+export const pbCapSets = (a: Pick<PlanBuilderAnswers, 'minutes' | 'supersets'>, warmupS: number): number => Math.max(2, Math.floor((a.minutes - Math.max(0, warmupS) / 60) / pbSetMinutes(a) + 1e-9));
+
+/** The plan's Warm-ups setting; absent (a plan built before it): `full`. */
+export const pbWarmups = (a: Pick<PlanBuilderAnswers, 'warmups'>): PlanWarmups => a.warmups ?? 'full';
 
 const starred = (a: PlanBuilderAnswers): string[] => a.other.filter((o) => o.star).map((o) => o.sport);
 
@@ -276,11 +294,43 @@ function blockedDays(a: PlanBuilderAnswers): Set<number> {
 // ---------------------------------------------------------------------------
 // The build
 
-interface WorkDay extends PbDay {
+interface WorkDay extends Omit<PbDay, 'cap' | 'warmupS' | 'minutes'> {
   load: number;
 }
 
+/** Rounds of the capacity loop: each lowers at least one day's capacity, so it ends well before this. */
+const PB_CAP_ROUNDS = 8;
+
 export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
+  const a = input.answers;
+  const n = pbPlanDays(a).length;
+  // Start from no warm-ups (the most each day could fit); lower each day to what fits with its own warm-ups.
+  let caps = Array.from({ length: n }, () => pbCapSets(a, 0));
+  let built = buildWithCaps(input, caps);
+  let warm = built.days.map((d) => pbDayWarmups(d, a, input));
+  for (let round = 1; round < PB_CAP_ROUNDS; round += 1) {
+    const fit = warm.map((w) => pbCapSets(a, w.timeS));
+    if (fit.every((c, i) => c >= (caps[i] ?? 0))) break;
+    caps = caps.map((c, i) => Math.min(c, fit[i] ?? c));
+    built = buildWithCaps(input, caps);
+    warm = built.days.map((d) => pbDayWarmups(d, a, input));
+  }
+  const perSet = pbSetMinutes(a);
+  return {
+    ...built,
+    days: built.days.map((d, i) => {
+      const w = warm[i];
+      const warmupS = w?.timeS ?? 0;
+      const sets = d.exercises.reduce((t, e) => t + e.sets, 0);
+      // The main lift's warm-ups as the day plans them (its place, the day's budget, the Warm-ups setting).
+      const exercises = d.exercises.map((e, k) => (e.role !== 'main' || e.main === null || w === undefined ? e : { ...e, main: { ...e.main, warmup: w.mainSteps(k) ?? e.main.warmup } }));
+      return { ...d, exercises, cap: caps[i] ?? pbCapSets(a, warmupS), warmupS, minutes: Math.round(warmupS / 60 + sets * perSet) };
+    }),
+  };
+}
+
+/** One build at fixed per-day capacities (`caps[day index]`). */
+function buildWithCaps(input: PlanEngineInput, caps: readonly number[]): Omit<PbPlan, 'days'> & { days: Omit<PbDay, 'cap' | 'warmupS' | 'minutes'>[] } {
   const a = input.answers;
   const pain = input.painHeld ?? new Set<string>();
   const heldForPain = new Set<string>();
@@ -380,7 +430,7 @@ export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
   }
 
   const T = Math.max(a.abs ?? pbAbsAuto(a), isSpec(a, 'Obliques') ? pbTargetAim(a) : 0);
-  const cap = pbCapSets(a);
+  const capOf = (d: Pick<WorkDay, 'index'>): number => caps[d.index] ?? 2;
 
   // Sets placed per (day, muscle, tag).
   const cnt = new Map<string, number>();
@@ -426,7 +476,7 @@ export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
   const place = (m: PbMuscle, t: string | null, upto: number, onlyDays?: readonly WorkDay[]): void => {
     for (let guard = 0; guard < 60 && total(m, t) < upto; guard += 1) {
       if (onlyDays !== undefined) {
-        const d = onlyDays.find((x) => (cnt.get(key(x, m, t ?? '')) ?? 0) - (t !== null ? 0 : mainOn(x, m)) <= 0 && cap - x.load >= 2);
+        const d = onlyDays.find((x) => (cnt.get(key(x, m, t ?? '')) ?? 0) - (t !== null ? 0 : mainOn(x, m)) <= 0 && capOf(x) - x.load >= 2);
         if (d === undefined) return;
         const k = key(d, m, t ?? '');
         cnt.set(k, (cnt.get(k) ?? 0) + 2);
@@ -438,14 +488,14 @@ export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
         .map((d) => {
           const has = (cnt.get(key(d, m, t ?? '')) ?? 0) - (t !== null ? 0 : mainOn(d, m));
           const unit = has > 0 ? 1 : 2;
-          return { d, unit, room: cap - d.load };
+          return { d, unit, room: capOf(d) - d.load };
         })
         .filter((o) => o.room >= o.unit && onDay(o.d, m) + o.unit <= 8)
         .sort((x, y) => (m === 'Core' ? y.room - x.room || onDay(x.d, m) - onDay(y.d, m) : onDay(x.d, m) - onDay(y.d, m) || y.room - x.room));
       // A priority whose own days are full borrows the most compatible, then lightest, other day (up to 3 days).
       if (opts.length === 0 && prioritised(m) && days.length < Math.min(3, plan.length)) {
         const extra = plan
-          .filter((p) => !days.includes(p) && !(PB_LEG_MUSCLES.includes(m) && blocked.has(dayOf(p))) && cap - p.load >= 2)
+          .filter((p) => !days.includes(p) && !(PB_LEG_MUSCLES.includes(m) && blocked.has(dayOf(p))) && capOf(p) - p.load >= 2)
           .sort((x, y) => compatRank(m, x.focus) - compatRank(m, y.focus) || x.load - y.load)[0];
         if (extra !== undefined) {
           D.set(m, [...days, extra]);
@@ -537,13 +587,13 @@ export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
     const m = chart.filter((x) => x !== 'Core' && (ws[x] ?? 0) < pbRange(a, x)[0]).sort((x, y) => (ws[x] ?? 0) - pbRange(a, x)[0] - ((ws[y] ?? 0) - pbRange(a, y)[0]))[0];
     if (m === undefined) break;
     const hit = plan
-      .flatMap((d) => d.exercises.filter((e) => e.muscle === m && e.role !== 'main' && e.sets < 4 && daySets(d) < cap).map((e) => [d, e] as const))
+      .flatMap((d) => d.exercises.filter((e) => e.muscle === m && e.role !== 'main' && e.sets < 4 && daySets(d) < capOf(d)).map((e) => [d, e] as const))
       .sort(([x], [y]) => daySets(x) - daySets(y))[0];
     if (hit !== undefined) {
       hit[1].sets += 1;
       continue;
     }
-    const d = (D.get(m) ?? []).filter((x) => cap - daySets(x) >= 2 && x.exercises.length < MAX_EX).sort((x, y) => daySets(x) - daySets(y))[0];
+    const d = (D.get(m) ?? []).filter((x) => capOf(x) - daySets(x) >= 2 && x.exercises.length < MAX_EX).sort((x, y) => daySets(x) - daySets(y))[0];
     const def = d === undefined ? undefined : ranked(exOf(m)).find((x) => !(x.skip ?? []).includes(d.focus) && !d.exercises.some((e) => e.key === x.key));
     if (d === undefined || def === undefined) break;
     const e = mkAcc(def.key, m, def.role, 2, def.tags ?? []);
@@ -558,13 +608,95 @@ export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
   return {
     split,
     days: plan.map((d) => ({ index: d.index, weekday: d.weekday, focus: d.focus, variant: d.variant, moved: d.moved, exercises: d.exercises })),
-    cap,
     abs: a.abs ?? pbAbsAuto(a),
     weekly,
     ranges,
     short: chart.filter((m) => (weekly[m] ?? 0) < (ranges[m]?.[0] ?? 0)),
     nextWeekStarts: pbNextWeekStarts(split, plan.length),
     heldForPain: [...heldForPain].sort(),
+  };
+}
+
+/** A nominal working load and a fine ladder: a time estimate for an exercise whose load isn't known yet (Start fits it). */
+const NOMINAL_W = 100;
+const NOMINAL_LOADS: readonly number[] = Array.from({ length: 2 * NOMINAL_W + 1 }, (_, k) => k / 2);
+const NOMINAL_BAR = 20;
+
+/** The catalogue facts the warm-up planner reads when the catalogue entry isn't given (engine tests; a key only). */
+function factsFromKey(key: string, role: PbExercise['role']): WarmupExerciseFacts {
+  return { catalogueKey: key, family: /(^|-)deadlift$/.test(key) && !key.includes('romanian') ? 'deadlift' : null, mechanic: role === 'i' ? 'isolation' : 'compound', measurement: 'reps' };
+}
+
+export interface PbDayWarmups {
+  /** The day's warm-up time (seconds): every exercise's warm-up steps plus the general warm-up, per WU11/WU12. */
+  timeS: number;
+  /** General warm-up minutes (WU12), or null. */
+  generalMinutes: number | null;
+  /** The warm-up sets the day plans for its exercise at index `k` (on known loads), else null. */
+  mainSteps: (k: number) => PbWarmupSet[] | null;
+}
+
+/**
+ * (Ben, 23 Oct) A plan day's warm-ups from the shared planner (WU1–WU12), as Start and Today plan them: each exercise in
+ * the day's order with its class at this gym, R and W (the main lift's top set; an accessory's planned load), WU2's
+ * warmed check against the exercises before it (a superset's second member is warmed), WU6's first-exercise step,
+ * WU12's general warm-up before a heavy first lift, all under the plan's Warm-ups setting (`full` within the D17
+ * budget, `short` WU11's floors, `none` nothing). An exercise with no known load yet is timed on a nominal load (its
+ * steps' reps, which is all the time depends on). Pure.
+ */
+export function pbDayWarmups(day: Pick<PbDay, 'exercises'>, a: Pick<PlanBuilderAnswers, 'warmups'>, input: Pick<PlanEngineInput, 'kitOf' | 'factsOf'>): PbDayWarmups {
+  const mode = pbWarmups(a);
+  const items: SessionWarmupItem[] = [];
+  const at: number[] = [];
+  const nominal: boolean[] = [];
+  const barOf: (number | null)[] = [];
+  const earlier: WarmupProfile[] = [];
+  let first: WarmupProfile | null = null;
+  day.exercises.forEach((e, k) => {
+    const kit = input.kitOf(e.key);
+    if (kit === null) return;
+    const facts = input.factsOf?.(e.key) ?? factsFromKey(e.key, e.role);
+    const loadable = kit !== 'bodyweight';
+    const convention = loadable ? kit.convention : 'bodyweight';
+    const profile = warmupProfileOf(facts, {
+      main: e.role === 'main',
+      itemKind: loadable ? kit.kind : null,
+      convention,
+      bodyweightExercise: convention === 'added',
+      fallback: { compound: e.role !== 'i', group: e.muscle, barbell: loadable && kit.barMass !== null },
+    });
+    const warmed = isWarmed(profile, earlier, e.pair?.endsWith('2') === true);
+    earlier.push(profile);
+    if (k === 0) first = profile;
+    const R = e.main?.reps ?? e.reps;
+    const known = e.main !== null ? e.main.top : e.load.kind === 'kg' ? e.load.value : null;
+    const bar = loadable && kit.kind === 'barbell' ? kit.barMass : null;
+    const guess = loadable && known === null && profile.cls !== 'none' && profile.cls !== 'bodyweight';
+    items.push({
+      cls: profile.cls,
+      reps: R,
+      load: guess ? NOMINAL_W : known,
+      warmed,
+      firstOfSession: k === 0,
+      floorStart: profile.floorStart,
+      barMass: guess ? (bar === null ? null : NOMINAL_BAR) : bar,
+      loads: guess ? NOMINAL_LOADS : loadable ? kit.loads : [],
+    });
+    at.push(k);
+    nominal.push(guess);
+    barOf.push(bar);
+  });
+  const general = mode === 'full' ? generalWarmupMinutes(first) : null;
+  const plan = planSessionWarmupsAs(items, mode, { generalMinutes: general });
+  return {
+    timeS: plan.timeS,
+    generalMinutes: plan.generalMinutes,
+    mainSteps: (k) => {
+      const i = at.indexOf(k);
+      if (i < 0 || nominal[i] === true) return null;
+      const bar = barOf[i] ?? null;
+      return (plan.steps[i] ?? []).map((st, j) => ({ bar: j === 0 && bar !== null && Math.abs(st.load - bar) < 1e-9, load: st.load, reps: st.reps }));
+    },
   };
 }
 
@@ -584,7 +716,7 @@ export function chunks(s: number): number[] {
 }
 
 /** Order: main lift, priorities and targets, compounds, isolations, core last. */
-function sortDay(a: PlanBuilderAnswers, d: PbDay): void {
+function sortDay(a: PlanBuilderAnswers, d: Pick<PbDay, 'exercises'>): void {
   const imp = (e: PbExercise): number => (e.role === 'main' ? 99 : isPri(a, e.muscle) ? 9 : isSpec(a, e.muscle) || e.tags.some((t) => isSpec(a, t)) ? 8 : e.muscle === 'Core' ? 3 : e.role === 'c' ? 5 : 4);
   const rank = (e: PbExercise): number => (e.role === 'main' ? 0 : e.muscle === 'Core' ? 9 : imp(e) >= 8 ? (e.role === 'c' ? 1 : 2) : e.role === 'c' ? 3 : 4);
   d.exercises.sort((x, y) => rank(x) - rank(y));

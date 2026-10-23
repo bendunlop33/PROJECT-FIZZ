@@ -3,7 +3,7 @@ import { PB_PREF_DAYS, PB_SPORT_DEFAULT_DAY } from './tables';
 
 /**
  * The plan builder's starting answers (D7, Ben 22–23 Oct): the ✦ answers start selected (6 weeks, Standard,
- * Balanced, the ✦ priority when there is one), so `Build plan` works from the first page. Sessions and length start
+ * Balanced, the ✦ priority when there is one; Warm-ups Full, Ben 23 Oct), so `Build plan` works from the first page. Sessions and length start
  * from Profile when set. Pure.
  */
 export function pbDefaultAnswers(input: { sessions?: number | null; minutes?: number | null; supersets?: boolean | null; suggestedPriority?: PlanGroup | null }): PlanBuilderAnswers {
@@ -20,6 +20,7 @@ export function pbDefaultAnswers(input: { sessions?: number | null; minutes?: nu
     days: [...(PB_PREF_DAYS[sessions] ?? [])],
     minutes: Math.min(180, Math.max(15, Math.round((input.minutes ?? 60) / 5) * 5)),
     supersets: input.supersets ?? false,
+    warmups: 'full',
     abs: null,
     other: [],
     lifts: {},

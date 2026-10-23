@@ -45,6 +45,15 @@ export type PlanTarget = z.infer<typeof PlanTargetSchema>;
 export const PlanSplitSchema = z.enum(['ul', 'ppl', 'body', 'full']);
 export type PlanSplit = z.infer<typeof PlanSplitSchema>;
 
+/**
+ * Your week › Warm-ups (Ben, 23 Oct): `full` the WU1–WU12 warm-ups as approved (the default); `short` WU11's cuts to
+ * their floors (no general warm-up, no WU6/WU7 steps, the short ladder on heavy lifts); `none` no planned warm-ups
+ * (Ben does his own). Applies to the plan's days on Today, Your workout and Start; Ben's own warm-ups on an exercise
+ * still win.
+ */
+export const PlanWarmupsSchema = z.enum(['full', 'short', 'none']);
+export type PlanWarmups = z.infer<typeof PlanWarmupsSchema>;
+
 /** A weekday, Monday = 0. */
 export const PlanWeekdaySchema = z.int().min(0).max(6);
 
@@ -88,6 +97,8 @@ export const PlanBuilderAnswersSchema = z.object({
   days: z.array(PlanWeekdaySchema).max(7),
   minutes: z.int().min(PLAN_BUILDER_LIMITS.minMinutes).max(PLAN_BUILDER_LIMITS.maxMinutes),
   supersets: z.boolean(),
+  /** (Ben, 23 Oct) Warm-ups for the plan's days; absent (plans built before it): `full`. */
+  warmups: PlanWarmupsSchema.optional(),
   /** Ab sets a week; null: the plan's own number (10, 14 with Core or Fitness, 6 on Maintain). */
   abs: z.union([z.literal(0), z.literal(6), z.literal(10), z.literal(14), z.literal(18)]).nullable(),
   other: z.array(PlanOtherTrainingSchema).max(PLAN_BUILDER_LIMITS.maxOther),

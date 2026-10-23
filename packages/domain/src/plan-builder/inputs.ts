@@ -1,4 +1,4 @@
-import type { EquipmentInstance, LoadConvention, PlanDraft, TrainingGoal } from '@fizz/schemas';
+import type { EquipmentInstance, LoadConvention, PlanDraft, PlanWarmups, TrainingGoal } from '@fizz/schemas';
 import { mainFocusOf } from '../builder/backoff';
 import type { MainFocus } from '../builder/types';
 import { getAchievableLoads, isBarLoaded, isPresenceOnly } from '../equipment';
@@ -51,4 +51,14 @@ export function pbHistoryOf(sessions: readonly HistorySession[], convention: Loa
 export function pbMainFocus(plan: Pick<PlanDraft, 'status' | 'versions' | 'currentVersion'> | null, goal: TrainingGoal | null | undefined): MainFocus {
   const focus = plan === null || plan.status !== 'applied' ? undefined : plan.versions.find((v) => v.n === plan.currentVersion)?.builder?.answers.focus;
   return focus ?? mainFocusOf(goal);
+}
+
+/**
+ * (Ben, 23 Oct) The Warm-ups setting Today, Your workout and Start plan with: the applied builder plan's (its answers),
+ * else `full` (no plan, a coach plan, or a plan built before the setting). Like the back-off band (S7), it is one of
+ * the workout defaults the plan sets while it is in use.
+ */
+export function pbWarmupsOf(plan: Pick<PlanDraft, 'status' | 'versions' | 'currentVersion'> | null): PlanWarmups {
+  if (plan === null || plan.status !== 'applied') return 'full';
+  return plan.versions.find((v) => v.n === plan.currentVersion)?.builder?.answers.warmups ?? 'full';
 }

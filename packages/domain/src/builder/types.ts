@@ -1,4 +1,4 @@
-import type { BuilderGroup, DraftLoadSource, EquipmentInstance, LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
+import type { BuilderGroup, DraftLoadSource, EquipmentInstance, LoadConvention, PlanWarmups, SetType, WeightUnit } from '@fizz/schemas';
 import type { RuleReps } from '../rep-range';
 import type { WarmupExerciseFacts } from '../warmup/plan';
 
@@ -298,4 +298,9 @@ export interface BuilderContext {
   restPresetsS?: readonly number[];
   /** Stable key for a new slot (injected so the rules stay pure and deterministic). */
   newKey: (exerciseId: string) => string;
+  /**
+   * (Ben, 23 Oct) The plan's Warm-ups setting (`full` / `short` / `none`); absent: `full`. Read by `settleWarmups`, so
+   * Today, Your workout and Start plan warm-ups the same way; a slot with Ben's own warm-ups keeps them.
+   */
+  warmups?: PlanWarmups;
 }

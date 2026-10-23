@@ -1,4 +1,4 @@
-import { muscleGroupOf, type LoadConvention } from '@fizz/schemas';
+import { muscleGroupOf, type LoadConvention, type PlanWarmups } from '@fizz/schemas';
 
 /**
  * The one warm-up planner (playbook WU1–WU12, approved by Ben 22 Oct 2026;
@@ -403,6 +403,23 @@ export function planSessionWarmups(items: readonly SessionWarmupItem[], opts: { 
     if (it?.cls === 'heavy' && heavyBand(it.reps) && !it.warmed) tryCut(k, 'short');
   }
   return { steps, cuts, generalMinutes: general, timeS: total(), overBudget: !fits() };
+}
+
+/**
+ * `planSessionWarmupsAs` (Ben, 23 Oct): the session's warm-ups under the plan's Warm-ups setting.
+ * - `full`: `planSessionWarmups` as approved (WU1–WU12 within the D17 budget).
+ * - `short`: every WU11 cut taken, down to its floors (no general warm-up; no WU6/WU7 steps; WU5's top step only;
+ *   WU4's short ladder): the minimum the rules allow.
+ * - `none`: no planned warm-ups and no general warm-up.
+ * Ben's own warm-ups (`fixedS`) count in the time in every mode and are never cut.
+ */
+export function planSessionWarmupsAs(items: readonly SessionWarmupItem[], mode: PlanWarmups = 'full', opts: { budgetS?: number; generalMinutes?: number | null } = {}): SessionWarmupPlan {
+  const budget = opts.budgetS ?? WARMUP_BUDGET_S;
+  const fixed = items.reduce((n, it) => n + (it.fixedS ?? 0), 0);
+  if (mode === 'none') return { steps: items.map(() => []), cuts: items.map(() => 'none'), generalMinutes: null, timeS: fixed, overBudget: fixed > budget };
+  if (mode === 'full') return planSessionWarmups(items, opts);
+  const out = planSessionWarmups(items, { ...opts, budgetS: 0 });
+  return { ...out, overBudget: out.timeS > budget };
 }
 
 /**

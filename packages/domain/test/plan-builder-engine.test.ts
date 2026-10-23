@@ -237,17 +237,19 @@ describe('the build', () => {
     for (const d of p.days) {
       expect(d.exercises[0]?.role).toBe('main');
       expect(d.exercises.filter((e) => e.role === 'main')).toHaveLength(1);
-      expect(d.exercises.reduce((s, e) => s + e.sets, 0)).toBeLessThanOrEqual(p.cap + 4);
+      expect(d.exercises.reduce((s, e) => s + e.sets, 0)).toBeLessThanOrEqual(d.cap + 4);
       expect(d.exercises.length).toBeLessThanOrEqual(10);
     }
     // A and B days differ in their main lift.
     expect(p.days[0]?.exercises[0]?.key).not.toBe(p.days[2]?.exercises[0]?.key);
   });
 
-  it('session length caps sets: 45 min ≈ 12, 60 ≈ 17, 75 ≈ 22', () => {
-    expect(build({}, answers({ minutes: 45 })).cap).toBe(12);
-    expect(build({}, answers({ minutes: 60 })).cap).toBe(17);
-    expect(build({}, answers({ minutes: 75 })).cap).toBe(22);
+  it('session length caps sets: longer sessions fit more, never more than the length less the day’s warm-ups allows', () => {
+    const caps = [45, 60, 75].map((m) => Math.max(...build({}, answers({ minutes: m })).days.map((d) => d.cap)));
+    expect(caps[0]).toBeLessThan(caps[1] ?? 0);
+    expect(caps[1]).toBeLessThan(caps[2] ?? 0);
+    for (const m of [45, 60, 75])
+      for (const d of build({}, answers({ minutes: m })).days) expect(d.cap).toBeLessThanOrEqual(Math.max(2, Math.floor((m - d.warmupS / 60) / 3 + 1e-9)));
   });
 
   it('a priority holds: trained on 2+ days and at least the bottom of its range', () => {
@@ -348,7 +350,7 @@ describe('the build', () => {
         if (e.pair?.endsWith('1') === true) expect(d.exercises[i + 1]?.pair).toBe(`${e.pair.slice(0, 1)}2`);
       });
     }
-    expect(build({}, answers({ supersets: true })).cap).toBe(22);
+    for (const d of build({}, answers({ supersets: true })).days) expect(d.cap).toBeLessThanOrEqual(Math.max(2, Math.floor((60 - d.warmupS / 60) / 2.3 + 1e-9)));
   });
 
   it('specific targets get trained: Glutes about 6 sets over 2 days; rear delts count toward Back (D5)', () => {

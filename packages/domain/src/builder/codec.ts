@@ -1,4 +1,4 @@
-import { BUILD_LIMITS, slotRev, type CheckedOnRecord, type DraftLoad, type DraftPlan, type DraftSetTemplate, type DraftSlot, type DraftSlotBuilder } from '@fizz/schemas';
+import { BUILD_LIMITS, slotRev, type CheckedOnRecord, type DraftLoad, type DraftPlan, type DraftSetTemplate, type DraftSlot, type DraftSlotBuilder, type PlanWarmups } from '@fizz/schemas';
 import { stableStringify } from '../stable';
 import { PLANNED_HELD_LINE } from './from-planned';
 import { restAfterRows, roundRestOf } from './rest';
@@ -41,6 +41,8 @@ export interface DraftCodecContext {
    * planner before saving (`settleWarmups`), so the stored warm-ups follow each slot's place and load.
    */
   loads?: (exerciseId: string) => SlotLoadInput;
+  /** (Ben, 23 Oct) The plan's Warm-ups setting for that planning; absent: `full`. */
+  warmups?: PlanWarmups;
 }
 
 const LETTERS = 'ABCDEFGHIJ';
@@ -95,7 +97,7 @@ function metaOf(slot: BuilderSlot, block: BuilderBlock, first: boolean): DraftSl
 
 /** `toDraftPlan`: the workout as a draft plan (order, superset letters, set templates with loads and rests). */
 export function toDraftPlan(input: BuilderWorkout, ctx: DraftCodecContext): DraftPlan {
-  const w = ctx.loads === undefined ? input : settleWarmups(input, { info: ctx.info, loads: ctx.loads });
+  const w = ctx.loads === undefined ? input : settleWarmups(input, { info: ctx.info, loads: ctx.loads, ...(ctx.warmups === undefined ? {} : { warmups: ctx.warmups }) });
   const slots: DraftSlot[] = [];
   let order = 0;
   let letter = 0;
@@ -242,9 +244,9 @@ export function withSlotRevs(prev: DraftPlan | null, next: DraftPlan): { plan: D
  * loads untouched). Slots whose warm-ups are Ben's own keep theirs. For plans that open in the builder without passing
  * through `toDraftPlan` (a saved or past workout as Start would plan it, a coach draft). Pure.
  */
-export function settlePlanWarmups(plan: DraftPlan, ctx: Pick<DraftCodecContext, 'info' | 'restPresetsS'> & { loads: (exerciseId: string) => SlotLoadInput }, restLevel: RestLevel = 'normal'): DraftPlan {
+export function settlePlanWarmups(plan: DraftPlan, ctx: Pick<DraftCodecContext, 'info' | 'restPresetsS' | 'warmups'> & { loads: (exerciseId: string) => SlotLoadInput }, restLevel: RestLevel = 'normal'): DraftPlan {
   const before = fromDraftPlan(plan, restLevel);
-  const after = settleWarmups(before, { info: ctx.info, loads: ctx.loads });
+  const after = settleWarmups(before, { info: ctx.info, loads: ctx.loads, ...(ctx.warmups === undefined ? {} : { warmups: ctx.warmups }) });
   if (after === before) return plan;
   const bySlot = new Map(slotsOf(after.blocks).map((sl) => [sl.key, sl]));
   const was = new Map(slotsOf(before.blocks).map((sl) => [sl.key, sl]));
