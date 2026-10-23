@@ -245,7 +245,8 @@ describe('Today (v2) session card from the plan', () => {
     expect(base?.lean).toBe(false);
     expect(base?.mixAvailable).toBe(true);
     const one = s.todaySession.card(data, sel(data, key, { minutes: 75, abs: false, mix: 1 }));
-    expect(one?.mix?.text).toMatch(/ → .* · today only$/);
+    expect(one?.mix?.text).toMatch(/ → /);
+    expect(one?.mix?.text).not.toContain('today only');
     expect(one?.mix?.another).toMatch(/^Another \(1\/\d+\)$/);
     expect(one?.mix?.notReviewed).toBe(true);
     // Never the main lift.

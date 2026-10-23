@@ -24,7 +24,6 @@ export const TODAY_V2_COPY = {
   breakdown: 'Session breakdown',
   why: 'Why?',
   mix: '↻ Mix it up',
-  todayOnly: 'today only',
   undo: 'Undo',
   // The coach's pre-session offer (§6.1; rule 3: applied only on Ben's tap).
   apply: 'Apply',
@@ -208,7 +207,7 @@ export function todayWhy(input: TodayWhyInput): string[] {
 // Mix it up line
 
 export interface TodayMixLine {
-  /** `Cable fly → Cable crossover · today only`. */
+  /** `Cable fly → Cable crossover` (no `today only` tag: D1/D3, Ben 22–23 Oct). */
   text: string;
   /** `Another (1/3)`. */
   another: string;
@@ -220,12 +219,12 @@ export interface TodayMixLine {
 }
 
 export function todayMixLine(mix: { fromExerciseId: string; toExerciseId: string; k: number; n: number }, nameOf: (id: string) => string, coachReason: string | null = null): TodayMixLine {
-  const text = `${nameOf(mix.fromExerciseId)} → ${nameOf(mix.toExerciseId)} · ${TODAY_V2_COPY.todayOnly}`;
+  const text = `${nameOf(mix.fromExerciseId)} → ${nameOf(mix.toExerciseId)}`;
   return {
     text,
     another: TODAY_V2_COPY.another(mix.k, mix.n),
     notReviewed: coachReason === null,
     reason: coachReason,
-    accessibilityLabel: `${nameOf(mix.fromExerciseId)} swapped for ${nameOf(mix.toExerciseId)}, today only${coachReason === null ? ', not reviewed' : `. ${coachReason}`}`,
+    accessibilityLabel: `${nameOf(mix.fromExerciseId)} swapped for ${nameOf(mix.toExerciseId)}${coachReason === null ? ', not reviewed' : `. ${coachReason}`}`,
   };
 }

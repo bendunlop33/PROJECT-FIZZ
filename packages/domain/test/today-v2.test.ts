@@ -237,7 +237,8 @@ describe('↻ Mix it up (today only)', () => {
     expect(wrap.mix?.toExerciseId).toBe(one.mix?.toExerciseId);
     expect(wrap.mix?.k).toBe(1);
     const line = todayMixLine(one.mix ?? { fromExerciseId: '', toExerciseId: '', k: 0, n: 0 }, name);
-    expect(line.text).toBe(`Cable fly → ${name(one.mix?.toExerciseId ?? '')} · today only`);
+    // No `today only` tag (D1/D3, Ben 22–23 Oct).
+    expect(line.text).toBe(`Cable fly → ${name(one.mix?.toExerciseId ?? '')}`);
     expect(line.another).toBe(`Another (1/${String(n)})`);
     expect(line.notReviewed).toBe(true);
     // Pain-flagged options are never offered.
