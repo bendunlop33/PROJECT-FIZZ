@@ -333,7 +333,7 @@ Otherwise it is a **modifier tag** on the planned or logged set. This matches wh
 
 ## 5. Open questions for Ben
 
-1. **Muscle words.** Add `hip_flexors`, `rotator_cuff`, `serratus`, `tibialis` and `neck` to the vocabulary? Without them, leg raises read as "abs only" and cuff work as "rear delts". `hip_flexors` is already used in `packages/domain` `first-run.ts` but not in the catalogue list.
+1. **Muscle words.** *(Decided, Ben 23 Oct: added; groups and re-mapped entries in `docs/brief/CHANGELOG.md`.)* Add `hip_flexors`, `rotator_cuff`, `serratus`, `tibialis` and `neck` to the vocabulary? Without them, leg raises read as "abs only" and cuff work as "rear delts". `hip_flexors` is already used in `packages/domain` `first-run.ts` but not in the catalogue list.
 2. **New patterns and equipment.** Add `power` (jumps, throws) and `mobility` movement patterns? Add equipment kinds for landmine, mini-band, Swiss ball, suspension trainer, slant board and GHD?
 3. **Plate-loaded iso-lateral machines and landmines.** How should their loads be logged? My suggestion is `added` (plates loaded, per side stated) with no estimated 1RM, because the real resistance isn't the plate weight. This needs a developer ADR.
 4. **Modifier model.** Approve tags (section 4) instead of separate entries for paused, tempo, 1½, negative, partial, deficit, grip, stance and attachment variants? Should grip, attachment and foot position split records, or only the load-affecting ones?
