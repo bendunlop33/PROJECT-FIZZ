@@ -52,6 +52,8 @@ import {
   toDraftPlan,
   toMs,
   timeFitChanges,
+  timeFitFromStored,
+  timeFitToStored,
   todayTimeFit,
   withSlotRevs,
   type AnchorLoad,
@@ -695,7 +697,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         workout: fromDraftPlan(currentDraftVersion(d).plan, st?.restLevel ?? 'normal'),
         minutes: st?.minutes ?? currentDraftVersion(d).fitMinutes,
         timeFrom: st?.timeFrom ?? tf?.fromMinutes ?? null,
-        fit: tf === undefined ? null : { base: fromDraftPlan(tf.base, tf.baseRestLevel ?? 'normal'), fromMinutes: tf.fromMinutes, dropped: tf.dropped, ...(tf.cut === undefined ? {} : { cut: tf.cut }), ...(tf.paired === undefined ? {} : { paired: tf.paired }) },
+        fit: tf === undefined ? null : timeFitFromStored(tf),
       };
       if (own.state === 'nudge') nudged[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = { ...shown, controls: own.controls };
       else edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = shown;
@@ -1000,7 +1002,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // a refit after an option change, Start and the Summary all read the cuts as Time's (D1, D9; SP6: the original is
     // the plan day's full workout).
     const planMinutes = clampInt(d.template.minutes);
-    const fit = todayTimeFit(d.unfitted, d.fit.steps, planMinutes, data.internal.ctx);
+    // (Review todaylean B3) A card Time filled keeps what the fill added too: the plan day's draft is the base.
+    const fit = todayTimeFit(d.unfitted, d.fit.steps, planMinutes, data.internal.ctx, minutes);
     const codec = codecOf(data);
     const setup = {
       dayId: day.splitDayId,
@@ -1017,18 +1020,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       // (D3) Accessories moved into Your workout: it shows and changes the style Today drafted with.
       accessories: controls.accessories,
       ...(minutes !== planMinutes || fit !== null ? { timeFrom: planMinutes } : {}),
-      ...(fit === null
-        ? {}
-        : {
-            timeFit: {
-              base: toDraftPlan(fit.base, codec),
-              ...(fit.base.restLevel === 'normal' ? {} : { baseRestLevel: fit.base.restLevel }),
-              fromMinutes: fit.fromMinutes,
-              dropped: [...fit.dropped],
-              ...(fit.cut === undefined ? {} : { cut: { ...fit.cut } }),
-              ...(fit.paired === undefined ? {} : { paired: fit.paired.map((x) => [...x]) }),
-            },
-          }),
+      ...(fit === null ? {} : { timeFit: timeFitToStored(fit, codec) }),
+      ...(fit?.filledTo === undefined ? {} : { timeFill: fit.filledTo }),
     };
     const bodyParts = [...new Set(groups.flatMap((g) => g.parts))];
     return {
