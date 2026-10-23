@@ -237,7 +237,7 @@ describe("Ben's own edits (§2.3–§2.5)", () => {
     expect(applyBuilderEdit(x, { kind: 'add_set', slotKey: fly?.key ?? '' }, c)).toEqual({ ok: false, reason: 'max_sets' });
   });
 
-  it('+ Warm-up fills the biggest gap, rounded down, and stops at 4', () => {
+  it('+ Warm-up fills the biggest gap, rounded down, and stops at 6 (WU4’s longest ladder)', () => {
     const c = ctx();
     const w = chest(c, false);
     const main = slotsOf(w.blocks).find((s) => s.main);
@@ -245,7 +245,10 @@ describe("Ben's own edits (§2.3–§2.5)", () => {
     if (main === undefined) return;
     const warm = main.rows.filter((r) => r.type === 'warmup');
     expect(warm.length).toBe(4);
-    expect(addWarmup(main, c)).toEqual({ ok: false, reason: 'max_warmups' });
+    // The planner's ladder from the bar leaves no gap a loadable step fits in (below the bar is nothing).
+    expect(addWarmup(main, c)).toEqual({ ok: false, reason: 'no_gap' });
+    const six = { ...main, rows: [...Array.from({ length: 6 }, (_, i) => ({ type: 'warmup' as const, reps: 5, load: 20 + 10 * i, rpe: null })), ...main.rows.filter((r) => r.type !== 'warmup')] };
+    expect(addWarmup(six, c)).toEqual({ ok: false, reason: 'max_warmups' });
     const fewer = { ...main, rows: main.rows.filter((r, i) => r.type !== 'warmup' || i === 0) };
     const r = addWarmup(fewer, c);
     expect(r.ok).toBe(true);

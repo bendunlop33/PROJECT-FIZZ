@@ -91,7 +91,7 @@ function expectRules(w: BuilderWorkout, world: CatalogueWorld, hasMain: boolean,
     if (heavy.length > 0) {
       const first = w.blocks[0]?.slots[0];
       expect(first !== undefined && rank(first, info), `${label}: heavy first ${names(w, info).join(' | ')}`).toBe(1);
-      if (heavy.some((s) => info(s.exerciseId)?.barbell === true)) expect(info(first?.exerciseId ?? '')?.barbell, label).toBe(true);
+      if (heavy.some((s) => info(s.exerciseId)?.barbell === true)) expect(info(first?.exerciseId ?? '')?.barbell, `${label}: bar first ${names(w, info).join(" | ")}`).toBe(true);
       if (opts.heaviest === true && first !== undefined) {
         const top = Math.max(...heavy.map((s) => (info(s.exerciseId)?.barbell === true ? (barLoad(world, s.exerciseId) ?? -1) : -1)));
         if (top >= 0) expect(barLoad(world, first.exerciseId), `${label}: heaviest first ${names(w, info).join(' | ')}`).toBe(top);

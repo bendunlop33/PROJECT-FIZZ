@@ -65,8 +65,8 @@ describe('a timed or cardio slot', () => {
     const base = estimateBuilderSeconds(solo({ ...ride, rows: [{ type: 'working', reps: 1, load: null, rpe: null }] }), ctx);
     expect(estimateBuilderSeconds(solo(ride), ctx) - base).toBe(1200 - BUILDER_TIME.setS);
     expect(estimateBuilderSeconds(solo(row), ctx)).toBe(base);
-    // A rep-based isolation set: setup + 45 s + its 1:30 rest, as before.
-    expect(estimateBuilderSeconds(solo(reps), ctx)).toBe(BUILDER_TIME.setupS + BUILDER_TIME.setS + 90);
+    // A rep-based isolation set: setup + 45 s + its 1:30 rest, plus its WU7 warm-up (30 s + 1:00, then 1:00 after).
+    expect(estimateBuilderSeconds(solo(reps), ctx)).toBe(BUILDER_TIME.setupS + BUILDER_TIME.setS + 90 + BUILDER_TIME.warmupSetS + 60 + BUILDER_TIME.afterWarmupsS);
   });
 
   it('isn’t edited, retyped, ramped or given a drop here; its sets can still be added (a copy, with its time) or deleted', () => {
@@ -123,11 +123,12 @@ describe('an exercise listed twice', () => {
     const b = { ...makeSlot('cable_fly', { main: false, workingSets: 4 }, ctx), key: id(402) };
     const w: BuilderWorkout = { blocks: [{ slots: [a], auto: false }, { slots: [b], auto: false }], restLevel: 'normal' };
     const back = fromDraftPlan(toDraftPlan(w, codec));
-    expect(slotsOf(back.blocks).map((s) => [s.key, s.rows.length])).toEqual([
+    // Each copy keeps its own sets; each has its own WU7 warm-up (the codec here has no load inputs to re-plan by place).
+    expect(slotsOf(back.blocks).map((s) => [s.key, s.rows.filter((r) => r.type !== 'warmup').length])).toEqual([
       [id(401), 2],
       [id(402), 4],
     ]);
     const r = applyBuilderEdit(back, { kind: 'add_set', slotKey: id(401) }, ctx);
-    expect(r.ok && slotsOf(r.workout.blocks).map((s) => s.rows.length)).toEqual([3, 4]);
+    expect(r.ok && slotsOf(r.workout.blocks).map((s) => s.rows.filter((x) => x.type !== 'warmup').length)).toEqual([3, 4]);
   });
 });

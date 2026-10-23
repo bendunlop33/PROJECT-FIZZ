@@ -89,7 +89,7 @@ function draft(version: WorkoutDraftVersion, over: Partial<WorkoutDraft> = {}): 
 
 describe('limits (S1, Q7)', () => {
   it('reconciled values', () => {
-    expect(BUILD_LIMITS).toMatchObject({ maxSuperset: 4, maxWarmups: 4, maxDropSets: 3, maxWorkingSets: 10, maxExercises: 10, minRestS: 30, maxRestS: 360, maxRestBeforeDropS: 60, minMinutes: 15, maxMinutes: 180 });
+    expect(BUILD_LIMITS).toMatchObject({ maxSuperset: 4, maxWarmups: 6, maxDropSets: 3, maxWorkingSets: 10, maxExercises: 10, minRestS: 30, maxRestS: 360, maxRestBeforeDropS: 60, minMinutes: 15, maxMinutes: 180 });
   });
 
   it('a 0:15 rest before a drop validates; 1:01 does not; a drop set rests like a working set', () => {
@@ -176,10 +176,10 @@ describe('workout drafts: builder versions (§4.4)', () => {
     expect(validate(WorkoutDraftSchema, { ...empty, builderKey: { planId: null, dayIndex: 0, splitDayId: 'push', mainLiftExerciseId: null, localDate: '2026-10-20' } }).ok).toBe(false);
   });
 
-  it('at most 4 warm-ups per exercise (S7)', () => {
+  it('at most 6 warm-ups per exercise (S7; WU4’s longest ladder, 22 Oct)', () => {
     const w = (n: number) => Array.from({ length: n }, () => working(60, 'warmup'));
-    expect(validate(DraftSlotSchema, slot(1, { setTemplates: [...w(4), working()] })).ok).toBe(true);
-    expect(validate(DraftSlotSchema, slot(1, { setTemplates: [...w(5), working()] })).ok).toBe(false);
+    expect(validate(DraftSlotSchema, slot(1, { setTemplates: [...w(6), working()] })).ok).toBe(true);
+    expect(validate(DraftSlotSchema, slot(1, { setTemplates: [...w(7), working()] })).ok).toBe(false);
   });
 
   it('a builder superset has 2–4 exercises; an older coach version with a lone group still reads (S7)', () => {

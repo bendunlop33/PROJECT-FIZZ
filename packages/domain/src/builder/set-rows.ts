@@ -1,5 +1,6 @@
 import { BUILD_LIMITS, type LoadConvention, type SetType, type WeightUnit } from '@fizz/schemas';
-import { compareDifficulty, isBarLoaded, loadDirection } from '../equipment';
+import { compareDifficulty, getAchievableLoads, isBarLoaded, loadDirection } from '../equipment';
+import { planWarmups, warmupProfileOf, type WarmupCut, type WarmupExerciseFacts, type WarmupPlanInput, type WarmupProfile } from '../warmup/plan';
 import { backoffTarget, followTop, lowerWithTop } from './backoff';
 import { builderLoad, convertValue, fitHere, formulaApplies, loadForSet, loadFrameOf, roundContextOf, roundDownHere, type RoundContext } from './loads';
 import type { BuilderLoadSourceKind, BuilderRole, BuilderSetRow, BuilderSlot, RepRangeT, RoundedLoad, SlotLoadInput } from './types';
@@ -7,15 +8,16 @@ import type { BuilderLoadSourceKind, BuilderRole, BuilderSetRow, BuilderSlot, Re
 /**
  * Per-set rows (workout-builder-v3 §2.4, §3.1, §3.3). Pure.
  *
- * - Main lift: warm-up ramp (bar × 10 on a barbell, then 50 % × 5, 70 % × 3,
- *   85 % × 1 of the top set, each rounded down; a step no heavier than the
- *   one before is skipped; max 4), one Top set at the bottom of the range
+ * - Warm-ups (every exercise): the shared warm-up planner (WU1–WU12,
+ *   `planWarmups`) from the first working set's load and reps, snapped down
+ *   on this gym's item; `settleWarmups` re-plans them with each exercise's
+ *   place in the workout (WU2) and the session budget (WU11).
+ * - Main lift: one Top set at the bottom of the range
  *   @ RPE 8, back-offs at the top of the range @ RPE 8. A back-off's load is
  *   worked out from its reps and RPE, never within the focus's `band.min` of
  *   the top (D4, `backoffTarget`); a lower top (a pain hold, a lighter top
  *   Ben types) lowers the back-offs by the same %, measured from the top they
  *   were worked out from (`settleBackoffs` after every edit).
- * - Compound accessory: one warm-up, 60 % × 8. Isolation: none.
  * - Others: working sets at the bottom of the range @ RPE 8, the last @ RPE 9
  *   at the same load.
  * - Drop: top of the range + 2 reps, RPE 9, about 78 % of the set before.
@@ -28,13 +30,12 @@ export const BUILDER_SET_RULES = {
   accessorySets: 3,
   workRpe: 8,
   lastWorkRpe: 9,
-  barWarmupReps: 10,
+  /** A row Ben turns into a warm-up (`changeSetType`): the lightest step's reps and %, as before. */
   ramp: [
     { pct: 0.5, reps: 5 },
     { pct: 0.7, reps: 3 },
     { pct: 0.85, reps: 1 },
   ],
-  compoundWarmup: { pct: 0.6, reps: 8 },
   dropPct: 0.78,
   dropRepsOver: 2,
   dropRpe: 9,
@@ -51,7 +52,7 @@ export const BUILDER_SET_RULES = {
 
 const R = BUILDER_SET_RULES;
 
-export interface SetRowsInput {
+export interface SetRowsInput extends WarmupRowsContext {
   main: boolean;
   role: BuilderRole;
   /** Loaded on a barbell (bar × 10 warm-up when the item is bar-loaded). */
@@ -74,7 +75,6 @@ export interface SetRowsResult {
 }
 
 const roundCtx = (load: SlotLoadInput): RoundContext => roundContextOf(load);
-const warmCtx = (load: SlotLoadInput): RoundContext => ({ ...roundContextOf(load), painCap: null });
 const rounded = (v: number | null, ctx: RoundContext): number | null => (v === null ? null : (roundDownHere(v, ctx)?.value ?? null));
 
 /** `setRowsFor`: the rows the builder makes for one exercise. */
@@ -93,7 +93,7 @@ export function setRowsFor(input: SetRowsInput): SetRowsResult {
         ...Array.from({ length: n - 1 }, (): BuilderSetRow => ({ type: 'backoff', reps: max, load: backoff, rpe: R.workRpe })),
       ]
     : Array.from({ length: n }, (_, i): BuilderSetRow => ({ type: 'working', reps: min, load: topLoad, rpe: i === n - 1 ? R.lastWorkRpe : R.workRpe }));
-  const warmups = warmupsFor(input, topLoad);
+  const warmups = warmupsFor({ ...input, reps: min }, topLoad);
   // No load came out (no item here, below its lightest): say so, not the source's name (review B2).
   const loaded = working.some((r) => r.load !== null);
   const startLight = loaded ? null : (work.startLight ?? (input.load.startLightCeiling === null ? null : convertValue(input.load.startLightCeiling, input.load.unit, work.unit)));
@@ -132,32 +132,55 @@ const snapBuilt =
   (v: number): number | null =>
     rounded(v, { ...ctx, painCap: null });
 
-/** Warm-ups from the rounded working (top) load. None without a load, or for assisted lifts. */
-export function warmupsFor(input: Pick<SetRowsInput, 'main' | 'role' | 'barbell' | 'load'>, top: number | null): BuilderSetRow[] {
+/** Where a slot sits in the workout, for the warm-up planner (WU2, WU6, WU11). */
+export interface WarmupRowsContext {
+  /** R: the first working set's reps; absent = the range's bottom. */
+  reps?: number;
+  /** WU2: an earlier exercise worked the same muscle group or pattern (or a superset partner started). */
+  warmed?: boolean;
+  /** The workout's first exercise (WU6's extra 50 % step). */
+  firstOfSession?: boolean;
+  /** The catalogue facts (`BuilderExerciseInfo.warmup`, under either name); absent = fallbacks from role and bar. */
+  facts?: WarmupExerciseFacts | null;
+  warmup?: WarmupExerciseFacts | undefined;
+  /** The builder's group (WU2's fallback when the facts are missing). */
+  group?: string | null;
+  cut?: WarmupCut;
+}
+
+/**
+ * The warm-up planner's input for a slot at this gym (`planWarmups`): W = `top` in the item's unit, the achievable
+ * loads of its item. Null when no item makes its loads (none here, assisted, bodyweight) and it isn't weighted
+ * bodyweight.
+ */
+export function builderWarmupInput(input: Pick<SetRowsInput, 'main' | 'role' | 'barbell' | 'load'> & WarmupRowsContext, top: number | null): (Omit<WarmupPlanInput, 'cut'> & { profile: WarmupProfile }) | null {
   const frame = loadFrameOf(input.load);
-  // Warm-ups ramp on a real item with the reps/RPE formula: not assisted, added weight or bodyweight.
-  if (top === null || frame.kind !== 'item' || frame.added || !formulaApplies(frame.convention) || loadDirection(frame.convention) !== 'resistance') return [];
-  const ctx = warmCtx(input.load);
-  const out: BuilderSetRow[] = [];
-  if (input.main) {
-    const eq = frame.equipment;
-    let prev = 0;
-    if (input.barbell && isBarLoaded(eq) && eq.barMass < top) {
-      out.push({ type: 'warmup', reps: R.barWarmupReps, load: eq.barMass, rpe: null });
-      prev = eq.barMass;
-    }
-    for (const step of R.ramp) {
-      if (out.length >= R.maxWarmups) break;
-      const k = roundDownHere(top * step.pct, ctx)?.value ?? null;
-      if (k === null || k <= prev + 1e-9 || k >= top - 1e-9) continue;
-      out.push({ type: 'warmup', reps: step.reps, load: k, rpe: null });
-      prev = k;
-    }
-    return out;
-  }
-  if (input.role !== 'compound') return [];
-  const k = roundDownHere(top * R.compoundWarmup.pct, ctx)?.value ?? null;
-  return k === null || k >= top - 1e-9 ? [] : [{ type: 'warmup', reps: R.compoundWarmup.reps, load: k, rpe: null }];
+  const eq = frame.kind === 'item' ? frame.equipment : null;
+  const weighted = frame.convention === 'added' && (frame.kind !== 'item' || frame.added || input.load.bodyweightExercise === true);
+  const profile = warmupProfileOf(input.facts ?? input.warmup ?? null, {
+    main: input.main,
+    itemKind: eq === null || weighted ? null : eq.kind,
+    convention: frame.convention,
+    bodyweightExercise: weighted,
+    fallback: { compound: input.role === 'compound', group: input.group ?? null, barbell: input.barbell },
+  });
+  const reps = Math.max(1, Math.round(input.reps ?? 1));
+  const base = { cls: profile.cls, reps, warmed: input.warmed === true, firstOfSession: input.firstOfSession === true, floorStart: profile.floorStart, profile };
+  if (profile.cls === 'weighted_bodyweight') return { ...base, load: null, barMass: null, loads: [] };
+  if (eq === null || weighted || loadDirection(frame.convention) !== 'resistance') return null;
+  return { ...base, load: top, barMass: eq.kind === 'barbell' && isBarLoaded(eq) ? eq.barMass : null, loads: getAchievableLoads(eq).loads };
+}
+
+/**
+ * Warm-ups from the rounded working (top) load: the shared planner's steps (WU1–WU12), each an achievable load on
+ * this gym's item below `top` (rule 4). Weighted bodyweight warms up with bodyweight only (no load: `BW`). None
+ * without a load, or for assisted and bodyweight lifts.
+ */
+export function warmupsFor(input: Pick<SetRowsInput, 'main' | 'role' | 'barbell' | 'load'> & WarmupRowsContext, top: number | null): BuilderSetRow[] {
+  const plan = builderWarmupInput(input, top);
+  if (plan === null) return [];
+  const weighted = plan.cls === 'weighted_bodyweight';
+  return planWarmups({ ...plan, ...(input.cut === undefined ? {} : { cut: input.cut }) }).map((s): BuilderSetRow => ({ type: 'warmup', reps: s.reps, load: weighted ? null : s.load, rpe: null }));
 }
 
 // ---------------------------------------------------------------------------
@@ -534,10 +557,10 @@ function timedLoadsHere(slot: BuilderSlot, load: SlotLoadInput): BuilderSlot {
  * typed stays when that exact weight exists there, else it's recalculated;
  * warm-ups are made again from the new top set. Pure.
  */
-export function reloadSlotLoads(slot: BuilderSlot, info: Pick<SetRowsInput, 'role' | 'barbell'>, load: SlotLoadInput): BuilderSlot {
+export function reloadSlotLoads(slot: BuilderSlot, info: Pick<SetRowsInput, 'role' | 'barbell'> & WarmupRowsContext, load: SlotLoadInput): BuilderSlot {
   // (22 Oct) A timed or cardio slot keeps its saved sets: there is no reps formula to work its loads out from.
   if (isTimedSlot(slot)) return timedLoadsHere(slot, load);
-  const fresh = setRowsFor({ main: slot.main, role: info.role, barbell: info.barbell, workingSets: workingCount(slot), repRange: slot.repRange, load });
+  const fresh = setRowsFor({ ...info, main: slot.main, workingSets: workingCount(slot), repRange: slot.repRange, load });
   const ctx = roundCtx(load);
   const typedHere = (v: number): boolean => {
     const r = fitHere(convertValue(v, slot.unit, ctx.unit), { ...ctx, painCap: null });
@@ -580,7 +603,8 @@ export function reloadSlotLoads(slot: BuilderSlot, info: Pick<SetRowsInput, 'rol
   }
   const top = (rows.find((x) => x.type === 'top') ?? rows[0])?.load ?? null;
   // Warm-ups follow the new top set (none if Ben had removed them).
-  const warm = slot.rows.some((x) => x.type === 'warmup') ? warmupsFor({ main: slot.main, role: info.role, barbell: info.barbell, load }, top) : [];
+  const firstWork = rows.find((x) => x.type === 'top') ?? rows[0];
+  const warm = slot.rows.some((x) => x.type === 'warmup') ? warmupsFor({ ...info, main: slot.main, load, ...(firstWork === undefined ? {} : { reps: firstWork.reps }) }, top) : [];
   next.rows = [...warm, ...rows];
   return next;
 }

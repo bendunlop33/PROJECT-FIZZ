@@ -1,6 +1,7 @@
 import { BUILD_LIMITS } from '@fizz/schemas';
 import { orderSlots, pairSlots, singlesOf } from './arrange';
 import { estimateBuilderMinutes } from './estimate';
+import { settleWarmups } from './warmups';
 import { FIT_RULES, fitToMinutes, type BuilderFitResult } from './fit';
 import { makeSlot } from './slot';
 import { KG_PER_LB } from '../units';
@@ -247,12 +248,16 @@ export function buildFromSetup(setup: BuilderSetup, pool: BuilderPool, ctx: Buil
   }
   let blocks = singlesOf(orderSlots(slots, ctx.info, { load: (id) => totalLoadKg(id, ctx) }));
   if (setup.supersets) blocks = pairSlots(blocks, ctx.info);
-  const workout: BuilderWorkout = { blocks, restLevel: 'normal' };
+  // (WU1–WU12) Warm-ups for each slot's place in the workout (WU2) before the time fit counts them.
+  const workout: BuilderWorkout = settleWarmups({ blocks, restLevel: 'normal' }, ctx);
   if (opts.trim === false) {
     const m = estimateBuilderMinutes(workout, ctx);
     return { workout, fit: { workout, steps: [], status: m <= setup.minutes ? 'fits' : 'over', minutes: m }, short };
   }
-  const fit = fitToMinutes(workout, ctx, { minutes: setup.minutes, mainGroup, grow: false, supersets: setup.supersets });
+  const fitted = fitToMinutes(workout, ctx, { minutes: setup.minutes, mainGroup, grow: false, supersets: setup.supersets });
+  // The fit may reorder, pair or drop slots: warm-ups follow the final order.
+  const settled = settleWarmups(fitted.workout, ctx);
+  const fit = settled === fitted.workout ? fitted : { ...fitted, workout: settled, minutes: estimateBuilderMinutes(settled, ctx) };
   return { workout: fit.workout, fit, short };
 }
 

@@ -183,7 +183,7 @@ describe('add_warmup (＋ Warm-up mid-workout)', () => {
     expect(addWarmupCommand(done, rowId(done, HANG), { ...op('warm-3'), newSetId: id(92003) })).toEqual({ ok: false, reason: 'done' });
   });
 
-  it('per-hand dumbbells in lb round down on the rack; assisted machines have no ramp; at most 4', () => {
+  it('per-hand dumbbells in lb round down on the rack; assisted machines have no ramp; at most 6 (WU4’s longest ladder)', () => {
     const CURL = id(260);
     const PULL = id(261);
     const exs = new Map<string, Exercise>([
@@ -212,7 +212,7 @@ describe('add_warmup (＋ Warm-up mid-workout)', () => {
       }
       s = apply(s, next.command);
     }
-    expect(setsFor(s, CURL).filter((x) => x.setType === 'warmup').length).toBeLessThanOrEqual(4);
+    expect(setsFor(s, CURL).filter((x) => x.setType === 'warmup').length).toBeLessThanOrEqual(6);
     expect(canAddWarmupNow(s, curl)).toBe(false);
   });
 

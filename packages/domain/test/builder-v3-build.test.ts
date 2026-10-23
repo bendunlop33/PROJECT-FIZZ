@@ -21,6 +21,8 @@ import {
   applyAccessoryStyleTo,
   pairSlots,
   removeSlot,
+  settleWarmups,
+  slotsOf,
   type BuilderSetup,
   type BuilderWorkout,
   type SetupIdentity,
@@ -68,7 +70,8 @@ describe('rest (§3.2, §9 Q7)', () => {
     const ctx = context();
     const s = makeSlot('cable_fly', { main: false }, ctx);
     const withDrop = { ...s, rows: [...s.rows, { type: 'drop' as const, reps: 14, load: 10, rpe: 9 }] };
-    expect(restAfterRows(withDrop, info, 'normal')).toEqual([90, 90, 15, 90]);
+    // Its WU7 warm-up rests 2 min before the first working set (WU11, rep band); then 1:30, and 0:15 before the drop.
+    expect(restAfterRows(withDrop, info, 'normal')).toEqual([120, 90, 90, 15, 90]);
   });
 });
 
@@ -79,17 +82,24 @@ describe('estimateBuilderMinutes (§3.6, no switch time per Q16)', () => {
     const incline = makeSlot('incline_db', { main: false }, ctx);
     const fly = makeSlot('cable_fly', { main: false }, ctx);
     const crunch = makeSlot('crunch', { main: false }, ctx);
+    // Each slot on its own (WU1–WU12, not warmed): bench WU4 (bar, 40, 60, 80 %), incline WU6 (80 % × 4), fly and crunch WU7 (50 % × 8).
     expect(bench.rows.filter((r) => r.type === 'warmup')).toHaveLength(4);
     expect(incline.rows.filter((r) => r.type === 'warmup')).toHaveLength(1);
+    expect(fly.rows.filter((r) => r.type === 'warmup')).toHaveLength(1);
+    expect(crunch.rows.filter((r) => r.type === 'warmup')).toHaveLength(1);
     const w: BuilderWorkout = { restLevel: 'normal', blocks: [{ slots: [bench], auto: false }, { slots: [incline], auto: false }, { slots: [fly, crunch], auto: true }] };
     // setup 120 + 2 × 60 between
     // bench: 4 × (30 + 60) + 60 = 420; top 45 + 210; 3 × (45 + 180) → 1350
     // incline: 1 × 90 + 60 = 150; 3 × (45 + 120) → 645
-    // fly + crunch: 3 rounds × (2 × 45 + 90) → 540
-    expect(estimateBuilderSeconds(w, ctx)).toBe(120 + 120 + 1350 + 645 + 540);
-    expect(estimateBuilderMinutes(w, ctx)).toBe(46);
-    // shortest: bench 420 + 195 + 3 × 165; incline 150 + 3 × 120; superset 3 × 150
-    expect(estimateBuilderSeconds({ ...w, restLevel: 'shortest' }, ctx)).toBe(120 + 120 + 1110 + 510 + 450);
+    // fly + crunch: warm-ups 2 × 90 + 2 × 60 = 300; 3 rounds × (2 × 45 + 90) → 840
+    expect(estimateBuilderSeconds(w, ctx)).toBe(120 + 120 + 1350 + 645 + 840);
+    expect(estimateBuilderMinutes(w, ctx)).toBe(51);
+    // shortest: bench 420 + 195 + 3 × 165; incline 150 + 3 × 120; superset 300 + 3 × 150
+    expect(estimateBuilderSeconds({ ...w, restLevel: 'shortest' }, ctx)).toBe(120 + 120 + 1110 + 510 + 750);
+    // In this order (WU2): the incline press after bench, the fly after bench and the crunch beside the fly are warmed: no warm-ups.
+    const settled = settleWarmups(w, ctx);
+    expect(slotsOf(settled.blocks).map((sl) => sl.rows.filter((r) => r.type === 'warmup').length)).toEqual([4, 0, 0, 0]);
+    expect(estimateBuilderSeconds(settled, ctx)).toBe(120 + 120 + 1350 + 495 + 540);
   });
 
   it('empty workout: 0', () => {
@@ -178,7 +188,8 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
 
   it('shorter rests first, then shortest, only as far as needed', () => {
     const { ctx, w } = sixty();
-    expect(estimateBuilderMinutes(w, ctx)).toBe(66);
+    // (WU1–WU12) Warm-ups by place: bench's ladder; the chest accessories after it none; the pushdown and crunch one each.
+    expect(estimateBuilderMinutes(w, ctx)).toBe(63);
     const f = fitToMinutes(w, ctx, { minutes: 55, mainGroup: 'Chest', grow: false, supersets: true });
     expect(f.steps).toEqual([
       { kind: 'rest', from: 'normal', to: 'shorter' },
@@ -204,8 +215,8 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     // 55: a fly set and a pushdown set (3.5 lost), not the whole pushdown (4.5).
     expect(ids(f(55).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'pushdown', 'crunch']);
     expect(cuts(f(55)).map((c) => c.kind)).toEqual(['sets', 'sets']);
-    // 40: 18 kept either way (two compounds, or fly + pushdown + crunch); the tie keeps more sets.
-    expect(ids(f(40).workout)).toEqual(['bench', 'cable_fly', 'pushdown', 'crunch']);
+    // 40: the warmed chest compounds (no warm-ups of their own, WU2) keep more training than fly + pushdown + crunch.
+    expect(ids(f(40).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly']);
     for (const m of [55, 50, 45, 40, 35, 30, 25]) {
       const r = f(m);
       expect(r.status).toBe('fitted');
@@ -213,20 +224,20 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
       expect(all(r.workout)[0]).toEqual(all(w)[0]);
       expect(all(r.workout).every((s) => s.main || s.rows.filter((x) => x.type !== 'warmup').length >= 2)).toBe(true);
     }
-    // 25: two crunch sets still fit after the main lift (the old one-cut-at-a-time fit kept the main lift alone).
-    expect(ids(f(25).workout)).toEqual(['bench', 'crunch']);
+    // 25: two fly sets still fit after the main lift (the old one-cut-at-a-time fit kept the main lift alone).
+    expect(ids(f(25).workout)).toEqual(['bench', 'cable_fly']);
     const f10 = f(10);
     expect(f10.status).toBe('over');
     expect(ids(f10.workout)).toEqual(['bench']);
     expect(all(f10.workout)[0]?.rows.filter((r) => r.type !== 'warmup')).toHaveLength(4);
   });
 
-  it('cuts are listed in workout order: at 50 a fly set and the pushdown', () => {
+  it('cuts are listed in workout order: at 55 a fly set and a pushdown set', () => {
     const { ctx, w } = solo();
-    const r = fitToMinutes(w, ctx, { minutes: 50, mainGroup: 'Chest', grow: false, supersets: false });
+    const r = fitToMinutes(w, ctx, { minutes: 55, mainGroup: 'Chest', grow: false, supersets: false });
     expect(cuts(r)).toEqual([
       { kind: 'sets', slotKey: all(w)[3]?.key, exerciseId: 'cable_fly', from: 3, to: 2 },
-      { kind: 'drop', slotKey: all(w)[4]?.key, exerciseId: 'pushdown' },
+      { kind: 'sets', slotKey: all(w)[4]?.key, exerciseId: 'pushdown', from: 3, to: 2 },
     ]);
   });
 
@@ -398,19 +409,20 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
 
   it('abs off + longer: a second arm exercise first, then sets; the plan buffer is kept', () => {
     const ctx = context();
-    const b = buildFromSetup({ minutes: 60, mainLiftExerciseId: 'bench', supersets: false, groups: chestGroups }, pool, ctx).workout;
-    expect(estimateBuilderMinutes(b, ctx)).toBe(60);
+    // 62 min (WU1–WU12: the pushdown and crunch carry a warm-up each, so the day is 62 at normal rests).
+    const b = buildFromSetup({ minutes: 62, mainLiftExerciseId: 'bench', supersets: false, groups: chestGroups }, pool, ctx).workout;
+    expect(estimateBuilderMinutes(b, ctx)).toBe(62);
     const off = absOff(b, ctx, { supersets: false, armCandidates: ['oh_ext', 'hammer'] });
     expect(off.partner).toBeNull();
     expect(estimateBuilderMinutes(off.workout, ctx)).toBe(52);
-    const grown = fitToMinutes(off.workout, ctx, { minutes: 60, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 0, addCandidates: { arm: ['oh_ext', 'hammer'], mainGroup: ['machine_press'] } });
+    const grown = fitToMinutes(off.workout, ctx, { minutes: 62, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 0, addCandidates: { arm: ['oh_ext', 'hammer'], mainGroup: ['machine_press'] } });
     expect(grown.steps[0]).toMatchObject({ kind: 'add', exerciseId: 'oh_ext', why: 'arm' });
-    expect(grown.minutes).toBeLessThanOrEqual(60);
+    expect(grown.minutes).toBeLessThanOrEqual(62);
     expect(ids(grown.workout)).toEqual(['bench', 'incline_db', 'cable_fly', 'pushdown', 'oh_ext']);
-    // With 9 spare plan minutes kept as a buffer, only sets fit.
-    const kept = fitToMinutes(off.workout, ctx, { minutes: 60, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 5, addCandidates: { arm: ['oh_ext'], mainGroup: ['machine_press'] } });
+    // With spare plan minutes kept as a buffer, only sets fit.
+    const kept = fitToMinutes(off.workout, ctx, { minutes: 62, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 5, addCandidates: { arm: ['oh_ext'], mainGroup: ['machine_press'] } });
     expect(kept.steps.some((s) => s.kind === 'add')).toBe(false);
-    expect(kept.minutes).toBeLessThanOrEqual(55);
+    expect(kept.minutes).toBeLessThanOrEqual(57);
   });
 
   it('longer: +1 set on accessories up to 4, never on the main lift', () => {
@@ -428,7 +440,8 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     const off = absOff(b, ctx, { supersets: true, armCandidates: ['oh_ext', 'curl'] });
     expect(ids(off.workout)).toEqual(['bench', 'incline_db', 'cable_fly', 'pushdown+curl']);
     expect(off.partner?.exerciseId).toBe('curl');
-    expect(estimateBuilderMinutes(off.workout, ctx)).toBe(estimateBuilderMinutes(b, ctx));
+    // As saved (warm-ups for each slot's place: the curl is a superset partner, so warmed, WU2), the same time.
+    expect(estimateBuilderMinutes(settleWarmups(off.workout, ctx), ctx)).toBe(estimateBuilderMinutes(b, ctx));
   });
 });
 

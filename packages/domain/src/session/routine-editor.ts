@@ -80,7 +80,7 @@ export function addExercise(list: EditorList, exercise: { id: string; measuremen
 // Set shape (exercise-library §10, routines WL11): `Sets [−] 3 [+]`, `Warm-ups`, `Reps`, `Target RPE`
 
 /** Stepper limits (§10.1). A slot already above the working max keeps its count; `+` is then off. */
-export const SLOT_SET_LIMITS = { working: { min: 1, max: 10 }, warmups: { min: 0, max: 5 } } as const;
+export const SLOT_SET_LIMITS = { working: { min: 1, max: 10 }, warmups: { min: 0, max: 6 } } as const;
 /** The default number of working sets when an exercise is added anywhere (§10.1). */
 export const DEFAULT_WORKING_SETS_ON_ADD = 3;
 

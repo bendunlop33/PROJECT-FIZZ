@@ -298,7 +298,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     // The one `checkedOnOf` (domain): what Start's re-check compares against, so a builder draft and Today's agree
     // (an lb bar's mass in kg, the slot's convention).
     const checkedOn = (id: string): CheckedOnRecord | null => checkedOnOf(loads(id));
-    const codec: DraftCodecContext = { info, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf: checkedOn, ...(presets.length > 0 ? { restPresetsS: presets } : {}) };
+    // (WU1–WU12) With the gym's load inputs, saving plans every slot's warm-ups for its place in the workout.
+    const codec: DraftCodecContext = { info, loads, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf: checkedOn, ...(presets.length > 0 ? { restPresetsS: presets } : {}) };
     return {
       ctx,
       pool,

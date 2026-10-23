@@ -9,6 +9,7 @@ import { makeSlot } from '../builder/slot';
 import { ARM_GROUPS, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
 import { landCarryOver, type CarryItem } from '../builder/carry';
 import { withCoachSetCounts } from '../builder/carried';
+import { settleWarmups } from '../builder/warmups';
 
 /**
  * Today (v2), workout-builder-v3 §2.0 and its 20 Oct additions: today's
@@ -307,9 +308,10 @@ export function assembleTodayDraft(input: TodayAssembleInput): TodayDraft | null
   // (Ben, 23 Oct) Sets carried over to this day land after its own fit (never cut again), and on the draft before it.
   const carry = input.carry ?? [];
   const landed = carry.length === 0 ? { workout: marked, changed: [] } : landCarryOver(marked, carry, input.ctx);
-  const workout = landed.workout;
+  // (WU1–WU12) Warm-ups planned by the shared planner for each exercise's place in today's workout.
+  const workout = settleWarmups(landed.workout, input.ctx);
   const unfitted = withTemplateMarks(carry.length === 0 ? built.workout : landCarryOver(built.workout, carry, input.ctx).workout, t.exerciseIds, []);
-  const minutes = landed.changed.length === 0 ? fit.minutes : estimateBuilderMinutes(workout, input.ctx);
+  const minutes = landed.changed.length === 0 && workout === landed.workout ? fit.minutes : estimateBuilderMinutes(workout, input.ctx);
   return {
     template: t,
     workout,

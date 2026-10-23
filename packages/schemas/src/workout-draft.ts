@@ -19,7 +19,8 @@ import { LocalDateSchema } from './import';
 /** §8.3 limits. The tool's argument schema is wider so the checks can clamp and say so (WB13); these are what a draft may hold. */
 export const BUILD_LIMITS = {
   maxExercises: 10,
-  maxWarmups: 4,
+  /** WU4's longest ladder: bar, four steps and one gap step (Ben, 22 Oct, WU1–WU12). */
+  maxWarmups: 6,
   minWorkingSets: 1,
   maxWorkingSets: 10,
   minReps: 1,
@@ -252,6 +253,8 @@ export const DraftSlotBuilderSchema = z.object({
   /** `Start light` cap when no load is known; null = none. */
   startLight: z.number().min(0).max(5000).nullable(),
   touched: z.literal(true).optional(),
+  /** (WU1–WU12) Ben set this slot's warm-ups himself: kept as he set them, never re-planned. Absent: the planner's. */
+  ownWarmups: z.literal(true).optional(),
   unlinked: z.literal(true).optional(),
   /** The plan-day template exercise this slot came from (kept through a swap). */
   origin: IdSchema.optional(),

@@ -260,7 +260,8 @@ describe('Exercise pop-up and keyboard (§2.4, §2.7)', () => {
       ['Top set', '3:30'],
       ['Back-offs', '3:00'],
     ]);
-    expect(p?.canAddWarmup).toBe(false);
+    // Room for more (at most 6 warm-ups, WU4's longest ladder; was 4).
+    expect(p?.canAddWarmup).toBe(true);
     expect(p?.canSupersetNext).toBe(false);
     expect(p?.rows[4]?.accessibilityLabel).toBe('Set 1, Top set, 6 reps, 100 kilograms, RPE 8');
     // Each cell says whose it is (`Warm-up 2, reps`, `Set 1, reps`; N6).

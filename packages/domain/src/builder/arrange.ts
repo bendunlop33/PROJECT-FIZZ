@@ -178,9 +178,16 @@ export function bandInsertIndex(blocks: readonly BuilderBlock[], slot: Pick<Buil
     const abs = rank === 4 ? -1 : blocks.findIndex((b) => builderBlockRank(b, info) === 4);
     at = (abs < 0 ? blocks.length : abs) - 1;
   }
+  // A heavy barbell lift goes ahead of heavy lifts on other equipment (§3.4 (b): with no main lift, a bar lift leads).
+  const bar = rank === 1 && infoOrDefault(info, slot.exerciseId).barbell;
+  const passes = (blk: BuilderBlock): boolean => {
+    const r = builderBlockRank(blk, info);
+    if (r > rank) return true;
+    return r === rank && bar && !blk.slots.some((s) => s.main || infoOrDefault(info, s.exerciseId).barbell);
+  };
   while (at >= 0) {
     const b = blocks[at];
-    if (b === undefined || builderBlockRank(b, info) <= rank) break;
+    if (b === undefined || !passes(b)) break;
     at -= 1;
   }
   for (;;) {

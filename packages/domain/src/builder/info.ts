@@ -18,7 +18,9 @@ const QUIET: ReadonlySet<string> = new Set(['core', 'grip', 'forearms']);
 
 const LEG_PART: Readonly<Record<string, string>> = { Quads: 'quads', 'Hamstrings & glutes': 'hamstrings_glutes', Calves: 'calves' };
 
-export function builderInfoOf(e: Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'secondaryMuscles' | 'movementPattern' | 'measurement' | 'mechanic' | 'compatibleEquipment'> & { heavy?: boolean }): BuilderExerciseInfo | null {
+export function builderInfoOf(
+  e: Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'secondaryMuscles' | 'movementPattern' | 'measurement' | 'mechanic' | 'compatibleEquipment'> & Partial<Pick<Exercise, 'family' | 'catalogueKey' | 'defaultLoadConvention'>> & { heavy?: boolean },
+): BuilderExerciseInfo | null {
   const group = builderGroupOf(e);
   if (group === null) return null;
   const focus = builderFocusOf(e) ?? group;
@@ -35,6 +37,16 @@ export function builderInfoOf(e: Pick<Exercise, 'id' | 'name' | 'primaryMuscles'
     muscles,
     angle: focus,
     barbell: kinds.some((k) => BAR_KINDS.has(k)),
+    // (WU1–WU12) What the warm-up planner classifies by.
+    warmup: {
+      catalogueKey: e.catalogueKey ?? null,
+      family: e.family ?? null,
+      movementPattern: e.movementPattern,
+      mechanic: e.mechanic ?? null,
+      primaryMuscles: [...e.primaryMuscles],
+      measurement: e.measurement,
+      ...(e.defaultLoadConvention === undefined ? {} : { defaultLoadConvention: e.defaultLoadConvention }),
+    },
   };
 }
 

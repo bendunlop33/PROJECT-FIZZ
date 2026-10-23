@@ -60,6 +60,7 @@ import {
   checkedOnOf,
   draftSavedRoutineId,
   plannedAsDraftPlan,
+  settlePlanWarmups,
   fitWorkoutToTime,
   refitWorkoutToTime,
   withOriginalRows,
@@ -836,7 +837,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         }
         // Rule 4: an exercise the planner put on no item is fitted to the builder's item here (never past its max).
         const fitted: DraftPlan = { slots: slots.map((x) => fitPlannedSlotHere(x, slotLoadOf(env.ctx.loads(x.exerciseId), x.main), env.codec.checkedOnOf(x.exerciseId))) };
-        return { plan: fitted, gymId: env.gymId, sourceVersion, leftOut: out.leftOut.slice(0, BUILD_LIMITS.maxExercises * 3), main, name, slotSeed: keySeed };
+        // (WU1–WU12) Its warm-ups as the builder plans them for each exercise's place (Ben's own kept), so what opens is what saves.
+        return { plan: settlePlanWarmups(fitted, { ...env.codec, loads: env.ctx.loads }), gymId: env.gymId, sourceVersion, leftOut: out.leftOut.slice(0, BUILD_LIMITS.maxExercises * 3), main, name, slotSeed: keySeed };
       }
       case 'coach_draft': {
         const d = await repos().workoutDrafts.get(from.id).catch(() => null);

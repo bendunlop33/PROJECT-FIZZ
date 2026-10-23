@@ -18,9 +18,11 @@ const lbBar = barbell({
   ],
 });
 
+/** The working rows (warm-ups are the shared planner's: warmup-planner.test.ts). */
+const work = <R extends { type: string }>(rows: readonly R[]): R[] => rows.filter((x) => x.type !== 'warmup');
 const slotOf = (input: SetRowsInput): BuilderSlot => {
   const r = setRowsFor(input);
-  return { key: 'k', exerciseId: 'x', main: input.main, repRange: input.repRange, rows: r.rows, unit: r.unit, convention: r.convention, source: r.source, startLight: r.startLight, anchorE1rm: r.anchorE1rm };
+  return { key: 'k', exerciseId: 'x', main: input.main, repRange: input.repRange, rows: work(r.rows), unit: r.unit, convention: r.convention, source: r.source, startLight: r.startLight, anchorE1rm: r.anchorE1rm };
 };
 const acc = (load: Partial<SlotLoadInput>, over: Partial<SetRowsInput> = {}): SetRowsInput => ({ main: false, role: 'isolation', barbell: false, workingSets: 3, repRange: { min: 8, max: 12 }, load: loadInput(load), ...over });
 const KG_PER_LB = 0.45359237;
@@ -29,17 +31,18 @@ describe('B1: a kg slot on lb equipment works in lb and says so', () => {
   it('20 kg per hand on lb dumbbells is 40 lb (44.1 lb rounded down), labelled lb', () => {
     const r = setRowsFor(acc({ unit: 'kg', convention: 'per_hand', equipment: lbRack, ruleTarget: { value: 20, reps: 8, rpe: 8 } }));
     expect(r.unit).toBe('lb');
-    expect(r.rows.map((x) => x.load)).toEqual([40, 40, 40]);
+    expect(work(r.rows).map((x) => x.load)).toEqual([40, 40, 40]);
   });
 
   it('45 kg per hand is 95 lb; 50 kg is capped at the rack max of 100 lb, never past it (rule 4)', () => {
-    expect(setRowsFor(acc({ convention: 'per_hand', equipment: lbRack, ruleTarget: { value: 45, reps: 8, rpe: 8 } })).rows[0]?.load).toBe(95);
+    expect(work(setRowsFor(acc({ convention: 'per_hand', equipment: lbRack, ruleTarget: { value: 45, reps: 8, rpe: 8 } })).rows)[0]?.load).toBe(95);
     const big = setRowsFor(acc({ convention: 'per_hand', equipment: lbRack, ruleTarget: { value: 50, reps: 8, rpe: 8 } }));
-    expect(big.rows.every((x) => x.load === 100)).toBe(true);
+    expect(work(big.rows).every((x) => x.load === 100)).toBe(true);
+    expect(big.rows.filter((x) => x.type === 'warmup').every((x) => (x.load ?? 0) < 100)).toBe(true);
     expect(big.unit).toBe('lb');
   });
 
-  it('a 100 kg bench target on an lb bar: top ≤ 220.5 lb, back-offs ≤ 95 kg in lb, warm-ups bar/50/70/85 % in lb', () => {
+  it('a 100 kg bench target on an lb bar: top ≤ 220.5 lb, back-offs ≤ 95 kg in lb, warm-ups bar/40/60/80 % in lb (WU4)', () => {
     const r = setRowsFor({ main: true, role: 'compound', barbell: true, workingSets: 4, repRange: { min: 6, max: 8 }, load: loadInput({ equipment: lbBar, ruleTarget: { value: 100, reps: 6, rpe: 8 } }) });
     expect(r.unit).toBe('lb');
     const top = r.rows.find((x) => x.type === 'top')?.load ?? 0;
@@ -54,9 +57,9 @@ describe('B1: a kg slot on lb equipment works in lb and says so', () => {
     const warm = r.rows.filter((x) => x.type === 'warmup').map((x) => x.load ?? 0);
     expect(warm[0]).toBe(45);
     expect(warm).toHaveLength(4);
-    // 220.46 → 220 lb; 95 kg = 209.4 → 205 lb; 110.2 → 110, 154.3 → 150, 187.4 → 185.
-    expect(r.rows.map((x) => x.load)).toEqual([45, 110, 150, 185, 220, 205, 205, 205]);
-    for (const [i, pct] of [0.5, 0.7, 0.85].entries()) expect(warm[i + 1]).toBeLessThanOrEqual(top * pct + 1e-6);
+    // 220.46 → 220 lb; 95 kg = 209.4 → 205 lb; 40 / 60 / 80 % of 220 = 88, 132, 176 → 80, 130, 170 on these plates (down).
+    expect(r.rows.map((x) => x.load)).toEqual([45, 80, 130, 170, 220, 205, 205, 205]);
+    for (const [i, pct] of [0.4, 0.6, 0.8].entries()) expect(warm[i + 1]).toBeLessThanOrEqual(top * pct + 1e-6);
   });
 
   it('drops and a typed kg on lb dumbbells are worked out in lb too', () => {
@@ -76,7 +79,9 @@ describe('B1: a kg slot on lb equipment works in lb and says so', () => {
 
   it('a pain cap in kg is applied in lb (30 kg ≈ 66.1 lb → 65 lb)', () => {
     const r = setRowsFor(acc({ convention: 'per_hand', equipment: lbRack, ruleTarget: { value: 40, reps: 8, rpe: 8 }, painCap: 30 }));
-    expect(r.rows.map((x) => x.load)).toEqual([65, 65, 65]);
+    expect(work(r.rows).map((x) => x.load)).toEqual([65, 65, 65]);
+    // Its warm-up is planned from the held top, never above it.
+    expect(r.rows.filter((x) => x.type === 'warmup').every((x) => (x.load ?? 0) < 65)).toBe(true);
   });
 });
 
@@ -84,27 +89,28 @@ describe('B2: weighted bodyweight (added) lifts keep their target', () => {
   const station = bodyweightStation();
   const base = { convention: 'added' as const, bodyweightExercise: true, ruleTarget: { value: 10, reps: 8, rpe: 8 } };
 
-  it('BW+10 on a dip station with the gym dumbbells: 10, rule, no warm-ups', () => {
+  it('BW+10 on a dip station with the gym dumbbells: 10, rule; its warm-up is bodyweight only × 4 (WU7: min(5, ⌈8/2⌉), no load: BW)', () => {
     const r = setRowsFor(acc({ ...base, equipment: station, gymEquipment: [rack] }, { role: 'compound' }));
-    expect(r.rows.map((x) => x.load)).toEqual([10, 10, 10]);
+    expect(r.rows.map((x) => x.load)).toEqual([null, 10, 10, 10]);
+    expect(r.rows[0]).toEqual({ type: 'warmup', reps: 4, load: null, rpe: null });
     expect(r.source).toBe('rule');
     expect(r.convention).toBe('added');
   });
 
   it('BW+11 rounds down to what the gym can hang on: 10', () => {
     const r = setRowsFor(acc({ ...base, ruleTarget: { value: 11, reps: 8, rpe: 8 }, equipment: station, gymEquipment: [rack] }));
-    expect(r.rows.map((x) => x.load)).toEqual([10, 10, 10]);
+    expect(work(r.rows).map((x) => x.load)).toEqual([10, 10, 10]);
   });
 
   it('mapped straight to the dumbbells (convention added): still 10', () => {
     const r = setRowsFor(acc({ ...base, coachTarget: { value: 10, reps: 8, rpe: 8 }, equipment: rack }));
-    expect(r.rows.map((x) => x.load)).toEqual([10, 10, 10]);
+    expect(work(r.rows).map((x) => x.load)).toEqual([10, 10, 10]);
     expect(r.source).toBe('coach_target');
   });
 
   it('no item and no gym items: kept in the slot unit and convention (fitWithoutEquipment)', () => {
     const r = setRowsFor(acc({ ...base, equipment: null }));
-    expect(r.rows.map((x) => x.load)).toEqual([10, 10, 10]);
+    expect(work(r.rows).map((x) => x.load)).toEqual([10, 10, 10]);
     expect(r.unit).toBe('kg');
   });
 

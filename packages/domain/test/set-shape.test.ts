@@ -82,7 +82,7 @@ describe('Sets / Warm-ups steppers (§10.5, EL-B17, EL-B18)', () => {
     expect(slotShapeOf(list[0] as RoutineExercise).setsDown).toBeNull();
   });
 
-  it('limits: 1–10 working, 0–5 warm-ups; a slot already above 10 may only go down; other sets never reorder', () => {
+  it('limits: 1–10 working, 0–6 warm-ups (WU4’s longest ladder); a slot already above 10 may only go down; other sets never reorder', () => {
     const big = slot(Array.from({ length: 12 }, () => ({})));
     expect(slotShapeOf(big)).toMatchObject({ workingSets: 12, setsUp: null, setsDown: 11 });
     expect(setWorkingSetCount([big], big.id, 13, idGen())[0]?.setTemplates).toHaveLength(12);
@@ -91,7 +91,7 @@ describe('Sets / Warm-ups steppers (§10.5, EL-B17, EL-B18)', () => {
     expect(setWorkingSetCount([s], s.id, 0, idGen())[0]?.setTemplates).toHaveLength(1);
     expect(setWorkingSetCount([s], s.id, 25, idGen())[0]?.setTemplates).toHaveLength(10);
     let w = setWarmupCount([s], s.id, 9, 'reps', idGen());
-    expect(slotShapeOf(w[0] as RoutineExercise)).toMatchObject({ warmups: 5, warmupsUp: null, workingSets: 1 });
+    expect(slotShapeOf(w[0] as RoutineExercise)).toMatchObject({ warmups: 6, warmupsUp: null, workingSets: 1 });
     w = setWarmupCount(w, s.id, 0, 'reps', idGen());
     expect(w[0]?.setTemplates).toEqual(s.setTemplates);
   });

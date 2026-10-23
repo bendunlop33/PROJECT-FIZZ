@@ -1,5 +1,6 @@
 import type { BuilderGroup, DraftLoadSource, EquipmentInstance, LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
 import type { RuleReps } from '../rep-range';
+import type { WarmupExerciseFacts } from '../warmup/plan';
 
 /**
  * Workout builder v3 (docs/design/workout-builder-v3.md, slice S2): the
@@ -39,8 +40,13 @@ export interface BuilderExerciseInfo {
   muscles: readonly string[];
   /** Focus heading / angle within the group (`Upper chest`, `Mid chest`, `Lats`…). */
   angle: string;
-  /** Loaded on a barbell (bar × 10 warm-up). */
+  /** Loaded on a bar (barbell, EZ or trap bar). */
   barbell: boolean;
+  /**
+   * (WU1–WU12) The catalogue facts the warm-up planner classifies by (category, pattern, family, primary muscles).
+   * Absent: the planner falls back on `role`, `group` and `barbell`.
+   */
+  warmup?: WarmupExerciseFacts;
 }
 
 /** The injected lookup. Null = unknown exercise (left out by the builder). */
@@ -238,6 +244,11 @@ export interface BuilderSlot {
   restS?: Partial<Record<RestKind, number>>;
   /** Ben edited this slot (swap, sets, reps…): merges and fits leave it alone. */
   touched?: true;
+  /**
+   * (WU1–WU12) Ben set this slot's warm-ups himself (added, removed, retyped or edited one): kept as he set them.
+   * Absent: the warm-up planner plans them (`settleWarmups`) from the slot's load, reps and place in the workout.
+   */
+  ownWarmups?: true;
   /** Ben unlinked this slot from a superset: automatic pairing never re-pairs it (review B3). */
   unlinked?: true;
   /** The plan-day template exercise this slot came from (kept through a swap): `Cable fly → Incline press` (§2.8). */

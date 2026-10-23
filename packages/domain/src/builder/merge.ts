@@ -97,6 +97,11 @@ export function mergeSetupChange(
       if (left !== undefined && groupOf(left) === 'Abs') {
         w = { ...w, blocks: [...w.blocks.filter((b) => !b.slots.some((x) => x.key === left.key)), { slots: [left], auto: false }] };
         added.add(left.key);
+      } else if (left !== undefined) {
+        // Any other partner left alone goes back to its §3.4 band (an isolation never stays ahead of a compound).
+        const rest = w.blocks.filter((b) => !b.slots.some((x) => x.key === left.key));
+        rest.splice(bandInsertIndex(rest, left, ctx.info, [groupOf(left)]), 0, { slots: [left], auto: false });
+        w = { ...w, blocks: rest };
       }
       changes.push({ kind: 'group_removed', group: g, slotKey: s.key, exerciseId: s.exerciseId });
       diff += 1;

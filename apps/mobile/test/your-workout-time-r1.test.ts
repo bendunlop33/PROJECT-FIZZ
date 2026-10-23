@@ -106,8 +106,10 @@ describe('R1: less time never makes an exercise Ben edited after a fit longer', 
       expect(countOf(down, key)).toBe(his);
       expect(slotOf(down, key)?.rows[index]?.rpe).toBe(7);
       expect(workoutView(down).time.lines).toContain(line);
-      // Less time never gives any exercise more sets.
-      for (const sl of slotsOf(down.workout.blocks)) expect(work(sl)).toBeLessThanOrEqual(countOf(snap, sl.key));
+      // Less time never gives the workout more sets. (WU1–WU12: an exercise's warm-ups are part of what leaving it out
+      // saves, so the least-training-lost fit may leave one out and give another a set back.)
+      const total = (x: BuilderSnapshot) => slotsOf(x.workout.blocks).reduce((n, sl) => n + work(sl), 0);
+      expect(total(down)).toBeLessThan(total(snap));
       expect(down.over || down.minutes <= down.setup.minutes).toBe(true);
       snap = down;
     }
@@ -149,7 +151,9 @@ describe('R2: Gym changed to a gym that lacks exercises after a fit', () => {
     const { services: s } = await h.launch();
     const { routine } = await bigPush(s, 3);
     const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: routine.id }, 'open-r2'));
-    const short = await stepUntil(s, snap0, (x) => x.time?.changes.some((c) => c.kind === 'drop') === true, 'drop');
+    const dropped = await stepUntil(s, snap0, (x) => x.time?.changes.some((c) => c.kind === 'drop') === true, 'drop');
+    // One step shorter still, so the home gym's swaps (bodyweight and warmed lifts: few warm-ups, WU1–WU12) still need a cut.
+    const short = await step(s, dropped, 'less', 'less-before-gym');
     const other = h.ids();
     expect((await s.setup.saveGym({ gymId: other, name: 'Home', draft: s.coachingKnowledge.buildGymDraft('home_barbell', 'kg') })).ok).toBe(true);
     expect((await s.gyms.select(other)).ok).toBe(true);
@@ -165,7 +169,8 @@ describe('R2: Gym changed to a gym that lacks exercises after a fit', () => {
     expect(m.minutes).toBeLessThanOrEqual(m.setup.minutes);
     expect(m.time).not.toBeNull();
     expect(workoutView(m).time.lines.length).toBeGreaterThan(1);
-    expect(slotsOf(m.workout.blocks).length).toBeLessThan(slotsOf(snap0.workout.blocks).length);
+    // Something is cut (an exercise left out, or sets standing in for it).
+    expect(slotsOf(m.workout.blocks).reduce((n, sl) => n + work(sl), 0)).toBeLessThan(slotsOf(snap0.workout.blocks).reduce((n, sl) => n + work(sl), 0));
     // Time can still shorten what was swapped in.
     const less = await step(s, m, 'less', 'less-after-gym');
     expect(less.minutes).toBeLessThanOrEqual(m.minutes);
@@ -182,7 +187,9 @@ describe('R2: Gym changed to a gym that lacks exercises after a fit', () => {
     const { services: s } = await h.launch();
     const { routine } = await bigPush(s, 3);
     const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: routine.id }, 'open-r2b'));
-    const short = await stepUntil(s, snap0, (x) => x.time?.changes.some((c) => c.kind === 'drop') === true, 'drop');
+    const dropped = await stepUntil(s, snap0, (x) => x.time?.changes.some((c) => c.kind === 'drop') === true, 'drop');
+    // One step shorter still, so the home gym's swaps (bodyweight and warmed lifts: few warm-ups, WU1–WU12) still need a cut.
+    const short = await step(s, dropped, 'less', 'less-before-gym');
     const other = h.ids();
     expect((await s.setup.saveGym({ gymId: other, name: 'Home', draft: s.coachingKnowledge.buildGymDraft('home_barbell', 'kg') })).ok).toBe(true);
     expect((await s.gyms.select(other)).ok).toBe(true);

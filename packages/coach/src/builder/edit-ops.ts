@@ -180,7 +180,9 @@ function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext):
     else work.push(at(r, prev?.load == null ? null : down(prev.load * BUILDER_SET_RULES.dropPct)));
   }
   const rows = formula ? settleBackoffs({ ...based, rows: work, anchorE1rm: anchor }, input, based).rows : work;
-  const warm = warmupsFor({ main: slot.main, role: info.role, barbell: info.barbell, load: input }, value);
+  // (WU1–WU12) The shared planner's warm-ups from the new working load (the save re-plans them for the slot's place).
+  const firstWork = rows.find((r) => r.type === 'top') ?? rows[0];
+  const warm = slot.ownWarmups === true ? slot.rows.filter((r) => r.type === 'warmup') : warmupsFor({ ...info, main: slot.main, load: input, ...(firstWork === undefined ? {} : { reps: firstWork.reps }) }, value);
   const out: BuilderSlot = { ...slot, rows: [...warm, ...rows], anchorE1rm: anchor, source: 'coach_target', startLight: null, touched: true };
   delete out.why;
   return out;

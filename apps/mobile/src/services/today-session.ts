@@ -1139,7 +1139,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
   /** The builder's codec over Today's facts (per-slot state, rests from the rest level, the history each load came from). */
   function codecOf(data: TodaySessionData) {
-    return { info: data.internal.info, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }) };
+    return { info: data.internal.info, loads: data.internal.ctx.loads, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }) };
   }
 
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {

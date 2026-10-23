@@ -2,7 +2,9 @@ import { BUILD_LIMITS, slotRev, type CheckedOnRecord, type DraftLoad, type Draft
 import { stableStringify } from '../stable';
 import { PLANNED_HELD_LINE } from './from-planned';
 import { restAfterRows, roundRestOf } from './rest';
-import type { BuilderBlock, BuilderInfoLookup, BuilderKeepMarks, BuilderSetRow, BuilderSlot, BuilderWorkout, RestLevel } from './types';
+import type { BuilderBlock, BuilderInfoLookup, BuilderKeepMarks, BuilderSetRow, BuilderSlot, BuilderWorkout, RestLevel, SlotLoadInput } from './types';
+import { settleWarmups } from './warmups';
+import { slotsOf } from './arrange';
 import { draftLoadSourceOf } from './types';
 
 /**
@@ -34,6 +36,11 @@ export interface DraftCodecContext {
   catalogueIdOf: (exerciseId: string) => string;
   /** The item a slot's loads were worked out on; null = none. */
   checkedOnOf: (exerciseId: string) => CheckedOnRecord | null;
+  /**
+   * (WU1–WU12) Load inputs at the draft's gym: given, every slot's warm-ups are planned again by the shared warm-up
+   * planner before saving (`settleWarmups`), so the stored warm-ups follow each slot's place and load.
+   */
+  loads?: (exerciseId: string) => SlotLoadInput;
 }
 
 const LETTERS = 'ABCDEFGHIJ';
@@ -73,6 +80,7 @@ function metaOf(slot: BuilderSlot, block: BuilderBlock, first: boolean): DraftSl
     anchorE1rm: slot.anchorE1rm,
     startLight: slot.startLight,
     ...(slot.touched === true ? { touched: true as const } : {}),
+    ...(slot.ownWarmups === true ? { ownWarmups: true as const } : {}),
     ...(slot.unlinked === true ? { unlinked: true as const } : {}),
     ...(slot.origin === undefined ? {} : { origin: slot.origin }),
     ...(keepOf(slot.keep) === undefined ? {} : { keep: keepOf(slot.keep) }),
@@ -86,7 +94,8 @@ function metaOf(slot: BuilderSlot, block: BuilderBlock, first: boolean): DraftSl
 }
 
 /** `toDraftPlan`: the workout as a draft plan (order, superset letters, set templates with loads and rests). */
-export function toDraftPlan(w: BuilderWorkout, ctx: DraftCodecContext): DraftPlan {
+export function toDraftPlan(input: BuilderWorkout, ctx: DraftCodecContext): DraftPlan {
+  const w = ctx.loads === undefined ? input : settleWarmups(input, { info: ctx.info, loads: ctx.loads });
   const slots: DraftSlot[] = [];
   let order = 0;
   let letter = 0;
@@ -176,6 +185,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
   };
   if (meta?.restS !== undefined) out.restS = { ...meta.restS };
   if (meta?.touched === true) out.touched = true;
+  if (meta?.ownWarmups === true) out.ownWarmups = true;
   if (meta?.unlinked === true) out.unlinked = true;
   if (meta?.origin !== undefined) out.origin = meta.origin;
   const keep = keepOf(meta?.keep);
@@ -224,4 +234,27 @@ export function withSlotRevs(prev: DraftPlan | null, next: DraftPlan): { plan: D
     return { ...s, rev: was === undefined ? 1 : slotRev(was) + 1 };
   });
   return { plan: { slots }, changed };
+}
+
+/**
+ * (WU1–WU12) A stored plan with each slot's warm-ups planned by the shared planner for its place in the workout
+ * (`settleWarmups`), every other template as it was (a saved workout's or the coach's own working sets, rests and
+ * loads untouched). Slots whose warm-ups are Ben's own keep theirs. For plans that open in the builder without passing
+ * through `toDraftPlan` (a saved or past workout as Start would plan it, a coach draft). Pure.
+ */
+export function settlePlanWarmups(plan: DraftPlan, ctx: Pick<DraftCodecContext, 'info' | 'restPresetsS'> & { loads: (exerciseId: string) => SlotLoadInput }, restLevel: RestLevel = 'normal'): DraftPlan {
+  const before = fromDraftPlan(plan, restLevel);
+  const after = settleWarmups(before, { info: ctx.info, loads: ctx.loads });
+  if (after === before) return plan;
+  const bySlot = new Map(slotsOf(after.blocks).map((sl) => [sl.key, sl]));
+  const was = new Map(slotsOf(before.blocks).map((sl) => [sl.key, sl]));
+  return {
+    slots: plan.slots.map((ds) => {
+      const now = bySlot.get(ds.slotKey);
+      if (now === undefined || now === was.get(ds.slotKey)) return ds;
+      const rests = restAfterRows(now, ctx.info, restLevel, ctx.restPresetsS);
+      const warm: DraftSetTemplate[] = now.rows.flatMap((row, i) => (row.type !== 'warmup' ? [] : [{ setType: 'warmup' as const, ...amountOf(row), targetRpe: null, restS: rests[i] ?? null, load: draftLoadOf(now, row) }]));
+      return { ...ds, setTemplates: [...warm, ...ds.setTemplates.filter((t) => t.setType !== 'warmup')] };
+    }),
+  };
 }

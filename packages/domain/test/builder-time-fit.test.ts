@@ -5,6 +5,7 @@ import {
   fitToMinutes,
   fitWorkoutToTime,
   heldSets,
+  settleWarmups,
   slotsOf,
   stepTimeMinutes,
   timeFitChanges,
@@ -31,7 +32,8 @@ const slot = (exerciseId: string, opts: { main?: boolean; sets?: number } = {}):
 
 /** Push: bench (main), incline DB press (per hand), fly + pushdown (a builder pair), assisted pull-up, crunch. */
 function push(): BuilderWorkout {
-  return {
+  // As stored (WU1–WU12): warm-ups planned for each slot's place in the workout.
+  return settleWarmups({
     restLevel: 'normal',
     blocks: [
       { slots: [slot('bench', { main: true, sets: 4 })], auto: false },
@@ -40,11 +42,13 @@ function push(): BuilderWorkout {
       { slots: [slot('assisted_pullup')], auto: false },
       { slots: [slot('crunch')], auto: false },
     ],
-  };
+  }, ctx);
 }
 
 const at = (w: BuilderWorkout, minutes: number, fit: BuilderTimeFit | null, now: number) => fitWorkoutToTime({ current: w, fit, minutes: now, to: minutes, ctx, mainGroup: 'Chest', supersets: false });
 const ids = (w: BuilderWorkout) => slotsOf(w.blocks).map((s) => s.exerciseId);
+/** The first working row (warm-ups come first). */
+const fw = (s: BuilderSlot | undefined): number => s?.rows.findIndex((r) => r.type !== 'warmup') ?? 0;
 const shape = (w: BuilderWorkout) => w.blocks.map((b) => b.slots.map((s) => `${s.exerciseId}×${String(workingCount(s))}`).join('+'));
 
 describe('fitWorkoutToTime', () => {
@@ -204,14 +208,14 @@ describe('a slot Ben edits after the fit cut it (22 Oct review)', () => {
     if (fit === null || pd === undefined) throw new Error('no fit');
     expect(workingCount(pd)).toBe(3);
     expect(fit.cut).toEqual({ [pd.key]: 1 });
-    const e = applyBuilderEdit(short.workout, { kind: 'edit_row', slotKey: pd.key, index: 0, patch: { kind: 'rpe', rpe: 7 } }, ctx);
+    const e = applyBuilderEdit(short.workout, { kind: 'edit_row', slotKey: pd.key, index: fw(pd), patch: { kind: 'rpe', rpe: 7 } }, ctx);
     if (!e.ok) throw new Error(e.reason);
     expect(timeFitChanges(fit, e.workout)).toContainEqual({ kind: 'sets', slotKey: pd.key, exerciseId: 'pushdown', from: 4, to: 3 });
     const back = at(e.workout, full, fit, full);
     const mine = pushdownOf(back.workout);
     expect(workingCount(mine ?? pd)).toBe(4);
-    expect(mine?.rows[0]?.rpe).toBe(7);
-    expect(mine?.rows.slice(1)).toEqual(slotsOf(base.blocks).find((s) => s.key === pd.key)?.rows.slice(1));
+    expect(mine?.rows[fw(mine)]?.rpe).toBe(7);
+    expect(mine?.rows.slice(fw(mine) + 1)).toEqual(slotsOf(base.blocks).find((s) => s.key === pd.key)?.rows.slice(fw(pd) + 1));
     expect(back.fit).toBeNull();
   });
 
@@ -234,7 +238,7 @@ describe('a slot Ben edits after the fit cut it (22 Oct review)', () => {
     const fit = short.fit;
     const pd = pushdownOf(short.workout);
     if (fit === null || pd === undefined) throw new Error('no fit');
-    const e = applyBuilderEdit(short.workout, { kind: 'edit_row', slotKey: pd.key, index: 0, patch: { kind: 'rpe', rpe: 7 } }, ctx);
+    const e = applyBuilderEdit(short.workout, { kind: 'edit_row', slotKey: pd.key, index: fw(pd), patch: { kind: 'rpe', rpe: 7 } }, ctx);
     if (!e.ok) throw new Error(e.reason);
     const old = { base: fit.base, fromMinutes: fit.fromMinutes, dropped: fit.dropped };
     expect(workingCount(pushdownOf(unfitWorkout(old, e.workout)) ?? pd)).toBe(3);
@@ -263,7 +267,7 @@ describe('review R1: less time never makes an exercise Ben edited after a fit lo
   it('an RPE edit on a cut exercise, then Time down twice: its count never rises, his RPE stays, the detail still lists its cut; the full length (Undo) brings it all back', () => {
     const { r, fit, key, m } = firstCut();
     const cutTo = workingCount(of(r.workout, key) ?? slot('curl'));
-    const e = applyBuilderEdit(r.workout, { kind: 'edit_row', slotKey: key, index: 0, patch: { kind: 'rpe', rpe: 7 } }, ctx);
+    const e = applyBuilderEdit(r.workout, { kind: 'edit_row', slotKey: key, index: fw(of(r.workout, key)), patch: { kind: 'rpe', rpe: 7 } }, ctx);
     if (!e.ok) throw new Error(e.reason);
     let w = e.workout;
     let live: BuilderTimeFit | null = fit;
@@ -282,8 +286,8 @@ describe('review R1: less time never makes an exercise Ben edited after a fit lo
     const back = at(w, full, live, full);
     expect(back.fit).toBeNull();
     expect(workingCount(of(back.workout, key) ?? slot('curl'))).toBe(4);
-    expect(of(back.workout, key)?.rows[0]?.rpe).toBe(7);
-    expect(of(back.workout, key)?.rows.slice(1)).toEqual(of(base, key)?.rows.slice(1));
+    expect(of(back.workout, key)?.rows[fw(of(back.workout, key))]?.rpe).toBe(7);
+    expect(of(back.workout, key)?.rows.slice(fw(of(back.workout, key)) + 1)).toEqual(of(base, key)?.rows.slice(fw(of(base, key)) + 1));
     for (const s of slotsOf(base.blocks)) if (s.key !== key) expect(of(back.workout, s.key)?.rows).toEqual(s.rows);
   });
 
@@ -302,7 +306,7 @@ describe('review R1: less time never makes an exercise Ben edited after a fit lo
 
   it('more time, still short of the original: his exercise stays as he left it and its cut stays listed (the record isn’t lost when nothing else needs cutting)', () => {
     const { r, fit, key, m } = firstCut();
-    const e = applyBuilderEdit(r.workout, { kind: 'edit_row', slotKey: key, index: 0, patch: { kind: 'rpe', rpe: 7 } }, ctx);
+    const e = applyBuilderEdit(r.workout, { kind: 'edit_row', slotKey: key, index: fw(of(r.workout, key)), patch: { kind: 'rpe', rpe: 7 } }, ctx);
     if (!e.ok) throw new Error(e.reason);
     const deeper = at(e.workout, m - 10, fit, full);
     const up = at(deeper.workout, m, deeper.fit, full);
@@ -317,7 +321,7 @@ describe('review R1: less time never makes an exercise Ben edited after a fit lo
 
   it('`withOriginalRows`: a copy changed only by adding or pairing takes back the original’s rows and rests', () => {
     const { r, fit, key } = firstCut();
-    const e = applyBuilderEdit(r.workout, { kind: 'edit_row', slotKey: key, index: 0, patch: { kind: 'rpe', rpe: 7 } }, ctx);
+    const e = applyBuilderEdit(r.workout, { kind: 'edit_row', slotKey: key, index: fw(of(r.workout, key)), patch: { kind: 'rpe', rpe: 7 } }, ctx);
     if (!e.ok) throw new Error(e.reason);
     const original = unfitWorkout(fit, e.workout);
     const work = unfitWorkout(fit, e.workout, { hold: true });

@@ -1,4 +1,5 @@
 import { BUILD_LIMITS } from '@fizz/schemas';
+import { warmupRestS } from '../warmup/plan';
 import type { BuilderBlock, BuilderInfoLookup, BuilderSlot, RestKind, RestLevel } from './types';
 
 /**
@@ -105,10 +106,15 @@ export function defaultRestS(kind: RestKind | 'round', role: RestRole, level: Re
  */
 export function restAfterRows(slot: BuilderSlot, info: BuilderInfoLookup, level: RestLevel, presets?: readonly number[]): number[] {
   const role = restRoleOf(slot, info);
+  const firstWork = slot.rows.find((r) => r.type !== 'warmup');
   return slot.rows.map((row, i) => {
     const next = slot.rows[i + 1];
     const kind: RestKind = next?.type === 'drop' && row.type !== 'warmup' ? 'before_drop' : row.type;
-    return slot.restS?.[kind] ?? defaultRestS(kind, role, level, presets);
+    const own = slot.restS?.[kind];
+    if (own !== undefined) return own;
+    // (WU11) The last warm-up rests 2 min before a rep-band first working set, 3 min before a heavy-band one.
+    if (row.type === 'warmup' && next !== undefined && next.type !== 'warmup' && firstWork !== undefined && firstWork.durationS === undefined && firstWork.distanceM === undefined) return nearestPreset(warmupRestS(firstWork.reps, true), presets);
+    return defaultRestS(kind, role, level, presets);
   });
 }
 

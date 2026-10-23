@@ -76,6 +76,9 @@ const find = (w: BuilderWorkout, key: string): { bi: number; si: number; slot: B
   return null;
 };
 
+/** (WU1–WU12) Ben changed this slot's warm-ups: the planner leaves them as he set them (`settleWarmups`). */
+const ownWarmups = (s: BuilderSlot): BuilderSlot => ({ ...s, ownWarmups: true });
+
 const replace = (w: BuilderWorkout, key: string, next: BuilderSlot): BuilderWorkout => ({ ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (s.key === key ? next : s)) })) });
 
 /** `applyBuilderEdit`: one of Ben's edits, or why it can't be made (nothing changes). */
@@ -141,12 +144,15 @@ function edit(w: BuilderWorkout, op: BuilderEditOp, ctx: BuilderContext): Builde
     }
     case 'set_type': {
       const r = changeSetType(slot, op.index, op.type, load());
-      return r.ok ? done(replace(w, slot.key, touched(r.slot)), [slot.key]) : { ok: false, reason: r.reason };
+      // (WU1–WU12) A row turned into or out of a warm-up: Ben's warm-ups from now on.
+      const own = op.type === 'warmup' || slot.rows[op.index]?.type === 'warmup';
+      return r.ok ? done(replace(w, slot.key, touched(own ? ownWarmups(r.slot) : r.slot)), [slot.key]) : { ok: false, reason: r.reason };
     }
     case 'edit_row': {
       const r = editSetRow(slot, op.index, op.patch, load());
       if (!r.ok) return { ok: false, reason: r.reason, ...(r.lightest === undefined ? {} : { lightest: r.lightest }) };
-      return done(replace(w, slot.key, touched(r.slot)), [slot.key], { rounded: r.rounded, ...(r.mayHurt === true ? { mayHurt: true as const } : {}) });
+      const own = slot.rows[op.index]?.type === 'warmup';
+      return done(replace(w, slot.key, touched(own ? ownWarmups(r.slot) : r.slot)), [slot.key], { rounded: r.rounded, ...(r.mayHurt === true ? { mayHurt: true as const } : {}) });
     }
     case 'delete_set': {
       const row = slot.rows[op.index];
@@ -156,7 +162,8 @@ function edit(w: BuilderWorkout, op: BuilderEditOp, ctx: BuilderContext): Builde
       // A drop never follows a warm-up: a drop left first becomes a working set.
       const first = rows.findIndex((x) => x.type !== 'warmup');
       const fixed = rows.map((x, i): BuilderSetRow => (i === first && x.type === 'drop' ? { ...x, type: 'working' } : x));
-      return done(replace(w, slot.key, touched({ ...slot, rows: fixed })), [slot.key]);
+      const next: BuilderSlot = { ...slot, rows: fixed };
+      return done(replace(w, slot.key, touched(row.type === 'warmup' ? ownWarmups(next) : next)), [slot.key]);
     }
     case 'add_set': {
       if (workingCount(slot) >= BUILDER_SET_RULES.maxWorkingSets) return { ok: false, reason: 'max_sets' };
@@ -169,7 +176,7 @@ function edit(w: BuilderWorkout, op: BuilderEditOp, ctx: BuilderContext): Builde
     }
     case 'add_warmup': {
       const r = addWarmup(slot, ctx);
-      return r.ok ? done(replace(w, slot.key, touched(r.slot)), [slot.key]) : r;
+      return r.ok ? done(replace(w, slot.key, touched(ownWarmups(r.slot))), [slot.key]) : r;
     }
     case 'rest': {
       const seconds = clampBuilderRest(op.restKind, op.seconds);
