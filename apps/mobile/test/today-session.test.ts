@@ -79,6 +79,17 @@ async function benWithPlan(stub = planStub) {
   return { s, gymId, planId };
 }
 
+/** Ben at his gym with the same history and no plan (Today's no-plan card: Other sessions with their controls). */
+async function benNoPlan(): Promise<AppServices> {
+  const { services: s } = await h.launch();
+  const gymId = await setUpGym(h, s);
+  await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 7, rpe: 8 }, { load: 100, reps: 7, rpe: 8 }] }]);
+  h.clockMs += DAY;
+  await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 60, reps: 10, rpe: 8 }, { load: 60, reps: 10, rpe: 8 }] }]);
+  h.clockMs += DAY;
+  return s;
+}
+
 async function loaded(s: AppServices): Promise<TodaySessionData> {
   const d = await s.todaySession.load();
   if (d === null) throw new Error('no data');
@@ -224,18 +235,42 @@ describe('Today (v2) session card from the plan', () => {
     expect(kept).toEqual({ ok: true, draftId: c1.draftId, version: view?.edited?.version });
   });
 
-  it('Mix it up cycles a shortlist (today only); Undo is the code draft again', async () => {
-    const { s } = await benWithPlan();
+  it('Mix it up (no plan) cycles a shortlist (today only); Undo is the code draft again', async () => {
+    const s = await benNoPlan();
     const data = await loaded(s);
-    const key = dayKeyOf(data, 'Push');
-    const base = s.todaySession.card(data, sel(data, key, { minutes: 75 }));
+    expect(data.status).toBe('no_plan');
+    // Full body without abs: its last accessory has fresh options at this gym.
+    const key = dayKeyOf(data, 'Full body');
+    const base = s.todaySession.card(data, sel(data, key, { minutes: 75, abs: false }));
+    expect(base?.lean).toBe(false);
     expect(base?.mixAvailable).toBe(true);
-    const one = s.todaySession.card(data, sel(data, key, { minutes: 75, mix: 1 }));
+    const one = s.todaySession.card(data, sel(data, key, { minutes: 75, abs: false, mix: 1 }));
     expect(one?.mix?.text).toMatch(/ → .* · today only$/);
     expect(one?.mix?.another).toMatch(/^Another \(1\/\d+\)$/);
     expect(one?.mix?.notReviewed).toBe(true);
-    expect(one?.rows[0]?.name).toBe('Bench press');
-    expect(s.todaySession.card(data, sel(data, key, { minutes: 75, mix: 0 }))?.rows.map((r) => r.name)).toEqual(base?.rows.map((r) => r.name));
+    // Never the main lift.
+    expect(one?.rows[0]?.name).toBe(base?.rows[0]?.name);
+    expect(s.todaySession.card(data, sel(data, key, { minutes: 75, abs: false, mix: 0 }))?.rows.map((r) => r.name)).toEqual(base?.rows.map((r) => r.name));
+  });
+
+  it('(D3) with a plan the lean card has no Mix it up: no offer, no shortlist, and a mix count an older selection carried changes nothing', async () => {
+    const { s } = await benWithPlan();
+    const data = await loaded(s);
+    for (const key of [dayKeyOf(data, 'Push'), data.others.find((d) => d.name === 'Push')?.key ?? '']) {
+      const base = s.todaySession.card(data, sel(data, key, { minutes: 75 }));
+      expect(base?.lean).toBe(true);
+      expect(base?.mixAvailable).toBe(false);
+      expect(base?.mixShortlist).toEqual([]);
+      expect(base?.mixFromExerciseId).toBeNull();
+      const carried = s.todaySession.card(data, sel(data, key, { minutes: 75, mix: 2 }));
+      if (base === null || carried === null) throw new Error('no card');
+      expect(carried.mix).toBeNull();
+      expect(carried.rows).toEqual(base.rows);
+      // Nothing for the coach to pick from: no model call.
+      const calls = model.requests.length;
+      expect(await s.todaySession.mixPick(data, carried)).toBeNull();
+      expect(model.requests.length).toBe(calls);
+    }
   });
 
   it('merge: Today’s draft is the builder’s (codec, per-slot state); an edit in the builder shows `· edited`, Start offers the §2.8 prompt, Update writes the plan day with the session, Summary’s Undo restores it once', async () => {
@@ -303,7 +338,7 @@ describe('Today (v2) session card from the plan', () => {
     expect(await s.builder.undoPlanChange(r.planChange, 'upd-undo')).toEqual({ ok: true });
   });
 
-  it('merge: the coach on Today — a low check-in gets the nudge’s line in Why? with code’s offer; Apply writes it to the card’s draft once and the day goes quiet; Mix it up takes the coach’s pick from code’s shortlist with its reason', async () => {
+  it('merge: the coach on Today — a low check-in gets the nudge’s line in Why? with code’s offer; Apply writes it to the card’s draft once and the day goes quiet', async () => {
     const { s } = await benWithPlan();
     const ci = await s.checkIns.record({ checkInId: '0d7f6c2e-4b1a-4c3d-9e8f-1a2b3c4d5e6f', opId: 'ci-1', score: 1 });
     expect(ci.ok).toBe(true);
@@ -329,19 +364,22 @@ describe('Today (v2) session card from the plan', () => {
     const again = await s.todaySession.review(after, sel(after, key), 'nudge-2');
     expect(again?.kind).toBe('settled');
     expect(model.requests.length).toBe(calls);
+  });
 
-    // Mix it up on another day: the coach's pick (from code's shortlist only) leads, with its reason.
-    const pull = dayKeyOf(after, 'Pull');
-    const base = s.todaySession.card(after, sel(after, pull, { minutes: 75, mix: 1 }));
+  it('Mix it up (no plan; D3 took it off the lean card) takes the coach’s pick from code’s shortlist with its reason', async () => {
+    const s = await benNoPlan();
+    const data = await loaded(s);
+    const full = dayKeyOf(data, 'Full body');
+    const base = s.todaySession.card(data, sel(data, full, { minutes: 75, abs: false, mix: 1 }));
     if (base === null || base.mixShortlist.length < 2) throw new Error('no shortlist');
     const want = base.mixShortlist[base.mixShortlist.length - 1] ?? '';
-    model = new StepModel([() => toolCall('mix_pick', { exerciseId: want, reason: 'A fresh angle for your back.' })]);
-    const pick = await s.todaySession.mixPick(after, base);
+    model = new StepModel([() => toolCall('mix_pick', { exerciseId: want, reason: 'A fresh angle for today.' })]);
+    const pick = await s.todaySession.mixPick(data, base);
     expect(pick).toMatchObject({ by: 'coach', exerciseId: want });
-    const mixed = s.todaySession.card(after, sel(after, pull, { minutes: 75, mix: 1 }), { mixPick: pick });
+    const mixed = s.todaySession.card(data, sel(data, full, { minutes: 75, abs: false, mix: 1 }), { mixPick: pick });
     expect(mixed?.mix?.notReviewed).toBe(false);
-    expect(mixed?.mix?.reason).toBe('A fresh angle for your back.');
-    expect(mixed?.rows.some((row) => row.name === after.internal.nameOf(want))).toBe(true);
+    expect(mixed?.mix?.reason).toBe('A fresh angle for today.');
+    expect(mixed?.rows.some((row) => row.name === data.internal.nameOf(want))).toBe(true);
   });
 
   it('Other sessions: Push from ⋯ starts with no plan day (Up next is credited by what was trained)', async () => {

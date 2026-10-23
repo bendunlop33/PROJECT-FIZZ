@@ -285,7 +285,8 @@ export interface TodayCardView {
   dayKey: string;
   /**
    * (D3, Ben 22–23 Oct) Lean card: with a plan in use (or paused), Today shows the session's rows, the Time control with
-   * its note, Start and Edit; main lift, accessories, abs and supersets are in Edit (Your workout). No plan: the controls.
+   * its note, Why?, Start and Edit; main lift, accessories, abs and supersets are in Edit (Your workout), and `↻ Mix it
+   * up` is gone (Your workout's Swap). No plan: the controls and Mix it up.
    */
   lean: boolean;
   /** `Chest`, or `Chest · edited`. */
@@ -838,8 +839,11 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         draft: null,
       };
     }
-    const pick = coach.mixPick ?? null;
-    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), ...(pick === null ? {} : { mixOrder: pick.order }) });
+    // (D3, Ben 22–23 Oct) `↻ Mix it up` left the lean card with the other Today-only controls (Your workout's Swap does
+    // the same job): with a plan the card never swaps an accessory, whatever an older selection carried.
+    const lean = data.status !== 'no_plan';
+    const pick = lean ? null : (coach.mixPick ?? null);
+    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId, ...(lean ? { mix: 0 } : {}) }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), ...(pick === null ? {} : { mixOrder: pick.order }) });
     if (d === null) return null;
     // The coach's reason only for the swap it picked (shown under the swap and in Why?).
     const mixReason = d.mix !== null && pick !== null && pick.exerciseId === d.mix.toExerciseId ? mixCoachReason(pick) : null;
@@ -849,7 +853,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const slotName = (key: string) => nameOf(d.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === key)?.exerciseId ?? '');
     return {
       dayKey: day.key,
-      lean: data.status !== 'no_plan',
+      lean,
       title: day.name,
       edited: null,
       nudged: null,
@@ -863,9 +867,10 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
       why: whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach, mixReason)),
       mix: d.mix === null ? null : todayMixLine(d.mix, nameOf, mixReason),
-      mixAvailable: d.mixOptions > 0,
-      mixShortlist: d.mixShortlist,
-      mixFromExerciseId: d.mixFromExerciseId,
+      mixAvailable: !lean && d.mixOptions > 0,
+      // No shortlist on the lean card: the coach is never asked for a Mix it up pick there.
+      mixShortlist: lean ? [] : d.mixShortlist,
+      mixFromExerciseId: lean ? null : d.mixFromExerciseId,
       startable: d.exerciseCount > 0,
       draft: d,
     };

@@ -139,6 +139,12 @@ describe('D3: Today with a plan is lean; without a plan the card keeps its contr
     for (const gone of ['TODAY_V2_COPY.mainLift', 'TODAY_V2_COPY.accessories', 'TODAY_V2_COPY.abs', 'TODAY_V2_COPY.supersets', 'TODAY_V2_COPY.breakdown']) expect(lean).not.toContain(gone);
     expect(sc).toContain('<PrimaryButton label={TODAY_V2_COPY.start}');
     expect(sc).toContain('<SecondaryButton label={TODAY_V2_COPY.edit}');
+    // `↻ Mix it up` went with them (design: Your workout's Swap does the same job): shown only on the no-plan card.
+    expect(sc).toContain('const mixShown = !view.lean;');
+    expect(sc).toContain('{mixShown && view.mix === null && view.mixAvailable ?');
+    expect(sc).toContain('{mixShown && view.mix !== null ?');
+    expect(push.mixAvailable).toBe(false);
+    expect(push.mixShortlist).toEqual([]);
   });
 
   it('no plan: an Other session’s card keeps main lift, accessories, Time, abs and supersets', async () => {

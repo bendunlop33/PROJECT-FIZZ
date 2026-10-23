@@ -520,13 +520,15 @@ export function SessionCard({
       <TextButton label={TODAY_V2_COPY.backToPlan} tone="secondary" onPress={onBackToPlan} />
     </View>
   );
-  // The session's rows, then `Why?` and `↻ Mix it up` (lean: always shown; no plan: behind Session breakdown).
+  // The session's rows, then `Why?` (lean: always shown; no plan: behind Session breakdown, with `↻ Mix it up`). (D3) Mix
+  // it up left the lean card with the other Today-only controls; Your workout's Swap does the same job.
+  const mixShown = !view.lean;
   const details = (
     <View style={{ gap: theme.space['2'] }}>
       <BreakdownTable rows={view.rows} unit={view.unit} />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['4'] }}>
         <TextButton label={TODAY_V2_COPY.why} tone="secondary" accessibilityLabel={why ? 'Hide why' : 'Why this workout'} onPress={() => { dispatch({ kind: 'why' }); }} />
-        {view.mix === null && view.mixAvailable ? <TextButton label={TODAY_V2_COPY.mix} tone="secondary" accessibilityLabel="Mix it up, swap one accessory for today" onPress={() => { dispatch({ kind: 'mix' }); }} /> : null}
+        {mixShown && view.mix === null && view.mixAvailable ? <TextButton label={TODAY_V2_COPY.mix} tone="secondary" accessibilityLabel="Mix it up, swap one accessory for today" onPress={() => { dispatch({ kind: 'mix' }); }} /> : null}
       </View>
       {why ? (
         <View style={{ gap: 2 }}>
@@ -537,7 +539,7 @@ export function SessionCard({
           ))}
         </View>
       ) : null}
-      {view.mix !== null ? (
+      {mixShown && view.mix !== null ? (
         <View style={{ gap: theme.space['1'] }}>
           <View accessible accessibilityLabel={view.mix.accessibilityLabel}>
             <AppText variant="callout">{view.mix.text}</AppText>
