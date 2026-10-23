@@ -1,6 +1,8 @@
 # Review: D2 offers (v5offers): weekly review, Summary stall resets, pre-start nudge
 
-**Verdict: CHANGES NEEDED** (23 Oct 2026). Two blocking issues, B1 and B2. Both were reproduced on real SQLite.
+**Verdict: PASS** (re-review after fix round 1, 23 Oct 2026). B1 and B2 are fixed and tested on real SQLite. Items 1 and 5 (SP2, SP1) wait for Ben and don't block this track. See "Re-review (fix round 1)" at the end.
+
+*Round 1 verdict: CHANGES NEEDED (two blocking issues, B1 and B2, both reproduced on real SQLite).*
 
 **Scope:** `9261625..b2fc778` on `claude/v5offers-23oct`. The commits are 8e6a760 (weekly review), 4c1b66a (Summary stall reset) and b2fc778 (schema comment).
 
@@ -188,3 +190,44 @@ Not in this list and not touched: S3 (`A reset after a stall.` not shown), S4 (t
 | `npm run typecheck` | exit 0 |
 | `npm run lint` | exit 0 |
 | `npm run test` | 474 files, 8824 passed, 2 todo, exit 0 |
+
+## Re-review (fix round 1, 23 Oct)
+
+**Verdict: PASS.** No blocking issues remain.
+
+**Scope:** `a09fa2c`, `02f1e2c`, `3451920`, `2d0623c` (and the note `61611f6`). I read each diff against the round 1 findings and ran the checks myself.
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` | exit 0 |
+| `npm run test` (full suite) | 474 files, 8824 passed, 2 todo, exit 0 |
+| Commit trailers | All four fix commits end with the required two lines |
+
+### Confirmed fixed
+
+- **B1, weekly gate.** `weeklyOfferReasons` adds `from_edits` for every `source: 'code'` proposal (`progress-page.ts`), so `autoApplicable` is false for code's changes and `autoApply` never writes them. This matches D1, rule 3 and workout-builder-v3 §6.1 ("suggests").
+- **B1, Time fits and Today's card.** `notEditedOfBuilderDraft` (`coach-draft.ts:850`) records at Start:
+  - the slots a live Your workout Time fit cut or dropped, named from `fit.base`;
+  - every exercise left at the count of the newest Today-marked version on the draft's line. That version is found by walking `parentN` with a cycle guard and checking the mark's `todayContentHash`.
+
+  `session-service.ts:364` carries it through when the builder passes its own `planDay`. `reviewSessionOf` turns those counts into `plannedWorking: null`, and `repeatedEdits` skips them. `weekly-review-time-fit.test.ts` covers both of my probe-1 paths on real SQLite: no `template_edit` fact, no proposal, and the template unchanged across three opens. The hand-edit variant stays one offer across re-runs, a force-close and a new review (same ID, `Got it` kept). Apply is recorded as Ben's, and Undo works.
+- **B2 / 2 and 7.** One mapping decides the buttons (`changeRowTaps`) and one function runs them (`runChangeTap`). `ChangeRow`, `AskRow` and Past weeks all use the pair. An undone offer's Redo now calls `redoProposal`. The service test drives Apply → Undo → Redo → Undo by button label through the same pair. Past weeks draws offers with `AskRow` (Apply/Skip plus status), and a pain-held open row gets no buttons.
+- **3 / S1.** The collapsed line now counts open, answerable rows (`1 change for next week · 1 to review`, `2 to review`), and both cases are tested.
+- **4.** `withOfferMark` stamps `offer: true` when a review stores a proposal. It also stamps carried proposals under the previous review's facts before re-classifying them, and keeps the mark when a fresh coach tweak replaces an open offer (`mergeCoachAsks`). The reviewer's stalled → not-stalled re-run is tested and stays open.
+- **N1.** Code's open offer carries over while `facts.edits` still holds the same from → to. The same ID is kept, and `NEW` doesn't come back (tested).
+- **6 (in part).** `decidePrimary` sets `stalled` when the miss streak reaches `failuresBeforeReduce`, whether it reduces or holds at the lightest load. The flag goes through `TargetProvenance.rule.stalled` (optional schema field, so older rows still parse) into `nextSessionBases`. Tests cover the rule (never on one bad day) and a coach rep-scheme change at the lightest load being a stall response.
+
+### Non-blocking (carry forward)
+
+- **R1. Today-started days mark every untouched exercise `notEdited`.** In `weekly-review-time-fit.test.ts`, the second test expects the full exercise set. This errs on the safe side: an edit Ben makes that a later Today build keeps is never offered. It never applies anything unasked, but it narrows §6.1 a lot. This affects SP6: once D1's Summary "Keep for next time?" is built, the weekly repeated-edit rule probably adds little.
+- **R2. Older sessions** have no `notEdited`, so an old short day can still count toward one offer. It's offer-only, so this is acceptable.
+- **R3. Pain-held open rows** aren't counted in `N to review`. That's correct, since they have no buttons. But a week whose only change is held collapses to `No changes for next week`, with the held row only visible when the section is expanded. Minor.
+- **R4. Item 6 remainder.** An exercise with no built-in plan can't be flagged as stalled, and the weekly review ("no new best in 3 sessions") and the Summary ("missed twice at the same load") still define "stalled" differently. That needs one definition in the spec.
+- S3, S4, N2 and N3 from round 1 are unchanged. None blocks.
+
+### Still for Ben (unchanged spec issues)
+
+- **SP2 / item 1 (highest priority).** On a stalled lift, the built-in rule's reset still sets next time with no Apply. This happens offline, when the coach's target equals the rule's, when the coach doesn't mention the lift, and after Ben taps `Not now` on the coach's gentler reset. The last case is the worst: Ben turns down 57.5 kg and gets the rule's 52.5 kg. That reset is −12.5%, outside playbook rule 8's 5–10% band, because `reducedLoad` rounds a 10% cut down to an achievable load. D2 ("stall resets ALWAYS need Apply") conflicts with ADR 0006's automatic fallback. Ben needs to decide which wins. Whichever way he decides, the rounding should be bounded so it never goes past rule 8's band.
+- **SP1 / item 5.** An unasked Summary +1 is still dropped and only noted behind `Why?`. D2 says it should be offered with Apply, while CA8 says drop it.
+- SP3–SP6 from round 1 still stand.
