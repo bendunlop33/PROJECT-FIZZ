@@ -73,25 +73,27 @@ describe('todaySplitDays: Profile › Split as Today days (no plan)', () => {
 describe('todaySplitNext: NEXT on the no-plan day row', () => {
   const none = g({});
   it('the app’s Up next resolver wins when it names a split day (one resolver, Today and Start agree)', () => {
-    expect(todaySplitNext({ split: CLSB, upNextTitle: 'Back', workouts: [], near: null, lastGroups: null })).toEqual({ dayId: 'back', why: 'resolver' });
+    expect(todaySplitNext({ split: CLSB, upNext: { title: 'Back', groups: null }, workouts: [], near: null, lastGroups: null })).toEqual({ dayId: 'back', why: 'resolver' });
     // `Back · 45 min` (a coach build's name) still names Back.
-    expect(todaySplitNext({ split: CLSB, upNextTitle: 'back · 45 min', workouts: [], near: null, lastGroups: null })?.dayId).toBe('back');
+    expect(todaySplitNext({ split: CLSB, upNext: { title: 'back · 45 min', groups: null }, workouts: [], near: null, lastGroups: null })?.dayId).toBe('back');
+    // The resolver planned Chest from a workout Ben named `Push`: the day its muscles were.
+    expect(todaySplitNext({ split: CLSB, upNext: { title: 'Push', groups: g({ Chest: 9, Triceps: 3 }) }, workouts: [], near: null, lastGroups: null })).toEqual({ dayId: 'chest', why: 'resolver' });
   });
 
   it('else the split day trained least recently (never the one just done)', () => {
     const ws = [w('c', '2026-10-12', { Chest: 9, Triceps: 3 }), w('l', '2026-10-14', { Quads: 9 }), w('s', '2026-10-16', { Shoulders: 9 }), w('b', '2026-10-17', { Back: 9 })];
-    expect(todaySplitNext({ split: CLSB, upNextTitle: 'Push A', workouts: ws, near: null, lastGroups: none })).toEqual({ dayId: 'chest', why: 'due' });
+    expect(todaySplitNext({ split: CLSB, upNext: { title: 'Push A', groups: null }, workouts: ws, near: null, lastGroups: none })).toEqual({ dayId: 'chest', why: 'due' });
   });
 
   it('a long run near today moves legs after the other days', () => {
     const ws = [w('l', '2026-10-10', { Quads: 9 }), w('c', '2026-10-12', { Chest: 9 }), w('s', '2026-10-16', { Shoulders: 9 }), w('b', '2026-10-17', { Back: 9 })];
-    expect(todaySplitNext({ split: CLSB, upNextTitle: null, workouts: ws, near: null, lastGroups: none })?.dayId).toBe('legs');
+    expect(todaySplitNext({ split: CLSB, upNext: null, workouts: ws, near: null, lastGroups: none })?.dayId).toBe('legs');
     const near = { when: 'before', why: 'Long run tomorrow' } as unknown as Parameters<typeof todaySplitNext>[0]['near'];
-    expect(todaySplitNext({ split: CLSB, upNextTitle: null, workouts: ws, near, lastGroups: none })?.dayId).toBe('chest');
+    expect(todaySplitNext({ split: CLSB, upNext: null, workouts: ws, near, lastGroups: none })?.dayId).toBe('chest');
   });
 
   it('no history: the first day', () => {
-    expect(todaySplitNext({ split: CLSB, upNextTitle: null, workouts: [], near: null, lastGroups: null })).toEqual({ dayId: 'chest', why: 'after_last' });
+    expect(todaySplitNext({ split: CLSB, upNext: null, workouts: [], near: null, lastGroups: null })).toEqual({ dayId: 'chest', why: 'after_last' });
   });
 });
 

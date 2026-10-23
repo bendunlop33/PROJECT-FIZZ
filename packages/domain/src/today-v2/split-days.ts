@@ -1,11 +1,11 @@
-import type { TrainingSplit } from '@fizz/schemas';
+import type { MuscleGroup, TrainingSplit } from '@fizz/schemas';
 import { avoidLegDays, type LegRunNear } from '../activity';
 import type { BuilderPool, GroupCount } from '../builder/build';
 import { BUILDER_DEFAULT_MAIN_LIFTS, defaultBuilderMainLift } from '../builder/main-lift';
 import { mixForDay } from '../builder/setup';
 import type { BuilderGroupName, BuilderInfoLookup } from '../builder/types';
 import { isSplitDayName, splitDaysByDue, type SplitWorkout } from '../session/split-up-next';
-import { nextSplitDay } from '../training-profile';
+import { matchSplitDay, nextSplitDay } from '../training-profile';
 import type { TodayDay, TodayTemplate } from './session';
 
 /**
@@ -105,8 +105,11 @@ export function todaySplitDays(input: TodaySplitDaysInput): TodayDay[] {
 
 export interface TodaySplitNextInput {
   split: TrainingSplit;
-  /** The app's Up next resolver's title (`Back`), when it could be read; null: none. */
-  upNextTitle: string | null;
+  /**
+   * The app's Up next resolver's pick, when it could be read (null: none): its title (`Back`, or the source workout's
+   * own name, `Push`) and the muscles its source workout trained (null for a routine).
+   */
+  upNext: { title: string; groups: ReadonlyMap<MuscleGroup, number> | null } | null;
   /** Finished workouts in the window, as the split rule reads them. */
   workouts: readonly SplitWorkout[];
   /** A long or hard run near today (legs move after the other days). */
@@ -119,7 +122,9 @@ export interface TodaySplitNextInput {
 export function todaySplitNext(input: TodaySplitNextInput): { dayId: string; why: 'resolver' | 'due' | 'after_last' } | null {
   const days = input.split.days;
   if (days.length === 0) return null;
-  const named = input.upNextTitle === null ? undefined : days.find((d) => isSplitDayName(input.upNextTitle ?? '', d.name));
+  const up = input.upNext;
+  // The day it names, else the day its source workout mainly trained (the resolver planned that day from it).
+  const named = up === null ? undefined : (days.find((d) => isSplitDayName(up.title, d.name)) ?? (up.groups === null ? undefined : (matchSplitDay(input.split, up.groups) ?? undefined)));
   if (named !== undefined) return { dayId: named.id, why: 'resolver' };
   const due = splitDaysByDue(input.split, input.workouts);
   const order = avoidLegDays(due, (p) => p.day.bodyParts, input.near).order;
