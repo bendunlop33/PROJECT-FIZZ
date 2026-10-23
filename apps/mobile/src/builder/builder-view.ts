@@ -1,7 +1,7 @@
 import { canAddWarmup, cardioValuesText, clampBuilderRest, FIT_RULES, fitNoteOf, isTimedRow, slotsOf, spokenDistance, spokenDuration, stepTimeMinutes, TODAY_V2_COPY, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderGroup } from '@fizz/schemas';
 
-import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from './builder-service';
+import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt, TodayOptions } from './builder-service';
 import { loadSpoken, loadText, REST_STEP_S, restText, SET_TYPE_LABEL, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
 import { swapPainConfirm } from '../ui/swap-sheet-model';
 
@@ -359,6 +359,17 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
       }
     }),
   };
+}
+
+/**
+ * (D3, §2.3a) Today's options on Your workout as the rows show them: the day's main lifts (read on focus) with the
+ * draft's own state from the snapshot (`snap.today`), so a write, an Undo or a swipe never leaves a switch or chip
+ * behind (review todaylean S1). Null: not a workout Today drafted for a plan day.
+ */
+export function todayOptionsView(list: TodayOptions | null, snap: BuilderSnapshot): TodayOptions | null {
+  const t = snap.today;
+  if (list === null || t === null) return null;
+  return { mainLifts: list.mainLifts.map((m) => ({ ...m, selected: m.exerciseId === t.mainLiftExerciseId })), accessories: t.accessories, abs: t.abs, supersets: t.supersets };
 }
 
 /**

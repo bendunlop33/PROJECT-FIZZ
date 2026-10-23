@@ -9,7 +9,7 @@ import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import type { BuilderSnapshot, BuilderWriteResult } from '../src/builder/builder-service';
 import type { AppServices } from '../src/services/app-services';
 import type { TodaySelection, TodaySessionData } from '../src/services/today-session';
-import { workoutView } from '../src/builder/builder-view';
+import { todayOptionsView, workoutView } from '../src/builder/builder-view';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -327,5 +327,22 @@ describe('S1 and the Abs switch: the options read the draft as it is after every
     expect((await s2.builder.setTodayOption(on.draftId, { kind: 'abs', on: true }, { opId: 'abs-rc', expectedVersion: on.version })).status).not.toBe('written');
     expect((await s2.builder.setTodayOption(on.draftId, { kind: 'abs', on: false }, { opId: 'abs-stale', expectedVersion: on.version - 1 })).status).toBe('stale');
     expect((await s2.builder.read(on.draftId))?.version).toBe(on.version);
+  });
+});
+
+describe('todayOptionsView (pure): the rows read the snapshot’s state, never a list fetched earlier', () => {
+  it('main lift chips, accessories, abs and supersets follow the snapshot; no Today state, no rows', async () => {
+    const first = await benWithPlan();
+    const s = await withInclineTemplate(first.s, first.planId);
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const snap = await edit(s, data, sel(data, key, { supersets: true, abs: true }));
+    const list = await s.builder.todayOptions(snap.draftId);
+    if (list === null || snap.today === null) throw new Error('no options');
+    const stale = { ...list, abs: false, supersets: false, accessories: 'varied' as const, mainLifts: list.mainLifts.map((m) => ({ ...m, selected: !m.selected })) };
+    const v = todayOptionsView(stale, snap);
+    expect(v).toEqual({ mainLifts: list.mainLifts, accessories: snap.today.accessories, abs: true, supersets: true });
+    expect(todayOptionsView(stale, { ...snap, today: null })).toBeNull();
+    expect(todayOptionsView(null, snap)).toBeNull();
   });
 });

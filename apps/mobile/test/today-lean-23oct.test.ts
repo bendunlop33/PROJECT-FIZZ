@@ -190,7 +190,9 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     // Your workout shows them only when opened from Today (source).
     const page = read('screens/builder/BuilderWorkoutScreen.tsx');
     expect(page).toContain("params.back === 'Today' && s !== null ? await services.builder.todayOptions(s.draftId)");
-    expect(page).toContain('<TodayOptionRows options={todayOpts} onChange={(c) => void setTodayOption(c)} />');
+    expect(page).toContain('<TodayOptionRows options={todayView} onChange={(c) => void setTodayOption(c)} />');
+    // Under the title, above the workout table (§2.3a layout; review todaylean S3).
+    expect(page.indexOf('<TodayOptionRows')).toBeLessThan(page.indexOf('<DragList'));
   });
 
   it('Supersets on pairs only what the builder may pair; off splits only its own pairs; each is one write with Undo; Today then shows the edited card', async () => {

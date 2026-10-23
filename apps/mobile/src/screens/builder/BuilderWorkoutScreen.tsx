@@ -13,7 +13,7 @@ import { TodayOptionRows } from '../today/TodaySession';
 import { reviewAfterApply } from '../../builder/review';
 import { UPDATE_PLAN_DAY_ACTION } from '../../coach/builder-review-provider';
 import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type ProposalState } from '../../coach/builder-coach-view';
-import { addAnywayConfirm, editsFromText, popupLinks, promptView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
+import { addAnywayConfirm, editsFromText, popupLinks, promptView, todayOptionsView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
@@ -518,6 +518,7 @@ export function BuilderWorkoutScreen() {
       </View>
     );
   const v = workoutView(snap);
+  const todayView = todayOptionsView(todayOpts, snap);
 
   /** `⋯` (§7): `Save to Workouts` for a workout that isn't a plan day or a saved workout already. */
   const openMore = () => {
@@ -672,6 +673,12 @@ export function BuilderWorkoutScreen() {
           />
         </View>
         <ScrollArea scrollEnabled={!dragging}>
+          {/* (D3, §2.3a) Today's options in a compact table under the title, above the workout; their state is the snapshot's (review todaylean S1, S3). */}
+          {todayView !== null ? (
+            <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.space['3'] }}>
+              <TodayOptionRows options={todayView} onChange={(c) => void setTodayOption(c)} />
+            </View>
+          ) : null}
           {earlier.map((e) => (
             <StatusLine key={e.draftId} icon="clock" tone="info" text={editsFromText(e.localDate)} action={<TextButton label={WORKOUT_COPY.useEdits} onPress={() => { navigation.dispatch(builderPage('BuilderWorkout', { draftId: e.draftId })); }} />} />
           ))}
@@ -788,11 +795,6 @@ export function BuilderWorkoutScreen() {
             >
               <AppText variant="callout">{WORKOUT_COPY.addExercise}</AppText>
             </Pressable>
-          ) : null}
-          {todayOpts !== null ? (
-            <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.space['3'] }}>
-              <TodayOptionRows options={todayOpts} onChange={(c) => void setTodayOption(c)} />
-            </View>
           ) : null}
         </ScrollArea>
         <ToastHost bottom={8}>{popupSlot === null ? toastNode : null}</ToastHost>
