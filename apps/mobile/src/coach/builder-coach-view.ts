@@ -112,7 +112,7 @@ export interface BuilderReviewView {
   /** `✓ Upper chest 6`, `· Abs`: icon plus text, never colour alone. */
   coverage: { text: string; trained: boolean; accessibilityLabel: string }[];
   variety: string;
-  plan: { title: string; lines: { mark: '✓' | '!'; text: string; ok: boolean; accessibilityLabel: string }[]; addBack: { id: string; label: string; proposal: BuilderProposal }[]; updatePlanDay: boolean } | null;
+  plan: { title: string; lines: { mark: '✓' | '!'; text: string; ok: boolean; accessibilityLabel: string }[]; addBack: { id: string; label: string; proposal: BuilderProposal }[] } | null;
   suggestions: { id: string; action: string; card: ProposalCardView; proposal: BuilderProposal }[];
   /** `For next Chest day`. */
   notesTitle: string;
@@ -138,7 +138,6 @@ export function builderReviewView(r: BuilderReviewResult, dayName: string, state
             title: f.plan.title,
             lines: f.plan.lines.map((l) => ({ mark: l.ok ? '✓' : '!', text: l.text, ok: l.ok, accessibilityLabel: `${l.ok ? 'As planned' : 'Differs'}: ${l.text}` })),
             addBack: r.addBack.filter((a) => (states.get(a.id) ?? 'open') === 'open').map((a) => ({ id: a.id, label: `Add back ${a.name}`, proposal: a.proposal })),
-            updatePlanDay: f.plan.differs,
           },
     suggestions: (r.coach?.suggestions ?? []).map((s) => ({ id: s.id, action: s.action, card: proposalCardView(s.proposal, states.get(s.id) ?? 'open', { applyLabel: s.action }), proposal: s.proposal })),
     notesTitle: `For next ${dayName} day`,

@@ -744,7 +744,8 @@ export const StructuralChangeLineSchema = z.object({
 export const StructuralOpSchema = z.discriminatedUnion('change', [
   z.object({ change: z.literal('swap'), slotKey: IdSchema, fromExerciseId: IdSchema, fromName: z.string().min(1).max(120), toExerciseId: IdSchema, toName: z.string().min(1).max(120) }),
   z.object({ change: z.literal('remove'), slotKey: IdSchema, exerciseId: IdSchema, name: z.string().min(1).max(120) }),
-  z.object({ change: z.literal('reorder'), slotKeys: z.array(IdSchema).min(2).max(40), names: z.array(z.string().max(120)).max(40) }),
+  /** `exerciseIds`: the new order by exercise (D8: Your workout's slots aren't the plan's); absent on older records. */
+  z.object({ change: z.literal('reorder'), slotKeys: z.array(IdSchema).min(2).max(40), names: z.array(z.string().max(120)).max(40), exerciseIds: z.array(IdSchema).min(2).max(40).optional() }),
 ]);
 export type StructuralOpRecord = z.infer<typeof StructuralOpSchema>;
 
@@ -871,6 +872,11 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
      * starts), `rejected` = Not now.
      */
     proposalId: IdSchema.optional(),
+    /**
+     * (Ben, 23 Oct, D8) Applied, it lands on the next workout's Your workout draft as today-only edits with Undo.
+     * Absent on records made before: they wrote into the retired Workout overview's draft and stay `Out of date`.
+     */
+    landsOn: z.literal('your_workout').optional(),
   }),
   /**
    * Ben changed a routine from today's edits (`Change Push A too ›`, ADR 0022;

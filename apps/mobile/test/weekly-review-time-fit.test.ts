@@ -95,7 +95,7 @@ async function logAndFinish(s: AppServices, sessionId: string): Promise<void> {
 async function pushDay(s: AppServices, gymId: string, push: string, tag: string, edit: (s: AppServices, snap: BuilderSnapshot) => Promise<BuilderSnapshot>): Promise<{ sessionId: string; snap: BuilderSnapshot }> {
   const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: push }, `open-${tag}`));
   const snap = await edit(s, snap0);
-  const r = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: `start-${tag}`, expectedVersion: snap.version, gymId });
+  const r = await s.builder.start(snap.draftId, { opId: `start-${tag}`, expectedVersion: snap.version, gymId });
   if (!r.ok) throw new Error(r.message);
   await logAndFinish(s, r.sessionId);
   return { sessionId: r.sessionId, snap };

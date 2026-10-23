@@ -425,6 +425,12 @@ export interface CoachServiceDeps {
    * `propose_week` checks against. Absent: neither tool is wired (withheld, never offered).
    */
   week?: { view(): Promise<WeekContextView | null>; tool(): Promise<WeekToolContext | null> };
+  /**
+   * (Ben, 23 Oct, D8) Where an applied next-workout change lands: the builder's open Your workout drafts. `revert`
+   * takes it back off every one it landed on (`check`: only whether it can, while it is still each one's last change).
+   * Absent: nothing landed, so nothing to take back.
+   */
+  nextWorkout?: { revert(applyActionId: string, check: boolean): Promise<boolean> };
 }
 
 /** (Ben, 20 Oct) An activity the coach offered: `Log` while open; once logged, its record (Undo on it). */
@@ -621,12 +627,12 @@ export function createCoachService(deps: CoachServiceDeps) {
   }
 
   /**
-   * Applies the next workout's overview couldn't write into its draft on its
-   * last load (review S1): not doable at that gym, or the plan has no place
-   * for them. Kept for this app run only: every overview load works it out
-   * again (another gym may take it), so nothing about it is stored. After a
-   * force-close the card is optimistic: it reads `Applied` until the next
-   * workout's overview loads again (review coach-tools r2 N1).
+   * Applies the next workout's Your workout draft couldn't take on its last
+   * open (review S1; D8): not doable at that gym, a pain flag, or the
+   * exercise isn't in it any more. Kept for this app run only: every open
+   * works it out again (another gym may take it), so nothing about it is
+   * stored. After a force-close the card is optimistic: it reads `Applied`
+   * until that workout opens again (review coach-tools r2 N1).
    */
   const refusedApplies = new Set<string>();
 
@@ -646,11 +652,16 @@ export function createCoachService(deps: CoachServiceDeps) {
       const dismissed = taps.some((a) => a.status === 'rejected');
       const since = apply?.createdAt.utc ?? proposal.createdAt.utc;
       const startedSince = await coachStore().basisStartedSince(p.id, basis, since).catch(() => false);
-      // Review B3 (retire-workout-overview): an older suggestion's Apply would change nothing now, so it reads `Out of date` (no Apply).
-      const basisChanged = true;
+      // (D8) A change made since Your workout takes it lands there. One from before (written into the retired overview's
+      // draft) reads `Out of date`, never Apply (review B3), and an older Apply has no Undo (nit 3).
+      const lands = d.landsOn === 'your_workout';
+      let basisChanged = !lands;
+      if (lands && apply === null && basis.kind === 'routine' && d.basisVersion !== undefined) {
+        const routine = await repos().routines.get(basis.routineId).catch(() => null);
+        basisChanged = routine === null || routine.version !== d.basisVersion;
+      }
       const refusedHere = apply !== null && refusedApplies.has(apply.actionId);
-      // Nit 3: one applied before this build was written where nothing reads it now (the overview): `Out of date`, no Undo.
-      const shownApply = apply === null || apply.undoneBy === null ? null : { undone: true };
+      const shownApply = apply === null ? null : lands ? { undone: apply.undoneBy !== null } : apply.undoneBy === null ? null : { undone: true };
       out.set(id, { state: structuralProposalState({ apply: shownApply, dismissed, startedSince, basisChanged, refusedHere }), apply });
     }
     return out;
@@ -660,9 +671,12 @@ export function createCoachService(deps: CoachServiceDeps) {
     return (await repos().exercises.get(id).catch(() => null)) ?? deps.catalogueExercises?.().find((e) => e.id === id) ?? null;
   }
 
-  /** What the next workout from `source` starts from (ADR 0020 §3): its routine, else the next session built from it. */
+  /**
+   * What the next workout from `source` starts from (ADR 0020 §3): its plan day's template (D8: a plan day started
+   * from Your workout names its template, not a routine), its routine, else the next session built from it.
+   */
   async function structuralBasisOf(p: UserProfile, source: SessionAggregate): Promise<{ basis: DraftBasis; basisVersion: number | null; label: string; slots: StructuralSlot[] } | null> {
-    const routineId = source.session.routineId;
+    const routineId = source.session.planDay?.templateRoutineId ?? source.session.routineId;
     const routine = routineId === null ? null : await repos().routines.get(routineId).catch(() => null);
     if (routine !== null && routine.ownerId === p.id && (routine.deletedAtUtc ?? null) === null) {
       const slots: StructuralSlot[] = [];
@@ -893,13 +907,6 @@ export function createCoachService(deps: CoachServiceDeps) {
     };
   }
 
-  /** Review B3: the structural executors less `propose_next_workout_change` (withheld until an Apply lands in the next workout again). */
-  function withoutNextWorkoutChange(x: CoachExecutors): CoachExecutors {
-    const out: CoachExecutors = { ...x };
-    delete out.propose_next_workout_change;
-    return out;
-  }
-
   async function executorsFor(p: UserProfile, entry: CoachEntry, kind: CoachTurnKind, session: SessionAggregate | null, gymName: string | null, checkIn: CheckIn | null, benAskedForMoreSets: boolean, onlySessionExerciseId: string | null = null): Promise<CoachExecutors> {
     const store = coachStore();
     const reads = createTrainingReadExecutors(trainingReads(p, session));
@@ -907,10 +914,9 @@ export function createCoachService(deps: CoachServiceDeps) {
       ...reads,
       // (20 Oct, ADR 0029) "This gym has no leg press": applied with Undo when Ben said it, else a card he applies.
       update_gym: createGymUpdateExecutor({ store, gym: (name) => gymForUpdate(p, session, name), exercise: exerciseByIdOrKey }),
-      // Review B3 (retire-workout-overview): `get_substitutions` only. With the Workout overview retired, nothing writes an
-      // applied `propose_next_workout_change` into the next workout (Your workout and Today's Start don't read the overview's
-      // draft), so the tool is withheld (`not_in_build`) rather than offer an Apply that changes nothing (rules 1-3).
-      ...withoutNextWorkoutChange(createStructuralExecutors(structuralDeps(p, session))),
+      // (Ben, 23 Oct, D8) `propose_next_workout_change` is back: an Apply lands on the next workout's Your workout draft
+      // (today-only edits with Undo; the builder's `landCoachChanges`), so the card never says Applied for nothing.
+      ...createStructuralExecutors(structuralDeps(p, session)),
       ...createStoreExecutors({
       store,
       exercises: { exerciseName: async (id) => (await repos().exercises.get(id).catch(() => null))?.name ?? session?.exercises.find((e) => e.exerciseId === id)?.exerciseName ?? null },
@@ -1742,7 +1748,16 @@ export function createCoachService(deps: CoachServiceDeps) {
     /** Undo from a card or the workout's banner. A double tap (same opId) undoes once. */
     async undo(actionId: string, opId: string) {
       const p = await owner();
+      // (D8) An applied next-workout change already on an open Your workout: it goes back there too, only while it is
+      // still that draft's last change (rule 5); otherwise nothing is undone and the card keeps its Undo.
+      const target0 = await coachStore().getAction(actionId).catch(() => null);
+      const landed = target0?.detail.kind === 'propose_next_workout_change' && target0.detail.proposalId !== undefined && target0.detail.landsOn === 'your_workout' && target0.status === 'committed' && target0.undoneBy === null && deps.nextWorkout !== undefined;
+      if (landed && !(await deps.nextWorkout?.revert(actionId, true).catch(() => false))) {
+        const failed = newActionRecord({ turnId: '', opId, now: deps.now() }, { kind: 'undo', undoneActionId: actionId, what: 'that change', restored: [], alreadyLogged: [] }, { author: 'ben', status: 'rejected', failure: 'it changed since' });
+        return { undo: { ...failed, turnId: null }, result: { status: 'not_possible' as const, reason: 'changed_since' as const } };
+      }
       const r = await undoCoachAction(coachStore(), { ownerId: p.id, actionId, opId, now: deps.now() });
+      if (landed && (r.result.status === 'written' || r.result.status === 'replayed')) await deps.nextWorkout?.revert(actionId, false).catch(() => false);
       const target = r.result.status === 'written' || r.result.status === 'replayed' ? r.result.target : null;
       if (target?.detail.kind === 'adjust_pending_sets' || target?.detail.kind === 'add_exercise_today' || target?.detail.kind === 'edit_today' || target?.detail.kind === 'rename_workout' || target?.detail.kind === 'log_set' || target?.detail.kind === 'correct_set') {
         const fresh = await repos().sessions.get(target.detail.sessionId).catch(() => null);
@@ -1879,8 +1894,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const proposal = await coachStore().getAction(proposalId);
       if (proposal === null || proposal.detail.kind !== 'propose_next_workout_change' || proposal.status !== 'proposed' || proposal.detail.basis === undefined) return { ok: false, state: null };
-      // Review B3: an older card's Apply would change nothing now (no next-workout draft reads it): refused, `Out of date`.
-      if (tap === 'apply') return { ok: false, state: 'out_of_date' };
+      // Review B3: an older card (from before D8) would land nowhere: refused, `Out of date`.
+      if (tap === 'apply' && proposal.detail.landsOn !== 'your_workout') return { ok: false, state: 'out_of_date' };
       const r = await coachStore().commitStructuralTap(p.id, structuralTapRecord(proposal, tap, { now: deps.now() }));
       if (r.status !== 'conflict') return { ok: true, record: r.action };
       return { ok: false, state: (await proposalStates([proposalId])).get(proposalId)?.state ?? null };
@@ -1909,27 +1924,53 @@ export function createCoachService(deps: CoachServiceDeps) {
 
     /**
      * Ben's applied structural proposals for one plan (ADR 0020 §3), for the
-     * next workout's overview to write into its draft (`structuralDraftPlan`).
-     * Reads coach records only.
+     * next workout's Your workout draft to land (D8, the builder's
+     * `landCoachChanges`). Only ones made to land there: older ones went to the
+     * retired overview's draft. Reads coach records only.
      */
     async appliedStructural(basis: DraftBasis): Promise<AppliedStructural[]> {
       const p = await owner();
       const key = draftBasisKey(basis);
       const out: AppliedStructural[] = [];
       for (const a of await coachStore().listStructural(p.id)) {
-        if (a.status !== 'committed' || a.author !== 'ben' || a.detail.kind !== 'propose_next_workout_change' || a.detail.basis === undefined || draftBasisKey(a.detail.basis) !== key) continue;
+        if (a.status !== 'committed' || a.author !== 'ben' || a.detail.kind !== 'propose_next_workout_change' || a.detail.landsOn !== 'your_workout' || a.detail.basis === undefined || draftBasisKey(a.detail.basis) !== key) continue;
         const used = a.undoneBy === null && (await coachStore().basisStartedSince(p.id, basis, a.createdAt.utc).catch(() => true));
-        out.push({ applyActionId: a.actionId, ops: a.detail.ops ?? [], undone: a.undoneBy !== null, used });
+        out.push({ applyActionId: a.actionId, ops: a.detail.ops ?? [], atUtc: a.createdAt.utc, undone: a.undoneBy !== null, used });
       }
       return out;
     },
 
     /**
-     * What the last overview load did with these applies (review S1): the
-     * ones in `refused` couldn't be written into the draft there; the rest
-     * of `checked` were (or already had been).
+     * (D8) The plans with an applied next-workout change still to land (not undone, no workout started from them
+     * since), for Today to show it on the card before Start. Reads coach records only.
      */
-    /** Whether the last overview load refused this apply (its card reads `Couldn't apply here`). */
+    async pendingNextWorkoutChanges(): Promise<DraftBasis[]> {
+      const p = await owner();
+      const out = new Map<string, DraftBasis>();
+      for (const a of await coachStore().listStructural(p.id)) {
+        if (a.status !== 'committed' || a.author !== 'ben' || a.undoneBy !== null || a.detail.kind !== 'propose_next_workout_change' || a.detail.landsOn !== 'your_workout' || a.detail.basis === undefined) continue;
+        const basis = a.detail.basis;
+        if (out.has(draftBasisKey(basis))) continue;
+        if (!(await coachStore().basisStartedSince(p.id, basis, a.createdAt.utc).catch(() => true))) out.set(draftBasisKey(basis), basis);
+      }
+      return [...out.values()];
+    },
+
+    /**
+     * (D8) Ben undid a landed next-workout change on Your workout: his Apply is undone here too, so the card reads
+     * `Undone` and the change never lands on another draft. One op ID per apply (a retry is the same undo).
+     */
+    async noteNextWorkoutChangeUndone(applyActionId: string): Promise<void> {
+      const p = await owner();
+      await undoCoachAction(coachStore(), { ownerId: p.id, actionId: applyActionId, opId: `undo-landed:${applyActionId}`, now: deps.now() });
+    },
+
+    /**
+     * What the last Your workout open did with these applies (review S1; D8):
+     * the ones in `refused` couldn't land on the draft there; the rest of
+     * `checked` did (or already had).
+     */
+    /** Whether the last open refused this apply (its card reads `Couldn't apply here`). */
     wasStructuralRefused(applyActionId: string): boolean {
       return refusedApplies.has(applyActionId);
     },

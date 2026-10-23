@@ -12,7 +12,7 @@ import type { ZonedTimestamp } from '@fizz/schemas';
 
 import { createBuilderCoachService, createDayNotes, type BuilderCoachWorld, type BuilderWriteResult, type SetupFrom } from '../src/coach/builder-coach-service';
 import { askBarView, builderReviewView, dayNotesFor, mixCoachReason, nudgeCardView, proposalCardView, todayCoachWhy } from '../src/coach/builder-coach-view';
-import { createBuilderReviewProvider, UPDATE_PLAN_DAY_ACTION } from '../src/coach/builder-review-provider';
+import { createBuilderReviewProvider } from '../src/coach/builder-review-provider';
 import type { CoachAvailability } from '../src/coach/coach-service';
 import { createDictation, type SpeechInputPort } from '../src/voice/dictation';
 
@@ -315,7 +315,8 @@ describe('Coach review (§2.9) and day notes', () => {
     expect([v.header, v.verdict, v.suggestions, v.notes]).toEqual(['Offline', null, [], []]);
     expect(v.plan?.lines[0]).toMatchObject({ mark: '✓', text: 'Chest is next (day 1 of 4)' });
     expect(v.plan?.addBack.map((a) => a.label)).toEqual(['Add back Machine chest press']);
-    expect(v.plan?.updatePlanDay).toBe(true);
+    // (Ben, 23 Oct, D1) No `Update plan day` before Start: the Plan section has no plan write.
+    expect(Object.keys(v.plan ?? {})).not.toContain('updatePlanDay');
     expect((await h.store.repos.reviews.current(OWNER, { kind: 'session', draftId: DRAFT, draftVersion: 1 }))?.coach).toEqual({ status: 'offline' });
   });
 });
@@ -496,11 +497,8 @@ describe('the BuilderReview provider the builder sheet consumes (review B6)', ()
       { group: 'Triceps', sets: 7, trained: true },
       { group: 'Abs', sets: 3, trained: true },
     ]);
-    expect(r.plan?.actions.map((a) => [a.text, a.apply])).toEqual([
-      ['Add back Machine chest press', 'Add'],
-      ['Update plan day', 'Update'],
-    ]);
-    expect(r.plan?.actions[1]?.id).toBe(UPDATE_PLAN_DAY_ACTION);
+    // (Ben, 23 Oct, D1) `Add back` only: no `Update plan day` before Start (Keep for next time is on the Summary).
+    expect(r.plan?.actions.map((a) => [a.text, a.apply])).toEqual([['Add back Machine chest press', 'Add']]);
     expect(r.suggestions.map((x) => [x.text, x.reason, x.apply])).toEqual([
       ['Cable fly → Incline barbell press', 'A second angle.', 'Swap'],
       ['Triceps pushdown: 3 → 4 sets', 'More triceps.', 'Apply'],

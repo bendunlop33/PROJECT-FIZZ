@@ -199,7 +199,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     // Coach v3 (ADR 0027, Ben 18 Oct): one tool for today's live workout, in place of `adjust_pending_sets` and
     // `add_exercise_today` (their records and Undo stay for earlier actions). Today only, because Ben asked (rule 3);
     // otherwise the turn saves the call as an offer he accepts. Not CC10's structural kind: the plan he trains from
-    // next time stays a proposal (`propose_next_workout_change`, withheld in this build: 22 Oct, overview retired).
+    // next time stays a proposal (`propose_next_workout_change`; applied, it lands on that workout's Your workout, D8).
     name: 'edit_today',
     effect: 'versioned_update',
     writes: ['pending_set_target', 'session_exercise'],

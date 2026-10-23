@@ -249,7 +249,10 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(screen).toContain("void start({ kind: 'next', sourceSessionId: upNext.sourceSessionId })");
     expect(screen).toContain("navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, ...of });");
     expect(screen).not.toContain("navigate('WorkoutOverview'");
-    expect(screen).toContain('accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNext.title)}');
+    // (D8) Changed on Your workout (by Ben, or a coach change he applied in chat): `· edited`, and its draft starts.
+    expect(screen).toContain('accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNextTitle)}');
+    expect(screen).toContain('upNext.edited != null ? `${upNext.title} · ${TODAY_V2_COPY.edited}` : upNext.title');
+    expect(screen).toContain('if (upNext.edited != null) void startUpNextDraft(upNext.edited);');
     expect(screen).toContain("{actions.emptyWorkout ? (");
   });
 

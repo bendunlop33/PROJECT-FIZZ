@@ -2,7 +2,7 @@ import { BUILD_LIMITS, slotRev, type CheckedOnRecord, type DraftLoad, type Draft
 import { stableStringify } from '../stable';
 import { PLANNED_HELD_LINE } from './from-planned';
 import { restAfterRows, roundRestOf } from './rest';
-import type { BuilderBlock, BuilderInfoLookup, BuilderSetRow, BuilderSlot, BuilderWorkout, RestLevel } from './types';
+import type { BuilderBlock, BuilderInfoLookup, BuilderKeepMarks, BuilderSetRow, BuilderSlot, BuilderWorkout, RestLevel } from './types';
 import { draftLoadSourceOf } from './types';
 
 /**
@@ -54,6 +54,16 @@ function draftLoadOf(slot: BuilderSlot, row: BuilderSetRow): DraftLoad {
   };
 }
 
+/** (D1) Ben's keep marks as stored: only the fields set (a set count clamped to the limits); none: undefined. */
+function keepOf(k: { added?: true | undefined; from?: string | undefined; setsFrom?: number | undefined } | undefined): BuilderKeepMarks | undefined {
+  if (k === undefined) return undefined;
+  const out: BuilderKeepMarks = {};
+  if (k.added === true) out.added = true;
+  if (k.from !== undefined) out.from = k.from;
+  if (k.setsFrom !== undefined) out.setsFrom = Math.max(BUILD_LIMITS.minWorkingSets, Math.min(BUILD_LIMITS.maxWorkingSets, Math.round(k.setsFrom)));
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
 function metaOf(slot: BuilderSlot, block: BuilderBlock, first: boolean): DraftSlotBuilder {
   return {
     repRange: { ...slot.repRange },
@@ -65,6 +75,8 @@ function metaOf(slot: BuilderSlot, block: BuilderBlock, first: boolean): DraftSl
     ...(slot.touched === true ? { touched: true as const } : {}),
     ...(slot.unlinked === true ? { unlinked: true as const } : {}),
     ...(slot.origin === undefined ? {} : { origin: slot.origin }),
+    ...(keepOf(slot.keep) === undefined ? {} : { keep: keepOf(slot.keep) }),
+    ...(slot.todayCut === undefined || slot.todayCut < 1 ? {} : { todayCut: Math.min(BUILD_LIMITS.maxWorkingSets, Math.round(slot.todayCut)) }),
     ...(first && block.auto && block.slots.length > 1 ? { autoPair: true as const } : {}),
     ...(first && block.roundRestS !== undefined && block.slots.length > 1 ? { roundRestS: block.roundRestS } : {}),
     ...(slot.restS !== undefined && Object.keys(slot.restS).length > 0 ? { restS: { ...slot.restS } } : {}),
@@ -165,6 +177,9 @@ function slotOf(s: DraftSlot): BuilderSlot {
   if (meta?.touched === true) out.touched = true;
   if (meta?.unlinked === true) out.unlinked = true;
   if (meta?.origin !== undefined) out.origin = meta.origin;
+  const keep = keepOf(meta?.keep);
+  if (keep !== undefined) out.keep = keep;
+  if (meta?.todayCut !== undefined) out.todayCut = meta.todayCut;
   if (meta?.why !== undefined && meta.why.length > 0) out.why = [...meta.why];
   if (s.checkedHistoryVersion != null) out.historyVersion = s.checkedHistoryVersion;
   return out;

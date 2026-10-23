@@ -95,6 +95,48 @@ async function finish(s: AppServices, sessionId: string): Promise<void> {
   await h.settle(s);
 }
 
+describe('(Ben, 23 Oct, D1) Keep for next time on a saved workout', () => {
+  it('Start is today only; the Summary offers exactly the structural changes; Apply writes that workout only, the rest as stored; Undo restores it', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, pushA, pullA } = await fixture(s);
+    let snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: pushA.id }, 'open-keep'));
+    const bench = slotsOf(snap.workout.blocks).find((x) => snap.facts[x.exerciseId]?.name === 'Bench press');
+    const lateral = slotsOf(snap.workout.blocks).find((x) => snap.facts[x.exerciseId]?.name === 'Lateral raise');
+    if (bench === undefined || lateral === undefined) throw new Error('no slots');
+    snap = opened(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'keep-set', basis: { version: snap.version } }));
+    const choices = await s.builder.exerciseChoices(snap.draftId, { slotKey: lateral.key });
+    const to = choices?.sections.flatMap((x) => x.items).find((i) => !i.mayHurt);
+    if (to === undefined) throw new Error('no swap');
+    snap = opened(await s.builder.edit(snap.draftId, { kind: 'swap', slotKey: lateral.key, exerciseId: to.exerciseId }, { opId: 'keep-swap', basis: { version: snap.version } }));
+    const r = await s.builder.start(snap.draftId, { opId: 'start-keep', expectedVersion: snap.version, gymId, checkIn: null });
+    if (!r.ok) throw new Error(r.message);
+    expect((await s.routines.list()).find((x) => x.id === pushA.id)?.version).toBe(pushA.version);
+    await finish(s, r.sessionId);
+
+    expect(await s.builder.keepNextTimeOf(r.sessionId)).toEqual({ state: 'open', label: 'Push A', lines: [`Lateral raise → ${to.name}`, 'Bench press: 3 → 4 sets'] });
+    expect(await s.builder.keepNextTime(r.sessionId, 'apply')).toEqual({ ok: true });
+    const after = (await s.routines.editor({ routineId: pushA.id, gymId: null }))?.routine;
+    expect(after?.version).toBe(pushA.version + 1);
+    expect(after?.exercises.map((e) => e.exerciseId)).toEqual([bench.exerciseId, to.exerciseId]);
+    const benchWas = pushA.exercises.find((e) => e.exerciseId === bench.exerciseId);
+    const benchNow = after?.exercises.find((e) => e.exerciseId === bench.exerciseId);
+    // The bench keeps its own sets as stored, one more copied from the last.
+    expect(benchNow?.setTemplates.slice(0, benchWas?.setTemplates.length)).toEqual(benchWas?.setTemplates);
+    expect(benchNow?.setTemplates.filter((t) => t.setType !== 'warmup')).toHaveLength(4);
+    expect(after?.exercises[1]?.setTemplates.every((t) => t.targetLoad === null)).toBe(true);
+    // That workout only.
+    expect((await s.routines.list()).find((x) => x.id === pullA.id)?.version).toBe(pullA.version);
+    // Next time it opens with the change.
+    h.clockMs += DAY;
+    expect(names(opened(await s.builder.openTarget({ kind: 'routine', routineId: pushA.id }, 'open-keep-next')))).toEqual(['Bench press', to.name]);
+
+    expect(await s.builder.undoKeepNextTime(r.sessionId)).toEqual({ ok: true });
+    const undone = (await s.routines.editor({ routineId: pushA.id, gymId: null }))?.routine;
+    expect(undone?.exercises).toEqual(pushA.exercises);
+    expect(await s.builder.keepNextTimeOf(r.sessionId)).toBeNull();
+  });
+});
+
 describe('a library workout (Library › Workouts, Exercise detail `Used in`, a Summary’s `Saved as`, the coach’s plan card)', () => {
   it('opens as stored (order, set counts, no Set up), resumes on reopen, and Start credits the workout: Up next moves on', async () => {
     const { services: s } = await h.launch();
@@ -118,14 +160,12 @@ describe('a library workout (Library › Workouts, Exercise detail `Used in`, a 
     expect(again.version).toBe(edited.version);
     // Another workout is its own draft.
     expect(opened(await s.builder.openTarget({ kind: 'routine', routineId: pullA.id }, 'open-pull-a')).draftId).not.toBe(snap.draftId);
-    // No prompt: not a plan day (Q11).
-    expect(await s.builder.startPrompt(again.draftId)).toBeNull();
 
-    const started = await s.builder.start(again.draftId, { choice: { kind: 'today' }, opId: 'start-push-a', expectedVersion: again.version, checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    const started = await s.builder.start(again.draftId, { opId: 'start-push-a', expectedVersion: again.version, checkIn: { kind: 'skipped', atUtc: h.now().utc } });
     expect(started).toMatchObject({ ok: true, duplicate: false });
     if (!started.ok) return;
     // A retry of the same tap: the same session, nothing more written.
-    expect(await s.builder.start(again.draftId, { choice: { kind: 'today' }, opId: 'start-push-a', expectedVersion: again.version, checkIn: { kind: 'skipped', atUtc: h.now().utc } })).toMatchObject({ ok: true, sessionId: started.sessionId, duplicate: true });
+    expect(await s.builder.start(again.draftId, { opId: 'start-push-a', expectedVersion: again.version, checkIn: { kind: 'skipped', atUtc: h.now().utc } })).toMatchObject({ ok: true, sessionId: started.sessionId, duplicate: true });
     const a = (await s.workout.load(started.sessionId))?.aggregate;
     expect(a?.session).toMatchObject({ routineId: pushA.id, routineName: 'Push A', gymId });
     startedAsShown(again, a);
@@ -158,7 +198,7 @@ describe('a past workout to do again (Library history)', () => {
     expect(snap.canSave).toBe(true);
     expect(slotsOf(snap.workout.blocks)[0]?.rows.filter((r) => r.type !== 'warmup')).toHaveLength(2);
     expect(opened(await s.builder.openTarget({ kind: 'session', sourceSessionId: shoulders }, 'open-again-2')).draftId).toBe(snap.draftId);
-    const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-again', expectedVersion: snap.version, checkIn: null });
+    const started = await s.builder.start(snap.draftId, { opId: 'start-again', expectedVersion: snap.version, checkIn: null });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     const a = (await s.workout.load(started.sessionId))?.aggregate;
@@ -197,7 +237,7 @@ describe('Start guards', () => {
     const snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: pushA.id }, 'open-active'));
     const other = await s.workout.start({ gymId, opId: 'empty-1', checkIn: null });
     expect(other.ok).toBe(true);
-    const r = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-blocked', expectedVersion: snap.version, checkIn: null });
+    const r = await s.builder.start(snap.draftId, { opId: 'start-blocked', expectedVersion: snap.version, checkIn: null });
     expect(r).toMatchObject({ ok: false, reason: 'active' });
     expect(await s.builder.read(snap.draftId)).toMatchObject({ startable: true });
   });
@@ -209,7 +249,7 @@ describe('Start guards', () => {
     const first = slotsOf(snap.workout.blocks)[0];
     if (first === undefined) throw new Error('no slot');
     opened(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: first.key }, { opId: 'e1', basis: { version: snap.version } }));
-    expect(await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-stale', expectedVersion: snap.version, checkIn: null })).toMatchObject({ ok: false, reason: 'stale' });
+    expect(await s.builder.start(snap.draftId, { opId: 'start-stale', expectedVersion: snap.version, checkIn: null })).toMatchObject({ ok: false, reason: 'stale' });
     expect(await s.sessions.active()).toBeNull();
   });
 
@@ -225,14 +265,14 @@ describe('Start guards', () => {
     expect(await s.yourData.currentGym()).toBeNull();
     const snap = opened(await s.builder.openTarget({ kind: 'routine', routineId: pushA.id }, 'open-nogym'));
     expect(snap.gymId).toBeNull();
-    const r = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-nogym', expectedVersion: snap.version, checkIn: null });
+    const r = await s.builder.start(snap.draftId, { opId: 'start-nogym', expectedVersion: snap.version, checkIn: null });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const gyms = await s.yourData.gyms();
     expect(gyms).toHaveLength(1);
     expect(gyms[0]?.id).not.toBe(gymId);
     expect((await s.workout.load(r.sessionId))?.aggregate.session).toMatchObject({ gymId: gyms[0]?.id, routineId: pushA.id });
-    expect(await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-nogym', expectedVersion: snap.version, checkIn: null })).toMatchObject({ ok: true, sessionId: r.sessionId, duplicate: true });
+    expect(await s.builder.start(snap.draftId, { opId: 'start-nogym', expectedVersion: snap.version, checkIn: null })).toMatchObject({ ok: true, sessionId: r.sessionId, duplicate: true });
     expect(await s.yourData.gyms()).toHaveLength(1);
   });
 });
@@ -278,7 +318,7 @@ describe('a coach chat draft', () => {
     expect(bench?.rows.find((r) => r.type !== 'warmup')?.load ?? null).toBe(chatLoad?.load?.value ?? null);
     expect(opened(await s.builder.openTarget({ kind: 'coach_draft', draftId: chatId }, 'open-chat-2')).draftId).toBe(snap.draftId);
 
-    const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-chat', expectedVersion: snap.version, checkIn: null });
+    const started = await s.builder.start(snap.draftId, { opId: 'start-chat', expectedVersion: snap.version, checkIn: null });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     startedAsShown(snap, (await s.workout.load(started.sessionId))?.aggregate);

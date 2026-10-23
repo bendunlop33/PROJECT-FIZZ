@@ -138,7 +138,7 @@ describe('D4: back-offs in Your workout follow Ben’s goal', () => {
     if (read === null) throw new Error('draft lost');
     expect(topOf(read)).toBe(lighter);
     expect(backoffsOf(read)).toEqual(b1);
-    const started = await s2.builder.start(read.draftId, { choice: { kind: 'today' }, opId: 'start-lower', expectedVersion: read.version, checkIn: null });
+    const started = await s2.builder.start(read.draftId, { opId: 'start-lower', expectedVersion: read.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     const a = (await s2.workout.load(started.sessionId))?.aggregate;
     const ex = a?.exercises.find((e) => e.exerciseId === mainOf(read).exerciseId);
@@ -190,7 +190,7 @@ describe('D4: back-offs in Your workout follow Ben’s goal', () => {
     const read = await s2.builder.read(snap.draftId);
     if (read === null) throw new Error('draft lost');
     expect(backoffsOf(read)).toEqual(b0);
-    const started = await s2.builder.start(read.draftId, { choice: { kind: 'today' }, opId: 'start-ratchet', expectedVersion: read.version, checkIn: null });
+    const started = await s2.builder.start(read.draftId, { opId: 'start-ratchet', expectedVersion: read.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     const a = (await s2.workout.load(started.sessionId))?.aggregate;
     const ex = a?.exercises.find((e) => e.exerciseId === mainOf(read).exerciseId);
@@ -211,7 +211,7 @@ describe('D4: back-offs in Your workout follow Ben’s goal', () => {
     expect(t1).toBeLessThan(topOf(fresh) ?? 0);
     const b1 = backoffsOf(reps);
     for (const x of b1) expect(x ?? Infinity).toBeLessThanOrEqual(t1 * 0.96 + 1e-9);
-    const started = await s.builder.start(reps.draftId, { choice: { kind: 'today' }, opId: 'start-reps', expectedVersion: reps.version, checkIn: null });
+    const started = await s.builder.start(reps.draftId, { opId: 'start-reps', expectedVersion: reps.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     const a = (await s.workout.load(started.sessionId))?.aggregate;
     const ex = a?.exercises.find((e) => e.exerciseId === fm.exerciseId);

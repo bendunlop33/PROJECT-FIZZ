@@ -34,7 +34,7 @@ export interface StructuralSlot extends TodaySlot {
 export type StructuralOp =
   | { change: 'swap'; slotKey: string; fromExerciseId: string; fromName: string; toExerciseId: string; toName: string }
   | { change: 'remove'; slotKey: string; exerciseId: string; name: string }
-  | { change: 'reorder'; slotKeys: string[]; names: string[] };
+  | { change: 'reorder'; slotKeys: string[]; names: string[]; /** (D8) The same order by exercise; absent on older records. */ exerciseIds?: string[] | undefined };
 
 export interface StructuralExerciseInfo {
   name: string;
@@ -164,7 +164,7 @@ export function checkStructuralProposal(input: StructuralCheckInput): Structural
           break;
         }
         const byKey = new Map(plan.map((s) => [s.slotKey, s]));
-        ops.push({ change: 'reorder', slotKeys: full, names: keys.map((k) => byKey.get(k)?.name ?? '') });
+        ops.push({ change: 'reorder', slotKeys: full, names: keys.map((k) => byKey.get(k)?.name ?? ''), exerciseIds: keys.map((k) => byKey.get(k)?.exerciseId ?? '') });
         plan = full.map((k) => byKey.get(k)).filter((s): s is (typeof plan)[number] => s !== undefined);
         break;
       }
@@ -212,6 +212,8 @@ export function structuralApplyOf(editOpId: string): string | null {
 export interface AppliedStructural {
   applyActionId: string;
   ops: readonly StructuralOp[];
+  /** (D8) When Ben applied it (UTC): several land in the order he applied them. Absent: unknown (kept as listed). */
+  atUtc?: string;
   undone: boolean;
   /** A workout has started from the plan since this Apply: it is used and left alone. */
   used: boolean;

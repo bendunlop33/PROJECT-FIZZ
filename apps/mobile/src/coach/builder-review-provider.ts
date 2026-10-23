@@ -22,9 +22,6 @@ import { builderReviewView } from './builder-coach-view';
 
 // ---------------------------------------------------------------------------
 
-/** `Update plan day` in the Plan section: the builder routes this ID to its own §2.8 choice (it owns plan-day writes); `apply` never takes it. */
-export const UPDATE_PLAN_DAY_ACTION = 'update_plan_day';
-
 /** What the review needs from the open builder (the builder stream supplies it). */
 export interface BuilderReviewInputs {
   /** `Chest` (for `For next Chest day`). */
@@ -72,7 +69,8 @@ function sheetOf(h: Held): BuilderReview {
         : {
             title: v.plan.title,
             lines: v.plan.lines.map((l) => ({ ok: l.ok, text: l.text })),
-            actions: [...v.plan.addBack.filter((a) => open(a.id)).map((a) => action(a.id, a.label, null, 'Add')), ...(v.plan.updatePlanDay ? [action(UPDATE_PLAN_DAY_ACTION, 'Update plan day', null, 'Update')] : [])],
+            // (Ben, 23 Oct, D1) No `Update plan day` before Start: a structural change is offered on the Summary.
+            actions: v.plan.addBack.filter((a) => open(a.id)).map((a) => action(a.id, a.label, null, 'Add')),
           },
     suggestions: v.suggestions.filter((s) => open(s.id)).map((s) => action(s.id, s.card.lines.join(' · '), [s.card.reason, ...s.card.warnings].filter((x): x is string => x !== null).join('\n') || null, s.action)),
     nextNotes: notes.map((n) => ({ id: n.id, text: n.text, ticked: n.ticked })),
@@ -100,7 +98,7 @@ export function createBuilderReviewProvider(service: Pick<BuilderCoachService, '
     async apply(draftId, actionId) {
       const h = held.get(draftId);
       const p = h?.proposals.get(actionId);
-      if (h === undefined || p === undefined) return { ok: false, message: actionId === UPDATE_PLAN_DAY_ACTION ? NOT_APPLIED : OUT_OF_DATE };
+      if (h === undefined || p === undefined) return { ok: false, message: OUT_OF_DATE };
       const r = await service.apply(p);
       if (r.kind === 'applied') {
         h.applied.add(actionId);

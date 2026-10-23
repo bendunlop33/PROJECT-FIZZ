@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WorkoutDraftSchema, type BuilderSetup, type DraftPlan } from '@fizz/schemas';
-import { builderDraftEdit, builderDraftUndo, builderInfoOf, mixForDay, newBuilderDraft, partsLabel, ruleSetupOf, storedGroupsOf, type DraftLifeChange } from '../src/index';
+import { builderDraftEdit, builderDraftUndo, builderInfoOf, draftOpenedUnchanged, mixForDay, newBuilderDraft, partsLabel, ruleSetupOf, storedGroupsOf, type DraftLifeChange } from '../src/index';
 import { id } from './fixtures';
 
 /** Builder drafts' life (§4.4): idempotent op IDs, version or slot-revision staleness, Undo at the version it left. */
@@ -66,6 +66,27 @@ describe('builder draft life (§4.4)', () => {
     expect(builderDraftEdit(d, { opId: 'x', at: at(1), basis: { version: 1 }, plan, setup, undoable: true }).kind).toBe('closed');
     const old = draft();
     expect(builderDraftEdit(old, { opId: 'y', at: { utc: '2026-11-05T10:00:00.000Z', tz: 'Europe/London' }, basis: { version: 1 }, plan, setup, undoable: true }).kind).toBe('closed');
+  });
+});
+
+describe('opened as it was, and the coach’s landing (review batch23 S3, S5)', () => {
+  it('a draft opened as it was is unchanged until an edit; an Undo back to it is unchanged again; one opened without the mark never is', () => {
+    const opened = WorkoutDraftSchema.parse(newBuilderDraft({ id: id(910), ownerId: id(1000), opId: 'op-o', actionId: id(911), name: 'Push A', key: { planId: null, dayIndex: null, splitDayId: null, mainLiftExerciseId: null, localDate: '2026-10-20' }, setup, plan, focus: 'chest', gymId: null, equipmentVersion: 'eq', contextHash: 'ctx', at: at(0), opened: true }));
+    expect(draftOpenedUnchanged(opened)).toBe(true);
+    const e = written(builderDraftEdit(opened, { opId: 'e-1', at: at(1), basis: { version: 1 }, plan: { slots: [slot(0, 1), { ...slot(1, 2), setTemplates: [...slot(1, 2).setTemplates, ...slot(1, 2).setTemplates], rev: 2 }] }, setup, undoable: true }));
+    expect(draftOpenedUnchanged(e)).toBe(false);
+    expect(draftOpenedUnchanged(written(builderDraftUndo(e, { opId: 'u-1', undoOpId: 'e-1', at: at(2) }) as DraftLifeChange))).toBe(true);
+    expect(draftOpenedUnchanged(draft())).toBe(false);
+  });
+
+  it('a landing records every apply’s op ID and its line on the Undo; its Undo records each apply’s Undo op', () => {
+    const d = draft();
+    const l = written(builderDraftEdit(d, { opId: 'coach-land:a1', at: at(1), basis: { version: 1 }, plan: { slots: [slot(0, 1), slot(1, 3)] }, setup, undoable: true, undoCoach: { applies: [id(31), id(32)], text: '✦ A → B · C → D' }, alsoOpIds: ['coach-land:a2'] }));
+    expect(l.opIds.slice(-2)).toEqual(['coach-land:a1', 'coach-land:a2']);
+    expect(l.undo).toMatchObject({ opId: 'coach-land:a1', coach: { applies: [id(31), id(32)], text: '✦ A → B · C → D' } });
+    const u = written(builderDraftUndo(l, { opId: 'coach-land-undo:a1', undoOpId: 'coach-land:a1', at: at(2), alsoOpIds: ['coach-land-undo:a2'] }) as DraftLifeChange);
+    expect(u.opIds.slice(-2)).toEqual(['coach-land-undo:a1', 'coach-land-undo:a2']);
+    expect(u.versions[0]?.plan).toEqual(plan);
   });
 });
 

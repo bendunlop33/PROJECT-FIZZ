@@ -948,9 +948,8 @@ const ADD_NOT_EXERCISE = /^(?:top ?sets?|back ?-?off(?: sets?)?|drop ?sets?|warm
  * Review B2, r2 B1: an add with a future scope ("add curls next time", "to my routine", "from now on",
  * "to every push day", "permanently") changes the plan, not today: a structural proposal (rule 3),
  * never `add_exercise_today`. The list can't be complete, so the today tool's description says it is
- * today only. An add whose scope is unclear (`unclearAddScope`) also opens `propose_next_workout_change` (withheld
- * in this build since the Workout overview was retired, 22 Oct: not offered to the model);
- * a plain today add doesn't (review r3 S1).
+ * today only. An add whose scope is unclear (`unclearAddScope`) also opens `propose_next_workout_change` (back since
+ * D8, 23 Oct: an Apply lands on that workout's Your workout); a plain today add doesn't (review r3 S1).
  */
 const ADD_FUTURE_TIME =
   /\b(?:next (?:time|sessions?|weeks?|workouts?|push|pull|legs|leg day|upper|lower|block|cycle|month)|tomorrow|from (?:now|today|here) on(?:wards?)?|from now|going forward|for good|permanently|always|in (?:the )?future|future (?:sessions?|workouts?|weeks?)|every (?:\w+ )?(?:week|time|session|workout|day)s?|each (?:\w+ )?(?:week|session|workout|day)|(?:push|pull|leg|legs|upper|lower|upper body|lower body|chest|back|arm|arms|shoulder|full body) days|for the rest of the (?:block|month|cycle|programme|program|phase|meso|mesocycle|year)|(?:rest of|for) the (?:block|programme|program|mesocycle))\b/;

@@ -47,7 +47,7 @@ async function buildPull(s: AppServices, opId: string): Promise<BuilderSnapshot>
 
 /** Start the built workout, log the row's top set and back-offs as Ben did, and finish. */
 async function doRows(s: AppServices, gymId: string, snap: BuilderSnapshot, opId: string, topSet: { load: number; reps: number; rpe: number | null }, backoff: { load: number; reps: number }): Promise<void> {
-  const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId, expectedVersion: snap.version, gymId });
+  const started = await s.builder.start(snap.draftId, { opId, expectedVersion: snap.version, gymId });
   if (!started.ok) throw new Error('not started');
   const a = (await s.workout.load(started.sessionId))?.aggregate;
   const ex = a?.exercises.find((e) => e.exerciseId === mainOf(snap).exerciseId);

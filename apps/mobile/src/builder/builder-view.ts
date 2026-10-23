@@ -1,7 +1,7 @@
 import { canAddWarmup, cardioValuesText, clampBuilderRest, FIT_RULES, isTimedRow, slotsOf, spokenDistance, spokenDuration, stepTimeMinutes, TODAY_V2_COPY, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderGroup } from '@fizz/schemas';
 
-import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from './builder-service';
+import type { BuilderSnapshot, SetupFacts, SetupInput } from './builder-service';
 import { loadSpoken, loadText, REST_STEP_S, restText, SET_TYPE_LABEL, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
 import { swapPainConfirm } from '../ui/swap-sheet-model';
 
@@ -46,8 +46,6 @@ export const WORKOUT_COPY = {
   applied: 'Applied',
   /** Done on Coach review: a ticked note couldn't be saved. */
   notSaved: 'Not saved',
-  /** `Update plan day` when the workout matches its plan day. */
-  noChanges: 'No changes',
   exercise: 'Exercise',
   sets: 'Sets',
   topSet: 'Top set',
@@ -96,16 +94,6 @@ export const TIME_COPY = {
   shortest: 'Shortest rests',
   sets: (name: string, from: number, to: number) => `${name} ${String(from)} → ${String(to)} sets`,
   dropped: (name: string) => `Dropped ${name}`,
-} as const;
-
-export const PROMPT_COPY = {
-  title: 'Use these changes for',
-  today: 'Today only',
-  variation: 'Save as new variation',
-  saveAndStart: 'Save and start',
-  cancel: 'Cancel',
-  limit: 'Limit reached',
-  notForThese: 'Not for these changes',
 } as const;
 
 const trim = (n: number): string => String(Math.round(n * 100) / 100);
@@ -521,29 +509,6 @@ export function popupLinks(snap: BuilderSnapshot, slotKey: string, howToOf: (x: 
   return {
     howTo: howToOf({ exerciseId: slot.exerciseId, exerciseName: name }),
     history: f?.hasHistory === true ? { exerciseId: slot.exerciseId, name, ...(item === null ? {} : { equipmentId: item }), ...(snap.gymId === null ? {} : { gymId: snap.gymId }) } : null,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Start prompt (§2.8)
-
-export interface PromptView {
-  title: string;
-  lines: string[];
-  today: string;
-  update: string | null;
-  variation: { label: string; enabled: boolean; note: string | null };
-  cancel: string;
-}
-
-export function promptView(p: StartPrompt): PromptView {
-  return {
-    title: PROMPT_COPY.title,
-    lines: p.lines,
-    today: PROMPT_COPY.today,
-    update: p.updateLabel,
-    variation: { label: PROMPT_COPY.variation, enabled: p.canSaveVariation && !p.variationLimitReached, note: p.variationLimitReached ? PROMPT_COPY.limit : p.canSaveVariation ? null : PROMPT_COPY.notForThese },
-    cancel: PROMPT_COPY.cancel,
   };
 }
 

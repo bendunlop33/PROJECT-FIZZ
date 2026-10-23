@@ -199,6 +199,17 @@ export interface RepRangeT {
 /** Rest kinds a slot can override (§3.2). */
 export type RestKind = 'warmup' | 'top' | 'backoff' | 'working' | 'drop' | 'before_drop';
 
+/**
+ * (Ben, 23 Oct, D1) What Ben himself changed on a slot's structure, for Summary's `Keep for next time?`: he added the
+ * exercise (`added`), swapped it (`from`: the exercise before his first swap), or changed its set count (`setsFrom`:
+ * its working sets before that, with Time's cuts put back). Loads, reps, rests and order are never structure.
+ */
+export interface BuilderKeepMarks {
+  added?: true;
+  from?: string;
+  setsFrom?: number;
+}
+
 export interface BuilderSlot {
   /** Stable for the draft's life. */
   key: string;
@@ -223,6 +234,13 @@ export interface BuilderSlot {
   unlinked?: true;
   /** The plan-day template exercise this slot came from (kept through a swap): `Cable fly → Incline press` (§2.8). */
   origin?: string;
+  /**
+   * (D1) Ben's own structure edits on this slot. Only his edits on Your workout and Set up write it; Today's card,
+   * Time, a gym change and the coach never do (a swap they make clears it).
+   */
+  keep?: BuilderKeepMarks;
+  /** (D1) Working sets Today's Time took from this slot (Today's card only): Keep compares Ben's count like with like. */
+  todayCut?: number;
   /** The comparable history its loads were worked out from (stored as `checkedHistoryVersion`; review B4). */
   historyVersion?: string;
   /**

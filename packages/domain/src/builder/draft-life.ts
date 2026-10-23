@@ -53,16 +53,19 @@ export interface NewBuilderDraftInput {
   equipmentVersion: string;
   contextHash: string;
   at: ZonedTimestamp;
+  /** (Review batch23 S3) Opened as it is (a plan day from the Library, a saved or past workout): not an edit yet. */
+  opened?: boolean;
 }
 
-function version(input: { n: number; parentN: number | null; actionId: string; setup: BuilderSetup; plan: DraftPlan; focus: BuildFocus; day?: BuildDay | undefined; gymId: string | null; equipmentVersion: string; contextHash: string; at: ZonedTimestamp; today?: TodayDraftMark | undefined }): WorkoutDraftVersion {
+function version(input: { n: number; parentN: number | null; actionId: string; setup: BuilderSetup; plan: DraftPlan; focus: BuildFocus; day?: BuildDay | undefined; gymId: string | null; equipmentVersion: string; contextHash: string; at: ZonedTimestamp; today?: TodayDraftMark | undefined; opened?: boolean | undefined }): WorkoutDraftVersion {
+  const opened = input.opened === true ? { opened: { hash: todayContentHash({ plan: input.plan, setup: input.setup, gymId: input.gymId }) } } : {};
   return {
     n: input.n,
     parentN: input.parentN,
     status: 'current',
     actionId: input.actionId,
     turnId: 'manual',
-    request: { text: '', minutes: input.setup.minutes, focus: input.focus, gymId: input.gymId, origin: 'builder', ...(input.day === undefined ? {} : { day: input.day }), setup: input.setup, ...(input.today === undefined ? {} : { today: input.today }) },
+    request: { text: '', minutes: input.setup.minutes, focus: input.focus, gymId: input.gymId, origin: 'builder', ...(input.day === undefined ? {} : { day: input.day }), setup: input.setup, ...(input.today === undefined ? {} : { today: input.today }), ...opened },
     rawArgs: '',
     plan: input.plan,
     fitMinutes: input.setup.minutes,
@@ -82,7 +85,7 @@ export function newBuilderDraft(i: NewBuilderDraftInput): WorkoutDraft {
     status: 'open',
     name: i.name,
     currentVersion: 1,
-    versions: [version({ n: 1, parentN: null, actionId: i.actionId, setup: i.setup, plan: i.plan, focus: i.focus, day: i.day, gymId: i.gymId, equipmentVersion: i.equipmentVersion, contextHash: i.contextHash, at: i.at })],
+    versions: [version({ n: 1, parentN: null, actionId: i.actionId, setup: i.setup, plan: i.plan, focus: i.focus, day: i.day, gymId: i.gymId, equipmentVersion: i.equipmentVersion, contextHash: i.contextHash, at: i.at, opened: i.opened })],
     sessionId: null,
     startedAtUtc: null,
     routineId: null,
@@ -122,13 +125,17 @@ export interface BuilderDraftEdit {
   /** The draft's code-made name after the edit (`Chest · Bench`). */
   name?: string;
   /** A rebuild: a new version (§4.4); else the current one changes in place. */
-  rebuild?: { actionId: string; focus: BuildFocus; day?: BuildDay; gymId: string | null; equipmentVersion: string; contextHash: string; /** The key for the new Day / Main lift (review B1); Undo puts the old one back. */ key?: BuilderDraftKey; /** The coach's pre-session offer applied over Today's version: still Today's card (integrity B2). */ today?: TodayDraftMark };
+  rebuild?: { actionId: string; focus: BuildFocus; day?: BuildDay; gymId: string | null; equipmentVersion: string; contextHash: string; /** The key for the new Day / Main lift (review B1); Undo puts the old one back. */ key?: BuilderDraftKey; /** The coach's pre-session offer applied over Today's version: still Today's card (integrity B2). */ today?: TodayDraftMark; /** (Review batch23 S3) What it was opened on, as it is now (a silent reload): not an edit. */ opened?: boolean };
   /** Keep the state before this edit for Undo (false: the edit clears any older Undo). */
   undoable: boolean;
   /** (§2.3 `Gym changed`) The version's gym moves in place; Undo puts the old one back. */
   gymId?: string | null;
   /** The set-up Undo restores, when it isn't the current one as is (`Gym changed`: it marks the gym kept). */
   undoSetup?: BuilderSetup;
+  /** (D8) The coach's applied next-workout changes this edit lands (their apply IDs) and their line; on the Undo. */
+  undoCoach?: { applies: string[]; text: string };
+  /** (D8) Op IDs recorded with this one (each other change landed in the same edit), so each lands once. */
+  alsoOpIds?: readonly string[];
 }
 
 /**
@@ -149,7 +156,7 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
   let currentVersion = current.currentVersion;
   if (e.rebuild !== undefined) {
     const n = Math.max(...current.versions.map((v) => v.n)) + 1;
-    const next = version({ n, parentN: current.currentVersion, actionId: e.rebuild.actionId, setup: e.setup, plan: e.plan, focus: e.rebuild.focus, day: e.rebuild.day, gymId: e.rebuild.gymId, equipmentVersion: e.rebuild.equipmentVersion, contextHash: e.rebuild.contextHash, at: e.at, today: e.rebuild.today });
+    const next = version({ n, parentN: current.currentVersion, actionId: e.rebuild.actionId, setup: e.setup, plan: e.plan, focus: e.rebuild.focus, day: e.rebuild.day, gymId: e.rebuild.gymId, equipmentVersion: e.rebuild.equipmentVersion, contextHash: e.rebuild.contextHash, at: e.at, today: e.rebuild.today, opened: e.rebuild.opened });
     versions = [...current.versions.map((v): WorkoutDraftVersion => (v.status === 'current' ? { ...v, status: 'replaced' } : v)), next];
     // Under the cap: the oldest replaced versions go first (the current and its parent stay for Undo).
     while (versions.length > MAX_WORKOUT_DRAFT_VERSIONS) {
@@ -168,10 +175,10 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
     ...(keyMoved && e.rebuild?.key !== undefined ? { builderKey: e.rebuild.key } : {}),
     versions,
     currentVersion,
-    opIds: [...current.opIds, e.opId].slice(-MAX_WORKOUT_DRAFT_OPS),
+    opIds: [...current.opIds, e.opId, ...(e.alsoOpIds ?? [])].slice(-MAX_WORKOUT_DRAFT_OPS),
     version: nextVersion,
     updatedAtUtc: e.at.utc,
-    undo: e.undoable ? { opId: e.opId, atVersion: nextVersion, snapshot: before } : null,
+    undo: e.undoable ? { opId: e.opId, atVersion: nextVersion, snapshot: before, ...(e.undoCoach === undefined ? {} : { coach: { applies: [...e.undoCoach.applies], text: e.undoCoach.text.slice(0, 160) } }) } : null,
   };
   return { kind: 'write', next, expectedVersion: current.version };
 }
@@ -184,7 +191,7 @@ export type BuilderUndoRefusal = 'nothing' | 'changed_since';
  * while the draft is still at the version that edit left. A rebuild's Undo
  * restores both pages (the previous version becomes current again).
  */
-export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoOpId: string; at: ZonedTimestamp; /** The name for the restored set-up (code-made). */ name?: string }): DraftLifeChange | { kind: 'refused'; reason: BuilderUndoRefusal; current: WorkoutDraft } {
+export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoOpId: string; at: ZonedTimestamp; /** The name for the restored set-up (code-made). */ name?: string; /** (D8) Op IDs recorded with this one (the Undo of each change landed together). */ alsoOpIds?: readonly string[] }): DraftLifeChange | { kind: 'refused'; reason: BuilderUndoRefusal; current: WorkoutDraft } {
   if (current.opIds.includes(u.opId)) return { kind: 'duplicate', current };
   if (closedOrDue(current, u.at.utc)) return { kind: 'closed', current };
   const undo = current.undo ?? null;
@@ -205,7 +212,7 @@ export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoO
     ...(back.key === undefined ? {} : { builderKey: back.key }),
     versions,
     currentVersion: rebuilt ? back.currentVersion : current.currentVersion,
-    opIds: [...current.opIds, u.opId].slice(-MAX_WORKOUT_DRAFT_OPS),
+    opIds: [...current.opIds, u.opId, ...(u.alsoOpIds ?? [])].slice(-MAX_WORKOUT_DRAFT_OPS),
     version: current.version + 1,
     updatedAtUtc: u.at.utc,
     undo: null,
@@ -234,4 +241,16 @@ export function todayDraftState(d: Pick<WorkoutDraft, 'versions' | 'currentVersi
   if (v === undefined || mark === undefined) return { state: 'edited' };
   if (todayContentHash({ plan: v.plan, setup: v.request.setup, gymId: v.request.gymId }) !== mark.hash) return { state: 'edited' };
   return { state: mark.by, controls: mark.controls };
+}
+
+/**
+ * (Review batch23 S3, M2) The builder opened this draft's current version as it was (a plan day from the Library, a
+ * saved or past workout, a silent reload) and nothing has changed it since: by content, so an Undo back to it counts.
+ * Such a draft isn't `· edited` on Today or Up next.
+ */
+export function draftOpenedUnchanged(d: Pick<WorkoutDraft, 'versions' | 'currentVersion'>): boolean {
+  const v = d.versions.find((x) => x.n === d.currentVersion);
+  const mark = v?.request.opened;
+  if (v === undefined || mark === undefined) return false;
+  return todayContentHash({ plan: v.plan, setup: v.request.setup, gymId: v.request.gymId }) === mark.hash;
 }

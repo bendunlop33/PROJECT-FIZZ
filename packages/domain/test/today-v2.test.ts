@@ -260,7 +260,9 @@ describe('the stored draft (§4.4) and back', () => {
     const { d } = draft();
     const plan = withSlotRevs(null, toDraftPlan(d.workout, { info, catalogueIdOf: (id) => `cat-${id}`, checkedOnOf: () => null })).plan;
     // The fixture's exercise IDs and slot keys aren't UUIDs (Ben's rows are); everything else must validate as stored.
-    expect(DraftPlanSchema.safeParse({ slots: plan.slots.map((s) => ({ ...s, exerciseId: deriveId(s.exerciseId), slotKey: deriveId(s.slotKey) })) }).error?.issues ?? []).toEqual([]);
+    // (D1) The plan day's exercises carry their origin (the template's exercise), mapped the same way.
+    expect(plan.slots.filter((s) => s.builder?.origin === s.exerciseId).length).toBeGreaterThan(0);
+    expect(DraftPlanSchema.safeParse({ slots: plan.slots.map((s) => ({ ...s, exerciseId: deriveId(s.exerciseId), slotKey: deriveId(s.slotKey), ...(s.builder?.origin === undefined ? {} : { builder: { ...s.builder, origin: deriveId(s.builder.origin) } }) })) }).error?.issues ?? []).toEqual([]);
     expect(plan.slots[0]?.main).toBe(true);
     expect(plan.slots.every((s) => s.rev === 1 && s.builder !== undefined)).toBe(true);
     expect(plan.slots[0]?.setTemplates.find((t) => t.setType === 'top')?.load?.load).toMatchObject({ unit: 'kg', convention: 'total' });

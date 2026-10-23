@@ -19,6 +19,7 @@ import {
   todayContentHash,
   todayControlsHash,
   todayDraftState,
+  draftOpenedUnchanged,
   deriveId,
   doableHere,
   estimateBuilderMinutes,
@@ -178,6 +179,11 @@ export interface TodayUpNext {
   routineId: string | null;
   /** The workout a next session repeats; null for a routine. */
   sourceSessionId: string | null;
+  /**
+   * (Ben, 23 Oct, D8) Today's Your workout draft for it, changed there (by Ben, or a coach change he applied in chat
+   * that landed): Start starts that one (`· edited`). Absent or null: none.
+   */
+  edited?: { draftId: string; version: number } | null;
 }
 
 /** An open builder draft for today that Ben changed in the builder (`Chest · edited`), or the coach's offer he applied. */
@@ -606,7 +612,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const open = (await repos().workoutDrafts.listByOwner(p.id).catch(() => [] as WorkoutDraft[])).filter((d) => d.status === 'open' && d.builderKey?.localDate === today && toMs(d.expiresAtUtc) > nowMs);
     for (const d of open) {
       const own = todayDraftState(d);
-      if (own.state === 'today') continue;
+      // Today's own, or opened on Your workout and left as it was (review batch23 S3): not `· edited`.
+      if (own.state === 'today' || draftOpenedUnchanged(d)) continue;
       const k = d.builderKey;
       if (k === undefined) continue;
       const dayKey = k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`;
@@ -659,6 +666,15 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // No plan: the old Today's Up next (split, rotation, longest gap) is still one tap away. Only at a saved gym, as
     // the overview it opens starts there; a failed read is no Up next (the rest of Today still loads).
     const fallbackNext = status === 'no_plan' && gymId !== null ? await deps.port.upNext(gymId).catch(() => null) : null;
+    // (D8) Today's Your workout draft for Up next, once changed there: Start starts what that page shows.
+    const upNextDraft =
+      fallbackNext === null
+        ? null
+        : (open.find((d) => {
+            const f = d.builderKey?.from;
+            const same = f !== undefined && ((f.kind === 'routine' && f.id === fallbackNext.routineId) || (f.kind === 'session' && f.id === fallbackNext.sourceSessionId));
+            return same && isEdited(d);
+          }) ?? null);
     return {
       status,
       ownerId: p.id,
@@ -670,7 +686,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       days,
       others,
       nextKey: nextDay?.key ?? null,
-      upNext: fallbackNext,
+      upNext: fallbackNext === null ? null : { ...fallbackNext, ...(upNextDraft === null ? {} : { edited: { draftId: upNextDraft.id, version: upNextDraft.version } }) },
       initial,
       goal,
       review,
@@ -867,7 +883,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
    * so any later write (an in-place edit, a new version, an Undo, a restore) bumps `version` and no longer matches.
    */
   function isEdited(d: WorkoutDraft): boolean {
-    return todayDraftState(d).state === 'edited';
+    // (Review batch23 S3, M2) Opened on Your workout and left as it was isn't an edit.
+    return todayDraftState(d).state === 'edited' && !draftOpenedUnchanged(d);
   }
 
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {

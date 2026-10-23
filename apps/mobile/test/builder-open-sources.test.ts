@@ -81,7 +81,7 @@ describe('B1: a library workout opens as saved, not rebuilt', () => {
     const plannedSquat = planned?.aggregate.sets.filter((x) => x.sessionExerciseId === squat?.id && x.setType !== 'warmup').map((x) => x.planned.load?.value ?? null);
     expect(rowsOf(snap, 'Back squat').filter((r) => r.type !== 'warmup').map((r) => r.load)).toEqual(plannedSquat);
 
-    const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-five', expectedVersion: snap.version, checkIn: null });
+    const started = await s.builder.start(snap.draftId, { opId: 'start-five', expectedVersion: snap.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     const a = (await s.workout.load(started.sessionId))?.aggregate;
     startedAsShown(snap, a);
@@ -155,7 +155,7 @@ describe('B1: a library workout opens as saved, not rebuilt', () => {
     expect(rowsOf(edited, 'Exercise bike').map((r) => [r.durationS, r.distanceM])).toEqual([[1200, 5000]]);
     expect(slotsOf(edited.workout.blocks).map((x) => x.rows.filter((r) => r.type !== 'warmup').length)).toEqual([1, 2, 2, 1]);
 
-    const started = await s.builder.start(edited.draftId, { choice: { kind: 'today' }, opId: 'start-fixed', expectedVersion: edited.version, checkIn: null });
+    const started = await s.builder.start(edited.draftId, { opId: 'start-fixed', expectedVersion: edited.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     const a = (await s.workout.load(started.sessionId))?.aggregate;
     const rowsIn = (order: number) => {
@@ -253,7 +253,7 @@ describe('B2 / high: what a draft was opened on moved since', () => {
     const lat = slotsOf(v2.workout.blocks)[0];
     const edited = opened(await s.builder.edit(v2.draftId, { kind: 'add_set', slotKey: lat?.key ?? '' }, { opId: 'edit-chat', basis: { version: v2.version } }));
     await revise(['Bench press', 'Lateral raise'], 'actually add bench back');
-    const stale = await s.builder.start(edited.draftId, { choice: { kind: 'today' }, opId: 'start-stale', expectedVersion: edited.version, checkIn: null });
+    const stale = await s.builder.start(edited.draftId, { opId: 'start-stale', expectedVersion: edited.version, checkIn: null });
     expect(stale).toMatchObject({ ok: false, reason: 'stale' });
     expect(await s.sessions.active()).toBeNull();
     expect(await s.coachDrafts.get(chatId)).toMatchObject({ status: 'open', currentVersion: 3 });
@@ -262,7 +262,7 @@ describe('B2 / high: what a draft was opened on moved since', () => {
     const reloaded = await s.builder.reloadPlanDay(page.draftId, { opId: 'reload-chat', expectedVersion: page.version });
     if (reloaded.status !== 'written') throw new Error(reloaded.status);
     expect(names(reloaded.snapshot)).toEqual(['Bench press', 'Lateral raise']);
-    const started = await s.builder.start(page.draftId, { choice: { kind: 'today' }, opId: 'start-v3', expectedVersion: reloaded.snapshot.version, checkIn: null });
+    const started = await s.builder.start(page.draftId, { opId: 'start-v3', expectedVersion: reloaded.snapshot.version, checkIn: null });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     expect(await s.coachDrafts.get(chatId)).toMatchObject({ status: 'started', sessionId: started.sessionId, currentVersion: 3 });
@@ -337,7 +337,7 @@ describe('Re-review (R1–R5)', () => {
     const read = await s2.builder.read(snap.draftId);
     expect(read).not.toBeNull();
     if (read === null) return;
-    const started = await s2.builder.start(read.draftId, { choice: { kind: 'today' }, opId: 'start-r1', expectedVersion: read.version, checkIn: null });
+    const started = await s2.builder.start(read.draftId, { opId: 'start-r1', expectedVersion: read.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     const a = (await s2.workout.load(started.sessionId))?.aggregate;
     const ex = a?.exercises.find((e) => e.exerciseName === 'Back squat');
@@ -403,7 +403,7 @@ describe('Re-review (R1–R5)', () => {
     expect(why[0]).toBe('Saved workout');
     expect(why.some((l) => l.startsWith('Max here'))).toBe(true);
     // Start keeps the cap (never extrapolated past the max).
-    const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-max', expectedVersion: snap.version, checkIn: null });
+    const started = await s.builder.start(snap.draftId, { opId: 'start-max', expectedVersion: snap.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     startedAsShown(snap, (await s.workout.load(started.sessionId))?.aggregate);
   });
@@ -440,7 +440,7 @@ describe('Re-review (R1–R5)', () => {
     expect(Object.values(snap.items).every((x) => x !== null)).toBe(true);
     // (O1) The shared planner now caps it on this gym's stack, so `Why?` names the planner's cap (`Max here …`), as for a pinned item.
     expect((await s.builder.whyWeight(snap.draftId, slotsOf(snap.workout.blocks)[0]?.key ?? '')).some((l) => l.startsWith('Max here'))).toBe(true);
-    const started = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-null', expectedVersion: snap.version, checkIn: null });
+    const started = await s.builder.start(snap.draftId, { opId: 'start-null', expectedVersion: snap.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     startedAsShown(snap, (await s.workout.load(started.sessionId))?.aggregate);
   });

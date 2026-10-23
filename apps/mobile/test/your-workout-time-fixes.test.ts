@@ -13,6 +13,7 @@ import { addAnywayConfirm, workoutView } from '../src/builder/builder-view';
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { finishWorkout } from './finish-workout';
 
 /**
  * Your workout's Time, the 22 Oct review fixes, on real SQLite, offline:
@@ -111,10 +112,11 @@ async function pushDay(s: AppServices): Promise<string> {
   return push;
 }
 
-describe('B1: `Update … in your plan` keeps the plan day’s own length, never Time’s', () => {
+describe('B1 (D1): Keep for next time keeps the plan day’s own length, never Time’s', () => {
   it('Time lowered with nothing cut (a step that only fits), then Ben’s own change: the plan day keeps the length it opened at; the session is today’s', async () => {
     const { services: s } = await h.launch();
     const push = await pushDay(s);
+    const minutes0 = (await s.routines.editor({ routineId: push, gymId: null }))?.routine?.planDay?.minutes;
     const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: push }, 'open-day'));
     // Longer first (nothing cut, no fit record), then back down past the original: the length before Time stands.
     const longer = opened(await s.builder.setTime(snap0.draftId, snap0.setup.minutes + 20, { opId: 'longer', expectedVersion: snap0.version }));
@@ -124,25 +126,32 @@ describe('B1: `Update … in your plan` keeps the plan day’s own length, never
     const bench = slotsOf(down.workout.blocks).find((x) => x.main);
     if (bench === undefined) throw new Error('no main');
     const edited = opened(await s.builder.edit(down.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'own-change', basis: { version: down.version } }));
-    const r = await s.builder.start(edited.draftId, { choice: { kind: 'update' }, opId: 'start-update', expectedVersion: edited.version });
+    const r = await s.builder.start(edited.draftId, { opId: 'start-1', expectedVersion: edited.version });
     if (!r.ok) throw new Error(r.message);
+    await finishWorkout(h, s, r.sessionId);
+    expect(await s.builder.keepNextTime(r.sessionId, 'apply')).toEqual({ ok: true });
     const template = (await s.routines.editor({ routineId: push, gymId: null }))?.routine;
-    expect(template?.planDay?.minutes).toBe(snap0.setup.minutes);
+    expect(template?.planDay?.minutes).toBe(minutes0);
   });
 
-  it('Coach review’s `Update plan day` (the same write before Start) also keeps the plan day’s length after a cut', async () => {
+  it('after a cut, Ben’s own change is the only line and the plan day keeps its length and every exercise', async () => {
     const { services: s } = await h.launch();
     const push = await pushDay(s);
+    const template0 = (await s.routines.editor({ routineId: push, gymId: null }))?.routine;
     const snap0 = opened(await s.builder.openTarget({ kind: 'routine', routineId: push }, 'open-day-2'));
     const short = await cutUntilDropped(s, snap0);
     expect(short.setup.minutes).toBeLessThan(snap0.setup.minutes);
     const bench = slotsOf(short.workout.blocks).find((x) => x.main);
     if (bench === undefined) throw new Error('no main');
     const edited = opened(await s.builder.edit(short.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'own-change-2', basis: { version: short.version } }));
-    const u = await s.builder.updatePlanDay(edited.draftId, { choice: { kind: 'update' }, opId: 'update-day', expectedVersion: edited.version });
-    expect(u.ok).toBe(true);
+    const r = await s.builder.start(edited.draftId, { opId: 'start-2', expectedVersion: edited.version });
+    if (!r.ok) throw new Error(r.message);
+    await finishWorkout(h, s, r.sessionId);
+    expect(await s.builder.keepNextTimeOf(r.sessionId)).toMatchObject({ state: 'open', lines: [expect.stringMatching(/sets$/) as string] });
+    expect(await s.builder.keepNextTime(r.sessionId, 'apply')).toEqual({ ok: true });
     const template = (await s.routines.editor({ routineId: push, gymId: null }))?.routine;
-    expect(template?.planDay?.minutes).toBe(snap0.setup.minutes);
+    expect(template?.planDay?.minutes).toBe(template0?.planDay?.minutes);
+    expect(template?.exercises.map((e) => e.exerciseId)).toEqual(template0?.exercises.map((e) => e.exerciseId));
   });
 });
 
