@@ -997,6 +997,8 @@ export function createAppServices(deps: AppServicesDeps) {
       const made = await setup.useTypicalGym();
       return made.ok && made.gymId !== undefined ? made.gymId : null;
     },
+    // (D3 §2.3a) Today's options on Your workout load Today's own draft for the choice (one draft and fit code).
+    todayDraft: (req) => todaySession.draftFor(req),
   });
 
   /**

@@ -366,6 +366,12 @@ export const BuilderSetupSchema = z.object({
    * Today's card, changed on Your workout opened from Today. Absent: a Set up or library workout (group counts rule).
    */
   accessories: z.enum(['focused', 'varied']).optional(),
+  /**
+   * (D3 §2.3a; review todaylean S2/S3) Slots Ben deleted from a workout Today drafted. Today's slot keys name an
+   * exercise for the day, so when one of Today's options loads Today's draft for another choice, what he deleted stays
+   * deleted (his changed and added exercises carry over as they are). Undo puts the list back with the workout.
+   */
+  todayRemoved: z.array(IdSchema).max(BUILD_LIMITS.maxExercises * 3).optional(),
   /** (v3 §2.3 `Gym changed · Undo`) Ben undid the move to this gym: the draft stays at its own gym, and isn't moved there again. */
   gymKept: IdSchema.optional(),
   /**

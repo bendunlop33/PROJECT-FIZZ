@@ -65,6 +65,10 @@ import {
   unfitWorkout,
   defaultMain,
   mainFlags,
+  heldSets,
+  replayTodayEdits,
+  replayedFitSteps,
+  todayTimeFit,
   type BuilderFitStep,
   type BuilderTimeFit,
   type BuilderAdvice,
@@ -82,6 +86,7 @@ import {
   defaultBuilderMainLift,
   templateLabel,
   type AccessoryStyle,
+  type TodayControls,
 } from '@fizz/domain';
 import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
@@ -134,6 +139,24 @@ export interface BuilderServiceDeps {
    * and preferred items, fitted to the gym (rule 4). Null: gone or nothing to plan. Absent: the builder's §3.1 rules.
    */
   planned?: (target: { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string }, gymId: string | null) => Promise<SessionAggregate | null>;
+  /**
+   * (D3 §2.3a; review todaylean S2) Today's code draft for a builder key and controls at their Time (Today's own draft
+   * and fit code): what Today's options on Your workout load before Ben's edits are replayed. Absent, or null: the
+   * option merges into the workout as Set up's change does.
+   */
+  todayDraft?: (req: { key: BuilderDraftKey; controls: TodayControls }) => Promise<TodayOptionDraft | null>;
+}
+
+/** (D3 §2.3a) Today's code draft for one choice (`todayDraft`), fitted to Time, with the draft before the fit. */
+export interface TodayOptionDraft {
+  workout: BuilderWorkout;
+  unfitted: BuilderWorkout;
+  steps: BuilderFitStep[];
+  /** The plan day's own length. */
+  planMinutes: number;
+  template: { routineId: string | null; version: number | null; mainLiftExerciseId: string | null; label: string };
+  name: string;
+  key: BuilderDraftKey;
 }
 
 /**
@@ -257,6 +280,12 @@ export interface BuilderSnapshot {
    * (Ben's later edits counted) and the length the detail's `Undo` goes back to. Null: no fit (the original stands).
    */
   time: { fromMinutes: number; changes: BuilderFitStep[] } | null;
+  /**
+   * (D3) Today's options as this draft has them: a workout Today drafted for a plan day (null otherwise). Read with
+   * the rows from the same write, so the switches and chips never lag a write, an Undo or a swipe (review todaylean S1).
+   * `abs`: the workout has an ab exercise (Time's cuts put back), Ben's own included.
+   */
+  today: { mainLiftExerciseId: string | null; accessories: AccessoryStyle | null; abs: boolean; supersets: boolean } | null;
 }
 
 export type BuilderWriteResult =
@@ -313,19 +342,25 @@ export function planChangeUndoOpId(sessionId: string): string {
   return deriveId(`plan-change-undo:${sessionId}`);
 }
 
-/** (D3) The toast after one of Today's options on Your workout (with Undo): `Supersets off`, `Abs on`, `Accessories varied`. */
-export function todayOptionText(c: TodayOptionChange): string {
+/**
+ * (D3, §2.3a copy) The toast after one of Today's options on Your workout (with Undo): `Supersets off`, `Abs on`,
+ * `Accessories: Varied`, `Main lift: Incline` (`mainLabel`: the lift's chip label).
+ */
+export function todayOptionText(c: TodayOptionChange, mainLabel?: string): string {
   switch (c.kind) {
     case 'supersets':
       return `Supersets ${c.on ? 'on' : 'off'}`;
     case 'abs':
       return `Abs ${c.on ? 'on' : 'off'}`;
     case 'accessories':
-      return `Accessories ${c.style}`;
+      return `Accessories: ${c.style === 'varied' ? 'Varied' : 'Focused'}`;
     case 'main_lift':
-      return BUILDER_COPY.rebuilt;
+      return mainLabel === undefined ? BUILDER_COPY.rebuilt : `Main lift: ${mainLabel}`;
   }
 }
+
+/** (D3) A workout Today drafted (its Accessories control is on the set-up): Today's options and their rules apply. */
+export const todayDrafted = (stored: BuilderSetup | null | undefined): stored is BuilderSetup => stored?.accessories !== undefined;
 
 /** Summary's line for a Start's plan change (§2.8): `Chest · bench updated`; a new variation `… saved`. */
 export function planChangeText(u: PlanChangeUndo): string {
@@ -761,6 +796,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     // The detail's Undo goes back to the length before Time changed it (a plan day Today drafted: the plan's length, as
     // Today's Undo does; there a plan day longer than its length is still fitted, as on Today's card).
     const time = fit === null ? null : { fromMinutes: stored?.timeFrom ?? fit.fromMinutes, changes: timeFitChanges(fit, workout) };
+    const today = todayDrafted(stored) && key?.planId != null ? { mainLiftExerciseId: stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null, accessories: stored.accessories ?? null, abs: hasAbs(untimed(stored, workout), env), supersets: stored.supersets } : null;
     for (const st of time?.changes ?? []) if (st.kind === 'drop') facts[st.exerciseId] ??= { name: env.nameOf(st.exerciseId), works: env.worksOf(st.exerciseId), group: env.info(st.exerciseId)?.group ?? null, compound: env.info(st.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(st.exerciseId), notHere: false, hasHistory: env.hasHistory(st.exerciseId) };
     return {
       draftId: d.id,
@@ -787,7 +823,20 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       canSave: planDay === null && stored?.templateRoutineId === undefined && key?.from?.kind !== 'routine' && !chatSaved,
       leftOut,
       time,
+      today,
     };
+  }
+
+  /** A main lift's chip label on Your workout (`Incline`), else its name: the `Main lift: …` toast. */
+  async function mainLiftLabel(p: UserProfile, d: WorkoutDraft, exerciseId: string): Promise<string> {
+    const chip = (await service.todayOptions(d.id).catch(() => null))?.mainLifts.find((m) => m.exerciseId === exerciseId)?.label;
+    if (chip !== undefined) return chip;
+    return (await envFor(p, { exerciseIds: [exerciseId], keySeed: 'label' })).nameOf(exerciseId);
+  }
+
+  /** The workout has an ab exercise. */
+  function hasAbs(w: BuilderWorkout, env: Pick<BuilderEnv, 'info'>): boolean {
+    return slotsOf(w.blocks).some((x) => env.info(x.exerciseId)?.group === 'Abs');
   }
 
   /** Build Your workout for a set-up: the template (and variation) when one is loaded and the groups weren't edited, else from the set-up. */
@@ -1462,7 +1511,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const r = applyBuilderEdit(before, op, env.ctx);
         if (!r.ok) return { refused: r.reason, env };
         const plan = withSlotRevs(v.plan, toDraftPlan(r.workout, env.codec)).plan;
-        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: w.basis, plan, setup: stored ?? storedSetup(pageSetup(current), {}), undoable: true });
+        // (D3 §2.3a) A slot Ben deletes from a workout Today drafted stays deleted when one of Today's options loads
+        // Today's draft for another choice (its Undo puts the list back with the workout).
+        const setup = op.kind === 'delete_exercise' && todayDrafted(stored) ? { ...stored, todayRemoved: [...new Set([...(stored.todayRemoved ?? []), op.slotKey])].slice(-BUILD_LIMITS.maxExercises * 3) } : (stored ?? storedSetup(pageSetup(current), {}));
+        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: w.basis, plan, setup, undoable: true });
         // A typed kg this gym can't make exactly: the cell shows the new value, the toast says so, `Why?` names the item (rule 4; review S6).
         const item = op.kind === 'edit_row' ? env.itemNameOf(before.blocks.flatMap((b) => b.slots).find((x) => x.key === op.slotKey)?.exerciseId ?? '') : null;
         const rounded = r.rounded?.rounded === true ? { text: BUILDER_COPY.roundedTo(r.rounded.value, r.rounded.unit), undoOpId: null, why: item === null ? null : `Rounded down: ${item}` } : null;
@@ -1533,7 +1585,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const after = m.kind === 'merged' ? m.workout : workout;
         // Length left as Time's: back to Time's length, fitted again from the merged original.
         // The slots keep their keys in a merge, so Gym changed still meets each one's planned slot (`slotSeed`).
-        const merged: BuilderSetup = { ...nextStored, ...(stored?.slotSeed === undefined ? {} : { slotSeed: stored.slotSeed }) };
+        const merged: BuilderSetup = { ...nextStored, ...(stored?.slotSeed === undefined ? {} : { slotSeed: stored.slotSeed }), ...(stored?.todayRemoved === undefined ? {} : { todayRemoved: stored.todayRemoved }) };
         const original = lengthKept ? withOriginalRows(parts.original, after) : after;
         const timed = retimed(lengthKept ? { ...merged, minutes: next.minutes, timeFrom } : merged, { original, work: after }, env);
         const plan = withSlotRevs(v.plan, toDraftPlan(timed.workout, env.codec)).plan;
@@ -1551,7 +1603,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const p = await owner();
       const d = await repos().workoutDrafts.get(draftId).catch(() => null);
       const stored = d === null ? null : builderSetupOf(d);
-      if (d === null || d.ownerId !== p.id || d.status !== 'open' || d.builderKey === undefined || stored === null) return null;
+      // Only a workout Today drafted for a plan day (Today's Edit with a plan): the no-plan card keeps its own controls,
+      // and Set up, Library or plan-day workouts have Set up (§2.3a States; review todaylean N3).
+      if (d === null || d.ownerId !== p.id || d.status !== 'open' || d.builderKey === undefined || !todayDrafted(stored) || d.builderKey.planId === null) return null;
       const v = currentDraftVersion(d);
       const key = d.builderKey;
       const workout = fromDraftPlan(v.plan, stored.restLevel ?? 'normal');
@@ -1574,34 +1628,123 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       return {
         mainLifts,
         accessories: stored.accessories ?? null,
-        abs: slotsOf(workout.blocks).some((x) => env.info(x.exerciseId)?.group === 'Abs'),
+        // What the workout has with Time's cuts put back (a fit that dropped the abs leaves Abs on), his own ab exercise included.
+        abs: hasAbs(untimed(stored, workout), env),
         supersets: stored.supersets,
       };
     },
 
     /**
-     * (D3) One of Today's options changed on Your workout: Set up's own change on this draft (`changeSetup`), so Ben's
-     * edits are kept and Time fits again. Supersets re-pairs only the builder's pairs; Abs adds or removes only the ab
-     * exercises; Accessories sets the main group's accessories to the style; a new Main lift opens that template
-     * (`Rebuilt · Undo`, the draft for that lift when there is one). One versioned write under `opId` with Undo.
+     * (D3, §2.3a) One of Today's options changed on Your workout (a workout Today drafted for a plan day): Today's draft
+     * for that choice at today's Time, from Today's own draft and fit code (`todayDraft`), with Ben's earlier edits
+     * replayed on it (what he deleted stays deleted, what he changed or added carries over; review todaylean S2/S3,
+     * FT5). Time's cuts stay Time's (the fit record), so more Time, the note, Undo and Start read them as Time's. A new
+     * Main lift moves the draft to that lift's key (the draft for that lift when there is one opens instead). One
+     * versioned write under `opId` with Undo (rule 5); toast `Abs off`, `Supersets on`, `Accessories: Varied`,
+     * `Main lift: Incline`. Without Today's draft (not wired, the day gone): Set up's merge (refitted at Time when Time
+     * is in use, as any Set up change).
      */
     async setTodayOption(draftId: string, change: TodayOptionChange, w: { opId: string; expectedVersion: number }): Promise<BuilderWriteResult> {
       const p = await owner();
       const d = await repos().workoutDrafts.get(draftId).catch(() => null);
-      if (d === null || d.ownerId !== p.id || d.builderKey === undefined || builderSetupOf(d) === null) return { status: 'closed', snapshot: null, message: BUILDER_COPY.failed };
+      const first = d === null ? null : builderSetupOf(d);
+      if (d === null || d.ownerId !== p.id || d.builderKey === undefined || first === null) return { status: 'closed', snapshot: null, message: BUILDER_COPY.failed };
+      const label = change.kind === 'main_lift' ? await mainLiftLabel(p, d, change.exerciseId) : undefined;
+      const toast = (r: BuilderWriteResult): BuilderWriteResult => (r.status === 'written' ? { ...r, toast: { text: todayOptionText(change, label), undoOpId: w.opId, why: null } } : r);
       const s = pageSetup(d);
-      const withoutAbs = s.groups.filter((g) => g.group !== 'Abs');
-      const next: SetupInput =
-        change.kind === 'supersets'
-          ? { ...s, supersets: change.on }
-          : change.kind === 'accessories'
-            ? { ...s, accessories: change.style }
-            : change.kind === 'abs'
-              ? { ...s, groups: change.on ? [...withoutAbs, { group: 'Abs', count: 1 }] : withoutAbs }
-              : { ...s, mainLiftExerciseId: change.exerciseId, variationId: null };
-      const r = await service.changeSetup(draftId, next, w);
-      if (r.status !== 'written' || r.toast !== null) return r;
-      return { ...r, toast: { text: todayOptionText(change), undoOpId: w.opId, why: null } };
+      const mergeNext = (): SetupInput => {
+        const withoutAbs = s.groups.filter((g) => g.group !== 'Abs');
+        switch (change.kind) {
+          case 'supersets':
+            return { ...s, supersets: change.on };
+          case 'accessories':
+            return { ...s, accessories: change.style };
+          case 'abs':
+            return { ...s, groups: change.on ? [...withoutAbs, { group: 'Abs', count: 1 }] : withoutAbs };
+          case 'main_lift':
+            return { ...s, mainLiftExerciseId: change.exerciseId, variationId: null };
+        }
+      };
+      // A new main lift whose draft is already open today: that one opens, as Set up's Main lift does (one draft per key).
+      if (change.kind === 'main_lift' && change.exerciseId !== (first.mainLiftExerciseId ?? d.builderKey.mainLiftExerciseId)) {
+        const other = await repos().workoutDrafts.openBuilderDraft(p.id, { ...d.builderKey, mainLiftExerciseId: change.exerciseId }).catch(() => null);
+        if (other !== null && other.id !== d.id) return toast(await service.changeSetup(draftId, mergeNext(), w));
+      }
+      const port = deps.todayDraft;
+      if (port === undefined || !todayDrafted(first) || d.builderKey.planId === null) return toast(await service.changeSetup(draftId, mergeNext(), w));
+      const todayGone = { now: false };
+      const r = await writeDraft(p, draftId, async (current) => {
+        const v = currentDraftVersion(current);
+        const stored = builderSetupOf(current) ?? first;
+        const key = current.builderKey ?? d.builderKey;
+        const now = fromDraftPlan(v.plan, stored.restLevel ?? 'normal');
+        const original = untimed(stored, now);
+        const seen = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(now), ...exerciseIdsOf(original)], keySeed: `${current.id}:${w.opId}` });
+        if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env: seen, toast: null };
+        if (key === undefined) return { refused: 'changed_since', env: seen };
+        const was: TodayControls = { mainLiftExerciseId: stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null, accessories: stored.accessories ?? 'focused', minutes: stored.minutes, abs: hasAbs(original, seen), supersets: stored.supersets, mix: 0 };
+        const next: TodayControls =
+          change.kind === 'supersets' ? { ...was, supersets: change.on } : change.kind === 'abs' ? { ...was, abs: change.on } : change.kind === 'accessories' ? { ...was, accessories: change.style } : { ...was, mainLiftExerciseId: change.exerciseId };
+        // Already so (a repeated tap): nothing to write.
+        if (stableStringify(next) === stableStringify(was)) return { change: { kind: 'duplicate', current }, env: seen, toast: null };
+        const t = await port({ key, controls: next });
+        if (t === null) {
+          todayGone.now = true;
+          return { refused: 'changed_since', env: seen };
+        }
+        const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(now), ...exerciseIdsOf(original), ...exerciseIdsOf(t.unfitted), ...exerciseIdsOf(t.workout)], keySeed: `${current.id}:${w.opId}` });
+        const mainMoved = t.template.mainLiftExerciseId !== was.mainLiftExerciseId;
+        // His slots that don't belong to the new choice: the old main lift's, and his ab exercises with Abs off.
+        const skip = (x: BuilderSlot) => (mainMoved && x.main) || (!next.abs && env.info(x.exerciseId)?.group === 'Abs');
+        const removed = stored.todayRemoved ?? [];
+        // Ben's edits on the draft before Time (what more Time brings back) and on the draft at Time (what he sees).
+        const base = replayTodayEdits({ next: t.unfitted, current: original, removed, info: env.info, skip });
+        const workout = replayTodayEdits({ next: t.workout, current: now, removed, info: env.info, skip });
+        const fit = todayTimeFit(base, replayedFitSteps(t.steps, base), t.planMinutes, env.ctx);
+        // Sets Time took from a slot Ben edited since (held, review R1) stay Time's too.
+        const held = heldSets(base, workout);
+        const record = fit === null && Object.keys(held).length === 0 ? null : { ...(fit ?? { base, fromMinutes: Math.max(t.planMinutes, estimateBuilderMinutes(base, env.ctx)), dropped: [] }), cut: { ...(fit?.cut ?? {}), ...held } };
+        const setup: BuilderSetup = {
+          ...stored,
+          mainLiftExerciseId: t.template.mainLiftExerciseId,
+          supersets: next.supersets,
+          accessories: next.accessories,
+          groups: storedGroupsOf(groupsOfWorkout(base, env)),
+          variationId: null,
+        };
+        delete setup.timeFit;
+        delete setup.timeFrom;
+        delete setup.restLevel;
+        delete setup.templateRoutineId;
+        delete setup.templateVersion;
+        delete setup.variationVersion;
+        if (t.template.routineId !== null && t.template.version !== null) {
+          setup.templateRoutineId = t.template.routineId;
+          setup.templateVersion = t.template.version;
+        }
+        if (workout.restLevel !== 'normal') setup.restLevel = workout.restLevel;
+        if (stored.minutes !== t.planMinutes || record !== null) setup.timeFrom = t.planMinutes;
+        if (record !== null) setup.timeFit = { base: toDraftPlan(record.base, env.codec), ...(record.base.restLevel === 'normal' ? {} : { baseRestLevel: record.base.restLevel }), fromMinutes: record.fromMinutes, dropped: [...record.dropped], ...(Object.keys(record.cut).length === 0 ? {} : { cut: record.cut }), ...(record.paired === undefined || record.paired.length === 0 ? {} : { paired: record.paired.map((x) => [...x]) }) };
+        const plan = withSlotRevs(v.plan, toDraftPlan(workout, env.codec)).plan;
+        const basis = { version: w.expectedVersion };
+        const change2 = mainMoved
+          ? builderDraftEdit(current, {
+              opId: w.opId,
+              at: deps.now(),
+              basis,
+              plan,
+              setup,
+              name: t.name,
+              // The key follows the new main lift (one draft per key, §4.4); the draft keeps its local date.
+              rebuild: { actionId: deriveId(`builder-action:${w.opId}`), focus: focusOf(setup.dayId), ...(v.request.day === undefined ? {} : { day: v.request.day }), gymId: env.gymId, equipmentVersion: env.equipmentVersion, contextHash: contextHash(setup, env.gymId, env.equipmentVersion), key: { ...t.key, localDate: key.localDate } },
+              undoable: true,
+            })
+          : builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis, plan, setup, undoable: true });
+        return { change: change2, env, toast: null };
+      });
+      // Today can't draft that choice now (the day or the lift is gone): Set up's merge.
+      if (todayGone.now) return toast(await service.changeSetup(draftId, mergeNext(), w));
+      return toast(r);
     },
 
     /**

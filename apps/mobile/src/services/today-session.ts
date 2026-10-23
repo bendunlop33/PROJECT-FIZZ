@@ -55,6 +55,7 @@ import {
   type AnchorLoad,
   type BuilderContext,
   type BuilderExerciseInfo,
+  type BuilderFitStep,
   type BuilderGroupName,
   type BuilderWorkout,
   type FinishedRef,
@@ -321,6 +322,21 @@ export interface TodayCardView {
   startable: boolean;
   /** For `commit` (the code draft; null when edited). */
   draft: TodayDraft | null;
+}
+
+/** (D3 §2.3a) Today's code draft for a key and controls (`draftFor`): what Your workout's options load. */
+export interface TodayDraftFor {
+  /** Fitted to the controls' Time. */
+  workout: BuilderWorkout;
+  /** The same before Time's fit. */
+  unfitted: BuilderWorkout;
+  steps: BuilderFitStep[];
+  /** The plan day's own length. */
+  planMinutes: number;
+  template: { routineId: string | null; version: number | null; mainLiftExerciseId: string | null; label: string };
+  /** `Push · Bench press`. */
+  name: string;
+  key: BuilderDraftKey;
 }
 
 export type TodayCommitResult = { ok: true; draftId: string; version: number } | { ok: false; message: string };
@@ -1081,6 +1097,34 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     }
   }
 
+  /**
+   * (D3 §2.3a; review todaylean S2) Today's draft for one of its days (the builder draft's key) and these controls, at
+   * their Time: the code draft, never an edited or nudged one, from the same draft and fit code as the card. Your
+   * workout's options load it and replay Ben's edits on it. Null: the day or its template is gone, or the main lift
+   * asked for isn't one of the day's here.
+   */
+  async function draftFor(req: { key: BuilderDraftKey; controls: TodayControls }): Promise<TodayDraftFor | null> {
+    const data = await load();
+    if (data === null) return null;
+    const k = req.key;
+    const day = dayOf(data, k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`);
+    if (day === null) return null;
+    const found = templateHere(data, day, req.controls.mainLiftExerciseId);
+    if (found === null || (found.gap === null && found.t.mainLiftExerciseId !== req.controls.mainLiftExerciseId)) return null;
+    const { t, gap } = found;
+    const d = assembleTodayDraft({ day: gap === null ? day : { ...day, templates: [t] }, controls: { ...req.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx: data.internal.ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day) });
+    if (d === null) return null;
+    return {
+      workout: d.workout,
+      unfitted: d.unfitted,
+      steps: d.fit.steps,
+      planMinutes: clampInt(d.template.minutes),
+      template: { routineId: d.template.routineId, version: d.template.version, mainLiftExerciseId: d.template.mainLiftExerciseId, label: d.template.label },
+      name: `${day.name} · ${d.template.label}`.slice(0, 120),
+      key: { ...keyOf(data, day, d.template), localDate: k.localDate },
+    };
+  }
+
   /** `start`: the draft as committed (version-checked, rule 5), through the one Start path. */
   async function start(req: { draftId: string; expectedVersion: number; gymId: string; opId: string; checkIn: SessionCheckIn | null }): Promise<TodayStartResult> {
     const p = await deps.profile();
@@ -1127,6 +1171,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     card,
     movedLine,
     commit,
+    draftFor,
     start,
     review,
     mixPick,

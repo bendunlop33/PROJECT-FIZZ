@@ -248,7 +248,7 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     const main = slotsOf(snap.workout.blocks).find((x) => x.main);
     expect(chestAcc(snap).map(workingCount)).toEqual([3, 3]);
     const varied = await s.builder.setTodayOption(snap.draftId, { kind: 'accessories', style: 'varied' }, { opId: 'acc-varied', expectedVersion: snap.version });
-    expect(toastOf(varied)).toEqual({ text: 'Accessories varied', undoOpId: 'acc-varied', why: null });
+    expect(toastOf(varied)).toEqual({ text: 'Accessories: Varied', undoOpId: 'acc-varied', why: null });
     snap = snapOf(varied);
     expect(chestAcc(snap).map(workingCount)).toEqual([2, 2, 2]);
     expect(slotsOf(snap.workout.blocks).find((x) => x.main)).toEqual(main);
@@ -277,7 +277,7 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     h.clockMs += 60_000;
     const r = await s.builder.setTodayOption(snap.draftId, { kind: 'main_lift', exerciseId: incline }, { opId: 'main-incline', expectedVersion: snap.version });
     expect(r.status).toBe('written');
-    expect(toastOf(r)).toEqual({ text: 'Rebuilt', undoOpId: 'main-incline', why: null });
+    expect(toastOf(r)).toEqual({ text: 'Main lift: Incline', undoOpId: 'main-incline', why: null });
     const now = snapOf(r);
     expect(slotsOf(now.workout.blocks).find((x) => x.main)?.exerciseId).toBe(incline);
     // Back on Today: the day opens on the incline and the card is that draft.
