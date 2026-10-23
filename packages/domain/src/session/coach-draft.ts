@@ -35,6 +35,7 @@ import { convertMass } from '../units';
 import type { HistorySession } from '../progression';
 import { deriveId } from '../stable';
 import { toIso, toMs } from '../time';
+import { todayContentHash } from '../builder/today-mark';
 import { defaultMain, type RoutineStartInput } from './routines';
 import { checkedOnOf, checkProposedLoad, checkSlotLoads, loadReferences, recheckDraftLoad, type LoadCheck, type LoadReferences } from './builder-loads';
 import { intendedOf } from './snap';
@@ -828,13 +829,58 @@ export function routineOfBuilderDraft(draft: Pick<WorkoutDraft, 'builderKey'>): 
   return from?.kind === 'routine' ? from.id : null;
 }
 
+type DraftVersionLine = Pick<WorkoutDraftVersion, 'request'> & Partial<Pick<WorkoutDraftVersion, 'n' | 'parentN' | 'plan'>>;
+
+/** Each exercise's working sets in a draft plan (its first slot; warm-ups and drops left out, as a session counts them). */
+function workingByExercise(plan: DraftPlan): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const slot of plan.slots) if (!out.has(slot.exerciseId)) out.set(slot.exerciseId, slot.setTemplates.filter((t) => t.setType !== 'warmup' && t.setType !== 'drop').length);
+  return out;
+}
+
+/**
+ * (23 Oct, D1; review v5offers B1) The exercises whose working sets Ben didn't set himself before Start, so the
+ * weekly review never reads their counts as his edit (a short day isn't a new plan):
+ * - Your workout's live Time fit: the slots it cut or left out (named by the workout before the fit);
+ * - Today's card: the newest version on this version's line that Today wrote (its mark still vouches for its
+ *   content: Today's own build, its Time, or the coach's pre-start offer Ben applied there). Each exercise Ben left at
+ *   that version's count is Today's number, not his; one he changed since in Your workout is his edit.
+ * Sorted; empty: every count is Ben's (or the template's as opened).
+ */
+export function notEditedOfBuilderDraft(draft: Partial<Pick<WorkoutDraft, 'versions'>>, version: DraftVersionLine): string[] {
+  const out = new Set<string>();
+  const fit = version.request.setup?.timeFit;
+  if (fit !== undefined) {
+    const keys = new Set([...Object.keys(fit.cut ?? {}), ...fit.dropped]);
+    for (const slot of fit.base.slots) if (keys.has(slot.slotKey)) out.add(slot.exerciseId);
+  }
+  const byN = new Map((draft.versions ?? []).map((v) => [v.n, v]));
+  const todays = (v: DraftVersionLine): v is DraftVersionLine & Pick<WorkoutDraftVersion, 'plan'> => v.plan !== undefined && v.request.today !== undefined && todayContentHash({ plan: v.plan, setup: v.request.setup, gymId: v.request.gymId }) === v.request.today.hash;
+  const seen = new Set<number>();
+  let v: DraftVersionLine | undefined = version;
+  while (v !== undefined && !todays(v)) {
+    const parent = v.parentN ?? null;
+    if (parent === null || seen.has(parent)) {
+      v = undefined;
+      break;
+    }
+    seen.add(parent);
+    v = byN.get(parent);
+  }
+  if (v !== undefined && version.plan !== undefined) {
+    const was = workingByExercise(v.plan);
+    for (const [id, n] of workingByExercise(version.plan)) if (was.get(id) === n) out.add(id);
+  }
+  return [...out].sort();
+}
+
 /**
  * (Workout builder v3 §4.2, Today v2) The plan day a builder draft starts as: its key's plan and day index, split day
- * and main lift, with the template and variation its set-up names. Up next credits it by plan day, so a `Today only`
- * start (no routine) still moves the plan on. Empty for a draft that isn't a plan day (an Other session, Set up with
- * no plan).
+ * and main lift, with the template and variation its set-up names, and the exercises whose sets Ben didn't set himself
+ * (`notEditedOfBuilderDraft`). Up next credits it by plan day, so a `Today only` start (no routine) still moves the
+ * plan on. Empty for a draft that isn't a plan day (an Other session, Set up with no plan).
  */
-export function planDayOfBuilderDraft(draft: Pick<WorkoutDraft, 'builderKey'>, version: Pick<WorkoutDraftVersion, 'request'>): { planDay?: SessionPlanDay } {
+export function planDayOfBuilderDraft(draft: Pick<WorkoutDraft, 'builderKey'> & Partial<Pick<WorkoutDraft, 'versions'>>, version: DraftVersionLine): { planDay?: SessionPlanDay } {
   const k = draft.builderKey;
   if (k === undefined || k.planId === null || k.dayIndex === null) return {};
   const setup = version.request.setup;
@@ -842,6 +888,7 @@ export function planDayOfBuilderDraft(draft: Pick<WorkoutDraft, 'builderKey'>, v
   if (splitDayId === null) return {};
   const templateRoutineId = setup?.templateRoutineId ?? null;
   const templateVersion = templateRoutineId === null ? null : (setup?.templateVersion ?? null);
+  const notEdited = notEditedOfBuilderDraft(draft, version);
   return {
     planDay: {
       planId: k.planId,
@@ -851,6 +898,7 @@ export function planDayOfBuilderDraft(draft: Pick<WorkoutDraft, 'builderKey'>, v
       templateRoutineId: templateVersion === null ? null : templateRoutineId,
       templateVersion,
       variationId: setup?.variationId ?? null,
+      ...(notEdited.length === 0 ? {} : { notEdited }),
     },
   };
 }

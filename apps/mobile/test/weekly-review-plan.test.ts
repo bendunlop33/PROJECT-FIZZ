@@ -125,8 +125,9 @@ describe('weekly review over an applied plan (review build-b-21oct B1)', () => {
           verdict: '3 of 3 sessions done.',
           lines: [],
           tweaks: [
-            { routineId: x.pullId, exerciseId: x.pulldownId, workingSets: 4, reason: 'Back volume is light.' },
-            // A wrong number in the reason hides it: asked, not applied.
+            // One set fewer, with its reason: CA8-small, so the review applies it itself.
+            { routineId: x.pullId, exerciseId: x.pulldownId, workingSets: 2, reason: 'Back volume is high.' },
+            // An added set (and a wrong number in the reason hides it): an offer, never applied before Ben (D2).
             { routineId: x.pullId, exerciseId: x.rowId, workingSets: 4, reason: 'Row 17 sets last week.' },
           ],
         }),
@@ -136,11 +137,11 @@ describe('weekly review over an applied plan (review build-b-21oct B1)', () => {
     h.clockMs = Date.parse('2026-10-19T07:00:00.000Z');
     const first = await s.reviews.runOnOpen();
     expect(first.kind).toBe('reviewed');
-    expect(await workingOf(s, x.pullId, x.gymId)).toEqual([4, 3]);
+    expect(await workingOf(s, x.pullId, x.gymId)).toEqual([2, 3]);
     const shown = (await s.reviews.progress())?.changes;
     expect(shown?.rows.map((r) => [r.exercise, r.status, r.canUndo])).toEqual([['Lat pulldown', 'applied', true]]);
-    expect(shown?.asks.map((r) => [r.exercise, r.statusText, r.canApply])).toEqual([['Barbell row', 'Not applied', true]]);
-    // The week keeps the plan it was reviewed against (Back 6, not the 7 after the change).
+    expect(shown?.asks.map((r) => [r.exercise, r.offer, r.statusText, r.canApply])).toEqual([['Barbell row', true, null, true]]);
+    // The week keeps the plan it was reviewed against (Back 6, not the 5 after the change).
     expect((await s.reviews.progress())?.muscles.rows.find((r) => r.key === 'Back')?.last).toBe('6 of 6');
     expect(await s.reviews.markSeen({ reviewId: shown?.reviewId ?? '', expectedVersion: shown?.version ?? 0, opId: 'seen-1', contentKey: shown?.contentKey ?? '' })).toBe(true);
 
@@ -169,7 +170,7 @@ describe('weekly review over an applied plan (review build-b-21oct B1)', () => {
     await h.settle(s);
     now = (await s.reviews.progress())?.changes;
     expect(now?.rows.map((r) => [r.exercise, r.status, r.canRedo])).toEqual([['Lat pulldown', 'undone', true]]);
-    expect(now?.asks.map((r) => [r.exercise, r.statusText])).toEqual([['Barbell row', 'Not applied']]);
+    expect(now?.asks.map((r) => [r.exercise, r.status, r.offer])).toEqual([['Barbell row', 'open', true]]);
     expect(model.weeklyCalls).toBe(1);
 
     // Ben changes Barbell row himself (3 → 2); Apply on the ask is then refused and writes nothing (rule 5).
@@ -180,6 +181,34 @@ describe('weekly review over an applied plan (review build-b-21oct B1)', () => {
     const ask = now?.asks[0];
     expect(await s.reviews.applyProposal({ reviewId: now?.reviewId ?? '', proposalId: ask?.id ?? '', opId: 'apply-tap' })).toMatchObject({ ok: false, reason: 'out_of_date' });
     expect(await workingOf(s, x.pullId, x.gymId)).toEqual([3, 2]);
+  });
+
+  it('D2: the coach’s added set with a checked reason is an offer: no open applies it, a force-close keeps it asked, Apply writes it once with Undo', async () => {
+    const x = await setup();
+    let s = x.s;
+    model.weekly = [() => toolCall('weekly_review', { verdict: '3 of 3 sessions done.', lines: [], tweaks: [{ routineId: x.pullId, exerciseId: x.pulldownId, workingSets: 4, reason: 'Back volume is light.' }] })];
+    h.clockMs = Date.parse('2026-10-19T07:00:00.000Z');
+    expect((await s.reviews.runOnOpen()).kind).toBe('reviewed');
+    for (let i = 0; i < 2; i += 1) {
+      h.clockMs += 3_600_000;
+      await s.reviews.runOnOpen();
+    }
+    expect(await workingOf(s, x.pullId, x.gymId)).toEqual([3, 3]);
+    let now = (await s.reviews.progress())?.changes;
+    expect(now?.rows).toEqual([]);
+    expect(now?.asks.map((r) => [r.exercise, r.before, r.after, r.why, r.offer, r.canApply])).toEqual([['Lat pulldown', '3 sets', '4 sets', 'Back volume is light.', true, true]]);
+    s = await x.relaunch();
+    await h.settle(s);
+    expect(await workingOf(s, x.pullId, x.gymId)).toEqual([3, 3]);
+    now = (await s.reviews.progress())?.changes;
+    const ask = now?.asks[0];
+    expect(ask).toMatchObject({ status: 'open', offer: true });
+    expect(await s.reviews.applyProposal({ reviewId: now?.reviewId ?? '', proposalId: ask?.id ?? '', opId: 'apply-tap' })).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
+    expect(await s.reviews.applyProposal({ reviewId: now?.reviewId ?? '', proposalId: ask?.id ?? '', opId: 'apply-tap' })).toMatchObject({ ok: true });
+    expect(await workingOf(s, x.pullId, x.gymId)).toEqual([4, 3]);
+    expect(await s.reviews.undoProposal({ reviewId: now?.reviewId ?? '', proposalId: ask?.id ?? '', opId: 'undo-tap' })).toMatchObject({ ok: true, proposal: { status: 'undone' } });
+    expect(await workingOf(s, x.pullId, x.gymId)).toEqual([3, 3]);
+    expect(model.weeklyCalls).toBe(1);
   });
 
   it('a workout logged into the reviewed week is still new input: a new review', async () => {

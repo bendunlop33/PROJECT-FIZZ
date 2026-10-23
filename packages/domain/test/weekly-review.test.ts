@@ -56,7 +56,7 @@ const kg = (value: number, convention: Load['convention'] = 'total'): Load => ({
 const work = (load: Load | null, reps: number, more: Partial<ReviewSet> = {}): ReviewSet => ({ setType: 'working', load, reps, rpe: null, targetRpe: null, counts: true, ...more });
 
 let seq = 100;
-function sess(date: string, exercises: { exerciseId: string; sets: ReviewSet[]; planned?: number }[], more: Partial<ReviewSession> = {}): ReviewSession {
+function sess(date: string, exercises: { exerciseId: string; sets: ReviewSet[]; planned?: number | null }[], more: Partial<ReviewSession> = {}): ReviewSession {
   seq += 1;
   const startedAtUtc = `${date}T17:00:00.000Z`;
   return {
@@ -70,7 +70,7 @@ function sess(date: string, exercises: { exerciseId: string; sets: ReviewSet[]; 
     feel: null,
     plannedReps: null,
     doneReps: 0,
-    exercises: exercises.map((e) => ({ exerciseId: e.exerciseId, name: `Ex ${e.exerciseId.slice(-2)}`, equipmentKind: null, sets: e.sets, plannedWorking: e.planned ?? e.sets.filter((s) => s.setType !== 'warmup').length })),
+    exercises: exercises.map((e) => ({ exerciseId: e.exerciseId, name: `Ex ${e.exerciseId.slice(-2)}`, equipmentKind: null, sets: e.sets, plannedWorking: e.planned === undefined ? e.sets.filter((s) => s.setType !== 'warmup').length : e.planned })),
     ...more,
   };
 }
@@ -269,6 +269,15 @@ describe('weekly signals: RPE, feel, runs, repeated edits (§6.1 feedback loop)'
     expect(weeklyFacts(input({ sessions: [fromLegs('2026-10-08', 9), fromLegs('2026-10-15', 9)], templates: [template] })).edits).toEqual([]);
   });
 
+  it('a workout whose sets Ben didn’t set himself (`plannedWorking` null) is never an edit: two short days aren’t a new plan (D1; review v5offers B1)', () => {
+    const template: ReviewTemplate = { planId: id(60), routineId: LEGS_DAY, name: 'Legs', version: 4, exercises: [{ exerciseId: SQUAT, name: 'Squat', workingSets: 4 }, { exerciseId: CURL, name: 'Leg curl', workingSets: 3 }] };
+    const fromLegs = (date: string, curl: number | null) => sess(date, [{ exerciseId: SQUAT, sets: [work(kg(120), 5)], planned: 4 }, { exerciseId: CURL, sets: [work(kg(40), 10)], planned: curl }], { template: { routineId: LEGS_DAY }, routineId: LEGS_DAY });
+    expect(weeklyFacts(input({ sessions: [fromLegs('2026-10-08', null), fromLegs('2026-10-15', null)], templates: [template] })).edits).toEqual([]);
+    // One fitted day in the newest two breaks Ben's streak too.
+    expect(weeklyFacts(input({ sessions: [fromLegs('2026-10-08', 2), fromLegs('2026-10-15', null)], templates: [template] })).edits).toEqual([]);
+    expect(weeklyFacts(input({ sessions: [fromLegs('2026-10-08', 2), fromLegs('2026-10-15', 2)], templates: [template] })).edits.map((e) => [e.exerciseId, e.toSets])).toEqual([[CURL, 2]]);
+  });
+
   it('the stored facts parse with the review schema (and IDs that aren’t stored IDs are left out)', () => {
     const sessions = [sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6, { rpe: 8, targetRpe: 8 })] }], { routineId: CHEST_DAY, feel: 'easy' })];
     const f = weeklyFacts(input({ sessions, plans: [plan()], lifts: [BENCH], goal: 'both', activities: [{ id: id(70), date: '2026-10-14', kind: 'run', status: 'done', distanceM: null }] }));
@@ -294,8 +303,17 @@ describe('reviewSessionOf: a stored workout as the review reads it', () => {
     const r = reviewSessionOf({ ...a, session: { ...a.session, feel: { value: 'good', at: a.session.startedAt } } }, TZ, NOW);
     expect(r?.feel).toBe('good');
     expect(r?.exercises.length).toBeGreaterThan(0);
-    expect(r?.exercises.every((e) => e.plannedWorking >= 0)).toBe(true);
+    expect(r?.exercises.every((e) => e.plannedWorking !== null && e.plannedWorking >= 0)).toBe(true);
     expect(reviewSessionOf({ ...a, session: { ...a.session, status: 'active', endedAt: null } }, TZ, NOW)).toBeNull();
+  });
+
+  it('an exercise whose sets Ben didn’t set himself reads no set-up count (`SessionPlanDay.notEdited`: Today’s card, a Time fit; review v5offers B1)', () => {
+    const a = richFinishedSession();
+    const fitted = a.exercises[0]?.exerciseId ?? '';
+    const planDay = { planId: id(61), dayIndex: 0, splitDayId: 'legs', templateRoutineId: id(62), templateVersion: 1, variationId: null, notEdited: [fitted] };
+    const r = reviewSessionOf({ ...a, session: { ...a.session, planDay } }, TZ, NOW);
+    expect(r?.exercises.filter((e) => e.exerciseId === fitted).map((e) => e.plannedWorking)).toEqual([null]);
+    expect(r?.exercises.filter((e) => e.exerciseId !== fitted).every((e) => e.plannedWorking !== null)).toBe(true);
   });
 });
 

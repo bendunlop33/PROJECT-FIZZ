@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { clearPainFlag, newPainFlag, reduceSession, startWorkout, toIso } from '@fizz/domain';
+import { CHANGE_TAP_LABEL, changeRowTaps, clearPainFlag, deriveId, newPainFlag, reduceSession, startWorkout, toIso } from '@fizz/domain';
 import { at, barbell, exercise, GYM, id, idGen, kg, OWNER, profile, routine, routineExercise, stack, template, T0_MS, TZ, values } from '@fizz/domain/testing';
 import { openStore, type Store } from '@fizz/persistence';
 import { openNodeDriver } from '@fizz/persistence/node';
@@ -8,6 +8,7 @@ import type { CoachModelPort } from '@fizz/coach';
 import type { Exercise, ReviewProposal, Routine, SessionAggregate, SessionCommand, TrainingReview, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../src/coach/coach-service';
+import { runChangeTap } from '../src/reviews/change-taps';
 import { createWeeklyReviewService } from '../src/reviews/weekly-review-service';
 import { StepModel, toolCall } from './coach-model';
 
@@ -362,7 +363,7 @@ describe('weekly proposals: Apply / Skip / Undo, refused when stale (rule 5)', (
       opIds: ['seed'],
       createdAt: { utc: toIso(OPEN_MS), tz: TZ },
       proposals: [
-        { id: 'p1', source: 'code', change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: CURL.id, exerciseName: 'Leg curl', fromSets: 3, toSets: 4 }, reason: '4 sets the last 2 times', status: 'open', actionId: null },
+        { id: 'p1', source: 'code', change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: CURL.id, exerciseName: 'Leg curl', fromSets: 3, toSets: 4 }, reason: '2 sets the last 2 times', status: 'open', actionId: null },
         { id: 'p2', source: 'coach', change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: CURL.id, exerciseName: 'Leg curl', fromSets: 3, toSets: 2 }, reason: null, status: 'open', actionId: null },
       ],
     };
@@ -474,29 +475,36 @@ describe('Coach’s changes (Progress v3, rule 3): small changes applied with Un
     const legs: Routine = { ...routine([routineExercise(960, { exerciseId: CURL.id, setTemplates: [template(96_000, { targetLoad: kg(40, 'stack') }), template(96_001, { targetLoad: kg(40, 'stack') }), template(96_002, { targetLoad: kg(40, 'stack') })] })]), id: id(9310), name: 'Legs' };
     await h.store.repos.routines.save(legs, null);
     const r = first.review;
+    // p1 is the coach's CA8-small change (one set fewer, with its reason): the review applies it. p2 adds a set nobody asked for: an offer (D2).
     const proposals: ReviewProposal[] = [
-      { id: 'p1', source: 'code', change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: CURL.id, exerciseName: 'Leg curl', fromSets: 3, toSets: 4 }, reason: '4 sets the last 2 times', status: 'open', actionId: null },
-      { id: 'p2', source: 'coach', change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: CURL.id, exerciseName: 'Leg curl', fromSets: 3, toSets: 2 }, reason: 'Legs ran long', status: 'open', actionId: null },
+      { id: 'p1', source: 'coach', change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: CURL.id, exerciseName: 'Leg curl', fromSets: 3, toSets: 2 }, reason: 'Legs ran long', status: 'open', actionId: null },
+      { id: 'p2', source: 'coach', change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: CURL.id, exerciseName: 'Leg curl', fromSets: 3, toSets: 4 }, reason: 'Legs ran short', status: 'open', actionId: null },
     ];
     expect(await h.store.repos.reviews.update(OWNER, { ...r, proposals, version: r.version + 1, opIds: [...r.opIds, 'seed-proposals'] }, r.version, 'seed-proposals')).toMatchObject({ status: 'written' });
     return { ...h, legs, reviewId: r.id };
   }
   const workingOf = async (store: Store, rid: string) => (await store.repos.routines.get(rid))?.exercises[0]?.setTemplates.filter((t) => t.setType !== 'warmup').length;
 
-  it('the next open applies the small changes itself (recorded with reason and author), once; a later one made stale is refused (rule 5)', async () => {
+  it('the next open applies the small change itself (recorded with reason and author), once; the offer is never written; Apply on it once stale is refused (rules 3, 5; D2)', async () => {
     const h = await stored();
     const run = await h.service.runOnOpen();
     if (run.kind === 'nothing' || run.kind === 'failed') throw new Error(run.kind);
-    expect(run.review.proposals?.map((p) => [p.id, p.status])).toEqual([['p1', 'applied'], ['p2', 'stale']]);
-    expect(await workingOf(h.store, h.legs.id)).toBe(4);
+    expect(run.review.proposals?.map((p) => [p.id, p.status])).toEqual([['p1', 'applied'], ['p2', 'open']]);
+    expect(await workingOf(h.store, h.legs.id)).toBe(2);
     const actionId = run.review.proposals?.[0]?.actionId ?? '';
-    expect(await h.store.repos.coach.getAction(actionId)).toMatchObject({ author: 'checks', reason: '4 sets the last 2 times', detail: { kind: 'update_routine' } });
-    // Another open: nothing written twice.
+    expect(await h.store.repos.coach.getAction(actionId)).toMatchObject({ author: 'coach', reason: 'Legs ran long', detail: { kind: 'update_routine' } });
+    // Another open: nothing written twice, and the offer still waits for Ben.
     await h.service.runOnOpen();
     expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(h.legs.version + 1);
-    const view = (await h.service.progress())?.changes;
-    expect(view?.rows.map((r) => [r.exercise, r.after, r.status, r.canUndo])).toEqual([['Leg curl', '4 sets', 'applied', true], ['Leg curl', '2 sets', 'stale', false]]);
-    expect(view?.collapsed).toBe('1 change for next week');
+    let view = (await h.service.progress())?.changes;
+    expect(view?.rows.map((r) => [r.exercise, r.after, r.status, r.canUndo])).toEqual([['Leg curl', '2 sets', 'applied', true]]);
+    expect(view?.asks.map((r) => [r.exercise, r.after, r.status, r.offer, r.statusText, r.canApply])).toEqual([['Leg curl', '4 sets', 'open', true, null, true]]);
+    expect(view?.collapsed).toBe('1 change for next week · 1 to review');
+    // Ben taps Apply on the offer: made against 3 sets, the plan has 2 now, so it is refused and nothing is written (rule 5).
+    expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'p2', opId: 'apply-p2' })).toMatchObject({ ok: false, reason: 'out_of_date' });
+    expect(await workingOf(h.store, h.legs.id)).toBe(2);
+    view = (await h.service.progress())?.changes;
+    expect(view?.asks.map((r) => [r.exercise, r.status, r.statusText, r.canApply])).toEqual([['Leg curl', 'stale', 'Out of date', false]]);
   });
 
   it('a pain flag since the review: the small change isn’t applied (rule 9)', async () => {
@@ -515,7 +523,7 @@ describe('Coach’s changes (Progress v3, rule 3): small changes applied with Un
     await h.service.runOnOpen();
     expect(await workingOf(h.store, h.legs.id)).toBe(3);
     expect(await h.service.redoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'redo-a' })).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
-    expect(await workingOf(h.store, h.legs.id)).toBe(4);
+    expect(await workingOf(h.store, h.legs.id)).toBe(2);
     // The same tap again: one write.
     const v = (await h.store.repos.routines.get(h.legs.id))?.version;
     await h.service.redoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'redo-a' });
@@ -525,9 +533,9 @@ describe('Coach’s changes (Progress v3, rule 3): small changes applied with Un
     if (now === null) throw new Error('missing');
     const ex = now.exercises[0];
     if (ex === undefined) throw new Error('missing');
-    await h.store.repos.routines.save({ ...now, exercises: [{ ...ex, setTemplates: ex.setTemplates.slice(0, 2) }], version: now.version + 1 }, now.version);
+    await h.store.repos.routines.save({ ...now, exercises: [{ ...ex, setTemplates: [...ex.setTemplates, { ...ex.setTemplates[0], id: id(96_009) } as (typeof ex.setTemplates)[number]] }], version: now.version + 1 }, now.version);
     expect(await h.service.redoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'redo-b' })).toMatchObject({ ok: false, reason: 'changed_since' });
-    expect(await workingOf(h.store, h.legs.id)).toBe(2);
+    expect(await workingOf(h.store, h.legs.id)).toBe(4);
   });
 
   it('NEW until Got it (versioned, idempotent; a tap on an older version is refused); kept through a re-run with nothing new', async () => {
@@ -563,8 +571,8 @@ describe('Coach’s changes (Progress v3, rule 3): small changes applied with Un
 
 describe('Coach’s changes: two exercises on one plan day, restart safety, honest states (reviews progress-v3 B1–B3, S5–S7)', () => {
   const ROW: Exercise = BENCH;
-  /** Legs with Leg curl and a second exercise, and a review whose small changes are `extra` (open). */
-  async function twoOnLegs(extra: (legs: Routine) => ReviewProposal[]) {
+  /** Legs with Leg curl and a second exercise, and a review whose changes are `extra` (open; by default one set fewer, CA8-small). */
+  async function twoOnLegs(extra: (legs: Routine) => ReviewProposal[], more: { stalled?: readonly string[] } = {}) {
     const h = await setUp({ model: null });
     const first = await h.service.runOnOpen();
     if (first.kind !== 'not_reviewed') throw new Error(first.kind);
@@ -572,12 +580,15 @@ describe('Coach’s changes: two exercises on one plan day, restart safety, hone
     const legs: Routine = { ...routine([routineExercise(970, { exerciseId: CURL.id, setTemplates: three(97_000) }), routineExercise(971, { exerciseId: ROW.id, setTemplates: three(97_100) })]), id: id(9320), name: 'Legs' };
     await h.store.repos.routines.save(legs, null);
     const r = first.review;
-    expect(await h.store.repos.reviews.update(OWNER, { ...r, proposals: extra(legs), version: r.version + 1, opIds: [...r.opIds, 'seed-two'] }, r.version, 'seed-two')).toMatchObject({ status: 'written' });
+    // `stalled`: the week's own facts flag these lifts as stalled (code's `stalled_lift`, as a run stores them).
+    const facts = [...r.facts, ...(more.stalled ?? []).map((exerciseId) => ({ kind: 'stalled_lift' as const, exerciseId, sessions: 3 }))];
+    expect(await h.store.repos.reviews.update(OWNER, { ...r, facts, proposals: extra(legs), version: r.version + 1, opIds: [...r.opIds, 'seed-two'] }, r.version, 'seed-two')).toMatchObject({ status: 'written' });
     return { ...h, legs, reviewId: r.id };
   }
-  const change = (legs: Routine, pid: string, ex: Exercise, name: string, reason: string | null, toSets = 4): ReviewProposal => ({
+  /** `e…`: code's own (Ben's repeated edit); any other ID is the coach's. */
+  const change = (legs: Routine, pid: string, ex: Exercise, name: string, reason: string | null, toSets = 2): ReviewProposal => ({
     id: pid,
-    source: pid.startsWith('c') ? 'coach' : 'code',
+    source: pid.startsWith('e') ? 'code' : 'coach',
     change: { kind: 'template_sets', routineId: legs.id, routineName: 'Legs', expectedVersion: legs.version, exerciseId: ex.id, exerciseName: name, fromSets: 3, toSets },
     reason,
     status: 'open',
@@ -595,36 +606,36 @@ describe('Coach’s changes: two exercises on one plan day, restart safety, hone
   };
 
   it('two small changes on the same plan day are both applied; Undo of one leaves the other; Redo puts it back (review progress-v3-data B1)', async () => {
-    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', '4 sets the last 2 times'), change(legs, 'c1', ROW, 'Bench press', 'Bench stalled at 3 sets')]);
+    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', 'Legs ran long'), change(legs, 'c1', ROW, 'Bench press', 'Bench ran long')]);
     await h.service.runOnOpen();
     expect(await statuses(h.store, h.reviewId)).toEqual([['p1', 'applied'], ['c1', 'applied']]);
-    expect(await setsOf(h.store, h.legs.id)).toEqual([4, 4]);
+    expect(await setsOf(h.store, h.legs.id)).toEqual([2, 2]);
     expect(await h.service.undoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'u1' })).toMatchObject({ ok: true, proposal: { status: 'undone' } });
-    expect(await setsOf(h.store, h.legs.id)).toEqual([3, 4]);
+    expect(await setsOf(h.store, h.legs.id)).toEqual([3, 2]);
     expect(await h.service.redoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'r1' })).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
-    expect(await setsOf(h.store, h.legs.id)).toEqual([4, 4]);
+    expect(await setsOf(h.store, h.legs.id)).toEqual([2, 2]);
     // Undo of the second, after the first was redone: only its own exercise.
     expect(await h.service.undoProposal({ reviewId: h.reviewId, proposalId: 'c1', opId: 'u2' })).toMatchObject({ ok: true });
-    expect(await setsOf(h.store, h.legs.id)).toEqual([4, 3]);
+    expect(await setsOf(h.store, h.legs.id)).toEqual([2, 3]);
     // The applies are recorded as undone in the action log, each with its own undo record.
     const c1 = (await h.store.repos.reviews.get(h.reviewId))?.proposals?.find((p) => p.id === 'c1');
     expect((await h.store.repos.coach.getAction(c1?.actionId ?? ''))?.undoneBy).not.toBeNull();
   });
 
-  it('a small change with no reason (the number check hid it) is never applied automatically: asked, `Not applied`, Apply applies it (review progress-v3-design B3)', async () => {
+  it('a small change with no reason (the number check hid it) is never applied automatically: an offer, Apply applies it (review progress-v3-design B3)', async () => {
     const h = await twoOnLegs((legs) => [change(legs, 'c1', CURL, 'Leg curl', null)]);
     await h.service.runOnOpen();
     expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
     const view = (await h.service.progress())?.changes;
     expect(view?.rows).toEqual([]);
-    expect(view?.asks.map((r) => [r.exercise, r.status, r.statusText, r.canApply, r.canUndo])).toEqual([['Leg curl', 'open', 'Not applied', true, false]]);
+    expect(view?.asks.map((r) => [r.exercise, r.status, r.offer, r.statusText, r.canApply, r.canUndo])).toEqual([['Leg curl', 'open', true, null, true, false]]);
     expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'c1', opId: 'tap' })).toMatchObject({ ok: true, proposal: { status: 'applied' } });
-    expect(await setsOf(h.store, h.legs.id)).toEqual([4, 3]);
+    expect(await setsOf(h.store, h.legs.id)).toEqual([2, 3]);
     expect((await h.store.repos.coach.getAction((await h.store.repos.reviews.get(h.reviewId))?.proposals?.[0]?.actionId ?? ''))?.author).toBe('ben');
   });
 
   it('a small change not applied yet is shown `Not applied`, never as made; the page is told only after the apply lands (review progress-v3-design B1)', async () => {
-    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', '4 sets the last 2 times')]);
+    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', 'Legs ran long')]);
     const before = (await h.service.progress())?.changes;
     expect(before?.rows).toEqual([]);
     expect(before?.asks[0]).toMatchObject({ status: 'open', statusText: 'Not applied', canApply: true });
@@ -642,18 +653,18 @@ describe('Coach’s changes: two exercises on one plan day, restart safety, hone
   });
 
   it('a force-close between the automatic apply’s write and its mark: the next open marks it, one write (review progress-v3-design S7)', async () => {
-    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', '4 sets the last 2 times')]);
+    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', 'Legs ran long')]);
     await h.service.runOnOpen();
     const v = (await h.store.repos.routines.get(h.legs.id))?.version;
     await loseMark(h.store, h.reviewId, 'p1', { status: 'open', actionId: null });
     await h.service.runOnOpen();
     expect(await statuses(h.store, h.reviewId)).toEqual([['p1', 'applied']]);
     expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(v);
-    expect(await setsOf(h.store, h.legs.id)).toEqual([4, 3]);
+    expect(await setsOf(h.store, h.legs.id)).toEqual([2, 3]);
   });
 
   it('a force-close between Redo’s write and its mark: the next Redo (a new tap) marks it applied with Undo, one write (review progress-v3-design B2)', async () => {
-    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', '4 sets the last 2 times')]);
+    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', 'Legs ran long')]);
     await h.service.runOnOpen();
     await h.service.undoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'u1' });
     const undone = (await h.store.repos.reviews.get(h.reviewId))?.proposals?.[0];
@@ -663,14 +674,14 @@ describe('Coach’s changes: two exercises on one plan day, restart safety, hone
     await loseMark(h.store, h.reviewId, 'p1', { status: 'undone', actionId: undone?.actionId ?? null });
     expect(await h.service.redoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'r2-new-tap' })).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
     expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(v);
-    expect(await setsOf(h.store, h.legs.id)).toEqual([4, 3]);
+    expect(await setsOf(h.store, h.legs.id)).toEqual([2, 3]);
     // And Undo still works.
     expect(await h.service.undoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'u2' })).toMatchObject({ ok: true, proposal: { status: 'undone' } });
     expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
   });
 
   it('a force-close between Undo’s write and its mark: the next Undo (a new tap) marks it, one write', async () => {
-    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', '4 sets the last 2 times')]);
+    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', 'Legs ran long')]);
     await h.service.runOnOpen();
     const applied = (await h.store.repos.reviews.get(h.reviewId))?.proposals?.[0];
     await h.service.undoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'u1' });
@@ -681,20 +692,20 @@ describe('Coach’s changes: two exercises on one plan day, restart safety, hone
   });
 
   it('Got it after the automatic apply moved the review: still marked; new coach words are not (review progress-v3-design S5)', async () => {
-    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', '4 sets the last 2 times')]);
+    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', 'Legs ran long')]);
     const shown = (await h.service.progress())?.changes;
     await h.service.runOnOpen();
     expect(await h.service.markSeen({ reviewId: h.reviewId, expectedVersion: shown?.version ?? 0, opId: 'seen-a', contentKey: shown?.contentKey ?? '' })).toBe(true);
     expect((await h.service.progress())?.changes?.isNew).toBe(false);
     // A key that doesn't match what is stored (news since): refused.
-    const h2 = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', '4 sets the last 2 times')]);
+    const h2 = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', 'Legs ran long')]);
     const shown2 = (await h2.service.progress())?.changes;
     await h2.service.runOnOpen();
     expect(await h2.service.markSeen({ reviewId: h2.reviewId, expectedVersion: shown2?.version ?? 0, opId: 'seen-b', contentKey: 'something else' })).toBe(false);
   });
 
-  it('collapses once Ben acted on every change himself (Undo, Keep as is); the automatic applies alone don’t (review progress-v3-design S6)', async () => {
-    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', '4 sets the last 2 times'), change(legs, 'c1', ROW, 'Bench press', null)]);
+  it('collapses once Ben acted on every change himself (Undo, Skip); the automatic applies alone don’t (review progress-v3-design S6)', async () => {
+    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', 'Legs ran long'), change(legs, 'c1', ROW, 'Bench press', null)]);
     await h.service.runOnOpen();
     expect((await h.service.progress())?.changes?.isNew).toBe(true);
     await h.service.undoProposal({ reviewId: h.reviewId, proposalId: 'p1', opId: 'u1' });
@@ -703,8 +714,136 @@ describe('Coach’s changes: two exercises on one plan day, restart safety, hone
     expect((await h.service.progress())?.changes?.isNew).toBe(false);
   });
 
+  describe('D2 (Ben, 23 Oct): the review never applies an unasked change outside CA8 small', () => {
+    // The review's own apply has one deterministic record per change: none may exist for an offer.
+    const autoRecord = async (store: Store, reviewId: string, pid: string) => store.repos.coach.getAction(deriveId(`review-apply:${deriveId(`${reviewId}|${pid}`)}`));
+
+    it('an added set (the coach’s, or code’s from Ben’s repeated edit) is an offer: no open writes it; Apply writes once as Ben’s, Undo restores', async () => {
+      const h = await twoOnLegs((legs) => [change(legs, 'e1', CURL, 'Leg curl', '4 sets the last 2 times', 4), change(legs, 'c1', ROW, 'Bench press', 'Chest under plan', 4)]);
+      const v0 = (await h.store.repos.routines.get(h.legs.id))?.version;
+      for (let i = 0; i < 3; i += 1) await h.service.runOnOpen();
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
+      expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(v0);
+      expect(await statuses(h.store, h.reviewId)).toEqual([['e1', 'open'], ['c1', 'open']]);
+      expect(await autoRecord(h.store, h.reviewId, 'e1')).toBeNull();
+      expect(await autoRecord(h.store, h.reviewId, 'c1')).toBeNull();
+      const view = (await h.service.progress())?.changes;
+      expect(view?.rows).toEqual([]);
+      expect(view?.asks.map((r) => [r.exercise, r.before, r.after, r.when, r.offer, r.statusText, r.canApply])).toEqual([
+        ['Leg curl', '3 sets', '4 sets', 'next Legs', true, null, true],
+        ['Bench press', '3 sets', '4 sets', 'next Legs', true, null, true],
+      ]);
+      // Both wait for Ben: the collapsed line says so (review v5offers 3).
+      expect(view?.collapsed).toBe('2 to review');
+      // Ben applies one: written once (a double tap replays), recorded as his.
+      expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'c1', opId: 'apply-c1' })).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
+      expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'c1', opId: 'apply-c1' })).toMatchObject({ ok: true });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 4]);
+      expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe((v0 ?? 0) + 1);
+      const c1 = (await h.store.repos.reviews.get(h.reviewId))?.proposals?.find((p) => p.id === 'c1');
+      expect((await h.store.repos.coach.getAction(c1?.actionId ?? ''))?.author).toBe('ben');
+      // The other is skipped: nothing changes, and a later open doesn't apply it.
+      expect(await h.service.skipProposal({ reviewId: h.reviewId, proposalId: 'e1', opId: 'skip-p1' })).toMatchObject({ ok: true, proposal: { status: 'skipped' } });
+      await h.service.runOnOpen();
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 4]);
+      expect(await h.service.undoProposal({ reviewId: h.reviewId, proposalId: 'c1', opId: 'undo-c1' })).toMatchObject({ ok: true, proposal: { status: 'undone' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
+    });
+
+    it('code’s own change (Ben’s repeated edit) is always an offer, even one set fewer: no open writes it, Apply writes it as Ben’s (D1; review v5offers B1)', async () => {
+      const h = await twoOnLegs((legs) => [change(legs, 'e1', CURL, 'Leg curl', '2 sets the last 2 times')]);
+      const v0 = (await h.store.repos.routines.get(h.legs.id))?.version;
+      for (let i = 0; i < 3; i += 1) await h.service.runOnOpen();
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
+      expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(v0);
+      expect(await autoRecord(h.store, h.reviewId, 'e1')).toBeNull();
+      const view = (await h.service.progress())?.changes;
+      expect(view?.rows).toEqual([]);
+      expect(view?.asks.map((r) => [r.exercise, r.after, r.offer, r.statusText, r.canApply])).toEqual([['Leg curl', '2 sets', true, null, true]]);
+      expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'e1', opId: 'apply-e1' })).toMatchObject({ ok: true, proposal: { status: 'applied' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([2, 3]);
+      const e1 = (await h.store.repos.reviews.get(h.reviewId))?.proposals?.find((p) => p.id === 'e1');
+      expect((await h.store.repos.coach.getAction(e1?.actionId ?? ''))?.author).toBe('ben');
+    });
+
+    it('an offer Ben was shown stays an offer on a re-run whose facts would call it small (review v5offers 4)', async () => {
+      // Bench press is stalled in the reviewed week, so the coach's one set fewer on it is a stall response: an offer.
+      const h = await twoOnLegs((legs) => [change(legs, 'c1', ROW, 'Bench press', 'Bench ran long')], { stalled: [ROW.id] });
+      await h.service.runOnOpen();
+      expect(await statuses(h.store, h.reviewId)).toEqual([['c1', 'open']]);
+      expect((await h.service.progress())?.changes?.asks.map((r) => [r.id, r.offer, r.canApply])).toEqual([['c1', true, true]]);
+      // One more workout that week: new inputs, a new review whose facts no longer flag Bench press as stalled.
+      await h.store.repos.sessions.save(workout(1 * DAY_S, CURL, [{ load: 40, reps: 10, rpe: 8 }]), null);
+      const again = await h.service.runOnOpen();
+      if (again.kind === 'nothing' || again.kind === 'failed') throw new Error(again.kind);
+      expect(again.review.id).not.toBe(h.reviewId);
+      expect(again.review.facts.some((f) => f.kind === 'stalled_lift' && f.exerciseId === ROW.id)).toBe(false);
+      expect(again.review.proposals?.map((p) => [p.id, p.status, p.offer])).toEqual([['c1', 'open', true]]);
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
+      expect(await autoRecord(h.store, again.review.id, 'c1')).toBeNull();
+      expect((await h.service.progress())?.changes?.asks.map((r) => [r.id, r.offer, r.canApply])).toEqual([['c1', true, true]]);
+      // Only Ben's Apply writes it.
+      expect(await h.service.applyProposal({ reviewId: again.review.id, proposalId: 'c1', opId: 'apply-c1' })).toMatchObject({ ok: true, proposal: { status: 'applied' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 2]);
+    });
+
+    it('Apply → Undo → Redo on an offer, tapped the way the screens tap (`changeRowTaps` → `runChangeTap`): Redo writes once, Undo again (review v5offers B2)', async () => {
+      const h = await twoOnLegs((legs) => [change(legs, 'c1', CURL, 'Leg curl', 'Legs ran short', 4)]);
+      await h.service.runOnOpen();
+      const row = async () => {
+        const r = (await h.service.progress())?.changes?.asks.find((x) => x.id === 'c1');
+        if (r === undefined) throw new Error('no row');
+        return r;
+      };
+      /** The one button a row shows with this label, run as the screen runs it. */
+      const tap = async (label: string, opId: string) => {
+        const r = await row();
+        const t = changeRowTaps(r).find((x) => CHANGE_TAP_LABEL[x] === label);
+        if (t === undefined) throw new Error(`no ${label} on ${r.status}: ${changeRowTaps(r).join(',')}`);
+        return runChangeTap(h.service, t, { reviewId: h.reviewId, proposalId: r.id, opId });
+      };
+      expect(changeRowTaps(await row()).map((t) => CHANGE_TAP_LABEL[t])).toEqual(['Apply', 'Skip']);
+      expect(await tap('Apply', 'a1')).toMatchObject({ ok: true, proposal: { status: 'applied' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([4, 3]);
+      expect(await tap('Undo', 'u1')).toMatchObject({ ok: true, proposal: { status: 'undone' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
+      expect(changeRowTaps(await row()).map((t) => CHANGE_TAP_LABEL[t])).toEqual(['Redo']);
+      const v = (await h.store.repos.routines.get(h.legs.id))?.version ?? 0;
+      expect(await tap('Redo', 'r1')).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([4, 3]);
+      expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(v + 1);
+      // Recorded as Ben's; Undo again restores it.
+      const c1 = (await h.store.repos.reviews.get(h.reviewId))?.proposals?.find((p) => p.id === 'c1');
+      expect((await h.store.repos.coach.getAction(c1?.actionId ?? ''))?.author).toBe('ben');
+      expect(await tap('Undo', 'u2')).toMatchObject({ ok: true, proposal: { status: 'undone' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
+    });
+
+    it('a move of more than one set is an offer, even downwards', async () => {
+      const h = await twoOnLegs((legs) => [change(legs, 'c1', CURL, 'Leg curl', 'Legs ran long', 1)]);
+      await h.service.runOnOpen();
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
+      expect((await h.service.progress())?.changes?.asks.map((r) => [r.after, r.offer, r.canApply])).toEqual([['1 set', true, true]]);
+      expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'c1', opId: 'apply' })).toMatchObject({ ok: true });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([1, 3]);
+    });
+
+    it('on a lift the week flags as stalled, even one set fewer is a stall response: asked, never applied by the review (rule 8)', async () => {
+      const h = await twoOnLegs((legs) => [change(legs, 'c1', CURL, 'Leg curl', 'Leg curl has stalled'), change(legs, 'p1', ROW, 'Bench press', 'Bench ran long')], { stalled: [CURL.id] });
+      await h.service.runOnOpen();
+      // Bench press isn't stalled: its one set fewer is applied; Leg curl's waits for Ben.
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 2]);
+      expect(await statuses(h.store, h.reviewId)).toEqual([['c1', 'open'], ['p1', 'applied']]);
+      const view = (await h.service.progress())?.changes;
+      expect(view?.rows.map((r) => r.exercise)).toEqual(['Bench press']);
+      expect(view?.asks.map((r) => [r.exercise, r.offer, r.statusText, r.canApply])).toEqual([['Leg curl', true, null, true]]);
+      expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'c1', opId: 'apply' })).toMatchObject({ ok: true, proposal: { status: 'applied' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([2, 2]);
+    });
+  });
+
   it('an older week’s review isn’t `for next week` (review progress-v3-data S5)', async () => {
-    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', '4 sets the last 2 times')]);
+    const h = await twoOnLegs((legs) => [change(legs, 'p1', CURL, 'Leg curl', 'Legs ran long')]);
     await h.service.runOnOpen();
     expect((await h.service.progress())?.changes).toMatchObject({ current: true, right: 'for next week', isNew: true });
     h.advance(21 * DAY_S * 1000);

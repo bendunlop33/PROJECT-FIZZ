@@ -103,8 +103,12 @@ export interface ReviewExercise {
   equipmentId?: string | null;
   /** Completed sets with a result, in order. */
   sets: readonly ReviewSet[];
-  /** Working sets the workout was set up with (Ben's edits before Start included): the template comparison. */
-  plannedWorking: number;
+  /**
+   * Working sets the workout was set up with (Ben's edits before Start included): the template comparison. Null when
+   * Ben didn't set them himself (`SessionPlanDay.notEdited`: Today's card, a Time fit): never read as his edit (D1;
+   * review v5offers B1).
+   */
+  plannedWorking: number | null;
 }
 
 export interface ReviewSession {
@@ -142,6 +146,7 @@ export function reviewSessionOf(a: SessionAggregate, ownerTz: string, nowMs: num
     planned.set(s.sessionExerciseId, (planned.get(s.sessionExerciseId) ?? 0) + 1);
   }
   const removed = new Set(a.exercises.filter((e) => e.removed !== undefined).map((e) => e.id));
+  const notEdited = new Set(a.session.planDay?.notEdited ?? []);
   // The same count as the Summary's `156 of 170 planned reps` (`plannedRepsOf`).
   const reps = plannedRepsOf(a);
   return {
@@ -162,7 +167,7 @@ export function reviewSessionOf(a: SessionAggregate, ownerTz: string, nowMs: num
         name: e.exerciseName,
         equipmentKind: e.equipmentKind,
         equipmentId: e.equipmentId,
-        plannedWorking: planned.get(e.sessionExerciseId) ?? 0,
+        plannedWorking: notEdited.has(e.exerciseId) ? null : (planned.get(e.sessionExerciseId) ?? 0),
         sets: e.sets.map((s) => ({ setType: s.setType, load: s.load, reps: s.reps, rpe: s.rpe, targetRpe: targetRpe.get(s.setId) ?? null, counts: isSetCountable(s, 'record') })),
       })),
   };
@@ -642,7 +647,9 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
 /**
  * (§6.1 feedback loop) The same edit repeated: the newest `repeatedEdit` workouts from a template (the
  * newest this week) all set an exercise up with the same working sets, other than the template's. Never
- * for a pain-flagged exercise (rule 9), never outside 1–8 sets.
+ * for a pain-flagged exercise (rule 9), never outside 1–8 sets, and never from a workout whose sets for it
+ * Ben didn't set himself (`plannedWorking` null: Today's card, a Time fit; a short day isn't an edit; D1, review
+ * v5offers B1). It is only ever offered (Apply / Skip), never applied by the review.
  */
 function repeatedEdits(input: WeeklyReviewInput, thisWeek: readonly ReviewSession[], sessions: readonly ReviewSession[]): TemplateEdit[] {
   const out: TemplateEdit[] = [];

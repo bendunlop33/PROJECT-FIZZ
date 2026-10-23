@@ -172,11 +172,24 @@ describe('a re-run review: the coach’s unanswered asks (review build-b-21oct S
     expect(carriedProposals([ask({ status: 'applied', actionId: 'a' })], { facts: after, painFlagged: new Set() })[0]?.reason).toBe('You missed 1 session. Leg curl: keep going.');
   });
 
-  it('an open ask on a movement with a pain flag now is dropped (rule 9); code’s open and out-of-date ones are made again, not carried', () => {
+  it('an open ask on a movement with a pain flag now is dropped (rule 9); code’s out-of-date ones are made again, not carried', () => {
     expect(carriedProposals([ask()], { facts, painFlagged: new Set([CURL]) })).toEqual([]);
     const code = codeProposals([{ routineId: LEGS, routineName: 'Legs', exerciseId: CURL, exerciseName: 'Leg curl', fromSets: 3, toSets: 4, sessions: 2, expectedVersion: 4 }], 'old');
-    expect(carriedProposals([...code, ...code.map((p) => ({ ...p, id: `${p.id}:s`, status: 'stale' as const }))], { facts, painFlagged: new Set() })).toEqual([]);
+    // Out of date: made again from this week's facts, never carried (an open one carries while its edit holds, below).
+    expect(carriedProposals(code.map((p) => ({ ...p, id: `${p.id}:s`, status: 'stale' as const })), { facts, painFlagged: new Set() })).toEqual([]);
     expect(carriedProposals([ask({ status: 'skipped' })], { facts, painFlagged: new Set([CURL]) }).map((p) => p.status)).toEqual(['skipped']);
+  });
+
+  it('code’s open offer carries over (its ID kept) only while the week still holds the same edit, never on a pain-flagged movement (review v5offers N1)', () => {
+    const edit = { routineId: LEGS, routineName: 'Legs', exerciseId: CURL, exerciseName: 'Leg curl', fromSets: 3, toSets: 4, sessions: 2, expectedVersion: 4 };
+    const [old] = codeProposals([edit], 'old');
+    if (old === undefined) throw new Error('no code proposal');
+    const holding = { ...facts, edits: [edit] };
+    expect(carriedProposals([old], { facts: holding, painFlagged: new Set() }).map((p) => [p.id, p.status])).toEqual([[old.id, 'open']]);
+    // The edit went (or became another count): the old offer goes too.
+    expect(carriedProposals([old], { facts: { ...facts, edits: [] }, painFlagged: new Set() })).toEqual([]);
+    expect(carriedProposals([old], { facts: { ...facts, edits: [{ ...edit, toSets: 2 }] }, painFlagged: new Set() })).toEqual([]);
+    expect(carriedProposals([old], { facts: holding, painFlagged: new Set([CURL]) })).toEqual([]);
   });
 
   it('a fresh coach tweak replaces an unanswered ask for the same exercise; never one Ben answered, or code’s', () => {
@@ -185,6 +198,9 @@ describe('a re-run review: the coach’s unanswered asks (review build-b-21oct S
     expect(mergeCoachAsks([ask({ status: 'stale', held: 'pain' })], [fresh]).map((p) => p.id)).toEqual(['new:coach:0']);
     for (const status of ['applied', 'skipped', 'undone'] as const) expect(mergeCoachAsks([ask({ status })], [fresh]).map((p) => p.id)).toEqual(['old:coach:0']);
     expect(mergeCoachAsks([ask({ source: 'code' })], [fresh]).map((p) => p.id)).toEqual(['old:coach:0']);
+    // A tweak that replaces an offer stays an offer (review v5offers 4); one that replaces a plain ask doesn't gain the mark.
+    expect(mergeCoachAsks([ask({ offer: true })], [fresh])[0]).toMatchObject({ id: 'new:coach:0', offer: true });
+    expect(mergeCoachAsks([ask()], [fresh])[0]?.offer).toBeUndefined();
     // Another exercise is added; at most 4.
     const other = (n: number) => ask({ id: `o${String(n)}`, change: { ...ask().change, exerciseId: id(400 + n) } });
     expect(mergeCoachAsks([ask(), other(1), other(2)], [fresh, other(3), other(4)]).map((p) => p.id)).toEqual(['new:coach:0', 'o1', 'o2', 'o3']);

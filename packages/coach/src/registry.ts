@@ -256,7 +256,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ['summary'],
     plainLabel: "Small changes to next time's load, reps and sets, shown on the summary with Undo",
     capabilitySection: 'after_workout',
-    description: 'Next-session targets for exercises in this workout (rpe null keeps the target RPE). Small changes are saved with Undo; bigger ones, including a changed target RPE, become suggestions Ben applies.',
+    description: 'Next-session targets for exercises in this workout (rpe null keeps the target RPE). Small changes are saved with Undo; bigger ones, including a changed target RPE or a reset after a stall, become suggestions Ben applies.',
   },
   {
     name: 'propose_next_workout_change',

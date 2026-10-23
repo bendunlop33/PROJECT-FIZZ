@@ -1,6 +1,6 @@
 import type { CoachTarget, EquipmentInstance, GuardNote, GuardNoteKind, NextSessionTarget, NextSessionTargetRecord, PainFlag, PlannedSet, SessionAggregate, SessionExercise, SetType, TargetProvenance } from '@fizz/schemas';
 import { formatNumber } from '../display';
-import { stepLoad } from '../equipment';
+import { compareDifficulty, loadDirection, stepLoad } from '../equipment';
 import { activeFlag, AREA_WORD, isIncrease, sameTarget, snapLoad, validReps } from './adjust';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 import { deriveId } from '../stable';
@@ -15,7 +15,9 @@ import { nextTargetBlocks } from '../session/gym-switch';
  * - a pain-flagged movement never goes up (rule 9);
  * - `classifyNextSessionChange` decides what counts as a **small** change,
  *   which is saved by default, and what is **bigger**, which is a proposal
- *   Ben applies. An extra set he didn't ask for is dropped (D1).
+ *   Ben applies. An extra set he didn't ask for is dropped (D1). A stall
+ *   reset (playbook rule 8) is always bigger (Ben, 23 Oct, D2: stall resets
+ *   always need Apply).
  */
 
 export interface NextSessionBasis {
@@ -37,11 +39,39 @@ export interface NextSessionBasis {
   lastSets: number;
   /** The built-in rule's target for next time, for comparison; null when it plans nothing. */
   builtIn: { target: CoachTarget; sets: number } | null;
+  /**
+   * The lift is stalled (playbook rule 8: 2–3 sessions failing the same target): the built-in rule found
+   * repeated misses at the same load (`failuresBeforeReduce` sessions in a row): its `reduce_load` decision, or
+   * its hold at the lightest load this equipment has (`rule.stalled`; review v5offers 6). A coach change that
+   * eases the load or changes the rep target on it is then a stall reset.
+   */
+  stalled?: boolean | undefined;
 }
 
 export interface NextSessionChangeContext {
   /** Ben asked for more sets or volume in this conversation (D1). */
   benAskedForMoreSets: boolean;
+}
+
+/** Per exercise: whether its lift is stalled (`NextSessionBasis.stalled`). */
+export interface NextSessionChangeFacts extends NextSessionChangeContext {
+  stalled?: boolean | undefined;
+}
+
+/** CA8's `bigger` reason for a stall reset (app text, behind `Why?`). */
+export const STALL_RESET_REASON = 'A reset after a stall.';
+
+/**
+ * A stall reset (playbook rule 8: "a 5–10% reset or a rep-scheme change"): on a stalled lift, a coach target
+ * that eases the load (less weight; more assistance on an assisted machine) or changes the rep target.
+ */
+export function isStallReset(last: CoachTarget, after: CoachTarget, stalled: boolean): boolean {
+  if (!stalled) return false;
+  const a = last.load;
+  const b = after.load;
+  const eased = a !== null && b !== null && a.unit === b.unit && a.convention === b.convention && compareDifficulty(b.value, a.value, loadDirection(b.convention)) < 0;
+  const repsChanged = after.reps !== null && last.reps !== null && (after.reps.min !== last.reps.min || after.reps.max !== last.reps.max);
+  return eased || repsChanged;
 }
 
 export type NextChangeSize = 'small' | 'bigger';
@@ -63,7 +93,8 @@ export interface NextChangeClass {
  * stays (a coach `rpe` that differs from the last target's is bigger, as CA8
  * says "effort targets … don't change"). Anything else is
  * bigger. With no equipment, any load change is bigger: a step can't be
- * measured (rule 4).
+ * measured (rule 4). A stall reset (`isStallReset`) is always bigger, even
+ * one step (CA8; D2, 23 Oct).
  */
 export function classifyNextSessionChange(
   last: CoachTarget,
@@ -71,9 +102,10 @@ export function classifyNextSessionChange(
   after: CoachTarget,
   afterSets: number,
   equipment: EquipmentInstance | null,
-  ctx: NextSessionChangeContext,
+  ctx: NextSessionChangeFacts,
 ): NextChangeClass {
   const reasons: string[] = [];
+  if (isStallReset(last, after, ctx.stalled === true)) reasons.push(STALL_RESET_REASON);
   const lastLoad = last.load;
   const nextLoad = after.load;
   if (nextLoad !== null && !(lastLoad !== null && lastLoad.unit === nextLoad.unit && lastLoad.convention === nextLoad.convention && lastLoad.value === nextLoad.value)) {
@@ -197,7 +229,7 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
       drop('pain_blocked', area ? `Not increasing ${ex.exerciseName}: you flagged ${area} pain.` : `Not increasing ${ex.exerciseName}: you flagged pain on it.`);
       continue;
     }
-    const cls = classifyNextSessionChange(basis.last, basis.lastSets, after, wantSets, basis.equipment, input.ctx);
+    const cls = classifyNextSessionChange(basis.last, basis.lastSets, after, wantSets, basis.equipment, { ...input.ctx, stalled: basis.stalled === true });
     if (cls.droppedExtraSet) notes.push({ kind: 'too_many_sets', setIds: [], text: 'No extra set: only when you ask for more.' });
     const builtIn = basis.builtIn?.target ?? null;
     // Same as the built-in rule and the same set count: nothing for the coach to change.
@@ -227,7 +259,7 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
  */
 export function nextSessionBases(
   source: SessionAggregate,
-  builtIn: ReadonlyMap<string, readonly { setType: string; planned: { load: CoachTarget['load']; reps: CoachTarget['reps'] } }[]>,
+  builtIn: ReadonlyMap<string, readonly { setType: string; planned: { load: CoachTarget['load']; reps: CoachTarget['reps']; provenance?: { rule?: { decision: string; stalled?: true | undefined } | undefined } | null | undefined } }[]>,
   /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), the last fallback of `last.rpe`. */
   ruleTargetRpe: Readonly<Record<string, number>> = {},
 ): NextSessionBasis[] {
@@ -265,6 +297,8 @@ export function nextSessionBases(
       ...(benRpe !== undefined ? { benRpe } : {}),
       lastSets: block.workingSets,
       builtIn: firstPlan === undefined ? null : { target: { load: firstPlan.planned.load, reps: firstPlan.planned.reps }, sets: workingPlan.length },
+      // Rule 8's stall, as the built-in rule saw it: repeated misses at the same load, reduced or not (review v5offers 6).
+      ...(firstPlan?.planned.provenance?.rule?.decision === 'reduce_load' || firstPlan?.planned.provenance?.rule?.stalled === true ? { stalled: true } : {}),
     });
   }
   return out;

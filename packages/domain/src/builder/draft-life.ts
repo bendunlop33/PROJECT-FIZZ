@@ -16,6 +16,7 @@ import {
 import { coachDraftExpiry, currentDraftVersion, type DraftLifeChange } from '../session/coach-draft';
 import { toMs } from '../time';
 import { deriveId, stableStringify } from '../stable';
+import { todayContentHash } from './today-mark';
 
 /**
  * Builder drafts' life (workout-builder-v3 §4.4). Pure; persistence decides
@@ -215,10 +216,7 @@ export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoO
 // ---------------------------------------------------------------------------
 // Today's ownership (§2.0.2; review integrity B2)
 
-/** The content a Today mark vouches for: the version's plan, set-up and gym. Any builder write changes it. */
-export function todayContentHash(v: { plan: DraftPlan; setup: BuilderSetup | undefined | null; gymId: string | null }): string {
-  return deriveId(`today-content:${stableStringify({ plan: v.plan, setup: v.setup ?? null, gymId: v.gymId })}`);
-}
+export { todayContentHash };
 
 /** Today's controls as the mark stores them. */
 export function todayControlsHash(controls: unknown): string {

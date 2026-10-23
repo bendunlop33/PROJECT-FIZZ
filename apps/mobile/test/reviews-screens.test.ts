@@ -107,18 +107,22 @@ describe('Progress v3 screens', () => {
     expect(summary).toContain('accessibilityLabel={b.accessibilityLabel}');
   });
 
-  it('changes: small ones Undo / Redo, structural ones Apply / Keep as is; one op ID per tap; Got it is versioned', () => {
-    expect(section).toContain('PROGRESS_COPY.apply');
-    expect(section).toContain('PROGRESS_COPY.keep');
-    expect(charts).toContain('PROGRESS_COPY.undo');
-    expect(charts).toContain('PROGRESS_COPY.redo');
-    expect(section).toContain('opId: newUuid()');
+  it('changes: small ones Undo / Redo, offers Apply / Skip with their scope (D2); one op ID per tap; Got it is versioned', () => {
+    // Every button is its row's own action, labelled by it (`changeRowTaps`, `runChangeTap`; review v5offers B2):
+    // no screen wires one action to another's button (Redo on an undone offer once called Apply).
+    expect(section).toContain('const taps = changeRowTaps(row);');
+    expect(section).toContain('label={CHANGE_TAP_LABEL[t]}');
+    expect(charts).toContain('changeRowTaps(row).map((t) => (');
+    expect(charts).toContain('label={CHANGE_TAP_LABEL[t]}');
+    expect(section).toContain('run(() => runChangeTap(services.reviews, t, { reviewId: reviewId ?? \'\', proposalId: p.id, opId: newUuid() }));');
+    for (const src of [section, charts, detail]) expect(code(src)).not.toMatch(/onRedo|onApply|onUndo|onSkip|actions\.(apply|skip|undo|redo)\(/);
+    expect(section).toContain('[row.when, row.why, row.statusText]');
     expect(section).toContain('expectedVersion: view.version');
-    expect(detail).toContain('<ChangeRow');
-    // A change not made is never drawn as made: secondary colour, Apply while open (review progress-v3-design B1).
+    // Past weeks: made rows as changes, offers asked as on Progress (Apply / Skip; review v5offers 7).
+    expect(detail).toContain('d.changes.rows.map((r, i) => (\n                <ChangeRow');
+    expect(detail).toContain('d.changes.asks.map((r) => (\n                <AskRow');
+    // A change not made is never drawn as made: secondary colour (review progress-v3-design B1).
     expect(charts).toContain("color={made ? 'text.primary' : 'text.secondary'}");
-    expect(charts).toContain('row.canApply && onApply !== undefined');
-    expect(detail).toContain('actions.apply(r)');
     // Got it carries what Ben saw, so a status-only update since doesn't refuse it (review progress-v3-design S5).
     expect(section).toContain('contentKey: view.contentKey');
     expect(section).toContain('right={view.right}');

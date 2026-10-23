@@ -4,8 +4,14 @@ import type { BuilderMuscleInfo, LiftTarget, Load, ReviewProposal, TrainingRevie
 import {
   addDays,
   changeRowView,
+  autoApplicable,
+  CHANGE_TAP_LABEL,
+  changeRowTaps,
   coachChangesView,
   isStructuralProposal,
+  stalledOfReview,
+  weeklyOfferReasons,
+  withOfferMark,
   liftsView,
   loadAtReps,
   musclePlanOfReview,
@@ -530,7 +536,8 @@ describe('Muscles: sets per week per muscle vs plan, 8 complete weeks', () => {
 });
 
 describe('Coach’s changes: small changes already made (Undo), structural ones asked, NEW until Got it', () => {
-  const proposal = (more: Partial<ReviewProposal> = {}): ReviewProposal => ({ id: 'p1', source: 'coach', change: { kind: 'template_sets', routineId: BACK, routineName: 'Pull', expectedVersion: 2, exerciseId: ROW, exerciseName: 'Row', fromSets: 3, toSets: 4 }, reason: 'Stuck at 92.5 × 8 for 3 weeks', status: 'applied', actionId: id(900), ...more });
+  // The default change is CA8-small (one set fewer, with its reason), so the review applies it itself (D2).
+  const proposal = (more: Partial<ReviewProposal> = {}): ReviewProposal => ({ id: 'p1', source: 'coach', change: { kind: 'template_sets', routineId: BACK, routineName: 'Pull', expectedVersion: 2, exerciseId: ROW, exerciseName: 'Row', fromSets: 4, toSets: 3 }, reason: 'Back over plan 2 weeks running', status: 'applied', actionId: id(900), ...more });
   const review = (more: Partial<TrainingReview> = {}): TrainingReview => ({
     id: id(99),
     ownerId: id(80),
@@ -545,15 +552,15 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
     supersededById: null,
     opIds: ['o'],
     createdAt: { utc: '2026-10-19T09:00:00.000Z', tz: TZ },
-    proposals: [proposal(), proposal({ id: 'p2', change: { kind: 'template_sets', routineId: SHOULDERS, routineName: 'Upper', expectedVersion: 1, exerciseId: RAISE, exerciseName: 'Lateral raise', fromSets: 3, toSets: 4 }, reason: 'Shoulders under plan 2 weeks running', status: 'undone' })],
+    proposals: [proposal(), proposal({ id: 'p2', change: { kind: 'template_sets', routineId: SHOULDERS, routineName: 'Upper', expectedVersion: 1, exerciseId: RAISE, exerciseName: 'Lateral raise', fromSets: 4, toSets: 3 }, reason: 'Shoulders over plan 2 weeks running', status: 'undone' })],
     ...more,
   });
 
   it('a set change on the same exercise is small (applied with Undo); nothing in the plan’s sets is structural', () => {
     expect(isStructuralProposal(proposal())).toBe(false);
     const row = changeRowView(proposal());
-    expect(row).toMatchObject({ exercise: 'Row', before: '3 sets', after: '4 sets', when: 'next Pull', why: 'Stuck at 92.5 × 8 for 3 weeks', canUndo: true, canRedo: false, statusText: null });
-    expect(row.accessibilityLabel).toBe('Row: 3 sets to 4 sets, next Pull. Stuck at 92.5 × 8 for 3 weeks');
+    expect(row).toMatchObject({ exercise: 'Row', before: '4 sets', after: '3 sets', when: 'next Pull', why: 'Back over plan 2 weeks running', offer: false, canUndo: true, canRedo: false, statusText: null });
+    expect(row.accessibilityLabel).toBe('Row: 4 sets to 3 sets, next Pull. Back over plan 2 weeks running');
     expect(changeRowView(proposal({ status: 'undone' }))).toMatchObject({ canUndo: false, canRedo: true, statusText: 'Undone' });
     expect(changeRowView(proposal({ status: 'stale' }))).toMatchObject({ canUndo: false, canRedo: false, statusText: 'Out of date' });
     // Held by a pain flag: named while the flag is active, never `Out of date`, no Apply (rule 9; review build-b-21oct S3).
@@ -587,8 +594,10 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
     expect(open.accessibilityLabel).toContain('Not applied');
     const v = coachChangesView(review({ proposals: [proposal(), proposal({ id: 'p3', status: 'open', actionId: null, reason: null })] }), TODAY);
     expect(v?.rows.map((r) => r.id)).toEqual(['p1']);
-    expect(v?.asks.map((r) => [r.id, r.statusText])).toEqual([['p3', 'Not applied']]);
-    expect(v?.collapsed).toBe('1 change for next week');
+    // One whose reason the number check hid is an offer (never applied without its why): asked, not `Not applied`.
+    expect(v?.asks.map((r) => [r.id, r.statusText, r.offer])).toEqual([['p3', null, true]]);
+    // Still waiting for Ben: counted in the collapsed line, never hidden behind it (review v5offers 3).
+    expect(v?.collapsed).toBe('1 change for next week · 1 to review');
   });
 
   it('collapses once Ben acted on every change; an older week isn’t `for next week`; the content key ignores statuses (review progress-v3 S5, S6)', () => {
@@ -596,13 +605,105 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
     expect(coachChangesView(review(), TODAY, { actedOn: new Set(['p1', 'p2']) })?.isNew).toBe(false);
     expect(coachChangesView(review(), TODAY, { current: false })).toMatchObject({ isNew: false, current: false, right: 'w/c 12 Oct', collapsed: '1 change' });
     const a = coachChangesView(review(), TODAY)?.contentKey;
-    expect(coachChangesView(review({ proposals: [proposal({ status: 'undone' }), proposal({ id: 'p2', change: { kind: 'template_sets', routineId: SHOULDERS, routineName: 'Upper', expectedVersion: 1, exerciseId: RAISE, exerciseName: 'Lateral raise', fromSets: 3, toSets: 4 }, reason: 'Shoulders under plan 2 weeks running', status: 'applied' })] }), TODAY)?.contentKey).toBe(a);
+    expect(coachChangesView(review({ proposals: [proposal({ status: 'undone' }), proposal({ id: 'p2', change: { kind: 'template_sets', routineId: SHOULDERS, routineName: 'Upper', expectedVersion: 1, exerciseId: RAISE, exerciseName: 'Lateral raise', fromSets: 4, toSets: 3 }, reason: 'Shoulders over plan 2 weeks running', status: 'applied' })] }), TODAY)?.contentKey).toBe(a);
     expect(coachChangesView(review({ coach: { status: 'reviewed', verdict: 'Another week.', lines: [], actionIds: [], numbersChecked: true } }), TODAY)?.contentKey).not.toBe(a);
   });
 
   it('offline: the built-in changes with `Not reviewed · Offline`, no coach sentence (rule 1)', () => {
-    const v = coachChangesView(review({ coach: { status: 'offline' }, proposals: [proposal({ source: 'code', reason: '4 sets the last 2 times' })] }), TODAY);
+    const v = coachChangesView(review({ coach: { status: 'offline' }, proposals: [proposal({ source: 'code', reason: '3 sets the last 2 times' })] }), TODAY);
     expect(v).toMatchObject({ note: null, tag: 'Not reviewed · Offline', reviewed: false, collapsed: '1 change for next week' });
     expect(coachChangesView(review({ proposals: [] }), TODAY)?.collapsed).toBe('No changes for next week');
+  });
+
+  describe('D2 (Ben, 23 Oct): only a CA8-small change is applied by the review; everything else is an offer', () => {
+    const none = { stalled: new Set<string>() };
+    const sets = (fromSets: number, toSets: number, more: Partial<ReviewProposal> = {}): ReviewProposal =>
+      proposal({ status: 'open', actionId: null, change: { kind: 'template_sets', routineId: BACK, routineName: 'Pull', expectedVersion: 2, exerciseId: ROW, exerciseName: 'Row', fromSets, toSets }, ...more });
+
+    it('one set fewer with its reason is small; an added set, a move of two and a hidden reason are offers', () => {
+      expect(weeklyOfferReasons(sets(4, 3), none)).toEqual([]);
+      expect(autoApplicable(sets(4, 3), none)).toBe(true);
+      // An unasked +1 always needs Apply (D2), from the coach or from code's repeated-edit rule.
+      expect(weeklyOfferReasons(sets(3, 4), none)).toEqual(['added_sets']);
+      expect(autoApplicable(sets(3, 4, { source: 'code', reason: '4 sets the last 2 times' }), none)).toBe(false);
+      expect(weeklyOfferReasons(sets(3, 5), none)).toEqual(['added_sets', 'sets_step']);
+      expect(weeklyOfferReasons(sets(5, 3), none)).toEqual(['sets_step']);
+      expect(weeklyOfferReasons(sets(4, 3, { reason: null }), none)).toEqual(['no_reason']);
+      expect(weeklyOfferReasons(sets(0, 1), none)).toEqual(['added_sets']);
+    });
+
+    it('code’s own change (Ben’s repeated edit) is always an offer, even one set fewer (D1; review v5offers B1)', () => {
+      const code = sets(4, 3, { source: 'code', reason: '3 sets the last 2 times' });
+      expect(weeklyOfferReasons(code, none)).toEqual(['from_edits']);
+      expect(autoApplicable(code, none)).toBe(false);
+      expect(changeRowView(code)).toMatchObject({ offer: true, statusText: null, canApply: true });
+    });
+
+    it('an offer stays an offer once stored: the mark is kept whatever later facts say (review v5offers 4)', () => {
+      const stalled = { stalled: new Set([ROW]) };
+      // Small under its own facts: not marked. A stall response: marked, and the mark outlives the stall.
+      expect(withOfferMark(sets(4, 3), none)).not.toHaveProperty('offer');
+      const marked = withOfferMark(sets(4, 3), stalled);
+      expect(marked.offer).toBe(true);
+      expect(weeklyOfferReasons(marked, none)).toEqual(['offered']);
+      expect(autoApplicable(marked, none)).toBe(false);
+      expect(withOfferMark(marked, none)).toBe(marked);
+      expect(changeRowView(marked)).toMatchObject({ offer: true, statusText: null, canApply: true });
+      expect(coachChangesView(review({ proposals: [marked] }), TODAY)?.asks.map((r) => r.id)).toEqual(['p1']);
+    });
+
+    it('any change on a lift the week flags as stalled is a stall response: always an offer (rule 8, D2)', () => {
+      const stalled = stalledOfReview(review({ facts: [{ kind: 'stalled_lift', exerciseId: ROW, sessions: 3 }] }));
+      expect([...stalled]).toEqual([ROW]);
+      expect(weeklyOfferReasons(sets(4, 3), { stalled })).toEqual(['stall']);
+      expect(autoApplicable(sets(4, 3), { stalled })).toBe(false);
+      // Another lift in the same week isn't touched by Row's stall.
+      expect(autoApplicable(proposal({ status: 'open', actionId: null, id: 'p2', change: { kind: 'template_sets', routineId: SHOULDERS, routineName: 'Upper', expectedVersion: 1, exerciseId: RAISE, exerciseName: 'Lateral raise', fromSets: 4, toSets: 3 } }), { stalled })).toBe(true);
+    });
+
+    it('an open offer is asked (Apply / Skip) with no `Not applied`; once applied it keeps Undo with the asks; never a made row before Ben', () => {
+      const ask = changeRowView(sets(3, 4, { reason: 'Back under plan 2 weeks running' }));
+      expect(ask).toMatchObject({ offer: true, canApply: true, canUndo: false, statusText: null, before: '3 sets', after: '4 sets', when: 'next Pull' });
+      expect(ask.accessibilityLabel).toBe('Row: 3 sets to 4 sets, next Pull. Back under plan 2 weeks running');
+      const r = review({ proposals: [proposal(), sets(3, 4, { id: 'p3', reason: 'Back under plan 2 weeks running' })] });
+      const v = coachChangesView(r, TODAY);
+      expect(v?.rows.map((x) => x.id)).toEqual(['p1']);
+      expect(v?.asks.map((x) => [x.id, x.offer, x.canApply])).toEqual([['p3', true, true]]);
+      expect(v?.collapsed).toBe('1 change for next week · 1 to review');
+      // Ben applied it: still with the asks, with Undo; counted as made.
+      const applied = coachChangesView(review({ proposals: [proposal(), sets(3, 4, { id: 'p3', status: 'applied', actionId: id(901) })] }), TODAY);
+      expect(applied?.asks.map((x) => [x.id, x.canUndo, x.canApply])).toEqual([['p3', true, false]]);
+      expect(applied?.collapsed).toBe('2 changes for next week');
+      // Skipped: `Skipped`, nothing to apply.
+      expect(coachChangesView(review({ proposals: [sets(3, 4, { id: 'p3', status: 'skipped' })] }), TODAY)?.asks[0]).toMatchObject({ statusText: 'Skipped', canApply: false });
+    });
+
+    it('the collapsed line counts what still waits for Ben: `1 to review`, never `No changes` over an open offer (review v5offers 3)', () => {
+      expect(coachChangesView(review({ proposals: [sets(3, 4)] }), TODAY)?.collapsed).toBe('1 to review');
+      expect(coachChangesView(review({ proposals: [sets(3, 4), sets(3, 4, { id: 'p2', change: { kind: 'template_sets', routineId: SHOULDERS, routineName: 'Upper', expectedVersion: 1, exerciseId: RAISE, exerciseName: 'Lateral raise', fromSets: 3, toSets: 4 } })] }), TODAY)?.collapsed).toBe('2 to review');
+      expect(coachChangesView(review({ proposals: [sets(3, 4)] }), TODAY, { current: false })?.collapsed).toBe('1 to review');
+      // Answered, or held by pain (no Apply): nothing to review.
+      expect(coachChangesView(review({ proposals: [sets(3, 4, { status: 'skipped' })] }), TODAY)?.collapsed).toBe('No changes for next week');
+      expect(coachChangesView(review({ proposals: [sets(3, 4)] }), TODAY, { painFlagged: new Set([ROW]) })?.collapsed).toBe('No changes for next week');
+    });
+
+    it('each row’s buttons are its own actions: open Apply / Skip; applied Undo; an undone offer Redo, never Apply (review v5offers B2)', () => {
+      const offer = (more: Partial<ReviewProposal>) => changeRowView(sets(3, 4, { reason: 'Back under plan', ...more }));
+      expect(changeRowTaps(offer({}))).toEqual(['apply', 'skip']);
+      expect(changeRowTaps(offer({ status: 'applied', actionId: id(901) }))).toEqual(['undo']);
+      expect(changeRowTaps(offer({ status: 'undone', actionId: id(901) }))).toEqual(['redo']);
+      expect(changeRowTaps(offer({ status: 'skipped' }))).toEqual([]);
+      expect(changeRowTaps(offer({ status: 'stale' }))).toEqual([]);
+      expect(changeRowTaps(changeRowView(sets(3, 4), { painFlagged: new Set([ROW]) }))).toEqual([]);
+      expect(changeRowTaps(changeRowView(sets(3, 4, { status: 'undone', actionId: id(901) }), { painFlagged: new Set([ROW]) }))).toEqual([]);
+      expect(changeRowTaps(offer({ status: 'undone', actionId: id(901) })).map((t) => CHANGE_TAP_LABEL[t])).toEqual(['Redo']);
+    });
+
+    it('a stalled lift’s one-set-fewer change is asked on the page too (the review’s own facts say stalled)', () => {
+      const r = review({ facts: [{ kind: 'stalled_lift', exerciseId: ROW, sessions: 3 }], proposals: [sets(4, 3)] });
+      const v = coachChangesView(r, TODAY);
+      expect(v?.rows).toEqual([]);
+      expect(v?.asks[0]).toMatchObject({ id: 'p1', offer: true, statusText: null, canApply: true });
+    });
   });
 });

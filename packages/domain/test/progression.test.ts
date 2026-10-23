@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EquipmentInstance, Load, ProgressionRule, SetSide, SetType } from '@fizz/schemas';
-import { calculateNextTargets, formatLoad, type HistorySession, type NextTargetsInput } from '../src/index';
+import { calculateNextTargets, formatLoad, plannedSetsFromTargets, type HistorySession, type NextTargetsInput } from '../src/index';
 import { assisted, barbell, doubleProgression, dumbbells, id, kg, lb, stack, topSetBackoff } from './fixtures';
 
 let sessionN = 700;
@@ -101,6 +101,22 @@ describe('double progression', () => {
     expect(t.decision).toBe('reduce_load');
     expect(t.sets[0]?.load).toEqual(kg(90));
     expect(t.basedOnSessionIds).toHaveLength(2);
+  });
+
+  it('stalled is rule 8’s miss streak: set on a reduction and on a hold at the lightest load, never on one bad day (review v5offers 6)', () => {
+    expect(calculateNextTargets(input([session(1, bar.id, working(kg(100), [5, 5, 4])), session(4, bar.id, working(kg(100), [5, 4, 4]))], bar)).stalled).toBe(true);
+    expect(calculateNextTargets(input([session(1, bar.id, working(kg(100), [8, 7, 7])), session(4, bar.id, working(kg(100), [6, 5, 4]))], bar)).stalled).toBeUndefined();
+    const db = dumbbells();
+    const light = (n: number) => session(n, db.id, working(kg(5, 'per_hand'), [5, 4, 4]));
+    const t = calculateNextTargets(input([light(1), light(4)], db));
+    expect(t.decision).toBe('hold_after_miss');
+    expect(t.sets[0]?.load).toEqual(kg(5, 'per_hand'));
+    expect(t.explanation.facts.join(' ')).toMatch(/No easier load is available/);
+    expect(t.stalled).toBe(true);
+    expect(calculateNextTargets(input([light(4)], db)).stalled).toBeUndefined();
+    // Stored with the planned sets' provenance, so the Summary's next-time basis can read it.
+    const planned = plannedSetsFromTargets(t, { history: [light(1), light(4)], equipment: db, at: { utc: '2026-10-20T08:00:00.000Z', tz: 'Europe/London' } });
+    expect(planned?.[0]?.planned.provenance?.rule).toMatchObject({ decision: 'hold_after_miss', stalled: true });
   });
 
   it('misses at different loads are not a trend', () => {

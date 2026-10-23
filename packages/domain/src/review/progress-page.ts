@@ -62,10 +62,12 @@ export const PROGRESS_COPY = {
   undone: 'Undone',
   skipped: 'Skipped',
   apply: 'Apply',
-  keep: 'Keep as is',
+  skip: 'Skip',
   outOfDate: 'Out of date',
   heldPain: 'Held · pain',
   notApplied: 'Not applied',
+  /** Coach's changes collapsed with changes still waiting for Apply / Skip (review v5offers 3). */
+  toReview: (n: number) => `${String(n)} to review`,
   missed: 'missed',
   toDo: 'to do',
   paused: 'paused',
@@ -948,8 +950,9 @@ export function musclesView(input: WeeklyReviewInput, opts: { today: string; /**
 
 /**
  * Whether a weekly proposal is structural (swaps, adds, removes, day moves, order: always asked, Apply /
- * Keep as is; rule 3) or a small change on the same exercises (load, reps, sets: applied for the next
- * sessions, shown with its reason and Undo).
+ * Skip; rule 3) or a change on the same exercises (sets). A change on the same exercises is applied for the
+ * next sessions by the review itself only when it is CA8-small (`autoApplicable`), shown with its reason and
+ * Undo; any other one is asked too (Ben, 23 Oct, D2).
  */
 const SMALL_CHANGES: ReadonlySet<ReviewProposal['change']['kind']> = new Set(['template_sets']);
 
@@ -958,12 +961,68 @@ export function isStructuralProposal(p: Pick<ReviewProposal, 'change'>): boolean
 }
 
 /**
- * Whether the review applies this change itself (rule 3, Progress v3): a small change on the same exercises
- * with its reason. One whose reason the number check hid is asked instead (Apply / Keep as is): an automatic
- * change is never made without its why (review progress-v3-design B3).
+ * Why a weekly change waits for Ben's Apply (Ben, 23 Oct, D2: the coach never applies unasked changes;
+ * coach-adjustments CA8 decides what is small). Empty: small, so the review applies it itself.
+ * - `structural`: swaps, adds, removes, day moves, order (rule 3).
+ * - `no_reason`: the number check hid its reason; an automatic change is never made without its why
+ *   (review progress-v3-design B3).
+ * - `added_sets`: more working sets. Nobody asked in a weekly review, so an added set is always Ben's to
+ *   apply (D2; CA8: +1 only when Ben asked).
+ * - `sets_step`: the count moves by more than one (CA8).
+ * - `stall`: the reviewed week flags this lift as stalled (`stalled_lift`), so any change to it is a stall
+ *   response (playbook rule 8: resets are proposals; D2: stall resets always need Apply).
+ * - `from_edits`: code's own (§6.1, the same edit repeated). It is Ben's own structure, kept for next time only
+ *   by his Apply (D1; rule 3; workout-builder-v3 §6.1 "suggests"), never by the review (review v5offers B1).
+ * - `offered`: stored as an offer (`ReviewProposal.offer`): once it waited for Ben's Apply it stays an offer,
+ *   whatever a later run's facts say (review v5offers 4).
  */
-export function autoApplicable(p: Pick<ReviewProposal, 'change' | 'reason'>): boolean {
-  return !isStructuralProposal(p) && p.reason !== null;
+export type WeeklyOfferReason = 'structural' | 'no_reason' | 'added_sets' | 'sets_step' | 'stall' | 'from_edits' | 'offered';
+
+export interface WeeklyChangeContext {
+  /** Exercises the reviewed week flags as stalled (`stalledOfReview`). */
+  stalled: ReadonlySet<string>;
+}
+
+type ClassifiedProposal = Pick<ReviewProposal, 'change' | 'reason' | 'source'> & Partial<Pick<ReviewProposal, 'offer'>>;
+
+export function weeklyOfferReasons(p: ClassifiedProposal, ctx: WeeklyChangeContext): WeeklyOfferReason[] {
+  const out: WeeklyOfferReason[] = [];
+  if (isStructuralProposal(p)) out.push('structural');
+  if (p.reason === null) out.push('no_reason');
+  const delta = p.change.toSets - p.change.fromSets;
+  if (delta > 0) out.push('added_sets');
+  if (Math.abs(delta) > 1) out.push('sets_step');
+  if (ctx.stalled.has(p.change.exerciseId)) out.push('stall');
+  if (p.source === 'code') out.push('from_edits');
+  if (p.offer === true) out.push('offered');
+  return out;
+}
+
+/**
+ * A proposal as a review stores it (D2; review v5offers 4): marked `offer` when it waits for Ben's Apply under
+ * `ctx` (the facts of the review it belongs to), so a later run never re-classifies it as small and applies it.
+ * The mark is never removed.
+ */
+export function withOfferMark<P extends ClassifiedProposal>(p: P, ctx: WeeklyChangeContext): P {
+  if (p.offer === true || weeklyOfferReasons(p, ctx).length === 0) return p;
+  return { ...p, offer: true };
+}
+
+/** The lifts a stored weekly review flags as stalled (its `stalled_lift` facts: code's, from stored records). */
+export function stalledOfReview(r: Pick<TrainingReview, 'facts'>): Set<string> {
+  const out = new Set<string>();
+  for (const f of r.facts) if (f.kind === 'stalled_lift') out.add(f.exerciseId);
+  return out;
+}
+
+/**
+ * Whether the review applies this change itself (rule 3, Progress v3, narrowed by D2 on 23 Oct): only the
+ * coach's CA8-small change with its reason, which for a plan day's working sets means one set fewer on a lift
+ * that isn't stalled, never stored as an offer. Everything else (code's own included) is an offer (Apply /
+ * Skip), never written before Ben's tap.
+ */
+export function autoApplicable(p: ClassifiedProposal, ctx: WeeklyChangeContext): boolean {
+  return weeklyOfferReasons(p, ctx).length === 0;
 }
 
 export interface ChangeRowView {
@@ -979,12 +1038,14 @@ export interface ChangeRowView {
   why: string | null;
   status: ReviewProposal['status'];
   structural: boolean;
-  /** Undo while applied by the review (and Ben can Redo an undone one). */
+  /** Waits for Ben's Apply (D2): structural, or not CA8-small (`weeklyOfferReasons`). Never applied by the review itself. */
+  offer: boolean;
+  /** Undo while applied (and Ben can Redo an undone one). */
   canUndo: boolean;
   canRedo: boolean;
-  /** Not made yet: Apply / Keep as is (a structural change, a small one with no reason, or one never applied). */
+  /** Not made yet: Apply / Skip (an offer, or a small change not applied yet). */
   canApply: boolean;
-  /** `Not applied`, `Undone`, `Out of date`, `Skipped`; null while applied. */
+  /** `Not applied` (a small change the review hasn't applied yet), `Undone`, `Out of date`, `Skipped`; null while applied or offered. */
   statusText: string | null;
   accessibilityLabel: string;
 }
@@ -1007,17 +1068,18 @@ export interface CoachChangesView {
   reviewed: boolean;
   /** Small changes already made for the next sessions (and Ben's undone ones). */
   rows: ChangeRowView[];
-  /** Changes asked (Apply / Keep as is): structural ones, and any small one not made. */
+  /** Changes asked (Apply / Skip): every offer (structural, not CA8-small, a stall response), and any small one not made. */
   asks: ChangeRowView[];
-  /** `3 changes for next week`. */
+  /** `3 changes for next week`, `1 change for next week · 1 to review`, `1 to review`, `No changes for next week`. */
   collapsed: string;
   /** What Ben saw (the coach's words and the changes, not their statuses): `Got it` still marks it after a status-only update. */
   contentKey: string;
 }
 
-export function changeRowView(p: ReviewProposal, opts: { painFlagged?: ReadonlySet<string> } = {}): ChangeRowView {
+export function changeRowView(p: ReviewProposal, opts: { painFlagged?: ReadonlySet<string>; stalled?: ReadonlySet<string> } = {}): ChangeRowView {
   const c = p.change;
   const structural = isStructuralProposal(p);
+  const offer = !autoApplicable(p, { stalled: opts.stalled ?? new Set() });
   const before = plural(c.fromSets, 'set', 'sets');
   const after = plural(c.toSets, 'set', 'sets');
   const when = `next ${c.routineName}`;
@@ -1028,7 +1090,7 @@ export function changeRowView(p: ReviewProposal, opts: { painFlagged?: ReadonlyS
   const flagged = opts.painFlagged?.has(c.exerciseId) === true;
   const pain = flagged && (p.status === 'open' || (p.status === 'stale' && p.held === 'pain'));
   // An open small change isn't in the plan yet (the review is still applying it, its apply failed, or it is an
-  // older week's): never drawn as made (review progress-v3-design B1).
+  // older week's): never drawn as made (review progress-v3-design B1). An open offer is simply asked (D2).
   const statusText = pain
     ? PROGRESS_COPY.heldPain
     : p.status === 'undone'
@@ -1037,7 +1099,7 @@ export function changeRowView(p: ReviewProposal, opts: { painFlagged?: ReadonlyS
         ? PROGRESS_COPY.outOfDate
         : p.status === 'skipped'
           ? PROGRESS_COPY.skipped
-          : p.status === 'open' && !structural
+          : p.status === 'open' && !offer
             ? PROGRESS_COPY.notApplied
             : null;
   const said = statusText === PROGRESS_COPY.heldPain ? 'Held for a pain flag' : statusText;
@@ -1051,6 +1113,7 @@ export function changeRowView(p: ReviewProposal, opts: { painFlagged?: ReadonlyS
     why: p.reason,
     status: p.status,
     structural,
+    offer,
     canUndo: p.status === 'applied' && p.actionId !== null,
     canRedo: p.status === 'undone' && !structural && opts.painFlagged?.has(c.exerciseId) !== true,
     canApply: p.status === 'open' && !pain,
@@ -1058,6 +1121,24 @@ export function changeRowView(p: ReviewProposal, opts: { painFlagged?: ReadonlyS
     accessibilityLabel: words,
   };
 }
+
+/**
+ * (Review v5offers B2) What a change row's buttons do, in order: one mapping for every screen, so a button can only
+ * ever call the action its label names. Open and answerable: Apply, Skip. Applied: Undo. Undone: Redo (a Redo, never
+ * an Apply: the row isn't open, and Apply refuses anything that isn't). Nothing else has a button.
+ */
+export type ChangeTap = 'apply' | 'skip' | 'undo' | 'redo';
+
+export function changeRowTaps(row: Pick<ChangeRowView, 'status' | 'canApply' | 'canUndo' | 'canRedo'>): ChangeTap[] {
+  if (row.status === 'open') return row.canApply ? ['apply', 'skip'] : [];
+  const out: ChangeTap[] = [];
+  if (row.canUndo) out.push('undo');
+  if (row.canRedo) out.push('redo');
+  return out;
+}
+
+/** A change row's button label (`Apply`, `Skip`, `Undo`, `Redo`). */
+export const CHANGE_TAP_LABEL: Readonly<Record<ChangeTap, string>> = { apply: PROGRESS_COPY.apply, skip: PROGRESS_COPY.skip, undo: PROGRESS_COPY.undo, redo: PROGRESS_COPY.redo };
 
 /** A stable key of what a review shows Ben (coach words, changes), statuses left out. */
 export function changesContentKey(r: Pick<TrainingReview, 'coach' | 'proposals'>): string {
@@ -1068,7 +1149,7 @@ export function changesContentKey(r: Pick<TrainingReview, 'coach' | 'proposals'>
 export interface CoachChangesOptions {
   /** Whether the review is for the latest reviewable week (default true). An older one isn't `for next week`. */
   current?: boolean;
-  /** Proposals Ben acted on himself (Undo, Redo, Apply, Keep as is). When every change is his, the section collapses. */
+  /** Proposals Ben acted on himself (Undo, Redo, Apply, Skip). When every change is his, the section collapses. */
   actedOn?: ReadonlySet<string>;
   /** Exercises with an active pain flag: their changes read `Held · pain` (rule 9). */
   painFlagged?: ReadonlySet<string>;
@@ -1082,14 +1163,20 @@ export function coachChangesView(r: TrainingReview, today: string, opts: CoachCh
   const v = verdictOf(r);
   const current = opts.current ?? true;
   const proposals = r.proposals ?? [];
-  const all = proposals.map((p) => changeRowView(p, opts.painFlagged === undefined ? {} : { painFlagged: opts.painFlagged }));
-  const rows = all.filter((x) => !x.structural && x.status !== 'open');
-  const asks = all.filter((x) => x.structural || x.status === 'open');
+  const stalled = stalledOfReview(r);
+  const all = proposals.map((p) => changeRowView(p, opts.painFlagged === undefined ? { stalled } : { painFlagged: opts.painFlagged, stalled }));
+  // Offers stay with the asks once answered (Apply → Undo there; Skip → `Skipped`), as structural ones did.
+  const rows = all.filter((x) => !x.offer && x.status !== 'open');
+  const asks = all.filter((x) => x.offer || x.status === 'open');
   const made = all.filter((x) => x.status === 'applied').length;
+  // Still waiting for Ben (Apply / Skip): never hidden behind `No changes` once the section collapses (review v5offers 3).
+  const waiting = all.filter((x) => x.status === 'open' && x.canApply).length;
   const week = plain(`w/c ${shortDate(r.subject.weekMonday, today)}`);
   const acted = opts.actedOn ?? new Set<string>();
   const allActed = proposals.length > 0 && proposals.every((p) => acted.has(p.id));
-  const changes = made === 0 ? (current ? 'No changes for next week' : 'No changes') : current ? `${plural(made, 'change', 'changes')} for next week` : plural(made, 'change', 'changes');
+  const madeText = made === 0 ? null : current ? `${plural(made, 'change', 'changes')} for next week` : plural(made, 'change', 'changes');
+  const parts = [madeText, waiting === 0 ? null : PROGRESS_COPY.toReview(waiting)].filter((x): x is string => x !== null);
+  const changes = parts.length > 0 ? parts.join(' · ') : current ? 'No changes for next week' : 'No changes';
   return {
     reviewId: r.id,
     version: r.version,

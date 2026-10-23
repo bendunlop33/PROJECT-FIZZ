@@ -202,7 +202,7 @@ export function ruleTargetProvenance(input: RuleProvenanceInput, target: TargetS
     routineName: null,
     requestedLoad: null,
     basis,
-    rule: { name: result.rule.name, decision: result.decision, summary: result.explanation.summary, facts: [...result.explanation.facts] },
+    rule: { name: result.rule.name, decision: result.decision, summary: result.explanation.summary, facts: [...result.explanation.facts], ...(result.stalled === true ? { stalled: true as const } : {}) },
     ...(step !== null ? { step } : {}),
     guardNotes,
   });

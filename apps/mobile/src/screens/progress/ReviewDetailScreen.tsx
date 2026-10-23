@@ -4,7 +4,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 
 import type { ProgressStackParams } from '../../navigation/types';
 import { ChangeRow, PROGRESS_TEXT, ProgressCard } from '../../reviews/charts';
-import { useProposalActions } from '../../reviews/ReviewsSection';
+import { AskRow, useProposalActions } from '../../reviews/ReviewsSection';
 import { useScreenData } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Icon } from '../../ui';
@@ -50,7 +50,7 @@ export function PastWeeksScreen() {
   );
 }
 
-/** One past week in full: the coach's verdict (or `Not reviewed`), every fact, and its changes (Undo / Redo while they still apply). */
+/** One past week in full: the coach's verdict (or `Not reviewed`), every fact, and its changes (Undo / Redo while they still apply; offers Apply / Skip). */
 export function ReviewDetailScreen({ route }: NativeStackScreenProps<ProgressStackParams, 'ProgressReview'>) {
   const theme = useTheme();
   const [data, reload] = useScreenData((s) => s.reviews.review(route.params.reviewId));
@@ -82,19 +82,23 @@ export function ReviewDetailScreen({ route }: NativeStackScreenProps<ProgressSta
           </ProgressCard>
           {d.changes !== null && d.changes.rows.length + d.changes.asks.length > 0 ? (
             <ProgressCard>
-              {[...d.changes.rows, ...d.changes.asks].map((r, i) => (
+              {d.changes.rows.map((r, i) => (
                 <ChangeRow
                   key={r.id}
                   row={r}
                   first={i === 0}
-                  onUndo={() => {
-                    actions.undo(r);
+                  onTap={(t) => {
+                    actions.tap(r, t);
                   }}
-                  onRedo={() => {
-                    actions.redo(r);
-                  }}
-                  onApply={() => {
-                    actions.apply(r);
+                />
+              ))}
+              {/* Offers as on Progress: Apply / Skip while open, never drawn as made (review v5offers 7). */}
+              {d.changes.asks.map((r) => (
+                <AskRow
+                  key={r.id}
+                  row={r}
+                  onTap={(t) => {
+                    actions.tap(r, t);
                   }}
                 />
               ))}

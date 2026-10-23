@@ -353,6 +353,12 @@ export interface NextTargets {
   basedOnSessionIds: string[];
   /** (Reps from history, 21 Oct) The reps the rule used and the one count to plan (`nextTargetsFor`). */
   reps?: RuleReps;
+  /**
+   * (Review v5offers 6) Playbook rule 8's stall: the miss streak reached `failuresBeforeReduce` at the same load,
+   * whether the rule could reduce (`reduce_load`) or no easier load exists (`hold_after_miss` at the lightest load).
+   * Absent otherwise.
+   */
+  stalled?: true;
 }
 
 interface Criteria {
@@ -833,6 +839,8 @@ interface PrimaryDecision {
   load: number | null;
   reps: RepRange;
   summary: string;
+  /** The miss streak reached `failuresBeforeReduce` at the same load (`NextTargets.stalled`). */
+  stalled?: true;
 }
 
 /** Starting point when there is no usable history. */
@@ -1036,7 +1044,8 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
       streak += 1;
     }
     const needed = rule.failuresBeforeReduce;
-    if (streak >= needed && L !== null) {
+    const stalled = streak >= needed && L !== null;
+    if (stalled) {
       const reduced = reducedLoad(ctx, L);
       if (reduced !== null) {
         pushFact(ctx, `${streak} sessions in a row fell below ${criteria.repRange.min} reps at ${lastText}.`);
@@ -1045,6 +1054,7 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
           load: reduced,
           reps: criteria.repRange,
           summary: `Repeated misses at ${lastText}: reduce to ${fmt(ctx, reduced)} and build back up.`,
+          stalled: true,
         };
       }
       pushFact(ctx, 'No easier load is available on this equipment.');
@@ -1061,6 +1071,8 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
       load: held,
       reps: criteria.repRange,
       summary: `${sameAsLast ? 'Repeat' : 'Use'} ${fmt(ctx, held)} for ${range(criteria.repRange)} reps.`,
+      // Stalled at the easiest load this equipment has (review v5offers 6): still rule 8's stall.
+      ...(stalled ? { stalled: true as const } : {}),
     };
   }
 
@@ -1192,5 +1204,6 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
     rule: ruleRef,
     explanation: { summary: primary.summary, facts: ctx.facts },
     basedOnSessionIds: sessions.map((s) => s.sessionId),
+    ...(primary.stalled === true ? { stalled: true as const } : {}),
   };
 }

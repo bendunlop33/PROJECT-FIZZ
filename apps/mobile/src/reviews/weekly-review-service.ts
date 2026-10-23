@@ -11,12 +11,16 @@
  * - **Coach:** the ChatGPT-plan route only (the coach's own availability; never a paid route, rule 7), the
  *   stronger model (`builderModelFor('weekly')`), one strict tool. Every number in its words is checked
  *   (`checkWeeklyReview`); a wrong one hides its sentence. Its plan tweaks are offers (rule 3).
- * - **Changes (Progress v3, rule 3):** code's own (the same edit repeated, §6.1) and the coach's. A small
- *   change on the same exercises (working sets on a plan-day template) is applied for the next sessions as
- *   soon as the review stores it, recorded with its reason and author, each with Undo (and Redo); a
- *   structural one (swap, add, remove, day move), and a small one whose reason the number check hid, is
- *   only ever asked (Apply / Keep as is). Small changes land before the page is told; until then (or if the
- *   apply failed, or on an older week) they read `Not applied`. Every write is the routine's versioned write
+ * - **Changes (Progress v3, rule 3; narrowed by Ben's D2, 23 Oct):** code's own (the same edit repeated,
+ *   §6.1) and the coach's. Only the coach's CA8-small change (`autoApplicable`: one working set fewer on a
+ *   plan-day template, with its reason, on a lift the week doesn't flag as stalled) is applied for the next
+ *   sessions as soon as the review stores it, recorded with its reason and author, each with Undo (and Redo).
+ *   Every other change is an offer, only ever asked (Apply / Skip), and stays one on every re-run
+ *   (`ReviewProposal.offer`): code's own (a repeated edit is Ben's structure, D1; review v5offers B1),
+ *   structural ones (swap, add, remove, day move), any added set (nobody asked), a move of more than one set,
+ *   a change on a stalled lift (a stall response, rule 8), and a small one whose reason the number check hid.
+ *   Small changes land before the page is told; until then (or if the apply failed, or on an older week) they
+ *   read `Not applied`. Every write is the routine's versioned write
  *   with an `update_routine` record, guarded per exercise (refused once that exercise's working sets moved
  *   from the change's `fromSets`, rule 5; the same review's change to another exercise doesn't block it)
  *   and never on a pain-flagged movement (rule 9). Apply, Undo and Redo each have one deterministic op
@@ -55,6 +59,8 @@ import {
   isDeleted,
   autoApplicable,
   isStructuralProposal,
+  stalledOfReview,
+  withOfferMark,
   liftsView,
   liftHistorySessions,
   sessionNewBests,
@@ -453,11 +459,15 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       .reviews.current(owner.id, subject)
       .catch(() => null);
     // Ben's answers carry over; the coach's unanswered asks too, their reasons checked again against these
-    // facts, never on a movement flagged since (review build-b-21oct S1, progress-v3b-data B1; rule 9).
-    const carried = carriedProposals(previous?.proposals ?? [], { facts: f, painFlagged: g.input.painFlagged });
+    // facts, never on a movement flagged since (review build-b-21oct S1, progress-v3b-data B1; rule 9), and
+    // code's open offer while the same edit still holds (review v5offers N1). Each keeps what it was under the
+    // facts it was made with: an offer stays an offer (review v5offers 4).
+    const before = { stalled: previous == null ? new Set<string>() : stalledOfReview(previous) };
+    const carried = carriedProposals((previous?.proposals ?? []).map((p) => withOfferMark(p, before)), { facts: f, painFlagged: g.input.painFlagged });
     const taken = new Set(carried.map(keyOf));
     const fresh = codeProposals(f.edits, reviewId).filter((p) => !taken.has(keyOf(p)));
-    const proposals = [...carried, ...fresh].slice(0, 4);
+    const thisWeek = { stalled: stalledOfReview({ facts }) };
+    const proposals = [...carried, ...fresh].slice(0, 4).map((p) => withOfferMark(p, thisWeek));
     const review: TrainingReview = {
       id: reviewId,
       ownerId: owner.id,
@@ -512,7 +522,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       emit();
       return { kind: 'not_reviewed', review: latest, status: asked.status };
     }
-    const mergedProposals = mergeCoachAsks(latest.proposals ?? [], asked.proposals);
+    const mergedProposals = mergeCoachAsks(latest.proposals ?? [], asked.proposals).map((p) => withOfferMark(p, { stalled: stalledOfReview(latest) }));
     // The coach's sentence (or new changes) is news: `NEW` again until `Got it`.
     const { seenAtUtc, ...unseen } = latest;
     const keepSeen = seenAtUtc !== undefined && asked.status !== 'ok' && mergedProposals.length === (latest.proposals ?? []).length;
@@ -613,7 +623,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     return { kind: 'written', actionId: w.action.actionId };
   }
 
-  /** Apply (Ben's tap on a structural change, or the review's own apply of a small one, rule 3). */
+  /** Apply (Ben's tap on an offer, or the review's own apply of a CA8-small change, rule 3, D2). */
   async function applyOne(req: { reviewId: string; proposalId: string; opId: string }, author: ActionRecord['author']): Promise<ProposalOutcome> {
     const found = await proposalOf(req.reviewId, req.proposalId);
     if (found === null) return { ok: false, reason: 'missing', message: REVIEW_SERVICE_COPY.missing };
@@ -651,20 +661,23 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
   }
 
   /**
-   * (Rule 3, Progress v3) The review's small changes are applied for the next sessions as soon as it stores
-   * them (each with its reason and Undo), before the page is told; structural ones, and a small one whose
-   * reason was hidden, wait for Ben. Runs after every open too, so a change a force-close left open is
-   * applied then (one deterministic op per proposal: never twice). Until then the page shows it `Not applied`.
+   * (Rule 3, Progress v3; D2) The coach's CA8-small changes are applied for the next sessions as soon as the
+   * review stores them (each with its reason and Undo), before the page is told; every offer (code's own,
+   * structural, an added set, more than one set, a stall response, a hidden reason, or stored as an offer
+   * before) waits for Ben's Apply. Runs after every open
+   * too, so a change a force-close left open is applied then (one deterministic op per proposal: never
+   * twice). Until then the page shows it `Not applied`.
    */
   async function autoApply(review: TrainingReview): Promise<TrainingReview> {
-    const open = (review.proposals ?? []).filter((p) => p.status === 'open' && autoApplicable(p));
+    const stalled = stalledOfReview(review);
+    const open = (review.proposals ?? []).filter((p) => p.status === 'open' && autoApplicable(p, { stalled }));
     if (open.length === 0) return review;
     for (const p of open) await applyOne({ reviewId: review.id, proposalId: p.id, opId: `auto:${deriveId(`${review.id}|${p.id}`)}` }, p.source === 'coach' ? 'coach' : 'checks');
     return (await repos().reviews.get(review.id).catch(() => null)) ?? review;
   }
 
   /**
-   * The changes Ben acted on himself: Keep as is, Undo, and an Apply or Redo whose record is his (an
+   * The changes Ben acted on himself: Skip, Undo, and an Apply or Redo whose record is his (an
    * automatic apply is the coach's or the checks'). When every change is his, Coach's changes collapse.
    */
   async function actedOn(r: TrainingReview): Promise<Set<string>> {
@@ -835,12 +848,12 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       return out;
     },
 
-    /** Apply on a structural change (Ben's tap, rule 3): the template's next version, refused when it moved since (rule 5). */
+    /** Apply on an offer (Ben's tap, rule 3, D2): the template's next version, refused when that exercise moved since (rule 5). */
     applyProposal(req: { reviewId: string; proposalId: string; opId: string }): Promise<ProposalOutcome> {
       return applyOne(req, 'ben');
     },
 
-    /** Keep as is (Skip): nothing changes in the plan. */
+    /** Skip: nothing changes in the plan. */
     async skipProposal(req: { reviewId: string; proposalId: string; opId: string }): Promise<ProposalOutcome> {
       const found = await proposalOf(req.reviewId, req.proposalId);
       if (found === null) return { ok: false, reason: 'missing', message: REVIEW_SERVICE_COPY.missing };
