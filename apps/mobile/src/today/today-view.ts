@@ -1,4 +1,4 @@
-import { localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type TodayControls, type TodayDay } from '@fizz/domain';
+import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type TodayControls, type TodayDay } from '@fizz/domain';
 
 /**
  * Today (v2)'s screen rules (workout-builder-v3 §2.0, prototypes/today-v2.html), pure so they are tested
@@ -70,6 +70,8 @@ export type TodayCardAction =
   | { kind: 'main_lift'; exerciseId: string | null }
   | { kind: 'accessories'; value: 'focused' | 'varied' }
   | { kind: 'minutes'; delta: -1 | 1 }
+  /** The Time detail's `Undo`: back to the plan's length. */
+  | { kind: 'minutes_to'; minutes: number }
   | { kind: 'abs'; planOn: boolean }
   | { kind: 'supersets' }
   | { kind: 'mix' }
@@ -91,6 +93,8 @@ export function todayCardReducer(s: TodayCardState, a: TodayCardAction): TodayCa
       return { ...s, controls: withTodayControl(s.controls, 'accessories', a.value) };
     case 'minutes':
       return { ...s, controls: withTodayControl(s.controls, 'minutes', stepTodayMinutes(s.controls.minutes, a.delta)) };
+    case 'minutes_to':
+      return { ...s, controls: withTodayControl(s.controls, 'minutes', clampMinutes(a.minutes)) };
     case 'abs':
       return { ...s, controls: toggleTodayAbs(s.controls, { absPlan: a.planOn }) };
     case 'supersets':
@@ -104,6 +108,16 @@ export function todayCardReducer(s: TodayCardState, a: TodayCardAction): TodayCa
     case 'why':
       return { ...s, why: !s.why };
   }
+}
+
+/**
+ * (D3) On a reload, the card follows a main lift Ben chose on Your workout (Main lift left Today's card): the day's
+ * latest draft was written since the last read, is for another of the day's lifts (`initialMain`, which the service
+ * only sets to one of them), and isn't the card's. Anything else keeps the card as Ben left it.
+ */
+export function followLatestDraft(cur: TodayCardState, latest: { mainLiftExerciseId: string | null; atUtc: string } | undefined, seenAtUtc: string | undefined, initialMain: string | null | undefined): TodayCardState {
+  if (latest === undefined || latest.atUtc === seenAtUtc || latest.mainLiftExerciseId === cur.controls.mainLiftExerciseId || initialMain !== latest.mainLiftExerciseId) return cur;
+  return todayCardReducer(cur, { kind: 'main_lift', exerciseId: latest.mainLiftExerciseId });
 }
 
 /** The card's one button for VoiceOver: `Chest, Bench, details, collapsed`. */

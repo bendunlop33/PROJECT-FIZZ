@@ -8,11 +8,12 @@ import { builderApplyOpId, type BuilderCoachReach, type BuilderProposal } from '
 import { dropBuilderSlot, slotsOf, type BuilderEditOp } from '@fizz/domain';
 import type { BuilderGroup, CheckInScore, PlanChangeUndo, Routine, SessionCheckIn } from '@fizz/schemas';
 
-import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWriteResult, type StartChoice, type StartPrompt } from '../../builder/builder-service';
+import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWriteResult, type StartChoice, type StartPrompt, type TodayOptionChange, type TodayOptions } from '../../builder/builder-service';
+import { TodayOptionRows } from '../today/TodaySession';
 import { reviewAfterApply } from '../../builder/review';
 import { UPDATE_PLAN_DAY_ACTION } from '../../coach/builder-review-provider';
 import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type ProposalState } from '../../coach/builder-coach-view';
-import { addAnywayConfirm, editsFromText, popupLinks, promptView, TIME_COPY, workoutView, WORKOUT_COPY, type TimeRowView, type WorkoutRowView } from '../../builder/builder-view';
+import { addAnywayConfirm, editsFromText, popupLinks, promptView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
@@ -25,7 +26,7 @@ import { AppText, BottomCard, CheckInScale, PrimaryButton, SecondaryButton, Stat
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { saveScore, scoreStepOf } from '../../workout/check-in-score';
 import { CoachAskBar } from '../../ui/coach-ask-bar';
-import { TimeStepper } from '../../ui/time-stepper';
+import { TimeDetailSheet, TimeNoteRow } from '../../ui/time-stepper';
 import { createOnDeviceSpeech } from '../../voice/on-device-speech';
 import { SwipeRow } from './BuilderParts';
 import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
@@ -87,6 +88,8 @@ export function BuilderWorkoutScreen() {
   const [review, setReview] = useState<BuilderReview | null>(null);
   // (22 Oct) The detail behind the Time note: what the fit changed, and its Undo.
   const [timeDetail, setTimeDetail] = useState(false);
+  // (D3) Opened from Today: the options that left Today's card (Main lift, Accessories, Abs, Supersets).
+  const [todayOpts, setTodayOpts] = useState<TodayOptions | null>(null);
   // Coach review's `Update plan day` (§2.9): the §2.8 choice with no Start; its Undo is the plan change's inverse.
   const [planOnly, setPlanOnly] = useState(false);
   const planUndo = useRef<PlanChangeUndo | null>(null);
@@ -158,7 +161,8 @@ export function BuilderWorkoutScreen() {
     }
     setReach(await services.builderCoach.status().catch((): BuilderCoachReach => 'not_connected'));
     setEarlier((await services.builder.earlierEdits().catch(() => [])).filter((e) => e.draftId !== draftId));
-  }, [services, draftId, inTurn, setSnap]);
+    setTodayOpts(params.back === 'Today' && s !== null ? await services.builder.todayOptions(s.draftId).catch(() => null) : null);
+  }, [services, draftId, inTurn, setSnap, params.back]);
 
   useFocusEffect(
     useCallback(() => {
@@ -254,6 +258,30 @@ export function BuilderWorkoutScreen() {
       if (r.snapshot !== null) setSnap(r.snapshot);
       if (r.status === 'written') changed();
       else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
+    });
+  }
+
+  /**
+   * (D3) One of Today's options, run after any edit still in flight: Set up's own change on this draft (the service
+   * keeps Ben's edits and Time), with Undo. A new main lift can land on that lift's own draft: the page follows it.
+   */
+  function setTodayOption(change: TodayOptionChange): Promise<void> {
+    return inTurn(async () => {
+      const cur = snapRef.current;
+      if (cur === null) return;
+      const r = await services.builder.setTodayOption(cur.draftId, change, { opId: newUuid(), expectedVersion: cur.version });
+      if (r.snapshot !== null) {
+        if (r.snapshot.draftId !== cur.draftId) {
+          setDraftId(r.snapshot.draftId);
+          navigation.setParams({ draftId: r.snapshot.draftId });
+        }
+        setSnap(r.snapshot);
+        setTodayOpts(await services.builder.todayOptions(r.snapshot.draftId).catch(() => null));
+      }
+      if (r.status === 'written') {
+        changed();
+        showToast(r.toast);
+      } else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
     });
   }
 
@@ -633,8 +661,10 @@ export function BuilderWorkoutScreen() {
               {v.overLine}
             </AppText>
           ) : null}
-          <TimeRow
-            view={v.time}
+          <TimeNoteRow
+            minutes={v.time.minutes}
+            note={v.time.note}
+            noteLabel={v.time.noteLabel}
             onStep={(d) => void setTime({ dir: d })}
             onNote={() => {
               setTimeDetail(true);
@@ -759,6 +789,11 @@ export function BuilderWorkoutScreen() {
               <AppText variant="callout">{WORKOUT_COPY.addExercise}</AppText>
             </Pressable>
           ) : null}
+          {todayOpts !== null ? (
+            <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.space['3'] }}>
+              <TodayOptionRows options={todayOpts} onChange={(c) => void setTodayOption(c)} />
+            </View>
+          ) : null}
         </ScrollArea>
         <ToastHost bottom={8}>{popupSlot === null ? toastNode : null}</ToastHost>
       </View>
@@ -846,43 +881,16 @@ export function BuilderWorkoutScreen() {
           setPlanOnly(false);
         }}
       />
-      <BottomCard
+      <TimeDetailSheet
         visible={timeDetail && v.time.note !== null}
+        minutes={v.time.minutes}
+        lines={v.time.lines}
+        undoMinutes={v.time.undoMinutes}
+        onUndo={(back) => void setTime({ to: back })}
         onClose={() => {
           setTimeDetail(false);
         }}
-        footer={
-          <PrimaryButton
-            label={TIME_COPY.done}
-            onPress={() => {
-              setTimeDetail(false);
-            }}
-          />
-        }
-      >
-        <AppText variant="title2" accessibilityRole="header" numeric>
-          {`${TIME_COPY.label} · ${v.time.valueText}`}
-        </AppText>
-        {v.time.lines.map((l, i) => (
-          // An exercise listed twice can give the same line twice: keyed by place.
-          <AppText key={`${String(i)}:${l}`} variant="body" numeric>
-            {l}
-          </AppText>
-        ))}
-        {v.time.undoMinutes !== null ? (
-          <View style={{ alignSelf: 'flex-start' }}>
-            <TextButton
-              label={TIME_COPY.undo}
-              accessibilityLabel={`Undo, back to ${String(v.time.undoMinutes)} minutes`}
-              onPress={() => {
-                const back = v.time.undoMinutes;
-                setTimeDetail(false);
-                if (back !== null) void setTime({ to: back });
-              }}
-            />
-          </View>
-        ) : null}
-      </BottomCard>
+      />
       {alertsAsk.sheet}
       {save.sheet}
       <BottomCard visible={checkInSheet !== null} onClose={() => { setCheckInSheet(null); }}>
@@ -940,34 +948,6 @@ export function BuilderWorkoutScreen() {
         }}
         onClose={() => { setReview(null); }}
       />
-    </View>
-  );
-}
-
-/**
- * (22 Oct) `Time · −1 exercise ›   [−] 45 min [+]`: the same stepper as Today's; the note after the label (light
- * orange) is the biggest change a live fit made, and a tap opens everything it changed with its Undo.
- */
-function TimeRow({ view, onStep, onNote }: { view: TimeRowView; onStep: (d: -1 | 1) => void; onNote: () => void }) {
-  const theme = useTheme();
-  const label = (
-    <AppText variant="callout" color="text.secondary">
-      {TIME_COPY.label}
-    </AppText>
-  );
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 44, flexWrap: 'wrap' }}>
-      {view.note === null ? (
-        label
-      ) : (
-        <Pressable accessibilityRole="button" accessibilityLabel={view.noteLabel ?? view.note} onPress={onNote} style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', flexShrink: 1, opacity: pressed ? 0.7 : 1 })}>
-          {label}
-          <AppText variant="callout" color="status.warning" numeric style={{ flexShrink: 1 }}>
-            {` · ${view.note} ›`}
-          </AppText>
-        </Pressable>
-      )}
-      <TimeStepper minutes={view.minutes} onStep={onStep} />
     </View>
   );
 }

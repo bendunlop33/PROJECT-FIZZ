@@ -361,6 +361,11 @@ export const BuilderSetupSchema = z.object({
   restLevel: z.enum(['normal', 'shorter', 'shortest']).optional(),
   /** (v3 §2.3) Ben changed a group count, so Set up shows `Use recommended` instead of `Recommended`. */
   groupsEdited: z.literal(true).optional(),
+  /**
+   * (D3, Ben 22–23 Oct) Today's Accessories control for this workout (`focused` 2 × 3, `varied` 3 × 2): written by
+   * Today's card, changed on Your workout opened from Today. Absent: a Set up or library workout (group counts rule).
+   */
+  accessories: z.enum(['focused', 'varied']).optional(),
   /** (v3 §2.3 `Gym changed · Undo`) Ben undid the move to this gym: the draft stays at its own gym, and isn't moved there again. */
   gymKept: IdSchema.optional(),
   /**

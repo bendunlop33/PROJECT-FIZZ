@@ -1,6 +1,5 @@
 import type { WeightUnit } from '@fizz/schemas';
 import { infoOrDefault } from '../builder/arrange';
-import type { BuilderFitResult } from '../builder/fit';
 import { workingCount } from '../builder/set-rows';
 import type { BuilderInfoLookup, BuilderSlot, BuilderWorkout } from '../builder/types';
 import { formatNumber, NBSP } from '../display';
@@ -148,51 +147,6 @@ export function todayBreakdown(w: BuilderWorkout, info: BuilderInfoLookup, works
     });
   });
   return out;
-}
-
-// ---------------------------------------------------------------------------
-// Fit line (`To fit 45 min: shorter rests · 2 sets fewer`)
-
-/**
- * One line for what the Time control did, from the fit's own steps; null
- * when nothing changed. `Over 20 min` when it still doesn't fit.
- */
-export function todayFitLine(fit: BuilderFitResult, minutes: number, planMinutes: number, nameOf: (exerciseId: string) => string): string | null {
-  const parts: string[] = [];
-  let fewer = 0;
-  let more = 0;
-  const dropped: string[] = [];
-  const added: string[] = [];
-  let rest: string | null = null;
-  for (const st of fit.steps) {
-    switch (st.kind) {
-      case 'rest':
-        if (st.to === 'shorter') rest = 'shorter rests';
-        else if (st.to === 'shortest') rest = 'shortest rests';
-        break;
-      case 'effort':
-        break;
-      case 'sets':
-        if (st.to < st.from) fewer += st.from - st.to;
-        else more += st.to - st.from;
-        break;
-      case 'drop':
-        dropped.push(nameOf(st.exerciseId));
-        break;
-      case 'add':
-        added.push(nameOf(st.exerciseId));
-        break;
-    }
-  }
-  if (rest !== null) parts.push(rest);
-  if (fit.steps.some((s) => s.kind === 'effort')) parts.push('last sets pushed to RPE 9');
-  if (fewer > 0) parts.push(`${String(fewer)} ${fewer === 1 ? 'set' : 'sets'} fewer`);
-  if (dropped.length > 0) parts.push(`drops ${dropped.join(', ')}`);
-  if (added.length > 0) parts.push(`adds ${added.join(', ')}${minutes <= planMinutes ? ' in the time freed' : ''}`);
-  if (more > 0) parts.push(`+${String(more)} ${more === 1 ? 'set' : 'sets'}`);
-  if (fit.status === 'over') parts.push(`over ${String(minutes)}${NBSP}min`);
-  if (parts.length === 0) return null;
-  return `${minutes < planMinutes ? 'To fit' : 'With'} ${String(minutes)}${NBSP}min: ${parts.join(' · ')}`;
 }
 
 // ---------------------------------------------------------------------------

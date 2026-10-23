@@ -115,10 +115,18 @@ describe('Today (v2) session card from the plan', () => {
     // The plan's bench target, through the template's dry run (rounded down here, rule 4).
     expect(Number(push.rows[0]?.top)).toBeGreaterThan(0);
 
-    // A length under the card's own estimate trims with one line; the main lift stays. (Rests follow Ben's presets,
-    // as the builder's do, so the estimate agrees with Your workout.)
-    const short = s.todaySession.card(data, sel(data, pushKey, { minutes: Math.floor((push.minutes - 10) / 5) * 5 }));
-    expect(nbsp(short?.fitLine)).toMatch(/^To fit \d+ min: /);
+    // A plan in use: the lean card (D3); the plan's own length has no note and nothing to undo.
+    expect(push.lean).toBe(true);
+    expect(push.time).toMatchObject({ note: null, lines: [], undoMinutes: null });
+    // A length under the card's own estimate trims: the note after Time and the detail behind it (fit-to-time 22 Oct
+    // revision); the main lift stays. (Rests follow Ben's presets, as the builder's do, so the estimate agrees with
+    // Your workout.) Undo goes back to the plan's length.
+    const shorter = Math.floor((push.minutes - 10) / 5) * 5;
+    const short = s.todaySession.card(data, sel(data, pushKey, { minutes: shorter }));
+    expect(short?.time?.note).toMatch(/^(−\d+ (exercise|exercises|set|sets)|supersets|shorter rests|shortest rests)$/);
+    expect(short?.time?.lines[0]).toMatch(/^(Shorter|Shortest) rests$/);
+    expect(short?.time?.minutes).toBe(shorter);
+    expect(short?.time?.undoMinutes).toBe(data.initial[pushKey]?.minutes);
     expect(short?.rows[0]?.name).toBe('Bench press');
     // Supersets off: no pairs.
     expect(s.todaySession.card(data, sel(data, pushKey, { supersets: false }))?.rows.every((r) => r.superset === null)).toBe(true);

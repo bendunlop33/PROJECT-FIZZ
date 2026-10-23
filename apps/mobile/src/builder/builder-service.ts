@@ -80,6 +80,8 @@ import {
   type StartAlongside,
   type TemplateSlotSpec,
   defaultBuilderMainLift,
+  templateLabel,
+  type AccessoryStyle,
 } from '@fizz/domain';
 import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
@@ -161,7 +163,23 @@ export interface SetupInput {
   groups: GroupCount[];
   variationId: string | null;
   groupsEdited: boolean;
+  /** (D3) Today's Accessories style, for a workout Today drafted (absent on Set up's own). */
+  accessories?: AccessoryStyle;
 }
+
+/**
+ * (D3, Ben 22–23 Oct) Today's options on Your workout opened from Today: the controls that left Today's card. Main
+ * lift: the plan day's templates this gym can do (shown with more than one); accessories: Today's style (null for an
+ * older draft); abs and supersets as the workout has them.
+ */
+export interface TodayOptions {
+  mainLifts: { exerciseId: string; label: string; selected: boolean }[];
+  accessories: AccessoryStyle | null;
+  abs: boolean;
+  supersets: boolean;
+}
+
+export type TodayOptionChange = { kind: 'main_lift'; exerciseId: string } | { kind: 'accessories'; style: AccessoryStyle } | { kind: 'abs'; on: boolean } | { kind: 'supersets'; on: boolean };
 
 export interface SetupFacts {
   days: { split: BuilderDayOption[]; ppl: BuilderDayOption[] };
@@ -293,6 +311,20 @@ function v0GymOf(d: WorkoutDraft): string | null {
 /** Summary's Undo of a Start's plan change: one op ID per session, so a retry (or a relaunch) undoes once. */
 export function planChangeUndoOpId(sessionId: string): string {
   return deriveId(`plan-change-undo:${sessionId}`);
+}
+
+/** (D3) The toast after one of Today's options on Your workout (with Undo): `Supersets off`, `Abs on`, `Accessories varied`. */
+export function todayOptionText(c: TodayOptionChange): string {
+  switch (c.kind) {
+    case 'supersets':
+      return `Supersets ${c.on ? 'on' : 'off'}`;
+    case 'abs':
+      return `Abs ${c.on ? 'on' : 'off'}`;
+    case 'accessories':
+      return `Accessories ${c.style}`;
+    case 'main_lift':
+      return BUILDER_COPY.rebuilt;
+  }
 }
 
 /** Summary's line for a Start's plan change (§2.8): `Chest · bench updated`; a new variation `… saved`. */
@@ -539,6 +571,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       ...(extra.variationVersion === undefined || s.variationId === null ? {} : { variationVersion: extra.variationVersion }),
       ...(extra.restLevel === undefined || extra.restLevel === 'normal' ? {} : { restLevel: extra.restLevel }),
       ...(s.groupsEdited ? { groupsEdited: true as const } : {}),
+      ...(s.accessories === undefined ? {} : { accessories: s.accessories }),
     };
   }
 
@@ -557,6 +590,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       groups: [...rs.groups],
       variationId: s.variationId ?? null,
       groupsEdited: s.groupsEdited === true,
+      ...(s.accessories === undefined ? {} : { accessories: s.accessories }),
     };
   }
 
@@ -1504,6 +1538,68 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis, plan, setup: timed.setup, undoable: true });
         return { change, env, toast: null };
       });
+    },
+
+    /**
+     * (D3, Ben 22–23 Oct) Today's options on Your workout opened from Today: Main lift (the plan day's templates this
+     * gym can do), Accessories (Today's style), Abs and Supersets as the workout has them. Null: not an open builder
+     * draft. Read only; `setTodayOption` changes them.
+     */
+    async todayOptions(draftId: string): Promise<TodayOptions | null> {
+      const p = await owner();
+      const d = await repos().workoutDrafts.get(draftId).catch(() => null);
+      const stored = d === null ? null : builderSetupOf(d);
+      if (d === null || d.ownerId !== p.id || d.status !== 'open' || d.builderKey === undefined || stored === null) return null;
+      const v = currentDraftVersion(d);
+      const key = d.builderKey;
+      const workout = fromDraftPlan(v.plan, stored.restLevel ?? 'normal');
+      // The plan day's templates, one per main lift (Today's old Main lift chips).
+      const templates: { exerciseId: string; routine: Routine }[] = [];
+      const inUse = key.planId === null || key.dayIndex === null ? null : await planInUse(p.id);
+      if (inUse !== null && inUse.plan.id === key.planId) {
+        const t = await deps.training().catch(() => null);
+        const live = await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]);
+        for (const r of planRoutines(inUse.plan, live)) {
+          const k = planDayKeyOf(r, t?.split ?? null, t?.mainLifts);
+          const id = k?.mainLiftExerciseId ?? null;
+          if (k === null || k.planId !== key.planId || k.dayIndex !== key.dayIndex || id === null || templates.some((x) => x.exerciseId === id)) continue;
+          templates.push({ exerciseId: id, routine: r });
+        }
+      }
+      const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(workout), ...templates.map((x) => x.exerciseId)], keySeed: `${d.id}:today-options` });
+      const current = stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null;
+      const mainLifts = templates.filter((x) => x.exerciseId === current || env.doable(x.exerciseId)).map((x) => ({ exerciseId: x.exerciseId, label: templateLabel(x.routine, env.nameOf(x.exerciseId)), selected: x.exerciseId === current }));
+      return {
+        mainLifts,
+        accessories: stored.accessories ?? null,
+        abs: slotsOf(workout.blocks).some((x) => env.info(x.exerciseId)?.group === 'Abs'),
+        supersets: stored.supersets,
+      };
+    },
+
+    /**
+     * (D3) One of Today's options changed on Your workout: Set up's own change on this draft (`changeSetup`), so Ben's
+     * edits are kept and Time fits again. Supersets re-pairs only the builder's pairs; Abs adds or removes only the ab
+     * exercises; Accessories sets the main group's accessories to the style; a new Main lift opens that template
+     * (`Rebuilt · Undo`, the draft for that lift when there is one). One versioned write under `opId` with Undo.
+     */
+    async setTodayOption(draftId: string, change: TodayOptionChange, w: { opId: string; expectedVersion: number }): Promise<BuilderWriteResult> {
+      const p = await owner();
+      const d = await repos().workoutDrafts.get(draftId).catch(() => null);
+      if (d === null || d.ownerId !== p.id || d.builderKey === undefined || builderSetupOf(d) === null) return { status: 'closed', snapshot: null, message: BUILDER_COPY.failed };
+      const s = pageSetup(d);
+      const withoutAbs = s.groups.filter((g) => g.group !== 'Abs');
+      const next: SetupInput =
+        change.kind === 'supersets'
+          ? { ...s, supersets: change.on }
+          : change.kind === 'accessories'
+            ? { ...s, accessories: change.style }
+            : change.kind === 'abs'
+              ? { ...s, groups: change.on ? [...withoutAbs, { group: 'Abs', count: 1 }] : withoutAbs }
+              : { ...s, mainLiftExerciseId: change.exerciseId, variationId: null };
+      const r = await service.changeSetup(draftId, next, w);
+      if (r.status !== 'written' || r.toast !== null) return r;
+      return { ...r, toast: { text: todayOptionText(change), undoOpId: w.opId, why: null } };
     },
 
     /**

@@ -3,10 +3,11 @@ import { Pressable, Switch, View, useWindowDimensions } from 'react-native';
 
 import { TODAY_V2_COPY, type StripCell, type StripItem, type TodayBreakdownRow, type TodayDay } from '@fizz/domain';
 
+import type { TodayOptionChange, TodayOptions } from '../../builder/builder-service';
 import type { TodayCardView } from '../../services/today-session';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Icon, PrimaryButton, SecondaryButton, TextButton } from '../../ui';
-import { TimeStepper } from '../../ui/time-stepper';
+import { TimeNoteRow } from '../../ui/time-stepper';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { STRIP_LABEL_FIT, STRIP_LAYOUT, stripPillStyle } from '../../today/strip-style';
 import { breakdownLabel, TODAY_SCREEN_COPY, type TodayCardAction, type TodaySegment } from '../../today/today-view';
@@ -375,6 +376,31 @@ function ToggleRow({ label, sub, value, onChange }: { label: string; sub?: strin
   );
 }
 
+/**
+ * (D3, Ben 22–23 Oct) The controls that left Today's card, on Your workout opened from Today: `Main lift` (only with more
+ * than one template), `Accessories` Focused | Varied, `Abs` and `Supersets`. The same 44 pt rows as the card had; each
+ * tap is one change the service makes (with Undo), never computed here.
+ */
+export function TodayOptionRows({ options, onChange }: { options: TodayOptions; onChange: (c: TodayOptionChange) => void }) {
+  return (
+    <View>
+      {options.mainLifts.length > 1 ? (
+        <ControlRow label={TODAY_V2_COPY.mainLift}>
+          {options.mainLifts.map((m) => (
+            <Chip key={m.exerciseId} label={m.label} selected={m.selected} accessibilityLabel={`Main lift, ${m.label}`} onPress={() => { if (!m.selected) onChange({ kind: 'main_lift', exerciseId: m.exerciseId }); }} />
+          ))}
+        </ControlRow>
+      ) : null}
+      <ControlRow label={TODAY_V2_COPY.accessories}>
+        <Chip label={TODAY_V2_COPY.focused} selected={options.accessories === 'focused'} accessibilityLabel={`Accessories, ${TODAY_V2_COPY.focused}`} onPress={() => { if (options.accessories !== 'focused') onChange({ kind: 'accessories', style: 'focused' }); }} />
+        <Chip label={TODAY_V2_COPY.varied} selected={options.accessories === 'varied'} accessibilityLabel={`Accessories, ${TODAY_V2_COPY.varied}`} onPress={() => { if (options.accessories !== 'varied') onChange({ kind: 'accessories', style: 'varied' }); }} />
+      </ControlRow>
+      <ToggleRow label={TODAY_V2_COPY.abs} value={options.abs} onChange={() => { onChange({ kind: 'abs', on: !options.abs }); }} />
+      <ToggleRow label={TODAY_V2_COPY.supersets} value={options.supersets} onChange={() => { onChange({ kind: 'supersets', on: !options.supersets }); }} />
+    </View>
+  );
+}
+
 function BreakdownTable({ rows, unit }: { rows: readonly TodayBreakdownRow[]; unit: 'kg' | 'lb' }) {
   const theme = useTheme();
   const groups: TodayBreakdownRow[][] = [];
@@ -456,6 +482,7 @@ export function SessionCard({
   onStart,
   onEdit,
   onBackToPlan,
+  onTimeNote,
   offer = null,
 }: {
   /** (§6.1) The coach's pre-session line with code's offer (`Apply` / `Skip`, rule 3); null: nothing to say. */
@@ -469,9 +496,70 @@ export function SessionCard({
   onStart: () => void;
   onEdit: () => void;
   onBackToPlan: () => void;
+  /** The Time note's tap: everything the fit changed, with Undo (the screen's sheet). */
+  onTimeNote: () => void;
 }) {
   const theme = useTheme();
   const main = view.controls.mainLifts.find((m) => m.selected)?.label ?? null;
+  const time = view.time;
+  // (fit-to-time 22 Oct revision, item 4) `Time · −1 exercise ›  [−] 45 min [+]`: the note in place, nothing moves.
+  const timeRow =
+    time === null ? null : (
+      <TimeNoteRow
+        minutes={time.minutes}
+        note={time.note}
+        noteLabel={time.noteLabel}
+        onStep={(d) => {
+          dispatch({ kind: 'minutes', delta: d });
+        }}
+        onNote={onTimeNote}
+      />
+    );
+  const backToPlan = (
+    <View style={{ alignSelf: 'flex-start' }}>
+      <TextButton label={TODAY_V2_COPY.backToPlan} tone="secondary" onPress={onBackToPlan} />
+    </View>
+  );
+  // The session's rows, then `Why?` and `↻ Mix it up` (lean: always shown; no plan: behind Session breakdown).
+  const details = (
+    <View style={{ gap: theme.space['2'] }}>
+      <BreakdownTable rows={view.rows} unit={view.unit} />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['4'] }}>
+        <TextButton label={TODAY_V2_COPY.why} tone="secondary" accessibilityLabel={why ? 'Hide why' : 'Why this workout'} onPress={() => { dispatch({ kind: 'why' }); }} />
+        {view.mix === null && view.mixAvailable ? <TextButton label={TODAY_V2_COPY.mix} tone="secondary" accessibilityLabel="Mix it up, swap one accessory for today" onPress={() => { dispatch({ kind: 'mix' }); }} /> : null}
+      </View>
+      {why ? (
+        <View style={{ gap: 2 }}>
+          {view.why.map((l, i) => (
+            <AppText key={`${String(i)}:${l}`} variant="callout" color="text.secondary">
+              {`· ${l}`}
+            </AppText>
+          ))}
+        </View>
+      ) : null}
+      {view.mix !== null ? (
+        <View style={{ gap: theme.space['1'] }}>
+          <View accessible accessibilityLabel={view.mix.accessibilityLabel}>
+            <AppText variant="callout">{view.mix.text}</AppText>
+            {view.mix.reason !== null ? (
+              <AppText variant="callout" color="text.secondary" style={{ fontSize: 13 }}>
+                {view.mix.reason}
+              </AppText>
+            ) : null}
+            {view.mix.notReviewed ? (
+              <AppText variant="callout" color="text.tertiary" style={{ fontSize: 13 }}>
+                {TODAY_V2_COPY.notReviewed}
+              </AppText>
+            ) : null}
+          </View>
+          <View style={{ flexDirection: 'row', gap: theme.space['4'] }}>
+            <TextButton label={view.mix.another} tone="secondary" onPress={() => { dispatch({ kind: 'mix' }); }} />
+            <TextButton label={TODAY_V2_COPY.undo} tone="secondary" onPress={() => { dispatch({ kind: 'mix_undo' }); }} />
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
   return (
     <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['2'] }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: theme.space['2'] }}>
@@ -489,13 +577,10 @@ export function SessionCard({
           ) : null}
         </View>
       </View>
-      {view.fitLine !== null ? (
-        <View style={{ flexDirection: 'row', gap: theme.space['1'], alignItems: 'center' }}>
-          {view.over ? <Icon name="exclamationmark.triangle" size={14} color="status.warning" /> : null}
-          <AppText variant="callout" color="text.secondary" style={{ fontSize: 14, flexShrink: 1 }}>
-            {view.fitLine}
-          </AppText>
-        </View>
+      {time?.overText != null ? (
+        <AppText variant="label" color="status.warning" numeric>
+          {time.overText}
+        </AppText>
       ) : null}
       {view.clashLine !== null ? (
         <View style={{ flexDirection: 'row', gap: theme.space['1'], alignItems: 'center' }}>
@@ -508,87 +593,53 @@ export function SessionCard({
         </View>
       ) : null}
 
-      {/* The Main lift row stays on an edited card (review S2): another lift has its own draft, these edits are kept. */}
-      {view.controls.mainLifts.length > 1 ? (
-        <ControlRow label={TODAY_V2_COPY.mainLift}>
-          {view.controls.mainLifts.map((m) => (
-            <Chip key={m.exerciseId ?? '-'} label={m.label} selected={m.selected} accessibilityLabel={`Main lift, ${m.label}`} onPress={() => { dispatch({ kind: 'main_lift', exerciseId: m.exerciseId }); }} />
-          ))}
-        </ControlRow>
-      ) : null}
-      {view.edited === null ? (
-        <View>
-          <ControlRow label={TODAY_V2_COPY.accessories}>
-            <Chip label={TODAY_V2_COPY.focused} selected={view.controls.accessories === 'focused'} accessibilityLabel={`Accessories, ${TODAY_V2_COPY.focused}`} onPress={() => { dispatch({ kind: 'accessories', value: 'focused' }); }} />
-            <Chip label={TODAY_V2_COPY.varied} selected={view.controls.accessories === 'varied'} accessibilityLabel={`Accessories, ${TODAY_V2_COPY.varied}`} onPress={() => { dispatch({ kind: 'accessories', value: 'varied' }); }} />
-          </ControlRow>
-          <ControlRow label={TODAY_V2_COPY.time}>
-            <TimeStepper minutes={view.controls.minutes} onStep={(d) => { dispatch({ kind: 'minutes', delta: d }); }} />
-          </ControlRow>
-          <ToggleRow label={TODAY_V2_COPY.abs} sub={view.controls.abs.differs ? TODAY_V2_COPY.planAbs(view.controls.abs.planOn) : null} value={view.controls.abs.on} onChange={() => { dispatch({ kind: 'abs', planOn: view.controls.abs.planOn }); }} />
-          <ToggleRow label={TODAY_V2_COPY.supersets} value={view.controls.supersets} onChange={() => { dispatch({ kind: 'supersets' }); }} />
-        </View>
+      {view.lean ? (
+        // (D3, Ben 22–23 Oct) With a plan: the rows, Time, Start and Edit. Main lift, accessories, abs and supersets are
+        // in Edit (Your workout); an edited card keeps its Time there too.
+        <>
+          {view.edited === null ? timeRow : backToPlan}
+          {details}
+        </>
       ) : (
-        <View style={{ alignSelf: 'flex-start' }}>
-          <TextButton label={TODAY_V2_COPY.backToPlan} tone="secondary" onPress={onBackToPlan} />
-        </View>
-      )}
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={breakdownLabel(view.title, main, open)}
-        accessibilityState={{ expanded: open }}
-        onPress={() => {
-          dispatch({ kind: 'breakdown' });
-        }}
-        style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], opacity: pressed ? 0.7 : 1 })}
-      >
-        <AppText variant="label">{TODAY_V2_COPY.breakdown}</AppText>
-        <Icon name={open ? 'chevron.down' : 'chevron.right'} size={14} color="text.tertiary" />
-      </Pressable>
-
-      {open ? (
-        <View style={{ gap: theme.space['2'] }}>
-          <BreakdownTable rows={view.rows} unit={view.unit} />
-          <View style={{ alignSelf: 'flex-start' }}>
-            <TextButton label={TODAY_V2_COPY.why} tone="secondary" accessibilityLabel={why ? 'Hide why' : 'Why this workout'} onPress={() => { dispatch({ kind: 'why' }); }} />
-          </View>
-          {why ? (
-            <View style={{ gap: 2 }}>
-              {view.why.map((l, i) => (
-                <AppText key={`${String(i)}:${l}`} variant="callout" color="text.secondary">
-                  {`· ${l}`}
-                </AppText>
+        <>
+          {/* The Main lift row stays on an edited card (review S2): another lift has its own draft, these edits are kept. */}
+          {view.controls.mainLifts.length > 1 ? (
+            <ControlRow label={TODAY_V2_COPY.mainLift}>
+              {view.controls.mainLifts.map((m) => (
+                <Chip key={m.exerciseId ?? '-'} label={m.label} selected={m.selected} accessibilityLabel={`Main lift, ${m.label}`} onPress={() => { dispatch({ kind: 'main_lift', exerciseId: m.exerciseId }); }} />
               ))}
-            </View>
+            </ControlRow>
           ) : null}
-          {view.mix !== null ? (
-            <View style={{ gap: theme.space['1'] }}>
-              <View accessible accessibilityLabel={view.mix.accessibilityLabel}>
-                <AppText variant="callout">{view.mix.text}</AppText>
-                {view.mix.reason !== null ? (
-                  <AppText variant="callout" color="text.secondary" style={{ fontSize: 13 }}>
-                    {view.mix.reason}
-                  </AppText>
-                ) : null}
-                {view.mix.notReviewed ? (
-                  <AppText variant="callout" color="text.tertiary" style={{ fontSize: 13 }}>
-                    {TODAY_V2_COPY.notReviewed}
-                  </AppText>
-                ) : null}
-              </View>
-              <View style={{ flexDirection: 'row', gap: theme.space['4'] }}>
-                <TextButton label={view.mix.another} tone="secondary" onPress={() => { dispatch({ kind: 'mix' }); }} />
-                <TextButton label={TODAY_V2_COPY.undo} tone="secondary" onPress={() => { dispatch({ kind: 'mix_undo' }); }} />
-              </View>
+          {view.edited === null ? (
+            <View>
+              <ControlRow label={TODAY_V2_COPY.accessories}>
+                <Chip label={TODAY_V2_COPY.focused} selected={view.controls.accessories === 'focused'} accessibilityLabel={`Accessories, ${TODAY_V2_COPY.focused}`} onPress={() => { dispatch({ kind: 'accessories', value: 'focused' }); }} />
+                <Chip label={TODAY_V2_COPY.varied} selected={view.controls.accessories === 'varied'} accessibilityLabel={`Accessories, ${TODAY_V2_COPY.varied}`} onPress={() => { dispatch({ kind: 'accessories', value: 'varied' }); }} />
+              </ControlRow>
+              {timeRow}
+              <ToggleRow label={TODAY_V2_COPY.abs} sub={view.controls.abs.differs ? TODAY_V2_COPY.planAbs(view.controls.abs.planOn) : null} value={view.controls.abs.on} onChange={() => { dispatch({ kind: 'abs', planOn: view.controls.abs.planOn }); }} />
+              <ToggleRow label={TODAY_V2_COPY.supersets} value={view.controls.supersets} onChange={() => { dispatch({ kind: 'supersets' }); }} />
             </View>
-          ) : view.mixAvailable ? (
-            <View style={{ alignSelf: 'flex-start' }}>
-              <TextButton label={TODAY_V2_COPY.mix} tone="secondary" accessibilityLabel="Mix it up, swap one accessory for today" onPress={() => { dispatch({ kind: 'mix' }); }} />
-            </View>
-          ) : null}
-        </View>
-      ) : null}
+          ) : (
+            backToPlan
+          )}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={breakdownLabel(view.title, main, open)}
+            accessibilityState={{ expanded: open }}
+            onPress={() => {
+              dispatch({ kind: 'breakdown' });
+            }}
+            style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], opacity: pressed ? 0.7 : 1 })}
+          >
+            <AppText variant="label">{TODAY_V2_COPY.breakdown}</AppText>
+            <Icon name={open ? 'chevron.down' : 'chevron.right'} size={14} color="text.tertiary" />
+          </Pressable>
+
+          {open ? details : null}
+        </>
+      )}
 
       {offer !== null ? (
         <View style={{ gap: theme.space['1'] }} accessibilityLabel={[offer.line, ...offer.lines].join('. ')}>
