@@ -730,8 +730,8 @@ describe('Coach’s changes: two exercises on one plan day, restart safety, hone
       const view = (await h.service.progress())?.changes;
       expect(view?.rows).toEqual([]);
       expect(view?.asks.map((r) => [r.exercise, r.before, r.after, r.when, r.offer, r.statusText, r.canApply])).toEqual([
-        ['Leg curl', '3 sets', '4 sets', 'next Legs', true, null, true],
-        ['Bench press', '3 sets', '4 sets', 'next Legs', true, null, true],
+        ['Leg curl', '3 sets', '4 sets', 'future Legs days', true, null, true],
+        ['Bench press', '3 sets', '4 sets', 'future Legs days', true, null, true],
       ]);
       // Both wait for Ben: the collapsed line says so (review v5offers 3).
       expect(view?.collapsed).toBe('2 to review');

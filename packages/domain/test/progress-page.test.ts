@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { BuilderMuscleInfo, LiftTarget, Load, ReviewProposal, TrainingReview } from '@fizz/schemas';
 import {
+  futureDaysText,
   addDays,
   changeRowView,
   autoApplicable,
@@ -559,8 +560,8 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
   it('a set change on the same exercise is small (applied with Undo); nothing in the plan’s sets is structural', () => {
     expect(isStructuralProposal(proposal())).toBe(false);
     const row = changeRowView(proposal());
-    expect(row).toMatchObject({ exercise: 'Row', before: '4 sets', after: '3 sets', when: 'next Pull', why: 'Back over plan 2 weeks running', offer: false, canUndo: true, canRedo: false, statusText: null });
-    expect(row.accessibilityLabel).toBe('Row: 4 sets to 3 sets, next Pull. Back over plan 2 weeks running');
+    expect(row).toMatchObject({ exercise: 'Row', before: '4 sets', after: '3 sets', when: 'future Pulls', why: 'Back over plan 2 weeks running', offer: false, canUndo: true, canRedo: false, statusText: null });
+    expect(row.accessibilityLabel).toBe('Row: 4 sets to 3 sets, future Pulls. Back over plan 2 weeks running');
     expect(changeRowView(proposal({ status: 'undone' }))).toMatchObject({ canUndo: false, canRedo: true, statusText: 'Undone' });
     expect(changeRowView(proposal({ status: 'stale' }))).toMatchObject({ canUndo: false, canRedo: false, statusText: 'Out of date' });
     // Held by a pain flag: named while the flag is active, never `Out of date`, no Apply (rule 9; review build-b-21oct S3).
@@ -663,8 +664,8 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
 
     it('an open offer is asked (Apply / Skip) with no `Not applied`; once applied it keeps Undo with the asks; never a made row before Ben', () => {
       const ask = changeRowView(sets(3, 4, { reason: 'Back under plan 2 weeks running' }));
-      expect(ask).toMatchObject({ offer: true, canApply: true, canUndo: false, statusText: null, before: '3 sets', after: '4 sets', when: 'next Pull' });
-      expect(ask.accessibilityLabel).toBe('Row: 3 sets to 4 sets, next Pull. Back under plan 2 weeks running');
+      expect(ask).toMatchObject({ offer: true, canApply: true, canUndo: false, statusText: null, before: '3 sets', after: '4 sets', when: 'future Pulls' });
+      expect(ask.accessibilityLabel).toBe('Row: 3 sets to 4 sets, future Pulls. Back under plan 2 weeks running');
       const r = review({ proposals: [proposal(), sets(3, 4, { id: 'p3', reason: 'Back under plan 2 weeks running' })] });
       const v = coachChangesView(r, TODAY);
       expect(v?.rows.map((x) => x.id)).toEqual(['p1']);
@@ -705,5 +706,14 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
       expect(v?.rows).toEqual([]);
       expect(v?.asks[0]).toMatchObject({ id: 'p1', offer: true, statusText: null, canApply: true });
     });
+  });
+});
+
+describe('weekly change scope (Ben, 23 Oct): a template change reads as every future workout of that day', () => {
+  it('one plain word takes an s; anything else reads `days`', () => {
+    expect(futureDaysText('Pull')).toBe('future Pulls');
+    expect(futureDaysText('Upper')).toBe('future Uppers');
+    expect(futureDaysText('Legs')).toBe('future Legs days');
+    expect(futureDaysText('Push A')).toBe('future Push A days');
   });
 });

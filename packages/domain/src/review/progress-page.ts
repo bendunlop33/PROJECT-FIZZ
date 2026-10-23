@@ -1076,13 +1076,24 @@ export interface CoachChangesView {
   contentKey: string;
 }
 
+/**
+ * (Ben, 23 Oct) The scope of a weekly change to a plan day's template: every future workout of that day (rule 2:
+ * an honest scope). One plain word takes an `s` (`future Pulls`); anything else reads `future Legs days`,
+ * `future Push A days`.
+ */
+export function futureDaysText(routineName: string): string {
+  const n = routineName.trim();
+  return /^[A-Za-z]+$/.test(n) && !/s$/i.test(n) ? `future ${n}s` : `future ${n} days`;
+}
+
 export function changeRowView(p: ReviewProposal, opts: { painFlagged?: ReadonlySet<string>; stalled?: ReadonlySet<string> } = {}): ChangeRowView {
   const c = p.change;
   const structural = isStructuralProposal(p);
   const offer = !autoApplicable(p, { stalled: opts.stalled ?? new Set() });
   const before = plural(c.fromSets, 'set', 'sets');
   const after = plural(c.toSets, 'set', 'sets');
-  const when = `next ${c.routineName}`;
+  // (Ben, 23 Oct) Apply changes the plan day's template: every future workout of that day, never just the next one.
+  const when = futureDaysText(c.routineName);
   // A change held by a pain flag names it (rule 9; review build-b-21oct S3), never `Out of date`: refused for
   // pain, or still open on a movement flagged since.
   // Only while the flag is active (review progress-v3b S1/S3): once Ben clears it, a change held for it reads
