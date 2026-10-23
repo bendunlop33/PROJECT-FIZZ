@@ -2,7 +2,7 @@ import type { EquipmentInstance, LoadConvention, PlanDraft, PlanWarmups, Trainin
 import { mainFocusOf } from '../builder/backoff';
 import type { MainFocus } from '../builder/types';
 import { getAchievableLoads, isBarLoaded, isPresenceOnly } from '../equipment';
-import type { HistorySession } from '../progression';
+import { skipDeload, type HistorySession } from '../progression';
 import { toMs } from '../time';
 import { PB_STALE_DAYS, type PbHistory } from './lifts';
 import type { PlanKit } from './loads';
@@ -31,7 +31,9 @@ export function pbHistoryOf(sessions: readonly HistorySession[], convention: Loa
   if (own.length === 0) return null;
   let count = 0;
   for (const s of own) count += nowMs - toMs(s.performedAtUtc) > PB_STALE_DAYS * DAY_MS ? 0.5 : 1;
-  const newestFirst = [...own].sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
+  // (PM, 23 Oct) The record a lift's 6-rep estimate and week-1 loads start from skips deload weeks (lighter on purpose)
+  // unless they are all there is; they still count as sessions done.
+  const newestFirst = skipDeload([...own].sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc)));
   let last: PbHistory['last'] = null;
   for (const s of newestFirst) {
     const sets = s.sets.filter((x) => x.setType !== 'warmup' && x.load !== null && x.reps !== null && x.reps > 0 && (x.exclusions ?? []).length === 0 && (convention === null || x.load.convention === convention));

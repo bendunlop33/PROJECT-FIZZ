@@ -5,6 +5,7 @@ import {
   type Exercise,
   type SessionAggregate,
   type SessionCheckIn,
+  type SessionDeload,
   type SessionPlanDay,
   type ValidationIssue,
   type WorkoutDraft,
@@ -104,7 +105,23 @@ async function trySave<R extends SaveResult | FencedResult>(save: () => Promise<
  * command, load the aggregate, reduce, save atomically. No network, no AI.
  * Retrying after a write conflict is safe because commands are idempotent.
  */
-export function createSessionService(repos: Repositories, newId: () => string) {
+export interface SessionServiceOptions {
+  /**
+   * (PM, 23 Oct) The applied plan's deload week at `at`, if it is one (`pbDeloadAtStart`); null otherwise. Read once per
+   * real start (never a preview) and stamped on the new session, so the built-in rule, targets and estimates can skip
+   * it later. A failed read starts the workout unmarked: logging never waits on it.
+   */
+  deloadAt?: (ownerId: string, at: ZonedTimestamp) => Promise<SessionDeload | null>;
+}
+
+export function createSessionService(repos: Repositories, newId: () => string, options: SessionServiceOptions = {}) {
+  /** The new session, marked when it starts in the plan's deload week. */
+  async function stampDeload(aggregate: SessionAggregate, req: Pick<StartRequest, 'ownerId' | 'at'>): Promise<SessionAggregate> {
+    if (options.deloadAt === undefined) return aggregate;
+    const deload = await options.deloadAt(req.ownerId, req.at).catch(() => null);
+    return deload === null ? aggregate : { ...aggregate, session: { ...aggregate.session, deload } };
+  }
+
   async function start(req: StartRequest): Promise<StartOutcome> {
     const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
     if (existing) return { ok: true, aggregate: existing, warnings: [], duplicate: true };
@@ -149,10 +166,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
-    const saved = await trySave(() => repos.sessions.save(aggregate, null));
+    const stamped = await stampDeload(aggregate, req);
+    const saved = await trySave(() => repos.sessions.save(stamped, null));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
-    return { ok: true, aggregate, warnings, duplicate: false };
+    return { ok: true, aggregate: stamped, warnings, duplicate: false };
   }
 
   /**
@@ -223,10 +241,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits, today };
-    const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
+    const stamped = await stampDeload(out.aggregate, req);
+    const saved = await trySave(() => repos.sessions.save(stamped, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };
-    return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits, today };
+    return { ok: true, aggregate: stamped, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits, today };
   }
 
   /**
@@ -296,10 +315,11 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits, today };
-    const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
+    const stamped = await stampDeload(out.aggregate, req);
+    const saved = await trySave(() => repos.sessions.save(stamped, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };
-    return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits, today };
+    return { ok: true, aggregate: stamped, notes: out.notes, duplicate: false, fits: out.fits, today };
   }
 
   /**
@@ -363,7 +383,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     // The caller's plan day (Your workout's Start) keeps which sets Ben didn't set himself, which only the draft knows (review v5offers B1).
     const notEdited = out.aggregate.session.planDay?.notEdited;
     const planDay = req.planDay === undefined ? undefined : { ...req.planDay, ...(notEdited === undefined ? {} : { notEdited }) };
-    const aggregate = planDay === undefined ? out.aggregate : { ...out.aggregate, session: { ...out.aggregate.session, planDay } };
+    const aggregate = await stampDeload(planDay === undefined ? out.aggregate : { ...out.aggregate, session: { ...out.aggregate.session, planDay } }, req);
     const saved = await trySave(() => repos.sessions.save(aggregate, null, req.fence, req.alongside));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' }, ...(saved.error === 'stale_inputs' && saved.alongside !== undefined ? { alongside: saved.alongside } : {}) };

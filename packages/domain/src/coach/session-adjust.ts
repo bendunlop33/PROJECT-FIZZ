@@ -179,6 +179,8 @@ export function evaluateSessionAdjustment(input: SessionAdjustmentInput): Sessio
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
   const intent: SessionAdjustment['intent'] = t.kind === 'ben_asked' ? t.intent : t.kind === 'rpe_low' ? 'too_easy' : 'too_hard';
   if (intent === 'too_easy' && (activeFlag(input.painFlags, ex.exerciseId) !== null || input.sessionPainUnspecified)) return null;
+  // (PM, 23 Oct) A deload week is easy on purpose: an easy set there raises no offer. Ben can still ask.
+  if (t.kind === 'rpe_low' && state.session.deload !== undefined) return null;
 
   const achieved = logged?.actual?.reps ?? null;
   const dropPct = t.kind === 'ben_asked' ? BUILT_IN_SESSION_RULE.loadDropPct : tooHardDropPct(t.targetRpe, t.loggedRpe);

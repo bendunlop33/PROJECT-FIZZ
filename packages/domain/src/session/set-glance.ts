@@ -164,7 +164,7 @@ export function workoutChatContext(state: SessionAggregate, ruleTargetRpe: Reado
   const lastEx = exOf(last);
   if (last !== undefined && lastEx !== undefined && state.sets.some((s) => s.status === 'pending')) {
     const n = blockSets(state, lastEx.id).findIndex((s) => s.id === last.id) + 1;
-    offTarget = evaluateCoachTrigger(last, n, DEFAULT_COACH_TRIGGER_THRESHOLDS, targetRpeOf(last, ruleTargetRpe[lastEx.id] ?? null)?.rpe ?? null) !== null;
+    offTarget = evaluateCoachTrigger(last, n, DEFAULT_COACH_TRIGGER_THRESHOLDS, targetRpeOf(last, ruleTargetRpe[lastEx.id] ?? null)?.rpe ?? null, { deload: state.session.deload !== undefined }) !== null;
   }
   return { exerciseName: ex?.exerciseName ?? null, offTarget };
 }

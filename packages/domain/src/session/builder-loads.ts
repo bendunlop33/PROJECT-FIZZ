@@ -2,7 +2,7 @@ import type { EquipmentInstance, EquipmentKind, Exercise, Load, LoadConvention, 
 import { dayMonthText, formatNumber } from '../display';
 import { getAchievableLoads, isBarLoaded, loadDirection, roundToAvailableLoad, type LoadDirection } from '../equipment';
 import { isSetCountable } from '../exclusions';
-import { comparableSetsOf, type HistorySession } from '../progression';
+import { comparableSetsOf, skipDeload, type HistorySession } from '../progression';
 import { deriveId, stableStringify } from '../stable';
 import { toMs } from '../time';
 import { convertMass } from '../units';
@@ -131,6 +131,8 @@ export interface RefSession {
   sets: RefSet[];
   /** The hardest working set (heaviest; least assistance), more reps on a tie. */
   top: RefSet;
+  /** (PM, 23 Oct) Done in the plan's deload week: no basis for the estimate while another session is (`skipDeload`). */
+  deload?: true;
 }
 
 export interface OwnReference {
@@ -212,7 +214,7 @@ export function refSessionOf(h: HistorySession, unit: WeightUnit, convention: Lo
   }
   const top = topOf(sets, dir);
   if (top === null) return null;
-  return { sessionId: h.sessionId, performedAtUtc: h.performedAtUtc, tz: h.tz ?? 'UTC', source: h.imported ? 'fitnotes' : 'app', sets, top };
+  return { sessionId: h.sessionId, performedAtUtc: h.performedAtUtc, tz: h.tz ?? 'UTC', source: h.imported ? 'fitnotes' : 'app', sets, top, ...(h.deload === true ? { deload: true as const } : {}) };
 }
 
 /** Own reference from sessions newest first (§8.5): the last 3 within the window. */
@@ -265,8 +267,10 @@ export function loadReferences(input: LoadReferencesInput): LoadReferences {
     return r === null ? [] : [r];
   });
   const machine = equipment !== null && MACHINE_KINDS.has(equipment.kind);
-  const app = all.filter((s) => s.source === 'app');
-  const own = machine && app.length > 0 ? ownReferenceOf(app, convention, input.nowMs, false) : machine ? ownReferenceOf(all, convention, input.nowMs, true) : ownReferenceOf(all, convention, input.nowMs, false);
+  // (PM, 23 Oct) The estimate reads normal weeks: a deload week's lighter sessions only when nothing else compares.
+  const est = skipDeload(all);
+  const app = est.filter((s) => s.source === 'app');
+  const own = machine && app.length > 0 ? ownReferenceOf(app, convention, input.nowMs, false) : machine ? ownReferenceOf(est, convention, input.nowMs, true) : ownReferenceOf(est, convention, input.nowMs, false);
   return {
     exerciseId: exercise.id,
     unit,

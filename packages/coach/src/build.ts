@@ -146,7 +146,7 @@ export function loadReferenceView(catalogueId: string, name: string, refs: LoadR
   const own = refs.own;
   const last = (own?.sessions ?? []).map((s) => {
     const v = refs.convention === 'added' ? `+${formatNumber(s.top.value)}` : formatNumber(s.top.value);
-    return `${v}×${String(s.top.reps)}${s.top.rpe === null ? '' : ` @${formatNumber(s.top.rpe)}`} · ${dayMonthText(s.performedAtUtc, s.tz).replace(/\u00a0/g, ' ')} · ${s.source === 'fitnotes' ? 'FitNotes import' : 'app'}`;
+    return `${v}×${String(s.top.reps)}${s.top.rpe === null ? '' : ` @${formatNumber(s.top.rpe)}`} · ${dayMonthText(s.performedAtUtc, s.tz).replace(/\u00a0/g, ' ')} · ${s.source === 'fitnotes' ? 'FitNotes import' : 'app'}${s.deload === true ? ' · deload week' : ''}`;
   });
   const e1rm = own?.e1rm ?? null;
   const noRef = own === null && refs.derived === null;

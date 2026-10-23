@@ -82,6 +82,21 @@ export interface HistorySession {
    * superset with itself at 0: its own sets, kept in history, never a basis for next time or `Last`.
    */
   copy?: true;
+  /**
+   * (PM, 23 Oct) Done in the plan's deload week (`WorkoutSession.deload`): lighter on purpose. The built-in rule and
+   * next-session targets skip it when other comparable history exists (`skipDeload`), lift estimates likewise, and the
+   * coach sees it labelled; `Last`, history, records and Progress volume read it as any other workout.
+   */
+  deload?: true;
+}
+
+/**
+ * (PM, 23 Oct) What a progression or estimate reads: the sessions that weren't deload weeks, or, when every one was
+ * (an exercise first done in a deload week), all of them (lighter, so what comes out errs light). Order is kept.
+ */
+export function skipDeload<T extends { deload?: true | undefined }>(sessions: readonly T[]): T[] {
+  const normal = sessions.filter((s) => s.deload !== true);
+  return normal.length > 0 ? normal : [...sessions];
 }
 
 /**
@@ -618,7 +633,7 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
   // B7: imported (FitNotes) history counts on any equipment, read from its working sets only.
   /** The latest comparable session, when it came from FitNotes: how many lighter sets were read as a warm-up ramp. */
   let latestFitNotes: { rampDropped: number } | null = null;
-  for (const s of [...input.history].sort(byRecency)) {
+  const reads = [...input.history].sort(byRecency).map((s) => {
     const kept = comparableSetsOf(s);
     const builderFormat = builderFormatSets(input.rule, s, kept);
     const sessionTypes = builderFormat ? BUILDER_FORMAT_TYPES : types;
@@ -633,8 +648,19 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
         x.load.convention !== 'bodyweight' &&
         (x.load.unit !== ctx.unit || x.load.convention !== ctx.convention),
     );
-    if (!matchesEquipment(s, wantedEquipment, input.comparableEquipmentIds) || mismatched || (s.imported && typed.length === 0)) {
+    const ok = matchesEquipment(s, wantedEquipment, input.comparableEquipmentIds) && !mismatched && !(s.imported && typed.length === 0);
+    return { s, builderFormat, typed, counted, ok };
+  });
+  // (PM, 23 Oct) A deload week's sessions were lighter on purpose: never a basis while a normal one compares.
+  const anyNormal = reads.some((x) => x.ok && x.s.deload !== true);
+  let deloadSkipped = 0;
+  for (const { s, builderFormat, typed, counted, ok } of reads) {
+    if (!ok) {
       excluded += 1;
+      continue;
+    }
+    if (anyNormal && s.deload === true) {
+      deloadSkipped += 1;
       continue;
     }
     if (s.imported && out.length === 0) latestFitNotes = { rampDropped: s.sets.length - comparableSetsOf(s).length };
@@ -732,6 +758,7 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
       pushFact(ctx, `${n} ${easy} set${n === 1 ? '' : 's'} than ${at} (a finisher or drop set) ${n === 1 ? 'was' : 'were'} not judged.`);
     }
   }
+  if (deloadSkipped > 0) pushFact(ctx, `${deloadSkipped} deload-week session${deloadSkipped === 1 ? ' was' : 's were'} left out.`);
   if (excluded > 0) {
     pushFact(
       ctx,

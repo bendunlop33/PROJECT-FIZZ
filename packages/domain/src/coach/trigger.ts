@@ -140,8 +140,11 @@ export function evaluateCoachTrigger(
   setNumber: number,
   thresholds: CoachTriggerThresholds = DEFAULT_COACH_TRIGGER_THRESHOLDS,
   targetRpe?: number | null,
+  /** (PM, 23 Oct) The workout is in the plan's deload week: easy on purpose, so `rpe_low` never fires (Ben can still ask). */
+  opts: { deload?: boolean } = {},
 ): CoachTrigger | null {
   if (!thresholds.enabled) return null;
+  const easyOk = opts.deload !== true;
   if (set.status !== 'completed' || set.actual === null) return null;
   if (NEVER_TRIGGERS.has(set.setType)) return null;
 
@@ -173,7 +176,7 @@ export function evaluateCoachTrigger(
     // D20: no target on the set (shouldn't happen once every working set carries one).
     if (logged !== null && logged >= thresholds.rpeHigh) return make('rpe_high', effortFact());
     if (short) return make('reps_short', shortFact());
-    if (logged !== null && logged <= thresholds.rpeLow && (reps === null || reps <= thresholds.easyMaxReps)) return make('rpe_low', effortFact());
+    if (easyOk && logged !== null && logged <= thresholds.rpeLow && (reps === null || reps <= thresholds.easyMaxReps)) return make('rpe_low', effortFact());
     return null;
   }
 
@@ -181,7 +184,7 @@ export function evaluateCoachTrigger(
   if (target >= 10) return null;
   if (logged !== null && logged >= target + thresholds.harderBy) return make('rpe_high', effortFact());
   if (short && !(logged !== null && logged <= target - thresholds.clearlyBelowBy)) return make('reps_short', shortFact());
-  if (logged !== null && !short && logged <= target - thresholds.easierBy && (reps === null || reps <= thresholds.easyMaxReps)) return make('rpe_low', effortFact());
+  if (easyOk && logged !== null && !short && logged <= target - thresholds.easierBy && (reps === null || reps <= thresholds.easyMaxReps)) return make('rpe_low', effortFact());
   return null;
 }
 

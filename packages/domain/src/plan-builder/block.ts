@@ -1,7 +1,7 @@
-import type { DraftSlot, PlanBuilderAnswers, PlanBuilderRecord, PlanDraft, PlanDraftVersion, PlanPause } from '@fizz/schemas';
+import type { DraftSlot, PlanBuilderAnswers, PlanBuilderRecord, PlanDraft, PlanDraftVersion, PlanPause, SessionDeload } from '@fizz/schemas';
 import { addDays, localWeekBounds } from '../calendar';
 import { pausedInWeek } from '../progress/plan-tracker';
-import { pausedDates } from '../session/plan-adapt';
+import { activePause, pausedDates } from '../session/plan-adapt';
 import { toMs } from '../time';
 import type { PbExercise, PbLoad } from './engine';
 import { fmt, type PlanKit } from './loads';
@@ -120,6 +120,22 @@ export function pbBlockOfPlan(plan: Pick<PlanDraft, 'id' | 'status' | 'versions'
     return day === undefined ? [] : [{ startedAtUtc: r.startedAtUtc, dayIndex: day }];
   });
   return pbBlockWeekOf({ answers: b.builder.answers, appliedAtUtc: plan.applied.atUtc, pauses: plan.pauses, workouts, nowMs, tz });
+}
+
+/**
+ * (PM, 23 Oct) What a workout started now is stamped with (`WorkoutSession.deload`): the applied builder plan's block
+ * when this is its deload week and the plan isn't paused today, else null. The same derivation Today's header and the
+ * deload draft use, read once at Start, so the mark never moves when the plan or history changes later.
+ */
+export function pbDeloadAtStart(
+  plan: Pick<PlanDraft, 'id' | 'status' | 'versions' | 'currentVersion' | 'applied' | 'pauses'> | null,
+  refs: readonly PbFinishedRef[],
+  nowMs: number,
+  tz: string,
+): SessionDeload | null {
+  if (plan === null || activePause(plan, nowMs, tz) !== null) return null;
+  const b = pbBlockOfPlan(plan, refs, nowMs, tz);
+  return b === null || !b.deload ? null : { planId: plan.id, week: b.week, of: b.of };
 }
 
 /** Today's header text: `Week 3 of 6`, `Week 6 of 6 · Deload`, `Block done`; with what VoiceOver reads. */

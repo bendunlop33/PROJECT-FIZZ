@@ -22,6 +22,7 @@ import { isInHistory } from './session/deletion';
  * - `gymId` is the session's gym (null: not recorded); `imported` marks a
  *   FitNotes workout, read through `comparableSetsOf` and matched on any
  *   item (B7).
+ * - `deload` marks a workout started in the plan's deload week (PM, 23 Oct).
  * - `identity: true` also keeps each set's ID and version and the session's
  *   zone and routine name, so a target made from this history can record its
  *   basis for `Why?` (active-workout §2.12) and spot later edits.
@@ -80,6 +81,7 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
       imported: session.source === 'import',
       sets,
       ...(copy ? { copy: true as const } : {}),
+      ...(session.deload !== undefined ? { deload: true as const } : {}),
       ...(opts.identity ? { tz: session.startedAt.tz, routineName: session.routineName } : {}),
     }));
 }
