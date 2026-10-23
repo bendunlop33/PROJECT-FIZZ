@@ -1,5 +1,6 @@
 import { BUILD_LIMITS } from '@fizz/schemas';
 import { slotsOf } from './arrange';
+import { estimateBuilderMinutes } from './estimate';
 import { clampMinutes, FIT_RULES, fitToMinutes, type BuilderFitStep } from './fit';
 import { workingCount } from './set-rows';
 import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
@@ -240,6 +241,26 @@ export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome 
   const work = i.fit === null ? i.current : unfitWorkout(i.fit, i.current, { hold: true });
   const fromMinutes = i.fit?.fromMinutes ?? i.minutes;
   return refitWorkoutToTime({ original, work, fromMinutes, to: i.to, ctx: i.ctx, mainGroup: i.mainGroup, supersets: i.supersets });
+}
+
+/**
+ * (Review todaylean B2) Today's card fitted to its Time, as the record Your workout's Time keeps: the draft before the
+ * fit (`base`), the length at which nothing is cut (the plan day's, or the draft's own when it is longer), and what
+ * the fit left out, cut and paired. So Your workout opened from Today shows Time's note and Undo, more Time brings the
+ * plan day's workout back, and Start (and the Summary) never take Time's cuts for Ben's. Null when the fit shrank
+ * nothing (it fits, or Time filled it: a filled card is the draft itself at that length).
+ */
+export function todayTimeFit(unfitted: BuilderWorkout, steps: readonly BuilderFitStep[], planMinutes: number, ctx: Pick<BuilderContext, 'info' | 'restPresetsS'>): BuilderTimeFit | null {
+  const rank = (l: BuilderWorkout['restLevel']) => (l === 'normal' ? 0 : l === 'shorter' ? 1 : 2);
+  const grew = steps.some((st) => st.kind === 'add' || (st.kind === 'sets' && st.to > st.from) || (st.kind === 'rest' && rank(st.to) < rank(st.from)));
+  const shrank = steps.some((st) => st.kind === 'drop' || st.kind === 'pair' || st.kind === 'effort' || (st.kind === 'sets' && st.to < st.from) || (st.kind === 'rest' && rank(st.to) > rank(st.from)));
+  if (grew || !shrank) return null;
+  const cut: Record<string, number> = {};
+  for (const st of steps) if (st.kind === 'sets' && st.from > st.to) cut[st.slotKey] = (cut[st.slotKey] ?? 0) + st.from - st.to;
+  const dropped = steps.flatMap((st) => (st.kind === 'drop' ? [st.slotKey] : []));
+  const paired = steps.flatMap((st) => (st.kind === 'pair' ? [[...st.slotKeys]] : []));
+  const fromMinutes = Math.max(clampMinutes(planMinutes), clampMinutes(estimateBuilderMinutes(unfitted, ctx)));
+  return { base: unfitted, fromMinutes, dropped, ...(Object.keys(cut).length === 0 ? {} : { cut }), ...(paired.length === 0 ? {} : { paired }) };
 }
 
 /**

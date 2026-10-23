@@ -236,8 +236,8 @@ const planStub = (req: ModelRequest): ModelEvent[] => {
   return toolCall('propose_plan', { days: DAYS.map(([dayName, splitDayId, exs]) => ({ dayName, splitDayId, focus: null, minutes: null, exercises: exs.map((n) => planEx(idOf(n))) })), message: 'Push, pull, legs.', minutes: null, gymName: null });
 };
 
-describe('R3 / S1: a draft from Today’s Edit (pending Ben, SP6)', () => {
-  it('Your workout’s Time works on the draft as Today committed it: less time cuts and lists it; Undo is exactly Today’s version; more time never adds past it', async () => {
+describe('R3 / S1: a draft from Today’s Edit (SP6, PM 23 Oct: the original is the plan day’s full workout; review todaylean B2)', () => {
+  it('Today’s Time fit comes with the draft: Your workout shows its note; Undo and more time bring back the plan day’s full workout; less time still cuts', async () => {
     const { services: s } = await h.launch();
     await bigPush(s, 3);
     model = new StepModel([planStub, () => replyWith('Here is your week.')]);
@@ -254,23 +254,35 @@ describe('R3 / S1: a draft from Today’s Edit (pending Ben, SP6)', () => {
     const full = s.todaySession.card(data, { dayKey: key, controls });
     if (full === null) throw new Error('no card');
     const todayMinutes = Math.floor((full.minutes - 10) / 5) * 5;
+    const short = s.todaySession.card(data, { dayKey: key, controls: { ...controls, minutes: todayMinutes } });
     const committed = await s.todaySession.commit(data, { dayKey: key, controls: { ...controls, minutes: todayMinutes } }, 'commit-short');
     if (!committed.ok) throw new Error(committed.message);
     const snap0 = await s.builder.read(committed.draftId);
     if (snap0 === null) throw new Error('no draft');
-    expect(snap0.setup.minutes).toBe(todayMinutes);
-    expect(snap0.time).toBeNull();
     const counts = (x: BuilderSnapshot) => slotsOf(x.workout.blocks).map((sl) => `${sl.key}×${String(work(sl))}`);
-    const short = await stepUntil(s, snap0, (x) => x.time !== null && x.time.changes.some((ch) => ch.kind !== 'rest'), 'today');
-    expect(workoutView(short).time.note).not.toBeNull();
-    const back = opened(await s.builder.setTime(short.draftId, short.time?.fromMinutes ?? 0, { opId: 'undo-today', expectedVersion: short.version }));
-    expect(back.time).toBeNull();
-    expect(back.setup.minutes).toBe(todayMinutes);
-    expect(counts(back)).toEqual(counts(snap0));
-    expect(back.workout.restLevel).toBe(snap0.workout.restLevel);
-    const more = await step(s, back, 'more', 'more-today');
-    for (const sl of slotsOf(more.workout.blocks)) expect(work(sl)).toBeLessThanOrEqual(countOf(snap0, sl.key));
-    expect(slotsOf(more.workout.blocks).length).toBe(slotsOf(snap0.workout.blocks).length);
+    // Today's card as committed, with Today's own note on Your workout's Time.
+    expect(snap0.setup.minutes).toBe(todayMinutes);
+    expect(slotsOf(snap0.workout.blocks).map((x) => x.exerciseId)).toEqual(short?.rows.map((r) => r.exerciseId));
+    expect(snap0.time).not.toBeNull();
+    expect(workoutView(snap0).time.note).toBe(short?.time?.note);
+    expect(workoutView(snap0).time.undoMinutes).toBe(controls.minutes);
+    // Undo (the detail's): back to the plan's length, the plan day's workout as Today's card has it there (this plan
+    // day runs longer than its length, so the card fits it there too: same rows, same note, no Undo).
+    const back = opened(await s.builder.setTime(snap0.draftId, workoutView(snap0).time.undoMinutes ?? 0, { opId: 'undo-today', expectedVersion: snap0.version }));
+    expect(back.setup.minutes).toBe(controls.minutes);
+    expect(slotsOf(back.workout.blocks).map((x) => x.exerciseId)).toEqual(full.rows.map((r) => r.exerciseId));
+    expect(workoutView(back).time.note).toBe(full.time?.note ?? null);
+    expect(workoutView(back).time.undoMinutes).toBeNull();
+    // More time: the whole plan day, nothing cut.
+    const whole = opened(await s.builder.setTime(back.draftId, 90, { opId: 'whole', expectedVersion: back.version }));
+    expect(whole.time).toBeNull();
+    for (const id of slotsOf(back.workout.blocks).map((x) => x.exerciseId)) expect(slotsOf(whole.workout.blocks).map((x) => x.exerciseId)).toContain(id);
+    expect(slotsOf(whole.workout.blocks).length).toBeGreaterThan(slotsOf(snap0.workout.blocks).length);
+    // Less time again cuts from it and lists the cuts.
+    const less = await stepUntil(s, whole, (x) => x.time !== null && x.time.changes.some((ch) => ch.kind !== 'rest'), 'today');
+    expect(workoutView(less).time.note).not.toBeNull();
+    for (const sl of slotsOf(less.workout.blocks)) expect(work(sl)).toBeLessThanOrEqual(countOf(whole, sl.key));
+    expect(counts(less)).not.toEqual(counts(whole));
   });
 });
 

@@ -50,6 +50,7 @@ import {
   toIso,
   toDraftPlan,
   toMs,
+  todayTimeFit,
   withSlotRevs,
   type AnchorLoad,
   type BuilderContext,
@@ -929,24 +930,39 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return todayDraftState(d).state === 'edited';
   }
 
+  /** The builder's codec over Today's facts (per-slot state, rests from the rest level, the history each load came from). */
+  function codecOf(data: TodaySessionData) {
+    return { info: data.internal.info, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }) };
+  }
+
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {
     return { planId: day.planId, dayIndex: day.dayIndex, splitDayId: day.splitDayId, mainLiftExerciseId: t.mainLiftExerciseId, localDate: data.localDate };
   }
 
   function versionOf(data: TodaySessionData, day: TodayDay, d: TodayDraft, controls: TodayControls, plan: DraftPlan, w: { draftId: string; n: number; parentN: number | null; draftVersion: number; at: ZonedTimestamp }): WorkoutDraftVersion {
-    const minutes = controls.minutes;
+    const minutes = clampInt(controls.minutes);
     const { draftId, n, parentN, at } = w;
+    // The groups Ben chose (before Time's cuts): Your workout's Abs reads them, and a Set up change merges from them.
     const counts = new Map<BuilderGroupName, number>();
-    for (const b of d.workout.blocks) for (const s of b.slots) {
+    for (const b of d.unfitted.blocks) for (const s of b.slots) {
       const g = data.internal.info(s.exerciseId)?.group;
       if (g !== undefined) counts.set(g, (counts.get(g) ?? 0) + 1);
     }
     const groups = storedGroupsOf([...counts].map(([group, count]) => ({ group, count })));
+    // (Review todaylean B2) Today's Time fit is Time's, never the plan's: its record (the draft before it, what it cut,
+    // dropped and paired) and the plan day's own length go with the draft, so Your workout's Time, its note and Undo,
+    // a refit after an option change, Start and the Summary all read the cuts as Time's (D1, D9; SP6: the original is
+    // the plan day's full workout).
+    const planMinutes = clampInt(d.template.minutes);
+    const fit = todayTimeFit(d.unfitted, d.fit.steps, planMinutes, data.internal.ctx);
+    const codec = codecOf(data);
     const setup = {
       dayId: day.splitDayId,
-      minutes: clampInt(minutes),
+      minutes,
       mainLiftExerciseId: d.template.mainLiftExerciseId,
-      supersets: d.workout.blocks.some((b) => b.slots.length > 1),
+      // Ben's Supersets choice, not whether the fitted workout happens to have a pair (Your workout's switch and its
+      // Time fit read it; review todaylean S6).
+      supersets: controls.supersets,
       groups,
       ...(d.template.routineId !== null && d.template.version !== null ? { templateRoutineId: d.template.routineId, templateVersion: d.template.version } : {}),
       variationId: null,
@@ -954,6 +970,19 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       ...(d.workout.restLevel === 'normal' ? {} : { restLevel: d.workout.restLevel }),
       // (D3) Accessories moved into Your workout: it shows and changes the style Today drafted with.
       accessories: controls.accessories,
+      ...(minutes !== planMinutes || fit !== null ? { timeFrom: planMinutes } : {}),
+      ...(fit === null
+        ? {}
+        : {
+            timeFit: {
+              base: toDraftPlan(fit.base, codec),
+              ...(fit.base.restLevel === 'normal' ? {} : { baseRestLevel: fit.base.restLevel }),
+              fromMinutes: fit.fromMinutes,
+              dropped: [...fit.dropped],
+              ...(fit.cut === undefined ? {} : { cut: { ...fit.cut } }),
+              ...(fit.paired === undefined ? {} : { paired: fit.paired.map((x) => [...x]) }),
+            },
+          }),
     };
     const bodyParts = [...new Set(groups.flatMap((g) => g.parts))];
     return {
@@ -1001,7 +1030,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     if (d.exerciseCount === 0) return { ok: false, message: TODAY_SESSION_COPY.empty };
     // The builder's codec (per-slot state, rests from the rest level, the history each load came from), so the
     // builder reads Today's draft exactly as its own (§4.4).
-    const built = toDraftPlan(d.workout, { info: data.internal.info, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }) });
+    const built = toDraftPlan(d.workout, codecOf(data));
     const key = keyOf(data, day, d.template);
     const name = `${day.name} · ${d.template.label}`.slice(0, 120);
     const at = deps.now();
@@ -1011,9 +1040,10 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         if (existing.opIds.includes(opId) || isEdited(existing)) return { ok: true, draftId: existing.id, version: existing.version };
         const cur = currentDraftVersion(existing);
         const plan = withSlotRevs(cur.plan, built).plan;
-        if (stableStringify(cur.plan) === stableStringify(plan)) return { ok: true, draftId: existing.id, version: existing.version };
         const n = Math.max(...existing.versions.map((v) => v.n)) + 1;
         const v = versionOf(data, day, d, sel.controls, plan, { draftId: existing.id, n, parentN: cur.n, draftVersion: existing.version + 1, at });
+        // The same workout and set-up (Time's length and fit record included): nothing to write.
+        if (stableStringify(cur.plan) === stableStringify(plan) && stableStringify(cur.request.setup ?? null) === stableStringify(v.request.setup ?? null)) return { ok: true, draftId: existing.id, version: existing.version };
         const kept = existing.versions.map((x) => (x.n === cur.n ? { ...x, status: 'replaced' as const } : x));
         while (kept.length >= MAX_WORKOUT_DRAFT_VERSIONS) kept.shift();
         const next: WorkoutDraft = { ...existing, name, versions: [...kept, v], currentVersion: n, version: existing.version + 1, updatedAtUtc: at.utc, opIds: [...existing.opIds, opId].slice(-MAX_WORKOUT_DRAFT_OPS) };

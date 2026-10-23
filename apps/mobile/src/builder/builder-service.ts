@@ -758,7 +758,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const gymChanged = here !== null && here.id !== v.request.gymId && here.id !== stored?.gymKept;
     // (22 Oct) Your workout's Time: what a live fit changed, with names for what it left out.
     const fit = timeFitOf(stored);
-    const time = fit === null ? null : { fromMinutes: fit.fromMinutes, changes: timeFitChanges(fit, workout) };
+    // The detail's Undo goes back to the length before Time changed it (a plan day Today drafted: the plan's length, as
+    // Today's Undo does; there a plan day longer than its length is still fitted, as on Today's card).
+    const time = fit === null ? null : { fromMinutes: stored?.timeFrom ?? fit.fromMinutes, changes: timeFitChanges(fit, workout) };
     for (const st of time?.changes ?? []) if (st.kind === 'drop') facts[st.exerciseId] ??= { name: env.nameOf(st.exerciseId), works: env.worksOf(st.exerciseId), group: env.info(st.exerciseId)?.group ?? null, compound: env.info(st.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(st.exerciseId), notHere: false, hasHistory: env.hasHistory(st.exerciseId) };
     return {
       draftId: d.id,

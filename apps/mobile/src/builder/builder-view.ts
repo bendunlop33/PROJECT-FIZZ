@@ -378,7 +378,8 @@ export function timeRowView(snap: BuilderSnapshot): TimeRowView {
     valueText: TODAY_V2_COPY.minutesValue(minutes),
     note,
     lines,
-    undoMinutes: note === null || snap.time === null ? null : snap.time.fromMinutes,
+    // Hidden at the length it goes back to (as Today's card's Undo).
+    undoMinutes: note === null || snap.time === null || snap.time.fromMinutes === minutes ? null : snap.time.fromMinutes,
     less: minutes <= FIT_RULES.minMinutes || less === minutes ? null : less,
     more: minutes >= FIT_RULES.maxMinutes || more === minutes ? null : more,
     noteLabel: note === null ? null : `Time changes: ${note}`,
