@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, useWindowDimensions, View, type TextStyle, type ViewStyle } from 'react-native';
 
-import { PROGRESS_COPY, type CalendarRowView, type ChangeRowView, type LiftsView, type MuscleTrackerRowView, type MuscleTrackerView, type ThisWeekView, type WeekChipView } from '@fizz/domain';
+import { CHANGE_TAP_LABEL, changeRowTaps, PROGRESS_COPY, type CalendarRowView, type ChangeRowView, type ChangeTap, type LiftsView, type MuscleTrackerRowView, type MuscleTrackerView, type ThisWeekView, type WeekChipView } from '@fizz/domain';
 
 import { createGuardedLoader } from '../guide/guarded-load';
 import { TICK_MAX_SCALE } from '../progress/axis-width';
@@ -721,7 +721,8 @@ export function MusclesCard({ view, onDetails }: { view: MuscleTrackerView; /** 
  * applied`, `Out of date`, `Skipped`) is drawn in the secondary colour, never like a made one, with Apply
  * while it is still open.
  */
-export function ChangeRow({ row, first, onUndo, onRedo, onApply }: { row: ChangeRowView; first: boolean; onUndo: () => void; onRedo: () => void; onApply?: () => void }) {
+/** A change as made (or undone, skipped, out of date): its buttons are its own actions (`changeRowTaps`; review v5offers B2). */
+export function ChangeRow({ row, first, onTap }: { row: ChangeRowView; first: boolean; onTap: (t: ChangeTap) => void }) {
   const theme = useTheme();
   const undone = row.status === 'undone';
   const made = row.status === 'applied';
@@ -748,9 +749,16 @@ export function ChangeRow({ row, first, onUndo, onRedo, onApply }: { row: Change
           {undone ? (row.statusText ?? '') : [row.when, row.why, row.statusText].filter((x): x is string => x !== null).join(' · ')}
         </AppText>
       </View>
-      {row.canUndo ? <TextButton label={PROGRESS_COPY.undo} onPress={onUndo} accessibilityLabel={`${PROGRESS_COPY.undo}: ${row.exercise}`} /> : null}
-      {row.canRedo ? <TextButton label={PROGRESS_COPY.redo} onPress={onRedo} accessibilityLabel={`${PROGRESS_COPY.redo}: ${row.exercise}`} /> : null}
-      {row.canApply && onApply !== undefined ? <TextButton label={PROGRESS_COPY.apply} onPress={onApply} accessibilityLabel={`${PROGRESS_COPY.apply}: ${row.exercise}`} /> : null}
+      {changeRowTaps(row).map((t) => (
+        <TextButton
+          key={t}
+          label={CHANGE_TAP_LABEL[t]}
+          onPress={() => {
+            onTap(t);
+          }}
+          accessibilityLabel={`${CHANGE_TAP_LABEL[t]}: ${row.exercise}`}
+        />
+      ))}
     </View>
   );
 }

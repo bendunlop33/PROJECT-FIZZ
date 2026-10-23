@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { clearPainFlag, deriveId, newPainFlag, reduceSession, startWorkout, toIso } from '@fizz/domain';
+import { CHANGE_TAP_LABEL, changeRowTaps, clearPainFlag, deriveId, newPainFlag, reduceSession, startWorkout, toIso } from '@fizz/domain';
 import { at, barbell, exercise, GYM, id, idGen, kg, OWNER, profile, routine, routineExercise, stack, template, T0_MS, TZ, values } from '@fizz/domain/testing';
 import { openStore, type Store } from '@fizz/persistence';
 import { openNodeDriver } from '@fizz/persistence/node';
@@ -8,6 +8,7 @@ import type { CoachModelPort } from '@fizz/coach';
 import type { Exercise, ReviewProposal, Routine, SessionAggregate, SessionCommand, TrainingReview, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../src/coach/coach-service';
+import { runChangeTap } from '../src/reviews/change-taps';
 import { createWeeklyReviewService } from '../src/reviews/weekly-review-service';
 import { StepModel, toolCall } from './coach-model';
 
@@ -498,7 +499,7 @@ describe('Coach’s changes (Progress v3, rule 3): small changes applied with Un
     let view = (await h.service.progress())?.changes;
     expect(view?.rows.map((r) => [r.exercise, r.after, r.status, r.canUndo])).toEqual([['Leg curl', '2 sets', 'applied', true]]);
     expect(view?.asks.map((r) => [r.exercise, r.after, r.status, r.offer, r.statusText, r.canApply])).toEqual([['Leg curl', '4 sets', 'open', true, null, true]]);
-    expect(view?.collapsed).toBe('1 change for next week');
+    expect(view?.collapsed).toBe('1 change for next week · 1 to review');
     // Ben taps Apply on the offer: made against 3 sets, the plan has 2 now, so it is refused and nothing is written (rule 5).
     expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'p2', opId: 'apply-p2' })).toMatchObject({ ok: false, reason: 'out_of_date' });
     expect(await workingOf(h.store, h.legs.id)).toBe(2);
@@ -732,7 +733,8 @@ describe('Coach’s changes: two exercises on one plan day, restart safety, hone
         ['Leg curl', '3 sets', '4 sets', 'next Legs', true, null, true],
         ['Bench press', '3 sets', '4 sets', 'next Legs', true, null, true],
       ]);
-      expect(view?.collapsed).toBe('No changes for next week');
+      // Both wait for Ben: the collapsed line says so (review v5offers 3).
+      expect(view?.collapsed).toBe('2 to review');
       // Ben applies one: written once (a double tap replays), recorded as his.
       expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'c1', opId: 'apply-c1' })).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
       expect(await h.service.applyProposal({ reviewId: h.reviewId, proposalId: 'c1', opId: 'apply-c1' })).toMatchObject({ ok: true });
@@ -783,6 +785,38 @@ describe('Coach’s changes: two exercises on one plan day, restart safety, hone
       // Only Ben's Apply writes it.
       expect(await h.service.applyProposal({ reviewId: again.review.id, proposalId: 'c1', opId: 'apply-c1' })).toMatchObject({ ok: true, proposal: { status: 'applied' } });
       expect(await setsOf(h.store, h.legs.id)).toEqual([3, 2]);
+    });
+
+    it('Apply → Undo → Redo on an offer, tapped the way the screens tap (`changeRowTaps` → `runChangeTap`): Redo writes once, Undo again (review v5offers B2)', async () => {
+      const h = await twoOnLegs((legs) => [change(legs, 'c1', CURL, 'Leg curl', 'Legs ran short', 4)]);
+      await h.service.runOnOpen();
+      const row = async () => {
+        const r = (await h.service.progress())?.changes?.asks.find((x) => x.id === 'c1');
+        if (r === undefined) throw new Error('no row');
+        return r;
+      };
+      /** The one button a row shows with this label, run as the screen runs it. */
+      const tap = async (label: string, opId: string) => {
+        const r = await row();
+        const t = changeRowTaps(r).find((x) => CHANGE_TAP_LABEL[x] === label);
+        if (t === undefined) throw new Error(`no ${label} on ${r.status}: ${changeRowTaps(r).join(',')}`);
+        return runChangeTap(h.service, t, { reviewId: h.reviewId, proposalId: r.id, opId });
+      };
+      expect(changeRowTaps(await row()).map((t) => CHANGE_TAP_LABEL[t])).toEqual(['Apply', 'Skip']);
+      expect(await tap('Apply', 'a1')).toMatchObject({ ok: true, proposal: { status: 'applied' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([4, 3]);
+      expect(await tap('Undo', 'u1')).toMatchObject({ ok: true, proposal: { status: 'undone' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
+      expect(changeRowTaps(await row()).map((t) => CHANGE_TAP_LABEL[t])).toEqual(['Redo']);
+      const v = (await h.store.repos.routines.get(h.legs.id))?.version ?? 0;
+      expect(await tap('Redo', 'r1')).toMatchObject({ ok: true, proposal: { status: 'applied', canUndo: true } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([4, 3]);
+      expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(v + 1);
+      // Recorded as Ben's; Undo again restores it.
+      const c1 = (await h.store.repos.reviews.get(h.reviewId))?.proposals?.find((p) => p.id === 'c1');
+      expect((await h.store.repos.coach.getAction(c1?.actionId ?? ''))?.author).toBe('ben');
+      expect(await tap('Undo', 'u2')).toMatchObject({ ok: true, proposal: { status: 'undone' } });
+      expect(await setsOf(h.store, h.legs.id)).toEqual([3, 3]);
     });
 
     it('a move of more than one set is an offer, even downwards', async () => {

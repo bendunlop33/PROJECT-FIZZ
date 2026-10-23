@@ -66,6 +66,8 @@ export const PROGRESS_COPY = {
   outOfDate: 'Out of date',
   heldPain: 'Held · pain',
   notApplied: 'Not applied',
+  /** Coach's changes collapsed with changes still waiting for Apply / Skip (review v5offers 3). */
+  toReview: (n: number) => `${String(n)} to review`,
   missed: 'missed',
   toDo: 'to do',
   paused: 'paused',
@@ -1068,7 +1070,7 @@ export interface CoachChangesView {
   rows: ChangeRowView[];
   /** Changes asked (Apply / Skip): every offer (structural, not CA8-small, a stall response), and any small one not made. */
   asks: ChangeRowView[];
-  /** `3 changes for next week`. */
+  /** `3 changes for next week`, `1 change for next week · 1 to review`, `1 to review`, `No changes for next week`. */
   collapsed: string;
   /** What Ben saw (the coach's words and the changes, not their statuses): `Got it` still marks it after a status-only update. */
   contentKey: string;
@@ -1120,6 +1122,24 @@ export function changeRowView(p: ReviewProposal, opts: { painFlagged?: ReadonlyS
   };
 }
 
+/**
+ * (Review v5offers B2) What a change row's buttons do, in order: one mapping for every screen, so a button can only
+ * ever call the action its label names. Open and answerable: Apply, Skip. Applied: Undo. Undone: Redo (a Redo, never
+ * an Apply: the row isn't open, and Apply refuses anything that isn't). Nothing else has a button.
+ */
+export type ChangeTap = 'apply' | 'skip' | 'undo' | 'redo';
+
+export function changeRowTaps(row: Pick<ChangeRowView, 'status' | 'canApply' | 'canUndo' | 'canRedo'>): ChangeTap[] {
+  if (row.status === 'open') return row.canApply ? ['apply', 'skip'] : [];
+  const out: ChangeTap[] = [];
+  if (row.canUndo) out.push('undo');
+  if (row.canRedo) out.push('redo');
+  return out;
+}
+
+/** A change row's button label (`Apply`, `Skip`, `Undo`, `Redo`). */
+export const CHANGE_TAP_LABEL: Readonly<Record<ChangeTap, string>> = { apply: PROGRESS_COPY.apply, skip: PROGRESS_COPY.skip, undo: PROGRESS_COPY.undo, redo: PROGRESS_COPY.redo };
+
 /** A stable key of what a review shows Ben (coach words, changes), statuses left out. */
 export function changesContentKey(r: Pick<TrainingReview, 'coach' | 'proposals'>): string {
   const coach = r.coach.status === 'reviewed' ? { s: r.coach.status, v: r.coach.verdict, l: r.coach.lines } : { s: r.coach.status };
@@ -1149,10 +1169,14 @@ export function coachChangesView(r: TrainingReview, today: string, opts: CoachCh
   const rows = all.filter((x) => !x.offer && x.status !== 'open');
   const asks = all.filter((x) => x.offer || x.status === 'open');
   const made = all.filter((x) => x.status === 'applied').length;
+  // Still waiting for Ben (Apply / Skip): never hidden behind `No changes` once the section collapses (review v5offers 3).
+  const waiting = all.filter((x) => x.status === 'open' && x.canApply).length;
   const week = plain(`w/c ${shortDate(r.subject.weekMonday, today)}`);
   const acted = opts.actedOn ?? new Set<string>();
   const allActed = proposals.length > 0 && proposals.every((p) => acted.has(p.id));
-  const changes = made === 0 ? (current ? 'No changes for next week' : 'No changes') : current ? `${plural(made, 'change', 'changes')} for next week` : plural(made, 'change', 'changes');
+  const madeText = made === 0 ? null : current ? `${plural(made, 'change', 'changes')} for next week` : plural(made, 'change', 'changes');
+  const parts = [madeText, waiting === 0 ? null : PROGRESS_COPY.toReview(waiting)].filter((x): x is string => x !== null);
+  const changes = parts.length > 0 ? parts.join(' · ') : current ? 'No changes for next week' : 'No changes';
   return {
     reviewId: r.id,
     version: r.version,

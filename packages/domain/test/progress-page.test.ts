@@ -5,6 +5,8 @@ import {
   addDays,
   changeRowView,
   autoApplicable,
+  CHANGE_TAP_LABEL,
+  changeRowTaps,
   coachChangesView,
   isStructuralProposal,
   stalledOfReview,
@@ -594,7 +596,8 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
     expect(v?.rows.map((r) => r.id)).toEqual(['p1']);
     // One whose reason the number check hid is an offer (never applied without its why): asked, not `Not applied`.
     expect(v?.asks.map((r) => [r.id, r.statusText, r.offer])).toEqual([['p3', null, true]]);
-    expect(v?.collapsed).toBe('1 change for next week');
+    // Still waiting for Ben: counted in the collapsed line, never hidden behind it (review v5offers 3).
+    expect(v?.collapsed).toBe('1 change for next week · 1 to review');
   });
 
   it('collapses once Ben acted on every change; an older week isn’t `for next week`; the content key ignores statuses (review progress-v3 S5, S6)', () => {
@@ -666,13 +669,34 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
       const v = coachChangesView(r, TODAY);
       expect(v?.rows.map((x) => x.id)).toEqual(['p1']);
       expect(v?.asks.map((x) => [x.id, x.offer, x.canApply])).toEqual([['p3', true, true]]);
-      expect(v?.collapsed).toBe('1 change for next week');
+      expect(v?.collapsed).toBe('1 change for next week · 1 to review');
       // Ben applied it: still with the asks, with Undo; counted as made.
       const applied = coachChangesView(review({ proposals: [proposal(), sets(3, 4, { id: 'p3', status: 'applied', actionId: id(901) })] }), TODAY);
       expect(applied?.asks.map((x) => [x.id, x.canUndo, x.canApply])).toEqual([['p3', true, false]]);
       expect(applied?.collapsed).toBe('2 changes for next week');
       // Skipped: `Skipped`, nothing to apply.
       expect(coachChangesView(review({ proposals: [sets(3, 4, { id: 'p3', status: 'skipped' })] }), TODAY)?.asks[0]).toMatchObject({ statusText: 'Skipped', canApply: false });
+    });
+
+    it('the collapsed line counts what still waits for Ben: `1 to review`, never `No changes` over an open offer (review v5offers 3)', () => {
+      expect(coachChangesView(review({ proposals: [sets(3, 4)] }), TODAY)?.collapsed).toBe('1 to review');
+      expect(coachChangesView(review({ proposals: [sets(3, 4), sets(3, 4, { id: 'p2', change: { kind: 'template_sets', routineId: SHOULDERS, routineName: 'Upper', expectedVersion: 1, exerciseId: RAISE, exerciseName: 'Lateral raise', fromSets: 3, toSets: 4 } })] }), TODAY)?.collapsed).toBe('2 to review');
+      expect(coachChangesView(review({ proposals: [sets(3, 4)] }), TODAY, { current: false })?.collapsed).toBe('1 to review');
+      // Answered, or held by pain (no Apply): nothing to review.
+      expect(coachChangesView(review({ proposals: [sets(3, 4, { status: 'skipped' })] }), TODAY)?.collapsed).toBe('No changes for next week');
+      expect(coachChangesView(review({ proposals: [sets(3, 4)] }), TODAY, { painFlagged: new Set([ROW]) })?.collapsed).toBe('No changes for next week');
+    });
+
+    it('each row’s buttons are its own actions: open Apply / Skip; applied Undo; an undone offer Redo, never Apply (review v5offers B2)', () => {
+      const offer = (more: Partial<ReviewProposal>) => changeRowView(sets(3, 4, { reason: 'Back under plan', ...more }));
+      expect(changeRowTaps(offer({}))).toEqual(['apply', 'skip']);
+      expect(changeRowTaps(offer({ status: 'applied', actionId: id(901) }))).toEqual(['undo']);
+      expect(changeRowTaps(offer({ status: 'undone', actionId: id(901) }))).toEqual(['redo']);
+      expect(changeRowTaps(offer({ status: 'skipped' }))).toEqual([]);
+      expect(changeRowTaps(offer({ status: 'stale' }))).toEqual([]);
+      expect(changeRowTaps(changeRowView(sets(3, 4), { painFlagged: new Set([ROW]) }))).toEqual([]);
+      expect(changeRowTaps(changeRowView(sets(3, 4, { status: 'undone', actionId: id(901) }), { painFlagged: new Set([ROW]) }))).toEqual([]);
+      expect(changeRowTaps(offer({ status: 'undone', actionId: id(901) })).map((t) => CHANGE_TAP_LABEL[t])).toEqual(['Redo']);
     });
 
     it('a stalled lift’s one-set-fewer change is asked on the page too (the review’s own facts say stalled)', () => {

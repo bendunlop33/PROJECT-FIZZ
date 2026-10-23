@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { PROGRESS_COPY, REVIEW_COPY, type ChangeRowView, type CoachChangesView } from '@fizz/domain';
+import { CHANGE_TAP_LABEL, changeRowTaps, PROGRESS_COPY, REVIEW_COPY, type ChangeRowView, type ChangeTap, type CoachChangesView } from '@fizz/domain';
 
 import { haptic } from '../device/haptics';
 import { newUuid } from '../device/runtime';
@@ -10,6 +10,7 @@ import { useDataChanged, useScreenData, useServices } from '../shell/context';
 import { useTheme } from '../theme';
 import { AppText, BottomCard, ChecklistRow, PrimaryButton, SecondaryButton } from '../ui';
 import { ChangeRow, LiftsCard, MusclesCard, PROGRESS_TEXT, ProgressCard, SectionHead, WeekCard, WeekHead, type WeekMode } from './charts';
+import { runChangeTap } from './change-taps';
 import type { LiftChoice, ProgressData, ProposalOutcome } from './weekly-review-service';
 
 /**
@@ -39,42 +40,55 @@ export function useProposalActions(reviewId: string | null, after: () => void) {
         busy.current = false;
       });
   };
-  const req = (p: { id: string }) => ({ reviewId: reviewId ?? '', proposalId: p.id, opId: newUuid() });
-  return {
-    message,
-    apply: (p: { id: string }) => {
-      run(() => services.reviews.applyProposal(req(p)));
-    },
-    skip: (p: { id: string }) => {
-      run(() => services.reviews.skipProposal(req(p)));
-    },
-    undo: (p: { id: string }) => {
-      run(() => services.reviews.undoProposal(req(p)));
-    },
-    redo: (p: { id: string }) => {
-      run(() => services.reviews.redoProposal(req(p)));
-    },
+  // Each button calls its own action (`changeRowTaps`, `runChangeTap`; review v5offers B2).
+  const tap = (p: { id: string }, t: ChangeTap) => {
+    run(() => runChangeTap(services.reviews, t, { reviewId: reviewId ?? '', proposalId: p.id, opId: newUuid() }));
   };
+  return { message, tap };
 }
 
-/** An offer, asked: Apply / Skip (rule 3, D2: never applied before Ben says). */
-function AskRow({ row, onApply, onSkip, onUndo }: { row: ChangeRowView; onApply: () => void; onSkip: () => void; onUndo: () => void }) {
+/**
+ * An offer, asked: Apply / Skip (rule 3, D2: never applied before Ben says). Answered (applied, undone, skipped, out of
+ * date): a change row with its own buttons (Undo, Redo).
+ */
+export function AskRow({ row, onTap }: { row: ChangeRowView; onTap: (t: ChangeTap) => void }) {
   const theme = useTheme();
-  if (row.status !== 'open') return <ChangeRow row={row} first={false} onUndo={onUndo} onRedo={onApply} />;
+  if (row.status !== 'open') return <ChangeRow row={row} first={false} onTap={onTap} />;
+  const taps = changeRowTaps(row);
   return (
     <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, gap: 10 }}>
       <AppText variant="headline" numeric style={{ fontSize: 15, lineHeight: 21, fontWeight: '600' }}>
         {`${row.exercise}: ${row.before} → ${row.after}`}
       </AppText>
       <AppText variant="callout" color="text.secondary" numeric style={PROGRESS_TEXT.why}>
-        {[row.when, row.why].filter((x): x is string => x !== null).join(' · ')}
+        {[row.when, row.why, row.statusText].filter((x): x is string => x !== null).join(' · ')}
       </AppText>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        <View style={{ flexGrow: 1 }}>
-          <PrimaryButton label={PROGRESS_COPY.apply} onPress={onApply} accessibilityHint={row.accessibilityLabel} />
+      {taps.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {taps.map((t) =>
+            t === 'apply' ? (
+              <View key={t} style={{ flexGrow: 1 }}>
+                <PrimaryButton
+                  label={CHANGE_TAP_LABEL[t]}
+                  onPress={() => {
+                    onTap(t);
+                  }}
+                  accessibilityHint={row.accessibilityLabel}
+                />
+              </View>
+            ) : (
+              <SecondaryButton
+                key={t}
+                label={CHANGE_TAP_LABEL[t]}
+                onPress={() => {
+                  onTap(t);
+                }}
+                accessibilityLabel={`${CHANGE_TAP_LABEL[t]}: ${row.exercise}`}
+              />
+            ),
+          )}
         </View>
-        <SecondaryButton label={PROGRESS_COPY.skip} onPress={onSkip} accessibilityLabel={`${PROGRESS_COPY.skip}: ${row.exercise}`} />
-      </View>
+      ) : null}
     </View>
   );
 }
@@ -136,11 +150,8 @@ export function ChangesSection({ view, hasPast, onReload, onPast }: { view: Coac
                 key={r.id}
                 row={r}
                 first={i === 0}
-                onUndo={() => {
-                  actions.undo(r);
-                }}
-                onRedo={() => {
-                  actions.redo(r);
+                onTap={(t) => {
+                  actions.tap(r, t);
                 }}
               />
             ))}
@@ -150,14 +161,8 @@ export function ChangesSection({ view, hasPast, onReload, onPast }: { view: Coac
           <AskRow
             key={r.id}
             row={r}
-            onApply={() => {
-              actions.apply(r);
-            }}
-            onSkip={() => {
-              actions.skip(r);
-            }}
-            onUndo={() => {
-              actions.undo(r);
+            onTap={(t) => {
+              actions.tap(r, t);
             }}
           />
         ))}
