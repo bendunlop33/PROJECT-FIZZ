@@ -19,6 +19,8 @@ import {
   fitCarryOver,
   fitSetValue,
   applyAccessoryStyleTo,
+  pairSlots,
+  removeSlot,
   type BuilderSetup,
   type BuilderWorkout,
   type SetupIdentity,
@@ -195,13 +197,15 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
   };
   const cuts = (r: { steps: readonly { kind: string }[] }) => r.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop');
 
-  it('then the cheapest cut by training lost per minute (22 Oct revision): the other group’s isolation first, compounds last; never the main lift, never below 2 sets', () => {
+  it('then the least training lost (D9, SP2; review todaylean B1): never the main lift, never below 2 sets', () => {
     const { ctx, w } = solo();
     expect(estimateBuilderMinutes(w, ctx)).toBe(71);
     const f = (m: number) => fitToMinutes(w, ctx, { minutes: m, mainGroup: 'Chest', grow: false, supersets: false });
-    // The triceps pushdown (an extra, 1.5 a set) goes first; the compounds stay longest.
-    expect(ids(f(55).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'crunch']);
-    expect(ids(f(40).workout)).toEqual(['bench', 'incline_db', 'machine_press']);
+    // 55: a fly set and a pushdown set (3.5 lost), not the whole pushdown (4.5).
+    expect(ids(f(55).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'pushdown', 'crunch']);
+    expect(cuts(f(55)).map((c) => c.kind)).toEqual(['sets', 'sets']);
+    // 40: 18 kept either way (two compounds, or fly + pushdown + crunch); the tie keeps more sets.
+    expect(ids(f(40).workout)).toEqual(['bench', 'cable_fly', 'pushdown', 'crunch']);
     for (const m of [55, 50, 45, 40, 35, 30, 25]) {
       const r = f(m);
       expect(r.status).toBe('fitted');
@@ -209,19 +213,20 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
       expect(all(r.workout)[0]).toEqual(all(w)[0]);
       expect(all(r.workout).every((s) => s.main || s.rows.filter((x) => x.type !== 'warmup').length >= 2)).toBe(true);
     }
-    expect(ids(f(25).workout)).toEqual(['bench']);
+    // 25: two crunch sets still fit after the main lift (the old one-cut-at-a-time fit kept the main lift alone).
+    expect(ids(f(25).workout)).toEqual(['bench', 'crunch']);
     const f10 = f(10);
     expect(f10.status).toBe('over');
     expect(ids(f10.workout)).toEqual(['bench']);
     expect(all(f10.workout)[0]?.rows.filter((r) => r.type !== 'warmup')).toHaveLength(4);
   });
 
-  it('when one cut is enough, the one that loses least: a fly set, not a whole exercise', () => {
+  it('cuts are listed in workout order: at 50 a fly set and the pushdown', () => {
     const { ctx, w } = solo();
     const r = fitToMinutes(w, ctx, { minutes: 50, mainGroup: 'Chest', grow: false, supersets: false });
     expect(cuts(r)).toEqual([
-      { kind: 'drop', slotKey: all(w)[4]?.key, exerciseId: 'pushdown' },
       { kind: 'sets', slotKey: all(w)[3]?.key, exerciseId: 'cable_fly', from: 3, to: 2 },
+      { kind: 'drop', slotKey: all(w)[4]?.key, exerciseId: 'pushdown' },
     ]);
   });
 
@@ -282,6 +287,95 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
         }
       }
     }
+  });
+
+  describe('review todaylean B1: the least training lost, only as far as needed', () => {
+    const days: { main: string; mainGroup: 'Chest' | 'Legs' | 'Back'; groups: { group: 'Chest' | 'Legs' | 'Back' | 'Triceps' | 'Biceps' | 'Abs'; count: number }[] }[] = [
+      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] },
+      { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 3 }, { group: 'Triceps', count: 2 }, { group: 'Biceps', count: 1 }, { group: 'Abs', count: 1 }] },
+      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 5 }, { group: 'Abs', count: 1 }] },
+      { main: 'squat', mainGroup: 'Legs', groups: [{ group: 'Legs', count: 4 }, { group: 'Abs', count: 2 }] },
+      { main: 'row', mainGroup: 'Back', groups: [{ group: 'Back', count: 3 }, { group: 'Biceps', count: 2 }, { group: 'Abs', count: 1 }] },
+    ];
+    const work = (s: { rows: readonly { type: string }[] }) => s.rows.filter((r) => r.type !== 'warmup').length;
+    /** The workout the cut works on (the fit's free savings made), each accessory at `counts` sets (0: left out). */
+    const withCounts = (base: BuilderWorkout, counts: ReadonlyMap<string, number>): BuilderWorkout => {
+      let x = base;
+      for (const s of all(base)) {
+        const k = counts.get(s.key);
+        if (k === undefined || k === work(s)) continue;
+        x = k === 0 ? removeSlot(x, s.key) : { ...x, blocks: x.blocks.map((b) => ({ ...b, slots: b.slots.map((y) => (y.key === s.key ? setWorkingCount(y, k) : y)) })) };
+      }
+      return x;
+    };
+    const cases = function* () {
+      for (const d of days) {
+        for (const supersets of [true, false]) {
+          const ctx = context();
+          const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: d.main, supersets, groups: d.groups }, pool, ctx).workout;
+          const value = (x: BuilderWorkout) => all(x).filter((s) => !s.main).reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, d.mainGroup), 0);
+          for (let m = estimateBuilderMinutes(w, ctx); m >= 15; m -= 1) {
+            const r = fitToMinutes(w, ctx, { minutes: m, mainGroup: d.mainGroup, grow: false, supersets });
+            if (!r.steps.some((s) => s.kind === 'sets' || s.kind === 'drop')) continue;
+            // The cut starts from shortest rests and, with Supersets on, the pairs it made.
+            const rested: BuilderWorkout = { ...w, restLevel: 'shortest' };
+            const base = r.steps.some((s) => s.kind === 'pair') ? { ...rested, blocks: pairSlots(rested.blocks, ctx.info, { skip: (s) => s.touched === true }) } : rested;
+            const label = `${d.main} ${String(d.groups.length)} groups, ${String(m)} min, supersets ${String(supersets)}`;
+            yield { ctx, base, r, m, value, label };
+          }
+        }
+      }
+    };
+
+    it('nothing it left out (at 2 sets) and no set it cut can come back while the workout still fits, at every minute of every day shape', () => {
+      let checked = 0;
+      for (const { ctx, base, r, m, label } of cases()) {
+        if (r.status !== 'fitted') continue;
+        const counts = new Map(all(base).filter((s) => !s.main).map((s) => [s.key, work(all(r.workout).find((x) => x.key === s.key) ?? { rows: [] })]));
+        expect(estimateBuilderSeconds(withCounts(base, counts), ctx), label).toBe(estimateBuilderSeconds(r.workout, ctx));
+        for (const s of all(base)) {
+          const k = counts.get(s.key);
+          if (k === undefined || k >= work(s)) continue;
+          const back = new Map(counts).set(s.key, k === 0 ? Math.min(2, work(s)) : k + 1);
+          expect(estimateBuilderSeconds(withCounts(base, back), ctx), `${label}: ${s.exerciseId} back`).toBeGreaterThan(m * 60 + 29);
+          checked += 1;
+        }
+      }
+      expect(checked).toBeGreaterThan(100);
+    });
+
+    it('brute force on the small fixture: no achievable fit keeps more training (FIT_SET_VALUE) at the same Time', () => {
+      for (const { ctx, base, r, m, value, label } of cases()) {
+        if (r.status !== 'fitted') continue;
+        const acc = all(base).filter((s) => !s.main);
+        let best = -1;
+        const walk = (i: number, counts: Map<string, number>): void => {
+          const s = acc[i];
+          if (s === undefined) {
+            const x = withCounts(base, counts);
+            if (estimateBuilderSeconds(x, ctx) <= m * 60 + 29) best = Math.max(best, value(x));
+            return;
+          }
+          const n = work(s);
+          walk(i + 1, new Map(counts).set(s.key, 0));
+          for (let k = Math.min(2, n); k <= n; k += 1) walk(i + 1, new Map(counts).set(s.key, k));
+        };
+        walk(0, new Map());
+        expect(value(r.workout), label).toBeGreaterThanOrEqual(best - 1e-9);
+      }
+    });
+
+    it('the examples the review found: Chest with Supersets on at 35 min uses ~35 min; off at 27 min keeps more than the main lift', () => {
+      const ctx = context();
+      const groups = days[0]?.groups ?? [];
+      const on = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: true, groups }, pool, ctx).workout;
+      const r35 = fitToMinutes(on, ctx, { minutes: 35, mainGroup: 'Chest', grow: false, supersets: true });
+      expect(r35.minutes).toBeGreaterThanOrEqual(34);
+      const off = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups }, pool, ctx).workout;
+      const r27 = fitToMinutes(off, ctx, { minutes: 27, mainGroup: 'Chest', grow: false, supersets: false });
+      expect(ids(r27.workout).length).toBeGreaterThan(1);
+      expect(r27.minutes).toBeLessThanOrEqual(27);
+    });
   });
 
   it('no effort is pushed for time unless asked (the workout’s +N min offer): then accessory last sets go to RPE 9 after the free savings, before any cut', () => {
@@ -409,10 +503,13 @@ describe('fit value and the week’s carry-over (fit-to-time 22 Oct revision)', 
     const ctx = context();
     const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }] }, pool, ctx).workout;
     const at = (m: number) => fitToMinutes(w, ctx, { minutes: m, mainGroup: 'Chest', grow: false, supersets: false }).workout;
-    // 55: only the pushdown went (3 triceps sets).
-    expect(fitCarryOver(w, at(55), info, 'Chest')).toEqual({ group: 'Triceps', sets: 3 });
-    // 40: fly, pushdown and crunch went (3 sets each): the tie goes to Chest.
-    expect(fitCarryOver(w, at(40), info, 'Chest')).toEqual({ group: 'Chest', sets: 3 });
+    // 50: a fly set and the whole pushdown went: 3 triceps sets.
+    expect(fitCarryOver(w, at(50), info, 'Chest')).toEqual({ group: 'Triceps', sets: 3 });
+    // 55: a set each from fly and pushdown: no group lost 2.
+    expect(fitCarryOver(w, at(55), info, 'Chest')).toBeNull();
+    // Fly and pushdown gone (3 sets each): the tie goes to Chest.
+    const gone = (keys: readonly string[]): BuilderWorkout => ({ ...w, blocks: w.blocks.flatMap((b) => { const slots = b.slots.filter((x) => !keys.includes(x.exerciseId)); return slots.length === 0 ? [] : [{ ...b, slots }]; }) });
+    expect(fitCarryOver(w, gone(['cable_fly', 'pushdown']), info, 'Chest')).toEqual({ group: 'Chest', sets: 3 });
     // 25: nine chest sets went; at most 4 are offered.
     expect(fitCarryOver(w, at(25), info, 'Chest')).toEqual({ group: 'Chest', sets: 4 });
     // Nothing cut, or one set: nothing to carry.

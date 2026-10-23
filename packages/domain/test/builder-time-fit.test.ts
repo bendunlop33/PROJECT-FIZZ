@@ -22,8 +22,8 @@ import { makeSlot } from '../src/builder/slot';
  * Your workout's Time control (22 Oct, Ben: "add option to reduce time"; fit-to-time.md 22 Oct revision): Today's
  * built-in fit (`fitToMinutes`, shrink only) on today's draft, fitting every step from the workout as it was before
  * the first change, so more time brings back what it cut, up to the original and never more. Shorter rests first,
- * then (Supersets on only) pairs, then the cheapest cut by training lost per minute (a set, never below 2, or a whole
- * exercise), never the main lift; no effort pushed, no load changed (kg, per-hand dumbbells, assisted machines alike).
+ * then (Supersets on only) pairs, then the least training lost (sets, never below 2, or whole exercises), never the main
+ * lift; no effort pushed, no load changed (kg, per-hand dumbbells, assisted machines alike).
  */
 
 const ctx = context();
@@ -82,11 +82,13 @@ describe('fitWorkoutToTime', () => {
         expect(row.reps).toBe(was.rows[i]?.reps);
       });
     }
-    // A little shorter, the abs (2.5 a set, Ben's choice) go before the compounds.
+    // A little shorter, the abs (2.5 a set, Ben's choice) go before the compounds; a minute longer, sets go instead
+    // (a fly, a pushdown and a crunch set lose 6, the crunch 7.5: the least training lost).
     const crunchKey = order.find((s) => s.exerciseId === 'crunch')?.key;
-    expect(at(base, full - 15, null, full).fit?.dropped).toEqual([crunchKey]);
-    expect(slotsOf(at(base, full - 15, null, full).workout.blocks).find((s) => s.exerciseId === 'assisted_pullup')?.convention).toBe('assistance');
-    expect(slotsOf(at(base, full - 15, null, full).workout.blocks).find((s) => s.exerciseId === 'incline_db')?.convention).toBe('per_hand');
+    expect(at(base, full - 16, null, full).fit?.dropped).toEqual([crunchKey]);
+    expect(at(base, full - 15, null, full).fit?.dropped).toEqual([]);
+    expect(slotsOf(at(base, full - 16, null, full).workout.blocks).find((s) => s.exerciseId === 'assisted_pullup')?.convention).toBe('assistance');
+    expect(slotsOf(at(base, full - 16, null, full).workout.blocks).find((s) => s.exerciseId === 'incline_db')?.convention).toBe('per_hand');
   });
 
   it('no superset is ever made (Supersets off is a hard rule, review V14): pairs only stay or shrink', () => {
@@ -435,7 +437,7 @@ describe('review N3: an exercise the fit left out that Ben added back himself', 
   it('doesn’t come back a second time, and the detail stops listing it as dropped', () => {
     const base = push();
     const full = estimateBuilderMinutes(base, ctx);
-    const short = at(base, full - 15, null, full);
+    const short = at(base, full - 16, null, full);
     const fit = short.fit;
     const crunchKey = slotsOf(base.blocks).find((s) => s.exerciseId === 'crunch')?.key ?? '';
     if (fit === null || !fit.dropped.includes(crunchKey)) throw new Error('crunch not dropped');
@@ -460,11 +462,14 @@ describe('one shared fit for Today and Your workout (22 Oct revision, D9)', () =
       blocks: [slot('bench', { main: true, sets: 4 }), slot('incline_db', { sets: 3 }), slot('cable_fly', { sets: 3 }), slot('pushdown', { sets: 3 }), { ...slot('pushdown', { sets: 3 }), key: 'ride', exerciseId: 'rowing_machine' }].map((x) => ({ slots: [x], auto: false })),
     };
     const n = estimateBuilderMinutes(w, ctx);
-    const today = fitToMinutes(w, ctx, { minutes: n - 20, mainGroup: 'Chest', grow: false, supersets: false });
-    const yours = fitToMinutes(w, ctx, { minutes: n - 20, mainGroup: 'Chest', grow: false, supersets: false, pushEffort: false });
+    const today = fitToMinutes(w, ctx, { minutes: n - 16, mainGroup: 'Chest', grow: false, supersets: false });
+    const yours = fitToMinutes(w, ctx, { minutes: n - 16, mainGroup: 'Chest', grow: false, supersets: false, pushEffort: false });
     expect(yours).toEqual(today);
-    const cuts = today.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop').map((x) => ('slotKey' in x ? x.slotKey : ''));
-    expect(cuts[0]).toBe('ride');
+    const cuts = today.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop');
+    expect(cuts).toEqual([{ kind: 'drop', slotKey: 'ride', exerciseId: 'rowing_machine' }]);
+    // A little shorter, a set off the ride first.
+    const less = fitToMinutes(w, ctx, { minutes: n - 12, mainGroup: 'Chest', grow: false, supersets: false });
+    expect(less.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop').map((x) => ('slotKey' in x ? x.slotKey : ''))).toEqual(['ride']);
   });
 });
 

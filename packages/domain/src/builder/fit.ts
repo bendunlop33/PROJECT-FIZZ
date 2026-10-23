@@ -1,5 +1,5 @@
 import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
-import { estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
+import { BUILDER_TIME, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { makeSlot } from './slot';
 import { BUILDER_SET_RULES, isTimedSlot, setWorkingCount, workingCount } from './set-rows';
 import { ARM_GROUPS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderInfoLookup, type BuilderSlot, type BuilderWorkout, type RestLevel } from './types';
@@ -13,13 +13,14 @@ import { ARM_GROUPS, type BuilderBlock, type BuilderContext, type BuilderGroupNa
  *       Supersets off nothing is ever paired (design review V14);
  *   (b) only when asked (`pushEffort`, the workout's `+N min` offer, workout-table-v3 §5): accessory last sets to
  *       RPE 9. Today and Your workout have no effort step;
- *   (c) the cheapest cut, step by step: a set off an exercise (never below 2) or a whole exercise (which saves its
- *       changeover too). When one cut is enough, the one that loses least (unless cheaper cuts per minute would lose
- *       less in all: never a compound for want of two isolation sets, design review V15); otherwise the one that
- *       loses least per minute saved. Value per set (`FIT_SET_VALUE`): compound accessory 3, isolation 2, abs 2.5 (Ben's choice),
- *       extra 1.5 (another group's isolation, or an exercise with no builder group such as cardio). Ties: later in
- *       the workout first, a set before a whole exercise. The main lift is never cut; at least one exercise stays;
- *   (d) sets a later cut made unneeded come back, most valuable first.
+ *   (c) the cheapest cut, as the least training lost (D9; SP2, the design track's 23 Oct proposal, for Ben to
+ *       confirm): of every way of keeping each accessory at 2+ sets or leaving it out, the one that fits and keeps the
+ *       most training value. Value per set (`FIT_SET_VALUE`): compound accessory 3, isolation 2, abs 2.5 (Ben's
+ *       choice), extra 1.5 (another group's isolation, or an exercise with no builder group such as cardio). Ties: more
+ *       sets kept, then more of the time used, then the earlier exercises kept. So it cuts only as far as needed:
+ *       nothing it left out or cut could come back and still fit (review todaylean B1), and a compound is never
+ *       dropped for want of two isolation sets (design review V15). The main lift is never cut; at least one exercise
+ *       stays. Less time never keeps more training, but a shorter fit isn't always a subset of a longer one.
  * Main-lift sets and loads never change for time. Still over → `over`. Length clamped to 15–180.
  * Longer (grow): normal rests back first; then exercises (a second arm exercise, then a main-group accessory), then
  * +1 set on accessories (max 4). The plan's own spare minutes stay as a buffer: only time beyond it is filled.
@@ -131,48 +132,6 @@ export function removeSlot(w: BuilderWorkout, key: string): BuilderWorkout {
   return { ...w, blocks };
 }
 
-/** One cut the fit could make: a set off a slot, or the whole slot. */
-interface FitCut {
-  kind: 'sets' | 'drop';
-  slot: BuilderSlot;
-  /** The slot's place in the workout (later is cut first on a tie). */
-  at: number;
-  /** Training lost (`FIT_SET_VALUE` × sets). */
-  lost: number;
-  /** Seconds the cut saves (> 0). */
-  saves: number;
-  /**
-   * Training seconds it saves (sets, rests and the changeover; warm-ups left out), what "per minute saved" is
-   * weighed on: a compound's warm-ups are no reason to drop it first (the prototype's time model; design review V15).
-   */
-  rateS: number;
-  next: BuilderWorkout;
-}
-
-/** Ties between two cuts: later in the workout first, then a set before a whole exercise. */
-function laterFirst(a: FitCut, b: FitCut): boolean {
-  if (a.at !== b.at) return a.at > b.at;
-  return a.kind === 'sets' && b.kind === 'drop';
-}
-
-/** The cut that loses least (an enough one); ties `laterFirst`. */
-function leastLost(cuts: readonly FitCut[]): FitCut | null {
-  let best: FitCut | null = null;
-  for (const c of cuts) if (best === null || c.lost < best.lost - 1e-9 || (Math.abs(c.lost - best.lost) <= 1e-9 && laterFirst(c, best))) best = c;
-  return best;
-}
-
-/** The cut that loses least per second saved; ties `laterFirst`. */
-function bestRate(cuts: readonly FitCut[]): FitCut | null {
-  let best: FitCut | null = null;
-  for (const c of cuts) {
-    const x = c.lost / c.rateS;
-    const y = best === null ? Infinity : best.lost / best.rateS;
-    if (best === null || x < y - 1e-12 || (Math.abs(x - y) <= 1e-12 && laterFirst(c, best))) best = c;
-  }
-  return best;
-}
-
 /** `fitToMinutes`: the ladder above. */
 export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts: BuilderFitOptions): BuilderFitResult {
   const floor = rawOpts.floorMinutes;
@@ -181,7 +140,7 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
   const limitS = opts.minutes * 60 + 29;
   const secs = (w: BuilderWorkout) => estimateBuilderSeconds(w, ctx);
   const over = (w: BuilderWorkout) => secs(w) > limitS;
-  const done = (w: BuilderWorkout, steps: BuilderFitStep[], status: BuilderFitStatus): BuilderFitResult => ({ workout: w, steps: tidySteps(steps), status, minutes: estimateBuilderMinutes(w, ctx) });
+  const done = (w: BuilderWorkout, steps: BuilderFitStep[], status: BuilderFitStatus): BuilderFitResult => ({ workout: w, steps, status, minutes: estimateBuilderMinutes(w, ctx) });
   let w = cloneW(input);
   const steps: BuilderFitStep[] = [];
   if (!over(w)) return opts.grow ? grow(w, ctx, opts) : done(w, steps, 'fits');
@@ -221,71 +180,177 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
   if (pushed.length > 0) steps.push({ kind: 'effort', slotKeys: pushed });
   if (!over(w)) return done(w, steps, 'fitted');
 
-  // (c) The cheapest cut, one at a time.
+  // (c) The least training lost: every way of keeping each accessory (2+ sets, or left out) is weighed at once.
   const valueOf = (s: BuilderSlot) => fitSetValue(s.exerciseId, ctx.info, opts.mainGroup);
-  const trainingSecs = (x: BuilderWorkout) => secs({ ...x, blocks: x.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => ({ ...s, rows: s.rows.filter((r) => r.type !== 'warmup') })) })) });
-  const cutsOf = (x: BuilderWorkout): FitCut[] => {
-    const now = secs(x);
-    const nowT = trainingSecs(x);
-    const slots = allSlots(x);
-    const out: FitCut[] = [];
-    for (const [at, s] of slots.entries()) {
-      if (s.main || s.touched === true) continue;
-      const n = workingCount(s);
-      const options: Omit<FitCut, 'saves' | 'rateS'>[] = [];
-      if (n > FIT_RULES.minAccessorySets) options.push({ kind: 'sets', slot: s, at, lost: valueOf(s), next: replaceSlot(x, s.key, setWorkingCount(s, n - 1)) });
-      // Never the last exercise (with no main lift, one stays).
-      if (slots.length > 1) options.push({ kind: 'drop', slot: s, at, lost: valueOf(s) * n, next: removeSlot(x, s.key) });
-      for (const o of options) {
-        const saves = now - secs(o.next);
-        const rateS = nowT - trainingSecs(o.next);
-        if (saves > 0 && rateS > 0) out.push({ ...o, saves, rateS });
+  const best = leastLostFit(w, ctx, limitS, valueOf);
+  steps.push(...best.steps);
+  return done(best.workout, steps, best.fits ? 'fitted' : 'over');
+}
+
+/** One way to keep a block: what it becomes (null: left out), its seconds with the changeover, the value and sets kept. */
+interface BlockChoice {
+  block: BuilderBlock | null;
+  secs: number;
+  value: number;
+  sets: number;
+  /** Per cuttable slot in the block, its working sets kept (0: left out). */
+  counts: number[];
+}
+
+interface FitState {
+  value: number;
+  sets: number;
+  /** Each block's choice (an index into its choices, more kept first). */
+  picks: number[];
+}
+
+/**
+ * `a` keeps more: more training value, then more sets, then (`secs`, for whole fits) more of the time used, then more
+ * of the earlier exercises (picks compared in order).
+ */
+function keepsMore(a: FitState, b: FitState, secs?: { a: number; b: number }): boolean {
+  if (Math.abs(a.value - b.value) > 1e-9) return a.value > b.value;
+  if (a.sets !== b.sets) return a.sets > b.sets;
+  if (secs !== undefined && secs.a !== secs.b) return secs.a > secs.b;
+  for (let i = 0; i < a.picks.length; i += 1) {
+    const x = a.picks[i] ?? 0;
+    const y = b.picks[i] ?? 0;
+    if (x !== y) return x < y;
+  }
+  return false;
+}
+
+/**
+ * Every way to keep one block: each cuttable slot (not the main lift, not one Ben edited) at 2..n working sets or left
+ * out (a slot with fewer than 2 keeps its own or goes); a pair left with one member is that one alone (`removeSlot`).
+ * More kept first, so a lower index keeps more of the earlier slot.
+ */
+function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, valueOf: (s: BuilderSlot) => number): BlockChoice[] {
+  const per = b.slots.map((s) => {
+    if (s.main || s.touched === true) return null;
+    const n = workingCount(s);
+    const keep: number[] = [];
+    for (let k = n; k >= Math.min(n, FIT_RULES.minAccessorySets); k -= 1) keep.push(k);
+    return [...keep, 0];
+  });
+  const out: BlockChoice[] = [];
+  const walk = (i: number, counts: number[]): void => {
+    if (i === b.slots.length) {
+      const slots: BuilderSlot[] = [];
+      let value = 0;
+      let sets = 0;
+      let c = 0;
+      const kept: number[] = [];
+      for (const [j, s] of b.slots.entries()) {
+        const options = per[j];
+        if (options === null || options === undefined) {
+          slots.push(s);
+          continue;
+        }
+        const k = counts[c] ?? 0;
+        c += 1;
+        kept.push(k);
+        value += k * valueOf(s);
+        sets += k;
+        if (k > 0) slots.push(k === workingCount(s) ? s : setWorkingCount(s, k));
+      }
+      const block = slots.length === 0 ? null : slots.length === 1 && b.slots.length > 1 ? { slots, auto: false } : { ...b, slots };
+      out.push({ block, secs: block === null ? 0 : blockSeconds(block, w, ctx) + BUILDER_TIME.betweenS, value, sets, counts: kept });
+      return;
+    }
+    const options = per[i];
+    if (options === null || options === undefined) {
+      walk(i + 1, counts);
+      return;
+    }
+    for (const k of options) walk(i + 1, [...counts, k]);
+  };
+  walk(0, []);
+  return out;
+}
+
+/**
+ * Step (c), the least training lost (Ben's "the cheapest cut", D9; fit-to-time 23 Oct "the least training lost, not
+ * one step at a time", SP2): of every way to keep each cuttable accessory at 2+ sets or leave it out, the one that fits
+ * and keeps the most training value (`FIT_SET_VALUE`); ties: more sets kept, then more of the time used, then the
+ * earlier exercises kept. Exact, by block (an estimate is a sum over blocks, `estimateBuilderSeconds`), so nothing it
+ * left out or cut could come back and still fit. Nothing fits: the shortest it can be (status over). The main lift and
+ * Ben's edited slots are never cut; at least one exercise stays.
+ */
+function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, valueOf: (s: BuilderSlot) => number): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
+  const choices = w.blocks.map((b) => blockChoices(b, w, ctx, valueOf));
+  // The blocks' seconds (with a changeover each) against the limit: setup is once, and the first block has no changeover.
+  const room = limitS - BUILDER_TIME.setupS + BUILDER_TIME.betweenS;
+  const minAfter: number[] = new Array<number>(choices.length + 1).fill(0);
+  for (let i = choices.length - 1; i >= 0; i -= 1) minAfter[i] = (minAfter[i + 1] ?? 0) + Math.min(...(choices[i] ?? []).map((c) => c.secs));
+  // By total seconds, the state that keeps most. States that can't fit any more are dropped as they arise.
+  let states = new Map<number, FitState>([[0, { value: 0, sets: 0, picks: [] }]]);
+  for (const [i, opts] of choices.entries()) {
+    const next = new Map<number, FitState>();
+    for (const [secs, st] of states) {
+      for (const [k, c] of opts.entries()) {
+        const total = secs + c.secs;
+        if (total + (minAfter[i + 1] ?? 0) > room) continue;
+        const cand: FitState = { value: st.value + c.value, sets: st.sets + c.sets, picks: [...st.picks, k] };
+        const cur = next.get(total);
+        if (cur === undefined || keepsMore(cand, cur)) next.set(total, cand);
       }
     }
-    return out;
-  };
-  /**
-   * Training lost on the per-minute path from `x` until it fits (Infinity: it never does): the least-lost-per-minute
-   * cut each step, finishing with an enough cut when one loses no more than that step would.
-   */
-  const pathLost = (start: BuilderWorkout): number => {
-    let x = start;
-    let total = 0;
-    while (over(x)) {
-      const cuts = cutsOf(x);
-      const rate = bestRate(cuts);
-      if (rate === null) return Infinity;
-      const enough = leastLost(cuts.filter((c) => c.saves >= secs(x) - limitS));
-      if (enough !== null && enough.lost <= rate.lost + 1e-9) return total + enough.lost;
-      total += rate.lost;
-      x = rate.next;
-    }
-    return total;
-  };
-  while (over(w)) {
-    const cuts = cutsOf(w);
-    const rate = bestRate(cuts);
-    if (rate === null) return done(w, steps, 'over');
-    // When one cut is enough, the one that loses least; unless the per-minute cuts lose no more in all (design review
-    // V15: a compound isn't dropped for want of a couple of cheaper cuts; on a tie the per-minute path keeps it).
-    const enough = leastLost(cuts.filter((c) => c.saves >= secs(w) - limitS));
-    const cut = enough !== null && (enough === rate || enough.lost < rate.lost + pathLost(rate.next) - 1e-9) ? enough : rate;
-    w = cut.next;
-    if (cut.kind === 'drop') {
-      steps.push({ kind: 'drop', slotKey: cut.slot.key, exerciseId: cut.slot.exerciseId });
-      continue;
-    }
-    const from = workingCount(cut.slot);
-    const key = cut.slot.key;
-    const prev = steps.find((x): x is Extract<BuilderFitStep, { kind: 'sets' }> => x.kind === 'sets' && x.slotKey === key);
-    if (prev !== undefined) prev.to = from - 1;
-    else steps.push({ kind: 'sets', slotKey: key, exerciseId: cut.slot.exerciseId, from, to: from - 1 });
+    states = next;
   }
-  // (d) Sets a later cut made unneeded come back.
-  return done(restoreSets(w, steps, over, (key) => {
-    const s = allSlots(w).find((x) => x.key === key);
-    return s === undefined ? 0 : valueOf(s);
-  }), steps, 'fitted');
+  let best: { secs: number; st: FitState } | null = null;
+  for (const [secs, st] of states) {
+    // Total 0: nothing kept (at least one exercise stays).
+    if (secs <= 0) continue;
+    if (best === null || keepsMore(st, best.st, { a: secs, b: best.secs })) best = { secs, st };
+  }
+  const fits = best !== null;
+  const picks = best?.st.picks ?? shortestPicks(choices);
+  const blocks: BuilderBlock[] = [];
+  const steps: BuilderFitStep[] = [];
+  for (const [i, b] of w.blocks.entries()) {
+    const c = choices[i]?.[picks[i] ?? 0];
+    if (c === undefined) continue;
+    if (c.block !== null) blocks.push(c.block);
+    let at = 0;
+    for (const s of b.slots) {
+      if (s.main || s.touched === true) continue;
+      const k = c.counts[at] ?? 0;
+      at += 1;
+      const n = workingCount(s);
+      if (k === 0) steps.push({ kind: 'drop', slotKey: s.key, exerciseId: s.exerciseId });
+      else if (k < n) steps.push({ kind: 'sets', slotKey: s.key, exerciseId: s.exerciseId, from: n, to: k });
+    }
+  }
+  return { workout: { ...w, blocks }, steps, fits };
+}
+
+/** Nothing fits: each block at its shortest (ties: more kept), keeping at least one exercise. */
+function shortestPicks(choices: readonly (readonly BlockChoice[])[]): number[] {
+  const shortest = (opts: readonly BlockChoice[], nonEmpty: boolean): number => {
+    let at = -1;
+    for (const [k, c] of opts.entries()) {
+      if (nonEmpty && c.block === null) continue;
+      const was = opts[at];
+      if (was === undefined || c.secs < was.secs || (c.secs === was.secs && c.value > was.value + 1e-9)) at = k;
+    }
+    return at;
+  };
+  const picks = choices.map((opts) => Math.max(0, shortest(opts, false)));
+  if (picks.some((k, i) => choices[i]?.[k]?.block != null)) return picks;
+  // Everything could go: the one block whose shortest kept form is shortest stays.
+  let keep = -1;
+  let keepAt = -1;
+  for (const [i, opts] of choices.entries()) {
+    const k = shortest(opts, true);
+    const c = opts[k];
+    const was = choices[keep]?.[keepAt];
+    if (c !== undefined && (was === undefined || c.secs < was.secs)) {
+      keep = i;
+      keepAt = k;
+    }
+  }
+  return keep < 0 ? picks : picks.map((k, i) => (i === keep ? keepAt : k));
 }
 
 /** Training sets a fit took from one muscle group, for the week's carry-over offer. */
@@ -318,40 +383,6 @@ export function fitCarryOver(before: BuilderWorkout, after: BuilderWorkout, info
   let best: FitCarryOver | null = null;
   for (const [group, sets] of lost) if (best === null || sets > best.sets || (sets === best.sets && group === mainGroup)) best = { group, sets };
   return best === null || best.sets < FIT_CARRY.minSets ? null : { group: best.group, sets: Math.min(FIT_CARRY.maxSets, best.sets) };
-}
-
-/**
- * After a later cut freed time: give the kept exercises back the sets an earlier cut took, most valuable first (then
- * the earlier exercise), as far as the time allows ("only as far as needed"). Steps are updated to the net change.
- */
-function restoreSets(input: BuilderWorkout, steps: BuilderFitStep[], over: (w: BuilderWorkout) => boolean, valueOf: (slotKey: string) => number): BuilderWorkout {
-  let w = input;
-  const order = new Map(allSlots(input).map((s, i) => [s.key, i]));
-  const cuts = steps.filter((st): st is Extract<BuilderFitStep, { kind: 'sets' }> => st.kind === 'sets').sort((a, b) => valueOf(b.slotKey) - valueOf(a.slotKey) || (order.get(a.slotKey) ?? 0) - (order.get(b.slotKey) ?? 0));
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const st of cuts) {
-      if (st.to >= st.from) continue;
-      const s = allSlots(w).find((x) => x.key === st.slotKey);
-      if (s === undefined) continue;
-      const next = replaceSlot(w, s.key, setWorkingCount(s, st.to + 1));
-      if (over(next)) continue;
-      w = next;
-      st.to += 1;
-      changed = true;
-    }
-  }
-  for (let i = steps.length - 1; i >= 0; i -= 1) {
-    const st = steps[i];
-    if (st?.kind === 'sets' && st.to === st.from) steps.splice(i, 1);
-  }
-  return w;
-}
-
-/** A slot that was cut and then dropped reports only the drop. */
-function tidySteps(steps: readonly BuilderFitStep[]): BuilderFitStep[] {
-  const dropped = new Set(steps.flatMap((s) => (s.kind === 'drop' ? [s.slotKey] : [])));
-  return steps.filter((s) => !(s.kind === 'sets' && dropped.has(s.slotKey)));
 }
 
 const rank = (l: RestLevel): number => (l === 'normal' ? 0 : l === 'shorter' ? 1 : 2);
