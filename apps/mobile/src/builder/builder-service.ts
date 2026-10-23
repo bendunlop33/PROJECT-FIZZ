@@ -51,6 +51,7 @@ import {
   specsFromSession,
   specsFromWorkout,
   isDeleted,
+  isInHistory,
   checkedOnOf,
   draftSavedRoutineId,
   plannedAsDraftPlan,
@@ -75,13 +76,17 @@ import {
   type SkippedOp,
   keepDiff,
   keepNextTimeMark,
+  landStructuralOps,
+  structuralLine,
+  type AppliedStructural,
+  type StructuralOp,
   keptExercises,
   type KeepBaseItem,
   type KeepCurrentItem,
   type TemplateSlotSpec,
   defaultBuilderMainLift,
 } from '@fizz/domain';
-import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
+import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { KeepNextTimeWrite, Store } from '@fizz/persistence';
 
 import type { WorkoutStartOutcome, WorkoutStartRequest } from '../services/workout-services';
@@ -133,6 +138,15 @@ export interface BuilderServiceDeps {
    * and preferred items, fitted to the gym (rule 4). Null: gone or nothing to plan. Absent: the builder's §3.1 rules.
    */
   planned?: (target: { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string }, gymId: string | null) => Promise<SessionAggregate | null>;
+  /**
+   * (Ben, 23 Oct, D8) The coach's next-workout changes Ben applied in chat for this plan (`coach.appliedStructural`),
+   * landed on its Your workout draft when that opens. Absent: none land.
+   */
+  coachApplies?: (basis: DraftBasis) => Promise<AppliedStructural[]>;
+  /** (D8) Of the applies checked on a draft, the ones that couldn't land there (the card reads `Couldn't apply here`). */
+  coachRefused?: (checked: readonly string[], refused: readonly string[]) => void;
+  /** (D8) Ben undid a landed change on Your workout: the coach's Apply is undone too, so it never lands again. */
+  coachUndone?: (applyActionId: string) => Promise<void>;
 }
 
 /**
@@ -288,6 +302,22 @@ export type KeepNextTimeResult = { ok: true } | { ok: false; reason: 'stale' | '
 /** One Apply, one Skip and one Undo per workout: a double tap, a retry or a relaunch writes once. */
 export function keepNextTimeOpId(sessionId: string, tap: 'apply' | 'skip' | 'undo'): string {
   return deriveId(`keep-next-time:${tap}:${sessionId}`);
+}
+
+/** (D8) The draft write that lands one applied coach change: one per apply and draft, so it lands once. */
+export function coachLandOpId(applyActionId: string): string {
+  return `coach-land:${applyActionId}`;
+}
+
+/** (D8) The Undo of a landed coach change (from Your workout or the chat card): one per apply and draft. */
+export function coachLandUndoOpId(applyActionId: string): string {
+  return `coach-land-undo:${applyActionId}`;
+}
+
+/** The applied coach change a draft write landed, or null for any other write. */
+export function coachLandApplyOf(opId: string): string | null {
+  const m = /^coach-land:(.+)$/.exec(opId);
+  return m?.[1] ?? null;
 }
 
 /** Summary's Undo of a Start's plan change: one op ID per session, so a retry (or a relaunch) undoes once. */
@@ -1019,6 +1049,79 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   };
 
   /**
+   * (D8) The plan an applied coach change was checked against, for a draft: a library workout's routine, a past
+   * workout's next session, else the plan day's template. Null: not one the coach's change can name.
+   */
+  function coachBasisOf(d: WorkoutDraft): DraftBasis | null {
+    const from = d.builderKey?.from;
+    if (from?.kind === 'routine') return { kind: 'routine', routineId: from.id };
+    if (from?.kind === 'session') return { kind: 'next', sourceSessionId: from.id };
+    if (from !== undefined) return null;
+    const t = builderSetupOf(d)?.templateRoutineId;
+    return t === undefined ? null : { kind: 'routine', routineId: t };
+  }
+
+  const opExerciseIds = (ops: readonly StructuralOp[]): string[] => ops.flatMap((o) => (o.change === 'swap' ? [o.fromExerciseId, o.toExerciseId] : o.change === 'remove' ? [o.exerciseId] : (o.exerciseIds ?? [])));
+
+  /**
+   * (D8) One applied coach change on one draft: matched by exercise, all or nothing, checked at this draft's gym
+   * (rule 4) and against pain flags (rule 9), as an undoable edit under its own op ID. `refused`: it can't land here.
+   */
+  async function landOne(p: UserProfile, draftId: string, a: AppliedStructural): Promise<{ kind: 'landed'; result: BuilderWriteResult } | { kind: 'already' } | { kind: 'refused' } | { kind: 'gone' }> {
+    const opId = coachLandOpId(a.applyActionId);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const d = await repos().workoutDrafts.get(draftId).catch(() => null);
+      if (d === null || d.ownerId !== p.id || d.status !== 'open' || d.builderKey === undefined) return { kind: 'gone' };
+      if (d.opIds.includes(opId)) return { kind: 'already' };
+      const v = currentDraftVersion(d);
+      const stored = builderSetupOf(d);
+      const before = fromDraftPlan(v.plan, stored?.restLevel ?? 'normal');
+      const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(before), ...opExerciseIds(a.ops)], keySeed: `${d.id}:${opId}` });
+      const incoming = a.ops.flatMap((o) => (o.change === 'swap' ? [o.toExerciseId] : []));
+      if (incoming.some((id) => env.painFlagged(id) || (env.gymId !== null && !env.doable(id)))) return { kind: 'refused' };
+      const l = landStructuralOps(before, a.ops, env.ctx);
+      if (!l.ok) return { kind: 'refused' };
+      const plan = withSlotRevs(v.plan, toDraftPlan(l.workout, env.codec)).plan;
+      const change = builderDraftEdit(d, { opId, at: deps.now(), basis: { version: d.version }, plan, setup: stored ?? storedSetup(pageSetup(d), {}), undoable: true });
+      const w = await repos()
+        .workoutDrafts.write(p.id, d.id, (current) => (current.version !== d.version && change.kind === 'write' ? { kind: 'stale', current } : change))
+        .catch(() => null);
+      if (w === null) return { kind: 'gone' };
+      if (w.status === 'stale') continue;
+      if (w.status === 'replayed') return { kind: 'already' };
+      if (w.status !== 'written') return { kind: 'gone' };
+      const text = `✦ ${a.ops.map((o) => structuralLine(o).text).join(' · ')}`.slice(0, 160);
+      return { kind: 'landed', result: { status: 'written', snapshot: await snapshotOf(p, w.draft, env), toast: { text, undoOpId: opId, why: null } } };
+    }
+    return { kind: 'gone' };
+  }
+
+  /** (D8) An open's result with the coach's applied changes landed on its draft (the last one's toast, with Undo). */
+  async function withCoachLanded(r: BuilderWriteResult): Promise<BuilderWriteResult> {
+    if (r.status !== 'written' && r.status !== 'replayed') return r;
+    const landed = await service.landCoachChanges(r.snapshot.draftId).catch(() => null);
+    return landed === null ? r : landed;
+  }
+
+  /** The Undo of one draft edit; a landed coach change's Undo writes under its own op ID (`coachLandUndoOpId`). */
+  async function undoIn(p: UserProfile, draftId: string, undoOpId: string, opId: string): Promise<BuilderWriteResult> {
+    return writeDraft(p, draftId, async (current) => {
+      const v = currentDraftVersion(current);
+      const snap = current.undo?.snapshot ?? null;
+      const restoredPlan = snap?.plan ?? v.plan;
+      const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(fromDraftPlan(v.plan)), ...exerciseIdsOf(fromDraftPlan(restoredPlan))], keySeed: `${current.id}:${opId}` });
+      let name: string | undefined;
+      if (snap?.setup != null) {
+        const back = snap.currentVersion === current.currentVersion ? null : current.versions.find((x) => x.n === snap.currentVersion);
+        if (back != null) name = nameOf({ ...pageSetup({ ...current, currentVersion: back.n, versions: current.versions.map((x) => (x.n === back.n ? { ...x, status: 'current' as const } : { ...x, status: 'replaced' as const })) }) }, env, null);
+      }
+      const r = builderDraftUndo(current, { opId, undoOpId, at: deps.now(), ...(name === undefined ? {} : { name }) });
+      if (r.kind === 'refused') return { refused: r.reason === 'nothing' ? 'nothing_to_undo' : 'changed_since', env };
+      return { change: r, env, toast: null };
+    });
+  }
+
+  /**
    * (D1) What Summary's `Keep for next time?` compares: the workout's started builder draft and the version it started
    * as, the plan day (template) or saved workout it opened and at which version, and both as exercise lists (Time's
    * cuts put back: a short day isn't a new plan). Null: not a plan day or saved workout, a variation was open, Ben
@@ -1026,7 +1129,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
    */
   async function keepContext(p: UserProfile, sessionId: string) {
     const a = await repos().sessions.get(sessionId).catch(() => null);
-    if (a === null || a.session.ownerId !== p.id || a.session.status !== 'finished') return null;
+    if (a === null || a.session.ownerId !== p.id || !isInHistory(a.session)) return null;
     const draftId = a.session.coachDraft?.draftId ?? null;
     const draft = draftId === null ? null : await repos().workoutDrafts.get(draftId).catch(() => null);
     const key = draft?.builderKey;
@@ -1232,16 +1335,17 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           const r = await repos().routines.get(target.routineId).catch(() => null);
           if (r === null || r.ownerId !== p.id || isDeleted(r)) return { status: 'closed', snapshot: null, message: BUILDER_COPY.notFound };
           const t = await deps.training().catch(() => null);
-          // A plan day of the plan in use opens as Today's `Edit` does (its template, its plan-day key, the Start prompt).
+          // A plan day of the plan in use opens as Today's `Edit` does (its template, its plan-day key).
           // One from a plan no longer in use is a library workout like any other (review: low).
           const pk = planDayKeyOf(r, t?.split ?? null, t?.mainLifts);
-          if (pk !== null && (await planInUse(p.id))?.plan.id === pk.planId) return service.openTemplate({ routineId: r.id }, opId);
-          return openFrom(p, { kind: 'routine', id: r.id }, opId);
+          // (D8) With the coach's changes Ben applied for it in chat landed on the draft.
+          if (pk !== null && (await planInUse(p.id))?.plan.id === pk.planId) return withCoachLanded(await service.openTemplate({ routineId: r.id }, opId));
+          return withCoachLanded(await openFrom(p, { kind: 'routine', id: r.id }, opId));
         }
         case 'session': {
           const a = await repos().sessions.get(target.sourceSessionId).catch(() => null);
           if (a === null || a.session.ownerId !== p.id) return { status: 'closed', snapshot: null, message: BUILDER_COPY.notFound };
-          return openFrom(p, { kind: 'session', id: a.session.id }, opId);
+          return withCoachLanded(await openFrom(p, { kind: 'session', id: a.session.id }, opId));
         }
         case 'coach_draft': {
           const d = await repos().workoutDrafts.get(target.draftId).catch(() => null);
@@ -1561,20 +1665,57 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     /** `Undo` on the last toast; refused if anything changed since (`Changed since · can't undo`). */
     async undo(draftId: string, undoOpId: string, opId: string): Promise<BuilderWriteResult> {
       const p = await owner();
-      return writeDraft(p, draftId, async (current) => {
-        const v = currentDraftVersion(current);
-        const snap = current.undo?.snapshot ?? null;
-        const restoredPlan = snap?.plan ?? v.plan;
-        const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(fromDraftPlan(v.plan)), ...exerciseIdsOf(fromDraftPlan(restoredPlan))], keySeed: `${current.id}:${opId}` });
-        let name: string | undefined;
-        if (snap?.setup != null) {
-          const back = snap.currentVersion === current.currentVersion ? null : current.versions.find((x) => x.n === snap.currentVersion);
-          if (back != null) name = nameOf({ ...pageSetup({ ...current, currentVersion: back.n, versions: current.versions.map((x) => (x.n === back.n ? { ...x, status: 'current' as const } : { ...x, status: 'replaced' as const })) }) }, env, null);
-        }
-        const r = builderDraftUndo(current, { opId, undoOpId, at: deps.now(), ...(name === undefined ? {} : { name }) });
-        if (r.kind === 'refused') return { refused: r.reason === 'nothing' ? 'nothing_to_undo' : 'changed_since', env };
-        return { change: r, env, toast: null };
-      });
+      // (D8) A landed coach change: its own Undo op, and the coach's Apply is undone too (it doesn't land again).
+      const applyId = coachLandApplyOf(undoOpId);
+      const r = await undoIn(p, draftId, undoOpId, applyId === null ? opId : coachLandUndoOpId(applyId));
+      if (applyId !== null && (r.status === 'written' || r.status === 'replayed')) await deps.coachUndone?.(applyId).catch(() => undefined);
+      return r;
+    },
+
+    /**
+     * (Ben, 23 Oct, D8) The coach's next-workout changes Ben applied in chat, landed on this Your workout draft as
+     * today-only edits with Undo: each once per draft (op ID), all or nothing, at this draft's gym. Null: nothing new
+     * landed. The ones that can't land here are reported, so the card says so.
+     */
+    async landCoachChanges(draftId: string): Promise<BuilderWriteResult | null> {
+      if (deps.coachApplies === undefined) return null;
+      const p = await owner();
+      const d = await repos().workoutDrafts.get(draftId).catch(() => null);
+      if (d === null || d.ownerId !== p.id || d.status !== 'open' || d.builderKey === undefined) return null;
+      const basis = coachBasisOf(d);
+      if (basis === null) return null;
+      const applies = (await deps.coachApplies(basis).catch(() => [] as AppliedStructural[])).filter((a) => !a.undone && !a.used);
+      if (applies.length === 0) return null;
+      const refused: string[] = [];
+      let last: BuilderWriteResult | null = null;
+      for (const a of applies) {
+        const r = await landOne(p, draftId, a);
+        if (r.kind === 'refused') refused.push(a.applyActionId);
+        if (r.kind === 'landed') last = r.result;
+      }
+      deps.coachRefused?.(
+        applies.map((a) => a.applyActionId),
+        refused,
+      );
+      return last;
+    },
+
+    /**
+     * (D8) The chat card's Undo of an applied change: every open draft it landed on goes back, only while the
+     * landing is still that draft's last change (rule 5). `check`: only whether it can.
+     */
+    async revertCoachLanding(applyActionId: string, check: boolean): Promise<boolean> {
+      const p = await owner();
+      const land = coachLandOpId(applyActionId);
+      const back = coachLandUndoOpId(applyActionId);
+      const drafts = (await repos().workoutDrafts.listByOwner(p.id).catch(() => [] as WorkoutDraft[])).filter((d) => d.builderKey !== undefined && d.status === 'open' && d.opIds.includes(land) && !d.opIds.includes(back));
+      if (drafts.some((d) => d.undo?.opId !== land || d.undo.atVersion !== d.version)) return false;
+      if (check) return true;
+      for (const d of drafts) {
+        const r = await undoIn(p, d.id, land, back);
+        if (r.status !== 'written' && r.status !== 'replayed') return false;
+      }
+      return true;
     },
 
     /** Swap / Add (§2.5): this gym's exercises of a group by focus, minus what's in the workout; pain-flagged ones marked. */

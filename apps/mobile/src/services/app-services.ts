@@ -10,10 +10,6 @@ import {
   deriveId,
   discardCommand,
   LEGACY_STARTER_IDS,
-  liveEdits,
-  dismissedCoachEditOpIds,
-  structuralApplyOf,
-  structuralDraftPlan,
   listGymPresets,
   materialiseGymDraft,
   starterExercises,
@@ -40,7 +36,7 @@ import {
   type RecordCounts,
   type SqliteRepositories,
 } from '@fizz/persistence';
-import type { DraftBasis, EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachModelPort } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
@@ -60,8 +56,8 @@ import { createLiftTargetService } from './lift-target-service';
 import { createPlanServices } from './plan-services';
 import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
-import { createTodaySessionService } from './today-session';
-import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
+import { createTodaySessionService, type TodaySessionData } from './today-session';
+import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 import { createBuilderEnv } from '../builder/builder-env';
 import { createBuilderService } from '../builder/builder-service';
@@ -600,6 +596,9 @@ export function createAppServices(deps: AppServicesDeps) {
     exerciseClash: (name) => customExercises.coachClash(name),
     // A build with no gym yet plans on the typical gym's items (workout-builder §4.1 `⚠ No gym`).
     typicalEquipment: () => typicalEquipment(),
+    // (Ben, 23 Oct, D8) An applied next-workout change lands on Your workout; its chat Undo takes it back off there.
+    // `builder` is made below and only called after startup.
+    nextWorkout: { revert: (applyActionId, check) => builder.revertCoachLanding(applyActionId, check) },
   });
 
   /** (Today v2, workout-builder-v3 §2.0) Today's session card from the plan, with the builder's rules. Local only. */
@@ -681,63 +680,6 @@ export function createAppServices(deps: AppServicesDeps) {
   }
 
   /**
-   * Structural changes Ben applied from a coach card (ADR 0020 §3) are
-   * written into the next workout's pre-start draft as his own `Swap today`,
-   * `Skip today` and order edits (ADR 0022), so the overview shows them with
-   * its own Undo and `Change Push A too ›` (the only route to a template
-   * change), and Start uses them like any edit. One op ID per apply and
-   * change: a second load writes nothing, and an edit Ben took back on an
-   * earlier day's overview isn't written again (review S5). An edit the
-   * draft's own checks refuse here (not doable at this gym, or no place for
-   * it in the plan) is left out and reported (review S1): the card reads
-   * `Couldn't apply here` and the overview says so once. An Apply's changes
-   * are written together or not at all (review B2). A refused Apply is
-   * tried again on later loads (at a gym that can do it, or once the plan
-   * has room); when one lands like that, the overview says so once
-   * (`Coach change applied`, merge r2 S2), so it never appears unannounced.
-   */
-  async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<{ wrote: boolean; refused: number; landedLate: number }> {
-    const none = { wrote: false, refused: 0, landedLate: 0 };
-    const basis: DraftBasis = startBasisOf(startOf);
-    const applies = await coach.appliedStructural(basis);
-    if (applies.length === 0) return none;
-    const p = await getProfile();
-    const draft = p === null ? null : await repos().drafts.open(p.id, basis).catch(() => null);
-    const earlier = p === null ? [] : await repos().drafts.listForBasis(p.id, basis).catch(() => []);
-    const plan = structuralDraftPlan({ applies, draftOpIds: draft?.opIds ?? null, liveEdits: draft === null ? [] : liveEdits(draft.edits), dismissedOpIds: dismissedCoachEditOpIds(earlier) });
-    const refusedApplies = new Set<string>();
-    const landedLate = new Set<string>();
-    let version = draftVersion;
-    let wrote = false;
-    // One draft write per Apply (review B2): all of its changes are written, or none, so a card never stands half-applied.
-    const byApply = new Map<string, typeof plan.write>();
-    for (const w of plan.write) {
-      const applyId = structuralApplyOf(w.opId) ?? w.opId;
-      byApply.set(applyId, [...(byApply.get(applyId) ?? []), w]);
-    }
-    for (const [applyId, writes] of byApply) {
-      const r = await overview.editBatch({ target, gymId, expectedDraftVersion: version, edits: writes });
-      if (r.ok) {
-        version = r.draft?.version ?? version;
-        wrote = wrote || !r.duplicate;
-        if (!r.duplicate && coach.wasStructuralRefused(applyId)) landedLate.add(applyId);
-      } else if (r.reason === 'invalid') refusedApplies.add(applyId);
-    }
-    for (const editId of plan.remove) {
-      const r = await overview.undoEdit({ target, gymId, expectedDraftVersion: version, opId: `coach-undo:${editId}`, editId });
-      if (r.ok) {
-        version = r.draft?.version ?? version;
-        wrote = true;
-      }
-    }
-    coach.noteStructuralRefused(
-      applies.map((a) => a.applyActionId),
-      [...refusedApplies],
-    );
-    return { wrote, refused: refusedApplies.size, landedLate: landedLate.size };
-  }
-
-  /**
    * The Workout overview (workout-overview.md): load, Why?, and Start. With no
    * gym, the rows are fitted to the typical gym, and Start saves it (after the
    * stale check) before starting, as Today's Start always has.
@@ -747,13 +689,9 @@ export function createAppServices(deps: AppServicesDeps) {
       const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;
       if (req.gymId === null && typical === null) return null;
       const read = () => loop.overview.load({ ...req, ...(typical ? { typicalEquipment: typical } : {}) });
-      const data = await read();
-      if (data === null) return null;
-      // Coach changes Ben applied for this workout (ADR 0020 §3) become today's edits, once; an undone one is taken back.
-      const coachChanges = await applyCoachChanges(req.target, req.gymId, data.startOf, data.draft?.version ?? null).catch(() => ({ wrote: false, refused: 0, landedLate: 0 }));
-      const page = coachChanges.wrote ? await read() : data;
-      // A coach change the overview's own checks refused here (review S1), or one refused earlier that landed now (merge r2 S2): the page says so once.
-      return page === null ? null : { ...page, coachRefused: coachChanges.refused, coachLanded: coachChanges.landedLate };
+      // (Ben, 23 Oct, D8) The coach's applied next-workout changes land on Your workout (the builder), not on this
+      // retired page's draft.
+      return read();
     },
     async explain(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null; sessionExerciseId: string }) {
       const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;
@@ -997,7 +935,50 @@ export function createAppServices(deps: AppServicesDeps) {
       const made = await setup.useTypicalGym();
       return made.ok && made.gymId !== undefined ? made.gymId : null;
     },
+    // (Ben, 23 Oct, D8) The coach's next-workout changes Ben applied in chat land here, with Undo.
+    coachApplies: (basis) => coach.appliedStructural(basis),
+    coachRefused: (checked, refused) => {
+      coach.noteStructuralRefused(checked, refused);
+    },
+    coachUndone: (applyActionId) => coach.noteNextWorkoutChangeUndone(applyActionId),
   });
+
+  /**
+   * (Ben, 23 Oct, D8) Today with a change Ben applied in chat for his next workout: it lands on that workout's Your
+   * workout draft before the card or Up next shows, so Today shows it (`· edited`) and its one-tap Start starts it.
+   * Only when one is waiting (coach records, local); then Today reads again. Nothing else on Today writes on load.
+   */
+  async function landCoachOnToday(d: TodaySessionData): Promise<boolean> {
+    const pending = await coach.pendingNextWorkoutChanges().catch(() => []);
+    if (pending.length === 0) return false;
+    const routines = new Set(pending.flatMap((b) => (b.kind === 'routine' ? [b.routineId] : [])));
+    const sessionsFrom = new Set(pending.flatMap((b) => (b.kind === 'next' ? [b.sourceSessionId] : [])));
+    let landed = false;
+    for (const day of d.days) {
+      for (const t of day.templates) {
+        const controls = d.initial[day.key];
+        if (t.routineId === null || !routines.has(t.routineId) || controls === undefined) continue;
+        const c = await todaySession.commit(d, { dayKey: day.key, controls: { ...controls, mainLiftExerciseId: t.mainLiftExerciseId } }, deriveId(`coach-land-today:${d.localDate}:${day.key}:${t.routineId}`)).catch(() => null);
+        if (c === null || !c.ok) continue;
+        if ((await builder.landCoachChanges(c.draftId).catch(() => null))?.status === 'written') landed = true;
+      }
+    }
+    const up = d.upNext;
+    if (up !== null && ((up.routineId !== null && routines.has(up.routineId)) || (up.sourceSessionId !== null && sessionsFrom.has(up.sourceSessionId)))) {
+      const target = up.routineId !== null ? { kind: 'routine' as const, routineId: up.routineId } : { kind: 'session' as const, sourceSessionId: up.sourceSessionId ?? '' };
+      const r = await builder.openTarget(target, deriveId(`coach-land-today:${d.localDate}:up-next:${up.routineId ?? up.sourceSessionId ?? ''}`)).catch(() => null);
+      if (r?.status === 'written') landed = true;
+    }
+    return landed;
+  }
+  const todayWithCoach: typeof todaySession = {
+    ...todaySession,
+    async load() {
+      const d = await todaySession.load();
+      if (d === null || !(await landCoachOnToday(d).catch(() => false))) return d;
+      return todaySession.load();
+    },
+  };
 
   /**
    * (Workout builder v3 §2.6, §2.9, §5, §6.1) The builder's coach: Set up words, Your workout proposals,
@@ -1058,7 +1039,7 @@ export function createAppServices(deps: AppServicesDeps) {
     library,
     customExercises,
     history,
-    todaySession,
+    todaySession: todayWithCoach,
     overview,
     routines,
     coachDrafts,

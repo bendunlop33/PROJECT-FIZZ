@@ -378,6 +378,39 @@ export function TodayScreen() {
     }
   }
 
+  /**
+   * (Ben, 23 Oct, D8) Up next's Your workout draft, changed there (by Ben, or a coach change he applied in chat):
+   * Start starts that one, today only, in one tap (the check-in sheet when due).
+   */
+  async function startUpNextDraft(e: { draftId: string; version: number }) {
+    if (!guard()) return;
+    try {
+      const g = await ensureGym();
+      if (g === null) return;
+      await alertsAsk.ensureAsked();
+      const gate = await gateCheckIn();
+      if (gate.ask) {
+        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, coachDraftOf: e.draftId, coachDraftVersion: e.version });
+        return;
+      }
+      const key = `draft:${e.draftId}:${String(e.version)}`;
+      const opId = startOps.current.get(key) ?? newUuid();
+      startOps.current.set(key, opId);
+      const r = await services.builder.start(e.draftId, { opId, expectedVersion: e.version, gymId: g.gymId, checkIn: gate.checkIn });
+      if (!r.ok) {
+        startOps.current.delete(key);
+        setError(r.reason === 'active' ? TODAY_SCREEN_COPY.started : r.message);
+        reload();
+        return;
+      }
+      startOps.current.delete(key);
+      await openStarted(null, gate.reuseId);
+    } catch (err) {
+      setError(TODAY_SCREEN_COPY.notStarted(err instanceof Error ? err.message : String(err)));
+      reload();
+    }
+  }
+
   /** The card's workout, saved as today's builder draft (Start and Edit use the same one, §2.0.2). */
   async function commitCard(sel: TodaySelection, data2: TodaySessionData, opKey: string) {
     const opId = startOps.current.get(opKey) ?? newUuid();
@@ -656,6 +689,7 @@ export function TodayScreen() {
     }
     const noPlan = session.status === 'no_plan';
     const upNext = actions.upNext ? session.upNext : null;
+    const upNextTitle = upNext === null ? '' : upNext.edited != null ? `${upNext.title} · ${TODAY_V2_COPY.edited}` : upNext.title;
     return (
       <View style={{ gap: theme.space['2'] }}>
         {gymRow}
@@ -680,10 +714,12 @@ export function TodayScreen() {
                 // The old Today's Up next (Profile split, routines in rotation): his own workout, Start in one tap (as the card's).
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNext.title)}
+                  accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNextTitle)}
                   disabled={starting}
                   onPress={() => {
-                    if (upNext.routineId !== null) void start({ kind: 'routine', routineId: upNext.routineId });
+                    // (D8) Changed on Your workout (by Ben, or a coach change he applied): that draft starts.
+                    if (upNext.edited != null) void startUpNextDraft(upNext.edited);
+                    else if (upNext.routineId !== null) void start({ kind: 'routine', routineId: upNext.routineId });
                     else if (upNext.sourceSessionId !== null) void start({ kind: 'next', sourceSessionId: upNext.sourceSessionId });
                   }}
                   style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingLeft: theme.space['4'], paddingRight: theme.space['2'], borderRadius: theme.radius.lg, backgroundColor: theme.colors['bg.surface'], opacity: pressed ? 0.7 : 1 })}
@@ -693,7 +729,7 @@ export function TodayScreen() {
                       {TODAY_SCREEN_COPY.upNext}
                     </AppText>
                     <AppText variant="headline" numberOfLines={1} accessible={false}>
-                      {upNext.title}
+                      {upNextTitle}
                     </AppText>
                   </View>
                   <View pointerEvents="none" style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, backgroundColor: theme.colors.accent }}>

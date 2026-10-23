@@ -118,6 +118,8 @@ export function BuilderWorkoutScreen() {
           return;
         }
         changed();
+        // (D8) A coach change Ben applied in chat that landed on opening: its `✦ … · Undo` shows once the page loads.
+        if (r.status === 'written' && r.toast !== null) toastLater.current = r.toast;
         setDraftId(r.snapshot.draftId);
         // A relaunch or a re-render reopens this draft, not a new one.
         navigation.setParams({ draftId: r.snapshot.draftId });
@@ -142,6 +144,13 @@ export function BuilderWorkoutScreen() {
       const r = await inTurn(() => services.builder.changeGym(cur.draftId, { opId: newUuid(), expectedVersion: cur.version }));
       if (r.snapshot !== null) s = r.snapshot;
       if (r.status === 'written' && r.toast !== null) toastLater.current = r.toast;
+    }
+    // (Ben, 23 Oct, D8) A change Ben applied in chat for this workout lands here, once, with `✦ … · Undo`.
+    if (s !== null) {
+      const cur = s;
+      const landed = await inTurn(() => services.builder.landCoachChanges(cur.draftId).catch(() => null));
+      if (landed?.snapshot != null) s = landed.snapshot;
+      if (landed?.status === 'written' && landed.toast !== null) toastLater.current = landed.toast;
     }
     setSnap(s);
     if (toastLater.current !== null) {
