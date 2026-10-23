@@ -64,6 +64,8 @@ export function SummaryScreen() {
   }, [toast]);
   // True while this Summary's own review runs (shows `Reviewing…` on Next time).
   const reviewing = useRef(false);
+  // `Keep for next time?`: one tap at a time (Apply then Skip can't race).
+  const [keepBusy, setKeepBusy] = useState(false);
   const [data, reload] = useScreenData(async (s) => {
     // Keychain + settings file only, no network; a read failure counts as not connected.
     const coach = summaryCoachView(await readTextCoachState(coachConnectionPorts().ports).catch(() => null));
@@ -585,11 +587,15 @@ export function SummaryScreen() {
         {data.value.keep !== null ? (
           <KeepRow
             view={data.value.keep}
+            busy={keepBusy}
             onTap={(tap) => {
+              if (keepBusy) return;
+              setKeepBusy(true);
               const run = tap === 'undo' ? services.builder.undoKeepNextTime(sessionId) : services.builder.keepNextTime(sessionId, tap);
               void run
                 .catch(() => ({ ok: false as const, message: 'Couldn’t save. Try again.' }))
                 .then((r) => {
+                  setKeepBusy(false);
                   if (!r.ok) setToast({ text: r.message });
                   changed();
                   reload();
@@ -758,18 +764,13 @@ function Comparison({ c, tz }: { c: NonNullable<WorkoutSummary['comparison']>; t
 }
 
 /**
- * One `Next time` row (D21): the target and its %, the source tag, `Why?`
- * (the coach's reason, checks and the built-in rule's value, or the rule's
- * own facts) and the row's buttons. Values come from the saved rows.
- */
-/**
  * (Ben, 23 Oct, D1) `Keep for next time?` with what would change, `Skip` and `Apply`; once kept, `<day> updated` with
  * `Undo`. Values from the builder service only.
  */
-function KeepRow({ view, onTap }: { view: KeepNextTimeView; onTap: (tap: 'apply' | 'skip' | 'undo') => void }) {
+function KeepRow({ view, busy, onTap }: { view: KeepNextTimeView; busy: boolean; onTap: (tap: 'apply' | 'skip' | 'undo') => void }) {
   const theme = useTheme();
   if (view.state === 'kept') {
-    return <StatusLine icon="checkmark.circle" tone="info" text={view.text} {...(view.canUndo ? { action: <TextButton label="Undo" onPress={() => { onTap('undo'); }} /> } : {})} />;
+    return <StatusLine icon="checkmark.circle" tone="info" text={view.text} {...(view.canUndo ? { action: <TextButton label="Undo" disabled={busy} onPress={() => { onTap('undo'); }} /> } : {})} />;
   }
   return (
     <Card>
@@ -783,8 +784,8 @@ function KeepRow({ view, onTap }: { view: KeepNextTimeView; onTap: (tap: 'apply'
         ))}
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
-        <TextButton label={KEEP_COPY.skip} tone="secondary" onPress={() => { onTap('skip'); }} />
-        <TextButton label={KEEP_COPY.apply} accessibilityLabel={`${KEEP_COPY.apply}: keep for next ${view.label}`} onPress={() => { onTap('apply'); }} />
+        <TextButton label={KEEP_COPY.skip} tone="secondary" disabled={busy} onPress={() => { onTap('skip'); }} />
+        <TextButton label={KEEP_COPY.apply} accessibilityLabel={`${KEEP_COPY.apply}: keep for next ${view.label}`} disabled={busy} onPress={() => { onTap('apply'); }} />
       </View>
     </Card>
   );
@@ -792,6 +793,11 @@ function KeepRow({ view, onTap }: { view: KeepNextTimeView; onTap: (tap: 'apply'
 
 const KEEP_COPY = { title: 'Keep for next time?', skip: 'Skip', apply: 'Apply' } as const;
 
+/**
+ * One `Next time` row (D21): the target and its %, the source tag, `Why?`
+ * (the coach's reason, checks and the built-in rule's value, or the rule's
+ * own facts) and the row's buttons. Values come from the saved rows.
+ */
 function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTap) => void }) {
   const theme = useTheme();
   const [why, setWhy] = useState(false);
