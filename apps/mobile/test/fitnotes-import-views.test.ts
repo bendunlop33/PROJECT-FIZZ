@@ -435,14 +435,15 @@ describe('import preview wording', () => {
         ['Dumbbell Squat', 40, 10],
       ]),
     );
-    // Dumbbell Squat is the one name to check: Ben chooses the goblet squat (Choose…), then "Both together" for the pairs.
-    // (Its suggestion ties the goblet squat with the thruster's "Dumbbell squat to press"; this test is about dumbbells, not that suggestion.)
+    // Dumbbell Squat is the one name to check, suggested as the goblet squat (never the thruster): Use this, then "Both together" for the pairs.
     expect(d.analysis.names.filter((x) => x.needsAnswer).map((x) => x.name)).toEqual(['Dumbbell Squat']);
-    const goblet = s.imports.searchExercises(d.draftId, 'goblet squat').find((c) => c.name === 'Goblet squat');
-    d = await step(d, { kind: 'name', key: nameKey('Dumbbell Squat'), answer: { kind: 'exercise', exerciseId: goblet?.exerciseId ?? '' } });
+    const squat = d.analysis.names.find((x) => x.name === 'Dumbbell Squat');
+    expect(squat?.match.status).toBe('check');
+    expect(s.imports.candidate(d.draftId, squat?.match.exerciseId ?? '')?.name).toBe('Goblet squat');
+    for (const n of d.analysis.names.filter((x) => x.needsAnswer && x.match.exerciseId)) d = await step(d, { kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId ?? '' } });
     d = await step(d, { kind: 'per_hand', answer: 'both' });
     const q = perHandOptions(d.analysis, 'en-GB');
-    // `Dumbbell Row` is a name of the one-arm row and `Dumbbell Squat` was answered as the goblet squat, but neither name says one: asked, nothing selected.
+    // `Dumbbell Row` is a name of the one-arm row and `Dumbbell Squat` was suggested as the goblet squat, but neither says one: asked, nothing selected.
     expect(q?.ask?.rows.map((r) => [r.title, plain(r.conversion), r.choices.filter((c) => c.selected).length])).toEqual([
       ['Dumbbell Row', '30 kg → not answered yet', 0],
       ['Dumbbell Squat', '40 kg → not answered yet', 0],

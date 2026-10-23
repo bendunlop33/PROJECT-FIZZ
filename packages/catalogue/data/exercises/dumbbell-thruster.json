@@ -3,7 +3,7 @@
   "key": "dumbbell-thruster",
   "tier": "rich",
   "name": "Dumbbell thruster",
-  "aliases": ["DB thruster", "Dumbbell thrusters", "DB thrusters", "Dumbbell squat to press", "Dumbbell squat and press"],
+  "aliases": ["DB thruster", "Dumbbell thrusters", "DB thrusters"],
   "family": "thruster",
   "movementPattern": "conditioning",
   "mechanic": "compound",
@@ -129,6 +129,10 @@
     }
   ],
   "uncertain": [
+    {
+      "field": "aliases",
+      "note": "\"Dumbbell squat to press\" and \"Dumbbell squat and press\" were removed (23 Oct 2026): they made a FitNotes \"Dumbbell Squat\" suggest the thruster instead of the goblet squat."
+    },
     {
       "field": "movementPattern",
       "note": "Mapped to 'conditioning' to match Wall ball; it is also a squat plus vertical push."

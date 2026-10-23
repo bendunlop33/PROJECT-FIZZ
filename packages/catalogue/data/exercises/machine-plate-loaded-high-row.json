@@ -3,7 +3,7 @@
   "key": "machine-plate-loaded-high-row",
   "tier": "rich",
   "name": "Plate-loaded high row",
-  "aliases": ["Iso-lateral high row", "Plate-loaded iso-lateral high row", "Hammer Strength high row", "Hammer high row", "High row machine"],
+  "aliases": ["Iso-lateral high row", "Plate-loaded iso-lateral high row", "High row machine"],
   "family": "row",
   "movementPattern": "vertical_pull",
   "mechanic": "compound",
@@ -115,6 +115,10 @@
     }
   ],
   "uncertain": [
+    {
+      "field": "aliases",
+      "note": "\"Hammer Strength high row\" and \"Hammer high row\" were removed (23 Oct 2026): either made a FitNotes \"Hammer Strength Row\" (often a low or iso-lateral row) suggest this high row. Hammer Strength is a brand with several rows."
+    },
     {
       "field": "movementPattern",
       "note": "The pull is diagonal; the manufacturer calls it more horizontal than a pulldown. Filed as vertical_pull so pulldowns come up as substitutes; it could be horizontal_pull."
