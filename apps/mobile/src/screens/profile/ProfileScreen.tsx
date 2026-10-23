@@ -17,7 +17,9 @@ import { capabilityGroups, summariseCapabilities } from '../../status/capabiliti
 import { signingStatus } from '../../status/signing';
 import { Group, Row, Screen, SectionHeader } from '../../ui';
 import { BannerList } from '../BannerList';
-import { splitView, trainingDetailsView } from '../../training/training-view';
+import { profileSplitRow, trainingDetailsView } from '../../training/training-view';
+import { openYourPlan } from '../../navigation/actions';
+import { newUuid } from '../../device/runtime';
 import { useProbeResults } from './useProbeResults';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { voiceCapability } from '../../voice/speaker';
@@ -37,7 +39,7 @@ export function ProfileScreen() {
   const probe = useProbeResults();
   const { prefs, update } = useDevicePrefs();
   const [data, reload] = useScreenData(async (s) => {
-    const [backup, banners, pain, gyms, coach, training] = await Promise.all([
+    const [backup, banners, pain, gyms, coach, training, planInUse] = await Promise.all([
       s.backups.getStatus(),
       loadBanners(s, install),
       s.pain.active(),
@@ -45,9 +47,12 @@ export function ProfileScreen() {
       // Keychain + settings file only; no network. A read failure shows as unknown, never as connected.
       readTextCoachState(coachConnectionPorts().ports).catch(() => null),
       Promise.all([s.training.snapshot(), s.yourData.profile()]).catch(() => [null, null] as const),
+      // (D7) A plan in use owns the split; a failed read is unknown (no line), never taken for no plan.
+      s.plans.inUse().then((x) => x !== null, () => null),
     ]);
     const [snap, owner] = training;
-    const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg' }).summary, split: splitView(snap.profile, snap.mainLifts).summary };
+    const split = snap === null || planInUse === null ? null : profileSplitRow(snap.profile, snap.mainLifts, planInUse);
+    const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg' }).summary, split };
     return { backup, banners, pain, gyms, coach, training: lines };
   });
   useEffect(() => {
@@ -110,9 +115,11 @@ export function ProfileScreen() {
         <Row
           title="Split"
           icon="calendar"
-          subtitle={data.state === 'ready' ? (data.value.training?.split ?? null) : null}
+          subtitle={data.state === 'ready' ? (data.value.training?.split?.subtitle ?? null) : null}
           onPress={() => {
-            navigation.navigate('Split');
+            // (D7) With a plan in use the split is the plan's: Library › Your plan.
+            if (data.state === 'ready' && data.value.training?.split?.opens === 'your_plan') rootNavigation.dispatch(openYourPlan(newUuid()));
+            else navigation.navigate('Split');
           }}
         />
         <Row

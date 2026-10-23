@@ -1,11 +1,14 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Switch, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 import { cmFromFeetInches, feetInches, LIFT_TARGET_COPY, localDateOf, localHourUtcMs } from '@fizz/domain';
 import type { TrainingChange, TrainingProfile, WeightEntry, WeightUnit } from '@fizz/schemas';
 
 import { nowMs as clockNow, dateAt } from '../../clock';
+import { newUuid } from '../../device/runtime';
+import { openYourPlan } from '../../navigation/actions';
 import { localDateKey } from '../../format/dates';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -23,9 +26,11 @@ type Editing = TrainingRowKey | 'addWeight' | null;
 export function TrainingDetailsScreen() {
   const services = useServices();
   const changed = useDataChanged();
+  const navigation = useNavigation();
   const [data, reload] = useScreenData(async (s) => {
-    const [snap, owner] = await Promise.all([s.training.snapshot(), s.yourData.profile()]);
-    return { snap, unit: owner?.preferredUnit ?? 'kg' };
+    // (D7) A plan in use owns days a week and session length; a failed read leaves them as Profile's (editable).
+    const [snap, owner, plan] = await Promise.all([s.training.snapshot(), s.yourData.profile(), s.plans.inUse().catch(() => null)]);
+    return { snap, unit: owner?.preferredUnit ?? 'kg', planInUse: plan !== null };
   });
   const [editing, setEditing] = useState<Editing>(null);
   const [opId, setOpId] = useState('');
@@ -40,9 +45,9 @@ export function TrainingDetailsScreen() {
       </Screen>
     );
   }
-  const { snap, unit } = data.value;
+  const { snap, unit, planInUse } = data.value;
   const p = snap.profile;
-  const v = trainingDetailsView(p, { nowYear: snap.nowYear, unit });
+  const v = trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse });
 
   const open = (e: Editing) => {
     setOpId(services.newId());
@@ -99,7 +104,8 @@ export function TrainingDetailsScreen() {
       <SectionHeader title={C.training} />
       <Group>
         {v.training.map((r) => (
-          <Row key={r.key} title={r.title} subtitle={r.value} onPress={() => { open(r.key); }} />
+          // (D7) `Set by your plan`: the plan's own (Library › Your plan), not an edit here.
+          <Row key={r.key} title={r.title} subtitle={r.value} onPress={() => { if (r.byPlan === true) navigation.dispatch(openYourPlan(newUuid())); else open(r.key); }} />
         ))}
         {/* (Ben approved 20 Oct) Lift targets on or off; off hides them everywhere and from the coach. */}
         <Row title={LIFT_TARGET_COPY.setting} trailing={<Switch accessibilityLabel={LIFT_TARGET_COPY.setting} value={p.liftTargetsOn === true} onValueChange={(on) => void save({ kind: 'lift_targets_on', on }, services.newId())} />} />

@@ -11,6 +11,7 @@ import type { BuilderSnapshot, BuilderWriteResult } from '../src/builder/builder
 import type { AppServices } from '../src/services/app-services';
 import type { TodaySelection, TodaySessionData } from '../src/services/today-session';
 import { followLatestDraft, todayCardReducer, type TodayCardState } from '../src/today/today-view';
+import { profileSplitRow, trainingDetailsView } from '../src/training/training-view';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -300,5 +301,54 @@ describe('followLatestDraft (pure)', () => {
     expect(followLatestDraft(st, { ...latest, mainLiftExerciseId: 'bench' }, undefined, 'bench')).toBe(st);
     expect(followLatestDraft(st, latest, undefined, 'bench')).toBe(st);
     expect(followLatestDraft(st, undefined, undefined, 'incline')).toBe(st);
+  });
+});
+
+describe('D7: one split source — with a plan, Profile › Split and the duplicated defaults read `Set by your plan`', () => {
+  it('plans.inUse: none without a plan; the plan with one, paused too; none once it has no live workouts', async () => {
+    const { services: s0 } = await h.launch();
+    await setUpGym(h, s0);
+    expect(await s0.plans.inUse()).toBeNull();
+    await h.forceClose();
+    const { s, planId } = await benWithPlan();
+    expect(await s.plans.inUse()).toMatchObject({ planId });
+    const plan = await s.plans.get(planId);
+    expect((await s.plans.pause({ planId, untilDate: null, expectedVersion: plan?.version ?? 0, opId: 'pause-1' })).ok).toBe(true);
+    expect(await s.plans.inUse()).toMatchObject({ planId });
+  });
+
+  it('views: Split and Training details’ days a week and session length are the plan’s with one; Profile’s without; the goal stays Ben’s', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    const snap = await s.training.snapshot();
+    if (snap === null) throw new Error('no snapshot');
+    expect(await s.training.change({ kind: 'days_per_week', days: 4 }, snap.profile.version, 'days-4')).toMatchObject({ ok: true });
+    const t = await s.training.snapshot();
+    if (t === null) throw new Error('no snapshot');
+    const none = trainingDetailsView(t.profile, { nowYear: 2026, unit: 'kg', planInUse: false });
+    expect(none.training.map((r) => [r.key, r.value, r.byPlan ?? false])).toEqual([
+      ['goal', 'Not set', false],
+      ['days', '4', false],
+      ['length', `${String(t.profile.sessionMinutes)} min`, false],
+    ]);
+    const plan = trainingDetailsView(t.profile, { nowYear: 2026, unit: 'kg', planInUse: true });
+    expect(plan.training.map((r) => [r.key, r.value, r.byPlan ?? false])).toEqual([
+      ['goal', 'Not set', false],
+      ['days', 'Set by your plan', true],
+      ['length', 'Set by your plan', true],
+    ]);
+    expect(profileSplitRow(t.profile, t.mainLifts, true)).toEqual({ subtitle: 'Set by your plan', opens: 'your_plan' });
+    expect(profileSplitRow(t.profile, t.mainLifts, false)).toEqual({ subtitle: 'Push/Pull/Legs', opens: 'split' });
+  });
+
+  it('screens (source): Profile’s Split row and Training details’ plan rows open Library › Your plan; Split itself says so with a plan', () => {
+    const profile = read('screens/profile/ProfileScreen.tsx');
+    expect(profile).toContain("s.plans.inUse().then((x) => x !== null, () => null)");
+    expect(profile).toContain("data.value.training?.split?.opens === 'your_plan') rootNavigation.dispatch(openYourPlan(newUuid()));");
+    const details = read('screens/profile/TrainingDetailsScreen.tsx');
+    expect(details).toContain('trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse })');
+    expect(details).toContain('if (r.byPlan === true) navigation.dispatch(openYourPlan(newUuid())); else open(r.key);');
+    const split = read('screens/profile/SplitScreen.tsx');
+    expect(split).toContain('text={C.setByPlan}');
   });
 });

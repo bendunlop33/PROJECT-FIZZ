@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 import type { SplitBodyPart, TrainingChange } from '@fizz/schemas';
 
+import { newUuid } from '../../device/runtime';
+import { openYourPlan } from '../../navigation/actions';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { bodyPartChoices, customStartDays, splitView, TRAINING_COPY as C } from '../../training/training-view';
 import { AppText, BottomCard, ChecklistRow, ChoiceCard, DangerTextButton, Group, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton, TextField, Toast } from '../../ui';
@@ -14,10 +17,14 @@ type Sheet = { kind: 'lift'; dayId: string } | { kind: 'day'; dayId: string | nu
  * Shoulders/Back, or Custom (named days with body parts), and each day's main
  * lift (recommended from history, changeable). Used by the Build card and the
  * coach. Each change is one versioned write (rule 5).
+ * (D7, Ben 22–23 Oct: one split source) With a plan in use the split is the plan's: `Set by your plan` and `Your plan ›`,
+ * nothing to change here (Profile's row opens Library › Your plan instead).
  */
 export function SplitScreen() {
   const services = useServices();
   const changed = useDataChanged();
+  const navigation = useNavigation();
+  const [planInUse] = useScreenData((s) => s.plans.inUse().then((x) => x !== null, () => false));
   const [data, reload] = useScreenData((s) => s.training.snapshot());
   const [sheet, setSheet] = useState<Sheet>(null);
   const [opId, setOpId] = useState('');
@@ -25,7 +32,14 @@ export function SplitScreen() {
   const [name, setName] = useState('');
   const [parts, setParts] = useState<SplitBodyPart[]>([]);
 
-  if (data.state === 'loading') return <Screen>{null}</Screen>;
+  if (data.state === 'loading' || planInUse.state === 'loading') return <Screen>{null}</Screen>;
+  if (planInUse.state === 'ready' && planInUse.value) {
+    return (
+      <Screen>
+        <StatusLine icon="info.circle" tone="info" text={C.setByPlan} action={<TextButton label={`${C.yourPlan} ›`} onPress={() => { navigation.dispatch(openYourPlan(newUuid())); }} />} />
+      </Screen>
+    );
+  }
   if (data.state === 'error' || data.value === null) {
     return (
       <Screen>
