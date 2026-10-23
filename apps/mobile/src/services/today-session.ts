@@ -15,6 +15,8 @@ import {
   lastSessionE1rm,
   pbMainFocus,
   pbWarmupsOf,
+  pbBlockOfPlan,
+  pbBlockLine,
   ruleCategory,
   currentDraftVersion,
   defaultTodayControls,
@@ -298,6 +300,11 @@ export interface TodaySessionData {
   doneToday: boolean;
   /** (§6.1) The pre-session nudge's real signals (finished sessions, today's check-in, logged activities). */
   nudgeInput: PreSessionInput;
+  /**
+   * (Ben, 23 Oct: plan length = block 1) The applied builder plan's block week for the header: `Week 3 of 6`,
+   * `Week 6 of 6 · Deload`, `Block done`. Null: no builder plan in use, or it's paused (the pause wins).
+   */
+  block: { text: string; accessibilityLabel: string; deload: boolean; done: boolean } | null;
   /** Compute context (pure functions over what `load` read). */
   internal: TodayInternal;
 }
@@ -407,6 +414,8 @@ export const TODAY_SESSION_COPY = {
   /** (Ben, 23 Oct) The carry-over. */
   carried: 'Carried over',
   nothingToCarry: 'Nothing to carry over',
+  /** (Training-blocks §3.1) Behind `Why?` in the plan's deload week. */
+  deloadWhy: 'Deload week: −10 % load, 1 set fewer',
 } as const;
 
 /** An open builder draft as Today's card shows it (changed on Your workout, or the coach's offer Ben applied). */
@@ -482,7 +491,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
   }
 
   /** Each exercise's load inputs at this gym: the template's dry run first, else the rule on its own history. */
-  async function loadInputs(p: UserProfile, ids: readonly string[], exercises: ReadonlyMap<string, Exercise>, sub: SubstituteContext, planned: ReadonlyMap<string, PlannedAnchor>, flags: readonly PainFlag[], mainFocus: MainFocus) {
+  async function loadInputs(p: UserProfile, ids: readonly string[], exercises: ReadonlyMap<string, Exercise>, sub: SubstituteContext, planned: ReadonlyMap<string, PlannedAnchor>, flags: readonly PainFlag[], mainFocus: MainFocus, deload = false) {
     const out = new Map<string, SlotLoadInput>();
     const nowMs = toMs(deps.now().utc);
     // (Ben, 23 Oct) The coach's next-session rows per workout they were saved on, read once (its set count reaches the card).
@@ -547,6 +556,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         historyVersion: refs.historyVersion,
         ruleReps: sp.ruleReps ?? null,
         ...(acc === null || heldNoHistory ? {} : { secondary: { ruleTarget: ruleAnchorFromPlan(acc, refs.convention, refs.unit, builtInTargetRpe('compound')), ruleReps: acc.ruleReps ?? null } }),
+        // (Ben, 23 Oct: plan length = block 1) The plan's deload week: ~10 % lighter, a set fewer (`withDeloadSets`).
+        ...(deload ? { deload: true as const } : {}),
       });
     }
     return out;
@@ -612,6 +623,9 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // says Couldn't load): never swallowed into `No plan` (as review planview S5 for Library).
     const plan = await repos().planDrafts.applied(p.id);
     const paused = activePause(plan, nowMs, tz) !== null;
+    // (Ben, 23 Oct: plan length = block 1) The block week, derived from the plan's Apply, pauses and his plan workouts.
+    const block = plan === null || paused ? null : pbBlockOfPlan(plan, await repos().sessions.listFinishedRefs(p.id, 400).catch(() => []), nowMs, tz);
+    const deload = block?.deload === true;
     const live = liveRoutines(await repos().routines.listByOwner(p.id));
     const templates = planRoutines(plan, live);
     const exercises = await exerciseIndex();
@@ -734,8 +748,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // (D4) Back-offs sit in the band for Ben's goal (as Your workout's); (S7) a builder plan in use: its focus's band.
     const mainFocus = pbMainFocus(plan, goal);
     const warmups = pbWarmupsOf(plan);
-    const loads = await loadInputs(p, [...ids].filter((id) => info(id) !== null), exercises, subAll, anchors, flags, mainFocus);
-    const fallbackLoad = (id: string): SlotLoadInput => ({ mainFocus, unit: p.preferredUnit, convention: exercises.get(id)?.defaultLoadConvention ?? 'total', equipment: null, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: null, painCap: null });
+    const loads = await loadInputs(p, [...ids].filter((id) => info(id) !== null), exercises, subAll, anchors, flags, mainFocus, deload);
+    const fallbackLoad = (id: string): SlotLoadInput => ({ mainFocus, unit: p.preferredUnit, convention: exercises.get(id)?.defaultLoadConvention ?? 'total', equipment: null, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: null, painCap: null, ...(deload ? { deload: true as const } : {}) });
     const ctx: BuilderContext = {
       info,
       loads: (id) => loads.get(id) ?? fallbackLoad(id),
@@ -924,6 +938,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       strip: { workouts: stripWorkouts, activities: acts, firstUse: newest.length === 0 && refs.length === 0 && acts.length === 0 },
       doneToday: stripWorkouts.some((w) => w.localDate === today),
       nudgeInput,
+      block: block === null ? null : pbBlockLine(block),
       internal: {
         memories,
         lastDoneText: (id) => {
@@ -1021,7 +1036,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
         rows: todayBreakdown(held.workout, info, worksOf, unit, pained),
-        why: whyLines(data, day, t, sel.controls, null, heldIn(held.workout), gap, coachWhyOf(data, coach)),
+        why: [...whyLines(data, day, t, sel.controls, null, heldIn(held.workout), gap, coachWhyOf(data, coach)), ...deloadWhy(data)],
         startable: count > 0,
         draft: null,
         carry: edited !== null ? editedCarry(data, day, edited) : null,
@@ -1049,11 +1064,16 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       unit,
       rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
       // (Ben, 23 Oct) Sets carried over to this day: one line each behind Why?.
-      why: [...whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach)), ...d.carried.map((x) => TODAY_CARRIED(x))],
+      why: [...whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach)), ...d.carried.map((x) => TODAY_CARRIED(x)), ...deloadWhy(data)],
       startable: d.exerciseCount > 0,
       draft: d,
       carry: todayCarry(data, day, d, sel.controls.minutes),
     };
+  }
+
+  /** (Ben, 23 Oct: plan length = block 1; training-blocks §3.1) A deload week's line behind `Why?`. */
+  function deloadWhy(data: TodaySessionData): string[] {
+    return data.block?.deload === true ? [TODAY_SESSION_COPY.deloadWhy] : [];
   }
 
   /** (Ben, 23 Oct) The plan's days as the carry-over routes to them (each day's groups over its templates). */

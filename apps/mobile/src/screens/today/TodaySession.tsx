@@ -32,13 +32,34 @@ const useAx = () => useWindowDimensions().fontScale >= AX_FONT_SCALE;
  * (`✦ Coach` pill + mic, 44 pt each) on the right, on one line at 375 pt: the name shrinks to fit
  * before it would wrap. The screen pads it below the status bar (safe-area inset).
  */
-export function TodayHeader({ title, coach }: { title: string; /** The shared coach bar, compact (`CoachAskBar compact`). */ coach: ReactNode }) {
+export function TodayHeader({
+  title,
+  coach,
+  week = null,
+  onWeek,
+}: {
+  title: string;
+  /** The shared coach bar, compact (`CoachAskBar compact`). */ coach: ReactNode;
+  /** (Ben, 23 Oct: plan length = block 1; training-blocks §3.1) `· Week 3 of 6`, `· Week 6 of 6 · Deload`, `· Block done`. */
+  week?: { text: string; accessibilityLabel: string; deload: boolean; done: boolean } | null;
+  /** Opens Library › Your plan (the week strip). */
+  onWeek?: () => void;
+}) {
   const theme = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 44 }}>
-      <AppText variant="title1" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ flexShrink: 1 }}>
-        {title}
-      </AppText>
+      <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: theme.space['2'], flexShrink: 1 }}>
+        <AppText variant="title1" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ flexShrink: 1 }}>
+          {title}
+        </AppText>
+        {week !== null ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={week.accessibilityLabel} onPress={onWeek} hitSlop={HIT} style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
+            <AppText variant="callout" color="text.secondary" numeric numberOfLines={1}>
+              {`· ${week.deload ? '◐ ' : ''}${week.text}${week.done ? ' ›' : ''}`}
+            </AppText>
+          </Pressable>
+        ) : null}
+      </View>
       {coach}
     </View>
   );
