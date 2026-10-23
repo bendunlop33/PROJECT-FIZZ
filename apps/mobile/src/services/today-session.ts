@@ -54,6 +54,11 @@ import {
   toDraftPlan,
   toMs,
   timeFitChanges,
+  carriedItems,
+  fitLostByGroup,
+  pendingCarryOvers,
+  type CarryDay,
+  type CarryItem,
   timeFitFromStored,
   timeFitToStored,
   todayTimeFit,
@@ -175,6 +180,9 @@ export interface TodayCoachInputs {
 const CATALOGUE_PER_GROUP = 8;
 /** Up next's and the pools' history window. */
 const WINDOW_DAYS = 42;
+
+/** (Ben, 23 Oct) Behind Why?: `Carried over: +3 Triceps sets`. */
+const TODAY_CARRIED = (x: Pick<CarryItem, 'group' | 'sets'>): string => `Carried over: +${String(x.sets)} ${x.group} ${x.sets === 1 ? 'set' : 'sets'}`;
 const DAY_MS = 86_400_000;
 /** A day's sessions that count as "lately" for Mix it up's target. */
 const RECENT_ON_DAY = 4;
@@ -265,6 +273,8 @@ interface TodayInternal {
   /** Per group, Ben's own (most done first) then the catalogue, here and not pain-flagged. */
   groupPool: (g: BuilderGroupName) => readonly string[];
   mixFor: (day: TodayDay) => TodayMixFacts;
+  /** (Ben, 23 Oct) Sets carried over to this day (`pendingCarryOvers`); empty: none. */
+  carryFor: (day: TodayDay) => CarryItem[];
   lastOf: (day: TodayDay, mainLiftExerciseId: string | null) => { dateText: string; lift: string; value: string; reps: number; rpe: number | null } | null;
   liftTargetOf: (exerciseId: string | null) => string | null;
   catalogueIdOf: (id: string) => string;
@@ -670,7 +680,22 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // Open builder drafts for today: an edited one shows on the card (`Chest · edited`).
     const edited: Record<string, TodayEditedDraft> = {};
     const nudged: Record<string, TodayNudgedDraft> = {};
-    const open = (await repos().workoutDrafts.listByOwner(p.id).catch(() => [] as WorkoutDraft[])).filter((d) => d.status === 'open' && d.builderKey?.localDate === today && toMs(d.expiresAtUtc) > nowMs);
+    const allDrafts = await repos().workoutDrafts.listByOwner(p.id).catch(() => [] as WorkoutDraft[]);
+    const open = allDrafts.filter((d) => d.status === 'open' && d.builderKey?.localDate === today && toMs(d.expiresAtUtc) > nowMs);
+    // (Ben, 23 Oct; fit-to-time SP3) Sets Ben carried over from a workout Time cut: from the drafts that became workouts,
+    // each still carrying no more than its fit as it ended took; they land on their day's next card (`pendingCarryOvers`).
+    const carrySources = allDrafts.flatMap((d) => {
+      if (d.status !== 'started' || d.sessionId === null || d.builderKey?.planId == null) return [];
+      const st = builderSetupOf(d);
+      const carry = st?.carryOver;
+      if (st === null || carry === undefined || carry.choice !== 'carried' || st.timeFit === undefined) return [];
+      const fitRec = timeFitFromStored(st.timeFit);
+      const now = fromDraftPlan(currentDraftVersion(d).plan, st.restLevel ?? 'normal');
+      const items = carriedItems(carry, fitLostByGroup(timeFitChanges(fitRec, now), fitRec.base, info));
+      return items.length === 0 ? [] : [{ draft: d, items, atUtc: carry.atUtc }];
+    });
+    const carrySessions = newest.map((a) => ({ sessionId: a.session.id, startedAtUtc: a.session.startedAt.utc, ...(a.session.planDay === undefined ? {} : { planDay: { planId: a.session.planDay.planId, dayIndex: a.session.planDay.dayIndex } }) }));
+    const carryFor = (day: TodayDay): CarryItem[] => (day.kind !== 'plan' || day.planId === null || day.dayIndex === null || carrySources.length === 0 ? [] : pendingCarryOvers({ sources: carrySources, sessions: carrySessions, planId: day.planId, dayIndex: day.dayIndex, nowUtc: now.utc }));
     const dayKeyOfDraft = (k: BuilderDraftKey): string => (k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`);
     // (D3) The main lift each day's latest draft today is for: Your workout's Main lift (it left Today's card) shows here.
     const latestDraft: Record<string, TodayLatestDraft> = {};
@@ -803,6 +828,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         worksOf,
         groupPool,
         mixFor,
+        carryFor,
         lastOf,
         liftTargetOf,
         catalogueIdOf: (id) => exercises.get(id)?.catalogueKey ?? id,
@@ -901,7 +927,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // the same job): with a plan the card never swaps an accessory, whatever an older selection carried.
     const lean = data.status !== 'no_plan';
     const pick = lean ? null : (coach.mixPick ?? null);
-    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId, ...(lean ? { mix: 0 } : {}) }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), ...(pick === null ? {} : { mixOrder: pick.order }) });
+    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId, ...(lean ? { mix: 0 } : {}) }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day), ...(pick === null ? {} : { mixOrder: pick.order }) });
     if (d === null) return null;
     // The coach's reason only for the swap it picked (shown under the swap and in Why?).
     const mixReason = d.mix !== null && pick !== null && pick.exerciseId === d.mix.toExerciseId ? mixCoachReason(pick) : null;
@@ -923,7 +949,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: d.absOn, planOn: t.absPlan, differs: d.absOn !== t.absPlan }, supersets: sel.controls.supersets },
       unit,
       rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
-      why: whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach, mixReason)),
+      // (Ben, 23 Oct) Sets carried over to this day: one line each behind Why?.
+      why: [...whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach, mixReason)), ...d.carried.map((x) => TODAY_CARRIED(x))],
       mix: d.mix === null ? null : todayMixLine(d.mix, nameOf, mixReason),
       mixAvailable: !lean && d.mixOptions > 0,
       // No shortlist on the lean card: the coach is never asked for a Mix it up pick there.
@@ -1157,7 +1184,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const found = templateHere(data, day, req.controls.mainLiftExerciseId);
     if (found === null || (found.gap === null && found.t.mainLiftExerciseId !== req.controls.mainLiftExerciseId)) return null;
     const { t, gap } = found;
-    const d = assembleTodayDraft({ day: gap === null ? day : { ...day, templates: [t] }, controls: { ...req.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx: data.internal.ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day) });
+    const d = assembleTodayDraft({ day: gap === null ? day : { ...day, templates: [t] }, controls: { ...req.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx: data.internal.ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day) });
     if (d === null) return null;
     return {
       workout: d.workout,
@@ -1180,6 +1207,18 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     if (data === null) return null;
     const day = dayOf(data, key.planId !== null && key.dayIndex !== null ? `plan:${key.planId}:${String(key.dayIndex)}` : `other:${key.splitDayId ?? '-'}`);
     return day === null ? null : data.internal.mixFor(day);
+  }
+
+  /**
+   * (Ben, 23 Oct; fit-to-time SP3) The plan's days as the carry-over routes to them (each day's groups over its
+   * templates), for a builder draft of that plan. Null: not the plan in use.
+   */
+  async function carryDaysFor(key: BuilderDraftKey): Promise<CarryDay[] | null> {
+    const data = await load();
+    if (data === null || key.planId === null) return null;
+    const days = data.days.filter((d) => d.kind === 'plan' && d.planId === key.planId && d.dayIndex !== null);
+    if (days.length === 0) return null;
+    return days.map((d) => ({ dayIndex: d.dayIndex ?? 0, name: d.name, groups: [...new Set(d.templates.flatMap((t) => t.groups.map((g) => g.group)))] }));
   }
 
   /** `start`: the draft as committed (version-checked, rule 5), through the one Start path. */
@@ -1230,6 +1269,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     commit,
     draftFor,
     mixFactsFor,
+    carryDaysFor,
     start,
     review,
     mixPick,

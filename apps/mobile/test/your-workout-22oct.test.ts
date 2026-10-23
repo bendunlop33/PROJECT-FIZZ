@@ -466,6 +466,7 @@ describe('the Time row’s view', () => {
     from: null,
     canSave: false,
     canSaveVariation: false,
+    carry: null,
     leftOut: [],
     time,
     coachLanded: null,

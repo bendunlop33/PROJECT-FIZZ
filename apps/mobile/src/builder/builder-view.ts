@@ -90,6 +90,8 @@ export const TIME_COPY = {
   label: 'Time',
   undo: 'Undo',
   done: 'Done',
+  /** (Ben, 23 Oct) The carry-over offer's Apply. */
+  carryOver: 'Carry over',
 } as const;
 
 const trim = (n: number): string => String(Math.round(n * 100) / 100);

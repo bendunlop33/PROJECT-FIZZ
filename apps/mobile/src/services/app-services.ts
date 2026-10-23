@@ -945,6 +945,8 @@ export function createAppServices(deps: AppServicesDeps) {
     todayDraft: (req) => todaySession.draftFor(req),
     // (Ben, 23 Oct) `↻ Mix it up` on Your workout reads the same Mix it up facts Today's card did.
     todayMix: (key) => todaySession.mixFactsFor(key),
+    // (Ben, 23 Oct) The carry-over routes the sets Time cut to each muscle's next plan day.
+    carryDays: (key) => todaySession.carryDaysFor(key),
   });
 
   /**

@@ -107,6 +107,12 @@ import {
   type TodayControls,
   type TodayMixFacts,
   mixItUpPick,
+  carriedItems,
+  carryItemText,
+  carryOverOffer,
+  fitLostByGroup,
+  type CarryDay,
+  type CarryItem,
 } from '@fizz/domain';
 import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { KeepNextTimeWrite, Store } from '@fizz/persistence';
@@ -177,6 +183,8 @@ export interface BuilderServiceDeps {
   todayDraft?: (req: { key: BuilderDraftKey; controls: TodayControls }) => Promise<TodayOptionDraft | null>;
   /** (Ben, 23 Oct) `↻ Mix it up` on Your workout: the Mix it up facts of the draft's day (Today's). Absent: not offered. */
   todayMix?: (key: BuilderDraftKey) => Promise<TodayMixFacts | null>;
+  /** (Ben, 23 Oct) The plan's days as the carry-over routes to them (Today's). Absent or null: no carry-over offer. */
+  carryDays?: (key: BuilderDraftKey) => Promise<CarryDay[] | null>;
 }
 
 /** (D3 §2.3a) Today's code draft for one choice (`todayDraft`), fitted to Time, with the draft before the fit. */
@@ -315,6 +323,12 @@ export interface BuilderSnapshot {
    */
   time: { fromMinutes: number; changes: BuilderFitStep[] } | null;
   /**
+   * (Ben, 23 Oct; fit-to-time SP3) The carry-over of the sets this Time fit cut, on a plan day: `offer` (`Carry over` /
+   * `✕`), `carried` (with `Undo`); a skipped one isn't shown. Lines: `+3 Triceps sets on your next Shoulders day`.
+   * Null: nothing to carry (no fit, under 2 sets lost, not a plan day).
+   */
+  carry: { state: 'offer' | 'carried'; items: CarryItem[]; lines: string[] } | null;
+  /**
    * (Ben, 23 Oct, D8; review batch23 S1) The coach's next-workout change(s) Ben applied in chat, landed here and still
    * the draft's last change: `✦ <change> · Undo` stays on the page (not only a toast), so it can be undone after Today
    * landed it or the toast went. Null: none, or something changed since.
@@ -332,7 +346,7 @@ export type BuilderWriteResult =
   | { status: 'written'; snapshot: BuilderSnapshot; toast: BuilderToast | null }
   | { status: 'replayed'; snapshot: BuilderSnapshot; toast: BuilderToast | null }
   | { status: 'stale' | 'closed'; snapshot: BuilderSnapshot | null; message: string }
-  | { status: 'refused'; reason: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since' | 'nothing_to_mix'; message: string; snapshot: BuilderSnapshot | null };
+  | { status: 'refused'; reason: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since' | 'nothing_to_mix' | 'nothing_to_carry'; message: string; snapshot: BuilderSnapshot | null };
 
 /** A toast after a write: text, and whether `Undo` goes with it. `why`: the advice's one-line reason. */
 export interface BuilderToast {
@@ -465,6 +479,9 @@ export const BUILDER_COPY = {
   saved: (label: string) => `${label} saved`,
   /** (Ben, 23 Oct) `↻ Mix it up` with no fresh option for any accessory. */
   nothingToMix: 'No other option',
+  /** (Ben, 23 Oct) The carry-over. */
+  carried: 'Carried over',
+  nothingToCarry: 'Nothing to carry over',
   /** (Ben, 23 Oct) `⋯ Save as a variation`. */
   saveAsVariation: 'Save as a variation',
   notAVariation: 'Can’t save these changes as a variation',
@@ -873,6 +890,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     // Today's Undo does; there a plan day longer than its length is still fitted, as on Today's card).
     const time = fit === null ? null : { fromMinutes: stored?.timeFrom ?? fit.fromMinutes, changes: timeFitChanges(fit, workout) };
     const today = todayDrafted(stored) && key?.planId != null ? { mainLiftExerciseId: stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null, accessories: stored.accessories ?? null, abs: hasAbs(untimed(stored, workout), env), supersets: stored.supersets } : null;
+    const carry = d.status === 'open' && fit !== null && time !== null && stored !== null && key?.planId != null && key.dayIndex !== null ? await carryOf(key, key.dayIndex, stored, fit, time.changes, workout, env) : null;
     for (const st of time?.changes ?? []) if (st.kind === 'drop') facts[st.exerciseId] ??= { name: env.nameOf(st.exerciseId), works: env.worksOf(st.exerciseId), group: env.info(st.exerciseId)?.group ?? null, compound: env.info(st.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(st.exerciseId), notHere: false, hasHistory: env.hasHistory(st.exerciseId) };
     return {
       draftId: d.id,
@@ -902,7 +920,27 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       time,
       coachLanded: d.status === 'open' && d.undo?.coach !== undefined && d.undo.atVersion === d.version ? { text: d.undo.coach.text, undoOpId: d.undo.opId } : null,
       today,
+      carry,
     };
+  }
+
+  /**
+   * (Ben, 23 Oct; fit-to-time SP3) The carry-over on Your workout: Ben's answer for this fit (carried: what still
+   * carries; skipped: nothing shown), else the offer (`carryOverOffer`, by muscle to each one's next plan day, at most
+   * 4 sets). Never applied by default.
+   */
+  async function carryOf(key: BuilderDraftKey, dayIndex: number, stored: BuilderSetup, fit: BuilderTimeFit, changes: readonly BuilderFitStep[], workout: BuilderWorkout, env: BuilderEnv): Promise<BuilderSnapshot['carry']> {
+    const answer = stored.carryOver;
+    if (answer?.choice === 'skipped') return null;
+    if (answer?.choice === 'carried') {
+      const items = carriedItems(answer, fitLostByGroup(changes, fit.base, env.info));
+      return items.length === 0 ? null : { state: 'carried', items, lines: items.map(carryItemText) };
+    }
+    const port = deps.carryDays;
+    const days = port === undefined ? null : await port(key).catch(() => null);
+    if (days === null) return null;
+    const items = carryOverOffer({ steps: changes, base: fit.base, info: env.info, mainGroup: mainGroupOf(workout, stored, env), fromDayIndex: dayIndex, days });
+    return items.length === 0 ? null : { state: 'offer', items, lines: items.map(carryItemText) };
   }
 
   /** A main lift's chip label on Your workout (`Incline`), else its name: the `Main lift: …` toast. */
@@ -967,13 +1005,13 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   // -------------------------------------------------------------------------
   // Writes
 
-  async function writeDraft(p: UserProfile, draftId: string, compute: (current: WorkoutDraft) => Promise<{ change: DraftLifeChange; env: BuilderEnv; toast: BuilderToast | null; skipped?: SkippedOp[] } | { refused: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since'; env: BuilderEnv | null }>): Promise<BuilderWriteResult> {
+  async function writeDraft(p: UserProfile, draftId: string, compute: (current: WorkoutDraft) => Promise<{ change: DraftLifeChange; env: BuilderEnv; toast: BuilderToast | null; skipped?: SkippedOp[] } | { refused: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since' | 'nothing_to_carry'; env: BuilderEnv | null }>): Promise<BuilderWriteResult> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const read = await repos().workoutDrafts.get(draftId).catch(() => null);
       if (read === null || read.ownerId !== p.id || read.builderKey === undefined) return { status: 'closed', snapshot: null, message: BUILDER_COPY.closed };
       const r = await compute(read);
       if ('refused' in r) {
-        const message = r.refused === 'changed_since' ? BUILDER_COPY.changedSince : r.refused === 'nothing_to_undo' ? BUILDER_COPY.cantUndo : (REFUSAL_TEXT[r.refused] ?? 'Can’t do that');
+        const message = r.refused === 'changed_since' ? BUILDER_COPY.changedSince : r.refused === 'nothing_to_undo' ? BUILDER_COPY.cantUndo : r.refused === 'nothing_to_carry' ? BUILDER_COPY.nothingToCarry : (REFUSAL_TEXT[r.refused] ?? 'Can’t do that');
         return { status: 'refused', reason: r.refused, message, snapshot: r.env === null ? null : await snapshotOf(p, read, r.env) };
       }
       // The change was worked out from `read`: written only if the stored draft is still that one.
@@ -1175,6 +1213,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const out: BuilderSetup = { ...setup, minutes: r.minutes, timeFrom: from };
     delete out.timeFit;
     delete out.restLevel;
+    // (Ben, 23 Oct) A carry-over answer is for the fit it was offered on: a new fit asks again.
+    delete out.carryOver;
     if (r.workout.restLevel !== 'normal') out.restLevel = r.workout.restLevel;
     if (r.fit !== null) out.timeFit = timeFitToStored(r.fit, env.codec);
     if (r.fit === null && r.minutes === from) delete out.timeFrom;
@@ -1869,7 +1909,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           if (at !== null) {
             const plan = withSlotRevs(v.plan, toDraftPlan(at.workout, at.env.codec)).plan;
             if (stableStringify(at.setup) === stableStringify(stored) && stableStringify(plan) === stableStringify(v.plan)) return { change: { kind: 'duplicate', current }, env: at.env, toast: null };
-            return { change: builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup: at.setup, undoable: true }), env: at.env, toast: null };
+            const setup: BuilderSetup = { ...at.setup };
+            delete setup.carryOver;
+            return { change: builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, undoable: true }), env: at.env, toast: null };
           }
         }
         const r = fitWorkoutToTime({ current: workout, fit, minutes: from, to: minutes, ctx: env.ctx, mainGroup: mainGroupOf(workout, stored, env), supersets: stored.supersets });
@@ -1879,6 +1921,37 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         if (stableStringify(setup) === stableStringify(stored) && stableStringify(plan) === stableStringify(v.plan)) return { change: { kind: 'duplicate', current }, env, toast: null };
         const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, undoable: true });
         return { change, env, toast: null };
+      });
+    },
+
+    /**
+     * (Ben, 23 Oct; fit-to-time SP3) The carry-over's answer: `carried` (`Carry over`: the offer as it stands now is saved
+     * with the workout and lands on each muscle's next day once this workout is done), `skipped` (`✕`), or `clear`
+     * (`Undo`: offered again). One versioned write on the draft (op ID; refused if the draft moved, rule 5); Apply is
+     * also undone by the write's own Undo. Never applied by default.
+     */
+    async carryOver(draftId: string, choice: 'carried' | 'skipped' | 'clear', w: { opId: string; expectedVersion: number }): Promise<BuilderWriteResult> {
+      const p = await owner();
+      return writeDraft(p, draftId, async (current) => {
+        const v = currentDraftVersion(current);
+        const stored = builderSetupOf(current);
+        const workout = fromDraftPlan(v.plan, stored?.restLevel ?? 'normal');
+        const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: exerciseIdsOf(workout), keySeed: `${current.id}:${w.opId}` });
+        if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env, toast: null };
+        if (current.version !== w.expectedVersion) return { change: { kind: 'stale', current }, env, toast: null };
+        const key = current.builderKey;
+        const fit = timeFitOf(stored);
+        if (stored === null || fit === null || key === undefined || key.planId === null || key.dayIndex === null) return { refused: 'nothing_to_carry', env };
+        const setup: BuilderSetup = { ...stored };
+        delete setup.carryOver;
+        if (choice !== 'clear') {
+          const changes = timeFitChanges(fit, workout);
+          const offer = await carryOf(key, key.dayIndex, setup, fit, changes, workout, env);
+          if (offer === null || offer.state !== 'offer') return { refused: 'nothing_to_carry', env };
+          setup.carryOver = { choice, atUtc: deps.now().utc, items: offer.items };
+        } else if (stored.carryOver === undefined) return { change: { kind: 'duplicate', current }, env, toast: null };
+        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan: v.plan, setup, undoable: choice === 'carried' });
+        return { change, env, toast: choice === 'carried' ? { text: BUILDER_COPY.carried, undoOpId: w.opId, why: null } : null };
       });
     },
 

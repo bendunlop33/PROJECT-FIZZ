@@ -3,6 +3,7 @@ import { IdSchema, LoadConventionSchema, LoadSchema, OperationIdSchema, RepRange
 import { GymEquipmentKindSchema } from './equipment';
 import { MainLiftIdSchema, PlanDayIndexSchema, RestSettingSchema, RoutineExerciseSchema, RoutinePlanDaySchema, SetTypeSchema, SplitDayIdSchema } from './routine';
 import { SplitBodyPartSchema } from './training-profile';
+import { BUILDER_GROUPS } from './builder-groups';
 import { LocalDateSchema } from './import';
 
 /**
@@ -451,8 +452,33 @@ export const BuilderSetupSchema = z.object({
    * coach's removals are never listed. Absent: none.
    */
   keepRemoved: z.array(IdSchema).max(BUILD_LIMITS.maxExercises * 3).optional(),
+  /**
+   * (Ben, 23 Oct; fit-to-time SP3) Ben's answer to the carry-over offer of the sets Time cut: `carried` (Carry over:
+   * they go to each muscle's next day in plan order, at most 4 in all) or `skipped` (✕). Only for the fit it was
+   * offered on: a Time change clears it. Lands on the next day's Today draft once this workout is done; never applied
+   * by default. Absent: not answered.
+   */
+  carryOver: z
+    .object({
+      choice: z.enum(['carried', 'skipped']),
+      atUtc: UtcTimestampSchema,
+      items: z
+        .array(
+          z.object({
+            group: z.enum(BUILDER_GROUPS),
+            sets: z.int().min(1).max(4),
+            exerciseId: IdSchema,
+            toDayIndex: PlanDayIndexSchema,
+            toDayName: z.string().min(1).max(60),
+          }),
+        )
+        .max(7),
+    })
+    .optional(),
 });
 export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
+export type BuilderCarryOver = NonNullable<BuilderSetup['carryOver']>;
+export type BuilderCarryItem = BuilderCarryOver['items'][number];
 
 /**
  * (v3 §4.4) Which builder draft this is: one open draft per (owner, plan,

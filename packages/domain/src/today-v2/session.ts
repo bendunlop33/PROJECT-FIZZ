@@ -7,6 +7,7 @@ import { mixItUpShortlist, mixItUpTarget } from '../builder/mix';
 import { workingCount } from '../builder/set-rows';
 import { makeSlot } from '../builder/slot';
 import { ARM_GROUPS, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
+import { landCarryOver, type CarryItem } from '../builder/carry';
 
 /**
  * Today (v2), workout-builder-v3 §2.0 and its 20 Oct additions: today's
@@ -99,6 +100,11 @@ export interface TodayAssembleInput {
    * is exactly code's shortlist, else code's order (least recently done first) stands.
    */
   mixOrder?: readonly string[];
+  /**
+   * (Ben, 23 Oct; fit-to-time SP3) Sets Ben carried over to this day from a workout Time cut (`pendingCarryOvers`):
+   * added after this day's own fit, so they aren't cut again.
+   */
+  carry?: readonly CarryItem[];
 }
 
 export interface TodayMix {
@@ -134,6 +140,8 @@ export interface TodayDraft {
   mixFromExerciseId: string | null;
   advice: BuilderAdvice[];
   mainGroup: BuilderGroupName | null;
+  /** (Ben, 23 Oct) The carried-over sets that landed on this draft (`carry`); empty: none. */
+  carried: CarryItem[];
 }
 
 /** The template for the main lift chosen (the first when it isn't one of the day's). */
@@ -293,14 +301,20 @@ export function assembleTodayDraft(input: TodayAssembleInput): TodayDraft | null
       mainGroup: mainGroup === null ? [] : input.pool(mainGroup).filter((id) => id !== built.mix?.fromExerciseId),
     },
   });
-  const workout = withTemplateMarks(fit.workout, t.exerciseIds, fit.steps);
+  const marked = withTemplateMarks(fit.workout, t.exerciseIds, fit.steps);
+  // (Ben, 23 Oct) Sets carried over to this day land after its own fit (never cut again), and on the draft before it.
+  const carry = input.carry ?? [];
+  const landed = carry.length === 0 ? { workout: marked, changed: [] } : landCarryOver(marked, carry, input.ctx);
+  const workout = landed.workout;
+  const unfitted = withTemplateMarks(carry.length === 0 ? built.workout : landCarryOver(built.workout, carry, input.ctx).workout, t.exerciseIds, []);
+  const minutes = landed.changed.length === 0 ? fit.minutes : estimateBuilderMinutes(workout, input.ctx);
   return {
     template: t,
     workout,
-    unfitted: withTemplateMarks(built.workout, t.exerciseIds, []),
-    fit: { ...fit, workout },
-    minutes: fit.minutes,
-    exerciseCount: slotCount(fit.workout),
+    unfitted,
+    fit: { ...fit, workout, minutes },
+    minutes,
+    exerciseCount: slotCount(workout),
     absOn,
     planBufferMin,
     mix: built.mix !== null && workout.blocks.some((b) => b.slots.some((s) => s.key === built.mix?.slotKey)) ? built.mix : null,
@@ -309,5 +323,6 @@ export function assembleTodayDraft(input: TodayAssembleInput): TodayDraft | null
     mixFromExerciseId: built.mixFromExerciseId,
     advice: adviseBuilder(workout.blocks, input.ctx.info),
     mainGroup,
+    carried: landed.changed.length === 0 ? [] : [...carry],
   };
 }

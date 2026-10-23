@@ -75,7 +75,16 @@ export function TimeNoteRow({ minutes, note, noteLabel, onStep, onNote }: { minu
 }
 
 /** What the Time row's note opens: `Time · 45 min`, every change the fit made, its `Undo` (when there is one) and `Done`. */
-export function TimeDetailSheet({ visible, minutes, lines, undoMinutes, onUndo, onClose }: { visible: boolean; minutes: number; lines: readonly string[]; undoMinutes: number | null; onUndo: (minutes: number) => void; onClose: () => void }) {
+/**
+ * (Ben, 23 Oct; fit-to-time SP3) The carry-over under the fit's lines: an offer (`+3 Triceps sets on your next
+ * Shoulders day?` `Carry over` `✕`) or, once carried, the same line with `Undo`. Values from the service only.
+ */
+export interface TimeCarryView {
+  state: 'offer' | 'carried';
+  lines: readonly string[];
+}
+
+export function TimeDetailSheet({ visible, minutes, lines, undoMinutes, onUndo, onClose, carry = null, onCarry }: { visible: boolean; minutes: number; lines: readonly string[]; undoMinutes: number | null; onUndo: (minutes: number) => void; onClose: () => void; carry?: TimeCarryView | null; onCarry?: (choice: 'carried' | 'skipped' | 'clear') => void }) {
   const theme = useTheme();
   return (
     <BottomCard visible={visible} onClose={onClose} footer={<PrimaryButton label={TIME_COPY.done} onPress={onClose} />}>
@@ -88,6 +97,25 @@ export function TimeDetailSheet({ visible, minutes, lines, undoMinutes, onUndo, 
           {l}
         </AppText>
       ))}
+      {carry !== null && onCarry !== undefined ? (
+        <View style={{ gap: theme.space['1'], marginTop: theme.space['2'] }}>
+          {carry.lines.map((l, i) => (
+            <AppText key={`carry:${String(i)}`} variant="body" numeric>
+              {carry.state === 'offer' ? `${l}?` : l}
+            </AppText>
+          ))}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
+            {carry.state === 'offer' ? (
+              <>
+                <TextButton label={TIME_COPY.carryOver} onPress={() => { onCarry('carried'); }} />
+                <TextButton label="✕" accessibilityLabel="Don’t carry over" tone="secondary" onPress={() => { onCarry('skipped'); }} />
+              </>
+            ) : (
+              <TextButton label={TIME_COPY.undo} accessibilityLabel="Undo carry over" onPress={() => { onCarry('clear'); }} />
+            )}
+          </View>
+        </View>
+      ) : null}
       {undoMinutes !== null ? (
         <View style={{ alignSelf: 'flex-start', marginTop: theme.space['1'] }}>
           <TextButton

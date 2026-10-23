@@ -281,6 +281,20 @@ export function BuilderWorkoutScreen() {
     });
   }
 
+  /** (Ben, 23 Oct) The carry-over of the sets Time cut: `Carry over` (toast `Carried over · Undo`), `✕`, or `Undo`. */
+  function carryOver(choice: 'carried' | 'skipped' | 'clear'): Promise<void> {
+    return inTurn(async () => {
+      const cur = snapRef.current;
+      if (cur === null) return;
+      const r = await services.builder.carryOver(cur.draftId, choice, { opId: newUuid(), expectedVersion: cur.version });
+      if (r.snapshot !== null) setSnap(r.snapshot);
+      if (r.status === 'written') {
+        changed();
+        if (r.toast !== null) showToast(r.toast);
+      } else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
+    });
+  }
+
   /** (Ben, 23 Oct) `↻ Mix it up`: one accessory swapped for a fresh one, run after any edit in flight; `<from> → <to> · Undo`. */
   function mixItUp(): Promise<void> {
     return inTurn(async () => {
@@ -888,6 +902,8 @@ export function BuilderWorkoutScreen() {
         onClose={() => {
           setTimeDetail(false);
         }}
+        carry={snap.carry === null ? null : { state: snap.carry.state, lines: snap.carry.lines }}
+        onCarry={(c) => void carryOver(c)}
       />
       {alertsAsk.sheet}
       {save.sheet}
