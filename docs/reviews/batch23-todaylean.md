@@ -4,6 +4,8 @@ Branch `claude/todaylean-23oct`, eight commits on `9261625` (790968a, e5fb5e1, 5
 
 ## Verdict: CHANGES NEEDED
 
+> **Re-review after fix round 1 (23 Oct): still CHANGES NEEDED.** B1 and B2 are fixed. One new blocking issue, B3, is the mirror of B2: a card Today *filled* above the plan's length carries no fit record. See "Re-review 1" at the end of this file.
+
 The lean card, the Profile split rules and the plumbing for Today's options are solid. Every option change is one versioned write under an op ID, a stale one is refused, and Undo still works once after a relaunch (all tested). Two things block:
 
 - **B1.** The shared fit often cuts far more than it needs to. It drops a whole exercise and never puts it back, so Ben gets a workout 4–8 minutes shorter than the Time he picked, and noticeably less training than fits.
@@ -306,3 +308,106 @@ Don't merge ahead of `claude/v3summary-23oct` (D1).
 - **A card Time filled.** When Time is above the plan's length, the filled draft is the draft itself at that length and carries no fit record. Start's old prompt would list the added exercise (merge gate).
 - **S5 (the workout's `+N min` offer).** Not in this batch's list. It now uses the exact cut, so the 8-minute overshoot is gone, but its half-floor assertion is still the weakened one.
 - **Device.** Nothing here needs a native rebuild. I haven't checked the moved option rows or the edited card's Time on the iPhone.
+
+## Re-review 1 (23 Oct, reviewer, after fix round 1)
+
+Commits reviewed: `c19d55b`, `c2b6eca`, `4e8c3e9`, `55c5a74`, `60e1c2f`, `146d4f7`, `93cccff` (on `526312b`).
+
+### Verdict: CHANGES NEEDED
+
+B1 and B2 are fixed, and most of the should-fix items are too. One new blocking issue (B3) sits on the same path as B2, but in the other direction: Time *above* the plan's length. The merge gate behind v3summary (D1) still applies.
+
+### Checks run by the reviewer
+
+- `npm run typecheck`: exit 0.
+- `npm run lint`: exit 0.
+- `npm run test`: 477 files and 8,845 tests passed, 2 todo. My own probe file was in the tree, half-written, during that run, and was the only failing file. I deleted it afterwards and the tree is clean. The builder's 477/8,845 count matches.
+- Probe (real SQLite, offline, the fixes test's Push/Pull/Legs plan; deleted afterwards):
+  - P1: Today 30 → Edit → +1 set on an accessory → Abs on → Accessories Varied, then the Start prompt.
+  - P2: Today 20 → Edit → add Ben's own chest exercise → Time 60, then Today's card and the Start prompt.
+  - P3: Today commits at 30 / 45 / 60 / 90 on one draft → Your workout Time 90 → 30 → 60, and the Start prompt at 90.
+
+### Fix verification
+
+- **B1: fixed.** `leastLostFit` (packages/domain/src/builder/fit.ts:283-337) is an exact search over block choices. Estimates really are a sum over blocks: `blockSeconds` reads only the block and `w.restLevel`, and a changeover is added per block, so the dynamic programme is exact. Both new tests are sound. One checks that nothing left out or cut can come back while the workout still fits. The other is a brute-force comparison of value at each minute over five day shapes, with Supersets on and off. The main lift and touched slots are never cut, and at least one exercise stays (`shortestPicks`).
+- **B2: fixed for cuts.** `versionOf` (apps/mobile/src/services/today-session.ts:988-1031) stores `timeFrom` (the plan's length) and `timeFit`, where base is the unfitted draft. P2 confirms it: Today 20 → Edit shows Today's note with Undo to 60, and Time 60 brings back the full plan day plus Ben's added exercise, with no `Delete …` in the Start prompt. Today now stores Ben's Supersets choice (S6).
+- **Options parity (S2/S3): fixed when Ben has no edits.** `setTodayOption` loads `todaySession.draftFor` and replays Ben's edits (`today-replay.ts`). Tests at 20, 45 and the plan's length match Today's card on exercises, sets and pairs, and Undo is exact. Main lift moves the key, keeps Ben's deletion and shows the toast `Main lift: Incline`.
+- **Switch state (S1): fixed.** The switches now read `snap.today` from every write (`todayOptionsView`), so Undo and swipe-delete no longer leave a stale switch. Abs off now removes an ab exercise Ben added himself.
+- **Layout and no-plan (S3/N3): fixed.** The option rows sit under the title, above the table. `todayOptions` and `snap.today` are null for a no-plan draft.
+- **Edited lean card (S4): fixed.** It keeps Time, and a step there calls Your workout's `setTime` on the draft.
+- **Copy: fixed.** The toasts follow the spec, and the `· today only` tag is gone from the Mix it up line and its VoiceOver label.
+
+### Blocking
+
+#### B3. A card Today filled above the plan's length goes into Your workout as if the fill were the plan: Time back to the plan's length gives the filled workout, over Time, and Start offers the additions for the plan
+
+- `packages/domain/src/builder/time-fit.ts:257`: `todayTimeFit` returns null when the fit grew.
+- `apps/mobile/src/services/today-session.ts:1019`: this still sets `timeFrom: planMinutes`.
+- `apps/mobile/src/builder/builder-service.ts:1155-1166` (`retimed`, `refitWorkoutToTime`): this then treats the filled draft as the original for the plan's length.
+
+Repro (probe P3, Push, plan length 60, unfilled ~50 min):
+
+1. Set Today's Time to 90. The committed draft is ~77 min, with three added exercises and +1 set on every slot.
+2. Tap Edit, then step Your workout's Time to 30. The fit's detail reads `Incline bench press 4 → 3`, `Close-grip bench press 4 → 2` and `Dropped Paused bench press`. It treats Time's own additions as the plan's exercises.
+3. Tap Undo (to 60), or step to 60. The workout is the **77-minute** filled one at Time 60, with `⚠ Over 60 min`, where the plan day at 60 is ~50 min.
+
+Separately, the Start prompt at 90 lists `Add Incline bench press · Add Close-grip bench press · Add Paused bench press · Bench press: 3 → 4 sets · …` under `Update Push · bench press in your plan`. That breaks D1 ("Time changes never ask") and the spirit of rule 2: one tap makes Time's fill permanent. This is the same class as B2. With D3, Edit is the main path. v3summary's `Keep for next time?` would count the fill as a structure change too.
+
+The builder's note lists "Time above the plan's length: the filled draft carries no fit record" as open, but doesn't give the consequence: the plan's own length no longer gives back the plan day.
+
+Fix: when Today commits a filled card, keep its record as well. Either:
+
+- store `timeFit` (or a grow record) with `base` = the un-grown draft and `fromMinutes` = the plan length, so that `untimed()`, the Start prompt and Time ≤ plan length all start from the plan-day draft; or
+- commit with `timeFrom` and let Your workout's Time grow from the base, as its own grow path does.
+
+Add tests for:
+
+- Today 90 → Edit → Time 60 equals Today's card at 60;
+- Today 90 → Edit → Time 30 equals Today's card at 30, with the note naming only plan-day exercises;
+- the Start prompt and Keep for next time list none of Time's additions.
+
+### Should fix
+
+#### R1. An option change on top of Ben's edits ends over Time without refitting the rest (FT5)
+
+`apps/mobile/src/builder/builder-service.ts:1701-1706` lays Ben's touched slots over Today's *already-fitted* draft (`t.workout`). That draft was fitted without his edits. Nothing refits the untouched accessories around them.
+
+Probe P1 (Today 30 → Edit → +1 set on Incline bench press, which reads 32 min with ⚠ Over and is acceptable as his own edit):
+
+- Abs on gives 32 min at Time 30.
+- Accessories Varied then gives **34 min** at Time 30, and the ab exercise is back to 3 sets, although the fit could still cut untouched sets.
+
+FT5 says Time is "refitted around his edits". Fix: after the replay, run `refitWorkoutToTime`, with Ben's touched slots held as `fitToMinutes` already holds them, from the replayed base at `stored.minutes`. Add a test where an option change on top of an edit stays within Time whenever untouched cuts can make room.
+
+#### R2. On an equal-value tie, the exact fit prefers more low-value sets over main-group compounds
+
+`packages/domain/src/builder/fit.ts:213`. On the domain fixture's Chest day at 40 min, the fit keeps `bench, cable_fly, pushdown, crunch`. That means both chest compound accessories go so that a triceps pushdown (an "extra", 1.5 a set) and the crunch can stay. The test at `builder-v3-build.test.ts:206-208` pins this.
+
+By `FIT_SET_VALUE` both options are worth 18, but the tie-break "more sets" leaves a Chest day with no chest compound accessory. That works against the intent of design review V15 ("a compound is never dropped for want of two isolation sets"). Suggest breaking ties toward main-group sets first, or toward compounds, before "more sets". This needs Ben or the designer together with SP2.
+
+#### R3. The Start prompt (and v3summary's Keep for next time) still reads Today's untimed draft, including exercises Ben never saw
+
+Probe P1 after Varied at Time 30 gives `Add Incline bench press · Add Paused bench press · Add Ab-wheel rollout · Bench press: 3 → 4 sets · Incline dumbbell press: 3 → 2 sets`. Paused bench press and Incline DB are not in the workout Ben sees. They come from `untimed()` (`builder-service.ts:1909`).
+
+The prompt is right not to count Time's cuts, but it measures Today's own drafting against the raw template, so `Update in your plan` would write exercises Ben never chose. This is the merge-gate point the builder disclosed. It needs v3summary's `Keep for next time?` to compare against Today's draft for the plan's controls (the result of `draftFor`), not the template.
+
+### Nits
+
+- N1. `TodayScreen.tsx:516-524` (`editedTime`). Two quick taps on the edited card's Time stepper both send the version read on load. The second comes back stale and shows an error until reload. Consider disabling the stepper while a write is in flight, or chaining from the returned snapshot's version.
+- N2. A draft committed before this build has no `timeFit`, so it keeps the old behaviour until the next day. Drafts last one day, so there is no migration to do, but it's worth knowing for an on-device test the same day.
+
+### Still open (disclosed, unchanged)
+
+- The D9 carry-over offer is not built (SP1/SP3). `fitCarryOver` still returns one group.
+- SP2: exact search vs. stability. Results can jump between neighbouring minutes and aren't nested.
+- SP4: the Time stepper range. SP5: the §2.3a semantics are still uncommitted design-track text.
+- Coach versions and order/link edits are not replayed across an option change.
+- On-device check of the moved option rows and the edited card's Time.
+
+### Merge gate (still stands)
+
+Don't merge ahead of `claude/v3summary-23oct` (D1). After B3 and R3 are fixed, v3summary should compare `Keep for next time?` against Today's draft for the plan's controls, so it never counts Time's cuts or fill, or Today's own drafting, as Ben's change.
+
+### Blocking for the next round
+
+- B3, plus its tests.
