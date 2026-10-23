@@ -14,6 +14,7 @@ import type { AppServices } from '../src/services/app-services';
 import { swapPainConfirm } from '../src/ui/swap-sheet-model';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { finishWorkout } from './finish-workout';
 
 /**
  * Your workout, Ben's 22 Oct batch (the Workout overview's retirement follow-ups), on real SQLite, offline:
@@ -228,7 +229,7 @@ describe('Time on Your workout: the same built-in fit as Today’s, today’s dr
     expect(model.requests.length).toBe(asked);
 
     // Start creates the shorter workout, as shown.
-    const started = await s.builder.start(short.draftId, { choice: { kind: 'today' }, opId: 'start-short', expectedVersion: short.version, checkIn: null });
+    const started = await s.builder.start(short.draftId, { opId: 'start-short', expectedVersion: short.version, checkIn: null });
     if (!started.ok) throw new Error(started.message);
     const a = (await s.workout.load(started.sessionId))?.aggregate;
     const live = [...(a?.exercises ?? [])].filter((e) => e.removed === undefined).sort((x, y) => x.order - y.order);
@@ -368,7 +369,7 @@ const planStub = (req: ModelRequest): ModelEvent[] => {
 };
 
 describe('Time on a plan day: today only, never a plan change', () => {
-  it('a Time fit alone doesn’t make Start ask about the plan; with Ben’s own change, Update writes his change and none of the cuts', async () => {
+  it('(D1) a Time fit alone never offers Keep for next time; with Ben’s own change, Apply writes his change and none of the cuts', async () => {
     const { services: s } = await h.launch();
     await bigPush(s);
     model = new StepModel([planStub, () => replyWith('Here is your week.')]);
@@ -386,23 +387,31 @@ describe('Time on a plan day: today only, never a plan change', () => {
     expect(snap0.planDay).not.toBeNull();
     const short = await cutUntilDropped(s, snap0);
     expect(short.time?.changes.length ?? 0).toBeGreaterThan(0);
-    expect(await s.builder.startPrompt(short.draftId)).toBeNull();
+    const timeOnly = await s.builder.start(short.draftId, { opId: 'start-short', expectedVersion: short.version });
+    if (!timeOnly.ok) throw new Error(timeOnly.message);
+    await finishWorkout(h, s, timeOnly.sessionId);
+    expect(await s.builder.keepNextTimeOf(timeOnly.sessionId)).toBeNull();
     expect(model.requests.length).toBe(asked);
+    h.clockMs += DAY;
 
-    // Ben adds a set to the main lift: the prompt names only that; Update writes it, and every exercise and set count
+    // Ben adds a set to the main lift: the row names only that; Apply writes it, and every exercise and set count
     // the fit cut stays in the plan.
-    const bench = slotsOf(short.workout.blocks).find((x) => x.main);
+    const again = opened(await s.builder.openTarget({ kind: 'routine', routineId: push }, 'open-plan-day-2'));
+    const short2 = await cutUntilDropped(s, again);
+    const bench = slotsOf(short2.workout.blocks).find((x) => x.main);
     if (bench === undefined) throw new Error('no main');
-    const edited = opened(await s.builder.edit(short.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'plan-set', basis: { version: short.version } }));
-    const prompt = await s.builder.startPrompt(edited.draftId);
-    expect(prompt?.lines).toHaveLength(1);
-    expect(prompt?.lines[0]).toMatch(/sets$/);
-    const r = await s.builder.start(edited.draftId, { choice: { kind: 'update' }, opId: 'start-update', expectedVersion: edited.version });
+    const edited = opened(await s.builder.edit(short2.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'plan-set', basis: { version: short2.version } }));
+    const r = await s.builder.start(edited.draftId, { opId: 'start-edited', expectedVersion: edited.version });
     if (!r.ok) throw new Error(r.message);
+    await finishWorkout(h, s, r.sessionId);
+    const keep = await s.builder.keepNextTimeOf(r.sessionId);
+    expect(keep?.state === 'open' ? keep.lines : null).toHaveLength(1);
+    expect(keep?.state === 'open' ? keep.lines[0] : null).toMatch(/sets$/);
+    expect(await s.builder.keepNextTime(r.sessionId, 'apply')).toEqual({ ok: true });
     const template1 = (await s.routines.editor({ routineId: push, gymId: null }))?.routine;
     // (22 Oct review B1) The plan day keeps its own length, never Time's.
-    expect(short.setup.minutes).toBeLessThan(snap0.setup.minutes);
-    expect(template1?.planDay?.minutes).toBe(snap0.setup.minutes);
+    expect(short2.setup.minutes).toBeLessThan(snap0.setup.minutes);
+    expect(template1?.planDay?.minutes).toBe(template0?.planDay?.minutes);
     expect(template1?.exercises.map((e) => e.exerciseId)).toEqual(template0?.exercises.map((e) => e.exerciseId));
     const work = (rt: typeof template0) => rt?.exercises.map((e) => e.setTemplates.filter((t) => t.setType !== 'warmup').length) ?? [];
     const changed = work(template1).map((n, i) => n - (work(template0)[i] ?? 0));

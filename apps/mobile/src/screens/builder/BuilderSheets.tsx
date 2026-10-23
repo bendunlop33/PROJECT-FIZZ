@@ -4,16 +4,15 @@ import { Pressable, View } from 'react-native';
 import type { BuilderEditOp, RestKind } from '@fizz/domain';
 
 import type { BuilderSnapshot, BuilderWriteResult } from '../../builder/builder-service';
-import { popupView, promptView, PROMPT_COPY, REST_STEP_S, WORKOUT_COPY, type PromptView } from '../../builder/builder-view';
+import { popupView, REST_STEP_S, WORKOUT_COPY } from '../../builder/builder-view';
 import { countText, reviewHeaderWord, type BuilderReview } from '../../builder/review';
 import type { ProposalCardView } from '../../coach/builder-coach-view';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, BottomCard, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton } from '../../ui';
 import { ExercisePopup } from '../../ui/exercise-popup';
-import { Divider, Table } from './BuilderParts';
 
 /**
- * The builder's sheets (workout-builder-v3 §2.4, §2.5, §2.7, §2.8, §2.9).
+ * The builder's sheets (workout-builder-v3 §2.4, §2.5, §2.7, §2.9).
  * Each one shows values from the service and sends Ben's edits back to it;
  * none works out a load, a rest default or a count itself.
  */
@@ -104,92 +103,6 @@ export function ExerciseSheet({
 
 export type { ChoiceSection } from '../../ui/swap-sheet-model';
 export { SwapSheet } from '../../ui/swap-sheet';
-
-/** `Use these changes for` (§2.8): Today only / Update … in your plan / Save as new variation (name, then Save and start) / Cancel. */
-export function PromptSheet({
-  view,
-  suggestedLabel,
-  busy,
-  error,
-  hideToday = false,
-  onToday,
-  onUpdate,
-  onVariation,
-  onClose,
-}: {
-  view: PromptView | null;
-  suggestedLabel: string;
-  busy: boolean;
-  error: string | null;
-  /** Coach review's `Update plan day` (§2.9): the same choice without `Today only` (nothing starts). */
-  hideToday?: boolean;
-  onToday: () => void;
-  onUpdate: () => void;
-  onVariation: (label: string) => void;
-  onClose: () => void;
-}) {
-  const theme = useTheme();
-  const [naming, setNaming] = useState(false);
-  const [label, setLabel] = useState(suggestedLabel);
-  useEffect(() => {
-    setNaming(false);
-    setLabel(suggestedLabel);
-  }, [view, suggestedLabel]);
-  return (
-    <BottomCard visible={view !== null} onClose={onClose}>
-      {view === null ? null : naming ? (
-        <>
-          <AppText variant="title2" accessibilityRole="header">
-            {view.variation.label}
-          </AppText>
-          <TextField accessibilityLabel="Variation name" value={label} onChangeText={setLabel} maxLength={40} autoFocus selectTextOnFocus />
-          {error !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
-          <PrimaryButton
-            label={PROMPT_COPY.saveAndStart}
-            busy={busy}
-            disabled={label.trim().length === 0}
-            onPress={() => {
-              onVariation(label.trim());
-            }}
-          />
-          <TextButton label={view.cancel} tone="secondary" onPress={() => { setNaming(false); }} />
-        </>
-      ) : (
-        <>
-          <AppText variant="title2" accessibilityRole="header">
-            {view.title}
-          </AppText>
-          <Table>
-            {view.lines.map((l, i) => (
-              <View key={l}>
-                {i > 0 ? <Divider /> : null}
-                <View style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.space['4'] }}>
-                  <AppText variant="callout" numeric>
-                    {l}
-                  </AppText>
-                </View>
-              </View>
-            ))}
-          </Table>
-          {error !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
-          {hideToday ? null : <PrimaryButton label={view.today} busy={busy} onPress={onToday} />}
-          {view.update !== null ? <TextButton label={view.update} onPress={onUpdate} disabled={busy} /> : null}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-            <TextButton label={view.variation.label} disabled={!view.variation.enabled || busy} onPress={() => { setNaming(true); }} />
-            {view.variation.note !== null ? (
-              <AppText variant="label" color="text.secondary">
-                {view.variation.note}
-              </AppText>
-            ) : null}
-          </View>
-          <TextButton label={view.cancel} tone="secondary" onPress={onClose} />
-        </>
-      )}
-    </BottomCard>
-  );
-}
-
-export { promptView };
 
 /** Coach review (§2.9): code's counts and mix always; the coach's verdict, suggestions and notes only when it reviewed. */
 export function ReviewSheet({ review, visible, onApply, onDone, onClose }: { review: BuilderReview | null; visible: boolean; onApply: (actionId: string) => void; onDone: (ticked: string[]) => void; onClose: () => void }) {

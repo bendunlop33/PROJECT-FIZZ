@@ -7,7 +7,6 @@ import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import { addDays, currentDraftVersion, formFromEquipment, localDateOf, toMs, undoableTimeFit, type EquipmentForm } from '@fizz/domain';
 import { builderApplyOpId } from '@fizz/coach';
 
-import { planChangeUndoOpId } from '../src/builder/builder-service';
 import type { AppServices } from '../src/services/app-services';
 import type { TodaySessionData, TodaySelection } from '../src/services/today-session';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
@@ -89,6 +88,21 @@ const sel = (data: TodaySessionData, dayKey: string, over: Partial<TodaySelectio
   if (c === undefined) throw new Error(`no controls for ${dayKey}`);
   return { dayKey, controls: { ...c, ...over } };
 };
+/** Log every working set and finish (the Summary then reads the workout as done). */
+async function finishAll(s: AppServices, sessionId: string): Promise<void> {
+  const a = (await s.workout.load(sessionId))?.aggregate;
+  if (a === undefined) throw new Error('no workout');
+  for (const set of a.sets) {
+    if (set.status !== 'pending' || set.setType === 'warmup') continue;
+    h.clockMs += 60_000;
+    const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load: set.planned.load ?? { value: 20, unit: 'kg', convention: a.exercises.find((e) => e.id === set.sessionExerciseId)?.loadConvention ?? 'total' }, reps: set.planned.reps?.min ?? 8, durationS: set.planned.durationS, rpe: 8, rir: null }, restTimerId: h.ids() });
+    if (!r.ok) throw new Error(r.error.message);
+  }
+  const now = await s.workout.load(sessionId);
+  const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: h.ids(), expectedVersion: now?.aggregate.session.version ?? 0, endedAt: null });
+  if (!fin.ok) throw new Error(fin.error.message);
+  await h.settle(s);
+}
 const dayKeyOf = (data: TodaySessionData, name: string) => data.days.find((d) => d.name === name)?.key ?? data.others.find((d) => d.name === name)?.key ?? '';
 const nbsp = (t: string | null | undefined) => (t ?? '').replaceAll('\u00a0', ' ');
 
@@ -230,7 +244,7 @@ describe('Today (v2) session card from the plan', () => {
     expect(s.todaySession.card(data, sel(data, key, { minutes: 75, mix: 0 }))?.rows.map((r) => r.name)).toEqual(base?.rows.map((r) => r.name));
   });
 
-  it('merge: Today’s draft is the builder’s (codec, per-slot state); an edit in the builder shows `· edited`, Start offers the §2.8 prompt, Update writes the plan day with the session, Summary’s Undo restores it once', async () => {
+  it('merge: Today’s draft is the builder’s (codec, per-slot state); an edit in the builder shows `· edited`; Start is one tap, today only; the Summary offers Keep for next time and its Undo restores the plan day once', async () => {
     const { s, gymId } = await benWithPlan();
     const data = await loaded(s);
     const key = dayKeyOf(data, 'Push');
@@ -244,10 +258,7 @@ describe('Today (v2) session card from the plan', () => {
     const stored = await s.coachDrafts.get(c.draftId);
     const plan = stored?.versions.find((v) => v.n === stored.currentVersion)?.plan;
     expect(plan?.slots.every((x) => x.builder !== undefined && x.rev === 1)).toBe(true);
-    // The card's own control choices may already differ from the template (they are today's changes too); Today only
-    // asks once Ben edited the draft in the builder (§2.0.4 Edited in builder).
-    const before = (await s.builder.startPrompt(c.draftId))?.lines.length ?? 0;
-    // Ben adds a set in the builder to a planned accessory: the card reads `· edited`, and Start gets the prompt.
+    // Ben adds a set in the builder to a planned accessory: the card reads `· edited`.
     const planned = new Set(card.draft?.template.exerciseIds ?? []);
     const slot = snap.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main && planned.has(x.exerciseId));
     if (slot === undefined) throw new Error('no accessory');
@@ -256,43 +267,40 @@ describe('Today (v2) session card from the plan', () => {
     const again = await loaded(s);
     const view = s.todaySession.card(again, sel(again, key));
     expect(view?.title).toMatch(/· edited$/);
-    const prompt = await s.builder.startPrompt(c.draftId);
-    expect(prompt?.lines.length ?? 0).toBeGreaterThan(before);
     const edited = view?.edited;
-    if (edited == null || prompt?.updateLabel == null) throw new Error('no edited card or Update');
-    const started = await s.builder.start(c.draftId, { choice: { kind: 'update' }, opId: 'merge-start', expectedVersion: edited.version, gymId, checkIn: null });
-    if (!started.ok) throw new Error(started.message);
-    const change = await s.builder.planChangeOf(started.sessionId);
-    expect(change?.kind).toBe('template');
-    if (change === null) throw new Error('no plan change');
-    expect(await s.builder.undoPlanChange(change, planChangeUndoOpId(started.sessionId))).toEqual({ ok: true });
-    // Undone once: the line goes, and a retry is still fine.
-    expect(await s.builder.planChangeOf(started.sessionId)).toBeNull();
-    expect(await s.builder.undoPlanChange(change, planChangeUndoOpId(started.sessionId))).toEqual({ ok: true });
+    if (edited == null) throw new Error('no edited card');
+    // (D1) Start: one tap through Today's own Start, today only (the commit hands back the edited draft).
+    const c2 = await s.todaySession.commit(again, sel(again, key), 'commit-merge-2');
+    expect(c2).toEqual({ ok: true, draftId: edited.draftId, version: edited.version });
+    const before = (await s.routines.list()).find((r) => r.id === again.days.find((d) => d.key === key)?.templates[0]?.routineId);
+    const started = await s.todaySession.start({ draftId: edited.draftId, expectedVersion: edited.version, gymId, opId: 'merge-start', checkIn: null });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    expect((await s.routines.list()).find((r) => r.id === before?.id)?.version).toBe(before?.version);
+    await finishAll(s, sessionId);
+    const keep = await s.builder.keepNextTimeOf(sessionId);
+    expect(keep?.state).toBe('open');
+    if (keep?.state !== 'open') return;
+    expect(keep.lines).toContain(`${snap.facts[slot.exerciseId]?.name ?? ''}: ${String(slot.rows.filter((r) => r.type !== 'warmup').length)} → ${String(slot.rows.filter((r) => r.type !== 'warmup').length + 1)} sets`);
+    expect(await s.builder.keepNextTime(sessionId, 'apply')).toEqual({ ok: true });
+    expect((await s.routines.list()).find((r) => r.id === before?.id)?.version).toBe((before?.version ?? 0) + 1);
+    expect(await s.builder.undoKeepNextTime(sessionId)).toEqual({ ok: true });
+    // Undone once: the row goes, and a retry is still fine.
+    expect(await s.builder.keepNextTimeOf(sessionId)).toBeNull();
+    expect(await s.builder.undoKeepNextTime(sessionId)).toEqual({ ok: true });
   });
 
-  it('merge: Coach review’s `Update plan day` writes the template before Start (versioned, once per op ID), the draft then matches it, and its Undo restores it', async () => {
-    const { s } = await benWithPlan();
+  it('(D1) Today’s own card (its controls, its length) never asks to change the plan: Start, finish, no Keep for next time', async () => {
+    const { s, gymId } = await benWithPlan();
     const data = await loaded(s);
     const key = dayKeyOf(data, 'Push');
-    const c = await s.todaySession.commit(data, sel(data, key), 'commit-upd');
+    const shorter = sel(data, key, { minutes: 30 });
+    const c = await s.todaySession.commit(data, shorter, 'commit-short');
     if (!c.ok) throw new Error('commit');
-    const snap = await s.builder.read(c.draftId);
-    const slot = snap?.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main);
-    if (snap === null || slot === undefined) throw new Error('no draft');
-    const e = await s.builder.edit(c.draftId, { kind: 'add_set', slotKey: slot.key }, { opId: 'upd-add-set', basis: { version: snap.version } });
-    if (e.status !== 'written') throw new Error(e.status);
-    const r = await s.builder.updatePlanDay(c.draftId, { choice: { kind: 'update' }, opId: 'upd-1', expectedVersion: e.snapshot.version });
-    if (!r.ok || r.planChange === null) throw new Error('not updated');
-    expect(r.planChange.kind).toBe('template');
-    // Nothing started; the draft now matches its plan day, so Start asks nothing.
-    expect((await s.coachDrafts.get(c.draftId))?.status).toBe('open');
-    expect(await s.builder.startPrompt(c.draftId)).toBeNull();
-    // The same tap again writes nothing more.
-    expect(await s.builder.updatePlanDay(c.draftId, { choice: { kind: 'update' }, opId: 'upd-1', expectedVersion: e.snapshot.version })).toEqual({ ok: true, planChange: null });
-    // A stale version is refused (rule 5).
-    expect(await s.builder.updatePlanDay(c.draftId, { choice: { kind: 'update' }, opId: 'upd-2', expectedVersion: e.snapshot.version })).toMatchObject({ ok: false, reason: 'stale' });
-    expect(await s.builder.undoPlanChange(r.planChange, 'upd-undo')).toEqual({ ok: true });
+    const started = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'start-short', checkIn: null });
+    if (!started.ok) throw new Error(started.error.message);
+    await finishAll(s, started.aggregate.session.id);
+    expect(await s.builder.keepNextTimeOf(started.aggregate.session.id)).toBeNull();
   });
 
   it('merge: the coach on Today — a low check-in gets the nudge’s line in Why? with code’s offer; Apply writes it to the card’s draft once and the day goes quiet; Mix it up takes the coach’s pick from code’s shortlist with its reason', async () => {
@@ -771,8 +779,6 @@ describe('Wave 2 merge integrity (reviews wave2-integrity, wave2-wiring)', () =>
     expect(card?.edited).toBeNull();
     expect(card?.title).not.toMatch(/edited/);
     expect(card?.nudged?.draftId).toBe(offer.proposal.draftId);
-    // No offer to write a fatigue-day cut into the plan.
-    expect(await s.builder.startPrompt(offer.proposal.draftId)).toBeNull();
     // Today's commit keeps the nudged draft as it is; Start plans that one.
     const c = await s.todaySession.commit(after, sel(after, key), 'commit-nudged');
     if (!c.ok) throw new Error(c.message);
@@ -784,6 +790,9 @@ describe('Wave 2 merge integrity (reviews wave2-integrity, wave2-wiring)', () =>
     expect(cardWorking).toBeGreaterThan(0);
     expect(working).toBe(cardWorking);
     expect(card?.rows).not.toEqual(before?.rows);
+    // No offer to write a fatigue-day cut into the plan (D1: the coach's today-only offer isn't Ben's structure).
+    await finishAll(s, started.aggregate.session.id);
+    expect(await s.builder.keepNextTimeOf(started.aggregate.session.id)).toBeNull();
   });
 
   it('B2 / wiring S4: Undo after the nudge hands the card back to Today; its controls drive it again', async () => {

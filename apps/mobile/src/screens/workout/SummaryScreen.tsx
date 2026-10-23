@@ -27,7 +27,7 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 import { LIBRARY_COPY_UI } from '../../workout/library-view';
-import { planChangeText, planChangeUndoOpId } from '../../builder/builder-service';
+import { planChangeText, planChangeUndoOpId, type KeepNextTimeView } from '../../builder/builder-service';
 import { DELETE_COPY, deletedToastText, restoredToastText, summaryCanDelete } from '../../history/delete-view';
 import { handOffDeleteToast } from '../../history/toast-handoff';
 import { DeletedWorkoutView } from './DeletedWorkoutView';
@@ -78,9 +78,11 @@ export function SummaryScreen() {
     const presence = await s.history.presence(sessionId).catch((): WorkoutPresence => ({ kind: 'hidden' }));
     // (workout-builder-v3 §2.8) The plan change this Start made (`Chest · bench updated · Undo`), stored with the session.
     const planChange = await s.builder.planChangeOf(sessionId).catch(() => null);
+    // (Ben, 23 Oct, D1) `Keep for next time?`: only when the structure differs from the plan day or saved workout.
+    const keep = await s.builder.keepNextTimeOf(sessionId).catch(() => null);
     // Progress v3 (Ben, 21 Oct): new PBs at the tracked reps, the Lifts chart's definition. Local only.
     const newBests = await s.reviews.sessionBests(sessionId).catch(() => []);
-    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone, planChange, newBests };
+    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone, planChange, keep, newBests };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
   // its small changes are saved when it answers, until a workout starts from this one (CA10).
@@ -580,6 +582,22 @@ export function SummaryScreen() {
           </View>
         ) : null}
 
+        {data.value.keep !== null ? (
+          <KeepRow
+            view={data.value.keep}
+            onTap={(tap) => {
+              const run = tap === 'undo' ? services.builder.undoKeepNextTime(sessionId) : services.builder.keepNextTime(sessionId, tap);
+              void run
+                .catch(() => ({ ok: false as const, message: 'Couldn’t save. Try again.' }))
+                .then((r) => {
+                  if (!r.ok) setToast({ text: r.message });
+                  changed();
+                  reload();
+                });
+            }}
+          />
+        ) : null}
+
         {nextTime ? (
           <View style={{ gap: theme.space['3'] }}>
             <SectionHeader title={nextTime.heading} />
@@ -744,6 +762,36 @@ function Comparison({ c, tz }: { c: NonNullable<WorkoutSummary['comparison']>; t
  * (the coach's reason, checks and the built-in rule's value, or the rule's
  * own facts) and the row's buttons. Values come from the saved rows.
  */
+/**
+ * (Ben, 23 Oct, D1) `Keep for next time?` with what would change, `Skip` and `Apply`; once kept, `<day> updated` with
+ * `Undo`. Values from the builder service only.
+ */
+function KeepRow({ view, onTap }: { view: KeepNextTimeView; onTap: (tap: 'apply' | 'skip' | 'undo') => void }) {
+  const theme = useTheme();
+  if (view.state === 'kept') {
+    return <StatusLine icon="checkmark.circle" tone="info" text={view.text} {...(view.canUndo ? { action: <TextButton label="Undo" onPress={() => { onTap('undo'); }} /> } : {})} />;
+  }
+  return (
+    <Card>
+      <View accessible accessibilityLabel={[KEEP_COPY.title, view.label, ...view.lines].join('. ')} style={{ gap: theme.space['1'] }}>
+        <AppText variant="headline">{KEEP_COPY.title}</AppText>
+        {view.lines.map((l, i) => (
+          // A line can repeat (the same change named twice): keyed by place.
+          <AppText key={`${String(i)}:${l}`} variant="callout" numeric>
+            {l}
+          </AppText>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
+        <TextButton label={KEEP_COPY.skip} tone="secondary" onPress={() => { onTap('skip'); }} />
+        <TextButton label={KEEP_COPY.apply} accessibilityLabel={`${KEEP_COPY.apply}: keep for next ${view.label}`} onPress={() => { onTap('apply'); }} />
+      </View>
+    </Card>
+  );
+}
+
+const KEEP_COPY = { title: 'Keep for next time?', skip: 'Skip', apply: 'Apply' } as const;
+
 function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTap) => void }) {
   const theme = useTheme();
   const [why, setWhy] = useState(false);

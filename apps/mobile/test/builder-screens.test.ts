@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { BuilderSlot, BuilderWorkout } from '@fizz/domain';
 
-import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from '../src/builder/builder-service';
+import type { BuilderSnapshot, SetupFacts, SetupInput } from '../src/builder/builder-service';
 import { adviceToast, ruleLine } from '../src/builder/builder-service';
 import {
   addGroup,
@@ -15,7 +15,6 @@ import {
   loadText,
   nextField,
   popupView,
-  promptView,
   setupView,
   stepGroup,
   stepMinutes,
@@ -285,17 +284,7 @@ describe('Exercise pop-up and keyboard (§2.4, §2.7)', () => {
   });
 });
 
-describe('Start prompt, advice, coach status and review (§2.6, §2.8, §2.9, §3.8)', () => {
-  const prompt: StartPrompt = { lines: ['Cable fly → Incline barbell press'], updateLabel: 'Update Chest · bench press in your plan', variationLimitReached: false, suggestedLabel: 'with chest', canSaveVariation: true };
-  it('the three choices, and Limit reached at 5 variations', () => {
-    const v = promptView(prompt);
-    expect([v.title, v.today, v.update, v.variation.label, v.cancel]).toEqual(['Use these changes for', 'Today only', 'Update Chest · bench press in your plan', 'Save as new variation', 'Cancel']);
-    expect(v.variation.enabled).toBe(true);
-    const full = promptView({ ...prompt, variationLimitReached: true, updateLabel: null });
-    expect(full.variation).toEqual({ label: 'Save as new variation', enabled: false, note: 'Limit reached' });
-    expect(full.update).toBeNull();
-  });
-
+describe('advice, coach status and review (§2.6, §2.9, §3.8)', () => {
   it('advice after Ben’s own move: a short toast, the full reason behind Why?', () => {
     const a = adviceToast({ kind: 'shared_muscle', key: 'k', a: { slotKey: 'x', exerciseId: 'x', name: 'Lat pulldown' }, b: { slotKey: 'y', exerciseId: 'y', name: 'Assisted pull-up' }, muscle: 'lats', reason: 'Both work your lats, so the second one suffers.', fix: { kind: 'unlink', slotKey: 'y', label: 'Unlink' } });
     expect(a).toEqual({ text: 'Not recommended: both work your lats', why: 'Both work your lats, so the second one suffers.' });

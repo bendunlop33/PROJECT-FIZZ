@@ -6,13 +6,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { builderApplyOpId, type BuilderCoachReach, type BuilderProposal } from '@fizz/coach';
 import { dropBuilderSlot, slotsOf, type BuilderEditOp } from '@fizz/domain';
-import type { BuilderGroup, CheckInScore, PlanChangeUndo, Routine, SessionCheckIn } from '@fizz/schemas';
+import type { BuilderGroup, CheckInScore, Routine, SessionCheckIn } from '@fizz/schemas';
 
-import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWriteResult, type StartChoice, type StartPrompt } from '../../builder/builder-service';
+import type { BuilderSnapshot, BuilderToast, BuilderWriteResult } from '../../builder/builder-service';
 import { reviewAfterApply } from '../../builder/review';
-import { UPDATE_PLAN_DAY_ACTION } from '../../coach/builder-review-provider';
 import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type ProposalState } from '../../coach/builder-coach-view';
-import { addAnywayConfirm, editsFromText, popupLinks, promptView, TIME_COPY, workoutView, WORKOUT_COPY, type TimeRowView, type WorkoutRowView } from '../../builder/builder-view';
+import { addAnywayConfirm, editsFromText, popupLinks, TIME_COPY, workoutView, WORKOUT_COPY, type TimeRowView, type WorkoutRowView } from '../../builder/builder-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
@@ -30,18 +29,16 @@ import { createOnDeviceSpeech } from '../../voice/on-device-speech';
 import { SwipeRow } from './BuilderParts';
 import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
 import { holdMenu } from '../../ui/exercise-popup-model';
-import { ExerciseSheet, PromptSheet, ProposalSheet, ReviewSheet, SwapSheet, type ChoiceSection } from './BuilderSheets';
+import { ExerciseSheet, ProposalSheet, ReviewSheet, SwapSheet, type ChoiceSection } from './BuilderSheets';
 
 /**
  * Your workout (workout-builder-v3 §2.3): numbered rounds, supersets as
  * one box (3a/3b), `Exercise | Sets | Top set`. Tap a row for the pop-up;
  * swipe left to Delete (Undo), right to Swap; the pop-up and VoiceOver
  * actions do the same, plus Move up/down, Superset with next and Unlink
- * (drag is S4b, §9 Q18). Start asks `Use these changes for` only when the
- * structure differs from the plan day (Q11).
+ * (drag is S4b, §9 Q18). Start always starts, today only (Ben, 23 Oct, D1):
+ * a structural change is offered for the plan on the Summary.
  */
-/** The toast Undo that undoes a plan change (`Chest · bench updated · Undo`), not a draft edit. */
-const PLAN_UNDO = 'plan-change';
 
 export function BuilderWorkoutScreen() {
   const theme = useTheme();
@@ -81,15 +78,10 @@ export function BuilderWorkoutScreen() {
   const [popup, setPopup] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [swap, setSwap] = useState<{ slotKey: string | null; group: BuilderGroup; groups: BuilderGroup[]; sections: ChoiceSection[] } | null>(null);
-  const [prompt, setPrompt] = useState<StartPrompt | null>(null);
   const [startBusy, setStartBusy] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
   const [review, setReview] = useState<BuilderReview | null>(null);
   // (22 Oct) The detail behind the Time note: what the fit changed, and its Undo.
   const [timeDetail, setTimeDetail] = useState(false);
-  // Coach review's `Update plan day` (§2.9): the §2.8 choice with no Start; its Undo is the plan change's inverse.
-  const [planOnly, setPlanOnly] = useState(false);
-  const planUndo = useRef<PlanChangeUndo | null>(null);
   const [earlier, setEarlier] = useState<{ draftId: string; localDate: string; name: string }[]>([]);
   const [screenReader, setScreenReader] = useState(false);
   const startOp = useRef(newUuid());
@@ -105,7 +97,7 @@ export function BuilderWorkoutScreen() {
       showToastRef.current({ text: WORKOUT_COPY.nothingToSave, undoOpId: null, why: null });
     },
   );
-  const [checkInSheet, setCheckInSheet] = useState<{ choice: StartChoice } | null>(null);
+  const [checkInSheet, setCheckInSheet] = useState(false);
   const [scoring, setScoring] = useState(false);
   const [checkInId] = useState(newUuid);
   const [checkInOp] = useState(newUuid);
@@ -217,16 +209,6 @@ export function BuilderWorkoutScreen() {
 
   function undo(opId: string): Promise<void> {
     showToast(null);
-    if (opId === PLAN_UNDO) {
-      const u = planUndo.current;
-      if (u === null) return Promise.resolve();
-      return services.builder.undoPlanChange(u, newUuid()).then(async (r) => {
-        if (!r.ok) showToast({ text: r.message, undoOpId: null, why: null });
-        else planUndo.current = null;
-        changed();
-        await reload();
-      });
-    }
     return inTurn(async () => {
       const cur = snapRef.current;
       if (cur === null) return;
@@ -352,89 +334,39 @@ export function BuilderWorkoutScreen() {
     }
   }
 
-  async function start(choice: StartChoice, given?: SessionCheckIn | null) {
+  /** `Start` (Ben, 23 Oct, D1): always starts, today only; a structural change is offered for the plan on the Summary. */
+  async function start(given?: SessionCheckIn | null) {
     if (snap === null || startBusy) return;
     const checkIn = given === undefined ? await checkInFor() : given;
     if (checkIn === 'ask') {
-      setPrompt(null);
-      setCheckInSheet({ choice });
+      setCheckInSheet(true);
       return;
     }
     // First Start ever: the one-time Rest alerts question; either answer continues this Start.
     await alertsAsk.ensureAsked();
     setStartBusy(true);
-    setStartError(null);
-    const r = await services.builder.start(snap.draftId, { choice, opId: startOp.current, expectedVersion: snap.version, checkIn });
+    const r = await services.builder.start(snap.draftId, { opId: startOp.current, expectedVersion: snap.version, checkIn });
     setStartBusy(false);
     if (r.ok) {
-      setPrompt(null);
-      setCheckInSheet(null);
+      setCheckInSheet(false);
       changed();
       navigation.dispatch(openStartedWorkout());
       return;
     }
-    // Nothing was created: the same op ID may try again only for the same choice.
+    // Nothing was created: a new tap is a new op ID.
     startOp.current = newUuid();
     // Another workout is in progress: Today, where it resumes.
     if (r.reason === 'active') {
-      setPrompt(null);
-      setCheckInSheet(null);
+      setCheckInSheet(false);
       navigation.dispatch(popToToday(r.message));
       return;
     }
     if (r.reason === 'stale') {
-      setPrompt(null);
       await reload();
       showToast({ text: r.message, undoOpId: null, why: null });
       return;
     }
-    if (prompt !== null) setStartError(r.message);
-    else showToast({ text: r.message, undoOpId: null, why: null });
-  }
-
-  /** `Update plan day` from Coach review: the §2.8 choice (Update / Save as new variation / Cancel), before Start. */
-  async function openPlanUpdate() {
-    if (snap === null) return;
-    const p = await services.builder.startPrompt(snap.draftId);
-    setReview(null);
-    if (p === null) {
-      showToast({ text: WORKOUT_COPY.noChanges, undoOpId: null, why: null });
-      return;
-    }
-    setStartError(null);
-    setPlanOnly(true);
-    setPrompt(p);
-  }
-
-  async function updatePlanDay(choice: Exclude<StartChoice, { kind: 'today' }>) {
-    if (snap === null || startBusy) return;
-    setStartBusy(true);
-    const r = await services.builder.updatePlanDay(snap.draftId, { choice, opId: startOp.current, expectedVersion: snap.version });
-    setStartBusy(false);
-    startOp.current = newUuid();
-    if (!r.ok) {
-      setStartError(r.message);
-      return;
-    }
-    setPrompt(null);
-    setPlanOnly(false);
-    changed();
-    await reload();
-    if (r.planChange !== null) {
-      planUndo.current = r.planChange;
-      showToast({ text: planChangeText(r.planChange), undoOpId: PLAN_UNDO, why: null });
-    }
-  }
-
-  async function onStart() {
-    if (snap === null) return;
-    setPlanOnly(false);
-    const p = await services.builder.startPrompt(snap.draftId);
-    if (p === null) await start({ kind: 'today' });
-    else {
-      setStartError(null);
-      setPrompt(p);
-    }
+    showToast({ text: r.message, undoOpId: null, why: null });
   }
 
   async function openReview() {
@@ -444,8 +376,7 @@ export function BuilderWorkoutScreen() {
   }
 
   async function pickScore(n: CheckInScore) {
-    const pending = checkInSheet;
-    if (pending === null || scoring) return;
+    if (!checkInSheet || scoring) return;
     setScoring(true);
     const r = await saveScore({ record: (q) => services.checkIns.record(q), update: (id, patch, version, opId) => services.checkIns.update(id, patch, version, opId), newOpId: newUuid }, { current: null, score: n, checkInId, opId: checkInOp });
     setScoring(false);
@@ -454,13 +385,13 @@ export function BuilderWorkoutScreen() {
       return;
     }
     changed();
-    setCheckInSheet(null);
+    setCheckInSheet(false);
     // At or below the What's up? setting: the reasons step first; its exits come back here, and Start reuses this check-in.
     if (scoreStepOf(r, n) === 'reasons') {
       navigation.navigate('CheckIn', { mode: 'overview', checkInId: r.checkIn.id });
       return;
     }
-    await start(pending.choice, { kind: 'answered', checkInId: r.checkIn.id });
+    await start({ kind: 'answered', checkInId: r.checkIn.id });
   }
 
   const kgStep = async (slotKey: string, value: number | null, dir: 1 | -1): Promise<number | null> => {
@@ -780,7 +711,7 @@ export function BuilderWorkoutScreen() {
         />
         <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
           <View style={{ flex: 1 }}>
-            <StartButton enabled={v.startEnabled} busy={startBusy} onPress={() => void onStart()} />
+            <StartButton enabled={v.startEnabled} busy={startBusy} onPress={() => void start()} />
           </View>
           <SecondaryButton label={WORKOUT_COPY.review} size="primary" onPress={() => void openReview()} />
         </View>
@@ -832,20 +763,6 @@ export function BuilderWorkoutScreen() {
         onPick={(id) => void pick(id)}
         onClose={() => { setSwap(null); }}
       />
-      <PromptSheet
-        view={prompt === null ? null : promptView(prompt)}
-        suggestedLabel={prompt?.suggestedLabel ?? ''}
-        busy={startBusy}
-        error={startError}
-        hideToday={planOnly}
-        onToday={() => void start({ kind: 'today' })}
-        onUpdate={() => void (planOnly ? updatePlanDay({ kind: 'update' }) : start({ kind: 'update' }))}
-        onVariation={(label) => void (planOnly ? updatePlanDay({ kind: 'variation', label }) : start({ kind: 'variation', label }))}
-        onClose={() => {
-          setPrompt(null);
-          setPlanOnly(false);
-        }}
-      />
       <BottomCard
         visible={timeDetail && v.time.note !== null}
         onClose={() => {
@@ -885,7 +802,7 @@ export function BuilderWorkoutScreen() {
       </BottomCard>
       {alertsAsk.sheet}
       {save.sheet}
-      <BottomCard visible={checkInSheet !== null} onClose={() => { setCheckInSheet(null); }}>
+      <BottomCard visible={checkInSheet} onClose={() => { setCheckInSheet(false); }}>
         <AppText variant="title2" accessibilityRole="header">
           {WORKOUT_COPY.checkIn}
         </AppText>
@@ -896,8 +813,8 @@ export function BuilderWorkoutScreen() {
           disabled={scoring || startBusy}
           onPress={() => {
             const pending = checkInSheet;
-            setCheckInSheet(null);
-            if (pending !== null) void start(pending.choice, { kind: 'skipped', atUtc: services.now().utc });
+            setCheckInSheet(false);
+            if (pending) void start({ kind: 'skipped', atUtc: services.now().utc });
           }}
         />
       </BottomCard>
@@ -914,11 +831,6 @@ export function BuilderWorkoutScreen() {
         visible={review !== null}
         review={review}
         onApply={(id) => {
-          // `Update plan day` is the builder's own §2.8 choice (it owns plan-day writes); the provider never applies it.
-          if (id === UPDATE_PLAN_DAY_ACTION) {
-            void openPlanUpdate();
-            return;
-          }
           const p = builderReviewProvider();
           if (p === null) return;
           void p.apply(snap.draftId, id, newUuid()).then(async (r) => {

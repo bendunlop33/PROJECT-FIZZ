@@ -8,6 +8,7 @@ import type { BuilderSnapshot, SetupInput } from '../src/builder/builder-service
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { seedVariation } from './variation-fixture';
 
 /**
  * Review b3-builder-20oct fixes on real SQLite (B1–B4, S1–S9): each case
@@ -132,7 +133,7 @@ describe('B1: a new Day or Main lift moves the draft’s plan day', () => {
     expect(back.planDay?.splitDayId).toBe('push');
     const again = ok(await s.builder.changeSetup(snap.draftId, { ...legs, minutes: snap.setup.minutes }, { opId: 'day-legs-2', expectedVersion: back.version })).snapshot;
 
-    const r = await s.builder.start(again.draftId, { choice: { kind: 'today' }, opId: 'start-1', expectedVersion: again.version, gymId });
+    const r = await s.builder.start(again.draftId, { opId: 'start-1', expectedVersion: again.version, gymId });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const a = (await s.workout.load(r.sessionId))?.aggregate;
@@ -148,7 +149,7 @@ describe('B1: a new Day or Main lift moves the draft’s plan day', () => {
     const custom: SetupInput = { ...snap.setup, dayId: 'custom', dayName: 'Custom', dayParts: [], mainLiftExerciseId: null, variationId: null, groups: [{ group: 'Chest', count: 2 }], groupsEdited: true };
     const c = ok(await s.builder.changeSetup(snap.draftId, custom, { opId: 'custom-1', expectedVersion: snap.version })).snapshot;
     expect(c.planDay).toBeNull();
-    const r = await s.builder.start(c.draftId, { choice: { kind: 'today' }, opId: 'start-c', expectedVersion: c.version, gymId });
+    const r = await s.builder.start(c.draftId, { opId: 'start-c', expectedVersion: c.version, gymId });
     if (!r.ok) throw new Error(r.message);
     expect((await s.workout.load(r.sessionId))?.aggregate.session.planDay).toBeUndefined();
   });
@@ -175,7 +176,6 @@ describe('B2: Set up over a template changes nothing until Ben changes it', () =
     expect(next.status).toBe('replayed');
     expect(next.snapshot && names(next.snapshot)).toEqual(['Bench press', 'Incline dumbbell press', 'Triceps pushdown']);
     expect((await s.builder.read(snap.draftId))?.version).toBe(snap.version);
-    expect(await s.builder.startPrompt(snap.draftId)).toBeNull();
     // Only Length changed: sets merge, no new exercises.
     const longer = ok(await s.builder.changeSetup(snap.draftId, { ...snap.setup, minutes: snap.setup.minutes + 5 }, { opId: 'len-1', expectedVersion: snap.version })).snapshot;
     expect(names(longer)).toEqual(['Bench press', 'Incline dumbbell press', 'Triceps pushdown']);
@@ -211,7 +211,7 @@ describe('B4: Start re-checks pain and history', () => {
     const bench = slotNamed(snap, 'Bench press');
     expect(bench.rows.find((r) => r.type === 'top')?.load).toBe(102.5);
     expect((await s.pain.flagMovement({ exerciseId: bench.exerciseId, exerciseName: 'Bench press', opId: 'pain-1' })).ok).toBe(true);
-    const r = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-1', expectedVersion: snap.version, gymId });
+    const r = await s.builder.start(snap.draftId, { opId: 'start-1', expectedVersion: snap.version, gymId });
     if (!r.ok) throw new Error(r.message);
     const sets = await benchSets(s, r.sessionId);
     expect(sets.length).toBeGreaterThan(0);
@@ -227,7 +227,7 @@ describe('B4: Start re-checks pain and history', () => {
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 110, reps: 6, rpe: 8 }, { load: 110, reps: 6, rpe: 8 }, { load: 110, reps: 6, rpe: 8 }] }]);
     const fresh = await s.builder.read(snap.draftId);
     if (fresh === null) throw new Error('draft');
-    const r = await s.builder.start(fresh.draftId, { choice: { kind: 'today' }, opId: 'start-1', expectedVersion: fresh.version, gymId });
+    const r = await s.builder.start(fresh.draftId, { opId: 'start-1', expectedVersion: fresh.version, gymId });
     if (!r.ok) throw new Error(r.message);
     const top = Math.max(...(await benchSets(s, r.sessionId)).map((x) => x.planned.load?.value ?? 0));
     expect(top).toBeGreaterThanOrEqual(110);
@@ -241,7 +241,7 @@ describe('S7: each builder load keeps its reason in the session', () => {
     const bench = slotNamed(snap, 'Bench press');
     const backoff = bench.rows.findIndex((r) => r.type === 'backoff');
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: bench.key, index: backoff, patch: { kind: 'load', value: 90 } }, { opId: 'kg-1', basis: { version: snap.version } })).snapshot;
-    const r = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-1', expectedVersion: snap.version, gymId });
+    const r = await s.builder.start(snap.draftId, { opId: 'start-1', expectedVersion: snap.version, gymId });
     if (!r.ok) throw new Error(r.message);
     const sets = (await benchSets(s, r.sessionId)).sort((a, b) => a.index - b.index);
     const top = sets.find((x) => x.setType === 'top');
@@ -252,75 +252,64 @@ describe('S7: each builder load keeps its reason in the session', () => {
   });
 });
 
-describe('S1, S9: Summary’s Undo survives a relaunch and a retry is idempotent', () => {
-  it('Update in your plan stores the inverse with the session; Undo twice with one op ID is ok', async () => {
+describe('S1, S9 (D1): Keep for next time’s Undo survives a relaunch and a retry is idempotent', () => {
+  it('Apply stores the inverse with the workout; Undo twice is ok; once the plan day changed again it is refused', async () => {
     const { s, gymId, push } = await benWithPlan();
     let snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
     const pd = slotNamed(snap, 'Triceps pushdown');
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: pd.key }, { opId: 'set-1', basis: { version: snap.version } })).snapshot;
-    const r = await s.builder.start(snap.draftId, { choice: { kind: 'update' }, opId: 'start-up', expectedVersion: snap.version, gymId });
-    if (!r.ok || r.planChange === null) throw new Error('no plan change');
+    const r = await s.builder.start(snap.draftId, { opId: 'start-1', expectedVersion: snap.version, gymId });
+    if (!r.ok) throw new Error(r.message);
+    await finishOne(s, r.sessionId);
+    expect(await s.builder.keepNextTime(r.sessionId, 'apply')).toEqual({ ok: true });
     await h.forceClose();
     const { services: s2 } = await h.launch();
-    const stored = await s2.builder.planChangeOf(r.sessionId);
-    expect(stored).toMatchObject({ kind: 'template', routineId: push, version: r.planChange.version });
-    if (stored === null) return;
-    expect(await s2.builder.undoPlanChange(stored, 'undo-1')).toEqual({ ok: true });
-    expect(await s2.builder.undoPlanChange(stored, 'undo-1')).toEqual({ ok: true });
-    expect(await s2.builder.undoPlanChange(stored, 'undo-2')).toEqual({ ok: false, message: 'Changed since · can’t undo' });
+    expect((await s2.builder.keepNextTimeOf(r.sessionId))?.state).toBe('kept');
+    expect(await s2.builder.undoKeepNextTime(r.sessionId)).toEqual({ ok: true });
+    expect(await s2.builder.undoKeepNextTime(r.sessionId)).toEqual({ ok: true });
+
+    // A second workout: kept, then the plan day changes elsewhere; Undo is refused and the line has no Undo.
+    let again = ok(await s2.builder.openTemplate({ routineId: push }, 'open-2')).snapshot;
+    again = ok(await s2.builder.edit(again.draftId, { kind: 'add_set', slotKey: slotNamed(again, 'Triceps pushdown').key }, { opId: 'set-2', basis: { version: again.version } })).snapshot;
+    const r2 = await s2.builder.start(again.draftId, { opId: 'start-2', expectedVersion: again.version, gymId });
+    if (!r2.ok) throw new Error(r2.message);
+    await finishOne(s2, r2.sessionId);
+    expect(await s2.builder.keepNextTime(r2.sessionId, 'apply')).toEqual({ ok: true });
+    const t = await template(s2, push);
+    expect((await s2.routines.rename({ routineId: push, name: 'Push A', expectedVersion: t?.version ?? 0, opId: 'rename-1' })).ok).toBe(true);
+    expect(await s2.builder.undoKeepNextTime(r2.sessionId)).toEqual({ ok: false, reason: 'stale', message: 'Changed since · can’t undo' });
+    expect(await s2.builder.keepNextTimeOf(r2.sessionId)).toMatchObject({ state: 'kept', canUndo: false });
+    expect((await template(s2, push))?.exercises.find((e) => e.exerciseId === pd.exerciseId)?.setTemplates.filter((x) => x.setType !== 'warmup')).toHaveLength(4);
   });
 });
 
-describe('S2, S3: variations check the version opened, and never drop part of a change', () => {
-  async function withVariation(s: AppServices, gymId: string, push: string): Promise<{ variationId: string }> {
-    let snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-v')).snapshot;
+describe('variations Ben saved before D1: open, rename and delete; Start today only, no Keep for next time', () => {
+  async function withVariation(s: AppServices, push: string): Promise<{ s: AppServices; variationId: string }> {
+    const snap = ok(await s.builder.openTemplate({ routineId: push }, 'peek-v')).snapshot;
     const pd = slotNamed(snap, 'Triceps pushdown');
-    snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: pd.key }, { opId: 'set-v', basis: { version: snap.version } })).snapshot;
-    const r = await s.builder.start(snap.draftId, { choice: { kind: 'variation', label: 'more sets' }, opId: 'start-v', expectedVersion: snap.version, gymId });
-    if (!r.ok) throw new Error(r.message);
-    const a = (await s.workout.load(r.sessionId))?.aggregate;
-    const set = a?.sets.find((x) => x.status === 'pending' && x.setType !== 'warmup');
-    if (a === undefined || set === undefined) throw new Error('no set');
-    const conv = a.exercises.find((e) => e.id === set.sessionExerciseId)?.loadConvention ?? 'total';
-    h.clockMs += 60_000;
-    await s.workout.dispatch(r.sessionId, { type: 'log_set', at: h.now(), opId: 'log-v', setId: set.id, values: { load: set.planned.load ?? { value: 20, unit: 'kg', convention: conv }, reps: 8, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
-    h.clockMs += 60_000;
-    const now = await s.workout.load(r.sessionId);
-    await s.workout.dispatch(r.sessionId, { type: 'finish', at: h.now(), opId: h.ids(), expectedVersion: now?.aggregate.session.version ?? 0, endedAt: null });
-    await h.settle(s);
-    h.clockMs += DAY;
-    const v = (await s.builder.setupFacts(snap.setup)).variations[0];
-    if (v === undefined) throw new Error('no variation');
-    return { variationId: v.id };
+    const variationId = '7a7a7a7a-0000-4000-8000-000000000001';
+    const s2 = await seedVariation(h, s, { id: variationId, templateRoutineId: push, splitDayId: snap.setup.dayId, mainLiftExerciseId: snap.setup.mainLiftExerciseId, label: 'more sets', extras: [{ kind: 'set_count', exerciseId: pd.exerciseId, n: 4 }] });
+    return { s: s2, variationId };
   }
 
-  it('updating an open variation that was renamed since is refused', async () => {
-    const { s, gymId, push } = await benWithPlan();
-    const { variationId } = await withVariation(s, gymId, push);
+  it('an open variation starts today only; the Summary doesn’t offer Keep for next time (its ops can’t take a swap)', async () => {
+    const { s: s0, gymId, push } = await benWithPlan();
+    const { s, variationId } = await withVariation(s0, push);
     let snap = ok(await s.builder.openTemplate({ routineId: push, variationId }, 'open-2')).snapshot;
+    expect(snap.variationLabel).toBe('more sets');
     const bench = slotNamed(snap, 'Bench press');
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'set-2', basis: { version: snap.version } })).snapshot;
-    const v = (await s.builder.setupFacts(snap.setup)).variations.find((x) => x.id === variationId);
-    expect(await s.builder.renameVariation(variationId, 'arms', { opId: 'rename-v', expectedVersion: v?.version ?? 0 })).toEqual({ ok: true });
-    const r = await s.builder.start(snap.draftId, { choice: { kind: 'update' }, opId: 'start-up', expectedVersion: snap.version, gymId });
-    expect(r).toMatchObject({ ok: false, reason: 'plan_changed' });
-    expect(await s.sessions.active()).toBeNull();
-  });
-
-  it('a new order or a split pair isn’t offered as a variation; Today only and Update still are', async () => {
-    const { s, push } = await benWithPlan();
-    let snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
-    const pd = slotNamed(snap, 'Triceps pushdown');
-    snap = ok(await s.builder.edit(snap.draftId, { kind: 'move', slotKey: pd.key, dir: 'up' }, { opId: 'move-1', basis: { version: snap.version } })).snapshot;
-    const prompt = await s.builder.startPrompt(snap.draftId);
-    expect(prompt?.lines).toContain('New order');
-    expect(prompt?.canSaveVariation).toBe(false);
-    expect(prompt?.updateLabel).not.toBeNull();
+    const r = await s.builder.start(snap.draftId, { opId: 'start-v', expectedVersion: snap.version, gymId });
+    if (!r.ok) throw new Error(r.message);
+    expect((await s.workout.load(r.sessionId))?.aggregate.session.planDay?.variationId).toBe(variationId);
+    await finishOne(s, r.sessionId);
+    expect(await s.builder.keepNextTimeOf(r.sessionId)).toBeNull();
+    expect(await s.builder.keepNextTime(r.sessionId, 'apply')).toMatchObject({ ok: false, reason: 'gone' });
   });
 
   it('Rename and Delete a variation; Undo puts it back', async () => {
-    const { s, gymId, push } = await benWithPlan();
-    const { variationId } = await withVariation(s, gymId, push);
+    const { s: s0, push } = await benWithPlan();
+    const { s, variationId } = await withVariation(s0, push);
     const setup = { ...(await s.builder.initialSetup({ dayId: 'push' })) };
     const facts = async () => (await s.builder.setupFacts({ ...setup, mainLiftExerciseId: (await s.builder.read((ok(await s.builder.openTemplate({ routineId: push }, 'peek')).snapshot.draftId)))?.setup.mainLiftExerciseId ?? null })).variations;
     let v = (await facts()).find((x) => x.id === variationId);
@@ -355,19 +344,26 @@ describe('S6: a typed kg the gym can’t make is rounded down, with the item nam
   });
 });
 
-describe('S8: Update in your plan carries Ben’s rests and the length', () => {
-  it('a rest change and a set go to the template; its plan day takes the set-up’s minutes', async () => {
+describe('S8 (D1): Keep for next time keeps the structure only; Ben’s rests and length stay today’s', () => {
+  it('a set count goes to the template; a rest change and Set up’s length don’t', async () => {
     const { s, gymId, push } = await benWithPlan();
+    const before = await template(s, push);
     let snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
     const pd = slotNamed(snap, 'Triceps pushdown');
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: pd.key }, { opId: 'set-1', basis: { version: snap.version } })).snapshot;
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'rest', slotKey: pd.key, restKind: 'working', seconds: 120 }, { opId: 'rest-1', basis: { version: snap.version } })).snapshot;
     snap = ok(await s.builder.changeSetup(snap.draftId, { ...snap.setup, minutes: snap.setup.minutes + 1 }, { opId: 'len-1', expectedVersion: snap.version })).snapshot;
-    const r = await s.builder.start(snap.draftId, { choice: { kind: 'update' }, opId: 'start-up', expectedVersion: snap.version, gymId });
+    const r = await s.builder.start(snap.draftId, { opId: 'start-1', expectedVersion: snap.version, gymId });
     if (!r.ok) throw new Error(r.message);
+    await finishOne(s, r.sessionId);
+    expect(await s.builder.keepNextTimeOf(r.sessionId)).toMatchObject({ state: 'open', lines: ['Triceps pushdown: 3 → 4 sets'] });
+    expect(await s.builder.keepNextTime(r.sessionId, 'apply')).toEqual({ ok: true });
     const t = await template(s, push);
-    expect(t?.exercises.find((e) => e.exerciseId === pd.exerciseId)?.restBySetType.working).toEqual({ seconds: 120 });
-    expect(t?.planDay?.minutes).toBe(snap.setup.minutes);
+    const was = before?.exercises.find((e) => e.exerciseId === pd.exerciseId);
+    const now = t?.exercises.find((e) => e.exerciseId === pd.exerciseId);
+    expect(now?.setTemplates.filter((x) => x.setType !== 'warmup')).toHaveLength(4);
+    expect(now?.restBySetType).toEqual(was?.restBySetType);
+    expect(t?.planDay?.minutes).toBe(before?.planDay?.minutes);
   });
 });
 
@@ -405,7 +401,7 @@ describe('S10: gym changed, plan day reloaded silently, Not applied · Add anywa
     const back = ok(await s.builder.undo(snap.draftId, 'gym-1', 'u-gym'));
     expect(names(back.snapshot)).toEqual(names(snap));
     expect(back.snapshot.gymChanged).toBe(false);
-    const r = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-1', expectedVersion: back.snapshot.version });
+    const r = await s.builder.start(snap.draftId, { opId: 'start-1', expectedVersion: back.snapshot.version });
     if (!r.ok) throw new Error(r.message);
     expect((await s.workout.load(r.sessionId))?.aggregate.session.gymId).toBe(gymId);
   });
@@ -424,32 +420,29 @@ describe('S10: gym changed, plan day reloaded silently, Not applied · Add anywa
   });
 
   it('a variation op whose anchor left the template shows Not applied after a relaunch, and Add anyway adds it', async () => {
-    const { s, gymId, push } = await benWithPlan();
-    // Variation: add a curl after Triceps pushdown.
-    let snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
-    const c = await s.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Biceps' });
+    const { s: s0, gymId, push } = await benWithPlan();
+    // A variation from before D1: a curl after Triceps pushdown, paired with it.
+    const snap = ok(await s0.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
+    const c = await s0.builder.exerciseChoices(snap.draftId, { slotKey: null, group: 'Biceps' });
     const curl = c?.sections.flatMap((x) => x.items).find((i) => !i.mayHurt);
     if (curl === undefined) throw new Error('no curl');
-    snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_exercise', exerciseId: curl.exerciseId }, { opId: 'add-1', basis: { version: snap.version } })).snapshot;
-    const pd = slotNamed(snap, 'Triceps pushdown');
-    snap = ok(await s.builder.edit(snap.draftId, { kind: 'superset_next', slotKey: pd.key }, { opId: 'pair-1', basis: { version: snap.version } })).snapshot;
-    const started = await s.builder.start(snap.draftId, { choice: { kind: 'variation', label: 'arms superset' }, opId: 'start-var', expectedVersion: snap.version, gymId });
-    if (!started.ok) throw new Error(started.message);
-    await finishOne(s, started.sessionId);
-    // The template loses Triceps pushdown (the pair's anchor) elsewhere.
+    const pdId = slotNamed(snap, 'Triceps pushdown').exerciseId;
+    const variationId = '7a7a7a7a-0000-4000-8000-000000000002';
+    const s = await seedVariation(h, s0, { id: variationId, templateRoutineId: push, splitDayId: snap.setup.dayId, mainLiftExerciseId: snap.setup.mainLiftExerciseId, label: 'arms superset', extras: [{ kind: 'add_slot', after: pdId, slot: { exerciseId: curl.exerciseId } }, { kind: 'pair', a: pdId, b: curl.exerciseId }] });
+    // The template loses Triceps pushdown (the pair's anchor): Ben deletes it and keeps that for next time.
     let tplSnap = ok(await s.builder.openTemplate({ routineId: push }, 'open-2')).snapshot;
     tplSnap = ok(await s.builder.edit(tplSnap.draftId, { kind: 'delete_exercise', slotKey: slotNamed(tplSnap, 'Triceps pushdown').key }, { opId: 'del-pd', basis: { version: tplSnap.version } })).snapshot;
-    const up = await s.builder.start(tplSnap.draftId, { choice: { kind: 'update' }, opId: 'start-up', expectedVersion: tplSnap.version, gymId });
+    const up = await s.builder.start(tplSnap.draftId, { opId: 'start-up', expectedVersion: tplSnap.version, gymId });
     if (!up.ok) throw new Error(up.message);
     await finishOne(s, up.sessionId);
-    const variationId = (await s.builder.setupFacts(snap.setup)).variations[0]?.id ?? null;
+    expect(await s.builder.keepNextTimeOf(up.sessionId)).toMatchObject({ state: 'open', lines: ['Delete Triceps pushdown'] });
+    expect(await s.builder.keepNextTime(up.sessionId, 'apply')).toEqual({ ok: true });
     const opened = ok(await s.builder.openTemplate({ routineId: push, variationId }, 'open-3')).snapshot;
     await h.forceClose();
     const { services: s2 } = await h.launch();
     const again = await s2.builder.read(opened.draftId);
     // The curl was added after Triceps pushdown and paired with it: both ops lost their anchor.
     expect(again?.skipped.map((x) => x.op.kind)).toEqual(['add_slot', 'pair']);
-    const pdId = slotNamed(snap, 'Triceps pushdown').exerciseId;
     expect(again?.facts[pdId]?.name).toBe('Triceps pushdown');
     // Add anyway: the missing exercises come back, and the lines go.
     let added = ok(await s2.builder.edit(opened.draftId, { kind: 'add_exercise', exerciseId: curl.exerciseId }, { opId: 'add-anyway-1', basis: { version: again?.version ?? 0 } })).snapshot;
@@ -461,7 +454,7 @@ describe('S10: gym changed, plan day reloaded silently, Not applied · Add anywa
 });
 
 describe('Re-review R5 (retire-workout-overview): a plan day from a plan no longer in use', () => {
-  it('opens as a library workout (no plan-day key, no Start prompt); while the plan is in use it opens as its plan day', async () => {
+  it('opens as a library workout (no plan-day key); while the plan is in use it opens as its plan day', async () => {
     const { s, push } = await benWithPlan();
     const inUse = ok(await s.builder.openTarget({ kind: 'routine', routineId: push }, 'open-in-use')).snapshot;
     expect(inUse.planDay).not.toBeNull();
@@ -474,6 +467,5 @@ describe('Re-review R5 (retire-workout-overview): a plan day from a plan no long
     expect(old.planDay).toBeNull();
     expect(old.from).toEqual({ kind: 'routine', id: push });
     expect(names(old).length).toBeGreaterThan(0);
-    expect(await s.builder.startPrompt(old.draftId)).toBeNull();
   });
 });

@@ -1,6 +1,5 @@
 import {
   adviseBuilder,
-  alignToDraft,
   applyBuilderEdit,
   applyVariation,
   builderLoad,
@@ -14,7 +13,6 @@ import {
   PLANNED_HELD_LINE,
   buildFromSetup,
   builderChangeLine,
-  builderChanges,
   builderDraftEdit,
   builderDraftUndo,
   builderSetupOf,
@@ -45,10 +43,8 @@ import {
   slotsOf,
   stableStringify,
   storedGroupsOf,
-  suggestVariationLabel,
   toDraftPlan,
   toMs,
-  variationExtrasOf,
   withSlotRevs,
   workingCount,
   workoutFromTemplate,
@@ -77,12 +73,16 @@ import {
   type RestKind,
   type GroupCount,
   type SkippedOp,
-  type StartAlongside,
+  keepDiff,
+  keepNextTimeMark,
+  keptExercises,
+  type KeepBaseItem,
+  type KeepCurrentItem,
   type TemplateSlotSpec,
   defaultBuilderMainLift,
 } from '@fizz/domain';
 import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
-import type { Store } from '@fizz/persistence';
+import type { KeepNextTimeWrite, Store } from '@fizz/persistence';
 
 import type { WorkoutStartOutcome, WorkoutStartRequest } from '../services/workout-services';
 import type { BuilderEnv, BuilderEnvPort } from './builder-env';
@@ -105,9 +105,10 @@ import { formatShortDate } from '../format/dates';
  *   version.
  * - Undo's before-state is stored on the draft, so it survives a force-close.
  * - Start goes through the workout services' Start (`coachDraftOf`): the
- *   draft's loads stand as built, the session records its plan day, and
- *   `Update … in your plan` / `Save as new variation` land in the session's
- *   own transaction.
+ *   draft's loads stand as built and the session records its plan day.
+ *   Start always starts, today only (Ben, 23 Oct, D1): a structural change
+ *   is offered for the plan day or saved workout on the Summary instead
+ *   (`keepNextTimeOf`, `keepNextTime`).
  */
 
 export interface BuilderServiceDeps {
@@ -254,31 +255,16 @@ export interface BuilderToast {
   why: string | null;
 }
 
-export type StartChoice = { kind: 'today' } | { kind: 'update' } | { kind: 'variation'; label: string };
-
-/** The `Use these changes for` sheet (§2.8); null = start without asking. */
-export interface StartPrompt {
-  lines: string[];
-  /** `Update Chest · bench in your plan` (variation open: `Update Chest · bench · arms superset`); null = hidden (plan paused or ended, no template). */
-  updateLabel: string | null;
-  /** At 5 variations: disabled with `Limit reached`. */
-  variationLimitReached: boolean;
-  /** The variation name field's prefill (`arms superset`). */
-  suggestedLabel: string;
-  canSaveVariation: boolean;
-}
-
 /**
- * A plan change made at Start, for Summary's `Chest · bench updated · Undo`
- * (versioned inverse write, §4.6). Stored with the session in the Start's
- * own write (`SessionPlanDay.planChange`), so it survives a force-close
- * (review S9); `planChangeOf(sessionId)` reads it back.
+ * A plan change and its versioned inverse, for `Chest · bench updated · Undo`. Older sessions stored the one their
+ * Start made (`SessionPlanDay.planChange`, before D1; `planChangeOf`); Summary's `Keep for next time?` stores its own
+ * on the started builder draft (`keepNextTime`). Both survive a force-close.
  */
 export type { PlanChangeUndo };
 
 export type BuilderStartResult =
-  | { ok: true; sessionId: string; duplicate: boolean; planChange: PlanChangeUndo | null }
-  | { ok: false; reason: 'stale' | 'plan_changed' | 'variation_limit' | 'variation_label' | 'empty' | 'gone' | 'failed'; message: string }
+  | { ok: true; sessionId: string; duplicate: boolean }
+  | { ok: false; reason: 'stale' | 'empty' | 'gone' | 'failed'; message: string }
   /** Another workout is in progress: nothing was created; the page goes to Today, where it resumes. */
   | { ok: false; reason: 'active'; message: string; sessionId: string };
 
@@ -288,6 +274,20 @@ const BUILDER_GROUP_ORDER: readonly BuilderGroup[] = BUILDER_GROUPS;
 /** The gym a draft's current version was worked out at. */
 function v0GymOf(d: WorkoutDraft): string | null {
   return currentDraftVersion(d).request.gymId;
+}
+
+/**
+ * (Ben, 23 Oct, D1) Summary's `Keep for next time?`: shown only when the workout's structure (an exercise swapped,
+ * added or removed, a set count) differs from the plan day or saved workout it opened as, Time's cuts put back.
+ * `open`: the row with the changes; `kept`: `Chest · bench updated` with Undo while nothing changed it since.
+ */
+export type KeepNextTimeView = { state: 'open'; label: string; lines: string[] } | { state: 'kept'; text: string; canUndo: boolean };
+
+export type KeepNextTimeResult = { ok: true } | { ok: false; reason: 'stale' | 'gone' | 'failed'; message: string };
+
+/** One Apply, one Skip and one Undo per workout: a double tap, a retry or a relaunch writes once. */
+export function keepNextTimeOpId(sessionId: string, tap: 'apply' | 'skip' | 'undo'): string {
+  return deriveId(`keep-next-time:${tap}:${sessionId}`);
 }
 
 /** Summary's Undo of a Start's plan change: one op ID per session, so a retry (or a relaunch) undoes once. */
@@ -310,13 +310,13 @@ export const BUILDER_COPY = {
   cantOpen: 'Can’t open this workout here yet.',
   leftOut: (n: number) => `${String(n)} left out`,
   noGym: 'Couldn’t set up a gym. Try again.',
-  planChanged: 'Your plan changed. Today only?',
+  /** (D1) The plan day or saved workout changed since this workout opened it: nothing kept. */
+  planChanged: 'Changed since · not kept',
   limitReached: 'Limit reached',
   labelTaken: 'Name already used',
   empty: 'Add an exercise first',
   changedSince: 'Changed since · can’t undo',
   failed: 'Couldn’t save. Try again.',
-  notAVariation: 'Can’t save these changes as a variation',
   rebuilt: 'Rebuilt',
   reloaded: 'Reloaded',
   gymChanged: 'Gym changed',
@@ -780,20 +780,6 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     ...(built.variation === null ? {} : { variationVersion: built.variation.version }),
   });
 
-  /**
-   * The variation the current workout would be saved as: its extras, and
-   * whether opening them gives this workout back. Order alone, a template
-   * pair Ben split and a deleted main lift have no op (§4.3), so a
-   * variation would drop them: it isn't offered (review S3).
-   */
-  function variationOf(template: Routine, current: BuilderWorkout, env: BuilderEnv): { extras: PlanDayVariation['extras'] } | null {
-    const base = openTemplate(template, null, env).workout;
-    const x = variationExtrasOf(base, current);
-    if (!x.ok) return null;
-    const reopened = alignToDraft(applyVariation(base, x.extras, env.ctx).workout, current);
-    return builderChanges(reopened, current).length === 0 ? { extras: x.extras } : null;
-  }
-
   function draftKey(s: SetupInput, plan: { planId: string; dayIndex: number } | null): BuilderDraftKey {
     return {
       planId: plan?.planId ?? null,
@@ -814,62 +800,6 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   const sameSetup = (a: SetupInput, b: SetupInput) => stableStringify(storedSetup(a, {})) === stableStringify(storedSetup(b, {}));
 
   const contextHash = (setup: BuilderSetup, gymId: string | null, equipmentVersion: string) => deriveId(`builder-context:${stableStringify({ setup, gymId, equipmentVersion })}`);
-
-  /**
-   * The plan write a §2.8 choice makes (`Update … in your plan`, `Save as new variation`), worked out against the
-   * draft as stored: the template or variation's next version, its versioned inverse (`planChange`), and the plan
-   * day it leaves the draft on. Start writes it with the session (§4.6); `Update plan day` in Coach review on its own.
-   */
-  async function planWriteFor(p: UserProfile, d: WorkoutDraft, choice: Exclude<StartChoice, { kind: 'today' }>, opId: string, at: ZonedTimestamp): Promise<{ ok: true; alongside: StartAlongside; planChange: PlanChangeUndo; templateVersion: number | null; variationId: string | null; variationVersion?: number } | { ok: false; reason: 'plan_changed' | 'variation_label' | 'failed'; message: string }> {
-    const v = currentDraftVersion(d);
-    const stored = builderSetupOf(d);
-    const setup = pageSetup(d);
-    const key = d.builderKey;
-    const template = stored?.templateRoutineId === undefined ? null : await repos().routines.get(stored.templateRoutineId).catch(() => null);
-    // The template Ben's edits were made on must be the one stored now (rule 5; review S2).
-    if (template === null || stored?.templateVersion === undefined || template.version !== stored.templateVersion) return { ok: false, reason: 'plan_changed', message: BUILDER_COPY.planChanged };
-    // (22 Oct) Time is today's only: the plan gets Ben's changes, never what a Time fit cut.
-    const current = untimed(stored, fromDraftPlan(v.plan, stored.restLevel ?? 'normal'));
-    const env = await envFor(p, { exerciseIds: [...template.exercises.map((e) => e.exerciseId), ...exerciseIdsOf(current)], keySeed: 'start' });
-    const plan = stored.timeFit === undefined ? v.plan : toDraftPlan(current, env.codec);
-    const variations = await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId);
-    const open = setup.variationId === null ? null : (variations.find((x) => x.id === setup.variationId) ?? null);
-    const t = await deps.training().catch(() => null);
-    const label = planLabel(setup, env, null);
-    if (choice.kind === 'update' && open === null) {
-      const exercises = templateExercisesOf(template, d, opId, at.utc, plan);
-      // An older plan workout gains its `planDay` key on this write (§4.2: derived on read, written only by a change);
-      // the plan day's length becomes the set-up's (review S8), never Time's (today's only; 22 Oct review B1).
-      const minutes = setupMinutesOf(stored);
-      const planDayField = template.planDay !== undefined ? { ...template.planDay, minutes } : key?.planId != null && key.dayIndex !== null && key.splitDayId !== null ? { planId: key.planId, dayIndex: key.dayIndex, splitDayId: key.splitDayId, mainLiftExerciseId: key.mainLiftExerciseId, minutes } : undefined;
-      const next: Routine = { ...template, exercises, version: template.version + 1, updatedAtUtc: at.utc, lastOpId: opId, source: 'ben', ...(planDayField === undefined ? {} : { planDay: planDayField }) };
-      const alongside: StartAlongside = { opId, template: { next, expectedVersion: stored.templateVersion, split: t?.split ?? null, mainLifts: t?.mainLifts } };
-      const planChange: PlanChangeUndo = { kind: 'template', routineId: template.id, version: next.version, restore: template.exercises, label };
-      return { ok: true, alongside, planChange, templateVersion: next.version, variationId: setup.variationId };
-    } else {
-      const extras = variationOf(template, current, env);
-      if (extras === null) return { ok: false, reason: 'failed', message: BUILDER_COPY.notAVariation };
-      if (choice.kind === 'update' && open !== null) {
-        // At the version Ben opened (rule 5; review S2): a variation changed elsewhere since is refused.
-        const opened = stored.variationVersion ?? open.version;
-        if (open.version !== opened) return { ok: false, reason: 'plan_changed', message: BUILDER_COPY.planChanged };
-        const next: PlanDayVariation = { ...open, extras: extras.extras, version: open.version + 1, updatedAtUtc: at.utc, basedOn: { routineId: template.id, version: stored.templateVersion }, opIds: [...open.opIds, opId].slice(-PLAN_DAY_LIMITS.maxOpIds) };
-        const alongside: StartAlongside = { opId, variation: { next, expectedVersion: opened } };
-        const planChange: PlanChangeUndo = { kind: 'variation_update', id: open.id, version: next.version, restore: open.extras, label: planLabel(setup, env, open.label) };
-        return { ok: true, alongside, planChange, templateVersion: stored.templateVersion, variationId: open.id, variationVersion: next.version };
-      } else if (choice.kind === 'variation') {
-        if (setup.dayId === CUSTOM_DAY_ID) return { ok: false, reason: 'failed', message: BUILDER_COPY.failed };
-        const id = deriveId(`builder-variation:${opId}`);
-        const labelText = choice.label.trim().slice(0, PLAN_DAY_LIMITS.labelMax);
-        if (labelText.length === 0) return { ok: false, reason: 'variation_label', message: 'Give it a name' };
-        const next: PlanDayVariation = { id, ownerId: p.id, version: 1, createdAtUtc: at.utc, updatedAtUtc: at.utc, splitDayId: setup.dayId, mainLiftExerciseId: setup.mainLiftExerciseId, label: labelText, extras: extras.extras, basedOn: { routineId: template.id, version: stored.templateVersion }, deletedAtUtc: null, opIds: [opId] };
-        const alongside: StartAlongside = { opId, variation: { next, expectedVersion: null } };
-        const planChange: PlanChangeUndo = { kind: 'variation_new', id, version: 1, label: planLabel(setup, env, labelText) };
-        return { ok: true, alongside, planChange, templateVersion: stored.templateVersion, variationId: id, variationVersion: 1 };
-      }
-    }
-    return { ok: false, reason: 'failed', message: BUILDER_COPY.failed };
-  }
 
   // -------------------------------------------------------------------------
   // Writes
@@ -1087,6 +1017,71 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     delete out.slotSeed;
     return { ...out, ...(src.sourceVersion === null ? {} : { sourceVersion: src.sourceVersion }), ...(src.leftOut.length === 0 ? {} : { leftOut: src.leftOut }), ...(src.slotSeed === undefined || src.slotSeed.length > 300 ? {} : { slotSeed: src.slotSeed }) };
   };
+
+  /**
+   * (D1) What Summary's `Keep for next time?` compares: the workout's started builder draft and the version it started
+   * as, the plan day (template) or saved workout it opened and at which version, and both as exercise lists (Time's
+   * cuts put back: a short day isn't a new plan). Null: not a plan day or saved workout, a variation was open, Ben
+   * didn't edit it on Your workout (Today's own card, the coach's offer), or not a finished workout Ben can see.
+   */
+  async function keepContext(p: UserProfile, sessionId: string) {
+    const a = await repos().sessions.get(sessionId).catch(() => null);
+    if (a === null || a.session.ownerId !== p.id || a.session.status !== 'finished') return null;
+    const draftId = a.session.coachDraft?.draftId ?? null;
+    const draft = draftId === null ? null : await repos().workoutDrafts.get(draftId).catch(() => null);
+    const key = draft?.builderKey;
+    if (draft === null || key === undefined || draft.ownerId !== p.id || draft.status !== 'started' || draft.sessionId !== sessionId) return null;
+    const version = draft.versions.find((v) => v.n === (a.session.coachDraft?.version ?? draft.currentVersion)) ?? currentDraftVersion(draft);
+    const stored = version.request.setup;
+    if (stored === undefined) return null;
+    // Only Ben's own changes on Your workout: Today's card as Today made it (its controls, its length) and the coach's
+    // pre-session offer he applied are today's, never offered for the plan (integrity B2).
+    if (todayDraftState({ versions: [version], currentVersion: version.n }).state !== 'edited') return null;
+    // A variation's extras can't take these changes as they are (its ops have no swap): not offered.
+    if (stored.variationId !== null) return null;
+    let target: { routineId: string; openedVersion: number; plan: boolean } | null = null;
+    if (stored.templateRoutineId !== undefined && stored.templateVersion !== undefined && key.planId !== null && a.session.planDay?.templateRoutineId === stored.templateRoutineId) target = { routineId: stored.templateRoutineId, openedVersion: stored.templateVersion, plan: true };
+    else if (key.from?.kind === 'routine' && stored.sourceVersion !== undefined) target = { routineId: key.from.id, openedVersion: stored.sourceVersion, plan: false };
+    if (target === null) return null;
+    const routine = await repos().routines.get(target.routineId).catch(() => null);
+    if (routine === null || routine.ownerId !== p.id || isDeleted(routine)) return null;
+    const workout = untimed(stored, fromDraftPlan(version.plan, stored.restLevel ?? 'normal'));
+    const env = await envFor(p, { gymId: version.request.gymId, exerciseIds: [...routine.exercises.map((e) => e.exerciseId), ...exerciseIdsOf(workout)], keySeed: `keep:${draft.id}` });
+    // What the workout opened: a plan day the exercises the builder knows; a saved workout all but those it left out.
+    const leftOut = new Set(stored.leftOut ?? []);
+    const opened = (id: string) => (target.plan ? env.info(id) !== null : !leftOut.has(id));
+    const base: KeepBaseItem[] = [...routine.exercises]
+      .sort((x, y) => x.order - y.order)
+      .filter((e) => opened(e.exerciseId))
+      .map((e) => ({ exerciseId: e.exerciseId, workingSets: Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, e.setTemplates.filter((t) => t.setType !== 'warmup').length)), ref: e.id }));
+    const current: KeepCurrentItem[] = workout.blocks.flatMap((b, round) => b.slots.map((x) => ({ key: x.key, exerciseId: x.exerciseId, workingSets: workingCount(x), origin: x.origin ?? null, round })));
+    const label = target.plan ? planLabel(pageSetup(draft), env, null) : routine.name;
+    return { session: a, draft, version, routine, openedVersion: target.openedVersion, label, workout, env, base, current, diff: keepDiff(base, current) };
+  }
+
+  /** (D1) The next workout from that plan day or saved workout has started since this one: `next time` is past. */
+  async function nextAlreadyStarted(p: UserProfile, c: { session: SessionAggregate; routine: Routine }): Promise<boolean> {
+    const since = c.session.session.startedAt.utc;
+    const from = (r: { routineId: string | null; planDay?: { templateRoutineId: string | null } | undefined }) => r.routineId === c.routine.id || r.planDay?.templateRoutineId === c.routine.id;
+    const refs = await repos().sessions.listFinishedRefs(p.id, 60).catch(() => []);
+    if (refs.some((r) => r.sessionId !== c.session.session.id && r.startedAtUtc > since && from(r))) return true;
+    const active = await repos().sessions.getActive(p.id).catch(() => null);
+    return active !== null && active.session.id !== c.session.session.id && active.session.startedAt.utc > since && from({ routineId: active.session.routineId, planDay: active.session.planDay });
+  }
+
+  function keepWriteResult(w: KeepNextTimeWrite | null): KeepNextTimeResult {
+    if (w === null) return { ok: false, reason: 'failed', message: BUILDER_COPY.failed };
+    switch (w.status) {
+      case 'written':
+      case 'replayed':
+        return { ok: true };
+      case 'stale':
+        return { ok: false, reason: 'stale', message: BUILDER_COPY.planChanged };
+      case 'missing':
+      case 'invalid':
+        return { ok: false, reason: 'gone', message: BUILDER_COPY.notFound };
+    }
+  }
 
   const service = {
     copy: BUILDER_COPY,
@@ -1653,46 +1648,12 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       return lines;
     },
 
-    /** The Start prompt (§2.8): null when the workout matches its plan day (load-only edits don't count, Q11) or isn't a plan day. */
-    async startPrompt(draftId: string): Promise<StartPrompt | null> {
-      const p = await owner();
-      const d = await repos().workoutDrafts.get(draftId).catch(() => null);
-      if (d === null || d.ownerId !== p.id) return null;
-      // Only the coach's pre-session offer changed Today's card: a today-only change, never offered for the plan (integrity B2).
-      if (todayDraftState(d).state === 'nudge') return null;
-      const stored = builderSetupOf(d);
-      if (stored?.templateRoutineId === undefined) return null;
-      const template = await repos().routines.get(stored.templateRoutineId).catch(() => null);
-      if (template === null) return null;
-      // (22 Oct) A Time fit is today's only: it never makes Start ask to change the plan.
-      const current = untimed(stored, fromDraftPlan(currentDraftVersion(d).plan, stored.restLevel ?? 'normal'));
-      const setup = pageSetup(d);
-      const variations = await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId);
-      const variation = setup.variationId === null ? null : (variations.find((v) => v.id === setup.variationId) ?? null);
-      const env = await envFor(p, { exerciseIds: [...template.exercises.map((e) => e.exerciseId), ...exerciseIdsOf(current)], keySeed: 'prompt' });
-      const base = alignToDraft(openTemplate(template, variation, env).workout, current);
-      const changes = builderChanges(base, current);
-      if (changes.length === 0) return null;
-      const inUse = await planInUse(p.id);
-      const planOk = inUse !== null && !inUse.paused && planRoutines(inUse.plan, [template]).length > 0;
-      const label = planLabel(setup, env, variation?.label ?? null);
-      const asVariation = variationOf(template, current, env) !== null;
-      return {
-        lines: changes.map((c) => builderChangeLine(c, env.nameOf)),
-        // Updating an open variation needs a change a variation can hold (S3).
-        updateLabel: planOk && (variation === null || asVariation) ? `Update ${label}${variation === null ? ' in your plan' : ''}` : null,
-        variationLimitReached: variations.length >= PLAN_DAY_LIMITS.maxVariations,
-        suggestedLabel: suggestVariationLabel(changes, env.info),
-        canSaveVariation: asVariation && setup.dayId !== CUSTOM_DAY_ID,
-      };
-    },
-
     /**
-     * `Start` (§2.8, §4.6): Today only, Update the plan day (or the open
-     * variation), or Save as new variation; the plan write and the session
-     * are one transaction under `opId`. A retry returns the same session.
+     * `Start` (§4.6; Ben, 23 Oct, D1): always starts, today only. No plan write rides on it: a structural change is
+     * offered for the plan day or saved workout on the Summary (`keepNextTimeOf`). One transaction under `opId`; a
+     * retry returns the same session.
      */
-    async start(draftId: string, req: { choice: StartChoice; opId: string; expectedVersion: number; gymId?: string; checkIn?: SessionCheckIn | null }): Promise<BuilderStartResult> {
+    async start(draftId: string, req: { opId: string; expectedVersion: number; gymId?: string; checkIn?: SessionCheckIn | null }): Promise<BuilderStartResult> {
       const p = await owner();
       const d = await repos().workoutDrafts.get(draftId).catch(() => null);
       if (d === null || d.ownerId !== p.id) return { ok: false, reason: 'gone', message: BUILDER_COPY.closed };
@@ -1704,93 +1665,26 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       // No gym yet (first run): the typical gym is saved first, as Today's Start does; Start's re-check fits the loads to it (rule 4).
       if (gymId === null) {
         const already = await repos().sessions.findByStartOperation(p.id, req.opId).catch(() => null);
-        if (already !== null) return { ok: true, sessionId: already.session.id, duplicate: true, planChange: null };
+        if (already !== null) return { ok: true, sessionId: already.session.id, duplicate: true };
         gymId = deps.ensureGym === undefined ? null : await deps.ensureGym().catch(() => null);
         if (gymId === null) return { ok: false, reason: 'failed', message: BUILDER_COPY.noGym };
       }
-      const at = deps.now();
-      let alongside: StartAlongside | undefined;
-      let planChange: PlanChangeUndo | null = null;
-      let templateVersion = stored?.templateVersion ?? null;
-      let variationId = setup.variationId;
+      const templateVersion = stored?.templateVersion ?? null;
       const template = stored?.templateRoutineId === undefined ? null : await repos().routines.get(stored.templateRoutineId).catch(() => null);
-      if (req.choice.kind !== 'today') {
-        const w = await planWriteFor(p, d, req.choice, req.opId, at);
-        if (!w.ok) return w;
-        alongside = w.alongside;
-        planChange = w.planChange;
-        templateVersion = w.templateVersion;
-        variationId = w.variationId;
-      }
       // The plan day is the one the current set-up names (Day, Main lift), never a stale key (review B1).
       const day = await planDayFor(p.id, setup.dayId, setup.mainLiftExerciseId);
       const sameTemplate = template !== null && day?.routine != null && day.routine.id === template.id && templateVersion !== null;
       const planDay: SessionPlanDay | undefined =
         day === null
           ? undefined
-          : { planId: day.planId, dayIndex: day.dayIndex, splitDayId: setup.dayId, mainLiftExerciseId: setup.mainLiftExerciseId, templateRoutineId: sameTemplate ? template.id : null, templateVersion: sameTemplate ? templateVersion : null, variationId, ...(planChange === null ? {} : { planChange }) };
-      const r = await deps.start({ gymId, opId: req.opId, checkIn: req.checkIn ?? null, coachDraftOf: d.id, builder: { expectedVersion: req.expectedVersion, ...(planDay === undefined ? {} : { planDay }), ...(alongside === undefined ? {} : { alongside }) } });
-      if (r.ok) return { ok: true, sessionId: r.aggregate.session.id, duplicate: r.duplicate, planChange: r.duplicate ? null : planChange };
+          : { planId: day.planId, dayIndex: day.dayIndex, splitDayId: setup.dayId, mainLiftExerciseId: setup.mainLiftExerciseId, templateRoutineId: sameTemplate ? template.id : null, templateVersion: sameTemplate ? templateVersion : null, variationId: setup.variationId };
+      const r = await deps.start({ gymId, opId: req.opId, checkIn: req.checkIn ?? null, coachDraftOf: d.id, builder: { expectedVersion: req.expectedVersion, ...(planDay === undefined ? {} : { planDay }) } });
+      if (r.ok) return { ok: true, sessionId: r.aggregate.session.id, duplicate: r.duplicate };
       const e = r.error;
-      if (e.code === 'stale_preview' && e.alongside !== undefined) {
-        switch (e.alongside) {
-          case 'template_changed':
-          case 'variation_changed':
-            return { ok: false, reason: 'plan_changed', message: BUILDER_COPY.planChanged };
-          case 'variation_limit':
-            return { ok: false, reason: 'variation_limit', message: BUILDER_COPY.limitReached };
-          case 'variation_label':
-            return { ok: false, reason: 'variation_label', message: BUILDER_COPY.labelTaken };
-        }
-      }
       if (e.code === 'stale_preview') return { ok: false, reason: 'stale', message: BUILDER_COPY.outOfDate };
       if (e.code === 'not_found') return { ok: false, reason: 'gone', message: BUILDER_COPY.closed };
       if (e.code === 'session_already_active') return { ok: false, reason: 'active', message: e.message, sessionId: e.sessionId };
       return { ok: false, reason: 'failed', message: 'message' in e && typeof e.message === 'string' ? e.message : BUILDER_COPY.failed };
-    },
-
-    /**
-     * Coach review's `Update plan day` (§2.9): the same choice as §2.8 (`Update … in your plan` / `Save as new
-     * variation`), before Start, so its Undo is a toast (`Chest · bench updated · Undo`, `undoPlanChange`). The plan
-     * write is versioned (rule 5) and idempotent on `opId`; the draft then records the template or variation it now
-     * matches, so Start doesn't ask again. Two writes, plan first: a force-close between them leaves the draft on the
-     * older version, and a later `Update` is refused as `Your plan changed` (never applied to newer state).
-     */
-    async updatePlanDay(draftId: string, req: { choice: Exclude<StartChoice, { kind: 'today' }>; opId: string; expectedVersion: number }): Promise<{ ok: true; planChange: PlanChangeUndo | null } | { ok: false; reason: 'stale' | 'plan_changed' | 'variation_limit' | 'variation_label' | 'gone' | 'failed'; message: string }> {
-      const p = await owner();
-      const d = await repos().workoutDrafts.get(draftId).catch(() => null);
-      if (d === null || d.ownerId !== p.id || d.status !== 'open' || d.builderKey === undefined) return { ok: false, reason: 'gone', message: BUILDER_COPY.closed };
-      if (d.opIds.includes(req.opId)) return { ok: true, planChange: null };
-      if (d.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: BUILDER_COPY.outOfDate };
-      const at = deps.now();
-      const w = await planWriteFor(p, d, req.choice, req.opId, at);
-      if (!w.ok) return w;
-      const a = w.alongside;
-      if (a.template !== undefined) {
-        const saved = await repos()
-          .routines.saveTemplate(a.template.next, a.template.expectedVersion, { split: a.template.split, mainLifts: a.template.mainLifts })
-          .catch(() => null);
-        if (saved === null || !saved.ok) return { ok: false, reason: 'plan_changed', message: BUILDER_COPY.planChanged };
-      } else if (a.variation !== undefined) {
-        const saved = await repos()
-          .planDayVariations.saveVariation(p.id, a.variation.next, a.variation.expectedVersion, req.opId)
-          .catch(() => null);
-        if (saved === null || saved.status === 'invalid') return { ok: false, reason: 'failed', message: BUILDER_COPY.failed };
-        if (saved.status === 'limit') return { ok: false, reason: 'variation_limit', message: BUILDER_COPY.limitReached };
-        if (saved.status === 'duplicate_label') return { ok: false, reason: 'variation_label', message: BUILDER_COPY.labelTaken };
-        if (saved.status === 'stale') return { ok: false, reason: 'plan_changed', message: BUILDER_COPY.planChanged };
-      }
-      const stored = builderSetupOf(d);
-      if (stored !== null) {
-        const rest: BuilderSetup = { ...stored };
-        delete rest.variationVersion;
-        const setup: BuilderSetup = { ...rest, ...(w.templateVersion === null ? {} : { templateVersion: w.templateVersion }), variationId: w.variationId, ...(w.variationId !== null && w.variationVersion !== undefined ? { variationVersion: w.variationVersion } : {}) };
-        const change = builderDraftEdit(d, { opId: req.opId, at, basis: { version: d.version }, plan: currentDraftVersion(d).plan, setup, undoable: false });
-        await repos()
-          .workoutDrafts.write(p.id, d.id, (current) => (current.version !== d.version && change.kind === 'write' ? { kind: 'stale', current } : change))
-          .catch(() => null);
-      }
-      return { ok: true, planChange: w.planChange };
     },
 
     // -----------------------------------------------------------------------
@@ -2047,6 +1941,85 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       return { ok: false, message: r.status === 'limit' ? BUILDER_COPY.limitReached : r.status === 'duplicate_label' ? BUILDER_COPY.labelTaken : BUILDER_COPY.changedSince };
     },
 
+    /**
+     * (Ben, 23 Oct, D1) Summary's `Keep for next time?` row for a finished workout: null when there's nothing to keep
+     * (no structural change, not a plan day or saved workout, a variation was open), when Ben answered (Skip, or an
+     * Apply he undid), or when it's too late (the plan day or saved workout changed since, or the next workout from it
+     * has started). Local reads only.
+     */
+    async keepNextTimeOf(sessionId: string): Promise<KeepNextTimeView | null> {
+      const p = await owner();
+      const c = await keepContext(p, sessionId).catch(() => null);
+      if (c === null) return null;
+      const answer = c.draft.keepNextTime;
+      if (answer !== undefined) {
+        if (answer.choice !== 'kept' || answer.undo === undefined || answer.undoneOpId !== undefined) return null;
+        const now = await repos().routines.get(answer.undo.routineId).catch(() => null);
+        return { state: 'kept', text: BUILDER_COPY.updated(answer.undo.label), canUndo: now !== null && now.version === answer.undo.version };
+      }
+      if (c.routine.version !== c.openedVersion || c.diff.changes.length === 0 || (await nextAlreadyStarted(p, c))) return null;
+      return { state: 'open', label: c.label, lines: c.diff.changes.map((x) => builderChangeLine(x, c.env.nameOf)) };
+    },
+
+    /**
+     * `Apply` (the plan day or saved workout takes exactly the changes listed, versioned against the version the
+     * workout opened, rule 5) or `Skip`, with the answer on the started draft in the same transaction. One op ID per
+     * workout and tap: a retry writes nothing more.
+     */
+    async keepNextTime(sessionId: string, tap: 'apply' | 'skip'): Promise<KeepNextTimeResult> {
+      const p = await owner();
+      const c = await keepContext(p, sessionId).catch(() => null);
+      if (c === null) return { ok: false, reason: 'gone', message: BUILDER_COPY.notFound };
+      const opId = keepNextTimeOpId(sessionId, tap);
+      const at = deps.now();
+      if (c.draft.opIds.includes(opId)) return { ok: true };
+      if (tap === 'skip') {
+        const w = await repos().workoutDrafts.keepNextTime(p.id, c.draft.id, (cur) => keepNextTimeMark(cur, { sessionId, opId, at, mark: { kind: 'skipped' } })).catch(() => null);
+        return keepWriteResult(w);
+      }
+      if (c.routine.version !== c.openedVersion) return { ok: false, reason: 'stale', message: BUILDER_COPY.planChanged };
+      if (c.diff.changes.length === 0) return { ok: false, reason: 'gone', message: BUILDER_COPY.notFound };
+      // New exercises' sets are the workout's, loads automatic (Q6: a typed kg stays today only).
+      const asRoutine = draftAsRoutine(c.draft, { ...c.version, plan: toDraftPlan(c.workout, c.env.codec) });
+      const fromDraft = new Map(asRoutine.exercises.map((e) => [e.id, e]));
+      const entryFor = (item: KeepCurrentItem): RoutineExercise => {
+        const e = fromDraft.get(item.key);
+        const setTemplates = (e?.setTemplates ?? []).map((t, k) => ({ ...t, id: deriveId(`keep-set:${opId}:${item.key}:${String(k)}`), targetLoad: null }));
+        return { id: deriveId(`keep-ex:${opId}:${item.key}`), exerciseId: item.exerciseId, equipmentId: null, order: e?.order ?? 0, supersetGroup: null, setTemplates, restBySetType: {}, transitionRestS: null, progressionRuleId: null, structureChangedAtUtc: at.utc };
+      };
+      const exercises = keptExercises({ before: c.routine.exercises, base: c.base, current: c.current, diff: c.diff, entryFor, opId, atUtc: at.utc });
+      const next: Routine = { ...c.routine, exercises, version: c.routine.version + 1, updatedAtUtc: at.utc, lastOpId: opId, source: 'ben' };
+      const undo = { kind: 'template' as const, routineId: c.routine.id, version: next.version, restore: c.routine.exercises, label: c.label };
+      const t = await deps.training().catch(() => null);
+      const w = await repos()
+        .workoutDrafts.keepNextTime(p.id, c.draft.id, (cur) => keepNextTimeMark(cur, { sessionId, opId, at, mark: { kind: 'kept', undo } }), { next, expectedVersion: c.openedVersion, split: { split: t?.split ?? null, mainLifts: t?.mainLifts } })
+        .catch(() => null);
+      return keepWriteResult(w);
+    },
+
+    /** `Undo` after Apply: the plan day or saved workout as it was, only while nothing changed it since (rule 5). */
+    async undoKeepNextTime(sessionId: string): Promise<KeepNextTimeResult> {
+      const p = await owner();
+      const a = await repos().sessions.get(sessionId).catch(() => null);
+      const draftId = a?.session.coachDraft?.draftId ?? null;
+      const d = a === null || a.session.ownerId !== p.id || draftId === null ? null : await repos().workoutDrafts.get(draftId).catch(() => null);
+      const kept = d?.keepNextTime;
+      const opId = keepNextTimeOpId(sessionId, 'undo');
+      if (d === null || kept?.choice !== 'kept' || kept.undo === undefined) return { ok: false, reason: 'gone', message: BUILDER_COPY.cantUndo };
+      if (kept.undoneOpId === opId) return { ok: true };
+      const u = kept.undo;
+      const r = await repos().routines.get(u.routineId).catch(() => null);
+      if (r === null || r.version !== u.version) return { ok: false, reason: 'stale', message: BUILDER_COPY.changedSince };
+      const at = deps.now();
+      const next: Routine = { ...r, exercises: u.restore, version: r.version + 1, updatedAtUtc: at.utc, lastOpId: opId };
+      const t = await deps.training().catch(() => null);
+      const w = await repos()
+        .workoutDrafts.keepNextTime(p.id, d.id, (cur) => keepNextTimeMark(cur, { sessionId, opId, at, mark: { kind: 'undone' } }), { next, expectedVersion: u.version, split: { split: t?.split ?? null, mainLifts: t?.mainLifts } })
+        .catch(() => null);
+      const out = keepWriteResult(w);
+      return out.ok || out.reason !== 'stale' ? out : { ...out, message: BUILDER_COPY.changedSince };
+    },
+
     /** Summary's `… updated · Undo` after a relaunch: the plan change stored with the session (review S9). */
     async planChangeOf(sessionId: string): Promise<PlanChangeUndo | null> {
       const p = await owner();
@@ -2073,36 +2046,6 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       return adviseBuilder(snap.workout.blocks, env.info);
     },
   };
-
-  /** The template's exercises after `Update … in your plan`: the draft's structure, loads left to the rules each week (Q6: typed kg stays today only). */
-  function templateExercisesOf(template: Routine, d: WorkoutDraft, opId: string, atUtc: string, plan: DraftPlan): RoutineExercise[] {
-    const v = { ...currentDraftVersion(d), plan };
-    const asRoutine = draftAsRoutine(d, v);
-    const old = new Map(template.exercises.map((e) => [e.exerciseId, e]));
-    const slots = new Map(v.plan.slots.map((s) => [s.slotKey, s]));
-    return asRoutine.exercises.map((e, i): RoutineExercise => {
-      const was = old.get(e.exerciseId);
-      // Ben's own rests per set type go with the structure (review S8); the rest keep the template's.
-      const own = slots.get(e.id)?.builder?.restS ?? {};
-      const restBySetType: RoutineExercise['restBySetType'] = { ...(was?.restBySetType ?? {}) };
-      for (const t of ['warmup', 'top', 'backoff', 'working', 'drop'] as const) {
-        const sec = own[t];
-        if (sec !== undefined) restBySetType[t] = { seconds: sec };
-      }
-      const setTemplates = e.setTemplates.map((t, k) => ({ ...t, id: deriveId(`builder-template-set:${template.id}:${opId}:${String(i)}:${String(k)}`), targetLoad: null }));
-      const sameShape = was !== undefined && was.setTemplates.length === setTemplates.length && was.setTemplates.every((t, k) => t.setType === setTemplates[k]?.setType);
-      return {
-        ...e,
-        id: was?.id ?? deriveId(`builder-template-ex:${template.id}:${opId}:${String(i)}`),
-        order: i,
-        equipmentId: was?.equipmentId ?? null,
-        restBySetType,
-        transitionRestS: was?.transitionRestS ?? null,
-        progressionRuleId: was?.progressionRuleId ?? null,
-        structureChangedAtUtc: sameShape && was.order === i ? (was.structureChangedAtUtc ?? atUtc) : atUtc,
-      };
-    });
-  }
 
   return service;
 }
