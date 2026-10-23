@@ -12,9 +12,16 @@ import { PB_EFFORT, PB_FOCUS_GAIN } from './tables';
  *   max (rule 4): at the max the load holds.
  * - Accessories: double progression (a rep a week to the top of the range, then one achievable step and back to the
  *   bottom).
- * - Deload weeks (Standard: the last week of 4+; Push: every 4th; Maintain: none) take ~10 % off and about a third
- *   of the sets; back-offs come down by the same −10 % (D4, SS4, HT8). Maintain holds weights.
+ * - Deload weeks (Standard: the last week of 4+; Push: every 4th; Maintain: none) take ~10 % off and one set fewer
+ *   per exercise, never below 2 (main lifts keep the top set, one back-off fewer; training-blocks §2.3 Q3, Ben 21 Oct,
+ *   which supersedes the prototype's "about a third of the sets"); back-offs come down by the same −10 % (D4, SS4,
+ *   HT8). Maintain holds weights. The Today drafter's deload (`deloadSetCount`) uses the same set count.
  */
+
+/** (Ben, 21 Oct, Q3) A deload week's working sets: one fewer, never below 2 (or below what there was). */
+export function deloadSetCount(sets: number): number {
+  return Math.max(Math.min(2, sets), sets - 1);
+}
 
 export function pbIsDeload(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks'>, w: number): boolean {
   if (a.effort === 'standard') return a.weeks >= 4 && w === a.weeks;
@@ -55,14 +62,14 @@ export function pbAtWeek(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks' | 'focus
   const load0 = e.load.kind === 'kg' ? e.load.value : null;
   if (e.role === 'main' && (e.bodyweightMain || e.main === null)) {
     const reps = e.reps + Math.min(k, 4);
-    const sets = dl ? Math.max(2, e.sets - 1) : e.sets;
+    const sets = dl ? deloadSetCount(e.sets) : e.sets;
     return { week: w, deload: dl, sets, reps, load: load0, backs: 0, back: null, backReps: reps, line: `${String(sets)} × ${String(reps)}` };
   }
   if (e.role === 'main' && e.main !== null) {
     const m = e.main;
     const perHand = kit?.convention === 'per_hand';
     if (m.top === null || kit === null) {
-      const backs = dl ? Math.max(1, m.backs - 1) : m.backs;
+      const backs = dl ? Math.max(Math.min(1, m.backs), m.backs - 1) : m.backs;
       return { week: w, deload: dl, sets: backs + 1, reps: m.reps, load: null, backs, back: null, backReps: 8, line: pbMainLine(null, null, m.reps, backs, 8, perHand) };
     }
     let top = m.top;
@@ -91,7 +98,7 @@ export function pbAtWeek(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks' | 'focus
       back = pbLowerBackOff(kit, back, 0.9, lowered);
       top = lowered;
     }
-    const backs = dl ? Math.max(1, m.backs - 1) : m.backs;
+    const backs = dl ? Math.max(Math.min(1, m.backs), m.backs - 1) : m.backs;
     return { week: w, deload: dl, sets: backs + 1, reps, load: top, backs, back, backReps, line: pbMainLine(top, back, reps, backs, backReps, perHand) };
   }
   // Accessories: double progression.
@@ -112,6 +119,6 @@ export function pbAtWeek(a: Pick<PlanBuilderAnswers, 'effort' | 'weeks' | 'focus
     }
   }
   if (dl && kg !== null && kit !== null && kit.convention !== 'assistance') kg = kitDown(kit, kg * 0.9) ?? kg;
-  const sets = dl ? Math.max(1, Math.round(e.sets * 0.66)) : e.sets;
+  const sets = dl ? deloadSetCount(e.sets) : e.sets;
   return { week: w, deload: dl, sets, reps, load: kg, backs: 0, back: null, backReps: reps, line: `${String(sets)} × ${String(reps)}` };
 }

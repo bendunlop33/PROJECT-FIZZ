@@ -114,6 +114,7 @@ export const pbPlanIdFor = (opId: string): string => deriveId(`plan-builder:${op
 export function pbPlanVersion(input: Omit<PbDraftInput, 'ownerId'> & { planId: string }): PlanDraftVersion {
   const days = pbDayDrafts(input.plan, input.answers, input.kitOf, input.planId);
   if (days.length === 0) throw new Error('A plan needs at least one day');
+  const startReps = pbStartReps(input.plan, input.planId);
   return {
     n: 1,
     parentN: null,
@@ -128,8 +129,20 @@ export function pbPlanVersion(input: Omit<PbDraftInput, 'ownerId'> & { planId: s
     contextHash: 'plan-builder',
     equipmentVersion: input.equipmentVersion.slice(0, 128) || 'none',
     createdAt: input.at,
-    builder: { engine: 1, answers: input.answers, gymId: input.gymId },
+    builder: { engine: 1, answers: input.answers, gymId: input.gymId, ...(Object.keys(startReps).length === 0 ? {} : { startReps }) },
   };
+}
+
+/** (Ben, 23 Oct: plan length = block 1) Each accessory slot's week-1 reps, by slot key (the weekly progression's start). */
+export function pbStartReps(plan: PbPlan, seed: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const d of plan.days) {
+    for (const e of d.exercises) {
+      if (e.role === 'main') continue;
+      out[deriveId(`pb-slot:${seed}:${String(d.index)}:${e.key}`)] = Math.max(1, Math.min(50, Math.round(e.reps)));
+    }
+  }
+  return out;
 }
 
 /** A new open plan (not applied) from a built plan. Apply and Undo are the plan model's own. */
