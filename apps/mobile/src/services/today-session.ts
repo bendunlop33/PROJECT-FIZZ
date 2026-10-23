@@ -102,6 +102,7 @@ import {
   COACH_DRAFT_DAYS,
   MAX_WORKOUT_DRAFT_OPS,
   MAX_WORKOUT_DRAFT_VERSIONS,
+  isBrowseOnlyFocus,
   worksLine,
   type Activity,
   type BuilderDraftKey,
@@ -662,7 +663,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const byGroup = new Map<BuilderGroupName, string[]>();
     const add = (id: string, cap: boolean) => {
       const i = info(id);
-      if (i === null || !here(id) || pained(id)) return;
+      // Prehab and forearm work (cuff, shins, wrist curls) is Swap / Add only: never picked into a day by itself.
+      if (i === null || isBrowseOnlyFocus(i.angle) || !here(id) || pained(id)) return;
       const list = byGroup.get(i.group) ?? [];
       if (list.includes(id)) return;
       if (cap && list.length >= CATALOGUE_PER_GROUP + own.filter((o) => info(o)?.group === i.group).length) return;

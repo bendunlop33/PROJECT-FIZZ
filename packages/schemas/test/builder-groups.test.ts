@@ -3,12 +3,15 @@ import {
   BUILDER_FOCI,
   BUILDER_GROUP_PARTS,
   BUILDER_GROUPS,
+  builderFocusCounts,
   builderFocusOf,
   builderFocusSections,
   builderGroupOf,
   builderGroupOfMuscleGroup,
   builderGroupOfPart,
   builderGroupOfParts,
+  isBrowseOnlyFocus,
+  isBuilderAutoPick,
   isBuilderStrength,
   MUSCLE_GROUPS,
   MUSCLE_TO_GROUP,
@@ -86,10 +89,45 @@ describe('builderGroupOf (catalogue exercise)', () => {
     expect(isBuilderStrength(ex(['quads'], [], 'squat', 'reps'))).toBe(true);
     expect(isBuilderStrength(ex(['quads'], [], 'conditioning', 'reps'))).toBe(false);
   });
-  it('null for only forearms, no muscles, or words outside the vocabulary', () => {
-    expect(builderGroupOf(ex(['forearms']))).toBeNull();
+  it('null for no muscles or words outside the vocabulary', () => {
     expect(builderGroupOf(ex([]))).toBeNull();
     expect(builderGroupOf(ex(['rhomboids']))).toBeNull();
+  });
+  it('forearm-only exercises are found under the arms group (D5), browse only and uncounted', () => {
+    expect(builderGroupOf(ex(['forearms']))).toBe('Biceps');
+    expect(builderGroupOf(ex(['grip'], ['forearms']))).toBe('Biceps');
+    expect(builderFocusOf(ex(['forearms']))).toBe('Forearms');
+    expect(isBuilderAutoPick(ex(['forearms']))).toBe(false);
+    expect(builderFocusCounts('Forearms')).toBe(false);
+    // A counted muscle still leads: the reverse curl is a biceps exercise (brachialis), auto-pickable.
+    expect(builderFocusOf(ex(['forearms', 'brachialis']))).toBe('Biceps');
+    expect(isBuilderAutoPick(ex(['forearms', 'brachialis']))).toBe(true);
+    // Forearms still count in no group (Progress, plan weekly sets).
+    expect(builderGroupOfMuscleGroup('Forearms')).toBeNull();
+  });
+  it('the 23 Oct words map to their broad groups and foci; prehab foci are Swap / Add only', () => {
+    expect([builderGroupOf(ex(['hip_flexors'])), builderFocusOf(ex(['hip_flexors']))]).toEqual(['Abs', 'Abs']);
+    expect([builderGroupOf(ex(['rotator_cuff'])), builderFocusOf(ex(['rotator_cuff']))]).toEqual(['Shoulders', 'Rotator cuff']);
+    expect([builderGroupOf(ex(['serratus'])), builderFocusOf(ex(['serratus']))]).toEqual(['Chest', 'Serratus']);
+    expect([builderGroupOf(ex(['tibialis'])), builderFocusOf(ex(['tibialis']))]).toEqual(['Legs', 'Shins']);
+    expect([builderGroupOf(ex(['neck'])), builderFocusOf(ex(['neck']))]).toEqual(['Back', 'Neck']);
+    for (const m of ['rotator_cuff', 'serratus', 'tibialis', 'neck', 'forearms']) expect(isBuilderAutoPick(ex([m])), m).toBe(false);
+    for (const m of ['hip_flexors', 'calves', 'rear_delts', 'chest']) expect(isBuilderAutoPick(ex([m])), m).toBe(true);
+    for (const f of ['Rotator cuff', 'Serratus', 'Shins', 'Neck']) expect(builderFocusCounts(f as BuilderFocus), f).toBe(true);
+    expect(isBrowseOnlyFocus('Shins')).toBe(true);
+    expect(isBrowseOnlyFocus('Calves')).toBe(false);
+    expect(worksLine(ex(['abs', 'hip_flexors'], ['obliques']))).toBe('Abs, hip flexors, obliques');
+    expect(worksLine(ex(['rotator_cuff'], ['rear_delts']))).toBe('Rotator cuff, rear delts');
+    expect(worksLine(ex(['tibialis']))).toBe('Shins');
+    expect(worksLine(ex(['neck']))).toBe('Neck');
+    expect(worksLine(ex(['serratus']))).toBe('Serratus');
+  });
+  it('Swap / Add: forearm work is its own heading under the arms group', () => {
+    const items = [ex(['biceps']), ex(['forearms']), ex(['forearms', 'brachialis'])];
+    expect(builderFocusSections(items, (e) => e, 'Biceps').map((s) => [s.focus, s.items.length])).toEqual([
+      ['Biceps', 2],
+      ['Forearms', 1],
+    ]);
   });
 });
 

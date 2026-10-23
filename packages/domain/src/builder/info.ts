@@ -1,4 +1,4 @@
-import { builderFocusOf, builderGroupOf, worksLine, type Exercise } from '@fizz/schemas';
+import { builderFocusOf, builderGroupOf, isBrowseOnlyFocus, worksLine, type Exercise } from '@fizz/schemas';
 import type { BuilderExerciseInfo } from './types';
 
 /**
@@ -16,7 +16,7 @@ const BAR_KINDS: ReadonlySet<string> = new Set(['barbell', 'ez_bar', 'trap_bar']
 /** Helpers too general to decide pairing (every lift braces and grips). */
 const QUIET: ReadonlySet<string> = new Set(['core', 'grip', 'forearms']);
 
-const LEG_PART: Readonly<Record<string, string>> = { Quads: 'quads', 'Hamstrings & glutes': 'hamstrings_glutes', Calves: 'calves' };
+const LEG_PART: Readonly<Record<string, string>> = { Quads: 'quads', 'Hamstrings & glutes': 'hamstrings_glutes', Calves: 'calves', Shins: 'calves' };
 
 export function builderInfoOf(
   e: Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'secondaryMuscles' | 'movementPattern' | 'measurement' | 'mechanic' | 'compatibleEquipment'> & Partial<Pick<Exercise, 'family' | 'catalogueKey' | 'defaultLoadConvention'>> & { heavy?: boolean },
@@ -48,6 +48,15 @@ export function builderInfoOf(
       ...(e.defaultLoadConvention === undefined ? {} : { defaultLoadConvention: e.defaultLoadConvention }),
     },
   };
+}
+
+/**
+ * Whether the builder may pick an exercise by itself (a group's pool, a
+ * merge's extra exercise): it has builder info and isn't prehab or forearm
+ * work (`Rotator cuff`, `Shins`, `Forearms`…), which Swap / Add offer only.
+ */
+export function isAutoPickInfo(i: Pick<BuilderExerciseInfo, 'angle'> | null): boolean {
+  return i !== null && !isBrowseOnlyFocus(i.angle);
 }
 
 /** The `works` line under an exercise (§2.4, §2.5): `Chest, front delts, triceps`. */

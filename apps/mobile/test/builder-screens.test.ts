@@ -316,6 +316,15 @@ describe('advice, coach status and review (§2.6, §2.9, §3.8)', () => {
     expect(reviewHeaderWord(reviewFacts(snapshot(W), 'offline').status)).toBe('Offline');
   });
 
+  it('forearm work added under the arms group counts in no group: a wrist curl is never shown as biceps sets (D5)', () => {
+    const base = snapshot(W);
+    const wrist = { name: 'Wrist curl', works: 'Forearms', group: 'Biceps' as const, counts: false, compound: false, mayHurt: false, notHere: false, hasHistory: false };
+    const r = reviewFacts({ ...base, facts: { ...base.facts, pullup: wrist } }, 'not_connected');
+    expect(r.counts.map(countText)).toEqual(['✓ Chest 10', '· Triceps', '✓ Abs 3']);
+    // Counted facts (absent or true) are unchanged.
+    expect(reviewFacts({ ...base, facts: { ...base.facts, pullup: { ...wrist, group: 'Back', counts: true } } }, 'not_connected').counts.map(countText)).toEqual(['✓ Chest 10', '· Triceps', '✓ Abs 3', '✓ Back 1']);
+  });
+
   it('connected with no provider, or a review that fails: `Not reviewed` with Why?, never `● Coach` (review B5)', async () => {
     const shown: BuilderReview[] = [];
     const none = await runReview(snapshot(W), 'ok', null, (r) => shown.push(r));

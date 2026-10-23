@@ -3,6 +3,7 @@ import { orderSlots, pairSlots, singlesOf } from './arrange';
 import { estimateBuilderMinutes } from './estimate';
 import { settleWarmups } from './warmups';
 import { FIT_RULES, fitToMinutes, type BuilderFitResult } from './fit';
+import { isAutoPickInfo } from './info';
 import { makeSlot } from './slot';
 import { KG_PER_LB } from '../units';
 import type { BuilderContext, BuilderExerciseInfo, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
@@ -165,7 +166,7 @@ export type BuilderPool = (group: BuilderGroupName) => readonly string[];
 /** Pick a group's exercises from its pool. */
 function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used: Set<string>, ctx: BuilderContext, opts: { varied: boolean; legParts: readonly LegPart[] | undefined; mainInfo: BuilderExerciseInfo | null }): string[] {
   if (need <= 0) return [];
-  const candidates = pool(group).filter((id) => !used.has(id) && ctx.info(id) !== null);
+  const candidates = pool(group).filter((id) => !used.has(id) && isAutoPickInfo(ctx.info(id)));
   const out: string[] = [];
   const take = (id: string) => {
     out.push(id);

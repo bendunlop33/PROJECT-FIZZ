@@ -112,7 +112,7 @@ export function reviewFacts(snap: BuilderSnapshot, status: BuilderReviewStatus):
   let isolation = 0;
   for (const s of slotsOf(snap.workout.blocks)) {
     const f = snap.facts[s.exerciseId];
-    if (f?.group != null) sets.set(f.group, (sets.get(f.group) ?? 0) + workingCount(s));
+    if (f?.group != null && f.counts !== false) sets.set(f.group, (sets.get(f.group) ?? 0) + workingCount(s));
     if (f?.compound === true) compound += 1;
     else isolation += 1;
   }

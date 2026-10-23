@@ -5,7 +5,9 @@
  *
  * Display only: stored data (split days, draft set-ups, templates) keeps
  * `SplitBodyPart` names. `Legs` = Quads + Hamstrings + Glutes + Calves and
- * `Abs` = Core are derived when read. Forearms has no builder group.
+ * `Abs` = Core are derived when read. Forearms count in no group, but
+ * forearm-only exercises are found under `Biceps` › `Forearms` in Swap / Add
+ * (D5: the arms group takes forearms when picking).
  */
 import type { Measurement } from './exercise';
 import { muscleGroupOf, type MUSCLE_TO_GROUP, type MuscleGroup } from './muscle-groups';
@@ -83,7 +85,19 @@ export function isBuilderStrength(e: BuilderMuscleInfo): boolean {
   return e.measurement !== 'cardio';
 }
 
-/** The primary muscle that decides the exercise's builder group: the first with one. Null for non-strength exercises. */
+/**
+ * Forearms count in no builder group, but an exercise led by them (wrist
+ * curl, dead hang) is still found in Swap / Add: under the arms group (D5,
+ * Ben 22–23 Oct: Arms takes forearms when picking). Until the builder's
+ * groups become D5's `Arms`, that is `Biceps`.
+ */
+const FOREARM_PICK_GROUP: BuilderGroup = 'Biceps';
+
+/**
+ * The primary muscle that decides the exercise's builder group: the first
+ * with one; a forearm-only exercise falls back to its first forearm or grip
+ * word (`FOREARM_PICK_GROUP`). Null for non-strength exercises.
+ */
 function leadMuscle(e: BuilderMuscleInfo): { muscle: Muscle; group: BuilderGroup } | null {
   if (!isBuilderStrength(e)) return null;
   for (const m of e.primaryMuscles) {
@@ -91,36 +105,68 @@ function leadMuscle(e: BuilderMuscleInfo): { muscle: Muscle; group: BuilderGroup
     const b = g === null ? null : builderGroupOfMuscleGroup(g);
     if (b !== null) return { muscle: m as Muscle, group: b };
   }
+  for (const m of e.primaryMuscles) if (muscleGroupOf(m) === 'Forearms') return { muscle: m as Muscle, group: FOREARM_PICK_GROUP };
   return null;
 }
 
-/** The exercise's builder group from its first primary muscle that has one (rear delts → Back, §9 Q13); null when none does or for conditioning, cardio and carries. */
+/** The exercise's builder group from its first primary muscle that has one (rear delts → Back, §9 Q13; forearm-only → the arms group); null when none does or for conditioning, cardio and carries. */
 export function builderGroupOf(e: BuilderMuscleInfo): BuilderGroup | null {
   return leadMuscle(e)?.group ?? null;
 }
 
 /** Focus headings for Swap / Add, in display order within each group (§2.5). */
 export const BUILDER_FOCI = {
-  Chest: ['Upper chest', 'Mid chest'],
-  Back: ['Lats', 'Mid-back', 'Rear delts', 'Lower back'],
-  Shoulders: ['Front delts', 'Side delts'],
-  Legs: ['Quads', 'Hamstrings & glutes', 'Calves'],
-  Biceps: ['Biceps'],
+  Chest: ['Upper chest', 'Mid chest', 'Serratus'],
+  Back: ['Lats', 'Mid-back', 'Rear delts', 'Lower back', 'Neck'],
+  Shoulders: ['Front delts', 'Side delts', 'Rotator cuff'],
+  Legs: ['Quads', 'Hamstrings & glutes', 'Calves', 'Shins'],
+  Biceps: ['Biceps', 'Forearms'],
   Triceps: ['Triceps'],
   Abs: ['Abs'],
 } as const satisfies Record<BuilderGroup, readonly string[]>;
 export type BuilderFocus = (typeof BUILDER_FOCI)[BuilderGroup][number];
 
+/**
+ * Prehab and small-part foci (catalogue expansion, Ben 23 Oct): offered in
+ * Swap / Add under their group, never picked by the builder on its own
+ * (a cuff rotation is not a shoulder accessory, a tibialis raise not a calf
+ * raise, a wrist curl not a biceps curl).
+ */
+export const BUILDER_BROWSE_ONLY_FOCI: ReadonlySet<BuilderFocus> = new Set<BuilderFocus>(['Serratus', 'Neck', 'Rotator cuff', 'Shins', 'Forearms']);
+
+/** Whether a focus heading (or a builder info `angle`) is Swap / Add only. */
+export function isBrowseOnlyFocus(f: string): boolean {
+  return (BUILDER_BROWSE_ONLY_FOCI as ReadonlySet<string>).has(f);
+}
+
+/** Whether the builder may pick this exercise by itself for its group (a browse-only focus is Swap / Add only). */
+export function isBuilderAutoPick(e: BuilderMuscleInfo): boolean {
+  const f = builderFocusOf(e);
+  return f !== null && !BUILDER_BROWSE_ONLY_FOCI.has(f);
+}
+
+/**
+ * Whether a focus's sets count toward its builder group (review counts).
+ * Forearms count in no group (D5's counting list has no forearms row), so a
+ * wrist curl's sets are never shown as biceps sets.
+ */
+export function builderFocusCounts(f: BuilderFocus | null): boolean {
+  return f !== null && f !== 'Forearms';
+}
+
 const MUSCLE_FOCUS = {
   chest: 'Mid chest',
   upper_chest: 'Upper chest',
   lats: 'Lats',
+  serratus: 'Serratus',
   upper_back: 'Mid-back',
   traps: 'Mid-back',
   spinal_erectors: 'Lower back',
   rear_delts: 'Rear delts',
+  neck: 'Neck',
   front_delts: 'Front delts',
   side_delts: 'Side delts',
+  rotator_cuff: 'Rotator cuff',
   biceps: 'Biceps',
   brachialis: 'Biceps',
   triceps: 'Triceps',
@@ -130,11 +176,13 @@ const MUSCLE_FOCUS = {
   adductors: 'Hamstrings & glutes',
   abductors: 'Hamstrings & glutes',
   calves: 'Calves',
+  tibialis: 'Shins',
   abs: 'Abs',
   obliques: 'Abs',
   core: 'Abs',
-  forearms: null,
-  grip: null,
+  hip_flexors: 'Abs',
+  forearms: 'Forearms',
+  grip: 'Forearms',
 } as const satisfies Record<Muscle, BuilderFocus | null>;
 
 /**
@@ -185,6 +233,9 @@ const WORKS_WORD = {
   upper_back: 'upper back',
   traps: 'traps',
   spinal_erectors: 'lower back',
+  neck: 'neck',
+  serratus: 'serratus',
+  rotator_cuff: 'rotator cuff',
   front_delts: 'front delts',
   side_delts: 'side delts',
   rear_delts: 'rear delts',
@@ -197,9 +248,11 @@ const WORKS_WORD = {
   adductors: 'adductors',
   abductors: 'abductors',
   calves: 'calves',
+  tibialis: 'shins',
   abs: 'abs',
   obliques: 'obliques',
   core: 'core',
+  hip_flexors: 'hip flexors',
   forearms: 'forearms',
   grip: 'grip',
 } as const satisfies Record<Muscle, string>;

@@ -34,7 +34,7 @@ import {
   type SlotLoadInput,
   type SubstituteContext,
 } from '@fizz/domain';
-import { builderFocusOf, isBuilderStrength, type BuilderFocus, type BuilderGroup, type CheckedOnRecord, type EquipmentInstance, type Exercise, type PainFlag, type PlanDraft, type Routine, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
+import { builderFocusOf, isBrowseOnlyFocus, isBuilderStrength, type BuilderFocus, type BuilderGroup, type CheckedOnRecord, type EquipmentInstance, type Exercise, type PainFlag, type PlanDraft, type Routine, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
 
 /**
@@ -301,7 +301,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
 
     const presets = p.restPresets.map((r) => r.seconds);
     const ctx: BuilderContext = { info, loads, newKey: req.newKey, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt };
-    const pool: BuilderPool = (g) => candidates(g).filter((id) => !painFlagged(id));
+    // Prehab and forearm work (cuff, shins, wrist curls) is in `candidates` for Swap / Add, never picked by itself.
+    const pool: BuilderPool = (g) => candidates(g).filter((id) => !painFlagged(id) && !isBrowseOnlyFocus(info(id)?.angle ?? ''));
     // The one `checkedOnOf` (domain): what Start's re-check compares against, so a builder draft and Today's agree
     // (an lb bar's mass in kg, the slot's convention).
     const checkedOn = (id: string): CheckedOnRecord | null => checkedOnOf(loads(id));

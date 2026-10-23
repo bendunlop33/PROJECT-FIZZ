@@ -68,6 +68,30 @@ describe('Swap / Add with the builder’s sheet and loads (§7)', () => {
     expect(back?.groups).toContain('Abs');
   });
 
+  it('forearm and prehab work is findable (D5): wrist curls under the arms group › Forearms, cuff under Shoulders, tibialis under Legs; Add works', async () => {
+    const { s, sessionId } = await started();
+    const heads = async (group: 'Biceps' | 'Shoulders' | 'Legs' | 'Back') => {
+      const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null, group });
+      return new Map((c?.sections ?? []).map((x) => [x.focus, x.items.map((i) => i.name)]));
+    };
+    const arms = await heads('Biceps');
+    expect(arms.get('Forearms')).toEqual(expect.arrayContaining(['Barbell wrist curl']));
+    expect(arms.get('Biceps') ?? []).not.toContain('Barbell wrist curl');
+    const shoulders = await heads('Shoulders');
+    expect(shoulders.get('Rotator cuff')).toEqual(expect.arrayContaining(['Cable external rotation']));
+    // Cuff work is no longer filed as rear delts under Back.
+    expect([...(await heads('Back')).values()].flat()).not.toContain('Cable external rotation');
+    const legs = await heads('Legs');
+    expect(legs.get('Shins')).toEqual(expect.arrayContaining(['Tibialis raise']));
+    expect(legs.get('Calves') ?? []).not.toContain('Tibialis raise');
+
+    const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null, group: 'Biceps' });
+    const wrist = (c?.sections ?? []).flatMap((x) => x.items).find((i) => i.name === 'Barbell wrist curl');
+    if (wrist === undefined) throw new Error('no wrist curl in the sheet');
+    const a = ok(await s.workoutEdit.add(sessionId, wrist.exerciseId, 'add-wrist'));
+    expect(a.exercises.some((e) => e.exerciseId === wrist.exerciseId && e.removed === undefined)).toBe(true);
+  });
+
   it('Add: the builder’s sets (warm-up for a compound, 3 working @ RPE 8–9), loads on the gym’s item; idempotent; Undo', async () => {
     const { s, sessionId } = await started();
     const c = await s.workoutEdit.choices(sessionId, { sessionExerciseId: null });

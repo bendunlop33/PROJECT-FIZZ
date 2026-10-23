@@ -2,6 +2,7 @@ import { bandInsertIndex, infoOrDefault, pairSlots, unpairAuto } from './arrange
 import { ACCESSORY_STYLES, type AccessoryStyle, type BuilderPool, type BuilderSetup, type GroupCount } from './build';
 import { fitToMinutes, removeSlot, type BuilderFitResult } from './fit';
 import { setWorkingCount, workingCount } from './set-rows';
+import { isAutoPickInfo } from './info';
 import { makeSlot } from './slot';
 import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
 
@@ -71,7 +72,7 @@ export function mergeSetupChange(
     if (g === styleGroup) continue;
     let diff = countOf(next.groups, g) - countOf(prev.groups, g);
     while (diff > 0) {
-      const id = pool(g).find((x) => !all().some((s) => s.exerciseId === x) && ctx.info(x) !== null);
+      const id = pool(g).find((x) => !all().some((s) => s.exerciseId === x) && isAutoPickInfo(ctx.info(x)));
       if (id === undefined) {
         changes.push({ kind: 'group_short', group: g });
         break;
@@ -151,7 +152,7 @@ export function applyAccessoryStyleTo(input: BuilderWorkout, style: AccessorySty
   const present = () => new Set(w.blocks.flatMap((b) => b.slots.map((s) => s.exerciseId)));
   while (acc().length < accessories) {
     const angles = new Set(w.blocks.flatMap((b) => b.slots).filter((s) => groupOf(s) === group).map((s) => infoOrDefault(ctx.info, s.exerciseId).angle));
-    const candidates = pool(group).filter((id) => !present().has(id) && ctx.info(id) !== null);
+    const candidates = pool(group).filter((id) => !present().has(id) && isAutoPickInfo(ctx.info(id)));
     const id = (style === 'varied' ? candidates.find((c) => !angles.has(infoOrDefault(ctx.info, c).angle)) : undefined) ?? candidates[0];
     if (id === undefined) break;
     const slot = makeSlot(id, { main: false, workingSets: sets }, ctx);

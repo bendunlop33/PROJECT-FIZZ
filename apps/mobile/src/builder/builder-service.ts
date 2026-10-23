@@ -117,7 +117,7 @@ import {
   type CarryDay,
   type CarryItem,
 } from '@fizz/domain';
-import { builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
+import { builderFocusCounts, builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { KeepNextTimeWrite, Store } from '@fizz/persistence';
 
 import type { WorkoutStartOutcome, WorkoutStartRequest } from '../services/workout-services';
@@ -276,6 +276,8 @@ export interface ExerciseFacts {
   name: string;
   works: string | null;
   group: BuilderGroup | null;
+  /** False: its sets count in no group (forearm work found under the arms group, D5). Absent: they count. */
+  counts?: boolean;
   compound: boolean;
   mayHurt: boolean;
   /** This gym doesn't have what it needs, and nothing here could replace it (`Not at this gym`, §2.3). */
@@ -864,7 +866,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const minutes = estimateBuilderMinutes(workout, env.ctx);
     const variation = setup.variationId === null ? null : ((await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId)).find((x) => x.id === setup.variationId) ?? null);
     const facts: Record<string, ExerciseFacts> = {};
-    for (const s of slotsOf(workout.blocks)) facts[s.exerciseId] = { name: env.nameOf(s.exerciseId), works: env.worksOf(s.exerciseId), group: env.info(s.exerciseId)?.group ?? null, compound: env.info(s.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(s.exerciseId), notHere: env.gymId !== null && !env.doable(s.exerciseId), hasHistory: env.hasHistory(s.exerciseId) };
+    for (const s of slotsOf(workout.blocks)) facts[s.exerciseId] = { name: env.nameOf(s.exerciseId), works: env.worksOf(s.exerciseId), group: env.info(s.exerciseId)?.group ?? null, counts: builderFocusCounts(env.focusOf(s.exerciseId)), compound: env.info(s.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(s.exerciseId), notHere: env.gymId !== null && !env.doable(s.exerciseId), hasHistory: env.hasHistory(s.exerciseId) };
     const key = d.builderKey;
     const planDay =
       key !== undefined && key.planId !== null && key.dayIndex !== null && key.splitDayId !== null
@@ -892,7 +894,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     // Review S1: opened on a chat draft whose current version is already a saved workout: not saved twice.
     const chatSaved = key?.from?.kind === 'coach_draft' ? await chatSavedRoutine(key.from.id) : false;
     // Names for the `Not applied` lines' exercises too.
-    for (const x of notApplied) for (const id of x.op.kind === 'add_slot' ? [x.op.slot.exerciseId] : x.op.kind === 'pair' ? [x.op.a, x.op.b] : [x.op.exerciseId]) facts[id] ??= { name: env.nameOf(id), works: env.worksOf(id), group: env.info(id)?.group ?? null, compound: env.info(id)?.role === 'compound', mayHurt: env.painFlagged(id), notHere: false, hasHistory: env.hasHistory(id) };
+    for (const x of notApplied) for (const id of x.op.kind === 'add_slot' ? [x.op.slot.exerciseId] : x.op.kind === 'pair' ? [x.op.a, x.op.b] : [x.op.exerciseId]) facts[id] ??= { name: env.nameOf(id), works: env.worksOf(id), group: env.info(id)?.group ?? null, counts: builderFocusCounts(env.focusOf(id)), compound: env.info(id)?.role === 'compound', mayHurt: env.painFlagged(id), notHere: false, hasHistory: env.hasHistory(id) };
     const here = d.status === 'open' ? await deps.currentGym().catch(() => null) : null;
     const gymChanged = here !== null && here.id !== v.request.gymId && here.id !== stored?.gymKept;
     // (22 Oct) Your workout's Time: what a live fit changed, with names for what it left out.
@@ -902,7 +904,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const time = fit === null ? null : { fromMinutes: stored?.timeFrom ?? fit.fromMinutes, changes: timeFitChanges(fit, workout) };
     const today = todayDrafted(stored) && key !== undefined ? { mainLiftExerciseId: stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null, accessories: stored.accessories ?? null, abs: hasAbs(untimed(stored, workout), env), supersets: stored.supersets } : null;
     const carry = d.status === 'open' && fit !== null && time !== null && stored !== null && key?.planId != null && key.dayIndex !== null ? await carryOf(key, key.dayIndex, stored, fit, time.changes, workout, env) : null;
-    for (const st of time?.changes ?? []) if (st.kind === 'drop') facts[st.exerciseId] ??= { name: env.nameOf(st.exerciseId), works: env.worksOf(st.exerciseId), group: env.info(st.exerciseId)?.group ?? null, compound: env.info(st.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(st.exerciseId), notHere: false, hasHistory: env.hasHistory(st.exerciseId) };
+    for (const st of time?.changes ?? []) if (st.kind === 'drop') facts[st.exerciseId] ??= { name: env.nameOf(st.exerciseId), works: env.worksOf(st.exerciseId), group: env.info(st.exerciseId)?.group ?? null, counts: builderFocusCounts(env.focusOf(st.exerciseId)), compound: env.info(st.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(st.exerciseId), notHere: false, hasHistory: env.hasHistory(st.exerciseId) };
     return {
       draftId: d.id,
       version: d.version,
