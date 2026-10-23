@@ -83,6 +83,12 @@ export function draftLoadSourceOf(source: BuilderLoadSourceKind, typed: boolean)
 }
 
 /**
+ * (D4, Ben 22–23 Oct) The main focus a back-off's band follows (`BACKOFF_BANDS`): Ben's goal, Strength, Muscle, or
+ * both (Balanced).
+ */
+export type MainFocus = 'strength' | 'balanced' | 'muscle';
+
+/**
  * Resolved inputs for one exercise at the selected gym. The service fills
  * them from the existing code (§4.1): coach next-session targets / lift
  * targets, `planFirstLoads`, `nextTargetsFor`, `loadReferences` →
@@ -91,6 +97,8 @@ export function draftLoadSourceOf(source: BuilderLoadSourceKind, typed: boolean)
  * item's unit when it differs (`loadFrameOf`).
  */
 export interface SlotLoadInput {
+  /** (D4) The band back-offs sit in below the top set (`mainFocusOf` Ben's goal). Absent: Balanced. */
+  mainFocus?: MainFocus;
   unit: WeightUnit;
   convention: LoadConvention;
   /** The item this gym maps the exercise to; null = none (bodyweight, or not here). */

@@ -1,5 +1,6 @@
 import { BUILD_LIMITS, type LoadConvention, type SetType, type WeightUnit } from '@fizz/schemas';
 import { compareDifficulty, isBarLoaded, loadDirection } from '../equipment';
+import { backoffLoad, lowerWithTop } from './backoff';
 import { builderLoad, convertValue, fitHere, formulaApplies, loadForSet, loadFrameOf, roundContextOf, roundDownHere, type RoundContext } from './loads';
 import type { BuilderLoadSourceKind, BuilderRole, BuilderSetRow, BuilderSlot, RepRangeT, RoundedLoad, SlotLoadInput } from './types';
 
@@ -9,7 +10,10 @@ import type { BuilderLoadSourceKind, BuilderRole, BuilderSetRow, BuilderSlot, Re
  * - Main lift: warm-up ramp (bar × 10 on a barbell, then 50 % × 5, 70 % × 3,
  *   85 % × 1 of the top set, each rounded down; a step no heavier than the
  *   one before is skipped; max 4), one Top set at the bottom of the range
- *   @ RPE 8, back-offs at the top of the range @ RPE 8.
+ *   @ RPE 8, back-offs at the top of the range @ RPE 8. A back-off's load is
+ *   worked out from its reps and RPE inside the focus's band below the top
+ *   (D4, `backoffLoad`), so never at or above it; a lower top (a pain hold,
+ *   a lighter top Ben types) lowers the back-offs by the same %.
  * - Compound accessory: one warm-up, 60 % × 8. Isolation: none.
  * - Others: working sets at the bottom of the range @ RPE 8, the last @ RPE 9
  *   at the same load.
@@ -79,10 +83,13 @@ export function setRowsFor(input: SetRowsInput): SetRowsResult {
   const work = builderLoad(input.load, { reps: min, rpe: R.workRpe });
   const ctx = roundCtx(input.load);
   const topLoad = rounded(work.working, ctx);
+  // (D4) The band is measured from the top as worked out here; a pain hold that lowers the top lowers the back-offs by the same %.
+  const topHere = rounded(work.working, { ...ctx, painCap: null });
+  const backoff = rounded(backoffHere({ anchorE1rm: work.anchorE1rm, working: work.working, reps: max, rpe: R.workRpe }, topHere, topLoad, input.load), ctx);
   const working: BuilderSetRow[] = input.main
     ? [
         { type: 'top', reps: min, load: topLoad, rpe: R.workRpe },
-        ...Array.from({ length: n - 1 }, (): BuilderSetRow => ({ type: 'backoff', reps: max, load: rounded(loadForSet(work.anchorE1rm, work.working, max, R.workRpe), ctx), rpe: R.workRpe })),
+        ...Array.from({ length: n - 1 }, (): BuilderSetRow => ({ type: 'backoff', reps: max, load: backoff, rpe: R.workRpe })),
       ]
     : Array.from({ length: n }, (_, i): BuilderSetRow => ({ type: 'working', reps: min, load: topLoad, rpe: i === n - 1 ? R.lastWorkRpe : R.workRpe }));
   const warmups = warmupsFor(input, topLoad);
@@ -98,6 +105,16 @@ export function setRowsFor(input: SetRowsInput): SetRowsResult {
     estimate: loaded && work.estimate,
     startLight,
   };
+}
+
+/**
+ * (D4) A back-off's load before rounding: from its reps and RPE inside the focus's band below `topHere` (the top as
+ * worked out here), then, when today's top (`topNow`: pain-held, or Ben's lighter kg) is lower, lower by the same %.
+ * No formula (assisted, added weight): the working kg, as before.
+ */
+function backoffHere(set: { anchorE1rm: number | null; working: number | null; reps: number; rpe: number }, topHere: number | null, topNow: number | null, load: SlotLoadInput): number | null {
+  const raw = backoffLoad({ ...set, top: topHere, focus: load.mainFocus });
+  return set.anchorE1rm === null ? raw : lowerWithTop(raw, topHere, topNow);
 }
 
 /** Warm-ups from the rounded working (top) load. None without a load, or for assisted lifts. */
@@ -193,7 +210,20 @@ function recalcLoad(slot: BuilderSlot, i: number, load: SlotLoadInput, working: 
     const before = slot.rows[i - 1]?.load ?? null;
     return before === null ? null : rounded(before * R.dropPct, ctx);
   }
+  // (D4) A back-off from its reps and RPE, inside the band below the slot's top set as it is now.
+  if (row.type === 'backoff') return rounded(backoffLoad({ anchorE1rm: slot.anchorE1rm, working, reps: row.reps, rpe: row.rpe ?? R.workRpe, top: topNowOf(slot, load, working), focus: load.mainFocus }), ctx);
   return rounded(loadForSet(slot.anchorE1rm, working, row.reps, row.rpe ?? R.workRpe), ctx);
+}
+
+/**
+ * (D4) The slot's top set's kg now: its load, or (a set just made Top, not worked out yet) its load from its reps and
+ * RPE. Null with no Top set (no band then) or no formula.
+ */
+function topNowOf(slot: BuilderSlot, load: SlotLoadInput, working: number | null): number | null {
+  const t = slot.rows.find((r) => r.type === 'top');
+  if (t === undefined) return null;
+  if (t.load !== null || t.typed === true) return t.load;
+  return rounded(loadForSet(slot.anchorE1rm, working, t.reps, t.rpe ?? R.workRpe), roundCtx(load));
 }
 
 /** The slot's working kg for the no-formula case: its top set, else its first working set. */
@@ -279,6 +309,9 @@ export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, lo
       const plain: BuilderSetRow = { ...cur, load: r.load.value, typed: true };
       delete plain.roundedFrom;
       rows[index] = { ...plain, ...(r.load.rounded ? { roundedFrom: convertValue(value, ctx.unit, slot.unit) } : {}) };
+      // (D4, HT8) A lighter top: the back-offs drop by the same %, rounded down (Ben's own kg kept). A heavier one leaves them.
+      // A saved workout's own back-offs (no formula anchor) drop the same way; assisted and added weight keep theirs.
+      if (row.type === 'top' && row.load !== null && formulaApplies(ctx.convention)) lowerBackoffs(rows, row.load, convertValue(r.load.value, r.load.unit, slot.unit), ctx);
       const cap = ctx.painCap ?? null;
       const mayHurt = cap !== null && compareDifficulty(r.load.value, cap, loadDirection(ctx.convention)) > 0;
       return { ok: true, slot: { ...slot, rows, touched: true }, rounded: r.load, ...(mayHurt ? { mayHurt: true as const } : {}) };
@@ -303,20 +336,40 @@ export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, lo
 }
 
 /**
+ * (D4, HT8) Today's top lowered from `from` to `to` (the slot's unit): each back-off Ben didn't type drops by the same
+ * %, rounded down here, and a drop set after a lowered set follows it (~78 %). In place; nothing moves when `to` isn't
+ * lower.
+ */
+function lowerBackoffs(rows: BuilderSetRow[], from: number, to: number, ctx: RoundContext): void {
+  if (!(to < from)) return;
+  const moved = new Set<number>();
+  rows.forEach((r, i) => {
+    if (r.type === 'backoff' && r.typed !== true && r.load !== null) {
+      rows[i] = { ...r, load: rounded(lowerWithTop(r.load, from, to), ctx) };
+      moved.add(i);
+    } else if (r.type === 'drop' && r.typed !== true && moved.has(i - 1)) {
+      const before = rows[i - 1]?.load ?? null;
+      rows[i] = { ...r, load: before === null ? null : rounded(before * R.dropPct, ctx) };
+      moved.add(i);
+    }
+  });
+}
+
+/**
  * `setWorkingCount`: add copies of the last working set (not a drop; a Top
  * set copies as a Back-off), placed before any drops at the end so a drop
  * still follows the last set; or remove from the end (trailing drops first,
  * never the Top set, so a drop never loses the set it follows). 1–10 sets,
  * drops included. Straight working sets keep the last one @ RPE 9.
  */
-export function setWorkingCount(slot: BuilderSlot, n: number): BuilderSlot {
+export function setWorkingCount(slot: BuilderSlot, n: number, load?: SlotLoadInput): BuilderSlot {
   const target = Math.max(1, Math.min(R.maxWorkingSets, Math.round(n)));
   const rows = slot.rows.map((r) => ({ ...r }));
   let work = workRows(rows);
   while (work.length < target) {
     const last = [...work].reverse().find((r) => r.type !== 'drop');
     const copy: BuilderSetRow =
-      last === undefined ? { type: 'working', reps: slot.repRange.min, load: null, rpe: R.workRpe } : { ...last, type: last.type === 'top' ? 'backoff' : last.type };
+      last === undefined ? { type: 'working', reps: slot.repRange.min, load: null, rpe: R.workRpe } : last.type === 'top' ? backoffFromTop(slot, last, load) : { ...last };
     let at = rows.length;
     while (at > 0 && rows[at - 1]?.type === 'drop') at -= 1;
     rows.splice(at, 0, copy);
@@ -329,6 +382,18 @@ export function setWorkingCount(slot: BuilderSlot, n: number): BuilderSlot {
     work = workRows(rows);
   }
   return { ...slot, rows: lastAtNine(rows) };
+}
+
+/**
+ * A Top set copied as a Back-off (`setWorkingCount`): with the slot's load inputs, its kg is worked out by the back-off
+ * rule below the top (D4), not the top's own kg; without them (or no formula), a copy as before.
+ */
+function backoffFromTop(slot: BuilderSlot, top: BuilderSetRow, load: SlotLoadInput | undefined): BuilderSetRow {
+  const copy: BuilderSetRow = { ...top, type: 'backoff' };
+  if (load === undefined || slot.anchorE1rm === null || top.load === null || !formulaApplies(load.convention)) return copy;
+  delete copy.typed;
+  delete copy.roundedFrom;
+  return { ...copy, load: rounded(backoffLoad({ anchorE1rm: slot.anchorE1rm, working: top.load, reps: top.reps, rpe: top.rpe ?? R.workRpe, top: top.load, focus: load.mainFocus }), roundCtx(load)) };
 }
 
 /** Straight working sets with default effort: all @ 8 and the last @ 9 (§3.1.4). Ben's own RPEs are left alone. */
@@ -397,15 +462,29 @@ export function reloadSlotLoads(slot: BuilderSlot, info: Pick<SetRowsInput, 'rol
   delete next.why;
   if (load.historyVersion != null) next.historyVersion = load.historyVersion;
   const work = builderLoad(load, { reps: slot.repRange.min, rpe: R.workRpe });
+  const kept = (r: BuilderSetRow): boolean => r.typed === true && r.load !== null && slot.unit === fresh.unit && slot.convention === fresh.convention && typedHere(r.load);
+  const byFormula = (r: BuilderSetRow, c: RoundContext): number | null => rounded(loadForSet(work.anchorE1rm, work.working, r.reps, r.rpe ?? R.workRpe), c);
+  // (D4) Back-offs: the band is measured from the top set as worked out here; today's top (Ben's kg kept here, or a
+  // pain hold) lower than that lowers them by the same %.
+  const topRow = slot.rows.find((r) => r.type === 'top');
+  const topHere = topRow === undefined ? null : byFormula(topRow, { ...ctx, painCap: null });
+  const topNow = topRow === undefined ? null : kept(topRow) ? topRow.load : byFormula(topRow, ctx);
   const rows: BuilderSetRow[] = [];
   for (const r of slot.rows) {
     if (r.type === 'warmup') continue;
-    if (r.typed === true && r.load !== null && slot.unit === fresh.unit && slot.convention === fresh.convention && typedHere(r.load)) {
+    if (kept(r)) {
       rows.push({ ...r });
       continue;
     }
     const before = rows[rows.length - 1];
-    const kg = r.type === 'drop' ? (before?.load == null ? null : rounded(before.load * R.dropPct, ctx)) : rounded(loadForSet(work.anchorE1rm, work.working, r.reps, r.rpe ?? R.workRpe), ctx);
+    const kg =
+      r.type === 'drop'
+        ? before?.load == null
+          ? null
+          : rounded(before.load * R.dropPct, ctx)
+        : r.type === 'backoff'
+          ? rounded(backoffHere({ anchorE1rm: work.anchorE1rm, working: work.working, reps: r.reps, rpe: r.rpe ?? R.workRpe }, topHere, topNow, load), ctx)
+          : byFormula(r, ctx);
     const plain: BuilderSetRow = { ...r, load: fresh.source === 'none' ? null : kg };
     delete plain.typed;
     delete plain.roundedFrom;

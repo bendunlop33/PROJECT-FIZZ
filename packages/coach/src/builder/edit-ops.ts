@@ -4,6 +4,7 @@ import {
   adviseBuilder,
   bandInsertIndex,
   anchorE1rmOf,
+  backoffLoad,
   builderSupersetWithNext,
   builderUnlink,
   canPair,
@@ -15,7 +16,7 @@ import {
   formulaApplies,
   infoOrDefault,
   loadDirection,
-  loadForSet,
+  lowerWithTop,
   makeSlot,
   removeSlot,
   roundContextOf,
@@ -137,9 +138,10 @@ export function builderRepsText(row: Pick<BuilderSetRow, 'reps' | 'repsMax'>): s
 }
 
 /**
- * The slot with a new working load: Top / working sets at it, back-offs by the formula, warm-ups rebuilt, all rounded
- * down here. Each row keeps its reps (a saved `3–6` range included; final re-review F1); a typed kg gives way to the
- * coach's load, and the saved workout's reasons no longer explain it (S1).
+ * The slot with a new working load: Top / working sets at it, back-offs by the back-off rule (D4: from their reps and
+ * RPE inside the focus's band below the new top; a lighter top lowers them by the same %), warm-ups rebuilt, all
+ * rounded down here. Each row keeps its reps (a saved `3–6` range included; final re-review F1); a typed kg gives way
+ * to the coach's load, and the saved workout's reasons no longer explain it (S1).
  */
 function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext): BuilderSlot {
   const input = ctx.loads(slot.exerciseId);
@@ -147,6 +149,9 @@ function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext):
   const info = infoOrDefault(ctx.info, slot.exerciseId);
   const first = working(slot)[0];
   const anchor = first !== undefined && formulaApplies(slot.convention) ? anchorE1rmOf({ value, reps: first.reps, rpe: first.rpe ?? BUILDER_SET_RULES.workRpe }) : null;
+  // (D4, HT8) Today's top lowered: each back-off drops by the same %.
+  const was = topLoad(slot);
+  const lighter = anchor !== null && was !== null && value < was;
   const down = (v: number | null): number | null => (v === null ? null : (roundDownHere(v, rc)?.value ?? null));
   const at = (r: BuilderSetRow, load: number | null): BuilderSetRow => {
     const row: BuilderSetRow = { ...r, load };
@@ -158,7 +163,7 @@ function withWorkingLoad(slot: BuilderSlot, value: number, ctx: BuilderContext):
   for (const r of working(slot)) {
     const prev = work[work.length - 1];
     if (r.type === 'top' || r.type === 'working') work.push(at(r, value));
-    else if (r.type === 'backoff') work.push(at(r, down(loadForSet(anchor, value, r.reps, r.rpe ?? BUILDER_SET_RULES.workRpe))));
+    else if (r.type === 'backoff') work.push(at(r, down(lighter && r.load !== null ? lowerWithTop(r.load, was, value) : backoffLoad({ anchorE1rm: anchor, working: value, reps: r.reps, rpe: r.rpe ?? BUILDER_SET_RULES.workRpe, top: value, focus: input.mainFocus }))));
     else work.push(at(r, prev?.load == null ? null : down(prev.load * BUILDER_SET_RULES.dropPct)));
   }
   const warm = warmupsFor({ main: slot.main, role: info.role, barbell: info.barbell, load: input }, value);
@@ -285,7 +290,7 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
         st.notes.push(`${name(s.exerciseId)}: Not more: ${pain}`);
         return;
       }
-      st.w = replaceSlot(st.w, s.key, { ...setWorkingCount(s, n), touched: true });
+      st.w = replaceSlot(st.w, s.key, { ...setWorkingCount(s, n, ctx.loads(s.exerciseId)), touched: true });
       return;
     }
     case 'reps':
