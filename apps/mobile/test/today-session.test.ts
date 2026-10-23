@@ -281,7 +281,9 @@ describe('Today (v2) session card from the plan', () => {
     const keep = await s.builder.keepNextTimeOf(sessionId);
     expect(keep?.state).toBe('open');
     if (keep?.state !== 'open') return;
-    expect(keep.lines).toContain(`${snap.facts[slot.exerciseId]?.name ?? ''}: ${String(slot.rows.filter((r) => r.type !== 'warmup').length)} → ${String(slot.rows.filter((r) => r.type !== 'warmup').length + 1)} sets`);
+    // (Review batch23 S7) Exactly Ben's one change, like with like: the plan day's 3 sets plus his one (Today's own
+    // picks and its main lift's top set + back-offs are never lines).
+    expect(keep.lines).toEqual([`${snap.facts[slot.exerciseId]?.name ?? ''}: 3 → 4 sets`]);
     expect(await s.builder.keepNextTime(sessionId, 'apply')).toEqual({ ok: true });
     expect((await s.routines.list()).find((r) => r.id === before?.id)?.version).toBe((before?.version ?? 0) + 1);
     expect(await s.builder.undoKeepNextTime(sessionId)).toEqual({ ok: true });

@@ -231,6 +231,9 @@ export function slotAtNewGym(slot: BuilderSlot, planned: BuilderSlot, base: Buil
     else if (s.restS !== undefined) out.restS = { ...s.restS };
     if (slot.unlinked === true) out.unlinked = true;
     if (slot.origin !== undefined) out.origin = slot.origin;
+    // (D1) Ben's own structure edits on this slot stay his at the new gym.
+    delete out.keep;
+    if (slot.keep !== undefined) out.keep = { ...slot.keep };
     return out;
   };
   if (slot.touched !== true) return { slot: keep({ ...planned, rows: planned.rows.map((r) => ({ ...r })) }), fromPlanned: true };

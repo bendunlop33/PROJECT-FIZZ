@@ -2,11 +2,11 @@ import { adviseBuilder, type BuilderAdvice } from '../builder/advise';
 import { infoOrDefault, splitInvalidAutoPairs } from '../builder/arrange';
 import { buildFromSetup, type AccessoryStyle, type BuilderPool, type GroupCount } from '../builder/build';
 import { estimateBuilderMinutes } from '../builder/estimate';
-import { absOff, clampMinutes, fitToMinutes, type BuilderFitResult } from '../builder/fit';
+import { absOff, clampMinutes, fitToMinutes, type BuilderFitResult, type BuilderFitStep } from '../builder/fit';
 import { mixItUpShortlist, mixItUpTarget } from '../builder/mix';
 import { workingCount } from '../builder/set-rows';
 import { makeSlot } from '../builder/slot';
-import { ARM_GROUPS, type BuilderContext, type BuilderGroupName, type BuilderWorkout } from '../builder/types';
+import { ARM_GROUPS, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
 
 /**
  * Today (v2), workout-builder-v3 §2.0 and its 20 Oct additions: today's
@@ -239,6 +239,27 @@ function applyMix(workout: BuilderWorkout, input: TodayAssembleInput, c: TodayCo
 }
 
 /**
+ * (Ben, 23 Oct, D1; review batch23 B1, B3) What Keep for next time needs from Today's card: each exercise the plan day
+ * has is marked as the template's (`origin`), so a swap Ben makes on Your workout reads as a swap of it; and the
+ * working sets Today's Time took from a slot (`todayCut`), so a set Ben adds back isn't a new set count for the plan.
+ * Sets Time added (a longer day) aren't a cut. Nothing else changes.
+ */
+export function withTemplateMarks(w: BuilderWorkout, templateExerciseIds: readonly string[], steps: readonly BuilderFitStep[]): BuilderWorkout {
+  const planned = new Set(templateExerciseIds);
+  const first = new Map<string, number>();
+  for (const st of steps) if (st.kind === 'sets' && !first.has(st.slotKey)) first.set(st.slotKey, st.from);
+  const mark = (s: BuilderSlot): BuilderSlot => {
+    const out: BuilderSlot = { ...s };
+    if (out.origin === undefined && planned.has(s.exerciseId)) out.origin = s.exerciseId;
+    const was = first.get(s.key);
+    const cut = was === undefined ? 0 : was - workingCount(s);
+    if (cut > 0) out.todayCut = cut;
+    return out;
+  };
+  return { ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map(mark) })) };
+}
+
+/**
  * `assembleTodayDraft`: the card's workout for a day and its controls. The
  * plan's own draft (its abs, its supersets, its length, no mix) is estimated
  * first: its spare minutes are the buffer the fill keeps.
@@ -267,19 +288,20 @@ export function assembleTodayDraft(input: TodayAssembleInput): TodayDraft | null
       mainGroup: mainGroup === null ? [] : input.pool(mainGroup).filter((id) => id !== built.mix?.fromExerciseId),
     },
   });
+  const workout = withTemplateMarks(fit.workout, t.exerciseIds, fit.steps);
   return {
     template: t,
-    workout: fit.workout,
-    fit,
+    workout,
+    fit: { ...fit, workout },
     minutes: fit.minutes,
     exerciseCount: slotCount(fit.workout),
     absOn,
     planBufferMin,
-    mix: built.mix !== null && fit.workout.blocks.some((b) => b.slots.some((s) => s.key === built.mix?.slotKey)) ? built.mix : null,
+    mix: built.mix !== null && workout.blocks.some((b) => b.slots.some((s) => s.key === built.mix?.slotKey)) ? built.mix : null,
     mixOptions: built.mixOptions,
     mixShortlist: built.mixShortlist,
     mixFromExerciseId: built.mixFromExerciseId,
-    advice: adviseBuilder(fit.workout.blocks, input.ctx.info),
+    advice: adviseBuilder(workout.blocks, input.ctx.info),
     mainGroup,
   };
 }

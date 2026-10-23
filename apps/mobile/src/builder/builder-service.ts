@@ -82,6 +82,9 @@ import {
   type AppliedStructural,
   type StructuralOp,
   keptExercises,
+  markBenEdit,
+  benRemovalOf,
+  withBenAdded,
   type KeepBaseItem,
   type KeepCurrentItem,
   type TemplateSlotSpec,
@@ -975,6 +978,18 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   };
 
   /**
+   * (D1) A slot's working sets before Ben's first set-count change, like with like for Keep: Your workout's Time cuts
+   * put back (`untimed`), and the sets Today's Time took from it (`todayCut`).
+   */
+  const unfittedSetsOf = (stored: BuilderSetup | null | undefined, w: BuilderWorkout): ((slot: BuilderSlot) => number) => {
+    const counts = new Map(slotsOf(untimed(stored, w).blocks).map((x) => [x.key, workingCount(x)] as const));
+    return (slot) => (counts.get(slot.key) ?? workingCount(slot)) + (slot.todayCut ?? 0);
+  };
+
+  /** (D1) A set-up with the exercises Ben just removed added to `keepRemoved` (the most recent kept). */
+  const withKeepRemoved = (setup: BuilderSetup, removed: readonly string[]): BuilderSetup => (removed.length === 0 ? setup : { ...setup, keepRemoved: [...(setup.keepRemoved ?? []), ...removed].slice(-BUILD_LIMITS.maxExercises * 3) });
+
+  /**
    * (22 Oct, review R1) The two copies a change under Time works on: `original`, the whole workout (what the length
    * before the first Time change brings back), and `work`, the same with each exercise Ben edited after a fit as he
    * has it (the sets the fit took from it held). Time fits `work`; with no fit both are the workout as it stands.
@@ -1126,9 +1141,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
 
   /**
    * (D1) What Summary's `Keep for next time?` compares: the workout's started builder draft and the version it started
-   * as, the plan day (template) or saved workout it opened and at which version, and both as exercise lists (Time's
-   * cuts put back: a short day isn't a new plan). Null: not a plan day or saved workout, a variation was open, Ben
-   * didn't edit it on Your workout (Today's own card, the coach's offer), or not a finished workout Ben can see.
+   * as, the plan day (template) or saved workout it opened and at which version, and the workout as Ben left it (Time's
+   * cuts put back) with his own marks. Only his structure edits on Your workout and Set up are listed (review batch23
+   * B1–B3): Today's card and its controls, Time, a gym change's swaps and the coach's changes never are. Null: not a plan
+   * day or saved workout, a variation was open, or not a finished workout Ben can see.
    */
   async function keepContext(p: UserProfile, sessionId: string) {
     const a = await repos().sessions.get(sessionId).catch(() => null);
@@ -1140,9 +1156,6 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const version = draft.versions.find((v) => v.n === (a.session.coachDraft?.version ?? draft.currentVersion)) ?? currentDraftVersion(draft);
     const stored = version.request.setup;
     if (stored === undefined) return null;
-    // Only Ben's own changes on Your workout: Today's card as Today made it (its controls, its length) and the coach's
-    // pre-session offer he applied are today's, never offered for the plan (integrity B2).
-    if (todayDraftState({ versions: [version], currentVersion: version.n }).state !== 'edited') return null;
     // A variation's extras can't take these changes as they are (its ops have no swap): not offered.
     if (stored.variationId !== null) return null;
     let target: { routineId: string; openedVersion: number; plan: boolean } | null = null;
@@ -1156,13 +1169,17 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     // What the workout opened: a plan day the exercises the builder knows; a saved workout all but those it left out.
     const leftOut = new Set(stored.leftOut ?? []);
     const opened = (id: string) => (target.plan ? env.info(id) !== null : !leftOut.has(id));
+    // The plan day's main lift (the one its template is keyed by, Today's Main lift) names the plan day: Keep never
+    // swaps or removes it (SP7, open for Ben). A `Main` flag (WL9: compounds in places 1–2) alone doesn't lock.
+    const mainLift = key.mainLiftExerciseId ?? routine.planDay?.mainLiftExerciseId ?? null;
+    const isMain = (e: RoutineExercise) => target.plan && mainLift !== null && e.exerciseId === mainLift;
     const base: KeepBaseItem[] = [...routine.exercises]
       .sort((x, y) => x.order - y.order)
       .filter((e) => opened(e.exerciseId))
-      .map((e) => ({ exerciseId: e.exerciseId, workingSets: Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, e.setTemplates.filter((t) => t.setType !== 'warmup').length)), ref: e.id }));
-    const current: KeepCurrentItem[] = workout.blocks.flatMap((b, round) => b.slots.map((x) => ({ key: x.key, exerciseId: x.exerciseId, workingSets: workingCount(x), origin: x.origin ?? null, round })));
+      .map((e) => ({ exerciseId: e.exerciseId, workingSets: Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, e.setTemplates.filter((t) => t.setType !== 'warmup').length)), ref: e.id, ...(isMain(e) ? { locked: true } : {}) }));
+    const current: KeepCurrentItem[] = workout.blocks.flatMap((b, round) => b.slots.map((x) => ({ key: x.key, exerciseId: x.exerciseId, workingSets: workingCount(x), origin: x.origin ?? null, round, ben: x.keep ?? null })));
     const label = target.plan ? planLabel(pageSetup(draft), env, null) : routine.name;
-    return { session: a, draft, version, routine, openedVersion: target.openedVersion, label, workout, env, base, current, diff: keepDiff(base, current) };
+    return { session: a, draft, version, routine, openedVersion: target.openedVersion, label, workout, env, base, current, diff: keepDiff(base, current, stored.keepRemoved ?? []) };
   }
 
   /** (D1) The next workout from that plan day or saved workout has started since this one: `next time` is past. */
@@ -1288,7 +1305,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           // Reopen (§2.1): the same unstarted workout, with Set up's change merged in.
           const prev = pageSetup(r.draft);
           if (sameSetup(prev, s)) return { status: 'replayed', snapshot: await snapshotOf(p, r.draft, built.env), toast: null };
-          return service.changeSetup(r.draft.id, s, { opId, expectedVersion: r.draft.version });
+          // Opened from the Library or Today's Edit (not Ben's Set up): the merge isn't his structure edit (D1).
+          return service.changeSetup(r.draft.id, s, { opId, expectedVersion: r.draft.version, ...(opts.opened === true ? { byApp: true } : {}) });
         }
         case 'invalid':
           return { status: 'refused', reason: 'no_such_exercise', message: BUILDER_COPY.failed, snapshot: null };
@@ -1529,8 +1547,11 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env, toast: null };
         const r = applyBuilderEdit(before, op, env.ctx);
         if (!r.ok) return { refused: r.reason, env };
-        const plan = withSlotRevs(v.plan, toDraftPlan(r.workout, env.codec)).plan;
-        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: w.basis, plan, setup: stored ?? storedSetup(pageSetup(current), {}), undoable: true });
+        // (D1; review batch23 B1–B3) Ben's own structure edit, marked on the slots it changed (and what he removed), so
+        // Summary's `Keep for next time?` lists only his: a set count against the count it opened at (Time's cuts put back).
+        const marked = markBenEdit(before, r.workout, unfittedSetsOf(stored, before));
+        const plan = withSlotRevs(v.plan, toDraftPlan(marked.workout, env.codec)).plan;
+        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: w.basis, plan, setup: withKeepRemoved(stored ?? storedSetup(pageSetup(current), {}), marked.removed), undoable: true });
         // A typed kg this gym can't make exactly: the cell shows the new value, the toast says so, `Why?` names the item (rule 4; review S6).
         const item = op.kind === 'edit_row' ? env.itemNameOf(before.blocks.flatMap((b) => b.slots).find((x) => x.key === op.slotKey)?.exerciseId ?? '') : null;
         const rounded = r.rounded?.rounded === true ? { text: BUILDER_COPY.roundedTo(r.rounded.value, r.rounded.unit), undoOpId: null, why: item === null ? null : `Rounded down: ${item}` } : null;
@@ -1543,7 +1564,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
      * and group counts merge into the edited workout; a new Day, Main lift or
      * Variation builds a new workout (`Rebuilt · Undo` restores both pages).
      */
-    async changeSetup(draftId: string, next: SetupInput, w: { opId: string; expectedVersion: number }): Promise<BuilderWriteResult> {
+    async changeSetup(draftId: string, next: SetupInput, w: { opId: string; expectedVersion: number; /** (D1) An open merged it in, not Ben's Set up: no Keep marks. */ byApp?: boolean }): Promise<BuilderWriteResult> {
       const p = await owner();
       const read = await repos().workoutDrafts.get(draftId).catch(() => null);
       if (read !== null && read.ownerId === p.id && read.builderKey !== undefined && read.status === 'open' && !read.opIds.includes(w.opId) && read.version === w.expectedVersion) {
@@ -1555,7 +1576,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         if (prev.dayId !== next.dayId || prev.mainLiftExerciseId !== next.mainLiftExerciseId) {
           const key = { ...draftKey(next, await planDayFor(p.id, next.dayId, next.mainLiftExerciseId)), localDate: read.builderKey.localDate };
           const other = await repos().workoutDrafts.openBuilderDraft(p.id, key).catch(() => null);
-          if (other !== null && other.id !== read.id) return service.changeSetup(other.id, next, { opId: w.opId, expectedVersion: other.version });
+          if (other !== null && other.id !== read.id) return service.changeSetup(other.id, next, { opId: w.opId, expectedVersion: other.version, ...(w.byApp === true ? { byApp: true } : {}) });
         }
       }
       return writeDraft(p, draftId, async (current) => {
@@ -1598,10 +1619,15 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           });
           return { change, env: built.env, toast: { text: BUILDER_COPY.rebuilt, undoOpId: w.opId, why: null }, skipped: built.skipped };
         }
-        const after = m.kind === 'merged' ? m.workout : workout;
+        // (D1) A group count Ben changed on Set up is his structure edit: its new exercises are his adds, the ones it
+        // took out his removals. Length's set changes are a length, never listed (Time changes never ask).
+        const ben = w.byApp !== true;
+        const addedKeys = new Set(m.kind === 'merged' && ben ? m.changes.flatMap((c) => (c.kind === 'group_added' ? [c.slotKey] : [])) : []);
+        const removedNow = m.kind === 'merged' && ben ? m.changes.flatMap((c) => (c.kind === 'group_removed' ? [slotsOf(workout.blocks).find((x) => x.key === c.slotKey) ?? { exerciseId: c.exerciseId }] : [])).flatMap((x) => benRemovalOf(x) ?? []) : [];
+        const after = m.kind === 'merged' ? withBenAdded(m.workout, addedKeys) : workout;
         // Length left as Time's: back to Time's length, fitted again from the merged original.
         // The slots keep their keys in a merge, so Gym changed still meets each one's planned slot (`slotSeed`).
-        const merged: BuilderSetup = { ...nextStored, ...(stored?.slotSeed === undefined ? {} : { slotSeed: stored.slotSeed }) };
+        const merged: BuilderSetup = withKeepRemoved({ ...nextStored, ...(stored?.slotSeed === undefined ? {} : { slotSeed: stored.slotSeed }), ...(stored?.keepRemoved === undefined ? {} : { keepRemoved: stored.keepRemoved }) }, removedNow);
         const original = lengthKept ? withOriginalRows(parts.original, after) : after;
         const timed = retimed(lengthKept ? { ...merged, minutes: next.minutes, timeFrom } : merged, { original, work: after }, env);
         const plan = withSlotRevs(v.plan, toDraftPlan(timed.workout, env.codec)).plan;
@@ -2134,7 +2160,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         return { id: deriveId(`keep-ex:${opId}:${item.key}`), exerciseId: item.exerciseId, equipmentId: null, order: e?.order ?? 0, supersetGroup: null, setTemplates, restBySetType: {}, transitionRestS: null, progressionRuleId: null, structureChangedAtUtc: at.utc };
       };
       const exercises = keptExercises({ before: c.routine.exercises, base: c.base, current: c.current, diff: c.diff, entryFor, opId, atUtc: at.utc });
-      const next: Routine = { ...c.routine, exercises, version: c.routine.version + 1, updatedAtUtc: at.utc, lastOpId: opId, source: 'ben' };
+      // (Review S4) The routine keeps its own `source`: a coach template stays the coach's, and a legacy routine's stored
+      // loads stay last time's (never read as Ben's Fixed loads); new exercises' loads are automatic.
+      const next: Routine = { ...c.routine, exercises, version: c.routine.version + 1, updatedAtUtc: at.utc, lastOpId: opId };
       const undo = { kind: 'template' as const, routineId: c.routine.id, version: next.version, restore: c.routine.exercises, label: c.label };
       const t = await deps.training().catch(() => null);
       const w = await repos()

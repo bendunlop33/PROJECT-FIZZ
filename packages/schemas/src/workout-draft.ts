@@ -248,6 +248,20 @@ export const DraftSlotBuilderSchema = z.object({
   unlinked: z.literal(true).optional(),
   /** The plan-day template exercise this slot came from (kept through a swap). */
   origin: IdSchema.optional(),
+  /**
+   * (Ben, 23 Oct, D1) Ben's own structure edits on this slot, for Summary's `Keep for next time?`: he added it, swapped
+   * it (`from`: the exercise before his first swap) or changed its set count (`setsFrom`: the working sets before that,
+   * Time's cuts put back). Never written by Today, Time, a gym change or the coach. Absent: none.
+   */
+  keep: z
+    .object({
+      added: z.literal(true).optional(),
+      from: IdSchema.optional(),
+      setsFrom: z.int().min(1).max(BUILD_LIMITS.maxWorkingSets).optional(),
+    })
+    .optional(),
+  /** (D1) Working sets Today's Time took from this slot (Today's card only), so Keep compares Ben's count like with like. */
+  todayCut: z.int().min(1).max(BUILD_LIMITS.maxWorkingSets).optional(),
   /** On a superset's first slot: the builder made this pair. */
   autoPair: z.literal(true).optional(),
   /** On a superset's first slot: Ben's `After each round` (seconds). */
@@ -398,6 +412,12 @@ export const BuilderSetupSchema = z.object({
    * reorders or deletes them.
    */
   slotSeed: z.string().min(1).max(300).optional(),
+  /**
+   * (Ben, 23 Oct, D1) Exercises Ben deleted on Your workout or Set up that the workout opened with (the plan day's or
+   * saved workout's exercise each slot came from), for Summary's `Keep for next time?`. Today's, Time's, a gym's or the
+   * coach's removals are never listed. Absent: none.
+   */
+  keepRemoved: z.array(IdSchema).max(BUILD_LIMITS.maxExercises * 3).optional(),
 });
 export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
 

@@ -473,6 +473,17 @@ describe('plan-day templates: Start today only, Keep for next time on the Summar
     if (!r.ok) throw new Error(r.message);
     await finish(s, r.sessionId);
     expect(await s.builder.keepNextTimeOf(r.sessionId)).toBeNull();
+
+    // (Review batch23 S7) Under Time, Ben swaps an exercise Time kept: exactly that line, not Time's cuts.
+    let again = ok(await s.builder.openTemplate({ routineId: push }, 'open-2')).snapshot;
+    again = ok(await s.builder.setTime(again.draftId, 20, { opId: 'time-2', expectedVersion: again.version })).snapshot;
+    const kept = names(again).find((n) => n !== 'Bench press');
+    if (kept === undefined) throw new Error(`nothing but the bench kept: ${names(again).join(', ')}`);
+    const swapped = await swapOne(s, again, kept, 'swap-under-time');
+    const r2 = await s.builder.start(again.draftId, { opId: 'start-2', expectedVersion: swapped.snap.version, gymId });
+    if (!r2.ok) throw new Error(r2.message);
+    await finish(s, r2.sessionId);
+    expect(await s.builder.keepNextTimeOf(r2.sessionId)).toEqual({ state: 'open', label: expect.any(String) as string, lines: [`${kept} → ${swapped.to}`] });
   });
 });
 
