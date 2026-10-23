@@ -354,6 +354,29 @@ describe('a main lift Ben swapped is its own Summary row (Ben, 23 Oct; SP7)', ()
     expect(working(t, 'Lateral raise', nameOf)).toBeUndefined();
   });
 
+  it('review ben-8-decisions B2: the new main lift already in the template (Ben removed it, then swapped the bench for it): Apply moves it to the main lift’s place, never twice; Keep’s line for it is absorbed', async () => {
+    const { s, gymId, push } = await benWithPlan();
+    const snap = await editFromToday(s);
+    const incline = slotNamed(snap, 'Incline dumbbell press');
+    const removed = ok(await s.builder.edit(snap.draftId, { kind: 'delete_exercise', slotKey: incline.key }, { opId: h.ids(), basis: { version: snap.version } }));
+    const from = slotNamed(removed, 'Bench press');
+    const swapped = ok(await s.builder.edit(removed.draftId, { kind: 'swap', slotKey: from.key, exerciseId: incline.exerciseId }, { opId: h.ids(), basis: { version: removed.version } }));
+    const sessionId = await startAndFinish(s, swapped, gymId);
+    expect(await s.builder.keepMainLiftOf(sessionId)).toEqual({ state: 'open', text: 'Make Incline dumbbell press the main lift for Push?' });
+    expect(await s.builder.keepMainLift(sessionId, 'apply')).toEqual({ ok: true });
+    const t = await template(s, push);
+    expect(t?.exercises.filter((e) => e.exerciseId === incline.exerciseId)).toHaveLength(1);
+    expect(t?.exercises.find((e) => e.exerciseId === incline.exerciseId)?.main).toBe(true);
+    expect(t?.exercises.map((e) => e.order)).toEqual(t?.exercises.map((_, k) => k));
+    // Keep's `− Incline dumbbell press` was what the move did: nothing left to keep.
+    expect(await s.builder.keepNextTimeOf(sessionId)).toBeNull();
+    // Today's next Push lists it once.
+    const data = await loaded(s);
+    const key = data.days.find((d) => d.name === 'Push')?.key ?? '';
+    const card = s.todaySession.card(data, { dayKey: key, controls: data.initial[key] ?? sel(data, key).controls });
+    expect(card?.rows.filter((r) => r.name === 'Incline dumbbell press')).toHaveLength(1);
+  });
+
   it('an isolation swapped in for the main lift: no row (today only)', async () => {
     const { s, gymId, push } = await benWithPlan();
     const before = await template(s, push);

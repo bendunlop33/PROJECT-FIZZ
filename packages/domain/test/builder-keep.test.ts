@@ -328,4 +328,19 @@ describe('a main lift Ben swapped (Ben, 23 Oct; SP7)', () => {
     expect(withMainLift({ exercises, name: 'Push', planDay: undefined }, { ref: id(499), to: id(9), toName: 'x', opId: 'o', atUtc: '2026-10-23T19:00:00.000Z' })).toBeNull();
     expect(withMainLift({ exercises, name: 'Push', planDay: undefined }, { ref: id(401), to: id(9), toName: 'x', opId: 'o', atUtc: '2026-10-23T19:00:00.000Z' })?.name).toBe('Push');
   });
+
+  it('withMainLift (review ben-8-decisions B2): a lift already in the template moves to the main lift’s place, never held twice; a pair it leaves is no longer a pair', () => {
+    const exercises = [ex(1, 0, ['warmup', 'top', 'backoff', 'backoff'], { main: true }), ex(2, 1, ['working', 'working', 'working']), ex(3, 2, ['working', 'working', 'working'], { supersetGroup: 'A' }), ex(4, 3, ['working', 'working'], { supersetGroup: 'A' })];
+    // Incline (exercise 2) becomes the main lift.
+    const r = withMainLift({ exercises, name: 'Push · bench press', planDay: undefined }, { ref: id(401), to: id(2), toName: 'Incline dumbbell press', opId: 'op-dup', atUtc: '2026-10-23T19:00:00.000Z' });
+    expect(r?.exercises.map((e) => e.exerciseId)).toEqual([id(2), id(3), id(4)]);
+    expect(r?.exercises.filter((e) => e.exerciseId === id(2))).toHaveLength(1);
+    expect(r?.exercises.map((e) => e.order)).toEqual([0, 1, 2]);
+    expect(r?.exercises[0]?.main).toBe(true);
+    expect(r?.exercises.slice(1)).toEqual([{ ...exercises[2], order: 1 }, { ...exercises[3], order: 2 }]);
+    // Exercise 3 made main from its pair: 4 is left alone, so it's no longer a pair.
+    const q = withMainLift({ exercises, name: 'Push', planDay: undefined }, { ref: id(401), to: id(3), toName: 'Fly', opId: 'op-dup2', atUtc: '2026-10-23T19:00:00.000Z' });
+    expect(q?.exercises.map((e) => [e.exerciseId, e.supersetGroup])).toEqual([[id(3), null], [id(2), null], [id(4), null]]);
+    for (const e of [...(r?.exercises ?? []), ...(q?.exercises ?? [])]) expect(RoutineExerciseSchema.safeParse(e).success).toBe(true);
+  });
 });

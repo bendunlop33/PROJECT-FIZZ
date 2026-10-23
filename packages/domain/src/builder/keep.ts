@@ -369,8 +369,9 @@ export function keepMainLiftSwap(base: readonly KeepBaseItem[], current: readonl
  * `withMainLift`: the template with `to` as its main lift, in place: the main lift's entry (`ref`) takes the new
  * exercise with its own set structure (top set and back-offs, loads automatic: `targetLoad` null), `Main` on it and on
  * no other entry, and the template's key (`planDay.mainLiftExerciseId`) and name (`Chest · incline barbell press`)
- * follow, so the plan day's identity stays whole (review v3summary B3). Every other exercise is as stored. Null: the
- * entry isn't there.
+ * follow, so the plan day's identity stays whole (review v3summary B3). Every other exercise is as stored, except an
+ * entry that already was `to` (it moved to the main lift's place; review ben-8-decisions B2). Null: the entry isn't
+ * there.
  */
 export function withMainLift(r: Pick<Routine, 'exercises' | 'name' | 'planDay'>, m: { ref: string; to: string; toName: string; opId: string; atUtc: string }): { exercises: RoutineExercise[]; name: string; planDay: Routine['planDay'] } | null {
   const at = r.exercises.findIndex((e) => e.id === m.ref);
@@ -387,13 +388,28 @@ export function withMainLift(r: Pick<Routine, 'exercises' | 'name' | 'planDay'>,
     setTemplates: e.setTemplates.map((t, k) => ({ ...t, id: deriveId(`${seed}:set:${String(k)}`), targetLoad: null })),
     structureChangedAtUtc: m.atUtc,
   };
-  const exercises = r.exercises.map((x, k) => {
-    if (k === at) return entry;
-    if (x.main !== true) return x;
+  // (Review ben-8-decisions B2) The lift already one of the template's other exercises: it moves to the main lift's
+  // place (that entry goes in the same write), so the template never holds it twice. A pair left with one exercise is
+  // no longer a pair.
+  const kept = r.exercises.flatMap((x, k): RoutineExercise[] => {
+    if (k === at) return [entry];
+    if (x.exerciseId === m.to) return [];
+    if (x.main !== true) return [x];
     const plain: RoutineExercise = { ...x };
     delete plain.main;
-    return plain;
+    return [plain];
   });
+  const groupSize = new Map<string, number>();
+  for (const x of kept) if (x.supersetGroup !== null) groupSize.set(x.supersetGroup, (groupSize.get(x.supersetGroup) ?? 0) + 1);
+  const moved = kept.length !== r.exercises.length;
+  const exercises = !moved
+    ? kept
+    : [...kept]
+        .sort((a, b) => a.order - b.order)
+        .map((x, n) => {
+          const lone = x.supersetGroup !== null && (groupSize.get(x.supersetGroup) ?? 0) < 2;
+          return x.order === n && !lone ? x : { ...x, order: n, ...(lone ? { supersetGroup: null } : {}) };
+        });
   const parts = r.name.split('·').map((x) => x.trim());
   const day = parts[0] ?? '';
   const name = parts.length > 1 && day !== '' ? `${day} · ${m.toName.toLowerCase()}`.slice(0, 120) : r.name;
