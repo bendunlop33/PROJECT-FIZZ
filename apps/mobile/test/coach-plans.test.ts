@@ -117,7 +117,9 @@ async function doRoutine(s: AppServices, gymId: string, routineId: string, reps:
   for (const set of cur?.aggregate.sets ?? []) {
     if (set.status !== 'pending' || set.setType === 'warmup') continue;
     h.clockMs += 60_000;
-    const n = reps(set.index, names.get(set.sessionExerciseId) ?? '') ?? set.planned.reps?.max ?? 8;
+    // The set's place among the exercise's working sets (warm-ups, planned by WU1–WU12, aren't counted).
+    const workIndex = (cur?.aggregate.sets ?? []).filter((x) => x.sessionExerciseId === set.sessionExerciseId && x.setType !== 'warmup' && x.index < set.index).length;
+    const n = reps(workIndex, names.get(set.sessionExerciseId) ?? '') ?? set.planned.reps?.max ?? 8;
     const r = await s.workout.dispatch(id, { type: 'log_set', at: h.now(), opId: `log:${set.id}:0`, setId: set.id, values: { load: set.planned.load ?? { value: 20, unit: 'kg', convention: conventions.get(set.sessionExerciseId) ?? 'total' }, reps: n, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
     if (!r.ok) throw new Error(r.error.message);
   }

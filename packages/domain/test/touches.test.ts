@@ -28,15 +28,18 @@ describe('plate breakdown (critic #4, brief §4 buildPlateSetup)', () => {
 });
 
 describe('warm-up ramp (deterministic, labelled, skippable)', () => {
-  it('bar × 10, then about 40/60/80 % rounded down to this bar; never at or above the working load', () => {
+  it('the shared planner’s WU4 ladder: bar × 5, then 40/60/80 % rounded down to this bar; never at or above the working load', () => {
     const steps = warmUpRamp(kg(100), bar);
     expect(steps).toEqual([
-      { load: 20, reps: 10 },
+      { load: 20, reps: 5 },
       { load: 40, reps: 5 },
       { load: 60, reps: 3 },
       { load: 80, reps: 2 },
     ]);
-    expect(plain(warmUpText(steps, bar))).toBe('bar × 10 · 40 × 5 · 60 × 3 · 80 × 2 (kg)');
+    expect(plain(warmUpText(steps, bar))).toBe('bar × 5 · 40 × 5 · 60 × 3 · 80 × 2 (kg)');
+    // The set's reps pick the band (WU3): 3 reps → the 1–3 ladder; 12 reps → WU5's two steps, no bar.
+    expect(warmUpRamp(kg(100), bar, 3).map((x) => [x.load, x.reps])).toEqual([[20, 5], [40, 5], [60, 3], [75, 2], [87.5, 1]]);
+    expect(warmUpRamp(kg(100), bar, 12).map((x) => [x.load, x.reps])).toEqual([[50, 8], [80, 5]]);
     expect(warmUpRamp(kg(40), bar).map((x) => x.load)).toEqual([20, 22.5, 30]);
     expect(warmUpRamp(kg(20), bar)).toEqual([]);
     expect(warmUpRamp(kg(30, 'per_hand'), dumbbells())).toEqual([]);
@@ -47,7 +50,7 @@ describe('warm-up ramp (deterministic, labelled, skippable)', () => {
     const r = routine([routineExercise(900, { exerciseId: BENCH, equipmentId: bar.id, order: 0, setTemplates: [template(9001, { targetLoad: kg(100) }), template(9002, { targetLoad: kg(100) })] })]);
     let s = startWorkout({ opId: 's', owner: profile(), gymId: GYM, routine: r, exercises, gymEquipment: [bar], at: at(0), newId: idGen(95_000) }).aggregate;
     const view = () => buildActiveSetView({ aggregate: s, nowMs: Date.parse(at(1).utc), gymName: null, previous: {}, painFlagged: new Set(), edits: null });
-    expect(plain(view().focus?.warmUp ?? null)).toBe('bar × 10 · 40 × 5 · 60 × 3 · 80 × 2 (kg)');
+    expect(plain(view().focus?.warmUp ?? null)).toBe('bar × 5 · 40 × 5 · 60 × 3 · 80 × 2 (kg)');
     const first = setsFor(s, BENCH)[0];
     s = apply(s, logCmd(first?.id ?? '', values(kg(100), 5), 10));
     expect(view().focus?.warmUp).toBeNull();

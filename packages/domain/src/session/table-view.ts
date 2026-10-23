@@ -10,7 +10,7 @@ import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf, partsOf } from './gym-switch';
 import { isRoundEnd, nextPendingSet, setUnits } from './order';
 import { isPlatesAddedKind } from '../plates-added';
-import { painFlaggedOf, shownPlannedIn, type CarryOptions } from './carry';
+import { painFlaggedOf, shownPlannedIn, warmupLookupOf, type CarryOptions } from './carry';
 import { prefillDraft } from './view';
 
 /**
@@ -303,9 +303,14 @@ type RowOptions = CarryOptions & { previous?: ActiveViewInput['previous'] };
  */
 function shownRowPlanned(state: SessionAggregate, set: WorkoutSet, ex: SessionExercise, o: RowOptions): ReturnType<typeof shownPlannedIn> {
   const p = shownPlannedIn(state, set, ex, o);
-  if (p.load !== null || set.status !== 'pending' || ex.loadConvention === 'bodyweight') return p;
-  const load = prefillDraft(state, set.id, o.previous?.[ex.id]?.sets ?? [], o).values.load;
-  return load === null ? p : { ...p, load };
+  if (set.status !== 'pending' || ex.loadConvention === 'bodyweight') return p;
+  // (WU1–WU12) A warm-up planned at or above today's working load shows the planner's step instead (rule 4).
+  if (p.load !== null && set.setType !== 'warmup') return p;
+  const values = prefillDraft(state, set.id, o.previous?.[ex.id]?.sets ?? [], o).values;
+  const load = values.load;
+  if (load === null || (p.load !== null && (set.draft !== null || (load.value === p.load.value && load.unit === p.load.unit)))) return p;
+  // A warm-up the planner fills (WU1–WU12) shows its step's reps with its load, as Start stores them.
+  return set.setType === 'warmup' && values.reps !== null && set.planned.durationS === null ? { ...p, load, reps: { min: values.reps, max: values.reps } } : { ...p, load };
 }
 
 function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null, carry: RowOptions): TableRow {
@@ -523,7 +528,7 @@ function exerciseCard(input: ActiveViewInput, root: SessionExercise, parts: read
   const blockLive = blockSets(state, root.id).filter(live);
   const ruleRpe = input.ruleTargetRpe?.[action.id] ?? input.ruleTargetRpe?.[root.id] ?? null;
   const ownColumns = tableColumns(action, eq);
-  const { columns, rows } = sharedColumns([ownColumns], buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null, { painFlagged: painFlaggedOf(input), previous: input.previous })));
+  const { columns, rows } = sharedColumns([ownColumns], buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous })));
   const prev = input.previous[action.id] ?? input.previous[root.id] ?? null;
   const headerLine = headerLineOf(action, eq);
   const lastLine = lastLineOf(prev, action, eq, state.session.startedAt.tz);
@@ -591,7 +596,7 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
       hasPending: memberLive.some((s) => s.status === 'pending'),
     });
     const ruleRpe = input.ruleTargetRpe?.[action.id] ?? null;
-    const mine = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName, { painFlagged: painFlaggedOf(input), previous: input.previous }));
+    const mine = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous }));
     built.push(...mine);
     memberBuilt.push(mine);
     unitsByMember.push({ tag, name: action.exerciseName, units: parts.flatMap((p, k) => setUnits(state.sets, p.id, k === 0 ? (root.roundOffset ?? 0) : 0)) });

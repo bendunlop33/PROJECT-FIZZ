@@ -100,7 +100,7 @@ describe('propose_workout with loads (BD6)', () => {
     const result = await runCoachTurn(request({ input: words(REQ.text), context: { session: null, gymName: 'Main gym', painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } }), ports(store, model, executors(store)));
     expect(result.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'build_workout' } });
     const [d] = await store.repos.workoutDrafts.listByOwner(OWNER);
-    const t = d?.versions[0]?.plan.slots[0]?.setTemplates[0];
+    const t = d?.versions[0]?.plan.slots[0]?.setTemplates.find((x) => x.setType !== 'warmup');
     expect(t?.load).toMatchObject({ load: { value: 102.5, unit: 'kg', convention: 'total' }, source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'main lift, strength focus', notUsed: null });
     await store.close();
   });
@@ -112,7 +112,7 @@ describe('propose_workout with loads (BD6)', () => {
     const notes = result.cards[0]?.record.guardNotes.map((n) => n.text) ?? [];
     expect(notes).toContain('Bench press · coach load 200 kg too far from last 100 × 7');
     const [d] = await store.repos.workoutDrafts.listByOwner(OWNER);
-    expect(d?.versions[0]?.plan.slots[0]?.setTemplates[0]?.load).toMatchObject({ load: null, source: 'rule' });
+    expect(d?.versions[0]?.plan.slots[0]?.setTemplates.find((x) => x.setType !== 'warmup')?.load).toMatchObject({ load: null, source: 'rule' });
     await store.close();
   });
 
@@ -121,7 +121,7 @@ describe('propose_workout with loads (BD6)', () => {
     const model = new ScriptedCoachModel([[call('propose_workout', proposal(benchLoad(102.5, 'last 100×7'))), { type: 'completed' }], reply('Built.')]);
     await runCoachTurn(request({ input: words(REQ.text), context: { session: null, gymName: 'Main gym', painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } }), ports(store, model, executors(store, { sessionPain: true })));
     const [d] = await store.repos.workoutDrafts.listByOwner(OWNER);
-    expect(d?.versions[0]?.plan.slots[0]?.setTemplates[0]?.load).toMatchObject({ load: { value: 100 }, held: true, notes: ['held · pain reported today'] });
+    expect(d?.versions[0]?.plan.slots[0]?.setTemplates.find((x) => x.setType !== 'warmup')?.load).toMatchObject({ load: { value: 100 }, held: true, notes: ['held · pain reported today'] });
     await store.close();
   });
 });

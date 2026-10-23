@@ -393,7 +393,9 @@ describe('(c) warm-ups obey equipment caps and pain blocks', () => {
     const capped = BARS.find((b) => b.maxLoad !== undefined);
     if (capped?.kind !== 'barbell') throw new Error('fixture');
     const ramp = warmUpRamp(kg(180), capped);
-    expect(ramp.map((r) => r.load)).toEqual([20, 70, 100]);
+    // WU4 on a bar capped at 100: bar, 40 % → 70, 60 % and 80 % both capped at 100 (merged), and WU4's gap step (45) between the bar and 70.
+    expect(ramp.map((r) => r.load)).toEqual([20, 45, 70, 100]);
+    expect(ramp.every((r) => r.load <= (capped.maxLoad ?? Infinity))).toBe(true);
   });
 
   const bar = barbell();
@@ -432,7 +434,8 @@ describe('(c) warm-ups obey equipment caps and pain blocks', () => {
     expect(s.sets.map((x) => x.planned.load)).toEqual([kg(100), kg(100), kg(100)]);
     const view = buildActiveSetView({ aggregate: s, nowMs: ms(10), gymName: null, previous: {}, painFlagged: new Set([bench.id]), edits: null });
     expect(view.focus?.painFlagged).toBe(true);
-    const ramp = warmUpRamp(kg(100), bar);
+    // The suggestion is the shared planner's ladder for the set's own reps (WU3), up to the held load only.
+    const ramp = warmUpRamp(kg(100), bar, s.sets[0]?.planned.reps?.min ?? null);
     expect(view.focus?.warmUp).toBe(warmUpText(ramp, bar));
     expect(ramp.every((r) => r.load < 100)).toBe(true);
   });
@@ -442,9 +445,10 @@ describe('(c) warm-ups obey equipment caps and pain blocks', () => {
     const first = s.sets[0];
     if (!first) throw new Error('fixture');
     const view = buildActiveSetView({ aggregate: s, nowMs: ms(10), gymName: null, previous: {}, painFlagged: new Set(), edits: { setId: first.id, values: values(kg(60), 6) } });
-    const ramp = warmUpRamp(kg(60), bar);
+    const ramp = warmUpRamp(kg(60), bar, first.planned.reps?.min ?? null);
     expect(view.focus?.warmUp).toBe(warmUpText(ramp, bar));
-    expect(ramp.map((r) => r.load)).toEqual([20, 22.5, 35, 47.5]);
+    expect(ramp.every((r) => r.load < 60)).toBe(true);
+    expect(ramp[0]?.load).toBe(20);
   });
 
   it('planned warm-up sets go through the same equipment check as working sets, at Start and in Repeat', () => {
@@ -462,7 +466,8 @@ describe('(c) warm-ups obey equipment caps and pain blocks', () => {
     ]);
     const out = startWorkout({ opId: 'cap', owner: profile(), gymId: GYM, routine: r, exercises: PUSH_A_EXERCISES, gymEquipment: [capped], at: at(0), newId: idGen(132_000) });
     for (const x of out.aggregate.sets) expectPossibleTarget(x.planned.load, capped, `${x.setType} at Start`);
-    expect(out.aggregate.sets.map((x) => x.planned.load?.value)).toEqual([100, 60, 100]);
+    // The 120 warm-up capped at the bar's 100 would equal the working load: Start plans it again below it (WU8, rule 4).
+    expect(out.aggregate.sets.map((x) => x.planned.load?.value)).toEqual([60, 60, 100]);
 
     // Repeat at a gym whose bar stops at 50 kg: the 60 kg warm-up is capped too.
     let src = startFixture().state;
@@ -472,8 +477,9 @@ describe('(c) warm-ups obey equipment caps and pain blocks', () => {
     const hotel = barbell({ id: id(1105), name: 'Hotel bar to 50 kg', maxLoad: 50 });
     const rep = startWorkoutFromSession({ opId: 'rep-cap', owner: profile(), gymId: GYM, source: src, exercises: PUSH_A_EXERCISES, gymEquipment: [hotel], at: at(86_400), newId: idGen(133_000) });
     const benchSets = setsFor(rep.aggregate, BENCH);
+    // Capped at 50 the warm-up would equal the working 50: planned again below it (WU8, rule 4).
     expect(benchSets.map((x) => [x.setType, x.planned.load?.value])).toEqual([
-      ['warmup', 50],
+      ['warmup', 40],
       ['working', 50],
     ]);
     for (const x of benchSets) expectPossibleTarget(x.planned.load, hotel, `${x.setType} in Repeat`);

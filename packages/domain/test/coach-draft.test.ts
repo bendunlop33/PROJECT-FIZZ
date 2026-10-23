@@ -335,8 +335,10 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
       'Superset ungrouped · needs 2–4 exercises in a row',
     ]);
     const bench = r.plan.slots[0];
-    expect(bench?.setTemplates).toHaveLength(10);
-    expect(bench?.setTemplates[0]).toMatchObject({ reps: { min: 1, max: 50 }, targetRpe: 10, restS: 120 });
+    // Working sets only (the planner adds the warm-ups: WU1–WU12).
+    const work = (bench?.setTemplates ?? []).filter((t) => t.setType !== 'warmup');
+    expect(work).toHaveLength(10);
+    expect(work[0]).toMatchObject({ reps: { min: 1, max: 50 }, targetRpe: 10, restS: 120 });
     expect(r.plan.slots.every((s) => s.supersetGroup === null)).toBe(true);
   });
 
@@ -372,7 +374,7 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
   it('BD7: a missing RPE is the built-in rule’s, with `RPE missing · n used`; a reversed rep range is put in order', () => {
     const r = checked(args([pex('barbell-bench-press', { targetRpe: null, reps: { min: 8, max: 6 } }), pex('cable-fly', { targetRpe: null })]));
     expect(r.checks.map((c) => c.text)).toEqual(['Bench press · reps 8–6 → 6–8', 'Bench press · RPE missing · 8.5 used', 'Cable fly · RPE missing · 9 used']);
-    expect(r.plan.slots[0]?.setTemplates[0]?.targetRpe).toBe(8.5);
+    expect(r.plan.slots[0]?.setTemplates.find((t) => t.setType !== 'warmup')?.targetRpe).toBe(8.5);
   });
 
   it('WB10 / rule 9: a pain-flagged movement is left out and never substituted', () => {
@@ -405,7 +407,9 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
 
   it('a top set comes first with its own RPE; the rest are back-offs at the working RPE', () => {
     const r = checked(args([pex('barbell-bench-press', { workingSets: 3, reps: { min: 6, max: 8 }, targetRpe: 8, topSet: { reps: { min: 3, max: 5 }, targetRpe: 9 } })]));
-    expect(r.plan.slots[0]?.setTemplates.map((t) => [t.setType, t.targetRpe, t.reps?.min])).toEqual([['top', 9, 3], ['backoff', 8, 6], ['backoff', 8, 6], ['backoff', 8, 6]]);
+    expect(r.plan.slots[0]?.setTemplates.filter((t) => t.setType !== 'warmup').map((t) => [t.setType, t.targetRpe, t.reps?.min])).toEqual([['top', 9, 3], ['backoff', 8, 6], ['backoff', 8, 6], ['backoff', 8, 6]]);
+    // Warm-ups before it are the planner's (WU4 for the top set's 3 reps, the main lift first: bar, 40 / 60 / 75 / 87.5 %).
+    expect(r.plan.slots[0]?.setTemplates.filter((t) => t.setType === 'warmup').map((t) => [t.reps?.min, t.targetRpe, t.load])).toEqual([[5, null, undefined], [5, null, undefined], [3, null, undefined], [2, null, undefined], [1, null, undefined]]);
   });
 
   it('review S1 / r2 S1: rest snaps to the nearest preset, then clamps to 0:30–6:00 (Q7, 20 Oct: was 5:00)', () => {
@@ -425,8 +429,8 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
   it('review S9: the top set’s reps clamp with a line, it counts against the set limit, and a timed top set is noted', () => {
     const r = checked(args([pex('barbell-bench-press', { workingSets: 10, reps: { min: 6, max: 8 }, topSet: { reps: { min: 0, max: 80 }, targetRpe: 9 } }), pex('plank', { reps: null, workSeconds: 45, topSet: { reps: { min: 3, max: 5 }, targetRpe: 9 } })]));
     expect(r.checks.map((c) => c.text)).toEqual(['Bench press · top set reps 0–80 → 1–50', 'Bench press · sets 11 → 10 with the top set (most allowed)', 'Plank · top set left out (timed)']);
-    const bench = r.plan.slots[0]?.setTemplates ?? [];
-    expect(bench.filter((t) => t.setType !== 'warmup')).toHaveLength(10);
+    const bench = (r.plan.slots[0]?.setTemplates ?? []).filter((t) => t.setType !== 'warmup');
+    expect(bench).toHaveLength(10);
     expect(bench[0]).toMatchObject({ setType: 'top', reps: { min: 1, max: 50 } });
     expect(r.plan.slots[1]?.setTemplates.every((t) => t.setType === 'working')).toBe(true);
   });

@@ -405,7 +405,7 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     h.clockMs = Date.parse('2026-10-23T07:00:00.000Z');
     const snap = await s.training.snapshot();
     if (!snap) throw new Error('snapshot');
-    expect(await s.training.change({ kind: 'session_minutes', minutes: 15 }, snap.profile.version, 'len-15')).toMatchObject({ ok: true });
+    expect(await s.training.change({ kind: 'session_minutes', minutes: 30 }, snap.profile.version, 'len-30')).toMatchObject({ ok: true });
     await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-24', durationS: null, distanceM: null, effort: 'long' }, opId: 'sheet-run' });
     const chest = (await s.next.preview(gymId))?.aboutMinutes ?? 0;
     const seen: WeekView[] = [];
@@ -414,11 +414,13 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     expect(await s.week.apply({ actionId: proposal?.actionId ?? '', opId: 'apply-short' })).toMatchObject({ ok: true });
     const push = await s.next.preview(gymId);
     expect(push?.title).toBe('Push');
-    expect(push?.aboutMinutes ?? 99).toBeLessThanOrEqual(15);
-    // Chest alone is already about this long: the two days' 12 working sets come down, main lifts keeping two.
-    expect(chest).toBe(15);
-    expect(push?.sets ?? 99).toBeLessThan(12);
-    expect(sp(push?.targets.find((t) => t.exerciseName === 'Bench press')?.line)).toBe('Target 100 kg × 6–8 · 2 sets');
+    expect(push?.aboutMinutes ?? 99).toBeLessThanOrEqual(30);
+    // Chest alone is about 25 with its warm-ups (WU1–WU12; at 15 min the main lifts' warm-up floors alone wouldn't
+    // fit, WU11): the two days' 12 working sets come down, warm-ups cut first, main lifts keeping two.
+    expect(chest).toBe(25);
+    const working = (push?.targets ?? []).reduce((n, t) => n + Number(/· (\d+) sets?/.exec(sp(t.line))?.[1] ?? 0), 0);
+    expect(working).toBeLessThan(12);
+    expect(sp(push?.targets.find((t) => t.exerciseName === 'Bench press')?.line)).toBe('Target 100 kg × 6–8 · 3 sets');
   });
 
   it('a merge where one day has nothing to bring: Apply changes nothing (review S3)', async () => {

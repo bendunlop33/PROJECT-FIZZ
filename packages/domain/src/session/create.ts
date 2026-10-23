@@ -24,6 +24,7 @@ import { convertMassExactly } from '../units';
 import { resolveRestPreset } from '../rest';
 import { planTargetProvenance } from '../target-provenance';
 import { buildExecutionOrder } from './order';
+import { planStartWarmups } from '../warmup/session';
 import { plannedSnapOf, snapPlanToGym, type SnapResult, type SnapSlotInput, type SnapSource } from './snap';
 import { stationWords, type GymStation } from '../stations';
 
@@ -397,6 +398,14 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
     });
   });
 
+  // (WU1–WU12) Warm-ups saved without a load (a coach-built or saved workout's) take the shared warm-up planner's
+  // load and reps from the first working set's load here, so what Start stores is what the workout shows.
+  const mainRows = new Set(planned.flatMap(({ rex }, position) => (rex.main === true ? [exercises[position]?.id ?? ''] : [])));
+  const warmed = planStartWarmups(
+    { exercises, sets, session: { equipmentSnapshot: input.gymEquipment } },
+    { facts: (id) => input.exercises.get(id) ?? null, main: (id) => mainRows.has(id) },
+  );
+  sets.splice(0, sets.length, ...warmed);
   const order = buildExecutionOrder(exercises, sets);
   const fits = setFitsOf({ warnings, setTemplateIds, snap });
   return {

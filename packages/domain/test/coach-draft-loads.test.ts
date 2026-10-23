@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DraftPlanSchema, WorkoutDraftSchema, type EquipmentInstance, type Exercise, type Load, type PainFlag, type ProposeWorkoutArgs, type ProposedExercise, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
+import { DraftPlanSchema, WorkoutDraftSchema, type DraftSetTemplate, type EquipmentInstance, type Exercise, type Load, type PainFlag, type ProposeWorkoutArgs, type ProposedExercise, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
 
 import {
   checkWorkoutProposal,
@@ -182,6 +182,8 @@ function planOf(d: WorkoutDraft, opts: { gym?: typeof MAIN_GYM; flags?: PainFlag
   });
 }
 
+/** A slot's working templates (the planner adds warm-ups first: WU1–WU12). */
+const work = (s: { setTemplates: readonly DraftSetTemplate[] } | undefined): DraftSetTemplate[] => (s?.setTemplates ?? []).filter((t) => t.setType !== 'warmup');
 const setsFor = (out: ReturnType<typeof planOf>, exerciseId: string) => {
   const row = out.aggregate.exercises.find((e) => e.exerciseId === exerciseId);
   return out.aggregate.sets.filter((s) => s.sessionExerciseId === row?.id && s.setType !== 'warmup').sort((a, b) => a.index - b.index);
@@ -192,13 +194,13 @@ describe('checkWorkoutProposal stores checked loads (BD6)', () => {
     const r = checkWorkoutProposal(PUSH, ctx());
     if (r.status === 'unusable') throw new Error('unusable');
     const [bench, incline, fly, pushdown] = r.plan.slots;
-    expect(bench?.setTemplates.map((t) => t.load?.load?.value)).toEqual([102.5, 102.5, 102.5, 102.5]);
-    expect(bench?.setTemplates[0]?.load).toMatchObject({ source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'main lift, strength focus' });
+    expect(work(bench).map((t) => t.load?.load?.value)).toEqual([102.5, 102.5, 102.5, 102.5]);
+    expect(work(bench)[0]?.load).toMatchObject({ source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'main lift, strength focus' });
     expect(bench?.checkedOn).toMatchObject({ equipmentId: bar.id, kind: 'barbell', convention: 'total', unit: 'kg', barKg: 20 });
     expect(bench?.checkedHistoryVersion).toMatch(/[0-9a-f-]{36}/);
-    expect(incline?.setTemplates[0]?.load).toMatchObject({ load: { value: 30, convention: 'per_hand' }, source: 'coach' });
-    expect(fly?.setTemplates[0]?.load).toMatchObject({ load: { value: 25 }, source: 'coach_est', notes: ['capped at 25 · first time'] });
-    expect(pushdown?.setTemplates[0]?.load).toMatchObject({ load: null, source: 'rule' });
+    expect(work(incline)[0]?.load).toMatchObject({ load: { value: 30, convention: 'per_hand' }, source: 'coach' });
+    expect(work(fly)[0]?.load).toMatchObject({ load: { value: 25 }, source: 'coach_est', notes: ['capped at 25 · first time'] });
+    expect(work(pushdown)[0]?.load).toMatchObject({ load: null, source: 'rule' });
     // Every load note is a code check line too (the coach's tool result and `Why?`).
     expect(r.checks.filter((c) => c.kind === 'load').map((c) => c.text)).toEqual(['Cable fly · capped at 25 · first time', 'Triceps pushdown · coach load 40 kg too far from last 25 × 12']);
   });
@@ -209,7 +211,7 @@ describe('checkWorkoutProposal stores checked loads (BD6)', () => {
     expect(left.status).toBe('unusable');
     const kept = checkWorkoutProposal(a, ctx({ namedByBen: (e) => e.id === OHP.id }, { flags: [SHOULDER] }));
     if (kept.status === 'unusable') throw new Error('unusable');
-    expect(kept.plan.slots[0]?.setTemplates[0]?.load).toMatchObject({ load: { value: 50 }, held: true });
+    expect(work(kept.plan.slots[0])[0]?.load).toMatchObject({ load: { value: 50 }, held: true });
     expect(kept.checks.map((c) => c.text.replaceAll(' ', ' '))).toContain('Overhead press kept · held · shoulder flagged 6 Oct');
   });
 
@@ -219,7 +221,7 @@ describe('checkWorkoutProposal stores checked loads (BD6)', () => {
     if (r.status === 'unusable') throw new Error('unusable');
     expect(r.plan.slots.map((s) => s.exerciseId)).toEqual([BENCH.id, INCLINE.id, FLY.id]);
     expect(r.plan.slots.map((s) => s.main)).toEqual([true, false, false]);
-    expect(r.plan.slots[0]?.setTemplates[0]?.load?.source).toBe('rule');
+    expect(work(r.plan.slots[0])[0]?.load?.source).toBe('rule');
     expect(r.checks.map((c) => c.text)).toContain('Bench press kept as main lift');
     const skip = checkWorkoutProposal(noBench, ctx({ mainLift: { exercise: BENCH, skip: true } }));
     expect(skip.status !== 'unusable' && skip.plan.slots.map((s) => s.exerciseId)).toEqual([INCLINE.id, FLY.id]);

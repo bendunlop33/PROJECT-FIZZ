@@ -227,10 +227,11 @@ describe('S2: the set card’s plate breakdown and warm-up for the new bars and 
   });
 
   it('the warm-up ramp: trap bar yes, EZ bar no', () => {
+    // A trap bar starts from the floor (WU9): no empty-bar step; 40 / 60 / 80 % of 140 on its plates.
     const ramp = warmUpRamp(kg(140), trap);
-    expect(ramp[0]).toEqual({ load: 25, reps: 10 });
+    expect(ramp[0]).toEqual({ load: 55, reps: 5 });
     expect(ramp.length).toBeGreaterThan(2);
-    expect(plain(warmUpText(ramp, trap))).toMatch(/^bar × 10 · /);
+    expect(plain(warmUpText(ramp, trap))).toMatch(/^55 × 5 · /);
     expect(warmUpRamp(kg(40), ez)).toEqual([]);
   });
 });

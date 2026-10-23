@@ -38,7 +38,8 @@ import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLe
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
 import { changedTargetFields, draftWithNewTarget, markCarriedLoad, pendingOwnValues } from './pending-values';
-import { carriedLoad, hasOwnValuesAnyFlags, painFlaggedOf, shownPlannedIn, shownTargetShortIn, type CarryOptions } from './carry';
+import { carriedLoad, hasOwnValuesAnyFlags, painFlaggedOf, shownPlannedIn, shownTargetShortIn, warmupLookupOf, type CarryOptions } from './carry';
+import type { WarmupExerciseFacts } from '../warmup/plan';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -186,6 +187,12 @@ export interface ActiveViewInput {
   previous: Readonly<Record<string, PreviousSession | null>>;
   /** Exercise IDs with an active pain flag. */
   painFlagged: ReadonlySet<string>;
+  /**
+   * (WU1–WU12) Catalogue facts by exercise ID (`BuilderExerciseInfo.warmup`) and the workout's main lifts (exercise
+   * IDs), so warm-ups the planner fills at display are planned as Start plans them. Omitted: item fallbacks.
+   */
+  warmupFacts?: Readonly<Record<string, WarmupExerciseFacts | null>>;
+  mainExerciseIds?: ReadonlySet<string>;
   /**
    * The built-in rule's target RPE per session exercise (`ruleTargetRpes`),
    * the last fallback of each set's target RPE (`targetRpeOf`). Omitted: only
@@ -703,7 +710,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   const setNumber = own.findIndex((s) => s.id === set.id) + 1;
 
   const edits = input.edits?.setId === set.id ? input.edits : null;
-  const carry: CarryOptions = { painFlagged: painFlaggedOf(input) };
+  const carry: CarryOptions = { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input) };
   const pre = prefillDraft(state, set.id, prev?.sets ?? [], carry);
   const covering = painFlagCovering(input.painFlags ?? [], ex.exerciseId, input.nowMs, state.session.startedAt.tz);
   const painNote: PainFlagNoteView | null = covering
@@ -834,7 +841,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     restAfterS: set.rest.seconds,
     restSourceLabel: set.rest.sourceLabel,
     plateLine: plateBreakdownLine(logValues.load, eq),
-    warmUp: eq !== null && showsWarmUp(state, set.id) ? warmUpText(warmUpRamp(logValues.load ?? set.planned.load, eq), eq) : null,
+    warmUp: eq !== null && showsWarmUp(state, set.id) ? warmUpText(warmUpRamp(logValues.load ?? set.planned.load, eq, set.planned.reps?.min ?? null), eq) : null,
     rows: buildSetRows(input, ex.id, set.id),
     next,
     logLabel,
@@ -853,7 +860,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
  */
 export function buildSetRows(input: Pick<ActiveViewInput, 'aggregate' | 'gymNames' | 'painFlagged' | 'painFlags'>, sessionExerciseId: string, activeSetId: string | null): SetRowView[] {
   const state = input.aggregate;
-  const carry: CarryOptions = { painFlagged: painFlaggedOf(input) };
+  const carry: CarryOptions = { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input) };
   const ex = state.exercises.find((e) => e.id === sessionExerciseId);
   if (!ex) return [];
   const own = exerciseSets(state, ex.id);
@@ -1069,7 +1076,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     exercises: exerciseEntries(state, liveSets),
     lastCompletedAtUtc: last,
     openEnded: isOpenEndedWorkout(state),
-    upNext: focus === null ? null : upNextLine(state, focus, { painFlagged: painFlaggedOf(input) }),
+    upNext: focus === null ? null : upNextLine(state, focus, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input) }),
     timeLeft: input.withTimeLeft === false ? null : buildTimeLeftView(state, nowMs, input.recentPace),
     finishByUtc: session.finishBy?.utc ?? null,
   };

@@ -298,7 +298,21 @@ export function mergedExercises(a: readonly RoutineExercise[], b: readonly Routi
   const ordered = [...pick(a, true, false), ...pick(b, true, true), ...pick(a, false, false), ...pick(b, false, true)].slice(0, 40);
   const out = ordered.map((e, i) => ({ ...e, id: o.newId(), order: i, setTemplates: e.setTemplates.map((t) => ({ ...t, id: o.newId() })) }));
   const secondsOf = o.secondsOf ?? routineSeconds;
-  for (let guard = 0; guard < 400 && roundEstimateMinutes(secondsOf(out)) > o.minutes; guard += 1) {
+  const over = () => roundEstimateMinutes(secondsOf(out)) > o.minutes;
+  // (WU11) Warm-ups are cut before working sets: the accessories' (WU6/WU7), last exercise first; then the main
+  // lifts' lightest steps, down to WU11's floor of 2.
+  const warmups = (e: RoutineExercise) => e.setTemplates.filter((t) => t.setType === 'warmup').length;
+  for (const e of [...out].reverse()) {
+    if (!over()) break;
+    if (e.main !== true && warmups(e) > 0) e.setTemplates = e.setTemplates.filter((t) => t.setType !== 'warmup');
+  }
+  for (let guard = 0; guard < 40 && over(); guard += 1) {
+    const e = [...out].reverse().find((x) => x.main === true && warmups(x) > 2);
+    if (e === undefined) break;
+    const lightest = e.setTemplates.findIndex((t) => t.setType === 'warmup');
+    e.setTemplates = e.setTemplates.filter((_, i) => i !== lightest);
+  }
+  for (let guard = 0; guard < 400 && over(); guard += 1) {
     const floor = (e: RoutineExercise) => (e.main === true ? 2 : 1);
     const cut = (main: boolean) =>
       out

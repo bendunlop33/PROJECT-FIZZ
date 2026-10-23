@@ -306,7 +306,8 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
       ports(store, m2, executors(store, draft)),
     );
     expect(m2.offeredTools()[0]).toContain('propose_workout');
-    expect(result.cards[0]?.record.detail).toMatchObject({ kind: 'build_workout', versionN: 2, parentN: 1, lines: [{ change: 'remove', text: '− Bench press' }, { change: 'add', text: '+ Lateral raise · 3 × 12–15' }] });
+    expect(result.cards[0]?.record.detail).toMatchObject({ kind: 'build_workout', versionN: 2, parentN: 1, lines: [{ change: 'remove', text: '− Bench press' }, { change: 'add', text: '+ Lateral raise · 3 × 12–15' }, { change: 'edit', text: '✎ Incline DB press · warm-ups' }] });
+    // (WU2) With the bench gone, the incline press is the first chest press: it now gets its own warm-ups, and the diff says so.
     expect(await store.repos.workoutDrafts.get(draft.id)).toMatchObject({ currentVersion: 2, version: 2 });
     await store.close();
   });

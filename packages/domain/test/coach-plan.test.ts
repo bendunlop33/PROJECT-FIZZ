@@ -368,7 +368,9 @@ describe('Apply and Undo (rule 2, rule 3, rule 5)', () => {
     expect(c.create.flatMap((r) => r.exercises.flatMap((e) => e.setTemplates)).every((t) => t.targetLoad === null)).toBe(true);
     // The coach's target RPE and reps stay; the item the loads were checked on is the row's.
     expect(c.create[0]?.exercises[0]).toMatchObject({ exerciseId: BENCH.id, equipmentId: bar.id, main: true });
-    expect(c.create[0]?.exercises[0]?.setTemplates[0]).toMatchObject({ targetReps: { min: 6, max: 8 }, targetRpe: 8 });
+    expect(c.create[0]?.exercises[0]?.setTemplates.find((t) => t.setType !== 'warmup')).toMatchObject({ targetReps: { min: 6, max: 8 }, targetRpe: 8 });
+    // Its warm-ups are the planner's (WU4 for the main lift's 6 reps: bar, 40 / 60 / 80 %), reps only: Start plans their loads.
+    expect(c.create[0]?.exercises[0]?.setTemplates.filter((t) => t.setType === 'warmup').map((t) => [t.targetReps?.min, t.targetLoad])).toEqual([[5, null], [5, null], [3, null], [2, null]]);
     expect(c.update.map((u) => [u.next.name, u.next.inRotation, u.expectedVersion])).toEqual([
       ['Push A', false, 3],
       ['Pull A', false, 3],

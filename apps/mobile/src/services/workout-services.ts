@@ -237,6 +237,7 @@ import {
   fitTodayCommand,
   builderInfoOf,
   type BuilderExerciseInfo,
+  type WarmupExerciseFacts,
   type TimeFitOffer,
   type ActiveSetView,
   type WorkoutTableView,
@@ -2962,7 +2963,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       // `Time left` has one source on this screen: `timeLeft` below, on its own minute clock (review N4).
       const info = data.exerciseInfo ?? {};
       const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe, ...(data.bodyweightExercises ? { bodyweightExercises: data.bodyweightExercises } : {}) });
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe, ...warmupInputOf(data), ...(data.bodyweightExercises ? { bodyweightExercises: data.bodyweightExercises } : {}) });
     },
 
     /**
@@ -2972,7 +2973,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     tableView(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): WorkoutTableView {
       const info = data.exerciseInfo ?? {};
       const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
-      return buildWorkoutTableView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe, ...(data.bodyweightExercises ? { bodyweightExercises: data.bodyweightExercises } : {}) });
+      return buildWorkoutTableView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe, ...warmupInputOf(data), ...(data.bodyweightExercises ? { bodyweightExercises: data.bodyweightExercises } : {}) });
     },
 
     /** `exerciseCardFacts` for any card's `⋯` and name sheet, with the built-in target RPE as the default (§2A.7). */
@@ -5493,3 +5494,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;
+
+/**
+ * (WU1–WU12) The warm-up planner's facts for the active workout's views (catalogue facts by exercise ID and the
+ * workout's main lifts), so warm-ups filled at display are planned as Start plans them.
+ */
+function warmupInputOf(data: Pick<ActiveWorkoutData, 'builderInfo' | 'mainExerciseIds'>): { warmupFacts?: Record<string, WarmupExerciseFacts | null>; mainExerciseIds?: ReadonlySet<string> } {
+  const info = data.builderInfo;
+  return {
+    ...(info === undefined ? {} : { warmupFacts: Object.fromEntries(Object.entries(info).map(([id, i]) => [id, i?.warmup ?? null])) }),
+    ...(data.mainExerciseIds === undefined ? {} : { mainExerciseIds: data.mainExerciseIds }),
+  };
+}

@@ -1,7 +1,8 @@
 import type { EquipmentInstance, Load, SessionAggregate, SessionExercise } from '@fizz/schemas';
 import { formatNumber, NBSP } from './display';
 import { isSetCountable } from './exclusions';
-import { buildPlateSetup, isBarLoaded, roundToAvailableLoad } from './equipment';
+import { buildPlateSetup, getAchievableLoads, isBarLoaded } from './equipment';
+import { planWarmups } from './warmup/plan';
 import { matchesEquipment, type HistorySession } from './progression';
 import { toMs } from './time';
 import { toScaled } from './units';
@@ -37,15 +38,8 @@ export interface WarmUpStep {
   reps: number;
 }
 
-/** Built-in ramp: the bar for 10, then about 40 %, 60 % and 80 % of the working load. Not a prescription. */
-const RAMP: readonly { pct: number; reps: number }[] = [
-  { pct: 0.4, reps: 5 },
-  { pct: 0.6, reps: 3 },
-  { pct: 0.8, reps: 2 },
-];
-
 /**
- * Bars that get the warm-up ramp: the barbell and the trap bar (heavy
+ * Bars that get the warm-up suggestion: the barbell and the trap bar (heavy
  * compound lifts). Not the EZ bar: its curls and skull crushers aren't
  * ramped (review ben-kit S2).
  */
@@ -54,30 +48,29 @@ function rampsWarmUp(eq: EquipmentInstance | null | undefined): eq is Extract<Eq
 }
 
 /**
- * Warm-up ramp for a barbell (or trap-bar) working load: every step rounded
- * down to a load this bar can make, strictly lighter than the working load,
- * no repeats. Empty when the working load is the bar or close to it.
+ * Warm-up suggestion for a barbell (or trap-bar) working load when the plan has no warm-up sets of its own: the
+ * shared warm-up planner's heavy-compound ladder (WU4/WU5 from the set's reps; WU8 snapping down on this bar, never
+ * reaching the working load; a trap bar starts from the floor, WU9). Empty when nothing fits below the working load.
  */
-export function warmUpRamp(workingLoad: Load | null, eq: EquipmentInstance | null): WarmUpStep[] {
+export function warmUpRamp(workingLoad: Load | null, eq: EquipmentInstance | null, reps: number | null = null): WarmUpStep[] {
   if (workingLoad === null || !rampsWarmUp(eq) || workingLoad.unit !== eq.unit || workingLoad.convention !== 'total') return [];
-  const work = toScaled(workingLoad.value);
-  const bar = toScaled(eq.barMass);
-  if (work <= bar) return [];
-  const steps: WarmUpStep[] = [{ load: eq.barMass, reps: 10 }];
-  for (const r of RAMP) {
-    const rounded = roundToAvailableLoad({ value: workingLoad.value * r.pct, unit: eq.unit, convention: 'total' }, eq, 'down');
-    if (!rounded.ok) continue;
-    const v = toScaled(rounded.load.value);
-    const last = toScaled(steps[steps.length - 1]?.load ?? 0);
-    if (v > last && v < work) steps.push({ load: rounded.load.value, reps: r.reps });
-  }
-  return steps;
+  if (toScaled(workingLoad.value) <= toScaled(eq.barMass)) return [];
+  return planWarmups({
+    cls: 'heavy',
+    reps: reps ?? 5,
+    load: workingLoad.value,
+    warmed: false,
+    firstOfSession: true,
+    floorStart: eq.kind === 'trap_bar',
+    barMass: eq.kind === 'barbell' ? eq.barMass : null,
+    loads: getAchievableLoads(eq).loads,
+  });
 }
 
-/** `Warm-up suggestion: bar × 10 · 40 × 5 · 60 × 3 · 80 × 2 (kg)` */
+/** `bar × 5 · 40 × 5 · 60 × 3 · 80 × 2 (kg)` */
 export function warmUpText(steps: readonly WarmUpStep[], eq: EquipmentInstance): string | null {
   if (steps.length < 2 || !rampsWarmUp(eq)) return null;
-  const parts = steps.map((s, i) => `${i === 0 ? 'bar' : formatNumber(s.load)}${NBSP}×${NBSP}${String(s.reps)}`);
+  const parts = steps.map((s) => `${toScaled(s.load) === toScaled(eq.barMass) ? 'bar' : formatNumber(s.load)}${NBSP}×${NBSP}${String(s.reps)}`);
   return `${parts.join(' · ')} (${eq.unit})`;
 }
 

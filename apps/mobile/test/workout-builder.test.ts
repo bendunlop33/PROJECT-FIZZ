@@ -483,7 +483,8 @@ describe('14 days, discard, versions, restart (WB18, WB25, BD4, rule 5)', () => 
     model = new StepModel([pushStub(PUSH.slice(1)), () => replyWith('Dumbbells only.')]);
     const r = await ask(s, 'no barbell', { kind: 'draft', draftId, name: 'Push · 45 min' });
     expect(buildOf(model.requests[0] as ModelRequest).draft).toMatchObject({ name: 'Push · 45 min', version: 1 });
-    expect(r.cards[0]?.record.detail).toMatchObject({ kind: 'build_workout', versionN: 2, parentN: 1, lines: [{ change: 'remove', text: '− Bench press' }] });
+    expect(r.cards[0]?.record.detail).toMatchObject({ kind: 'build_workout', versionN: 2, parentN: 1, lines: [{ change: 'remove', text: '− Bench press' }, { change: 'edit', text: '✎ Incline dumbbell press · warm-ups' }] });
+    // (WU2) With the bench gone, the incline press leads the chest work: it now gets warm-ups of its own, and the diff says so.
     const p2 = await page(s, draftId, gymId);
     expect(p2.view.basis).toMatchObject({ kind: 'coach_draft', versionN: 2 });
     expect(p2.view.rows.map((r2) => r2.name)).not.toContain('Bench press');
@@ -1024,8 +1025,9 @@ describe('F21: the same exercise twice in a coach workout (Ben, 13 Oct)', () => 
     expect(detail).not.toBeNull();
     h.clockMs += 2 * DAY;
     const again = await s.overview.load({ target: { kind: 'session', sourceSessionId: sessionId }, gymId });
-    // Repeating it: each Lateral raise slot repeats its own sets (2 × 16 at 5, 4 × 10 at 10).
-    expect(again?.view.rows.filter((r) => r.name === 'Lateral raise').map((r) => [r.detail.replaceAll('\u00a0', ' '), r.load.value])).toEqual([['2 × 16', '5'], ['4 × 10', '10']]);
+    // Repeating it: each Lateral raise slot repeats its own sets (2 × 16 at 5, 4 × 10 at 10). The first, the workout's
+    // first exercise, has the planner's one warm-up (WU7); the second is warmed by then (WU2): none.
+    expect(again?.view.rows.filter((r) => r.name === 'Lateral raise').map((r) => [r.detail.replaceAll('\u00a0', ' '), r.load.value])).toEqual([['2 × 16 · 1 warm-up', '5'], ['4 × 10', '10']]);
   });
 });
 

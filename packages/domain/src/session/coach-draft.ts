@@ -44,6 +44,7 @@ import type { SwapPlan } from './swap-plan';
 import { liveEdits, planWithTodayEdits, type TodayEditsInput, type TodayPlanOutput } from './today-edits';
 import { PACE_DEFAULT_CHANGEOVER_S, PACE_DEFAULT_SET_S } from './duration';
 import { CARDIO_DEFAULT_S } from '../cardio';
+import { isWarmed, warmupProfileOf, warmupShape, type WarmupProfile } from '../warmup/plan';
 
 /**
  * Coach-built workouts (workout-builder.md v1.0). Pure.
@@ -320,6 +321,8 @@ interface Pending {
   superset: 'A' | 'B' | 'C' | null;
   /** BD19: inserted by code as Ben's main lift. */
   main?: boolean;
+  /** (WU1–WU12) The warm-ups the coach gave (when Ben asked for a number); null = the planner's. */
+  askedWarmups: number | null;
 }
 
 /**
@@ -374,7 +377,7 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
     const ex = exercise;
     // The same exercise listed again is its own slot (F21, Ben 13 Oct: a light warm-up early, working sets later).
     // BD9: a substitute's load comes from the rule (the coach's basis was for another exercise).
-    pending.push({ exercise: ex, catalogueId: ex.catalogueKey ?? p.catalogueId, slot: shapeOf(swapped ? { ...p, load: null, topSet: p.topSet === null ? null : { ...p.topSet, load: null } } : p, ex, ctx, add, swapped), superset: p.superset });
+    pending.push({ exercise: ex, catalogueId: ex.catalogueKey ?? p.catalogueId, slot: shapeOf(swapped ? { ...p, load: null, topSet: p.topSet === null ? null : { ...p.topSet, load: null } } : p, ex, ctx, add, swapped), superset: p.superset, askedWarmups: p.warmups === null ? null : clampInt(p.warmups, 0, L.maxWarmups) });
   }
   insertMainLift(args, ctx, pending, add);
   if (pending.length === 0) return { status: 'unusable', plan: null, checks };
@@ -401,6 +404,13 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
           pending.map((x) => ({ exerciseId: x.exercise.id })),
           (id) => pending.find((x) => x.exercise.id === id)?.exercise.mechanic === 'compound',
         );
+  // (WU1–WU12) Warm-ups by the shared planner, now each exercise's place, main lift and superset are known.
+  const partnerStarted = (i: number): boolean => {
+    const x = pending[i];
+    const g = x === undefined ? null : x.superset;
+    return g !== null && keep.has(g) && pending[i - 1]?.superset === g;
+  };
+  const warm = draftWarmups(pending, main, partnerStarted);
   const slots: DraftSlot[] = pending.map((x, i) => {
     const prior = ctx.previous?.slots.find((s) => s.exerciseId === x.exercise.id && !used.has(s.slotKey)) ?? null;
     const slotKey = prior?.slotKey ?? ctx.newSlotKey(x.exercise.id, i);
@@ -412,13 +422,37 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
       order: i,
       main: main[i] ?? false,
       supersetGroup: x.superset !== null && keep.has(x.superset) ? x.superset : null,
-      setTemplates: x.slot.setTemplates,
+      setTemplates: warm[i] ?? x.slot.setTemplates,
       ...(x.slot.checkedOn !== undefined ? { checkedOn: x.slot.checkedOn } : {}),
       ...(x.slot.checkedHistoryVersion !== undefined ? { checkedHistoryVersion: x.slot.checkedHistoryVersion } : {}),
     };
   });
   const leftOut = checks.some((c) => c.leftOut);
   return { status: leftOut ? 'partial' : 'ok', plan: { slots }, checks };
+}
+
+/**
+ * (WU1–WU12) Each slot's warm-up templates from the shared planner, by its place in the workout: warmed (WU2) by an
+ * earlier exercise's muscle group or pattern or as a superset's later member, the main lift's ladder (WU4/WU5), the
+ * first exercise's extra step (WU6). The coach's count (Ben asked for a number) is kept; otherwise the planner's.
+ * Reps only: Start plans the loads (and reps again) on the gym's real loads from the first working load. Timed and
+ * cardio slots keep theirs. Null = unchanged.
+ */
+function draftWarmups(pending: readonly Pending[], main: readonly boolean[], partnerStarted: (i: number) => boolean): (DraftSetTemplate[] | null)[] {
+  const earlier: WarmupProfile[] = [];
+  return pending.map((x, i) => {
+    const ex = x.exercise;
+    const profile = warmupProfileOf(ex, { main: main[i] ?? false, itemKind: ex.compatibleEquipment[0] ?? null, convention: ex.defaultLoadConvention });
+    const warmed = isWarmed(profile, earlier, partnerStarted(i));
+    earlier.push(profile);
+    const templates = x.slot.setTemplates;
+    const work = templates.find((t) => t.setType === 'top') ?? templates.find((t) => t.setType !== 'warmup');
+    if (ex.measurement !== 'reps' || work?.reps == null) return null;
+    const reps = warmupShape({ cls: profile.cls, reps: work.reps.min, warmed, firstOfSession: i === 0, floorStart: profile.floorStart, bar: ex.compatibleEquipment[0] === 'barbell' }, x.askedWarmups).slice(-L.maxWarmups);
+    const restS = work.restS;
+    const warmups: DraftSetTemplate[] = reps.map((r) => ({ setType: 'warmup', reps: { min: r, max: r }, durationS: null, targetRpe: null, restS }));
+    return [...warmups, ...templates.filter((t) => t.setType !== 'warmup')];
+  });
 }
 
 /** One exercise's sets, clamped to §8.3, each change with its check line. */
@@ -583,7 +617,8 @@ function insertMainLift(args: ProposeWorkoutArgs, ctx: WorkoutProposalContext, p
   const first = args.exercises[0];
   const shapeFrom: ProposedExercise = {
     catalogueId: ex.catalogueKey ?? ex.id,
-    warmups: first?.warmups ?? null,
+    // (WU1–WU12) The main lift's warm-ups are the planner's (the coach's count was for its own first lift).
+    warmups: null,
     workingSets: first?.workingSets ?? 3,
     reps: first?.reps ?? null,
     workSeconds: null,
@@ -594,7 +629,7 @@ function insertMainLift(args: ProposeWorkoutArgs, ctx: WorkoutProposalContext, p
     load: null,
   };
   const quiet = (): void => undefined;
-  pending.unshift({ exercise: ex, catalogueId: ex.catalogueKey ?? ex.id, slot: shapeOf(shapeFrom, ex, ctx, quiet), superset: null, main: true });
+  pending.unshift({ exercise: ex, catalogueId: ex.catalogueKey ?? ex.id, slot: shapeOf(shapeFrom, ex, ctx, quiet), superset: null, main: true, askedWarmups: null });
   add({ kind: 'main_kept', catalogueId: ex.catalogueKey ?? null, exerciseId: ex.id, text: `${ex.name} kept as main lift`, leftOut: false });
 }
 

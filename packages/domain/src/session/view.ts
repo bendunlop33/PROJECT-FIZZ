@@ -3,7 +3,7 @@ import { restOverrunMs, restRemainingMs } from '../rest';
 import { toMs } from '../time';
 import { carriedLoad, type CarryOptions } from './carry';
 import { draftAsValues } from './pending-values';
-import { warmupRampLoads } from './warmup-ramp';
+import { warmupRampSteps } from './warmup-ramp';
 
 /**
  * Derived phase (flow §3.1). "Result saved" is not a stored phase: the commit
@@ -135,7 +135,7 @@ const EMPTY: SetValues = { load: null, reps: null, durationS: null, rpe: null, r
  * Ben's last logged set carries, rule 2a) → last set of this exercise this
  * session → matching set of the last comparable session → empty.
  * A warm-up with no load target takes the ramp up to the working load
- * (`warmupRampLoads`); its history is only this session's warm-ups.
+ * (`warmupRampSteps`, the shared warm-up planner); its history is only this session's warm-ups.
  * Effort is never prefilled.
  */
 export function prefillDraft(
@@ -159,9 +159,11 @@ export function prefillDraft(
   const comparable = warmup ? null : ((lastComparable.find((c) => c.index === set.index) ?? lastComparable[lastComparable.length - 1])?.values ?? null);
   // History in another unit or convention is never copied in as-is (review B1).
   const lastThere = comparable && ex ? { ...comparable, load: compatibleLoad(comparable.load, ex) } : comparable;
-  // A warm-up's load: its own target, else the ramp to the working load (`warmupRampLoads`), else this session's last warm-up.
+  // A warm-up's load: its own target, else the ramp to the working load (`warmupRampSteps`, the shared warm-up planner), else this session's last warm-up.
   const fallback = warmup ? lastHere : (lastHere ?? lastThere);
-  const ramp = warmup && set.planned.load === null ? (warmupRampLoads(state, set.sessionExerciseId, (w) => prefillDraft(state, w.id, lastComparable, opts).values.load).get(set.id) ?? null) : null;
+  // (WU1–WU12) A warm-up with no load, or one planned at or above today's working load, takes the planner's step.
+  const step = warmup ? (warmupRampSteps(state, set.sessionExerciseId, (w) => prefillDraft(state, w.id, lastComparable, opts).values.load, opts.warmup).get(set.id) ?? null) : null;
+  const ramp = step?.load ?? null;
 
   const p = set.planned;
   const plannedDistance = p.distanceM ?? null;
@@ -172,15 +174,16 @@ export function prefillDraft(
     return {
       values: {
         ...EMPTY,
-        load: carry ?? p.load ?? ramp ?? fallback?.load ?? null,
-        reps: p.reps?.max ?? fallback?.reps ?? null,
+        load: carry ?? ramp ?? p.load ?? fallback?.load ?? null,
+        // A warm-up the planner fills shows its step's reps (WU10), the same as Start stores.
+        reps: step?.reps ?? p.reps?.max ?? fallback?.reps ?? null,
         durationS: p.durationS ?? fallback?.durationS ?? null,
         ...(distanceM !== null ? { distanceM } : {}),
       },
       source: carry !== null ? 'last_set' : 'target',
     };
   }
-  if (ramp !== null) return { values: { ...EMPTY, load: ramp, reps: fallback?.reps ?? null }, source: 'target' };
+  if (ramp !== null) return { values: { ...EMPTY, load: ramp, reps: step?.reps ?? fallback?.reps ?? null }, source: 'target' };
   if (lastHere) return { values: { ...lastHere, rpe: null, rir: null }, source: 'this_session' };
   if (lastThere) return { values: { ...lastThere, rpe: null, rir: null }, source: 'last_session' };
   return { values: EMPTY, source: 'none' };

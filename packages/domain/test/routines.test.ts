@@ -329,7 +329,8 @@ describe('planRoutineStart (start a routine with next-session targets)', () => {
   it('never above the equipment’s max: rounded down, with a note', () => {
     const small = barbell({ plates: [{ mass: 20, count: 2 }] });
     const out = planRoutineStart({ ...base, gymEquipment: [small, stack()], targets: new Map([[BENCH, plan(105, [6, 8])]]) });
-    expect(setsFor(out.aggregate, BENCH).map((x) => x.planned.load?.value)).toEqual([60, 60, 60]);
+    // The warm-up capped at 60 would equal the working load: Start plans it below (WU8, rule 4): the bar.
+    expect(setsFor(out.aggregate, BENCH).map((x) => x.planned.load?.value)).toEqual([20, 60, 60]);
     expect(out.notes).toContainEqual({ exerciseName: 'Bench press', text: 'Max here 60 kg · plan 105 kg', tone: 'info' });
   });
 
