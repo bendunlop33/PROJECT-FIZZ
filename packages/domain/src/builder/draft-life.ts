@@ -131,6 +131,10 @@ export interface BuilderDraftEdit {
   gymId?: string | null;
   /** The set-up Undo restores, when it isn't the current one as is (`Gym changed`: it marks the gym kept). */
   undoSetup?: BuilderSetup;
+  /** (D8) The coach's applied next-workout changes this edit lands (their apply IDs) and their line; on the Undo. */
+  undoCoach?: { applies: string[]; text: string };
+  /** (D8) Op IDs recorded with this one (each other change landed in the same edit), so each lands once. */
+  alsoOpIds?: readonly string[];
 }
 
 /**
@@ -170,10 +174,10 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
     ...(keyMoved && e.rebuild?.key !== undefined ? { builderKey: e.rebuild.key } : {}),
     versions,
     currentVersion,
-    opIds: [...current.opIds, e.opId].slice(-MAX_WORKOUT_DRAFT_OPS),
+    opIds: [...current.opIds, e.opId, ...(e.alsoOpIds ?? [])].slice(-MAX_WORKOUT_DRAFT_OPS),
     version: nextVersion,
     updatedAtUtc: e.at.utc,
-    undo: e.undoable ? { opId: e.opId, atVersion: nextVersion, snapshot: before } : null,
+    undo: e.undoable ? { opId: e.opId, atVersion: nextVersion, snapshot: before, ...(e.undoCoach === undefined ? {} : { coach: { applies: [...e.undoCoach.applies], text: e.undoCoach.text.slice(0, 160) } }) } : null,
   };
   return { kind: 'write', next, expectedVersion: current.version };
 }
@@ -186,7 +190,7 @@ export type BuilderUndoRefusal = 'nothing' | 'changed_since';
  * while the draft is still at the version that edit left. A rebuild's Undo
  * restores both pages (the previous version becomes current again).
  */
-export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoOpId: string; at: ZonedTimestamp; /** The name for the restored set-up (code-made). */ name?: string }): DraftLifeChange | { kind: 'refused'; reason: BuilderUndoRefusal; current: WorkoutDraft } {
+export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoOpId: string; at: ZonedTimestamp; /** The name for the restored set-up (code-made). */ name?: string; /** (D8) Op IDs recorded with this one (the Undo of each change landed together). */ alsoOpIds?: readonly string[] }): DraftLifeChange | { kind: 'refused'; reason: BuilderUndoRefusal; current: WorkoutDraft } {
   if (current.opIds.includes(u.opId)) return { kind: 'duplicate', current };
   if (closedOrDue(current, u.at.utc)) return { kind: 'closed', current };
   const undo = current.undo ?? null;
@@ -207,7 +211,7 @@ export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoO
     ...(back.key === undefined ? {} : { builderKey: back.key }),
     versions,
     currentVersion: rebuilt ? back.currentVersion : current.currentVersion,
-    opIds: [...current.opIds, u.opId].slice(-MAX_WORKOUT_DRAFT_OPS),
+    opIds: [...current.opIds, u.opId, ...(u.alsoOpIds ?? [])].slice(-MAX_WORKOUT_DRAFT_OPS),
     version: current.version + 1,
     updatedAtUtc: u.at.utc,
     undo: null,

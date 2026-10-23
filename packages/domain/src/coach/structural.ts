@@ -212,6 +212,8 @@ export function structuralApplyOf(editOpId: string): string | null {
 export interface AppliedStructural {
   applyActionId: string;
   ops: readonly StructuralOp[];
+  /** (D8) When Ben applied it (UTC): several land in the order he applied them. Absent: unknown (kept as listed). */
+  atUtc?: string;
   undone: boolean;
   /** A workout has started from the plan since this Apply: it is used and left alone. */
   used: boolean;

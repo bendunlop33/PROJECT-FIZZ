@@ -184,6 +184,121 @@ describe('the coach’s next-workout change lands on Your workout (D8)', () => {
   });
 });
 
+describe('D8 review fixes (batch23 S1, S2, S5, M1)', () => {
+  /** Ben asks for a second swap (`fromName`), avoiding what the first brought in; the first option otherwise. */
+  async function proposeAnother(s: AppServices, sessionId: string, fromName: string, avoid: string): Promise<ActionRecord> {
+    const agg = (await s.workout.load(sessionId))?.aggregate;
+    const from = agg?.exercises.find((e) => e.exerciseName === fromName);
+    model = new StepModel([
+      () => toolCall('get_substitutions', { exerciseId: from?.exerciseId }),
+      (req) => {
+        const options = (outputsOf(req)[0]?.data as { options: { exerciseId: string; name: string }[] }).options.filter((o) => o.name !== avoid);
+        return toolCall('propose_next_workout_change', { sourceSessionId: sessionId, sourceVersion: agg?.session.version ?? 1, changes: [{ change: 'swap', fromExerciseId: from?.exerciseId, toExerciseId: options[0]?.exerciseId }], reason: 'Some variety.' });
+      },
+      () => replyWith('Here is another swap.'),
+    ]);
+    const r = await ask(s, `Swap the ${fromName.toLowerCase()} too next time`);
+    const card = r.cards.find((c) => c.record.detail.kind === 'propose_next_workout_change')?.record;
+    if (card?.detail.kind !== 'propose_next_workout_change' || card.status !== 'proposed') throw new Error('no second card');
+    return card;
+  }
+
+  it('two applied changes land together as one edit: one line with both, kept on the page with Undo; Undo takes both back and both cards read Undone (S5, S1)', async () => {
+    const { s, sessionId } = await pushDay();
+    const first = await proposeSwap(s, sessionId, 'Triceps pushdown');
+    const firstId = await apply(s, first.card);
+    h.clockMs += 60_000;
+    const second = await proposeAnother(s, sessionId, 'Lateral raise', first.toName);
+    const secondId = await apply(s, second);
+    const op = second.detail.kind === 'propose_next_workout_change' ? second.detail.ops?.[0] : undefined;
+    const secondTo = op?.change === 'swap' ? op.toName : '';
+    const r = await s.builder.openTarget({ kind: 'session', sourceSessionId: sessionId }, 'open-both');
+    const landed = opened(r);
+    expect(names(landed)).toEqual(['Bench press', secondTo, first.toName]);
+    expect(r.status === 'written' ? r.toast : null).toEqual({ text: `✦ Triceps pushdown → ${first.toName} · Lateral raise → ${secondTo}`, undoOpId: coachLandOpId(firstId), why: null });
+    // Reopened (the toast gone): the line and its Undo are still on the page.
+    const again = await s.builder.read(landed.draftId);
+    expect(again?.coachLanded).toEqual({ text: `✦ Triceps pushdown → ${first.toName} · Lateral raise → ${secondTo}`, undoOpId: coachLandOpId(firstId) });
+    const u = opened(await s.builder.undo(landed.draftId, coachLandOpId(firstId), 'page-undo'));
+    expect(names(u)).toEqual(PUSH);
+    expect(u.coachLanded).toBeNull();
+    const t1 = (await s.coach.loadThread(first.threadId)) === null ? null : await cardOf(s, first.threadId);
+    expect(t1?.status.word).toBe('Undone');
+    expect((await s.coach.getAction(secondId))?.undoneBy).not.toBeNull();
+  });
+
+  it('the chat card’s Undo of one of two changes landed together takes the landing back; the other card reads Undone too, never stuck as Applied (S3)', async () => {
+    const { s, sessionId } = await pushDay();
+    const first = await proposeSwap(s, sessionId, 'Triceps pushdown');
+    const firstId = await apply(s, first.card);
+    h.clockMs += 60_000;
+    const second = await proposeAnother(s, sessionId, 'Lateral raise', first.toName);
+    const secondId = await apply(s, second);
+    const landed = opened(await s.builder.openTarget({ kind: 'session', sourceSessionId: sessionId }, 'open-both'));
+    expect(names(landed)).not.toEqual(PUSH);
+    const undone = await s.coach.undo(secondId, `undo:${secondId}`);
+    expect(undone.result.status).toBe('written');
+    const back = await s.builder.read(landed.draftId);
+    expect(back === null ? null : names(back)).toEqual(PUSH);
+    expect((await s.coach.getAction(firstId))?.undoneBy).not.toBeNull();
+    expect((await cardOf(s, first.threadId))?.status.word).toBe('Undone');
+  });
+
+  it('a landing taken back on Your workout whose Apply wasn’t marked (a force-close between the two writes) is marked on the next open; it never lands again (S2)', async () => {
+    const { s, sessionId } = await pushDay();
+    const { threadId, card } = await proposeSwap(s, sessionId, 'Triceps pushdown');
+    const applyId = await apply(s, card);
+    const landed = opened(await s.builder.openTarget({ kind: 'session', sourceSessionId: sessionId }, 'open-1'));
+    // The second write (the coach record) never happens.
+    const real = Object.getOwnPropertyDescriptor(s.coach, 'noteNextWorkoutChangeUndone');
+    if (real === undefined) throw new Error('no coach record write');
+    s.coach.noteNextWorkoutChangeUndone = () => Promise.resolve();
+    opened(await s.builder.undo(landed.draftId, coachLandOpId(applyId), 'page-undo'));
+    Object.defineProperty(s.coach, 'noteNextWorkoutChangeUndone', real);
+    expect((await cardOf(s, threadId))?.status.word).toBe('Applied');
+    // Next open (another day too): put right, nothing lands.
+    h.clockMs += DAY;
+    expect(names(opened(await s.builder.openTarget({ kind: 'session', sourceSessionId: sessionId }, 'open-2')))).toEqual(PUSH);
+    expect((await cardOf(s, threadId))?.status.word).toBe('Undone');
+  });
+
+  it('undone in chat but still on Your workout (a force-close before the draft went back): the next open takes it off (S2)', async () => {
+    const { s, sessionId } = await pushDay();
+    const { threadId, card } = await proposeSwap(s, sessionId, 'Triceps pushdown');
+    const applyId = await apply(s, card);
+    const landed = opened(await s.builder.openTarget({ kind: 'session', sourceSessionId: sessionId }, 'open-1'));
+    // Only the coach record's write happens.
+    await s.coach.noteNextWorkoutChangeUndone(applyId);
+    expect((await cardOf(s, threadId))?.status.word).toBe('Undone');
+    expect(names(opened(await s.builder.openTarget({ kind: 'session', sourceSessionId: sessionId }, 'open-2')))).toEqual(PUSH);
+    expect((await s.builder.read(landed.draftId))?.coachLanded).toBeNull();
+  });
+
+  it('a Reload (the saved workout renamed) lands the coach’s change again in the same write: the card’s Applied stays true (M1)', async () => {
+    const { s, gymId, sessionId } = await pushDay();
+    const saved = await s.routines.saveFrom({ from: { kind: 'session', sessionId }, name: 'Push A', addToRotation: true, opId: 'save-push-a' });
+    if (!saved.ok) throw new Error(saved.message);
+    const day = opened(await s.builder.openTarget({ kind: 'routine', routineId: saved.routine.id }, 'open-push-a'));
+    const done = await s.builder.start(day.draftId, { opId: 'start-push-a', expectedVersion: day.version, gymId, checkIn: null });
+    if (!done.ok) throw new Error(done.message);
+    await finishWorkout(h, s, done.sessionId);
+    h.clockMs += DAY;
+    const { card, toName } = await proposeSwap(s, done.sessionId, 'Triceps pushdown');
+    await apply(s, card);
+    const landed = opened(await s.builder.openTarget({ kind: 'routine', routineId: saved.routine.id }, 'open-landed'));
+    expect(names(landed)).toEqual(['Bench press', 'Lateral raise', toName]);
+    const r = await s.routines.editor({ routineId: saved.routine.id, gymId: null });
+    expect((await s.routines.rename({ routineId: saved.routine.id, name: 'Push B', expectedVersion: r?.routine?.version ?? 0, opId: 'rename-1' })).ok).toBe(true);
+    const read = await s.builder.read(landed.draftId);
+    expect(read?.planDayChanged?.silent).toBe(false);
+    const reloaded = opened(await s.builder.reloadPlanDay(landed.draftId, { opId: 'reload-1', expectedVersion: read?.version ?? 0 }));
+    expect(names(reloaded)).toEqual(['Bench press', 'Lateral raise', toName]);
+    expect(await s.builder.landCoachChanges(landed.draftId)).toBeNull();
+    // Reload's Undo puts back what was there (the change included).
+    expect(names(opened(await s.builder.undo(landed.draftId, 'reload-1', 'undo-reload')))).toEqual(['Bench press', 'Lateral raise', toName]);
+  });
+});
+
 describe('Today: a plan day’s card and Up next start it in one tap (D8)', () => {
   const ex = (catalogueId: string) => ({ catalogueId, warmups: null, workingSets: 3, reps: { min: 8, max: 10 }, workSeconds: null, targetRpe: 8, topSet: null, restSeconds: null, superset: null, load: null });
   const DAYS: [string, string, string[]][] = [

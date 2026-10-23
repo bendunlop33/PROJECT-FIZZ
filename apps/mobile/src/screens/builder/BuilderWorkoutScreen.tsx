@@ -585,6 +585,23 @@ export function BuilderWorkoutScreen() {
           {earlier.map((e) => (
             <StatusLine key={e.draftId} icon="clock" tone="info" text={editsFromText(e.localDate)} action={<TextButton label={WORKOUT_COPY.useEdits} onPress={() => { navigation.dispatch(builderPage('BuilderWorkout', { draftId: e.draftId })); }} />} />
           ))}
+          {/* (D8; review batch23 S1) The coach's change Ben applied in chat, landed here: it stays with its Undo while it's the last change, not only as a toast. */}
+          {snap.coachLanded !== null && toast?.undoOpId !== snap.coachLanded.undoOpId ? (
+            <StatusLine
+              icon="sparkles"
+              tone="info"
+              text={snap.coachLanded.text}
+              action={
+                <TextButton
+                  label={WORKOUT_COPY.undo}
+                  onPress={() => {
+                    const landed = snapRef.current?.coachLanded ?? null;
+                    if (landed !== null) void undo(landed.undoOpId);
+                  }}
+                />
+              }
+            />
+          ) : null}
           {snap.planDayChanged !== null && !snap.planDayChanged.silent ? (
             <StatusLine
               icon="arrow.clockwise"

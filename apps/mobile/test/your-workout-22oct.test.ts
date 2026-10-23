@@ -464,6 +464,7 @@ describe('the Time row’s view', () => {
     canSave: false,
     leftOut: [],
     time,
+    coachLanded: null,
   });
 
   it('the note is the biggest change (exercises, else sets, else rests); the detail lists them all; steps stop at 15 and 180', () => {

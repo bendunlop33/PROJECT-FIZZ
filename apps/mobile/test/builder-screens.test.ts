@@ -165,6 +165,7 @@ function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): Build
     canSave: false,
     leftOut: [],
     time: null,
+    coachLanded: null,
     ...over,
   };
 }

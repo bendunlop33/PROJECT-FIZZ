@@ -551,6 +551,12 @@ export const BuilderUndoSchema = z.object({
     /** The gym before `Gym changed`; Undo puts it back. Absent: unchanged. */
     gymId: IdSchema.nullable().optional(),
   }),
+  /**
+   * (Ben, 23 Oct, D8; review batch23 S1, S5) This edit landed the coach's next-workout changes Ben applied in chat (their
+   * apply action IDs, landed together) and the line Your workout shows for them (`✦ … · Undo`). Undo takes them all
+   * back and undoes those Applies. Absent: not a landing.
+   */
+  coach: z.object({ applies: z.array(IdSchema).min(1).max(20), text: z.string().min(1).max(160) }).optional(),
 });
 export type BuilderUndo = z.infer<typeof BuilderUndoSchema>;
 

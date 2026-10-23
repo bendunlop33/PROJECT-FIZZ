@@ -1935,7 +1935,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       for (const a of await coachStore().listStructural(p.id)) {
         if (a.status !== 'committed' || a.author !== 'ben' || a.detail.kind !== 'propose_next_workout_change' || a.detail.landsOn !== 'your_workout' || a.detail.basis === undefined || draftBasisKey(a.detail.basis) !== key) continue;
         const used = a.undoneBy === null && (await coachStore().basisStartedSince(p.id, basis, a.createdAt.utc).catch(() => true));
-        out.push({ applyActionId: a.actionId, ops: a.detail.ops ?? [], undone: a.undoneBy !== null, used });
+        out.push({ applyActionId: a.actionId, ops: a.detail.ops ?? [], atUtc: a.createdAt.utc, undone: a.undoneBy !== null, used });
       }
       return out;
     },
