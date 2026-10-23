@@ -7,8 +7,10 @@ import type { MainFocus } from './types';
  *
  * - A back-off's load is worked out from its own reps and target RPE (the anchor's e1RM, Epley with RIR = 10 − RPE,
  *   as every other set: `loadForSet`), then rounded down to what this gym can load. Not a fixed 90 % or 95 %.
- * - Sanity band below the top set, by main focus: Strength 2–8 %, Balanced 4–10 %, Muscle 8–15 %. A worked-out load
- *   outside it is moved to its nearest edge, so a back-off is never at or above the top set.
+ * - Sanity band below the top set, by main focus: Strength 2–8 %, Balanced 4–10 %, Muscle 8–15 %. Its top edge is a
+ *   limit: a back-off is never within `band.min` of the top. Its lower edge is only a check (review B3, SP1): a
+ *   back-off of many reps or a low RPE keeps the lighter load its reps and RPE give, never one heavier than Ben can do
+ *   for them (`belowBackoffBand` says when it's outside).
  * - When today's top is lowered (Ben types a lighter top, the coach lowers it, a pain hold), the back-offs drop by
  *   the same %, rounded down (`lowerWithTop`). Raising the top never raises them.
  * - Assisted and added-weight lifts have no formula: their back-offs keep the working kg, as before (§3.1.6).
@@ -47,16 +49,24 @@ export interface BackoffInput {
 }
 
 /**
- * `backoffLoad`: one back-off's load before rounding: from its reps and RPE, held inside the focus's band below `top`.
+ * `backoffLoad`: one back-off's load before rounding: from its reps and RPE, never within `band.min` of `top`.
+ * Never moved up to the band's lower edge (review B3): that would ask for more than its reps and RPE allow.
  * Round it down on the item (`roundDownHere`) after.
  */
 export function backoffLoad(input: BackoffInput): number | null {
   const raw = loadForSet(input.anchorE1rm, input.working, input.reps, input.rpe);
   if (raw === null || input.anchorE1rm === null || input.top === null || !Number.isFinite(input.top) || input.top <= 0) return raw;
   const band = BACKOFF_BANDS[input.focus ?? DEFAULT_MAIN_FOCUS];
-  const highest = input.top * (1 - band.min);
-  const lowest = input.top * (1 - band.max);
-  return tidy(Math.min(highest, Math.max(lowest, raw)));
+  return tidy(Math.min(input.top * (1 - band.min), raw));
+}
+
+/**
+ * `belowBackoffBand`: whether a back-off's load sits further below `top` than the focus's band (the lower edge as a
+ * check, review B3, SP1). Its load stays what its reps and RPE give; this only says it's outside the band.
+ */
+export function belowBackoffBand(load: number | null, top: number | null, focus?: MainFocus): boolean {
+  if (load === null || top === null || !(top > 0)) return false;
+  return load < top * (1 - BACKOFF_BANDS[focus ?? DEFAULT_MAIN_FOCUS].max) - 1e-9;
 }
 
 /**

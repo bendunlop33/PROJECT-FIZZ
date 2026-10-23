@@ -52,14 +52,15 @@ describe('D4: the band by focus', () => {
     expect(BACKOFF_BANDS).toEqual({ strength: { min: 0.02, max: 0.08 }, balanced: { min: 0.04, max: 0.1 }, muscle: { min: 0.08, max: 0.15 } });
   });
 
-  it('from reps and RPE (Epley, RIR = 10 − RPE): 100 × 6 @ 8 → 8 @ 8 = 95, inside Balanced and Strength; Muscle moves it to 8 % below', () => {
+  it('from reps and RPE (Epley, RIR = 10 − RPE): 100 × 6 @ 8 → 8 @ 8 = 95, inside Balanced and Strength; Muscle holds it 8 % below', () => {
     const e1rm = 100 * (1 + 8 / 30);
     expect(backoffLoad({ anchorE1rm: e1rm, working: 100, reps: 8, rpe: 8, top: 100, focus: 'balanced' })).toBe(95);
     expect(backoffLoad({ anchorE1rm: e1rm, working: 100, reps: 8, rpe: 8, top: 100, focus: 'strength' })).toBe(95);
     expect(backoffLoad({ anchorE1rm: e1rm, working: 100, reps: 8, rpe: 8, top: 100, focus: 'muscle' })).toBe(92);
-    // An easy back-off (12 @ 6) would be ~19 % below: held at the band's floor.
-    expect(backoffLoad({ anchorE1rm: e1rm, working: 100, reps: 12, rpe: 6, top: 100, focus: 'strength' })).toBe(92);
-    expect(backoffLoad({ anchorE1rm: e1rm, working: 100, reps: 12, rpe: 6, top: 100, focus: 'muscle' })).toBe(85);
+    // (Review B3) An easy back-off (12 @ 6) is ~17 % below: it keeps what its reps and RPE give (126.7 ÷ 1.533 =
+    // 82.6), never moved up to the band's lower edge (92 would be about RPE 10 for 12 reps).
+    expect(backoffLoad({ anchorE1rm: e1rm, working: 100, reps: 12, rpe: 6, top: 100, focus: 'strength' })).toBe(82.609);
+    expect(backoffLoad({ anchorE1rm: e1rm, working: 100, reps: 12, rpe: 6, top: 100, focus: 'muscle' })).toBe(82.609);
     // A back-off as hard as the top (6 @ 8) or harder (3 @ 9) is never at or above it.
     for (const focus of ['strength', 'balanced', 'muscle'] as MainFocus[]) {
       const b = BACKOFF_BANDS[focus];
@@ -213,12 +214,12 @@ describe('D4: when today’s top is lowered in Your workout (editSetRow)', () =>
     const harder = editSetRow(s0, bi, { kind: 'reps', reps: 6 }, loadInput({ ...rule100, mainFocus: 'strength' }));
     if (!harder.ok) throw new Error(harder.reason);
     expect(harder.slot.rows[bi]?.load).toBe(97.5);
-    // 12 @ 6 is far easier: held 8 % below (92 → 90).
+    // 12 @ 6 is far easier: what its reps and RPE give (82.6 → 82.5), not the band's lower edge (review B3).
     const r1 = editSetRow(s0, bi, { kind: 'reps', reps: 12 }, loadInput({ ...rule100, mainFocus: 'strength' }));
     if (!r1.ok) throw new Error(r1.reason);
     const easier = editSetRow(r1.slot, bi, { kind: 'rpe', rpe: 6 }, loadInput({ ...rule100, mainFocus: 'strength' }));
     if (!easier.ok) throw new Error(easier.reason);
-    expect(easier.slot.rows[bi]?.load).toBe(90);
+    expect(easier.slot.rows[bi]?.load).toBe(82.5);
   });
 
   it('a set retyped as Back-off is worked out by the rule, below the top', () => {
