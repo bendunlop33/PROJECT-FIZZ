@@ -24,6 +24,7 @@ import {
   checkRows,
   dayViews,
   goalsRowValue,
+  likeGroups,
   liftFromLine,
   otherOf,
   prefQuestions,
@@ -47,6 +48,7 @@ type Sheet =
   | { kind: 'spec' }
   | { kind: 'abs' }
   | { kind: 'other'; qId: string }
+  | { kind: 'likes' }
   | { kind: 'exercise'; day: number; key: string }
   | null;
 type Draft = PlanBuilderSession['draft'];
@@ -452,6 +454,14 @@ export function PlanSetupScreen() {
             })}
           </View>
         ))}
+        <Question label={C.likes}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+            {answers.likes.map((k) => (
+              <Chip key={k} size="min" label={`${s.nameOf(k)} ×`} selected onPress={() => { set({ ...answers, likes: answers.likes.filter((x) => x !== k) }); }} />
+            ))}
+            <Chip size="min" label={C.add} selected={false} onPress={() => { setSheet({ kind: 'likes' }); }} />
+          </View>
+        </Question>
       </>
     );
   } else if (plan !== null) {
@@ -653,6 +663,22 @@ export function PlanSetupScreen() {
           </View>
         </>
       );
+  } else if (sheet?.kind === 'likes') {
+    sheetBody = (
+      <>
+        <AppText variant="headline">{C.likes}</AppText>
+        {likeGroups((k) => s.kitOf(k) !== null).map((g) => (
+          <View key={g.muscle} style={{ gap: theme.space['1'] }}>
+            <AppText variant="sectionLabel" color="text.secondary">{g.muscle}</AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+              {g.keys.map((k) => (
+                <Chip key={k} size="min" label={s.nameOf(k)} selected={answers.likes.includes(k)} onPress={() => { set({ ...answers, likes: answers.likes.includes(k) ? answers.likes.filter((x) => x !== k) : [...answers.likes, k] }); }} />
+              ))}
+            </View>
+          </View>
+        ))}
+      </>
+    );
   } else if (sheet?.kind === 'exercise' && plan !== null) {
     const e: PbExercise | undefined = plan.days.find((d) => d.index === sheet.day)?.exercises.find((x) => x.key === sheet.key);
     sheetBody =

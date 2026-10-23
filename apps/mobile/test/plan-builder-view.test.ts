@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { pbDefaultAnswers, pbWithSessions } from '@fizz/domain';
 
-import { goalsRowValue, prefQuestions, prefsRowValue, rotatesLine, splitBoxes, targetChoices, weekRowValue } from '../src/plan-builder/plan-builder-view';
+import { goalsRowValue, likeGroups, prefQuestions, prefsRowValue, rotatesLine, splitBoxes, targetChoices, weekRowValue } from '../src/plan-builder/plan-builder-view';
 
 /** The plan builder's screen values (minimal copy; numbers from the engine). */
 
@@ -38,5 +38,11 @@ describe('plan builder view', () => {
     // No forearm exercise in the catalogue yet: never offered.
     expect(all).not.toContain('Forearms');
     expect(targetChoices((k) => k !== 'cable-woodchop')).not.toContain('Obliques');
+  });
+
+  it('Others I like lists only what this gym has, by muscle', () => {
+    const g = likeGroups((k) => !k.startsWith('barbell-'));
+    expect(g.flatMap((x) => x.keys).some((k) => k.startsWith('barbell-'))).toBe(false);
+    expect(g.find((x) => x.muscle === 'Forearms')).toBeUndefined();
   });
 });

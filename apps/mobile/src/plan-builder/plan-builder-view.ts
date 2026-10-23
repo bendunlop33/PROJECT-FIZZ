@@ -90,6 +90,7 @@ export const PB_COPY = {
   otherPick: 'Other',
   noPreference: 'No preference',
   heldForPain: 'Left out for pain',
+  likes: 'Others I like',
 } as const;
 
 export const PB_WEEKS: readonly PlanBuilderAnswers['weeks'][] = [4, 6, 8, 12];
@@ -292,3 +293,10 @@ export function otherOf(a: PlanBuilderAnswers, qId: string): string | null {
   return typeof x === 'object' ? x.other : null;
 }
 
+
+/** `Others I like ＋ Add`: every exercise the engine picks from, by muscle, that this gym has. */
+export function likeGroups(usable: (key: string) => boolean): { muscle: string; keys: string[] }[] {
+  return Object.entries(PB_EX)
+    .map(([muscle, list]) => ({ muscle, keys: list.map((x) => x.key).filter(usable) }))
+    .filter((g) => g.keys.length > 0);
+}
