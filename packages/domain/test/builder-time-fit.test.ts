@@ -278,8 +278,11 @@ describe('review R1: less time never makes an exercise Ben edited after a fit lo
       expect(mine?.rows).toEqual(of(e.workout, key)?.rows);
       expect(down.fit).not.toBeNull();
       expect(timeFitChanges(down.fit ?? fit, down.workout)).toContainEqual({ kind: 'sets', slotKey: key, exerciseId: 'curl', from: 4, to: cutTo });
-      // The others are cut harder only because less time was asked for, never to pay for his slot.
-      for (const s of slotsOf(down.workout.blocks)) if (s.key !== key) expect(workingCount(s)).toBeLessThanOrEqual(workingCount(of(w, s.key) ?? s));
+      // The others are cut harder only because less time was asked for, never to pay for his slot: together they never
+      // get sets back. (The fit is an exact knapsack, so one may get a set back when another is dropped whole, its
+      // warm-ups with it: with WU11's warm-up times, 52 min drops Triceps pushdown and gives Cable fly its 4th set.)
+      const others = (x: BuilderWorkout): number => slotsOf(x.blocks).reduce((n, s) => (s.key === key ? n : n + workingCount(s)), 0);
+      expect(others(down.workout)).toBeLessThanOrEqual(others(w));
       w = down.workout;
       live = down.fit;
     }

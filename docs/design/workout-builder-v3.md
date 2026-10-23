@@ -770,7 +770,8 @@ Never pair: the main lift [Proto, Q5]; two heavy lifts; abs with a heavy lift; t
 ### 3.6 Time estimate [Ben]
 
 `2 min setup + every exercise + 1 min between exercises`:
-- solo exercise = warm-ups (each 30 s + 1 min rest, then +1 min after the last) + each set (45 s + its rest);
+- solo exercise = warm-ups + each set (45 s + its rest);
+- warm-ups (WU11, from the shared planner; 23 Oct, Ben approved WU1–WU12 on 22 Oct) = Σ reps × 4 s + 60 s between steps (`warmupTimeS`), then the rest before the first working set (`warmupRestS`: 2 min rep band, 3 min heavy band); Ben's own warm-up rest wins. *(Was: each 30 s + 1 min rest, then +1 min after the last.)*
 - superset = its warm-ups + rounds × (45 s per exercise + rest after the round).
 
 Shown rounded as `about N min`. [Proposal, Q15] Today, the builder and the active workout's time left all use these same numbers, so they agree. Switch time between superset exercises: Q16.

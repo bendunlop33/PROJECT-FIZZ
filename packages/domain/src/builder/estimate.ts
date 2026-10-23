@@ -1,10 +1,13 @@
-import { restAfterRows, roundRestOf, defaultRestS, restRoleOf } from './rest';
+import { WARMUP_REP_S, warmupTimeS } from '../warmup/plan';
+import { restAfterRows, roundRestOf } from './rest';
 import type { BuilderBlock, BuilderInfoLookup, BuilderSlot, BuilderWorkout } from './types';
 
 /**
  * Time estimate (workout-builder-v3 §3.6, §9 Q15–Q16):
  * `2 min setup + every exercise + 1 min between exercises`;
- * - solo: warm-ups (each 30 s + its rest, then +1 min after the last) +
+ * - solo: warm-ups (WU11, 23 Oct: `warmupTimeS`, reps × 4 s + 60 s between
+ *   steps, then the rest before the first working set, `warmupRestS`: 2 min
+ *   in the rep band, 3 min in the heavy band; Ben's own warm-up rest wins) +
  *   each set (45 s + its rest);
  * - superset: its warm-ups + rounds × (45 s per exercise + rest after the
  *   round). No switch time inside a round (Q16).
@@ -16,8 +19,6 @@ export const BUILDER_TIME = {
   setupS: 120,
   betweenS: 60,
   setS: 45,
-  warmupSetS: 30,
-  afterWarmupsS: 60,
 } as const;
 
 const T = BUILDER_TIME;
@@ -27,11 +28,19 @@ export interface EstimateContext {
   restPresetsS?: readonly number[];
 }
 
+/**
+ * (WU11, Ben approved WU1–WU12 22 Oct) A slot's warm-ups: the shared planner's warm-up time (`warmupTimeS`: Σ reps ×
+ * 4 s + 60 s between steps, or Ben's own warm-up rest between them), plus the rest after the last warm-up before the
+ * first working set (`restAfterRows`: `warmupRestS`, 2 min rep band / 3 min heavy band, unless Ben set his own).
+ */
 function warmupSeconds(slot: BuilderSlot, ctx: EstimateContext, w: BuilderWorkout): number {
-  const n = slot.rows.filter((r) => r.type === 'warmup').length;
-  if (n === 0) return 0;
-  const rest = slot.restS?.warmup ?? defaultRestS('warmup', restRoleOf(slot, ctx.info), w.restLevel, ctx.restPresetsS);
-  return n * (T.warmupSetS + rest) + T.afterWarmupsS;
+  const idx = slot.rows.flatMap((r, i) => (r.type === 'warmup' ? [i] : []));
+  const last = idx[idx.length - 1];
+  if (last === undefined) return 0;
+  const steps = idx.map((i) => ({ load: slot.rows[i]?.load ?? 0, reps: slot.rows[i]?.reps ?? 0 }));
+  const own = slot.restS?.warmup;
+  const ladder = own === undefined ? warmupTimeS(steps) : steps.reduce((m, s) => m + s.reps * WARMUP_REP_S, 0) + own * (steps.length - 1);
+  return ladder + (restAfterRows(slot, ctx.info, w.restLevel, ctx.restPresetsS)[last] ?? 0);
 }
 
 /**

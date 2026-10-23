@@ -88,14 +88,18 @@ describe('estimateBuilderMinutes (§3.6, no switch time per Q16)', () => {
     expect(fly.rows.filter((r) => r.type === 'warmup')).toHaveLength(1);
     expect(crunch.rows.filter((r) => r.type === 'warmup')).toHaveLength(1);
     const w: BuilderWorkout = { restLevel: 'normal', blocks: [{ slots: [bench], auto: false }, { slots: [incline], auto: false }, { slots: [fly, crunch], auto: true }] };
-    // setup 120 + 2 × 60 between
-    // bench: 4 × (30 + 60) + 60 = 420; top 45 + 210; 3 × (45 + 180) → 1350
-    // incline: 1 × 90 + 60 = 150; 3 × (45 + 120) → 645
-    // fly + crunch: warm-ups 2 × 90 + 2 × 60 = 300; 3 rounds × (2 × 45 + 90) → 840
-    expect(estimateBuilderSeconds(w, ctx)).toBe(120 + 120 + 1350 + 645 + 840);
+    // setup 120 + 2 × 60 between. Warm-ups time by WU11 (23 Oct): Σ reps × 4 s + 60 s between steps, then the rest
+    // before the first working set (warmupRestS: 3 min heavy band, 2 min rep band).
+    // bench: 15 reps × 4 + 3 × 60 + 180 = 420; top 45 + 210; 3 × (45 + 180) → 1350
+    // incline: 4 × 4 + 120 = 136; 3 × (45 + 120) → 631
+    // fly + crunch: warm-ups 2 × (8 × 4 + 120) = 304; 3 rounds × (2 × 45 + 90) → 844
+    expect(estimateBuilderSeconds(w, ctx)).toBe(120 + 120 + 1350 + 631 + 844);
     expect(estimateBuilderMinutes(w, ctx)).toBe(51);
-    // shortest: bench 420 + 195 + 3 × 165; incline 150 + 3 × 120; superset 300 + 3 × 150
-    expect(estimateBuilderSeconds({ ...w, restLevel: 'shortest' }, ctx)).toBe(120 + 120 + 1110 + 510 + 750);
+    // shortest (the warm-up rests are WU11's at every level): bench 420 + 195 + 3 × 165; incline 136 + 3 × 120; superset 304 + 3 × 150
+    expect(estimateBuilderSeconds({ ...w, restLevel: 'shortest' }, ctx)).toBe(120 + 120 + 1110 + 496 + 754);
+    // Ben's own warm-up rest wins between steps and before the first working set: bench 15 × 4 + 4 × 90.
+    const ownRest = { ...bench, restS: { ...bench.restS, warmup: 90 } };
+    expect(estimateBuilderSeconds({ restLevel: 'normal', blocks: [{ slots: [ownRest], auto: false }] }, ctx) - estimateBuilderSeconds({ restLevel: 'normal', blocks: [{ slots: [bench], auto: false }] }, ctx)).toBe(60 + 4 * 90 - 420);
     // In this order (WU2): the incline press after bench, the fly after bench and the crunch beside the fly are warmed: no warm-ups.
     const settled = settleWarmups(w, ctx);
     expect(slotsOf(settled.blocks).map((sl) => sl.rows.filter((r) => r.type === 'warmup').length)).toEqual([4, 0, 0, 0]);

@@ -16,6 +16,8 @@ import {
   type BuilderSlot,
   type BuilderWorkout,
   type DraftCodecContext,
+  warmupRestS,
+  warmupTimeS,
 } from '../src/index';
 import { context, info, lbRack, loadInput, loadsFor, rack } from './builder-v3-fixture';
 import { id } from './fixtures';
@@ -65,8 +67,10 @@ describe('a timed or cardio slot', () => {
     const base = estimateBuilderSeconds(solo({ ...ride, rows: [{ type: 'working', reps: 1, load: null, rpe: null }] }), ctx);
     expect(estimateBuilderSeconds(solo(ride), ctx) - base).toBe(1200 - BUILDER_TIME.setS);
     expect(estimateBuilderSeconds(solo(row), ctx)).toBe(base);
-    // A rep-based isolation set: setup + 45 s + its 1:30 rest, plus its WU7 warm-up (30 s + 1:00, then 1:00 after).
-    expect(estimateBuilderSeconds(solo(reps), ctx)).toBe(BUILDER_TIME.setupS + BUILDER_TIME.setS + 90 + BUILDER_TIME.warmupSetS + 60 + BUILDER_TIME.afterWarmupsS);
+    // A rep-based isolation set: setup + 45 s + its 1:30 rest, plus its WU7 warm-up timed by WU11 (8 reps × 4 s, then 2 min before the set).
+    const warm = reps.rows.filter((r) => r.type === 'warmup');
+    expect(warm.map((r) => r.reps)).toEqual([8]);
+    expect(estimateBuilderSeconds(solo(reps), ctx)).toBe(BUILDER_TIME.setupS + BUILDER_TIME.setS + 90 + warmupTimeS(warm.map((r) => ({ load: r.load ?? 0, reps: r.reps }))) + warmupRestS(8, true));
   });
 
   it('isn’t edited, retyped, ramped or given a drop here; its sets can still be added (a copy, with its time) or deleted', () => {
