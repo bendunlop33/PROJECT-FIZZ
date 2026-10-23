@@ -27,8 +27,8 @@ import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 import { GymChip } from './workout/GymSwitch';
-import { DayControl, DaySheet, OtherSessionChips, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
-import { builderApplyOpId, type BuilderCoachReach, type MixPick } from '@fizz/coach';
+import { DayControl, DaySheet, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
+import { builderApplyOpId, type BuilderCoachReach } from '@fizz/coach';
 import { setTodaySetupDay } from '../builder/coach-ports';
 import type { NudgeResult } from '../coach/builder-coach-service';
 import { nudgeCardView, todayAskFirst, todayAskRoute } from '../coach/builder-coach-view';
@@ -40,8 +40,8 @@ import { createOnDeviceSpeech } from '../voice/on-device-speech';
  * Today (v2) (workout-builder-v3 §2.0 with Ben's 20 Oct additions; prototypes/today-v2.html): `Tuesday`
  * with the gym and a compact `✦ Coach` + mic, the 7-day strip (3 back, 3 ahead: only what Ben did,
  * logged or told the coach), the rare lines (banners, check-in, pain check), then Today's session: the
- * day control (`NEXT`, `⋯` Other sessions), the session card with the five controls, a collapsed
- * Session breakdown (table, Why?, ↻ Mix it up), one-tap Start and Edit; `Build your own` and
+ * day control (the plan's days, or with no plan Profile › Split's; `NEXT`, `⋯` other workouts), the lean
+ * session card (rows, Time with its fit note, Why?, one-tap Start and Edit; D3, V5); `Build your own` and
  * `＋ Activity` below. Resume and the stale card replace the session while a workout is open (today.md,
  * unchanged).
  *
@@ -110,7 +110,6 @@ export function TodayScreen() {
   const [nudge, setNudge] = useState<{ key: string; result: NudgeResult } | null>(null);
   const [nudgeBusy, setNudgeBusy] = useState(false);
   const nudgeAsked = useRef<string | null>(null);
-  const [mixPicks, setMixPicks] = useState<ReadonlyMap<string, MixPick | null>>(new Map());
 
   // The card's selection: the plan's next day on open (or as Ben left it while the data reloads). Once today's
   // workout is done, no day is selected until Ben picks one for a second session (§2.0.4 Done today).
@@ -144,9 +143,7 @@ export function TodayScreen() {
   const cardKey = selection === null ? null : `${selection.dayKey}|${selection.controls.mainLiftExerciseId ?? '-'}`;
   // The nudge is for the card as Ben has set it (wiring S1, integrity S2): its offer is dropped once a control moves.
   const nudgeKey = selection === null || cardKey === null ? null : `${cardKey}|${JSON.stringify(selection.controls)}`;
-  const baseView = useMemo(() => (session === null || selection === null ? null : services.todaySession.card(session, { dayKey: selection.dayKey, controls: selection.controls })), [services, session, selection]);
-  const mixKey = baseView === null || cardKey === null ? null : `${cardKey}|${baseView.mixFromExerciseId ?? '-'}|${baseView.mixShortlist.join(',')}`;
-  const coachIn = useMemo(() => ({ nudge: nudge !== null && nudge.key === nudgeKey ? nudge.result : null, mixPick: mixKey === null ? null : (mixPicks.get(mixKey) ?? null) }), [nudge, nudgeKey, mixKey, mixPicks]);
+  const coachIn = useMemo(() => ({ nudge: nudge !== null && nudge.key === nudgeKey ? nudge.result : null }), [nudge, nudgeKey]);
   const view = useMemo(() => (session === null || selection === null ? null : services.todaySession.card(session, { dayKey: selection.dayKey, controls: selection.controls }, coachIn)), [services, session, selection, coachIn]);
 
   // The bar's status word, and Set up words asked here start from the card's day.
@@ -179,19 +176,6 @@ export function TodayScreen() {
       alive = false;
     };
   }, [services, session, selection, nudgeKey, reach]);
-
-  // `↻ Mix it up` (rule 3): the coach picks from code's shortlist (with its reason) once Ben asks for a swap.
-  useEffect(() => {
-    if (session === null || baseView === null || mixKey === null || (selection?.controls.mix ?? 0) <= 0 || mixPicks.has(mixKey) || baseView.mixShortlist.length === 0) return;
-    let alive = true;
-    setMixPicks((m) => new Map(m).set(mixKey, null));
-    void services.todaySession.mixPick(session, baseView).then((pick) => {
-      if (alive && pick !== null) setMixPicks((m) => new Map(m).set(mixKey, pick));
-    });
-    return () => {
-      alive = false;
-    };
-  }, [services, session, baseView, mixKey, selection, mixPicks]);
 
   /**
    * Words from Today's bar: pain words go straight to the coach (rule 9); a set-up request opens Set up filled
@@ -637,14 +621,9 @@ export function TodayScreen() {
   const openWorkout = main.kind === 'resume' || main.kind === 'stale';
   const chosenName = view === null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
   const strip = session === null ? [] : services.todaySession.strip(session, main.kind === 'done_today' ? null : chosenName);
-  // No plan: the Other sessions are the day control (review S3), so a picked one can be changed; `⋯` keeps Empty
-  // workout and Build your own.
-  const segs =
-    session === null
-      ? null
-      : session.status === 'no_plan'
-        ? todaySegments({ days: session.others, others: [], nextKey: null, selectedKey: selection?.dayKey ?? null, paused: false })
-        : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey, selectedKey: selection?.dayKey ?? null, paused: session.status === 'paused' });
+  // The day row: the plan's days, or (V5, no plan; D7) Profile › Split's, NEXT on the Up next pick; `⋯` is the other
+  // workouts (Full body, Upper, Push, Empty workout, Build your own). No plan and no split: `⋯` alone.
+  const segs = session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey, selectedKey: selection?.dayKey ?? null, paused: session.status === 'paused' });
 
   const openHero = (() => {
     switch (main.kind) {
@@ -739,7 +718,7 @@ export function TodayScreen() {
       </Pressable>
     ) : null;
 
-  const actions = todayActions({ openWorkout, read: session !== null ? 'ready' : sessionFailed ? 'failed' : 'loading', noPlan: session?.status === 'no_plan', cardShown: view !== null, upNext: session?.upNext != null });
+  const actions = todayActions({ openWorkout, read: session !== null ? 'ready' : sessionFailed ? 'failed' : 'loading', noPlan: session?.status === 'no_plan', cardShown: view !== null, upNext: session?.upNext != null && session.days.length === 0 });
   // The gym sits on the session's row (its loads are this gym's), so the header stays one line at 375 pt. It shows
   // while the session loads and after a failed read too (review today-fix-21oct S3).
   const gymRow = actions.gymRow ? (
@@ -777,86 +756,21 @@ export function TodayScreen() {
       <View style={{ gap: theme.space['2'] }}>
         {gymRow}
         {noPlan ? (
-          view === null ? (
-            // No plan (§2.0.4), compact: `No plan` with `Set up a plan ›` on one row, the Other sessions as one row of
-            // chips (Empty workout last); `Build your own` (primary) and `＋ Activity` share the row below.
-            <View style={{ gap: theme.space['2'] }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], flexWrap: 'wrap' }}>
-                <AppText variant="title2" accessibilityRole="header">
-                  {TODAY_V2_COPY.noPlan}
-                </AppText>
-                <TextButton
-                  label={`${TODAY_V2_COPY.setUpPlan} ›`}
-                  tone="secondary"
-                  onPress={() => {
-                    navigation.dispatch(openYourPlan(newUuid()));
-                  }}
-                />
-              </View>
-              {upNext !== null ? (
-                // The old Today's Up next (Profile split, routines in rotation): his own workout, Start in one tap (as the card's).
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNextTitle)}
-                  disabled={starting}
-                  onPress={() => {
-                    // (D8) Changed on Your workout (by Ben, or a coach change he applied): that draft starts.
-                    if (upNext.edited != null) void startUpNextDraft(upNext.edited);
-                    else if (upNext.routineId !== null) void start({ kind: 'routine', routineId: upNext.routineId });
-                    else if (upNext.sourceSessionId !== null) void start({ kind: 'next', sourceSessionId: upNext.sourceSessionId });
-                  }}
-                  style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingLeft: theme.space['4'], paddingRight: theme.space['2'], borderRadius: theme.radius.lg, backgroundColor: theme.colors['bg.surface'], opacity: pressed ? 0.7 : 1 })}
-                >
-                  <View style={{ flex: 1 }}>
-                    <AppText variant="sectionLabel" color="text.secondary" accessible={false}>
-                      {TODAY_SCREEN_COPY.upNext}
-                    </AppText>
-                    <AppText variant="headline" numberOfLines={1} accessible={false}>
-                      {upNextTitle}
-                    </AppText>
-                  </View>
-                  <View pointerEvents="none" style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, backgroundColor: theme.colors.accent }}>
-                    <AppText variant="headline" color="on.accent" accessible={false}>
-                      {TODAY_V2_COPY.start}
-                    </AppText>
-                  </View>
-                </Pressable>
-              ) : null}
-              <OtherSessionChips
-                days={session.others}
-                emptyLabel={TODAY_V2_COPY.emptyWorkout}
-                onPick={pickDay}
-                onEmpty={() => void start({ kind: 'empty' })}
-              />
-            </View>
-          ) : (
-            <View style={{ gap: theme.space['1'] }}>
-              {segs !== null ? (
-                <DayControl
-                  segments={segs.segments}
-                  paused={false}
-                  onDay={pickDay}
-                  onMore={() => {
-                    setListSheet('other');
-                  }}
-                  onAxList={() => {
-                    setListSheet('all');
-                  }}
-                  axLabel={chosenName ?? TODAY_V2_COPY.other}
-                />
-              ) : null}
-              <View style={{ alignSelf: 'flex-start' }}>
-                <TextButton
-                  label={`${TODAY_V2_COPY.setUpPlan} ›`}
-                  tone="secondary"
-                  onPress={() => {
-                    navigation.dispatch(openYourPlan(newUuid()));
-                  }}
-                />
-              </View>
-            </View>
-          )
-        ) : segs !== null ? (
+          // (§2.0.4 No plan, V5) `No plan` with `Set up a plan ›` on one row; the day row and the card below read as with a plan.
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], flexWrap: 'wrap' }}>
+            <AppText variant="title2" accessibilityRole="header">
+              {TODAY_V2_COPY.noPlan}
+            </AppText>
+            <TextButton
+              label={`${TODAY_V2_COPY.setUpPlan} ›`}
+              tone="secondary"
+              onPress={() => {
+                navigation.dispatch(openYourPlan(newUuid()));
+              }}
+            />
+          </View>
+        ) : null}
+        {segs !== null ? (
           <DayControl
             segments={segs.segments}
             paused={session.status === 'paused'}
@@ -870,10 +784,38 @@ export function TodayScreen() {
             axLabel={chosenName ?? TODAY_V2_COPY.other}
           />
         ) : null}
+        {upNext !== null ? (
+          // No plan and no Profile split: the old Today's Up next (routines in rotation, the longest gap), Start in one tap.
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNextTitle)}
+            disabled={starting}
+            onPress={() => {
+              // (D8) Changed on Your workout (by Ben, or a coach change he applied): that draft starts.
+              if (upNext.edited != null) void startUpNextDraft(upNext.edited);
+              else if (upNext.routineId !== null) void start({ kind: 'routine', routineId: upNext.routineId });
+              else if (upNext.sourceSessionId !== null) void start({ kind: 'next', sourceSessionId: upNext.sourceSessionId });
+            }}
+            style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingLeft: theme.space['4'], paddingRight: theme.space['2'], borderRadius: theme.radius.lg, backgroundColor: theme.colors['bg.surface'], opacity: pressed ? 0.7 : 1 })}
+          >
+            <View style={{ flex: 1 }}>
+              <AppText variant="sectionLabel" color="text.secondary" accessible={false}>
+                {TODAY_SCREEN_COPY.upNext}
+              </AppText>
+              <AppText variant="headline" numberOfLines={1} accessible={false}>
+                {upNextTitle}
+              </AppText>
+            </View>
+            <View pointerEvents="none" style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, backgroundColor: theme.colors.accent }}>
+              <AppText variant="headline" color="on.accent" accessible={false}>
+                {TODAY_V2_COPY.start}
+              </AppText>
+            </View>
+          </Pressable>
+        ) : null}
         {view !== null && selection !== null ? (
           <SessionCard
             view={view}
-            open={selection.open}
             why={selection.why}
             moved={moved}
             busy={starting}
@@ -1038,7 +980,7 @@ export function TodayScreen() {
       <SessionListSheet
         visible={listSheet !== null}
         title={listSheet === 'all' ? 'Day' : TODAY_V2_COPY.otherLabel}
-        days={session === null ? [] : listSheet === 'all' ? [...session.days, ...session.others] : session.status === 'no_plan' ? [] : [...(segs?.overflow ?? []), ...session.others]}
+        days={session === null ? [] : listSheet === 'all' ? [...session.days, ...session.others] : [...(segs?.overflow ?? []), ...session.others]}
         selectedKey={selection?.dayKey ?? null}
         nextKey={session?.nextKey ?? null}
         onPick={(key) => {

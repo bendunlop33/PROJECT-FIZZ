@@ -614,7 +614,6 @@ export function createAppServices(deps: AppServicesDeps) {
     port: { ...loop.todayPort, start: (req) => loop.workout.start(req) },
     // `builderCoach` is made below; these run only when Today asks (after startup).
     nudge: (req) => builderCoach.preSessionNudge(req),
-    mixPick: (req) => builderCoach.mixPick(req),
     offerAtOrBelow: () => DEFAULT_CHECK_IN_SETTINGS.offerAtOrBelow,
   });
 
@@ -945,6 +944,8 @@ export function createAppServices(deps: AppServicesDeps) {
     todayDraft: (req) => todaySession.draftFor(req),
     // (Ben, 23 Oct) `↻ Mix it up` on Your workout reads the same Mix it up facts Today's card did.
     todayMix: (key) => todaySession.mixFactsFor(key),
+    // (V5) Main lift on Your workout for a no-plan Today draft: the split day's (or Other session's) main lifts here.
+    todayMainLifts: (key) => todaySession.mainLiftsFor(key),
     // (Ben, 23 Oct) The carry-over routes the sets Time cut to each muscle's next plan day.
     carryDays: (key) => todaySession.carryDaysFor(key),
     // (Ben, 23 Oct) Carried sets land on a plan day opened from the Library too, not only on Today's card.

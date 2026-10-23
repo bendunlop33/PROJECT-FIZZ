@@ -185,6 +185,11 @@ export interface BuilderServiceDeps {
   todayDraft?: (req: { key: BuilderDraftKey; controls: TodayControls }) => Promise<TodayOptionDraft | null>;
   /** (Ben, 23 Oct) `↻ Mix it up` on Your workout: the Mix it up facts of the draft's day (Today's). Absent: not offered. */
   todayMix?: (key: BuilderDraftKey) => Promise<TodayMixFacts | null>;
+  /**
+   * (V5) Main lift options for a Today draft with no plan day (a Profile split day or an Other session): that day's main
+   * lifts here, as Today has them. Absent or null: none offered.
+   */
+  todayMainLifts?: (key: BuilderDraftKey) => Promise<{ exerciseId: string; label: string }[] | null>;
   /** (Ben, 23 Oct) The plan's days as the carry-over routes to them (Today's). Absent or null: no carry-over offer. */
   carryDays?: (key: BuilderDraftKey) => Promise<CarryDay[] | null>;
   /** (Ben, 23 Oct) The sets carried over to a plan day's next workout (Today's `pendingCarryOvers`). Absent: none land here. */
@@ -339,7 +344,7 @@ export interface BuilderSnapshot {
    */
   coachLanded: { text: string; undoOpId: string } | null;
   /**
-   * (D3) Today's options as this draft has them: a workout Today drafted for a plan day (null otherwise). Read with
+   * (D3; V5) Today's options as this draft has them: a workout Today drafted, with or without a plan (null otherwise). Read with
    * the rows from the same write, so the switches and chips never lag a write, an Undo or a swipe (review todaylean S1).
    * `abs`: the workout has an ab exercise (Time's cuts put back), Ben's own included.
    */
@@ -893,7 +898,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     // The detail's Undo goes back to the length before Time changed it (a plan day Today drafted: the plan's length, as
     // Today's Undo does; there a plan day longer than its length is still fitted, as on Today's card).
     const time = fit === null ? null : { fromMinutes: stored?.timeFrom ?? fit.fromMinutes, changes: timeFitChanges(fit, workout) };
-    const today = todayDrafted(stored) && key?.planId != null ? { mainLiftExerciseId: stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null, accessories: stored.accessories ?? null, abs: hasAbs(untimed(stored, workout), env), supersets: stored.supersets } : null;
+    const today = todayDrafted(stored) && key !== undefined ? { mainLiftExerciseId: stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null, accessories: stored.accessories ?? null, abs: hasAbs(untimed(stored, workout), env), supersets: stored.supersets } : null;
     const carry = d.status === 'open' && fit !== null && time !== null && stored !== null && key?.planId != null && key.dayIndex !== null ? await carryOf(key, key.dayIndex, stored, fit, time.changes, workout, env) : null;
     for (const st of time?.changes ?? []) if (st.kind === 'drop') facts[st.exerciseId] ??= { name: env.nameOf(st.exerciseId), works: env.worksOf(st.exerciseId), group: env.info(st.exerciseId)?.group ?? null, compound: env.info(st.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(st.exerciseId), notHere: false, hasHistory: env.hasHistory(st.exerciseId) };
     return {
@@ -1928,7 +1933,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         // to the Time it filled to, never past it), Ben's edits replayed, so more Time brings back what less took.
         const key = current.builderKey;
         const cap = stored.timeFill;
-        if (cap !== undefined && minutes > from && todayDrafted(stored) && key !== undefined && key.planId !== null) {
+        if (cap !== undefined && minutes > from && todayDrafted(stored) && key !== undefined) {
           const to = Math.max(BUILD_LIMITS.minMinutes, Math.min(BUILD_LIMITS.maxMinutes, Math.round(minutes)));
           const was = todayControlsOf(stored, key, untimed(stored, workout), env);
           const at = await todayAt(p, current, stored, key, { ...was, minutes: Math.min(to, cap) }, { minutes: to, opId: w.opId });
@@ -2103,9 +2108,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const p = await owner();
       const d = await repos().workoutDrafts.get(draftId).catch(() => null);
       const stored = d === null ? null : builderSetupOf(d);
-      // Only a workout Today drafted for a plan day (Today's Edit with a plan): the no-plan card keeps its own controls,
-      // and Set up, Library or plan-day workouts have Set up (§2.3a States; review todaylean N3).
-      if (d === null || d.ownerId !== p.id || d.status !== 'open' || d.builderKey === undefined || !todayDrafted(stored) || d.builderKey.planId === null) return null;
+      // Only a workout Today drafted (Today's Edit; V5: with or without a plan, the card is the same lean card); Set up,
+      // Library or plan-day workouts have Set up (§2.3a States; review todaylean N3).
+      if (d === null || d.ownerId !== p.id || d.status !== 'open' || d.builderKey === undefined || !todayDrafted(stored)) return null;
       const v = currentDraftVersion(d);
       const key = d.builderKey;
       const workout = fromDraftPlan(v.plan, stored.restLevel ?? 'normal');
@@ -2122,9 +2127,12 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           templates.push({ exerciseId: id, routine: r });
         }
       }
-      const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(workout), ...templates.map((x) => x.exerciseId)], keySeed: `${d.id}:today-options` });
+      // (V5) No plan day: the Profile split day's (or Other session's) main lifts, as Today has them.
+      const dayMains = key.planId === null && deps.todayMainLifts !== undefined ? ((await deps.todayMainLifts(key).catch(() => null)) ?? []) : [];
+      const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(workout), ...templates.map((x) => x.exerciseId), ...dayMains.map((x) => x.exerciseId)], keySeed: `${d.id}:today-options` });
       const current = stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null;
-      const mainLifts = templates.filter((x) => x.exerciseId === current || env.doable(x.exerciseId)).map((x) => ({ exerciseId: x.exerciseId, label: templateLabel(x.routine, env.nameOf(x.exerciseId)), selected: x.exerciseId === current }));
+      const options = [...templates.map((x) => ({ exerciseId: x.exerciseId, label: templateLabel(x.routine, env.nameOf(x.exerciseId)) })), ...dayMains];
+      const mainLifts = options.filter((x) => x.exerciseId === current || env.doable(x.exerciseId)).map((x) => ({ ...x, selected: x.exerciseId === current }));
       return {
         mainLifts,
         accessories: stored.accessories ?? null,
@@ -2148,7 +2156,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const stored = d === null ? null : builderSetupOf(d);
       const key = d?.builderKey;
       const port = deps.todayMix;
-      if (d === null || d.ownerId !== p.id || key === undefined || !todayDrafted(stored) || key.planId === null || port === undefined) return { status: 'refused', reason: 'nothing_to_mix', message: BUILDER_COPY.nothingToMix, snapshot: null };
+      if (d === null || d.ownerId !== p.id || key === undefined || !todayDrafted(stored) || port === undefined) return { status: 'refused', reason: 'nothing_to_mix', message: BUILDER_COPY.nothingToMix, snapshot: null };
       if (d.opIds.includes(w.opId)) {
         // A retry of a mix already written: nothing more.
         const now = await service.read(draftId);
@@ -2217,7 +2225,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         if (other !== null && other.id !== d.id) return toast(await service.changeSetup(draftId, mergeNext(), todayW));
       }
       const port = deps.todayDraft;
-      if (port === undefined || !todayDrafted(first) || d.builderKey.planId === null) return toast(await service.changeSetup(draftId, mergeNext(), todayW));
+      if (port === undefined || !todayDrafted(first)) return toast(await service.changeSetup(draftId, mergeNext(), todayW));
       const todayGone = { now: false };
       const r = await writeDraft(p, draftId, async (current) => {
         const v = currentDraftVersion(current);

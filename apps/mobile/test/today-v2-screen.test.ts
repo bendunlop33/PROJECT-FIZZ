@@ -186,38 +186,27 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(screen).toContain('if (!enabled) return;');
   });
 
-  it('no plan: an edited card keeps the Main lift chips (review S2); Edit’s op ID is cleared once saved (review S6)', () => {
+  it('Edit’s op ID is cleared once saved (review S6); (V5) no card has Main lift chips, with or without a plan', () => {
     const card = parts.slice(parts.indexOf('export function SessionCard('));
-    const noPlan = card.slice(card.indexOf('{view.lean ? ('));
-    const rest = noPlan.slice(noPlan.indexOf(') : ('));
-    expect(rest.indexOf('TODAY_V2_COPY.mainLift')).toBeGreaterThan(-1);
-    expect(rest.indexOf('TODAY_V2_COPY.mainLift')).toBeLessThan(rest.indexOf('view.edited === null ?'));
+    expect(card).not.toContain('TODAY_V2_COPY.mainLift');
     const edit = screen.slice(screen.indexOf('async function editCard()'), screen.indexOf('function buildYourOwn()'));
     expect(edit).toContain('startOps.current.delete(editKey)');
     expect(edit).toContain('session.equipmentVersion');
   });
 
-  it('no plan: the Other sessions stay a day control after one is picked, with Build your own (review S3)', () => {
-    expect(screen).toContain("todaySegments({ days: session.others, others: [], nextKey: null");
+  it('(V5, D7) no plan: the day row (Profile › Split, NEXT, ⋯) stays after a day is picked, with Build your own secondary beside the card', () => {
+    expect(screen).toContain('const segs = session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey');
     expect(screen).toContain("noPlan: session?.status === 'no_plan', cardShown: view !== null");
-    // A picked Other session keeps Build your own (secondary beside the card's Start).
     expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: true, upNext: false }).buildYourOwn).toBe('secondary');
   });
 
-  it('no plan is compact (§2.0.4; Ben 21 Oct): `No plan` and `Set up a plan ›` on one row, Other sessions as chips, Build your own primary beside ＋ Activity', () => {
+  it('(V5) no plan is compact: `No plan` and `Set up a plan ›` on one row, no chip row (D7); with no split and no card, Build your own is primary beside ＋ Activity', () => {
     const block = screen.slice(screen.indexOf('const sessionBlock = '), screen.indexOf('return (\n    <View style={{ flex: 1, backgroundColor'));
-    const noPlan = block.slice(block.indexOf('view === null ? ('), block.indexOf(') : (', block.indexOf('view === null ? (')));
+    const noPlan = block.slice(block.indexOf('{noPlan ? ('), block.indexOf('{segs !== null ? ('));
     expect(noPlan).toContain('TODAY_V2_COPY.noPlan');
     expect(noPlan).toContain('TODAY_V2_COPY.setUpPlan');
-    expect(noPlan).toContain('<OtherSessionChips');
-    // The old tall list (one 52 pt row per session, then Empty workout) is gone.
-    expect(noPlan).not.toContain('session.others.map(');
     expect(noPlan).not.toContain('<PrimaryButton');
-    const chips = parts.slice(parts.indexOf('export function OtherSessionChips('), parts.indexOf('// The session card'));
-    expect(chips).toContain("flexWrap: 'wrap'");
-    expect(chips).toContain('minHeight: theme.target.min.height');
-    expect(chips).toContain('accessibilityRole="button"');
-    expect(chips).toContain('chip(\'empty\', emptyLabel, onEmpty)');
+    expect(screen).not.toContain('OtherSessionChips');
     const bottom = screen.slice(screen.indexOf("{actions.buildYourOwn === 'primary' ? ("));
     expect(bottom.slice(0, 400)).toContain('<PrimaryButton label={TODAY_V2_COPY.buildYourOwn}');
     expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: false, upNext: false })).toEqual({ gymRow: true, failed: false, upNext: false, buildYourOwn: 'primary', emptyWorkout: false });

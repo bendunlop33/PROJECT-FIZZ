@@ -18,7 +18,7 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 /**
  * Lean Today with a plan (D3, Ben 22–23 Oct) on real SQLite, offline: the card shows the session's rows, Time with
  * its note, Start and Edit; main lift, accessories, abs and supersets left the card for Your workout opened from
- * Today (`todayOptions` / `setTodayOption`, Set up's own merge, with Undo). Without a plan the card keeps them.
+ * Today (`todayOptions` / `setTodayOption`, Set up's own merge, with Undo). (V5) Without a plan the card is the same.
  */
 
 const DAY = 86_400_000;
@@ -120,41 +120,35 @@ async function edit(s: AppServices, data: TodaySessionData, selection: TodaySele
   return snap;
 }
 
-describe('D3: Today with a plan is lean; without a plan the card keeps its controls', () => {
+describe('D3: Today with a plan is lean (V5: without a plan too)', () => {
   it('a plan in use: rows, Time with its note and Undo length, Start and Edit; the Today-only controls are not on the card', async () => {
     const { s } = await benWithPlan();
     const data = await loaded(s);
     const push = s.todaySession.card(data, sel(data, dayKeyOf(data, 'Push')));
     if (push === null) throw new Error('no card');
-    expect(push.lean).toBe(true);
     expect(push.rows.length).toBeGreaterThan(0);
     expect(push.time).toMatchObject({ minutes: data.initial[push.dayKey]?.minutes, note: null, undoMinutes: null });
     expect(push.startable).toBe(true);
-    // The card: the lean branch has Time and the rows; Main lift, Accessories, Abs and Supersets only on the no-plan card.
+    // The card has Time and the rows; Main lift, Accessories, Abs and Supersets are on Your workout (V5: no plan too).
     const card = read('screens/today/TodaySession.tsx');
     const sc = card.slice(card.indexOf('export function SessionCard('));
-    const lean = sc.slice(sc.indexOf('{view.lean ? ('), sc.indexOf(') : (', sc.indexOf('{view.lean ? (')));
-    expect(lean).toContain('timeRow');
-    expect(lean).toContain('{details}');
-    for (const gone of ['TODAY_V2_COPY.mainLift', 'TODAY_V2_COPY.accessories', 'TODAY_V2_COPY.abs', 'TODAY_V2_COPY.supersets', 'TODAY_V2_COPY.breakdown']) expect(lean).not.toContain(gone);
+    expect(sc).toContain('{timeRow}');
+    expect(sc).toContain('{details}');
+    for (const gone of ['TODAY_V2_COPY.mainLift', 'TODAY_V2_COPY.accessories', 'TODAY_V2_COPY.abs', 'TODAY_V2_COPY.supersets', 'TODAY_V2_COPY.breakdown']) expect(sc).not.toContain(gone);
     expect(sc).toContain('<PrimaryButton label={TODAY_V2_COPY.start}');
     expect(sc).toContain('<SecondaryButton label={TODAY_V2_COPY.edit}');
-    // `↻ Mix it up` went with them (design: Your workout's Swap does the same job): shown only on the no-plan card.
-    expect(sc).toContain('const mixShown = !view.lean;');
-    expect(sc).toContain('{mixShown && view.mix === null && view.mixAvailable ?');
-    expect(sc).toContain('{mixShown && view.mix !== null ?');
-    expect(push.mixAvailable).toBe(false);
-    expect(push.mixShortlist).toEqual([]);
+    // `↻ Mix it up` went with them (it is on Your workout).
+    expect(sc).not.toContain('TODAY_V2_COPY.mix');
   });
 
-  it('no plan: an Other session’s card keeps main lift, accessories, Time, abs and supersets', async () => {
+  it('(V5) no plan: an Other session’s card is the same lean card (rows, Time, Start, Edit)', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
     const data = await loaded(s);
     expect(data.status).toBe('no_plan');
     const full = s.todaySession.card(data, sel(data, dayKeyOf(data, 'Full body')));
-    expect(full?.lean).toBe(false);
     expect(full?.time).not.toBeNull();
+    expect(full?.rows.length).toBeGreaterThan(0);
   });
 
   it('a shorter Time on the lean card: the note and its detail; Undo goes back to the plan length (reducer)', async () => {

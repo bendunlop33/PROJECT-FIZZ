@@ -47,8 +47,14 @@ import {
   TODAY_V2_COPY,
   todayBreakdown,
   fitNoteOf,
-  todayMixLine,
   todayPlanDays,
+  todaySplitDays,
+  todaySplitNext,
+  splitDayKey,
+  splitDaySource,
+  splitDaysTrained,
+  splitWorkoutOf,
+  lastSplitWorkoutGroups,
   todayWhy,
   toIso,
   toDraftPlan,
@@ -85,7 +91,6 @@ import {
   type TodayDay,
   type TodayDraft,
   type TodayMixFacts,
-  type TodayMixLine,
   type TodayReviewStatus,
   type TodayTemplate,
   coachTargetRows,
@@ -115,9 +120,9 @@ import {
   type ZonedTimestamp,
 } from '@fizz/schemas';
 
-import { createBuilderLoadGuard, type MixPick, type NudgeSession, type PreSessionInput } from '@fizz/coach';
-import type { BuilderCoachWorld, NudgeResult } from '../coach/builder-coach-service';
-import { mixCoachReason, todayCoachWhy } from '../coach/builder-coach-view';
+import type { NudgeSession, PreSessionInput } from '@fizz/coach';
+import type { NudgeResult } from '../coach/builder-coach-service';
+import { todayCoachWhy } from '../coach/builder-coach-view';
 import type { CoachStatus } from '../coach/coach-service';
 import type { WorkoutStartOutcome, WorkoutStartRequest } from './workout-services';
 
@@ -170,16 +175,13 @@ export interface TodaySessionDeps {
   port: TodaySessionPort;
   /** (§6.1) The builder coach's pre-session nudge on the card's draft; absent: not in this build's wiring. */
   nudge?: (req: { draftId: string; splitDayId: string | null; input: PreSessionInput; opId: string }) => Promise<NudgeResult>;
-  /** (§2.0.2 Mix it up rule 3) The coach's pick from code's shortlist; absent: code's pick only. */
-  mixPick?: (req: { fromExerciseId: string; shortlist: readonly string[]; lastDone: (exerciseId: string) => string | null; world: BuilderCoachWorld }) => Promise<MixPick | null>;
   /** Check-in settings' `offerAtOrBelow` (the nudge's low check-in signal); null: never. */
   offerAtOrBelow?: () => number | null;
 }
 
-/** What the coach said about Today's card (null fields: nothing yet, or not asked). */
+/** What the coach said about Today's card (null: nothing yet, or not asked). */
 export interface TodayCoachInputs {
   nudge?: NudgeResult | null;
-  mixPick?: MixPick | null;
 }
 
 /** Per group, how many catalogue exercises join Ben's own in a pool (the rest are reachable in the builder). */
@@ -266,8 +268,10 @@ export interface TodaySessionData {
   equipmentVersion: string;
   days: TodayDay[];
   others: TodayDay[];
-  /** The plan's next day (null: no plan, or paused). */
+  /** The plan's next day, or (no plan) the Profile split's NEXT (null: none, or paused). */
   nextKey: string | null;
+  /** (V5) No plan: why the split day is NEXT (`resolver`: the app's Up next named it); null with a plan or no split. */
+  splitNextWhy: 'resolver' | 'due' | 'after_last' | null;
   /**
    * (review today-fix-21oct B1) No plan in use: Up next from the Profile split or the routines in rotation (else the
    * longest gap), so Ben's own workouts stay one tap from Today, as on the old Today. Null with a plan, or none.
@@ -342,14 +346,12 @@ export interface TodayTimeView {
   undoMinutes: number | null;
 }
 
+/**
+ * Today's card (D3, Ben 22–23 Oct; V5 23 Oct: the no-plan card reads the same): the session's rows, the Time control with
+ * its note, Why?, Start and Edit. Main lift, accessories, abs, supersets and `↻ Mix it up` are on Your workout (Edit).
+ */
 export interface TodayCardView {
   dayKey: string;
-  /**
-   * (D3, Ben 22–23 Oct) Lean card: with a plan in use (or paused), Today shows the session's rows, the Time control with
-   * its note, Why?, Start and Edit; main lift, accessories, abs and supersets are in Edit (Your workout), and `↻ Mix it
-   * up` is gone (Your workout's Swap). No plan: the controls and Mix it up.
-   */
-  lean: boolean;
   /** `Chest`, or `Chest · edited`. */
   title: string;
   edited: TodayEditedDraft | null;
@@ -359,7 +361,7 @@ export interface TodayCardView {
   summary: string;
   minutes: number;
   exerciseCount: number;
-  /** The Time row; on an edited card with a plan, the draft's own Time (steps go to Your workout's Time on it); null on an edited no-plan card. */
+  /** The Time row; on an edited card, the draft's own Time (steps go to Your workout's Time on it). */
   time: TodayTimeView | null;
   clashLine: string | null;
   controls: {
@@ -372,16 +374,10 @@ export interface TodayCardView {
   unit: 'kg' | 'lb';
   rows: TodayBreakdownRow[];
   why: string[];
-  mix: TodayMixLine | null;
-  /** `↻ Mix it up` is offered (there's a fresh option). */
-  mixAvailable: boolean;
-  /** Code's shortlist and the accessory it swaps (the coach picks from these). */
-  mixShortlist: string[];
-  mixFromExerciseId: string | null;
   startable: boolean;
   /** For `commit` (the code draft; null when edited). */
   draft: TodayDraft | null;
-  /** (Ben, 23 Oct) The carry-over of the sets Time cut, behind the Time note; null: none (no cut, no plan, under 2 sets). */
+  /** (Ben, 23 Oct) The carry-over of the sets Time cut, behind the Time note; null: none (no cut, not a plan day, under 2 sets). */
   carry: TodayCarryView | null;
 }
 
@@ -411,6 +407,22 @@ export const TODAY_SESSION_COPY = {
   carried: 'Carried over',
   nothingToCarry: 'Nothing to carry over',
 } as const;
+
+/** An open builder draft as Today's card shows it (changed on Your workout, or the coach's offer Ben applied). */
+function editedOf(d: WorkoutDraft): TodayEditedDraft {
+  const st = builderSetupOf(d);
+  const tf = st?.timeFit;
+  return {
+    draftId: d.id,
+    version: d.version,
+    name: d.name,
+    workout: fromDraftPlan(currentDraftVersion(d).plan, st?.restLevel ?? 'normal'),
+    minutes: st?.minutes ?? currentDraftVersion(d).fitMinutes,
+    timeFrom: st?.timeFrom ?? tf?.fromMinutes ?? null,
+    fit: tf === undefined ? null : timeFitFromStored(tf),
+    carryOver: st?.carryOver ?? null,
+  };
+}
 
 const titleOf = (name: string | null | undefined): string => (name ?? '').split('·')[0]?.trim() || 'Workout';
 
@@ -611,7 +623,9 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       return infoCache.get(id) ?? null;
     };
     const split = training?.split ?? (plan !== null ? splitInUse(training) : null);
-    const days = plan === null ? [] : todayPlanDays({ planId: plan.id, templates, split, mainLifts: training?.mainLifts, info, defaultMinutes: training?.sessionMinutes ?? 60 });
+    const planDays = plan === null ? [] : todayPlanDays({ planId: plan.id, templates, split, mainLifts: training?.mainLifts, info, defaultMinutes: training?.sessionMinutes ?? 60 });
+    // An applied plan with no live workouts left is no plan in use (Library › Your plan shows none either).
+    const status: TodaySessionStatus = plan === null || planDays.length === 0 ? 'no_plan' : paused ? 'paused' : 'plan';
 
     // History in the window: pools, Mix it up, Why?, the strip.
     const { sessions } = await repos()
@@ -633,7 +647,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
     // Up next: the app's one resolver (adaptive plan day, the run rule, a pin).
     const upNext = plan !== null && !paused ? await deps.port.upNextRoutineId(planGymId, typical).catch(() => null) : null;
-    const nextDay = upNext === null ? null : (days.find((d) => d.templates.some((t) => t.routineId === upNext)) ?? null);
+    const nextPlanDay = upNext === null ? null : (planDays.find((d) => d.templates.some((t) => t.routineId === upNext)) ?? null);
 
     // The gym, pain and the pools.
     const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
@@ -658,6 +672,41 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     for (const e of deps.catalogueExercises()) add(e.id, true);
     const groupPool = (g: BuilderGroupName): readonly string[] => byGroup.get(g) ?? [];
 
+    // (V5, §2.0.4 No plan; D7) No plan in use: the day row is Profile › Split, each day drafted like a plan day. NEXT is
+    // the app's one Up next resolver when it names a split day (only at a saved gym, as Start plans there), else the
+    // split rule (least recently trained, the run rule). A failed read is no Up next (the rest of Today still loads).
+    const fallbackNext = status === 'no_plan' && gymId !== null ? await deps.port.upNext(gymId).catch(() => null) : null;
+    const profileSplit = status === 'no_plan' ? (training?.split ?? null) : null;
+    const exerciseOf = (id: string) => exercises.get(id) ?? null;
+    const splitWorkouts = profileSplit === null ? [] : newest.map((a) => splitWorkoutOf(a, exerciseOf, training?.sessionMinutes ?? null));
+    const trainedDays = new Map<string, readonly string[]>(profileSplit === null ? [] : splitWorkouts.map((w) => [w.sessionId, splitDaysTrained(profileSplit, w.groups)]));
+    const splitDays =
+      profileSplit === null
+        ? []
+        : todaySplitDays({
+            split: profileSplit,
+            mainLifts: training?.mainLifts,
+            exercisesOf: (dayId) => {
+              const src = splitDaySource(profileSplit, { id: dayId }, splitWorkouts);
+              const a = src === null ? undefined : newest.find((x) => x.session.id === src.sessionId);
+              return a === undefined ? [] : [...a.exercises].filter((e) => e.removed === undefined).sort((x, y) => x.order - y.order).map((e) => e.exerciseId);
+            },
+            pool: groupPool,
+            info,
+            catalogueKeyOf: (id) => exercises.get(id)?.catalogueKey ?? null,
+            defaultMinutes: training?.sessionMinutes ?? 60,
+          });
+    const near = legRunNear(await repos().activities.listBetween(p.id, addDays(today, -1), addDays(today, 2)).catch(() => [] as Activity[]), today);
+    // The resolver's pick by its title, else by the muscles of the workout it plans from (a split day's Up next is
+    // planned from his newest workout of that day, which keeps its own name).
+    const upNextSource = fallbackNext?.sourceSessionId == null ? null : (splitWorkouts.find((w) => w.sessionId === fallbackNext.sourceSessionId) ?? null);
+    const splitNext =
+      profileSplit === null || splitDays.length === 0
+        ? null
+        : todaySplitNext({ split: profileSplit, upNext: fallbackNext === null ? null : { title: fallbackNext.title, groups: upNextSource?.groups ?? null }, workouts: splitWorkouts, near, lastGroups: lastSplitWorkoutGroups(profileSplit, newest, exerciseOf) });
+    const days = planDays.length > 0 ? planDays : splitDays;
+    const nextDay = nextPlanDay ?? (splitNext === null ? null : (splitDays.find((d) => d.key === splitDayKey(splitNext.dayId)) ?? null));
+
     // Other sessions: the plan days' main lifts, else the catalogue's standard ones.
     const catalogueByKey = new Map<string, Exercise>();
     for (const e of deps.catalogueExercises()) if (e.catalogueKey) catalogueByKey.set(e.catalogueKey, e);
@@ -665,7 +714,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       .map((k) => catalogueByKey.get(k))
       .filter((e): e is Exercise => e !== undefined && here(e.id))
       .map((e) => ({ id: e.id, label: e.name }));
-    const others = TODAY_OTHER_SESSIONS.map((s) => otherSessionDay(s, otherMainOptions(s, days, info, fallbacks), info, training?.sessionMinutes ?? 60));
+    // A split day of the same ID (`push` on PPL) is that day already: it isn't offered twice.
+    const others = TODAY_OTHER_SESSIONS.filter((s) => !splitDays.some((d) => d.splitDayId === s.id)).map((s) => otherSessionDay(s, otherMainOptions(s, planDays, info, fallbacks), info, training?.sessionMinutes ?? 60));
 
     // Load inputs for every exercise a card can use.
     const allTemplates = [...days, ...others].flatMap((d) => d.templates);
@@ -695,6 +745,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // Each day's own sessions (credited by plan day or by its templates), newest first.
     const daySessions = (day: TodayDay): SessionAggregate[] =>
       newest.filter((a) => {
+        // A split day's workouts are the ones that trained it, by the muscles done (as Up next counts them).
+        if (day.kind === 'split') return trainedDays.get(a.session.id)?.includes(day.splitDayId) === true;
         const pd = a.session.planDay;
         if (pd !== undefined && day.planId !== null) return pd.planId === day.planId && pd.dayIndex === day.dayIndex;
         return a.session.routineId !== null && day.templates.some((t) => t.routineId === a.session.routineId);
@@ -749,7 +801,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     });
     const carrySessions = newest.map((a) => ({ sessionId: a.session.id, startedAtUtc: a.session.startedAt.utc, ...(a.session.planDay === undefined ? {} : { planDay: { planId: a.session.planDay.planId, dayIndex: a.session.planDay.dayIndex } }) }));
     const carryFor = (day: TodayDay): CarryItem[] => (day.kind !== 'plan' || day.planId === null || day.dayIndex === null || carrySources.length === 0 ? [] : pendingCarryOvers({ sources: carrySources, sessions: carrySessions, planId: day.planId, dayIndex: day.dayIndex, nowUtc: now.utc }));
-    const dayKeyOfDraft = (k: BuilderDraftKey): string => (k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`);
+    const dayKeyOfDraft = todayDayKeyOf;
     // (D3) The main lift each day's latest draft today is for: Your workout's Main lift (it left Today's card) shows here.
     const latestDraft: Record<string, TodayLatestDraft> = {};
     for (const d of open) {
@@ -782,18 +834,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const k = d.builderKey;
       if (k === undefined) continue;
       const dayKey = dayKeyOfDraft(k);
-      const st = builderSetupOf(d);
-      const tf = st?.timeFit;
-      const shown: TodayEditedDraft = {
-        draftId: d.id,
-        version: d.version,
-        name: d.name,
-        workout: fromDraftPlan(currentDraftVersion(d).plan, st?.restLevel ?? 'normal'),
-        minutes: st?.minutes ?? currentDraftVersion(d).fitMinutes,
-        timeFrom: st?.timeFrom ?? tf?.fromMinutes ?? null,
-        fit: tf === undefined ? null : timeFitFromStored(tf),
-        carryOver: st?.carryOver ?? null,
-      };
+      const shown = editedOf(d);
       if (own.state === 'nudge') nudged[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = { ...shown, controls: own.controls };
       else edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = shown;
     }
@@ -802,7 +843,6 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const acts = await repos()
       .activities.listBetween(p.id, addDays(today, -3), addDays(today, 4))
       .catch(() => [] as Activity[]);
-    const near = legRunNear(await repos().activities.listBetween(p.id, addDays(today, -1), addDays(today, 2)).catch(() => [] as Activity[]), today);
     const stripWorkouts = newest
       .map((a) => ({ sessionId: a.session.id, localDate: localDateOf(toMs(a.session.startedAt.utc), tz), title: titleOf(a.session.routineName) }))
       .filter((w) => w.localDate >= addDays(today, -3) && w.localDate <= today);
@@ -837,11 +877,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const coach = await deps.coachStatus().catch((): CoachStatus => 'not_connected');
     const review = reviewOf(coach);
     const equipmentVersion = deriveId(stableStringify(sub.gym.equipment.map((e) => [e.id, e.version])));
-    // An applied plan with no live workouts left is no plan in use (Library › Your plan shows none either).
-    const status: TodaySessionStatus = plan === null || days.length === 0 ? 'no_plan' : paused ? 'paused' : 'plan';
-    // No plan: the old Today's Up next (split, rotation, longest gap) is still one tap away. Only at a saved gym, as
-    // the overview it opens starts there; a failed read is no Up next (the rest of Today still loads).
-    const fallbackNext = status === 'no_plan' && gymId !== null ? await deps.port.upNext(gymId).catch(() => null) : null;
+    // No plan and no Profile split: the old Today's Up next (rotation, longest gap) is still one tap away.
     // (D8) Today's Your workout draft for Up next, once changed there: Start starts what that page shows.
     const upNextDraft =
       fallbackNext === null
@@ -851,6 +887,14 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
             const same = f !== undefined && ((f.kind === 'routine' && f.id === fallbackNext.routineId) || (f.kind === 'session' && f.id === fallbackNext.sourceSessionId));
             return same && isEdited(d);
           }) ?? null);
+    // (D8, V5) With the day row from Profile › Split, Up next is the NEXT split day's card: a change landed on the
+    // resolver's own Your workout draft for that day (by Ben, or a coach change he applied in chat) shows there
+    // (`· edited`), and Start and Edit use it. Only when the resolver named that split day.
+    const nextMain = nextDay === null ? undefined : initial[nextDay.key]?.mainLiftExerciseId;
+    if (upNextDraft !== null && nextDay?.kind === 'split' && splitNext?.why === 'resolver' && nextMain !== undefined) {
+      const at = `${nextDay.key}|${nextMain ?? '-'}`;
+      edited[at] ??= editedOf(upNextDraft);
+    }
     return {
       status,
       ownerId: p.id,
@@ -862,6 +906,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       days,
       others,
       nextKey: nextDay?.key ?? null,
+      splitNextWhy: splitNext?.why ?? null,
       upNext: fallbackNext === null ? null : { ...fallbackNext, ...(upNextDraft === null ? {} : { edited: { draftId: upNextDraft.id, version: upNextDraft.version } }) },
       initial,
       latestDraft,
@@ -959,45 +1004,35 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const unit = breakdownUnit(held.workout, data.unit);
       return {
         dayKey: day.key,
-        lean: data.status !== 'no_plan',
         title: edited === null ? day.name : `${day.name} · ${TODAY_V2_COPY.edited}`,
         edited,
         nudged: edited === null ? nudged : null,
         summary: TODAY_V2_COPY.summary(count, minutes),
         minutes,
         exerciseCount: count,
-        // The coach's version Ben applied keeps Time (a step is Today's card again). (D3; review todaylean S4) An edited
-        // card with a plan keeps Time too: the draft's own (Your workout's Time on it, refitted around Ben's edits, FT5).
-        time: edited === null ? timeView(sel.controls.minutes, t.minutes, { note: null, lines: [] }, false) : data.status !== 'no_plan' ? editedTime(data, edited) : null,
+        // The coach's version Ben applied keeps Time (a step is Today's card again). (D3; review todaylean S4; V5) An
+        // edited card keeps Time too: the draft's own (Your workout's Time on it, refitted around Ben's edits, FT5).
+        time: edited === null ? timeView(sel.controls.minutes, t.minutes, { note: null, lines: [] }, false) : editedTime(data, edited),
         clashLine: clash,
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
         rows: todayBreakdown(held.workout, info, worksOf, unit, pained),
-        why: whyLines(data, day, t, sel.controls, null, heldIn(held.workout), gap, coachWhyOf(data, coach, null)),
-        mix: null,
-        mixAvailable: false,
-        mixShortlist: [],
-        mixFromExerciseId: null,
+        why: whyLines(data, day, t, sel.controls, null, heldIn(held.workout), gap, coachWhyOf(data, coach)),
         startable: count > 0,
         draft: null,
-        carry: edited !== null && data.status !== 'no_plan' ? editedCarry(data, day, edited) : null,
+        carry: edited !== null ? editedCarry(data, day, edited) : null,
       };
     }
-    // (D3, Ben 22–23 Oct) `↻ Mix it up` left the lean card with the other Today-only controls (Your workout's Swap does
-    // the same job): with a plan the card never swaps an accessory, whatever an older selection carried.
-    const lean = data.status !== 'no_plan';
-    const pick = lean ? null : (coach.mixPick ?? null);
-    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId, ...(lean ? { mix: 0 } : {}) }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day), ...(pick === null ? {} : { mixOrder: pick.order }) });
+    // (D3, Ben 22–23 Oct; V5) `↻ Mix it up` left the card with the other Today-only controls (Your workout has it): the
+    // card never swaps an accessory, whatever an older selection carried.
+    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day) });
     if (d === null) return null;
-    // The coach's reason only for the swap it picked (shown under the swap and in Why?).
-    const mixReason = d.mix !== null && pick !== null && pick.exerciseId === d.mix.toExerciseId ? mixCoachReason(pick) : null;
     const unit = breakdownUnit(d.workout, data.unit);
     const advice = d.advice[0]?.reason ?? null;
     const mainSlot = d.workout.blocks.flatMap((b) => b.slots).find((s) => s.main) ?? null;
     const slotName = (key: string) => nameOf(d.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === key)?.exerciseId ?? '');
     return {
       dayKey: day.key,
-      lean,
       title: day.name,
       edited: null,
       nudged: null,
@@ -1010,15 +1045,10 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       unit,
       rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
       // (Ben, 23 Oct) Sets carried over to this day: one line each behind Why?.
-      why: [...whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach, mixReason)), ...d.carried.map((x) => TODAY_CARRIED(x))],
-      mix: d.mix === null ? null : todayMixLine(d.mix, nameOf, mixReason),
-      mixAvailable: !lean && d.mixOptions > 0,
-      // No shortlist on the lean card: the coach is never asked for a Mix it up pick there.
-      mixShortlist: lean ? [] : d.mixShortlist,
-      mixFromExerciseId: lean ? null : d.mixFromExerciseId,
+      why: [...whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach)), ...d.carried.map((x) => TODAY_CARRIED(x))],
       startable: d.exerciseCount > 0,
       draft: d,
-      carry: lean ? todayCarry(data, day, d, sel.controls.minutes) : null,
+      carry: todayCarry(data, day, d, sel.controls.minutes),
     };
   }
 
@@ -1083,11 +1113,11 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return timeView(e.minutes, e.timeFrom ?? e.minutes, fitNoteOf(changes, nameOf, slotName), estimateBuilderSeconds(e.workout, ctx) > e.minutes * 60 + 29);
   }
 
-  /** The coach's part of Why?: its nudge (`todayCoachWhy`), else the Mix it up reason; no nudge yet: the connection's status. */
-  function coachWhyOf(data: TodaySessionData, coach: TodayCoachInputs, mixReason: string | null): { coachReason: string | null; review: TodayReviewStatus } {
+  /** The coach's part of Why?: its nudge (`todayCoachWhy`); no nudge yet: the connection's status. */
+  function coachWhyOf(data: TodaySessionData, coach: TodayCoachInputs): { coachReason: string | null; review: TodayReviewStatus } {
     const nudge = coach.nudge === undefined || coach.nudge === null ? null : todayCoachWhy(coach.nudge);
     const review: TodayReviewStatus = nudge === null || nudge.review === 'pending' ? data.review : nudge.review;
-    return { coachReason: nudge?.coachReason ?? mixReason, review: mixReason !== null && review === 'not_reviewed' ? 'reviewed' : review };
+    return { coachReason: nudge?.coachReason ?? null, review };
   }
 
   function whyLines(data: TodaySessionData, day: TodayDay, t: TodayTemplate, c: TodayControls, mainTarget: string | null, held: readonly string[], gap: string | null, coach: { coachReason: string | null; review: TodayReviewStatus } = { coachReason: null, review: data.review }): string[] {
@@ -1096,6 +1126,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       dayName: day.name,
       nextDayName: next,
       other: day.kind === 'other',
+      split: day.kind === 'split' ? { due: data.splitNextWhy !== 'after_last' } : null,
       last: data.internal.lastOf(day, t.mainLiftExerciseId),
       mainTarget: mainTarget === null || mainTarget === '—' ? null : mainTarget,
       goal: data.goal,
@@ -1306,7 +1337,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const data = await load();
     if (data === null) return null;
     const k = req.key;
-    const day = dayOf(data, k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`);
+    const day = dayOf(data, todayDayKeyOf(k));
     if (day === null) return null;
     const found = templateHere(data, day, req.controls.mainLiftExerciseId);
     if (found === null || (found.gap === null && found.t.mainLiftExerciseId !== req.controls.mainLiftExerciseId)) return null;
@@ -1325,6 +1356,18 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
   }
 
   /**
+   * (V5) Your workout's Main lift options for a no-plan Today draft (a Profile split day or an Other session): the day's
+   * main lifts this gym can do (the draft's own kept even when it can't). Null: not one of Today's days now.
+   */
+  async function mainLiftsFor(key: BuilderDraftKey): Promise<{ exerciseId: string; label: string }[] | null> {
+    const data = await load();
+    if (data === null) return null;
+    const day = dayOf(data, todayDayKeyOf(key));
+    if (day === null) return null;
+    return day.templates.flatMap((t) => (t.mainLiftExerciseId !== null && (data.internal.here(t.mainLiftExerciseId) || t.mainLiftExerciseId === key.mainLiftExerciseId) ? [{ exerciseId: t.mainLiftExerciseId, label: t.label }] : []));
+  }
+
+  /**
    * (Ben, 23 Oct; review todaylean SP3) `↻ Mix it up` on Your workout: the Mix it up facts of the day a builder draft is
    * for (its recent sessions, when each exercise was last done, what's here and pain-flagged), the same ones Today's
    * card used before D3. Null: not one of Today's days.
@@ -1332,7 +1375,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
   async function mixFactsFor(key: BuilderDraftKey): Promise<TodayMixFacts | null> {
     const data = await load();
     if (data === null) return null;
-    const day = dayOf(data, key.planId !== null && key.dayIndex !== null ? `plan:${key.planId}:${String(key.dayIndex)}` : `other:${key.splitDayId ?? '-'}`);
+    const day = dayOf(data, todayDayKeyOf(key));
     return day === null ? null : data.internal.mixFor(day);
   }
 
@@ -1398,20 +1441,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const c = await commit(data, sel, `${opId}:commit`);
     if (!c.ok) return null;
     const day = dayOf(data, sel.dayKey);
-    return deps.nudge({ draftId: c.draftId, splitDayId: day?.kind === 'plan' ? day.splitDayId : null, input: data.nudgeInput, opId: `${opId}:${c.draftId}` }).catch(() => null);
-  }
-
-  /** `↻ Mix it up` (rule 3): the coach's pick from code's shortlist with its reason; offline or unwired: null (code's pick stands, not reviewed). */
-  async function mixPick(data: TodaySessionData, view: Pick<TodayCardView, 'mixShortlist' | 'mixFromExerciseId'>): Promise<MixPick | null> {
-    if (deps.mixPick === undefined || view.mixFromExerciseId === null || view.mixShortlist.length === 0) return null;
-    const { ctx, here } = data.internal;
-    const world: BuilderCoachWorld = {
-      snapshot: { draftId: '', draftVersion: 0, dayName: '', minutes: 0, supersets: false, workout: { blocks: [], restLevel: 'normal' }, revs: {} },
-      env: { ctx, usable: here, pain: () => null, loads: createBuilderLoadGuard({ ctx, refs: () => null, pain: () => null }), mainGroup: null },
-      extras: { usable: [], painFlags: [], dayNotes: [], plan: null, goal: data.goal, history: [], memories: data.internal.memories },
-    };
-    const pick = await deps.mixPick({ fromExerciseId: view.mixFromExerciseId, shortlist: view.mixShortlist, lastDone: data.internal.lastDoneText, world }).catch(() => null);
-    return pick?.by === 'coach' ? pick : null;
+    return deps.nudge({ draftId: c.draftId, splitDayId: day?.kind === 'plan' || day?.kind === 'split' ? day.splitDayId : null, input: data.nudgeInput, opId: `${opId}:${c.draftId}` }).catch(() => null);
   }
 
   return {
@@ -1426,7 +1456,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     carryOver,
     start,
     review,
-    mixPick,
+    mainLiftsFor,
     /** The 7-day strip for the card's day (`chosen`). */
     strip(data: TodaySessionData, chosen: string | null): StripCell[] {
       return buildTodayStrip({
@@ -1438,6 +1468,11 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       });
     },
   };
+}
+
+/** A builder draft key's Today day: `plan:<planId>:<dayIndex>`, else `other:<splitDayId>` (a Profile split day or an Other session). */
+export function todayDayKeyOf(k: Pick<BuilderDraftKey, 'planId' | 'dayIndex' | 'splitDayId'>): string {
+  return k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`;
 }
 
 const clampInt = (m: number): number => Math.max(15, Math.min(180, Math.round(m)));
