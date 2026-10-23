@@ -384,9 +384,11 @@ describe('source checks', () => {
     // A workout in progress: back to Today, where it resumes; nothing was created.
     expect(page).toContain("if (r.reason === 'active') {");
     expect(page).toContain('navigation.dispatch(popToToday(r.message));');
-    // `⋯ Save to Workouts` only for a workout that isn't a plan day or a saved workout (§7).
-    expect(page).toContain('{snap.canSave ? <TextButton label="⋯"');
-    expect(page).toContain("void save.open({ kind: 'draft', draftId: snap.draftId, gymId: snap.gymId }, snap.name);");
+    // `⋯ Save to Workouts` only for a workout that isn't a plan day or a saved workout (§7); (Ben, 23 Oct) `Save as a
+    // variation` only for a plan day.
+    expect(page).toContain('{moreItems.length > 0 ? <TextButton label="⋯"');
+    expect(page).toContain("...(snap.canSave ? [{ label: WORKOUT_COPY.saveToWorkouts, run: () => void save.open({ kind: 'draft', draftId: snap.draftId, gymId: snap.gymId }, snap.name) }] : []),");
+    expect(page).toContain('...(snap.canSaveVariation ? [{ label: services.builder.copy.saveAsVariation, run: () => void openVariationName() }] : []),');
   });
   it('swipes and steppers carry VoiceOver actions; the keyboard bar has − + Next Done', () => {
     expect(screens).toContain('accessibilityActions');
