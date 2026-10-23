@@ -162,6 +162,8 @@ Never in week 1–2. At most one offer a week. `✕` stops the offer for that we
 ### 4.4 Deload transform (`deloadDraft`)
 Applied by the Today drafter after §3.1 and **before** fitting (fitting runs on the deloaded draft; review 23 Oct S4): working loads × 0.9 rounded down, back-offs included (they drop by the same −10 % as the top, SS4/HT8; D4, Ben 22–23 Oct; workout-builder-v3 §3.1 item 9); sets −1 per exercise (min 2; main lift keeps the top set, back-offs −1); RPE targets min(target, 7). Warm-ups follow. Only today's draft is touched. Templates and completed sets are never changed (rule 2), and `Keep for next time?` measures Ben's changes against the template, not the deloaded draft (workout-builder-v3 §2.8).
 
+**Deload history (PM, 23 Oct).** A workout started in the deload week is marked at Start (`WorkoutSession.deload`, migration 34). The built-in rule, next-session targets, lift estimates (the next block's 6-rep estimate and week-1 loads) and the coach's history read skip it while a normal week compares, or label it; Progress volume and history count it as any workout. See the changelog entry of 23 Oct.
+
 ### 4.5 Gym change, pain, units
 - Path values are stored with unit and convention, and re-snapped down for the gym Ben is using.
 - A lift the gym lacks shows `—` for that week.
