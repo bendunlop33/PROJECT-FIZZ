@@ -566,6 +566,21 @@ export function timerBarMode(rest: Pick<RestView, 'kind'> | null): 'rest' | 'set
 }
 
 /**
+ * The round page's bottom chrome (Ben, 23 Oct: with the number pad up only
+ * about 2 rows showed). While the pad is up the SET clock and the action bar
+ * (Log, coach, mic) step aside so the table gets the room; the cell's − / +,
+ * Next › and Done bar stays on the pad. A running rest keeps its slim bar
+ * (its countdown and Skip still matter). Done or the pad closing brings them
+ * back. Focus view keeps its own layout.
+ */
+export function bottomChrome(p: { tableMode: boolean; keypadUp: boolean; rest: Pick<RestView, 'kind'> | null }): { timer: 'rest' | 'rest_slim' | 'set' | null; actionBar: boolean } {
+  if (!p.tableMode) return { timer: null, actionBar: true };
+  const mode = timerBarMode(p.rest);
+  if (!p.keypadUp) return { timer: mode, actionBar: true };
+  return { timer: mode === 'rest' ? 'rest_slim' : null, actionBar: false };
+}
+
+/**
  * Where the SET clock counts up from: when the last rest ended, or the last
  * log if that came later (a superset's a → b has no rest), else the start.
  */

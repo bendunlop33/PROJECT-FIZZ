@@ -48,7 +48,8 @@ describe('row taps (WT10, WT11, WT12; Ben decision 4)', () => {
     runRowTap({ ...row('pending'), columns: cols }, h, 'load');
     runRowTap({ ...row('done'), columns: cols }, h, 'value');
     runRowTap({ ...row('done'), columns: cols }, h, 'marker');
-    expect(calls).toEqual(['dismiss', 'selectEdit:set-pending:load', 'dismiss', 'correct:set-done:reps', 'dismiss', 'untick:set-done']);
+    // A cell tap keeps the number pad up (Ben, 23 Oct); the ✓ closes it.
+    expect(calls).toEqual(['selectEdit:set-pending:load', 'correct:set-done:reps', 'dismiss', 'untick:set-done']);
   });
 });
 

@@ -182,8 +182,17 @@ describe('keypad-open chrome, header and sheets (1.7–1.10)', () => {
     expect(screen).toContain('{toast && !keypadOpen ? toastNode : null}');
     expect(screen).toContain('const toastNode = toast ? (');
   });
+  it('with the pad up the table gets the room: the SET clock and the Log / coach / mic bar come off, back after Done (Ben, 23 Oct)', () => {
+    const f = flat(screen);
+    expect(f).toContain('const chrome = bottomChrome({ tableMode, keypadUp: chromeKeypad, rest });');
+    expect(f).toContain("chrome.timer === 'set' ? ( <SetClockBar");
+    expect(f).toContain('{chrome.actionBar ? <ActionBar');
+    // Moving from one cell to another doesn't flash them back in; the cell bar (− / +, Next ›, Done) stays.
+    expect(f).toContain('}, CHROME_KEYPAD_SETTLE_MS);');
+    expect(f).toContain('{cellBar !== null ? ( <CellKeypadBarView');
+  });
   it('the rest bar collapses to a slim one-line strip while the keypad is open (Ben, 20 Oct)', () => {
-    expect(flat(screen)).toContain('<RestBar rest={rest} slim={keypadOpen}');
+    expect(flat(screen)).toContain("<RestBar rest={rest} slim={keypadOpen || chrome.timer === 'rest_slim'}");
     expect(table).toContain('export const SLIM_REST_HEIGHT = 32;');
     const slim = flat(table.slice(table.indexOf('if (slim) {'), table.indexOf('const pill = (')));
     expect(slim).toContain('`Rest ${formatDuration(remainingS)}`');

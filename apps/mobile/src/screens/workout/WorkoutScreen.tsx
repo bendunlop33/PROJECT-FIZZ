@@ -82,7 +82,7 @@ import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/tar
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { createDraftSaver } from '../../workout/draft-saver';
 import { cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
-import { buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockMs, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
+import { bottomChrome, buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockMs, setClockStartMs, shownRoundIndex, stepRound, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
 import { CorrectionEditor, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
 import { WorkoutRoundsSheet, WhySheet } from './RoundSheets';
 import { useWorkoutEdits, type WorkoutEditsInput } from './WorkoutEdits';
@@ -115,6 +115,9 @@ interface ToastState {
 
 const EFFORT_RPE = [6, 7, 8, 9, 10] as const;
 const EFFORT_RIR = [4, 3, 2, 1, 0] as const;
+
+/** How long after the number pad hides the bottom chrome comes back: long enough for a move to another cell (23 Oct). */
+const CHROME_KEYPAD_SETTLE_MS = 300;
 
 export function WorkoutScreen() {
   const theme = useTheme();
@@ -186,6 +189,11 @@ export function WorkoutScreen() {
   // `Why?` on the target line (active-workout §2.12): one panel at most, hidden while the keypad is open.
   const [why, setWhy] = useState<WhyPanel>(null);
   const [keypadOpen, setKeypadOpen] = useState(false);
+  /**
+   * The pad as the bottom chrome sees it (Ben, 23 Oct): up at once; down a moment after the pad hides, so moving
+   * from one cell to another (the old field closes, the new one opens) doesn't flash Log and the clock back in.
+   */
+  const [chromeKeypad, setChromeKeypad] = useState(false);
   /** The number field the keypad is on (1.4): its accessory offers `Next ›` from it. */
   const [keypadField, setKeypadField] = useState<{ row: 'open' | 'done'; field: CellField } | null>(null);
   /** The done row's distance field (cardio pair), so `Next ›` from its time can focus it. */
@@ -315,17 +323,27 @@ export function WorkoutScreen() {
   useEffect(() => {
     // The Table's keypad anchor is sent by the tile's own onFocus (`onTileFocus`), never guessed here: the
     // focus event and this one have no guaranteed order (review r2 B1). This only says how tall the keypad is.
+    let chromeTimer: ReturnType<typeof setTimeout> | null = null;
     const shown = Keyboard.addListener('keyboardWillShow', (e) => {
+      if (chromeTimer !== null) clearTimeout(chromeTimer);
+      chromeTimer = null;
+      setChromeKeypad(true);
       setKeypadOpen(true);
       setKeyboardHeight(e.endCoordinates.height);
       whyEvent({ kind: 'keypad_opened' });
     });
     const hidden = Keyboard.addListener('keyboardWillHide', () => {
+      if (chromeTimer !== null) clearTimeout(chromeTimer);
+      chromeTimer = setTimeout(() => {
+        chromeTimer = null;
+        setChromeKeypad(false);
+      }, CHROME_KEYPAD_SETTLE_MS);
       setKeypadOpen(false);
       setKeyboardHeight(0);
       setKeypadField(null);
     });
     return () => {
+      if (chromeTimer !== null) clearTimeout(chromeTimer);
       shown.remove();
       hidden.remove();
     };
@@ -1411,7 +1429,7 @@ export function WorkoutScreen() {
       editCell({ kind: 'close' });
       return;
     }
-    Keyboard.dismiss();
+    // The number pad stays up (Ben, 23 Oct): the done cell's editor takes the focus as it opens.
     setCorrection({ setId: tap.setId, values: null, opId: newUuid() });
     editCell({ kind: 'tap', setId: tap.setId, field: tap.field, row: 'done' });
   }
@@ -2461,6 +2479,8 @@ export function WorkoutScreen() {
 
   // ---- Round page (workout-table-v3) ----
   const tableMode = mode === 'table' && table !== null && view.phase !== 'empty';
+  // Ben, 23 Oct: with the pad up the table gets the room (no SET clock, no Log / coach / mic); Done brings them back.
+  const chrome = bottomChrome({ tableMode, keypadUp: chromeKeypad, rest });
   const shown = shownRoundIndex(rounds, pickedRound);
   const shownRound = rounds[shown];
   // §1.6: Log names the step; a done round reads `Next round`. A round whose open row isn't there yet (a select in flight or
@@ -2953,22 +2973,22 @@ export function WorkoutScreen() {
           setChromeHeight(e.nativeEvent.layout.height);
         }}
       >
-        {/* v3 §1.5: the timer bar always shows: REST while resting, else the SET clock. */}
-        {tableMode && rest !== null && timerBarMode(rest) === 'rest' ? (
+        {/* v3 §1.5: the timer bar: REST while resting, else the SET clock; with the pad up only a slim REST (`bottomChrome`, 23 Oct). */}
+        {chrome.timer !== null && chrome.timer !== 'set' && rest !== null ? (
           <RestBar
             rest={rest}
-            slim={keypadOpen}
+            slim={keypadOpen || chrome.timer === 'rest_slim'}
             onAdjust={adjustRest}
             onSkip={skipRest}
             onOpen={() => {
               setRestFull(true);
             }}
           />
-        ) : tableMode ? (
+        ) : chrome.timer === 'set' ? (
           <SetClockBar text={setClock} paused={view.paused} slim={keypadOpen} />
         ) : null}
         {/* v3 §1.6: the shared coach ask bar (✦ + on-device mic) + Log; the coach sheet shows its own honest status. On the keypad, or with the cell bar under it: no home-indicator room (0.2; the cell bar takes it). */}
-        <ActionBar talk={<CoachAskBar icons page="active" reach={coachReach} speech={speech} onOpen={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen || cellBar !== null} />
+        {chrome.actionBar ? <ActionBar talk={<CoachAskBar icons page="active" reach={coachReach} speech={speech} onOpen={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen || cellBar !== null} /> : null}
         {/* Ben, 20 Oct: the cell is the field; its − / +, Next › and Done sit on the keypad, under Log. */}
         {cellBar !== null ? (
           <CellKeypadBarView

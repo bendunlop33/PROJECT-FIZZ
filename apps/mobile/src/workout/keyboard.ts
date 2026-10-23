@@ -6,3 +6,11 @@
  * the `Done` bar above the pad close it too.
  */
 export const WORKOUT_KEYBOARD = { keyboardDismissMode: 'interactive', keyboardShouldPersistTaps: 'handled' } as const;
+
+/**
+ * The v3 round table (Ben, 23 Oct: "scroll the table to change other cells
+ * quickly"): dragging the page or an exercise's set box leaves the number pad
+ * up, and a tap on another cell goes to that cell on the first tap. Done, Log
+ * and a tap outside the rows still close it.
+ */
+export const ROUND_TABLE_KEYBOARD = { keyboardDismissMode: 'none', keyboardShouldPersistTaps: 'handled' } as const;

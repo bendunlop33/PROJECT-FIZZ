@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SupersetCard, TableBlock, TableCard, TableRow, WorkoutTableView } from '@fizz/domain';
 
 import {
+  bottomChrome,
   boxAnchor,
   boxFades,
   boxFirstRow,
@@ -464,6 +465,17 @@ describe('timer bar (§1.5)', () => {
     expect(timerBarMode({ kind: 'paused' })).toBe('rest');
     expect(timerBarMode({ kind: 'ended' })).toBe('set');
     expect(timerBarMode(null)).toBe('set');
+  });
+
+  it('with the number pad up (Ben, 23 Oct): no SET clock and no Log / coach / mic bar; a running rest stays slim; the pad closing brings them back', () => {
+    expect(bottomChrome({ tableMode: true, keypadUp: false, rest: null })).toEqual({ timer: 'set', actionBar: true });
+    expect(bottomChrome({ tableMode: true, keypadUp: false, rest: { kind: 'running' } })).toEqual({ timer: 'rest', actionBar: true });
+    expect(bottomChrome({ tableMode: true, keypadUp: true, rest: null })).toEqual({ timer: null, actionBar: false });
+    expect(bottomChrome({ tableMode: true, keypadUp: true, rest: { kind: 'ended' } })).toEqual({ timer: null, actionBar: false });
+    expect(bottomChrome({ tableMode: true, keypadUp: true, rest: { kind: 'running' } })).toEqual({ timer: 'rest_slim', actionBar: false });
+    expect(bottomChrome({ tableMode: true, keypadUp: true, rest: { kind: 'paused' } })).toEqual({ timer: 'rest_slim', actionBar: false });
+    // Focus view keeps its own layout.
+    expect(bottomChrome({ tableMode: false, keypadUp: true, rest: null })).toEqual({ timer: null, actionBar: true });
   });
 
   it('SET counts up from the rest’s end, or the last log when that came later, else the start', () => {

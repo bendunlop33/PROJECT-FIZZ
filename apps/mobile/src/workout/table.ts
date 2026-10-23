@@ -71,14 +71,16 @@ export interface RowTapHandlers {
 }
 
 /**
- * Runs a row tap (review S3, F5): any tap that does something closes the
- * number pad first, so tapping another row is a tap outside the open row's
- * fields (the Table keeps taps with `keyboardShouldPersistTaps: 'handled'`).
+ * Runs a row tap (review S3, F5): a tap on another row's set number or ring
+ * closes the number pad first (it leaves the cells). A tap on another KG or
+ * REPS cell keeps the pad up and moves the typing there (Ben, 23 Oct:
+ * "change other cells quickly without the keyboard disappearing"); the
+ * Table keeps taps with `keyboardShouldPersistTaps: 'handled'`.
  */
 export function runRowTap(row: Parameters<typeof rowTap>[0], h: RowTapHandlers, part: RowPart = 'row'): RowTap {
   const tap = rowTap(row, part);
   if (tap.kind === 'none') return tap;
-  h.dismissKeyboard();
+  if (tap.kind !== 'select_edit' && tap.kind !== 'correct') h.dismissKeyboard();
   if (tap.kind === 'edit') h.edit(tap.setId);
   else if (tap.kind === 'select') h.select(tap.setId);
   else if (tap.kind === 'select_edit') h.selectEdit(tap.setId, tap.field);

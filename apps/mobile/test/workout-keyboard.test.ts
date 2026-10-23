@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { WORKOUT_KEYBOARD } from '../src/workout/keyboard';
+import { ROUND_TABLE_KEYBOARD, WORKOUT_KEYBOARD } from '../src/workout/keyboard';
 import { runRowTap } from '../src/workout/table';
 
 /**
@@ -17,17 +17,37 @@ const table = readFileSync(join(SRC, 'screens', 'workout', 'WorkoutTable.tsx'), 
 const ui = readFileSync(join(SRC, 'ui', 'workout.tsx'), 'utf8');
 
 describe('workout keyboard (F5)', () => {
-  it('dragging Focus or the Table closes the number pad; buttons still work on the first tap', () => {
+  it('dragging Focus closes the number pad; buttons still work on the first tap', () => {
     expect(WORKOUT_KEYBOARD).toEqual({ keyboardDismissMode: 'interactive', keyboardShouldPersistTaps: 'handled' });
     expect(screen).toContain('{...WORKOUT_KEYBOARD}');
-    expect(table).toContain('{...WORKOUT_KEYBOARD}');
+  });
+
+  it('the round table scrolls with the number pad up (Ben, 23 Oct): no dismiss on drag, taps handled, on the page and every set box', () => {
+    expect(ROUND_TABLE_KEYBOARD).toEqual({ keyboardDismissMode: 'none', keyboardShouldPersistTaps: 'handled' });
+    expect(table.match(/\{\.\.\.ROUND_TABLE_KEYBOARD\}/g)?.length).toBe(2);
+    expect(table).not.toContain('WORKOUT_KEYBOARD');
+    // A drag in a set box no longer closes the cell being typed in.
+    expect(table).not.toContain('onScrollBeginDrag={p.onTapElsewhere}');
   });
 
   it('a tap outside a field on Focus closes it', () => {
     expect(screen.replace(/\s+/g, ' ')).toContain('<Pressable accessible={false} onPress={() => { Keyboard.dismiss(); }}');
   });
 
-  it('in the Table, tapping another row closes it before selecting or editing (review S3)', () => {
+  it('in the Table, tapping another KG or REPS cell keeps the pad up and moves the typing there (Ben, 23 Oct)', () => {
+    const cols = { loadLabel: 'KG', valueLabel: 'REPS' } as const;
+    for (const [state, part, action] of [['pending', 'load', 'selectEdit'], ['pending', 'value', 'selectEdit'], ['done', 'load', 'correct'], ['done', 'value', 'correct']] as const) {
+      const h = { dismissKeyboard: vi.fn(), edit: vi.fn(), select: vi.fn(), selectEdit: vi.fn(), correct: vi.fn(), untick: vi.fn() };
+      runRowTap({ state, setId: 's1', columns: cols }, h, part);
+      expect(h.dismissKeyboard).not.toHaveBeenCalled();
+      expect(h[action]).toHaveBeenCalledWith('s1', part === 'load' ? 'load' : 'reps');
+    }
+    // A done cell's correction opens without closing the pad first (its field takes the focus).
+    const tap = screen.slice(screen.indexOf('function cellTap('), screen.indexOf('\n  }\n', screen.indexOf('function cellTap(')));
+    expect(tap).not.toContain('Keyboard.dismiss()');
+  });
+
+  it('in the Table, tapping another row’s number or ring closes it before selecting or editing (review S3)', () => {
     for (const [state, part, action] of [['pending', 'marker', 'select'], ['pending', 'row', 'edit'], ['done', 'row', 'edit']] as const) {
       const calls: string[] = [];
       const h = { dismissKeyboard: vi.fn(() => calls.push('dismiss')), edit: vi.fn(() => calls.push('edit')), select: vi.fn(() => calls.push('select')), selectEdit: vi.fn(), correct: vi.fn(), untick: vi.fn() };
@@ -80,8 +100,8 @@ describe('the table stays a table (18 Oct; review B1, S3, S4, S6)', () => {
     expect(fn('async function log(')).toContain("editCell({ kind: 'logged' });");
     expect(fn('async function selectRow(')).toContain("editCell({ kind: 'selected' });");
   });
-  it('a drag in a row box or a tap on the card outside the rows closes it', () => {
-    expect(table).toContain('onScrollBeginDrag={p.onTapElsewhere}');
+  it('a tap on the card outside the rows closes it; a drag in a row box doesn’t (Ben, 23 Oct)', () => {
+    expect(table).not.toContain('onScrollBeginDrag={p.onTapElsewhere}');
     expect(table).toContain('accessible={false} onPress={props.onTapElsewhere}');
     expect(screen).toContain('onTapElsewhere={closeCellEditors}');
   });
