@@ -57,17 +57,20 @@ describe('plan builder', () => {
     if (!built.ok) throw new Error('not built');
     expect(await s.plans.inUse()).toBeNull();
 
-    // A force-close before Apply keeps the built plan: the builder opens on it with its answers.
+    // A force-close before Apply keeps the built plan. (Ben, 23 Oct) `Set up a plan` still starts a new plan at step 1
+    // with its answers as the starting selections; the built plan is offered quietly (`Continue last draft`).
     await h.forceClose();
     const { services: s2 } = await h.launch();
     const again = await s2.planBuilder.open();
-    expect(again?.draft).toEqual({ planId: built.planId, version: 1, versionN: 1 });
+    expect(again?.draft).toBeNull();
+    expect(again?.opensOn).toBe('start');
+    expect(again?.lastDraft).toEqual({ planId: built.planId, version: 1, versionN: 1, answers: a });
     expect(again?.answers).toEqual(a);
 
-    // A rebuild with new answers is a new version; the old version can't be applied (rule 5).
-    if (again == null) throw new Error('no session');
+    // Continued: a rebuild with new answers is a new version; the old version can't be applied (rule 5).
+    if (again?.lastDraft == null) throw new Error('no session');
     const five = pbWithSessions(a, 5);
-    const v2 = await s2.planBuilder.save(again, five, again.draft, h.ids());
+    const v2 = await s2.planBuilder.save(again, five, again.lastDraft, h.ids());
     expect(v2).toMatchObject({ ok: true, version: 2, versionN: 2 });
     const stale = await s2.planBuilder.apply({ planId: built.planId, versionN: 1, expectedVersion: 1, opId: h.ids() });
     expect(stale.ok).toBe(false);

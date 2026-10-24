@@ -134,6 +134,11 @@ export function openNextBlock(fromPlanId: string) {
   return { type: 'NAVIGATE', payload: { name: 'PlanSetup', params: { fromPlanId } } } as const;
 }
 
+/** `Edit plan` on a plan's Your plan: the builder opens on that plan's overview with its answers (the only entry that does). */
+export function openPlanEdit(editPlanId: string) {
+  return { type: 'NAVIGATE', payload: { name: 'PlanSetup', params: { editPlanId } } } as const;
+}
+
 /** `Apply plan`: to Today with the plan, showing `Plan applied · Undo` (plan-builder §3). */
 export function todayAfterPlanApplied(planApplied: PlanAppliedToastParam): PopToTabsAction {
   return popToTabs({ screen: 'Today', params: { planApplied } });

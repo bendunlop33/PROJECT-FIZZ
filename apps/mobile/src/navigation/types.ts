@@ -239,7 +239,8 @@ export type RootStackParams = {
    * applied) opens on Your plan. `fromPlanId` (Ben, 23 Oct: plan length = block 1): `Block done · Start next block ›`
    * on Your plan, the builder starting from that plan's answers.
    */
-  PlanSetup: { fromPlanId?: string } | undefined;
+  /** `fromPlanId`: Start next block (a new plan from that block's answers). `editPlanId`: Edit plan (opens on Your plan). */
+  PlanSetup: { fromPlanId?: string; editPlanId?: string } | undefined;
 };
 
 /** Your workout's back control when it wasn't opened from Set up: `‹ Today`, `‹ Library`, `‹ Summary`, else `‹ Back`. */

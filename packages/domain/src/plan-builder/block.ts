@@ -99,6 +99,22 @@ export function pbAppliedBuilder(plan: Pick<PlanDraft, 'status' | 'versions' | '
   return version === undefined || builder === undefined ? null : { version, builder };
 }
 
+/**
+ * (Ben, 23 Oct) `Set up a plan` always starts a new plan at its first step; the starting selections are his last
+ * builder plan's answers: the applied one (as applied), else the most recently written builder plan of any status.
+ * Null: no builder plan yet (the ✦ answers).
+ */
+export function pbStartingAnswers(plans: readonly Pick<PlanDraft, 'status' | 'versions' | 'currentVersion' | 'applied' | 'updatedAtUtc'>[]): PlanBuilderAnswers | null {
+  for (const p of plans) {
+    const a = pbAppliedBuilder(p);
+    if (a !== null) return a.builder.answers;
+  }
+  const built = plans
+    .filter((p) => p.versions.find((v) => v.n === p.currentVersion)?.builder !== undefined)
+    .sort((a, b) => toMs(b.updatedAtUtc) - toMs(a.updatedAtUtc))[0];
+  return built?.versions.find((v) => v.n === built.currentVersion)?.builder?.answers ?? null;
+}
+
 /** A finished workout as the block reads it (a `FinishedRef`). */
 export interface PbFinishedRef {
   routineId: string | null;

@@ -18,6 +18,7 @@ import {
   painFlagCovering,
   pbDefaultAnswers,
   pbAppliedBuilder,
+  pbStartingAnswers,
   pbExpect,
   pbPrefSuggestion,
   pbHistoryOf,
@@ -59,8 +60,14 @@ export interface PlanBuilderDeps {
   plans: Pick<PlanServices, 'apply' | 'undo'>;
 }
 
-/** Every exercise the engine may name: its tables' keys. */
+let engineKeyList: string[] | null = null;
+/** Every exercise the engine may name: its tables' keys (static tables: worked out once). */
 function engineKeys(): string[] {
+  engineKeyList ??= allEngineKeys();
+  return engineKeyList;
+}
+
+function allEngineKeys(): string[] {
   const keys = new Set<string>([
     ...Object.values(PB_EX).flatMap((l) => l.map((x) => x.key)),
     ...Object.values(PB_MAIN_A).flatMap((m) => (m === null ? [] : [m.key])),
@@ -77,10 +84,20 @@ function engineKeys(): string[] {
 
 /** What the builder read once: kits at the gym, his history, pain holds. Synchronous after `open`. */
 export interface PlanBuilderSession {
-  /** The answers to start from: the open builder plan's, else the ✦ answers. */
+  /**
+   * The answers to start from. A new plan (Ben, 23 Oct): his last builder plan's as starting selections (or the
+   * finished block's for `Start next block`), else the ✦ answers. `editPlanId`: that plan's.
+   */
   answers: PlanBuilderAnswers;
-  /** An open builder plan resumed (Build was tapped before; Apply wasn't). */
+  /** The open builder plan being edited (`editPlanId` only); a new plan has none until Build. */
   draft: { planId: string; version: number; versionN: number } | null;
+  /**
+   * (Ben, 23 Oct) A built plan left unapplied, offered quietly on the first page (`Continue last draft`), never the
+   * landing page. Null: none, or editing.
+   */
+  lastDraft: { planId: string; version: number; versionN: number; answers: PlanBuilderAnswers } | null;
+  /** Where the page opens: `start` (Check your lifts when needed, else Gym goals) for every new plan; `plan` only for `Edit plan`. */
+  opensOn: 'start' | 'plan';
   gym: { id: string; name: string } | null;
   profileSplit: 'ppl' | 'body' | null;
   nowMs: number;
@@ -113,10 +130,12 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
   }
 
   /**
-   * `fromPlanId` (Ben, 23 Oct: plan length = block 1): `Start next block ›` on a finished block: the builder starts
-   * from that plan's answers (a fresh build from his records now; nothing is written until `Build plan`).
+   * `Set up a plan` (Ben, 23 Oct): always a new plan from the first step, his last builder plan's answers as the
+   * starting selections. `fromPlanId` (plan length = block 1): `Start next block ›` on a finished block starts from
+   * that plan's answers (a fresh build from his records now; nothing is written until `Build plan`). `editPlanId`:
+   * `Edit plan` on that plan (its answers; an open builder plan is edited in place, new versions on Build).
    */
-  async function open(opts: { fromPlanId?: string } = {}): Promise<PlanBuilderSession | null> {
+  async function open(opts: { fromPlanId?: string; editPlanId?: string } = {}): Promise<PlanBuilderSession | null> {
     const p = await deps.profile();
     if (p === null) return null;
     const store = deps.store();
@@ -139,7 +158,14 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     const hist = new Map<string, PbHistory | null>();
     const painHeld = new Set<string>();
     const names = new Map<string, string>();
-    for (const key of engineKeys()) {
+    const keys = engineKeys();
+    // (Perf, 23 Oct: Set up a plan took ~20 s) Every engine lift's history in one read, each workout decoded once
+    // (and reused from the store's cache), instead of a full-history read per lift.
+    const histories = await store.listExerciseHistories(
+      p.id,
+      keys.flatMap((k) => (byId.has(catalogueExerciseId(k)) ? [catalogueExerciseId(k)] : [])),
+    );
+    for (const key of keys) {
       const e = byId.get(catalogueExerciseId(key));
       if (e === undefined) {
         kits.set(key, null);
@@ -156,7 +182,7 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
       }
       kits.set(key, kit);
       if (painFlagCovering(flags, e.id, nowMs, at.tz) !== null) painHeld.add(key);
-      const sessions = await deps.store().listExerciseHistory(p.id, e.id);
+      const sessions = histories.get(e.id) ?? [];
       hist.set(key, pbHistoryOf(sessions, kit === null || kit === 'bodyweight' ? null : kit.convention, nowMs));
     }
     const kitOf = (k: string): PlanKit | 'bodyweight' | null => kits.get(k) ?? null;
@@ -165,11 +191,18 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     // (WU1–WU12) The catalogue facts Start's warm-up planner reads, so the plan's main-lift warm-ups match the workout's.
     const factsOf = (k: string): Exercise | null => byId.get(catalogueExerciseId(k)) ?? null;
 
-    const from = opts.fromPlanId === undefined ? null : await repo().get(opts.fromPlanId).catch(() => null);
-    const fromAnswers = from === null || from.ownerId !== p.id ? null : (pbAppliedBuilder(from)?.builder.answers ?? currentPlanVersion(from).builder?.answers ?? null);
-    const draft = fromAnswers !== null ? null : await openDraft(p.id, at.utc);
+    const fromId = opts.editPlanId ?? opts.fromPlanId;
+    const from = fromId === undefined ? null : await repo().get(fromId).catch(() => null);
+    const owned = from === null || from.ownerId !== p.id ? null : from;
+    const fromAnswers = owned === null ? null : (pbAppliedBuilder(owned)?.builder.answers ?? currentPlanVersion(owned).builder?.answers ?? null);
+    const editing = opts.editPlanId !== undefined && fromAnswers !== null;
+    // Editing an open builder plan writes new versions of it; anything else is a new plan until Build.
+    const draft = editing && owned !== null && planIsOpen(owned, at.utc) ? owned : null;
     const v = draft === null ? null : currentPlanVersion(draft);
-    const answers = fromAnswers ?? v?.builder?.answers ?? pbDefaultAnswers({ sessions: training?.daysPerWeek ?? null, minutes: training?.sessionMinutes ?? null });
+    const leftover = editing ? null : await openDraft(p.id, at.utc);
+    const leftoverV = leftover === null ? null : currentPlanVersion(leftover);
+    const starting = fromAnswers ?? pbStartingAnswers(await repo().listByOwner(p.id).catch(() => []));
+    const answers = starting ?? pbDefaultAnswers({ sessions: training?.daysPerWeek ?? null, minutes: training?.sessionMinutes ?? null });
     const lifts = (a: PlanBuilderAnswers): PbLiftStart[] =>
       [...PB_CHECK_LIFTS, ...a.extraLifts.filter((k) => !(PB_CHECK_LIFTS as readonly string[]).includes(k))].flatMap((k) => {
         const s = pbLiftStart(k, kitOf, historyOf, a.lifts[k], nowMs);
@@ -178,6 +211,8 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     return {
       answers,
       draft: draft === null || v === null ? null : { planId: draft.id, version: draft.version, versionN: v.n },
+      opensOn: editing ? 'plan' : 'start',
+      lastDraft: leftover === null || leftoverV?.builder === undefined ? null : { planId: leftover.id, version: leftover.version, versionN: leftoverV.n, answers: leftoverV.builder.answers },
       gym,
       profileSplit,
       nowMs,

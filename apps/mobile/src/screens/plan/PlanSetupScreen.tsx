@@ -29,6 +29,7 @@ import {
   likeGroups,
   liftFromLine,
   otherOf,
+  pbFirstPage,
   prefQuestions,
   prefsRowValue,
   rotatesLine,
@@ -68,13 +69,18 @@ export function PlanSetupScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   // (Ben, 23 Oct: plan length = block 1) `Start next block ›`: the finished block's answers.
-  const fromPlanId = useRoute<RouteProp<RootStackParams, 'PlanSetup'>>().params?.fromPlanId;
+  const params = useRoute<RouteProp<RootStackParams, 'PlanSetup'>>().params;
+  const fromPlanId = params?.fromPlanId;
+  // `Edit plan` only: the one entry that opens on Your plan. `Set up a plan` always starts a new plan at step 1.
+  const editPlanId = params?.editPlanId;
   const insets = useSafeAreaInsets();
   const [session, setSession] = useState<PlanBuilderSession | null | 'error'>(null);
   const [answers, setAnswers] = useState<PlanBuilderAnswers | null>(null);
   const [page, setPage] = useState<Page>('goals');
   const [fromPlan, setFromPlan] = useState<PlanBuilderAnswers | null>(null);
   const [draft, setDraft] = useState<Draft>(null);
+  // (Ben, 23 Oct) A built plan left unapplied: a quiet `Continue last draft ›` on the first page.
+  const [lastDraft, setLastDraft] = useState<PlanBuilderSession['lastDraft']>(null);
   const [openDay, setOpenDay] = useState(-1);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
@@ -87,7 +93,7 @@ export function PlanSetupScreen() {
   /** Reads Ben's records for the builder. `keep`: the answers on screen stay (a gym was just added). */
   const load = (keep: PlanBuilderAnswers | null = null): void => {
     void services.planBuilder
-      .open(fromPlanId === undefined ? {} : { fromPlanId })
+      .open(editPlanId !== undefined ? { editPlanId } : fromPlanId === undefined ? {} : { fromPlanId })
       .then((s) => {
         if (s === null) {
           setSession('error');
@@ -95,12 +101,13 @@ export function PlanSetupScreen() {
         }
         setSession(s);
         setDraft(s.draft);
+        setLastDraft(s.lastDraft);
         if (keep !== null) {
           setAnswers(keep);
           return;
         }
         setAnswers(s.answers);
-        setPage(s.draft !== null ? 'plan' : s.needsCheck ? 'check' : 'goals');
+        setPage(pbFirstPage(s));
       })
       .catch(() => {
         setSession('error');
@@ -154,6 +161,7 @@ export function PlanSetupScreen() {
     buildOp.current = newUuid();
     setAnswers(ready);
     setDraft({ planId: r.planId, version: r.version, versionN: r.versionN });
+    setLastDraft(null);
     setFromPlan(null);
     setOpenDay(-1);
     setPage('plan');
@@ -189,6 +197,17 @@ export function PlanSetupScreen() {
     changed();
     navigation.dispatch(todayAfterPlanApplied({ key: applyOp.current, planId: r.plan.id, version: r.plan.version }));
   }
+
+  /** `Continue last draft ›`: that built plan's answers on Your plan (Build there writes its next version). */
+  const continueLast = (): void => {
+    if (lastDraft === null) return;
+    setAnswers(lastDraft.answers);
+    setDraft({ planId: lastDraft.planId, version: lastDraft.version, versionN: lastDraft.versionN });
+    setLastDraft(null);
+    setOpenDay(-1);
+    setPage('plan');
+  };
+  const continueRow = lastDraft !== null && draft === null && fromPlan === null && page === flow[0] ? <TextButton label={C.continueDraft} tone="secondary" onPress={continueLast} /> : null;
 
   const openFromPlan = (p: Page): void => {
     setFromPlan(answers);
@@ -254,6 +273,7 @@ export function PlanSetupScreen() {
     body = (
       <>
         {title(C.goals)}
+        {continueRow}
         <Question label={C.length}>
           <Boxes items={PB_WEEKS.map((w) => ({ key: String(w), label: `${w === 6 ? '✦ ' : ''}${String(w)} weeks`, selected: answers.weeks === w }))} onPick={(k) => { set({ ...answers, weeks: Number(k) as PlanBuilderAnswers['weeks'] }); }} />
         </Question>
@@ -317,6 +337,7 @@ export function PlanSetupScreen() {
     body = (
       <>
         {title(C.check)}
+        {continueRow}
         <Card>
           <TableRow cells={[C.lift, C.sixReps, C.oneRmEst]} head />
           {rows.map((r) => (

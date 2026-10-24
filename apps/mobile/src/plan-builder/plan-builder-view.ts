@@ -31,6 +31,8 @@ export const PB_COPY = {
   week: 'Your week',
   check: 'Check your lifts',
   plan: 'Your plan',
+  /** (Ben, 23 Oct) A built plan left unapplied: offered on the first page, never the landing page. */
+  continueDraft: 'Continue last draft ›',
   prefs: 'Any preferences',
   length: 'Plan length',
   effort: 'Effort',
@@ -311,4 +313,13 @@ export function likeGroups(usable: (key: string) => boolean): { muscle: string; 
   return Object.entries(PB_EX)
     .map(([muscle, list]) => ({ muscle, keys: list.map((x) => x.key).filter(usable) }))
     .filter((g) => g.keys.length > 0);
+}
+
+/**
+ * (Ben, 23 Oct) The page the plan builder opens on: a new plan (`Set up a plan`, `Start next block`) always at its
+ * first step (Check your lifts when needed, else Gym goals), never on Your plan; only `Edit plan` opens on Your plan.
+ */
+export function pbFirstPage(s: { opensOn: 'start' | 'plan'; needsCheck: boolean }): 'check' | 'goals' | 'plan' {
+  if (s.opensOn === 'plan') return 'plan';
+  return s.needsCheck ? 'check' : 'goals';
 }
