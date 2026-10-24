@@ -197,6 +197,11 @@ export interface CheckedReview {
   hidden: string[];
   /** Whether everything shown passed the number check (always true: what failed is hidden). */
   numbersChecked: true;
+  /**
+   * (Ben, 23 Oct) Suggestions code left out because they would put a near-duplicate in the workout
+   * (`Dumbbell shrug: like Barbell shrug`), for `Why?`.
+   */
+  leftOut: string[];
 }
 
 const ACTION: Readonly<Record<string, string>> = { swap: 'Swap', add: 'Add', remove: 'Delete', superset: 'Superset', unlink: 'Unlink', move: 'Move' };
@@ -228,11 +233,17 @@ export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; 
   const verdict = check(input.args.verdict, null);
   hidden.push(...verdict.hidden);
   const suggestions: ReviewSuggestion[] = [];
+  const leftOut: string[] = [];
   const seen = new Set<string>();
   input.args.suggestions.forEach((s, i) => {
     const r = makeBuilderProposal({ id: `${input.reviewId}:s${String(i)}`, snapshot: input.snapshot, ops: s.ops, words: s.reason, check, env: input.env });
     hidden.push(...r.hidden);
     if (r.proposal === null) return;
+    // (Ben, 23 Oct) Never suggest two near-duplicates in one workout (a second shrug, the dumbbell twin of a curl).
+    if (r.outcome.nearDuplicates.length > 0) {
+      for (const [had, added] of r.outcome.nearDuplicates) leftOut.push(`${added}: like ${had}`);
+      return;
+    }
     const key = r.proposal.lines.join('\n');
     if (seen.has(key)) return;
     seen.add(key);
@@ -262,5 +273,5 @@ export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; 
     notes.push({ id, kind: 'text', text: c.shown });
   });
 
-  return { verdict: verdict.shown, suggestions, notes, hidden, numbersChecked: true };
+  return { verdict: verdict.shown, suggestions, notes, hidden, numbersChecked: true, leftOut: [...new Set(leftOut)] };
 }

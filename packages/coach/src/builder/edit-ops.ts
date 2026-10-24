@@ -100,6 +100,11 @@ export interface EditOutcome {
   notes: string[];
   /** The slots (and length) the change touches, at their revision in the snapshot. */
   preconditions: SlotPrecondition[];
+  /**
+   * (Ben, 23 Oct) Near-duplicate pairs the change adds (`Dumbbell shrug` next to `Barbell shrug`), each as
+   * `[in the workout, new]` names. Shown as a ⚠ warning on an edit Ben asked for; a review suggestion with one is left out.
+   */
+  nearDuplicates: [string, string][];
 }
 
 const EPS = 1e-6;
@@ -544,14 +549,19 @@ export function applyBuilderEdits(snapshot: BuilderCoachSnapshot, ops: readonly 
   lines.push(...st.structure);
 
   const adviceBefore = new Set(adviseBuilder(base.blocks, env.ctx.info).map((a) => a.key));
-  const warnings = adviseBuilder(after.blocks, env.ctx.info)
-    .filter((a) => !adviceBefore.has(a.key))
-    .map((a) => `⚠ Not recommended: ${a.reason}`);
+  const added = adviseBuilder(after.blocks, env.ctx.info).filter((a) => !adviceBefore.has(a.key));
+  const warnings = added.map((a) => `⚠ Not recommended: ${a.reason}`);
+  // (Ben, 23 Oct) A near-duplicate pair counts as new only when one of the two wasn't in the workout before.
+  const hadIds = new Set(beforeSlots.map((s) => s.exerciseId));
+  const nearDuplicates = added.flatMap((a): [string, string][] => {
+    if (a.kind !== 'near_duplicate' || (hadIds.has(a.a.exerciseId) && hadIds.has(a.b.exerciseId))) return [];
+    return [hadIds.has(a.a.exerciseId) ? [a.a.name, a.b.name] : [a.b.name, a.a.name]];
+  });
 
   const preconditions: SlotPrecondition[] = [...new Set([...touched, ...st.named])].filter((k) => beforeSlots.some((s) => s.key === k)).map((slotKey) => ({ slotKey, rev: snapshot.revs[slotKey] ?? 1 }));
   if (st.minutesTouched) preconditions.push({ slotKey: MINUTES_KEY, rev: snapshot.setupRev ?? snapshot.minutes });
 
-  return { workout: after, minutes: st.minutes, estimate: estimateBuilderMinutes(after, env.ctx), lines, warnings: [...new Set(warnings)], notes: st.notes, preconditions };
+  return { workout: after, minutes: st.minutes, estimate: estimateBuilderMinutes(after, env.ctx), lines, warnings: [...new Set(warnings)], notes: st.notes, preconditions, nearDuplicates };
 }
 
 export type FreshCheck = { ok: true } | { ok: false; line: typeof OUT_OF_DATE_LINE };

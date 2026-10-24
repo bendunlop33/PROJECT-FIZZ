@@ -109,19 +109,22 @@ describe('checkReview: a sentence with a wrong number is hidden', () => {
     const args: ReviewWorkoutArgs = {
       verdict: 'Balanced, 16 working sets.',
       suggestions: [
-        { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'incline_bb' }], reason: '2 exercises lead with mid chest.' },
-        { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'incline_bb' }], reason: 'Same again.' },
+        { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'crossover' }], reason: '2 exercises lead with mid chest.' },
+        { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'crossover' }], reason: 'Same again.' },
         { ops: [{ op: 'sets', slotKey: key('pushdown'), workingSets: 3 }], reason: 'Nothing changes.' },
         { ops: [{ op: 'add', exerciseId: 'hammer', afterSlotKey: null, workingSets: 3 }], reason: 'You have done 14 sets of arms.' },
+        // (Ben, 23 Oct) A near-duplicate of the Incline dumbbell press already in: code leaves it out.
+        { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'incline_bb' }], reason: 'More upper chest.' },
       ],
       nextNotes: [{ text: 'Include abs', target: null }, { text: null, target: { exerciseId: 'bench', value: 103, unit: 'kg', reps: 6 } }, { text: 'Go for 12 sets next time', target: null }],
     };
     const r = checkReview({ reviewId: 'r1', args, snapshot: snap, env, claims });
     expect(r.verdict).toBe('Balanced, 16 working sets.');
     expect(r.suggestions.map((s) => [s.action, s.proposal.lines, s.proposal.reason])).toEqual([
-      ['Swap', ['Cable fly → Incline barbell press'], '2 exercises lead with mid chest.'],
+      ['Swap', ['Cable fly → Cable crossover'], '2 exercises lead with mid chest.'],
       ['Add', ['Add Hammer curl'], null],
     ]);
+    expect(r.leftOut).toEqual(['Incline barbell press: like Incline dumbbell press']);
     expect(r.hidden).toEqual(['You have done 14 sets of arms.', 'Go for 12 sets next time']);
     expect(r.notes).toEqual([
       { id: 'r1:n0', kind: 'text', text: 'Include abs' },
