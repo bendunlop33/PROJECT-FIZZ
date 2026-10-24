@@ -1,6 +1,6 @@
 import type { EquipmentInstance, Exercise, Load, LoadConvention, Measurement, RepRange, RestSetting, RoutineExercise, SetTemplate, SetType, WeightUnit } from '@fizz/schemas';
 
-import { formatDuration, formatNumber, loadText, NBSP, repRangeText, SET_TYPE_BADGE, SET_TYPE_WORD, type LoadContext } from '../display';
+import { formatNumber, loadText, type LoadContext } from '../display';
 import { addedWeightEquipment } from '../added-weight';
 import { builtInRepRange, ruleCategory } from '../default-rule';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
@@ -271,11 +271,6 @@ export function setSlotTargetRpe(list: EditorList, slotId: string, value: number
 /** The EffortSheet's choices (§9.91): `None 6 7 7.5 8 8.5 9 9.5 10`, RIR `None 0 1 2 3 4`. */
 export const EFFORT_CHOICES: { rpe: readonly number[]; rir: readonly number[] } = { rpe: [6, 7, 7.5, 8, 8.5, 9, 9.5, 10], rir: [0, 1, 2, 3, 4] };
 
-/** Working sets across the workout (the summary line's `16 sets`): every non-warm-up set. */
-export function workingSetTotal(list: EditorList): number {
-  return list.reduce((n, e) => n + e.setTemplates.filter((t) => !isWarmup(t)).length, 0);
-}
-
 /** `Remove` (exercise `⋯`). */
 export function removeExercise(list: EditorList, slotId: string): RoutineExercise[] {
   return normaliseRoutineExercises(list.filter((e) => e.id !== slotId));
@@ -338,11 +333,28 @@ export function addSet(list: EditorList, slotId: string, setType: SetType, measu
   });
 }
 
-export type SetPatch = Partial<Pick<SetTemplate, 'setType' | 'targetLoad' | 'targetReps' | 'targetDurationS' | 'restOverrideS'>>;
+export type SetPatch = Partial<Pick<SetTemplate, 'setType' | 'targetLoad' | 'targetReps' | 'targetDurationS' | 'restOverrideS' | 'targetRpe' | 'targetRir'>> & {
+  /** (Ben, 23 Oct: one editor) A cardio set's distance; null clears it. */
+  targetDistanceM?: number | null;
+};
 
-/** The set sheet's changes (type, load Auto/Fixed, reps range/exact, work time, this set's rest). */
+/** A set's changes in the editor (type, load Auto/Fixed, reps range/exact, work time or distance, target effort, this set's rest). */
 export function updateSet(list: EditorList, slotId: string, setId: string, patch: SetPatch): RoutineExercise[] {
-  return list.map((e) => (e.id !== slotId ? e : { ...e, setTemplates: e.setTemplates.map((t) => (t.id === setId ? { ...t, ...patch } : t)) }));
+  return list.map((e) =>
+    e.id !== slotId
+      ? e
+      : {
+          ...e,
+          setTemplates: e.setTemplates.map((t) => {
+            if (t.id !== setId) return t;
+            const { targetDistanceM, ...rest } = patch;
+            const next: SetTemplate = { ...t, ...rest };
+            if (targetDistanceM === null) delete next.targetDistanceM;
+            else if (targetDistanceM !== undefined) next.targetDistanceM = targetDistanceM;
+            return next;
+          }),
+        },
+  );
 }
 
 /** `Delete set`. The last set can't go this way: the editor asks `Remove Bench press from Push A?` instead. */
@@ -360,6 +372,30 @@ export function setRestBySetType(list: EditorList, slotId: string, setType: SetT
     const others = Object.fromEntries(Object.entries(e.restBySetType).filter(([k]) => k !== setType)) as RoutineExercise['restBySetType'];
     return { ...e, restBySetType: rest === null ? others : { ...others, [setType]: rest } };
   });
+}
+
+/**
+ * A slot's rest after one set type as it resolves at Start (rest-state §4.2): the workout's own rest for that type,
+ * else the exercise's default, else Ben's default. `own`: the workout sets it (a step or `Default` changes it).
+ */
+export function slotRestOf(slot: Pick<RoutineExercise, 'restBySetType'>, setType: SetType, ctx: { exerciseName: string; exerciseDefaultRestS: number | null; globalDefault: RestSetting }): { seconds: number; own: boolean } {
+  const own = slot.restBySetType[setType] ?? null;
+  const r = resolveRestPreset({ setType, exerciseName: ctx.exerciseName, setOverrideS: null, routineSetTypePreset: own, exerciseDefaultS: ctx.exerciseDefaultRestS, globalDefault: ctx.globalDefault });
+  return { seconds: r.seconds, own: own !== null };
+}
+
+/** Rest steps in the editor's pop-up: 15 s, 0:00–15:00 (Ben, 23 Oct: one editor; the builder's stepper size). */
+export const SLOT_REST_STEP_S = 15;
+export const SLOT_REST_MAX_S = 900;
+
+/** `[−] 2:00 [+]` for one set type: 15 s from what it resolves to now, written as the workout's own rest (0:00–15:00). */
+export function stepSlotRest(list: EditorList, slotId: string, setType: SetType, dir: 1 | -1, ctx: { exerciseName: string; exerciseDefaultRestS: number | null; globalDefault: RestSetting }): RoutineExercise[] {
+  const slot = list.find((e) => e.id === slotId);
+  if (slot === undefined) return [...list];
+  const now = slotRestOf(slot, setType, ctx).seconds;
+  const next = Math.max(0, Math.min(SLOT_REST_MAX_S, now + dir * SLOT_REST_STEP_S));
+  if (next === now) return [...list];
+  return setRestBySetType(list, slotId, setType, { seconds: next });
 }
 
 /** `Main` (WL9): Ben's choice, written down. `current` is what the chip shows now (stored or the rule's). */
@@ -429,96 +465,48 @@ export function supersetWithNext(list: EditorList, slotId: string): RoutineExerc
   return normaliseRoutineExercises(merged);
 }
 
+/**
+ * A dragged exercise dropped on another (Ben, 23 Oct: one editor; workout-builder-v3 §2.3 drag): it leaves its own
+ * superset (a partner left alone stands alone), then goes in as its own round before or after the target's round,
+ * or (`onto`) joins the target's round as a superset (up to 4). Null for a drop on itself, a drop that changes
+ * nothing, or a superset that would be too big: the row springs back. Pure.
+ */
+export function dropRoutineSlot(list: EditorList, slotId: string, targetId: string, edge: 'before' | 'after' | 'onto'): RoutineExercise[] | null {
+  if (slotId === targetId) return null;
+  const moving = list.find((e) => e.id === slotId);
+  const target = list.find((e) => e.id === targetId);
+  if (moving === undefined || target === undefined) return null;
+  if (edge === 'onto' && moving.supersetGroup !== null && moving.supersetGroup === target.supersetGroup) return null;
+  const without = list.filter((e) => e.id !== slotId);
+  const at = without.findIndex((e) => e.id === targetId);
+  // The target's round: its whole superset run.
+  let start = at;
+  let end = at;
+  const label = target.supersetGroup;
+  if (label !== null) {
+    while (start > 0 && without[start - 1]?.supersetGroup === label) start -= 1;
+    while (end < without.length - 1 && without[end + 1]?.supersetGroup === label) end += 1;
+  }
+  let next: RoutineExercise[];
+  if (edge === 'onto') {
+    if (end - start + 2 > SUPERSET_MAX) return null;
+    const group = label ?? '#drop';
+    next = [...without.slice(0, end + 1).map((e, i) => (i >= start ? { ...e, supersetGroup: group } : e)), { ...moving, supersetGroup: group }, ...without.slice(end + 1)];
+  } else {
+    const alone: RoutineExercise = { ...moving, supersetGroup: null };
+    const i = edge === 'before' ? start : end + 1;
+    next = [...without.slice(0, i), alone, ...without.slice(i)];
+  }
+  const out = normaliseRoutineExercises(next);
+  const shape = (l: EditorList) => l.map((e) => `${e.id}:${e.supersetGroup ?? ''}`).join('|');
+  return shape(out) === shape(normaliseRoutineExercises(list)) ? null : out;
+}
+
 /** `Ungroup`: every member of this exercise's superset goes back to a plain exercise. */
 export function ungroup(list: EditorList, slotId: string): RoutineExercise[] {
   const label = list.find((e) => e.id === slotId)?.supersetGroup ?? null;
   if (label === null) return [...list];
   return normaliseRoutineExercises(list.map((e) => (e.supersetGroup === label ? { ...e, supersetGroup: null } : e)));
-}
-
-// ---------------------------------------------------------------------------
-// What the editor shows
-
-export interface EditorSetRow {
-  /** `1`, `3–5`: identical neighbouring sets collapse into one row. */
-  numbers: string;
-  setIds: string[];
-  badge: string | null;
-  typeWord: string;
-  /** `Auto × 6–8`, `60 kg × 5`, `37.5 kg each × 8`, `Auto · 0:45`. */
-  target: string;
-  /** `2:00`, the rest after these sets as it resolves at Start. */
-  rest: string;
-  /** This set's own rest (`●`; VoiceOver "this set's own rest"). */
-  ownRest: boolean;
-  accessibilityLabel: string;
-}
-
-export interface EditorRowContext {
-  exerciseName: string;
-  convention: LoadConvention;
-  equipment: Pick<EquipmentInstance, 'kind'> | null;
-  /** Rest resolution steps 3 and 4 (rest-state §4.2). */
-  exerciseDefaultRestS: number | null;
-  globalDefault: RestSetting;
-  perSide: boolean;
-}
-
-/** A template's target in words: `Auto × 6–8`, `60 kg × 5`, `Auto · 0:45`. */
-export function templateTargetText(t: Pick<SetTemplate, 'targetLoad' | 'targetReps' | 'targetDurationS'>, ctx: Pick<EditorRowContext, 'convention' | 'equipment' | 'perSide'>): string {
-  const load = ctx.convention === 'bodyweight' ? 'BW' : t.targetLoad === null ? 'Auto' : loadText(t.targetLoad, t.targetLoad.convention, ctx.equipment);
-  if (t.targetReps !== null) return `${load}${NBSP}×${NBSP}${repRangeText(t.targetReps)}${ctx.perSide ? `${NBSP}per side` : ''}`;
-  if (t.targetDurationS !== null) return `${load} · ${formatDuration(t.targetDurationS)}`;
-  return load;
-}
-
-/** The set rows of one exercise card (§2.3 row rules). */
-export function editorSetRows(slot: Pick<RoutineExercise, 'setTemplates' | 'restBySetType'>, ctx: EditorRowContext): EditorSetRow[] {
-  const shaped = slot.setTemplates.map((t, i) => {
-    const rest = resolveRestPreset({
-      setType: t.setType,
-      exerciseName: ctx.exerciseName,
-      setOverrideS: t.restOverrideS,
-      routineSetTypePreset: slot.restBySetType[t.setType] ?? null,
-      exerciseDefaultS: ctx.exerciseDefaultRestS,
-      globalDefault: ctx.globalDefault,
-    });
-    return { n: i + 1, t, target: templateTargetText(t, ctx), rest: formatDuration(rest.seconds), own: rest.source === 'set_override' };
-  });
-  const rows: EditorSetRow[] = [];
-  let run: typeof shaped = [];
-  const flush = () => {
-    const first = run[0];
-    const last = run[run.length - 1];
-    if (first === undefined || last === undefined) return;
-    const numbers = run.length === 1 ? String(first.n) : `${String(first.n)}–${String(last.n)}`;
-    const typeWord = SET_TYPE_WORD[first.t.setType];
-    rows.push({
-      numbers,
-      setIds: run.map((x) => x.t.id),
-      badge: SET_TYPE_BADGE[first.t.setType],
-      typeWord,
-      target: first.target,
-      rest: first.rest,
-      ownRest: first.own,
-      accessibilityLabel: `${run.length === 1 ? `Set ${numbers}` : `Sets ${numbers.replace('–', ' to ')}`}, ${typeWord}, ${first.target.replaceAll(NBSP, ' ').replace('×', 'times')}, rest ${first.rest}${first.own ? ", this set's own rest" : ''}`,
-    });
-    run = [];
-  };
-  for (const x of shaped) {
-    const prev = run[run.length - 1];
-    if (prev !== undefined && (prev.t.setType !== x.t.setType || prev.target !== x.target || prev.rest !== x.rest || prev.own !== x.own)) flush();
-    run.push(x);
-  }
-  flush();
-  return rows;
-}
-
-/** `5 exercises · 16 sets · ≈ 55 min at Main gym` (live, under the name; sets = working sets, WL11). */
-export function editorSummaryLine(exercises: number, minutes: number | null, gymName: string | null, workingSets?: number): string {
-  const n = `${String(exercises)} ${exercises === 1 ? 'exercise' : 'exercises'}${workingSets === undefined ? '' : ` · ${String(workingSets)} ${workingSets === 1 ? 'set' : 'sets'}`}`;
-  if (minutes === null) return n;
-  return `${n} · ≈ ${String(minutes)} min${gymName === null ? '' : ` at ${gymName}`}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -538,6 +526,21 @@ export function fixedLoadNote(load: Load, eq: EquipmentInstance | null, display:
   const words = loadText(r.load, r.load.convention, display);
   if (r.bounded !== null) return boundWords(r.bounded, words, loadDirection(eq.loadConvention) === 'assistance');
   return `At Start ${words}`;
+}
+
+/**
+ * A load typed in the pop-up's Kg cell (Ben, 23 Oct: one editor): pinned as a Fixed load, rounded **down** to what this
+ * gym's item can load (rule 4: never past its max; toward easier on an assisted machine), with the line that says
+ * what moved (`At Start 27.5 kg each`, `Max here 30 kg each`). With no item here it is kept as typed (fitted at
+ * Start, as before). Never negative.
+ */
+export function typedFixedLoad(value: number, frame: { unit: WeightUnit; convention: LoadConvention }, eq: EquipmentInstance | null, display: LoadContext = eq): { load: Load; note: string | null } {
+  const typed: Load = { value: Math.max(0, value), unit: frame.unit, convention: frame.convention };
+  if (eq === null || eq.kind === 'bodyweight_station') return { load: typed, note: null };
+  const note = fixedLoadNote(typed, eq, display);
+  const r = roundToAvailableLoad(typed, eq, 'easier');
+  if (!r.ok || r.load.unit !== frame.unit) return { load: typed, note };
+  return { load: r.load, note: r.exact && r.convertedRequest === null ? null : note };
 }
 
 /** The new Fixed load's unit and convention: the item's at this gym, else Ben's unit and the exercise's own. */

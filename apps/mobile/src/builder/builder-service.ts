@@ -2439,7 +2439,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     },
 
     /** Swap / Add (§2.5): this gym's exercises of a group by focus, minus what's in the workout; pain-flagged ones marked. */
-    async exerciseChoices(draftId: string, req: { slotKey: string | null; group?: BuilderGroup }): Promise<{ group: BuilderGroup; groups: BuilderGroup[]; sections: { focus: string; items: { exerciseId: string; name: string; works: string | null; mayHurt: boolean; painLine: string | null }[] }[] } | null> {
+    async exerciseChoices(draftId: string, req: { slotKey: string | null; group?: BuilderGroup }): Promise<ExerciseChoices | null> {
       const snap = await service.read(draftId);
       if (snap === null) return null;
       const p = await owner();
@@ -2447,17 +2447,34 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const firstGroup = snap.setup.groups[0]?.group ?? 'Chest';
       const group: BuilderGroup = req.group ?? (slot === null ? firstGroup : (snap.facts[slot.exerciseId]?.group ?? firstGroup));
       const env = await envFor(p, { groups: [group], keySeed: 'choices' });
-      const inWorkout = new Set(slotsOf(snap.workout.blocks).map((s) => s.exerciseId));
-      const ids = env.candidates(group).filter((id) => !inWorkout.has(id));
-      const sections = builderFocusSections(
-        ids.flatMap((id) => {
-          const e = env.exercise(id);
-          return e === null ? [] : [e];
-        }),
-        (e) => e,
-        group,
-      ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id) })) }));
-      return { group, groups: [...BUILDER_GROUPS], sections };
+      return choicesIn(env, group, new Set(slotsOf(snap.workout.blocks).map((s) => s.exerciseId)));
+    },
+
+    /**
+     * (Ben, 23 Oct: one editor) Swap / Add on a saved workout or plan-day template: the same sheet as Your workout's,
+     * at `gymId` (the editor's gym), with no draft. The group defaults to the swapped exercise's, else the first
+     * exercise's, else Chest. Local reads only.
+     */
+    async templateChoices(req: { gymId: string | null; inWorkout: readonly string[]; exerciseId: string | null; group?: BuilderGroup }): Promise<ExerciseChoices> {
+      const p = await owner();
+      const probe = await envFor(p, { gymId: req.gymId, exerciseIds: [...(req.exerciseId === null ? [] : [req.exerciseId]), ...req.inWorkout.slice(0, 1)], keySeed: 'template-choices' });
+      const groupOf = (id: string | null | undefined) => (id == null ? null : (probe.info(id)?.group ?? null));
+      const group: BuilderGroup = req.group ?? groupOf(req.exerciseId) ?? groupOf(req.inWorkout[0]) ?? 'Chest';
+      const env = await envFor(p, { gymId: req.gymId, groups: [group], keySeed: 'template-choices' });
+      return choicesIn(env, group, new Set(req.inWorkout));
+    },
+
+    /**
+     * (Ben, 23 Oct: one editor) What Your workout's rows show for each exercise of a saved workout, at `gymId`: the
+     * `works` line, `May hurt` (rule 9), `Not at this gym`, and whether Ben has logged it (the pop-up's `History`).
+     * Values only; loads are not worked out here (a template's loads stay `Auto` or Ben's Fixed ones).
+     */
+    async templateFacts(req: { gymId: string | null; exerciseIds: readonly string[] }): Promise<Record<string, TemplateFact>> {
+      const p = await owner();
+      const ids = [...new Set(req.exerciseIds)];
+      if (ids.length === 0) return {};
+      const env = await envFor(p, { gymId: req.gymId, exerciseIds: ids, keySeed: 'template-facts' });
+      return Object.fromEntries(ids.map((id) => [id, { works: env.worksOf(id), mayHurt: env.painFlagged(id), notHere: req.gymId !== null && !env.doable(id), hasHistory: env.hasHistory(id) }]));
     },
 
     /** `Why this weight?` (§2.4): where the load came from, numbers from code only. */
@@ -3032,6 +3049,35 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   };
 
   return service;
+}
+
+/** The Swap / Add sheet's choices (§2.5): one group's exercises at this gym by focus. */
+export interface ExerciseChoices {
+  group: BuilderGroup;
+  groups: BuilderGroup[];
+  sections: { focus: string; items: { exerciseId: string; name: string; works: string | null; mayHurt: boolean; painLine: string | null }[] }[];
+}
+
+/** (Ben, 23 Oct: one editor) A saved workout's exercise as Your workout's row shows it. */
+export interface TemplateFact {
+  works: string | null;
+  mayHurt: boolean;
+  notHere: boolean;
+  hasHistory: boolean;
+}
+
+/** One group's exercises this gym has, by focus, minus what's in the workout; pain-flagged ones marked (rule 9). */
+function choicesIn(env: BuilderEnv, group: BuilderGroup, inWorkout: ReadonlySet<string>): ExerciseChoices {
+  const ids = env.candidates(group).filter((id) => !inWorkout.has(id));
+  const sections = builderFocusSections(
+    ids.flatMap((id) => {
+      const e = env.exercise(id);
+      return e === null ? [] : [e];
+    }),
+    (e) => e,
+    group,
+  ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id) })) }));
+  return { group, groups: [...BUILDER_GROUPS], sections };
 }
 
 export type BuilderService = ReturnType<typeof createBuilderService>;

@@ -45,28 +45,9 @@ export const LIBRARY_COPY_UI = {
   undo: 'Undo',
 } as const;
 
+/** The one workout editor's words (Ben, 23 Oct: one editor; routines.md §A5): Cancel / Save, the discard and conflict sheets. */
 export const EDITOR_COPY = {
-  newTitle: 'New workout',
-  editTitle: 'Edit workout',
-  name: 'Name',
-  exercises: 'Exercises',
-  main: 'Main',
-  addWeight: 'Add weight',
-  addExercise: 'Add exercise',
-  addWarmup: '+ Warm-up',
-  addWorking: '+ Working',
-  addMore: '+ More',
-  topSet: 'Top set',
-  backoff: 'Back-off',
-  dropSet: 'Drop set',
-  restByType: 'Rest by set type',
-  replace: 'Replace',
-  exerciseInfo: 'Exercise info',
-  supersetWithNext: 'Superset with next',
-  ungroup: 'Ungroup',
-  moveUp: 'Move up',
-  moveDown: 'Move down',
-  remove: 'Remove',
+  reps: 'Reps',
   save: 'Save',
   noChanges: 'No changes',
   inProgress: 'In progress · changes apply next time',
@@ -74,22 +55,6 @@ export const EDITOR_COPY = {
   discard: 'Discard',
   keepEditing: 'Keep editing',
   cancel: 'Cancel',
-  done: 'Done',
-  type: 'Type',
-  load: 'Load',
-  auto: 'Auto',
-  fixed: 'Fixed',
-  autoInfo: 'Auto: the coach’s target from the last time you did this workout, or the built-in rule’s. Worked out when you start.',
-  reps: 'Reps',
-  range: 'Range',
-  exact: 'Exact',
-  workTime: 'Work time',
-  restAfter: 'Rest after this set',
-  thisSetOnly: 'This set only',
-  useDefault: 'Use default',
-  deleteSet: 'Delete set',
-  removeExerciseTitle: (exercise: string, workout: string) => `Remove ${exercise} from ${workout}?`,
-  search: 'Search exercises',
   conflictTitle: (name: string) => `${name} changed while you were editing`,
   keepBoth: 'Keep both',
   discardMine: 'Discard my edits',
@@ -135,48 +100,9 @@ export function editorPrimary(input: { issues: readonly RoutineIssue[]; dirty: b
   return { label: EDITOR_COPY.save, disabled: false };
 }
 
-/**
- * The issue line on an editor card: a distance slot the save refuses
- * (`isRefusedDistanceSlot`: newly added, or in an unsaved copy) reads
- * `⚠ Can’t save distance yet` with `Replace` and `Remove`, so Ben can see
- * which card blocks `Save`. A slot stored before EL-B13 shows nothing and
- * saves as it was (review library-browse r3 S1).
- */
-export function editorSlotIssue(refused: boolean): { text: string; actions: string[] } | null {
-  return refused ? { text: NO_DISTANCE_IN_WORKOUTS, actions: [EDITOR_COPY.replace, EDITOR_COPY.remove] } : null;
-}
 
-/**
- * A row in the editor's `Add exercise` / `Replace` sheet: a distance
- * exercise shows disabled with `Can’t save distance yet`, as on the
- * Library's Add sheet (exercise-library EL-B13, review library-browse r2 S1).
- */
-export function editorAddRow(x: { measurement: 'reps' | 'duration' | 'distance' | 'cardio' }): { disabled: boolean; subtitle: string | null } {
-  return x.measurement === 'distance' ? { disabled: true, subtitle: NO_DISTANCE_IN_WORKOUTS } : { disabled: false, subtitle: null };
-}
 
-/** An exercise card's `⋯` (§A2.3, revised 2026-10-12): Replace, Exercise info, Superset with next / Ungroup, Move up, Move down, Remove. */
-export function exerciseMenu(list: readonly Pick<RoutineExercise, 'id' | 'supersetGroup'>[], slotId: string): string[] {
-  const i = list.findIndex((e) => e.id === slotId);
-  const slot = list[i];
-  if (slot === undefined) return [];
-  const next = list[i + 1];
-  const canGroup = next !== undefined && !(slot.supersetGroup !== null && slot.supersetGroup === next.supersetGroup);
-  return [
-    EDITOR_COPY.replace,
-    EDITOR_COPY.exerciseInfo,
-    ...(canGroup ? [EDITOR_COPY.supersetWithNext] : []),
-    ...(slot.supersetGroup !== null ? [EDITOR_COPY.ungroup] : []),
-    ...(i > 0 ? [EDITOR_COPY.moveUp] : []),
-    ...(i < list.length - 1 ? [EDITOR_COPY.moveDown] : []),
-    EDITOR_COPY.remove,
-  ];
-}
 
-/** The `Main` chip's VoiceOver (§A2.3): "Main lift, on". */
-export function mainChipLabel(on: boolean): string {
-  return `Main lift, ${on ? 'on' : 'off'}`;
-}
 
 /** The conflict sheet's lines (v0.1 §3.3): what changed, and when. */
 export function conflictLines(input: { lines: readonly string[]; changedAtUtc: string; tz: string }): string[] {

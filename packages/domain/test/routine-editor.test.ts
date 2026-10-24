@@ -8,8 +8,6 @@ import {
   deleteSet,
   editorItemFor,
   editorMainFlags,
-  editorSetRows,
-  editorSummaryLine,
   fixedLoadFrame,
   fixedLoadNote,
   fixedLoadSeed,
@@ -23,7 +21,6 @@ import {
   setMain,
   setRestBySetType,
   supersetWithNext,
-  templateTargetText,
   ungroup,
   updateSet,
   NBSP,
@@ -130,36 +127,6 @@ describe('editor list changes (routines.md §A2.3, §4.3)', () => {
     // Stored and survives a save.
     const saved = createRoutine({ id: id(990), ownerId: OWNER, edit: { name: 'X', exercises: toggled }, opId: 'o', at: at(0), isCompound: compound });
     expect(saved.kind === 'write' && saved.next.exercises.map((e) => e.main)).toEqual([false, false, true]);
-  });
-});
-
-describe('what the editor shows', () => {
-  const ctx = { exerciseName: 'Bench press', convention: 'total' as const, equipment: null, exerciseDefaultRestS: 120, globalDefault: { seconds: 90 }, perSide: false };
-  it('collapses identical sets, shows targets and resolved rest, marks a set’s own rest', () => {
-    const slot = {
-      setTemplates: [
-        template(1, { setType: 'warmup', targetReps: { min: 5, max: 5 } }),
-        template(2, { setType: 'top', targetReps: { min: 4, max: 6 } }),
-        template(3),
-        template(4),
-        template(5, { restOverrideS: 150 }),
-      ],
-      restBySetType: { warmup: { seconds: 60 }, top: { seconds: 180 } },
-    };
-    const rows = editorSetRows(slot, ctx);
-    expect(rows.map((r) => [r.numbers, r.badge, r.typeWord, plain(r.target), r.rest, r.ownRest])).toEqual([
-      ['1', 'W', 'Warm-up', 'Auto × 5', '1:00', false],
-      ['2', 'T', 'Top set', 'Auto × 4–6', '3:00', false],
-      ['3–4', null, 'Working', 'Auto × 6–8', '2:00', false],
-      ['5', null, 'Working', 'Auto × 6–8', '2:30', true],
-    ]);
-    expect(rows[2]?.accessibilityLabel).toBe('Sets 3 to 4, Working, Auto times 6–8, rest 2:00');
-    expect(rows[3]?.accessibilityLabel).toContain("this set's own rest");
-    expect(plain(templateTargetText(template(9, { targetLoad: kg(30, 'per_hand'), targetReps: { min: 8, max: 8 } }), { convention: 'per_hand', equipment: { kind: 'dumbbells' }, perSide: false }))).toBe('30 kg each × 8');
-    expect(plain(templateTargetText(template(9, { targetReps: { min: 8, max: 10 } }), { convention: 'per_hand', equipment: null, perSide: true }))).toBe('Auto × 8–10 per side');
-    expect(plain(templateTargetText(template(9, { targetReps: null, targetDurationS: 45 }), { convention: 'bodyweight', equipment: null, perSide: false }))).toBe('BW · 0:45');
-    expect(plain(editorSummaryLine(5, 55, 'Main gym'))).toBe('5 exercises · ≈ 55 min at Main gym');
-    expect(editorSummaryLine(1, null, null)).toBe('1 exercise');
   });
 });
 

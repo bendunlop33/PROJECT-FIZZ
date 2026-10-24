@@ -353,6 +353,7 @@ Unchanged: Resume card, stale card, check-in line, pain check line, banners, che
 | Coach chat, `Apply` on a change for the next workout (`Swap fly for crossover next Chest`) | Nothing opens. The change lands on that workout's Your workout draft as today-only edits (author `coach`, one action ID), shown there and on Today's card when that day comes up, each with Undo. The plan day and saved workout don't change, and the Summary's `Keep for next time?` doesn't list coach edits (only Ben's own, §2.8); "from now on" is a template proposal (change-review). A draft that changed since the proposal refuses it (`Out of date. Ask again.`, rule 5). **Where it waits (review 23 Oct SP5, proposal for Ben):** applied days ahead, there is no draft yet, so it is stored as a pending coach `TodayEdit` on that plan day (template ID, main lift, template version, action ID). When that day's draft is first made (Today or Your workout) it is replayed with Undo, if the template version, main lift and the exercise it names still match; otherwise it isn't applied and Today shows once `Coach change for Chest out of date` (with `Why?`). A `Keep for next time?` Apply or a plan edit that lands first makes it stale the same way; it expires once that plan day is done or after 14 days. **Spec only: no prototype lands a chat change on a later Your workout (review S8).** | Ben, 22–23 Oct (D8). Rebuilds `propose_next_workout_change` (CHANGELOG 2026-10-22, B3) |
 | Reopen today after leaving (or a force-close) before Start | The same unstarted workout, with every edit kept | [Proposal] |
 | Resuming a workout in progress | **Never** the builder (unchanged) | — |
+| Library › Workouts `＋`, `Edit workout`, `Duplicate`; Library › plan day `Edit`; `Save to Workouts › Edit ›`; Exercise detail `New workout` | Your workout's page in edit mode (§2.3b): Cancel / Save, no Start | Ben, 23 Oct: one editor |
 
 **Your workout is the only pre-start page (Ben, 22 Oct).** The Workout overview (`WorkoutOverviewScreen`, route `WorkoutOverview`) is retired. Every row above that opens a workout before Start opens Your workout. Its gym chip, `done by` time, `↑ UP` / `SAME` / `↑ REPS` arrows and `after …` header are not carried over. Loads are still rounded to the gym and capped at a machine's max, with nothing shown (rule 4). See CHANGELOG 2026-10-22 and `docs/reviews/retire-workout-overview.md`.
 
@@ -510,6 +511,78 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 - **Copy.** `Main lift` · `Accessories` · `Focused` · `Varied` · `Abs` · `Supersets` · `Out of date` · toasts above. VoiceOver: "Abs, switch, on".
 - **Data.** Today's draft per choice (`buildTodayDraft(planDay, {mainLift, style, abs, supersets}, minutes)` from the same domain function Today uses, then `fitToMinutes`); the template per choice and per main lift (`planDayTemplate(planDay, choice)`, un-fitted, before the deload and the coach); Ben's edits (`TodayEdit[]` with `author: 'ben'`: remove, add, swap, sets) replayed after the fit and the coach (`replayTodayEdits`); `structureChanges(template(mainLift), replayTodayEdits(template(choice), edits))` for §2.8.
 - **Acceptance.** (1) With a plan, Today has no Main lift / Accessories / Abs / Supersets controls and Your workout from Edit has all four (Main lift only with 2+ main lifts). (2) Abs off on Your workout removes the ab exercise and splits its superset; Start; the Summary asks `Keep for next time?` with exactly `− Cable crunch`, at 60, 40 or 35 min. (3) Undo after a control change restores the rows, minutes, the control and Ben's edits exactly. (4) The rows after any control change equal what Today would draft for that choice at that Time, with Ben's edits on top. (5) Delete Cable fly, then Abs off: Cable fly stays deleted. (6) Edit → Abs off → `‹ Today`: Today's card has no Cable crunch and says `Edited`; Edit shows Abs off.
+
+### 2.3b Editing a saved workout or plan day (Ben, 23 Oct: one editor)
+
+Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a Name field, a summary line, per-exercise cards with `✓ Main`, `Sets ±`, `Warm-ups ±`, `Reps Mixed ›`, `Target RPE 8 ›`, `Rest by set type ›`, `Each set ⌄`, `No changes`): "Why does the plan builder's workout builder look so different to the usual workout builder?" **One editor (Ben, 23 Oct: one editor).** Every way of editing a saved workout opens Your workout's page in an edit mode: the same table (§2.3), pop-up (§2.4) and Add / Swap sheet (§2.5). The old routines.md §A2.3 editor screen is retired.
+
+```
+┌──────────────────────────────────────────┐
+│ Cancel                                   │
+│ Push A                                   │  the name, editable, where the title is
+│ Time                       about 55 min  │  the estimate (read-only)
+│     Exercise              Sets  Top set  │
+│                                   (kg)   │
+│  1  Bench press  MAIN       4     Auto   │
+│     Chest, front delts…   +1 W           │
+│ ┌─────────────────────────────────────┐  │
+│ │2a Incline DB press      3   27.5 each│  │  Fixed loads show; Auto says Auto
+│ │2b Lateral raise         3     Auto  │  │
+│ └─────────────────────────────────────┘  │
+│  ＋ Add exercise                          │
+│ [              Save               ]      │  `No changes` / `Add a name` / `Fix 1 issue`
+└──────────────────────────────────────────┘
+```
+
+**Entry points (all open this page; route `WorkoutEditor`, full-screen like Your workout):**
+
+| From | Opens | Save goes back to |
+|---|---|---|
+| Library › Workouts `＋` (New workout) | Empty, name focused | Library › Workouts with `Saved <name> · Undo` (Undo deletes it) |
+| Library › Workouts, a row's `⋯ Edit workout` | That workout | Library › Workouts, `Saved <name> · Undo` (Undo puts the version before back) |
+| Library › Workouts `⋯ Duplicate` | The new copy, its name selected | Library › Workouts; the copy's Undo deletes it (Cancel hands the same toast back) |
+| Library › Plan › a day, `Edit` | That plan day's template | The plan day, `Saved <name> · Undo` |
+| `Save to Workouts` sheet, `Edit ›` | The unsaved copy (not dirty) | The screen under the sheet; the sheet's own save and toast |
+| Exercise detail, `New workout` | A new workout with that exercise and the sheet's shape, name empty | Exercise detail, `Saved <name> · Undo` |
+
+**What's the same as Your workout.** Numbered rounds, supersets as one box (`2a/2b`) with the line, `Exercise | Sets | Top set (kg)`, `MAIN`, `+N W`, works lines, `May hurt`, `Not at this gym`; tap a row for the pop-up; swipe left Delete (toast `Deleted Cable fly · Undo`, local), right Swap (`Swapped · Undo`); press and hold then drag (an edge = move, the middle = superset, up to 4); VoiceOver actions; dashed `＋ Add exercise`; the Add / Swap sheet (muscle group, this gym's exercises by focus, `May hurt` confirm).
+
+**What differs, because a saved workout is a template, not today's draft.**
+- `Top set` shows the template's target: `Auto` (worked out at Start) or Ben's Fixed load (`100`, `27.5 each`, `25 assist`, `BW+10`), another unit inline (`45 lb`).
+- `Time` shows the estimate only. Your workout's `[−] 45 min [+]` fits today's draft only and never the saved workout or the plan (§2.3), so it isn't offered here. [Proposal: Ben may want a Time fit for templates; not built.]
+- No coach bar, no Coach review, no Start: the primary is `Save` (`No changes` when nothing changed; `Add a name`, `Add an exercise`, `Can’t save distance yet` or `Fix N issues` while it can't save). `Cancel` with changes asks `Discard changes?`.
+- Nothing is written until Save: one version (op ID; a retry is the same save), with an Undo record (rule 5). Saved against an older version, nothing is written and the conflict sheet shows (`Push A changed while you were editing`, `Keep both` / `Discard my edits`). Unsaved edits are lost on Cancel or a force-close.
+- A plan day's Save changes its template for the weeks ahead; a workout already done never changes (rule 2). Today's unstarted draft for that day reloads as §2.3's `Plan day updated elsewhere while open` says.
+- An exercise the workout can't save (a distance exercise added now) shows `Can’t save distance yet` on its row; Swap or Delete clears it.
+
+**Pop-up on a saved workout (§2.4 plus what the old editor had).** Every old capability is here:
+
+| Old editor | Now |
+|---|---|
+| Name field | The name where the title is (`New workout` placeholder) |
+| `N exercises · M sets · ≈ X min at <gym>` | The table shows the counts; `Time · about N min` |
+| `In progress · changes apply next time` | Kept, above the table |
+| `⋯` Replace / Remove / Move up / Move down / Superset with next / Ungroup | Swipe Swap / Delete, the pop-up's buttons (`Unlink`), drag, VoiceOver |
+| `⋯` Exercise info | Pop-up `How to` (the guide, else the exercise's detail, read-only); `History` when logged |
+| `✓ Main` chip | Pop-up `Main` switch; `MAIN` on the row |
+| `Add weight` chip (bodyweight) | Pop-up `Add weight` switch |
+| `Sets ±`, `Warm-ups ±`, `+ More` (Top, Back-off, Drop) | `＋ Set`, `＋ Warm-up`, swipe a set to delete, tap `#  Type` to change its type |
+| `Reps` (range, exact, work time, cardio) for the exercise | Pop-up `Reps ›`, the same Reps sheet |
+| `Target RPE` / `Target RIR` for the exercise | Pop-up `Target RPE ›`, the same sheet; each set's RPE (RIR) is also a cell |
+| `Rest by set type` | Pop-up Rest rows per set type, `[−] 2:00 [+]` (15 s); `Default` puts the default back |
+| `Each set` rows and the set sheet: type | `Type` picker on the row |
+| Set sheet: `Auto` / `Fixed` load | Type in `Kg`: a Fixed load, rounded down to this gym's item and never past its max (rule 4; assisted rounds toward more help), with a line when it moved (`At Start 25 kg each`, `Max here 30 kg each`); `−`/`+` from an Auto cell start at the last logged load. `Auto load` in the set's hold menu |
+| Set sheet: reps range / exact | Type exact reps in `Reps`; `Rep range` in the set's hold menu (`8-12`) |
+| Set sheet: work time, cardio time and distance | `Time` / `Distance` in the set's hold menu |
+| Set sheet: rest after this set | `Rest after this set` in the set's hold menu (`Default` or a time); the row reads `Working · 2:30` |
+| Set sheet: `Delete set` | Swipe left, or the hold menu |
+| Add sheet: search | The Add / Swap sheet has a search field (Ben's exercises and the catalogue; distance not offered) |
+
+**Dropped, and why.** (1) The Add sheet's `Sets [−] 3 [+]` bar: Your workout adds with the exercise's default (3 sets); `＋ Set` and swipe change it. (2) `at <gym>` after the minutes (minimal copy; Today shows the gym). (3) A rest step writes a time, not a named preset (`Heavy 3:00`); `Rest after this set` still lists named presets. (4) `Each set` collapsing identical sets (`3–5`): the pop-up lists every set. (5) A Fixed load past the rack is now capped when typed, with the line, instead of saved past it with a warning (rule 4); with no item at this gym it is kept as typed and fitted at Start, as before. (6) Time fit, coach bar, Coach review and Start (above).
+
+**Data.** Unchanged: the workout's `RoutineExercise` list (loads `Auto` / Fixed, reps ranges, `restBySetType`, a set's own rest, `main`, `addedWeight`, supersets), `services.routines.update` / `create` / `saveFrom` / `revert`. New service reads: `builder.templateChoices` (the Add / Swap sheet at the editor's gym, no draft) and `builder.templateFacts` (works lines, `May hurt`, `Not at this gym`, `History`). Stored data is unchanged.
+
+**Acceptance.** (1) Each entry point above opens this page and its Save, Cancel and Undo behave as the table says (real SQLite: `apps/mobile/test/one-editor.test.ts`). (2) Two pages on the same version: the second Save writes nothing and offers Keep both, which saves on the newer version. (3) A plan day's Save changes `Library › Plan › <day>` and not a workout already done; Undo puts it back. (4) A typed load on per-hand dumbbells, an assisted machine or a barbell lands on a load this gym has, never past its max, kg or lb. (5) Nothing the old editor could do is lost except the list above. Not yet run on Ben's iPhone: the hold menus, the Alert prompts (`Rep range`, `Time`, `Distance`) and the keyboard over the name field need a device check.
 
 ### 2.4 Exercise pop-up (full-height sheet) [Ben]
 
@@ -955,7 +1028,8 @@ Reviews are Your data (rule 10): stored as their own records with facts separate
 | Backlog H5: `Save as day default`, default workout per day, Supersets review sheet | Removed [Ben]: today-only edits + Start prompt + variations; pairing in the pop-up (drag later) |
 | workout-overview.md (every pre-start entry; Ben, 22 Oct) | Your workout. A library or past workout opens as the overview planned it, cardio, timed sets and an exercise twice included (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation); `N left out` only for an exercise it can't find, a set with no target or past the limits (review B1). The overview's TIME tile is Your workout's Time row (§2.3) |
 | today.md Up next card, alternatives row, This week / Recent, `Then:` row, Ask pill | Today (v2), §2.0.9 |
-| routines.md editor for plan-day routines | Builder edits templates through the Start prompt; the library editor stays for other workouts [Proposal] |
+| routines.md editor for plan-day routines | ~~Builder edits templates through the Start prompt; the library editor stays for other workouts [Proposal]~~ (Ben, 23 Oct: one editor) Every saved workout and plan day is edited on Your workout's page (§2.3b); the old editor screen is retired |
+| routines.md §A2.3 editor (all workouts) | §2.3b (Ben, 23 Oct: one editor) |
 | weekly-plan.md / plan Apply making one routine per day | One template per day **per main lift**; variations kept separately |
 
 Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_today`, adaptive Up next (now credited by plan day), pause/end plan.

@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native';
+import { AccessibilityInfo, ActionSheetIOS, Alert, ScrollView, View } from 'react-native';
 import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,9 +28,7 @@ import { saveScore, scoreStepOf } from '../../workout/check-in-score';
 import { CoachAskBar } from '../../ui/coach-ask-bar';
 import { TimeDetailSheet, TimeNoteRow } from '../../ui/time-stepper';
 import { createOnDeviceSpeech } from '../../voice/on-device-speech';
-import { SwipeRow } from './BuilderParts';
-import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
-import { holdMenu } from '../../ui/exercise-popup-model';
+import { WorkoutTable } from './WorkoutTable';
 import { ExerciseSheet, ProposalSheet, ReviewSheet, SwapSheet, type ChoiceSection } from './BuilderSheets';
 
 /**
@@ -573,74 +571,6 @@ export function BuilderWorkoutScreen() {
       />
     );
 
-  const row = (r: WorkoutRowView) => (
-    <DragItem key={r.slotKey} dragKey={r.slotKey} draggable>
-      <HeldSwipeRow
-      onPress={() => { setPopup(r.slotKey); }}
-      accessibilityLabel={r.accessibilityLabel}
-      actions={r.actions}
-      onAction={(name) => { rowAction(r, name); }}
-      leftAction={{ label: WORKOUT_COPY.delete, onPress: () => { rowAction(r, 'delete'); } }}
-      rightAction={{ label: WORKOUT_COPY.swap, onPress: () => { rowAction(r, 'swap'); } }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], paddingVertical: theme.space['2'] }}>
-        <View style={{ width: 28, alignItems: 'flex-start' }}>
-          <AppText variant="callout" color={r.label.length > 1 ? 'text.primary' : 'text.secondary'} numeric>
-            {r.label}
-          </AppText>
-          {r.linkedToNext ? <View style={{ position: 'absolute', left: 8, top: 24, height: 34, width: 2, borderRadius: 1, backgroundColor: theme.colors['text.tertiary'] }} /> : null}
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <AppText variant="callout" numberOfLines={2}>
-            {r.name}
-            {r.main ? <AppText variant="label" color="text.secondary">{`  ${WORKOUT_COPY.main}`}</AppText> : null}
-          </AppText>
-          {r.works !== null ? (
-            // Wraps (no ellipsis), like the Today strip: `Lower back, glutes, hamstrings` is never cut (Ben, 21 Oct).
-            <AppText variant="label" color="text.secondary">
-              {r.works}
-            </AppText>
-          ) : null}
-          {r.mayHurt ? (
-            <AppText variant="label" color="status.warning">
-              {WORKOUT_COPY.mayHurt}
-            </AppText>
-          ) : null}
-          {r.notHere ? (
-            <AppText variant="label" color="status.warning">
-              {WORKOUT_COPY.notHere}
-            </AppText>
-          ) : null}
-        </View>
-        <View style={{ width: 40, alignItems: 'flex-end' }}>
-          <AppText variant="callout" numeric>
-            {r.setsText}
-          </AppText>
-          {r.warmText !== null ? (
-            <AppText variant="label" color="text.secondary" numeric>
-              {r.warmText}
-            </AppText>
-          ) : null}
-        </View>
-        <AppText variant="callout" numeric align="right" style={{ width: 76 }}>
-          {r.topText}
-        </AppText>
-      </View>
-      </HeldSwipeRow>
-    </DragItem>
-  );
-
-  /** A hold released without a drag (§2.3's fallback): the row's own actions, as VoiceOver has them. */
-  const rowMenu = (slotKey: string) => {
-    const r = v.rounds.flatMap((x) => x.rows).find((x) => x.slotKey === slotKey);
-    if (r === undefined) return;
-    const m = holdMenu(r.actions);
-    ActionSheetIOS.showActionSheetWithOptions({ title: r.name, options: m.options, cancelButtonIndex: m.cancelButtonIndex, destructiveButtonIndex: m.destructiveButtonIndex }, (i) => {
-      const a = m.actionAt(i);
-      if (a !== null) rowAction(r, a);
-    });
-  };
-
   const popupSlot = popup;
   // (22 Oct) The pop-up's `How to` and `History`, where the overview's rows had them; the sheet closes first.
   const links = popupSlot === null ? null : popupLinks(snap, popupSlot, (x) => howToRouteFor(x, bundledHowToSources()));
@@ -779,48 +709,21 @@ export function BuilderWorkoutScreen() {
               }
             />
           ) : null}
-          <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', gap: theme.space['2'], paddingHorizontal: theme.space['3'] }}>
-            <View style={{ width: 28 }} />
-            <AppText variant="label" color="text.secondary" style={{ flex: 1 }}>
-              {WORKOUT_COPY.exercise}
-            </AppText>
-            <AppText variant="label" color="text.secondary" align="right" style={{ width: 40 }}>
-              {WORKOUT_COPY.sets}
-            </AppText>
-            <AppText variant="label" color="text.secondary" align="right" style={{ width: 76 }}>
-              {v.topHeader}
-            </AppText>
-          </View>
-          {/* Press and hold a row, then drag (§2.3, Q18): an edge = move there, the middle = superset. Built once, shared with the workout (workout-table-v3 §7). */}
-          <DragList
-            enabled
-            allowOnto
-            // Only drops the builder takes are highlighted (the main lift, more than 4, a no-op spring back; review S5).
+          {/* The table, shared with the one workout editor (Ben, 23 Oct): drops the builder takes only (the main lift, more than 4, a no-op spring back; review S5). */}
+          <WorkoutTable
+            rounds={v.rounds}
+            topHeader={v.topHeader}
+            canAdd={v.canAdd}
+            dragging={dragging}
+            onDragChange={setDragging}
             canDrop={(slotKey, t) => snapRef.current !== null && dropBuilderSlot(snapRef.current.workout.blocks, slotKey, t.key, t.edge) !== null}
             onDrop={(slotKey, t) => void edit({ kind: 'drop', slotKey, targetKey: t.key, edge: t.edge })}
-            onMenu={rowMenu}
-            onDragChange={setDragging}
-            style={{ gap: theme.space['3'] }}
-          >
-            {v.rounds.map((round) => (
-              <View
-                key={`${String(round.n)}:${round.rows[0]?.slotKey ?? ''}`}
-                style={{ borderRadius: theme.radius.md, overflow: dragging ? 'visible' : 'hidden', backgroundColor: theme.colors['bg.surface'], borderWidth: round.superset ? 1.5 : 0, borderColor: theme.colors['text.tertiary'] }}
-              >
-                {round.rows.map(row)}
-              </View>
-            ))}
-          </DragList>
-          {v.canAdd ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add exercise"
-              onPress={() => void openSwap(null)}
-              style={({ pressed }) => ({ minHeight: 50, borderRadius: theme.radius.md, borderWidth: 1.5, borderStyle: 'dashed', borderColor: theme.colors['border.divider'], alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}
-            >
-              <AppText variant="callout">{WORKOUT_COPY.addExercise}</AppText>
-            </Pressable>
-          ) : null}
+            onRowPress={(r) => {
+              setPopup(r.slotKey);
+            }}
+            onRowAction={rowAction}
+            onAdd={() => void openSwap(null)}
+          />
         </ScrollArea>
         <ToastHost bottom={8}>{popupSlot === null ? toastNode : null}</ToastHost>
       </View>
@@ -971,12 +874,6 @@ export function BuilderWorkoutScreen() {
       />
     </View>
   );
-}
-
-/** A row's swipe and tap, with the drag's hold on its own press (`useDragHandle`, inside its `DragItem`). */
-function HeldSwipeRow(p: Omit<Parameters<typeof SwipeRow>[0], 'holdProps'>) {
-  const hold = useDragHandle();
-  return <SwipeRow {...p} holdProps={hold} />;
 }
 
 function ScrollArea({ children, scrollEnabled }: { children: ReactNode; scrollEnabled: boolean }) {

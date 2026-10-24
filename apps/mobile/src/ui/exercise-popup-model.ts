@@ -39,6 +39,8 @@ export const POPUP_COPY = {
   /** (22 Oct) The links the overview's rows had: the exercise guide and its history. */
   howTo: 'How to',
   history: 'History',
+  /** (Ben, 23 Oct: one editor) A rest back to the default. */
+  restDefault: 'Default',
 } as const;
 
 export type PopupField = 'reps' | 'kg' | 'rpe';
@@ -118,6 +120,12 @@ export interface PopupSetRow {
   accessibilityLabel: string;
   /** `Warm-up 1`, `Set 2`: what VoiceOver says before each cell (`Set 2, reps`). */
   spokenName: string;
+  /** (Ben, 23 Oct: one editor) The Kg cell can't be typed (bodyweight); absent: it can. */
+  kgEditable?: boolean;
+  /** What an empty Kg cell shows (`Auto` on a saved workout, `45 lb` in another unit); absent: nothing. */
+  kgPlaceholder?: string;
+  /** More of this set's actions, after the row's own (hold menu and VoiceOver): `Rep range`, `Rest after this set`… */
+  extraActions?: readonly { name: string; label: string }[];
 }
 
 export interface PopupRestRow {
@@ -129,12 +137,16 @@ export interface PopupRestRow {
   /** A 15 s step down or up is still in range (no write that changes nothing). */
   canMinus: boolean;
   canPlus: boolean;
+  /** (Ben, 23 Oct: one editor) The workout sets this rest itself (`Default` puts the default back); absent: no `Default`. */
+  own?: boolean;
 }
 
 export interface PopupView {
   name: string;
   works: string | null;
   kgHeader: string;
+  /** `RPE` (absent) or `RIR`, Ben's effort scale. */
+  effortHeader?: string;
   rows: PopupSetRow[];
   canAddWarmup: boolean;
   canAddSet: boolean;

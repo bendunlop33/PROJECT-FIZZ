@@ -4,6 +4,8 @@
 >
 > **Revision 2026-10-12 (Ben on build 126: "should be able to select the number of sets per exercise as I can't change it atm").** Editor cards lead with a `SetShapeControl`: `Sets [−] 3 [+]` (working sets), `Warm-ups`, `Reps`, `Target RPE`; the per-set rows move under `Each set ▸` (§A2.3, WL11). The add sheet gets a `Sets` bar. The Save sheet's summary line gets `Edit ›` to open the editor on the unsaved copy (§A2.5). The Workouts list moves into the new **`Library` tab** (`Exercises` · `Workouts`; exercise-library.md EL10), replacing the planned Plan hub segment; until the tab ships, nothing here changes. Shared rules and checks: [exercise-library.md](exercise-library.md) §10 (EL-B17–EL-B24).
 >
+> **Revision 2026-10-23 (Ben, 23 Oct: one editor).** Ben: "Why does the plan builder's workout builder look so different to the usual workout builder?" The editor in §A2.3 (and v0.1 §2.3's editor screen) is **retired**: New workout, Edit workout, Duplicate, a plan day's Edit, `Save to Workouts › Edit ›` and Exercise detail's `New workout` open Your workout's page in an edit mode ([workout-builder-v3.md](workout-builder-v3.md) §2.3b), with Save / Cancel, the same Save, Undo and conflict rules (§A4.2, WL10, WL-A6), and every capability §A2.3 had moved into the shared exercise pop-up or the set's hold menu. What was dropped and why is listed there. §A2.3 below is kept as history.
+>
 > Code and data keep the name `Routine` (`routines` table, `Routine` schema, `services.routines`). Only the UI says **Workouts** (WL1).
 
 ---
@@ -86,6 +88,8 @@
 **Depends on later slices (not in slice A's acceptance):** `New with coach` / `Coach offline` (here and in the empty state) needs the workout builder; `Edit order` and `Set up rotation ›` on `YOUR ROTATION` need Edit rotation (weekly-plan §2.4); the Plan hub `Week` · `Workouts` segment needs the Plan hub. Until then `＋` opens the editor directly and Today links to the list (`Workouts ›`).
 
 ### A2.3 Editor (v1 scope, WL8)
+
+> **Superseded (Ben, 23 Oct: one editor):** see [workout-builder-v3.md](workout-builder-v3.md) §2.3b. The rules for Save (one version, opId, expectedVersion), `No changes` / `Add a name` / `Fix N issues`, `Discard changes?`, the conflict sheet, `Main`, `Add weight`, Auto / Fixed loads and rest by set type still hold; only the screen changed.
 
 Same frame, action bar and keypad rules as v0.1 §2.3. Changes:
 
