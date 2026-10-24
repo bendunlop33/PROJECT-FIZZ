@@ -11,8 +11,10 @@ import {
   discardCommand,
   LEGACY_STARTER_IDS,
   listGymPresets,
+  localDateOf,
   materialiseGymDraft,
   starterExercises,
+  toIso,
   toMs,
   type GymDraft,
   type GymPresetId,
@@ -1034,6 +1036,21 @@ export function createAppServices(deps: AppServicesDeps) {
       update: async (next, expectedVersion, opId) => repos().reviews.update(await ownerIdOf(), next, expectedVersion, opId),
     },
     dayNotes: createDayNotes({ store: () => repos().coach, ownerId: ownerIdOf, now: deps.now }),
+    // (Ben, 23 Oct; §2.9) Coach review's own Your data: lift targets only while they're on, and today's check-in.
+    reviewExtras: async () => {
+      const p = await getProfile();
+      const at = deps.now();
+      const nowMs = toMs(at.utc);
+      const today = localDateOf(nowMs, p?.timezone ?? at.tz);
+      const on = await liftTargets.on().catch(() => false);
+      const views = on ? await liftTargets.coachViews().catch(() => []) : [];
+      const checkIns = p === null ? [] : await repos().checkIns.listSince(p.id, toIso(nowMs - 2 * 24 * 60 * 60 * 1000)).catch(() => []);
+      const c = checkIns.filter((x) => x.deletedAtUtc === undefined && x.localDate === today).sort((a, b) => toMs(b.recordedAt.utc) - toMs(a.recordedAt.utc))[0];
+      return {
+        liftTargets: views.map((v) => ({ exerciseId: v.exerciseId, value: v.load.value, unit: v.load.unit, convention: v.load.convention, reps: v.reps, by: v.by })),
+        checkIn: c === undefined ? null : { score: c.score, reasons: c.reasons },
+      };
+    },
   });
   setBuilderReviewProvider(createBuilderReviewProvider(builderCoach, builderPorts.review, { newId: deps.newId }));
 

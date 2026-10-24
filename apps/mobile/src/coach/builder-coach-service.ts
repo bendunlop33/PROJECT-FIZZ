@@ -46,8 +46,12 @@ import {
   preSessionSignals,
   recheckBuilderProposal,
   requestBuilderTool,
+  removedClaimExtras,
+  reviewEditLines,
+  reviewEdits,
   reviewFactLines,
   reviewFacts,
+  reviewLiftFacts,
   setupContextText,
   signalLine,
   type BuilderCoachEnv,
@@ -63,11 +67,15 @@ import {
   type NudgeOffer,
   type PreSessionInput,
   type ReviewNote,
+  type ReviewDrafted,
+  type ReviewEdit,
+  type ReviewLiftTarget,
   type ReviewPlanDay,
+  type ReviewRequestContext,
   type SetupCoachContext,
   type SetupFill,
 } from '@fizz/coach';
-import { deriveId, estimateBuilderMinutes, infoOrDefault, parseBuildRequest, slotsOf, stableStringify, toMs, type BuilderGroupName, type BuilderWorkout } from '@fizz/domain';
+import { deriveId, estimateBuilderMinutes, infoOrDefault, parseBuildRequest, slotsOf, stableStringify, toMs, type BuilderGroupName, type BuilderWorkout, type LoadReferences, type MainFocus } from '@fizz/domain';
 import {
   BUILDER_COACH_TOOL,
   type ActionDetail,
@@ -87,12 +95,34 @@ import type { CoachAvailability } from './coach-service';
 // ---------------------------------------------------------------------------
 // Ports (wired at the merge by the builder and Today streams)
 
+/**
+ * (Ben, 23 Oct; §2.9) What Coach review reads beyond the workout: what was drafted before Ben's own edits (the
+ * version's `drafted`, null on older drafts), what Time cut, his comparable history per exercise, the plan's focus
+ * and block week.
+ */
+export interface BuilderReviewWorld {
+  drafted: ReviewDrafted | null;
+  time: { dropped: readonly string[]; cut: Readonly<Record<string, number>>; added?: readonly string[]; raised?: Readonly<Record<string, number>> } | null;
+  refs: (exerciseId: string) => LoadReferences | null;
+  focus: MainFocus | null;
+  block: { week: number; of: number; deload: boolean } | null;
+}
+
 /** Today's builder draft as the coach sees and checks it. */
 export interface BuilderCoachWorld {
   snapshot: BuilderCoachSnapshot;
   /** The checks' context: rules context, gym availability, pain flags, the load guard. `askedHeavier` is read from Ben's words here. */
   env: Omit<BuilderCoachEnv, 'askedHeavier'>;
   extras: BuilderCoachExtras;
+  /** Coach review's own reads; absent: the review judges the workout without his edits or history facts. */
+  review?: BuilderReviewWorld;
+}
+
+/** (Ben, 23 Oct; §2.9) Your data Coach review reads at review time: lift targets (only while on) and today's check-in. */
+export interface BuilderReviewExtras {
+  liftTargets: readonly ReviewLiftTarget[];
+  /** Today's check-in, if Ben did one: its score (1–5) and reasons, as given. */
+  checkIn: { score: number; reasons: readonly string[] } | null;
 }
 
 /** Where Set up words were asked: on Set up itself, or Today's coach bar (§2.0.5, §2.1: opens the builder on Set up, filled). */
@@ -158,6 +188,8 @@ export interface BuilderCoachServiceDeps {
   writer: BuilderCoachWriter;
   reviews?: BuilderReviewsPort;
   dayNotes?: DayNotesPort;
+  /** (Ben, 23 Oct) Lift targets and today's check-in for Coach review; absent or failing: none given. */
+  reviewExtras?: () => Promise<BuilderReviewExtras>;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,7 +343,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
     const coachPart: ReviewCoach =
       input.coach === null
         ? { status: input.status === 'reviewed' ? 'failed' : input.status }
-        : { status: 'reviewed', verdict: input.coach.verdict, lines: [...input.coach.suggestions.map((s) => s.proposal.lines.join(' · ').slice(0, 300)), ...input.coach.notes.map((n) => n.text)].slice(0, 10), actionIds: [], numbersChecked: true };
+        : { status: 'reviewed', verdict: input.coach.verdict, lines: [...input.coach.edits.map((e) => `${e.edit}${e.comment === null ? '' : ` · ${e.comment}`}`.slice(0, 300)), ...input.coach.suggestions.map((s) => s.proposal.lines.join(' · ').slice(0, 300)), ...input.coach.notes.map((n) => n.text)].slice(0, 10), actionIds: [], numbersChecked: true };
     const review: TrainingReview = {
       id: input.reviewId,
       ownerId: await deps.ownerId(),
@@ -334,6 +366,36 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       await deps.reviews.update(next, w.review.version, input.opId).catch(() => null);
     }
     return w.review.id;
+  }
+
+  /**
+   * (Ben, 23 Oct; §2.9) The review's context, all worked out by code: Ben's own edits (null when what was drafted
+   * isn't known), per-exercise facts from his history, the plan's focus and block week, readiness and lift targets,
+   * and every number in them for the claim check.
+   */
+  async function reviewContextOf(world: BuilderCoachWorld, env: BuilderCoachEnv): Promise<{ request: ReviewRequestContext; edits: ReviewEdit[] | null; claims: ReturnType<typeof removedClaimExtras> }> {
+    const rw = world.review;
+    const snap = world.snapshot;
+    const more = deps.reviewExtras === undefined ? null : await deps.reviewExtras().catch(() => null);
+    const drafted = rw?.drafted ?? null;
+    const edits = rw === undefined ? null : reviewEdits({ drafted, workout: snap.workout, minutes: snap.minutes, ctx: env.ctx, time: rw.time });
+    const lifts = reviewLiftFacts({ workout: snap.workout, ctx: env.ctx, refs: rw?.refs ?? (() => null), pain: env.pain, targets: more?.liftTargets ?? [], edits, drafted });
+    const name = (id: string) => infoOrDefault(env.ctx.info, id).name;
+    const focus = rw?.focus ?? null;
+    const block = rw?.block ?? null;
+    const c = more?.checkIn ?? null;
+    return {
+      request: {
+        yourEdits: edits === null ? null : reviewEditLines(edits),
+        lifts: lifts.map((l) => ({ slotKey: l.slotKey, exercise: l.exercise, facts: l.facts })),
+        focus: focus === null ? null : `${focus.charAt(0).toUpperCase()}${focus.slice(1)}`,
+        blockWeek: block === null ? null : `Week ${String(block.week)} of ${String(block.of)}${block.deload ? ' · Deload' : ''}`,
+        readiness: c === null ? null : `Check-in ${String(c.score)} of 5 today${c.reasons.length === 0 ? '' : ` · ${c.reasons.join(', ').replaceAll('_', ' ')}`}`,
+        liftTargets: (more?.liftTargets ?? []).map((t) => `${name(t.exerciseId)} ${String(t.value)} ${t.unit} × ${String(t.reps)}${t.by === null ? '' : ` by ${t.by}`}`),
+      },
+      edits,
+      claims: [...lifts.map((l) => l.claims), ...removedClaimExtras(edits, drafted, env.ctx)],
+    };
   }
 
   const service = {
@@ -431,9 +493,11 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       const reviewId = deriveId(`builder-review:${req.opId}`);
       if (r.reach === 'ok' && r.models !== null) {
         const view = builderWorkoutView(world.snapshot, env.ctx, estimateBuilderMinutes(world.snapshot.workout, env.ctx));
-        const answer = await call(buildReviewRequest(view, world.extras, lines, builderModelFor('review', r.models)), BUILDER_COACH_TOOL.reviewWorkout, req.signal);
+        // (Ben, 23 Oct) The numbers too: his own edits against what was drafted, and per exercise his history, all code's.
+        const ctx = await reviewContextOf(world, env);
+        const answer = await call(buildReviewRequest(view, world.extras, lines, builderModelFor('review', r.models), ctx.request), BUILDER_COACH_TOOL.reviewWorkout, req.signal);
         if (answer.ok) {
-          coach = checkReview({ reviewId, args: answer.args, snapshot: world.snapshot, env, claims });
+          coach = checkReview({ reviewId, args: answer.args, snapshot: world.snapshot, env, claims: { ...claims, extra: ctx.claims }, edits: ctx.edits });
           status = 'reviewed';
         } else {
           const st = failedReach(answer);

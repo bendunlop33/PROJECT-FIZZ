@@ -43,6 +43,11 @@ export interface BuilderReview {
   counts: { group: string; sets: number; trained: boolean }[];
   variety: string | null;
   plan: { title: string; lines: { ok: boolean; text: string }[]; actions: BuilderReviewAction[] } | null;
+  /**
+   * (Ben, 23 Oct) The coach's comments on Ben's own edits, in his edits' order: code's line for the edit
+   * (`Barbell bench press top 100 → 110 kg`), the coach's short comment, and its offer (Apply / Skip), if any.
+   */
+  edits: { id: string; edit: string; comment: string | null; action: BuilderReviewAction | null }[];
   suggestions: BuilderReviewAction[];
   /** `For next Chest day`: ticked by default, saved on Done (Your data). */
   nextNotes: { id: string; text: string; ticked: boolean }[];
@@ -125,6 +130,7 @@ export function reviewFacts(snap: BuilderSnapshot, status: BuilderReviewStatus):
     counts: shown.map((g) => ({ group: g, sets: sets.get(g) ?? 0, trained: (sets.get(g) ?? 0) > 0 })),
     variety: compound + isolation === 0 ? null : `${String(compound)} compound · ${String(isolation)} isolation`,
     plan: null,
+    edits: [],
     suggestions: [],
     nextNotes: [],
     nextNotesTitle: null,
@@ -162,6 +168,8 @@ export function reviewAfterApply(r: BuilderReview, actionId: string, ok: boolean
   const keep = (a: BuilderReviewAction): boolean => a.id !== actionId;
   return {
     ...r,
+    // An edit's comment stays; only its offer goes once applied.
+    edits: r.edits.map((e) => (e.action === null || e.action.id !== actionId ? e : { ...e, action: ok ? null : mark(e.action) })),
     suggestions: ok ? r.suggestions.filter(keep) : r.suggestions.map(mark),
     plan: r.plan === null ? null : { ...r.plan, actions: ok ? r.plan.actions.filter(keep) : r.plan.actions.map(mark) },
   };

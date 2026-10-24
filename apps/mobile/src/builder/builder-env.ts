@@ -32,6 +32,7 @@ import {
   type DraftCodecContext,
   type HistorySession,
   type LoadReferences,
+  type MainFocus,
   type RuleReps,
   type SlotLoadInput,
   type SubstituteContext,
@@ -85,6 +86,10 @@ export interface BuilderEnv {
   equipmentVersion: string;
   gymId: string | null;
   unit: UserProfile['preferredUnit'];
+  /** (Ben, 23 Oct; §2.9) The plan's main focus, else his goal's (`pbMainFocus`), for Coach review. */
+  mainFocus: MainFocus;
+  /** (Ben, 23 Oct; §2.9) The applied builder plan's block week (`Week 3 of 6`); null: no builder plan, or paused. */
+  block: { week: number; of: number; deload: boolean } | null;
 }
 
 export interface BuilderEnvRequest {
@@ -359,6 +364,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       equipmentVersion: deriveId(`builder-equipment:${stableStringify(equipment.map((e) => [e.id, e.version]).sort())}`),
       gymId: req.gymId,
       unit: p.preferredUnit,
+      mainFocus,
+      block: block === null || block.done || activePause(appliedPlan, nowMs, p.timezone) !== null ? null : { week: block.week, of: block.of, deload: block.deload },
     };
   };
 }

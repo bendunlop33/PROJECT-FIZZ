@@ -17,6 +17,8 @@ import {
   PLANNED_HELD_LINE,
   buildFromSetup,
   builderChangeLine,
+  adoptChangedSlots,
+  adoptUneditedSlots,
   builderDraftEdit,
   builderDraftUndo,
   builderSetupOf,
@@ -1402,7 +1404,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const opId = coachLandOpId(first);
       const plan = withSlotRevs(v.plan, toDraftPlan(r.workout, env.codec)).plan;
       const text = `✦ ${r.landed.flatMap((a) => a.ops.map((o) => structuralLine(o).text)).join(' · ')}`.slice(0, 160);
-      const change = builderDraftEdit(d, { opId, at: deps.now(), basis: { version: d.version }, plan, setup: stored ?? storedSetup(pageSetup(d), {}), undoable: true, undoCoach: { applies: r.landed.map((a) => a.applyActionId), text }, alsoOpIds: r.landed.slice(1).map((a) => coachLandOpId(a.applyActionId)) });
+      // (Ben, 23 Oct; §2.9) The coach's changes aren't Ben's edits: the drafted baseline takes the slots they changed.
+      const drafted = v.drafted === undefined ? undefined : adoptChangedSlots(v.drafted, v.plan, plan);
+      const change = builderDraftEdit(d, { opId, at: deps.now(), basis: { version: d.version }, plan, setup: stored ?? storedSetup(pageSetup(d), {}), undoable: true, undoCoach: { applies: r.landed.map((a) => a.applyActionId), text }, alsoOpIds: r.landed.slice(1).map((a) => coachLandOpId(a.applyActionId)), ...(drafted === undefined ? {} : { drafted }) });
       const w = await repos()
         .workoutDrafts.write(p.id, d.id, (current) => (current.version !== d.version && change.kind === 'write' ? { kind: 'stale', current } : change))
         .catch(() => null);
@@ -1922,7 +1926,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const withItems: DraftPlan = { slots: encoded.slots.map((x) => (fromPlanned.has(x.slotKey) ? { ...x, checkedOn: plannedItem.get(fromPlanned.get(x.slotKey) ?? '') ?? null } : x)) };
         const plan = withSlotRevs(v.plan, withItems).plan;
         const setup = timed.setup;
-        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, gymId: gym.id, undoSetup: { ...stored, gymKept: gym.id }, undoable: true });
+        // (Ben, 23 Oct; §2.9) A gym change isn't Ben's edit of the loads: slots he hadn't edited take their loads here.
+        const drafted = v.drafted === undefined ? undefined : adoptUneditedSlots(v.drafted, v.plan, plan);
+        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, gymId: gym.id, undoSetup: { ...stored, gymKept: gym.id }, undoable: true, ...(drafted === undefined ? {} : { drafted }) });
         return { change, env, toast: { text: BUILDER_COPY.gymChanged, undoOpId: w.opId, why: null } };
       });
     },
@@ -2594,6 +2600,15 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           }),
           memories: memories.filter((m) => m.dayNote === undefined).map((m) => m.text).slice(0, 20),
         },
+        // (Ben, 23 Oct; §2.9) Coach review: what was drafted before Ben's own edits (at the rest level it was drafted
+        // with: before Time's, if Time shortened rests), what Time cut, his comparable history, the plan's focus and week.
+        review: {
+          drafted: v.drafted === undefined ? null : { workout: fromDraftPlan(v.drafted.plan, stored?.timeFit !== undefined ? (stored.timeFit.baseRestLevel ?? 'normal') : (stored?.restLevel ?? 'normal')), minutes: v.drafted.minutes },
+          time: stored?.timeFit === undefined ? null : { dropped: stored.timeFit.dropped, cut: stored.timeFit.cut ?? {}, added: (stored.timeFit.added ?? []).map((a) => a.slotKey), raised: stored.timeFit.raised ?? {} },
+          refs: env.refsOf,
+          focus: env.mainFocus,
+          block: env.block,
+        },
       };
     },
 
@@ -2708,6 +2723,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       // The pre-session offer over Today's own content stays Today's card (integrity B2); over Ben's edit it's an edit.
       const own = req.nudge === true ? todayDraftState(d) : { state: 'edited' as const };
       const today = own.state === 'edited' ? undefined : { by: 'nudge' as const, controls: own.controls, hash: todayContentHash({ plan, setup, gymId: v.request.gymId }) };
+      // (Ben, 23 Oct; §2.9) The coach's version carries the drafted baseline over: what the coach changed (Ben applied
+      // it) joins it; Ben's own earlier edits elsewhere still read as his. No baseline before: none after.
+      const drafted = v.drafted === undefined ? null : adoptChangedSlots(v.drafted, v.plan, plan, { before: stored.minutes, after: setup.minutes });
       const change = builderDraftEdit(d, {
         opId: req.opId,
         at: deps.now(),
@@ -2715,6 +2733,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         plan,
         setup,
         undoable: true,
+        drafted,
         rebuild: { actionId: deriveId(`builder-coach-action:${req.opId}`), focus: v.request.focus, ...(v.request.day === undefined ? {} : { day: v.request.day }), gymId: v.request.gymId, equipmentVersion: env.equipmentVersion, contextHash: contextHash(setup, v.request.gymId, env.equipmentVersion), ...(today === undefined ? {} : { today }) },
       });
       const w = await repos()
