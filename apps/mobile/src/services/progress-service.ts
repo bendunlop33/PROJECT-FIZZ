@@ -228,6 +228,9 @@ export function createProgressService(deps: ProgressServiceDeps) {
     return out;
   }
 
+  /** Workouts read per slice of a projection pass. */
+  const PROJECT_BATCH = 8;
+
   async function projectAll(profile: UserProfile): Promise<{ sessions: ProgressSession[]; unreadable: number }> {
     const store = deps.store();
     if (cacheKey === null || cacheKey.store !== store || cacheKey.ownerId !== profile.id || cacheKey.tz !== profile.timezone) {
@@ -238,15 +241,35 @@ export function createProgressService(deps: ProgressServiceDeps) {
     const refs = await store.repos.sessions.listFinishedRevisions(profile.id);
     const next = new Map<string, Cached>();
     const slice = (deps.slicer ?? (() => timeSlicer()))();
-    for (const ref of refs) {
+    // (Perf, 23 Oct) Changed workouts are read a few at a time (one batched read each, shared with the store's
+    // cache), still sliced so a long pass never blocks.
+    const toRead = refs.filter((ref) => {
+      const hit = cache.get(ref.id);
+      return hit === undefined || hit.revision !== ref.revision;
+    });
+    const read = new Map<string, SessionAggregate | Error | null>();
+    for (let i = 0; i < toRead.length; i += PROJECT_BATCH) {
       await slice();
+      const ids = toRead.slice(i, i + PROJECT_BATCH).map((r) => r.id);
+      try {
+        const got = await store.repos.sessions.getMany(ids);
+        for (const id of ids) read.set(id, got.get(id) ?? null);
+      } catch (e) {
+        for (const id of ids) read.set(id, e instanceof Error ? e : new Error(String(e)));
+      }
+    }
+    for (const ref of refs) {
       const hit = cache.get(ref.id);
       if (hit !== undefined && hit.revision === ref.revision) {
         next.set(ref.id, hit);
         continue;
       }
+      const agg = read.get(ref.id) ?? null;
+      if (agg instanceof Error) {
+        next.set(ref.id, { revision: ref.revision, projection: null, unreadable: true });
+        continue;
+      }
       try {
-        const agg = await store.repos.sessions.get(ref.id);
         next.set(ref.id, { revision: ref.revision, projection: agg ? toProgressSession(agg, profile.timezone, nowMs) : null, unreadable: false });
       } catch {
         next.set(ref.id, { revision: ref.revision, projection: null, unreadable: true });

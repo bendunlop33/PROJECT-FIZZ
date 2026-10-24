@@ -435,6 +435,38 @@ function editedOf(d: WorkoutDraft): TodayEditedDraft {
   };
 }
 
+/** A serial per history entry object: the store hands back the same entries while their workout is unchanged. */
+const entrySerials = new WeakMap<HistorySession, number>();
+let nextSerial = 0;
+function historyKey(history: readonly HistorySession[]): string {
+  return history
+    .map((h) => {
+      let n = entrySerials.get(h);
+      if (n === undefined) {
+        n = (nextSerial += 1);
+        entrySerials.set(h, n);
+      }
+      return String(n);
+    })
+    .join(',');
+}
+
+/** What the rule reads of the gym and Ben's state, as a key (items and flags by ID and version; the minute). */
+function substituteKey(sub: SubstituteContext, nowMs: number): string {
+  return deriveId(
+    stableStringify({
+      ownerId: sub.ownerId,
+      unit: sub.unit,
+      gym: { id: sub.gym.id, name: sub.gym.name, items: sub.gym.equipment.map((e) => [e.id, e.version]) },
+      known: [...sub.knownEquipment.values()].map((e) => [e.id, e.version]),
+      pain: sub.painFlags.map((f) => [f.id, f.version]),
+      sessionPain: sub.sessionPain,
+      at: { tz: sub.at.tz, minute: Math.floor(toMs(sub.at.utc) / 60_000) },
+      now: Math.floor(nowMs / 60_000),
+    }),
+  );
+}
+
 const titleOf = (name: string | null | undefined): string => (name ?? '').split('·')[0]?.trim() || 'Workout';
 
 /** A template dry run's load for one exercise. `planSetMs`: when its plan's loads were set (plan workouts only). */
@@ -491,6 +523,29 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return out;
   }
 
+  /**
+   * (Perf, 23 Oct) The rule's reads of each exercise's history (`loadReferences`, `substituteTargets`), kept while
+   * nothing they read changed: the same exercise record, the same history entries (a corrected or new workout is a
+   * new entry, `historyKey`), the same gym, items, pain flags and minute. A Your workout edit then re-reads Today
+   * without re-running the rule over years of history. Pure inputs only, so the result is the same.
+   */
+  type RuleReads = { refs: ReturnType<typeof loadReferences>; sp: ReturnType<typeof substituteTargets>; acc: ReturnType<typeof substituteTargets> | null };
+  let ruleCache = new Map<string, RuleReads>();
+  let ruleCacheStore: Store | null = null;
+  function ruleReads(key: string, compute: () => RuleReads): RuleReads {
+    const store = deps.store();
+    if (ruleCacheStore !== store || ruleCache.size > 2000) {
+      ruleCache = new Map();
+      ruleCacheStore = store;
+    }
+    let got = ruleCache.get(key);
+    if (got === undefined) {
+      got = compute();
+      ruleCache.set(key, got);
+    }
+    return got;
+  }
+
   /** Each exercise's load inputs at this gym: the template's dry run first, else the rule on its own history. */
   async function loadInputs(p: UserProfile, ids: readonly string[], exercises: ReadonlyMap<string, Exercise>, sub: SubstituteContext, planned: ReadonlyMap<string, PlannedAnchor>, flags: readonly PainFlag[], mainFocus: MainFocus, deload = false) {
     const out = new Map<string, SlotLoadInput>();
@@ -500,25 +555,42 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const coachRowsOf = (sessionId: string) => {
       let got = coachRows.get(sessionId);
       if (got === undefined) {
-        got = Promise.all([repos().sessions.get(sessionId).catch(() => null), repos().coach.listNextTargets(p.id, sessionId).catch(() => [] as NextSessionTargetRecord[])]).then(([source, rows]) => ({ source, rows: coachTargetRows(rows) }));
+        // The workout from the history cache (read-only here), not a fresh copy.
+        const source = repos()
+          .sessions.getMany([sessionId])
+          .then((m) => {
+            const a = m.get(sessionId);
+            return a === undefined || a instanceof Error ? null : a;
+          })
+          .catch(() => null);
+        got = Promise.all([source, repos().coach.listNextTargets(p.id, sessionId).catch(() => [] as NextSessionTargetRecord[])]).then(([src, rows]) => ({ source: src, rows: coachTargetRows(rows) }));
         coachRows.set(sessionId, got);
       }
       return got;
     };
+    // (Perf, 23 Oct) Every exercise's history in one read (each workout decoded once), not one full read per exercise.
+    const histories = ids.length > 1 ? await deps.store().listExerciseHistories(p.id, ids).catch(() => null) : null;
+    const subKey = substituteKey(sub, nowMs);
+    const shape = { workingSets: 3, templates: [{ setType: 'working' as const, reps: { min: 8, max: 12 }, durationS: null }] };
     for (const id of ids) {
       const e = exercises.get(id);
       if (e === undefined) continue;
-      const history = await deps.port.historyFor(p.id, id).catch(() => [] as HistorySession[]);
-      const refs = loadReferences({ exercise: e, history, ctx: sub, nowMs });
+      const history = histories?.get(id) ?? (await deps.port.historyFor(p.id, id).catch(() => [] as HistorySession[]));
+      // The rule's pure reads of his history (the heavy part), worked out once per history, gym and minute.
+      const ruleOf = ruleReads(`${id}|${String(e.version)}|${e.updatedAtUtc}|${historyKey(history)}|${subKey}|${sub.lastUsedHere?.(id) ?? '-'}`, () => {
+        const r = loadReferences({ exercise: e, history, ctx: sub, nowMs });
+        const accessory = ruleCategory(e, r.equipment?.kind ?? null, r.convention) === 'main_barbell' ? substituteTargets(shape, e, history, sub, { accessory: true }) : null;
+        return { refs: r, sp: substituteTargets(shape, e, history, sub), acc: accessory };
+      });
+      const refs = ruleOf.refs;
       const fromPlan = planned.get(id);
       const anchorOf = (a: { anchor: AnchorLoad; unit: 'kg' | 'lb'; convention: string } | undefined): AnchorLoad | null => (a === undefined || a.convention !== refs.convention ? null : { ...a.anchor, value: convertValue(a.anchor.value, a.unit, refs.unit) });
       let ruleTarget: AnchorLoad | null = null;
       const ruleRpe = builtInTargetRpe(ruleCategory(e, refs.equipment?.kind ?? null, refs.convention));
       // The rule runs on every card, plan days too: its reps (Ben's last session of the exercise; 21 Oct) set every slot's reps.
-      const shape = { workingSets: 3, templates: [{ setType: 'working' as const, reps: { min: 8, max: 12 }, durationS: null }] };
-      const sp = substituteTargets(shape, e, history, sub);
+      const sp = ruleOf.sp;
       // A main barbell lift as a secondary lift: its rule read as a compound lift's (`slotLoadOf`).
-      const acc = ruleCategory(e, refs.equipment?.kind ?? null, refs.convention) === 'main_barbell' ? substituteTargets(shape, e, history, sub, { accessory: true }) : null;
+      const acc = ruleOf.acc;
       // A plan's week-1 load with newer history gives way to the rule (`builderLoad`; reps from history, 21 Oct).
       const planStale = fromPlan?.source === 'plan' && planAnchor(anchorOf(fromPlan), fromPlan.planSetMs, refs.latest?.performedAtUtc ?? null)?.yieldsToHistory === true;
       if (fromPlan === undefined || fromPlan.source === 'rule' || planStale) {
@@ -607,7 +679,28 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return 'not_connected';
   }
 
+  /**
+   * (Perf, 23 Oct) Today's data, read once per state: Today, its Edit, and Your workout's Today options (`draftFor`,
+   * `mainLiftsFor`, `mixFactsFor`, `carryDaysFor`, `carryItemsFor`) used to each re-read and re-plan everything. The
+   * same database with no write since (`writeCount`), the same minute, coach status and check-in setting give the
+   * same data; anything else reads again. Local only (rule 1).
+   */
+  let memo: { key: string; store: Store; value: Promise<TodaySessionData | null> } | null = null;
   async function load(): Promise<TodaySessionData | null> {
+    const store = deps.store();
+    const coach = await deps.coachStatus().catch((): CoachStatus => 'not_connected');
+    const key = `${String(store.db.writeCount)}|${String(Math.floor(toMs(deps.now().utc) / 60_000))}|${coach}|${String(deps.offerAtOrBelow?.() ?? null)}`;
+    if (memo !== null && memo.store === store && memo.key === key) return memo.value;
+    const value = loadFresh();
+    memo = { key, store, value };
+    // A failed read is never kept.
+    value.catch(() => {
+      if (memo?.value === value) memo = null;
+    });
+    return value;
+  }
+
+  async function loadFresh(): Promise<TodaySessionData | null> {
     const p = await deps.profile();
     if (p === null) return null;
     const now = deps.now();

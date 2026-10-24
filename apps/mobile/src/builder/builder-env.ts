@@ -166,6 +166,12 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       if (i === null || !here(e)) continue;
       byGroup.set(i.group, [...(byGroup.get(i.group) ?? []), e]);
     }
+    // (Perf, 23 Oct) Every candidate's history in one read (each workout decoded once), not one read per candidate.
+    const wanted = [...new Set(req.groups)].flatMap((g) => (byGroup.get(g) ?? []).map((e) => e.id));
+    if (wanted.length > 1) {
+      const got = await deps.store().listExerciseHistories(p.id, wanted).catch(() => null);
+      if (got !== null) for (const [id, h] of got) histories.set(id, h);
+    }
     const ranked = new Map<BuilderGroup, string[]>();
     for (const g of new Set(req.groups)) {
       const list = byGroup.get(g) ?? [];

@@ -1440,6 +1440,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return ctx.store().listExerciseHistory(ownerId, exerciseId);
   }
 
+  /** (Perf, 23 Oct) Several exercises' histories in one read; one that can't be read is empty, as `historyFor`'s callers treat it. */
+  async function historiesFor(ownerId: string, exerciseIds: Iterable<string>): Promise<Map<string, HistorySession[]>> {
+    const ids = [...new Set(exerciseIds)];
+    const all = await ctx.store().listExerciseHistories(ownerId, ids).catch(() => null);
+    const out = new Map<string, HistorySession[]>();
+    for (const id of ids) out.set(id, all?.get(id) ?? (await historyFor(ownerId, id).catch(() => [] as HistorySession[])));
+    return out;
+  }
+
   async function gymNamesOf(ownerId: string): Promise<Record<string, string>> {
     return Object.fromEntries((await repos().gyms.listByOwner(ownerId).catch(() => [])).map((g) => [g.id, g.name]));
   }
@@ -1452,8 +1461,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   /** GS3 step 2 for each exercise: the item it last used at `gymId`. History that can't be read is skipped. */
   async function lastUsedFor(ownerId: string, exerciseIds: Iterable<string>, gymId: string): Promise<(exerciseId: string) => string | null> {
     const map = new Map<string, string | null>();
-    for (const exerciseId of new Set(exerciseIds)) {
-      map.set(exerciseId, lastUsedAtGym(await historyFor(ownerId, exerciseId).catch(() => [] as HistorySession[]), gymId));
+    const ids = [...new Set(exerciseIds)];
+    // (Perf, 23 Oct) One read for all of them (each workout decoded once), not a full history read per exercise.
+    const all = ids.length > 1 ? await ctx.store().listExerciseHistories(ownerId, ids).catch(() => null) : null;
+    for (const exerciseId of ids) {
+      map.set(exerciseId, lastUsedAtGym(all?.get(exerciseId) ?? (await historyFor(ownerId, exerciseId).catch(() => [] as HistorySession[])), gymId));
     }
     return (exerciseId) => map.get(exerciseId) ?? null;
   }
@@ -1717,13 +1729,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const plan = await ctx.store().repos.planDrafts.get(link.planId).catch(() => null);
     if (plan === null || plan.ownerId !== p.id) return null;
     const exercises = new Map<string, Exercise>();
-    const histories = new Map<string, HistorySession[]>();
     for (const e of routine.exercises) {
       const x = await exerciseById(e.exerciseId);
       if (x === null) continue;
       exercises.set(x.id, x);
-      histories.set(x.id, await historyFor(p.id, x.id).catch(() => [] as HistorySession[]));
     }
+    const histories = await historiesFor(p.id, exercises.keys());
     const substitute = await substituteCtx(p, gymId, gymEquipment, today, exercises.keys());
     return planFirstLoads({ routine, plan, exercises, histories, substitute, nowMs: toMs(ctx.now().utc) });
   }
@@ -1745,8 +1756,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const e = req.preview ? await exerciseById(s.exerciseId) : await ensureExercise(s.exerciseId);
       if (e !== null) exercises.set(s.exerciseId, e);
     }
-    const histories = new Map<string, HistorySession[]>();
-    for (const id of exercises.keys()) histories.set(id, await historyFor(p.id, id).catch(() => [] as HistorySession[]));
+    const histories = await historiesFor(p.id, exercises.keys());
     const substitute = await substituteCtx(p, req.gymId, req.gymEquipment, req.today ?? null, exercises.keys());
     const lastUsedHere = await lastUsedFor(p.id, [...exercises.keys(), ...swapExerciseIds(req.todayEdits)], req.gymId);
     const service = req.newId ? createSessionService(repos(), req.newId, { deloadAt }) : domain();
