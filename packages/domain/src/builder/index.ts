@@ -19,6 +19,7 @@ export * from './edit';
 export * from './scope';
 export * from './from-planned';
 export * from './draft-life';
+export * from './drafted';
 export * from './info';
 export * from './setup';
 export * from './main-lift';

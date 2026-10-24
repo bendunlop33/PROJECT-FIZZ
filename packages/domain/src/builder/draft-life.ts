@@ -7,6 +7,7 @@ import {
   type BuildFocus,
   type BuilderDraftKey,
   type BuilderSetup,
+  type DraftedBase,
   type DraftPlan,
   type TodayDraftMark,
   type WorkoutDraft,
@@ -57,8 +58,10 @@ export interface NewBuilderDraftInput {
   opened?: boolean;
 }
 
-function version(input: { n: number; parentN: number | null; actionId: string; setup: BuilderSetup; plan: DraftPlan; focus: BuildFocus; day?: BuildDay | undefined; gymId: string | null; equipmentVersion: string; contextHash: string; at: ZonedTimestamp; today?: TodayDraftMark | undefined; opened?: boolean | undefined }): WorkoutDraftVersion {
+function version(input: { n: number; parentN: number | null; actionId: string; setup: BuilderSetup; plan: DraftPlan; focus: BuildFocus; day?: BuildDay | undefined; gymId: string | null; equipmentVersion: string; contextHash: string; at: ZonedTimestamp; today?: TodayDraftMark | undefined; opened?: boolean | undefined; drafted?: DraftedBase | null | undefined }): WorkoutDraftVersion {
   const opened = input.opened === true ? { opened: { hash: todayContentHash({ plan: input.plan, setup: input.setup, gymId: input.gymId }) } } : {};
+  // (Ben, 23 Oct) A new version is what was drafted, unless the caller carries a baseline over (a coach apply).
+  const drafted = input.drafted === undefined ? { plan: input.plan, minutes: input.setup.minutes } : input.drafted;
   return {
     n: input.n,
     parentN: input.parentN,
@@ -68,6 +71,7 @@ function version(input: { n: number; parentN: number | null; actionId: string; s
     request: { text: '', minutes: input.setup.minutes, focus: input.focus, gymId: input.gymId, origin: 'builder', ...(input.day === undefined ? {} : { day: input.day }), setup: input.setup, ...(input.today === undefined ? {} : { today: input.today }), ...opened },
     rawArgs: '',
     plan: input.plan,
+    ...(drafted === null ? {} : { drafted }),
     fitMinutes: input.setup.minutes,
     checks: [],
     rationale: null,
@@ -136,6 +140,12 @@ export interface BuilderDraftEdit {
   undoCoach?: { applies: string[]; text: string };
   /** (D8) Op IDs recorded with this one (each other change landed in the same edit), so each lands once. */
   alsoOpIds?: readonly string[];
+  /**
+   * (Ben, 23 Oct; §2.9) The drafted baseline after this write. Absent: an in-place edit keeps the version's (Ben's own
+   * edit), a rebuild starts from its new plan. Given: a write that isn't Ben's edit (a coach apply, a gym change)
+   * carries the baseline with the slots it changed moved (`adoptChangedSlots`, `adoptUneditedSlots`); null: none.
+   */
+  drafted?: DraftedBase | null;
 }
 
 /**
@@ -151,12 +161,13 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
   const cur = currentDraftVersion(current);
   const keyMoved = e.rebuild?.key !== undefined && builderDraftKeyText(e.rebuild.key) !== builderDraftKeyText(current.builderKey);
   const gymMoved = e.rebuild === undefined && e.gymId !== undefined && e.gymId !== cur.request.gymId;
-  const before = { currentVersion: current.currentVersion, setup: e.undoSetup ?? cur.request.setup ?? null, plan: cur.plan, ...(keyMoved ? { key: current.builderKey } : {}), ...(gymMoved ? { gymId: cur.request.gymId } : {}) };
+  const draftedMoved = e.rebuild === undefined && e.drafted !== undefined && cur.drafted !== undefined;
+  const before = { currentVersion: current.currentVersion, setup: e.undoSetup ?? cur.request.setup ?? null, plan: cur.plan, ...(keyMoved ? { key: current.builderKey } : {}), ...(gymMoved ? { gymId: cur.request.gymId } : {}), ...(draftedMoved && cur.drafted !== undefined ? { drafted: cur.drafted } : {}) };
   let versions: WorkoutDraftVersion[];
   let currentVersion = current.currentVersion;
   if (e.rebuild !== undefined) {
     const n = Math.max(...current.versions.map((v) => v.n)) + 1;
-    const next = version({ n, parentN: current.currentVersion, actionId: e.rebuild.actionId, setup: e.setup, plan: e.plan, focus: e.rebuild.focus, day: e.rebuild.day, gymId: e.rebuild.gymId, equipmentVersion: e.rebuild.equipmentVersion, contextHash: e.rebuild.contextHash, at: e.at, today: e.rebuild.today, opened: e.rebuild.opened });
+    const next = version({ n, parentN: current.currentVersion, actionId: e.rebuild.actionId, setup: e.setup, plan: e.plan, focus: e.rebuild.focus, day: e.rebuild.day, gymId: e.rebuild.gymId, equipmentVersion: e.rebuild.equipmentVersion, contextHash: e.rebuild.contextHash, at: e.at, today: e.rebuild.today, opened: e.rebuild.opened, drafted: e.drafted });
     versions = [...current.versions.map((v): WorkoutDraftVersion => (v.status === 'current' ? { ...v, status: 'replaced' } : v)), next];
     // Under the cap: the oldest replaced versions go first (the current and its parent stay for Undo).
     while (versions.length > MAX_WORKOUT_DRAFT_VERSIONS) {
@@ -166,7 +177,13 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
     }
     currentVersion = n;
   } else {
-    versions = current.versions.map((v): WorkoutDraftVersion => (v.n === current.currentVersion ? { ...v, plan: e.plan, fitMinutes: e.setup.minutes, request: { ...v.request, minutes: e.setup.minutes, setup: e.setup, ...(gymMoved ? { gymId: e.gymId ?? null } : {}) } } : v));
+    versions = current.versions.map((v): WorkoutDraftVersion => {
+      if (v.n !== current.currentVersion) return v;
+      const next: WorkoutDraftVersion = { ...v, plan: e.plan, fitMinutes: e.setup.minutes, request: { ...v.request, minutes: e.setup.minutes, setup: e.setup, ...(gymMoved ? { gymId: e.gymId ?? null } : {}) } };
+      if (e.drafted === null) delete next.drafted;
+      else if (e.drafted !== undefined) next.drafted = e.drafted;
+      return next;
+    });
   }
   const nextVersion = current.version + 1;
   const next: WorkoutDraft = {
@@ -203,7 +220,7 @@ export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoO
     ? current.versions.filter((v) => v.n !== current.currentVersion).map((v): WorkoutDraftVersion => (v.n === back.currentVersion ? { ...v, status: 'current' } : v))
     : current.versions.map((v): WorkoutDraftVersion =>
         v.n === current.currentVersion
-          ? { ...v, plan: back.plan, ...(back.setup === null ? {} : { fitMinutes: back.setup.minutes, request: { ...v.request, minutes: back.setup.minutes, setup: back.setup, ...(back.gymId === undefined ? {} : { gymId: back.gymId }) } }) }
+          ? { ...v, plan: back.plan, ...(back.drafted === undefined ? {} : { drafted: back.drafted }), ...(back.setup === null ? {} : { fitMinutes: back.setup.minutes, request: { ...v.request, minutes: back.setup.minutes, setup: back.setup, ...(back.gymId === undefined ? {} : { gymId: back.gymId }) } }) }
           : v,
       );
   const next: WorkoutDraft = {
