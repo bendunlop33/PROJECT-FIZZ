@@ -217,6 +217,8 @@ export interface WorkoutRowView {
   mayHurt: boolean;
   /** `Not at this gym` (§2.3 `Gym changed`, nothing here could replace it). */
   notHere: boolean;
+  /** (Ben, 23 Oct: one editor) What blocks Save on a saved workout (`Can’t save distance yet`); absent or null: nothing. */
+  issue?: string | null;
   /** Whether the next row is in the same superset (draw the a→b line). */
   linkedToNext: boolean;
   accessibilityLabel: string;

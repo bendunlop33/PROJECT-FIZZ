@@ -186,7 +186,7 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     expect(page).toContain("params.back === 'Today' && s !== null ? await services.builder.todayOptions(s.draftId)");
     expect(page).toContain('<TodayOptionRows options={todayView} onChange={(c) => void setTodayOption(c)} onMix={() => void mixItUp()} />');
     // Under the title, above the workout table (§2.3a layout; review todaylean S3).
-    expect(page.indexOf('<TodayOptionRows')).toBeLessThan(page.indexOf('<DragList'));
+    expect(page.indexOf('<TodayOptionRows')).toBeLessThan(page.indexOf('<WorkoutTable'));
   });
 
   it('Supersets on pairs only what the builder may pair; off splits only its own pairs; each is one write with Undo; Today then shows the edited card', async () => {

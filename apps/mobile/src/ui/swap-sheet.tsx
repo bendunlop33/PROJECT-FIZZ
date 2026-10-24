@@ -4,7 +4,7 @@ import type { BuilderGroup } from '@fizz/schemas';
 
 import { useTheme } from '../theme';
 import { TextButton } from './buttons';
-import { Eyebrow, StatusLine } from './layout';
+import { Eyebrow, StatusLine, TextField } from './layout';
 import { BottomCard } from './sheet';
 import { AppText } from './Text';
 import { POPUP_COPY } from './exercise-popup-model';
@@ -25,6 +25,7 @@ export function SwapSheet({
   onGroup,
   onPick,
   onClose,
+  search,
 }: {
   visible: boolean;
   title: string;
@@ -36,6 +37,11 @@ export function SwapSheet({
   onGroup: (g: BuilderGroup) => void;
   onPick: (exerciseId: string) => void;
   onClose: () => void;
+  /**
+   * (Ben, 23 Oct: one editor) A search over all of Ben's and the catalogue's exercises, as the old editor's Add sheet
+   * had: while it holds text the group dropdown hides and `sections` are the page's results. Absent: no search.
+   */
+  search?: { query: string; onQuery: (q: string) => void } | undefined;
 }) {
   const theme = useTheme();
   const chooseGroup = () => {
@@ -50,11 +56,14 @@ export function SwapSheet({
       <AppText variant="title2" accessibilityRole="header">
         {title}
       </AppText>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Muscle group, ${group}`} onPress={chooseGroup} style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <AppText variant="body">Muscle group</AppText>
-        <AppText variant="body" color="text.secondary">{`${group}  ⌄`}</AppText>
-      </Pressable>
-      {sections.length === 0 ? <StatusLine icon="info.circle" tone="info" text="All of these are in the workout" /> : null}
+      {search !== undefined ? <TextField accessibilityLabel="Search exercises" placeholder="Search" value={search.query} onChangeText={search.onQuery} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" /> : null}
+      {search === undefined || search.query.trim() === '' ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={`Muscle group, ${group}`} onPress={chooseGroup} style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <AppText variant="body">Muscle group</AppText>
+          <AppText variant="body" color="text.secondary">{`${group}  ⌄`}</AppText>
+        </Pressable>
+      ) : null}
+      {sections.length === 0 ? <StatusLine icon="info.circle" tone="info" text={search !== undefined && search.query.trim() !== '' ? 'No matches' : 'All of these are in the workout'} /> : null}
       {sections.map((sec) => (
         <View key={sec.focus} style={{ gap: theme.space['1'] }}>
           {sections.length > 1 ? <Eyebrow>{sec.focus}</Eyebrow> : null}

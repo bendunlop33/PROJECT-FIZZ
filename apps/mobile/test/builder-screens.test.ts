@@ -417,7 +417,7 @@ describe('source checks', () => {
     expect(parts).toMatch(/container\s*\?\s*\{ accessible: false \}/);
     expect(sheets).toMatch(/<SwipeRow[\s\S]{0,120}container/);
     expect(sheets).toContain('`${r.spokenName}, reps`');
-    expect(sheets).toContain("`${r.spokenName}, ${r.done ? 'RPE' : 'target RPE'}`");
+    expect(sheets).toContain("`${r.spokenName}, ${r.done ? (view.effortHeader ?? 'RPE') : `target ${view.effortHeader ?? 'RPE'}`}`");
     expect(sheets).toMatch(/accessibilityActions=\{actions\}/);
   });
   it('edits run one at a time on the latest snapshot; a held stepper keeps adding (review S4, S5)', () => {
@@ -430,7 +430,8 @@ describe('source checks', () => {
     expect(parts).toContain('sides.current.left');
   });
   it('the works line under an exercise wraps, never cut with an ellipsis (Ben, 21 Oct)', () => {
-    const ws = read('screens/builder/BuilderWorkoutScreen.tsx');
+    // (Ben, 23 Oct: one editor) The rows are the shared table's, on Your workout and the workout editor.
+    const ws = read('screens/builder/WorkoutTable.tsx');
     const works = /<AppText[^>]*>\s*\{r\.works\}/.exec(ws)?.[0] ?? '';
     expect(works).toContain('{r.works}');
     expect(works).not.toContain('numberOfLines');
@@ -447,7 +448,7 @@ describe('source checks', () => {
     expect(ws).toContain('services.builder.reloadPlanDay(');
     expect(ws).toContain('services.builder.changeGym(');
     expect(ws).toContain('WORKOUT_COPY.addAnyway');
-    expect(ws).toContain('WORKOUT_COPY.notHere');
+    expect(read('screens/builder/WorkoutTable.tsx')).toContain('WORKOUT_COPY.notHere');
     const su = read('screens/builder/BuilderSetupScreen.tsx');
     expect(su).toContain('services.builder.renameVariation(');
     expect(su).toContain('services.builder.deleteVariation(');

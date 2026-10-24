@@ -10,7 +10,7 @@ import { Eyebrow, StatusLine, TextField } from './layout';
 import { BottomCard } from './sheet';
 import { AppText } from './Text';
 import { Divider, Stepper, SwipeRow, Table } from './table-parts';
-import { holdMenu, KEY_STEPS, nextFieldByKey, popupRowActions, popupRowByKey, POPUP_COPY, typeMenu, type PopupField, type PopupRestRow, type PopupRowAction, type PopupSetRow, type PopupView } from './exercise-popup-model';
+import { holdMenu, KEY_STEPS, nextFieldByKey, popupRowActions, popupRowByKey, POPUP_COPY, typeMenu, type PopupField, type PopupRestRow, type PopupSetRow, type PopupView } from './exercise-popup-model';
 
 /**
  * The exercise pop-up (workout-builder-v3 §2.4), one component for the
@@ -53,7 +53,14 @@ export interface ExercisePopupProps {
   /** `Delete` (builder) / `Remove` (workout). */
   onDelete: () => void;
   onClose: () => void;
-  why: () => Promise<string[]>;
+  /** `Why this weight?`; absent: no link (a saved workout's loads are `Auto` or Ben's own). */
+  why?: (() => Promise<string[]>) | undefined;
+  /** (Ben, 23 Oct: one editor) A row's `extraActions` item picked (hold menu or VoiceOver). */
+  onRowExtra?: ((row: PopupSetRow, name: string) => void) | undefined;
+  /** (Ben, 23 Oct: one editor) `Default` on a rest the workout sets itself. */
+  onRestDefault?: ((rest: PopupRestRow) => void) | undefined;
+  /** (Ben, 23 Oct: one editor) More for this exercise, under the rest (a saved workout's `Main`, `Reps`, `Target RPE`). */
+  options?: ReactNode;
   /** The next weight this gym can load for the set's item, up or down (§2.7). */
   kgStep: (row: PopupSetRow, value: number | null, dir: 1 | -1) => Promise<number | null>;
   /** (22 Oct) `How to`: the exercise guide; absent when it has none (or the page doesn't link it). */
@@ -120,8 +127,9 @@ export function ExercisePopup(p: ExercisePopupProps) {
           refs.current.set(k, el);
         }}
         accessibilityLabel={label}
-        editable={r.editable && !(field === 'reps' && r.reps === null)}
+        editable={r.editable && !(field === 'reps' && r.reps === null) && !(field === 'kg' && r.kgEditable === false)}
         value={drafts[k] ?? value}
+        {...(field === 'kg' && r.kgPlaceholder !== undefined ? { placeholder: r.kgPlaceholder } : {})}
         keyboardType={field === 'reps' ? 'number-pad' : 'decimal-pad'}
         inputAccessoryViewID={POPUP_SET_BAR_ID}
         selectTextOnFocus
@@ -145,7 +153,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
     });
   };
 
-  const rowAction = (r: PopupSetRow, name: PopupRowAction) => {
+  const rowAction = (r: PopupSetRow, name: string) => {
     switch (name) {
       case 'type':
         pickType(r);
@@ -159,10 +167,13 @@ export function ExercisePopup(p: ExercisePopupProps) {
       case 'delete_set':
         p.onDeleteRow(r);
         break;
+      default:
+        p.onRowExtra?.(r, name);
+        break;
     }
   };
 
-  const actionsOf = (r: PopupSetRow) => popupRowActions(p.onMoveRow === undefined ? { ...r, canMoveUp: false, canMoveDown: false } : r);
+  const actionsOf = (r: PopupSetRow): { name: string; label: string }[] => [...popupRowActions(p.onMoveRow === undefined ? { ...r, canMoveUp: false, canMoveDown: false } : r), ...(p.onRowExtra === undefined ? [] : (r.extraActions ?? []))];
   /** Press and hold a set row: its menu (§7 "long-press menu fallback"; the same actions as VoiceOver's). */
   const openMenu = (r: PopupSetRow) => {
     const m = holdMenu(actionsOf(r));
@@ -210,7 +221,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
           </View>
           <Table>
             <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', paddingHorizontal: theme.space['3'], paddingTop: theme.space['2'], gap: theme.space['2'] }}>
-              {['#', 'Type', 'Reps', view.kgHeader, 'RPE'].map((h, i) => (
+              {['#', 'Type', 'Reps', view.kgHeader, view.effortHeader ?? 'RPE'].map((h, i) => (
                 <AppText key={h} variant="label" color="text.secondary" style={{ width: i === 0 ? 24 : i === 1 ? undefined : VALUE_COL_W, flex: i === 1 ? 1 : undefined, textAlign: i > 1 ? 'right' : 'left' }}>
                   {h}
                 </AppText>
@@ -267,7 +278,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
                         –
                       </AppText>
                     ) : (
-                      cell(r, 'rpe', r.rpe === null ? '' : String(r.rpe), `${r.spokenName}, ${r.done ? 'RPE' : 'target RPE'}`)
+                      cell(r, 'rpe', r.rpe === null ? '' : String(r.rpe), `${r.spokenName}, ${r.done ? (view.effortHeader ?? 'RPE') : `target ${view.effortHeader ?? 'RPE'}`}`)
                     )}
                   </View>
                 </SwipeRow>
@@ -289,6 +300,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
                     <AppText variant="body" style={{ flex: 1 }}>
                       {x.label}
                     </AppText>
+                    {x.own === true && p.onRestDefault !== undefined ? <TextButton label={POPUP_COPY.restDefault} tone="secondary" accessibilityLabel={`${x.label}, ${POPUP_COPY.restDefault}`} onPress={() => { p.onRestDefault?.(x); }} /> : null}
                     <Stepper
                       label={x.label}
                       valueText={x.text}
@@ -304,6 +316,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
               ))}
             </Table>
           ) : null}
+          {p.options}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             {view.canMoveUp ? <SecondaryButton label={`↑ ${POPUP_COPY.moveUp}`} onPress={() => { p.onMove('up'); }} /> : null}
             {view.canMoveDown ? <SecondaryButton label={`↓ ${POPUP_COPY.moveDown}`} onPress={() => { p.onMove('down'); }} /> : null}
@@ -316,14 +329,16 @@ export function ExercisePopup(p: ExercisePopupProps) {
               {p.onHistory !== undefined ? <TextButton label={POPUP_COPY.history} icon="chevron.right" tone="secondary" accessibilityLabel={`History, ${view.name}`} onPress={p.onHistory} /> : null}
             </View>
           ) : null}
-          <TextButton
-            label={`${POPUP_COPY.whyWeight}${whyLines === null ? ' ›' : ''}`}
-            tone="secondary"
-            onPress={() => {
-              if (whyLines !== null) setWhyLines(null);
-              else void p.why().then(setWhyLines);
-            }}
-          />
+          {p.why !== undefined ? (
+            <TextButton
+              label={`${POPUP_COPY.whyWeight}${whyLines === null ? ' ›' : ''}`}
+              tone="secondary"
+              onPress={() => {
+                if (whyLines !== null) setWhyLines(null);
+                else void p.why?.().then(setWhyLines);
+              }}
+            />
+          ) : null}
           {whyLines !== null
             ? whyLines.map((l) => (
                 <AppText key={l} variant="label" color="text.secondary" numeric>
