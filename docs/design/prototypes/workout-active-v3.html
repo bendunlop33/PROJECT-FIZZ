@@ -1,0 +1,309 @@
+<title>In-Workout Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the active workout in the builder's format. Header; a compact round strip (1 2 3a/b 4 5); the active round card (a superset is one box with a/b and a connecting line); per-set table # · Kg · Reps · RPE · ✓ with warm-ups as W rows; edit in the cell with a keyboard bar; the log button; Up next. "Workout" opens the builder-style overview table. Direction D tokens. */
+:root {
+  --canvas: #0D0C0B; --surface: #181615; --raised: #23201E; --divider: #302C29;
+  --text: #F3EEE8; --text2: #B5ADA5; --text3: #948C84; --accent: #EDE5DA; --on-accent: #0D0C0B;
+  --done: #5CC98A; --done-sub: #15301F; --page: #1B1917;
+  --ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--text); font-family: var(--ui); margin: 0; }
+.wrap { padding: 24px max(16px, env(safe-area-inset-left, 0px)) 40px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 380px; line-height: 1.45; }
+.phone { width: 380px; max-width: 100%; height: 800px; background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 18px 14px 12px; display: flex; flex-direction: column; gap: 10px; position: relative; overflow: hidden; }
+.status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
+.hdr { display: flex; align-items: center; gap: 8px; }
+.hdr .t { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--text2); flex: 1; }
+.chip { border: 1.5px solid var(--divider); border-radius: 999px; padding: 6px 10px; font-size: 13px; color: var(--text); background: none; font-family: inherit; }
+.clock { font-variant-numeric: tabular-nums; color: var(--text2); font-size: 14px; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+/* round strip */
+.rounds { display: flex; gap: 6px; align-items: center; overflow-x: auto; padding: 2px; }
+.rd { flex: none; min-width: 36px; height: 30px; border-radius: 9px; display: grid; place-items: center; font-size: 13px; font-weight: 600; background: var(--surface); color: var(--text3); border: 1.5px solid transparent; font-variant-numeric: tabular-nums; cursor: pointer; padding: 0 8px; font-family: inherit; }
+.rd.done { color: var(--done); background: var(--done-sub); }
+.rd.now { color: var(--text); border-color: var(--accent); }
+.rounds .all { margin-left: auto; background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 13.5px; cursor: pointer; font-family: inherit; }
+/* round card */
+.card { background: var(--surface); border-radius: 18px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.box { padding: 0; display: flex; flex-direction: column; gap: 12px; position: relative; }
+.ex { position: relative; }
+.ex.dim { opacity: .55; }
+.exh { display: grid; grid-template-columns: 28px 1fr auto; gap: 6px; align-items: start; }
+.exh .n { font-weight: 700; font-size: 14px; padding-top: 2px; }
+.exh .nm { font-size: 17px; font-weight: 600; line-height: 1.2; }
+.exh .nm small { display: block; font-size: 12.5px; font-weight: 400; color: var(--text2); margin-top: 2px; }
+.exh .prog { font-size: 13px; color: var(--text2); font-variant-numeric: tabular-nums; padding-top: 3px; }
+.box .ex + .ex { border-top: 1px solid var(--divider); padding-top: 12px; }
+/* set table */
+.tbl { margin-top: 8px; display: flex; flex-direction: column; }
+.tr, .th { display: grid; grid-template-columns: 52px 1fr 1fr 40px 40px; gap: 6px; align-items: center; }
+.th { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); padding: 0 2px 4px; }
+.th span:nth-child(n+2) { text-align: center; }
+.tr { min-height: 44px; border-top: 1px solid var(--divider); padding: 0 2px; }
+.tr .sn { font-size: 13px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.tr .sn i { display: block; white-space: nowrap; font-style: normal; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); }
+.cell { min-height: 36px; border-radius: 9px; background: var(--raised); color: var(--text); border: 1.5px solid transparent; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; font-family: inherit; width: 100%; }
+.cell:focus { outline: none; border-color: var(--accent); }
+.tr.wu .cell { color: var(--text2); background: #1E1B19; }
+.tr.done .cell { background: none; color: var(--done); }
+@keyframes flash { from { background: rgba(237,229,218,.16); } to { background: transparent; } }
+.tr.new { animation: flash 1.2s ease-out; border-radius: 10px; }
+.tr.cur .sn { color: var(--text); font-weight: 700; }
+.tr.cur .tick { border-color: var(--accent); color: var(--accent); border-width: 2px; }
+.rpe { text-align: center; color: var(--text3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.tr.done .rpe { color: var(--text2); }
+.tick { width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--text3); background: none; color: var(--text3); font-size: 15px; cursor: pointer; justify-self: center; }
+.tr.done .tick { background: var(--done); border-color: var(--done); color: var(--on-accent); }
+.wl { font-size: 14px; color: var(--text2); padding: 10px 4px; border-top: 1px solid var(--divider); line-height: 1.4; }
+.wl b { color: var(--text); font-weight: 600; }
+.wl u { color: var(--text); margin-left: 6px; cursor: pointer; text-underline-offset: 3px; }
+.foot2 { display: flex; justify-content: space-between; align-items: center; padding-top: 6px; }
+.q { min-height: 30px; padding: 0 2px; border: 0; background: none; color: var(--text2); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); cursor: pointer; font-family: inherit; position: relative; }
+.q::after, .addset::after { content: ''; position: absolute; inset: -8px; }
+.addset { position: relative; min-height: 30px; padding: 0 12px; border-radius: 999px; border: 1.5px solid var(--divider); background: none; color: var(--text2); font-size: 13px; cursor: pointer; font-family: inherit; }
+.rows { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.rows.up.down { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); }
+.rows.up:not(.down) { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px); mask-image: linear-gradient(to bottom, transparent 0, #000 16px); }
+.rows.down:not(.up) { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%); mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%); }
+.fold { display: flex; justify-content: center; gap: 8px; width: 100%; min-height: 44px; align-items: center; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--done); font-size: 14px; font-variant-numeric: tabular-nums; padding: 0 2px; cursor: pointer; font-family: inherit; text-align: left; }
+.fold u { color: var(--text2); font-size: 13px; text-underline-offset: 3px; text-decoration-color: var(--text3); flex: none; }
+.restbar { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 16px; padding: 10px 10px 10px 14px; min-height: 64px; }
+.restbar.idle .rt { color: var(--text2); }
+.scroll { touch-action: pan-y; }
+.more { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--divider); background: none; color: var(--text); font-size: 16px; cursor: pointer; }
+.mi { min-height: 50px; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font-size: 16px; text-align: left; padding: 0 8px; cursor: pointer; font-family: inherit; }
+.mi.red { color: #E5534B; }
+.restbar b { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text2); font-weight: 600; }
+.restbar .rt { flex: 1; font-size: 36px; line-height: 1.1; font-weight: 600; font-variant-numeric: tabular-nums; }
+.restbar button { min-width: 48px; min-height: 40px; border-radius: 999px; border: 1.5px solid var(--text3); background: none; color: var(--text); font-size: 14px; cursor: pointer; font-family: inherit; }
+.next { font-size: 13.5px; color: var(--text2); padding: 0 4px; display: flex; justify-content: space-between; }
+.next b { color: var(--text); font-weight: 600; }
+.foot { display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: center; }
+.chat { width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid var(--text3); background: none; color: var(--text); font-size: 11px; cursor: pointer; font-family: inherit; }
+.log { min-height: 56px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; }
+#kb { position: absolute; left: 0; right: 0; bottom: 0; background: #2B2724; border-top: 1px solid var(--divider); padding: 8px 12px 16px; display: none; gap: 8px; z-index: 30; }
+#kb button { min-width: 52px; min-height: 44px; border-radius: 10px; border: 0; background: var(--raised); color: var(--text); font-size: 18px; cursor: pointer; font-family: inherit; }
+#kb span { flex: 1; }
+#kb .done { background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 15px; padding: 0 16px; }
+/* overview sheet */
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 19; }
+.sheet { position: absolute; inset: auto 0 0 0; background: var(--surface); border-radius: 24px 24px 38px 38px; padding: 16px 14px 22px; display: flex; flex-direction: column; gap: 8px; z-index: 20; max-height: 82%; overflow-y: auto; }
+.sheet h3 { margin: 0 4px; font-size: 18px; }
+.ovh, .ovr { display: grid; grid-template-columns: 26px 1fr 44px 58px; gap: 6px; align-items: center; }
+.ovh { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); padding: 0 8px; }
+.ovh span:nth-child(n+3), .ovr .c { text-align: right; }
+.ovr { min-height: 50px; padding: 6px 8px; border-top: 1px solid var(--divider); font-size: 15px; }
+.ovr .n { font-weight: 600; font-size: 13px; color: var(--text2); }
+.ovr small { display: block; color: var(--text2); font-size: 12px; }
+.ovr.done { opacity: .6; }
+.ovr.now .n, .ovr.now { color: var(--text); }
+.ovr .c { font-variant-numeric: tabular-nums; }
+.ovbox { border: 1.5px solid var(--text3); border-radius: 12px; margin: 4px -2px; }
+.ovbox .ovr:first-child { border-top: 0; }
+.ghost { min-height: 46px; border-radius: 999px; border: 1.5px solid var(--text3); background: none; color: var(--text); font-size: 15px; cursor: pointer; font-family: inherit; }
+.toast { position: absolute; left: 16px; right: 16px; bottom: 170px; background: var(--raised); border-radius: 12px; padding: 12px 14px; font-size: 14px; z-index: 25; }
+.toast.undo { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px 4px 14px; }
+.toast .ul { min-height: 40px; padding: 0 8px; border: 0; background: none; color: var(--text); font: inherit; font-size: 15px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+</style>
+
+<div class="wrap">
+  <div class="phone" id="app"></div>
+  <div class="hint">Prototype with example data: Upper body, round 3 is a superset (3a rear-delt fly, 3b cable crunch). Swipe left/right on the round (not on a set row) for the next/previous exercise. Tap a kg or reps box to type in it (− / + on the keyboard bar), tap ✓ to log, tap a round chip or "Workout" for the builder-style overview.</div>
+</div>
+
+<script>
+(() => {
+  // Opened alone: this example workout. In the app, Start sends the session it started (V1): {cmd: 'session'} below.
+  let NAME = 'Upper body', EST = 55, LAST = '16 Oct', FROM_APP = false, FOCUS = 'Balanced';
+  const W = 'Rear delts'; let ROUNDS = [
+    { n: '1', ex: [{ name: 'Barbell bench press', main: true, works: 'Chest, front delts, triceps', rest: '3:00', target: '6 @ 8 top · 8 @ 8 back-offs', sets: [['W', 20, 10], ['W', 50, 5], ['W', 70, 3], ['W', 85, 1], ['Top', 100, 6, 8], ['B', 95, 8, 8], ['B', 95, 8, 8], ['B', 95, 8, 8]].map(([t, kg, r, rpe]) => ({ t, kg, r, rpe, done: true })) }] },
+    { n: '2', ex: [{ name: 'Lat pulldown', works: 'Lats, biceps', rest: '2:00', target: '8–10 @ 8', sets: [['W', 35, 8], ['', 60, 9, 8], ['', 60, 9, 8], ['', 60, 8, 9]].map(([t, kg, r, rpe]) => ({ t, kg, r, rpe, done: true })) }] },
+    { n: '3', ss: true, ex: [
+      { name: 'Dumbbell rear-delt fly', works: W, each: true, rest: '', target: '8–12 @ 9', sets: [{ t: '', kg: 7.5, r: 12, rpe: 8, done: true }, { t: '', kg: 7.5, r: 12, rpe: 9, done: true }, { t: '', kg: 7.5, r: 12, rpe: 9, done: false }] },
+      { name: 'Cable crunch', works: 'Upper abs', rest: '1:30 after round', target: '10–12 @ 8', sets: [{ t: '', kg: 40, r: 12, rpe: 8, done: true }, { t: '', kg: 40, r: 12, rpe: 8, done: true }, { t: '', kg: 40, r: 12, rpe: 8, done: false }] },
+    ] },
+    { n: '4', ex: [{ name: 'Lateral raise', works: 'Side delts', each: true, rest: '1:30', target: '12–15 @ 9', sets: [1, 2, 3].map(() => ({ t: '', kg: 10, r: 12, rpe: 9, done: false })) }] },
+    { n: '5', ex: [{ name: 'EZ-bar curl', works: 'Biceps', rest: '1:30', target: '8–10 @ 8', sets: [1, 2, 3].map(() => ({ t: '', kg: 30, r: 10, rpe: 8, done: false })) }] },
+  ];
+  let s = { r: 2, sheet: false, toast: null, open: {}, rest: 0, since: Date.now() - 24000, t0: Date.now() - 43 * 60000, anchor: true, menu: false }; let iv;
+  const fmt = (x) => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
+  // Workout clock (h:mm since Start).
+  const hm = () => { const m = Math.floor((Date.now() - s.t0) / 60000); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
+  // Main lift in one format everywhere (V1): top set + back-offs · loads, e.g. 1 × 6 + 2 × 8 · 100 / 90.
+  function mainLine(e) {
+    const w = e.sets.filter((x) => x.t !== 'W'), top = w.find((x) => x.t === 'Top') ?? w[0], b = w.filter((x) => x !== top);
+    if (!top) return '';
+    // Bodyweight or straight sets (no top set): sets × reps, as on Today and the plan.
+    if (!w.some((x) => x.t === 'Top')) return `${w.length} × ${top.r}${top.kg === 'BW' ? '' : ` · ${top.kg}${e.each ? ' each' : ''}`}`;
+    return `1 × ${top.r}${b.length ? ` + ${b.length} × ${b[0].r}` : ''} · ${top.kg}${b.length ? ` / ${b[0].kg}` : ''}${e.each ? ' each' : ''}`;
+  }
+  const kgTxt = (kg, each) => (kg === 'BW' ? 'BW' : `${kg}${each ? ' kg each' : ' kg'}`);
+  // A session from Today, the builder or the plan: same name, exercises, order, sets, reps and kg; round 1 at 0:00.
+  const snap = (kg) => Math.round(kg / 2.5) * 2.5;
+  // Back-offs when a session doesn't carry them: the shared rule, in the session's focus band (review S7).
+  // BACKOFF-START (one copy in each prototype that needs it; build_app.py checks they match, check_app.mjs tests it)
+  // Back-offs (D4, Ben 22 and 23 Oct; training guide SS4): worked out from the top set at their own reps and effort
+  // (RIR-adjusted Epley; top set and back-offs @ RPE 8), kept in the focus's band below the top (Strength 2–8 %,
+  // Balanced 4–10 %, Muscle 8–15 %; other focuses 2–15 %) and snapped down to a real load, or the next real load up
+  // when that is still inside the band. Not a fixed 90 % or 95 %. No real load inside the band (coarse dumbbells, sparse
+  // racks; review B2): the one nearest the band that is below the top, on a tie the lighter; never the top itself. A top
+  // with no real load below it keeps its load and the back-offs do 1 rep fewer (spec §3.1 item 9; none here is that light).
+  const BACKOFF_BAND = { Strength: [0.02, 0.08], Balanced: [0.04, 0.1], Muscle: [0.08, 0.15] };
+  function backOff(top, topReps, backReps, focus = 'Balanced', step = 2.5, topRpe = 8, backRpe = 8) {
+    if (top == null || Number.isNaN(Number(top))) return null;
+    const raw = (top * (30 + topReps + 10 - topRpe)) / (30 + backReps + 10 - backRpe);
+    const [lo, hi] = BACKOFF_BAND[focus] ?? [0.02, 0.15], L = top * (1 - hi) - 1e-9, U = top * (1 - lo) + 1e-9;
+    const down = Math.floor(Math.min(U, Math.max(L, raw)) / step + 1e-9) * step;
+    const near = [down, down + step].filter((kg) => kg > 0 && kg < top - 1e-9);
+    const inBand = near.find((kg) => kg >= L && kg <= U);
+    if (inBand != null) return inBand;
+    const off = (kg) => (kg < L ? L - kg : kg - U);
+    return near.sort((a, b) => off(a) - off(b) || a - b)[0] ?? top;
+  }
+  // When today's top is lowered from the planned one (a pain hold, the coach, Ben, an R2 offer; a deload's −10 %), the
+  // back-offs drop by the same factor and snap down, staying below the new top (SS4, HT8). Raising never raises them.
+  function lowerBackOff(back, factor, newTop, step = 2.5) {
+    if (back == null || newTop == null || !(factor < 1)) return back;
+    return Math.max(step, Math.min(Math.floor((back * factor) / step + 1e-9) * step, newTop - step));
+  }
+  // BACKOFF-END
+  const TYPE = { W: 'W', T: 'Top', B: 'B', N: '', D: 'Drop' };
+  function exOf(x, inSs, lastInSs) {
+    const kg0 = x.kg ?? 'BW', each = !!x.each;
+    let sets;
+    if (x.rows) sets = x.rows.map((q) => ({ t: TYPE[q.type] ?? '', kg: q.kg ?? 'BW', r: q.reps, rpe: q.rpe ?? 8, done: false }));
+    else if (x.main && x.kg != null) {
+      // Warm-ups as the builder ramps them: empty bar (barbell), then about 50 / 70 / 85 %.
+      const wu = [], top = Number(kg0);
+      if (!Number.isNaN(top)) { if (!each && /barbell|squat|deadlift/i.test(x.name)) wu.push([20, 10]); [[0.5, 5], [0.7, 3], [0.85, 1]].forEach(([f, r]) => { const k = snap(top * f); if (k > (wu.at(-1)?.[0] ?? 0)) wu.push([k, r]); }); }
+      sets = [...wu.map(([k, r]) => ({ t: 'W', kg: k, r, done: false })),
+        { t: 'Top', kg: kg0, r: x.reps ?? 6, rpe: 8, done: false },
+        ...Array.from({ length: Math.max(0, x.sets - 1) }, () => ({ t: 'B', kg: x.back ?? (Number.isNaN(top) ? kg0 : backOff(top, x.reps ?? 6, x.backReps ?? 8, FOCUS)), r: x.backReps ?? 8, rpe: 8, done: false }))];
+    } else sets = [...(x.comp && typeof kg0 === 'number' ? [{ t: 'W', kg: snap(kg0 * 0.6), r: 8, done: false }] : []), // compounds: one warm-up, as the builder adds
+      ...Array.from({ length: x.sets }, (_, i) => ({ t: '', kg: kg0, r: x.reps ?? (x.comp ? 8 : 12), rpe: i === x.sets - 1 ? 9 : 8, done: false }))];
+    // Target as the sets say it: top set and back-offs for a main lift, else reps @ RPE. Last time only when the app
+    // has it (rule 6: never made up from today's targets).
+    const w = sets.filter((z) => z.t !== 'W'), top = w.find((z) => z.t === 'Top'), bo = w.find((z) => z.t === 'B');
+    const target = top ? `${top.r} @ ${top.rpe} top${bo ? ` · ${bo.r} @ ${bo.rpe} back-offs` : ''}` : `${w[0]?.r ?? x.reps ?? (x.comp ? 8 : 12)} @ 8`;
+    return { name: x.name, main: !!x.main, works: x.works ?? '', each, rest: inSs ? (lastInSs ? '1:30 after round' : '') : x.main ? '3:00' : x.comp ? '2:00' : '1:30', target, last: x.last ?? null, why: x.why ?? null, sets };
+  }
+  function openSession(ss) {
+    FROM_APP = true; NAME = ss.name; EST = ss.est ?? ss.min ?? EST; LAST = ss.lastDate ?? LAST; FOCUS = ss.focus ?? 'Balanced';
+    ROUNDS = (ss.blocks ?? []).map((b, i) => ({ n: String(i + 1), ss: b.length > 1, ex: b.map((x, k) => exOf(x, b.length > 1, k === b.length - 1)) }));
+    clearInterval(iv);
+    s = { r: 0, sheet: false, toast: null, open: {}, rest: 0, restEnd: 0, since: Date.now(), t0: Date.now(), anchor: true, menu: false };
+    view();
+  }
+  addEventListener('message', (ev) => { if (ev.data?.cmd === 'session' && ev.data.session) openSession(ev.data.session); });
+  // What was logged, for the Summary.
+  const logged = () => ({ name: NAME, start: s.t0, end: Date.now(), ex: ROUNDS.flatMap((rd) => rd.ex.map((e) => ({ name: e.name, main: !!e.main, each: !!e.each, sets: e.sets.filter((z) => z.t !== 'W').map(({ t, kg, r, done }) => ({ t, kg, r, done })) }))) });
+  const restOf = (e) => { const m = /^(\d+):(\d\d)/.exec(e.rest || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : 90; };
+  s.restEnd = 0;
+  const left = () => Math.ceil((s.restEnd - Date.now()) / 1000);
+  function setEnd(end) { s.restEnd = end; clearInterval(iv); s.rest = end ? Math.max(0, left()) : 0; if (!s.rest) { s.restEnd = 0; s.since = Date.now(); return; } iv = setInterval(() => { s.rest = left(); const el = app.querySelector('.rt'); if (s.rest <= 0) { clearInterval(iv); s.rest = 0; s.restEnd = 0; s.since = Date.now(); view(); } else if (el) el.textContent = fmt(s.rest); }, 1000); }
+  const startRest = (sec) => setEnd(Date.now() + sec * 1000);
+  function logSet(k, i) { const rd = ROUNDS[s.r]; const st = rd.ex[k].sets[i]; st.prevEnd = s.restEnd; st.prevSince = s.since; st.done = true; s.anchor = true; s.last = `${s.r}-${k}-${i}`; const c2 = cur(); if (c2 && rd.ex.length > 1 && c2.k === 1 && k === 0) s.toast = 'Straight to ' + rd.n + 'b'; else startRest(rd.ex.length > 1 ? 90 : restOf(rd.ex[k])); }
+  function unlogSet(k, i) { const st = ROUNDS[s.r].ex[k].sets[i]; st.done = false; s.last = null; setEnd(st.prevEnd || 0); if (!s.rest) s.since = st.prevSince || Date.now(); }
+  const hidden = () => false; const foldRow = () => '';
+  setInterval(() => { const el = app.querySelector('.sclock'); if (el) el.textContent = fmt(Math.floor((Date.now() - s.since) / 1000)); const wc = app.querySelector('.wclock'); if (wc) wc.textContent = hm(); }, 1000);
+  const app = document.getElementById('app');
+  const cur = () => { const rd = ROUNDS[s.r]; if (!rd) return null; for (let i = 0; i < rd.ex[0].sets.length; i++) for (let k = 0; k < rd.ex.length; k++) { const st = rd.ex[k].sets[i]; if (st && !st.done) return { k, i }; } return null; };
+  const setLab = (e, i) => (e.sets[i].t === 'W' ? 'Warm-up' : `Set ${e.sets.slice(0, i + 1).filter((x) => x.t !== 'W').length}`);
+  const tgt = (e) => { const t = e.target.replace(/ @ \d+/g, ''); return /^\d+(–\d+)?$/.test(t) ? `${t} reps` : t; };
+  const lab = (rd, k) => `${rd.n}${rd.ex.length > 1 ? 'ab'[k] : ''}`;
+  function exHtml(rd, e, k, c) {
+    let n = 0; const doneW = e.sets.filter((x) => x.done && x.t !== 'W').length, totW = e.sets.filter((x) => x.t !== 'W').length;
+    return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.main ? mainLine(e) : `${e.works} · ${tgt(e)}`}</small></span><span class="prog">${doneW}/${totW}</span></div>
+      <div class="tbl">${true ? `<div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>` : ''}
+      <div class="rows" data-k="${k}">${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n;  return `<div data-k="${k}" data-i="${i}" class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div></div>
+      <div class="foot2"><button class="addset" data-a="add" data-k="${k}">＋ Set</button><button class="q" data-a="why" data-k="${k}" aria-label="Why this target">Why?</button></div></div>`;
+  }
+  function view() { draw(); fit(); }
+  // Everything fits on one page: each exercise's set rows scroll inside their own box. Boxes shrink (largest first)
+  // until the round fits, never below 2 rows each; then each box scrolls so its current set shows with done sets above.
+  function fit(noNext) {
+    const nx = app.querySelector('.next'); if (nx) nx.style.display = noNext ? 'none' : '';
+    app.querySelectorAll('.rows').forEach((b) => { b.style.maxHeight = ''; });
+    const sc = app.querySelector('.scroll'); const boxes = [...app.querySelectorAll('.rows')]; if (!boxes.length) return;
+    const h = boxes[0].querySelector('.tr')?.getBoundingClientRect().height || 45;
+    const n = boxes.map((b) => b.querySelectorAll('.tr').length); const v = [...n];
+    let over = sc.scrollHeight - sc.clientHeight;
+    while (over > 1) { let j = -1; v.forEach((x, k) => { if (x > 2 && (j < 0 || x > v[j])) j = k; }); if (j < 0) break; v[j]--; over -= h; }
+    if (!noNext && nx && v.some((x, k) => x < Math.min(3, n[k]))) return fit(true); // Up next gives way so each exercise keeps 3 rows
+    const c = cur();
+    boxes.forEach((b, k) => { b.style.maxHeight = v[k] < n[k] ? `${v[k] * h}px` : ''; b.classList.toggle('lim', v[k] < n[k]);
+      const rows = [...b.querySelectorAll('.tr')]; let idx = rows.findIndex((r) => !r.classList.contains('done')); if (c && c.k === k) idx = rows.findIndex((r) => r.dataset.i === String(c.i)); if (idx < 0) idx = rows.length - 1;
+      const showAbove = Math.min(3, v[k] - 1, idx); const first = Math.max(0, Math.min(idx - showAbove, n[k] - v[k])); b.scrollTop = first * h; if (s.added && s.added.k === k) { const nr = b.querySelector(`.tr[data-i="${s.added.i}"]`); if (nr) { b.scrollTop = b.scrollHeight; nr.classList.add('new'); } } mark(b); }); s.added = null;
+  }
+  const mark = (b) => { b.classList.toggle('up', b.scrollTop > 2); b.classList.toggle('down', b.scrollTop + b.clientHeight < b.scrollHeight - 2); };
+  app.addEventListener('scroll', (ev) => { if (ev.target.classList?.contains('rows')) mark(ev.target); }, true);
+  function draw() {
+    const rd = ROUNDS[s.r]; const c = cur(); const e = c ? rd.ex[c.k] : null; const st = c ? e.sets[c.i] : null;
+    const nextR = ROUNDS[s.r + 1];
+    app.innerHTML = `
+    <div class="status"><span>23:01</span><span>●●● 82%</span></div>
+    <div class="hdr"><span class="t">${NAME}</span><button class="chip">Main gym ▾</button><span class="clock wclock">${hm()}</span><button class="more" data-a="menu" aria-label="Workout options">⋯</button></div>
+    <div class="rounds">${ROUNDS.map((x, i) => { const all = x.ex.every((q) => q.sets.every((z) => z.done)); return `<button class="rd${all ? ' done' : ''}${i === s.r ? ' now' : ''}" data-a="go" data-v="${i}">${all ? '✓ ' : ''}${x.n}${x.ex.length > 1 ? 'a·b' : ''}</button>`; }).join('')}<button class="all" data-a="sheet">Workout</button></div>
+    <div class="scroll">
+      <div class="card">${!rd ? '<button class="addset" data-a="addex">＋ Exercise</button>' : rd.ex.length > 1 ? `<div class="box">${rd.ex.map((x, k) => exHtml(rd, x, k, c)).join('')}</div>` : exHtml(rd, rd.ex[0], 0, c)}</div>
+      ${nextR ? `<div class="next"><span>Up next: <b>${nextR.n} ${nextR.ex.map((x) => x.name).join(' + ')}</b></span></div>` : ''}
+    </div>
+    ${s.rest ? `<div class="restbar"><b>Rest</b><span class="rt">${fmt(s.rest)}</span><button data-a="r-">−30</button><button data-a="r+">+30</button><button data-a="skip">Skip</button></div>` : `<div class="restbar idle"><b>Set</b><span class="rt sclock">${fmt(Math.floor((Date.now() - s.since) / 1000))}</span></div>`}
+    <div class="foot"><button class="chat" data-a="chat">Chat</button><button class="log" data-a="log">${c ? `${lab(rd, c.k)} · ${setLab(e, c.i)} · Log ${kgTxt(st.kg, e.each)} × ${st.r}` : rd ? 'Round done · Next' : 'Log'}</button></div>
+    <div id="kb"><button data-k="-">−</button><button data-k="+">+</button><button data-k="next">Next</button><span></span><button class="done" data-k="done">Done</button></div>
+    ${s.sheet ? overview() : ''}
+    ${s.why !== undefined && s.why !== null ? (() => { const e = rd.ex[s.why]; return `<div class="scrim" data-a="close"></div><div class="sheet"><h3>${e.name}</h3><div class="wl">Target <b>${e.target}</b></div><div class="wl">Rest <b>${rd.ex.length > 1 ? '1:30 after the round' : e.rest}</b> <u>Change</u></div>${FROM_APP ? `${e.last ? `<div class="wl">Last time <b>${e.last}</b></div>` : ''}${e.why ? `<div class="wl">${e.why}</div>` : ''}` : `<div class="wl">Last time <b>${e.last ?? `${LAST} · ${e.sets.filter((x) => x.t !== 'W').map((x) => `${x.kg} × ${x.r}`).join(', ')}`}</b></div><div class="wl">From the coach: kept the same load, last session hit the top of the range at RPE 9.</div>`}<button class="ghost" data-a="close">Close</button></div>`; })() : ''}
+    ${s.menu ? `<div class="scrim" data-a="close"></div><div class="sheet">${['Focus view', 'Pause workout', 'Rename workout', 'Turn off spoken cues', 'Ask the coach', 'Edit workout times', 'Finish workout', 'Discard workout'].map((x) => `<button class="mi${x === 'Discard workout' ? ' red' : ''}" data-a="mi">${x}</button>`).join('')}<button class="ghost" data-a="close">Cancel</button></div>` : ''}
+    ${s.confirm ? `<div class="scrim" data-a="close"></div><div class="sheet"><h3>Discard ${s.confirm} logged set${s.confirm > 1 ? 's' : ''}?</h3><button class="mi red" data-a="discard">Discard</button><button class="ghost" data-a="close">Cancel</button></div>` : ''}
+    ${s.toast ? `<div class="toast">${s.toast}</div>` : ''}`;
+    if (s.discarded) app.innerHTML = `<div class="status"><span>23:01</span><span>●●● 82%</span></div><div style="flex:1"></div><div class="toast undo"><span>Workout discarded</span><button class="ul" data-a="undo">Undo</button></div>`;
+  }
+  function overview() {
+    let rows = ''; ROUNDS.forEach((rd, ri) => { const r = rd.ex.map((e, k) => { const done = e.sets.every((z) => z.done); const dn = e.sets.filter((z) => z.done && z.t !== 'W').length, tot = e.sets.filter((z) => z.t !== 'W').length; const kgs = e.sets.filter((z) => z.t !== 'W' && typeof z.kg === 'number').map((z) => z.kg), top = kgs.length ? Math.max(...kgs) : 'BW'; return `<div class="ovr${done ? ' done' : ''}${ri === s.r ? ' now' : ''}" data-a="go" data-v="${ri}"><span class="n">${lab(rd, k)}</span><span>${e.name}<small>${e.works}</small></span><span class="c">${dn}/${tot}</span><span class="c">${top}${e.each && top !== 'BW' ? '<small>each</small>' : ''}</span></div>`; }).join(''); rows += rd.ex.length > 1 ? `<div class="ovbox">${r}</div>` : r; });
+    return `<div class="scrim" data-a="close"></div><div class="sheet"><h3>${NAME} · about ${EST} min</h3><div class="ovh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${rows}<button class="ghost" data-a="close">Close</button></div>`;
+  }
+  const kb = () => app.querySelector('#kb');
+  app.addEventListener('focusin', (ev) => { if (ev.target.classList.contains('cell')) { kb().style.display = 'flex'; ev.target.select(); } });
+  app.addEventListener('focusout', () => setTimeout(() => { if (!app.contains(document.activeElement) || !document.activeElement.classList.contains('cell')) { const k = kb(); if (k) k.style.display = 'none'; } }, 0));
+  app.addEventListener('pointerdown', (ev) => { if (ev.target.closest('#kb')) ev.preventDefault(); });
+  // Swipe left/right anywhere on the round (not on a set row, which keeps swipe-left Delete) = next / previous exercise.
+  let sw = null;
+  app.addEventListener('pointerdown', (ev) => { sw = ev.target.closest('.scroll') && !ev.target.closest('.tr, input, .sheet') ? { x: ev.clientX, y: ev.clientY } : null; });
+  app.addEventListener('pointerup', (ev) => { if (!sw) return; const dx = ev.clientX - sw.x, dy = ev.clientY - sw.y; sw = null; if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return; const to = s.r + (dx < 0 ? 1 : -1); if (to < 0 || to >= ROUNDS.length) return; s.r = to; s.anchor = true; s.toast = null; view(); });
+  app.addEventListener('input', (ev) => { const t = ev.target; if (!t.classList.contains('cell')) return; const st = ROUNDS[s.r].ex[t.dataset.k].sets[t.dataset.i]; const n = parseFloat(t.value); if (!Number.isNaN(n)) st[t.dataset.f] = n; const c = cur(); if (c) { const e = ROUNDS[s.r].ex[c.k], x = e.sets[c.i]; app.querySelector('.log').textContent = `${lab(ROUNDS[s.r], c.k)} · ${setLab(e, c.i)} · Log ${kgTxt(x.kg, e.each)} × ${x.r}`; } });
+  app.addEventListener('click', (ev) => {
+    const kbt = ev.target.closest('#kb [data-k]');
+    if (kbt) { const el = document.activeElement; if (!el?.classList.contains('cell')) return; const k = kbt.dataset.k;
+      if (k === 'done') { el.blur(); kb().style.display = 'none'; return; }
+      if (k === 'next') { const cells = [...app.querySelectorAll('.cell')]; const nx = cells[cells.indexOf(el) + 1]; if (nx) nx.focus(); else el.blur(); return; }
+      const step = el.dataset.f === 'kg' ? (ROUNDS[s.r].ex[el.dataset.k].each ? 1.25 : 2.5) : 1; el.value = String(Math.max(0, Math.round(((parseFloat(el.value) || 0) + (k === '+' ? step : -step)) * 100) / 100)); el.dispatchEvent(new Event('input', { bubbles: true })); return; }
+    const t = ev.target.closest('[data-a]'); if (!t) return; const a = t.dataset.a; s.toast = null;
+    if (a === 'tick') { const k = Number(t.dataset.k), i = Number(t.dataset.i); if (ROUNDS[s.r].ex[k].sets[i].done) unlogSet(k, i); else logSet(k, i); }
+    if (a === 'log') { const c = cur(); if (c) logSet(c.k, c.i); else if (s.r < ROUNDS.length - 1) { s.r++; s.anchor = true; } }
+    if (a === 'fold') s.open[t.dataset.v] = !s.open[t.dataset.v];
+    if (a === 'r-') setEnd(Math.max(Date.now() + 1000, s.restEnd - 30000));
+    if (a === 'r+') setEnd(s.restEnd + 30000);
+    if (a === 'skip') setEnd(0);
+    if (a === 'add') { const e = ROUNDS[s.r].ex[t.dataset.k]; const l = e.sets[e.sets.length - 1]; e.sets.push({ ...l, done: false, t: l.t === 'W' ? '' : l.t }); s.added = { k: Number(t.dataset.k), i: e.sets.length - 1 }; s.toast = 'Set added'; }
+    if (a === 'go') { s.r = Number(t.dataset.v); s.sheet = false; s.anchor = true; }
+    if (a === 'sheet') s.sheet = true;
+    if (a === 'close') { s.sheet = false; s.menu = false; s.why = null; s.confirm = 0; }
+    if (a === 'why') s.why = Number(t.dataset.k);
+    if (a === 'menu') s.menu = true;
+    // Discard asks first when sets are logged (N = ticked sets), then offers Undo (V4). In the app the shell does the Undo.
+    const discard = () => { s.confirm = 0; if (document.documentElement.classList.contains('embed')) parent.postMessage({ app: 'discarded' }, '*'); else s.discarded = true; };
+    if (a === 'mi' && t.textContent === 'Discard workout') { s.menu = false; const n = ROUNDS.reduce((m, rd) => m + rd.ex.reduce((q, e) => q + e.sets.filter((z) => z.done).length, 0), 0); if (n) s.confirm = n; else discard(); }
+    // Finish: in the app the Summary shows this workout and what was logged (V1).
+    else if (a === 'mi' && t.textContent === 'Finish workout' && document.documentElement.classList.contains('embed')) { s.menu = false; parent.postMessage({ app: 'finished', log: logged() }, '*'); }
+    else if (a === 'mi') { s.menu = false; s.toast = t.textContent + ' (same as today)'; }
+    if (a === 'addex') s.toast = 'Add an exercise (prototype)';
+    if (a === 'discard') discard();
+    if (a === 'undo') s.discarded = false;
+    if (a === 'chat') s.toast = 'Opens the coach (type or speak)';
+    view();
+  });
+  view();
+})();
+</script>

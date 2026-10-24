@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "kettlebell-snatch",
+  "tier": "basic",
+  "name": "Kettlebell snatch",
+  "aliases": ["KB snatch", "Single-arm kettlebell snatch", "One-arm kettlebell snatch"],
+  "family": "kettlebell_snatch",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "hamstrings"],
+  "secondaryMuscles": ["spinal_erectors", "front_delts", "traps", "core", "grip"],
+  "compatibleEquipment": ["kettlebell"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "implements": 1,
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

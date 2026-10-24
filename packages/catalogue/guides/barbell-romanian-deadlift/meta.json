@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "exerciseKey": "barbell-romanian-deadlift",
+  "format": "fizz-figure-guide@1",
+  "rig": "adult-v1",
+  "view": "side",
+  "durationMs": 3000,
+  "keyframes": 9,
+  "renderFps": 30,
+  "frames": 90,
+  "guideBytes": 2532,
+  "attribution": "Original figure animation made for Fizz; no third-party media.",
+  "reviewStatus": "draft",
+  "check": {
+    "status": "pass",
+    "failed": [],
+    "warnings": []
+  },
+  "focus": [
+    {
+      "muscle": "hamstrings",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "glutes",
+      "level": "strong",
+      "shown": true
+    },
+    {
+      "muscle": "spinal_erectors",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "adductors",
+      "level": "soft",
+      "shown": false
+    },
+    {
+      "muscle": "upper_back",
+      "level": "soft",
+      "shown": true
+    },
+    {
+      "muscle": "grip",
+      "level": "soft",
+      "shown": true
+    }
+  ],
+  "faintGroups": [
+    "chest",
+    "abs",
+    "obliques",
+    "lats",
+    "deltoid",
+    "frontArm",
+    "triceps",
+    "quads",
+    "calves"
+  ]
+}

@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-skull-crusher",
+  "tier": "rich",
+  "name": "Dumbbell skull crusher",
+  "aliases": ["DB skull crusher", "Dumbbell skullcrusher", "Dumbbell lying triceps extension", "Lying dumbbell triceps extension", "DB lying triceps extension"],
+  "family": "triceps_extension",
+  "movementPattern": "arms",
+  "mechanic": "isolation",
+  "primaryMuscles": ["triceps"],
+  "secondaryMuscles": [],
+  "compatibleEquipment": ["dumbbells"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "implements": 2,
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on a flat bench, feet planted",
+      "Dumbbells over your chest, palms in",
+      "Arms straight, upper arms near vertical"
+    ],
+    "execution": [
+      "Bend only at the elbows",
+      "Lower the weights beside your head",
+      "Keep your elbows pointing up",
+      "Straighten your arms back up"
+    ],
+    "faults": [
+      "Don't let your elbows flare out",
+      "Don't swing your upper arms",
+      "Don't drop the weights toward your face"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Lower the dumbbells to the sides of the head, not onto the forehead, and control every rep.",
+      "Start light; elbows are often the limit before the triceps.",
+      "Finish by bringing the dumbbells to your chest before sitting up.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "cable-triceps-pushdown", "name": "Triceps pushdown", "reason": "Standing, nothing over the face; easy to load lightly." }
+    ],
+    "progressions": [
+      { "key": "ez-bar-skull-crusher", "name": "Skull crusher", "reason": "EZ-bar version; heavier loads." },
+      { "key": null, "name": "Incline dumbbell skull crusher", "reason": "Bench inclined; more stretch on the triceps." }
+    ],
+    "substitutions": [
+      { "key": "ez-bar-skull-crusher", "name": "Skull crusher", "reason": "Same movement with an EZ bar. Load is the whole bar." },
+      { "key": "dumbbell-overhead-triceps-extension", "name": "Dumbbell overhead triceps extension", "reason": "Seated or standing, arms overhead." },
+      { "key": "cable-triceps-pushdown", "name": "Triceps pushdown", "reason": "Cable triceps work, stack load." },
+      { "key": "dumbbell-triceps-kickback", "name": "Dumbbell triceps kickback", "reason": "One-arm triceps work with a light dumbbell." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height, head on the left. The near arm's elbow staying high while the forearm drops must be clear.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Lying on a flat bench, feet flat. Arms straight up over the chest, dumbbells held with palms facing each other.",
+        "approxAnglesDeg": { "shoulderFlexion": 90, "elbowFlexion": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Elbows bent about 90° or a little more, upper arms still near vertical (tilted slightly back), dumbbells beside the head at ear level.",
+        "approxAnglesDeg": { "shoulderFlexion": 100, "elbowFlexion": 100 }
+      }
+    ],
+    "ikHints": ["Back and head stay on the bench", "Upper arms stay nearly fixed"],
+    "barPath": "Dumbbells arc from over the chest down to beside the head",
+    "tempo": { "downMs": 1800, "holdMs": 200, "upMs": 1000 },
+    "props": ["bench_flat", "dumbbell_pair"],
+    "emphasise": [
+      "Only the forearms move",
+      "Dumbbells lower beside the head",
+      "Elbows point up"
+    ],
+    "doNotShow": ["Elbows flared wide", "Dumbbells over the face", "Upper arms swinging"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/dumbbell-lying-triceps-extension/",
+      "title": "StrengthLog: Dumbbell Lying Triceps Extension",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-1,3]; primaryMuscles"
+    },
+    {
+      "url": "https://www.hevyapp.com/exercises/dumbbell-skull-crusher/",
+      "title": "Hevy: Dumbbell Skull Crusher",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1] (lower toward the sides of the head); cues.faults[0]",
+      "note": "Commercial app page, seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "cues.setup[1]",
+      "note": "A neutral (palms-in) grip is the common default; some lifters use palms-forward. Grip is a set modifier, not a new entry."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

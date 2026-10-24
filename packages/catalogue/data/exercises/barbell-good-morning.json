@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-good-morning",
+  "tier": "basic",
+  "name": "Good morning",
+  "aliases": ["Barbell good morning", "BB good morning", "Good mornings"],
+  "family": "good_morning",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["hamstrings", "spinal_erectors"],
+  "secondaryMuscles": ["glutes", "adductors", "upper_back"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

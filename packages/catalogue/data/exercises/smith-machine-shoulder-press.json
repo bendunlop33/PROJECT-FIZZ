@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "key": "smith-machine-shoulder-press",
+  "tier": "rich",
+  "name": "Smith machine shoulder press",
+  "aliases": ["Smith shoulder press", "Smith machine overhead press", "Seated Smith machine shoulder press", "Smith military press", "Smith OHP"],
+  "family": "overhead_press",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["front_delts"],
+  "secondaryMuscles": ["triceps", "side_delts", "upper_chest"],
+  "compatibleEquipment": ["smith_machine"],
+  "requiresStation": ["specific_machine", "incline_bench"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Upright bench under the bar, safeties set",
+      "Bar just in front of your face when seated",
+      "Grip a little wider than your shoulders"
+    ],
+    "execution": [
+      "Unhook the bar and brace your trunk",
+      "Lower to about chin or upper-chest height",
+      "Press straight up to straight arms",
+      "Twist the bar to re-hook at the top"
+    ],
+    "faults": [
+      "Don't press from behind your neck",
+      "Don't arch your lower back off the pad",
+      "Don't flare your elbows straight out"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Set the safety stops just below the lowest point of your rep, so a missed rep lands on the stops, not on you.",
+      "Practise hooking and unhooking with an empty bar first; the hooks catch only when the bar is twisted.",
+      "Keep the bar path in front of the head; behind-the-neck pressing puts the shoulder in an extreme position.",
+      "Smith bar weight differs between gyms, so the number logged is plates added, not the total.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-shoulder-press", "name": "Machine shoulder press", "reason": "Fully guided with handles; small load steps." }
+    ],
+    "progressions": [
+      { "key": "barbell-seated-overhead-press", "name": "Seated overhead press", "reason": "Free bar; you balance the path yourself." },
+      { "key": "barbell-overhead-press", "name": "Overhead press", "reason": "Standing free-bar press; more trunk demand." }
+    ],
+    "substitutions": [
+      { "key": "machine-shoulder-press", "name": "Machine shoulder press", "reason": "Guided press on a stack. Numbers aren't comparable." },
+      { "key": "dumbbell-seated-shoulder-press", "name": "Dumbbell shoulder press", "reason": "Each arm works alone; load is each dumbbell." },
+      { "key": "barbell-seated-overhead-press", "name": "Seated overhead press", "reason": "Same seated press with a free bar." },
+      { "key": "barbell-landmine-press", "name": "Landmine press", "reason": "Angled press if overhead range is limited." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at head height of the seated figure, Smith rails vertical, bench upright and centred under the bar. Bar path must clear the face.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Seated upright on a bench with back support, feet flat. Bar just in front of the face at about chin to upper-chest height, forearms near vertical, elbows slightly in front of the bar.",
+        "approxAnglesDeg": { "shoulderFlexion": 60, "elbowFlexion": 100, "trunkLeanFromVertical": 5 }
+      },
+      {
+        "label": "Lockout",
+        "describe": "Arms straight overhead, bar over the shoulders on the vertical rail. Back still on the pad, ribs down.",
+        "approxAnglesDeg": { "shoulderFlexion": 170, "elbowFlexion": 5, "trunkLeanFromVertical": 5 }
+      }
+    ],
+    "ikHints": ["Bar runs on the vertical rails", "Hips and back fixed on the bench"],
+    "barPath": "Straight vertical line on the Smith rails, in front of the face",
+    "tempo": { "downMs": 1500, "holdMs": 200, "upMs": 1000 },
+    "props": ["smith_machine", "bench_adjustable"],
+    "emphasise": [
+      "Bar in front of the face",
+      "Safety stops set below the bottom",
+      "Back stays on the pad"
+    ],
+    "doNotShow": ["Bar behind the neck", "Lower back arching off the bench", "Safeties unset"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/seated-smith-machine-shoulder-press/",
+      "title": "StrengthLog: Seated Smith Machine Shoulder Press",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1-2]; primaryMuscles; secondaryMuscles (triceps, side delts)"
+    },
+    {
+      "url": "https://fitnessvolt.com/24023/smith-machine-seated-overhead-press/",
+      "title": "Fitness Volt: Smith Machine Seated Overhead Press",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; safety.notes[0]",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "cues.execution[1]",
+      "note": "Sources differ on the bottom position (chin height vs upper chest). Both are given; depth depends on shoulder comfort."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

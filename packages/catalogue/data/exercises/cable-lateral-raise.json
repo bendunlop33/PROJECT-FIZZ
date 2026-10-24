@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-lateral-raise",
+  "tier": "basic",
+  "name": "Cable lateral raise",
+  "aliases": ["Single-arm cable lateral raise", "One-arm cable lateral raise", "Cable side raise", "Cable lat raise"],
+  "family": "lateral_raise",
+  "movementPattern": "vertical_push",
+  "mechanic": "isolation",
+  "primaryMuscles": ["side_delts"],
+  "secondaryMuscles": ["front_delts", "traps"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

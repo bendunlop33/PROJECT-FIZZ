@@ -1,0 +1,697 @@
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, ScrollView, Switch, View } from 'react-native';
+import type { ReactNode } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { dropRoutineSlot, formatDuration, mergeRoutineEdits, routineEditDirty, routineIssues, slotShapeOf, type RoutineConflict, type RoutineEdit } from '@fizz/domain';
+import type { BuilderGroup, Routine, RoutineExercise, SetType } from '@fizz/schemas';
+
+import type { ExerciseChoices, TemplateFact } from '../../builder/builder-service';
+import { newUuid } from '../../device/runtime';
+import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
+import { backFromEditor, popToFromEditor } from '../../navigation/actions';
+import type { RootStackParams } from '../../navigation/types';
+import type { EditorExerciseInfo, RoutineEditorData } from '../../services/workout-services';
+import { useDataChanged, useServices } from '../../shell/context';
+import { useTheme } from '../../theme';
+import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, PrimaryButton, ShapeRepsSheet, StatusLine, TextButton, TextField, Toast, ToastHost } from '../../ui';
+import { ExercisePopup } from '../../ui/exercise-popup';
+import { SwapSheet } from '../../ui/swap-sheet';
+import type { ChoiceSection } from '../../ui/swap-sheet-model';
+import { Divider, Table, ValueRow } from '../../ui/table-parts';
+import { conflictLines, conflictText, EDITOR_COPY, editorPrimary, restChoices } from '../../workout/library-view';
+import { handOffLibraryToast } from '../../workout/library-toast';
+import { settleSaveEdit } from '../../workout/save-edit-handoff';
+import { slotRepsDraft, SET_SHAPE_COPY } from '../../workout/set-shape-view';
+import {
+  applyTemplateEdit,
+  editableOf,
+  openTemplate,
+  parseClock,
+  parseMetres,
+  parseRepRange,
+  saveTemplate,
+  templateKgStep,
+  templatePopupView,
+  templateTableView,
+  templateSearchable,
+  templateTarget,
+  TEMPLATE_COPY,
+  type TemplateEditOp,
+  type TemplateEditorCtx,
+  type TemplateOptionsView,
+} from '../../workout/template-editor';
+import { WorkoutTable, type WorkoutRowAction } from './WorkoutTable';
+
+type Stale = { current: Routine; lines: string[]; changedAtUtc: string };
+type Swap = { slotId: string | null; choices: ExerciseChoices; query: string; results: ChoiceSection[]; found: Record<string, EditorExerciseInfo> };
+
+/**
+ * The one workout editor (Ben, 23 Oct: "Why does the plan builder's workout builder look so different to the usual
+ * workout builder?"): a saved workout, a plan day's template, `New workout`, `Duplicate`, and `Save to Workouts ›
+ * Edit ›` / Exercise detail's `New workout`, on Your workout's page (workout-builder-v3 §2.3; routines.md §A2.3):
+ * the name where the title is, `Time`, the same table and pop-up, swipe Delete / Swap, drag, `＋ Add exercise`.
+ * Nothing is written until `Save` (one version, opId, expectedVersion; rule 5), then `Saved Push A · Undo` where it
+ * was opened from; a newer version is never overwritten (the conflict sheet). A plan day's change is to its
+ * template for the weeks ahead; workouts already done never change (rule 2). Edits are lost on Cancel or a
+ * force-close. Local only, offline (rule 1). Loads are `Auto` or Ben's Fixed ones, rounded to this gym (rule 4).
+ */
+export function EditWorkoutScreen() {
+  const theme = useTheme();
+  const services = useServices();
+  const changed = useDataChanged();
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const params = useRoute<RouteProp<RootStackParams, 'WorkoutEditor'>>().params;
+  const { routineId, from, selectName, copyToast, draft, saveAs } = params;
+  const target = useMemo(() => templateTarget({ routineId, copyToast, saveAs }), [routineId, copyToast, saveAs]);
+  const [data, setData] = useState<RoutineEditorData | null | 'loading'>('loading');
+  const [name, setName] = useState('');
+  const [list, setListState] = useState<RoutineExercise[]>([]);
+  const listRef = useRef<RoutineExercise[]>([]);
+  const setList = useCallback((l: RoutineExercise[]) => {
+    listRef.current = l;
+    setListState(l);
+  }, []);
+  const [info, setInfo] = useState<Record<string, EditorExerciseInfo>>({});
+  const [facts, setFacts] = useState<Record<string, TemplateFact>>({});
+  const [minutes, setMinutes] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState<Stale | null>(null);
+  const [picks, setPicks] = useState<Record<string, 'mine' | 'theirs'>>({});
+  const [popup, setPopup] = useState<string | null>(null);
+  const [swap, setSwap] = useState<Swap | null>(null);
+  const [shapeSheet, setShapeSheet] = useState<{ slotId: string; kind: 'reps' | 'effort' } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [toast, setToast] = useState<{ text: string; before: RoutineExercise[] | null } | null>(null);
+  const [screenReader, setScreenReader] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const opId = useRef(newUuid());
+  // The workout as opened (or as last merged on a conflict): what `dirty` and Keep both compare against.
+  const base = useRef<RoutineEdit>({ name: '', exercises: [] });
+
+  const load = useCallback(() => {
+    setData('loading');
+    void openTemplate(services, { routineId, draft, saveAs }).then((o) => {
+      if (o === null) {
+        setData(null);
+        return;
+      }
+      base.current = o.base;
+      setName(o.name);
+      setList(o.list);
+      setInfo(o.info);
+      setFacts(o.facts);
+      setData(o.data);
+    });
+  }, [services, routineId, draft, saveAs, setList]);
+  useEffect(load, [load]);
+  // The Save sheet's `Edit ›`: whatever closes the editor without a Save (Cancel, Discard) shows the sheet again.
+  useEffect(
+    () => () => {
+      if (saveAs !== undefined) settleSaveEdit(saveAs, { kind: 'cancelled' });
+    },
+    [saveAs],
+  );
+  useEffect(() => {
+    void AccessibilityInfo.isScreenReaderEnabled().then(setScreenReader);
+  }, []);
+
+  // `about N min` while editing (debounced; local).
+  const gymId = data !== 'loading' && data !== null ? (data.gym?.id ?? null) : null;
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void services.routines
+        .estimate({ exercises: list, gymId })
+        .then(setMinutes)
+        .catch(() => {
+          setMinutes(null);
+        });
+    }, 400);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [services, list, gymId]);
+
+  const showToast = useCallback(
+    (t: { text: string; before: RoutineExercise[] | null } | null) => {
+      if (toastTimer.current !== null) clearTimeout(toastTimer.current);
+      setToast(t);
+      // With VoiceOver on, an Undo toast stays until dismissed (close button).
+      if (t !== null && !screenReader)
+        toastTimer.current = setTimeout(() => {
+          setToast(null);
+        }, theme.timing.undoToast);
+    },
+    [screenReader, theme.timing.undoToast],
+  );
+
+  if (data === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
+  if (data === null) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], padding: theme.components.screenMargin, paddingTop: insets.top + theme.space['6'], gap: theme.space['4'] }}>
+        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open that workout." action={<TextButton label="Try again" onPress={load} />} />
+        <TextButton
+          label={EDITOR_COPY.cancel}
+          tone="secondary"
+          onPress={() => {
+            navigation.goBack();
+          }}
+        />
+      </View>
+    );
+  }
+  const editor = data;
+  const ctx: TemplateEditorCtx = { info, facts, gym: editor.gym, unit: editor.unit, globalDefault: editor.globalDefault, effortScale: editor.effortScale, stored: editor.routine?.exercises ?? [] };
+  const edit: RoutineEdit = { name, exercises: list };
+  const issues = routineIssues(edit, (id) => info[id]?.measurement === 'distance', ctx.stored);
+  const isNew = target.kind !== 'edit';
+  const dirty = routineEditDirty(base.current, edit);
+  const primary = editorPrimary({ issues, dirty, isNew });
+  const table = templateTableView(list, ctx);
+  const nameOfSlot = (slotId: string) => info[list.find((e) => e.id === slotId)?.exerciseId ?? '']?.name ?? 'Exercise';
+
+  /** One edit on the page's list, on the list as it is now (quick taps add up). Returns the pop-up's line, if any. */
+  function apply(op: TemplateEditOp): string | null {
+    const r = applyTemplateEdit(listRef.current, op, ctx, newUuid);
+    setList(r.list);
+    setError(null);
+    if (op.kind !== 'delete_exercise' && op.kind !== 'swap') showToast(null);
+    return r.note;
+  }
+
+  function deleteExercise(slotId: string) {
+    const before = listRef.current;
+    const label = nameOfSlot(slotId);
+    apply({ kind: 'delete_exercise', slotId });
+    showToast({ text: TEMPLATE_COPY.deleted(label), before });
+  }
+
+  function cancel() {
+    if (!dirty) {
+      navigation.dispatch(backFromEditor(from, copyToast));
+      return;
+    }
+    Alert.alert(EDITOR_COPY.discardTitle, undefined, [
+      { text: EDITOR_COPY.keepEditing, style: 'cancel' },
+      {
+        text: EDITOR_COPY.discard,
+        style: 'destructive',
+        onPress: () => {
+          navigation.dispatch(backFromEditor(from, copyToast));
+        },
+      },
+    ]);
+  }
+
+  async function save(next: RoutineEdit = edit, expectedVersion: number | null = editor.routine?.version ?? null) {
+    if (busy || (next === edit && primary.disabled)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await saveTemplate(services.routines, { target, edit: next, expectedVersion, opId: opId.current });
+      switch (r.kind) {
+        case 'saved':
+          changed();
+          if (from === 'ExerciseInfo' || from === 'PlanDay') handOffLibraryToast(r.toast);
+          navigation.dispatch(popToFromEditor(from, r.toast));
+          return;
+        case 'saved_as':
+          changed();
+          if (saveAs !== undefined) settleSaveEdit(saveAs, { kind: 'saved', routine: r.routine });
+          navigation.goBack();
+          return;
+        case 'stale':
+          setPicks({});
+          setStale({ current: r.current, lines: r.lines, changedAtUtc: r.changedAtUtc });
+          return;
+        case 'failed':
+          setError(r.message);
+          return;
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Keep both (v0.1 §3.3): my edits on the newer version; a new opId, since it is a new save.
+  const merge = stale === null ? null : mergeRoutineEdits(base.current, edit, editableOf(stale.current), picks);
+  function keepBoth() {
+    if (stale === null || merge === null) return;
+    const current = stale.current;
+    base.current = editableOf(current);
+    setName(merge.merged.name);
+    setList([...merge.merged.exercises]);
+    setStale(null);
+    opId.current = newUuid();
+    void save(merge.merged, current.version);
+  }
+  function discardMine() {
+    setStale(null);
+    opId.current = newUuid();
+    load();
+  }
+
+  /** Swap / Add (§2.5): this gym's exercises by group, the same sheet as Your workout's, plus a search. */
+  async function openSwap(slotId: string | null, group?: BuilderGroup) {
+    const exerciseId = slotId === null ? null : (listRef.current.find((e) => e.id === slotId)?.exerciseId ?? null);
+    const choices = await services.builder
+      .templateChoices({ gymId: editor.gym?.id ?? null, inWorkout: listRef.current.map((e) => e.exerciseId), exerciseId, ...(group === undefined ? {} : { group }) })
+      .catch((): ExerciseChoices => ({ group: group ?? 'Chest', groups: [], sections: [] }));
+    setSwap((s) => ({ slotId, choices, query: s !== null && s.slotId === slotId ? s.query : '', results: s !== null && s.slotId === slotId ? s.results : [], found: s?.found ?? {} }));
+  }
+
+  async function search(q: string) {
+    setSwap((s) => (s === null ? s : { ...s, query: q }));
+    if (q.trim() === '') return;
+    const found = await services.routines.searchExercises(q).catch(() => [] as EditorExerciseInfo[]);
+    // A distance exercise can't be saved in a workout yet (EL-B13): not offered.
+    const usable = found.filter(templateSearchable).slice(0, 25);
+    const flags = await services.builder.templateFacts({ gymId: editor.gym?.id ?? null, exerciseIds: usable.map((x) => x.id) }).catch((): Record<string, TemplateFact> => ({}));
+    setSwap((s) =>
+      s === null || s.query !== q
+        ? s
+        : { ...s, results: [{ focus: 'Results', items: usable.map((x) => ({ exerciseId: x.id, name: x.name, works: flags[x.id]?.works ?? null, mayHurt: flags[x.id]?.mayHurt === true, painLine: null })) }], found: { ...s.found, ...Object.fromEntries(usable.map((x) => [x.id, x])) } },
+    );
+  }
+
+  async function pick(exerciseId: string) {
+    const s = swap;
+    if (s === null) return;
+    setSwap(null);
+    const x = s.found[exerciseId] ?? (await services.routines.exerciseInfo([exerciseId]).catch((): Record<string, EditorExerciseInfo> => ({})))[exerciseId];
+    if (x === undefined) {
+      setError('Couldn’t add that exercise. Try again.');
+      return;
+    }
+    const more = await services.builder.templateFacts({ gymId: editor.gym?.id ?? null, exerciseIds: [exerciseId] }).catch((): Record<string, TemplateFact> => ({}));
+    setInfo((cur) => ({ ...cur, [x.id]: x }));
+    setFacts((cur) => ({ ...cur, ...more }));
+    const ref = { id: x.id, measurement: x.measurement };
+    // Apply against the info that includes the new exercise (its measurement and shape).
+    const withX: TemplateEditorCtx = { ...ctx, info: { ...ctx.info, [x.id]: x }, facts: { ...ctx.facts, ...more } };
+    if (s.slotId === null) {
+      setList(applyTemplateEdit(listRef.current, { kind: 'add_exercise', exercise: ref, shape: x.defaultShape }, withX, newUuid).list);
+      showToast(null);
+    } else {
+      const before = listRef.current;
+      setList(applyTemplateEdit(listRef.current, { kind: 'swap', slotId: s.slotId, exercise: ref }, withX, newUuid).list);
+      showToast({ text: TEMPLATE_COPY.swapped, before });
+    }
+  }
+
+  const rowAction = (slotId: string, a: WorkoutRowAction) => {
+    switch (a) {
+      case 'delete':
+        deleteExercise(slotId);
+        break;
+      case 'swap':
+        void openSwap(slotId);
+        break;
+      case 'move_up':
+        apply({ kind: 'move', slotId, dir: 'up' });
+        break;
+      case 'move_down':
+        apply({ kind: 'move', slotId, dir: 'down' });
+        break;
+      case 'superset_next':
+        apply({ kind: 'superset_next', slotId });
+        break;
+      case 'unlink':
+        apply({ kind: 'unlink', slotId });
+        break;
+    }
+  };
+
+  /** A set's own actions behind its hold menu: rep range, time, distance, Auto load, rest after this set. */
+  function rowExtra(slotId: string, setId: string, action: string) {
+    const t = listRef.current.find((e) => e.id === slotId)?.setTemplates.find((x) => x.id === setId);
+    if (t === undefined) return;
+    switch (action) {
+      case 'reps_range':
+        Alert.prompt(TEMPLATE_COPY.repRange, undefined, (text) => {
+          const r = parseRepRange(text);
+          if (r !== null) apply({ kind: 'set_reps', slotId, setId, reps: r });
+        }, 'plain-text', t.targetReps === null ? '' : `${String(t.targetReps.min)}-${String(t.targetReps.max)}`, 'numbers-and-punctuation');
+        return;
+      case 'time':
+        Alert.prompt(TEMPLATE_COPY.workTime, undefined, (text) => {
+          const s = parseClock(text);
+          if (s !== null) apply({ kind: 'set_time', slotId, setId, seconds: s });
+        }, 'plain-text', t.targetDurationS === null ? '' : formatDuration(t.targetDurationS), 'numbers-and-punctuation');
+        return;
+      case 'distance':
+        Alert.prompt(`${TEMPLATE_COPY.distance} (m)`, undefined, (text) => {
+          const d = parseMetres(text);
+          if (d !== null) {
+            const note = apply({ kind: 'set_distance', slotId, setId, metres: d.metres });
+            if (note !== null) setError(note);
+          }
+        }, 'plain-text', t.targetDistanceM == null ? '' : String(t.targetDistanceM), 'number-pad');
+        return;
+      case 'auto_load':
+        apply({ kind: 'auto_load', slotId, setId });
+        return;
+      case 'rest_after': {
+        const choices = restChoices(editor.restPresets);
+        const options = [TEMPLATE_COPY.useDefault, ...choices.map((c) => c.label), EDITOR_COPY.cancel];
+        ActionSheetIOS.showActionSheetWithOptions({ title: TEMPLATE_COPY.restAfter, options, cancelButtonIndex: options.length - 1 }, (i) => {
+          if (i === 0) apply({ kind: 'set_rest', slotId, setId, seconds: null });
+          const c = choices[i - 1];
+          if (i > 0 && c !== undefined) apply({ kind: 'set_rest', slotId, setId, seconds: c.seconds });
+        });
+        return;
+      }
+    }
+  }
+
+  const popupSlot = popup === null ? undefined : list.find((e) => e.id === popup);
+  const view = popup === null ? null : templatePopupView(list, popup, ctx);
+  const popupExercise = popupSlot === undefined ? null : { exerciseId: popupSlot.exerciseId, exerciseName: info[popupSlot.exerciseId]?.name ?? 'Exercise' };
+  const howTo = popupExercise === null ? null : howToRouteFor(popupExercise, bundledHowToSources());
+  const shapeSlot = shapeSheet === null ? undefined : list.find((e) => e.id === shapeSheet.slotId);
+  const shapeView = shapeSlot === undefined ? null : slotShapeOf(shapeSlot);
+
+  const toastNode =
+    toast === null ? null : (
+      <Toast
+        icon="info.circle"
+        text={toast.text}
+        {...(toast.before !== null
+          ? {
+              action: TEMPLATE_COPY.undo,
+              onAction: () => {
+                const before = toast.before;
+                showToast(null);
+                if (before !== null) setList(before);
+              },
+            }
+          : {})}
+        onDismiss={() => {
+          showToast(null);
+        }}
+        showClose={screenReader}
+      />
+    );
+
+  return (
+    <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
+      <View style={{ flex: 1 }}>
+        <View style={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <TextButton label={EDITOR_COPY.cancel} tone="secondary" onPress={cancel} />
+          </View>
+          <TextField
+            accessibilityLabel={TEMPLATE_COPY.name}
+            placeholder={isNew ? TEMPLATE_COPY.newTitle : TEMPLATE_COPY.name}
+            value={name}
+            onChangeText={setName}
+            autoFocus={(target.kind === 'new' && name.trim() === '') || selectName === true}
+            selectTextOnFocus={selectName === true}
+            returnKeyType="done"
+            maxLength={160}
+            style={{ fontSize: theme.type.title1.fontSize, fontWeight: '700', paddingHorizontal: theme.space['2'], backgroundColor: 'transparent' }}
+          />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
+            <AppText variant="callout" color="text.secondary" style={{ fontSize: 15 }}>
+              {TEMPLATE_COPY.time}
+            </AppText>
+            <AppText variant="label" numeric>
+              {minutes === null ? '—' : TEMPLATE_COPY.minutes(minutes)}
+            </AppText>
+          </View>
+        </View>
+        <ScrollView scrollEnabled={!dragging} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingVertical: theme.space['3'], gap: theme.space['3'] }}>
+          {editor.inProgress ? <StatusLine icon="info.circle" tone="info" text={EDITOR_COPY.inProgress} /> : null}
+          <WorkoutTable
+            rounds={table.rounds}
+            topHeader={table.topHeader}
+            canAdd={table.canAdd}
+            dragging={dragging}
+            onDragChange={setDragging}
+            canDrop={(slotId, t) => dropRoutineSlot(listRef.current, slotId, t.key, t.edge) !== null}
+            onDrop={(slotId, t) => {
+              apply({ kind: 'drop', slotId, targetId: t.key, edge: t.edge });
+            }}
+            onRowPress={(r) => {
+              setPopup(r.slotKey);
+            }}
+            onRowAction={(r, a) => {
+              rowAction(r.slotKey, a);
+            }}
+            onAdd={() => void openSwap(null)}
+          />
+        </ScrollView>
+        <ToastHost bottom={8}>{popup === null ? toastNode : null}</ToastHost>
+      </View>
+      <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: insets.bottom + theme.space['2'], gap: theme.space['2'], backgroundColor: theme.colors['bg.canvas'] }}>
+        {error !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
+        <PrimaryButton label={primary.label} disabled={primary.disabled} busy={busy} onPress={() => void save()} />
+      </View>
+
+      <ExercisePopup
+        view={view}
+        resetKey={popup}
+        onEditCell={(row, field, value) => Promise.resolve(popup === null ? null : apply({ kind: 'cell', slotId: popup, setId: row.key, field, value }))}
+        onType={(row, type: SetType) => Promise.resolve(popup === null ? null : apply({ kind: 'set_type', slotId: popup, setId: row.key, type }))}
+        onDeleteRow={(row) => {
+          if (popup !== null) apply({ kind: 'delete_set', slotId: popup, setId: row.key });
+        }}
+        onAddWarmup={() => Promise.resolve(popup === null ? null : apply({ kind: 'add_warmup', slotId: popup }))}
+        onAddSet={() => {
+          if (popup !== null) apply({ kind: 'add_set', slotId: popup });
+        }}
+        onRestStep={(x, d) => {
+          if (popup !== null) apply({ kind: 'rest_step', slotId: popup, setType: x.kind as SetType, dir: d });
+        }}
+        onRestDefault={(x) => {
+          if (popup !== null) apply({ kind: 'rest_default', slotId: popup, setType: x.kind as SetType });
+        }}
+        onMove={(dir) => {
+          if (popup !== null) apply({ kind: 'move', slotId: popup, dir });
+        }}
+        onSupersetNext={() => {
+          if (popup !== null) apply({ kind: 'superset_next', slotId: popup });
+        }}
+        onUnlink={() => {
+          if (popup !== null) apply({ kind: 'unlink', slotId: popup });
+        }}
+        onSwap={() => {
+          const k = popup;
+          setPopup(null);
+          if (k !== null) void openSwap(k);
+        }}
+        onDelete={() => {
+          const k = popup;
+          setPopup(null);
+          if (k !== null) deleteExercise(k);
+        }}
+        onClose={() => {
+          setPopup(null);
+        }}
+        // An `Auto` cell (nothing typed yet) steps from the last logged load (design pass 5.1).
+        kgStep={(row, value, dir) => Promise.resolve(popup === null ? null : templateKgStep(listRef.current, popup, row.load === null && value === 0 ? null : value, dir, ctx))}
+        onRowExtra={(row, action) => {
+          if (popup !== null) rowExtra(popup, row.key, action);
+        }}
+        onHowTo={
+          popupExercise === null
+            ? undefined
+            : () => {
+                setPopup(null);
+                // The exercise's guide, else its detail (the old editor's `Exercise info`).
+                if (howTo !== null) navigation.navigate('HowTo', howTo);
+                else navigation.navigate('ExerciseInfo', { exerciseId: popupExercise.exerciseId, name: popupExercise.exerciseName, readOnly: true });
+              }
+        }
+        onHistory={
+          popupSlot === undefined || facts[popupSlot.exerciseId]?.hasHistory !== true
+            ? undefined
+            : () => {
+                setPopup(null);
+                navigation.navigate('ExerciseProgress', { exerciseId: popupSlot.exerciseId, name: info[popupSlot.exerciseId]?.name ?? 'Exercise', ...(gymId === null ? {} : { gymId }) });
+              }
+        }
+        options={
+          view === null || popup === null ? null : (
+            <TemplateOptions
+              options={view.options}
+              onMain={(on) => {
+                apply({ kind: 'main', slotId: popup, on });
+              }}
+              onAddedWeight={(on) => {
+                apply({ kind: 'added_weight', slotId: popup, on });
+              }}
+              onReps={() => {
+                setShapeSheet({ slotId: popup, kind: 'reps' });
+              }}
+              onEffort={() => {
+                setShapeSheet({ slotId: popup, kind: 'effort' });
+              }}
+            />
+          )
+        }
+        toast={toastNode}
+      />
+      <SwapSheet
+        visible={swap !== null}
+        title={swap?.slotId == null ? 'Add exercise' : `Swap ${nameOfSlot(swap.slotId)}`}
+        group={swap?.choices.group ?? 'Chest'}
+        groups={swap?.choices.groups ?? []}
+        sections={swap === null ? [] : swap.query.trim() === '' ? swap.choices.sections : swap.results}
+        actionWord={swap?.slotId == null ? 'Add' : 'Swap'}
+        onGroup={(g) => void openSwap(swap?.slotId ?? null, g)}
+        onPick={(id) => void pick(id)}
+        onClose={() => {
+          setSwap(null);
+        }}
+        search={{ query: swap?.query ?? '', onQuery: (q) => void search(q) }}
+      />
+      <ShapeRepsSheet
+        visible={shapeSheet?.kind === 'reps' && shapeSlot !== undefined}
+        title={`${EDITOR_COPY.reps} · ${shapeSlot ? (info[shapeSlot.exerciseId]?.name ?? '') : ''}`}
+        start={slotRepsDraft(shapeSlot?.setTemplates ?? [], shapeSlot !== undefined && info[shapeSlot.exerciseId]?.measurement === 'cardio')}
+        onDone={(v) => {
+          const id = shapeSheet?.slotId;
+          if (id !== undefined) apply({ kind: 'slot_reps', slotId: id, value: v });
+          setShapeSheet(null);
+        }}
+        onClose={() => {
+          setShapeSheet(null);
+        }}
+      />
+      {editor.effortScale !== null ? (
+        <EffortSheet
+          visible={shapeSheet?.kind === 'effort' && shapeSlot !== undefined}
+          scale={editor.effortScale}
+          title={`${editor.effortScale === 'rpe' ? SET_SHAPE_COPY.targetRpe : SET_SHAPE_COPY.targetRir} · ${shapeSlot ? (info[shapeSlot.exerciseId]?.name ?? '') : ''}`}
+          value={shapeView === null ? null : editor.effortScale === 'rpe' ? shapeView.targetRpe : shapeView.targetRir}
+          onPick={(v) => {
+            const id = shapeSheet?.slotId;
+            if (id !== undefined) apply({ kind: 'slot_effort', slotId: id, value: v });
+          }}
+          onClose={() => {
+            setShapeSheet(null);
+          }}
+        />
+      ) : null}
+      <BottomCard
+        visible={stale !== null}
+        scroll={false}
+        onClose={() => {
+          setStale(null);
+        }}
+      >
+        {stale !== null && merge !== null ? (
+          <ConflictBody
+            stale={stale}
+            conflicts={merge.conflicts}
+            picks={picks}
+            nameOf={(id) => info[id]?.name ?? 'Exercise'}
+            tz={services.now().tz}
+            onPick={(k, v) => {
+              setPicks((p) => ({ ...p, [k]: v }));
+            }}
+            onKeepBoth={keepBoth}
+            onDiscard={discardMine}
+          />
+        ) : null}
+      </BottomCard>
+    </View>
+  );
+}
+
+/**
+ * The pop-up's options on a saved workout (the old editor's card, moved here; Ben, 23 Oct): `Main`, `Add weight` on a
+ * bodyweight exercise, the exercise's `Reps` (a range for every working set) and `Target RPE`.
+ */
+function TemplateOptions({ options, onMain, onAddedWeight, onReps, onEffort }: { options: TemplateOptionsView; onMain: (on: boolean) => void; onAddedWeight: (on: boolean) => void; onReps: () => void; onEffort: () => void }) {
+  const rows: ReactNode[] = [
+    <SwitchRow key="main" label={TEMPLATE_COPY.main} value={options.main} onChange={() => { onMain(!options.main); }} />,
+    ...(options.addedWeight === null ? [] : [<SwitchRow key="added" label={TEMPLATE_COPY.addWeight} value={options.addedWeight} onChange={() => { onAddedWeight(options.addedWeight !== true); }} />]),
+    <ValueRow key="reps" label={options.reps.label} value={options.reps.text} onPress={onReps} />,
+    ...(options.effort === null ? [] : [<ValueRow key="effort" label={options.effort.label} value={options.effort.text} onPress={onEffort} />]),
+  ];
+  return (
+    <Table>
+      {rows.map((r, i) => (
+        <View key={i}>
+          {i > 0 ? <Divider /> : null}
+          {r}
+        </View>
+      ))}
+    </Table>
+  );
+}
+
+/** A 54 pt row that is one switch for VoiceOver (the Switch inside only shows it; review S9 on Today's rows). */
+function SwitchRow({ label, value, onChange }: { label: string; value: boolean; onChange: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: value }}
+      onPress={onChange}
+      style={({ pressed }) => ({ minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: theme.space['4'], opacity: pressed ? 0.7 : 1 })}
+    >
+      <AppText variant="body">{label}</AppText>
+      <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
+        <Switch value={value} accessible={false} />
+      </View>
+    </Pressable>
+  );
+}
+
+/** The save conflict (v0.1 §3.3, WL-A6): what changed, a pick for anything both changed, `Keep both` / `Discard my edits`. */
+function ConflictBody({
+  stale,
+  conflicts,
+  picks,
+  nameOf,
+  tz,
+  onPick,
+  onKeepBoth,
+  onDiscard,
+}: {
+  stale: Stale;
+  conflicts: RoutineConflict[];
+  picks: Record<string, 'mine' | 'theirs'>;
+  nameOf: (id: string) => string;
+  tz: string;
+  onPick: (key: string, v: 'mine' | 'theirs') => void;
+  onKeepBoth: () => void;
+  onDiscard: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ gap: theme.space['3'] }}>
+      <AppText variant="title2" accessibilityRole="header">
+        {EDITOR_COPY.conflictTitle(stale.current.name)}
+      </AppText>
+      {conflictLines({ lines: stale.lines, changedAtUtc: stale.changedAtUtc, tz }).map((l) => (
+        <AppText key={l} variant="callout" color="text.secondary" numeric>
+          {l}
+        </AppText>
+      ))}
+      {conflicts.map((c) => {
+        const key = c.kind === 'name' ? 'name' : c.slotId;
+        const t = conflictText(c, nameOf);
+        const pick = picks[key] ?? 'theirs';
+        return (
+          <View key={key} style={{ gap: theme.space['2'] }}>
+            <AppText variant="headline">{t.title}</AppText>
+            <ChipRow>
+              <Chip label={`${EDITOR_COPY.mine}: ${t.mine}`} selected={pick === 'mine'} onPress={() => { onPick(key, 'mine'); }} />
+              <Chip label={`${EDITOR_COPY.theirs}: ${t.theirs}`} selected={pick === 'theirs'} onPress={() => { onPick(key, 'theirs'); }} />
+            </ChipRow>
+          </View>
+        );
+      })}
+      <PrimaryButton label={EDITOR_COPY.keepBoth} onPress={onKeepBoth} />
+      <DangerTextButton label={EDITOR_COPY.discardMine} onPress={onDiscard} />
+    </ScrollView>
+  );
+}

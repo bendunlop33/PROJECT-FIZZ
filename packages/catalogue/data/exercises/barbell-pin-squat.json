@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-pin-squat",
+  "tier": "rich",
+  "name": "Pin squat",
+  "aliases": ["Barbell pin squat", "Squat from pins", "Dead-stop squat", "Anderson squat", "Bottom-up squat"],
+  "family": "squat",
+  "movementPattern": "squat",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "spinal_erectors", "core"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 150,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Set the pins at your chosen squat depth",
+      "Get under the bar in a full squat",
+      "Bar on your upper back, feet set",
+      "Brace hard before you push"
+    ],
+    "execution": [
+      "Drive up from a dead stop",
+      "Push your back into the bar",
+      "Stand up fully, then lower to the pins",
+      "Let the bar settle before the next rep"
+    ],
+    "faults": [
+      "Don't bounce the bar off the pins",
+      "Don't let your hips shoot up first",
+      "Don't lose your brace at the bottom"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Work inside a power rack. The pins or safety straps hold the bar at the bottom, so you can set it down there if a rep fails.",
+      "Check both pins are at the same hole and fully locked before loading the bar.",
+      "Getting into position under a bar at the bottom of a squat is awkward; practise with an empty bar first.",
+      "Starting from a dead stop is harder than a normal squat, so use less weight than your usual squat. Logged as total bar weight.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "barbell-box-squat", "name": "Box squat", "reason": "A box gives a set depth with less awkward setup." },
+      { "key": "barbell-paused-back-squat", "name": "Paused back squat", "reason": "A pause at the bottom without the dead-stop start." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Lower pin height", "reason": "A deeper start makes the drive harder. Record pin height as a modifier." }
+    ],
+    "substitutions": [
+      { "key": "barbell-paused-back-squat", "name": "Paused back squat", "reason": "Same goal of strength out of the bottom with no rebound." },
+      { "key": "barbell-back-squat", "name": "Back squat", "reason": "The full lift; loads aren't comparable." },
+      { "key": "smith-machine-squat", "name": "Smith machine squat", "reason": "Squat with built-in catches; can also be started from the stops." },
+      { "key": "barbell-front-squat", "name": "Front squat", "reason": "More upright squat with the bar in front." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right, rack uprights and pins drawn lightly so the bar resting on the pins is visible at the bottom.",
+    "keyPositions": [
+      {
+        "label": "Bottom on pins",
+        "describe": "Bar resting on the pins at about parallel depth, figure under it in a braced squat: bar on the upper back, hands just outside the shoulders, heels down, chest up.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 40, "kneeFlexion": 110, "hipFlexion": 110 }
+      },
+      {
+        "label": "Standing",
+        "describe": "Standing tall with the bar on the upper back, hips and knees straight.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 5, "kneeFlexion": 0, "hipFlexion": 5 }
+      }
+    ],
+    "ikHints": ["Bar stays over the middle of the foot", "Feet fixed on the floor"],
+    "barPath": "Straight up and down over the mid-foot, stopping on the pins at the bottom",
+    "tempo": { "downMs": 1800, "holdMs": 1000, "upMs": 1200 },
+    "props": ["barbell_loaded", "power_rack_with_pins"],
+    "emphasise": [
+      "Bar comes to a full stop on the pins",
+      "Hips and chest rise together",
+      "Brace before the drive"
+    ],
+    "doNotShow": ["Bar bouncing off the pins", "Hips rising before the chest", "Rounded back"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/pin-squat/",
+      "title": "StrengthLog: Pin Squat",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-3]; cues.execution[0,2-3]"
+    },
+    {
+      "url": "https://nfpt.com/10-best-exercises-to-build-a-better-squat/",
+      "title": "NFPT: 10 best exercises to build a better squat",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[0] (squatting up from a dead stop); variations.substitutions[0]",
+      "note": "Cited from the research file (exercise-catalogue-expansion [NFPT2]); not re-read in this pass."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "aliases",
+      "note": "'Anderson squat' is usually a squat started from pins at the bottom, which is this entry; some coaches use 'pin squat' for lowering to the pins and pausing instead. Both are covered here, but Ben may want them split."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

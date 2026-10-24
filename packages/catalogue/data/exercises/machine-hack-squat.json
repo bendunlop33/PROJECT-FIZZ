@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-hack-squat",
+  "tier": "basic",
+  "name": "Hack squat",
+  "aliases": ["Machine hack squat", "Hack squat machine", "Plate-loaded hack squat", "Sled hack squat"],
+  "family": "hack_squat",
+  "movementPattern": "squat",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "hamstrings"],
+  "compatibleEquipment": ["plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

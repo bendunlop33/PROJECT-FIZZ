@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-floor-press",
+  "tier": "rich",
+  "name": "Dumbbell floor press",
+  "aliases": ["DB floor press", "Floor press (dumbbell)", "Dumbbell floor chest press", "Floor dumbbell press"],
+  "family": "bench_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest"],
+  "secondaryMuscles": ["triceps", "front_delts"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "implements": 2,
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Sit with the dumbbells on your thighs",
+      "Lie back, bringing them to your chest",
+      "Knees bent, feet flat on the floor"
+    ],
+    "execution": [
+      "Press both dumbbells to straight arms",
+      "Lower until your upper arms touch the floor",
+      "Pause briefly; don't bounce",
+      "Press back up over your chest"
+    ],
+    "faults": [
+      "Don't crash your elbows into the floor",
+      "Don't flare your elbows to 90°",
+      "Don't let your wrists bend back"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "No spotter is needed: the floor stops the weights. Still bring them to your chest and roll up to sit before putting them down.",
+      "Use a mat under the elbows and upper back.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-push-up", "name": "Push-up", "reason": "Same pattern with no equipment." }
+    ],
+    "progressions": [
+      { "key": "dumbbell-bench-press", "name": "Dumbbell bench press", "reason": "Full range on a bench." },
+      { "key": "dumbbell-single-arm-bench-press", "name": "Single-arm dumbbell bench press", "reason": "One side at a time adds trunk work." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-bench-press", "name": "Dumbbell bench press", "reason": "Same press with a bigger range when a bench is free." },
+      { "key": null, "name": "Barbell floor press", "reason": "Same floor press with a bar; needs a rack." },
+      { "key": "barbell-pin-press", "name": "Pin press", "reason": "Dead-stop barbell press for lockout strength." },
+      { "key": "bodyweight-push-up", "name": "Push-up", "reason": "No kit at all." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, head on the left. The upper arm resting on the floor at the bottom must be clearly visible.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Lying on the floor, knees bent, feet flat. Dumbbells held over the chest with straight arms.",
+        "approxAnglesDeg": { "shoulderFlexion": 90, "elbowFlexion": 5, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Upper arms resting on the floor about 45° from the body, elbows bent near 90°, forearms vertical. Dumbbells just above the chest.",
+        "approxAnglesDeg": { "shoulderFlexion": 0, "elbowFlexion": 90, "kneeFlexion": 90 }
+      }
+    ],
+    "ikHints": ["Back, hips and feet stay on the floor"],
+    "barPath": "Dumbbells move straight up and down over the chest",
+    "tempo": { "downMs": 1500, "holdMs": 500, "upMs": 1000 },
+    "props": ["floor_mat", "dumbbell_pair"],
+    "emphasise": [
+      "Upper arms come to rest on the floor",
+      "Brief pause, then press",
+      "Forearms stay vertical"
+    ],
+    "doNotShow": ["Elbows bouncing off the floor", "Arms flared straight out to the sides"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/dumbbell-floor-press/",
+      "title": "StrengthLog: Dumbbell Floor Press",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0-1,3]; primaryMuscles; secondaryMuscles"
+    },
+    {
+      "url": "https://www.garagegymreviews.com/floor-press-exercise",
+      "title": "Garage Gym Reviews: Floor press exercise",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1-2] (arms touch the floor, then full lockout)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

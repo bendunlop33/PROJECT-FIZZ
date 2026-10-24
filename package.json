@@ -1,0 +1,47 @@
+{
+  "name": "project-fizz",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "postinstall": "patch-package --error-on-fail --error-on-warn",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p apps/mobile/tsconfig.json",
+    "lint": "node --max-old-space-size=5120 node_modules/eslint/bin/eslint.js .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:perf": "vitest run --config vitest.perf.config.ts --silent=false",
+    "test:perf:jitless": "vitest run --config vitest.perf.config.ts packages/persistence/test/backup.perf.test.ts packages/persistence/test/data-domains.perf.test.ts apps/mobile/test/backup.perf.test.ts apps/mobile/test/progress.perf.test.ts apps/mobile/test/progress-exercise.perf.test.ts apps/mobile/test/app-paths.perf.test.ts --pool=forks --execArgv=--jitless --testTimeout=1200000 --silent=false",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run catalogue:validate && npm run guide:check -- --all --verify && npm run guide:motion -- --all",
+    "check:migrations": "node --experimental-transform-types --import ./packages/catalogue/scripts/ts-hooks.ts scripts/check-migrations.ts",
+    "check:entitlements": "node scripts/check-entitlements.ts --prebuild apps/mobile/ios",
+    "catalogue:index": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/build-index.ts",
+    "catalogue:validate": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/validate-catalogue.ts",
+    "guide:render": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/guide-render.ts",
+    "guide:check": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/guide-check.ts",
+    "guide:motion": "node --import ./packages/catalogue/scripts/ts-hooks.ts packages/catalogue/scripts/guide-motion.ts"
+  },
+  "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/parser": "7.29.9",
+    "@babel/plugin-transform-modules-commonjs": "7.29.7",
+    "@babel/plugin-transform-react-jsx": "7.29.7",
+    "@babel/preset-typescript": "7.29.7",
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.19.1",
+    "eslint": "10.12.0",
+    "patch-package": "8.0.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3"
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-renegade-row",
+  "tier": "rich",
+  "name": "Renegade row",
+  "aliases": ["Renegade rows", "Plank row", "Plank dumbbell row", "Dumbbell renegade row", "DB renegade row"],
+  "family": "row",
+  "movementPattern": "core",
+  "mechanic": "compound",
+  "primaryMuscles": ["core", "lats", "upper_back"],
+  "secondaryMuscles": ["obliques", "rear_delts", "biceps", "front_delts"],
+  "compatibleEquipment": ["dumbbells"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "implements": 2,
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Two hex dumbbells, shoulder width apart",
+      "High plank, hands on the handles",
+      "Feet wider than hip width"
+    ],
+    "execution": [
+      "Brace like a plank, hips level",
+      "Row one dumbbell to your hip",
+      "Set it down softly, then switch",
+      "Push the other hand into the floor"
+    ],
+    "faults": [
+      "Don't twist your hips to lift",
+      "Don't let your hips sag or pike",
+      "Don't drop the dumbbell back down"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use hex dumbbells that sit flat; round ones can roll under your hand and wrist.",
+      "A wider foot stance makes it easier to keep the hips level. Start light; the trunk limits the load, not the back.",
+      "Keep the wrists straight over the handles.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Kneeling renegade row", "reason": "Knees down shortens the lever so the row is easier to control." },
+      { "key": "bodyweight-plank", "name": "Plank", "reason": "Build the plank hold before lifting a hand." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Renegade row with push-up", "reason": "A push-up between rows adds pressing work." },
+      { "key": null, "name": "Narrow-stance renegade row", "reason": "Feet closer together makes it harder to stay square." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-one-arm-row", "name": "One-arm dumbbell row", "reason": "Same row with bench support, so you can go heavier." },
+      { "key": "dumbbell-three-point-row", "name": "Three-point dumbbell row", "reason": "One-arm row with some trunk demand but a stable base." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Anti-rotation core work without the row." },
+      { "key": "bodyweight-bear-crawl", "name": "Bear crawl", "reason": "Moving plank that also resists twisting." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "View from in front of the head, camera a little above shoulder height, so the level hips and the rowing elbow are both visible. Dumbbells on the floor under the shoulders.",
+    "keyPositions": [
+      {
+        "label": "Plank",
+        "describe": "High plank on two hex dumbbells under the shoulders, arms straight. Feet wider than hip width, body straight from head to heels, hips level.",
+        "approxAnglesDeg": { "elbowFlexion": 0, "hipFlexion": 0, "trunkRotation": 0 }
+      },
+      {
+        "label": "Row",
+        "describe": "One dumbbell rowed up beside the lower ribs, elbow close to the side. Other arm straight and pushing into its dumbbell. Hips still level and square to the floor.",
+        "approxAnglesDeg": { "elbowFlexion": 100, "hipFlexion": 0, "trunkRotation": 5 }
+      }
+    ],
+    "ikHints": ["Supporting hand and both feet stay fixed", "Hips stay level with the floor"],
+    "tempo": { "downMs": 1200, "holdMs": 300, "upMs": 1000 },
+    "props": ["dumbbell_hex_pair", "floor_mat"],
+    "emphasise": [
+      "Hips stay level while one hand lifts",
+      "Elbow travels toward the hip",
+      "Wide feet for a stable base"
+    ],
+    "doNotShow": ["Hips rotating open", "Round dumbbells", "Dumbbell dropped back to the floor"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/renegade-row/",
+      "title": "StrengthLog: Renegade Row",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1-2]; cues.execution[0-2]; primaryMuscles (lats, upper back); secondaryMuscles (obliques, biceps)"
+    },
+    {
+      "url": "https://themanual.com/fitness/how-to-do-the-renegade-row",
+      "title": "The Manual: How to do the renegade row",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[0-1]; cues.faults[0-1]; safety.notes[1-2]; variations.regressions[0]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "movementPattern",
+      "note": "Filed as core (the expansion research groups it with core work). It is also a horizontal pull; Ben may prefer horizontal_pull."
+    },
+    {
+      "field": "safety.notes[0]",
+      "note": "Hex dumbbells come from the expansion research; neither source checked names them, they only say to use stable weights."
+    },
+    {
+      "field": "laterality",
+      "note": "Two dumbbells, rowing alternately, logged like an alternating curl (bilateral, two implements). Whether reps count each arm or each pair is not settled."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

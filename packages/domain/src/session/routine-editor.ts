@@ -1,0 +1,709 @@
+import type { EquipmentInstance, Exercise, Load, LoadConvention, Measurement, RepRange, RestSetting, RoutineExercise, SetTemplate, SetType, WeightUnit } from '@fizz/schemas';
+
+import { formatNumber, loadText, type LoadContext } from '../display';
+import { addedWeightEquipment } from '../added-weight';
+import { builtInRepRange, ruleCategory } from '../default-rule';
+import { getAchievableLoads, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
+import { equipmentForExercise } from '../exercise-equipment';
+import { resolveRestPreset } from '../rest';
+import type { StepTarget } from './active-view';
+import { boundWords, droppedWords } from './fit-words';
+import { normaliseRoutineExercises, ROUTINE_MAX_SETS, SUPERSET_MAX, type RoutineEdit } from './library';
+import { defaultMain } from './routines';
+import { CARDIO_DEFAULT_S } from '../cardio';
+import type { HistorySession } from '../progression';
+
+/**
+ * The workout editor's changes (routines.md §A2.3, v0.1 §2.3, §4.3). Pure:
+ * each takes the exercises as they are in the editor and returns the next
+ * list (normalised: order, contiguous supersets). Nothing is saved until
+ * `Save` (`editRoutine` / `createRoutine`). Loads are `Auto` (null) unless
+ * Ben pins a Fixed load; a replaced exercise's loads go back to `Auto`,
+ * never converted (rule 4).
+ */
+
+export type EditorList = readonly RoutineExercise[];
+
+const DEFAULT_REPS: RepRange = { min: 8, max: 10 };
+const DEFAULT_WARMUP_REPS: RepRange = { min: 5, max: 5 };
+const DEFAULT_WORK_S = 45;
+
+function template(newId: () => string, setType: SetType, measurement: Measurement): SetTemplate {
+  return {
+    id: newId(),
+    setType,
+    targetLoad: null,
+    targetReps: measurement === 'duration' || measurement === 'cardio' ? null : setType === 'warmup' ? { ...DEFAULT_WARMUP_REPS } : { ...DEFAULT_REPS },
+    targetDurationS: measurement === 'cardio' ? CARDIO_DEFAULT_S : measurement === 'duration' ? DEFAULT_WORK_S : null,
+    targetRpe: null,
+    targetRir: null,
+    restOverrideS: null,
+  };
+}
+
+/**
+ * `＋ Add exercise`: at the end, with `shape` (the add sheet's `Sets` count
+ * and the §10.1 defaults, `defaultSlotShape`); without one, three working
+ * sets `Auto × 8–10` (or `0:45` for a timed one). Loads are `Auto`.
+ */
+export function addExercise(list: EditorList, exercise: { id: string; measurement: Measurement }, newId: () => string, shape?: SlotShapeInput): RoutineExercise[] {
+  const id = newId();
+  const count = shape === undefined ? 3 : clampCount(shape.workingSets, SLOT_SET_LIMITS.working.min, SLOT_SET_LIMITS.working.max);
+  const warmups = shape === undefined ? 0 : clampCount(shape.warmups, SLOT_SET_LIMITS.warmups.min, SLOT_SET_LIMITS.warmups.max);
+  const timed = exercise.measurement === 'duration' || exercise.measurement === 'cardio';
+  const working = (): SetTemplate => {
+    const t = template(newId, 'working', exercise.measurement);
+    if (shape === undefined) return t;
+    if (exercise.measurement === 'cardio' && shape.distanceM !== undefined) {
+      // Cardio from the add sheet: its time and distance as set there (either may be empty), no effort target.
+      const c: SetTemplate = { ...t, targetReps: null, targetDurationS: shape.durationS, targetRpe: null, targetRir: null };
+      if (shape.distanceM !== null) c.targetDistanceM = shape.distanceM;
+      return c.targetDurationS === null && c.targetDistanceM === undefined ? t : c;
+    }
+    return { ...t, targetReps: timed || shape.reps === null ? t.targetReps : { ...shape.reps }, targetDurationS: timed ? (shape.durationS ?? t.targetDurationS) : null, targetRpe: shape.targetRpe, targetRir: shape.targetRir ?? null };
+  };
+  const slot: RoutineExercise = {
+    id,
+    exerciseId: exercise.id,
+    equipmentId: null,
+    order: list.length,
+    supersetGroup: null,
+    setTemplates: [...Array.from({ length: warmups }, () => template(newId, 'warmup', exercise.measurement)), ...Array.from({ length: count }, working)],
+    restBySetType: {},
+    transitionRestS: null,
+    progressionRuleId: null,
+  };
+  return normaliseRoutineExercises([...list, slot]);
+}
+
+// ---------------------------------------------------------------------------
+// Set shape (exercise-library §10, routines WL11): `Sets [−] 3 [+]`, `Warm-ups`, `Reps`, `Target RPE`
+
+/** Stepper limits (§10.1). A slot already above the working max keeps its count; `+` is then off. */
+export const SLOT_SET_LIMITS = { working: { min: 1, max: 10 }, warmups: { min: 0, max: 6 } } as const;
+/** The default number of working sets when an exercise is added anywhere (§10.1). */
+export const DEFAULT_WORKING_SETS_ON_ADD = 3;
+
+const clampCount = (n: number, min: number, max: number): number => Math.max(min, Math.min(max, Math.round(n)));
+
+/** What a slot is created with: the add sheet's count and the §10.1 defaults. */
+export interface SlotShapeInput {
+  workingSets: number;
+  warmups: number;
+  /** Null for a timed exercise (it has `durationS`), or to keep the default. */
+  reps: RepRange | null;
+  durationS: number | null;
+  /** Cardio (review cardio S1): the distance target from the add sheet (null: none); with it, `durationS` null means no time target. Absent elsewhere. */
+  distanceM?: number | null;
+  targetRpe: number | null;
+  targetRir?: number | null;
+}
+
+/**
+ * The §10.1 default shape for an exercise: 3 working sets, no warm-ups, the
+ * built-in rule's rep range for it (else 8–12), `0:45` for a timed one, no
+ * target RPE. `workingSets` overrides the count (the sheet's bar).
+ */
+export function defaultSlotShape(
+  exercise: Pick<Exercise, 'movementPattern' | 'measurement' | 'defaultLoadConvention' | 'compatibleEquipment'> & Partial<Pick<Exercise, 'mechanic' | 'family'>>,
+  ctx: { equipmentKind?: EquipmentInstance['kind'] | null; workingSets?: number } = {},
+): SlotShapeInput {
+  const cardio = exercise.measurement === 'cardio';
+  const timed = exercise.measurement === 'duration' || cardio;
+  const reps = timed ? null : builtInRepRange(ruleCategory(exercise, ctx.equipmentKind ?? exercise.compatibleEquipment[0] ?? null, exercise.defaultLoadConvention));
+  return {
+    // Cardio (19 Oct): one 10-minute set unless the bar says otherwise.
+    workingSets: clampCount(ctx.workingSets ?? (cardio ? 1 : DEFAULT_WORKING_SETS_ON_ADD), SLOT_SET_LIMITS.working.min, SLOT_SET_LIMITS.working.max),
+    warmups: 0,
+    reps,
+    durationS: cardio ? CARDIO_DEFAULT_S : timed ? DEFAULT_WORK_S : null,
+    targetRpe: null,
+  };
+}
+
+/** What the card's `SetShapeControl` shows (§10.5). */
+export interface SlotShapeView {
+  /** Every non-warm-up set. */
+  workingSets: number;
+  warmups: number;
+  reps: RepRange | 'mixed' | null;
+  durationS: number | 'mixed' | null;
+  targetRpe: number | 'mixed' | null;
+  targetRir: number | 'mixed' | null;
+  /** Top / Back-off / Drop sets, a Fixed load, a set's own rest, or working sets that differ: `Each set ▾` opens by default. */
+  hasSpecialSets: boolean;
+  /** Stepper targets; null at a limit (the button is dimmed). */
+  setsDown: number | null;
+  setsUp: number | null;
+  warmupsDown: number | null;
+  warmupsUp: number | null;
+}
+
+const isWarmup = (t: Pick<SetTemplate, 'setType'>): boolean => t.setType === 'warmup';
+
+/** The sets `Reps` and `Target RPE` read and write: the plain working sets, else (a top/back-off slot) every non-warm-up set. */
+function shapeTargets(slot: Pick<RoutineExercise, 'setTemplates'>): SetTemplate[] {
+  const plain = slot.setTemplates.filter((t) => t.setType === 'working');
+  return plain.length > 0 ? plain : slot.setTemplates.filter((t) => !isWarmup(t));
+}
+
+function common<T>(values: readonly T[], same: (a: T, b: T) => boolean): T | 'mixed' | null {
+  const first = values[0];
+  if (first === undefined) return null;
+  return values.every((v) => same(v, first)) ? first : 'mixed';
+}
+
+const sameRange = (a: RepRange | null, b: RepRange | null): boolean => (a === null || b === null ? a === b : a.min === b.min && a.max === b.max);
+
+export function slotShapeOf(slot: Pick<RoutineExercise, 'setTemplates'>): SlotShapeView {
+  const working = slot.setTemplates.filter((t) => !isWarmup(t));
+  const warmups = slot.setTemplates.length - working.length;
+  const targets = shapeTargets(slot);
+  const nonWarm = working;
+  const reps = common(nonWarm.map((t) => t.targetReps), sameRange);
+  const durationS = common(nonWarm.map((t) => t.targetDurationS), (a, b) => a === b);
+  const targetRpe = common(targets.map((t) => t.targetRpe), (a, b) => a === b);
+  const targetRir = common(targets.map((t) => t.targetRir), (a, b) => a === b);
+  const special =
+    working.some((t) => t.setType !== 'working') ||
+    slot.setTemplates.some((t) => t.targetLoad !== null || t.restOverrideS !== null) ||
+    reps === 'mixed' ||
+    durationS === 'mixed' ||
+    targetRpe === 'mixed' ||
+    targetRir === 'mixed';
+  const total = slot.setTemplates.length;
+  const wMax = Math.max(SLOT_SET_LIMITS.working.max, working.length);
+  return {
+    workingSets: working.length,
+    warmups,
+    reps: reps === 'mixed' ? 'mixed' : reps === null ? null : { ...reps },
+    durationS,
+    targetRpe,
+    targetRir,
+    hasSpecialSets: special,
+    setsDown: working.length > SLOT_SET_LIMITS.working.min ? working.length - 1 : null,
+    setsUp: working.length < wMax && working.length < SLOT_SET_LIMITS.working.max && total < ROUTINE_MAX_SETS ? working.length + 1 : null,
+    warmupsDown: warmups > SLOT_SET_LIMITS.warmups.min ? warmups - 1 : null,
+    warmupsUp: warmups < SLOT_SET_LIMITS.warmups.max && total < ROUTINE_MAX_SETS ? warmups + 1 : null,
+  };
+}
+
+/**
+ * `Sets [−] N [+]` (§10.5): `+` appends copies of the last non-warm-up set
+ * (its type, reps, load mode and RPE; not its own rest); `−` removes
+ * non-warm-up sets from the end. Clamped to 1–10 (a slot already above 10
+ * may only go down) and the slot's 30-set cap. Never reorders other sets.
+ */
+export function setWorkingSetCount(list: EditorList, slotId: string, n: number, newId: () => string): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const working = e.setTemplates.filter((t) => !isWarmup(t));
+    const max = Math.max(SLOT_SET_LIMITS.working.max, working.length);
+    let want = clampCount(n, SLOT_SET_LIMITS.working.min, max);
+    if (want > working.length) want = Math.min(want, SLOT_SET_LIMITS.working.max, working.length + (ROUTINE_MAX_SETS - e.setTemplates.length));
+    if (want === working.length) return e;
+    if (want < working.length) {
+      const drop = new Set(working.slice(want).map((t) => t.id));
+      return { ...e, setTemplates: e.setTemplates.filter((t) => !drop.has(t.id)) };
+    }
+    const last = working[working.length - 1];
+    const extra = Array.from({ length: want - working.length }, (): SetTemplate => (last === undefined ? template(newId, 'working', 'reps') : { ...last, id: newId(), restOverrideS: null }));
+    return { ...e, setTemplates: [...e.setTemplates, ...extra] };
+  });
+}
+
+/**
+ * `Warm-ups [−] N [+]` (§10.5): `+` inserts before the first non-warm-up set,
+ * copying the last warm-up (else `Auto × 5`); `−` removes the last warm-up.
+ * Clamped to 0–5 and the slot's 30-set cap.
+ */
+export function setWarmupCount(list: EditorList, slotId: string, n: number, measurement: Measurement, newId: () => string): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const warm = e.setTemplates.filter(isWarmup);
+    let want = clampCount(n, SLOT_SET_LIMITS.warmups.min, SLOT_SET_LIMITS.warmups.max);
+    if (want > warm.length) want = Math.min(want, warm.length + (ROUTINE_MAX_SETS - e.setTemplates.length));
+    if (want === warm.length) return e;
+    if (want < warm.length) {
+      const drop = new Set(warm.slice(want).map((t) => t.id));
+      return { ...e, setTemplates: e.setTemplates.filter((t) => !drop.has(t.id)) };
+    }
+    const like = warm[warm.length - 1];
+    const extra = Array.from({ length: want - warm.length }, (): SetTemplate => (like === undefined ? template(newId, 'warmup', measurement) : { ...like, id: newId(), restOverrideS: null }));
+    const at = e.setTemplates.findIndex((t) => !isWarmup(t));
+    const sets = at < 0 ? [...e.setTemplates, ...extra] : [...e.setTemplates.slice(0, at), ...extra, ...e.setTemplates.slice(at)];
+    return { ...e, setTemplates: sets };
+  });
+}
+
+/** `Reps` (or `Work time`) for the slot (§10.5): every plain working set (a top/back-off slot: every non-warm-up set). Loads kept. */
+export function setSlotReps(list: EditorList, slotId: string, value: { reps: RepRange } | { durationS: number } | { cardio: { durationS: number | null; distanceM: number | null } }): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const ids = new Set(shapeTargets(e).map((t) => t.id));
+    return {
+      ...e,
+      setTemplates: e.setTemplates.map((t): SetTemplate => {
+        if (!ids.has(t.id)) return t;
+        if ('reps' in value) return { ...t, targetReps: { ...value.reps }, targetDurationS: null };
+        if ('durationS' in value) return { ...t, targetReps: null, targetDurationS: Math.max(1, Math.round(value.durationS)) };
+        // Cardio (review S1): time and distance; a set needs one of them, so neither leaves the set as it was.
+        const c = value.cardio;
+        if (c.durationS === null && c.distanceM === null) return t;
+        const next: SetTemplate = { ...t, targetReps: null, targetDurationS: c.durationS === null ? null : Math.max(1, Math.round(c.durationS)) };
+        if (c.distanceM === null) delete next.targetDistanceM;
+        else next.targetDistanceM = c.distanceM;
+        return next;
+      }),
+    };
+  });
+}
+
+/** `Target RPE` / `Target RIR` (§10.5, EffortSheet): every plain working set; null = `None`. Writes one scale and clears the other. */
+export function setSlotTargetRpe(list: EditorList, slotId: string, value: number | null, scale: 'rpe' | 'rir' = 'rpe'): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const ids = new Set(shapeTargets(e).map((t) => t.id));
+    return { ...e, setTemplates: e.setTemplates.map((t) => (!ids.has(t.id) ? t : scale === 'rpe' ? { ...t, targetRpe: value, targetRir: null } : { ...t, targetRir: value, targetRpe: null })) };
+  });
+}
+
+/** The EffortSheet's choices (§9.91): `None 6 7 7.5 8 8.5 9 9.5 10`, RIR `None 0 1 2 3 4`. */
+export const EFFORT_CHOICES: { rpe: readonly number[]; rir: readonly number[] } = { rpe: [6, 7, 7.5, 8, 8.5, 9, 9.5, 10], rir: [0, 1, 2, 3, 4] };
+
+/** `Remove` (exercise `⋯`). */
+export function removeExercise(list: EditorList, slotId: string): RoutineExercise[] {
+  return normaliseRoutineExercises(list.filter((e) => e.id !== slotId));
+}
+
+/** `Move up` / `Move down` (also VoiceOver actions). Leaves a superset when it moves out of its run. */
+export function moveExercise(list: EditorList, slotId: string, how: 'up' | 'down'): RoutineExercise[] {
+  const i = list.findIndex((e) => e.id === slotId);
+  const j = how === 'up' ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= list.length) return [...list];
+  const next = [...list];
+  const a = next[i];
+  const b = next[j];
+  if (a === undefined || b === undefined) return [...list];
+  // Moving past a neighbour in another group (or none) takes the moved one out of its own group.
+  const moved: RoutineExercise = a.supersetGroup !== null && a.supersetGroup === b.supersetGroup ? a : { ...a, supersetGroup: null };
+  next[i] = b;
+  next[j] = moved;
+  return normaliseRoutineExercises(next);
+}
+
+/**
+ * `Replace` (exercise `⋯`, §4.3): the new exercise keeps set types, reps,
+ * rest, `Main` and its superset; loads go back to `Auto` and the item and
+ * built-in rule are cleared (never converted, rule 4).
+ */
+export function replaceExercise(list: EditorList, slotId: string, to: { id: string; measurement: Measurement }): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const toTimed = to.measurement === 'duration' || to.measurement === 'cardio';
+    const sameMeasure = e.setTemplates.every((t) => (toTimed ? t.targetDurationS !== null : t.targetReps !== null));
+    return {
+      ...e,
+      exerciseId: to.id,
+      equipmentId: null,
+      progressionRuleId: null,
+      setTemplates: e.setTemplates.map((t) =>
+        sameMeasure
+          ? { ...t, targetLoad: null }
+          : { ...t, targetLoad: null, targetReps: toTimed ? null : { ...DEFAULT_REPS }, targetDurationS: to.measurement === 'cardio' ? CARDIO_DEFAULT_S : toTimed ? DEFAULT_WORK_S : null },
+      ),
+    };
+  });
+}
+
+/**
+ * `+ Warm-up`, `+ Working`, `+ More` (Top, Back-off, Drop): a copy of the
+ * last set of that type (its own rest override dropped), else sensible
+ * empty targets. Warm-ups go before the first non-warm-up; others at the end.
+ */
+export function addSet(list: EditorList, slotId: string, setType: SetType, measurement: Measurement, newId: () => string): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId || e.setTemplates.length >= ROUTINE_MAX_SETS) return e;
+    const like = [...e.setTemplates].reverse().find((t) => t.setType === setType);
+    const added: SetTemplate = like ? { ...like, id: newId(), restOverrideS: null } : template(newId, setType, measurement);
+    if (setType !== 'warmup') return { ...e, setTemplates: [...e.setTemplates, added] };
+    const at = e.setTemplates.findIndex((t) => t.setType !== 'warmup');
+    const sets = at < 0 ? [...e.setTemplates, added] : [...e.setTemplates.slice(0, at), added, ...e.setTemplates.slice(at)];
+    return { ...e, setTemplates: sets };
+  });
+}
+
+export type SetPatch = Partial<Pick<SetTemplate, 'setType' | 'targetLoad' | 'targetReps' | 'targetDurationS' | 'restOverrideS' | 'targetRpe' | 'targetRir'>> & {
+  /** (Ben, 23 Oct: one editor) A cardio set's distance; null clears it. */
+  targetDistanceM?: number | null;
+};
+
+/** A set's changes in the editor (type, load Auto/Fixed, reps range/exact, work time or distance, target effort, this set's rest). */
+export function updateSet(list: EditorList, slotId: string, setId: string, patch: SetPatch): RoutineExercise[] {
+  return list.map((e) =>
+    e.id !== slotId
+      ? e
+      : {
+          ...e,
+          setTemplates: e.setTemplates.map((t) => {
+            if (t.id !== setId) return t;
+            const { targetDistanceM, ...rest } = patch;
+            const next: SetTemplate = { ...t, ...rest };
+            if (targetDistanceM === null) delete next.targetDistanceM;
+            else if (targetDistanceM !== undefined) next.targetDistanceM = targetDistanceM;
+            return next;
+          }),
+        },
+  );
+}
+
+/** `Delete set`. The last set can't go this way: the editor asks `Remove Bench press from Push A?` instead. */
+export function deleteSet(list: EditorList, slotId: string, setId: string): { kind: 'ok'; list: RoutineExercise[] } | { kind: 'last_set' } {
+  const slot = list.find((e) => e.id === slotId);
+  if (slot === undefined) return { kind: 'ok', list: [...list] };
+  if (slot.setTemplates.length <= 1 && slot.setTemplates.some((t) => t.id === setId)) return { kind: 'last_set' };
+  return { kind: 'ok', list: list.map((e) => (e.id !== slotId ? e : { ...e, setTemplates: e.setTemplates.filter((t) => t.id !== setId) })) };
+}
+
+/** `Rest by set type` (§2.3): a preset for one set type, or null (`Use default`) so resolution falls through. */
+export function setRestBySetType(list: EditorList, slotId: string, setType: SetType, rest: RestSetting | null): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const others = Object.fromEntries(Object.entries(e.restBySetType).filter(([k]) => k !== setType)) as RoutineExercise['restBySetType'];
+    return { ...e, restBySetType: rest === null ? others : { ...others, [setType]: rest } };
+  });
+}
+
+/**
+ * A slot's rest after one set type as it resolves at Start (rest-state §4.2): the workout's own rest for that type,
+ * else the exercise's default, else Ben's default. `own`: the workout sets it (a step or `Default` changes it).
+ */
+export function slotRestOf(slot: Pick<RoutineExercise, 'restBySetType'>, setType: SetType, ctx: { exerciseName: string; exerciseDefaultRestS: number | null; globalDefault: RestSetting }): { seconds: number; own: boolean } {
+  const own = slot.restBySetType[setType] ?? null;
+  const r = resolveRestPreset({ setType, exerciseName: ctx.exerciseName, setOverrideS: null, routineSetTypePreset: own, exerciseDefaultS: ctx.exerciseDefaultRestS, globalDefault: ctx.globalDefault });
+  return { seconds: r.seconds, own: own !== null };
+}
+
+/** Rest steps in the editor's pop-up: 15 s, 0:00–15:00 (Ben, 23 Oct: one editor; the builder's stepper size). */
+export const SLOT_REST_STEP_S = 15;
+export const SLOT_REST_MAX_S = 900;
+
+/** `[−] 2:00 [+]` for one set type: 15 s from what it resolves to now, written as the workout's own rest (0:00–15:00). */
+export function stepSlotRest(list: EditorList, slotId: string, setType: SetType, dir: 1 | -1, ctx: { exerciseName: string; exerciseDefaultRestS: number | null; globalDefault: RestSetting }): RoutineExercise[] {
+  const slot = list.find((e) => e.id === slotId);
+  if (slot === undefined) return [...list];
+  const now = slotRestOf(slot, setType, ctx).seconds;
+  const next = Math.max(0, Math.min(SLOT_REST_MAX_S, now + dir * SLOT_REST_STEP_S));
+  if (next === now) return [...list];
+  return setRestBySetType(list, slotId, setType, { seconds: next });
+}
+
+/** `Main` (WL9): Ben's choice, written down. `current` is what the chip shows now (stored or the rule's). */
+export function setMain(list: EditorList, slotId: string, main: boolean): RoutineExercise[] {
+  return list.map((e) => (e.id === slotId ? { ...e, main } : e));
+}
+
+/** A slot's load convention: `added` for a bodyweight exercise saved with `Add weight` (Ben, 18 Oct), else the exercise's own. */
+export function slotLoadConvention(slot: Pick<RoutineExercise, 'addedWeight'>, exerciseDefault: LoadConvention): LoadConvention {
+  return slot.addedWeight === true && exerciseDefault === 'bodyweight' ? 'added' : exerciseDefault;
+}
+
+/**
+ * `Add weight` on a bodyweight exercise (Ben, 18 Oct): its sets log the mass
+ * held or worn. A Fixed load in the other convention goes back to Auto, so a
+ * saved workout never mixes the two.
+ */
+export function setAddedWeight(list: EditorList, slotId: string, on: boolean): RoutineExercise[] {
+  const keep = on ? 'added' : 'bodyweight';
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const setTemplates = e.setTemplates.map((t) => (t.targetLoad !== null && t.targetLoad.convention !== keep ? { ...t, targetLoad: null } : t));
+    const next: RoutineExercise = { ...e, setTemplates };
+    if (on) next.addedWeight = true;
+    else delete next.addedWeight;
+    return next;
+  });
+}
+
+/**
+ * The item a slot's Fixed loads step through in the editor: for a weighted
+ * bodyweight slot, the gym's dumbbells and plates (`addedWeightEquipment`);
+ * else `editorItemFor`.
+ */
+export function editorLoadItem(
+  slot: Pick<RoutineExercise, 'equipmentId' | 'addedWeight'>,
+  exercise: Pick<Exercise, 'defaultLoadConvention' | 'compatibleEquipment'>,
+  gym: { id: string; equipment: readonly EquipmentInstance[] },
+  unit: WeightUnit,
+): EquipmentInstance | null {
+  const item = editorItemFor(slot, exercise, gym.equipment);
+  if (slotLoadConvention(slot, exercise.defaultLoadConvention) !== 'added' || exercise.defaultLoadConvention !== 'bodyweight') return item;
+  return addedWeightEquipment(gym.equipment.filter((e) => e.availability === 'available'), unit, item, gym.id);
+}
+
+/** What each `Main` chip shows: Ben's stored choice, else the rule over the list as it is now. */
+export function editorMainFlags(list: EditorList, isCompound: (exerciseId: string) => boolean): boolean[] {
+  const rule = defaultMain(list, isCompound);
+  return list.map((e, i) => e.main ?? rule[i] ?? false);
+}
+
+/**
+ * `Superset with next` (§4.3): this exercise and the next become one
+ * superset (joining a group either is already in), up to 4 members.
+ * Null when there's no next exercise or the group would be too big.
+ */
+export function supersetWithNext(list: EditorList, slotId: string): RoutineExercise[] | null {
+  const i = list.findIndex((e) => e.id === slotId);
+  const a = list[i];
+  const b = list[i + 1];
+  if (a === undefined || b === undefined) return null;
+  if (a.supersetGroup !== null && a.supersetGroup === b.supersetGroup) return null;
+  const size = (label: string | null) => (label === null ? 1 : list.filter((e) => e.supersetGroup === label).length);
+  if (size(a.supersetGroup) + size(b.supersetGroup) > SUPERSET_MAX) return null;
+  const label = a.supersetGroup ?? b.supersetGroup ?? '#new';
+  const merged = list.map((e) => (e.id === a.id || e.id === b.id || (b.supersetGroup !== null && e.supersetGroup === b.supersetGroup) || (a.supersetGroup !== null && e.supersetGroup === a.supersetGroup) ? { ...e, supersetGroup: label } : e));
+  return normaliseRoutineExercises(merged);
+}
+
+/**
+ * A dragged exercise dropped on another (Ben, 23 Oct: one editor; workout-builder-v3 §2.3 drag): it leaves its own
+ * superset (a partner left alone stands alone), then goes in as its own round before or after the target's round,
+ * or (`onto`) joins the target's round as a superset (up to 4). Null for a drop on itself, a drop that changes
+ * nothing, or a superset that would be too big: the row springs back. Pure.
+ */
+export function dropRoutineSlot(list: EditorList, slotId: string, targetId: string, edge: 'before' | 'after' | 'onto'): RoutineExercise[] | null {
+  if (slotId === targetId) return null;
+  const moving = list.find((e) => e.id === slotId);
+  const target = list.find((e) => e.id === targetId);
+  if (moving === undefined || target === undefined) return null;
+  if (edge === 'onto' && moving.supersetGroup !== null && moving.supersetGroup === target.supersetGroup) return null;
+  const without = list.filter((e) => e.id !== slotId);
+  const at = without.findIndex((e) => e.id === targetId);
+  // The target's round: its whole superset run.
+  let start = at;
+  let end = at;
+  const label = target.supersetGroup;
+  if (label !== null) {
+    while (start > 0 && without[start - 1]?.supersetGroup === label) start -= 1;
+    while (end < without.length - 1 && without[end + 1]?.supersetGroup === label) end += 1;
+  }
+  let next: RoutineExercise[];
+  if (edge === 'onto') {
+    if (end - start + 2 > SUPERSET_MAX) return null;
+    const group = label ?? '#drop';
+    next = [...without.slice(0, end + 1).map((e, i) => (i >= start ? { ...e, supersetGroup: group } : e)), { ...moving, supersetGroup: group }, ...without.slice(end + 1)];
+  } else {
+    const alone: RoutineExercise = { ...moving, supersetGroup: null };
+    const i = edge === 'before' ? start : end + 1;
+    next = [...without.slice(0, i), alone, ...without.slice(i)];
+  }
+  const out = normaliseRoutineExercises(next);
+  const shape = (l: EditorList) => l.map((e) => `${e.id}:${e.supersetGroup ?? ''}`).join('|');
+  return shape(out) === shape(normaliseRoutineExercises(list)) ? null : out;
+}
+
+/** `Ungroup`: every member of this exercise's superset goes back to a plain exercise. */
+export function ungroup(list: EditorList, slotId: string): RoutineExercise[] {
+  const label = list.find((e) => e.id === slotId)?.supersetGroup ?? null;
+  if (label === null) return [...list];
+  return normaliseRoutineExercises(list.map((e) => (e.supersetGroup === label ? { ...e, supersetGroup: null } : e)));
+}
+
+// ---------------------------------------------------------------------------
+// Fixed loads (§2.3 set sheet)
+
+/**
+ * What a Fixed load will be at Start on this item (rule 4: never past its
+ * max; snapped toward easier): `Max here 30 kg each`, `At Start 27.5 kg each`,
+ * or a reason it can't be checked. Null when it's achievable as is. Saving
+ * is always allowed; Start fits it (ADR 0003 B1).
+ */
+export function fixedLoadNote(load: Load, eq: EquipmentInstance | null, display: LoadContext = eq): string | null {
+  if (eq === null || eq.kind === 'bodyweight_station') return null;
+  const r = roundToAvailableLoad(load, eq, 'easier');
+  if (!r.ok) return droppedWords(r.reason, { unit: load.unit });
+  if (r.exact && r.convertedRequest === null) return null;
+  const words = loadText(r.load, r.load.convention, display);
+  if (r.bounded !== null) return boundWords(r.bounded, words, loadDirection(eq.loadConvention) === 'assistance');
+  return `At Start ${words}`;
+}
+
+/**
+ * A load typed in the pop-up's Kg cell (Ben, 23 Oct: one editor): pinned as a Fixed load, rounded **down** to what this
+ * gym's item can load (rule 4: never past its max; toward easier on an assisted machine), with the line that says
+ * what moved (`At Start 27.5 kg each`, `Max here 30 kg each`). With no item here it is kept as typed (fitted at
+ * Start, as before). Never negative.
+ */
+export function typedFixedLoad(value: number, frame: { unit: WeightUnit; convention: LoadConvention }, eq: EquipmentInstance | null, display: LoadContext = eq): { load: Load; note: string | null } {
+  const typed: Load = { value: Math.max(0, value), unit: frame.unit, convention: frame.convention };
+  if (eq === null || eq.kind === 'bodyweight_station') return { load: typed, note: null };
+  const note = fixedLoadNote(typed, eq, display);
+  const r = roundToAvailableLoad(typed, eq, 'easier');
+  if (!r.ok || r.load.unit !== frame.unit) return { load: typed, note };
+  return { load: r.load, note: r.exact && r.convertedRequest === null ? null : note };
+}
+
+/** The new Fixed load's unit and convention: the item's at this gym, else Ben's unit and the exercise's own. */
+export function fixedLoadFrame(eq: EquipmentInstance | null, unit: WeightUnit, convention: LoadConvention): { unit: WeightUnit; convention: LoadConvention } {
+  return eq === null || eq.kind === 'bodyweight_station' ? { unit, convention } : { unit: eq.unit, convention: eq.loadConvention };
+}
+
+/**
+ * (Design pass 5.1, 20 Oct) The working load last logged for this exercise: the newest workout's
+ * heaviest working set (least assisted, on an assisted machine). Warm-ups and sets with no load don't count.
+ */
+export function lastWorkingLoad(history: readonly Pick<HistorySession, 'performedAtUtc' | 'sets'>[]): Load | null {
+  const newest = [...history].sort((a, b) => (a.performedAtUtc < b.performedAtUtc ? 1 : a.performedAtUtc > b.performedAtUtc ? -1 : 0));
+  for (const h of newest) {
+    let best: Load | null = null;
+    for (const set of h.sets) {
+      const l = set.load;
+      if (set.setType === 'warmup' || l === null || l.convention === 'bodyweight') continue;
+      if (best === null || best.unit !== l.unit || best.convention !== l.convention) {
+        if (best === null) best = l;
+        continue;
+      }
+      const harder = loadDirection(l.convention) === 'assistance' ? l.value < best.value : l.value > best.value;
+      if (harder) best = l;
+    }
+    if (best !== null) return best;
+  }
+  return null;
+}
+
+/**
+ * (Design pass 5.1) The value a new Fixed load starts at: the last logged working load, snapped to an
+ * achievable load on this item (rule 4: never past its max; toward easier), so `Auto → Fixed` on bench
+ * shows about 100 kg, not the bar. Different convention (or unit with no item): not used. Fallback: the
+ * item's lightest load, else 0.
+ */
+export function fixedLoadSeed(last: Load | null, frame: { unit: WeightUnit; convention: LoadConvention }, eq: EquipmentInstance | null): number {
+  const item = eq === null || eq.kind === 'bodyweight_station' ? null : eq;
+  if (last !== null && last.convention === frame.convention) {
+    if (item !== null) {
+      const r = roundToAvailableLoad(last, item, 'easier');
+      if (r.ok && r.load.unit === frame.unit) return r.load.value;
+    } else if (last.unit === frame.unit) {
+      return last.value;
+    }
+  }
+  if (item !== null) return getAchievableLoads(item).loads[0] ?? 0;
+  return 0;
+}
+
+/** The set sheet's load stepper: achievable loads on this item (P5); without one, 2.5 kg / 5 lb steps. */
+export function fixedLoadSteps(value: number | null, frame: { unit: WeightUnit; convention: LoadConvention }, eq: EquipmentInstance | null, display: LoadContext = eq): { down: StepTarget; up: StepTarget } {
+  const fmt = (v: number) => loadText({ value: v, unit: frame.unit, convention: frame.convention }, frame.convention, display);
+  if (eq !== null && eq.kind !== 'bodyweight_station') {
+    const loads = getAchievableLoads(eq).loads;
+    if (loads.length === 0) return { down: { enabled: false, reason: 'No loads set up here' }, up: { enabled: false, reason: 'No loads set up here' } };
+    if (value === null) {
+      const first = loads[0] ?? 0;
+      return { down: { enabled: false, reason: 'No load entered' }, up: { enabled: true, value: first, label: fmt(first) } };
+    }
+    const up = stepLoad(value, eq, 'increase');
+    const down = stepLoad(value, eq, 'decrease');
+    return {
+      up: up.ok ? { enabled: true, value: up.value, label: fmt(up.value) } : { enabled: false, reason: `Max ${fmt(loads[loads.length - 1] ?? value)}` },
+      down: down.ok ? { enabled: true, value: down.value, label: fmt(down.value) } : { enabled: false, reason: `Min ${fmt(loads[0] ?? value)}` },
+    };
+  }
+  const step = frame.unit === 'kg' ? 2.5 : 5;
+  const v = value ?? 0;
+  const upV = Number(formatNumber(v + step));
+  const downV = Number(formatNumber(v - step));
+  return {
+    up: { enabled: true, value: upV, label: fmt(upV) },
+    down: value === null || downV < 0 ? { enabled: false, reason: 'Min 0' } : { enabled: true, value: downV, label: fmt(downV) },
+  };
+}
+
+/**
+ * The item a Fixed load is checked on in the editor (§2.3): the slot's own
+ * item when it is at this gym, else the first compatible one here, else
+ * none (`Fixed` is then saved unchecked and fitted at Start).
+ */
+export function editorItemFor(slot: Pick<RoutineExercise, 'equipmentId'>, exercise: Pick<Exercise, 'defaultLoadConvention' | 'compatibleEquipment'>, gym: readonly EquipmentInstance[]): EquipmentInstance | null {
+  const own = slot.equipmentId === null ? undefined : gym.find((e) => e.id === slot.equipmentId && e.availability === 'available');
+  return own ?? equipmentForExercise(exercise, gym)[0] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Save conflict (v0.1 §3.3, WL-A6; rule 5)
+
+/** One thing both Ben's edits and the newer version changed: Ben picks one. */
+export type RoutineConflict = { kind: 'name'; mine: string; theirs: string } | { kind: 'slot'; slotId: string; exerciseId: string; mine: RoutineExercise | null; theirs: RoutineExercise | null };
+
+export interface RoutineMerge {
+  /** Ben's edits re-applied on the newer version, with each conflict as picked (default: the newer version's). */
+  merged: RoutineEdit;
+  conflicts: RoutineConflict[];
+}
+
+const conflictKey = (c: RoutineConflict): string => (c.kind === 'name' ? 'name' : c.slotId);
+
+/**
+ * `Keep both` (v0.1 §3.3): Ben's edits (`mine`, from `base`) re-applied on
+ * the version that was saved meanwhile (`theirs`). A slot or the name that
+ * only one side changed takes that side; one both changed differently is a
+ * conflict, resolved by `picks` (`'mine'` / `'theirs'`, by slot ID or
+ * `name`; unpicked = theirs, so nothing newer is lost by default). Ben's
+ * order wins when he reordered; added slots keep their place in his list.
+ * Pure: the caller saves the result against `theirs`' version.
+ */
+export function mergeRoutineEdits(base: RoutineEdit, mine: RoutineEdit, theirs: RoutineEdit, picks: Readonly<Record<string, 'mine' | 'theirs'>> = {}): RoutineMerge {
+  const same = (a: RoutineExercise | undefined, b: RoutineExercise | undefined): boolean => {
+    if (a === undefined || b === undefined) return a === b;
+    const strip = (e: RoutineExercise) => ({ ...e, order: 0 });
+    return JSON.stringify(strip(a)) === JSON.stringify(strip(b));
+  };
+  const conflicts: RoutineConflict[] = [];
+  const nameMine = mine.name.trim() !== base.name.trim();
+  const nameTheirs = theirs.name.trim() !== base.name.trim();
+  let name = nameMine ? mine.name : theirs.name;
+  if (nameMine && nameTheirs && mine.name.trim() !== theirs.name.trim()) {
+    const c: RoutineConflict = { kind: 'name', mine: mine.name.trim(), theirs: theirs.name.trim() };
+    conflicts.push(c);
+    name = picks[conflictKey(c)] === 'mine' ? mine.name : theirs.name;
+  }
+  const b = new Map(base.exercises.map((e) => [e.id, e]));
+  const m = new Map(mine.exercises.map((e) => [e.id, e]));
+  const t = new Map(theirs.exercises.map((e) => [e.id, e]));
+  const chosen = new Map<string, RoutineExercise | null>();
+  for (const id of new Set([...b.keys(), ...m.keys(), ...t.keys()])) {
+    const was = b.get(id);
+    const mx = m.get(id);
+    const tx = t.get(id);
+    if (was === undefined) {
+      // Added on one side (IDs are new, so never on both).
+      chosen.set(id, mx ?? tx ?? null);
+      continue;
+    }
+    const mineChanged = !same(was, mx);
+    const theirsChanged = !same(was, tx);
+    if (mineChanged && theirsChanged && !same(mx, tx)) {
+      const c: RoutineConflict = { kind: 'slot', slotId: id, exerciseId: was.exerciseId, mine: mx ?? null, theirs: tx ?? null };
+      conflicts.push(c);
+      chosen.set(id, picks[conflictKey(c)] === 'mine' ? (mx ?? null) : (tx ?? null));
+    } else chosen.set(id, mineChanged ? (mx ?? null) : (tx ?? null));
+  }
+  const order = (list: RoutineEdit) => list.exercises.map((e) => e.id).filter((id) => b.has(id));
+  const reordered = JSON.stringify(order(mine)) !== JSON.stringify(order(base));
+  const lead = reordered ? mine.exercises : theirs.exercises;
+  const other = reordered ? theirs.exercises : mine.exercises;
+  const ids: string[] = lead.map((e) => e.id);
+  // Slots only the other list has: at the end when they were added at its end, else after the slot they follow there.
+  const leadIds = new Set(ids);
+  other.forEach((e, i) => {
+    if (ids.includes(e.id)) return;
+    const trailing = other.slice(i + 1).every((x) => !leadIds.has(x.id));
+    const prev = other[i - 1];
+    const at = trailing || prev === undefined ? (trailing ? ids.length - 1 : -1) : ids.indexOf(prev.id);
+    ids.splice(at + 1, 0, e.id);
+  });
+  const exercises = ids.flatMap((id) => {
+    const e = chosen.get(id);
+    return e === null || e === undefined ? [] : [e];
+  });
+  return { merged: { name, exercises: normaliseRoutineExercises(exercises) }, conflicts };
+}

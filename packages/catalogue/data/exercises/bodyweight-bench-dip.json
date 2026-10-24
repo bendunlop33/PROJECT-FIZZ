@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-bench-dip",
+  "tier": "rich",
+  "name": "Bench dip",
+  "aliases": ["Bench dips", "Triceps bench dip", "Tricep bench dip", "Bench triceps dip", "Chair dip"],
+  "family": "dip",
+  "movementPattern": "vertical_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["triceps"],
+  "secondaryMuscles": ["front_delts", "chest"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["bench"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Sit on the edge of a stable bench",
+      "Hands beside your hips, fingers forward",
+      "Slide your hips just off the front edge",
+      "Knees bent, feet flat on the floor"
+    ],
+    "execution": [
+      "Bend your elbows and lower straight down",
+      "Keep your back close to the bench",
+      "Stop at about a right angle at the elbow",
+      "Press through your palms to straighten"
+    ],
+    "faults": [
+      "Don't sink until your shoulders roll forward",
+      "Don't let your elbows flare wide",
+      "Don't drift away from the bench",
+      "Don't push with your legs"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a bench or box that can't slide or tip. A gym bench against a wall or rack is safest.",
+      "Depth is the main lever. Going deeper than a comfortable elbow bend puts the front of the shoulder in a stretched, loaded position; stop short of that.",
+      "Bent knees make it easier; straight legs or feet raised make it harder. Change the leg position before adding load.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the front of the shoulder",
+      "Pain that changes how you move",
+      "Numbness or tingling in the hands"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Bench dip with feet close", "reason": "Knees bent and feet near the bench take more of your weight through the legs." },
+      { "key": "machine-assisted-dip", "name": "Assisted dip", "reason": "Upright dip with the machine taking some of your weight; easy to load in small steps." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Bench dip with straight legs", "reason": "Heels further away puts more of your weight on the arms." },
+      { "key": null, "name": "Bench dip with feet raised", "reason": "Feet on a second bench makes the arms carry most of your weight." },
+      { "key": "bodyweight-dip", "name": "Dip", "reason": "The arms carry all your bodyweight on parallel bars." }
+    ],
+    "substitutions": [
+      { "key": "cable-triceps-pushdown", "name": "Triceps pushdown", "reason": "Triceps work on a cable stack with no shoulder stretch at the bottom." },
+      { "key": "bodyweight-diamond-push-up", "name": "Diamond push-up", "reason": "Triceps-focused bodyweight press with no bench needed." },
+      { "key": "barbell-close-grip-bench-press", "name": "Close-grip bench press", "reason": "Heavier, loadable triceps press; needs a rack and bench." },
+      { "key": "machine-assisted-dip", "name": "Assisted dip", "reason": "Dip pattern on a machine; load is assistance, so a larger number is easier." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height, figure facing right with the bench behind. Shows the elbow bend, the hips travelling straight down close to the bench edge, and the shoulder position at the bottom.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Arms straight, hands on the bench edge beside the hips, fingers forward. Hips just in front of the bench. Knees bent to about 90°, feet flat. Chest up, shoulders down away from the ears.",
+        "approxAnglesDeg": { "elbowFlexion": 5, "shoulderExtension": 20, "kneeFlexion": 90 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Elbows bent to about 90°, pointing straight back. Hips have dropped straight down, back close to the bench. Chest still up; shoulders not rolled forward.",
+        "approxAnglesDeg": { "elbowFlexion": 90, "shoulderExtension": 50, "kneeFlexion": 80 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the bench edge in every frame", "Feet fixed on the floor"],
+    "tempo": { "downMs": 1500, "holdMs": 200, "upMs": 1000 },
+    "props": ["flat_bench"],
+    "emphasise": [
+      "Hips travel straight down, close to the bench",
+      "Elbows point back, not out",
+      "Bottom stops at about a right angle at the elbow"
+    ],
+    "doNotShow": ["Very deep dip with shoulders rolled forward", "Elbows flared wide", "Hips drifting far from the bench"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/bench-dip/",
+      "title": "StrengthLog: Bench Dip",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-3]; cues.execution[0,3]; variations.progressions[0-1]"
+    },
+    {
+      "url": "https://www.nasm.org/resource-center/exercise-library/bench-dips",
+      "title": "NASM exercise library: Bench Dips",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[3] (knees at about 90°); cues.execution[2] (about 90° elbow bend at the bottom)",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://catalystathletics.com/exercise/546/Bench-Dip",
+      "title": "Catalyst Athletics exercise library: Bench Dip",
+      "checkedOn": "2026-10-23",
+      "supports": "secondaryMuscles (shoulders and triceps more than chest); safety.notes[2] (bent knees make it easier)",
+      "note": "Seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    },
+    {
+      "field": "variations.progressions",
+      "note": "Weighted bench dips (a plate on the lap) are sometimes programmed. Not listed: the load convention would be 'added', and the plate placement is awkward to make safe."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

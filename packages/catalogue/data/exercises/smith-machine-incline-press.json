@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "key": "smith-machine-incline-press",
+  "tier": "rich",
+  "name": "Smith machine incline press",
+  "aliases": ["Smith incline press", "Smith machine incline bench press", "Smith incline bench press", "Incline Smith press", "Incline Smith machine press", "Smith incline bench"],
+  "family": "bench_press",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["upper_chest"],
+  "secondaryMuscles": ["chest", "front_delts", "triceps"],
+  "compatibleEquipment": ["smith_machine"],
+  "requiresStation": ["specific_machine", "incline_bench"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 150,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Incline bench under the bar, about 30-45°",
+      "Bar lined up over your upper chest",
+      "Set the safety stops just above your chest",
+      "Grip a little wider than shoulder width"
+    ],
+    "execution": [
+      "Twist the bar to unhook it",
+      "Lower under control to your upper chest",
+      "Press straight up to straight arms",
+      "Twist to rehook at the top"
+    ],
+    "faults": [
+      "Don't bounce the bar off your chest",
+      "Don't flare your elbows straight out",
+      "Don't lift your hips off the bench"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Set the Smith machine's safety stops so the bar can't reach your chest or neck. With them set, you can train without a spotter.",
+      "Before loading, lower the empty bar to check it lands on your upper chest, not your neck or face.",
+      "The logged load is the plates added. Smith bars weigh different amounts in different gyms and some are counterbalanced, so loads aren't comparable with a barbell.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-incline-chest-press", "name": "Incline chest press machine", "reason": "Seated machine with a fixed path; no bar to unhook." }
+    ],
+    "progressions": [
+      { "key": "barbell-incline-bench-press", "name": "Incline bench press", "reason": "Free bar; more balance, and needs safeties or a spotter." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-incline-bench-press", "name": "Incline dumbbell press", "reason": "Same angle with dumbbells; no rack needed." },
+      { "key": "barbell-incline-bench-press", "name": "Incline bench press", "reason": "Same angle with a free barbell in a rack." },
+      { "key": "machine-incline-chest-press", "name": "Incline chest press machine", "reason": "Upper-chest press on a stack machine." },
+      { "key": "smith-machine-bench-press", "name": "Smith machine bench press", "reason": "Flat version on the same machine." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height. Incline bench at about 35° inside the Smith frame; draw the vertical rails behind the bar and the safety stops just above the chest.",
+    "keyPositions": [
+      {
+        "label": "Lockout",
+        "describe": "Lying on the incline bench, feet flat, back and head on the pad. Arms straight, bar directly above the upper chest in the rails.",
+        "approxAnglesDeg": { "benchIncline": 35, "shoulderFlexion": 75, "elbowFlexion": 5 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Bar lowered to touch the upper chest, just above the safety stops. Elbows below the bar and angled slightly in from the shoulders; shoulder blades back.",
+        "approxAnglesDeg": { "benchIncline": 35, "shoulderFlexion": 10, "elbowFlexion": 95 }
+      }
+    ],
+    "ikHints": ["Bar moves only along the vertical rails", "Hands fixed to the bar; hips and back fixed on the bench"],
+    "barPath": "Straight up and down in the Smith rails, over the upper chest",
+    "tempo": { "downMs": 1800, "holdMs": 200, "upMs": 1000 },
+    "props": ["smith_machine", "incline_bench", "safety_stops"],
+    "emphasise": [
+      "Bar touches the upper chest, not the neck",
+      "Safety stops set just above the chest",
+      "Straight vertical bar path"
+    ],
+    "doNotShow": ["Bar bouncing off the chest", "Elbows flared straight out to the sides", "Hips lifting off the bench"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/smith-machine-incline-bench-press/",
+      "title": "StrengthLog: Smith Machine Incline Bench Press",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; secondaryMuscles; cues.setup[3]; cues.execution[1-2]; barPath (fixed straight path)"
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/PectoralClavicular/SMInclineBenchPress",
+      "title": "ExRx.net: Smith Incline Bench Press",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (clavicular pectoralis target); secondaryMuscles (sternal pec, front delts, triceps); cues.setup[1]",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "safety.notes[2]",
+      "note": "Smith bar weight varies by gym and isn't assumed (expansion research). Logging plates added matches the other Smith entries."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Bench angle varies; 30-45° is a common range, not a rule."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

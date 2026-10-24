@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-pendlay-row",
+  "tier": "basic",
+  "name": "Pendlay row",
+  "aliases": ["Pendlay", "Barbell Pendlay row", "Dead-stop barbell row", "Dead-stop row"],
+  "family": "row",
+  "movementPattern": "horizontal_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["upper_back", "lats"],
+  "secondaryMuscles": ["rear_delts", "traps", "biceps", "brachialis", "spinal_erectors", "hamstrings", "grip"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

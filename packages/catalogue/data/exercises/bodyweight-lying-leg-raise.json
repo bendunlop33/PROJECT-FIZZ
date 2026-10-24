@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-lying-leg-raise",
+  "tier": "rich",
+  "name": "Lying leg raise",
+  "aliases": ["Lying leg raises", "Leg raise", "Leg raises", "Floor leg raise", "Flat bench leg raise", "Supine leg raise"],
+  "family": "leg_raise",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["abs", "hip_flexors"],
+  "secondaryMuscles": ["obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Lie on your back, legs straight",
+      "Hands by your sides or under your hips",
+      "Press your lower back into the floor"
+    ],
+    "execution": [
+      "Lift your legs until they point at the ceiling",
+      "Keep your lower back down the whole time",
+      "Lower slowly to just above the floor",
+      "Breathe out as the legs rise"
+    ],
+    "faults": [
+      "Don't let your lower back arch up",
+      "Don't drop your legs fast",
+      "Don't swing to get them up"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "If your lower back starts to lift as the legs go down, stop the lowering higher up or bend your knees a little.",
+      "On a flat bench, hold the bench behind your head and keep the bench steady before you start.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Bent-knee leg raise", "reason": "Bending the knees shortens the lever." },
+      { "key": "bodyweight-reverse-crunch", "name": "Reverse crunch", "reason": "Knees stay bent and the range is small." }
+    ],
+    "progressions": [
+      { "key": "bodyweight-hanging-leg-raise", "name": "Hanging leg raise", "reason": "Same hip lift while hanging; harder and adds grip." },
+      { "key": null, "name": "Leg raise with ankle weights", "reason": "A little extra load; log it as added weight." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-reverse-crunch", "name": "Reverse crunch", "reason": "More pelvic curl, less hip lift." },
+      { "key": "bodyweight-captains-chair-knee-raise", "name": "Captain's chair knee raise", "reason": "Knee raise with the back supported upright." },
+      { "key": "bodyweight-dead-bug", "name": "Dead bug", "reason": "One leg at a time; trains keeping the back still." },
+      { "key": "bodyweight-hanging-knee-raise", "name": "Hanging knee raise", "reason": "Bent-knee raise from a bar." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at floor level, figure lying along the frame with the head on the left. A thin mat line under the body.",
+    "keyPositions": [
+      {
+        "label": "Low",
+        "describe": "Lying on the back, arms by the sides. Legs straight together, heels hovering just above the mat. Lower back flat on the mat.",
+        "approxAnglesDeg": { "hipFlexion": 10, "kneeFlexion": 5 }
+      },
+      {
+        "label": "Up",
+        "describe": "Straight legs raised until they point at the ceiling. Lower back and hips still on the mat.",
+        "approxAnglesDeg": { "hipFlexion": 90, "kneeFlexion": 5 }
+      }
+    ],
+    "ikHints": ["Shoulders, head and hips stay on the mat in every frame", "Knees stay nearly straight"],
+    "tempo": { "downMs": 2000, "holdMs": 300, "upMs": 1200 },
+    "props": ["floor_mat"],
+    "emphasise": [
+      "Lower back stays pressed to the mat",
+      "Slow lowering to just above the floor"
+    ],
+    "doNotShow": ["Lower back arching off the mat", "Heels slamming down", "Legs swinging"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/lying-leg-raise/",
+      "title": "StrengthLog: Lying Leg Raise",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; secondaryMuscles; cues.setup[0-1]; cues.execution[0,2]; variations.regressions[0]; variations.progressions[1]"
+    },
+    {
+      "url": "https://womenshealthsa.co.za/how-to-do-lying-leg-raises/",
+      "title": "Women's Health SA: How to do lying leg raises",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[2]; cues.execution[1]; cues.faults[0-1] (no arching; slow and controlled)",
+      "note": "Seen only through a search-result summary. Consumer magazine quoting a trainer."
+    },
+    {
+      "url": "https://www.jefit.com/blog/get-ripped-with-these-popular-jefit-core-exercises",
+      "title": "JEFIT: popular core exercises",
+      "checkedOn": "2026-10-23",
+      "supports": "aliases[1] (\"Leg Raise\" is JEFIT's name, ranked second); variations.substitutions[0] context",
+      "note": "Commercial app blog; popularity, not technique."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "primaryMuscles",
+      "note": "StrengthLog lists the hip flexors as a primary muscle, and they do much of the lifting; they are listed as primary with the abs (vocabulary word added 23 Oct 2026, expansion research Q1)."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Leg raise\" alone could mean the hanging version for some people. It is JEFIT's name for this floor exercise; an import may still want Ben to confirm it."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

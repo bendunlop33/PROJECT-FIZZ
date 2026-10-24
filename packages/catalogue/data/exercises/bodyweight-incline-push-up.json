@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-incline-push-up",
+  "tier": "rich",
+  "name": "Incline push-up",
+  "aliases": ["Incline press-up", "Hands-elevated push-up", "Hands-elevated press-up", "Bench push-up", "Incline pushup"],
+  "family": "push_up",
+  "movementPattern": "horizontal_push",
+  "mechanic": "compound",
+  "primaryMuscles": ["chest"],
+  "secondaryMuscles": ["front_delts", "triceps", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Hands on a bench or bar, a bit wide",
+      "Walk your feet back to a straight line",
+      "Brace lightly, squeeze your glutes"
+    ],
+    "execution": [
+      "Lower your chest to the edge",
+      "Elbows angled back, not straight out",
+      "Push the bench away to straight arms",
+      "Body moves as one piece"
+    ],
+    "faults": [
+      "Don't let your hips sag",
+      "Don't lead with your head",
+      "Don't flare your elbows wide"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use something that won't slide or tip: a fixed bench, a Smith bar locked in place, or a racked barbell.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Wall push-up", "reason": "Hands on a wall; the easiest version." },
+      { "key": null, "name": "Higher hand position", "reason": "The higher the hands, the easier the push-up." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Lower hand position", "reason": "Lower the bench or bar height step by step." },
+      { "key": "bodyweight-push-up", "name": "Push-up", "reason": "Hands on the floor." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-push-up", "name": "Push-up", "reason": "Harder floor version." },
+      { "key": "machine-chest-press", "name": "Chest press machine", "reason": "Supported press, easy to load lightly." },
+      { "key": "dumbbell-bench-press", "name": "Dumbbell bench press", "reason": "Loaded press lying on a bench." },
+      { "key": "dumbbell-floor-press", "name": "Dumbbell floor press", "reason": "Pressing with no bench, short range." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at bench height, head on the left, hands on the edge of a flat bench. Whole body from head to heels in frame.",
+    "keyPositions": [
+      {
+        "label": "Top",
+        "describe": "Hands on the bench edge slightly wider than the shoulders, arms straight. Body in a straight line from head to heels at roughly 30–45° to the floor.",
+        "approxAnglesDeg": { "bodyAngleFromFloor": 35, "elbowFlexion": 0 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Chest lowered to just above the bench edge. Elbows bent and angled back about 45° from the body. Body still straight.",
+        "approxAnglesDeg": { "bodyAngleFromFloor": 25, "elbowFlexion": 100 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the bench", "Toes fixed on the floor"],
+    "tempo": { "downMs": 1500, "holdMs": 200, "upMs": 1000 },
+    "props": ["bench_flat"],
+    "emphasise": [
+      "Straight line from head to heels",
+      "Chest, not chin, goes to the bench",
+      "Elbows angled back"
+    ],
+    "doNotShow": ["Sagging hips", "Head poking forward", "Bench sliding"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/incline-push-up/",
+      "title": "StrengthLog: Incline Push-Up",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0-2]; cues.execution[0,2]; primaryMuscles; secondaryMuscles"
+    },
+    {
+      "url": "https://library.theprehabguys.com/vimeo-video/incline-push-up/",
+      "title": "The Prehab Guys: Incline Push Up",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.execution[1] (arms about 45° from the body); variations.progressions[0] (easier because the hands carry more bodyweight)",
+      "note": "Seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "requiresStation",
+      "note": "No station is listed because a bench, box, bar or wall all work. Hand height changes difficulty a lot, so loads aren't comparable between sets at different heights."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

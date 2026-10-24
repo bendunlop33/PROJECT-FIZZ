@@ -1,0 +1,322 @@
+# Builds an unsigned (ad hoc "-" signed) device .ipa for SideStore (ADR 0004).
+# Ben-facing instructions: docs/guides/building-the-ipa.md
+#
+# The bundle ID comes from apps/mobile/app-identity.mts and must never change
+# after the first install. The entitlement check fails the build if it does,
+# or if any entitlement a free Apple ID can't provision appears.
+
+name: iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      live_activity:
+        description: Include the Live Activity extension (untick only if it breaks the build or SideStore install)
+        type: boolean
+        default: true
+      background_audio:
+        description: Background-audio experiment (locked spoken cue). Leave unticked unless testing it
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'ios-v*'
+    # Manual runs only work once this file is on the default branch, so pushes to
+    # Claude's working branches also run it. The macOS build (the expensive part)
+    # only runs when the head commit message contains [ios-build]. Adding
+    # [bg-audio] to that message turns on the background-audio experiment.
+    branches:
+      - 'claude/**'
+
+permissions:
+  contents: read
+
+# Never cancel a build. The group is keyed on the commit, so a later push (a docs
+# commit, say) starts its own run instead of cancelling an in-flight macOS build.
+# A per-ref group would cancel it: with cancel-in-progress the running build, and
+# without it a still-pending one (GitHub keeps only the newest pending run).
+concurrency:
+  group: ios-ipa-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22.22.0'
+  XCODE_APP: /Applications/Xcode_26.6.app
+  # Internal Xcode project/scheme name (IOS_PROJECT_NAME in app-identity.mts),
+  # not the name Ben sees (that's CFBundleDisplayName, GymSmarter).
+  IOS_PROJECT: Fizz
+  FIZZ_BUILD_NUMBER: ${{ github.run_number }}
+  FIZZ_LIVE_ACTIVITY: ${{ (github.event_name != 'workflow_dispatch' || inputs.live_activity) && '1' || '0' }}
+  # Opt-in experiment, default off (ADR 0007): adds UIBackgroundModes audio.
+  FIZZ_BACKGROUND_AUDIO: ${{ ((github.event_name == 'workflow_dispatch' && inputs.background_audio) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[bg-audio]'))) && '1' || '0' }}
+  CI: '1'
+
+jobs:
+  # Cheap Linux job first, so a failing test or config never spends macOS minutes.
+  check:
+    name: Check (tests, types, lint, entitlements)
+    # Same gate as the build: Claude runs these checks locally before every push,
+    # so a push without [ios-build] (docs, merges) spends no Actions minutes.
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[ios-build]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Keep the token out of .git/config: npm ci runs third-party install scripts.
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      # Install scripts must stay enabled (never --ignore-scripts): Skia's postinstall
+      # copies its prebuilt xcframeworks into node_modules/@shopify/react-native-skia/libs,
+      # and its podspec fails without them (ADR 0013).
+      - run: npm ci
+      - name: Skia iOS libraries present
+        run: |
+          if [ ! -d node_modules/@shopify/react-native-skia/libs/ios/libskia.xcframework ]; then
+            echo "::error::Skia's prebuilt iOS libraries are missing from node_modules/@shopify/react-native-skia/libs/ios. Its postinstall didn't run (are npm install scripts disabled?). pod install would fail later."
+            exit 1
+          fi
+      - run: npm run check
+      # A placeholder migration (empty SQL) must never reach the phone: a database
+      # migrated past it would never run the real one (review gaps S5).
+      - name: No placeholder migrations
+        run: npx vitest run packages/persistence/test/release-migrations.test.ts
+        env:
+          FIZZ_RELEASE_CHECK: '1'
+      # No .ipa may ship a reserved or empty migration (review coach-tools B1): a phone that ran a
+      # placeholder would never run the real one.
+      - name: Migrations releasable
+        run: npm run check:migrations
+      - name: Expo prebuild (config only)
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform ios --no-install --clean
+      - name: Entitlement check (generated project)
+        run: node scripts/check-entitlements.ts --prebuild apps/mobile/ios
+
+  # Timing budgets (*.perf.test.ts, `npm run test:perf`) depend on machine load, so they
+  # report here and never block the check or the .ipa: nothing needs this job.
+  perf:
+    name: Perf lane (timing budgets, non-blocking)
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[ios-build]')
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      # Install scripts must stay enabled (never --ignore-scripts), as in the other jobs.
+      - run: npm ci
+      - run: npm run test:perf
+
+  build:
+    name: Build unsigned .ipa
+    needs: check
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[ios-build]')
+    # macos-15 only has Xcode 26.3, which can't compile Expo SDK 57 (expo-modules-jsi); keep macOS 26.
+    # GitHub's macOS arm64 runners hit capacity limits (jobs end "not acquired by Runner of type hosted"),
+    # so a head commit containing [intel] builds on the standard x64 macOS 26 runner instead (same Xcode 26).
+    runs-on: ${{ contains(github.event.head_commit.message, '[intel]') && 'macos-26-intel' || 'macos-26' }}
+    # Intel compiles take about 40 min (build 213: 33 min compiling); allow headroom.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Keep the token out of .git/config: npm ci runs third-party install scripts.
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Select Xcode
+        run: |
+          if [ ! -d "$XCODE_APP" ]; then
+            # Fall back to the newest Xcode 26 on the image (macos-15 may carry a different 26.x).
+            ALT=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+            if [ -n "$ALT" ]; then echo "Using $ALT instead of $XCODE_APP"; XCODE_APP="$ALT"; fi
+          fi
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "::error::$XCODE_APP is not on this runner image. Installed Xcodes:"
+            ls -d /Applications/Xcode*.app || true
+            echo "Update XCODE_APP (and the Pods cache key) in this workflow."
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      # Install scripts must stay enabled (never --ignore-scripts): Skia's postinstall
+      # copies its prebuilt xcframeworks into node_modules/@shopify/react-native-skia/libs,
+      # and its podspec fails without them (ADR 0013).
+      - run: npm ci
+      - name: Skia iOS libraries present
+        run: |
+          if [ ! -d node_modules/@shopify/react-native-skia/libs/ios/libskia.xcframework ]; then
+            echo "::error::Skia's prebuilt iOS libraries are missing from node_modules/@shopify/react-native-skia/libs/ios. Its postinstall didn't run (are npm install scripts disabled?). pod install would fail later."
+            exit 1
+          fi
+
+      - name: Expo prebuild (iOS)
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform ios --no-install --clean
+
+      - name: Entitlement check (generated project)
+        run: node scripts/check-entitlements.ts --prebuild apps/mobile/ios
+
+      # The key doesn't include FIZZ_LIVE_ACTIVITY: the extension adds no pods today.
+      # Add it if that ever changes.
+      - name: Cache CocoaPods
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apps/mobile/ios/Pods
+            ~/Library/Caches/CocoaPods
+          key: pods-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('package-lock.json', 'apps/mobile/ios/Podfile', 'apps/mobile/ios/Podfile.properties.json', 'apps/mobile/modules/*/ios/*.podspec') }}
+
+      - name: Install pods
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Build (Release, iphoneos, code signing off)
+        working-directory: apps/mobile/ios
+        run: |
+          LOG="$RUNNER_TEMP/xcodebuild.log"
+          if ! xcodebuild \
+              -workspace "$IOS_PROJECT.xcworkspace" \
+              -scheme "$IOS_PROJECT" \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              COMPILER_INDEX_STORE_ENABLE=NO \
+              build > "$LOG" 2>&1; then
+            grep -E "error:|BUILD FAILED" "$LOG" | head -50 || true
+            tail -100 "$LOG"
+            exit 1
+          fi
+          tail -5 "$LOG"
+
+      - name: Ad hoc sign with entitlements
+        # A fully unsigned app carries no entitlements, and SideStore/AltStore then
+        # skip App Group registration (docs/research/free-ios-install.md §2).
+        # Sign inside-out: nested frameworks, then extensions, then the app.
+        run: |
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/$IOS_PROJECT.app"
+          test -d "$APP" || { echo "::error::$APP not found"; exit 1; }
+          if [ "$FIZZ_LIVE_ACTIVITY" = 1 ] && [ ! -d "$APP/PlugIns/ExpoWidgetsTarget.appex" ]; then
+            echo "::error::FIZZ_LIVE_ACTIVITY=1 but PlugIns/ExpoWidgetsTarget.appex was not embedded"
+            ls "$APP/PlugIns" 2>/dev/null || echo "(no PlugIns directory)"
+            exit 1
+          fi
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          if [ -d "$APP/Frameworks" ]; then
+            find "$APP/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -print0 |
+              xargs -0 -I{} codesign --force --sign - --timestamp=none "{}"
+          fi
+          for appex in "$APP"/PlugIns/*.appex; do
+            [ -d "$appex" ] || continue
+            name="$(basename "$appex" .appex)"
+            ent="apps/mobile/ios/$name/$name.entitlements"
+            if [ -f "$ent" ]; then
+              codesign --force --sign - --timestamp=none --entitlements "$ent" "$appex"
+            else
+              echo "::warning::No entitlements file for extension $name ($ent); signing without entitlements"
+              codesign --force --sign - --timestamp=none "$appex"
+            fi
+          done
+          codesign --force --sign - --timestamp=none \
+            --entitlements "apps/mobile/ios/$IOS_PROJECT/$IOS_PROJECT.entitlements" "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Live Activity check (runtime App Group patch compiled in)
+        # ADR 0007: SideStore renames the App Group, so the patched expo-widgets
+        # (patches/expo-widgets+57.0.23.patch) must be in the code BOTH the app
+        # and the extension run: their executables, anything else Mach-O in the
+        # bundle, and the @rpath libraries they load. Markers are strings only
+        # the patch contains. Prints what it searched, and diagnostics on failure.
+        if: env.FIZZ_LIVE_ACTIVITY == '1'
+        run: |
+          bash scripts/ci/check-patched-binaries.sh "$APP"
+          if [ "$(plutil -extract NSSupportsLiveActivities raw "$APP/Info.plist" 2>/dev/null)" != true ]; then
+            echo "::error::NSSupportsLiveActivities is not true in the app's Info.plist"
+            exit 1
+          fi
+
+      - name: Entitlement check (signed binaries)
+        run: |
+          OUT="$RUNNER_TEMP/entitlements"
+          mkdir -p "$OUT"
+          codesign -d --entitlements - --xml "$APP" > "$OUT/$IOS_PROJECT.app.plist"
+          for appex in "$APP"/PlugIns/*.appex; do
+            [ -d "$appex" ] || continue
+            codesign -d --entitlements - --xml "$appex" > "$OUT/$(basename "$appex").plist"
+          done
+          plutil -convert xml1 -o "$OUT/Info.xml" "$APP/Info.plist"
+          for f in "$OUT"/*.plist; do echo "== $(basename "$f")"; cat "$f"; echo; done
+          node scripts/check-entitlements.ts --signed "$OUT"/*.plist --info-plist "$OUT/Info.xml"
+
+      - name: Package .ipa
+        run: |
+          VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist")"
+          BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Info.plist")"
+          # Named after what Ben sees (DISPLAY_NAME in app-identity.mts), e.g.
+          # GymSmarter-0.1.0-build42.ipa. IOS_PROJECT stays the internal Xcode name.
+          # Fails here if the CFBundleDisplayName override didn't reach the app.
+          DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw "$APP/Info.plist")" || {
+            echo "::error::CFBundleDisplayName is missing from $APP/Info.plist (DISPLAY_NAME in apps/mobile/app-identity.mts didn't reach the build)."
+            exit 1
+          }
+          # File and artifact names take only safe characters (a name with / : or " would break upload-artifact).
+          FILE_NAME="$(printf '%s' "$DISPLAY_NAME" | tr -cd 'A-Za-z0-9._-')"
+          [ -n "$FILE_NAME" ] || FILE_NAME="$IOS_PROJECT"
+          IPA_NAME="$FILE_NAME-$VERSION-build$FIZZ_BUILD_NUMBER.ipa"
+          STAGE="$RUNNER_TEMP/ipa"
+          mkdir -p "$STAGE/Payload"
+          cp -R "$APP" "$STAGE/Payload/"
+          (cd "$STAGE" && zip -qry "$IPA_NAME" Payload)
+          echo "IPA_PATH=$STAGE/$IPA_NAME" >> "$GITHUB_ENV"
+          {
+            echo "### $IPA_NAME"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Name on the home screen | $DISPLAY_NAME |"
+            echo "| Bundle ID | \`$BUNDLE_ID\` (must never change) |"
+            echo "| Version | $VERSION (build $FIZZ_BUILD_NUMBER) |"
+            echo "| Live Activity extension | $([ "$FIZZ_LIVE_ACTIVITY" = 1 ] && echo included || echo left out) |"
+            echo "| Background-audio experiment | $([ "$FIZZ_BACKGROUND_AUDIO" = 1 ] && echo ON || echo off) |"
+            echo "| Size | $(du -h "$STAGE/$IPA_NAME" | cut -f1) |"
+            echo "| SHA-256 | \`$(shasum -a 256 "$STAGE/$IPA_NAME" | cut -d' ' -f1)\` |"
+            echo "| Commit | \`$GITHUB_SHA\` |"
+            echo ""
+            echo "Download it from **Artifacts** below. It arrives as a plain \`.ipa\` (not zipped)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload .ipa
+        # archive: false uploads the .ipa itself (no zip), so the phone can open it
+        # straight from Safari's downloads. The artifact takes the file's name.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ env.IPA_PATH }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: xcodebuild-log
+          path: ${{ runner.temp }}/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7

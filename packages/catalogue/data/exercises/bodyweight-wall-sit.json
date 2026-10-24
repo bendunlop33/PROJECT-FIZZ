@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-wall-sit",
+  "tier": "rich",
+  "name": "Wall sit",
+  "aliases": ["Wall sits", "Wall squat hold", "Isometric wall sit", "Wall chair", "Wall sit hold"],
+  "family": "wall_sit",
+  "movementPattern": "squat",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads"],
+  "secondaryMuscles": ["glutes", "adductors"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "duration",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Back flat against a smooth wall",
+      "Walk your feet out about two foot-lengths",
+      "Feet hip-width, toes forward"
+    ],
+    "execution": [
+      "Slide down until your thighs are level",
+      "Knees over your ankles",
+      "Press your back into the wall",
+      "Breathe steadily and hold"
+    ],
+    "faults": [
+      "Don't hold your breath",
+      "Don't push on your thighs with your hands",
+      "Don't let your knees drift in"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Use a wall with a non-slip floor and shoes with grip so your feet don't slide.",
+      "A long hard hold can raise blood pressure. Keep breathing throughout, and stand up if you feel lightheaded.",
+      "Pick a depth you can hold with good form; a higher sit is easier.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain at the knee that builds during the hold",
+      "Dizziness or faintness",
+      "Numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Higher wall sit", "reason": "Knees bent less, so the thighs work less." },
+      { "key": null, "name": "Shorter holds", "reason": "Several short holds with rests build up to one long one." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Longer hold", "reason": "Add time before adding difficulty." },
+      { "key": null, "name": "Single-leg wall sit", "reason": "One foot lifted puts all the work on the other leg." },
+      { "key": null, "name": "Wall sit with a ball squeeze", "reason": "Squeezing a ball between the knees adds inner-thigh work." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-squat", "name": "Bodyweight squat", "reason": "Same muscles through a full range instead of a hold." },
+      { "key": "machine-leg-extension", "name": "Leg extension", "reason": "Quad work on a stack that is easy to load." },
+      { "key": "dumbbell-goblet-squat", "name": "Goblet squat", "reason": "Loaded squat for strength." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at hip height, figure facing right with the wall on the left. Shows the hip and knee at right angles and the back flat on the wall. A still hold, so the animation slides down once, holds, and slides up.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Standing with the back against the wall, feet about two foot-lengths in front of it, hip-width apart.",
+        "approxAnglesDeg": { "kneeFlexion": 10, "hipFlexion": 10, "trunkLeanFromVertical": 0 }
+      },
+      {
+        "label": "Hold",
+        "describe": "Back flat on the wall, thighs level with the floor, knees over the ankles, shins vertical. Hands resting by the sides or crossed on the chest, not on the thighs.",
+        "approxAnglesDeg": { "kneeFlexion": 90, "hipFlexion": 90, "trunkLeanFromVertical": 0 }
+      }
+    ],
+    "ikHints": ["Back and head in contact with the wall throughout", "Feet fixed on the floor"],
+    "tempo": { "downMs": 1500, "holdMs": 5000, "upMs": 1500 },
+    "props": ["wall"],
+    "emphasise": [
+      "Thighs level, knees over ankles",
+      "Back flat on the wall",
+      "Steady breathing during the hold"
+    ],
+    "doNotShow": ["Hands pushing on the thighs", "Knees far past the toes", "Feet slipping"]
+  },
+  "sources": [
+    {
+      "url": "https://catalystathletics.com/exercise/749/Wall-Sit/",
+      "title": "Catalyst Athletics exercise library: Wall Sit",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.execution[0-1] (90° hips and knees); measurement (timed holds, commonly 30–60 s)",
+      "note": "Seen through a search listing."
+    },
+    {
+      "url": "https://www.physitrack.com/exercise-library/how-to-perform-the-isometric-wall-sits-with-ball-squeeze",
+      "title": "Physitrack: Isometric wall sits with ball squeeze",
+      "checkedOn": "2026-10-23",
+      "supports": "variations.progressions[2]; cues.setup[0]",
+      "note": "Seen through a search listing."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "safety.notes[1]",
+      "note": "Isometric holds raising blood pressure is general exercise-physiology knowledge; no source specific to wall sits was checked in this pass."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

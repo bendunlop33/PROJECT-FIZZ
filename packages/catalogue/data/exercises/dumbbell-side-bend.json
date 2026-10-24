@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "key": "dumbbell-side-bend",
+  "tier": "rich",
+  "name": "Dumbbell side bend",
+  "aliases": ["DB side bend", "Dumbbell side bends", "Standing dumbbell side bend", "Dumbbell lateral bend", "Kettlebell side bend"],
+  "family": "side_bend",
+  "movementPattern": "core",
+  "mechanic": "isolation",
+  "primaryMuscles": ["obliques"],
+  "secondaryMuscles": ["core"],
+  "compatibleEquipment": ["dumbbells", "kettlebell"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "reps",
+  "laterality": "unilateral",
+  "implements": 1,
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Stand tall, feet about hip-width",
+      "One dumbbell in one hand at your side",
+      "Other hand on your hip or by your head"
+    ],
+    "execution": [
+      "Lean sideways toward the dumbbell",
+      "Let it slide down the side of your leg",
+      "Pull yourself upright with the other side",
+      "Do all your reps, then switch hands"
+    ],
+    "faults": [
+      "Don't lean forward or back",
+      "Don't twist as you bend",
+      "Don't bounce out of the bottom"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Bend only as far as you can control; this is a small range.",
+      "Hold one dumbbell only. A weight in each hand balances out and takes the work away.",
+      "Some coaches prefer side planks or suitcase carries, which work the same muscles without bending the spine. Either is a reasonable choice.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Bodyweight side bend", "reason": "Learn the range and the straight sideways path with no load." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Heavier dumbbell", "reason": "Small jumps, with the bend still slow and controlled." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-suitcase-carry", "name": "Suitcase carry", "reason": "Same side-of-waist muscles, resisting the bend while walking." },
+      { "key": "bodyweight-side-plank", "name": "Side plank", "reason": "Holds the side of the waist with the spine still." },
+      { "key": "cable-side-bend", "name": "Cable side bend", "reason": "Stack-loaded side bend with smaller load steps." },
+      { "key": "cable-pallof-press", "name": "Pallof press", "reason": "Trunk work that resists twisting instead." }
+    ]
+  },
+  "guideBrief": {
+    "view": "front",
+    "cameraNote": "Front view at waist height, figure facing the camera with one dumbbell in the right hand and the left hand on the hip. The sideways bend reads only from the front.",
+    "keyPositions": [
+      {
+        "label": "Upright",
+        "describe": "Standing tall, feet hip-width. Dumbbell hanging at the right side, arm straight. Left hand on the hip. Shoulders level.",
+        "approxAnglesDeg": { "trunkSideBend": 0 }
+      },
+      {
+        "label": "Bend",
+        "describe": "Torso bent sideways toward the dumbbell, which has slid down to about knee level along the outside of the leg. Hips stay over the feet; no forward lean or twist.",
+        "approxAnglesDeg": { "trunkSideBend": 25 }
+      }
+    ],
+    "ikHints": ["Feet and pelvis fixed in every frame", "Loaded arm stays straight; the dumbbell tracks along the leg"],
+    "tempo": { "downMs": 1500, "holdMs": 300, "upMs": 1200 },
+    "props": ["dumbbell_single"],
+    "emphasise": [
+      "Straight sideways path, no lean forward",
+      "The far side of the waist pulls you back up"
+    ],
+    "doNotShow": ["Dumbbells in both hands", "Twisting or leaning forward", "Bouncing at the bottom"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/dumbbell-side-bend/",
+      "title": "StrengthLog: Dumbbell Side Bend",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles; cues.setup[0-2]; cues.execution[0-3]; cues.faults[0,2]"
+    },
+    {
+      "url": "https://exrx.net/WeightExercises/Obliques/DBSideBend",
+      "title": "ExRx.net: Dumbbell Side Bend",
+      "checkedOn": "2026-10-23",
+      "supports": "primaryMuscles (obliques target); secondaryMuscles (quadratus lumborum synergist, mapped to core); mechanic",
+      "note": "Direct fetch is blocked; content seen only through a search-result summary."
+    },
+    {
+      "url": "https://www.acefitness.org/resources/pros/expert-articles/5038/train-this-not-that-the-core-edition/",
+      "title": "ACE: Train This, Not That: The Core Edition",
+      "checkedOn": "2026-10-23",
+      "supports": "safety.notes[2] (some coaches suggest the side plank instead); variations.substitutions[1]",
+      "note": "Seen only through a search-result summary. Coaching opinion; its spinal claims were not used."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "secondaryMuscles",
+      "note": "ExRx names the quadratus lumborum as a synergist. The catalogue has no word for it; core is the nearest."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    },
+    {
+      "field": "aliases",
+      "note": "Plain \"Side bend\" is deliberately not an alias: it could also mean a cable or 45° bench side bend (Should and Could proposals)."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

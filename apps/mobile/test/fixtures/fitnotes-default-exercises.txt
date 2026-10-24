@@ -1,0 +1,104 @@
+# FitNotes' default exercise names, used as data in tests (review r5).
+# Source: ikkani/Fitnotes2Hevy, files/fitnotes_exercises.txt (fetched 2026-10-09). Its README says the
+# file lists all the default exercises of FitNotes. Its Spanish entries are that user's own and are left
+# out, with the two unpaired entries "Abductor" / "Aductor"; the 92 English names are kept as written.
+# The last 5 names are FitNotes defaults seen in the real 2020 export cited in
+# docs/research/fitnotes-export-format.md §4 (moferg) that the list above doesn't have.
+Ab-Wheel Rollout
+Arnold Dumbbell Press
+Barbell Calf Raise
+Barbell Curl
+Barbell Front Squat
+Barbell Glute Bridge
+Barbell Row
+Barbell Shrug
+Behind The Neck Barbell Press
+Cable Crossover
+Cable Crunch
+Cable Curl
+Cable Face Pull
+Cable Overhead Triceps Extension
+Chin Up
+Close Grip Barbell Bench Press
+Crunch
+Crunch Machine
+Cycling
+Deadlift
+Decline Barbell Bench Press
+Decline Crunch
+Decline Hammer Strength Chest Press
+Donkey Calf Raise
+Dragon Flag
+Dumbbell Concentration Curl
+Dumbbell Curl
+Dumbbell Hammer Curl
+Dumbbell Overhead Triceps Extension
+Dumbbell Preacher Curl
+Dumbbell Row
+EZ-Bar Curl
+EZ-Bar Preacher Curl
+EZ-Bar Skullcrusher
+Elliptical Trainer
+Flat Dumbbell Bench Press
+Flat Dumbbell Fly
+Front Dumbbell Raise
+Glute-Ham Raise
+Good Morning
+Hammer Strength Row
+Hammer Strength Shoulder Press
+Hanging Knee Raise
+Hanging Leg Raise
+Incline Barbell Bench Press
+Incline Dumbbell Bench Press
+Incline Dumbbell Fly
+Incline Hammer Strength Chest Press
+Lat Pulldown
+Lateral Machine Raise
+Leg Extension Machine
+Leg Press
+Log Press
+Lying Leg Curl Machine
+Lying Triceps Extension
+Machine Shrug
+Neutral Chin Up
+One-Arm Standing Dumbbell Press
+Overhead Press
+Parallel Bar Triceps Dip
+Pendlay Row
+Plank
+Pull Up
+Push Press
+Rack Pull
+Rear Delt Dumbbell Raise
+Rear Delt Machine Fly
+Ring Dip
+Romanian Deadlift
+Rope Push Down
+Rowing Machine
+Running (Outdoor)
+Running (Treadmill)
+Seated Calf Raise Machine
+Seated Dumbbell Lateral Raise
+Seated Dumbbell Press
+Seated Incline Dumbbell Curl
+Seated Leg Curl Machine
+Seated Machine Curl
+Seated Machine Fly
+Side Plank
+Smith Machine Close Grip Bench Press
+Smith Machine Overhead Press
+Standing Calf Raise Machine
+Stationary Bike
+Stiff-Legged Deadlift
+Straight-Arm Cable Pushdown
+Sumo Deadlift
+Swimming
+T-Bar Row
+V-Bar Push Down
+Walking
+# From the real 2020 export:
+Barbell Squat
+Flat Barbell Bench Press
+Lat Pulldown (Pulley)
+Seated Cable Row (Pulley)
+Lateral Dumbbell Raise

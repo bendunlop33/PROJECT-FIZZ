@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "kettlebell-front-rack-carry",
+  "tier": "basic",
+  "name": "Kettlebell front-rack carry",
+  "aliases": ["KB front-rack carry", "Front-rack carry", "Rack carry", "Rack walk", "Double kettlebell rack carry"],
+  "family": "carry",
+  "movementPattern": "carry",
+  "mechanic": "compound",
+  "primaryMuscles": ["core", "upper_back"],
+  "secondaryMuscles": ["obliques", "front_delts", "biceps", "glutes"],
+  "compatibleEquipment": ["kettlebell"],
+  "defaultLoadConvention": "per_hand",
+  "measurement": "distance",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

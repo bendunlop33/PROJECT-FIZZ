@@ -1,0 +1,135 @@
+{
+  "formatVersion": 1,
+  "source": "docs/training-guides/playbook-v1.md",
+  "approved": "2026-10-09",
+  "rules": [
+    {
+      "id": "1",
+      "short": "Weekly sets per muscle group start from Ben's stated days a week and session length, or from his own logged sets per lifting day × his stated days. His goal sets the range. Sets grow by 1–2 only when he asks. In a short week, keep the loads and cut sets.",
+      "appliesWhen": "Any plan or weekly-volume advice",
+      "grade": "Strong / Moderate / Weak / Practice, split by claim (see 1)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "2",
+      "short": "Strength: main lifts mostly at ≥ ~80% 1RM (≈ 1–6 reps at RPE 7–9), 2–3+ sets per lift per session, each lift ≥ 2×/week.",
+      "appliesWhen": "Strength is the main focus, or strength \"also matters\"",
+      "grade": "Strong (heavy loads); Moderate (≥ 2×/week, set count)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "3",
+      "short": "Working sets default to RPE 7–9 on compounds. RPE 10 is for planned last sets, AMRAPs or isolation work.",
+      "appliesWhen": "Setting targets",
+      "grade": "Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "4",
+      "short": "Treat one RPE rating as ± 1 rep. Change future targets only on a pattern (≥ 2 sessions), never on one rating. Distrust ratings on sets above 12 reps.",
+      "appliesWhen": "Interpreting logs",
+      "grade": "Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "5",
+      "short": "Harder than planned (rule T: logged effort ≥ target RPE + 1.5, or reps below the range minimum): the coach offers, for the remaining sets of that exercise, −5–10% load (≈ 2–4% per RPE point over target, rounded down to an achievable load) or the same load with fewer reps. How the two figures combine is D22. With no coach, the built-in rule offers the same, labelled.",
+      "appliesWhen": "Mid-session (rule T)",
+      "grade": "Weak + Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "6",
+      "short": "Easier than planned (rule T: logged effort ≤ target RPE − 2) on a working set: the coach offers the next achievable load up (+2–5%) or +1–2 reps. With no coach, the built-in rule offers the same, labelled.",
+      "appliesWhen": "Mid-session (rule T)",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "7",
+      "short": "The AI coach chooses load, reps, sets or a variant from Ben's goal, his history on this equipment and the selected gym's real increments and min/max. Changes are shown in kg/lb and %.",
+      "appliesWhen": "Ben asks, a rule T signal, the post-workout review, or planning the next session or block",
+      "grade": "Strong / Moderate / Weak / Practice, split by claim (see 7)",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "7-F",
+      "short": "Labelled, equipment-aware double progression. It uses the smallest achievable increment. If that jump is > ~10% or the machine is at its max, it progresses reps instead, up to the rep cap, then holds. It doesn't add sets (D2).",
+      "appliesWhen": "Next-session targets when the coach is unavailable, or when no coach target has been applied (D21)",
+      "grade": "Weak + Practice",
+      "use": "code_only",
+      "note": "code: the built-in rule, never sent as advice"
+    },
+    {
+      "id": "8",
+      "short": "A stall (2–3 sessions failing the same target): propose a 5–10% reset or a rep-scheme change. One bad session gets a note only.",
+      "appliesWhen": "Next-session targets",
+      "grade": "Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "9",
+      "short": "Rest 2–3 min (up to 5) on heavy compounds and 1–2 min on isolation work.",
+      "appliesWhen": "Rest presets, shortening sessions",
+      "grade": "Moderate",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "10",
+      "short": "Deload when performance drops across ≥ 2 sessions (≈ halve sets, RPE ≤ 7, ~1 week), or every 4–8 weeks if Ben prefers. Always a proposal.",
+      "appliesWhen": "Future plan",
+      "grade": "Weak + Practice",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "11",
+      "short": "Same day with strength as the priority: lift first and keep the endurance part easy. If the day's endurance session is a key one, do it first and cut leg volume.",
+      "appliesWhen": "Daily plan, only when the endurance switch is on. The lift-first part only when lifting is the priority (see \"Endurance switch\")",
+      "grade": "Moderate",
+      "use": "not_in_use",
+      "note": "not in use: no endurance training logged"
+    },
+    {
+      "id": "12",
+      "short": "Keep heavy lower-body lifting and hard or long endurance ≥ 6 h apart (ideally ≥ 24 h). Keep heavy or high-volume leg work out of the 48 h before a key long run, ride or race. Show the trade-off as a proposal; never overwrite the run.",
+      "appliesWhen": "Weekly scheduling, only when the endurance switch is on",
+      "grade": "Moderate",
+      "use": "not_in_use",
+      "note": "not in use: no endurance training logged"
+    },
+    {
+      "id": "13",
+      "short": "Keep ≥ 2 heavy strength exposures a week through endurance phases (fewer sets, same heavy loads).",
+      "appliesWhen": "When the endurance switch is on and endurance is one of Ben's goals (was \"Endurance/HYROX blocks\")",
+      "grade": "Moderate",
+      "use": "not_in_use",
+      "note": "not in use: no endurance training logged"
+    },
+    {
+      "id": "G",
+      "short": "Targets follow Ben's confirmed goal and how his training is run. Nothing is sport-specific. Rules 11 and 12 apply only while the endurance switch is on; rule 13 also needs endurance as a goal.",
+      "appliesWhen": "Always",
+      "grade": "Practice (structure), built on Strong/Moderate profile values",
+      "use": "in_use",
+      "note": null
+    },
+    {
+      "id": "T",
+      "short": "Mid-session offer triggers compare logged effort with each working set's target RPE (Ben's, else the coach's, else the plan's, else the built-in rule's): harder at ≥ target + 1.5 or reps below the range minimum (unless effort was ≤ target − 1), easier at ≤ target − 2. Warm-ups, drop sets and planned all-out/AMRAP sets never trigger. \"Too easy\" never fires above 12 reps.",
+      "appliesWhen": "Every logged working set",
+      "grade": "Moderate (rating error) + Practice",
+      "use": "in_use",
+      "note": null
+    }
+  ]
+}

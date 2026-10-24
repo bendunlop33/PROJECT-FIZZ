@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-neutral-grip-pull-up",
+  "tier": "rich",
+  "name": "Neutral-grip pull-up",
+  "aliases": ["Neutral grip pull-up", "Parallel-grip pull-up", "Hammer-grip pull-up", "Neutral-grip pullup", "Neutral-grip chin-up"],
+  "family": "pull_up",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "biceps", "brachialis"],
+  "secondaryMuscles": ["upper_back", "rear_delts", "grip"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["pullup_bar"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-23"
+  },
+  "cues": {
+    "setup": [
+      "Grab the parallel handles, palms facing",
+      "Hang with straight arms, legs still",
+      "Brace your trunk, ribs down"
+    ],
+    "execution": [
+      "Pull your shoulders down first",
+      "Drive your elbows down to your ribs",
+      "Chest up toward the handles",
+      "Lower all the way to straight arms"
+    ],
+    "faults": [
+      "Don't kick or swing your legs",
+      "Don't stop short of straight arms",
+      "Don't crane your chin to finish"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Step down onto a box or bench at the end of a set rather than dropping.",
+      "Add weight with a dip belt only once bodyweight reps are smooth; log the added weight as added.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-assisted-pull-up", "name": "Assisted pull-up", "reason": "The machine takes some bodyweight; many have neutral handles." },
+      { "key": "cable-neutral-grip-pulldown", "name": "Neutral-grip pulldown", "reason": "Same grip with a chosen load." },
+      { "key": null, "name": "Band-assisted neutral-grip pull-up", "reason": "A band under the feet or knees helps at the bottom." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Weighted neutral-grip pull-up", "reason": "Extra weight on a dip belt." }
+    ],
+    "substitutions": [
+      { "key": "bodyweight-pull-up", "name": "Pull-up", "reason": "Overhand grip on a straight bar." },
+      { "key": "bodyweight-chin-up", "name": "Chin-up", "reason": "Underhand grip; more biceps." },
+      { "key": "cable-neutral-grip-pulldown", "name": "Neutral-grip pulldown", "reason": "Same grip on a stack." },
+      { "key": "cable-lat-pulldown", "name": "Lat pulldown", "reason": "Loadable vertical pull." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at chest height, parallel handles near the top of frame seen side-on. Whole body in frame at the bottom position.",
+    "keyPositions": [
+      {
+        "label": "Hang",
+        "describe": "Hanging from parallel handles, palms facing each other about shoulder width. Arms straight, legs together and still, ribs down.",
+        "approxAnglesDeg": { "shoulderFlexion": 175, "elbowFlexion": 5, "hipFlexion": 10 }
+      },
+      {
+        "label": "Top",
+        "describe": "Chin above the handles, upper chest close to them. Elbows down by the ribs and slightly in front. Legs still together, no swing.",
+        "approxAnglesDeg": { "shoulderFlexion": 20, "elbowFlexion": 130, "hipFlexion": 10 }
+      }
+    ],
+    "ikHints": ["Hands fixed on the handles", "Body rises in a near-vertical line"],
+    "tempo": { "downMs": 2000, "holdMs": 300, "upMs": 1200 },
+    "props": ["pullup_bar_neutral_handles"],
+    "emphasise": [
+      "Palms face each other",
+      "Full hang at the bottom",
+      "Elbows drive down to the ribs"
+    ],
+    "doNotShow": ["Kipping or leg kick", "Half reps", "Chin jutting over the handles"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/pull-ups-with-a-neutral-grip/",
+      "title": "StrengthLog: Pull-Ups With a Neutral Grip",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[0]; cues.execution[2-3]; primaryMuscles (lats); secondaryMuscles; variations.regressions[2]; variations.progressions[0]"
+    },
+    {
+      "url": "https://bullbarfit.com/blogs/q-as/how-to-do-pull-ups-with-a-neutral-grip",
+      "title": "BULLBAR: How to Do Pull-Ups with a Neutral Grip",
+      "checkedOn": "2026-10-23",
+      "supports": "cues.setup[1-2]; cues.execution[0-1]; cues.faults[0]; primaryMuscles (brachialis emphasis)",
+      "note": "Commercial equipment blog, seen only through a search-result summary."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "requiresStation",
+      "note": "pullup_bar doesn't say whether the gym has parallel handles. Many pull-up stations do; some don't."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Neutral-grip chin-up\" is used by some lifters for this exercise and by others for a close neutral grip; included because both mean the same station and loading."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}
