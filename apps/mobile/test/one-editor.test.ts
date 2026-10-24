@@ -476,3 +476,23 @@ describe('the prompts’ parsers (rep range, time, distance)', () => {
     expect(parseMetres('x')).toBeNull();
   });
 });
+
+describe('the editor’s Swap / Add sheet and near-duplicates (Ben, 23 Oct; merged with the one editor)', () => {
+  it('near-duplicates of what stays go last, marked `Like …`; the exercise being swapped doesn’t count', async () => {
+    const { s, gymId, sessionId } = await ben();
+    const p = await open(s, { routineId: (await savedPushA(s, sessionId)).id });
+    const inWorkout = p.list.map((x) => x.exerciseId);
+    const incline = p.slot('Incline dumbbell press').exerciseId;
+    const items = (await s.builder.templateChoices({ gymId, inWorkout, exerciseId: null, group: 'Chest' })).sections.flatMap((sec) => sec.items);
+    const like = items.filter((i) => i.similarTo !== null);
+    expect(like.length).toBeGreaterThan(0);
+    expect(like.map((i) => i.similarTo)).toContain('Incline dumbbell press');
+    // Within each focus section the twins come after the rest.
+    for (const sec of (await s.builder.templateChoices({ gymId, inWorkout, exerciseId: null, group: 'Chest' })).sections) {
+      const firstLike = sec.items.findIndex((i) => i.similarTo !== null);
+      if (firstLike >= 0) expect(sec.items.slice(firstLike).every((i) => i.similarTo !== null)).toBe(true);
+    }
+    const swapping = (await s.builder.templateChoices({ gymId, inWorkout, exerciseId: incline, group: 'Chest' })).sections.flatMap((sec) => sec.items);
+    expect(swapping.some((i) => i.similarTo === 'Incline dumbbell press')).toBe(false);
+  });
+});

@@ -258,6 +258,22 @@ describe('checkReview: comments on his edits, offers fenced and guarded', () => 
     expect(r.edits.every((e) => e.offer === null)).toBe(true);
   });
 
+  it('an edit comment whose offer adds a near-duplicate is left out with its words (Ben, 23 Oct); others still show', () => {
+    const { s, edits } = run({});
+    const pd = edits.find((e) => e.kind === 'sets')?.id ?? '';
+    expect(slotsOf(s.mine.blocks).map((x) => x.exerciseId)).toContain('incline_db');
+    const { r } = run({
+      editComments: [
+        { editId: 'e1', comment: 'Bench press at 110 kg is 9% above his best recent load for 6 reps.', ops: [{ op: 'add', exerciseId: 'incline_bb', afterSlotKey: null, workingSets: 3 }] },
+        { editId: pd, comment: 'Triceps pushdown at 6 sets is fine today.', ops: [] },
+      ],
+      suggestions: [{ ops: [{ op: 'add', exerciseId: 'incline_bb', afterSlotKey: null, workingSets: 3 }], reason: 'More upper chest.' }],
+    });
+    expect(r.edits.map((e) => e.editId)).toEqual([pd]);
+    expect(r.suggestions).toEqual([]);
+    expect(r.leftOut).toEqual(['Incline barbell press: like Incline dumbbell press']);
+  });
+
   it('rest, reps and RPE are offers too; rest on the builder’s 15 s steps', () => {
     const { s } = run({});
     const { r } = run({ suggestions: [{ ops: [{ op: 'rest', slotKey: s.key('crunch'), seconds: 100 }], reason: 'Cable crunch rest 1:00 is short.' }, { ops: [{ op: 'rpe', slotKey: s.key('incline_db'), rpe: 9 }], reason: 'Push the incline.' }] });
