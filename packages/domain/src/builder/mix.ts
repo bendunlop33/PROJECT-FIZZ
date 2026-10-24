@@ -1,4 +1,5 @@
 import { infoOrDefault } from './arrange';
+import { autoPickClash } from './similar';
 import type { BuilderGroupName, BuilderInfoLookup, BuilderSlot, BuilderWorkout } from './types';
 
 /**
@@ -68,7 +69,7 @@ export interface MixShortlistInput {
   lastDoneMs: ReadonlyMap<string, number>;
 }
 
-export type MixExclusion = 'not_same_group' | 'same_angle' | 'other_role' | 'not_here' | 'pain' | 'recent_on_day' | 'in_workout' | 'unknown' | 'is_target';
+export type MixExclusion = 'not_same_group' | 'same_angle' | 'other_role' | 'not_here' | 'pain' | 'recent_on_day' | 'in_workout' | 'near_duplicate' | 'unknown' | 'is_target';
 
 /** Why one candidate is out, or null when it's on the shortlist. */
 export function mixExclusion(id: string, input: MixShortlistInput): MixExclusion | null {
@@ -83,13 +84,15 @@ export function mixExclusion(id: string, input: MixShortlistInput): MixExclusion
   if (input.painFlagged(id)) return 'pain';
   if (input.lastTwoOnDay.has(id)) return 'recent_on_day';
   if (input.inWorkout.has(id)) return 'in_workout';
+  // (Ben, 23 Oct) Never a near-duplicate of another exercise in the workout (the target goes), nor a second traps isolation.
+  if (autoPickClash(id, [...input.inWorkout].filter((x) => x !== input.target.exerciseId), input.info) !== null) return 'near_duplicate';
   return null;
 }
 
 /**
  * `mixItUpShortlist`: same muscles (group) at a different angle, same role,
  * here, not pain-flagged, not in the day's last 2 sessions, not already in
- * the workout. Ordered least recently done first (never done first), so the
+ * the workout, and no near-duplicate of another exercise in it (Ben, 23 Oct). Ordered least recently done first (never done first), so the
  * offline pick is `[0]` and `Another (1/3)` cycles the rest. Empty for the
  * main lift.
  */

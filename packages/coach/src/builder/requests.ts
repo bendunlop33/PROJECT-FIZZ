@@ -77,13 +77,19 @@ const WEEKLY_INSTRUCTIONS = [
 
 const INSTRUCTIONS: Readonly<Record<BuilderRequestKind, string>> = {
   setup: [...COMMON, 'Ben is on Set up. Read what he wants (day, length, main lift, supersets, muscle groups) and fill only what he said. Leave the rest null.'].join('\n'),
-  edit: [...COMMON, 'Ben is looking at today’s workout before he starts. Make only the changes he asked for. Each one is a proposal he applies or skips.', BUILDER_TARGET_CORRECTION_LINES].join('\n'),
+  edit: [
+    ...COMMON,
+    'Ben is looking at today’s workout before he starts. Make only the changes he asked for. Each one is a proposal he applies or skips.',
+    'When he asks for a new exercise without naming it, never pick a near-duplicate of one already in the workout (see COACHING KNOWLEDGE). If he names one, propose it; code flags it.',
+    BUILDER_TARGET_CORRECTION_LINES,
+  ].join('\n'),
   review: [
     ...COMMON,
     'Review the whole workout: the exercises AND every exercise’s sets, reps, loads, RPE and rest, against his goal and plan focus, the block week, his recent history per exercise (`lifts`), lift targets, pain flags, readiness and the plan day. The verdict (a few words) covers the numbers too.',
     'Comment first on Ben’s own edits (`yourEdits`, by editId; `by: Time` ones are what his Time cut). One short line each, judged against the facts in `lifts`. Say plainly when an edit looks fine (no ops). Never take an edit back just because it differs from the draft: only for a reason in the facts (a load well above his recent best for those reps, a stall, too many sets for one muscle, a pain flag), and say which fact.',
     'An edit comment or suggestion may change loads, reps, sets, RPE and rest as well as structure (missing muscles, order, pairing, variety); each is only an offer Ben applies or skips. None is fine. A pain-flagged exercise is never made heavier or harder.',
     'Copy numbers exactly as given and name the exercise in the same part of the sentence as each number. An estimated 1RM is always called an estimate. Never quote dates.',
+    'Never suggest or offer a swap or add that puts a near-duplicate of an exercise already in the workout (see COACHING KNOWLEDGE); code drops it.',
     'Notes are for the next time this day comes round: things to keep or change. A load for next time goes in `target`.',
   ].join('\n'),
   mix: [...COMMON, 'Pick one fresh exercise from the shortlist for today, using his goal, recent sessions and memories (for example something he dislikes). One short reason.'].join('\n'),
@@ -95,11 +101,16 @@ const INSTRUCTIONS: Readonly<Record<BuilderRequestKind, string>> = {
 };
 
 
+/** (Ben, 23 Oct) The near-duplicate rule as the coach is told it; code rejects (review) or flags (edit) any breach. */
+export const NEAR_DUPLICATE_RULE =
+  'Never two near-duplicates in one workout: the same movement for the same main muscle with another implement or a small change (Barbell shrug and Dumbbell shrug, Barbell curl and Dumbbell curl, Incline dumbbell press and Incline bench press, two rows, Lat pulldown and Pull-up). Cover what is missing instead (a Back day: a vertical pull and a row before shrugs or rear-delt work). At most one shrug-type traps exercise.';
+
 const KNOWLEDGE = {
   order: 'Main lift first, then compounds, then isolations, abs last.',
   pairing: [ADVICE_TEXT.heavyPair, ADVICE_TEXT.absHeavy, ADVICE_TEXT.sharedMuscle('chest')],
   isolationFirst: ADVICE_TEXT.isolationFirst('chest'),
   volume: 'Up to 7 exercises; at most 4 per muscle group.',
+  nearDuplicates: NEAR_DUPLICATE_RULE,
 };
 
 /** One slot as the model sees it (app text, Ben's units and conventions). */

@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import type { LoadConvention } from '@fizz/schemas';
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import { addDays, currentDraftVersion, formFromEquipment, localDateOf, toMs, undoableTimeFit, type EquipmentForm } from '@fizz/domain';
 import { builderApplyOpId } from '@fizz/coach';
@@ -106,7 +107,7 @@ async function finishAll(s: AppServices, sessionId: string): Promise<void> {
   for (const set of a.sets) {
     if (set.status !== 'pending' || set.setType === 'warmup') continue;
     h.clockMs += 60_000;
-    const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load: set.planned.load ?? { value: 20, unit: 'kg', convention: a.exercises.find((e) => e.id === set.sessionExerciseId)?.loadConvention ?? 'total' }, reps: set.planned.reps?.min ?? 8, durationS: set.planned.durationS, rpe: 8, rir: null }, restTimerId: h.ids() });
+    const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load: set.planned.load ?? fallbackLoad(a.exercises.find((e) => e.id === set.sessionExerciseId)?.loadConvention ?? 'total'), reps: set.planned.reps?.min ?? 8, durationS: set.planned.durationS, rpe: 8, rir: null }, restTimerId: h.ids() });
     if (!r.ok) throw new Error(r.error.message);
   }
   const now = await s.workout.load(sessionId);
@@ -116,6 +117,9 @@ async function finishAll(s: AppServices, sessionId: string): Promise<void> {
 }
 const dayKeyOf = (data: TodaySessionData, name: string) => data.days.find((d) => d.name === name)?.key ?? data.others.find((d) => d.name === name)?.key ?? '';
 const nbsp = (t: string | null | undefined) => (t ?? '').replaceAll('\u00a0', ' ');
+
+/** A set logged with no planned load: 20 kg, or no external load on a bodyweight exercise (a push-up the builder picked). */
+const fallbackLoad = (convention: LoadConvention): { value: number; unit: 'kg'; convention: LoadConvention } => ({ value: convention === 'bodyweight' ? 0 : 20, unit: 'kg', convention });
 
 describe('Today (v2) session card from the plan', () => {
   it('days in plan order with NEXT; the card from the controls; picking writes nothing; Start in one tap from the committed draft with the card’s loads and plan-day provenance; Up next moves on', async () => {
@@ -203,7 +207,7 @@ describe('Today (v2) session card from the plan', () => {
     for (const set of a.sets) {
       if (set.status !== 'pending' || set.setType === 'warmup') continue;
       h.clockMs += 60_000;
-      const r = await s.workout.dispatch(a.session.id, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load: set.planned.load ?? { value: 20, unit: 'kg', convention: a.exercises.find((e) => e.id === set.sessionExerciseId)?.loadConvention ?? 'total' }, reps: set.planned.reps?.min ?? 8, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
+      const r = await s.workout.dispatch(a.session.id, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load: set.planned.load ?? fallbackLoad(a.exercises.find((e) => e.id === set.sessionExerciseId)?.loadConvention ?? 'total'), reps: set.planned.reps?.min ?? 8, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
       if (!r.ok) throw new Error(r.error.message);
     }
     const now = await s.workout.load(a.session.id);

@@ -1,5 +1,6 @@
 import {
   adviseBuilder,
+  similarLast,
   applyBuilderEdit,
   alignToDraft,
   applyVariation,
@@ -532,6 +533,8 @@ export function adviceToast(a: BuilderAdvice): { text: string; why: string } {
       return { text: 'Not recommended: abs with a heavy lift', why: a.reason };
     case 'isolation_first':
       return { text: `Not recommended: tires your ${a.muscle} first`, why: a.reason };
+    case 'near_duplicate':
+      return { text: `Not recommended: ${a.a.name} and ${a.b.name} are alike`, why: a.reason };
   }
 }
 
@@ -2447,7 +2450,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const firstGroup = snap.setup.groups[0]?.group ?? 'Chest';
       const group: BuilderGroup = req.group ?? (slot === null ? firstGroup : (snap.facts[slot.exerciseId]?.group ?? firstGroup));
       const env = await envFor(p, { groups: [group], keySeed: 'choices' });
-      return choicesIn(env, group, new Set(slotsOf(snap.workout.blocks).map((s) => s.exerciseId)));
+      const slots = slotsOf(snap.workout.blocks);
+      // (Ben, 23 Oct) Near-duplicates of what stays in the workout (all but the one being swapped) go last, `Like …`.
+      return choicesIn(env, group, new Set(slots.map((s) => s.exerciseId)), slots.filter((s) => s.key !== req.slotKey).map((s) => s.exerciseId));
     },
 
     /**
@@ -2461,7 +2466,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const groupOf = (id: string | null | undefined) => (id == null ? null : (probe.info(id)?.group ?? null));
       const group: BuilderGroup = req.group ?? groupOf(req.exerciseId) ?? groupOf(req.inWorkout[0]) ?? 'Chest';
       const env = await envFor(p, { gymId: req.gymId, groups: [group], keySeed: 'template-choices' });
-      return choicesIn(env, group, new Set(req.inWorkout));
+      // (Ben, 23 Oct) Near-duplicates of what stays (the workout minus the exercise being swapped) go last, `Like …`.
+      const at = req.exerciseId === null ? -1 : req.inWorkout.indexOf(req.exerciseId);
+      return choicesIn(env, group, new Set(req.inWorkout), req.inWorkout.filter((_, i) => i !== at));
     },
 
     /**
@@ -3055,7 +3062,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
 export interface ExerciseChoices {
   group: BuilderGroup;
   groups: BuilderGroup[];
-  sections: { focus: string; items: { exerciseId: string; name: string; works: string | null; mayHurt: boolean; painLine: string | null }[] }[];
+  sections: { focus: string; items: { exerciseId: string; name: string; works: string | null; mayHurt: boolean; painLine: string | null; similarTo: string | null }[] }[];
 }
 
 /** (Ben, 23 Oct: one editor) A saved workout's exercise as Your workout's row shows it. */
@@ -3066,17 +3073,20 @@ export interface TemplateFact {
   hasHistory: boolean;
 }
 
-/** One group's exercises this gym has, by focus, minus what's in the workout; pain-flagged ones marked (rule 9). */
-function choicesIn(env: BuilderEnv, group: BuilderGroup, inWorkout: ReadonlySet<string>): ExerciseChoices {
-  const ids = env.candidates(group).filter((id) => !inWorkout.has(id));
+/**
+ * One group's exercises this gym has, by focus, minus what's in the workout; pain-flagged ones marked (rule 9).
+ * (Ben, 23 Oct) Near-duplicates of `staying` go last, each marked with the exercise it's like; still pickable.
+ */
+function choicesIn(env: BuilderEnv, group: BuilderGroup, inWorkout: ReadonlySet<string>, staying: readonly string[]): ExerciseChoices {
+  const ranked = similarLast(env.candidates(group).filter((id) => !inWorkout.has(id)), staying, env.info);
   const sections = builderFocusSections(
-    ids.flatMap((id) => {
+    ranked.order.flatMap((id) => {
       const e = env.exercise(id);
       return e === null ? [] : [e];
     }),
     (e) => e,
     group,
-  ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id) })) }));
+  ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id), similarTo: ranked.similarTo.get(e.id) ?? null })) }));
   return { group, groups: [...BUILDER_GROUPS], sections };
 }
 

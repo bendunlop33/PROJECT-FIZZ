@@ -215,6 +215,11 @@ export interface CheckedReview {
   hidden: string[];
   /** Whether everything shown passed the number check (always true: what failed is hidden). */
   numbersChecked: true;
+  /**
+   * (Ben, 23 Oct) Suggestions code left out because they would put a near-duplicate in the workout
+   * (`Dumbbell shrug: like Barbell shrug`), for `Why?`.
+   */
+  leftOut: string[];
 }
 
 const ACTION: Readonly<Record<string, string>> = { swap: 'Swap', add: 'Add', remove: 'Delete', superset: 'Superset', unlink: 'Unlink', move: 'Move' };
@@ -296,12 +301,19 @@ export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; 
   const verdict = check(input.args.verdict, null);
   hidden.push(...verdict.hidden);
   const edits = input.edits ?? [];
+  const leftOut: string[] = [];
   const seen = new Set<string>();
   /** The proposal for `ops`, or null when it changes nothing, repeats one shown, or undoes his edit with no grounded reason. */
   const offer = (id: string, ops: ReviewWorkoutArgs['suggestions'][number]['ops'], words: string): { suggestion: ReviewSuggestion | null; shown: string | null } => {
     const r = makeBuilderProposal({ id, snapshot: input.snapshot, ops, words, check, env: input.env });
     hidden.push(...r.hidden);
     if (r.proposal === null) return { suggestion: null, shown: r.reason };
+    // (Ben, 23 Oct) Never suggest two near-duplicates in one workout (a second shrug, the dumbbell twin of a curl):
+    // left out with its words, for `Why?`.
+    if (r.outcome.nearDuplicates.length > 0) {
+      for (const [had, added] of r.outcome.nearDuplicates) leftOut.push(`${added}: like ${had}`);
+      return { suggestion: null, shown: null };
+    }
     if (edits.some((e) => revertsEdit(e, input.snapshot, r.outcome, input.env)) && !grounded(r.reason)) return { suggestion: null, shown: r.reason };
     const key = r.proposal.lines.join('\n');
     if (seen.has(key)) return { suggestion: null, shown: r.reason };
@@ -359,5 +371,5 @@ export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; 
     notes.push({ id, kind: 'text', text: c.shown });
   });
 
-  return { verdict: verdict.shown, edits: editNotes, suggestions, notes, hidden, numbersChecked: true };
+  return { verdict: verdict.shown, edits: editNotes, suggestions, notes, hidden, numbersChecked: true, leftOut: [...new Set(leftOut)] };
 }

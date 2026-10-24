@@ -8,7 +8,7 @@ import { Eyebrow, StatusLine, TextField } from './layout';
 import { BottomCard } from './sheet';
 import { AppText } from './Text';
 import { POPUP_COPY } from './exercise-popup-model';
-import { swapPainConfirm, type ChoiceSection } from './swap-sheet-model';
+import { choiceLine, swapPainConfirm, type ChoiceSection } from './swap-sheet-model';
 import { ChoiceRow, Divider, Table } from './table-parts';
 
 /**
@@ -73,7 +73,7 @@ export function SwapSheet({
                 {i > 0 ? <Divider /> : null}
                 <ChoiceRow
                   title={it.name}
-                  line={it.works}
+                  line={choiceLine(it)}
                   tag={it.mayHurt ? POPUP_COPY.mayHurt : null}
                   onPress={() => {
                     // Rule 9: a flagged exercise asks first; `Choose another` keeps the sheet open and changes nothing.

@@ -2,6 +2,7 @@ import type { PlanBuilderAnswers, PlanGroup, PlanSplit, PlanTarget, PlanWarmups 
 import { inKitUnit, kitAbove, kitBelow, kitDown, kitHasFormula, pbBackOff, pbMainLine, pbWarmUp, pbWeekOneTop, type PbWarmupSet, type PlanKit } from './loads';
 import { generalWarmupMinutes, isWarmed, planSessionWarmupsAs, warmupProfileOf, type SessionWarmupItem, type WarmupExerciseFacts, type WarmupProfile } from '../warmup/plan';
 import { pbLiftStart, type PbHistoryOf, type PbKitOf, type PbLiftStart } from './lifts';
+import { nearDuplicate, trapsIsolation, type SimilarityFacts } from '../builder/similar';
 import {
   PB_COMPAT,
   PB_CORE,
@@ -527,6 +528,22 @@ function buildWithCaps(input: PlanEngineInput, caps: readonly number[]): Omit<Pb
   for (const m of order.filter((x) => isPri(a, x))) place(m, null, aimFor(a, m)); // 5
   for (const m of order.filter((x) => !prioritised(x))) place(m, null, aimFor(a, m)); // 6
 
+  // (Ben, 23 Oct) Never two near-duplicates on one day (Barbell row + Chest-supported row, two shrugs), nor a second
+  // traps isolation: the catalogue's family and primary muscles (`factsOf`), else the key's words and the muscle.
+  const simOf = (k: string, m: PbMuscle, role: PbExercise['role']): SimilarityFacts => {
+    const f = input.factsOf?.(k) ?? null;
+    const primary = f?.primaryMuscles !== undefined && f.primaryMuscles.length > 0 ? f.primaryMuscles : [m];
+    return { name: k.replace(/-/g, ' '), family: f?.family ?? null, primaryMuscles: primary, mechanic: f?.mechanic ?? (role === 'i' ? 'isolation' : 'compound') };
+  };
+  const clashes = (d: WorkDay, def: PbExerciseDef, m: PbMuscle): boolean => {
+    const a = simOf(def.key, m, def.role);
+    return d.exercises.some((e) => {
+      if (e.key === def.key) return false;
+      const b = simOf(e.key, e.muscle, e.role);
+      return nearDuplicate(a, b) || (trapsIsolation(a) && trapsIsolation(b));
+    });
+  };
+
   // Sets → exercises of 2–4 sets, rotating each muscle's list so repeat days differ.
   const MAX_EX = 10;
   const seenM = new Map<string, number>();
@@ -571,8 +588,11 @@ function buildWithCaps(input: PlanEngineInput, caps: readonly number[]): Omit<Pb
       seenM.set(sk, occ);
       const start = occ % Math.min(2, list.length);
       const rot = [...list.slice(start), ...list.slice(0, start)];
-      chunks(s).forEach((c, j) => {
-        const def = rot.find((x) => !d.exercises.some((e) => e.key === x.key)) ?? rot[j % rot.length];
+      chunks(s).forEach((c) => {
+        // A fresh exercise that near-duplicates nothing on the day; else more sets on one already there (an
+        // accessory before the main lift); never a near-duplicate.
+        const inDay = (x: PbExerciseDef, main: boolean): boolean => d.exercises.some((e) => e.key === x.key && (e.role === 'main') === main);
+        const def = rot.find((x) => !d.exercises.some((e) => e.key === x.key) && !clashes(d, x, m)) ?? rot.find((x) => inDay(x, false)) ?? rot.find((x) => inDay(x, true));
         if (def !== undefined) add(d, m, def, c);
       });
     }
@@ -594,7 +614,7 @@ function buildWithCaps(input: PlanEngineInput, caps: readonly number[]): Omit<Pb
       continue;
     }
     const d = (D.get(m) ?? []).filter((x) => capOf(x) - daySets(x) >= 2 && x.exercises.length < MAX_EX).sort((x, y) => daySets(x) - daySets(y))[0];
-    const def = d === undefined ? undefined : ranked(exOf(m)).find((x) => !(x.skip ?? []).includes(d.focus) && !d.exercises.some((e) => e.key === x.key));
+    const def = d === undefined ? undefined : ranked(exOf(m)).find((x) => !(x.skip ?? []).includes(d.focus) && !d.exercises.some((e) => e.key === x.key) && !clashes(d, x, m));
     if (d === undefined || def === undefined) break;
     const e = mkAcc(def.key, m, def.role, 2, def.tags ?? []);
     const ci = d.exercises.findIndex((x) => x.muscle === 'Core');
