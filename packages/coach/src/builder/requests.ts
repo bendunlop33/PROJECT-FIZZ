@@ -1,4 +1,4 @@
-import { ADVICE_TEXT, infoOrDefault, slotsOf, workingCount, type BuilderContext } from '@fizz/domain';
+import { ADVICE_TEXT, infoOrDefault, restClockText, slotsOf, workingCount, workingRestS, type BuilderContext } from '@fizz/domain';
 import { BUILDER_COACH_TOOL, BUILDER_COACH_TOOL_ARGS, BUILDER_GROUPS, type BuilderCoachToolArgs, type BuilderCoachToolName } from '@fizz/schemas';
 import { strictJsonSchema, type FunctionToolDefinition } from '../function-tools';
 import type { CoachModelPort, ModelErrorKind, ModelRequest } from '../model-port';
@@ -50,8 +50,8 @@ const TOOL_OF: Readonly<Record<BuilderRequestKind, BuilderCoachToolName>> = {
 
 const DESCRIPTIONS: Readonly<Record<BuilderCoachToolName, string>> = {
   fill_setup: 'Fill in Set up from Ben’s words: day (a dayId from the context), minutes, main lift (an option ID, or "none"), supersets, and muscle-group counts (count, or delta) by the context’s groups; a part Ben names is its group (biceps or triceps → Arms, hamstrings → Legs, abs → Core). Unused fields are null. `reply`: a short answer when he asked a question instead; else null.',
-  propose_workout_edit: 'Propose changes to today’s workout, by slotKey: swap, add, remove, sets, reps, rpe, load (heavier/lighter or a value), move, superset, unlink, minutes. Ben applies or skips. `reply`: one or two sentences; an answer alone when ops is empty.',
-  review_workout: 'Review today’s workout: a short verdict, up to 4 suggestions (ops by slotKey, each with a one-line reason), and up to 4 notes for the next time this day comes round (words, or a target load for one lift).',
+  propose_workout_edit: 'Propose changes to today’s workout, by slotKey: swap, add, remove, sets, reps, rpe, load (heavier/lighter or a value), rest (seconds), move, superset, unlink, minutes. Ben applies or skips. `reply`: one or two sentences; an answer alone when ops is empty.',
+  review_workout: 'Review today’s workout, numbers included: a short verdict; a one-line comment on each of Ben’s own edits that matters (by editId; ops empty when it looks fine, else an offer); up to 4 suggestions (ops by slotKey, each with a one-line reason); and up to 4 notes for the next time this day comes round (words, or a target load for one lift).',
   mix_pick: 'Pick one exercise from `shortlist` to swap in today, with a one-line reason.',
   pre_session_nudge: 'Decide whether today’s signals deserve one line on the session card. speak=false to stay silent. If you speak, one plain line; the app shows the code offer with it as Apply.',
   weekly_review: 'Review Ben’s week from the facts given: a verdict of a few words, up to 3 short lines, and up to 2 plan tweaks (an exercise’s working sets on one of the plan’s days, by routineId and exerciseId), each with a one-line reason. Ben applies or skips each tweak.',
@@ -80,7 +80,10 @@ const INSTRUCTIONS: Readonly<Record<BuilderRequestKind, string>> = {
   edit: [...COMMON, 'Ben is looking at today’s workout before he starts. Make only the changes he asked for. Each one is a proposal he applies or skips.', BUILDER_TARGET_CORRECTION_LINES].join('\n'),
   review: [
     ...COMMON,
-    'Review the workout against his goal, the plan day and the facts given. Keep the verdict to a few words. Suggest only clear improvements (missing muscles, order, pairing, variety); none is fine.',
+    'Review the whole workout: the exercises AND every exercise’s sets, reps, loads, RPE and rest, against his goal and plan focus, the block week, his recent history per exercise (`lifts`), lift targets, pain flags, readiness and the plan day. The verdict (a few words) covers the numbers too.',
+    'Comment first on Ben’s own edits (`yourEdits`, by editId; `by: Time` ones are what his Time cut). One short line each, judged against the facts in `lifts`. Say plainly when an edit looks fine (no ops). Never take an edit back just because it differs from the draft: only for a reason in the facts (a load well above his recent best for those reps, a stall, too many sets for one muscle, a pain flag), and say which fact.',
+    'An edit comment or suggestion may change loads, reps, sets, RPE and rest as well as structure (missing muscles, order, pairing, variety); each is only an offer Ben applies or skips. None is fine. A pain-flagged exercise is never made heavier or harder.',
+    'Copy numbers exactly as given and name the exercise in the same part of the sentence as each number. An estimated 1RM is always called an estimate. Never quote dates.',
     'Notes are for the next time this day comes round: things to keep or change. A load for next time goes in `target`.',
   ].join('\n'),
   mix: [...COMMON, 'Pick one fresh exercise from the shortlist for today, using his goal, recent sessions and memories (for example something he dislikes). One short reason.'].join('\n'),
@@ -111,6 +114,10 @@ export interface BuilderSlotView {
   workingSets: number;
   /** `4 × 6 @ 100 kg`, `5 × 3–6 @ 100 kg`, `3 × 8 @ 30 kg each`, `3 × 8 · no load`. */
   sets: string;
+  /** (Ben, 23 Oct) Target RPE of the working sets in order, distinct (`8`, `8 / 9`); null: none. */
+  rpe: string | null;
+  /** (Ben, 23 Oct) Rest after its working sets (`3:00`); null: no working set. */
+  rest: string | null;
   warmups: number;
 }
 
@@ -136,6 +143,8 @@ export function builderWorkoutView(snapshot: BuilderCoachSnapshot, ctx: BuilderC
       // A saved range reads as one (`5 × 3–6`), not its bottom (final re-review S2).
       const first = work[0];
       const repsText = first === undefined ? String(s.repRange.min) : builderRepsText(first);
+      const rpes = [...new Set(work.flatMap((r) => (r.rpe == null ? [] : [String(r.rpe)])))];
+      const rest = workingRestS(s, ctx.info, snapshot.workout.restLevel, ctx.restPresetsS);
       slots.push({
         slotKey: s.key,
         exerciseId: s.exerciseId,
@@ -145,6 +154,8 @@ export function builderWorkoutView(snapshot: BuilderCoachSnapshot, ctx: BuilderC
         superset: tag,
         workingSets: workingCount(s),
         sets: `${String(workingCount(s))} × ${repsText}${top === null ? ' · no load' : ` @ ${builderLoadText(top, s.unit, s.convention)}`}`,
+        rpe: rpes.length === 0 ? null : rpes.join(' / '),
+        rest: rest === null ? null : restClockText(rest),
         warmups: s.rows.length - work.length,
       });
     }
@@ -210,8 +221,26 @@ export function buildEditRequest(view: BuilderWorkoutView, extras: BuilderCoachE
   return request('edit', model, workoutContextText(view, extras), words);
 }
 
-export function buildReviewRequest(view: BuilderWorkoutView, extras: BuilderCoachExtras, factLines: readonly string[], model: string): ModelRequest {
-  return request('review', model, workoutContextText(view, extras, { facts: factLines }), 'Review this workout.');
+/**
+ * (Ben, 23 Oct) What the review is given beyond the workout, all code-made: his own edits against what was drafted,
+ * per-exercise facts from his history, the plan's focus and block week, readiness and lift targets.
+ */
+export interface ReviewRequestContext {
+  /** Null: what was drafted isn't known (an older draft), so his edits aren't either. */
+  yourEdits: readonly { editId: string; change: string; by: 'Ben' | 'Time' }[] | null;
+  lifts: readonly { slotKey: string; exercise: string; facts: readonly string[] }[];
+  /** `Strength`, `Balanced`, `Muscle`, `Fitness`: the plan's main focus, or his goal's. */
+  focus: string | null;
+  /** `Week 3 of 6`, `Week 6 of 6 · Deload`. */
+  blockWeek: string | null;
+  /** `Check-in 2 of 5 today`; null: no check-in today. */
+  readiness: string | null;
+  /** `Barbell bench press 120 kg × 5 by 1 Dec`. */
+  liftTargets: readonly string[];
+}
+
+export function buildReviewRequest(view: BuilderWorkoutView, extras: BuilderCoachExtras, factLines: readonly string[], model: string, review?: ReviewRequestContext): ModelRequest {
+  return request('review', model, workoutContextText(view, extras, { facts: factLines, ...(review === undefined ? {} : review) }), 'Review this workout.');
 }
 
 export function mixContextText(input: { from: string; shortlist: readonly { exerciseId: string; name: string; lastDone: string | null }[]; extras: Pick<BuilderCoachExtras, 'goal' | 'memories' | 'history'> }): string {

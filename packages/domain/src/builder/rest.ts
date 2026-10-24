@@ -122,3 +122,20 @@ export function restAfterRows(slot: BuilderSlot, info: BuilderInfoLookup, level:
 export function roundRestOf(block: BuilderBlock, level: RestLevel, presets?: readonly number[]): number {
   return block.roundRestS ?? defaultRestS('round', 'isolation', level, presets);
 }
+
+/**
+ * (Ben, 23 Oct; §2.9) A slot's working rest as Ben reads it: the rest after its first working set (the top set's, or
+ * the working sets'), his own or the default. Null: no working set.
+ */
+export function workingRestS(slot: BuilderSlot, info: BuilderInfoLookup, level: RestLevel, presets?: readonly number[]): number | null {
+  const first = slot.rows.find((r) => r.type !== 'warmup');
+  if (first === undefined) return null;
+  const kind: RestKind = first.type === 'warmup' ? 'working' : first.type;
+  return slot.restS?.[kind] ?? defaultRestS(kind, restRoleOf(slot, info), level, presets);
+}
+
+/** `3:00`, `1:30`. */
+export function restClockText(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  return `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`;
+}

@@ -7,6 +7,7 @@ import {
   builderSupersetWithNext,
   builderUnlink,
   canPair,
+  clampBuilderRest,
   clampMinutes,
   compareDifficulty,
   editSetRow,
@@ -17,6 +18,7 @@ import {
   loadDirection,
   makeSlot,
   removeSlot,
+  restClockText,
   roundContextOf,
   roundDownHere,
   setWorkingCount,
@@ -27,6 +29,7 @@ import {
   withBackoffBases,
   followTop,
   workingCount,
+  workingRestS,
   type BuilderBlock,
   type BuilderContext,
   type BuilderGroupName,
@@ -452,6 +455,15 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
       st.structure.push(`Unlink ${block.slots.map((x) => name(x.exerciseId)).join(' + ')}`);
       return;
     }
+    case 'rest': {
+      const s = slotFor(op.slotKey);
+      if (s === null) return;
+      // (Ben, 23 Oct) Rest after each working set (top, back-offs, working sets), on the builder's 15 s steps and limits.
+      const seconds = clampBuilderRest('working', op.seconds);
+      if (Math.abs(seconds - op.seconds) >= 8) st.notes.push(`${name(s.exerciseId)}: rest ${restClockText(seconds)}`);
+      st.w = replaceSlot(st.w, s.key, { ...s, restS: { ...s.restS, top: seconds, backoff: seconds, working: seconds }, touched: true });
+      return;
+    }
     case 'minutes': {
       const m = clampMinutes(op.minutes);
       if (m !== op.minutes) st.notes.push(`Length ${String(m)} min (limit ${String(BUILD_LIMITS.minMinutes)}–${String(BUILD_LIMITS.maxMinutes)})`);
@@ -481,8 +493,8 @@ function perSetChange(before: BuilderSlot, after: BuilderSlot, text: (r: Builder
   return x === '' || y === '' || x === y ? null : [x, y];
 }
 
-/** Lines for one surviving slot: sets, reps, RPE and load, before → after. */
-function slotLines(before: BuilderSlot, after: BuilderSlot, name: string): string[] {
+/** Lines for one surviving slot: sets, reps, RPE, load and rest, before → after. */
+function slotLines(before: BuilderSlot, after: BuilderSlot, name: string, rest: (s: BuilderSlot) => number | null): string[] {
   const out: string[] = [];
   const a = workingCount(before);
   const b = workingCount(after);
@@ -494,6 +506,9 @@ function slotLines(before: BuilderSlot, after: BuilderSlot, name: string): strin
   const la = topLoad(before);
   const lb = topLoad(after);
   if (la !== null && lb !== null && Math.abs(la - lb) > EPS) out.push(`${name}: ${loadChange(la, lb, after.unit, after.convention)}`);
+  const ra = rest(before);
+  const rb = rest(after);
+  if (ra !== null && rb !== null && ra !== rb) out.push(`${name}: rest ${restClockText(ra)} → ${restClockText(rb)}`);
   return out;
 }
 
@@ -536,7 +551,7 @@ export function applyBuilderEdits(snapshot: BuilderCoachSnapshot, ops: readonly 
     }
     if (!same(s, now)) {
       touched.add(s.key);
-      lines.push(...slotLines(s, now, name(s.exerciseId)));
+      lines.push(...slotLines(s, now, name(s.exerciseId), (x) => workingRestS(x, env.ctx.info, x === s ? base.restLevel : after.restLevel, env.ctx.restPresetsS)));
     }
   }
   for (const s of afterSlots) if (!beforeSlots.some((b) => b.key === s.key) && !replacing.has(s.key)) lines.push(`Add ${name(s.exerciseId)}`);
