@@ -542,6 +542,13 @@ export const BuildDaySchema = z.object({
 });
 export type BuildDay = z.infer<typeof BuildDaySchema>;
 
+/** (Ben, 23 Oct) A builder version's drafted baseline (`WorkoutDraftVersion.drafted`). */
+export const DraftedBaseSchema = z.object({
+  plan: DraftPlanSchema,
+  minutes: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes),
+});
+export type DraftedBase = z.infer<typeof DraftedBaseSchema>;
+
 export const TodayDraftMarkSchema = z.object({
   by: z.enum(['today', 'nudge']),
   controls: z.string().min(1).max(128),
@@ -582,6 +589,13 @@ export const WorkoutDraftVersionSchema = z.object({
   /** The model's arguments as received (data). */
   rawArgs: z.string().max(40_000),
   plan: DraftPlanSchema,
+  /**
+   * (Ben, 23 Oct; §2.9 Coach review) What code (or the coach, once Ben applied it) drafted for this version, before
+   * Ben's own edits: the plan and its length as they were made. Ben's in-place edits never change it; a coach apply,
+   * the coach's landed next-workout changes and a gym change move only the slots they changed. The review diffs the
+   * plan against it ("Bench top 100 → 110 kg, his edit"). Absent on older drafts: his edits aren't known.
+   */
+  drafted: DraftedBaseSchema.optional(),
   /** The length the overview fits to (BD11): from Ben's words or chips, never the model's. */
   fitMinutes: z.int().min(15).max(180),
   checks: z.array(BuildCheckSchema).max(60),
@@ -625,6 +639,8 @@ export const BuilderUndoSchema = z.object({
     key: BuilderDraftKeySchema.optional(),
     /** The gym before `Gym changed`; Undo puts it back. Absent: unchanged. */
     gymId: IdSchema.nullable().optional(),
+    /** (Ben, 23 Oct) The drafted baseline before an edit that moved it (a gym change, landed coach changes); Undo puts it back. */
+    drafted: DraftedBaseSchema.optional(),
   }),
   /**
    * (Ben, 23 Oct, D8; review batch23 S1, S5) This edit landed the coach's next-workout changes Ben applied in chat (their

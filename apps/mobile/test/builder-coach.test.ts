@@ -245,7 +245,7 @@ describe('Coach review (§2.9) and day notes', () => {
       (req) => {
         const slots = (yourData(req).workout as { slots: { slotKey: string; exerciseId: string }[] }).slots;
         const fly = slots.find((s) => s.exerciseId === 'cable_fly')?.slotKey ?? '';
-        return call('review_workout', { verdict: 'Balanced, 16 working sets', suggestions: [{ ops: [{ op: 'swap', slotKey: fly, toExerciseId: 'incline_bb' }], reason: 'Two lead with mid chest.' }], nextNotes: [{ text: 'Include abs', target: null }, { text: 'Hit 99 reps', target: null }, { text: null, target: { exerciseId: 'bench', value: 102.5, unit: 'kg', reps: 8 } }] });
+        return call('review_workout', { verdict: 'Balanced, 16 working sets', editComments: [], suggestions: [{ ops: [{ op: 'swap', slotKey: fly, toExerciseId: 'incline_bb' }], reason: 'Two lead with mid chest.' }], nextNotes: [{ text: 'Include abs', target: null }, { text: 'Hit 99 reps', target: null }, { text: null, target: { exerciseId: 'bench', value: 102.5, unit: 'kg', reps: 8 } }] });
       },
     ]);
     const h = await harness({ model });
@@ -288,7 +288,7 @@ describe('Coach review (§2.9) and day notes', () => {
   });
 
   it('no day-notes port: no notes on the sheet (never a ticked note that won’t be kept; B4)', async () => {
-    const model = new StepModel([() => call('review_workout', { verdict: 'Good', suggestions: [], nextNotes: [{ text: 'Include abs', target: null }, { text: null, target: { exerciseId: 'bench', value: 102.5, unit: 'kg', reps: 8 } }] })]);
+    const model = new StepModel([() => call('review_workout', { verdict: 'Good', editComments: [], suggestions: [], nextNotes: [{ text: 'Include abs', target: null }, { text: null, target: { exerciseId: 'bench', value: 102.5, unit: 'kg', reps: 8 } }] })]);
     const h = await harness({ model, dayNotes: false });
     const r = await h.service.review({ draftId: DRAFT, opId: 'rv-n', groups: [], plan: null });
     expect(r === null ? null : builderReviewView(r, 'Chest').notes).toEqual([]);
@@ -478,6 +478,7 @@ describe('the BuilderReview provider the builder sheet consumes (review B6)', ()
         push = slots.find((x) => x.exerciseId === 'pushdown')?.slotKey ?? '';
         return call('review_workout', {
           verdict: 'Mid chest 7, upper chest 3',
+          editComments: [],
           suggestions: [
             { ops: [{ op: 'swap', slotKey: fly, toExerciseId: 'incline_bb' }], reason: 'A second angle.' },
             { ops: [{ op: 'sets', slotKey: push, workingSets: 4 }], reason: 'More triceps.' },

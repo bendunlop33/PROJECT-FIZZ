@@ -108,6 +108,7 @@ describe('checkReview: a sentence with a wrong number is hidden', () => {
     const claims = reviewClaimBase(f, { ctx, minutes: [60, 52], plan });
     const args: ReviewWorkoutArgs = {
       verdict: 'Balanced, 16 working sets.',
+      editComments: [],
       suggestions: [
         { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'incline_bb' }], reason: '2 exercises lead with mid chest.' },
         { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'incline_bb' }], reason: 'Same again.' },
@@ -136,7 +137,7 @@ describe('checkReview: a sentence with a wrong number is hidden', () => {
     const { ctx, snap, env } = world();
     const f = reviewFacts({ snapshot: snap, ctx, groups: ['Chest', 'Arms', 'Core'], plan });
     const claims = reviewClaimBase(f, { ctx, minutes: [60, 52], plan });
-    const verdict = (v: string) => checkReview({ reviewId: 'r', args: { verdict: v, suggestions: [], nextNotes: [] }, snapshot: snap, env, claims }).verdict;
+    const verdict = (v: string) => checkReview({ reviewId: 'r', args: { verdict: v, editComments: [], suggestions: [], nextNotes: [] }, snapshot: snap, env, claims }).verdict;
     // Wrong: every one of these numbers appears SOMEWHERE in the context (reps, slot keys, loads), but not as this fact.
     for (const bad of ['Balanced, 5 working sets', 'Balanced, 30 working sets', 'Mid chest has 4 sets', 'Only 2 exercises for chest', 'Mid chest 3', 'Three exercises lead with mid chest', 'Bench at 105 kg', 'Up 10%', 'Bench 1RM is 125 kg']) expect([bad, verdict(bad)]).toEqual([bad, null]);
     // Right: each matches its own fact.
@@ -157,7 +158,7 @@ describe('checkReview: a sentence with a wrong number is hidden', () => {
     const claims = { ctx, minutes: [60] };
     const r = checkReview({
       reviewId: 'r3',
-      args: { verdict: 'Fine', suggestions: [{ ops: [{ op: 'sets', slotKey: key('cable_fly'), workingSets: 4 }], reason: 'More fly.' }, { ops: [{ op: 'sets', slotKey: key('pushdown'), workingSets: 4 }], reason: 'More triceps.' }], nextNotes: [] },
+      args: { verdict: 'Fine', editComments: [], suggestions: [{ ops: [{ op: 'sets', slotKey: key('cable_fly'), workingSets: 4 }], reason: 'More fly.' }, { ops: [{ op: 'sets', slotKey: key('pushdown'), workingSets: 4 }], reason: 'More triceps.' }], nextNotes: [] },
       snapshot: snap,
       env,
       claims,
@@ -261,7 +262,7 @@ describe('requests: one forced strict tool, parsed or refused', () => {
     const req = buildReviewRequest(view, extras, ['✓ Mid chest 7'], 'gpt-main');
     expect([req.effort, req.model]).toEqual(['high', 'gpt-main']);
     const call = (name: string, args: unknown): ModelEvent[] => [{ type: 'tool_call', callId: 'c', name, arguments: JSON.stringify(args) }, { type: 'completed' }];
-    const good = { verdict: 'Good', suggestions: [], nextNotes: [] };
+    const good = { verdict: 'Good', editComments: [], suggestions: [], nextNotes: [] };
     const port = new ScriptedCoachModel([call('review_workout', good), call('review_workout', { ...good, score: 9 }), call('fill_setup', good), [{ type: 'error', error: 'network' }]]);
     expect(await requestBuilderTool(port, req, BUILDER_COACH_TOOL.reviewWorkout)).toEqual({ ok: true, args: good });
     expect(await requestBuilderTool(port, req, BUILDER_COACH_TOOL.reviewWorkout)).toEqual({ ok: false, error: 'invalid_args' });

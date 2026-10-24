@@ -109,10 +109,15 @@ export function ReviewSheet({ review, visible, onApply, onDone, onClose }: { rev
   const theme = useTheme();
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [whyOpen, setWhyOpen] = useState(false);
+  /** Offers on his edits Ben skipped on this sheet (nothing is written; rule 3). */
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
   useEffect(() => {
     setTicked(new Set((review?.nextNotes ?? []).filter((n) => n.ticked).map((n) => n.id)));
     setWhyOpen(false);
   }, [review]);
+  useEffect(() => {
+    setSkipped(new Set());
+  }, [review?.edits.length]);
   const done = () => {
     onDone([...ticked]);
   };
@@ -150,6 +155,38 @@ export function ReviewSheet({ review, visible, onApply, onDone, onClose }: { rev
             <AppText variant="label" color="text.secondary" numeric>
               {review.variety}
             </AppText>
+          ) : null}
+          {review.edits.length > 0 ? (
+            <View style={{ gap: theme.space['1'] }}>
+              <Eyebrow>Your edits</Eyebrow>
+              {review.edits.map((e) => (
+                <View key={e.id} style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, padding: theme.space['3'], gap: theme.space['1'] }}>
+                  <AppText variant="callout" numeric>
+                    {e.edit}
+                  </AppText>
+                  {e.comment !== null ? (
+                    <AppText variant="label" color="text.secondary">
+                      {e.comment}
+                    </AppText>
+                  ) : null}
+                  {e.action !== null && !skipped.has(e.action.id) ? (
+                    <ReviewActionRow
+                      text={e.action.text}
+                      reason={e.action.reason}
+                      apply={e.action.apply}
+                      outOfDate={e.action.outOfDate === true}
+                      onApply={() => {
+                        if (e.action !== null) onApply(e.action.id);
+                      }}
+                      onSkip={() => {
+                        const id = e.action?.id;
+                        if (id !== undefined) setSkipped((x) => new Set([...x, id]));
+                      }}
+                    />
+                  ) : null}
+                </View>
+              ))}
+            </View>
           ) : null}
           {review.plan !== null ? (
             <View style={{ gap: theme.space['1'] }}>
@@ -204,7 +241,7 @@ export function ReviewSheet({ review, visible, onApply, onDone, onClose }: { rev
   );
 }
 
-function ReviewActionRow({ text, reason, apply, outOfDate, onApply }: { text: string; reason: string | null; apply: string; outOfDate: boolean; onApply: () => void }) {
+function ReviewActionRow({ text, reason, apply, outOfDate, onApply, onSkip }: { text: string; reason: string | null; apply: string; outOfDate: boolean; onApply: () => void; onSkip?: () => void }) {
   const theme = useTheme();
   return (
     <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, padding: theme.space['3'], gap: theme.space['1'] }}>
@@ -216,7 +253,16 @@ function ReviewActionRow({ text, reason, apply, outOfDate, onApply }: { text: st
           {reason}
         </AppText>
       ) : null}
-      {outOfDate ? <AppText variant="label" color="status.warning">Out of date</AppText> : <SecondaryButton label={apply} onPress={onApply} />}
+      {outOfDate ? (
+        <AppText variant="label" color="status.warning">Out of date</AppText>
+      ) : onSkip === undefined ? (
+        <SecondaryButton label={apply} onPress={onApply} />
+      ) : (
+        <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
+          <SecondaryButton label={apply} onPress={onApply} />
+          <TextButton label="Skip" tone="secondary" onPress={onSkip} />
+        </View>
+      )}
     </View>
   );
 }

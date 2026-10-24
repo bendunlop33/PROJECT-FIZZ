@@ -1,9 +1,11 @@
-import { infoOrDefault, slotsOf, workingCount, type BuilderContext, type BuilderGroupName, type BuilderSlot } from '@fizz/domain';
+import { infoOrDefault, slotsOf, workingCount, workingRestS, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '@fizz/domain';
 import type { EquipmentInstance, ReviewWorkoutArgs, WeightUnit, LoadConvention } from '@fizz/schemas';
-import { checkClaims, claimFacts, workoutClaimCheck, type ClaimBase } from './claims';
+import { checkClaims, claimFacts, workoutClaimCheck, type ClaimBase, type ClaimExtra } from './claims';
 import { CORE_FOCI, focusSets } from './focus';
-import { builderLoadText, type BuilderCoachEnv, type BuilderCoachSnapshot } from './edit-ops';
+import { builderLoadText, type BuilderCoachEnv, type BuilderCoachSnapshot, type EditOutcome } from './edit-ops';
+import { topLoad } from './load-guard';
 import { makeBuilderProposal, type BuilderProposal } from './proposal';
+import type { ReviewEdit } from './review-context';
 
 /**
  * Coach review (workout-builder-v3 §2.9; Ben, 20 Oct: "the coach writes the
@@ -189,8 +191,24 @@ export type ReviewNote =
   | { id: string; kind: 'text'; text: string }
   | { id: string; kind: 'target'; exerciseId: string; text: string; value: number; unit: WeightUnit; convention: LoadConvention; reps: number | null };
 
+/**
+ * (Ben, 23 Oct) The coach's comment on one of Ben's own edits: code's edit line, the coach's words after the number
+ * check, and its offer (a proposal, Apply / Skip, version-fenced, Undo after), if any.
+ */
+export interface ReviewEditNote {
+  /** `<reviewId>:c<i>`; the offer's proposal has the same ID. */
+  id: string;
+  editId: string;
+  /** Code's line for the edit (`Barbell bench press top 100 → 110 kg`). */
+  edit: string;
+  comment: string | null;
+  offer: ReviewSuggestion | null;
+}
+
 export interface CheckedReview {
   verdict: string | null;
+  /** (Ben, 23 Oct) Comments on his own edits, in the order of the edits. */
+  edits: ReviewEditNote[];
   suggestions: ReviewSuggestion[];
   notes: ReviewNote[];
   /** Sentences hidden for a number not in the facts (`Why?` → `Not shown`). */
@@ -201,8 +219,8 @@ export interface CheckedReview {
 
 const ACTION: Readonly<Record<string, string>> = { swap: 'Swap', add: 'Add', remove: 'Delete', superset: 'Superset', unlink: 'Unlink', move: 'Move' };
 
-/** The claim check's base for a review: code's facts and the plan's totals, never IDs or memories (B2). */
-export function reviewClaimBase(f: BuilderReviewFacts, input: { ctx: BuilderContext; minutes: readonly number[]; plan: ReviewPlanDay | null; words?: string }): ClaimBase {
+/** The claim check's base for a review: code's facts and the plan's totals, never IDs or memories (B2). `extra`: the review context's per-exercise facts (Ben, 23 Oct). */
+export function reviewClaimBase(f: BuilderReviewFacts, input: { ctx: BuilderContext; minutes: readonly number[]; plan: ReviewPlanDay | null; words?: string; extra?: readonly ClaimExtra[] }): ClaimBase {
   const p = input.plan;
   const kept = f.plan?.lines.find((l) => l.key === 'planned_exercises');
   return {
@@ -218,26 +236,105 @@ export function reviewClaimBase(f: BuilderReviewFacts, input: { ctx: BuilderCont
             pairs: [[p.nextDayNumber, p.dayCount], ...(kept?.actual != null && kept.planned != null ? [[kept.actual, kept.planned] as [number, number]] : [])],
           },
     ...(input.words === undefined ? {} : { words: input.words }),
+    ...(input.extra === undefined ? {} : { extra: input.extra }),
   };
 }
 
-/** `checkReview`: what of the coach's review may show. Every number is checked against the fact it names. */
-export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; snapshot: BuilderCoachSnapshot; env: BuilderCoachEnv; claims: ClaimBase }): CheckedReview {
+const sign = (v: number): number => (Math.abs(v) < 1e-6 ? 0 : v > 0 ? 1 : -1);
+
+/**
+ * Whether a change takes one of Ben's own edits back (in part or whole): his raised load, sets, reps, RPE or rest
+ * lowered again (or his lowered one raised), his added exercise removed, his removed one added back, his swap swapped
+ * back, his length moved back. Code's check behind "never just undo his edit without a reason" (Ben, 23 Oct).
+ */
+export function revertsEdit(e: ReviewEdit, snapshot: BuilderCoachSnapshot, outcome: EditOutcome, env: BuilderCoachEnv): boolean {
+  if (e.cause !== 'ben') return false;
+  const before = slotsOf(snapshot.workout.blocks);
+  const after = slotsOf(outcome.workout.blocks);
+  const was = before.find((x) => x.key === e.slotKey);
+  const now = after.find((x) => x.key === e.slotKey);
+  const has = (id: string | null) => id !== null && after.some((x) => x.exerciseId === id);
+  const against = (a: number | null, b: number | null): boolean => e.before !== null && e.after !== null && a !== null && b !== null && sign(b - a) !== 0 && sign(b - a) === -sign(e.after - e.before);
+  const rpeOf = (x: BuilderSlot | undefined) => x?.rows.find((r) => r.type === 'top')?.rpe ?? x?.rows.find((r) => r.type !== 'warmup')?.rpe ?? null;
+  const repsOf = (x: BuilderSlot | undefined) => x?.rows.find((r) => r.type === 'top')?.reps ?? x?.rows.find((r) => r.type !== 'warmup')?.reps ?? null;
+  const restOf = (x: BuilderSlot | undefined, w: BuilderWorkout) => (x === undefined ? null : workingRestS(x, env.ctx.info, w.restLevel, env.ctx.restPresetsS));
+  switch (e.kind) {
+    case 'minutes':
+      return against(snapshot.minutes, outcome.minutes);
+    case 'added':
+      return was !== undefined && now === undefined;
+    case 'removed':
+      return has(e.fromExerciseId);
+    case 'swapped':
+      return now?.exerciseId !== e.exerciseId && has(e.fromExerciseId);
+    case 'sets':
+      return was !== undefined && now !== undefined && against(workingCount(was), workingCount(now));
+    case 'load':
+      return was !== undefined && now !== undefined && against(topLoad(was), topLoad(now));
+    case 'reps':
+      return against(repsOf(was), repsOf(now));
+    case 'rpe':
+      return against(rpeOf(was), rpeOf(now));
+    case 'rest':
+      return against(restOf(was, snapshot.workout), restOf(now, outcome.workout));
+  }
+}
+
+/** A reason grounded in code's facts: words that passed the number check with a number in them, or the pain flag. */
+const grounded = (shown: string | null): boolean => shown !== null && (/\d/.test(shown) || /\b(?:pain|flag(?:ged)?|hurt)/i.test(shown));
+
+/**
+ * `checkReview`: what of the coach's review may show. Every number is checked against the fact it names.
+ * (Ben, 23 Oct) `edits`: Ben's own edits (`reviewEdits`); the coach's comments name them by ID. An offer that takes
+ * one of his edits back shows only with a reason grounded in code's facts (a checked number, or the pain flag);
+ * otherwise the offer is dropped and the comment stays. Pain-flagged lifts are never made heavier or harder (the
+ * edit ops' guard), and every load is rounded down to what this gym can load and capped (rule 4).
+ */
+export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; snapshot: BuilderCoachSnapshot; env: BuilderCoachEnv; claims: ClaimBase; edits?: readonly ReviewEdit[] | null }): CheckedReview {
   const hidden: string[] = [];
   const check = workoutClaimCheck(input.snapshot.workout, input.claims);
   const verdict = check(input.args.verdict, null);
   hidden.push(...verdict.hidden);
-  const suggestions: ReviewSuggestion[] = [];
+  const edits = input.edits ?? [];
   const seen = new Set<string>();
-  input.args.suggestions.forEach((s, i) => {
-    const r = makeBuilderProposal({ id: `${input.reviewId}:s${String(i)}`, snapshot: input.snapshot, ops: s.ops, words: s.reason, check, env: input.env });
+  /** The proposal for `ops`, or null when it changes nothing, repeats one shown, or undoes his edit with no grounded reason. */
+  const offer = (id: string, ops: ReviewWorkoutArgs['suggestions'][number]['ops'], words: string): { suggestion: ReviewSuggestion | null; shown: string | null } => {
+    const r = makeBuilderProposal({ id, snapshot: input.snapshot, ops, words, check, env: input.env });
     hidden.push(...r.hidden);
-    if (r.proposal === null) return;
+    if (r.proposal === null) return { suggestion: null, shown: r.reason };
+    if (edits.some((e) => revertsEdit(e, input.snapshot, r.outcome, input.env)) && !grounded(r.reason)) return { suggestion: null, shown: r.reason };
     const key = r.proposal.lines.join('\n');
-    if (seen.has(key)) return;
+    if (seen.has(key)) return { suggestion: null, shown: r.reason };
     seen.add(key);
-    const first = s.ops[0]?.op ?? '';
-    suggestions.push({ id: r.proposal.id, action: s.ops.length === 1 ? (ACTION[first] ?? 'Apply') : 'Apply', proposal: r.proposal });
+    const first = ops[0]?.op ?? '';
+    return { suggestion: { id: r.proposal.id, action: ops.length === 1 ? (ACTION[first] ?? 'Apply') : 'Apply', proposal: r.proposal }, shown: r.reason };
+  };
+
+  const editNotes: ReviewEditNote[] = [];
+  const commented = new Set<string>();
+  input.args.editComments.forEach((c, i) => {
+    const e = edits.find((x) => x.id === c.editId);
+    if (e === undefined || commented.has(e.id)) return;
+    commented.add(e.id);
+    const id = `${input.reviewId}:c${String(i)}`;
+    if (c.ops.length > 0) {
+      const o = offer(id, c.ops, c.comment);
+      if (o.shown === null && o.suggestion === null) return;
+      editNotes.push({ id, editId: e.id, edit: e.text, comment: o.shown, offer: o.suggestion });
+      return;
+    }
+    const words = check(c.comment, null);
+    hidden.push(...words.hidden);
+    if (words.shown === null) return;
+    editNotes.push({ id, editId: e.id, edit: e.text, comment: words.shown, offer: null });
+  });
+  // In the order of his edits.
+  editNotes.sort((a, b) => edits.findIndex((x) => x.id === a.editId) - edits.findIndex((x) => x.id === b.editId));
+
+  const suggestions: ReviewSuggestion[] = [];
+  input.args.suggestions.forEach((s, i) => {
+    const o = offer(`${input.reviewId}:s${String(i)}`, s.ops, s.reason);
+    if (o.suggestion !== null) suggestions.push(o.suggestion);
   });
 
   const notes: ReviewNote[] = [];
@@ -262,5 +359,5 @@ export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; 
     notes.push({ id, kind: 'text', text: c.shown });
   });
 
-  return { verdict: verdict.shown, suggestions, notes, hidden, numbersChecked: true };
+  return { verdict: verdict.shown, edits: editNotes, suggestions, notes, hidden, numbersChecked: true };
 }

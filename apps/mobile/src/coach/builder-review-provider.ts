@@ -72,13 +72,14 @@ function sheetOf(h: Held): BuilderReview {
             // (Ben, 23 Oct, D1) No `Update plan day` before Start: a structural change is offered on the Summary.
             actions: v.plan.addBack.filter((a) => open(a.id)).map((a) => action(a.id, a.label, null, 'Add')),
           },
+    edits: v.edits.map((e) => ({ id: e.id, edit: e.edit, comment: e.comment, action: e.offer === null || !open(e.offer.id) ? null : action(e.offer.id, e.offer.card.lines.join(' · '), e.offer.card.warnings.join('\n') || null, e.offer.action) })),
     suggestions: v.suggestions.filter((s) => open(s.id)).map((s) => action(s.id, s.card.lines.join(' · '), [s.card.reason, ...s.card.warnings].filter((x): x is string => x !== null).join('\n') || null, s.action)),
     nextNotes: notes.map((n) => ({ id: n.id, text: n.text, ticked: n.ticked })),
     nextNotesTitle: notes.length === 0 ? null : v.notesTitle,
   };
 }
 
-const unavailable = (status: BuilderReviewStatus): BuilderReview => ({ status, verdict: null, counts: [], variety: null, plan: null, suggestions: [], nextNotes: [], nextNotesTitle: null });
+const unavailable = (status: BuilderReviewStatus): BuilderReview => ({ status, verdict: null, counts: [], variety: null, plan: null, edits: [], suggestions: [], nextNotes: [], nextNotesTitle: null });
 
 export function createBuilderReviewProvider(service: Pick<BuilderCoachService, 'review' | 'apply' | 'saveReviewNotes'>, source: BuilderReviewSource, opts: { newId: () => string }): BuilderReviewProvider {
   const held = new Map<string, Held>();
@@ -88,7 +89,11 @@ export function createBuilderReviewProvider(service: Pick<BuilderCoachService, '
       if (inputs === null) return unavailable('failed');
       const result = await service.review({ draftId, opId: `builder-review:${draftId}:${opts.newId()}`, groups: inputs.groups, plan: inputs.plan, ...(signal === undefined ? {} : { signal }) });
       if (result === null) return unavailable('failed');
-      const proposals = new Map<string, BuilderProposal>([...result.addBack.map((a) => [a.id, a.proposal] as const), ...(result.coach?.suggestions ?? []).map((s) => [s.id, s.proposal] as const)]);
+      const proposals = new Map<string, BuilderProposal>([
+        ...result.addBack.map((a) => [a.id, a.proposal] as const),
+        ...(result.coach?.edits ?? []).flatMap((e) => (e.offer === null ? [] : [[e.offer.id, e.offer.proposal] as const])),
+        ...(result.coach?.suggestions ?? []).map((s) => [s.id, s.proposal] as const),
+      ]);
       const h: Held = { result, inputs, proposals, notes: result.coach?.notes ?? [], applied: new Set(), outOfDate: new Set() };
       held.set(draftId, h);
       return sheetOf(h);

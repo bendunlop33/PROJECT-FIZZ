@@ -36,6 +36,26 @@ interface Entity {
    * only one of these passes only when its sentence calls it an estimate (rule 6; review b3-wave3-truth B1).
    */
   estimates?: Load[];
+  /** (Ben, 23 Oct; Coach review) Percentages code worked out for it (`9% above his best recent 6-rep load`). */
+  percents?: Set<number>;
+  /** (Coach review) Rest after its working sets, seconds (`3:00`, `90 s`, `2 min rest`). */
+  rests?: Set<number>;
+}
+
+/**
+ * (Ben, 23 Oct; Coach review) Facts code adds for one exercise or focus beyond the workout itself: his recent
+ * history, the drafted values before his edits, the percentages and rests code worked out. Names as the coach may
+ * write them (`exerciseNames`). Estimates are kept apart (rule 6).
+ */
+export interface ClaimExtra {
+  names: readonly string[];
+  loads?: readonly Load[];
+  estimates?: readonly Load[];
+  reps?: readonly number[];
+  rpe?: readonly number[];
+  sets?: readonly number[];
+  percents?: readonly number[];
+  rests?: readonly number[];
 }
 
 /**
@@ -85,6 +105,8 @@ export interface ClaimBase {
   plan?: ClaimPlan | null;
   /** Ben's words. */
   words?: string;
+  /** (Coach review) Code's extra facts per exercise or focus. */
+  extra?: readonly ClaimExtra[];
 }
 
 const LB_PER_KG = 2.20462;
@@ -156,6 +178,18 @@ export function claimFacts(workouts: readonly BuilderWorkout[], base: ClaimBase)
     for (const [g, n] of groupCount) entity([g]).exercises.add(n);
     for (const [fo, n] of focusCount) entity([fo]).exercises.add(n);
   }
+  for (const x of base.extra ?? []) {
+    const names = [...new Set(x.names.map(lower))].filter((n) => n !== '');
+    if (names.length === 0) continue;
+    const e = entity(names);
+    for (const v of x.sets ?? []) e.sets.add(v);
+    for (const v of x.reps ?? []) e.reps.add(v);
+    for (const v of x.rpe ?? []) e.rpe.add(v);
+    e.loads.push(...(x.loads ?? []));
+    if (x.estimates !== undefined && x.estimates.length > 0) e.estimates = [...(e.estimates ?? []), ...x.estimates];
+    if (x.percents !== undefined && x.percents.length > 0) e.percents = new Set([...(e.percents ?? []), ...x.percents]);
+    if (x.rests !== undefined && x.rests.length > 0) e.rests = new Set([...(e.rests ?? []), ...x.rests]);
+  }
   const p = base.plan;
   if (p != null) {
     f.minutes.add(p.minutes);
@@ -168,18 +202,20 @@ export function claimFacts(workouts: readonly BuilderWorkout[], base: ClaimBase)
   return f;
 }
 
-type Kind = 'plan' | 'load' | 'sets' | 'exercises' | 'compound' | 'isolation' | 'minutes' | 'reps' | 'rpe' | 'of' | 'sessions' | 'runs' | 'bare' | 'never';
+type Kind = 'plan' | 'load' | 'sets' | 'exercises' | 'compound' | 'isolation' | 'minutes' | 'reps' | 'rpe' | 'of' | 'sessions' | 'runs' | 'percent' | 'rest' | 'bare' | 'never';
 
 const LOAD_UNIT = /^\s?(?:kgs?|kilos?|lbs?|pounds?)\b/;
 const AFTER: readonly [RegExp, Kind][] = [
   [LOAD_UNIT, 'load'],
-  [/^\s?%/, 'never'],
+  // A percentage passes only when code worked it out for what its clause names (Coach review); else hidden.
+  [/^\s?(?:%|percent\b|per cent\b)/, 'percent'],
   [/^\s?[×x]\s?\d/, 'sets'],
   [/^\s?(?:(?:hard|working|work|total|more|fewer|extra|direct|weekly)\s+)?sets?\b/, 'sets'],
   [/^\s?(?:(?:\w+)\s+)?(?:exercises?|lifts?|movements?)\b/, 'exercises'],
   [/^\s?compounds?\b/, 'compound'],
   [/^\s?isolations?\b/, 'isolation'],
   [/^\s?(?:min|mins|minutes?)\b/, 'minutes'],
+  [/^\s?(?:s|secs?|seconds?)\b/, 'rest'],
   [/^\s?(?:reps?|repetitions?)\b/, 'reps'],
   [/^\s?(?:(?:planned|plan|lifting|gym|training|hard|easy|good)\s+)?(?:sessions?|workouts?|days?)\b/, 'sessions'],
   [/^\s?runs?\b/, 'runs'],
@@ -228,6 +264,12 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
       return '#'.repeat(m.length);
     });
   }
+  // (Coach review) A rest time (`3:00`) is one value in seconds, checked with its clause (its colon cuts nothing).
+  const clocks: { at: number; seconds: number }[] = [];
+  masked = masked.replace(/(?<![\d.:])(\d{1,2}):([0-5]\d)(?![\d:])/g, (m, mm: string, ss: string, at: number) => {
+    clocks.push({ at, seconds: Number(mm) * 60 + Number(ss) });
+    return ' '.repeat(m.length);
+  });
   // Clauses: a fact belongs to what its own clause names.
   const cuts = [0, ...[...masked.matchAll(/[,;:()]|\s(?:and|but|while|whereas|plus|vs)\s|\s[–—-]\s/g)].map((m) => m.index), masked.length];
   const clauseOf = (at: number): [number, number] => {
@@ -242,6 +284,12 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
     }
     return [lo, hi];
   };
+
+  for (const c of clocks) {
+    const [lo, hi] = clauseOf(c.at);
+    const named = mentions.filter((x) => x.at >= lo && x.at < hi).map((x) => x.e);
+    if (!named.some((e) => has(e.rests ?? [], c.seconds))) return false;
+  }
 
   const pairEnds = new Set<number>();
   /** Where a range's top starts → its bottom's kind (`5 × 3–6`: the 6 is reps too; final re-review S2). */
@@ -313,7 +361,14 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
         ok = has(f.isolation, n);
         break;
       case 'minutes':
-        ok = has(f.minutes, n);
+        // `2 min rest`: a named exercise's rest; else the length.
+        ok = has(f.minutes, n) || (/\brest/.test(masked.slice(lo, hi)) && named.some((e) => has(e.rests ?? [], n * 60)));
+        break;
+      case 'rest':
+        ok = named.some((e) => has(e.rests ?? [], n));
+        break;
+      case 'percent':
+        ok = named.some((e) => has(e.percents ?? [], n));
         break;
       case 'sessions': {
         const sc = f.sessions;

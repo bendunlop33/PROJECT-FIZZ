@@ -59,6 +59,11 @@ export const BuilderEditOpSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('unlink'), slotKey: RefSchema }),
   /** The length; code fits the workout to it (§3.6) and works out the minutes. */
   z.strictObject({ op: z.literal('minutes'), minutes: z.int().min(0).max(600) }),
+  /**
+   * (Ben, 23 Oct; §2.9) Rest after each working set (top, back-offs, working sets), seconds. Code rounds it to the
+   * builder's 15 s steps and clamps it to the builder's limits.
+   */
+  z.strictObject({ op: z.literal('rest'), slotKey: RefSchema, seconds: z.int().min(0).max(1200) }),
 ]);
 export type BuilderEditOp = z.infer<typeof BuilderEditOpSchema>;
 export type BuilderEditOpKind = BuilderEditOp['op'];
@@ -77,6 +82,9 @@ export const BUILDER_COACH_LIMITS = {
   weeklyLines: 3,
   weeklyLineMax: 200,
   maxTweaks: 2,
+  /** (Ben, 23 Oct) Coach review: comments on Ben's own edits, each with an optional offer. */
+  maxEditComments: 6,
+  editCommentMax: 160,
 } as const;
 const L = BUILDER_COACH_LIMITS;
 
@@ -121,12 +129,25 @@ export const ReviewNoteArgsSchema = z.strictObject({
 export type ReviewNoteArgs = z.infer<typeof ReviewNoteArgsSchema>;
 
 /**
+ * (Ben, 23 Oct) One comment on one of Ben's own edits (by the code-given `editId`), with an optional offer (`ops`,
+ * empty: no change, e.g. "looks fine"). The offer is only ever Apply / Skip, version-fenced, with Undo.
+ */
+export const ReviewEditCommentSchema = z.strictObject({
+  editId: RefSchema,
+  comment: coachText(L.editCommentMax),
+  ops: z.array(BuilderEditOpSchema).max(L.maxSuggestionOps),
+});
+export type ReviewEditComment = z.infer<typeof ReviewEditCommentSchema>;
+
+/**
  * `review_workout` (Coach review, §2.9): the coach writes the verdict,
- * suggestions and notes; code supplies every fact and checks the numbers in
- * the text (a sentence with a number not in the facts is hidden).
+ * comments on Ben's own edits, suggestions and notes; code supplies every
+ * fact and checks the numbers in the text (a sentence with a number not in
+ * the facts is hidden). (Ben, 23 Oct) The verdict covers the numbers too.
  */
 export const ReviewWorkoutArgsSchema = z.strictObject({
   verdict: coachText(L.verdictMax),
+  editComments: z.array(ReviewEditCommentSchema).max(L.maxEditComments),
   suggestions: z.array(z.strictObject({ ops: z.array(BuilderEditOpSchema).min(1).max(L.maxSuggestionOps), reason: coachText(L.reasonMax) })).max(L.maxSuggestions),
   nextNotes: z.array(ReviewNoteArgsSchema).max(L.maxNotes),
 });
