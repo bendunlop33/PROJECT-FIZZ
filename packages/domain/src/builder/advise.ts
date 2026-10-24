@@ -1,4 +1,5 @@
 import { canPair, infoOrDefault, sharedMuscle } from './arrange';
+import { nearDuplicateIds } from './similar';
 import type { BuilderInfoLookup, BuilderSlot } from './types';
 
 /**
@@ -20,7 +21,9 @@ export type BuilderAdvice =
   | { kind: 'isolation_first'; key: string; isolation: AdviceRef; compound: AdviceRef; muscle: string; reason: string; fix: { kind: 'move_first'; slotKey: string; label: string } }
   | { kind: 'heavy_pair'; key: string; a: AdviceRef; b: AdviceRef; reason: string; fix: { kind: 'unlink'; slotKey: string; label: string } }
   | { kind: 'abs_heavy'; key: string; a: AdviceRef; b: AdviceRef; reason: string; fix: { kind: 'unlink'; slotKey: string; label: string } }
-  | { kind: 'shared_muscle'; key: string; a: AdviceRef; b: AdviceRef; muscle: string; reason: string; fix: { kind: 'unlink'; slotKey: string; label: string } };
+  | { kind: 'shared_muscle'; key: string; a: AdviceRef; b: AdviceRef; muscle: string; reason: string; fix: { kind: 'unlink'; slotKey: string; label: string } }
+  /** (Ben, 23 Oct) Two near-duplicates in one workout (`nearDuplicate`): advice only, Ben may keep both. */
+  | { kind: 'near_duplicate'; key: string; a: AdviceRef; b: AdviceRef; reason: string; fix: { kind: 'remove'; slotKey: string; label: string } };
 
 export interface AdviceRef {
   slotKey: string;
@@ -37,6 +40,8 @@ export const ADVICE_TEXT = {
   moveFirst: (name: string) => `Move ${name} first`,
   unlinkNamed: (name: string) => `Unlink ${name}`,
   unlink: 'Unlink',
+  nearDuplicate: (a: string, b: string) => `${a} and ${b} are the same movement for the same muscle: one is enough.`,
+  removeNamed: (name: string) => `Remove ${name}`,
 } as const;
 
 /** `adviseBuilder`: every current "not recommended" item, in workout order. */
@@ -99,6 +104,15 @@ export function adviseBuilder(blocks: readonly AdviceBlock[], info: BuilderInfoL
       }
     }
   });
+  // (Ben, 23 Oct) Near-duplicates anywhere in the workout: the later one is the fix.
+  for (let a = 0; a < flat.length; a += 1) {
+    for (let b = a + 1; b < flat.length; b += 1) {
+      const x = flat[a];
+      const y = flat[b];
+      if (x === undefined || y === undefined || !nearDuplicateIds(x.s.exerciseId, y.s.exerciseId, info)) continue;
+      out.push({ kind: 'near_duplicate', key: `dup:${x.s.key}~${y.s.key}`, a: ref(x), b: ref(y), reason: ADVICE_TEXT.nearDuplicate(x.i.name, y.i.name), fix: { kind: 'remove', slotKey: y.s.key, label: ADVICE_TEXT.removeNamed(y.i.name) } });
+    }
+  }
   return out;
 }
 

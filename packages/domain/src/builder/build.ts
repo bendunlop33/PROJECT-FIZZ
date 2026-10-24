@@ -1,9 +1,10 @@
-import { BUILD_LIMITS } from '@fizz/schemas';
-import { orderSlots, pairSlots, singlesOf } from './arrange';
+import { BUILD_LIMITS, BUILDER_FOCI } from '@fizz/schemas';
+import { infoOrDefault, orderSlots, pairSlots, singlesOf } from './arrange';
 import { estimateBuilderMinutes } from './estimate';
 import { settleWarmups } from './warmups';
 import { FIT_RULES, fitToMinutes, type BuilderFitResult } from './fit';
 import { isAutoPickInfo } from './info';
+import { autoPickClash, BUILDER_SUB_ROLES, subRoleOf } from './similar';
 import { makeSlot } from './slot';
 import { KG_PER_LB } from '../units';
 import type { ArmPart, BuilderContext, BuilderExerciseInfo, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
@@ -183,7 +184,12 @@ export interface BuilderSetup {
  */
 export type BuilderPool = (group: BuilderGroupName) => readonly string[];
 
-/** Pick a group's exercises from its pool. */
+/**
+ * Pick a group's exercises from its pool (Ben, 23 Oct): never a near-duplicate of one already in the workout (the
+ * main lift and earlier groups' picks included) and at most one traps isolation (`autoPickClash`); an uncovered
+ * sub-role before a second exercise for a covered one (`BUILDER_SUB_ROLES` first, a compound first within each, so a
+ * Back day has a vertical pull and a row before shrugs or rear-delt work).
+ */
 function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used: Set<string>, ctx: BuilderContext, opts: { varied: boolean; legParts: readonly LegPart[] | undefined; armOrder: readonly PickedArmPart[]; mainInfo: BuilderExerciseInfo | null }): string[] {
   if (need <= 0) return [];
   const candidates = pool(group).filter((id) => !used.has(id) && isAutoPickInfo(ctx.info(id)));
@@ -192,6 +198,8 @@ function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used:
     out.push(id);
     used.add(id);
   };
+  /** Free to go in: not in yet, and no near-duplicate (or second traps isolation) of anything in. */
+  const free = (id: string): boolean => !used.has(id) && autoPickClash(id, used, ctx.info) === null;
   if (group === 'Legs') {
     const allowed = opts.legParts ?? (['quads', 'hamstrings_glutes', 'calves'] as const);
     const seq = LEG_PART_ORDER.filter((p) => allowed.includes(p));
@@ -200,12 +208,12 @@ function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used:
     const order = idx >= 0 ? [...seq.slice(0, idx), ...seq.slice(idx + 1)] : seq;
     for (let i = 0; out.length < need && i < order.length * 2; i += 1) {
       const part = order[i % order.length];
-      const id = candidates.find((c) => !used.has(c) && ctx.info(c)?.part === part);
+      const id = candidates.find((c) => free(c) && ctx.info(c)?.part === part);
       if (id !== undefined) take(id);
     }
     for (const c of candidates) {
       if (out.length >= need) break;
-      if (used.has(c)) continue;
+      if (!free(c)) continue;
       if (opts.legParts !== undefined && !opts.legParts.includes(ctx.info(c)?.part as LegPart)) continue;
       take(c);
     }
@@ -216,28 +224,40 @@ function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used:
     const parts = opts.armOrder;
     for (let i = 0; out.length < need && i < parts.length * BUILDER_VOLUME.maxPerGroup; i += 1) {
       const part = parts[i % parts.length];
-      const id = candidates.find((c) => !used.has(c) && ctx.info(c)?.part === part);
+      const id = candidates.find((c) => free(c) && ctx.info(c)?.part === part);
       if (id !== undefined) take(id);
     }
     for (const c of candidates) {
       if (out.length >= need) break;
-      if (!used.has(c) && parts.includes(ctx.info(c)?.part as PickedArmPart)) take(c);
+      if (free(c) && parts.includes(ctx.info(c)?.part as PickedArmPart)) take(c);
     }
     return out;
   }
-  if (opts.varied) {
-    const angles = new Set<string>(opts.mainInfo?.group === group ? [opts.mainInfo.angle] : []);
-    for (const c of candidates) {
-      if (out.length >= need) break;
-      const a = ctx.info(c)?.angle ?? '';
-      if (used.has(c) || angles.has(a)) continue;
-      take(c);
-      angles.add(a);
-    }
+  // Sub-roles: the main lift's (when it is this group's) is covered already.
+  const role = (id: string): string => subRoleOf(infoOrDefault(ctx.info, id));
+  const covered = new Set<string>(opts.mainInfo?.group === group ? [subRoleOf(opts.mainInfo)] : []);
+  const takeRole = (id: string) => {
+    take(id);
+    covered.add(role(id));
+  };
+  // 1. The group's first sub-roles in order, a compound first within each.
+  for (const r of BUILDER_SUB_ROLES[group] ?? []) {
+    if (out.length >= need) break;
+    if (covered.has(r)) continue;
+    const of = candidates.filter((c) => free(c) && role(c) === r);
+    const id = of.find((c) => ctx.info(c)?.role === 'compound') ?? of[0];
+    if (id !== undefined) takeRole(id);
   }
+  // 2. Any other uncovered sub-role of the group (its focus headings, and traps; Varied: any other angle), in pool order.
+  const roles = new Set<string>([...BUILDER_FOCI[group], 'Traps']);
   for (const c of candidates) {
     if (out.length >= need) break;
-    if (!used.has(c)) take(c);
+    if (free(c) && (opts.varied || roles.has(role(c))) && !covered.has(role(c))) takeRole(c);
+  }
+  // 3. Then the pool's order.
+  for (const c of candidates) {
+    if (out.length >= need) break;
+    if (free(c)) takeRole(c);
   }
   return out;
 }

@@ -56,7 +56,9 @@ describe('Mix it up (§2.0.2, Ben agreed 20 Oct)', () => {
     expect(mixExclusion('machine_press', base())).toBe('same_angle');
     expect(mixExclusion('pushdown', base())).toBe('not_same_group');
     expect(mixExclusion('incline_db', base({ target: { exerciseId: 'machine_press', main: false } }))).toBe('in_workout');
-    expect(mixExclusion('incline_bb', base({ target: { exerciseId: 'machine_press', main: false } }))).toBeNull();
+    // (Ben, 23 Oct) Incline barbell press near-duplicates the Incline dumbbell press already in: never offered.
+    expect(mixExclusion('incline_bb', base({ target: { exerciseId: 'machine_press', main: false } }))).toBe('near_duplicate');
+    expect(mixExclusion('incline_bb', base({ target: { exerciseId: 'machine_press', main: false }, inWorkout: new Set(['bench', 'machine_press', 'cable_fly']) }))).toBeNull();
     expect(mixExclusion('pec_deck', base({ painFlagged: (id) => id === 'pec_deck' }))).toBe('pain');
     expect(mixExclusion('pec_deck', base({ availableHere: (id) => id !== 'pec_deck' }))).toBe('not_here');
     expect(mixExclusion('pec_deck', base({ lastTwoOnDay: new Set(['pec_deck']) }))).toBe('recent_on_day');

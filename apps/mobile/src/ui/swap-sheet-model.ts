@@ -15,6 +15,13 @@ export interface ChoiceItem {
   mayHurt: boolean;
   /** (Rule 9) The flag behind `May hurt`, as the confirm says it: `Shoulder pain flagged 6 Oct.`; null: none or not known. */
   painLine?: string | null;
+  /** (Ben, 23 Oct) A near-duplicate of this exercise in the workout (`Barbell shrug`): listed last, `Like Barbell shrug`. */
+  similarTo?: string | null;
+}
+
+/** The row's second line: `Like Barbell shrug` for a near-duplicate, else the works line. */
+export function choiceLine(item: Pick<ChoiceItem, 'works' | 'similarTo'>): string | null {
+  return item.similarTo == null ? item.works : `Like ${item.similarTo}`;
 }
 
 export const SWAP_PAIN_COPY = {

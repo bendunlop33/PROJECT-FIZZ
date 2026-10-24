@@ -115,21 +115,23 @@ describe("Ben's Back day (Build B screenshot, 21 Oct)", () => {
     { group: 'Arms', count: 2 },
   ];
 
-  it('exact case: before the fix this built "45° back extension + Dumbbell curl | Barbell row + Cable curl | Barbell shrug | Dumbbell rear-delt fly"', () => {
+  it('exact case: before the fix this built "45° back extension + Dumbbell curl | Barbell row + Cable curl | Barbell shrug | Dumbbell rear-delt fly" (now a vertical pull, no near-duplicate curls; Ben, 23 Oct)', () => {
     // His set-up then was Biceps 2 (pre-D5): a stored `Biceps` row reads as Arms with only biceps (`armParts`).
     const w = buildFromSetup({ minutes: 40, mainLiftExerciseId: null, supersets: true, groups, armParts: ['biceps'] }, world.pool(BACK_HISTORY), world.ctx()).workout;
-    expect(names(w, world.info)).toEqual(['Barbell row', '45° back extension + Dumbbell curl', 'Barbell shrug + Cable curl', 'Dumbbell rear-delt fly']);
+    // (Ben, 23 Oct) A vertical pull before the shrug (sub-roles), and never two near-duplicate curls (Cable curl ≈ Dumbbell curl).
+    expect(names(w, world.info)).toEqual(['Barbell row', 'Assisted pull-up + Dumbbell curl', '45° back extension + Hammer curl', 'Dumbbell rear-delt fly']);
     // D5's Arms 2 on a back day: biceps first, then triceps.
     const d5 = buildFromSetup({ minutes: 40, mainLiftExerciseId: null, supersets: true, groups }, world.pool(BACK_HISTORY), world.ctx()).workout;
-    expect(names(d5, world.info)).toEqual(['Barbell row', '45° back extension + Dumbbell curl', 'Barbell shrug + Band triceps pushdown', 'Dumbbell rear-delt fly']);
+    expect(names(d5, world.info)).toEqual(['Barbell row', 'Assisted pull-up + Dumbbell curl', '45° back extension + Band triceps pushdown', 'Dumbbell rear-delt fly']);
     // §3.5's canPair still allows heavy + a light lift (Ben's own pair, advice only); the builder never makes it.
     expect(canAutoPair({ exerciseId: ROW, main: false }, { exerciseId: 'cable-curl', main: false }, world.info)).toBe(false);
   });
 
-  it('Main lift none: Barbell row leads, alone; the back extension follows; curls pair only with light lifts', () => {
+  it('Main lift none: Barbell row leads, alone; the vertical pull and back extension follow; curls pair only with light lifts', () => {
     const w = buildFromSetup({ minutes: 40, mainLiftExerciseId: null, supersets: true, groups }, world.pool(BACK_HISTORY), world.ctx()).workout;
     expect(w.blocks[0]?.slots.map((s) => s.exerciseId)).toEqual([ROW]);
-    expect(w.blocks.findIndex((b) => b.slots.some((s) => s.exerciseId === 'bodyweight-45-degree-back-extension'))).toBe(1);
+    // (Ben, 23 Oct) The vertical pull comes in first (sub-roles), so the back extension follows it.
+    expect(w.blocks.findIndex((b) => b.slots.some((s) => s.exerciseId === 'bodyweight-45-degree-back-extension'))).toBe(2);
     expectRules(w, world, false, 'ben none');
   });
 

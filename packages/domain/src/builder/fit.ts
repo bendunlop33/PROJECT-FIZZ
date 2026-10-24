@@ -1,6 +1,7 @@
 import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
 import { BUILDER_TIME, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { makeSlot } from './slot';
+import { autoPickClash } from './similar';
 import { BUILDER_SET_RULES, isTimedSlot, setWorkingCount, workingCount } from './set-rows';
 import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderInfoLookup, type BuilderSlot, type BuilderWorkout, type RestLevel } from './types';
 
@@ -411,7 +412,9 @@ function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOption
   // pushdown gets a curl, as when Biceps and Triceps were groups of their own).
   const arms = allSlots(w).filter((s) => groupOf(s) === 'Arms');
   const armPart = arms.length === 1 && arms[0] !== undefined ? infoOrDefault(ctx.info, arms[0].exerciseId).part : null;
-  const armIds = (opts.addCandidates?.arm ?? []).filter((id) => !inWorkout(id) && infoOrDefault(ctx.info, id).group === 'Arms');
+  // (Ben, 23 Oct) Nothing that near-duplicates an exercise in the workout (or a second traps isolation).
+  const clashes = (id: string) => autoPickClash(id, allSlots(w).map((s) => s.exerciseId), ctx.info) !== null;
+  const armIds = (opts.addCandidates?.arm ?? []).filter((id) => !inWorkout(id) && !clashes(id) && infoOrDefault(ctx.info, id).group === 'Arms');
   const armPick = [...armIds.filter((id) => infoOrDefault(ctx.info, id).part !== armPart), ...armIds.filter((id) => infoOrDefault(ctx.info, id).part === armPart)];
   for (const id of armPick) {
     if (armPart === null || count() >= FIT_RULES.maxExercises) break;
@@ -425,7 +428,7 @@ function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOption
   // Then one more accessory for the day's main group.
   const mg = opts.mainGroup;
   if (mg !== null && count() < FIT_RULES.maxExercises) {
-    const id = (opts.addCandidates?.mainGroup ?? []).find((x) => !inWorkout(x) && ctx.info(x)?.group === mg);
+    const id = (opts.addCandidates?.mainGroup ?? []).find((x) => !inWorkout(x) && !clashes(x) && ctx.info(x)?.group === mg);
     if (id !== undefined) {
       const next = insertAfterGroup(w, makeSlot(id, { main: false }, ctx), [mg], ctx, opts.supersets);
       if (fits(next.w)) {
@@ -490,7 +493,7 @@ export function absOff(w: BuilderWorkout, ctx: BuilderContext, opts: { supersets
     }
     const arm = kept.length === 1 ? kept[0] : undefined;
     if (opts.supersets && partner === null && arm !== undefined && infoOrDefault(ctx.info, arm.exerciseId).group === 'Arms') {
-      const id = opts.armCandidates.find((c) => !present.has(c) && infoOrDefault(ctx.info, c).group === 'Arms' && canAutoPair(arm, { exerciseId: c, main: false }, ctx.info));
+      const id = opts.armCandidates.find((c) => !present.has(c) && autoPickClash(c, present, ctx.info) === null && infoOrDefault(ctx.info, c).group === 'Arms' && canAutoPair(arm, { exerciseId: c, main: false }, ctx.info));
       if (id !== undefined) {
         const slot = makeSlot(id, { main: false, workingSets: workingCount(arm) }, ctx);
         partner = { slotKey: slot.key, exerciseId: id };

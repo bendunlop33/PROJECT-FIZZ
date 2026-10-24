@@ -1,5 +1,6 @@
 import {
   adviseBuilder,
+  similarLast,
   applyBuilderEdit,
   alignToDraft,
   applyVariation,
@@ -530,6 +531,8 @@ export function adviceToast(a: BuilderAdvice): { text: string; why: string } {
       return { text: 'Not recommended: abs with a heavy lift', why: a.reason };
     case 'isolation_first':
       return { text: `Not recommended: tires your ${a.muscle} first`, why: a.reason };
+    case 'near_duplicate':
+      return { text: `Not recommended: ${a.a.name} and ${a.b.name} are alike`, why: a.reason };
   }
 }
 
@@ -2433,7 +2436,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     },
 
     /** Swap / Add (§2.5): this gym's exercises of a group by focus, minus what's in the workout; pain-flagged ones marked. */
-    async exerciseChoices(draftId: string, req: { slotKey: string | null; group?: BuilderGroup }): Promise<{ group: BuilderGroup; groups: BuilderGroup[]; sections: { focus: string; items: { exerciseId: string; name: string; works: string | null; mayHurt: boolean; painLine: string | null }[] }[] } | null> {
+    async exerciseChoices(draftId: string, req: { slotKey: string | null; group?: BuilderGroup }): Promise<{ group: BuilderGroup; groups: BuilderGroup[]; sections: { focus: string; items: { exerciseId: string; name: string; works: string | null; mayHurt: boolean; painLine: string | null; similarTo: string | null }[] }[] } | null> {
       const snap = await service.read(draftId);
       if (snap === null) return null;
       const p = await owner();
@@ -2442,15 +2445,17 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const group: BuilderGroup = req.group ?? (slot === null ? firstGroup : (snap.facts[slot.exerciseId]?.group ?? firstGroup));
       const env = await envFor(p, { groups: [group], keySeed: 'choices' });
       const inWorkout = new Set(slotsOf(snap.workout.blocks).map((s) => s.exerciseId));
-      const ids = env.candidates(group).filter((id) => !inWorkout.has(id));
+      // (Ben, 23 Oct) Near-duplicates of what stays in the workout go last, marked `Like …`; still pickable.
+      const staying = slotsOf(snap.workout.blocks).filter((s) => s.key !== req.slotKey).map((s) => s.exerciseId);
+      const ranked = similarLast(env.candidates(group).filter((id) => !inWorkout.has(id)), staying, env.info);
       const sections = builderFocusSections(
-        ids.flatMap((id) => {
+        ranked.order.flatMap((id) => {
           const e = env.exercise(id);
           return e === null ? [] : [e];
         }),
         (e) => e,
         group,
-      ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id) })) }));
+      ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id), similarTo: ranked.similarTo.get(e.id) ?? null })) }));
       return { group, groups: [...BUILDER_GROUPS], sections };
     },
 

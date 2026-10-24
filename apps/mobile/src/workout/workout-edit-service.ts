@@ -5,6 +5,7 @@ import {
   makeSlot,
   pendingSetsOf,
   plannedFromBuilderRows,
+  similarLast,
   type BuilderAdvice,
   type CommandOutcome,
   type TargetExplanation,
@@ -94,15 +95,17 @@ export function createWorkoutEditService(deps: WorkoutEditDeps) {
       if (got === null) return null;
       const { env } = got;
       const inWorkout = new Set(live.map((e) => e.exerciseId));
-      const ids = env.candidates(group).filter((id) => !inWorkout.has(id));
+      // (Ben, 23 Oct) Near-duplicates of what stays in the workout go last, marked `Like …`; still pickable.
+      const staying = live.filter((e) => e.id !== req.sessionExerciseId).map((e) => e.exerciseId);
+      const ranked = similarLast(env.candidates(group).filter((id) => !inWorkout.has(id)), staying, env.info);
       const sections = builderFocusSections(
-        ids.flatMap((id) => {
+        ranked.order.flatMap((id) => {
           const e = env.exercise(id);
           return e === null ? [] : [e];
         }),
         (e) => e,
         group,
-      ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id) })) }));
+      ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id), similarTo: ranked.similarTo.get(e.id) ?? null })) }));
       return { group, groups: GROUPS, sections };
     },
 
