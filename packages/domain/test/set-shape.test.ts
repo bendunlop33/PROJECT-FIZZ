@@ -5,7 +5,6 @@ import type { PlannedSet, RoutineExercise } from '@fizz/schemas';
 import {
   addExercise,
   defaultSlotShape,
-  editorSummaryLine,
   EFFORT_CHOICES,
   setSlotReps,
   setSlotTargetRpe,
@@ -13,7 +12,6 @@ import {
   setWorkingSetCount,
   shapeAddPlan,
   slotShapeOf,
-  workingSetTotal,
   type PlannedEntry,
 } from '../src/index';
 import { exercise, idGen, kg, lb, routineExercise, template } from './fixtures';
@@ -25,7 +23,6 @@ import { exercise, idGen, kg, lb, routineExercise, template } from './fixtures';
  * an exercise added to a running workout (only its own new sets; rule 2).
  */
 
-const NB = ' ';
 const BENCH = exercise(1, 'Bench press', { movementPattern: 'horizontal_push', mechanic: 'compound', family: 'bench_press' });
 const FLY = exercise(2, 'Cable fly', { movementPattern: 'horizontal_push', mechanic: 'isolation', compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' });
 const ROW = exercise(3, 'One-arm dumbbell row', { movementPattern: 'horizontal_pull', mechanic: 'compound', compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand', laterality: 'unilateral' });
@@ -133,13 +130,6 @@ describe('Reps and Target RPE (§10.5, EL-B19)', () => {
     expect(slotShapeOf(slot([{}, {}])).hasSpecialSets).toBe(false);
     expect(EFFORT_CHOICES.rpe).toEqual([6, 7, 7.5, 8, 8.5, 9, 9.5, 10]);
     expect(EFFORT_CHOICES.rir).toEqual([0, 1, 2, 3, 4]);
-  });
-
-  it('the summary line counts working sets (`16 sets`), warm-ups left out', () => {
-    const list = [slot([{ setType: 'warmup' }, {}, {}], 600), slot([{}, {}, {}], 601)];
-    expect(workingSetTotal(list)).toBe(5);
-    expect(editorSummaryLine(2, 30, 'Main gym', 5).replaceAll(NB, ' ')).toBe('2 exercises · 5 sets · ≈ 30 min at Main gym');
-    expect(editorSummaryLine(1, null, null, 1)).toBe('1 exercise · 1 set');
   });
 });
 

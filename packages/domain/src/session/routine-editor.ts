@@ -1,6 +1,6 @@
 import type { EquipmentInstance, Exercise, Load, LoadConvention, Measurement, RepRange, RestSetting, RoutineExercise, SetTemplate, SetType, WeightUnit } from '@fizz/schemas';
 
-import { formatDuration, formatNumber, loadText, NBSP, repRangeText, SET_TYPE_BADGE, SET_TYPE_WORD, type LoadContext } from '../display';
+import { formatNumber, loadText, type LoadContext } from '../display';
 import { addedWeightEquipment } from '../added-weight';
 import { builtInRepRange, ruleCategory } from '../default-rule';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
@@ -271,11 +271,6 @@ export function setSlotTargetRpe(list: EditorList, slotId: string, value: number
 /** The EffortSheet's choices (§9.91): `None 6 7 7.5 8 8.5 9 9.5 10`, RIR `None 0 1 2 3 4`. */
 export const EFFORT_CHOICES: { rpe: readonly number[]; rir: readonly number[] } = { rpe: [6, 7, 7.5, 8, 8.5, 9, 9.5, 10], rir: [0, 1, 2, 3, 4] };
 
-/** Working sets across the workout (the summary line's `16 sets`): every non-warm-up set. */
-export function workingSetTotal(list: EditorList): number {
-  return list.reduce((n, e) => n + e.setTemplates.filter((t) => !isWarmup(t)).length, 0);
-}
-
 /** `Remove` (exercise `⋯`). */
 export function removeExercise(list: EditorList, slotId: string): RoutineExercise[] {
   return normaliseRoutineExercises(list.filter((e) => e.id !== slotId));
@@ -512,91 +507,6 @@ export function ungroup(list: EditorList, slotId: string): RoutineExercise[] {
   const label = list.find((e) => e.id === slotId)?.supersetGroup ?? null;
   if (label === null) return [...list];
   return normaliseRoutineExercises(list.map((e) => (e.supersetGroup === label ? { ...e, supersetGroup: null } : e)));
-}
-
-// ---------------------------------------------------------------------------
-// What the editor shows
-
-export interface EditorSetRow {
-  /** `1`, `3–5`: identical neighbouring sets collapse into one row. */
-  numbers: string;
-  setIds: string[];
-  badge: string | null;
-  typeWord: string;
-  /** `Auto × 6–8`, `60 kg × 5`, `37.5 kg each × 8`, `Auto · 0:45`. */
-  target: string;
-  /** `2:00`, the rest after these sets as it resolves at Start. */
-  rest: string;
-  /** This set's own rest (`●`; VoiceOver "this set's own rest"). */
-  ownRest: boolean;
-  accessibilityLabel: string;
-}
-
-export interface EditorRowContext {
-  exerciseName: string;
-  convention: LoadConvention;
-  equipment: Pick<EquipmentInstance, 'kind'> | null;
-  /** Rest resolution steps 3 and 4 (rest-state §4.2). */
-  exerciseDefaultRestS: number | null;
-  globalDefault: RestSetting;
-  perSide: boolean;
-}
-
-/** A template's target in words: `Auto × 6–8`, `60 kg × 5`, `Auto · 0:45`. */
-export function templateTargetText(t: Pick<SetTemplate, 'targetLoad' | 'targetReps' | 'targetDurationS'>, ctx: Pick<EditorRowContext, 'convention' | 'equipment' | 'perSide'>): string {
-  const load = ctx.convention === 'bodyweight' ? 'BW' : t.targetLoad === null ? 'Auto' : loadText(t.targetLoad, t.targetLoad.convention, ctx.equipment);
-  if (t.targetReps !== null) return `${load}${NBSP}×${NBSP}${repRangeText(t.targetReps)}${ctx.perSide ? `${NBSP}per side` : ''}`;
-  if (t.targetDurationS !== null) return `${load} · ${formatDuration(t.targetDurationS)}`;
-  return load;
-}
-
-/** The set rows of one exercise card (§2.3 row rules). */
-export function editorSetRows(slot: Pick<RoutineExercise, 'setTemplates' | 'restBySetType'>, ctx: EditorRowContext): EditorSetRow[] {
-  const shaped = slot.setTemplates.map((t, i) => {
-    const rest = resolveRestPreset({
-      setType: t.setType,
-      exerciseName: ctx.exerciseName,
-      setOverrideS: t.restOverrideS,
-      routineSetTypePreset: slot.restBySetType[t.setType] ?? null,
-      exerciseDefaultS: ctx.exerciseDefaultRestS,
-      globalDefault: ctx.globalDefault,
-    });
-    return { n: i + 1, t, target: templateTargetText(t, ctx), rest: formatDuration(rest.seconds), own: rest.source === 'set_override' };
-  });
-  const rows: EditorSetRow[] = [];
-  let run: typeof shaped = [];
-  const flush = () => {
-    const first = run[0];
-    const last = run[run.length - 1];
-    if (first === undefined || last === undefined) return;
-    const numbers = run.length === 1 ? String(first.n) : `${String(first.n)}–${String(last.n)}`;
-    const typeWord = SET_TYPE_WORD[first.t.setType];
-    rows.push({
-      numbers,
-      setIds: run.map((x) => x.t.id),
-      badge: SET_TYPE_BADGE[first.t.setType],
-      typeWord,
-      target: first.target,
-      rest: first.rest,
-      ownRest: first.own,
-      accessibilityLabel: `${run.length === 1 ? `Set ${numbers}` : `Sets ${numbers.replace('–', ' to ')}`}, ${typeWord}, ${first.target.replaceAll(NBSP, ' ').replace('×', 'times')}, rest ${first.rest}${first.own ? ", this set's own rest" : ''}`,
-    });
-    run = [];
-  };
-  for (const x of shaped) {
-    const prev = run[run.length - 1];
-    if (prev !== undefined && (prev.t.setType !== x.t.setType || prev.target !== x.target || prev.rest !== x.rest || prev.own !== x.own)) flush();
-    run.push(x);
-  }
-  flush();
-  return rows;
-}
-
-/** `5 exercises · 16 sets · ≈ 55 min at Main gym` (live, under the name; sets = working sets, WL11). */
-export function editorSummaryLine(exercises: number, minutes: number | null, gymName: string | null, workingSets?: number): string {
-  const n = `${String(exercises)} ${exercises === 1 ? 'exercise' : 'exercises'}${workingSets === undefined ? '' : ` · ${String(workingSets)} ${workingSets === 1 ? 'set' : 'sets'}`}`;
-  if (minutes === null) return n;
-  return `${n} · ≈ ${String(minutes)} min${gymName === null ? '' : ` at ${gymName}`}`;
 }
 
 // ---------------------------------------------------------------------------

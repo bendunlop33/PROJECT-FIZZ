@@ -9,7 +9,7 @@ import { NBSP, NO_FILTERS, type AddDestination } from '@fizz/domain';
 import { backFromEditor, openLibrary, openYourPlan, popToFromEditor } from '../src/navigation/actions';
 import { addEffortRow, addPrimary, addRepsRow, initialAddShape, posterSize, repsDraftOfShape, slotShapeOfAdd } from '../src/workout/exercise-info-view';
 import { filterChipLabel, filterOptions, toggled, withFilter } from '../src/workout/library-browse-view';
-import { countSteps, effortChoices, SET_BAR, setShapeStacked, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../src/workout/set-shape-view';
+import { countSteps, effortChoices, SET_BAR, setShapeStacked, shapeEffortRow, shapeRepsText, slotRepsDraft } from '../src/workout/set-shape-view';
 import { AX_FONT_SCALE } from '../src/workout/screen-rules';
 import { handOffLibraryToast, takeLibraryToast } from '../src/workout/library-toast';
 import { beginSaveEdit, saveEditRequest, settleSaveEdit, type SaveEditOutcome } from '../src/workout/save-edit-handoff';
@@ -54,9 +54,6 @@ describe('the sets control (§10.5)', () => {
     expect(countSteps(3, SET_BAR.limits)).toEqual({ down: 2, up: 4 });
     expect(countSteps(1, SET_BAR.limits)).toEqual({ down: null, up: 2 });
     expect(countSteps(10, SET_BAR.limits)).toEqual({ down: 9, up: null });
-    // The card uses the domain's next values: a slot above 10 may only go down.
-    expect(countSteps(12, stepperLimits(12, 11, null))).toEqual({ down: 11, up: null });
-    expect(countSteps(0, stepperLimits(0, null, 1))).toEqual({ down: null, up: 1 });
   });
 
   it('reps, per side, timed and Mixed; Target RPE / RIR, hidden with the scale off', () => {
@@ -170,12 +167,11 @@ describe('source checks (EL-B16, EL-B24, rules 1 and 2)', () => {
   it('every creation path sends the Sets count', () => {
     expect(code(read('screens/workout/ExercisePickerScreen.tsx'))).toMatch(/shape: \{ workingSets: sets \}/);
     expect(code(read('screens/workout/ExercisePickerScreen.tsx'))).toMatch(/<SetCountBar /);
-    const editor = code(read('screens/routines/WorkoutEditorScreen.tsx'));
-    expect(editor).toMatch(/\{ \.\.\.x\.defaultShape, workingSets: sets \}/);
-    expect(editor).toMatch(/<SetShapeControl/);
-    expect(editor).toMatch(/setWorkingSetCount\(l, slot\.id, n, newUuid\)/);
-    // `+ Warm-up` / `+ Working` retire: the steppers do the same.
-    expect(editor).not.toMatch(/EDITOR_COPY\.addWarmup|EDITOR_COPY\.addWorking/);
+    // (Ben, 23 Oct: one editor) The workout editor adds with the exercise's default shape (3 sets), as Your workout does;
+    // the pop-up's `＋ Set` / delete change the count.
+    const editor = code(read('screens/builder/EditWorkoutScreen.tsx'));
+    expect(editor).toMatch(/kind: 'add_exercise', exercise: ref, shape: x\.defaultShape/);
+    expect(code(read('workout/template-editor.ts'))).toMatch(/setWorkingSetCount\(list, op\.slotId, slotShapeOf\(slot\)\.workingSets \+ 1, newId\)/);
     const info = code(read('screens/library/ExerciseInfoScreen.tsx'));
     expect(info).toMatch(/<SetShapeControl/);
     expect(info).toMatch(/services\.library\.addToWorkout\(/);
@@ -242,8 +238,9 @@ describe('review library-browse B2: Save to Workouts → Edit ›', () => {
     expect(sheet).toMatch(/navigation\.navigate\('WorkoutEditor', \{ routineId: null, from: 'SaveSheet', draft: \{ name: e\.name, exercises: state\.exercises \}, saveAs: e\.key \}\)/);
     // Re-showing keeps the sheet's opId: it only starts afresh on a new opening.
     expect(sheet).toMatch(/\}, \[openKey, initialName\]\);/);
-    const editor = code(read('screens/routines/WorkoutEditorScreen.tsx'));
-    expect(editor).toMatch(/services\.routines\.saveFrom\(\{ from: req\.from, name: next\.name\.trim\(\), addToRotation: req\.addToRotation, opId: req\.opId, edit: next \}\)/);
+    // (Ben, 23 Oct: one editor) The editor's Save is the sheet's own save; its run on real SQLite is in one-editor.test.ts.
+    expect(code(read('workout/template-editor.ts'))).toMatch(/s\.saveFrom\(\{ from: held\.from, name: edit\.name, addToRotation: held\.addToRotation, opId: held\.opId, edit \}\)/);
+    const editor = code(read('screens/builder/EditWorkoutScreen.tsx'));
     expect(editor).toMatch(/settleSaveEdit\(saveAs, \{ kind: 'cancelled' \}\)/);
     expect(editor).toMatch(/settleSaveEdit\(saveAs, \{ kind: 'saved', routine: r\.routine \}\)/);
   });

@@ -256,8 +256,10 @@ export interface BuilderToastParam {
 /**
  * Where the workout editor returns to. `SaveSheet`: the Save sheet's `Edit ›`
  * (routines.md §A2.5): back to the screen under the sheet, which shows the result.
+ * `PlanDay` (Ben, 23 Oct: one editor): back to Library › Plan › that day, with
+ * the `Saved Push A` [Undo] toast handed off in memory (`library-toast.ts`).
  */
-export type EditorFrom = 'Library' | 'ExerciseInfo' | 'SaveSheet';
+export type EditorFrom = 'Library' | 'ExerciseInfo' | 'SaveSheet' | 'PlanDay';
 
 /** `Plan applied · Undo` on Today (plan-builder §3): Undo of that Apply, only while the plan is still at `version`. */
 export interface PlanAppliedToastParam {

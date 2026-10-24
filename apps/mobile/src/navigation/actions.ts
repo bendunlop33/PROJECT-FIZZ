@@ -77,7 +77,7 @@ export function replaceWithSummary(sessionId: string) {
  */
 export function popToFromEditor(from: EditorFrom, toast: LibraryToastParam) {
   if (from === 'Library') return openLibrary('workouts', toast);
-  // Exercise detail sits right under the editor: back to it (its toast is handed off in memory, `library-toast.ts`).
+  // Exercise detail or a plan day sits right under the editor: back to it (its toast is handed off in memory, `library-toast.ts`).
   // The Save sheet's `Edit ›`: back to the screen under the sheet, which takes the result (`save-edit-handoff.ts`).
   return { type: 'GO_BACK' } as const;
 }

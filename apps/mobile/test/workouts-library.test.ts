@@ -7,7 +7,7 @@ import { NBSP, setWorkingSetCount } from '@fizz/domain';
 import type { Routine } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import { editorAddRow } from '../src/workout/library-view';
+import { templateSearchable } from '../src/workout/template-editor';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -519,8 +519,9 @@ describe('distance is never saved as reps (exercise-library EL-B13, review libra
     const bench = (await s.routines.searchExercises('bench')).find((x) => x.name === 'Bench press');
     if (!carry || !bench) throw new Error('no exercises');
     expect(carry.measurement).toBe('distance');
-    expect(editorAddRow(carry)).toEqual({ disabled: true, subtitle: 'Can’t save distance yet' });
-    expect(editorAddRow(bench)).toEqual({ disabled: false, subtitle: null });
+    // (Ben, 23 Oct: one editor) The Add / Swap sheet's search doesn't offer it.
+    expect(templateSearchable(carry)).toBe(false);
+    expect(templateSearchable(bench)).toBe(true);
 
     // New workout › Save with a carry: refused, nothing stored.
     expect(await s.routines.create({ edit: { name: 'Carry day', exercises: [slot(carry.id)] }, opId: 'new-carry' })).toEqual({ ok: false, message: 'Can’t save distance yet' });

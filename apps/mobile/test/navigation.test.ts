@@ -211,7 +211,7 @@ describe('Workouts library routes (routines.md §A3)', () => {
     // The Duplicate entry point hands the toast to the editor instead of showing it under it; the editor's Cancel uses it.
     const src = (f: string) => readFileSync(join(__dirname, '..', 'src', 'screens', f), 'utf8');
     expect(src('routines/WorkoutsScreen.tsx')).toMatch(/selectName: true, copyToast \}\);/);
-    expect(src('routines/WorkoutEditorScreen.tsx').match(/navigation\.dispatch\(backFromEditor\(from, copyToast\)\)/g)).toHaveLength(2);
+    expect(src('builder/EditWorkoutScreen.tsx').match(/navigation\.dispatch\(backFromEditor\(from, copyToast\)\)/g)).toHaveLength(2);
   });
 
   it('the Save sheet’s Edit › : the editor’s Save and Cancel both go back to the screen under the sheet', () => {

@@ -1,5 +1,5 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,6 +10,8 @@ import { PLAN_COPY } from '../../services/plan-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, HeroHeader, PrimaryButton, StatusLine, TextButton, Toast } from '../../ui';
+import { takeLibraryToast } from '../../workout/library-toast';
+import { undoTemplateSave } from '../../workout/template-editor';
 
 export const PLAN_DAY_COPY = {
   /** (22 Oct) It opens Your workout (nothing starts until Start there), so it says Open, not Start. */
@@ -56,6 +58,33 @@ export function PlanDayScreen() {
       clearTimeout(t);
     };
   }, [toast]);
+
+  // (Ben, 23 Oct: one editor) `Edit` → Save comes back here with `Saved Push day · Undo` (handed off in memory); Undo
+  // puts the template's version before back, only while it is still at the saved one (rule 5).
+  useFocusEffect(
+    useCallback(() => {
+      const t = takeLibraryToast();
+      if (t === null) return;
+      reload();
+      const undo = t.undo;
+      setToast(
+        undo === null
+          ? { text: t.text }
+          : {
+              text: t.text,
+              action: PLAN_DAY_COPY.undo,
+              onAction: () => {
+                setToast(null);
+                void undoTemplateSave(services.routines, undo, newUuid()).then((u) => {
+                  changed();
+                  reload();
+                  if (!u.ok) setToast({ text: u.message });
+                });
+              },
+            },
+      );
+    }, [reload, services, changed]),
+  );
 
   /** `Make next` / `Unpin` (rule 5: the screen's read of the plan; a retried tap is the same write), then Undo. */
   async function pin(on: boolean) {
@@ -129,7 +158,7 @@ export function PlanDayScreen() {
             <TextButton
               label={PLAN_DAY_COPY.edit}
               onPress={() => {
-                navigation.navigate('WorkoutEditor', { routineId: day.routineId, from: 'Library' });
+                navigation.navigate('WorkoutEditor', { routineId: day.routineId, from: 'PlanDay' });
               }}
             />
             <TextButton
