@@ -653,12 +653,27 @@ Shown on `Start` when today's workout differs from the plan day it came from [Be
 
 > (Ben, 22–23 Oct, D1) The Plan section's `Update plan day` is removed: changes before Start are today only. `Add back` stays. The suggestions below are Ben-asked (he opened the review), so Apply / Skip as before.
 
+> **(Ben, 23 Oct) The review judges the numbers and his own edits.** Ben: "I thought the whole point was the coach should review the sets and weights as well in context of the goals and history." The review now covers every exercise's sets, reps, loads, RPE and rest, not only structure.
+> - **What the coach is given (all code-made):** a diff of Ben's own edits against what was drafted (`Barbell bench press top 100 → 110 kg`, `Cable fly removed`, `EZ-bar curl 3 → 6 sets`, `Length 60 → 45 min`; what Time cut is marked `Time`, not his); per exercise, his last 3 sessions' top sets (deload weeks marked), est. 1RM (always `(estimate)`), the est. 1RM trend or a stall over normal weeks, today's load against his best recent load for the same reps as a percentage (`110 kg today is 9% above his best recent load for 6 reps`), a lift target, a pain flag, and the muscle's working sets today (`6 working sets of EZ-bar curl today; Biceps 12 working sets in all today`); the plan's focus and block week; today's check-in if he did one. Each exercise's RPE and rest are in the workout view.
+> - **What was drafted** is stored on the draft version (`drafted`): set when the version is made (Set up, Today, a plan day, a saved workout, a rebuild); Ben's own edits never move it; a coach change he applied (here, in chat or the pre-session offer) and a gym change move only the slots they changed, so they never read as his edits; Undo puts it back. Older drafts have none: the review then says nothing about his edits.
+> - **The coach** writes the verdict (covering the numbers), then a short comment on each of his edits that matters, each with an optional offer (load, reps, sets, RPE, rest or structure; Apply / Skip, version-fenced, Undo), and says plainly when an edit looks fine. It never takes his edit back without a reason grounded in the given facts: code drops any offer that undoes one of his edits unless its words passed the number check with a number in them, or name the pain flag. Pain-flagged lifts are never made heavier or harder.
+> - **Guardrails unchanged:** every number in its words is checked (a percentage or rest time only when code worked it out for the exercise named; an est. 1RM only when called an estimate); every load is rounded down to what the gym can load and capped (rule 4); Apply is refused `Out of date` once a slot it touches changed (rule 5). Offline / not connected: counts and Plan section only, no verdict, no comments.
+> - **Sheet:** a `Your edits` section after the counts: each edit's line (code's), the coach's comment under it, and its offer with `Apply` / `Skip`. No other copy.
+
 ```
 │ Coach review                   ● Coach   │
-│ Balanced and varied                      │  verdict (coach)
+│ Balanced; bench top set heavy            │  verdict (coach)
 │ ✓ Upper chest 6 ✓ Mid chest 7 ✓ Triceps 4│  counts (code)
 │ · Abs                                    │
 │ 2 compound · 4 isolation · free weights… │
+│ YOUR EDITS                               │  (Ben, 23 Oct)
+│ │ Barbell bench press top 100 → 110 kg │ │  his edit (code)
+│ │ Bench press at 110 kg is 9% above his│ │  comment (coach, checked)
+│ │ best recent load for 6 reps.         │ │
+│ │ Barbell bench press: 110 → 102.5 kg  │ │  offer (code's line)
+│ │                   [Apply]  Skip      │ │
+│ │ EZ-bar curl 3 → 6 sets               │ │
+│ │ Fine for a muscle day.               │ │  no offer
 │ PLAN · 4-day split · since 13 Oct        │
 │ ✓ Chest is next (day 1 of 4)             │
 │ ✓ 60 min (plan 60)                       │
@@ -682,7 +697,7 @@ Shown on `Start` when today's workout differs from the plan day it came from [Be
 - Each suggestion and `Add back` stays usable after another one is applied. It's only refused (`Out of date`) if an exercise it touches has changed.
 - **Swipe down = Done:** ticked notes are saved [Proposal].
 - Notes show at the top of that day's Your workout next time as `From last review`, each with ✕ [Ben]. They are **Your data** (rule 10). [Proposal] A note with a number in it (`Bench top set: 102.5 kg next`) is saved as the coach's target for that lift, so it actually sets next time's load (§3.1) and can be undone. Text notes (`Include abs`) are saved as notes.
-- **The coach writes the verdict, suggestions and notes. Code works out and checks every fact** (counts, plan lines, numbers in the text) [Ben]. Offline / not connected: header `Offline` or `Coach not connected`; the counts, variety and Plan section (with `Add back`) still show; no verdict, no suggestions, no notes [Proposal, rule 1].
+- **The coach writes the verdict, comments on Ben's edits (Ben, 23 Oct), suggestions and notes. Code works out and checks every fact** (counts, plan lines, his edits, history facts, numbers in the text) [Ben]. Offline / not connected: header `Offline` or `Coach not connected`; the counts, variety and Plan section (with `Add back`) still show; no verdict, no suggestions, no notes [Proposal, rule 1].
 
 ---
 
@@ -877,8 +892,8 @@ Advice never blocks or undoes Ben's change. He sometimes pairs things on purpose
 | Tool | Page | Behaviour |
 |---|---|---|
 | `fill_setup` (new, strict) | Set up | `{ dayId?, minutes?, mainLiftCatalogueId?, supersets?, groups?: [{group, delta\|count}] }`. Applied at once, Undo toast [Ben]. Code checks the day exists, minutes from Ben's words win (`buildMinutesFor`), main lift in `mainLiftOptions`, counts 1–4 |
-| `propose_workout_edit` (new, strict) | Your workout | Typed ops `swap`, `add`, `remove`, `sets`, `reps`, `rpe`, `load`, `move`, `superset`, `unlink`, `minutes`, with slot preconditions. Code applies to a copy, runs §3 and limits, shows before/after [Ben] |
-| `review_workout` (new, strict) | Your workout | `{ verdict, suggestions: [ops + reason + preconditions], nextNotes: [{ text } \| { target: next-session target }] }`. Code supplies facts; numbers in text checked (`checkCoachClaims`) |
+| `propose_workout_edit` (new, strict) | Your workout | Typed ops `swap`, `add`, `remove`, `sets`, `reps`, `rpe`, `load`, `move`, `superset`, `unlink`, `minutes`, `rest` (Ben, 23 Oct: seconds after each working set, 15 s steps, builder limits), with slot preconditions. Code applies to a copy, runs §3 and limits, shows before/after [Ben] |
+| `review_workout` (new, strict) | Your workout | `{ verdict, editComments: [{ editId, comment, ops }] (Ben, 23 Oct), suggestions: [ops + reason + preconditions], nextNotes: [{ text } \| { target: next-session target }] }`. Code supplies facts (his edits, history per exercise, §2.9); numbers in text checked (`checkCoachClaims`) |
 | `propose_plan` (existing) | — | Apply writes templates per main lift (§4.2) |
 
 - **Staleness (rule 5):** slot preconditions (§4.4); template and variation writes carry `expectedVersion`.
