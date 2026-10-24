@@ -229,7 +229,7 @@ Other workouts sheet (`⋯`), half height [Proto]:
   - [Ben, 20 Oct] Title row: the day on the left; `5 exercises · ~52 min` on the right (and `Chest moves to Thu` under it when another day is picked). No `plan day N of 4` anywhere on Today: `NEXT` on the day control already says it. This replaces every `plan day 1 of 4` example in this spec.
   - `↻ Mix it up` rules [Ben, 20 Oct: agreed]:
     1. **Which one**: never the main lift; the accessory done most often lately on this day (on Varied, one that repeats another's angle goes first).
-    2. **Shortlist (code)**: same muscles, different angle; same role (compound ↔ compound, isolation ↔ isolation, so balance and time hold); available at today's gym; not pain-flagged; not done in this day's last two sessions; not already in the workout.
+    2. **Shortlist (code)**: same muscles, different angle; same role (compound ↔ compound, isolation ↔ isolation, so balance and time hold); available at today's gym; not pain-flagged; not done in this day's last two sessions; not already in the workout; **no near-duplicate of another exercise in the workout, and no second traps isolation (Ben, 23 Oct; §3.7)**.
     3. **Pick**: with AI, the coach picks from the shortlist using goal, recent sessions and memories (e.g. "hates dips") and adds a one-line reason (shown under the swap and in `Why?`); offline, code picks the least recently done, labelled not reviewed.
     4. **Load**: from history if done before; else a conservative first-time load, marked estimate (existing `noReferenceCeiling`).
     5. **Use**: `Cable fly → Cable crossover · today only` with the reason, `Another (1/3)` cycles the shortlist, `Undo` restores. Today only; if Ben keeps choosing the same swap, the coach may suggest it as a plan change (proposal).
@@ -567,6 +567,7 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 - The group dropdown defaults to the exercise's group (Add: today's first group). Exercises are grouped by focus (`Upper chest` / `Mid chest`; `Lats` / `Mid-back` / `Rear delts`; `Quads` / `Hamstrings & glutes` / `Calves`; …), each with its `works` line. **No est. 1RM** [Ben].
 - [Proposal] Lists only exercises this gym has. Ones already in the workout are hidden. Pain-flagged ones show `May hurt` and ask to confirm (rule 9), as the overview did (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation): `Overhead press may hurt` · `Shoulder pain flagged 6 Oct.` · `Choose another` / `Swap anyway` (`Add anyway` when adding). The active workout's Swap sheet uses the same words.
 - Swap keeps the position, superset, set count and set types; loads recalculate. Toast `Swapped · Undo`. Add appends 3 sets; disabled at 10 exercises.
+- **Near-duplicates (Ben, 23 Oct).** Exercises that near-duplicate one staying in the workout (§3.7) are still listed, last in their focus, with `Like Barbell shrug` in place of the works line. Ben can pick them; the pick then shows the §3.8 advice toast. Never blocked. The active workout's sheet does the same.
 
 ### 2.6 Coach chat and voice [Ben]
 
@@ -784,6 +785,9 @@ Shown rounded as `about N min`. [Proposal, Q15] Today, the builder and the activ
 - Day mixes [Proto]: Chest = Chest 4, Triceps 1, Abs 1; Back/Pull = Back 4, Biceps 1, Abs 1; Legs = Legs 5, Abs 1; Shoulders = Shoulders 4, Triceps 1, Abs 1; Push = Chest 3, Shoulders 2, Triceps 1, Abs 1.
 - A Legs count is spread over the day's leg parts in order: quads, hamstrings/glutes, quads, hamstrings/glutes, then calves [Proposal]. A custom day with only some parts uses only those.
 - Exercise picks per group come from Ben's history first, then the catalogue: only exercises this gym has, not pain-flagged [Proposal; the prototype uses a fixed list].
+- **No near-duplicates (Ben, 23 Oct: a code-built Back day had Barbell shrug and Dumbbell shrug; "shouldn't suggest two very similar exercises").** Two exercises are near-duplicates when they are the same movement for the same primary target and differ only by implement or a minor variation. Worked out from the catalogue (`similar.ts`): same `family` (a small override table joins families the catalogue splits: `pulldown` = `pull_up`, `chest_press` = `bench_press`; an exercise of Ben's with no family uses its name without implement words) **and** the same lead primary muscle (any press listing `upper_chest` leads with it) or the same primary muscles in another order. So Barbell ≈ Dumbbell shrug, Barbell ≈ Dumbbell ≈ EZ-bar ≈ Cable curl, Incline dumbbell ≈ Incline barbell ≈ Smith incline press, any two rows, Lat pulldown ≈ Pull-up, Seated ≈ Standing calf raise (the catalogue gives both `calves`); not Hammer curl vs curl (brachialis first), flat vs incline press, shrug vs row, row vs pulldown. Nothing code picks by itself ever puts two in one workout: the build and each group's picks, Set up's group counts (merge), Today's Accessories style, Time's added exercises and the abs-off arm partner, `↻ Mix it up`, the plan builder's days, and coach review suggestions. A carry-over lands on the group's exercise, so it can't add one. Ben can still add one himself (§2.5, §3.8).
+- **Sub-roles before seconds (Ben, 23 Oct).** Within a group the builder fills an uncovered sub-role before a second exercise for a covered one. In order: Back `Lats` (a vertical pull), `Mid-back` (a row), `Rear delts`; Chest `Upper chest`, `Mid chest`; Shoulders `Front delts`, `Side delts`; a compound first within each. Then any other of the group's focus headings not yet covered (traps-led work counts as its own sub-role, `Traps`, so a shrug never stands in for a row; Varied: any other angle). Then the pool's order. The main lift covers its own sub-role. **At most one traps isolation (shrug, Y-raise) per workout.** Rows, pulldowns and pull-ups are compounds in the catalogue (`mechanic`), so a Back day comes out with 2+ compounds when the gym has them.
+- *Open for Ben (23 Oct):* the time fit (§3.6, D9 least training lost) weighs sets, not sub-roles: when Ben asks for more exercises than the length holds, it can still cut the vertical pull before the back extension. Built picks at the recommended count keep it.
 
 ### 3.8 Advice ("not recommended") [Ben]
 
@@ -795,6 +799,7 @@ Fixed checks, each with a one-line reason and a fix:
 | Superset of two heavy lifts | `Two heavy lifts back to back: both get weaker and form slips.` | `Unlink <b>` |
 | Abs with a heavy lift | `Ab work between sets tires the bracing that protects your lower back.` | `Unlink` |
 | Superset that shares a muscle | `Both work your lats, so the second one suffers.` | `Unlink` |
+| Near-duplicates anywhere in the workout (Ben, 23 Oct; §3.7) | `Barbell shrug and Dumbbell shrug are the same movement for the same muscle: one is enough.` | `Remove <later one>` |
 
 Advice never blocks or undoes Ben's change. He sometimes pairs things on purpose mid-workout.
 
@@ -882,6 +887,7 @@ Advice never blocks or undoes Ben's change. He sometimes pairs things on purpose
 | `propose_plan` (existing) | — | Apply writes templates per main lift (§4.2) |
 
 - **Staleness (rule 5):** slot preconditions (§4.4); template and variation writes carry `expectedVersion`.
+- **Near-duplicates (Ben, 23 Oct; §3.7):** COACHING KNOWLEDGE tells the coach the rule (`NEAR_DUPLICATE_RULE`). A `review_workout` suggestion that would add a near-duplicate of an exercise staying in the workout is left out by code (`CheckedReview.leftOut`, for `Why?`). A `propose_workout_edit` Ben asked for that adds one is flagged with the §3.8 `⚠ Not recommended` line and still applies (Ben's own choice). `mix_pick` can only pick from code's shortlist, which has none.
 - **Code checks:** exercise IDs this gym has; pain flags (left out or held, rule 9); loads via `checkProposedLoad` (ceilings `capE` / `capLastTop` 1.2, `stepsHarderAsked` when Ben asked heavier), then snap down (rule 4); limits clamp with a note; minutes from the estimate, never the model.
 - **AI status:** `● Coach` / `Offline` / `Coach not connected`; never a canned reply; the offline Set up parser never appears as a coach message (rule 1). No silent paid route (rule 7). Ben's words and imported text are data (rule 8).
 - **Voice:** `expo-speech-recognition` with `requiresOnDeviceRecognition: true`; check on-device support at runtime (not only in the probe, `probe/runners.ts`); no server fallback.
