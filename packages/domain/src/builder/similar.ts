@@ -175,14 +175,23 @@ export function subRoleOf(i: Pick<BuilderExerciseInfo, 'name' | 'muscles' | 'rol
   return leadPrimaryOf(similarityFactsOf(i).primaryMuscles) === 'traps' ? 'Traps' : i.angle;
 }
 
+/** One sub-role a group fills first; `compound`: a compound of it first (a pulldown or pull-up, not a straight-arm pulldown). */
+export interface BuilderSubRole {
+  role: string;
+  compound: boolean;
+}
+
 /**
- * Sub-roles each group fills first, in order (Ben, 23 Oct): a Back day gets a vertical pull (lats) and a row before a
- * rear-delt or traps exercise; a Chest day both chest angles; a Shoulders day a press and a raise.
+ * Sub-roles a group fills before anything else, in order (Ben, 23 Oct): a Back day gets a vertical pull (lats) and a
+ * row, each a compound when there is one, then rear-delt work, before traps (shrugs) or anything else. Other groups fill their uncovered sub-roles
+ * in the pool's order (a plan day's template leads it), so no fixed order overrides his own exercises.
  */
-export const BUILDER_SUB_ROLES: Readonly<Partial<Record<BuilderExerciseInfo['group'], readonly string[]>>> = {
-  Back: ['Lats', 'Mid-back', 'Rear delts'],
-  Chest: ['Upper chest', 'Mid chest'],
-  Shoulders: ['Front delts', 'Side delts'],
+export const BUILDER_SUB_ROLES: Readonly<Partial<Record<BuilderExerciseInfo['group'], readonly BuilderSubRole[]>>> = {
+  Back: [
+    { role: 'Lats', compound: true },
+    { role: 'Mid-back', compound: true },
+    { role: 'Rear delts', compound: false },
+  ],
 };
 
 /**

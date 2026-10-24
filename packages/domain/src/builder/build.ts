@@ -187,8 +187,8 @@ export type BuilderPool = (group: BuilderGroupName) => readonly string[];
 /**
  * Pick a group's exercises from its pool (Ben, 23 Oct): never a near-duplicate of one already in the workout (the
  * main lift and earlier groups' picks included) and at most one traps isolation (`autoPickClash`); an uncovered
- * sub-role before a second exercise for a covered one (`BUILDER_SUB_ROLES` first, a compound first within each, so a
- * Back day has a vertical pull and a row before shrugs or rear-delt work).
+ * sub-role before a second exercise for a covered one, in the pool's order; on Back a vertical pull and a row first
+ * (`BUILDER_SUB_ROLES`, a compound of each first), before shrugs or rear-delt work.
  */
 function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used: Set<string>, ctx: BuilderContext, opts: { varied: boolean; legParts: readonly LegPart[] | undefined; armOrder: readonly PickedArmPart[]; mainInfo: BuilderExerciseInfo | null }): string[] {
   if (need <= 0) return [];
@@ -240,12 +240,12 @@ function pickFor(group: BuilderGroupName, need: number, pool: BuilderPool, used:
     take(id);
     covered.add(role(id));
   };
-  // 1. The group's first sub-roles in order, a compound first within each.
+  // 1. Back: a vertical pull and a row first (a compound of each first), then rear delts.
   for (const r of BUILDER_SUB_ROLES[group] ?? []) {
     if (out.length >= need) break;
-    if (covered.has(r)) continue;
-    const of = candidates.filter((c) => free(c) && role(c) === r);
-    const id = of.find((c) => ctx.info(c)?.role === 'compound') ?? of[0];
+    if (covered.has(r.role)) continue;
+    const of = candidates.filter((c) => free(c) && role(c) === r.role);
+    const id = (r.compound ? of.find((c) => ctx.info(c)?.role === 'compound') : undefined) ?? of[0];
     if (id !== undefined) takeRole(id);
   }
   // 2. Any other uncovered sub-role of the group (its focus headings, and traps; Varied: any other angle), in pool order.

@@ -245,7 +245,7 @@ describe('Coach review (§2.9) and day notes', () => {
       (req) => {
         const slots = (yourData(req).workout as { slots: { slotKey: string; exerciseId: string }[] }).slots;
         const fly = slots.find((s) => s.exerciseId === 'cable_fly')?.slotKey ?? '';
-        return call('review_workout', { verdict: 'Balanced, 16 working sets', suggestions: [{ ops: [{ op: 'swap', slotKey: fly, toExerciseId: 'incline_bb' }], reason: 'Two lead with mid chest.' }], nextNotes: [{ text: 'Include abs', target: null }, { text: 'Hit 99 reps', target: null }, { text: null, target: { exerciseId: 'bench', value: 102.5, unit: 'kg', reps: 8 } }] });
+        return call('review_workout', { verdict: 'Balanced, 16 working sets', suggestions: [{ ops: [{ op: 'swap', slotKey: fly, toExerciseId: 'crossover' }], reason: 'Two lead with mid chest.' }], nextNotes: [{ text: 'Include abs', target: null }, { text: 'Hit 99 reps', target: null }, { text: null, target: { exerciseId: 'bench', value: 102.5, unit: 'kg', reps: 8 } }] });
       },
     ]);
     const h = await harness({ model });
@@ -257,7 +257,8 @@ describe('Coach review (§2.9) and day notes', () => {
     expect(v.header).toBe('● Coach');
     expect(v.verdict).toBe('Balanced, 16 working sets');
     expect(v.coverage.map((c) => c.text)).toEqual(['✓ Upper chest 3', '✓ Mid chest 7', '✓ Triceps 7', '✓ Abs 3']);
-    expect(v.suggestions.map((s) => [s.action, s.card.lines])).toEqual([['Swap', ['Cable fly → Incline barbell press']]]);
+    // (Ben, 23 Oct) Not Incline barbell press: it would near-duplicate the Incline dumbbell press (code drops it).
+    expect(v.suggestions.map((s) => [s.action, s.card.lines])).toEqual([['Swap', ['Cable fly → Cable crossover']]]);
     expect(v.notesTitle).toBe('For next Chest day');
     expect(v.notes.map((n) => [n.text, n.ticked])).toEqual([
       ['Include abs', true],
@@ -479,7 +480,7 @@ describe('the BuilderReview provider the builder sheet consumes (review B6)', ()
         return call('review_workout', {
           verdict: 'Mid chest 7, upper chest 3',
           suggestions: [
-            { ops: [{ op: 'swap', slotKey: fly, toExerciseId: 'incline_bb' }], reason: 'A second angle.' },
+            { ops: [{ op: 'swap', slotKey: fly, toExerciseId: 'crossover' }], reason: 'A second angle.' },
             { ops: [{ op: 'sets', slotKey: push, workingSets: 4 }], reason: 'More triceps.' },
           ],
           nextNotes: [{ text: 'Include abs', target: null }],
@@ -500,7 +501,7 @@ describe('the BuilderReview provider the builder sheet consumes (review B6)', ()
     // (Ben, 23 Oct, D1) `Add back` only: no `Update plan day` before Start (Keep for next time is on the Summary).
     expect(r.plan?.actions.map((a) => [a.text, a.apply])).toEqual([['Add back Machine chest press', 'Add']]);
     expect(r.suggestions.map((x) => [x.text, x.reason, x.apply])).toEqual([
-      ['Cable fly → Incline barbell press', 'A second angle.', 'Swap'],
+      ['Cable fly → Cable crossover', 'A second angle.', 'Swap'],
       ['Triceps pushdown: 3 → 4 sets', 'More triceps.', 'Apply'],
     ]);
     expect([r.nextNotesTitle, r.nextNotes]).toEqual(['For next Chest day', [{ id: expect.any(String) as string, text: 'Include abs', ticked: true }]]);
