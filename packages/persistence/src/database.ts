@@ -16,6 +16,7 @@ import type { SqlDriver, SqlExecutor } from './driver';
 export class Database {
   private tail: Promise<unknown> = Promise.resolve();
   private closed = false;
+  private writes = 0;
 
   constructor(readonly driver: SqlDriver) {}
 
@@ -24,14 +25,27 @@ export class Database {
   }
 
   write<T>(fn: (tx: SqlExecutor) => Promise<T>): Promise<T> {
-    return this.enqueue(() =>
-      this.driver.withExclusiveTransaction(async (tx) => {
-        // Where the driver enforces foreign keys, check them at commit, not per
-        // statement, so rows of one aggregate can be written in any order.
-        await tx.exec('PRAGMA defer_foreign_keys = ON');
-        return fn(tx);
-      }),
-    );
+    return this.enqueue(async () => {
+      try {
+        return await this.driver.withExclusiveTransaction(async (tx) => {
+          // Where the driver enforces foreign keys, check them at commit, not per
+          // statement, so rows of one aggregate can be written in any order.
+          await tx.exec('PRAGMA defer_foreign_keys = ON');
+          return fn(tx);
+        });
+      } finally {
+        this.writes += 1;
+      }
+    });
+  }
+
+  /**
+   * (Perf, 23 Oct) How many write transactions have run (committed or not) on this database. A
+   * service caching something it read keys it on this (and the database), so any write since makes
+   * it read again.
+   */
+  get writeCount(): number {
+    return this.writes;
   }
 
   /** Close after every queued call has finished. Later calls fail loudly. */

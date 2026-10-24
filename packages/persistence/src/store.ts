@@ -1,4 +1,4 @@
-import type { ProgressionRule, UserProfile } from '@fizz/schemas';
+import type { ProgressionRule, SessionAggregate, UserProfile } from '@fizz/schemas';
 import { toHistorySessions, toMs, type HistorySession, type ProfileRepository, type Repositories, type VersionedRepository } from '@fizz/domain';
 import { finishedWorkoutsDigest } from './backup/coverage';
 import { Database } from './database';
@@ -98,6 +98,8 @@ export interface Store {
    * `calculateNextTargets` (finished sessions only; sides carried).
    */
   listExerciseHistory(ownerId: string, exerciseId: string): Promise<HistorySession[]>;
+  /** `listExerciseHistory` for many exercises in one read (each workout decoded once). */
+  listExerciseHistories(ownerId: string, exerciseIds: readonly string[]): Promise<Map<string, HistorySession[]>>;
   countRecords(): Promise<RecordCounts>;
   /** `finishedWorkoutsDigest` of the finished workouts now, by ID and revision (backup coverage, B2, S1). */
   finishedWorkoutsDigest(): Promise<string>;
@@ -118,16 +120,56 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
   const migration = await migrate(driver, options.migrations ?? MIGRATIONS);
   const db = new Database(driver);
   const repos = createSqliteRepositories(db);
+  // (Perf, 23 Oct) Each cached workout's history per exercise, worked out once: the repository hands back the same
+  // aggregate object while its revision is the stored one, so a changed workout is a new key.
+  const histories = new WeakMap<SessionAggregate, Map<string, readonly HistorySession[]>>();
+  const historyOf = (a: SessionAggregate, exerciseId: string): readonly HistorySession[] => {
+    let byExercise = histories.get(a);
+    if (byExercise === undefined) {
+      byExercise = new Map();
+      histories.set(a, byExercise);
+    }
+    let h = byExercise.get(exerciseId);
+    if (h === undefined) {
+      h = toHistorySessions(a, exerciseId, { identity: true });
+      byExercise.set(exerciseId, h);
+    }
+    return h;
+  };
+  // (Perf, 23 Oct) Each exercise's history while the owner's history is as it was (`historyStamp`): a Your workout
+  // edit, a Today read or a set logged doesn't re-read years of workouts. Callers get their own array.
+  let memo: { ownerId: string; stamp: string; writes: number; byExercise: Map<string, readonly HistorySession[]> } | null = null;
+  async function historiesOf(ownerId: string, exerciseIds: readonly string[]): Promise<Map<string, HistorySession[]>> {
+    const unique = [...new Set(exerciseIds)];
+    // No write at all since the stamp was read: it still holds (the stamp query is skipped).
+    const writes = db.writeCount;
+    const stamp = memo !== null && memo.ownerId === ownerId && memo.writes === writes ? memo.stamp : await repos.sessions.historyStamp(ownerId);
+    if (memo === null || memo.ownerId !== ownerId || memo.stamp !== stamp) memo = { ownerId, stamp, writes, byExercise: new Map() };
+    else memo.writes = writes;
+    const kept = memo;
+    const missing = unique.filter((id) => !kept.byExercise.has(id));
+    if (missing.length > 0) {
+      const byExercise = await repos.sessions.listFinishedWithExercises(ownerId, missing);
+      for (const id of missing) {
+        kept.byExercise.set(
+          id,
+          (byExercise.get(id) ?? []).flatMap((a) => historyOf(a, id)).sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc)),
+        );
+      }
+    }
+    const out = new Map<string, HistorySession[]>();
+    for (const id of unique) out.set(id, [...(kept.byExercise.get(id) ?? [])]);
+    return out;
+  }
+
   return {
     db,
     repos,
     migration,
     async listExerciseHistory(ownerId, exerciseId) {
-      const sessions = await repos.sessions.listFinishedWithExercise(ownerId, exerciseId);
-      return sessions
-        .flatMap((a) => toHistorySessions(a, exerciseId, { identity: true }))
-        .sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
+      return (await historiesOf(ownerId, [exerciseId])).get(exerciseId) ?? [];
     },
+    listExerciseHistories: historiesOf,
     countRecords: () =>
       db.read(async (q) => {
         const row = await q.getFirst<Record<keyof RecordCounts, number>>(

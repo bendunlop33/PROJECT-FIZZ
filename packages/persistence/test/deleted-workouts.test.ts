@@ -283,6 +283,7 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
     const allowed: Record<string, { why: string; query: RegExp }[]> = {
       'packages/persistence/src/sessions.ts': [
         { why: 'one session by ID, whatever its status: `readAggregate`, the revision guards, the purge’s checks and tombstone', query: /FROM sessions WHERE id = \?['`]$/ },
+        { why: 'many sessions by ID, whatever their status: `readAggregates` (the batched `readAggregate`; callers pick the IDs)', query: /^`SELECT \* FROM sessions WHERE id IN \(\$\{marks\}\)`$/ },
         // Anchored to each query's whole text (review r3 N4): a broader reader that also says `status = 'deleted'` isn't allowed.
         { why: 'the purge’s check that the session is deleted', query: /^"SELECT check_in_id FROM sessions WHERE id = \? AND status = 'deleted'"$/ },
         { why: 'Recently deleted', query: /^`SELECT id FROM sessions WHERE owner_id = \? AND status = 'deleted' AND purge_after_utc > \? ORDER BY deleted_at_utc DESC, id DESC`$/ },
