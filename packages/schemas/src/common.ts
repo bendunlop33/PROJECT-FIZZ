@@ -15,13 +15,25 @@ export type OperationId = z.infer<typeof OperationIdSchema>;
 export const UtcTimestampSchema = z.iso.datetime({ offset: false });
 export type UtcTimestamp = z.infer<typeof UtcTimestampSchema>;
 
+/**
+ * Zones already checked (perf, 23 Oct): building an `Intl.DateTimeFormat` per timestamp was the single largest
+ * cost of reading Ben's history (every set's zoned times are validated; ~18 s on ~800 workouts in Node, more on
+ * Hermes). A zone's validity never changes while the app runs.
+ */
+const zoneChecks = new Map<string, boolean>();
+
 function isValidTimeZone(tz: string): boolean {
+  const known = zoneChecks.get(tz);
+  if (known !== undefined) return known;
+  let ok: boolean;
   try {
     new Intl.DateTimeFormat('en-GB', { timeZone: tz });
-    return true;
+    ok = true;
   } catch {
-    return false;
+    ok = false;
   }
+  if (zoneChecks.size < 1000) zoneChecks.set(tz, ok);
+  return ok;
 }
 
 /** IANA time zone, e.g. `Pacific/Auckland`. */

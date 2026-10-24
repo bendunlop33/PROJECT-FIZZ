@@ -5,15 +5,32 @@ import { localHourUtcMs } from '@fizz/domain';
  * arguments, and `locale` defaults to the device's (tests pass 'en-GB').
  */
 
+/**
+ * (Perf, 23 Oct) One formatter per locale, zone and options: building an `Intl.DateTimeFormat` costs far more than
+ * using one, and these run in render (Today and the workout re-render every second).
+ */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function formatter(locale: string | undefined, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale ?? ''}|${JSON.stringify(options)}`;
+  let f = FORMATTERS.get(key);
+  if (f === undefined) {
+    f = new Intl.DateTimeFormat(locale, options);
+    if (FORMATTERS.size > 200) FORMATTERS.clear();
+    FORMATTERS.set(key, f);
+  }
+  return f;
+}
+
 function parts(ms: number, tz: string, locale: string | undefined, options: Intl.DateTimeFormatOptions): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const p of new Intl.DateTimeFormat(locale, { ...options, timeZone: tz }).formatToParts(ms)) out[p.type] = p.value;
+  for (const p of formatter(locale, { ...options, timeZone: tz }).formatToParts(ms)) out[p.type] = p.value;
   return out;
 }
 
 /** `19:05` (24-hour unless the locale prefers 12-hour). */
 export function formatTime(ms: number, tz: string, locale?: string): string {
-  return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', timeZone: tz }).format(ms);
+  return formatter(locale, { hour: '2-digit', minute: '2-digit', timeZone: tz }).format(ms);
 }
 
 /** `Thu 8 Oct` */
