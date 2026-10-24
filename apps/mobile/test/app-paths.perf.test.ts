@@ -5,6 +5,7 @@ import { loadSample, measureBlocking, timingBudget } from '@fizz/domain/testing'
 
 import type { AppServices } from '../src/services/app-services';
 import type { TodaySelection, TodaySessionData } from '../src/services/today-session';
+import { openTemplate } from '../src/workout/template-editor';
 import { bigDataset, type BigDataset } from './perf-dataset';
 
 /**
@@ -144,6 +145,23 @@ describe('the everyday paths on ~800 workouts', () => {
       const r = await s.builder.openTarget({ kind: 'routine', routineId }, h.ids());
       if (r.snapshot === null) throw new Error('not opened');
       return yourWorkout(s, r.snapshot.draftId, false);
+    });
+
+    // (Merged 24 Oct) Coach review's own reads before the model call: what was drafted, Time's cuts, his history per
+    // exercise (the builder's cached reads, not a full read per exercise), focus and block week.
+    await timed('Coach review context (Your workout)', 800, async () => {
+      const w = await s.builder.coachWorld(fromToday.draftId);
+      if (w?.review === undefined) throw new Error('no review world');
+      for (const x of slotsOf(w.snapshot.workout.blocks)) w.review.refs(x.exerciseId);
+      return w;
+    });
+
+    // (Merged 24 Oct) The one workout editor on a plan day: open (rows' facts at this gym), then Swap / Add's sheet.
+    await timed('Edit workout (one editor): open a plan day, Swap sheet', 1000, async () => {
+      const o = await openTemplate(s, { routineId });
+      if (o === null) throw new Error('not opened');
+      const inWorkout = o.list.map((x) => x.exerciseId);
+      return s.builder.templateChoices({ gymId: o.data.gym?.id ?? null, inWorkout, exerciseId: inWorkout[0] ?? null });
     });
 
     // Library › Exercises, and a search keystroke.
