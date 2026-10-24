@@ -664,3 +664,26 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Still read as is:** `Last`, history, records, Progress volume, and the pain hold (it reads the most recent session, the safer one).
 - **Coach:** history, recent sessions and the overview mark deload workouts (`deload: true`) with a note that they were lighter on purpose; the overview's trend compares normal weeks only. An easy set in a deload week raises no `That looked easy` offer (Ben can still ask).
 - **Open (developer, for Ben):** a workout started by Repeat or an empty workout in the deload week is marked too (it is the deload week's), though Repeat doesn't lighten its loads. Add exercise's set count from last time (`workingSetsFromPrevious`) still reads the latest session, deload or not.
+
+## 2026-10-24: Coach review judges sets, weights and Ben's own edits (Ben, 23 Oct)
+
+- **Decision (Ben, 23 Oct):** "the coach should review the sets and weights as well in context of the goals and history". Spec: `docs/design/workout-builder-v3.md` §2.9.
+- **Built:** a builder draft keeps what was drafted before Ben's own edits (`drafted`; his edits never move it, a rebuild starts again, Undo restores it; older drafts have none). Coach review gets code's diff of his edits (loads, reps, sets, RPE, rest, removed/added/swapped, length; Time's cuts marked as Time's) and, per exercise, facts from his history (last sessions with deload weeks marked, est. 1RM labelled as an estimate, trend or stall, today's load against his best recent load for those reps, lift target while on, pain flag), the plan's focus, the block week and today's check-in. History is read through the builder's cached history reads (ADR 0032), not per exercise.
+- **Review sheet:** `Your edits` first, each with code's edit line, the coach's checked comment and an optional offer (Apply / Skip, Undo after). An offer that takes back one of his edits shows only with a reason grounded in code's facts. Every number is claim-checked; pain-flagged lifts are never made heavier (rule 9); loads round down to the gym (rule 4). The coach's edit ops gain `rest` (15 s steps, builder limits).
+
+## 2026-10-24: One workout editor (Ben, 23 Oct)
+
+- **Decision (Ben, 23 Oct):** "Why does the plan builder's workout builder look so different to the usual workout builder?" New workout, a saved workout's Edit, Duplicate, a plan day's Edit, Save to Workouts › Edit and Exercise detail's New workout all open one editor (`EditWorkoutScreen`) with Your workout's table, pop-up and Swap / Add sheet (shared `WorkoutTable`). Specs: `workout-builder-v3.md` §2.3b, `routines.md`.
+- **Built:** Save is one versioned write (opId, expected version); a stale save offers Keep both (rule 5); Undo toast where it was opened. A plan day's change is to its template, never a workout already done (rule 2). Typed loads round down to the gym's items, never past max (rule 4). The old `WorkoutEditorScreen` is removed.
+
+## 2026-10-24: No near-duplicate exercises (Ben, 23 Oct)
+
+- **Decision (Ben, 23 Oct):** a code-built Back day had Barbell shrug and Dumbbell shrug. Two exercises are near-duplicates when they share a catalogue family and lead primary muscle (`packages/domain/src/builder/similar.ts`). Spec: `workout-builder-v3.md`, `plan-builder.md`.
+- **Built:** wherever code picks by itself (build, Set up merges, fit-to-time adds, Mix it up, the plan builder's days) it never picks a near-duplicate; Back fills a vertical pull and a row before rear delts and shrugs. Ben can still add one: Swap / Add (Your workout, the one editor, the live workout) lists them last as `Like …`, and an advice warning flags it without blocking. The coach is told the rule in Coaching knowledge; review suggestions and edit-comment offers that would add one are left out by code.
+
+## 2026-10-24: Faster everyday paths; Set up a plan opens at step 1 (Ben, 23 Oct)
+
+- **Problem (Ben, 23 Oct, iPhone):** "so slow"; Set up a plan took ~20 s and landed on the end of his last plan.
+- **Built (ADR 0032):** migration 35 indexes workout exercises by workout; history is read once and cached in memory by stored version (SQLite stays authoritative); many exercises' histories in one read; Today worked out once per database state. On ~800 workouts in Node, every everyday path is under a second after the first read of a run (Today was 93–202 s). A perf lane (`npm run test:perf`) budgets each path, now including Coach review's reads and the one editor.
+- **Set up a plan:** every new plan opens at Check your lifts (when needed), else Gym goals, with his last plan's answers prefilled; an unapplied built plan is offered as `Continue last draft`. Only Edit plan opens on Your plan.
+- **Open:** the first history read after a launch still decodes every workout once (~3 s Node); a stored per-workout summary would fix it but is a schema change for Ben to approve.
