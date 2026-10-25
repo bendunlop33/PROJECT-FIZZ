@@ -40,6 +40,7 @@ import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
 import { changedTargetFields, draftWithNewTarget, markCarriedLoad, pendingOwnValues } from './pending-values';
 import { carriedLoad, hasOwnValuesAnyFlags, painFlaggedOf, shownPlannedIn, shownTargetShortIn, warmupLookupOf, type CarryOptions } from './carry';
 import type { WarmupExerciseFacts } from '../warmup/plan';
+import { isPastLog } from './time-shift';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -757,7 +758,9 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   }
 
   // Cardio (19 Oct): while its timer runs, ✓ logs the time on it (the reducer reads it again at the log).
-  const cardioTimer = ex.measurement === 'cardio' ? cardioTimerView(state, set, input.nowMs) : null;
+  // (Ben, 25 Oct) A past log runs no clock: no work or cardio timer; the time is typed in.
+  const pastLog = isPastLog(state.session);
+  const cardioTimer = ex.measurement === 'cardio' && !pastLog ? cardioTimerView(state, set, input.nowMs) : null;
   const timedCardioS = cardioTimer?.elapsedMs != null ? Math.round(cardioTimer.elapsedMs / 1000) : null;
   const missing = missingFor(timedCardioS === null ? values : { ...values, durationS: timedCardioS }, ex);
   const logValues: SetValues = {
@@ -820,7 +823,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     addWeight: addWeightOf(state, ex, eq, input.bodyweightExercises),
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     ...valueFields(ex.measurement, values.durationS, values.distanceM ?? null),
-    workTimer: ex.measurement === 'duration' ? workTimerView(state, set, values, input.nowMs) : cardioTimer,
+    workTimer: ex.measurement === 'duration' && !pastLog ? workTimerView(state, set, values, input.nowMs) : cardioTimer,
     pace: ex.measurement === 'cardio' ? paceText(logValues, ex.exerciseId) : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral, rpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null, measurement: ex.measurement }),
     targetBrief: targetBrief(set.planned, targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null, ex.measurement),
@@ -1077,7 +1080,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     lastCompletedAtUtc: last,
     openEnded: isOpenEndedWorkout(state),
     upNext: focus === null ? null : upNextLine(state, focus, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input) }),
-    timeLeft: input.withTimeLeft === false ? null : buildTimeLeftView(state, nowMs, input.recentPace),
+    timeLeft: input.withTimeLeft === false || isPastLog(session) ? null : buildTimeLeftView(state, nowMs, input.recentPace),
     finishByUtc: session.finishBy?.utc ?? null,
   };
 }

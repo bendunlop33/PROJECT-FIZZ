@@ -14,6 +14,8 @@ import { TIMING, useTheme } from '../../theme';
 import { AppText, DangerTextButton, Group, Icon, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton, Toast, ToastHost, toastBottom } from '../../ui';
 import { LIBRARY_COPY_UI } from '../../workout/library-view';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
+import { LogPastWorkoutSheet } from '../workout/LogPastWorkoutSheet';
+import { PAST_LOG_COPY } from '../../workout/past-log-view';
 
 /**
  * Past workouts (Today → `Past workouts`): pick one to repeat, or delete
@@ -42,6 +44,7 @@ export function PastWorkoutsScreen() {
   const { selecting, selected, line } = sel;
   const changed = useDataChanged();
   const [saveToast, setSaveToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
+  const [pastLog, setPastLog] = useState(false);
   useEffect(() => {
     if (!saveToast) return;
     const t = setTimeout(() => {
@@ -84,6 +87,16 @@ export function PastWorkoutsScreen() {
   return (
     <>
       <Screen>
+        {/* (Ben, 25 Oct) A workout done on another day, entered now. */}
+        {!selecting ? (
+          <TextButton
+            label={PAST_LOG_COPY.entry}
+            icon="plus"
+            onPress={() => {
+              setPastLog(true);
+            }}
+          />
+        ) : null}
         {line ? (
           <StatusLine
             icon={line.tone === 'warning' ? 'exclamationmark.triangle' : 'info.circle'}
@@ -195,6 +208,12 @@ export function PastWorkoutsScreen() {
         ) : null}
       </ToastHost>
       {save.sheet}
+      <LogPastWorkoutSheet
+        visible={pastLog}
+        onClose={() => {
+          setPastLog(false);
+        }}
+      />
       {selecting ? <SelectionToolbar trailing={<DangerTextButton label={deleteToolbarLabel(selected.size)} disabled={selected.size === 0} onPress={sel.confirmSelected} />} /> : null}
     </>
   );

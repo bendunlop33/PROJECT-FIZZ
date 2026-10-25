@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
+import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -16,6 +16,7 @@ import { toggleCues } from '../../voice/settings';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
+import { pastLogWhen } from '../../workout/past-log-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openGymFromWorkout, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
@@ -1726,7 +1727,7 @@ export function WorkoutScreen() {
     };
     const cuesOn = voiceCapability().speech ? prefs.voice.cuesOn : undefined;
     const undoFit = undoableTimeFit(loaded.aggregate, services.now()) !== null;
-    const items = workoutMenu({ view: mode, paused: session.pause !== null, openEnded: view?.openEnded ?? false, ax, gymName: loaded.gymName, cuesOn, undoFit }).map((m) => ({ label: m.label, run: run[m.id] }));
+    const items = workoutMenu({ view: mode, paused: session.pause !== null, openEnded: view?.openEnded ?? false, ax, gymName: loaded.gymName, cuesOn, undoFit, pastLog: session.pastLog !== undefined }).map((m) => ({ label: m.label, run: run[m.id] }));
     const options = [...items.map((x) => x.label), 'Cancel'];
     ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: items.length - 1, cancelButtonIndex: items.length }, (i) => {
       items[i]?.run();
@@ -2777,8 +2778,14 @@ export function WorkoutScreen() {
           </AppText>
           {/* The gym chip sits in the top bar (§2); at AX1+ it moves into ⋯. */}
           {!ax ? <GymChip gymName={loaded.gymName} onPress={openGymSheet} /> : null}
+          {/* (Ben, 25 Oct) A past log runs no clock: its date and start time instead of the elapsed time. */}
+          {session.pastLog !== undefined ? (
+            <AppText variant="callout" numeric color="text.secondary" accessibilityLabel={`Past workout, ${pastLogWhen(toMs(session.startedAt.utc), session.startedAt.tz)}`}>
+              {pastLogWhen(toMs(session.startedAt.utc), session.startedAt.tz)}
+            </AppText>
+          ) : null}
           {/* v3 §5: the elapsed time opens Time left; `+12 min` after it while running over Ben's finish time (shown, never applied). */}
-          <Pressable
+          {session.pastLog !== undefined ? null : <Pressable
             accessibilityRole={timeLeft ? 'button' : 'text'}
             accessibilityLabel={`${view.paused ? 'Paused, ' : ''}active time ${formatElapsed(view.elapsedMs)}${overTime !== null ? `, ${overTime.replace('\u00a0', ' ')} over` : ''}`}
             accessibilityHint={overTime !== null ? 'Offers a shorter rest of the workout' : timeLeft ? 'Shows the time left' : undefined}
@@ -2800,7 +2807,7 @@ export function WorkoutScreen() {
                 {overTime}
               </AppText>
             ) : null}
-          </Pressable>
+          </Pressable>}
           {alertsOff(permission, prefs.alertsAsk) ? <IconButton icon="bell.slash" tint="text.secondary" label={alertsOffLabel(permission)} onPress={openAlertSettings} /> : null}
           <IconButton icon="ellipsis.circle" label="Workout menu" onPress={topMenu} />
         </View>
@@ -3279,11 +3286,25 @@ export function WorkoutScreen() {
         onClose={() => {
           setTimesOpen(false);
         }}
-        onSaved={(d) => {
+        onSaved={(d, editOpId) => {
           setData((cur) => newerWorkoutData(cur, d));
           changed();
           setTimesOpen(false);
-          showToast({ text: 'Start time changed' });
+          // (Ben, 25 Oct) One tap puts the times back, on the version this edit made (rule 5).
+          const undo = timingUndoCommand(d.aggregate, editOpId, newUuid(), services.now());
+          showToast({
+            text: 'Start time changed',
+            ...(undo === null
+              ? {}
+              : {
+                  action: 'Undo',
+                  onAction: () => {
+                    void run({ ...undo, at: services.now() }).then((u) => {
+                      if (!u.ok) showToast({ icon: 'info.circle', text: 'Couldn’t undo: changed since' });
+                    });
+                  },
+                }),
+          });
         }}
       />
     </KeyboardAvoidingView>
@@ -3588,7 +3609,7 @@ function RestAfterSheet({
 }
 
 /** `Edit workout times` before Finish: start only (active-workout §4.6), on the same wheel as Finish (review S3). */
-function StartTimeSheet({ visible, data, onClose, onSaved }: { visible: boolean; data: ActiveWorkoutData; onClose: () => void; onSaved: (d: ActiveWorkoutData) => void }) {
+function StartTimeSheet({ visible, data, onClose, onSaved }: { visible: boolean; data: ActiveWorkoutData; onClose: () => void; onSaved: (d: ActiveWorkoutData, editOpId: string) => void }) {
   const theme = useTheme();
   const services = useServices();
   const insets = useSafeAreaInsets();
@@ -3606,6 +3627,8 @@ function StartTimeSheet({ visible, data, onClose, onSaved }: { visible: boolean;
     setError(null);
   }, [visible, data]);
   const bounds = workoutTimeBounds(data.aggregate, nowAt);
+  // (Ben, 25 Oct) A past log moves as a whole (its sets with it), to any past date; a live workout keeps the 19 Oct rule.
+  const pastLog = data.aggregate.session.pastLog !== undefined;
   async function save() {
     const r = await services.workout.dispatch(data.aggregate.session.id, {
       type: 'update_session_timing',
@@ -3614,12 +3637,13 @@ function StartTimeSheet({ visible, data, onClose, onSaved }: { visible: boolean;
       expectedVersion: data.aggregate.session.version,
       startedAt: { utc: toIso(times.startMs), tz },
       endedAt: null,
+      ...(pastLog ? { shift: true as const } : {}),
     });
     if (!r.ok) {
       setError(r.error.code === 'stale_version' ? 'The workout changed. Close and try again.' : r.error.message);
       return;
     }
-    onSaved({ ...data, aggregate: r.aggregate });
+    onSaved({ ...data, aggregate: r.aggregate }, opId);
   }
   return (
     <ModalSheet visible={visible} onClose={onClose}>
@@ -3627,7 +3651,11 @@ function StartTimeSheet({ visible, data, onClose, onSaved }: { visible: boolean;
         <AppText variant="title2" accessibilityRole="header">
           Edit workout times
         </AppText>
-        <WorkoutTimesRows times={times} bounds={bounds} tz={tz} onChange={setTimes} startOnly />
+        {pastLog ? (
+          <WorkoutTimesRows times={times} shift={{ timeline: timelineOf(data.aggregate), nowMs: nowAt }} tz={tz} onChange={setTimes} startOnly />
+        ) : (
+          <WorkoutTimesRows times={times} bounds={bounds} tz={tz} onChange={setTimes} startOnly />
+        )}
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         <SecondaryButton label="Save" onPress={() => void save()} />
         <TextButton label="Cancel" tone="secondary" onPress={onClose} />

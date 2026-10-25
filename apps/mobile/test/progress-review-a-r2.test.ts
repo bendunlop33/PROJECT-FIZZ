@@ -43,7 +43,8 @@ describe('N1: Edit times opens the time correction and returns to Progress', () 
     const src = read('screens/workout/SummaryScreen.tsx');
     expect(src).toContain('const [times, setTimes] = useState(editTimes);');
     expect(src).toMatch(/onClose=\{\(\) => \{\s*setTimes\(false\);\s*if \(editTimes\) done\(\);/);
-    expect(src).toMatch(/onSaved=\{\(\) => \{\s*setTimes\(false\);\s*changed\(\);\s*if \(editTimes\) done\(\);/);
+    // (Ben, 25 Oct) onSaved now takes the saved workout and the edit's op for the `Times changed` Undo.
+    expect(src).toMatch(/onSaved=\{\((?:after, editOpId)?\) => \{\s*setTimes\(false\);\s*changed\(\);\s*if \(editTimes\) done\(\);/);
   });
 });
 

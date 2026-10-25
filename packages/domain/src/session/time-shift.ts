@@ -1,4 +1,4 @@
-import type { RestTimer, SessionAggregate, SessionPastLog, ZonedTimestamp } from '@fizz/schemas';
+import type { RestTimer, SessionAggregate, SessionCommand, SessionPastLog, ZonedTimestamp } from '@fizz/schemas';
 import { addDays, clockText, localDateOf, localTimeUtcMs } from '../calendar';
 import { toIso, toMs } from '../time';
 
@@ -128,4 +128,21 @@ export function pastLogStartRefusal(startMs: number, nowMs: number): 'in_future'
 export const PAST_LOG_DEFAULT_MS = 60 * 60_000;
 export function pastLogDefaultEnd(startMs: number, lastSetMs: number | null, nowMs: number): number {
   return Math.min(nowMs, Math.max(startMs + PAST_LOG_DEFAULT_MS, (lastSetMs ?? startMs) + 60_000));
+}
+
+/**
+ * The one-tap Undo of a timing edit (Ben, 25 Oct): the times as they were before operation
+ * `editOpId` (read from its timing audit entries, zones and all), on the version it made, with a new
+ * operation. A moved start moves the whole workout back (`shift`); an end alone goes back alone.
+ * Null: that operation changed nothing. A later edit makes it stale, never applied to newer state.
+ */
+export function timingUndoCommand(after: SessionAggregate, editOpId: string, opId: string, at: ZonedTimestamp): Extract<SessionCommand, { type: 'update_session_timing' }> | null {
+  const s = after.session;
+  const start = after.timingAudit.find((e) => e.opId === editOpId && e.field === 'startedAt');
+  const end = after.timingAudit.find((e) => e.opId === editOpId && e.field === 'endedAt');
+  const base = { type: 'update_session_timing' as const, at, opId, expectedVersion: s.version };
+  // A workout with an end (finished) gets its end back too; one still open has none to give.
+  if (start?.before) return { ...base, startedAt: start.before, endedAt: s.endedAt === null ? null : (end?.before ?? s.endedAt), ...(start.shiftMs === undefined ? {} : { shift: true as const }) };
+  if (end?.before) return { ...base, startedAt: null, endedAt: end.before };
+  return null;
 }

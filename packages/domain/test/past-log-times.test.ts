@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, UpdateSessionTimingCommandSchema, type SessionAggregate, type SessionCommand, type ZonedTimestamp } from '@fizz/schemas';
 import {
   asPastLog,
+  buildActiveSetView,
   buildLockScreenContent,
   buildWorkoutSummary,
   createMemoryRepositories,
@@ -22,6 +23,7 @@ import {
   shiftTimeBounds,
   summaryTimeline,
   timelineOf,
+  timingUndoCommand,
   toHistorySessions,
   toIso,
   toMs,
@@ -29,7 +31,7 @@ import {
   type HistorySession,
 } from '../src/index';
 import { at, barbell, GYM, id, idGen, kg, ms, OWNER, profile, stack, TZ, values } from './fixtures';
-import { apply, BENCH, exercises, expectError, expectOk, logCmd, ROW, setsFor, startFixture } from './session-fixture';
+import { apply, BENCH, exercises, expectError, expectOk, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
 /**
  * (Ben, 25 Oct) "I should be able to freely edit times, e.g. if I want to import a workout
@@ -148,7 +150,7 @@ describe('update_session_timing with shift (a finished workout)', () => {
     const again = expectOk(reduceSession(once, { ...cmd, at: at(2 * DAY + 30) }));
     expect(again.duplicate).toBe(true);
     expect(again.state).toBe(once);
-    expectError(reduceSession(once, { ...cmd, startedAt: z(ms(0) - 2 * DAY * 1000) }), 'operation_id_reused');
+    expectError(reduceSession(once, shiftCmd(s, 2 * DAY, ms(0) - 2 * DAY * 1000, null)), 'operation_id_reused');
     // The version the sheet opened on is gone after the move.
     expectError(reduceSession(once, shiftCmd(s, 2 * DAY, ms(0) - 2 * DAY * 1000, null, 'shift-2')), 'stale_version');
   });
@@ -380,5 +382,37 @@ describe('Summary of a workout dated before newer ones (Ben, 25 Oct)', () => {
     expect(sum.timeline).toEqual({ lastSetUtc: at(15 * MIN).utc, latestUtc: at(15 * MIN).utc });
     expect(sum.pastLog).toBe(false);
     expect(timelineOf(s)).toEqual(summaryTimeline(sum.startedAtUtc, sum.timeline));
+  });
+});
+
+describe('timingUndoCommand', () => {
+  it('a whole-workout move undoes as a move back, from the audit; an end alone as the end; nothing: null', () => {
+    const s = finishedWorkout();
+    const moved = apply(s, shiftCmd(s, 2 * DAY, ms(0) - 2 * DAY * 1000, ms(0) - 2 * DAY * 1000 + 50 * MIN * 1000, 'mv'));
+    const undo = timingUndoCommand(moved, 'mv', 'undo-mv', at(2 * DAY + 1));
+    expect(undo).toMatchObject({ startedAt: s.session.startedAt, endedAt: s.session.endedAt, shift: true, expectedVersion: moved.session.version });
+    if (!undo) throw new Error('no undo');
+    const back = apply(moved, undo);
+    expect(doneTimes(back)).toEqual(doneTimes(s));
+    expect(back.session.endedAt).toEqual(s.session.endedAt);
+    // Once something else changed the workout, the Undo is stale.
+    const later = apply(moved, { type: 'update_session_timing', at: at(2 * DAY + 2), opId: 'end2', expectedVersion: moved.session.version, startedAt: null, endedAt: z(toMs(moved.session.endedAt?.utc ?? '') + 60_000) });
+    expectError(reduceSession(later, undo), 'stale_version');
+    const endOnly = apply(s, { type: 'update_session_timing', at: at(DAY), opId: 'e', expectedVersion: s.session.version, startedAt: null, endedAt: at(45 * MIN) });
+    expect(timingUndoCommand(endOnly, 'e', 'u', at(DAY + 1))).toMatchObject({ startedAt: null, endedAt: s.session.endedAt });
+    expect(timingUndoCommand(s, 'nothing', 'u', at(DAY))).toBeNull();
+  });
+});
+
+describe('the workout view of a past log', () => {
+  it('a timed set has no Start/Stop (the time is typed), and there is no Time left', () => {
+    let s = asPastLog(startFixture().state, z(ms(0) - DAY * 1000), at(0));
+    const hang = setsFor(s, HANG)[0];
+    s = apply(s, { type: 'set_active_set', at: at(5), opId: 'focus-hang', setId: hang?.id ?? '', expectedVersion: s.session.version });
+    const view = buildActiveSetView({ aggregate: s, nowMs: ms(10), gymName: 'Main Gym', previous: {}, painFlagged: new Set(), edits: null });
+    expect(view.focus?.workTimer).toBeNull();
+    expect(['log', 'enter']).toContain(view.primary.kind);
+    expect(view.timeLeft).toBeNull();
+    expectError(reduceSession(s, { type: 'start_work_interval', at: at(20), opId: 'w', setId: hang?.id ?? '', durationS: 45 }), 'past_log_no_clock');
   });
 });

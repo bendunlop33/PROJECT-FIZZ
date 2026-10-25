@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { toIso, toMs, workoutTimeBounds } from '@fizz/domain';
+import { pastLogDefaultEnd, timelineOf, toIso, toMs } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { nowMs as clockNow } from '../../clock';
@@ -20,6 +20,10 @@ import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
  * (and start, when Ben moved it on the wheel; Ben, 19 Oct) in the same
  * transaction (ADR 0003 S5). A stale version reloads and says so
  * (review N8). With nothing logged, `Discard workout` is the primary.
+ *
+ * (Ben, 25 Oct) Moving Started moves the whole workout (its sets, pauses and rests with it) to any
+ * past date and time; the `finish` then carries `shift: true` and the end as shown. A past log's
+ * end starts an hour after its start (`pastLogDefaultEnd`), with no `Use now`.
  */
 export function FinishSheet({
   aggregate,
@@ -44,11 +48,13 @@ export function FinishSheet({
   const insets = useSafeAreaInsets();
   const [opId, setOpId] = useState(newUuid);
   const [now, setNow] = useState(clockNow);
+  const pastLog = aggregate.session.pastLog !== undefined;
+  const timeline = timelineOf(aggregate);
+  const defaultEnd = (t: number): number => (pastLog ? pastLogDefaultEnd(timeline.startMs, timeline.lastSetMs, t) : finishModel(aggregate, t).defaultEndMs);
   const model = finishModel(aggregate, now);
   const recordedStartMs = toMs(aggregate.session.startedAt.utc);
-  const [times, setTimes] = useState<WorkoutTimes>({ startMs: recordedStartMs, endMs: model.defaultEndMs });
+  const [times, setTimes] = useState<WorkoutTimes>({ startMs: recordedStartMs, endMs: defaultEnd(now) });
   const endMs = times.endMs;
-  const bounds = workoutTimeBounds(aggregate, now);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tz = aggregate.session.startedAt.tz;
@@ -58,7 +64,7 @@ export function FinishSheet({
     if (!visible) return;
     const t = clockNow();
     setNow(t);
-    setTimes({ startMs: toMs(aggregate.session.startedAt.utc), endMs: finishModel(aggregate, t).defaultEndMs });
+    setTimes({ startMs: toMs(aggregate.session.startedAt.utc), endMs: pastLog ? pastLogDefaultEnd(timeline.startMs, timeline.lastSetMs, t) : finishModel(aggregate, t).defaultEndMs });
     setOpId(newUuid());
     setError(null);
   }, [visible, aggregate]);
@@ -68,15 +74,16 @@ export function FinishSheet({
     setBusy(true);
     setError(null);
     const at = services.now();
-    const chosenIsNow = Math.abs(endMs - now) < 60_000;
+    const moved = times.startMs !== recordedStartMs;
+    const chosenIsNow = !moved && !pastLog && Math.abs(endMs - now) < 60_000;
     const r = await services.workout.dispatch(aggregate.session.id, {
       type: 'finish',
       at,
       opId,
       expectedVersion: aggregate.session.version,
-      endedAt: chosenIsNow ? null : { utc: toIso(endMs), tz: at.tz },
-      // The workout's own zone (review N6); only when Ben moved it.
-      ...(times.startMs === recordedStartMs ? {} : { startedAt: { utc: toIso(times.startMs), tz } }),
+      endedAt: chosenIsNow ? null : { utc: toIso(endMs), tz: moved || pastLog ? tz : at.tz },
+      // The workout's own zone (review N6); only when Ben moved it, and then the whole workout moves (Ben, 25 Oct).
+      ...(moved ? { startedAt: { utc: toIso(times.startMs), tz }, shift: true as const } : {}),
     });
     setBusy(false);
     if (!r.ok) {
@@ -115,8 +122,8 @@ export function FinishSheet({
           )}
           {!model.nothingLogged ? (
             <View style={{ gap: theme.space['2'] }}>
-              <WorkoutTimesRows times={times} bounds={bounds} tz={tz} onChange={setTimes} endNow={now} endEstimate={model.forgotten ? model.defaultEndMs : null} />
-              {Math.abs(endMs - now) >= 60_000 ? (
+              <WorkoutTimesRows times={times} shift={{ timeline, nowMs: now }} tz={tz} onChange={setTimes} endNow={pastLog ? null : now} endEstimate={pastLog ? defaultEnd(now) : model.forgotten ? model.defaultEndMs : null} />
+              {!pastLog && Math.abs(endMs - now) >= 60_000 ? (
                 <TextButton
                   label={`Use now (${formatTime(now, tz)})`}
                   onPress={() => {

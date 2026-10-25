@@ -35,6 +35,7 @@ import {
   isSplitDayName,
   splitDaySource,
   planRoutines,
+  pastLogDefaultStart,
   planRoutineForSplitDay,
   activePause,
   planDayBodyParts,
@@ -1020,6 +1021,12 @@ export interface WorkoutStartRequest {
    * template or variation write that lands in the same transaction.
    */
   builder?: { expectedVersion: number; planDay?: SessionPlanDay; alongside?: StartAlongside };
+  /**
+   * (Ben, 25 Oct) `Log a past workout`: the date and start time Ben picked. Only an empty workout or a
+   * saved workout (`routineOf`, a plan day's too) can start this way; no check-in is asked or linked,
+   * today's pre-start drafts are left alone, and the coach's next targets aren't marked used by it.
+   */
+  pastStart?: ZonedTimestamp;
 }
 
 /** The overview's key check (§7): a retry of a Start that landed, out of date, or fresh with what to re-check in the write. */
@@ -1688,6 +1695,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       noteSource?: boolean;
       /** Today's edits from the pre-start draft (ADR 0022). */
       todayEdits?: TodayEditsInput;
+      /** (Ben, 25 Oct) A past log's start. */
+      pastStart?: ZonedTimestamp;
     },
   ) {
     const routine = await repos().routines.get(req.routineId);
@@ -1718,6 +1727,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       ...(req.fence ? { fence: req.fence } : {}),
       ...(lastUsedHere ? { lastUsedHere } : {}),
       ...(req.todayEdits ? { today: req.todayEdits } : {}),
+      ...(req.pastStart ? { pastStart: req.pastStart } : {}),
     });
     return { r, ref, source, routine, targeted: (targets !== null && targets.size > 0) || (firstLoads !== null && firstLoads.size > 0), targetsFailed: source !== null && targets === null };
   }
@@ -2767,6 +2777,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async startOnce(req: WorkoutStartRequest): Promise<WorkoutStartOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
+      if (req.pastStart !== undefined) return workout.startPast(p, { ...req, pastStart: req.pastStart });
       let fence = req.fence;
       if (req.expectedPreviewKey !== undefined && (req.routineOf || req.nextOf || req.coachDraftOf)) {
         const check = await workout.previewCheck(p, {
@@ -2897,6 +2908,48 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
       }
       return domain().start({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn });
+    },
+
+    /**
+     * (Ben, 25 Oct) What `Log a past workout` offers: its first date and time (`pastLogDefaultStart`:
+     * yesterday at the latest workout's time of day), the zone, and the workouts it can start from (the
+     * plan's days first, then the other saved workouts). Local reads only; a failed one lists nothing.
+     */
+    async pastLogChoices(): Promise<{ defaultStartMs: number; tz: string; days: { routineId: string; name: string }[]; workouts: { routineId: string; name: string }[] } | null> {
+      const p = await ctx.profile();
+      if (!p) return null;
+      const now = ctx.now();
+      const tz = p.timezone;
+      const latest = await repos().sessions.latestFinished(p.id).catch(() => null);
+      const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]));
+      const plan = await ctx.store().repos.planDrafts.applied(p.id).catch(() => null);
+      const days = planRoutines(plan, live);
+      const inPlan = new Set(days.map((r) => r.id));
+      return {
+        defaultStartMs: pastLogDefaultStart(toMs(now.utc), tz, latest === null ? null : toMs(latest.session.startedAt.utc)),
+        tz,
+        days: days.map((r) => ({ routineId: r.id, name: r.name })),
+        workouts: live.filter((r) => !inPlan.has(r.id)).map((r) => ({ routineId: r.id, name: r.name })),
+      };
+    },
+
+    /**
+     * (Ben, 25 Oct) `Log a past workout`: an empty workout or a saved one, started at the picked date
+     * and time and marked a past log. No check-in, no pre-start draft, no coach targets marked used
+     * (it isn't the next workout). Idempotent by `opId`, one open workout at a time, as any Start.
+     */
+    async startPast(p: UserProfile, req: WorkoutStartRequest & { pastStart: ZonedTimestamp }): Promise<WorkoutStartOutcome> {
+      if (req.routineOf) {
+        const { r } = await routineStart(p, { routineId: req.routineOf, gymId: req.gymId, opId: req.opId, preview: false, checkIn: null, noteSource: false, pastStart: req.pastStart });
+        if (!r.ok) {
+          const e = r.error;
+          if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+          return { ok: false, error: e };
+        }
+        return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
+      }
+      return domain().start({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn: null, pastStart: req.pastStart });
     },
 
     /**
