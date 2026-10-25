@@ -253,6 +253,22 @@ describe('import jobs and rows', () => {
     expect(history.every((h) => h.imported && h.gymId === null && h.equipmentId === null)).toBe(true);
   });
 
+  it('(ADR 0032) each imported workout gets its history summary in its own write; Undo import removes them in the same transaction', async () => {
+    const { job } = await importAll(store);
+    const summaries = () => store.db.read(async (q) => (await q.getFirst<{ n: number }>('SELECT count(*) AS n FROM history_summaries'))?.n);
+    expect(await summaries()).toBe(2);
+    expect(await store.checkHistorySummaries()).toMatchObject({ ok: true, checked: 2 });
+    // FitNotes history reads from the summaries as it did from the workouts: imported, no item, working sets.
+    const lat = await store.listExerciseHistory(OWNER, LAT);
+    expect(lat.map((h) => [h.imported, h.equipmentId, h.sets.length])).toEqual([
+      [true, null, 1],
+      [true, null, 2],
+    ]);
+    expect((await store.repos.imports.revertJob(job.id, 1, 'undo-1', LATER)).ok).toBe(true);
+    expect(await summaries()).toBe(0);
+    expect(await store.checkHistorySummaries()).toMatchObject({ ok: true, checked: 0, orphans: [] });
+  });
+
   it('Undo import hides every workout everywhere, deletes nothing, and is versioned and idempotent (DX7, check 25)', async () => {
     const { job, rows } = await importAll(store);
     const before = await store.db.read(async (q) => ({

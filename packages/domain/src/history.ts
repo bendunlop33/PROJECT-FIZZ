@@ -1,4 +1,5 @@
 import type { SessionAggregate, SessionExercise } from '@fizz/schemas';
+import { addedRowIdsOf, type HistoryLike } from './history-summary';
 import type { HistorySession, HistorySet } from './progression';
 import { equipmentOfRow } from './session/equipment-snapshot';
 import { setDisplayNumbers } from './session/order';
@@ -27,7 +28,7 @@ import { isInHistory } from './session/deletion';
  *   zone and routine name, so a target made from this history can record its
  *   basis for `Why?` (active-workout §2.12) and spot later edits.
  */
-export function toHistorySessions(aggregate: SessionAggregate, exerciseId: string, opts: { identity?: boolean } = {}): HistorySession[] {
+export function toHistorySessions(aggregate: HistoryLike, exerciseId: string, opts: { identity?: boolean } = {}): HistorySession[] {
   const { session } = aggregate;
   if (!isInHistory(session)) return [];
   const rows = aggregate.exercises.filter((e) => e.exerciseId === exerciseId).sort((a, b) => a.order - b.order);
@@ -86,12 +87,6 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
     }));
 }
 
-/** The rows added to the workout after it was planned (Library, picker, coach adds): `add_exercise` records. */
-function addedRows(aggregate: Pick<SessionAggregate, 'processedOps'>): Set<string> {
-  const out = new Set<string>();
-  for (const op of Object.values(aggregate.processedOps)) if (op.commandType === 'add_exercise') for (const id of op.createdIds ?? []) out.add(id);
-  return out;
-}
 
 /**
  * (Ben, 19 Oct: the same exercise twice in a workout, e.g. a superset with itself at 0) Rows of one
@@ -101,13 +96,13 @@ function addedRows(aggregate: Pick<SessionAggregate, 'processedOps'>): Set<strin
  * planned slot (a row in the workout when it was planned) over a row added later; then the heaviest
  * done load; then the first in order. Parts after a gym switch (`continuesFromId`) aren't copies.
  */
-export function extraCopies(aggregate: Pick<SessionAggregate, 'exercises' | 'sets'> & Partial<Pick<SessionAggregate, 'processedOps'>>, rows: readonly SessionExercise[], byItem: boolean): Set<string> {
+export function extraCopies(aggregate: Pick<SessionAggregate, 'exercises' | 'sets'> & Pick<HistoryLike, 'addedRowIds' | 'processedOps'>, rows: readonly SessionExercise[], byItem: boolean): Set<string> {
   const done = (row: SessionExercise) => aggregate.sets.filter((s) => s.sessionExerciseId === row.id && s.status === 'completed' && s.actual !== null && s.setType !== 'warmup');
   const heaviest = (row: SessionExercise): number => {
     const loads = done(row).flatMap((s) => (s.actual?.load && s.actual.load.convention !== 'bodyweight' ? [s.actual.load.convention === 'assistance' ? -s.actual.load.value : s.actual.load.value] : []));
     return loads.length === 0 ? Number.NEGATIVE_INFINITY : Math.max(...loads);
   };
-  const added = addedRows({ processedOps: aggregate.processedOps ?? {} });
+  const added = new Set(addedRowIdsOf(aggregate));
   const groups = new Map<string, SessionExercise[]>();
   for (const row of rows) {
     if (row.continuesFromId !== undefined || row.removed !== undefined) continue;

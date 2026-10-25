@@ -208,6 +208,8 @@ import {
   type SessionAdjustmentTrigger,
   gymSetupWords,
   type RuleReps,
+  type HistoryLike,
+  type HistoryWorkout,
 } from '@fizz/domain';
 import type { CandidateWrite, MemoryWrite, SqliteRepositories, Store } from '@fizz/persistence';
 import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
@@ -741,7 +743,9 @@ export function createCoachService(deps: CoachServiceDeps) {
   /** The workout a structural change would build from in this turn: the one in context, else the last finished one. */
   async function structuralSource(p: UserProfile, session: SessionAggregate | null): Promise<SessionAggregate | null> {
     if (session !== null) return session;
-    return repos().sessions.latestFinished(p.id).catch(() => null);
+    // (ADR 0032) A structural change builds from the full stored workout, not its history summary.
+    const last = await repos().sessions.latestFinished(p.id).catch(() => null);
+    return last === null ? null : repos().sessions.get(last.session.id).catch(() => null);
   }
 
   /** CA9 signals for the gate: a pain flag since that workout, or its equipment changed (never from the model). */
@@ -860,10 +864,10 @@ export function createCoachService(deps: CoachServiceDeps) {
    */
   function trainingReads(p: UserProfile, session: SessionAggregate | null): TrainingReadPort {
     const gymNames = async (): Promise<Record<string, string>> => Object.fromEntries((await repos().gyms.listByOwner(p.id).catch(() => [])).map((g) => [g.id, g.name]));
-    const equipmentNames = (aggs: readonly SessionAggregate[]): Record<string, string> => Object.fromEntries(aggs.flatMap((a) => a.session.equipmentSnapshot.map((e) => [e.id, e.name] as const)));
-    const exerciseNameOf = async (id: string, aggs: readonly SessionAggregate[]): Promise<string | null> =>
+    const equipmentNames = (aggs: readonly HistoryLike[]): Record<string, string> => Object.fromEntries(aggs.flatMap((a) => a.session.equipmentSnapshot.map((e) => [e.id, e.name] as const)));
+    const exerciseNameOf = async (id: string, aggs: readonly HistoryLike[]): Promise<string | null> =>
       (await repos().exercises.get(id).catch(() => null))?.name ?? aggs.flatMap((a) => a.exercises).find((e) => e.exerciseId === id)?.exerciseName ?? null;
-    const finishedWith = (exerciseId: string) => repos().sessions.listFinishedWithExercise(p.id, exerciseId).catch(() => [] as SessionAggregate[]);
+    const finishedWith = (exerciseId: string) => repos().sessions.listFinishedWithExercise(p.id, exerciseId).catch(() => [] as HistoryWorkout[]);
     return {
       async exerciseHistory(exerciseId, sessions) {
         const aggs = await finishedWith(exerciseId);
@@ -874,7 +878,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       async overview(weeks) {
         const now = deps.now();
         const from = toIso(toMs(now.utc) - weeks * 7 * 86_400_000);
-        const aggs = await repos().sessions.listFinishedBetween(p.id, from, now.utc).catch(() => [] as SessionAggregate[]);
+        const aggs = await repos().sessions.listFinishedBetween(p.id, from, now.utc).catch(() => [] as HistoryWorkout[]);
         const firstWorkoutUtc = await repos().sessions.earliestFinishedStartUtc(p.id).catch(() => null);
         return trainingOverviewView({ weeks, nowUtc: now.utc, tz: now.tz, sessions: aggs, gymNames: await gymNames(), firstWorkoutUtc });
       },
@@ -1273,7 +1277,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const mainEx = ownMain !== null && ownMain.source === 'yours' ? (byId.get(ownMain.exerciseId) ?? null) : null;
     const words = parseBuildRequest(newest.join('\n'));
     const namedKeys = new Set(exercisesNamedIn(newest.join('\n'), pool.map((e) => ({ exerciseId: e.id, exerciseName: e.name }))));
-    const recent = inPlay ? await repos().sessions.listFinishedBetween(p.id, toIso(nowMs - 180 * 86_400_000), toIso(nowMs + 1)).catch(() => [] as SessionAggregate[]) : [];
+    const recent = inPlay ? await repos().sessions.listFinishedBetween(p.id, toIso(nowMs - 180 * 86_400_000), toIso(nowMs + 1)).catch(() => [] as HistoryWorkout[]) : [];
     const recentIds = [...new Set(recent.flatMap((a) => a.exercises.map((e) => e.exerciseId)))];
     const recentHistory = new Map<string, HistorySession[]>(recentIds.map((id) => [id, recent.flatMap((a) => toHistorySessions(a, id, { identity: true })).sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc))]));
     const fullHistory = new Map<string, HistorySession[]>();
@@ -2384,7 +2388,7 @@ export function createCoachService(deps: CoachServiceDeps) {
   }
 
   /** The built-in rule's target RPE per session exercise, from each exercise's catalogue entry (unknown: the accessory profile). */
-  async function ruleRpesOf(a: SessionAggregate): Promise<Record<string, number>> {
+  async function ruleRpesOf(a: HistoryLike): Promise<Record<string, number>> {
     const info = new Map<string, Awaited<ReturnType<ReturnType<typeof repos>['exercises']['get']>>>();
     for (const id of new Set(a.exercises.map((e) => e.exerciseId))) {
       info.set(id, await repos().exercises.get(id).catch(() => null));

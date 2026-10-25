@@ -1,3 +1,4 @@
+import type { HistoryLike } from '../history-summary';
 import type { CoachTarget, EquipmentInstance, GuardNote, GuardNoteKind, NextSessionTarget, NextSessionTargetRecord, PainFlag, PlannedSet, SessionAggregate, SessionExercise, SetType, TargetProvenance } from '@fizz/schemas';
 import { formatNumber, loadText } from '../display';
 import { compareDifficulty, getAchievableLoads, loadDirection, stepLoad } from '../equipment';
@@ -160,7 +161,7 @@ export interface NextSessionValidation {
 }
 
 export interface NextSessionValidationInput {
-  source: SessionAggregate;
+  source: HistoryLike;
   bases: readonly NextSessionBasis[];
   targets: readonly NextSessionTarget[];
   painFlags: readonly PainFlag[];
@@ -293,7 +294,7 @@ export function bandedReset(last: CoachTarget['load'], after: CoachTarget['load'
  * completed working set have no basis (nothing to progress from).
  */
 export function nextSessionBases(
-  source: SessionAggregate,
+  source: HistoryLike,
   builtIn: ReadonlyMap<string, readonly { setType: string; planned: { load: CoachTarget['load']; reps: CoachTarget['reps']; provenance?: { rule?: { decision: string; stalled?: true | undefined } | undefined } | null | undefined } }[]>,
   /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), the last fallback of `last.rpe`. */
   ruleTargetRpe: Readonly<Record<string, number>> = {},
@@ -391,7 +392,7 @@ export function coachTargetRows<T extends Pick<NextSessionTargetRecord, 'origin'
  * Summary and that still stand: `applied`, not used by a workout started from it, set on the workout as it still is
  * (a corrected set makes the rule decide afresh). The rule lowers their load (`acceptReset`); every other stall holds.
  */
-export function acceptedRuleResets(rows: readonly NextSessionTargetRecord[], source: SessionAggregate): Set<string> {
+export function acceptedRuleResets(rows: readonly NextSessionTargetRecord[], source: HistoryLike): Set<string> {
   const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
   return new Set(rows.filter((r) => isRuleResetRow(r) && r.status === 'applied' && r.usedBySessionId === null && r.sourceSessionId === source.session.id && nextTargetFitsSource(r, fits)).map((r) => r.exerciseId));
 }
@@ -410,7 +411,7 @@ export function acceptedRuleResets(rows: readonly NextSessionTargetRecord[], sou
  * that one the rule itself plans, `acceptReset`), saved or applied by Ben, not used by a workout started from it, and
  * set on the workout as it still is (rule 5). The one test Start, Your workout and Today's card all use.
  */
-export function coachTargetStands(row: NextSessionTargetRecord, source: SessionAggregate, fits: { version: number; basis: string } = { version: source.session.version, basis: nextTargetSourceBasis(source) }): boolean {
+export function coachTargetStands(row: NextSessionTargetRecord, source: HistoryLike, fits: { version: number; basis: string } = { version: source.session.version, basis: nextTargetSourceBasis(source) }): boolean {
   if (isRuleResetRow(row) || (row.status !== 'saved' && row.status !== 'applied')) return false;
   return row.usedBySessionId === null && row.sourceSessionId === source.session.id && nextTargetFitsSource(row, fits);
 }
@@ -419,7 +420,7 @@ export function coachTargetStands(row: NextSessionTargetRecord, source: SessionA
  * (Ben, 23 Oct) The coach's standing next-session row for one exercise of `source` (`coachTargetStands`), or null: what
  * Your workout and Today's card read for its load and its set count, as Start does.
  */
-export function standingCoachTarget(rows: readonly NextSessionTargetRecord[], source: SessionAggregate, exerciseId: string): NextSessionTargetRecord | null {
+export function standingCoachTarget(rows: readonly NextSessionTargetRecord[], source: HistoryLike, exerciseId: string): NextSessionTargetRecord | null {
   const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
   return rows.find((r) => r.exerciseId === exerciseId && coachTargetStands(r, source, fits)) ?? null;
 }
@@ -427,7 +428,7 @@ export function standingCoachTarget(rows: readonly NextSessionTargetRecord[], so
 export function withCoachTargets(
   builtIn: ReadonlyMap<string, readonly PlanEntry[]>,
   rows: readonly NextSessionTargetRecord[],
-  source: SessionAggregate,
+  source: HistoryLike,
   ctx: { flaggedExerciseIds: ReadonlySet<string>; painToday: boolean },
 ): Map<string, NextTargetEntry[]> {
   const out = new Map<string, NextTargetEntry[]>([...builtIn].map(([k, v]) => [k, [...v]]));

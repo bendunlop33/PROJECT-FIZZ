@@ -14,7 +14,7 @@ describe('migration 34 (session deload)', () => {
     await at33.repos.profiles.save(profile(), null);
     await at33.repos.sessions.save(richFinishedSession(), null);
     const before = await at33.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toMatchObject({ from: 33, to: 35, applied: [34, 35] });
+    expect(await migrate(db)).toMatchObject({ from: 33, to: 36, applied: [34, 35, 36] });
     const at34 = await openStore(db);
     const after = await at34.db.read((q) => exportTables(q));
     for (const [t, rows] of Object.entries(before)) {

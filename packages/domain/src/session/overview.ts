@@ -1,3 +1,4 @@
+import type { HistoryLike } from '../history-summary';
 import type {
   EquipmentInstance,
   Exercise,
@@ -119,7 +120,7 @@ const hasTarget = (s: WorkoutSet): boolean => s.planned.load !== null || s.plann
  * entry per workout exercise row, so an exercise done on two machines in one
  * workout gives two entries.
  */
-export function pastExercisesOf(sessions: readonly SessionAggregate[], exerciseId: string): PastExercise[] {
+export function pastExercisesOf(sessions: readonly HistoryLike[], exerciseId: string): PastExercise[] {
   const out: PastExercise[] = [];
   for (const a of sessions) {
     if (!isInHistory(a.session)) continue;
@@ -672,7 +673,7 @@ export interface OverviewInput {
   /** Catalogue muscles (Coaching knowledge) per exercise ID. */
   exerciseInfo: Readonly<Record<string, Pick<Exercise, 'primaryMuscles'>>>;
   /** Ben's last finished workouts (pace). */
-  recent: readonly SessionAggregate[];
+  recent: readonly HistoryLike[];
   /** The pace already worked out from `recent` (`planPace`), the same one a fit used; absent: from `recent`. */
   pace?: ResolvedPace;
   nowMs: number;

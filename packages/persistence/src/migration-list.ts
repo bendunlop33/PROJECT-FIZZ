@@ -39,6 +39,7 @@ import { MIGRATION_0032 } from './schema/0032-session-feel';
 import { MIGRATION_0033 } from './schema/0033-builder-draft-from';
 import { MIGRATION_0034 } from './schema/0034-session-deload';
 import { MIGRATION_0035 } from './schema/0035-session-exercises-index';
+import { MIGRATION_0036 } from './schema/0036-history-summaries';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -94,6 +95,8 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(33, 'builder-draft-from', MIGRATION_0033),
   sqlMigration(34, 'session-deload', MIGRATION_0034),
   sqlMigration(35, 'session-exercises-index', MIGRATION_0035),
+  // (ADR 0032) Its backfill runs in the same transaction from the store (`MIGRATION_BACKFILLS` in `store.ts`).
+  sqlMigration(36, 'history-summaries', MIGRATION_0036),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */

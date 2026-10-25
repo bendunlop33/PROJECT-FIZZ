@@ -23,6 +23,8 @@ const TABLES = [
   'exercise_aliases',
   'exercises',
   'gyms',
+  'history_summaries',
+  'history_summary_exercises',
   'import_jobs',
   'import_layout_requests',
   'import_profiles',

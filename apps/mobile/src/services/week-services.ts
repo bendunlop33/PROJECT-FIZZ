@@ -45,6 +45,7 @@ import {
   type WeekDayInput,
   type WeekFacts,
   type WeekProposal,
+  type HistoryWorkout,
 } from '@fizz/domain';
 import type { ActivityWrite, Store } from '@fizz/persistence';
 import type { ActionRecord, Activity, ActivityFields, Exercise, PlanDraft, Routine, RoutineExercise, SessionAggregate, SplitBodyPart, SplitDay, TrainingProfile, UserProfile, WeekBasis, WeekPlan, ZonedTimestamp } from '@fizz/schemas';
@@ -226,7 +227,7 @@ export function createWeekServices(deps: WeekServicesDeps) {
     const split = splitInUse(training);
     const { sessions } = await repos()
       .sessions.listFinishedBetweenReadable(p.id, toIso(startMs), toIso(nowMs + 1))
-      .catch(() => ({ sessions: [] as SessionAggregate[] }));
+      .catch(() => ({ sessions: [] as HistoryWorkout[] }));
     const thisWeek = sessions.filter((a) => isInHistory(a.session));
     const gymDates = new Set(thisWeek.map((a) => localDateOf(toMs(a.session.startedAt.utc), tz)));
     const workouts = thisWeek.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: splitWorkoutOf(a, of, null).groups }));
@@ -286,7 +287,7 @@ export function createWeekServices(deps: WeekServicesDeps) {
     const nowMs = toMs(at.utc);
     const { sessions } = await repos()
       .sessions.listFinishedBetweenReadable(p.id, toIso(nowMs - SPLIT_WINDOW_DAYS * 86_400_000), toIso(nowMs + 1))
-      .catch(() => ({ sessions: [] as SessionAggregate[] }));
+      .catch(() => ({ sessions: [] as HistoryWorkout[] }));
     const of = await exerciseOf();
     const newest = [...sessions].sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc)).find((a) => splitDaysTrained(split, splitWorkoutOf(a, of, null).groups).includes(sd.id));
     if (newest === undefined) return [];

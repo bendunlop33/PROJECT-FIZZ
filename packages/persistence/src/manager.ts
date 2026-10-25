@@ -272,7 +272,7 @@ export class DatabaseManager {
       }
     }
     const migrations = options.migrations ?? MIGRATIONS;
-    const store = await openStore(await host.open(slots.current), { migrations });
+    const store = await openStore(await host.open(slots.current), { migrations, slice: options.slice ?? timeSlicer() });
     return new DatabaseManager(
       { host, newName: options.newName, migrations, slice: options.slice ?? timeSlicer() },
       meta,
@@ -424,7 +424,7 @@ export class DatabaseManager {
           if (!saved.ok) throw new Error(`bundled exercise ${e.id} could not be saved`);
         }
       });
-      fresh = await openStore(driver, { migrations });
+      fresh = await openStore(driver, { migrations, slice: this.options.slice });
       // A restored phone never starts from an old pre-start draft (ADR 0022 §5): every open one is discarded.
       // Only for a restore: Reset and Delete build with `check` and keep Your-data rows as they are (review r4 S1).
       if (purpose === 'restore') await discardOpenDrafts(fresh.db);
@@ -465,7 +465,7 @@ export class DatabaseManager {
         driver = await this.options.host.open(previous);
         // Opening a missing file creates an empty one; never switch to that.
         if ((await readUserVersion(driver)) === 0) throw new RestoreAbort(missing);
-        store = await openStore(driver, { migrations: this.options.migrations });
+        store = await openStore(driver, { migrations: this.options.migrations, slice: this.options.slice });
         // As after a restore (ADR 0022 §5): the database switched to never starts from its old pre-start drafts (review N4).
         await discardOpenDrafts(store.db, at.utc);
         const integrity = await checkIntegrity(store.db, latestVersion(this.options.migrations), this.options.slice);
@@ -519,7 +519,7 @@ export class DatabaseManager {
     try {
       // Opening a missing file creates an empty one; never read that as data.
       if ((await readUserVersion(driver)) === 0) return null;
-      store = await openStore(driver, { migrations: this.options.migrations });
+      store = await openStore(driver, { migrations: this.options.migrations, slice: this.options.slice });
       return await store.db.read(async (q) => ({ schemaVersion: await readUserVersion(q), tables: await exportTables(q, this.options.slice) }));
     } finally {
       const closing = store ?? driver;
@@ -571,7 +571,7 @@ export class DatabaseManager {
       try {
         driver = await this.options.host.open(name);
         if ((await readUserVersion(driver)) === 0) return null;
-        store = await openStore(driver, { migrations: this.options.migrations });
+        store = await openStore(driver, { migrations: this.options.migrations, slice: this.options.slice });
       } catch {
         const closing = store ?? driver;
         if (closing !== null) await quietly(() => closing.close());

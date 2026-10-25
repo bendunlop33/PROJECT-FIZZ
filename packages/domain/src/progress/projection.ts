@@ -1,4 +1,5 @@
-import type { EquipmentKind, Laterality, Load, LoadConvention, Measurement, SessionAggregate, SetExclusion, SetSide, SetType, WeightUnit } from '@fizz/schemas';
+import type { HistoryLike } from '../history-summary';
+import type { EquipmentKind, Laterality, Load, LoadConvention, Measurement, SetExclusion, SetSide, SetType, WeightUnit } from '@fizz/schemas';
 import { localDateOf } from '../calendar';
 import { isInHistory } from '../session/deletion';
 import { equipmentOfRow } from '../session/equipment-snapshot';
@@ -87,7 +88,7 @@ export interface ProgressSession {
  * history (`isInHistory`: active, discarded, reverted, deleted): an
  * unfinished or deleted workout is never counted (PG33, delete-workouts §5).
  */
-export function toProgressSession(aggregate: SessionAggregate, ownerTz: string, nowMs: number): ProgressSession | null {
+export function toProgressSession(aggregate: HistoryLike, ownerTz: string, nowMs: number): ProgressSession | null {
   const { session } = aggregate;
   if (!isInHistory(session)) return null;
   const switched = (session.gymChanges ?? []).length > 0;

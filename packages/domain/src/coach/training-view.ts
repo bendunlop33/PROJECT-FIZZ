@@ -1,4 +1,5 @@
-import type { EquipmentInstance, Exercise, Load, LoadConvention, PainFlag, PlannedSet, SessionAggregate, SetType, WeightUnit } from '@fizz/schemas';
+import type { HistoryLike } from '../history-summary';
+import type { EquipmentInstance, Exercise, Load, LoadConvention, PainFlag, PlannedSet, SetType, WeightUnit } from '@fizz/schemas';
 import { localDateOf } from '../calendar';
 import { formatNumber, loadText, repRangeText } from '../display';
 import { getAchievableLoads, loadDirection } from '../equipment';
@@ -130,7 +131,7 @@ export interface ExerciseHistoryInput {
   exerciseId: string;
   exerciseName: string;
   /** Finished workouts that include the exercise (any order). */
-  sessions: readonly SessionAggregate[];
+  sessions: readonly HistoryLike[];
   /** How many workouts to list (newest first). */
   limit: number;
   gymNames: Readonly<Record<string, string>>;
@@ -271,7 +272,7 @@ export interface TrainingOverviewInput {
   nowUtc: string;
   tz: string;
   /** Finished workouts that started in the window. */
-  sessions: readonly SessionAggregate[];
+  sessions: readonly HistoryLike[];
   gymNames: Readonly<Record<string, string>>;
   /** When Ben's first finished workout started (any source); null or absent: the window is used as is. */
   firstWorkoutUtc?: string | null;
@@ -497,7 +498,7 @@ function compactSet(s: HistorySet): string {
 }
 
 /** `get_recent_sessions`: Ben's last finished workouts, newest first, with every exercise's sets as logged. Pure. */
-export function recentSessionsView(input: { sessions: readonly SessionAggregate[]; count: number; gymNames: Readonly<Record<string, string>> }): RecentSessionsView {
+export function recentSessionsView(input: { sessions: readonly HistoryLike[]; count: number; gymNames: Readonly<Record<string, string>> }): RecentSessionsView {
   const ordered = input.sessions.filter((a) => isInHistory(a.session)).sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
   const sessions: RecentSessionLine[] = [];
   for (const agg of ordered) {

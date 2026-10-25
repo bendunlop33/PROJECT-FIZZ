@@ -107,9 +107,10 @@ import {
   type ReviewWeekData,
   type WeeklyFacts,
   type WeeklyReviewInput,
+  type HistoryWorkout,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
-import type { ActionRecord, Activity, Exercise, PlanDraft, ReviewCoach, ReviewProposal, ReviewSubject, Routine, SessionAggregate, TrainingProfile, TrainingReview, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { ActionRecord, Activity, Exercise, PlanDraft, ReviewCoach, ReviewProposal, ReviewSubject, Routine, TrainingProfile, TrainingReview, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 import { BUILDER_COACH_TOOL } from '@fizz/schemas';
 import type { CoachAvailability } from '../coach/coach-service';
 
@@ -214,7 +215,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     const from = toIso(nowMs - SESSION_WEEKS * 7 * 86_400_000);
     const r = await repos()
       .sessions.listFinishedBetweenReadable(owner.id, from, toIso(nowMs + 1))
-      .catch(() => ({ sessions: [] as SessionAggregate[] }));
+      .catch(() => ({ sessions: [] as HistoryWorkout[] }));
     return r.sessions.map((a) => reviewSessionOf(a, owner.timezone, nowMs)).filter((s): s is ReviewSession => s !== null);
   }
 

@@ -1,3 +1,4 @@
+import type { HistoryLike } from '../history-summary';
 import {
   BUILDER_GROUPS,
   builderGroupOfMuscleGroup,
@@ -11,7 +12,6 @@ import {
   type LoadConvention,
   type MuscleGroup,
   type ReviewFact,
-  type SessionAggregate,
   type SessionFeelValue,
   type SetType,
   type TrainingGoal,
@@ -134,7 +134,7 @@ export interface ReviewSession {
 }
 
 /** A finished workout as the review reads it (corrections applied; null when it isn't in history). */
-export function reviewSessionOf(a: SessionAggregate, ownerTz: string, nowMs: number): ReviewSession | null {
+export function reviewSessionOf(a: HistoryLike, ownerTz: string, nowMs: number): ReviewSession | null {
   if (!isInHistory(a.session)) return null;
   const p = toProgressSession(a, ownerTz, nowMs);
   if (p === null) return null;

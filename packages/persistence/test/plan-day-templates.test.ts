@@ -223,7 +223,7 @@ describe('migration 30 in place on a schema-29 database', () => {
     await appliedPlan(at29, PLAN);
     await at29.repos.sessions.save(beforeSchema31(richFinishedSession()), null);
     const before = await at29.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toEqual({ from: 29, to: 35, applied: [30, 31, 32, 33, 34, 35] });
+    expect(await migrate(db)).toEqual({ from: 29, to: 36, applied: [30, 31, 32, 33, 34, 35, 36] });
     const at30 = await openStore(db);
     const after = await at30.db.read((q) => exportTables(q));
     // Every older table keeps its rows; sessions gain only an empty `plan_day`.

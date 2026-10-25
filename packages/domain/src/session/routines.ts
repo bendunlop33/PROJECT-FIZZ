@@ -1,3 +1,4 @@
+import type { HistoryLike } from '../history-summary';
 import type {
   EquipmentInstance,
   Exercise,
@@ -89,7 +90,7 @@ export interface RoutineFromSessionInput {
   ownerId: string;
   name: string;
   opId: string;
-  source: SessionAggregate;
+  source: HistoryLike;
   at: ZonedTimestamp;
   newId: () => string;
   /**
@@ -128,7 +129,7 @@ export function isDistanceSet(ex: { measurement: string }, values: { distanceM?:
 }
 
 /** Sets per exercise, in plan order, that `isDistanceSet` leaves out; warm-up-only exercises are left out anyway and not listed. */
-function distanceLeftOut(src: SessionAggregate, kept: (s: WorkoutSet) => boolean, valuesOf: (s: WorkoutSet) => { distanceM?: number | null | undefined } | null): NotCopied[] {
+function distanceLeftOut(src: HistoryLike, kept: (s: WorkoutSet) => boolean, valuesOf: (s: WorkoutSet) => { distanceM?: number | null | undefined } | null): NotCopied[] {
   const out: NotCopied[] = [];
   const roots = [...src.exercises].sort((a, b) => a.order - b.order).filter((sx) => partRootOf(src.exercises, sx.id) === sx.id);
   for (const sx of roots) {
@@ -144,7 +145,7 @@ function distanceLeftOut(src: SessionAggregate, kept: (s: WorkoutSet) => boolean
 }
 
 /** What `routineFromSession` leaves out of a finished workout (shown on the save sheet with `notCopiedText`). */
-export function notSavedFromSession(source: SessionAggregate): NotCopied[] {
+export function notSavedFromSession(source: HistoryLike): NotCopied[] {
   return distanceLeftOut(
     source,
     (s) => s.status === 'completed' && s.actual !== null,

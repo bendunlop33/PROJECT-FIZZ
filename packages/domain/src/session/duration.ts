@@ -1,3 +1,4 @@
+import type { HistoryLike } from '../history-summary';
 import type { SessionAggregate } from '@fizz/schemas';
 import { toMs } from '../time';
 import { estimatePendingWork, paceSamplesOf, recentPaceSamples, resolvePace, roundTimeLeftMinutes, TIME_LEFT, type Pace, type PaceSource } from './time-left';
@@ -42,7 +43,7 @@ export type ResolvedPace = Pace;
  * before Start): Ben's recent workouts, else the defaults. Equal to what
  * `estimateRemainingDuration` picks for an unstarted plan.
  */
-export function planPace(recent: readonly SessionAggregate[] = []): ResolvedPace {
+export function planPace(recent: readonly HistoryLike[] = []): ResolvedPace {
   return resolvePace({ set: [], changeover: [] }, recentPaceSamples(recent));
 }
 
@@ -50,7 +51,7 @@ export function planPace(recent: readonly SessionAggregate[] = []): ResolvedPace
  * `recent`: Ben's last few finished workouts (5 in the spec); their pace is used when this one has too little.
  * `pace`: a pace already resolved (`planPace`); it replaces both this workout's and the recent samples.
  */
-export function estimateRemainingDuration(state: SessionAggregate, opts: { recent?: readonly SessionAggregate[]; pace?: ResolvedPace } = {}): DurationEstimate {
+export function estimateRemainingDuration(state: SessionAggregate, opts: { recent?: readonly HistoryLike[]; pace?: ResolvedPace } = {}): DurationEstimate {
   const nowMs = toMs(state.session.lastActivityAtUtc);
   const pace = opts.pace ?? resolvePace(paceSamplesOf(state, nowMs), recentPaceSamples(opts.recent ?? []));
   const work = estimatePendingWork(state, pace);

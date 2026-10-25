@@ -1,3 +1,4 @@
+import type { HistoryLike } from './history-summary';
 import {
   type BuildFocus,
   muscleGroupOf,
@@ -6,7 +7,6 @@ import {
   TrainingProfileSchema,
   type Exercise,
   type MuscleGroup,
-  type SessionAggregate,
   type SplitBodyPart,
   type SplitDay,
   type TrainingChange,
@@ -366,7 +366,7 @@ export function splitDayFocus(split: Pick<TrainingSplit, 'kind'>, day: Pick<Spli
 type ExerciseInfo = Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'mechanic'>;
 
 /** Completed working sets per session exercise row (warm-ups don't count). */
-function workingSetsBy(a: SessionAggregate): Map<string, { sets: number; bestKg: number | null }> {
+function workingSetsBy(a: HistoryLike): Map<string, { sets: number; bestKg: number | null }> {
   const out = new Map<string, { sets: number; bestKg: number | null }>();
   for (const s of a.sets) {
     if (s.status !== 'completed' || s.setType === 'warmup') continue;
@@ -379,7 +379,7 @@ function workingSetsBy(a: SessionAggregate): Map<string, { sets: number; bestKg:
 }
 
 /** Ben's lifts from finished workouts, for `recommendMainLift`: how many workouts each was in and its heaviest working load. */
-export function liftHistoryFrom(sessions: readonly SessionAggregate[], exerciseOf: (id: string) => ExerciseInfo | null): LiftHistory[] {
+export function liftHistoryFrom(sessions: readonly HistoryLike[], exerciseOf: (id: string) => ExerciseInfo | null): LiftHistory[] {
   const by = new Map<string, LiftHistory>();
   for (const a of sessions) {
     const sets = workingSetsBy(a);
@@ -401,7 +401,7 @@ export function liftHistoryFrom(sessions: readonly SessionAggregate[], exerciseO
  * day of `split`, for `nextSplitDay`; a workout that fits no day (Core only,
  * say) is skipped so the rotation doesn't reset (review S6). Null with none.
  */
-export function lastSplitWorkoutGroups(split: TrainingSplit, sessions: readonly SessionAggregate[], exerciseOf: (id: string) => ExerciseInfo | null): Map<MuscleGroup, number> | null {
+export function lastSplitWorkoutGroups(split: TrainingSplit, sessions: readonly HistoryLike[], exerciseOf: (id: string) => ExerciseInfo | null): Map<MuscleGroup, number> | null {
   const newestFirst = [...sessions].sort((a, b) => (a.session.startedAt.utc < b.session.startedAt.utc ? 1 : a.session.startedAt.utc > b.session.startedAt.utc ? -1 : 0));
   for (const a of newestFirst) {
     const groups = workoutGroupsOf(a, exerciseOf);
@@ -411,7 +411,7 @@ export function lastSplitWorkoutGroups(split: TrainingSplit, sessions: readonly 
 }
 
 /** The muscle groups one finished workout trained: completed working sets on each exercise's first primary muscle. */
-export function workoutGroupsOf(a: SessionAggregate, exerciseOf: (id: string) => Pick<Exercise, 'primaryMuscles'> | null): Map<MuscleGroup, number> {
+export function workoutGroupsOf(a: HistoryLike, exerciseOf: (id: string) => Pick<Exercise, 'primaryMuscles'> | null): Map<MuscleGroup, number> {
   const sets = workingSetsBy(a);
   return workoutMuscleGroups(a.exercises.map((ex) => ({ primaryMuscles: exerciseOf(ex.exerciseId)?.primaryMuscles ?? [], workingSets: sets.get(ex.id)?.sets ?? 0 })));
 }

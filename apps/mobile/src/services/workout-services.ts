@@ -303,6 +303,8 @@ import {
   shownRationale,
   secondaryMainLifts,
   type RuleReps,
+  type HistoryLike,
+  type HistoryWorkout,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import { worksLine } from '@fizz/schemas';
@@ -1612,7 +1614,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** The source's own name, unless it's the generic `Workout`. */
-  const storedName = (a: SessionAggregate): string | null => storedWorkoutName(a.session);
+  const storedName = (a: HistoryLike): string | null => storedWorkoutName(a.session);
 
   /** A next session's name: a coach build's without its length (`Pull · 20 min` → `Pull`; the plan's own estimate is shown). */
   const upNextName = (a: SessionAggregate): string | null => {
@@ -2052,7 +2054,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     if (dayName !== null) {
       const now = ctx.now();
       const nowMs = toMs(now.utc);
-      const recent = await repos().sessions.listFinishedBetween(planned.ownerId, toIso(nowMs - 120 * 86_400_000), toIso(nowMs + 1)).catch(() => [] as SessionAggregate[]);
+      const recent = await repos().sessions.listFinishedBetween(planned.ownerId, toIso(nowMs - 120 * 86_400_000), toIso(nowMs + 1)).catch(() => [] as HistoryWorkout[]);
       const muscles = new Map<string, readonly string[]>();
       for (const a of recent) for (const e of a.exercises) if (!muscles.has(e.exerciseId)) muscles.set(e.exerciseId, (await exerciseById(e.exerciseId))?.primaryMuscles ?? []);
       const same = [...recent].reverse().find((a) => matchSplitDay(split, workoutMuscleGroups(a.exercises.map((ex) => ({ primaryMuscles: muscles.get(ex.exerciseId) ?? [], workingSets: a.sets.filter((x) => x.sessionExerciseId === ex.id && x.status === 'completed' && x.setType !== 'warmup').length }))))?.name === dayName);
@@ -2211,7 +2213,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** The finished workouts in Up next's window (`SPLIT_WINDOW_DAYS`; from `sinceUtc` when that is earlier) and an exercise lookup for their rows. */
-  async function windowSessions(p: UserProfile, sinceUtc: string | null = null): Promise<{ sessions: SessionAggregate[]; exerciseOf: (id: string) => Exercise | null }> {
+  async function windowSessions(p: UserProfile, sinceUtc: string | null = null): Promise<{ sessions: HistoryWorkout[]; exerciseOf: (id: string) => Exercise | null }> {
     const nowMs = toMs(ctx.now().utc);
     const windowMs = nowMs - SPLIT_WINDOW_DAYS * 86_400_000;
     const fromMs = sinceUtc === null ? windowMs : Math.min(windowMs, toMs(sinceUtc));
@@ -4831,7 +4833,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const exerciseInfo: Record<string, Exercise> = {};
         for (const ex of aggregate.exercises) {
           if (ex.exerciseId in pasts) continue;
-          const history = await repos().sessions.listFinishedWithExercise(p.id, ex.exerciseId).catch(() => [] as SessionAggregate[]);
+          const history = await repos().sessions.listFinishedWithExercise(p.id, ex.exerciseId).catch(() => [] as HistoryWorkout[]);
           pasts[ex.exerciseId] = pastExercisesOf(history, ex.exerciseId);
           const info = await repos().exercises.get(ex.exerciseId).catch(() => null);
           if (info) exerciseInfo[ex.exerciseId] = info;

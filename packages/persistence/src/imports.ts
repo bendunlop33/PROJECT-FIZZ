@@ -21,6 +21,7 @@ import { EXERCISE_SPEC, listDocuments, saveDocumentIn, decodeDocument, type Docu
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
 import { checkRead, checkWrite, inHistorySql, insert, parseJson, parseJsonOrNull, rowId } from './sql';
 import { writeAggregate } from './sessions';
+import { hasSummaryTables } from './history-summaries';
 import { IMPORT_PROFILE_SPEC } from './import-profiles';
 
 /**
@@ -369,6 +370,12 @@ export class SqliteImports {
          WHERE import_job_id = ? AND status IN ('finished', 'deleted')`,
         [at.utc, jobId],
       );
+      // (ADR 0032) Reverted workouts leave history: their summaries go in the same transaction.
+      if (await hasSummaryTables(tx)) {
+        const gone = `(SELECT id FROM sessions WHERE import_job_id = ? AND NOT ${inHistorySql()})`;
+        await tx.run(`DELETE FROM history_summary_exercises WHERE session_id IN ${gone}`, [jobId]);
+        await tx.run(`DELETE FROM history_summaries WHERE session_id IN ${gone}`, [jobId]);
+      }
       const next: ImportJob = { ...job, status: 'reverted', revert: { at, opId, workouts: changed.changes }, version: job.version + 1, updatedAtUtc: at.utc };
       const saved = await saveDocumentIn(tx, IMPORT_JOB_SPEC, next, job.version);
       if (!saved.ok) throw new Error('Import job changed during the undo');

@@ -98,6 +98,8 @@ import {
   type TodayTemplate,
   coachTargetRows,
   standingCoachTarget,
+  type HistoryLike,
+  type HistoryWorkout,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import {
@@ -551,7 +553,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const out = new Map<string, SlotLoadInput>();
     const nowMs = toMs(deps.now().utc);
     // (Ben, 23 Oct) The coach's next-session rows per workout they were saved on, read once (its set count reaches the card).
-    const coachRows = new Map<string, Promise<{ source: SessionAggregate | null; rows: NextSessionTargetRecord[] }>>();
+    const coachRows = new Map<string, Promise<{ source: HistoryWorkout | null; rows: NextSessionTargetRecord[] }>>();
     const coachRowsOf = (sessionId: string) => {
       let got = coachRows.get(sessionId);
       if (got === undefined) {
@@ -739,7 +741,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // History in the window: pools, Mix it up, Why?, the strip.
     const { sessions } = await repos()
       .sessions.listFinishedBetweenReadable(p.id, toIso(nowMs - WINDOW_DAYS * DAY_MS), toIso(nowMs + 1))
-      .catch(() => ({ sessions: [] as SessionAggregate[] }));
+      .catch(() => ({ sessions: [] as HistoryWorkout[] }));
     const newest = [...sessions].filter((s) => isInHistory(s.session)).sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
     const doneCount = new Map<string, number>();
     const lastDoneMs = new Map<string, number>();
@@ -856,7 +858,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     };
 
     // Each day's own sessions (credited by plan day or by its templates), newest first.
-    const daySessions = (day: TodayDay): SessionAggregate[] =>
+    const daySessions = (day: TodayDay): HistoryWorkout[] =>
       newest.filter((a) => {
         // A split day's workouts are the ones that trained it, by the muscles done (as Up next counts them).
         if (day.kind === 'split') return trainedDays.get(a.session.id)?.includes(day.splitDayId) === true;
@@ -864,7 +866,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         if (pd !== undefined && day.planId !== null) return pd.planId === day.planId && pd.dayIndex === day.dayIndex;
         return a.session.routineId !== null && day.templates.some((t) => t.routineId === a.session.routineId);
       });
-    const exerciseIdsOf = (a: SessionAggregate) => new Set(a.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId));
+    const exerciseIdsOf = (a: HistoryLike) => new Set(a.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId));
     const mixFor = (day: TodayDay): TodayMixFacts => {
       const mine = daySessions(day);
       const recentCountOnDay = new Map<string, number>();

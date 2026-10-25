@@ -32,7 +32,11 @@ describe('unreadable records', () => {
     const file = s.developer.databaseNames().current;
     await h.forceClose();
     corrupt(file, old);
-    s = (await h.launch()).services;
+    // (ADR 0032) History reads use the workout's stored summary (made when it was whole) until the integrity check
+    // finds the workout damaged and drops its summary. The launch runs that check in the background; here the launch's
+    // background work is held and the check awaited, so its repair is seen.
+    s = (await h.launch({ backgroundGate: () => new Promise<void>(() => undefined) })).services;
+    expect((await s.integrity.checkAll())?.report.staleSummaries).toEqual([old]);
     h.clockMs += 86_400_000;
     // A new workout with the same exercise still loads and logs.
     const id = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 62.5, reps: 8 }] }]);

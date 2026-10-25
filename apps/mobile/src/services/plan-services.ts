@@ -53,6 +53,7 @@ import {
   pbKitOfEquipment,
   type PbBlockView,
   type PlanKit,
+  type HistoryWorkout,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import type { DraftSlot, EquipmentInstance, Exercise, MuscleGroup, PlanApplyMode, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
@@ -361,7 +362,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
 
   /** Finished workouts from `fromMs` with the working sets they did per muscle group (Your plan's ✓, 20 Oct). */
   async function groupedWorkouts(ownerId: string, fromMs: number, nowMs: number): Promise<Map<string, ReadonlyMap<MuscleGroup, number>>> {
-    const r = await deps.store().repos.sessions.listFinishedBetweenReadable(ownerId, toIso(fromMs), toIso(nowMs + 1)).catch(() => ({ sessions: [] as SessionAggregate[] }));
+    const r = await deps.store().repos.sessions.listFinishedBetweenReadable(ownerId, toIso(fromMs), toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }));
     const of = await exerciseOf();
     return new Map(r.sessions.map((a) => [a.session.id, workoutGroupsOf(a, of)]));
   }
@@ -548,7 +549,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const parts = await bodyPartsOf(p.id, days);
       const dayRefs = days.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, bodyParts: parts.get(r.id) ?? [] }));
       const from = planWeekStartMs({ appliedAtUtc: plan.applied.atUtc, nowMs, tz });
-      const week = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, toIso(from), toIso(nowMs + 1)).catch(() => ({ sessions: [] as SessionAggregate[] }));
+      const week = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, toIso(from), toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }));
       // (Ben, 20 Oct) This week's workouts carry the muscles they trained: an off-plan leg day ticks Legs.
       const of = await exerciseOf();
       const groups = new Map(week.sessions.map((a) => [a.session.id, workoutGroupsOf(a, of)]));
@@ -588,7 +589,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       if (plan === null || routine === undefined) return null;
       const gym = (await deps.currentGym?.().catch(() => null)) ?? null;
       const run = gym === null ? null : ((await deps.plannedDay?.(routine.id, gym.id).catch(() => null)) ?? null);
-      const histories = new Map<string, SessionAggregate[]>();
+      const histories = new Map<string, HistoryWorkout[]>();
       for (const exerciseId of run === null ? routine.exercises.map((e) => e.exerciseId) : run.aggregate.exercises.map((e) => e.exerciseId)) {
         if (histories.has(exerciseId)) continue;
         histories.set(exerciseId, await deps.store().repos.sessions.listFinishedWithExercise(p.id, exerciseId).catch(() => []));
@@ -608,7 +609,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       if (plan.pin?.routineId === routine.id) {
         const parts = await bodyPartsOf(p.id, days);
         // Every finished workout since the pin, read as Up next reads it (review plan-adapt S3).
-        const r = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, plan.pin.atUtc, toIso(nowMs + 1)).catch(() => ({ sessions: [] as SessionAggregate[] }));
+        const r = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, plan.pin.atUtc, toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }));
         const of = await exerciseOf();
         const ws: PlanDueWorkout[] = r.sessions.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, of) }));
         pinned = activePin(plan.pin, days.map((r) => ({ routineId: r.id, name: r.name, bodyParts: parts.get(r.id) ?? [], createdFromSessionId: r.createdFromSessionId ?? null })), ws) !== null;

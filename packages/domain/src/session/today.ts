@@ -1,3 +1,4 @@
+import type { HistoryLike } from '../history-summary';
 import type { CheckIn, PainFlag, SessionAggregate } from '@fizz/schemas';
 import { reusableCheckIn, type RecentCheckIn } from '../checkin';
 import { todayPainCheck, type TodayPainCheck } from '../pain-flags';
@@ -92,7 +93,7 @@ export interface TodayInput {
   nowMs: number;
   active: SessionAggregate | null;
   /** Finished sessions that started this local week (Monday–Sunday). */
-  finishedThisWeek: readonly SessionAggregate[];
+  finishedThisWeek: readonly HistoryLike[];
   /** Local `YYYY-MM-DD` of today and of each finished session, in the phone's zone. */
   todayLocalDate: string;
   localDateOf: (utc: string) => string;
@@ -166,7 +167,7 @@ export interface TodayView {
   painCheck: TodayPainCheck | null;
 }
 
-function lastSetUtc(a: SessionAggregate): string | null {
+function lastSetUtc(a: HistoryLike): string | null {
   return (
     a.sets
       .filter((s) => s.status === 'completed' && s.completedAt)
@@ -178,7 +179,7 @@ function lastSetUtc(a: SessionAggregate): string | null {
 
 export function buildTodayView(input: TodayInput): TodayView {
   const { nowMs, active } = input;
-  const titleOf = (a: SessionAggregate): string => storedWorkoutName(a.session) ?? input.titles?.[a.session.id] ?? GENERIC_WORKOUT_NAME;
+  const titleOf = (a: HistoryLike): string => storedWorkoutName(a.session) ?? input.titles?.[a.session.id] ?? GENERIC_WORKOUT_NAME;
   let main: TodayMain = { kind: 'no_plan' };
   if (active && active.session.status === 'active') {
     const done = active.sets.filter((s) => s.status === 'completed').length;

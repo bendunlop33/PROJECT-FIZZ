@@ -1,4 +1,5 @@
-import type { SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
+import type { HistoryLike } from '../history-summary';
+import type { SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { formatNumber, valuesText } from '../display';
 import { isSetCountable } from '../exclusions';
 import { toMs } from '../time';
@@ -43,7 +44,7 @@ export const LIFT_HIGHLIGHT_MAX_POINTS = 7;
 
 const isWorking = (s: WorkoutSet) => s.setType !== 'warmup' && s.status === 'completed' && s.actual !== null && isSetCountable(s, 'record') && isSetCountable(s, 'comparison');
 
-function weightedTop(a: SessionAggregate, ex: SessionExercise): { load: number; reps: number; set: WorkoutSet } | null {
+function weightedTop(a: HistoryLike, ex: SessionExercise): { load: number; reps: number; set: WorkoutSet } | null {
   let best: { load: number; reps: number; set: WorkoutSet } | null = null;
   for (const s of a.sets) {
     if (s.sessionExerciseId !== ex.id || !isWorking(s)) continue;
@@ -59,18 +60,18 @@ function eligible(ex: SessionExercise): boolean {
   return ex.measurement === 'reps' && ex.loadConvention !== 'assistance' && ex.loadConvention !== 'bodyweight';
 }
 
-export function buildLiftHighlight(sessions: readonly SessionAggregate[], maxPoints = LIFT_HIGHLIGHT_MAX_POINTS): LiftHighlight | null {
+export function buildLiftHighlight(sessions: readonly HistoryLike[], maxPoints = LIFT_HIGHLIGHT_MAX_POINTS): LiftHighlight | null {
   const logged = sessions
     .filter((a) => isInHistory(a.session))
     .sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
   // The newest workout with a counted weighted set: one whose sets were all marked as not counting is passed over.
-  const liftOf = (a: SessionAggregate) => [...a.exercises].sort((x, y) => x.order - y.order).find((ex) => eligible(ex) && weightedTop(a, ex) !== null);
+  const liftOf = (a: HistoryLike) => [...a.exercises].sort((x, y) => x.order - y.order).find((ex) => eligible(ex) && weightedTop(a, ex) !== null);
   const newest = logged.find((a) => liftOf(a) !== undefined);
   if (!newest) return null;
   const lift = liftOf(newest);
   if (!lift) return null;
 
-  const series: { load: number; reps: number; set: WorkoutSet; session: SessionAggregate }[] = [];
+  const series: { load: number; reps: number; set: WorkoutSet; session: HistoryLike }[] = [];
   /**
    * The item app workouts are charted on. Only the match against a FitNotes
    * workout is relaxed (review import-progress S3): app workouts still need

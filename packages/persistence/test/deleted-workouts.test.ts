@@ -159,7 +159,7 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
   /** Every reader of finished workouts in the store, as one comparable snapshot. */
   async function readers() {
     const s = store.repos.sessions;
-    const ids = (list: readonly SessionAggregate[]) => list.map((a) => a.session.id);
+    const ids = (list: readonly { session: { id: string } }[]) => list.map((a) => a.session.id);
     const withBench = await s.listFinishedWithExercise(OWNER, BENCH);
     return {
       listFinishedWithExercise: ids(withBench),
