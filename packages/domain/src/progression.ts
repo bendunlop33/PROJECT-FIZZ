@@ -596,10 +596,12 @@ function criteriaOf(rule: ProgressionRule): Criteria {
 }
 
 /** Latest first; equal timestamps are ordered by session ID so input order never matters. */
-function byRecency(a: HistorySession, b: HistorySession): number {
-  const d = toMs(b.performedAtUtc) - toMs(a.performedAtUtc);
-  if (d !== 0) return d;
-  return a.sessionId < b.sessionId ? 1 : a.sessionId > b.sessionId ? -1 : 0;
+/** Newest first; the same time: the greater session ID first. Each timestamp parsed once (perf, 24 Oct). */
+function byRecencyOf(history: readonly HistorySession[]): HistorySession[] {
+  return history
+    .map((s) => ({ s, ms: toMs(s.performedAtUtc) }))
+    .sort((a, b) => b.ms - a.ms || (a.s.sessionId < b.s.sessionId ? 1 : a.s.sessionId > b.s.sessionId ? -1 : 0))
+    .map((e) => e.s);
 }
 
 /** Every set within the rule's effort limits (sets without a recorded effort pass). */
@@ -633,7 +635,7 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
   // B7: imported (FitNotes) history counts on any equipment, read from its working sets only.
   /** The latest comparable session, when it came from FitNotes: how many lighter sets were read as a warm-up ramp. */
   let latestFitNotes: { rampDropped: number } | null = null;
-  const reads = [...input.history].sort(byRecency).map((s) => {
+  const reads = byRecencyOf(input.history).map((s) => {
     const kept = comparableSetsOf(s);
     const builderFormat = builderFormatSets(input.rule, s, kept);
     const sessionTypes = builderFormat ? BUILDER_FORMAT_TYPES : types;
