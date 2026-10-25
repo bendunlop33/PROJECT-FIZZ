@@ -76,6 +76,8 @@ Tap `Delete workout`. The workout is deleted, the screen pops (Past workout) or 
 
 ### 2.3 Past workouts list
 
+(Ben, 25 Oct) `＋ Log a past workout` sits at the top of the list (hidden while selecting); it opens [log-past-workout.md](log-past-workout.md) §3.
+
 Normal (current screen; the lead text is trimmed per CLAUDE.md minimal copy):
 
 ```
