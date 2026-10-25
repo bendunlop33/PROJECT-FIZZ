@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { NO_FILTERS, slotsOf } from '@fizz/domain';
+import { buildExercisePickerView, NO_FILTERS, slotsOf } from '@fizz/domain';
 import { loadSample, measureBlocking, timingBudget } from '@fizz/domain/testing';
 
 import type { AppServices } from '../src/services/app-services';
@@ -161,8 +161,28 @@ describe('the everyday paths on ~800 workouts', () => {
       const o = await openTemplate(s, { routineId });
       if (o === null) throw new Error('not opened');
       const inWorkout = o.list.map((x) => x.exerciseId);
-      return s.builder.templateChoices({ gymId: o.data.gym?.id ?? null, inWorkout, exerciseId: inWorkout[0] ?? null });
+      // (Ben, 25 Oct) The sheet reads every exercise at the editor's gym alongside its suggestions.
+      return Promise.all([s.builder.templateChoices({ gymId: o.data.gym?.id ?? null, inWorkout, exerciseId: inWorkout[0] ?? null }), s.exercisePicker.forTemplate(o.data.gym?.id ?? null)]);
     });
+
+    // (Ben, 25 Oct) Your workout's Swap sheet with every exercise: the suggestions and the full list read once on open
+    // (what the sheet awaits, then its first render), then a search keystroke and a chip (pure over that read, no I/O).
+    const swapSlot = slotsOf(fromToday.workout.blocks)[1] ?? slot;
+    const inWorkout = slotsOf(fromToday.workout.blocks).map((x) => x.exerciseId);
+    const sheet = await timed('Swap sheet (Your workout): open with every exercise', 800, async () => {
+      const [choices, index] = await Promise.all([s.builder.exerciseChoices(fromToday.draftId, { slotKey: swapSlot.key }), s.exercisePicker.forDraft(fromToday.draftId)]);
+      const suggested = (choices?.sections ?? []).flatMap((x) => x.items.map((i) => i.exerciseId));
+      const v = buildExercisePickerView({ index, query: '', group: null, exclude: inWorkout, suggested });
+      return { index, suggested, v };
+    });
+    expect(sheet.index.entries.length).toBeGreaterThan(150);
+    expect(sheet.v.sections.length).toBeGreaterThan(4);
+    await timed('Swap sheet: a search keystroke ("romanain")', 30, () => {
+      const v = buildExercisePickerView({ index: sheet.index, query: 'romanain', group: null, exclude: inWorkout, suggested: sheet.suggested });
+      expect(v.sections[0]?.parts[0]?.rows.some((r) => r.name === 'Romanian deadlift')).toBe(true);
+      return Promise.resolve(v);
+    });
+    await timed('Swap sheet: the Legs chip (full list part)', 30, () => Promise.resolve(buildExercisePickerView({ index: sheet.index, query: '', group: 'Legs', exclude: inWorkout, suggested: sheet.suggested })));
 
     // Library › Exercises, and a search keystroke.
     await timed('Library Exercises', 500, () => s.library.browse({ query: '', filters: NO_FILTERS }));
@@ -180,6 +200,16 @@ describe('the everyday paths on ~800 workouts', () => {
       if (d === null) throw new Error('no workout');
       s.workout.view(d, h.clockMs, null);
       return r.aggregate.session.id;
+    });
+
+    // (Ben, 25 Oct) Swap mid-workout: the suggestions and every exercise, read once on open, then its first render.
+    await timed('Swap sheet (workout in progress): open with every exercise', 800, async () => {
+      const d = await s.workout.load(sessionId);
+      const row = d?.aggregate.exercises.find((e) => e.removed === undefined);
+      if (d == null || row === undefined) throw new Error('no row');
+      const [choices, index] = await Promise.all([s.workoutEdit.choices(sessionId, { sessionExerciseId: row.id }), s.exercisePicker.forSession(sessionId, row.id)]);
+      const live = d.aggregate.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId);
+      return buildExercisePickerView({ index, query: '', group: null, exclude: live, suggested: (choices?.sections ?? []).flatMap((x) => x.items.map((i) => i.exerciseId)) });
     });
 
     // Logging sets: the write, then what the workout screen reads and renders.
