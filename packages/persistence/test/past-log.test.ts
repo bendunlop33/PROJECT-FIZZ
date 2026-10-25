@@ -38,16 +38,15 @@ async function workout(service: SessionService, opId: string, startS: number, lo
   const nowS = opts.nowS ?? startS;
   const started = await service.startRoutine({ ownerId: OWNER, gymId: GYM, routineId: id(300), opId, at: at(nowS), ...(opts.pastStart ? { pastStart: opts.pastStart } : {}) });
   if (!started.ok) throw new Error(started.error.code);
-  let s = started.aggregate;
-  const sid = s.session.id;
+  const sid = started.aggregate.session.id;
   const live = opts.pastStart === undefined;
-  const [w, b1] = setsFor(s, BENCH);
-  s = await ok(service, sid, { type: 'log_set', at: at(live ? startS + 5 * MIN : nowS + 1), opId: `${opId}-w`, setId: w?.id ?? '', values: values(kg(60), 10), restTimerId: id(91_000 + startS % 1000) });
+  const [w, b1] = setsFor(started.aggregate, BENCH);
+  await ok(service, sid, { type: 'log_set', at: at(live ? startS + 5 * MIN : nowS + 1), opId: `${opId}-w`, setId: w?.id ?? '', values: values(kg(60), 10), restTimerId: id(91_000 + startS % 1000) });
   if (opts.pause) {
-    s = await ok(service, sid, { type: 'pause', at: at(startS + 6 * MIN), opId: `${opId}-p` });
-    s = await ok(service, sid, { type: 'resume', at: at(startS + 8 * MIN), opId: `${opId}-r` });
+    await ok(service, sid, { type: 'pause', at: at(startS + 6 * MIN), opId: `${opId}-p` });
+    await ok(service, sid, { type: 'resume', at: at(startS + 8 * MIN), opId: `${opId}-r` });
   }
-  s = await ok(service, sid, { type: 'log_set', at: at(live ? startS + 10 * MIN : nowS + 2), opId: `${opId}-b1`, setId: b1?.id ?? '', values: values(kg(load), 8), restTimerId: id(92_000 + startS % 1000) });
+  const s = await ok(service, sid, { type: 'log_set', at: at(live ? startS + 10 * MIN : nowS + 2), opId: `${opId}-b1`, setId: b1?.id ?? '', values: values(kg(load), 8), restTimerId: id(92_000 + startS % 1000) });
   const end = live ? null : z(toMs(s.session.startedAt.utc) + 45 * MIN * 1000);
   return ok(service, sid, { type: 'finish', at: at(live ? startS + 30 * MIN : nowS + 3), opId: `${opId}-fin`, expectedVersion: s.session.version, endedAt: end });
 }
@@ -76,7 +75,7 @@ describe('Log a past workout and move workouts in time, on SQLite', () => {
     const path = join(dir, 'training.db');
     let store = await openStore(openNodeDriver(path));
     await seed(store);
-    let service = createSessionService(store.repos, idGen(70_000));
+    const service = createSessionService(store.repos, idGen(70_000));
     // Today's live workout first (−2 h), then yesterday's entered after it.
     const today = await workout(service, 'today', -2 * 3600, 100);
     const yesterday = T0 - DAY * 1000;
@@ -105,7 +104,6 @@ describe('Log a past workout and move workouts in time, on SQLite', () => {
     // A relaunch reads the same.
     await store.close();
     store = await openStore(openNodeDriver(path));
-    service = createSessionService(store.repos, idGen(71_000));
     const again = await store.repos.sessions.get(past.session.id);
     expect(again?.session.pastLog).toEqual({ enteredAt: at(0) });
     expect(again?.session.startedAt.utc).toBe(toIso(yesterday));
