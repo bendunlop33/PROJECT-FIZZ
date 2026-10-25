@@ -1,6 +1,7 @@
-import type { ProgressionRule, SessionAggregate, UserProfile } from '@fizz/schemas';
-import { toHistorySessions, toMs, type HistorySession, type ProfileRepository, type Repositories, type VersionedRepository } from '@fizz/domain';
+import type { ProgressionRule, UserProfile } from '@fizz/schemas';
+import { sortNewestFirst, type HistorySession, type ProfileRepository, type Repositories, type VersionedRepository } from '@fizz/domain';
 import { finishedWorkoutsDigest } from './backup/coverage';
+import type { Slicer } from './backup/slice';
 import { Database } from './database';
 import {
   DocumentRepository,
@@ -14,7 +15,9 @@ import {
   SqliteRoutines,
 } from './documents';
 import type { SqlDriver } from './driver';
-import { migrate, MIGRATIONS, type Migration, type MigrationReport } from './migrations';
+import { migrate, MIGRATIONS, type Migration, type MigrationBackfills, type MigrationReport } from './migrations';
+import { hasSummaryTables, staleHistorySummaries } from './history-summaries';
+import { checkHistorySummariesWith, rebuildHistorySummariesIn, refreshStaleHistorySummariesIn, type SummaryCheck, type SummaryRebuild } from './summary-repair';
 import { SqliteImports } from './imports';
 import { SqliteImportProfiles } from './import-profiles';
 import { SqliteCoachStore } from './coach';
@@ -103,39 +106,59 @@ export interface Store {
   countRecords(): Promise<RecordCounts>;
   /** `finishedWorkoutsDigest` of the finished workouts now, by ID and revision (backup coverage, B2, S1). */
   finishedWorkoutsDigest(): Promise<string>;
+  /**
+   * (ADR 0032) What the open-time refresh of the history summaries did (missing or stale ones rebuilt from the
+   * workouts: after a restore, a reset, a summary format change, or a write that bypassed the repositories).
+   */
+  summaryRefresh: SummaryRebuild;
+  /** (ADR 0032) The full consistency check: every workout's stored history summary against one recomputed from it. Reads only. */
+  checkHistorySummaries(sessionIds?: readonly string[]): Promise<SummaryCheck>;
+  /** (ADR 0032) Rewrite the history summaries of `sessionIds` (default: every one the check finds wrong) from their workouts. */
+  repairHistorySummaries(sessionIds?: readonly string[]): Promise<SummaryRebuild>;
   close(): Promise<void>;
 }
 
 export interface OpenStoreOptions {
   /** Override the migration list (tests of older schema versions only). */
   migrations?: readonly Migration[];
+  /**
+   * (ADR 0032) Rebuilding history summaries on open (migration 36's backfill, after a restore or a reset) pauses
+   * between workouts with this, so the JS thread stays responsive. Default: one go.
+   */
+  slice?: Slicer;
 }
 
 /**
  * Open the training database: WAL journal (research §2.1), migrate to the
  * current schema, then serve repositories through one write queue.
  */
+/** Workouts per queue turn of the summaries' consistency check. */
+const SUMMARY_CHECK_TURN = 10;
+const macrotaskYield = (): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+
+/**
+ * (ADR 0032) Migration 36's backfill: every stored workout's history summary, in the migration's own transaction.
+ * Exported for the migration tests.
+ */
+export const MIGRATION_BACKFILLS: MigrationBackfills = {
+  36: (tx) => refreshStaleHistorySummariesIn(tx),
+};
+
+/** `MIGRATION_BACKFILLS`, sliced (a launch after the update shows its cover meanwhile). */
+const backfillsSliced = (slice: Slicer | undefined): MigrationBackfills => (slice === undefined ? MIGRATION_BACKFILLS : { 36: (tx) => refreshStaleHistorySummariesIn(tx, slice) });
+
 export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {}): Promise<Store> {
   await driver.exec('PRAGMA journal_mode = WAL');
-  const migration = await migrate(driver, options.migrations ?? MIGRATIONS);
+  const migration = await migrate(driver, options.migrations ?? MIGRATIONS, undefined, backfillsSliced(options.slice));
   const db = new Database(driver);
+  // (ADR 0032) Summaries missing or stale (one query when there are none) are rebuilt before anything reads them.
+  const stale = await db.read(async (q) => ((await hasSummaryTables(q)) ? staleHistorySummaries(q) : { missing: [], orphans: [] }));
+  const summaryRefresh =
+    stale.missing.length + stale.orphans.length === 0 ? { written: 0, removed: 0, unreadable: [] } : await db.write((tx) => refreshStaleHistorySummariesIn(tx, options.slice));
   const repos = createSqliteRepositories(db);
-  // (Perf, 23 Oct) Each cached workout's history per exercise, worked out once: the repository hands back the same
-  // aggregate object while its revision is the stored one, so a changed workout is a new key.
-  const histories = new WeakMap<SessionAggregate, Map<string, readonly HistorySession[]>>();
-  const historyOf = (a: SessionAggregate, exerciseId: string): readonly HistorySession[] => {
-    let byExercise = histories.get(a);
-    if (byExercise === undefined) {
-      byExercise = new Map();
-      histories.set(a, byExercise);
-    }
-    let h = byExercise.get(exerciseId);
-    if (h === undefined) {
-      h = toHistorySessions(a, exerciseId, { identity: true });
-      byExercise.set(exerciseId, h);
-    }
-    return h;
-  };
   // (Perf, 23 Oct) Each exercise's history while the owner's history is as it was (`historyStamp`): a Your workout
   // edit, a Today read or a set logged doesn't re-read years of workouts. Callers get their own array.
   let memo: { ownerId: string; stamp: string; writes: number; byExercise: Map<string, readonly HistorySession[]> } | null = null;
@@ -149,16 +172,34 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
     const kept = memo;
     const missing = unique.filter((id) => !kept.byExercise.has(id));
     if (missing.length > 0) {
-      const byExercise = await repos.sessions.listFinishedWithExercises(ownerId, missing);
+      // (ADR 0032) From the stored per-exercise summaries: nothing is decoded while they are current.
+      const byExercise = await repos.sessions.listLiftHistories(ownerId, missing);
       for (const id of missing) {
         kept.byExercise.set(
           id,
-          (byExercise.get(id) ?? []).flatMap((a) => historyOf(a, id)).sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc)),
+          sortNewestFirst(byExercise.get(id) ?? [], (h) => h.performedAtUtc),
         );
       }
     }
     const out = new Map<string, HistorySession[]>();
     for (const id of unique) out.set(id, [...(kept.byExercise.get(id) ?? [])]);
+    return out;
+  }
+
+  /** (ADR 0032) The consistency check a few workouts per queue turn (`SUMMARY_CHECK_TURN`), so writes and taps aren't held behind it. */
+  async function checkInTurns(sessionIds?: readonly string[]): Promise<SummaryCheck> {
+    const ids = sessionIds ?? (await db.read(async (q) => ((await hasSummaryTables(q)) ? (await q.getAll<{ id: string }>(`SELECT id FROM sessions WHERE ${inHistorySql()} ORDER BY id`)).map((r) => r.id) : [])));
+    const out: SummaryCheck = { ok: true, checked: 0, missing: [], differing: [], orphans: [], unreadable: [] };
+    for (let i = 0; i < ids.length; i += SUMMARY_CHECK_TURN) {
+      const part = await db.read((q) => checkHistorySummariesWith(q, ids.slice(i, i + SUMMARY_CHECK_TURN), { orphans: false }));
+      out.checked += part.checked;
+      out.missing.push(...part.missing);
+      out.differing.push(...part.differing);
+      out.unreadable.push(...part.unreadable);
+      await (options.slice ?? macrotaskYield)();
+    }
+    out.orphans = await db.read(async (q) => ((await hasSummaryTables(q)) ? (await staleHistorySummaries(q)).orphans : []));
+    out.ok = out.missing.length === 0 && out.differing.length === 0 && out.orphans.length === 0;
     return out;
   }
 
@@ -189,6 +230,20 @@ export async function openStore(driver: SqlDriver, options: OpenStoreOptions = {
           exercises: row?.exercises ?? 0,
         };
       }),
+    summaryRefresh,
+    checkHistorySummaries: (sessionIds) => checkInTurns(sessionIds),
+    async repairHistorySummaries(sessionIds) {
+      const ids =
+        sessionIds ??
+        (await (async () => {
+          const c = await checkInTurns();
+          return [...c.missing, ...c.differing, ...c.orphans];
+        })());
+      const r = await db.write((tx) => rebuildHistorySummariesIn(tx, ids));
+      repos.sessions.summariesChanged();
+      memo = null;
+      return r;
+    },
     finishedWorkoutsDigest: () =>
       db.read(async (q) => finishedWorkoutsDigest(await q.getAll<{ id: string; revision: number }>(`SELECT id, revision FROM sessions WHERE ${inHistorySql()}`))),
     close: () => db.close(),

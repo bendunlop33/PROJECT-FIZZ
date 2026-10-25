@@ -9,9 +9,10 @@ import {
   toMs,
   type LiftHistory,
   type MainLift,
+  type HistoryWorkout,
 } from '@fizz/domain';
 import { trainingProfileId, type Store } from '@fizz/persistence';
-import type { Exercise, SessionAggregate, TrainingChange, TrainingProfile, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, TrainingChange, TrainingProfile, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 import type { TrainingInput } from '@fizz/coach';
 
 import { buildDayChips, type BuildDayChip } from '../coach/build-view';
@@ -63,10 +64,10 @@ export function createTrainingService(deps: TrainingServiceDeps) {
     return out;
   }
 
-  async function recent(owner: UserProfile): Promise<SessionAggregate[]> {
+  async function recent(owner: UserProfile): Promise<HistoryWorkout[]> {
     const now = deps.now();
     const from = toIso(toMs(now.utc) - MAIN_LIFT_WINDOW_DAYS * 86_400_000);
-    const r = await deps.store().repos.sessions.listFinishedBetweenReadable(owner.id, from, toIso(toMs(now.utc) + 1)).catch(() => ({ sessions: [] as SessionAggregate[], unreadable: 0 }));
+    const r = await deps.store().repos.sessions.listFinishedBetweenReadable(owner.id, from, toIso(toMs(now.utc) + 1)).catch(() => ({ sessions: [] as HistoryWorkout[], unreadable: 0 }));
     return r.sessions;
   }
 

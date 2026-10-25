@@ -12,6 +12,8 @@ import { CorruptDataError } from './errors';
 import { latestVersion, readUserVersion } from './migrations';
 import { decodeImportRow, EXERCISE_ALIAS_SPEC, IMPORT_JOB_SPEC } from './imports';
 import { readAggregate } from './sessions';
+import { hasSummaryTables, staleHistorySummaries } from './history-summaries';
+import { summaryNeedsRebuild } from './summary-repair';
 import { ident, rowId } from './sql';
 import { monotonicMs, noYield, type Slicer } from './backup/slice';
 
@@ -38,6 +40,11 @@ export interface IntegrityReport {
   issues: IntegrityIssue[];
   /** Records that were read and validated, by table. */
   checked: Record<string, number>;
+  /**
+   * (ADR 0032) Workouts whose stored history summary (derived, rebuildable) disagrees with the workout, when the check
+   * was asked to compare them (`summaries`). Not an issue with Ben's data: the caller rebuilds them.
+   */
+  staleSummaries?: string[];
 }
 
 function describe(e: unknown): string {
@@ -110,8 +117,9 @@ const TURN_BUDGET_MS = 8;
  * launch check waits for one small turn, never for the whole database.
  * Records written between turns are checked as they are then.
  */
-export async function checkIntegrity(db: Database, expectedVersion: number = latestVersion(), slice: Slicer = noYield): Promise<IntegrityReport> {
+export async function checkIntegrity(db: Database, expectedVersion: number = latestVersion(), slice: Slicer = noYield, opts: { summaries?: boolean } = {}): Promise<IntegrityReport> {
   const issues: IntegrityIssue[] = [];
+  const staleSummaries: string[] = [];
   const checked: Record<string, number> = {};
   const schemaVersion = await db.read(async (q) => {
     const version = await readUserVersion(q);
@@ -162,15 +170,25 @@ export async function checkIntegrity(db: Database, expectedVersion: number = lat
       do {
         const id = ids[next] ?? '';
         next += 1;
+        let read: Awaited<ReturnType<typeof readAggregate>> | Error;
         try {
-          await readAggregate(q, id);
+          read = await readAggregate(q, id);
         } catch (e) {
           issues.push({ table: e instanceof CorruptDataError ? e.table : 'sessions', id, message: describe(e) });
+          read = e instanceof Error ? e : new Error(String(e));
         }
+        // (ADR 0032) Its stored history summary against the workout as read (derived; rebuilt by the caller).
+        if (opts.summaries === true && (await summaryNeedsRebuild(q, id, read))) staleSummaries.push(id);
       } while (next < ids.length && next - i < SESSION_CHUNK && monotonicMs() - started < TURN_BUDGET_MS);
       return next;
     });
     await slice();
+  }
+  if (opts.summaries === true) {
+    // Summary rows of workouts no longer stored (a write that bypassed the repositories).
+    const orphans = await db.read(async (q) => ((await hasSummaryTables(q)) ? (await staleHistorySummaries(q)).orphans : []));
+    for (const id of orphans) if (!staleSummaries.includes(id)) staleSummaries.push(id);
+    return { ok: issues.length === 0, schemaVersion, issues, checked, staleSummaries };
   }
   return { ok: issues.length === 0, schemaVersion, issues, checked };
 }

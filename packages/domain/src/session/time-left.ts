@@ -1,3 +1,4 @@
+import type { HistoryLike } from '../history-summary';
 import type { SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 import { clockText } from '../calendar';
 import { formatDuration, formatElapsed, NBSP } from '../display';
@@ -77,7 +78,7 @@ export interface TimeLeftEstimate {
 
 const live = (s: WorkoutSet) => s.status !== 'deleted';
 
-function exerciseOf(state: SessionAggregate, set: WorkoutSet): SessionExercise | undefined {
+function exerciseOf(state: HistoryLike, set: WorkoutSet): SessionExercise | undefined {
   return state.exercises.find((e) => e.id === set.sessionExerciseId);
 }
 
@@ -89,7 +90,7 @@ const sameSuperset = (a: SessionExercise | undefined, b: SessionExercise | undef
  * choice `log_set` makes when it starts the timer (superset member steps use
  * the transition; an exercise's last set uses its transition when one is set).
  */
-function plannedRestBetween(state: SessionAggregate, set: WorkoutSet, next: WorkoutSet): number {
+function plannedRestBetween(state: HistoryLike, set: WorkoutSet, next: WorkoutSet): number {
   const ex = exerciseOf(state, set);
   const nextEx = exerciseOf(state, next);
   if (!ex) return set.rest.seconds;
@@ -106,7 +107,7 @@ function plannedRestBetween(state: SessionAggregate, set: WorkoutSet, next: Work
  * is a changeover sample. Gaps over `maxGap` are left out; a date-only
  * (imported) workout has no times and gives none.
  */
-export function paceSamplesOf(state: SessionAggregate, nowMs: number): PaceSamples {
+export function paceSamplesOf(state: HistoryLike, nowMs: number): PaceSamples {
   const out: PaceSamples = { set: [], changeover: [] };
   if (dateOnlyOf(state.session) !== null) return out;
   const done = state.sets
@@ -132,7 +133,7 @@ export function paceSamplesOf(state: SessionAggregate, nowMs: number): PaceSampl
  * Samples from Ben's most recent finished workouts with real times (up to
  * `recentSessions`), newest first. Imported date-only workouts are skipped.
  */
-export function recentPaceSamples(finished: readonly SessionAggregate[], limit: number = TIME_LEFT.recentSessions): PaceSamples {
+export function recentPaceSamples(finished: readonly HistoryLike[], limit: number = TIME_LEFT.recentSessions): PaceSamples {
   const timed = finished
     .filter((a) => isInHistory(a.session) && dateOnlyOf(a.session) === null)
     .sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc))

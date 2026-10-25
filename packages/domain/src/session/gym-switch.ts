@@ -70,7 +70,7 @@ export function partsOf(exercises: readonly SessionExercise[], rowId: string): S
 }
 
 /** Live sets of a whole block in execution order (set numbers run across parts). */
-export function blockSets(state: SessionAggregate, rowId: string): WorkoutSet[] {
+export function blockSets(state: Pick<SessionAggregate, 'exercises' | 'sets'>, rowId: string): WorkoutSet[] {
   const order = buildExecutionOrder(state.exercises, state.sets);
   const pos = new Map(order.map((id, i) => [id, i]));
   const parts = partsOf(state.exercises, rowId);

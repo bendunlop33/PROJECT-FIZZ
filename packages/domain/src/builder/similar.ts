@@ -179,6 +179,11 @@ export function subRoleOf(i: Pick<BuilderExerciseInfo, 'name' | 'muscles' | 'rol
 export interface BuilderSubRole {
   role: string;
   compound: boolean;
+  /**
+   * (Ben, 24 Oct) A main sub-role: Time's fit keeps one exercise for it when it cuts (`fitToMinutes`), cutting other
+   * exercises first, then this exercise's sets; past that it gives up the main sub-roles last first.
+   */
+  main: boolean;
 }
 
 /**
@@ -188,9 +193,9 @@ export interface BuilderSubRole {
  */
 export const BUILDER_SUB_ROLES: Readonly<Partial<Record<BuilderExerciseInfo['group'], readonly BuilderSubRole[]>>> = {
   Back: [
-    { role: 'Lats', compound: true },
-    { role: 'Mid-back', compound: true },
-    { role: 'Rear delts', compound: false },
+    { role: 'Lats', compound: true, main: true },
+    { role: 'Mid-back', compound: true, main: true },
+    { role: 'Rear delts', compound: false, main: false },
   ],
 };
 

@@ -22,6 +22,13 @@ export interface MigrationReport {
 }
 
 /**
+ * Data a migration derives with domain code (ADR 0032: migration 36's history summaries), run inside that
+ * migration's transaction straight after its SQL. Kept out of the migration list so it stays free of domain code
+ * (the release check loads it under plain Node).
+ */
+export type MigrationBackfills = Readonly<Record<number, (tx: SqlExecutor) => Promise<unknown>>>;
+
+/**
  * Bring the database up to `target` (default: the latest), one transaction per
  * migration. Refuses to touch a database from a newer build, and never goes
  * backwards.
@@ -30,6 +37,7 @@ export async function migrate(
   driver: SqlDriver,
   migrations: readonly Migration[] = MIGRATIONS,
   target: number = latestVersion(migrations),
+  backfills: MigrationBackfills = {},
 ): Promise<MigrationReport> {
   assertWellFormed(migrations);
   const latest = latestVersion(migrations);
@@ -47,6 +55,7 @@ export async function migrate(
       if (current >= m.version) return;
       if (current !== m.version - 1) throw new Error(`Database at version ${current} can't take migration ${m.version}`);
       await m.up(tx);
+      await backfills[m.version]?.(tx);
       await tx.exec(`PRAGMA user_version = ${String(m.version)}`);
       applied.push(m.version);
     });

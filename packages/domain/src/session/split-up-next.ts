@@ -1,3 +1,4 @@
+import type { HistoryLike } from '../history-summary';
 import type { Exercise, MuscleGroup, SessionAggregate, SplitDay, TrainingSplit } from '@fizz/schemas';
 
 import { toMs } from '../time';
@@ -64,7 +65,7 @@ export function cutShort(a: Pick<SessionAggregate, 'sets'>): boolean {
  * The split rule's view of one finished workout. `sessionMinutes`: Ben's
  * session length (Profile), or null when he hasn't saved training details.
  */
-export function splitWorkoutOf(a: SessionAggregate, exerciseOf: (id: string) => Pick<Exercise, 'primaryMuscles'> | null, sessionMinutes: number | null): SplitWorkout {
+export function splitWorkoutOf(a: HistoryLike, exerciseOf: (id: string) => Pick<Exercise, 'primaryMuscles'> | null, sessionMinutes: number | null): SplitWorkout {
   const built = a.session.coachDraft === undefined ? null : builtMinutes(a.session.coachDraft.name);
   return {
     sessionId: a.session.id,
@@ -156,7 +157,7 @@ export function preferFullSource(workouts: readonly SplitWorkout[]): string | nu
  * planned for (`splitDaysByDue`, workouts in the last `SPLIT_WINDOW_DAYS` before `nowUtc`), else the
  * day after the last one (`nextSplitDay`) when no workout in the window matches a day.
  */
-export function buildDayFor(split: TrainingSplit, sessions: readonly SessionAggregate[], exerciseOf: (id: string) => Pick<Exercise, 'id' | 'name' | 'primaryMuscles'> | null, nowUtc: string): SplitDay {
+export function buildDayFor(split: TrainingSplit, sessions: readonly HistoryLike[], exerciseOf: (id: string) => Pick<Exercise, 'id' | 'name' | 'primaryMuscles'> | null, nowUtc: string): SplitDay {
   const from = toMs(nowUtc) - SPLIT_WINDOW_DAYS * 86_400_000;
   const workouts = sessions.filter((a) => toMs(a.session.startedAt.utc) >= from).map((a) => splitWorkoutOf(a, exerciseOf, null));
   return splitDaysByDue(split, workouts)[0]?.day ?? nextSplitDay(split, lastSplitWorkoutGroups(split, sessions, exerciseOf));

@@ -38,6 +38,7 @@ import {
   type ProgressHomeView,
   type ProgressSession,
   type ResumeBar,
+  type HistoryWorkout,
 } from '@fizz/domain';
 import { timeSlicer, type Slicer, type Store } from '@fizz/persistence';
 import type { Exercise, ImplementCount, ProgressGrouping, ProgressPeriodKey, SessionAggregate, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
@@ -247,7 +248,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const hit = cache.get(ref.id);
       return hit === undefined || hit.revision !== ref.revision;
     });
-    const read = new Map<string, SessionAggregate | Error | null>();
+    const read = new Map<string, HistoryWorkout | Error | null>();
     for (let i = 0; i < toRead.length; i += PROJECT_BATCH) {
       await slice();
       const ids = toRead.slice(i, i + PROJECT_BATCH).map((r) => r.id);

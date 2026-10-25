@@ -442,10 +442,16 @@ export function createAppServices(deps: AppServicesDeps) {
   };
 
   const integrity = {
-    /** `Check all data` (system-states §3.7). Reads only; never repairs. */
+    /**
+     * `Check all data` (system-states §3.7). Never repairs Ben's data. (ADR 0032) It also compares each workout's
+     * stored history summary (derived, rebuildable) with the workout and rebuilds any that disagree, from the workout.
+     */
     async checkAll(): Promise<IntegrityCheck> {
       const at = deps.now();
-      lastIntegrity = { atUtc: at.utc, tz: at.tz, report: await checkIntegrity(deps.manager.store.db, undefined, timeSlicer()) };
+      const store = deps.manager.store;
+      const report = await checkIntegrity(store.db, undefined, timeSlicer(), { summaries: true });
+      if ((report.staleSummaries ?? []).length > 0) await store.repairHistorySummaries(report.staleSummaries).catch(() => null);
+      lastIntegrity = { atUtc: at.utc, tz: at.tz, report };
       return lastIntegrity;
     },
     last: (): IntegrityCheck => lastIntegrity,

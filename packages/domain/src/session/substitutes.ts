@@ -7,7 +7,7 @@ import { nextTargetsFor, plannedSetsFromTargets } from '../next-target';
 import { mayHurtAccessibility, mayHurtConfirm, painFlagCovering } from '../pain-flags';
 import type { HistorySession, PainStatus } from '../progression';
 import { convertMass } from '../units';
-import { toMs } from '../time';
+import { sortNewestFirst, toMs } from '../time';
 import { loadCell } from './overview';
 import { mapEquipment, snapPlanToGym, type SnapGym, type SnapMapping } from './snap';
 import { swapSource, type SwapPlan } from './swap-plan';
@@ -82,7 +82,10 @@ export function comparableHistory(exercise: Exercise, history: readonly HistoryS
  */
 export function comparableSessions(exercise: Exercise, history: readonly HistorySession[], ctx: Pick<SubstituteContext, 'gym' | 'lastUsedHere' | 'knownEquipment'>): { session: HistorySession; equipment: EquipmentInstance | null }[] {
   const { equipment: here, mapping } = equipmentHere(exercise, ctx);
-  const newest = [...history].filter((h) => h.sets.some((s) => s.setType !== 'warmup')).sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
+  const newest = sortNewestFirst(
+    history.filter((h) => h.sets.some((s) => s.setType !== 'warmup')),
+    (h) => h.performedAtUtc,
+  );
   const out: { session: HistorySession; equipment: EquipmentInstance | null }[] = [];
   for (const h of newest) {
     if (h.imported) {

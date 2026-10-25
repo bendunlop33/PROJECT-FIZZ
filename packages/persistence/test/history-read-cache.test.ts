@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reduceSession, toHistorySessions } from '@fizz/domain';
+import { reduceSession, toHistorySessions, toHistoryWorkout } from '@fizz/domain';
 import { at, profile, richFinishedSession } from '@fizz/domain/testing';
 import type { SessionAggregate } from '@fizz/schemas';
 import { checkIntegrity, exportTables, migrate, MIGRATIONS, openStore, readAggregate } from '../src/index';
@@ -17,7 +17,7 @@ describe('migration 35 (session_exercises index)', () => {
     await at34.repos.profiles.save(profile(), null);
     await at34.repos.sessions.save(richFinishedSession(), null);
     const before = await at34.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toMatchObject({ from: 34, to: 35, applied: [35] });
+    expect(await migrate(db)).toMatchObject({ from: 34, to: 36, applied: [35, 36] });
     const at35 = await openStore(db);
     expect(await at35.db.read((q) => exportTables(q))).toEqual(before);
     const plan = await at35.db.read((q) => q.getAll<{ detail: string }>('EXPLAIN QUERY PLAN SELECT * FROM session_exercises WHERE session_id = ? ORDER BY ordinal, id', ['x']));
@@ -42,15 +42,18 @@ describe('the history cache', () => {
   it('batched reads give exactly what one-by-one reads give', async () => {
     const store = await seeded();
     const one = await store.db.read((q) => readAggregate(q, rich.session.id));
+    if (one === null) throw new Error('not saved');
+    // (ADR 0032) History reads give the workout as history reads it (its stored summary).
+    const summary = toHistoryWorkout(one);
     const many = await store.repos.sessions.getMany([rich.session.id, 'missing']);
-    expect(many.get(rich.session.id)).toEqual(one);
+    expect(many.get(rich.session.id)).toEqual(summary);
     expect(many.has('missing')).toBe(false);
-    expect(await store.repos.sessions.listFinishedWithExercise(owner, exerciseId)).toEqual([one]);
+    expect(await store.repos.sessions.listFinishedWithExercise(owner, exerciseId)).toEqual([summary]);
     const both = await store.repos.sessions.listFinishedWithExercises(owner, [exerciseId, 'none']);
-    expect(both.get(exerciseId)).toEqual([one]);
+    expect(both.get(exerciseId)).toEqual([summary]);
     expect(both.get('none')).toEqual([]);
     expect((await store.listExerciseHistories(owner, [exerciseId])).get(exerciseId)).toEqual(await store.listExerciseHistory(owner, exerciseId));
-    expect(await store.listExerciseHistory(owner, exerciseId)).toEqual(one === null ? [] : toHistorySessions(one, exerciseId, { identity: true }));
+    expect(await store.listExerciseHistory(owner, exerciseId)).toEqual(toHistorySessions(one, exerciseId, { identity: true }));
     await store.close();
   });
 

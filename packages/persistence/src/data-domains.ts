@@ -4,6 +4,7 @@ import { exportTables } from './backup/backup';
 import { noYield, type Slicer } from './backup/slice';
 import { readUserVersion } from './migrations';
 import { inHistorySql, rowInHistory } from './sql';
+import { isDerivedTable } from './history-summaries';
 
 /**
  * The two data domains (CLAUDE.md rule 10, design-system §7.2,
@@ -74,6 +75,10 @@ export const YOUR_DATA_TABLES = [
   'reviews',
   // Tombstones of purged workouts (delete-workouts §6.3, migration 8): Your data, removed by Delete my data.
   'purged_sessions',
+  // (ADR 0032, migration 36) Per-workout history summaries: derived from his workouts, rebuildable. Never exported or
+  // backed up (`DERIVED_TABLES`); a database built from Your data rebuilds them on open.
+  'history_summaries',
+  'history_summary_exercises',
 ] as const;
 
 /** Tables whose every row is Coaching knowledge. */
@@ -185,6 +190,8 @@ export async function countDomainsIn(q: SqlExecutor): Promise<DomainCounts> {
   const mine: Record<string, number> = {};
   const known: Record<string, number> = {};
   for (const table of await userTables(q)) {
+    // (ADR 0032) Derived tables aren't records: they're rebuilt from the workouts, as exports and backups leave them out.
+    if (isDerivedTable(table)) continue;
     const quoted = `"${table.replaceAll('"', '""')}"`;
     if ((YOUR_DATA_TABLES as readonly string[]).includes(table)) mine[table] = await count(`SELECT COUNT(*) AS n FROM ${quoted}`);
     else if ((KNOWLEDGE_TABLES as readonly string[]).includes(table)) known[table] = await count(`SELECT COUNT(*) AS n FROM ${quoted}`);

@@ -1,3 +1,4 @@
+import type { HistoryLike } from '../history-summary';
 import type { Load, SessionAggregate, SessionExercise, SetExclusion, SetValues, WorkoutSession, WorkoutSet } from '@fizz/schemas';
 import { restOverrunMs, restRemainingMs } from '../rest';
 import { toMs } from '../time';
@@ -63,7 +64,7 @@ export function getSessionPhase(state: SessionAggregate, nowMs: number): Session
  * up to `nowMs`) counts only for the part that overlaps the window. Pauses
  * fully outside it are ignored; partial overlaps are clipped (review R1).
  */
-export function pausedMsWithin(state: SessionAggregate, startMs: number, endMs: number, nowMs: number): number {
+export function pausedMsWithin(state: HistoryLike, startMs: number, endMs: number, nowMs: number): number {
   const { session } = state;
   const intervals = session.pauses.map((p) => [toMs(p.startUtc), toMs(p.endUtc)] as const);
   if (session.pause !== null) intervals.push([toMs(session.pause.pausedAtUtc), Math.max(nowMs, toMs(session.pause.pausedAtUtc))]);
@@ -77,7 +78,7 @@ export function pausedMsWithin(state: SessionAggregate, startMs: number, endMs: 
  * paused time inside that window. A corrected start or end time therefore
  * never subtracts a pause that happened outside the corrected window.
  */
-export function getActiveDurationMs(state: SessionAggregate, nowMs: number): number {
+export function getActiveDurationMs(state: HistoryLike, nowMs: number): number {
   const { session } = state;
   const start = toMs(session.startedAt.utc);
   const end = session.endedAt ? toMs(session.endedAt.utc) : nowMs;
@@ -99,7 +100,7 @@ export function dateOnlyOf(session: Pick<WorkoutSession, 'localDate'>): string |
  * How long a workout took, for Today and the summary; null for a date-only
  * workout, which has no times to measure (review B2).
  */
-export function workoutDurationMs(state: SessionAggregate, nowMs: number): number | null {
+export function workoutDurationMs(state: HistoryLike, nowMs: number): number | null {
   return dateOnlyOf(state.session) === null ? getActiveDurationMs(state, nowMs) : null;
 }
 

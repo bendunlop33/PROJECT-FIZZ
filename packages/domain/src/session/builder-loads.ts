@@ -3,7 +3,7 @@ import { dayMonthText, formatNumber } from '../display';
 import { getAchievableLoads, isBarLoaded, loadDirection, roundToAvailableLoad, type LoadDirection } from '../equipment';
 import { isSetCountable } from '../exclusions';
 import { comparableSetsOf, skipDeload, type HistorySession } from '../progression';
-import { deriveId, stableStringify } from '../stable';
+import { deriveId } from '../stable';
 import { toMs } from '../time';
 import { convertMass } from '../units';
 import { comparableSessions, equipmentHere, type SubstituteContext } from './substitutes';
@@ -318,7 +318,9 @@ export function buildReferences(input: { target: ExerciseHistory; mates: readonl
 
 /** A stable fingerprint of the comparable history (new or corrected sessions change it). */
 export function historyVersionOf(sessions: readonly RefSession[]): string {
-  return deriveId(`builder-history:${stableStringify(sessions.map((s) => [s.sessionId, s.performedAtUtc, s.sets.map((x) => [x.value, x.reps, x.rpe])]))}`);
+  // (Perf, 24 Oct) Arrays of strings, numbers and nulls only: `JSON.stringify` gives exactly `stableStringify`'s text
+  // (so stored versions still match), natively.
+  return deriveId(`builder-history:${JSON.stringify(sessions.map((s) => [s.sessionId, s.performedAtUtc, s.sets.map((x) => [x.value, x.reps, x.rpe])]))}`);
 }
 
 /** Where a reference was checked: the item now mapped, for `recheckDraftLoad` (B7). */

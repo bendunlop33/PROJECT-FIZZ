@@ -11,6 +11,10 @@ import {
 import {
   planDeleteWorkouts,
   planRestoreWorkouts,
+  toHistorySessions,
+  toHistoryWorkout,
+  type HistorySession,
+  type HistoryWorkout,
   type DeletionError,
   type DeletionPlan,
   type FencedResult,
@@ -29,6 +33,7 @@ import type { SqlExecutor, SqlRow, SqlValue } from './driver';
 import { CorruptDataError, HistoryRewriteError } from './errors';
 import { bool, checkRead, checkWrite, inHistorySql, insert, int, mismatch, parseJson, parseJsonOrNull, rowId, upsert } from './sql';
 import { chatSourceStaleIn, startChatSourceIn, startWorkoutDraftIn } from './workout-drafts';
+import { deleteHistorySummaryIn, FRESH_SUMMARY_SQL, hasSummaryTables, parseStoredLifts, parseStoredWorkout, writeHistorySummaryIn } from './history-summaries';
 
 const T = 'sessions';
 
@@ -312,8 +317,8 @@ export async function readAggregates(q: SqlExecutor, sessionIds: readonly string
 }
 
 /** The aggregates, or the first read error (as the one-by-one reads threw it). */
-function orThrow(list: readonly (SessionAggregate | Error | null)[]): SessionAggregate[] {
-  const out: SessionAggregate[] = [];
+function orThrow<T>(list: readonly (T | Error | null)[]): T[] {
+  const out: T[] = [];
   for (const x of list) {
     if (x instanceof Error) throw x;
     if (x !== null) out.push(x);
@@ -322,7 +327,7 @@ function orThrow(list: readonly (SessionAggregate | Error | null)[]): SessionAgg
 }
 
 /** `FIZZ_FREEZE_HISTORY_CACHE=1` (a test run): cached workouts are deep-frozen, so a caller that mutates one fails loudly. */
-function freezeForTests(a: SessionAggregate): SessionAggregate {
+function freezeForTests<T extends object>(a: T): T {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
   if (env?.['FIZZ_FREEZE_HISTORY_CACHE'] !== '1') return a;
   const deep = (o: unknown): void => {
@@ -781,6 +786,9 @@ export async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Prom
       created_ids: op.createdIds === undefined ? null : JSON.stringify(op.createdIds),
     });
   }
+
+  // (ADR 0032) The workout's history summary, in the same transaction: written while it is in history, removed otherwise.
+  await writeHistorySummaryIn(tx, a);
 }
 
 export type DeletionOutcome = { ok: true; duplicate: boolean; refs: SessionRef[] } | { ok: false; error: DeletionError };
@@ -804,18 +812,22 @@ async function purgeOne(tx: SqlExecutor, sessionId: string, opId: string, atUtc:
     [atUtc, opId, sessionId],
   );
   for (const table of PURGED_CHILD_TABLES) await tx.run(`DELETE FROM ${table} WHERE session_id = ?`, [sessionId]);
+  // A deleted workout has no history summary; any left (a write that bypassed the repository) goes with it.
+  if (await hasSummaryTables(tx)) await deleteHistorySummaryIn(tx, sessionId);
   await tx.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
   if (s.check_in_id !== null) await tx.run('DELETE FROM check_ins WHERE id = ?', [s.check_in_id]);
 }
 
 /** The columns a cached workout is checked against: every write through the app bumps `revision` (and `version`). */
-const STAMP = 'revision, version, last_activity_at_utc';
 type StampRow = {
   id: string;
   revision: number;
   version: number;
   last_activity_at_utc: string;
 };
+/** A stamp row with whether the workout has a current stored history summary (1) or not (0 / null). */
+type SummaryStampRow = StampRow & { fresh: number | null };
+type PairRow = SummaryStampRow & { exercise_id: string; started_at_utc: string };
 const stampOf = (r: StampRow): string => `${String(r.revision)}|${String(r.version)}|${r.last_activity_at_utc}`;
 
 /** How many decoded workouts the history cache keeps (Ben's ~800 fit; past it the cache starts again). */
@@ -858,11 +870,25 @@ export class SqliteSessions implements SessionRepository {
     return out;
   }
 
+  /** (ADR 0032) The stored summaries were rebuilt outside a workout write (the repair path): drop everything parsed. */
+  summariesChanged(): void {
+    this.forget();
+  }
+
   /** Every change through this repository drops what it had cached of those workouts. */
   private forget(ids?: readonly string[]): void {
     this.changes += 1;
-    if (ids === undefined) this.decoded.clear();
-    else for (const id of ids) this.decoded.delete(id);
+    if (ids === undefined) {
+      this.decoded.clear();
+      this.parsedWorkouts.clear();
+      this.parsedLifts.clear();
+    } else {
+      for (const id of ids) {
+        this.decoded.delete(id);
+        this.parsedWorkouts.delete(id);
+        this.parsedLifts.delete(id);
+      }
+    }
   }
 
   private changes = 0;
@@ -889,19 +915,19 @@ export class SqliteSessions implements SessionRepository {
   }
 
   /**
-   * (Perf, 23 Oct) Several finished workouts by ID in one read, for read-only projections (Progress): batched and
-   * shared with the history cache, so not copies (`get` returns a copy to change). Missing IDs are left out; a
-   * damaged one is its error.
+   * (ADR 0032) Several finished workouts by ID in one read, for read-only projections (Progress, Today's coach rows):
+   * their stored history summaries, shared and read-only (`get` returns a full copy to change). Missing IDs and
+   * workouts not in history are left out; a damaged one (no current summary and no decode) is its error.
    */
-  getMany(sessionIds: readonly string[]): Promise<Map<string, SessionAggregate | Error>> {
+  getMany(sessionIds: readonly string[]): Promise<Map<string, HistoryWorkout | Error>> {
     return this.db.read(async (q) => {
-      const rows: StampRow[] = [];
+      const rows: SummaryStampRow[] = [];
       for (let i = 0; i < sessionIds.length; i += BATCH) {
         const ids = sessionIds.slice(i, i + BATCH);
-        rows.push(...(await q.getAll<StampRow>(`SELECT id, ${STAMP} FROM sessions WHERE id IN (${ids.map(() => '?').join(', ')}) AND ${inHistorySql()}`, ids)));
+        rows.push(...(await this.summaryStamps(q, `s.id IN (${ids.map(() => '?').join(', ')})`, ids, '')));
       }
-      const got = await this.cachedAggregates(q, rows);
-      const out = new Map<string, SessionAggregate | Error>();
+      const got = await this.historyWorkouts(q, rows);
+      const out = new Map<string, HistoryWorkout | Error>();
       rows.forEach((r, i) => {
         const x = got[i];
         if (x !== null && x !== undefined) out.set(r.id, x);
@@ -951,41 +977,24 @@ export class SqliteSessions implements SessionRepository {
     });
   }
 
-  /** Finished sessions of `ownerId` that include `exerciseId`, oldest first. */
-  listFinishedWithExercise(ownerId: string, exerciseId: string): Promise<SessionAggregate[]> {
-    return this.db.read(async (q) => {
-      const rows = await q.getAll<StampRow>(
-        `SELECT DISTINCT s.id AS id, s.revision AS revision, s.version AS version, s.last_activity_at_utc AS last_activity_at_utc, s.started_at_utc FROM sessions s JOIN session_exercises e ON e.session_id = s.id
-         WHERE s.owner_id = ? AND ${inHistorySql('s')} AND e.exercise_id = ? ORDER BY s.started_at_utc, s.id`,
-        [ownerId, exerciseId],
-      );
-      return orThrow(await this.cachedAggregates(q, rows));
-    });
+  /** Finished sessions of `ownerId` that include `exerciseId`, oldest first, as history reads them (ADR 0032 summaries). */
+  listFinishedWithExercise(ownerId: string, exerciseId: string): Promise<HistoryWorkout[]> {
+    return this.listFinishedWithExercises(ownerId, [exerciseId]).then((m) => m.get(exerciseId) ?? []);
   }
 
   /**
    * (Perf, 23 Oct) `listFinishedWithExercise` for many exercises in one read: each exercise's finished sessions,
    * oldest first. A workout with several of them is read once.
    */
-  listFinishedWithExercises(ownerId: string, exerciseIds: readonly string[]): Promise<Map<string, SessionAggregate[]>> {
+  listFinishedWithExercises(ownerId: string, exerciseIds: readonly string[]): Promise<Map<string, HistoryWorkout[]>> {
     return this.db.read(async (q) => {
-      const out = new Map<string, SessionAggregate[]>(exerciseIds.map((id) => [id, []]));
+      const out = new Map<string, HistoryWorkout[]>(exerciseIds.map((id) => [id, []]));
       if (exerciseIds.length === 0) return out;
-      const pairs: (StampRow & { exercise_id: string })[] = [];
-      for (let i = 0; i < exerciseIds.length; i += BATCH) {
-        const ids = exerciseIds.slice(i, i + BATCH);
-        pairs.push(
-          ...(await q.getAll<StampRow & { exercise_id: string }>(
-            `SELECT DISTINCT s.id AS id, s.revision AS revision, s.version AS version, s.last_activity_at_utc AS last_activity_at_utc, e.exercise_id AS exercise_id, s.started_at_utc FROM sessions s JOIN session_exercises e ON e.session_id = s.id
-             WHERE s.owner_id = ? AND ${inHistorySql('s')} AND e.exercise_id IN (${ids.map(() => '?').join(', ')}) ORDER BY s.started_at_utc, s.id`,
-            [ownerId, ...ids],
-          )),
-        );
-      }
-      const unique = new Map<string, StampRow>();
+      const pairs = await this.exercisePairs(q, ownerId, exerciseIds);
+      const unique = new Map<string, SummaryStampRow>();
       for (const p of pairs) unique.set(p.id, p);
       const rows = [...unique.values()];
-      const read = orThrow(await this.cachedAggregates(q, rows));
+      const read = orThrow(await this.historyWorkouts(q, rows));
       const byId = new Map(read.map((a) => [a.session.id, a]));
       // `pairs` is oldest first; each exercise's list keeps that order.
       for (const p of pairs) {
@@ -996,15 +1005,51 @@ export class SqliteSessions implements SessionRepository {
     });
   }
 
-  /** Finished sessions of `ownerId` that started in [fromUtc, toUtc), oldest first (Today's week strip). */
-  listFinishedBetween(ownerId: string, fromUtc: string, toUtc: string): Promise<SessionAggregate[]> {
+  /**
+   * (ADR 0032) Each exercise's progression history (`toHistorySessions(…, { identity: true })` of every finished workout
+   * with it), oldest workout first: read from the stored per-exercise summaries, so nothing is decoded while they are
+   * current. A workout whose summary isn't current is decoded (and fails the read when it can't be, as before).
+   */
+  listLiftHistories(ownerId: string, exerciseIds: readonly string[]): Promise<Map<string, HistorySession[]>> {
     return this.db.read(async (q) => {
-      const rows = await q.getAll<StampRow>(
-        `SELECT id, ${STAMP} FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND started_at_utc >= ? AND started_at_utc < ?
-         ORDER BY started_at_utc, id`,
-        [ownerId, fromUtc, toUtc],
-      );
-      return orThrow(await this.cachedAggregates(q, rows));
+      const out = new Map<string, HistorySession[]>(exerciseIds.map((id) => [id, []]));
+      if (exerciseIds.length === 0) return out;
+      const pairs = await this.liftPairs(q, ownerId, exerciseIds);
+      const cached = (p: PairRow): readonly HistorySession[] | undefined => {
+        const hit = p.fresh === 1 ? this.parsedLifts.get(p.id) : undefined;
+        return hit?.revision === p.revision ? (hit.lifts[p.exercise_id] ?? []) : undefined;
+      };
+      // Current summaries not parsed yet this run: each workout's lifts, read in batches of workouts.
+      const revisionOf = new Map<string, number>();
+      for (const p of pairs) if (p.fresh === 1 && cached(p) === undefined) revisionOf.set(p.id, p.revision);
+      const sessionIds = [...revisionOf.keys()];
+      if (sessionIds.length > 0 && this.parsedLifts.size + sessionIds.length > HISTORY_CACHE_MAX) this.parsedLifts.clear();
+      for (let i = 0; i < sessionIds.length; i += BATCH) {
+        const ids = sessionIds.slice(i, i + BATCH);
+        for (const r of await q.getAll<{ session_id: string; revision: number; lifts: string }>(`SELECT session_id, revision, lifts FROM history_summaries WHERE session_id IN (${ids.map(() => '?').join(', ')})`, ids)) {
+          const lifts = parseStoredLifts(r.lifts);
+          if (lifts !== null && revisionOf.get(r.session_id) === r.revision) this.parsedLifts.set(r.session_id, { revision: r.revision, lifts: freezeForTests(lifts) });
+        }
+      }
+      // Anything still without a current summary is decoded.
+      const decode = new Map<string, SummaryStampRow>();
+      for (const p of pairs) if (cached(p) === undefined) decode.set(p.id, p);
+      const decoded = new Map<string, SessionAggregate>();
+      if (decode.size > 0) for (const a of orThrow(await this.cachedAggregates(q, [...decode.values()]))) decoded.set(a.session.id, a);
+      for (const p of pairs) {
+        const a = decoded.get(p.id);
+        const lifts = a !== undefined ? toHistorySessions(a, p.exercise_id, { identity: true }) : (cached(p) ?? []);
+        out.get(p.exercise_id)?.push(...lifts);
+      }
+      return out;
+    });
+  }
+
+  /** Finished sessions of `ownerId` that started in [fromUtc, toUtc), oldest first (Today's week strip). */
+  listFinishedBetween(ownerId: string, fromUtc: string, toUtc: string): Promise<HistoryWorkout[]> {
+    return this.db.read(async (q) => {
+      const rows = await this.summaryStamps(q, 's.owner_id = ? AND s.started_at_utc >= ? AND s.started_at_utc < ?', [ownerId, fromUtc, toUtc], 'ORDER BY s.started_at_utc, s.id');
+      return orThrow(await this.historyWorkouts(q, rows));
     });
   }
 
@@ -1012,16 +1057,12 @@ export class SqliteSessions implements SessionRepository {
    * Like `listFinishedBetween`, but a session that fails to decode is skipped
    * and counted instead of failing the whole read (Today's week, review S1).
    */
-  listFinishedBetweenReadable(ownerId: string, fromUtc: string, toUtc: string): Promise<{ sessions: SessionAggregate[]; unreadable: number }> {
+  listFinishedBetweenReadable(ownerId: string, fromUtc: string, toUtc: string): Promise<{ sessions: HistoryWorkout[]; unreadable: number }> {
     return this.db.read(async (q) => {
-      const rows = await q.getAll<StampRow>(
-        `SELECT id, ${STAMP} FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND started_at_utc >= ? AND started_at_utc < ?
-         ORDER BY started_at_utc, id`,
-        [ownerId, fromUtc, toUtc],
-      );
-      const sessions: SessionAggregate[] = [];
+      const rows = await this.summaryStamps(q, 's.owner_id = ? AND s.started_at_utc >= ? AND s.started_at_utc < ?', [ownerId, fromUtc, toUtc], 'ORDER BY s.started_at_utc, s.id');
+      const sessions: HistoryWorkout[] = [];
       let unreadable = 0;
-      for (const got of await this.cachedAggregates(q, rows)) {
+      for (const got of await this.historyWorkouts(q, rows)) {
         if (got === null) continue;
         if (!(got instanceof Error)) sessions.push(got);
         else if (got instanceof CorruptDataError) unreadable += 1;
@@ -1039,16 +1080,147 @@ export class SqliteSessions implements SessionRepository {
     });
   }
 
-  /** The most recently started finished session, if any. */
-  latestFinished(ownerId: string): Promise<SessionAggregate | null> {
+  /** The most recently started finished session, if any, as history reads it. */
+  latestFinished(ownerId: string): Promise<HistoryWorkout | null> {
     return this.db.read(async (q) => {
-      const row = await q.getFirst<StampRow>(
-        `SELECT id, ${STAMP} FROM sessions WHERE owner_id = ? AND ${inHistorySql()} ORDER BY started_at_utc DESC, id DESC LIMIT 1`,
-        [ownerId],
-      );
-      return row ? (orThrow(await this.cachedAggregates(q, [row]))[0] ?? null) : null;
+      const rows = await this.summaryStamps(q, 's.owner_id = ?', [ownerId], 'ORDER BY s.started_at_utc DESC, s.id DESC LIMIT 1');
+      return rows.length === 0 ? null : (orThrow(await this.historyWorkouts(q, rows))[0] ?? null);
     });
   }
+
+  /** Whether this database has the history summary tables (schema 36 on; read once per repository). */
+  private async summaries(q: SqlExecutor): Promise<boolean> {
+    this.summaryTables ??= await hasSummaryTables(q);
+    return this.summaryTables;
+  }
+
+  private summaryTables: boolean | undefined;
+
+  /** Stamps of the finished sessions `where` also selects (alias `s`), with whether each has a current summary (`fresh`). */
+  private async summaryStamps(q: SqlExecutor, where: string, params: readonly SqlValue[], tail: string): Promise<SummaryStampRow[]> {
+    const withSummaries = await this.summaries(q);
+    return q.getAll<SummaryStampRow>(
+      withSummaries
+        ? `SELECT s.id AS id, s.revision AS revision, s.version AS version, s.last_activity_at_utc AS last_activity_at_utc, ${FRESH_SUMMARY_SQL('w', 's')} AS fresh
+           FROM sessions s LEFT JOIN history_summaries w ON w.session_id = s.id WHERE ${inHistorySql('s')} AND ${where} ${tail}`
+        : `SELECT s.id AS id, s.revision AS revision, s.version AS version, s.last_activity_at_utc AS last_activity_at_utc, 0 AS fresh FROM sessions s WHERE ${inHistorySql('s')} AND ${where} ${tail}`,
+      params,
+    );
+  }
+
+  /**
+   * (ADR 0032) `exercisePairs` from the stored lift summaries' index (no scan of every workout's rows): the pairs with a
+   * current summary, plus those of workouts in history without one (normally none), oldest first.
+   */
+  private async liftPairs(q: SqlExecutor, ownerId: string, exerciseIds: readonly string[]): Promise<PairRow[]> {
+    if (!(await this.summaries(q))) return this.exercisePairs(q, ownerId, exerciseIds);
+    const { fresh, stale } = await this.historyState(q, ownerId);
+    const pairs: PairRow[] = [];
+    for (let i = 0; i < exerciseIds.length; i += BATCH) {
+      const ids = exerciseIds.slice(i, i + BATCH);
+      const marks = ids.map(() => '?').join(', ');
+      // The lift summaries' covering index: no workout row is read.
+      for (const r of await q.getAll<{ session_id: string; exercise_id: string; started_at_utc: string }>(
+        `SELECT session_id, exercise_id, started_at_utc FROM history_summary_exercises WHERE owner_id = ? AND exercise_id IN (${marks})`,
+        [ownerId, ...ids],
+      )) {
+        const f = fresh.get(r.session_id);
+        if (f !== undefined) pairs.push({ ...f, exercise_id: r.exercise_id, started_at_utc: r.started_at_utc, fresh: 1 });
+      }
+      // Workouts in history without a current summary (normally none): their pairs from their own rows.
+      for (let j = 0; j < stale.length; j += BATCH) {
+        const some = stale.slice(j, j + BATCH);
+        const byId = new Map(some.map((x) => [x.id, x]));
+        for (const r of await q.getAll<{ session_id: string; exercise_id: string }>(
+          `SELECT DISTINCT session_id, exercise_id FROM session_exercises WHERE session_id IN (${some.map(() => '?').join(', ')}) AND exercise_id IN (${marks})`,
+          [...some.map((x) => x.id), ...ids],
+        )) {
+          const x = byId.get(r.session_id);
+          if (x !== undefined) pairs.push({ ...x, exercise_id: r.exercise_id, fresh: 0 });
+        }
+      }
+    }
+    return pairs.sort((a, b) => (a.started_at_utc < b.started_at_utc ? -1 : a.started_at_utc > b.started_at_utc ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  /**
+   * (ADR 0032) `ownerId`'s workouts in history, split by whether their stored summary is current, read once per state
+   * of the database (any write reads it again).
+   */
+  private async historyState(q: SqlExecutor, ownerId: string): Promise<{ fresh: Map<string, StampRow & { started_at_utc: string }>; stale: (StampRow & { started_at_utc: string })[] }> {
+    const key = `${ownerId}|${String(this.db.writeCount)}|${String(this.changes)}`;
+    if (this.stateMemo?.key === key) return this.stateMemo.state;
+    const rows = await q.getAll<StampRow & { started_at_utc: string; fresh: number | null }>(
+      `SELECT s.id AS id, s.revision AS revision, s.version AS version, s.last_activity_at_utc AS last_activity_at_utc, s.started_at_utc AS started_at_utc, ${FRESH_SUMMARY_SQL('w', 's')} AS fresh
+       FROM sessions s LEFT JOIN history_summaries w ON w.session_id = s.id WHERE s.owner_id = ? AND ${inHistorySql('s')}`,
+      [ownerId],
+    );
+    const fresh = new Map<string, StampRow & { started_at_utc: string }>();
+    const stale: (StampRow & { started_at_utc: string })[] = [];
+    for (const { fresh: f, ...r } of rows) {
+      if (f === 1) fresh.set(r.id, r);
+      else stale.push(r);
+    }
+    const state = { fresh, stale };
+    this.stateMemo = { key, state };
+    return state;
+  }
+
+  private stateMemo: { key: string; state: { fresh: Map<string, StampRow & { started_at_utc: string }>; stale: (StampRow & { started_at_utc: string })[] } } | null = null;
+
+  /** (Session, exercise) pairs of `ownerId`'s finished workouts with any of `exerciseIds`, oldest first, with stamps. */
+  private async exercisePairs(q: SqlExecutor, ownerId: string, exerciseIds: readonly string[]): Promise<PairRow[]> {
+    const withSummaries = await this.summaries(q);
+    const pairs: PairRow[] = [];
+    for (let i = 0; i < exerciseIds.length; i += BATCH) {
+      const ids = exerciseIds.slice(i, i + BATCH);
+      pairs.push(
+        ...(await q.getAll<PairRow>(
+          `SELECT DISTINCT s.id AS id, s.revision AS revision, s.version AS version, s.last_activity_at_utc AS last_activity_at_utc, e.exercise_id AS exercise_id, s.started_at_utc,
+                  ${withSummaries ? FRESH_SUMMARY_SQL('w', 's') : '0'} AS fresh
+           FROM sessions s JOIN session_exercises e ON e.session_id = s.id ${withSummaries ? 'LEFT JOIN history_summaries w ON w.session_id = s.id' : ''}
+           WHERE s.owner_id = ? AND ${inHistorySql('s')} AND e.exercise_id IN (${ids.map(() => '?').join(', ')}) ORDER BY s.started_at_utc, s.id`,
+          [ownerId, ...ids],
+        )),
+      );
+    }
+    // Batches are each oldest first; across batches too.
+    return exerciseIds.length > BATCH ? pairs.sort((a, b) => (a.started_at_utc < b.started_at_utc ? -1 : a.started_at_utc > b.started_at_utc ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) : pairs;
+  }
+
+  /**
+   * (ADR 0032) The workouts of `rows` as history reads them, in order: a current stored summary (parsed once per run
+   * and revision), else the workout decoded (the full-decode cache) and summarised in memory. Null: no such workout
+   * any more; an Error: no current summary and its rows didn't decode.
+   */
+  private async historyWorkouts(q: SqlExecutor, rows: readonly SummaryStampRow[]): Promise<(HistoryWorkout | Error | null)[]> {
+    const wanted = rows.filter((r) => r.fresh === 1 && this.parsedWorkouts.get(r.id)?.revision !== r.revision).map((r) => r.id);
+    const revisionOf = new Map(rows.map((r) => [r.id, r.revision]));
+    if (wanted.length > 0 && this.parsedWorkouts.size + wanted.length > HISTORY_CACHE_MAX) this.parsedWorkouts.clear();
+    for (let i = 0; i < wanted.length; i += BATCH) {
+      const ids = wanted.slice(i, i + BATCH);
+      for (const r of await q.getAll<{ session_id: string; data: string }>(`SELECT session_id, data FROM history_summaries WHERE session_id IN (${ids.map(() => '?').join(', ')})`, ids)) {
+        const w = parseStoredWorkout(r.data);
+        const revision = revisionOf.get(r.session_id);
+        if (w !== null && revision !== undefined && w.revision === revision && w.session.id === r.session_id) this.parsedWorkouts.set(r.session_id, { revision, workout: freezeForTests(w) });
+      }
+    }
+    const current = (r: SummaryStampRow) => (r.fresh === 1 ? this.parsedWorkouts.get(r.id) : undefined);
+    const stale = rows.filter((r) => current(r)?.revision !== r.revision);
+    const decoded = stale.length === 0 ? [] : await this.cachedAggregates(q, stale);
+    const fallback = new Map(stale.map((r, i) => [r.id, decoded[i] ?? null]));
+    return rows.map((r) => {
+      const hit = current(r);
+      if (hit !== undefined && hit.revision === r.revision) return hit.workout;
+      const a = fallback.get(r.id) ?? null;
+      return a === null || a instanceof Error ? a : toHistoryWorkout(a);
+    });
+  }
+
+  /** (ADR 0032) Parsed stored summaries by workout ID and revision: read-only, shared. */
+  private readonly parsedWorkouts = new Map<string, { revision: number; workout: HistoryWorkout }>();
+  /** (ADR 0032) Parsed stored lift summaries by workout ID and revision (each exercise's history, by exercise ID). */
+  private readonly parsedLifts = new Map<string, { revision: number; lifts: Readonly<Record<string, readonly HistorySession[]>> }>();
 
   /**
    * IDs of finished sessions with at least one completed set, newest first

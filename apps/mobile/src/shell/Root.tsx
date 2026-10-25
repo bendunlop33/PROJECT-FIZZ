@@ -20,7 +20,7 @@ import { expoDatabaseHost, removeDatabaseFiles } from '../data/expo-sqlite-host'
 import { deleteUnfinishedView } from '../backup/data-domain-view';
 import { DevicePrefsProvider, useDevicePrefs } from '../device/DevicePrefsContext';
 import { createPrefsHolder, DEFAULT_PREFS, type DevicePrefs } from '../device/prefs';
-import { appInfo, deviceTimeZone, newUuid, nowZoned, whenIdle } from '../device/runtime';
+import { afterLaunch, appInfo, deviceTimeZone, newUuid, nowZoned, whenIdle } from '../device/runtime';
 import { AppNavigator } from '../navigation/AppNavigator';
 import { MorningReminderHost } from '../reminders/MorningReminderHost';
 import type { AppServices } from '../services/app-services';
@@ -124,6 +124,8 @@ function Launch() {
       app: appInfo(),
       restAlerts,
       idle: () => whenIdle(),
+      // (ADR 0032) Launch background work waits a moment, so Today's first read never queues behind it.
+      backgroundGate: () => afterLaunch(),
       // The coach over the ChatGPT-plan route (ADR 0020 C5); the same Keychain items and fetch as the connection screen.
       coach: {
         model: () => {

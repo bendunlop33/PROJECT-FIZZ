@@ -66,6 +66,13 @@ export interface StartupDeps extends Omit<AppServicesDeps, 'manager'> {
    * finish it.
    */
   interruptedDelete?: 'finish' | 'leave';
+  /**
+   * (ADR 0032, 24 Oct) The launch's background work (the catch-up backup and purge, the integrity check, the weekly
+   * review, Progress' prewarm) starts once this resolves, so the first screen's reads never wait behind it (the
+   * integrity check's engine pass and a catch-up backup's export each hold the database for 0.3–1.4 s on ~800
+   * workouts). The phone passes a short delay then an idle moment; default: at once.
+   */
+  backgroundGate?: () => Promise<void>;
 }
 
 function errorText(e: unknown): string {
@@ -129,18 +136,19 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     // unfinished; finishing that workout backs up anyway.
     // Workouts past their 30 days in Recently deleted are purged after that check, silently,
     // never while a workout is unfinished (delete-workouts §6.4).
+    const gate = (deps.backgroundGate?.() ?? Promise.resolve()).catch(() => undefined);
     if (recoveryError === null && recovery?.state.session.status !== 'active') {
-      void services.backups
-        .ensureBackedUp()
+      void gate
+        .then(() => services.backups.ensureBackedUp())
         .catch(() => null)
         .then(() => services.history.purgeDue())
         .catch(() => 0);
     }
-    void services.integrity.checkAll().catch(() => null);
+    void gate.then(() => services.integrity.checkAll()).catch(() => null);
     // (§6.1) The weekly review on open: facts by code, the coach when reachable; never awaited, never during a workout.
-    if (recoveryError === null && recovery?.state.session.status !== 'active' && setup.profile) void services.reviews.runOnOpen().catch(() => null);
+    if (recoveryError === null && recovery?.state.session.status !== 'active' && setup.profile) void gate.then(() => services.reviews.runOnOpen()).catch(() => null);
     // Progress projections, so the first Progress open after a cold start is quick (review progress-A S4).
-    void services.progress.prewarm().catch(() => null);
+    void gate.then(() => services.progress.prewarm()).catch(() => null);
     return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery, recoveryError, personalDataCleared, signOutNotConfirmed };
   } catch (e) {
     await manager.close().catch(() => undefined);
