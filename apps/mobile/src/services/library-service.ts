@@ -6,10 +6,8 @@ import {
   defaultSlotShape,
   deriveId,
   equipmentForExercise,
-  EXERCISE_EQUIPMENT_WORD,
   gymAvailability,
-  missingStations,
-  stationWords,
+  notHereLine,
   isArchivedExercise,
   isDeleted,
   isInRotation,
@@ -138,18 +136,6 @@ export const LIBRARY_ADD_COPY = {
   cantUndo: (name: string) => `Can’t undo: ${name} changed since.`,
 } as const;
 
-const KIND_NOUN: Partial<Record<Exercise['compatibleEquipment'][number], string>> = {
-  barbell: 'barbell',
-  dumbbells: 'dumbbells',
-  weight_stack: 'cable station',
-  assisted_stack: 'assisted machine',
-  plate_loaded_machine: 'plate-loaded machine',
-  bodyweight_station: 'bar or station',
-  kettlebell: 'kettlebells',
-  ez_bar: 'EZ bar',
-  trap_bar: 'trap bar',
-  smith_machine: 'Smith machine',
-};
 
 export function createLibraryService(deps: LibraryServiceDeps) {
   const repos = deps.repos;
@@ -315,11 +301,8 @@ export function createLibraryService(deps: LibraryServiceDeps) {
         let notAtGym: string | null = null;
         if (active !== null && gymAvailability(exercise, currentGymEquipment(active.session)) === 'not_at_gym') {
           const gymName = (await repos().gyms.get(active.session.gymId ?? '').catch(() => null))?.name ?? 'This gym';
-          const kind = exercise.compatibleEquipment[0];
-          // (ADR 0030) A missing bench or rack is named, not the load item (which may be here).
-          const station = stationWords(missingStations(exercise.id, currentGymEquipment(active.session)));
-          const noun = station ?? (kind === undefined ? 'equipment' : (KIND_NOUN[kind] ?? EXERCISE_EQUIPMENT_WORD[kind].toLowerCase()));
-          notAtGym = `${gymName} has no ${noun}. Add ${exercise.name} anyway?`;
+          // (ADR 0030) A missing bench or rack is named, not the load item (which may be here); the Swap sheet says the same.
+          notAtGym = `${notHereLine(gymName, exercise, currentGymEquipment(active.session))} Add ${exercise.name} anyway?`;
         }
         return { destinations, notAtGym };
       } catch {

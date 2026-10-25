@@ -51,6 +51,7 @@ import { createDataDomainService, type CredentialPort, type PersonalFilesPort } 
 import { createImportService } from '../import/import-service';
 import { createLayoutService } from '../import/layout-service';
 import { createGymServices, type GymEditOutcome } from './gym-services';
+import { createExercisePickerService } from './exercise-picker-service';
 import { createLibraryService } from './library-service';
 import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
@@ -906,6 +907,9 @@ export function createAppServices(deps: AppServicesDeps) {
     routineRows: () => loop.routines.list(),
   });
 
+  /** (Ben, 25 Oct) The Swap / Add sheet's full list: every exercise, read once per open; search is pure over it. */
+  const exercisePicker = createExercisePickerService({ repos, now: deps.now, profile: getProfile, catalogueExercises, catalogueAliases });
+
   /** Deleting past workouts: delete, Undo, Recently deleted, Restore, purge (delete-workouts.md). */
   const history = createHistoryServices({
     repos,
@@ -1081,6 +1085,7 @@ export function createAppServices(deps: AppServicesDeps) {
     builderCoach,
     reviews,
     workoutEdit,
+    exercisePicker,
     library,
     customExercises,
     history,
