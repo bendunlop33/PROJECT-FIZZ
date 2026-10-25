@@ -41,9 +41,10 @@ export interface Harness {
   /** The latest launch's rest alerts (and Live Activity), so a test can reconcile as Root does on launch and foreground. */
   restAlerts: ReturnType<typeof createRestAlertController> | null;
   now: () => ZonedTimestamp;
-  launch: () => Promise<Extract<StartupOutcome, { kind: 'ready' }>>;
+  /** `extra.backgroundGate`: when the launch's background work starts (default: at once; the phone waits, `afterLaunch`). */
+  launch: (extra?: { backgroundGate?: () => Promise<void> }) => Promise<Extract<StartupOutcome, { kind: 'ready' }>>;
   /** Launch and return whatever startup returned (`interruptedDelete` as Root passes it). */
-  start: (extra?: { interruptedDelete?: 'finish' | 'leave'; /** Background backups wait for it (main's idle rule). */ idle?: () => Promise<void> }) => Promise<StartupOutcome>;
+  start: (extra?: { interruptedDelete?: 'finish' | 'leave'; /** Background backups wait for it (main's idle rule). */ idle?: () => Promise<void>; backgroundGate?: () => Promise<void> }) => Promise<StartupOutcome>;
   /**
    * Every file in the app's container, by path: backups, the backup record,
    * the data ledger, other Documents files, tmp, Caches, and every SQLite
@@ -112,8 +113,8 @@ export function createHarness(
     cache: new Map(),
     restAlerts: null,
     now: () => ({ utc: toIso(h.clockMs), tz: TZ }),
-    async launch() {
-      const o = await h.start();
+    async launch(extra) {
+      const o = await h.start(extra);
       if (o.kind !== 'ready') throw new Error(o.kind);
       return o;
     },

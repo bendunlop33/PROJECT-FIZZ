@@ -64,6 +64,19 @@ export function appInfo(): AppInfo {
 
 type IdleCallback = (cb: () => void, opts?: { timeout?: number }) => number;
 
+/** (ADR 0032, 24 Oct) How long after a launch its background work waits, so the first screen reads first. */
+export const LAUNCH_BACKGROUND_DELAY_MS = 3000;
+
+/**
+ * The launch's background gate (`StartupDeps.backgroundGate`): `LAUNCH_BACKGROUND_DELAY_MS`, then an idle moment, so
+ * the first screen's reads (Today, a recovered workout) never queue behind the integrity check or a catch-up backup.
+ */
+export function afterLaunch(delayMs = LAUNCH_BACKGROUND_DELAY_MS): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, delayMs);
+  }).then(() => whenIdle());
+}
+
 /**
  * Resolves once the JS thread is idle (React Native's `requestIdleCallback`),
  * or after `timeoutMs` at most, so background backups start after Finish's
