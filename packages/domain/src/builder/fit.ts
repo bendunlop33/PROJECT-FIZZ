@@ -1,7 +1,7 @@
 import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
 import { BUILDER_TIME, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { makeSlot } from './slot';
-import { autoPickClash } from './similar';
+import { autoPickClash, BUILDER_SUB_ROLES, subRoleOf } from './similar';
 import { BUILDER_SET_RULES, isTimedSlot, setWorkingCount, workingCount } from './set-rows';
 import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderInfoLookup, type BuilderSlot, type BuilderWorkout, type RestLevel } from './types';
 
@@ -22,6 +22,10 @@ import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type Bui
  *       nothing it left out or cut could come back and still fit (review todaylean B1), and a compound is never
  *       dropped for want of two isolation sets (design review V15). The main lift is never cut; at least one exercise
  *       stays. Less time never keeps more training, but a shorter fit isn't always a subset of a longer one.
+ *       (Ben, 24 Oct) Sub-role coverage: on a day whose main group has main sub-roles (`BUILDER_SUB_ROLES`: a Back
+ *       day's vertical pull and row) the fit keeps one exercise for each (`subRoleGuards`). Other exercises are cut first; if that isn't enough, those
+ *       exercises keep their place and lose sets (down to 2) before anything else they could keep; still too long, the
+ *       later main sub-role goes before the earlier one (the row before the vertical pull); only then is coverage given up.
  * Main-lift sets and loads never change for time. Still over → `over`. Length clamped to 15–180.
  * Longer (grow): normal rests back first; then exercises (a second arm exercise, then a main-group accessory), then
  * +1 set on accessories (max 4). The plan's own spare minutes stay as a buffer: only time beyond it is filled.
@@ -181,11 +185,64 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
   if (pushed.length > 0) steps.push({ kind: 'effort', slotKeys: pushed });
   if (!over(w)) return done(w, steps, 'fitted');
 
-  // (c) The least training lost: every way of keeping each accessory (2+ sets, or left out) is weighed at once.
+  // (c) The least training lost: every way of keeping each accessory (2+ sets, or left out) is weighed at once,
+  // keeping the main sub-roles' exercises as long as anything else can go (Ben, 24 Oct).
   const valueOf = (s: BuilderSlot) => fitSetValue(s.exerciseId, ctx.info, opts.mainGroup);
-  const best = leastLostFit(w, ctx, limitS, valueOf);
+  const best = guardedFit(w, ctx, limitS, valueOf, opts.mainGroup);
   steps.push(...best.steps);
   return done(best.workout, steps, best.fits ? 'fitted' : 'over');
+}
+
+/** (Ben, 24 Oct) A slot the fit keeps for its group's main sub-role, in the group's sub-role order. */
+export interface SubRoleGuard {
+  group: BuilderGroupName;
+  role: string;
+  slotKey: string;
+}
+
+/**
+ * The slots that cover each main sub-role of the day's main group (`BUILDER_SUB_ROLES` with `main`: on a Back day a
+ * vertical pull, then a row), one per sub-role: a compound of it first when the sub-role asks for one, else the
+ * earliest. A sub-role already covered by the main lift or by a slot Ben edited (neither is ever cut) needs no guard;
+ * a group with no sub-roles defined has none.
+ */
+export function subRoleGuards(w: BuilderWorkout, info: BuilderInfoLookup, mainGroup: BuilderGroupName | null): SubRoleGuard[] {
+  if (mainGroup === null) return [];
+  const slots = allSlots(w);
+  const out: SubRoleGuard[] = [];
+  for (const r of BUILDER_SUB_ROLES[mainGroup] ?? []) {
+    if (!r.main) continue;
+    const of = slots.filter((s) => {
+      const i = info(s.exerciseId);
+      return i !== null && i.group === mainGroup && subRoleOf(i) === r.role;
+    });
+    if (of.length === 0 || of.some((s) => s.main || s.touched === true)) continue;
+    const pick = (r.compound ? of.find((s) => info(s.exerciseId)?.role === 'compound') : undefined) ?? of[0];
+    if (pick !== undefined) out.push({ group: mainGroup, role: r.role, slotKey: pick.key });
+  }
+  return out;
+}
+
+/** How the fit treats a guarded slot: `full` keeps every working set, `kept` keeps it at 2 or more. */
+type GuardMode = 'full' | 'kept';
+
+/**
+ * Step (c) with sub-role coverage (Ben, 24 Oct), in order, the first that fits: the guarded exercises whole (others are
+ * cut); then kept with fewer sets (their sets go before anything else's); then without the later sub-roles, one at a
+ * time (the row before the vertical pull); then no guard at all (the plain least-lost fit, or the shortest).
+ */
+function guardedFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, valueOf: (s: BuilderSlot) => number, mainGroup: BuilderGroupName | null): ReturnType<typeof leastLostFit> {
+  const guards = subRoleGuards(w, ctx.info, mainGroup);
+  const levels: Map<string, GuardMode>[] = [];
+  if (guards.length > 0) {
+    levels.push(new Map(guards.map((g) => [g.slotKey, 'full'])));
+    for (let n = guards.length; n >= 1; n -= 1) levels.push(new Map(guards.slice(0, n).map((g) => [g.slotKey, 'kept'])));
+  }
+  for (const guard of levels) {
+    const r = leastLostFit(w, ctx, limitS, valueOf, guard);
+    if (r.fits) return r;
+  }
+  return leastLostFit(w, ctx, limitS, valueOf, new Map());
 }
 
 /** One way to keep a block: what it becomes (null: left out), its seconds with the changeover, the value and sets kept. */
@@ -193,12 +250,16 @@ interface BlockChoice {
   block: BuilderBlock | null;
   secs: number;
   value: number;
+  /** The value of the guarded slots' sets kept (sub-role coverage): weighed before anything else. */
+  guard: number;
   sets: number;
   /** Per cuttable slot in the block, its working sets kept (0: left out). */
   counts: number[];
 }
 
 interface FitState {
+  /** The guarded slots' value kept (`BlockChoice.guard`). */
+  guard: number;
   value: number;
   sets: number;
   /** Each block's choice (an index into its choices, more kept first). */
@@ -206,10 +267,11 @@ interface FitState {
 }
 
 /**
- * `a` keeps more: more training value, then more sets, then (`secs`, for whole fits) more of the time used, then more
- * of the earlier exercises (picks compared in order).
+ * `a` keeps more: more of the guarded slots' value (sub-role coverage), then more training value, then more sets, then
+ * (`secs`, for whole fits) more of the time used, then more of the earlier exercises (picks compared in order).
  */
 function keepsMore(a: FitState, b: FitState, secs?: { a: number; b: number }): boolean {
+  if (Math.abs(a.guard - b.guard) > 1e-9) return a.guard > b.guard;
   if (Math.abs(a.value - b.value) > 1e-9) return a.value > b.value;
   if (a.sets !== b.sets) return a.sets > b.sets;
   if (secs !== undefined && secs.a !== secs.b) return secs.a > secs.b;
@@ -226,19 +288,23 @@ function keepsMore(a: FitState, b: FitState, secs?: { a: number; b: number }): b
  * out (a slot with fewer than 2 keeps its own or goes); a pair left with one member is that one alone (`removeSlot`).
  * More kept first, so a lower index keeps more of the earlier slot.
  */
-function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, valueOf: (s: BuilderSlot) => number): BlockChoice[] {
+function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, valueOf: (s: BuilderSlot) => number, guard: ReadonlyMap<string, GuardMode>): BlockChoice[] {
   const per = b.slots.map((s) => {
     if (s.main || s.touched === true) return null;
     const n = workingCount(s);
+    const mode = guard.get(s.key);
+    // A guarded slot (sub-role coverage) is never left out: whole (`full`) or at 2+ sets (`kept`).
+    if (mode === 'full') return [n];
     const keep: number[] = [];
     for (let k = n; k >= Math.min(n, FIT_RULES.minAccessorySets); k -= 1) keep.push(k);
-    return [...keep, 0];
+    return mode === 'kept' ? keep : [...keep, 0];
   });
   const out: BlockChoice[] = [];
   const walk = (i: number, counts: number[]): void => {
     if (i === b.slots.length) {
       const slots: BuilderSlot[] = [];
       let value = 0;
+      let guarded = 0;
       let sets = 0;
       let c = 0;
       const kept: number[] = [];
@@ -252,11 +318,12 @@ function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, v
         c += 1;
         kept.push(k);
         value += k * valueOf(s);
+        if (guard.has(s.key)) guarded += k * valueOf(s);
         sets += k;
         if (k > 0) slots.push(k === workingCount(s) ? s : setWorkingCount(s, k));
       }
       const block = slots.length === 0 ? null : slots.length === 1 && b.slots.length > 1 ? { slots, auto: false } : { ...b, slots };
-      out.push({ block, secs: block === null ? 0 : blockSeconds(block, w, ctx) + BUILDER_TIME.betweenS, value, sets, counts: kept });
+      out.push({ block, secs: block === null ? 0 : blockSeconds(block, w, ctx) + BUILDER_TIME.betweenS, value, guard: guarded, sets, counts: kept });
       return;
     }
     const options = per[i];
@@ -278,21 +345,21 @@ function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, v
  * left out or cut could come back and still fit. Nothing fits: the shortest it can be (status over). The main lift and
  * Ben's edited slots are never cut; at least one exercise stays.
  */
-function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, valueOf: (s: BuilderSlot) => number): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
-  const choices = w.blocks.map((b) => blockChoices(b, w, ctx, valueOf));
+function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, valueOf: (s: BuilderSlot) => number, guard: ReadonlyMap<string, GuardMode>): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
+  const choices = w.blocks.map((b) => blockChoices(b, w, ctx, valueOf, guard));
   // The blocks' seconds (with a changeover each) against the limit: setup is once, and the first block has no changeover.
   const room = limitS - BUILDER_TIME.setupS + BUILDER_TIME.betweenS;
   const minAfter: number[] = new Array<number>(choices.length + 1).fill(0);
   for (let i = choices.length - 1; i >= 0; i -= 1) minAfter[i] = (minAfter[i + 1] ?? 0) + Math.min(...(choices[i] ?? []).map((c) => c.secs));
   // By total seconds, the state that keeps most. States that can't fit any more are dropped as they arise.
-  let states = new Map<number, FitState>([[0, { value: 0, sets: 0, picks: [] }]]);
+  let states = new Map<number, FitState>([[0, { guard: 0, value: 0, sets: 0, picks: [] }]]);
   for (const [i, opts] of choices.entries()) {
     const next = new Map<number, FitState>();
     for (const [secs, st] of states) {
       for (const [k, c] of opts.entries()) {
         const total = secs + c.secs;
         if (total + (minAfter[i + 1] ?? 0) > room) continue;
-        const cand: FitState = { value: st.value + c.value, sets: st.sets + c.sets, picks: [...st.picks, k] };
+        const cand: FitState = { guard: st.guard + c.guard, value: st.value + c.value, sets: st.sets + c.sets, picks: [...st.picks, k] };
         const cur = next.get(total);
         if (cur === undefined || keepsMore(cand, cur)) next.set(total, cand);
       }

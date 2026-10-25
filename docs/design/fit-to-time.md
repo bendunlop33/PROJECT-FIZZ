@@ -1,5 +1,13 @@
 # Fit to time (How long? on the overview; built-in trim and coach fit)
 
+> **Sub-role coverage (Ben, 24 Oct).** When Time cuts a day whose main group has main sub-roles (the builder's `BUILDER_SUB_ROLES`; today only Back: a vertical pull, then a row), the fit keeps one exercise for each (a compound of it first, else the earliest; a sub-role the main lift or one of Ben's edited exercises already covers needs none). Order, the first that fits:
+> 1. **Other exercises are cut first** (sets, then whole exercises, by the least training lost as before); the vertical pull and the row keep every set.
+> 2. **Still too long: both stay and lose sets** (never below 2), before anything else that could be kept.
+> 3. **Still too long: the row goes, the vertical pull stays** (at 2+ sets). With more main sub-roles, the later ones go first.
+> 4. **Not even that fits:** coverage is given up and the plain least-lost fit (or the shortest it can be) applies.
+>
+> A second exercise for a covered sub-role (a second row) is an ordinary accessory. Rear delts and traps aren't main sub-roles. Days whose main group defines no sub-roles fit as before. Built: `subRoleGuards` and the guarded step (c) in `packages/domain/src/builder/fit.ts`; tests `packages/domain/test/builder-fit-sub-roles.test.ts`.
+
 > **Warm-up time (23 Oct; Ben approved WU1–WU12 incl. WU11 on 22 Oct).** The fit's minutes (`estimateBuilderSeconds`, workout-builder-v3 §3.6) time each exercise's warm-ups with WU11 from the shared planner (`packages/domain/src/warmup`): `warmupTimeS` (Σ reps × 4 s + 60 s between steps) plus the rest before the first working set (`warmupRestS`: 2 min rep band, 3 min heavy band; Ben's own warm-up rest wins). The old §3.6 constants (30 s a warm-up + its rest, then +1 min) are retired. Dropping an exercise still drops its warm-ups, so an exact fit can drop one accessory whole and give another a set back at a shorter length; the exercises other than one Ben edited never get sets back in total (FT5).
 
 > **Warm-ups setting (Ben, 23 Oct).** A plan's Your week › `Warm-ups` (Full / Short / None, plan-builder.md) decides how the plan's days plan warm-ups, so the fit's minutes follow it: Full is WU1–WU12 within D17 as above; Short takes every WU11 cut to its floors (no general warm-up, no WU6/WU7 steps, the short ladder on heavy lifts); None plans none. Today's card, Your workout's Time and Start read the same setting (`settleWarmups` with `warmups`), so a shorter warm-up leaves more of Time for working sets and nothing is cut to pay for warm-ups Ben doesn't do. Warm-ups Ben set himself on an exercise are kept and still timed. The plan builder's per-day set capacity uses the same warm-ups (that day's own, not a flat 8 minutes).

@@ -23,6 +23,7 @@ import {
   removeSlot,
   settleWarmups,
   slotsOf,
+  subRoleGuards,
   type BuilderSetup,
   type BuilderWorkout,
   type SetupIdentity,
@@ -336,7 +337,7 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
             const rested: BuilderWorkout = { ...w, restLevel: 'shortest' };
             const base = r.steps.some((s) => s.kind === 'pair') ? { ...rested, blocks: pairSlots(rested.blocks, ctx.info, { skip: (s) => s.touched === true }) } : rested;
             const label = `${d.main} ${String(d.groups.length)} groups, ${String(m)} min, supersets ${String(supersets)}`;
-            yield { ctx, base, r, m, value, label };
+            yield { ctx, base, r, m, value, label, mainGroup: d.mainGroup };
           }
         }
       }
@@ -359,25 +360,53 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
       expect(checked).toBeGreaterThan(100);
     });
 
-    it('brute force on the small fixture: no achievable fit keeps more training (FIT_SET_VALUE) at the same Time', () => {
-      for (const { ctx, base, r, m, value, label } of cases()) {
+    it('brute force on the small fixture: no achievable fit keeps more training (FIT_SET_VALUE) at the same Time (with sub-role coverage first, Ben 24 Oct)', () => {
+      let guarded = 0;
+      for (const { ctx, base, r, m, value, label, mainGroup } of cases()) {
         if (r.status !== 'fitted') continue;
         const acc = all(base).filter((s) => !s.main);
-        let best = -1;
-        const walk = (i: number, counts: Map<string, number>): void => {
-          const s = acc[i];
-          if (s === undefined) {
-            const x = withCounts(base, counts);
-            if (estimateBuilderSeconds(x, ctx) <= m * 60 + 29) best = Math.max(best, value(x));
-            return;
+        // (Ben, 24 Oct) The guarded exercises (a Back day's vertical pull and row) first: whole, then at 2+ sets with their
+        // sets weighed before the rest, then the later sub-roles given up one at a time, then no guard.
+        const guards = subRoleGuards(base, ctx.info, mainGroup).map((g) => g.slotKey);
+        const levels: (Map<string, 'full' | 'kept'> | null)[] = guards.length === 0 ? [null] : [new Map(guards.map((k) => [k, 'full'])), ...guards.map((_, i) => new Map(guards.slice(0, guards.length - i).map((k) => [k, 'kept' as const]))), null];
+        if (guards.length > 0) guarded += 1;
+        const guardValue = (x: BuilderWorkout, keys: readonly string[]) => all(x).filter((s) => keys.includes(s.key)).reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, mainGroup), 0);
+        const top: { best: { g: number; v: number } | null } = { best: null };
+        let level: Map<string, 'full' | 'kept'> | null = null;
+        for (const lv of levels) {
+          const walk = (i: number, counts: Map<string, number>): void => {
+            const s = acc[i];
+            if (s === undefined) {
+              const x = withCounts(base, counts);
+              if (estimateBuilderSeconds(x, ctx) > m * 60 + 29) return;
+              const g = lv === null ? 0 : guardValue(x, [...lv.keys()]);
+              const v = value(x);
+              const b = top.best;
+              if (b === null || g > b.g + 1e-9 || (Math.abs(g - b.g) <= 1e-9 && v > b.v)) top.best = { g, v };
+              return;
+            }
+            const n = work(s);
+            const mode = lv?.get(s.key);
+            if (mode === 'full') {
+              walk(i + 1, new Map(counts).set(s.key, n));
+              return;
+            }
+            if (mode !== 'kept') walk(i + 1, new Map(counts).set(s.key, 0));
+            for (let k = Math.min(2, n); k <= n; k += 1) walk(i + 1, new Map(counts).set(s.key, k));
+          };
+          walk(0, new Map());
+          if (top.best !== null) {
+            level = lv;
+            break;
           }
-          const n = work(s);
-          walk(i + 1, new Map(counts).set(s.key, 0));
-          for (let k = Math.min(2, n); k <= n; k += 1) walk(i + 1, new Map(counts).set(s.key, k));
-        };
-        walk(0, new Map());
-        expect(value(r.workout), label).toBeGreaterThanOrEqual(best - 1e-9);
+        }
+        const found = top.best;
+        if (found === null) continue;
+        const keys = level === null ? [] : [...level.keys()];
+        expect(guardValue(r.workout, keys), `${label}: sub-role coverage`).toBeGreaterThanOrEqual(found.g - 1e-9);
+        if (Math.abs(guardValue(r.workout, keys) - found.g) <= 1e-9) expect(value(r.workout), label).toBeGreaterThanOrEqual(found.v - 1e-9);
       }
+      expect(guarded).toBeGreaterThan(0);
     });
 
     it('the examples the review found: Chest with Supersets on at 35 min uses ~35 min; off at 27 min keeps more than the main lift', () => {
