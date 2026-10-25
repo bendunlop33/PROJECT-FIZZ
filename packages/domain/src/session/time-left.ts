@@ -7,6 +7,7 @@ import { toIso, toMs } from '../time';
 import { isRoundEnd, nextPendingSet } from './order';
 import { dateOnlyOf, getActiveDurationMs, getSessionPhase, pausedMsWithin } from './view';
 import { isInHistory } from './deletion';
+import { isPastLog } from './time-shift';
 
 /**
  * "About N min left" (active-workout §2.15). An estimate worked out by code
@@ -105,11 +106,12 @@ function plannedRestBetween(state: HistoryLike, set: WorkoutSet, next: WorkoutSe
  * logged them), the time between the two commits minus paused time and the
  * planned rest between them. A move to another exercise (outside a superset)
  * is a changeover sample. Gaps over `maxGap` are left out; a date-only
- * (imported) workout has no times and gives none.
+ * (imported) workout and a past log have no real set times and give none.
  */
 export function paceSamplesOf(state: HistoryLike, nowMs: number): PaceSamples {
   const out: PaceSamples = { set: [], changeover: [] };
-  if (dateOnlyOf(state.session) !== null) return out;
+  // A past log's set times are placeholders in tick order (Ben, 25 Oct): no pace in them either.
+  if (dateOnlyOf(state.session) !== null || isPastLog(state.session)) return out;
   const done = state.sets
     .filter((s) => s.status === 'completed' && s.completedAt !== null)
     .map((s) => ({ s, t: toMs(s.completedAt?.utc ?? '') }))

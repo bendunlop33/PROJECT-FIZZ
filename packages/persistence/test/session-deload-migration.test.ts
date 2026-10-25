@@ -14,11 +14,12 @@ describe('migration 34 (session deload)', () => {
     await at33.repos.profiles.save(profile(), null);
     await at33.repos.sessions.save(richFinishedSession(), null);
     const before = await at33.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toMatchObject({ from: 33, to: 36, applied: [34, 35, 36] });
+    expect(await migrate(db)).toMatchObject({ from: 33, to: 37, applied: [34, 35, 36, 37] });
     const at34 = await openStore(db);
     const after = await at34.db.read((q) => exportTables(q));
     for (const [t, rows] of Object.entries(before)) {
-      if (t === 'sessions') expect(after.sessions).toEqual(rows.map((r) => ({ ...r, deload: null })));
+      if (t === 'sessions') expect(after.sessions).toEqual(rows.map((r) => ({ ...r, deload: null, past_log: null })));
+      else if (t === 'timing_audit') expect(after.timing_audit).toEqual(rows.map((r) => ({ ...r, shift_ms: null })));
       else expect(after[t]).toEqual(rows);
     }
     expect((await at34.repos.sessions.get(richFinishedSession().session.id))?.session.deload).toBeUndefined();

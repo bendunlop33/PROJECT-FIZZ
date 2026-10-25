@@ -24,6 +24,8 @@ import type { HistorySession } from './progression';
 import type { ShapeBefore } from './session/today-shape';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
 import { isInHistory } from './session/deletion';
+import { asPastLog, EARLIEST_WORKOUT_MS } from './session/time-shift';
+import { toMs } from './time';
 
 export type ServiceError =
   | SessionError
@@ -61,6 +63,12 @@ export interface StartRequest {
   checkIn?: SessionCheckIn | null;
   /** GS3 step 2: the item an exercise last used at this gym (from history). */
   lastUsedHere?: (exerciseId: string) => string | null;
+  /**
+   * (Ben, 25 Oct) `Log a past workout`: the date and start time Ben picked. The workout is planned
+   * at `at` as any start, then starts at this time and is marked a past log (`asPastLog`); its
+   * deload mark is read for this date. Must not be after `at` or before 2000.
+   */
+  pastStart?: ZonedTimestamp;
 }
 
 const MAX_CONFLICT_RETRIES = 2;
@@ -114,6 +122,15 @@ export interface SessionServiceOptions {
   deloadAt?: (ownerId: string, at: ZonedTimestamp) => Promise<SessionDeload | null>;
 }
 
+/** A past log's start (Ben, 25 Oct): not after the tap, not before 2000. */
+function pastStartError(req: Pick<StartRequest, 'at' | 'pastStart'>): SessionError | null {
+  if (req.pastStart === undefined) return null;
+  const ms = toMs(req.pastStart.utc);
+  if (ms > toMs(req.at.utc)) return { code: 'invalid_time', message: 'A past workout can’t start in the future.' };
+  if (ms < EARLIEST_WORKOUT_MS) return { code: 'invalid_time', message: 'The start time is too far back.' };
+  return null;
+}
+
 export function createSessionService(repos: Repositories, newId: () => string, options: SessionServiceOptions = {}) {
   /** The new session, marked when it starts in the plan's deload week. */
   async function stampDeload(aggregate: SessionAggregate, req: Pick<StartRequest, 'ownerId' | 'at'>): Promise<SessionAggregate> {
@@ -122,9 +139,20 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     return deload === null ? aggregate : { ...aggregate, session: { ...aggregate.session, deload } };
   }
 
+  /**
+   * The new session as it is saved: a past log starts at the picked time (Ben, 25 Oct), and the
+   * deload mark is read for the date the workout is on.
+   */
+  async function finalise(aggregate: SessionAggregate, req: Pick<StartRequest, 'ownerId' | 'at' | 'pastStart'>): Promise<SessionAggregate> {
+    const past = req.pastStart === undefined ? aggregate : asPastLog(aggregate, req.pastStart, req.at);
+    return stampDeload(past, { ownerId: req.ownerId, at: req.pastStart ?? req.at });
+  }
+
   async function start(req: StartRequest): Promise<StartOutcome> {
     const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
     if (existing) return { ok: true, aggregate: existing, warnings: [], duplicate: true };
+    const pastError = pastStartError(req);
+    if (pastError) return { ok: false, error: pastError };
 
     const active = await repos.sessions.getActive(req.ownerId);
     if (active) {
@@ -166,7 +194,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     });
-    const stamped = await stampDeload(aggregate, req);
+    const stamped = await finalise(aggregate, req);
     const saved = await trySave(() => repos.sessions.save(stamped, null));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: { code: 'write_conflict', message: 'Could not create the session.' } };
@@ -202,6 +230,8 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
       if (existing) return { ok: true, aggregate: existing, notes: [], notCopied: [], duplicate: true, fits: {}, today: null };
+      const pastError = pastStartError(req);
+      if (pastError) return { ok: false, error: pastError };
       const active = await repos.sessions.getActive(req.ownerId);
       if (active) {
         return { ok: false, error: { code: 'session_already_active', message: 'Finish or resume the unfinished workout first.', sessionId: active.session.id } };
@@ -241,7 +271,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, notCopied: out.notCopied, duplicate: false, fits: out.fits, today };
-    const stamped = await stampDeload(out.aggregate, req);
+    const stamped = await finalise(out.aggregate, req);
     const saved = await trySave(() => repos.sessions.save(stamped, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };
@@ -272,6 +302,8 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
       if (existing) return { ok: true, aggregate: existing, notes: [], duplicate: true, fits: {}, today: null };
+      const pastError = pastStartError(req);
+      if (pastError) return { ok: false, error: pastError };
       const active = await repos.sessions.getActive(req.ownerId);
       if (active) {
         return { ok: false, error: { code: 'session_already_active', message: 'Finish or resume the unfinished workout first.', sessionId: active.session.id } };
@@ -315,7 +347,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
     if (req.preview) return { ok: true, aggregate: out.aggregate, notes: out.notes, duplicate: false, fits: out.fits, today };
-    const stamped = await stampDeload(out.aggregate, req);
+    const stamped = await finalise(out.aggregate, req);
     const saved = await trySave(() => repos.sessions.save(stamped, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };
@@ -349,6 +381,8 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
       if (existing) return { ok: true, aggregate: existing, duplicate: true, fits: {}, today: { slotOf: {}, outcomes: [], resolved: noResolvedEdits(), slots: [], baseSlots: [], plannedShape: {}, fit: null, tiers: {} } };
+      const pastError = pastStartError(req);
+      if (pastError) return { ok: false, error: pastError };
       const active = await repos.sessions.getActive(req.ownerId);
       if (active) return { ok: false, error: { code: 'session_already_active', message: 'Finish or resume the unfinished workout first.', sessionId: active.session.id } };
     }
@@ -383,7 +417,7 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     // The caller's plan day (Your workout's Start) keeps which sets Ben didn't set himself, which only the draft knows (review v5offers B1).
     const notEdited = out.aggregate.session.planDay?.notEdited;
     const planDay = req.planDay === undefined ? undefined : { ...req.planDay, ...(notEdited === undefined ? {} : { notEdited }) };
-    const aggregate = await stampDeload(planDay === undefined ? out.aggregate : { ...out.aggregate, session: { ...out.aggregate.session, planDay } }, req);
+    const aggregate = await finalise(planDay === undefined ? out.aggregate : { ...out.aggregate, session: { ...out.aggregate.session, planDay } }, req);
     const saved = await trySave(() => repos.sessions.save(aggregate, null, req.fence, req.alongside));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' }, ...(saved.error === 'stale_inputs' && saved.alongside !== undefined ? { alongside: saved.alongside } : {}) };

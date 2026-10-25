@@ -11,7 +11,7 @@ import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
 import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
-import { formatShortDate, formatTime } from '../format/dates';
+import { formatShortDate, formatTime, formatWhen } from '../format/dates';
 import { openPlanSetup, openYourPlan } from '../navigation/actions';
 import { PB_COPY } from '../plan-builder/plan-builder-view';
 import type { TabParams } from '../navigation/types';
@@ -29,6 +29,7 @@ import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 import { GymChip } from './workout/GymSwitch';
 import { DayControl, DaySheet, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
+import { LogPastWorkoutSheet } from './workout/LogPastWorkoutSheet';
 import { builderApplyOpId, type BuilderCoachReach } from '@fizz/coach';
 import { setTodaySetupDay } from '../builder/coach-ports';
 import type { NudgeResult } from '../coach/builder-coach-service';
@@ -100,6 +101,7 @@ export function TodayScreen() {
   const [activitySheet, setActivitySheet] = useState<{ activity: Activity | null } | null>(null);
   const [daySheet, setDaySheet] = useState<StripCell | null>(null);
   const [listSheet, setListSheet] = useState<'other' | 'all' | null>(null);
+  const [pastLog, setPastLog] = useState(false);
   // The Time note's detail (fit-to-time 22 Oct revision): what the fit changed, and Undo back to the plan's length.
   const [timeDetail, setTimeDetail] = useState(false);
   const [listAfter] = useState(() => createAfterDismiss());
@@ -664,7 +666,7 @@ export function TodayScreen() {
                   ? 'Add an exercise to start'
                   : 'Ready for next set';
         return (
-          <Hero label={`In progress · started ${formatTime(toMs(main.startedAtUtc), zoned.tz)}`} title={main.title} lines={[main.now, `${String(main.done)} of ${String(main.total)} sets done · ${status}`, main.timeLeft]}>
+          <Hero label={`In progress · started ${formatWhen(toMs(main.startedAtUtc), now, zoned.tz)}`} title={main.title} lines={[main.now, `${String(main.done)} of ${String(main.total)} sets done · ${status}`, main.timeLeft]}>
             <PrimaryButton
               label="Resume"
               onPress={() => {
@@ -1023,8 +1025,20 @@ export function TodayScreen() {
           listAfter.arm(buildYourOwn);
           setListSheet(null);
         }}
+        onPastLog={() => {
+          listAfter.arm(() => {
+            setPastLog(true);
+          });
+          setListSheet(null);
+        }}
         onClose={() => {
           setListSheet(null);
+        }}
+      />
+      <LogPastWorkoutSheet
+        visible={pastLog}
+        onClose={() => {
+          setPastLog(false);
         }}
       />
       <TimeDetailSheet

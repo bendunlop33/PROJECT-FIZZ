@@ -14,6 +14,8 @@ import { TIMING, useTheme } from '../../theme';
 import { AppText, Banner, Eyebrow, Icon, SecondaryButton, StatusLine, Tag, TextButton, Toast, ToastHost, toastBottom } from '../../ui';
 import { deleteConfirm, LIBRARY_COPY_UI, LIBRARY_TOASTS, rowMenu } from '../../workout/library-view';
 import { useSaveToWorkouts } from './SaveWorkoutSheet';
+import { LogPastWorkoutSheet } from '../workout/LogPastWorkoutSheet';
+import { PAST_LOG_COPY } from '../../workout/past-log-view';
 
 type Toasting = { text: string; action?: string; onAction?: () => void; why?: string } | null;
 
@@ -58,6 +60,7 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
   const [showAll, setShowAll] = useState(false);
   const [toast, setToast] = useState<Toasting>(null);
   const [placeholder, setPlaceholder] = useState(false);
+  const [pastLog, setPastLog] = useState(false);
   const busy = useRef(false);
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym().catch(() => null);
@@ -340,6 +343,14 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
               navigation.dispatch(popToTabs({ screen: 'Today', params: { startEmpty: newUuid() } }));
             }}
           />
+          {/* (Ben, 25 Oct) A workout done on another day, entered now. */}
+          <TextButton
+            label={PAST_LOG_COPY.entry}
+            tone="secondary"
+            onPress={() => {
+              setPastLog(true);
+            }}
+          />
         </View>
       </View>
     );
@@ -350,6 +361,12 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
       <ScrollView ref={scrollRef} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }}>
         {body}
       </ScrollView>
+      <LogPastWorkoutSheet
+        visible={pastLog}
+        onClose={() => {
+          setPastLog(false);
+        }}
+      />
       {/* 0.6: on the tab bar (this list is the Library tab's), floating; it never reflows the list. */}
       <ToastHost bottom={toastBottom({ footerHeight: null, insetBottom: insets.bottom, space2: theme.space['2'], tab: true })}>
         {toast ? (

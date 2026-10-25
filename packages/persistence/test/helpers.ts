@@ -56,9 +56,29 @@ export function beforeSchema31(a: SessionAggregate): SessionAggregate {
   return { ...a, restTimer };
 }
 
-/** A backup's tables as a schema-33 build wrote them: no `sessions.deload` (migration 34, PM 23 Oct). */
-export function withoutSchema34<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+/** A backup's tables as a schema-36 build wrote them: no `sessions.past_log` or `timing_audit.shift_ms` (migration 37, Ben 25 Oct). */
+export function withoutSchema37<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
   const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  if (out.sessions) {
+    out.sessions = out.sessions.map((row) => {
+      const copy = { ...row };
+      delete copy.past_log;
+      return copy;
+    });
+  }
+  if (out.timing_audit) {
+    out.timing_audit = out.timing_audit.map((row) => {
+      const copy = { ...row };
+      delete copy.shift_ms;
+      return copy;
+    });
+  }
+  return out as T;
+}
+
+/** A backup's tables as a schema-33 build wrote them: no `sessions.deload` (migration 34, PM 23 Oct), nor later columns. */
+export function withoutSchema34<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+  const out: Record<string, Record<string, unknown>[]> = withoutSchema37({ ...tables });
   if (out.sessions) {
     out.sessions = out.sessions.map((row) => {
       const copy = { ...row };

@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, PLAN_VERDICT_WORD, summaryTimeBounds, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
+import { checkRoutineName, PLAN_VERDICT_WORD, summaryTimeline, timingUndoCommand, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
+import type { SessionAggregate } from '@fizz/schemas';
 import { nextTargetTapOpId } from '@fizz/coach';
 import { readTextCoachState } from '@fizz/providers';
 
@@ -735,11 +736,26 @@ export function SummaryScreen() {
           setTimes(false);
           if (editTimes) done();
         }}
-        onSaved={() => {
+        onSaved={(after, editOpId) => {
           setTimes(false);
           changed();
           if (editTimes) done();
           else reload();
+          // (Ben, 25 Oct) Only times moved; one tap puts them back (on the version this edit made, rule 5).
+          const undo = timingUndoCommand(after, editOpId, newUuid(), services.now());
+          if (undo === null || editTimes) return;
+          setToast({
+            text: 'Times changed',
+            action: 'Undo',
+            onAction: () => {
+              setToast(null);
+              void services.workout.dispatch(sessionId, { ...undo, at: services.now() }).then((u) => {
+                if (!u.ok) setToast({ text: u.error.code === 'stale_version' ? 'Couldn’t undo: changed since' : `Couldn’t undo: ${u.error.message}` });
+                changed();
+                reload();
+              });
+            },
+          });
         }}
       />
       <PainChooseSheet
@@ -902,9 +918,11 @@ function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTa
 /**
  * Summary `Edit times` (workout-summary §4), also a past workout's: Started / Ended on the same
  * wheels as the Finish sheet (Ben, 19 Oct), bounds from the domain; one audited
- * `update_session_timing`, versioned. No set changes.
+ * `update_session_timing`, versioned. (Ben, 25 Oct) Moving Started moves the whole workout to any
+ * past date and time (its sets with it, `shift`); Ended can then be set on its own. Logged values
+ * never change; the caller shows `Times changed` with Undo.
  */
-function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: WorkoutSummary; visible: boolean; onClose: () => void; onSaved: () => void }) {
+function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: WorkoutSummary; visible: boolean; onClose: () => void; onSaved: (after: SessionAggregate, editOpId: string) => void }) {
   const theme = useTheme();
   const services = useServices();
   const insets = useSafeAreaInsets();
@@ -922,7 +940,7 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
       setError(null);
     }
   }
-  const bounds = summaryTimeBounds(summary.timingBounds, summary.startedAtUtc, clockNow());
+  const timeline = summaryTimeline(summary.startedAtUtc, summary.timeline);
 
   async function save() {
     const startChanged = times.startMs !== toMs(summary.startedAtUtc);
@@ -937,15 +955,16 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
       at,
       opId,
       expectedVersion: summary.sessionVersion,
-      // The workout's own zone, not the phone's current one (review N6).
+      // The workout's own zone, not the phone's current one (review N6). A moved start moves the whole workout.
       startedAt: startChanged ? { utc: toIso(times.startMs), tz } : null,
-      endedAt: endChanged ? { utc: toIso(times.endMs), tz } : null,
+      endedAt: endChanged || startChanged ? { utc: toIso(times.endMs), tz } : null,
+      ...(startChanged ? { shift: true as const } : {}),
     });
     if (!r.ok) {
       setError(r.error.code === 'stale_version' ? 'The workout changed. Close and try again.' : r.error.message);
       return;
     }
-    onSaved();
+    onSaved(r.aggregate, opId);
   }
 
   return (
@@ -954,7 +973,7 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
         <AppText variant="title2" accessibilityRole="header">
           Edit workout times
         </AppText>
-        <WorkoutTimesRows times={times} bounds={bounds} tz={tz} onChange={setTimes} />
+        <WorkoutTimesRows times={times} shift={{ timeline, nowMs: clockNow() }} tz={tz} onChange={setTimes} />
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         <PrimaryButton label="Save" onPress={() => void save()} />
         <TextButton label="Cancel" tone="secondary" onPress={onClose} />

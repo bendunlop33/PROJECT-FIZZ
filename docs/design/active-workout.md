@@ -1267,7 +1267,7 @@ The view returns `draftSource` (`draft | target | last_set | this_session | last
   - `Voice & alerts`
   - `Rest presets`
   - `Finish workout`
-  - `Edit workout times` opens a small sheet: `Started at [18:02 ▾]` [Save]. It calls `updateSessionTiming(sessionId, expectedVersion, {startedAt})`. The end time can only be changed after Finish (finish sheet or summary Edit). The start can't move later than the first logged set or into the future; the picker limits it.
+  - `Edit workout times` opens a small sheet: `Started at [18:02 ▾]` [Save]. It calls `updateSessionTiming(sessionId, expectedVersion, {startedAt})`. The end time can only be changed after Finish (finish sheet or summary Edit). The start can't move later than the first logged set or into the future; the picker limits it. (Ben, 25 Oct) In a past log (log-past-workout.md §3) the start moves the whole workout to any past date and time (`shift`), with `Start time changed` [Undo].
   - `Discard workout` (destructive; red text) calls `discardWorkout` (`discard`). It also cancels a running rest or work timer. With ≥1 logged set it confirms first (§4.9).
 
 ### 4.7 Coach and Talk
@@ -1302,6 +1302,7 @@ The view returns `draftSource` (`draft | target | last_set | this_session | last
 ```
 - If the last set was more than 20 min ago, the end time defaults to `19:24 (estimated)`, with `Use now (20:41)` as the alternative. The picker allows only times between the last logged set and now.
 - The chosen time is passed to `finishWorkout` in the same transaction. When it differs from the tap time, the tap time is kept in the timing audit.
+- (Ben, 25 Oct) `Started` takes any past date and time and moves the whole workout with it (sets, pauses, rests; `finish` with `shift: true`); `Ended` moves by the same amount until set on its own (log-past-workout.md §2). A past log has no `(now)` and no `Use now`: Ended starts an hour after the start, `(estimated)`.
 - If a work timer is running, the finish sheet shows `Stop the timer first` with a [Stop] action instead of Finish:
 
 ```

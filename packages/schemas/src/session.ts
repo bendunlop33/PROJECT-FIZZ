@@ -607,6 +607,18 @@ export const SessionDeloadSchema = z.object({
 });
 export type SessionDeload = z.infer<typeof SessionDeloadSchema>;
 
+/**
+ * (Ben, 25 Oct) "Log a past workout": a workout entered after the fact, at a date and start time
+ * Ben picked. No clock runs while it is entered (no rest timer, work timer, pause, Live Activity or
+ * alerts), so its sets' `completedAt` are placeholders in the order Ben ticked them, a second apart
+ * from the start (never shown as set times, never read as pace). `enteredAt`: when Ben started
+ * entering it (the real time), kept as provenance. Written once, at Start.
+ */
+export const SessionPastLogSchema = z.object({
+  enteredAt: ZonedTimestampSchema,
+});
+export type SessionPastLog = z.infer<typeof SessionPastLogSchema>;
+
 export const WorkoutSessionSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
@@ -695,6 +707,8 @@ export const WorkoutSessionSchema = z.object({
   feel: SessionFeelSchema.optional(),
   /** (PM, 23 Oct) Started in the plan's deload week (`SessionDeloadSchema`). Absent = a normal workout. */
   deload: SessionDeloadSchema.optional(),
+  /** (Ben, 25 Oct) Entered after the fact with `Log a past workout` (`SessionPastLogSchema`). Absent = logged live. */
+  pastLog: SessionPastLogSchema.optional(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 
@@ -816,6 +830,11 @@ export type SetAuditEntry = z.infer<typeof SetAuditEntrySchema>;
  * keeps the originally recorded value in `before` (review M7, ADR 0003 S5).
  * - `finish`: Finish was confirmed with a chosen end time; `before` is the tap time.
  * - `correction`: a later `update_session_timing` edit.
+ *
+ * `shiftMs` (Ben, 25 Oct), only on a `startedAt` entry: the whole workout moved by this much with its
+ * start (every set's `completedAt`, pauses, rest and work timers), so order and durations stay as
+ * logged; each set's earlier time is its time now minus the sum of the later entries' shifts, so the
+ * originally recorded times stay recoverable. Absent = only the start moved (the sets stayed).
  */
 export const SessionTimingAuditEntrySchema = z.object({
   id: z.string().min(1),
@@ -826,6 +845,7 @@ export const SessionTimingAuditEntrySchema = z.object({
   atUtc: UtcTimestampSchema,
   before: ZonedTimestampSchema.nullable(),
   after: ZonedTimestampSchema,
+  shiftMs: z.int().optional(),
 });
 export type SessionTimingAuditEntry = z.infer<typeof SessionTimingAuditEntrySchema>;
 

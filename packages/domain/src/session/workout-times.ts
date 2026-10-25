@@ -2,6 +2,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 import { localDateOf } from '../calendar';
 import { formatMinutes } from '../display';
 import { toMs } from '../time';
+import { EARLIEST_WORKOUT_MS, latestHappenedMs } from './time-shift';
 
 /**
  * Started / Ended on the Finish sheet and in a past workout's `Edit times` (Ben, 19 Oct: "Option
@@ -11,6 +12,12 @@ import { toMs } from '../time';
  *
  * - Start: not after the first logged set, not in the future; at most 24 h before it was recorded.
  * - End: not before the last logged set, after the start, not in the future.
+ *
+ * (Ben, 25 Oct: "freely edit times, e.g. import a workout historically from the day before or
+ * beyond") On the Finish sheet, a past workout's `Edit times` and a past log, moving the start moves
+ * the whole workout instead (`shiftTimeBounds`, `moveWorkoutTimes`): any past date and time, every
+ * set moving with it, the end by the same amount until Ben sets it on its own (after the last set,
+ * after the start, not in the future). The live workout's own `Edit workout times` keeps the rule above.
  */
 
 const MINUTE = 60_000;
@@ -41,13 +48,15 @@ export function workoutTimeBounds(state: SessionAggregate, nowMs: number): Worko
   };
 }
 
-export type TimeNote = 'start_after_first_set' | 'start_in_future' | 'start_too_early' | 'end_before_last_set' | 'end_in_future' | 'end_before_start';
+export type TimeNote = 'start_after_first_set' | 'start_in_future' | 'start_too_early' | 'start_too_far_back' | 'sets_in_future' | 'end_before_last_set' | 'end_in_future' | 'end_before_start';
 
 /** The short note under the rows after a clamp (minimal copy: the value says the rest). */
 export const TIME_NOTE: Readonly<Record<TimeNote, string>> = {
   start_after_first_set: 'Start can’t be after the first set',
   start_in_future: 'Start can’t be in the future',
   start_too_early: 'Start can’t move back more than a day',
+  start_too_far_back: 'Start can’t be before 2000',
+  sets_in_future: 'Sets can’t move into the future',
   end_before_last_set: 'End can’t be before the last set',
   end_in_future: 'End can’t be in the future',
   end_before_start: 'End must be after the start',
@@ -112,4 +121,63 @@ export function summaryTimeBounds(t: { startLatestUtc: string; endEarliestUtc: s
     endMinMs: toMs(t.endEarliestUtc),
     endMaxMs: Math.max(toMs(t.endLatestUtc), nowMs),
   };
+}
+
+/**
+ * The workout's times as recorded, which a move of the whole workout is measured from (Ben, 25 Oct).
+ * `lastSetMs`: the last logged set; `latestMs`: the latest time that has already happened (a set, a
+ * pause), which must not move past now (`latestHappenedMs`).
+ */
+export interface WorkoutTimeline {
+  startMs: number;
+  lastSetMs: number | null;
+  latestMs: number | null;
+}
+
+export function timelineOf(state: SessionAggregate): WorkoutTimeline {
+  const done = state.sets.flatMap((s) => (s.status === 'completed' && s.completedAt ? [toMs(s.completedAt.utc)] : []));
+  return { startMs: toMs(state.session.startedAt.utc), lastSetMs: done.length > 0 ? Math.max(...done) : null, latestMs: latestHappenedMs(state) };
+}
+
+/** The same from a finished workout's Summary (`timeline`, read when it was built). */
+export function summaryTimeline(startedAtUtc: string, t: { lastSetUtc: string | null; latestUtc: string | null }): WorkoutTimeline {
+  return { startMs: toMs(startedAtUtc), lastSetMs: t.lastSetUtc === null ? null : toMs(t.lastSetUtc), latestMs: t.latestUtc === null ? null : toMs(t.latestUtc) };
+}
+
+/**
+ * Bounds when the start moves the whole workout, with the start now at `startMs`: any start from
+ * 2000 until the latest one that keeps every logged set (and pause) out of the future and leaves a
+ * minute for the end; the end from the last set (moved with the start) or a minute after the start,
+ * until now.
+ */
+export function shiftTimeBounds(t: WorkoutTimeline, startMs: number, nowMs: number): WorkoutTimeBounds {
+  const offset = startMs - t.startMs;
+  return {
+    startMinMs: EARLIEST_WORKOUT_MS,
+    startMaxMs: Math.max(EARLIEST_WORKOUT_MS, Math.min(nowMs - MINUTE, t.startMs + nowMs - (t.latestMs ?? t.startMs))),
+    endMinMs: t.lastSetMs === null ? startMs : t.lastSetMs + offset,
+    endMaxMs: nowMs,
+  };
+}
+
+/**
+ * A wheel's new value when the start moves the whole workout (Ben, 25 Oct). Moving the start keeps
+ * the duration (the end moves by the same amount), then the end is kept after the last set and the
+ * start and not in the future. Moving the end changes the end only. Whole minutes, as the wheels.
+ */
+export function moveWorkoutTimes(which: 'start' | 'end', ms: number, times: { startMs: number; endMs: number }, t: WorkoutTimeline, nowMs: number): ClampedTimes {
+  if (which === 'end') return clampWorkoutTimes({ startMs: times.startMs, endMs: ms }, shiftTimeBounds(t, times.startMs, nowMs));
+  const any = shiftTimeBounds(t, times.startMs, nowMs);
+  let note: TimeNote | null = null;
+  let startMs = ms;
+  if (startMs > any.startMaxMs) {
+    startMs = any.startMaxMs;
+    // Stopped by now itself, or by a logged set that would pass now first.
+    note = t.latestMs !== null && t.startMs + nowMs - t.latestMs < nowMs - MINUTE ? 'sets_in_future' : 'start_in_future';
+  } else if (startMs < EARLIEST_WORKOUT_MS) {
+    startMs = EARLIEST_WORKOUT_MS;
+    note = 'start_too_far_back';
+  }
+  const moved = clampWorkoutTimes({ startMs, endMs: times.endMs + (startMs - times.startMs) }, shiftTimeBounds(t, startMs, nowMs));
+  return { startMs: moved.startMs, endMs: moved.endMs, note: note ?? moved.note };
 }

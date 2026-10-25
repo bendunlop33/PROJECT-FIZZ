@@ -14,6 +14,7 @@ import { gymRouteIds, nextTargetBlocks, nextTargetsForBlock, partRootOf, seconda
 import { sessionRecords } from './records';
 import { dateOnlyOf, workoutDurationMs } from './view';
 import { summariseVolume } from './volume';
+import { isPastLog, latestHappenedMs } from './time-shift';
 
 /**
  * `buildWorkoutSummary` (workout-summary.md §6). Pure and local: facts,
@@ -131,6 +132,10 @@ export interface WorkoutSummary {
   records: string[];
   /** Bounds for `Edit times` (`update_session_timing`). */
   timingBounds: { startLatestUtc: string; endEarliestUtc: string; endLatestUtc: string };
+  /** (Ben, 25 Oct) The times a move of the whole workout is measured from (`summaryTimeline`): the last set and the latest time that has happened. */
+  timeline: { lastSetUtc: string | null; latestUtc: string | null };
+  /** (Ben, 25 Oct) Entered with `Log a past workout`: its set times are placeholders, never shown. */
+  pastLog: boolean;
   lastCompletedAtUtc: string | null;
 }
 
@@ -302,6 +307,13 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   // of its own (a `Next time` read from it would talk about an old FitNotes date). A workout
   // logged in the app does compare with FitNotes history, labelled (B7).
   const imported = s.source === 'import';
+  // (Ben, 25 Oct) A workout dated before others (a past log, or one moved back) is read as of its own
+  // date: records, the highlight and `Next time` see only the workouts before it, and an exercise done
+  // again since gets no `Next time` row here (the newer workout's Summary says what comes next).
+  const startMs = toMs(s.startedAt.utc);
+  const history: SummaryInput['history'] = Object.fromEntries(Object.entries(input.history).map(([id, hs]) => [id, hs.filter((h) => h.sessionId === s.id || toMs(h.performedAtUtc) <= startMs)]));
+  const doneSince = (exerciseId: string): boolean => (input.history[exerciseId] ?? []).some((h) => h.sessionId !== s.id && toMs(h.performedAtUtc) > startMs);
+  let skippedNewer = 0;
 
   // Comparison: the first exercise in order with working sets today and comparable history.
   let comparison: WorkoutSummary['comparison'] = null;
@@ -357,6 +369,10 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   const secondary = secondaryMainLifts(targetBlocks, (id) => input.exerciseInfo?.[id] ?? null);
   for (const block of targetBlocks) {
     if (block.prescribedSets === 0 || (blocksOf.get(block.root.exerciseId) ?? 0) > 1) continue;
+    if (doneSince(block.root.exerciseId)) {
+      skippedNewer += 1;
+      continue;
+    }
     const ex = block.decider;
     const eq = block.equipment;
     const gymId = eq?.gymId ?? null;
@@ -368,7 +384,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
         count: 'prescribed',
         exercise: input.exerciseInfo?.[ex.exerciseId] ?? null,
         rule: (block.root.progressionRuleId !== null ? input.rules[block.root.progressionRuleId] : undefined) ?? null,
-        history: input.history[ex.exerciseId] ?? [],
+        history: history[ex.exerciseId] ?? [],
         painFlags: input.painFlags,
         sessionPain: unspecifiedPain(input.checkIn),
         ...(secondary.has(ex.exerciseId) ? { accessory: true } : {}),
@@ -398,6 +414,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   const lastDone = completed.map((x) => x.completedAt?.utc ?? '').filter((u) => u !== '').sort().at(-1) ?? null;
   const firstDone = completed.map((x) => x.completedAt?.utc ?? '').filter((u) => u !== '').sort()[0] ?? null;
   const nowIso = toIso(nowMs);
+  const latest = latestHappenedMs(state);
 
   return {
     sessionId: s.id,
@@ -428,18 +445,20 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     comparison: workingSets === 0 ? null : comparison,
     exercises: exerciseRows,
     nextTime:
-      workingSets === 0 || imported
+      workingSets === 0 || imported || (rows.length === 0 && skippedNewer > 0)
         ? null
         : { sourceTag: BUILT_IN_SOURCE_TAG[input.coach], rows, emptyText: rows.length === 0 ? 'Same targets next time' : null },
     empty: workingSets === 0,
-    highlight: workingSets === 0 || imported ? null : summaryHighlight(state, input.history),
-    records: workingSets === 0 || imported ? [] : sessionRecords({ aggregate: state, gymName: input.gymName, ...(input.gymNames ? { gymNames: input.gymNames } : {}), history: input.history }),
+    highlight: workingSets === 0 || imported ? null : summaryHighlight(state, history),
+    records: workingSets === 0 || imported ? [] : sessionRecords({ aggregate: state, gymName: input.gymName, ...(input.gymNames ? { gymNames: input.gymNames } : {}), history }),
     timingBounds: {
       startLatestUtc: firstDone ?? (s.endedAt?.utc ?? nowIso),
       endEarliestUtc: lastDone ?? s.startedAt.utc,
       endLatestUtc: nowIso,
     },
     lastCompletedAtUtc: lastDone,
+    timeline: { lastSetUtc: lastDone, latestUtc: latest === null ? null : toIso(latest) },
+    pastLog: isPastLog(s),
   };
 }
 

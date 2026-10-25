@@ -259,13 +259,16 @@ export function workoutMenu(o: {
   cuesOn?: boolean | undefined;
   /** The `+N min` fit can still be undone (`undoableTimeFit`; review build-a S1): `Undo fit to time`. */
   undoFit?: boolean | undefined;
+  /** (Ben, 25 Oct) A past log: no clock, so no Pause and no spoken cues. */
+  pastLog?: boolean | undefined;
 }): { id: WorkoutMenuId; label: string }[] {
+  const past = o.pastLog === true;
   return [
     { id: 'view' as const, label: o.view === 'table' ? 'Focus view' : 'Table view' },
-    { id: 'pause' as const, label: o.paused ? 'Resume workout' : 'Pause workout' },
+    ...(past ? [] : [{ id: 'pause' as const, label: o.paused ? 'Resume workout' : 'Pause workout' }]),
     ...(o.openEnded ? [] : [{ id: 'rename' as const, label: 'Rename workout' }]),
     ...(o.ax && o.gymName !== null ? [{ id: 'gym' as const, label: `Gym: ${o.gymName} ›` }] : []),
-    ...(o.cuesOn === undefined ? [] : [{ id: 'cues' as const, label: o.cuesOn ? 'Turn off spoken cues' : 'Turn on spoken cues' }]),
+    ...(o.cuesOn === undefined || past ? [] : [{ id: 'cues' as const, label: o.cuesOn ? 'Turn off spoken cues' : 'Turn on spoken cues' }]),
     ...(o.undoFit === true ? [{ id: 'undo_fit' as const, label: 'Undo fit to time' }] : []),
     { id: 'coach' as const, label: 'Ask the coach' },
     { id: 'finish' as const, label: 'Finish workout' },

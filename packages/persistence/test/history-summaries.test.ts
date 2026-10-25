@@ -257,12 +257,16 @@ describe('migration 36 backfills every stored workout', () => {
     for (const w of workouts) expect((await at35.repos.sessions.save(w, null)).ok).toBe(true);
     const before = await at35.db.read((q) => exportTables(q));
     const at36 = await openStore(db);
-    expect(at36.migration).toMatchObject({ from: 35, applied: [36] });
+    expect(at36.migration).toMatchObject({ from: 35, applied: [36, 37] });
     // Backfilled by the migration (nothing left for the open-time refresh).
     expect(at36.summaryRefresh).toMatchObject({ written: 0 });
     expect(await at36.checkHistorySummaries()).toMatchObject({ ok: true, checked: 3 });
-    // Your data unchanged; the derived tables aren't in an export.
-    expect(await at36.db.read((q) => exportTables(q))).toEqual(before);
+    // Your data unchanged (migration 37 only adds empty past-log columns); the derived tables aren't in an export.
+    expect(await at36.db.read((q) => exportTables(q))).toEqual({
+      ...before,
+      sessions: (before.sessions ?? []).map((r) => ({ ...r, past_log: null })),
+      timing_audit: (before.timing_audit ?? []).map((r) => ({ ...r, shift_ms: null })),
+    });
     for (const w of workouts) expect(await at36.db.read((q) => readAggregate(q, w.session.id))).toEqual(w);
     await at36.close();
   });
@@ -272,7 +276,7 @@ describe('migration 36 backfills every stored workout', () => {
     const at35 = await openStore(db, { migrations: MIGRATIONS.slice(0, 35) });
     await at35.repos.profiles.save(profile(), null);
     expect((await at35.repos.sessions.save(mixedWorkout(12), null)).ok).toBe(true);
-    expect(await migrate(db)).toMatchObject({ applied: [36] });
+    expect(await migrate(db)).toMatchObject({ applied: [36, 37] });
     const opened = await openStore(db);
     expect(opened.summaryRefresh).toMatchObject({ written: 1 });
     expect(await opened.checkHistorySummaries()).toMatchObject({ ok: true, checked: 1 });

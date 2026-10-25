@@ -42,6 +42,7 @@ import {
 import { deriveId, stableStringify } from '../stable';
 import { asCardioInterval, CARDIO_TIMER_CAP_S, cardioElapsedMs, cardioHasValue, resumeCardioInterval } from '../cardio';
 import { toIso, toMs } from '../time';
+import { EARLIEST_WORKOUT_MS, isPastLog, latestHappenedMs, pastLogCompletedAt, shiftSessionTimes } from './time-shift';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { anyWorkingSetEverLogged } from '../checkin';
@@ -85,7 +86,9 @@ export type SessionErrorCode =
   /** `undo_op` on an operation that has no Undo (a log has its own `undo_log`). */
   | 'operation_not_undoable'
   /** (Ben, 23 Oct) `set_session_check_in` after the first working set, or on a workout already linked to a check-in. */
-  | 'check_in_closed';
+  | 'check_in_closed'
+  /** (Ben, 25 Oct) A timer or pause in a workout logged after the fact (`Log a past workout`): no clock runs there. */
+  | 'past_log_no_clock';
 
 export interface SessionError {
   code: SessionErrorCode;
@@ -456,6 +459,8 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   }
 
   const events: SessionEvent[] = [];
+  // (Ben, 25 Oct) A past log runs no clock: the set takes a placeholder time in tick order, and no rest starts.
+  const pastLog = isPastLog(state.session);
   // Unticking this set puts back the rest it ends here, deadline and all (workout-table-v3 §3).
   const resumable = resumableAfterLog(state.restTimer, set.id, nowMs);
   let restTimer = state.restTimer;
@@ -473,7 +478,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
       side: cmd.side ?? set.side,
       actual: withoutEmptyDistance(values),
       draft: null,
-      completedAt: cmd.at,
+      completedAt: pastLog ? pastLogCompletedAt(state, nowMs) : cmd.at,
       completedByOpId: cmd.opId,
       flags: flagsFor(values, state, ex),
       version: set.version + 1,
@@ -514,7 +519,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
     // (rest-state #14). An open-ended workout is built as Ben goes, so its
     // "final" set is only the last one so far: the rest still runs while he
     // adds a set or the next exercise (audit B1). Finish cancels it.
-    if (isOpenEndedWorkout(state) && set.rest.seconds > 0) {
+    if (!pastLog && isOpenEndedWorkout(state) && set.rest.seconds > 0) {
       restTimer = createRestTimer({
         id: cmd.restTimerId,
         sessionId: state.session.id,
@@ -550,7 +555,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
     rest = { kind: 'rest', seconds: set.rest.seconds, source: set.rest.source === 'not_recorded' ? null : set.rest.source };
   }
 
-  if (rest.seconds > 0) {
+  if (rest.seconds > 0 && !pastLog) {
     restTimer = createRestTimer({
       id: cmd.restTimerId,
       sessionId: state.session.id,
@@ -838,6 +843,7 @@ function handleSkipRest(state: SessionAggregate, cmd: CommandOf<'skip_rest'>, no
 }
 
 function handleStartWork(state: SessionAggregate, cmd: CommandOf<'start_work_interval'>, nowMs: number): Handled {
+  if (isPastLog(state.session)) return fail('past_log_no_clock', 'Type the time in for a past workout.');
   if (state.session.pause !== null) return fail('session_paused', 'Resume the workout first.');
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
@@ -915,6 +921,7 @@ function handleStopWork(state: SessionAggregate, cmd: CommandOf<'stop_work_inter
 }
 
 function handlePause(state: SessionAggregate, nowMs: number): Handled {
+  if (isPastLog(state.session)) return fail('past_log_no_clock', 'A past workout has no clock to pause.');
   if (state.session.pause !== null) return fail('session_paused', 'The workout is already paused.');
   // Rests kept for Undo pause with it, so they keep time as if never replaced.
   const restTimer = state.restTimer ? mapResumable(pauseRestTimer(state.restTimer, nowMs), (t) => pauseRestTimer(t, nowMs), nowMs, true) : null;
@@ -977,6 +984,7 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
     // ADR 0003 S4: never discard a running work interval. Stop it, then Log or leave it.
     return fail('work_interval_running', 'Stop the work timer before finishing.');
   }
+  if (cmd.shift === true && cmd.startedAt !== undefined) return finishShifted(state, cmd, nowMs);
   const endedAt = cmd.endedAt ?? cmd.at;
   const endMs = toMs(endedAt.utc);
   // (19 Oct) A start chosen on the Finish sheet: never after the first logged set or in the future.
@@ -1051,6 +1059,47 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
   return { ok: true, state: next, events };
 }
 
+/**
+ * (Ben, 25 Oct) Finish with the whole workout moved to the start chosen on the sheet: finish at the
+ * tap time first (pause closed, rest cancelled, pending sets skipped, as any Finish), then move every
+ * time on the timeline by the start's offset (`shiftSessionTimes`), then set the chosen end. One
+ * version bump; the timing audit keeps the start as recorded with the offset, and the tap time.
+ */
+function finishShifted(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: number): Handled {
+  const startedAt = cmd.startedAt ?? state.session.startedAt;
+  const startError = checkShiftStart(toMs(startedAt.utc), nowMs);
+  if (startError) return { ok: false, error: startError };
+  const base = handleFinish(state, { ...cmd, startedAt: undefined, shift: undefined, endedAt: null }, nowMs);
+  if (!base.ok) return base;
+  const offset = toMs(startedAt.utc) - toMs(state.session.startedAt.utc);
+  const shifted = shiftSessionTimes(base.state, offset);
+  const endedAt = cmd.endedAt ?? shifted.session.endedAt ?? cmd.at;
+  const moved = checkShifted(shifted, nowMs);
+  if (moved) return { ok: false, error: moved };
+  const timeError = checkEndTime(shifted, toMs(endedAt.utc), nowMs, toMs(startedAt.utc));
+  if (timeError) return { ok: false, error: timeError };
+  const timingAudit = [
+    ...state.timingAudit,
+    ...(startedAt.utc !== state.session.startedAt.utc ? [{ ...timingEntry(state, cmd.opId, 'startedAt', 'finish', cmd.at, state.session.startedAt, startedAt), shiftMs: offset }] : []),
+    ...(endedAt.utc !== cmd.at.utc ? [timingEntry(state, cmd.opId, 'endedAt', 'finish', cmd.at, cmd.at, endedAt)] : []),
+  ];
+  return { ok: true, state: { ...shifted, timingAudit, session: { ...shifted.session, startedAt, endedAt } }, events: base.events };
+}
+
+/** A moved start: not in the future, not before `EARLIEST_WORKOUT_MS`. */
+function checkShiftStart(startMs: number, nowMs: number): SessionError | null {
+  if (startMs > nowMs) return { code: 'invalid_time', message: 'The start time is in the future.' };
+  if (startMs < EARLIEST_WORKOUT_MS) return { code: 'invalid_time', message: 'The start time is too far back.' };
+  return null;
+}
+
+/** After a shift, nothing that has happened may lie in the future. */
+function checkShifted(shifted: SessionAggregate, nowMs: number): SessionError | null {
+  const latest = latestHappenedMs(shifted);
+  if (latest !== null && latest > nowMs) return { code: 'invalid_time', message: 'That would put logged sets in the future.' };
+  return null;
+}
+
 function completedTimes(state: SessionAggregate): number[] {
   return state.sets.flatMap((s) => (s.status === 'completed' && s.completedAt ? [toMs(s.completedAt.utc)] : []));
 }
@@ -1088,6 +1137,7 @@ function timingEntry(
 
 function handleUpdateTiming(state: SessionAggregate, cmd: CommandOf<'update_session_timing'>, nowMs: number): Handled {
   if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed; reload.');
+  if (cmd.shift === true && cmd.startedAt !== null) return shiftTiming(state, { ...cmd, startedAt: cmd.startedAt }, nowMs);
   const { session } = state;
   if (cmd.endedAt !== null && session.status !== 'finished') {
     return fail('session_not_finished', 'The end time can only be edited after Finish.');
@@ -1116,6 +1166,44 @@ function handleUpdateTiming(state: SessionAggregate, cmd: CommandOf<'update_sess
     ...state,
     timingAudit: [...state.timingAudit, ...entries],
     session: { ...session, startedAt, endedAt, version: session.version + 1 },
+  };
+  return { ok: true, state: next, events: [{ type: 'SessionTimingUpdated' }] };
+}
+
+/**
+ * (Ben, 25 Oct) `update_session_timing` with `shift`: the whole workout moves with its start, so
+ * order and durations stay as logged; the end is the one given (after the move) or moves too. A
+ * workout still running live can't move (new sets would log at the real time); a past log can.
+ * Audited: the start's entry keeps the offset (`shiftMs`), the end's its value before.
+ */
+function shiftTiming(state: SessionAggregate, cmd: CommandOf<'update_session_timing'> & { startedAt: ZonedTimestamp }, nowMs: number): Handled {
+  const { session } = state;
+  if (cmd.endedAt !== null && session.status !== 'finished') return fail('session_not_finished', 'The end time can only be edited after Finish.');
+  if (session.status === 'active' && !isPastLog(session)) return fail('invalid_time', 'Move the whole workout after Finish.');
+  const startMs = toMs(cmd.startedAt.utc);
+  const startError = checkShiftStart(startMs, nowMs);
+  if (startError) return { ok: false, error: startError };
+  const offset = startMs - toMs(session.startedAt.utc);
+  const shifted = shiftSessionTimes(state, offset);
+  const moved = checkShifted(shifted, nowMs);
+  if (moved) return { ok: false, error: moved };
+  const endedAt = cmd.endedAt ?? shifted.session.endedAt;
+  if (endedAt !== null) {
+    const timeError = checkEndTime(shifted, toMs(endedAt.utc), nowMs, startMs);
+    if (timeError) return { ok: false, error: timeError };
+  }
+  const entries: SessionTimingAuditEntry[] = [];
+  if (cmd.startedAt.utc !== session.startedAt.utc || cmd.startedAt.tz !== session.startedAt.tz) {
+    entries.push({ ...timingEntry(state, cmd.opId, 'startedAt', 'correction', cmd.at, session.startedAt, cmd.startedAt), shiftMs: offset });
+  }
+  if (endedAt !== null && endedAt.utc !== session.endedAt?.utc) {
+    entries.push(timingEntry(state, cmd.opId, 'endedAt', 'correction', cmd.at, session.endedAt, endedAt));
+  }
+  if (entries.length === 0) return { ok: true, state, events: [] };
+  const next: SessionAggregate = {
+    ...shifted,
+    timingAudit: [...state.timingAudit, ...entries],
+    session: { ...shifted.session, startedAt: cmd.startedAt, endedAt, version: session.version + 1 },
   };
   return { ok: true, state: next, events: [{ type: 'SessionTimingUpdated' }] };
 }

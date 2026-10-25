@@ -11,6 +11,7 @@ import { TimeNoteRow } from '../../ui/time-stepper';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { STRIP_LABEL_FIT, STRIP_LAYOUT, stripPillStyle } from '../../today/strip-style';
 import { TODAY_SCREEN_COPY, type TodayCardAction, type TodaySegment } from '../../today/today-view';
+import { PAST_LOG_COPY } from '../../workout/past-log-view';
 
 /**
  * Today (v2)'s pieces (workout-builder-v3 §2.0, prototypes/today-v2.html). They only lay out what
@@ -247,7 +248,7 @@ export function DayControl({ segments, paused, onDay, onMore, onAxList, axLabel 
 }
 
 /** `⋯` Other sessions (or, at AX sizes, every day): a list sheet; Empty workout and Build your own at the end. */
-export function SessionListSheet({ visible, title, days, selectedKey, nextKey, onPick, onEmpty, onBuild, onClose }: { visible: boolean; title: string; days: readonly TodayDay[]; selectedKey: string | null; nextKey: string | null; onPick: (key: string) => void; onEmpty: () => void; onBuild: () => void; onClose: () => void }) {
+export function SessionListSheet({ visible, title, days, selectedKey, nextKey, onPick, onEmpty, onBuild, onPastLog, onClose }: { visible: boolean; title: string; days: readonly TodayDay[]; selectedKey: string | null; nextKey: string | null; onPick: (key: string) => void; onEmpty: () => void; onBuild: () => void; /** (Ben, 25 Oct) `Log a past workout`. */ onPastLog?: () => void; onClose: () => void }) {
   const theme = useTheme();
   return (
     <BottomCard
@@ -259,6 +260,7 @@ export function SessionListSheet({ visible, title, days, selectedKey, nextKey, o
             <SecondaryButton label={TODAY_V2_COPY.emptyWorkout} onPress={onEmpty} grow />
             <SecondaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={onBuild} grow />
           </View>
+          {onPastLog ? <TextButton label={PAST_LOG_COPY.entry} onPress={onPastLog} /> : null}
           <TextButton label={TODAY_V2_COPY.close} tone="secondary" onPress={onClose} />
         </>
       }
