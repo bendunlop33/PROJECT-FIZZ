@@ -116,6 +116,41 @@ describe('moving a finished workout in time (app services)', () => {
   });
 });
 
+describe('moving a workout in time with stored history summaries (app services)', () => {
+  it('the newer workout moved before an older one: its Summary reads as of its new date, and last time follows the dates after a relaunch', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const older = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2].map(() => ({ load: 80, reps: 8 })) }]);
+    h.clockMs += 2 * DAY;
+    const newer = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2].map(() => ({ load: 90, reps: 8 })) }]);
+    expect((await s.workout.summary(newer))?.nextTime).not.toBeNull();
+
+    const before = (await s.workout.load(newer))?.aggregate;
+    if (!before) throw new Error('load');
+    const back = toMs(before.session.startedAt.utc) - 7 * DAY;
+    const moved = await s.workout.dispatch(newer, { type: 'update_session_timing', at: h.now(), opId: 'move-newer', expectedVersion: before.session.version, startedAt: { utc: toIso(back), tz: TZ }, endedAt: null, shift: true });
+    if (!moved.ok) throw new Error(moved.error.message);
+
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    // Bench was done since its new date (the older workout): no Next time on its Summary; the older one's has one.
+    expect((await s2.workout.summary(newer))?.nextTime).toBeNull();
+    expect((await s2.workout.summary(older))?.nextTime).not.toBeNull();
+
+    // A new Bench reads the older workout's 80 kg as last time: it is the latest by date now.
+    h.clockMs += 3_600_000;
+    const next = await s2.workout.start({ gymId, opId: 'after-move', checkIn: null });
+    if (!next.ok) throw new Error(next.error.message);
+    const picks = await s2.workout.pickerExercises(next.aggregate.session.id, 'Bench press');
+    const bench = picks.find((p) => p.exercise.name === 'Bench press');
+    if (!bench) throw new Error('bench');
+    const added = await s2.workout.addExercise({ sessionId: next.aggregate.session.id, exerciseId: bench.exercise.id, equipmentId: bench.equipment[0]?.id ?? null, opId: h.ids() });
+    if (!added.ok) throw new Error(added.error.message);
+    const last = await s2.workout.lastComparableSets(added.aggregate, added.aggregate.exercises.at(-1)?.id ?? '');
+    expect(last.map((x) => x.values.load?.value)).toEqual([80, 80]);
+  });
+});
+
 describe('past-log view', () => {
   it('the Date wheel keeps the time; the Start wheel keeps the date; DST-safe; never in the future or before 2000', () => {
     // 18:30 on 24 Oct London (BST), picked date 27 Oct (GMT): still 18:30 local.

@@ -180,6 +180,69 @@ describe('Log a past workout and move workouts in time, on SQLite', () => {
     await store.close();
   });
 
+  it('a summarized workout moved a week back: its stored history summary moves in the same save, the check is clean, last time follows the dates', async () => {
+    const path = join(dir, 'training.db');
+    let store = await openStore(openNodeDriver(path));
+    await seed(store);
+    let service = createSessionService(store.repos, idGen(77_000));
+    const older = await workout(service, 'older', -3 * DAY, 100);
+    const newer = await workout(service, 'newer', -1 * DAY, 110, { pause: true });
+    const summaryRow = (sid: string) =>
+      store.db.read(async (q) => ({
+        row: await q.getFirst<{ started_at_utc: string; revision: number; data: string }>('SELECT started_at_utc, revision, data FROM history_summaries WHERE session_id = ?', [sid]),
+        lifts: (await q.getAll<{ started_at_utc: string }>('SELECT started_at_utc FROM history_summary_exercises WHERE session_id = ?', [sid])).map((r) => r.started_at_utc),
+      }));
+    const benchOf = (a: SessionAggregate) => {
+      const ex = a.exercises.find((e) => e.exerciseId === BENCH);
+      if (!ex) throw new Error('fixture');
+      return ex;
+    };
+    // Before: the newer workout is last time.
+    expect((await store.listExerciseHistory(OWNER, BENCH)).map((h) => h.sessionId)).toEqual([newer.session.id, older.session.id]);
+    expect((await summaryRow(newer.session.id)).row?.started_at_utc).toBe(newer.session.startedAt.utc);
+
+    // Moved a week back: now before the older one.
+    const startMs = toMs(newer.session.startedAt.utc);
+    const back = startMs - 7 * DAY * 1000;
+    const moved = await ok(service, newer.session.id, shift(newer, 0, back, null, 'move-summarized'));
+    const after = await summaryRow(newer.session.id);
+    expect(after.row?.started_at_utc).toBe(toIso(back));
+    expect(after.row?.revision).toBe(moved.revision);
+    const data = JSON.parse(after.row?.data ?? 'null') as { session: { startedAt: { utc: string }; pauses: unknown } };
+    expect(data.session.startedAt.utc).toBe(toIso(back));
+    expect(data.session.pauses).toEqual(moved.session.pauses);
+    expect(after.lifts.length).toBeGreaterThan(0);
+    expect(new Set(after.lifts)).toEqual(new Set([toIso(back)]));
+    expect(await store.checkHistorySummaries()).toMatchObject({ ok: true, checked: 2, missing: [], differing: [], orphans: [], unreadable: [] });
+
+    // Every summary-based read orders by the shifted date.
+    expect((await store.repos.sessions.listFinishedRefs(OWNER, 10)).map((r) => r.sessionId)).toEqual([older.session.id, newer.session.id]);
+    expect((await store.repos.sessions.latestFinished(OWNER))?.session.id).toBe(older.session.id);
+    const history = await store.listExerciseHistory(OWNER, BENCH);
+    expect(history.map((h) => h.sessionId)).toEqual([older.session.id, newer.session.id]);
+    expect(history.find((h) => h.sessionId === newer.session.id)?.performedAtUtc).toBe(toIso(back));
+    expect(lastComparableSession(history, benchOf(older))?.sessionId).toBe(older.session.id);
+    const window = await store.repos.sessions.listFinishedBetweenReadable(OWNER, toIso(back - 1000), toIso(back + DAY * 1000));
+    expect(window.sessions.map((w) => w.session.id)).toEqual([newer.session.id]);
+
+    // A relaunch finds nothing to rebuild (written in the move's own transaction) and reads the same.
+    await store.close();
+    store = await openStore(openNodeDriver(path));
+    expect(store.summaryRefresh).toMatchObject({ written: 0 });
+    expect((await store.listExerciseHistory(OWNER, BENCH)).map((h) => h.sessionId)).toEqual([older.session.id, newer.session.id]);
+
+    // Undo (the move back, a new op): the summary returns to its first date.
+    service = createSessionService(store.repos, idGen(78_000));
+    const current = await store.repos.sessions.get(newer.session.id);
+    if (!current) throw new Error('missing');
+    await ok(service, newer.session.id, shift(current, 60, startMs, toMs(newer.session.endedAt?.utc ?? ''), 'undo-move-summarized'));
+    expect((await summaryRow(newer.session.id)).row?.started_at_utc).toBe(newer.session.startedAt.utc);
+    expect((await store.listExerciseHistory(OWNER, BENCH)).map((h) => h.sessionId)).toEqual([newer.session.id, older.session.id]);
+    expect(await store.checkHistorySummaries()).toMatchObject({ ok: true, checked: 2 });
+    expect((await checkIntegrity(store.db)).ok).toBe(true);
+    await store.close();
+  });
+
   it('a pause can only move with a timing shift written in the same save; the trigger refuses a change to its length', async () => {
     const store = await openStore(memoryDriver());
     await seed(store);

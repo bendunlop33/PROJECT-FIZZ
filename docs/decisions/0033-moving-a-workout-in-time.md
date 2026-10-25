@@ -27,6 +27,10 @@ pauses append-only and unclipped (stored exactly as recorded).
    by one that allows only a move (same session, ordinal and length to the millisecond). The write path moves a
    stored pause only by the sum of `shiftMs` of the timing entries appended in the same save; anything else is
    still a `HistoryRewriteError`.
+5. Stored history summaries (ADR 0032): a move, a past log's Finish and a timing Undo are ordinary workout saves
+   (`writeAggregate`), so the workout's summary and its per-exercise index rows are rewritten at the new revision
+   and start in the same transaction. Summary reads order by the shifted `started_at_utc`; the Summary's as-of-date
+   history comes from those reads.
 
 ## Consequences
 
