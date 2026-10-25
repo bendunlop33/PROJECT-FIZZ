@@ -16,8 +16,9 @@ import { bigDataset, type BigDataset } from './perf-dataset';
  * Today 93–202 s, Your workout from Today 223 s, an edit 218 s, from Library 261 s, Plan tab 30 s, plan builder
  * 35 s (details in the perf commit). On a loaded machine budgets scale (`timingBudget`).
  *
- * Cold reads: the first read after a launch decodes his history once (shared by Today, Your workout, the plan
- * builder and Progress, and started in the background at launch by Progress' prewarm); every later read reuses it.
+ * Cold reads (ADR 0032, Ben-approved 24 Oct): history reads read the stored per-workout history summaries, so the
+ * first read after a launch decodes nothing (before: ~4 s Node, ~8 s jitless on this dataset); every later read
+ * reuses what it parsed. The launch's background work waits until the first screen has read (`backgroundGate`).
  */
 
 let big: BigDataset;
@@ -27,9 +28,10 @@ const jitless = process.execArgv.includes('--jitless');
 const slow = jitless ? 4 : 1;
 let startLoad = 0;
 
-async function timed<T>(label: string, budgetMs: number, fn: () => Promise<T>): Promise<T> {
+/** `jitlessMs`: the budget without the JIT, when it isn't 4× the Node one (the cold reads' targets, ADR 0032). */
+async function timed<T>(label: string, budgetMs: number, fn: () => Promise<T>, jitlessMs?: number): Promise<T> {
   const m = await measureBlocking(fn);
-  const budget = timingBudget(budgetMs * slow, startLoad);
+  const budget = timingBudget(jitless && jitlessMs !== undefined ? jitlessMs : budgetMs * slow, startLoad);
   timings.push(`${label}: ${String(Math.round(m.totalMs))} ms (budget ${String(Math.round(budget))})`);
   expect(m.totalMs, label).toBeLessThan(budget);
   return m.result;
@@ -43,6 +45,15 @@ afterAll(async () => {
   console.log(`[App paths]${jitless ? ' (--jitless)' : ''} ${String(big.sessions)} workouts, ${String(big.sets)} sets:\n  ${timings.join('\n  ')}`);
   await big.h.cleanup();
 });
+
+/** A gate the test opens: the launch's background work waits for it (`backgroundGate`), as the phone's `afterLaunch` does. */
+function launchGate(): { wait: () => Promise<void>; open: () => void } {
+  let open = (): void => undefined;
+  const p = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { wait: () => p, open };
+}
 
 /** What Today's screen awaits on open, then the card it renders (the plan's next day, else the first). */
 async function todayOpen(s: AppServices): Promise<{ data: TodaySessionData; sel: TodaySelection | null }> {
@@ -72,18 +83,31 @@ async function yourWorkout(s: AppServices, draftId: string, fromToday: boolean) 
 }
 
 describe('the everyday paths on ~800 workouts', () => {
-  it('cold after a launch: Set up a plan and Today read his history once; after the launch pass both are quick', async () => {
+  it('cold after a launch: Set up a plan and Today read stored history summaries, not every workout (ADR 0032)', async () => {
     const { h } = big;
     await h.forceClose();
-    let s = (await h.launch()).services;
-    // Straight after a launch (nothing decoded yet): one pass over his history.
-    await timed('Set up a plan, cold (just launched)', 8000, () => s.planBuilder.open());
+    // As on the phone (`afterLaunch`), the launch's background work starts once the first screen has read.
+    let gate = launchGate();
+    let s = (await h.launch({ backgroundGate: gate.wait })).services;
+    // Straight after a launch (nothing read yet): his history from the stored summaries (Ben, 24 Oct: < 500 ms, < 1.5 s jitless).
+    await timed('Set up a plan, cold (just launched)', 500, () => s.planBuilder.open(), 1500);
+    gate.open();
     await s.progress.prewarm();
     const session = await timed('Set up a plan (after the launch pass)', 300, () => s.planBuilder.open());
     expect(session?.opensOn).toBe('start');
     await h.forceClose();
-    s = (await h.launch()).services;
-    await timed('Today, cold (just launched, no plan)', 8000, () => todayOpen(s));
+    gate = launchGate();
+    s = (await h.launch({ backgroundGate: gate.wait })).services;
+    await timed('Today, cold (just launched, no plan)', 500, () => todayOpen(s), 1500);
+    gate.open();
+  }, 1_200_000);
+
+  it('cold with the launch’s background work at once (a catch-up backup and the integrity check competing): still quick', async () => {
+    const { h } = big;
+    await h.forceClose();
+    // No gate: the backup's export and the integrity check's engine pass each hold the database in one turn.
+    const s = (await h.launch()).services;
+    await timed('Today, cold, background work at once', 4000, () => todayOpen(s));
   }, 1_200_000);
 
   it('Today, Time, Your workout, an edit, Library, Plan, the plan builder, Start, logging and Finish', async () => {
