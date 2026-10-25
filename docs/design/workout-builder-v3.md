@@ -545,7 +545,7 @@ Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a N
 | `Save to Workouts` sheet, `Edit ›` | The unsaved copy (not dirty) | The screen under the sheet; the sheet's own save and toast |
 | Exercise detail, `New workout` | A new workout with that exercise and the sheet's shape, name empty | Exercise detail, `Saved <name> · Undo` |
 
-**What's the same as Your workout.** Numbered rounds, supersets as one box (`2a/2b`) with the line, `Exercise | Sets | Top set (kg)`, `MAIN`, `+N W`, works lines, `May hurt`, `Not at this gym`; tap a row for the pop-up; swipe left Delete (toast `Deleted Cable fly · Undo`, local), right Swap (`Swapped · Undo`); press and hold then drag (an edge = move, the middle = superset, up to 4); VoiceOver actions; dashed `＋ Add exercise`; the Add / Swap sheet (muscle group, this gym's exercises by focus, `May hurt` confirm).
+**What's the same as Your workout.** Numbered rounds, supersets as one box (`2a/2b`) with the line, `Exercise | Sets | Top set (kg)`, `MAIN`, `+N W`, works lines, `May hurt`, `Not at this gym`; tap a row for the pop-up; swipe left Delete (toast `Deleted Cable fly · Undo`, local), right Swap (`Swapped · Undo`); press and hold then drag (an edge = move, the middle = superset, up to 4); VoiceOver actions; dashed `＋ Add exercise`; the Add / Swap sheet (muscle group, this gym's exercises by focus, `May hurt` confirm; (Ben, 25 Oct) plus every exercise, search and `＋ Add your own`, §2.5).
 
 **What differs, because a saved workout is a template, not today's draft.**
 - `Top set` shows the template's target: `Auto` (worked out at Start) or Ben's Fixed load (`100`, `27.5 each`, `25 assist`, `BW+10`), another unit inline (`45 lb`).
@@ -576,7 +576,7 @@ Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a N
 | Set sheet: work time, cardio time and distance | `Time` / `Distance` in the set's hold menu |
 | Set sheet: rest after this set | `Rest after this set` in the set's hold menu (`Default` or a time); the row reads `Working · 2:30` |
 | Set sheet: `Delete set` | Swipe left, or the hold menu |
-| Add sheet: search | The Add / Swap sheet has a search field (Ben's exercises and the catalogue; distance not offered) |
+| Add sheet: search | The Add / Swap sheet has a search field (Ben's exercises and the catalogue; distance not offered). (Ben, 25 Oct) Now the same sheet everywhere: suggestions, chips, every exercise, `＋ Add your own` (§2.5) |
 
 **Dropped, and why.** (1) The Add sheet's `Sets [−] 3 [+]` bar: Your workout adds with the exercise's default (3 sets); `＋ Set` and swipe change it. (2) `at <gym>` after the minutes (minimal copy; Today shows the gym). (3) A rest step writes a time, not a named preset (`Heavy 3:00`); `Rest after this set` still lists named presets. (4) `Each set` collapsing identical sets (`3–5`): the pop-up lists every set. (5) A Fixed load past the rack is now capped when typed, with the line, instead of saved past it with a warning (rule 4); with no item at this gym it is kept as typed and fitted at Start, as before. (6) Time fit, coach bar, Coach review and Start (above).
 
@@ -625,6 +625,41 @@ Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a N
 
 ### 2.5 Swap / Add exercise (sheet) [Ben]
 
+**Every exercise (Ben, 25 Oct, iPhone: "When I swap exercises I don't have the option to select from all exercises.").** The sheet kept only a short ranked list. It now has the suggestions on top and every exercise below, on Your workout, the one workout editor (§2.3 edit mode) and the workout in progress alike:
+
+```
+│ Swap Cable fly                           │
+│ SUGGESTED                                │
+│ Upper chest                              │  focus headings, as before
+│ │ Incline barbell press                │ │
+│ │ Upper chest, front delts, triceps    │ │
+│ Mid chest                                │
+│ │ Machine chest press        May hurt  │ │
+│ │ Like Pec deck                        │ │  near-duplicate, last
+│ [All] [Chest] [Back] [Shoulders] [Legs]… │  muscle chips (D5), All on
+│ [ Search exercises                    ]  │  Library's search
+│ CHEST                                    │  every exercise, by group
+│ │ Bench press                          │ │
+│ │ Barbell · Chest                      │ │
+│ │ Cable crossover    Not at Main Gym   │ │  dimmed, last in its group
+│ LEGS                                     │
+│ Quads                                    │
+│ │ …                                    │ │
+│ ＋ Add your own                          │
+│ [Back]                                   │
+```
+
+- **Suggested (top), as before:** the ranked list for one group by focus (§2.5 below), near-duplicates last with `Like …`, `May hurt` marked. The group is the exercise's (Add: today's first). The old `Muscle group ⌄` dropdown is gone: a group chip below sets the suggestions' group too; `All` keeps the exercise's.
+- **Every exercise (below):** the muscle chips `All`, `Chest`, `Back`, `Shoulders`, `Legs`, `Arms`, `Core` (D5; `All` on when the sheet opens) and the search field, then every exercise in the catalogue plus Ben's own, by broad group as in Library › Exercises (exercise-library §9.3): Legs by `Quads` / `Hamstrings` / `Calves`, Arms by `Biceps` / `Triceps` / `Forearms`, each exercise once under its first main muscle; a group chip shows only that group. Rows: name, the Library line (`Barbell · Chest`, `Matches "RDL"` on an alias hit), tags `May hurt`, `Yours`, `Not at Main Gym`. Exercises already in the workout and the suggestions shown above are left out (a search still finds a suggestion).
+- **Search** is the Library's (EL1): name, catalogue aliases and Ben's own names, one typo per word of 5+ letters, best match first. While it holds text the suggestions hide and the rows are `MATCHES` (within the chip). No match: `No match for "landmine twst".`
+- **Not at this gym:** exercises the gym can't do (its kit, ADR 0030 stations) are listed last in their group (last among matches when searching), dimmed, with `Not at Main Gym`. They are still pickable after a confirm, as Library's `Add anyway`: `Main Gym has no cable station. Swap Cable fly anyway?` · `Choose another` / `Swap anyway` (`Add anyway`). Flagged as well: one ask with both lines. Loads stay rule 4: Your workout shows the row `Not at this gym` with no load; mid-workout nothing is planned past the gym's kit; a saved workout keeps `Auto`. No editor gym: nothing is tagged.
+- **What each sheet offers** is what its write takes, so a listed row is never refused for its kind: Your workout, strength exercises with a group; the editor, anything but distance; Swap mid-workout, the same measurement; Add mid-workout, anything.
+- **`＋ Add your own`** at the bottom opens the custom-exercise form (exercise-library §2.6; the search text as its name). After `Save` the sheet comes back searching for the new exercise; Ben taps it (same checks). Cancel: nothing changes.
+- Unchanged: Swap is today only on Your workout and mid-workout and a template change in the editor (Save, versioned); `Swapped · Undo`; stale writes are refused (rule 5); pain confirm (rule 9).
+- Fast: the full list is read once when the sheet opens; typing and chips work over it with no read (perf lane: `Swap sheet` open ≤ 800 ms, a keystroke ≤ 30 ms on ~800 workouts).
+
+*Before 25 Oct (kept for the focus and near-duplicate rules):*
+
 ```
 │ Swap Cable fly                           │
 │ Muscle group                  Chest  ⌄   │
@@ -637,8 +672,8 @@ Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a N
 │ [Back]                                   │
 ```
 
-- The group dropdown defaults to the exercise's group (Add: today's first group). Exercises are grouped by focus (`Upper chest` / `Mid chest`; `Lats` / `Mid-back` / `Rear delts`; `Quads` / `Hamstrings & glutes` / `Calves`; …), each with its `works` line. **No est. 1RM** [Ben].
-- [Proposal] Lists only exercises this gym has. Ones already in the workout are hidden. Pain-flagged ones show `May hurt` and ask to confirm (rule 9), as the overview did (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation): `Overhead press may hurt` · `Shoulder pain flagged 6 Oct.` · `Choose another` / `Swap anyway` (`Add anyway` when adding). The active workout's Swap sheet uses the same words.
+- The suggestions' group (the old dropdown; since 25 Oct the chips) defaults to the exercise's group (Add: today's first group). Exercises are grouped by focus (`Upper chest` / `Mid chest`; `Lats` / `Mid-back` / `Rear delts`; `Quads` / `Hamstrings & glutes` / `Calves`; …), each with its `works` line. **No est. 1RM** [Ben].
+- [Proposal] ~~Lists only exercises this gym has.~~ (Ben, 25 Oct) The suggestions list only exercises this gym has; the full list below has the rest, last and tagged. Ones already in the workout are hidden. Pain-flagged ones show `May hurt` and ask to confirm (rule 9), as the overview did (22 Oct; relayed by the PM as Ben’s decision, pending Ben’s confirmation): `Overhead press may hurt` · `Shoulder pain flagged 6 Oct.` · `Choose another` / `Swap anyway` (`Add anyway` when adding). The active workout's Swap sheet uses the same words.
 - Swap keeps the position, superset, set count and set types; loads recalculate. Toast `Swapped · Undo`. Add appends 3 sets; disabled at 10 exercises.
 - **Near-duplicates (Ben, 23 Oct).** Exercises that near-duplicate one staying in the workout (§3.7) are still listed, last in their focus, with `Like Barbell shrug` in place of the works line. Ben can pick them; the pick then shows the §3.8 advice toast. Never blocked. The active workout's sheet does the same.
 
