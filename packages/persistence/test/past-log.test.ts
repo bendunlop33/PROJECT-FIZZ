@@ -1,0 +1,220 @@
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { SessionAggregate, SessionCommand, ZonedTimestamp } from '@fizz/schemas';
+import { createSessionService, lastComparableSession, toIso, toMs, unshiftedMs, type SessionService } from '@fizz/domain';
+import { at, barbell, BENCH, exercises, GYM, id, idGen, kg, OWNER, profile, richFinishedSession, setsFor, stack, startFixture, TZ, values } from '@fizz/domain/testing';
+import { checkIntegrity, exportTables, migrate, MIGRATIONS, openStore, type Store } from '../src/index';
+import { openNodeDriver } from '../src/node/index';
+import { memoryDriver, tempDir } from './helpers';
+
+/**
+ * (Ben, 25 Oct) "I should be able to freely edit times, e.g. if I want to import a workout
+ * historically from the day before or beyond." On real SQLite: a past log, a finished workout moved a
+ * week back (pauses included), Undo, retries, stale versions, ordering by workout date, a relaunch.
+ */
+
+const MIN = 60;
+const DAY = 24 * 3600;
+const T0 = toMs(at(0).utc);
+const z = (ms: number): ZonedTimestamp => ({ utc: toIso(ms), tz: TZ });
+
+async function seed(store: Store): Promise<void> {
+  await store.repos.profiles.save(profile(), null);
+  for (const eq of [barbell(), stack()]) await store.repos.equipment.save(eq, null);
+  for (const ex of exercises.values()) await store.repos.exercises.save(ex, null);
+  const routine = startFixture().input.routine;
+  if (!routine) throw new Error('fixture');
+  await store.repos.routines.save(routine, null);
+}
+
+async function ok(service: SessionService, sessionId: string, cmd: SessionCommand): Promise<SessionAggregate> {
+  const r = await service.dispatch(sessionId, cmd);
+  if (!r.ok) throw new Error(`${r.error.code}: ${r.error.message}`);
+  return r.aggregate;
+}
+
+/** A routine workout: bench warm-up and B1 logged `load` at +5 / +10 min after `startS`, optionally a pause, finished at +30 min. */
+async function workout(service: SessionService, opId: string, startS: number, load: number, opts: { pastStart?: ZonedTimestamp; pause?: boolean; nowS?: number } = {}): Promise<SessionAggregate> {
+  const nowS = opts.nowS ?? startS;
+  const started = await service.startRoutine({ ownerId: OWNER, gymId: GYM, routineId: id(300), opId, at: at(nowS), ...(opts.pastStart ? { pastStart: opts.pastStart } : {}) });
+  if (!started.ok) throw new Error(started.error.code);
+  let s = started.aggregate;
+  const sid = s.session.id;
+  const live = opts.pastStart === undefined;
+  const [w, b1] = setsFor(s, BENCH);
+  s = await ok(service, sid, { type: 'log_set', at: at(live ? startS + 5 * MIN : nowS + 1), opId: `${opId}-w`, setId: w?.id ?? '', values: values(kg(60), 10), restTimerId: id(91_000 + startS % 1000) });
+  if (opts.pause) {
+    s = await ok(service, sid, { type: 'pause', at: at(startS + 6 * MIN), opId: `${opId}-p` });
+    s = await ok(service, sid, { type: 'resume', at: at(startS + 8 * MIN), opId: `${opId}-r` });
+  }
+  s = await ok(service, sid, { type: 'log_set', at: at(live ? startS + 10 * MIN : nowS + 2), opId: `${opId}-b1`, setId: b1?.id ?? '', values: values(kg(load), 8), restTimerId: id(92_000 + startS % 1000) });
+  const end = live ? null : z(toMs(s.session.startedAt.utc) + 45 * MIN * 1000);
+  return ok(service, sid, { type: 'finish', at: at(live ? startS + 30 * MIN : nowS + 3), opId: `${opId}-fin`, expectedVersion: s.session.version, endedAt: end });
+}
+
+const shift = (s: SessionAggregate, nowS: number, startMs: number, endMs: number | null, opId: string): SessionCommand => ({
+  type: 'update_session_timing',
+  at: at(nowS),
+  opId,
+  expectedVersion: s.session.version,
+  startedAt: z(startMs),
+  endedAt: endMs === null ? null : z(endMs),
+  shift: true,
+});
+
+describe('Log a past workout and move workouts in time, on SQLite', () => {
+  let dir: string;
+  let cleanup: () => void;
+  beforeEach(() => {
+    ({ dir, cleanup } = tempDir());
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('yesterday’s workout logged today sits at its date: history, last time and Up next order by date, not by insert', async () => {
+    const path = join(dir, 'training.db');
+    let store = await openStore(openNodeDriver(path));
+    await seed(store);
+    let service = createSessionService(store.repos, idGen(70_000));
+    // Today's live workout first (−2 h), then yesterday's entered after it.
+    const today = await workout(service, 'today', -2 * 3600, 100);
+    const yesterday = T0 - DAY * 1000;
+    const past = await workout(service, 'past', 0, 110, { pastStart: z(yesterday), nowS: 0 });
+    expect(past.session.pastLog).toEqual({ enteredAt: at(0) });
+    expect(past.session.startedAt.utc).toBe(toIso(yesterday));
+    expect(toMs(past.session.endedAt?.utc ?? '')).toBe(yesterday + 45 * MIN * 1000);
+    expect(past.restTimer).toBeNull();
+    for (const x of past.sets.filter((y) => y.status === 'completed')) {
+      expect(toMs(x.completedAt?.utc ?? '')).toBeGreaterThan(yesterday);
+      expect(toMs(x.completedAt?.utc ?? '')).toBeLessThan(yesterday + 60_000);
+    }
+
+    // Ordered by workout date: the past log is older than today's, though written later.
+    const refs = await store.repos.sessions.listFinishedRefs(OWNER, 10);
+    expect(refs.map((r) => r.sessionId)).toEqual([today.session.id, past.session.id]);
+    expect((await store.repos.sessions.latestFinished(OWNER))?.session.id).toBe(today.session.id);
+    const history = await store.listExerciseHistory(OWNER, BENCH);
+    // Newest first, by workout date.
+    expect(history.map((h) => h.sessionId)).toEqual([today.session.id, past.session.id]);
+    // "Last time" is today's (100 kg), never the heavier past log entered after it.
+    const ex = today.exercises.find((e) => e.exerciseId === BENCH);
+    if (!ex) throw new Error('fixture');
+    expect(lastComparableSession(history, ex)?.sessionId).toBe(today.session.id);
+
+    // A relaunch reads the same.
+    await store.close();
+    store = await openStore(openNodeDriver(path));
+    service = createSessionService(store.repos, idGen(71_000));
+    const again = await store.repos.sessions.get(past.session.id);
+    expect(again?.session.pastLog).toEqual({ enteredAt: at(0) });
+    expect(again?.session.startedAt.utc).toBe(toIso(yesterday));
+    expect((await store.repos.sessions.listFinishedRefs(OWNER, 10)).map((r) => r.sessionId)).toEqual([today.session.id, past.session.id]);
+    expect((await checkIntegrity(store.db)).ok).toBe(true);
+    await store.close();
+  });
+
+  it('an open past log survives a force-close: recovery restores it with no rest timer, and Start of another is refused until it is finished', async () => {
+    const path = join(dir, 'training.db');
+    let store = await openStore(openNodeDriver(path));
+    await seed(store);
+    let service = createSessionService(store.repos, idGen(72_000));
+    const started = await service.startRoutine({ ownerId: OWNER, gymId: GYM, routineId: id(300), opId: 'past-open', at: at(0), pastStart: z(T0 - 2 * DAY * 1000) });
+    if (!started.ok) throw new Error(started.error.code);
+    const [w] = setsFor(started.aggregate, BENCH);
+    await ok(service, started.aggregate.session.id, { type: 'log_set', at: at(5), opId: 'po-w', setId: w?.id ?? '', values: values(kg(60), 10), restTimerId: id(93_001) });
+    await store.close();
+    store = await openStore(openNodeDriver(path));
+    service = createSessionService(store.repos, idGen(73_000));
+    const recovered = await service.recover(OWNER, at(600));
+    expect(recovered?.state.session.pastLog).toBeDefined();
+    expect(recovered?.state.restTimer).toBeNull();
+    const second = await service.start({ ownerId: OWNER, gymId: GYM, routineId: null, opId: 'live-2', at: at(700) });
+    expect(second.ok ? null : second.error.code).toBe('session_already_active');
+    await store.close();
+  });
+
+  it('an old workout moved a week back: sets, pause and end move; stored with the offset; Undo; a retry is a duplicate; a stale version is refused', async () => {
+    const path = join(dir, 'training.db');
+    let store = await openStore(openNodeDriver(path));
+    await seed(store);
+    let service = createSessionService(store.repos, idGen(74_000));
+    const s = await workout(service, 'old', -3 * DAY, 100, { pause: true });
+    const startMs = toMs(s.session.startedAt.utc);
+    const back = startMs - 7 * DAY * 1000;
+    const moveCmd = shift(s, 0, back, null, 'move-week');
+    const moved = await ok(service, s.session.id, moveCmd);
+    const off = back - startMs;
+    expect(moved.session.pauses).toEqual(s.session.pauses.map((p) => ({ startUtc: toIso(toMs(p.startUtc) + off), endUtc: toIso(toMs(p.endUtc) + off) })));
+    expect(moved.timingAudit.at(-2)?.shiftMs).toBe(off);
+
+    // A retry (same op, e.g. after a relaunch) changes nothing more.
+    await store.close();
+    store = await openStore(openNodeDriver(path));
+    service = createSessionService(store.repos, idGen(75_000));
+    const stored = await store.repos.sessions.get(s.session.id);
+    expect(stored?.session.startedAt.utc).toBe(toIso(back));
+    expect(stored?.session.pauses).toEqual(moved.session.pauses);
+    expect(stored?.timingAudit.find((e) => e.field === 'startedAt')?.shiftMs).toBe(off);
+    const retry = await service.dispatch(s.session.id, { ...moveCmd, at: at(30) });
+    expect(retry).toMatchObject({ ok: true, duplicate: true });
+    expect((await store.repos.sessions.get(s.session.id))?.revision).toBe(stored?.revision);
+    // The sheet opened before the move is stale now.
+    const stale = await service.dispatch(s.session.id, shift(s, 40, back - DAY * 1000, null, 'move-stale'));
+    expect(stale.ok ? null : stale.error.code).toBe('stale_version');
+    // Logged values unchanged (rule 2).
+    expect(stored?.sets.map((x) => x.actual)).toEqual(s.sets.map((x) => x.actual));
+    // Original times recoverable from the audit.
+    const firstDone = stored?.sets.find((x) => x.status === 'completed');
+    expect(unshiftedMs(firstDone?.completedAt?.utc ?? '', stored?.timingAudit ?? [])).toBe(toMs(s.sets.find((x) => x.id === firstDone?.id)?.completedAt?.utc ?? ''));
+
+    // Undo: the same move back, a new op on the new version.
+    if (!stored) throw new Error('missing');
+    const undone = await ok(service, s.session.id, shift(stored, 60, startMs, toMs(s.session.endedAt?.utc ?? ''), 'undo-move-week'));
+    expect(undone.session.startedAt.utc).toBe(s.session.startedAt.utc);
+    expect(undone.session.endedAt?.utc).toBe(s.session.endedAt?.utc);
+    expect(undone.session.pauses).toEqual(s.session.pauses);
+    expect(undone.sets.map((x) => x.completedAt)).toEqual(s.sets.map((x) => x.completedAt));
+    const reread = await store.repos.sessions.get(s.session.id);
+    expect(reread?.session.pauses).toEqual(s.session.pauses);
+    expect(reread?.timingAudit.filter((e) => e.shiftMs !== undefined).map((e) => e.shiftMs)).toEqual([off, -off]);
+    expect((await checkIntegrity(store.db)).ok).toBe(true);
+    await store.close();
+  });
+
+  it('a pause can only move with a timing shift written in the same save; the trigger refuses a change to its length', async () => {
+    const store = await openStore(memoryDriver());
+    await seed(store);
+    const service = createSessionService(store.repos, idGen(76_000));
+    const s = await workout(service, 'p', -3 * DAY, 100, { pause: true });
+    const cur = await store.repos.sessions.get(s.session.id);
+    if (!cur) throw new Error('missing');
+    // Moved pause without a shift entry: a history rewrite.
+    const sneaky = { ...cur, session: { ...cur.session, pauses: cur.session.pauses.map((p) => ({ startUtc: toIso(toMs(p.startUtc) - 1000), endUtc: toIso(toMs(p.endUtc) - 1000) })) }, revision: cur.revision + 1 };
+    await expect(store.repos.sessions.save(sneaky, cur.revision)).rejects.toThrow(/session_pauses/);
+    // Straight SQL: moving keeps its length (allowed by the trigger), changing the length is refused.
+    await expect(store.db.write((tx) => tx.run("UPDATE session_pauses SET end_utc = '2030-01-01T00:00:00.000Z' WHERE session_id = ?", [s.session.id]))).rejects.toThrow(/only move/);
+    const p = cur.session.pauses[0];
+    if (!p) throw new Error('fixture');
+    await store.db.write((tx) => tx.run('UPDATE session_pauses SET start_utc = ?, end_utc = ? WHERE session_id = ?', [toIso(toMs(p.startUtc) + 60_000), toIso(toMs(p.endUtc) + 60_000), s.session.id]));
+    await store.close();
+  });
+
+  it('migration 36 in place on a schema-35 database: rows kept, the new columns NULL; a moved workout then saves', async () => {
+    const db = memoryDriver();
+    const at35 = await openStore(db, { migrations: MIGRATIONS.filter((m) => m.version <= 35) });
+    await at35.repos.profiles.save(profile(), null);
+    await at35.repos.sessions.save(richFinishedSession(), null);
+    const before = await at35.db.read((q) => exportTables(q));
+    expect(await migrate(db)).toMatchObject({ from: 35, to: 36, applied: [36] });
+    const at36 = await openStore(db);
+    const after = await at36.db.read((q) => exportTables(q));
+    expect(after.sessions).toEqual((before.sessions ?? []).map((r) => ({ ...r, past_log: null })));
+    expect(after.timing_audit).toEqual((before.timing_audit ?? []).map((r) => ({ ...r, shift_ms: null })));
+    expect(after.session_pauses).toEqual(before.session_pauses);
+    const got = await at36.repos.sessions.get(richFinishedSession().session.id);
+    expect(got?.session.pastLog).toBeUndefined();
+    expect((await checkIntegrity(at36.db)).ok).toBe(true);
+    await at36.close();
+  });
+});

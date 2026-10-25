@@ -11,6 +11,8 @@ import {
 import {
   planDeleteWorkouts,
   planRestoreWorkouts,
+  toIso,
+  toMs,
   type DeletionError,
   type DeletionPlan,
   type FencedResult,
@@ -102,6 +104,8 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     ...(s.feel === undefined ? {} : { feel: JSON.stringify(s.feel) }),
     // Only when set: the column is new in schema 34, written once at Start.
     ...(s.deload === undefined ? {} : { deload: JSON.stringify(s.deload) }),
+    // Only when set: the column is new in schema 36, written once at Start.
+    ...(s.pastLog === undefined ? {} : { past_log: JSON.stringify(s.pastLog) }),
     deleted_at_utc: s.deletion?.at.utc ?? null,
     deleted_at_tz: s.deletion?.at.tz ?? null,
     deleted_by_op_id: s.deletion?.opId ?? null,
@@ -205,6 +209,8 @@ function timingRow(e: SessionTimingAuditEntry, ordinal: number): Record<string, 
     before_tz: beforeTz,
     after_utc: e.after.utc,
     after_tz: e.after.tz,
+    // Only when set: the column is new in schema 36.
+    ...(e.shiftMs === undefined ? {} : { shift_ms: e.shiftMs }),
   };
 }
 
@@ -371,6 +377,7 @@ function buildAggregate(rows: AggregateRows): SessionAggregate {
       ...(s.plan_day === null || s.plan_day === undefined ? {} : { planDay: parseJson(T, id, 'plan_day', s.plan_day) }),
       ...(s.feel === null || s.feel === undefined ? {} : { feel: parseJson(T, id, 'feel', s.feel) }),
       ...(s.deload === null || s.deload === undefined ? {} : { deload: parseJson(T, id, 'deload', s.deload) }),
+      ...(s.past_log === null || s.past_log === undefined ? {} : { pastLog: parseJson(T, id, 'past_log', s.past_log) }),
       ...(s.duration_confirmed_at_utc === null || s.duration_confirmed_at_utc === undefined
         ? {}
         : { durationConfirmedAt: { utc: s.duration_confirmed_at_utc, tz: s.duration_confirmed_at_tz } }),
@@ -494,6 +501,7 @@ function buildAggregate(rows: AggregateRows): SessionAggregate {
       atUtc: e.at_utc,
       before: zoned(e.before_utc, e.before_tz),
       after: { utc: e.after_utc, tz: e.after_tz },
+      ...(e.shift_ms === null || e.shift_ms === undefined ? {} : { shiftMs: e.shift_ms }),
     })),
     processedOps: Object.fromEntries(
       ops.map((o) => {
@@ -643,6 +651,8 @@ async function closeDraftsOnStart(tx: SqlExecutor, a: SessionAggregate): Promise
   if (coach !== undefined && !(await startWorkoutDraftIn(tx, coach.draftId, owner, a.session.id, startedAt)).ok) return false;
   // (22 Oct) A coach chat draft opened on Your workout is started with it: its card reads `Started`, as before.
   if (coach !== undefined) await startChatSourceIn(tx, coach.draftId, owner, a.session.id, startedAt);
+  // (Ben, 25 Oct) A past log is about another day: today's pre-start drafts stay open.
+  if (a.session.pastLog !== undefined) return true;
   const from = a.session.todayEdits?.draftId ?? null;
   if (from !== null) {
     const row = await tx.getFirst<{ status: string; owner_id: string; expires_at_utc: string; version: number }>('SELECT status, owner_id, expires_at_utc, version FROM pre_start_drafts WHERE id = ?', [from]);
@@ -748,13 +758,20 @@ export async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Prom
     });
   }
 
-  // Pauses have no ID: compare stored values with the same positions.
+  // Pauses have no ID: compare stored values with the same positions. (Ben, 25 Oct) A stored pause
+  // may only move, and only by the shift of the timing entries this write appends (the whole workout
+  // moved with its start); the trigger also refuses any change to its length.
   const pauses = await tx.getAll('SELECT start_utc, end_utc FROM session_pauses WHERE session_id = ? ORDER BY ordinal', [sid]);
   if (pauses.length > a.session.pauses.length) throw new HistoryRewriteError(sid, 'session_pauses: stored pauses are missing');
-  pauses.forEach((p, i) => {
+  const storedTiming = await tx.getFirst<{ n: number }>('SELECT count(*) AS n FROM timing_audit WHERE session_id = ?', [sid]);
+  const shiftMs = a.timingAudit.slice(storedTiming?.n ?? 0).reduce((sum, e) => sum + (e.shiftMs ?? 0), 0);
+  const moved = (iso: SqlValue | undefined): string | null => (typeof iso === 'string' ? toIso(toMs(iso) + shiftMs) : null);
+  for (const [i, p] of pauses.entries()) {
     const next = a.session.pauses[i];
-    if (next === undefined || next.startUtc !== p.start_utc || next.endUtc !== p.end_utc) throw new HistoryRewriteError(sid, `session_pauses: pause ${i} was changed`);
-  });
+    if (next !== undefined && next.startUtc === p.start_utc && next.endUtc === p.end_utc) continue;
+    if (next === undefined || shiftMs === 0 || next.startUtc !== moved(p.start_utc) || next.endUtc !== moved(p.end_utc)) throw new HistoryRewriteError(sid, `session_pauses: pause ${i} was changed`);
+    await tx.run('UPDATE session_pauses SET start_utc = ?, end_utc = ? WHERE session_id = ? AND ordinal = ?', [next.startUtc, next.endUtc, sid, i]);
+  }
   for (let i = pauses.length; i < a.session.pauses.length; i += 1) {
     const p = a.session.pauses[i];
     if (p) await insert(tx, 'session_pauses', { session_id: sid, ordinal: i, start_utc: p.startUtc, end_utc: p.endUtc });

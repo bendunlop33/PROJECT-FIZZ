@@ -7,6 +7,7 @@ import { blockSets, partRootOf } from './gym-switch';
 import { shownTargetShortIn, type CarryOptions } from './carry';
 import { STALE_SESSION_MS } from './recovery';
 import { getSessionPhase } from './view';
+import { isPastLog } from './time-shift';
 
 /**
  * What the Lock Screen Live Activity shows for the workout in progress
@@ -81,12 +82,14 @@ export function lockScreenTargetWords(target: string): string {
 
 /**
  * The content for `state` at `nowMs`, with clock times in `tz`; null when no
- * activity should show (no workout, finished or discarded, or stale: ≥ 6 h
+ * activity should show (no workout, finished or discarded, a past log, or stale: ≥ 6 h
  * since the last activity, flow §4.2). `carry.painFlagged`: movements with
  * an active pain flag, so a heavier load never carries onto the next set.
  */
 export function buildLockScreenContent(state: SessionAggregate | null, nowMs: number, tz: string, carry: CarryOptions = {}): LockScreenContent | null {
   if (state === null || state.session.status !== 'active') return null;
+  // (Ben, 25 Oct) A past log runs no clock: no Live Activity.
+  if (isPastLog(state.session)) return null;
   if (nowMs - toMs(state.session.lastActivityAtUtc) >= STALE_SESSION_MS) return null;
   const name = state.session.routineName ?? TITLE_FALLBACK;
   const base = { sessionId: state.session.id };

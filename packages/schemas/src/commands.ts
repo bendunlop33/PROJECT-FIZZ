@@ -178,6 +178,12 @@ export const FinishCommandSchema = z.object({
    * Checked like `update_session_timing` (not after the first logged set) and audited.
    */
   startedAt: ZonedTimestampSchema.optional(),
+  /**
+   * (Ben, 25 Oct) With `startedAt`: the whole workout moves with its start (every set, pause and
+   * timer by the same offset), instead of only the start. `endedAt` is then the chosen end after the
+   * move (null = the tap time moved by the same offset). Absent = only the start moves, as before.
+   */
+  shift: z.literal(true).optional(),
 });
 
 /**
@@ -193,8 +199,17 @@ export const UpdateSessionTimingCommandSchema = z
     expectedVersion: z.int().min(1),
     startedAt: ZonedTimestampSchema.nullable(),
     endedAt: ZonedTimestampSchema.nullable(),
+    /**
+     * (Ben, 25 Oct: "freely edit times, e.g. import a workout historically from the day before or
+     * beyond") Moving the start moves the whole workout: every set's `completedAt`, pauses, rest and
+     * work timers by the same offset, so order and durations stay as logged. `endedAt` null then
+     * moves the end by the same offset too; a given `endedAt` is the end after the move. Logged
+     * values never change. Absent = only the start moves and must stay before the first set.
+     */
+    shift: z.literal(true).optional(),
   })
-  .refine((c) => c.startedAt !== null || c.endedAt !== null, { message: 'Nothing to change' });
+  .refine((c) => c.startedAt !== null || c.endedAt !== null, { message: 'Nothing to change' })
+  .refine((c) => c.shift === undefined || c.startedAt !== null, { message: 'A shift needs the new start' });
 
 /**
  * Add a set to an exercise (the "Add set" control). The new set copies the
