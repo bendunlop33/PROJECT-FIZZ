@@ -24,6 +24,9 @@ export function choiceLine(item: Pick<ChoiceItem, 'works' | 'similarTo'>): strin
   return item.similarTo == null ? item.works : `Like ${item.similarTo}`;
 }
 
+/** (Ben, 25 Oct) The heading over the ranked suggestions, above the full list. */
+export const SWAP_SHEET_COPY = { suggested: 'Suggested' } as const;
+
 export const SWAP_PAIN_COPY = {
   cancel: 'Choose another',
   anyway: (actionWord: string) => `${actionWord} anyway`,

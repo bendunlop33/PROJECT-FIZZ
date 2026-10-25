@@ -248,16 +248,38 @@ export function Divider() {
 }
 
 /** A sheet's list row: title and an optional second line, ≥ 44 pt. */
-export function ChoiceRow({ title, line, selected = false, tag, onPress, disabled = false }: { title: string; line?: string | null; selected?: boolean; tag?: string | null; onPress: () => void; disabled?: boolean }) {
+export function ChoiceRow({
+  title,
+  line,
+  selected = false,
+  tag,
+  tags,
+  dimmed = false,
+  accessibilityLabel,
+  onPress,
+  disabled = false,
+}: {
+  title: string;
+  line?: string | null;
+  selected?: boolean;
+  tag?: string | null;
+  /** (Ben, 25 Oct) Several short tags: `May hurt` (warning), `Yours`, `Not at Main Gym` (secondary). */
+  tags?: readonly { text: string; tone: 'warning' | 'secondary' }[];
+  /** Shown faded but still tappable (the Swap sheet's `Not at Main Gym` rows). */
+  dimmed?: boolean;
+  accessibilityLabel?: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={[title, tag, line].filter((x): x is string => typeof x === 'string' && x.length > 0).join(', ')}
+      accessibilityLabel={accessibilityLabel ?? [title, tag, ...(tags ?? []).map((t) => t.text), line].filter((x): x is string => typeof x === 'string' && x.length > 0).join(', ')}
       accessibilityState={{ selected, disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => ({ minHeight: 52, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['2'], justifyContent: 'center', backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent', opacity: disabled ? 0.5 : 1 })}
+      style={({ pressed }) => ({ minHeight: 52, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['2'], justifyContent: 'center', backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent', opacity: disabled || dimmed ? 0.5 : 1 })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
         <AppText variant="body" style={{ flex: 1 }}>
@@ -268,6 +290,11 @@ export function ChoiceRow({ title, line, selected = false, tag, onPress, disable
             {tag}
           </AppText>
         ) : null}
+        {(tags ?? []).map((t) => (
+          <AppText key={t.text} variant="label" color={t.tone === 'warning' ? 'status.warning' : 'text.secondary'}>
+            {t.text}
+          </AppText>
+        ))}
       </View>
       {line != null && line.length > 0 ? (
         <AppText variant="label" color="text.secondary">

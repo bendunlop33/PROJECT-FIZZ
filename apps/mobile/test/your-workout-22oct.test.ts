@@ -82,7 +82,9 @@ describe('the `May hurt` confirm before a swap (rule 9)', () => {
 
   it('the shared Swap sheet asks with that confirm before `onPick` (source)', () => {
     const sheet = read('ui/swap-sheet.tsx');
-    expect(sheet).toContain('const c = swapPainConfirm(it, actionWord);');
+    // (Ben, 25 Oct) Suggestions and the full list share one ask: `swapPainConfirm` / `pickerConfirm`, then `onPick`.
+    expect(sheet).toContain('ask(swapPainConfirm(it, actionWord), it.exerciseId);');
+    expect(sheet).toContain('ask(pickerConfirm(r, actionWord), r.exerciseId);');
     expect(sheet).toContain('Alert.alert(c.title, c.message ?? undefined, [');
     expect(sheet).toContain("{ text: c.cancel, style: 'cancel' },");
   });

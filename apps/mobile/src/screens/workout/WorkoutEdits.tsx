@@ -22,6 +22,8 @@ import { ExercisePopup } from '../../ui/exercise-popup';
 import { holdMenu, POPUP_COPY, typeMenu, type PopupSetRow } from '../../ui/exercise-popup-model';
 import { SwapSheet } from '../../ui/swap-sheet';
 import type { ChoiceSection } from '../../ui/swap-sheet-model';
+import { useAddOwn } from '../../ui/use-add-own';
+import { useExercisePicker, usePickerView } from '../../ui/use-exercise-picker';
 import { popupCellWrite, popupRestCommand, POPUP_REFUSAL, removePrompt, sessionPopupView } from '../../workout/exercise-popup';
 import type { Round } from '../../workout/rounds';
 import { UNDO_TOAST } from '../../workout/undo-op';
@@ -71,11 +73,15 @@ export interface WorkoutEditsInput {
   toast: ReactNode;
 }
 
-type Sheet = { mode: 'swap'; sessionExerciseId: string; name: string; group: BuilderGroup; groups: BuilderGroup[]; sections: ChoiceSection[] } | { mode: 'add'; group: BuilderGroup; groups: BuilderGroup[]; sections: ChoiceSection[] };
+type Sheet = { mode: 'swap'; sessionExerciseId: string; name: string; sections: ChoiceSection[] } | { mode: 'add'; sections: ChoiceSection[] };
+/** Which row the sheet is for (kept across `＋ Add your own`). */
+type SheetFor = { mode: 'swap'; sessionExerciseId: string } | { mode: 'add' };
+const sheetFor = (s: Sheet): SheetFor => (s.mode === 'swap' ? { mode: 'swap', sessionExerciseId: s.sessionExerciseId } : { mode: 'add' });
 
 export function useWorkoutEdits(p: WorkoutEditsInput) {
   const [popupFor, setPopupFor] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  const picker = useExercisePicker();
   const own = useRef<SessionAggregate | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const latest = useRef(p);
@@ -229,22 +235,33 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
 
   // ---- Swap / Add (the builder's sheet) -------------------------------------
 
-  async function openSwap(sessionExerciseId: string, group?: BuilderGroup) {
+  /**
+   * (Ben, 25 Oct) The suggestions for a group (the chip; none: the exercise's own), and on a fresh open the full
+   * list (every exercise, read once; search and chips are pure over it). Today only, as before.
+   */
+  async function openSheet(to: SheetFor, opts: { group?: BuilderGroup; fresh: boolean; query?: string }) {
     const a = current();
     if (a === null) return;
-    const c = await latest.current.services.workoutEdit.choices(latest.current.sessionId, group === undefined ? { sessionExerciseId } : { sessionExerciseId, group }).catch(() => null);
-    if (c !== null) setSheet({ mode: 'swap', sessionExerciseId, name: nameOf(a, sessionExerciseId), ...c });
+    const sessionExerciseId = to.mode === 'swap' ? to.sessionExerciseId : null;
+    if (opts.fresh) picker.open(() => latest.current.services.exercisePicker.forSession(latest.current.sessionId, sessionExerciseId), opts.query ?? '');
+    const c = await latest.current.services.workoutEdit.choices(latest.current.sessionId, opts.group === undefined ? { sessionExerciseId } : { sessionExerciseId, group: opts.group }).catch(() => null);
+    const sections = c?.sections ?? [];
+    setSheet(to.mode === 'swap' ? { mode: 'swap', sessionExerciseId: to.sessionExerciseId, name: nameOf(a, to.sessionExerciseId), sections } : { mode: 'add', sections });
   }
 
-  async function openAdd(group?: BuilderGroup) {
-    const c = await latest.current.services.workoutEdit.choices(latest.current.sessionId, group === undefined ? { sessionExerciseId: null } : { sessionExerciseId: null, group }).catch(() => null);
-    if (c !== null) setSheet({ mode: 'add', ...c });
+  const openSwap = (sessionExerciseId: string) => openSheet({ mode: 'swap', sessionExerciseId }, { fresh: true });
+  const openAdd = () => openSheet({ mode: 'add' }, { fresh: true });
+  const addOwn = useAddOwn<SheetFor>((to, name) => void openSheet(to, { fresh: true, query: name }));
+
+  function closeSheet() {
+    setSheet(null);
+    picker.close();
   }
 
   function pick(exerciseId: string) {
     const s = sheet;
     if (s === null) return;
-    setSheet(null);
+    closeSheet();
     void inTurn(async () => {
       latest.current.beforeEdit();
       const before = current();
@@ -391,6 +408,9 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
     });
   }
 
+  const liveIds = (current()?.exercises ?? []).filter((e) => e.removed === undefined).map((e) => e.exerciseId);
+  const pickerView = usePickerView(picker, liveIds, (sheet?.sections ?? []).flatMap((x) => x.items.map((i) => i.exerciseId)));
+
   const node = (
     <>
       <ExercisePopup
@@ -463,17 +483,24 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
       <SwapSheet
         visible={sheet !== null}
         title={sheet === null ? '' : sheet.mode === 'swap' ? `Swap ${sheet.name}` : 'Add exercise'}
-        group={sheet?.group ?? 'Chest'}
-        groups={sheet?.groups ?? []}
         sections={sheet?.sections ?? []}
         actionWord={sheet?.mode === 'add' ? 'Add' : 'Swap'}
-        onGroup={(g) => {
-          if (sheet?.mode === 'swap') void openSwap(sheet.sessionExerciseId, g);
-          else void openAdd(g);
-        }}
         onPick={pick}
-        onClose={() => {
-          setSheet(null);
+        onClose={closeSheet}
+        onDismissed={addOwn.onDismissed}
+        picker={{
+          view: pickerView,
+          query: picker.query,
+          onQuery: picker.setQuery,
+          onChip: (g) => {
+            picker.setGroup(g);
+            if (sheet !== null) void openSheet(sheetFor(sheet), g === null ? { fresh: false } : { group: g, fresh: false });
+          },
+          onAddOwn: (name) => {
+            if (sheet === null) return;
+            addOwn.start(sheetFor(sheet), name);
+            closeSheet();
+          },
         }}
       />
     </>

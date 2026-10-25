@@ -189,7 +189,7 @@ export type RootStackParams = {
    * (19 Oct) Ben's own exercise: `＋ New exercise` (`name`: the search text), Edit (`exerciseId`), or
    * the coach card's Edit (`proposalActionId` with the card's `fields`: Save is Add).
    */
-  ExerciseForm: { exerciseId?: string; name?: string; proposalActionId?: string; fields?: CustomExerciseFields };
+  ExerciseForm: { exerciseId?: string; name?: string; proposalActionId?: string; fields?: CustomExerciseFields; /** (Ben, 25 Oct) The Swap / Add sheet's token: a Save hands the new exercise back to it. */ pickFor?: string };
   /** `supersetWith` (19 Oct, `Superset with…`): the row the pick pairs with (an exercise already here is linked; any other is added). */
   ExercisePicker: { sessionId: string; supersetWith?: string };
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */

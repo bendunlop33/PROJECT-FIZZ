@@ -18,3 +18,23 @@ export function takeAdded(): { actionId: string; name: string } | null {
 
 /** Ben's message after Add (his tap, in words). */
 export const addedMessage = (name: string): string => `Added ${name}.`;
+
+/**
+ * (Ben, 25 Oct) `＋ Add your own` on the Swap / Add sheet opens this form; a Save leaves the new exercise here under
+ * the sheet's token, and the sheet comes back (when its screen is in focus again) searching for it, so Ben picks
+ * it there with the same checks as any row (rule 9 `May hurt`, rule 4 `Not at Main Gym`). Nothing is swapped or
+ * added by the form itself.
+ */
+let created: { token: string; exerciseId: string; name: string } | null = null;
+
+export function handOffCreated(token: string, exerciseId: string, name: string): void {
+  created = { token, exerciseId, name };
+}
+
+/** The exercise saved for `token`, once; null when none (the form was cancelled, or another sheet's). */
+export function takeCreated(token: string): { exerciseId: string; name: string } | null {
+  if (created === null || created.token !== token) return null;
+  const c = created;
+  created = null;
+  return { exerciseId: c.exerciseId, name: c.name };
+}

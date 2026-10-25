@@ -26,6 +26,8 @@ import { AppText, BottomCard, CheckInScale, PrimaryButton, SecondaryButton, Stat
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { saveScore, scoreStepOf } from '../../workout/check-in-score';
 import { CoachAskBar } from '../../ui/coach-ask-bar';
+import { useAddOwn } from '../../ui/use-add-own';
+import { useExercisePicker, usePickerView } from '../../ui/use-exercise-picker';
 import { TimeDetailSheet, TimeNoteRow } from '../../ui/time-stepper';
 import { createOnDeviceSpeech } from '../../voice/on-device-speech';
 import { WorkoutTable } from './WorkoutTable';
@@ -81,7 +83,14 @@ export function BuilderWorkoutScreen() {
   const variationOp = useRef(newUuid());
   const [popup, setPopup] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [swap, setSwap] = useState<{ slotKey: string | null; group: BuilderGroup; groups: BuilderGroup[]; sections: ChoiceSection[] } | null>(null);
+  const [swap, setSwap] = useState<{ slotKey: string | null; sections: ChoiceSection[] } | null>(null);
+  // (Ben, 25 Oct) Swap / Add's full list: every exercise, read once per open; search and chips are pure over it.
+  const picker = useExercisePicker();
+  const pickerView = usePickerView(
+    picker,
+    snap === null ? [] : slotsOf(snap.workout.blocks).map((s) => s.exerciseId),
+    (swap?.sections ?? []).flatMap((x) => x.items.map((i) => i.exerciseId)),
+  );
   const [startBusy, setStartBusy] = useState(false);
   const [review, setReview] = useState<BuilderReview | null>(null);
   // (22 Oct) The detail behind the Time note: what the fit changed, and its Undo.
@@ -371,16 +380,25 @@ export function BuilderWorkoutScreen() {
     }
   }
 
-  async function openSwap(slotKey: string | null, group?: BuilderGroup) {
+  /** Swap / Add (§2.5): the suggestions for a group (the chip; none: the exercise's own) and, on a fresh open, the full list. */
+  async function openSwap(slotKey: string | null, opts: { group?: BuilderGroup; fresh?: boolean; query?: string } = {}) {
     if (snap === null) return;
-    const c = await services.builder.exerciseChoices(snap.draftId, group === undefined ? { slotKey } : { slotKey, group });
-    if (c !== null) setSwap({ slotKey, group: c.group, groups: c.groups, sections: c.sections });
+    const draftId = snap.draftId;
+    if (opts.fresh !== false) picker.open(() => services.exercisePicker.forDraft(draftId), opts.query ?? '');
+    const c = await services.builder.exerciseChoices(draftId, opts.group === undefined ? { slotKey } : { slotKey, group: opts.group }).catch(() => null);
+    setSwap({ slotKey, sections: c?.sections ?? [] });
+  }
+  const addOwn = useAddOwn<string | null>((slotKey, name) => void openSwap(slotKey, { query: name }));
+
+  function closeSwap() {
+    setSwap(null);
+    picker.close();
   }
 
   async function pick(exerciseId: string) {
     if (swap === null) return;
     const op: BuilderEditOp = swap.slotKey === null ? { kind: 'add_exercise', exerciseId } : { kind: 'swap', slotKey: swap.slotKey, exerciseId };
-    setSwap(null);
+    closeSwap();
     await edit(op);
   }
 
@@ -789,13 +807,25 @@ export function BuilderWorkoutScreen() {
       <SwapSheet
         visible={swap !== null}
         title={swap?.slotKey == null ? 'Add exercise' : `Swap ${snap.facts[slotsOf(snap.workout.blocks).find((s) => s.key === swap.slotKey)?.exerciseId ?? '']?.name ?? ''}`}
-        group={swap?.group ?? 'Chest'}
-        groups={swap?.groups ?? []}
         sections={swap?.sections ?? []}
         actionWord={swap?.slotKey == null ? 'Add' : 'Swap'}
-        onGroup={(g) => void openSwap(swap?.slotKey ?? null, g)}
         onPick={(id) => void pick(id)}
-        onClose={() => { setSwap(null); }}
+        onClose={closeSwap}
+        onDismissed={addOwn.onDismissed}
+        picker={{
+          view: pickerView,
+          query: picker.query,
+          onQuery: picker.setQuery,
+          onChip: (g) => {
+            picker.setGroup(g);
+            if (swap !== null) void openSwap(swap.slotKey, g === null ? { fresh: false } : { group: g, fresh: false });
+          },
+          onAddOwn: (name) => {
+            if (swap === null) return;
+            addOwn.start(swap.slotKey, name);
+            closeSwap();
+          },
+        }}
       />
       <TimeDetailSheet
         visible={timeDetail && v.time.note !== null}

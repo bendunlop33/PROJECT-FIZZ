@@ -4,7 +4,7 @@ import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { newUuid } from '../../device/runtime';
-import { handOffAdded } from '../../library/exercise-form-handoff';
+import { handOffAdded, handOffCreated } from '../../library/exercise-form-handoff';
 import { canSaveForm, equipmentOptions, EXERCISE_FORM_COPY, loadOptions, measuredOptions, muscleOptions, newFormFields, selectedGroups, toggledMuscle, withEquipment, type ExerciseFormFields } from '../../library/exercise-form-view';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
@@ -74,6 +74,8 @@ export function ExerciseFormScreen() {
     }
     changed();
     if (params.proposalActionId !== undefined) handOffAdded(params.proposalActionId, r.exercise.name);
+    // (Ben, 25 Oct) Opened from the Swap / Add sheet's `＋ Add your own`: the sheet comes back with it found.
+    if (params.pickFor !== undefined) handOffCreated(params.pickFor, r.exercise.id, r.exercise.name);
     navigation.goBack();
   }
 

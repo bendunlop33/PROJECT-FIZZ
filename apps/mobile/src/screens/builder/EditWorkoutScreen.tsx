@@ -18,7 +18,8 @@ import { useTheme } from '../../theme';
 import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, PrimaryButton, ShapeRepsSheet, StatusLine, TextButton, TextField, Toast, ToastHost } from '../../ui';
 import { ExercisePopup } from '../../ui/exercise-popup';
 import { SwapSheet } from '../../ui/swap-sheet';
-import type { ChoiceSection } from '../../ui/swap-sheet-model';
+import { useAddOwn } from '../../ui/use-add-own';
+import { useExercisePicker, usePickerView } from '../../ui/use-exercise-picker';
 import { Divider, Table, ValueRow } from '../../ui/table-parts';
 import { conflictLines, conflictText, EDITOR_COPY, editorPrimary, restChoices } from '../../workout/library-view';
 import { handOffLibraryToast } from '../../workout/library-toast';
@@ -35,7 +36,6 @@ import {
   templateKgStep,
   templatePopupView,
   templateTableView,
-  templateSearchable,
   templateTarget,
   TEMPLATE_COPY,
   type TemplateEditOp,
@@ -45,7 +45,7 @@ import {
 import { WorkoutTable, type WorkoutRowAction } from './WorkoutTable';
 
 type Stale = { current: Routine; lines: string[]; changedAtUtc: string };
-type Swap = { slotId: string | null; choices: ExerciseChoices; query: string; results: ChoiceSection[]; found: Record<string, EditorExerciseInfo> };
+type Swap = { slotId: string | null; choices: ExerciseChoices };
 
 /**
  * The one workout editor (Ben, 23 Oct: "Why does the plan builder's workout builder look so different to the usual
@@ -83,6 +83,17 @@ export function EditWorkoutScreen() {
   const [picks, setPicks] = useState<Record<string, 'mine' | 'theirs'>>({});
   const [popup, setPopup] = useState<string | null>(null);
   const [swap, setSwap] = useState<Swap | null>(null);
+  // (Ben, 25 Oct) Swap / Add's full list: every exercise at the editor's gym, read once per open; search and chips are pure over it.
+  const picker = useExercisePicker();
+  const pickerView = usePickerView(
+    picker,
+    list.map((e) => e.exerciseId),
+    (swap?.choices.sections ?? []).flatMap((x) => x.items.map((i) => i.exerciseId)),
+  );
+  const openSwapRef = useRef<(slotId: string | null, opts?: { group?: BuilderGroup; fresh?: boolean; query?: string }) => void>(() => undefined);
+  const addOwn = useAddOwn<string | null>((slotId, name) => {
+    openSwapRef.current(slotId, { query: name });
+  });
   const [shapeSheet, setShapeSheet] = useState<{ slotId: string; kind: 'reps' | 'effort' } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [toast, setToast] = useState<{ text: string; before: RoutineExercise[] | null } | null>(null);
@@ -254,34 +265,32 @@ export function EditWorkoutScreen() {
     load();
   }
 
-  /** Swap / Add (§2.5): this gym's exercises by group, the same sheet as Your workout's, plus a search. */
-  async function openSwap(slotId: string | null, group?: BuilderGroup) {
+  /**
+   * Swap / Add (§2.5): this gym's suggestions for a group (the chip; none: the exercise's own), the same sheet as
+   * Your workout's; on a fresh open the full list (Ben, 25 Oct: every exercise, search, `＋ Add your own`).
+   */
+  async function openSwap(slotId: string | null, opts: { group?: BuilderGroup; fresh?: boolean; query?: string } = {}) {
     const exerciseId = slotId === null ? null : (listRef.current.find((e) => e.id === slotId)?.exerciseId ?? null);
+    const gymId = editor.gym?.id ?? null;
+    if (opts.fresh !== false) picker.open(() => services.exercisePicker.forTemplate(gymId), opts.query ?? '');
+    const group = opts.group;
     const choices = await services.builder
-      .templateChoices({ gymId: editor.gym?.id ?? null, inWorkout: listRef.current.map((e) => e.exerciseId), exerciseId, ...(group === undefined ? {} : { group }) })
+      .templateChoices({ gymId, inWorkout: listRef.current.map((e) => e.exerciseId), exerciseId, ...(group === undefined ? {} : { group }) })
       .catch((): ExerciseChoices => ({ group: group ?? 'Chest', groups: [], sections: [] }));
-    setSwap((s) => ({ slotId, choices, query: s !== null && s.slotId === slotId ? s.query : '', results: s !== null && s.slotId === slotId ? s.results : [], found: s?.found ?? {} }));
+    setSwap({ slotId, choices });
   }
+  openSwapRef.current = (slotId, opts) => void openSwap(slotId, opts);
 
-  async function search(q: string) {
-    setSwap((s) => (s === null ? s : { ...s, query: q }));
-    if (q.trim() === '') return;
-    const found = await services.routines.searchExercises(q).catch(() => [] as EditorExerciseInfo[]);
-    // A distance exercise can't be saved in a workout yet (EL-B13): not offered.
-    const usable = found.filter(templateSearchable).slice(0, 25);
-    const flags = await services.builder.templateFacts({ gymId: editor.gym?.id ?? null, exerciseIds: usable.map((x) => x.id) }).catch((): Record<string, TemplateFact> => ({}));
-    setSwap((s) =>
-      s === null || s.query !== q
-        ? s
-        : { ...s, results: [{ focus: 'Results', items: usable.map((x) => ({ exerciseId: x.id, name: x.name, works: flags[x.id]?.works ?? null, mayHurt: flags[x.id]?.mayHurt === true, painLine: null })) }], found: { ...s.found, ...Object.fromEntries(usable.map((x) => [x.id, x])) } },
-    );
+  function closeSwap() {
+    setSwap(null);
+    picker.close();
   }
 
   async function pick(exerciseId: string) {
     const s = swap;
     if (s === null) return;
-    setSwap(null);
-    const x = s.found[exerciseId] ?? (await services.routines.exerciseInfo([exerciseId]).catch((): Record<string, EditorExerciseInfo> => ({})))[exerciseId];
+    closeSwap();
+    const x = (await services.routines.exerciseInfo([exerciseId]).catch((): Record<string, EditorExerciseInfo> => ({})))[exerciseId];
     if (x === undefined) {
       setError('Couldn’t add that exercise. Try again.');
       return;
@@ -538,16 +547,25 @@ export function EditWorkoutScreen() {
       <SwapSheet
         visible={swap !== null}
         title={swap?.slotId == null ? 'Add exercise' : `Swap ${nameOfSlot(swap.slotId)}`}
-        group={swap?.choices.group ?? 'Chest'}
-        groups={swap?.choices.groups ?? []}
-        sections={swap === null ? [] : swap.query.trim() === '' ? swap.choices.sections : swap.results}
+        sections={swap?.choices.sections ?? []}
         actionWord={swap?.slotId == null ? 'Add' : 'Swap'}
-        onGroup={(g) => void openSwap(swap?.slotId ?? null, g)}
         onPick={(id) => void pick(id)}
-        onClose={() => {
-          setSwap(null);
+        onClose={closeSwap}
+        onDismissed={addOwn.onDismissed}
+        picker={{
+          view: pickerView,
+          query: picker.query,
+          onQuery: picker.setQuery,
+          onChip: (g) => {
+            picker.setGroup(g);
+            if (swap !== null) void openSwap(swap.slotId, g === null ? { fresh: false } : { group: g, fresh: false });
+          },
+          onAddOwn: (name) => {
+            if (swap === null) return;
+            addOwn.start(swap.slotId, name);
+            closeSwap();
+          },
         }}
-        search={{ query: swap?.query ?? '', onQuery: (q) => void search(q) }}
       />
       <ShapeRepsSheet
         visible={shapeSheet?.kind === 'reps' && shapeSlot !== undefined}
