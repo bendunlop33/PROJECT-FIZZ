@@ -40,6 +40,7 @@ export * from './exercise-search';
 export * from './find-exercises';
 export * from './custom-exercise';
 export * from './exercise-browse';
+export * from './exercise-picker';
 export * from './session/add-shape';
 export * from './exercise-equipment';
 export * from './stations';

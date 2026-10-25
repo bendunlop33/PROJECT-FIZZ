@@ -37,7 +37,7 @@ export const EXERCISE_EQUIPMENT_WORD: Record<ExerciseEquipmentKind, string> = {
   rack: 'Rack',
 };
 
-type RowExercise = Pick<Exercise, 'id' | 'name' | 'movementPattern' | 'primaryMuscles' | 'compatibleEquipment' | 'defaultLoadConvention' | 'laterality' | 'measurement' | 'source'>;
+export type RowExercise = Pick<Exercise, 'id' | 'name' | 'movementPattern' | 'primaryMuscles' | 'compatibleEquipment' | 'defaultLoadConvention' | 'laterality' | 'measurement' | 'source'>;
 
 /** The exercise's equipment in one word: its first kind, or `Bodyweight` when it needs none. */
 export function equipmentWordOf(e: Pick<Exercise, 'compatibleEquipment' | 'defaultLoadConvention'>): string | null {
@@ -164,7 +164,7 @@ export interface BrowseSectionView {
  * (D5, Ben 22–23 Oct; prototype `renderLibrary`) Library › Exercises lists by broad group, and Legs and Arms by
  * part. Glutes list under Hamstrings and shins under Calves (as they count); forearm work under Arms.
  */
-const BROWSE_PARTS: Readonly<Partial<Record<BroadMuscleGroup, readonly string[]>>> = {
+export const BROWSE_PARTS: Readonly<Partial<Record<BroadMuscleGroup, readonly string[]>>> = {
   Legs: ['Quads', 'Hamstrings', 'Calves'],
   Arms: ['Biceps', 'Triceps', 'Forearms'],
 };
@@ -215,7 +215,8 @@ export interface BrowseInput {
   recentLimit?: number;
 }
 
-function line2Of(e: RowExercise, match: ExerciseMatch | null): string {
+/** A browse row's second line: `Matches "RDL" · Barbell · Hamstrings` (· `per side` / `Time` / `Distance` / `Cardio`). */
+export function browseLine2Of(e: RowExercise, match: ExerciseMatch | null): string {
   const parts: string[] = [];
   if (match?.matchedAlias != null) parts.push(`Matches “${match.matchedAlias}”`);
   const eq = equipmentWordOf(e);
@@ -250,7 +251,7 @@ export function buildExerciseBrowseView(input: BrowseInput): ExerciseBrowseView 
     if (r.entry.painFlag !== null) tags.push({ kind: 'may_hurt', text: 'May hurt', accessibilityLabel: r.entry.painFlag.accessibilityLabel });
     if (e.source === 'custom') tags.push({ kind: 'custom', text: 'Yours' });
     // Availability tags only while `At <gym>` is on (§9.3); then nothing not-at-gym is listed anyway.
-    const line2 = line2Of(e, r.match);
+    const line2 = browseLine2Of(e, r.match);
     const line3 = lastLine(input.last.get(e.id), gymId, input.gymNames, input.today);
     const a11y = [e.name, spoken(line2).toLowerCase(), line3 === null ? null : spoken(line3).toLowerCase(), r.entry.hasGuide ? 'has a guide' : null, ...tags.map((t) => (t.kind === 'may_hurt' ? t.accessibilityLabel : t.text))].filter((x): x is string => x !== null && x !== '');
     return { exerciseId: e.id, name: e.name, hasGuide: r.entry.hasGuide, line2, line3, tags, accessibilityLabel: a11y.join(', ') };
