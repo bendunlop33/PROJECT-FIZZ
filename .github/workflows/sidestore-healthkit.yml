@@ -63,6 +63,13 @@ on:
   push:
     tags:
       - 'sidestore-hk-*'
+    # Tag pushes aren't possible from the agent session, and workflow_dispatch needs the file on
+    # the default branch. Editing this request file on the working branch starts a build with the
+    # defaults; no other push runs this workflow.
+    branches:
+      - 'claude/gracious-knuth-joxqpw'
+    paths:
+      - '.github/sidestore-healthkit-request.txt'
 
 permissions:
   contents: read
