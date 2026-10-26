@@ -325,6 +325,8 @@ Pushed from `Exercises ›`. Search field (system keyboard, `Search` return key,
 
 ### 2.7 Exercise detail, slice B
 
+> **Superseded for layout (Ben, 26 Oct): one exercise-progress screen.** Exercise detail is now Progress › Lifts' body for one exercise (no chip row, one period set, `BEST REPS` and `RECORDS` below). See progress-goals.md, revision "Progress fast, one exercise-progress screen …" (26 Oct). The regions below describe the old screen.
+
 Pushed from the Exercises list, a home record, or the Summary's exercise rows (later).
 
 Regions:
