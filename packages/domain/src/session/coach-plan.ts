@@ -246,25 +246,29 @@ function templateOf(rowId: string, i: number, t: PlanDayDraft['plan']['slots'][n
   };
 }
 
+/**
+ * One plan slot as a saved workout's row (its ID from the plan, version and slot, so the first workout finds the
+ * plan's checked loads); every load `Auto`.
+ */
+export function routineExerciseOfSlot(planId: string, versionN: number, s: PlanDayDraft['plan']['slots'][number], order: number): RoutineExercise {
+  const rowId = planSlotRowId(planId, versionN, s.slotKey);
+  return {
+    id: rowId,
+    exerciseId: s.exerciseId,
+    equipmentId: s.checkedOn?.equipmentId ?? null,
+    order,
+    supersetGroup: s.supersetGroup,
+    setTemplates: s.setTemplates.map((t, k) => templateOf(rowId, k, t)),
+    restBySetType: {},
+    transitionRestS: null,
+    progressionRuleId: null,
+    main: s.main,
+  };
+}
+
 /** One plan day as a saved workout (`source: 'coach'`, in the rotation at `rotationAtUtc`). */
 export function routineFromPlanDay(input: { plan: Pick<PlanDraft, 'id' | 'ownerId'>; versionN: number; day: PlanDayDraft; id: string; opId: string; at: ZonedTimestamp; rotationAtUtc: string }): Routine {
-  const exercises: RoutineExercise[] = [...input.day.plan.slots]
-    .sort((a, b) => a.order - b.order)
-    .map((s, i) => {
-      const rowId = planSlotRowId(input.plan.id, input.versionN, s.slotKey);
-      return {
-        id: rowId,
-        exerciseId: s.exerciseId,
-        equipmentId: s.checkedOn?.equipmentId ?? null,
-        order: i,
-        supersetGroup: s.supersetGroup,
-        setTemplates: s.setTemplates.map((t, k) => templateOf(rowId, k, t)),
-        restBySetType: {},
-        transitionRestS: null,
-        progressionRuleId: null,
-        main: s.main,
-      };
-    });
+  const exercises: RoutineExercise[] = [...input.day.plan.slots].sort((a, b) => a.order - b.order).map((s, i) => routineExerciseOfSlot(input.plan.id, input.versionN, s, i));
   return {
     id: input.id,
     ownerId: input.plan.ownerId,

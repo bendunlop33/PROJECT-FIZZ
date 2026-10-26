@@ -68,6 +68,12 @@ export interface PlanEngineInput {
   painHeld?: ReadonlySet<string>;
   /** The exercise's catalogue facts for the shared warm-up planner (WU9 floor start); absent: from the key. */
   factsOf?: (key: string) => WarmupExerciseFacts | null;
+  /**
+   * (Ben, 22 Oct: "Editing keeps the plan"; 26 Oct, Edit plan on a running plan) Each day's exercises now (catalogue
+   * keys), by day index: they go first for their muscle, so a tweak changes only what it needs; a new like for that
+   * muscle still wins. Absent: a new plan.
+   */
+  keep?: ((dayIndex: number) => readonly string[]) | undefined;
   nowMs: number;
 }
 
@@ -587,7 +593,9 @@ function buildWithCaps(input: PlanEngineInput, caps: readonly number[]): Omit<Pb
       const occ = (seenM.get(sk) ?? -1) + 1;
       seenM.set(sk, occ);
       const start = occ % Math.min(2, list.length);
-      const rot = [...list.slice(start), ...list.slice(0, start)];
+      let rot = [...list.slice(start), ...list.slice(0, start)];
+      const kept = input.keep?.(d.index) ?? [];
+      if (kept.length > 0 && !rot.some((x) => likes.includes(x.key) && !kept.includes(x.key))) rot = [...rot.filter((x) => kept.includes(x.key)), ...rot.filter((x) => !kept.includes(x.key))];
       chunks(s).forEach((c) => {
         // A fresh exercise that near-duplicates nothing on the day; else more sets on one already there (an
         // accessory before the main lift); never a near-duplicate.
