@@ -365,6 +365,25 @@ export function todayOptionsView(list: TodayOptions | null, snap: BuilderSnapsho
 }
 
 /**
+ * (Ben, 26 Oct; app review finding 7) Today's options on Your workout fold into one `Options` row above the table, so
+ * the exercises start at the top. Collapsed it shows only what is set: `Bench · Focused · Abs · Supersets` (the main
+ * lift only when there is a choice; Abs and Supersets only when on). Values only; the row opens the full controls.
+ */
+export const OPTIONS_ROW_COPY = { title: 'Options' } as const;
+
+export function todayOptionsSummary(o: TodayOptions): { text: string; accessibilityLabel: string } {
+  const main = o.mainLifts.length > 1 ? (o.mainLifts.find((m) => m.selected)?.label ?? null) : null;
+  const parts = [main, o.accessories === 'focused' ? TODAY_V2_COPY.focused : o.accessories === 'varied' ? TODAY_V2_COPY.varied : null, o.abs ? TODAY_V2_COPY.abs : null, o.supersets ? TODAY_V2_COPY.supersets : null].filter((x): x is string => x !== null);
+  const spoken = [
+    main === null ? null : `${TODAY_V2_COPY.mainLift} ${main}`,
+    o.accessories === null ? null : `${TODAY_V2_COPY.accessories} ${o.accessories === 'focused' ? TODAY_V2_COPY.focused : TODAY_V2_COPY.varied}`,
+    `${TODAY_V2_COPY.abs} ${o.abs ? 'on' : 'off'}`,
+    `${TODAY_V2_COPY.supersets} ${o.supersets ? 'on' : 'off'}`,
+  ].filter((x): x is string => x !== null);
+  return { text: parts.join(' · '), accessibilityLabel: `${OPTIONS_ROW_COPY.title}: ${spoken.join(', ')}` };
+}
+
+/**
  * The Time row (22 Oct): the length, its steps, and what a live fit changed (from the service's `time`). The note is
  * the biggest change: exercises left out, else sets fewer, else supersets, else shorter rests (`fitNoteOf`). Values only.
  */

@@ -493,11 +493,14 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 │ ‹ Today                                  │  one back control
 │ Chest · about 47 min                     │  estimate
 │ ┌──────────────────────────────────────┐ │
+│ │ Options     Bench · Focused · Abs  ⌄ │ │  one row, collapsed (Ben, 26 Oct)
+│ └──────────────────────────────────────┘ │
+│   tapped, it opens in place:             │
 │ │ Main lift          (●Bench) (Incline)│ │  only when the day has 2+ main lifts
 │ │ Accessories     (●Focused) (Varied)  │ │
 │ │ Abs                            [ ●]  │ │
 │ │ Supersets                      [ ●]  │ │
-│ └──────────────────────────────────────┘ │
+│ │ ↻ Mix it up                          │ │
 │ ✦ Cable fly 3 → 2 sets?    Apply   ✕    │  coach offer, only when there is one (D2)
 │     Exercise              Sets  Top set  │
 │  1  Barbell bench press     3   102.5    │
@@ -506,7 +509,7 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 └──────────────────────────────────────────┘
 ```
 
-- **Layout.** A compact table under the title, rows ≥ 50 pt, chips and switches with 44 pt targets. Then the coach offer line (if any), then the workout table as §2.3.
+- **Layout (Ben, 26 Oct; app review finding 7).** One `Options` row under the title (44 pt), collapsed by default, so the first exercise sits near the top of the screen. Collapsed it shows only what is set (`Bench · Focused · Abs · Supersets`: the main lift only with 2+ main lifts; Abs and Supersets only when on). A tap opens the five controls in place (`⌃` closes them): rows ≥ 50 pt, chips and switches with 44 pt targets. VoiceOver: `Options: Main lift Bench, Accessories Focused, Abs on, Supersets off`, button, collapsed/expanded. Then the coach offer line (if any), then the workout table as §2.3. *(Was: the five rows always open above the table, which pushed the first exercise two-thirds down a 375 × 667 screen.)*
 - **Interactions.** A chip or switch loads Today's draft for that choice at today's Time, from the same draft and fit code as Today (D9, one shared fit), then the coach's applied offer and **Ben's earlier edits replayed on it** (review 23 Oct S3, FT5: a control change never quietly undoes them; was "replaces earlier manual edits" [Proposal]). Toast `Abs off · Undo` (`Main lift: Incline`, `Accessories: Varied`, `Supersets off`); Undo puts back the workout as it was. A coach offer Ben applied is kept across a control change while its exercise still reads as offered. Everything here is today's draft: `‹ Today` shows it on Today's card (`Edited`), and Edit reopens it (§2.0.2).
 - **Coach offer line.** Shown while its exercise reads as offered (`Cable fly` at 3 sets); once Ben edits that exercise (sets, swap, remove) or a control loads a draft where it differs, the line is withdrawn; a stale Apply is refused with `Out of date` (rule 5).
 - **`↻ Mix it up` (Ben, 23 Oct; was [Proposal], §9 Q-R6).** A fifth row here, under Supersets: `↻ Mix it up`. One tap swaps one accessory for a fresh one with the 20 Oct rules (never the main lift; on Varied an accessory repeating another's angle first, then the one done most lately on this day; same group, another angle, same role, here, not pain-flagged, not in the day's last two sessions, not already in the workout; least recently done first). An accessory with no fresh option gives way to the next. Code's pick, offline (no coach call here). Toast `<from> → <to> · Undo`; a tap with nothing fresh: `No other option`. Each tap mixes again from the workout as it now is (no `Another (1/3)` counter). Its swap is Ben's own (he tapped it), so it's listed by `Keep for next time?`. Built: `mixItUpPick` (domain), `builder.mixItUp` (one versioned write through Your workout's edit, op ID, stale refused). Not in the prototype.
