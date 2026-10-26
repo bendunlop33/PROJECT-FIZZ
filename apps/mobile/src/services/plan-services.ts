@@ -1,4 +1,5 @@
 import {
+  localDateOf,
   activePause,
   activePin,
   applyPlan,
@@ -56,6 +57,7 @@ import {
   type HistoryWorkout,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
+import { createVersionMemo } from './version-memo';
 import type { DraftSlot, EquipmentInstance, Exercise, MuscleGroup, PlanApplyMode, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
@@ -213,6 +215,7 @@ export type PlanEndOutcome = (Extract<PlanWriteOutcome, { ok: true }> & { notRes
 const plural = (n: number, word: string): string => `${String(n)} ${word}${n === 1 ? '' : 's'}`;
 
 export function createPlanServices(deps: PlanServicesDeps) {
+  const consistencyMemo = createVersionMemo<ConsistencyView | null>(2);
   const repo = () => deps.store().repos.planDrafts;
 
   async function owner(): Promise<UserProfile | null> {
@@ -686,6 +689,12 @@ export function createPlanServices(deps: PlanServicesDeps) {
     async consistency(): Promise<ConsistencyView | null> {
       const p = await owner();
       if (p === null) return null;
+      // (Perf, Ben 26 Oct) Kept while nothing is written and the day is the same: a return to Progress reads nothing.
+      return consistencyMemo.get(deps.store(), `${p.id}|${p.timezone}|${localDateOf(toMs(deps.now().utc), p.timezone)}`, () => readConsistency(p));
+    },
+  };
+
+  async function readConsistency(p: UserProfile): Promise<ConsistencyView | null> {
       const now = deps.now();
       const nowMs = toMs(now.utc);
       const from = nowMs - 10 * 7 * 86_400_000;
@@ -714,8 +723,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
         plan: plan === null ? null : { days: plan.days.map((d) => ({ ...d, bodyParts: parts.get(d.routineId) ?? [] })), appliedAtUtc: plan.appliedAtUtc },
         pausedDates: paused,
       });
-    },
-  };
+  }
 }
 
 export type PlanServices = ReturnType<typeof createPlanServices>;

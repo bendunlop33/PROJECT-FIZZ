@@ -8,6 +8,7 @@ import {
   customProgressWindow,
   listProgressExercises,
   defaultLiftPicks,
+  trackedLiftPicks,
   liftChips,
   liftsTabSelection,
   type LiftChip,
@@ -46,6 +47,8 @@ import {
   type HistoryWorkout,
 } from '@fizz/domain';
 import { timeSlicer, type Slicer, type Store } from '@fizz/persistence';
+
+import { createVersionMemo } from './version-memo';
 import type { Exercise, ImplementCount, ProgressGrouping, ProgressPeriodKey, SessionAggregate, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
@@ -86,6 +89,16 @@ export interface ProgressServiceDeps {
    * plan in use (or absent): Ben's most-trained main compounds instead.
    */
   planMainLifts?: () => Promise<readonly string[] | null>;
+  /** (Ben, 26 Oct) The lifts Ben picked on Overview (`Edit`, `progress_lifts`), in his order; absent or empty: none. */
+  progressLifts?: () => Promise<readonly string[]>;
+}
+
+/** (Perf, Ben 26 Oct) Progress before any tab: whether there is history, the period in use (the coach's entry) and the ResumeBar. */
+export interface ProgressShell {
+  hasData: boolean;
+  period: ProgressPeriodKey;
+  range: DateRange | null;
+  resume: ResumeBar | null;
 }
 
 export interface ProgressHome {
@@ -237,6 +250,11 @@ export function createProgressService(deps: ProgressServiceDeps) {
 
   /** A projection pass in progress (prewarm or a screen); the next one waits for it, then mostly hits the cache. */
   let pass: Promise<unknown> = Promise.resolve();
+  /**
+   * (Perf, Ben 26 Oct) The last pass's answer: handed out again (the same array) while no workout changed, so the
+   * domain's per-history memos (records) hold across periods, tabs and returns to Progress.
+   */
+  let lastPass: { store: Store; ownerId: string; tz: string; out: { sessions: ProgressSession[]; unreadable: number } } | null = null;
 
   /** Every finished workout, projected; reads only sessions whose revision changed. One pass at a time. */
   function finishedSessions(profile: UserProfile): Promise<{ sessions: ProgressSession[]; unreadable: number }> {
@@ -293,14 +311,18 @@ export function createProgressService(deps: ProgressServiceDeps) {
         next.set(ref.id, { revision: ref.revision, projection: null, unreadable: true });
       }
     }
+    const same = toRead.length === 0 && next.size === cache.size && lastPass !== null && lastPass.store === store && lastPass.ownerId === profile.id && lastPass.tz === profile.timezone;
     cache = next;
+    if (same && lastPass !== null) return lastPass.out;
     const sessions: ProgressSession[] = [];
     let unreadable = 0;
     for (const c of next.values()) {
       if (c.unreadable) unreadable += 1;
       else if (c.projection !== null) sessions.push(c.projection);
     }
-    return { sessions, unreadable };
+    const out = { sessions, unreadable };
+    lastPass = { store, ownerId: profile.id, tz: profile.timezone, out };
+    return out;
   }
 
   async function context(profile: UserProfile) {
@@ -326,12 +348,19 @@ export function createProgressService(deps: ProgressServiceDeps) {
       .sort((a, b) => b.startedMs - a.startedMs)
       .slice(0, limit)
       .map((x) => x.sessionId);
-    const aggregates: SessionAggregate[] = [];
-    for (const id of ids) {
-      const a = await repos().sessions.get(id).catch(() => null);
-      if (a !== null && a.session.ownerId === profile.id) aggregates.push(a);
-    }
-    const history = exerciseTargetHistory(aggregates, exerciseId, limit);
+    // (Perf, Ben 26 Oct; review 26 Oct finding 9) One batched read of the stored history summaries, not up to 20
+    // full workouts one at a time; kept while nothing is written, so a period or measure change reads nothing.
+    const history = await targetsMemo.get(deps.store(), `${profile.id}|${exerciseId}|${String(limit)}|${ids.join(',')}`, async () => {
+      const got = await repos()
+        .sessions.getMany(ids)
+        .catch(() => new Map<string, HistoryWorkout | Error>());
+      const workouts: HistoryWorkout[] = [];
+      for (const id of ids) {
+        const a = got.get(id);
+        if (a !== undefined && !(a instanceof Error) && a.session.ownerId === profile.id) workouts.push(a);
+      }
+      return exerciseTargetHistory(workouts, exerciseId, limit);
+    });
     // `Targets hit` (Ben, 20 Oct): with the setting on, on main lifts only; the per-workout rows always stay.
     const mains = targetsHit ? ((await deps.mainLiftIds?.().catch(() => null)) ?? new Set<string>()) : new Set<string>();
     return { ...history, hitText: targetsHitShown(history.hitText, { on: targetsHit, main: isMainLift(exerciseId, mains) }) };
@@ -343,29 +372,59 @@ export function createProgressService(deps: ProgressServiceDeps) {
    * In memory only: not data, and a restore or relaunch falls back to the
    * defaults (most-used series, `Est. 1RM`, `6 mo`, `By weight`).
    */
+  const targetsMemo = createVersionMemo<ExerciseTargetHistory>(8);
+  /** (Perf, Ben 26 Oct) Answers kept while nothing is written (`createVersionMemo`): a return to Progress reads nothing. */
+  const homeMemo = createVersionMemo<ProgressHome | null>(8);
+  const tabMemo = createVersionMemo<ExerciseTab | null>(8);
+  const activeMemo = createVersionMemo<SessionAggregate | null>(1);
+  const shellMemo = createVersionMemo<ProgressShell>(4);
+  const activeOf = (ownerId: string): Promise<SessionAggregate | null> =>
+    activeMemo.get(deps.store(), ownerId, () =>
+      repos()
+        .sessions.getActive(ownerId)
+        .catch(() => null),
+    );
+
   const detailChoice = new Map<string, { store: Store; seriesId?: string; metric?: ExerciseMetric; range?: TrendRange; repBy?: 'weight' | 'reps' }>();
 
-  return {
-    /** `listProgressExercises` (§6.2, §2.6): exercises with a finished session, by last done; search and body-part filter. */
-    async exercises(req: { query?: string; group?: MuscleGroup | null } = {}): Promise<{ view: ExerciseListView; unreadable: number } | null> {
-      const profile = await deps.profile();
-      if (!profile) return null;
-      const ctx = await context(profile);
-      const today = localDateOf(toMs(deps.now().utc), profile.timezone);
-      return { view: buildExerciseListView({ sessions: ctx.sessions, exercises: ctx.exercises, today, query: req.query ?? '', group: req.group ?? null }), unreadable: ctx.unreadable };
-    },
+  /** The period, grouping and custom range in use: the request's, else Ben's latest tap, else saved, else the defaults. */
+  function periodNow(profile: UserProfile, req: { period?: ProgressPeriodKey; grouping?: ProgressGrouping; range?: DateRange }, today: string): { period: ProgressPeriodKey; grouping: ProgressGrouping; range: DateRange | null } {
+    const pick = chosenNow();
+    const period = req.period ?? pick.period ?? profile.progress?.period ?? DEFAULT_PROGRESS_PERIOD;
+    const grouping = req.grouping ?? pick.grouping ?? profile.progress?.grouping ?? 'body_part';
+    const asked = req.range ?? (req.period === undefined && customRange !== null && customRange.store === deps.store() ? customRange.range : null);
+    return { period, grouping, range: asked === null ? null : normaliseProgressRange(asked, today) };
+  }
 
-    /**
-     * The Exercises tab (Ben, 13–14 Oct 2026): local only, no AI. The period
-     * is the tab's own (not the shared home setting). The exercise (Ben, 26 Oct):
-     * the one asked for, else his last pick on this phone, else his first main lift
-     * (`defaultLiftPicks`: the plan's per day, else his most-trained main compounds).
-     */
-    async exerciseTab(req: ExerciseTabRequest): Promise<ExerciseTab | null> {
-      const profile = await deps.profile();
-      if (!profile) return null;
+  async function homeFor(profile: UserProfile, req: { period?: ProgressPeriodKey; grouping?: ProgressGrouping; range?: DateRange }): Promise<ProgressHome | null> {
+    const nowMs = toMs(deps.now().utc);
+    const today = localDateOf(nowMs, profile.timezone);
+    const { period, grouping, range } = periodNow(profile, req, today);
+    // (Perf, Ben 26 Oct) Kept while nothing is written: a return to Progress or a period picked before reads nothing.
+    const base = await homeMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, today, period, grouping, range]), async () => {
       const ctx = await context(profile);
-      const today = localDateOf(toMs(deps.now().utc), profile.timezone);
+      let earliest = today;
+      for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
+      const home: ProgressHome = {
+        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period, grouping, range }),
+        period,
+        range,
+        today,
+        earliest,
+        grouping,
+        unreadable: ctx.unreadable,
+        resume: null,
+      };
+      return home;
+    });
+    if (base === null) return null;
+    const resume = resumeBar(await activeOf(profile.id), nowMs);
+    // The same object while nothing changed, so a screen showing it doesn't render again.
+    return resume === null ? base : { ...base, resume };
+  }
+
+  async function readExerciseTab(profile: UserProfile, req: ExerciseTabRequest, today: string): Promise<ExerciseTab | null> {
+      const ctx = await context(profile);
       let period = req.period;
       let range = req.range ? normaliseProgressRange(req.range, today) : null;
       const openDate = req.open ? ctx.sessions.find((s) => s.sessionId === req.open?.sessionId)?.date : undefined;
@@ -376,7 +435,9 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const listed = listProgressExercises(ctx.sessions);
       const names = new Map(listed.map((e) => [e.exerciseId, e.name]));
       const planMains = (await deps.planMainLifts?.().catch(() => null)) ?? null;
-      const picks = defaultLiftPicks({ planMains, sessions: ctx.sessions, info: (id) => ctx.exercises.get(id) ?? null, today });
+      const picked = (await deps.progressLifts?.().catch(() => null)) ?? [];
+      // (Ben, 26 Oct) One list of tracked lifts: his Overview picks first, then the defaults.
+      const picks = trackedLiftPicks({ picked, defaults: defaultLiftPicks({ planMains, sessions: ctx.sessions, info: (id) => ctx.exercises.get(id) ?? null, today }), logged: (id) => names.has(id) });
       const exerciseId = liftsTabSelection({ requested: req.exerciseId ?? null, remembered: req.remembered ?? null, picks: picks.ids, logged: (id) => names.has(id) }) ?? listed[0]?.exerciseId ?? null;
       const nameOf = (id: string): string => ctx.exercises.get(id)?.name ?? names.get(id) ?? 'Exercise';
       const lifts = { chips: liftChips(picks.ids, exerciseId, nameOf), source: picks.source };
@@ -399,6 +460,48 @@ export function createProgressService(deps: ProgressServiceDeps) {
             });
       const targets = exerciseId === null ? null : await targetsFor(profile, ctx.sessions, exerciseId, req.targetsHit === true).catch(() => null);
       return { view, period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable, targets, lifts };
+  }
+
+  return {
+    /** `listProgressExercises` (§6.2, §2.6): exercises with a finished session, by last done; search and body-part filter. */
+    async exercises(req: { query?: string; group?: MuscleGroup | null } = {}): Promise<{ view: ExerciseListView; unreadable: number } | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const ctx = await context(profile);
+      const today = localDateOf(toMs(deps.now().utc), profile.timezone);
+      return { view: buildExerciseListView({ sessions: ctx.sessions, exercises: ctx.exercises, today, query: req.query ?? '', group: req.group ?? null }), unreadable: ctx.unreadable };
+    },
+
+    /**
+     * The Exercises tab (Ben, 13–14 Oct 2026): local only, no AI. The period
+     * is the tab's own (not the shared home setting). The exercise (Ben, 26 Oct):
+     * the one asked for, else his last pick on this phone, else his first main lift
+     * (`defaultLiftPicks`: the plan's per day, else his most-trained main compounds).
+     */
+    async exerciseTab(req: ExerciseTabRequest): Promise<ExerciseTab | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const today = localDateOf(toMs(deps.now().utc), profile.timezone);
+      // (Perf, Ben 26 Oct) The same request with nothing written since is answered from memory.
+      return tabMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, profile.preferredUnit, today, req]), () => readExerciseTab(profile, req, today));
+    },
+
+    /**
+     * (Perf, Ben 26 Oct) What Progress needs before any tab: whether there is anything to show, the period the
+     * coach is asked about, and the ResumeBar. Cheap: no workout is read.
+     */
+    async shell(): Promise<ProgressShell | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const nowMs = toMs(deps.now().utc);
+      const today = localDateOf(nowMs, profile.timezone);
+      const { period, range } = periodNow(profile, {}, today);
+      const base = await shellMemo.get(deps.store(), JSON.stringify([profile.id, today, period, range]), async () => {
+        const refs = await repos().sessions.listFinishedRevisions(profile.id);
+        return { hasData: refs.length > 0, period, range, resume: null };
+      });
+      const resume = resumeBar(await activeOf(profile.id), nowMs);
+      return resume === null ? base : { ...base, resume };
     },
 
     /**
@@ -473,6 +576,10 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const profile = await deps.profile();
       if (!profile) return;
       await finishedSessions(profile);
+      // (Perf, Ben 26 Oct) And the Training totals for the period in use, so the tab opens from memory (it also
+      // walks the records once for every later period).
+      await (deps.slicer ?? (() => timeSlicer()))()();
+      await homeFor(profile, {}).catch(() => null);
     },
 
     /**
@@ -484,29 +591,9 @@ export function createProgressService(deps: ProgressServiceDeps) {
     async home(req: { period?: ProgressPeriodKey; grouping?: ProgressGrouping; range?: DateRange } = {}): Promise<ProgressHome | null> {
       const profile = await deps.profile();
       if (!profile) return null;
-      const pick = chosenNow();
-      const period = req.period ?? pick.period ?? profile.progress?.period ?? DEFAULT_PROGRESS_PERIOD;
-      const grouping = req.grouping ?? pick.grouping ?? profile.progress?.grouping ?? 'body_part';
-      const now = deps.now();
-      const nowMs = toMs(now.utc);
-      const today = localDateOf(nowMs, profile.timezone);
-      const asked = req.range ?? (req.period === undefined && customRange !== null && customRange.store === deps.store() ? customRange.range : null);
-      const range = asked === null ? null : normaliseProgressRange(asked, today);
-      const ctx = await context(profile);
-      const active = await repos().sessions.getActive(profile.id).catch(() => null);
-      let earliest = today;
-      for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
-      return {
-        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period, grouping, range }),
-        period,
-        range,
-        today,
-        earliest,
-        grouping,
-        unreadable: ctx.unreadable,
-        resume: resumeBar(active, nowMs),
-      };
+      return homeFor(profile, req);
     },
+
 
     /**
      * What the Library reads from history (exercise-library §9): the same

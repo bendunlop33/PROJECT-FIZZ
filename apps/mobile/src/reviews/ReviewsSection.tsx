@@ -300,9 +300,9 @@ export function LiftsShownSheet({ visible, onClose, version, onSaved }: { visibl
  * until there is something to show. `onOpenLifts`: the Lifts tab (on one lift's page, or its list);
  * `onOpenTraining`: the Training tab.
  */
-export function ReviewsSection({ onOpenLifts, onOpenTraining }: { onOpenLifts: (exerciseId: string | null) => void; onOpenTraining: () => void }) {
+export function ReviewsSection({ onOpenLifts, onOpenTraining, active = true }: { onOpenLifts: (exerciseId: string | null) => void; onOpenTraining: () => void; /** Showing now: a hidden Overview doesn't read (Ben, 26 Oct). */ active?: boolean }) {
   const navigation = useNavigation();
-  const [data, reload] = useScreenData((s) => s.reviews.progress());
+  const [data, reload] = useScreenData((s) => s.reviews.progress(), { enabled: active });
   const [liftsOpen, setLiftsOpen] = useState(false);
   const [mode, setMode] = useState<WeekMode>('week');
   if (data.state === 'error') {

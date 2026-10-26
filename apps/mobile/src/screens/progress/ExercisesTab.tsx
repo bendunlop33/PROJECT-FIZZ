@@ -35,7 +35,7 @@ export interface ExercisesFocus {
   n: number;
 }
 
-export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null } = {}) {
+export function ExercisesTab({ focus = null, active = true }: { focus?: ExercisesFocus | null; /** Showing now: a hidden tab doesn't read (Ben, 26 Oct). */ active?: boolean } = {}) {
   const theme = useTheme();
   const ax = useAx();
   const [exerciseId, setExerciseId] = useState<string | null>(null);
@@ -49,7 +49,7 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
   // The record's workout: picks its series and widens the period until Ben picks another exercise, series or period.
   const [opened, setOpened] = useState<{ sessionId: string; sessionExerciseId: string | null } | null>(null);
   const { prefs, update } = useDevicePrefs();
-  const [data, reload] = useScreenData((s) => s.progress.exerciseTab({ exerciseId, remembered: prefs.liftsExercise ?? null, period, range, measure, trailing, seriesId, open: opened, targetsHit: prefs.targetsHit }));
+  const [data, reload] = useScreenData((s) => s.progress.exerciseTab({ exerciseId, remembered: prefs.liftsExercise ?? null, period, range, measure, trailing, seriesId, open: opened, targetsHit: prefs.targetsHit }), { enabled: active });
   useEffect(() => {
     if (focus === null) return;
     setExerciseId(focus.exerciseId);

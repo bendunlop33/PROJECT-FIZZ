@@ -859,6 +859,12 @@ export function createAppServices(deps: AppServicesDeps) {
     dispatch: (sessionId, command) => sessions.dispatch(sessionId, command),
     ...(deps.idle === undefined ? {} : { idle: deps.idle }),
     mainLiftIds: () => training.mainLiftIds(),
+    // (Ben, 26 Oct) Overview's `Edit` picks lead the Lifts chips: one list of tracked lifts.
+    progressLifts: async () => {
+      const p = await getProfile();
+      if (p === null) return [];
+      return (await repos().trainingProfiles.get(p.id))?.progressLifts ?? [];
+    },
     // Progress › Lifts' chips (Ben, 26 Oct): the plan in use's main lift per day, in day order; null with no plan.
     planMainLifts: async () => {
       const p = await getProfile();

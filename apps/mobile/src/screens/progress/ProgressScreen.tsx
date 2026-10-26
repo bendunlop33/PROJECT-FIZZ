@@ -13,7 +13,7 @@ import { runCountIt, type CountItToast } from '../../progress/count-it';
 import { consistencyCardView, type ConsistencyCardView } from '../../progress/consistency-view';
 import { ActivityChart, FrequencyHeader, FrequencyRow, FrequencySubRows, PeriodPicker, ResumeBar, Segmented, useAx } from '../../progress/components';
 import type { ProgressStackParams } from '../../navigation/types';
-import type { ProgressHome } from '../../services/progress-service';
+import type { ProgressHome, ProgressShell } from '../../services/progress-service';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Card, Icon, PrimaryButton, SecondaryButton, StatStrip, StatusLine, TextButton, Toast } from '../../ui';
@@ -48,10 +48,17 @@ export function ProgressScreen() {
   const [exercisesSeen, setExercisesSeen] = useState(false);
   // A record tap opens the Exercises tab on that exercise and workout (review S3); `n` makes a repeat tap re-open it.
   const [exercisesFocus, setExercisesFocus] = useState<ExercisesFocus | null>(null);
+  // (Perf, Ben 26 Oct) Only what is on screen loads: the shell (is there history, the period, the ResumeBar) always;
+  // each tab's reads only while it shows. A return with nothing changed is answered from memory.
+  const [shellData, reloadShell] = useScreenData((s) => s.progress.shell());
   // No local window or grouping: the service holds the one shared choice, so home and Muscles never disagree (check 15).
-  const [data, reload] = useScreenData((s) => s.progress.home());
+  const [data, reloadHome] = useScreenData((s) => s.progress.home(), { enabled: tab === 'training' });
   // Plan tracker v1 (19 Oct): the last 8 weeks against Ben's days-a-week aim, and his plan's days this week.
-  const [consistencyData] = useScreenData((s) => s.plans.consistency());
+  const [consistencyData] = useScreenData((s) => s.plans.consistency(), { enabled: tab === 'training' });
+  const reload = () => {
+    reloadShell();
+    reloadHome();
+  };
   const [timeOpen, setTimeOpen] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
   const [toast, setToast] = useState<Toasted>(null);
@@ -133,14 +140,15 @@ export function ProgressScreen() {
   };
 
   const home: ProgressHome | null = data.state === 'ready' ? data.value : null;
-  const resume = home?.resume ?? null;
+  const shell: ProgressShell | null = shellData.state === 'ready' ? shellData.value : null;
+  const resume = shell?.resume ?? null;
 
   const header = (
     <View style={{ gap: theme.space['4'] }}>
       <AppText variant="title1" accessibilityRole="header">
         Progress
       </AppText>
-      {home?.view.dataState === 'normal' ? (
+      {shell?.hasData === true ? (
         <Segmented
           options={[
             { key: 'overview', label: 'Overview' },
@@ -158,10 +166,11 @@ export function ProgressScreen() {
     </View>
   );
   // Overview: This week, Trends, Coach's changes (Progress v3). With no data (or an error) it still shows above the empty state.
-  const overview = <ReviewsSection onOpenLifts={openLifts} onOpenTraining={openTraining} />;
+  const overview = <ReviewsSection active={tab === 'overview'} onOpenLifts={openLifts} onOpenTraining={openTraining} />;
 
+  const failed = shellData.state === 'error' ? shellData : data.state === 'error' && tab === 'training' ? data : null;
   let body: React.ReactNode;
-  if (data.state === 'error') {
+  if (failed !== null) {
     body = (
       <>
         {overview}
@@ -169,7 +178,7 @@ export function ProgressScreen() {
           icon="exclamationmark.triangle"
           tone="warning"
           text="Couldn’t open your training data."
-          info={data.message}
+          info={failed.message}
           infoLabel="Error details"
           action={
             <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
@@ -185,10 +194,10 @@ export function ProgressScreen() {
         />
       </>
     );
-  } else if (home === null) {
+  } else if (shell === null) {
     // Loading: grey blocks after the delay. Ready with no profile: the empty state, never a blank page (review N3).
     body =
-      data.state === 'loading' ? (
+      shellData.state === 'loading' ? (
         placeholder ? <Placeholder /> : null
       ) : (
         <>
@@ -196,7 +205,7 @@ export function ProgressScreen() {
           <EmptyState hasResume={false} />
         </>
       );
-  } else if (home.view.dataState === 'empty') {
+  } else if (!shell.hasData) {
     body = (
       <>
         {overview}
@@ -210,7 +219,7 @@ export function ProgressScreen() {
         <View style={tab === 'overview' ? null : { display: 'none' }}>{overview}</View>
         {exercisesSeen || tab === 'lifts' ? (
           <View style={tab === 'lifts' ? null : { display: 'none' }}>
-            <ExercisesTab focus={exercisesFocus} />
+            <ExercisesTab focus={exercisesFocus} active={tab === 'lifts'} />
           </View>
         ) : null}
         {tab === 'training' ? (
@@ -230,6 +239,7 @@ export function ProgressScreen() {
         {calendarSeen || (tab === 'training' && segment === 'calendar') ? (
           <View style={tab === 'training' && segment === 'calendar' ? null : { display: 'none' }}>
             <CalendarView
+              active={tab === 'training' && segment === 'calendar'}
               month={month}
               onMonth={(m) => {
                 setMonth(m);
@@ -246,6 +256,12 @@ export function ProgressScreen() {
           </View>
         ) : null}
         <View style={tab === 'training' && segment === 'activity' ? { gap: theme.space['5'] } : { display: 'none' }}>
+      {home === null ? (
+        data.state === 'loading' && tab === 'training' && placeholder ? <Placeholder /> : null
+      ) : home.view.dataState === 'empty' ? (
+        <EmptyState hasResume={resume !== null} />
+      ) : (
+      <>
       {consistencyData.state === 'ready' && consistencyData.value !== null ? <ConsistencyCard ax={ax} view={consistencyCardView(consistencyData.value, home.today)} /> : null}
       <Overview
         home={home}
@@ -276,18 +292,19 @@ export function ProgressScreen() {
           navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressMuscles', params: { group: '' } } });
         }}
         onRecord={(r) => {
-          setExercisesFocus((f) => ({ exerciseId: r.exerciseId, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, n: (f?.n ?? 0) + 1 }));
-          setExercisesSeen(true);
-          setTab('lifts');
+          // (Ben, 26 Oct) A record opens the workout it was set in (read-only Summary, as Past workouts).
+          navigation.navigate('Summary', { sessionId: r.sessionId, back: true });
         }}
       />
+      </>
+      )}
         </View>
       </>
     );
   }
 
-  const period = home?.period ?? null;
-  const range = home?.range ?? null;
+  const period = shell?.period ?? null;
+  const range = shell?.range ?? null;
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       {/* Everything that floats (Ask, toast) lives in this area, which ends above the ResumeBar, so the bar never covers them (review S1). */}
@@ -574,7 +591,7 @@ function Overview({
               key={r.key}
               accessibilityRole="button"
               accessibilityLabel={r.words}
-              accessibilityHint="Opens the exercise"
+              accessibilityHint="Opens the workout"
               onPress={() => {
                 onRecord(r);
               }}

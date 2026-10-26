@@ -92,9 +92,14 @@ export type Loaded<T> = { state: 'loading' } | { state: 'ready'; value: T } | { 
  * Load local data for a screen: on focus, and again whenever any screen
  * reports a change. Reads are local, so there's no spinner (design-system:
  * static placeholders only after 300 ms; screens render nothing until then).
+ *
+ * (Perf, Ben 26 Oct) `enabled: false` skips loading (a tab that isn't showing, so a return to the screen reads
+ * only what is on screen); it loads when it becomes enabled. When a load returns the very same value as the one
+ * showing (a service answering from memory because nothing was written), the screen doesn't render again.
  */
-export function useScreenData<T>(load: (services: AppServices) => Promise<T>): [Loaded<T>, () => void] {
+export function useScreenData<T>(load: (services: AppServices) => Promise<T>, opts: { enabled?: boolean } = {}): [Loaded<T>, () => void] {
   const { services, version } = useApp();
+  const enabled = opts.enabled ?? true;
   const [data, setData] = useState<Loaded<T>>({ state: 'loading' });
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -104,10 +109,11 @@ export function useScreenData<T>(load: (services: AppServices) => Promise<T>): [
   }, []);
   useFocusEffect(
     useCallback(() => {
+      if (!enabled) return;
       let alive = true;
       loadRef.current(services).then(
         (value) => {
-          if (alive) setData({ state: 'ready', value });
+          if (alive) setData((prev) => (prev.state === 'ready' && Object.is(prev.value, value) ? prev : { state: 'ready', value }));
         },
         (e: unknown) => {
           if (alive) setData({ state: 'error', message: e instanceof Error ? e.message : String(e) });
@@ -116,7 +122,7 @@ export function useScreenData<T>(load: (services: AppServices) => Promise<T>): [
       return () => {
         alive = false;
       };
-    }, [services, version, tick]),
+    }, [services, version, tick, enabled]),
   );
   return [data, reload];
 }

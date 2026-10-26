@@ -32,7 +32,7 @@ export const LIFT_PICKS = {
 /** The main compound patterns, in the order ties are listed: bench, squat, deadlift, row, overhead press. */
 export const MAIN_LIFT_PATTERNS = ['horizontal_push', 'squat', 'hinge', 'horizontal_pull', 'vertical_push'] as const;
 
-export type LiftPicksSource = 'plan' | 'history' | 'recent' | 'none';
+export type LiftPicksSource = 'picked' | 'plan' | 'history' | 'recent' | 'none';
 
 export interface LiftPicks {
   /** The chips' exercises, in order. */
@@ -99,6 +99,19 @@ export function defaultLiftPicks(input: { planMains: readonly string[] | null; s
   if (picks.length > 0) return { ids: picks.slice(0, LIFT_PICKS.max), source: 'history' };
   const recent = [...all.values()].sort((a, b) => b.lastMs - a.lastMs || (a.exerciseId < b.exerciseId ? -1 : 1)).map((t) => t.exerciseId);
   return { ids: recent.slice(0, LIFT_PICKS.recentMax), source: 'recent' };
+}
+
+/**
+ * (Ben, 26 Oct) One list of tracked lifts for Overview and Lifts: Ben's own picks (Overview's `Edit`, saved as
+ * `progress_lifts`) first, in his order, then the defaults (`defaultLiftPicks`), each once, up to `LIFT_PICKS.max`.
+ * Only lifts with logged history are offered (the tab charts history), so a pick with nothing logged yet waits.
+ * Overview shows the picks alone once he has made any; the Lifts chips add the defaults after them.
+ */
+export function trackedLiftPicks(input: { picked: readonly string[]; defaults: LiftPicks; logged: (exerciseId: string) => boolean }): LiftPicks {
+  const picked = [...new Set(input.picked)].filter((id) => input.logged(id));
+  if (picked.length === 0) return input.defaults;
+  const ids = [...new Set([...picked, ...input.defaults.ids])].slice(0, LIFT_PICKS.max);
+  return { ids, source: 'picked' };
 }
 
 /**
