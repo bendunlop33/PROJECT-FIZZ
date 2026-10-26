@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import type { LiveActivity } from 'expo-widgets';
+import { addUserInteractionListener, type LiveActivity } from 'expo-widgets';
 
 import type { LiveActivityPort, WorkoutActivityProps } from './controller';
 import { restCountdownActivity } from './RestCountdownActivity';
@@ -51,3 +51,16 @@ export const expoLiveActivityPort: LiveActivityPort = {
     if (a) await a.end('immediate');
   },
 };
+
+/**
+ * A Lock Screen button tap reached the app (Ben, 26 Oct): the queue is then
+ * drained (`taps.ts`); the event's own payload is not trusted or needed.
+ */
+export function onLiveActivityTap(listener: () => void): () => void {
+  const sub = addUserInteractionListener(() => {
+    listener();
+  });
+  return () => {
+    sub.remove();
+  };
+}

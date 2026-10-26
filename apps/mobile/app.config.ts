@@ -9,6 +9,10 @@ import { withFreeProvisioning } from './plugins/with-free-provisioning.mts';
  * - FIZZ_BUILD_NUMBER: CFBundleVersion; CI passes the run number so each IPA is newer.
  * - FIZZ_LIVE_ACTIVITY=0: leave out the expo-widgets Live Activity extension,
  *   a fallback if the extension breaks the unsigned build or SideStore signing.
+ * - FIZZ_LA_BUTTONS=0: leave the Live Activity's −15 s / +15 s / Skip buttons
+ *   out (Ben, 26 Oct; on by default), a fallback if they misbehave on the phone.
+ *   They need no entitlement; the app hides them below iOS 17 or without the
+ *   native tap queue.
  * - FIZZ_BACKGROUND_AUDIO=1: opt-in experiment (default OFF). Adds
  *   UIBackgroundModes "audio" so the probe can test a spoken cue while locked
  *   (ios-platform-feasibility.md rec. 6; ADR 0007). Not a product decision.
@@ -22,6 +26,7 @@ function envString(name: string): string | undefined {
 const buildNumber = envString('FIZZ_BUILD_NUMBER') ?? '1';
 const includeLiveActivity = envString('FIZZ_LIVE_ACTIVITY') !== '0';
 const backgroundAudioExperiment = envString('FIZZ_BACKGROUND_AUDIO') === '1';
+const liveActivityButtons = includeLiveActivity && envString('FIZZ_LA_BUTTONS') !== '0';
 
 const plugins: NonNullable<ExpoConfig['plugins']> = [
   [
@@ -72,7 +77,7 @@ const config: ExpoConfig = {
   },
   plugins,
   // Read at runtime by the capability probe (Metro can't import app-identity.mts).
-  extra: { includeLiveActivity, backgroundAudioExperiment, appGroupIdentifier: APP_GROUP_IDENTIFIER, displayName: DISPLAY_NAME },
+  extra: { includeLiveActivity, liveActivityButtons, backgroundAudioExperiment, appGroupIdentifier: APP_GROUP_IDENTIFIER, displayName: DISPLAY_NAME },
 };
 
 // withFreeProvisioning wraps the config directly, so its mods are registered

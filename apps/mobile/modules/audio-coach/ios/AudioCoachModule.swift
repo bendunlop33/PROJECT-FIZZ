@@ -292,6 +292,25 @@ public final class AudioCoachModule: Module {
       }
     }
 
+    // Lock Screen rest buttons (lock-screen-and-alerts §4.2, Ben 26 Oct 2026).
+    // The patched expo-widgets LiveActivityIntent (patches/expo-widgets+57.0.23.patch,
+    // FizzLiveActivityTaps) stores each tap as "fizz.liveActivity.tap.<id>" in the
+    // app's standard defaults and waits (up to 8 s) until it is removed. JS lists
+    // them here, turns each into a versioned rest command, then removes it.
+    // Read and remove only: nothing here changes workout data.
+    Function("liveActivityTaps") { () -> [[String: Any]] in
+      let prefix = "fizz.liveActivity.tap."
+      return UserDefaults.standard.dictionaryRepresentation()
+        .filter { $0.key.hasPrefix(prefix) }
+        .compactMap { $0.value as? [String: Any] }
+    }
+
+    Function("ackLiveActivityTaps") { (ids: [String]) in
+      for id in ids {
+        UserDefaults.standard.removeObject(forKey: "fizz.liveActivity.tap." + id)
+      }
+    }
+
     // App Group evidence for the capability probe (free-ios-install.md §9 #3,
     // ADR 0007). For the app AND the Live Activity extension: the installed
     // signing profile and ALTAppGroups; each candidate group's container (test

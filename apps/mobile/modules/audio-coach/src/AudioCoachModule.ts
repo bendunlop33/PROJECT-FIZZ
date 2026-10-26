@@ -7,6 +7,7 @@ import type {
   AudioSessionState,
   KeepAliveStartResult,
   KeepAliveStopResult,
+  LiveActivityTapEntry,
   NativeVoice,
   SessionOptions,
   SpeakOptions,
@@ -28,6 +29,10 @@ declare class AudioCoachNativeModule extends NativeModule<AudioCoachEvents> {
   /** Shows the system prompt if not yet determined; resolves to the resulting state. */
   requestAlarmKitAuthorization(): Promise<AlarmKitStatus>;
   getAppGroupInfo(configuredGroups: string[]): Promise<AppGroupInfo>;
+  /** Lock Screen rest-button taps waiting to be handled (Ben, 26 Oct). Absent in builds made before it existed. */
+  liveActivityTaps?(): LiveActivityTapEntry[];
+  /** Removes handled taps; the waiting LiveActivityIntent then returns. Absent in older builds. */
+  ackLiveActivityTaps?(ids: string[]): void;
 }
 
 /**
