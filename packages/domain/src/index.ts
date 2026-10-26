@@ -14,6 +14,7 @@ export * from './session/order';
 export * from './session/superset-with';
 export * from './session/workout-times';
 export * from './session/time-shift';
+export * from './session/tick-all-view';
 export * from './session/create';
 export * from './session/reducer';
 export * from './session/view';

@@ -631,6 +631,22 @@ export const AddWarmupCommandSchema = z.object({
 });
 
 /**
+ * (Ben, 26 Oct; log-past-workout Q-PL2) `Tick all as planned` in a past log started from a saved workout or a plan
+ * day: every planned set not done yet is logged with its planned values (load as planned, the target reps or the
+ * low end of a range, the planned time or distance; no effort), in workout order, as one write. Ben's tap is the
+ * confirmation; each set stays editable. A set with no complete plan (no load or reps), a set he added and a set
+ * taken out before the start stay as they are. Refused on a live workout, on one not started from a plan, and on
+ * a stale version (rule 5). Undo is `undo_op` on its `opId`: every set it ticked goes back to not done, only
+ * while none of them changed since.
+ */
+export const TickAllPlannedCommandSchema = z.object({
+  type: z.literal('tick_all_planned'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+});
+
+/**
  * Undo of an earlier operation, from its toast (copy D4, ADR 0003 Open):
  * `delete_set`, `skip_exercise`, `correct_set`, `remove_exercise`,
  * `swap_exercise` and `add_exercise` (12 Oct: takes the added row out, only
@@ -908,6 +924,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   FitTodayToTimeCommandSchema,
   ReorderSetsCommandSchema,
   AddWarmupCommandSchema,
+  TickAllPlannedCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];
