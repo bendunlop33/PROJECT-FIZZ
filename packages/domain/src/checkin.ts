@@ -3,6 +3,7 @@ import type {
   CheckInHistoryEntry,
   CheckInOutcome,
   CheckInReason,
+  CheckInSchedule,
   CheckInScore,
   CheckInSettings,
   PainArea,
@@ -14,6 +15,7 @@ import type {
 } from '@fizz/schemas';
 import { CHECK_IN_NOTE_MAX } from '@fizz/schemas';
 import type { PainStatus } from './progression';
+import { weekdayShort } from './morning-reminder';
 import { toMs } from './time';
 
 /**
@@ -34,6 +36,58 @@ export const DEFAULT_CHECK_IN_SETTINGS: CheckInSettings = {
   offerAtOrBelow: 2,
   offerOnTiredOrPoorSleep: true,
 };
+
+/** Monday first, as the settings' day chips. */
+export const CHECK_IN_WEEKDAYS: readonly Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+/**
+ * (Ben, 26 Oct) The settings Start uses: Ben's saved schedule (Profile › Training › Check-in) on the defaults.
+ * The thresholds have no screen yet and stay at `DEFAULT_CHECK_IN_SETTINGS`.
+ */
+export function checkInSettingsFor(profile: { checkInSchedule?: CheckInSchedule | undefined } | null): CheckInSettings {
+  const schedule = profile?.checkInSchedule;
+  return schedule === undefined ? DEFAULT_CHECK_IN_SETTINGS : { ...DEFAULT_CHECK_IN_SETTINGS, schedule };
+}
+
+/**
+ * (Ben, 26 Oct) An Empty workout never asks on Start, whatever the schedule: there is nothing planned for the
+ * answer to change. A check-in he already gave still links (reuse), and the workout's own `How are you
+ * feeling?` is still offered until the first working set (recorded as `when_i_choose`).
+ */
+export function emptyWorkoutGate(gate: CheckInGate): CheckInGate {
+  return gate.kind === 'ask' ? { kind: 'skip', reason: 'when_i_choose' } : gate;
+}
+
+/** Profile › Training › Check-in (Ben, 26 Oct): the words, values only. */
+export const CHECK_IN_SETTINGS_COPY = {
+  title: 'Check-in',
+  whenChoose: 'Only when I choose',
+  every: 'Every workout',
+  days: 'On these days',
+} as const;
+
+/** The Profile row's value: `Only when I choose`, `Every workout`, `Mon, Wed, Fri`. */
+export function checkInScheduleLine(schedule: CheckInSchedule): string {
+  if (schedule.kind === 'when_i_choose') return CHECK_IN_SETTINGS_COPY.whenChoose;
+  if (schedule.kind === 'every_workout') return CHECK_IN_SETTINGS_COPY.every;
+  return CHECK_IN_WEEKDAYS.filter((d) => schedule.weekdays.includes(d))
+    .map(weekdayShort)
+    .join(', ');
+}
+
+/** `On these days`: picking it starts from the days chosen before, else today's weekday (never an empty list). */
+export function checkInDaysPick(current: CheckInSchedule, today: Weekday, lastDays: readonly Weekday[] | null): CheckInSchedule {
+  if (current.kind === 'days') return current;
+  return { kind: 'days', weekdays: lastDays !== null && lastDays.length > 0 ? CHECK_IN_WEEKDAYS.filter((d) => lastDays.includes(d)) : [today] };
+}
+
+/** A day chip toggles that day; the last day can't be turned off (null: nothing to write). */
+export function checkInDayToggle(current: CheckInSchedule, day: Weekday): CheckInSchedule | null {
+  if (current.kind !== 'days') return { kind: 'days', weekdays: [day] };
+  const on = current.weekdays.includes(day);
+  const next = CHECK_IN_WEEKDAYS.filter((d) => (d === day ? !on : current.weekdays.includes(d)));
+  return next.length === 0 ? null : { kind: 'days', weekdays: next };
+}
 
 /** `timing.checkInReuse`: an unlinked check-in is reused by the next Start within this window. */
 export const CHECK_IN_REUSE_MS = 2 * 60 * 60 * 1000;

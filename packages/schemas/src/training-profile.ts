@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { OperationIdSchema, RecordMetaSchema, UtcTimestampSchema, WeightUnitSchema } from './common';
 import type { MuscleGroup } from './muscle-groups';
 import { LIFT_TARGET_LIMITS, LiftTargetSchema, type LiftTarget } from './lift-targets';
+import { CheckInScheduleSchema, type CheckInSchedule } from './checkin';
 
 /**
  * Ben's training details and split (Ben 13 Oct: D5, D7, D8; backlog F19).
@@ -118,6 +119,11 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
    * (1–30). Lifts with a target or in the plan are tracked at those reps instead. Absent: none picked.
    */
   progressLiftReps: z.record(z.string().min(1).max(64), z.int().min(1).max(30)).optional(),
+  /**
+   * (Ben, 26 Oct) Profile › Training › Check-in: when Start asks `How are you feeling?`. Absent: `Only when I
+   * choose` (the 23 Oct default). Your data (rule 10).
+   */
+  checkInSchedule: CheckInScheduleSchema.optional(),
   /** Operation IDs already applied, newest last (a repeat is a no-op; rule 5). */
   recentOps: z.array(OperationIdSchema).max(TRAINING_LIMITS.recentOpsMax),
 });
@@ -146,4 +152,6 @@ export type TrainingChange =
   | { kind: 'remove_lift_target'; exerciseId: string }
   /** (Ben, 21 Oct) The lifts Progress › Reviews shows (up to 6, in order); an empty list goes back to the plan's main lifts. */
   /** `reps`: the reps to track a lift at that isn't in the plan (asked once when adding it; Progress v3). */
-  | { kind: 'progress_lifts'; exerciseIds: readonly string[]; reps?: Readonly<Record<string, number>> };
+  | { kind: 'progress_lifts'; exerciseIds: readonly string[]; reps?: Readonly<Record<string, number>> }
+  /** (Ben, 26 Oct) Profile › Training › Check-in. `days` needs at least one weekday. */
+  | { kind: 'check_in_schedule'; schedule: CheckInSchedule };

@@ -15,6 +15,7 @@ import {
   type WeightEntry,
 } from '@fizz/schemas';
 import { withLiftTarget, withoutLiftTarget } from './lift-targets';
+import { CHECK_IN_WEEKDAYS } from './checkin';
 import { toMs } from './time';
 import { convertMass, KG_PER_LB } from './units';
 
@@ -188,6 +189,12 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
     }
     case 'remove_lift_target':
       return { ...p, liftTargets: withoutLiftTarget(p.liftTargets ?? [], c.exerciseId) };
+    case 'check_in_schedule': {
+      // (Ben, 26 Oct) `days` needs at least one day; each day once, in week order.
+      if (c.schedule.kind !== 'days') return { ...p, checkInSchedule: { kind: c.schedule.kind } };
+      const weekdays = CHECK_IN_WEEKDAYS.filter((d) => c.schedule.kind === 'days' && c.schedule.weekdays.includes(d));
+      return weekdays.length === 0 ? null : { ...p, checkInSchedule: { kind: 'days', weekdays } };
+    }
     case 'progress_lifts': {
       const ids = [...new Set(c.exerciseIds.map((x) => x.trim()))];
       if (ids.length > TRAINING_LIMITS.progressLiftsMax || ids.some((x) => x.length === 0 || x.length > 64)) return null;

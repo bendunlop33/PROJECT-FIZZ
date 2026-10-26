@@ -338,9 +338,9 @@ export function TodayScreen() {
     return { gymId: made.gymId, created: true };
   }
 
-  /** The check-in gate's answer as the start records it. */
-  async function gateCheckIn(): Promise<{ ask: true } | { ask: false; checkIn: SessionCheckIn | null; reuseId: string | null }> {
-    const gate = await services.checkIns.gate();
+  /** The check-in gate's answer as the start records it. `empty` (Ben, 26 Oct): an Empty workout never asks. */
+  async function gateCheckIn(empty: boolean): Promise<{ ask: true } | { ask: false; checkIn: SessionCheckIn | null; reuseId: string | null }> {
+    const gate = await services.checkIns.gate({ empty });
     if (gate.kind === 'ask') return { ask: true };
     if (gate.kind === 'reuse') return { ask: false, checkIn: { kind: 'answered', checkInId: gate.checkInId }, reuseId: gate.checkInId };
     // (Ben, 23 Oct) Not asked by default: Start goes straight in; nothing is recorded about how he feels.
@@ -378,7 +378,7 @@ export function TodayScreen() {
       const g = await ensureGym();
       if (g === null) return;
       await alertsAsk.ensureAsked();
-      const gate = await gateCheckIn();
+      const gate = await gateCheckIn(intent.kind === 'empty');
       const of = intent.kind === 'routine' ? { routineOf: intent.routineId } : intent.kind === 'next' ? { nextOf: intent.sourceSessionId } : {};
       if (gate.ask) {
         navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, ...of });
@@ -414,7 +414,7 @@ export function TodayScreen() {
       const g = await ensureGym();
       if (g === null) return;
       await alertsAsk.ensureAsked();
-      const gate = await gateCheckIn();
+      const gate = await gateCheckIn(false);
       if (gate.ask) {
         navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, coachDraftOf: e.draftId, coachDraftVersion: e.version });
         return;
@@ -461,7 +461,7 @@ export function TodayScreen() {
         return;
       }
       await alertsAsk.ensureAsked();
-      const gate = await gateCheckIn();
+      const gate = await gateCheckIn(false);
       if (gate.ask) {
         navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, coachDraftOf: c.draftId, coachDraftVersion: c.version });
         return;
