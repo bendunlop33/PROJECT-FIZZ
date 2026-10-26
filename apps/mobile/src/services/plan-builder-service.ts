@@ -38,7 +38,7 @@ import {
   type PlanKit,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
-import type { EquipmentInstance, Exercise, PainFlag, PlanBuilderAnswers, PlanDraft, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, PainFlag, PlanBuilderAnswers, PlanDraft, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { PlanServices, PlanWriteOutcome } from './plan-services';
 
@@ -99,6 +99,8 @@ export interface PlanBuilderSession {
   /** Where the page opens: `start` (Check your lifts when needed, else Gym goals) for every new plan; `plan` only for `Edit plan`. */
   opensOn: 'start' | 'plan';
   gym: { id: string; name: string } | null;
+  /** (Ben, 26 Oct) Ben's own weight unit: tables name it in their header (kg/lb always explicit). */
+  unit: WeightUnit;
   profileSplit: 'ppl' | 'body' | null;
   nowMs: number;
   tz: string;
@@ -214,6 +216,7 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
       opensOn: editing ? 'plan' : 'start',
       lastDraft: leftover === null || leftoverV?.builder === undefined ? null : { planId: leftover.id, version: leftover.version, versionN: leftoverV.n, answers: leftoverV.builder.answers },
       gym,
+      unit: p.preferredUnit,
       profileSplit,
       nowMs,
       tz: at.tz,

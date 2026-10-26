@@ -19,7 +19,7 @@ import {
   type PbPlan,
   type PbPrefQuestion,
 } from '@fizz/domain';
-import type { PlanBuilderAnswers, PlanEffort, PlanFocus, PlanGroup, PlanSplit, PlanTarget, PlanWarmups } from '@fizz/schemas';
+import type { PlanBuilderAnswers, PlanEffort, PlanFocus, PlanGroup, PlanSplit, PlanTarget, PlanWarmups, WeightUnit } from '@fizz/schemas';
 
 /**
  * The plan builder's screens as values (plan-builder.md, D7; minimal copy, Ben 10 Oct). Formatting only: every
@@ -199,6 +199,12 @@ export interface PbDayView {
   rows: PbRowView[];
 }
 
+/** (Ben, 26 Oct) A plan row's load with its unit: `30 kg`, `24 kg each`, `1 × 6 + 2 × 8 · 100 / 95 kg`; `BW`, `—` and a scheme with no load as they are. */
+function withUnit(text: string, e: PbExercise): string {
+  if (e.load.kind !== 'kg' || !/\d$|\d each$/.test(text) || (e.role === 'main' && e.main !== null && e.main.top === null)) return text;
+  return text.endsWith(' each') ? `${text.slice(0, -' each'.length)} ${e.load.unit} each` : `${text} ${e.load.unit}`;
+}
+
 function rowOf(e: PbExercise, nameOf: (k: string) => string): PbRowView {
   const loaded = e.role === 'main' && e.main !== null;
   return {
@@ -206,8 +212,8 @@ function rowOf(e: PbExercise, nameOf: (k: string) => string): PbRowView {
     pair: e.pair,
     name: nameOf(e.key),
     main: e.role === 'main',
-    scheme: loaded ? pbMainWeekOneLine(e) : `${String(e.sets)} × ${String(e.reps)}`,
-    kg: loaded ? null : pbLoadText(e),
+    scheme: loaded ? withUnit(pbMainWeekOneLine(e), e) : `${String(e.sets)} × ${String(e.reps)}`,
+    kg: loaded ? null : withUnit(pbLoadText(e), e),
     est: e.estimate && e.load.kind === 'kg',
   };
 }
@@ -261,11 +267,49 @@ export interface PbCheckRow {
   open: boolean;
 }
 
-const kgText = (n: number | null, perHand: boolean): string => (n === null ? '—' : `${fmt(n)}${perHand ? ' each' : ''}`);
+/**
+ * (Ben, 26 Oct; app review finding 12) kg/lb is always explicit. A table names its unit once in the header
+ * (`6 reps (kg)`); a value in another unit (a lb-only item at a kg gym) carries its own (`45 lb`).
+ */
+const kgText = (n: number | null, perHand: boolean, unit: WeightUnit | null = null): string => (n === null ? '—' : `${fmt(n)}${unit === null ? '' : ` ${unit}`}${perHand ? ' each' : ''}`);
 
-/** Check your lifts rows: Lift · 6 reps · 1RM est. */
-export function checkRows(lifts: readonly PbLiftStart[], nameOf: (k: string) => string, perHand: (k: string) => boolean): PbCheckRow[] {
-  return lifts.map((l) => ({ key: l.key, name: nameOf(l.key), six: kgText(l.six, perHand(l.key)), oneRm: kgText(l.oneRm, perHand(l.key)), est: l.estimate, open: l.open }));
+/** The unit a table's header names: the one its rows share, else Ben's own. */
+export function pbTableUnit(units: readonly (WeightUnit | null)[], preferred: WeightUnit): WeightUnit {
+  const known = [...new Set(units.filter((u): u is WeightUnit => u !== null))];
+  return known.length === 1 && known[0] !== undefined ? known[0] : preferred;
+}
+
+/** Check your lifts' header: `Lift · 6 reps (kg) · 1RM est. (kg)`. */
+export function checkHeader(unit: WeightUnit): [string, string, string] {
+  return [PB_COPY.lift, `${PB_COPY.sixReps} (${unit})`, `${PB_COPY.oneRmEst} (${unit})`];
+}
+
+/** Check your lifts rows: Lift · 6 reps · 1RM est. `unitOf`: the lift's kit unit; `header`: the unit the header names. */
+export function checkRows(lifts: readonly PbLiftStart[], nameOf: (k: string) => string, perHand: (k: string) => boolean, unitOf: (k: string) => WeightUnit | null = () => null, header: WeightUnit | null = null): PbCheckRow[] {
+  return lifts.map((l) => {
+    const u = unitOf(l.key);
+    const own = u !== null && header !== null && u !== header ? u : null;
+    return { key: l.key, name: nameOf(l.key), six: kgText(l.six, perHand(l.key), own), oneRm: kgText(l.oneRm, perHand(l.key), own), est: l.estimate, open: l.open };
+  });
+}
+
+/** `What to expect`: header `kg × 6 · Now · Week 6 (est.)`, then each lift's now and end loads. */
+export function expectTable(
+  expect: { reps: number; rows: readonly { key: string; now: number | null; end: number | null; perHand: boolean }[] },
+  weeks: number,
+  nameOf: (k: string) => string,
+  unitOf: (k: string) => WeightUnit | null,
+  preferred: WeightUnit,
+): { head: [string, string, string]; rows: { key: string; cells: [string, string, string] }[] } {
+  const unit = pbTableUnit(expect.rows.map((r) => unitOf(r.key)), preferred);
+  return {
+    head: [`${unit} × ${String(expect.reps)}`, 'Now', `Week ${String(weeks)} (${PB_COPY.est})`],
+    rows: expect.rows.map((r) => {
+      const u = unitOf(r.key);
+      const own = u !== null && u !== unit ? u : null;
+      return { key: r.key, cells: [nameOf(r.key), kgText(r.now, r.perHand, own), kgText(r.end, r.perHand, own)] };
+    }),
+  };
 }
 
 /** The lift sheet's line: `Last set: 120 × 5 · 3 Aug`, `Estimated from …`, `You entered`, `No history`. */
