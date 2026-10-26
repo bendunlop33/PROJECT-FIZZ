@@ -19,7 +19,7 @@ import { AppText, BottomCard, DangerTextButton, Group, Icon, Row, StatusLine, Te
  * - `⋯ › Link activity from Health` (`pickerOpen`): the day before to the day after, any strength or `other` workout.
  * - Nothing: no row.
  */
-export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose, onChoices }: { sessionId: string; pickerOpen?: boolean; onPickerClose?: () => void; onChoices?: (n: number) => void }) {
+export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose, onChoices, onTimesChanged }: { sessionId: string; pickerOpen?: boolean; onPickerClose?: () => void; onChoices?: (n: number) => void; /** The workout's times changed (`Use watch times` or its Undo): the Summary reloads. */ onTimesChanged?: () => void }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -78,6 +78,28 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
     setToast(offerUndo ? { text: HEALTH_COPY.unlinked, undo: () => void link(healthUuid) } : null);
     changed();
     load();
+  }
+
+  async function applyWatchTimes() {
+    const r = await services.health.useWatchTimes(sessionId, op.current);
+    fresh();
+    if (!r.ok) {
+      setToast({ text: r.message });
+      return;
+    }
+    changed();
+    load();
+    onTimesChanged?.();
+    setToast({
+      text: HEALTH_COPY.timesChanged,
+      undo: () =>
+        void r.undo().then((u) => {
+          changed();
+          load();
+          onTimesChanged?.();
+          if (!u.ok) setToast({ text: u.message ?? HEALTH_COPY.failed });
+        }),
+    });
   }
 
   async function notIt(healthUuid: string) {
@@ -161,6 +183,12 @@ export function LinkedActivityRow({ sessionId, pickerOpen = false, onPickerClose
             </AppText>
           ) : null}
         </Pressable>
+        {view.useWatchTimes === true ? (
+          // (Ben, 27 Oct) Offered, never applied silently: the workout takes the watch's start and end, with Undo.
+          <View style={{ alignSelf: 'flex-start' }}>
+            <TextButton label={HEALTH_COPY.useWatchTimes} tone="secondary" onPress={() => void applyWatchTimes()} />
+          </View>
+        ) : null}
         <BottomCard
           visible={sheet}
           onClose={() => {

@@ -16,6 +16,8 @@ import {
   linkSuggestion,
   nearbyWorkouts,
   planHealthWrites,
+  timingUndoCommand,
+  type CommandOutcome,
   readSinceMs,
   restingHeartRateDays,
   sleepNights,
@@ -30,7 +32,7 @@ import {
 import type { HealthLinkWrite, Store } from '@fizz/persistence';
 import { healthCapability, restingHrSamplesFrom, sleepSamplesFrom, weightSamplesFrom, workoutSamplesFrom, type HealthCapability, type HealthPort, type HealthType } from '@fizz/providers';
 import type { LinkedActivityContext } from '@fizz/coach';
-import { DEFAULT_HEALTH_SETTINGS, type Activity, type HealthLink, type HealthReadWindow, type HealthSettings, type HealthWorkoutSample, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
+import { DEFAULT_HEALTH_SETTINGS, type Activity, type HealthLink, type HealthReadWindow, type HealthSettings, type HealthWorkoutSample, type SessionCommand, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 
 import { healthScreenView, linkCandidateLine, linkedActivityView, type HealthScreenView, type HealthSwitch, type LinkCandidateView, type WorkoutHealthView } from './health-view';
 
@@ -67,7 +69,12 @@ export interface HealthServiceDeps {
   buildIncludesHealth: boolean;
   /** Whether a workout is open now (reads wait until it is finished). */
   workoutOpen: () => Promise<boolean>;
+  /** The workout's versioned commands (`Use watch times` goes through the existing time-shift path). */
+  dispatch?: (sessionId: string, command: SessionCommand) => Promise<CommandOutcome>;
 }
+
+/** Start or end this far from the watch's: `Use watch times` is offered. */
+export const WATCH_TIMES_DIFFER_MS = 2 * 60_000;
 
 export type HealthSwitchOutcome = { ok: true } | { ok: false; message: string };
 export type HealthLinkOutcome = { ok: true; healthUuid: string; version: number } | { ok: false; message: string };
@@ -293,7 +300,7 @@ export function createHealthService(deps: HealthServiceDeps) {
       .repos.sessions.get(sessionId)
       .catch(() => null);
     if (a === null || a.session.endedAt === null) return null;
-    const workout: LinkableWorkout = { sessionId, startUtc: a.session.startedAt.utc, endUtc: a.session.endedAt.utc, tz: a.session.startedAt.tz, title: a.session.routineName ?? 'Workout' };
+    const workout: LinkableWorkout = { sessionId, startUtc: a.session.startedAt.utc, endUtc: a.session.endedAt.utc, tz: a.session.startedAt.tz, title: a.session.routineName ?? 'Workout', ...(a.session.pastLog === undefined ? {} : { pastLogged: true }) };
     const ms = toMs(workout.startUtc);
     const all = await repo()
       .workoutSamples(ownerId, toIso(ms - 2 * 86_400_000), toIso(ms + 2 * 86_400_000))
@@ -448,7 +455,13 @@ export function createHealthService(deps: HealthServiceDeps) {
         const sample = await repo()
           .workoutSample(p.id, link.healthUuid)
           .catch(() => null);
-        return sample === null ? { kind: 'none' } : linkedActivityView(healthProvenanceOf(sample), link.version, s.readHeartRate, p.timezone);
+        if (sample === null) return { kind: 'none' };
+        const a = await deps
+          .store()
+          .repos.sessions.get(sessionId)
+          .catch(() => null);
+        const differ = a !== null && a.session.endedAt !== null && a.session.localDate === undefined && (Math.abs(toMs(a.session.startedAt.utc) - toMs(sample.startUtc)) > WATCH_TIMES_DIFFER_MS || Math.abs(toMs(a.session.endedAt.utc) - toMs(sample.endUtc)) > WATCH_TIMES_DIFFER_MS);
+        return { ...linkedActivityView(healthProvenanceOf(sample), link.version, s.readHeartRate, p.timezone), useWatchTimes: differ && deps.dispatch !== undefined };
       }
       const ctx = await workoutContext(p.id, sessionId);
       if (ctx === null) return { kind: 'none' };
@@ -456,6 +469,39 @@ export function createHealthService(deps: HealthServiceDeps) {
       const qs = sameDayLinkCandidates(ctx.workout, ctx.samples, ctx.links);
       if (qs.length === 0) return { kind: 'none' };
       return { kind: 'question', candidates: qs.map((x) => candidateView(x, p.timezone)) };
+    },
+
+    /**
+     * (Ben, 27 Oct) `Use watch times`: the workout's start and end become the linked watch workout's, through the
+     * existing versioned time-shift (sets move with the start), on the version the row showed. Never silent: Ben's tap,
+     * and the returned `undo` puts the times back. Refused (with a message) when the move isn't allowed.
+     */
+    async useWatchTimes(sessionId: string, opId: string): Promise<{ ok: true; undo: () => Promise<{ ok: boolean; message?: string }> } | { ok: false; message: string }> {
+      const p = await owner();
+      const dispatch = deps.dispatch;
+      if (p === null || dispatch === undefined) return { ok: false, message: 'Couldn’t change the times.' };
+      const link = await repo()
+        .linkForWorkout(p.id, sessionId)
+        .catch(() => null);
+      const sample = link === null ? null : await repo().workoutSample(p.id, link.healthUuid).catch(() => null);
+      const a = await deps
+        .store()
+        .repos.sessions.get(sessionId)
+        .catch(() => null);
+      if (sample === null || a === null) return { ok: false, message: 'Couldn’t change the times.' };
+      const tz = a.session.startedAt.tz;
+      const r = await dispatch(sessionId, { type: 'update_session_timing', at: deps.now(), opId, expectedVersion: a.session.version, startedAt: { utc: sample.startUtc, tz }, endedAt: { utc: sample.endUtc, tz }, shift: true });
+      if (!r.ok) return { ok: false, message: r.error.message };
+      const after = r.aggregate;
+      return {
+        ok: true,
+        undo: async () => {
+          const cmd = timingUndoCommand(after, opId, deps.newId(), deps.now());
+          if (cmd === null) return { ok: false, message: 'Nothing to undo.' };
+          const u = await dispatch(sessionId, cmd);
+          return u.ok ? { ok: true } : { ok: false, message: u.error.message };
+        },
+      };
     },
 
     /** Summary `⋯ › Link activity from Health`: Health strength or `other` workouts from the day before to the day after. */

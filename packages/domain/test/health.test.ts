@@ -362,11 +362,13 @@ describe('Links', () => {
     expect(autoLinkPairs({ samples: [garminStrength], workouts: [workout()], links: [] })).toEqual([{ healthUuid: U1, sessionId: S1 }]);
   });
 
-  it('doesn’t auto-link a run, a weak overlap, an unlinked one, or a workout already linked', () => {
+  it('doesn’t auto-link a run, `other`, one over 2 h away, an unlinked one, or a workout already linked', () => {
     expect(autoLinkPairs({ samples: [{ ...garminStrength, activityType: 37 }], workouts: [workout()], links: [] })).toEqual([]);
     expect(autoLinkPairs({ samples: [{ ...garminStrength, activityType: 3000 }], workouts: [workout()], links: [] })).toEqual([]);
-    const weak = { ...garminStrength, startUtc: '2026-10-27T17:45:00.000Z', endUtc: '2026-10-27T18:45:00.000Z' };
-    expect(autoLinkPairs({ samples: [weak], workouts: [workout()], links: [] })).toEqual([]);
+    // More than 2 h apart on the same day: offered, never automatic.
+    const far = { ...garminStrength, startUtc: '2026-10-27T07:00:00.000Z', endUtc: '2026-10-27T08:00:00.000Z' };
+    expect(autoLinkPairs({ samples: [far], workouts: [workout()], links: [] })).toEqual([]);
+    expect(sameDayLinkCandidates(workout(), [far], []).map((x) => x.uuid)).toEqual([U1]);
     expect(autoLinkPairs({ samples: [garminStrength], workouts: [workout()], links: [link({ status: 'unlinked', version: 2 })] })).toEqual([]);
     expect(autoLinkPairs({ samples: [garminStrength], workouts: [workout()], links: [link({ healthUuid: U3, id: healthLinkId(U3) })] })).toEqual([]);
   });
@@ -507,5 +509,44 @@ describe('History / Recent with Health (feed)', () => {
     const linked = mergeFeed({ workouts: [withLinkedSource(gym, new Map([[S1, 'Garmin Connect']]))], activities: [feedActivityOf(runA)] });
     expect(linked[0]).toMatchObject({ kind: 'workout', linkedSource: 'Garmin' });
     expect(linked[0]?.accessibilityLabel).toContain('linked to Garmin activity');
+  });
+});
+
+describe('log times differ (Ben, 27 Oct: "the log times won\u2019t always be the same")', () => {
+  const gym = (p: Partial<LinkableWorkout> = {}): LinkableWorkout => ({ sessionId: S1, startUtc: '2026-10-27T17:00:00.000Z', endUtc: '2026-10-27T18:00:00.000Z', tz: TZ, title: 'Push', ...p });
+  const watch = (start: string, end: string, uuid = U1) => sample({ uuid, activityType: 50, startUtc: start, endUtc: end, distanceM: null });
+
+  it('watch started 20 min late: auto-links', () => {
+    expect(autoLinkPairs({ samples: [watch('2026-10-27T17:20:00.000Z', '2026-10-27T18:05:00.000Z')], workouts: [gym()], links: [] })).toEqual([{ healthUuid: U1, sessionId: S1 }]);
+  });
+
+  it('app logged 1 h late (no overlap, within 2 h): auto-links', () => {
+    expect(autoLinkPairs({ samples: [watch('2026-10-27T16:00:00.000Z', '2026-10-27T16:55:00.000Z')], workouts: [gym()], links: [] })).toEqual([{ healthUuid: U1, sessionId: S1 }]);
+  });
+
+  it('past log entered with rough times the next day: offered (a day either side), never automatic across days', () => {
+    const past = gym({ startUtc: '2026-10-28T12:00:00.000Z', endUtc: '2026-10-28T13:00:00.000Z', pastLogged: true });
+    const w = watch('2026-10-27T18:00:00.000Z', '2026-10-27T19:00:00.000Z');
+    expect(autoLinkPairs({ samples: [w], workouts: [past], links: [] })).toEqual([]);
+    expect(sameDayLinkCandidates(past, [w], []).map((x) => x.uuid)).toEqual([U1]);
+    // The same workout logged live at noon the next day: only that day's.
+    expect(sameDayLinkCandidates({ ...past, pastLogged: false }, [w], [])).toEqual([]);
+  });
+
+  it('near midnight: the day either side is offered', () => {
+    const late = gym({ startUtc: '2026-10-27T23:10:00.000Z', endUtc: '2026-10-28T00:10:00.000Z' });
+    expect(sameDayLinkCandidates(late, [watch('2026-10-28T00:15:00.000Z', '2026-10-28T00:50:00.000Z')], [])).toHaveLength(1);
+  });
+
+  it('two gym sessions the same day: nothing automatic; each offers the day’s watch workouts, nearest first', () => {
+    const am = gym({ sessionId: S2, startUtc: '2026-10-27T07:00:00.000Z', endUtc: '2026-10-27T08:00:00.000Z', title: 'AM' });
+    const pm = gym();
+    const w1 = watch('2026-10-27T07:05:00.000Z', '2026-10-27T08:00:00.000Z');
+    const w2 = watch('2026-10-27T17:10:00.000Z', '2026-10-27T18:00:00.000Z', U2);
+    expect(autoLinkPairs({ samples: [w1, w2], workouts: [am, pm], links: [] })).toEqual([]);
+    expect(sameDayLinkCandidates(am, [w1, w2], []).map((x) => x.uuid)).toEqual([U1, U2]);
+    expect(sameDayLinkCandidates(pm, [w1, w2], []).map((x) => x.uuid)).toEqual([U2, U1]);
+    // One gym session but two watch workouts: also offered, not automatic.
+    expect(autoLinkPairs({ samples: [w1, w2], workouts: [pm], links: [] })).toEqual([]);
   });
 });

@@ -592,6 +592,7 @@ export function createAppServices(deps: AppServicesDeps) {
     port: deps.health?.port ?? null,
     buildIncludesHealth: deps.health?.buildIncludesHealth ?? false,
     workoutOpen: async () => (await sessions.active()) !== null,
+    dispatch: (sessionId, command) => loop.workout.dispatch(sessionId, command),
   });
 
   const coach = createCoachService({

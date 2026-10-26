@@ -407,6 +407,7 @@ export function SummaryScreen() {
             setHealthPicker(false);
           }}
           onChoices={setHealthChoices}
+          onTimesChanged={reload}
         />
 
         {/* (Ben, 21 Oct; workout-builder-v3 §6.2) One tap, a weekly review fact. */}

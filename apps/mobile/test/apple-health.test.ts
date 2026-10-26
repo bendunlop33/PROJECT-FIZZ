@@ -303,23 +303,52 @@ describe('reading activities and linking', () => {
     expect((await s.activities.remove({ activityId: run, expectedVersion: 1, opId: 'rm' })).ok).toBe(false);
   });
 
-  it('a weak overlap is asked about; `Not it` is never asked again', async () => {
+  it('times off by an hour still auto-link (one each that day); `Use watch times` moves the workout with Undo, never silently', async () => {
     const s = await launch();
     const gymId = await setUpGym(h, s);
     h.clockMs += 60_000;
-    const start = h.clockMs;
     const id = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8 }] }]);
-    // Started 10 minutes after the workout ended: near, but no overlap.
-    const uuid = fake.addGarmin({ activityType: 50, startMs: h.clockMs + 10 * 60_000, endMs: h.clockMs + 50 * 60_000 });
+    const before = (await s.workout.load(id))?.aggregate;
+    if (before === undefined) throw new Error('load');
+    // The watch was started an hour before the app's log and stopped 50 min later.
+    const wStart = toMs(before.session.startedAt.utc) - 3_600_000;
+    const uuid = fake.addGarmin({ activityType: 50, startMs: wStart, endMs: wStart + 50 * 60_000 });
     h.clockMs += 60 * 60_000;
-    expect(start).toBeLessThan(h.clockMs);
     await s.health.setSwitch('readActivities', true);
     await s.health.readNow();
-    const q = await s.health.forWorkout(id);
-    expect(q).toMatchObject({ kind: 'question', candidates: [{ healthUuid: uuid }] });
-    expect((await s.health.notIt({ healthUuid: uuid, sessionId: id, opId: 'not-it' })).ok).toBe(true);
+    const v = await s.health.forWorkout(id);
+    expect(v).toMatchObject({ kind: 'linked', healthUuid: uuid, useWatchTimes: true });
+    // Nothing moved until Ben taps.
+    expect((await s.workout.load(id))?.aggregate.session.startedAt.utc).toBe(before.session.startedAt.utc);
+    const r = await s.health.useWatchTimes(id, 'watch-times-1');
+    if (!r.ok) throw new Error(r.message);
+    const moved = (await s.workout.load(id))?.aggregate.session;
+    expect(moved?.startedAt.utc).toBe(toIso(wStart));
+    expect(moved?.endedAt?.utc).toBe(toIso(wStart + 50 * 60_000));
+    expect(await s.health.forWorkout(id)).toMatchObject({ kind: 'linked', useWatchTimes: false });
+    expect((await r.undo()).ok).toBe(true);
+    expect((await s.workout.load(id))?.aggregate.session.startedAt.utc).toBe(before.session.startedAt.utc);
+  });
+
+  it('two gym sessions the same day: nothing automatic; one tap links the chosen one; `Not it` is never offered again', async () => {
+    const s = await launch();
+    const gymId = await setUpGym(h, s);
+    h.clockMs += 60_000;
+    const am = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8 }] }]);
+    const amEnd = h.clockMs;
+    h.clockMs += 4 * 3_600_000;
+    const pm = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8 }] }]);
+    const uuid = fake.addGarmin({ activityType: 50, startMs: amEnd - 10 * 60_000, endMs: amEnd + 20 * 60_000 });
+    await s.health.setSwitch('readActivities', true);
     await s.health.readNow();
-    expect(await s.health.forWorkout(id)).toEqual({ kind: 'none' });
+    expect(await s.health.forWorkout(am)).toMatchObject({ kind: 'question', candidates: [{ healthUuid: uuid }] });
+    expect(await s.health.forWorkout(pm)).toMatchObject({ kind: 'question', candidates: [{ healthUuid: uuid }] });
+    expect((await s.health.notIt({ healthUuid: uuid, sessionId: pm, opId: 'not-it' })).ok).toBe(true);
+    expect(await s.health.forWorkout(pm)).toEqual({ kind: 'none' });
+    // Still linkable by hand from ⋯ (the record only stops offers).
+    expect((await s.health.linkChoices(am)).map((c) => c.healthUuid)).toEqual([uuid]);
+    expect((await s.health.link({ healthUuid: uuid, sessionId: am, opId: 'link-am' })).ok).toBe(true);
+    expect(await s.health.forWorkout(am)).toMatchObject({ kind: 'linked', healthUuid: uuid });
   });
 
   it('turning reads off forgets what was read', async () => {

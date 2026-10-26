@@ -18,7 +18,7 @@ import {
 
 import type { SessionAggregate } from '@fizz/schemas';
 
-import { addDays, localDateOf } from './calendar';
+import { addDays, localDateOf, localMidnightUtcMs } from './calendar';
 import { isInHistory } from './session/deletion';
 import { NBSP } from './display';
 import { deriveId } from './stable';
@@ -308,6 +308,8 @@ export interface LinkableWorkout {
   tz: string;
   /** `Push`, `Workout`. */
   title: string;
+  /** Entered after the fact (`Log a past workout`): its times are rough, so a match a day either side is offered. */
+  pastLogged?: boolean;
 }
 
 /** Overlap as a share of the shorter of the two (0–1). */
@@ -336,31 +338,48 @@ function linkedSessions(links: readonly HealthLink[]): Set<string> {
   return new Set(links.filter((l) => l.status === 'linked').map((l) => l.sessionId));
 }
 
+/** Auto-link needs the two within this of each other (or overlapping): log times differ (Ben, 27 Oct). */
+export const AUTO_LINK_NEAR_MS = 2 * 3_600_000;
+
+/** Overlapping, or start or end within `AUTO_LINK_NEAR_MS` of the other's. */
+function nearInTime(s: HealthInterval, w: HealthInterval): boolean {
+  if (overlapShare(s, w) > 0) return true;
+  const [ss, se, ws, we] = [toMs(s.startUtc), toMs(s.endUtc), toMs(w.startUtc), toMs(w.endUtc)];
+  return Math.min(Math.abs(ss - we), Math.abs(se - ws), Math.abs(ss - ws), Math.abs(se - we)) <= AUTO_LINK_NEAR_MS;
+}
+
 /**
- * The Health workouts to link on reading (apple-health.md §3.2): a strength-family type, no link record yet (an
- * unlinked or `Not it` one is never linked or asked again), the same local day as an app workout and overlapping
- * at least half of the shorter one, and the only such pair for both: with two or more candidates nothing
- * auto-links (the Summary asks instead). An app workout already linked takes no other.
+ * The Health workouts to link on reading (apple-health.md §3.2; Ben, 27 Oct: "the log times won't always be the
+ * same"). Times never block a link; they only decide whether it is automatic. Auto-link when, on one local day, there
+ * is exactly one Health strength-family workout with no link record (an unlinked or `Not it` one is never linked or
+ * offered again automatically) and exactly one app workout, not linked yet, and the two overlap or are within 2 h.
+ * Anything else is offered as a one-tap `Link` (`sameDayLinkCandidates`).
  */
 export function autoLinkPairs(input: { samples: readonly HealthWorkoutSample[]; workouts: readonly LinkableWorkout[]; links: readonly HealthLink[] }): { healthUuid: string; sessionId: string }[] {
   const recorded = new Set(input.links.map((l) => l.healthUuid));
   const taken = linkedSessions(input.links);
-  const pairs: { healthUuid: string; sessionId: string }[] = [];
+  const byDay = new Map<string, { samples: HealthWorkoutSample[]; workouts: LinkableWorkout[] }>();
+  const day = (date: string) => {
+    let d = byDay.get(date);
+    if (d === undefined) {
+      d = { samples: [], workouts: [] };
+      byDay.set(date, d);
+    }
+    return d;
+  };
+  for (const w of input.workouts) day(localDateOf(toMs(w.startUtc), w.tz)).workouts.push(w);
   for (const s of input.samples) {
     if (!HK_STRENGTH_TYPES.has(s.activityType) || recorded.has(s.uuid)) continue;
-    for (const w of input.workouts) {
-      if (taken.has(w.sessionId) || !sameDay(s, w)) continue;
-      if (overlapShare(s, { startUtc: w.startUtc, endUtc: w.endUtc }) >= AUTO_LINK_MIN_OVERLAP) pairs.push({ healthUuid: s.uuid, sessionId: w.sessionId });
-    }
+    day(localDateOf(toMs(s.startUtc), s.tz)).samples.push(s);
   }
-  const count = (key: (p: { healthUuid: string; sessionId: string }) => string) => {
-    const m = new Map<string, number>();
-    for (const p of pairs) m.set(key(p), (m.get(key(p)) ?? 0) + 1);
-    return m;
-  };
-  const perSample = count((p) => p.healthUuid);
-  const perSession = count((p) => p.sessionId);
-  return pairs.filter((p) => perSample.get(p.healthUuid) === 1 && perSession.get(p.sessionId) === 1);
+  const out: { healthUuid: string; sessionId: string }[] = [];
+  for (const d of byDay.values()) {
+    const [s] = d.samples;
+    const [w] = d.workouts;
+    if (d.samples.length !== 1 || d.workouts.length !== 1 || s === undefined || w === undefined || taken.has(w.sessionId)) continue;
+    if (nearInTime(s, w)) out.push({ healthUuid: s.uuid, sessionId: w.sessionId });
+  }
+  return out;
 }
 
 /** A Health workout starting or ending within this of an app workout, the same day, is asked about. */
@@ -398,9 +417,23 @@ export function sameDayLinkCandidates(workout: LinkableWorkout, samples: readonl
   if (linkedSessions(links).has(workout.sessionId)) return [];
   const recorded = new Set(links.map((l) => l.healthUuid));
   const ws = toMs(workout.startUtc);
+  const days = linkDays(workout);
   return samples
-    .filter((s) => (HK_STRENGTH_TYPES.has(s.activityType) || s.activityType === HK_OTHER_TYPE) && !recorded.has(s.uuid) && sameDay(s, workout))
+    .filter((s) => (HK_STRENGTH_TYPES.has(s.activityType) || s.activityType === HK_OTHER_TYPE) && !recorded.has(s.uuid) && days.has(localDateOf(toMs(s.startUtc), workout.tz)))
     .sort((a, b) => Math.abs(toMs(a.startUtc) - ws) - Math.abs(toMs(b.startUtc) - ws));
+}
+
+/**
+ * The days a workout's Health match may be on: its own; and the day either side when it is near midnight (starts
+ * before 02:00 or from 22:00, or ends on another day) or was logged after the fact with rough times (Ben, 27 Oct).
+ */
+export function linkDays(w: LinkableWorkout): Set<string> {
+  const start = toMs(w.startUtc);
+  const date = localDateOf(start, w.tz);
+  const hour = (start - localMidnightUtcMs(date, w.tz)) / 3_600_000;
+  const crossesMidnight = localDateOf(toMs(w.endUtc), w.tz) !== date;
+  const wide = w.pastLogged === true || hour < 2 || hour >= 22 || crossesMidnight;
+  return new Set(wide ? [addDays(date, -1), date, addDays(date, 1)] : [date]);
 }
 
 /**

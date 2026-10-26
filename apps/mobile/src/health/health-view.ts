@@ -46,6 +46,8 @@ export const HEALTH_COPY = {
   undo: 'Undo',
   linkToWorkout: 'Link to a workout',
   linkFromHealth: 'Link activity from Health',
+  useWatchTimes: 'Use watch times',
+  timesChanged: 'Times changed',
   openHealth: 'Open Health',
   failed: 'Couldn’t save. Try again.',
   stale: 'Changed since. Try again.',
@@ -173,6 +175,8 @@ export interface LinkedActivityView {
   sheetTitle: string;
   sheetWhen: string;
   accessibilityLabel: string;
+  /** (Ben, 27 Oct) The workout's times differ from the watch's: offer `Use watch times` (never applied silently). */
+  useWatchTimes?: boolean;
 }
 
 /** One Health workout that can be linked: `Strength · Garmin · 17:40–18:35`. */

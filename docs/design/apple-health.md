@@ -258,6 +258,11 @@ Window of a GymSmarter workout = its start to its end (wall clock, pauses includ
 - A linked Health workout is shown only on its GymSmarter workout: never in the strip, calendar, week counts, run rule or the coach's activity list as a separate item.
 - Links are Your data: versioned, with op IDs, in backups (rules 5, 10). `link.mode` = `auto` or `ben`.
 
+**Built rule, Ben 27 Oct ("the log times won't always be the same"):** times never block a link; they only decide whether it's automatic.
+- Candidates: Health strength-family or `other` workouts on the app workout's local day; also the day either side when the workout is near midnight (starts before 02:00 or from 22:00, or crosses midnight) or was logged after the fact.
+- Auto-link only when that day has exactly one such Health workout (with no `Not it` / Unlink record) and exactly one app workout, and they overlap or are within 2 h. Otherwise the Summary offers the one-tap `Link` (one candidate: links at once with Undo; several: a pick list nearest in time first). Past-logged and time-shifted workouts get the same offer.
+- After linking, when start or end differ from the watch's by more than 2 min, the Linked activity row offers `Use watch times`: the workout's start and end become the watch's through the existing versioned time-shift (sets move with the start), with Undo. Times never change silently.
+
 ### 3.3 Ben's own activities vs Health activities
 
 Ben's `＋ Activity` and coach-logged activities have a date but no time.
