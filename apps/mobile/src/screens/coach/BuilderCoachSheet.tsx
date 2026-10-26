@@ -13,6 +13,8 @@ import {
   BUILDER_SHEET_COPY,
   builderSeesLabel,
   builderSheetStatus,
+  retryTurn,
+  sendPlan,
   settleTurn,
   skipTurn,
   turnCard,
@@ -92,16 +94,34 @@ export function BuilderCoachSheet({ entry }: { entry: BuilderCoachEntry }) {
   async function send() {
     const words = text.trim();
     if (!canSend || words === '') return;
+    // (Ben, 26 Oct) "Again" right after an ask that got no answer sends that ask again, not the word.
+    const plan = sendPlan(turnsRef.current, words);
+    if (plan.kind === 'retry') {
+      setText('');
+      await retry(plan.turn);
+      return;
+    }
     const now = services.now();
     const id = newUuid();
     setTurns((cur) => askTurn(cur, { id, words, atUtc: now.utc, tz: now.tz }));
     if (!turnsRef.current.some((t) => t.id === id)) return;
     setText('');
-    const r = await services.builderCoach.askEdit({ draftId: entry.draftId, words, opId: id }).catch(() => null);
+    await ask(id, words, false);
+  }
+
+  async function ask(id: string, words: string, again: boolean) {
+    const r = await services.builderCoach.askEdit({ draftId: entry.draftId, words, opId: id, retry: again }).catch(() => null);
     const v = r === null ? ({ kind: 'toast', text: EDIT_ASK_COPY.noAnswer } as const) : editAskView(r);
     const settled = settleTurn(turnsRef.current, id, v);
     setTurns(() => settled.turns);
     if (settled.reach !== null) setReach(settled.reach);
+  }
+
+  /** `Retry` on a turn that got no answer: the same words and ask ID again, tried even when the sheet reads Offline. */
+  async function retry(t: BuilderTurn) {
+    setTurns((cur) => retryTurn(cur, t.id));
+    if (turnsRef.current.find((x) => x.id === t.id)?.result.kind !== 'asking') return;
+    await ask(t.id, t.words, true);
   }
 
   /** `Apply` (Ben's tap, rule 3): one versioned write under the proposal's op ID; a stale draft is refused. */
@@ -171,7 +191,7 @@ export function BuilderCoachSheet({ entry }: { entry: BuilderCoachEntry }) {
                 {formatTime(toMs(t.atUtc), t.tz)}
               </AppText>
             </View>
-            <TurnResult turn={t} busy={busy === t.id} notApplied={failed[t.id] === true} onApply={() => void apply(t)} onSkip={() => { setTurns((cur) => skipTurn(cur, t.id)); }} onUndo={() => void undo(t)} />
+            <TurnResult turn={t} busy={busy === t.id} notApplied={failed[t.id] === true} canRetry={!asking} onRetry={() => void retry(t)} onApply={() => void apply(t)} onSkip={() => { setTurns((cur) => skipTurn(cur, t.id)); }} onUndo={() => void undo(t)} />
           </View>
         ))}
       </ScrollView>
@@ -194,7 +214,7 @@ export function BuilderCoachSheet({ entry }: { entry: BuilderCoachEntry }) {
   );
 }
 
-function TurnResult({ turn, busy, notApplied, onApply, onSkip, onUndo }: { turn: BuilderTurn; busy: boolean; notApplied: boolean; onApply: () => void; onSkip: () => void; onUndo: () => void }) {
+function TurnResult({ turn, busy, notApplied, canRetry, onRetry, onApply, onSkip, onUndo }: { turn: BuilderTurn; busy: boolean; notApplied: boolean; canRetry: boolean; onRetry: () => void; onApply: () => void; onSkip: () => void; onUndo: () => void }) {
   const theme = useTheme();
   const [whyOpen, setWhyOpen] = useState(false);
   if (turn.result.kind === 'asking')
@@ -210,6 +230,7 @@ function TurnResult({ turn, busy, notApplied, onApply, onSkip, onUndo }: { turn:
         <AppText variant="callout" color="text.secondary">
           {turn.result.text}
         </AppText>
+        {turn.result.retry === true ? <TextButton label={BUILDER_SHEET_COPY.retry} onPress={onRetry} disabled={!canRetry} /> : null}
       </View>
     );
   const card = turnCard(turn);

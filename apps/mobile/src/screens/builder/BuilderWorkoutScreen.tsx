@@ -386,7 +386,7 @@ export function BuilderWorkoutScreen() {
   async function openSwap(slotKey: string | null, opts: { group?: BuilderGroup; fresh?: boolean; query?: string } = {}) {
     if (snap === null) return;
     const draftId = snap.draftId;
-    if (opts.fresh !== false) picker.open(() => services.exercisePicker.forDraft(draftId), opts.query ?? '');
+    if (opts.fresh !== false) picker.open(() => services.exercisePicker.forDraft(draftId, { add: slotKey === null }), opts.query ?? '');
     const c = await services.builder.exerciseChoices(draftId, opts.group === undefined ? { slotKey } : { slotKey, group: opts.group }).catch(() => null);
     setSwap({ slotKey, sections: c?.sections ?? [] });
   }

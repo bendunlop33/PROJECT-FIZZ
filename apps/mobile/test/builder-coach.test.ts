@@ -294,7 +294,7 @@ describe('Your workout bar in the coach sheet (Ben, 26 Oct, option a)', () => {
     expect(skipTurn(reply, 'k-1')).toEqual(reply);
     const off = settleTurn(askTurn([], p), 'k-1', { kind: 'reach', reach: 'offline' });
     expect(off.reach).toBe('offline');
-    expect(off.turns[0]?.result).toEqual({ kind: 'line', text: 'Offline' });
+    expect(off.turns[0]?.result).toEqual({ kind: 'line', text: 'Offline', retry: true });
     expect(builderSheetStatus('offline', false)).toEqual({ word: 'Offline', canSend: false });
     expect(builderSeesLabel('Push A')).toBe('Sees: Push A (draft)');
   });

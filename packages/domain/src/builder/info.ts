@@ -1,5 +1,6 @@
 import { builderFocusOf, builderGroupOf, isBrowseOnlyFocus, worksLine, type Exercise } from '@fizz/schemas';
-import type { BuilderExerciseInfo } from './types';
+import { builtInRepRange, ruleCategory } from '../default-rule';
+import type { BuilderExerciseInfo, BuilderExtraInfo } from './types';
 
 /**
  * An exercise row (Ben's or the catalogue's) as the builder rules see it
@@ -71,4 +72,20 @@ export function builderWorksOf(e: Pick<Exercise, 'primaryMuscles' | 'secondaryMu
  */
 export function builderUsable(e: Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'secondaryMuscles' | 'movementPattern' | 'measurement' | 'mechanic' | 'compatibleEquipment' | 'archivedAtUtc'>): boolean {
   return e.measurement === 'reps' && e.archivedAtUtc === undefined && builderInfoOf(e) !== null;
+}
+
+/**
+ * (Ben, 27 Oct: "add 8 min bike warm up"; "check others too") An exercise with no builder group that Your workout
+ * still holds (`BuilderExtraInfo`): a cardio machine or timed exercise (exercise bike, rower, battle ropes) as a work
+ * time, as a library workout's ride already opens (22 Oct); rep work outside the strength groups (box jump, burpee,
+ * wall ball, med-ball slam) as reps with no planned load. Null for a strength exercise (it has `builderInfoOf`), a
+ * distance-only one (a carry, a sled: no target the builder holds) or a deleted one.
+ */
+export function builderExtraOf(
+  e: Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'secondaryMuscles' | 'movementPattern' | 'measurement' | 'mechanic' | 'compatibleEquipment'> & Partial<Pick<Exercise, 'archivedAtUtc' | 'defaultLoadConvention'>>,
+): BuilderExtraInfo | null {
+  if (e.archivedAtUtc !== undefined || e.measurement === 'distance') return null;
+  if (builderInfoOf(e) !== null) return null;
+  if (e.measurement === 'reps') return { exerciseId: e.id, name: e.name, measurement: 'reps', repRange: builtInRepRange(ruleCategory(e, null, e.defaultLoadConvention ?? 'bodyweight')) };
+  return { exerciseId: e.id, name: e.name, measurement: e.measurement, repRange: null };
 }

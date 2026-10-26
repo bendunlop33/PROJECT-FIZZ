@@ -98,8 +98,29 @@ function view(f: FindableExercise): FoundExercise {
   };
 }
 
+/**
+ * (Ben, 27 Oct: "Add 8 min bike warm up" → "isn't available") What a request says about the exercise's role or
+ * length, not its name: `warm up`, `cool down`, `finisher`, `8 min`, `for 10 minutes`. The query without them is
+ * searched first, so `bike warm up` finds Exercise bike.
+ */
+const NOT_NAME_WORDS = /\b(?:warm(?:ing)?[\s-]?ups?|cool(?:ing)?[\s-]?downs?|finishers?|(?:before|after|then)(?: [a-z]+)?|first|last|quick|short|easy|some|a|an|the|for|of|on|to|\d+(?:[.,]\d+)?\s*(?:minutes?|mins?|m|seconds?|secs?|s|hours?|hrs?|h|km|k|metres?|meters?)?)\b/g;
+
+export function findQueryCore(query: string): string {
+  return normaliseSearchText(normaliseSearchText(query).replace(NOT_NAME_WORDS, ' '));
+}
+
 /** Pure: the best matches for the query in `pool`, best first then A–Z, at most `cap`. */
 export function findExercises(pool: readonly FindableExercise[], args: { query: string; muscle: string | null; equipment: string | null }, cap = FIND_EXERCISES_CAP): FoundExercise[] {
+  const found = findExercisesFor(pool, args, cap);
+  const core = findQueryCore(args.query);
+  if (core === '' || core === normaliseSearchText(args.query)) return found;
+  // The name words first (`bike` of `bike warm up`), then anything the whole words found.
+  const byCore = findExercisesFor(pool, { ...args, query: core }, cap);
+  const seen = new Set(byCore.map((x) => x.catalogueId));
+  return [...byCore, ...found.filter((x) => !seen.has(x.catalogueId))].slice(0, cap);
+}
+
+function findExercisesFor(pool: readonly FindableExercise[], args: { query: string; muscle: string | null; equipment: string | null }, cap: number): FoundExercise[] {
   const muscleGroups = args.muscle === null ? null : groupsNamedBy(args.muscle);
   const filtered = pool.filter((f) => {
     if (muscleGroups !== null && muscleGroups.size > 0 && !f.exercise.primaryMuscles.some((m) => muscleGroups.has(muscleGroupOf(m) ?? ''))) return false;

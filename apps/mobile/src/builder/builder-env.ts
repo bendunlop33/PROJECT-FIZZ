@@ -4,6 +4,7 @@ import {
   standingCoachTarget,
   isRuleResetRow,
   builderInfoOf,
+  builderExtraOf,
   builderWorksOf,
   checkedOnOf,
   equipmentHere,
@@ -29,6 +30,7 @@ import {
   type BuilderContext,
   type BuilderExerciseInfo,
   type BuilderPool,
+  type BuilderExtraInfo,
   type DraftCodecContext,
   type HistorySession,
   type LoadReferences,
@@ -80,6 +82,11 @@ export interface BuilderEnv {
   hasHistory: (exerciseId: string) => boolean;
   /** Exercises of a group this gym has, best first (Ben's history, then the catalogue), pain-flagged ones included (Swap shows `May hurt`). */
   candidates: (group: BuilderGroup) => readonly string[];
+  /**
+   * (Ben, 27 Oct) Exercises with no builder group this gym can do (`builderExtraOf`: cardio machines, timed work,
+   * plyometric and med-ball reps), for the coach's add list. A cardio machine needs no gym item (`isMachineCardio`).
+   */
+  extrasHere: () => readonly BuilderExtraInfo[];
   /** Compound lifts whose builder group is one of these (Main lift on a Custom day, §2.2). */
   compoundsOf: (groups: readonly BuilderGroup[]) => readonly string[];
   /** Hash of the gym's items (draft `equipmentVersion`, §4.4). */
@@ -111,6 +118,9 @@ export interface BuilderEnvDeps {
   now: () => ZonedTimestamp;
   catalogueExercises: () => readonly Exercise[];
 }
+
+/** (Ben, 27 Oct) The coach's other-work list: cardio machines first, then timed work, then plyometric and med-ball reps. */
+const EXTRA_ORDER: Readonly<Record<BuilderExtraInfo['measurement'], number>> = { cardio: 0, duration: 1, reps: 2 };
 
 /** How many of each group's best candidates get exact loads up front (the rest are computed when picked). */
 const POOL_EXACT = 10;
@@ -318,7 +328,12 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     };
 
     const presets = p.restPresets.map((r) => r.seconds);
-    const ctx: BuilderContext = { info, loads, newKey: req.newKey, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt };
+    // (Ben, 27 Oct) Cardio machines and timed exercises (no builder group): held as timed slots (`makeExtraSlot`).
+    const timed = (id: string): BuilderExtraInfo | null => {
+      const e = byId.get(id);
+      return e === undefined ? null : builderExtraOf(e);
+    };
+    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt };
     // Prehab and forearm work (cuff, shins, wrist curls) is in `candidates` for Swap / Add, never picked by itself.
     const pool: BuilderPool = (g) => candidates(g).filter((id) => !painFlagged(id) && !isBrowseOnlyFocus(info(id)?.angle ?? ''));
     // The one `checkedOnOf` (domain): what Start's re-check compares against, so a builder draft and Today's agree
@@ -359,6 +374,13 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       lastTopOf: (id) => lastTop.get(id) ?? null,
       hasHistory: (id) => (histories.get(id)?.length ?? 0) > 0,
       candidates,
+      extrasHere: () =>
+        [...byId.values()]
+          .flatMap((e) => {
+            const t = builderExtraOf(e);
+            return t === null || !here(e) || painFlagged(e.id) ? [] : [t];
+          })
+          .sort((a, b) => EXTRA_ORDER[a.measurement] - EXTRA_ORDER[b.measurement] || a.name.localeCompare(b.name)),
       compoundsOf: (groups) =>
         [...byId.values()]
           .filter((e) => {

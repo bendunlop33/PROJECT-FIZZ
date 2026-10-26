@@ -312,4 +312,22 @@ export interface BuilderContext {
    * Today, Your workout and Start plan warm-ups the same way; a slot with Ben's own warm-ups keeps them.
    */
   warmups?: PlanWarmups;
+  /**
+   * (Ben, 27 Oct: "add 8 min bike warm up") An exercise with no builder group that the builder still holds
+   * (`BuilderExtraInfo`: cardio, a timed hold, plyometric or med-ball reps). Absent or null: not one.
+   */
+  extra?: (exerciseId: string) => BuilderExtraInfo | null;
+}
+
+/**
+ * (Ben, 27 Oct) An exercise with no builder group that Your workout still holds: a cardio machine or timed hold (a
+ * work time, no reps or load), or rep work outside the strength groups (box jumps, med-ball slams, wall balls: reps,
+ * no planned load). Added by Ben or the coach; never picked by the builder itself.
+ */
+export interface BuilderExtraInfo {
+  exerciseId: string;
+  name: string;
+  measurement: 'cardio' | 'duration' | 'reps';
+  /** Reps: the built-in rule's range for it; null for cardio and timed work. */
+  repRange: { min: number; max: number } | null;
 }

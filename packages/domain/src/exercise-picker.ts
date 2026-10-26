@@ -1,6 +1,6 @@
 import { isBuilderStrength, type EquipmentInstance, type Exercise } from '@fizz/schemas';
 
-import { builderInfoOf } from './builder/info';
+import { builderInfoOf, builderExtraOf } from './builder/info';
 import { BROWSE_PARTS, browseLine2Of, browsePlaceOf, EXERCISE_EQUIPMENT_WORD, type RowExercise } from './exercise-browse';
 import { BROAD_MUSCLE_GROUPS, EQUIPMENT_FILTER_LABEL, EQUIPMENT_FILTERS, equipmentFiltersOf, NO_FILTERS, passesFilters, searchExerciseRows, withBroadGroup, type BroadMuscleGroup, type EquipmentFilter, type SearchableEntry } from './exercise-search';
 import { missingStations, stationWords } from './stations';
@@ -17,8 +17,12 @@ import { missingStations, stationWords } from './stations';
 
 /** Which exercises a host can take (the same checks its write makes, so a listed row is never refused for its kind). */
 export type PickerScope =
-  /** Your workout (a builder draft): strength exercises with a builder group (`applyBuilderEdit` refuses others). */
-  | { kind: 'builder' }
+  /**
+   * Your workout (a builder draft): strength exercises with a builder group. `add` (Ben, 27 Oct: "when I searched
+   * exercise bike it didn't come up"): cardio machines and timed exercises too, which Add puts in as a timed slot
+   * (`applyBuilderEdit` takes them); Swap stays strength for strength.
+   */
+  | { kind: 'builder'; add?: boolean }
   /** The one workout editor: anything but distance (a saved workout has no distance target, EL-B13). */
   | { kind: 'template' }
   /** Swap mid-workout: the same measurement as the exercise being swapped (`buildSwapExerciseCommand`). */
@@ -31,7 +35,7 @@ type ScopeExercise = Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'secondar
 export function inPickerScope(scope: PickerScope, e: ScopeExercise): boolean {
   switch (scope.kind) {
     case 'builder':
-      return isBuilderStrength(e) && builderInfoOf(e) !== null;
+      return (isBuilderStrength(e) && builderInfoOf(e) !== null) || (scope.add === true && builderExtraOf(e) !== null);
     case 'template':
       return e.measurement !== 'distance';
     case 'session_swap':
