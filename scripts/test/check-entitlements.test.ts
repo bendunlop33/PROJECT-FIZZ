@@ -66,10 +66,26 @@ describe('entitlement rules', () => {
   it.each([
     'com.apple.developer.applesignin',
     'com.apple.developer.usernotifications.communication',
-    'com.apple.developer.healthkit',
     'com.example.custom-key',
   ])('fails closed on %s, which is not on the allowlist', (key) => {
     expect(checkEntitlementKeys([key])).toEqual([expect.objectContaining({ severity: 'error', key })]);
+  });
+
+  // (Ben, 27 Oct; ADR 0035) HealthKit alone is allowed: a free team can sign it (LoopDocs), and the app detects at
+  // runtime when SideStore strips it. Its extras (background delivery, clinical records) stay errors.
+  it('accepts HealthKit alone, with the App Group', () => {
+    const xml = plist('<dict><key>com.apple.developer.healthkit</key><true/><key>com.apple.security.application-groups</key><array><string>g</string></array></dict>');
+    expect(checkEntitlementsXml(xml, 'Fizz.entitlements')).toEqual([]);
+  });
+
+  it.each(['com.apple.developer.healthkit.background-delivery', 'com.apple.developer.healthkit.access', 'com.apple.developer.healthkit.recalibrate-estimates'])('fails on the HealthKit extra %s', (key) => {
+    expect(checkEntitlementKeys([key])).toEqual([expect.objectContaining({ severity: 'error', key })]);
+  });
+
+  it('still fails on push, time-sensitive, Siri, iCloud and Associated Domains next to HealthKit', () => {
+    const keys = ['aps-environment', 'com.apple.developer.usernotifications.time-sensitive', 'com.apple.developer.siri', 'com.apple.developer.icloud-services', 'com.apple.developer.associated-domains'];
+    const errors = checkEntitlementKeys(['com.apple.developer.healthkit', ...keys]).filter((f) => f.severity === 'error');
+    expect(errors.map((e) => e.key)).toEqual(keys);
   });
 
   it('warns when a signed binary carries no entitlements at all', () => {

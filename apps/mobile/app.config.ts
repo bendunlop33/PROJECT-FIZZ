@@ -3,6 +3,7 @@ import { env } from 'node:process';
 import type { ExpoConfig } from 'expo/config';
 import { APP_GROUP_IDENTIFIER, BUNDLE_IDENTIFIER, DISPLAY_NAME, IOS_PROJECT_NAME, WIDGET_EXTENSION_BUNDLE_IDENTIFIER } from './app-identity.mts';
 import { withFreeProvisioning } from './plugins/with-free-provisioning.mts';
+import { withHealthKit } from './plugins/with-healthkit.mts';
 
 /**
  * Build-time switches (read by `expo prebuild`, set by the IPA workflow):
@@ -13,6 +14,8 @@ import { withFreeProvisioning } from './plugins/with-free-provisioning.mts';
  *   out (Ben, 26 Oct; on by default), a fallback if they misbehave on the phone.
  *   They need no entitlement; the app hides them below iOS 17 or without the
  *   native tap queue.
+ * - FIZZ_HEALTHKIT=0: leave the HealthKit entitlement out (ADR 0035; on by default). The app then shows
+ *   Apple Health as `Not available on this install`, exactly as when SideStore strips the entitlement.
  * - FIZZ_BACKGROUND_AUDIO=1: opt-in experiment (default OFF). Adds
  *   UIBackgroundModes "audio" so the probe can test a spoken cue while locked
  *   (ios-platform-feasibility.md rec. 6; ADR 0007). Not a product decision.
@@ -27,6 +30,7 @@ const buildNumber = envString('FIZZ_BUILD_NUMBER') ?? '1';
 const includeLiveActivity = envString('FIZZ_LIVE_ACTIVITY') !== '0';
 const backgroundAudioExperiment = envString('FIZZ_BACKGROUND_AUDIO') === '1';
 const liveActivityButtons = includeLiveActivity && envString('FIZZ_LA_BUTTONS') !== '0';
+const includeHealthKit = envString('FIZZ_HEALTHKIT') !== '0';
 
 const plugins: NonNullable<ExpoConfig['plugins']> = [
   [
@@ -72,16 +76,19 @@ const config: ExpoConfig = {
       // Shown by the AlarmKit permission prompt (probe "Request permission").
       // AlarmKit needs no entitlement (free-ios-install.md, AlarmKit row).
       NSAlarmKitUsageDescription: `${DISPLAY_NAME} can sound an alarm when your rest ends, even in silent mode or a Focus.`,
+      // (Ben, 27 Oct; ADR 0035) Shown by the Health permission sheet when Ben turns a switch on in Profile › Apple Health.
+      NSHealthShareUsageDescription: `${DISPLAY_NAME} reads your bodyweight and the workouts other apps save to Health, such as runs from Garmin, to show them with your training.`,
+      NSHealthUpdateUsageDescription: `${DISPLAY_NAME} saves your finished gym workouts to Health as strength training.`,
       ...(backgroundAudioExperiment ? { UIBackgroundModes: ['audio'] } : {}),
     },
   },
   plugins,
   // Read at runtime by the capability probe (Metro can't import app-identity.mts).
-  extra: { includeLiveActivity, liveActivityButtons, backgroundAudioExperiment, appGroupIdentifier: APP_GROUP_IDENTIFIER, displayName: DISPLAY_NAME },
+  extra: { includeLiveActivity, liveActivityButtons, backgroundAudioExperiment, includeHealthKit, appGroupIdentifier: APP_GROUP_IDENTIFIER, displayName: DISPLAY_NAME },
 };
 
 // withFreeProvisioning wraps the config directly, so its mods are registered
 // before the `plugins` array (and before Expo's automatic plugins such as
 // expo-notifications). Expo runs mods newest-first, so it runs LAST and strips
 // what the others added. Don't move it into `plugins`.
-export default withFreeProvisioning(config);
+export default withFreeProvisioning(includeHealthKit ? withHealthKit(config) : config);

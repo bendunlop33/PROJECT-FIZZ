@@ -73,7 +73,7 @@ describe('history summaries on ~800 workouts', () => {
   it('the update’s backfill (migration 36) and the consistency check go over every workout once, in short turns', async () => {
     const opened = await measureBlocking(() => openStore(openNodeDriver(file35), { slice: timeSlicer() }));
     const store = opened.result;
-    expect(store.migration.applied).toEqual([36, 37]);
+    expect(store.migration.applied).toEqual([36, 37, 38]);
     check('migration 36 backfill (sliced)', opened, 12_000, 250);
     const checked = await measureBlocking(() => store.checkHistorySummaries());
     expect(checked.result).toMatchObject({ ok: true, checked: 800 });

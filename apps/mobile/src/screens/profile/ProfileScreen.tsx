@@ -42,7 +42,7 @@ export function ProfileScreen() {
   const probe = useProbeResults();
   const { prefs, update } = useDevicePrefs();
   const [data, reload] = useScreenData(async (s) => {
-    const [backup, banners, pain, gyms, coach, training, planInUse] = await Promise.all([
+    const [backup, banners, pain, gyms, coach, training, planInUse, health] = await Promise.all([
       s.backups.getStatus(),
       loadBanners(s, install),
       s.pain.active(),
@@ -52,11 +52,13 @@ export function ProfileScreen() {
       Promise.all([s.training.snapshot(), s.yourData.profile()]).catch(() => [null, null] as const),
       // (D7) A plan in use owns the split; a failed read is unknown (no line), never taken for no plan.
       s.plans.inUse().then((x) => x !== null, () => null),
+      // (ADR 0035) Apple Health's line: `On · last read 07:42`, `Off`, `Not available on this install`.
+      s.health.screen().then((v) => v.line, () => null),
     ]);
     const [snap, owner] = training;
     const split = snap === null || planInUse === null ? null : profileSplitRow(snap.profile, snap.mainLifts, planInUse);
-    const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg' }).summary, split, checkIn: checkInScheduleLine(checkInSettingsFor(snap.profile).schedule) };
-    return { backup, banners, pain, gyms, coach, training: lines };
+    const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg', healthWeights: snap.healthWeights }).summary, split, checkIn: checkInScheduleLine(checkInSettingsFor(snap.profile).schedule) };
+    return { backup, banners, pain, gyms, coach, training: lines, health };
   });
   useEffect(() => {
     reload();
@@ -79,6 +81,15 @@ export function ProfileScreen() {
           secondLine={data.state === 'ready' ? data.value.backup.offPhone.line.text : null}
           onPress={() => {
             navigation.navigate('DataBackup');
+          }}
+        />
+        {/* (Ben, 27 Oct; apple-health.md §2.1) Health data is Ben's own: under Data & backup. */}
+        <Row
+          title="Apple Health"
+          icon="heart"
+          subtitle={data.state === 'ready' ? data.value.health : null}
+          onPress={() => {
+            navigation.navigate('AppleHealth');
           }}
         />
       </Group>

@@ -107,6 +107,7 @@ import {
   type NextTargetTap,
   type OpenedFrom,
   type TrainingInput,
+  type LinkedActivityContext,
 } from '@fizz/coach';
 import {
   basisSlots,
@@ -422,6 +423,8 @@ export interface BuildChips {
 const WEEK_OFFER_LOOKBACK = 200;
 
 export interface CoachServiceDeps {
+  /** (Ben, 27 Oct, Q4; ADR 0035) The watch workout linked to a workout, as the coach sees it; absent or null: none. */
+  healthLinked?: (sessionId: string) => Promise<LinkedActivityContext | null>;
   /** Check-in settings (check-in.md §2.8); absent, the defaults. */
   checkInSettings?: () => CheckInSettings;
   /**
@@ -1031,6 +1034,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const checkIn = await checkInOf(session);
     const builtIn = kind === 'summary' && session !== null ? await builtInNext(session) : null;
     const training = (await deps.training?.().catch(() => null)) ?? null;
+    const linkedActivity = session === null || deps.healthLinked === undefined ? null : await deps.healthLinked(session.session.id).catch(() => null);
     return {
       gymName,
       checkIn,
@@ -1049,6 +1053,7 @@ export function createCoachService(deps: CoachServiceDeps) {
         trainingHistoryAvailable: true,
         ...(openedFrom === undefined ? {} : { openedFrom }),
         ...(training === null ? {} : { training }),
+        ...(linkedActivity === null ? {} : { linkedActivity }),
         ...(builtIn === null || session === null
           ? {}
           : {

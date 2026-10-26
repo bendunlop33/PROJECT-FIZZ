@@ -27,6 +27,9 @@ export const FORBIDDEN_ENTITLEMENTS: readonly ForbiddenEntitlement[] = [
   { key: 'com.apple.developer.icloud-services', reason: 'iCloud is not free-provisionable' },
   { key: 'com.apple.developer.ubiquity-container-identifiers', reason: 'iCloud Documents are not free-provisionable' },
   { key: 'com.apple.developer.ubiquity-kvstore-identifier', reason: 'iCloud key-value storage is not free-provisionable' },
+  // (ADR 0035) HealthKit's extras: not needed (reads run on app open), and not shown to be free-provisionable.
+  { key: 'com.apple.developer.healthkit.background-delivery', reason: 'HealthKit background delivery is not used (ADR 0035)' },
+  { key: 'com.apple.developer.healthkit.access', reason: 'HealthKit clinical records are not used (ADR 0035)' },
 ];
 
 /**
@@ -44,6 +47,9 @@ export const ALLOWED_ENTITLEMENTS: readonly string[] = [
   'com.apple.developer.team-identifier',
   // Development-signed builds (SideStore signs with a development certificate).
   'get-task-allow',
+  // (Ben, 27 Oct; ADR 0035) Apple Health. A free team can sign it via Xcode (LoopDocs); SideStore may strip it, so
+  // the app treats it as a runtime capability and hides Apple Health when it is missing.
+  'com.apple.developer.healthkit',
 ];
 
 /** Info.plist UIBackgroundModes values that imply a forbidden capability. */

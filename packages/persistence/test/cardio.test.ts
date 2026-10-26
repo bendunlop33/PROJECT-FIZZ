@@ -137,6 +137,8 @@ describe('migration 21: the four machines become cardio, history included', () =
     // Schema 26's tables weren't there yet either.
     Reflect.deleteProperty(tables, 'activities');
     Reflect.deleteProperty(tables, 'week_plans');
+    Reflect.deleteProperty(tables, 'health_writes');
+    Reflect.deleteProperty(tables, 'health_links');
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
     const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 20, tables, counts };
     delete body.checksum;
@@ -192,6 +194,8 @@ describe('migration 21 mid-workout: an air-bike timer already running (review S7
     // Schema 26's tables weren't there yet either.
     Reflect.deleteProperty(tables, 'activities');
     Reflect.deleteProperty(tables, 'week_plans');
+    Reflect.deleteProperty(tables, 'health_writes');
+    Reflect.deleteProperty(tables, 'health_links');
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
     const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 20, tables, counts };
     delete body.checksum;

@@ -9,6 +9,7 @@ import type { Activity } from '@fizz/schemas';
 import { activitySavedToast, type ActivitySaved } from '../../activity/activity-toast';
 import { deleteToolbarLabel, pastRowDetail, pastRowOpens, pastRowTitle, recentlyDeletedFooter, rowCustomActions, selectRowLabel, unreadableLine } from '../../history/delete-view';
 import { DeleteToastView } from '../../history/DeleteToastView';
+import { HEALTH_COPY } from '../../health/health-view';
 import { historyRowTitle, historySelectable, historyView, historyWorkoutLine } from '../../history/history-view';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import { useSelectDelete } from '../../history/useSelectDelete';
@@ -104,6 +105,29 @@ export function HistoryScreen() {
   const view = historyView(feed, filter, selecting);
   const footer = recentlyDeletedFooter(deleted);
 
+  /** One-tap Link (Ben, 27 Oct): linked at once, rows merge, `Linked · Undo`. */
+  async function linkNow(healthUuid: string, sessionId: string) {
+    const r = await services.health.link({ healthUuid, sessionId, opId: newUuid() });
+    changed();
+    reload();
+    if (!r.ok) {
+      setSaveToast({ text: r.message });
+      return;
+    }
+    setSaveToast({
+      text: HEALTH_COPY.linked,
+      action: HEALTH_COPY.undo,
+      onAction: () => {
+        setSaveToast(null);
+        void services.health.unlink({ healthUuid: r.healthUuid, expectedVersion: r.version, opId: newUuid() }).then((u) => {
+          changed();
+          reload();
+          if (!u.ok) setSaveToast({ text: u.message });
+        });
+      },
+    });
+  }
+
   const workoutRow = (item: Extract<FeedItem, { kind: 'workout' }>, c: RepeatCandidate) =>
     selecting ? (
       <SelectRow
@@ -124,6 +148,8 @@ export function HistoryScreen() {
         subtitle={c.exerciseNames.join(', ')}
         subtitleLines={1}
         secondLine={historyWorkoutLine(item, c)}
+        // (ADR 0035) A linked watch workout: one row, with a small mark naming its source.
+        {...(item.linkedSource !== undefined ? { tag: { icon: 'heart.fill' as const, color: 'text.secondary' as const, text: item.linkedSource, accessibilityLabel: `linked to ${item.linkedSource} activity` } } : {})}
         actions={rowCustomActions('past')}
         onAction={() => {
           sel.removeOne(c);
@@ -170,16 +196,20 @@ export function HistoryScreen() {
             const c = feed.workouts[item.sessionId];
             return c === undefined ? null : workoutRow(item, c);
           }
+          const linkTo = item.linkTo;
           return (
             <Row
               key={item.key}
               title={historyRowTitle(item, undefined, tz)}
               subtitle={item.value}
+              {...(item.fromHealth !== undefined ? { icon: 'heart.fill' as const } : {})}
               onPress={() => {
                 void services.activities.get(item.activityId).then((a) => {
                   if (a !== null) setEditing(a);
                 });
               }}
+              // (Ben, 27 Oct; TrainingPeaks-style) One tap links a Health strength workout to that day's gym workout; Undo.
+              trailing={linkTo !== undefined ? <TextButton label={HEALTH_COPY.link} accessibilityLabel={`${HEALTH_COPY.link} to ${linkTo.title}`} onPress={() => void linkNow(item.activityId, linkTo.sessionId)} /> : null}
             />
           );
         })}

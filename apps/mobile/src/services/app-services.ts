@@ -42,7 +42,7 @@ import {
 import type { CheckInSettings, EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachModelPort } from '@fizz/coach';
-import type { TextCoachState } from '@fizz/providers';
+import type { HealthPort, TextCoachState } from '@fizz/providers';
 
 import type { RestAlertController } from '../alerts/rest-alerts';
 import { createCoachService } from '../coach/coach-service';
@@ -72,6 +72,7 @@ import { setBuilderReviewProvider } from '../builder/review';
 import { createBuilderCoachService, createDayNotes } from '../coach/builder-coach-service';
 import { createBuilderReviewProvider } from '../coach/builder-review-provider';
 import { deloadAtOf } from './deload-at';
+import { createHealthService } from '../health/health-service';
 
 /**
  * The app's in-process services (no HTTP layer). Screens call these and never
@@ -120,6 +121,11 @@ export interface AppServicesDeps {
   signOutTimeoutMs?: number;
   /** Check-in settings (check-in.md §2.8; not persisted yet). Absent: the defaults (`Only when I choose`, Ben 23 Oct). */
   checkInSettings?: () => CheckInSettings;
+  /**
+   * (ADR 0035) Apple Health: the HealthKit bridge and whether the build has the entitlement. Absent (tests, Expo
+   * Go): Apple Health reads `Not available on this install`; nothing else changes.
+   */
+  health?: { port: HealthPort | null; buildIncludesHealth: boolean };
   /** Resolves when the UI is idle; background backups wait for it so Finish's Summary appears first (backup review B1). */
   idle?: () => Promise<void>;
 }
@@ -577,7 +583,21 @@ export function createAppServices(deps: AppServicesDeps) {
     plannedDay: (routineId, gymId) => loop.routines.planned(routineId, gymId),
   });
 
+  /** (Ben, 27 Oct; ADR 0035) Apple Health: switches, writes after Finish and edits, reads, links. Local only. */
+  const health = createHealthService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    newId: deps.newId,
+    port: deps.health?.port ?? null,
+    buildIncludesHealth: deps.health?.buildIncludesHealth ?? false,
+    workoutOpen: async () => (await sessions.active()) !== null,
+    dispatch: (sessionId, command) => loop.workout.dispatch(sessionId, command),
+  });
+
   const coach = createCoachService({
+    // (Ben, 27 Oct, Q4) The watch workout linked to the workout in context.
+    healthLinked: (sessionId) => health.coachLinked(sessionId),
     ...(deps.checkInSettings === undefined ? {} : { checkInSettings: deps.checkInSettings }),
     // (Ben, 20 Oct) Lift targets join the training details only while the setting is on.
     training: async () => {
@@ -1112,6 +1132,7 @@ export function createAppServices(deps: AppServicesDeps) {
    */
   const workoutEdit = createWorkoutEditService({ store: () => deps.manager.store, profile: getProfile, env: builderEnv, workout: loop.workout });
 
+
   return {
     ...loop,
     builder,
@@ -1136,6 +1157,7 @@ export function createAppServices(deps: AppServicesDeps) {
     data,
     coach,
     training,
+    health,
     liftTargets,
     gyms,
     imports,

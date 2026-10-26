@@ -374,7 +374,7 @@ describe('D7: one split source — with a plan, Profile › Split and the duplic
     expect(profile).toContain("s.plans.inUse().then((x) => x !== null, () => null)");
     expect(profile).toContain("data.value.training?.split?.opens === 'your_plan') rootNavigation.dispatch(openYourPlan(newUuid()));");
     const details = read('screens/profile/TrainingDetailsScreen.tsx');
-    expect(details).toContain('trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse })');
+    expect(details).toContain('trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse, healthWeights: snap.healthWeights })');
     expect(details).toContain('if (r.byPlan === true) navigation.dispatch(openYourPlan(newUuid())); else open(r.key);');
     const split = read('screens/profile/SplitScreen.tsx');
     expect(split).toContain('text={C.setByPlan}');

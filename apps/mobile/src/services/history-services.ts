@@ -1,6 +1,7 @@
 import {
   addDays,
   feedActivityOf,
+  withLinkedSource,
   feedWorkoutOf,
   historyFirstFrom,
   historyOlderFrom,
@@ -227,8 +228,12 @@ export function createHistoryServices(ctx: HistoryServicesContext) {
       const workouts: Record<string, RepeatCandidate> = {};
       for (const r of rows) workouts[r.sessionId] = r;
       const activities = await repos().activities.listBetween(p.id, from, addDays(today, 1));
+      // (ADR 0035) A workout with a linked Health workout carries its source (the row's ♥ mark).
+      const linked = await repos()
+        .health.linkedSources(p.id)
+        .catch(() => new Map<string, string>());
       const items = mergeFeed({
-        workouts: listed.map((w) => feedWorkoutOf(w, { title: workouts[w.session.id]?.title ?? 'Workout', nowMs })),
+        workouts: listed.map((w) => withLinkedSource(feedWorkoutOf(w, { title: workouts[w.session.id]?.title ?? 'Workout', nowMs }), linked)),
         activities: activities.map(feedActivityOf),
       });
       const olderWorkoutUtc = await repos().sessions.latestInHistoryStartBefore(p.id, fromUtc);

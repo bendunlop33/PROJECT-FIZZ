@@ -1,10 +1,11 @@
-import type { ActivityEffort, ActivityKind, Exercise, SessionAggregate } from '@fizz/schemas';
+import type { ActivityEffort, ActivityKind, Exercise, HealthActivityProvenance, SessionAggregate } from '@fizz/schemas';
 import { ACTIVITY_WORD, EFFORT_WORD, activityDistanceText, activityDurationText, activitySortMs } from './activity';
 import { addDays, localDateOf, weekdayIndexOfDate } from './calendar';
 import { NBSP, formatMinutes, formatNumber } from './display';
 import { deriveWorkoutTitle, storedWorkoutName } from './session/first-run';
 import { workoutDurationMs } from './session/view';
 import { toMs } from './time';
+import { healthSourceText } from './health';
 
 /**
  * (Ben, 26 Oct: "at the moment the app isn't very good at showing recent activity beyond the last couple of days")
@@ -15,8 +16,9 @@ import { toMs } from './time';
  * this module merges, groups, filters and words them. Only what was done: a planned activity is not something Ben did
  * (it shows on Today's strip and the calendar as planned, never here as done; rule 6).
  *
- * Another activity source (Apple Health, later) slots in through the activities model: its rows carry a `source` and,
- * when one is the same session as a gym workout, `linkedSessionId`. A linked activity shows once, as the workout.
+ * Apple Health (ADR 0035) slots in through the activities model: its rows carry `source: 'health'` and their source
+ * name; a Health workout linked to a gym workout isn't listed (or is left out by `linkedSessionId`) and the workout
+ * carries a small linked mark; an unlinked Health strength workout on a gym day offers a one-tap `Link`.
  */
 
 /** A workout in history, as the feed reads it. */
@@ -32,6 +34,8 @@ export interface FeedWorkoutInput {
   /** Completed sets, as Past workouts counts them (a two-sided pair counts once). */
   sets: number;
   source: 'manual' | 'import';
+  /** (ADR 0035) A Health workout is linked to it: its source (`Garmin`), for the row's small linked mark. */
+  linkedSource?: string | null;
 }
 
 /** An activity (a run, a ride), as the feed reads it. */
@@ -48,6 +52,11 @@ export interface FeedActivityInput {
   source: string;
   /** The gym workout this activity is the same session as; it then shows once, as the workout. */
   linkedSessionId: string | null;
+  /** (ADR 0035) Read from Apple Health: its own title (`Strength`, `Walk`) and source (`Garmin`). */
+  title?: string;
+  fromHealth?: string;
+  /** A Health strength (or `other`) workout that can be linked to a gym workout of the same day (`Link` chip). */
+  linkable?: boolean;
 }
 
 interface FeedItemBase {
@@ -65,7 +74,17 @@ interface FeedItemBase {
   accessibilityLabel: string;
 }
 
-export type FeedItem = (FeedItemBase & { kind: 'workout'; sessionId: string; source: 'manual' | 'import' }) | (FeedItemBase & { kind: 'activity'; activityId: string; source: string });
+export type FeedItem =
+  | (FeedItemBase & { kind: 'workout'; sessionId: string; source: 'manual' | 'import'; /** (ADR 0035) Linked Health workout's source: the row's ♥ mark. */ linkedSource?: string })
+  | (FeedItemBase & {
+      kind: 'activity';
+      activityId: string;
+      source: string;
+      /** (ADR 0035) Read from Apple Health: its source. */
+      fromHealth?: string;
+      /** (Ben, 27 Oct) The one-tap `Link` chip: the same day's gym workout nearest in time, not linked yet. */
+      linkTo?: { sessionId: string; title: string };
+    });
 
 export type FeedFilter = 'all' | 'workouts' | 'activities';
 
@@ -163,8 +182,21 @@ export function feedWorkoutOf(w: Pick<SessionAggregate, 'session' | 'exercises' 
   };
 }
 
-/** A stored activity as the feed's input. `linkedSessionId`: set by a source that links to a workout (none yet). */
-export function feedActivityOf(a: { id: string; tz: string; source: string; fields: { kind: ActivityKind; status: 'done' | 'planned'; date: string; distanceM: number | null; durationS: number | null; effort: ActivityEffort | null }; linkedSessionId?: string | null }): FeedActivityInput {
+/**
+ * A stored activity as the feed's input. `linkedSessionId`: set by a source that links to a workout. An activity read
+ * from Apple Health carries its own title and source, sorts at its real start, and is linkable when it is a strength
+ * (or `other`) workout (ADR 0035).
+ */
+export function feedActivityOf(a: {
+  id: string;
+  tz: string;
+  source: string;
+  fields: { kind: ActivityKind; status: 'done' | 'planned'; date: string; distanceM: number | null; durationS: number | null; effort: ActivityEffort | null };
+  linkedSessionId?: string | null;
+  health?: Pick<HealthActivityProvenance, 'label' | 'sourceName' | 'startUtc' | 'strength' | 'activityType'> | undefined;
+}): FeedActivityInput {
+  const h = a.health;
+  const fromHealth = h !== undefined && a.source === 'health';
   return {
     activityId: a.id,
     localDate: a.fields.date,
@@ -173,10 +205,19 @@ export function feedActivityOf(a: { id: string; tz: string; source: string; fiel
     distanceM: a.fields.distanceM,
     durationS: a.fields.durationS,
     effort: a.fields.effort,
-    sortMs: activitySortMs(a),
+    sortMs: fromHealth ? toMs(h.startUtc) : activitySortMs(a),
     source: a.source,
     linkedSessionId: a.linkedSessionId ?? null,
+    ...(h === undefined ? {} : { fromHealth: h.sourceName }),
+    ...(fromHealth && (a.fields.kind === 'other' || a.fields.kind === 'sport') ? { title: h.label } : {}),
+    ...(fromHealth && (h.strength || h.activityType === 3000) ? { linkable: true } : {}),
   };
+}
+
+/** (ADR 0035) A workout's feed input with its linked Health workout's source (shortened), when it has one. */
+export function withLinkedSource(w: FeedWorkoutInput, linked: ReadonlyMap<string, string>): FeedWorkoutInput {
+  const source = linked.get(w.sessionId);
+  return source === undefined ? w : { ...w, linkedSource: healthSourceText(source) };
 }
 
 /**
@@ -189,14 +230,42 @@ export function mergeFeed(input: { workouts: readonly FeedWorkoutInput[]; activi
   const out: FeedItem[] = [];
   for (const w of input.workouts) {
     const value = workoutValueText(w);
-    out.push({ kind: 'workout', key: `w:${w.sessionId}`, sessionId: w.sessionId, source: w.source, localDate: w.localDate, sortMs: w.sortMs, when: feedWhen(w.localDate), title: w.title, value, accessibilityLabel: label(w.localDate, w.title, value) });
+    const linked = w.linkedSource ?? null;
+    out.push({
+      kind: 'workout',
+      key: `w:${w.sessionId}`,
+      sessionId: w.sessionId,
+      source: w.source,
+      localDate: w.localDate,
+      sortMs: w.sortMs,
+      when: feedWhen(w.localDate),
+      title: w.title,
+      value,
+      ...(linked === null ? {} : { linkedSource: linked }),
+      accessibilityLabel: label(w.localDate, w.title, value) + (linked === null ? '' : `, linked to ${linked} activity`),
+    });
   }
+  const freeWorkouts = input.workouts.filter((w) => (w.linkedSource ?? null) === null && w.durationMs !== null);
   for (const a of input.activities) {
     if (a.status !== 'done') continue;
     if (a.linkedSessionId !== null && ids.has(a.linkedSessionId)) continue;
-    const title = ACTIVITY_WORD[a.kind];
-    const value = activityValueText(a);
-    out.push({ kind: 'activity', key: `a:${a.activityId}`, activityId: a.activityId, source: a.source, localDate: a.localDate, sortMs: a.sortMs, when: feedWhen(a.localDate), title, value, accessibilityLabel: label(a.localDate, title, value) });
+    const title = a.title ?? ACTIVITY_WORD[a.kind];
+    const value = [activityValueText(a), a.fromHealth ?? ''].filter((x) => x !== '').join(' · ');
+    const near = a.linkable === true ? freeWorkouts.filter((w) => w.localDate === a.localDate).sort((x, y) => Math.abs(x.sortMs - a.sortMs) - Math.abs(y.sortMs - a.sortMs))[0] : undefined;
+    out.push({
+      kind: 'activity',
+      key: `a:${a.activityId}`,
+      activityId: a.activityId,
+      source: a.source,
+      localDate: a.localDate,
+      sortMs: a.sortMs,
+      when: feedWhen(a.localDate),
+      title,
+      value,
+      ...(a.fromHealth === undefined ? {} : { fromHealth: a.fromHealth }),
+      ...(near === undefined ? {} : { linkTo: { sessionId: near.sessionId, title: near.title } }),
+      accessibilityLabel: label(a.localDate, title, value) + (a.fromHealth === undefined ? '' : ', from Apple Health'),
+    });
   }
   return out.sort((x, y) => (x.localDate !== y.localDate ? (x.localDate < y.localDate ? 1 : -1) : x.sortMs !== y.sortMs ? y.sortMs - x.sortMs : x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
 }

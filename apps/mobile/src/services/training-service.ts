@@ -4,15 +4,18 @@ import {
   mainLiftFor,
   mainLiftOptions,
   newTrainingProfile,
+  restingHeartRateDays,
+  sleepNights,
   splitInUse,
   toIso,
   toMs,
   type LiftHistory,
   type MainLift,
   type HistoryWorkout,
+  type HealthDailyValue,
 } from '@fizz/domain';
 import { trainingProfileId, type Store } from '@fizz/persistence';
-import type { Exercise, TrainingChange, TrainingProfile, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, HealthWeightSample, TrainingChange, TrainingProfile, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 import type { TrainingInput } from '@fizz/coach';
 
 import { buildDayChips, type BuildDayChip } from '../coach/build-view';
@@ -46,6 +49,8 @@ export interface TrainingSnapshot {
   options: Record<string, { id: string; name: string }[]>;
   nextDayId: string;
   nowYear: number;
+  /** (ADR 0035) Bodyweights read from Apple Health while `Bodyweight` is on. */
+  healthWeights: HealthWeightSample[];
 }
 
 export function createTrainingService(deps: TrainingServiceDeps) {
@@ -55,6 +60,32 @@ export function createTrainingService(deps: TrainingServiceDeps) {
   /** Throws when the row can't be read (review S4): the screen shows its error state, the coach "not available". */
   async function stored(owner: UserProfile): Promise<TrainingProfile> {
     return (await repo().get(owner.id)) ?? newTrainingProfile({ id: trainingProfileId(owner.id), ownerId: owner.id, atUtc: owner.createdAtUtc });
+  }
+
+  /** (ADR 0035) Bodyweights read from Apple Health while `Bodyweight` is on; none when off or unreadable. */
+  async function readHealthWeights(ownerId: string): Promise<HealthWeightSample[]> {
+    try {
+      const h = deps.store().repos.health;
+      const settings = await h.settings(ownerId).catch(() => null);
+      return settings?.readWeight === true ? await h.weightSamples(ownerId).catch(() => []) : [];
+    } catch {
+      // Health's tables unreadable: training details never fail on them.
+      return [];
+    }
+  }
+
+  /** (Q8) Resting heart rate and sleep, the last 14 days, while their switches are on. */
+  async function readHealthSignals(ownerId: string): Promise<{ restingHeartRate: HealthDailyValue[]; sleep: HealthDailyValue[] }> {
+    try {
+      const h = deps.store().repos.health;
+      const settings = await h.settings(ownerId).catch(() => null);
+      const from = toIso(toMs(deps.now().utc) - 15 * 86_400_000);
+      const hr = settings?.readRestingHeartRate === true ? await h.samplesSince(ownerId, 'resting_hr', from).catch(() => []) : [];
+      const sleep = settings?.readSleep === true ? await h.samplesSince(ownerId, 'sleep', from).catch(() => []) : [];
+      return { restingHeartRate: restingHeartRateDays(hr), sleep: sleepNights(sleep) };
+    } catch {
+      return { restingHeartRate: [], sleep: [] };
+    }
   }
 
   async function pool(): Promise<Map<string, Exercise>> {
@@ -87,7 +118,7 @@ export function createTrainingService(deps: TrainingServiceDeps) {
       mainLifts[d.id] = mainLiftFor(d, history, (id) => exercises.get(id)?.name ?? null);
       options[d.id] = mainLiftOptions(d, all).map((e) => ({ id: e.id, name: e.name }));
     }
-    return { owner, profile, mainLifts, options, nextDayId: buildDayFor(split, sessions, exerciseOf, deps.now().utc).id, nowYear: yearOf(deps.now()) };
+    return { owner, profile, mainLifts, options, nextDayId: buildDayFor(split, sessions, exerciseOf, deps.now().utc).id, nowYear: yearOf(deps.now()), healthWeights: await readHealthWeights(owner.id) };
   }
 
   /** Each split day's main lift, without the rest of the snapshot (review S3). */
@@ -194,7 +225,16 @@ export function createTrainingService(deps: TrainingServiceDeps) {
       const s = await snapshot();
       if (s === null) return null;
       const saved = await repo().get(s.owner.id);
-      return { profile: saved, nowYear: s.nowYear, mainLifts: s.mainLifts, nextDayId: s.nextDayId };
+      const healthWeights = await readHealthWeights(s.owner.id);
+      const healthSignals = await readHealthSignals(s.owner.id);
+      return {
+        profile: saved,
+        nowYear: s.nowYear,
+        mainLifts: s.mainLifts,
+        nextDayId: s.nextDayId,
+        ...(healthWeights.length > 0 ? { healthWeights } : {}),
+        ...(healthSignals.restingHeartRate.length > 0 || healthSignals.sleep.length > 0 ? { healthSignals } : {}),
+      };
     },
 
     /** F19: the Build card's chips (the split's days), the next day selected, and the session length. */

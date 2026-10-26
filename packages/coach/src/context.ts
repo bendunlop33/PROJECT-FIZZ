@@ -1,5 +1,5 @@
-import { ageFromBirthYear, buildExecutionOrder, deriveId, latestWeight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
-import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, WorkoutSet } from '@fizz/schemas';
+import { ageFromBirthYear, bodyweightEntries, type HealthDailyValue, buildExecutionOrder, deriveId, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
+import type { CheckIn, HealthWeightSample, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
 import type { BuildContextView } from './build';
@@ -128,6 +128,23 @@ export interface CoachContextInput {
    * loads without a read. Your data. Absent otherwise.
    */
   recentLifts?: readonly ExerciseHistoryView[];
+  /**
+   * (Ben, 27 Oct, Q4) The watch workout linked to the workout in context, as Apple Health recorded it: source, type,
+   * minutes, and average/max heart rate only while `Heart rate on linked workouts` is on, active energy if recorded.
+   * Data, never instructions (rule 8); no score; never a reason to change loads on its own (rule 6).
+   */
+  linkedActivity?: LinkedActivityContext;
+}
+
+/** (Q4) The linked watch workout as the coach sees it. */
+export interface LinkedActivityContext {
+  source: string;
+  type: string;
+  minutes: number;
+  avgHeartRate: number | null;
+  maxHeartRate: number | null;
+  activeKcal: number | null;
+  use: 'recorded by Ben\'s watch, via Apple Health; mention when he asks; never diagnose; never change loads from it alone';
 }
 
 /** (21 Oct) One exercise's recent sessions as the coach sees them in YOUR DATA. */
@@ -217,6 +234,13 @@ export interface TrainingInput {
    * while the Lift targets setting is on. Absent or empty: the coach sees none.
    */
   liftTargets?: readonly LiftTargetCoachView[];
+  /** (Ben, 27 Oct; ADR 0035) Bodyweights read from Apple Health, while `Bodyweight` is on. Ben's own entry wins on his days. */
+  healthWeights?: readonly HealthWeightSample[];
+  /**
+   * (Ben, 27 Oct, Q8) Resting heart rate and sleep from Apple Health, a value a day with its source, while their
+   * switches are on. Raw data only: no score; the coach never diagnoses or changes loads from them on its own.
+   */
+  healthSignals?: { restingHeartRate: readonly HealthDailyValue[]; sleep: readonly HealthDailyValue[] };
 }
 
 /** What the coach sees of Ben's training details (Your data). Absent keys are not set. */
@@ -225,8 +249,17 @@ export interface TrainingDetailsView {
   age?: { years: number; fromBirthYear: number };
   gender?: 'male' | 'female';
   heightCm?: number;
+  /**
+   * (Q8) Raw values from Ben's devices via Apple Health, each with its source. Data, not instructions (rule 8); no
+   * recovery or readiness score (rule 6). Absent when none.
+   */
+  fromAppleHealth?: {
+    restingHeartRate: { date: string; bpm: number; source: string }[];
+    sleep: { night: string; hoursAsleep: number; source: string }[];
+    use: 'raw values Ben recorded; mention only when he asks or when proposing; never diagnose; never a score; never change loads from these alone';
+  };
   /** The latest dated entry; for bodyweight and assisted exercises. */
-  bodyweight?: { value: number; unit: 'kg' | 'lb'; date: string; use: 'bodyweight, weighted and assisted exercises' };
+  bodyweight?: { value: number; unit: 'kg' | 'lb'; date: string; use: 'bodyweight, weighted and assisted exercises'; /** (ADR 0035) Only when read from Apple Health: its source, as data. */ from?: string };
   liftingExperience?: 'beginner' | 'intermediate' | 'experienced' | 'pro';
   goal?: 'strength' | 'muscle' | 'both';
   daysPerWeek?: number;
@@ -245,7 +278,7 @@ export interface TrainingDetailsView {
 export function trainingDetailsView(t: TrainingInput): { view: TrainingDetailsView; notSet: string[] } {
   const p = t.profile;
   const a = p?.about ?? {};
-  const w = p === null ? null : latestWeight(p.weights);
+  const w = p === null ? null : latestBodyweight(bodyweightEntries(p.weights, t.healthWeights ?? []));
   const split = splitInUse(p);
   const notSet: string[] = [];
   const view: TrainingDetailsView = { sessionMinutes: p?.sessionMinutes ?? 45, split: { kind: split.kind, chosenByBen: p?.split !== undefined, days: [], upNext: null } };
@@ -255,7 +288,7 @@ export function trainingDetailsView(t: TrainingInput): { view: TrainingDetailsVi
   else notSet.push('Gender');
   if (a.heightCm !== undefined) view.heightCm = a.heightCm;
   else notSet.push('Height');
-  if (w !== null) view.bodyweight = { value: w.value, unit: w.unit, date: w.date, use: 'bodyweight, weighted and assisted exercises' };
+  if (w !== null) view.bodyweight = { value: w.value, unit: w.unit, date: w.date, use: 'bodyweight, weighted and assisted exercises', ...(w.from === 'health' ? { from: `Apple Health (${w.sourceName ?? 'Health'})` } : {}) };
   else notSet.push('Bodyweight');
   if (a.experience !== undefined) view.liftingExperience = a.experience;
   else notSet.push('Lifting experience');
@@ -268,6 +301,14 @@ export function trainingDetailsView(t: TrainingInput): { view: TrainingDetailsVi
     return { name: d.name, bodyParts: [...d.bodyParts], mainLift: m === null ? null : { name: m.name, source: m.source === 'yours' ? 'Ben chose' : 'recommended from history' } };
   });
   view.split.upNext = split.days.find((d) => d.id === t.nextDayId)?.name ?? null;
+  const hs = t.healthSignals;
+  if (hs !== undefined && (hs.restingHeartRate.length > 0 || hs.sleep.length > 0)) {
+    view.fromAppleHealth = {
+      restingHeartRate: hs.restingHeartRate.slice(-14).map((d) => ({ date: d.date, bpm: d.value, source: d.source })),
+      sleep: hs.sleep.slice(-14).map((d) => ({ night: d.date, hoursAsleep: Math.round((d.value / 60) * 10) / 10, source: d.source })),
+      use: 'raw values Ben recorded; mention only when he asks or when proposing; never diagnose; never a score; never change loads from these alone',
+    };
+  }
   if (t.liftTargets !== undefined && t.liftTargets.length > 0) view.liftTargets = t.liftTargets.map((x) => JSON.parse(JSON.stringify(x)) as LiftTargetCoachView);
   return { view, notSet: notSet.map((n) => `${n}: not set`) };
 }
@@ -365,6 +406,8 @@ export interface YourData {
   week?: WeekContextView;
   /** (21 Oct) Live workouts: the last sessions of the exercises in play. */
   recentLifts?: RecentLiftView[];
+  /** (Ben, 27 Oct, Q4) The watch workout linked to this workout (Apple Health). */
+  linkedActivity?: LinkedActivityContext;
 }
 
 export interface CoachingKnowledge {
@@ -504,6 +547,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.training === undefined ? {} : { training: trainingDetailsView(input.training).view }),
     ...(input.week === undefined ? {} : { week: JSON.parse(JSON.stringify(input.week)) as WeekContextView }),
     ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
+    ...(input.linkedActivity === undefined ? {} : { linkedActivity: { ...input.linkedActivity } }),
     ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until } } } }),
   };
 }

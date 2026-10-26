@@ -26,6 +26,7 @@ import { SqliteWorkoutDrafts } from './workout-drafts';
 import { SqlitePlanDrafts } from './plan-drafts';
 import { SqliteTrainingProfiles } from './training-profiles';
 import { SqliteActivities, SqliteWeekPlans } from './activities';
+import { SqliteHealth } from './health';
 import { SqlitePlanDayVariations, SqliteReviews } from './plan-days';
 import { SqliteSessions } from './sessions';
 import { inHistorySql } from './sql';
@@ -56,6 +57,8 @@ export interface SqliteRepositories extends Repositories {
   planDayVariations: SqlitePlanDayVariations;
   /** (Workout builder v3, migration 30) Pre-session, session, post-session, weekly and block reviews. */
   reviews: SqliteReviews;
+  /** (Ben, 27 Oct, migration 38; ADR 0035) Apple Health: writes, links, what was read, the switches. */
+  health: SqliteHealth;
 }
 
 export function createSqliteRepositories(db: Database): SqliteRepositories {
@@ -80,6 +83,7 @@ export function createSqliteRepositories(db: Database): SqliteRepositories {
     weekPlans: new SqliteWeekPlans(db),
     planDayVariations: new SqlitePlanDayVariations(db),
     reviews: new SqliteReviews(db),
+    health: new SqliteHealth(db),
   };
 }
 

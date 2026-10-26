@@ -323,7 +323,7 @@ describe('integrity, backup and restore with coach data', () => {
     await src.close();
     const file = JSON.parse(made.text) as BackupFile;
     const tables = withoutSchema30({ ...file.tables });
-    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts', 'purged_sessions', 'workout_drafts', 'plan_drafts', 'import_profiles', 'import_layout_requests', 'training_profiles', 'activities', 'week_plans']) Reflect.deleteProperty(tables, t);
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts', 'purged_sessions', 'workout_drafts', 'plan_drafts', 'import_profiles', 'import_layout_requests', 'training_profiles', 'activities', 'week_plans', 'health_writes', 'health_links']) Reflect.deleteProperty(tables, t);
     for (const row of tables.sessions ?? []) for (const c of ['deleted_at_utc', 'deleted_at_tz', 'deleted_by_op_id', 'purge_after_utc', 'coach_draft']) Reflect.deleteProperty(row, c);
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
     const body: Omit<BackupFile, 'checksum'> = { ...file, schemaVersion: 3, tables, counts };

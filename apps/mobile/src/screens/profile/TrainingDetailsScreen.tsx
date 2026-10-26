@@ -48,7 +48,7 @@ export function TrainingDetailsScreen() {
   }
   const { snap, unit, planInUse } = data.value;
   const p = snap.profile;
-  const v = trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse });
+  const v = trainingDetailsView(p, { nowYear: snap.nowYear, unit, planInUse, healthWeights: snap.healthWeights });
 
   const open = (e: Editing) => {
     setOpId(services.newId());
@@ -89,7 +89,11 @@ export function TrainingDetailsScreen() {
 
       <SectionHeader title={C.weight} />
       <Group>
-        {v.weights.map((w) => (
+        {v.weights.map((w) =>
+          // (ADR 0035) A weight read from Apple Health is shown with its source, read-only (change it in Health).
+          w.fromHealth !== undefined ? (
+            <Row key={w.id} title={w.value} subtitle={w.title} icon="heart.fill" />
+          ) : (
           <Row
             key={w.id}
             title={w.value}
@@ -98,7 +102,8 @@ export function TrainingDetailsScreen() {
             onAction={() => void remove(w.id)}
             trailing={<TextButton label={C.delete} tone="secondary" accessibilityLabel={`${C.delete} ${w.accessibilityLabel}`} onPress={() => void remove(w.id)} />}
           />
-        ))}
+          ),
+        )}
         <Row title={C.addWeight} icon="plus" onPress={() => { open('addWeight'); }} />
       </Group>
 

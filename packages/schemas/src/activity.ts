@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IdSchema, OperationIdSchema, RecordMetaSchema, TimeZoneSchema, UtcTimestampSchema } from './common';
 import { LocalDateSchema } from './import';
+import { HealthActivityProvenanceSchema } from './health';
 
 /**
  * (Ben, 20 Oct: "Can we add ability to flex ordering and sessions etc
@@ -10,7 +11,9 @@ import { LocalDateSchema } from './import';
  * (Today › ＋ Activity) or by the coach when he asks. Your data, owner-scoped
  * (rule 10), in backups. Only what Ben said: a date, a rough duration and/or
  * distance, an effort word. No heart rate, pace zones or load scores (rule 6).
- * Read-only sources (Apple Health, Garmin, Strava) are not in scope.
+ * (Ben, 27 Oct) Workouts read from Apple Health (a Garmin run) are listed with
+ * these as read-only activities (`source: 'health'`, `health` provenance). They
+ * are built when listed, never stored here, and never edited (ADR 0035).
  */
 
 export const ActivityKindSchema = z.enum(['run', 'ride', 'swim', 'sport', 'other']);
@@ -58,8 +61,13 @@ export type ActivityLastChange = z.infer<typeof ActivityLastChangeSchema>;
 export const ActivitySchema = RecordMetaSchema.extend({
   fields: ActivityFieldsSchema,
   tz: TimeZoneSchema,
-  /** Who logged it: Ben's sheet, or the coach (when he asked, or his tap on its offer). */
-  source: z.enum(['ben', 'coach']),
+  /**
+   * Who logged it: Ben's sheet, or the coach (when he asked, or his tap on its offer). `health`: read from Apple
+   * Health (read-only, never stored in `activities`).
+   */
+  source: z.enum(['ben', 'coach', 'health']),
+  /** Only with `source: 'health'`: where it came from. */
+  health: HealthActivityProvenanceSchema.optional(),
   /** Tombstone: a deleted activity is kept so Undo can bring it back. Null: live. */
   deletedAtUtc: UtcTimestampSchema.nullable(),
   lastChange: ActivityLastChangeSchema.nullable(),

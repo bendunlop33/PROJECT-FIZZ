@@ -26,6 +26,8 @@ import { createPrefsHolder, DEFAULT_PREFS, type DevicePrefs } from '../device/pr
 import { afterLaunch, appInfo, deviceTimeZone, newUuid, nowZoned, whenIdle } from '../device/runtime';
 import { AppNavigator } from '../navigation/AppNavigator';
 import { MorningReminderHost } from '../reminders/MorningReminderHost';
+import { HealthHost } from '../health/HealthHost';
+import { healthInBuild, nativeHealthPort } from '../health/native-port';
 import type { AppServices } from '../services/app-services';
 import { startApp, type StartupOutcome } from '../services/startup';
 import { ThemeProvider, TIMING, useTheme, type AvailableDirectionId } from '../theme';
@@ -176,6 +178,8 @@ function Launch() {
         },
         connection: () => readTextCoachState(coachConnectionPorts().ports),
       },
+      // (ADR 0035) Apple Health: the HealthKit module if this build has it; usable only if the install's signing kept the entitlement.
+      health: { port: nativeHealthPort(), buildIncludesHealth: healthInBuild() },
       dataLedger: containerTextFile(DATA_LEDGER),
       credentials: deviceCredentials(),
       interruptedDelete: attempt.interruptedDelete,
@@ -275,6 +279,7 @@ function Launch() {
         <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, recoveryError, restAlerts, restoreInterrupted: services.restore.interruptedRestore, signOutNotConfirmed }} relaunch={relaunch}>
           <ForegroundAlerts services={services} />
           <MorningReminderHost services={services} />
+          <HealthHost services={services} />
           <AppNavigator
             setupStep={setup.step}
             setupUnit={setup.profile?.preferredUnit ?? null}
