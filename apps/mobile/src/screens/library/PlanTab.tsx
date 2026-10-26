@@ -40,6 +40,8 @@ export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined })
   const scrollRef = useRef<ScrollView>(null);
   const [data, reload] = useScreenData(async (s) => {
     // Review planview S5: a failed read is said, never shown as no plan.
+    // (Ben, 26 Oct) A new block week takes its version first (idempotent), so the overview and Today agree.
+    await s.plans.syncWeek().catch(() => false);
     const [planRead, previous, coach] = await Promise.all([
       s.plans.overview().then(
         (v) => ({ plan: v, planFailed: false }),

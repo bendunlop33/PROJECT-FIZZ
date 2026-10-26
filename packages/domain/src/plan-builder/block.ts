@@ -93,8 +93,9 @@ export function pbBlockWeekOf(input: PbBlockInput): PbBlockWeek {
 /** The builder record of the plan version in use (Apply's), else null (a coach plan, or not applied). */
 export function pbAppliedBuilder(plan: Pick<PlanDraft, 'status' | 'versions' | 'currentVersion' | 'applied'> | null): { version: PlanDraftVersion; builder: PlanBuilderRecord } | null {
   if (plan?.status !== 'applied' || plan.applied === null) return null;
-  const n = plan.applied.versionN;
-  const version = plan.versions.find((v) => v.n === n) ?? plan.versions.find((v) => v.n === plan.currentVersion);
+  // (Ben, 26 Oct: Edit plan) An edit's newest version carries the plan's answers (length, effort); without edits the
+  // current version is the applied one. Each week's days: `pbWeekDaysOf`.
+  const version = plan.versions.find((v) => v.n === plan.currentVersion) ?? plan.versions.find((v) => v.n === plan.applied?.versionN);
   const builder = version?.builder;
   return version === undefined || builder === undefined ? null : { version, builder };
 }
@@ -219,6 +220,8 @@ export interface PbBlockRow {
 export interface PbBlockDay {
   index: number;
   name: string;
+  /** (26 Oct) Set days plans: its weekday that week (Mon = 0, a `Move day` applied); null on Any days. */
+  weekday: number | null;
   /** Done in the week viewed (done or current week). */
   done: boolean;
   rows: PbBlockRow[];
@@ -258,6 +261,10 @@ export interface PbBlockViewInput {
   kitOf: (slot: DraftSlot) => PlanKit | null;
   /** The exercise's display name (catalogue or Ben's own). */
   nameOf: (exerciseId: string) => string;
+  /** (Ben, 26 Oct: Edit plan) Each week's own days (a running plan's edits); absent: `version` every week. */
+  weekOf?: ((w: number) => { days: PlanDraftVersion['days']; startReps?: Record<string, number> | undefined }) | undefined;
+  /** (26 Oct) Set days plans: each day's weekday in week `w`; null on Any days. */
+  weekdaysOf?: ((w: number, dayIndexes: readonly number[]) => ReadonlyMap<number, number> | null) | undefined;
 }
 
 function rowOf(slot: DraftSlot, t: PbWeekTarget, kit: PlanKit | null, e: PbExercise, name: string): PbBlockRow {
@@ -282,15 +289,17 @@ export function pbBlockView(input: PbBlockViewInput): PbBlockView {
     return { week: w, deload: dl, state, selected: w === viewed, accessibilityLabel: said.join(', ') };
   });
   const daysDone = new Set(block.daysDone[viewed - 1] ?? []);
-  const days = input.version.days.map((d): PbBlockDay => {
+  const week = input.weekOf?.(viewed) ?? { days: input.version.days, startReps: builder.startReps };
+  const weekdays = input.weekdaysOf?.(viewed, week.days.map((d) => d.index)) ?? null;
+  const days = week.days.map((d): PbBlockDay => {
     const rows = [...d.plan.slots]
       .sort((x, y) => x.order - y.order)
       .map((slot) => {
         const kit = input.kitOf(slot);
-        const e = pbExerciseOfSlot(slot, kit, builder.startReps?.[slot.slotKey]);
+        const e = pbExerciseOfSlot(slot, kit, week.startReps?.[slot.slotKey] ?? builder.startReps?.[slot.slotKey]);
         return rowOf(slot, pbAtWeek(a, e, kit, viewed), kit, e, input.nameOf(slot.exerciseId));
       });
-    return { index: d.index, name: d.name, done: viewed <= block.mondays.length && daysDone.has(d.index), rows };
+    return { index: d.index, name: d.name, weekday: weekdays?.get(d.index) ?? null, done: viewed <= block.mondays.length && daysDone.has(d.index), rows };
   });
   return {
     header: pbBlockLine(block).text,

@@ -50,15 +50,16 @@ import {
   type PlanOverview,
   pbAppliedBuilder,
   pbBlockOfPlan,
-  pbBlockViews,
-  pbKitOfEquipment,
+  movePlanDay,
+  undoMovePlanDay,
+  syncPlanWeek,
   type PbBlockView,
-  type PlanKit,
   type HistoryWorkout,
 } from '@fizz/domain';
-import type { Store } from '@fizz/persistence';
+import type { PlanWrite, Store } from '@fizz/persistence';
 import { createVersionMemo } from './version-memo';
-import type { DraftSlot, EquipmentInstance, Exercise, MuscleGroup, PlanApplyMode, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import { editBlockOf, readPlanBlock, slotKits, weekViews } from './plan-edit-read';
+import type { Exercise, MuscleGroup, PlanApplyMode, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Coach-built plans (Ben, 19 Oct): the plan card and its day view, Apply
@@ -98,6 +99,16 @@ export interface PlanBlockOverview {
   header: string;
   /** `6 weeks · Standard · deload week 6`. */
   line: string;
+  /** (Ben, 26 Oct) The plan's version as read: `Move day` and `Edit plan` write against it (rule 5). */
+  planId: string;
+  planVersion: number;
+  /** (26 Oct) `Edit plan` while the block runs (a done block starts the next one instead). */
+  editable: boolean;
+  /**
+   * (26 Oct) This week's plan days not done yet: `Do today ›` opens that day on Today (its Today key); `Move day` the
+   * weekdays it can move to this week (Set days plans; null on Any days).
+   */
+  actions: Readonly<Record<number, { todayKey: string; moveTo: number[] | null }>>;
 }
 
 export interface PlanOverviewWithBlock extends PlanOverview {
@@ -179,6 +190,14 @@ export const PLAN_COPY = {
   notPaused: 'Not paused.',
 } as const;
 
+/** (26 Oct) `Move day`'s write as an outcome (a taken weekday or a done day: out of date). */
+function moveOutcome(r: PlanWrite | null): PlanWriteOutcome {
+  if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+  if (r.status === 'written' || r.status === 'replayed') return { ok: true, plan: r.plan, duplicate: r.status === 'replayed' };
+  if (r.status === 'missing') return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+  return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+}
+
 /** Library › Your plan › a day (Ben, 19 Oct): what Start would plan here and last time's sets. */
 export interface PlanDayScreenData {
   planId: string;
@@ -228,23 +247,23 @@ export function createPlanServices(deps: PlanServicesDeps) {
     const block = pbBlockOfPlan(plan, refs, nowMs, tz);
     if (b === null || block === null) return null;
     // Each slot's item wherever Ben set it up (the plan was checked at one gym; a later gym change doesn't move the plan).
-    const items = new Map<string, EquipmentInstance>();
-    for (const g of await deps.store().repos.gyms.listByOwner(p.id).catch(() => [])) for (const e of await deps.store().repos.equipment.listByGym(g.id).catch(() => [] as EquipmentInstance[])) items.set(e.id, e);
-    const kits = new Map<string, PlanKit | null>();
-    const kitOf = (slot: DraftSlot): PlanKit | null => {
-      const id = slot.checkedOn?.equipmentId ?? null;
-      if (id === null) return null;
-      if (!kits.has(id)) {
-        const eq = items.get(id);
-        kits.set(id, eq === undefined ? null : pbKitOfEquipment(eq));
-      }
-      return kits.get(id) ?? null;
-    };
-    const views = pbBlockViews({ version: b.version, builder: b.builder, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise' });
+    const kitOf = await slotKits(deps.store(), p.id);
     const a = b.builder.answers;
+    // (Ben, 26 Oct: Edit plan) Each week from the plan's week map; Set days plans show each day's weekday.
+    const views = weekViews({ plan, answers: a, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise' });
     const deloads = views[0]?.deloadWeeks ?? [];
     const line = [`${String(a.weeks)} weeks`, EFFORT_WORD[a.effort], ...(deloads.length === 0 ? [] : [`deload ${deloads.length === 1 ? 'week' : 'weeks'} ${deloads.join(', ')}`])].join(' · ');
-    return { views, current: Math.min(block.week, a.weeks), done: block.done, header: views[0] === undefined ? '' : views[0].header, line };
+    const eb = editBlockOf(block);
+    const actions: Record<number, { todayKey: string; moveTo: number[] | null }> = {};
+    const thisWeek = eb === null ? undefined : views[eb.week - 1];
+    if (eb !== null && thisWeek !== undefined && activePause(plan, nowMs, tz) === null) {
+      const taken = new Set(thisWeek.days.flatMap((d) => (d.weekday === null ? [] : [d.weekday])));
+      for (const d of thisWeek.days) {
+        if (d.done) continue;
+        actions[d.index] = { todayKey: `plan:${plan.id}:${String(d.index)}`, moveTo: d.weekday === null ? null : [0, 1, 2, 3, 4, 5, 6].filter((x) => x === d.weekday || !taken.has(x)) };
+      }
+    }
+    return { views, current: Math.min(block.week, a.weeks), done: block.done, header: views[0] === undefined ? '' : views[0].header, line, planId: plan.id, planVersion: plan.version, editable: eb !== null, actions };
   }
 
   async function exerciseOf(): Promise<(id: string) => Exercise | null> {
@@ -673,6 +692,49 @@ export function createPlanServices(deps: PlanServicesDeps) {
       if (plan === null || due === null) return false;
       const r = await controlWrite(plan.id, (c) => resumePlan(c, { expectedVersion: c.version, opId: `plan-auto-resume:${due.opId}`, at, tz: p.timezone, auto: true }));
       return r.ok && !r.duplicate;
+    },
+
+    /**
+     * (Ben, 26 Oct: Edit plan) On app open and on Library › Your plan: a new block week's version takes over the plan's
+     * workouts (a change `from week N` or `only week N` starts or ends). Idempotent; writes only when a day's version
+     * changes. Returns whether it wrote.
+     */
+    async syncWeek(): Promise<boolean> {
+      const p = await owner();
+      if (p === null) return false;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan?.weekVersions === undefined) return false;
+      const at = deps.now();
+      const eb = editBlockOf(await readPlanBlock(deps.store(), p.id, plan, toMs(at.utc), p.timezone));
+      const b = pbAppliedBuilder(plan);
+      if (eb === null || b === null) return false;
+      const r = await repo().edit(p.id, plan.id, (c, routines) => syncPlanWeek(c, { at, block: eb, weeks: b.builder.answers.weeks, routines })).catch(() => null);
+      return r?.status === 'written';
+    },
+
+    /**
+     * (Ben, 26 Oct) `Move day` on a plan day, this week only (Set days plans): Legs → Sat. Refused when that weekday
+     * holds another plan day or the day is done this week. `expectedVersion`: Your plan's read (rule 5); idempotent by
+     * `opId`; `undoMove` is its Undo.
+     */
+    async moveDay(req: { planId: string; dayIndex: number; weekday: number; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const plan = await repo().get(req.planId).catch(() => null);
+      if (plan === null || plan.ownerId !== p.id) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const at = deps.now();
+      const eb = editBlockOf(await readPlanBlock(deps.store(), p.id, plan, toMs(at.utc), p.timezone));
+      if (eb === null) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+      const r = await repo().move(p.id, req.planId, (c) => movePlanDay(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, block: eb, dayIndex: req.dayIndex, weekday: req.weekday })).catch(() => null);
+      return moveOutcome(r);
+    },
+
+    async undoMove(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const at = deps.now();
+      const r = await repo().move(p.id, req.planId, (c) => undoMovePlanDay(c, { expectedVersion: req.expectedVersion, opId: req.opId, at })).catch(() => null);
+      return moveOutcome(r);
     },
 
     /** The `Plan ended` toast's Undo: the plan in use again, its days back in their places (refused if a newer plan is in use or a day changed since). */

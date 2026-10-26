@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { IdSchema, OperationIdSchema, TimeZoneSchema, UtcTimestampSchema, ZonedTimestampSchema } from './common';
 import { BUILD_LIMITS, BuildCheckSchema, BuildFocusSchema, NonEmptyDraftPlanSchema, ProposedExerciseSchema, WorkoutDraftOriginSchema } from './workout-draft';
 import { PlanBuilderRecordSchema } from './plan-builder';
+import { RoutineExerciseSchema, RoutinePlanDaySchema, RoutinePlanLinkSchema } from './routine';
 
 /**
  * Coach-built multi-day plans (Ben, 19 Oct: "Can it build plans across
@@ -23,7 +24,8 @@ export const PLAN_LIMITS = {
   dayNameMax: 30,
   /** Each open plan is kept this long, as a coach draft (BD4). An applied plan stays while it is in use. */
   openDays: 14,
-  maxVersions: 10,
+  /** (Ben, 26 Oct: Edit plan) Room for a running plan's edits: versions a week, a day or Undo still names are kept. */
+  maxVersions: 24,
   maxOps: 200,
   /**
    * (Workout builder v3 §4.2) Templates per plan day: one per main lift (`Chest · bench`,
@@ -215,6 +217,62 @@ export const PlanControlUndoSchema = z.object({
 export type PlanControlUndo = z.infer<typeof PlanControlUndoSchema>;
 
 /**
+ * (Ben, 26 Oct: Edit plan on a running plan; plan-builder.md "Editing a running plan") Each block week's plan version,
+ * week 1 first (`weekVersions[w - 1]`). Absent: every week is the applied version. Done weeks never change (rule 2).
+ */
+export const PlanWeekVersionsSchema = z.array(z.int().min(1)).min(1).max(12);
+
+/** What each plan day's workouts were last made to match: that day of version `versionN`; null: the day isn't in the plan now. */
+export const PlanDayAtSchema = z.object({ dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1), versionN: z.int().min(1).nullable() });
+export type PlanDayAt = z.infer<typeof PlanDayAtSchema>;
+
+/**
+ * The last `Apply changes` on a running plan, for its Undo (rule 2, 5): the week map, the day mirrors and the current
+ * version before it, and the versions it added. Undo only from `versionAfter`.
+ */
+export const PlanEditUndoSchema = z.object({
+  opId: OperationIdSchema,
+  versionAfter: z.int().min(2),
+  before: z.object({
+    weekVersions: PlanWeekVersionsSchema.nullable(),
+    daysAt: z.array(PlanDayAtSchema).max(PLAN_LIMITS.maxDays).nullable(),
+    currentVersion: z.int().min(1),
+    name: z.string().min(1).max(120),
+  }),
+  added: z.array(z.int().min(1)).max(12),
+  /**
+   * Every plan workout the edit wrote, at the version it left it, and as it was before (null: the edit made it). Undo
+   * puts each back exactly, only while each is still as the edit left it (one Ben changed since refuses the Undo).
+   */
+  routines: z
+    .array(
+      z.object({
+        routineId: IdSchema,
+        versionAfter: z.int().min(1),
+        before: z
+          .object({
+            name: z.string().min(1).max(120),
+            exercises: z.array(RoutineExerciseSchema).max(40),
+            createdFromPlan: RoutinePlanLinkSchema.optional(),
+            planDay: RoutinePlanDaySchema.optional(),
+            deletedAtUtc: UtcTimestampSchema.nullable(),
+          })
+          .nullable(),
+      }),
+    )
+    .max(PLAN_LIMITS.maxDays * PLAN_LIMITS.maxTemplatesPerDay),
+});
+export type PlanEditUndo = z.infer<typeof PlanEditUndoSchema>;
+
+/** (Ben, 26 Oct) `Move day`: a plan day on another weekday in one block week only (Set days plans). */
+export const PlanDayMoveSchema = z.object({ week: z.int().min(1).max(12), dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1), weekday: z.int().min(0).max(6) });
+export type PlanDayMove = z.infer<typeof PlanDayMoveSchema>;
+
+/** The last `Move day`, for its Undo: the moves before it. Undo only from `versionAfter`. */
+export const PlanMoveUndoSchema = z.object({ opId: OperationIdSchema, versionAfter: z.int().min(2), before: z.array(PlanDayMoveSchema).max(84) });
+export type PlanMoveUndo = z.infer<typeof PlanMoveUndoSchema>;
+
+/**
  * A coach-built plan (Your data). `open` until applied, discarded or
  * expired; Undo of an Apply makes it `open` again (its workouts gone, the
  * rotation as it was). Every write bumps `version` and records its `opId`.
@@ -246,6 +304,15 @@ export const PlanDraftSchema = z
     pauses: z.array(PlanPauseSchema).max(60).optional(),
     /** (20 Oct) The last pin or pause write, for its Undo. */
     lastControl: PlanControlUndoSchema.nullable().optional(),
+    /** (Ben, 26 Oct: Edit plan) Each block week's version; absent: the applied version every week. */
+    weekVersions: PlanWeekVersionsSchema.optional(),
+    /** (26 Oct) Which version's day each plan day's workouts match; absent: the applied version's. */
+    daysAt: z.array(PlanDayAtSchema).max(PLAN_LIMITS.maxDays).optional(),
+    /** (26 Oct) The last `Apply changes`, for its Undo. */
+    lastEdit: PlanEditUndoSchema.nullable().optional(),
+    /** (26 Oct) `Move day`s, each for one block week. */
+    moves: z.array(PlanDayMoveSchema).max(84).optional(),
+    lastMove: PlanMoveUndoSchema.nullable().optional(),
     opIds: z.array(OperationIdSchema).max(PLAN_LIMITS.maxOps),
     createdAt: ZonedTimestampSchema,
     tz: TimeZoneSchema,

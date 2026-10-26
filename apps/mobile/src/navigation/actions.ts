@@ -139,6 +139,11 @@ export function openPlanEdit(editPlanId: string) {
   return { type: 'NAVIGATE', payload: { name: 'PlanSetup', params: { editPlanId } } } as const;
 }
 
+/** (Ben, 26 Oct) Your plan's `Do today ›`: that plan day on Today's card (today only, as Today's own day row). */
+export function todayWithDay(key: string, nonce: string): PopToTabsAction {
+  return popToTabs({ screen: 'Today', params: { pickDay: { key, nonce } } });
+}
+
 /** `Apply plan`: to Today with the plan, showing `Plan applied · Undo` (plan-builder §3). */
 export function todayAfterPlanApplied(planApplied: PlanAppliedToastParam): PopToTabsAction {
   return popToTabs({ screen: 'Today', params: { planApplied } });

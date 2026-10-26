@@ -297,7 +297,9 @@ export function TodayScreen() {
       action: PB_COPY.undo,
       onAction: () => {
         setToast(null);
-        void services.planBuilder.undo({ planId: planApplied.planId, expectedVersion: planApplied.version, opId: newUuid() }).then((r) => {
+        // (Ben, 26 Oct) After `Apply changes`, Undo puts the plan as it was before the edit; after `Apply plan`, no plan.
+        const undo = planApplied.edit === true ? services.planBuilder.undoEdit({ planId: planApplied.planId, expectedVersion: planApplied.version, opId: newUuid() }) : services.planBuilder.undo({ planId: planApplied.planId, expectedVersion: planApplied.version, opId: newUuid() });
+        void undo.then((r) => {
           if (!r.ok) setToast({ text: r.message });
           changed();
           reload();
@@ -305,6 +307,28 @@ export function TodayScreen() {
       },
     });
   }, [planApplied, navigation]);
+
+  // (Ben, 26 Oct) Your plan's `Do today ›`: that plan day on the card, today only, like Today's own day row (nothing is
+  // written; the week reflows because Up next follows what is done). Undo puts the card back on the day it was on.
+  const pickDayParam = route.params?.pickDay;
+  const pickedNonce = useRef<string | null>(null);
+  useEffect(() => {
+    if (pickDayParam === undefined || session === null || pickedNonce.current === pickDayParam.nonce) return;
+    pickedNonce.current = pickDayParam.nonce;
+    navigation.setParams({ pickDay: undefined });
+    const day = session.days.find((d) => d.key === pickDayParam.key);
+    if (day === undefined) return;
+    const was = selection?.dayKey ?? session.nextKey;
+    pickDay(day.key);
+    setToast({
+      text: TODAY_V2_COPY.doToday(day.name),
+      action: PB_COPY.undo,
+      onAction: () => {
+        setToast(null);
+        if (was !== null) pickDay(was);
+      },
+    });
+  }, [pickDayParam, session]);
 
   const startEmpty = route.params?.startEmpty;
   const startedEmpty = useRef<string | null>(null);

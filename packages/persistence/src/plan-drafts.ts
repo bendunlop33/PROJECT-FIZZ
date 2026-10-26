@@ -1,5 +1,5 @@
 import { PlanDraftSchema, type Exercise, type PlanDraft, type Routine } from '@fizz/schemas';
-import { expirePlanDraft, type PlanApplyChange, type PlanControlChange, type PlanEndChange, type PlanLifeChange, type PlanRestartChange, type PlanUndoChange } from '@fizz/domain';
+import { expirePlanDraft, type PlanApplyChange, type PlanControlChange, type PlanEditChange, type PlanEndChange, type PlanLifeChange, type PlanMoveChange, type PlanRestartChange, type PlanUndoChange } from '@fizz/domain';
 import type { Database } from './database';
 import { decodeDocument, DocumentRepository, erase, EXERCISE_SPEC, listDocuments, ROUTINE_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
@@ -282,6 +282,70 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
         const plan = await this.get(sourceId);
         return plan === null ? { status: 'missing' as const } : { status: 'stale' as const, plan };
       });
+  }
+
+  /**
+   * (Ben, 26 Oct: Edit plan) `Apply changes` on a running plan, its Undo and the new-week sync: the plan and every plan
+   * workout they make, change or delete, together or not at all (a force-close leaves all of it or none). `make` gets
+   * the plan and Ben's workouts as stored inside the transaction (rule 5). Deletes go first, so a day's other template
+   * is gone before its own takes the new main lift (`routines_plan_day`).
+   */
+  edit(ownerId: string, planId: string, make: (current: PlanDraft, routines: readonly Routine[]) => PlanEditChange): Promise<PlanWrite | { status: 'nothing'; plan: PlanDraft } | { status: 'invalid'; reason: string; plan: PlanDraft }> {
+    return this.db
+      .write(async (tx): Promise<PlanWrite | { status: 'nothing'; plan: PlanDraft } | { status: 'invalid'; reason: string; plan: PlanDraft }> => {
+        const current = await getPlanDraftIn(tx, planId);
+        if (current === null || current.ownerId !== ownerId) return { status: 'missing' };
+        const routines = await listDocuments(tx, ROUTINE_SPEC, 'owner_id = ?', [ownerId]);
+        const c = make(current, routines);
+        switch (c.kind) {
+          case 'duplicate':
+            return { status: 'replayed', plan: c.current, routines: [] };
+          case 'stale':
+            return { status: 'stale', plan: c.current };
+          case 'nothing':
+            return { status: 'nothing', plan: c.current };
+          case 'changed_since':
+            return { status: 'changed_since', plan: c.current, names: c.names };
+          case 'invalid':
+            return { status: 'invalid', reason: c.reason, plan: c.current };
+          case 'write': {
+            const gone = (r: Routine): number => (r.deletedAtUtc != null ? 0 : 1);
+            for (const u of [...c.update].sort((a, b) => gone(a.next) - gone(b.next))) if (!(await saveDocumentIn(tx, ROUTINE_SPEC, u.next, u.expectedVersion)).ok) throw new Conflict();
+            for (const r of c.create) {
+              if (r.ownerId !== ownerId) throw new Error('Routine owner differs from the store owner');
+              if (!(await saveDocumentIn(tx, ROUTINE_SPEC, r, null)).ok) throw new Conflict();
+            }
+            if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion)).ok) throw new Conflict();
+            return { status: 'written', plan: c.next, routines: [...c.create, ...c.update.map((u) => u.next)] };
+          }
+        }
+      })
+      .catch(async (e: unknown) => {
+        if (!(e instanceof Conflict)) throw e;
+        const plan = await this.get(planId);
+        return plan === null ? { status: 'missing' as const } : { status: 'stale' as const, plan };
+      });
+  }
+
+  /** (26 Oct) `Move day` and its Undo: one versioned write on the plan in use. */
+  move(ownerId: string, planId: string, make: (current: PlanDraft) => PlanMoveChange): Promise<PlanWrite> {
+    return this.db.write(async (tx): Promise<PlanWrite> => {
+      const current = await getPlanDraftIn(tx, planId);
+      if (current === null || current.ownerId !== ownerId) return { status: 'missing' };
+      const c = make(current);
+      switch (c.kind) {
+        case 'duplicate':
+          return { status: 'replayed', plan: c.current, routines: [] };
+        case 'stale':
+          return { status: 'stale', plan: c.current };
+        case 'invalid':
+          return { status: 'invalid', reason: 'move' };
+        case 'write': {
+          const r = await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion);
+          return r.ok ? { status: 'written', plan: c.next, routines: [] } : { status: 'stale', plan: current };
+        }
+      }
+    });
   }
 
   /** The 14-day expiry of open plans, run on read. Returns the plans it closed. */
