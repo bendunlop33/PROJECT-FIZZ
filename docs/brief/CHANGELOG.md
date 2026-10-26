@@ -777,3 +777,9 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 ## 2026-10-26: Apple Health device probe: not available on the SideStore install (Ben, build 419)
 
 - **Result:** Profile › Apple Health reads "Not available on this install"; SideStore drops the HealthKit entitlement. Health stays built and dormant; nothing else changes. Route decision (Xcode on a Mac, paid programme, or no Health) is Ben's (apple-health.md Q10).
+
+## 2026-10-26: Apple Health through a patched SideStore (Ben, 26 Oct)
+
+- **Decision (Ben, 26 Oct):** try the fourth Q10 route: a SideStore built in our CI from pinned upstream refs plus SideSign PR #3, which lets a free Apple ID turn on HealthKit for an App ID. Research: `docs/research/sidestore-healthkit.md`. ADR 0036; ADR 0035 and `apple-health.md` Q10 amended.
+- **Built:** manual workflow `SideStore HealthKit (patched)` producing `SideStore-HealthKit.ipa` (0.7.0-alpha, recommended) and `SideStore-0.6.4-HealthKit.ipa` (stay on 0.6.4). GymSmarter's app and entitlements are unchanged.
+- **Open:** not yet built on GitHub's runner or run on Ben's iPhone. Steps and what to report: `docs/device-tests/2026-10-27-sidestore-healthkit.md`. Until PR #3 ships upstream, every SideStore update needs a rebuild, and an unpatched SideStore drops Health on the next GymSmarter install.
