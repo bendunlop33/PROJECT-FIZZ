@@ -511,7 +511,8 @@ export function applyPlanEdit(current: PlanDraft, input: PlanEditApplyInput): Pl
   const top = Math.max(...current.versions.map((v) => v.n));
   const curV = pbVersionOf(current, pbWeekVersionOf(current, cur));
   if (curV === null) return { kind: 'stale', current };
-  const startReps = { ...(curV.builder?.startReps ?? {}), ...input.startReps };
+  // A kept slot keeps its start reps; a new slot takes the rebuild's.
+  const startReps = { ...input.startReps, ...(curV.builder?.startReps ?? {}) };
   const added: PlanDraftVersion[] = [];
   const mint = (days: readonly PlanDayDraft[]): number => {
     const same = added.find((v) => sameDays(v.days, days));
