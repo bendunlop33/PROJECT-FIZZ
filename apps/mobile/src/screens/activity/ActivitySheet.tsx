@@ -13,6 +13,7 @@ import { useTheme } from '../../theme';
 import { AppText, BottomCard, DangerTextButton, KeyboardDoneAccessory, PrimaryButton, StatusLine, TextField } from '../../ui';
 
 import type { ActivitySaved } from '../../activity/activity-toast';
+import { HealthActivitySheet } from './HealthActivitySheet';
 
 export type { ActivitySaved };
 
@@ -85,6 +86,20 @@ export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible
       return;
     }
     onSaved({ kind: 'deleted', activityId: activity.id, opId, text: activityRemovedText(activity.fields) });
+  }
+
+  // (ADR 0035) Read from Apple Health: read-only, with its source and link actions.
+  if (activity?.source === 'health') {
+    return (
+      <HealthActivitySheet
+        visible={visible}
+        activity={activity}
+        onClose={onClose}
+        onLinked={() => {
+          onSaved({ kind: 'linked', activityId: activity.id, opId: op.current });
+        }}
+      />
+    );
   }
 
   return (

@@ -10,6 +10,7 @@ import {
   applyWeekPlan,
   deleteActivity,
   editActivity,
+  healthActivityOf,
   isInHistory,
   liveRoutines,
   localDateOf,
@@ -345,6 +346,13 @@ export function createWeekServices(deps: WeekServicesDeps) {
       const a = await repos()
         .activities.get(activityId)
         .catch(() => null);
+      if (a === null && p !== null) {
+        // (ADR 0035) An activity read from Apple Health: read-only, built from its sample.
+        const sample = await repos()
+          .health.workoutSample(p.id, activityId)
+          .catch(() => null);
+        return sample === null ? null : healthActivityOf(sample, p.id);
+      }
       return a !== null && p !== null && a.ownerId === p.id && a.deletedAtUtc === null ? a : null;
     },
     /** Live activities dated in [`from`, `to`) (local dates): the morning reminder's run rule. Unreadable: none. */
@@ -401,7 +409,7 @@ export function createWeekServices(deps: WeekServicesDeps) {
         gymDaysLeft: s.facts.gymDaysLeft,
         daysFrom: s.basis.kind,
         remaining: s.facts.remaining.map((d) => ({ id: d.id, name: d.name, bodyParts: [...d.bodyParts] })),
-        activities: s.activities.map((a) => [ACTIVITY_WORD[a.fields.kind], `${dateWeekdayShort(a.fields.date)} ${a.fields.date}`, activityStatusOn(a, s.today), activityDetail(a.fields).replaceAll(' ', ' ')].filter((x) => x !== '').join(' · ')),
+        activities: s.activities.map((a) => [ACTIVITY_WORD[a.fields.kind], `${dateWeekdayShort(a.fields.date)} ${a.fields.date}`, activityStatusOn(a, s.today), activityDetail(a.fields).replaceAll(' ', ' '), a.health === undefined ? '' : `from Apple Health (${a.health.label}, ${a.health.sourceName})`].filter((x) => x !== '').join(' · ')),
         needsReshape: s.facts.needsReshape && s.active === null,
         suggestion: suggestion === null || suggestion.merges.length === 0 ? null : { merges: suggestion.merges.map((m) => ({ dayIds: [...m.dayIds], name: m.name })) },
         applied: s.active === null ? null : weekChangeText(s.active),

@@ -47,6 +47,7 @@ import { CoachConnectionScreen } from '../screens/profile/CoachConnectionScreen'
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { VoiceSettingsScreen } from '../screens/profile/VoiceSettingsScreen';
 import { MorningReminderScreen } from '../screens/profile/MorningReminderScreen';
+import { AppleHealthScreen } from '../screens/profile/AppleHealthScreen';
 import { morningTapOpensToday } from '../reminders/morning';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { SplitScreen } from '../screens/profile/SplitScreen';
@@ -213,6 +214,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="SavedLayout" component={SavedLayoutScreen} options={{ title: 'Saved layout' }} />
       <ProfileStack.Screen name="Voice" component={VoiceSettingsScreen} options={{ title: 'Voice' }} />
       <ProfileStack.Screen name="MorningReminder" component={MorningReminderScreen} options={{ title: 'Morning reminder' }} />
+      <ProfileStack.Screen name="AppleHealth" component={AppleHealthScreen} options={{ title: 'Apple Health' }} />
       <ProfileStack.Screen name="Developer" component={DeveloperScreen} options={{ title: 'Developer' }} />
       <ProfileStack.Screen name="CapabilityProbe" component={ProbeRoute} options={{ headerShown: false }} />
       <ProfileStack.Screen name="ChatGptSignInTest" component={ChatGptSignInTestScreen} options={{ title: 'ChatGPT sign-in test' }} />

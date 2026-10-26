@@ -1,5 +1,5 @@
-import { ageFromBirthYear, feetInches, localHourUtcMs, heightText, latestWeight, splitInUse, weightText, type MainLift } from '@fizz/domain';
-import { SPLIT_BODY_PARTS, TRAINING_LIMITS, type Gender, type LiftingExperience, type SplitBodyPart, type SplitKind, type TrainingGoal, type TrainingProfile, type WeightUnit } from '@fizz/schemas';
+import { ageFromBirthYear, bodyweightEntries, feetInches, latestBodyweight, localHourUtcMs, heightText, splitInUse, weightText, type MainLift } from '@fizz/domain';
+import { SPLIT_BODY_PARTS, TRAINING_LIMITS, type Gender, type HealthWeightSample, type LiftingExperience, type SplitBodyPart, type SplitKind, type TrainingGoal, type TrainingProfile, type WeightUnit } from '@fizz/schemas';
 
 import { formatCalendarDate, localDateKey } from '../format/dates';
 
@@ -87,6 +87,8 @@ export interface WeightRowView {
   id: string;
   title: string;
   value: string;
+  /** (ADR 0035) Read from Apple Health: its source (`Withings`). Read-only: no Delete. */
+  fromHealth?: string;
   accessibilityLabel: string;
 }
 
@@ -103,13 +105,23 @@ export interface TrainingDetailsView {
  * Ben's unit. Check-in and Self next-time targets are stored but not shown
  * until the check-in prompt and Self sessions exist (review B1, S3).
  */
-export function trainingDetailsView(p: TrainingProfile, s: { nowYear: number; unit: WeightUnit; /** (D7) A plan is in use: its days a week and session length are the plan's. */ planInUse?: boolean }): TrainingDetailsView {
+export function trainingDetailsView(
+  p: TrainingProfile,
+  s: {
+    nowYear: number;
+    unit: WeightUnit;
+    /** (D7) A plan is in use: its days a week and session length are the plan's. */ planInUse?: boolean;
+    /** (ADR 0035) Bodyweights read from Apple Health (`Bodyweight` on): listed with their source; Ben's entry wins on his days. */
+    healthWeights?: readonly HealthWeightSample[];
+  },
+): TrainingDetailsView {
   const a = p.about;
-  const latest = latestWeight(p.weights);
-  const weights = [...p.weights].reverse().map((w) => {
+  const entries = bodyweightEntries(p.weights, s.healthWeights ?? []);
+  const latest = latestBodyweight(entries);
+  const weights = [...entries].reverse().map((w): WeightRowView => {
     const value = weightText(w, s.unit);
-    const title = formatCalendarDate(w.date);
-    return { id: w.id, title, value, accessibilityLabel: `${title}, ${value}` };
+    const title = w.from === 'health' ? `${formatCalendarDate(w.date)} · ${w.sourceName ?? 'Health'}` : formatCalendarDate(w.date);
+    return { id: w.id, title, value, ...(w.from === 'health' ? { fromHealth: w.sourceName ?? 'Health' } : {}), accessibilityLabel: `${title}, ${value}${w.from === 'health' ? ', from Apple Health' : ''}` };
   });
   const summaryParts = [
     a.birthYear === undefined ? null : String(ageFromBirthYear(a.birthYear, s.nowYear)),

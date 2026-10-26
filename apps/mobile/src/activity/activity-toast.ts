@@ -3,7 +3,7 @@ import { ACTIVITY_COPY } from '@fizz/domain';
 import type { ActivityOutcome } from '../services/week-services';
 
 /** What the activity sheet did, for the caller's toast with Undo. */
-export type ActivitySaved = { kind: 'added' | 'edited' | 'deleted'; activityId: string; opId: string; /** A remove's own words (`Run cancelled`); else the default. */ text?: string };
+export type ActivitySaved = { /** `linked`: a Health activity linked to a workout (ADR 0035; Unlink is on that workout). */ kind: 'added' | 'edited' | 'deleted' | 'linked'; activityId: string; opId: string; /** A remove's own words (`Run cancelled`); else the default. */ text?: string };
 
 export interface ActivityToast {
   text: string;
@@ -27,6 +27,7 @@ export function activitySavedToast(
     show: (t: ActivityToast | null) => void;
   },
 ): ActivityToast {
+  if (saved.kind === 'linked') return { text: 'Linked' };
   const undoOp = deps.newOpId();
   return {
     text: saved.text ?? (saved.kind === 'deleted' ? ACTIVITY_COPY.deleted : ACTIVITY_COPY.saved),

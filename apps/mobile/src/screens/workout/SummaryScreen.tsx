@@ -33,6 +33,7 @@ import { DELETE_COPY, deletedToastText, restoredToastText, summaryCanDelete } fr
 import { handOffDeleteToast } from '../../history/toast-handoff';
 import { DeletedWorkoutView } from './DeletedWorkoutView';
 import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
+import { LinkedActivityRow } from './LinkedActivityRow';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
 /**
@@ -391,6 +392,9 @@ export function SummaryScreen() {
             ) : null}
           </View>
         </DelayedFade>
+
+        {/* (Ben, 27 Oct; apple-health.md §2.3) The watch's actuals for this workout, or `Link to this workout?`; nothing otherwise. */}
+        <LinkedActivityRow sessionId={sessionId} />
 
         {/* (Ben, 21 Oct; workout-builder-v3 §6.2) One tap, a weekly review fact. */}
         <FeelRow sessionId={sessionId} />

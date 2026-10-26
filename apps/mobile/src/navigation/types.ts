@@ -14,6 +14,8 @@ export type ProfileStackParams = {
   Voice: undefined;
   /** Profile › Morning reminder: what to train today, at a set time (Ben, 20 Oct 2026). */
   MorningReminder: undefined;
+  /** (Ben, 27 Oct; ADR 0035) Profile › Apple Health. */
+  AppleHealth: undefined;
   CapabilityProbe: undefined;
   PainFlags: undefined;
   /** Profile › Training details (Ben 13 Oct: D5, D8). */
