@@ -4,10 +4,11 @@ import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, ScrollView, Switch
 import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { dropRoutineSlot, formatDuration, mergeRoutineEdits, routineEditDirty, routineIssues, slotShapeOf, type RoutineConflict, type RoutineEdit } from '@fizz/domain';
+import { dropRoutineSlot, fitNoteOf, formatDuration, mergeRoutineEdits, routineEditDirty, routineIssues, slotShapeOf, stepTimeMinutes, type BuilderFitStep, type RoutineConflict, type RoutineEdit } from '@fizz/domain';
 import type { BuilderGroup, Routine, RoutineExercise, SetType } from '@fizz/schemas';
 
 import type { ExerciseChoices, TemplateFact } from '../../builder/builder-service';
+import { editorDrafts } from '../../device/editor-drafts';
 import { newUuid } from '../../device/runtime';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { backFromEditor, popToFromEditor } from '../../navigation/actions';
@@ -17,6 +18,8 @@ import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, PrimaryButton, ShapeRepsSheet, StatusLine, TextButton, TextField, Toast, ToastHost } from '../../ui';
 import { ExercisePopup } from '../../ui/exercise-popup';
+import { TimeDetailSheet, TimeNoteRow } from '../../ui/time-stepper';
+import { EDITOR_DRAFT_COPY, editorDraftKey, editorDraftToOffer, type EditorDraft } from '../../workout/editor-draft';
 import { SwapSheet } from '../../ui/swap-sheet';
 import { useAddOwn } from '../../ui/use-add-own';
 import { useExercisePicker, usePickerView } from '../../ui/use-exercise-picker';
@@ -54,8 +57,10 @@ type Swap = { slotId: string | null; choices: ExerciseChoices };
  * the name where the title is, `Time`, the same table and pop-up, swipe Delete / Swap, drag, `＋ Add exercise`.
  * Nothing is written until `Save` (one version, opId, expectedVersion; rule 5), then `Saved Push A · Undo` where it
  * was opened from; a newer version is never overwritten (the conflict sheet). A plan day's change is to its
- * template for the weeks ahead; workouts already done never change (rule 2). Edits are lost on Cancel or a
- * force-close. Local only, offline (rule 1). Loads are `Auto` or Ben's Fixed ones, rounded to this gym (rule 4).
+ * template for the weeks ahead; workouts already done never change (rule 2). (Ben, 26 Oct) Unsaved edits are kept on
+ * the phone as he makes them (`editor-draft.ts`): after a force-close, reopening asks `Resume edits` / `Discard`; the
+ * Save is still the one versioned write against the version they started from. `Time ±` fits the sets and rests to
+ * the length (the service's fitTemplate), as edits he saves or Undoes. Local only, offline (rule 1). Loads are `Auto` or Ben's Fixed ones, rounded to this gym (rule 4).
  */
 export function EditWorkoutScreen() {
   const theme = useTheme();
@@ -102,6 +107,15 @@ export function EditWorkoutScreen() {
   const opId = useRef(newUuid());
   // The workout as opened (or as last merged on a conflict): what `dirty` and Keep both compare against.
   const base = useRef<RoutineEdit>({ name: '', exercises: [] });
+  // The version Save expects: the one opened, or the one resumed edits started from (rule 5).
+  const expected = useRef<number | null>(null);
+  // (Ben, 26 Oct) Unsaved edits kept on the phone; autosave waits until the resume question is answered.
+  const draftKey = editorDraftKey(target);
+  const [draftReady, setDraftReady] = useState(draftKey === null);
+  // (Ben, 26 Oct) `Time ±`: the list before the first step (Undo), the length asked for and what the fit changed.
+  const [fit, setFit] = useState<{ before: RoutineExercise[]; fromMinutes: number | null; target: number; steps: BuilderFitStep[] } | null>(null);
+  const fitBusy = useRef(false);
+  const [timeDetail, setTimeDetail] = useState(false);
 
   const load = useCallback(() => {
     setData('loading');
@@ -111,14 +125,81 @@ export function EditWorkoutScreen() {
         return;
       }
       base.current = o.base;
+      expected.current = o.data.routine?.version ?? null;
       setName(o.name);
       setList(o.list);
       setInfo(o.info);
       setFacts(o.facts);
+      setFit(null);
       setData(o.data);
+      if (draftKey === null) return;
+      // A kept draft from before a force-close: offered back once, never applied without Ben's answer.
+      void editorDrafts()
+        .get(draftKey)
+        .catch(() => null)
+        .then((kept) => {
+          const offer = editorDraftToOffer(kept, { name: o.name, exercises: o.list });
+          if (offer === null) {
+            setDraftReady(true);
+            return;
+          }
+          Alert.alert(EDITOR_DRAFT_COPY.title, undefined, [
+            {
+              text: EDITOR_DRAFT_COPY.discard,
+              style: 'destructive',
+              onPress: () => {
+                void editorDrafts().remove(draftKey).catch(() => undefined);
+                setDraftReady(true);
+              },
+            },
+            {
+              text: EDITOR_DRAFT_COPY.resume,
+              onPress: () => {
+                void resumeDraft(offer, o.data.gym?.id ?? null).finally(() => {
+                  setDraftReady(true);
+                });
+              },
+            },
+          ]);
+        });
     });
-  }, [services, routineId, draft, saveAs, setList]);
+  }, [services, routineId, draft, saveAs, setList, draftKey]);
   useEffect(load, [load]);
+
+  /** `Resume edits`: the kept edits on the page, against the version they started from, with their Save's op ID. */
+  async function resumeDraft(kept: EditorDraft, atGym: string | null) {
+    const ids = [...new Set(kept.edit.exercises.map((e) => e.exerciseId))];
+    const more = await services.routines.exerciseInfo(ids).catch((): Record<string, EditorExerciseInfo> => ({}));
+    const moreFacts = await services.builder.templateFacts({ gymId: atGym, exerciseIds: ids }).catch((): Record<string, TemplateFact> => ({}));
+    setInfo((cur) => ({ ...more, ...cur }));
+    setFacts((cur) => ({ ...moreFacts, ...cur }));
+    base.current = { name: kept.base.name, exercises: kept.base.exercises };
+    expected.current = kept.baseVersion;
+    opId.current = kept.opId;
+    setName(kept.edit.name);
+    setList(kept.edit.exercises);
+  }
+
+  // Autosave (Ben, 26 Oct): the edits as they stand, 400 ms after the last change; none left once nothing differs.
+  useEffect(() => {
+    if (draftKey === null || !draftReady || data === 'loading' || data === null) return;
+    const edits: RoutineEdit = { name, exercises: list };
+    const t = setTimeout(() => {
+      if (!routineEditDirty(base.current, edits)) {
+        void editorDrafts().remove(draftKey).catch(() => undefined);
+        return;
+      }
+      void editorDrafts()
+        .put({ key: draftKey, savedAtUtc: services.now().utc, baseVersion: expected.current, base: { name: base.current.name, exercises: [...base.current.exercises] }, edit: { name, exercises: list }, opId: opId.current })
+        .catch(() => undefined);
+    }, 400);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [draftKey, draftReady, data, name, list, services]);
+  const forgetDraft = () => {
+    if (draftKey !== null) void editorDrafts().remove(draftKey).catch(() => undefined);
+  };
   // The Save sheet's `Edit ›`: whatever closes the editor without a Save (Cancel, Discard) shows the sheet again.
   useEffect(
     () => () => {
@@ -183,11 +264,14 @@ export function EditWorkoutScreen() {
   const primary = editorPrimary({ issues, dirty, isNew });
   const table = templateTableView(list, ctx);
   const nameOfSlot = (slotId: string) => info[list.find((e) => e.id === slotId)?.exerciseId ?? '']?.name ?? 'Exercise';
+  const shownMinutes = fit?.target ?? minutes;
+  const fitNote = fit === null ? { note: null, lines: [] as string[] } : fitNoteOf(fit.steps, (id) => info[id]?.name ?? 'Exercise', nameOfSlot);
 
   /** One edit on the page's list, on the list as it is now (quick taps add up). Returns the pop-up's line, if any. */
   function apply(op: TemplateEditOp): string | null {
     const r = applyTemplateEdit(listRef.current, op, ctx, newUuid);
     setList(r.list);
+    setFit(null);
     setError(null);
     if (op.kind !== 'delete_exercise' && op.kind !== 'swap') showToast(null);
     return r.note;
@@ -202,6 +286,7 @@ export function EditWorkoutScreen() {
 
   function cancel() {
     if (!dirty) {
+      forgetDraft();
       navigation.dispatch(backFromEditor(from, copyToast));
       return;
     }
@@ -211,13 +296,14 @@ export function EditWorkoutScreen() {
         text: EDITOR_COPY.discard,
         style: 'destructive',
         onPress: () => {
+          forgetDraft();
           navigation.dispatch(backFromEditor(from, copyToast));
         },
       },
     ]);
   }
 
-  async function save(next: RoutineEdit = edit, expectedVersion: number | null = editor.routine?.version ?? null) {
+  async function save(next: RoutineEdit = edit, expectedVersion: number | null = expected.current) {
     if (busy || (next === edit && primary.disabled)) return;
     setBusy(true);
     setError(null);
@@ -225,11 +311,13 @@ export function EditWorkoutScreen() {
       const r = await saveTemplate(services.routines, { target, edit: next, expectedVersion, opId: opId.current });
       switch (r.kind) {
         case 'saved':
+          forgetDraft();
           changed();
           if (from === 'ExerciseInfo' || from === 'PlanDay') handOffLibraryToast(r.toast);
           navigation.dispatch(popToFromEditor(from, r.toast));
           return;
         case 'saved_as':
+          forgetDraft();
           changed();
           if (saveAs !== undefined) settleSaveEdit(saveAs, { kind: 'saved', routine: r.routine });
           navigation.goBack();
@@ -253,6 +341,7 @@ export function EditWorkoutScreen() {
     if (stale === null || merge === null) return;
     const current = stale.current;
     base.current = editableOf(current);
+    expected.current = current.version;
     setName(merge.merged.name);
     setList([...merge.merged.exercises]);
     setStale(null);
@@ -262,7 +351,39 @@ export function EditWorkoutScreen() {
   function discardMine() {
     setStale(null);
     opId.current = newUuid();
+    forgetDraft();
     load();
+  }
+
+  /**
+   * (Ben, 26 Oct) `Time ±`: the next 5-minute step, the template's sets and rests fitted to it from the list as it was
+   * before the first step (so steps don't add up), shown as page edits with the note and `Undo`. Nothing is saved.
+   */
+  async function stepTime(dir: -1 | 1) {
+    const shown = fit?.target ?? minutes;
+    if (shown === null || fitBusy.current) return;
+    fitBusy.current = true;
+    try {
+      const from = fit?.before ?? listRef.current;
+      const targetMin = stepTimeMinutes(shown, dir);
+      const r = await services.routines.fitTemplate({ exercises: from, gymId: editor.gym?.id ?? null, minutes: targetMin, defaultRestS: editor.globalDefault.seconds });
+      if (r === null) {
+        setError(TEMPLATE_COPY.fitNoChange);
+        return;
+      }
+      if (r.status === 'fits') {
+        setList(from);
+        setFit(null);
+        showToast({ text: TEMPLATE_COPY.fitNoChange, before: null });
+        return;
+      }
+      setList(r.exercises);
+      setFit({ before: from, fromMinutes: fit?.fromMinutes ?? minutes, target: targetMin, steps: r.steps });
+      setError(null);
+      if (r.status === 'over') showToast({ text: TEMPLATE_COPY.fitOver(Math.max(1, Math.round(r.seconds / 60))), before: from });
+    } finally {
+      fitBusy.current = false;
+    }
   }
 
   /**
@@ -301,6 +422,7 @@ export function EditWorkoutScreen() {
     const ref = { id: x.id, measurement: x.measurement };
     // Apply against the info that includes the new exercise (its measurement and shape).
     const withX: TemplateEditorCtx = { ...ctx, info: { ...ctx.info, [x.id]: x }, facts: { ...ctx.facts, ...more } };
+    setFit(null);
     if (s.slotId === null) {
       setList(applyTemplateEdit(listRef.current, { kind: 'add_exercise', exercise: ref, shape: x.defaultShape }, withX, newUuid).list);
       showToast(null);
@@ -395,6 +517,7 @@ export function EditWorkoutScreen() {
                 const before = toast.before;
                 showToast(null);
                 if (before !== null) setList(before);
+                setFit(null);
               },
             }
           : {})}
@@ -423,14 +546,27 @@ export function EditWorkoutScreen() {
             maxLength={160}
             style={{ fontSize: theme.type.title1.fontSize, fontWeight: '700', paddingHorizontal: theme.space['2'], backgroundColor: 'transparent' }}
           />
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
-            <AppText variant="callout" color="text.secondary" style={{ fontSize: 15 }}>
-              {TEMPLATE_COPY.time}
-            </AppText>
-            <AppText variant="label" numeric>
-              {minutes === null ? '—' : TEMPLATE_COPY.minutes(minutes)}
-            </AppText>
-          </View>
+          {/* (Ben, 26 Oct) Your workout's Time control: the estimate, ± fits the sets and rests (as edits to save). */}
+          {shownMinutes === null ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
+              <AppText variant="callout" color="text.secondary" style={{ fontSize: 15 }}>
+                {TEMPLATE_COPY.time}
+              </AppText>
+              <AppText variant="label" numeric>
+                —
+              </AppText>
+            </View>
+          ) : (
+            <TimeNoteRow
+              minutes={shownMinutes}
+              note={fitNote.note}
+              noteLabel={fitNote.note === null ? null : `Time changes: ${fitNote.note}`}
+              onStep={(d) => void stepTime(d)}
+              onNote={() => {
+                setTimeDetail(true);
+              }}
+            />
+          )}
         </View>
         <ScrollView scrollEnabled={!dragging} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingVertical: theme.space['3'], gap: theme.space['3'] }}>
           {editor.inProgress ? <StatusLine icon="info.circle" tone="info" text={EDITOR_COPY.inProgress} /> : null}
@@ -543,6 +679,21 @@ export function EditWorkoutScreen() {
           )
         }
         toast={toastNode}
+      />
+      {/* (Ben, 26 Oct) What `Time ±` changed, with Undo back to the list before it. */}
+      <TimeDetailSheet
+        visible={timeDetail && fit !== null}
+        minutes={shownMinutes ?? 0}
+        lines={fitNote.lines}
+        undoMinutes={fit?.fromMinutes ?? null}
+        onUndo={() => {
+          if (fit !== null) setList(fit.before);
+          setFit(null);
+          setTimeDetail(false);
+        }}
+        onClose={() => {
+          setTimeDetail(false);
+        }}
       />
       <SwapSheet
         visible={swap !== null}

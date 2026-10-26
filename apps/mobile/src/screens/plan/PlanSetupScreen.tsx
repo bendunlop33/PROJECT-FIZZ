@@ -23,8 +23,11 @@ import {
   PB_WEEKDAYS,
   PB_WEEKS,
   balanceRows,
+  checkHeader,
   checkRows,
   dayViews,
+  expectTable,
+  pbTableUnit,
   goalsRowValue,
   likeGroups,
   liftFromLine,
@@ -114,6 +117,12 @@ export function PlanSetupScreen() {
       });
   };
   useEffect(() => { load(); }, []);
+  // (Ben, 26 Oct; app review findings 17, 20) While loading: the frame and Close at once, a light skeleton after a beat.
+  const [placeholder, setPlaceholder] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => { setPlaceholder(true); }, theme.timing.placeholderDelay);
+    return () => { clearTimeout(t); };
+  }, [theme.timing.placeholderDelay]);
 
   useEffect(() => {
     if (toast === null) return;
@@ -132,7 +141,7 @@ export function PlanSetupScreen() {
       </Screen>
     );
   }
-  if (s === null || answers === null) return <Screen>{null}</Screen>;
+  if (s === null || answers === null) return <PlanSetupLoading placeholder={placeholder} onClose={() => { navigation.goBack(); }} />;
 
   const set = (next: PlanBuilderAnswers): void => { setAnswers(next); };
   const flow: Page[] = [...(s.needsCheck ? (['check'] as const) : []), 'goals', 'week'];
@@ -268,8 +277,11 @@ export function PlanSetupScreen() {
   let body: ReactNode = null;
   // `Any priorities?`: Yes while a group or target is picked, or Ben tapped Yes (no ✦ pick yet: none is computed).
   const yes = priYes ?? (answers.priorities.length > 0 || answers.specific.length > 0);
+  // (Ben, 26 Oct) Every load names its unit: each lift's kit unit, the header Ben's (or the one the rows share).
+  const unitOf = (k: string) => kitOf(k)?.unit ?? null;
   if (page === 'goals') {
     const expect = s.expect(answers);
+    const expectView = expectTable(expect, answers.weeks, s.nameOf, unitOf, s.unit);
     body = (
       <>
         {title(C.goals)}
@@ -320,9 +332,9 @@ export function PlanSetupScreen() {
         {expect.rows.length > 0 ? (
           <Question label={C.expect(answers.weeks)}>
             <Card>
-              <TableRow cells={[`kg × ${String(expect.reps)}`, 'Now', `Week ${String(answers.weeks)} (${C.est})`]} head />
-              {expect.rows.map((r) => (
-                <TableRow key={r.key} cells={[s.nameOf(r.key), r.now === null ? '—' : `${fmt(r.now)}${r.perHand ? ' each' : ''}`, r.end === null ? '—' : `${fmt(r.end)}${r.perHand ? ' each' : ''}`]} />
+              <TableRow cells={expectView.head} head />
+              {expectView.rows.map((r) => (
+                <TableRow key={r.key} cells={r.cells} />
               ))}
             </Card>
           </Question>
@@ -331,7 +343,8 @@ export function PlanSetupScreen() {
     );
   } else if (page === 'check') {
     const lifts = s.lifts(answers);
-    const rows = checkRows(lifts, s.nameOf, perHand);
+    const headUnit = pbTableUnit(lifts.map((l) => unitOf(l.key)), s.unit);
+    const rows = checkRows(lifts, s.nameOf, perHand, unitOf, headUnit);
     const bal = balanceRows(lifts, s.nameOf);
     const left = PB_EXTRA_LIFTS.filter((k) => !answers.extraLifts.includes(k) && kitOf(k) !== null);
     body = (
@@ -339,7 +352,7 @@ export function PlanSetupScreen() {
         {title(C.check)}
         {continueRow}
         <Card>
-          <TableRow cells={[C.lift, C.sixReps, C.oneRmEst]} head />
+          <TableRow cells={checkHeader(headUnit)} head />
           {rows.map((r) => (
             <Pressable
               key={r.key}
@@ -603,13 +616,13 @@ export function PlanSetupScreen() {
       <>
         <AppText variant="headline">{s.nameOf(sheet.key)}</AppText>
         {lift === undefined ? null : <AppText variant="callout" color="text.secondary">{liftFromLine(lift, s.nameOf, (utc) => formatShortDate(toMs(utc), s.tz))}</AppText>}
-        <Stepper label={C.weight} value={`${fmt(sheet.value)}${perHand(sheet.key) ? ' each' : ''}`} onDown={() => { step(-1); }} onUp={() => { step(1); }} />
+        <Stepper label={C.weight} value={`${fmt(sheet.value)} ${kit?.unit ?? s.unit}${perHand(sheet.key) ? ' each' : ''}`} onDown={() => { step(-1); }} onUp={() => { step(1); }} />
         <Stepper label={C.reps} value={String(sheet.reps)} onDown={() => { setSheet({ ...sheet, reps: Math.max(1, sheet.reps - 1) }); }} onUp={() => { setSheet({ ...sheet, reps: Math.min(30, sheet.reps + 1) }); }} />
         {lift !== undefined && lift.status !== 'recent' && lift.sources.length > 1 && lift.from?.kind !== 'history' && lift.from?.kind !== 'entered' ? (
           <View style={{ gap: theme.space['1'] }}>
             <AppText variant="sectionLabel" color="text.secondary">{C.otherLift}</AppText>
             {lift.sources.map((src) => (
-              <Chip key={src.index} size="min" label={`${s.nameOf(src.fromKey)} · ${C.est} ${src.six === null ? '—' : fmt(src.six)}`} selected={lift.from?.kind === 'similar' && lift.from.index === src.index} onPress={() => { set({ ...answers, lifts: { ...answers.lifts, [sheet.key]: { kind: 'similar', source: src.index } } }); setSheet(null); }} />
+              <Chip key={src.index} size="min" label={`${s.nameOf(src.fromKey)} · ${C.est} ${src.six === null ? '—' : `${fmt(src.six)} ${kit?.unit ?? s.unit}`}`} selected={lift.from?.kind === 'similar' && lift.from.index === src.index} onPress={() => { set({ ...answers, lifts: { ...answers.lifts, [sheet.key]: { kind: 'similar', source: src.index } } }); setSheet(null); }} />
             ))}
           </View>
         ) : null}
@@ -736,6 +749,30 @@ export function PlanSetupScreen() {
 
 // ---------------------------------------------------------------------------
 // Parts
+
+/**
+ * (Ben, 26 Oct; app review findings 17, 20) The builder while its read runs: the top bar with `Close` at once (the
+ * modal has no swipe-down), then a few static placeholder blocks after `timing.placeholderDelay` (no shimmer).
+ */
+function PlanSetupLoading({ placeholder, onClose }: { placeholder: boolean; onClose: () => void }) {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: theme.components.screenMargin, minHeight: 44 + insets.top }}>
+        <TextButton label={C.close} tone="secondary" onPress={onClose} />
+      </View>
+      {placeholder ? (
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], gap: theme.space['3'] }}>
+          <View style={{ height: 34, width: '55%', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }} />
+          {[0, 1, 2].map((i) => (
+            <View key={String(i)} style={{ height: 64, borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 /** A share as a percentage width. */
 const pct = (x: number): DimensionValue => `${String(Math.max(0, Math.min(1, x)) * 100)}%` as DimensionValue;

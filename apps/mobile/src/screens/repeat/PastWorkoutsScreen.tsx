@@ -18,7 +18,7 @@ import { LogPastWorkoutSheet } from '../workout/LogPastWorkoutSheet';
 import { PAST_LOG_COPY } from '../../workout/past-log-view';
 
 /**
- * Past workouts (Today → `Past workouts`): pick one to repeat, or delete
+ * Past workouts (Library › Workouts → `All workouts ›`, Ben 26 Oct): pick one to repeat, or delete
  * (delete-workouts §2.3). Every workout logged in the app is listed, with
  * `Show more` for older ones; one with nothing logged opens its Summary
  * (with `⋯`) instead of Repeat (review r2 B1, B2). `Select` → tick →

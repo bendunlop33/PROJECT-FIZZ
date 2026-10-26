@@ -80,17 +80,24 @@ export const WeekdaySchema = z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', '
 export type Weekday = z.infer<typeof WeekdaySchema>;
 
 /** Check-in settings (check-in.md §2.8). Not persisted yet: the defaults are used. */
+/**
+ * When Start asks the check-in (check-in.md §2.8). (Ben, 26 Oct) Saved on the training profile
+ * (`checkInSchedule`, Your data) from Profile › Training › Check-in.
+ */
+export const CheckInScheduleSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('when_i_choose') }),
+  z.object({ kind: z.literal('every_workout') }),
+  z.object({ kind: z.literal('days'), weekdays: z.array(WeekdaySchema).max(7) }),
+]);
+export type CheckInSchedule = z.infer<typeof CheckInScheduleSchema>;
+
 export const CheckInSettingsSchema = z.object({
   enabled: z.boolean(),
   /**
    * `when_i_choose` (Ben, 23 Oct; the default): never asked on Start. The check-in is offered quietly in
    * the workout until the first working set is logged, and stays editable on the Summary.
    */
-  schedule: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('when_i_choose') }),
-    z.object({ kind: z.literal('every_workout') }),
-    z.object({ kind: z.literal('days'), weekdays: z.array(WeekdaySchema).max(7) }),
-  ]),
+  schedule: CheckInScheduleSchema,
   /** Ask "What's up?" at or below this score; null = never. */
   askReasonsAtOrBelow: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).nullable(),
   /** The coach offers a lighter session at or below this score; null = never. */

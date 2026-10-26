@@ -278,7 +278,7 @@ Picking another day or session type drafts that one the same way (steps 1, 3, 4)
 | No plan | *(Rewritten 23 Oct, review S4; Ben 22 Oct, D7.)* Top to bottom: `No plan` and `Set up a plan ›` on one row; **a day row from Profile › Split** (the one split source without a plan, D7): `Chest NEXT · Back · Legs · Shoulders · ⋯` (NEXT = the Up next resolver's pick: Profile split, routines in rotation, else the longest gap; picking another day shows it, `Picked by you`, today only, and the suggestion moves on; `⋯` = Other workouts: Full body, Upper, Push, `Empty workout`, saved workouts; no chip row under the card). Then the `Up next` card (`Today` when picked): day, `N exercises · ~M min`, the main-lift line, and its own today-only controls: Main lift, Accessories, Time (fit note in light orange, the shared fit, D9), Abs, Supersets; **no `Today only` tag** (D1: edits are always today only), and `Start` (one tap; never the overview). Below: `Build your own` and `＋ Activity` side by side. With no split and nothing to resolve, `Build your own` is the primary. The no-plan card keeps its controls (D3 is about Today with a plan). Back-offs use the band the Profile goal maps to (strength → Strength, muscle → Muscle, both → Balanced) [Proposal, review SP8]. **Pending Ben:** whether a split without an applied plan should show as plan days (review today-fix-21oct SP4) |
 | Plan paused | Day control shows the paused plan's days, none marked `NEXT`; `Plan paused` under the label |
 | First use | Strip shows today only; as No plan |
-| Large Dynamic Type | Strip as a list; day control as a `Day` row; chips wrap |
+| Large Dynamic Type | Strip as a list (AX sizes); day control as a `Day  Chest ›` row from xxxLarge (Ben, 26 Oct: before AX1 `Shoulders` and `Full body` were cut); below that, segment labels shrink to fit on one line (never `…`); the header's `Week 6 of 6 · Deload` goes on its own line under the day name at 320 pt or from xLarge; chips wrap |
 
 #### 2.0.5 Interactions
 
@@ -493,11 +493,14 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 │ ‹ Today                                  │  one back control
 │ Chest · about 47 min                     │  estimate
 │ ┌──────────────────────────────────────┐ │
+│ │ Options     Bench · Focused · Abs  ⌄ │ │  one row, collapsed (Ben, 26 Oct)
+│ └──────────────────────────────────────┘ │
+│   tapped, it opens in place:             │
 │ │ Main lift          (●Bench) (Incline)│ │  only when the day has 2+ main lifts
 │ │ Accessories     (●Focused) (Varied)  │ │
 │ │ Abs                            [ ●]  │ │
 │ │ Supersets                      [ ●]  │ │
-│ └──────────────────────────────────────┘ │
+│ │ ↻ Mix it up                          │ │
 │ ✦ Cable fly 3 → 2 sets?    Apply   ✕    │  coach offer, only when there is one (D2)
 │     Exercise              Sets  Top set  │
 │  1  Barbell bench press     3   102.5    │
@@ -506,7 +509,7 @@ States: **normal**; **custom, empty** (`Next: exercises` disabled, hint `Add a m
 └──────────────────────────────────────────┘
 ```
 
-- **Layout.** A compact table under the title, rows ≥ 50 pt, chips and switches with 44 pt targets. Then the coach offer line (if any), then the workout table as §2.3.
+- **Layout (Ben, 26 Oct; app review finding 7).** One `Options` row under the title (44 pt), collapsed by default, so the first exercise sits near the top of the screen. Collapsed it shows only what is set (`Bench · Focused · Abs · Supersets`: the main lift only with 2+ main lifts; Abs and Supersets only when on). A tap opens the five controls in place (`⌃` closes them): rows ≥ 50 pt, chips and switches with 44 pt targets. VoiceOver: `Options: Main lift Bench, Accessories Focused, Abs on, Supersets off`, button, collapsed/expanded. Then the coach offer line (if any), then the workout table as §2.3. *(Was: the five rows always open above the table, which pushed the first exercise two-thirds down a 375 × 667 screen.)*
 - **Interactions.** A chip or switch loads Today's draft for that choice at today's Time, from the same draft and fit code as Today (D9, one shared fit), then the coach's applied offer and **Ben's earlier edits replayed on it** (review 23 Oct S3, FT5: a control change never quietly undoes them; was "replaces earlier manual edits" [Proposal]). Toast `Abs off · Undo` (`Main lift: Incline`, `Accessories: Varied`, `Supersets off`); Undo puts back the workout as it was. A coach offer Ben applied is kept across a control change while its exercise still reads as offered. Everything here is today's draft: `‹ Today` shows it on Today's card (`Edited`), and Edit reopens it (§2.0.2).
 - **Coach offer line.** Shown while its exercise reads as offered (`Cable fly` at 3 sets); once Ben edits that exercise (sets, swap, remove) or a control loads a draft where it differs, the line is withdrawn; a stale Apply is refused with `Out of date` (rule 5).
 - **`↻ Mix it up` (Ben, 23 Oct; was [Proposal], §9 Q-R6).** A fifth row here, under Supersets: `↻ Mix it up`. One tap swaps one accessory for a fresh one with the 20 Oct rules (never the main lift; on Varied an accessory repeating another's angle first, then the one done most lately on this day; same group, another angle, same role, here, not pain-flagged, not in the day's last two sessions, not already in the workout; least recently done first). An accessory with no fresh option gives way to the next. Code's pick, offline (no coach call here). Toast `<from> → <to> · Undo`; a tap with nothing fresh: `No other option`. Each tap mixes again from the workout as it now is (no `Another (1/3)` counter). Its swap is Ben's own (he tapped it), so it's listed by `Keep for next time?`. Built: `mixItUpPick` (domain), `builder.mixItUp` (one versioned write through Your workout's edit, op ID, stale refused). Not in the prototype.
@@ -523,7 +526,7 @@ Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a N
 ┌──────────────────────────────────────────┐
 │ Cancel                                   │
 │ Push A                                   │  the name, editable, where the title is
-│ Time                       about 55 min  │  the estimate (read-only)
+│ Time                    [−] 55 min [+]   │  the estimate; ± fits sets and rests (Ben, 26 Oct)
 │     Exercise              Sets  Top set  │
 │                                   (kg)   │
 │  1  Bench press  MAIN       4     Auto   │
@@ -552,9 +555,9 @@ Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a N
 
 **What differs, because a saved workout is a template, not today's draft.**
 - `Top set` shows the template's target: `Auto` (worked out at Start) or Ben's Fixed load (`100`, `27.5 each`, `25 assist`, `BW+10`), another unit inline (`45 lb`).
-- `Time` shows the estimate only. Your workout's `[−] 45 min [+]` fits today's draft only and never the saved workout or the plan (§2.3), so it isn't offered here. [Proposal: Ben may want a Time fit for templates; not built.]
+- **`Time` (Ben, 26 Oct; app review finding 6).** The same `[−] 55 min [+]` control and fit note as Your workout (`Time · −2 sets ›`), on the estimate. A template has no length of its own, so a step fits the **template's** sets and rests to the next 5-minute step, as edits on the page that Ben then saves (or Cancels): shorter rests on the accessories first (compound 1:30, isolation 1:15), then the least training lost (an accessory set off, never below 2, or an accessory at 2 sets left out; never a main lift); longer adds a set to the most valuable accessories (max 4). Steps fit from the list as it was before the first step, so they don't pile up; any other edit ends the fit. The note opens what changed with `Undo` back to the list before. Can't get there: `Shortest: about N min`; nothing to change: `No change`. Built: `fitTemplateToMinutes` (domain), `routines.fitTemplate` (the editor's own estimate, nothing written).
 - No coach bar, no Coach review, no Start: the primary is `Save` (`No changes` when nothing changed; `Add a name`, `Add an exercise`, `Can’t save distance yet` or `Fix N issues` while it can't save). `Cancel` with changes asks `Discard changes?`.
-- Nothing is written until Save: one version (op ID; a retry is the same save), with an Undo record (rule 5). Saved against an older version, nothing is written and the conflict sheet shows (`Push A changed while you were editing`, `Keep both` / `Discard my edits`). Unsaved edits are lost on Cancel or a force-close.
+- Nothing is written until Save: one version (op ID; a retry is the same save), with an Undo record (rule 5). Saved against an older version, nothing is written and the conflict sheet shows (`Push A changed while you were editing`, `Keep both` / `Discard my edits`). **Unsaved edits survive a force-close (Ben, 26 Oct; app review finding 6):** they are kept on this phone as he makes them (a local draft per workout: the edits, what they started from, its version and the Save's op ID; Your data, removed by Delete my data, not in backups). Reopening that workout (or `New workout`) asks `Unsaved edits` · `Discard` / `Resume edits`; Resume puts them back on the page, and Save is still the one versioned write against the version they started from (a newer version gets the conflict sheet; a save that landed just before the app closed isn't written twice). Save, Cancel and Discard forget the draft. A `Save to Workouts ›  Edit ›` copy isn't kept (its sheet is gone after a relaunch).
 - A plan day's Save changes its template for the weeks ahead; a workout already done never changes (rule 2). Today's unstarted draft for that day reloads as §2.3's `Plan day updated elsewhere while open` says.
 - An exercise the workout can't save (a distance exercise added now) shows `Can’t save distance yet` on its row; Swap or Delete clears it.
 

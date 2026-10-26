@@ -14,8 +14,11 @@ export const COACH_SETTINGS_FILE = 'coach-connection.json';
 /** This phone's look and alert answers. */
 export const DEVICE_PREFS_FILE = 'device-prefs.json';
 
+/** (Ben, 26 Oct) The workout editor's unsaved edits (`workout/editor-draft.ts`). */
+export const EDITOR_DRAFTS_FILE = 'editor-drafts.json';
+
 /** Small files in Documents that hold Ben's settings or notes about his use. */
-export const PERSONAL_DOCUMENTS: readonly string[] = [COACH_SETTINGS_FILE, DEVICE_PREFS_FILE, LAST_ERROR_FILE, GUIDE_OPEN_FILE];
+export const PERSONAL_DOCUMENTS: readonly string[] = [COACH_SETTINGS_FILE, DEVICE_PREFS_FILE, LAST_ERROR_FILE, GUIDE_OPEN_FILE, EDITOR_DRAFTS_FILE];
 /** Damaged copies kept aside (`*.damaged-<time>.json`). */
 export const DAMAGED_COPY = /\.damaged-.*\.json$/;
 

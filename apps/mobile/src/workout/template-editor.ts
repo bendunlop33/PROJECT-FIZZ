@@ -61,6 +61,9 @@ export const TEMPLATE_COPY = {
   name: 'Name',
   time: 'Time',
   minutes: (n: number) => `about ${String(n)} min`,
+  /** (Ben, 26 Oct) `Time ±` couldn't get down to the length: the shortest it got. */
+  fitOver: (n: number) => `Shortest: about ${String(n)} min`,
+  fitNoChange: 'No change',
   save: 'Save',
   cancel: 'Cancel',
   main: 'Main',

@@ -105,7 +105,9 @@ import {
   retractPainFlag,
   createSessionService,
   deriveId,
+  checkInSettingsFor,
   DEFAULT_CHECK_IN_SETTINGS,
+  emptyWorkoutGate,
   explainTarget,
   lastComparableSession,
   lastWorkingLoad,
@@ -306,9 +308,12 @@ import {
   type RuleReps,
   type HistoryLike,
   type HistoryWorkout,
+  fitTemplateToMinutes,
+  mainFlags,
+  type TemplateFitResult,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
-import { worksLine } from '@fizz/schemas';
+import { muscleGroupOf, worksLine } from '@fizz/schemas';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
 import type {
   GymStation,
@@ -365,8 +370,9 @@ export const EMPTY_WORKOUT_TITLE = 'Empty workout';
  */
 export interface WorkoutServicesContext {
   /**
-   * Check-in settings (check-in.md §2.8). Not persisted yet (no settings screen): absent, the
-   * defaults (`DEFAULT_CHECK_IN_SETTINGS`, `Only when I choose` since Ben, 23 Oct). Tests pass others.
+   * Check-in settings (check-in.md §2.8). Absent (the app): the schedule Ben saved on Profile › Training ›
+   * Check-in (training profile `checkInSchedule`, Ben 26 Oct) on the default thresholds; nothing saved:
+   * `DEFAULT_CHECK_IN_SETTINGS` (`Only when I choose`, Ben 23 Oct). Tests pass others.
    */
   checkInSettings?: () => CheckInSettings;
   repos: () => SqliteRepositories;
@@ -1081,6 +1087,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   const checkInSettings = (): CheckInSettings => ctx.checkInSettings?.() ?? DEFAULT_CHECK_IN_SETTINGS;
+  /** (Ben, 26 Oct) What Start uses: a test's settings, else Ben's saved schedule (Profile › Training › Check-in). */
+  async function startCheckInSettings(ownerId: string): Promise<CheckInSettings> {
+    if (ctx.checkInSettings !== undefined) return ctx.checkInSettings();
+    return checkInSettingsFor(await repos().trainingProfiles.get(ownerId).catch(() => null));
+  }
 
   /** `recordCheckIn` (CI4): idempotent per opId. */
   async function recordCheckIn(req: { checkInId: string; opId: string; score: CheckInScore }): Promise<CheckInWrite> {
@@ -1098,12 +1109,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   const checkIns = {
-    /** `shouldAskCheckIn` for a Start (check-in.md §2.1). Defaults are used until the settings screen exists. */
-    async gate(): Promise<CheckInGate> {
+    /**
+     * `shouldAskCheckIn` for a Start (check-in.md §2.1) with Ben's saved schedule. `empty` (Ben, 26 Oct): an
+     * Empty workout never asks (`emptyWorkoutGate`); a check-in he already gave still links.
+     */
+    async gate(opts: { empty?: boolean } = {}): Promise<CheckInGate> {
       const p = await owner();
       const at = ctx.now();
       const nowMs = toMs(at.utc);
-      return shouldAskCheckIn({ settings: checkInSettings(), nowMs, weekday: weekdayOf(nowMs, at.tz), entry: 'start', recent: await recentCheckIns(p.id, nowMs) });
+      const gate = shouldAskCheckIn({ settings: await startCheckInSettings(p.id), nowMs, weekday: weekdayOf(nowMs, at.tz), entry: 'start', recent: await recentCheckIns(p.id, nowMs) });
+      return opts.empty === true ? emptyWorkoutGate(gate) : gate;
     },
 
     get: (id: string): Promise<CheckIn | null> => repos().checkIns.get(id),
@@ -1190,7 +1205,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const p = await ctx.profile();
       if (!p) return null;
       const nowMs = toMs(ctx.now().utc);
-      const gate = shouldAskCheckIn({ settings: checkInSettings(), nowMs, weekday: weekdayOf(nowMs, ctx.now().tz), entry: 'start', recent: await recentCheckIns(p.id, nowMs) });
+      const gate = shouldAskCheckIn({ settings: await startCheckInSettings(p.id), nowMs, weekday: weekdayOf(nowMs, ctx.now().tz), entry: 'start', recent: await recentCheckIns(p.id, nowMs) });
       return gate.kind === 'reuse' ? repos().checkIns.get(gate.checkInId) : null;
     },
   };
@@ -3968,6 +3983,45 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const out = planRoutineStart({ opId: 'editor-estimate', owner: p, gymId: req.gymId, routine, exercises, gymEquipment: await repos().equipment.listByGym(req.gymId), knownEquipment: await allEquipment(p.id), at, newId: previewIds() });
         const m = estimateRemainingDuration(out.aggregate, { recent: await recentFinished(p) }).minutes;
         return m > 0 ? m : null;
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * (Ben, 26 Oct; app review finding 6) The editor's `Time ±`: the template fitted to `minutes` (`fitTemplateToMinutes`)
+     * with the editor's own estimate, read once here. Nothing is written: the screen shows the result as edits Ben saves.
+     * Null: no gym or nothing to fit, or a read failed (the screen says nothing changed).
+     */
+    async fitTemplate(req: { exercises: readonly RoutineExercise[]; gymId: string | null; minutes: number; defaultRestS: number }): Promise<TemplateFitResult | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p || req.gymId === null || req.exercises.length === 0) return null;
+        const exercises = new Map<string, Exercise>();
+        for (const e of req.exercises) {
+          const x = await exerciseById(e.exerciseId);
+          if (x) exercises.set(x.id, x);
+        }
+        const at = ctx.now();
+        const gymEquipment = await repos().equipment.listByGym(req.gymId);
+        const knownEquipment = await allEquipment(p.id);
+        const recent = await recentFinished(p);
+        const estimateS = (list: readonly RoutineExercise[]): number => {
+          const routine: Routine = { id: deriveId('editor-estimate'), ownerId: p.id, version: 1, createdAtUtc: at.utc, updatedAtUtc: at.utc, name: 'Estimate', exercises: [...list], createdFromSessionId: null, source: 'ben' };
+          const out = planRoutineStart({ opId: 'editor-estimate', owner: p, gymId: req.gymId ?? '', routine, exercises, gymEquipment, knownEquipment, at, newId: previewIds() });
+          return estimateRemainingDuration(out.aggregate, { recent }).seconds;
+        };
+        const isCompound = (id: string) => exercises.get(id)?.mechanic === 'compound';
+        return fitTemplateToMinutes({
+          exercises: req.exercises,
+          minutes: req.minutes,
+          main: mainFlags(req.exercises, isCompound),
+          isCompound,
+          isCore: (id) => (exercises.get(id)?.primaryMuscles ?? []).some((m) => muscleGroupOf(m) === 'Core'),
+          defaultRestS: req.defaultRestS,
+          estimateS,
+          newId: ctx.newId,
+        });
       } catch {
         return null;
       }

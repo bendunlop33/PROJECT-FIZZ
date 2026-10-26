@@ -3,7 +3,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEffect } from 'react';
 import { Switch } from 'react-native';
 
-import { toMs } from '@fizz/domain';
+import { checkInScheduleLine, checkInSettingsFor, toMs } from '@fizz/domain';
 import { readTextCoachState } from '@fizz/providers';
 
 import { coachConnectionPorts } from '../../ai/coach-connection-ports';
@@ -25,6 +25,9 @@ import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { voiceCapability } from '../../voice/speaker';
 import { voiceRowLine } from '../../voice/settings';
 import { MorningReminderRow } from './MorningReminderRow';
+
+/** (Rule 10) Profile's two data groups, with Data & backup's names. */
+export const PROFILE_SECTIONS = { yourData: 'Your data', knowledge: 'Coaching knowledge' } as const;
 
 /**
  * Profile hub skeleton (profile-and-settings.md §2.1). No primary button;
@@ -52,7 +55,7 @@ export function ProfileScreen() {
     ]);
     const [snap, owner] = training;
     const split = snap === null || planInUse === null ? null : profileSplitRow(snap.profile, snap.mainLifts, planInUse);
-    const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg' }).summary, split };
+    const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg' }).summary, split, checkIn: checkInScheduleLine(checkInSettingsFor(snap.profile).schedule) };
     return { backup, banners, pain, gyms, coach, training: lines };
   });
   useEffect(() => {
@@ -122,12 +125,13 @@ export function ProfileScreen() {
             else navigation.navigate('Split');
           }}
         />
+        {/* (Ben, 26 Oct) When Start asks `How are you feeling?`: Only when I choose (default) / Every workout / days. */}
         <Row
-          title="Pain flags"
-          icon="exclamationmark.triangle"
-          subtitle={data.state === 'ready' ? (data.value.pain.length === 0 ? 'None' : `${String(data.value.pain.length)} active: ${data.value.pain.map((f) => f.exerciseName).join(', ')}`) : null}
+          title="Check-in"
+          icon="heart.text.square"
+          subtitle={data.state === 'ready' ? (data.value.training?.checkIn ?? null) : null}
           onPress={() => {
-            navigation.navigate('PainFlags');
+            navigation.navigate('CheckInSettings');
           }}
         />
         {/* Ben, 20 Oct: `Targets hit 5 of last 6` on main lifts only, when on (this phone; default off). */}
@@ -147,16 +151,9 @@ export function ProfileScreen() {
         />
       </Group>
 
-      <SectionHeader title="Coach" />
+      {/* (Rule 10; Ben, 26 Oct; app review finding 13) Your data (personal) and Coaching knowledge (general) are separate groups, named as in Data & backup. */}
+      <SectionHeader title={PROFILE_SECTIONS.yourData} />
       <Group>
-        <Row
-          title="Coach connection"
-          icon="bubble.left.and.text.bubble.right"
-          subtitle={data.state === 'ready' ? (data.value.coach === null ? 'Couldn’t read the connection' : profileCoachLine(data.value.coach)) : null}
-          onPress={() => {
-            navigation.navigate('CoachConnection');
-          }}
-        />
         <Row
           title="Memory"
           icon="brain"
@@ -165,10 +162,34 @@ export function ProfileScreen() {
           }}
         />
         <Row
+          title="Pain flags"
+          icon="exclamationmark.triangle"
+          subtitle={data.state === 'ready' ? (data.value.pain.length === 0 ? 'None' : `${String(data.value.pain.length)} active: ${data.value.pain.map((f) => f.exerciseName).join(', ')}`) : null}
+          onPress={() => {
+            navigation.navigate('PainFlags');
+          }}
+        />
+      </Group>
+
+      <SectionHeader title={PROFILE_SECTIONS.knowledge} />
+      <Group>
+        <Row
           title="Playbook"
           icon="books.vertical"
           onPress={() => {
             navigation.navigate('Playbook');
+          }}
+        />
+      </Group>
+
+      <SectionHeader title="Coach" />
+      <Group>
+        <Row
+          title="Coach connection"
+          icon="bubble.left.and.text.bubble.right"
+          subtitle={data.state === 'ready' ? (data.value.coach === null ? 'Couldn’t read the connection' : profileCoachLine(data.value.coach)) : null}
+          onPress={() => {
+            navigation.navigate('CoachConnection');
           }}
         />
       </Group>

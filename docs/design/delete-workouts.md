@@ -42,7 +42,7 @@ Decisions:
 |---|---|---|
 | Summary (just finished, any time before `Done`) | Title-row `⋯` → `Delete workout` (destructive item, last in menu, separated) | Same menu as `Share / export` and `Reopen workout` |
 | Past workout (history-mode summary, from Calendar / chart / record / Past workouts) | Nav-bar `⋯` → `Delete workout` | `Edit` stays the nav-bar text button. `⋯` sits beside it |
-| Past workouts list (Today → `Past workouts`) | Swipe left on a row → `Delete` (no full-swipe). Or nav-bar `Select` | Swipe is never the only way. VoiceOver gets a `Delete` custom action |
+| Past workouts list (Library › Workouts → `All workouts ›`; Ben, 26 Oct: Today’s entry was retired with the Workout overview on 22 Oct) | Swipe left on a row → `Delete` (no full-swipe). Or nav-bar `Select` | Swipe is never the only way. VoiceOver gets a `Delete` custom action |
 | Imported workout (Data & backup → Past imports → an import → a date) | Nav-bar `⋯` → `Delete workout` | Past workouts doesn't list imported workouts yet (P-I3). See §9 DW-Q3 |
 | An import's workout list | Nav-bar `Select` | For "a bad imported day" or a few rows. The whole file still uses `Undo this import` |
 | Edit workout (finished) → a set → Edit set | `Delete set` (`DangerTextButton`, already built for the active workout) | Now allowed on finished workouts (§9 DW-Q1) |
@@ -82,7 +82,7 @@ Normal (current screen; the lead text is trimmed per CLAUDE.md minimal copy):
 
 ```
 ┌────────────────────────────────────────┐
-│ ‹ Today      Past workouts      Select │
+│ ‹ Library    Past workouts      Select │
 │                                        │
 │ Thu 8 Oct · Push A                   › │
 │ Bench press, Incline DB press, …       │

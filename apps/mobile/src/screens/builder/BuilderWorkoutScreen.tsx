@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, ActionSheetIOS, Alert, ScrollView, View } from 'react-native';
+import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native';
 import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -12,7 +12,7 @@ import type { BuilderSnapshot, BuilderToast, BuilderWriteResult, TodayOptionChan
 import { TodayOptionRows } from '../today/TodaySession';
 import { reviewAfterApply } from '../../builder/review';
 import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type ProposalState } from '../../coach/builder-coach-view';
-import { addAnywayConfirm, editsFromText, popupLinks, todayOptionsView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
+import { addAnywayConfirm, editsFromText, OPTIONS_ROW_COPY, popupLinks, todayOptionsSummary, todayOptionsView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
@@ -22,7 +22,7 @@ import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 import { NameSheet } from '../routines/NameSheet';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, CheckInScale, PrimaryButton, SecondaryButton, StatusLine, TextButton, Toast, ToastHost } from '../../ui';
+import { AppText, BottomCard, CheckInScale, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, Toast, ToastHost } from '../../ui';
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { saveScore, scoreStepOf } from '../../workout/check-in-score';
 import { CoachAskBar } from '../../ui/coach-ask-bar';
@@ -97,6 +97,8 @@ export function BuilderWorkoutScreen() {
   const [timeDetail, setTimeDetail] = useState(false);
   // (D3) Opened from Today: the options that left Today's card (Main lift, Accessories, Abs, Supersets).
   const [todayOpts, setTodayOpts] = useState<TodayOptions | null>(null);
+  // (Ben, 26 Oct) The `Options` row starts collapsed.
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [earlier, setEarlier] = useState<{ draftId: string; localDate: string; name: string }[]>([]);
   const [screenReader, setScreenReader] = useState(false);
   const startOp = useRef(newUuid());
@@ -629,12 +631,8 @@ export function BuilderWorkoutScreen() {
           />
         </View>
         <ScrollArea scrollEnabled={!dragging}>
-          {/* (D3, §2.3a) Today's options in a compact table under the title, above the workout; their state is the snapshot's (review todaylean S1, S3). */}
-          {todayView !== null ? (
-            <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.space['3'] }}>
-              <TodayOptionRows options={todayView} onChange={(c) => void setTodayOption(c)} onMix={() => void mixItUp()} />
-            </View>
-          ) : null}
+          {/* (D3, §2.3a; Ben, 26 Oct) Today's options fold into one `Options` row so the exercises start at the top; their state is the snapshot's (review todaylean S1, S3). */}
+          {todayView !== null ? <OptionsRow options={todayView} open={optionsOpen} onToggle={() => { setOptionsOpen((o) => !o); }} onChange={(c) => void setTodayOption(c)} onMix={() => void mixItUp()} /> : null}
           {earlier.map((e) => (
             <StatusLine key={e.draftId} icon="clock" tone="info" text={editsFromText(e.localDate)} action={<TextButton label={WORKOUT_COPY.useEdits} onPress={() => { navigation.dispatch(builderPage('BuilderWorkout', { draftId: e.draftId })); }} />} />
           ))}
@@ -923,4 +921,32 @@ function backLabel(back: BuilderBack | undefined): string {
 
 function StartButton({ enabled, busy, onPress }: { enabled: boolean; busy: boolean; onPress: () => void }) {
   return <PrimaryButton label={WORKOUT_COPY.start} onPress={onPress} disabled={!enabled} busy={busy} />;
+}
+
+/**
+ * (Ben, 26 Oct; app review finding 7; §2.3a) Today's options as one row: `Options  Bench · Focused · Abs  ⌄`.
+ * Collapsed by default so the table starts near the top; a tap shows the same controls (Main lift, Accessories,
+ * Abs, Supersets, Mix it up) under it. Each control is still one change the service makes, with Undo.
+ */
+function OptionsRow({ options, open, onToggle, onChange, onMix }: { options: TodayOptions; open: boolean; onToggle: () => void; onChange: (c: TodayOptionChange) => void; onMix: () => void }) {
+  const theme = useTheme();
+  const summary = todayOptionsSummary(options);
+  return (
+    <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.space['3'] }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={summary.accessibilityLabel}
+        accessibilityState={{ expanded: open }}
+        onPress={onToggle}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}
+      >
+        <AppText variant="callout">{OPTIONS_ROW_COPY.title}</AppText>
+        <AppText variant="callout" color="text.secondary" style={{ flex: 1, textAlign: 'right' }}>
+          {open ? '' : summary.text}
+        </AppText>
+        <Icon name={open ? 'chevron.up' : 'chevron.down'} color="text.secondary" size={14} />
+      </Pressable>
+      {open ? <TodayOptionRows options={options} onChange={onChange} onMix={onMix} /> : null}
+    </View>
+  );
 }

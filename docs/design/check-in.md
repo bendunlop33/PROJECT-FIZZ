@@ -296,6 +296,8 @@ No line at all when the check-in was skipped or not asked. Tapping the line open
 
 ### 2.8 Settings: Profile → Training → `Check-in` (profile-and-settings.md §2.4a)
 
+**Built (Ben, 26 Oct; app review finding 16).** Profile › Training › `Check-in` (row value `Only when I choose` / `Every workout` / `Mon, Wed, Fri`) opens a screen with three choices: `Only when I choose` (default), `Every workout`, `On these days` with day chips (picking it starts from the days chosen before, else today; the last day can't be turned off). Values only, no explainer lines (minimal copy, Ben 10 Oct). Each tap is one versioned, idempotent write of `checkInSchedule` on the training profile (Your data: backed up, exported and deleted with it); Start's gate reads it (`checkInSettingsFor`). The on/off switch and the two thresholds below are **not built yet**: they keep `DEFAULT_CHECK_IN_SETTINGS`. **An Empty workout never asks on Start** (`emptyWorkoutGate`), whatever the schedule: a check-in Ben gave in the last 2 h still links, and the workout's own `How are you feeling?` is offered as usual.
+
 (Ben, 23 Oct) `When` gains a first option, `Only when I choose` (default): Start never asks; `How are you feeling?` is in the workout until the first working set. The settings screen isn't built yet; `DEFAULT_CHECK_IN_SETTINGS` carries the default. The coach-offer group's footer becomes `Without the coach, a built-in lighter session is offered.`
 
 ```

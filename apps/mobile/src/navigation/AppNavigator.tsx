@@ -26,7 +26,6 @@ import { ExportScreen } from '../screens/data/ExportScreen';
 import { ResetKnowledgeScreen } from '../screens/data/ResetKnowledgeScreen';
 import { ImportChooseScreen } from '../screens/import/ImportChooseScreen';
 import { ImportedWorkoutScreen } from '../screens/import/ImportedWorkoutScreen';
-import { ImportIntroScreen } from '../screens/import/ImportIntroScreen';
 import { ImportHistoryScreen } from '../screens/import/ImportHistoryScreen';
 import { ImportLayoutCheckScreen } from '../screens/import/ImportLayoutCheckScreen';
 import { ImportLayoutQuestionScreen } from '../screens/import/ImportLayoutQuestionScreen';
@@ -51,6 +50,7 @@ import { MorningReminderScreen } from '../screens/profile/MorningReminderScreen'
 import { morningTapOpensToday } from '../reminders/morning';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { SplitScreen } from '../screens/profile/SplitScreen';
+import { CheckInSettingsScreen } from '../screens/profile/CheckInSettingsScreen';
 import { TrainingDetailsScreen } from '../screens/profile/TrainingDetailsScreen';
 import { MemoryScreen } from '../screens/profile/MemoryScreen';
 import { PlaybookScreen } from '../screens/profile/PlaybookScreen';
@@ -180,6 +180,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="PainFlags" component={PainFlagsScreen} options={{ title: 'Pain flags' }} />
       <ProfileStack.Screen name="TrainingDetails" component={TrainingDetailsScreen} options={{ title: 'Training details' }} />
       <ProfileStack.Screen name="Split" component={SplitScreen} options={{ title: 'Split' }} />
+      <ProfileStack.Screen name="CheckInSettings" component={CheckInSettingsScreen} options={{ title: 'Check-in' }} />
       <ProfileStack.Screen name="Memory" component={MemoryScreen} options={{ title: 'Memory' }} />
       <ProfileStack.Screen name="Playbook" component={PlaybookScreen} options={{ title: 'Playbook' }} />
       <ProfileStack.Screen name="CoachConnection" component={CoachConnectionScreen} options={{ title: 'Coach connection' }} />
@@ -193,7 +194,6 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="Export" component={ExportScreen} options={{ title: 'Export' }} />
       <ProfileStack.Screen name="DeleteMyData" component={DeleteMyDataScreen} options={{ title: 'Delete my data' }} />
       <ProfileStack.Screen name="ResetKnowledge" component={ResetKnowledgeScreen} options={{ title: 'Reset coaching knowledge' }} />
-      <ProfileStack.Screen name="ImportIntro" component={ImportIntroScreen} options={{ title: 'Import from FitNotes' }} />
       <ProfileStack.Screen name="ImportPreview" component={ImportPreviewScreen} options={{ title: 'Import preview' }} />
       <ProfileStack.Screen name="ImportNames" component={ImportNamesScreen} options={{ title: 'Check exercise names' }} />
       <ProfileStack.Screen name="ImportChoose" component={ImportChooseScreen} options={({ route }) => ({ title: route.params.mode === 'new' ? 'Add new exercise' : 'Choose exercise' })} />

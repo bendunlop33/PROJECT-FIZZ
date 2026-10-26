@@ -19,6 +19,8 @@ export type ProfileStackParams = {
   TrainingDetails: undefined;
   /** Profile › Split and main lifts (D7, F19). */
   Split: undefined;
+  /** Profile › Training › Check-in (Ben, 26 Oct; check-in.md §2.8): when Start asks. */
+  CheckInSettings: undefined;
   /** Profile → Coach → Memory (coach-memory §2.1). */
   Memory: undefined;
   /** Profile → Coach → Playbook: chat rules to review (coaching-playbook §2.1). */
@@ -36,8 +38,6 @@ export type ProfileStackParams = {
   ChatGptSignInTest: undefined;
   /** Profile → Coach connection (ai-connection.md, ADR 0020 C5). */
   CoachConnection: undefined;
-  /** FitNotes import (data-import-export §2.5): intro, file pick and file errors. */
-  ImportIntro: undefined;
   /** The preview (§2.5 step 3). The draft lives in the import service until commit. */
   ImportPreview: { draftId: string };
   /** Check exercise names (§2.5 step 3a). */

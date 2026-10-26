@@ -346,7 +346,17 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
             ) : null}
           </Section>
         ) : null}
-        <View style={{ alignSelf: 'flex-start' }}>
+        <View style={{ alignItems: 'flex-start' }}>
+          {/* (Ben, 26 Oct; app review finding 3) Every past workout: Select → Delete, Repeat, Recently deleted. */}
+          {view.state === 'empty' ? null : (
+            <TextButton
+              label={LIBRARY_COPY_UI.pastWorkouts}
+              accessibilityLabel={LIBRARY_COPY_UI.pastWorkoutsLabel}
+              onPress={() => {
+                navigation.navigate('PastWorkouts');
+              }}
+            />
+          )}
           {/* (Ben, 25 Oct) A workout done on another day, entered now. */}
           <TextButton
             label={PAST_LOG_COPY.entry}

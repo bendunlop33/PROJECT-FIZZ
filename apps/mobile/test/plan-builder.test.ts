@@ -46,7 +46,7 @@ describe('plan builder', () => {
     expect(days.map((d) => d.title)).toEqual(['1 · Upper A', '2 · Lower A', '3 · Upper B', '4 · Lower B']);
     // Bench is Upper B's main lift at its 6-rep estimate with a D4 back-off, snapped to the gym's plates.
     const upperB = days[2];
-    expect(upperB?.rows[0]).toMatchObject({ key: 'barbell-bench-press', main: true, scheme: '1 × 6 + 2 × 8 · 100 / 95', kg: null });
+    expect(upperB?.rows[0]).toMatchObject({ key: 'barbell-bench-press', main: true, scheme: '1 × 6 + 2 × 8 · 100 / 95 kg', kg: null });
     expect(volumeRows(plan, a).map((v) => v.muscle)).toEqual(['Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Calves', 'Biceps', 'Triceps', 'Core']);
 
     // Build writes an open plan; a retried tap with the same op finds it.

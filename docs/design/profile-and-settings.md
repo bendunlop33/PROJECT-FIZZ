@@ -1,5 +1,7 @@
 # Profile and settings
 
+> **Revision (Ben, 26 Oct; app review finding 13, rule 10): Your data and Coaching knowledge are separate groups.** The Profile hub no longer mixes them under `Coach`. Order: Data · Gyms · Training (`Training details`, `Split`, `Targets hit`, `Check-in`) · **Your data** (`Memory`, `Pain flags`) · **Coaching knowledge** (`Playbook`) · Coach (`Coach connection`) · Voice · App · Developer. The group names are Data & backup's. `Pain flags` moved from Training to Your data; it opens the same list.
+
 > **Revision (Ben, 22–23 Oct, D7): one source for the split and workout defaults.** Training gets `Split` (no plan: `Chest · Legs · Shoulders · Back`, which drives Today's Up next; with a plan: `Set by your plan`, opening Library › Your plan) and `Workout defaults` (no plan: `60 min · Supersets on · Abs on`; with a plan: `Set by your plan`). Session length in Goals & schedule (§2.2) follows the same rule: with a plan it reads `Set by your plan`. Prototype: `prototypes/app/app-shell.html` Profile.
 
 > **Revision 2026-10-09 (import from any app).** §2.8 now names the Data & backup import rows (`Import history`, `Saved import layouts`, `Past imports`; data-import-export.md §9) and says saved import layouts are Your data. No new Profile row or setting.
@@ -244,6 +246,8 @@ Empty: `No pain flags. Flag a movement here, or tap Pain in a workout.`
 ```
 
 ### 2.4a Check-in (revision 2026-10-09)
+
+> **Built (Ben, 26 Oct):** the schedule only (`Only when I choose` default / `Every workout` / `On these days`), as check-in.md §2.8 now says. The switch and thresholds below are not built yet; the wireframe's explainer and footer lines are dropped (minimal copy).
 
 Owned by [check-in.md](check-in.md) §2.8 (wireframe, rules and copy); placed here as a Training row. Rows: switch `Ask how I'm feeling before a workout` (default on) with `One tap before you start. Skip any time.`; `When` radio `Every workout` (default) / `Only on these days` + weekday `ParamChip`s; `Ask "What's up?" when I pick` radio `4 or lower` / `3 or lower` (default) / `2 or lower` / `1 only` / `Never`; `Coach offers a lighter session when I pick` radio `3 or lower` / `2 or lower` (default) / `1 only` / `Never`; switch `Also when I pick Tired or Poor sleep` (default on); explainer `The coach only offers. Nothing changes until you tap Adjust. Without the coach, your check-in is saved and your plan stays the same.`; footer `Check-ins are part of your data. Fizz never turns them into a score.` With the switch off, the other rows are hidden. Root row subtitle: `Every workout · asks what's up at 3 or lower` / `Mon, Wed, Fri · asks what's up at 3 or lower` / `Off`.
 

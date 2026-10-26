@@ -1,4 +1,4 @@
-import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type TodayControls, type TodayDay } from '@fizz/domain';
+import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type TodayControls, type TodayDay, type TodayMain } from '@fizz/domain';
 
 /**
  * Today (v2)'s screen rules (workout-builder-v3 §2.0, prototypes/today-v2.html), pure so they are tested
@@ -176,4 +176,42 @@ export function todayActions(input: { openWorkout: boolean; read: 'loading' | 'f
   const noPlanList = input.noPlan && !input.cardShown;
   const upNext = noPlanList && input.upNext;
   return { gymRow: true, failed: false, upNext, buildYourOwn: noPlanList && !upNext ? 'primary' : 'secondary', emptyWorkout: true, emptyOnCard: input.cardShown };
+}
+
+/**
+ * How often Today's clock ticks (app review 26 Oct, finding 8): only while a clock is on screen. The Resume
+ * hero's rest countdown needs a second-by-second tick; its `started 18:02` only changes its date at midnight, so a
+ * minute is enough. With no workout open nothing on Today moves with time, so there is no tick at all (`null`)
+ * and the page isn't redrawn every second.
+ */
+export function todayTickMs(main: TodayMain | null): number | null {
+  if (main === null || main.kind !== 'resume') return null;
+  return main.status.kind === 'resting' ? 1000 : 60_000;
+}
+
+/**
+ * (Ben, 26 Oct; app review finding 14) Today's text at large sizes. The day row's segments share a fixed width, so
+ * from xxxLarge (RN font scale ≈ 1.35) the row becomes the one-line `Day  Chest ›` control (the list sheet), not at
+ * AX1 as before, when `Shoulders` and `Full body` were already cut. Below that, a label shrinks to fit (never `…`)
+ * and grows with Dynamic Type only so far.
+ */
+export const DAY_LIST_FONT_SCALE = 1.3;
+
+export const TODAY_TEXT_FIT = {
+  segmentLabel: { numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.7, maxFontSizeMultiplier: 1.3 },
+  segmentNext: { numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.8, maxFontSizeMultiplier: 1.3 },
+  weekLabel: { adjustsFontSizeToFit: true, minimumFontScale: 0.85 },
+} as const;
+
+export function dayRowAsList(fontScale: number): boolean {
+  return fontScale >= DAY_LIST_FONT_SCALE;
+}
+
+/**
+ * The header's `· Week 6 of 6 · Deload` sits beside the day name only when there's room: on a 375 pt phone at the
+ * default sizes. On a narrower screen (320 pt) or from xLarge text it goes on its own line under the name, so
+ * neither it, the name nor the coach bar is cut.
+ */
+export function todayWeekStacked(widthPt: number, fontScale: number): boolean {
+  return widthPt < 375 || fontScale >= 1.1;
 }
