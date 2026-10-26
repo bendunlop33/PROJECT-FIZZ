@@ -54,5 +54,9 @@ com.apple.developer.healthkit entitlement". Only a device probe can tell.
 
 - Likely on SideStore: `Not available on this install`. Ben then chooses (Q10): Xcode builds (keep HealthKit per
   LoopDocs), paid signing (ADR 0004's upgrade trigger), or living without it. The device test says how to tell.
+- **Confirmed on build 419 (26 Oct), and a fourth route added (26 Oct, ADR 0036):** a patched SideStore built in our
+  CI with SideSign PR #3, which maps the entitlement to the HealthKit App ID feature for free teams. The cause was
+  SideStore's signing library, SideSign in SideStore 0.6.4 and later (AltSign only in 0.6.3 and older), not an Apple
+  refusal. Ben approved trying it; the runtime flag still covers it failing.
 - The Swift module is unverified until the macOS CI build compiles it; the JS side is tested against a fake port.
 - Migration 38 is new; another branch taking 38 must renumber on merge.
