@@ -9,7 +9,7 @@ import { progressPalette, withAlpha } from '../src/reviews/palette';
 
 const WEEKS = ['24 Aug', '31 Aug', '7 Sep', '14 Sep', '21 Sep', '28 Sep', '5 Oct', '12 Oct'];
 function lift(id: string, values: readonly (number | null)[], more: Partial<LiftView> = {}, pbs: readonly number[] = []): LiftView {
-  const points = values.flatMap((v, week) => (v === null ? [] : [{ week, value: v, estimate: false, detail: `${String(v)} × 6`, pb: pbs.includes(week), pbDetail: pbs.includes(week) ? `PB · ${id} ${String(v)} × 6` : null }]));
+  const points = values.flatMap((v, week) => (v === null ? [] : [{ week, value: v, estimate: false, detail: `${String(v)} × 6`, pb: pbs.includes(week), pbDetail: pbs.includes(week) ? `PB · ${id} ${String(v)} × 6` : null, sessionId: `${id}-w${String(week)}` }]));
   return {
     exerciseId: id,
     name: id,

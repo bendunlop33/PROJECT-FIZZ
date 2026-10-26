@@ -127,15 +127,10 @@ describe('Exercise detail keeps the delete Undo when the exercise has no workout
 
   it('the screen renders the toast overlay in its error, empty, loading and normal states', () => {
     const src = readFileSync(join(import.meta.dirname, '../src/screens/progress/ExerciseDetailScreen.tsx'), 'utf8');
-    // One overlay, built once, before the first early return.
+    // (Ben, 26 Oct: one exercise-progress screen) One render path: the shared body (which shows its own error,
+    // empty and loading states) and one overlay over it, whatever the body shows.
     expect(src.match(/<DeleteToastView /g)).toHaveLength(1);
-    const overlayAt = src.indexOf('const deleteToast =');
-    const firstReturn = src.indexOf("if (data.state === 'error')");
-    expect(overlayAt).toBeGreaterThan(0);
-    expect(overlayAt).toBeLessThan(firstReturn);
-    // Every render branch after it places `{deleteToast}`: error, empty, loading, and the chart.
-    const branches = src.slice(firstReturn).split(/\n {2}(?:if \(|return \()/).filter((b) => b.includes('<View'));
-    expect(branches.length).toBeGreaterThanOrEqual(4);
-    for (const b of branches) expect(b).toContain('{deleteToast}');
+    expect(src.match(/\n {2}return \(/g)).toHaveLength(1);
+    expect(src.indexOf('<DeleteToastView ')).toBeGreaterThan(src.indexOf('<ExercisesTab '));
   });
 });

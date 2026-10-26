@@ -19,6 +19,8 @@ export interface ChartPoint {
   ring: boolean;
   /** `PB · Bench 100 × 6 · week of 13 Oct` (the ring's tap); null with no ring. */
   ringDetail: string | null;
+  /** (Ben, 26 Oct) The workout the point's set was done in: a tap opens it. */
+  sessionId: string;
 }
 
 export interface ChartLine {
@@ -84,7 +86,7 @@ export function liftsChartLayout(input: { lifts: readonly LiftView[]; focus: str
     const pts = l.points.map((p, i) => {
       const last = i === l.points.length - 1;
       const ring = p.pb && (one !== null || last);
-      return { x: x(p.week), y: y(p.value), estimate: p.estimate, last, detail: p.detail, ring, ringDetail: ring ? p.pbDetail : null };
+      return { x: x(p.week), y: y(p.value), estimate: p.estimate, last, detail: p.detail, ring, ringDetail: ring ? p.pbDetail : null, sessionId: p.sessionId };
     });
     const lastPt = pts.at(-1);
     const gutter = one === null && l.target !== null && lastPt !== undefined ? { y: y(l.target), label: fmt(l.target), guideFromX: lastPt.x } : null;

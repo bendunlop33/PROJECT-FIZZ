@@ -1,15 +1,19 @@
+import { useNavigation } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { parseTrailing, PLAN_VERDICT_WORD, TRAILING_OPTIONS, type DateRange, type LiftChip, type ExerciseMeasure, type ExerciseTabView, type ExerciseTargetHistory } from '@fizz/domain';
+import { measureMetric, parseTrailing, PLAN_VERDICT_WORD, TRAILING_OPTIONS, type DateRange, type ExerciseExtrasView, type LiftChip, type ExerciseMeasure, type ExerciseTabView, type ExerciseTargetHistory } from '@fizz/domain';
 import type { ProgressPeriodKey } from '@fizz/schemas';
 
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
-import { DropdownButton, DropdownPanel, PeriodPicker, useAx } from '../../progress/components';
+import { ExerciseLiftTarget } from '../../lift-targets/ExerciseLiftTarget';
+import { DropdownButton, DropdownPanel, PeriodPicker, Segmented, useAx } from '../../progress/components';
 import { ExerciseLineChart } from '../../progress/exercise-line-chart';
 import { LIFTS_TAB_SECTIONS, type LiftsTabSection } from '../../progress/lifts-tab-layout';
+import { RepTable } from '../../progress/trend-chart';
 import { unreadableText } from '../../progress/copy';
-import { useScreenData } from '../../shell/context';
+import type { ExerciseTab } from '../../services/progress-service';
+import { useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, Icon, InfoLine, StatStrip, StatusLine, TextButton, TextField } from '../../ui';
 
@@ -20,6 +24,10 @@ import { AppText, Chip, Icon, InfoLine, StatStrip, StatusLine, TextButton, TextF
  * Measure and Period dropdowns, one stat line and the sessions table. The tab
  * keeps its own period. Lays out the service's view model and computes
  * nothing. Local only.
+ *
+ * (Ben, 26 Oct: one exercise-progress screen) Exercise detail is this same component for one exercise
+ * (`exerciseId`): no chip row, the same chart, controls, periods and table, then `BEST REPS` and `RECORDS`
+ * (in Lifts too). A tap on a chart point, a record or a best-reps row opens that workout.
  */
 
 type Open = 'exercise' | 'measure' | 'period' | 'series' | 'trailing' | null;
@@ -35,21 +43,52 @@ export interface ExercisesFocus {
   n: number;
 }
 
-export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null } = {}) {
+export function ExercisesTab({
+  focus = null,
+  active = true,
+  exerciseId: only = null,
+  opening = null,
+  onLoaded,
+}: {
+  focus?: ExercisesFocus | null;
+  /** Showing now: a hidden tab doesn't read (Ben, 26 Oct). */
+  active?: boolean;
+  /** Exercise detail: this exercise alone (no chip row; Ben's Lifts pick on this phone is left as it is). */
+  exerciseId?: string | null;
+  /** Exercise detail opened on a workout (Summary, history): its series, selected, in a period that holds it. */
+  opening?: { sessionId: string; sessionExerciseId: string | null } | null;
+  /** The tab's data each time it loads (Exercise detail's title and the coach's entry). */
+  onLoaded?: (tab: ExerciseTab | null) => void;
+} = {}) {
   const theme = useTheme();
   const ax = useAx();
-  const [exerciseId, setExerciseId] = useState<string | null>(null);
+  const navigation = useNavigation();
+  const [exerciseId, setExerciseId] = useState<string | null>(only);
   const [period, setPeriod] = useState<ProgressPeriodKey>(DEFAULT_PERIOD);
   const [range, setRange] = useState<DateRange | null>(null);
   const [measure, setMeasure] = useState<ExerciseMeasure | null>(null);
   const [trailing, setTrailing] = useState<number | null>(null);
   const [seriesId, setSeriesId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(opening?.sessionId ?? null);
   const [open, setOpen] = useState<Open>(null);
+  const [repBy, setRepBy] = useState<'weight' | 'reps'>('weight');
+  const [repAll, setRepAll] = useState(false);
+  const [recordsAll, setRecordsAll] = useState(false);
   // The record's workout: picks its series and widens the period until Ben picks another exercise, series or period.
-  const [opened, setOpened] = useState<{ sessionId: string; sessionExerciseId: string | null } | null>(null);
+  const [opened, setOpened] = useState<{ sessionId: string; sessionExerciseId: string | null } | null>(opening);
   const { prefs, update } = useDevicePrefs();
-  const [data, reload] = useScreenData((s) => s.progress.exerciseTab({ exerciseId, remembered: prefs.liftsExercise ?? null, period, range, measure, trailing, seriesId, open: opened, targetsHit: prefs.targetsHit }));
+  const [data, reload] = useScreenData(
+    (s) => s.progress.exerciseTab({ exerciseId, remembered: only === null ? (prefs.liftsExercise ?? null) : null, period, range, measure, trailing, seriesId, open: opened, targetsHit: prefs.targetsHit, repBy }),
+    { enabled: active },
+  );
+  const loaded = data.state === 'ready' ? data.value : undefined;
+  useEffect(() => {
+    if (loaded !== undefined) onLoaded?.(loaded);
+  }, [loaded, onLoaded]);
+  // (Ben, 26 Oct) A chart point, a record or a best-reps row opens the workout it came from (read-only Summary).
+  const openWorkout = (sessionId: string) => {
+    navigation.navigate('Summary', { sessionId, back: true });
+  };
   useEffect(() => {
     if (focus === null) return;
     setExerciseId(focus.exerciseId);
@@ -101,12 +140,13 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
     setMeasure(null);
     setSelected(null);
     // His last pick opens the tab next time on this phone (Ben, 26 Oct).
-    if (prefs.liftsExercise !== id) update({ liftsExercise: id });
+    if (only === null && prefs.liftsExercise !== id) update({ liftsExercise: id });
     reload();
   };
 
+  const extras = tab.extras;
   const sections: Record<LiftsTabSection, React.ReactNode> = {
-    lifts: (
+    lifts: only !== null ? null : (
       <LiftChipRow
         chips={tab.lifts.chips}
         selectedId={view.exerciseId}
@@ -123,14 +163,25 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
           {view.empty}
         </AppText>
       ) : (
-        <ExerciseLineChart
-          chart={view.chart}
-          selected={selected}
-          readout={selectedRow?.readout ?? null}
-          onSelect={(id) => {
-            setSelected(id);
+        <ChartWithTarget view={view} selected={selected} readout={selectedRow?.readout ?? null} onOpen={openWorkout} />
+      ),
+    pain:
+      extras?.pain == null ? null : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={extras.pain.words}
+          onPress={() => {
+            const flagId = extras.pain?.flagId;
+            if (flagId) navigation.navigate('PainFlag', { flagId });
           }}
-        />
+          style={{ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.raised'] }}
+        >
+          <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
+          <AppText variant="callout" numeric style={{ flex: 1 }}>
+            {extras.pain.text}
+          </AppText>
+          <Icon name="chevron.right" color="text.tertiary" size={14} />
+        </Pressable>
       ),
     controls: (
       <View style={{ gap: theme.space['2'] }}>
@@ -203,6 +254,7 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
       </View>
     ),
     stats: <StatStrip items={view.stats} accessibilityLabel={view.statsWords} ax={ax} />,
+    target: <LiftTargetSection exerciseId={view.exerciseId} />,
     trailing: (
       <TrailingControl
         value={view.trailing}
@@ -227,15 +279,37 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
         }}
       />
     ),
+    reps: (
+      <BestReps
+        extras={extras}
+        showAll={repAll}
+        onShowAll={() => {
+          setRepAll(true);
+        }}
+        onBy={(k) => {
+          setRepBy(k);
+          reload();
+        }}
+        onOpen={openWorkout}
+      />
+    ),
+    records: (
+      <Records
+        extras={extras}
+        showAll={recordsAll}
+        onShowAll={() => {
+          setRecordsAll(true);
+        }}
+        onOpen={openWorkout}
+      />
+    ),
   };
 
   // (Ben, 26 Oct) The chips, the chart straight under them, then the rest (`LIFTS_TAB_SECTIONS`).
   return (
     <View style={{ gap: theme.space['4'] }}>
       {tab.unreadable > 0 ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={unreadableText(tab.unreadable)} /> : null}
-      {LIFTS_TAB_SECTIONS.map((k) => (
-        <View key={k}>{sections[k]}</View>
-      ))}
+      {LIFTS_TAB_SECTIONS.map((k) => (sections[k] === null ? null : <View key={k}>{sections[k]}</View>))}
     </View>
   );
 }
@@ -480,6 +554,107 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
           );
         })}
       </View>
+    </View>
+  );
+}
+
+/** The chart, with the lift target's dotted line when the measure is the target's (Est. 1RM or top set; Ben, 20 Oct). */
+function ChartWithTarget({ view, selected, readout, onOpen }: { view: ExerciseTabView; selected: string | null; readout: string | null; onOpen: (sessionId: string) => void }) {
+  const services = useServices();
+  const [liftData] = useScreenData((s) => s.liftTargets.forExercise(view.exerciseId));
+  const lift = liftData.state === 'ready' ? liftData.value : null;
+  const metric = measureMetric(view.measure);
+  const target = lift?.on === true && lift.target !== null && metric !== null ? services.liftTargets.chartValue(lift.target, view.seriesTerms, metric) : null;
+  return <ExerciseLineChart chart={view.chart} selected={selected} readout={readout} target={target} onOpen={onOpen} />;
+}
+
+/** This exercise's lift target (Ben approved 20 Oct): its line, or `Add target`; nothing while the setting is off. */
+function LiftTargetSection({ exerciseId }: { exerciseId: string }) {
+  const [liftData, reloadLift] = useScreenData((s) => s.liftTargets.forExercise(exerciseId));
+  const lift = liftData.state === 'ready' ? liftData.value : null;
+  return <ExerciseLiftTarget data={lift} exerciseId={exerciseId} onChanged={reloadLift} />;
+}
+
+/** `BEST REPS` (by weight or by reps) for the period showing, or `BEST DISTANCE`; a row opens its workout. */
+function BestReps({ extras, showAll, onShowAll, onBy, onOpen }: { extras: ExerciseExtrasView | null; showAll: boolean; onShowAll: () => void; onBy: (by: 'weight' | 'reps') => void; onOpen: (sessionId: string) => void }) {
+  const theme = useTheme();
+  if (extras === null) return null;
+  if (extras.distanceTable !== null) {
+    return (
+      <View style={{ gap: theme.space['2'] }}>
+        <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+          BEST DISTANCE
+        </AppText>
+        {extras.distanceTable.rows.length === 0 ? (
+          <AppText variant="callout" color="text.secondary">
+            None in this period.
+          </AppText>
+        ) : (
+          <RepTable table={extras.distanceTable} showAll={showAll} onShowAll={onShowAll} onOpen={onOpen} />
+        )}
+      </View>
+    );
+  }
+  const table = extras.repTable;
+  if (table === null) return null;
+  return (
+    <View style={{ gap: theme.space['2'] }}>
+      <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+        BEST REPS
+      </AppText>
+      <Segmented
+        options={[
+          { key: 'weight' as const, label: 'By weight' },
+          { key: 'reps' as const, label: 'By reps' },
+        ]}
+        selected={table.by}
+        onSelect={onBy}
+        label="Best reps"
+      />
+      {table.rows.length === 0 ? (
+        <AppText variant="callout" color="text.secondary">
+          None in this period.
+        </AppText>
+      ) : (
+        <RepTable table={table} showAll={showAll} onShowAll={onShowAll} onOpen={onOpen} />
+      )}
+    </View>
+  );
+}
+
+/** `RECORDS` (all time): each opens the workout it was set in (Ben, 26 Oct). */
+function Records({ extras, showAll, onShowAll, onOpen }: { extras: ExerciseExtrasView | null; showAll: boolean; onShowAll: () => void; onOpen: (sessionId: string) => void }) {
+  const theme = useTheme();
+  const records = extras?.records ?? null;
+  if (records === null) return null;
+  const rows = showAll ? records.items : records.items.slice(0, 5);
+  return (
+    <View style={{ gap: theme.space['2'] }}>
+      <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+        RECORDS
+      </AppText>
+      {records.empty !== null ? (
+        <AppText variant="callout" color="text.secondary">
+          {records.empty}
+        </AppText>
+      ) : (
+        rows.map((r) => (
+          <Pressable
+            key={r.key}
+            accessibilityRole="button"
+            accessibilityLabel={r.words}
+            accessibilityHint="Opens the workout"
+            onPress={() => {
+              onOpen(r.sessionId);
+            }}
+            style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+          >
+            <AppText variant="body" numeric style={{ flex: 1 }}>{`${r.label}  ${r.value} · ${r.date}`}</AppText>
+            <Icon name="chevron.right" color="text.tertiary" size={14} />
+          </Pressable>
+        ))
+      )}
+      {!showAll && records.items.length > 5 ? <TextButton label={`Show all (${String(records.items.length)})`} onPress={onShowAll} /> : null}
     </View>
   );
 }

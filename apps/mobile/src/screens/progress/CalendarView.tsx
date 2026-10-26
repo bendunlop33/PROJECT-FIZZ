@@ -15,11 +15,11 @@ import { AppText, Group, Icon, Row, StatusLine, TextButton } from '../../ui';
  * mark on workout days, and the selected day's workouts, each opening its
  * Summary. Nothing here is planned or estimated.
  */
-export function CalendarView({ month, onMonth, onActivitySaved }: { month: string | null; onMonth: (m: string) => void; onActivitySaved: (saved: ActivitySaved) => void }) {
+export function CalendarView({ month, onMonth, onActivitySaved, active = true }: { month: string | null; onMonth: (m: string) => void; onActivitySaved: (saved: ActivitySaved) => void; /** Showing now (a hidden tab doesn't read; Ben, 26 Oct). */ active?: boolean }) {
   const theme = useTheme();
   const dayCircle = Math.round(30 * Math.min(Math.max(useWindowDimensions().fontScale, 1), 1.4));
   const navigation = useNavigation();
-  const [data, reload] = useScreenData((s) => s.progress.calendar(month ?? undefined));
+  const [data, reload] = useScreenData((s) => s.progress.calendar(month ?? undefined), { enabled: active });
   const [selected, setSelected] = useState<string | null>(null);
   const services = useServices();
   const changed = useDataChanged();

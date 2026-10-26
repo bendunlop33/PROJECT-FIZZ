@@ -24,10 +24,11 @@ describe('Progress v3 screens', () => {
     const tabs = ["{ key: 'overview', label: 'Overview' }", "{ key: 'lifts', label: 'Lifts' }", "{ key: 'training', label: 'Training' }"].map((t) => progress.indexOf(t));
     expect(tabs.every((i) => i > 0)).toBe(true);
     expect([...tabs].sort((a, b) => a - b)).toEqual(tabs);
-    expect(progress).toContain('<ReviewsSection onOpenLifts={openLifts} onOpenTraining={openTraining} />');
+    // (Ben, 26 Oct) Each tab reads only while it shows.
+    expect(progress).toContain("<ReviewsSection active={tab === 'overview'} onOpenLifts={openLifts} onOpenTraining={openTraining} />");
     // `Open Bench ›` lands on that lift's page in Lifts (no workout picked); `Details ›` on Training's totals.
     expect(progress).toContain('setExercisesFocus((f) => ({ exerciseId, sessionId: null, sessionExerciseId: null, n: (f?.n ?? 0) + 1 }))');
-    expect(progress).toContain("<ExercisesTab focus={exercisesFocus} />");
+    expect(progress).toContain("<ExercisesTab focus={exercisesFocus} active={tab === 'lifts'} />");
     expect(read('screens', 'progress', 'ExercisesTab.tsx')).toContain('focus.sessionId === null ? null');
     expect(charts).toContain('PROGRESS_COPY.allLiftsLink : PROGRESS_COPY.openLift(one.name)');
     expect(charts).toContain('onOpen(one === null ? null : one.exerciseId)');

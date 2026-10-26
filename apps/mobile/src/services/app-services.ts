@@ -859,6 +859,17 @@ export function createAppServices(deps: AppServicesDeps) {
     dispatch: (sessionId, command) => sessions.dispatch(sessionId, command),
     ...(deps.idle === undefined ? {} : { idle: deps.idle }),
     mainLiftIds: () => training.mainLiftIds(),
+    // (Ben, 26 Oct) Overview's `Edit` picks lead the Lifts chips: one list of tracked lifts.
+    progressLifts: async () => {
+      const p = await getProfile();
+      if (p === null) return [];
+      return (await repos().trainingProfiles.get(p.id))?.progressLifts ?? [];
+    },
+    // The monthly recap's plan line (Ben, 26 Oct): the consistency card's weeks, with a plan in use.
+    planWeeks: async () => {
+      const c = await plans.consistency();
+      return c === null || c.planThisWeek === null ? null : [...c.weeks, c.thisWeek].map((w) => ({ monday: w.monday, atAim: w.atAim }));
+    },
     // Progress › Lifts' chips (Ben, 26 Oct): the plan in use's main lift per day, in day order; null with no plan.
     planMainLifts: async () => {
       const p = await getProfile();

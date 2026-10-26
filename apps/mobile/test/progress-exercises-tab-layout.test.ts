@@ -48,11 +48,11 @@ describe('Exercises tab (review S3–S5)', () => {
     expect(tab).toContain('`SESSIONS · ${view.table.unit.toUpperCase()}`');
   });
 
-  it('S3: a record opens the Lifts tab (was Exercises), not the old detail; the old list route is gone', () => {
+  it('S3, Ben 26 Oct: a record opens the workout it was set in (Summary), not the old detail; the old list route is gone', () => {
     const onRecord = screen.slice(screen.indexOf('onRecord={(r) => {'), screen.indexOf('onRecord={(r) => {') + 400);
-    expect(onRecord).toContain("setTab('lifts')");
+    expect(onRecord).toContain("navigate('Summary', { sessionId: r.sessionId, back: true })");
     expect(onRecord).not.toContain('ProgressExercise');
-    expect(screen).toContain('<ExercisesTab focus={exercisesFocus} />');
+    expect(screen).toContain("<ExercisesTab focus={exercisesFocus} active={tab === 'lifts'} />");
     expect(read('navigation/AppNavigator.tsx')).not.toContain('"ProgressExercises"');
     expect(read('navigation/types.ts')).not.toContain('ProgressExercises:');
   });

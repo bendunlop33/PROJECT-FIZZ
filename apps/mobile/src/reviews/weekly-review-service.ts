@@ -112,7 +112,9 @@ import {
   type WeeklyReviewInput,
   type HistoryWorkout,
 } from '@fizz/domain';
-import type { Store } from '@fizz/persistence';
+import { timeSlicer, type Store } from '@fizz/persistence';
+
+import { createVersionMemo } from '../services/version-memo';
 import type { ActionRecord, Activity, Exercise, PlanDraft, ReviewCoach, ReviewProposal, ReviewSubject, Routine, SessionAggregate, TrainingProfile, TrainingReview, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 import { BUILDER_COACH_TOOL } from '@fizz/schemas';
 import type { CoachAvailability } from '../coach/coach-service';
@@ -698,6 +700,48 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     return out;
   }
 
+  const progressMemo = createVersionMemo<ProgressData | null>(2);
+  async function readProgress(owner: UserProfile, nowMs: number, today: string): Promise<ProgressData | null> {
+    const slice = timeSlicer();
+    const monday = localWeekBounds(nowMs, owner.timezone).mondayLocalDate;
+    const g = await gather(monday);
+    if (g === null) return null;
+    const stored = await storedWeekly(owner.id);
+    const newest = stored[0];
+    // Only the latest reviewable week's review is `for next week` (review progress-v3-data S5).
+    const current = newest !== undefined && mondayOf(newest) === weeklyReviewWeek(nowMs, owner.timezone);
+    await slice();
+    const history = await liftHistory(g);
+    // Time-sliced between the views, so the first open after a launch never holds the JS thread in one long block.
+    await slice();
+    const week = thisWeekView(g.input, { today, reviewIds: new Map(stored.map((r) => [mondayOf(r), r.id])), historyWeeks: SESSION_WEEKS - 1 });
+    await slice();
+    const lifts = liftsView(g.input, { today, mains: g.mains, planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, previousPlanReps: g.previousPlanReps, planAppliedDate: g.planAppliedDate, nameOf: g.nameOf, earlier: history.earlier, historyUnknown: history.unknown });
+    await slice();
+    // Reviewed weeks keep the plan they were reviewed against (review progress-v3-design S4).
+    const muscles = musclesView(g.input, { today, storedPlans: new Map(stored.map((r) => [mondayOf(r), musclePlanOfReview(r)])) });
+    return {
+      week,
+      lifts,
+      muscles,
+      changes: newest === undefined ? null : coachChangesView(newest, today, { current, actedOn: await actedOn(newest), painFlagged: g.input.painFlagged, reviewing: asking === newest.id }),
+      hasPast: stored.length > 1,
+      liftsChosen: g.liftsChosen,
+      // No row yet: the defaults are version 1 (the first change writes them).
+      trainingVersion: g.training?.version ?? 1,
+    };
+  }
+
+  async function sessionBestsOf(sessionId: string): Promise<NewBestView[]> {
+    const owner = await deps.profile();
+    if (owner === null) return [];
+    const nowMs = toMs(deps.now().utc);
+    const g = await gather(localWeekBounds(nowMs, owner.timezone).mondayLocalDate);
+    if (g === null) return [];
+    const history = await liftHistory(g);
+    return sessionNewBests(g.input, { planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, nameOf: g.nameOf, earlier: history.earlier, historyUnknown: history.unknown }, sessionId);
+  }
+
   return {
     /** Called after each review a run stores (the pending one, then the coach's part); returns the unsubscribe. */
     subscribe(listener: () => void): () => void {
@@ -729,25 +773,9 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       if (owner === null) return null;
       const nowMs = toMs(deps.now().utc);
       const today = localDateOf(nowMs, owner.timezone);
-      const monday = localWeekBounds(nowMs, owner.timezone).mondayLocalDate;
-      const g = await gather(monday);
-      if (g === null) return null;
-      const stored = await storedWeekly(owner.id);
-      const newest = stored[0];
-      // Only the latest reviewable week's review is `for next week` (review progress-v3-data S5).
-      const current = newest !== undefined && mondayOf(newest) === weeklyReviewWeek(nowMs, owner.timezone);
-      const history = await liftHistory(g);
-      return {
-        week: thisWeekView(g.input, { today, reviewIds: new Map(stored.map((r) => [mondayOf(r), r.id])), historyWeeks: SESSION_WEEKS - 1 }),
-        lifts: liftsView(g.input, { today, mains: g.mains, planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, previousPlanReps: g.previousPlanReps, planAppliedDate: g.planAppliedDate, nameOf: g.nameOf, earlier: history.earlier, historyUnknown: history.unknown }),
-        // Reviewed weeks keep the plan they were reviewed against (review progress-v3-design S4).
-        muscles: musclesView(g.input, { today, storedPlans: new Map(stored.map((r) => [mondayOf(r), musclePlanOfReview(r)])) }),
-        changes: newest === undefined ? null : coachChangesView(newest, today, { current, actedOn: await actedOn(newest), painFlagged: g.input.painFlagged, reviewing: asking === newest.id }),
-        hasPast: stored.length > 1,
-        liftsChosen: g.liftsChosen,
-        // No row yet: the defaults are version 1 (the first change writes them).
-        trainingVersion: g.training?.version ?? 1,
-      };
+      // (Perf, Ben 26 Oct) Kept while nothing is written (and the day and the coach call in flight are the same): a
+      // return to Progress reads nothing and renders nothing new.
+      return progressMemo.get(deps.store(), JSON.stringify([owner.id, owner.timezone, owner.preferredUnit, today, asking]), () => readProgress(owner, nowMs, today));
     },
 
     /**
@@ -755,13 +783,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
      * in this workout beats every earlier real one at its tracked reps (the Lifts chart's definition). Local only.
      */
     async sessionBests(sessionId: string): Promise<NewBestView[]> {
-      const owner = await deps.profile();
-      if (owner === null) return [];
-      const nowMs = toMs(deps.now().utc);
-      const g = await gather(localWeekBounds(nowMs, owner.timezone).mondayLocalDate);
-      if (g === null) return [];
-      const history = await liftHistory(g);
-      return sessionNewBests(g.input, { planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, nameOf: g.nameOf, earlier: history.earlier, historyUnknown: history.unknown }, sessionId);
+      return sessionBestsOf(sessionId);
     },
 
     /**

@@ -100,12 +100,32 @@ function fold(series: Series | undefined, sets: readonly Comparable[]): Series {
   return { sessions, maxLoad, maxReps };
 }
 
-export function recordsInWindow(sessions: readonly ProgressSession[], window: DateRange, opts: { limit?: number; estimates?: boolean } = {}): RecordsInWindow {
+type FoundRecord = ProgressRecord & { order: number; startedMs: number };
+
+/** Every record in the whole history (window-free): what each window filters. */
+interface AllRecords {
+  /** Actual records (heaviest, most reps at a load) of every logged workout, in history order. */
+  found: FoundRecord[];
+  /** `Best Est. 1RM` candidates (window-free), each with its workout row. */
+  estimates: { r: ExerciseRecord; s: ProgressSession; ex: ProgressExercise; order: number }[];
+}
+
+/**
+ * (Perf, 26 Oct) The window-free pass, kept per history array: Progress asks for many windows (periods,
+ * groupings, the monthly recap) of the same finished workouts, and the service hands out the same array while
+ * nothing changed, so only the first window walks the whole history. Judging every workout (not only the
+ * window's) gives the same records for the window's workouts: a judgement only reads what was learnt before.
+ */
+const allRecordsMemo = new WeakMap<readonly ProgressSession[], AllRecords>();
+
+function allRecords(sessions: readonly ProgressSession[]): AllRecords {
+  const hit = allRecordsMemo.get(sessions);
+  if (hit !== undefined) return hit;
   const ordered = [...sessions].sort((a, b) => a.startedMs - b.startedMs || a.sessionId.localeCompare(b.sessionId));
   const series = new Map<string, Series>();
   /** Heaviest imported comparable value per exercise, convention and unit as stored. */
   const imported = new Map<string, number>();
-  const found: (ProgressRecord & { order: number; startedMs: number })[] = [];
+  const found: FoundRecord[] = [];
 
   // Sessions that started at the same instant don't see each other (`findSetRecord` takes history started strictly before).
   let i = 0;
@@ -113,7 +133,7 @@ export function recordsInWindow(sessions: readonly ProgressSession[], window: Da
     let j = i;
     while (j < ordered.length && ordered[j]?.startedMs === ordered[i]?.startedMs) j += 1;
     const group = ordered.slice(i, j);
-    for (const s of group) if (s.source === 'manual' && inRange(s.date, window)) judge(s);
+    for (const s of group) if (s.source === 'manual') judge(s);
     for (const s of group) learn(s);
     i = j;
   }
@@ -205,16 +225,26 @@ export function recordsInWindow(sessions: readonly ProgressSession[], window: Da
     for (const [key, sets] of bySeries) series.set(key, fold(series.get(key), sets));
   }
 
+  const rowOf = new Map<string, { s: ProgressSession; ex: ProgressExercise; order: number }>();
+  for (const s of ordered) s.exercises.forEach((ex, order) => rowOf.set(ex.sessionExerciseId, { s, ex, order }));
+  const estimates: AllRecords['estimates'] = [];
+  for (const r of e1rmRecords(ordered)) {
+    const row = rowOf.get(r.sessionExerciseId);
+    if (row !== undefined) estimates.push({ r, ...row });
+  }
+  const out: AllRecords = { found, estimates };
+  allRecordsMemo.set(sessions, out);
+  return out;
+}
+
+export function recordsInWindow(sessions: readonly ProgressSession[], window: DateRange, opts: { limit?: number; estimates?: boolean } = {}): RecordsInWindow {
+  const all = allRecords(sessions);
+  const found: FoundRecord[] = all.found.filter((r) => inRange(r.date, window));
   if (opts.estimates === true) {
     // Slice B (PG30): `Best Est. 1RM` for a logged row with no actual record that day (one record per row per workout).
     const claimed = new Set(found.map((r) => r.sessionExerciseId));
-    const rowOf = new Map<string, { s: ProgressSession; ex: ProgressSession['exercises'][number]; order: number }>();
-    for (const s of ordered) s.exercises.forEach((ex, order) => rowOf.set(ex.sessionExerciseId, { s, ex, order }));
-    for (const r of e1rmRecords(ordered)) {
+    for (const { r, s, ex, order } of all.estimates) {
       if (!inRange(r.date, window) || claimed.has(r.sessionExerciseId) || r.load === null || r.reps === null) continue;
-      const hit = rowOf.get(r.sessionExerciseId);
-      if (hit === undefined) continue;
-      const { s, ex, order } = hit;
       found.push({
         kind: 'best_e1rm',
         sessionId: s.sessionId,
