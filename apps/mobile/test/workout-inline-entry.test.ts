@@ -170,7 +170,7 @@ describe('the open row reads as a table row (1.5, 1.6)', () => {
     expect(flat(open)).toContain('</InlineEditor> </View> ) : null} {plates}');
   });
   it('the open row reads its round label (`1`, `W`, `2L`; v3 numbers working sets) and VoiceOver its full row', () => {
-    expect(table).toContain('createContext<{ row: RoundRow; loadHeader: string | null } | null>');
+    expect(table).toContain('createContext<{ row: RoundRow; loadHeader: string | null; onCopyLast?: (() => void) | undefined } | null>');
     expect(open).toContain('<NumberCell row={ctx.row} current todayChange={f.adjustedBy} />');
     expect(open).toContain('ctx?.row.accessibilityLabel');
   });

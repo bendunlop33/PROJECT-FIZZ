@@ -29,7 +29,9 @@ describe('the workout screen never puts an old weight back (R2)', () => {
   });
   it('every edit records the set version it was made on, so a late save is refused as stale (rule 5)', () => {
     expect(workout).toContain('const next: DraftEdits = { setId: focus.setId, values, setVersion: focus.setVersion };');
-    expect(workout.match(/copied: true, setVersion: f(ocus)?\.setVersion/g)?.length).toBe(2);
+    expect(workout.match(/copied: true, setVersion: f(ocus)?\.setVersion/g)?.length).toBe(3);
+    // (Ben, 26 Oct) A row's last-time copy into a set not current: on the version read after it became current.
+    expect(workout).toContain('setEdits({ setId, values, copied: true, setVersion: set.version });');
   });
   it('a pop-up value already on the row writes nothing (R4)', () => {
     expect(edits).toMatch(/case 'unchanged':\s*return w\.note;/);

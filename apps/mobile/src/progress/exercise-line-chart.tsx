@@ -20,16 +20,16 @@ import { nearestPointIndex, trendLayout } from './trend-layout';
  */
 
 const INSET = 10;
-const DEFAULT_HEIGHT = 260;
+const HEIGHT = 260;
 
 /** `readout`: the selected session's line from the table, shown when it has no point for the measure (`8 Oct · Est. 1RM —`). */
 /** `height`: the plot's height (the exercise pop-up's small `History` chart uses less; Ben, 26 Oct). */
-export function ExerciseLineChart({ chart, selected, readout = null, onSelect, height: HEIGHT = DEFAULT_HEIGHT }: { chart: ExerciseTabView['chart']; selected: string | null; readout?: string | null; onSelect: (sessionId: string | null) => void; height?: number }) {
+export function ExerciseLineChart({ chart, selected, readout = null, onSelect, height = HEIGHT }: { chart: ExerciseTabView['chart']; selected: string | null; readout?: string | null; onSelect: (sessionId: string | null) => void; height?: number }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
   // One run, no gap breaks: Ben asked for a line every time.
   const points = chart.points.map((p) => ({ date: p.date, value: p.value, breakBefore: false }));
-  const base = { points, from: chart.from, to: chart.to, width, height: HEIGHT, bars: false, format: chart.format, inset: INSET, overlay: chart.points.map((p) => p.average) };
+  const base = { points, from: chart.from, to: chart.to, width, height, bars: false, format: chart.format, inset: INSET, overlay: chart.points.map((p) => p.average) };
   // Design pass 6.3: the axis is as wide as its widest label (the ticks don't depend on the width).
   const axis = useAxisWidth(trendLayout({ ...base, axisWidth: 44 }).yTicks.map((t) => t.label));
   const layout = trendLayout({ ...base, axisWidth: axis.width });
@@ -51,7 +51,7 @@ export function ExerciseLineChart({ chart, selected, readout = null, onSelect, h
         ) : null}
       </View>
       <View
-        style={{ height: HEIGHT }}
+        style={{ height }}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
         onLayout={(e) => {
@@ -63,7 +63,7 @@ export function ExerciseLineChart({ chart, selected, readout = null, onSelect, h
             <canvas.value
               layout={layout}
               width={width}
-              height={HEIGHT}
+              height={height}
               bars={false}
               hollow={[]}
               selected={index >= 0 ? index : null}
