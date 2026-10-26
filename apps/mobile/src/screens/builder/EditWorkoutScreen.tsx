@@ -60,7 +60,7 @@ type Swap = { slotId: string | null; choices: ExerciseChoices };
  * template for the weeks ahead; workouts already done never change (rule 2). (Ben, 26 Oct) Unsaved edits are kept on
  * the phone as he makes them (`editor-draft.ts`): after a force-close, reopening asks `Resume edits` / `Discard`; the
  * Save is still the one versioned write against the version they started from. `Time ±` fits the sets and rests to
- * the length (`routines.fitTemplate`), as edits he saves or Undoes. Local only, offline (rule 1). Loads are `Auto` or Ben's Fixed ones, rounded to this gym (rule 4).
+ * the length (the service's fitTemplate), as edits he saves or Undoes. Local only, offline (rule 1). Loads are `Auto` or Ben's Fixed ones, rounded to this gym (rule 4).
  */
 export function EditWorkoutScreen() {
   const theme = useTheme();
