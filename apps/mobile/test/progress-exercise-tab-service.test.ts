@@ -57,7 +57,47 @@ describe('exerciseTab', () => {
     expect(again?.chart.points.map((p) => p.average)).toEqual([60, 61.25, 62.5]);
   });
 
-  it('opening on a record: its series, a period wide enough to hold it, the unreadable count (review S3, S5)', async () => {
+  it('(Ben, 26 Oct) no plan: the chips are his most-trained main compounds and the tab opens on the first; his last pick wins while it has history; a relaunch the same', async () => {
+    const { services: s } = await h.launch();
+    await s.setup.saveUnits('kg');
+    const gym = await s.setup.useTypicalGym();
+    await s.setup.complete();
+    const gymId = gym.ok ? (gym.gymId ?? '') : '';
+    const w = (exercise: string, load: number) => ({ exercise, sets: [{ load, reps: 5 }, { load, reps: 5 }] });
+    await logWorkout(h, s, gymId, [w('Back squat', 100), w('Deadlift', 140)]);
+    h.clockMs += 2 * DAY;
+    await logWorkout(h, s, gymId, [w('Bench press', 80), w('Barbell row', 70), w('Lateral raise', 10)]);
+    h.clockMs += 2 * DAY;
+    await logWorkout(h, s, gymId, [w('Back squat', 102.5), w('Overhead press', 50)]);
+    h.clockMs += 2 * DAY;
+    // The newest workout is lateral raises only: the old default (most recent) would open on them.
+    await logWorkout(h, s, gymId, [w('Lateral raise', 12)]);
+
+    const tab = await s.progress.exerciseTab({ period: '6m' });
+    expect(tab?.lifts.source).toBe('history');
+    expect(tab?.lifts.chips.map((c) => c.label)).toEqual(['Back squat', 'Bench press', 'Deadlift', 'Barbell row', 'Overhead press']);
+    expect(tab?.lifts.chips.map((c) => c.selected)).toEqual([true, false, false, false, false]);
+    expect(tab?.view?.title).toBe('Back squat');
+
+    const rowId = tab?.lifts.chips.find((c) => c.label === 'Barbell row')?.exerciseId ?? '';
+    const remembered = await s.progress.exerciseTab({ period: '6m', remembered: rowId });
+    expect(remembered?.view?.title).toBe('Barbell row');
+    expect(remembered?.lifts.chips.find((c) => c.selected)?.label).toBe('Barbell row');
+    // A remembered lift with no history (deleted, another store) falls back to the first main lift.
+    expect((await s.progress.exerciseTab({ period: '6m', remembered: 'gone' }))?.view?.title).toBe('Back squat');
+
+    // An exercise opened from elsewhere (not a main lift) leads the chips, selected.
+    const raiseId = (await s.progress.exercises({ query: 'Lateral raise' }))?.view.rows[0]?.exerciseId ?? '';
+    const raise = await s.progress.exerciseTab({ period: '6m', exerciseId: raiseId });
+    expect(raise?.lifts.chips[0]).toMatchObject({ label: 'Lateral raise', selected: true });
+
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    expect((await s2.progress.exerciseTab({ period: '6m', remembered: rowId }))?.view?.title).toBe('Barbell row');
+    expect((await s2.progress.exerciseTab({ period: '6m' }))?.lifts.chips.map((c) => c.label)).toEqual(['Back squat', 'Bench press', 'Deadlift', 'Barbell row', 'Overhead press']);
+  });
+
+    it('opening on a record: its series, a period wide enough to hold it, the unreadable count (review S3, S5)', async () => {
     const { services: s } = await h.launch();
     await s.setup.saveUnits('kg');
     const gym = await s.setup.useTypicalGym();

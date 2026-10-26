@@ -31,7 +31,15 @@ describe('device prefs', () => {
     expect(parsePrefs('{"targetsHit":"yes"}').targetsHit).toBe(false);
   });
 
-  it('only an explicit false turns them off', () => {
+  it('Progress › Lifts remembers the last pick on this phone (Ben, 26 Oct); absent or junk: none', () => {
+    expect(DEFAULT_PREFS.liftsExercise).toBeUndefined();
+    expect(parsePrefs('{"liftsExercise":"ex-bench"}').liftsExercise).toBe('ex-bench');
+    expect(parsePrefs('{"liftsExercise":""}')).not.toHaveProperty('liftsExercise');
+    expect(parsePrefs('{"liftsExercise":7}')).not.toHaveProperty('liftsExercise');
+    expect(parsePrefs(JSON.stringify(updatePrefs(null, { liftsExercise: 'ex-squat' }))).liftsExercise).toBe('ex-squat');
+  });
+
+    it('only an explicit false turns them off', () => {
     expect(parsePrefs('{"guideAnimations":false}').guideAnimations).toBe(false);
     expect(parsePrefs('{"guideAnimations":"no"}').guideAnimations).toBe(true);
   });

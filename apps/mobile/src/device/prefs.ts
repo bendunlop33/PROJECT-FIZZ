@@ -27,6 +27,8 @@ export interface DevicePrefs {
   voice: VoicePrefs;
   /** Profile › `Targets hit` (Ben, 20 Oct): `Targets hit 5 of last 6` on main lifts; off by default. */
   targetsHit: boolean;
+  /** Progress › Lifts: the lift Ben last picked on this phone (Ben, 26 Oct); absent: his first main lift. A UI choice, not backed up. */
+  liftsExercise?: string;
   /** Profile › Morning reminder (Ben, 20 Oct): per phone, as notification permission is. Absent: never changed (`morningReminderOf`). */
   morningReminder?: MorningReminderSettings;
 }
@@ -46,7 +48,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
     const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment, voice, targetsHit } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown; voice?: unknown; targetsHit?: unknown };
-    const { morningReminder } = json as { morningReminder?: unknown };
+    const { morningReminder, liftsExercise } = json as { morningReminder?: unknown; liftsExercise?: unknown };
     return {
       themeDirection: dir === 'A' || dir === 'D' ? dir : null,
       guideAnimations: guideAnimations !== false,
@@ -55,6 +57,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
       librarySegment: librarySegment === 'workouts' || librarySegment === 'exercises' ? librarySegment : 'plan',
       voice: parseVoicePrefs(voice),
       targetsHit: targetsHit === true,
+      ...(typeof liftsExercise === 'string' && liftsExercise.length > 0 && liftsExercise.length <= 200 ? { liftsExercise } : {}),
       ...(morningReminder === undefined ? {} : { morningReminder: parseMorningReminder(morningReminder) }),
     };
   } catch {

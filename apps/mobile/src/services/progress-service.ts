@@ -7,6 +7,11 @@ import {
   buildProgressHomeView,
   customProgressWindow,
   listProgressExercises,
+  defaultLiftPicks,
+  liftChips,
+  liftsTabSelection,
+  type LiftChip,
+  type LiftPicksSource,
   periodHolding,
   periodProgressWindow,
   rangeText,
@@ -76,6 +81,11 @@ export interface ProgressServiceDeps {
   idle?: () => Promise<void>;
   /** Every main lift (`Targets hit` shows on main lifts only, Ben 20 Oct); absent: none. */
   mainLiftIds?: () => Promise<ReadonlySet<string>>;
+  /**
+   * The plan in use's main lift per day, in day order (Progress › Lifts' chips, Ben 26 Oct); null with no
+   * plan in use (or absent): Ben's most-trained main compounds instead.
+   */
+  planMainLifts?: () => Promise<readonly string[] | null>;
 }
 
 export interface ProgressHome {
@@ -123,8 +133,10 @@ export interface ExerciseDetailRequest {
 
 /** Progress › Exercises tab (Ben, 13–14 Oct 2026): one exercise, measure, period and trailing count. */
 export interface ExerciseTabRequest {
-  /** Null: the most recently done exercise. */
+  /** Null: Ben's last pick on this phone (`remembered`) while it has history, else the first of his main lifts (`lifts`). */
   exerciseId?: string | null;
+  /** Ben's last pick in the Lifts tab on this phone (device prefs); ignored once it has no history. */
+  remembered?: string | null;
   period: ProgressPeriodKey;
   /** A custom period, or null for the preset. */
   range?: DateRange | null;
@@ -150,6 +162,11 @@ export interface ExerciseTab {
   unreadable: number;
   /** (19 Oct, plan tracker v1) The exercise's target against actual per workout and (main lifts, setting on; Ben 20 Oct) `Targets hit 5 of last 6`; null with no exercise. */
   targets?: ExerciseTargetHistory | null;
+  /**
+   * (Ben, 26 Oct) The chip row over the chart: his main lifts (the plan's per day, else his most-trained
+   * main compounds, else his recent exercises), the one showing selected.
+   */
+  lifts: { chips: LiftChip[]; source: LiftPicksSource };
 }
 
 export type ConfirmOutcome = { ok: true; sessionId: string; version: number } | { ok: false; message: string };
@@ -174,7 +191,7 @@ export function muscleInfoFor(rows: readonly Exercise[], catalogue: readonly Exe
 function infoOf(row: Exercise, bundled: Exercise | undefined): MuscleInfo {
   const primary = row.primaryMuscles.length > 0 ? row.primaryMuscles : (bundled?.primaryMuscles ?? []);
   const secondary = row.secondaryMuscles ?? bundled?.secondaryMuscles;
-  return { name: row.name, movementPattern: row.movementPattern, primaryMuscles: primary, secondaryMuscles: secondary, split: row.split ?? bundled?.split };
+  return { name: row.name, movementPattern: row.movementPattern, primaryMuscles: primary, secondaryMuscles: secondary, split: row.split ?? bundled?.split, mechanic: row.mechanic ?? bundled?.mechanic };
 }
 
 export function createProgressService(deps: ProgressServiceDeps) {
@@ -340,8 +357,9 @@ export function createProgressService(deps: ProgressServiceDeps) {
 
     /**
      * The Exercises tab (Ben, 13–14 Oct 2026): local only, no AI. The period
-     * is the tab's own (not the shared home setting); the exercise defaults
-     * to the most recently done.
+     * is the tab's own (not the shared home setting). The exercise (Ben, 26 Oct):
+     * the one asked for, else his last pick on this phone, else his first main lift
+     * (`defaultLiftPicks`: the plan's per day, else his most-trained main compounds).
      */
     async exerciseTab(req: ExerciseTabRequest): Promise<ExerciseTab | null> {
       const profile = await deps.profile();
@@ -355,7 +373,13 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const window = range === null ? periodProgressWindow(today, period) : customProgressWindow(range);
       let earliest = today;
       for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
-      const exerciseId = req.exerciseId ?? listProgressExercises(ctx.sessions)[0]?.exerciseId ?? null;
+      const listed = listProgressExercises(ctx.sessions);
+      const names = new Map(listed.map((e) => [e.exerciseId, e.name]));
+      const planMains = (await deps.planMainLifts?.().catch(() => null)) ?? null;
+      const picks = defaultLiftPicks({ planMains, sessions: ctx.sessions, info: (id) => ctx.exercises.get(id) ?? null, today });
+      const exerciseId = liftsTabSelection({ requested: req.exerciseId ?? null, remembered: req.remembered ?? null, picks: picks.ids, logged: (id) => names.has(id) }) ?? listed[0]?.exerciseId ?? null;
+      const nameOf = (id: string): string => ctx.exercises.get(id)?.name ?? names.get(id) ?? 'Exercise';
+      const lifts = { chips: liftChips(picks.ids, exerciseId, nameOf), source: picks.source };
       const view =
         exerciseId === null
           ? null
@@ -374,7 +398,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
               trailing: req.trailing ?? null,
             });
       const targets = exerciseId === null ? null : await targetsFor(profile, ctx.sessions, exerciseId, req.targetsHit === true).catch(() => null);
-      return { view, period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable, targets };
+      return { view, period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable, targets, lifts };
     },
 
     /**

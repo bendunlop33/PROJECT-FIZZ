@@ -15,3 +15,4 @@ export * from './exercise-tab';
 export * from './plan-tracker';
 export * from './plan-overview';
 export * from './targets-hit';
+export * from './lift-picks';

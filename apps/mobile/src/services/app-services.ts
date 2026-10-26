@@ -13,6 +13,7 @@ import {
   listGymPresets,
   localDateOf,
   materialiseGymDraft,
+  planRoutines,
   starterExercises,
   toIso,
   toMs,
@@ -858,6 +859,18 @@ export function createAppServices(deps: AppServicesDeps) {
     dispatch: (sessionId, command) => sessions.dispatch(sessionId, command),
     ...(deps.idle === undefined ? {} : { idle: deps.idle }),
     mainLiftIds: () => training.mainLiftIds(),
+    // Progress › Lifts' chips (Ben, 26 Oct): the plan in use's main lift per day, in day order; null with no plan.
+    planMainLifts: async () => {
+      const p = await getProfile();
+      if (p === null) return null;
+      const plan = await repos().planDrafts.applied(p.id);
+      if (plan === null) return null;
+      const days = planRoutines(plan, await repos().routines.listByOwner(p.id));
+      return days.flatMap((r) => {
+        const main = r.planDay?.mainLiftExerciseId ?? r.exercises.find((e) => e.main === true)?.exerciseId ?? null;
+        return main === null ? [] : [main];
+      });
+    },
   });
 
   /** Coach-built plans (19 Oct): the card, Apply and Undo, the consistency card. Local only. */

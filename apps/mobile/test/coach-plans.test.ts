@@ -235,6 +235,11 @@ describe('build a 4-day plan → card → Apply (replace) → Up next walks it �
     const tabOff = await s2.progress.exerciseTab({ exerciseId: benchId, period: '6m' });
     expect(tabOff?.targets?.hitText).toBeNull();
     expect(tabOff?.targets?.rows[0]).toMatchObject({ sessionId, verdict: 'short' });
+    // (Ben, 26 Oct) Progress › Lifts opens on the plan's main lifts, one per day in day order.
+    const lifts = await s2.progress.exerciseTab({ period: '6m' });
+    expect(lifts?.lifts.source).toBe('plan');
+    expect(lifts?.lifts.chips.map((c) => c.label)).toEqual(['Bench press', 'Lat pulldown', 'Back squat', 'Overhead press']);
+    expect(lifts?.view?.title).toBe('Bench press');
 
     // Undo: Push A and Pull A back in the rotation in their places; the plan's workouts are gone; the plan is open again.
     const now = await s2.plans.card({ planId, versionN: 1 });

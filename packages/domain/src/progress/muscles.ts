@@ -19,6 +19,8 @@ export interface MuscleInfo {
   primaryMuscles: readonly string[];
   secondaryMuscles?: readonly string[] | undefined;
   split?: ExerciseSplit | undefined;
+  /** Compound or isolation, when the row or catalogue says (Progress › Lifts' default picks). */
+  mechanic?: 'compound' | 'isolation' | undefined;
 }
 
 export type HardSetKind = 'hard' | 'warmup' | 'easy';

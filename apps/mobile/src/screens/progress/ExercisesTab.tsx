@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { parseTrailing, PLAN_VERDICT_WORD, TRAILING_OPTIONS, type DateRange, type ExerciseMeasure, type ExerciseTabView, type ExerciseTargetHistory } from '@fizz/domain';
+import { parseTrailing, PLAN_VERDICT_WORD, TRAILING_OPTIONS, type DateRange, type LiftChip, type ExerciseMeasure, type ExerciseTabView, type ExerciseTargetHistory } from '@fizz/domain';
 import type { ProgressPeriodKey } from '@fizz/schemas';
 
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { DropdownButton, DropdownPanel, PeriodPicker, useAx } from '../../progress/components';
 import { ExerciseLineChart } from '../../progress/exercise-line-chart';
+import { LIFTS_TAB_SECTIONS, type LiftsTabSection } from '../../progress/lifts-tab-layout';
 import { unreadableText } from '../../progress/copy';
 import { useScreenData } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Icon, InfoLine, StatStrip, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, Chip, Icon, InfoLine, StatStrip, StatusLine, TextButton, TextField } from '../../ui';
 
 /**
  * Progress › Exercises (Ben, 13–14 Oct 2026; ideas-2026-10-12 D3): an
@@ -46,8 +47,8 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
   const [open, setOpen] = useState<Open>(null);
   // The record's workout: picks its series and widens the period until Ben picks another exercise, series or period.
   const [opened, setOpened] = useState<{ sessionId: string; sessionExerciseId: string | null } | null>(null);
-  const { prefs } = useDevicePrefs();
-  const [data, reload] = useScreenData((s) => s.progress.exerciseTab({ exerciseId, period, range, measure, trailing, seriesId, open: opened, targetsHit: prefs.targetsHit }));
+  const { prefs, update } = useDevicePrefs();
+  const [data, reload] = useScreenData((s) => s.progress.exerciseTab({ exerciseId, remembered: prefs.liftsExercise ?? null, period, range, measure, trailing, seriesId, open: opened, targetsHit: prefs.targetsHit }));
   useEffect(() => {
     if (focus === null) return;
     setExerciseId(focus.exerciseId);
@@ -91,98 +92,32 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
       />
     ) : null;
 
-  return (
-    <View style={{ gap: theme.space['4'] }}>
-      {tab.unreadable > 0 ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={unreadableText(tab.unreadable)} /> : null}
-      <ExercisePicker
-        name={view.title}
-        open={open === 'exercise'}
-        onToggle={() => {
+  const pick = (id: string) => {
+    setOpen(null);
+    setExerciseId(id);
+    setOpened(null);
+    setSeriesId(null);
+    setMeasure(null);
+    setSelected(null);
+    // His last pick opens the tab next time on this phone (Ben, 26 Oct).
+    if (prefs.liftsExercise !== id) update({ liftsExercise: id });
+    reload();
+  };
+
+  const sections: Record<LiftsTabSection, React.ReactNode> = {
+    lifts: (
+      <LiftChipRow
+        chips={tab.lifts.chips}
+        selectedId={view.exerciseId}
+        moreOpen={open === 'exercise'}
+        onMore={() => {
           toggle('exercise');
         }}
-        onPick={(id) => {
-          setOpen(null);
-          setExerciseId(id);
-          setOpened(null);
-          setSeriesId(null);
-          setMeasure(null);
-          setSelected(null);
-          reload();
-        }}
-        selectedId={view.exerciseId}
+        onPick={pick}
       />
-
-      {view.series.length > 1 ? (
-        <View style={{ gap: theme.space['1'] }}>
-          <DropdownButton
-            small
-            label={view.series.find((s) => s.id === view.seriesId)?.label ?? ''}
-            accessibilityLabel={`Type, ${view.series.find((s) => s.id === view.seriesId)?.label ?? ''}`}
-            open={open === 'series'}
-            onPress={() => {
-              toggle('series');
-            }}
-          />
-          {open === 'series' ? (
-            <DropdownPanel
-              options={view.series.map((s) => ({ key: s.id, label: s.label }))}
-              selected={view.seriesId}
-              onSelect={(k) => {
-                setOpen(null);
-                setOpened(null);
-                setSeriesId(k);
-                setMeasure(null);
-                setSelected(null);
-                reload();
-              }}
-            />
-          ) : null}
-        </View>
-      ) : null}
-
-      <PeriodPicker
-        period={tab.period}
-        custom={tab.range !== null}
-        today={tab.today}
-        earliest={tab.earliest}
-        current={tab.window}
-        datesLine={tab.datesLine}
-        datesWords={tab.datesWords}
-        open={open === 'period'}
-        onOpenChange={(o) => {
-          setOpen(o ? 'period' : null);
-        }}
-        onPreset={(p) => {
-          setOpened(null);
-          setPeriod(p);
-          setRange(null);
-          setSelected(null);
-          reload();
-        }}
-        onCustom={(r) => {
-          setOpened(null);
-          setRange(r);
-          setSelected(null);
-          reload();
-        }}
-        leading={
-          view.measures.length > 1 ? (
-            <DropdownButton
-              label={view.measureLabel}
-              accessibilityLabel={`Measure, ${view.measureLabel}`}
-              open={open === 'measure'}
-              onPress={() => {
-                toggle('measure');
-              }}
-            />
-          ) : undefined
-        }
-        leadingPanel={measurePanel}
-      />
-
-      <StatStrip items={view.stats} accessibilityLabel={view.statsWords} ax={ax} />
-
-      {view.empty !== null ? (
+    ),
+    chart:
+      view.empty !== null ? (
         <AppText variant="body" color="text.secondary">
           {view.empty}
         </AppText>
@@ -195,8 +130,79 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
             setSelected(id);
           }}
         />
-      )}
-
+      ),
+    controls: (
+      <View style={{ gap: theme.space['2'] }}>
+        {view.series.length > 1 ? (
+          <View style={{ gap: theme.space['1'] }}>
+            <DropdownButton
+              small
+              label={view.series.find((s) => s.id === view.seriesId)?.label ?? ''}
+              accessibilityLabel={`Type, ${view.series.find((s) => s.id === view.seriesId)?.label ?? ''}`}
+              open={open === 'series'}
+              onPress={() => {
+                toggle('series');
+              }}
+            />
+            {open === 'series' ? (
+              <DropdownPanel
+                options={view.series.map((s) => ({ key: s.id, label: s.label }))}
+                selected={view.seriesId}
+                onSelect={(k) => {
+                  setOpen(null);
+                  setOpened(null);
+                  setSeriesId(k);
+                  setMeasure(null);
+                  setSelected(null);
+                  reload();
+                }}
+              />
+            ) : null}
+          </View>
+        ) : null}
+        <PeriodPicker
+          period={tab.period}
+          custom={tab.range !== null}
+          today={tab.today}
+          earliest={tab.earliest}
+          current={tab.window}
+          datesLine={tab.datesLine}
+          datesWords={tab.datesWords}
+          open={open === 'period'}
+          onOpenChange={(o) => {
+            setOpen(o ? 'period' : null);
+          }}
+          onPreset={(p) => {
+            setOpened(null);
+            setPeriod(p);
+            setRange(null);
+            setSelected(null);
+            reload();
+          }}
+          onCustom={(r) => {
+            setOpened(null);
+            setRange(r);
+            setSelected(null);
+            reload();
+          }}
+          leading={
+            view.measures.length > 1 ? (
+              <DropdownButton
+                label={view.measureLabel}
+                accessibilityLabel={`Measure, ${view.measureLabel}`}
+                open={open === 'measure'}
+                onPress={() => {
+                  toggle('measure');
+                }}
+              />
+            ) : undefined
+          }
+          leadingPanel={measurePanel}
+        />
+      </View>
+    ),
+    stats: <StatStrip items={view.stats} accessibilityLabel={view.statsWords} ax={ax} />,
+    trailing: (
       <TrailingControl
         value={view.trailing}
         open={open === 'trailing'}
@@ -209,7 +215,8 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
           reload();
         }}
       />
-
+    ),
+    sessions: (
       <SessionsTable
         view={view}
         targets={tab.targets ?? null}
@@ -218,77 +225,99 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
           setSelected((cur) => (cur === id ? null : id));
         }}
       />
+    ),
+  };
+
+  // (Ben, 26 Oct) The chips, the chart straight under them, then the rest (`LIFTS_TAB_SECTIONS`).
+  return (
+    <View style={{ gap: theme.space['4'] }}>
+      {tab.unreadable > 0 ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={unreadableText(tab.unreadable)} /> : null}
+      {LIFTS_TAB_SECTIONS.map((k) => (
+        <View key={k}>{sections[k]}</View>
+      ))}
     </View>
   );
 }
 
-function ExercisePicker({ name, open, onToggle, onPick, selectedId }: { name: string; open: boolean; onToggle: () => void; onPick: (id: string) => void; selectedId: string }) {
+/**
+ * The lift chips (Ben, 26 Oct): his main lifts in a row that scrolls sideways (names are never cut), the
+ * one showing selected, and `More` for any other exercise (the searchable list, in place under the row).
+ */
+function LiftChipRow({ chips, selectedId, moreOpen, onMore, onPick }: { chips: readonly LiftChip[]; selectedId: string; moreOpen: boolean; onMore: () => void; onPick: (id: string) => void }) {
+  const theme = useTheme();
+  return (
+    <View style={{ gap: theme.space['2'] }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="Lifts" contentContainerStyle={{ gap: theme.space['2'] }}>
+        {chips.map((c) => (
+          <Chip
+            key={c.exerciseId}
+            size="min"
+            label={c.label}
+            selected={c.selected}
+            onPress={() => {
+              if (!c.selected) onPick(c.exerciseId);
+            }}
+          />
+        ))}
+        <Chip size="min" label="More" accessibilityLabel="More exercises" selected={moreOpen} onPress={onMore} />
+      </ScrollView>
+      {moreOpen ? <ExercisePicker onPick={onPick} selectedId={selectedId} /> : null}
+    </View>
+  );
+}
+
+/** `More`: every exercise with history, searchable; a tap opens it. */
+function ExercisePicker({ onPick, selectedId }: { onPick: (id: string) => void; selectedId: string }) {
   const theme = useTheme();
   const [query, setQuery] = useState('');
   const [data, reload] = useScreenData((s) => s.progress.exercises({ query }));
   const rows = data.state === 'ready' ? (data.value?.view.rows ?? []) : [];
   const noMatches = data.state === 'ready' ? (data.value?.view.noMatches ?? null) : null;
   return (
-    <View style={{ gap: theme.space['2'] }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Exercise, ${name}`}
-        accessibilityState={{ expanded: open }}
-        onPress={onToggle}
-        style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.sm, backgroundColor: pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'] })}
-      >
-        <AppText variant="headline" style={{ flex: 1 }} numberOfLines={1}>
-          {name}
+    <View style={{ gap: theme.space['2'], borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], borderWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], padding: theme.space['2'] }}>
+      <TextField
+        value={query}
+        placeholder="Search"
+        returnKeyType="search"
+        clearButtonMode="while-editing"
+        autoCorrect={false}
+        accessibilityLabel="Search exercises"
+        onChangeText={(t) => {
+          setQuery(t);
+          reload();
+        }}
+      />
+      {noMatches !== null ? (
+        <AppText variant="callout" color="text.secondary">
+          {noMatches}
         </AppText>
-        <Icon name={open ? 'chevron.up' : 'chevron.down'} color="text.secondary" size={14} />
-      </Pressable>
-      {open ? (
-        <View style={{ gap: theme.space['2'], borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], borderWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], padding: theme.space['2'] }}>
-          <TextField
-            value={query}
-            placeholder="Search"
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-            autoCorrect={false}
-            accessibilityLabel="Search exercises"
-            onChangeText={(t) => {
-              setQuery(t);
-              reload();
-            }}
-          />
-          {noMatches !== null ? (
-            <AppText variant="callout" color="text.secondary">
-              {noMatches}
-            </AppText>
-          ) : null}
-          <ScrollView style={{ maxHeight: 320 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-            {rows.map((r) => {
-              const on = r.exerciseId === selectedId;
-              return (
-                <Pressable
-                  key={r.exerciseId}
-                  accessibilityRole="button"
-                  accessibilityLabel={r.words}
-                  accessibilityState={{ selected: on }}
-                  onPress={() => {
-                    setQuery('');
-                    onPick(r.exerciseId);
-                  }}
-                  style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingVertical: theme.space['2'], paddingHorizontal: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
-                >
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <AppText variant="body">{r.name}</AppText>
-                    <AppText variant="callout" color="text.secondary" numeric>
-                      {r.line}
-                    </AppText>
-                  </View>
-                  {on ? <Icon name="checkmark" color="text.primary" /> : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
       ) : null}
+      <ScrollView style={{ maxHeight: 320 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+        {rows.map((r) => {
+          const on = r.exerciseId === selectedId;
+          return (
+            <Pressable
+              key={r.exerciseId}
+              accessibilityRole="button"
+              accessibilityLabel={r.words}
+              accessibilityState={{ selected: on }}
+              onPress={() => {
+                setQuery('');
+                onPick(r.exerciseId);
+              }}
+              style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingVertical: theme.space['2'], paddingHorizontal: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+            >
+              <View style={{ flex: 1, gap: 2 }}>
+                <AppText variant="body">{r.name}</AppText>
+                <AppText variant="callout" color="text.secondary" numeric>
+                  {r.line}
+                </AppText>
+              </View>
+              {on ? <Icon name="checkmark" color="text.primary" /> : null}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
