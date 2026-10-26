@@ -36,6 +36,19 @@ export function haptic(token: HapticToken): void {
             }),
         );
         break;
+      case 'pb':
+        // (Ben, 26 Oct) A new best: the commit, then a light tap 120 ms later; fire-and-forget like `record`.
+        run = Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).then(
+          () =>
+            new Promise<void>((resolve) => {
+              setTimeout(() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                  .catch(() => undefined)
+                  .finally(resolve);
+              }, 120);
+            }),
+        );
+        break;
       case 'finish':
         run = Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         break;

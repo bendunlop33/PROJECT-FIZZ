@@ -7,6 +7,7 @@ import {
   TrainingProfileSchema,
   type Exercise,
   type MuscleGroup,
+  type PinnedNote,
   type SplitBodyPart,
   type SplitDay,
   type TrainingChange,
@@ -212,7 +213,30 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
       else next.progressLiftReps = reps;
       return next;
     }
+    case 'pin_note': {
+      const text = c.text.trim();
+      if (text === '' || text.length > TRAINING_LIMITS.pinnedNoteMax || c.exerciseId.trim() === '') return null;
+      const rest = (p.pinnedNotes ?? []).filter((n) => !(n.exerciseId === c.exerciseId && n.gymId === c.gymId));
+      if (rest.length >= TRAINING_LIMITS.pinnedNotesMax) return null;
+      return { ...p, pinnedNotes: [...rest, { exerciseId: c.exerciseId, gymId: c.gymId, text, updatedAtUtc: atUtc }] };
+    }
+    case 'unpin_note': {
+      const next = { ...p };
+      const rest = (p.pinnedNotes ?? []).filter((n) => !(n.exerciseId === c.exerciseId && n.gymId === c.gymId));
+      if (rest.length === 0) delete next.pinnedNotes;
+      else next.pinnedNotes = rest;
+      return next;
+    }
   }
+}
+
+/**
+ * (Ben, 26 Oct) The pinned note an exercise shows at a gym: that gym's own pin, else the every-gym pin, else none.
+ * Shown as typed (rule 8).
+ */
+export function pinnedNoteFor(notes: readonly PinnedNote[] | undefined, exerciseId: string, gymId: string | null): PinnedNote | null {
+  const mine = (notes ?? []).filter((n) => n.exerciseId === exerciseId);
+  return (gymId === null ? undefined : mine.find((n) => n.gymId === gymId)) ?? mine.find((n) => n.gymId === null) ?? null;
 }
 
 /**

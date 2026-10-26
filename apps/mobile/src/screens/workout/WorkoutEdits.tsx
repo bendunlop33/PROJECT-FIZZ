@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert } from 'react-native';
 
 import {
@@ -8,8 +8,11 @@ import {
   stepRoundCommand,
   stepSetCommand,
   supersetNextCommand,
+  supersetPartners,
   type BuilderAdvice,
   type CommandOutcome,
+  type HistoryGlanceView,
+  type SupersetPartner,
 } from '@fizz/domain';
 import type { BuilderGroup, SessionAggregate, SessionCommand, SetType } from '@fizz/schemas';
 
@@ -18,6 +21,7 @@ import { newUuid } from '../../device/runtime';
 import { haptic } from '../../device/haptics';
 import type { ActiveWorkoutData } from '../../services/workout-services';
 import type { AppServices } from '../../services/app-services';
+import { HistoryGlance } from '../../progress/history-glance';
 import { ExercisePopup } from '../../ui/exercise-popup';
 import { holdMenu, POPUP_COPY, typeMenu, type PopupSetRow } from '../../ui/exercise-popup-model';
 import { SwapSheet } from '../../ui/swap-sheet';
@@ -73,15 +77,34 @@ export interface WorkoutEditsInput {
   toast: ReactNode;
 }
 
-type Sheet = { mode: 'swap'; sessionExerciseId: string; name: string; sections: ChoiceSection[] } | { mode: 'add'; sections: ChoiceSection[] };
+type Sheet =
+  | { mode: 'swap'; sessionExerciseId: string; name: string; sections: ChoiceSection[] }
+  | { mode: 'add'; sections: ChoiceSection[] }
+  /** (Ben, 26 Oct; review 26 Oct #2) `Superset with…`: the exercises in the workout it can pair with first, then everything. */
+  | { mode: 'superset'; sessionExerciseId: string; name: string; sections: ChoiceSection[]; partners: SupersetPartner[] };
 /** Which row the sheet is for (kept across `＋ Add your own`). */
-type SheetFor = { mode: 'swap'; sessionExerciseId: string } | { mode: 'add' };
-const sheetFor = (s: Sheet): SheetFor => (s.mode === 'swap' ? { mode: 'swap', sessionExerciseId: s.sessionExerciseId } : { mode: 'add' });
+type SheetFor = { mode: 'swap'; sessionExerciseId: string } | { mode: 'add' } | { mode: 'superset'; sessionExerciseId: string };
+const sheetFor = (s: Sheet): SheetFor => (s.mode === 'add' ? { mode: 'add' } : { mode: s.mode, sessionExerciseId: s.sessionExerciseId });
 
 export function useWorkoutEdits(p: WorkoutEditsInput) {
   const [popupFor, setPopupFor] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const picker = useExercisePicker();
+  // (Ben, 26 Oct) The pop-up's read-only History: read once when it opens on an exercise (stored history, local).
+  const [glance, setGlance] = useState<{ for: string; view: HistoryGlanceView | null } | null>(null);
+  useEffect(() => {
+    if (popupFor === null) return;
+    let live = true;
+    void p.services.workout
+      .exerciseGlance(p.sessionId, popupFor)
+      .catch(() => null)
+      .then((view) => {
+        if (live) setGlance({ for: popupFor, view });
+      });
+    return () => {
+      live = false;
+    };
+  }, [p.services, p.sessionId, popupFor]);
   const own = useRef<SessionAggregate | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const latest = useRef(p);
@@ -242,15 +265,41 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
   async function openSheet(to: SheetFor, opts: { group?: BuilderGroup; fresh: boolean; query?: string }) {
     const a = current();
     if (a === null) return;
+    // Swap keeps the swapped exercise's kind; Add and `Superset with…` take anything.
     const sessionExerciseId = to.mode === 'swap' ? to.sessionExerciseId : null;
     if (opts.fresh) picker.open(() => latest.current.services.exercisePicker.forSession(latest.current.sessionId, sessionExerciseId), opts.query ?? '');
     const c = await latest.current.services.workoutEdit.choices(latest.current.sessionId, opts.group === undefined ? { sessionExerciseId } : { sessionExerciseId, group: opts.group }).catch(() => null);
     const sections = c?.sections ?? [];
-    setSheet(to.mode === 'swap' ? { mode: 'swap', sessionExerciseId: to.sessionExerciseId, name: nameOf(a, to.sessionExerciseId), sections } : { mode: 'add', sections });
+    if (to.mode === 'swap') setSheet({ mode: 'swap', sessionExerciseId: to.sessionExerciseId, name: nameOf(a, to.sessionExerciseId), sections });
+    else if (to.mode === 'superset') setSheet({ mode: 'superset', sessionExerciseId: to.sessionExerciseId, name: nameOf(a, to.sessionExerciseId), sections, partners: supersetPartners(current() ?? a, to.sessionExerciseId) });
+    else setSheet({ mode: 'add', sections });
   }
 
   const openSwap = (sessionExerciseId: string) => openSheet({ mode: 'swap', sessionExerciseId }, { fresh: true });
   const openAdd = () => openSheet({ mode: 'add' }, { fresh: true });
+  const openSupersetWith = (sessionExerciseId: string) => openSheet({ mode: 'superset', sessionExerciseId }, { fresh: true });
+
+  /** `Superset with…` an exercise already in the workout: `link_superset` on the state now (rule 5), with Undo. */
+  function linkPartner(s: Extract<Sheet, { mode: 'superset' }>, partner: SupersetPartner) {
+    closeSheet();
+    void inTurn(async () => {
+      latest.current.beforeEdit();
+      const before = current();
+      if (before === null) return;
+      const opId = newUuid();
+      const r = await latest.current.services.workout.linkSuperset({ sessionId: latest.current.sessionId, sessionExerciseId: s.sessionExerciseId, withSessionExerciseId: partner.sessionExerciseId, expectedVersion: before.session.version, opId });
+      if (!r.ok) {
+        refused(r);
+        void latest.current.reload();
+        return;
+      }
+      own.current = r.aggregate;
+      latest.current.adopt(r.aggregate);
+      latest.current.changed();
+      haptic('step');
+      latest.current.undoToast(UNDO_TOAST.supersetted(s.name, partner.exerciseName), opId);
+    });
+  }
   const addOwn = useAddOwn<SheetFor>((to, name) => void openSheet(to, { fresh: true, query: name }));
 
   function closeSheet() {
@@ -267,7 +316,10 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
       const before = current();
       if (before === null) return;
       const opId = newUuid();
-      const r = s.mode === 'swap' ? await latest.current.services.workoutEdit.swap(latest.current.sessionId, s.sessionExerciseId, exerciseId, opId) : await latest.current.services.workoutEdit.add(latest.current.sessionId, exerciseId, opId);
+      const r =
+        s.mode === 'swap'
+          ? await latest.current.services.workoutEdit.swap(latest.current.sessionId, s.sessionExerciseId, exerciseId, opId)
+          : await latest.current.services.workoutEdit.add(latest.current.sessionId, exerciseId, opId, s.mode === 'superset' ? { supersetWith: s.sessionExerciseId } : {});
       if (!r.ok) {
         refused(r);
         void latest.current.reload();
@@ -278,7 +330,7 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
       latest.current.changed();
       haptic('step');
       const name = ('toName' in r && typeof r.toName === 'string' ? r.toName : undefined) ?? r.aggregate.exercises.find((e) => e.exerciseId === exerciseId && e.removed === undefined)?.exerciseName ?? 'Exercise';
-      const text = s.mode === 'swap' ? UNDO_TOAST.swapped(s.name, name) : `${name} added`;
+      const text = s.mode === 'swap' ? UNDO_TOAST.swapped(s.name, name) : s.mode === 'superset' ? UNDO_TOAST.supersetted(s.name, name) : `${name} added`;
       await afterChange(before, r.aggregate, text, opId);
       // `Last` lines are per exercise: read the new row's history.
       void latest.current.reload();
@@ -478,13 +530,29 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
           const t = k === null ? null : dir === 1 ? k.up : k.down;
           return t !== null && t.enabled ? t.value : null;
         }}
+        history={glance !== null && glance.for === popupFor ? <HistoryGlance view={glance.view} /> : null}
         toast={p.toast}
       />
       <SwapSheet
         visible={sheet !== null}
-        title={sheet === null ? '' : sheet.mode === 'swap' ? `Swap ${sheet.name}` : 'Add exercise'}
+        title={sheet === null ? '' : sheet.mode === 'swap' ? `Swap ${sheet.name}` : sheet.mode === 'superset' ? `Superset with ${sheet.name}` : 'Add exercise'}
         sections={sheet?.sections ?? []}
-        actionWord={sheet?.mode === 'add' ? 'Add' : 'Swap'}
+        actionWord={sheet?.mode === 'swap' ? 'Swap' : 'Add'}
+        partners={
+          sheet?.mode === 'superset'
+            ? {
+                title: 'In this workout',
+                rows: sheet.partners.map((x) => ({
+                  key: x.sessionExerciseId,
+                  name: x.exerciseName,
+                  line: x.detail,
+                  onPress: () => {
+                    linkPartner(sheet, x);
+                  },
+                })),
+              }
+            : null
+        }
         onPick={pick}
         onClose={closeSheet}
         onDismissed={addOwn.onDismissed}
@@ -492,6 +560,9 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
           view: pickerView,
           query: picker.query,
           onQuery: picker.setQuery,
+          index: picker.index,
+          equipment: picker.equipment,
+          onEquipment: picker.setEquipment,
           onChip: (g) => {
             picker.setGroup(g);
             if (sheet !== null) void openSheet(sheetFor(sheet), g === null ? { fresh: false } : { group: g, fresh: false });
@@ -514,6 +585,8 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
     },
     openSwap: (sessionExerciseId: string) => void openSwap(sessionExerciseId),
     openAdd: () => void openAdd(),
+    /** (Review 26 Oct #2) `Superset with…` on the shared sheet: partners first, then every exercise. */
+    openSupersetWith: (sessionExerciseId: string) => void openSupersetWith(sessionExerciseId),
     moveRound: (sessionExerciseId: string, dir: 'up' | 'down') => void moveRound(sessionExerciseId, dir),
     supersetNext: (sessionExerciseId: string) => void supersetNext(sessionExerciseId),
     unlink: (sessionExerciseId: string) => void unlink(sessionExerciseId),

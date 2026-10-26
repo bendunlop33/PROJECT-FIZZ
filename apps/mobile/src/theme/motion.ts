@@ -95,8 +95,9 @@ export function screenAnimation(route: 'Workout' | 'Summary', reduceMotion: bool
 }
 
 /** A log that's also a record plays only the record haptic, never both (§5). */
-export function logHaptic(record: boolean): Extract<HapticToken, 'commit' | 'record'> {
-  return record ? 'record' : 'commit';
+export function logHaptic(record: boolean, pb = false): Extract<HapticToken, 'commit' | 'record' | 'pb'> {
+  // (Ben, 26 Oct) A new best: the commit, then a light tap; a heaviest-set record already ends on one.
+  return record ? 'record' : pb ? 'pb' : 'commit';
 }
 
 /**

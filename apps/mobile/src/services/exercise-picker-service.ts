@@ -7,6 +7,8 @@ import {
   mayHurtAccessibility,
   mayHurtConfirm,
   painFlagCovering,
+  PICKER_RECENT,
+  toIso,
   toMs,
   type PickerEntry,
   type PickerIndex,
@@ -44,10 +46,13 @@ export function createExercisePickerService(deps: ExercisePickerDeps) {
   }
 
   async function indexAt(p: UserProfile, gym: Gym, scope: PickerScope): Promise<PickerIndex> {
-    const [saved, own, flags] = await Promise.all([
+    const at = deps.now();
+    const nowMs = toMs(at.utc);
+    const [saved, own, flags, recentIds] = await Promise.all([
       repos().exercises.list().catch(() => [] as Exercise[]),
       repos().imports.aliases(p.id).catch(() => []),
       repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]),
+      recentExerciseIds(p.id, nowMs),
     ]);
     const mine = saved.filter((e) => e.ownerId === null || e.ownerId === p.id);
     const have = new Set(mine.map((e) => e.id));
@@ -55,8 +60,6 @@ export function createExercisePickerService(deps: ExercisePickerDeps) {
     const all = [...mine.filter((e) => !isArchivedExercise(e)), ...deps.catalogueExercises().filter((e) => !have.has(e.id))];
     const ownNames = new Map<string, string[]>();
     for (const a of own) if (a.target.kind === 'exercise') ownNames.set(a.target.exerciseId, [...(ownNames.get(a.target.exerciseId) ?? []), a.name]);
-    const at = deps.now();
-    const nowMs = toMs(at.utc);
     const snapGym = gym === null ? null : { id: gym.id, name: gym.name, equipment: gym.equipment };
     const entries: PickerEntry[] = [];
     for (const exercise of all) {
@@ -71,7 +74,21 @@ export function createExercisePickerService(deps: ExercisePickerDeps) {
         painFlag: covering === null ? null : { line: mayHurtConfirm({ ...covering.flag, exerciseName: exercise.name }).message, accessibilityLabel: mayHurtAccessibility(covering.flag) },
       });
     }
-    return { entries, gym: gym === null ? null : { name: gym.name, equipment: gym.equipment } };
+    const listed = new Set(entries.map((e) => e.exercise.id));
+    return { entries, gym: gym === null ? null : { name: gym.name, equipment: gym.equipment }, recent: recentIds.filter((id) => listed.has(id)).slice(0, PICKER_RECENT.limit * 3) };
+  }
+
+  /**
+   * (Ben, 26 Oct) The `Recent` group: exercises in his finished workouts of the last 4 weeks, newest first (the
+   * stored history summaries, ADR 0032). A failed read is no group, never a failed sheet.
+   */
+  async function recentExerciseIds(ownerId: string, nowMs: number): Promise<string[]> {
+    const done = await repos()
+      .sessions.listFinishedBetween(ownerId, toIso(nowMs - PICKER_RECENT.days * 86_400_000), toIso(nowMs + 1))
+      .catch(() => []);
+    const ids: string[] = [];
+    for (const w of [...done].reverse()) for (const e of [...w.exercises].sort((a, b) => a.order - b.order)) if (e.removed === undefined && !ids.includes(e.exerciseId)) ids.push(e.exerciseId);
+    return ids;
   }
 
   const empty: PickerIndex = { entries: [], gym: null };

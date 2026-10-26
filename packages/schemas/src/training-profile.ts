@@ -48,6 +48,9 @@ export const TRAINING_LIMITS = {
   recentOpsMax: 50,
   /** Lifts shown on Progress › Reviews (Ben, 21 Oct: up to 6). */
   progressLiftsMax: 6,
+  /** (Ben, 26 Oct) Pinned exercise notes: one per exercise and gym (or every gym), each at most `pinnedNoteMax` characters. */
+  pinnedNotesMax: 300,
+  pinnedNoteMax: 500,
 } as const;
 
 export const SplitDaySchema = z.object({
@@ -76,6 +79,19 @@ export const WeightEntrySchema = z.object({
   recordedAtUtc: UtcTimestampSchema,
 });
 export type WeightEntry = z.infer<typeof WeightEntrySchema>;
+
+/**
+ * (Ben, 26 Oct) A pinned exercise note: Ben's own words (seat and pin settings) shown every time the exercise is in
+ * a workout, at one gym (`gymId`) or at every gym (null). Your data (rule 10); shown as typed and never read as an
+ * instruction by anything (rule 8); never in the coach's context.
+ */
+export const PinnedNoteSchema = z.object({
+  exerciseId: z.string().min(1).max(64),
+  gymId: z.string().min(1).max(64).nullable(),
+  text: z.string().trim().min(1).max(TRAINING_LIMITS.pinnedNoteMax),
+  updatedAtUtc: UtcTimestampSchema,
+});
+export type PinnedNote = z.infer<typeof PinnedNoteSchema>;
 
 export const TrainingProfileSchema = RecordMetaSchema.extend({
   about: z.object({
@@ -124,6 +140,8 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
    * choose` (the 23 Oct default). Your data (rule 10).
    */
   checkInSchedule: CheckInScheduleSchema.optional(),
+  /** (Ben, 26 Oct) Pinned exercise notes, one per exercise and gym (null gym: every gym). Absent: none. */
+  pinnedNotes: z.array(PinnedNoteSchema).max(TRAINING_LIMITS.pinnedNotesMax).optional(),
   /** Operation IDs already applied, newest last (a repeat is a no-op; rule 5). */
   recentOps: z.array(OperationIdSchema).max(TRAINING_LIMITS.recentOpsMax),
 });
@@ -154,4 +172,8 @@ export type TrainingChange =
   /** `reps`: the reps to track a lift at that isn't in the plan (asked once when adding it; Progress v3). */
   | { kind: 'progress_lifts'; exerciseIds: readonly string[]; reps?: Readonly<Record<string, number>> }
   /** (Ben, 26 Oct) Profile › Training › Check-in. `days` needs at least one weekday. */
-  | { kind: 'check_in_schedule'; schedule: CheckInSchedule };
+  | { kind: 'check_in_schedule'; schedule: CheckInSchedule }
+  /** (Ben, 26 Oct) Pin a note on an exercise (at one gym, or every gym with `gymId` null), replacing that pin. */
+  | { kind: 'pin_note'; exerciseId: string; gymId: string | null; text: string }
+  /** (Ben, 26 Oct) Unpin it (the text is kept as today's note by the caller when Ben asks). */
+  | { kind: 'unpin_note'; exerciseId: string; gymId: string | null };

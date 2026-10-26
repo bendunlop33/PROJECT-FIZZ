@@ -50,6 +50,7 @@ function row(over: Partial<TableRow> = {}): TableRow {
   return {
     setId: `s${String(seq)}`,
     number: seq,
+    last: null,
     pairedWithSetId: null,
     badges: [],
     note: null,

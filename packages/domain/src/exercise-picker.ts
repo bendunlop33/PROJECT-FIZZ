@@ -2,7 +2,7 @@ import { isBuilderStrength, type EquipmentInstance, type Exercise } from '@fizz/
 
 import { builderInfoOf } from './builder/info';
 import { BROWSE_PARTS, browseLine2Of, browsePlaceOf, EXERCISE_EQUIPMENT_WORD, type RowExercise } from './exercise-browse';
-import { BROAD_MUSCLE_GROUPS, NO_FILTERS, searchExerciseRows, withBroadGroup, type BroadMuscleGroup, type SearchableEntry } from './exercise-search';
+import { BROAD_MUSCLE_GROUPS, EQUIPMENT_FILTER_LABEL, EQUIPMENT_FILTERS, equipmentFiltersOf, NO_FILTERS, passesFilters, searchExerciseRows, withBroadGroup, type BroadMuscleGroup, type EquipmentFilter, type SearchableEntry } from './exercise-search';
 import { missingStations, stationWords } from './stations';
 
 /**
@@ -55,7 +55,15 @@ export interface PickerIndex {
   entries: PickerEntry[];
   /** The host's gym (Your workout's, the editor's, the workout in progress's); null: no gym, nothing is tagged. */
   gym: { name: string; equipment: readonly Pick<EquipmentInstance, 'kind' | 'availability'>[] } | null;
+  /**
+   * (Ben, 26 Oct) Exercises Ben has done recently (finished workouts in the last `PICKER_RECENT.days` days),
+   * newest first, at most `PICKER_RECENT.limit`: the sheet's `Recent` group. Absent or empty: no group.
+   */
+  recent?: readonly string[];
 }
+
+/** (Ben, 26 Oct) The `Recent` group: workouts in the last 4 weeks, at most 8 exercises. */
+export const PICKER_RECENT = { days: 28, limit: 8 } as const;
 
 export type PickerTag = { kind: 'may_hurt'; text: 'May hurt' } | { kind: 'custom'; text: 'Yours' } | { kind: 'not_here'; text: string };
 
@@ -98,6 +106,16 @@ export interface PickerView {
   addOwn: { label: string; name: string | null };
   /** The muscle chips: `All` + Chest, Back, Shoulders, Legs, Arms, Core; exactly one on. */
   chips: { label: string; group: BroadMuscleGroup | null; selected: boolean }[];
+  /**
+   * (Ben, 26 Oct) `Recent`: what he's done lately, newest first, above the suggestions (not while searching). The
+   * chips filter it too; what's in the workout already is left out. It never reorders the suggestions.
+   */
+  recent: PickerRowView[];
+  /**
+   * (Ben, 26 Oct) The equipment chips beside the muscle chips (Library's kinds), only those with an exercise in
+   * this sheet. At most one on; tapping it again turns it off. They combine with the muscle chip.
+   */
+  equipmentChips: { label: string; filter: EquipmentFilter; selected: boolean }[];
 }
 
 export interface PickerInput {
@@ -109,6 +127,8 @@ export interface PickerInput {
   exclude: readonly string[];
   /** Shown above as suggestions: left out of the full list (but found by a search). */
   suggested: readonly string[];
+  /** (Ben, 26 Oct) The equipment chip that is on; null or absent: none. */
+  equipment?: EquipmentFilter | null;
 }
 
 export const PICKER_COPY = {
@@ -117,6 +137,7 @@ export const PICKER_COPY = {
   addOwn: '＋ Add your own',
   matches: 'MATCHES',
   other: 'OTHER',
+  recent: 'Recent',
   notAt: (gym: string) => `Not at ${gym}`,
   noMatch: (q: string) => `No match for “${q}”.`,
   cancel: 'Choose another',
@@ -158,7 +179,9 @@ export function buildExercisePickerView(input: PickerInput): PickerView {
   const suggested = new Set(input.suggested);
   const listed = index.entries.filter((x) => !exclude.has(x.exercise.id) && (searching || !suggested.has(x.exercise.id)));
   // No gym check here: every row is listed and the not-here ones are only moved last and tagged.
-  const { rows } = searchExerciseRows(listed, input.query, withBroadGroup(NO_FILTERS, input.group), null);
+  const equipment = input.equipment ?? null;
+  const filters = { ...withBroadGroup(NO_FILTERS, input.group), equipment: equipment === null ? [] : [equipment] };
+  const { rows } = searchExerciseRows(listed, input.query, filters, null);
   const gymName = index.gym?.name ?? null;
   const view = (entry: PickerEntry, match: Parameters<typeof browseLine2Of>[1]): PickerRowView => {
     const e = entry.exercise;
@@ -207,8 +230,20 @@ export function buildExercisePickerView(input: PickerInput): PickerView {
     if (other.length > 0 && input.group === null) sections.push({ key: 'other', title: PICKER_COPY.other, parts: [{ title: null, rows: hereFirst(other).map((x) => view(x.entry, x.match)) }] });
   }
   const q = input.query.trim();
+  // `Recent`: the index's order (newest first), the same chips, nothing already in the workout.
+  const byId = new Map(index.entries.map((e) => [e.exercise.id, e]));
+  const recent = searching
+    ? []
+    : (index.recent ?? []).flatMap((id) => {
+        const entry = byId.get(id);
+        return entry === undefined || exclude.has(id) || !passesFilters(entry.exercise, filters) ? [] : [view(entry, null)];
+      })
+        .slice(0, PICKER_RECENT.limit);
+  const kinds = new Set(index.entries.flatMap((e) => equipmentFiltersOf(e.exercise)));
   return {
     searching,
+    recent,
+    equipmentChips: EQUIPMENT_FILTERS.filter((f) => kinds.has(f)).map((f) => ({ label: EQUIPMENT_FILTER_LABEL[f], filter: f, selected: equipment === f })),
     showSuggestions: !searching,
     sections,
     empty: searching && sections.length === 0 ? PICKER_COPY.noMatch(q) : null,
@@ -231,4 +266,14 @@ export function pickerConfirm(
   if (!row.mayHurt && row.notHereLine !== null) return { title: PICKER_COPY.notHereTitle(row.notHereLine, actionWord, row.name), message: null, cancel: PICKER_COPY.cancel, confirm };
   const message = [row.painLine, row.notHereLine].filter((x): x is string => x !== null && x !== '').join('\n');
   return { title: `${row.name} may hurt`, message: message === '' ? null : message, cancel: PICKER_COPY.cancel, confirm };
+}
+
+/**
+ * (Ben, 26 Oct) An equipment chip on the ranked suggestions: those of another kind are hidden, the rest keep their
+ * order (the ranking is never changed). An exercise the index doesn't know is kept (nothing to judge it by).
+ */
+export function suggestionKept(index: PickerIndex | null, exerciseId: string, equipment: EquipmentFilter | null): boolean {
+  if (equipment === null || index === null) return true;
+  const entry = index.entries.find((e) => e.exercise.id === exerciseId);
+  return entry === undefined || equipmentFiltersOf(entry.exercise).includes(equipment);
 }

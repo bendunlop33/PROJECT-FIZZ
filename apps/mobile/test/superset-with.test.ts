@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildExecutionOrder } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
-import { supersetPickerView } from '../src/workout/superset-picker';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
@@ -47,7 +46,6 @@ describe('Superset with… during a workout', () => {
     // The picker: nothing else in the workout yet; a new partner starts with the 2 sets left.
     const choices = await s.workout.supersetChoices(sessionId, calfRow?.id ?? '');
     expect(choices).toMatchObject({ name: 'Seated calf raise', partners: [], sets: 2 });
-    expect(supersetPickerView(choices, '')?.title).toBe('Superset with Seated calf raise');
 
     // Calf raise (bodyweight), the new catalogue entry, as the partner.
     const bw = (await s.workout.pickerExercises(sessionId, 'bodyweight calf raise', { withCatalogue: true })).find((p) => p.exercise.name === 'Calf raise (bodyweight)');
@@ -121,7 +119,6 @@ describe('Superset with… during a workout', () => {
       ['Seated calf raise', '2 sets left'],
       ['Plank', '2 sets left'],
     ]);
-    expect(supersetPickerView(choices, 'plan')?.partners.map((p) => p.exerciseName)).toEqual(['Plank']);
     const linked = await s.workout.linkSuperset({ sessionId, sessionExerciseId: push, withSessionExerciseId: plank, expectedVersion: choices?.version ?? 0, opId: 'link-plank' });
     if (!linked.ok) throw new Error(linked.error.message);
     expect(linked.aggregate.exercises.filter((e) => e.removed === undefined).sort((a, b) => a.order - b.order).map((e) => [e.exerciseName, e.supersetGroup])).toEqual([

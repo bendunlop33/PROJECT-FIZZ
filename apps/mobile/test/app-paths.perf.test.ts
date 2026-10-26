@@ -5,6 +5,7 @@ import { loadSample, measureBlocking, timingBudget } from '@fizz/domain/testing'
 
 import type { AppServices } from '../src/services/app-services';
 import type { TodaySelection, TodaySessionData } from '../src/services/today-session';
+import { buildRounds } from '../src/workout/rounds';
 import { openTemplate } from '../src/workout/template-editor';
 import { bigDataset, type BigDataset } from './perf-dataset';
 
@@ -235,6 +236,26 @@ describe('the everyday paths on ~800 workouts', () => {
       const live = d.aggregate.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId);
       return buildExercisePickerView({ index, query: '', group: null, exclude: live, suggested: (choices?.sections ?? []).flatMap((x) => x.items.map((i) => i.exerciseId)) });
     });
+
+    // (Ben, 26 Oct) The table with a last-time line on every row (pure, in render), the pop-up's History (one read),
+    // and the PB mark: its context read once per workout, then a pure check per log.
+    const loaded = await s.workout.load(sessionId);
+    if (loaded === null) throw new Error('no workout');
+    const rounds = await timed('Workout table render with last-time lines', 50, () => {
+      const t = s.workout.tableView(loaded, h.clockMs, null);
+      return Promise.resolve(buildRounds(t, () => null, null));
+    });
+    expect(rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).some((r) => r.row.last !== null)).toBe(true);
+    const firstRow = loaded.aggregate.exercises.find((e) => e.removed === undefined);
+    if (firstRow === undefined) throw new Error('no row');
+    const glance = await timed('Exercise pop-up History open', 150, () => s.workout.exerciseGlance(sessionId, firstRow.id));
+    expect(glance?.rows.length ?? 0).toBeGreaterThan(0);
+    const bests = await timed('PB context (once per workout)', 1500, () => s.reviews.liveBestsContext());
+    if (bests !== null) {
+      // The first check (at open, in render) learns each lift's earlier best; every log after it is the warm one.
+      await timed('PB check, first (pure, at open)', 30, () => Promise.resolve(s.reviews.liveNewBests(bests, loaded.aggregate)));
+      await timed('PB check on a log (pure, warm)', 10, () => Promise.resolve(s.reviews.liveNewBests(bests, loaded.aggregate)));
+    }
 
     // Logging sets: the write, then what the workout screen reads and renders.
     for (let i = 0; i < 3; i += 1) {

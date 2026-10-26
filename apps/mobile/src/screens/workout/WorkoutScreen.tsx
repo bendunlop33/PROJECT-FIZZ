@@ -21,6 +21,7 @@ import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openGymFromWorkout, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import type { ActiveWorkoutData, GymChoice, RecordContext } from '../../services/workout-services';
+import type { LiveBestsContext } from '@fizz/domain';
 import { NameSheet } from '../routines/NameSheet';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
 import { logHaptic, swapMotion, TIMING, useTheme } from '../../theme';
@@ -54,6 +55,7 @@ import {
 } from '../../ui';
 import { CoachSlot } from './CoachSlot';
 import { NoteSheet } from './NoteSheet';
+import { noteWrites } from '../../workout/notes';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
@@ -120,6 +122,8 @@ const EFFORT_RIR = [4, 3, 2, 1, 0] as const;
 /** How long after the number pad hides the bottom chrome comes back: long enough for a move to another cell (23 Oct). */
 const CHROME_KEYPAD_SETTLE_MS = 300;
 
+const EMPTY_IDS: ReadonlySet<string> = new Set();
+
 export function WorkoutScreen() {
   const theme = useTheme();
   const services = useServices();
@@ -150,7 +154,8 @@ export function WorkoutScreen() {
   /** `Rest after` for one set (the open row's, or the set `Why?` names): its number, exercise, seconds and where they came from. */
   const [restEditor, setRestEditor] = useState<{ setId: string; stepName: string; exerciseName: string; seconds: number; sourceLabel: string } | null>(null);
   /** `Notes` on the focused exercise (§4.4). */
-  const [noteFor, setNoteFor] = useState<{ sessionExerciseId: string; exerciseName: string; note: string | null } | null>(null);
+  /** `pinnedOpen`: opened from the pinned line (the sheet starts on the pin, Ben 26 Oct). */
+  const [noteFor, setNoteFor] = useState<{ sessionExerciseId: string; exerciseName: string; note: string | null; pinnedOpen?: boolean } | null>(null);
   /** Learn chips Ben answered in this workout (ADR 0029: offered once). */
   const [learnAnswered, setLearnAnswered] = useState<ReadonlySet<string>>(new Set());
   const [hiddenWarmUps, setHiddenWarmUps] = useState<string[]>([]);
@@ -529,7 +534,12 @@ export function WorkoutScreen() {
   // v3: one round per block, 3a / 3b in a superset, with the builder's works line (workout-table-v3 §1–§2).
   const worksLines = data === 'loading' || data === null ? undefined : data.worksLines;
   const latestLogged = data === 'loading' || data === null ? null : latestCommittedSetId(data.aggregate);
-  const rounds = useMemo(() => (table === null ? [] : buildRounds(table, (id) => worksLines?.[id] ?? null, latestLogged)), [table, worksLines, latestLogged]);
+  // (Ben, 26 Oct) Pinned notes at this gym, shown under the exercise every time it's in a workout.
+  const pinnedNotes = data === 'loading' || data === null ? undefined : data.pinnedNotes;
+  const rounds = useMemo(
+    () => (table === null ? [] : buildRounds(table, (id) => worksLines?.[id] ?? null, latestLogged, (id) => { const n = pinnedNotes?.[id]; return n === undefined ? null : { text: n.text, gymOnly: n.gymId !== null }; })),
+    [table, worksLines, latestLogged, pinnedNotes],
+  );
   const timerRound = timerRoundIndex(rounds, data === 'loading' || data === null ? null : data.aggregate.workInterval);
   // A change of the open row (a log, an untick, a delete, a row select) brings the page back to its round (auto-advance, §3);
   // one a round change's own select made keeps the round Ben is on, even when an earlier select lands late.
@@ -583,17 +593,36 @@ export function WorkoutScreen() {
     };
   }, [services, viewSessionId, focusSetId, focusEquipment]);
 
-  // A new empty workout opens the exercise picker straight away (audit: Start leads to a usable workout).
+  // (Ben, 26 Oct) The `PB` mark: what the Summary's `New best` reads, once per workout, so a log decides it with no read.
+  const [bestsContext, setBestsContext] = useState<LiveBestsContext | null>(null);
+  useEffect(() => {
+    if (viewSessionId === null) return;
+    let live = true;
+    void services.reviews
+      .liveBestsContext()
+      .catch(() => null)
+      .then((c) => {
+        if (live) setBestsContext(c);
+      });
+    return () => {
+      live = false;
+    };
+  }, [services, viewSessionId]);
+  const liveAggregate = data === 'loading' || data === null ? null : data.aggregate;
+  const pbSetIds = useMemo(() => (bestsContext === null || liveAggregate === null ? EMPTY_IDS : services.reviews.liveNewBests(bestsContext, liveAggregate)), [services, bestsContext, liveAggregate]);
+
+  // A new empty workout opens the shared Swap / Add sheet straight away (audit: Start leads to a usable workout; review 26 Oct #2).
   const emptySessionId = view?.phase === 'empty' && view.sessionId ? view.sessionId : null;
+  const openAddRef = useRef<() => void>(() => undefined);
   useEffect(() => {
     if (emptySessionId === null || !firstTime(`auto-picker:${emptySessionId}`)) return;
     const t = setTimeout(() => {
-      navigation.navigate('ExercisePicker', { sessionId: emptySessionId });
+      openAddRef.current();
     }, 450);
     return () => {
       clearTimeout(t);
     };
-  }, [emptySessionId, navigation]);
+  }, [emptySessionId]);
 
   // So does an open `Why?` panel: another active set closes it.
   useEffect(() => {
@@ -746,6 +775,7 @@ export function WorkoutScreen() {
     beforeEdit: () => editDeps.current?.beforeEdit(),
     toast: toastNode,
   });
+  openAddRef.current = workoutEdits.openAdd;
 
   if (loadError !== null && (data === 'loading' || data === null)) {
     return (
@@ -854,6 +884,37 @@ export function WorkoutScreen() {
     setEdits({ setId: f.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, setVersion: f.setVersion, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
   }
 
+  /** (Ben, 26 Oct) The note sheet's start: today's note (pin off), else the pinned one (pin on); opened on the pin, the pin. */
+  const noteExerciseId = noteFor === null ? '' : (loaded.aggregate.exercises.find((e) => e.id === noteFor.sessionExerciseId)?.exerciseId ?? '');
+  const pinnedNow = noteFor === null ? undefined : loaded.pinnedNotes?.[noteExerciseId];
+  const noteSheet = {
+    exerciseId: noteExerciseId,
+    pinned: pinnedNow === undefined ? null : { gymOnly: pinnedNow.gymId !== null },
+    initial: noteFor === null ? null : noteFor.pinnedOpen === true || (noteFor.note === null && pinnedNow !== undefined) ? (pinnedNow?.text ?? null) : noteFor.note,
+    pin: { on: pinnedNow !== undefined && (noteFor?.pinnedOpen === true || noteFor?.note == null), gymOnly: pinnedNow !== undefined && pinnedNow.gymId !== null },
+  };
+
+  /**
+   * (Ben, 26 Oct) A row's last-time line: its comparable set from last time goes into that row, as `Copy last` does
+   * (a draft on the open row, never a result and never its effort). A set not current is made current first; a done
+   * set is never changed this way (rule 2).
+   */
+  async function copyRowLast(setId: string) {
+    const row = rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).find((r) => r.setId === setId);
+    const last = row?.row.last ?? null;
+    if (row === undefined || last === null || row.done || row.skipped) return;
+    const values = { ...last.values, rpe: null, rir: null };
+    if (focus !== null && focus.setId === setId) {
+      setEdits({ setId, values, copied: true, setVersion: focus.setVersion, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+      return;
+    }
+    if (!(await selectRow(setId))) return;
+    const d = await reload();
+    const set = d?.aggregate.sets.find((x) => x.id === setId);
+    if (set === undefined || set.status !== 'pending') return;
+    setEdits({ setId, values, copied: true, setVersion: set.version });
+  }
+
   function editLoad(f: FocusView, v: number | null) {
     const unit = loaded.aggregate.exercises.find((e) => e.id === f.sessionExerciseId)?.unit ?? 'kg';
     const convention = loaded.aggregate.exercises.find((e) => e.id === f.sessionExerciseId)?.loadConvention ?? 'total';
@@ -900,8 +961,10 @@ export function WorkoutScreen() {
     }
     // After the write, never on press-in. A heaviest-set record plays `record` instead of `commit` (premium-feel §5.1).
     const loggedSetId = focus.setId;
+    // (Ben, 26 Oct) A new best (Summary's definition) adds a light tap after the log's own.
+    const pb = bestsContext !== null && services.reviews.liveNewBests(bestsContext, r.aggregate).has(loggedSetId);
     const showRecord = (rec: { text: string } | null) => {
-      haptic(logHaptic(rec !== null));
+      haptic(logHaptic(rec !== null, pb));
       setRecord(rec === null ? null : { setId: loggedSetId, text: rec.text });
     };
     const ready = recordContext.current;
@@ -1066,11 +1129,10 @@ export function WorkoutScreen() {
         workoutEdits.remove(ex.sessionExerciseId);
         return true;
       case 'add_exercise':
-        if (v3) workoutEdits.openAdd();
-        else navigation.navigate('ExercisePicker', { sessionId: session.id });
+        workoutEdits.openAdd();
         return true;
       case 'superset_with':
-        navigation.navigate('ExercisePicker', { sessionId: session.id, supersetWith: ex.sessionExerciseId });
+        workoutEdits.openSupersetWith(ex.sessionExerciseId);
         return true;
       case 'notes':
       case 'how_to':
@@ -1893,7 +1955,7 @@ export function WorkoutScreen() {
         return {
           label: 'Add exercise',
           onPress: () => {
-            navigation.navigate('ExercisePicker', { sessionId: session.id });
+            workoutEdits.openAdd();
           },
         };
       case 'finish':
@@ -2490,7 +2552,7 @@ export function WorkoutScreen() {
             label={focus.next?.kind === 'last_set' && !view.openEnded ? 'Last set ·' : 'Then'}
             text="Add exercise"
             onPress={() => {
-              navigation.navigate('ExercisePicker', { sessionId: session.id });
+              workoutEdits.openAdd();
             }}
           />
         )}
@@ -2902,8 +2964,10 @@ export function WorkoutScreen() {
                   runExerciseAction(id, name);
                 }}
                 onAddExercise={shown === rounds.length - 1 ? () => { workoutEdits.openAdd(); } : null}
-                onNote={(sessionExerciseId, exerciseName, note) => {
-                  setNoteFor({ sessionExerciseId, exerciseName, note });
+                onCopyLast={(setId) => void copyRowLast(setId)}
+                pbSetIds={pbSetIds}
+                onNote={(sessionExerciseId, exerciseName, note, pinnedOpen) => {
+                  setNoteFor({ sessionExerciseId, exerciseName, note, ...(pinnedOpen === true ? { pinnedOpen } : {}) });
                 }}
                 onPainBadge={openPainBadge}
               />
@@ -2992,7 +3056,7 @@ export function WorkoutScreen() {
                 <SecondaryButton
                   label="Add exercise"
                   onPress={() => {
-                    navigation.navigate('ExercisePicker', { sessionId: session.id });
+                    workoutEdits.openAdd();
                   }}
                 />
               )}
@@ -3095,19 +3159,37 @@ export function WorkoutScreen() {
       <NoteSheet
         visible={noteFor !== null}
         title={`Notes · ${noteFor?.exerciseName ?? ''}`}
-        initial={noteFor?.note ?? null}
+        initial={noteSheet.initial}
+        pin={noteFor === null ? null : { start: noteSheet.pin, gymName: loaded.gymName }}
         onClose={() => {
           setNoteFor(null);
         }}
-        onSave={async (note) => {
+        onSave={async (note, pin) => {
           if (noteFor === null) return null;
-          const r = await services.workout.setNote({ sessionId: session.id, target: { kind: 'exercise', sessionExerciseId: noteFor.sessionExerciseId }, note, expectedVersion: session.version, opId: newUuid() });
-          if (!r.ok) {
-            void reload();
-            return refusalText(r.error.code, r.error.message);
+          // (Ben, 26 Oct) Pinned: the pin, and today's copy cleared; unpinned: the words stay for this workout only.
+          const writes = noteWrites({ text: note, pin: pin ?? { on: false, gymOnly: false }, pinned: noteSheet.pinned, today: noteFor.note });
+          let version = loaded.pinnedVersion ?? 1;
+          for (const w of writes) {
+            if (w.kind === 'today') {
+              const now = latestData.current;
+              const expectedVersion = now !== null && now !== 'loading' && now.aggregate.session.id === session.id ? now.aggregate.session.version : session.version;
+              const r = await services.workout.setNote({ sessionId: session.id, target: { kind: 'exercise', sessionExerciseId: noteFor.sessionExerciseId }, note: w.text, expectedVersion, opId: newUuid() });
+              if (!r.ok) {
+                void reload();
+                return refusalText(r.error.code, r.error.message);
+              }
+              setData((cur) => withCommandResult(cur, loaded, r.aggregate));
+              continue;
+            }
+            const r = await services.workout.pinNote({ sessionId: session.id, exerciseId: noteSheet.exerciseId, gymOnly: w.gymOnly, text: w.kind === 'pin' ? w.text : null, expectedVersion: version, opId: newUuid() });
+            if (!r.ok) {
+              void reload();
+              return r.message;
+            }
+            version = r.version;
           }
-          setData((cur) => withCommandResult(cur, loaded, r.aggregate));
           changed();
+          void reload();
           setNoteFor(null);
           return null;
         }}

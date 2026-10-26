@@ -59,6 +59,9 @@ describe('motion', () => {
   it('haptics: a record log plays only the record haptic; finish once, only for a finished workout (acceptance 16)', () => {
     expect(logHaptic(false)).toBe('commit');
     expect(logHaptic(true)).toBe('record');
+    // (Ben, 26 Oct) A new best plays the commit then a light tap; a record already ends on one (never both).
+    expect(logHaptic(false, true)).toBe('pb');
+    expect(logHaptic(true, true)).toBe('record');
     const base = { sessionStatus: 'finished' as const, justFinished: true, played: new Set<string>(), sessionId: 's1' };
     expect(shouldPlayFinish(base)).toBe(true);
     expect(shouldPlayFinish({ ...base, played: new Set(['s1']) })).toBe(false);

@@ -70,14 +70,24 @@ export interface PreviousSession {
  * 2026); only its working sets are offered (`comparableSetsOf`).
  */
 export function lastComparableSession(history: readonly HistorySession[], ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>): PreviousSession | null {
+  return lastComparableSessions(history, ex, 1)[0] ?? null;
+}
+
+/**
+ * (Ben, 26 Oct) The newest `n` history sessions like-for-like with this session exercise, newest first, by the same
+ * rule as `lastComparableSession` (the exercise pop-up's `History`).
+ */
+export function lastComparableSessions(history: readonly HistorySession[], ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>, n: number): PreviousSession[] {
   const sorted = [...history].sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
+  const out: PreviousSession[] = [];
   for (const h of sorted) {
+    if (out.length >= n) break;
     if (!matchesEquipment(h, ex.equipmentId)) continue;
     const sets = comparableSetsOf(h).filter((s) => s.setType !== 'warmup');
     if (sets.length === 0) continue;
     const alike = sets.every((s) => s.load === null || s.load.convention === 'bodyweight' || (s.load.unit === ex.unit && s.load.convention === ex.loadConvention));
     if (!alike) continue;
-    return {
+    out.push({
       sessionId: h.sessionId,
       performedAtUtc: h.performedAtUtc,
       gymId: h.gymId,
@@ -87,9 +97,9 @@ export function lastComparableSession(history: readonly HistorySession[], ex: Pi
         values: { load: s.load, reps: s.reps, durationS: s.durationS ?? null, rpe: s.rpe, rir: s.rir, ...(s.distanceM !== undefined ? { distanceM: s.distanceM } : {}) },
         ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
       })),
-    };
+    });
   }
-  return null;
+  return out;
 }
 
 /**

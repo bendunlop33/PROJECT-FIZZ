@@ -67,6 +67,8 @@ export interface ExercisePopupProps {
   onHowTo?: (() => void) | undefined;
   /** (22 Oct) `History`: the exercise's history; absent when it was never logged (or the page doesn't link it). */
   onHistory?: (() => void) | undefined;
+  /** (Ben, 26 Oct) A read-only `History` section (mid-workout: the last 3 comparable sessions and a top-set chart). */
+  history?: ReactNode;
   toast?: ReactNode;
 }
 
@@ -317,6 +319,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
             </Table>
           ) : null}
           {p.options}
+          {p.history}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             {view.canMoveUp ? <SecondaryButton label={`↑ ${POPUP_COPY.moveUp}`} onPress={() => { p.onMove('up'); }} /> : null}
             {view.canMoveDown ? <SecondaryButton label={`↓ ${POPUP_COPY.moveDown}`} onPress={() => { p.onMove('down'); }} /> : null}

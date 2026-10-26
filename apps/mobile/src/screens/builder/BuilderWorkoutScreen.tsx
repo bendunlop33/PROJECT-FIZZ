@@ -814,6 +814,9 @@ export function BuilderWorkoutScreen() {
           view: pickerView,
           query: picker.query,
           onQuery: picker.setQuery,
+          index: picker.index,
+          equipment: picker.equipment,
+          onEquipment: picker.setEquipment,
           onChip: (g) => {
             picker.setGroup(g);
             if (swap !== null) void openSwap(swap.slotKey, g === null ? { fresh: false } : { group: g, fresh: false });
