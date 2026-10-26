@@ -525,6 +525,8 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
         title: 'Rest',
         line1: 'Probe · Bench press · Set 2 of 3 next',
         line2: 'Target 100\u00a0kg\u00a0×\u00a08',
+        line3: '',
+        tap: '',
         startMs: now,
         endMs: endsAtMs,
         side: '',

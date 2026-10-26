@@ -1,5 +1,7 @@
 # Lock screen and alerts
 
+> **Revision 2026-10-26 (Ben, 26 Oct; competitor-landscape Pass 4, changes 3 and 8).** Approved: (1) the Live Activity shows **last time** for the next set (`Last 100 kg × 7`, §2.1); (2) the rest-done notification body names the set, its target and last time (`Bench press · set 3 · target 100 kg × 6–8 · last 100 kg × 7`, §2.2); (3) **`−15 s` / `+15 s` / `Skip` buttons** on the Live Activity while a rest runs (§2.1, §4.2), replacing P-L4 for timer buttons. They are App Intents (`LiveActivityIntent`, iOS 17+), which need no entitlement, push or new App Group, so they fit the free Apple ID (ADR 0004); they are built and unit-tested but **not yet run on the phone** (device test `2026-10-12-live-activity-rest.md`, steps 2–8). `Log as planned` on the Lock Screen is **not built** (§8 P-L4b): it waits until the buttons pass on the phone. **Nothing on the Lock Screen logs a set.**
+
 > **Revision 2026-10-08 (consolidation).** P-L1 is applied in rest-state.md §4.8 (no Time Sensitive option; the brief's wording is the product manager's to change). profile-and-settings.md §2.6 now hosts this file's `When rest ends`, `Alert check` and `Test rest alert` unchanged, and its own duplicate rest-alert rows (`Loud alerts (AlarmKit)` with a threshold picker) are withdrawn in favour of `Loud rest alerts` here. `runAlertTest()` is renamed `runRestAlertTest()` (one name across specs). Capability evidence from tests is shown in App status (system-states.md). Tokens and the widget colour mirror are merged into design-system (§2.2, §3 `type.liveCountdown`, §6 timings, `sound.restEnd`).
 
 Status: v0.1 draft, 8 Oct 2026. Designer. Tokens: [design-system.md](design-system.md). Timer behaviour inside the app: [rest-state.md](rest-state.md) and [flow-first-milestone.md](flow-first-milestone.md) §4–§5. App-wide permission and capability states: [system-states.md](system-states.md).
@@ -23,7 +25,7 @@ Sources: brief §12 (rest state, spoken set companion); CHANGELOG v0.2 and v0.3 
 
 These surfaces answer one question when Ben **isn't looking at Fizz**: **"Is my rest over, and what's my next set?"**
 
-There is no primary action on the lock screen. Every surface opens the active workout in one tap, where `Log …` is already waiting. **Nothing on the lock screen logs a set** (rest-state.md §4.8): logging without seeing the values risks wrong data.
+There is no primary action on the lock screen. Every surface opens the active workout in one tap, where `Log …` is already waiting. **Nothing on the lock screen logs a set** (rest-state.md §4.8): logging without seeing the values risks wrong data. The only controls are the rest buttons (`−15 s`, `+15 s`, `Skip`; Ben, 26 Oct), which change the running rest through the same versioned command as the in-app buttons.
 
 Design rules:
 1. **One alert per rest end, never zero when Ben has allowed alerts, never two.** Each layer has a defined job; the arbitration in §4.1 picks which one fires.
@@ -43,23 +45,34 @@ Design rules:
 
 | State | When | Banner (Lock Screen) | Compact (Dynamic Island) | Minimal |
 |---|---|---|---|---|
-| Ready | Workout started; rest skipped; a zero-length rest; after the app updates an ended rest | `figure.strengthtraining.traditional` `Ready · Push A` / `Bench press · Set 3 of 4` / `Target 100 kg × 6–8` | leading: figure icon · trailing: `Set 3` | figure icon |
-| Resting | `commitSetAndBeginRest` returned a timer, or `adjustRestTimer` | `timer` `Rest` + countdown / `Until 18:42 · Bench press · Set 3 of 4 next` / `Target 100 kg × 6–8` | leading: `timer` (accent) · trailing: countdown `2:47` | countdown `2:47` |
+| Ready | Workout started; rest skipped; a zero-length rest; after the app updates an ended rest | `figure.strengthtraining.traditional` `Ready · Push A` / `Bench press · Set 3 of 4` / `Target 100 kg × 6–8` / `Last 100 kg × 7` | leading: figure icon · trailing: `Set 3` | figure icon |
+| Resting | `commitSetAndBeginRest` returned a timer, or `adjustRestTimer` | `timer` `Rest` + countdown / `Until 18:42 · Bench press · Set 3 of 4 next` / `Target 100 kg × 6–8` / `Last 100 kg × 7` / `−15 s` `+15 s` … `Skip` | leading: `timer` (accent) · trailing: countdown `2:47` | countdown `2:47` |
 | Working (timed) | `startWorkInterval` | `timer` `Work · Plank` + countdown / `Until 18:40 · Target 0:45` / `Open Fizz to log it` | leading: `timer` · trailing: countdown | countdown |
 | Paused | `pauseSession` | `pause.circle.fill` (warning) `Paused · Push A` / `Rest 1:10 left when you resume` (or `Ready for set 3`) | leading: pause icon · trailing: `1:10` (static) | pause icon |
 | Ended | Finish, Discard, or a stale workout found on relaunch | Activity ended with immediate dismissal | — | — |
 
 **Wireframes** (system container; Fizz controls only the content):
 
-Lock Screen banner, Resting:
+Lock Screen banner, Resting (Ben, 26 Oct: last time and rest buttons):
 ```
 ┌──────────────────────────────────────┐
 │ ⏱ Rest                         2:47  │ countdown: system-rendered,
-│ Until 18:42 · Bench press ·          │ 28pt semibold, monospaced digits
-│ Set 3 of 4 next                      │
-│ Target 100 kg × 6–8                  │
+│ Until 18:42 · Bench press · Set 3 …  │ monospaced digits; line 1 is one
+│ Target 100 kg × 6–8                  │ line when the buttons show
+│ Last 100 kg × 7                      │ secondary colour; '' when none
+│ [−15 s] [+15 s]              [Skip]  │ bordered, small; iOS 17+ only
 └──────────────────────────────────────┘
 ```
+
+**Last time (Ben, 26 Oct).** `Last <value>` is the same working set of the last comparable session (same exercise, equipment, unit and convention: the in-app `Last` line's source), as recorded: `Last 100 kg × 7`, `Last 22.5 kg each × 10`, `Last Assist 20 kg × 8`, `Last 100 kg × 8 · spotted`. No line when there is no such set (a first workout, a 4th set when last time had 3, a warm-up, history in the other unit or convention); never an estimate or a nearby set (rule 6). It appears in Ready and Resting, and VoiceOver reads it after the target (`Last time 100 kilograms, 7 reps.`). History is read once per exercise row when it's first needed, so the line can appear a moment after the rest starts.
+
+**Rest buttons (Ben, 26 Oct).** While a rest runs (not paused, not after its end), the banner and the expanded Dynamic Island show `−15 s`, `+15 s` and `Skip`. A tap changes the rest exactly as the in-app buttons do, without opening the app:
+- It goes through the same `adjust_rest` / `skip_rest` command, with an operation ID fixed per (button, timer, version) and the timer version the button was drawn for. A tap on an older picture of the rest (moved since by another tap, Log, Undo, a coach change) is ignored and the activity is redrawn; the same tap delivered twice is one change (rule 5).
+- A tap more than a minute old (the app was killed and only handled it on the next launch), for another workout, while paused, or after the rest ended does nothing.
+- The countdown, `Until`, the rest-done notification and the in-app rest all follow from the committed change. No toast, no confirmation, no Undo (the same as the in-app ±/Skip, rest-state §4.10: tap the other button).
+- Not shown below iOS 17, in builds without the native tap queue, or in builds made with `FIZZ_LA_BUTTONS=0`; the activity then looks as before.
+- VoiceOver: `15 seconds less rest`, `15 seconds more rest`, `Skip rest`.
+- Step is 15 s on the Lock Screen (Hevy's step; a smaller target than the app's ±30 s). In-app stays ±30 s.
 
 The same banner after the deadline, with Fizz suspended (nothing can update it):
 ```
@@ -118,7 +131,7 @@ Dynamic Island, expanded (long-press), Resting:
 - Accent is used only for the `timer` icon (`#5AA9FF` in dark appearance, `#0A63C9` in light; mirrored from `color.accent`). Paused uses `status.warning` (`#F2B84B` / `#8A5A00`) for the icon, plus the word `Paused`.
 - Countdown digits are monospaced (`.monospacedDigit()`), so they don't jitter. If the `@expo/ui` subset can't express this, the widget needs a small native modifier (developer note).
 - Always-On Display (`isLuminanceReduced`): regular weight, no accent tint; content unchanged.
-- No buttons in this milestone (§8, P-L4). Tapping anywhere opens `fizz://workout` (the active workout).
+- Only the rest buttons above (Ben, 26 Oct); no `Log` (§8, P-L4b). Tapping anywhere else opens `fizz://workout` (the active workout).
 - Long exercise names: one line, tail ellipsis; the target line never truncates its numbers.
 
 ### 2.2 Notifications
@@ -127,11 +140,12 @@ All are local, scheduled by Fizz, interruption level `active`, sound `rest-end.c
 
 | Kind | Identifier (replaces the previous one of the same kind) | Title | Body | When |
 |---|---|---|---|---|
-| Rest done | `fizz.rest.<sessionId>` | `Rest done` | `Next: Bench press · 100 kg × 6–8 target` | At the rest deadline, unless a louder layer owns this rest (§4.1) |
-| Rest done, next exercise | same | `Rest done` | `Next: Incline DB press · 30 kg each × 8–10 target` | same |
-| Rest done, coach target | same | `Rest done` | `Next: Bench press · 95 kg × 8 coach target` | same |
-| Rest done, no load target | same | `Rest done` | `Next: Lat pulldown · 8–10 reps (no load target)` | same |
-| Rest done, unilateral | same | `Rest done` | `Next: Single-arm row · 25 kg stack × 10 per side target` | same |
+| Rest done (Ben, 26 Oct) | `fizz.rest.<sessionId>` | `Rest done` | `Bench press · set 3 · target 100 kg × 6–8 · last 100 kg × 7` | At the rest deadline, unless a louder layer owns this rest (§4.1) |
+| Rest done, next exercise | same | `Rest done` | `Incline DB press · set 1 · target 30 kg each × 8–10 · last 30 kg each × 9` | same |
+| Rest done, no last time | same | `Rest done` | `Bench press · set 3 · target 100 kg × 6–8` | same |
+| Rest done, no load target | same | `Rest done` | `Lat pulldown · set 2 · target 8–10 reps (no load target)` | same |
+| Rest done, unilateral | same | `Rest done` | `Single-arm row · set 1 · target 25 kg stack × 10 per side` | same |
+| Rest done, no target (Ben's draft) | same | `Rest done` | `Cable fly · set 2 · 15 kg stack × 12` | same |
 | Work time up | `fizz.work.<sessionId>` | `Time` | `Plank: 0:45 is up. Open Fizz to log it.` | At the work-interval deadline. Never says "done" or "logged" |
 | Resting until (optional, quiet) | `fizz.resting.<sessionId>` | `Resting until 18:42` | `Next: Bench press · 100 kg × 6–8 target` | Only when the Live Activity is unavailable **and** Ben turned on `Show rest end time on the Lock Screen`. Posted when Fizz goes to the background during rest, interruption level `passive` (no sound, doesn't light the screen) |
 | Workout still running (optional, off by default) | `fizz.running.<sessionId>` | `Push A is still running` | `Last set 1 h ago. Open Fizz to finish or keep going.` | 60 min after the last set, rescheduled at every Log; cancelled on Finish, Discard, Pause |
@@ -139,13 +153,15 @@ All are local, scheduled by Fizz, interruption level `active`, sound `rest-end.c
 
 Grouping: every workout notification uses thread `fizz.workout.<sessionId>`, so the Lock Screen shows at most one stack, and at most one of each kind.
 
+The set number counts the whole block, warm-ups included, as the Live Activity and the in-app header do. `target` and `last` stay separate words (rule 6). `last` is the same working set last time, as on the Live Activity; it's added when that history has been read (the notification is replaced in place with it, normally before the phone is even locked). Known gap: the target here is the planned value, so Ben's own edit or a carried load shows on the Live Activity (`Your edit 105 kg × 6–8`) but not in this text (unchanged from before 26 Oct).
+
 Lock Screen, notifications-only (today's reality), at the deadline:
 ```
 ┌──────────────────────────────────────┐
-│ [icon] FIZZ                    now   │
+│ [icon] GYMSMARTER              now   │
 │ Rest done                            │
-│ Next: Bench press · 100 kg × 6–8     │
-│ target                               │
+│ Bench press · set 3 · target 100 kg  │
+│ × 6–8 · last 100 kg × 7              │
 └──────────────────────────────────────┘
 ```
 
@@ -284,7 +300,8 @@ Every alert is keyed `(timerId, timerVersion, kind)` (flow §4.2). These events 
 
 ### 4.2 Live Activity
 - **Tap** (banner or Dynamic Island): opens `fizz://workout` → Active workout in its persisted state (zero further taps).
-- **Long-press** the Dynamic Island: system expanded view (§2.1). No controls.
+- **Long-press** the Dynamic Island: system expanded view (§2.1), with the rest buttons during a rest.
+- **Rest buttons** (Ben, 26 Oct): `−15 s` / `+15 s` / `Skip` (§2.1). How a tap travels: an expo-widgets `LiveActivityIntent` runs in the app's process (iOS wakes or launches the app in the background); the patched intent stores the tap (`fizz.liveActivity.tap.<id>` in the app's own defaults), tells the app, and waits up to 8 s for the app to handle it. The app reads the queue on that signal, at launch and on return to the foreground, applies each tap through the normal write path, waits for the activity and the alert to be updated, then removes the entry. So a tap that wakes a suspended app updates the Lock Screen before iOS suspends it again, and a tap that launches a killed app is still handled once JavaScript starts (if within a minute).
 - **Swipe the banner away:** iOS removes it from the Lock Screen. Fizz doesn't start another one for this workout until the next app launch reconcile.
 - **Relaunch reconcile:** `getInstances()` against `getActiveSession`. Unknown or finished workouts → end with immediate dismissal. The current workout → update to its true state. A workout that is now stale (≥ 6 h, flow §4.2) → end.
 - **Gym switch, coach adjustment, set correction during rest:** the next-set lines update (Fizz is running). Rest time is unchanged (rest-state.md §4.5).
@@ -293,7 +310,7 @@ Every alert is keyed `(timerId, timerVersion, kind)` (flow §4.2). These events 
 - **Tap:** opens the active workout. If the workout has since been finished, it opens Today.
 - **Foreground arrival:** never shown as a banner (the in-app cue is the alert).
 - **On return to the foreground:** Fizz removes its delivered workout notifications from Notification Centre, since they're stale once the screen shows the truth.
-- **No actions** (no `Log`, no `+30 s`). See §8 P-L4.
+- **No actions** (no `Log`, no `+30 s`). See §8 P-L4. The rest buttons are on the Live Activity only (Ben, 26 Oct), not on notifications: notification actions would need a notification category and a second path for the same change.
 
 ### 4.4 Loud rest alerts
 - Turning the setting on from Off shows onboarding.md's priming sheet (`Loud alerts ring even in silent mode and Focus, with a full-screen alarm. Best for long rests.` [Turn on] [Cancel]), then the system authorisation prompt (usage text below). Denied → switch returns to Off with `Turned off in iOS Settings`.
@@ -308,7 +325,7 @@ Every alert is keyed `(timerId, timerVersion, kind)` (flow §4.2). These events 
 Spoken commands live in rest-state.md §4.9 ("add thirty seconds", "skip rest"). They need Fizz in the foreground with the microphone open; there is no voice control from the lock screen.
 
 ### 4.7 Undo
-Nothing on these surfaces changes data, so there is nothing to undo. Timer changes made in the app are undone in the app (rest-state.md §4.10), and the lock-screen layers follow automatically.
+Nothing on these surfaces changes workout data except the rest buttons (Ben, 26 Oct), which change only the running rest; their undo is the opposite button, as in the app. Timer changes made in the app are undone in the app (rest-state.md §4.10), and the lock-screen layers follow automatically.
 
 ---
 
@@ -316,14 +333,15 @@ Nothing on these surfaces changes data, so there is nothing to undo. Timer chang
 
 | Element | Text | Target or actual |
 |---|---|---|
-| LA Resting | `Rest` · countdown · `Until 18:42 · Bench press · Set 3 of 4 next` · `Target 100 kg × 6–8` | Target |
+| LA Resting | `Rest` · countdown · `Until 18:42 · Bench press · Set 3 of 4 next` · `Target 100 kg × 6–8` · `Last 100 kg × 7` | Target, actual |
+| LA rest buttons (Ben, 26 Oct) | `−15 s` · `+15 s` · `Skip` | — |
 | LA Resting, next exercise | `Until 18:42 · Next: Incline DB press` · `Target 30 kg each × 8–10` | Target |
 | LA Resting, coach target | `Coach target 95 kg × 8` | Target |
 | LA Ready | `Ready · Push A` · `Bench press · Set 3 of 4` · `Target 100 kg × 6–8` | Target |
 | LA Working | `Work · Plank` · countdown · `Until 18:40 · Target 0:45` · `Open Fizz to log it` | Target |
 | LA Paused | `Paused · Push A` · `Rest 1:10 left when you resume` / `Ready for set 3` | — |
 | LA compact trailing | `2:47` · `Set 3` · `1:10` | — |
-| Notification, rest | `Rest done` / `Next: Bench press · 100 kg × 6–8 target` (variants in §2.2) | Target |
+| Notification, rest | `Rest done` / `Bench press · set 3 · target 100 kg × 6–8 · last 100 kg × 7` (variants in §2.2; Ben, 26 Oct) | Target, actual |
 | Notification, work | `Time` / `Plank: 0:45 is up. Open Fizz to log it.` | — |
 | Notification, quiet | `Resting until 18:42` / `Next: Bench press · 100 kg × 6–8 target` | Target |
 | Notification, still running | `Push A is still running` / `Last set 1 h ago. Open Fizz to finish or keep going.` | — |
@@ -340,7 +358,7 @@ Nothing on these surfaces changes data, so there is nothing to undo. Timer chang
 
 All numbers in Fizz-rendered text use the design-system number format (no trailing `.0`, no-break spaces, `×`). Units come from the equipment convention (design-system §8): `kg each`, `kg stack`, `per side`.
 
-VoiceOver labels (Live Activity): Resting `Rest, 2 minutes 47 seconds left, until 18:42. Next: Bench press, set 3 of 4, target 100 kilograms, 6 to 8 reps.` Paused `Workout paused. Rest 1 minute 10 seconds left when you resume.`
+VoiceOver labels (Live Activity): Resting `Rest, 2 minutes 47 seconds left, until 18:42. Next: Bench press, set 3 of 4, target 100 kilograms, 6 to 8 reps. Last time 100 kilograms, 7 reps.` Paused `Workout paused. Rest 1 minute 10 seconds left when you resume.`
 
 ---
 
@@ -404,6 +422,13 @@ General
 24. `Test rest alert` never creates, changes or deletes workout data.
 25. VoiceOver reads the Live Activity with units in full and the word "target".
 
+Last time and rest buttons (Ben, 26 Oct)
+26. With a previous comparable workout, Resting shows `Last <value>` for the next set and the rest-done notification ends with `last <value>`; with none, neither shows anything.
+27. `+15 s` / `−15 s` on the Lock Screen move the countdown, `Until` and the pending notification by 15 s without opening the app; `Skip` turns the activity to Ready and removes the notification. No set is ever logged.
+28. A tap on a rest that has since changed (in the app, or by another tap) changes nothing; a repeated delivery changes the rest once.
+29. Force-closed mid-rest, a button tap still changes the rest (iOS launches the app in the background) or, at worst, does nothing; it never applies to a later rest.
+30. Below iOS 17, or in a build with `FIZZ_LA_BUTTONS=0`, no buttons show and everything else behaves as before.
+
 ---
 
 ## 8. Proposed changes (for Ben / the product manager)
@@ -413,7 +438,8 @@ General
 | P-L1 | Remove "Time Sensitive only if Ben enables it" from rest-state.md §4.8 and the brief's alert layers; the free route can't use it (ADR 0004) | Avoids designing a control that can't work |
 | P-L2 | One Live Activity per workout (Ready / Resting / Working / Paused), not one per rest | Shows the next set even between rests, and avoids starting and ending an activity at every Log |
 | P-L3 | Lock-screen text carries the absolute end time (`Until 18:42`) | The activity can't change at the deadline without push; the end time keeps `0:00` unambiguous. Use `staleDate` once on SDK 58 |
-| P-L4 | No lock-screen buttons (+30 s, Skip, Log) in the first milestone | Logging blind risks wrong data; timer buttons need `LiveActivityIntent`, which must first pass a free-provisioning device test. Revisit after Ben uses it |
+| P-L4 | ~~No lock-screen buttons (+30 s, Skip, Log) in the first milestone~~ **Superseded for timer buttons (Ben, 26 Oct):** `−15 s` / `+15 s` / `Skip` via `LiveActivityIntent`, which needs no entitlement (built; device test `2026-10-12-live-activity-rest.md` steps 2–8 pending) | Logging blind risks wrong data, so `Log` stays out (P-L4b) |
+| P-L4b | `Log as planned` on the Live Activity (Hevy) | **Not built (26 Oct).** Only after the rest buttons pass on the phone. It would log the shown target with an operation ID and an Undo in the app, and is the one lock-screen action that writes a set |
 | P-L5 | Alarm only while Fizz is in the background (§4.1) | Keeps "exactly one alert" without racing the in-app cue |
 | P-L6 | Optional quiet `Resting until 18:42` notification when the Live Activity is unavailable | Gives the lock screen the end time and next set on the free route today |
 | P-L7 | Optional `still running` reminder, off by default | Catches a forgotten Finish before the stale-workout path (6 h) |

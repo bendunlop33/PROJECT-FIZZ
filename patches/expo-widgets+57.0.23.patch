@@ -1,3 +1,57 @@
+diff --git a/node_modules/expo-widgets/ios/Widgets/AppIntent.swift b/node_modules/expo-widgets/ios/Widgets/AppIntent.swift
+index 972fa4f..b0d1e81 100644
+--- a/node_modules/expo-widgets/ios/Widgets/AppIntent.swift
++++ b/node_modules/expo-widgets/ios/Widgets/AppIntent.swift
+@@ -119,12 +119,49 @@ struct LiveActivityUserInteraction: LiveActivityIntent {
+   }
+ 
+   func perform() async throws -> some IntentResult {
++    // PROJECT-FIZZ patch (lock-screen-and-alerts §4.2, Ben 26 Oct 2026): queue the
++    // tap before announcing it, so a tap that wakes or cold-launches the app is
++    // still there when JS starts listening; then keep this (app) process awake
++    // briefly until JS has handled it (it removes the entry), so the rest change
++    // and the Live Activity update land before iOS suspends the app again.
++    let tapId = FizzLiveActivityTaps.enqueue(source: source, target: target)
+     WidgetsEvents.shared.sendNotification(type: .userEvent, data: [
+       "source": source as Any,
+       "target": target as Any,
+       "timestamp": Int(Date().timeIntervalSince1970 * 1000)
+     ])
++    await FizzLiveActivityTaps.waitUntilHandled(tapId, timeoutSeconds: 8)
+ 
+     return .result()
+   }
+ }
++
++// PROJECT-FIZZ patch (patches/expo-widgets+57.0.23.patch; lock-screen-and-alerts §4.2).
++// Lock Screen rest-button taps, one UserDefaults.standard entry per tap
++// ("fizz.liveActivity.tap.<id>" -> {id, source, target, atMs}), so writers
++// never race on a shared list. A LiveActivityIntent runs in the app's process,
++// so these are the app's defaults; the app's AudioCoach module lists them
++// (liveActivityTaps) and removes each once handled (ackLiveActivityTaps).
++// Nothing here changes workout data: JS turns a tap into a versioned command.
++enum FizzLiveActivityTaps {
++  static let keyPrefix = "fizz.liveActivity.tap."
++
++  static func enqueue(source: String?, target: String?) -> String {
++    let id = UUID().uuidString
++    let entry: [String: Any] = [
++      "id": id,
++      "source": source ?? "",
++      "target": target ?? "",
++      "atMs": Int(Date().timeIntervalSince1970 * 1000)
++    ]
++    UserDefaults.standard.set(entry, forKey: keyPrefix + id)
++    return id
++  }
++
++  static func waitUntilHandled(_ id: String, timeoutSeconds: Double) async {
++    let deadline = Date().addingTimeInterval(timeoutSeconds)
++    while Date() < deadline && UserDefaults.standard.object(forKey: keyPrefix + id) != nil {
++      try? await Task.sleep(nanoseconds: 100_000_000)
++    }
++  }
++}
 diff --git a/node_modules/expo-widgets/ios/WidgetsStorage.swift b/node_modules/expo-widgets/ios/WidgetsStorage.swift
 index 86f9d6c..29575ec 100644
 --- a/node_modules/expo-widgets/ios/WidgetsStorage.swift

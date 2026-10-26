@@ -241,7 +241,7 @@ describe('the loop: add exercise, log, rest, force-close, finish, summary', () =
     expect(first.ok && !first.duplicate).toBe(true);
     expect(second.ok && second.duplicate).toBe(true);
     await settle(s);
-    expect([...pending.values()].map((p) => [p.fireAtMs - clockMs, plain(p.body)])).toEqual([[180_000, 'Next: Bench press · 3–6 reps (no load target)']]);
+    expect([...pending.values()].map((p) => [p.fireAtMs - clockMs, plain(p.body)])).toEqual([[180_000, 'Bench press · set 2 · target 3–6 reps (no load target)']]);
 
     // Force-close during rest; reopen 10 s later: the remaining time is right, one alert.
     await forceClose();

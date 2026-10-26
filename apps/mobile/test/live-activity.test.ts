@@ -274,11 +274,11 @@ describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
 
   it('after a relaunch with no workout in progress, every activity is ended; later a null reconcile leaves other activities alone (the probe’s)', async () => {
     const fake = fakeActivities();
-    fake.running.set('old', { props: { state: 'resting', title: 'Rest', line1: '', line2: '', startMs: 1, endMs: 2, side: '', a11y: '' }, staleAtMs: null, updates: 0 });
+    fake.running.set('old', { props: { state: 'resting', title: 'Rest', line1: '', line2: '', line3: '', tap: '', startMs: 1, endMs: 2, side: '', a11y: '' }, staleAtMs: null, updates: 0 });
     const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
     await la.reconcile(null, ms(0));
     expect(fake.running.size).toBe(0);
-    fake.running.set('probe', { props: { state: 'resting', title: 'Rest', line1: '', line2: '', startMs: 1, endMs: 2, side: '', a11y: '' }, staleAtMs: null, updates: 0 });
+    fake.running.set('probe', { props: { state: 'resting', title: 'Rest', line1: '', line2: '', line3: '', tap: '', startMs: 1, endMs: 2, side: '', a11y: '' }, staleAtMs: null, updates: 0 });
     await la.reconcile(null, ms(1));
     expect([...fake.running.keys()]).toEqual(['probe']);
   });

@@ -6,7 +6,7 @@ import { toIso, toMs } from '@fizz/domain';
 import { idGen } from '@fizz/domain/testing';
 import type { ZonedTimestamp } from '@fizz/schemas';
 
-import { createRestAlertController, type NotifierPort, type PlannedRestAlert } from '../src/alerts/rest-alerts';
+import { createRestAlertController, type LastTimeLayer, type NotifierPort, type PlannedRestAlert } from '../src/alerts/rest-alerts';
 import type { BackupFileStore, TextFile } from '../src/backup/backup-service';
 import { createLiveActivityController, type LiveActivityPort } from '../src/live-activity/controller';
 import { createExpoDatabaseHost } from '../src/data/expo-driver';
@@ -75,6 +75,10 @@ export function createHarness(
     ledger?: TextFile;
     /** A fake Live Activity system; each launch gets a fresh controller over it, as a relaunch does. */
     liveActivity?: LiveActivityPort;
+    /** Last time for the next set (Root's `last-time-cache`); the test sets its reader. */
+    lastTime?: LastTimeLayer;
+    /** The Lock Screen rest buttons are deliverable (Root's `lockScreenButtonsAvailable`). */
+    liveActivityButtons?: boolean;
   } = {},
 ): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'fizz-harness-'));
@@ -176,7 +180,18 @@ export function createHarness(
         newId: h.ids,
         app: { name: 'GymSmarter', version: '0.1.0', build: 'test' },
         locale: 'en-GB',
-        restAlerts: (h.restAlerts = createRestAlertController(notifier, opts.liveActivity ? { liveActivity: createLiveActivityController(opts.liveActivity, { tz: () => TZ }) } : {})),
+        restAlerts: (h.restAlerts = createRestAlertController(notifier, {
+          ...(opts.liveActivity
+            ? {
+                liveActivity: createLiveActivityController(opts.liveActivity, {
+                  tz: () => TZ,
+                  ...(opts.lastTime ? { lastComparable: (st: Parameters<LastTimeLayer['lookup']>[0]) => opts.lastTime?.lookup(st) ?? (() => undefined) } : {}),
+                  ...(opts.liveActivityButtons === true ? { buttons: () => true } : {}),
+                }),
+              }
+            : {}),
+          ...(opts.lastTime ? { lastTime: opts.lastTime } : {}),
+        })),
         ...(opts.coach === undefined ? {} : { coach: opts.coach }),
         dataLedger: opts.ledger ?? {
           read: () => Promise.resolve(ledgerText),

@@ -40,7 +40,8 @@ describe('planRestAlert (lock-screen-and-alerts §2.2, §4.1)', () => {
   it('one alert at the deadline with the next set as a target', () => {
     const a = planRestAlert(logged, ms(10));
     expect(a).toMatchObject({ identifier: `fizz.rest.${state.session.id}`, title: 'Rest done', fireAtMs: ms(65) });
-    expect(plain(a?.body ?? '')).toBe('Next: Bench press · 100 kg × 6–8 target');
+    // (Ben, 26 Oct) The next set, its number, its target; `last …` only with history (below).
+    expect(plain(a?.body ?? '')).toBe('Bench press · set 2 · target 100 kg × 6–8');
   });
 
   it('nothing before a rest, while paused, after the deadline, or when finished', () => {

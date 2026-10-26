@@ -1,4 +1,4 @@
-import { formatDuration, loadText, NBSP, repRangeText, toMs, valuesText } from '@fizz/domain';
+import { blockSets, formatDuration, lastTimeOfSet, loadText, NBSP, repRangeText, toMs, valuesText, type LastComparableLookup } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 /**
@@ -24,22 +24,37 @@ export interface PlannedRestAlert {
 export const REST_ALERT_PREFIX = 'fizz.rest.';
 export const restAlertIdentifier = (sessionId: string) => `${REST_ALERT_PREFIX}${sessionId}`;
 
-/** `Next: Bench press · 100 kg × 6–8 target` and its variants (§2.2). */
-export function nextSetLine(state: SessionAggregate): string {
+/**
+ * The rest-done body (§2.2; Ben, 26 Oct): the next set, its target and last
+ * time, `Bench press · set 3 · target 100 kg × 6–8 · last 100 kg × 7`.
+ * `target` and `last` stay distinct words (rule 6); `last` only when the
+ * last comparable session has the same set (`lastTimeOfSet`), never a guess.
+ */
+export function nextSetLine(state: SessionAggregate, lastComparable?: LastComparableLookup): string {
+  return nextSetParts(state, lastComparable).body;
+}
+
+function nextSetParts(state: SessionAggregate, lastComparable?: LastComparableLookup): { body: string; last: string | null } {
   const set = state.sets.find((s) => s.id === state.session.activeSetId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
-  if (!set || !ex) return 'Next set';
+  if (!set || !ex) return { body: 'Next set', last: null };
   const eq = ex.equipmentId === null ? null : (state.session.equipmentSnapshot.find((e) => e.id === ex.equipmentId) ?? null);
   const perSide = ex.laterality === 'unilateral' ? `${NBSP}per side` : '';
+  // Numbered across the whole block (warm-ups and every gym part), as the Lock Screen and the in-app header.
+  const number = blockSets(state, ex.id).indexOf(set) + 1;
+  const parts = [number > 0 ? `${ex.exerciseName} · set ${String(number)}` : ex.exerciseName];
   const p = set.planned;
-  if (p.load !== null && p.reps !== null) return `Next: ${ex.exerciseName} · ${loadText(p.load, ex.loadConvention, eq)}${NBSP}×${NBSP}${repRangeText(p.reps)}${perSide} target`;
-  if (p.reps !== null) {
+  if (p.load !== null && p.reps !== null) parts.push(`target ${loadText(p.load, ex.loadConvention, eq)}${NBSP}×${NBSP}${repRangeText(p.reps)}${perSide}`);
+  else if (p.reps !== null) {
     const noLoad = ex.loadConvention === 'bodyweight' ? '' : ' (no load target)';
-    return `Next: ${ex.exerciseName} · ${repRangeText(p.reps)}${NBSP}reps${perSide}${noLoad}`;
+    parts.push(`target ${repRangeText(p.reps)}${NBSP}reps${perSide}${noLoad}`);
+  } else if (set.draft) {
+    // No target (an exercise added to an empty workout): the saved draft, if any, as Ben's own values (no `target`).
+    parts.push(valuesText(set.draft, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }));
   }
-  // No target (an exercise added to an empty workout): show the saved draft, if any, as a draft.
-  if (set.draft) return `Next: ${ex.exerciseName} · ${valuesText(set.draft, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq })}`;
-  return `Next: ${ex.exerciseName}`;
+  const last = lastComparable === undefined ? null : lastTimeOfSet(state, set.id, lastComparable(ex.id));
+  if (last !== null) parts.push(`last ${last.text}`);
+  return { body: parts.join(' · '), last: last?.text ?? null };
 }
 
 /**
@@ -50,7 +65,7 @@ export function nextSetLine(state: SessionAggregate): string {
  * any rest, so the two never compete; the identifier is the same, so one
  * replaces the other.
  */
-export function planRestAlert(state: SessionAggregate | null, nowMs: number): PlannedRestAlert | null {
+export function planRestAlert(state: SessionAggregate | null, nowMs: number, lastComparable?: LastComparableLookup): PlannedRestAlert | null {
   if (state === null || state.session.status !== 'active' || state.session.pause !== null) return null;
   const wi = state.workInterval;
   if (wi?.status === 'running') {
@@ -72,13 +87,15 @@ export function planRestAlert(state: SessionAggregate | null, nowMs: number): Pl
   if (t?.status !== 'running') return null;
   const fireAtMs = toMs(t.deadlineUtc);
   if (fireAtMs <= nowMs) return null;
+  const { body, last } = nextSetParts(state, lastComparable);
   return {
     identifier: restAlertIdentifier(state.session.id),
-    // The next set's text is part of the key so a correction or Undo that changes it reschedules.
-    key: `${t.id}:${String(t.version)}:${state.session.activeSetId ?? ''}:${String(state.session.version)}`,
+    // The next set's text is part of the key so a correction or Undo that changes it reschedules,
+    // and so does last time arriving after the history read (Ben, 26 Oct).
+    key: `${t.id}:${String(t.version)}:${state.session.activeSetId ?? ''}:${String(state.session.version)}${last === null ? '' : `:last ${last}`}`,
     fireAtMs,
     title: 'Rest done',
-    body: nextSetLine(state),
+    body,
   };
 }
 
@@ -116,7 +133,7 @@ export interface NotifierPort {
  * every command, on launch and on return to the foreground. A failing
  * notifier never throws into logging (rule 1): the error is kept for display.
  */
-export function createRestAlertController(notifier: NotifierPort, layers: { liveActivity?: LiveActivityLayer; spokenCues?: SpokenCueLayer } = {}) {
+export function createRestAlertController(notifier: NotifierPort, layers: { liveActivity?: LiveActivityLayer; spokenCues?: SpokenCueLayer; lastTime?: LastTimeLayer } = {}) {
   let current: ScheduledAlert | null = null;
   let lastError: string | null = null;
   let chain: Promise<void> = Promise.resolve();
@@ -137,19 +154,22 @@ export function createRestAlertController(notifier: NotifierPort, layers: { live
    */
   let issued = 0;
   let newest = 0;
+  /** The state last planned from (after the version guard), for a re-plan when last time arrives. */
+  let latest: SessionAggregate | null = null;
   function reconcile(state: SessionAggregate | null, nowMs: number, readTicket?: number): Promise<void> {
     if (readTicket !== undefined && newest > readTicket) return chain.then(() => undefined);
     newest = readTicket ?? ++issued;
     chain = chain.then(async () => {
       if (state !== null && applied !== null && applied.sessionId === state.session.id && state.session.version < applied.version) return;
       applied = state === null ? null : { sessionId: state.session.id, version: state.session.version };
+      latest = state;
       // In-app spoken cues follow the same committed state, behind the same version guard; never throws into logging.
       try {
         layers.spokenCues?.reconcile(state, nowMs);
       } catch {
         // A cue problem never affects the alert.
       }
-      const planned = planRestAlert(state, nowMs);
+      const planned = planRestAlert(state, nowMs, state === null ? undefined : layers.lastTime?.lookup(state));
       // After a relaunch nothing is known: cancel by identifier first so a stale alert can't survive.
       const known = current ?? (state ? { identifier: restAlertIdentifier(state.session.id), key: '' } : null);
       for (const a of decideAlertActions(known, planned)) {
@@ -170,7 +190,27 @@ export function createRestAlertController(notifier: NotifierPort, layers: { live
     });
     // The Lock Screen Live Activity follows the same committed state; it never blocks or fails the notification.
     const activity = layers.liveActivity?.reconcile(state, nowMs).catch(() => undefined) ?? Promise.resolve();
+    readAhead(state);
     return Promise.all([chain, activity]).then(() => undefined);
+  }
+  /**
+   * Last time for the next set (Ben, 26 Oct) is read from history once per
+   * workout row, after the first reconcile that needs it; when it arrives the
+   * newest state of that workout is reconciled again, so the notification
+   * body and the Live Activity gain `last …`.
+   */
+  function readAhead(state: SessionAggregate | null): void {
+    const lt = layers.lastTime;
+    if (lt === undefined || state === null) return;
+    lt.ensure(state)
+      .then(async (fresh) => {
+        if (!fresh) return;
+        await chain;
+        const now = latest;
+        if (now?.session.id !== state.session.id) return;
+        await reconcile(now, lt.now());
+      })
+      .catch(() => undefined);
   }
   return {
     /** After a commit, with the state it committed. */
@@ -221,6 +261,15 @@ export function createRestAlertController(notifier: NotifierPort, layers: { live
 /** In-app spoken cues (`voice/cue-controller.ts`): schedules or drops its cues from each committed state. */
 export interface SpokenCueLayer {
   reconcile(state: SessionAggregate | null, nowMs: number): void;
+}
+
+/** Last comparable sets per workout row, for `last …` (`live-activity/last-time-cache.ts`). */
+export interface LastTimeLayer {
+  /** What has been read so far for this workout (sync). */
+  lookup(state: SessionAggregate): LastComparableLookup;
+  /** Read ahead for the active set's row; true when something new arrived. Never rejects. */
+  ensure(state: SessionAggregate): Promise<boolean>;
+  now(): number;
 }
 
 /** The Live Activity layer as the alert controller drives it (`live-activity/controller.ts`). */

@@ -12,6 +12,9 @@ import { createPlanModelPort } from '../coach/plan-model-port';
 import { createRestAlertController } from '../alerts/rest-alerts';
 import { nowMs } from '../clock';
 import { createLiveActivityController } from '../live-activity/controller';
+import { createLastTimeCache } from '../live-activity/last-time-cache';
+import { lockScreenButtonsAvailable, nativeTapQueue, onLockScreenTap } from '../live-activity/tap-bridge';
+import { createLockScreenTapHandler } from '../live-activity/taps';
 import { activePainFlagged } from '../workout/pain-flagged';
 import { lazyLiveActivityPort } from '../live-activity/lazy-port';
 import { containerBackupFiles, containerTextFile, emptyTemporaryFiles, removeContainerFiles } from '../device/files';
@@ -29,11 +32,14 @@ import { ThemeProvider, TIMING, useTheme, type AvailableDirectionId } from '../t
 import { MessageScreen, PrimaryButton, SecondaryButton } from '../ui';
 import { createSpokenCueController } from '../voice/cue-controller';
 import { appleSpeaker, setVoicePrefs, voicePrefs } from '../voice/speaker';
-import { AppProvider } from './context';
+import { AppProvider, useDataChanged } from './context';
 
 const BACKUP_MANIFEST = 'backup-state.json';
 /** Delete my data's marker and done op IDs (data-import-export §3.6 Interrupted). */
 const DATA_LEDGER = 'data-ops.json';
+
+/** Last time for the next set (Ben, 26 Oct): read ahead per workout row, shared by the Live Activity and the rest-done notification. */
+const lastTime = createLastTimeCache(nowMs);
 
 /**
  * The workout's Lock Screen Live Activity (lock-screen-and-alerts §2.1): one
@@ -43,6 +49,8 @@ const DATA_LEDGER = 'data-ops.json';
 const liveActivity = createLiveActivityController(lazyLiveActivityPort, {
   tz: () => deviceTimeZone(),
   painFlagged: activePainFlagged,
+  lastComparable: (state) => lastTime.lookup(state),
+  buttons: lockScreenButtonsAvailable,
   clock: { now: nowMs, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => { clearTimeout(h as ReturnType<typeof setTimeout>); } },
 });
 
@@ -60,7 +68,7 @@ const spokenCues = createSpokenCueController({
 });
 
 /** One rest-alert controller for the app run (it remembers what is scheduled); the Live Activity and spoken cues follow it. */
-const restAlerts = createRestAlertController(expoNotifier, { liveActivity, spokenCues });
+const restAlerts = createRestAlertController(expoNotifier, { liveActivity, spokenCues, lastTime });
 
 /**
  * On return to the foreground: delivered workout alerts are stale (the screen
@@ -75,6 +83,7 @@ function useForegroundAlerts(services: AppServices) {
     const now = () => toMs(services.now().utc);
     // "Rest done. Set 2 …" reads the card's values, history included (voice review B1).
     spokenCues.setHistoryReader((state, exId) => services.workout.lastComparableSets(state, exId));
+    lastTime.setReader((state, exId) => services.workout.lastComparableSets(state, exId));
     void restAlerts.reconcileFromRead(readActive, now);
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
@@ -88,12 +97,45 @@ function useForegroundAlerts(services: AppServices) {
     return () => {
       sub.remove();
       spokenCues.setHistoryReader(null);
+      lastTime.setReader(null);
     };
   }, [services]);
 }
 
+/**
+ * Lock Screen −15 s / +15 s / Skip (Ben, 26 Oct; lock-screen-and-alerts §4.2):
+ * taps queued by the Live Activity are drained on the tap event, at launch
+ * and on return to the foreground, through the same write path as the
+ * in-app buttons. Nothing happens in builds or iOS versions without them.
+ */
+function useLockScreenTaps(services: AppServices) {
+  const changed = useDataChanged();
+  useEffect(() => {
+    const taps = createLockScreenTapHandler({
+      queue: nativeTapQueue,
+      readActive: () => services.sessions.active(),
+      dispatch: (sessionId, command) => services.sessions.dispatch(sessionId, command),
+      settle: (state) => restAlerts.reconcile(state, toMs(services.now().utc)),
+      now: () => services.now(),
+      onChanged: changed,
+    });
+    void taps.drain();
+    const off = onLockScreenTap(() => {
+      void taps.drain();
+    });
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void taps.drain();
+    });
+    return () => {
+      off();
+      sub.remove();
+    };
+  }, [services, changed]);
+}
+
 function ForegroundAlerts({ services }: { services: AppServices }) {
   useForegroundAlerts(services);
+  useLockScreenTaps(services);
   return null;
 }
 

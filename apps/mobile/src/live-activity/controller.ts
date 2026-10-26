@@ -1,4 +1,4 @@
-import { buildLockScreenContent, type LockScreenContent, type LockScreenState } from '@fizz/domain';
+import { buildLockScreenContent, lockScreenTapBase, type LastComparableLookup, type LockScreenContent, type LockScreenState } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 /**
@@ -36,18 +36,29 @@ export interface WorkoutActivityProps {
   title: string;
   line1: string;
   line2: string;
+  /** `Last 100 kg × 7` (Ben, 26 Oct); '' when none. */
+  line3: string;
+  /**
+   * Lock Screen rest buttons (Ben, 26 Oct): the target base
+   * `fizz.rest|<session>|<timer>|<version>` the widget appends `|minus15`,
+   * `|plus15` or `|skip` to; '' = no buttons (not resting, or the build or iOS
+   * can't deliver the tap: `buttons` off).
+   */
+  tap: string;
   startMs: number;
   endMs: number;
   side: string;
   a11y: string;
 }
 
-export function activityProps(c: LockScreenContent): WorkoutActivityProps {
+export function activityProps(c: LockScreenContent, buttons = false): WorkoutActivityProps {
   return {
     state: c.state,
     title: c.title,
     line1: c.line1,
     line2: c.line2,
+    line3: c.line3,
+    tap: buttons && c.rest !== null ? lockScreenTapBase(c.sessionId, c.rest) : '',
     startMs: c.countdown?.startMs ?? 0,
     endMs: c.countdown?.endMs ?? 0,
     side: c.side,
@@ -77,7 +88,18 @@ export type LiveActivityStatus = 'not_in_build' | 'idle' | 'showing' | 'failed';
 /** Re-check a little after a countdown ends, so a Resting activity left at 0:00 turns Ready while the app runs. */
 export const DEADLINE_RECHECK_MS = 500;
 
-export function createLiveActivityController(port: LiveActivityPort, opts: { tz: (state: SessionAggregate) => string; clock?: ActivityClock; painFlagged?: () => ReadonlySet<string> | undefined }) {
+export function createLiveActivityController(
+  port: LiveActivityPort,
+  opts: {
+    tz: (state: SessionAggregate) => string;
+    clock?: ActivityClock;
+    painFlagged?: () => ReadonlySet<string> | undefined;
+    /** Last time per workout row, as read so far (`last-time-cache.ts`). */
+    lastComparable?: (state: SessionAggregate) => LastComparableLookup;
+    /** The −15 s / +15 s / Skip buttons can be delivered on this phone and build (`lock-screen-taps.ts`). */
+    buttons?: () => boolean;
+  },
+) {
   let current: { sessionId: string; id: string; key: string } | null = null;
   let adopted = false;
   /** Workouts whose activity Ben swiped away this run. */
@@ -89,6 +111,14 @@ export function createLiveActivityController(port: LiveActivityPort, opts: { tz:
   let lastState: SessionAggregate | null = null;
   /** The newest workout state applied, so an older one arriving late is ignored (review ben-bugs S2). */
   let applied: { sessionId: string; version: number } | null = null;
+
+  const buttonsOn = (): boolean => {
+    try {
+      return opts.buttons?.() === true;
+    } catch {
+      return false;
+    }
+  };
 
   const note = (e: unknown) => {
     lastError = e instanceof Error ? e.message : String(e);
@@ -131,7 +161,8 @@ export function createLiveActivityController(port: LiveActivityPort, opts: { tz:
     if (state !== null && applied !== null && applied.sessionId === state.session.id && state.session.version < applied.version) return;
     applied = state === null ? null : { sessionId: state.session.id, version: state.session.version };
     lastState = state;
-    const content = state === null ? null : buildLockScreenContent(state, nowMs, opts.tz(state), { painFlagged: opts.painFlagged?.() });
+    const lookup = state === null ? undefined : opts.lastComparable?.(state);
+    const content = state === null ? null : buildLockScreenContent(state, nowMs, opts.tz(state), { painFlagged: opts.painFlagged?.(), ...(lookup === undefined ? {} : { lastComparable: lookup }) });
     const running = listIds();
 
     if (!adopted) {
@@ -159,7 +190,7 @@ export function createLiveActivityController(port: LiveActivityPort, opts: { tz:
       scheduleRecheck(null, nowMs);
       return;
     }
-    const props = activityProps(content);
+    const props = activityProps(content, buttonsOn());
     const key = `${JSON.stringify(props)}|${String(content.staleAtMs)}`;
     if (current === null) {
       try {

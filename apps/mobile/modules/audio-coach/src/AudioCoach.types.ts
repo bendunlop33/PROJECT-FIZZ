@@ -106,6 +106,14 @@ export interface AppGroupInfo extends SigningProfileInfo {
 /** Raw string from the native side; see AudioCoachModule.swift. */
 export type AlarmKitStatus = string;
 
+/** One queued Lock Screen button tap (patched expo-widgets `FizzLiveActivityTaps`); fields unchecked until parsed. */
+export interface LiveActivityTapEntry {
+  id?: unknown;
+  source?: unknown;
+  target?: unknown;
+  atMs?: unknown;
+}
+
 // A type alias (not an interface) so it satisfies expo's EventsMap index constraint.
 export type AudioCoachEvents = {
   onInterruption: (event: { type: 'began' | 'ended'; shouldResume: boolean }) => void;
