@@ -10,7 +10,9 @@ import {
   healthWriteRemoved,
   HK_WRITE_TYPE,
   linkHealthActivity,
-  linkQuestions,
+  linkChoicesFor,
+  localDateOf,
+  sameDayLinkCandidates,
   linkSuggestion,
   nearbyWorkouts,
   planHealthWrites,
@@ -27,9 +29,10 @@ import {
 } from '@fizz/domain';
 import type { HealthLinkWrite, Store } from '@fizz/persistence';
 import { healthCapability, restingHrSamplesFrom, sleepSamplesFrom, weightSamplesFrom, workoutSamplesFrom, type HealthCapability, type HealthPort, type HealthType } from '@fizz/providers';
-import { DEFAULT_HEALTH_SETTINGS, type Activity, type HealthReadWindow, type HealthSettings, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
+import type { LinkedActivityContext } from '@fizz/coach';
+import { DEFAULT_HEALTH_SETTINGS, type Activity, type HealthLink, type HealthReadWindow, type HealthSettings, type HealthWorkoutSample, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 
-import { healthScreenView, linkCandidateLine, linkedActivityView, type HealthScreenView, type HealthSwitch, type WorkoutHealthView } from './health-view';
+import { healthScreenView, linkCandidateLine, linkedActivityView, type HealthScreenView, type HealthSwitch, type LinkCandidateView, type WorkoutHealthView } from './health-view';
 
 /**
  * Apple Health (Ben, 27 Oct; ADR 0035; apple-health.md). Local only, never waits on the network (rule 1), and
@@ -283,6 +286,29 @@ export function createHealthService(deps: HealthServiceDeps) {
     }
   }
 
+  /** A finished workout as linking sees it, with the Health workouts around it (never the app's own) and the links. */
+  async function workoutContext(ownerId: string, sessionId: string): Promise<{ workout: LinkableWorkout; samples: HealthWorkoutSample[]; links: HealthLink[] } | null> {
+    const a = await deps
+      .store()
+      .repos.sessions.get(sessionId)
+      .catch(() => null);
+    if (a === null || a.session.endedAt === null) return null;
+    const workout: LinkableWorkout = { sessionId, startUtc: a.session.startedAt.utc, endUtc: a.session.endedAt.utc, tz: a.session.startedAt.tz, title: a.session.routineName ?? 'Workout' };
+    const ms = toMs(workout.startUtc);
+    const all = await repo()
+      .workoutSamples(ownerId, toIso(ms - 2 * 86_400_000), toIso(ms + 2 * 86_400_000))
+      .catch(() => []);
+    const writes = new Set((await repo().writes(ownerId).catch(() => [])).map((x) => x.healthUuid));
+    const links = await repo()
+      .links(ownerId)
+      .catch(() => []);
+    return { workout, samples: all.filter((x) => !writes.has(x.uuid) && x.externalId?.toLowerCase() !== sessionId), links };
+  }
+
+  function candidateView(x: HealthWorkoutSample, tz: string): LinkCandidateView {
+    return { healthUuid: x.uuid, ...linkCandidateLine(x, classifyHealthWorkout(x.activityType).label, tz) };
+  }
+
   async function linkableAround(ownerId: string, startUtc: string): Promise<LinkableWorkout[]> {
     const ms = toMs(startUtc);
     return repo().linkableWorkouts(ownerId, toIso(ms - 2 * 86_400_000), toIso(ms + 2 * 86_400_000));
@@ -424,26 +450,45 @@ export function createHealthService(deps: HealthServiceDeps) {
           .catch(() => null);
         return sample === null ? { kind: 'none' } : linkedActivityView(healthProvenanceOf(sample), link.version, s.readHeartRate, p.timezone);
       }
-      const a = await deps
-        .store()
-        .repos.sessions.get(sessionId)
-        .catch(() => null);
-      if (a === null || a.session.endedAt === null) return { kind: 'none' };
-      const w: LinkableWorkout = { sessionId, startUtc: a.session.startedAt.utc, endUtc: a.session.endedAt.utc, tz: a.session.startedAt.tz, title: a.session.routineName ?? 'Workout' };
-      const ms = toMs(w.startUtc);
-      const samples = await repo()
-        .workoutSamples(p.id, toIso(ms - 86_400_000), toIso(ms + 2 * 86_400_000))
-        .catch(() => []);
-      const writes = new Set((await repo().writes(p.id).catch(() => [])).map((x) => x.healthUuid));
-      const qs = linkQuestions(
-        w,
-        samples.filter((x) => !writes.has(x.uuid) && x.externalId?.toLowerCase() !== sessionId),
-        await repo()
-          .links(p.id)
-          .catch(() => []),
-      );
+      const ctx = await workoutContext(p.id, sessionId);
+      if (ctx === null) return { kind: 'none' };
+      // (Ben, 27 Oct, TrainingPeaks-style) Every unlinked Health strength or `other` workout that day: one tap links.
+      const qs = sameDayLinkCandidates(ctx.workout, ctx.samples, ctx.links);
       if (qs.length === 0) return { kind: 'none' };
-      return { kind: 'question', candidates: qs.map((x) => ({ healthUuid: x.uuid, ...linkCandidateLine(x, classifyHealthWorkout(x.activityType).label, p.timezone) })) };
+      return { kind: 'question', candidates: qs.map((x) => candidateView(x, p.timezone)) };
+    },
+
+    /** Summary `⋯ › Link activity from Health`: Health strength or `other` workouts from the day before to the day after. */
+    async linkChoices(sessionId: string): Promise<LinkCandidateView[]> {
+      const p = await owner();
+      if (p === null || (await cap()) !== 'available') return [];
+      const s = await settings(p.id);
+      if (s === null || !s.readActivities) return [];
+      const ctx = await workoutContext(p.id, sessionId);
+      return ctx === null ? [] : linkChoicesFor(ctx.workout, ctx.samples, ctx.links).map((x) => candidateView(x, p.timezone));
+    },
+
+    /** (Ben, 27 Oct, Q4) The linked watch workout as the coach sees it: HR only while its switch is on. Null: none. */
+    async coachLinked(sessionId: string): Promise<LinkedActivityContext | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const s = await settings(p.id);
+      if (s === null || !s.readActivities) return null;
+      const link = await repo()
+        .linkForWorkout(p.id, sessionId)
+        .catch(() => null);
+      const sample = link === null ? null : await repo().workoutSample(p.id, link.healthUuid).catch(() => null);
+      if (sample === null) return null;
+      const prov = healthProvenanceOf(sample);
+      return {
+        source: prov.sourceName,
+        type: prov.label,
+        minutes: Math.round((toMs(prov.endUtc) - toMs(prov.startUtc)) / 60_000),
+        avgHeartRate: s.readHeartRate ? prov.avgHeartRate : null,
+        maxHeartRate: s.readHeartRate ? prov.maxHeartRate : null,
+        activeKcal: prov.activeKcal ?? null,
+        use: "recorded by Ben's watch, via Apple Health; mention when he asks; never diagnose; never change loads from it alone",
+      };
     },
 
     /** The Health activity sheet: its facts and source, a one-tap suggestion and the `Link to a workout` list. */
@@ -461,7 +506,11 @@ export function createHealthService(deps: HealthServiceDeps) {
         .catch(() => []);
       const workouts = await linkableAround(p.id, sample.startUtc).catch(() => []);
       const s = await settings(p.id);
-      return { activity, suggestion: linkSuggestion(sample, workouts, links), nearby: nearbyWorkouts(sample, workouts, links), showHeartRate: s?.readHeartRate === true };
+      const nearby = nearbyWorkouts(sample, workouts, links);
+      const sameDay = nearby.filter((w) => localDateOf(toMs(w.startUtc), w.tz) === localDateOf(toMs(sample.startUtc), w.tz));
+      // One tap (Ben, 27 Oct): the near match, else the day's only workout.
+      const suggestion = linkSuggestion(sample, workouts, links) ?? (sameDay.length === 1 ? (sameDay[0] ?? null) : null);
+      return { activity, suggestion, nearby, showHeartRate: s?.readHeartRate === true };
     },
 
     /** Ben's `Link`: on the version he saw (null: no record yet). */

@@ -34,6 +34,7 @@ import { handOffDeleteToast } from '../../history/toast-handoff';
 import { DeletedWorkoutView } from './DeletedWorkoutView';
 import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
 import { LinkedActivityRow } from './LinkedActivityRow';
+import { HEALTH_COPY } from '../../health/health-view';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
 /**
@@ -51,6 +52,9 @@ export function SummaryScreen() {
   const insets = useSafeAreaInsets();
   const ax = useAx();
   const { sessionId, back = false, justFinished: finishedNow = false, editTimes = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
+  // (Ben, 27 Oct) `⋯ › Link activity from Health`: how many Health workouts could be linked, and the pick list.
+  const [healthChoices, setHealthChoices] = useState(0);
+  const [healthPicker, setHealthPicker] = useState(false);
   // Opened from Progress `Edit times`: the time correction shows at once, and closing it returns there (progress.md §2.3).
   const [times, setTimes] = useState(editTimes);
   const [choosePain, setChoosePain] = useState(false);
@@ -196,6 +200,8 @@ export function SummaryScreen() {
   /** `⋯`: `Save to Workouts` (from a saved workout not saved again, §A2.6) and `Delete workout` (delete-workouts §2.2). */
   const moreItems: { label: string; run: () => void; destructive?: boolean }[] = [
     ...(fromSaved && savedAs === null ? [{ label: LIBRARY_COPY_UI.saveToWorkouts, run: openSave }] : []),
+    // (Ben, 27 Oct) Link a watch workout from Apple Health by hand (the day before to the day after).
+    ...(healthChoices > 0 ? [{ label: HEALTH_COPY.linkFromHealth, run: () => { setHealthPicker(true); } }] : []),
     ...(canDelete ? [{ label: DELETE_COPY.menuItem, run: () => void deleteThis(), destructive: true }] : []),
   ];
   /** `⋯` → `Delete workout` (§2.2, DW1, DW2): the tap is the confirmation; Undo comes as a toast where Ben lands. */
@@ -359,7 +365,7 @@ export function SummaryScreen() {
               >
                 <Icon name="pencil" color="text.secondary" size={18} />
               </Pressable>
-              {(fromSaved && savedAs === null) || canDelete ? (
+              {(fromSaved && savedAs === null) || canDelete || healthChoices > 0 ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="More"
@@ -394,7 +400,14 @@ export function SummaryScreen() {
         </DelayedFade>
 
         {/* (Ben, 27 Oct; apple-health.md §2.3) The watch's actuals for this workout, or `Link to this workout?`; nothing otherwise. */}
-        <LinkedActivityRow sessionId={sessionId} />
+        <LinkedActivityRow
+          sessionId={sessionId}
+          pickerOpen={healthPicker}
+          onPickerClose={() => {
+            setHealthPicker(false);
+          }}
+          onChoices={setHealthChoices}
+        />
 
         {/* (Ben, 21 Oct; workout-builder-v3 §6.2) One tap, a weekly review fact. */}
         <FeelRow sessionId={sessionId} />

@@ -232,6 +232,8 @@ export function RecentSection({ items, onItem, onAll }: { items: readonly FeedIt
                 {it.value}
               </AppText>
             </View>
+            {/* (ADR 0035) From Apple Health, or linked to a Health workout: a small mark (the label says it in words). */}
+            {(it.kind === 'workout' && it.linkedSource !== undefined) || (it.kind === 'activity' && it.fromHealth !== undefined) ? <Icon name="heart.fill" size={12} color="text.secondary" /> : null}
             <Icon name="chevron.right" size={14} color="text.tertiary" />
           </Pressable>
         ))}

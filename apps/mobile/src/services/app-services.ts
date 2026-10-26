@@ -583,7 +583,20 @@ export function createAppServices(deps: AppServicesDeps) {
     plannedDay: (routineId, gymId) => loop.routines.planned(routineId, gymId),
   });
 
+  /** (Ben, 27 Oct; ADR 0035) Apple Health: switches, writes after Finish and edits, reads, links. Local only. */
+  const health = createHealthService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    newId: deps.newId,
+    port: deps.health?.port ?? null,
+    buildIncludesHealth: deps.health?.buildIncludesHealth ?? false,
+    workoutOpen: async () => (await sessions.active()) !== null,
+  });
+
   const coach = createCoachService({
+    // (Ben, 27 Oct, Q4) The watch workout linked to the workout in context.
+    healthLinked: (sessionId) => health.coachLinked(sessionId),
     ...(deps.checkInSettings === undefined ? {} : { checkInSettings: deps.checkInSettings }),
     // (Ben, 20 Oct) Lift targets join the training details only while the setting is on.
     training: async () => {
@@ -1118,16 +1131,6 @@ export function createAppServices(deps: AppServicesDeps) {
    */
   const workoutEdit = createWorkoutEditService({ store: () => deps.manager.store, profile: getProfile, env: builderEnv, workout: loop.workout });
 
-  /** (Ben, 27 Oct; ADR 0035) Apple Health: switches, writes after Finish and edits, reads, links. Local only. */
-  const health = createHealthService({
-    store: () => deps.manager.store,
-    profile: getProfile,
-    now: deps.now,
-    newId: deps.newId,
-    port: deps.health?.port ?? null,
-    buildIncludesHealth: deps.health?.buildIncludesHealth ?? false,
-    workoutOpen: async () => (await sessions.active()) !== null,
-  });
 
   return {
     ...loop,

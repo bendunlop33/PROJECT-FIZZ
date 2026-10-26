@@ -482,5 +482,10 @@ What the branch builds against this spec and Ben's §11 answers, and where it di
 - `Not it` is remembered per Health workout, not per pair.
 - A deleted workout's Health copy is deleted at once, not after the Undo window; Restore writes it back.
 
+**Round 2 (27 Oct, after the History merge)**
+- History and Today › Recent: Health activities show with their own title (`Strength`, `Walk`) and source (`· Garmin`, ♥); a linked Health workout shows once, as the workout, with a small ♥ `Garmin` mark (VoiceOver: `linked to Garmin activity`).
+- One-tap linking, TrainingPeaks-style (Ben: "TrainingPeaks lets you just click Pair or Link"): the Summary row offers `Link` for any unlinked Health strength or `other` workout that day (one: links at once with `Linked · Undo`; several: `N activities from Health` › short pick list `17:40 · Garmin · Strength · 55 min`), with `Not it` as a small secondary; Summary `⋯ › Link activity from Health` lists the day before to the day after; History rows of an unlinked Health strength workout on a gym day carry a `Link` chip (rows merge, Undo); the Health activity sheet's `Link to this workout?` is one tap when there's a near match or one workout that day. Auto-link stays for the clear single match.
+- Q4: the coach's per-workout context carries the linked watch workout (source, type, minutes, active kcal; avg/max HR only while `Heart rate on linked workouts` is on), labelled as data.
+
 **Not built yet**
-- Hide (and the `Hidden` list), Ben's effort word on a Health activity, `Same as your Run 12k?` / `Unpair` / `Unmerge`, `Also recorded by …` line, the strip's ♥ glyph (rows say the source in words), Library › Past workouts ♥, `Open Health`, Summary `⋯ › Link activity from Health` (the Summary asks, and any Health activity's sheet links), Progress › Training › Bodyweight chart, the coach's `link_health_activity` tool, linked HR in the coach's per-workout context (Q4), Today v2 check 6 wording.
+- Hide (and the `Hidden` list), Ben's effort word on a Health activity, `Same as your Run 12k?` / `Unpair` / `Unmerge`, `Also recorded by …` line, the week strip's ♥ glyph, `Open Health`, Progress › Training › Bodyweight chart, the coach's `link_health_activity` tool, Today v2 check 6 wording.

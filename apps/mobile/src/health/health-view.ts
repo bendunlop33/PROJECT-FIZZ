@@ -175,9 +175,17 @@ export interface LinkedActivityView {
   accessibilityLabel: string;
 }
 
+/** One Health workout that can be linked: `Strength · Garmin · 17:40–18:35`. */
+export interface LinkCandidateView {
+  healthUuid: string;
+  line: string;
+  accessibilityLabel: string;
+}
+
+/** The Summary's one-tap `Link` (Ben, 27 Oct): the day's unlinked Health strength workouts, nearest first. */
 export interface LinkQuestionView {
   kind: 'question';
-  candidates: { healthUuid: string; line: string; accessibilityLabel: string }[];
+  candidates: LinkCandidateView[];
 }
 
 export type WorkoutHealthView = LinkedActivityView | LinkQuestionView | { kind: 'none' };
@@ -212,11 +220,12 @@ export function linkedActivityView(p: HealthActivityProvenance, linkVersion: num
   };
 }
 
-/** `Strength · Garmin · 17:40–18:35`: one Health workout the Summary asks about. */
+/** `17:40 · Garmin · Strength · 55 min`: one Health workout the Summary offers to link (time · source · minutes). */
 export function linkCandidateLine(s: Pick<HealthWorkoutSample, 'activityType' | 'sourceName' | 'startUtc' | 'endUtc'>, label: string, tz: string, locale?: string): { line: string; accessibilityLabel: string } {
   const source = healthSourceText(s.sourceName);
-  const line = `${label} · ${source} · ${formatTime(toMs(s.startUtc), tz, locale)}–${formatTime(toMs(s.endUtc), tz, locale)}`;
-  return { line, accessibilityLabel: `${line}, from Apple Health` };
+  const m = Math.round((toMs(s.endUtc) - toMs(s.startUtc)) / 60_000);
+  const line = `${formatTime(toMs(s.startUtc), tz, locale)} · ${source} · ${label} · ${String(m)} min`;
+  return { line, accessibilityLabel: `${label} from ${source} at ${formatTime(toMs(s.startUtc), tz, locale)}, ${String(m)} minutes, from Apple Health` };
 }
 
 /** One row of `Link to a workout`: `Push · Tue 27 Oct 18:02`. */

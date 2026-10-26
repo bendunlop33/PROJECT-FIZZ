@@ -13,6 +13,11 @@ import {
   dedupeHealthSources,
   dismissHealthLink,
   linkQuestions,
+  linkChoicesFor,
+  mergeFeed,
+  feedActivityOf,
+  withLinkedSource,
+  sameDayLinkCandidates,
   healthActivityLine,
   healthActivityOf,
   healthLinkId,
@@ -463,5 +468,44 @@ describe('read window, resting heart rate and sleep (Q6, Q8)', () => {
     ]);
     expect(out).toEqual([{ date: '2026-10-26', value: 7 * 60, source: 'Apple Watch' }]);
     expect(sleepText(440).replaceAll(' ', ' ')).toBe('7 h 20 min');
+  });
+});
+
+describe('one-tap linking (Ben, 27 Oct)', () => {
+  const w: LinkableWorkout = { sessionId: S1, startUtc: '2026-10-27T17:00:00.000Z', endUtc: '2026-10-27T18:00:00.000Z', tz: TZ, title: 'Push' };
+  const strength = (uuid: string, start: string, end: string, type = 50) => sample({ uuid, activityType: type, startUtc: start, endUtc: end, distanceM: null });
+  it('the Summary offers the same day’s unlinked strength or other workouts, nearest first; never runs, never once dismissed', () => {
+    const a = strength(U1, '2026-10-27T07:00:00.000Z', '2026-10-27T08:00:00.000Z');
+    const b = strength(U2, '2026-10-27T19:00:00.000Z', '2026-10-27T19:30:00.000Z', 3000);
+    const run = strength(U3, '2026-10-27T17:00:00.000Z', '2026-10-27T18:00:00.000Z', 37);
+    expect(sameDayLinkCandidates(w, [a, b, run], []).map((x) => x.uuid)).toEqual([U2, U1]);
+    const dismissed = dismissHealthLink(null, { ownerId: OWNER, healthUuid: U2, sessionId: S1, opId: 'n', atUtc: '2026-10-27T20:00:00.000Z' });
+    if (dismissed.kind !== 'write') throw new Error('no');
+    expect(sameDayLinkCandidates(w, [a, b], [dismissed.next]).map((x) => x.uuid)).toEqual([U1]);
+    // `Link activity from Health` still lists it, and the day either side.
+    const yesterday = strength('a0000000-0000-4000-8000-000000000007', '2026-10-26T07:00:00.000Z', '2026-10-26T08:00:00.000Z');
+    expect(linkChoicesFor(w, [a, b, yesterday], [dismissed.next]).map((x) => x.uuid)).toEqual([U2, U1, 'a0000000-0000-4000-8000-000000000007']);
+    // A workout already linked offers nothing.
+    expect(sameDayLinkCandidates(w, [a], [link({ healthUuid: U3, id: healthLinkId(U3) })])).toEqual([]);
+  });
+});
+
+describe('History / Recent with Health (feed)', () => {
+  it('a Health activity has its own title and source; a strength one on a gym day offers Link; a linked workout carries its mark', () => {
+    const strengthA = healthActivityOf(sample({ activityType: 50, startUtc: '2026-10-27T16:55:00.000Z', endUtc: '2026-10-27T17:50:00.000Z', distanceM: null }), OWNER);
+    const runA = healthActivityOf(sample({ uuid: U2 }), OWNER);
+    if (strengthA === null || runA === null) throw new Error('none');
+    const gym = { sessionId: S1, localDate: '2026-10-27', sortMs: Date.parse('2026-10-27T17:00:00.000Z'), title: 'Push', durationMs: 3_600_000, sets: 12, source: 'manual' as const };
+    const items = mergeFeed({ workouts: [gym], activities: [feedActivityOf(strengthA), feedActivityOf(runA)] });
+    const st = items.find((i) => i.kind === 'activity' && i.activityId === U1);
+    expect(st).toMatchObject({ title: 'Strength', fromHealth: 'Garmin', linkTo: { sessionId: S1, title: 'Push' } });
+    expect(st?.value).toContain('Garmin');
+    const rn = items.find((i) => i.kind === 'activity' && i.activityId === U2);
+    expect(rn).toMatchObject({ title: 'Run', fromHealth: 'Garmin' });
+    expect(rn?.kind === 'activity' ? rn.linkTo : 'x').toBeUndefined();
+    // Linked: the workout carries the mark and offers no Link to anything else.
+    const linked = mergeFeed({ workouts: [withLinkedSource(gym, new Map([[S1, 'Garmin Connect']]))], activities: [feedActivityOf(runA)] });
+    expect(linked[0]).toMatchObject({ kind: 'workout', linkedSource: 'Garmin' });
+    expect(linked[0]?.accessibilityLabel).toContain('linked to Garmin activity');
   });
 });

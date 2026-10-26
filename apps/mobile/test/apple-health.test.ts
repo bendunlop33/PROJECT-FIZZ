@@ -265,6 +265,16 @@ describe('reading activities and linking', () => {
     expect(fake.ownWorkouts()).toHaveLength(1);
     await s.health.syncWrites();
     expect(fake.ownWorkouts()).toHaveLength(0);
+    // History and Recent: the run with its source; the linked Garmin strength once, as the workout, with its mark.
+    const feed = await s.history.feed();
+    const workoutItem = feed.items.find((i) => i.kind === 'workout' && i.sessionId === id);
+    expect(workoutItem).toMatchObject({ linkedSource: 'Garmin' });
+    expect(feed.items.filter((i) => i.kind === 'activity').map((i) => [i.key, i.kind === 'activity' ? i.fromHealth : null])).toEqual([[`a:${run}`, 'Garmin']]);
+    // The coach sees the linked workout's recorded data (Q4): HR only while its switch is on.
+    expect(await s.health.coachLinked(id)).toMatchObject({ source: 'Garmin', type: 'Strength', avgHeartRate: null, maxHeartRate: null });
+    await s.health.setSwitch('readHeartRate', true);
+    await s.health.readNow();
+    expect(await s.health.coachLinked(id)).toMatchObject({ avgHeartRate: 128, maxHeartRate: 161 });
     // The linked activity shows on the workout, not as its own item.
     const linked = await s.health.forWorkout(id);
     expect(linked).toMatchObject({ kind: 'linked', healthUuid: strength, line: expect.stringContaining('Garmin') as unknown });
@@ -272,12 +282,16 @@ describe('reading activities and linking', () => {
     const un = await s.health.unlink({ healthUuid: strength, expectedVersion: linked.linkVersion, opId: 'unlink-1' });
     expect(un.ok).toBe(true);
     expect((await s.activities.between('2026-10-20', '2026-11-03')).map((a) => a.id).sort()).toEqual([run, strength].sort());
+    // History offers the one-tap Link chip on the freed strength workout.
+    const freed = (await s.history.feed()).items.find((i) => i.kind === 'activity' && i.activityId === strength);
+    expect(freed?.kind === 'activity' ? freed.linkTo?.sessionId : null).toBe(id);
     // Unlinked: both as they were, the app's copy written back.
     await s.health.syncWrites();
     expect(fake.ownWorkouts()).toHaveLength(1);
-    // Never auto-linked again after a new read.
+    // Never auto-linked again after a new read; the Summary offers it as a one-tap Link; ⋯ lists it too.
     await s.health.readNow();
     expect((await s.health.forWorkout(id)).kind).toBe('none');
+    expect((await s.health.linkChoices(id)).map((c) => c.healthUuid)).toEqual([strength]);
     // Ben links it by hand from the activity's sheet.
     const sheet = await s.health.activity(strength);
     expect(sheet?.nearby.map((w) => w.sessionId)).toContain(id);

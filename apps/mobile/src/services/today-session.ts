@@ -1,6 +1,7 @@
 import {
   RECENT_DAYS,
   feedActivityOf,
+  withLinkedSource,
   feedWorkoutOf,
   feedWorkoutTitle,
   mergeFeed,
@@ -971,9 +972,13 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     // (Ben, 26 Oct) Today's Recent: the window's workouts (already read, stored summaries) and done activities, merged.
     const recentFrom = addDays(today, -(RECENT_DAYS - 1));
     const titleInfo = (id: string) => exercises.get(id) ?? null;
+    // (ADR 0035) Workouts with a linked Health workout carry its source (the row's ♥ mark).
+    const linked = await repos()
+      .health.linkedSources(p.id)
+      .catch(() => new Map<string, string>());
     const recent = recentFeed(
       mergeFeed({
-        workouts: newest.filter((a) => localDateOf(toMs(a.session.startedAt.utc), a.session.startedAt.tz) >= addDays(recentFrom, -1)).map((a) => feedWorkoutOf(a, { title: feedWorkoutTitle(a, titleInfo), nowMs })),
+        workouts: newest.filter((a) => localDateOf(toMs(a.session.startedAt.utc), a.session.startedAt.tz) >= addDays(recentFrom, -1)).map((a) => withLinkedSource(feedWorkoutOf(a, { title: feedWorkoutTitle(a, titleInfo), nowMs }), linked)),
         activities: actsWide.filter((a) => a.fields.date <= today).map(feedActivityOf),
       }),
       today,

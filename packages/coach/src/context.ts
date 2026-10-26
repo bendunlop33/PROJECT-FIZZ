@@ -128,6 +128,23 @@ export interface CoachContextInput {
    * loads without a read. Your data. Absent otherwise.
    */
   recentLifts?: readonly ExerciseHistoryView[];
+  /**
+   * (Ben, 27 Oct, Q4) The watch workout linked to the workout in context, as Apple Health recorded it: source, type,
+   * minutes, and average/max heart rate only while `Heart rate on linked workouts` is on, active energy if recorded.
+   * Data, never instructions (rule 8); no score; never a reason to change loads on its own (rule 6).
+   */
+  linkedActivity?: LinkedActivityContext;
+}
+
+/** (Q4) The linked watch workout as the coach sees it. */
+export interface LinkedActivityContext {
+  source: string;
+  type: string;
+  minutes: number;
+  avgHeartRate: number | null;
+  maxHeartRate: number | null;
+  activeKcal: number | null;
+  use: 'recorded by Ben\'s watch, via Apple Health; mention when he asks; never diagnose; never change loads from it alone';
 }
 
 /** (21 Oct) One exercise's recent sessions as the coach sees them in YOUR DATA. */
@@ -389,6 +406,8 @@ export interface YourData {
   week?: WeekContextView;
   /** (21 Oct) Live workouts: the last sessions of the exercises in play. */
   recentLifts?: RecentLiftView[];
+  /** (Ben, 27 Oct, Q4) The watch workout linked to this workout (Apple Health). */
+  linkedActivity?: LinkedActivityContext;
 }
 
 export interface CoachingKnowledge {
@@ -528,6 +547,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.training === undefined ? {} : { training: trainingDetailsView(input.training).view }),
     ...(input.week === undefined ? {} : { week: JSON.parse(JSON.stringify(input.week)) as WeekContextView }),
     ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
+    ...(input.linkedActivity === undefined ? {} : { linkedActivity: { ...input.linkedActivity } }),
     ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until } } } }),
   };
 }

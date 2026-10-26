@@ -18,7 +18,7 @@ import {
 
 import type { SessionAggregate } from '@fizz/schemas';
 
-import { localDateOf } from './calendar';
+import { addDays, localDateOf } from './calendar';
 import { isInHistory } from './session/deletion';
 import { NBSP } from './display';
 import { deriveId } from './stable';
@@ -386,6 +386,35 @@ export function linkQuestions(workout: LinkableWorkout, samples: readonly Health
       const near = Math.abs(ss - ws) <= ASK_WITHIN_MS || Math.abs(se - we) <= ASK_WITHIN_MS || Math.abs(ss - we) <= ASK_WITHIN_MS || Math.abs(se - ws) <= ASK_WITHIN_MS;
       return overlaps || near;
     })
+    .sort((a, b) => Math.abs(toMs(a.startUtc) - ws) - Math.abs(toMs(b.startUtc) - ws));
+}
+
+/**
+ * (Ben, 27 Oct: "TrainingPeaks lets you just click Pair or Link") The Summary's one-tap `Link`: the same local day's
+ * Health strength (or `other`) workouts with no link record (an unlinked or `Not it` one isn't offered again here;
+ * `Link activity from Health` still lists it), not the app's own, nearest in time first.
+ */
+export function sameDayLinkCandidates(workout: LinkableWorkout, samples: readonly HealthWorkoutSample[], links: readonly HealthLink[]): HealthWorkoutSample[] {
+  if (linkedSessions(links).has(workout.sessionId)) return [];
+  const recorded = new Set(links.map((l) => l.healthUuid));
+  const ws = toMs(workout.startUtc);
+  return samples
+    .filter((s) => (HK_STRENGTH_TYPES.has(s.activityType) || s.activityType === HK_OTHER_TYPE) && !recorded.has(s.uuid) && sameDay(s, workout))
+    .sort((a, b) => Math.abs(toMs(a.startUtc) - ws) - Math.abs(toMs(b.startUtc) - ws));
+}
+
+/**
+ * Summary `⋯ › Link activity from Health`: any Health strength or `other` workout from the day before to the day
+ * after, not linked to another workout (an unlinked or `Not it` one included: linking by hand is always allowed).
+ */
+export function linkChoicesFor(workout: LinkableWorkout, samples: readonly HealthWorkoutSample[], links: readonly HealthLink[]): HealthWorkoutSample[] {
+  if (linkedSessions(links).has(workout.sessionId)) return [];
+  const taken = new Set(links.filter((l) => l.status === 'linked').map((l) => l.healthUuid));
+  const ws = toMs(workout.startUtc);
+  const day = localDateOf(ws, workout.tz);
+  const near = new Set([addDays(day, -1), day, addDays(day, 1)]);
+  return samples
+    .filter((s) => (HK_STRENGTH_TYPES.has(s.activityType) || s.activityType === HK_OTHER_TYPE) && !taken.has(s.uuid) && near.has(localDateOf(toMs(s.startUtc), workout.tz)))
     .sort((a, b) => Math.abs(toMs(a.startUtc) - ws) - Math.abs(toMs(b.startUtc) - ws));
 }
 

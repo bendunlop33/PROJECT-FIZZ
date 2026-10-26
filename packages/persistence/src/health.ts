@@ -227,6 +227,17 @@ export class SqliteHealth {
     return this.db.read((q) => listDocuments(q, HEALTH_LINK_SPEC, 'owner_id = ?', [ownerId]));
   }
 
+  /** (History, Recent) Each workout with a linked Health workout that was read: that workout's source name, raw. */
+  linkedSources(ownerId: string): Promise<Map<string, string>> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ session_id: string; source: string | null }>(
+        "SELECT l.session_id AS session_id, json_extract(s.data, '$.sourceName') AS source FROM health_links l JOIN health_samples s ON s.id = l.health_uuid AND s.kind = 'workout' WHERE l.owner_id = ? AND l.status = 'linked'",
+        [ownerId],
+      );
+      return new Map(rows.map((r) => [r.session_id, r.source ?? '']));
+    });
+  }
+
   linkOf(ownerId: string, healthUuid: string): Promise<HealthLink | null> {
     return this.db.read((q) => linkIn(q, ownerId, healthUuid));
   }
