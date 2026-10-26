@@ -36,8 +36,6 @@ export type ProfileStackParams = {
   ChatGptSignInTest: undefined;
   /** Profile → Coach connection (ai-connection.md, ADR 0020 C5). */
   CoachConnection: undefined;
-  /** FitNotes import (data-import-export §2.5): intro, file pick and file errors. */
-  ImportIntro: undefined;
   /** The preview (§2.5 step 3). The draft lives in the import service until commit. */
   ImportPreview: { draftId: string };
   /** Check exercise names (§2.5 step 3a). */

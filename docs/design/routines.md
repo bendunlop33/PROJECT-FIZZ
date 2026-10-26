@@ -80,6 +80,7 @@
 - `FROM HISTORY` lists history types from `deriveSessionTypes` that don't match a saved workout (WL5), longest gap first, up to 10, then `Show all (14)`. Rows have no `⋯`. Row tap opens their overview (as the picker does).
 - `Sort` applies to `ALL WORKOUTS`: `Recent` (default) · `A–Z`.
 - No `Start` button on rows (replaces RT2): row → overview → `Start workout` is 2 taps from this list, and the check-in and gym notes are always seen first.
+- **`All workouts ›` (Ben, 26 Oct; app review finding 3).** An underlined link at the foot of the list, above `Log a past workout`, opens Past workouts ([delete-workouts.md](delete-workouts.md) §2.3): every logged workout, `Select` → `Delete (n)`, a row → Repeat, and the `Recently deleted` footer. Hidden when there are no workouts at all. It is the list's only entry since the Workout overview was retired (22 Oct).
 
 ### A2.2 `＋` menu
 

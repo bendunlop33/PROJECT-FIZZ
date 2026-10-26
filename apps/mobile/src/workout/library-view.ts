@@ -28,6 +28,9 @@ export const LIBRARY_COPY_UI = {
   cancel: 'Cancel',
   empty: 'No workouts yet.',
   emptyWorkout: 'Empty workout',
+  /** (Ben, 26 Oct; app review finding 3) Past workouts: the full list, Select → Delete, Repeat. */
+  pastWorkouts: 'All workouts ›',
+  pastWorkoutsLabel: 'All past workouts',
   inProgress: (name: string) => `${name} in progress`,
   resume: 'Resume',
   loadFailed: 'Couldn’t open your data.',
