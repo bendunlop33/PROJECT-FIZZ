@@ -20,7 +20,12 @@ Approved by Ben on 26 Oct (mock https://claude.ai/artifact/6aAkJhiq15PtUCFW7vQ4H
 
 ### 0.1 RIR replaces RPE in the UI (Ben, 26 Oct)
 
-Ben: use RIR instead of RPE app-wide for display and entry. RIR = 10 − RPE (RPE 8.5 → RIR 1.5, shown as `1.5`). Stored values don't change: targets stay as stored (`rpe`, or `rir`), logged sets keep what was logged; every place that shows effort to Ben converts at the view layer and says RIR (targets, logged values, entry, Summary, history / pop-up, Why?, coach text shown to him, Live Activity and notification text). The coach's numbers check accepts the RIR values it was given (its facts carry both forms), so a correct reply isn't hidden.
+Ben: use RIR instead of RPE app-wide for display and entry. RIR = 10 − RPE (RPE 8.5 → RIR 1.5, shown as `1.5`). The stored model doesn't change: targets stay as stored (`rpe`, or a routine's `rir`), and what Ben enters is stored in his effort scale (RPE by default: RIR 2 is saved as RPE 8), so progression, offers and history read it exactly as before. Every place that shows or takes effort converts at the view layer and says RIR:
+
+- Targets: `Target 100 kg · 6–8 reps · RIR 2`, the open row's `3–6 · RIR 1.5`, the RIR cells, `Next` on the rest screen, the Workout overview (`4 × 6–8 · RIR 2`), Why? (`Last time 100 kg × 8, 8 · RIR 2 · 8 Oct`, the rule `3–6 reps, RIR 1.5 or more`), Today's Why?.
+- Entry: the RIR cell, the after-log chips (`4+ 3 2 1 0`), Edit set (`Reps in reserve`, `Target RIR`), `⋯ › Target RIR` (`RIR 0` … `RIR 4`), the exercise pop-up's effort column in the workout, the builder and the saved-workout editor (typed and stepped in RIR, half steps), the Target RIR rows and sheets of the sets control.
+- Coach: cards shown to Ben (`· RIR 2`), offers (`RIR 0 on set 2 (target RIR 2)`), draft and guard notes, nudges, weekly review facts (`RIR 0.7 · target 2`). The model's context keeps RPE as stored (tool arguments are RPE); every turn tells it to write RIR to Ben (`EFFORT_WORDS_LINE`), and the numbers check adds each given effort's twin (RPE 6 backs RIR 4 and the other way), so a correct reply in RIR isn't hidden. A set logged from chat accepts the effort as Ben said it, RPE or RIR.
+- Not changed: the FitNotes import question still names the file's own `RPE` comments (it describes the source data); Summary, Live Activity and notification text show no effort today.
 
 ## 1. Layout
 

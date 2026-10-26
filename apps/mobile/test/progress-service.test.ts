@@ -50,7 +50,7 @@ describe('Progress home through the services', () => {
     expect(home.view.activity.stats[0]).toEqual({ value: '2', label: 'SESSIONS' });
     const chest = home.view.muscles.rows.find((r) => r.key === 'Chest');
     expect(chest).toMatchObject({ sessions: 2, sets: 3 });
-    expect(home.view.muscles.notCounted.summary).toBe('1 rated under RPE 6');
+    expect(home.view.muscles.notCounted.summary).toBe('1 rated over RIR 4');
     expect(home.unreadable).toBe(0);
     expect(home.resume).toBeNull();
 
@@ -77,7 +77,7 @@ describe('Progress home through the services', () => {
     expect(corrected.ok).toBe(true);
     const after = await normal(s);
     expect(after.view.muscles.rows.find((r) => r.key === 'Chest')?.sets).toBe(0);
-    expect(after.view.muscles.notCounted.summary).toBe('1 rated under RPE 6');
+    expect(after.view.muscles.notCounted.summary).toBe('1 rated over RIR 4');
 
     const started = await s.workout.start({ gymId, opId: 'start-open', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
     if (!started.ok) throw new Error(started.error.message);

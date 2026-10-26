@@ -1,5 +1,7 @@
 # Workout builder (build a workout from the coach)
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 > **Superseded where they differ (Ben, 20–22 Oct 2026)** by [workout-builder-v3.md](workout-builder-v3.md) (Set up → Your workout; its §7 lists what replaced what) and by the overview's retirement (CHANGELOG 2026-10-22). The load-honesty rules below (code's numbers, `Coach's note`, re-checks) still apply.
 
 > **14 Oct 2026 (review builder-v2 r4, PM decision):** every number Ben sees about a load comes from code. The coach's `basis` is shown behind `Why?` as `Coach's note` **only if it contains no digits** (and no number words): a qualitative reason such as `main lift, strength focus`. Any note with a number goes under `NOT USED` (kept for audit, never shown as fact). This replaces the r1–r3 basis rules (citable sets, arrows, past-time words), which never closed. Stored notes from older drafts go through the same rule at plan time. Also: a pain hold never makes a load harder (the easy-side bound doesn't apply under a hold); a light high-rep session doesn't re-band a lift; a set logged in another unit is cited in its own unit (`225 lb×8`); a re-checked load that falls back to an estimate keeps `est.` (§7, §8.2, §8.5).

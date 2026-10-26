@@ -272,7 +272,7 @@ export function templatePopupView(list: readonly RoutineExercise[], slotId: stri
       canMoveDown: false,
       draggable: false,
       extraActions: extra,
-      accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[t.setType]}, ${timed ? reps : `${reps.replace('–', ' to ')} reps`}, ${loadWords}${rpe === null || scale === null ? '' : `, ${scale === 'rpe' ? 'RPE' : 'RIR'} ${String(rpe)}`}${t.restOverrideS === null ? '' : `, rest after ${restText(t.restOverrideS)}`}`,
+      accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[t.setType]}, ${timed ? reps : `${reps.replace('–', ' to ')} reps`}, ${loadWords}${rpe === null || scale === null ? '' : `, RIR ${String(scale === 'rpe' ? Math.max(0, Math.round((10 - rpe) * 100) / 100) : rpe)}`}${t.restOverrideS === null ? '' : `, rest after ${restText(t.restOverrideS)}`}`,
       spokenName,
     };
   });

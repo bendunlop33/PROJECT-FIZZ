@@ -1,5 +1,7 @@
 # Flow: first milestone loop (Today → Active set → Rest → Summary)
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md) and review S1–S5: Undo is guarded on the set's own version and commit order (S1); Skip is `endRestTimer(…, 'skipped')` with no cue (S2); Finish is refused while a work timer runs (S4); end time goes into `finishWorkout(…, endedAt?)`, later edits use `updateSessionTiming` (S5). Added the `empty` phase and homes for add set / add exercise / delete set / skip exercise / discard (§3.4).
 >
 > **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions": Stop is allowed while paused and ends the interval at the pause start without resuming (§3.2, S8); pauses are stored as intervals and only those inside the start–end window are subtracted (§4.1, S9); a Left/Right log adds a pending other-side set that Undo removes (§3.2, §3.3).

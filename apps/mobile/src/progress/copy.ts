@@ -9,7 +9,7 @@
  * with the designer (review progress-A SP1).
  */
 export const HOW_COUNTED_LINES: readonly string[] = [
-  'Sets are completed working sets rated RPE 6 or harder, or not rated. Warm-ups and easier sets aren’t counted.',
+  'Sets are completed working sets rated RIR 4 or harder, or not rated. Warm-ups and easier sets aren’t counted.',
   'Body parts: a set counts 1 for the muscles an exercise mainly works and ½ for helpers. Bench press: 1 chest, ½ shoulders, ½ triceps.',
   'Push/Pull/Legs: each exercise belongs to one group, and each set counts 1 there.',
   'Sessions are workouts with at least 1 counted set for that group.',

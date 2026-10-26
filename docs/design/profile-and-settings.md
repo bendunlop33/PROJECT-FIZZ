@@ -1,5 +1,7 @@
 # Profile and settings
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 > **Revision (Ben, 26 Oct; app review finding 13, rule 10): Your data and Coaching knowledge are separate groups.** The Profile hub no longer mixes them under `Coach`. Order: Data · Gyms · Training (`Training details`, `Split`, `Targets hit`, `Check-in`) · **Your data** (`Memory`, `Pain flags`) · **Coaching knowledge** (`Playbook`) · Coach (`Coach connection`) · Voice · App · Developer. The group names are Data & backup's. `Pain flags` moved from Training to Your data; it opens the same list.
 
 > **Revision (Ben, 22–23 Oct, D7): one source for the split and workout defaults.** Training gets `Split` (no plan: `Chest · Legs · Shoulders · Back`, which drives Today's Up next; with a plan: `Set by your plan`, opening Library › Your plan) and `Workout defaults` (no plan: `60 min · Supersets on · Abs on`; with a plan: `Set by your plan`). Session length in Goals & schedule (§2.2) follows the same rule: with a plan it reads `Set by your plan`. Prototype: `prototypes/app/app-shell.html` Profile.

@@ -1,7 +1,7 @@
 import { useMemo, useRef, type ReactNode } from 'react';
 import { PanResponder, Pressable, View } from 'react-native';
 
-import { NBSP, type SetGlance } from '@fizz/domain';
+import { NBSP, type SetGlance, rirLabel } from '@fizz/domain';
 
 import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
@@ -97,7 +97,8 @@ export function ViewedSetCard({ glance, pager, onEdit, onMakeCurrent }: { glance
       </AppText>
       {glance.effort !== null && (glance.effort.rpe !== null || glance.effort.rir !== null) ? (
         <AppText variant="callout" color="text.secondary" numeric>
-          {glance.effort.rpe !== null ? `RPE ${String(glance.effort.rpe)}` : `RIR ${String(glance.effort.rir)}`}
+          {/* (Ben, 26 Oct: RIR replaces RPE in the UI) */}
+          {plain(rirLabel(glance.effort) ?? '')}
         </AppText>
       ) : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>

@@ -155,7 +155,7 @@ describe('the workout’s exercise pop-up (sessionPopupView)', () => {
       // Set 1 logged at 97.5 against 100: set 2 starts at his 97.5 (last set carries, 21 Oct).
       ['2', '6–8', 97.5, null, false, false],
     ]);
-    expect(v.rows[1]?.accessibilityLabel).toContain('RPE 9');
+    expect(v.rows[1]?.accessibilityLabel).toContain('RIR 1');
     expect(v.rows[1]?.accessibilityLabel).toContain('done');
     expect([v.canMoveUp, v.canMoveDown]).toEqual([false, false]);
   });
@@ -232,7 +232,7 @@ describe('pop-up edits as the workout’s own writes', () => {
     expect(popupCellWrite(s, b1?.id ?? '', 'kg', 5)).toEqual({ kind: 'refused', text: 'Lighter than this gym can load' });
     expect(popupCellWrite(s, b1?.id ?? '', 'rpe', 9)).toMatchObject({ kind: 'planned', patch: { targetRpe: 9 } });
     expect(popupCellWrite(s, w?.id ?? '', 'rpe', 9)).toEqual({ kind: 'refused', text: 'Warm-ups have no target effort' });
-    expect(popupCellWrite(s, b1?.id ?? '', 'rpe', 9.3)).toEqual({ kind: 'refused', text: 'RPE 1–10' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'rpe', 9.3)).toEqual({ kind: 'refused', text: 'RIR 0–9' });
     expect(popupCellWrite(s, b1?.id ?? '', 'reps', 0)).toEqual({ kind: 'refused', text: 'Reps 1–100' });
   });
 

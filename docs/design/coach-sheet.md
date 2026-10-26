@@ -1,5 +1,7 @@
 # Coach sheet (conversation, context, action cards, history)
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 > **Revision 2026-10-08 (consolidation).**
 > - **"What the coach can see" is grouped by the two data domains** (approved by Ben, relayed by the product manager; design-system §7.2): `Your data` (today's workout, history, gyms, memory, pain flags, goals, this conversation) and `Coaching knowledge` (approved playbook rules, guide excerpts, exercise catalogue), each under a `DomainLabel` (§2.4). Conversations are Your data.
 > - A general training rule stated in chat is routed to the playbook as a candidate, not saved as a memory (coach-memory.md CM9, §2.4a); the card is listed in §2.6.

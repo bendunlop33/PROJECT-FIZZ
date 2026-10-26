@@ -93,7 +93,7 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
         canMoveUp: steps.up,
         canMoveDown: steps.down,
         draggable: !done && (steps.up || steps.down),
-        accessibilityLabel: [spokenName, typeText, reps ? `${repsText} reps` : repsText, loadWords, rpe === null ? null : done ? `RPE ${trim(rpe)}` : `target RPE ${trim(rpe)}`, done ? 'done' : 'not done'].filter((x): x is string => x !== null && x !== '').join(', '),
+        accessibilityLabel: [spokenName, typeText, reps ? `${repsText} reps` : repsText, loadWords, rpe === null ? null : done ? `RIR ${trim(Math.max(0, 10 - rpe))}` : `target RIR ${trim(Math.max(0, 10 - rpe))}`, done ? 'done' : 'not done'].filter((x): x is string => x !== null && x !== '').join(', '),
         spokenName,
       };
   });
@@ -178,7 +178,7 @@ export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps'
   const ex = set === undefined ? undefined : a.exercises.find((e) => e.id === set.sessionExerciseId);
   if (set === undefined || ex === undefined || set.status === 'deleted' || set.status === 'skipped') return { kind: 'refused', text: POPUP_REFUSAL.changed };
   if (field === 'reps' && (!Number.isInteger(value) || value < 1 || value > 100)) return { kind: 'refused', text: 'Reps 1–100' };
-  if (field === 'rpe' && (value < 1 || value > 10 || Math.round(value * 2) !== value * 2)) return { kind: 'refused', text: 'RPE 1–10' };
+  if (field === 'rpe' && (value < 1 || value > 10 || Math.round(value * 2) !== value * 2)) return { kind: 'refused', text: 'RIR 0–9' };
   if (field === 'kg' && (value < 0 || ex.loadConvention === 'bodyweight')) return { kind: 'refused', text: POPUP_REFUSAL.notLoadable };
   if (set.status === 'completed') {
     const load = set.actual?.load ?? null;

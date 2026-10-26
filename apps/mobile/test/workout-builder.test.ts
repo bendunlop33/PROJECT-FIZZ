@@ -140,7 +140,7 @@ describe('a draft from a fake model response (WB2, WB4, WB7–WB9)', () => {
     expect(p.coachDraft).toMatchObject({ id: draftId, leftOut: 0, request: 'build me a 45-minute push session for this gym', fitMinutes: 45 });
     // `@ RPE n` on the detail line; the superset kept.
     const bench = p.view.rows.find((r) => r.name === 'Bench press');
-    expect(bench?.detail.replaceAll(' ', ' ')).toMatch(/^4 × 6–8 @ RPE 8/);
+    expect(bench?.detail.replaceAll(' ', ' ')).toMatch(/^4 × 6–8 · RIR 2/);
     expect(p.view.groups.some((g) => g.kind === 'superset')).toBe(true);
     // The requested length is the page's fit (BD11): TIME · FIT 45.
     expect(p.view.fit).toMatchObject({ minutes: 45 });
@@ -226,7 +226,8 @@ function matchesSession(row: OverviewRow, agg: SessionAggregate): void {
   expect(detail.startsWith(`${String(working.length)} × `)).toBe(true);
   expect(row.load.value).toBe(loadCell(first?.planned.load ?? null, ex.loadConvention, null, false).value);
   if (first?.planned.reps) expect(detail).toContain(first.planned.reps.min === first.planned.reps.max ? String(first.planned.reps.min) : `${String(first.planned.reps.min)}–${String(first.planned.reps.max)}`);
-  if (first?.planned.rpe != null) expect(detail).toContain(`@ RPE ${String(first.planned.rpe)}`);
+  // (Ben, 26 Oct) The target reads as RIR (10 − RPE).
+  if (first?.planned.rpe != null) expect(detail).toContain(`· RIR ${String(Math.round((10 - first.planned.rpe) * 100) / 100)}`);
 }
 
 describe('pain, gym and checks (WB10, WB11, WB13)', () => {
@@ -948,8 +949,8 @@ describe('F21: the same exercise twice in a coach workout (Ben, 13 Oct)', () => 
     if (early === undefined || late === undefined) throw new Error('no laterals');
     // Each slot's load from Ben's own history (10 kg each), not blank.
     expect([early.load.value, late.load.value]).toEqual(['10', '10']);
-    expect(early.detail.replaceAll(' ', ' ')).toMatch(/^2 × 15–20 @ RPE 6/);
-    expect(late.detail.replaceAll(' ', ' ')).toMatch(/^3 × 10–12 @ RPE 9/);
+    expect(early.detail.replaceAll(' ', ' ')).toMatch(/^2 × 15–20 · RIR 4/);
+    expect(late.detail.replaceAll(' ', ' ')).toMatch(/^3 × 10–12 · RIR 1/);
 
     // Overview edits act on one slot only.
     const sets = await s.overview.edit({ target: { kind: 'coach_draft', draftId }, gymId, expectedDraftVersion: null, opId: 'twice-sets', edit: { kind: 'sets', slotKey: late.slotKey, workingSets: 4 } });

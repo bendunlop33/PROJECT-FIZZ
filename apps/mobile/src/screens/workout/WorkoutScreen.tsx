@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, canRemoveExercise, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
+import { canDropRound, canRemoveExercise, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -116,7 +116,6 @@ interface ToastState {
   onSecondary?: () => void;
 }
 
-const EFFORT_RPE = [6, 7, 8, 9, 10] as const;
 const EFFORT_RIR = [4, 3, 2, 1, 0] as const;
 
 /** How long after the number pad hides the bottom chrome comes back: long enough for a move to another cell (23 Oct). */
@@ -870,7 +869,7 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (pendingRirTarget === null || !focus) return;
     setPendingRir(null);
-    setValues({ ...focus.draft, rir: pendingRirTarget.rir });
+    setValues({ ...focus.draft, ...effortPatch(pendingRirTarget.rir) });
   }, [pendingRirTarget]);
 
   /** `Last …`: copies last time's values into the open row (its effort is never copied). */
@@ -1495,7 +1494,7 @@ export function WorkoutScreen() {
     const set = loaded.aggregate.sets.find((x) => x.id === setId);
     if (set === undefined || set.setType === 'warmup' || set.status === 'deleted' || set.status === 'skipped') return;
     const done = set.status === 'completed';
-    const current = done ? (set.actual === null ? null : effortRir(set.actual)) : focus?.setId === setId ? focus.draft.rir : (set.draft?.rir ?? null);
+    const current = done ? (set.actual === null ? null : effortRir(set.actual)) : focus?.setId === setId ? effortRir(focus.draft) : set.draft ? effortRir(set.draft) : null;
     const stepName = setStepName(loaded.aggregate, setId) ?? 'Set';
     const menu = rirMenu(stepName, current);
     ActionSheetIOS.showActionSheetWithOptions({ title: menu.title, options: menu.options, cancelButtonIndex: menu.cancelButtonIndex }, (i) => {
@@ -1509,9 +1508,15 @@ export function WorkoutScreen() {
     });
   }
 
+  /** (Ben, 26 Oct) An RIR as stored: in Ben's effort scale, RPE (10 − RIR) by default, so progression reads it as before. */
+  function effortPatch(rir: number | null): { rpe: number | null; rir: number | null } {
+    if (loaded.effortScale === 'rir') return { rir, rpe: null };
+    return { rpe: rir === null ? null : rpeOfRir(rir), rir: null };
+  }
+
   async function correctRir(setId: string, expectedSetVersion: number, rir: number | null, stepName: string) {
     const opId = newUuid();
-    const r = await services.workout.correctSet({ sessionId: session.id, setId, expectedSetVersion, patch: { rir, rpe: null }, opId });
+    const r = await services.workout.correctSet({ sessionId: session.id, setId, expectedSetVersion, patch: effortPatch(rir), opId });
     changed();
     if (!r.ok) {
       showToast({ icon: 'info.circle', text: r.message });
@@ -1623,7 +1628,7 @@ export function WorkoutScreen() {
   /** Ben's own target RPE (CHANGELOG 2026-10-11): a value, then this set, this exercise or today. Saved on the workout (versioned). */
   function pickTargetRpe(f: Pick<FocusView, 'targetRpe' | 'setId' | 'sessionExerciseId'>) {
     const values = targetRpeMenu(f.targetRpe);
-    ActionSheetIOS.showActionSheetWithOptions({ title: 'Target RPE', options: values.options, cancelButtonIndex: values.cancelButtonIndex }, (i) => {
+    ActionSheetIOS.showActionSheetWithOptions({ title: 'Target RIR', options: values.options, cancelButtonIndex: values.cancelButtonIndex }, (i) => {
       const rpe = values.valueAt(i);
       if (rpe === undefined) return;
       const scopes = targetRpeScopeMenu(f.setId, f.sessionExerciseId);
@@ -1913,12 +1918,12 @@ export function WorkoutScreen() {
   async function effort(value: number) {
     const js = view?.justSaved;
     if (!js) return;
+    // (Ben, 26 Oct) `value` is RIR (the chips read RIR); stored in his scale: RPE = 10 − RIR by default.
     const scale = loaded.effortScale;
-    const current = scale === 'rir' ? js.rir : js.rpe;
-    const next = current === value ? null : value;
+    const next = effortRir(js) === value ? null : value;
     haptic('step');
     // Changing effort never touches rest (invariant 5).
-    const r = await run({ type: 'correct_set', at: services.now(), opId: newUuid(), setId: js.setId, expectedSetVersion: js.setVersion, patch: scale === 'rir' ? { rir: next } : { rpe: next } });
+    const r = await run({ type: 'correct_set', at: services.now(), opId: newUuid(), setId: js.setId, expectedSetVersion: js.setVersion, patch: scale === 'rir' ? { rir: next, rpe: null } : { rpe: next === null ? null : rpeOfRir(next), rir: null } });
     if (!r.ok) showToast({ icon: 'info.circle', text: 'That set changed. Tap it to edit.' });
     else coach.afterLog(r.aggregate, js.setId);
   }
@@ -2020,17 +2025,18 @@ export function WorkoutScreen() {
   const restored = focus !== null && focus.draftSource === 'draft' && restoredDraft === focus.setId;
   const copied = focus !== null && focus.draftSource === 'copied' && focus.previous ? `Copied from ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}` : null;
   const lastExercise = view.exercises.at(-1) ?? null;
-  const effortScale = loaded.effortScale;
+  // (Ben, 26 Oct: RIR replaces RPE in the UI) The chips always read as RIR; `effort` stores in Ben's scale (RPE by default).
+  const effortScale = loaded.effortScale === 'off' ? 'off' : 'rir';
 
   const effortChips = (
     <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-      {(effortScale === 'rir' ? EFFORT_RIR : EFFORT_RPE).map((n) => (
+      {EFFORT_RIR.map((n) => (
         <Chip
           key={n}
           grow
-          label={effortScale === 'rir' && n === 4 ? '4+' : String(n)}
-          accessibilityLabel={effortScale === 'rir' ? `${String(n)} reps in reserve` : `RPE ${String(n)}`}
-          selected={(effortScale === 'rir' ? view.justSaved?.rir : view.justSaved?.rpe) === n}
+          label={n === 4 ? '4+' : String(n)}
+          accessibilityLabel={`${String(n)} reps in reserve`}
+          selected={view.justSaved ? effortRir(view.justSaved) === n : false}
           onPress={() => void effort(n)}
         />
       ))}
@@ -2040,7 +2046,7 @@ export function WorkoutScreen() {
     view.justSaved && effortScale !== 'off' ? (
       <View style={{ gap: theme.space['3'] }}>
         <EffortHeading scale={effortScale}>
-          <Eyebrow>{effortScale === 'rir' ? 'Last set · Reps in reserve' : 'Last set · Effort'}</Eyebrow>
+          <Eyebrow>Last set · Reps in reserve</Eyebrow>
         </EffortHeading>
         {effortChips}
       </View>
@@ -2112,7 +2118,7 @@ export function WorkoutScreen() {
     restSets.last !== null && view.justSaved?.setId === restSets.last.setId && effortScale !== 'off' ? (
       <View style={{ gap: theme.space['2'] }}>
         <EffortHeading scale={effortScale}>
-          <Eyebrow>{effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}</Eyebrow>
+          <Eyebrow>Reps in reserve</Eyebrow>
         </EffortHeading>
         {effortChips}
       </View>
@@ -2667,7 +2673,7 @@ export function WorkoutScreen() {
           <View style={{ gap: theme.space['2'] }}>
             <EffortHeading scale={effortScale}>
               <AppText variant="label" color="text.tertiary" style={{ flexShrink: 1 }}>
-                {`${afterSetSaved.exerciseName !== focus?.exerciseName ? `${afterSetSaved.exerciseName.toUpperCase()} · ` : ''}${afterSetSaved.stepName.toUpperCase()} ${effortScale === 'rir' ? 'REPS IN RESERVE' : 'EFFORT'}`}
+                {`${afterSetSaved.exerciseName !== focus?.exerciseName ? `${afterSetSaved.exerciseName.toUpperCase()} · ` : ''}${afterSetSaved.stepName.toUpperCase()} REPS IN RESERVE`}
               </AppText>
             </EffortHeading>
             {effortChips}

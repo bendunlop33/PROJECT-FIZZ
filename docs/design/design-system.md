@@ -1,5 +1,7 @@
 # Design system
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 > **Revision 2026-10-08.** Added `L` / `R` side badges for unilateral sets and noted that deleted sets aren't shown (§7), per [ADR 0003](../decisions/0003-domain-review-decisions.md). No token values changed.
 >
 > **Revision 2026-10-08 (coach-led progression, v0.4).** For [ADR 0006](../decisions/0006-coach-led-progression.md) and [coach-adjustments.md](coach-adjustments.md): new timing tokens `timing.valueChangeGuard` and `timing.coachTimeout` (§6); target source styles and the `TargetSourceTag` (§7); `ChangeReviewCard` scope narrowed to swaps, gym changes and summary proposals (§9.11); new components `AdjustControl` (§9.13), `CoachOfferLine` (§9.14), `CoachAdjustmentBanner` (§9.15) and `CoachTargetProposal` (§9.16). No colour values added: coach UI uses existing tokens, so the one-accent rule holds.

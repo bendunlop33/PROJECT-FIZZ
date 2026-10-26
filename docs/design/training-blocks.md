@@ -1,5 +1,7 @@
 # Training blocks (light)
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 Status: **Approved by Ben, 21 Oct 2026** (answers in §8). Backlog H4. **§1–§3 are for Ben; §4–§8 are for the developer.**
 
 > **Revision (Ben, 22–23 Oct): what Ben's D1–D5 and D9 change here.** Prototype: `prototypes/training-blocks.html` (Today with a plan, Progress with a plan, block review).

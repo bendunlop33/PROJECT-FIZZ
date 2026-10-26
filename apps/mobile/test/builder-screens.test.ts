@@ -265,7 +265,7 @@ describe('Exercise pop-up and keyboard (§2.4, §2.7)', () => {
     // Room for more (at most 6 warm-ups, WU4's longest ladder; was 4).
     expect(p?.canAddWarmup).toBe(true);
     expect(p?.canSupersetNext).toBe(false);
-    expect(p?.rows[4]?.accessibilityLabel).toBe('Set 1, Top set, 6 reps, 100 kilograms, RPE 8');
+    expect(p?.rows[4]?.accessibilityLabel).toBe('Set 1, Top set, 6 reps, 100 kilograms, RIR 2');
     // Each cell says whose it is (`Warm-up 2, reps`, `Set 1, reps`; N6).
     expect(p?.rows.map((r) => r.spokenName)).toEqual(['Warm-up 1', 'Warm-up 2', 'Warm-up 3', 'Warm-up 4', 'Set 1', 'Set 2', 'Set 3', 'Set 4']);
     expect(p?.rests.every((r) => r.canMinus && r.canPlus)).toBe(true);
@@ -417,7 +417,8 @@ describe('source checks', () => {
     expect(parts).toMatch(/container\s*\?\s*\{ accessible: false \}/);
     expect(sheets).toMatch(/<SwipeRow[\s\S]{0,120}container/);
     expect(sheets).toContain('`${r.spokenName}, reps`');
-    expect(sheets).toContain("`${r.spokenName}, ${r.done ? (view.effortHeader ?? 'RPE') : `target ${view.effortHeader ?? 'RPE'}`}`");
+    // (Ben, 26 Oct) The effort column reads RIR whatever the view holds.
+    expect(sheets).toContain("cell(r, 'rpe', effortCellText(view, r.rpe), `${r.spokenName}, ${r.done ? 'reps in reserve' : 'target reps in reserve'}`)");
     expect(sheets).toMatch(/accessibilityActions=\{actions\}/);
   });
   it('edits run one at a time on the latest snapshot; a held stepper keeps adding (review S4, S5)', () => {

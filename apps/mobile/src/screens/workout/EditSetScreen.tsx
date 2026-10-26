@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 
-import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, setStepName, toMs } from '@fizz/domain';
+import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, setStepName, toMs, effortRir, rpeOfRir } from '@fizz/domain';
 import type { SetExclusion, SetType, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -326,22 +326,24 @@ export function EditSetScreen() {
           </View>
         ) : null}
         {effortScale !== 'off' ? (
+          // (Ben, 26 Oct: RIR replaces RPE in the UI) The chips read RIR; stored in his scale (RPE = 10 − RIR by default).
           <View style={{ gap: theme.space['1'] }}>
-            <EffortHeading scale={effortScale}>
+            <EffortHeading scale="rir">
               <AppText variant="label" color="text.secondary">
-                {effortScale === 'rir' ? 'Reps in reserve' : 'Effort (RPE)'}
+                Reps in reserve
               </AppText>
             </EffortHeading>
             <ChipRow>
-              {(effortScale === 'rir' ? [4, 3, 2, 1, 0] : [6, 7, 8, 9, 10]).map((n) => {
-                const selected = (effortScale === 'rir' ? current.rir : current.rpe) === n;
+              {[4, 3, 2, 1, 0].map((n) => {
+                const selected = effortRir(current) === n;
+                const next = selected ? null : n;
                 return (
                   <Chip
                     key={n}
-                    label={effortScale === 'rir' && n === 4 ? '4+' : String(n)}
+                    label={n === 4 ? '4+' : String(n)}
                     selected={selected}
                     onPress={() => {
-                      setValues(effortScale === 'rir' ? { ...current, rir: selected ? null : n } : { ...current, rpe: selected ? null : n });
+                      setValues(effortScale === 'rir' ? { ...current, rir: next, rpe: null } : { ...current, rpe: next === null ? null : rpeOfRir(next), rir: null });
                     }}
                   />
                 );
@@ -352,7 +354,7 @@ export function EditSetScreen() {
         {view.targetRpe ? (
           <View style={{ gap: theme.space['1'] }}>
             <AppText variant="label" color="text.secondary">
-              Target RPE
+              Target RIR
             </AppText>
             <ChipRow>
               {targetRpeChips(view.targetRpe).map((c) => (

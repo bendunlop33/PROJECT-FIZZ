@@ -1,5 +1,7 @@
 # Active workout (Table view, default; Focus card in ⋯)
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md): Finish refused while a work timer runs (§4.8, S4); end time passed to `finishWorkout(…, endedAt)` (S5); Undo guarded on the set's version and commit order (S1); new empty-workout state (§2.10); homes and copy for add set, add exercise, delete set, skip exercise and discard (§4.4, §4.9); per-side entry for unilateral exercises (§2.9); dropped planned load (`target_dropped`) on the set card (§2.11).
 >
 > **Revision 2026-10-08 (re-review).** Aligned with ADR 0003 "Re-review decisions": a Left/Right log makes the domain add a pending other-side set (`pairedWithSetId`) that becomes next and accepts only its own side; `Log right side ›` just scrolls to it, and Undo removes it (§2.9, §4.9). Progression now evaluates sides (§2.9). Stop works while paused (§4.8, S8). `no_feasible_load` shows `no load target` with `Fix the equipment profile`, never bodyweight (§2.11, §5).

@@ -153,7 +153,7 @@ describe('the round page source (Ben, 26 Oct)', () => {
     expect(screen).toContain("return [{ label: 'Reps in reserve', run: () => { enterRir(setId); } }];");
     expect(screen).toContain('onRir={barRirSetId === null ? null : () => { enterRir(barRirSetId); }}');
     // A done set's RIR is a versioned correction with Undo (rule 2).
-    expect(screen).toContain('patch: { rir, rpe: null }');
+    expect(screen).toContain('patch: effortPatch(rir)');
   });
 
   it('PREVIOUS copies into a set not done yet (never a done one), on the same path as before', () => {

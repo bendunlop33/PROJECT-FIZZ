@@ -82,30 +82,30 @@ describe('exercise ⋯ menu', () => {
 describe('Edit set', () => {
   it('sits above Target RPE and Add set when the exercise has a set not done yet; the rows below keep their actions', () => {
     const m = exerciseMenu(true, false, { canEditSet: true, hasTargetRpe: true });
-    expect(m.options).toEqual(['How to', 'Edit set', 'Target RPE', 'Add set', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options).toEqual(['How to', 'Edit set', 'Target RIR', 'Add set', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
     expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'edit_set', 'target_rpe', 'add_set', 'notes', 'add_exercise', 'delete_set', 'skip_exercise', null]);
     expect(exerciseMenu(false).options).not.toContain('Edit set');
   });
 });
 
 /** CHANGELOG 2026-10-11 (b): Ben overrides the target RPE for a set, an exercise or today. */
-describe('Target RPE', () => {
+describe('Target RIR', () => {
   it('sits above Add set when the set carries a target; the rows below keep their actions', () => {
     const m = exerciseMenu(true, 'rule', { hasTargetRpe: true });
-    expect(m.options).toEqual(['How to', 'Undo change', 'Target RPE', 'Add set', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options).toEqual(['How to', 'Undo change', 'Target RIR', 'Add set', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
     expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'undo_coach', 'target_rpe', 'add_set', 'notes', 'add_exercise', 'delete_set', 'skip_exercise', null]);
-    expect(exerciseMenu(false, false, { hasTargetRpe: false }).options).not.toContain('Target RPE');
+    expect(exerciseMenu(false, false, { hasTargetRpe: false }).options).not.toContain('Target RIR');
   });
 
   it('with a swap and a target RPE: Undo swap, then Target RPE, then Add set and Swap exercise; Remove last before Cancel', () => {
     const m = exerciseMenu(false, true, { canUndoSwap: true, hasTargetRpe: true, canSwap: true, canRemove: true });
-    expect(m.options).toEqual(['Undo coach change', 'Undo swap', 'Target RPE', 'Add set', 'Swap exercise', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Remove exercise', 'Cancel']);
+    expect(m.options).toEqual(['Undo coach change', 'Undo swap', 'Target RIR', 'Add set', 'Swap exercise', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Remove exercise', 'Cancel']);
     expect(m.destructiveButtonIndex).toEqual([7, 8, 9]);
   });
 
-  it('values 6–10 in half steps, the current one ticked; Default only when Ben set his own', () => {
+  it('RIR 0–4 in half steps (RPE 10–6), the current one ticked; Default only when Ben set his own', () => {
     const rule = targetRpeMenu({ rpe: 8.5, source: 'rule' });
-    expect(rule.options).toEqual(['RPE 6', 'RPE 6.5', 'RPE 7', 'RPE 7.5', 'RPE 8', 'RPE 8.5 ✓', 'RPE 9', 'RPE 9.5', 'RPE 10', 'Cancel']);
+    expect(rule.options).toEqual(['RIR 0', 'RIR 0.5', 'RIR 1', 'RIR 1.5 ✓', 'RIR 2', 'RIR 2.5', 'RIR 3', 'RIR 3.5', 'RIR 4', 'Cancel']);
     expect(rule.valueAt(4)).toBe(8);
     expect(rule.valueAt(rule.cancelButtonIndex)).toBeUndefined();
     expect(rule.valueAt(-1)).toBeUndefined();
@@ -117,7 +117,8 @@ describe('Target RPE', () => {
   it('Edit set chips match the sheet: the target in force selected; Default only when Ben set his own (review r2 N3)', () => {
     expect(targetRpeChips(null)).toEqual([]);
     const rule = targetRpeChips({ target: { rpe: 8.5, source: 'rule' }, override: null });
-    expect(rule.map((c) => c.label)).toEqual(['6', '6.5', '7', '7.5', '8', '8.5', '9', '9.5', '10']);
+    // (Ben, 26 Oct) Labelled as RIR, hardest first; the values stay RPE.
+    expect(rule.map((c) => c.label)).toEqual(['0', '0.5', '1', '1.5', '2', '2.5', '3', '3.5', '4']);
     expect(rule.filter((c) => c.selected).map((c) => c.value)).toEqual([8.5]);
     const ben = targetRpeChips({ target: { rpe: 10, source: 'ben' }, override: 10 });
     expect(ben.at(-1)).toEqual({ key: 'default', label: 'Default', value: null, selected: false });

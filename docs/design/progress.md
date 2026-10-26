@@ -1,5 +1,7 @@
 # Progress
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 Status: **v1.0, 11 Oct 2026.** Replaces v0.1 (8–9 Oct). Brief §1 (Progress tab) and §12 "Page 6: Progress". Tokens and components: [design-system.md](design-system.md) (chart aliases §2.1, chart sizes §4.1, `TrendChart` §9.23, `StatStrip` §9.65, new Progress components §9.69–9.73). Research: [competitor-analytics.md](../research/competitor-analytics.md). Mockup: [mockups/progress.html](mockups/progress.html) (Direction D dark, 390 × 844).
 
 > **Build note, 12 Oct 2026 (Ben: "something is wrong with the 30 and 60 day overviews"; "flexibility to select time period"). Designer to confirm.**

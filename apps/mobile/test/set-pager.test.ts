@@ -101,7 +101,7 @@ describe('screens wire it (source checks; swipe feel and layout need a real iPho
   it('rest shows Last set and Next under the timer, in Focus and in the full rest view', () => {
     expect(screen.match(/\{restBlocks\}/g)?.length).toBe(2);
     expect(pager).toContain('<Eyebrow>Last set</Eyebrow>');
-    expect(screen).toContain("'Last set · Effort'");
+    expect(screen).toContain('<Eyebrow>Last set · Reps in reserve</Eyebrow>');
   });
   it('the pager has 52 pt ‹ › buttons (design pass) and a Table button; Log still logs the current set', () => {
     expect(pager).toMatch(/width: 52, height: 52/);
