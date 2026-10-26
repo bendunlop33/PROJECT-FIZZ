@@ -197,7 +197,7 @@ export function mixCoachReason(pick: MixPick | null): string | null {
 }
 
 /** `notApplied`: the write failed (not out of date). */
-export const EDIT_ASK_COPY = { noAnswer: 'No answer. Try again.', notApplied: 'Not applied' } as const;
+export const EDIT_ASK_COPY = { noAnswer: 'No answer. Try again.', notApplied: 'Not applied', unreached: 'Couldn’t reach the coach', retry: 'Retry' } as const;
 
 /** What Your workout does with a reply to its bar (§2.6). */
 export type EditAskView =
@@ -222,7 +222,9 @@ export function editAskView(r: EditAsk): EditAskView {
       return text === null || text.trim() === '' ? { kind: 'none' } : { kind: 'reply', text };
     }
     case 'unavailable':
-      return r.status === 'offline' || r.status === 'not_connected' ? { kind: 'reach', reach: r.status } : { kind: 'toast', text: EDIT_ASK_COPY.noAnswer };
+      if (r.status === 'offline' || r.status === 'not_connected') return { kind: 'reach', reach: r.status };
+      // (Ben, 26 Oct) No answer in time while connected: never `Offline` (rule 1).
+      return { kind: 'toast', text: r.timeout === true ? EDIT_ASK_COPY.unreached : EDIT_ASK_COPY.noAnswer };
     case 'gone':
       return { kind: 'gone' };
   }

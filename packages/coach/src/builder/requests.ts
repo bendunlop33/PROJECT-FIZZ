@@ -299,9 +299,15 @@ export function buildWeeklyRequest(text: string, model: string): ModelRequest {
 
 export type BuilderToolAnswer<K extends BuilderCoachToolName> = { ok: true; args: BuilderCoachToolArgs[K] } | { ok: false; error: ModelErrorKind | 'invalid_args' | 'no_answer' };
 
-/** Send a builder request and parse its one call. Never throws for a model failure. */
+/**
+ * Send a builder request and parse its one call. Never throws for a model failure. (Ben, 26 Oct: `Offline` on wifi)
+ * A transient failure before any answer (a dropped connection, a 5xx: the port marks it) is tried once more, as a
+ * coach turn's step is, so a stale connection on the first call after a while isn't reported as offline.
+ */
 export async function requestBuilderTool<K extends BuilderCoachToolName>(port: CoachModelPort, req: ModelRequest, tool: K, opts: { signal?: AbortSignal; timing?: CoachTiming } = {}): Promise<BuilderToolAnswer<K>> {
-  const out = await runModelStep(port, req, opts.timing ?? DEFAULT_COACH_TIMING, opts.signal);
+  const timing = opts.timing ?? DEFAULT_COACH_TIMING;
+  let out = await runModelStep(port, req, timing, opts.signal);
+  if (out.kind === 'error' && out.transient === true && opts.signal?.aborted !== true) out = await runModelStep(port, req, timing, opts.signal);
   if (out.kind === 'error') return { ok: false, error: out.error };
   if (out.kind !== 'call' || out.name !== tool) return { ok: false, error: 'no_answer' };
   let raw: unknown;

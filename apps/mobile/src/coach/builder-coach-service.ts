@@ -214,8 +214,11 @@ export type EditAsk =
   | { kind: 'proposal'; proposal: BuilderProposal; status: 'ok' }
   /** The coach answered (or nothing it asked for could be done: `notes` says why). */
   | { kind: 'reply'; text: string | null; notes: string[]; status: 'ok' }
-  /** Offline / not connected / the call failed: the bar shows the word; manual edits all still work. */
-  | { kind: 'unavailable'; status: CoachCallStatus }
+  /**
+   * Offline / not connected / the call failed: the bar shows the word; manual edits all still work. `timeout`: the
+   * call got no answer in time (`Couldn’t reach the coach`, Retry), not the phone being offline.
+   */
+  | { kind: 'unavailable'; status: CoachCallStatus; timeout?: true }
   /** The draft is gone (deleted, or started): nothing to change. */
   | { kind: 'gone' };
 
@@ -288,11 +291,12 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
   let lastNetworkFailureMs: number | null = null;
   const nowMs = (): number => toMs(deps.now().utc);
 
-  async function reach(): Promise<{ reach: BuilderCoachReach; models: { main: string; light: string | null } | null }> {
+  /** `retry`: Ben tapped Retry (or said "again"): the call is tried even inside the offline hold. */
+  async function reach(opts: { retry?: boolean } = {}): Promise<{ reach: BuilderCoachReach; models: { main: string; light: string | null } | null }> {
     if (deps.model === undefined) return { reach: 'not_connected', models: null };
     const a = await deps.availability().catch((): CoachAvailability => ({ status: 'not_connected', model: null }));
     let r = builderReachOf(a);
-    if (r === 'ok' && lastNetworkFailureMs !== null && nowMs() - lastNetworkFailureMs < OFFLINE_HOLD_MS) r = 'offline';
+    if (r === 'ok' && opts.retry !== true && lastNetworkFailureMs !== null && nowMs() - lastNetworkFailureMs < OFFLINE_HOLD_MS) r = 'offline';
     return { reach: r, models: r === 'ok' && a.model !== null ? { main: a.model, light: a.workoutModelGone === true ? null : (a.workoutModel ?? null) } : null };
   }
 
@@ -305,13 +309,18 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
     return r;
   }
 
-  /** A failed call's status: the network is `offline`; a route that can't answer (signed out, not eligible, gone) is not connected; anything else `failed`. */
+  /**
+   * A failed call's status: no network (after one retry) is `offline`; a route that can't answer (signed out, not
+   * eligible, gone) is not connected; anything else `failed`. (Ben, 26 Oct: `Offline` on wifi) A timeout is no answer
+   * in time from a connected phone, never `Offline` (rule 1): `failed`, shown as `Couldn’t reach the coach` with Retry.
+   */
   const failedReach = (r: BuilderToolAnswer<BuilderCoachToolName>): CoachCallStatus => {
     if (r.ok) return 'ok';
     switch (r.error) {
       case 'network':
-      case 'timeout':
         return 'offline';
+      case 'timeout':
+        return 'failed';
       case 'auth_expired':
       case 'not_eligible':
       case 'model_gone':
@@ -439,15 +448,15 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
      * Your workout's bar (§2.6): a proposal with code-made before/after lines, Apply / Skip.
      * Offline or not connected: `unavailable` (the bar shows the word and is disabled).
      */
-    async askEdit(req: { draftId: string; words: string; opId: string; signal?: AbortSignal }): Promise<EditAsk> {
-      const r = await reach();
+    async askEdit(req: { draftId: string; words: string; opId: string; signal?: AbortSignal; /** Ben's Retry (or "again"): tried even inside the offline hold. */ retry?: boolean }): Promise<EditAsk> {
+      const r = await reach({ retry: req.retry === true });
       if (r.reach !== 'ok' || r.models === null) return { kind: 'unavailable', status: r.reach === 'ok' ? 'not_connected' : r.reach };
       const world = await deps.source.world(req.draftId);
       if (world === null) return { kind: 'gone' };
       const env = envFor(world, req.words);
       const view = builderWorkoutView(world.snapshot, env.ctx, estimateBuilderMinutes(world.snapshot.workout, env.ctx));
       const answer = await call(buildEditRequest(view, world.extras, req.words, builderModelFor('edit', r.models)), BUILDER_COACH_TOOL.proposeWorkoutEdit, req.signal);
-      if (!answer.ok) return { kind: 'unavailable', status: failedReach(answer) };
+      if (!answer.ok) return { kind: 'unavailable', status: failedReach(answer), ...(answer.error === 'timeout' ? { timeout: true as const } : {}) };
       const made = makeBuilderProposal({ id: req.opId, snapshot: world.snapshot, ops: answer.args.ops, words: answer.args.reply, check: workoutClaimCheck(world.snapshot.workout, claimBase(world, req.words)), env });
       if (made.proposal === null) return { kind: 'reply', text: made.reason, notes: made.outcome.notes, status: 'ok' };
       return { kind: 'proposal', proposal: made.proposal, status: 'ok' };
