@@ -396,6 +396,9 @@ export function TodayScreen() {
     }
   }
 
+  /** (Ben, 26 Oct) Today's visible `Empty workout`: the same start as `⋯` and Library (idempotent per intent). */
+  const startEmptyNow = () => void start({ kind: 'empty' });
+
   /**
    * (Ben, 23 Oct, D8) Up next's Your workout draft, changed there (by Ben, or a coach change he applied in chat):
    * Start starts that one, today only, in one tap (the check-in sheet when due).
@@ -768,7 +771,7 @@ export function TodayScreen() {
           {actions.failed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={TODAY_SCREEN_COPY.sessionFailed} action={<TextButton label="Try again" tone="secondary" onPress={reload} />} /> : null}
           {actions.emptyWorkout ? (
             <View style={{ alignSelf: 'flex-start' }}>
-              <TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" onPress={() => void start({ kind: 'empty' })} />
+              <TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" disabled={starting} onPress={startEmptyNow} />
             </View>
           ) : null}
         </View>
@@ -862,6 +865,7 @@ export function TodayScreen() {
                   }
             }
             onStart={() => void startCard()}
+            onEmpty={actions.emptyOnCard ? startEmptyNow : undefined}
             onEdit={() => void editCard()}
             onBackToPlan={() => void backToPlan()}
             onTimeNote={() => {
@@ -872,6 +876,12 @@ export function TodayScreen() {
               if (t !== null) void editedTime(stepTimeMinutes(t.minutes, dir));
             }}
           />
+        ) : null}
+        {actions.emptyWorkout && !actions.emptyOnCard ? (
+          // (Ben, 26 Oct) No card (nothing up next, done today, a paused plan with no day picked): its own row.
+          <View style={{ alignSelf: 'flex-start' }}>
+            <TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" disabled={starting} onPress={startEmptyNow} />
+          </View>
         ) : null}
       </View>
     );

@@ -209,7 +209,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(screen).not.toContain('OtherSessionChips');
     const bottom = screen.slice(screen.indexOf("{actions.buildYourOwn === 'primary' ? ("));
     expect(bottom.slice(0, 400)).toContain('<PrimaryButton label={TODAY_V2_COPY.buildYourOwn}');
-    expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: false, upNext: false })).toEqual({ gymRow: true, failed: false, upNext: false, buildYourOwn: 'primary', emptyWorkout: false });
+    expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: false, upNext: false })).toEqual({ gymRow: true, failed: false, upNext: false, buildYourOwn: 'primary', emptyWorkout: true, emptyOnCard: false });
   });
 
   it('a failed read of Today’s session says Couldn’t load with Try again, never `No plan` (as Library, review planview S5)', () => {
@@ -226,7 +226,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
 
   it('session area actions by state (review today-fix-21oct B1, S2, S3, S4): a failed read still offers Build your own (primary) and Empty workout; the gym chip shows while loading and after a failure; No plan with Up next makes it the main action', () => {
     const failed = todayActions({ openWorkout: false, read: 'failed', noPlan: false, cardShown: false, upNext: false });
-    expect(failed).toEqual({ gymRow: true, failed: true, upNext: false, buildYourOwn: 'primary', emptyWorkout: true });
+    expect(failed).toEqual({ gymRow: true, failed: true, upNext: false, buildYourOwn: 'primary', emptyWorkout: true, emptyOnCard: false });
     const loading = todayActions({ openWorkout: false, read: 'loading', noPlan: false, cardShown: false, upNext: false });
     expect(loading).toMatchObject({ gymRow: true, failed: false, buildYourOwn: null });
     const withNext = todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: false, upNext: true });
@@ -235,7 +235,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: true, upNext: true }).upNext).toBe(false);
     // With a plan the fallback never shows (the service gives none either).
     expect(todayActions({ openWorkout: false, read: 'ready', noPlan: false, cardShown: true, upNext: true }).upNext).toBe(false);
-    expect(todayActions({ openWorkout: true, read: 'failed', noPlan: true, cardShown: false, upNext: true })).toEqual({ gymRow: false, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false });
+    expect(todayActions({ openWorkout: true, read: 'failed', noPlan: true, cardShown: false, upNext: true })).toEqual({ gymRow: false, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false, emptyOnCard: false });
     // The screen draws what this says: the Up next row starts it in one tap through Today's one Start (gym, alerts,
     // check-in gate, op ID kept per intent), never the overview (OV11).
     expect(screen).toContain("void start({ kind: 'routine', routineId: upNext.routineId })");

@@ -155,8 +155,14 @@ export interface TodayActions {
   upNext: boolean;
   /** `Build your own`: primary when nothing else is the main action. */
   buildYourOwn: 'primary' | 'secondary' | null;
-  /** `Empty workout` as its own action (No plan shows it among the chips instead). */
+  /**
+   * (Ben, 26 Oct) `Empty workout` as a visible one-tap action in every state of a read (with a plan, no plan, paused,
+   * nothing up next, done today) and after a failed read; hidden while loading (no button moving under a finger) and
+   * while a workout is open (Resume takes over). It stays in `⋯` too.
+   */
   emptyWorkout: boolean;
+  /** Where it sits: under the card's Start when a card shows, else its own row in the session area. */
+  emptyOnCard: boolean;
 }
 
 /**
@@ -164,10 +170,10 @@ export interface TodayActions {
  * Empty workout); No plan with an Up next makes that the main action and Build your own secondary.
  */
 export function todayActions(input: { openWorkout: boolean; read: 'loading' | 'failed' | 'ready'; noPlan: boolean; cardShown: boolean; upNext: boolean }): TodayActions {
-  if (input.openWorkout) return { gymRow: false, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false };
-  if (input.read === 'loading') return { gymRow: true, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false };
-  if (input.read === 'failed') return { gymRow: true, failed: true, upNext: false, buildYourOwn: 'primary', emptyWorkout: true };
+  if (input.openWorkout) return { gymRow: false, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false, emptyOnCard: false };
+  if (input.read === 'loading') return { gymRow: true, failed: false, upNext: false, buildYourOwn: null, emptyWorkout: false, emptyOnCard: false };
+  if (input.read === 'failed') return { gymRow: true, failed: true, upNext: false, buildYourOwn: 'primary', emptyWorkout: true, emptyOnCard: false };
   const noPlanList = input.noPlan && !input.cardShown;
   const upNext = noPlanList && input.upNext;
-  return { gymRow: true, failed: false, upNext, buildYourOwn: noPlanList && !upNext ? 'primary' : 'secondary', emptyWorkout: false };
+  return { gymRow: true, failed: false, upNext, buildYourOwn: noPlanList && !upNext ? 'primary' : 'secondary', emptyWorkout: true, emptyOnCard: input.cardShown };
 }

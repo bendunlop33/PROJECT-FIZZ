@@ -484,7 +484,10 @@ export function SessionCard({
   onTimeNote,
   onEditedTime,
   offer = null,
+  onEmpty,
 }: {
+  /** (Ben, 26 Oct) `Empty workout` under Start: one tap, the screen's own empty start. */
+  onEmpty?: (() => void) | undefined;
   /** (§6.1) The coach's pre-session line with code's offer (`Apply` / `Skip`, rule 3); null: nothing to say. */
   offer?: { line: string; lines: string[]; busy: boolean; onApply: () => void; onSkip: () => void; /** (§6.2) Opens Progress › Reviews. */ onReviews?: () => void } | null;
   view: TodayCardView;
@@ -605,6 +608,11 @@ export function SessionCard({
           <SecondaryButton label={TODAY_V2_COPY.edit} onPress={onEdit} grow size="primary" />
         </View>
       </View>
+      {onEmpty !== undefined ? (
+        <View style={{ alignSelf: 'flex-start' }}>
+          <TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" disabled={busy} onPress={onEmpty} />
+        </View>
+      ) : null}
     </View>
   );
 }

@@ -278,7 +278,19 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
               />
             }
           />
-        ) : null}
+        ) : (
+          // (Ben, 26 Oct) The top row: one tap, Today's own start (gym, alerts question, check-in gate); one Tabs,
+          // never a second (actions.ts). Hidden while a workout is open (Resume above takes over).
+          <View style={{ alignSelf: 'flex-start' }}>
+            <TextButton
+              label={LIBRARY_COPY_UI.emptyWorkout}
+              icon="plus"
+              onPress={() => {
+                navigation.dispatch(popToTabs({ screen: 'Today', params: { startEmpty: newUuid() } }));
+              }}
+            />
+          </View>
+        )}
         {view.state === 'empty' && plan === null ? (
           <View style={{ gap: theme.space['2'], alignItems: 'flex-start' }}>
             <AppText variant="body">{LIBRARY_COPY_UI.empty}</AppText>
@@ -335,14 +347,6 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
           </Section>
         ) : null}
         <View style={{ alignSelf: 'flex-start' }}>
-          <TextButton
-            label={LIBRARY_COPY_UI.emptyWorkout}
-            tone="secondary"
-            onPress={() => {
-              // Today's own start (gym, alerts question, check-in gate); one Tabs, never a second (actions.ts).
-              navigation.dispatch(popToTabs({ screen: 'Today', params: { startEmpty: newUuid() } }));
-            }}
-          />
           {/* (Ben, 25 Oct) A workout done on another day, entered now. */}
           <TextButton
             label={PAST_LOG_COPY.entry}
