@@ -3,6 +3,7 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { CustomExerciseFields, EquipmentKind, RoutineExercise, SetExclusion } from '@fizz/schemas';
 
 import type { CoachEntry } from '../coach/coach-service';
+import type { BuilderCoachEntry } from '../coach/builder-sheet-view';
 
 export type ProfileStackParams = {
   ProfileHome: undefined;
@@ -217,7 +218,8 @@ export type RootStackParams = {
    */
   /** `build`: open with the Build card (workout-builder §3, `Build with coach`). */
   /** `draft`: the field starts with this text when it's empty (Your plan's `Ask coach to change`: `Change my plan: `); nothing is sent. */
-  Coach: { entry: CoachEntry; focus?: boolean; build?: boolean; draft?: string };
+  /** (Ben, 26 Oct) `builder`: Your workout's bar; words go to the builder's `askEdit`, proposals come back as cards (Apply / Skip). */
+  Coach: { entry: CoachEntry | BuilderCoachEntry; focus?: boolean; build?: boolean; draft?: string };
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
   /**

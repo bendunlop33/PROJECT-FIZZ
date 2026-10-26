@@ -13,6 +13,8 @@ import type { ZonedTimestamp } from '@fizz/schemas';
 import { createBuilderCoachService, createDayNotes, type BuilderCoachWorld, type BuilderWriteResult, type SetupFrom } from '../src/coach/builder-coach-service';
 import { askBarView, builderReviewView, dayNotesFor, mixCoachReason, nudgeCardView, proposalCardView, todayCoachWhy } from '../src/coach/builder-coach-view';
 import { createBuilderReviewProvider } from '../src/coach/builder-review-provider';
+import { applyTurn, askTurn, builderSeesLabel, builderSheetStatus, settleTurn, skipTurn, turnCard, undoTurn, type BuilderTurn } from '../src/coach/builder-sheet-view';
+import { editAskView } from '../src/coach/builder-coach-view';
 import type { CoachAvailability } from '../src/coach/coach-service';
 import { createDictation, type SpeechInputPort } from '../src/voice/dictation';
 
@@ -236,6 +238,77 @@ describe('Your workout bar: proposals, Apply, Out of date', () => {
     expect(await h.service.askEdit({ draftId: DRAFT, words: 'swap the fly', opId: 'f-2' })).toEqual({ kind: 'unavailable', status: 'failed' });
     expect(await h.service.askEdit({ draftId: DRAFT, words: 'swap the fly', opId: 'f-3' })).toEqual({ kind: 'unavailable', status: 'not_connected' });
     expect(await h.service.askEdit({ draftId: 'b7d0e2f4-1a2b-4c3d-8e9f-0a1b2c3d4e5f', words: 'swap the fly', opId: 'f-4' })).toEqual({ kind: 'gone' });
+  });
+});
+
+describe('Your workout bar in the coach sheet (Ben, 26 Oct, option a)', () => {
+  const AT = { atUtc: '2026-10-26T09:00:00.000Z', tz: 'Europe/London' };
+
+  it('typed words come back as a proposal card with Apply / Skip; nothing is written until Apply; a stale Apply is refused; Undo once', async () => {
+    let fly = '';
+    let bench = '';
+    const model = new StepModel([
+      (req) => {
+        const slots = (yourData(req).workout as { slots: { slotKey: string; exerciseId: string }[] }).slots;
+        fly = slots.find((s) => s.exerciseId === 'cable_fly')?.slotKey ?? '';
+        bench = slots.find((s) => s.exerciseId === 'bench')?.slotKey ?? '';
+        return call('propose_workout_edit', { ops: [{ op: 'swap', slotKey: fly, toExerciseId: 'incline_bb' }], reply: 'Swap the fly for an incline press.' });
+      },
+      () => call('propose_workout_edit', { ops: [{ op: 'load', slotKey: bench, direction: 'heavier', value: null, unit: null }], reply: 'Up 2.5 kg.' }),
+    ]);
+    const h = await harness({ model });
+    let turns: BuilderTurn[] = askTurn([], { id: 's-1', words: ' swap the cable fly ', ...AT });
+    // One request at a time: a second ask while the first is out is not added.
+    expect(askTurn(turns, { id: 's-x', words: 'again', ...AT }).map((t) => t.id)).toEqual(['s-1']);
+    expect(builderSheetStatus('ok', true).canSend).toBe(false);
+    const a = settleTurn(turns, 's-1', editAskView(await h.service.askEdit({ draftId: DRAFT, words: turns[0]?.words ?? '', opId: 's-1' })));
+    turns = askTurn(a.turns, { id: 's-2', words: 'bench heavier', ...AT });
+    turns = settleTurn(turns, 's-2', editAskView(await h.service.askEdit({ draftId: DRAFT, words: 'bench heavier', opId: 's-2' }))).turns;
+    expect(turns.map((t) => turnCard(t)?.actions)).toEqual([{ apply: 'Apply', skip: 'Skip' }, { apply: 'Apply', skip: 'Skip' }]);
+    expect(turnCard(turns[0] as BuilderTurn)?.lines).toEqual(['Cable fly → Incline barbell press']);
+    // Rule 3: asking wrote nothing.
+    expect(h.applied).toEqual([]);
+
+    // Ben edits the fly since: its Apply is refused (version-fenced), the card says so; nothing written.
+    h.benEdits(h.key('cable_fly'));
+    const first = turns[0];
+    const second = turns[1];
+    if (first?.result.kind !== 'proposal' || second?.result.kind !== 'proposal') throw new Error('proposals');
+    const r1 = await h.service.apply(first.result.proposal);
+    turns = applyTurn(turns, 's-1', r1.kind === 'applied' ? 'applied' : r1.kind === 'out_of_date' ? 'out_of_date' : 'failed');
+    expect(turnCard(turns[0] as BuilderTurn)).toMatchObject({ actions: null, state: 'Out of date. Ask again.', undo: false });
+    const r2 = await h.service.apply(second.result.proposal);
+    turns = applyTurn(turns, 's-2', r2.kind === 'applied' ? 'applied' : 'failed');
+    expect(h.applied.map((x) => x.opId)).toEqual(['builder-apply:s-2']);
+    expect(turnCard(turns[1] as BuilderTurn)).toMatchObject({ actions: null, state: 'Applied', undo: true, undoState: null });
+    turns = undoTurn(turns, 's-2', true);
+    expect(turnCard(turns[1] as BuilderTurn)).toMatchObject({ undo: false, undoState: 'Undone' });
+    // Undo is once: a second has no effect.
+    expect(undoTurn(turns, 's-2', false)).toEqual(turns);
+  });
+
+  it('Skip writes nothing; offline is one word and Send is off; a reply has no actions', () => {
+    const p = { id: 'k-1', words: 'swap it', ...AT };
+    const reply = settleTurn(askTurn([], p), 'k-1', { kind: 'reply', text: 'The fly is already your only isolation.' }).turns;
+    expect(turnCard(reply[0] as BuilderTurn)).toMatchObject({ actions: null, reason: 'The fly is already your only isolation.' });
+    expect(skipTurn(reply, 'k-1')).toEqual(reply);
+    const off = settleTurn(askTurn([], p), 'k-1', { kind: 'reach', reach: 'offline' });
+    expect(off.reach).toBe('offline');
+    expect(off.turns[0]?.result).toEqual({ kind: 'line', text: 'Offline' });
+    expect(builderSheetStatus('offline', false)).toEqual({ word: 'Offline', canSend: false });
+    expect(builderSeesLabel('Push A')).toBe('Sees: Push A (draft)');
+  });
+
+  it('wiring: Your workout opens the sheet with the builder entry (no Alert.prompt); the sheet applies only from Apply', () => {
+    const src = (f: string) => readFileSync(join(__dirname, '..', 'src', ...f.split('/')), 'utf8');
+    const workout = src('screens/builder/BuilderWorkoutScreen.tsx');
+    expect(workout).not.toContain('Alert.prompt');
+    expect(workout).toContain("navigation.navigate('Coach', { entry: { kind: 'builder', draftId: snap.draftId, name: snap.name }, focus: true })");
+    const sheet = src('screens/coach/BuilderCoachSheet.tsx');
+    expect(sheet).toContain('services.builderCoach.askEdit(');
+    expect(sheet.match(/services\.builderCoach\.apply\(/g)?.length).toBe(1);
+    expect(sheet).toMatch(/async function apply\(t: BuilderTurn\)[\s\S]*services\.builderCoach\.apply\(proposal\)/);
+    expect(src('screens/coach/CoachSheetScreen.tsx')).toContain("if (params.entry.kind === 'builder') return <BuilderCoachSheet entry={params.entry} />;");
   });
 });
 

@@ -50,7 +50,9 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, SecondaryButton, SheetKeyboardAvoidingView, TEXT_PRESSED_OPACITY, TextButton, TextField, useKeyboardVisible } from '../../ui';
+import { BuilderCoachSheet } from './BuilderCoachSheet';
 import { CoachCard } from './CoachCard';
+import { HeaderButton, SendButton } from './SheetButtons';
 import { BuildQuestionCard, BuildRequestCard, PendingBuildCard, QUESTION_COPY, WorkoutDraftCard } from './BuildCards';
 import { PlanCard } from './PlanCard';
 import { ActivityOfferCard, WeekProposalCard } from './WeekCards';
@@ -71,12 +73,18 @@ const entryKey = (e: CoachEntry): string =>
   e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${e.period}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : e.kind === 'draft' ? `draft:${e.draftId}` : `${e.kind}:${e.sessionId}`;
 
 export function CoachSheetScreen() {
+  const params = useRoute<RouteProp<RootStackParams, 'Coach'>>().params;
+  // (Ben, 26 Oct) Your workout's bar: the same sheet, its words go to the builder's askEdit (proposal cards, Apply / Skip).
+  if (params.entry.kind === 'builder') return <BuilderCoachSheet entry={params.entry} />;
+  return <ThreadCoachSheet {...params} entry={params.entry} />;
+}
+
+function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draftParam }: Omit<RootStackParams['Coach'], 'entry'> & { entry: CoachEntry }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { entry, focus = false, build: buildParam, draft: draftParam } = useRoute<RouteProp<RootStackParams, 'Coach'>>().params;
   const key = entryKey(entry);
 
   const [availability, setAvailability] = useState<CoachAvailability | null>(null);
@@ -846,37 +854,6 @@ export function CoachSheetScreen() {
       </View>
       <KeyboardDoneAccessory nativeID={COACH_DONE_ACCESSORY_ID} />
     </SheetKeyboardAvoidingView>
-  );
-}
-
-function HeaderButton({ icon, label, onPress, toggle }: { icon: 'list.bullet' | 'square.and.pencil' | 'xmark' | 'speaker.wave.2' | 'speaker.slash' | 'chevron.left'; label: string; onPress: () => void; /** A switch (the speaker): on is accent-tinted and read as on. */ toggle?: { on: boolean } }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole={toggle === undefined ? 'button' : 'switch'}
-      accessibilityLabel={label}
-      {...(toggle === undefined ? {} : { accessibilityState: { checked: toggle.on } })}
-      onPress={onPress}
-      style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
-    >
-      <Icon name={icon} color={toggle?.on === true ? 'accent' : 'text.primary'} size={20} />
-    </Pressable>
-  );
-}
-
-function SendButton({ icon, label, enabled, onPress }: { icon: 'arrow.up' | 'stop.fill'; label: string; enabled: boolean; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: !enabled }}
-      disabled={!enabled}
-      onPress={onPress}
-      style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: enabled ? theme.colors.accent : theme.colors['bg.raised'] }}
-    >
-      <Icon name={icon} color={enabled ? 'on.accent' : 'text.secondary'} size={20} />
-    </Pressable>
   );
 }
 

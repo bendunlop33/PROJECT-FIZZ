@@ -754,9 +754,9 @@ export function BuilderWorkoutScreen() {
               void askWorkout(heard);
               return;
             }
-            Alert.prompt(WORKOUT_COPY.bar, undefined, (text) => {
-              if (text.trim() !== '') void askWorkout(text);
-            });
+            // (Ben, 26 Oct; app review finding 10, option a) Typing opens the coach sheet, as on Today: its `builder`
+            // entry sends the words to askEdit and shows proposal cards with Apply / Skip there (rule 3).
+            navigation.navigate('Coach', { entry: { kind: 'builder', draftId: snap.draftId, name: snap.name }, focus: true });
           }}
         />
         <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
