@@ -14,11 +14,12 @@ import { useTheme } from '../../theme';
 import { AppText, Chip, Icon, InfoLine, StatStrip, StatusLine, TextButton, TextField } from '../../ui';
 
 /**
- * Progress › Exercises (Ben, 13–14 Oct 2026; ideas-2026-10-12 D3): an
- * exercise dropdown (searchable), Measure and Period dropdowns, one stat
- * line, a large line chart with a dashed trailing average, and the sessions
- * table under it. The tab keeps its own period. Lays out the service's view
- * model and computes nothing. Local only.
+ * Progress › Lifts (Ben, 13–14 Oct 2026; ideas-2026-10-12 D3; layout Ben
+ * 26 Oct): his main lifts as chips with `More` (searchable), the line chart
+ * with a dashed trailing average straight under them, then the series,
+ * Measure and Period dropdowns, one stat line and the sessions table. The tab
+ * keeps its own period. Lays out the service's view model and computes
+ * nothing. Local only.
  */
 
 type Open = 'exercise' | 'measure' | 'period' | 'series' | 'trailing' | null;
