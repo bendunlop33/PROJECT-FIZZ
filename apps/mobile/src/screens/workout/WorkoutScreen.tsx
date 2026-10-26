@@ -20,7 +20,7 @@ import { pastLogWhen } from '../../workout/past-log-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openGymFromWorkout, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
-import type { ActiveWorkoutData, GymChoice, RecordContext } from '../../services/workout-services';
+import type { ActiveWorkoutData, GymChoice } from '../../services/workout-services';
 import type { LiveBestsContext } from '@fizz/domain';
 import { NameSheet } from '../routines/NameSheet';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
@@ -190,8 +190,8 @@ export function WorkoutScreen() {
   const [switchCard, setSwitchCard] = useState<OpenSwitchCard | null>(null);
   const [checkingGym, setCheckingGym] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
-  /** The heaviest-set line for the set just logged (premium-feel §5.1), shown under the saved line. */
-  const [record, setRecord] = useState<{ setId: string; text: string } | null>(null);
+  /** The `New best · …` line for the set just logged (Summary's definition, Ben 26 Oct), shown under the saved line. */
+  const [record, setRecord] = useState<{ setId: string; text: string; accessibilityLabel: string } | null>(null);
   // `Why?` on the target line (active-workout §2.12): one panel at most, hidden while the keypad is open.
   const [why, setWhy] = useState<WhyPanel>(null);
   const [keypadOpen, setKeypadOpen] = useState(false);
@@ -577,21 +577,7 @@ export function WorkoutScreen() {
     };
   }, [readyHold]);
 
-  // The record check's history is read when a set is focused, so the log haptic fires right after the write (review S1).
-  const recordContext = useRef<RecordContext | null>(null);
-  const focusSetId = view?.focus?.setId ?? null;
   const viewSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
-  const focusEquipment = view?.focus ? (data !== 'loading' && data !== null ? (data.aggregate.exercises.find((e) => e.id === view.focus?.sessionExerciseId)?.equipmentId ?? null) : null) : null;
-  useEffect(() => {
-    if (focusSetId === null || viewSessionId === null) return;
-    let live = true;
-    void services.workout.recordContext(viewSessionId, focusSetId).then((c) => {
-      if (live) recordContext.current = c;
-    });
-    return () => {
-      live = false;
-    };
-  }, [services, viewSessionId, focusSetId, focusEquipment]);
 
   // (Ben, 26 Oct) The `PB` mark: what the Summary's `New best` reads, once per workout, so a log decides it with no read.
   const [bestsContext, setBestsContext] = useState<LiveBestsContext | null>(null);
@@ -959,22 +945,13 @@ export function WorkoutScreen() {
       setEdits(null);
       return;
     }
-    // After the write, never on press-in. A heaviest-set record plays `record` instead of `commit` (premium-feel §5.1).
+    // After the write, never on press-in.
     const loggedSetId = focus.setId;
-    // (Ben, 26 Oct) A new best (Summary's definition) adds a light tap after the log's own.
-    const pb = bestsContext !== null && services.reviews.liveNewBests(bestsContext, r.aggregate).has(loggedSetId);
-    const showRecord = (rec: { text: string } | null) => {
-      haptic(logHaptic(rec !== null, pb));
-      setRecord(rec === null ? null : { setId: loggedSetId, text: rec.text });
-    };
-    const ready = recordContext.current;
-    const quick = ready === null ? undefined : services.workout.recordOf(ready, r.aggregate, loggedSetId);
-    if (quick !== undefined) showRecord(quick);
-    else
-      void services.workout
-        .setRecord(session.id, loggedSetId)
-        .catch(() => null)
-        .then(showRecord);
+    // (Ben, 26 Oct; one definition of best) The line under the set and the table's PB mark are both the Summary's
+    // `New best` (`liveNewBestLine`): a new best adds a light tap after the log's own.
+    const best = bestsContext === null ? null : services.reviews.liveNewBestLine(bestsContext, r.aggregate, loggedSetId);
+    haptic(logHaptic(false, best !== null));
+    setRecord(best === null ? null : { setId: loggedSetId, text: best.text, accessibilityLabel: best.accessibilityLabel });
     // Path B: a pure check on the logged set, no AI call (coach-adjustments §4.2).
     coach.afterLog(r.aggregate, loggedSetId);
     setViewing(nextViewing(services.workout.navigation({ ...loaded, aggregate: r.aggregate }, null), { kind: 'logged' }));
@@ -2008,7 +1985,7 @@ export function WorkoutScreen() {
 
   const recordLine =
     record !== null && view.justSaved?.setId === record.setId ? (
-      <View accessible accessibilityLabel={record.text} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+      <View accessible accessibilityLabel={record.accessibilityLabel} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
         <PulseOnce key={record.setId}>
           <Icon name="star" color="text.secondary" size={16} />
         </PulseOnce>

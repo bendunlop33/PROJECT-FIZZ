@@ -418,6 +418,8 @@ A log that is also a record plays **only** `haptic.record`, not both. The finish
 
 ### 5.1 Heaviest-set line (the only "PR" in the app)
 
+> **Superseded (Ben, 26 Oct 2026, one definition of best).** The line under a just-logged set, the live table's `PB` mark and the Summary all use the Summary's `New best` rule (`liveNewBestLine` / `liveNewBestSets` / `sessionNewBests`): tracked lifts at their tracked reps, real sets only. The line reads `New best · Bench press 102.5 × 8` and plays `haptic.pb`; the Summary no longer shows the separate heaviest-set / most-reps sentences. `findSetRecord` stays for the services that still read it; the rules below are history.
+
 - New pure function `findSetRecord(set, history)` in `packages/domain` (unit-tested). A set qualifies only if:
   - it's a completed working, top or back-off set (not warm-up or drop) on a weighted exercise in reps (the same eligibility as `buildLiftHighlight`);
   - it's **comparable** (workout-summary.md §3 rule): same exercise, equipment instance, load convention, unit and set type group;

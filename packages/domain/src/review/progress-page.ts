@@ -789,10 +789,7 @@ export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOption
     const now = bestSets(liftRows([session], id, t.newest), t, reps, unit).real;
     const before = bestSets(liftRows(earlier, id, t.newest), t, reps, unit).real;
     if (now === null || before === null || !(t.lowerIsBetter ? now.load < before.load : now.load > before.load)) continue;
-    const name = opts.nameOf(id);
-    const suffix = suffixOf(t.convention);
-    const set = withSuffix(`${nf(now.load)}${NBSP}×${NBSP}${String(now.reps)}`, suffix);
-    out.push({ exerciseId: id, text: `${PROGRESS_COPY.newBest} · ${name} ${set}`, accessibilityLabel: plain(`New best: ${name}, ${nf(now.load)} ${liftUnitText(unit, t.convention)} for ${String(now.reps)} reps`) });
+    out.push(newBestView(id, opts.nameOf(id), now.load, now.reps, t.convention, unit));
   }
   return out;
 }
@@ -813,7 +810,30 @@ export interface LiveBestsContext {
  * whose older history couldn't be read claims none. Set IDs; pure.
  */
 export function liveNewBestSets(ctx: LiveBestsContext, aggregate: SessionAggregate): Set<string> {
-  const out = new Set<string>();
+  return new Set(liveNewBests(ctx, aggregate).keys());
+}
+
+/**
+ * (Ben, 26 Oct; one definition of best) The line under a just-logged set that is a new best (`liveNewBestSets`), in
+ * the Summary's own words: `New best · Bench press 100 × 6`. Null for any other set, so the line, the table's `PB`
+ * mark and the Summary always agree.
+ */
+export function liveNewBestLine(ctx: LiveBestsContext, aggregate: SessionAggregate, setId: string): NewBestView | null {
+  const hit = liveNewBests(ctx, aggregate).get(setId);
+  const set = aggregate.sets.find((x) => x.id === setId);
+  const ex = set === undefined ? undefined : aggregate.exercises.find((e) => e.id === set.sessionExerciseId);
+  if (hit === undefined || ex === undefined) return null;
+  return newBestView(ex.exerciseId, ex.exerciseName, hit.load, hit.reps, hit.convention, ctx.input.unit);
+}
+
+function newBestView(exerciseId: string, name: string, load: number, reps: number, convention: LoadConvention | null, unit: WeeklyReviewInput['unit']): NewBestView {
+  const set = withSuffix(`${nf(load)}${NBSP}×${NBSP}${String(reps)}`, suffixOf(convention));
+  return { exerciseId, text: `${PROGRESS_COPY.newBest} · ${name} ${set}`, accessibilityLabel: plain(`New best: ${name}, ${nf(load)} ${liftUnitText(unit, convention)} for ${String(reps)} reps`) };
+}
+
+/** Each new-best set of the workout in progress → its load (in the review's unit) and reps. */
+function liveNewBests(ctx: LiveBestsContext, aggregate: SessionAggregate): Map<string, { load: number; reps: number; convention: LoadConvention }> {
+  const out = new Map<string, { load: number; reps: number; convention: LoadConvention }>();
   const { input, opts } = ctx;
   const live = reviewSessionOf({ ...aggregate, session: { ...aggregate.session, status: HISTORY_STATUS } }, input.tz, input.nowMs);
   if (live === null) return out;
@@ -852,7 +872,7 @@ export function liveNewBestSets(ctx: LiveBestsContext, aggregate: SessionAggrega
       if (reps === 1 ? r !== 1 : r < reps) continue;
       const v = roundEstimate(convertMass({ value: load.value, unit: load.unit }, input.unit).value, input.unit);
       if (t.lowerIsBetter ? v < best : v > best) {
-        out.add(x.id);
+        out.set(x.id, { load: v, reps: r, convention: t.convention });
         best = v;
       }
     }

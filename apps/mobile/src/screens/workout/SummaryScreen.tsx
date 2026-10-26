@@ -527,21 +527,8 @@ export function SummaryScreen() {
             </View>
           </FadeIn>
         ) : null}
-        {sum.records.length > 0 ? (
-          // Heaviest-set lines (premium-feel §5.1), in the Comparison region; static, no badge or colour.
-          <FadeIn motion={follow(1)}>
-            <View style={{ gap: theme.space['2'] }}>
-              {sum.records.map((r) => (
-                <View key={r} accessible accessibilityLabel={r} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-                  <Icon name="star" color="text.secondary" size={16} />
-                  <AppText variant="callout" style={{ flex: 1 }}>
-                    {r}
-                  </AppText>
-                </View>
-              ))}
-            </View>
-          </FadeIn>
-        ) : null}
+        {/* (Ben, 26 Oct) One definition of best: the `New best` lines above are the Summary's only record lines (the old
+            heaviest-set lines judged by another rule are no longer shown, so they can't disagree with the PB mark). */}
 
         {sum.exercises.length > 0 ? (
           <View>

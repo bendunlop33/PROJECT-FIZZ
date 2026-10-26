@@ -171,6 +171,11 @@ describe('PB on the row (Ben, 26 Oct): the Summary’s New best, set by set', ()
     // 102.5 × 8: a real best.
     const third = await log(sets[2]?.id ?? '', 102.5, 8);
     expect([...third]).toEqual([sets[2]?.id]);
+    // One definition of best (Ben, 26 Oct): the line under the set is there exactly where the PB mark is, in the
+    // Summary's words; the tie and the short set get none.
+    expect(plain(s.reviews.liveNewBestLine(ctx, cur, sets[2]?.id ?? '')?.text ?? '')).toBe('New best · Bench press 102.5 × 8');
+    expect(s.reviews.liveNewBestLine(ctx, cur, sets[0]?.id ?? '')).toBeNull();
+    expect(s.reviews.liveNewBestLine(ctx, cur, sets[1]?.id ?? '')).toBeNull();
     // Undo of that log takes the mark away (it is worked out from the sets as they are).
     const logged3 = cur.sets.find((x) => x.id === sets[2]?.id);
     cur = ok(await s.workout.dispatch(sessionId, { type: 'undo_log', at: h.now(), opId: 'undo-3', setId: sets[2]?.id ?? '', expectedSetVersion: logged3?.version ?? 1 }));

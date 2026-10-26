@@ -64,6 +64,7 @@ import {
   liftsView,
   liftHistorySessions,
   sessionNewBests,
+  liveNewBestLine,
   liveNewBestSets,
   type LiveBestsContext,
   type NewBestView,
@@ -780,6 +781,11 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     /** (Ben, 26 Oct) The workout-in-progress sets that are a new best (`liveNewBestSets`); pure, no read. */
     liveNewBests(ctx: LiveBestsContext, aggregate: SessionAggregate): Set<string> {
       return liveNewBestSets(ctx, aggregate);
+    },
+
+    /** (Ben, 26 Oct) The just-logged set's `New best · …` line (`liveNewBestLine`), or null; agrees with the PB mark. */
+    liveNewBestLine(ctx: LiveBestsContext, aggregate: SessionAggregate, setId: string): NewBestView | null {
+      return liveNewBestLine(ctx, aggregate, setId);
     },
 
     /** Past weeks: every stored weekly review but the newest, newest first. */
