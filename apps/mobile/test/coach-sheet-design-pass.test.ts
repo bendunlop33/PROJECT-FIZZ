@@ -97,7 +97,8 @@ describe('sheet layout (source checks)', () => {
     expect(screen).toContain('No conversations');
     expect(screen).toContain('formatWhen(toMs(t.updatedAtUtc)');
     expect(screen).not.toContain('<TextButton label="Back"');
-    expect(screen).toContain("accessibilityRole={toggle === undefined ? 'button' : 'switch'}");
+    // (26 Oct) The header buttons are shared with the builder entry's sheet (SheetButtons.tsx).
+    expect(flat(readFileSync(join(SRC, 'screens', 'coach', 'SheetButtons.tsx'), 'utf8'))).toContain("accessibilityRole={toggle === undefined ? 'button' : 'switch'}");
   });
 
   it('nits: tools behind a Tools link (not lower-cased), composer height scales with text size', () => {

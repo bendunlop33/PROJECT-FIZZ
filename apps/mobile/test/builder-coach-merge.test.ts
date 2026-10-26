@@ -252,8 +252,9 @@ describe('Your workout’s bar (§2.6): words to the coach, a proposal with Appl
     expect(ws).toContain('services.builderCoach.apply(p.proposal)');
     expect(ws).toContain('undoOpId: builderApplyOpId(p.proposal.id)');
     expect(ws).toContain('<ProposalSheet');
-    // The bar no longer opens the general coach chat.
-    expect(ws).not.toContain("navigate('Coach'");
+    // The bar never opens the general coach thread: typing opens the sheet's `builder` entry (Ben, 26 Oct, option a).
+    expect(ws).not.toContain("entry: { kind: 'today' }");
+    expect(ws).toContain("navigate('Coach', { entry: { kind: 'builder'");
     // One request at a time with `Asking…` on the bar; a reply stays in the sheet (wiring S3).
     expect(ws).toContain('askingRef.current) return;');
     expect(ws).toContain('asking={asking}');

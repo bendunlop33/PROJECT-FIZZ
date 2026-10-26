@@ -99,13 +99,9 @@ export function BuilderCoachSheet({ entry }: { entry: BuilderCoachEntry }) {
     setText('');
     const r = await services.builderCoach.askEdit({ draftId: entry.draftId, words, opId: id }).catch(() => null);
     const v = r === null ? ({ kind: 'toast', text: EDIT_ASK_COPY.noAnswer } as const) : editAskView(r);
-    let reachNow: BuilderCoachReach | null = null;
-    setTurns((cur) => {
-      const s = settleTurn(cur, id, v);
-      reachNow = s.reach;
-      return s.turns;
-    });
-    if (reachNow !== null) setReach(reachNow);
+    const settled = settleTurn(turnsRef.current, id, v);
+    setTurns(() => settled.turns);
+    if (settled.reach !== null) setReach(settled.reach);
   }
 
   /** `Apply` (Ben's tap, rule 3): one versioned write under the proposal's op ID; a stale draft is refused. */
