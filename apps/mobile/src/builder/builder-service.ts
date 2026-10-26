@@ -2602,7 +2602,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         snapshot: { draftId: d.id, draftVersion: d.version, dayName: setup.dayName, minutes: setup.minutes, supersets: setup.supersets, workout, revs: Object.fromEntries(v.plan.slots.map((x) => [x.slotKey, x.rev ?? 1])) },
         env: {
           ctx: env.ctx,
-          usable: (id) => env.info(id) !== null && env.doable(id),
+          // (Ben, 27 Oct) A cardio machine or timed exercise counts too: the coach's add puts it in as a timed slot.
+          usable: (id) => (env.info(id) !== null || env.ctx.extra?.(id) != null) && env.doable(id),
           pain: env.painText,
           loads: createBuilderLoadGuard({ ctx: env.ctx, refs: env.refsOf, pain: env.painText }),
           mainGroup,
@@ -2610,6 +2611,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         },
         extras: {
           usable,
+          otherWork: env.extrasHere().map((t) => ({ exerciseId: t.exerciseId, name: t.name, measured: t.measurement === 'duration' ? ('time' as const) : t.measurement })).slice(0, 40),
           painFlags: [...inWorkout].flatMap((id) => {
             const t = env.painText(id);
             return t === null ? [] : [{ exercise: name(id), text: t }];

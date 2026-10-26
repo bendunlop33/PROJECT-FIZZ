@@ -94,13 +94,16 @@ export function createExercisePickerService(deps: ExercisePickerDeps) {
   const empty: PickerIndex = { entries: [], gym: null };
 
   return {
-    /** Your workout (a builder draft): at the draft's gym, as its rows' `Not at this gym`; strength exercises only. */
-    async forDraft(draftId: string): Promise<PickerIndex> {
+    /**
+     * Your workout (a builder draft): at the draft's gym, as its rows' `Not at this gym`. Swap: strength exercises
+     * only; Add (`add`, Ben 27 Oct): cardio machines and timed exercises too.
+     */
+    async forDraft(draftId: string, opts: { add?: boolean } = {}): Promise<PickerIndex> {
       const p = await deps.profile();
       if (p === null) return empty;
       const d = await repos().workoutDrafts.get(draftId).catch(() => null);
       if (d === null || d.ownerId !== p.id) return empty;
-      return indexAt(p, await gymById(currentDraftVersion(d).request.gymId), { kind: 'builder' });
+      return indexAt(p, await gymById(currentDraftVersion(d).request.gymId), { kind: 'builder', add: opts.add === true });
     },
 
     /** The one workout editor: at the editor's gym (null: none, nothing tagged); anything but distance. */
