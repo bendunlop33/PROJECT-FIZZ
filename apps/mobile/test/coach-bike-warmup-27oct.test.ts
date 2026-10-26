@@ -62,7 +62,7 @@ describe('Your workout coach: the bike is in reach and goes in first as 8:00', (
     const first = slotsOf(read?.workout.blocks ?? [])[0];
     expect(first?.exerciseId).toBe(bike.exerciseId);
     expect(first?.rows.map((r) => [r.type, r.durationS, r.load])).toEqual([['working', 480, null]]);
-    expect(read?.facts[bike.exerciseId]?.name ?? 'Exercise bike').toBe('Exercise bike');
+    expect(read?.facts[bike.exerciseId]?.name).toBe('Exercise bike');
     // Undo (one tap) takes it out again.
     const u = await s.builder.undo(snap.draftId, builderApplyOpId('bike-1'), 'undo-bike-1');
     expect(u.status).toBe('written');
