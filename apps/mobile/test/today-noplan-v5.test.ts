@@ -294,7 +294,7 @@ describe('V5: the screen', () => {
     const block = screen.slice(screen.indexOf('const sessionBlock = '));
     expect(block.indexOf('TODAY_V2_COPY.noPlan')).toBeLessThan(block.indexOf('<DayControl'));
     expect(block.indexOf('<DayControl')).toBeLessThan(block.indexOf('<SessionCard'));
-    expect(screen).toContain('const segs = session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey');
+    expect(screen).toContain('(session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey');
     // ⋯ lists the other workouts with Empty workout and Build your own, with or without a plan.
     expect(screen).toContain("days={session === null ? [] : listSheet === 'all' ? [...session.days, ...session.others] : [...(segs?.overflow ?? []), ...session.others]}");
   });

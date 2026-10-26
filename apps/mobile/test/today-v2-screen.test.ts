@@ -195,7 +195,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
   });
 
   it('(V5, D7) no plan: the day row (Profile › Split, NEXT, ⋯) stays after a day is picked, with Build your own secondary beside the card', () => {
-    expect(screen).toContain('const segs = session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey');
+    expect(screen).toContain('(session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey');
     expect(screen).toContain("noPlan: session?.status === 'no_plan', cardShown: view !== null");
     expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: true, upNext: false }).buildYourOwn).toBe('secondary');
   });

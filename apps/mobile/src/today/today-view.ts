@@ -1,4 +1,4 @@
-import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type TodayControls, type TodayDay } from '@fizz/domain';
+import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type TodayControls, type TodayDay, type TodayMain } from '@fizz/domain';
 
 /**
  * Today (v2)'s screen rules (workout-builder-v3 §2.0, prototypes/today-v2.html), pure so they are tested
@@ -176,4 +176,15 @@ export function todayActions(input: { openWorkout: boolean; read: 'loading' | 'f
   const noPlanList = input.noPlan && !input.cardShown;
   const upNext = noPlanList && input.upNext;
   return { gymRow: true, failed: false, upNext, buildYourOwn: noPlanList && !upNext ? 'primary' : 'secondary', emptyWorkout: true, emptyOnCard: input.cardShown };
+}
+
+/**
+ * How often Today's clock ticks (app review 26 Oct, finding 8): only while a clock is on screen. The Resume
+ * hero's rest countdown needs a second-by-second tick; its `started 18:02` only changes its date at midnight, so a
+ * minute is enough. With no workout open nothing on Today moves with time, so there is no tick at all (`null`)
+ * and the page isn't redrawn every second.
+ */
+export function todayTickMs(main: TodayMain | null): number | null {
+  if (main === null || main.kind !== 'resume') return null;
+  return main.status.kind === 'resting' ? 1000 : 60_000;
 }

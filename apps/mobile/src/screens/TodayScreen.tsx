@@ -22,7 +22,7 @@ import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import { followLatestDraft, todayActions, todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { followLatestDraft, todayActions, todayCardReducer, todaySegments, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
 import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
@@ -264,14 +264,19 @@ export function TodayScreen() {
     reload();
   }, [install, reload]);
 
+  // (App review 26 Oct, finding 8) Tick only while a clock is on screen: the Resume hero's rest countdown each
+  // second, its start time each minute. No workout open: no tick, so Today isn't redrawn every second.
+  const tickMs = todayTickMs(data.state === 'ready' ? (data.value.view?.main ?? null) : null);
   useEffect(() => {
+    if (tickMs === null) return;
+    setNow(clockNow());
     const t = setInterval(() => {
       setNow(clockNow());
-    }, 1000);
+    }, tickMs);
     return () => {
       clearInterval(t);
     };
-  }, []);
+  }, [tickMs]);
 
   const handed = route.params?.toast;
   useEffect(() => {
@@ -625,6 +630,19 @@ export function TodayScreen() {
     setToast({ text: 'Workout discarded' });
   }
 
+  // (App review 26 Oct, finding 8) The strip and the day row only change with the session, the selection and the main
+  // state, never with a re-render (a toast, a sheet, the rest tick).
+  const mainKind = data.state === 'ready' ? (data.value.view?.main.kind ?? 'no_plan') : 'no_plan';
+  const chosenName = view === null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
+  const strip = useMemo(() => (session === null ? [] : services.todaySession.strip(session, mainKind === 'done_today' ? null : chosenName)), [services, session, mainKind, chosenName]);
+  // The day row: the plan's days, or (V5, no plan; D7) Profile › Split's, NEXT on the Up next pick; `⋯` is the other
+  // workouts (Full body, Upper, Push, Empty workout, Build your own). No plan and no split: `⋯` alone.
+  const selectedKey = selection?.dayKey ?? null;
+  const segs = useMemo(
+    () => (session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey, selectedKey, paused: session.status === 'paused' })),
+    [session, selectedKey],
+  );
+
   if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
   if (data.state === 'error') {
     return (
@@ -647,11 +665,6 @@ export function TodayScreen() {
   const checkInLine = (c: NonNullable<typeof unlinked>) => `Check-in ${formatTime(toMs(c.recordedAt.utc), zoned.tz)} · ${scoreText(c.score)}${c.reasons.length ? ` · ${reasonsText(c.reasons)}` : ''}`;
   const main = todayView?.main ?? { kind: 'no_plan' as const };
   const openWorkout = main.kind === 'resume' || main.kind === 'stale';
-  const chosenName = view === null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
-  const strip = session === null ? [] : services.todaySession.strip(session, main.kind === 'done_today' ? null : chosenName);
-  // The day row: the plan's days, or (V5, no plan; D7) Profile › Split's, NEXT on the Up next pick; `⋯` is the other
-  // workouts (Full body, Upper, Push, Empty workout, Build your own). No plan and no split: `⋯` alone.
-  const segs = session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey, selectedKey: selection?.dayKey ?? null, paused: session.status === 'paused' });
 
   const openHero = (() => {
     switch (main.kind) {
