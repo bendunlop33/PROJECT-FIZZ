@@ -46,3 +46,24 @@ describe('findExercises (pure)', () => {
     expect(findExercises(POOL, { query: '', muscle: 'delts', equipment: null }).map((x) => x.name)).toEqual(['Lateral raise']);
   });
 });
+
+describe('(Ben, 27 Oct) cardio by what he says: "bike warm up", "8 min bike"', () => {
+  const CARDIO: FindableExercise[] = [
+    ...POOL,
+    e('exercise-bike', 'Exercise bike', { primaryMuscles: ['quads', 'glutes'], compatibleEquipment: ['erg'], defaultLoadConvention: 'bodyweight', measurement: 'cardio' }, ['Stationary bike', 'Upright bike', 'Spin bike']),
+    e('air-bike', 'Air bike', { primaryMuscles: ['quads'], compatibleEquipment: ['erg'], defaultLoadConvention: 'bodyweight', measurement: 'cardio' }, ['Assault bike']),
+    e('rowing-erg', 'Rowing machine', { primaryMuscles: ['lats'], compatibleEquipment: ['erg'], defaultLoadConvention: 'bodyweight', measurement: 'cardio' }, ['Rower']),
+  ];
+  const find = (query: string) => findExercises(CARDIO, { query, muscle: null, equipment: null }).map((x) => x.catalogueId);
+  it('the request words around the name never hide it (repro: "bike warm up" found nothing)', () => {
+    expect(find('bike warm up')).toContain('exercise-bike');
+    expect(find('8 min bike warm up')).toContain('exercise-bike');
+    expect(find('bike warm-up before legs')).toContain('exercise-bike');
+    expect(find('10 minute rower cool down')[0]).toBe('rowing-erg');
+    expect(find('stationary bike')[0]).toBe('exercise-bike');
+  });
+  it('the core query keeps names whole and words that are names', () => {
+    expect(find('exercise bike')[0]).toBe('exercise-bike');
+    expect(find('back squat')[0]).toBe('barbell-back-squat');
+  });
+});
