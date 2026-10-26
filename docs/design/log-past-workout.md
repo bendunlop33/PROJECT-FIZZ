@@ -39,7 +39,7 @@ Where: the Finish sheet (active-workout §4.8), Summary and a past workout's `Ed
 
 ## 3. Log a past workout
 
-**Entry points:** Today's `⋯` sheet (under Empty workout / Build your own), Library › Workouts (under Empty workout), Past workouts (top of the list; reached from Library › Workouts → `All workouts ›`, Ben, 26 Oct).
+**Entry points:** Today's `⋯` sheet (under Empty workout / Build your own), Library › Workouts (under Empty workout), Past workouts (top of the list; reached from Library › Workouts → `Past workouts ›`, Ben, 26 Oct).
 
 ```
 ┌────────────────────────────────────────┐

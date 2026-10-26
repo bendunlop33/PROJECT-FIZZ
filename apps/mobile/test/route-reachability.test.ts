@@ -91,7 +91,7 @@ describe('route reachability (review 26 Oct, findings 3 and 15)', () => {
     expect(registeredRoutes(fake).filter((r) => !used.has(r))).toEqual(['Orphan']);
   });
 
-  it('Past workouts is opened from Library › Workouts (`All workouts ›`)', () => {
+  it('Past workouts is opened from Library › Workouts (`Past workouts ›`)', () => {
     const files = sourceFiles(SRC).filter((f) => readFileSync(f, 'utf8').match(/navigate\(\s*'PastWorkouts'/));
     expect(files.map((f) => relative(SRC, f))).toContain('screens/routines/WorkoutsScreen.tsx');
   });
