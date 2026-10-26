@@ -20,6 +20,37 @@ export function formatNumber(value: number): string {
   return String(fromScaled(toScaled(value)));
 }
 
+/**
+ * (Ben, 26 Oct): RIR replaces RPE in the UI. Effort is still stored as it was
+ * logged or planned (`rpe` or `rir`); every place that shows it to Ben says
+ * reps in reserve, RIR = 10 − RPE (RPE 8.5 → 1.5), never below 0.
+ */
+export function rirOfRpe(rpe: number): number {
+  return Math.max(0, fromScaled(toScaled(10 - rpe)));
+}
+
+/** The RPE a RIR stands for (what targets are stored as): 10 − RIR, at least 1. */
+export function rpeOfRir(rir: number): number {
+  return Math.max(1, fromScaled(toScaled(10 - rir)));
+}
+
+/** A logged or planned effort as RIR: its `rir`, else 10 − its `rpe`; null when neither was recorded. */
+export function effortRir(e: { rpe: number | null; rir: number | null }): number | null {
+  if (e.rir !== null) return e.rir;
+  return e.rpe === null ? null : rirOfRpe(e.rpe);
+}
+
+/** `RIR 2`, `RIR 1.5`: an effort shown to Ben; null when none was recorded. */
+export function rirLabel(e: { rpe: number | null; rir: number | null }): string | null {
+  const rir = effortRir(e);
+  return rir === null ? null : `RIR${NBSP}${formatNumber(rir)}`;
+}
+
+/** VoiceOver: "2 reps in reserve", "1 rep in reserve", "1.5 reps in reserve". */
+export function rirWords(rir: number): string {
+  return `${formatNumber(rir)} ${rir === 1 ? 'rep' : 'reps'} in reserve`;
+}
+
 /** `0:45`, `1:30` (rest and work times). */
 export function formatDuration(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));

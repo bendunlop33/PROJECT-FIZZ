@@ -1,6 +1,6 @@
 import type { EquipmentInstance, Load, Measurement, SessionAggregate, SessionExercise, SetType, SetValues, WorkoutSet } from '@fizz/schemas';
 import { paceText } from '../cardio';
-import { cardioValuesText, dayMonthText, EQUIPMENT_WORD, formatDistance, formatDuration, formatNumber, NBSP, repRangeText, rowLoadCell, rowValueCell, targetText } from '../display';
+import { cardioValuesText, dayMonthText, effortRir, EQUIPMENT_WORD, formatDistance, formatDuration, formatNumber, NBSP, repRangeText, rirOfRpe, rirWords, rowLoadCell, rowValueCell, targetText } from '../display';
 import { painFlagCovering } from '../pain-flags';
 import { massWords } from '../progress/text';
 import { targetRpeOf } from '../coach/target-rpe';
@@ -56,6 +56,13 @@ export interface TableRow extends SetRowView {
   cells: { load: string | null; value: string };
   /** `RPE 8` / `RIR 2` on a done row (actual, no `@`); the target `@ 8.5` on a pending or open row; null otherwise. */
   effort: string | null;
+  /**
+   * (Ben, 26 Oct: RIR replaces RPE in the UI) The row's RIR cell: on a done row what Ben logged (`2`, `1.5`; a
+   * logged RPE reads as 10 − RPE), `target: false`; on a set not done yet the RIR he entered for it before logging
+   * (`target: false`) or else its target (`target: true`, shown dimmed). Null on warm-ups, skipped rows and with
+   * nothing to show.
+   */
+  rir: { text: string; value: number; target: boolean; spoken: string } | null;
   /** A done cardio row's pace (`2:05 /500 m`, `5:12 /km`); null otherwise. */
   pace: string | null;
   /** A pending target changed today: the word tag `Coach` or `Rule` (never `C`). */
@@ -298,7 +305,7 @@ function sharedColumns(own: readonly TableColumns[], built: readonly BuiltRow[])
 }
 
 /** The row options: pain flags for the carry, and the last comparable sets the open row prefills from. */
-type RowOptions = CarryOptions & { previous?: ActiveViewInput['previous']; /** (Ben, 26 Oct) The block's `lastPerSet`. */ lastBySet?: ReadonlyMap<string, SetLast | null> };
+type RowOptions = CarryOptions & { previous?: ActiveViewInput['previous']; /** (Ben, 26 Oct) The block's `lastPerSet`. */ lastBySet?: ReadonlyMap<string, SetLast | null>; /** The screen's unsaved edits (the open row's RIR before logging). */ edits?: ActiveViewInput['edits'] };
 
 /**
  * What a pending row shows (23 Oct, Ben: every row shows its load, not `—`
@@ -323,7 +330,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   const set = state.sets.find((s) => s.id === base.setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) {
-    return { ...base, state: 'skipped', setType: 'working', restAfterS: 0, spoken: '', columns: { kind: 'reps', loadLabel: null, valueLabel: 'REPS' }, cells: { load: null, value: '—' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
+    return { ...base, state: 'skipped', setType: 'working', restAfterS: 0, spoken: '', columns: { kind: 'reps', loadLabel: null, valueLabel: 'REPS' }, cells: { load: null, value: '—' }, effort: null, rir: null, pace: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
   }
   const eq = equipmentOf(state, ex);
   const columns = tableColumns(ex, eq);
@@ -335,8 +342,9 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   if (set.status === 'completed' && set.actual) {
     const a = set.actual;
     const effort = a.rpe !== null ? `RPE${NBSP}${formatNumber(a.rpe)}` : a.rir !== null ? `RIR${NBSP}${String(a.rir)}` : null;
+    const loggedRir = effortRir(a);
     const spoken = spokenValues(a.load, a.reps === null ? null : String(a.reps), a.durationS, a.distanceM, ex, eq);
-    const extra = [effort === null ? null : effort.replace(NBSP, ' '), base.edited ? 'edited' : null, base.gymCaption !== null ? `at ${base.gymCaption}` : null].filter((p): p is string => p !== null);
+    const extra = [loggedRir === null ? null : rirWords(loggedRir), base.edited ? 'edited' : null, base.gymCaption !== null ? `at ${base.gymCaption}` : null].filter((p): p is string => p !== null);
     return {
       ...base,
       state: 'done',
@@ -346,6 +354,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
       columns,
       cells: { load: rowLoadCell(a.load, ex.loadConvention, eq), value: rowValueCell(a, ex.measurement) },
       effort,
+      rir: ex.measurement === 'reps' ? rirCell(loggedRir, false) : null,
       pace: ex.measurement === 'cardio' ? paceText(a, ex.exerciseId) : null,
       todayChange: null,
       memberTag,
@@ -355,7 +364,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     };
   }
   if (set.status === 'skipped') {
-    return { ...base, state: 'skipped', setType: set.setType, restAfterS: set.rest.seconds, spoken: '', columns, cells: { load: null, value: 'Skipped' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
+    return { ...base, state: 'skipped', setType: set.setType, restAfterS: set.rest.seconds, spoken: '', columns, cells: { load: null, value: 'Skipped' }, effort: null, rir: null, pace: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
   }
   const open = set.id === activeSetId;
   const today = carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null;
@@ -367,7 +376,10 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   const targetWord = own ? 'your edit' : today === 'coach' ? 'coach target' : today === 'rule' ? 'adjusted target' : 'target';
   const before = today !== null && p.coach ? p.coach.before : null;
   const planWas = before === null ? null : spokenValues(before.load, before.reps === null ? null : repRangeText(before.reps), before.durationS, before.distanceM, ex, eq);
-  const rpeWords = rpe === null ? null : `RPE ${formatNumber(rpe)}`;
+  // (Ben, 26 Oct) RIR he entered for this set before logging (the open row's edits, else its saved draft).
+  const ownRir = set.setType === 'warmup' || ex.measurement !== 'reps' ? null : ((carry.edits?.setId === set.id ? carry.edits.values.rir : set.draft?.rir) ?? null);
+  const targetRir = rpe === null || set.setType === 'warmup' || ex.measurement !== 'reps' ? null : rirOfRpe(rpe);
+  const rpeWords = ownRir !== null ? rirWords(ownRir) : targetRir === null ? null : `target ${rirWords(targetRir)}`;
   const target = targetText(p, { convention: ex.loadConvention, equipment: eq, perSide: ex.laterality === 'unilateral', rpe, measurement: ex.measurement });
   return {
     ...base,
@@ -379,6 +391,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     cells: { load: rowLoadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(p, ex.measurement) },
     // The target RPE is a cell too (18 Oct: set · KG · REPS · RPE · ✓).
     effort: rpe === null ? null : `@${NBSP}${formatNumber(rpe)}`,
+    rir: ownRir !== null ? rirCell(ownRir, false) : rirCell(targetRir, true),
     pace: null,
     todayChange: today,
     memberTag,
@@ -388,6 +401,11 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
       ? `${who}, current`
       : `${[who, spokenTarget === '' ? 'no target' : `${targetWord} ${spokenTarget}`, rpeWords].filter((x): x is string => x !== null).join(', ')}${planWas !== null && planWas !== '' ? `. Plan was ${planWas}` : ''}`,
   };
+}
+
+function rirCell(rir: number | null, target: boolean): TableRow['rir'] {
+  if (rir === null) return null;
+  return { text: formatNumber(rir), value: rir, target, spoken: target ? `target ${rirWords(rir)}` : rirWords(rir) };
 }
 
 /**
@@ -535,7 +553,7 @@ function exerciseCard(input: ActiveViewInput, root: SessionExercise, parts: read
   const ruleRpe = input.ruleTargetRpe?.[action.id] ?? input.ruleTargetRpe?.[root.id] ?? null;
   const ownColumns = tableColumns(action, eq);
   const lastBySet = lastPerSet(state, root.id, input.previous);
-  const { columns, rows } = sharedColumns([ownColumns], buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous, lastBySet })));
+  const { columns, rows } = sharedColumns([ownColumns], buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous, lastBySet, edits: input.edits })));
   const prev = input.previous[action.id] ?? input.previous[root.id] ?? null;
   const headerLine = headerLineOf(action, eq);
   const lastLine = lastLineOf(prev, action, eq, state.session.startedAt.tz);
@@ -604,7 +622,7 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
     });
     const ruleRpe = input.ruleTargetRpe?.[action.id] ?? null;
     const lastBySet = lastPerSet(state, root.id, input.previous);
-    const mine = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous, lastBySet }));
+    const mine = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous, lastBySet, edits: input.edits }));
     built.push(...mine);
     memberBuilt.push(mine);
     unitsByMember.push({ tag, name: action.exerciseName, units: parts.flatMap((p, k) => setUnits(state.sets, p.id, k === 0 ? (root.roundOffset ?? 0) : 0)) });

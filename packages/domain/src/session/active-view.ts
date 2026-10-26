@@ -60,6 +60,11 @@ export interface PreviousSession {
   imported: boolean;
   /** Working-order sets as logged, for prefill and the `Last (…)` line. */
   sets: ComparableSet[];
+  /**
+   * (Ben, 26 Oct) That session's warm-ups in order, in the same unit and convention (the table's PREVIOUS on a
+   * `W` row: warm-up n matches last time's warm-up n). Absent or empty: none. Never used for prefill or progression.
+   */
+  warmups?: ComparableSet[];
 }
 
 /**
@@ -84,8 +89,10 @@ export function lastComparableSessions(history: readonly HistorySession[], ex: P
   for (const h of sorted) {
     if (out.length >= n) break;
     if (!matchesEquipment(h, ex.equipmentId)) continue;
-    const sets = comparableSetsOf(h).filter((s) => s.setType !== 'warmup');
+    const all = comparableSetsOf(h);
+    const sets = all.filter((s) => s.setType !== 'warmup');
     if (sets.length === 0) continue;
+    const warmups = all.filter((s) => s.setType === 'warmup' && (s.load === null || s.load.convention === 'bodyweight' || (s.load.unit === ex.unit && s.load.convention === ex.loadConvention)));
     const alike = sets.every((s) => s.load === null || s.load.convention === 'bodyweight' || (s.load.unit === ex.unit && s.load.convention === ex.loadConvention));
     if (!alike) continue;
     out.push({
@@ -99,6 +106,7 @@ export function lastComparableSessions(history: readonly HistorySession[], ex: P
         ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
         ...(s.side === 'left' || s.side === 'right' ? { side: s.side } : {}),
       })),
+      ...(warmups.length > 0 ? { warmups: warmups.map((s, index) => ({ index, values: { load: s.load, reps: s.reps, durationS: s.durationS ?? null, rpe: null, rir: null, ...(s.distanceM !== undefined ? { distanceM: s.distanceM } : {}) } })) } : {}),
     });
   }
   return out;
@@ -730,8 +738,10 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     ? { flagId: covering.flag.id, flagVersion: covering.flag.version, checkDue: covering.checkDue, text: painNoteText(covering.checkDue), accessibilityLabel: painNoteAccessibility(covering.checkDue) }
     : null;
   let values: SetValues = edits ? edits.values : pre.values;
-  // Effort is never prefilled; only an explicit chip sets it.
-  values = { ...values, rpe: null, rir: null };
+  // Effort is never prefilled; only Ben sets it: a chip after the log, or (Ben, 26 Oct) the row's RIR cell before
+  // it, kept in his edits or the set's saved draft (never history's, never on a warm-up).
+  const ownRir = set.setType === 'warmup' ? null : ((edits ? edits.values.rir : set.draft?.rir) ?? null);
+  values = { ...values, rpe: null, rir: ownRir };
   // A bodyweight exercise has no load; `added` with nothing entered means none added.
   if (ex.loadConvention === 'bodyweight') values = { ...values, load: { value: 0, unit: ex.unit, convention: 'bodyweight' } };
   // Weighted today after a bodyweight Last: nothing added until Ben steps it.
