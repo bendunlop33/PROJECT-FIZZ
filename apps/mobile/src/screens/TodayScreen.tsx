@@ -50,7 +50,8 @@ import { createOnDeviceSpeech } from '../voice/on-device-speech';
  * The card's workout comes from `todaySession` (the builder rules); this screen only lays it out and
  * keeps the selection. Picking a day, chip or control writes nothing; Start commits the card as
  * today's builder draft and starts it (check-in sheet when due). Supersedes today.md's Up next card,
- * alternatives, Recent and Ask pill (§2.0.9, §7).
+ * alternatives, Recent and Ask pill (§2.0.9, §7). (Ben, 26 Oct) `Recent` is back under the session: the last 14
+ * days of workouts and activities, then `All history ›` (history.md §2).
  */
 
 /** An empty workout, or (No plan) the app's Up next: its routine or the last workout's next session (review today-fix-21oct B1). */

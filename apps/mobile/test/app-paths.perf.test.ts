@@ -162,6 +162,14 @@ describe('the everyday paths on ~800 workouts', () => {
     expect(edit.status).toBe('written');
     await timed('Today after an edit', 1000, () => todayOpen(s));
 
+    // (Ben, 26 Oct) History from Today's `All history ›`: six weeks of stored summaries and activities, then `Show more`.
+    const page = await timed('History (first six weeks)', 500, () => Promise.all([s.history.feed(), s.history.recentlyDeletedCount()]));
+    expect(page[0].items.length).toBeGreaterThan(0);
+    if (page[0].olderFrom !== null) {
+      const from = page[0].olderFrom;
+      await timed('History, Show more', 700, () => s.history.feed({ from }));
+    }
+
     // Library › Plan, and a plan day's workout opened from it.
     const overview = await timed('Library Plan tab', 500, () => Promise.all([s.plans.overview(), s.plans.previous(), s.coach.availability()]));
     const routineId = overview[0]?.days[1]?.routineId ?? null;
