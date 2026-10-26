@@ -62,6 +62,8 @@ export function ExerciseDetailScreen() {
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
+        // (27 Oct) The Lifts search and `Other` fields scroll above the keyboard.
+        automaticallyAdjustKeyboardInsets
         contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'] + 56 + (deleted.toast ? toastHeight : 0), gap: theme.space['5'] }}
       >
         {route.name === 'ProgressExercise' && view !== null ? (

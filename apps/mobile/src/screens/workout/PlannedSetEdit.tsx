@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
-import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { useWindowDimensions, View } from 'react-native';
 
 import { setStepName, toggleRepRange, type PlannedSetEdits } from '@fizz/domain';
 
@@ -10,7 +10,7 @@ import type { ActiveWorkoutData } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
-import { ActionBar, AppText, Chip, ChipRow, DangerTextButton, NUMBER_ACCESSORY_ID, NumberAccessory, NumberStepper, SecondaryButton, SheetKeyboardAvoidingView, StatusLine, StepperTileRow, TextButton, TextField, useKeyboardVisible } from '../../ui';
+import { ActionBar, AppText, Chip, ChipRow, DangerTextButton, NUMBER_ACCESSORY_ID, NumberAccessory, NumberStepper, SecondaryButton, KeyboardScrollView, SheetKeyboardAvoidingView, StatusLine, StepperTileRow, TextButton, TextField, useKeyboardVisible } from '../../ui';
 import { targetRpeChips } from '../../workout/exercise-menu';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
 import { committedLoad, loadNeedsFit, plannedEditSave } from '../../workout/set-edit';
@@ -138,7 +138,7 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
     // Review S1: the avoiding view alone lifts it (no automaticallyAdjustKeyboardInsets, or the inset counts twice).
     <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
       <NumberAccessory />
-      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
+      <KeyboardScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>{`Edit ${view.stepName.toLowerCase()} · ${view.exerciseName}`}</AppText>
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
@@ -306,7 +306,7 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
         </View>
         <View style={{ height: theme.space['8'] }} />
         <DangerTextButton label="Delete set" onPress={() => void remove()} />
-      </ScrollView>
+      </KeyboardScrollView>
       <ActionBar surface keypadOpen={keyboard} primary={{ label: 'Save changes', disabled: !view.changed && !noteEdited, onPress: () => void save() }} />
     </SheetKeyboardAvoidingView>
   );

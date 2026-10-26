@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, ScrollView, View } from 'react-native';
+import { Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../theme';
-import { useKeyboardVisible } from './keyboard';
+import { KeyboardScrollView, SheetKeyboardAvoidingView, useKeyboardVisible } from './keyboard';
 
 /**
  * A plain RN Modal bottom card (premium-feel §7.1): its content is there
@@ -18,6 +18,7 @@ export function BottomCard({
   onClose,
   onDismissed,
   children,
+  header,
   footer,
   closeLabel = 'Close',
   scroll = true,
@@ -26,6 +27,8 @@ export function BottomCard({
   onClose: () => void;
   onDismissed?: () => void;
   children: ReactNode;
+  /** (27 Oct) Pinned above the scrolling content: a title and a search field stay in view while the list scrolls and the keyboard is up. */
+  header?: ReactNode;
   /** Pinned under the scrolling content (Save, Remove, Cancel). */
   footer?: ReactNode;
   closeLabel?: string;
@@ -36,7 +39,7 @@ export function BottomCard({
   const keyboard = useKeyboardVisible();
   return (
     <Modal visible={visible} transparent animationType={theme.a11y.reduceMotion ? 'fade' : 'slide'} onRequestClose={onClose} {...(onDismissed ? { onDismiss: onDismissed } : {})}>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <SheetKeyboardAvoidingView style={{ flex: 1 }} contentStyle={{ justifyContent: 'flex-end' }}>
         <Pressable accessibilityLabel={closeLabel} accessibilityRole="button" onPress={onClose} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: theme.colors.scrim }} />
         <View
           accessibilityViewIsModal
@@ -52,16 +55,17 @@ export function BottomCard({
             maxHeight: '90%',
           }}
         >
+          {header !== undefined && header !== null ? <View style={{ gap: theme.space['3'] }}>{header}</View> : null}
           {scroll ? (
-            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ gap: theme.space['4'] }}>
+            <KeyboardScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ gap: theme.space['4'] }}>
               {children}
-            </ScrollView>
+            </KeyboardScrollView>
           ) : (
             children
           )}
           {footer !== undefined && footer !== null ? <View style={{ gap: theme.space['2'] }}>{footer}</View> : null}
         </View>
-      </KeyboardAvoidingView>
+      </SheetKeyboardAvoidingView>
     </Modal>
   );
 }

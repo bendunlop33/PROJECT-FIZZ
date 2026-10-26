@@ -318,6 +318,8 @@ export function ProgressScreen() {
           // Design pass 6.2: one tap on a search result opens it; a drag hides the keyboard.
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          // (27 Oct) The Lifts search and `Other` fields scroll above the keyboard.
+          automaticallyAdjustKeyboardInsets
           contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + 56 + (toastShown ? toastHeight : 0), gap: theme.space['5'] }}
         >
           {header}

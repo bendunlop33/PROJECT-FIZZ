@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, Keyboard, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { canDropRound, canRemoveExercise, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
@@ -44,6 +44,7 @@ import {
   PulseOnce,
   RuledSection,
   SecondaryButton,
+  SheetKeyboardAvoidingView,
   FadeIn,
   StatusLine,
   Tag,
@@ -2908,7 +2909,7 @@ export function WorkoutScreen() {
     />
   ) : null;
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
+    <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <NumberAccessory onNext={onKeypadNext} onDone={closeCellEditors} />
       {/* Top bar (D-ActiveSet): on the canvas, the workout's name in tracked caps, active time, pause. */}
       <View style={{ paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
@@ -3475,7 +3476,7 @@ export function WorkoutScreen() {
           });
         }}
       />
-    </KeyboardAvoidingView>
+    </SheetKeyboardAvoidingView>
   );
 }
 

@@ -156,6 +156,8 @@ export function BuilderCoachSheet({ entry }: { entry: BuilderCoachEntry }) {
         ref={scroll}
         style={{ flex: 1, borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], marginTop: theme.space['2'] }}
         onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
+        // (27 Oct) The keyboard shrinks the transcript: keep the latest turn in view above the composer.
+        onLayout={() => scroll.current?.scrollToEnd({ animated: false })}
         contentContainerStyle={{ padding: theme.components.screenMargin, gap: theme.space['4'], flexGrow: 1 }}
         {...COACH_TRANSCRIPT_KEYBOARD}
       >

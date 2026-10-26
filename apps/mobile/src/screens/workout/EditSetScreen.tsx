@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { useWindowDimensions, View } from 'react-native';
 
 import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, setStepName, toMs, effortRir, rpeOfRir } from '@fizz/domain';
 import type { SetExclusion, SetType, SetValues } from '@fizz/schemas';
@@ -15,7 +15,7 @@ import { useDataChanged, useServices } from '../../shell/context';
 import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
-import { ActionBar, AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NUMBER_ACCESSORY_ID, NumberAccessory, NumberStepper, SecondaryButton, SheetKeyboardAvoidingView, StatusLine, StepperTileRow, TextButton, TextField, useKeyboardVisible } from '../../ui';
+import { ActionBar, AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NUMBER_ACCESSORY_ID, NumberAccessory, NumberStepper, SecondaryButton, KeyboardScrollView, SheetKeyboardAvoidingView, StatusLine, StepperTileRow, TextButton, TextField, useKeyboardVisible } from '../../ui';
 import { PlannedSetEdit } from './PlannedSetEdit';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
 import { stepperRowTiles } from '../../workout/tile-fit';
@@ -213,7 +213,7 @@ export function EditSetScreen() {
     // Review S1: the avoiding view alone lifts it (no automaticallyAdjustKeyboardInsets, or the inset counts twice).
     <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
       <NumberAccessory />
-      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
+      <KeyboardScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <AppText variant="title2" accessibilityRole="header">{`Edit ${view.stepName.toLowerCase()} · ${view.exerciseName}`}</AppText>
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
@@ -420,7 +420,7 @@ export function EditSetScreen() {
         ) : null}
         <View style={{ height: theme.space['8'] }} />
         <DangerTextButton label="Delete set" onPress={() => void remove()} />
-      </ScrollView>
+      </KeyboardScrollView>
       <ActionBar surface keypadOpen={keyboard} primary={{ label: 'Save changes', disabled: !view.changed && !noteEdited, onPress: () => void save() }} />
     </SheetKeyboardAvoidingView>
   );
