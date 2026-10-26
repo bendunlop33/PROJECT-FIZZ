@@ -797,6 +797,8 @@ export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOption
   return out;
 }
 
+const LIVE_MEMO = new WeakMap<LiveBestsContext, { sessionId: string; earlier: ReviewSession[]; before: Map<string, number | null> }>();
+
 /** What `liveNewBestSets` needs besides the workout: the review's input and the Summary's options, read once. */
 export interface LiveBestsContext {
   input: WeeklyReviewInput;
@@ -815,7 +817,14 @@ export function liveNewBestSets(ctx: LiveBestsContext, aggregate: SessionAggrega
   const { input, opts } = ctx;
   const live = reviewSessionOf({ ...aggregate, session: { ...aggregate.session, status: HISTORY_STATUS } }, input.tz, input.nowMs);
   if (live === null) return out;
-  const earlier = withEarlier([...input.sessions].filter((x) => x.sessionId !== live.sessionId).sort((a, b) => a.startedMs - b.startedMs), opts.earlier).filter((x) => x.sessionId !== live.sessionId && x.startedMs <= live.startedMs);
+  // The history pool and each lift's earlier best don't change during a workout: worked out once per context.
+  let memo = LIVE_MEMO.get(ctx);
+  if (memo === undefined || memo.sessionId !== live.sessionId) {
+    const pool = withEarlier([...input.sessions].filter((x) => x.sessionId !== live.sessionId).sort((a, b) => a.startedMs - b.startedMs), opts.earlier).filter((x) => x.sessionId !== live.sessionId && x.startedMs <= live.startedMs);
+    memo = { sessionId: live.sessionId, earlier: pool, before: new Map() };
+    LIVE_MEMO.set(ctx, memo);
+  }
+  const earlier = memo.earlier;
   const upTo = [...earlier, live];
   const targets = new Map(input.liftTargets.map((t) => [t.exerciseId, t]));
   const removed = new Set(aggregate.exercises.filter((e) => e.removed !== undefined).map((e) => e.id));
@@ -824,9 +833,14 @@ export function liveNewBestSets(ctx: LiveBestsContext, aggregate: SessionAggrega
     const t = liftTermsOf(upTo, id, targets.get(id) ?? null, opts);
     if (!t.chartable || t.tracked.reps === null || t.convention === null) continue;
     const reps = t.tracked.reps;
-    const before = bestSets(liftRows(earlier, id, t.newest), t, reps, input.unit).real;
+    const key = `${id}|${t.convention}|${String(t.lowerIsBetter)}|${String(reps)}|${t.newest?.machine === true ? (t.newest.equipmentId ?? '-') : '*'}`;
+    let before = memo.before.get(key);
+    if (before === undefined) {
+      before = bestSets(liftRows(earlier, id, t.newest), t, reps, input.unit).real?.load ?? null;
+      memo.before.set(key, before);
+    }
     if (before === null) continue;
-    let best = before.load;
+    let best = before;
     const rows = aggregate.exercises.filter((e) => e.exerciseId === id && !removed.has(e.id) && (t.newest?.machine !== true || (e.equipmentId ?? null) === t.newest.equipmentId));
     const sets = aggregate.sets
       .filter((x) => rows.some((e) => e.id === x.sessionExerciseId) && x.status === 'completed' && x.actual !== null)
