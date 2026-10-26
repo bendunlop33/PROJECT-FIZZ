@@ -27,6 +27,9 @@
 #   the one line PR #3 relies on (Entitlement.healthKit, missing at that pin).
 # - SideStore 0.6.3 and older use AltSign (ALTCapabilities.m) and are not supported: the patch
 #   step fails.
+# - 27 Oct (Ben, build 1): sign-in failed on 0.7.0-alpha ("invalid server response"); 0.7.0-alpha's
+#   SideSign lacks the 2FA sign-in fix (752d1ef). Default is now the nightly d97ec13 (16 Oct), which pins
+#   SideSign 752d1ef, with PR #3 cherry-picked onto it, Xcode 26.4 as SideStore's nightly.yml uses.
 # - Xcode: what SideStore's own CI used for each tag on macos-26 (0.7.0-alpha alpha.yml: 26.2;
 #   0.6.4 stable.yml: 26.4). Their develop branch has since moved to a custom "xcode-27" runner
 #   and Xcode 27.2, which GitHub-hosted runners may not have; a newer sidestore_ref may need a
@@ -40,7 +43,7 @@ on:
       sidestore_ref:
         description: 'SideStore tag, branch or full commit SHA for the 0.7 build (github.com/SideStore/SideStore)'
         type: string
-        default: '0.7.0-alpha'
+        default: 'd97ec133719d79916675bdaf722b82a8d091d545'
       sideSign_ref:
         description: 'SideSign commit carrying the HealthKit patch (PR #3 head by default; full or short SHA)'
         type: string
@@ -51,11 +54,11 @@ on:
         options:
           - pr-head
           - cherry-pick
-        default: pr-head
+        default: cherry-pick
       xcode_version:
         description: 'Xcode for the 0.7 build (falls back to the newest Xcode 26 if absent)'
         type: string
-        default: '26.2'
+        default: '26.4'
       build_064:
         description: 'Also build the 0.6.4 alternative (SideStore-0.6.4-HealthKit.ipa)'
         type: boolean
@@ -90,11 +93,11 @@ jobs:
         id: plan
         env:
           # Inputs are empty on tag pushes, so fall back to the same defaults.
-          SIDESTORE_REF: ${{ inputs.sidestore_ref || '0.7.0-alpha' }}
+          SIDESTORE_REF: ${{ inputs.sidestore_ref || 'd97ec133719d79916675bdaf722b82a8d091d545' }}
           SIDESIGN_REF: ${{ inputs.sideSign_ref || '74950d37f2333d29cbf3bfc9ca4a60820498c2d3' }}
-          SIDESIGN_MODE: ${{ inputs.sidesign_mode || 'pr-head' }}
-          XCODE_VERSION: ${{ inputs.xcode_version || '26.2' }}
-          BUILD_064: ${{ github.event_name != 'workflow_dispatch' || inputs.build_064 }}
+          SIDESIGN_MODE: ${{ inputs.sidesign_mode || 'cherry-pick' }}
+          XCODE_VERSION: ${{ inputs.xcode_version || '26.4' }}
+          BUILD_064: ${{ github.event_name == 'workflow_dispatch' && inputs.build_064 }}
         run: |
           for v in "$SIDESTORE_REF" "$SIDESIGN_REF" "$XCODE_VERSION"; do
             if ! printf '%s' "$v" | grep -Eq '^[A-Za-z0-9._/-]+$'; then

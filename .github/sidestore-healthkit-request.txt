@@ -1,1 +1,2 @@
 Request 1 (26 Oct 2026): first patched SideStore build, defaults (0.7.0-alpha + 0.6.4, SideSign PR #3).
+Request 2 (27 Oct 2026): nightly d97ec13 (SideSign 752d1ef sign-in fix) + PR #3 cherry-picked, Xcode 26.4; 0.7 only.
