@@ -1,13 +1,13 @@
 # Competitor landscape
 
-Written by the `competitor-researcher`, 9 Oct 2026. Pass 2 (same day) applied the completeness critique: it adds Arvo, a "ChatGPT used directly" baseline, six more apps and a UK store view, and fixes unsourced cells. Pass 3 (20 Oct 2026) adds "Supersets and the in-workout screen", covering nine loggers (corrected in pass 3c, same day). Later passes should extend and correct this file rather than start over. The changes are listed under "Revision log" at the end.
+Written by the `competitor-researcher`, 9 Oct 2026. Pass 2 (same day) applied the completeness critique: it adds Arvo, a "ChatGPT used directly" baseline, six more apps and a UK store view, and fixes unsourced cells. Pass 3 (20 Oct 2026) adds "Supersets and the in-workout screen", covering nine loggers (corrected in pass 3c, same day). Pass 4 (26 Oct 2026) adds "Pass 4: Hevy in depth, screen by screen", which compares Hevy screen by screen (Ben's "lifft" meant Hevy) with lighter notes on eight peers, and ends with "Changes worth considering for GymSmarter (26 Oct)". Later passes should extend and correct this file rather than start over. The changes are listed under "Revision log" at the end.
 
 ## Summary
 
 - **Coverage.** 55 apps, a "ChatGPT used directly" baseline and 6 one-line notes, all checked on 2026-10-09 against vendor pages, US and GB App Store listings and help docs. User evidence comes only from the App Store, Trustpilot, forums and GitHub (Reddit can't be fetched, and there was no web search in pass 2), so the complaints are examples, not a survey.
 - **The market has caught up.** A rest Live Activity is standard (Hevy free; Strong, Arvo and GymStreak too). Equipment-aware loads exist in MacroFactor, Gravl, Alpha, Liftosaur and (vendor claim) Arvo. In-session AI that edits workouts exists in SensAI, Arvo, GymStreak and LiftTrack Max. Ben's realistic alternative, his ChatGPT Pro voice mode plus a free logger such as Hevy (whose free ChatGPT app saves plans), costs him nothing extra.
 - **The headline claim survives only in narrowed form [Inference].** No app checked documents all of these together: version-checked proposals that are rejected when stale, Undo on in-session coach edits, a max for every machine, and a labelled no-AI fallback. Arvo comes closest (in-session AI edits, plates per gym, Undo for plan activation only), but its "client-side AI" claim is contradicted by its own privacy policy, and GymSmarter's version is designed, not built.
-- **Top recommendations:** get the rest Live Activity working (with an actionable notification as fallback), build competitor-failure tests, show "Why this number?" on every target, get Ben's FitNotes export now, and have Ben run four brief scenarios in ChatGPT voice mode before the coach is built. **Supersets (pass 3, 20 Oct):** all nine loggers link exercises by hand, and Hevy, Strong, FitNotes, FitNotes 2 and Liftosaur move a→b. None of the nine documents rule-based pairing, fitting the time with supersets, a single rest after the round, or both partners on one page, so GymSmarter's design is ahead but untested; see #20–#24. Pass 3b (10 adaptive and AI coaches) changes one point: Fitbod and Gravl auto-pair behind a setting, and Arvo's AI applies supersets itself, so auto-pairing isn't unique (#25).
+- **Top recommendations:** get the rest Live Activity working (with an actionable notification as fallback), build competitor-failure tests, show "Why this number?" on every target, get Ben's FitNotes export now, and have Ben run four brief scenarios in ChatGPT voice mode before the coach is built. **Supersets (pass 3, 20 Oct):** all nine loggers link exercises by hand, and Hevy, Strong, FitNotes, FitNotes 2 and Liftosaur move a→b. None of the nine documents rule-based pairing, fitting the time with supersets, a single rest after the round, or both partners on one page, so GymSmarter's design is ahead but untested; see #20–#24. Pass 3b (10 adaptive and AI coaches) changes one point: Fitbod and Gravl auto-pair behind a setting, and Arvo's AI applies supersets itself, so auto-pairing isn't unique (#25). **Pass 4 (26 Oct), Hevy in depth:** GymSmarter is ahead on the Today start, warm-ups, supersets, plans, honesty in Progress, past-workout logging and import. Hevy is ahead on last time's numbers in every row, a PR mark at the moment of logging, a proven lock-screen Live Activity with buttons, history inside the workout, and pinned notes. Ten small-to-medium proposals for Ben are under "Changes worth considering for GymSmarter (26 Oct)"; none changes the brief.
 - **The brief needs changes** (see "Proposed brief changes"): hold "Proposed advantage" (change 2) until that baseline check; add "ChatGPT used directly" as the first competitor row; refresh the table and the LiftTrack section; add exclusion flags (low evidence) and validation scenarios; and say that only Ben can test competitors.
 
 ## How to read this
@@ -50,7 +50,7 @@ Written by the `competitor-researcher`, 9 Oct 2026. Pass 2 (same day) applied th
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **GymSmarter (9 Oct)** | built [G1] | built [G2] | built [G3] | built, fallback [G4] | designed [G5] | designed [G6] | partial [G7] | built, 10 draft [G8] | partial [G9] | built | partial [G10] | parked | not built | built [G11] | parked | ✓ |
 | **ChatGPT used directly (baseline)** [B1] | ✗ | ✗ | partial | partial | ✓ | ✓ | ✓ | partial | ✗ | ✗ | partial | ? [B2] | partial | partial | partial | partial |
-| Hevy | ✓ | partial [1] | partial | partial (Pro) | partial [2] | ✗ | ✓ | ✓ | ✓ [3] | ? [4] | partial | partial [5] | ✓ | partial (Pro) | partial | partial |
+| Hevy | ✓ | partial [1] | partial | partial (Pro) | partial [2] | ✗ | ✓ | ✓ | ✓ [3] | ✓ [4] | partial | partial [5] | ✓ | partial (Pro) | partial | partial |
 | Strong | ✓ | partial (PRO) | ✗ | ✗ | ✗ | ✗ | partial | ✓ [46] | ✓ [6] | ? | partial [7] | partial | ✓ | ✗ | partial | partial [8] |
 | FitNotes (Android) | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | partial | ✗ [47] | partial | ✓ | partial | ? | ✓ | ✗ | partial | ✓ |
 | FitNotes 2 (iOS) | ✓ | ✓ | partial | partial | ✗ | ✗ | ✓ | partial | ✓ | ✓ | ✓ [9] | partial | ✓ | ✗ | partial | ✓ |
@@ -98,7 +98,7 @@ Written by the `competitor-researcher`, 9 Oct 2026. Pass 2 (same day) applied th
 - [1] Hevy: the plate calculator is opt-in and covers barbell, short bar and EZ bar only. It shows "Closest possible weight" instead of snapping targets.
 - [2] Hevy: there is no in-app LLM. A free @hevy ChatGPT app reads your history and saves plans to Hevy. Since 3.1.12 (3 Sep 2026) the finish screen can send workouts to ChatGPT and Claude.
 - [3] Hevy: the Live Activity is free, and sets can be completed and rest adjusted by ±15 s without unlocking.
-- [4] Hevy offline isn't documented on the listing, the logging feature page or the Live Activity page, and the FAQ URL returned 404. Pass 1's anecdote (alternativeto) couldn't be reopened and has been dropped.
+- [4] Hevy offline: the US listing now says "Works offline" (checked 26 Oct 2026, pass 4). It wasn't documented on 9 Oct.
 - [5] Hevy wearables: a Watch app and full-detail Strava sync since Jun 2026. No Garmin; the accounts of why conflict (see Hevy).
 - [6] Strong: Live Activity and Dynamic Island arrived in 6.5.0 (12 Aug 2026).
 - [7] Strong: the CSV export "cannot be imported back".
@@ -282,7 +282,7 @@ Each section covers what the app is, its notable capabilities, what users say, a
   - A workout can be tagged with a gym (3.1.11, 28 Aug 2026), which Hevy calls "a first step". Hevy says logging single vs double dumbbells is "genuinely tricky" and still being investigated ([July update](https://www.hevyapp.com/community-updates/july-26/)).
   - **Analytics:** graphs for volume, best weight and total reps, muscle-group graphs, and 1RM; unlimited history needs Pro (US listing).
   - **Endurance:** HYROX-style hybrid training tracking (3.0.13, May 2026) (US listing). Full-detail Strava sync since June 2026 (July update).
-  - **Offline:** not documented ([4]).
+  - **Offline:** "Works offline" (US listing, 26 Oct; see [4]). Pass 4 has the screen-by-screen update: v3.2.3, pinned notes (3.2.0, 13 Oct), the free cap of 4 routines, and the live PR banner.
   - **Garmin: the accounts conflict.** Hevy's help centre says Garmin rejected its API application ([help](https://help.hevyapp.com/hc/en-us/articles/35361029194647-Hevy-and-Garmin-Integration-Update-Why-It-s-Not-Possible-Yet); 403 on recheck, so not re-read). the5krunner says Garmin offered a restricted integration that Hevy declined ([the5krunner](https://the5krunner.com/2026/03/24/garmin-connect-plus-strength-apps/)).
 - **Users say [User].**
   - Praise: easy logging and the lifetime option.
@@ -1583,6 +1583,165 @@ So **auto-generated pairs are not unique to GymSmarter.** This corrects pass 3's
 3. **Keep logging one set at a time.** A Fitbod user disliked having "the choice only to log an entire superset" on Fitbod's **Apple Watch** app (not the phone) [T1]. It mainly matters if a Watch app is ever built (brief: Watch later). GymSmarter's Log pill logs one set at a time (`workout-table-v3.md`), which avoids this. Keep it, and add no "log round" button unless Ben asks.
 4. **A coach-proposed pair needs a reason.** A JuggernautAI user saw supersets with "random muscle groups" [T13]. A coach-proposed pair should carry its one-line reason behind "Why?" and pass the §3.5 checks (no shared muscle, no two heavy lifts) before it is offered (rule 3). Opportunity #25.
 
+## Pass 4 (26 Oct 2026): Hevy in depth, screen by screen
+
+Ben asked (26 Oct) for a detailed review of GymSmarter against "lifft". The PM relayed his correction the same day: **"lifft" means Hevy.** Hevy is therefore the deep comparison here (free and Pro, latest version). Strong, Fitbod, Liftin', Lyfta, Liftosaur, Alpha Progression, Gravl and Boostcamp are lighter references. Before the correction arrived I had checked for an app called "Lifft": none exists in the App Store search results. The nearest names are Liftoff, Lifty and Liftin' ([search, 26 Oct](https://apps.apple.com/app/id1085414909)).
+
+**How to read this pass.**
+- Every URL was checked on **2026-10-26**. Labels are [Doc], [User] and [Inference], as in "How to read this".
+- **Unreachable:** Reddit (still can't be fetched); help.hevyapp.com (403, so it is cited from search excerpts and marked as such); the Strong and Liftin' review feeds (empty). r/Hevy has about 32k members and a "Feature Request" flair, per a June 2026 snapshot ([GummySearch](https://gummysearch.com/r/Hevy/)). No threads were read.
+- **User evidence** is 100 Hevy App Store reviews dated 20–24 Oct 2026 (US and GB feeds), plus older reviews where named. These are examples, not a survey. The feeds skew to 5 stars.
+- **GymSmarter status** comes from `docs/brief/CHANGELOG.md` (to 25 Oct) and the v3 specs (`workout-table-v3.md`, `workout-builder-v3.md`, `progress-goals.md`, `lock-screen-and-alerts.md`, `log-past-workout.md`). Most recent features are built but **not yet run on Ben's iPhone**, as the changelog says.
+
+### Hevy at a glance (26 Oct)
+
+- **Version and price [Doc].** v3.2.3 (listed "2d ago"); 4.9 stars from 100K US ratings. Pro is $2.99/mo, $23.99/yr or $74.99 lifetime, plus a second $3.99 monthly item with no explanation ([US listing](https://apps.apple.com/us/app/hevy-workout-tracker-gym-log/id1458862350)).
+- **Free-tier limits.**
+  - [Doc] Graphs go back 3 months, and you get 7 custom exercises ([gym progress](https://www.hevyapp.com/features/gym-progress/), [library](https://www.hevyapp.com/features/exercise-library)).
+  - [Doc] The listing says Pro adds "unlimited routines". [User + third party] The free cap is 4 routines: a GB review on 23 Oct says "you can only have 4 workouts on there" ([GB feed](https://itunes.apple.com/gb/rss/customerreviews/id=1458862350/sortby=mostrecent/json)), and a third-party review agrees ([androidexperto](https://androidexperto.com/apps/hevy/)).
+- **Offline [Doc].** The listing now says "Works offline". This replaces the `?` in matrix footnote [4].
+- **Changes since 20 Oct [Doc].** 3.2.1, 3.2.2 and 3.2.3 (all in the last 5 days) repeat the 3.2.0 notes (13 Oct): rebuilt notes that can be **pinned to an exercise, a routine or a single workout**, Snapchat sharing, and bug fixes. No other screen changed. Earlier 2026 changes that matter here:
+  - 3.1.8 (6 Aug): a redesigned set row "with clearer states" and an RPE colour scale.
+  - 3.1.11 (28 Aug): tag a gym on a workout; choose split types.
+  - 3.1.12–3.1.16 (Sep–2 Oct): send a workout to ChatGPT or Claude from the finish screen.
+
+  Source: the US listing's version history.
+
+### Screen by screen: Hevy vs GymSmarter
+
+"GymSmarter" means built unless marked designed. "Untested" means built but not yet run on Ben's iPhone.
+
+| Screen or flow | Hevy (26 Oct) | GymSmarter (26 Oct) | Verdict |
+|---|---|---|---|
+| **Home / start** | [Doc] Home is the social feed, and it can't be removed. The Workout tab has `Start Empty Workout`, routine folders and `Start Routine` on each card. First logged set takes about 3 taps ([competitor-first-pages.md](competitor-first-pages.md) §2) | Lean Today: Up next card with rows, minutes, Time and Edit. Start just starts (D1, 23 Oct), so the first set is 2 taps (Start, Log) | **GymSmarter ahead** (no feed; fewer taps) |
+| **Logging table** | [Doc] Columns: set, PREVIOUS, KG/LBS, REPS, optional RPE, ✓. Header shows duration, sets and volume. `+ Add Set`; swipe left to delete. Tap the set number to make it warm-up, drop or failure ([track workouts](https://www.hevyapp.com/features/track-workouts/)). 3.1.8 redesigned the row with an RPE colour scale | v3 round page: `#`, `KG` (`KG EACH`, `KG STACK`), `REPS`, `RPE` (target `@9` until logged), ✓. Cells edit in place with a keypad bar (−/+ by achievable step, Next, Done). Pending rows are dimmed, and the current set is marked. Swipe left deletes with Undo | **At parity on entry**; GymSmarter's steps are equipment-aware (rule 4) |
+| **Last time's numbers** | [Doc] A PREVIOUS column on every row. You can tap it to copy the values, and the source is a setting: last session, or last time in this routine (track workouts page). The Live Activity also shows last time's performance for the next set ([Live Activity](https://www.hevyapp.com/features/live-activity/)) | **Not in the table.** `Last time` is only behind `Why?` (workout-table-v3 §2), though pending rows are prefilled from the target (or the last logged set, 21 Oct) | **Hevy ahead.** It's the most-praised logging feature in the sample (below). Change #1 |
+| **Set types, RPE** | [Doc] Normal, warm-up, drop, failure; RPE per set, off by default | Warm-up, working, top, back-off, drop; target RPE per set; logged RPE | **GymSmarter richer** |
+| **Warm-ups** | [Doc] An opt-in warm-up calculator with editable percentages and reps, and separate rounding for plates and dumbbells. A setting decides whether warm-ups count in stats; changing it recalculates history and PRs ([help, search excerpt](https://help.hevyapp.com/hc/en-us/articles/35650921359639)) | A shared warm-up planner (WU1–WU12) is used everywhere and snapped to the gym; warm-ups never count in progress | **Parity.** Hevy's "count warm-ups?" toggle isn't needed: rule 6 and brief §4 already fix the choice |
+| **Supersets** | [Doc] Pair from `⋯` › `Add To Superset` (more than 2 allowed); Smart Superset Scrolling (pass 3). The rest-timer page suggests turning the timer off for back-to-back moves ([rest timer](https://www.hevyapp.com/features/workout-rest-timer/)) | One rest after the round, a→b auto-advance, both exercises on screen | **GymSmarter ahead** (see pass 3) |
+| **Rest timer** | [Doc] Starts on ✓. Set per exercise from 5 s to 5 min, or off; −15/+15 after a set; a default in Settings; a notification at zero | Persisted deadline; rest per set type; −30/+30/Skip; spoken "10 seconds" and "Rest done" cues with silent mode on (19 Oct); a slim strip while the keypad is open | **GymSmarter ahead in the app**, if the device tests pass |
+| **Lock screen / Live Activity** | [Doc] Free. Shows duration, exercise and set count, the next set's weight × reps, last time's result, and rest. You can **complete a set**, change rest by ±15 s or skip, all without unlocking (Live Activity page). [User] "the genius lock screen widget" (GB, 21 Oct) | Designed with **no buttons** (P-L4). The real rest flow on the phone is **still untested** (`device-tests/2026-10-12-live-activity-rest.md`: "open, not run"); only the probe's countdown has passed | **Hevy well ahead.** Change #3 |
+| **Watch** | [Doc] Log sets, rest timers and heart rate from the Watch. [User] "Logged a full workout, without having to pickup my phone" (GB, 22 Oct). [User] Apple Health and Watch sync "stopped working" after 3 months (US, 22 Oct, 3★) | None (brief: Watch later) | Hevy ahead; out of scope for now |
+| **Exercise picker / swap** | [Doc] `+ Add Exercise` at the bottom; search plus **equipment and muscle filters**; recently logged and custom exercises listed (library and performance pages). Replace from `⋯`. Trainer (Pro) offers 4 alternatives, then asks "permanent or this session" ([Trainer](https://www.hevyapp.com/features/workout-plan-generator/)) | One Swap / Add sheet (25 Oct): ranked suggestions, muscle chips, search with aliases and typos, every exercise; `Not at <gym>` dimmed; near-duplicates marked `Like …`. Swaps are today only by default | **Parity.** No equipment filter or "Recent" group in GymSmarter (Change #7) |
+| **Exercise info mid-workout** | [Doc] The exercise screen has an animation, step-by-step instructions, **and your performance and history for that lift** on the same screen (library page) | The exercise pop-up edits sets, types and rest and has `Why this weight?`. It shows **no history or chart**. How To shows the guide | **Hevy ahead.** Change #4 |
+| **Notes** | [Doc] 3.2.0–3.2.3: a note can be pinned to an exercise (shown every time), a routine, or one workout. Pinned notes can include a link | A note per exercise **for this workout only** (`NoteSheet`: "seat settings, how it felt") | **Hevy ahead** for machine settings. Change #5 |
+| **Plans and progression** | [Doc] Free routines: sets, set types, load and rep or rep-range targets, rest (no RPE targets documented) ([routines](https://www.hevyapp.com/features/gym-routines/)). At Finish it asks whether to update the routine. **Trainer (Pro):** onboarding (experience, goal, equipment, days, length, focus muscles); weight goes up only after "the upper end of the rep range … on all prescribed sets"; a small indicator marks progressed exercises; Injury Management; no per-change explanation or undo documented | Plan builder (offline), coach plans, blocks with deloads, coach-led next-session targets with `Why?` and Undo, rule fallback; `Keep for next time?` only for structural edits | **GymSmarter ahead** on explanation and Undo (rules 2 and 3). Hevy's simple double progression is the baseline to beat |
+| **Finish and PRs** | [Doc] Finish opens a save screen: name, duration, start date and time, photos, note, private. A **live PR banner** appears when a ticked set is a record (opt-in; 1RM, heaviest weight, set volume, most reps, duration). New PRs show on the summary ([help, search excerpt](https://help.hevyapp.com/hc/en-us/articles/36012016405655)). [User] "gold medal reminders of trying to beat out my last lift" (US, 24 Oct) | Summary with Hit/Short/Over per exercise, `Next time` with `Why?`/Undo, and `New best · Bench 100 × 6` (Build B). **No PB mark at the moment of logging** | **Hevy ahead on the moment.** Change #2 |
+| **Progress: lift charts** | [Doc] Route: Profile › Exercises › search › exercise, or Profile › Statistics › Main exercises (most logged over 30 days, 3 months, a year or all time). Summary has 5 graphs (heaviest weight, "projected or true 1RM", best set volume, best session volume, most reps). **Tap a record to open its workout.** Set Records (best weight per rep count); Strength Level vs population for 3 barbell lifts; History tab ([performance](https://www.hevyapp.com/features/gym-performance/)). Free: 3 months | Progress › Overview: This week, then Trends (main lifts in kg with PB rings, estimated points marked, targets in the right gutter), then Muscles. The Lifts tab has per-exercise PRs and rep maxes, history, and est. 1RM (labelled). No population scores (rule 6) | **GymSmarter ahead on honesty** (est. labelled; no Strength Level). Main lifts are on screen with no taps, where Hevy needs 3 or more. Hevy's "tap a record to open its workout" is missing (Change #6) |
+| **Muscle volume** | [Doc] A last-7-days body graph; set count per muscle by week, month or year; muscle distribution chart and body view. How secondary muscles count isn't documented ([sets per muscle](https://www.hevyapp.com/features/sets-per-muscle-group-per-week/)). [User] "Core-muscle graph shows zero work" (GB, 24 Oct, 4★). [User] dumbbell volume counts "as if you did it for one hand" (US, 22 Oct) | Muscles: sets vs plan over 8 weeks; the D5 groups; warm-ups excluded; Total weight counts both dumbbells (20 Oct) | **GymSmarter ahead** on counting both hands and on the stated rule. Keep the "what counted" list |
+| **History and calendar** | [Doc] A calendar with blue circles; tap a day to open its workout; a weekly streak; **year and multi-year views**; `+` logs a past workout. [User] A calendar to plan blocks is asked for (GB, 21 Oct) | Today's Recent (last 5), Past workouts, Progress Week/Month calendar, `5 weeks on plan`. Blocks exist | Parity; Hevy has a year view (Change #10, low) |
+| **Past-workout logging** | [Doc] Calendar `+`; the start date and time can be edited on Finish. [User] Wants a year dropdown when editing dates (Dec 2024) | `Log a past workout` (25 Oct) from Today `⋯`, Library and Past workouts; any past date; no clock; audited moves with Undo | **GymSmarter ahead** (untested) |
+| **Coach / AI** | [Doc] No in-app AI. The free @hevy ChatGPT app reads history and saves plans; the finish screen sends a workout to ChatGPT or Claude. [User] Praise in the sample: "connects with ChatGPT to prepare, analize and review" (US, 23 Oct); "connected it to Grok" (US, 24 Oct) | An embedded coach that sees the live session; today edits with Undo; offers when unasked; proposals for structure; plans; review | **GymSmarter ahead in design**; it has to win inside the session (pass 2) |
+| **Onboarding / import** | [Doc] Imports **only Strong CSVs**, **once**, with a revert ([help, search excerpt](https://help.hevyapp.com/hc/en-us/articles/38001424401943)). Trainer asks 6 questions | FitNotes import (preview, Undo) and AI import from any app; quick gym setup that learns as he trains | **GymSmarter ahead** |
+| **Speed and feel** | [User] Common words in the sample are "simple", "easy", "not bloated", "not overloading you with too much information". Complaints: one crash on launch and one "timer and routine saving" failure after an update (GB, 22–23 Oct, 1★) | Cold Today 0.30–0.49 s in Node on 800 workouts (25 Oct); not measured on the iPhone | Unknown until measured on the device |
+
+### What Hevy users say (sample of 100 reviews, 20–24 Oct 2026)
+
+Sources: [US feed](https://itunes.apple.com/us/rss/customerreviews/id=1458862350/sortby=mostrecent/json) (47 five-star, 2 four-star, 1 three-star) and [GB feed](https://itunes.apple.com/gb/rss/customerreviews/id=1458862350/sortby=mostrecent/json) (44 five-star, 3 four-star, 3 one-star). Short quotes only.
+
+**Praise [User]:**
+- **Remembering last time:** "remember what weight I hit last time" (US, 24 Oct); "tracks your 1RM and volume PRs" (US, 24 Oct).
+- **Simplicity:** "not overloading you with too much information" (US, 24 Oct); "not bloated with random features" (GB, 23 Oct).
+- **A generous free tier:** "even on the free tier I've had no issues" (GB, 24 Oct). This is the most common theme.
+- **The lock-screen widget:** "the genius lock screen widget" (GB, 21 Oct).
+- **Watch logging** (GB, 22 Oct) and Strava upload.
+- **Hotel gyms:** "build different routines to cater for differing facilities" (GB, 22 Oct). [Inference] Hevy users handle hotel gyms with separate routines, where GymSmarter re-snaps loads to the gym.
+- **External AI:** ChatGPT and Grok connections (US, 23–24 Oct).
+
+**Complaints [User]:**
+- Watch and Apple Health sync stopped after 3 months (US, 22 Oct, 3★).
+- Timer and routine saving broke after an update; a crash on launch (GB, 22–23 Oct, 1★).
+- Paid for Pro but got no access (GB, 22 Oct, 1★). Not relevant to us.
+- "reps carry over" between plans that share an exercise (GB, 21 Oct). [Inference] This is the "previous" source problem that Hevy's setting tries to solve.
+- Dumbbell volume counts one hand (US, 22 Oct). The core graph shows zero (GB, 24 Oct).
+- The timer "count[s] up" with no end alarm (US, 24 Oct). [Inference] This is probably about duration exercises.
+- Anyone can follow you without approval (US, 23 Oct).
+- Wants lock-screen heart rate (US, 23 Oct), Whoop support (US, 23 Oct), and a calendar for planning blocks (GB, 21 Oct).
+
+Earlier evidence in the Hevy section still stands: the feed can't be turned off; Garmin isn't supported.
+
+### Secondary references (lighter; checked 26 Oct)
+
+- **Strong** [Doc]. 6.5.1 (8 Oct) fixed sign-in sessions that "stopped sync". 6.5.0 (12 Aug) added the Live Activity ([US listing](https://apps.apple.com/us/app/strong-workout-tracker-gym-log/id464254577)). Exercise detail has About, History, **Charts (PRO only)** and Records (best at each rep count plus projected values; no PRO mark) ([help 237](https://help.strongapp.io/article/237-about-exercise-detail)). [User] Older reviews ask to "re-open a previous workout" and add past workouts (2022), and complain about a 3-routine free cap (2020) ([reviews](https://apps.apple.com/us/app/strong-workout-tracker-gym-log/id464254577?see-all=reviews)). Lesson: keep records free, and keep actual and projected values apart.
+- **Liftin'** [Doc]. v54.1 (about 25 Oct), 4.7 from 771 ratings; $2.99/mo, $24.99/yr, $99.99 lifetime. The listing says: "a workout screen focused on the next set", Live Activity and widgets, plate calculator, warm-up sets, per-exercise progression rules, built-in programmes, Hevy import, CSV export, Apple Intelligence workout generation, MCP for ChatGPT and Claude, and a Watch app that runs alone or mirrors the phone. Recent notes mention a new workout-screen design and rebuilt Watch sync ([US listing](https://apps.apple.com/us/app/liftin-gym-workout-tracker/id1445041669)). [User] Users want rest between exercises and finer rest control; the calendar showed only one workout a day (developer said it will be fixed) ([reviews](https://apps.apple.com/us/app/liftin-gym-workout-tracker/id1445041669?see-all=reviews)). Lesson: per-workout progression is praised ("independent progression for the same lift used in different workouts").
+- **Lyfta** [Doc]. v1.164 (11 Oct). The release notes are generic. The listing names warm-up, drop, superset and failure sets, automatic rest timers, Watch, widgets and Shortcuts. No Live Activity or AI is described ([US listing](https://apps.apple.com/us/app/lyfta-gym-tracker-workout-log/id6443740936)). Nothing new to copy.
+- **Liftosaur** [Doc]. v121 (22 Sep) redesigned the workout screen "with less clutter" and bigger set rows and ticks; v122 (29 Sep) shows heart rate from Watch or AirPods; v117 adds countdowns for timed sets and separate left and right timers ([US listing](https://apps.apple.com/us/app/liftosaur-scriptable-workouts/id1661880849)). The expanded set shows **"Last", "Best" and "Same day"** with dates, and **the column header cycles Target → Previous Set → Plates → e1RM**. Notes show as "Previous Note" for two months ([workout screen](https://www.liftosaur.com/features/workout-screen)). Lesson: a cycling header shows last time without adding a column (Change #1).
+- **Alpha Progression** [Doc]. v7.7 (6 Oct): more CSV export options. The listing describes set-by-set targets that use "what you've done today", a Live Activity with the next set, and a warm-up calculator (Pro); charts are Pro ([US listing](https://apps.apple.com/us/app/alpha-progression-gym-log/id1462277793)). Nothing new since pass 3b.
+- **Gravl** [Doc]. 1.53 (26 Sep): Workout Focus (blocks distracting apps during training), a rebuilt Watch app, and refreshed analytics and progress screens. 1.53.1: failed saves retry. 1.52 lets you tap any target weight to see why ([US listing](https://apps.apple.com/us/app/personal-trainer-gravl/id6450921637)). GymSmarter's `Why?` matches this.
+- **Boostcamp** [Doc]. v265 (5 Sep): the current set stays highlighted, finished exercises collapse, the rest timer was rebuilt, and history can be viewed by month. v266 (2 Oct): Auto Progression (Pro), "Similar Exercises" swaps, and a "Max Weight Reps" record ([US listing](https://apps.apple.com/us/app/boostcamp-gym-workout-fitness/id1529354455)). GymSmarter already marks the current set, has ranked swaps, and keeps rep records.
+- **Fitbod** [Doc]. 8.37.0. Every note since September says only "Bug fixes and improvements", and 8.36.0's note has an unfilled "{version}" placeholder ([US listing](https://apps.apple.com/us/app/fitbod-gym-fitness-planner/id1041517543)). Nothing new to compare.
+
+### Changes worth considering for GymSmarter (26 Oct)
+
+**These are proposals for Ben; none is approved.** They're ranked with Hevy-proven patterns first, then by value divided by effort. Effort: S is under one slice, M is one or two slices, L is more. Each change keeps the minimal-copy rule: values and icons, with any explanation behind `Why?`.
+
+1. **Workout table: show last time on every row.**
+   - Change: add the last comparable result per set (`100 × 8`) as a secondary value. To save width, use a header that cycles `RPE` ↔ `LAST`, or a small line under the KG/REPS cells. Tapping it copies the values into the row (Hevy).
+   - "Comparable" means the same exercise, equipment and convention, as `getComparableHistory` already defines. Show nothing when there is no comparable set. FitNotes history reads `Last (FitNotes …)` (B7).
+   - Hevy: a PREVIOUS column with tap-to-copy, and a setting for last session vs same routine. Liftosaur: a header that cycles Target / Previous / Plates / e1RM.
+   - Evidence: [User] "remember what weight I hit last time" (Hevy, 24 Oct); Boostcamp, "Best feature is having the previous weight and reps" (first-pages §4). Today GymSmarter shows last time only behind `Why?`.
+   - Effort S–M. Fits now (v3 table). Rules 6 (an actual result, never an estimate) and 4.
+2. **Mark a personal best on the set the moment it's logged.**
+   - Change: when a ticked working set beats the series' actual best at that rep count (or the heaviest set), show a small `PB` mark on the done row with a light haptic. No banner sentence. `Why?` names the old best. Estimated-1RM bests don't trigger it.
+   - Hevy: an opt-in live PR banner and medals. Evidence: [User] "gold medal reminders" (Hevy, 24 Oct); "my phone vibrates because I've [hit] a personal record" (analytics doc).
+   - Effort S. Use the same definition as Summary's `New best` (Build B) and PG10's minimum history, so imported sessions don't flood it. Rule 6.
+3. **Lock screen: prove the Live Activity on the phone, then add rest −/+ and Skip, then (maybe) Log.**
+   - Change, in steps:
+     - (a) Ben runs `2026-10-12-live-activity-rest.md` (about 10 minutes). Until he does, GymSmarter's lock screen is unproven.
+     - (b) Add last time to the Live Activity's next-set line (Hevy shows it).
+     - (c) Add rest −/+ and Skip buttons through `LiveActivityIntent`, if a free-provisioning device test passes (P-L4 said to revisit).
+     - (d) `Log as planned` last, with an operation ID and Undo in the app (rule 5).
+   - Hevy: complete a set and adjust or skip rest without unlocking, free. Evidence: [User] "the genius lock screen widget" (Hevy, 21 Oct). Strong, Alpha, Boostcamp and Liftin' all have a Live Activity.
+   - Effort: S for (a); S for (b); M–L for (c)–(d), feasibility unknown. First milestone (brief v0.2).
+4. **Exercise pop-up in the workout: add a `History` view.**
+   - Change: a read-only section in the exercise pop-up with the last 3 comparable sessions and a small top-set chart (the Lifts tab's chart, filtered to this exercise and gym series). `Open in Progress ›` goes further.
+   - Hevy: the exercise screen shows performance and history next to the instructions.
+   - Evidence [Inference]: Ben now has to leave the workout to see more than one past session. The demand evidence is indirect (the praise for last-time values above).
+   - Effort S–M; reuses the Progress components. Rule 6 (est. labelled).
+5. **Pinned exercise notes, so seat and pin settings show every time.**
+   - Change: a `Pin` switch in the note sheet. A pinned note shows under the exercise name every time that exercise is in a workout. Optionally pin per gym, because machine settings differ between gyms. An unpinned note stays for this workout only (as now). Pinned notes are Your data (rule 10) and are never read as instructions (rule 8).
+   - Hevy 3.2.0–3.2.3 (13–24 Oct) rebuilt notes around pinning to an exercise, routine or workout. Liftosaur shows the "Previous Note" for two months. FitNotes users already keep "machine settings" in exercise notes (FitNotes section).
+   - Effort S. Fits now.
+6. **Progress: tap a record or chart point to open its workout; list the most-logged lifts first in Lifts.**
+   - Change: in Lifts and on the Overview PB rings, tapping a record or point opens the workout it came from (read-only, as Past workouts does). The Lifts tab opens on the lifts logged most in the last 30 days, then A–Z.
+   - Hevy: "Tap a personal best to open the workout where it happened"; Statistics › Main exercises (most logged).
+   - Evidence [Doc]: Hevy performance page. [User] Fitbod "a tab … to locate your personal records" (analytics doc).
+   - Effort S. Rule 6 unchanged.
+7. **Swap / Add sheet: add `Recent` and an equipment filter.**
+   - Change: a `Recent` group (exercises from the last 4 weeks) above the muscle chips, plus an equipment chip row (Barbell, Dumbbell, Machine, Cable, Bodyweight) that combines with the muscle chips.
+   - Hevy: equipment and muscle filters, and recently logged exercises in the library.
+   - Evidence: [Doc] only; no user complaint was found. Low evidence.
+   - Effort S. It must not reorder the ranked suggestions (25 Oct).
+8. **Rest notification: add last time to the body text when the Live Activity is unavailable.**
+   - Change: `Rest done · Bench set 3 · target 100 × 6–8 · last 100 × 7`. This is in our control today (P-L6 fallback) and needs no new entitlement.
+   - Hevy: the Live Activity shows last time's performance.
+   - Effort S. Rule 6 (`target` and `last` stay distinct words).
+9. **Bring the monthly recap forward (facts only).**
+   - Change: build the agreed "Later: monthly recap card" (progress-goals) next after Build B. Show sessions, time, working sets, new bests and the change against last month. No sharing image needed.
+   - Hevy: a monthly report and a year in review. Boostcamp: a Sunday report. Evidence: [User] "So much Data!" and "Peep my Progress" (Hevy, 23–24 Oct) show the appetite. Ben asked for stats on 11 Oct (analytics doc).
+   - Effort M. Rule 6.
+10. **Calendar: a year view of training days (low priority).**
+    - Change: a `Year` option next to Week/Month, as a grid of dots for days trained. Tap a month to open it.
+    - Hevy: year and multi-year calendar views. Evidence: [Doc] only.
+    - Effort S–M. Low evidence.
+
+**Considered and not proposed:**
+- A "count warm-ups in stats" toggle (Hevy): rule 6 and brief §4 already settle this.
+- An RPE colour scale (Hevy 3.1.8): colour must never be the only signal, and the `@9` target already shows the information.
+- Sending a finished workout to an outside AI (Hevy): the coach is embedded.
+- A Watch app (Hevy, Liftin', Gravl and Strong all have one, and Hevy, Liftin' and Strong reviewers praise it): the brief says later. Record it as evidence for step 7, not now.
+- Gravl's Workout Focus (blocking other apps): outside a personal logger's scope.
+
+**Avoid (Hevy evidence):**
+- a social feed, or follows without approval;
+- population "Strength Level" scores (rule 6);
+- paywalled history;
+- a one-shot import (Hevy allows only one Strong import);
+- dumbbell volume counted as one hand;
+- a muscle graph that silently shows zero (show what counted).
+
+**Proposed brief changes from this pass:** none. Every change above fits the existing rules and build order. Change #3 (a)–(b) belong to the first milestone, which already has rest alerts. Change #3 (c)–(d) revisit design decision P-L4, not the brief.
+
 ## Opportunities for GymSmarter (Recommendations)
 
 Ranked by value to Ben divided by effort, then by fit with where the build is now (steps 2–3, first milestone). The effort sizes are guesses; the developer should re-estimate them. Pass 2 changes to the ranking:
@@ -1874,3 +2033,12 @@ No changes are proposed for HYROX, wearables or Strava. Ben's decisions (CHANGEL
     - rest inside a superset for Fitbod, Gravl and Alpha;
     - whether any app uses supersets to meet a session length.
   - **No brief changes proposed.**
+- **Pass 4 (26 Oct 2026):** Ben's "lifft" was confirmed to mean Hevy (the PM relayed this on 26 Oct). No app called "Lifft" exists in App Store search. Web search was available.
+  - **Added:** "Pass 4: Hevy in depth, screen by screen", with Hevy at a glance, a 21-row screen table against GymSmarter, a sample of 100 Hevy reviews (20–24 Oct), lighter notes on Strong, Liftin', Lyfta, Liftosaur, Alpha, Gravl, Boostcamp and Fitbod, and "Changes worth considering for GymSmarter (26 Oct)" (10 proposals).
+  - **Corrected:** Hevy Offline `?` → ✓ (the listing now says "Works offline"); footnote [4] rewritten; the Hevy section points to pass 4.
+  - **Unreachable:** Reddit; help.hevyapp.com (403, cited from search excerpts); the Strong and Liftin' review feeds (empty); Hevy's warm-up and Apple Watch feature pages (404).
+  - **Not done:**
+    - a hands-on check of any app (only Ben can do this);
+    - Hevy's in-app tap counts beyond the docs;
+    - MacroFactor and Arvo (not in Ben's corrected list; see their earlier sections).
+  - **No brief changes proposed.** Change #3 (c)–(d) would revisit design decision P-L4 in `lock-screen-and-alerts.md`.
