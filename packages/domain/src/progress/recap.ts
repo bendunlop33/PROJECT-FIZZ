@@ -8,6 +8,7 @@ import { seriesUnitText, shortDate, longDate } from './exercise-view';
 import { muscleFrequency, type MuscleInfo } from './muscles';
 import type { ProgressSession } from './projection';
 import { recordsInWindow } from './records';
+import type { NewBestRecords } from '../review/progress-page';
 import { countNoun, gymTimeWords, monthName, setsText } from './text';
 import { inRange, type ProgressWindow } from './window';
 
@@ -100,6 +101,8 @@ export interface MonthlyRecapInput {
   /** With a plan in use: each week (Monday) and whether it reached his aim (consistency); null: no plan or no aim. */
   planWeeks: readonly { monday: string; atAim: boolean | null }[] | null;
   nameOf?: (exerciseId: string) => string | null;
+  /** (Ben, 26 Oct) The tracked lifts' `New best`s (`newBestClaims`): the month's records. Absent: not known, none shown. */
+  bests?: NewBestRecords | null;
 }
 
 /** The month before `today`'s, `YYYY-MM`. */
@@ -170,15 +173,15 @@ export function buildMonthlyRecap(input: MonthlyRecapInput): MonthlyRecapView | 
     .sort((a, b) => b.r.sets - a.r.sets || b.prev - a.prev)
     .map(({ r, prev }) => ({ key: r.key, label: r.label, value: setsText(r.sets), previous: setsText(prev), words: `${r.label}: ${setsText(r.sets)} sets; ${previousTitle} ${setsText(prev)}.` }));
 
-  // Records set that month: actual sets only (no `Best Est. 1RM`).
-  const rec = recordsInWindow(input.sessions, w, { limit: Number.POSITIVE_INFINITY, estimates: false });
+  // Records set that month (Ben, 26 Oct): the tracked lifts' `New best`s, the same ones the Summary and PB ring show.
+  const rec = input.bests == null ? { items: [] } : recordsInWindow(input.sessions, w, { limit: Number.POSITIVE_INFINITY, bests: input.bests });
   const records: RecapRecordRow[] = rec.items.map((r) => ({
     key: `${r.sessionExerciseId}:${r.kind}`,
     sessionId: r.sessionId,
     exercise: r.exerciseName,
-    text: r.kind === 'heaviest' ? r.value : `${r.label} · ${r.value}`,
+    text: r.value,
     date: shortDate(r.date, input.today),
-    words: `${r.exerciseName}, ${r.label.toLowerCase()}, ${r.value.replace(/\u00a0/g, ' ').replace(' × ', ' by ')}, ${longDate(r.date, input.today)}. Opens the workout.`,
+    words: `${r.exerciseName}, new best, ${r.value.replace(/\u00a0/g, ' ').replace(' × ', ' by ')}, ${longDate(r.date, input.today)}. Opens the workout.`,
   }));
 
   // The tracked lifts trained that month: heaviest top set against the month before (same series, his unit).

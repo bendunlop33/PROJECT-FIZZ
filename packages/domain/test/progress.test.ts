@@ -27,6 +27,7 @@ import {
 } from '../src/index';
 import { at, kg, lb, values } from './fixtures';
 import { apply, BENCH, logCmd, setsFor, startFixture } from './session-fixture';
+import { bestsFor } from './new-best-fixture';
 
 /**
  * Progress slice A (progress.md §8 checks 1–14, 17, 23): windows, sessions,
@@ -327,57 +328,74 @@ describe('muscles (checks 9–15, PG26, PG27)', () => {
   });
 });
 
-describe('records in the window (check 17, PG10, PG30)', () => {
+describe('records in the window: the tracked lifts\u2019 New bests (Ben, 26 Oct)', () => {
   const benchRow = (load: Load, reps: number, over: Partial<ProgressExercise> = {}) => row('bench', [set({ load, reps })], { exerciseName: 'Bench press', ...over });
   const history = ['2026-09-01', '2026-09-05', '2026-09-09'].map((d) => session(d, { exercises: [benchRow(kg(100), 5)] }));
   const w30 = progressWindow(TODAY, 30);
+  const rec = (sessions: ProgressSession[], o: { lifts?: string[]; reps?: Record<string, number>; window?: typeof w30; limit?: number } = {}) =>
+    recordsInWindow(sessions, o.window ?? w30, { bests: bestsFor(sessions, o.lifts ?? ['bench'], { reps: o.reps ?? { bench: 5 } }), ...(o.limit === undefined ? {} : { limit: o.limit }) });
 
-  it('a heavier set after 3 earlier sessions on the same equipment is a record, with load × reps', () => {
-    const r = recordsInWindow([...history, session('2026-10-01', { exercises: [benchRow(kg(105), 3)] })], w30);
+  it('a heavier real set at the tracked reps is a record, in the Summary\u2019s words; the home lists it', () => {
+    const sessions = [...history, session('2026-10-01', { exercises: [benchRow(kg(105), 5)] })];
+    const r = rec(sessions);
     expect(r.total).toBe(1);
-    expect(r.items[0]).toMatchObject({ kind: 'heaviest', label: 'Heaviest set', date: '2026-10-01', isEstimate: false });
-    expect(sp(r.items[0]?.value)).toBe('105 kg × 3');
-    const home = buildProgressHomeView({ sessions: [...history, session('2026-10-01', { exercises: [benchRow(kg(105), 3)] })], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part', gymNames: { 'gym-1': 'Main Gym' } });
+    expect(r.items[0]).toMatchObject({ kind: 'new_best', label: 'New best', date: '2026-10-01', isEstimate: false });
+    expect(sp(r.items[0]?.value)).toBe('105 kg × 5');
+    const home = buildProgressHomeView({ sessions, exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part', gymNames: { 'gym-1': 'Main Gym' }, bests: bestsFor(sessions, ['bench'], { reps: { bench: 5 } }) });
     if (home.dataState !== 'normal') throw new Error('expected normal');
-    expect(home.records.items[0]).toMatchObject({ title: 'Bench press · Main Gym', date: '1\u00a0Oct', words: 'Bench press, Main Gym. Heaviest set, 105 kilograms by 3, 1 October.' });
+    expect(home.records.items[0]).toMatchObject({ title: 'Bench press · Main Gym', label: 'New best', date: '1\u00a0Oct', words: 'Bench press, Main Gym. New best, 105 kilograms by 5, 1 October.' });
   });
 
-  it('more reps at the heaviest load is `Most reps at`', () => {
-    const r = recordsInWindow([...history, session('2026-10-01', { exercises: [benchRow(kg(100), 7)] })], w30);
-    expect(r.items[0]).toMatchObject({ kind: 'most_reps_at_load', value: '7' });
-    expect(sp(r.items[0]?.label)).toBe('Most reps at 100 kg');
+  it('short of the tracked reps, a tie, more reps at the same load, or an untracked lift: no record', () => {
+    expect(rec([...history, session('2026-10-01', { exercises: [benchRow(kg(110), 3)] })]).total).toBe(0);
+    expect(rec([...history, session('2026-10-01', { exercises: [benchRow(kg(100), 5)] })]).total).toBe(0);
+    expect(rec([...history, session('2026-10-01', { exercises: [benchRow(kg(100), 9)] })]).total).toBe(0);
+    expect(rec([...history, session('2026-10-01', { exercises: [benchRow(kg(105), 5)] })], { lifts: ['squat'] }).total).toBe(0);
   });
 
-  it('needs ≥ 3 earlier sessions; other equipment, units or conventions are not comparable', () => {
-    expect(recordsInWindow([...history.slice(1), session('2026-10-01', { exercises: [benchRow(kg(105), 3)] })], w30).total).toBe(0);
-    expect(recordsInWindow([...history, session('2026-10-01', { exercises: [benchRow(kg(105), 3, { equipmentId: 'bar-2' })] })], w30).total).toBe(0);
-    expect(recordsInWindow([...history, session('2026-10-01', { exercises: [benchRow(lb(240), 3, { unit: 'lb' })] })], w30).total).toBe(0);
+  it('a lift\u2019s first top set is never one; a second, heavier one is (no 3-session wait)', () => {
+    expect(rec([session('2026-10-01', { exercises: [benchRow(kg(100), 5)] })]).total).toBe(0);
+    expect(rec([session('2026-09-30', { exercises: [benchRow(kg(100), 5)] }), session('2026-10-01', { exercises: [benchRow(kg(102.5), 5)] })]).total).toBe(1);
   });
 
-  it('imported workouts never claim a record, and a heavier imported set suppresses one', () => {
-    const imp = (d: string, load: Load) => imported(d, { exercises: [benchRow(load, 3, { equipmentId: null, gymId: null })] });
-    expect(recordsInWindow([...history, imp('2026-10-01', kg(120))], w30).total).toBe(0);
-    expect(recordsInWindow([imp('2026-08-01', kg(110)), ...history, session('2026-10-01', { exercises: [benchRow(kg(105), 3)] })], w30).total).toBe(0);
+  it('kg and lb compare in Ben\u2019s unit', () => {
+    // 230 lb ≈ 104.3 kg → 104.5 shown: heavier than 100 kg.
+    const r = rec([...history, session('2026-10-01', { exercises: [benchRow(lb(230), 5, { unit: 'lb' })] })]);
+    expect(r.items.map((i) => sp(i.value))).toEqual(['104.5 kg × 5']);
+  });
+
+  it('imported workouts never claim one, and a heavier imported set must be beaten', () => {
+    const imp = (d: string, load: Load) => imported(d, { exercises: [benchRow(load, 5, { equipmentId: null, gymId: null })] });
+    expect(rec([...history, imp('2026-10-01', kg(120))]).total).toBe(0);
+    expect(rec([imp('2026-08-01', kg(110)), ...history, session('2026-10-01', { exercises: [benchRow(kg(105), 5)] })]).total).toBe(0);
+    expect(rec([imp('2026-08-01', kg(110)), ...history, session('2026-10-01', { exercises: [benchRow(kg(112.5), 5)] })]).total).toBe(1);
   });
 
   it('marked sets are never records; records before the window are not listed; newest first and limited', () => {
-    const spotted = session('2026-10-01', { exercises: [row('bench', [set({ load: kg(110), reps: 3, exclusions: ['spotted'] })])] });
-    expect(recordsInWindow([...history, spotted], w30).total).toBe(0);
-    const old = session('2026-09-10', { exercises: [benchRow(kg(102.5), 3)] });
-    const r = recordsInWindow([...history, old, session('2026-10-01', { exercises: [benchRow(kg(105), 3)] }), session('2026-10-05', { exercises: [benchRow(kg(107.5), 2)] })], progressWindow(TODAY, 14), { limit: 1 });
+    const spotted = session('2026-10-01', { exercises: [row('bench', [set({ load: kg(110), reps: 5, exclusions: ['spotted'] })])] });
+    expect(rec([...history, spotted]).total).toBe(0);
+    const old = session('2026-09-10', { exercises: [benchRow(kg(102.5), 5)] });
+    const r = rec([...history, old, session('2026-10-01', { exercises: [benchRow(kg(105), 5)] }), session('2026-10-05', { exercises: [benchRow(kg(107.5), 5)] })], { window: progressWindow(TODAY, 14), limit: 1 });
     expect(r.total).toBe(2);
     expect(r.items.map((i) => i.date)).toEqual(['2026-10-05']);
   });
 
   it('per-dumbbell loads read `each`', () => {
     const db = (d: string, v: number) => session(d, { exercises: [row('db', [set({ load: kg(v, 'per_hand'), reps: 8 })], { exerciseName: 'DB press', convention: 'per_hand', equipmentKind: 'dumbbells' })] });
-    const r = recordsInWindow([db('2026-09-01', 30), db('2026-09-04', 30), db('2026-09-07', 30), db('2026-10-02', 32.5)], w30);
+    const r = rec([db('2026-09-01', 30), db('2026-10-02', 32.5)], { lifts: ['db'], reps: { db: 8 } });
     expect(sp(r.items[0]?.value)).toBe('32.5 kg each × 8');
   });
 
-  it('assisted and bodyweight movements have no records (heavier is not better)', () => {
+  it('assisted: less assistance at the tracked reps is a record; more is not', () => {
     const asst = (d: string, v: number) => session(d, { exercises: [row('pullup', [set({ load: kg(v, 'assistance'), reps: 8 })], { convention: 'assistance', equipmentKind: 'assisted_stack' })] });
-    expect(recordsInWindow([asst('2026-09-01', 30), asst('2026-09-04', 30), asst('2026-09-07', 30), asst('2026-10-02', 40)], w30).total).toBe(0);
+    expect(rec([asst('2026-09-01', 30), asst('2026-10-02', 40)], { lifts: ['pullup'], reps: { pullup: 8 } }).total).toBe(0);
+    expect(rec([asst('2026-09-01', 30), asst('2026-10-02', 25)], { lifts: ['pullup'], reps: { pullup: 8 } }).total).toBe(1);
+  });
+
+  it('without the bests (not known) the home shows no rows and no `No new records` line', () => {
+    const home = buildProgressHomeView({ sessions: history, exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
+    if (home.dataState !== 'normal') throw new Error('expected normal');
+    expect(home.records).toMatchObject({ items: [], total: 0, empty: null });
   });
 });
 
@@ -413,7 +431,8 @@ describe('home view states (§3.1, check 19, 23)', () => {
   });
 
   it('no sessions in the window: 0 · — · —, bars at 0 with labels, last workout line, every muscle row 0', () => {
-    const home = buildProgressHomeView({ sessions: [session('2026-08-14', { exercises: [row('bench', [set()])] })], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
+    const only = [session('2026-08-14', { exercises: [row('bench', [set()])] })];
+    const home = buildProgressHomeView({ sessions: only, exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part', bests: bestsFor(only, ['bench']) });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(sp(home.datesLine)).toBe('12 Sep – 11 Oct');
     expect(home.activity.stats).toEqual([
@@ -585,23 +604,23 @@ describe('review progress-A fixes (S6, S8, N1, N2, N5, N9)', () => {
     expect(home.datesWords).toBe('12 September to 11 October');
   });
 
-  it('N5: the same exercise twice in one workout gives two distinct record keys', () => {
+  it('N5: one record per lift per workout, on the row its set was done (the same exercise on two bars)', () => {
     const benchAt = (load: Load, reps: number, equipmentId: string) => row('bench', [set({ load, reps })], { exerciseName: 'Bench press', equipmentId });
-    const hist = (eq: string) => ['2026-09-01', '2026-09-05', '2026-09-09'].map((d) => session(d, { exercises: [benchAt(kg(100), 5, eq)] }));
-    const today = session('2026-10-01', { exercises: [benchAt(kg(105), 3, 'bar-1'), benchAt(kg(105), 3, 'bar-2')] });
-    const home = buildProgressHomeView({ sessions: [...hist('bar-1'), ...hist('bar-2'), today], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
+    const hist = ['2026-09-01', '2026-09-05'].map((d) => session(d, { exercises: [benchAt(kg(100), 5, 'bar-1')] }));
+    const today = session('2026-10-01', { exercises: [benchAt(kg(102.5), 5, 'bar-1'), benchAt(kg(105), 5, 'bar-2')] });
+    const sessions = [...hist, today];
+    const home = buildProgressHomeView({ sessions, exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part', bests: bestsFor(sessions, ['bench'], { reps: { bench: 5 } }) });
     if (home.dataState !== 'normal') throw new Error('expected normal');
-    const keys = home.records.items.map((r) => r.key);
-    expect(keys).toHaveLength(2);
-    expect(new Set(keys).size).toBe(2);
+    expect(home.records.items.map((r) => [r.sessionExerciseId, sp(r.value)])).toEqual([[today.exercises[1]?.sessionExerciseId, '105 kg × 5']]);
   });
 
   it('N9: a `BW + 10 kg` record reads "body weight plus 10 kilograms"', () => {
     const dip = (d: string, v: number) => session(d, { exercises: [row('dip', [set({ load: kg(v, 'added'), reps: 8 })], { exerciseName: 'Dip', convention: 'added', equipmentKind: 'bodyweight_station' })] });
-    const home = buildProgressHomeView({ sessions: [dip('2026-09-01', 5), dip('2026-09-04', 5), dip('2026-09-07', 5), dip('2026-10-02', 10)], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
+    const sessions = [dip('2026-09-01', 5), dip('2026-10-02', 10)];
+    const home = buildProgressHomeView({ sessions, exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part', bests: bestsFor(sessions, ['dip'], { reps: { dip: 8 } }) });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(sp(home.records.items[0]?.value)).toBe('BW + 10 kg × 8');
-    expect(home.records.items[0]?.words).toContain('Heaviest set, body weight plus 10 kilograms by 8');
+    expect(home.records.items[0]?.words).toContain('New best, body weight plus 10 kilograms by 8');
   });
 
   it('S8: lb workouts count in time and muscles exactly as kg ones (units never change counts)', () => {

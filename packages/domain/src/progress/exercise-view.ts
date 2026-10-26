@@ -3,9 +3,7 @@ import { cardioDistanceText, cardioTimeText, cardioValuesText, distanceLoadText,
 import { paceText } from '../cardio';
 import { exclusionWords, isSetCountable } from '../exclusions';
 import { E1RM_MAX_REPS } from './e1rm';
-import { RECORD_MIN_SESSIONS } from '../session/records';
 import {
-  ASSIST_RECORD_MIN_REPS,
   collectExerciseSeries,
   defaultSeries,
   distanceTableByLoad,
@@ -36,7 +34,8 @@ import {
 import { MUSCLE_GROUPS, type MuscleGroup } from './muscle-groups';
 import { muscleGroupCredits, type MuscleInfo } from './muscles';
 import type { ProgressSession, ProgressSet } from './projection';
-import { exerciseRecords, type ExerciseRecord } from './records';
+import { exerciseRecords, RECORD_LABEL, type ExerciseRecord } from './records';
+import type { NewBestRecords } from '../review/progress-page';
 import { countNoun, loadUnitText, massWords, monthName } from './text';
 import type { DateRange } from './window';
 import { isPlatesAddedKind } from '../plates-added';
@@ -544,6 +543,8 @@ export interface ExerciseDetailInput {
   historyMonths?: number;
   /** An active pain flag on this exercise (`Pain flag since 2 Oct`). */
   painFlag?: { flagId: string; date: string } | null;
+  /** (Ben, 26 Oct) The tracked lifts' `New best`s (`newBestClaims`): the records. Absent: not known, none shown. */
+  bests?: NewBestRecords | null;
 }
 
 /**
@@ -708,42 +709,17 @@ function changeLine(first: TrendPoint, latest: TrendPoint, series: ExerciseSerie
 function recordView(r: ExerciseRecord, series: ExerciseSeries, today: string): RecordRowView {
   // The record's own row: its equipment reads its load (`40 kg stack`, `BW + 10 kg`).
   const kind = series.sessions.find((x) => x.sessionId === r.sessionId)?.rows.find((row) => row.sessionExerciseId === r.sessionExerciseId)?.equipmentKind ?? series.equipmentKind;
-  const date = shortDate(r.date, today);
-  const dateW = longDate(r.date, today);
-  // Records are judged and shown as logged, in the row's own unit (never converted).
-  const unit = r.load?.unit ?? series.key.unit;
-  const unitW = unit === 'kg' ? 'kilograms' : 'pounds';
-  let label: string;
-  let value: string;
-  let words: string;
-  switch (r.kind) {
-    case 'heaviest':
-      label = 'Heaviest set';
-      value = r.load ? setText({ load: r.load, reps: r.reps, equipmentKind: kind }, series) : '—';
-      words = `Heaviest set, ${r.load ? setWords({ load: r.load, reps: r.reps }, kind) : ''}, ${dateW}.`;
-      break;
-    case 'most_reps_at_load':
-      label = r.load ? `Most reps at ${setLoadText(r.load, kind)}` : 'Most reps';
-      value = String(r.reps ?? 0);
-      words = `Most reps at ${r.load ? massWords(r.load, kind) : ''}, ${String(r.reps ?? 0)}, ${dateW}.`;
-      break;
-    case 'best_e1rm':
-      label = 'Best Est. 1RM';
-      value = `≈${formatNumber(r.value)}${NBSP}${r.load === null ? seriesUnitText(series) : loadUnitText(r.load.unit, r.load.convention, kind)}`;
-      words = `Best estimated one-rep max, an estimate, about ${formatNumber(r.value)} ${unitW}, ${dateW}.`;
-      break;
-    case 'most_reps':
-      label = series.kind === 'added_bodyweight' ? 'Most reps at BW' : 'Most reps';
-      value = String(r.value);
-      words = `${series.kind === 'added_bodyweight' ? 'Most reps at bodyweight' : 'Most reps'}, ${String(r.value)}, ${dateW}.`;
-      break;
-    case 'least_assist':
-      label = `Least assistance for ${String(ASSIST_RECORD_MIN_REPS)}+ reps`;
-      value = `${formatNumber(r.value)}${NBSP}${unit}`;
-      words = `Least assistance for ${String(ASSIST_RECORD_MIN_REPS)} or more reps, ${r.load ? massWords(r.load, kind) : `${formatNumber(r.value)} ${unitW}`}${r.reps === null ? '' : `, ${countNoun(r.reps, 'rep', 'reps')}`}, ${dateW}.`;
-      break;
-  }
-  return { key: `${r.sessionExerciseId}:${r.kind}`, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, label, value, date, isEstimate: r.isEstimate, words };
+  // (Ben, 26 Oct) A record is a `New best`, in the Summary's words and unit.
+  return {
+    key: `${r.sessionExerciseId}:${r.kind}`,
+    sessionId: r.sessionId,
+    sessionExerciseId: r.sessionExerciseId,
+    label: RECORD_LABEL,
+    value: setText({ load: r.load, reps: r.reps, equipmentKind: kind }, series),
+    date: shortDate(r.date, today),
+    isEstimate: r.isEstimate,
+    words: `New best, ${setWords({ load: r.load, reps: r.reps }, kind)}, ${longDate(r.date, today)}.`,
+  };
 }
 
 function historyRow(ss: SeriesSession, series: ExerciseSeries, today: string): HistoryRowView {
@@ -1002,15 +978,8 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   }
   tableRows.reverse();
 
-  // Records (PG10, PG30)
-  const rec = exerciseRecords(input.sessions, series);
-  const records =
-    series.kind === 'timed' || series.kind === 'distance' || series.kind === 'cardio'
-      ? null
-      : {
-          items: rec.items.map((r) => recordView(r, series, today)),
-          empty: rec.items.length > 0 ? null : rec.loggedSessions <= RECORD_MIN_SESSIONS ? `Records start after ${String(RECORD_MIN_SESSIONS)} logged sessions.` : 'No records yet.',
-        };
+  // Records (Ben, 26 Oct): the lift's `New best`s; none (hidden) for a lift that isn't tracked.
+  const records = recordsSection(series, input.bests, today);
 
   // History
   const historyMonths = Math.max(1, input.historyMonths ?? 2);
@@ -1127,6 +1096,19 @@ export function buildExerciseListView(input: { sessions: readonly ProgressSessio
  * period showing, like the chart; `RECORDS` are all time (a record is judged against everything before it).
  * Every row carries its workout, so a tap opens it. Pure.
  */
+/**
+ * `RECORDS` (Ben, 26 Oct: one definition of best): the lift's `New best`s, newest first; `No records yet.` for a
+ * tracked lift with none; null (hidden) for a lift that isn't tracked or a series with no top set (bodyweight
+ * reps, timed, distance, cardio).
+ */
+function recordsSection(series: ExerciseSeries, bests: NewBestRecords | null | undefined, today: string): { items: RecordRowView[]; empty: string | null } | null {
+  if (bests == null) return null;
+  if (series.kind !== 'load' && series.kind !== 'assisted' && series.kind !== 'added_bodyweight') return null;
+  const rec = exerciseRecords(series, bests);
+  if (!rec.tracked) return null;
+  return { items: rec.items.map((r) => recordView(r, series, today)), empty: rec.items.length > 0 ? null : 'No records yet.' };
+}
+
 export interface ExerciseExtrasView {
   seriesId: string;
   repTable: RepTableView | null;
@@ -1146,23 +1128,18 @@ export function buildExerciseExtras(input: {
   unit?: WeightUnit | null;
   repBy?: 'weight' | 'reps';
   painFlag?: { flagId: string; date: string } | null;
+  /** (Ben, 26 Oct) The tracked lifts' `New best`s (`newBestClaims`): the records. Absent: not known, none shown. */
+  bests?: NewBestRecords | null;
 }): ExerciseExtrasView | null {
   const mine = input.sessions.filter((s) => s.exercises.some((e) => e.exerciseId === input.exerciseId));
   const series = collectExerciseSeries(mine, input.exerciseId, { unit: input.unit ?? null }).find((s) => s.id === input.seriesId);
   if (series === undefined) return null;
   const today = input.today;
-  const rec = exerciseRecords(input.sessions, series);
   return {
     seriesId: series.id,
     repTable: repTableView(series, input.window, input.repBy ?? 'weight', today),
     distanceTable: distanceTableView(series, input.window, today),
-    records:
-      series.kind === 'timed' || series.kind === 'distance' || series.kind === 'cardio'
-        ? null
-        : {
-            items: rec.items.map((r) => recordView(r, series, today)),
-            empty: rec.items.length > 0 ? null : rec.loggedSessions <= RECORD_MIN_SESSIONS ? `Records start after ${String(RECORD_MIN_SESSIONS)} logged sessions.` : 'No records yet.',
-          },
+    records: recordsSection(series, input.bests, today),
     pain: input.painFlag ? { flagId: input.painFlag.flagId, text: `Pain flag since ${shortDate(input.painFlag.date, today)}`, words: `Pain flag since ${longDate(input.painFlag.date, today)}. Opens the flag.` } : null,
   };
 }

@@ -29,6 +29,7 @@ import {
 } from '../src/index';
 import { at, kg, lb, values } from './fixtures';
 import { apply, BENCH, logCmd, setsFor, startFixture } from './session-fixture';
+import { bestsFor } from './new-best-fixture';
 
 /**
  * Progress slice B (progress.md §8 checks 26–39): series, Est. 1RM, top set,
@@ -199,10 +200,8 @@ describe('Est. 1RM (PG11, checks 27–29)', () => {
     expect(v.chartWords).toMatch(/^Estimated one-rep max, an estimate, Bench press, 9 April/);
     expect(v.table.headers[1]).toBe('Est. 1RM (estimate)');
     expect(v.table.rows.every((r) => r.value.startsWith('≈'))).toBe(true);
-    const rec = v.records?.items.find((r) => r.label === 'Best Est. 1RM');
-    expect(rec?.isEstimate).toBe(true);
-    expect(sp(rec?.value)).toBe('≈125.5 kg');
-    expect(rec?.words).toMatch(/an estimate/);
+    // (Ben, 26 Oct) An estimate is never a record: no `Best Est. 1RM` row.
+    expect(v.records?.items.some((r) => r.isEstimate || r.value.includes('≈')) ?? false).toBe(false);
     expect(v.estimateInfo).toBe(true);
   });
 
@@ -312,11 +311,11 @@ describe('marked sets (PG21, check 32)', () => {
   const sessions = [bench('2026-09-01', [[100, 5]]), bench('2026-09-03', [[100, 5]]), bench('2026-09-05', [[100, 5]]), session('2026-09-07', [row([spotted, set(kg(100), 6)])])];
 
   it('a 105×3 marked Spotted is not in the chart, rep table, records or StatStrip; history reads `105×3 (spotted)`', () => {
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, metric: 'top_set' });
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, metric: 'top_set', bests: bestsFor(sessions, ['bench'], { reps: { bench: 3 } }) });
     if (!v) throw new Error('view');
     expect(v.points.map((p) => sp(p.display))).not.toContain('105 kg × 3');
     expect(v.repTable?.rows.map((r) => sp(r.cells[0]))).toEqual(['100 kg']);
-    expect(v.records?.items.some((r) => r.value.includes('105'))).toBe(false);
+    expect(v.records).toEqual({ items: [], empty: 'No records yet.' });
     expect(v.stats.some((s) => s.value.includes('105'))).toBe(false);
     expect(v.history.months[0]?.rows[0]?.sets).toBe('105×3 (spotted) · 100×6');
     expect(v.points[3]?.notes).toContain('1 set not counted');
@@ -472,61 +471,59 @@ describe('Total weight on exercise detail (Ben, 20 Oct: replaces Volume)', () =>
   });
 });
 
-describe('records (PG10, PG30, check 39)', () => {
-  it('every record of the series, newest first, Best Est. 1RM labelled; heaviest and most reps as the home judges them', () => {
-    const sessions = [
-      bench('2026-08-01', [[100, 5]]),
-      bench('2026-08-04', [[100, 5]]),
-      bench('2026-08-07', [[100, 5]]),
-      bench('2026-08-10', [[100, 7]]), // most reps at 100, and Est. 1RM 123.5
-      bench('2026-08-13', [[105, 3]]), // heaviest (Est. 1RM 115.5: no)
-    ];
-    const s = onlySeries(sessions);
-    const r = exerciseRecords(sessions, s);
-    expect(r.items.map((x) => [x.date, x.kind])).toEqual([
-      ['2026-08-13', 'heaviest'],
-      ['2026-08-10', 'most_reps_at_load'],
-      ['2026-08-10', 'best_e1rm'],
+describe('records: the tracked lift\u2019s New bests (Ben, 26 Oct)', () => {
+  const sessions = [
+    bench('2026-08-01', [[100, 5]]),
+    bench('2026-08-04', [[100, 7]]), // more reps at 100: not a New best at × 5
+    bench('2026-08-07', [[105, 3]]), // heavier but short of 5 reps: not one (no estimate)
+    bench('2026-08-10', [[102.5, 5]]), // a New best
+    bench('2026-08-13', [[105, 5]]), // a New best
+  ];
+  const bests = bestsFor(sessions, ['bench'], { reps: { bench: 5 } });
+
+  it('every New best of the lift, newest first, in the Summary\u2019s words; never an estimate', () => {
+    const r = exerciseRecords(onlySeries(sessions), bests);
+    expect(r.tracked).toBe(true);
+    expect(r.items.map((x) => [x.date, x.kind, x.value, x.reps])).toEqual([
+      ['2026-08-13', 'new_best', 105, 5],
+      ['2026-08-10', 'new_best', 102.5, 5],
     ]);
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY });
-    expect(v?.records?.items.map((x) => sp(`${x.label}  ${x.value} · ${x.date}`))).toEqual(['Heaviest set  105 kg × 3 · 13 Aug', 'Most reps at 100 kg  7 · 10 Aug', 'Best Est. 1RM  ≈123.5 kg · 10 Aug']);
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, bests });
+    expect(v?.records?.items.map((x) => sp(`${x.label}  ${x.value} · ${x.date}`))).toEqual(['New best  105 kg × 5 · 13 Aug', 'New best  102.5 kg × 5 · 10 Aug']);
+    expect(v?.records?.items.every((x) => !x.isEstimate)).toBe(true);
   });
 
-  it('fewer than 3 earlier logged sessions: none, and `Records start after 3 logged sessions.`', () => {
-    const sessions = [bench('2026-08-01', [[100, 5]]), bench('2026-08-04', [[110, 5]]), bench('2026-08-07', [[120, 5]])];
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY });
-    expect(v?.records).toEqual({ items: [], empty: 'Records start after 3 logged sessions.' });
+  it('a lift that isn\u2019t tracked has no records section; a tracked one with none says `No records yet.`', () => {
+    expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, bests: bestsFor(sessions, ['squat']) })?.records).toBeNull();
+    const first = [bench('2026-08-01', [[100, 5]])];
+    expect(buildExerciseDetailView({ sessions: first, exerciseId: 'bench', today: TODAY, bests: bestsFor(first, ['bench'], { reps: { bench: 5 } }) })?.records).toEqual({ items: [], empty: 'No records yet.' });
+    // Not known (no bests read): hidden, never a false `No records yet.`
+    expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY })?.records).toBeNull();
   });
 
-  it('imports never make a record but a higher imported Est. 1RM suppresses one; an imported-only series has none', () => {
-    const base = [bench('2026-08-01', [[100, 5]]), bench('2026-08-04', [[100, 5]]), bench('2026-08-07', [[100, 5]]), bench('2026-08-10', [[100, 7]])];
-    const s = collectExerciseSeries(base, 'bench', { unit: null })[0] as ExerciseSeries;
-    expect(exerciseRecords(base, s).items.map((x) => x.kind)).toEqual(['most_reps_at_load', 'best_e1rm']);
-    // An imported 95 × 10 (Est. 126.5) suppresses the 123.5 Est. 1RM claim, not the lighter-load rep record.
-    const imp = imported('2026-01-01', [row([set(kg(95), 10)])]);
-    const withImp = collectExerciseSeries([imp, ...base], 'bench', { unit: null }).find((x) => x.key.source === 'app') as ExerciseSeries;
-    expect(exerciseRecords([imp, ...base], withImp).items.map((x) => x.kind)).toEqual(['most_reps_at_load']);
-    // A heavier imported set suppresses the actual records too (as `findSetRecord`).
-    const heavy = imported('2026-01-01', [row([set(kg(110), 1)])]);
-    const withHeavy = collectExerciseSeries([heavy, ...base], 'bench', { unit: null })[0] as ExerciseSeries;
-    expect(exerciseRecords([heavy, ...base], withHeavy).items.map((x) => x.kind)).toEqual(['best_e1rm']);
-    const onlyImp = [imported('2026-01-01', [row([set(kg(100), 5)])]), imported('2026-01-04', [row([set(kg(100), 5)])]), imported('2026-01-07', [row([set(kg(100), 5)])]), imported('2026-01-10', [row([set(kg(120), 5)])])];
-    const v = buildExerciseDetailView({ sessions: onlyImp, exerciseId: 'bench', today: TODAY, range: 'all' });
+  it('imports never make a record but a heavier imported set must be beaten; an imported-only series has none', () => {
+    const base = [bench('2026-08-01', [[100, 5]]), bench('2026-08-04', [[102.5, 5]])];
+    expect(exerciseRecords(onlySeries(base), bestsFor(base, ['bench'], { reps: { bench: 5 } })).items).toHaveLength(1);
+    const heavy = imported('2026-01-01', [row([set(kg(110), 5)])]);
+    const withHeavy = [heavy, ...base];
+    const s = collectExerciseSeries(withHeavy, 'bench', { unit: null })[0] as ExerciseSeries;
+    expect(exerciseRecords(s, bestsFor(withHeavy, ['bench'], { reps: { bench: 5 } })).items).toEqual([]);
+    const onlyImp = [imported('2026-01-01', [row([set(kg(100), 5)])]), imported('2026-01-10', [row([set(kg(120), 5)])])];
+    const v = buildExerciseDetailView({ sessions: onlyImp, exerciseId: 'bench', today: TODAY, range: 'all', bests: bestsFor(onlyImp, ['bench'], { reps: { bench: 5 } }) });
     expect(v?.seriesLabel).toBe('');
-    expect(v?.records).toEqual({ items: [], empty: 'Records start after 3 logged sessions.' });
+    expect(v?.records).toEqual({ items: [], empty: 'No records yet.' });
     // 18 Oct (Ben): imported points and rows carry no `FitNotes` tag; the source stays in the data.
     expect(v?.points.some((p) => p.notes.includes('FitNotes'))).toBe(false);
     expect(v?.history.months[0]?.rows.some((r) => r.tags.includes('FitNotes'))).toBe(false);
     expect(v?.history.months[0]?.rows[0]?.title).toMatch(/· Workout$/);
   });
 
-  it('Best Est. 1RM on the home: labelled, only when the row has no actual record', () => {
-    const sessions = [bench('2026-09-20', [[100, 5]]), bench('2026-09-23', [[100, 5]]), bench('2026-09-26', [[100, 5]]), bench('2026-10-01', [[95, 10]])];
+  it('the home lists no Best Est. 1RM: an estimate is never a record', () => {
+    const home4 = [bench('2026-09-20', [[100, 5]]), bench('2026-10-01', [[95, 10]])];
     const info = new Map<string, MuscleInfo>([['bench', { name: 'Bench press', movementPattern: 'horizontal_push', primaryMuscles: ['chest'] }]]);
-    const home = buildProgressHomeView({ sessions, exercises: info, today: TODAY, period: '1m', grouping: 'body_part', gymNames: GYMS });
+    const home = buildProgressHomeView({ sessions: home4, exercises: info, today: TODAY, period: '1m', grouping: 'body_part', gymNames: GYMS, bests: bestsFor(home4, ['bench'], { reps: { bench: 5 } }) });
     if (home.dataState !== 'normal') throw new Error('home');
-    expect(home.records.items.map((r) => [r.label, sp(r.value)])).toEqual([['Best Est. 1RM', '≈126.5 kg']]);
-    expect(home.records.items[0]?.words).toMatch(/estimated one-rep max, an estimate/);
+    expect(home.records.items).toEqual([]);
   });
 });
 

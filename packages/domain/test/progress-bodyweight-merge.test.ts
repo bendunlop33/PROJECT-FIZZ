@@ -17,6 +17,7 @@ import {
   type ProgressSet,
 } from '../src/index';
 import { kg, lb } from './fixtures';
+import { bestsFor } from './new-best-fixture';
 
 /**
  * Ben, 20 Oct 2026 (decision 8): bodyweight and weighted (BW +) versions of
@@ -137,14 +138,12 @@ describe('bodyweight and weighted are one series (Ben, 20 Oct)', () => {
     expect(v?.repTable?.rows.some((r) => r.cells[0] === 'BW')).toBe(true);
   });
 
-  it('records: never an Est. 1RM, and a bodyweight set is never a heavier one', () => {
+  it('records (Ben, 26 Oct): New bests of the added load at the tracked reps; never an Est. 1RM, never a bodyweight set', () => {
     const sessions = [...history(), session('2026-09-09', [addedRow([[20, 5]])]), session('2026-09-11', [bwRow([20])])];
     const s = collectExerciseSeries(sessions, 'pullup', { unit: null })[0] as ExerciseSeries;
-    const r = exerciseRecords(sessions, s);
-    expect(r.items.some((x) => x.kind === 'best_e1rm')).toBe(false);
-    expect(r.items.filter((x) => x.kind !== 'most_reps').every((x) => (x.load?.value ?? 0) > 0)).toBe(true);
-    // The bodyweight 20 is a `Most reps at BW` record (review S1), never a load record.
-    expect(r.items.filter((x) => x.kind === 'most_reps').map((x) => x.value)).toEqual([20]);
+    const r = exerciseRecords(s, bestsFor(sessions, ['pullup'], { reps: { pullup: 5 } }));
+    expect(r.items.map((x) => [x.date, x.value, x.reps])).toEqual([['2026-09-09', 20, 5]]);
+    expect(r.items.every((x) => x.load.value > 0)).toBe(true);
   });
 
   it('kg and lb: a bodyweight set is +0 in Ben’s unit (never converted)', () => {
@@ -171,30 +170,10 @@ describe('bodyweight and weighted are one series (Ben, 20 Oct)', () => {
     const target = { exerciseId: 'pullup', kind: 'weight_reps', reps: 5, load: { value: 20, unit: 'kg', convention: 'added' } } as unknown as Parameters<typeof liftTargetChartValue>[0];
     expect(liftTargetChartValue(target, { ...v.seriesTerms, metric: v.metric })).toBe(20);
   });
-  it('a bodyweight Most reps record survives one weighted session (`Most reps at BW`, review S1)', () => {
-    const bwOnly = [
-      session('2026-09-01', [bwRow([12])]),
-      session('2026-09-03', [bwRow([14])]),
-      session('2026-09-05', [bwRow([15])]),
-      session('2026-09-07', [bwRow([20])]),
-    ];
-    const before = exerciseRecords(bwOnly, collectExerciseSeries(bwOnly, 'pullup', { unit: null })[0] as ExerciseSeries);
-    expect(before.items.map((x) => [x.kind, x.value])).toEqual([['most_reps', 20]]);
-    const sessions = [...bwOnly, session('2026-09-09', [addedRow([[10, 5]])])];
-    const s = collectExerciseSeries(sessions, 'pullup', { unit: null })[0] as ExerciseSeries;
-    expect(s.kind).toBe('added_bodyweight');
-    const after = exerciseRecords(sessions, s);
-    expect(after.items.map((x) => [x.kind, x.value])).toEqual([['most_reps', 20]]);
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'pullup', today: TODAY, metric: 'top_set' });
-    expect(v?.records?.items.map((r) => [r.label, r.value])).toEqual([['Most reps at BW', '20']]);
-    // More reps at +0 earlier in the merged series: no BW record.
-    const beaten = [session('2026-08-20', [addedRow([[0, 25]])]), ...sessions];
-    const s2 = collectExerciseSeries(beaten, 'pullup', { unit: null })[0] as ExerciseSeries;
-    expect(exerciseRecords(beaten, s2).items.some((x) => x.kind === 'most_reps')).toBe(false);
-    // Weighted reps never count against a BW record.
-    const heavyReps = [session('2026-08-20', [addedRow([[5, 30]])]), ...sessions];
-    const s3 = collectExerciseSeries(heavyReps, 'pullup', { unit: null })[0] as ExerciseSeries;
-    expect(exerciseRecords(heavyReps, s3).items.map((x) => [x.kind, x.value])).toEqual([['most_reps', 20]]);
+  it('bodyweight reps are never a record (Ben, 26 Oct: a bodyweight lift has no New best)', () => {
+    const bwOnly = [session('2026-09-01', [bwRow([12])]), session('2026-09-03', [bwRow([14])]), session('2026-09-07', [bwRow([20])])];
+    const v = buildExerciseDetailView({ sessions: bwOnly, exerciseId: 'pullup', today: TODAY, bests: bestsFor(bwOnly, ['pullup']) });
+    expect(v?.records).toBeNull();
   });
 
   it('an imported BW + set with a blank weight plots as +0, like a logged bodyweight set (review S2)', () => {

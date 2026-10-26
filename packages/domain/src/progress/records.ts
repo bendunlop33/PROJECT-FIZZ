@@ -1,39 +1,27 @@
-import type { EquipmentKind, Load, LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
-import { formatNumber, loadText, NBSP } from '../display';
-import { loadUnitText } from './text';
+import type { EquipmentKind, Load, LoadConvention } from '@fizz/schemas';
+import { loadText, NBSP } from '../display';
 import { isSetCountable } from '../exclusions';
-import { RECORD_MIN_SESSIONS } from '../session/records';
+import type { NewBestClaim, NewBestRecords } from '../review/progress-page';
+import { roundEstimate } from './e1rm';
 import { convertMass } from '../units';
-import { chronological, keyOfRow, loadInUnit, seriesIdOf, seriesKind, seriesLoadedSet, sessionBestSet, sessionE1rm, sessionLeastAssist, sessionTopSet, type ExerciseSeries, type SeriesSession, type SeriesSet } from './exercise';
-import type { ProgressExercise, ProgressSession, ProgressSet } from './projection';
+import type { ExerciseSeries } from './exercise';
+import type { ProgressExercise, ProgressSession } from './projection';
 import { inRange, type DateRange } from './window';
 
 /**
- * Records set inside a Progress window (progress.md PG10, PG30): `Heaviest
- * set` and `Most reps at <load>`, with exactly the rules of `findSetRecord`
- * (the Summary's record line), each set judged as it was logged against
- * everything done before that workout and the earlier sets of that exercise
- * that day:
- * - only workouts logged in the app make a claim (ADR 0016);
- * - a series is one exercise + equipment instance + load convention + unit,
- *   and needs ≥ `RECORD_MIN_SESSIONS` earlier logged sessions with a
- *   comparable set before anything counts;
- * - warm-ups and drop sets never count; assisted, bodyweight and timed
- *   exercises have no records (heavier isn't better there);
- * - sets Ben marked (`Spotted`, `Pain`, …) never are records and never the
- *   bar (PG21);
- * - a heavier imported set of the exercise (same convention, any unit,
- *   converted) suppresses the claim.
- * At most one record per exercise row per workout: the last heaviest, else
- * the last most-reps.
- *
- * One chronological pass with running maxima per series, instead of calling
- * `findSetRecord` with the whole history for every set (that was ~160 ms on a
- * 2-year history in Node and far more on the phone). The equivalence with
- * `findSetRecord` is property-tested (progress-records.test.ts). Pure.
+ * Progress's `RECORDS` (Training's list, Lifts and Exercise detail, the monthly recap's count). (Ben, 26 Oct: one
+ * definition of best) A record is a `New best`, exactly as the Summary, the table's `PB` mark and Overview's PB ring
+ * judge it (`newBestClaims`, `sessionNewBests`): a tracked lift, at its tracked reps, a real set heavier (assisted:
+ * less assistance) than every earlier real one; the same machine for stacks and plate-loaded. So:
+ * - a lift that isn't tracked has no records (Lifts and Exercise detail hide the section);
+ * - an estimate (Est. 1RM) is never a record: it stays on the chart and stat line, labelled;
+ * - a lift's first top set isn't one, an imported workout never claims one (ADR 0016), and a lift whose older
+ *   history couldn't be read claims none (rule 6).
+ * Replaces the earlier `Heaviest set`, `Most reps at <load>`, `Best Est. 1RM`, bodyweight `Most reps` and
+ * `Least assistance` lists (progress.md PG10, PG30). Pure.
  */
 
-export type ProgressRecordKind = 'heaviest' | 'most_reps_at_load' | 'best_e1rm';
+export type ProgressRecordKind = 'new_best';
 
 export interface ProgressRecord {
   kind: ProgressRecordKind;
@@ -48,16 +36,16 @@ export interface ProgressRecord {
   equipmentKind: EquipmentKind | null;
   gymId: string | null;
   convention: LoadConvention;
+  /** In Ben's unit, as the Summary's `New best` says it. */
   load: Load;
   reps: number;
-  /** `Heaviest set` · `Most reps at 59 kg`. */
+  /** `New best`. */
   label: string;
-  /** `105 kg × 3` · `12`. */
+  /** `102.5 kg × 8`. */
   value: string;
-  /** `best_e1rm` only: an estimate (`≈`, `Est.`); the others are actual results. */
-  isEstimate: boolean;
-  /** `best_e1rm`: the Est. 1RM value (in `load.unit`); null otherwise. */
-  estimate: number | null;
+  /** Always false: an estimate is never a record. */
+  isEstimate: false;
+  estimate: null;
 }
 
 export interface RecordsInWindow {
@@ -66,234 +54,79 @@ export interface RecordsInWindow {
   total: number;
 }
 
-const WORKING_GROUP: ReadonlySet<SetType> = new Set(['working', 'top', 'backoff']);
+export const RECORD_LABEL = 'New best';
 
-type Comparable = ProgressSet & { load: Load; reps: number };
+const WORKING = new Set(['working', 'top', 'backoff']);
 
-/** `comparableSet` in `findSetRecord`: a working set with load and reps that counts for records. */
-function isComparable(s: ProgressSet): s is Comparable {
-  return WORKING_GROUP.has(s.setType) && isSetCountable(s, 'record') && s.load !== null && s.reps !== null;
-}
-
-interface Series {
-  /** Earlier logged sessions with a comparable set. */
-  sessions: number;
-  maxLoad: number;
-  /** Most reps at `maxLoad`. */
-  maxReps: number;
-}
-
-const seriesKey = (exerciseId: string, equipmentId: string | null, convention: LoadConvention, unit: WeightUnit) => `${exerciseId}\u0000${equipmentId ?? ''}\u0000${equipmentId === null ? 'none' : 'id'}\u0000${convention}\u0000${unit}`;
-const importKey = (exerciseId: string, convention: LoadConvention, unit: WeightUnit) => `${exerciseId}\u0000${convention}\u0000${unit}`;
-
-function fold(series: Series | undefined, sets: readonly Comparable[]): Series {
-  let { sessions, maxLoad, maxReps } = series ?? { sessions: 0, maxLoad: -Infinity, maxReps: -Infinity };
-  for (const s of sets) {
-    if (s.load.value > maxLoad) {
-      maxLoad = s.load.value;
-      maxReps = s.reps;
-    } else if (s.load.value === maxLoad && s.reps > maxReps) {
-      maxReps = s.reps;
-    }
-  }
-  if (sets.length > 0) sessions += 1;
-  return { sessions, maxLoad, maxReps };
-}
-
-type FoundRecord = ProgressRecord & { order: number; startedMs: number };
-
-/** Every record in the whole history (window-free): what each window filters. */
-interface AllRecords {
-  /** Actual records (heaviest, most reps at a load) of every logged workout, in history order. */
-  found: FoundRecord[];
-  /** `Best Est. 1RM` candidates (window-free), each with its workout row. */
-  estimates: { r: ExerciseRecord; s: ProgressSession; ex: ProgressExercise; order: number }[];
-}
-
-/**
- * (Perf, 26 Oct) The window-free pass, kept per history array: Progress asks for many windows (periods,
- * groupings, the monthly recap) of the same finished workouts, and the service hands out the same array while
- * nothing changed, so only the first window walks the whole history. Judging every workout (not only the
- * window's) gives the same records for the window's workouts: a judgement only reads what was learnt before.
- */
-const allRecordsMemo = new WeakMap<readonly ProgressSession[], AllRecords>();
-
-function allRecords(sessions: readonly ProgressSession[]): AllRecords {
-  const hit = allRecordsMemo.get(sessions);
-  if (hit !== undefined) return hit;
-  const ordered = [...sessions].sort((a, b) => a.startedMs - b.startedMs || a.sessionId.localeCompare(b.sessionId));
-  const series = new Map<string, Series>();
-  /** Heaviest imported comparable value per exercise, convention and unit as stored. */
-  const imported = new Map<string, number>();
-  const found: FoundRecord[] = [];
-
-  // Sessions that started at the same instant don't see each other (`findSetRecord` takes history started strictly before).
-  let i = 0;
-  while (i < ordered.length) {
-    let j = i;
-    while (j < ordered.length && ordered[j]?.startedMs === ordered[i]?.startedMs) j += 1;
-    const group = ordered.slice(i, j);
-    for (const s of group) if (s.source === 'manual') judge(s);
-    for (const s of group) learn(s);
-    i = j;
-  }
-
-  function judge(s: ProgressSession): void {
-    s.exercises.forEach((ex, order) => {
-      const convention = ex.convention;
-      if (ex.measurement !== 'reps' || convention === 'assistance' || convention === 'bodyweight' || ex.sets.length === 0) return;
-      const today = new Map<string, Comparable[]>();
-      let heaviest: Comparable | null = null;
-      let mostReps: Comparable | null = null;
-      for (const set of ex.sets) {
-        if (isComparable(set) && set.reps > 0 && set.load.convention === convention) {
-          const key = seriesKey(ex.exerciseId, ex.equipmentId, convention, set.load.unit);
-          const before = series.get(key);
-          if (before !== undefined && before.sessions >= RECORD_MIN_SESSIONS) {
-            const earlier = fold({ ...before, sessions: 0 }, today.get(key) ?? []);
-            let kind: ProgressRecordKind | null = null;
-            if (set.load.value > earlier.maxLoad) kind = 'heaviest';
-            else if (set.load.value === earlier.maxLoad && set.reps > earlier.maxReps) kind = 'most_reps_at_load';
-            if (kind !== null && !importedHeavier(ex.exerciseId, convention, set.load)) {
-              if (kind === 'heaviest') heaviest = set;
-              else mostReps = set;
-            }
-          }
-        }
-        // Every set of the row is "earlier today" for the next one; only comparable ones of the same series count.
-        if (isComparable(set) && set.load.convention === convention) {
-          const key = seriesKey(ex.exerciseId, ex.equipmentId, convention, set.load.unit);
-          today.set(key, [...(today.get(key) ?? []), set]);
-        }
-      }
-      const shown = heaviest ?? mostReps;
-      if (shown === null) return;
-      const kind: ProgressRecordKind = heaviest !== null ? 'heaviest' : 'most_reps_at_load';
-      const loadWords = loadText(shown.load, convention, ex.equipmentKind === null ? null : { kind: ex.equipmentKind });
-      found.push({
-        kind,
-        sessionId: s.sessionId,
-        date: s.date,
-        sessionExerciseId: ex.sessionExerciseId,
-        exerciseId: ex.exerciseId,
-        exerciseName: ex.exerciseName,
-        equipmentId: ex.equipmentId,
-        equipmentKind: ex.equipmentKind,
-        gymId: ex.gymId,
-        convention,
-        load: shown.load,
-        reps: shown.reps,
-        label: kind === 'heaviest' ? 'Heaviest set' : `Most reps at ${loadWords}`,
-        value: kind === 'heaviest' ? `${loadWords}${NBSP}×${NBSP}${String(shown.reps)}` : String(shown.reps),
-        isEstimate: false,
-        estimate: null,
-        order,
-        startedMs: s.startedMs,
-      });
+/** The workout row a claim's set was done on: the row of that lift holding a counted set at those reps and load. */
+function rowOfClaim(s: ProgressSession, c: NewBestClaim): { ex: ProgressExercise; order: number } | null {
+  let first: { ex: ProgressExercise; order: number } | null = null;
+  for (const [order, ex] of s.exercises.entries()) {
+    if (ex.exerciseId !== c.exerciseId) continue;
+    first ??= { ex, order };
+    const hit = ex.sets.some((x) => {
+      if (!WORKING.has(x.setType) || !isSetCountable(x, 'record') || x.load === null || x.reps !== c.reps || x.load.convention !== c.convention) return false;
+      return roundEstimate(convertMass({ value: x.load.value, unit: x.load.unit }, c.unit).value, c.unit) === c.load;
     });
+    if (hit) return { ex, order };
   }
-
-  function importedHeavier(exerciseId: string, convention: LoadConvention, load: Load): boolean {
-    for (const unit of ['kg', 'lb'] as const) {
-      const max = imported.get(importKey(exerciseId, convention, unit));
-      if (max !== undefined && convertMass({ value: max, unit }, load.unit).value > load.value + 1e-9) return true;
-    }
-    return false;
-  }
-
-  function learn(s: ProgressSession): void {
-    if (s.source === 'import') {
-      for (const ex of s.exercises) {
-        for (const set of ex.sets) {
-          // As `findSetRecord`'s suppression: any counted working set with a load (reps not needed).
-          if (!WORKING_GROUP.has(set.setType) || !isSetCountable(set, 'record') || set.load === null) continue;
-          const key = importKey(ex.exerciseId, set.load.convention, set.load.unit);
-          imported.set(key, Math.max(imported.get(key) ?? -Infinity, set.load.value));
-        }
-      }
-      return;
-    }
-    // One session per series however many rows it had there (rows on one equipment form one history session).
-    const bySeries = new Map<string, Comparable[]>();
-    for (const ex of s.exercises) {
-      for (const set of ex.sets) {
-        if (!isComparable(set)) continue;
-        const key = seriesKey(ex.exerciseId, ex.equipmentId, set.load.convention, set.load.unit);
-        bySeries.set(key, [...(bySeries.get(key) ?? []), set]);
-      }
-    }
-    for (const [key, sets] of bySeries) series.set(key, fold(series.get(key), sets));
-  }
-
-  const rowOf = new Map<string, { s: ProgressSession; ex: ProgressExercise; order: number }>();
-  for (const s of ordered) s.exercises.forEach((ex, order) => rowOf.set(ex.sessionExerciseId, { s, ex, order }));
-  const estimates: AllRecords['estimates'] = [];
-  for (const r of e1rmRecords(ordered)) {
-    const row = rowOf.get(r.sessionExerciseId);
-    if (row !== undefined) estimates.push({ r, ...row });
-  }
-  const out: AllRecords = { found, estimates };
-  allRecordsMemo.set(sessions, out);
-  return out;
+  return first;
 }
 
-export function recordsInWindow(sessions: readonly ProgressSession[], window: DateRange, opts: { limit?: number; estimates?: boolean } = {}): RecordsInWindow {
-  const all = allRecords(sessions);
-  const found: FoundRecord[] = all.found.filter((r) => inRange(r.date, window));
-  if (opts.estimates === true) {
-    // Slice B (PG30): `Best Est. 1RM` for a logged row with no actual record that day (one record per row per workout).
-    const claimed = new Set(found.map((r) => r.sessionExerciseId));
-    for (const { r, s, ex, order } of all.estimates) {
-      if (!inRange(r.date, window) || claimed.has(r.sessionExerciseId) || r.load === null || r.reps === null) continue;
-      found.push({
-        kind: 'best_e1rm',
-        sessionId: s.sessionId,
-        date: s.date,
-        sessionExerciseId: ex.sessionExerciseId,
-        exerciseId: ex.exerciseId,
-        exerciseName: ex.exerciseName,
-        equipmentId: ex.equipmentId,
-        equipmentKind: ex.equipmentKind,
-        gymId: ex.gymId,
-        convention: ex.convention,
-        load: r.load,
-        reps: r.reps,
-        label: 'Best Est. 1RM',
-        value: `≈${formatNumber(r.value)}${NBSP}${loadUnitText(r.load.unit, ex.convention, ex.equipmentKind)}`,
-        isEstimate: true,
-        estimate: r.value,
-        order,
-        startedMs: s.startedMs,
-      });
-    }
+function recordOf(s: ProgressSession, c: NewBestClaim): (ProgressRecord & { order: number; startedMs: number }) | null {
+  const at = rowOfClaim(s, c);
+  if (at === null) return null;
+  const { ex, order } = at;
+  const load: Load = { value: c.load, unit: c.unit, convention: c.convention };
+  const words = loadText(load, c.convention, ex.equipmentKind === null ? null : { kind: ex.equipmentKind });
+  return {
+    kind: 'new_best',
+    sessionId: s.sessionId,
+    date: s.date,
+    sessionExerciseId: ex.sessionExerciseId,
+    exerciseId: c.exerciseId,
+    exerciseName: ex.exerciseName,
+    equipmentId: ex.equipmentId,
+    equipmentKind: ex.equipmentKind,
+    gymId: ex.gymId,
+    convention: c.convention,
+    load,
+    reps: c.reps,
+    label: RECORD_LABEL,
+    value: `${words}${NBSP}×${NBSP}${String(c.reps)}`,
+    isEstimate: false,
+    estimate: null,
+    order,
+    startedMs: s.startedMs,
+  };
+}
+
+/** The records (`New best`s) set in a window, newest first. Only workouts in `sessions` that were logged in the app. */
+export function recordsInWindow(sessions: readonly ProgressSession[], window: DateRange, opts: { limit?: number; bests: NewBestRecords }): RecordsInWindow {
+  const byId = new Map(sessions.map((s) => [s.sessionId, s]));
+  const found: (ProgressRecord & { order: number; startedMs: number })[] = [];
+  for (const c of opts.bests.claims) {
+    if (!inRange(c.date, window)) continue;
+    const s = byId.get(c.sessionId);
+    if (s === undefined || s.source === 'import') continue;
+    const r = recordOf(s, c);
+    if (r !== null) found.push(r);
   }
   found.sort((a, b) => b.date.localeCompare(a.date) || b.startedMs - a.startedMs || a.order - b.order);
   const limit = opts.limit ?? 5;
-  const items: ProgressRecord[] = found.slice(0, limit).map((r) => ({
-    kind: r.kind,
-    sessionId: r.sessionId,
-    date: r.date,
-    sessionExerciseId: r.sessionExerciseId,
-    exerciseId: r.exerciseId,
-    exerciseName: r.exerciseName,
-    equipmentId: r.equipmentId,
-    equipmentKind: r.equipmentKind,
-    gymId: r.gymId,
-    convention: r.convention,
-    load: r.load,
-    reps: r.reps,
-    label: r.label,
-    value: r.value,
-    isEstimate: r.isEstimate,
-    estimate: r.estimate,
-  }));
+  const items: ProgressRecord[] = found.slice(0, limit).map((r) => {
+    const out: ProgressRecord & { order?: number; startedMs?: number } = { ...r };
+    delete out.order;
+    delete out.startedMs;
+    return out;
+  });
   return { items, total: found.length };
 }
 
 // ---------------------------------------------------------------------------
-// Records (PG10, PG30)
+// One exercise's records (Lifts, Exercise detail)
 
-export type ExerciseRecordKind = 'heaviest' | 'most_reps_at_load' | 'best_e1rm' | 'most_reps' | 'least_assist';
+export type ExerciseRecordKind = 'new_best';
 
 export interface ExerciseRecord {
   kind: ExerciseRecordKind;
@@ -302,206 +135,29 @@ export interface ExerciseRecord {
   sessionExerciseId: string;
   date: string;
   startedMs: number;
-  /** Est. 1RM value, the heaviest load, or the reps. */
+  /** The load (in Ben's unit). */
   value: number;
-  load: Load | null;
-  reps: number | null;
-  isEstimate: boolean;
+  load: Load;
+  reps: number;
+  isEstimate: false;
 }
 
 /**
- * Est. 1RM records (PG30 `Best Est. 1RM`, PG10): a logged session's Est. 1RM
- * that is strictly above every earlier logged session of the same series,
- * after ≥ `RECORD_MIN_SESSIONS` earlier logged sessions with a value. Imported
- * history never makes one, but an imported Est. 1RM of the same exercise and
- * convention (any unit, converted) at or above it suppresses the claim.
+ * Every record (`New best`) of one exercise in this series' workouts, newest first. `tracked: false`: the lift isn't
+ * tracked, so it has no records at all (the section is hidden rather than saying `No records yet`).
  */
-export function e1rmRecords(sessions: readonly ProgressSession[], exerciseIds?: ReadonlySet<string>): ExerciseRecord[] {
-  return sequentialRecords(sessions, exerciseIds, 'e1rm');
-}
-
-/** Bodyweight `Most reps` records, with the same history rules. */
-export function bodyweightRepRecords(sessions: readonly ProgressSession[], exerciseIds?: ReadonlySet<string>): ExerciseRecord[] {
-  return sequentialRecords(sessions, exerciseIds, 'reps');
-}
-
-/**
- * Assisted `Least assistance for 8+ reps` records (§5.5): less assistance than
- * every earlier logged session of the series at ≥ 8 reps, with the same
- * history rules. An imported set of the exercise with as little assistance
- * or less (any unit, converted) suppresses the claim.
- */
-export function leastAssistRecords(sessions: readonly ProgressSession[], exerciseIds?: ReadonlySet<string>): ExerciseRecord[] {
-  return sequentialRecords(sessions, exerciseIds, 'assist');
-}
-
-type Sequential = 'e1rm' | 'reps' | 'assist';
-
-const SEQUENTIAL_KIND: Record<Sequential, ExerciseRecordKind> = { e1rm: 'best_e1rm', reps: 'most_reps', assist: 'least_assist' };
-
-function sequentialRecords(sessions: readonly ProgressSession[], exerciseIds: ReadonlySet<string> | undefined, what: Sequential): ExerciseRecord[] {
-  const lower = what === 'assist';
-  const mass = what !== 'reps';
-  /** Strictly better (higher, or lower for assistance). */
-  const beats = (a: number, b: number) => (lower ? a < b - 1e-9 : a > b + 1e-9);
-  const running = new Map<string, { sessions: number; best: number }>();
-  const imported = new Map<string, number>();
-  const out: ExerciseRecord[] = [];
-  const ordered = [...sessions].sort(chronological);
-  for (const s of ordered) {
-    const seen = new Set<string>();
-    for (const ex of s.exercises) {
-      if (exerciseIds !== undefined && !exerciseIds.has(ex.exerciseId)) continue;
-      const key = keyOfRow(s, ex);
-      const id = seriesIdOf(key);
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const rows = s.exercises.filter((r) => r.exerciseId === ex.exerciseId && seriesIdOf(keyOfRow(s, r)) === id);
-      const ss: SeriesSession = { sessionId: s.sessionId, date: s.date, startedMs: s.startedMs, source: key.source, name: s.name, rows, sets: rows.flatMap((r) => r.sets), edited: false };
-      const kind = seriesKind(key.convention, ex.equipmentKind, key.measurement);
-      const shape = { key, kind, equipmentKind: ex.equipmentKind };
-      const v = what === 'e1rm' ? sessionE1rm(ss, shape) : what === 'assist' ? sessionLeastAssist(ss, shape) : kind === 'bodyweight' ? sessionBestSet(ss) : null;
-      if (v === null) continue;
-      const impKey = `${ex.exerciseId}|${key.convention}`;
-      const comparable = mass ? convertMass({ value: v.value, unit: key.unit }, 'kg').value : v.value;
-      if (key.source === 'import') {
-        const prev = imported.get(impKey);
-        imported.set(impKey, prev === undefined ? comparable : lower ? Math.min(prev, comparable) : Math.max(prev, comparable));
-        continue;
-      }
-      const before = running.get(id);
-      if (before !== undefined && before.sessions >= RECORD_MIN_SESSIONS && beats(v.value, before.best)) {
-        const imp = imported.get(impKey);
-        // An imported value as good or better suppresses the claim.
-        if (imp === undefined || beats(comparable, imp)) {
-          out.push({
-            kind: SEQUENTIAL_KIND[what],
-            sessionId: s.sessionId,
-            sessionExerciseId: (rows[0] as ProgressExercise).sessionExerciseId,
-            date: s.date,
-            startedMs: s.startedMs,
-            value: v.value,
-            load: v.fromSet?.load ?? null,
-            reps: v.fromSet?.reps ?? null,
-            isEstimate: what === 'e1rm',
-          });
-        }
-      }
-      const best = before === undefined ? v.value : lower ? Math.min(before.best, v.value) : Math.max(before.best, v.value);
-      running.set(id, { sessions: (before?.sessions ?? 0) + 1, best });
-    }
-  }
-  return out;
-}
-
-const ALL_TIME: DateRange = { from: '0000-01-01', to: '9999-12-31' };
-
-/**
- * A record of one record series as a record of the merged series (review B2),
- * or null when an earlier session of the merged series (any gym, equipment,
- * unit or source) in the same convention was as good. Values are in the
- * merged series' unit, as its sets are (`loadInUnit`); per hand, stack and
- * total are never compared with each other.
- */
-function inMergedSeries(r: ExerciseRecord, series: ExerciseSeries): ExerciseRecord | null {
-  const at = series.sessions.findIndex((x) => x.sessionId === r.sessionId);
-  if (at < 0) return null;
-  const conv = r.load?.convention ?? null;
-  const same = (x: SeriesSet) => conv === null || x.load?.convention === conv;
-  const only = (ss: SeriesSession, rowId: string | null): SeriesSession => {
-    const rows = rowId === null ? ss.rows : ss.rows.filter((row) => row.sessionExerciseId === rowId);
-    const sets = rows.flatMap((row) => row.sets as readonly SeriesSet[]).filter(same);
-    return { ...ss, rows, sets };
-  };
-  const earlier = series.sessions.slice(0, at).map((ss) => only(ss, null));
-  const own = only(series.sessions[at] as SeriesSession, r.sessionExerciseId);
-  const load = r.load === null ? null : loadInUnit(r.load, series.key.unit);
-  const values = (f: (ss: SeriesSession) => { value: number } | null) => earlier.flatMap((ss) => {
-    const v = f(ss);
-    return v === null ? [] : [v.value];
-  });
-  switch (r.kind) {
-    case 'heaviest':
-    case 'most_reps_at_load': {
-      if (load === null) return null;
-      const tops = values((ss) => sessionTopSet(ss, series));
-      const maxLoad = tops.length === 0 ? Number.NEGATIVE_INFINITY : Math.max(...tops);
-      if (r.kind === 'heaviest') return load.value > maxLoad ? { ...r, load, value: load.value } : null;
-      const repsAt = earlier.flatMap((ss) => ss.sets.flatMap((x) => (seriesLoadedSet(x, series) && isSetCountable(x, 'record') && x.load.value === load.value ? [x.reps] : [])));
-      return load.value >= maxLoad && (r.reps ?? 0) > Math.max(0, ...repsAt) ? { ...r, load } : null;
-    }
-    case 'best_e1rm': {
-      // The same estimate the chart plots for this row, from its sets in the series' unit.
-      const value = sessionE1rm(own, series)?.value ?? (r.load === null || load === null ? r.value : convertMass({ value: r.value, unit: r.load.unit }, load.unit).value);
-      const before = values((ss) => sessionE1rm(ss, series));
-      return before.every((v) => value > v) ? { ...r, load, value } : null;
-    }
-    case 'least_assist': {
-      if (load === null) return null;
-      const before = values((ss) => sessionLeastAssist(ss, series));
-      return before.every((v) => load.value < v) ? { ...r, load, value: load.value } : null;
-    }
-    case 'most_reps': {
-      if (series.kind === 'added_bodyweight') {
-        // At bodyweight only: earlier bodyweight sets and `+0` sets of the merged series (review S1).
-        const atBw = (x: SeriesSet) => x.load === null || x.load.value === 0;
-        const bw = series.sessions.slice(0, at).flatMap((ss) => {
-          const v = sessionBestSet({ ...ss, sets: ss.sets.filter(atBw) });
-          return v === null ? [] : [v.value];
-        });
-        return bw.every((v) => r.value > v) ? { ...r, load } : null;
-      }
-      const before = values((ss) => sessionBestSet(ss));
-      return before.every((v) => r.value > v) ? { ...r, load } : null;
-    }
-  }
-}
-
-/**
- * `exerciseRecords` (§6.2): every record of the series, newest first:
- * `Heaviest set` and `Most reps at <load>` exactly as the home and the
- * Summary judge them (`recordsInWindow`, `findSetRecord`), `Best Est. 1RM`
- * (an estimate), for bodyweight `Most reps` (`Most reps at BW` in a BW +
- * series) and for assisted `Least
- * assistance for 8+ reps`. Timed series have none (not specified, SP2). Imported workouts never have
- * records (they can only suppress one). `sessions` may be every workout or
- * only those with this exercise. Each record is first judged within its own
- * record series (`SeriesKey`: equipment, convention, unit), exactly as the
- * Summary does; the merged series (Ben, 20 Oct: every gym, equipment item and
- * unit) then keeps only those that also beat every earlier session of the
- * merged series in the same convention, shown in its unit (review B2).
- */
-export function exerciseRecords(sessions: readonly ProgressSession[], series: ExerciseSeries): { items: ExerciseRecord[]; loggedSessions: number } {
-  const loggedSessions = series.sessions.filter((s) => s.source === 'app').length;
-  if (loggedSessions === 0) return { items: [], loggedSessions };
-  const ids = new Set([series.key.exerciseId]);
-  // Only this exercise's rows: records and import suppression never look at other exercises.
-  const mine = sessions.flatMap((s) => {
-    const rows = s.exercises.filter((e) => e.exerciseId === series.key.exerciseId);
-    return rows.length === 0 ? [] : [{ ...s, exercises: rows }];
-  });
+export function exerciseRecords(series: ExerciseSeries, bests: NewBestRecords): { items: ExerciseRecord[]; tracked: boolean } {
+  const id = series.key.exerciseId;
+  if (!bests.tracked.has(id)) return { items: [], tracked: false };
   const items: ExerciseRecord[] = [];
-  const inSeries = (r: { sessionId: string; sessionExerciseId: string }) => series.sessions.some((s) => s.sessionId === r.sessionId && s.rows.some((row) => row.sessionExerciseId === r.sessionExerciseId));
-  if (series.kind === 'load' || series.kind === 'added_bodyweight') {
-    const actual: ProgressRecord[] = recordsInWindow(mine, ALL_TIME, { limit: Number.POSITIVE_INFINITY }).items;
-    const startedOf = new Map(mine.map((s) => [s.sessionId, s.startedMs]));
-    for (const r of actual) {
-      if (r.exerciseId !== series.key.exerciseId || !inSeries(r)) continue;
-      items.push({ kind: r.kind, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, date: r.date, startedMs: startedOf.get(r.sessionId) ?? 0, value: r.kind === 'heaviest' ? r.load.value : r.reps, load: r.load, reps: r.reps, isEstimate: false });
-    }
+  for (const c of bests.claims) {
+    if (c.exerciseId !== id) continue;
+    const ss = series.sessions.find((x) => x.sessionId === c.sessionId);
+    if (ss === undefined || ss.source !== 'app') continue;
+    const row = ss.rows.find((r) => r.sets.some((x) => x.load?.convention === c.convention && x.reps === c.reps)) ?? ss.rows.find((r) => r.convention === c.convention);
+    if (row === undefined) continue;
+    items.push({ kind: 'new_best', sessionId: c.sessionId, sessionExerciseId: row.sessionExerciseId, date: c.date, startedMs: c.startedMs, value: c.load, load: { value: c.load, unit: c.unit, convention: c.convention }, reps: c.reps, isEstimate: false });
   }
-  if (series.kind === 'load') items.push(...e1rmRecords(mine, ids).filter(inSeries));
-  // A BW + series keeps its bodyweight rows' rep records (`Most reps at BW`, review S1).
-  if (series.kind === 'bodyweight' || series.kind === 'added_bodyweight') items.push(...bodyweightRepRecords(mine, ids).filter(inSeries));
-  if (series.kind === 'assisted') items.push(...leastAssistRecords(mine, ids).filter(inSeries));
-  const kept = items.flatMap((r) => {
-    const m = inMergedSeries(r, series);
-    return m === null ? [] : [m];
-  });
-  items.length = 0;
-  items.push(...kept);
-  const rank: Record<ExerciseRecordKind, number> = { heaviest: 0, most_reps_at_load: 1, least_assist: 2, most_reps: 3, best_e1rm: 4 };
-  items.sort((a, b) => b.date.localeCompare(a.date) || b.startedMs - a.startedMs || rank[a.kind] - rank[b.kind]);
-  return { items, loggedSessions };
+  items.sort((a, b) => b.date.localeCompare(a.date) || b.startedMs - a.startedMs);
+  return { items, tracked: true };
 }
-

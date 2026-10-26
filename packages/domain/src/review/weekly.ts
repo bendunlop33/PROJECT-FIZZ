@@ -131,6 +131,11 @@ export interface ReviewSession {
   plannedReps: number | null;
   /** Reps done in working sets, sets Ben added included (so the % can go over 100). */
   doneReps: number;
+  /**
+   * (Ben, 26 Oct; ADR 0016) Imported (FitNotes): its sets are earlier history a new best must beat, but it never
+   * claims a `New best` itself (no ring, Summary line or record). Absent: logged in the app.
+   */
+  imported?: true;
 }
 
 /** A finished workout as the review reads it (corrections applied; null when it isn't in history). */
@@ -160,6 +165,7 @@ export function reviewSessionOf(a: HistoryLike, ownerTz: string, nowMs: number):
     feel: a.session.feel?.value ?? null,
     plannedReps: reps.planned,
     doneReps: reps.done,
+    ...(p.source === 'import' ? { imported: true as const } : {}),
     exercises: p.exercises
       .filter((e) => !removed.has(e.sessionExerciseId))
       .map((e) => ({

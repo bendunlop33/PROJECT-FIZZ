@@ -3,6 +3,7 @@ import type { Load } from '@fizz/schemas';
 
 import { buildMonthlyRecap, MONTHLY_RECAP, recapCardShown, recapMonthOf, type MuscleInfo, type ProgressExercise, type ProgressSession, type ProgressSet } from '../src/index';
 import { kg, lb } from './fixtures';
+import { bestsFor } from './new-best-fixture';
 
 /**
  * The monthly recap (Ben approved 26 Oct): facts only, from finished workouts. Counts, time (imports have none),
@@ -98,14 +99,18 @@ describe('monthly recap', () => {
     expect(r?.muscles[0]?.key).toBe('Chest');
   });
 
-  it('records are actual sets set that month (never an estimate), each with its workout', () => {
-    // Records need earlier logged sessions of the series first.
-    const sessions = [bench('2026-08-01', 70), bench('2026-08-08', 72.5), bench('2026-08-15', 75), bench('2026-09-01', 77.5), bench('2026-10-06', 85), bench('2026-10-20', 80, 3)];
-    const r = buildMonthlyRecap({ sessions, exercises: info, today: '2026-11-03', lifts: [], unit: 'kg', planWeeks: null });
+  it('records are the tracked lifts\u2019 New bests that month (never an estimate), each with its workout (Ben, 26 Oct)', () => {
+    const sessions = [bench('2026-08-01', 70), bench('2026-09-01', 77.5), bench('2026-10-06', 85), bench('2026-10-20', 90, 3), session('2026-10-21', [row('curl', 'Curl', [set(kg(10), 10)])]), session('2026-10-28', [row('curl', 'Curl', [set(kg(12), 10)])])];
+    const bests = bestsFor(sessions, ['bench'], { reps: { bench: 5 } });
+    const r = buildMonthlyRecap({ sessions, exercises: info, today: '2026-11-03', lifts: ['bench'], unit: 'kg', planWeeks: null, bests });
+    // 90 × 3 is short of the tracked 5 reps; the curl isn't tracked.
     expect(r?.records.map((x) => sp(x.text))).toEqual(['85 kg × 5']);
-    expect(r?.records[0]?.sessionId).toBe(sessions[4]?.sessionId);
+    expect(r?.records[0]?.sessionId).toBe(sessions[2]?.sessionId);
+    expect(r?.records[0]?.words).toBe('Bench press, new best, 85 kg by 5, 6 October. Opens the workout.');
     expect(JSON.stringify(r)).not.toMatch(/≈|Est\./);
-    expect(sp(r?.line)).toBe('2 workouts · 2 h 00 min · 1 record');
+    expect(sp(r?.line)).toBe('4 workouts · 4 h 00 min · 1 record');
+    // Without the bests (not known): no record count.
+    expect(sp(buildMonthlyRecap({ sessions, exercises: info, today: '2026-11-03', lifts: ['bench'], unit: 'kg', planWeeks: null })?.line)).toBe('4 workouts · 4 h 00 min');
   });
 
   it('tracked lifts: heaviest top set against the month before, in his unit (kg/lb), per-hand dumbbells and assisted said', () => {

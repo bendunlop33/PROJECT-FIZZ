@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Load, LoadConvention, SetExclusion, SetType, WeightUnit } from '@fizz/schemas';
 
-import { findSetRecord, recordsInWindow, type HistorySession, type HistorySet, type ProgressExercise, type ProgressSession, type ProgressSet } from '../src/index';
+import { newBestClaims, recordsInWindow, sessionNewBests, type ProgressExercise, type ProgressSession, type ProgressSet } from '../src/index';
+import { reviewInputOf, reviewOfProgress } from './new-best-fixture';
 
 /**
- * `recordsInWindow` is one chronological pass with running maxima. It must
- * decide exactly what `findSetRecord` (the Summary's record line) decides for
- * each set given the full history, so the two can never disagree. This test
- * runs the straightforward `findSetRecord` version against it on random
- * histories with ties, mixed units and conventions, other equipment, imports,
- * marked sets, warm-ups, drop sets, zero reps, two rows of one exercise in a
+ * (Ben, 26 Oct; one definition of best) `newBestClaims` is one pass per lift with running bests. It must say exactly
+ * what the Summary's `sessionNewBests` says for every workout given the whole history, so Progress's records, the
+ * recap's count and the Summary can never disagree. This test runs `sessionNewBests` for every workout against it
+ * on random histories with ties, mixed units and conventions (the lift's convention changing over time), stacks on
+ * two machines, other bars, imports, marked sets, warm-ups, drop sets, zero reps, two rows of one exercise in a
  * workout and workouts that start at the same instant.
  */
 
@@ -37,10 +37,10 @@ function randomHistory(seed: number): ProgressSession[] {
     const rows: ProgressExercise[] = [];
     const rowCount = 1 + Math.floor(r() * 3);
     for (let x = 0; x < rowCount; x += 1) {
-      const exerciseId = pick(r, ['bench', 'bench', 'press', 'pullup']);
-      const convention: LoadConvention = exerciseId === 'pullup' ? pick(r, ['assistance', 'added'] as const) : pick(r, ['total', 'total', 'total', 'per_hand'] as const);
+      const exerciseId = pick(r, ['bench', 'bench', 'press', 'pullup', 'cable']);
+      const convention: LoadConvention = exerciseId === 'pullup' ? pick(r, ['assistance', 'added'] as const) : exerciseId === 'cable' ? 'stack' : pick(r, ['total', 'total', 'total', 'per_hand'] as const);
       const unit: WeightUnit = r() < 0.15 ? 'lb' : 'kg';
-      const equipmentId = source === 'import' ? null : pick(r, ['bar-1', 'bar-1', 'bar-2', null]);
+      const equipmentId = source === 'import' ? null : exerciseId === 'cable' ? pick(r, ['stack-1', 'stack-1', 'stack-2']) : pick(r, ['bar-1', 'bar-1', 'bar-2', null]);
       const sets: ProgressSet[] = [];
       for (let y = 0; y < 1 + Math.floor(r() * 5); y += 1) {
         n += 1;
@@ -95,50 +95,28 @@ function randomHistory(seed: number): ProgressSession[] {
   return out;
 }
 
-const toHistorySet = (s: ProgressSet): HistorySet => ({ setType: s.setType, side: s.side, load: s.load, reps: s.reps, rpe: null, rir: null, ...(s.exclusions ? { exclusions: s.exclusions } : {}) });
+const LIFTS = ['bench', 'press', 'pullup', 'cable'];
+const REPS = { bench: 5, pullup: 8 };
 
-/** The straightforward version: `findSetRecord` for every set with the whole earlier history. */
-function reference(sessions: readonly ProgressSession[], from: string, to: string) {
-  const out: { sessionId: string; exerciseId: string; order: number; kind: string; load: Load; reps: number }[] = [];
-  for (const s of sessions) {
-    if (s.source !== 'manual' || s.date < from || s.date > to) continue;
-    s.exercises.forEach((ex, order) => {
-      const history: HistorySession[] = [];
-      for (const h of sessions) {
-        if (h.startedMs >= s.startedMs || h.sessionId === s.sessionId) continue;
-        const byEq = new Map<string | null, HistorySet[]>();
-        for (const e of h.exercises) if (e.exerciseId === ex.exerciseId) byEq.set(e.equipmentId, [...(byEq.get(e.equipmentId) ?? []), ...e.sets.map(toHistorySet)]);
-        for (const [equipmentId, sets] of byEq) history.push({ sessionId: h.sessionId, performedAtUtc: h.startedAtUtc, equipmentId, gymId: 'g', imported: h.source === 'import', sets });
-      }
-      const earlierToday: HistorySet[] = [];
-      let heaviest: ProgressSet | null = null;
-      let most: ProgressSet | null = null;
-      for (const set of ex.sets) {
-        const rec = findSetRecord({ exerciseName: ex.exerciseName, gymName: null, equipmentId: ex.equipmentId, convention: ex.convention, measurement: ex.measurement, set: { setType: set.setType, load: set.load, reps: set.reps, ...(set.exclusions ? { exclusions: set.exclusions } : {}) }, earlierToday, history });
-        if (rec?.kind === 'heaviest') heaviest = set;
-        else if (rec !== null) most = set;
-        earlierToday.push(toHistorySet(set));
-      }
-      const shown = heaviest ?? most;
-      if (shown?.load && shown.reps !== null) out.push({ sessionId: s.sessionId, exerciseId: ex.exerciseId, order, kind: heaviest ? 'heaviest' : 'most_reps_at_load', load: shown.load, reps: shown.reps });
-    });
-  }
-  return out.sort((a, b) => b.sessionId.localeCompare(a.sessionId) || a.order - b.order);
-}
-
-describe('recordsInWindow decides exactly what findSetRecord decides', () => {
+describe('newBestClaims says exactly what the Summary\u2019s sessionNewBests says, workout by workout', () => {
   let compared = 0;
   for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
     it(`random history ${String(seed)}`, () => {
       const sessions = randomHistory(seed);
-      const window = { from: '2026-07-20', to: '2026-10-31' };
-      const want = reference(sessions, window.from, window.to);
-      const got = recordsInWindow(sessions, window, { limit: Number.POSITIVE_INFINITY }).items.map((x) => ({ sessionId: x.sessionId, exerciseId: x.exerciseId, kind: x.kind, load: x.load, reps: x.reps }));
+      const input = reviewInputOf(sessions.map(reviewOfProgress), LIFTS);
+      const opts = { planReps: new Map<string, number>(), pickedReps: REPS, nameOf: (id: string) => id };
+      const want = sessions.flatMap((s) => sessionNewBests(input, opts, s.sessionId).map((b) => `${s.sessionId}|${b.exerciseId}|${b.text}`)).sort();
+      const bests = newBestClaims(input, opts);
+      const got = bests.claims.map((c) => `${c.sessionId}|${c.exerciseId}|${c.view.text}`).sort();
       compared += want.length;
-      expect([...got].sort((a, b) => b.sessionId.localeCompare(a.sessionId))).toEqual(want.map((w) => ({ sessionId: w.sessionId, exerciseId: w.exerciseId, kind: w.kind, load: w.load, reps: w.reps })));
+      expect(got).toEqual(want);
+      // Progress's records are those claims, on workouts logged in the app (every claim is one).
+      const listed = recordsInWindow(sessions, { from: '2000-01-01', to: '2099-12-31' }, { limit: Number.POSITIVE_INFINITY, bests }).items.map((x) => `${x.sessionId}|${x.exerciseId}`).sort();
+      expect(listed).toEqual(bests.claims.map((c) => `${c.sessionId}|${c.exerciseId}`).sort());
+      expect(bests.claims.every((c) => sessions.find((x) => x.sessionId === c.sessionId)?.source === 'manual')).toBe(true);
     });
   }
-  it('the random histories produced records to compare', () => {
+  it('the random histories produced bests to compare', () => {
     expect(compared).toBeGreaterThan(30);
   });
 });
