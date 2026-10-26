@@ -72,7 +72,8 @@ describe('route reachability (review 26 Oct, findings 3 and 15)', () => {
 
   it('reads the registrations (sanity)', () => {
     expect(routes.length).toBeGreaterThan(50);
-    expect(routes).toContain('PastWorkouts');
+    expect(routes).toContain('History');
+    expect(routes).not.toContain('PastWorkouts');
     expect(routes).toContain('WorkoutEditor');
   });
 
@@ -91,8 +92,9 @@ describe('route reachability (review 26 Oct, findings 3 and 15)', () => {
     expect(registeredRoutes(fake).filter((r) => !used.has(r))).toEqual(['Orphan']);
   });
 
-  it('Past workouts is opened from Library › Workouts (`Past workouts ›`)', () => {
-    const files = sourceFiles(SRC).filter((f) => readFileSync(f, 'utf8').match(/navigate\(\s*'PastWorkouts'/));
-    expect(files.map((f) => relative(SRC, f))).toContain('screens/routines/WorkoutsScreen.tsx');
+  it('History is opened from Today (`All history ›`), Library › Workouts and Progress › Calendar (Ben, 26 Oct)', () => {
+    const files = sourceFiles(SRC).filter((f) => readFileSync(f, 'utf8').match(/navigate\(\s*'History'/));
+    const names = files.map((f) => relative(SRC, f));
+    for (const f of ['screens/TodayScreen.tsx', 'screens/routines/WorkoutsScreen.tsx', 'screens/progress/CalendarView.tsx']) expect(names).toContain(f);
   });
 });

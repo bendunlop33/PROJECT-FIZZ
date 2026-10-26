@@ -34,7 +34,7 @@ describe('6.7 Row', () => {
     expect(read('screens', 'profile', 'MemoryScreen.tsx')).toContain('below={');
     expect(read('screens', 'profile', 'PlaybookScreen.tsx')).toContain('below={');
     expect(read('screens', 'profile', 'PainFlagsScreen.tsx')).toContain("trailingAction={{ label: 'Clear',");
-    expect(read('screens', 'repeat', 'PastWorkoutsScreen.tsx')).toContain('subtitleLines={1}');
+    expect(read('screens', 'history', 'HistoryScreen.tsx')).toContain('subtitleLines={1}');
   });
 });
 
