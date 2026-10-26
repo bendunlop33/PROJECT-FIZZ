@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { newUuid } from '../../device/runtime';
@@ -9,7 +9,7 @@ import { canSaveForm, equipmentOptions, EXERCISE_FORM_COPY, loadOptions, measure
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, DangerTextButton, Icon, PrimaryButton, SheetKeyboardAvoidingView, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, Chip, ChipRow, DangerTextButton, Icon, PrimaryButton, KeyboardScrollView, SheetKeyboardAvoidingView, StatusLine, TextButton, TextField } from '../../ui';
 
 /**
  * Library › ＋ New exercise, a custom exercise's Edit, and the coach card's
@@ -125,7 +125,7 @@ export function ExerciseFormScreen() {
         </AppText>
         <View style={{ minWidth: 60 }} />
       </View>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'] + insets.bottom, gap: theme.space['5'] }}>
+      <KeyboardScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'] + insets.bottom, gap: theme.space['5'] }}>
         {section(
           EXERCISE_FORM_COPY.name,
           false,
@@ -200,7 +200,7 @@ export function ExerciseFormScreen() {
             <DangerTextButton label={EXERCISE_FORM_COPY.delete} onPress={confirmDelete} />
           </Pressable>
         ) : null}
-      </ScrollView>
+      </KeyboardScrollView>
     </SheetKeyboardAvoidingView>
   );
 }

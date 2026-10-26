@@ -1,10 +1,10 @@
 import { Children, Fragment, isValidElement, useState, type ReactNode, type Ref } from 'react';
-import { Pressable, ScrollView, TextInput, View, type LayoutChangeEvent, type TextInputProps, type ViewStyle } from 'react-native';
+import { Pressable, TextInput, View, type LayoutChangeEvent, type TextInputProps, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme, type ColorToken } from '../theme';
 import { Icon, type SymbolName } from './Icon';
-import { SheetKeyboardAvoidingView, useKeyboardVisible } from './keyboard';
+import { KeyboardScrollView, SheetKeyboardAvoidingView, useKeyboardVisible, useTabBarGap } from './keyboard';
 import { bottomBarPadding, toastBottom } from './keyboard-state';
 import { AppText } from './Text';
 import { ToastHost } from './workout';
@@ -25,6 +25,8 @@ export function Screen({ children, footer, floating, toast, tab = false, testID 
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardVisible();
+  // A tab screen ends on the tab bar, which the keyboard covers (27 Oct).
+  const tabBarGap = useTabBarGap();
   const [footerHeight, setFooterHeight] = useState<number | null>(null);
   const [toastHeight, setToastHeight] = useState(0);
   const showFloating = floating !== undefined && floating !== null && !keyboard;
@@ -32,10 +34,10 @@ export function Screen({ children, footer, floating, toast, tab = false, testID 
   // scroll only insets itself (no double inset), and a large-title header still finds its scroll view.
   const Frame = footer ? SheetKeyboardAvoidingView : View;
   return (
-    <Frame style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} {...(testID ? { testID } : {})}>
+    <Frame style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} {...(footer ? { bottomGap: tabBarGap } : {})} {...(testID ? { testID } : {})}>
       {/* Review S4: the toast is placed in this unpadded view, so the avoiding frame's keyboard padding can't put it behind the keyboard. */}
       <View style={{ flex: 1 }}>
-        <ScrollView
+        <KeyboardScrollView
           contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
@@ -48,7 +50,7 @@ export function Screen({ children, footer, floating, toast, tab = false, testID 
           }}
         >
           {children}
-        </ScrollView>
+        </KeyboardScrollView>
         {showFloating ? floating : null}
         {footer ? (
           <BottomBar

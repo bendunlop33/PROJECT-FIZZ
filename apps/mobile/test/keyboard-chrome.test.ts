@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { accessoryAction, bottomBarPadding, KEYBOARD_CLOSED, toastBottom, watchKeyboard, windowKeyboardOffset, type KeyboardEmitter, type KeyboardEventName } from '../src/ui/keyboard-state';
+import { accessoryAction, bottomBarPadding, KEYBOARD_CLOSED, keyboardInset, toastBottom, watchKeyboard, type KeyboardEmitter, type KeyboardEventName } from '../src/ui/keyboard-state';
 
 /**
  * Design pass batch 0 (Ben approved 20 Oct): shared keyboard and bottom
@@ -55,7 +55,7 @@ describe('keyboard hooks (0.1)', () => {
 
   it('the hooks use it on the real Keyboard', () => {
     const k = read('ui', 'keyboard.tsx');
-    expect(k).toContain('useEffect(() => watchKeyboard(Keyboard, setState), [])');
+    expect(k).toContain('const stop = watchKeyboard(Keyboard, setState);');
     expect(k).toContain('export function useKeyboardVisible()');
     expect(k).toContain('export function useKeyboardHeight()');
   });
@@ -84,12 +84,10 @@ describe('Screen and sheets avoid the keyboard (0.3–0.5)', () => {
     expect(layout).toContain('automaticallyAdjustKeyboardInsets={!footer}');
     expect(layout).toContain('const showFloating = floating !== undefined && floating !== null && !keyboard;');
   });
-  it('a sheet’s KeyboardAvoidingView is offset by where it starts in the window', () => {
-    expect(windowKeyboardOffset(54.4)).toBe(54);
-    expect(windowKeyboardOffset(-3)).toBe(0);
-    expect(windowKeyboardOffset(undefined)).toBe(0);
-    expect(windowKeyboardOffset(Number.NaN)).toBe(0);
-    expect(read('ui', 'keyboard.tsx')).toContain('keyboardVerticalOffset={offset}');
+  it('a sheet’s avoiding view is padded by the keyboard’s height, never a measured window offset (27 Oct)', () => {
+    expect(keyboardInset({ keyboardHeight: 336 })).toBe(336);
+    expect(keyboardInset({ keyboardHeight: 380, bottomGap: 83 })).toBe(297);
+    expect(read('ui', 'keyboard.tsx')).not.toContain('measureInWindow');
     for (const f of [['screens', 'coach', 'CoachSheetScreen.tsx'], ['screens', 'library', 'ExerciseFormScreen.tsx'], ['screens', 'workout', 'EditSetScreen.tsx'], ['screens', 'workout', 'PlannedSetEdit.tsx']]) {
       const s = read(...f);
       expect(s, f.join('/')).toContain('<SheetKeyboardAvoidingView');
@@ -98,7 +96,7 @@ describe('Screen and sheets avoid the keyboard (0.3–0.5)', () => {
   });
   it('BottomCard scrolls its content and pins a footer', () => {
     const sheet = read('ui', 'sheet.tsx');
-    expect(sheet).toContain('<ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled"');
+    expect(sheet).toContain('<KeyboardScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled"');
     expect(sheet).toContain('{footer !== undefined && footer !== null ?');
     // The split day sheet's Save, Remove and Cancel stay visible with the keyboard up.
     expect(read('screens', 'profile', 'SplitScreen.tsx').replace(/\s+/g, ' ')).toMatch(/footer=\{ sheet\?\.kind === 'lift'.*<PrimaryButton label=\{C\.save\}/);
