@@ -1,21 +1,5 @@
 import type { CommandOf, EquipmentInstance, Load, Measurement, PainFlag, ZonedTimestamp, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetType, SetValues, WorkoutSet } from '@fizz/schemas';
-import {
-  EQUIPMENT_WORD,
-  SET_TYPE_BADGE,
-  SET_TYPE_WORD,
-  formatDistance,
-  formatDuration,
-  formatNumber,
-  loadFieldLabel,
-  loadFieldUnit,
-  loadText,
-  rowLoadCell,
-  rowValueCell,
-  targetBrief,
-  targetShort,
-  targetText,
-  valuesText,
-} from '../display';
+import { EQUIPMENT_WORD, SET_TYPE_BADGE, SET_TYPE_WORD, formatDistance, formatDuration, formatNumber, loadFieldLabel, loadFieldUnit, loadText, rowLoadCell, rowValueCell, targetBrief, targetShort, targetText, valuesText, effortRir } from '../display';
 import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclusions, notCountedLine, withExclusionWords } from '../exclusions';
 import { getAchievableLoads, isLoadAchievable, isPresenceOnly, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
 import { gymLearnFor, gymLearnText, type GymLearn } from '../quick-gym';
@@ -629,7 +613,9 @@ function repSteps(value: number | null): { down: StepTarget; up: StepTarget } {
 function rowText(state: SessionAggregate, set: WorkoutSet, ex: SessionExercise, eq: EquipmentInstance | null, active: boolean, carry: CarryOptions): { status: SetRowStatus; text: string } {
   if (set.status === 'completed' && set.actual) {
     const v = valuesText(set.actual, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq });
-    const effort = set.actual.rpe !== null ? `   RPE ${formatNumber(set.actual.rpe)}` : set.actual.rir !== null ? `   RIR ${String(set.actual.rir)}` : '';
+    // (Ben, 26 Oct) Effort reads as RIR however it was logged.
+    const rir = effortRir(set.actual);
+    const effort = rir === null ? '' : `   RIR ${formatNumber(rir)}`;
     return { status: 'done', text: `${v}${effort}` };
   }
   if (set.status === 'skipped') return { status: 'skipped', text: 'Skipped' };
@@ -740,8 +726,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   let values: SetValues = edits ? edits.values : pre.values;
   // Effort is never prefilled; only Ben sets it: a chip after the log, or (Ben, 26 Oct) the row's RIR cell before
   // it, kept in his edits or the set's saved draft (never history's, never on a warm-up).
-  const ownRir = set.setType === 'warmup' ? null : ((edits ? edits.values.rir : set.draft?.rir) ?? null);
-  values = { ...values, rpe: null, rir: ownRir };
+  const ownEffort = set.setType === 'warmup' ? null : edits ? edits.values : set.draft;
+  values = { ...values, rpe: ownEffort?.rpe ?? null, rir: ownEffort?.rir ?? null };
   // A bodyweight exercise has no load; `added` with nothing entered means none added.
   if (ex.loadConvention === 'bodyweight') values = { ...values, load: { value: 0, unit: ex.unit, convention: 'bodyweight' } };
   // Weighted today after a bodyweight Last: nothing added until Ben steps it.

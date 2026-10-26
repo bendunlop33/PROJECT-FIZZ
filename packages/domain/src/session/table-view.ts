@@ -377,7 +377,8 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   const before = today !== null && p.coach ? p.coach.before : null;
   const planWas = before === null ? null : spokenValues(before.load, before.reps === null ? null : repRangeText(before.reps), before.durationS, before.distanceM, ex, eq);
   // (Ben, 26 Oct) RIR he entered for this set before logging (the open row's edits, else its saved draft).
-  const ownRir = set.setType === 'warmup' || ex.measurement !== 'reps' ? null : ((carry.edits?.setId === set.id ? carry.edits.values.rir : set.draft?.rir) ?? null);
+  const ownSource = set.setType === 'warmup' || ex.measurement !== 'reps' ? null : carry.edits?.setId === set.id ? carry.edits.values : set.draft;
+  const ownRir = ownSource == null ? null : effortRir(ownSource);
   const targetRir = rpe === null || set.setType === 'warmup' || ex.measurement !== 'reps' ? null : rirOfRpe(rpe);
   const rpeWords = ownRir !== null ? rirWords(ownRir) : targetRir === null ? null : `target ${rirWords(targetRir)}`;
   const target = targetText(p, { convention: ex.loadConvention, equipment: eq, perSide: ex.laterality === 'unilateral', rpe, measurement: ex.measurement });

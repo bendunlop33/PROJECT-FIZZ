@@ -29,7 +29,7 @@ describe('built-in default rule by category', () => {
     const main = builtInDefaultRule(OWNER, 'kg', 5, 'main_barbell');
     expect(ProgressionRuleSchema.safeParse(main).success).toBe(true);
     expect(main).toMatchObject({ repRange: { min: 3, max: 6 }, maxRpeToProgress: 8.5, workingSets: 5 });
-    expect(main.name).toBe('3–6 reps, up to RPE 8.5');
+    expect(main.name).toBe('3–6 reps, RIR 1.5 or more');
     expect(builtInDefaultRule(OWNER, 'lb', 3, 'compound')).toMatchObject({ repRange: { min: 6, max: 10 }, maxRpeToProgress: 9, loadIncrement: { value: 5, unit: 'lb' } });
     expect(builtInDefaultRule(OWNER, 'kg', 3, 'isolation')).toMatchObject({ repRange: { min: 8, max: 12 }, maxRpeToProgress: 9 });
     expect(new Set([builtInDefaultRule(OWNER, 'kg', 3, 'main_barbell').id, builtInDefaultRule(OWNER, 'kg', 3, 'compound').id, builtInDefaultRule(OWNER, 'lb', 3, 'main_barbell').id]).size).toBe(3);

@@ -465,7 +465,7 @@ describe('a saved rep range through the coach (retire-overview final re-review F
     const tw: BuilderWorkout = { ...w, blocks: w.blocks.map((b) => ({ ...b, slots: b.slots.map((x) => (x.key === benchKey ? topBack : x)) })) };
     const s = snapshotOf(tw);
     expect(applyBuilderEdits(s, [{ op: 'reps', slotKey: benchKey, reps: 5 }], env).lines).toContain('Barbell bench press: 5 / 8 → 5 reps');
-    expect(applyBuilderEdits(s, [{ op: 'rpe', slotKey: benchKey, rpe: 8 }], env).lines).toContain('Barbell bench press: RPE 8 / 7 → 8');
+    expect(applyBuilderEdits(s, [{ op: 'rpe', slotKey: benchKey, rpe: 8 }], env).lines).toContain('Barbell bench press: RIR 2 / 3 → 2');
     // Fewer sets drops back-offs: that's the sets line alone.
     expect(applyBuilderEdits(s, [{ op: 'sets', slotKey: benchKey, workingSets: 1 }], env).lines).toEqual(['Barbell bench press: 4 → 1 sets']);
   });

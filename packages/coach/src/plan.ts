@@ -21,6 +21,7 @@ import {
 import { BUILD_ALREADY_LINE, LOAD_CHOICE_LINE, checkedRationale, sameGymName, unknownGymLine, type BuildGym } from './build';
 import { actionIdFor, newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
 import { collectFacts, mergeFacts, type NumberFacts } from './numbers';
+import { EFFORT_WORDS_LINE } from './numbers';
 
 /**
  * The plan builder's tool, `propose_plan` (Ben, 19 Oct). Offered in a
@@ -227,6 +228,7 @@ export const PLAN_INSTRUCTIONS = [
   'Follow his split (build.plan.splitDays) and his days a week (build.plan.daysPerWeek) unless he asks for something else; give each day its splitDayId. Spread the muscles across the days so the same muscles don’t lead two days in a row. Keep each day within build.plan.setBudget working sets. Put each day’s main lift first.',
   'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters in words with no numbers; null when you have no opinion. Give targetRpe for every exercise. Give `minutes` when Ben asked for a length for every day, a day’s own `minutes` when he asked for one for that day.',
   LOAD_CHOICE_LINE,
+  EFFORT_WORDS_LINE,
   'To change the plan in context (build.plan.current), call `propose_plan` with the whole new version: keep every day and exercise Ben didn’t ask to change.',
   'If build.plan.current.inUse is true, it is the plan Ben is using: the new version is a new plan he can Apply in place of it. Never say it was changed.',
   'Its `message` (at most 600 characters) says, like a coach would, why these days and this order. Any number in it must come from YOUR DATA, a tool result, Ben’s words or this plan; the app drops sentences with other numbers. No praise, scores, max or record claims, recovery claims or diagnoses.',

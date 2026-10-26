@@ -1,42 +1,4 @@
-import {
-  BUILDER_MAX_SUPERSET,
-  BUILDER_SET_RULES,
-  adviseBuilder,
-  bandInsertIndex,
-  anchorE1rmOf,
-  builderSupersetWithNext,
-  builderUnlink,
-  canPair,
-  clampBuilderRest,
-  clampMinutes,
-  compareDifficulty,
-  editSetRow,
-  estimateBuilderMinutes,
-  fitToMinutes,
-  formulaApplies,
-  infoOrDefault,
-  loadDirection,
-  makeSlot,
-  removeSlot,
-  restClockText,
-  roundContextOf,
-  roundDownHere,
-  setWorkingCount,
-  settleBackoffs,
-  slotsOf,
-  splitInvalidAutoPairs,
-  warmupsFor,
-  withBackoffBases,
-  followTop,
-  workingCount,
-  workingRestS,
-  type BuilderBlock,
-  type BuilderContext,
-  type BuilderGroupName,
-  type BuilderSetRow,
-  type BuilderSlot,
-  type BuilderWorkout,
-} from '@fizz/domain';
+import { BUILDER_MAX_SUPERSET, BUILDER_SET_RULES, adviseBuilder, bandInsertIndex, anchorE1rmOf, builderSupersetWithNext, builderUnlink, canPair, clampBuilderRest, clampMinutes, compareDifficulty, editSetRow, estimateBuilderMinutes, fitToMinutes, formulaApplies, infoOrDefault, loadDirection, makeSlot, removeSlot, restClockText, roundContextOf, roundDownHere, setWorkingCount, settleBackoffs, slotsOf, splitInvalidAutoPairs, warmupsFor, withBackoffBases, followTop, workingCount, workingRestS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSetRow, type BuilderSlot, type BuilderWorkout, rirOfRpe } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderEditOp, type LoadConvention, type WeightUnit } from '@fizz/schemas';
 import { topLoad, type BuilderLoadGuard } from './load-guard';
 
@@ -325,7 +287,8 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
       const [lo, hi] = op.op === 'reps' ? [BUILD_LIMITS.minReps, BUILD_LIMITS.maxReps] : [BUILD_LIMITS.minRpe, BUILD_LIMITS.maxRpe];
       if (value < lo || value > hi) {
         value = Math.max(lo, Math.min(hi, value));
-        st.notes.push(`${name(s.exerciseId)}: ${op.op === 'reps' ? `${String(value)} reps` : `RPE ${String(value)}`} (limit ${String(lo)}–${String(hi)})`);
+        // (Ben, 26 Oct) Shown as RIR: the limit reads from easiest to hardest.
+        st.notes.push(`${name(s.exerciseId)}: ${op.op === 'reps' ? `${String(value)} reps (limit ${String(lo)}–${String(hi)})` : `RIR ${fmt(rirOfRpe(value))} (limit ${fmt(rirOfRpe(hi))}–${fmt(rirOfRpe(lo))})`}`);
       }
       // Rule 9: a pain-flagged movement is never made harder: no higher RPE target, no more reps (review S2).
       const pain = env.pain(s.exerciseId);
@@ -506,8 +469,8 @@ function slotLines(before: BuilderSlot, after: BuilderSlot, name: string, rest: 
   if (a !== b) out.push(`${name}: ${String(a)} → ${String(b)} sets`);
   const reps = perSetChange(before, after, builderRepsText);
   if (reps !== null) out.push(`${name}: ${reps[0]} → ${reps[1]} reps`);
-  const rpe = perSetChange(before, after, (r) => (r.rpe == null ? null : fmt(r.rpe)));
-  if (rpe !== null) out.push(`${name}: RPE ${rpe[0]} → ${rpe[1]}`);
+  const rpe = perSetChange(before, after, (r) => (r.rpe == null ? null : fmt(rirOfRpe(r.rpe))));
+  if (rpe !== null) out.push(`${name}: RIR ${rpe[0]} → ${rpe[1]}`);
   const la = topLoad(before);
   const lb = topLoad(after);
   if (la !== null && lb !== null && Math.abs(la - lb) > EPS) out.push(`${name}: ${loadChange(la, lb, after.unit, after.convention)}`);

@@ -2,7 +2,7 @@ import type { WeightUnit } from '@fizz/schemas';
 import { infoOrDefault } from '../builder/arrange';
 import { workingCount } from '../builder/set-rows';
 import type { BuilderInfoLookup, BuilderSlot, BuilderWorkout } from '../builder/types';
-import { formatNumber, NBSP } from '../display';
+import { formatNumber, NBSP, rirOfRpe } from '../display';
 
 /**
  * Today (v2) card text (workout-builder-v3 §2.0, prototypes/today-v2.html).
@@ -196,7 +196,7 @@ export function todayWhy(input: TodayWhyInput): string[] {
   else if (input.nextDayName === input.dayName) lines.push(`Plan: ${input.dayName} is next`);
   else lines.push(`${input.dayName} picked by you; the plan moves on`);
   if (input.last !== null) {
-    const rpe = input.last.rpe === null ? '' : ` at RPE ${formatNumber(input.last.rpe)}`;
+    const rpe = input.last.rpe === null ? '' : ` at RIR ${formatNumber(rirOfRpe(input.last.rpe))}`;
     lines.push(`Last ${input.dayName}, ${input.last.dateText}: ${input.last.lift} ${input.last.value}${NBSP}×${NBSP}${String(input.last.reps)}${rpe}${input.mainTarget === null ? '' : ` → ${input.mainTarget}`}`);
   } else if (input.mainTarget !== null) {
     lines.push(`Top set today: ${input.mainTarget}`);

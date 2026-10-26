@@ -82,7 +82,7 @@ describe('buildWorkoutSummary', () => {
     expect(buildWorkoutSummary(input(s, [lastWeek], { coach: 'unavailable' })).nextTime?.sourceTag).toBe('Rule');
     expect(buildWorkoutSummary(input(s, [lastWeek], { coach: 'connected' })).nextTime?.sourceTag).toBe('Rule');
     expect(sum.nextTime?.rows.map((r) => [r.kind, plain(r.target), r.decision, r.ruleName])).toEqual([
-      ['change', 'Target 62.5 kg × 8–12', 'increase_load', '8–12 reps, up to RPE 9'],
+      ['change', 'Target 62.5 kg × 8–12', 'increase_load', '8–12 reps, RIR 1 or more'],
     ]);
     expect(sum.nextTime?.rows[0]?.summary).toContain('Increase to 62.5');
   });

@@ -1,6 +1,6 @@
 import { BUILD_LIMITS, type AddExerciseTodayArgs, type CoachTarget, type CommandOf, type Exercise, type GuardNote, type Load, type PlannedSet, type RepRange, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 import { builtInRepRange, ruleCategory } from '../default-rule';
-import { dayMonthText, formatDuration, repRangeText } from '../display';
+import { dayMonthText, formatDuration, repRangeText, formatNumber, rirOfRpe } from '../display';
 import { painFlagForMovement } from '../exercise-identity';
 import { PAIN_AREA_WORD } from '../pain-flags';
 import type { HistorySession } from '../progression';
@@ -174,7 +174,7 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
   // No effort target on cardio (review N4): its time and distance are the target.
   if (args.targetRpe !== null && !cardio) {
     rpe = clampRpe(args.targetRpe);
-    if (rpe !== args.targetRpe) note('invalid_reps', `RPE ${String(args.targetRpe)} → ${String(rpe)}`);
+    if (rpe !== args.targetRpe) note('invalid_reps', `RIR ${formatNumber(10 - args.targetRpe)} → ${formatNumber(rirOfRpe(rpe))}`);
   }
 
   // 8. Loads from the exercise's own history (B6: none → blank), fitted to this gym.

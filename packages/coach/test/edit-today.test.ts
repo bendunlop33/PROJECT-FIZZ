@@ -85,7 +85,7 @@ describe('edit_today through the turn (Coach v3 slice 2)', () => {
     await saved(s, workout());
     const model = new ScriptedCoachModel([[call('edit_today', swapAndAdd({ benAsked: true, benQuote: 'swap bench for incline dumbbell press' })), { type: 'completed' }], reply('Dumbbells it is.')]);
     const r = await runCoachTurn(request({ kind: 'workout', input: words('swap bench for incline dumbbell press and add lateral raises'), context: ctx(workout()) }), livePorts(s, model));
-    expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', 'Bench press → Incline DB press. Added Lateral raise: 3 × 12–15 reps @ RPE 8.']]);
+    expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', 'Bench press → Incline DB press. Added Lateral raise: 3 × 12–15 reps · RIR 2.']]);
     const after = await s.repos.sessions.get(SESSION);
     expect(after?.session.version).toBe(8);
     expect(live(after)).toEqual(['Bench press', 'Incline DB press', 'Dumbbell press', 'Assisted pull-up', 'Lateral raise']);
@@ -119,7 +119,7 @@ describe('edit_today through the turn (Coach v3 slice 2)', () => {
     await saved(s, workout());
     const model = new ScriptedCoachModel([[call('edit_today', swapAndAdd({ benAsked: true, benQuote: 'Too easy' })), { type: 'completed' }], reply("I've swapped bench for incline presses. Want me to keep that?")]);
     const r = await runCoachTurn(request({ kind: 'workout', input: { kind: 'chip', chip: 'too_easy' }, context: ctx(workout()) }), livePorts(s, model));
-    expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['proposed', 'Suggested: Bench press → Incline DB press. Added Lateral raise: 3 × 12–15 reps @ RPE 8. Not applied.']]);
+    expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['proposed', 'Suggested: Bench press → Incline DB press. Added Lateral raise: 3 × 12–15 reps · RIR 2. Not applied.']]);
     expect(r.offer).toBe('adjust_today');
     expect(r.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : []))).not.toContain("I've swapped bench for incline presses.");
     expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(7);
@@ -127,7 +127,7 @@ describe('edit_today through the turn (Coach v3 slice 2)', () => {
     const silent = new ScriptedCoachModel([]);
     const r2 = await runCoachTurn(request({ kind: 'workout', threadId: r.threadId, input: { kind: 'accept_offer', offer: 'adjust_today' }, context: ctx(workout()) }), livePorts(s, silent));
     expect(silent.requests).toHaveLength(0);
-    expect(r2.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', 'Bench press → Incline DB press. Added Lateral raise: 3 × 12–15 reps @ RPE 8.']]);
+    expect(r2.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', 'Bench press → Incline DB press. Added Lateral raise: 3 × 12–15 reps · RIR 2.']]);
     expect(live(await s.repos.sessions.get(SESSION))).toEqual(['Bench press', 'Incline DB press', 'Dumbbell press', 'Assisted pull-up', 'Lateral raise']);
     const actionId = r2.cards[0]?.record.actionId ?? '';
     expect((await undoCoachAction(s.repos.coach, { ownerId: OWNER, actionId, opId: undoOpId(actionId), now: at(900) })).result.status).toBe('written');

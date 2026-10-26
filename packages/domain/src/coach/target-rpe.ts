@@ -1,5 +1,5 @@
 import type { PlannedSet, SessionAggregate, SetType } from '@fizz/schemas';
-import { formatNumber, NBSP } from '../display';
+import { formatNumber, NBSP, rirOfRpe } from '../display';
 import { builtInTargetRpe, ruleCategory, type RuleExerciseInfo } from '../default-rule';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 
@@ -64,9 +64,9 @@ export function ruleTargetRpes(aggregate: Pick<SessionAggregate, 'exercises' | '
   return out;
 }
 
-/** `@ RPE 8`, `@ RPE 8.5` (the target line; minimal copy). */
+/** `RIR 2`, `RIR 1.5` (the target line; minimal copy; Ben, 26 Oct: RIR replaces RPE in the UI). */
 export function targetRpeText(rpe: number): string {
-  return `@${NBSP}RPE${NBSP}${formatNumber(rpe)}`;
+  return `RIR${NBSP}${formatNumber(rirOfRpe(rpe))}`;
 }
 
 /** The values Ben can pick as a target (RPE half steps 6–10). */

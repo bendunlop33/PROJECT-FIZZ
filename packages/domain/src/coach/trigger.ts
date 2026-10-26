@@ -1,5 +1,5 @@
 import type { PlannedSet, SetType, SetValues } from '@fizz/schemas';
-import { formatNumber } from '../display';
+import { formatNumber, effortRir, rirOfRpe } from '../display';
 import { deriveId } from '../stable';
 
 /**
@@ -88,21 +88,14 @@ function effortAsRpe(e: { rpe: number | null; rir: number | null }): number | nu
   return null;
 }
 
+/** (Ben, 26 Oct: RIR replaces RPE in the UI) What he entered, as RIR: `RIR 0`, `RIR 1.5`. */
 function effortWords(e: { rpe: number | null; rir: number | null }): string {
-  return e.rpe !== null ? `RPE ${formatNumber(e.rpe)}` : `RIR ${String(e.rir ?? 0)}`;
+  return `RIR ${formatNumber(effortRir(e) ?? 0)}`;
 }
 
-/**
- * The target in the scale Ben logged with: `target 8`, or `target RIR 2` when
- * he logged RIR. RIR is whole reps, so a half-step target (RPE 8.5) reads
- * `target RPE 8.5` rather than `target RIR 1.5` (review target-rpe S3).
- */
-function targetWords(actual: { rpe: number | null; rir: number | null }, target: number): string {
-  if (actual.rpe === null && actual.rir !== null) {
-    const rir = Math.max(0, 10 - target);
-    return Number.isInteger(rir) ? `target RIR ${formatNumber(rir)}` : `target RPE ${formatNumber(target)}`;
-  }
-  return `target ${formatNumber(target)}`;
+/** The target as RIR: `target RIR 2`, `target RIR 1.5` (half values stay halves, Ben 26 Oct). */
+function targetWords(_actual: { rpe: number | null; rir: number | null }, target: number): string {
+  return `target RIR ${formatNumber(rirOfRpe(target))}`;
 }
 
 /**

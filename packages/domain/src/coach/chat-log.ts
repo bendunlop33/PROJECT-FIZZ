@@ -105,11 +105,13 @@ export function numbersInWords(text: string): Set<number> {
  * ("set 2 was 95") isn't a value he said (review N2), so it can't become the
  * reps or the load.
  */
-function said(benWords: string | null, values: readonly (number | null)[]): boolean {
+function said(benWords: string | null, values: readonly (number | null)[], rpe: number | null = null): boolean {
   if (benWords === null) return false;
   const withoutSetNumbers = benWords.replace(/\bsets?\s+(?:no\.?\s*|number\s+)?(?:\d+|[a-z]+)\b/gi, (m) => (numbersInWords(m).size > 0 ? ' ' : m));
   const nums = numbersInWords(withoutSetNumbers);
-  return values.every((v) => v === null || nums.has(v));
+  // (Ben, 26 Oct: RIR replaces RPE in the UI) An effort is stored as RPE; Ben may have said it as RIR (10 − RPE).
+  const effortSaid = rpe === null || nums.has(rpe) || nums.has(Math.round((10 - rpe) * 100) / 100);
+  return effortSaid && values.every((v) => v === null || nums.has(v));
 }
 
 const norm = (t: string): string => ` ${t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
@@ -198,7 +200,7 @@ export function checkChatLog(input: ChatSetInput): ChatSetCheck {
   const unit = unitFailure(input.load, ex);
   if (unit !== null) return fail('rejected', unit);
   if (input.reps === null) return fail('rejected', 'no reps given');
-  if (!said(input.benWords, [input.load?.value ?? null, input.reps, input.rpe])) return fail('rejected', 'say the weight and reps to log');
+  if (!said(input.benWords, [input.load?.value ?? null, input.reps], input.rpe)) return fail('rejected', 'say the weight and reps to log');
   const values: SetValues = { load: input.load, reps: input.reps, durationS: null, rpe: input.rpe, rir: null };
   const command: Extract<SessionCommand, { type: 'log_set' }> = { type: 'log_set', at: input.at, opId: input.opId, setId: set.id, values, restTimerId: deriveId(`chat-rest:${input.opId}`) };
   const dry = reduceSession(agg, command);
@@ -223,7 +225,7 @@ export function checkChatCorrection(input: ChatSetInput): ChatSetCheck {
   if (input.reps !== null && input.reps !== before.reps) patch.reps = input.reps;
   if (input.rpe !== null && input.rpe !== before.rpe) patch.rpe = input.rpe;
   if (Object.keys(patch).length === 0) return fail('rejected', `set ${String(setNumber)} already has those values`);
-  if (!said(input.benWords, [patch.load?.value ?? null, patch.reps ?? null, patch.rpe ?? null])) return fail('rejected', 'say the corrected numbers');
+  if (!said(input.benWords, [patch.load?.value ?? null, patch.reps ?? null], patch.rpe ?? null)) return fail('rejected', 'say the corrected numbers');
   const command: Extract<SessionCommand, { type: 'correct_set' }> = { type: 'correct_set', at: input.at, opId: input.opId, setId: set.id, expectedSetVersion: set.version, patch };
   const dry = reduceSession(agg, command);
   if (!dry.ok) return fail('rejected', dry.error.message.replace(/\.$/, '').toLowerCase());

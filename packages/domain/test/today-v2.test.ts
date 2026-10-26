@@ -314,7 +314,7 @@ describe('Session breakdown rows', () => {
 describe('Why? (facts from code; honest review status)', () => {
   it('next day, last session → today’s load, goal, accessories and time; offline says so', () => {
     const lines = todayWhy({ dayName: 'Chest', nextDayName: 'Chest', other: false, last: { dateText: '13 Oct', lift: 'bench', value: '100', reps: 6, rpe: 8 }, mainTarget: '102.5', goal: 'strength', liftTarget: 'bench target 110 kg', accessories: 'focused', minutes: 60, coachReason: null, review: 'offline' });
-    expect(lines.map(sp)).toEqual(['Plan: Chest is next', 'Last Chest, 13 Oct: bench 100 × 6 at RPE 8 → 102.5', 'Goal: strength · bench target 110 kg', 'Accessories focused · 60 min', 'Not reviewed · Offline']);
+    expect(lines.map(sp)).toEqual(['Plan: Chest is next', 'Last Chest, 13 Oct: bench 100 × 6 at RIR 2 → 102.5', 'Goal: strength · bench target 110 kg', 'Accessories focused · 60 min', 'Not reviewed · Offline']);
     const picked = todayWhy({ dayName: 'Back', nextDayName: 'Chest', other: false, last: null, mainTarget: null, goal: null, liftTarget: null, accessories: 'varied', minutes: 45, coachReason: null, review: 'not_connected' });
     expect(picked[0]).toBe('Back picked by you; the plan moves on');
     expect(picked.at(-1)).toBe('Not reviewed · Coach not connected');

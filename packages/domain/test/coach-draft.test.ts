@@ -329,7 +329,7 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
     expect(r.checks.map((c) => c.text)).toEqual([
       'Bench press · sets 12 → 10 (most allowed)',
       'Bench press · reps 0–60 → 1–50',
-      'Bench press · RPE 11 → 10',
+      'Bench press · RIR -1 → 0',
       'Rest 2:15 → 2:00 (your presets)',
       'Landmine twist left out · not in your exercises',
       'Superset ungrouped · needs 2–4 exercises in a row',
@@ -373,7 +373,7 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
 
   it('BD7: a missing RPE is the built-in rule’s, with `RPE missing · n used`; a reversed rep range is put in order', () => {
     const r = checked(args([pex('barbell-bench-press', { targetRpe: null, reps: { min: 8, max: 6 } }), pex('cable-fly', { targetRpe: null })]));
-    expect(r.checks.map((c) => c.text)).toEqual(['Bench press · reps 8–6 → 6–8', 'Bench press · RPE missing · 8.5 used', 'Cable fly · RPE missing · 9 used']);
+    expect(r.checks.map((c) => c.text)).toEqual(['Bench press · reps 8–6 → 6–8', 'Bench press · RIR missing · 1.5 used', 'Cable fly · RIR missing · 1 used']);
     expect(r.plan.slots[0]?.setTemplates.find((t) => t.setType !== 'warmup')?.targetRpe).toBe(8.5);
   });
 
@@ -594,7 +594,7 @@ describe('versions (BD16): diff lines from code, Undo back to the parent', () =>
       '− Lateral raise',
       '− Plank',
       '✎ Incline DB press · 3 → 2 sets',
-      '✎ Cable fly · reps, RPE, superset',
+      '✎ Cable fly · reps, RIR, superset',
     ]);
   });
 

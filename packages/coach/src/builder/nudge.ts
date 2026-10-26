@@ -1,4 +1,4 @@
-import { addDays, daysBetween, infoOrDefault, slotsOf, workingCount } from '@fizz/domain';
+import { addDays, daysBetween, infoOrDefault, slotsOf, workingCount, formatNumber, rirOfRpe } from '@fizz/domain';
 import type { ActivityEffort, ActivityKind, BuilderEditOp, PreSessionNudgeArgs, ReviewFact } from '@fizz/schemas';
 import type { NumberFacts } from '../numbers';
 import { checkCoachText } from './checked-text';
@@ -139,7 +139,7 @@ export function signalLine(s: NudgeSignal, nameOf: (exerciseId: string) => strin
     case 'rep_miss':
       return `${nameOf(s.exerciseId)} on ${s.localDate}: ${String(s.reps)} reps against a target of ${String(s.targetReps)}`;
     case 'rpe_high':
-      return `Last ${String(s.sessionIds.length)} sessions averaged RPE ${String(s.meanRpe)}`;
+      return `Last ${String(s.sessionIds.length)} sessions averaged RIR ${formatNumber(rirOfRpe(s.meanRpe))}`;
     case 'low_check_in':
       return `Check-in today: ${String(s.score)} of 5`;
     case 'hard_run':

@@ -252,7 +252,7 @@ describe('weekly signals: RPE, feel, runs, repeated edits (§6.1 feedback loop)'
     expect(f.feel).toEqual({ easy: 0, good: 1, hard: 1 });
     expect(f.runs).toEqual({ count: 2, distanceM: 20000 });
     expect(f.week.runs).toBe(2);
-    expect(reviewFactLines(f)).toEqual(['2 workouts · 2 runs', 'RPE 9.3 · target 8', 'Felt: 1 good, 1 hard']);
+    expect(reviewFactLines(f)).toEqual(['2 workouts · 2 runs', 'RIR 0.7 · target 2', 'Felt: 1 good, 1 hard']);
     // No RPE logged: no RPE fact (rule 6).
     expect(weeklyFacts(input({ sessions: [sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }])] })).rpe).toBeNull();
   });
@@ -442,7 +442,7 @@ describe('review fixes (b3-wave3 truth and UX reviews, 21 Oct)', () => {
     ]);
     const f = weeklyFacts(input({ sessions: [s] }));
     expect(f.rpe).toEqual({ sessions: 1, mean: 8, target: 8 });
-    expect(reviewFactLines(f)).toContain('RPE 8 · target 8');
+    expect(reviewFactLines(f)).toContain('RIR 2 · target 2');
     // With no targets at all: the plain mean, no target.
     const none = weeklyFacts(input({ sessions: [sess('2026-10-13', [{ exerciseId: CURL, sets: [work(kg(30), 10, { rpe: 10 }), work(kg(30), 10, { rpe: 9 })] }])] }));
     expect(none.rpe).toEqual({ sessions: 1, mean: 9.5, target: null });

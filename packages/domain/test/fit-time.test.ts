@@ -728,12 +728,12 @@ describe('fitPlanOf: the plan the coach fits carries each slot’s target RPE (m
     const benchSx = Object.entries(out.slotOf).find(([, k]) => k === SLOT_BENCH)?.[0] ?? '';
     const base = { aggregate: out.aggregate, slotOf: out.slotOf, tiers: out.tiers, benEdited: new Set<string>(), skipped: new Set(r.skipped.keys()), held: () => false, muscles: () => [], lastOf: () => null };
     const without = fitPlanOf(base).items;
-    expect(without.every((i) => !i.sets.includes('RPE'))).toBe(true);
+    expect(without.every((i) => !i.sets.includes('RIR'))).toBe(true);
     const withRule = fitPlanOf({ ...base, ruleTargetRpe: { [benchSx]: 8.5 } }).items;
-    expect(withRule.find((i) => i.slotKey === SLOT_BENCH)?.sets).toMatch(/@ RPE 8\.5/);
-    expect(withRule.filter((i) => i.slotKey !== SLOT_BENCH).every((i) => !i.sets.includes('RPE'))).toBe(true);
+    expect(withRule.find((i) => i.slotKey === SLOT_BENCH)?.sets).toMatch(/· RIR 1\.5/);
+    expect(withRule.filter((i) => i.slotKey !== SLOT_BENCH).every((i) => !i.sets.includes('RIR'))).toBe(true);
     // A planned RPE (the plan's, the coach's or Ben's) wins over the rule's.
     const planned = { ...out.aggregate, sets: out.aggregate.sets.map((s) => (out.slotOf[s.sessionExerciseId] === SLOT_BENCH && s.setType !== 'warmup' ? { ...s, planned: { ...s.planned, rpe: 7 } } : s)) };
-    expect(fitPlanOf({ ...base, aggregate: planned, ruleTargetRpe: { [benchSx]: 8.5 } }).items.find((i) => i.slotKey === SLOT_BENCH)?.sets).toMatch(/@ RPE 7(?![.\d])/);
+    expect(fitPlanOf({ ...base, aggregate: planned, ruleTargetRpe: { [benchSx]: 8.5 } }).items.find((i) => i.slotKey === SLOT_BENCH)?.sets).toMatch(/· RIR 3(?![.\d])/);
   });
 });

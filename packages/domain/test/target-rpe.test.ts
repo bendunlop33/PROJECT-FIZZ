@@ -61,10 +61,10 @@ describe('ruleTargetRpes', () => {
 });
 
 describe('target line', () => {
-  it('shows `@ RPE 8` after the target (minimal copy)', () => {
-    expect(targetRpeText(8).replaceAll('\u00a0', ' ')).toBe('@ RPE 8');
-    expect(targetRpeText(8.5).replaceAll('\u00a0', ' ')).toBe('@ RPE 8.5');
-    expect(targetText(plan(), { convention: 'total', rpe: 8 })?.replaceAll('\u00a0', ' ')).toBe('Target 100 kg · 3–6 reps @ RPE 8');
+  it('shows `RIR 2` after the target (minimal copy; Ben, 26 Oct: RIR replaces RPE in the UI)', () => {
+    expect(targetRpeText(8).replaceAll('\u00a0', ' ')).toBe('RIR 2');
+    expect(targetRpeText(8.5).replaceAll('\u00a0', ' ')).toBe('RIR 1.5');
+    expect(targetText(plan(), { convention: 'total', rpe: 8 })?.replaceAll('\u00a0', ' ')).toBe('Target 100 kg · 3–6 reps · RIR 2');
     expect(targetText(plan(), { convention: 'total' })?.replaceAll('\u00a0', ' ')).toBe('Target 100 kg · 3–6 reps');
     expect(targetText(plan({ load: null, reps: null }), { convention: 'total', rpe: 8 })).toBeNull();
   });

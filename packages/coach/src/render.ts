@@ -1,4 +1,4 @@
-import { activityDetail, ACTIVITY_WORD, cardioValuesText, customExerciseLine, formatDuration, formatNumber, liftTargetValueText, loadText, localDateText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
+import { activityDetail, ACTIVITY_WORD, cardioValuesText, customExerciseLine, formatDuration, formatNumber, liftTargetValueText, loadText, localDateText, NBSP, repRangeText, setNumbersText, toMs, rirOfRpe } from '@fizz/domain';
 import type { ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
 
 /**
@@ -39,20 +39,20 @@ function loadPart(load: Load | null): string | null {
   return loadText(load, load.convention);
 }
 
-/** A logged set's values: `100 kg × 8 · RPE 8`, `Bodyweight × 12`. */
+/** A logged set's values: `100 kg × 8 · RIR 2`, `Bodyweight × 12` (Ben, 26 Oct: RIR replaces RPE in the UI). */
 function chatValues(v: { load: Load | null; reps: number | null; rpe: number | null }): string {
   const load = loadPart(v.load);
   const reps = v.reps === null ? null : String(v.reps);
   const main = load !== null && reps !== null ? `${load}${TIMES}${reps}` : load !== null ? load : reps !== null ? `${reps} reps` : '—';
-  return v.rpe === null ? main : `${main} · RPE ${formatNumber(v.rpe)}`;
+  return v.rpe === null ? main : `${main} · RIR ${formatNumber(rirOfRpe(v.rpe))}`;
 }
 
-/** ` @ RPE 8` when the target names one (CHANGELOG 2026-10-11), else empty. */
+/** ` · RIR 2` when the target names one (CHANGELOG 2026-10-11; read as RIR, Ben 26 Oct), else empty. */
 function rpePart(t: CoachTarget): string {
-  return t.rpe == null ? '' : ` @${NBSP}RPE${NBSP}${formatNumber(t.rpe)}`;
+  return t.rpe == null ? '' : ` · RIR${NBSP}${formatNumber(rirOfRpe(t.rpe))}`;
 }
 
-/** `95 kg × 8`, `95 kg × 6–8`, `10–15 reps`, `22.5 kg each`, `95 kg × 8 @ RPE 8`. */
+/** `95 kg × 8`, `95 kg × 6–8`, `10–15 reps`, `22.5 kg each`, `95 kg × 8 · RIR 2`. */
 export function targetPhrase(t: CoachTarget | null): string {
   if (t === null) return '—';
   const load = loadPart(t.load);
