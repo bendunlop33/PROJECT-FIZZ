@@ -174,7 +174,9 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(read('ui/time-stepper.tsx')).toContain('<TimeStepper minutes={minutes} onStep={onStep} />');
     expect(read('ui/time-stepper.tsx')).toContain("accessibilityRole=\"adjustable\"");
     expect(parts).toContain('fontScale >= AX_FONT_SCALE');
-    expect(parts.match(/if \(ax\) \{/g)).toHaveLength(2);
+    // The strip lists at AX sizes; the day row from xxxLarge (Ben, 26 Oct: `dayRowAsList`).
+    expect(parts.match(/if \(ax\) \{/g)).toHaveLength(1);
+    expect(parts).toContain('if (asList) {');
     // No swipe gestures on Today (§2.0.5): every action is a tap.
     expect(parts).not.toMatch(/PanResponder|Swipeable|onSwipe/);
   });

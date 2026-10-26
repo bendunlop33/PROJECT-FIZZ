@@ -10,7 +10,7 @@ import { AppText, BottomCard, Icon, PrimaryButton, SecondaryButton, TextButton }
 import { TimeNoteRow } from '../../ui/time-stepper';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { STRIP_LABEL_FIT, STRIP_LAYOUT, stripPillStyle } from '../../today/strip-style';
-import { TODAY_SCREEN_COPY, type TodayCardAction, type TodaySegment } from '../../today/today-view';
+import { dayRowAsList, TODAY_SCREEN_COPY, TODAY_TEXT_FIT, todayWeekStacked, type TodayCardAction, type TodaySegment } from '../../today/today-view';
 import { PAST_LOG_COPY } from '../../workout/past-log-view';
 
 /**
@@ -47,21 +47,29 @@ export function TodayHeader({
   onWeek?: () => void;
 }) {
   const theme = useTheme();
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 44 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: theme.space['2'], flexShrink: 1 }}>
-        <AppText variant="title1" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ flexShrink: 1 }}>
-          {title}
+  const { width, fontScale } = useWindowDimensions();
+  // (Ben, 26 Oct; review finding 14) The week goes under the name when the row has no room for it (320 pt, large text).
+  const stacked = week !== null && todayWeekStacked(width, fontScale);
+  const weekLink =
+    week === null ? null : (
+      <Pressable accessibilityRole="button" accessibilityLabel={week.accessibilityLabel} onPress={onWeek} hitSlop={HIT} style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', flexShrink: 1, opacity: pressed ? 0.7 : 1 })}>
+        <AppText variant="callout" color="text.secondary" numeric {...TODAY_TEXT_FIT.weekLabel} numberOfLines={stacked ? 2 : 1}>
+          {`${stacked ? '' : '· '}${week.deload ? '◐ ' : ''}${week.text}${week.done ? ' ›' : ''}`}
         </AppText>
-        {week !== null ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={week.accessibilityLabel} onPress={onWeek} hitSlop={HIT} style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
-            <AppText variant="callout" color="text.secondary" numeric numberOfLines={1}>
-              {`· ${week.deload ? '◐ ' : ''}${week.text}${week.done ? ' ›' : ''}`}
-            </AppText>
-          </Pressable>
-        ) : null}
+      </Pressable>
+    );
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 44 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: theme.space['2'], flexShrink: 1 }}>
+          <AppText variant="title1" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ flexShrink: 1 }}>
+            {title}
+          </AppText>
+          {stacked ? null : weekLink}
+        </View>
+        {coach}
       </View>
-      {coach}
+      {stacked ? weekLink : null}
     </View>
   );
 }
@@ -193,14 +201,15 @@ export function DaySheet({ cell, onClose, onWorkout, onActivity }: { cell: Strip
 
 export function DayControl({ segments, paused, onDay, onMore, onAxList, axLabel }: { segments: readonly TodaySegment[]; paused: boolean; onDay: (key: string) => void; onMore: () => void; onAxList: () => void; axLabel: string }) {
   const theme = useTheme();
-  const ax = useAx();
-  if (ax) {
+  // (Ben, 26 Oct) From xxxLarge, not AX1: the segments would cut `Shoulders` before then.
+  const asList = dayRowAsList(useWindowDimensions().fontScale);
+  if (asList) {
     return (
       <Pressable accessibilityRole="button" accessibilityLabel={`Day, ${axLabel}`} onPress={onAxList} style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.7 : 1 })}>
         <AppText variant="callout" color="text.secondary">
           Day
         </AppText>
-        <AppText variant="body">{`${axLabel} ›`}</AppText>
+        <AppText variant="body" style={{ flexShrink: 1, textAlign: 'right' }}>{`${axLabel} ›`}</AppText>
       </Pressable>
     );
   }
@@ -227,11 +236,11 @@ export function DayControl({ segments, paused, onDay, onMore, onAxList, axLabel 
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <AppText variant="label" color={s.selected ? 'text.primary' : 'text.tertiary'} numberOfLines={1} style={{ fontSize: 15 }}>
+            <AppText variant="label" color={s.selected ? 'text.primary' : 'text.tertiary'} {...TODAY_TEXT_FIT.segmentLabel} style={{ fontSize: 15, paddingHorizontal: 2 }}>
               {s.label}
             </AppText>
             {s.next ? (
-              <AppText variant="sectionLabel" color={s.selected ? 'text.primary' : 'text.tertiary'} style={{ fontSize: 10, lineHeight: 12 }}>
+              <AppText variant="sectionLabel" color={s.selected ? 'text.primary' : 'text.tertiary'} {...TODAY_TEXT_FIT.segmentNext} style={{ fontSize: 10, lineHeight: 12 }}>
                 {TODAY_V2_COPY.next}
               </AppText>
             ) : null}
