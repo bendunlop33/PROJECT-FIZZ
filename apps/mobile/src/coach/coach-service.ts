@@ -210,6 +210,7 @@ import {
   type RuleReps,
   type HistoryLike,
   type HistoryWorkout,
+  missingEquipmentNoun,
 } from '@fizz/domain';
 import type { CandidateWrite, MemoryWrite, SqliteRepositories, Store } from '@fizz/persistence';
 import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
@@ -1163,6 +1164,18 @@ export function createCoachService(deps: CoachServiceDeps) {
       .map((e) => ({ exerciseId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'cardio' ? ('cardio' as const) : e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
   }
 
+  /**
+   * (Ben, 27 Oct: "Why not") `find_exercises`' second pool: the rest of Ben's list (catalogue and his own, not deleted)
+   * with code's reason it can't be added here now, so the coach names the reason instead of "not in your list".
+   */
+  function elsewherePool(p: UserProfile, pool: readonly Exercise[], usableIds: ReadonlySet<string>, gym: { name: string; equipment: readonly EquipmentInstance[] }, flagged: (e: Exercise) => boolean): (FindableExercise & { why: string })[] {
+    return findablePool(pool.filter((e) => (e.ownerId === null || e.ownerId === p.id) && !isArchivedExercise(e) && !usableIds.has(e.id))).map((f) => {
+      const e = f.exercise as Exercise;
+      const why = flagged(e) ? 'pain flagged' : e.measurement === 'distance' ? 'measured by distance (not added by the coach)' : `${gym.name} has no ${missingEquipmentNoun(e, gym.equipment)} in its profile`;
+      return { ...f, why };
+    });
+  }
+
   /** `find_exercises`' pool: the IDs the coach uses (catalogue key, else Ben's ID), with catalogue aliases. */
   function findablePool(list: readonly Exercise[]): FindableExercise[] {
     return list.map((e) => ({ catalogueId: e.catalogueKey ?? e.id, exercise: e, aliases: e.catalogueKey ? (deps.catalogueAliases?.(e.catalogueKey) ?? []) : [] }));
@@ -1270,7 +1283,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     const usable = capUsable(allUsable, inPlay ? BUILD_USABLE_CAP : OFFERED_USABLE_CAP, first);
     // The cap is for prompt size only: `find_exercises` searches the whole doable list, which the checks accept.
     const proposeHere = proposeDeps(p, pool);
-    const findExecutors = createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(doable)), ...(proposeHere === undefined ? {} : { propose: proposeHere }) });
+    const doableIds = new Set(doable.map((e) => e.id));
+    const findExecutors = createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(doable)), elsewhere: () => Promise.resolve(elsewherePool(p, pool, doableIds, gym, (e) => flagged(e.id))), ...(proposeHere === undefined ? {} : { propose: proposeHere }) });
     const split = splitInUse(training?.profile ?? null);
     const dayObj = day !== null ? (split.days.find((d) => d.name === day.name) ?? null) : (split.days.find((d) => d.id === focus) ?? null);
     const ownMain = dayObj === null ? null : (training?.mainLifts[dayObj.id] ?? null);
@@ -1625,7 +1639,13 @@ export function createCoachService(deps: CoachServiceDeps) {
       const everything = await exercisePool();
       const pool = everything.filter((e) => ids.has(e.catalogueKey ?? e.id));
       const proposeHere = proposeDeps(p, everything);
-      Object.assign(executors, createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(pool)), ...(proposeHere === undefined ? {} : { propose: proposeHere }) }));
+      const usableIds = new Set(pool.map((e) => e.id));
+      const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
+      const flaggedMove = movementMatcher(everything, flags.filter((f) => f.status === 'active'));
+      const atNow = deps.now();
+      const flaggedHere = (e: Exercise): boolean => flaggedMove(e) || painFlagCovering(flags, e.id, toMs(atNow.utc), atNow.tz) !== null;
+      const gymHere = { name: (await repos().gyms.get(session.session.gymId ?? '').catch(() => null))?.name ?? 'This gym', equipment: currentGymEquipment(session.session) };
+      Object.assign(executors, createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(pool)), elsewhere: () => Promise.resolve(elsewherePool(p, everything, usableIds, gymHere, flaggedHere)), ...(proposeHere === undefined ? {} : { propose: proposeHere }) }));
     }
     // (Ben, 20 Oct) Lift targets on: the coach may set one Ben asks for (the turn checks he asked).
     const liftTargetsOn = (kind === 'general' || kind === 'workout') && deps.liftTargets !== undefined && (await deps.liftTargets.on().catch(() => false));
