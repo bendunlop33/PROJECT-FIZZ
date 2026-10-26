@@ -60,3 +60,8 @@ Health). Record each step as Pass / Fail / Not run with a note.
 - `Nothing from Health yet` after a read: iOS never says a read was refused. Check the same Health › Apps screen.
 - Fallbacks if Health stays unavailable: log runs with Today › ＋ Activity; type bodyweight in Training details.
   Ben's decision (Q10): Xcode builds, paid signing (ADR 0004), or no Health.
+
+## Result (Ben, 26 Oct 2026, build 419 via SideStore)
+
+- Profile › Apple Health shows **"Not available on this install"**. As predicted (ADR 0035, `free-ios-install.md` §1.2): SideStore's re-signing drops `com.apple.developer.healthkit`. The rest of the app is unaffected.
+- Next: Ben chooses the route (apple-health.md Q10): Xcode build on a Mac with his free Apple ID (HealthKit is signable on a free team), the paid Apple Developer Program, or no Health for now.
