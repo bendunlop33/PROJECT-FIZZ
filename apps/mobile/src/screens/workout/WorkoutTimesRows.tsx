@@ -2,12 +2,12 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 
-import { clampWorkoutTimes, localDateOf, moveWorkoutTimes, shiftTimeBounds, TIME_NOTE, timesNeedDate, wheelNeedsDate, workoutDurationText, type TimeNote, type WorkoutTimeBounds, type WorkoutTimeline } from '@fizz/domain';
+import { clampWorkoutTimes, localDateOf, moveWorkoutTimes, shiftTimeBounds, START_MOVE_LABEL, startMoveShown, switchStartMove, TIME_NOTE, timesNeedDate, wheelNeedsDate, workoutDurationText, type StartMove, type TimeNote, type WorkoutTimeBounds, type WorkoutTimeline } from '@fizz/domain';
 
 import { dateAt } from '../../clock';
 import { formatShortDate, formatTime } from '../../format/dates';
 import { useTheme } from '../../theme';
-import { AppText, Group, Icon, StatusLine, TEXT_PRESSED_OPACITY } from '../../ui';
+import { AppText, Chip, ChipRow, Group, Icon, StatusLine, TEXT_PRESSED_OPACITY } from '../../ui';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 
 /**
@@ -22,6 +22,10 @@ import { AX_FONT_SCALE } from '../../workout/screen-rules';
  * wheel has the date (any past day), Ended moves with it until Ben sets it on its own, and the bounds
  * come from the workout's recorded timeline (`moveWorkoutTimes`). The rows show the date whenever the
  * workout isn't today. The caller writes with `shift: true` when the start moved.
+ *
+ * (Ben, 26 Oct; Q-PL1) With `startMove`, once Started has moved, two chips choose how: `Move whole workout`
+ * (default) or `Only the start` (the sets stay; the 19 Oct bounds, `fixed`). The caller writes `shift` only for
+ * the whole workout (`startMoveWrite`). Not offered on a past log (its set times are placeholders).
  *
  * Needs `@react-native-community/datetimepicker` in the native build (Expo SDK 57's 9.1.0).
  */
@@ -39,6 +43,7 @@ export function WorkoutTimesRows({
   endNow = null,
   endEstimate = null,
   startOnly = false,
+  startMove,
 }: {
   times: WorkoutTimes;
   tz: string;
@@ -49,12 +54,16 @@ export function WorkoutTimesRows({
   endEstimate?: number | null;
   /** Before Finish: only `Started`, no duration (the workout is still going). */
   startOnly?: boolean;
+  /** (Ben, 26 Oct) With `shift`: how a moved start applies, and the 19 Oct bounds for `Only the start`. */
+  startMove?: { mode: StartMove; onMode: (mode: StartMove) => void; fixed: WorkoutTimeBounds; pastLog: boolean };
 } & ({ bounds: WorkoutTimeBounds; shift?: undefined } | { shift: { timeline: WorkoutTimeline; nowMs: number }; bounds?: undefined })) {
   const theme = useTheme();
   const ax = useWindowDimensions().fontScale >= AX_FONT_SCALE;
   const [open, setOpen] = useState<'start' | 'end' | null>(null);
   const [note, setNote] = useState<TimeNote | null>(null);
-  const bounds = shift === undefined ? fixedBounds : shiftTimeBounds(shift.timeline, times.startMs, shift.nowMs);
+  // `Only the start` (Ben, 26 Oct): the 19 Oct bounds, the sets where they were.
+  const onlyStart = shift !== undefined && startMove?.mode === 'start_only' ? startMove.fixed : null;
+  const bounds = shift === undefined ? fixedBounds : (onlyStart ?? shiftTimeBounds(shift.timeline, times.startMs, shift.nowMs));
   const withDate = timesNeedDate(times, tz) || (shift !== undefined && localDateOf(times.startMs, tz) !== localDateOf(shift.nowMs, tz));
   const text = (ms: number): string => (withDate ? `${formatShortDate(ms, tz)}, ${formatTime(ms, tz)}` : formatTime(ms, tz));
   const isNow = (ms: number): boolean => endNow !== null && Math.abs(ms - endNow) < 60_000;
@@ -63,7 +72,7 @@ export function WorkoutTimesRows({
     // Whole minutes: the wheel has no seconds.
     const ms = Math.floor(date.getTime() / 60_000) * 60_000;
     const next =
-      shift !== undefined
+      shift !== undefined && onlyStart === null
         ? moveWorkoutTimes(which, ms, times, shift.timeline, shift.nowMs)
         : clampWorkoutTimes(which === 'start' ? { startMs: ms, endMs: times.endMs } : { startMs: times.startMs, endMs: ms }, bounds);
     setNote(next.note);
@@ -97,7 +106,7 @@ export function WorkoutTimesRows({
         {expanded ? (
           <DateTimePicker
             value={dateAt(ms)}
-            mode={withDate || (shift !== undefined && which === 'start') || wheelNeedsDate(minMs, maxMs, tz) ? 'datetime' : 'time'}
+            mode={withDate || (shift !== undefined && onlyStart === null && which === 'start') || wheelNeedsDate(minMs, maxMs, tz) ? 'datetime' : 'time'}
             display="spinner"
             timeZoneName={tz}
             minimumDate={dateAt(minMs)}
@@ -118,6 +127,25 @@ export function WorkoutTimesRows({
         {row('start', 'Started', times.startMs)}
         {startOnly ? null : row('end', 'Ended', times.endMs)}
       </Group>
+      {shift !== undefined && startMove !== undefined && startMoveShown(times.startMs, shift.timeline.startMs, startMove.pastLog) ? (
+        <ChipRow>
+          {(['whole', 'start_only'] as const).map((m) => (
+            <Chip
+              key={m}
+              label={START_MOVE_LABEL[m]}
+              selected={startMove.mode === m}
+              size="min"
+              onPress={() => {
+                if (startMove.mode === m) return;
+                const next = switchStartMove(m, times, { timeline: shift.timeline, fixed: startMove.fixed, nowMs: shift.nowMs });
+                setNote(next.note);
+                startMove.onMode(m);
+                onChange({ startMs: next.startMs, endMs: next.endMs });
+              }}
+            />
+          ))}
+        </ChipRow>
+      ) : null}
       {startOnly ? null : (
         <AppText variant="callout" color="text.secondary" numeric accessibilityLiveRegion="polite">
           {workoutDurationText(times.startMs, times.endMs)}

@@ -181,3 +181,37 @@ export function moveWorkoutTimes(which: 'start' | 'end', ms: number, times: { st
   const moved = clampWorkoutTimes({ startMs, endMs: times.endMs + (startMs - times.startMs) }, shiftTimeBounds(t, startMs, nowMs));
   return { startMs: moved.startMs, endMs: moved.endMs, note: note ?? moved.note };
 }
+
+/**
+ * (Ben, 26 Oct; log-past-workout Q-PL1) When Started moves on the Finish sheet, the Summary's or a past workout's
+ * `Edit times`: `Move whole workout` (the default, its sets with it, ADR 0033) or `Only the start` (the sets stay
+ * where they were; the start stays at or before the first set, within the 19 Oct bounds, `workoutTimeBounds`).
+ */
+export type StartMove = 'whole' | 'start_only';
+
+export const START_MOVE_LABEL: Readonly<Record<StartMove, string>> = { whole: 'Move whole workout', start_only: 'Only the start' };
+
+/**
+ * The choice shows once Started has moved, on a workout with real set times. A past log's set times are
+ * placeholders a second apart from its start, so only moving the whole of it means anything there.
+ */
+export function startMoveShown(startMs: number, recordedStartMs: number, pastLog: boolean): boolean {
+  return !pastLog && startMs !== recordedStartMs;
+}
+
+/**
+ * The times after Ben picks how the moved start applies. To `start_only`: the end goes back to where it was before
+ * it moved along with the start, then both are kept in the 19 Oct bounds (`fixed`: not after the first set, at
+ * most a day back, the end after the last set). To `whole`: the end moves along with the start again
+ * (`moveWorkoutTimes`). Whole minutes, with the short note when something was clamped.
+ */
+export function switchStartMove(mode: StartMove, times: { startMs: number; endMs: number }, ctx: { timeline: WorkoutTimeline; fixed: WorkoutTimeBounds; nowMs: number }): ClampedTimes {
+  const offset = times.startMs - ctx.timeline.startMs;
+  if (mode === 'start_only') return clampWorkoutTimes({ startMs: times.startMs, endMs: times.endMs - offset }, ctx.fixed);
+  return moveWorkoutTimes('start', times.startMs, { startMs: ctx.timeline.startMs, endMs: times.endMs }, ctx.timeline, ctx.nowMs);
+}
+
+/** The write's part for a moved start: `shift: true` moves the whole workout; `Only the start` writes none (19 Oct). */
+export function startMoveWrite(mode: StartMove, startMoved: boolean): { shift?: true } {
+  return startMoved && mode === 'whole' ? { shift: true } : {};
+}
