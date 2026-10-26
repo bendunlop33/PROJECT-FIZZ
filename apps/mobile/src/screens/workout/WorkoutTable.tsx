@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { AccessibilityInfo, Animated, Keyboard, PanResponder, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 
-import { formatDuration, NBSP, type FocusView, type LoadField, type RestView, type StepTarget } from '@fizz/domain';
+import { formatDuration, NBSP, type FocusView, type LoadField, type RestView, type SetLast, type StepTarget } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
 
 import { haptic } from '../../device/haptics';
@@ -106,6 +106,10 @@ export interface RoundPageProps {
   onExerciseAction?: (sessionExerciseId: string, name: string) => void;
   /** `＋ Add exercise` under the last round (v3 §7, the builder's add flow); null on other rounds. */
   onAddExercise?: (() => void) | null;
+  /** (Ben, 26 Oct) A tap on a pending row's last-time line: copy it into that row (the open row's draft). */
+  onCopyLast?: (setId: string) => void;
+  /** (Ben, 26 Oct) Done sets that are a new best (Summary's `New best` definition): a small `PB` on the row. */
+  pbSetIds?: ReadonlySet<string>;
 }
 
 interface Measures {
@@ -462,13 +466,15 @@ function ExerciseBlock({
               >
                 <Flash on={p.highlightSetId === r.setId} reduceMotion={p.reduceMotion}>
                   {r.current ? (
-                    <OpenRowContext.Provider value={{ row: r, loadHeader: ex.loadHeader }}>{p.openRow}</OpenRowContext.Provider>
+                    <OpenRowContext.Provider value={{ row: r, loadHeader: ex.loadHeader, onCopyLast: p.onCopyLast === undefined ? undefined : () => { p.onCopyLast?.(r.setId); } }}>{p.openRow}</OpenRowContext.Provider>
                   ) : (
                     <TableSetRow
                       row={r}
                       hasLoad={ex.loadHeader !== null}
                       ax={p.ax}
                       editing={p.rowEditor?.setId === r.setId ? p.rowEditor.field : null}
+                      pb={p.pbSetIds?.has(r.setId) === true}
+                      {...(p.onCopyLast === undefined || r.done ? {} : { onCopyLast: () => { p.onCopyLast?.(r.setId); } })}
                       cellEditor={p.rowEditor?.setId === r.setId && p.rowEditor.inCell && !p.ax ? p.rowEditor.node : null}
                       onDelete={() => {
                         p.onDeleteSet(r.setId, r.stepName);
@@ -679,6 +685,49 @@ function MenuButton({ label, onPress }: { label: string; onPress: () => void }) 
 }
 
 /** A soft fade at a box's edge: more rows that way (§2). Drawn with steps of the card colour, no gradient module. */
+/**
+ * (Ben, 26 Oct) Last time's comparable set, small and grey under the KG / REPS cells: a history icon and `100 × 8`,
+ * or `—` when there is none (rule 6). On a set not done yet it is a 44 pt tap target that copies it into the row.
+ */
+function LastLine({ last, wide = false, onPress }: { last: SetLast | null; wide?: boolean; onPress?: (() => void) | undefined }) {
+  const tappable = onPress !== undefined && last !== null;
+  const text = last === null ? '—' : plainSpaces(last.text);
+  return (
+    <Pressable
+      accessibilityRole={tappable ? 'button' : 'text'}
+      accessibilityLabel={last === null ? 'No last time' : last.accessibilityLabel}
+      accessibilityHint={tappable ? 'Copies it into this set' : undefined}
+      disabled={!tappable}
+      hitSlop={{ top: 12, bottom: 12, left: 4, right: 4 }}
+      onPress={() => {
+        if (!tappable) return;
+        haptic('step');
+        onPress();
+      }}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: wide ? 'flex-start' : 'center', gap: 3, opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+    >
+      <Icon name="clock.arrow.circlepath" color="text.tertiary" size={10} />
+      <AppText variant="label" color="text.tertiary" numeric numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 11, lineHeight: 13 }} maxFontSizeMultiplier={1.4}>
+        {text}
+      </AppText>
+    </Pressable>
+  );
+}
+
+/** The last-time line laid out under a row's KG and REPS cells (the same column widths, so it centres under them). */
+function LastRow({ last, hasLoad, onPress }: { last: SetLast | null; hasLoad: boolean; onPress?: (() => void) | undefined }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 6, marginTop: -2, paddingBottom: 2 }}>
+      <View style={{ width: NUM_W }} />
+      <View style={{ flex: hasLoad ? 2 : 1, alignItems: 'center' }}>
+        <LastLine last={last} onPress={onPress} />
+      </View>
+      <View style={{ width: RPE_W }} />
+      <View style={{ width: TICK_W }} />
+    </View>
+  );
+}
+
 function Fade({ edge }: { edge: 'top' | 'bottom' }) {
   const theme = useTheme();
   const steps = [0.85, 0.6, 0.35, 0.15];
@@ -760,14 +809,27 @@ function SwipeRow({ enabled, onDelete, children }: { enabled: boolean; onDelete:
 // Rows
 
 /** The number cell: bold on the current set, `W` on a warm-up, the set type (or today's change) under it. */
-function NumberCell({ row, current, todayChange }: { row: RoundRow; current: boolean; todayChange: 'coach' | 'rule' | null }) {
+function NumberCell({ row, current, todayChange, pb = false }: { row: RoundRow; current: boolean; todayChange: 'coach' | 'rule' | null; pb?: boolean }) {
   const theme = useTheme();
   const sub = [row.typeLabel, todayChange === 'coach' ? 'Coach' : todayChange === 'rule' ? 'Rule' : null].filter((x): x is string => x !== null);
+  const label = (
+    <AppText variant="callout" numeric color={current ? 'text.primary' : row.warmup ? 'text.tertiary' : 'text.secondary'} style={current ? { fontWeight: '700' } : undefined}>
+      {row.label}
+    </AppText>
+  );
   return (
     <View style={{ paddingLeft: theme.space['1'] }}>
-      <AppText variant="callout" numeric color={current ? 'text.primary' : row.warmup ? 'text.tertiary' : 'text.secondary'} style={current ? { fontWeight: '700' } : undefined}>
-        {row.label}
-      </AppText>
+      {pb ? (
+        // (Ben, 26 Oct) A new best (Summary's definition, rule 6): a small `PB` beside the number, never colour alone.
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          {label}
+          <AppText variant="label" color="status.done" numberOfLines={1} style={{ fontSize: 10, lineHeight: 12, fontWeight: '700' }} maxFontSizeMultiplier={1.4}>
+            PB
+          </AppText>
+        </View>
+      ) : (
+        label
+      )}
       {sub.map((s) => (
         // Mixed case like the prototype (`Back-off`): fits the 52 pt column without truncating (spec S4).
         <AppText key={s} variant="label" color="text.tertiary" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 10, lineHeight: 12 }} maxFontSizeMultiplier={1.4}>
@@ -816,6 +878,8 @@ export function TableSetRow({
   moves,
   onMoveSet,
   onChangeType,
+  pb = false,
+  onCopyLast,
 }: {
   row: RoundRow;
   hasLoad: boolean;
@@ -829,6 +893,10 @@ export function TableSetRow({
   moves?: { up: boolean; down: boolean };
   onMoveSet?: (dir: 'up' | 'down') => void;
   onChangeType?: () => void;
+  /** (Ben, 26 Oct) A new best by Summary's definition: `PB` under the set number. */
+  pb?: boolean;
+  /** (Ben, 26 Oct) Copies last time's set into this row (sets not done yet only). */
+  onCopyLast?: () => void;
 }) {
   const theme = useTheme();
   // §7: a hold arms the row's drag (inside the round's `DragList`); elsewhere it opens Edit set, as before.
@@ -850,10 +918,12 @@ export function TableSetRow({
     ...(onChangeType !== undefined ? [{ name: 'type', label: 'Change type' }] : []),
     ...(moves?.up === true ? [{ name: 'move_up', label: 'Move up' }] : []),
     ...(moves?.down === true ? [{ name: 'move_down', label: 'Move down' }] : []),
+    ...(onCopyLast !== undefined && row.last !== null ? [{ name: 'copy_last', label: 'Copy last time' }] : []),
     { name: 'delete', label: 'Delete set' },
   ];
   const onAction = (a: string) => {
-    if (a === 'delete') onDelete();
+    if (a === 'copy_last') onCopyLast?.();
+    else if (a === 'delete') onDelete();
     else if (a === 'type') onChangeType?.();
     else if (a === 'move_up' || a === 'move_down') onMoveSet?.(a === 'move_up' ? 'up' : 'down');
     else onPress(a === 'select' || a === 'untick' ? 'marker' : a === 'load' ? 'load' : a === 'value' ? 'value' : 'row');
@@ -893,12 +963,13 @@ export function TableSetRow({
     </Pressable>
   );
 
+  const a11y = [r.accessibilityLabel, pb ? 'personal best' : null, skipped ? null : (row.last?.accessibilityLabel ?? 'no last time')].filter((x): x is string => x !== null).join(', ');
   if (ax || skipped) {
     // AX1+ block rows and skipped rows: one element; the cells are VoiceOver actions.
     return (
       <Pressable
         accessibilityRole={skipped ? 'text' : 'button'}
-        accessibilityLabel={r.accessibilityLabel}
+        accessibilityLabel={a11y}
         accessibilityHint={skipped ? undefined : 'Edit this set'}
         accessibilityActions={skipped ? [] : rowActions}
         onAccessibilityAction={(e) => {
@@ -913,7 +984,7 @@ export function TableSetRow({
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['3'], paddingVertical: theme.space['2'] }}>
           <View style={{ flex: 1, gap: theme.space['1'] }}>
             <AppText variant="headline" color={done ? 'text.primary' : 'text.secondary'}>
-              {[r.stepName, r.typeLabel].filter((x): x is string => x !== null).join(' · ')}
+              {[r.stepName, r.typeLabel, pb ? 'PB' : null].filter((x): x is string => x !== null).join(' · ')}
             </AppText>
             <AppText variant="body" color={done ? 'status.done' : 'text.secondary'} numeric>
               {[row.cells.load !== null && hasLoad ? plainSpaces(row.cells.load) : null, plainSpaces(row.cells.value), r.rpe].filter((x): x is string => x !== null).join(' · ')}
@@ -923,6 +994,7 @@ export function TableSetRow({
                 {x}
               </AppText>
             ))}
+            {skipped ? null : <LastLine last={row.last} wide onPress={onCopyLast} />}
           </View>
           {marker}
         </View>
@@ -958,7 +1030,7 @@ export function TableSetRow({
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={r.accessibilityLabel}
+          accessibilityLabel={a11y}
           accessibilityHint="Edit this set"
           accessibilityActions={rowActions}
           onAccessibilityAction={(e) => {
@@ -970,7 +1042,7 @@ export function TableSetRow({
           {...hold}
           style={({ pressed }) => ({ width: NUM_W, minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
         >
-          <NumberCell row={r} current={false} todayChange={row.todayChange} />
+          <NumberCell row={r} current={false} todayChange={row.todayChange} pb={pb} />
         </Pressable>
         {/* Each row's own columns (review B2): a mixed part keeps its load cell. */}
         {hasLoad ? (row.columns.loadLabel !== null ? cell('load', plainSpaces(row.cells.load ?? '—'), loadCellA11y(row.columns.loadLabel, row.cells.load)) : <View style={{ flex: 1 }} />) : null}
@@ -980,6 +1052,7 @@ export function TableSetRow({
         </AppText>
         {marker}
       </View>
+      <LastRow last={row.last} hasLoad={hasLoad} onPress={onCopyLast} />
       {second.length > 0 ? (
         <AppText variant="callout" color="text.secondary" style={{ paddingLeft: NUM_W, paddingBottom: theme.space['1'], fontSize: 13 }}>
           {second.join(' · ')}
@@ -1038,7 +1111,7 @@ export interface OpenSetRowProps {
 }
 
 /** The open row's round row and its exercise's load header, from the round page, so its cells line up with the header. */
-const OpenRowContext = createContext<{ row: RoundRow; loadHeader: string | null } | null>(null);
+const OpenRowContext = createContext<{ row: RoundRow; loadHeader: string | null; onCopyLast?: (() => void) | undefined } | null>(null);
 
 /**
  * `OpenSetRow` (v3 §2): the current set reads like every pending row (the
@@ -1202,6 +1275,12 @@ export function OpenSetRow(p: OpenSetRowProps) {
           </View>
         </Pressable>
       </View>
+      {ctx !== null && !p.ax ? <LastRow last={ctx.row.row.last} hasLoad={hasLoadColumn} onPress={ctx.onCopyLast} /> : null}
+      {ctx !== null && p.ax ? (
+        <View style={{ paddingLeft: NUM_W }}>
+          <LastLine last={ctx.row.row.last} wide onPress={ctx.onCopyLast} />
+        </View>
+      ) : null}
       {editor !== null ? (
         <View>
           <InlineEditor

@@ -21,6 +21,7 @@ import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openGymFromWorkout, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
 import type { ActiveWorkoutData, GymChoice, RecordContext } from '../../services/workout-services';
+import type { LiveBestsContext } from '@fizz/domain';
 import { NameSheet } from '../routines/NameSheet';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
 import { logHaptic, swapMotion, TIMING, useTheme } from '../../theme';
@@ -119,6 +120,8 @@ const EFFORT_RIR = [4, 3, 2, 1, 0] as const;
 
 /** How long after the number pad hides the bottom chrome comes back: long enough for a move to another cell (23 Oct). */
 const CHROME_KEYPAD_SETTLE_MS = 300;
+
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 export function WorkoutScreen() {
   const theme = useTheme();
@@ -583,6 +586,24 @@ export function WorkoutScreen() {
     };
   }, [services, viewSessionId, focusSetId, focusEquipment]);
 
+  // (Ben, 26 Oct) The `PB` mark: what the Summary's `New best` reads, once per workout, so a log decides it with no read.
+  const [bestsContext, setBestsContext] = useState<LiveBestsContext | null>(null);
+  useEffect(() => {
+    if (viewSessionId === null) return;
+    let live = true;
+    void services.reviews
+      .liveBestsContext()
+      .catch(() => null)
+      .then((c) => {
+        if (live) setBestsContext(c);
+      });
+    return () => {
+      live = false;
+    };
+  }, [services, viewSessionId]);
+  const liveAggregate = data === 'loading' || data === null ? null : data.aggregate;
+  const pbSetIds = useMemo(() => (bestsContext === null || liveAggregate === null ? EMPTY_IDS : services.reviews.liveNewBests(bestsContext, liveAggregate)), [services, bestsContext, liveAggregate]);
+
   // A new empty workout opens the shared Swap / Add sheet straight away (audit: Start leads to a usable workout; review 26 Oct #2).
   const emptySessionId = view?.phase === 'empty' && view.sessionId ? view.sessionId : null;
   const openAddRef = useRef<() => void>(() => undefined);
@@ -856,6 +877,27 @@ export function WorkoutScreen() {
     setEdits({ setId: f.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, setVersion: f.setVersion, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
   }
 
+  /**
+   * (Ben, 26 Oct) A row's last-time line: its comparable set from last time goes into that row, as `Copy last` does
+   * (a draft on the open row, never a result and never its effort). A set not current is made current first; a done
+   * set is never changed this way (rule 2).
+   */
+  async function copyRowLast(setId: string) {
+    const row = rounds.flatMap((r) => r.exercises.flatMap((e) => e.rows)).find((r) => r.setId === setId);
+    const last = row?.row.last ?? null;
+    if (row === undefined || last === null || row.done || row.skipped) return;
+    const values = { ...last.values, rpe: null, rir: null };
+    if (focus !== null && focus.setId === setId) {
+      setEdits({ setId, values, copied: true, setVersion: focus.setVersion, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+      return;
+    }
+    if (!(await selectRow(setId))) return;
+    const d = await reload();
+    const set = d?.aggregate.sets.find((x) => x.id === setId);
+    if (set === undefined || set.status !== 'pending') return;
+    setEdits({ setId, values, copied: true, setVersion: set.version });
+  }
+
   function editLoad(f: FocusView, v: number | null) {
     const unit = loaded.aggregate.exercises.find((e) => e.id === f.sessionExerciseId)?.unit ?? 'kg';
     const convention = loaded.aggregate.exercises.find((e) => e.id === f.sessionExerciseId)?.loadConvention ?? 'total';
@@ -902,8 +944,10 @@ export function WorkoutScreen() {
     }
     // After the write, never on press-in. A heaviest-set record plays `record` instead of `commit` (premium-feel §5.1).
     const loggedSetId = focus.setId;
+    // (Ben, 26 Oct) A new best (Summary's definition) adds a light tap after the log's own.
+    const pb = bestsContext !== null && services.reviews.liveNewBests(bestsContext, r.aggregate).has(loggedSetId);
     const showRecord = (rec: { text: string } | null) => {
-      haptic(logHaptic(rec !== null));
+      haptic(logHaptic(rec !== null, pb));
       setRecord(rec === null ? null : { setId: loggedSetId, text: rec.text });
     };
     const ready = recordContext.current;
@@ -2903,6 +2947,8 @@ export function WorkoutScreen() {
                   runExerciseAction(id, name);
                 }}
                 onAddExercise={shown === rounds.length - 1 ? () => { workoutEdits.openAdd(); } : null}
+                onCopyLast={(setId) => void copyRowLast(setId)}
+                pbSetIds={pbSetIds}
                 onNote={(sessionExerciseId, exerciseName, note) => {
                   setNoteFor({ sessionExerciseId, exerciseName, note });
                 }}

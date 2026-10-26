@@ -1,4 +1,4 @@
-import { type LiftTarget, type MuscleGroup, type LoadConvention, type ReviewProposal, type SetExclusion, type SetType, type TrainingReview, type WeightUnit } from '@fizz/schemas';
+import { type SessionAggregate, type LiftTarget, type MuscleGroup, type LoadConvention, type ReviewProposal, type SetExclusion, type SetType, type TrainingReview, type WeightUnit } from '@fizz/schemas';
 import { addDays, daysBetween, localDateOf, localMidnightUtcMs, weekdayIndexOfDate } from '../calendar';
 import { formatNumber, NBSP } from '../display';
 import { deriveId, stableStringify } from '../stable';
@@ -10,7 +10,8 @@ import { toMs } from '../time';
 import { convertMass } from '../units';
 import { isPlatesAddedKind } from '../plates-added';
 import { liftUnitText, REVIEW_COPY, verdictOf, weekRangeText } from './views';
-import { leadMuscleGroup, reviewWeekCount, type ReviewActivity, type ReviewSession, type WeeklyReviewInput } from './weekly';
+import { leadMuscleGroup, reviewSessionOf, reviewWeekCount, type ReviewActivity, type ReviewSession, type WeeklyReviewInput } from './weekly';
+import { HISTORY_STATUS } from '../session/deletion';
 
 /**
  * Progress v3 (agreed with Ben, 21 Oct; `docs/design/progress-goals.md` "Progress v3 (agreed)", prototype
@@ -792,6 +793,55 @@ export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOption
     const suffix = suffixOf(t.convention);
     const set = withSuffix(`${nf(now.load)}${NBSP}×${NBSP}${String(now.reps)}`, suffix);
     out.push({ exerciseId: id, text: `${PROGRESS_COPY.newBest} · ${name} ${set}`, accessibilityLabel: plain(`New best: ${name}, ${nf(now.load)} ${liftUnitText(unit, t.convention)} for ${String(now.reps)} reps`) });
+  }
+  return out;
+}
+
+/** What `liveNewBestSets` needs besides the workout: the review's input and the Summary's options, read once. */
+export interface LiveBestsContext {
+  input: WeeklyReviewInput;
+  opts: Pick<LiftsOptions, 'planReps' | 'pickedReps' | 'earlier' | 'historyUnknown'>;
+}
+
+/**
+ * (Ben, 26 Oct; competitor pass 4 #2) The sets of the workout in progress that are a new best the moment they are
+ * logged, by exactly the Summary's `New best` (`sessionNewBests`): a tracked lift, at its tracked reps, a real set
+ * (never an estimate, rule 6) heavier (assisted: less assistance) than every earlier real one in history and every
+ * set before it today; the same machine for stacks and plate-loaded; a lift's first ever top set isn't one; a lift
+ * whose older history couldn't be read claims none. Set IDs; pure.
+ */
+export function liveNewBestSets(ctx: LiveBestsContext, aggregate: SessionAggregate): Set<string> {
+  const out = new Set<string>();
+  const { input, opts } = ctx;
+  const live = reviewSessionOf({ ...aggregate, session: { ...aggregate.session, status: HISTORY_STATUS } }, input.tz, input.nowMs);
+  if (live === null) return out;
+  const earlier = withEarlier([...input.sessions].filter((x) => x.sessionId !== live.sessionId).sort((a, b) => a.startedMs - b.startedMs), opts.earlier).filter((x) => x.sessionId !== live.sessionId && x.startedMs <= live.startedMs);
+  const upTo = [...earlier, live];
+  const targets = new Map(input.liftTargets.map((t) => [t.exerciseId, t]));
+  const removed = new Set(aggregate.exercises.filter((e) => e.removed !== undefined).map((e) => e.id));
+  for (const id of new Set(input.lifts)) {
+    if (!live.exercises.some((e) => e.exerciseId === id) || opts.historyUnknown?.has(id) === true) continue;
+    const t = liftTermsOf(upTo, id, targets.get(id) ?? null, opts);
+    if (!t.chartable || t.tracked.reps === null || t.convention === null) continue;
+    const reps = t.tracked.reps;
+    const before = bestSets(liftRows(earlier, id, t.newest), t, reps, input.unit).real;
+    if (before === null) continue;
+    let best = before.load;
+    const rows = aggregate.exercises.filter((e) => e.exerciseId === id && !removed.has(e.id) && (t.newest?.machine !== true || (e.equipmentId ?? null) === t.newest.equipmentId));
+    const sets = aggregate.sets
+      .filter((x) => rows.some((e) => e.id === x.sessionExerciseId) && x.status === 'completed' && x.actual !== null)
+      .sort((a, b) => (a.completedAt?.utc ?? '').localeCompare(b.completedAt?.utc ?? '') || a.index - b.index);
+    for (const x of sets) {
+      const load = x.actual?.load ?? null;
+      const r = x.actual?.reps ?? null;
+      if (!WORKING.has(x.setType) || !isSetCountable(x, 'record') || r === null || r < 1 || load === null || load.convention !== t.convention) continue;
+      if (reps === 1 ? r !== 1 : r < reps) continue;
+      const v = roundEstimate(convertMass({ value: load.value, unit: load.unit }, input.unit).value, input.unit);
+      if (t.lowerIsBetter ? v < best : v > best) {
+        out.add(x.id);
+        best = v;
+      }
+    }
   }
   return out;
 }

@@ -12,6 +12,7 @@ import { isRoundEnd, nextPendingSet, setUnits } from './order';
 import { isPlatesAddedKind } from '../plates-added';
 import { painFlaggedOf, shownPlannedIn, warmupLookupOf, type CarryOptions } from './carry';
 import { prefillDraft } from './view';
+import { lastPerSet, type SetLast } from './set-last';
 
 /**
  * `buildWorkoutTableView` (active-workout §2A.12): the Table view of the
@@ -66,6 +67,11 @@ export interface TableRow extends SetRowView {
   blockValue: string;
   /** VoiceOver: "Set 1, done, 100 kilograms, 8 reps, RPE 8" / "Set 3, target 100 kilograms, 6 to 8 reps". */
   accessibilityLabel: string;
+  /**
+   * (Ben, 26 Oct) Last time's comparable set for this row (`lastPerSet`): `100 × 8`; null when there is none (the
+   * row says `—`). A tap on a set not done yet copies it into the row.
+   */
+  last: SetLast | null;
 }
 
 export interface FoldedLine {
@@ -246,7 +252,7 @@ interface BuiltRow {
 }
 
 function rowOf(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null, carry: RowOptions): BuiltRow {
-  const built = rowCore(state, base, activeSetId, ruleRpe, memberTag, memberName, carry);
+  const built: TableRow = { ...rowCore(state, base, activeSetId, ruleRpe, memberTag, memberName, carry), last: carry.lastBySet?.get(base.setId) ?? null };
   const set = state.sets.find((s) => s.id === base.setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) return { row: built, unitCells: built.cells };
@@ -292,7 +298,7 @@ function sharedColumns(own: readonly TableColumns[], built: readonly BuiltRow[])
 }
 
 /** The row options: pain flags for the carry, and the last comparable sets the open row prefills from. */
-type RowOptions = CarryOptions & { previous?: ActiveViewInput['previous'] };
+type RowOptions = CarryOptions & { previous?: ActiveViewInput['previous']; /** (Ben, 26 Oct) The block's `lastPerSet`. */ lastBySet?: ReadonlyMap<string, SetLast | null> };
 
 /**
  * What a pending row shows (23 Oct, Ben: every row shows its load, not `—`
@@ -313,7 +319,7 @@ function shownRowPlanned(state: SessionAggregate, set: WorkoutSet, ex: SessionEx
   return set.setType === 'warmup' && values.reps !== null && set.planned.durationS === null ? { ...p, load, reps: { min: values.reps, max: values.reps } } : { ...p, load };
 }
 
-function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null, carry: RowOptions): TableRow {
+function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null, carry: RowOptions): Omit<TableRow, 'last'> {
   const set = state.sets.find((s) => s.id === base.setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) {
@@ -528,7 +534,8 @@ function exerciseCard(input: ActiveViewInput, root: SessionExercise, parts: read
   const blockLive = blockSets(state, root.id).filter(live);
   const ruleRpe = input.ruleTargetRpe?.[action.id] ?? input.ruleTargetRpe?.[root.id] ?? null;
   const ownColumns = tableColumns(action, eq);
-  const { columns, rows } = sharedColumns([ownColumns], buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous })));
+  const lastBySet = lastPerSet(state, root.id, input.previous);
+  const { columns, rows } = sharedColumns([ownColumns], buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous, lastBySet })));
   const prev = input.previous[action.id] ?? input.previous[root.id] ?? null;
   const headerLine = headerLineOf(action, eq);
   const lastLine = lastLineOf(prev, action, eq, state.session.startedAt.tz);
@@ -596,7 +603,8 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
       hasPending: memberLive.some((s) => s.status === 'pending'),
     });
     const ruleRpe = input.ruleTargetRpe?.[action.id] ?? null;
-    const mine = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous }));
+    const lastBySet = lastPerSet(state, root.id, input.previous);
+    const mine = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName, { painFlagged: painFlaggedOf(input), warmup: warmupLookupOf(input), previous: input.previous, lastBySet }));
     built.push(...mine);
     memberBuilt.push(mine);
     unitsByMember.push({ tag, name: action.exerciseName, units: parts.flatMap((p, k) => setUnits(state.sets, p.id, k === 0 ? (root.roundOffset ?? 0) : 0)) });

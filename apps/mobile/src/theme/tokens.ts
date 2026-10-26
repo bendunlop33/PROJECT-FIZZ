@@ -442,6 +442,8 @@ export const HAPTICS = {
   restEnd: 'notificationWarning',
   /** Heaviest-set line (premium-feel §5): medium then light, 90 ms apart. Replaces `commit` for that log. */
   record: 'impactMediumThenLight',
+  /** (Ben, 26 Oct) A new best (`PB` on the row): the commit, then a light tap 120 ms later. Replaces `commit` for that log. */
+  pb: 'notificationSuccessThenLight',
   /** Summary shown after a successful Finish; never on discard (premium-feel §5). */
   finish: 'notificationSuccess',
 } as const;

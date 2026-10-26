@@ -64,6 +64,8 @@ import {
   liftsView,
   liftHistorySessions,
   sessionNewBests,
+  liveNewBestSets,
+  type LiveBestsContext,
   type NewBestView,
   musclesView,
   templateWorkingSets,
@@ -110,7 +112,7 @@ import {
   type HistoryWorkout,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
-import type { ActionRecord, Activity, Exercise, PlanDraft, ReviewCoach, ReviewProposal, ReviewSubject, Routine, TrainingProfile, TrainingReview, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { ActionRecord, Activity, Exercise, PlanDraft, ReviewCoach, ReviewProposal, ReviewSubject, Routine, SessionAggregate, TrainingProfile, TrainingReview, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 import { BUILDER_COACH_TOOL } from '@fizz/schemas';
 import type { CoachAvailability } from '../coach/coach-service';
 
@@ -759,6 +761,25 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       if (g === null) return [];
       const history = await liftHistory(g);
       return sessionNewBests(g.input, { planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, nameOf: g.nameOf, earlier: history.earlier, historyUnknown: history.unknown }, sessionId);
+    },
+
+    /**
+     * (Ben, 26 Oct) What the live table's `PB` mark needs, read once when a workout opens: the same reads as the
+     * Summary's `New best` (`sessionBests`), so the two always agree. Local only; null when nothing can be judged.
+     */
+    async liveBestsContext(): Promise<LiveBestsContext | null> {
+      const owner = await deps.profile();
+      if (owner === null) return null;
+      const nowMs = toMs(deps.now().utc);
+      const g = await gather(localWeekBounds(nowMs, owner.timezone).mondayLocalDate);
+      if (g === null) return null;
+      const history = await liftHistory(g);
+      return { input: g.input, opts: { planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, earlier: history.earlier, historyUnknown: history.unknown } };
+    },
+
+    /** (Ben, 26 Oct) The workout-in-progress sets that are a new best (`liveNewBestSets`); pure, no read. */
+    liveNewBests(ctx: LiveBestsContext, aggregate: SessionAggregate): Set<string> {
+      return liveNewBestSets(ctx, aggregate);
     },
 
     /** Past weeks: every stored weekly review but the newest, newest first. */
