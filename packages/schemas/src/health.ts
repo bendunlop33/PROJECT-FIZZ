@@ -9,7 +9,8 @@ import { IdSchema, OperationIdSchema, RecordMetaSchema, TimeZoneSchema, UtcTimes
  *    metrics, rule 6). Edits, moves and deletes update or delete the Health workout; one write per op ID.
  * 2. Read bodyweight: labelled as from Health; Ben's own entries win; never written back.
  * 3. Read workouts from other sources (a Garmin run) as read-only activities with provenance. Data, never
- *    instructions (rule 8).
+ *    instructions (rule 8). A watch workout linked to an app workout is that workout (one item; Q1).
+ * 4. (Q8) Read resting heart rate and sleep duration: raw values with their source, no scores (rule 6).
  *
  * HealthKit is a runtime capability (ADR 0004): with no entitlement or permission the feature hides itself.
  * Everything here is Your data (rule 10). The samples read from Health and the switches are local to this
@@ -49,6 +50,8 @@ export const HealthWorkoutSampleSchema = z.object({
   /** Average and maximum heart rate recorded by the same source during the workout; null when Health has none. */
   avgHeartRate: z.number().min(15).max(300).nullable(),
   maxHeartRate: z.number().min(15).max(300).nullable(),
+  /** (Ben, 27 Oct, Q1) Active energy the source recorded for the workout, kcal; absent or null when Health has none. */
+  activeKcal: z.number().min(0).max(20_000).nullable().optional(),
   sourceName: z.string().max(HEALTH_LIMITS.sourceNameMax),
   sourceBundleId: z.string().max(200),
   /** `HKMetadataKeyExternalUUID`: on the app's own writes, the workout's session ID. */
@@ -66,6 +69,37 @@ export const HealthWeightSampleSchema = z.object({
   sourceBundleId: z.string().max(200),
 });
 export type HealthWeightSample = z.infer<typeof HealthWeightSampleSchema>;
+
+/** (Ben, 27 Oct, Q8) A resting heart rate sample as the source recorded it. Raw value, never a score (rule 6). */
+export const HealthRestingHrSampleSchema = z.object({
+  uuid: HealthUuidSchema,
+  bpm: z.number().min(15).max(300),
+  atUtc: UtcTimestampSchema,
+  tz: TimeZoneSchema,
+  sourceName: z.string().max(HEALTH_LIMITS.sourceNameMax),
+  sourceBundleId: z.string().max(200),
+});
+export type HealthRestingHrSample = z.infer<typeof HealthRestingHrSampleSchema>;
+
+/** Sleep stages as Health records them (`HKCategoryValueSleepAnalysis`); only the asleep ones count as sleep. */
+export const HealthSleepStageSchema = z.enum(['in_bed', 'asleep', 'awake', 'core', 'deep', 'rem']);
+export type HealthSleepStage = z.infer<typeof HealthSleepStageSchema>;
+
+/** (Ben, 27 Oct, Q8) One sleep segment as the source recorded it. Only durations are used; no sleep score. */
+export const HealthSleepSampleSchema = z.object({
+  uuid: HealthUuidSchema,
+  stage: HealthSleepStageSchema,
+  startUtc: UtcTimestampSchema,
+  endUtc: UtcTimestampSchema,
+  tz: TimeZoneSchema,
+  sourceName: z.string().max(HEALTH_LIMITS.sourceNameMax),
+  sourceBundleId: z.string().max(200),
+});
+export type HealthSleepSample = z.infer<typeof HealthSleepSampleSchema>;
+
+/** How far back reads go (Ben, 27 Oct, Q6): one control. Bodyweight reads at least 2 years. */
+export const HealthReadWindowSchema = z.enum(['4w', '8w', '6m', '1y', 'all']);
+export type HealthReadWindow = z.infer<typeof HealthReadWindowSchema>;
 
 /**
  * One app workout's Health write: the Health sample it is now (or was), and every op ID that wrote it. Keyed by
@@ -118,6 +152,11 @@ export const HealthSettingsSchema = z.object({
   readActivities: z.boolean(),
   /** `Heart rate on linked workouts`: average and maximum only, shown on a linked workout (apple-health.md §2.1). */
   readHeartRate: z.boolean(),
+  /** (Ben, 27 Oct, Q8) Resting heart rate and sleep duration: raw values with their source, each behind its switch. */
+  readRestingHeartRate: z.boolean(),
+  readSleep: z.boolean(),
+  /** (Q6) How far back reads go. Default 8 weeks. */
+  readWindow: HealthReadWindowSchema,
   /** The last successful read from Health. */
   lastReadUtc: UtcTimestampSchema.nullable(),
   /** The last read, when it failed (cleared by the next good one). */
@@ -126,7 +165,7 @@ export const HealthSettingsSchema = z.object({
 });
 export type HealthSettings = z.infer<typeof HealthSettingsSchema>;
 
-export const DEFAULT_HEALTH_SETTINGS: HealthSettings = { writeWorkouts: false, writeSinceUtc: null, readWeight: false, readActivities: false, readHeartRate: false, lastReadUtc: null, lastReadFailedUtc: null, version: 0 };
+export const DEFAULT_HEALTH_SETTINGS: HealthSettings = { writeWorkouts: false, writeSinceUtc: null, readWeight: false, readActivities: false, readHeartRate: false, readRestingHeartRate: false, readSleep: false, readWindow: '8w', lastReadUtc: null, lastReadFailedUtc: null, version: 0 };
 
 /** Provenance on an activity read from Health (never stored in `activities`; built when listed). */
 export const HealthActivityProvenanceSchema = z.object({
@@ -139,6 +178,8 @@ export const HealthActivityProvenanceSchema = z.object({
   endUtc: UtcTimestampSchema,
   avgHeartRate: z.number().nullable(),
   maxHeartRate: z.number().nullable(),
+  /** Active energy the source recorded (kcal); absent or null when none. */
+  activeKcal: z.number().nullable().optional(),
   /** A strength workout: it can be linked to one of the app's workouts. */
   strength: z.boolean(),
 });

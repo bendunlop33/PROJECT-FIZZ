@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ActivitySchema, HealthLinkSchema, HealthWorkoutWriteSchema, type Activity, type HealthLink, type HealthWeightSample, type HealthWorkoutSample, type HealthWorkoutWrite, type WeightEntry } from '@fizz/schemas';
+import { ActivitySchema, HealthLinkSchema, HealthWorkoutWriteSchema, type Activity, type HealthLink, type HealthSleepSample, type HealthWeightSample, type HealthWorkoutSample, type HealthWorkoutWrite, type WeightEntry } from '@fizz/schemas';
 
 import {
   activityRow,
@@ -21,6 +21,10 @@ import {
   healthWriteRecordAfter,
   healthWriteRemoved,
   healthCandidateOf,
+  readSinceMs,
+  restingHeartRateDays,
+  sleepNights,
+  sleepText,
   isLongActivity,
   latestBodyweight,
   legRunNear,
@@ -55,6 +59,7 @@ function candidate(p: Partial<HealthWriteCandidate> = {}): HealthWriteCandidate 
     recordedAtUtc: '2026-10-27T18:00:00.000Z',
     anyExternalLoad: true,
     anyDoneSet: true,
+    linkedToWatch: false,
     ...p,
   };
 }
@@ -177,6 +182,14 @@ describe('planHealthWrites', () => {
     const del = written({ status: 'deleted', syncVersion: 2, version: 2 });
     expect(planHealthWrites({ settings: ON, candidates: [candidate()], records: [del] })).toEqual([expect.objectContaining({ kind: 'save', syncVersion: 3, replacesUuid: null })]);
     expect(planHealthWrites({ settings: ON, candidates: [], records: [del] })).toEqual([]);
+  });
+
+  it('Q1: a workout linked to a watch workout is not written; one written is deleted; unlinking writes it back', () => {
+    expect(planHealthWrites({ settings: ON, candidates: [candidate({ linkedToWatch: true })], records: [] })).toEqual([]);
+    const ops = planHealthWrites({ settings: ON, candidates: [candidate({ linkedToWatch: true })], records: [written()] });
+    expect(ops).toEqual([expect.objectContaining({ kind: 'delete', healthUuid: U1 })]);
+    const del = written({ status: 'deleted', syncVersion: 2, version: 2 });
+    expect(planHealthWrites({ settings: ON, candidates: [candidate()], records: [del] })).toEqual([expect.objectContaining({ kind: 'save', syncVersion: 3 })]);
   });
 
   it('a workout Ben removed from Health is never written again', () => {
@@ -420,5 +433,35 @@ describe('Bodyweight from Health', () => {
   it('with no Health samples it is Ben’s entries as they are', () => {
     expect(bodyweightEntries(mine, []).map((e) => e.from)).toEqual(['you']);
     expect(latestBodyweight([])).toBeNull();
+  });
+});
+
+describe('read window, resting heart rate and sleep (Q6, Q8)', () => {
+  const now = Date.UTC(2026, 9, 27, 12);
+  it('the window, with bodyweight at least 2 years; `all` reads everything', () => {
+    expect(readSinceMs('8w', now)).toBe(now - 56 * 86_400_000);
+    expect(readSinceMs('4w', now, 730)).toBe(now - 730 * 86_400_000);
+    expect(readSinceMs('all', now, 730)).toBe(0);
+  });
+
+  it('resting heart rate: one a day, the latest, with its source', () => {
+    const s = (uuid: string, atUtc: string, bpm: number) => ({ uuid, bpm, atUtc, tz: TZ, sourceName: 'Garmin Connect', sourceBundleId: 'g' });
+    expect(restingHeartRateDays([s(U1, '2026-10-26T06:00:00.000Z', 52.4), s(U2, '2026-10-26T20:00:00.000Z', 54), s(U3, '2026-10-25T06:00:00.000Z', 50)])).toEqual([
+      { date: '2026-10-25', value: 50, source: 'Garmin' },
+      { date: '2026-10-26', value: 54, source: 'Garmin' },
+    ]);
+  });
+
+  it('sleep: asleep stages only, overlaps once, one source a night (never added together)', () => {
+    const seg = (uuid: string, stage: HealthSleepSample['stage'], start: string, end: string, src = 'watch') => ({ uuid, stage, startUtc: start, endUtc: end, tz: TZ, sourceName: src === 'watch' ? 'Apple Watch' : 'iPhone', sourceBundleId: src });
+    const out = sleepNights([
+      seg(U1, 'core', '2026-10-25T23:00:00.000Z', '2026-10-26T03:00:00.000Z'),
+      seg(U2, 'deep', '2026-10-26T02:00:00.000Z', '2026-10-26T06:00:00.000Z'),
+      seg(U3, 'awake', '2026-10-26T06:00:00.000Z', '2026-10-26T06:30:00.000Z'),
+      seg('a0000000-0000-4000-8000-000000000009', 'in_bed', '2026-10-25T22:00:00.000Z', '2026-10-26T07:00:00.000Z', 'phone'),
+      seg('a0000000-0000-4000-8000-000000000008', 'asleep', '2026-10-25T23:30:00.000Z', '2026-10-26T05:00:00.000Z', 'phone'),
+    ]);
+    expect(out).toEqual([{ date: '2026-10-26', value: 7 * 60, source: 'Apple Watch' }]);
+    expect(sleepText(440).replaceAll(' ', ' ')).toBe('7 h 20 min');
   });
 });

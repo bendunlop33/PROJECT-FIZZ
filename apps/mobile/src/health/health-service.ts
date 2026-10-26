@@ -14,16 +14,20 @@ import {
   linkSuggestion,
   nearbyWorkouts,
   planHealthWrites,
+  readSinceMs,
+  restingHeartRateDays,
+  sleepNights,
   toIso,
   toMs,
   unlinkHealthActivity,
+  type HealthDailyValue,
   type HealthWriteCandidate,
   type HealthWriteOp,
   type LinkableWorkout,
 } from '@fizz/domain';
 import type { HealthLinkWrite, Store } from '@fizz/persistence';
-import { healthCapability, weightSamplesFrom, workoutSamplesFrom, type HealthCapability, type HealthPort, type HealthType } from '@fizz/providers';
-import { DEFAULT_HEALTH_SETTINGS, type Activity, type HealthSettings, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
+import { healthCapability, restingHrSamplesFrom, sleepSamplesFrom, weightSamplesFrom, workoutSamplesFrom, type HealthCapability, type HealthPort, type HealthType } from '@fizz/providers';
+import { DEFAULT_HEALTH_SETTINGS, type Activity, type HealthReadWindow, type HealthSettings, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 
 import { healthScreenView, linkCandidateLine, linkedActivityView, type HealthScreenView, type HealthSwitch, type WorkoutHealthView } from './health-view';
 
@@ -37,12 +41,15 @@ import { healthScreenView, linkCandidateLine, linkedActivityView, type HealthScr
  *   (it is read again when turned on); turning writing off stops writes (Health keeps what it has).
  * - Writes: `syncWrites` runs `planHealthWrites` over the workouts that changed (by revision) and does each op once
  *   (deterministic op IDs; the module adopts a sample already written for a retried op).
- * - Reads: activities 8 weeks back, bodyweight 2 years (apple-health.md §11 Q6, PM defaults 27 Oct). A read replaces
- *   its window. Clear overlaps of strength workouts are linked automatically afterwards.
+ * - Reads: as far back as `How far back` says (Ben, 27 Oct, Q6; default 8 weeks), bodyweight at least 2 years. A read
+ *   replaces its window. Clear overlaps of strength workouts are linked automatically afterwards; a linked watch
+ *   workout then replaces the app's own Health write (Q1). Resting heart rate and sleep (Q8) are raw values.
  */
 
-export const ACTIVITY_READ_DAYS = 8 * 7;
-export const WEIGHT_READ_DAYS = 2 * 365;
+/** Bodyweight reads at least this far back whatever the window (Q6). */
+export const WEIGHT_MIN_DAYS = 2 * 365;
+/** Progress's trend lines and the coach see this many days of resting heart rate and sleep. */
+export const SIGNAL_DAYS = 30;
 /** A read on return to the foreground waits this long since the last one. */
 export const READ_EVERY_MS = 15 * 60_000;
 
@@ -63,10 +70,18 @@ export type HealthSwitchOutcome = { ok: true } | { ok: false; message: string };
 export type HealthLinkOutcome = { ok: true; healthUuid: string; version: number } | { ok: false; message: string };
 
 const READ_TYPES: Readonly<Record<Exclude<HealthSwitch, 'writeWorkouts'>, HealthType[]>> = {
-  readActivities: ['workout', 'distanceWalkingRunning', 'distanceCycling', 'distanceSwimming'],
+  readActivities: ['workout', 'distanceWalkingRunning', 'distanceCycling', 'distanceSwimming', 'activeEnergyBurned'],
   readHeartRate: ['heartRate'],
   readWeight: ['bodyMass'],
+  readRestingHeartRate: ['restingHeartRate'],
+  readSleep: ['sleepAnalysis'],
 };
+
+/** The raw daily values Progress and the coach show (Q8), with their source. */
+export interface HealthSignals {
+  restingHeartRate: HealthDailyValue[];
+  sleep: HealthDailyValue[];
+}
 
 export function createHealthService(deps: HealthServiceDeps) {
   const repo = () => deps.store().repos.health;
@@ -141,13 +156,14 @@ export function createHealthService(deps: HealthServiceDeps) {
     const recordOf = new Map(records.map((r) => [r.sessionId, r]));
     const candidates: HealthWriteCandidate[] = [];
     const revisionOf = new Map<string, number>();
+    const linked = new Set((await repo().links(p.id)).filter((l) => l.status === 'linked').map((l) => l.sessionId));
     for (const row of toCheck) {
       const a: SessionAggregate | null = await deps
         .store()
         .repos.sessions.get(row.sessionId)
         .catch(() => null);
       if (a === null) continue;
-      candidates.push(healthCandidateOf(a));
+      candidates.push(healthCandidateOf(a, linked.has(a.session.id)));
       revisionOf.set(row.sessionId, a.revision);
     }
     const checked = new Set([...candidates.map((c) => c.sessionId), ...goneSessionIds]);
@@ -185,7 +201,7 @@ export function createHealthService(deps: HealthServiceDeps) {
     const port = deps.port;
     if (p === null || port === null) return;
     const s = await settings(p.id);
-    if (s === null || !(s.readActivities || s.readWeight) || (await cap()) !== 'available') return;
+    if (s === null || !(s.readActivities || s.readWeight || s.readRestingHeartRate || s.readSleep) || (await cap()) !== 'available') return;
     if (await deps.workoutOpen().catch(() => false)) return;
     const nowMs = toMs(deps.now().utc);
     if (!force && nowMs - lastReadStartMs < READ_EVERY_MS) return;
@@ -196,7 +212,7 @@ export function createHealthService(deps: HealthServiceDeps) {
     let fresh = 0;
     try {
       if (s.readActivities) {
-        const sinceMs = nowMs - ACTIVITY_READ_DAYS * 86_400_000;
+        const sinceMs = readSinceMs(s.readWindow, nowMs);
         const before = new Set((await repo().workoutSamples(p.id, toIso(sinceMs), toIso(nowMs + 86_400_000))).map((x) => x.uuid));
         const rows = await port.readWorkouts(sinceMs, nowMs + 60_000, s.readHeartRate);
         const samples = workoutSamplesFrom(rows, port.bundleId, tz);
@@ -204,8 +220,16 @@ export function createHealthService(deps: HealthServiceDeps) {
         fresh += samples.filter((x) => !before.has(x.uuid)).length;
         await autoLink(p, samples);
       }
+      if (s.readRestingHeartRate) {
+        const sinceMs = readSinceMs(s.readWindow, nowMs);
+        await repo().replaceSamples(p.id, 'resting_hr', toIso(sinceMs), restingHrSamplesFrom(await port.readRestingHeartRate(sinceMs), port.bundleId, tz));
+      }
+      if (s.readSleep) {
+        const sinceMs = readSinceMs(s.readWindow, nowMs);
+        await repo().replaceSamples(p.id, 'sleep', toIso(sinceMs), sleepSamplesFrom(await port.readSleep(sinceMs), port.bundleId, tz));
+      }
       if (s.readWeight) {
-        const sinceMs = nowMs - WEIGHT_READ_DAYS * 86_400_000;
+        const sinceMs = readSinceMs(s.readWindow, nowMs, WEIGHT_MIN_DAYS);
         const rows = await port.readBodyMass(sinceMs);
         const before = new Set((await repo().weightSamples(p.id)).map((x) => x.uuid));
         const samples = weightSamplesFrom(rows, port.bundleId, tz);
@@ -226,7 +250,8 @@ export function createHealthService(deps: HealthServiceDeps) {
   async function autoLink(p: UserProfile, samples: Parameters<typeof autoLinkPairs>[0]['samples']): Promise<void> {
     if (samples.length === 0) return;
     const nowMs = toMs(deps.now().utc);
-    const workouts = await repo().linkableWorkouts(p.id, toIso(nowMs - (ACTIVITY_READ_DAYS + 2) * 86_400_000), toIso(nowMs + 86_400_000));
+    const first = samples.reduce((m, x) => Math.min(m, toMs(x.startUtc)), nowMs);
+    const workouts = await repo().linkableWorkouts(p.id, toIso(first - 2 * 86_400_000), toIso(nowMs + 86_400_000));
     const links = await repo().links(p.id);
     for (const pair of autoLinkPairs({ samples, workouts, links })) {
       await repo()
@@ -278,7 +303,7 @@ export function createHealthService(deps: HealthServiceDeps) {
       }
       const nowMs = toMs(deps.now().utc);
       const [workouts, weights, writes, shareStatus] = await Promise.all([
-        repo().workoutSamples(p.id, toIso(nowMs - ACTIVITY_READ_DAYS * 86_400_000), toIso(nowMs + 86_400_000)).catch(() => []),
+        repo().workoutSamples(p.id, toIso(readSinceMs(s.readWindow, nowMs)), toIso(nowMs + 86_400_000)).catch(() => []),
         repo().weightSamples(p.id).catch(() => []),
         repo().writes(p.id).catch(() => []),
         s.writeWorkouts && deps.port !== null ? deps.port.workoutShareStatus().catch(() => null) : Promise.resolve(null),
@@ -325,9 +350,37 @@ export function createHealthService(deps: HealthServiceDeps) {
       if (r === null || !r.ok) return { ok: false, message: 'Changed since. Try again.' };
       if (!on && key === 'readActivities') await repo().clearSamples(p.id, 'workout').catch(() => undefined);
       if (!on && key === 'readWeight') await repo().clearSamples(p.id, 'weight').catch(() => undefined);
+      if (!on && key === 'readRestingHeartRate') await repo().clearSamples(p.id, 'resting_hr').catch(() => undefined);
+      if (!on && key === 'readSleep') await repo().clearSamples(p.id, 'sleep').catch(() => undefined);
       if (on && key === 'writeWorkouts') void syncWrites();
       if (on && key !== 'writeWorkouts') void readNow(true);
       return { ok: true };
+    },
+
+    /** (Q6) `How far back`: one control for every read (bodyweight at least 2 years). A new read follows. */
+    async setReadWindow(window: HealthReadWindow): Promise<HealthSwitchOutcome> {
+      const p = await owner();
+      const cur = p === null ? null : await settings(p.id);
+      if (p === null || cur === null) return { ok: false, message: 'Couldn’t save. Try again.' };
+      const r = await repo()
+        .updateSettings(p.id, cur.version, (x) => ({ ...x, readWindow: window }))
+        .catch(() => null);
+      if (r === null || !r.ok) return { ok: false, message: 'Changed since. Try again.' };
+      void readNow(true);
+      return { ok: true };
+    },
+
+    /** (Q8) Resting heart rate and sleep, a value a day for the last 30 days, each with its source; empty while off. */
+    async signals(): Promise<HealthSignals> {
+      const p = await owner();
+      const s = p === null ? null : await settings(p.id);
+      if (p === null || s === null) return { restingHeartRate: [], sleep: [] };
+      const from = toIso(toMs(deps.now().utc) - (SIGNAL_DAYS + 1) * 86_400_000);
+      const [hr, sleep] = await Promise.all([
+        s.readRestingHeartRate ? repo().samplesSince(p.id, 'resting_hr', from).catch(() => []) : Promise.resolve([]),
+        s.readSleep ? repo().samplesSince(p.id, 'sleep', from).catch(() => []) : Promise.resolve([]),
+      ]);
+      return { restingHeartRate: restingHeartRateDays(hr).slice(-SIGNAL_DAYS), sleep: sleepNights(sleep).slice(-SIGNAL_DAYS) };
     },
 
     readNow: () => readNow(true),

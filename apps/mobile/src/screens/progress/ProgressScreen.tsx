@@ -18,6 +18,7 @@ import { useDataChanged, useScreenData, useServices } from '../../shell/context'
 import { useTheme } from '../../theme';
 import { AppText, Card, Icon, PrimaryButton, SecondaryButton, StatStrip, StatusLine, TextButton, Toast } from '../../ui';
 import { AskPill } from '../coach/AskPill';
+import { HealthTrends } from './HealthTrends';
 import { CalendarView } from './CalendarView';
 import { unreadableText } from '../../progress/copy';
 import { ExercisesTab, type ExercisesFocus } from './ExercisesTab';
@@ -296,6 +297,8 @@ export function ProgressScreen() {
           navigation.navigate('Summary', { sessionId: r.sessionId, back: true });
         }}
       />
+      {/* (Ben, 27 Oct, Q8) Resting heart rate and sleep from Apple Health, raw and labelled; nothing while off. */}
+      <HealthTrends />
       </>
       )}
         </View>

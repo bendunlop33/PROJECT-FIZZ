@@ -4,12 +4,15 @@ import {
   mainLiftFor,
   mainLiftOptions,
   newTrainingProfile,
+  restingHeartRateDays,
+  sleepNights,
   splitInUse,
   toIso,
   toMs,
   type LiftHistory,
   type MainLift,
   type HistoryWorkout,
+  type HealthDailyValue,
 } from '@fizz/domain';
 import { trainingProfileId, type Store } from '@fizz/persistence';
 import type { Exercise, HealthWeightSample, TrainingChange, TrainingProfile, UserProfile, ZonedTimestamp } from '@fizz/schemas';
@@ -64,6 +67,16 @@ export function createTrainingService(deps: TrainingServiceDeps) {
     const h = deps.store().repos.health;
     const settings = await h.settings(ownerId).catch(() => null);
     return settings?.readWeight === true ? h.weightSamples(ownerId).catch(() => []) : [];
+  }
+
+  /** (Q8) Resting heart rate and sleep, the last 14 days, while their switches are on. */
+  async function readHealthSignals(ownerId: string): Promise<{ restingHeartRate: HealthDailyValue[]; sleep: HealthDailyValue[] }> {
+    const h = deps.store().repos.health;
+    const settings = await h.settings(ownerId).catch(() => null);
+    const from = toIso(toMs(deps.now().utc) - 15 * 86_400_000);
+    const hr = settings?.readRestingHeartRate === true ? await h.samplesSince(ownerId, 'resting_hr', from).catch(() => []) : [];
+    const sleep = settings?.readSleep === true ? await h.samplesSince(ownerId, 'sleep', from).catch(() => []) : [];
+    return { restingHeartRate: restingHeartRateDays(hr), sleep: sleepNights(sleep) };
   }
 
   async function pool(): Promise<Map<string, Exercise>> {
@@ -204,7 +217,15 @@ export function createTrainingService(deps: TrainingServiceDeps) {
       if (s === null) return null;
       const saved = await repo().get(s.owner.id);
       const healthWeights = await readHealthWeights(s.owner.id);
-      return { profile: saved, nowYear: s.nowYear, mainLifts: s.mainLifts, nextDayId: s.nextDayId, ...(healthWeights.length > 0 ? { healthWeights } : {}) };
+      const healthSignals = await readHealthSignals(s.owner.id);
+      return {
+        profile: saved,
+        nowYear: s.nowYear,
+        mainLifts: s.mainLifts,
+        nextDayId: s.nextDayId,
+        ...(healthWeights.length > 0 ? { healthWeights } : {}),
+        ...(healthSignals.restingHeartRate.length > 0 || healthSignals.sleep.length > 0 ? { healthSignals } : {}),
+      };
     },
 
     /** F19: the Build card's chips (the split's days), the next day selected, and the session length. */

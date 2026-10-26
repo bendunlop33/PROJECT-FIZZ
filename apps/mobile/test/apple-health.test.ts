@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { toIso, toMs } from '@fizz/domain';
-import type { HealthNativeBodyMass, HealthNativeWorkout, HealthPort, HealthSaveRequest } from '@fizz/providers';
+import type { HealthNativeBodyMass, HealthNativeRestingHr, HealthNativeSleep, HealthNativeWorkout, HealthPort, HealthSaveRequest } from '@fizz/providers';
 
-import { healthScreenView } from '../src/health/health-view';
+import { healthScreenView, healthTrendViews } from '../src/health/health-view';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -23,6 +23,8 @@ class FakeHealth implements HealthPort {
   status: 'available' | 'missing_entitlement' | 'unsupported' = 'available';
   workouts = new Map<string, HealthNativeWorkout & { syncIdentifier?: string; syncVersion?: number }>();
   weights: HealthNativeBodyMass[] = [];
+  resting: HealthNativeRestingHr[] = [];
+  sleep: HealthNativeSleep[] = [];
   asked: { share: string[]; read: string[] }[] = [];
   saves = 0;
   failSaves = false;
@@ -83,6 +85,12 @@ class FakeHealth implements HealthPort {
   }
   readBodyMass(since: number) {
     return Promise.resolve(this.weights.filter((w) => w.atMs >= since));
+  }
+  readRestingHeartRate(since: number) {
+    return Promise.resolve(this.resting.filter((w) => w.atMs >= since));
+  }
+  readSleep(since: number) {
+    return Promise.resolve(this.sleep.filter((w) => w.startMs >= since));
   }
   ownWorkouts() {
     return [...this.workouts.values()].filter((w) => w.sourceBundleId === OWN);
@@ -253,6 +261,10 @@ describe('reading activities and linking', () => {
     expect(rows.find((r) => r.activityId === run)).toMatchObject({ title: 'Run', fromHealth: 'Garmin' });
     expect(today).toBe('2026-10-27');
 
+    // Q1: the watch's workout is Health's record now; the app's own copy goes.
+    expect(fake.ownWorkouts()).toHaveLength(1);
+    await s.health.syncWrites();
+    expect(fake.ownWorkouts()).toHaveLength(0);
     // The linked activity shows on the workout, not as its own item.
     const linked = await s.health.forWorkout(id);
     expect(linked).toMatchObject({ kind: 'linked', healthUuid: strength, line: expect.stringContaining('Garmin') as unknown });
@@ -260,6 +272,9 @@ describe('reading activities and linking', () => {
     const un = await s.health.unlink({ healthUuid: strength, expectedVersion: linked.linkVersion, opId: 'unlink-1' });
     expect(un.ok).toBe(true);
     expect((await s.activities.between('2026-10-20', '2026-11-03')).map((a) => a.id).sort()).toEqual([run, strength].sort());
+    // Unlinked: both as they were, the app's copy written back.
+    await s.health.syncWrites();
+    expect(fake.ownWorkouts()).toHaveLength(1);
     // Never auto-linked again after a new read.
     await s.health.readNow();
     expect((await s.health.forWorkout(id)).kind).toBe('none');
@@ -321,9 +336,37 @@ describe('bodyweight', () => {
   });
 });
 
+describe('resting heart rate and sleep (Q8) and how far back (Q6)', () => {
+  it('raw values with their source, for Progress and the coach; the window is one control', async () => {
+    const s = await launch();
+    await setUpGym(h, s);
+    const day = (n: number) => h.clockMs - n * DAY;
+    fake.resting = [0, 1, 2].map((n) => ({ uuid: `C000000${String(n)}-0000-4000-8000-000000000000`, bpm: 50 + n, atMs: day(n) - 6 * 3_600_000, sourceName: 'Garmin Connect', sourceBundleId: 'g' }));
+    fake.sleep = [1, 2].map((n) => ({ uuid: `D000000${String(n)}-0000-4000-8000-000000000000`, value: 3, startMs: day(n) - 12 * 3_600_000, endMs: day(n) - 5 * 3_600_000, sourceName: 'Apple Watch', sourceBundleId: 'w' }));
+    expect((await s.health.setSwitch('readRestingHeartRate', true)).ok).toBe(true);
+    expect((await s.health.setSwitch('readSleep', true)).ok).toBe(true);
+    expect(fake.asked.map((a) => a.read)).toEqual([['restingHeartRate'], ['sleepAnalysis']]);
+    await s.health.readNow();
+    const sig = await s.health.signals();
+    expect(sig.restingHeartRate.map((d) => d.value)).toEqual([52, 51, 50]);
+    expect(sig.sleep.map((d) => d.value)).toEqual([420, 420]);
+    const trends = healthTrendViews(sig, 'en-GB');
+    expect(trends.map((t) => [t.title, t.source])).toEqual([
+      ['Resting heart rate', 'Garmin · Apple Health'],
+      ['Sleep', 'Apple Watch · Apple Health'],
+    ]);
+    const input = await s.training.coachInput();
+    expect(input?.healthSignals?.restingHeartRate).toHaveLength(3);
+    expect(await s.health.setReadWindow('4w')).toEqual({ ok: true });
+    expect((await s.health.screen()).window.value).toBe('4w');
+    await s.health.setSwitch('readSleep', false);
+    expect((await s.health.signals()).sleep).toEqual([]);
+  });
+});
+
 describe('the settings view', () => {
   it('states from apple-health.md §4', () => {
-    const base = { settings: { writeWorkouts: true, writeSinceUtc: '2026-10-27T10:00:00.000Z', readWeight: false, readActivities: true, readHeartRate: false, lastReadUtc: '2026-10-27T06:42:00.000Z', lastReadFailedUtc: null, version: 3 }, shareStatus: 'authorized' as const, notSaved: 0, readCounts: { workouts: 0, weights: 0 }, sources: [], reading: false, newOnLastRead: 3, written: 2, nowMs: toMs('2026-10-27T08:00:00.000Z'), tz: 'Europe/London', locale: 'en-GB' };
+    const base = { settings: { writeWorkouts: true, writeSinceUtc: '2026-10-27T10:00:00.000Z', readWeight: false, readActivities: true, readHeartRate: false, readRestingHeartRate: false, readSleep: false, readWindow: '8w' as const, lastReadUtc: '2026-10-27T06:42:00.000Z', lastReadFailedUtc: null, version: 3 }, shareStatus: 'authorized' as const, notSaved: 0, readCounts: { workouts: 0, weights: 0 }, sources: [], reading: false, newOnLastRead: 3, written: 2, nowMs: toMs('2026-10-27T08:00:00.000Z'), tz: 'Europe/London', locale: 'en-GB' };
     const v = healthScreenView({ ...base, capability: 'available' });
     expect(v.line).toBe('On · last read 06:42');
     expect(v.lastRead).toBe('Last read 06:42 · 3 new');

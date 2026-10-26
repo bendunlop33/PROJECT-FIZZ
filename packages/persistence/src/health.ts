@@ -2,12 +2,16 @@ import {
   DEFAULT_HEALTH_SETTINGS,
   HealthLinkSchema,
   HealthSettingsSchema,
+  HealthRestingHrSampleSchema,
+  HealthSleepSampleSchema,
   HealthWeightSampleSchema,
   HealthWorkoutSampleSchema,
   HealthWorkoutWriteSchema,
   type Activity,
   type HealthLink,
+  type HealthRestingHrSample,
   type HealthSettings,
+  type HealthSleepSample,
   type HealthWeightSample,
   type HealthWorkoutSample,
   type HealthWorkoutWrite,
@@ -77,6 +81,15 @@ function decodeWeightSample(row: SqlRow): HealthWeightSample {
 
 const DAY_MS = 86_400_000;
 
+export type HealthSampleKind = 'workout' | 'weight' | 'resting_hr' | 'sleep';
+export interface HealthSampleOf {
+  workout: HealthWorkoutSample;
+  weight: HealthWeightSample;
+  resting_hr: HealthRestingHrSample;
+  sleep: HealthSleepSample;
+}
+const SAMPLE_SCHEMA = { workout: HealthWorkoutSampleSchema, weight: HealthWeightSampleSchema, resting_hr: HealthRestingHrSampleSchema, sleep: HealthSleepSampleSchema } as const;
+
 export class SqliteHealth {
   constructor(private readonly db: Database) {}
 
@@ -105,12 +118,12 @@ export class SqliteHealth {
    * A read's result replaces what was stored for its window (`sinceUtc` on): Health is the source, so a sample
    * deleted there goes here too. All or nothing.
    */
-  replaceSamples(ownerId: string, kind: 'workout' | 'weight', sinceUtc: string, samples: readonly (HealthWorkoutSample | HealthWeightSample)[]): Promise<number> {
+  replaceSamples<K extends HealthSampleKind>(ownerId: string, kind: K, sinceUtc: string, samples: readonly HealthSampleOf[K][]): Promise<number> {
     return this.db.write(async (tx) => {
       await tx.run('DELETE FROM health_samples WHERE owner_id = ? AND kind = ? AND start_utc >= ?', [ownerId, kind, sinceUtc]);
       let n = 0;
       for (const s of samples) {
-        const valid = kind === 'workout' ? checkWrite(HealthWorkoutSampleSchema, s, 'health_samples', s.uuid) : checkWrite(HealthWeightSampleSchema, s, 'health_samples', s.uuid);
+        const valid = checkWrite(SAMPLE_SCHEMA[kind], s, 'health_samples', s.uuid) as HealthSampleOf[K];
         const start = 'startUtc' in valid ? valid.startUtc : valid.atUtc;
         if (start < sinceUtc) continue;
         await tx.run('INSERT INTO health_samples (id, owner_id, kind, start_utc, data) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET owner_id = excluded.owner_id, kind = excluded.kind, start_utc = excluded.start_utc, data = excluded.data', [
@@ -127,9 +140,18 @@ export class SqliteHealth {
   }
 
   /** Forget one kind (its switch went off). */
-  clearSamples(ownerId: string, kind: 'workout' | 'weight'): Promise<void> {
+  clearSamples(ownerId: string, kind: HealthSampleKind): Promise<void> {
     return this.db.write(async (tx) => {
       await tx.run('DELETE FROM health_samples WHERE owner_id = ? AND kind = ?', [ownerId, kind]);
+    });
+  }
+
+  /** (Q8) Resting heart rates or sleep segments since `fromUtc`, oldest first. */
+  async samplesSince<K extends 'resting_hr' | 'sleep'>(ownerId: string, kind: K, fromUtc: string): Promise<HealthSampleOf[K][]> {
+    const rows = await this.db.read((q) => q.getAll('SELECT * FROM health_samples WHERE owner_id = ? AND kind = ? AND start_utc >= ? ORDER BY start_utc', [ownerId, kind, fromUtc]));
+    return rows.map((r) => {
+      const id = rowId(r.id);
+      return checkRead(SAMPLE_SCHEMA[kind], parseJson('health_samples', id, 'data', r.data ?? null), 'health_samples', id) as HealthSampleOf[K];
     });
   }
 
@@ -223,7 +245,13 @@ export class SqliteHealth {
       const current = await linkIn(tx, ownerId, healthUuid);
       const elsewhere = async (sessionId: string) =>
         (await tx.getFirst("SELECT 1 AS x FROM health_links WHERE owner_id = ? AND session_id = ? AND status = 'linked' AND health_uuid <> ?", [ownerId, sessionId, healthUuid.toLowerCase()])) !== null;
-      return saveHealthLinkChangeIn(tx, ownerId, await make(current, elsewhere));
+      const out = await saveHealthLinkChangeIn(tx, ownerId, await make(current, elsewhere));
+      // (Q1) A link or unlink changes whether the app's own Health write should exist: check those workouts again.
+      if (out.status === 'written') {
+        const ids = [...new Set([current?.sessionId, out.link.sessionId].filter((x): x is string => x !== undefined))];
+        for (const id of ids) await tx.run('UPDATE health_writes SET session_revision = -1 WHERE session_id = ?', [id]);
+      }
+      return out;
     });
   }
 

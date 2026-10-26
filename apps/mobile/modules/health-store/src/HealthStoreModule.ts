@@ -15,6 +15,7 @@ export interface NativeHealthWorkout {
   distanceM: number | null;
   avgHeartRate: number | null;
   maxHeartRate: number | null;
+  activeKcal: number | null;
   sourceName: string;
   sourceBundleId: string;
   externalId: string | null;
@@ -25,6 +26,23 @@ export interface NativeBodyMass {
   uuid: string;
   kg: number;
   atMs: number;
+  sourceName: string;
+  sourceBundleId: string;
+}
+
+export interface NativeRestingHr {
+  uuid: string;
+  bpm: number;
+  atMs: number;
+  sourceName: string;
+  sourceBundleId: string;
+}
+
+export interface NativeSleep {
+  uuid: string;
+  value: number;
+  startMs: number;
+  endMs: number;
   sourceName: string;
   sourceBundleId: string;
 }
@@ -40,7 +58,7 @@ export interface NativeSaveWorkout {
   timeZone: string;
 }
 
-export type NativeHealthType = 'workout' | 'bodyMass' | 'heartRate' | 'distanceWalkingRunning' | 'distanceCycling' | 'distanceSwimming';
+export type NativeHealthType = 'workout' | 'bodyMass' | 'heartRate' | 'activeEnergyBurned' | 'restingHeartRate' | 'sleepAnalysis' | 'distanceWalkingRunning' | 'distanceCycling' | 'distanceSwimming';
 
 declare class HealthStoreNativeModule extends NativeModule {
   readonly bundleId: string;
@@ -52,6 +70,8 @@ declare class HealthStoreNativeModule extends NativeModule {
   deleteAllOwnWorkouts(): Promise<number>;
   readWorkouts(sinceMs: number, untilMs: number, heartRate: boolean): Promise<NativeHealthWorkout[]>;
   readBodyMass(sinceMs: number): Promise<NativeBodyMass[]>;
+  readRestingHeartRate(sinceMs: number): Promise<NativeRestingHr[]>;
+  readSleep(sinceMs: number): Promise<NativeSleep[]>;
 }
 
 /** null when this build doesn't include the module (Expo Go, an older build): Apple Health is then not available. */

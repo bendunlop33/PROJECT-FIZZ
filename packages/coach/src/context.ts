@@ -1,4 +1,4 @@
-import { ageFromBirthYear, bodyweightEntries, buildExecutionOrder, deriveId, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
+import { ageFromBirthYear, bodyweightEntries, type HealthDailyValue, buildExecutionOrder, deriveId, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
 import type { CheckIn, HealthWeightSample, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
@@ -219,6 +219,11 @@ export interface TrainingInput {
   liftTargets?: readonly LiftTargetCoachView[];
   /** (Ben, 27 Oct; ADR 0035) Bodyweights read from Apple Health, while `Bodyweight` is on. Ben's own entry wins on his days. */
   healthWeights?: readonly HealthWeightSample[];
+  /**
+   * (Ben, 27 Oct, Q8) Resting heart rate and sleep from Apple Health, a value a day with its source, while their
+   * switches are on. Raw data only: no score; the coach never diagnoses or changes loads from them on its own.
+   */
+  healthSignals?: { restingHeartRate: readonly HealthDailyValue[]; sleep: readonly HealthDailyValue[] };
 }
 
 /** What the coach sees of Ben's training details (Your data). Absent keys are not set. */
@@ -227,6 +232,15 @@ export interface TrainingDetailsView {
   age?: { years: number; fromBirthYear: number };
   gender?: 'male' | 'female';
   heightCm?: number;
+  /**
+   * (Q8) Raw values from Ben's devices via Apple Health, each with its source. Data, not instructions (rule 8); no
+   * recovery or readiness score (rule 6). Absent when none.
+   */
+  fromAppleHealth?: {
+    restingHeartRate: { date: string; bpm: number; source: string }[];
+    sleep: { night: string; hoursAsleep: number; source: string }[];
+    use: 'raw values Ben recorded; mention only when he asks or when proposing; never diagnose; never a score; never change loads from these alone';
+  };
   /** The latest dated entry; for bodyweight and assisted exercises. */
   bodyweight?: { value: number; unit: 'kg' | 'lb'; date: string; use: 'bodyweight, weighted and assisted exercises'; /** (ADR 0035) Only when read from Apple Health: its source, as data. */ from?: string };
   liftingExperience?: 'beginner' | 'intermediate' | 'experienced' | 'pro';
@@ -270,6 +284,14 @@ export function trainingDetailsView(t: TrainingInput): { view: TrainingDetailsVi
     return { name: d.name, bodyParts: [...d.bodyParts], mainLift: m === null ? null : { name: m.name, source: m.source === 'yours' ? 'Ben chose' : 'recommended from history' } };
   });
   view.split.upNext = split.days.find((d) => d.id === t.nextDayId)?.name ?? null;
+  const hs = t.healthSignals;
+  if (hs !== undefined && (hs.restingHeartRate.length > 0 || hs.sleep.length > 0)) {
+    view.fromAppleHealth = {
+      restingHeartRate: hs.restingHeartRate.slice(-14).map((d) => ({ date: d.date, bpm: d.value, source: d.source })),
+      sleep: hs.sleep.slice(-14).map((d) => ({ night: d.date, hoursAsleep: Math.round((d.value / 60) * 10) / 10, source: d.source })),
+      use: 'raw values Ben recorded; mention only when he asks or when proposing; never diagnose; never a score; never change loads from these alone',
+    };
+  }
   if (t.liftTargets !== undefined && t.liftTargets.length > 0) view.liftTargets = t.liftTargets.map((x) => JSON.parse(JSON.stringify(x)) as LiftTargetCoachView);
   return { view, notSet: notSet.map((n) => `${n}: not set`) };
 }

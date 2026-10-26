@@ -15,7 +15,8 @@ import HealthKit
 //    is adopted, not written again (a retry after a force-close writes nothing twice). No energy,
 //    heart rate, distance or set data (rule 6).
 //  - deleteWorkout(uuid), deleteAllOwnWorkouts(): only this app's own samples can be deleted.
-//  - readWorkouts(since, until, heartRate), readBodyMass(since): plain values with their source.
+//  - readWorkouts(since, until, heartRate), readBodyMass(since), readRestingHeartRate(since),
+//    readSleep(since): plain values with their source (no scores, rule 6).
 //
 // Written without a Mac: first compiled by the macOS CI build (as the other local modules were).
 
@@ -36,6 +37,9 @@ public class HealthStoreModule: Module {
     case "workout": return HKObjectType.workoutType()
     case "bodyMass": return HKQuantityType.quantityType(forIdentifier: .bodyMass)
     case "heartRate": return HKQuantityType.quantityType(forIdentifier: .heartRate)
+    case "activeEnergyBurned": return HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)
+    case "restingHeartRate": return HKQuantityType.quantityType(forIdentifier: .restingHeartRate)
+    case "sleepAnalysis": return HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)
     case "distanceWalkingRunning": return HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)
     case "distanceCycling": return HKQuantityType.quantityType(forIdentifier: .distanceCycling)
     case "distanceSwimming": return HKQuantityType.quantityType(forIdentifier: .distanceSwimming)
@@ -174,6 +178,7 @@ public class HealthStoreModule: Module {
           "timeZone": (w.metadata?[HKMetadataKeyTimeZone] as? String) ?? NSNull(),
         ]
         row["distanceM"] = HealthStoreModule.distance(of: w) ?? NSNull()
+        row["activeKcal"] = HealthStoreModule.activeKcal(of: w) ?? NSNull()
         if heartRate, let hr = await self.heartRate(of: w) {
           row["avgHeartRate"] = hr.avg ?? NSNull()
           row["maxHeartRate"] = hr.max ?? NSNull()
@@ -184,6 +189,40 @@ public class HealthStoreModule: Module {
         out.append(row)
       }
       return out
+    }
+
+    // (Q8) Raw resting heart rates, bpm, with their source.
+    AsyncFunction("readRestingHeartRate") { (sinceMs: Double) async throws -> [[String: Any]] in
+      guard let type = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) else { return [] }
+      let predicate = HKQuery.predicateForSamples(withStart: HealthStoreModule.date(sinceMs), end: nil, options: [])
+      let bpm = HKUnit.count().unitDivided(by: .minute())
+      return try await self.query(type, predicate: predicate).compactMap { s -> [String: Any]? in
+        guard let q = s as? HKQuantitySample else { return nil }
+        return [
+          "uuid": q.uuid.uuidString,
+          "bpm": q.quantity.doubleValue(for: bpm),
+          "atMs": HealthStoreModule.ms(q.startDate),
+          "sourceName": q.sourceRevision.source.name,
+          "sourceBundleId": q.sourceRevision.source.bundleIdentifier,
+        ]
+      }
+    }
+
+    // (Q8) Sleep segments: HKCategoryValueSleepAnalysis raw value and times, with their source. No score.
+    AsyncFunction("readSleep") { (sinceMs: Double) async throws -> [[String: Any]] in
+      guard let type = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return [] }
+      let predicate = HKQuery.predicateForSamples(withStart: HealthStoreModule.date(sinceMs), end: nil, options: [])
+      return try await self.query(type, predicate: predicate).compactMap { s -> [String: Any]? in
+        guard let c = s as? HKCategorySample else { return nil }
+        return [
+          "uuid": c.uuid.uuidString,
+          "value": c.value,
+          "startMs": HealthStoreModule.ms(c.startDate),
+          "endMs": HealthStoreModule.ms(c.endDate),
+          "sourceName": c.sourceRevision.source.name,
+          "sourceBundleId": c.sourceRevision.source.bundleIdentifier,
+        ]
+      }
     }
 
     AsyncFunction("readBodyMass") { (sinceMs: Double) async throws -> [[String: Any]] in
@@ -204,6 +243,11 @@ public class HealthStoreModule: Module {
   }
 
   // MARK: - Helpers
+
+  private static func activeKcal(of w: HKWorkout) -> Double? {
+    guard let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return nil }
+    return w.statistics(for: type)?.sumQuantity()?.doubleValue(for: .kilocalorie())
+  }
 
   private func query(_ type: HKSampleType, predicate: NSPredicate?) async throws -> [HKSample] {
     try await withCheckedThrowingContinuation { cont in

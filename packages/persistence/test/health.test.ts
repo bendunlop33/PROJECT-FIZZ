@@ -110,7 +110,7 @@ describe('Health writes', () => {
     const since = '2000-01-01T00:00:00.000Z';
     const rows = await h.writeRows(OWNER, since);
     expect(rows.toCheck.map((r) => r.sessionId)).toEqual([sid]);
-    const cand = { sessionId: sid, inHistory: true, source: s.session.source, startedAtUtc: s.session.startedAt.utc, endedAtUtc: s.session.endedAt?.utc ?? null, pauses: [], recordedAtUtc: s.session.endedAt?.utc ?? '', anyExternalLoad: true, anyDoneSet: true };
+    const cand = { sessionId: sid, inHistory: true, source: s.session.source, startedAtUtc: s.session.startedAt.utc, endedAtUtc: s.session.endedAt?.utc ?? null, pauses: [], recordedAtUtc: s.session.endedAt?.utc ?? '', anyExternalLoad: true, anyDoneSet: true, linkedToWatch: false };
     const [op] = planHealthWrites({ settings: { writeWorkouts: true, writeSinceUtc: since }, candidates: [cand], records: [] });
     if (op === undefined) throw new Error('no op');
     const rec = healthWriteRecordAfter(null, op, { kind: 'saved', healthUuid: U1 }, OWNER, at(0).utc);

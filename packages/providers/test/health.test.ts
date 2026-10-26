@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { healthCapability, isMissingEntitlement, weightSamplesFrom, workoutSamplesFrom, type HealthNativeWorkout, type HealthPort } from '../src';
+import { healthCapability, isMissingEntitlement, restingHrSamplesFrom, sleepSamplesFrom, weightSamplesFrom, workoutSamplesFrom, type HealthNativeWorkout, type HealthPort } from '../src';
 
 const OWN = 'com.projectfizz.fizz';
 const port = (status: Awaited<ReturnType<HealthPort['capability']>>['status'] | 'throws'): HealthPort => ({
@@ -13,6 +13,8 @@ const port = (status: Awaited<ReturnType<HealthPort['capability']>>['status'] | 
   deleteAllOwnWorkouts: () => Promise.resolve(0),
   readWorkouts: () => Promise.resolve([]),
   readBodyMass: () => Promise.resolve([]),
+  readRestingHeartRate: () => Promise.resolve([]),
+  readSleep: () => Promise.resolve([]),
 });
 
 describe('healthCapability (a runtime flag, ADR 0004/0035)', () => {
@@ -62,6 +64,7 @@ describe('mapping Health’s rows', () => {
         distanceM: 18000,
         avgHeartRate: 148,
         maxHeartRate: null,
+        activeKcal: null,
         sourceName: 'Garmin Connect',
         sourceBundleId: 'com.garmin.connect.mobile',
         externalId: null,
@@ -84,5 +87,20 @@ describe('mapping Health’s rows', () => {
       'Europe/London',
     );
     expect(out).toEqual([{ uuid: 'd0000000-0000-4000-8000-000000000004', kg: 81.623, atUtc: '2026-10-26T06:00:00.000Z', tz: 'Europe/London', sourceName: 'Withings', sourceBundleId: 'com.withings' }]);
+  });
+});
+
+describe('resting heart rate and sleep (Q8)', () => {
+  it('maps raw values and stages; drops bad ones', () => {
+    expect(restingHrSamplesFrom([{ uuid: 'F0000000-0000-4000-8000-000000000006', bpm: 52, atMs: Date.UTC(2026, 9, 26, 6), sourceName: 'Garmin Connect', sourceBundleId: 'g' }, { uuid: 'F0000000-0000-4000-8000-000000000007', bpm: 5, atMs: 0, sourceName: 'x', sourceBundleId: 'x' }], OWN, 'Europe/London')).toHaveLength(1);
+    const sleep = sleepSamplesFrom(
+      [
+        { uuid: 'F0000000-0000-4000-8000-000000000008', value: 4, startMs: Date.UTC(2026, 9, 26, 1), endMs: Date.UTC(2026, 9, 26, 2), sourceName: 'Apple Watch', sourceBundleId: 'w' },
+        { uuid: 'F0000000-0000-4000-8000-000000000009', value: 9, startMs: Date.UTC(2026, 9, 26, 1), endMs: Date.UTC(2026, 9, 26, 2), sourceName: 'Apple Watch', sourceBundleId: 'w' },
+      ],
+      OWN,
+      'Europe/London',
+    );
+    expect(sleep.map((x) => x.stage)).toEqual(['deep']);
   });
 });

@@ -21,6 +21,8 @@ export function nativeHealthPort(): HealthPort | null {
     deleteAllOwnWorkouts: () => m.deleteAllOwnWorkouts(),
     readWorkouts: (since, until, hr) => m.readWorkouts(since, until, hr),
     readBodyMass: (since) => m.readBodyMass(since),
+    readRestingHeartRate: (since) => m.readRestingHeartRate(since),
+    readSleep: (since) => m.readSleep(since),
   };
 }
 

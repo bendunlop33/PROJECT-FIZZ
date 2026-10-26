@@ -89,7 +89,28 @@ export function AppleHealthScreen() {
           <SectionHeader title={HEALTH_COPY.saveTo} />
           <Group>{v.save.map(switchRow)}</Group>
           <SectionHeader title={HEALTH_COPY.readFrom} />
-          <Group>{v.read.map(switchRow)}</Group>
+          <Group>
+            {v.read.map(switchRow)}
+            {/* (Ben, 27 Oct, Q6) One control for how far back every read goes (bodyweight at least 2 years). */}
+            <Row
+              title={HEALTH_COPY.howFarBack}
+              subtitle={v.window.text}
+              onPress={() => {
+                Alert.alert(HEALTH_COPY.howFarBack, undefined, [
+                  ...v.window.choices.map((c) => ({
+                    text: c.text,
+                    onPress: () => {
+                      void services.health.setReadWindow(c.value).then((r) => {
+                        if (!r.ok) setNotice(r.message);
+                        reload();
+                      });
+                    },
+                  })),
+                  { text: HEALTH_COPY.cancel, style: 'cancel' as const },
+                ]);
+              }}
+            />
+          </Group>
           {v.sources.length > 0 ? (
             <>
               <SectionHeader title={HEALTH_COPY.sources} />

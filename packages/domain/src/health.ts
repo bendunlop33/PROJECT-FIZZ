@@ -6,6 +6,9 @@ import {
   type HealthActivityProvenance,
   type HealthInterval,
   type HealthLink,
+  type HealthReadWindow,
+  type HealthRestingHrSample,
+  type HealthSleepSample,
   type HealthWeightSample,
   type HealthWorkoutSample,
   type HealthWorkoutWrite,
@@ -152,10 +155,15 @@ export interface HealthWriteCandidate {
   anyExternalLoad: boolean;
   /** At least one done set. */
   anyDoneSet: boolean;
+  /**
+   * (Ben, 27 Oct, Q1) A watch or Garmin workout is linked to it: the watch's stays Health's record, so the app
+   * writes none (and deletes its own if it wrote one). Unlinking writes it back.
+   */
+  linkedToWatch: boolean;
 }
 
 /** An app workout as `planHealthWrites` sees it. Its end, or a past log's entry time, is when it was recorded. */
-export function healthCandidateOf(a: SessionAggregate): HealthWriteCandidate {
+export function healthCandidateOf(a: SessionAggregate, linkedToWatch = false): HealthWriteCandidate {
   const s = a.session;
   const done = a.sets.filter((x) => x.status === 'completed' && x.actual !== null);
   return {
@@ -168,6 +176,7 @@ export function healthCandidateOf(a: SessionAggregate): HealthWriteCandidate {
     recordedAtUtc: s.pastLog?.enteredAt.utc ?? s.endedAt?.utc ?? s.startedAt.utc,
     anyExternalLoad: done.some((x) => x.actual !== null && x.actual.load !== null && x.actual.load.convention !== 'bodyweight'),
     anyDoneSet: done.length > 0,
+    linkedToWatch,
   };
 }
 
@@ -231,8 +240,9 @@ function opIdOf(kind: 'save' | 'delete', sessionId: string, syncVersion: number)
  * - a workout with no write record is saved when finished, logged in the app (not imported) and recorded at or
  *   after `writeSinceUtc` (history from before isn't written);
  * - one already written is saved again when its fingerprint changed (moved, edited times, pauses), or deleted from
- *   Health when it left history (deleted, discarded) or is gone (purged);
- * - one whose Health workout was deleted is saved again when it is back in history (restored);
+ *   Health when it left history (deleted, discarded), is gone (purged), or a watch workout was linked to it (Q1:
+ *   the watch's is Health's record);
+ * - one whose Health workout was deleted is saved again when it is back in history (restored) or unlinked;
  * - one Ben removed from Health (`Remove GymSmarter workouts from Health`) is never written again.
  */
 export function planHealthWrites(input: {
@@ -247,14 +257,14 @@ export function planHealthWrites(input: {
   const ops: HealthWriteOp[] = [];
   for (const c of input.candidates) {
     if (recordOf.has(c.sessionId)) continue;
-    if (c.source !== 'manual' || toMs(c.recordedAtUtc) < since) continue;
+    if (c.source !== 'manual' || c.linkedToWatch || toMs(c.recordedAtUtc) < since) continue;
     const workout = healthWorkoutOf(c);
     if (workout === null) continue;
     ops.push({ kind: 'save', sessionId: c.sessionId, opId: opIdOf('save', c.sessionId, 1), syncVersion: 1, workout, replacesUuid: null });
   }
   for (const r of input.records) {
     const c = byId.get(r.sessionId);
-    const workout = c === undefined ? null : healthWorkoutOf(c);
+    const workout = c === undefined || c.linkedToWatch ? null : healthWorkoutOf(c);
     const next = r.syncVersion + 1;
     if (r.status === 'written') {
       if (workout === null) ops.push({ kind: 'delete', sessionId: r.sessionId, opId: opIdOf('delete', r.sessionId, next), syncVersion: next, healthUuid: r.healthUuid });
@@ -459,6 +469,7 @@ export function healthProvenanceOf(s: HealthWorkoutSample): HealthActivityProven
     endUtc: s.endUtc,
     avgHeartRate: s.avgHeartRate === null ? null : Math.round(s.avgHeartRate),
     maxHeartRate: s.maxHeartRate === null ? null : Math.round(s.maxHeartRate),
+    ...(s.activeKcal === undefined || s.activeKcal === null ? {} : { activeKcal: Math.round(s.activeKcal) }),
     strength: info.strength,
   };
 }
@@ -605,4 +616,83 @@ export function bodyweightEntries(own: readonly WeightEntry[], health: readonly 
 /** The newest bodyweight (Ben's or Health's), or null. */
 export function latestBodyweight(entries: readonly BodyweightEntry[]): BodyweightEntry | null {
   return entries.at(-1) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Read window (Q6), resting heart rate and sleep (Q8): raw values only, no scores (rule 6)
+
+/** Days each `How far back` choice reads; `all`: everything Health has. */
+export const READ_WINDOW_DAYS: Readonly<Record<HealthReadWindow, number | null>> = { '4w': 28, '8w': 56, '6m': 183, '1y': 365, all: null };
+
+export const READ_WINDOW_WORD: Readonly<Record<HealthReadWindow, string>> = { '4w': '4 weeks', '8w': '8 weeks', '6m': '6 months', '1y': '1 year', all: 'All' };
+
+/** Where a read starts: the window back from now, at least `minDays` (bodyweight reads 2 years at least); 0 for `all`. */
+export function readSinceMs(window: HealthReadWindow, nowMs: number, minDays = 0): number {
+  const days = READ_WINDOW_DAYS[window];
+  return days === null ? 0 : nowMs - Math.max(days, minDays) * 86_400_000;
+}
+
+/** One value a day, with the source that recorded it (shown as data). */
+export interface HealthDailyValue {
+  date: string;
+  value: number;
+  source: string;
+}
+
+/** Resting heart rate, one a day (the day's latest), rounded bpm, oldest first. */
+export function restingHeartRateDays(samples: readonly HealthRestingHrSample[]): HealthDailyValue[] {
+  const byDay = new Map<string, HealthRestingHrSample>();
+  for (const s of samples) {
+    const date = localDateOf(toMs(s.atUtc), s.tz);
+    const have = byDay.get(date);
+    if (have === undefined || have.atUtc < s.atUtc) byDay.set(date, s);
+  }
+  return [...byDay.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([date, s]) => ({ date, value: Math.round(s.bpm), source: healthSourceText(s.sourceName) }));
+}
+
+const ASLEEP: ReadonlySet<string> = new Set(['asleep', 'core', 'deep', 'rem']);
+
+/**
+ * Minutes asleep per night (the local date it ended), oldest first. Only asleep stages count; overlapping
+ * segments of one source count once; with two sources (watch and phone) the night is the source with the most
+ * sleep that night, never the two added together.
+ */
+export function sleepNights(samples: readonly HealthSleepSample[]): HealthDailyValue[] {
+  const groups = new Map<string, { date: string; source: string; spans: [number, number][] }>();
+  for (const s of samples) {
+    if (!ASLEEP.has(s.stage)) continue;
+    const start = toMs(s.startUtc);
+    const end = toMs(s.endUtc);
+    if (!(end > start)) continue;
+    const date = localDateOf(end, s.tz);
+    const key = `${date}|${s.sourceBundleId}`;
+    const g = groups.get(key) ?? { date, source: healthSourceText(s.sourceName), spans: [] };
+    g.spans.push([start, end]);
+    groups.set(key, g);
+  }
+  const best = new Map<string, HealthDailyValue>();
+  for (const g of groups.values()) {
+    const spans = [...g.spans].sort((a, b) => a[0] - b[0]);
+    let total = 0;
+    let cur: [number, number] | null = null;
+    for (const sp of spans) {
+      if (cur !== null && sp[0] <= cur[1]) cur[1] = Math.max(cur[1], sp[1]);
+      else {
+        if (cur !== null) total += cur[1] - cur[0];
+        cur = [sp[0], sp[1]];
+      }
+    }
+    if (cur !== null) total += cur[1] - cur[0];
+    const minutes = Math.round(total / 60_000);
+    const have = best.get(g.date);
+    if (have === undefined || have.value < minutes) best.set(g.date, { date: g.date, value: minutes, source: g.source });
+  }
+  return [...best.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/** `7 h 20 min` asleep. */
+export function sleepText(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h === 0 ? `${String(m)}${NBSP}min` : m === 0 ? `${String(h)}${NBSP}h` : `${String(h)}${NBSP}h ${String(m)}${NBSP}min`;
 }

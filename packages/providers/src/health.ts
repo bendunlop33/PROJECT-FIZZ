@@ -7,7 +7,7 @@
  * only (rule 8).
  */
 
-export type HealthType = 'workout' | 'bodyMass' | 'heartRate' | 'distanceWalkingRunning' | 'distanceCycling' | 'distanceSwimming';
+export type HealthType = 'workout' | 'bodyMass' | 'heartRate' | 'activeEnergyBurned' | 'restingHeartRate' | 'sleepAnalysis' | 'distanceWalkingRunning' | 'distanceCycling' | 'distanceSwimming';
 
 export interface HealthNativeCapability {
   status: 'available' | 'unsupported' | 'missing_entitlement' | 'unknown';
@@ -23,6 +23,8 @@ export interface HealthNativeWorkout {
   distanceM: number | null;
   avgHeartRate: number | null;
   maxHeartRate: number | null;
+  /** Active energy for the workout (kcal), as its source recorded it; null when none. */
+  activeKcal?: number | null;
   sourceName: string;
   sourceBundleId: string;
   externalId: string | null;
@@ -33,6 +35,25 @@ export interface HealthNativeBodyMass {
   uuid: string;
   kg: number;
   atMs: number;
+  sourceName: string;
+  sourceBundleId: string;
+}
+
+/** (Q8) A resting heart rate sample. */
+export interface HealthNativeRestingHr {
+  uuid: string;
+  bpm: number;
+  atMs: number;
+  sourceName: string;
+  sourceBundleId: string;
+}
+
+/** (Q8) A sleep segment: `value` is `HKCategoryValueSleepAnalysis` (0 in bed, 1 asleep, 2 awake, 3 core, 4 deep, 5 REM). */
+export interface HealthNativeSleep {
+  uuid: string;
+  value: number;
+  startMs: number;
+  endMs: number;
   sourceName: string;
   sourceBundleId: string;
 }
@@ -60,6 +81,8 @@ export interface HealthPort {
   deleteAllOwnWorkouts(): Promise<number>;
   readWorkouts(sinceMs: number, untilMs: number, heartRate: boolean): Promise<HealthNativeWorkout[]>;
   readBodyMass(sinceMs: number): Promise<HealthNativeBodyMass[]>;
+  readRestingHeartRate(sinceMs: number): Promise<HealthNativeRestingHr[]>;
+  readSleep(sinceMs: number): Promise<HealthNativeSleep[]>;
 }
 
 /**
@@ -136,6 +159,10 @@ export function workoutSamplesFrom(rows: readonly HealthNativeWorkout[], ownBund
       distanceM: distance !== null && distance >= 0 && distance <= 10_000_000 ? distance : null,
       avgHeartRate: hr(finite(r.avgHeartRate)),
       maxHeartRate: hr(finite(r.maxHeartRate)),
+      activeKcal: (() => {
+        const k = finite(r.activeKcal);
+        return k !== null && k >= 0 && k <= 20_000 ? k : null;
+      })(),
       sourceName: cleanText(r.sourceName, 60),
       sourceBundleId: cleanText(r.sourceBundleId, 200),
       externalId: r.externalId === null ? null : cleanText(r.externalId, 200) || null,
@@ -153,6 +180,35 @@ export function weightSamplesFrom(rows: readonly HealthNativeBodyMass[], ownBund
     const at = finite(r.atMs);
     if (!UUID.test(uuid) || kg === null || kg <= 0 || kg > 700 || at === null || isOwn(r.sourceBundleId, ownBundleId)) continue;
     out.push({ uuid, kg: Math.round(kg * 1000) / 1000, atUtc: iso(at), tz, sourceName: cleanText(r.sourceName, 60), sourceBundleId: cleanText(r.sourceBundleId, 200) });
+  }
+  return out;
+}
+
+/** (Q8) Resting heart rates, raw (15–300 bpm), the app's own left out. */
+export function restingHrSamplesFrom(rows: readonly HealthNativeRestingHr[], ownBundleId: string, tz: string) {
+  const out = [];
+  for (const r of rows) {
+    const uuid = String(r.uuid).toLowerCase();
+    const bpm = finite(r.bpm);
+    const at = finite(r.atMs);
+    if (!UUID.test(uuid) || bpm === null || bpm < 15 || bpm > 300 || at === null || isOwn(r.sourceBundleId, ownBundleId)) continue;
+    out.push({ uuid, bpm, atUtc: iso(at), tz, sourceName: cleanText(r.sourceName, 60), sourceBundleId: cleanText(r.sourceBundleId, 200) });
+  }
+  return out;
+}
+
+const SLEEP_STAGE = ['in_bed', 'asleep', 'awake', 'core', 'deep', 'rem'] as const;
+
+/** (Q8) Sleep segments with their stage; unknown stages and segments over 24 h left out. */
+export function sleepSamplesFrom(rows: readonly HealthNativeSleep[], ownBundleId: string, tz: string) {
+  const out = [];
+  for (const r of rows) {
+    const uuid = String(r.uuid).toLowerCase();
+    const start = finite(r.startMs);
+    const end = finite(r.endMs);
+    const stage = SLEEP_STAGE[Math.round(finite(r.value) ?? -1)];
+    if (!UUID.test(uuid) || stage === undefined || start === null || end === null || !(end > start) || end - start > 86_400_000 || isOwn(r.sourceBundleId, ownBundleId)) continue;
+    out.push({ uuid, stage, startUtc: iso(start), endUtc: iso(end), tz, sourceName: cleanText(r.sourceName, 60), sourceBundleId: cleanText(r.sourceBundleId, 200) });
   }
   return out;
 }
