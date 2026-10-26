@@ -139,6 +139,8 @@ describe('the round page source (Ben, 26 Oct)', () => {
     expect(table).not.toContain('fitRoundBoxes');
     expect(table).not.toContain('<Fade');
     expect(page).toContain('revealOffset(');
+    // It moves on its own only on a log, an untick or a round change, never on another re-render (a timer, a draft).
+    expect(page).toContain('}, [props.positionKey, flush]);');
   });
 
   it('set rows are memoised with stable callbacks; a tick never redraws them', () => {

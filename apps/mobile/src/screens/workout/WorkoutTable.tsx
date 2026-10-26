@@ -174,10 +174,12 @@ export function RoundPage(props: RoundPageProps) {
     }
   }, [reveal]);
 
-  // A log, an untick or a round change: the current set comes into view if it's off-screen; never while typing.
+  // A log, an untick or a round change (`positionKey`), and only then: the current set comes into view if it's
+  // off-screen; never while typing. Other re-renders (a draft, a timer, a minute's pain check) never move the page,
+  // so a look at another exercise isn't pulled back.
   useEffect(() => {
-    if (props.editingSetId !== null) return;
-    const id = revealSetId(round);
+    if (latest.current.editingSetId !== null) return;
+    const id = revealSetId(latest.current.round);
     if (id === null) return;
     // The first placement in a round is a jump; later ones (a log, an untick) move gently, with the motion setting.
     pending.current = { setId: id, context: true, jump: !placed.current };
@@ -186,7 +188,7 @@ export function RoundPage(props: RoundPageProps) {
     return () => {
       cancelAnimationFrame(t);
     };
-  }, [props.positionKey, props.editingSetId, round, flush]);
+  }, [props.positionKey, flush]);
 
   // `＋ Set` (Ben, 20 Oct): the new row comes into view and flashes once it's laid out.
   useEffect(() => {
