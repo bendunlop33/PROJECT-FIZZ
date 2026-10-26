@@ -86,6 +86,7 @@ import {
   buildGymSwitchProposal,
   gymRouteIds,
   doneExerciseNames,
+  feedWorkoutTitle,
   changeGymCommand,
   currentGymEquipment,
   equipmentOfRow,
@@ -3819,6 +3820,32 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
+  /** Each gym of a workout's route by name, into `gyms` (read once per gym). */
+  async function gymNames(a: HistoryLike, gyms: Map<string, string>): Promise<void> {
+    for (const g of gymRouteIds(a.session)) if (!gyms.has(g)) gyms.set(g, (await repos().gyms.get(g).catch(() => null))?.name ?? 'Gym');
+  }
+
+  /** One past workout as a list row, its gyms already in `gyms`. */
+  function describeAs(a: HistoryLike, gyms: ReadonlyMap<string, string>, title: string): RepeatCandidate {
+    const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
+    // A workout that switched gym is listed as `Main Gym → Hotel · Lisbon` (gym-switch check 24).
+    const route = gymRouteIds(a.session);
+    return {
+      sessionId: a.session.id,
+      version: a.session.version,
+      title,
+      startedAtUtc: a.session.startedAt.utc,
+      tz: a.session.startedAt.tz,
+      localDate: a.session.localDate ?? null,
+      source: a.session.source,
+      gymId: a.session.gymId,
+      gymName: route.length === 0 ? 'Gym not recorded' : route.map((g) => gyms.get(g) ?? 'Gym').join(' → '),
+      // An exercise done at two gyms is listed once (review B1).
+      exerciseNames: doneExerciseNames(a),
+      sets: done.length,
+    };
+  }
+
   const repeat = {
     /**
      * `Start from a past workout`: the newest `limit` finished workouts with
@@ -3858,26 +3885,25 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * One past workout as a list row (Past workouts, Recently deleted):
      * title, gym route, done exercises and set count. `gyms` caches names.
      */
-    async describe(a: SessionAggregate, gyms: Map<string, string> = new Map()): Promise<RepeatCandidate> {
-      const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
-      // A workout that switched gym is listed as `Main Gym → Hotel · Lisbon` (gym-switch check 24).
-      const route = gymRouteIds(a.session);
-      for (const g of route) if (!gyms.has(g)) gyms.set(g, (await repos().gyms.get(g).catch(() => null))?.name ?? 'Gym');
-      return {
-        sessionId: a.session.id,
-        version: a.session.version,
-        // A test session with no exercise at all is recognisable in Past workouts' delete list (delete-workouts §2.3).
-        title: storedName(a) ?? (liveExercises(a.exercises).length === 0 ? EMPTY_WORKOUT_TITLE : (await titleFor(liveExercises(a.exercises).map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title),
-        startedAtUtc: a.session.startedAt.utc,
-        tz: a.session.startedAt.tz,
-        localDate: a.session.localDate ?? null,
-        source: a.session.source,
-        gymId: a.session.gymId,
-        gymName: route.length === 0 ? 'Gym not recorded' : route.map((g) => gyms.get(g) ?? 'Gym').join(' → '),
-        // An exercise done at two gyms is listed once (review B1).
-        exerciseNames: doneExerciseNames(a),
-        sets: done.length,
-      };
+    async describe(a: HistoryLike, gyms: Map<string, string> = new Map()): Promise<RepeatCandidate> {
+      await gymNames(a, gyms);
+      // A test session with no exercise at all is recognisable in Past workouts' delete list (delete-workouts §2.3).
+      const title = storedName(a) ?? (liveExercises(a.exercises).length === 0 ? EMPTY_WORKOUT_TITLE : (await titleFor(liveExercises(a.exercises).map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title);
+      return describeAs(a, gyms, title);
+    },
+
+    /**
+     * (Ben, 26 Oct) `describe` for many workouts (History's page): the exercises read once and each gym once, so no
+     * read per row. The same rows `describe` gives.
+     */
+    async describeMany(ws: readonly HistoryLike[], gyms: Map<string, string> = new Map()): Promise<RepeatCandidate[]> {
+      const byId = new Map((await repos().exercises.list().catch(() => [] as Exercise[])).map((e) => [e.id, e]));
+      const out: RepeatCandidate[] = [];
+      for (const a of ws) {
+        await gymNames(a, gyms);
+        out.push(describeAs(a, gyms, feedWorkoutTitle(a, (id) => byId.get(id) ?? null)));
+      }
+      return out;
     },
 
     /** `describe` by ID (an imported workout's view, delete-workouts §2.1); null if it isn't stored or can't be read. */

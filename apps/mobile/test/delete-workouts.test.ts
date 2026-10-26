@@ -454,6 +454,7 @@ describe('screen decisions as view helpers (review r3 N3, N5, N6)', () => {
       now: () => ({ utc: '2026-10-10T07:00:00.000Z', tz: TZ }),
       profile: () => Promise.resolve({ id: 'owner' } as never),
       describe: () => Promise.reject(new Error('unused')),
+      describeMany: () => Promise.reject(new Error('unused')),
       activeWorkout: () => Promise.resolve(null),
     });
     expect(await failing.recentlyDeletedCount()).toBeNull();
