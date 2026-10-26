@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
-import { Keyboard, LayoutAnimation, ScrollView, TextInput, View, type LayoutChangeEvent, type ScrollViewProps, type StyleProp, type ViewStyle } from 'react-native';
+import { Keyboard, LayoutAnimation, ScrollView, TextInput, View, type KeyboardEvent, type LayoutChangeEvent, type ScrollViewProps, type StyleProp, type ViewStyle } from 'react-native';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 
 import { KEYBOARD_CLOSED, keyboardAnimationMs, keyboardInset, revealScrollY, watchKeyboard, type KeyboardState } from './keyboard-state';
@@ -52,11 +52,12 @@ export function useKeyboardInset(bottomGap = 0): number {
       if (ms !== null) LayoutAnimation.configureNext({ duration: ms, update: { duration: ms, type: LayoutAnimation.Types.keyboard } });
       setHeight(h);
     };
-    const shown = Keyboard.addListener('keyboardWillShow', (e) => {
-      move(Math.max(0, e.endCoordinates.height), e.duration);
+    // Events can arrive without coordinates (Prefer Cross-Fade Transitions): fall back to the keyboard's metrics.
+    const shown = Keyboard.addListener('keyboardWillShow', (e: KeyboardEvent | undefined) => {
+      move(Math.max(0, e?.endCoordinates.height || (Keyboard.metrics()?.height ?? 0)), e?.duration);
     });
-    const hidden = Keyboard.addListener('keyboardWillHide', (e) => {
-      move(0, e.duration);
+    const hidden = Keyboard.addListener('keyboardWillHide', (e: KeyboardEvent | undefined) => {
+      move(0, e?.duration);
     });
     // An autoFocus field can raise the keyboard before this subscribes: catch up once.
     setHeight(current().height);
