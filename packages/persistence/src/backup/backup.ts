@@ -8,7 +8,7 @@ import { ident, insert, rowInHistory } from '../sql';
 import type { Store } from '../store';
 import { finishedWorkoutsDigest } from './coverage';
 import { writeStable, stableHash } from './serialise';
-import { isDerivedTable } from '../history-summaries';
+import { isUnbackedTable } from '../local-tables';
 import { Sha256Stream } from './sha256';
 import { noYield, type Slicer } from './slice';
 
@@ -101,13 +101,14 @@ function checksumOf(file: Omit<BackupFile, 'checksum'>, slice: Slicer): Promise<
 
 /**
  * Tables at this database's schema version, by name, that a backup holds: every table but the derived ones
- * (ADR 0032's history summaries), which are rebuilt from the workouts when a backup is loaded.
+ * (ADR 0032's history summaries), which are rebuilt from the workouts when a backup is loaded, and the ones local
+ * to this install (ADR 0035's Apple Health reads and switches), which are read from Health again.
  */
 async function tableNames(q: SqlExecutor): Promise<string[]> {
   const rows = await q.getAll<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
   );
-  return rows.map((r) => r.name).filter((name) => !isDerivedTable(name));
+  return rows.map((r) => r.name).filter((name) => !isUnbackedTable(name));
 }
 
 async function tableInfo(q: SqlExecutor, table: string): Promise<{ columns: string[]; key: string[] }> {

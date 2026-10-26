@@ -4,7 +4,7 @@ import { exportTables } from './backup/backup';
 import { noYield, type Slicer } from './backup/slice';
 import { readUserVersion } from './migrations';
 import { inHistorySql, rowInHistory } from './sql';
-import { isDerivedTable } from './history-summaries';
+import { isUnbackedTable } from './local-tables';
 
 /**
  * The two data domains (CLAUDE.md rule 10, design-system §7.2,
@@ -79,6 +79,12 @@ export const YOUR_DATA_TABLES = [
   // backed up (`DERIVED_TABLES`); a database built from Your data rebuilds them on open.
   'history_summaries',
   'history_summary_exercises',
+  // (Ben, 27 Oct, migration 38; ADR 0035) Apple Health: what the app wrote there and Ben's links (backed up), and
+  // what it read and the switches (local to this install, `LOCAL_ONLY_TABLES`: not backed up, gone with Delete my data).
+  'health_writes',
+  'health_links',
+  'health_samples',
+  'health_settings',
 ] as const;
 
 /** Tables whose every row is Coaching knowledge. */
@@ -191,7 +197,7 @@ export async function countDomainsIn(q: SqlExecutor): Promise<DomainCounts> {
   const known: Record<string, number> = {};
   for (const table of await userTables(q)) {
     // (ADR 0032) Derived tables aren't records: they're rebuilt from the workouts, as exports and backups leave them out.
-    if (isDerivedTable(table)) continue;
+    if (isUnbackedTable(table)) continue;
     const quoted = `"${table.replaceAll('"', '""')}"`;
     if ((YOUR_DATA_TABLES as readonly string[]).includes(table)) mine[table] = await count(`SELECT COUNT(*) AS n FROM ${quoted}`);
     else if ((KNOWLEDGE_TABLES as readonly string[]).includes(table)) known[table] = await count(`SELECT COUNT(*) AS n FROM ${quoted}`);

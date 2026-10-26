@@ -3,6 +3,7 @@ import type { ActivityChange, WeekPlanChange } from '@fizz/domain';
 import type { Database } from './database';
 import { decodeDocument, DocumentRepository, erase, listDocuments, ROUTINE_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
+import { activitiesWithHealthIn } from './health';
 
 /**
  * (Ben, 20 Oct) Activities (runs, rides, swims, sport) and this week's
@@ -48,6 +49,8 @@ export async function saveActivityChangeIn(tx: SqlExecutor, ownerId: string, c: 
       return { status: 'invalid', reason: c.reason };
     case 'write': {
       if (c.next.ownerId !== ownerId) throw new Error('Activity owner differs from the store owner');
+      // Health's activities are built when listed, never stored (ADR 0035).
+      if (c.next.source === 'health') return { status: 'invalid', reason: 'Read from Apple Health' };
       if (c.expectedVersion === null) {
         // A retried add with the same ID: the first one stands.
         const have = await getActivityIn(tx, c.next.id);
@@ -64,8 +67,21 @@ export class SqliteActivities extends DocumentRepository<Activity> {
     super(db, ACTIVITY_SPEC);
   }
 
-  /** Live (not deleted) activities dated in [`from`, `to`) (local dates). */
+  /**
+   * Live (not deleted) activities dated in [`from`, `to`) (local dates), with the workouts read from Apple Health
+   * (Ben, 27 Oct; ADR 0035): read-only, `source: 'health'`, never the app's own writes or linked ones, paired with
+   * Ben's where they match (`activitiesWithHealth`). Every reader (Today, the week, the run rule, the coach,
+   * reviews, the calendar) sees them. Edits go through `change`, which only finds Ben's own.
+   */
   listBetween(ownerId: string, from: string, to: string): Promise<Activity[]> {
+    return this.db.read(async (q) => {
+      const own = await listDocuments(q, ACTIVITY_SPEC, 'owner_id = ? AND deleted = 0 AND local_date >= ? AND local_date < ?', [ownerId, from, to]);
+      return activitiesWithHealthIn(q, ownerId, own, from, to);
+    });
+  }
+
+  /** Ben's own live activities only (no Health ones), dated in [`from`, `to`). */
+  listOwnBetween(ownerId: string, from: string, to: string): Promise<Activity[]> {
     return this.listWhere('owner_id = ? AND deleted = 0 AND local_date >= ? AND local_date < ?', [ownerId, from, to]);
   }
 

@@ -56,9 +56,17 @@ export function beforeSchema31(a: SessionAggregate): SessionAggregate {
   return { ...a, restTimer };
 }
 
-/** A backup's tables as a schema-36 build wrote them: no `sessions.past_log` or `timing_audit.shift_ms` (migration 37, Ben 25 Oct). */
-export function withoutSchema37<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+/** A backup's tables as a schema-37 build wrote them: no Apple Health writes or links (migration 38, Ben 27 Oct). */
+export function withoutSchema38<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
   const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  delete out.health_writes;
+  delete out.health_links;
+  return out as T;
+}
+
+/** A backup's tables as a schema-36 build wrote them: no `sessions.past_log` or `timing_audit.shift_ms` (migration 37, Ben 25 Oct), nor later tables. */
+export function withoutSchema37<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+  const out: Record<string, Record<string, unknown>[]> = withoutSchema38({ ...tables });
   if (out.sessions) {
     out.sessions = out.sessions.map((row) => {
       const copy = { ...row };
