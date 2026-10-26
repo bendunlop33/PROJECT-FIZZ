@@ -751,3 +751,10 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **Performance:** Recent reads nothing new for workouts (Today's stored-summary window); one activities read serves the strip and Recent. History reads summaries and activities in batched range reads, never a read per row.
 - **Health-ready:** the feed reads activities with a `source` and an optional `linkedSessionId`; a Health workout linked to a gym workout will show once, as the workout. Not built for Health.
 - **Open for Ben:** whether a past planned activity never marked done should show in History as `Planned`; the Library link wording (`All history ›`). Not yet run on Ben's iPhone.
+
+## 2026-10-26: Workout table with PREVIOUS, RIR replaces RPE, one scroll per round (Ben, 26 Oct)
+
+- **Decisions (Ben, 26 Oct):** the active table reads `SET | PREVIOUS | KG (EACH) | REPS | RIR | ✓` (approved from the "Workout Table Layout" mock); the title row keeps only the muscles line (the `6–10 reps @ 9` line goes); `Adjust` moves into `⋯`; RIR (reps in reserve) replaces RPE everywhere Ben sees effort; scrolling should be smoother with extra sets.
+- **Built:** PREVIOUS uses the one last-time rule (`lastTimeMatch`), tap copies into a not-done row; RIR cell shows the target dimmed, then what's logged; RIR can be entered before logging (kept in the set draft). Stored effort stays RPE (RIR = 10 − RPE), so progression is unchanged; the coach is told to write RIR and its numbers check accepts either form.
+- **Supersedes (20 Oct):** each exercise's sets scrolling in their own box and the round always fitting one screen. Each round page is now one scroll view; it moves on its own only after a log, untick or round change. Ben to confirm on device.
+- **Open:** Your workout and the saved-workout editor keep their planning tables (RIR wording only). Device feel unverified. Spec: `docs/design/workout-table-v3.md` §0.
