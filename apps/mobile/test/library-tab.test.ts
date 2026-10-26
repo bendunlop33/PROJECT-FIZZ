@@ -1,5 +1,5 @@
 import { StackRouter, type ParamListBase, type StackNavigationState } from '@react-navigation/routers';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -165,8 +165,8 @@ describe('navigation (EL10)', () => {
 
 describe('source checks (EL-B16, EL-B24, rules 1 and 2)', () => {
   it('every creation path sends the Sets count', () => {
-    expect(code(read('screens/workout/ExercisePickerScreen.tsx'))).toMatch(/shape: \{ workingSets: sets \}/);
-    expect(code(read('screens/workout/ExercisePickerScreen.tsx'))).toMatch(/<SetCountBar /);
+    // (Review 26 Oct #2) The old exercise picker is gone: every live-workout Add is the shared Swap / Add sheet.
+    expect(existsSync(join(SRC, 'screens/workout/ExercisePickerScreen.tsx'))).toBe(false);
     // (Ben, 23 Oct: one editor) The workout editor adds with the exercise's default shape (3 sets), as Your workout does;
     // the pop-up's `＋ Set` / delete change the count.
     const editor = code(read('screens/builder/EditWorkoutScreen.tsx'));

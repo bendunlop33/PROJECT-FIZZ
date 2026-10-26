@@ -556,6 +556,9 @@ export function EditWorkoutScreen() {
           view: pickerView,
           query: picker.query,
           onQuery: picker.setQuery,
+          index: picker.index,
+          equipment: picker.equipment,
+          onEquipment: picker.setEquipment,
           onChip: (g) => {
             picker.setGroup(g);
             if (swap !== null) void openSwap(swap.slotId, g === null ? { fresh: false } : { group: g, fresh: false });

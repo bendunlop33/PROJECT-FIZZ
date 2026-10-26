@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Exercise } from '@fizz/schemas';
 
-import { buildExercisePickerView, inPickerScope, notHereLine, pickerConfirm, type PickerEntry, type PickerIndex } from '../src/index';
+import { buildExercisePickerView, inPickerScope, notHereLine, pickerConfirm, PICKER_RECENT, suggestionKept, type PickerEntry, type PickerIndex } from '../src/index';
 import { assisted, barbell, dumbbells, exercise, GYM, id } from './fixtures';
 
 /**
@@ -147,5 +147,44 @@ describe('the full catalogue is reachable', () => {
     const v = buildExercisePickerView({ index: INDEX, query: '', group: null, exclude: [], suggested: [] });
     const listed = new Set(v.sections.flatMap((s) => s.parts.flatMap((p) => p.rows.map((r) => r.exerciseId))));
     expect(listed.size).toBe(ALL.length);
+  });
+});
+
+describe('(Ben, 26 Oct) Recent and the equipment chips', () => {
+  const withRecent: PickerIndex = { ...INDEX, recent: [CURL.id, BENCH.id, FLY.id, RDL.id] };
+  const recentNames = (v: ReturnType<typeof buildExercisePickerView>) => v.recent.map((r) => r.name);
+
+  it('Recent: newest first, nothing already in the workout, not while searching', () => {
+    const v = buildExercisePickerView({ index: withRecent, query: '', group: null, exclude: [BENCH.id], suggested: [DB_FLY.id, CURL.id] });
+    // A suggested one is still listed in Recent (a shortcut; the suggestions keep their own order).
+    expect(recentNames(v)).toEqual(['Dumbbell curl', 'Cable fly', 'Romanian deadlift']);
+    // The gym's miss keeps its tag there too.
+    expect(v.recent.find((r) => r.name === 'Cable fly')?.notHere).toBe(true);
+    expect(buildExercisePickerView({ index: withRecent, query: 'curl', group: null, exclude: [], suggested: [] }).recent).toEqual([]);
+    expect(buildExercisePickerView({ index: INDEX, query: '', group: null, exclude: [], suggested: [] }).recent).toEqual([]);
+  });
+
+  it('Recent follows the chips and keeps at most 8', () => {
+    expect(recentNames(buildExercisePickerView({ index: withRecent, query: '', group: 'Chest', exclude: [], suggested: [] }))).toEqual(['Bench press', 'Cable fly']);
+    expect(recentNames(buildExercisePickerView({ index: withRecent, query: '', group: null, equipment: 'dumbbells', exclude: [], suggested: [] }))).toEqual(['Dumbbell curl']);
+    const many: PickerIndex = { ...INDEX, recent: ALL.map((e) => e.id) };
+    expect(buildExercisePickerView({ index: many, query: '', group: null, exclude: [], suggested: [] }).recent).toHaveLength(PICKER_RECENT.limit);
+  });
+
+  it('an equipment chip combines with the muscle chip; only kinds in this sheet are offered', () => {
+    const v = buildExercisePickerView({ index: INDEX, query: '', group: 'Chest', equipment: 'dumbbells', exclude: [], suggested: [] });
+    expect(v.sections.flatMap((s) => s.parts.flatMap((p) => p.rows.map((r) => r.name)))).toEqual(['Dumbbell fly']);
+    expect(v.equipmentChips.find((c) => c.filter === 'dumbbells')?.selected).toBe(true);
+    expect(v.equipmentChips.map((c) => c.label)).toEqual(['Barbell', 'Dumbbells', 'Cable / stack', 'Bodyweight', 'Assisted', 'Cardio']);
+    // A search keeps the chip.
+    const found = buildExercisePickerView({ index: INDEX, query: 'fly', group: null, equipment: 'cable_stack', exclude: [], suggested: [] });
+    expect(found.sections.flatMap((s) => s.parts.flatMap((p) => p.rows.map((r) => r.name)))).toEqual(['Cable fly']);
+  });
+
+  it('the chip hides suggestions of another kind and never reorders them', () => {
+    const ranked = [FLY.id, BENCH.id, DB_FLY.id];
+    expect(ranked.filter((x) => suggestionKept(INDEX, x, 'dumbbells'))).toEqual([DB_FLY.id]);
+    expect(ranked.filter((x) => suggestionKept(INDEX, x, null))).toEqual(ranked);
+    expect(suggestionKept(INDEX, 'unknown', 'barbell')).toBe(true);
   });
 });

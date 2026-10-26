@@ -583,17 +583,18 @@ export function WorkoutScreen() {
     };
   }, [services, viewSessionId, focusSetId, focusEquipment]);
 
-  // A new empty workout opens the exercise picker straight away (audit: Start leads to a usable workout).
+  // A new empty workout opens the shared Swap / Add sheet straight away (audit: Start leads to a usable workout; review 26 Oct #2).
   const emptySessionId = view?.phase === 'empty' && view.sessionId ? view.sessionId : null;
+  const openAddRef = useRef<() => void>(() => undefined);
   useEffect(() => {
     if (emptySessionId === null || !firstTime(`auto-picker:${emptySessionId}`)) return;
     const t = setTimeout(() => {
-      navigation.navigate('ExercisePicker', { sessionId: emptySessionId });
+      openAddRef.current();
     }, 450);
     return () => {
       clearTimeout(t);
     };
-  }, [emptySessionId, navigation]);
+  }, [emptySessionId]);
 
   // So does an open `Why?` panel: another active set closes it.
   useEffect(() => {
@@ -746,6 +747,7 @@ export function WorkoutScreen() {
     beforeEdit: () => editDeps.current?.beforeEdit(),
     toast: toastNode,
   });
+  openAddRef.current = workoutEdits.openAdd;
 
   if (loadError !== null && (data === 'loading' || data === null)) {
     return (
@@ -1066,11 +1068,10 @@ export function WorkoutScreen() {
         workoutEdits.remove(ex.sessionExerciseId);
         return true;
       case 'add_exercise':
-        if (v3) workoutEdits.openAdd();
-        else navigation.navigate('ExercisePicker', { sessionId: session.id });
+        workoutEdits.openAdd();
         return true;
       case 'superset_with':
-        navigation.navigate('ExercisePicker', { sessionId: session.id, supersetWith: ex.sessionExerciseId });
+        workoutEdits.openSupersetWith(ex.sessionExerciseId);
         return true;
       case 'notes':
       case 'how_to':
@@ -1893,7 +1894,7 @@ export function WorkoutScreen() {
         return {
           label: 'Add exercise',
           onPress: () => {
-            navigation.navigate('ExercisePicker', { sessionId: session.id });
+            workoutEdits.openAdd();
           },
         };
       case 'finish':
@@ -2490,7 +2491,7 @@ export function WorkoutScreen() {
             label={focus.next?.kind === 'last_set' && !view.openEnded ? 'Last set ·' : 'Then'}
             text="Add exercise"
             onPress={() => {
-              navigation.navigate('ExercisePicker', { sessionId: session.id });
+              workoutEdits.openAdd();
             }}
           />
         )}
@@ -2992,7 +2993,7 @@ export function WorkoutScreen() {
                 <SecondaryButton
                   label="Add exercise"
                   onPress={() => {
-                    navigation.navigate('ExercisePicker', { sessionId: session.id });
+                    workoutEdits.openAdd();
                   }}
                 />
               )}

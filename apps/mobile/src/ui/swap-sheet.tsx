@@ -1,6 +1,6 @@
 import { Alert, ScrollView, View } from 'react-native';
 
-import { PICKER_COPY, pickerConfirm, type BroadMuscleGroup, type PickerRowView, type PickerView } from '@fizz/domain';
+import { PICKER_COPY, pickerConfirm, suggestionKept, type BroadMuscleGroup, type EquipmentFilter, type PickerIndex, type PickerRowView, type PickerView } from '@fizz/domain';
 
 import { useTheme } from '../theme';
 import { TextButton } from './buttons';
@@ -18,6 +18,9 @@ import { Chip } from './workout';
  * `Like …`, `May hurt`). Below: the muscle chips and a search over every exercise (catalogue + Ben's own, the
  * Library's aliases and typos), by broad group like Library › Exercises; the gym's misses last, dimmed,
  * `Not at Main Gym`; `＋ Add your own` at the bottom. A flagged or not-here pick asks first. No estimated max.
+ * (Ben, 26 Oct) `Recent` at the top (what he's done lately), an equipment chip row beside the muscle chips (it
+ * hides suggestions of another kind, never reorders them), and for `Superset with…` the exercises already in the
+ * workout first (`partners`), then everything else.
  */
 export function SwapSheet({
   visible,
@@ -28,6 +31,7 @@ export function SwapSheet({
   onClose,
   onDismissed,
   picker,
+  partners,
 }: {
   visible: boolean;
   title: string;
@@ -48,11 +52,21 @@ export function SwapSheet({
     onChip: (group: BroadMuscleGroup | null) => void;
     /** `＋ Add your own`: the custom-exercise form, the name pre-filled when searching. */
     onAddOwn: (name: string | null) => void;
+    /** (Ben, 26 Oct) The index the view is over (the suggestions' equipment chip), the chip on, and its tap. */
+    index?: PickerIndex | null;
+    equipment?: EquipmentFilter | null;
+    onEquipment?: (filter: EquipmentFilter | null) => void;
   };
+  /** (Ben, 26 Oct) `Superset with…`: the exercises in the workout it can pair with, first; a tap links them. */
+  partners?: { title: string; rows: readonly { key: string; name: string; line: string; onPress: () => void }[] } | null;
 }) {
   const theme = useTheme();
   const view = picker.view;
   const searching = picker.query.trim() !== '';
+  const equipment = picker.equipment ?? null;
+  // An equipment chip hides suggestions of another kind; their order stays as ranked.
+  const shown = sections.map((sec) => ({ ...sec, items: sec.items.filter((it) => suggestionKept(picker.index ?? null, it.exerciseId, equipment)) })).filter((sec) => sec.items.length > 0);
+  const partnerRows = (partners?.rows ?? []).filter((x) => !searching || x.name.toLowerCase().includes(picker.query.trim().toLowerCase()));
   const ask = (c: { title: string; message: string | null; cancel: string; confirm: string } | null, exerciseId: string) => {
     if (c === null) {
       onPick(exerciseId);
@@ -89,12 +103,31 @@ export function SwapSheet({
       <AppText variant="title2" accessibilityRole="header">
         {title}
       </AppText>
-      {!searching && sections.length > 0 ? (
+      {partners != null && partnerRows.length > 0 ? (
+        <View style={{ gap: theme.space['2'] }}>
+          <Eyebrow>{partners.title}</Eyebrow>
+          <Table>
+            {partnerRows.map((x, i) => (
+              <View key={x.key}>
+                {i > 0 ? <Divider /> : null}
+                <ChoiceRow title={x.name} line={x.line} onPress={x.onPress} />
+              </View>
+            ))}
+          </Table>
+        </View>
+      ) : null}
+      {view !== null && view.recent.length > 0 ? (
+        <View style={{ gap: theme.space['2'] }}>
+          <Eyebrow>{PICKER_COPY.recent}</Eyebrow>
+          <Table>{view.recent.map(row)}</Table>
+        </View>
+      ) : null}
+      {!searching && shown.length > 0 ? (
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>{SWAP_SHEET_COPY.suggested}</Eyebrow>
-          {sections.map((sec) => (
+          {shown.map((sec) => (
             <View key={sec.focus} style={{ gap: theme.space['1'] }}>
-              {sections.length > 1 ? (
+              {shown.length > 1 ? (
                 <AppText variant="label" color="text.secondary" accessibilityRole="header">
                   {sec.focus}
                 </AppText>
@@ -133,6 +166,22 @@ export function SwapSheet({
           />
         ))}
       </ScrollView>
+      {/* (Ben, 26 Oct) Equipment beside the muscle chips: at most one on; a second tap turns it off. */}
+      {picker.onEquipment !== undefined && (view?.equipmentChips.length ?? 0) > 1 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" accessibilityLabel="Equipment" style={{ flexGrow: 0, marginHorizontal: -theme.components.screenMargin }} contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
+          {(view?.equipmentChips ?? []).map((c) => (
+            <Chip
+              key={c.filter}
+              label={c.label}
+              selected={c.selected}
+              size="min"
+              onPress={() => {
+                picker.onEquipment?.(c.selected ? null : c.filter);
+              }}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
       <TextField accessibilityLabel={PICKER_COPY.search} placeholder={PICKER_COPY.search} value={picker.query} onChangeText={picker.onQuery} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
       {view === null ? null : (
         <>

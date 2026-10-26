@@ -21,7 +21,7 @@ describe('root stack at launch (review S5)', () => {
  * Tabs, a stale Summary or a discarded Workout mounted underneath.
  */
 describe('root stack after Finish, Done and Discard (review B1)', () => {
-  const routeNames = ['Tabs', 'Workout', 'CheckIn', 'ExercisePicker', 'EditSet', 'Summary', 'AddGym'];
+  const routeNames = ['Tabs', 'Workout', 'CheckIn', 'EditSet', 'Summary', 'AddGym'];
   const router = StackRouter({});
   const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
   type State = StackNavigationState<ParamListBase>;

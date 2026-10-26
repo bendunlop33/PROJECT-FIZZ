@@ -60,12 +60,6 @@ describe('check-in, gym switch, picker, Why? link (2.6–2.9)', () => {
     expect(flat(src)).toContain('workout grow');
     expect(src.match(/theme\.space\['4'\] \+ insets\.bottom/g)?.length).toBe(2);
   });
-  it('the picker: title2 on one line, Cardio beside the search, no bar inset on the keyboard', () => {
-    const src = read('ExercisePickerScreen.tsx');
-    expect(src).toContain('<AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }} numberOfLines={1}>');
-    expect(flat(src)).toMatch(/style=\{\{ flex: 1, minHeight: 48,[^}]*\}\} \/> <Chip label="Cardio"/);
-    expect(src).toContain('paddingBottom: keyboard ? 0 : insets.bottom');
-  });
   it('Why? and Check due are underlined in D; the chevron only where the look uses it', () => {
     const src = read('TargetWhyPanel.tsx');
     expect(src).toContain("style={underline ? { textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] } : undefined}");

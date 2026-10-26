@@ -6,6 +6,7 @@ import {
   pendingSetsOf,
   plannedFromBuilderRows,
   similarLast,
+  supersetPartnerSets,
   type BuilderAdvice,
   type CommandOutcome,
   type TargetExplanation,
@@ -33,7 +34,7 @@ export interface WorkoutEditDeps {
   profile: () => Promise<UserProfile | null>;
   env: BuilderEnvPort;
   workout: {
-    addExercise: (req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string; plan?: { setType: SetType; planned: PlannedSet }[] }) => Promise<CommandOutcome>;
+    addExercise: (req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string; plan?: { setType: SetType; planned: PlannedSet }[]; shape?: { workingSets: number }; supersetWithSessionExerciseId?: string }) => Promise<CommandOutcome>;
     swapExercise: (req: { sessionId: string; sessionExerciseId: string; exerciseId: string; opId: string; builderPlan?: { plan: { setType: SetType; planned: PlannedSet }[]; pin: EquipmentInstance | null } }) => Promise<CommandOutcome & { fromName?: string; toName?: string }>;
     explainTarget: (sessionId: string, setId: string) => Promise<TargetExplanation | null>;
   };
@@ -109,15 +110,26 @@ export function createWorkoutEditService(deps: WorkoutEditDeps) {
       return { group, groups: GROUPS, sections };
     },
 
-    /** `＋ Add exercise` (§7): the builder's 3 sets with its loads on this gym's item; Undo is `undo_op` on `opId`. */
-    async add(sessionId: string, exerciseId: string, opId: string): Promise<CommandOutcome> {
+    /**
+     * `＋ Add exercise` (§7): the builder's 3 sets with its loads on this gym's item; Undo is `undo_op` on `opId`.
+     * (Ben, 26 Oct) `Superset with…` adds it as `supersetWith`'s partner, with as many sets as that one has left.
+     */
+    async add(sessionId: string, exerciseId: string, opId: string, opts: { supersetWith?: string } = {}): Promise<CommandOutcome> {
       const a = await sessionOf(sessionId);
       const got = a === null ? null : await envFor(a, [exerciseId], []);
-      const built = a === null || got === null ? null : builderPlan(a, got.env, exerciseId, 3);
+      const sets = a === null || opts.supersetWith === undefined ? 3 : Math.max(1, supersetPartnerSets(a, opts.supersetWith));
+      const built = a === null || got === null ? null : builderPlan(a, got.env, exerciseId, sets);
       const fallbackItem = got?.env.ctx.loads(exerciseId).equipment ?? null;
       const here = a === null ? [] : currentGymEquipment(a.session);
       const equipmentId = built !== null ? (built.item?.id ?? null) : (here.find((e) => e.id === fallbackItem?.id)?.id ?? null);
-      return deps.workout.addExercise({ sessionId, exerciseId, equipmentId, opId, ...(built === null ? {} : { plan: built.plan }) });
+      return deps.workout.addExercise({
+        sessionId,
+        exerciseId,
+        equipmentId,
+        opId,
+        ...(built === null ? (opts.supersetWith === undefined ? {} : { shape: { workingSets: sets } }) : { plan: built.plan }),
+        ...(opts.supersetWith === undefined ? {} : { supersetWithSessionExerciseId: opts.supersetWith }),
+      });
     },
 
     /** Swap (§7): the builder's loads for the substitute (pending sets only move; done ones stay, rule 2). */
