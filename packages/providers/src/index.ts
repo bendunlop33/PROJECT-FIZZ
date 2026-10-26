@@ -10,3 +10,4 @@ export * from './openai/models';
 export * from './openai/credentials';
 export * from './openai/sign-in-test';
 export * from './openai/connection';
+export * from './health';

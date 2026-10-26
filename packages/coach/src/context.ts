@@ -1,5 +1,5 @@
-import { ageFromBirthYear, buildExecutionOrder, deriveId, latestWeight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
-import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, WorkoutSet } from '@fizz/schemas';
+import { ageFromBirthYear, bodyweightEntries, buildExecutionOrder, deriveId, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
+import type { CheckIn, HealthWeightSample, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
 import type { BuildContextView } from './build';
@@ -217,6 +217,8 @@ export interface TrainingInput {
    * while the Lift targets setting is on. Absent or empty: the coach sees none.
    */
   liftTargets?: readonly LiftTargetCoachView[];
+  /** (Ben, 27 Oct; ADR 0035) Bodyweights read from Apple Health, while `Bodyweight` is on. Ben's own entry wins on his days. */
+  healthWeights?: readonly HealthWeightSample[];
 }
 
 /** What the coach sees of Ben's training details (Your data). Absent keys are not set. */
@@ -226,7 +228,7 @@ export interface TrainingDetailsView {
   gender?: 'male' | 'female';
   heightCm?: number;
   /** The latest dated entry; for bodyweight and assisted exercises. */
-  bodyweight?: { value: number; unit: 'kg' | 'lb'; date: string; use: 'bodyweight, weighted and assisted exercises' };
+  bodyweight?: { value: number; unit: 'kg' | 'lb'; date: string; use: 'bodyweight, weighted and assisted exercises'; /** (ADR 0035) Only when read from Apple Health: its source, as data. */ from?: string };
   liftingExperience?: 'beginner' | 'intermediate' | 'experienced' | 'pro';
   goal?: 'strength' | 'muscle' | 'both';
   daysPerWeek?: number;
@@ -245,7 +247,7 @@ export interface TrainingDetailsView {
 export function trainingDetailsView(t: TrainingInput): { view: TrainingDetailsView; notSet: string[] } {
   const p = t.profile;
   const a = p?.about ?? {};
-  const w = p === null ? null : latestWeight(p.weights);
+  const w = p === null ? null : latestBodyweight(bodyweightEntries(p.weights, t.healthWeights ?? []));
   const split = splitInUse(p);
   const notSet: string[] = [];
   const view: TrainingDetailsView = { sessionMinutes: p?.sessionMinutes ?? 45, split: { kind: split.kind, chosenByBen: p?.split !== undefined, days: [], upNext: null } };
@@ -255,7 +257,7 @@ export function trainingDetailsView(t: TrainingInput): { view: TrainingDetailsVi
   else notSet.push('Gender');
   if (a.heightCm !== undefined) view.heightCm = a.heightCm;
   else notSet.push('Height');
-  if (w !== null) view.bodyweight = { value: w.value, unit: w.unit, date: w.date, use: 'bodyweight, weighted and assisted exercises' };
+  if (w !== null) view.bodyweight = { value: w.value, unit: w.unit, date: w.date, use: 'bodyweight, weighted and assisted exercises', ...(w.from === 'health' ? { from: `Apple Health (${w.sourceName ?? 'Health'})` } : {}) };
   else notSet.push('Bodyweight');
   if (a.experience !== undefined) view.liftingExperience = a.experience;
   else notSet.push('Lifting experience');
