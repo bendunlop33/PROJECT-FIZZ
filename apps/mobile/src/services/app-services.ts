@@ -948,6 +948,7 @@ export function createAppServices(deps: AppServicesDeps) {
     now: deps.now,
     profile: getProfile,
     describe: (a, gyms) => loop.repeat.describe(a, gyms),
+    describeMany: (ws, gyms) => loop.repeat.describeMany(ws, gyms),
     activeWorkout: () => sessions.active(),
   });
 

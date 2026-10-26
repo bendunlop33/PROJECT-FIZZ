@@ -1,4 +1,11 @@
 import {
+  RECENT_DAYS,
+  feedActivityOf,
+  feedWorkoutOf,
+  feedWorkoutTitle,
+  mergeFeed,
+  recentFeed,
+  type FeedItem,
   activePause,
   addDays,
   assembleTodayDraft,
@@ -299,6 +306,8 @@ export interface TodaySessionData {
   /** The long or hard run near today (the clash line). */
   near: LegRunNear | null;
   strip: { workouts: { sessionId: string; localDate: string; title: string }[]; activities: Activity[]; firstUse: boolean };
+  /** (Ben, 26 Oct) Today's Recent: what Ben did in the last 14 days, workouts and activities, newest first, at most 6. */
+  recent: FeedItem[];
   /** Done today (a second session can still be picked). */
   doneToday: boolean;
   /** (§6.1) The pre-session nudge's real signals (finished sessions, today's check-in, logged activities). */
@@ -954,10 +963,21 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       else edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = shown;
     }
 
-    // The strip: 3 back, today, 3 ahead.
-    const acts = await repos()
-      .activities.listBetween(p.id, addDays(today, -3), addDays(today, 4))
+    // The strip (3 back, today, 3 ahead) and Recent (the last 14 days, Ben 26 Oct): one activities read for both.
+    const actsWide = await repos()
+      .activities.listBetween(p.id, addDays(today, -(RECENT_DAYS - 1)), addDays(today, 4))
       .catch(() => [] as Activity[]);
+    const acts = actsWide.filter((a) => a.fields.date >= addDays(today, -3));
+    // (Ben, 26 Oct) Today's Recent: the window's workouts (already read, stored summaries) and done activities, merged.
+    const recentFrom = addDays(today, -(RECENT_DAYS - 1));
+    const titleInfo = (id: string) => exercises.get(id) ?? null;
+    const recent = recentFeed(
+      mergeFeed({
+        workouts: newest.filter((a) => localDateOf(toMs(a.session.startedAt.utc), a.session.startedAt.tz) >= addDays(recentFrom, -1)).map((a) => feedWorkoutOf(a, { title: feedWorkoutTitle(a, titleInfo), nowMs })),
+        activities: actsWide.filter((a) => a.fields.date <= today).map(feedActivityOf),
+      }),
+      today,
+    );
     const stripWorkouts = newest
       .map((a) => ({ sessionId: a.session.id, localDate: localDateOf(toMs(a.session.startedAt.utc), tz), title: titleOf(a.session.routineName) }))
       .filter((w) => w.localDate >= addDays(today, -3) && w.localDate <= today);
@@ -1033,6 +1053,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       carryAnswers,
       near,
       strip: { workouts: stripWorkouts, activities: acts, firstUse: newest.length === 0 && refs.length === 0 && acts.length === 0 },
+      recent,
       doneToday: stripWorkouts.some((w) => w.localDate === today),
       nudgeInput,
       block: block === null ? null : pbBlockLine(block),

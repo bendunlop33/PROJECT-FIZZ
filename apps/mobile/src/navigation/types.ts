@@ -206,9 +206,12 @@ export type RootStackParams = {
    */
   PainFlag: { flagId: string; sessionId?: string; sessionExerciseId?: string };
   AddGym: undefined;
-  /** `Start from a past workout` list. */
-  PastWorkouts: undefined;
-  /** Recently deleted (delete-workouts §2.5): from Past workouts' footer and Data & backup. */
+  /**
+   * (Ben, 26 Oct) History: workouts and activities by week (docs/design/history.md); repeat, select and delete, Save
+   * to Workouts. From Today's `All history ›`, Library › Workouts and Progress › Calendar. Was `PastWorkouts`.
+   */
+  History: undefined;
+  /** Recently deleted (delete-workouts §2.5): from History's footer and Data & backup. */
   RecentlyDeleted: undefined;
   /** Repeat a finished workout (routines.md §2.4). */
   Repeat: { sessionId: string };

@@ -1,4 +1,14 @@
 import {
+  addDays,
+  feedActivityOf,
+  feedWorkoutOf,
+  historyFirstFrom,
+  historyOlderFrom,
+  localMidnightUtcMs,
+  mergeFeed,
+  toIso,
+  type FeedItem,
+  type HistoryWorkout,
   buildDeleteConfirmView,
   goneOnDate,
   isInHistory,
@@ -25,11 +35,27 @@ import type { RepeatCandidate } from './workout-services';
 /** Past workouts loads this many rows at a time; `Show more` loads the next (review r2 B2). */
 export const PAST_PAGE = 30;
 
+const DAY_MS = 86_400_000;
+
 export interface PastWorkoutsPage {
   rows: RepeatCandidate[];
   unreadable: number;
   /** Older workouts exist beyond these rows. */
   more: boolean;
+}
+
+/**
+ * (Ben, 26 Oct) History: what Ben did from `from` (a Monday) to today, workouts and done activities merged, newest
+ * first. `workouts`: each listed workout's row (repeat, select and delete, Save to Workouts). `olderFrom`: where
+ * `Show more` reads from next; null when nothing older exists.
+ */
+export interface HistoryFeed {
+  today: string;
+  from: string;
+  items: FeedItem[];
+  workouts: Readonly<Record<string, RepeatCandidate>>;
+  unreadable: number;
+  olderFrom: string | null;
 }
 
 export interface DeletedWorkoutRow extends RepeatCandidate {
@@ -64,6 +90,8 @@ export interface HistoryServicesContext {
   now: () => ZonedTimestamp;
   profile: () => Promise<UserProfile | null>;
   describe: (a: SessionAggregate, gyms: Map<string, string>) => Promise<RepeatCandidate>;
+  /** `describe` for a page of workouts in one go (exercises and gyms read once). */
+  describeMany: (ws: readonly HistoryWorkout[], gyms: Map<string, string>) => Promise<RepeatCandidate[]>;
   activeWorkout: () => Promise<SessionAggregate | null>;
 }
 
@@ -168,6 +196,46 @@ export function createHistoryServices(ctx: HistoryServicesContext) {
         if (a) rows.push(await ctx.describe(a, gyms));
       }
       return { rows, unreadable, more: ids.length > limit };
+    },
+
+    /**
+     * (Ben, 26 Oct) History: workouts and activities from `from` (a Monday; default: this week and the five before),
+     * newest first. Batched reads only: the workouts' stored summaries in one range read, the activities in one, and
+     * one read each for what is older. A record that can't be read is skipped and counted. A read that fails outright
+     * throws, so the screen shows its error, never an empty history.
+     */
+    async feed(req: { from?: string } = {}): Promise<HistoryFeed> {
+      const p = await ctx.profile();
+      const now = ctx.now();
+      const nowMs = toMs(now.utc);
+      const tz = p?.timezone ?? now.tz;
+      const today = localDateOf(nowMs, tz);
+      const from = req.from ?? historyFirstFrom(today);
+      if (!p) return { today, from, items: [], workouts: {}, unreadable: 0, olderFrom: null };
+      // A day either side of the range: a workout's date is in its own zone. Each is then placed by its own date.
+      const fromUtc = toIso(localMidnightUtcMs(from, tz) - DAY_MS);
+      const { sessions, unreadable } = await repos().sessions.listFinishedBetweenReadable(p.id, fromUtc, toIso(nowMs + DAY_MS));
+      const listed: HistoryWorkout[] = [];
+      let olderInRange: string | null = null;
+      for (const w of sessions) {
+        if (!isInHistory(w.session)) continue;
+        const date = feedWorkoutOf(w, { title: '', nowMs }).localDate;
+        if (date >= from) listed.push(w);
+        else if (olderInRange === null || date > olderInRange) olderInRange = date;
+      }
+      const rows = await ctx.describeMany(listed, new Map());
+      const workouts: Record<string, RepeatCandidate> = {};
+      for (const r of rows) workouts[r.sessionId] = r;
+      const activities = await repos().activities.listBetween(p.id, from, addDays(today, 1));
+      const items = mergeFeed({
+        workouts: listed.map((w) => feedWorkoutOf(w, { title: workouts[w.session.id]?.title ?? 'Workout', nowMs })),
+        activities: activities.map(feedActivityOf),
+      });
+      const olderWorkoutUtc = await repos().sessions.latestInHistoryStartBefore(p.id, fromUtc);
+      const olderActivity = await repos().activities.latestDateBefore(p.id, from);
+      const olderWorkout = olderWorkoutUtc === null ? null : localDateOf(toMs(olderWorkoutUtc), tz);
+      const newestOlder = [olderInRange, olderWorkout, olderActivity].filter((d): d is string => d !== null).sort().at(-1) ?? null;
+      return { today, from, items, workouts, unreadable, olderFrom: historyOlderFrom(from, newestOlder === null ? null : newestOlder < from ? newestOlder : addDays(from, -1)) };
     },
 
     /**

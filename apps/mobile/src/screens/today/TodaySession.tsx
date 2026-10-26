@@ -1,12 +1,12 @@
 import { Fragment, type ReactNode } from 'react';
 import { Pressable, Switch, View, useWindowDimensions } from 'react-native';
 
-import { TODAY_V2_COPY, type StripCell, type StripItem, type TodayBreakdownRow, type TodayDay } from '@fizz/domain';
+import { HISTORY_COPY, TODAY_V2_COPY, type FeedItem, type StripCell, type StripItem, type TodayBreakdownRow, type TodayDay } from '@fizz/domain';
 
 import type { TodayOptionChange, TodayOptions } from '../../builder/builder-service';
 import type { TodayCardView } from '../../services/today-session';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Icon, PrimaryButton, SecondaryButton, TextButton } from '../../ui';
+import { AppText, BottomCard, Group, Icon, PrimaryButton, SecondaryButton, SectionHeader, TextButton } from '../../ui';
 import { TimeNoteRow } from '../../ui/time-stepper';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { STRIP_LABEL_FIT, STRIP_LAYOUT, stripPillStyle } from '../../today/strip-style';
@@ -193,6 +193,53 @@ export function DaySheet({ cell, onClose, onWorkout, onActivity }: { cell: Strip
         </View>
       )}
     </BottomCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Recent (Ben, 26 Oct; docs/design/history.md §2)
+
+/**
+ * What Ben did in the last 14 days, newest first, at most 6 rows (`todaySession` picks them), then `All history ›`.
+ * One compact row each: `Sun 25 Oct  Push A  52 min · 16 sets ›`; at accessibility sizes the value wraps under the
+ * name. A workout opens its Summary, an activity its sheet. Nothing done: the caller shows no section.
+ */
+export function RecentSection({ items, onItem, onAll }: { items: readonly FeedItem[]; onItem: (item: FeedItem) => void; onAll: () => void }) {
+  const theme = useTheme();
+  const ax = useAx();
+  return (
+    <View style={{ gap: theme.space['2'] }}>
+      <SectionHeader title={HISTORY_COPY.recent} />
+      <Group>
+        {items.map((it) => (
+          <Pressable
+            key={it.key}
+            accessibilityRole="button"
+            accessibilityLabel={it.accessibilityLabel}
+            onPress={() => {
+              onItem(it);
+            }}
+            style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+          >
+            <View style={{ flex: 1, flexDirection: ax ? 'column' : 'row', alignItems: ax ? 'flex-start' : 'baseline', gap: ax ? 2 : theme.space['3'] }}>
+              <AppText variant="callout" color="text.secondary" numeric style={ax ? undefined : { minWidth: 76 }}>
+                {it.when}
+              </AppText>
+              <AppText variant="body" numberOfLines={ax ? undefined : 1} style={ax ? undefined : { flex: 1 }}>
+                {it.title}
+              </AppText>
+              <AppText variant="callout" color="text.secondary" numeric>
+                {it.value}
+              </AppText>
+            </View>
+            <Icon name="chevron.right" size={14} color="text.tertiary" />
+          </Pressable>
+        ))}
+      </Group>
+      <View style={{ alignSelf: 'flex-start' }}>
+        <TextButton label={HISTORY_COPY.allHistory} accessibilityLabel={HISTORY_COPY.allHistoryLabel} tone="secondary" onPress={onAll} />
+      </View>
+    </View>
   );
 }
 

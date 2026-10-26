@@ -28,7 +28,7 @@ import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 import { GymChip } from './workout/GymSwitch';
-import { DayControl, DaySheet, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
+import { DayControl, DaySheet, RecentSection, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
 import { LogPastWorkoutSheet } from './workout/LogPastWorkoutSheet';
 import { builderApplyOpId, type BuilderCoachReach } from '@fizz/coach';
 import { setTodaySetupDay } from '../builder/coach-ports';
@@ -50,7 +50,8 @@ import { createOnDeviceSpeech } from '../voice/on-device-speech';
  * The card's workout comes from `todaySession` (the builder rules); this screen only lays it out and
  * keeps the selection. Picking a day, chip or control writes nothing; Start commits the card as
  * today's builder draft and starts it (check-in sheet when due). Supersedes today.md's Up next card,
- * alternatives, Recent and Ask pill (§2.0.9, §7).
+ * alternatives, Recent and Ask pill (§2.0.9, §7). (Ben, 26 Oct) `Recent` is back under the session: the last 14
+ * days of workouts and activities, then `All history ›` (history.md §2).
  */
 
 /** An empty workout, or (No plan) the app's Up next: its routine or the last workout's next session (review today-fix-21oct B1). */
@@ -1030,6 +1031,19 @@ export function TodayScreen() {
               grow
             />
           </View>
+        ) : null}
+        {/* (Ben, 26 Oct) Recent: the last 14 days of what Ben did, then All history ›. Nothing done: no section. */}
+        {!openWorkout && session !== null && session.recent.length > 0 ? (
+          <RecentSection
+            items={session.recent}
+            onItem={(it) => {
+              if (it.kind === 'workout') navigation.navigate('Summary', { sessionId: it.sessionId, back: true });
+              else void openActivity(it.activityId);
+            }}
+            onAll={() => {
+              navigation.navigate('History');
+            }}
+          />
         ) : null}
       </ScrollView>
       <ActivitySheet

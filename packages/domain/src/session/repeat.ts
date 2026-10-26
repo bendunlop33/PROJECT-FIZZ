@@ -474,7 +474,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
  * The names of a workout's exercises with at least one done set, in workout order,
  * once per exercise: an exercise split across gyms (GS6) is listed once (review B1).
  */
-export function doneExerciseNames(state: SessionAggregate): string[] {
+export function doneExerciseNames(state: Pick<SessionAggregate, 'exercises' | 'sets'>): string[] {
   const doneRows = new Set(state.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null).map((s) => s.sessionExerciseId));
   const seen = new Set<string>();
   const names: string[] = [];

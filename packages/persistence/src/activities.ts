@@ -69,6 +69,12 @@ export class SqliteActivities extends DocumentRepository<Activity> {
     return this.listWhere('owner_id = ? AND deleted = 0 AND local_date >= ? AND local_date < ?', [ownerId, from, to]);
   }
 
+  /** (Ben, 26 Oct) The newest local date of a live activity before `before`, or null: History's `Show more`. */
+  async latestDateBefore(ownerId: string, before: string): Promise<string | null> {
+    const row = await this.db.read((q) => q.getFirst<{ d: string | null }>('SELECT max(local_date) AS d FROM activities WHERE owner_id = ? AND deleted = 0 AND local_date < ?', [ownerId, before]));
+    return row?.d ?? null;
+  }
+
   /** Every activity (deleted ones too), for backups' counts and tests. */
   listByOwner(ownerId: string): Promise<Activity[]> {
     return this.listWhere('owner_id = ?', [ownerId]);
