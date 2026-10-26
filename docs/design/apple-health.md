@@ -1,6 +1,6 @@
 # Apple Health: write workouts, read bodyweight and activities, link watch data
 
-Status: **Proposal, 27 Oct 2026.** Direction approved by Ben on 27 Oct: (1) write GymSmarter workouts to Health as strength workouts, (2) read bodyweight, (3) read runs and other activities (for example Garmin via Health). Everything else in this spec (ranking, placement, link rules, defaults) is a designer proposal until Ben answers §11. A developer is building the integration in `wt-health`; where this spec and that build differ, raise it rather than pick one.
+Status: **Proposal, 27 Oct 2026; §11 answered by Ben 27 Oct; built on `claude/health-27oct` (§13, for review).** Direction approved by Ben on 27 Oct: (1) write GymSmarter workouts to Health as strength workouts, (2) read bodyweight, (3) read runs and other activities (for example Garmin via Health). Everything else in this spec (ranking, placement, link rules, defaults) is a designer proposal until Ben answers §11. A developer is building the integration in `wt-health`; where this spec and that build differ, raise it rather than pick one.
 
 Tags: **[Ben]** = Ben's decision. **[Proposal]** = designer proposal, Ben decides. **[Doc] / [User] / [Unverified]** = evidence grade for competitor and platform facts (§10).
 
@@ -439,22 +439,22 @@ None of these is documented as hiding its own export from its own history, or li
 
 ---
 
-## 11. Open questions for Ben
+## 11. Questions for Ben (answered 27 Oct, see the table's last column)
 
-| # | Question | Recommended |
-|---|---|---|
-| Q1 | When the watch also recorded a workout, keep only the watch's copy in Health (it has heart rate), or keep both? | **Keep the watch's** |
-| Q2 | Add past GymSmarter workouts to Health once (`Add past workouts`)? FitNotes imports never | **No** for now; offer later if you miss them |
-| Q3 | Health runs show on Today automatically. This replaces "runs show only when I logged them or told the coach" (20 Oct). OK? | **Yes**, with the ♥ mark and `Hide` |
-| Q4 | Can the coach see the watch's avg/max heart rate for a linked workout? It never uses it for weights | **Yes**, behind the `Heart rate` switch |
-| Q5 | Use bodyweight for anything beyond the chart and the coach (e.g. total load for weighted pull-ups)? | **No**: chart, coach and a dated line in bodyweight `Why?` only |
-| Q6 | How far back to read? | Activities **8 weeks** (the review's bars); bodyweight **2 years** |
-| Q7 | A Garmin strength session with no GymSmarter workout: show as `Strength 45 min ♥` (an activity, not a lifting workout)? | **Yes**, with `Link to a workout ›` |
-| Q8 | Later: read resting heart rate and sleep as raw values (no score) for the check-in or coach? | **Not now**; Garmin's recovery data doesn't reach Health anyway |
-| Q9 | Should a Health run ever count as `Hard` without your word (e.g. from heart rate)? | **No** |
-| Q10 | HealthKit probably doesn't survive SideStore signing (unverified). If the probe fails: Xcode builds, paid signing, or accept `Not available on this install`? | **Probe first**; decide after |
-| Q11 | Garmin and Apple Watch both recording: which wins? | **The one with distance and heart rate** (usually Garmin) |
-| Q12 | A treadmill run recorded during a gym workout: its own run (counts for the run rule), or part of the workout? | **Its own run** |
+| # | Question | Recommended | Ben, 27 Oct |
+|---|---|---|---|
+| Q1 | When the watch also recorded a workout, keep only the watch's copy in Health (it has heart rate), or keep both? | **Keep the watch's** | **Merge, never lose either side.** Linked: the watch's stays Health's record (ours not written, or deleted); the app shows one item with our sets and the watch's duration, avg/max HR and active energy. Unlink restores both. No watch workout: ours is written |
+| Q2 | Add past GymSmarter workouts to Health once (`Add past workouts`)? FitNotes imports never | **No** for now; offer later if you miss them | Unanswered: default **No** (no back-fill) |
+| Q3 | Health runs show on Today automatically. This replaces "runs show only when I logged them or told the coach" (20 Oct). OK? | **Yes**, with the ♥ mark and `Hide` | **Yes** |
+| Q4 | Can the coach see the watch's avg/max heart rate for a linked workout? It never uses it for weights | **Yes**, behind the `Heart rate` switch | **Yes**, behind the switch |
+| Q5 | Use bodyweight for anything beyond the chart and the coach (e.g. total load for weighted pull-ups)? | **No**: chart, coach and a dated line in bodyweight `Why?` only | Pending (Ben is being asked). Default **No** |
+| Q6 | How far back to read? | Activities **8 weeks** (the review's bars); bodyweight **2 years** | **A setting**: `How far back` 4 weeks / 8 weeks / 6 months / 1 year / All, default 8 weeks; one control (bodyweight at least 2 years) |
+| Q7 | A Garmin strength session with no GymSmarter workout: show as `Strength 45 min ♥` (an activity, not a lifting workout)? | **Yes**, with `Link to a workout ›` | **Yes** |
+| Q8 | Later: read resting heart rate and sleep as raw values (no score) for the check-in or coach? | **Not now**; Garmin's recovery data doesn't reach Health anyway | **Yes**: resting heart rate and sleep duration, raw, labelled with source, own read switches; small trend lines on Progress; labelled data for the coach. No scores; the coach never diagnoses or changes loads from them on its own (it may mention them when Ben asks or when proposing) |
+| Q9 | Should a Health run ever count as `Hard` without your word (e.g. from heart rate)? | **No** | **No** |
+| Q10 | HealthKit probably doesn't survive SideStore signing (unverified). If the probe fails: Xcode builds, paid signing, or accept `Not available on this install`? | **Probe first**; decide after | **Yes**, probe on the phone first |
+| Q11 | Garmin and Apple Watch both recording: which wins? | **The one with distance and heart rate** (usually Garmin) | **Yes** |
+| Q12 | A treadmill run recorded during a gym workout: its own run (counts for the run rule), or part of the workout? | **Its own run** | **Yes**, its own run |
 
 ## 12. Brief and decision impacts (Ben approves)
 
@@ -463,3 +463,24 @@ None of these is documented as hiding its own export from its own history, or li
 - ADR needed: HealthKit entitlement and usage strings vs the free-provisionable allowlist (`check-entitlements`), the runtime capability flag, and the SideStore probe result.
 - `packages/schemas/src/activity.ts` header ("Read-only sources … are not in scope") needs updating when built.
 - Today v2 acceptance check 6 ("With no activities logged or told to the coach, no run appears anywhere on Today") becomes "…and none read from Health".
+
+## 13. Build notes (developer, `claude/health-27oct`, 27 Oct; for review)
+
+What the branch builds against this spec and Ben's §11 answers, and where it differs. ADR 0035 records the technical choices; `docs/device-tests/2026-10-27-apple-health.md` is the phone check (nothing here has run on a phone yet).
+
+**Built**
+- Profile › Apple Health (§2.1) under `Data & backup`: `Workouts` (save), `Runs, rides and other activities`, `Heart rate on linked workouts`, `Bodyweight`, `Resting heart rate`, `Sleep`, `How far back` (Q6), `Sources` with latest times, `Last read … · N new` + `Read now`, `Remove GymSmarter workouts from Health` (confirm). States from §4: `Not available on this install` (+ `Why?`), `Off`, `On · last read`, `Reading…`, `Last read failed`, `Off in Health`, `Nothing from Health yet` (+ `Why?`), `1 not saved to Health` + `Try again`.
+- Writes (§3.7, Q1, Q2): one `HKWorkout` per finished in-app workout recorded after the switch went on (past logs at their own date; imports never), traditional strength, or functional strength when every done set was bodyweight; start, end, pause/resume events; external UUID = session ID, sync identifier + version. Moves rewrite, deletes delete (straight away, not after the Undo window; Restore writes it back), a linked watch workout replaces ours, Unlink writes ours back, `Remove` is permanent for those workouts.
+- Reads (§3.1, §3.3, §3.5, Q3, Q6, Q8, Q11): on app open and return to the foreground, never during a workout. Our own writes are never read back (bundle ID, written UUIDs, external ID). Two sources of one activity are one (the one with distance and heart rate, else the longer). Health activities flow through the existing activity model (`activities.listBetween`), so Today's Recent, the week and run rule, Progress's calendar, the weekly review, the coach and the History screen being built on `claude/recent-27oct` see them, linked ones never. Ben's planned run plus the one Health run that day are one item, done, with Health's numbers and his effort word; his done run likewise when the numbers agree within 15 % (or he gave none); otherwise both show.
+- Links (§3.2, §2.3): strength family (traditional, functional, core, cross training) auto-links on ≥ 50 % of the shorter, same local day, only when it's the single candidate both ways; weaker overlaps, `other`, or within 60 min are asked on the Summary (`Link to this workout?` Link / Not it; two or more: `N activities from Health · Link one?` Choose). Linked row: `♥ Garmin · 61 min`, `Avg HR 118 · Max 162 · 412 kcal active`; its sheet has the watch's times and `Unlink` (toast with Undo). A Health activity's sheet is read-only with `Link to this workout?` and `Link to a workout ›`.
+- Bodyweight (§2.5, Q5): merged with Ben's (his entry wins on his days), listed in Training details with the source, read-only; latest used by the coach's training view, labelled `Apple Health (Withings)`. Not used for loads.
+- Resting heart rate and sleep (Q8): one value a day (latest resting HR; minutes asleep per night from asleep stages, one source a night, never summed across sources); Progress shows two small trend lines with the latest value and source; the coach's training view gets the last 14 days as raw labelled values with a fixed `use` line (no score, no diagnosis, no load changes on its own).
+
+**Differs from the spec (raise with the PM/designer)**
+- Samples read from Health are local to the install, not backed up (§8 said backed up): they are re-read after a restore. Links, `Not it`s and write records are backed up, so a restore doesn't double anything (§4 Restore row holds).
+- Turning a read switch off forgets what it read (re-read when on); §2.1 said data stays.
+- `Not it` is remembered per Health workout, not per pair.
+- A deleted workout's Health copy is deleted at once, not after the Undo window; Restore writes it back.
+
+**Not built yet**
+- Hide (and the `Hidden` list), Ben's effort word on a Health activity, `Same as your Run 12k?` / `Unpair` / `Unmerge`, `Also recorded by …` line, the strip's ♥ glyph (rows say the source in words), Library › Past workouts ♥, `Open Health`, Summary `⋯ › Link activity from Health` (the Summary asks, and any Health activity's sheet links), Progress › Training › Bodyweight chart, the coach's `link_health_activity` tool, linked HR in the coach's per-workout context (Q4), Today v2 check 6 wording.
