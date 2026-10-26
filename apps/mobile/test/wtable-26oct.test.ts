@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildExercisePickerView, saveDraftCommand, type CommandOutcome } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
+import { trainingDetailsView } from '@fizz/coach';
+
 import type { AppServices } from '../src/services/app-services';
+import { noteSheetChanged, noteWrites } from '../src/workout/notes';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -214,5 +217,64 @@ describe('exercise pop-up History mid-workout (Ben, 26 Oct)', () => {
     expect(g?.chart?.points.map((p) => p.value)).toEqual([90, 95, 97.5, 100]);
     expect((await s.workout.load(sessionId))?.aggregate.session.version).toBe(before);
     expect(await s.workout.exerciseGlance(sessionId, 'nope')).toBeNull();
+  });
+});
+
+describe('pinned exercise notes (Ben, 26 Oct)', () => {
+  it('Save writes: pin (and clear today’s copy), move the gym scope, unpin keeping the words for today, clear', () => {
+    expect(noteWrites({ text: 'Seat 4', pin: { on: true, gymOnly: false }, pinned: null, today: 'Seat 4' })).toEqual([
+      { kind: 'pin', gymOnly: false, text: 'Seat 4' },
+      { kind: 'today', text: null },
+    ]);
+    expect(noteWrites({ text: 'Seat 4', pin: { on: true, gymOnly: true }, pinned: { gymOnly: false }, today: null })).toEqual([
+      { kind: 'unpin', gymOnly: false },
+      { kind: 'pin', gymOnly: true, text: 'Seat 4' },
+    ]);
+    expect(noteWrites({ text: 'Seat 4', pin: { on: false, gymOnly: false }, pinned: { gymOnly: false }, today: null })).toEqual([
+      { kind: 'unpin', gymOnly: false },
+      { kind: 'today', text: 'Seat 4' },
+    ]);
+    expect(noteWrites({ text: null, pin: { on: true, gymOnly: false }, pinned: { gymOnly: false }, today: null })).toEqual([{ kind: 'unpin', gymOnly: false }]);
+    expect(noteWrites({ text: 'Felt good', pin: { on: false, gymOnly: false }, pinned: null, today: null })).toEqual([{ kind: 'today', text: 'Felt good' }]);
+    expect(noteSheetChanged('Seat 4', 'Seat 4', { on: false, gymOnly: false }, { on: true, gymOnly: false })).toBe(true);
+    expect(noteSheetChanged('Seat 4', 'Seat 4 ', { on: true, gymOnly: false }, { on: true, gymOnly: false })).toBe(false);
+  });
+
+  it('a pinned note shows on every later workout with that exercise (at that gym when gym-only); versioned, idempotent, survives a force-close; never in the coach’s context', async () => {
+    const { s, sessionId, a } = await started();
+    const benchId = a.exercises[0]?.exerciseId ?? '';
+    const d0 = await s.workout.load(sessionId);
+    expect(d0?.pinnedNotes ?? {}).toEqual({});
+    const v0 = d0?.pinnedVersion ?? 1;
+    const pinned = await s.workout.pinNote({ sessionId, exerciseId: benchId, gymOnly: false, text: 'Seat 4, pins at 6', expectedVersion: v0, opId: 'pin-1' });
+    if (!pinned.ok) throw new Error(pinned.message);
+    // The same tap twice writes once; an old version is refused (rule 5).
+    expect(await s.workout.pinNote({ sessionId, exerciseId: benchId, gymOnly: false, text: 'Seat 4, pins at 6', expectedVersion: v0, opId: 'pin-1' })).toEqual({ ok: true, version: pinned.version });
+    expect(await s.workout.pinNote({ sessionId, exerciseId: benchId, gymOnly: true, text: 'Other', expectedVersion: v0, opId: 'pin-2' })).toMatchObject({ ok: false, stale: true });
+    expect((await s.workout.load(sessionId))?.pinnedNotes?.[benchId]?.text).toBe('Seat 4, pins at 6');
+    // A gym-only pin wins at its gym.
+    const gymOnly = await s.workout.pinNote({ sessionId, exerciseId: benchId, gymOnly: true, text: 'Bench 2 here', expectedVersion: pinned.version, opId: 'pin-3' });
+    if (!gymOnly.ok) throw new Error(gymOnly.message);
+    expect((await s.workout.load(sessionId))?.pinnedNotes?.[benchId]).toMatchObject({ text: 'Bench 2 here', gymId: a.session.gymId });
+    // Force-close, finish, next workout: still there.
+    await h.forceClose();
+    const s2 = (await h.launch()).services;
+    const cur = await s2.workout.load(sessionId);
+    h.clockMs += 60_000;
+    ok(await s2.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'finish', expectedVersion: cur?.aggregate.session.version ?? 0, endedAt: null }));
+    h.clockMs += DAY;
+    const st = await s2.workout.start({ gymId: a.session.gymId ?? '', opId: 'start-next', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!st.ok) throw new Error(st.error.message);
+    const pick = (await s2.workout.pickerExercises(st.aggregate.session.id, 'Bench press')).find((p) => p.exercise.name === 'Bench press');
+    ok(await s2.workout.addExercise({ sessionId: st.aggregate.session.id, exerciseId: pick?.exercise.id ?? '', equipmentId: pick?.equipment[0]?.id ?? null, opId: 'add-bench-2' }));
+    const next = await s2.workout.load(st.aggregate.session.id);
+    expect(next?.pinnedNotes?.[benchId]?.text).toBe('Bench 2 here');
+    // Unpinned: gone next time (the every-gym one shows again).
+    const un = await s2.workout.pinNote({ sessionId: st.aggregate.session.id, exerciseId: benchId, gymOnly: true, text: null, expectedVersion: next?.pinnedVersion ?? 0, opId: 'unpin-3' });
+    expect(un.ok).toBe(true);
+    expect((await s2.workout.load(st.aggregate.session.id))?.pinnedNotes?.[benchId]?.text).toBe('Seat 4, pins at 6');
+    // Rule 8/10: the coach's view of his training details never carries the note.
+    const snap = await s2.training.snapshot();
+    expect(JSON.stringify(trainingDetailsView({ profile: snap?.profile ?? null, nowYear: 2026, mainLifts: {}, nextDayId: null }))).not.toContain('Seat 4');
   });
 });

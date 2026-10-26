@@ -85,7 +85,8 @@ export interface RoundPageProps {
   onWhy: (exerciseIndex: number) => void;
   onMenu: (sessionExerciseId: string) => void;
   onName: (card: { sessionExerciseId: string; exerciseId: string; name: string; isCurrent: boolean }) => void;
-  onNote: (sessionExerciseId: string, name: string, note: string | null) => void;
+  /** `pinnedOpen`: the pinned line was tapped (the sheet opens on the pin; Ben, 26 Oct). */
+  onNote: (sessionExerciseId: string, name: string, note: string | null, pinnedOpen?: boolean) => void;
   onPainBadge: (exerciseId: string) => void;
   /**
    * v3 §7 (same editing as the builder): press and hold a set row, then drag it among the sets not
@@ -592,6 +593,24 @@ function ExerciseHeader({ ex, superset, page: p }: { ex: RoundExercise; superset
           }}
         />
       </View>
+      {ex.pinned !== null ? (
+        // (Ben, 26 Oct) A pinned note: every time this exercise is in a workout; his words as typed (rule 8).
+        <LinkLine
+          accessibilityLabel={`Pinned note${ex.pinned.gymOnly ? ', this gym' : ''}: ${ex.pinned.text}. Tap to edit.`}
+          onPress={() => {
+            p.onNote(ex.sessionExerciseId, ex.name, ex.note, true);
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['1'] }}>
+            <View style={{ paddingTop: 3 }}>
+              <Icon name="pin.fill" color="text.tertiary" size={12} />
+            </View>
+            <AppText variant="callout" color="text.secondary" numberOfLines={2} style={{ flex: 1 }}>
+              {ex.pinned.text}
+            </AppText>
+          </View>
+        </LinkLine>
+      ) : null}
       {ex.note !== null ? (
         <LinkLine
           accessibilityLabel={`Note: ${ex.note}. Tap to edit.`}

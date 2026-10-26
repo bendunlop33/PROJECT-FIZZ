@@ -15,6 +15,7 @@ import {
   matchSplitDay,
   newTrainingProfile,
   nextSplitDay,
+  pinnedNoteFor,
   PRESET_SPLITS,
   recommendMainLift,
   weightText,
@@ -314,5 +315,43 @@ describe('from history (finished workouts)', () => {
     expect(splitDayFocus({ kind: 'clsb' }, { id: 'shoulders' })).toBe('shoulders');
     expect(splitDayFocus({ kind: 'ppl' }, { id: 'pull' })).toBe('pull');
     expect(splitDayFocus({ kind: 'custom' }, { id: 'legs' })).toBe('split_day');
+  });
+});
+
+describe('(Ben, 26 Oct) pinned exercise notes', () => {
+  const BENCH = 'ex-bench';
+  const GYM_A = 'gym-a';
+
+  it('pin, replace, gym-only alongside every-gym, unpin; Your data in the profile, versioned', () => {
+    let p = ok(fresh(), { kind: 'pin_note', exerciseId: BENCH, gymId: null, text: '  Seat 4, pins at 6  ' });
+    expect(p.pinnedNotes).toEqual([{ exerciseId: BENCH, gymId: null, text: 'Seat 4, pins at 6', updatedAtUtc: T1 }]);
+    p = ok(p, { kind: 'pin_note', exerciseId: BENCH, gymId: GYM_A, text: 'Bench 2, the wobbly one' });
+    p = ok(p, { kind: 'pin_note', exerciseId: BENCH, gymId: null, text: 'Seat 5' });
+    expect(p.pinnedNotes?.map((x) => [x.gymId, x.text])).toEqual([
+      [GYM_A, 'Bench 2, the wobbly one'],
+      [null, 'Seat 5'],
+    ]);
+    expect(pinnedNoteFor(p.pinnedNotes, BENCH, GYM_A)?.text).toBe('Bench 2, the wobbly one');
+    expect(pinnedNoteFor(p.pinnedNotes, BENCH, 'gym-b')?.text).toBe('Seat 5');
+    expect(pinnedNoteFor(p.pinnedNotes, BENCH, null)?.text).toBe('Seat 5');
+    expect(pinnedNoteFor(p.pinnedNotes, 'other', GYM_A)).toBeNull();
+    p = ok(p, { kind: 'unpin_note', exerciseId: BENCH, gymId: null });
+    expect(pinnedNoteFor(p.pinnedNotes, BENCH, 'gym-b')).toBeNull();
+    p = ok(p, { kind: 'unpin_note', exerciseId: BENCH, gymId: GYM_A });
+    expect(p.pinnedNotes).toBeUndefined();
+    expect(TrainingProfileSchema.parse(p)).toEqual(p);
+  });
+
+  it('an empty or too-long note is refused; a repeated opId writes once; a stale version is refused', () => {
+    expect(apply(fresh(), { kind: 'pin_note', exerciseId: BENCH, gymId: null, text: '   ' })).toMatchObject({ ok: false, error: 'invalid' });
+    expect(apply(fresh(), { kind: 'pin_note', exerciseId: BENCH, gymId: null, text: 'x'.repeat(501) })).toMatchObject({ ok: false, error: 'invalid' });
+    const p0 = fresh();
+    const first = applyTrainingChange(p0, { kind: 'pin_note', exerciseId: BENCH, gymId: null, text: 'Seat 4' }, { opId: 'pin-1', expectedVersion: p0.version, atUtc: T1, nowYear: 2026, today: '2026-10-14' });
+    if (!first.ok) throw new Error('not written');
+    const again = applyTrainingChange(first.profile, { kind: 'pin_note', exerciseId: BENCH, gymId: null, text: 'Seat 4' }, { opId: 'pin-1', expectedVersion: p0.version, atUtc: T1, nowYear: 2026, today: '2026-10-14' });
+    expect(again).toMatchObject({ ok: true, replayed: true });
+    if (again.ok) expect(again.profile.version).toBe(first.profile.version);
+    const stale = applyTrainingChange(first.profile, { kind: 'unpin_note', exerciseId: BENCH, gymId: null }, { opId: 'unpin-1', expectedVersion: p0.version, atUtc: T1, nowYear: 2026, today: '2026-10-14' });
+    expect(stale).toMatchObject({ ok: false, error: 'stale' });
   });
 });

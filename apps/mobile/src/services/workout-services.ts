@@ -109,6 +109,7 @@ import {
   explainTarget,
   lastComparableSession,
   lastComparableSessions,
+  pinnedNoteFor,
   exerciseHistoryGlance,
   HISTORY_GLANCE,
   type HistoryGlanceView,
@@ -345,6 +346,8 @@ import type {
   SetValues,
   SplitDay,
   TrainingProfile,
+  TrainingChange,
+  PinnedNote,
   PlanPin,
   TrainingSplit,
   UserProfile,
@@ -603,6 +606,12 @@ export interface ActiveWorkoutData {
   builderInfo?: Readonly<Record<string, BuilderExerciseInfo | null>>;
   /** The main lifts of the builder or plan draft this workout started from (`session.coachDraft`), for the `+N min` fit. */
   mainExerciseIds?: ReadonlySet<string>;
+  /**
+   * (Ben, 26 Oct) Each exercise's pinned note at this workout's gym (that gym's pin, else the every-gym one), by
+   * exercise ID; and the training profile's version a pin edit is written on (rule 5). Your data, shown as typed.
+   */
+  pinnedNotes?: Readonly<Record<string, PinnedNote>>;
+  pinnedVersion?: number;
 }
 
 /**
@@ -3097,6 +3106,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const bodyweightExercises = new Set<string>();
       const worksLines: Record<string, string | null> = {};
       const builderInfo: Record<string, BuilderExerciseInfo | null> = {};
+      // (Ben, 26 Oct) Pinned notes: a failed read shows none, never a failed workout.
+      const training = await ctx.store().repos.trainingProfiles.get(p.id).catch(() => null);
+      const pinnedNotes: Record<string, PinnedNote> = {};
+      for (const id of new Set(aggregate.exercises.map((e) => e.exerciseId))) {
+        const pin = pinnedNoteFor(training?.pinnedNotes, id, aggregate.session.gymId);
+        if (pin !== null) pinnedNotes[id] = pin;
+      }
       for (const id of new Set(aggregate.exercises.map((e) => e.exerciseId))) {
         const e = await exerciseById(id).catch(() => null);
         exerciseInfo[id] = e;
@@ -3120,7 +3136,30 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         checkIn: ci,
         title,
         recentPace: pace,
+        pinnedNotes,
+        pinnedVersion: training?.version ?? 1,
       };
+    },
+
+    /**
+     * (Ben, 26 Oct) Pin today's note on an exercise (`gymOnly`: at this workout's gym only), or unpin it. One
+     * versioned, idempotent write on the training profile (Your data; rule 5): a repeated opId writes once, a stale
+     * version is refused. Unpinning can keep the words as today's note (`keepToday`), as a second write.
+     */
+    async pinNote(req: { sessionId: string; exerciseId: string; gymOnly: boolean; text: string | null; expectedVersion: number; opId: string }): Promise<{ ok: true; version: number } | { ok: false; message: string; stale: boolean }> {
+      const p = await ctx.profile();
+      if (!p) return { ok: false, message: 'Couldn’t save. Try again.', stale: false };
+      const a = await repos().sessions.get(req.sessionId).catch(() => null);
+      const gymId = req.gymOnly ? (a?.session.gymId ?? null) : null;
+      const at = ctx.now();
+      const change: TrainingChange = req.text === null ? { kind: 'unpin_note', exerciseId: req.exerciseId, gymId } : { kind: 'pin_note', exerciseId: req.exerciseId, gymId, text: req.text };
+      try {
+        const r = await ctx.store().repos.trainingProfiles.change(p.id, change, { opId: req.opId, expectedVersion: req.expectedVersion, atUtc: at.utc, nowYear: Number(localDateOf(toMs(at.utc), at.tz).slice(0, 4)), today: localDateOf(toMs(at.utc), at.tz) });
+        if (r.status === 'written' || r.status === 'replayed') return { ok: true, version: r.profile.version };
+        return { ok: false, message: r.status === 'stale' ? 'Your notes changed. Try again.' : 'Couldn’t save. Try again.', stale: r.status === 'stale' };
+      } catch {
+        return { ok: false, message: 'Couldn’t save. Try again.', stale: false };
+      }
     },
 
     /** `buildActiveSetView` over loaded data plus the screen's unsaved edits. */

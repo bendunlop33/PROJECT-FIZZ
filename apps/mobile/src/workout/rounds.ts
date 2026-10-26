@@ -67,6 +67,8 @@ export interface RoundExercise {
   anchor: number;
   painBadge: boolean;
   note: string | null;
+  /** (Ben, 26 Oct) The exercise's pinned note at this gym (shown every time it's in a workout); null when none. */
+  pinned: PinnedView | null;
   /** `Last 1 Oct: 100 × 8, 8, 7` / `No previous result`. */
   lastLine: string;
   topSet: TopSet | null;
@@ -88,6 +90,12 @@ export interface Round {
   /** Working sets done / total across the round (warm-ups not counted). */
   doneSets: number;
   totalSets: number;
+}
+
+/** (Ben, 26 Oct) A pinned note as the header shows it: Ben's words as typed (rule 8), and whether it's for this gym only. */
+export interface PinnedView {
+  text: string;
+  gymOnly: boolean;
 }
 
 const TYPE_LABEL: Record<SetType, string | null> = { warmup: null, working: null, top: 'Top', backoff: 'Back-off', drop: 'Drop' };
@@ -174,7 +182,7 @@ const MEMBER_LETTERS = 'abcdefghij';
  * One round per table block (§1.3): an exercise, or a superset's members as
  * `3a`, `3b`. `worksLineOf` reads the builder's works line by exercise ID.
  */
-export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf: (exerciseId: string) => string | null, latestLoggedSetId: string | null = null): Round[] {
+export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf: (exerciseId: string) => string | null, latestLoggedSetId: string | null = null, pinnedOf: (exerciseId: string) => PinnedView | null = () => null): Round[] {
   return table.blocks.map((block, i) => {
     const n = i + 1;
     let exercises: RoundExercise[];
@@ -201,6 +209,7 @@ export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf
           anchor: anchorOf(rows),
           painBadge: c.painBadge,
           note: c.note,
+          pinned: pinnedOf(c.exerciseId),
           lastLine: c.lastLine,
           topSet: c.topSet,
         },
@@ -232,6 +241,7 @@ export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf
           anchor: anchorOf(rows),
           painBadge: m.painBadge,
           note: m.note,
+          pinned: pinnedOf(m.exerciseId),
           lastLine: m.lastLine,
           topSet: m.topSet,
         };
