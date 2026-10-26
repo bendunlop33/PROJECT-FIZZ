@@ -11,6 +11,11 @@ import {
   listProgressExercises,
   defaultLiftPicks,
   trackedLiftPicks,
+  buildMonthlyRecap,
+  recapCardShown,
+  recapMonthOf,
+  MONTHLY_RECAP,
+  type MonthlyRecapView,
   liftChips,
   liftsTabSelection,
   type LiftChip,
@@ -93,6 +98,13 @@ export interface ProgressServiceDeps {
   planMainLifts?: () => Promise<readonly string[] | null>;
   /** (Ben, 26 Oct) The lifts Ben picked on Overview (`Edit`, `progress_lifts`), in his order; absent or empty: none. */
   progressLifts?: () => Promise<readonly string[]>;
+  /** (Ben, 26 Oct) With a plan in use: each recent week and whether it reached his aim (the consistency card's); null otherwise. */
+  planWeeks?: () => Promise<readonly { monday: string; atAim: boolean | null }[] | null>;
+}
+
+/** (Ben, 26 Oct) The monthly recap card: the month just ended, while its card shows on Progress. */
+export interface RecapCard {
+  view: MonthlyRecapView;
 }
 
 /** (Perf, Ben 26 Oct) Progress before any tab: whether there is history, the period in use (the coach's entry) and the ResumeBar. */
@@ -387,6 +399,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
   const tabMemo = createVersionMemo<ExerciseTab | null>(8);
   const activeMemo = createVersionMemo<SessionAggregate | null>(1);
   const shellMemo = createVersionMemo<ProgressShell>(4);
+  const recapMemo = createVersionMemo<RecapCard | null>(2);
   const activeOf = (ownerId: string): Promise<SessionAggregate | null> =>
     activeMemo.get(deps.store(), ownerId, () =>
       repos()
@@ -511,6 +524,35 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const today = localDateOf(toMs(deps.now().utc), profile.timezone);
       // (Perf, Ben 26 Oct) The same request with nothing written since is answered from memory.
       return tabMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, profile.preferredUnit, today, req]), () => readExerciseTab(profile, req, today));
+    },
+
+    /**
+     * (Ben, 26 Oct) The monthly recap (facts only, offline, from the stored history summaries): the month before
+     * today's, against the one before it, on the 1st–7th until Ben dismisses it. Null when the card doesn't show
+     * (later in the month, dismissed, or no workout that month); nothing is read then.
+     */
+    async recap(): Promise<RecapCard | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const today = localDateOf(toMs(deps.now().utc), profile.timezone);
+      if (Number(today.slice(8, 10)) > MONTHLY_RECAP.showDays || profile.progress?.recapDismissed === recapMonthOf(today)) return null;
+      return recapMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, profile.preferredUnit, today]), async () => {
+        const ctx = await context(profile);
+        const names = new Map(listProgressExercises(ctx.sessions).map((e) => [e.exerciseId, e.name]));
+        const planMains = (await deps.planMainLifts?.().catch(() => null)) ?? null;
+        const picked = (await deps.progressLifts?.().catch(() => null)) ?? [];
+        const lifts = trackedLiftPicks({ picked, defaults: defaultLiftPicks({ planMains, sessions: ctx.sessions, info: (id) => ctx.exercises.get(id) ?? null, today }), logged: (id) => names.has(id) }).ids;
+        const planWeeks = (await deps.planWeeks?.().catch(() => null)) ?? null;
+        const view = buildMonthlyRecap({ sessions: ctx.sessions, exercises: ctx.exercises, today, lifts, unit: profile.preferredUnit, planWeeks, nameOf: (id) => ctx.exercises.get(id)?.name ?? names.get(id) ?? null });
+        return recapCardShown({ today, dismissed: profile.progress?.recapDismissed ?? null, recap: view }) && view !== null ? { view } : null;
+      });
+    },
+
+    /** Dismiss the recap card for `month` (Your data, a versioned profile write; the same month twice writes once). */
+    async dismissRecap(month: string): Promise<{ ok: boolean }> {
+      return deps
+        .saveSettings((current) => (current?.recapDismissed === month ? null : { ...(current ?? {}), recapDismissed: month }))
+        .catch(() => ({ ok: false }));
     },
 
     /**

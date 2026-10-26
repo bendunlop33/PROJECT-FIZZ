@@ -55,6 +55,8 @@ export const UserProfileSchema = RecordMetaSchema.extend({
       window: ProgressWindowDaysSchema.optional(),
       period: ProgressPeriodKeySchema.optional(),
       grouping: ProgressGroupingSchema.optional(),
+      /** (Ben, 26 Oct) The monthly recap Ben dismissed (`YYYY-MM`): its card doesn't show again. */
+      recapDismissed: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
     })
     .optional(),
 });

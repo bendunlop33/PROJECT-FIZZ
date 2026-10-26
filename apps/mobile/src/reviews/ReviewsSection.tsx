@@ -11,6 +11,7 @@ import { useTheme } from '../theme';
 import { AppText, BottomCard, ChecklistRow, PrimaryButton, SecondaryButton } from '../ui';
 import { ChangeRow, LiftsCard, MusclesCard, PROGRESS_TEXT, ProgressCard, SectionHead, WeekCard, WeekHead, type WeekMode } from './charts';
 import { runChangeTap } from './change-taps';
+import { RecapCard } from './RecapCard';
 import type { LiftChoice, ProgressData, ProposalOutcome } from './weekly-review-service';
 
 /**
@@ -303,8 +304,30 @@ export function LiftsShownSheet({ visible, onClose, version, onSaved }: { visibl
 export function ReviewsSection({ onOpenLifts, onOpenTraining, active = true }: { onOpenLifts: (exerciseId: string | null) => void; onOpenTraining: () => void; /** Showing now: a hidden Overview doesn't read (Ben, 26 Oct). */ active?: boolean }) {
   const navigation = useNavigation();
   const [data, reload] = useScreenData((s) => s.reviews.progress(), { enabled: active });
+  // (Ben, 26 Oct) The monthly recap card, on the 1st–7th for the month just ended, until dismissed.
+  const services = useServices();
+  const changed = useDataChanged();
+  const [recapData, reloadRecap] = useScreenData((s) => s.progress.recap(), { enabled: active });
+  const recap = recapData.state === 'ready' ? (recapData.value?.view ?? null) : null;
   const [liftsOpen, setLiftsOpen] = useState(false);
   const [mode, setMode] = useState<WeekMode>('week');
+  const openWorkout = (sessionId: string) => {
+    navigation.navigate('Summary', { sessionId, back: true });
+  };
+  const recapCard =
+    recap === null ? null : (
+      <RecapCard
+        view={recap}
+        onOpenWorkout={openWorkout}
+        onDismiss={() => {
+          haptic('step');
+          void services.progress.dismissRecap(recap.month).then(() => {
+            changed();
+            reloadRecap();
+          });
+        }}
+      />
+    );
   if (data.state === 'error') {
     // One honest line when it can't be read, never nothing (review b3-wave3-ux N7).
     return (
@@ -313,16 +336,17 @@ export function ReviewsSection({ onOpenLifts, onOpenTraining, active = true }: {
       </AppText>
     );
   }
-  if (data.state !== 'ready' || data.value === null) return null;
+  if (data.state !== 'ready' || data.value === null) return recapCard;
   const d: ProgressData = data.value;
   const showWeek = !d.week.empty;
   const showGoal = !d.lifts.empty || !d.muscles.empty || showWeek;
-  if (!showWeek && !showGoal && d.changes === null) return null;
+  if (!showWeek && !showGoal && d.changes === null) return recapCard;
   const openReview = (reviewId: string) => {
     navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressReview', params: { reviewId } } });
   };
   return (
     <View style={{ gap: 14 }}>
+      {recapCard}
       {showWeek ? (
         <>
           <WeekHead
@@ -353,9 +377,7 @@ export function ReviewsSection({ onOpenLifts, onOpenTraining, active = true }: {
               setLiftsOpen(true);
             }}
             onOpen={onOpenLifts}
-            onOpenWorkout={(sessionId) => {
-              navigation.navigate('Summary', { sessionId, back: true });
-            }}
+            onOpenWorkout={openWorkout}
           />
           {!d.muscles.empty ? <MusclesCard view={d.muscles} onDetails={onOpenTraining} /> : null}
         </>

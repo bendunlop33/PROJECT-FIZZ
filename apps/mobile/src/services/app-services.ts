@@ -865,6 +865,11 @@ export function createAppServices(deps: AppServicesDeps) {
       if (p === null) return [];
       return (await repos().trainingProfiles.get(p.id))?.progressLifts ?? [];
     },
+    // The monthly recap's plan line (Ben, 26 Oct): the consistency card's weeks, with a plan in use.
+    planWeeks: async () => {
+      const c = await plans.consistency();
+      return c === null || c.planThisWeek === null ? null : [...c.weeks, c.thisWeek].map((w) => ({ monday: w.monday, atAim: w.atAim }));
+    },
     // Progress › Lifts' chips (Ben, 26 Oct): the plan in use's main lift per day, in day order; null with no plan.
     planMainLifts: async () => {
       const p = await getProfile();

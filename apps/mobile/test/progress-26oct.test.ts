@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultLiftPicks, newPainFlag, trackedLiftPicks } from '@fizz/domain';
@@ -250,5 +253,84 @@ describe('a PB or a chart point opens its workout (Ben, 26 Oct)', () => {
     expect(lift.points.map((p) => p.sessionId)).toEqual(ids);
     expect(lift.latestPb).toBe(true);
     expect(lift.points.at(-1)).toMatchObject({ pb: true, sessionId: ids.at(-1) });
+  });
+});
+
+describe('monthly recap (Ben, 26 Oct): facts only, offline, dismissible, Your data', () => {
+  it('on the 1st–7th, for the month just ended (nothing read otherwise); a record and a lift open their workout; dismissed stays dismissed after a force-close', async () => {
+    const { s, gymId } = await setUp();
+    // September: one workout. October: three, heavier.
+    h.clockMs = Date.parse('2026-09-20T17:00:00.000Z');
+    await logWorkout(h, s, gymId, [w('Bench press', 70)]);
+    const october: string[] = [];
+    for (const [day, load] of [[5, 75], [12, 77.5], [19, 80]] as const) {
+      h.clockMs = Date.parse(`2026-10-${String(day).padStart(2, '0')}T17:00:00.000Z`);
+      october.push(await logWorkout(h, s, gymId, [w('Bench press', load)]));
+    }
+    // Late October: the card isn't shown (September's recap is past its days).
+    h.clockMs = Date.parse('2026-10-26T09:00:00.000Z');
+    expect(await s.progress.recap()).toBeNull();
+
+    h.clockMs = Date.parse('2026-11-02T09:00:00.000Z');
+    const card = await s.progress.recap();
+    if (card === null) throw new Error('no recap');
+    expect(card.view).toMatchObject({ month: '2026-10', title: 'October', previousTitle: 'September' });
+    expect(card.view.stats.map((x) => [x.label, x.value, x.previous])).toEqual([
+      ['Workouts', '3', '1'],
+      ['Time', expect.any(String), expect.any(String)],
+    ]);
+    expect(card.view.lifts[0]?.name).toBe('Bench press');
+    expect(card.view.lifts[0]?.text.replace(/\u00a0/g, ' ')).toBe('70 × 5 → 80 × 5');
+    expect(card.view.lifts[0]?.sessionId).toBe(october[2]);
+    for (const r of card.view.records) expect(october).toContain(r.sessionId);
+    expect(JSON.stringify(card.view)).not.toMatch(/≈|score|recovery|readiness/i);
+    // Answered from memory while nothing is written.
+    expect(await s.progress.recap()).toBe(card);
+
+    expect((await s.progress.dismissRecap('2026-10')).ok).toBe(true);
+    expect(await s.progress.recap()).toBeNull();
+    // Stored in Your data (the profile): a force-close keeps it.
+    expect((await s.yourData.profile())?.progress?.recapDismissed).toBe('2026-10');
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    expect(await s2.progress.recap()).toBeNull();
+    // The same month again writes nothing more.
+    expect((await s2.progress.dismissRecap('2026-10')).ok).toBe(true);
+    // After the 7th: not shown either way; next month's recap shows again.
+    h.clockMs = Date.parse('2026-11-08T09:00:00.000Z');
+    expect(await s2.progress.recap()).toBeNull();
+  });
+
+  it('no workout last month: no card', async () => {
+    const { s, gymId } = await setUp();
+    h.clockMs = Date.parse('2026-09-20T17:00:00.000Z');
+    await logWorkout(h, s, gymId, [w('Bench press', 70)]);
+    h.clockMs = Date.parse('2026-11-02T09:00:00.000Z');
+    expect(await s.progress.recap()).toBeNull();
+  });
+});
+
+describe('screens (source; no React renderer in tests)', () => {
+  const src = (p: string) => readFileSync(join(import.meta.dirname, '../src', p), 'utf8');
+
+  it('a PB ring or a point opens its workout on Overview; a chart point, record or best-reps row in Lifts and Exercise detail', () => {
+    const charts = src('reviews/charts.tsx');
+    expect(charts).toContain('onOpenWorkout(ring.sessionId);');
+    expect(charts).toContain('onOpenWorkout(p.sessionId);');
+    const tab = src('screens/progress/ExercisesTab.tsx');
+    expect(tab).toContain("navigation.navigate('Summary', { sessionId, back: true });");
+    expect(tab).toContain('onOpen={openWorkout}');
+    expect(src('progress/exercise-line-chart.tsx')).toContain('if (onOpen !== undefined) onOpen(p.sessionId);');
+  });
+
+  it('the recap card leads Overview while it shows, reads only while Overview shows, and dismisses with a write', () => {
+    const section = src('reviews/ReviewsSection.tsx');
+    expect(section).toContain("useScreenData((s) => s.progress.recap(), { enabled: active })");
+    expect(section).toContain('services.progress.dismissRecap(recap.month)');
+    expect(section.indexOf('{recapCard}')).toBeLessThan(section.indexOf('{showWeek ? ('));
+    const card = src('reviews/RecapCard.tsx');
+    expect(card).toContain('accessibilityLabel={`Dismiss ${view.title} recap`}');
+    // Values only (minimal copy): no explanations, no score.
+    expect(card).not.toMatch(/score|great job|keep it up|recovery/i);
   });
 });

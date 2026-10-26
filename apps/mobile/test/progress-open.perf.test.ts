@@ -107,5 +107,11 @@ describe('Progress on ~800 workouts (Ben, 26 Oct)', () => {
     const after = await timed('Training after a write (period saved)', 150, () => trainingOpen(s));
     expect(after[0]).not.toBe(training[0]);
     expect(after[0]?.period).toBe('3m');
+
+    // The monthly recap on the 2nd of the next month: from the projections already in memory (no workout re-read).
+    h.clockMs = Date.parse('2026-11-02T08:00:00.000Z');
+    const recap = await timed('Monthly recap (2 Nov, after the launch pass)', 250, () => s.progress.recap());
+    expect(recap?.view.month).toBe('2026-10');
+    await timed('Monthly recap again, nothing changed', 25, () => s.progress.recap(), { jitlessMs: 50 });
   }, 1_200_000);
 });
