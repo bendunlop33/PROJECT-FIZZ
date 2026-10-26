@@ -15,12 +15,13 @@ import { Chip } from './workout';
 /**
  * Swap / Add (workout-builder-v3 §2.5), one sheet for Your workout, the one workout editor and the active workout
  * (today only there). (Ben, 25 Oct) Top: the ranked suggestions as before (by focus, near-duplicates last with
- * `Like …`, `May hurt`). Below: the muscle chips and a search over every exercise (catalogue + Ben's own, the
+ * `Like …`, `May hurt`). Below: the muscle chips over a search of every exercise (catalogue + Ben's own, the
  * Library's aliases and typos), by broad group like Library › Exercises; the gym's misses last, dimmed,
  * `Not at Main Gym`; `＋ Add your own` at the bottom. A flagged or not-here pick asks first. No estimated max.
  * (Ben, 26 Oct) `Recent` at the top (what he's done lately), an equipment chip row beside the muscle chips (it
  * hides suggestions of another kind, never reorders them), and for `Superset with…` the exercises already in the
- * workout first (`partners`), then everything else.
+ * workout first (`partners`), then everything else. (27 Oct, Ben build 403) The search field is pinned at the top,
+ * under the title, above everything that scrolls.
  */
 export function SwapSheet({
   visible,
@@ -99,10 +100,22 @@ export function SwapSheet({
     </View>
   );
   return (
-    <BottomCard visible={visible} onClose={onClose} {...(onDismissed ? { onDismissed } : {})} footer={<TextButton label="Back" tone="secondary" onPress={onClose} />}>
-      <AppText variant="title2" accessibilityRole="header">
-        {title}
-      </AppText>
+    <BottomCard
+      visible={visible}
+      onClose={onClose}
+      {...(onDismissed ? { onDismissed } : {})}
+      // (Ben, build 403: "why can't I search when I add exercise") The title and the search sit at the top, pinned
+      // above the list, so search is in view the moment the sheet opens and stays above the keyboard while typing.
+      header={
+        <>
+          <AppText variant="title2" accessibilityRole="header">
+            {title}
+          </AppText>
+          <TextField accessibilityLabel={PICKER_COPY.search} placeholder={PICKER_COPY.search} value={picker.query} onChangeText={picker.onQuery} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
+        </>
+      }
+      footer={<TextButton label="Back" tone="secondary" onPress={onClose} />}
+    >
       {partners != null && partnerRows.length > 0 ? (
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>{partners.title}</Eyebrow>
@@ -152,7 +165,7 @@ export function SwapSheet({
           ))}
         </View>
       ) : null}
-      {/* (D5) `All` + six broad groups, as Library › Exercises; then the search. */}
+      {/* (D5) `All` + six broad groups, as Library › Exercises; the search is pinned at the top (27 Oct). */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" accessibilityLabel="Muscle" style={{ flexGrow: 0, marginHorizontal: -theme.components.screenMargin }} contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
         {(view?.chips ?? []).map((c) => (
           <Chip
@@ -182,7 +195,6 @@ export function SwapSheet({
           ))}
         </ScrollView>
       ) : null}
-      <TextField accessibilityLabel={PICKER_COPY.search} placeholder={PICKER_COPY.search} value={picker.query} onChangeText={picker.onQuery} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
       {view === null ? null : (
         <>
           {view.sections.map((sec) => (
