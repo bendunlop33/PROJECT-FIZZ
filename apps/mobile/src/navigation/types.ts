@@ -136,7 +136,8 @@ export type TabParams = {
   /** `toast`: a one-off message after returning from the check-in (e.g. Skip workout), or Your workout's Start with a workout in progress. */
   /** `startEmpty`: `Empty workout` on the Workouts list, once per nonce (Today's own start, with its check-in gate). */
   /** `planApplied`: back from the plan builder's Apply: `Plan applied · Undo` once per `key` (Undo at that plan version, rule 5). */
-  Today: { toast?: string; startEmpty?: string; planApplied?: PlanAppliedToastParam } | undefined;
+  /** `pickDay` (Ben, 26 Oct): Your plan's `Do today ›`: that plan day on Today's card, today only (`nonce`: once). */
+  Today: { toast?: string; startEmpty?: string; planApplied?: PlanAppliedToastParam; pickDay?: { key: string; nonce: string } } | undefined;
   Library: NavigatorScreenParams<LibraryStackParams> | undefined;
   Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
@@ -268,6 +269,8 @@ export interface PlanAppliedToastParam {
   key: string;
   planId: string;
   version: number;
+  /** (Ben, 26 Oct) `Apply changes` on the plan in use: Undo puts the plan as it was before the edit (not Apply's Undo). */
+  edit?: true;
 }
 
 /** A library toast handed back to the screen below (`key`: shown once). */

@@ -4,17 +4,17 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { addDays, localDateOf, localDateText, localHourUtcMs, PLAN_OVERVIEW_COPY, PLAN_PAUSE_MAX_DAYS, toMs, type PlanOverview, type PlanOverviewDay } from '@fizz/domain';
+import { addDays, localDateOf, localDateText, localHourUtcMs, PB_EDIT_COPY, pbWeekdayName, PLAN_OVERVIEW_COPY, PLAN_PAUSE_MAX_DAYS, toMs, type PlanOverview, type PlanOverviewDay } from '@fizz/domain';
 
 import { dateAt } from '../../clock';
 import { WEEK_COPY } from '../../services/week-services';
 import type { PlanOverviewWithBlock } from '../../services/plan-services';
-import { openNextBlock } from '../../navigation/actions';
+import { openNextBlock, openPlanEdit, todayWithDay } from '../../navigation/actions';
 import { newUuid } from '../../device/runtime';
 import type { LibraryStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Eyebrow, Icon, TextButton } from '../../ui';
+import { AppText, Eyebrow, Icon, SecondaryButton, TextButton } from '../../ui';
 import { LiftTargetsBlock } from './LiftTargetsBlock';
 import { PlanWeeksBlock } from './PlanWeeksBlock';
 
@@ -106,6 +106,37 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
       });
   }
 
+  /** (Ben, 26 Oct) `Move day`: this week only, then `Legs on Sat this week · Undo` (rule 5: against this read). */
+  async function moveDay(dayIndex: number, weekday: number) {
+    const b = plan.block;
+    if (busy.current || b == null) return;
+    busy.current = true;
+    try {
+      const r = await services.plans.moveDay({ planId: plan.planId, dayIndex, weekday, expectedVersion: b.planVersion, opId: newUuid() });
+      changed();
+      if (!r.ok) {
+        onToast({ text: r.message });
+        return;
+      }
+      const after = r.plan;
+      const name = b.views[b.current - 1]?.days.find((d) => d.index === dayIndex)?.name ?? '';
+      const undoOp = newUuid();
+      onToast({
+        text: PB_EDIT_COPY.moved(name, pbWeekdayName(weekday)),
+        action: PLAN_OVERVIEW_COPY.undo,
+        onAction: () => {
+          onToast(null);
+          void services.plans.undoMove({ planId: after.id, expectedVersion: after.version, opId: undoOp }).then((u) => {
+            changed();
+            if (!u.ok) onToast({ text: u.message });
+          });
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+  }
+
   function openTraining() {
     navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'TrainingDetails', initial: false } });
   }
@@ -177,6 +208,21 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
           block={plan.block}
           onStartNext={() => {
             navigation.dispatch(openNextBlock(plan.planId));
+          }}
+          actions={plan.block.actions}
+          onMove={(dayIndex, weekday) => {
+            void moveDay(dayIndex, weekday);
+          }}
+          onDoToday={(key) => {
+            navigation.dispatch(todayWithDay(key, newUuid()));
+          }}
+        />
+      ) : null}
+      {plan.block?.editable === true ? (
+        <SecondaryButton
+          label={PB_EDIT_COPY.editPlan}
+          onPress={() => {
+            navigation.dispatch(openPlanEdit(plan.planId));
           }}
         />
       ) : null}

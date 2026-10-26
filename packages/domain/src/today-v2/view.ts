@@ -11,6 +11,8 @@ import { formatNumber, NBSP } from '../display';
 
 export const TODAY_V2_COPY = {
   session: 'Today’s session',
+  /** (Ben, 26 Oct) Your plan's `Do today ›` landed: `Legs today` [Undo]. */
+  doToday: (name: string) => `${name} today`,
   next: 'NEXT',
   other: '⋯',
   otherLabel: 'Other sessions',

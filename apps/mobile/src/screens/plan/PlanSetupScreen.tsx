@@ -3,12 +3,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, View, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { toMs, fmt, pbDaysReady, pbToggleDay, pbTapSport, pbTogglePriority, pbToggleSportDay, pbWarmUpText, pbWithSessions,  PB_EXTRA_LIFTS, PB_PREF_DAYS, type PbExercise, type PlanKit } from '@fizz/domain';
+import { toMs, fmt, PB_EDIT_COPY, pbDaysReady, pbToggleDay, pbTapSport, pbTogglePriority, pbToggleSportDay, pbWarmUpText, pbWithSessions,  PB_EXTRA_LIFTS, PB_PREF_DAYS, type PbEditScope, type PbExercise, type PlanKit } from '@fizz/domain';
 import type { PlanBuilderAnswers, PlanPrefAnswer, PlanTarget } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { formatShortDate } from '../../format/dates';
 import { todayAfterPlanApplied } from '../../navigation/actions';
+import { PlanWeeksBlock } from '../library/PlanWeeksBlock';
+import { PlanChangesCard, type PlanEditScopeKind } from './PlanChangesCard';
 import type { RootStackParams } from '../../navigation/types';
 import {
   PB_ABS_OPTIONS,
@@ -92,6 +94,10 @@ export function PlanSetupScreen() {
   const [lenOpen, setLenOpen] = useState(false);
   const buildOp = useRef(newUuid());
   const applyOp = useRef(newUuid());
+  // (Ben, 26 Oct) Editing the plan in use: rejected lines, `Apply to`, and the week viewed on the strip.
+  const [rejected, setRejected] = useState<ReadonlySet<string>>(new Set());
+  const [scopeKind, setScopeKind] = useState<PlanEditScopeKind>('now');
+  const [viewWeek, setViewWeek] = useState<number | null>(null);
 
   /** Reads Ben's records for the builder. `keep`: the answers on screen stay (a gym was just added). */
   const load = (keep: PlanBuilderAnswers | null = null): void => {
@@ -132,6 +138,10 @@ export function PlanSetupScreen() {
 
   const s = session !== null && session !== 'error' ? session : null;
   const plan = useMemo(() => (s === null || answers === null || page !== 'plan' ? null : s.build(answers)), [s, answers, page]);
+  const run = s?.running ?? null;
+  const scopeWeek = run === null ? 1 : Math.max(run.week, viewWeek ?? run.week);
+  const scope: PbEditScope = scopeKind === 'now' || run === null ? { kind: 'from', week: run?.week ?? 1 } : { kind: scopeKind, week: scopeWeek };
+  const editView = useMemo(() => (run === null || answers === null || page !== 'plan' ? null : run.preview(answers, rejected, scope)), [run, answers, page, rejected, scope.kind, scope.week]);
 
   if (session === 'error') {
     return (
@@ -159,6 +169,15 @@ export function PlanSetupScreen() {
       return;
     }
     const ready = next.schedule === 'any' && next.days.length !== next.sessions ? { ...next, days: [...(PB_PREF_DAYS[next.sessions] ?? [])] } : next;
+    if (s.running !== null) {
+      // (Ben, 26 Oct) The plan in use: nothing is written until `Apply changes`; the Changes card shows the difference.
+      setAnswers(ready);
+      setFromPlan(null);
+      setOpenDay(-1);
+      setPage('plan');
+      if (undoText !== null && before !== null && JSON.stringify(before) !== JSON.stringify(ready)) setToast({ text: undoText, undo: () => { setToast(null); setAnswers(before); } });
+      return;
+    }
     setBusy(true);
     const r = await services.planBuilder.save(s, ready, draft, buildOp.current);
     setBusy(false);
@@ -207,6 +226,24 @@ export function PlanSetupScreen() {
     navigation.dispatch(todayAfterPlanApplied({ key: applyOp.current, planId: r.plan.id, version: r.plan.version }));
   }
 
+  /** (Ben, 26 Oct) `Apply changes`: the accepted lines to the chosen weeks, one write; Today then shows `Plan applied · Undo`. */
+  async function applyChanges(): Promise<void> {
+    if (s === null || s.running === null || answers === null) return;
+    setBusy(true);
+    const r = await services.planBuilder.applyEdit(s, answers, rejected, scope, applyOp.current);
+    setBusy(false);
+    if (!r.ok) {
+      setToast({ text: r.message });
+      if (r.reason === 'stale' || r.reason === 'changed_since') {
+        setRejected(new Set());
+        load();
+      }
+      return;
+    }
+    changed();
+    navigation.dispatch(todayAfterPlanApplied({ key: applyOp.current, planId: r.planId, version: r.version, edit: true }));
+  }
+
   /** `Continue last draft ›`: that built plan's answers on Your plan (Build there writes its next version). */
   const continueLast = (): void => {
     if (lastDraft === null) return;
@@ -237,7 +274,7 @@ export function PlanSetupScreen() {
     const prev = flow[at - 1];
     if (prev !== undefined) setPage(prev);
   };
-  const canBack = fromPlan !== null || (page === 'plan' ? draft === null || flow.length > 0 : flow.indexOf(page) > 0);
+  const canBack = fromPlan !== null || (page === 'plan' ? s.running === null && (draft === null || flow.length > 0) : flow.indexOf(page) > 0);
   const topBar = (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: theme.components.screenMargin, minHeight: 44 + insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
       {canBack ? <TextButton label={fromPlan !== null ? C.yourPlan : C.back} onPress={stepBack} /> : <View />}
@@ -247,7 +284,11 @@ export function PlanSetupScreen() {
 
   const footer =
     page === 'plan' ? (
-      <PrimaryButton label={C.apply} busy={busy} disabled={draft === null} onPress={() => void apply()} />
+      s.running !== null ? (
+        <PrimaryButton label={PB_EDIT_COPY.apply} busy={busy} disabled={editView?.canApply !== true} onPress={() => void applyChanges()} />
+      ) : (
+        <PrimaryButton label={C.apply} busy={busy} disabled={draft === null} onPress={() => void apply()} />
+      )
     ) : fromPlan !== null ? (
       <PrimaryButton label={C.done} busy={busy} onPress={() => void build(answers, C.updated)} />
     ) : (
@@ -517,6 +558,32 @@ export function PlanSetupScreen() {
           <AppText variant="callout" color="text.secondary">{`${String(answers.minutes)} min`}</AppText>
         </View>
         {plan.heldForPain.length > 0 ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={`${C.heldForPain}: ${plan.heldForPain.map(s.nameOf).join(', ')}`} /> : null}
+        {editView !== null && run !== null ? (
+          <>
+            {editView.tooShort ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={PB_EDIT_COPY.tooShort(run.week)} /> : null}
+            <PlanChangesCard
+              view={editView}
+              scope={scopeKind}
+              week={scopeWeek}
+              onToggle={(id) => {
+                const next = new Set(rejected);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                setRejected(next);
+              }}
+              onAll={(accept) => {
+                setRejected(accept ? new Set() : new Set(editView.items.map((it) => it.id)));
+              }}
+              onScope={setScopeKind}
+            />
+            <PlanWeeksBlock
+              block={{ views: editView.views, current: run.week, done: false, header: editView.views[0]?.header ?? '', line: '' }}
+              viewed={viewWeek ?? run.week}
+              onView={setViewWeek}
+            />
+          </>
+        ) : null}
+        {editView !== null ? null : (
         <View style={{ gap: theme.space['2'] }}>
           {days.map((d) => {
             const open = openDay === d.index;
@@ -554,6 +621,7 @@ export function PlanSetupScreen() {
             );
           })}
         </View>
+        )}
         <Question label={C.setsPerWeek}>
           <Card>
             {vol.map((v) => (
