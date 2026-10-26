@@ -1,0 +1,337 @@
+# Builds SideStore (third-party, AGPL) from pinned upstream refs with one upstream patch,
+# SideSign PR #3 "Enable HealthKit capability on App IDs", so a free-Apple-ID SideStore
+# install keeps GymSmarter's HealthKit entitlement (ADR 0036, Ben approved 26 Oct 2026).
+# Research: docs/research/sidestore-healthkit.md. Ben's steps:
+# docs/device-tests/2026-10-27-sidestore-healthkit.md
+#
+# Isolated on purpose: it never runs on branch pushes, uses no secrets, never touches
+# GymSmarter's code or the "iOS IPA" workflow, and nothing depends on it.
+#
+# How to run it:
+# - Actions > "SideStore HealthKit (patched)" > Run workflow (only once this file is on
+#   the default branch; GitHub can't dispatch a workflow that exists only on a branch).
+# - From any branch: push a tag named sidestore-hk-* (for example sidestore-hk-1). Tag runs
+#   use the defaults below and build both lines.
+#
+# Two builds (checked 26 Oct 2026 against SideStore's git tags and its published source,
+# github.com/SideStore/apps-v2.json):
+# - "0.7" -> SideStore-HealthKit.ipa. SideStore 0.7.0-alpha (6032424, 11 Sep), which SideStore's
+#   source now lists as the newest *stable* release (0.7.0-20260911.328+6032424a). SideSign is
+#   replaced by PR #3's head (74950d3, not on any branch, fetched via refs/pull/3/head), which is
+#   10 SideSign commits ahead of 0.7.0-alpha's pin a731c0d. Those commits read as additive
+#   against 0.7.0-alpha's call sites, but only this build can prove it compiles. If it doesn't,
+#   rerun with sidesign_mode=cherry-pick.
+# - "0.6.4" -> SideStore-0.6.4-HealthKit.ipa. The published 0.6.4 release (9 Sep) was built from
+#   tag 0.6.4 (f93a95c), which already uses SideSign (pin 7f81842), not AltSign. PR #3's head is
+#   31 commits ahead of that pin, so this build always cherry-picks PR #3 onto the pin and adds
+#   the one line PR #3 relies on (Entitlement.healthKit, missing at that pin).
+# - SideStore 0.6.3 and older use AltSign (ALTCapabilities.m) and are not supported: the patch
+#   step fails.
+# - Xcode: what SideStore's own CI used for each tag on macos-26 (0.7.0-alpha alpha.yml: 26.2;
+#   0.6.4 stable.yml: 26.4). Their develop branch has since moved to a custom "xcode-27" runner
+#   and Xcode 27.2, which GitHub-hosted runners may not have; a newer sidestore_ref may need a
+#   newer xcode_version.
+
+name: SideStore HealthKit (patched)
+
+on:
+  workflow_dispatch:
+    inputs:
+      sidestore_ref:
+        description: 'SideStore tag, branch or full commit SHA for the 0.7 build (github.com/SideStore/SideStore)'
+        type: string
+        default: '0.7.0-alpha'
+      sideSign_ref:
+        description: 'SideSign commit carrying the HealthKit patch (PR #3 head by default; full or short SHA)'
+        type: string
+        default: '74950d37f2333d29cbf3bfc9ca4a60820498c2d3'
+      sidesign_mode:
+        description: '0.7 build only. pr-head uses sideSign_ref as-is; cherry-pick applies it onto SideStore''s own SideSign pin'
+        type: choice
+        options:
+          - pr-head
+          - cherry-pick
+        default: pr-head
+      xcode_version:
+        description: 'Xcode for the 0.7 build (falls back to the newest Xcode 26 if absent)'
+        type: string
+        default: '26.2'
+      build_064:
+        description: 'Also build the 0.6.4 alternative (SideStore-0.6.4-HealthKit.ipa)'
+        type: boolean
+        default: true
+  push:
+    tags:
+      - 'sidestore-hk-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sidestore-healthkit-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan builds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Check inputs and plan
+        id: plan
+        env:
+          # Inputs are empty on tag pushes, so fall back to the same defaults.
+          SIDESTORE_REF: ${{ inputs.sidestore_ref || '0.7.0-alpha' }}
+          SIDESIGN_REF: ${{ inputs.sideSign_ref || '74950d37f2333d29cbf3bfc9ca4a60820498c2d3' }}
+          SIDESIGN_MODE: ${{ inputs.sidesign_mode || 'pr-head' }}
+          XCODE_VERSION: ${{ inputs.xcode_version || '26.2' }}
+          BUILD_064: ${{ github.event_name != 'workflow_dispatch' || inputs.build_064 }}
+        run: |
+          for v in "$SIDESTORE_REF" "$SIDESIGN_REF" "$XCODE_VERSION"; do
+            if ! printf '%s' "$v" | grep -Eq '^[A-Za-z0-9._/-]+$'; then
+              echo "::error::Input '$v' has characters a git ref or Xcode version can't contain."
+              exit 1
+            fi
+          done
+          case "$SIDESIGN_MODE" in pr-head|cherry-pick) ;; *) echo "::error::Unknown sidesign_mode $SIDESIGN_MODE"; exit 1;; esac
+          M=$(jq -cn \
+            --arg ref "$SIDESTORE_REF" --arg ss "$SIDESIGN_REF" --arg mode "$SIDESIGN_MODE" --arg xc "$XCODE_VERSION" \
+            '[{line: "0.7", sidestore_ref: $ref, sidesign_ref: $ss, sidesign_mode: $mode, xcode: $xc, ipa_name: "SideStore-HealthKit"}]')
+          if [ "$BUILD_064" = "true" ]; then
+            M=$(jq -c --arg ss "$SIDESIGN_REF" \
+              '. + [{line: "0.6.4", sidestore_ref: "0.6.4", sidesign_ref: $ss, sidesign_mode: "cherry-pick", xcode: "26.4", ipa_name: "SideStore-0.6.4-HealthKit"}]' <<< "$M")
+          fi
+          echo "matrix={\"include\":$M}" >> "$GITHUB_OUTPUT"
+          jq . <<< "$M"
+
+  build:
+    name: Build patched SideStore ${{ matrix.line }}
+    needs: plan
+    runs-on: macos-26
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      LINE: ${{ matrix.line }}
+      SIDESTORE_REF: ${{ matrix.sidestore_ref }}
+      SIDESIGN_REF: ${{ matrix.sidesign_ref }}
+      SIDESIGN_MODE: ${{ matrix.sidesign_mode }}
+      XCODE_VERSION: ${{ matrix.xcode }}
+      IPA_NAME: ${{ matrix.ipa_name }}
+      # The PR whose head carries the patch; fetched so its commit is reachable.
+      SIDESIGN_PR: '3'
+      OUT_DIR: ${{ github.workspace }}/out
+    steps:
+      # Upstream SideStore, read-only, no token kept in .git/config.
+      - name: Check out SideStore
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: SideStore/SideStore
+          ref: ${{ matrix.sidestore_ref }}
+          path: sidestore
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Apply the HealthKit patch to Dependencies/SideSign
+        working-directory: sidestore
+        run: |
+          if [ ! -d Dependencies/SideSign ]; then
+            echo "::error::SideStore $SIDESTORE_REF has no Dependencies/SideSign. SideStore 0.6.3 and older use AltSign, which this workflow doesn't patch (ADR 0036). Use 0.6.4 or newer."
+            exit 1
+          fi
+          SIDESTORE_SHA=$(git rev-parse HEAD)
+          # The SideSign commit this SideStore ref pins (recorded in the README).
+          UPSTREAM_PIN=$(git ls-tree HEAD Dependencies/SideSign | awk '{print $3}')
+          cd Dependencies/SideSign
+          git fetch --no-tags origin \
+            "+refs/pull/${SIDESIGN_PR}/head:refs/remotes/origin/pr-${SIDESIGN_PR}" \
+            '+refs/heads/main:refs/remotes/origin/main'
+          if git rev-parse -q --verify "${SIDESIGN_REF}^{commit}" >/dev/null; then
+            PATCH_SHA=$(git rev-parse "${SIDESIGN_REF}^{commit}")
+          else
+            # Not in PR #3 or main: try it as a full SHA or a branch name.
+            git fetch --no-tags origin "$SIDESIGN_REF"
+            PATCH_SHA=$(git rev-parse FETCH_HEAD)
+          fi
+          GIT_ID=(-c user.name=gymsmarter-ci -c user.email=ci@invalid)
+          if [ "$SIDESIGN_MODE" = "pr-head" ]; then
+            git checkout --detach "$PATCH_SHA"
+          else
+            # Keep SideStore's own SideSign and apply only the patch commit on top.
+            git checkout --detach "$UPSTREAM_PIN"
+            git "${GIT_ID[@]}" cherry-pick "$PATCH_SHA"
+            E=Sources/Models/Entitlement.swift
+            if ! grep -Eq 'static let healthKit:[[:space:]]*Entitlement' "$E"; then
+              # PR #3 relies on Entitlement.healthKit, which older SideSign pins don't define.
+              perl -0pi -e 's/^(\s*static let inAppPurchase:\s*Entitlement\s*=\s*"in-app-purchase"\n)/$1    static let healthKit: Entitlement                       = "com.apple.developer.healthkit"\n/m' "$E"
+              grep -Eq 'static let healthKit:[[:space:]]*Entitlement[[:space:]]*=[[:space:]]*"com.apple.developer.healthkit"' "$E" \
+                || { echo "::error::Couldn't add Entitlement.healthKit to $E."; exit 1; }
+              git "${GIT_ID[@]}" commit -qam "Define Entitlement.healthKit (missing at this SideSign pin)"
+            fi
+          fi
+          SIDESIGN_SHA=$(git rev-parse HEAD)
+          {
+            echo "SIDESTORE_SHA=$SIDESTORE_SHA"
+            echo "SIDESIGN_UPSTREAM_PIN=$UPSTREAM_PIN"
+            echo "SIDESIGN_PATCH_SHA=$PATCH_SHA"
+            echo "SIDESIGN_SHA=$SIDESIGN_SHA"
+          } >> "$GITHUB_ENV"
+          echo "SideStore $SIDESTORE_REF = $SIDESTORE_SHA"
+          echo "SideSign: upstream pin $UPSTREAM_PIN, patch $PATCH_SHA ($SIDESIGN_MODE), building $SIDESIGN_SHA"
+          echo "Diff from SideStore's pin:"
+          git diff --stat "$UPSTREAM_PIN" HEAD
+          git log --oneline "$UPSTREAM_PIN..HEAD" 2>/dev/null || echo "(pin is not an ancestor, or history is shallow)"
+
+      # Fail unless SideSign now maps the HealthKit entitlement to an App ID feature that
+      # free teams may turn on. Clinical records (healthKitAccess) must stay off.
+      - name: Verify the HealthKit patch is in SideSign
+        working-directory: sidestore/Dependencies/SideSign/Sources/Models
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          F=Feature.swift
+          E=Entitlement.swift
+          [ -f "$F" ] && [ -f "$E" ] || fail "SideSign at $SIDESIGN_SHA has no Sources/Models/Feature.swift or Entitlement.swift."
+          grep -Eq 'static let healthKit:[[:space:]]*Feature[[:space:]]*=[[:space:]]*"HK421J6T7P"' "$F" \
+            || fail "Feature.swift has no healthKit = \"HK421J6T7P\". The HealthKit patch isn't in SideSign $SIDESIGN_SHA."
+          grep -Eq 'case \.healthKit:[[:space:]]*self = \.healthKit' "$F" \
+            || fail "Feature.init(entitlement:) doesn't map .healthKit."
+          grep -Eq 'static let healthKit:[[:space:]]*Entitlement[[:space:]]*=[[:space:]]*"com.apple.developer.healthkit"' "$E" \
+            || fail "Entitlement.healthKit isn't defined as com.apple.developer.healthkit."
+          # Read each list once, then grep the text (no pipes for pipefail to trip on).
+          FREE_FEATURES=$(awk '/static let freeFeatures/,/^[[:space:]]*\]/' "$F")
+          FREE_ENTITLEMENTS=$(awk '/static let freeEntitlements/,/^[[:space:]]*\]/' "$E")
+          grep -Eq '\.healthKit[[:space:]]*,?[[:space:]]*$' <<< "$FREE_FEATURES" \
+            || fail "Feature.freeFeatures doesn't include .healthKit, so SideStore would still drop it for a free team."
+          grep -Eq '\.healthKit[[:space:]]*,?[[:space:]]*$' <<< "$FREE_ENTITLEMENTS" \
+            || fail "Entitlement.freeEntitlements doesn't include .healthKit."
+          if grep -q 'healthKitAccess' <<< "$FREE_ENTITLEMENTS"; then
+            fail "Entitlement.freeEntitlements includes healthKitAccess (clinical records). Not wanted (ADR 0035)."
+          fi
+          echo "HealthKit patch present:"
+          grep -n 'healthKit' "$F" "$E"
+
+      - name: Select Xcode
+        run: |
+          XCODE_APP="/Applications/Xcode_${XCODE_VERSION}.app"
+          if [ ! -d "$XCODE_APP" ]; then
+            ALT=$(ls -d /Applications/Xcode_${XCODE_VERSION}*.app 2>/dev/null | sort -V | tail -1 || true)
+            [ -n "$ALT" ] || ALT=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+            if [ -n "$ALT" ]; then
+              echo "::warning::Xcode $XCODE_VERSION isn't on this runner; using $ALT. Installed: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+              XCODE_APP="$ALT"
+            fi
+          fi
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "::error::No usable Xcode. Installed:"; ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+          echo "XCODE_USED=$(xcodebuild -version | tr '\n' ' ')" >> "$GITHUB_ENV"
+
+      # Same tools SideStore's CI installs: ldid (fake-signing, Makefile `fakesign`) and
+      # xcbeautify (scripts/ci/workflow.py build). Homebrew picks the versions.
+      - name: Install ldid and xcbeautify
+        run: |
+          brew install ldid xcbeautify
+          echo "$(brew list --versions ldid), $(brew list --versions xcbeautify)"
+
+      # Mark the build so Ben can tell it apart in SideStore, in the same
+      # "<version>-<label>+<commit>" form SideStore's nightly and PR builds use.
+      - name: Set version label
+        working-directory: sidestore
+        run: |
+          BASE=$(python3 scripts/ci/workflow.py get-marketing-version | tail -1 | tr -d '[:space:]')
+          VERSION="${BASE}-healthkit.${GITHUB_RUN_NUMBER}+${SIDESTORE_SHA:0:7}"
+          python3 scripts/ci/workflow.py set-marketing-version "$VERSION"
+          grep '^MARKETING_VERSION' Build.xcconfig
+
+      # SideStore's own build: `make -B build` (xcodebuild archive, unsigned, Release),
+      # `make fakesign` (ldid with SideStore's entitlements), `make ipa` -> SideStore.ipa.
+      - name: Build (SideStore's scripts/ci/workflow.py build)
+        working-directory: sidestore
+        run: python3 scripts/ci/workflow.py build
+
+      - name: Check the .ipa and that the patched SideSign was compiled
+        working-directory: sidestore
+        run: |
+          [ -f SideStore.ipa ] || { echo "::error::SideStore.ipa wasn't produced."; exit 1; }
+          NOW=$(git -C Dependencies/SideSign rev-parse HEAD)
+          [ "$NOW" = "$SIDESIGN_SHA" ] || { echo "::error::Dependencies/SideSign moved to $NOW during the build."; exit 1; }
+          # SideSign is a local Swift package, so the patched tree is what compiled.
+          grep -q 'XCLocalSwiftPackageReference "Dependencies/SideSign"' AltStore.xcodeproj/project.pbxproj \
+            || echo "::warning::AltStore.xcodeproj doesn't reference Dependencies/SideSign as a local package; check the build log."
+          rm -rf "$RUNNER_TEMP/ipa" && mkdir -p "$RUNNER_TEMP/ipa"
+          unzip -q SideStore.ipa -d "$RUNNER_TEMP/ipa"
+          PLIST="$RUNNER_TEMP/ipa/Payload/SideStore.app/Info.plist"
+          BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw "$PLIST")
+          SHORT_VERSION=$(plutil -extract CFBundleShortVersionString raw "$PLIST")
+          echo "Bundle ID $BUNDLE_ID, version $SHORT_VERSION"
+          if [ "$BUNDLE_ID" != "com.SideStore.SideStore" ]; then
+            echo "::error::Bundle ID is $BUNDLE_ID, not com.SideStore.SideStore. It would install beside Ben's SideStore instead of over it."
+            exit 1
+          fi
+          echo "IPA_BUNDLE_ID=$BUNDLE_ID" >> "$GITHUB_ENV"
+          echo "IPA_VERSION=$SHORT_VERSION" >> "$GITHUB_ENV"
+
+      - name: Stage the .ipa and README
+        run: |
+          mkdir -p "$OUT_DIR"
+          cp sidestore/SideStore.ipa "$OUT_DIR/$IPA_NAME.ipa"
+          SHA256=$(shasum -a 256 "$OUT_DIR/$IPA_NAME.ipa" | cut -d' ' -f1)
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          README="$OUT_DIR/$IPA_NAME-README.md"
+          {
+            echo "# $IPA_NAME.ipa (SideStore $LINE line)"
+            echo ""
+            echo "Upstream SideStore plus SideSign PR #$SIDESIGN_PR (HealthKit App ID feature HK421J6T7P allowed for free teams)."
+            echo "Built for GymSmarter's Apple Health on a free Apple ID (ADR 0036). Unsigned: fake-signed with ldid like SideStore's"
+            echo "own CI; SideStore or iloader signs it with Ben's Apple ID on install. Steps: docs/device-tests/2026-10-27-sidestore-healthkit.md."
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| SideStore ref | \`$SIDESTORE_REF\` = \`$SIDESTORE_SHA\` (github.com/SideStore/SideStore) |"
+            echo "| SideSign pinned by that ref | \`$SIDESIGN_UPSTREAM_PIN\` |"
+            echo "| SideSign patch | \`$SIDESIGN_REF\` = \`$SIDESIGN_PATCH_SHA\` (github.com/SideStore/SideSign refs/pull/$SIDESIGN_PR/head) |"
+            echo "| How applied | $SIDESIGN_MODE (pr-head: SideSign at the patch commit; cherry-pick: patch on the pinned SideSign) |"
+            echo "| SideSign built | \`$SIDESIGN_SHA\` |"
+            echo "| Version shown in SideStore | $IPA_VERSION |"
+            echo "| Bundle ID | \`$IPA_BUNDLE_ID\` |"
+            echo "| Xcode | $XCODE_USED |"
+            echo "| Runner image | ${ImageOS:-?} ${ImageVersion:-?} |"
+            echo "| Built by | $GITHUB_REPOSITORY @ \`$GITHUB_SHA\` ($GITHUB_REF), run $RUN_URL |"
+            echo "| SHA-256 | \`$SHA256\` |"
+          } > "$README"
+          cat "$README" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download **$IPA_NAME.ipa** and **$IPA_NAME-README.md** from Artifacts below (plain files, not zipped)." >> "$GITHUB_STEP_SUMMARY"
+
+      # archive: false uploads each file as-is, so the phone can open the .ipa from Safari's downloads.
+      - name: Upload the .ipa
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ env.OUT_DIR }}/${{ matrix.ipa_name }}.ipa
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload README
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ env.OUT_DIR }}/${{ matrix.ipa_name }}-README.md
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sidestore-${{ matrix.line }}-build-log
+          path: sidestore/build/logs/
+          if-no-files-found: ignore
+          retention-days: 7
