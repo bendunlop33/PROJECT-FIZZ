@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { LiftView } from '@fizz/domain';
 
-import { LIFT_TABLE, LIFTS_CHART, liftCellLines, liftCellPartWidth, liftsChartLayout, liftTableColumnWidth, lineAt, pointAt, ringAt } from '../src/reviews/lifts-layout';
+import { LIFT_NAME, LIFT_TABLE, LIFTS_AXIS, LIFTS_CHART, liftCellLines, liftCellPartWidth, liftNameLines, liftRowStacked, liftsAxisLeft, liftsChartLayout, liftStackedNameWidth, liftTableColumnWidth, lineAt, pointAt, ringAt } from '../src/reviews/lifts-layout';
 import { progressPalette, withAlpha } from '../src/reviews/palette';
 
 /** The Lifts chart's geometry (Progress v3, the prototype's `liftChart`), pure. */
@@ -135,5 +135,59 @@ describe('the Lifts table’s Current / Target cell: wrap, never cut the number 
     expect(liftCellLines({ width: col390, number: '32.5', suffix: 'each', pb: true })).toEqual([['pb', 'number'], ['suffix']]);
     expect(liftCellLines({ width: col390, number: '100', suffix: null, pb: false })).toEqual([['number']]);
     expect(liftCellLines({ width: col390, number: '60', suffix: 'stack', pb: false })).toEqual([['number', 'suffix']]);
+  });
+});
+
+describe('Overview › Lifts: no clipped text under the chart at 320–430 pt and large text (Ben, 26 Oct)', () => {
+  const table = (screen: number) => screen - 2 * 20 - 2 * 14;
+  const WIDTHS = [320, 375, 390, 430];
+  // Default, xxxLarge, AX1, AX3, AX5 (the callout's 3× cap).
+  const SCALES = [1, 1.353, 1.647, 2.353, 3.118];
+  const NAMES = ['Bench press', 'Back squat', 'Deadlift', 'Overhead press', 'Romanian deadlift', 'Incline dumbbell press', 'Bulgarian split squat', 'Smith machine bench press', 'Lat pulldown', 'Barbell row'];
+  /** Every word fits the width it is given, at the scale (words never break mid-way). */
+  const wordsFit = (name: string, width: number, scale: number) => name.split(' ').every((w) => w.length * LIFT_NAME.char * Math.min(scale, LIFT_NAME.maxScale) <= width);
+
+  it('a name either wraps whole in its column on at most two lines, or the row stacks and the name gets the row’s width', () => {
+    for (const screen of WIDTHS)
+      for (const scale of SCALES)
+        for (const name of NAMES) {
+          const col = liftTableColumnWidth(table(screen));
+          if (liftRowStacked(name, col, scale)) {
+            // Stacked: the whole width; at the largest sizes a long word can still wrap, but nothing is cut (no line limit).
+            expect(liftStackedNameWidth(table(screen))).toBeGreaterThan(col * 2);
+          } else {
+            expect(liftNameLines(name, col, scale), `${name} at ${String(screen)} pt ×${String(scale)}`).toBeLessThanOrEqual(LIFT_NAME.maxLines);
+            expect(wordsFit(name, col, scale)).toBe(true);
+          }
+        }
+  });
+
+  it('at 390 pt and default text the usual main lifts wrap in their column; long names stack; at 320 pt, Overhead press stacks', () => {
+    const col390 = liftTableColumnWidth(table(390));
+    expect(liftNameLines('Bench press', col390)).toBe(2);
+    expect(liftNameLines('Deadlift', col390)).toBe(1);
+    expect(liftRowStacked('Overhead press', col390)).toBe(false);
+    expect(liftRowStacked('Incline dumbbell press', col390)).toBe(true);
+    expect(liftRowStacked('Overhead press', liftTableColumnWidth(table(320)))).toBe(true);
+    expect(liftNameLines('Bench', 0)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('the old table cut every two-word name at 390 pt (one line in a quarter of the row)', () => {
+    const col390 = liftTableColumnWidth(table(390));
+    for (const name of ['Bench press', 'Back squat', 'Overhead press', 'Romanian deadlift']) expect(name.length * LIFT_NAME.char).toBeGreaterThan(col390);
+  });
+
+  it('the y-axis widens for its labels at large text (capped 1.3×), so `100` is never `10…`', () => {
+    expect(liftsAxisLeft(['80', '90', '100'])).toBe(LIFTS_CHART.left);
+    expect(liftsAxisLeft(['80', '90', '100'], 1.3)).toBe(Math.ceil(3 * LIFTS_AXIS.digit * 1.3) + LIFTS_AXIS.gap + 1);
+    expect(liftsAxisLeft(['80', '90', '100'], 3)).toBe(liftsAxisLeft(['80', '90', '100'], 1.3));
+    for (const scale of SCALES) {
+      const left = liftsAxisLeft(['200', '210', '220'], scale);
+      // The label box is `left - 6` wide (charts.tsx), the label right-aligned in it.
+      expect(3 * LIFTS_AXIS.digit * Math.min(scale, LIFTS_AXIS.maxScale)).toBeLessThanOrEqual(left - LIFTS_AXIS.gap);
+    }
+    const l = liftsChartLayout({ lifts: [lift('a', [100, 105, 110])], focus: null, weeks: WEEKS, width: 300, fontScale: 1.3 });
+    expect(l.plot.left).toBe(liftsAxisLeft(l.ticks.map((t) => t.label), 1.3));
+    expect(l.lines[0]?.points[0]?.x).toBe(l.plot.left);
   });
 });

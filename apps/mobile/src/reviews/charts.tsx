@@ -8,7 +8,7 @@ import { TICK_MAX_SCALE } from '../progress/axis-width';
 import { useAx } from '../progress/components';
 import { useTheme } from '../theme';
 import { AppText, Card, TextButton } from '../ui';
-import { LIFT_TABLE, liftCellLines, liftsChartLayout, liftTableColumnWidth, lineAt, pointAt, ringAt } from './lifts-layout';
+import { LIFT_TABLE, liftCellLines, liftRowStacked, liftsChartLayout, liftTableColumnWidth, lineAt, pointAt, ringAt } from './lifts-layout';
 import type { LiftsCanvas } from './LiftsCanvas';
 import { progressPalette } from './palette';
 
@@ -442,9 +442,10 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
   const [picked, setPicked] = useState<string | null>(null);
   const [width, setWidth] = useState(0);
   const [tableWidth, setTableWidth] = useState(0);
+  const { fontScale } = useWindowDimensions();
   const column = liftTableColumnWidth(tableWidth);
   const one = focus === null ? null : (view.lifts.find((l) => l.exerciseId === focus) ?? null);
-  const layout = liftsChartLayout({ lifts: view.lifts, focus: one === null ? null : one.exerciseId, weeks: view.weeks, width: Math.max(width, 1) });
+  const layout = liftsChartLayout({ lifts: view.lifts, focus: one === null ? null : one.exerciseId, weeks: view.weeks, width: Math.max(width, 1), fontScale });
   const loaded = loadLiftsCanvas();
   const Drawing = loaded.ok ? loaded.value : null;
   const showChart = (one === null ? view.lifts.some((l) => l.colour !== null) : one.chartable && one.points.length > 0) && Drawing !== null;
@@ -457,6 +458,27 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
   const row = (l: (typeof view.lifts)[number]) => {
     const on = focus === l.exerciseId;
     const dim = focus !== null && !on;
+    // (Ben, 26 Oct) The name is never cut: it wraps in its column, or (too long for two lines there) takes its own line.
+    const stacked = tableWidth > 0 && liftRowStacked(l.name, column, fontScale);
+    const dot = (
+      <View style={{ width: LIFT_COLS.dot, alignItems: 'center' }}>
+        <View style={l.colour === null ? { width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, borderColor: theme.colors['text.tertiary'] } : { width: 8, height: 8, borderRadius: 4, backgroundColor: pal.lines[l.colour] }} />
+      </View>
+    );
+    const name = (
+      <AppText variant="callout" style={[PROGRESS_TEXT.table, { flex: 1, fontWeight: '600' }]}>
+        {l.name}
+      </AppText>
+    );
+    const numbers = (
+      <>
+        <AppText variant="callout" color="text.secondary" numeric align="right" style={[PROGRESS_TEXT.table, { flex: 1 }]}>
+          {l.repsText}
+        </AppText>
+        <LoadCell width={column} number={l.current} suffix={l.current === '–' ? null : l.loadSuffix} pb={l.latestPb} />
+        <LoadCell width={column} number={l.targetText} suffix={l.target === null ? null : l.loadSuffix} pb={false} />
+      </>
+    );
     return (
       <Pressable
         key={l.exerciseId}
@@ -466,19 +488,27 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
         onPress={() => {
           toggle(l.exerciseId);
         }}
-        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: LIFT_COLS.gap, minHeight: 44, paddingHorizontal: 2, borderRadius: 8, borderTopWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], backgroundColor: on ? theme.colors['bg.raised'] : 'transparent', opacity: dim ? 0.5 : pressed ? 0.7 : 1 })}
+        style={({ pressed }) => ({ flexDirection: stacked ? 'column' : 'row', alignItems: stacked ? 'stretch' : 'center', gap: stacked ? 2 : LIFT_COLS.gap, minHeight: 44, paddingHorizontal: 2, paddingVertical: stacked ? 4 : 0, justifyContent: 'center', borderRadius: 8, borderTopWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], backgroundColor: on ? theme.colors['bg.raised'] : 'transparent', opacity: dim ? 0.5 : pressed ? 0.7 : 1 })}
       >
-        <View style={{ width: LIFT_COLS.dot, alignItems: 'center' }}>
-          <View style={l.colour === null ? { width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, borderColor: theme.colors['text.tertiary'] } : { width: 8, height: 8, borderRadius: 4, backgroundColor: pal.lines[l.colour] }} />
-        </View>
-        <AppText variant="callout" numberOfLines={1} style={[PROGRESS_TEXT.table, { flex: 1, fontWeight: '600' }]}>
-          {l.name}
-        </AppText>
-        <AppText variant="callout" color="text.secondary" numeric align="right" style={[PROGRESS_TEXT.table, { flex: 1 }]}>
-          {l.repsText}
-        </AppText>
-        <LoadCell width={column} number={l.current} suffix={l.current === '–' ? null : l.loadSuffix} pb={l.latestPb} />
-        <LoadCell width={column} number={l.targetText} suffix={l.target === null ? null : l.loadSuffix} pb={false} />
+        {stacked ? (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: LIFT_COLS.gap }}>
+              {dot}
+              {name}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: LIFT_COLS.gap }}>
+              <View style={{ width: LIFT_COLS.dot }} />
+              <View style={{ flex: 1 }} />
+              {numbers}
+            </View>
+          </>
+        ) : (
+          <>
+            {dot}
+            {name}
+            {numbers}
+          </>
+        )}
       </Pressable>
     );
   };
@@ -498,8 +528,8 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
             }}
           />
         ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <AppText variant="callout" color="text.secondary" style={PROGRESS_TEXT.key} accessibilityLabel="Top set. A ring means a personal best. Hollow dot means estimated.">
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', flexShrink: 1 }}>
+            <AppText variant="callout" color="text.secondary" style={[PROGRESS_TEXT.key, { flexShrink: 1 }]} accessibilityLabel="Top set. A ring means a personal best. Hollow dot means estimated.">
               {`${PROGRESS_COPY.topSet} · ${PROGRESS_COPY.pbKey} · ${PROGRESS_COPY.est}${onEdit === null ? '' : ' · '}`}
             </AppText>
             {onEdit !== null ? <SmallLink label={PROGRESS_COPY.edit} onPress={onEdit} accessibilityLabel="Edit lifts" /> : null}

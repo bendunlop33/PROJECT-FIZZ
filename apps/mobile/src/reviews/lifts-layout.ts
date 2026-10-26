@@ -56,13 +56,13 @@ function fmt(n: number): string {
  * `focus`: the one lift shown alone, or null for every drawn lift. `weeks`: the 8 week labels. A line with
  * no points draws nothing; an all-empty chart has no lines (the table still lists the lifts).
  */
-export function liftsChartLayout(input: { lifts: readonly LiftView[]; focus: string | null; weeks: readonly string[]; width: number; height?: number }): LiftsChartLayout {
+export function liftsChartLayout(input: { lifts: readonly LiftView[]; focus: string | null; weeks: readonly string[]; width: number; height?: number; /** Dynamic Type: the y-axis widens so its labels are never cut (Ben, 26 Oct). Absent: 1. */ fontScale?: number }): LiftsChartLayout {
   const W = input.width;
   const H = input.height ?? LIFTS_CHART.height;
   const one = input.focus === null ? null : (input.lifts.find((l) => l.exerciseId === input.focus) ?? null);
   const shown = one !== null ? [one] : input.lifts.filter((l) => l.colour !== null);
   const R = one !== null ? LIFTS_CHART.gutterOne : LIFTS_CHART.gutterAll;
-  const L = LIFTS_CHART.left;
+  let L: number = LIFTS_CHART.left;
   const T = LIFTS_CHART.top;
   const B = LIFTS_CHART.bottom;
   const etaCols = one !== null && one.focus.eta !== null && one.target !== null ? one.focus.etaWeeks : 0;
@@ -75,6 +75,9 @@ export function liftsChartLayout(input: { lifts: readonly LiftView[]; focus: str
   const hi = Math.max(lo + step, Math.ceil((max + 1) / step) * step);
   const x = (i: number) => L + (i * (W - L - R)) / (cols - 1);
   const y = (v: number) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const labels: string[] = [];
+  for (let v = lo; v <= hi + 1e-9; v += step) labels.push(fmt(v));
+  L = liftsAxisLeft(labels, input.fontScale ?? 1);
   const ticks: LiftsChartLayout['ticks'] = [];
   for (let v = lo; v <= hi + 1e-9; v += step) ticks.push({ y: y(v), label: fmt(v) });
   const lines: ChartLine[] = shown.map((l) => {
@@ -95,6 +98,16 @@ export function liftsChartLayout(input: { lifts: readonly LiftView[]; focus: str
   if (eta !== null) xLabels.push({ x: W - R, text: eta.label, anchor: 'end' });
   else xLabels.push({ x: x(WEEKS - 1), text: input.weeks[WEEKS - 1] ?? '', anchor: 'end' });
   return { width: W, height: H, plot: { left: L, right: W - R, top: T, bottom: H - B }, ticks, lines, target, eta, marker, xLabels };
+}
+
+/** The y-axis labels: 11 pt tabular digits (a generous 0.6 em), capped at the ticks' 1.3× Dynamic Type, right-aligned 6 pt from the plot. */
+export const LIFTS_AXIS = { digit: 6.6, maxScale: 1.3, gap: 6 } as const;
+
+/** The plot's left edge: the 30 pt default, wider when the longest label at this text size needs it (no `10…`). */
+export function liftsAxisLeft(labels: readonly string[], fontScale = 1): number {
+  const s = Math.min(LIFTS_AXIS.maxScale, Math.max(1, fontScale));
+  const longest = labels.reduce((n, l) => Math.max(n, l.length), 0);
+  return Math.max(LIFTS_CHART.left, Math.ceil(longest * LIFTS_AXIS.digit * s) + LIFTS_AXIS.gap + 1);
 }
 
 const dist2 = (px: number, py: number, ax: number, ay: number, bx: number, by: number): number => {
@@ -192,4 +205,41 @@ export function liftCellLines(input: { width: number; number: string; suffix: st
   }
   if (line.length > 0) lines.push(line);
   return lines;
+}
+
+/**
+ * The Lifts table's name (Ben, 26 Oct: "the text for lift cuts off under the chart"): never cut. It wraps in
+ * its column when it fits on two lines there with no word broken; otherwise the row stacks, the name on its
+ * own line across the row and the numbers on the line under it, in their columns. 13 pt semibold, a
+ * generous 0.58 em a character (spaces included), scaled with Dynamic Type up to the callout's 3×.
+ */
+export const LIFT_NAME = { char: 7.6, maxLines: 2, maxScale: 3 } as const;
+
+/** Lines `name` needs in `width` (greedy word wrap); Infinity when a word alone is wider than the column. */
+export function liftNameLines(name: string, width: number, fontScale = 1): number {
+  const s = Math.min(LIFT_NAME.maxScale, Math.max(1, fontScale));
+  const ch = LIFT_NAME.char * s;
+  if (width <= 0) return Number.POSITIVE_INFINITY;
+  let lines = 1;
+  let used = 0;
+  for (const word of name.split(/\s+/).filter((w) => w.length > 0)) {
+    const w = word.length * ch;
+    if (w > width) return Number.POSITIVE_INFINITY;
+    const need = used === 0 ? w : used + ch + w;
+    if (need > width) {
+      lines += 1;
+      used = w;
+    } else used = need;
+  }
+  return lines;
+}
+
+/** The row puts the name on its own line (it can't fit its column on two lines whole). */
+export function liftRowStacked(name: string, column: number, fontScale = 1): boolean {
+  return liftNameLines(name, column, fontScale) > LIFT_NAME.maxLines;
+}
+
+/** The stacked name's width: the table less the row padding, the dot and its gap. */
+export function liftStackedNameWidth(tableWidth: number): number {
+  return Math.max(0, tableWidth - LIFT_TABLE.rowPadding - LIFT_TABLE.dot - LIFT_TABLE.gap);
 }

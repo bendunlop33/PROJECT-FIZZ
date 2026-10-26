@@ -46,3 +46,15 @@ describe('Progress › Lifts: the chart near the top', () => {
     expect(tab).toContain('accessibilityLabel="More exercises"');
   });
 });
+
+describe('Overview › Lifts card: the lift names under the chart are never cut (Ben, 26 Oct)', () => {
+  const charts = read('reviews/charts.tsx');
+  it('the name has no one-line limit; a long name stacks the row; the axis and key make room at large text', () => {
+    expect(charts).toContain('const stacked = tableWidth > 0 && liftRowStacked(l.name, column, fontScale);');
+    expect(charts).not.toContain("numberOfLines={1} style={[PROGRESS_TEXT.table, { flex: 1, fontWeight: '600' }]}");
+    expect(charts).toContain("<AppText variant=\"callout\" style={[PROGRESS_TEXT.table, { flex: 1, fontWeight: '600' }]}>");
+    expect(charts).toContain('weeks: view.weeks, width: Math.max(width, 1), fontScale });');
+    expect(charts).toContain('width: layout.plot.left - 6');
+    expect(charts).toContain("style={[PROGRESS_TEXT.key, { flexShrink: 1 }]}");
+  });
+});
