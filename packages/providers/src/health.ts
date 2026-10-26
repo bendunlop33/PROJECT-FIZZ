@@ -126,7 +126,6 @@ function isOwn(bundleId: string, ownBundleId: string): boolean {
 function validZone(tz: string | null, fallback: string): string {
   if (tz === null || tz === '') return fallback;
   try {
-    // eslint-disable-next-line no-restricted-globals -- validating a zone name, not reading the clock
     new Intl.DateTimeFormat('en', { timeZone: tz });
     return tz;
   } catch {
@@ -143,7 +142,7 @@ const finite = (n: unknown): number | null => (typeof n === 'number' && Number.i
 export function workoutSamplesFrom(rows: readonly HealthNativeWorkout[], ownBundleId: string, tz: string) {
   const out = [];
   for (const r of rows) {
-    const uuid = String(r.uuid).toLowerCase();
+    const uuid = r.uuid.toLowerCase();
     const start = finite(r.startMs);
     const end = finite(r.endMs);
     if (!UUID.test(uuid) || start === null || end === null || end < start || isOwn(r.sourceBundleId, ownBundleId)) continue;
@@ -175,7 +174,7 @@ export function workoutSamplesFrom(rows: readonly HealthNativeWorkout[], ownBund
 export function weightSamplesFrom(rows: readonly HealthNativeBodyMass[], ownBundleId: string, tz: string) {
   const out = [];
   for (const r of rows) {
-    const uuid = String(r.uuid).toLowerCase();
+    const uuid = r.uuid.toLowerCase();
     const kg = finite(r.kg);
     const at = finite(r.atMs);
     if (!UUID.test(uuid) || kg === null || kg <= 0 || kg > 700 || at === null || isOwn(r.sourceBundleId, ownBundleId)) continue;
@@ -188,7 +187,7 @@ export function weightSamplesFrom(rows: readonly HealthNativeBodyMass[], ownBund
 export function restingHrSamplesFrom(rows: readonly HealthNativeRestingHr[], ownBundleId: string, tz: string) {
   const out = [];
   for (const r of rows) {
-    const uuid = String(r.uuid).toLowerCase();
+    const uuid = r.uuid.toLowerCase();
     const bpm = finite(r.bpm);
     const at = finite(r.atMs);
     if (!UUID.test(uuid) || bpm === null || bpm < 15 || bpm > 300 || at === null || isOwn(r.sourceBundleId, ownBundleId)) continue;
@@ -203,7 +202,7 @@ const SLEEP_STAGE = ['in_bed', 'asleep', 'awake', 'core', 'deep', 'rem'] as cons
 export function sleepSamplesFrom(rows: readonly HealthNativeSleep[], ownBundleId: string, tz: string) {
   const out = [];
   for (const r of rows) {
-    const uuid = String(r.uuid).toLowerCase();
+    const uuid = r.uuid.toLowerCase();
     const start = finite(r.startMs);
     const end = finite(r.endMs);
     const stage = SLEEP_STAGE[Math.round(finite(r.value) ?? -1)];

@@ -64,19 +64,28 @@ export function createTrainingService(deps: TrainingServiceDeps) {
 
   /** (ADR 0035) Bodyweights read from Apple Health while `Bodyweight` is on; none when off or unreadable. */
   async function readHealthWeights(ownerId: string): Promise<HealthWeightSample[]> {
-    const h = deps.store().repos.health;
-    const settings = await h.settings(ownerId).catch(() => null);
-    return settings?.readWeight === true ? h.weightSamples(ownerId).catch(() => []) : [];
+    try {
+      const h = deps.store().repos.health;
+      const settings = await h.settings(ownerId).catch(() => null);
+      return settings?.readWeight === true ? await h.weightSamples(ownerId).catch(() => []) : [];
+    } catch {
+      // Health's tables unreadable: training details never fail on them.
+      return [];
+    }
   }
 
   /** (Q8) Resting heart rate and sleep, the last 14 days, while their switches are on. */
   async function readHealthSignals(ownerId: string): Promise<{ restingHeartRate: HealthDailyValue[]; sleep: HealthDailyValue[] }> {
-    const h = deps.store().repos.health;
-    const settings = await h.settings(ownerId).catch(() => null);
-    const from = toIso(toMs(deps.now().utc) - 15 * 86_400_000);
-    const hr = settings?.readRestingHeartRate === true ? await h.samplesSince(ownerId, 'resting_hr', from).catch(() => []) : [];
-    const sleep = settings?.readSleep === true ? await h.samplesSince(ownerId, 'sleep', from).catch(() => []) : [];
-    return { restingHeartRate: restingHeartRateDays(hr), sleep: sleepNights(sleep) };
+    try {
+      const h = deps.store().repos.health;
+      const settings = await h.settings(ownerId).catch(() => null);
+      const from = toIso(toMs(deps.now().utc) - 15 * 86_400_000);
+      const hr = settings?.readRestingHeartRate === true ? await h.samplesSince(ownerId, 'resting_hr', from).catch(() => []) : [];
+      const sleep = settings?.readSleep === true ? await h.samplesSince(ownerId, 'sleep', from).catch(() => []) : [];
+      return { restingHeartRate: restingHeartRateDays(hr), sleep: sleepNights(sleep) };
+    } catch {
+      return { restingHeartRate: [], sleep: [] };
+    }
   }
 
   async function pool(): Promise<Map<string, Exercise>> {
