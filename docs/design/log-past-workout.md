@@ -6,6 +6,11 @@
 >
 > Built by the developer on 25 Oct (`docs/decisions/0033-moving-a-workout-in-time.md`). Not yet run on Ben's iPhone.
 
+> **Revision (Ben, 26 Oct): Q-PL1 and Q-PL2 decided.**
+> - **`Only the start` (Q-PL1, option b).** On the Finish sheet and in the Summary's (or a past workout's) `Edit times`, once Started has moved, two chips under the rows: `Move whole workout` (selected by default, as built 25 Oct) and `Only the start`. `Only the start` keeps every set where it was (the 19 Oct behaviour): the start stays at or before the first set, at most a day back and not in the future; Ended goes back to where it was before it moved along. Save writes the timing edit without `shift` (one versioned write; a retry is a duplicate, a stale sheet is refused), and `Times changed` [Undo] puts the start back. Not offered in a past log (its set times are placeholders, so it always moves whole). No other copy.
+> - **`Tick all as planned` (Q-PL2).** In a past log started from a saved workout or a plan day, a text button under the top bar: `Tick all as planned`. One tap logs every planned set not done yet with its planned values (load as planned, the target reps or the low end of a range, the planned time or distance; no effort), in workout order, as one versioned write (`tick_all_planned`; a retry writes nothing). Ben's tap is the confirmation; each set stays editable. Sets he added, sets taken out before the start and sets whose plan isn't complete stay as they are. Toast `8 sets ticked` [Undo]: every set it ticked goes back to not done, refused (`Couldn’t undo: changed since`) once one of them changed. Not shown in a live workout or a past log started empty; gone once nothing is left to tick.
+> - **Acceptance.** (1) Finish with Started 20 min earlier and `Only the start`: the sets keep their times, the start is earlier, Undo puts it back. (2) The default still moves the whole workout. (3) A past log of Push A: `Tick all as planned` ticks every set as planned; a force-close keeps them; Undo unticks them all; after correcting one set Undo is refused and nothing changes. (4) No button in a live workout. Not yet run on Ben's iPhone.
+
 ## 1. Purpose
 
 - Enter a workout after the fact (forgot the phone, logged on paper, a hotel gym) on the day it happened.
@@ -35,7 +40,7 @@ Where: the Finish sheet (active-workout §4.8), Summary and a past workout's `Ed
 - Out of range: the wheel stops at the limit and one short line says why (`Start can’t be in the future`, `Sets can’t move into the future`, `End can’t be before the last set`, `Start can’t be before 2000`).
 - **Save**: one `update_session_timing` with `shift: true` (the Finish sheet: `finish` with `shift: true`). Logged values never change; only times move.
 - After Save: toast `Times changed` [Undo] on the Summary (`Start time changed` [Undo] in a past log). Undo is the same move back on the new version; if anything changed since, it says `Couldn’t undo: changed since`.
-- **Not changed:** the live workout's own `Edit workout times` (before Finish) still moves only the start, at most a day back and never past the first set: a live workout can't move while its clock runs. See §7 Q-PL1.
+- **Not changed:** the live workout's own `Edit workout times` (before Finish) still moves only the start, at most a day back and never past the first set: a live workout can't move while its clock runs. **`Only the start` (Ben, 26 Oct):** on the Finish sheet and in `Edit times`, a moved start can instead keep the sets where they are (see the revision note at the top).
 
 ## 3. Log a past workout
 
@@ -98,5 +103,5 @@ Everything that reads "the latest" orders by the workout's start, never by when 
 
 ## 7. Open for Ben
 
-- **Q-PL1.** Moving Started now moves the sets too. The 19 Oct case "forgot to press Start, so the start should be earlier but the sets stay" no longer has a way on the Finish sheet or Summary. Options: (a) keep as built (move = whole workout); (b) a second row action `Only the start` that keeps the sets; (c) moving the start earlier within an hour keeps the sets, beyond that moves everything. Developer suggests (b) if Ben misses it.
-- **Q-PL2.** Ticking sets in a past log is one tap each, values prefilled from the target. Should `Log a past workout` from a saved workout or plan day offer `Tick all as planned` for when it went exactly to plan?
+- **Q-PL1 (decided, Ben, 26 Oct: option b, `Only the start`; see the revision note at the top).** Moving Started now moves the sets too. The 19 Oct case "forgot to press Start, so the start should be earlier but the sets stay" no longer has a way on the Finish sheet or Summary. Options: (a) keep as built (move = whole workout); (b) a second row action `Only the start` that keeps the sets; (c) moving the start earlier within an hour keeps the sets, beyond that moves everything. Developer suggests (b) if Ben misses it.
+- **Q-PL2 (decided, Ben, 26 Oct: yes, `Tick all as planned`; see the revision note at the top).** Ticking sets in a past log is one tap each, values prefilled from the target. Should `Log a past workout` from a saved workout or plan day offer `Tick all as planned` for when it went exactly to plan?
