@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { defaultLiftPicks, trackedLiftPicks } from '@fizz/domain';
+import { defaultLiftPicks, newPainFlag, trackedLiftPicks } from '@fizz/domain';
 
-import { barbell, dumbbells, gym, HISTORY_EXERCISES, largeHistory, profile, stack } from '@fizz/domain/testing';
+import { barbell, dumbbells, gym, HISTORY_EXERCISES, id, largeHistory, profile, stack } from '@fizz/domain/testing';
 import { openStore } from '@fizz/persistence';
 import { openNodeDriver } from '@fizz/persistence/node';
 
@@ -159,5 +159,96 @@ describe('Lifts targets read without full workouts (review 26 Oct finding 9)', (
     } finally {
       await store.close();
     }
+  });
+});
+
+describe('one exercise-progress screen (Ben, 26 Oct): Lifts and Exercise detail share one model', () => {
+  it('the Lifts model carries BEST REPS for the period, all-time RECORDS and a pain flag, for the series showing; every row opens a workout', async () => {
+    const store = await openStore(openNodeDriver(':memory:'));
+    try {
+      await store.repos.profiles.save(profile(), null);
+      await store.repos.gyms.save(gym(2, { isDefault: true }), null);
+      for (const eq of [barbell(), stack(), dumbbells()]) await store.repos.equipment.save(eq, null);
+      for (const ex of HISTORY_EXERCISES) await store.repos.exercises.save(ex, null);
+      const history = largeHistory({ weeks: 30, perWeek: 2 });
+      for (const x of history) await store.repos.sessions.save(x, null);
+      const ids = new Set(history.map((x) => x.session.id));
+      const nowIso = '2026-10-08T18:05:00.000Z';
+      const svc = createProgressService({
+        store: () => store,
+        now: () => ({ utc: nowIso, tz: 'Europe/London' }),
+        profile: async () => (await store.repos.profiles.get(profile().id)) ?? null,
+        saveSettings: () => Promise.resolve({ ok: true }),
+        catalogueExercises: () => [],
+        dispatch: () => Promise.reject(new Error('unused')),
+        slicer: () => () => Promise.resolve(),
+      });
+      const bench = HISTORY_EXERCISES[0]?.id ?? '';
+      const tab = await svc.exerciseTab({ exerciseId: bench, period: '6m' });
+      const extras = tab?.extras;
+      if (!extras || !tab.view) throw new Error('no extras');
+      expect(extras.seriesId).toBe(tab.view.seriesId);
+      expect(extras.repTable?.by).toBe('weight');
+      expect(extras.repTable?.rows.length).toBeGreaterThan(0);
+      for (const r of extras.repTable?.rows ?? []) if (r.sessionId !== null) expect(ids.has(r.sessionId)).toBe(true);
+      expect(extras.records).not.toBeNull();
+      for (const r of extras.records?.items ?? []) expect(ids.has(r.sessionId)).toBe(true);
+      expect(extras.pain).toBeNull();
+      // Every chart point is a workout (a tap opens it).
+      for (const p of tab.view.chart.points) expect(ids.has(p.sessionId)).toBe(true);
+      // By reps, and a shorter period narrows BEST REPS like the chart (records stay all-time).
+      const byReps = await svc.exerciseTab({ exerciseId: bench, period: '6m', repBy: 'reps' });
+      expect(byReps?.extras?.repTable?.by).toBe('reps');
+      const month = await svc.exerciseTab({ exerciseId: bench, period: '1m' });
+      expect(month?.extras?.records?.items.length).toBe(extras.records?.items.length);
+      // Opened on an old workout (a Summary row): its series and a period wide enough to hold it.
+      const oldest = history.find((x) => x.exercises.some((e) => e.exerciseId === bench));
+      if (!oldest) throw new Error('no bench workout');
+      const opened = await svc.exerciseTab({ exerciseId: bench, period: '6m', open: { sessionId: oldest.session.id, sessionExerciseId: null } });
+      expect(opened?.view?.chart.points.map((p) => p.sessionId)).toContain(oldest.session.id);
+      // A pain flag on the exercise shows (rule 9), at once (a write).
+      await store.repos.painFlags.save(newPainFlag({ id: id(9_260_001), ownerId: profile().id, opId: 'pain-bench-26oct', exerciseId: bench, exerciseName: 'Bench', area: null, source: 'check_in', checkInId: null, at: { utc: nowIso, tz: 'Europe/London' } }), null);
+      const flagged = await svc.exerciseTab({ exerciseId: bench, period: '6m' });
+      expect(flagged?.extras?.pain?.text).toMatch(/^Pain flag since/);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it('Exercise detail opens a lift with the same view as the Lifts chip (one period set, no chips)', async () => {
+    const { s, gymId } = await setUp();
+    const ids: string[] = [];
+    for (const load of [60, 62.5, 65]) {
+      ids.push(await logWorkout(h, s, gymId, [w('Bench press', load)]));
+      h.clockMs += 2 * DAY;
+    }
+    const lifts = await s.progress.exerciseTab({ period: '6m' });
+    const bench = lifts?.view?.exerciseId ?? '';
+    // Exercise detail asks for the exercise (no remembered pick): the same view.
+    const detail = await s.progress.exerciseTab({ exerciseId: bench, remembered: null, period: '6m' });
+    expect(detail?.view).toEqual(lifts?.view);
+    expect(detail?.extras).toEqual(lifts?.extras);
+    expect(detail?.view?.chart.points.map((p) => p.sessionId)).toEqual(ids);
+  });
+});
+
+describe('a PB or a chart point opens its workout (Ben, 26 Oct)', () => {
+  it('Overview lift points carry the workout of their top set; the PB ring is the newest workout', async () => {
+    const { s, gymId } = await setUp();
+    const ids: string[] = [];
+    // One workout a week for 4 weeks, heavier each time: the newest top set is a PB.
+    for (const load of [60, 62.5, 65, 67.5]) {
+      ids.push(await logWorkout(h, s, gymId, [w('Bench press', load, 6)]));
+      h.clockMs += 7 * DAY;
+    }
+    const bench = (await s.progress.exercises({ query: 'Bench press' }))?.view.rows[0]?.exerciseId ?? '';
+    const data = await s.reviews.progress();
+    if (data === null) throw new Error('no overview');
+    expect((await s.training.change({ kind: 'progress_lifts', exerciseIds: [bench], reps: { [bench]: 6 } }, data.trainingVersion, 'op-pick-bench')).ok).toBe(true);
+    const lift = (await s.reviews.progress())?.lifts.lifts.find((l) => l.exerciseId === bench);
+    if (!lift) throw new Error('no bench line');
+    expect(lift.points.map((p) => p.sessionId)).toEqual(ids);
+    expect(lift.latestPb).toBe(true);
+    expect(lift.points.at(-1)).toMatchObject({ pb: true, sessionId: ids.at(-1) });
   });
 });

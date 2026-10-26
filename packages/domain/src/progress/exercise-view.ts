@@ -1120,3 +1120,49 @@ export function buildExerciseListView(input: { sessions: readonly ProgressSessio
     noMatches: entries.length > 0 && rows.length === 0 ? 'No matches.' : null,
   };
 }
+
+/**
+ * (Ben, 26 Oct) One exercise-progress screen: what Progress › Lifts and Exercise detail show under the shared
+ * chart, stat line and sessions table, for the series the chart shows. `BEST REPS` (or `BEST DISTANCE`) covers the
+ * period showing, like the chart; `RECORDS` are all time (a record is judged against everything before it).
+ * Every row carries its workout, so a tap opens it. Pure.
+ */
+export interface ExerciseExtrasView {
+  seriesId: string;
+  repTable: RepTableView | null;
+  distanceTable: DistanceTableView | null;
+  /** Null for series with no defined record (timed holds, distance, cardio). */
+  records: { items: RecordRowView[]; empty: string | null } | null;
+  /** An active pain flag on this exercise (`Pain flag since 2 Oct`). */
+  pain: { flagId: string; text: string; words: string } | null;
+}
+
+export function buildExerciseExtras(input: {
+  sessions: readonly ProgressSession[];
+  exerciseId: string;
+  seriesId: string;
+  today: string;
+  window: DateRange;
+  unit?: WeightUnit | null;
+  repBy?: 'weight' | 'reps';
+  painFlag?: { flagId: string; date: string } | null;
+}): ExerciseExtrasView | null {
+  const mine = input.sessions.filter((s) => s.exercises.some((e) => e.exerciseId === input.exerciseId));
+  const series = collectExerciseSeries(mine, input.exerciseId, { unit: input.unit ?? null }).find((s) => s.id === input.seriesId);
+  if (series === undefined) return null;
+  const today = input.today;
+  const rec = exerciseRecords(input.sessions, series);
+  return {
+    seriesId: series.id,
+    repTable: repTableView(series, input.window, input.repBy ?? 'weight', today),
+    distanceTable: distanceTableView(series, input.window, today),
+    records:
+      series.kind === 'timed' || series.kind === 'distance' || series.kind === 'cardio'
+        ? null
+        : {
+            items: rec.items.map((r) => recordView(r, series, today)),
+            empty: rec.items.length > 0 ? null : rec.loggedSessions <= RECORD_MIN_SESSIONS ? `Records start after ${String(RECORD_MIN_SESSIONS)} logged sessions.` : 'No records yet.',
+          },
+    pain: input.painFlag ? { flagId: input.painFlag.flagId, text: `Pain flag since ${shortDate(input.painFlag.date, today)}`, words: `Pain flag since ${longDate(input.painFlag.date, today)}. Opens the flag.` } : null,
+  };
+}

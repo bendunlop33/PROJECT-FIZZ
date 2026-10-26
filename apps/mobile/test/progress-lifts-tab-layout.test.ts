@@ -19,7 +19,9 @@ const IPHONE = { se: 667 - 20 - 49, mini: 812 - 50 - 83, pro: 852 - 59 - 83, max
 
 describe('Progress › Lifts: the chart near the top', () => {
   it('the chips come first and the chart straight under them; controls, stats, trailing and sessions follow', () => {
-    expect(LIFTS_TAB_SECTIONS).toEqual(['lifts', 'chart', 'controls', 'stats', 'trailing', 'sessions']);
+    // (Ben, 26 Oct: one exercise-progress screen) An active pain flag under the chart, the lift target under the
+    // stat line, `BEST REPS` and `RECORDS` last; Exercise detail renders the same without the chips.
+    expect(LIFTS_TAB_SECTIONS).toEqual(['lifts', 'chart', 'pain', 'controls', 'stats', 'target', 'trailing', 'sessions', 'reps', 'records']);
     expect(LIFTS_TAB_SECTIONS.indexOf('chart')).toBe(LIFTS_TAB_SECTIONS.indexOf('lifts') + 1);
   });
 
@@ -34,12 +36,12 @@ describe('Progress › Lifts: the chart near the top', () => {
 
   it('the screen renders its sections in that order and computes nothing itself', () => {
     const tab = read('screens/progress/ExercisesTab.tsx');
-    expect(tab).toContain('{LIFTS_TAB_SECTIONS.map((k) => (');
+    expect(tab).toContain('{LIFTS_TAB_SECTIONS.map((k) => (sections[k] === null ? null : <View key={k}>{sections[k]}</View>))}');
     expect(tab).toContain('const sections: Record<LiftsTabSection, React.ReactNode> = {');
     // The chips come from the service (the plan's main lifts, else his main compounds); his pick is remembered on this phone.
     expect(tab).toContain('chips={tab.lifts.chips}');
-    expect(tab).toContain('remembered: prefs.liftsExercise ?? null');
-    expect(tab).toContain('update({ liftsExercise: id })');
+    expect(tab).toContain('remembered: only === null ? (prefs.liftsExercise ?? null) : null');
+    expect(tab).toContain('if (only === null && prefs.liftsExercise !== id) update({ liftsExercise: id });');
     expect(tab).not.toMatch(/defaultLiftPicks|liftsTabSelection|listProgressExercises/);
     // The chip row scrolls sideways, so a long name is never cut; `More` opens the searchable list.
     expect(tab).toContain('<ScrollView horizontal');

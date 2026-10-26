@@ -67,27 +67,16 @@ describe('6.4–6.6', () => {
     expect(c).toContain('accessibilityRole="radiogroup"');
     expect(c).toContain('adjustsFontSizeToFit minimumFontScale={0.85}');
   });
-  it('Exercise detail: measure and period are two compact dropdowns on one top row, with Exercise info (Ben, 20 Oct)', () => {
+  it('(Ben, 26 Oct) Exercise detail is the Lifts body: the same Measure and Period dropdowns (one period set), no chips, Exercise info', () => {
     const d = read('screens', 'progress', 'ExerciseDetailScreen.tsx');
-    expect(d).not.toMatch(/<Chip\b|ChipScroll/);
-    expect(d.match(/<DropdownButton small/g)?.length).toBe(2);
-    expect(d).toContain('accessibilityLabel={`Measure, ${metricLabel}`}');
-    expect(d).toContain('accessibilityLabel={`Period, ${rangeLabel}`}');
-    expect(d).toContain('options={view.metrics}');
-    expect(d).toContain('options={view.ranges}');
-    // The row comes first, above the pain line, series menu and stats, so the chart starts higher.
-    const row = d.indexOf('accessibilityLabel={`Measure, ${metricLabel}`}');
-    for (const later of ['{view.pain ? (', '{view.series.length > 1 ? (', '<StatStrip ', '<TrendChart']) expect(d.indexOf(later)).toBeGreaterThan(row);
-    expect(d).toContain("{route.name === 'ProgressExercise' ? <View style={{ marginLeft: 'auto' }}>{infoLink}</View> : null}");
-    expect(d).toContain('<TextButton label="Exercise info"');
-  });
-  it('Exercise detail: the measure list never stays open without its button (review S3)', () => {
-    const d = read('screens', 'progress', 'ExerciseDetailScreen.tsx');
-    // The button and the list share the same more-than-one-measure guard.
-    expect(d).toContain('{view.metrics.length > 1 ? ( <DropdownButton');
-    expect(d).toContain("{controlOpen === 'metric' && view.metrics.length > 1 ? (");
-    // Switching to a one-measure series closes the open list, so it does not reappear later.
-    expect(d).toContain('const singleMetric = view !== null && view.metrics.length <= 1;');
-    expect(d).toContain("if (singleMetric) setControlOpen((o) => (o === 'metric' ? null : o));");
+    const tab = read('screens', 'progress', 'ExercisesTab.tsx');
+    expect(d).not.toMatch(/<Chip\b|ChipScroll|view\.ranges|<DropdownButton/);
+    expect(d).toContain('<ExercisesTab exerciseId={exerciseId}');
+    expect(tab).toContain('accessibilityLabel={`Measure, ${view.measureLabel}`}');
+    expect(tab).toContain('<PeriodPicker');
+    // No chip row for one exercise; the measure list shares the more-than-one guard with its button.
+    expect(tab).toContain('lifts: only !== null ? null : (');
+    expect(tab).toContain('view.measures.length > 1 ? (');
+    expect(d).toMatch(/<TextButton\s+label="Exercise info"/);
   });
 });

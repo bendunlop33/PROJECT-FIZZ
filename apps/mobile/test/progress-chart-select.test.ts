@@ -111,9 +111,9 @@ describe('wiring', () => {
     expect(chart).toMatch(/if \(isPointSelected\(i, points, focus\)\) onSelect\(null\);/);
     expect(chart).not.toMatch(/onResponderMove|onMoveShouldSetResponder/);
     expect(chart).not.toMatch(/points\[selected\]/);
+    // (Ben, 26 Oct: one exercise-progress screen) Exercise detail is the Lifts tab's body for one exercise.
     const screen = read('screens/progress/ExerciseDetailScreen.tsx');
-    expect(screen).toMatch(/chartSelection\(view\.points, view\.selection, selectedId\)/);
-    expect(screen).toMatch(/selected=\{picked\?\.focus \?\? null\}/);
-    expect(screen).toMatch(/<Tag text=\{picked\.weekBest\} \/>/);
+    expect(screen).toContain('<ExercisesTab exerciseId={exerciseId} opening={opening} onLoaded={onLoaded} />');
+    expect(screen).not.toMatch(/<TrendChart|chartSelection\(/);
   });
 });

@@ -2,6 +2,8 @@ import {
   buildCalendarMonthView,
   activityRow,
   buildExerciseDetailView,
+  buildExerciseExtras,
+  type ExerciseExtrasView,
   buildExerciseListView,
   buildExerciseTabView,
   buildProgressHomeView,
@@ -160,6 +162,8 @@ export interface ExerciseTabRequest {
   open?: { sessionId: string; sessionExerciseId: string | null } | null;
   /** Settings › `Targets hit` (this phone; default off): with it on, a main lift's targets carry `Targets hit 5 of last 6`. */
   targetsHit?: boolean;
+  /** `BEST REPS` by weight (default) or by reps. */
+  repBy?: 'weight' | 'reps';
 }
 
 export interface ExerciseTab {
@@ -180,6 +184,11 @@ export interface ExerciseTab {
    * main compounds, else his recent exercises), the one showing selected.
    */
   lifts: { chips: LiftChip[]; source: LiftPicksSource };
+  /**
+   * (Ben, 26 Oct: one exercise-progress screen) Under the shared chart and table, in Lifts and on Exercise detail:
+   * `BEST REPS` for the period, all-time `RECORDS` and an active pain flag, for the series showing; null with no exercise.
+   */
+  extras: ExerciseExtrasView | null;
 }
 
 export type ConfirmOutcome = { ok: true; sessionId: string; version: number } | { ok: false; message: string };
@@ -459,7 +468,25 @@ export function createProgressService(deps: ProgressServiceDeps) {
               trailing: req.trailing ?? null,
             });
       const targets = exerciseId === null ? null : await targetsFor(profile, ctx.sessions, exerciseId, req.targetsHit === true).catch(() => null);
-      return { view, period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable, targets, lifts };
+      let extras: ExerciseExtrasView | null = null;
+      if (view !== null) {
+        const nowMs = toMs(deps.now().utc);
+        const flags = await repos()
+          .painFlags.listActive(profile.id)
+          .catch(() => []);
+        const pain = painFlagCovering(flags, view.exerciseId, nowMs, profile.timezone);
+        extras = buildExerciseExtras({
+          sessions: ctx.sessions,
+          exerciseId: view.exerciseId,
+          seriesId: view.seriesId,
+          today,
+          window,
+          unit: profile.preferredUnit,
+          repBy: req.repBy ?? 'weight',
+          painFlag: pain === null ? null : { flagId: pain.flag.id, date: localDateOf(toMs(pain.flag.reportedAt.utc), pain.flag.reportedAt.tz) },
+        });
+      }
+      return { view, period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable, targets, lifts, extras };
   }
 
   return {

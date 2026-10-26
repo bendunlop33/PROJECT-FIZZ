@@ -1,4 +1,4 @@
-import type { ImplementCount, ProgressPeriodKey, WeightUnit } from '@fizz/schemas';
+import type { ImplementCount, LoadConvention, ProgressPeriodKey, WeightUnit } from '@fizz/schemas';
 
 import { formatDistance, formatDuration, formatNumber, loadText, NBSP } from '../display';
 import { isSetCountable } from '../exclusions';
@@ -316,6 +316,8 @@ export interface ExerciseTabView {
   info: string | null;
   /** No session of this series in the period, or none with a value for the measure. */
   empty: string | null;
+  /** The series' terms (a lift target's dotted line, Ben 20 Oct). */
+  seriesTerms: { exerciseId: string; kind: SeriesKind; convention: LoadConvention; unit: WeightUnit };
 }
 
 export interface ExerciseTabInput {
@@ -493,5 +495,11 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
     table: { unit, totalUnit: offered.includes('total') ? series.key.unit : null, rows },
     info: [convertedText(inWindow), totalAssumed ? TOTAL_ASSUMED : null, measure === 'total' && series.kind === 'added_bodyweight' ? TOTAL_ADDED_ONLY : null].filter((x): x is string => x !== null).join('\n') || null,
     empty: inWindow.length === 0 ? 'No sessions in this period.' : points.length === 0 ? `No ${label} in this period.` : null,
+    seriesTerms: { exerciseId: input.exerciseId, kind: series.kind, convention: series.key.convention, unit: series.key.unit },
   };
+}
+
+/** The Exercise detail metric a Lifts measure plots (a lift target's line: Est. 1RM or top set), or null. */
+export function measureMetric(m: ExerciseMeasure): 'e1rm' | 'top_set' | null {
+  return m === 'e1rm' ? 'e1rm' : m === 'top_set' ? 'top_set' : null;
 }

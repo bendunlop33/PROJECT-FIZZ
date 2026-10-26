@@ -17,18 +17,35 @@ import { nearestPointIndex, trendLayout } from './trend-layout';
  * points), a labelled Y axis with gridlines, the trailing average as a thin
  * dashed line, and tap a point for its date and value (estimates say so).
  * Geometry from the pure `trendLayout`; the canvas only draws it.
+ *
+ * (Ben, 26 Oct) With `onOpen`, a tap on a point opens the workout it came from; a row tapped in the sessions
+ * table still selects its point. `target`: a lift target's dotted line (Ben, 20 Oct), in the chart's unit.
  */
 
 const INSET = 10;
 const HEIGHT = 260;
 
 /** `readout`: the selected session's line from the table, shown when it has no point for the measure (`8 Oct · Est. 1RM —`). */
-export function ExerciseLineChart({ chart, selected, readout = null, onSelect }: { chart: ExerciseTabView['chart']; selected: string | null; readout?: string | null; onSelect: (sessionId: string | null) => void }) {
+export function ExerciseLineChart({
+  chart,
+  selected,
+  readout = null,
+  onSelect,
+  onOpen,
+  target = null,
+}: {
+  chart: ExerciseTabView['chart'];
+  selected: string | null;
+  readout?: string | null;
+  onSelect?: (sessionId: string | null) => void;
+  onOpen?: (sessionId: string) => void;
+  target?: number | null;
+}) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
   // One run, no gap breaks: Ben asked for a line every time.
   const points = chart.points.map((p) => ({ date: p.date, value: p.value, breakBefore: false }));
-  const base = { points, from: chart.from, to: chart.to, width, height: HEIGHT, bars: false, format: chart.format, inset: INSET, overlay: chart.points.map((p) => p.average) };
+  const base = { points, from: chart.from, to: chart.to, width, height: HEIGHT, bars: false, format: chart.format, inset: INSET, overlay: chart.points.map((p) => p.average), target };
   // Design pass 6.3: the axis is as wide as its widest label (the ticks don't depend on the width).
   const axis = useAxisWidth(trendLayout({ ...base, axisWidth: 44 }).yTicks.map((t) => t.label));
   const layout = trendLayout({ ...base, axisWidth: axis.width });
@@ -38,7 +55,12 @@ export function ExerciseLineChart({ chart, selected, readout = null, onSelect }:
   const shown = point?.readout ?? (selected === null ? null : readout);
   const grid = theme.a11y.increaseContrast ? theme.colors['border.control'] : theme.colors['chart.grid'];
   return (
-    <View accessible accessibilityLabel={chart.words} {...(point ? { accessibilityValue: { text: point.words } } : {})}>
+    <View
+      accessible
+      accessibilityLabel={chart.words}
+      {...(point ? { accessibilityValue: { text: point.words } } : {})}
+      {...(onOpen !== undefined && point ? { accessibilityHint: 'Double-tap to open the workout', accessibilityActions: [{ name: 'activate' as const }], onAccessibilityAction: () => { onOpen(point.sessionId); } } : {})}
+    >
       <View style={{ minHeight: 22, flexDirection: 'row', justifyContent: 'space-between', gap: theme.space['2'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         <AppText variant="label" color="chart.axisText" maxFontSizeMultiplier={1.6}>
           {chart.unit}
@@ -71,6 +93,7 @@ export function ExerciseLineChart({ chart, selected, readout = null, onSelect }:
               pointSelectedSize={theme.chart.pointSelected}
               gridWidth={theme.a11y.increaseContrast ? 2 : 1}
               overlay={{ color: theme.colors['chart.bar'], width: 1.5 }}
+              targetColor={target === null ? null : theme.colors['text.secondary']}
               colors={{ line: theme.colors['chart.line'], point: theme.colors['chart.point'], selected: theme.colors['chart.selected'], grid, bar: theme.colors['chart.bar'], surface: theme.colors['bg.canvas'] }}
             />
           ) : (
@@ -99,7 +122,8 @@ export function ExerciseLineChart({ chart, selected, readout = null, onSelect }:
               const p = chart.points[i];
               if (!p) return;
               haptic('step');
-              onSelect(p.sessionId === selected ? null : p.sessionId);
+              if (onOpen !== undefined) onOpen(p.sessionId);
+              else onSelect?.(p.sessionId === selected ? null : p.sessionId);
             }}
           />
         ) : null}
