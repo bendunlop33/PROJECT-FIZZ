@@ -185,6 +185,9 @@ describe('PB on the row (Ben, 26 Oct): the Summary’s New best, set by set', ()
     ok(await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'finish', expectedVersion: cur.session.version, endedAt: null }));
     const bests = await s.reviews.sessionBests(sessionId);
     expect(bests.map((b) => plain(b.text))).toEqual(['New best · Bench press 102.5 × 8']);
+    // Progress › Overview's PB ring (the Lifts chart) marks the same workout and set (one definition of best).
+    const pbPoints = (await s.reviews.progress())?.lifts.lifts.flatMap((l) => l.points.filter((p) => p.pb)) ?? [];
+    expect(pbPoints.map((p) => [p.sessionId, plain(p.detail)])).toEqual([[sessionId, '102.5 × 8']]);
   });
 
   it('a lift’s first ever session is never a PB', async () => {
