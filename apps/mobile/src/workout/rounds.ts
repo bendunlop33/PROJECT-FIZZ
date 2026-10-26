@@ -36,12 +36,21 @@ export interface RoundRow {
   /** The latest log: its ✓ unticks it (the domain refuses any other; older sets are corrected). */
   canUntick: boolean;
   skipped: boolean;
-  /** RPE column: the target `@9` until logged, then the logged RPE (`8`, `RIR 2`); null for warm-ups and none. */
-  rpe: string | null;
+  /**
+   * (Ben, 26 Oct: RIR replaces RPE in the UI) The RIR cell: the logged RIR on a done row, the RIR Ben entered on a
+   * set not done yet, else its target (`rirTarget`, shown dimmed); null for warm-ups and none.
+   */
+  rir: string | null;
+  rirTarget: boolean;
   /** `Set 3` or `Warm-up`, for the Log pill and VoiceOver. */
   stepName: string;
-  /** "Set 3, 7.5 kilograms each, 12 reps, target RPE 9, not done". */
+  /** "Set 3, 7.5 kilograms each, 12 reps, target 1 rep in reserve, not done". */
   accessibilityLabel: string;
+  /**
+   * (Ben, 26 Oct: smoother scrolling) Everything the row draws, as one string: a row whose key is unchanged isn't
+   * drawn again (`memo`), so a timer tick redraws no set rows and a log only the rows it changed.
+   */
+  renderKey: string;
 }
 
 export interface RoundExercise {
@@ -50,7 +59,7 @@ export interface RoundExercise {
   name: string;
   /** `1`, or `3a` / `3b` in a superset. */
   label: string;
-  /** Works line · rep target: `Rear delts · 8–12 reps`; null when neither is known. */
+  /** (Ben, 26 Oct) The works line only (`Front delts`): the rep range is in the REPS cells, the target in RIR. Null when unknown. */
   subline: string | null;
   /** Working sets only. */
   progress: { done: number; total: number };
@@ -100,19 +109,10 @@ export interface PinnedView {
 
 const TYPE_LABEL: Record<SetType, string | null> = { warmup: null, working: null, top: 'Top', backoff: 'Back-off', drop: 'Drop' };
 
-/** The RPE column's text: the target (`@9`) on a set not done yet, the logged effort (`8`, `RIR 2`) on a done one. */
-export function rpeCellText(row: Pick<TableRow, 'state' | 'effort' | 'setType'>): string | null {
-  if (row.setType === 'warmup' || row.effort === null) return null;
-  const e = plain(row.effort).trim();
-  if (row.state === 'done') return e.startsWith('RPE ') ? e.slice(4) : e;
-  if (row.state === 'skipped') return null;
-  return e.replace(/^@\s*/, '@');
-}
-
-function spokenEffort(r: RoundRow['rpe'], state: TableRow['state']): string | null {
-  if (r === null) return null;
-  if (state === 'done') return r.startsWith('RIR') ? r : `RPE ${r}`;
-  return `target RPE ${r.slice(1)}`;
+/** The RIR cell's text and whether it is the target (dimmed) or Ben's own value (`2`, `1.5`). */
+export function rirCellText(row: Pick<TableRow, 'state' | 'rir' | 'setType'>): { text: string; target: boolean } | null {
+  if (row.setType === 'warmup' || row.state === 'skipped' || row.rir === null) return null;
+  return { text: row.rir.text, target: row.state !== 'done' && row.rir.target };
 }
 
 /**
@@ -129,29 +129,56 @@ export function roundRows(rows: readonly TableRow[], latestLoggedSetId: string |
     const number = step?.number ?? null;
     const side = row.badges.includes('L') ? 'L' : row.badges.includes('R') ? 'R' : '';
     const stepName = step?.name ?? (warmup ? 'Warm-up' : 'Set');
-    const rpe = rpeCellText(row);
+    const rir = rirCellText(row);
     const status = row.state === 'done' ? 'done' : row.state === 'skipped' ? 'skipped' : row.state === 'open' ? 'current, not done' : 'not done';
     const typeLabel = TYPE_LABEL[row.setType];
-    const accessibilityLabel = [stepName, typeLabel, side === 'L' ? 'left side' : side === 'R' ? 'right side' : null, row.spoken === '' ? null : row.spoken, spokenEffort(rpe, row.state), status]
+    const accessibilityLabel = [stepName, typeLabel, side === 'L' ? 'left side' : side === 'R' ? 'right side' : null, row.spoken === '' ? null : row.spoken, rir === null ? null : (row.rir?.spoken ?? null), status]
       .filter((x): x is string => x !== null)
       .join(', ');
+    const label = `${number === null ? 'W' : String(number)}${side}`;
+    const canUntick = row.state === 'done' && row.setId === latestLoggedSetId;
     return {
       row,
       setId: row.setId,
-      label: `${number === null ? 'W' : String(number)}${side}`,
+      label,
       number,
       typeLabel,
       warmup,
       companion: step?.companion ?? false,
       current: row.state === 'open',
       done: row.state === 'done',
-      canUntick: row.state === 'done' && row.setId === latestLoggedSetId,
+      canUntick,
       skipped: row.state === 'skipped',
-      rpe,
+      rir: rir?.text ?? null,
+      rirTarget: rir?.target ?? false,
       stepName,
       accessibilityLabel,
+      renderKey: rowRenderKey(row, { label, typeLabel, canUntick, rir, accessibilityLabel }),
     };
   });
+}
+
+/** The row's drawn content (its cells, previous, marks, state, words), so an unchanged row isn't redrawn. */
+export function rowRenderKey(row: TableRow, own: { label: string; typeLabel: string | null; canUntick: boolean; rir: { text: string; target: boolean } | null; accessibilityLabel: string }): string {
+  return JSON.stringify([
+    own.label,
+    own.typeLabel,
+    own.canUntick,
+    own.rir,
+    own.accessibilityLabel,
+    row.state,
+    row.cells,
+    row.columns,
+    row.last?.text ?? null,
+    row.last?.accessibilityLabel ?? null,
+    row.todayChange,
+    row.pace,
+    row.notCounted,
+    row.note,
+    row.gymCaption,
+    row.edited,
+    row.partStart,
+  ]);
 }
 
 /**
@@ -171,9 +198,8 @@ function anchorOf(rows: readonly RoundRow[]): number {
   return todo >= 0 ? todo : Math.max(0, rows.length - 1);
 }
 
-function sublineOf(works: string | null, target: string | null): string | null {
-  const parts = [works, target === null ? null : plain(target)].filter((x): x is string => x !== null && x !== '');
-  return parts.length === 0 ? null : parts.join(' · ');
+function sublineOf(works: string | null): string | null {
+  return works === null || works === '' ? null : works;
 }
 
 const MEMBER_LETTERS = 'abcdefghij';
@@ -197,7 +223,7 @@ export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf
           exerciseId: c.exerciseId,
           name: c.name,
           label: String(n),
-          subline: sublineOf(worksLineOf(c.exerciseId), c.repTarget),
+          subline: sublineOf(worksLineOf(c.exerciseId)),
           progress,
           progressText: `${String(progress.done)}/${String(progress.total)}`,
           loadHeader: c.loadHeader,
@@ -228,7 +254,7 @@ export function buildRounds(table: Pick<WorkoutTableView, 'blocks'>, worksLineOf
           exerciseId: m.exerciseId,
           name: m.name,
           label: `${String(n)}${MEMBER_LETTERS[k] ?? String(k + 1)}`,
-          subline: sublineOf(worksLineOf(m.exerciseId), m.repTarget),
+          subline: sublineOf(worksLineOf(m.exerciseId)),
           progress,
           progressText: `${String(progress.done)}/${String(progress.total)}`,
           loadHeader: m.loadHeader,
@@ -423,143 +449,53 @@ export function stepLabel(p: { member: string | null; stepName: string; primary:
 }
 
 // ---------------------------------------------------------------------------
-// Row boxes (§2: the round always fits one screen)
+// One scroll per round page (Ben, 26 Oct: "the scrolling could be improved, at the moment it's a bit clunky
+// when you have extra sets"). Replaces the per-exercise row boxes of 20 Oct: the whole round is one scroll
+// view (natural momentum and bounce, nothing nested to fight), and it moves on its own only to bring a row
+// into view, gently, when that row is off-screen.
 
-/** Rows each box aims to keep, and never goes below (Ben, 20 Oct). */
-export const BOX_AIM_ROWS = 3;
-export const BOX_MIN_ROWS = 2;
-/** Done sets shown above the current one, at most. */
-export const BOX_DONE_ABOVE = 3;
-/** A row that hasn't been measured yet. */
-export const ROW_HEIGHT_DEFAULT = 45;
-
-/** The first row a box of `k` visible rows shows: the anchor with up to 3 rows above it, kept in range. */
-export function boxFirstRow(n: number, k: number, anchor: number): number {
-  if (k >= n) return 0;
-  const above = Math.max(0, Math.min(BOX_DONE_ABOVE, k - 1, anchor));
-  return Math.max(0, Math.min(anchor - above, n - k));
-}
-
-const sum = (xs: readonly number[], from: number, to: number): number => {
-  let t = 0;
-  for (let i = from; i < to; i += 1) t += xs[i] ?? ROW_HEIGHT_DEFAULT;
-  return t;
-};
-
-export interface BoxInput {
-  /** Each row's measured height (the open row is taller when it has notes under it). */
-  heights: readonly number[];
-  anchor: number;
-}
-
-export interface BoxFit {
-  /** Rows visible. */
-  rows: number;
-  first: number;
-  /** Scroll offset for `first`. */
-  offset: number;
-  /** The box's height; null = no limit (every row shows, the box doesn't scroll). */
-  height: number | null;
-}
-
-export interface RoundFit {
-  boxes: BoxFit[];
-  upNext: boolean;
-  /**
-   * Even 2 rows each can't fit (largest text sizes, or the keypad is up on a
-   * small phone): the boxes stay at 2 rows, Up next hides, and the page
-   * scrolls (to the cell being typed in, `pageOffsetFor`).
-   */
-  pageScroll: boolean;
-}
+/** Room kept above a row brought into view (about one compact row: the set just done stays visible). */
+export const REVEAL_CONTEXT = 44;
+/** And below it, so it never sits flush on the timer bar or the keypad bar. */
+export const REVEAL_MARGIN = 8;
 
 /**
- * How many rows each exercise's box shows so the whole round fits
- * `available` (§2): when everything fits nothing scrolls; else the box with
- * the most rows shrinks first, row by row, aiming for 3 rows each; the `Up
- * next` line gives way before any box goes below 3; never below 2. If even
- * that can't fit, the boxes keep 2 rows, Up next hides and the page scrolls
- * (never full lists: the round would reflow while Ben types; review B3). `fixed` is all the
- * rest of the round (headers, column labels, compact rows, card padding,
- * after-set block); `upNext` the Up next line's height.
+ * The scroll offset that brings a row into view with the least movement, or `offset` unchanged when it is
+ * already fully in view (no jump when logging a set that stays on screen). `context` keeps that much of what's
+ * above the row in view too (the set just logged) when it's brought down into view.
  */
-export function fitRoundBoxes(p: { available: number; fixed: number; upNext: number; boxes: readonly BoxInput[] }): RoundFit {
-  const n = p.boxes.map((b) => b.heights.length);
-  const heightOf = (i: number, k: number): number => {
-    const b = p.boxes[i];
-    if (b === undefined) return 0;
-    const first = boxFirstRow(n[i] ?? 0, k, b.anchor);
-    return sum(b.heights, first, first + k);
-  };
-  const total = (ks: readonly number[], withNext: boolean): number => p.fixed + (withNext ? p.upNext : 0) + ks.reduce((t, k, i) => t + heightOf(i, k), 0);
-  const fits = (ks: readonly number[], withNext: boolean) => total(ks, withNext) <= p.available + 0.5;
-  const shrink = (floor: number, withNext: boolean): number[] => {
-    const ks = [...n];
-    while (!fits(ks, withNext)) {
-      let j = -1;
-      ks.forEach((k, i) => {
-        if (k > Math.min(floor, n[i] ?? 0) && (j < 0 || k > (ks[j] ?? 0))) j = i;
-      });
-      if (j < 0) break;
-      ks[j] = (ks[j] ?? 0) - 1;
-    }
-    return ks;
-  };
-  const result = (ks: readonly number[], upNext: boolean, pageScroll: boolean): RoundFit => ({
-    boxes: ks.map((k, i) => {
-      const count = n[i] ?? 0;
-      const b = p.boxes[i];
-      const first = b === undefined ? 0 : boxFirstRow(count, k, b.anchor);
-      return { rows: k, first, offset: b === undefined ? 0 : sum(b.heights, 0, first), height: k >= count ? null : heightOf(i, k) };
-    }),
-    upNext,
-    pageScroll,
-  });
-  const withNext = shrink(BOX_AIM_ROWS, true);
-  if (fits(withNext, true)) return result(withNext, true, false);
-  const aim = shrink(BOX_AIM_ROWS, false);
-  if (fits(aim, false)) return result(aim, false, false);
-  const least = shrink(BOX_MIN_ROWS, false);
-  if (fits(least, false)) return result(least, false, false);
-  return result(least, false, true);
+export function revealOffset(p: { offset: number; viewHeight: number; rowTop: number; rowHeight: number; context?: number; margin?: number }): number {
+  const context = Math.min(p.context ?? 0, Math.max(0, p.rowTop));
+  const margin = p.margin ?? 0;
+  const top = p.rowTop - context;
+  const bottom = p.rowTop + p.rowHeight + margin;
+  if (p.viewHeight <= 0) return p.offset;
+  if (p.rowTop >= p.offset && p.rowTop + p.rowHeight <= p.offset + p.viewHeight) return p.offset;
+  if (p.rowTop < p.offset) return Math.max(0, top);
+  // Below the fold: just enough to show it, but never so far that its own top goes off.
+  return Math.max(0, Math.min(bottom - p.viewHeight, p.rowTop - context));
 }
 
-/**
- * The row a box positions on: a set just added with `＋ Set` while it's
- * pinned (until the next log, untick or round change; review B2), else the
- * exercise's anchor (the open row, the first set to do, the last row).
- */
-export function boxAnchor(ex: Pick<RoundExercise, 'rows' | 'anchor'>, pinnedSetId: string | null): number {
-  if (pinnedSetId === null) return ex.anchor;
-  const i = ex.rows.findIndex((r) => r.setId === pinnedSetId);
-  return i >= 0 ? i : ex.anchor;
+/** The row the page brings into view on a log, untick or round change: the open row, else the round's first set to do. */
+export function revealSetId(round: Pick<Round, 'exercises' | 'firstPendingSetId'> | undefined): string | null {
+  if (round === undefined) return null;
+  for (const e of round.exercises) {
+    const open = e.rows.find((r) => r.current);
+    if (open !== undefined) return open.setId;
+  }
+  return round.firstPendingSetId;
 }
 
-/**
- * Page-scroll fallback with the keypad up (review B3): the page offset that
- * brings the row being typed in into view. Window coordinates: the page's
- * visible top and height, the row's top (box top + row y − box offset).
- */
-export function pageOffsetFor(p: { pageOffset: number; pageTop: number; pageHeight: number; rowTop: number; rowHeight: number }): number {
-  return keepInView(p.pageOffset, p.pageHeight, p.pageOffset + (p.rowTop - p.pageTop), p.rowHeight);
-}
-
-/** The offset that keeps a row (the cell being typed in) inside its box: the smallest move, none when it's already in view. */
+/** The offset that keeps a row (the cell being typed in) in view: the smallest move, none when it's already in view. */
 export function keepInView(offset: number, viewHeight: number, rowTop: number, rowHeight: number): number {
   if (rowTop < offset) return Math.max(0, rowTop);
   if (rowTop + rowHeight > offset + viewHeight) return Math.max(0, rowTop + rowHeight - viewHeight);
   return offset;
 }
 
-/** The soft fades at a box's top and bottom edge: more rows that way. */
-export function boxFades(p: { offset: number; viewHeight: number; contentHeight: number }): { top: boolean; bottom: boolean } {
-  return { top: p.offset > 2, bottom: p.offset + p.viewHeight < p.contentHeight - 2 };
-}
-
 /**
- * When the boxes re-position (§2: the current set changes on a log, an
- * untick or a round change; never while typing): the round, the open row and
- * how many sets are done.
+ * When the page brings the current set into view (the current set changes on a log, an untick or a round
+ * change; never while typing): the round, the open row and how many sets are done.
  */
 export function positionKey(round: Pick<Round, 'key' | 'exercises'> | undefined, activeSetId: string | null): string {
   if (round === undefined) return '';
@@ -696,7 +632,7 @@ export function overviewTitle(title: string, elapsedMs: number, minutesLeft: num
 export interface WhyView {
   /** The set the reason and the rest belong to. */
   setId: string;
-  /** `7.5 kg each × 8–12 @ 9`. */
+  /** `7.5 kg each × 8–12 · RIR 1`. */
   target: string;
   /** `Rest 1:30` / `1:30 after the round`. */
   rest: string;
@@ -733,8 +669,8 @@ export function whyView(round: Round, exerciseIndex: number): WhyView | null {
   if (ex === undefined || row === undefined) return null;
   const load = loadWords(row.row.cells.load, ex.loadHeader);
   const value = plain(row.row.cells.value);
-  const rpe = row.rpe === null || row.done ? null : row.rpe.replace(/^@/, '');
-  const target = `${load === null ? '' : `${load} × `}${value}${rpe === null ? '' : ` @ ${rpe}`}`;
+  const rir = row.rir === null || row.done ? null : row.rir;
+  const target = `${load === null ? '' : `${load} × `}${value}${rir === null ? '' : ` · RIR ${rir}`}`;
   const last = round.exercises.at(-1);
   const restRow = round.superset && last !== undefined ? (last.rows[last.anchor] ?? row) : row;
   const seconds = restRow.row.restAfterS;

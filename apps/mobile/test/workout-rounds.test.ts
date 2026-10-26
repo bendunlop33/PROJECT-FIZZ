@@ -3,12 +3,8 @@ import type { SupersetCard, TableBlock, TableCard, TableRow, WorkoutTableView } 
 
 import {
   bottomChrome,
-  boxAnchor,
-  boxFades,
-  boxFirstRow,
   buildRounds,
   clockText,
-  fitRoundBoxes,
   keepInView,
   lastLogMs,
   lastTimeText,
@@ -16,7 +12,6 @@ import {
   overviewRows,
   offRoundPill,
   overviewTitle,
-  pageOffsetFor,
   positionKey,
   queueSelect,
   resetsPick,
@@ -25,7 +20,9 @@ import {
   roundPrimary,
   roundRows,
   roundStrip,
-  rpeCellText,
+  revealOffset,
+  revealSetId,
+  rirCellText,
   selectOnShow,
   setClockMs,
   setClockStartMs,
@@ -71,6 +68,7 @@ function row(over: Partial<TableRow> = {}): TableRow {
     columns: { kind: 'load_reps', loadLabel: 'KG', valueLabel: 'REPS' },
     cells: { load: '100', value: '6' },
     effort: `@${NBSP}8`,
+    rir: { text: '2', value: 2, target: true, spoken: 'target 2 reps in reserve' },
     pace: null,
     todayChange: null,
     memberTag: null,
@@ -150,7 +148,7 @@ function superset(members: { name: string; rows: TableRow[]; loadHeader?: string
 const view = (blocks: TableBlock[]): Pick<WorkoutTableView, 'blocks'> => ({ blocks });
 const works = (id: string) => (id === 'ex-Bench' ? 'Chest, front delts, triceps' : id === 'ex-Fly' ? 'Rear delts' : null);
 
-describe('rows: numbering, set types and the RPE cell (§2)', () => {
+describe('rows: numbering, set types and the RIR cell (§2)', () => {
   it('numbers working sets 1..n; warm-ups read W and are not counted; Top / Back-off / Drop labels from the set type', () => {
     const rows = roundRows([
       row({ setType: 'warmup', effort: null, state: 'done', spoken: '20 kilograms, 10 reps' }),
@@ -197,29 +195,31 @@ describe('rows: numbering, set types and the RPE cell (§2)', () => {
     expect(roundRows([left, right, row()]).map((r) => r.label)).toEqual(['WL', 'WR', '1']);
   });
 
-  it('RPE column: the target @9 until logged, then the logged RPE (or RIR); none for warm-ups', () => {
-    expect(rpeCellText({ state: 'pending', setType: 'working', effort: `@${NBSP}9` })).toBe('@9');
-    expect(rpeCellText({ state: 'open', setType: 'working', effort: `@${NBSP}8.5` })).toBe('@8.5');
-    expect(rpeCellText({ state: 'done', setType: 'working', effort: `RPE${NBSP}8` })).toBe('8');
-    expect(rpeCellText({ state: 'done', setType: 'working', effort: `RIR${NBSP}2` })).toBe('RIR 2');
-    expect(rpeCellText({ state: 'done', setType: 'working', effort: null })).toBeNull();
-    expect(rpeCellText({ state: 'pending', setType: 'warmup', effort: `@${NBSP}9` })).toBeNull();
+  it('(Ben, 26 Oct) RIR cell: the target dimmed until logged, then what was logged; Ben\'s own before logging in full ink; none for warm-ups', () => {
+    const rir = (text: string, target: boolean) => ({ text, value: Number(text), target, spoken: '' });
+    expect(rirCellText({ state: 'pending', setType: 'working', rir: rir('1', true) })).toEqual({ text: '1', target: true });
+    expect(rirCellText({ state: 'open', setType: 'working', rir: rir('1.5', true) })).toEqual({ text: '1.5', target: true });
+    expect(rirCellText({ state: 'open', setType: 'working', rir: rir('3', false) })).toEqual({ text: '3', target: false });
+    expect(rirCellText({ state: 'done', setType: 'working', rir: rir('2', false) })).toEqual({ text: '2', target: false });
+    expect(rirCellText({ state: 'done', setType: 'working', rir: null })).toBeNull();
+    expect(rirCellText({ state: 'pending', setType: 'warmup', rir: rir('1', true) })).toBeNull();
+    expect(rirCellText({ state: 'skipped', setType: 'working', rir: rir('1', true) })).toBeNull();
   });
 
-  it('VoiceOver reads the set, its values, the target RPE and whether it is done (§6)', () => {
+  it('VoiceOver reads the set, its values, its reps in reserve (target or logged) and whether it is done (§6)', () => {
     const [w, cur, done] = roundRows([
-      row({ setType: 'warmup', effort: null, spoken: '20 kilograms, 10 reps' }),
-      row({ state: 'open', spoken: '7.5 kilograms each, 12 reps', effort: `@${NBSP}9` }),
-      row({ state: 'done', spoken: '7.5 kilograms each, 11 reps', effort: `RPE${NBSP}9` }),
+      row({ setType: 'warmup', effort: null, rir: null, spoken: '20 kilograms, 10 reps' }),
+      row({ state: 'open', spoken: '7.5 kilograms each, 12 reps', rir: { text: '1', value: 1, target: true, spoken: 'target 1 rep in reserve' } }),
+      row({ state: 'done', spoken: '7.5 kilograms each, 11 reps', rir: { text: '1', value: 1, target: false, spoken: '1 rep in reserve' } }),
     ]);
     expect(w?.accessibilityLabel).toBe('Warm-up, 20 kilograms, 10 reps, not done');
-    expect(cur?.accessibilityLabel).toBe('Set 1, 7.5 kilograms each, 12 reps, target RPE 9, current, not done');
-    expect(done?.accessibilityLabel).toBe('Set 2, 7.5 kilograms each, 11 reps, RPE 9, done');
+    expect(cur?.accessibilityLabel).toBe('Set 1, 7.5 kilograms each, 12 reps, target 1 rep in reserve, current, not done');
+    expect(done?.accessibilityLabel).toBe('Set 2, 7.5 kilograms each, 11 reps, 1 rep in reserve, done');
   });
 });
 
 describe('rounds from the table view (§1.3)', () => {
-  it('one round per block; a superset is 3a / 3b; works line · rep target; working-set progress', () => {
+  it('one round per block; a superset is 3a / 3b; the works line only (Ben, 26 Oct); working-set progress', () => {
     const rounds = buildRounds(
       view([
         card('Bench', [row({ setType: 'warmup', state: 'done', effort: null }), row({ state: 'done' }), row({ state: 'open' }), row({})]),
@@ -237,14 +237,15 @@ describe('rounds from the table view (§1.3)', () => {
       [3, true, ['3a', '3b']],
     ]);
     const bench = rounds[0]?.exercises[0];
-    expect(bench?.subline).toBe('Chest, front delts, triceps · 6–8 reps');
+    // (Ben, 26 Oct) The header shows the muscles only: the rep range is in the REPS cells, the target in RIR.
+    expect(bench?.subline).toBe('Chest, front delts, triceps');
     expect(bench?.progressText).toBe('1/3');
     expect(bench?.anchor).toBe(2);
     expect(rounds[0]?.current).toBe(true);
     expect(rounds[0]?.doneSets).toBe(1);
     expect(rounds[0]?.totalSets).toBe(3);
-    expect(rounds[1]?.exercises[0]?.subline).toBe('6–8 reps');
-    expect(rounds[2]?.exercises[0]?.subline).toBe('Rear delts · 8–12 reps');
+    expect(rounds[1]?.exercises[0]?.subline).toBeNull();
+    expect(rounds[2]?.exercises[0]?.subline).toBe('Rear delts');
     expect(rounds[2]?.exercises[0]?.loadHeader).toBe('KG EACH');
   });
 
@@ -345,110 +346,40 @@ describe('the Log pill names the step (§1.6)', () => {
   });
 });
 
-describe('row boxes: the round fits one screen (§2)', () => {
-  const h = (n: number, each = 45) => Array.from({ length: n }, () => each);
-
-  it('everything fits: no box scrolls, Up next shows', () => {
-    const fit = fitRoundBoxes({ available: 800, fixed: 300, upNext: 20, boxes: [{ heights: h(4), anchor: 1 }] });
-    expect(fit).toEqual({ boxes: [{ rows: 4, first: 0, offset: 0, height: null }], upNext: true, pageScroll: false });
+describe('(Ben, 26 Oct) one scroll per round page: the current set comes into view only when it is off-screen', () => {
+  it('a row already in view: no move (no jump when logging a set that stays on screen)', () => {
+    expect(revealOffset({ offset: 100, viewHeight: 400, rowTop: 200, rowHeight: 44, context: 44, margin: 8 })).toBe(100);
+    expect(revealOffset({ offset: 0, viewHeight: 400, rowTop: 356, rowHeight: 44 })).toBe(0);
   });
 
-  it('the box with the most rows shrinks first, row by row, aiming for 3 each', () => {
-    // 8 + 3 rows; room for 9 rows beside the fixed part and Up next.
-    const fit = fitRoundBoxes({ available: 300 + 20 + 9 * 45, fixed: 300, upNext: 20, boxes: [{ heights: h(8), anchor: 6 }, { heights: h(3), anchor: 0 }] });
-    expect(fit.boxes.map((b) => b.rows)).toEqual([6, 3]);
-    expect(fit.upNext).toBe(true);
-    expect(fit.boxes[0]?.height).toBe(6 * 45);
-    expect(fit.boxes[1]?.height).toBeNull();
+  it('below the fold: just enough to show it (and a margin), never past its own top', () => {
+    expect(revealOffset({ offset: 0, viewHeight: 400, rowTop: 500, rowHeight: 44, context: 44, margin: 8 })).toBe(500 + 44 + 8 - 400);
+    // A row taller than the view (the open row with notes): its top stays in view.
+    expect(revealOffset({ offset: 0, viewHeight: 200, rowTop: 500, rowHeight: 300, context: 44, margin: 8 })).toBe(456);
   });
 
-  it('Up next gives way before a box drops below 3', () => {
-    const fit = fitRoundBoxes({ available: 300 + 6 * 45 + 10, fixed: 300, upNext: 20, boxes: [{ heights: h(5), anchor: 0 }, { heights: h(5), anchor: 0 }] });
-    expect(fit.boxes.map((b) => b.rows)).toEqual([3, 3]);
-    expect(fit.upNext).toBe(false);
+  it('above the view: back up to it with the set just done above it in view', () => {
+    expect(revealOffset({ offset: 600, viewHeight: 400, rowTop: 300, rowHeight: 44, context: 44 })).toBe(256);
+    expect(revealOffset({ offset: 600, viewHeight: 400, rowTop: 20, rowHeight: 44, context: 44 })).toBe(0);
   });
 
-  it('never below 2 rows; when even that can’t fit, boxes keep 2 rows, Up next hides and the page scrolls (spec B3)', () => {
-    const two = fitRoundBoxes({ available: 300 + 4 * 45, fixed: 300, upNext: 20, boxes: [{ heights: h(5), anchor: 0 }, { heights: h(5), anchor: 0 }] });
-    expect(two.boxes.map((b) => b.rows)).toEqual([2, 2]);
-    expect(two.pageScroll).toBe(false);
-    const none = fitRoundBoxes({ available: 300 + 3 * 45, fixed: 300, upNext: 20, boxes: [{ heights: h(5), anchor: 0 }, { heights: h(5), anchor: 0 }] });
-    expect(none.pageScroll).toBe(true);
-    expect(none.boxes.map((b) => [b.rows, b.height])).toEqual([
-      [2, 90],
-      [2, 90],
-    ]);
-    expect(none.upNext).toBe(false);
+  it('before the page is measured it never moves', () => {
+    expect(revealOffset({ offset: 30, viewHeight: 0, rowTop: 900, rowHeight: 44 })).toBe(30);
   });
 
-  it('keypad open on a small phone, superset round 3a + 3b: the page scrolls, boxes keep 2 rows around the open row, the round never reflows to full lists (spec B3)', () => {
-    // SE: 667 pt; the round page has ~470 pt with the keypad closed and ~210 pt once the keypad and its bar are up.
-    const boxes = [
-      { heights: [45, 45, 45, 45], anchor: 2 },
-      { heights: [45, 45, 96, 45], anchor: 2 }, // 3b's open row is taller (cells and links)
-    ];
-    const closed = fitRoundBoxes({ available: 470, fixed: 230, upNext: 28, boxes });
-    expect(closed.pageScroll).toBe(false);
-    const open = fitRoundBoxes({ available: 210, fixed: 230, upNext: 28, boxes });
-    expect(open.pageScroll).toBe(true);
-    expect(open.upNext).toBe(false);
-    expect(open.boxes.map((b) => b.rows)).toEqual([2, 2]);
-    // 3b's open row (index 2) is in its box's 2 rows.
-    const b = open.boxes[1];
-    expect(b !== undefined && b.first <= 2 && 2 < b.first + b.rows).toBe(true);
-    // The page then scrolls so the row being typed in clears the keypad: the page shows 210 pt from y 100 (window).
-    expect(pageOffsetFor({ pageOffset: 0, pageTop: 100, pageHeight: 210, rowTop: 100 + 380, rowHeight: 96 })).toBe(380 + 96 - 210);
-    // Already in view: no move.
-    expect(pageOffsetFor({ pageOffset: 40, pageTop: 100, pageHeight: 210, rowTop: 150, rowHeight: 45 })).toBe(40);
-    // Above the view: scroll up to it.
-    expect(pageOffsetFor({ pageOffset: 200, pageTop: 100, pageHeight: 210, rowTop: 60, rowHeight: 45 })).toBe(160);
+  it('reveals the open row, else the round\'s first set to do', () => {
+    const open = buildRounds(view([card('A', [row({ state: 'done' }), row({ state: 'open', setId: 'cur' })])]), works)[0];
+    expect(revealSetId(open)).toBe('cur');
+    const todo = buildRounds(view([card('A', [row({ state: 'done' }), row({ setId: 'next' })])]), works)[0];
+    expect(revealSetId(todo)).toBe('next');
+    expect(revealSetId(buildRounds(view([card('A', [row({ state: 'done' })])]), works)[0])).toBeNull();
+    expect(revealSetId(undefined)).toBeNull();
   });
 
-  it('＋ Set: the box anchors on the new row until the next log, untick or round change, so it never lands out of sight (spec B2)', () => {
-    const rs = buildRounds(view([card('Bench', [row({ state: 'open' }), row({}), row({}), row({ setId: 'added' })])]), works);
-    const ex = rs[0]?.exercises[0];
-    if (!ex) throw new Error('no exercise');
-    expect(ex.anchor).toBe(0);
-    expect(boxAnchor(ex, null)).toBe(0);
-    expect(boxAnchor(ex, 'added')).toBe(3);
-    expect(boxAnchor(ex, 'not-here')).toBe(0);
-    // 3 sets all fitted; the 4th makes the box scroll at 3 rows. Anchored on the current set it would hide the new row…
-    const onCurrent = fitRoundBoxes({ available: 300 + 3 * 45, fixed: 300, upNext: 0, boxes: [{ heights: h(4), anchor: boxAnchor(ex, null) }] }).boxes[0];
-    expect(onCurrent?.first).toBe(0);
-    expect(onCurrent !== undefined && 3 < onCurrent.first + onCurrent.rows).toBe(false);
-    // …anchored on the new row, it shows it.
-    const pinned = fitRoundBoxes({ available: 300 + 3 * 45, fixed: 300, upNext: 0, boxes: [{ heights: h(4), anchor: boxAnchor(ex, 'added') }] }).boxes[0];
-    expect(pinned).toEqual({ rows: 3, first: 1, offset: 45, height: 135 });
-  });
-
-  it('a box with only 1 or 2 rows never shrinks', () => {
-    const fit = fitRoundBoxes({ available: 300 + 4 * 45, fixed: 300, upNext: 0, boxes: [{ heights: h(1), anchor: 0 }, { heights: h(6), anchor: 0 }] });
-    expect(fit.boxes.map((b) => b.rows)).toEqual([1, 3]);
-  });
-
-  it('uses each row’s own height (the open row is taller with notes under it)', () => {
-    const heights = [45, 45, 45, 120, 45, 45];
-    const fit = fitRoundBoxes({ available: 100 + 45 * 2 + 120, fixed: 100, upNext: 0, boxes: [{ heights, anchor: 3 }] });
-    expect(fit.boxes[0]).toEqual({ rows: 3, first: 1, offset: 45, height: 45 + 45 + 120 });
-  });
-
-  it('positions the current set with up to 3 done above it, kept in range', () => {
-    expect(boxFirstRow(8, 3, 6)).toBe(4);
-    expect(boxFirstRow(8, 5, 6)).toBe(3);
-    expect(boxFirstRow(8, 3, 0)).toBe(0);
-    expect(boxFirstRow(8, 3, 7)).toBe(5);
-    expect(boxFirstRow(4, 3, 3)).toBe(1);
-    expect(boxFirstRow(3, 3, 2)).toBe(0);
-    expect(boxFirstRow(10, 6, 9)).toBe(4);
-  });
-
-  it('a cell being typed in stays in its box (the smallest move), fades show more rows', () => {
+  it('a cell being typed in stays in view (the smallest move)', () => {
     expect(keepInView(90, 135, 45, 45)).toBe(45);
     expect(keepInView(0, 135, 180, 45)).toBe(90);
     expect(keepInView(45, 135, 90, 45)).toBe(45);
-    expect(boxFades({ offset: 0, viewHeight: 135, contentHeight: 270 })).toEqual({ top: false, bottom: true });
-    expect(boxFades({ offset: 135, viewHeight: 135, contentHeight: 270 })).toEqual({ top: true, bottom: false });
-    expect(boxFades({ offset: 0, viewHeight: 270, contentHeight: 270 })).toEqual({ top: false, bottom: false });
   });
 
   it('re-positions on a log, an untick or a round change; not on anything else', () => {
@@ -526,10 +457,10 @@ describe('header and overview (§4, §5)', () => {
 
 describe('Why? sheet (§2)', () => {
   it('full target, rest, last time; in a superset the rest is after the round (the last member’s)', () => {
-    const rs = buildRounds(view([card('Bench', [row({ state: 'done' }), row({ state: 'open', cells: { load: '7.5', value: `8–12` }, effort: `@${NBSP}9`, restAfterS: 90 })], { loadHeader: 'KG EACH' })]), works);
+    const rs = buildRounds(view([card('Bench', [row({ state: 'done' }), row({ state: 'open', cells: { load: '7.5', value: `8–12` }, rir: { text: '1', value: 1, target: true, spoken: '' }, restAfterS: 90 })], { loadHeader: 'KG EACH' })]), works);
     const r0 = rs[0];
     if (r0 === undefined) throw new Error('round');
-    expect(whyView(r0, 0)).toMatchObject({ target: '7.5 kg each × 8–12 @ 9', rest: 'Rest 1:30', restSeconds: 90, last: '16 Oct · 7.5 × 12, 12, 12' });
+    expect(whyView(r0, 0)).toMatchObject({ target: '7.5 kg each × 8–12 · RIR 1', rest: 'Rest 1:30', restSeconds: 90, last: '16 Oct · 7.5 × 12, 12, 12' });
     const ss = buildRounds(view([superset([{ name: 'Fly', rows: [row({ state: 'open', restAfterS: 0 })] }, { name: 'Crunch', rows: [row({ restAfterS: 90 })] }])]), works)[0];
     if (ss === undefined) throw new Error('superset');
     const why = whyView(ss, 0);

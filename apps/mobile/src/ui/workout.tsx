@@ -76,7 +76,10 @@ export function CellKeypadBarView({
   onNext,
   onDone,
   keypadOpen,
+  onRir = null,
 }: {
+  /** (Ben, 26 Oct) `RIR` on the bar: enter this set's reps in reserve (null: the row has no RIR, e.g. a warm-up). */
+  onRir?: (() => void) | null;
   /** The equipment's limit when + is off (`Max 40 kg`), else null. */
   limit: string | null;
   down: StepTarget;
@@ -146,6 +149,7 @@ export function CellKeypadBarView({
           </AppText>
         ) : null}
       </View>
+      {onRir ? textKey('RIR', 'Reps in reserve', onRir) : null}
       {onNext ? textKey('Next ›', 'Next field', onNext) : null}
       {textKey('Done', 'Done', () => {
         Keyboard.dismiss();

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
+import { canDropRound, canRemoveExercise, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -59,7 +59,7 @@ import { noteWrites } from '../../workout/notes';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
 import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
-import { exerciseMenu, targetRpeMenu, targetRpeScopeMenu, type ExerciseMenuAction, type ExerciseMenuOptions } from '../../workout/exercise-menu';
+import { exerciseMenu, rirMenu, targetRpeMenu, targetRpeScopeMenu, type ExerciseMenuAction, type ExerciseMenuOptions } from '../../workout/exercise-menu';
 import { exerciseActions } from '../../workout/exercise-popup';
 import { cuesWorkEnd, shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
@@ -209,6 +209,8 @@ export function WorkoutScreen() {
   const [toastHeight, setToastHeight] = useState(0);
   /** The keypad's height with its Done bar (`endCoordinates.height`); 0 while it's closed. */
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  /** (Ben, 26 Oct) An RIR picked for a set not done yet, applied to its edits once it is the open row. */
+  const [pendingRir, setPendingRir] = useState<{ setId: string; rir: number | null } | null>(null);
   // `Time left` (§2.15.1): its own clock moves on events (any new data) and once a minute, never every second.
   const [timeLeftNow, setTimeLeftNow] = useState(clockNow);
   const [timeLeftOpen, setTimeLeftOpen] = useState(false);
@@ -863,6 +865,14 @@ export function WorkoutScreen() {
     setRestoredDraft(null);
   }
 
+  // (Ben, 26 Oct) An RIR picked for a set lands in its edits once that set is the open row (at once when it already is).
+  const pendingRirTarget = pendingRir !== null && focus?.setId === pendingRir.setId ? pendingRir : null;
+  useEffect(() => {
+    if (pendingRirTarget === null || !focus) return;
+    setPendingRir(null);
+    setValues({ ...focus.draft, rir: pendingRirTarget.rir });
+  }, [pendingRirTarget]);
+
   /** `Last …`: copies last time's values into the open row (its effort is never copied). */
   function copyLast(f: FocusView) {
     const prev = f.previous;
@@ -1111,6 +1121,10 @@ export function WorkoutScreen() {
       case 'superset_with':
         workoutEdits.openSupersetWith(ex.sessionExerciseId);
         return true;
+      case 'adjust':
+        // (Ben, 26 Oct) `Adjust` moved off the header into `⋯`: its chips open under the header, as before.
+        coach.toggleAdjust();
+        return true;
       case 'notes':
       case 'how_to':
       case 'edit_set':
@@ -1158,7 +1172,7 @@ export function WorkoutScreen() {
     const howTo = howToRouteFor(f, bundledHowToSources());
     const plates = services.workout.cardFacts(loaded, f.sessionExerciseId)?.plates ?? [];
     const round = roundMenuFlags(f.sessionExerciseId, plates.length > 0);
-    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: round !== undefined ? canRemoveExercise(loaded.aggregate, f.sessionExerciseId) : f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset, canMarkNotHere: usesGymItem(f.sessionExerciseId), ...(round === undefined ? {} : { round }) });
+    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: round !== undefined ? canRemoveExercise(loaded.aggregate, f.sessionExerciseId) : f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset, canMarkNotHere: usesGymItem(f.sessionExerciseId), ...(round === undefined ? {} : { round, adjust: true }) });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (runMenuAction(action, f, plates)) return;
@@ -1263,9 +1277,18 @@ export function WorkoutScreen() {
   }
 
   /** The open row's own items: copy last time, the full set editor (type, side, notes), + Weight, Focus. */
+  /** (Ben, 26 Oct) `Reps in reserve` on a set's hold menu (not on warm-ups, timed or cardio sets). */
+  function rirItem(setId: string): { label: string; run: () => void }[] {
+    const set = loaded.aggregate.sets.find((x) => x.id === setId);
+    const ex = set === undefined ? undefined : loaded.aggregate.exercises.find((e) => e.id === set.sessionExerciseId);
+    if (set === undefined || ex === undefined || set.setType === 'warmup' || ex.measurement !== 'reps' || set.status === 'skipped') return [];
+    return [{ label: 'Reps in reserve', run: () => { enterRir(setId); } }];
+  }
+
   function setMoreItems(f: FocusView): { label: string; run: () => void }[] {
     return [
       ...(f.previous !== null ? [{ label: `Copy last · ${f.previous.text.replaceAll('\u00a0', ' ')}`, run: () => { copyLast(f); } }] : []),
+      ...rirItem(f.setId),
       { label: 'Edit set', run: () => { editSet(f.setId); } },
       ...(f.addWeight ? [{ label: f.addWeight.on ? 'Bodyweight' : '+ Weight', run: () => { toggleWeight(f); } }] : []),
       { label: 'Focus view', run: () => { updatePrefs({ workoutView: 'focus' }); } },
@@ -1459,6 +1482,46 @@ export function WorkoutScreen() {
     // F4: a corrected rep count runs the same offer check as a log.
     void reload().then((d) => {
       const id = patch.reps !== undefined ? correctedSetToCheck({ setId: c.setId }, d?.aggregate) : null;
+      if (d && id !== null) coach.afterLog(d.aggregate, id);
+    });
+  }
+
+  /**
+   * (Ben, 26 Oct: RIR replaces RPE in the UI) Reps in reserve for a set, from its RIR cell, its hold menu, VoiceOver
+   * or the keypad bar's `RIR`. A done set: one versioned correction with Undo (rule 2). A set not done yet: kept with
+   * Ben's edits (saved as its draft) and logged with it; a set that isn't current becomes current first.
+   */
+  function enterRir(setId: string) {
+    const set = loaded.aggregate.sets.find((x) => x.id === setId);
+    if (set === undefined || set.setType === 'warmup' || set.status === 'deleted' || set.status === 'skipped') return;
+    const done = set.status === 'completed';
+    const current = done ? (set.actual === null ? null : effortRir(set.actual)) : focus?.setId === setId ? focus.draft.rir : (set.draft?.rir ?? null);
+    const stepName = setStepName(loaded.aggregate, setId) ?? 'Set';
+    const menu = rirMenu(stepName, current);
+    ActionSheetIOS.showActionSheetWithOptions({ title: menu.title, options: menu.options, cancelButtonIndex: menu.cancelButtonIndex }, (i) => {
+      const v = menu.valueAt(i);
+      if (v === undefined) return;
+      if (done) void correctRir(setId, set.version, v, stepName);
+      else {
+        setPendingRir({ setId, rir: v });
+        if (focus?.setId !== setId) void selectRow(setId);
+      }
+    });
+  }
+
+  async function correctRir(setId: string, expectedSetVersion: number, rir: number | null, stepName: string) {
+    const opId = newUuid();
+    const r = await services.workout.correctSet({ sessionId: session.id, setId, expectedSetVersion, patch: { rir, rpe: null }, opId });
+    changed();
+    if (!r.ok) {
+      showToast({ icon: 'info.circle', text: r.message });
+      void reload();
+      return;
+    }
+    if (!r.duplicate) toastUndoOp(UNDO_TOAST.correctedNamed(stepName), opId, session.id);
+    // A changed effort runs the same offer check as a log (an RIR 0 is a clear signal, rule 3).
+    void reload().then((d) => {
+      const id = correctedSetToCheck({ setId }, d?.aggregate);
       if (d && id !== null) coach.afterLog(d.aggregate, id);
     });
   }
@@ -2732,6 +2795,9 @@ export function WorkoutScreen() {
           }),
         })
       : null;
+  // (Ben, 26 Oct) The keypad bar's `RIR` key: the set being typed in (the open row, or a done row's correction).
+  const barSetId = barCell === null ? null : barCell.row === 'open' ? (focus?.setId ?? null) : (doneEdit?.setId ?? null);
+  const barRirSetId = barSetId !== null && rirItem(barSetId).length > 0 ? barSetId : null;
   const stepCell = (field: CellField, v: number) => {
     if (barInput === null) return;
     if (field === 'load') barInput.onLoad(v);
@@ -2881,7 +2947,6 @@ export function WorkoutScreen() {
                 openRow={openRowNode}
                 afterSet={afterSetNode}
                 upNext={upNextText(rounds, shown)}
-                adjust={<AdjustButton coach={coach} />}
                 adjustRow={focus ? <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} /> : null}
                 warmUp={warmUpNode}
                 focusRef={openHeaderRef}
@@ -2927,7 +2992,7 @@ export function WorkoutScreen() {
                   onMenu: (setId) => {
                     // A hold without a drag (§7's fallback): the current set keeps its own items (copy last, Edit set…).
                     if (focus !== null && setId === focus.setId) workoutEdits.setMenu(setId, setMoreItems(focus));
-                    else workoutEdits.setMenu(setId, [{ label: 'Edit set', run: () => { editSet(setId); } }]);
+                    else workoutEdits.setMenu(setId, [...rirItem(setId), { label: 'Edit set', run: () => { editSet(setId); } }]);
                   },
                   onMove: (setId, dir) => {
                     workoutEdits.stepSet(setId, dir);
@@ -2942,6 +3007,7 @@ export function WorkoutScreen() {
                 }}
                 onAddExercise={shown === rounds.length - 1 ? () => { workoutEdits.openAdd(); } : null}
                 onCopyLast={(setId) => void copyRowLast(setId)}
+                onRir={enterRir}
                 pbSetIds={pbSetIds}
                 onNote={(sessionExerciseId, exerciseName, note, pinnedOpen) => {
                   setNoteFor({ sessionExerciseId, exerciseName, note, ...(pinnedOpen === true ? { pinnedOpen } : {}) });
@@ -3087,6 +3153,7 @@ export function WorkoutScreen() {
                   }
             }
             onDone={closeCellEditors}
+            onRir={barRirSetId === null ? null : () => { enterRir(barRirSetId); }}
           />
         ) : null}
       </View>

@@ -71,8 +71,9 @@ describe('the tapped cell is the field (Ben, 20 Oct)', () => {
   });
 
   it('a done row’s cell is the field too; at AX sizes (one block row) it sits under the row', () => {
-    expect(table).toContain('cellEditor={p.rowEditor?.setId === r.setId && p.rowEditor.inCell && !p.ax ? p.rowEditor.node : null}');
-    expect(table).toContain('{p.rowEditor?.setId === r.setId && (!p.rowEditor.inCell || p.ax) ? <View>{p.rowEditor.node}</View> : null}');
+    expect(table).toContain('const inCell = s.rowEditor !== null && s.rowEditor.inCell && !s.blockRows;');
+    expect(table).toContain('cellEditor={inCell ? (s.rowEditor?.node ?? null) : null}');
+    expect(table).toContain('{s.rowEditor !== null && !inCell ? <View>{s.rowEditor.node}</View> : null}');
     const row = table.slice(table.indexOf('export function TableSetRow'), table.indexOf('export interface OpenSetRowProps'));
     expect(flat(row)).toContain('if (on && cellEditor !== null) {');
     const corr = table.slice(table.indexOf('export function CorrectionEditor'), table.indexOf('function NoteLink('));

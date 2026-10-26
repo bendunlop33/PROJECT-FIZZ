@@ -69,7 +69,7 @@ export function sessionPopupView(p: SessionPopupInput): PopupView | null {
     const range = shown.reps;
     const repsValue = !reps ? null : done ? (values?.reps ?? null) : range === null ? null : range.min;
     const repsText = !reps ? plain(r.row.cells.value) : done ? (repsValue === null ? '' : String(repsValue)) : range === null ? '' : range.min === range.max ? String(range.min) : `${String(range.min)}–${String(range.max)}`;
-    const rpe = rpeNumber(r.rpe);
+    const rpe = set.setType === 'warmup' ? null : done ? (values?.rpe ?? null) : rpeNumber(r.row.effort);
     const steps = setMoveSteps(a, set.id);
     const typeText = SET_TYPE_LABEL[set.setType];
     const spokenName = r.stepName;
