@@ -20,10 +20,11 @@ import { nearestPointIndex, trendLayout } from './trend-layout';
  */
 
 const INSET = 10;
-const HEIGHT = 260;
+const DEFAULT_HEIGHT = 260;
 
 /** `readout`: the selected session's line from the table, shown when it has no point for the measure (`8 Oct · Est. 1RM —`). */
-export function ExerciseLineChart({ chart, selected, readout = null, onSelect }: { chart: ExerciseTabView['chart']; selected: string | null; readout?: string | null; onSelect: (sessionId: string | null) => void }) {
+/** `height`: the plot's height (the exercise pop-up's small `History` chart uses less; Ben, 26 Oct). */
+export function ExerciseLineChart({ chart, selected, readout = null, onSelect, height: HEIGHT = DEFAULT_HEIGHT }: { chart: ExerciseTabView['chart']; selected: string | null; readout?: string | null; onSelect: (sessionId: string | null) => void; height?: number }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
   // One run, no gap breaks: Ben asked for a line every time.

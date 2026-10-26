@@ -108,6 +108,10 @@ import {
   DEFAULT_CHECK_IN_SETTINGS,
   explainTarget,
   lastComparableSession,
+  lastComparableSessions,
+  exerciseHistoryGlance,
+  HISTORY_GLANCE,
+  type HistoryGlanceView,
   lastWorkingLoad,
   workingSetsFromPrevious,
   localDateOf,
@@ -3042,6 +3046,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return lastComparableSession(h, ex)?.sets ?? [];
       } catch {
         return [];
+      }
+    },
+
+    /**
+     * (Ben, 26 Oct) The exercise pop-up's read-only `History` mid-workout: the last comparable sessions of this row's
+     * exercise (same item, unit and convention) and their top sets, from the stored history (ADR 0032 summaries).
+     * Local only; a failed read is no history, never a failed pop-up.
+     */
+    async exerciseGlance(sessionId: string, sessionExerciseId: string): Promise<HistoryGlanceView | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const a = await repos().sessions.get(sessionId);
+        const ex = a?.exercises.find((e) => e.id === sessionExerciseId);
+        if (!a || !ex || a.session.ownerId !== p.id) return null;
+        const h = (await historyFor(p.id, ex.exerciseId)).filter((x) => x.sessionId !== a.session.id);
+        const nowMs = toMs(ctx.now().utc);
+        return exerciseHistoryGlance({ sessions: lastComparableSessions(h, ex, HISTORY_GLANCE.chartSessions), ex, eq: equipmentOfRow(a.session.equipmentSnapshot, ex), tz: p.timezone, today: localDateOf(nowMs, p.timezone) });
+      } catch {
+        return null;
       }
     },
 

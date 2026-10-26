@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert } from 'react-native';
 
 import {
@@ -11,6 +11,7 @@ import {
   supersetPartners,
   type BuilderAdvice,
   type CommandOutcome,
+  type HistoryGlanceView,
   type SupersetPartner,
 } from '@fizz/domain';
 import type { BuilderGroup, SessionAggregate, SessionCommand, SetType } from '@fizz/schemas';
@@ -20,6 +21,7 @@ import { newUuid } from '../../device/runtime';
 import { haptic } from '../../device/haptics';
 import type { ActiveWorkoutData } from '../../services/workout-services';
 import type { AppServices } from '../../services/app-services';
+import { HistoryGlance } from '../../progress/history-glance';
 import { ExercisePopup } from '../../ui/exercise-popup';
 import { holdMenu, POPUP_COPY, typeMenu, type PopupSetRow } from '../../ui/exercise-popup-model';
 import { SwapSheet } from '../../ui/swap-sheet';
@@ -88,6 +90,21 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
   const [popupFor, setPopupFor] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const picker = useExercisePicker();
+  // (Ben, 26 Oct) The pop-up's read-only History: read once when it opens on an exercise (stored history, local).
+  const [glance, setGlance] = useState<{ for: string; view: HistoryGlanceView | null } | null>(null);
+  useEffect(() => {
+    if (popupFor === null) return;
+    let live = true;
+    void p.services.workout
+      .exerciseGlance(p.sessionId, popupFor)
+      .catch(() => null)
+      .then((view) => {
+        if (live) setGlance({ for: popupFor, view });
+      });
+    return () => {
+      live = false;
+    };
+  }, [p.services, p.sessionId, popupFor]);
   const own = useRef<SessionAggregate | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const latest = useRef(p);
@@ -513,6 +530,7 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
           const t = k === null ? null : dir === 1 ? k.up : k.down;
           return t !== null && t.enabled ? t.value : null;
         }}
+        history={glance !== null && glance.for === popupFor ? <HistoryGlance view={glance.view} /> : null}
         toast={p.toast}
       />
       <SwapSheet

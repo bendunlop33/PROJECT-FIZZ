@@ -193,3 +193,26 @@ describe('PB on the row (Ben, 26 Oct): the Summary’s New best, set by set', ()
     expect(ctx === null ? 0 : s.reviews.liveNewBests(ctx, logged).size).toBe(0);
   });
 });
+
+describe('exercise pop-up History mid-workout (Ben, 26 Oct)', () => {
+  it('the last 3 comparable sessions newest first and a top-set chart, from stored history; nothing written', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    for (const [load, reps] of [[90, 8], [95, 8], [97.5, 8], [100, 7]] as const) {
+      await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load, reps }, { load, reps: reps - 1 }] }]);
+      h.clockMs += 2 * DAY;
+    }
+    const st = await s.workout.start({ gymId, opId: 'start-today', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!st.ok) throw new Error(st.error.message);
+    const sessionId = st.aggregate.session.id;
+    const pick = (await s.workout.pickerExercises(sessionId, 'Bench press')).find((p) => p.exercise.name === 'Bench press');
+    const a = ok(await s.workout.addExercise({ sessionId, exerciseId: pick?.exercise.id ?? '', equipmentId: pick?.equipment[0]?.id ?? null, opId: 'add-bench' }));
+    const row = a.exercises[0]?.id ?? '';
+    const before = (await s.workout.load(sessionId))?.aggregate.session.version;
+    const g = await s.workout.exerciseGlance(sessionId, row);
+    expect(g?.rows.map((r) => plain(r.text))).toEqual(['100 × 7, 6', '97.5 × 8, 7', '95 × 8, 7']);
+    expect(g?.chart?.points.map((p) => p.value)).toEqual([90, 95, 97.5, 100]);
+    expect((await s.workout.load(sessionId))?.aggregate.session.version).toBe(before);
+    expect(await s.workout.exerciseGlance(sessionId, 'nope')).toBeNull();
+  });
+});
