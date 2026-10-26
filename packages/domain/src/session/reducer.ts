@@ -810,16 +810,18 @@ function handleSetActiveSet(state: SessionAggregate, cmd: CommandOf<'set_active_
   return { ok: true, state: bumpVersion(state, set.id), events: [{ type: 'ActiveSetChanged', setId: set.id }] };
 }
 
-function liveTimer(state: SessionAggregate, timerId: string): RestTimer | SessionError {
+function liveTimer(state: SessionAggregate, timerId: string, expectedVersion?: number): RestTimer | SessionError {
   if (state.session.pause !== null) return { code: 'session_paused', message: 'Rest controls are disabled while paused.' };
   const timer = state.restTimer;
   if (timer?.id !== timerId) return { code: 'timer_not_found', message: 'That rest timer is no longer current.' };
   if (timer.status !== 'running') return { code: 'timer_not_running', message: 'Rest has already ended.' };
+  // A Lock Screen button drawn for an older version of this rest (Ben, 26 Oct; rule 5).
+  if (expectedVersion !== undefined && timer.version !== expectedVersion) return { code: 'stale_version', message: 'The rest changed since it was shown.' };
   return timer;
 }
 
 function handleAdjustRest(state: SessionAggregate, cmd: CommandOf<'adjust_rest'>, nowMs: number): Handled {
-  const timer = liveTimer(state, cmd.timerId);
+  const timer = liveTimer(state, cmd.timerId, cmd.expectedTimerVersion);
   if ('code' in timer) return { ok: false, error: timer };
   const adjusted = adjustRestTimer(timer, cmd.deltaS, nowMs);
   const events: SessionEvent[] = [
@@ -832,7 +834,7 @@ function handleAdjustRest(state: SessionAggregate, cmd: CommandOf<'adjust_rest'>
 }
 
 function handleSkipRest(state: SessionAggregate, cmd: CommandOf<'skip_rest'>, nowMs: number): Handled {
-  const timer = liveTimer(state, cmd.timerId);
+  const timer = liveTimer(state, cmd.timerId, cmd.expectedTimerVersion);
   if ('code' in timer) return { ok: false, error: timer };
   const skipped = endRestTimer(timer, 'skipped', nowMs);
   return {

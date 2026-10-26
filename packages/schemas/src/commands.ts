@@ -112,6 +112,12 @@ export const AdjustRestCommandSchema = z.object({
   opId: OperationIdSchema,
   timerId: IdSchema,
   deltaS: z.int().min(-3600).max(3600),
+  /**
+   * The timer version the control was drawn for (Lock Screen buttons, Ben 26 Oct):
+   * a tap on an older picture of the rest is refused as `stale_version` (rule 5).
+   * Omit for in-app taps, which always act on the rest on screen.
+   */
+  expectedTimerVersion: z.int().min(1).optional(),
 });
 
 export const SkipRestCommandSchema = z.object({
@@ -119,6 +125,8 @@ export const SkipRestCommandSchema = z.object({
   ...base,
   opId: OperationIdSchema,
   timerId: IdSchema,
+  /** As `adjust_rest`: the timer version a Lock Screen Skip was drawn for. */
+  expectedTimerVersion: z.int().min(1).optional(),
 });
 
 export const StartWorkIntervalCommandSchema = z.object({
