@@ -1,4 +1,4 @@
-import { BUILDER_MAX_SUPERSET, BUILDER_SET_RULES, adviseBuilder, bandInsertIndex, anchorE1rmOf, builderSupersetWithNext, builderUnlink, canPair, clampBuilderRest, clampMinutes, compareDifficulty, editSetRow, estimateBuilderMinutes, fitToMinutes, formulaApplies, infoOrDefault, loadDirection, makeSlot, removeSlot, restClockText, roundContextOf, roundDownHere, setWorkingCount, settleBackoffs, slotsOf, splitInvalidAutoPairs, warmupsFor, withBackoffBases, followTop, workingCount, workingRestS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSetRow, type BuilderSlot, type BuilderWorkout, rirOfRpe } from '@fizz/domain';
+import { BUILDER_MAX_SUPERSET, BUILDER_SET_RULES, adviseBuilder, isTimedSlot, makeExtraSlot, bandInsertIndex, anchorE1rmOf, builderSupersetWithNext, builderUnlink, canPair, clampBuilderRest, clampMinutes, compareDifficulty, editSetRow, estimateBuilderMinutes, fitToMinutes, formulaApplies, infoOrDefault, loadDirection, makeSlot, removeSlot, restClockText, roundContextOf, roundDownHere, setWorkingCount, settleBackoffs, slotsOf, splitInvalidAutoPairs, warmupsFor, withBackoffBases, followTop, workingCount, workingRestS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSetRow, type BuilderSlot, type BuilderWorkout, rirOfRpe } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderEditOp, type LoadConvention, type WeightUnit } from '@fizz/schemas';
 import { topLoad, type BuilderLoadGuard } from './load-guard';
 
@@ -175,9 +175,32 @@ interface Working {
   minutesTouched: boolean;
 }
 
+/** An exercise's name: its builder info's, else (a bike, a rower) its timed info's (Ben, 27 Oct). */
+export function builderExerciseName(ctx: BuilderContext, id: string): string {
+  return ctx.info(id)?.name ?? ctx.extra?.(id)?.name ?? infoOrDefault(ctx.info, id).name;
+}
+
+/** `8:00`, `0:45`, `1:05:00`: a timed slot's work time. */
+export function workTimeText(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const ss = String(sec).padStart(2, '0');
+  return h > 0 ? `${String(h)}:${String(m).padStart(2, '0')}:${ss}` : `${String(m)}:${ss}`;
+}
+
+/** A timed slot's sets as Ben reads them: `8:00`, `3 × 0:45`. Null: not a timed slot. */
+export function timedSetsText(s: BuilderSlot): string | null {
+  if (!isTimedSlot(s)) return null;
+  const work = working(s);
+  const t = work.find((r) => r.durationS !== undefined)?.durationS;
+  if (t === undefined) return null;
+  return work.length > 1 ? `${String(work.length)} × ${workTimeText(t)}` : workTimeText(t);
+}
+
 function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot: BuilderCoachSnapshot): void {
   const { ctx } = env;
-  const name = (id: string): string => infoOrDefault(ctx.info, id).name;
+  const name = (id: string): string => builderExerciseName(ctx, id);
   const nameOf = (key: string): string => {
     const s = findSlot(st.w, key);
     return s === undefined ? key : name(s.exerciseId);
@@ -186,8 +209,13 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
     if (snapshot.revs[key] !== undefined || findSlot(snapshot.workout, key) !== undefined) st.named.add(key);
   };
   const inWorkout = (id: string): boolean => slotsOf(st.w.blocks).some((s) => s.exerciseId === id);
-  const newExerciseOk = (id: string): string | null => {
-    if (ctx.info(id) === null || !env.usable(id)) return `Not changed: ${ctx.info(id)?.name ?? 'that exercise'} isn't at this gym`;
+  // (Ben, 27 Oct) A cardio machine or timed exercise has no builder info but can be added (as a timed slot); it never
+  // replaces a lift. Only an exercise code doesn't know at all is unknown; one it knows that this gym can't do isn't here.
+  const newExerciseOk = (id: string, opts: { timedOk: boolean }): string | null => {
+    const timed = ctx.extra?.(id) ?? null;
+    if (ctx.info(id) === null && timed === null) return 'Not changed: unknown exercise';
+    if (ctx.info(id) === null && !opts.timedOk) return `Not changed: ${name(id)} can’t replace a lift`;
+    if (!env.usable(id)) return `Not changed: ${name(id)} isn't at this gym`;
     if (inWorkout(id)) return `Not changed: ${name(id)} is already in the workout`;
     const pain = env.pain(id);
     if (pain !== null) return `${name(id)} left out · ${pain}`;
@@ -211,7 +239,7 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
         st.notes.push(`Not changed: the main lift changes on Set up`);
         return;
       }
-      const why = newExerciseOk(op.toExerciseId);
+      const why = newExerciseOk(op.toExerciseId, { timedOk: false });
       if (why !== null) {
         st.notes.push(why);
         return;
@@ -230,7 +258,7 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
       return;
     }
     case 'add': {
-      const why = newExerciseOk(op.exerciseId);
+      const why = newExerciseOk(op.exerciseId, { timedOk: true });
       if (why !== null) {
         st.notes.push(why);
         return;
@@ -239,12 +267,22 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
         st.notes.push(`Not changed: at most ${String(BUILD_LIMITS.maxExercises)} exercises`);
         return;
       }
-      const asked = op.workingSets ?? BUILDER_SET_RULES.accessorySets;
+      const timed = ctx.info(op.exerciseId) === null ? (ctx.extra?.(op.exerciseId) ?? null) : null;
+      const asked = op.workingSets ?? (timed === null || timed.measurement === 'reps' ? BUILDER_SET_RULES.accessorySets : 1);
       const sets = Math.max(BUILD_LIMITS.minWorkingSets, Math.min(BUILD_LIMITS.maxWorkingSets, asked));
       if (sets !== asked) st.notes.push(`${name(op.exerciseId)}: ${String(sets)} sets (limit ${String(BUILD_LIMITS.minWorkingSets)}–${String(BUILD_LIMITS.maxWorkingSets)})`);
-      const slot: BuilderSlot = { ...setWorkingCount(makeSlot(op.exerciseId, { main: false, workingSets: sets }, ctx), sets), touched: true };
-      let at = endIndex(st.w, op.exerciseId, ctx);
-      if (op.afterSlotKey !== null) {
+      let slot: BuilderSlot;
+      if (timed !== null) {
+        // (Ben, 27 Oct) A cardio machine or timed exercise: its work time (code's default when not asked), no reps or load.
+        const askedS = op.workSeconds ?? null;
+        slot = { ...makeExtraSlot(op.exerciseId, { workS: askedS, sets }, ctx), touched: true };
+        const gotS = working(slot)[0]?.durationS ?? null;
+        if (askedS !== null && gotS !== null && gotS !== askedS) st.notes.push(`${name(op.exerciseId)}: ${workTimeText(gotS)}`);
+      } else slot = { ...setWorkingCount(makeSlot(op.exerciseId, { main: false, workingSets: sets }, ctx), sets), touched: true };
+      // A timed slot with no place named goes last (a cool-down); `first` puts anything at the very start (a warm-up).
+      let at = timed === null ? endIndex(st.w, op.exerciseId, ctx) : st.w.blocks.length;
+      if (op.first === true) at = 0;
+      else if (op.afterSlotKey !== null) {
         mark(op.afterSlotKey);
         const i = blockIndexOf(st.w, op.afterSlotKey);
         if (i >= 0) at = i + 1;
@@ -492,7 +530,7 @@ export function applyBuilderEdits(snapshot: BuilderCoachSnapshot, ops: readonly 
   const st: Working = { w: cloneW(base), minutes: snapshot.minutes, notes: [], structure: [], swapped: new Map(), named: new Set(), minutesTouched: false };
   for (const op of ops) applyOne(st, op, env, snapshot);
 
-  const name = (id: string): string => infoOrDefault(env.ctx.info, id).name;
+  const name = (id: string): string => builderExerciseName(env.ctx, id);
   const after = st.w;
   const beforeSlots = slotsOf(base.blocks);
   const afterSlots = slotsOf(after.blocks);
@@ -522,7 +560,13 @@ export function applyBuilderEdits(snapshot: BuilderCoachSnapshot, ops: readonly 
       lines.push(...slotLines(s, now, name(s.exerciseId), (x) => workingRestS(x, env.ctx.info, x === s ? base.restLevel : after.restLevel, env.ctx.restPresetsS)));
     }
   }
-  for (const s of afterSlots) if (!beforeSlots.some((b) => b.key === s.key) && !replacing.has(s.key)) lines.push(`Add ${name(s.exerciseId)}`);
+  // (Ben, 27 Oct) A timed add reads with its time (`Add Exercise bike · 8:00`), and one put at the start says so.
+  for (const [i, s] of afterSlots.entries()) {
+    if (beforeSlots.some((b) => b.key === s.key) || replacing.has(s.key)) continue;
+    const time = timedSetsText(s);
+    const first = i === 0 && beforeSlots.length > 0;
+    lines.push(`Add ${name(s.exerciseId)}${time === null ? '' : ` · ${time}`}${first ? ' · first' : ''}`);
+  }
   // Blocks that moved or paired change other slots' positions only; each named slot is a precondition anyway.
   lines.push(...st.structure);
 

@@ -4,7 +4,7 @@ import { strictJsonSchema, type FunctionToolDefinition } from '../function-tools
 import type { CoachModelPort, ModelErrorKind, ModelRequest } from '../model-port';
 import { DEFAULT_COACH_TIMING, runModelStep, type CoachTiming } from '../turn';
 import { EFFORT_WORDS_LINE } from '../numbers';
-import { builderLoadText, builderRepsText, type BuilderCoachSnapshot } from './edit-ops';
+import { builderExerciseName, builderLoadText, builderRepsText, timedSetsText, type BuilderCoachSnapshot } from './edit-ops';
 import { topLoad } from './load-guard';
 import type { SetupCoachContext } from './setup';
 import { BUILDER_TARGET_CORRECTION_LINES } from '../corrections';
@@ -51,7 +51,7 @@ const TOOL_OF: Readonly<Record<BuilderRequestKind, BuilderCoachToolName>> = {
 
 const DESCRIPTIONS: Readonly<Record<BuilderCoachToolName, string>> = {
   fill_setup: 'Fill in Set up from Ben’s words: day (a dayId from the context), minutes, main lift (an option ID, or "none"), supersets, and muscle-group counts (count, or delta) by the context’s groups; a part Ben names is its group (biceps or triceps → Arms, hamstrings → Legs, abs → Core). Unused fields are null. `reply`: a short answer when he asked a question instead; else null.',
-  propose_workout_edit: 'Propose changes to today’s workout, by slotKey: swap, add, remove, sets, reps, rpe, load (heavier/lighter or a value), rest (seconds), move, superset, unlink, minutes. Ben applies or skips. `reply`: one or two sentences; an answer alone when ops is empty.',
+  propose_workout_edit: 'Propose changes to today’s workout, by slotKey: swap, add (first=true puts it at the start; workSeconds for cardio or timed work), remove, sets, reps, rpe, load (heavier/lighter or a value), rest (seconds), move, superset, unlink, minutes. Ben applies or skips. `reply`: one or two sentences; an answer alone when ops is empty.',
   review_workout: 'Review today’s workout, numbers included: a short verdict; a one-line comment on each of Ben’s own edits that matters (by editId; ops empty when it looks fine, else an offer); up to 4 suggestions (ops by slotKey, each with a one-line reason); and up to 4 notes for the next time this day comes round (words, or a target load for one lift).',
   mix_pick: 'Pick one exercise from `shortlist` to swap in today, with a one-line reason.',
   pre_session_nudge: 'Decide whether today’s signals deserve one line on the session card. speak=false to stay silent. If you speak, one plain line; the app shows the code offer with it as Apply.',
@@ -83,6 +83,8 @@ const INSTRUCTIONS: Readonly<Record<BuilderRequestKind, string>> = {
     ...COMMON,
     'Ben is looking at today’s workout before he starts. Make only the changes he asked for. Each one is a proposal he applies or skips.',
     'When he asks for a new exercise without naming it, never pick a near-duplicate of one already in the workout (see COACHING KNOWLEDGE). If he names one, propose it; code flags it.',
+    'Cardio, timed and plyometric work (bike, rower, treadmill, ski erg, ropes, box jumps) is in `otherWork`, not `usable`: add it by its exerciseId, cardio and timed work with workSeconds (8 min = 480). A warm-up goes first (first=true); otherwise leave first null.',
+    'Never say an exercise is unavailable or not in his list when `usable` or `otherWork` has one that fits his words. If none fits, ask one short question.',
     BUILDER_TARGET_CORRECTION_LINES,
   ].join('\n'),
   review: [
@@ -151,6 +153,8 @@ export function builderWorkoutView(snapshot: BuilderCoachSnapshot, ctx: BuilderC
     if (b.slots.length > 1) letter += 1;
     for (const s of b.slots) {
       const i = infoOrDefault(ctx.info, s.exerciseId);
+      const timed = ctx.info(s.exerciseId) === null ? (ctx.extra?.(s.exerciseId) ?? null) : null;
+      const timeText = timedSetsText(s);
       const work = s.rows.filter((r) => r.type !== 'warmup');
       const top = topLoad(s);
       // A saved range reads as one (`5 × 3–6`), not its bottom (final re-review S2).
@@ -161,12 +165,13 @@ export function builderWorkoutView(snapshot: BuilderCoachSnapshot, ctx: BuilderC
       slots.push({
         slotKey: s.key,
         exerciseId: s.exerciseId,
-        exercise: i.name,
-        group: i.group,
+        exercise: builderExerciseName(ctx, s.exerciseId),
+        group: timed === null ? i.group : timed.measurement === 'cardio' ? 'Cardio' : timed.measurement === 'duration' ? 'Timed' : 'Other',
         main: s.main,
         superset: tag,
         workingSets: workingCount(s),
-        sets: `${String(workingCount(s))} × ${repsText}${top === null ? ' · no load' : ` @ ${builderLoadText(top, s.unit, s.convention)}`}`,
+        // (Ben, 27 Oct) A timed slot (a bike warm-up) reads as its time, never `1 × 1 · no load`.
+        sets: timeText !== null ? timeText : `${String(workingCount(s))} × ${repsText}${top === null ? ' · no load' : ` @ ${builderLoadText(top, s.unit, s.convention)}`}`,
         rpe: rpes.length === 0 ? null : rpes.join(' / '),
         rest: rest === null ? null : restClockText(rest),
         warmups: s.rows.length - work.length,
@@ -180,6 +185,11 @@ export function builderWorkoutView(snapshot: BuilderCoachSnapshot, ctx: BuilderC
 export interface BuilderCoachExtras {
   /** Exercises usable at today's gym and not pain-flagged (for swap / add), capped by the caller. */
   usable: readonly { exerciseId: string; name: string; group: string }[];
+  /**
+   * (Ben, 27 Oct: "add 8 min bike warm up") Exercises doable here with no muscle group, so never in `usable`: cardio
+   * machines and timed work (add with `workSeconds`), plyometric and med-ball reps. Add only. Absent: none given.
+   */
+  otherWork?: readonly { exerciseId: string; name: string; measured: 'cardio' | 'time' | 'reps' }[];
   painFlags: readonly { exercise: string; text: string }[];
   /** Active `From last review` notes for this day (✕'d ones left out). */
   dayNotes: readonly string[];

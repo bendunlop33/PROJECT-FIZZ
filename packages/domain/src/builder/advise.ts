@@ -47,7 +47,8 @@ export const ADVICE_TEXT = {
 /** `adviseBuilder`: every current "not recommended" item, in workout order. */
 export function adviseBuilder(blocks: readonly AdviceBlock[], info: BuilderInfoLookup): BuilderAdvice[] {
   const out: BuilderAdvice[] = [];
-  const flat = blocks.flatMap((b, bi) => b.slots.map((s) => ({ s, bi, i: infoOrDefault(info, s.exerciseId) })));
+  // (Ben, 27 Oct) A slot with no builder info (a bike warm-up, a ride) has no muscle or role to advise on: left out.
+  const flat = blocks.flatMap((b, bi) => b.slots.flatMap((s) => (info(s.exerciseId) === null ? [] : [{ s, bi, i: infoOrDefault(info, s.exerciseId) }])));
   const ref = (x: (typeof flat)[number]): AdviceRef => ({ slotKey: x.s.key, exerciseId: x.s.exerciseId, name: x.i.name });
 
   // Isolation before a compound for the same muscle (different blocks; abs aside).

@@ -6,7 +6,7 @@ import { removeSlot } from './fit';
 import { roundContextOf, roundDownHere } from './loads';
 import { clampBuilderRest } from './rest';
 import { addDropSet, BUILDER_SET_RULES, changeSetType, editSetRow, isTimedSlot, setWorkingCount, workingCount, type RowPatch, type SetRowEditRefusal } from './set-rows';
-import { makeSlot } from './slot';
+import { makeSlot, makeExtraSlot } from './slot';
 import type { BuilderBlock, BuilderContext, BuilderSetRow, BuilderSlot, BuilderWorkout, RestKind, RoundedLoad } from './types';
 import { slotLoadOf } from './reps';
 
@@ -91,11 +91,14 @@ export function applyBuilderEdit(w: BuilderWorkout, op: BuilderEditOp, ctx: Buil
 function edit(w: BuilderWorkout, op: BuilderEditOp, ctx: BuilderContext): BuilderEditResult {
   const done = (workout: BuilderWorkout, changed: string[], extra: Partial<Extract<BuilderEditResult, { ok: true }>> = {}): BuilderEditResult => ({ ok: true, workout, changed, advice: null, ...extra });
   if (op.kind === 'add_exercise') {
-    if (ctx.info(op.exerciseId) === null) return { ok: false, reason: 'unknown_exercise' };
+    // (Ben, 27 Oct) A cardio machine or timed exercise (no builder group) goes in as a timed slot.
+    const timed = ctx.info(op.exerciseId) === null ? (ctx.extra?.(op.exerciseId) ?? null) : null;
+    if (ctx.info(op.exerciseId) === null && timed === null) return { ok: false, reason: 'unknown_exercise' };
     const all = slotsOf(w.blocks);
     if (all.length >= BUILDER_VOLUME.maxExercises) return { ok: false, reason: 'max_exercises' };
     if (all.some((s) => s.exerciseId === op.exerciseId)) return { ok: false, reason: 'already_in_workout' };
-    const slot: BuilderSlot = { ...makeSlot(op.exerciseId, { main: false, workingSets: BUILDER_SET_RULES.accessorySets }, ctx), touched: true };
+    const made = timed === null ? makeSlot(op.exerciseId, { main: false, workingSets: BUILDER_SET_RULES.accessorySets }, ctx) : makeExtraSlot(op.exerciseId, { workS: null }, ctx);
+    const slot: BuilderSlot = { ...made, touched: true };
     return done({ ...w, blocks: [...w.blocks, { slots: [slot], auto: false }] }, [slot.key]);
   }
   const at = find(w, op.slotKey);

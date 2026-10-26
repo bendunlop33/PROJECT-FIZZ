@@ -137,7 +137,7 @@ describe('typed edits, code-made lines', () => {
       env,
     );
     expect(o.lines).toEqual([]);
-    expect(o.notes).toEqual(['Not changed: the main lift never joins a superset', 'Not changed: the main lift stays', 'Machine chest press left out · shoulder flagged 6 Oct', "Not changed: that exercise isn't at this gym"]);
+    expect(o.notes).toEqual(['Not changed: the main lift never joins a superset', 'Not changed: the main lift stays', 'Machine chest press left out · shoulder flagged 6 Oct', 'Not changed: unknown exercise']);
   });
 
   it('a superset against the advice carries ⚠ and the reason; Apply still possible', () => {

@@ -37,8 +37,19 @@ const coachText = (max: number) => z.string().max(max);
 export const BuilderEditOpSchema = z.discriminatedUnion('op', [
   /** Swap an exercise for another one this gym has; position, superset and set count stay. */
   z.strictObject({ op: z.literal('swap'), slotKey: RefSchema, toExerciseId: RefSchema }),
-  /** Add an exercise after a slot (null: at the end, before abs). */
-  z.strictObject({ op: z.literal('add'), exerciseId: RefSchema, afterSlotKey: RefSchema.nullable(), workingSets: z.int().min(0).max(30).nullable() }),
+  /**
+   * Add an exercise after a slot (null: at the end, before abs). (Ben, 27 Oct: "add 8 min bike warm up") `first`: at
+   * the very start (a warm-up), before every slot; `workSeconds`: a cardio or timed exercise's work time per set
+   * (null: code's default). Absent on calls made before them.
+   */
+  z.strictObject({
+    op: z.literal('add'),
+    exerciseId: RefSchema,
+    afterSlotKey: RefSchema.nullable(),
+    workingSets: z.int().min(0).max(30).nullable(),
+    first: z.boolean().nullable().optional(),
+    workSeconds: z.int().min(0).max(36_000).nullable().optional(),
+  }),
   z.strictObject({ op: z.literal('remove'), slotKey: RefSchema }),
   /** Working sets (warm-ups follow the exercise). */
   z.strictObject({ op: z.literal('sets'), slotKey: RefSchema, workingSets: z.int().min(0).max(30) }),
