@@ -12,7 +12,7 @@ import { isRoundEnd, nextPendingSet, setUnits } from './order';
 import { isPlatesAddedKind } from '../plates-added';
 import { painFlaggedOf, shownPlannedIn, warmupLookupOf, type CarryOptions } from './carry';
 import { prefillDraft } from './view';
-import { lastPerSet, type SetLast } from './set-last';
+import { lastPerSet, type SetLast } from './last-time';
 
 /**
  * `buildWorkoutTableView` (active-workout §2A.12): the Table view of the

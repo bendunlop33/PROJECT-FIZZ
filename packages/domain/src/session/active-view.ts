@@ -35,6 +35,7 @@ import { midSwapSlot } from './mid-swap';
 import { supersetMenu, type SupersetMenu } from './superset-with';
 import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
+import { lastTimeOfSet } from './last-time';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
 import { changedTargetFields, draftWithNewTarget, markCarriedLoad, pendingOwnValues } from './pending-values';
@@ -96,6 +97,7 @@ export function lastComparableSessions(history: readonly HistorySession[], ex: P
         index,
         values: { load: s.load, reps: s.reps, durationS: s.durationS ?? null, rpe: s.rpe, rir: s.rir, ...(s.distanceM !== undefined ? { distanceM: s.distanceM } : {}) },
         ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
+        ...(s.side === 'left' || s.side === 'right' ? { side: s.side } : {}),
       })),
     });
   }
@@ -794,7 +796,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     }
   }
 
-  const prevFirst = prev?.sets.find((c) => c.index === setNumber - 1) ?? prev?.sets[prev.sets.length - 1] ?? null;
+  // The one last-time rule (`lastTimeMatch`): this working set's partner last time, or nothing (never the nearest set).
+  const lastTime = prev === null ? null : lastTimeOfSet(state, set.id, prev.sets);
   // F3 (Ben, 13 Oct): every set names its type, `Working` too (`Barbell · Working · Set 2 of 4`).
   const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
 
@@ -816,16 +819,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     setNumber,
     stepName: stepNameIn(own, set.id),
     setCount: own.length,
-    previous:
-      prev && prevFirst
-        ? {
-            performedAtUtc: prev.performedAtUtc,
-            // §2.13: a flagged set still shows (and copies) what happened, with its words.
-            text: withExclusionWords(valuesText(prevFirst.values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }), prevFirst.exclusions),
-            values: prevFirst.values,
-            imported: prev.imported,
-          }
-        : null,
+    // §2.13: a flagged set still shows (and copies) what happened, with its words.
+    previous: prev && lastTime ? { performedAtUtc: prev.performedAtUtc, text: lastTime.text, values: lastTime.values, imported: prev.imported } : null,
     draft: values,
     draftSource,
     carriedLoad: carriedLoad(state, set, carry),

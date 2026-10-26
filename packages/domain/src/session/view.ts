@@ -1,5 +1,5 @@
 import type { HistoryLike } from '../history-summary';
-import type { Load, SessionAggregate, SessionExercise, SetExclusion, SetValues, WorkoutSession, WorkoutSet } from '@fizz/schemas';
+import type { Load, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetValues, WorkoutSession, WorkoutSet } from '@fizz/schemas';
 import { restOverrunMs, restRemainingMs } from '../rest';
 import { toMs } from '../time';
 import { carriedLoad, type CarryOptions } from './carry';
@@ -121,6 +121,8 @@ export interface ComparableSet {
   values: SetValues;
   /** Ben's exclusion flags on that set (§2.13): `Last (1 Oct): 100 kg × 8 · spotted`. Copying still copies the values. */
   exclusions?: readonly SetExclusion[];
+  /** The side as logged (`left`/`right` for one side of a single-side log), so `lastTimeMatch` numbers a pair once. */
+  side?: SetSide | null;
 }
 
 function compatibleLoad(load: Load | null, ex: SessionExercise): Load | null {

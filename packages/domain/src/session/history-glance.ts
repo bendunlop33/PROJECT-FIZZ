@@ -7,7 +7,7 @@ import { longDate, shortDate } from '../progress/exercise-view';
 import { trailingAverage, type ExerciseTabView } from '../progress/exercise-tab';
 import { toMs } from '../time';
 import type { PreviousSession } from './active-view';
-import { setLastText } from './set-last';
+import { setLastText } from './last-time';
 import { resultsSummary } from './table-view';
 
 /**
