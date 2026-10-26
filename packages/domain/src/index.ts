@@ -54,6 +54,7 @@ export * from './rep-range';
 export * from './gym-editor';
 export * from './session/repeat';
 export * from './session/routines';
+export * from './session/template-fit';
 export * from './session/library';
 export * from './session/routine-editor';
 export * from './session/session-types';

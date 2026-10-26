@@ -308,9 +308,12 @@ import {
   type RuleReps,
   type HistoryLike,
   type HistoryWorkout,
+  fitTemplateToMinutes,
+  mainFlags,
+  type TemplateFitResult,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
-import { worksLine } from '@fizz/schemas';
+import { muscleGroupOf, worksLine } from '@fizz/schemas';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
 import type {
   GymStation,
@@ -3980,6 +3983,45 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const out = planRoutineStart({ opId: 'editor-estimate', owner: p, gymId: req.gymId, routine, exercises, gymEquipment: await repos().equipment.listByGym(req.gymId), knownEquipment: await allEquipment(p.id), at, newId: previewIds() });
         const m = estimateRemainingDuration(out.aggregate, { recent: await recentFinished(p) }).minutes;
         return m > 0 ? m : null;
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * (Ben, 26 Oct; app review finding 6) The editor's `Time ±`: the template fitted to `minutes` (`fitTemplateToMinutes`)
+     * with the editor's own estimate, read once here. Nothing is written: the screen shows the result as edits Ben saves.
+     * Null: no gym or nothing to fit, or a read failed (the screen says nothing changed).
+     */
+    async fitTemplate(req: { exercises: readonly RoutineExercise[]; gymId: string | null; minutes: number; defaultRestS: number }): Promise<TemplateFitResult | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p || req.gymId === null || req.exercises.length === 0) return null;
+        const exercises = new Map<string, Exercise>();
+        for (const e of req.exercises) {
+          const x = await exerciseById(e.exerciseId);
+          if (x) exercises.set(x.id, x);
+        }
+        const at = ctx.now();
+        const gymEquipment = await repos().equipment.listByGym(req.gymId);
+        const knownEquipment = await allEquipment(p.id);
+        const recent = await recentFinished(p);
+        const estimateS = (list: readonly RoutineExercise[]): number => {
+          const routine: Routine = { id: deriveId('editor-estimate'), ownerId: p.id, version: 1, createdAtUtc: at.utc, updatedAtUtc: at.utc, name: 'Estimate', exercises: [...list], createdFromSessionId: null, source: 'ben' };
+          const out = planRoutineStart({ opId: 'editor-estimate', owner: p, gymId: req.gymId ?? '', routine, exercises, gymEquipment, knownEquipment, at, newId: previewIds() });
+          return estimateRemainingDuration(out.aggregate, { recent }).seconds;
+        };
+        const isCompound = (id: string) => exercises.get(id)?.mechanic === 'compound';
+        return fitTemplateToMinutes({
+          exercises: req.exercises,
+          minutes: req.minutes,
+          main: mainFlags(req.exercises, isCompound),
+          isCompound,
+          isCore: (id) => (exercises.get(id)?.primaryMuscles ?? []).some((m) => muscleGroupOf(m) === 'Core'),
+          defaultRestS: req.defaultRestS,
+          estimateS,
+          newId: ctx.newId,
+        });
       } catch {
         return null;
       }

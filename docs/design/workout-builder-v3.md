@@ -526,7 +526,7 @@ Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a N
 ┌──────────────────────────────────────────┐
 │ Cancel                                   │
 │ Push A                                   │  the name, editable, where the title is
-│ Time                       about 55 min  │  the estimate (read-only)
+│ Time                    [−] 55 min [+]   │  the estimate; ± fits sets and rests (Ben, 26 Oct)
 │     Exercise              Sets  Top set  │
 │                                   (kg)   │
 │  1  Bench press  MAIN       4     Auto   │
@@ -555,9 +555,9 @@ Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a N
 
 **What differs, because a saved workout is a template, not today's draft.**
 - `Top set` shows the template's target: `Auto` (worked out at Start) or Ben's Fixed load (`100`, `27.5 each`, `25 assist`, `BW+10`), another unit inline (`45 lb`).
-- `Time` shows the estimate only. Your workout's `[−] 45 min [+]` fits today's draft only and never the saved workout or the plan (§2.3), so it isn't offered here. [Proposal: Ben may want a Time fit for templates; not built.]
+- **`Time` (Ben, 26 Oct; app review finding 6).** The same `[−] 55 min [+]` control and fit note as Your workout (`Time · −2 sets ›`), on the estimate. A template has no length of its own, so a step fits the **template's** sets and rests to the next 5-minute step, as edits on the page that Ben then saves (or Cancels): shorter rests on the accessories first (compound 1:30, isolation 1:15), then the least training lost (an accessory set off, never below 2, or an accessory at 2 sets left out; never a main lift); longer adds a set to the most valuable accessories (max 4). Steps fit from the list as it was before the first step, so they don't pile up; any other edit ends the fit. The note opens what changed with `Undo` back to the list before. Can't get there: `Shortest: about N min`; nothing to change: `No change`. Built: `fitTemplateToMinutes` (domain), `routines.fitTemplate` (the editor's own estimate, nothing written).
 - No coach bar, no Coach review, no Start: the primary is `Save` (`No changes` when nothing changed; `Add a name`, `Add an exercise`, `Can’t save distance yet` or `Fix N issues` while it can't save). `Cancel` with changes asks `Discard changes?`.
-- Nothing is written until Save: one version (op ID; a retry is the same save), with an Undo record (rule 5). Saved against an older version, nothing is written and the conflict sheet shows (`Push A changed while you were editing`, `Keep both` / `Discard my edits`). Unsaved edits are lost on Cancel or a force-close.
+- Nothing is written until Save: one version (op ID; a retry is the same save), with an Undo record (rule 5). Saved against an older version, nothing is written and the conflict sheet shows (`Push A changed while you were editing`, `Keep both` / `Discard my edits`). **Unsaved edits survive a force-close (Ben, 26 Oct; app review finding 6):** they are kept on this phone as he makes them (a local draft per workout: the edits, what they started from, its version and the Save's op ID; Your data, removed by Delete my data, not in backups). Reopening that workout (or `New workout`) asks `Unsaved edits` · `Discard` / `Resume edits`; Resume puts them back on the page, and Save is still the one versioned write against the version they started from (a newer version gets the conflict sheet; a save that landed just before the app closed isn't written twice). Save, Cancel and Discard forget the draft. A `Save to Workouts ›  Edit ›` copy isn't kept (its sheet is gone after a relaunch).
 - A plan day's Save changes its template for the weeks ahead; a workout already done never changes (rule 2). Today's unstarted draft for that day reloads as §2.3's `Plan day updated elsewhere while open` says.
 - An exercise the workout can't save (a distance exercise added now) shows `Can’t save distance yet` on its row; Swap or Delete clears it.
 
