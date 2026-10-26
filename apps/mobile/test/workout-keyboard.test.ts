@@ -22,9 +22,13 @@ describe('workout keyboard (F5)', () => {
     expect(screen).toContain('{...WORKOUT_KEYBOARD}');
   });
 
-  it('the round table scrolls with the number pad up (Ben, 23 Oct): no dismiss on drag, taps handled, on the page and every set box', () => {
+  it('the round table scrolls with the number pad up (Ben, 23 Oct): no dismiss on drag, taps handled, on its one scroll (Ben, 26 Oct)', () => {
     expect(ROUND_TABLE_KEYBOARD).toEqual({ keyboardDismissMode: 'none', keyboardShouldPersistTaps: 'handled' });
-    expect(table.match(/\{\.\.\.ROUND_TABLE_KEYBOARD\}/g)?.length).toBe(2);
+    expect(table.match(/\{\.\.\.ROUND_TABLE_KEYBOARD\}/g)?.length).toBe(1);
+    // One scroll view per round page: no set box scrolls inside it (no nested scrolling to fight).
+    const page = table.slice(table.indexOf('export function RoundPage'), table.indexOf('// The open row (the current set)'));
+    expect(page.match(/<ScrollView\s/g)?.length).toBe(1);
+    expect(page).not.toContain('nestedScrollEnabled');
     expect(table).not.toContain('WORKOUT_KEYBOARD');
     // A drag in a set box no longer closes the cell being typed in.
     expect(table).not.toContain('onScrollBeginDrag={p.onTapElsewhere}');
@@ -61,7 +65,7 @@ describe('workout keyboard (F5)', () => {
       expect(runRowTap({ state, setId: 's1' }, h).kind).toBe('none');
       expect(h.dismissKeyboard).not.toHaveBeenCalled();
     }
-    expect(table).toContain('runRowTap(r.row, {');
+    expect(table).toContain('runRowTap(\n          r.row,');
   });
 
   it('Log closes it', () => {

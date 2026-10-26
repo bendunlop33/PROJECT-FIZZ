@@ -4,7 +4,7 @@ import { buildActiveSetView, buildAddExerciseCommand, buildWorkoutTableView, cat
 
 import { assisted, at, barbell, bodyweightStation, dumbbells, exercise, GYM, idGen, kg, lb, ms, profile, routine, routineExercise, stack, template, values } from '../../../packages/domain/test/fixtures';
 import { apply, logCmd, setsFor, startFixture, BENCH, FACE, ROW } from '../../../packages/domain/test/session-fixture';
-import { boxFirstRow, buildRounds, clockText, fitRoundBoxes, lastLogMs, roundPrimary, setClockMs, setClockStartMs, shownRoundIndex, timerBarMode, whyView } from '../src/workout/rounds';
+import { buildRounds, clockText, lastLogMs, revealSetId, roundPrimary, setClockMs, setClockStartMs, shownRoundIndex, timerBarMode, whyView } from '../src/workout/rounds';
 
 /**
  * The v3 round page over real domain state (wo-v3 logic S4): a superset's
@@ -125,11 +125,8 @@ describe('many warm-ups (logic S4, spec B1)', () => {
     expect(ex?.rows[ex.anchor]?.stepName).toBe(v.focus?.stepName);
     const pill = roundPrimary({ rounds: rs, shown: 0, primary: v.primary });
     expect(pill.kind === 'step' ? plain(pill.label) : '').toMatch(/^Set 2 · Log 100 kg × /);
-    // A 3-row box positions on the open row with done rows above it.
-    const first = boxFirstRow(8, 3, ex?.anchor ?? 0);
-    expect(first).toBe(3);
-    const fit = fitRoundBoxes({ available: 300 + 3 * 45, fixed: 300, upNext: 0, boxes: [{ heights: Array.from({ length: 8 }, () => 45), anchor: ex?.anchor ?? 0 }] });
-    expect(fit.boxes[0]).toEqual({ rows: 3, first: 3, offset: 135, height: 135 });
+    // (Ben, 26 Oct) One scroll per round: the page brings the open row into view (not a per-exercise box).
+    expect(revealSetId(rs[0])).toBe(ex?.rows[5]?.setId);
   });
 });
 
@@ -161,13 +158,13 @@ describe('every load convention reads right on the round page (logic S4)', () =>
     expect(why?.target).toMatch(c.target);
   });
 
-  it('cardio: TIME · DIST column, no RPE cell', () => {
+  it('cardio: TIME · DIST column, no RIR cell', () => {
     const ROWER = exercise(0, 'Rowing machine', { id: catalogueExerciseId('rowing-erg'), catalogueKey: 'rowing-erg', measurement: 'cardio', movementPattern: 'conditioning', compatibleEquipment: ['erg'], defaultLoadConvention: 'bodyweight', primaryMuscles: ['quads', 'glutes', 'lats'] });
     const s = emptyWith(ROWER, null);
     const ex = roundsOf(s)[0]?.exercises[0];
     expect(ex?.valueHeader).toBe('TIME · DIST');
     expect(ex?.loadHeader).toBeNull();
-    expect(ex?.rows.every((r) => r.rpe === null)).toBe(true);
+    expect(ex?.rows.every((r) => r.rir === null)).toBe(true);
   });
 });
 

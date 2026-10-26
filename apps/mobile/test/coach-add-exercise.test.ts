@@ -100,7 +100,7 @@ describe('add an exercise from chat', () => {
     if (!record) throw new Error('no card');
     const card = cardView(record);
     expect(card).toMatchObject({ status: { word: 'Added' }, canUndo: true });
-    expect(plain(card.text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8.');
+    expect(plain(card.text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 · RIR 2.');
     expect(r.note).toBeNull();
 
     const after = await rowsOf(s, sessionId);

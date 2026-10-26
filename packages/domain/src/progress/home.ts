@@ -350,7 +350,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
       words: `${sr.label}, ${sr.sessions === null ? '' : `${countNoun(sr.sessions, 'session', 'sessions')}, `}${setsWords(sr.sets)}`,
     })),
   }));
-  const skipped = [freq.notCounted.warmups > 0 ? countNoun(freq.notCounted.warmups, 'warm-up set', 'warm-up sets') : null, freq.notCounted.easy > 0 ? `${String(freq.notCounted.easy)} rated under RPE 6` : null].filter(
+  const skipped = [freq.notCounted.warmups > 0 ? countNoun(freq.notCounted.warmups, 'warm-up set', 'warm-up sets') : null, freq.notCounted.easy > 0 ? `${String(freq.notCounted.easy)} rated over RIR 4` : null].filter(
     (x): x is string => x !== null,
   );
   const noMusclesCount = freq.notCounted.noMuscles.length;

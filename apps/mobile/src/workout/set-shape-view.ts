@@ -1,4 +1,4 @@
-import { DEFAULT_WORKING_SETS_ON_ADD, EFFORT_CHOICES, formatDuration, formatNumber, NBSP, repRangeText, SLOT_SET_LIMITS, type SlotShapeView } from '@fizz/domain';
+import { DEFAULT_WORKING_SETS_ON_ADD, EFFORT_CHOICES, formatDuration, formatNumber, NBSP, repRangeText, rirOfRpe, SLOT_SET_LIMITS, type SlotShapeView } from '@fizz/domain';
 
 /**
  * Screen-side words for the one sets control (`SetShapeControl`,
@@ -12,7 +12,8 @@ export const SET_SHAPE_COPY = {
   warmups: 'Warm-ups',
   reps: 'Reps',
   workTime: 'Work time',
-  targetRpe: 'Target RPE',
+  // (Ben, 26 Oct: RIR replaces RPE in the UI) Every effort row reads RIR; an RPE scale converts its values (`shapeEffortRow`, `effortChoices`).
+  targetRpe: 'Target RIR',
   targetRir: 'Target RIR',
   none: 'None',
   mixed: 'Mixed',
@@ -65,12 +66,14 @@ export function shapeRepsText(shape: Pick<SlotShapeView, 'reps' | 'durationS'>, 
 export function shapeEffortRow(shape: Pick<SlotShapeView, 'targetRpe' | 'targetRir'>, scale: 'rpe' | 'rir' | null): { label: string; text: string } | null {
   if (scale === null) return null;
   const v = scale === 'rpe' ? shape.targetRpe : shape.targetRir;
-  return { label: scale === 'rpe' ? SET_SHAPE_COPY.targetRpe : SET_SHAPE_COPY.targetRir, text: v === 'mixed' ? SET_SHAPE_COPY.mixed : v === null ? SET_SHAPE_COPY.none : formatNumber(v) };
+  const rir = v === 'mixed' || v === null ? v : scale === 'rpe' ? rirOfRpe(v) : v;
+  return { label: SET_SHAPE_COPY.targetRir, text: rir === 'mixed' ? SET_SHAPE_COPY.mixed : rir === null ? SET_SHAPE_COPY.none : formatNumber(rir) };
 }
 
-/** The EffortSheet's chips (§9.91): `None` first, then the scale's values. */
+/** The EffortSheet's chips (§9.91): `None` first, then RIR 0 → 4 (an RPE scale's values labelled as RIR, Ben 26 Oct). */
 export function effortChoices(scale: 'rpe' | 'rir'): { label: string; value: number | null }[] {
-  return [{ label: SET_SHAPE_COPY.none, value: null }, ...EFFORT_CHOICES[scale].map((v) => ({ label: formatNumber(v), value: v }))];
+  const values = scale === 'rpe' ? [...EFFORT_CHOICES.rpe].sort((a, b) => b - a) : EFFORT_CHOICES.rir;
+  return [{ label: SET_SHAPE_COPY.none, value: null }, ...values.map((v) => ({ label: formatNumber(scale === 'rpe' ? rirOfRpe(v) : v), value: v }))];
 }
 
 /** VoiceOver for a stepper row: "Sets, 3, adjustable" is the role; this is the label and value. */

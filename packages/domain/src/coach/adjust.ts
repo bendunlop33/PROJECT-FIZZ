@@ -378,7 +378,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       let rpe = ask.rpe ?? null;
       if (rpe !== null && set.planned.rpeOverride !== undefined && rpe !== set.planned.rpeOverride) {
         // Ben's own target RPE wins: the coach's isn't stored or shown (review target-rpe S2).
-        notes.add('rpe_overridden', 'Your target RPE stays.', setIds);
+        notes.add('rpe_overridden', 'Your target RIR stays.', setIds);
         rpe = null;
       }
       // Restating the target in force is no change.

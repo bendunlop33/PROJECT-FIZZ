@@ -519,7 +519,7 @@ const REFUSAL_TEXT: Partial<Record<BuilderEditRefusal, string>> = {
   not_loadable: 'Not at this gym',
   timed_set: 'Timed sets stay as saved',
   reps_out_of_range: 'Reps 1–100',
-  rpe_out_of_range: 'RPE 1–10',
+  rpe_out_of_range: 'RIR 0–9',
 };
 
 /** The short toast for advice after Ben's own change (§2.3); `why` is the full reason. */
@@ -2512,7 +2512,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           lines.push(ruleLine(env.lastTopOf(slot.exerciseId), work?.load ?? null));
           break;
         case 'calc':
-          if (slot.anchorE1rm !== null && work !== undefined) lines.push(`Est. max ${String(Math.round(slot.anchorE1rm))} ${u} (estimate) · ${String(work.reps)} reps @ RPE ${String(work.rpe ?? 8)}`);
+          if (slot.anchorE1rm !== null && work !== undefined) lines.push(`Est. max ${String(Math.round(slot.anchorE1rm))} ${u} (estimate) · ${String(work.reps)} reps · RIR ${String(Math.max(0, Math.round((10 - (work.rpe ?? 8)) * 100) / 100))}`);
           break;
         case 'none':
           // A timed or cardio set with no load (22 Oct): its time is what it was opened on, not a light start.

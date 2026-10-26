@@ -1,5 +1,6 @@
 import type { EquipmentKind, Exercise, ExerciseEquipmentKind, LoadConvention, ProgressionRule, WeightUnit } from '@fizz/schemas';
 import { deriveId } from './stable';
+import { formatNumber, rirOfRpe } from './display';
 
 /**
  * The built-in default progression rule by exercise category (ADR 0010
@@ -85,10 +86,10 @@ export function builtInTargetRpe(category: RuleCategory): number {
   return Math.min(RULES[category].rpe, PLAYBOOK_DEFAULT_MAX_RPE);
 }
 
-/** `3–6 reps, up to RPE 8.5` (the `Rule:` line behind `Why?`). */
+/** `3–6 reps, RIR 1.5 or more` (the `Rule:` line behind `Why?`; RIR = 10 − the rule's RPE cap). */
 export function builtInRuleName(category: RuleCategory): string {
   const r = RULES[category];
-  return `${String(r.min)}–${String(r.max)} reps, up to RPE ${String(r.rpe)}`;
+  return `${String(r.min)}–${String(r.max)} reps, RIR ${formatNumber(rirOfRpe(r.rpe))} or more`;
 }
 
 export function builtInDefaultRule(ownerId: string, unit: WeightUnit, workingSets: number, category: RuleCategory): ProgressionRule {

@@ -12,7 +12,7 @@ import type {
   TargetProvenance,
   ZonedTimestamp,
 } from '@fizz/schemas';
-import { cardioValuesText, dayMonthText, formatDuration, formatNumber, loadText, NBSP, repRangeText } from '../display';
+import { cardioValuesText, dayMonthText, formatDuration, formatNumber, loadText, NBSP, repRangeText, effortRir } from '../display';
 import { comparableSetsOf, matchesEquipment, type HistorySession } from '../progression';
 import { isPainCheckDue, PAIN_AREA_WORD } from '../pain-flags';
 import { isSetCountable, notUsedLine } from '../exclusions';
@@ -181,7 +181,9 @@ function planTargetText(planned: PlannedSet, requested: Load | null, ex: Pick<Se
   const load = requested ?? planned.load;
   const loadPart = load === null ? null : loadText(load, load.convention, eq);
   const amount = planned.reps !== null ? repRangeText(planned.reps) : planned.durationS !== null ? formatDuration(planned.durationS) : null;
-  const effort = planned.rpe !== null ? ` at RPE ${formatNumber(planned.rpe)}` : planned.rir !== null ? ` at RIR ${String(planned.rir)}` : '';
+  // (Ben, 26 Oct) Effort reads as RIR however it was planned.
+  const rir = effortRir(planned);
+  const effort = rir === null ? '' : ` at RIR ${formatNumber(rir)}`;
   if (loadPart !== null && amount !== null) return `${loadPart}${NBSP}×${NBSP}${amount}${effort}`;
   if (loadPart !== null) return `${loadPart}${effort}`;
   if (planned.reps !== null) return `${repRangeText(planned.reps)}${NBSP}reps${effort}`;
@@ -221,11 +223,14 @@ function setByRow(p: TargetProvenance | undefined): WhyRow {
   }
 }
 
-/** `100 kg × 8, 8, 7 @ 8 · 1 Oct`: one line, the top effort only. */
+/** `100 kg × 8, 8, 7 · RIR 2 · 1 Oct`: one line, the hardest effort only, as RIR (Ben, 26 Oct). */
 function lastLine(sets: readonly ShownSet[], text: string, day: string): string {
   if (sets.length === 0) return `${ALL_LEFT_OUT} · ${day}`;
-  const top = sets.reduce<number | null>((m, s) => (s.values.rpe === null ? m : m === null ? s.values.rpe : Math.max(m, s.values.rpe)), null);
-  return `${text}${top === null ? '' : ` @${NBSP}${formatNumber(top)}`} · ${day}`;
+  const least = sets.reduce<number | null>((m, s) => {
+    const r = effortRir(s.values);
+    return r === null ? m : m === null ? r : Math.min(m, r);
+  }, null);
+  return `${text}${least === null ? '' : ` · RIR${NBSP}${formatNumber(least)}`} · ${day}`;
 }
 
 function storedLastTime(basis: TargetBasis, ex: SessionExercise, eq: EquipmentInstance | null, basisNow: SessionAggregate | null): WhyRow {

@@ -1,5 +1,7 @@
 # Workout builder v3 (Set up → Your workout, plan-day templates, variations, coach review)
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 Status: **Approved by Ben, 20 Oct 2026** ("go" with the designer's recommended answers to §9; later 20 Oct additions on Today, Mix it up, auto-reviews and Progress › Reviews included). Rev 3+.
 
 > **Revision (Ben, 22–23 Oct): decisions D1–D5, D8, D9.** These win where older text below differs. Prototypes: `prototypes/training-blocks.html` (Today with a plan), `prototypes/workout-builder-v3.html`, `prototypes/app/` (whole app).

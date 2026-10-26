@@ -248,7 +248,7 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
         {view.targetRpe ? (
           <View style={{ gap: theme.space['1'] }}>
             <AppText variant="label" color="text.secondary">
-              Target RPE
+              Target RIR
             </AppText>
             <ChipRow>
               {targetRpeChips(view.targetRpe).map((c) => (

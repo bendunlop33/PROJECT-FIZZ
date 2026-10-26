@@ -225,7 +225,7 @@ describe('next session (audit B2)', () => {
     const v = s.workout.view(data, h.clockMs, null);
     expect(v.title).toBe('Push');
     expect(v.openEnded).toBe(false);
-    expect(plain(v.focus?.target)).toBe('Target 62.5 kg · 3–6 reps @ RPE 8.5');
+    expect(plain(v.focus?.target)).toBe('Target 62.5 kg · 3–6 reps · RIR 1.5');
     expect(plain(v.primary.label)).toBe('Log 62.5 kg × 6');
   });
 
@@ -248,7 +248,7 @@ describe('next session (audit B2)', () => {
     expect(r.aggregate.sets.map((x) => x.planned.load?.value)).toEqual([60, 60, 60]);
     const data = await s.workout.load();
     if (!data) throw new Error('no workout');
-    expect(plain(s.workout.view(data, h.clockMs, null).focus?.target)).toBe('Target 60 kg · 3–6 reps @ RPE 8.5');
+    expect(plain(s.workout.view(data, h.clockMs, null).focus?.target)).toBe('Target 60 kg · 3–6 reps · RIR 1.5');
   });
 
   it('targets that can’t be worked out repeat last time and say so (review S2)', async () => {

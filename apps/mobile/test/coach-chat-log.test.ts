@@ -63,7 +63,7 @@ describe('log a set from chat', () => {
     if (!record) throw new Error('no card');
     const card = cardView(record);
     expect(card).toMatchObject({ status: { word: 'Logged' }, canUndo: true });
-    expect(card.text.replaceAll(String.fromCharCode(160), ' ')).toMatch(/^Logged set \d · Bench press: 62\.5 kg × 8 · RPE 8 \(actual\)\.$/);
+    expect(card.text.replaceAll(String.fromCharCode(160), ' ')).toMatch(/^Logged set \d · Bench press: 62\.5 kg × 8 · RIR 2 \(actual\)\.$/);
     const d = await s.workout.load(sessionId);
     const set = d?.aggregate.sets.find((x) => x.id === before.find((b) => b.status === 'pending')?.id);
     expect(set).toMatchObject({ status: 'completed', actual: { load: { value: 62.5 }, reps: 8, rpe: 8 } });

@@ -61,11 +61,12 @@ describe('the sets control (§10.5)', () => {
     expect(plain(shapeRepsText({ reps: { min: 8, max: 10 }, durationS: null }, true))).toBe('8–10 per side');
     expect(shapeRepsText({ reps: null, durationS: 45 }, false)).toBe('0:45');
     expect(shapeRepsText({ reps: 'mixed', durationS: null }, false)).toBe('Mixed');
-    expect(shapeEffortRow({ targetRpe: null, targetRir: null }, 'rpe')).toEqual({ label: 'Target RPE', text: 'None' });
-    expect(shapeEffortRow({ targetRpe: 7.5, targetRir: null }, 'rpe')).toEqual({ label: 'Target RPE', text: '7.5' });
+    expect(shapeEffortRow({ targetRpe: null, targetRir: null }, 'rpe')).toEqual({ label: 'Target RIR', text: 'None' });
+    expect(shapeEffortRow({ targetRpe: 7.5, targetRir: null }, 'rpe')).toEqual({ label: 'Target RIR', text: '2.5' });
     expect(shapeEffortRow({ targetRpe: null, targetRir: 'mixed' }, 'rir')).toEqual({ label: 'Target RIR', text: 'Mixed' });
     expect(shapeEffortRow({ targetRpe: 8, targetRir: null }, null)).toBeNull();
-    expect(effortChoices('rpe').map((c) => c.label)).toEqual(['None', '6', '7', '7.5', '8', '8.5', '9', '9.5', '10']);
+    // (Ben, 26 Oct) An RPE scale's values labelled as RIR, hardest first.
+    expect(effortChoices('rpe').map((c) => c.label)).toEqual(['None', '0', '0.5', '1', '1.5', '2', '2.5', '3', '4']);
     expect(effortChoices('rir').map((c) => c.label)).toEqual(['None', '0', '1', '2', '3', '4']);
   });
 
@@ -88,7 +89,7 @@ describe('Add to a workout sheet (§9.5)', () => {
     expect(addPrimary(dest({ disabled: true, disabledText: 'Already in it' }))).toEqual({ label: 'Choose a workout', disabled: true });
     expect(plain(addRepsRow(shape, true).text)).toBe('6–10 per side');
     expect(addRepsRow({ ...shape, reps: null, durationS: 45 }, false)).toEqual({ label: 'Work time', text: '0:45' });
-    expect(addEffortRow({ ...shape, effort: { scale: 'rpe', value: 8 } }, 'rpe')).toEqual({ label: 'Target RPE', text: '8' });
+    expect(addEffortRow({ ...shape, effort: { scale: 'rpe', value: 8 } }, 'rpe')).toEqual({ label: 'Target RIR', text: '2' });
     expect(addEffortRow(shape, null)).toBeNull();
     expect(repsDraftOfShape(shape)).toEqual({ kind: 'reps', exact: false, min: 6, max: 10 });
   });

@@ -1,5 +1,7 @@
 # Voice (tap-to-talk, spoken set logging, spoken replies, cues)
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 > **Revision 2026-10-19 (Ben approved the feature; some details pending, see below).** Built: spoken cues while the app is open ("10 seconds", "Rest done" + optional set details), coach replies read aloud in the coach sheet (default only while a workout is in progress; header speaker toggle for that sheet), and Profile › Voice (Spoken cues Off / Timer only / Timer and set details; Read coach replies During workouts / Always / Off; installed Apple voice; speed 0.8–1.2; Test), plus a quick cue toggle in the workout ⋯ menu. Where this file or rest-state.md §5 says otherwise (cue modes, "Ready when you are…", replies only when asked by voice), the CHANGELOG entry of 19 Oct 2026 wins. That entry lists which details Ben approved and which are pending his approval (five speed steps, the timed-set "Time." cue, "45 kilos on the stack", replacing the cue modes and voice-only replies, one alert in the foreground, cues over replies, any live workout for read-aloud, a per-sheet speaker). The header speaker overrides read-aloud for that sheet only. Code: `packages/domain/src/spoken-cues.ts`, `spoken-reply.ts`; `apps/mobile/src/voice/`.
 
 > **Revision 2026-10-08 (consolidation).**

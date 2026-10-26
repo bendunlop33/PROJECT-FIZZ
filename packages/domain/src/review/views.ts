@@ -1,6 +1,6 @@
 import type { LoadConvention, MuscleGroup, ReviewFact, ReviewProposal, TrainingReview, WeightUnit } from '@fizz/schemas';
 import { addDays } from '../calendar';
-import { formatNumber, loadText, localDateText, NBSP } from '../display';
+import { formatNumber, loadText, localDateText, NBSP, rirOfRpe } from '../display';
 import { longDate, shortDate } from '../progress/exercise-view';
 import { reviewProposalText } from './template-sets';
 import type { GroupSets, LiftMetric, LiftTrend, ReviewWeekCount, WeeklyFacts } from './weekly';
@@ -213,7 +213,8 @@ export function reviewFactLines(d: ReviewWeekData): string[] {
     if (st === 'below' || st === 'above') out.push(`${groupLabel(g.group)}: ${String(g.sets)} sets ${STATUS_MARK[st].mark} ${String(g.range?.min ?? 0)}–${String(g.range?.max ?? 0)}`);
   }
   for (const x of d.stalled) out.push(`${x.name}: no new best in ${String(x.sessions)} sessions`);
-  if (d.rpe !== null) out.push(d.rpe.target === null ? `RPE ${formatNumber(d.rpe.mean)}` : `RPE ${formatNumber(d.rpe.mean)} · target ${formatNumber(d.rpe.target)}`);
+  // (Ben, 26 Oct) Effort reads as RIR: the week's mean and its target.
+  if (d.rpe !== null) out.push(d.rpe.target === null ? `RIR ${formatNumber(rirOfRpe(d.rpe.mean))}` : `RIR ${formatNumber(rirOfRpe(d.rpe.mean))} · target ${formatNumber(rirOfRpe(d.rpe.target))}`);
   const felt = (['easy', 'good', 'hard'] as const).filter((k) => d.feel[k] > 0).map((k) => `${String(d.feel[k])} ${k}`);
   if (felt.length > 0) out.push(`Felt: ${felt.join(', ')}`);
   for (const l of d.lifts) {

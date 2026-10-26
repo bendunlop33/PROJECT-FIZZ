@@ -583,20 +583,20 @@ describe('evaluateCoachTrigger (rule T, deviation from the target RPE; CHANGELOG
     expect(evaluateCoachTrigger(set, 1, undefined, target)?.kind ?? null).toBe(kind);
   });
 
-  it('quotes what Ben entered, with the target in the same scale', () => {
+  it('quotes what Ben entered and its target, as RIR (Ben, 26 Oct)', () => {
     expect(evaluateCoachTrigger(trig({ plannedRpe: 8, actual: e(10) }), 2)).toMatchObject({
       kind: 'rpe_high',
-      fact: 'RPE 10 on set 2 (target 8)',
+      fact: 'RIR 0 on set 2 (target RIR 2)',
       prompt: 'That looked hard. Adjust remaining sets?',
       targetRpe: 8,
       loggedRpe: 10,
     });
     expect(evaluateCoachTrigger(trig({ plannedRir: 2, actual: e(null, 8, 0) }), 3)?.fact).toBe('RIR 0 on set 3 (target RIR 2)');
-    // Review target-rpe S3: RIR is whole reps; a half-step target reads as RPE, never `target RIR 1.5`.
-    expect(evaluateCoachTrigger(trig({ actual: e(null, 8, 0) }), 1, undefined, 8.5)?.fact).toBe('RIR 0 on set 1 (target RPE 8.5)');
+    // (Ben, 26 Oct: RIR replaces RPE in the UI; supersedes review target-rpe S3) half values display as halves.
+    expect(evaluateCoachTrigger(trig({ actual: e(null, 8, 0) }), 1, undefined, 8.5)?.fact).toBe('RIR 0 on set 1 (target RIR 1.5)');
     expect(evaluateCoachTrigger(trig({ actual: e(null, 8, 0) }), 1, undefined, 8)?.fact).toBe('RIR 0 on set 1 (target RIR 2)');
     expect(evaluateCoachTrigger(trig({ actual: e(null, 6) }), 2, undefined, 8.5)?.fact).toBe('6 reps on set 2 (target 8–10)');
-    expect(evaluateCoachTrigger(trig({ actual: e(9.5) }), 1, undefined, null)?.fact).toBe('RPE 9.5 on set 1');
+    expect(evaluateCoachTrigger(trig({ actual: e(9.5) }), 1, undefined, null)?.fact).toBe('RIR 0.5 on set 1');
   });
 
   it('Ben’s override on the set is read when the caller passes no target', () => {
@@ -1136,10 +1136,10 @@ describe('validateTodayAdjustment: the coach’s target RPE against the resolved
     const r = applied(validateTodayAdjustment({ ...input(benchAsk(9, 95), { aggregate: { ...agg, sets }, intent: 'too_hard' }), ruleTargetRpe: builtIn }));
     const change = r.exercises[0]?.changes[0];
     expect(change?.after).toEqual({ load: kg(95), reps: { min: 6, max: 8 } });
-    expect(r.guardNotes).toContainEqual({ kind: 'rpe_overridden', setIds: [setId(1, 3)], text: 'Your target RPE stays.' });
+    expect(r.guardNotes).toContainEqual({ kind: 'rpe_overridden', setIds: [setId(1, 3)], text: 'Your target RIR stays.' });
     // Only an RPE change on that set: nothing to apply.
     const only = validateTodayAdjustment({ ...input(benchAsk(9), { aggregate: { ...agg, sets }, intent: 'general' }), ruleTargetRpe: builtIn });
-    expect(only).toMatchObject({ status: 'unchanged', outcome: 'Your target RPE stays. Nothing changed.' });
+    expect(only).toMatchObject({ status: 'unchanged', outcome: 'Your target RIR stays. Nothing changed.' });
   });
 });
 

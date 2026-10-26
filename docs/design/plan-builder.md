@@ -1,5 +1,7 @@
 # Plan builder (goal-led)
 
+> **(Ben, 26 Oct): RIR replaces RPE in the UI.** Wherever this spec shows effort to Ben as RPE (targets, logged values, entry, sheets, Why?, coach text), the app shows and takes RIR = 10 − RPE (RPE 8.5 → RIR 1.5). Stored values and tool arguments are unchanged; see `workout-table-v3.md` §0.1.
+
 Status: **Draft for Ben, 22 Oct 2026.** Prototype: [prototypes/plan-builder.html](prototypes/plan-builder.html) (example data only). Builds on [workout-builder-v3.md](workout-builder-v3.md) (chain Goal → Plan → Workout, §4 data), approved [training-blocks.md](training-blocks.md), [goal-adaptive.md](../training-guides/goal-adaptive.md) (GA1–GA19), [volume-by-frequency.md](../training-guides/volume-by-frequency.md), research [plans-and-plan-progress.md](../research/plans-and-plan-progress.md), and the pending [history-targets.md](../training-guides/history-targets.md).
 
 > Ben: "Is there an option atm to build a plan and interact with the building of it?" · "the plan should be built around goals etc" · "where's the plan builder?" (22 Oct)

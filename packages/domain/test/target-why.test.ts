@@ -104,7 +104,7 @@ describe('explainTarget: built-in rule target (check 39)', () => {
     expect(e?.recorded).toBe(true);
     expect(rowsOf(e)).toEqual([
       ['Set by', 'Rule · after your 8 Oct workout'],
-      ['Last time', '100 kg × 8, 8 @ 8 · 8 Oct'],
+      ['Last time', '100 kg × 8, 8 · RIR 2 · 8 Oct'],
       ['Reason', plain(result.explanation.summary).replace(/\.$/, '')],
       ['Equipment', `+2.5 kg (+${String(card?.nextUp?.pct)}%) · smallest step`],
     ]);
@@ -140,7 +140,7 @@ describe('explainTarget: built-in rule target (check 39)', () => {
     // The warm-up isn't part of the basis.
     expect(rowsOf(e).slice(0, 2)).toEqual([
       ['Set by', 'Rule · after Push A, 8 Oct'],
-      ['Last time', '100 kg × 8, 8 @ 8 · 8 Oct'],
+      ['Last time', '100 kg × 8, 8 · RIR 2 · 8 Oct'],
     ]);
   });
 
@@ -172,7 +172,7 @@ describe('explainTarget: the basis edited since (check 42)', () => {
     const edited = apply(basis, { type: 'correct_set', at: at(DAY + 60), opId: 'fix-2', setId: set2?.id ?? '', expectedSetVersion: set2?.version ?? 0, patch: { reps: 6 } });
     const e = explain(now, { basisNow: edited, history: hist(edited) });
     expect(plain(e?.basisEdited ?? '')).toBe('Based on 8 Oct, edited 9 Oct');
-    expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 8, 8 @ 8 · 8 Oct']);
+    expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 8, 8 · RIR 2 · 8 Oct']);
     // The target itself is untouched (rule 2).
     expect(now.sets.map((s) => s.planned.load)).toEqual([kg(102.5), kg(102.5)]);
   });
@@ -194,7 +194,7 @@ describe('explainTarget: missing provenance (check 43) and no target', () => {
     expect(e?.recorded).toBe(false);
     expect(rowsOf(e)).toEqual([
       ['Set by', 'Not recorded'],
-      ['Last time', '100 kg × 8, 8 @ 8 · 8 Oct'],
+      ['Last time', '100 kg × 8, 8 · RIR 2 · 8 Oct'],
     ]);
   });
 
@@ -245,7 +245,7 @@ describe('explainTarget: routine and Repeat targets', () => {
     const e = explainTarget({ aggregate: out.aggregate, setId: set?.id ?? '', nowMs: ms(DAY + 60), basisNow: source, gymNames: GYMS, painFlags: [], history: [] });
     expect(rowsOf(e)).toEqual([
       ['Set by', 'Repeat of Push A, 8 Oct'],
-      ['Last time', '102.5 kg × 8 @ 9 · 8 Oct'],
+      ['Last time', '102.5 kg × 8 · RIR 1 · 8 Oct'],
       ['Reason', 'Same as last time'],
       ['Equipment', 'Capped at 100 kg'],
     ]);
@@ -302,7 +302,7 @@ describe('explainTarget: pain flags (Pain and Before flag rows)', () => {
     const e = explain(now, { basisNow: post, history: h, painFlags: [on], nowMs: ms(3 * DAY + 60) });
     expect(rowsOf(e)).toEqual([
       ['Set by', 'Rule · after your 10 Oct workout'],
-      ['Last time', '100 kg × 8, 8 @ 8 · 10 Oct'],
+      ['Last time', '100 kg × 8, 8 · RIR 2 · 10 Oct'],
       ['Reason', 'Progression for Bench press is paused'],
       ['Pain', 'Held · since 9 Oct (shoulder)'],
       ['Before flag', '105 kg × 6, 6 · 8 Oct'],
@@ -346,7 +346,7 @@ describe('explainTarget: load conventions in the words', () => {
     const basis = finished(0, [values(kg(20, 'per_hand'), 10, { rpe: 8 }), values(kg(20, 'per_hand'), 10, { rpe: 8 })], db, rack);
     const h = hist(basis);
     const e = explain(today(2, h, { eq: rack, ex: db }), { basisNow: basis, history: h });
-    expect(rowsOf(e)[1]).toEqual(['Last time', '20 kg each × 10, 10 @ 8 · 8 Oct']);
+    expect(rowsOf(e)[1]).toEqual(['Last time', '20 kg each × 10, 10 · RIR 2 · 8 Oct']);
     expect(rowsOf(e)[3]).toEqual(['Equipment', '+2.5 kg each (+12.5%) · smallest step']);
   });
 
@@ -356,7 +356,7 @@ describe('explainTarget: load conventions in the words', () => {
     const basis = finished(0, [values(kg(20, 'assistance'), 8, { rpe: 8 }), values(kg(20, 'assistance'), 8, { rpe: 8 })], pull, machine);
     const h = hist(basis);
     const e = explain(today(2, h, { eq: machine, ex: pull }), { basisNow: basis, history: h });
-    expect(rowsOf(e)[1]).toEqual(['Last time', 'Assist 20 kg × 8, 8 @ 8 · 8 Oct']);
+    expect(rowsOf(e)[1]).toEqual(['Last time', 'Assist 20 kg × 8, 8 · RIR 2 · 8 Oct']);
     expect(rowsOf(e)[3]).toEqual(['Equipment', '5 kg less assistance · smallest step']);
   });
 
@@ -443,7 +443,7 @@ describe('explainTarget: sets left out (Not used, active-workout §2.13)', () =>
     const basis = basisWithFlag();
     const h = hist(basis);
     const e = explain(today(2, h), { basisNow: basis, history: h });
-    expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 8, 8 @ 8 · 8 Oct']);
+    expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 8, 8 · RIR 2 · 8 Oct']);
     expect(rowsOf(e).at(-1)).toEqual(['Not used', 'Set 3 on 8 Oct: form broke']);
     expect(e?.rows.at(-1)?.kind).toBe('actual');
     expect(e?.basisEdited).toBeNull();
@@ -461,7 +461,7 @@ describe('explainTarget: sets left out (Not used, active-workout §2.13)', () =>
     const basis = basisWithFlag();
     const h = hist(basis);
     const e = explain(today(2, h, { why: false }), { history: h });
-    expect(rowsOf(e)[1]?.[1]).toBe('100 kg × 8, 8 @ 8 · 8 Oct');
+    expect(rowsOf(e)[1]?.[1]).toBe('100 kg × 8, 8 · RIR 2 · 8 Oct');
     expect(rowsOf(e).at(-1)).toEqual(['Not used', 'Set 3 on 8 Oct: form broke']);
   });
 });

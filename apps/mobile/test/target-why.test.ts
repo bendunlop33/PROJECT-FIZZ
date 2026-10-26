@@ -44,7 +44,7 @@ describe('Why? through the services', () => {
     const e = await s.workout.explainTarget(sessionId, setId);
     expect(rowsOf(e)).toEqual([
       ['Set by', 'Rule · after your 8 Oct workout'],
-      ['Last time', '100 kg × 6, 6, 6 @ 8 · 8 Oct'],
+      ['Last time', '100 kg × 6, 6, 6 · RIR 2 · 8 Oct'],
       ['Reason', 'Increase to 102.5 kg for 3–6 reps'],
       // (20 Oct, ADR 0029) The preset gym's bar and plates are assumed: said here, nowhere on the set.
       ['Equipment', '+2.5 kg (+2.5%) · smallest step · Assumed plates'],
@@ -89,7 +89,7 @@ describe('Why? through the services', () => {
 
     const e = await s.workout.explainTarget(sessionId, setId);
     expect(plain(e?.basisEdited ?? '')).toBe('Based on 8 Oct, edited 11 Oct');
-    expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 6, 6, 6 @ 8 · 8 Oct']);
+    expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 6, 6, 6 · RIR 2 · 8 Oct']);
     expect((await s.workout.load(sessionId))?.aggregate.sets.map((x) => x.planned.load?.value)).toEqual([102.5, 102.5, 102.5]);
   });
 

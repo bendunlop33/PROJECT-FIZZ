@@ -16,7 +16,7 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 import { clockText } from '../calendar';
-import { cardioValuesText, dayMonthText, formatDuration, formatNumber, NBSP, repRangeText } from '../display';
+import { cardioValuesText, dayMonthText, formatDuration, formatNumber, NBSP, repRangeText, rirOfRpe } from '../display';
 import { buildPlateSetup, isBarLoaded, loadDirection } from '../equipment';
 import { isSetCountable } from '../exclusions';
 import { painFlagCovering, PAIN_AREA_WORD } from '../pain-flags';
@@ -1084,7 +1084,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     // A coach draft's target RPE (BD7): the working sets' value after the reps; `@` marks it as a target.
     const workRpe = input.targetRpe === true ? (working.at(-1)?.planned.rpe ?? null) : null;
     const topRpe = input.targetRpe === true ? (working.find((s) => s.setType === 'top')?.planned.rpe ?? null) : null;
-    const detail = [workRpe === null || setsText === '' ? setsText : `${setsText} @ RPE ${formatNumber(workRpe)}`, warmups].filter((x): x is string => x !== null && x !== '').join(' · ');
+    const detail = [workRpe === null || setsText === '' ? setsText : `${setsText} · RIR ${formatNumber(rirOfRpe(workRpe))}`, warmups].filter((x): x is string => x !== null && x !== '').join(' · ');
 
     const panel: PanelLine[] = [];
     if (edit?.kind === 'added') panel.push({ key: 'added', label: 'Added', value: 'Today', tone: 'normal' });
@@ -1118,7 +1118,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     if (covering !== null) panel.push({ key: 'flag', label: 'Flag', value: flagText(covering.flag), tone: 'warning' });
     // B6 (workout-builder BD6): no comparable history, so no load; the first set card asks for it.
     if (input.targetRpe === true && edit?.kind !== 'skipped' && planned.load === null && comparable === null && dropped === null && ex.loadConvention !== 'bodyweight') panel.push({ key: 'load', label: 'Load', value: '— · start light', tone: 'normal' });
-    if (topRpe !== null && workRpe !== null && topRpe !== workRpe) panel.push({ key: 'rpe', label: 'RPE', value: `Top ${formatNumber(topRpe)} · back-off ${formatNumber(workRpe)}`, tone: 'normal' });
+    if (topRpe !== null && workRpe !== null && topRpe !== workRpe) panel.push({ key: 'rpe', label: 'RIR', value: `Top ${formatNumber(rirOfRpe(topRpe))} · back-off ${formatNumber(rirOfRpe(workRpe))}`, tone: 'normal' });
     // (19 Oct) An exercise added again today is its own copy: the coach's next-time target is the plan's slot's only.
     const addedCopy = today?.added?.has(slotOf(ex.id)) === true && ordered.some((o) => o.id !== ex.id && o.exerciseId === ex.exerciseId);
     const coach = overviewCoachOf(first, addedCopy ? undefined : coachByExercise.get(ex.exerciseId), { sourceVersion, sourceBasis, painFlagged: covering !== null, painToday: input.coach?.painToday === true });

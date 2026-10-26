@@ -162,11 +162,12 @@ describe('Finish placement and the top bar menu (WT27, WT28, check 14)', () => {
     expect(workoutViewOf('focus')).toBe('focus');
   });
 
-  it('v3: each exercise (3a, 3b) has its own ⋯ and name sheet; Adjust sits on the exercise with the open row (review B3)', () => {
+  it('v3: each exercise (3a, 3b) has its own ⋯ and name sheet; Adjust is in the current exercise\'s ⋯ (Ben, 26 Oct), its row under that header', () => {
     const list = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/workout/WorkoutTable.tsx'), 'utf8');
     expect(list).toMatch(/p\.onMenu\(ex\.sessionExerciseId\)/);
     expect(list).toMatch(/p\.onName\(\{ sessionExerciseId: ex\.sessionExerciseId/);
-    expect(list).toContain('{ex.isCurrent ? p.adjust : null}');
+    expect(list).not.toContain('p.adjust}');
+    expect(list).toContain('{ex.isCurrent ? p.adjustRow : null}');
     expect(list).not.toMatch(/members\[0\]/);
   });
 

@@ -520,10 +520,12 @@ describe('builder Start → the v3 rounds (b3 merge)', () => {
         expect(ex?.exerciseId).toBe(slot.exerciseId);
         expect(ex?.subline).not.toBeNull();
         expect(ex?.rows.map((r) => r.warmup)).toEqual(slot.rows.map((r) => r.type === 'warmup'));
-        expect(ex?.rows.filter((r) => r.warmup).every((r) => r.label === 'W' && r.number === null && r.rpe === null)).toBe(true);
+        expect(ex?.rows.filter((r) => r.warmup).every((r) => r.label === 'W' && r.number === null && r.rir === null)).toBe(true);
         expect(ex?.rows.filter((r) => !r.warmup).map((r) => r.number)).toEqual(slot.rows.filter((r) => r.type !== 'warmup').map((_, k) => k + 1));
         expect(ex?.rows.map((r) => r.typeLabel)).toEqual(slot.rows.map((r) => (r.type === 'top' ? 'Top' : r.type === 'backoff' ? 'Back-off' : r.type === 'drop' ? 'Drop' : null)));
-        expect(ex?.rows.map((r) => r.rpe)).toEqual(slot.rows.map((r) => (r.type === 'warmup' || r.rpe === null ? null : `@${String(r.rpe)}`)));
+        // (Ben, 26 Oct: RIR replaces RPE in the UI) The builder's target RPE reads as its RIR (10 − RPE), dimmed as a target.
+        expect(ex?.rows.map((r) => r.rir)).toEqual(slot.rows.map((r) => (r.type === 'warmup' || r.rpe === null ? null : String(Math.round((10 - r.rpe) * 100) / 100))));
+        expect(ex?.rows.filter((r) => r.rir !== null).every((r) => r.rirTarget)).toBe(true);
         expect(ex?.progress).toEqual({ done: 0, total: slot.rows.filter((r) => r.type !== 'warmup').length });
         // The builder's load stands, with its source kept on the set.
         const sets = data.aggregate.sets.filter((x) => x.sessionExerciseId === ex?.sessionExerciseId).sort((x, y) => x.index - y.index);

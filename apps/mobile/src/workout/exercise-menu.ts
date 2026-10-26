@@ -4,10 +4,11 @@
  * destructive actions (review S3). `How to` leads when the exercise has one
  * (ADR 0013), so the bottom rows stay put under the thumb either way.
  */
-import { formatNumber, TARGET_RPE_CHOICES, type TargetRpe } from '@fizz/domain';
+import { formatNumber, rirOfRpe, TARGET_RPE_CHOICES, type TargetRpe } from '@fizz/domain';
 import type { TargetRpeScope } from '@fizz/schemas';
 
 export type ExerciseMenuAction =
+  | 'adjust'
   | 'how_to'
   | 'history'
   | 'plates'
@@ -36,6 +37,8 @@ interface MenuItem {
 }
 
 const HOW_TO: MenuItem = { action: 'how_to', label: 'How to', destructive: false };
+/** (Ben, 26 Oct) The coach's `Adjust` chips for the current exercise, moved off the header into `⋯`: first, one tap. */
+const ADJUST: MenuItem = { action: 'adjust', label: 'Adjust', destructive: false };
 /** While the focused set carries a coach change still pending (coach-adjustments §2.7). */
 const UNDO_COACH: MenuItem = { action: 'undo_coach', label: 'Undo coach change', destructive: false };
 /** The same for the built-in rule's change (CA6 revised): never called the coach's. */
@@ -45,7 +48,7 @@ const UNDO_SWAP: MenuItem = { action: 'undo_swap', label: 'Undo swap', destructi
 /** The set Log logs next, opened in Edit set (type, insert after, note…; review B1: "edit anything on the sets"). */
 const EDIT_SET: MenuItem = { action: 'edit_set', label: 'Edit set', destructive: false };
 /** Ben's own target RPE (CHANGELOG 2026-10-11): only on a set that carries one (not a warm-up or drop set). */
-const TARGET_RPE: MenuItem = { action: 'target_rpe', label: 'Target RPE', destructive: false };
+const TARGET_RPE: MenuItem = { action: 'target_rpe', label: 'Target RIR', destructive: false };
 const ADD_SET: MenuItem = { action: 'add_set', label: 'Add set', destructive: false };
 /** Only while the exercise has a pending set (B3: applies at once with Undo). */
 const SWAP: MenuItem = { action: 'swap', label: 'Swap exercise', destructive: false };
@@ -106,12 +109,15 @@ export interface ExerciseMenuOptions {
    * Superset with next, as the builder's pop-up; `Remove superset` reads `Unlink`; History.
    */
   round?: { moveUp: boolean; moveDown: boolean; supersetNext: boolean; history: boolean; plates?: boolean };
+  /** (Ben, 26 Oct) The current exercise on the round page: `Adjust` leads the sheet. */
+  adjust?: boolean;
 }
 
 export function exerciseMenu(hasHowTo: boolean, hasCoachChange: boolean | 'rule' = false, o: ExerciseMenuOptions = {}): ExerciseMenu {
   const undo = hasCoachChange === 'rule' ? [UNDO_RULE] : hasCoachChange ? [UNDO_COACH] : [];
   const r = o.round;
   const items = [
+    ...(o.adjust === true ? [ADJUST] : []),
     ...(hasHowTo ? [HOW_TO] : []),
     ...(r?.history === true ? [HISTORY] : []),
     ...(r?.plates === true ? [PLATES] : []),
@@ -150,12 +156,12 @@ export interface TargetRpeMenu {
 }
 
 /**
- * `Target RPE` sheet: `RPE 6` … `RPE 10` (the current one marked `✓`), and
- * `Default` when Ben has set his own. `valueAt`: undefined for Cancel.
+ * `Target RIR` sheet (Ben, 26 Oct: RIR replaces RPE in the UI): `RIR 0` … `RIR 4` (the current one marked `✓`),
+ * and `Default` when Ben has set his own. Values stay RPE (RIR = 10 − RPE). `valueAt`: undefined for Cancel.
  */
 export function targetRpeMenu(current: TargetRpe | null): TargetRpeMenu {
-  const values: (number | null)[] = [...TARGET_RPE_CHOICES, ...(current?.source === 'ben' ? [null] : [])];
-  const options = values.map((v) => (v === null ? 'Default' : `RPE ${formatNumber(v)}${current?.rpe === v ? ' ✓' : ''}`));
+  const values: (number | null)[] = [...[...TARGET_RPE_CHOICES].sort((a, b) => b - a), ...(current?.source === 'ben' ? [null] : [])];
+  const options = values.map((v) => (v === null ? 'Default' : `RIR ${formatNumber(rirOfRpe(v))}${current?.rpe === v ? ' ✓' : ''}`));
   return {
     options: [...options, 'Cancel'],
     cancelButtonIndex: options.length,
@@ -182,11 +188,33 @@ export interface TargetRpeChip {
 }
 
 /**
- * Edit set's `Target RPE` chips: the same choices as the `⋯` sheet, with
+ * Edit set's `Target RIR` chips: the same choices as the `⋯` sheet (labels RIR, values RPE), with
  * `Default` when Ben has set his own (review target-rpe r2 N3).
  */
 export function targetRpeChips(current: { target: TargetRpe | null; override: number | null } | null): TargetRpeChip[] {
   if (current === null) return [];
-  const chips: TargetRpeChip[] = TARGET_RPE_CHOICES.map((n) => ({ key: String(n), label: formatNumber(n), value: n, selected: current.target?.rpe === n }));
+  const chips: TargetRpeChip[] = [...TARGET_RPE_CHOICES].sort((a, b) => b - a).map((n) => ({ key: String(n), label: formatNumber(rirOfRpe(n)), value: n, selected: current.target?.rpe === n }));
   return current.override === null ? chips : [...chips, { key: 'default', label: 'Default', value: null, selected: false }];
+}
+
+/** (Ben, 26 Oct: RIR replaces RPE in the UI) Reps in reserve for one set: `0` … `5`, `Clear` when one is set. */
+export const RIR_CHOICES = [0, 1, 2, 3, 4, 5] as const;
+
+export interface RirMenu {
+  title: string;
+  options: string[];
+  cancelButtonIndex: number;
+  /** The RIR picked; null clears it; undefined for Cancel or a dismissal. */
+  valueAt: (index: number) => number | null | undefined;
+}
+
+export function rirMenu(stepName: string, current: number | null): RirMenu {
+  const values: (number | null)[] = [...RIR_CHOICES, ...(current !== null ? [null] : [])];
+  const options = values.map((v) => (v === null ? 'Clear' : `${formatNumber(v)}${v === 5 ? '+' : ''}${current === v ? ' ✓' : ''}`));
+  return {
+    title: `${stepName} · Reps in reserve`,
+    options: [...options, 'Cancel'],
+    cancelButtonIndex: options.length,
+    valueAt: (i) => (i >= 0 && i < values.length ? values[i] : undefined),
+  };
 }

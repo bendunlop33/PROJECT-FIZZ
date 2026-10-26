@@ -20,6 +20,37 @@ export function formatNumber(value: number): string {
   return String(fromScaled(toScaled(value)));
 }
 
+/**
+ * (Ben, 26 Oct): RIR replaces RPE in the UI. Effort is still stored as it was
+ * logged or planned (`rpe` or `rir`); every place that shows it to Ben says
+ * reps in reserve, RIR = 10 − RPE (RPE 8.5 → 1.5), never below 0.
+ */
+export function rirOfRpe(rpe: number): number {
+  return Math.max(0, fromScaled(toScaled(10 - rpe)));
+}
+
+/** The RPE a RIR stands for (what targets are stored as): 10 − RIR, at least 1. */
+export function rpeOfRir(rir: number): number {
+  return Math.max(1, fromScaled(toScaled(10 - rir)));
+}
+
+/** A logged or planned effort as RIR: its `rir`, else 10 − its `rpe`; null when neither was recorded. */
+export function effortRir(e: { rpe: number | null; rir: number | null }): number | null {
+  if (e.rir !== null) return e.rir;
+  return e.rpe === null ? null : rirOfRpe(e.rpe);
+}
+
+/** `RIR 2`, `RIR 1.5`: an effort shown to Ben; null when none was recorded. */
+export function rirLabel(e: { rpe: number | null; rir: number | null }): string | null {
+  const rir = effortRir(e);
+  return rir === null ? null : `RIR${NBSP}${formatNumber(rir)}`;
+}
+
+/** VoiceOver: "2 reps in reserve", "1 rep in reserve", "1.5 reps in reserve". */
+export function rirWords(rir: number): string {
+  return `${formatNumber(rir)} ${rir === 1 ? 'rep' : 'reps'} in reserve`;
+}
+
 /** `0:45`, `1:30` (rest and work times). */
 export function formatDuration(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));
@@ -181,7 +212,7 @@ export function repRangeText(r: RepRange): string {
 }
 
 /**
- * `Target 100 kg · 6–8 reps @ RPE 8` (focused card) or null when the set has no target
+ * `Target 100 kg · 6–8 reps · RIR 2` (focused card; Ben, 26 Oct: RIR replaces RPE in the UI) or null when the set has no target
  * at all (an exercise added to an empty workout).
  */
 export function targetText(planned: PlannedSet, o: { convention: LoadConvention; equipment?: LoadContext; perSide?: boolean; rpe?: number | null; measurement?: Measurement }): string | null {
@@ -201,9 +232,9 @@ export function targetText(planned: PlannedSet, o: { convention: LoadConvention;
   if (parts.length === 0) return null;
   // Rule 3: a coach target says so; any other source is behind `Why?` (`Set by`, minimal-copy D1).
   const word = planned.source === 'coach' ? 'Coach target' : 'Target';
-  // The set's target RPE (`targetRpeOf`): `Target 100 kg · 3–6 reps @ RPE 8`.
-  const rpe = o.rpe == null ? '' : ` @${NBSP}RPE${NBSP}${formatNumber(o.rpe)}`;
-  return `${word} ${parts.join(' · ')}${rpe}`;
+  // The set's target (`targetRpeOf`) read as RIR: `Target 100 kg · 3–6 reps · RIR 2`.
+  const rir = o.rpe == null ? '' : ` · RIR${NBSP}${formatNumber(rirOfRpe(o.rpe))}`;
+  return `${word} ${parts.join(' · ')}${rir}`;
 }
 
 /** A table load cell: the number only (`100`), `BW` for nothing added, `—` for no load; null when the exercise has no load column. */
@@ -225,7 +256,7 @@ export function rowValueCell(v: SetValues, m: Measurement): string {
 
 /**
  * The open table row's short target line (18 Oct, Ben: "the table stays a
- * table"): reps / time / distance and the target RPE, `3–6 @ 8.5`. The load
+ * table"): reps / time / distance and the target as RIR, `3–6 · RIR 1.5`. The load
  * is in the row's own cell, so it isn't repeated. Null when there's nothing.
  */
 export function targetBrief(planned: Pick<PlannedSet, 'reps' | 'durationS' | 'distanceM'>, rpe: number | null, measurement?: Measurement): string | null {
@@ -238,8 +269,8 @@ export function targetBrief(planned: Pick<PlannedSet, 'reps' | 'durationS' | 'di
   if (planned.durationS !== null) parts.push(formatDuration(planned.durationS));
   if (planned.distanceM !== undefined && planned.distanceM !== null) parts.push(formatDistance(planned.distanceM));
   const head = parts.join(' · ');
-  const tail = rpe === null ? '' : `@${NBSP}${formatNumber(rpe)}`;
-  const text = [head, tail].filter((x) => x !== '').join(' ');
+  const tail = rpe === null ? '' : `RIR${NBSP}${formatNumber(rirOfRpe(rpe))}`;
+  const text = [head, tail].filter((x) => x !== '').join(' · ');
   return text === '' ? null : text;
 }
 

@@ -136,9 +136,9 @@ describe('after logging (WT2–WT4, WT8, WT15, WT16)', () => {
       ['open', '', '100', '6–8', null],
     ]);
     for (const r of bench.rows.filter((x) => x.state === 'done')) expect(r.cells.value).not.toMatch(/–/);
-    expect(bench.rows[1]?.accessibilityLabel).toBe('Set 2, done, 100 kilograms, 8 reps, RPE 8');
+    expect(bench.rows[1]?.accessibilityLabel).toBe('Set 2, done, 100 kilograms, 8 reps, 2 reps in reserve');
     expect(bench.rows[1]?.blockTitle).toBe('Set 2 · done');
-    expect(plain(bench.rows[1]?.blockValue)).toBe('100 kg × 8 · RPE 8');
+    expect(plain(bench.rows[1]?.blockValue)).toBe('100 kg × 8 · RIR 2');
     expect(t.anchor?.setId).toBe(b2?.id);
     expect(bench.progressText).toBe('2/3');
     expect(t.blocks[0]?.folded).toBeNull();

@@ -105,7 +105,7 @@ describe('set_target_rpe (Ben’s override; Your data, versioned)', () => {
     if (set === undefined) throw new Error('fixture');
     expect(evaluateCoachTrigger(set, 2, undefined, targetRpeOf(set, 8.5)?.rpe ?? null)?.kind ?? null).toBeNull();
     const view = buildActiveSetView({ aggregate: { ...s, session: { ...s.session, activeSetId: b2.id } }, nowMs: 800_000, gymName: null, previous: {}, painFlagged: new Set(), edits: null, title: null, ruleTargetRpe: { [b2.sessionExerciseId]: 8.5 } });
-    expect(view.focus?.target?.replace(/\u00a0/g, ' ')).toMatch(/@ RPE 9$/);
+    expect(view.focus?.target?.replace(/\u00a0/g, ' ')).toMatch(/· RIR 1$/);
   });
 });
 

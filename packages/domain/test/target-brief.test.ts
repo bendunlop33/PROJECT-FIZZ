@@ -6,7 +6,7 @@ const plain = (s: string | null) => (s ?? '').replaceAll(NBSP, ' ');
 
 describe('targetBrief: the open table row’s short target (18 Oct)', () => {
   it('reps range and target RPE, no load (the load is in its own cell)', () => {
-    expect(plain(targetBrief({ reps: { min: 3, max: 6 }, durationS: null }, 8.5))).toBe('3–6 @ 8.5');
+    expect(plain(targetBrief({ reps: { min: 3, max: 6 }, durationS: null }, 8.5))).toBe('3–6 · RIR 1.5');
     expect(plain(targetBrief({ reps: { min: 8, max: 8 }, durationS: null }, null))).toBe('8');
   });
 

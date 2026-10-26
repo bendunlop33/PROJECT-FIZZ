@@ -34,7 +34,7 @@ describe('Next time prefills the next workout', () => {
     const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [1, 2, 3].map(() => ({ load: 100, reps: 6, rpe: 8 })) }]);
     const sum = await s.workout.summary(first);
     expect(sum?.nextTime?.rows.map((r) => [r.decision, plain(r.target), r.ruleName])).toEqual([
-      ['increase_load', 'Target 102.5 kg × 3–6', '3–6 reps, up to RPE 8.5'],
+      ['increase_load', 'Target 102.5 kg × 3–6', '3–6 reps, RIR 1.5 or more'],
     ]);
 
     h.clockMs += 2 * 86_400_000;
@@ -43,7 +43,7 @@ describe('Next time prefills the next workout', () => {
     const data = await s.workout.load(sessionId);
     if (!data) throw new Error('no data');
     const v = s.workout.view(data, h.clockMs, null);
-    expect(plain(v.focus?.target)).toBe('Target 102.5 kg · 3–6 reps @ RPE 8.5');
+    expect(plain(v.focus?.target)).toBe('Target 102.5 kg · 3–6 reps · RIR 1.5');
     expect(plain(v.primary.label)).toBe('Log 102.5 kg × 6');
   });
 

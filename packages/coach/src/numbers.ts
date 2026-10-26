@@ -17,6 +17,12 @@
  * was about; the check stops invented numbers, not every misattributed one.
  */
 
+/**
+ * (Ben, 26 Oct: RIR replaces RPE in the UI) Effort in the data stays as stored (often RPE) and tool arguments keep
+ * their RPE fields; what Ben reads says reps in reserve. The numbers check accepts either form of a given effort.
+ */
+export const EFFORT_WORDS_LINE = 'Ben reads effort as RIR (reps in reserve): in anything you write to him say RIR, never RPE, converting RIR = 10 − RPE (RPE 8 is RIR 2, RPE 8.5 is RIR 1.5). Tool arguments named rpe or targetRpe stay in RPE.';
+
 export interface NumberFacts {
   /** Every number found, deduplicated. */
   values: ReadonlySet<number>;
@@ -118,6 +124,17 @@ function jsonOf(raw: string): unknown {
   }
 }
 
+/** `RPE 8`, `@RPE 6`, `@ RPE 8.5`, `RIR 2`, `2 RIR`. */
+const EFFORT_TEXT = /\b(?:RPE|RIR)\s?@?\s?(\d+(?:[.,]\d+)?)|(?<![\d.])(\d+(?:[.,]\d+)?)\s?RIR\b/gi;
+/** JSON keys about effort (`"rpe": 8`, `"targetRpe": 8.5`, `"meanRpe": 9`, `"rir": 2`). */
+const EFFORT_KEY = /"[A-Za-z]*(?:rpe|Rpe|RPE|rir|Rir|RIR)[A-Za-z]*"\s*:\s*(\d+(?:\.\d+)?)/g;
+
+function addEffortTwin(values: Set<number>, raw: string): void {
+  if (raw === '') return;
+  const n = parseNumber(raw);
+  if (Number.isFinite(n) && n >= 0 && n <= 10) values.add(Math.round((10 - n) * 100) / 100);
+}
+
 /**
  * A fact text. A plain string is Ben's or code's text whose `100 kg × 7` also counts as a set done
  * (his own words). `{ text, setsDone: false }`: its numbers count, but no set in it backs a claim
@@ -150,6 +167,10 @@ export function collectFacts(texts: readonly FactText[]): NumberFacts {
     for (const m of t.matchAll(DAY_MONTH)) dates.add(`${pad(monthNumber(m[2] ?? ''))}-${pad(Number(m[1]))}`);
     for (const m of t.matchAll(MONTH_DAY)) dates.add(`${pad(monthNumber(m[1] ?? ''))}-${pad(Number(m[2]))}`);
     for (const m of t.matchAll(NUMBER)) values.add(parseNumber(m[1] ?? ''));
+    // (Ben, 26 Oct: RIR replaces RPE in the UI) An effort given as RPE also backs its RIR (10 − RPE), and the
+    // other way round, so "RIR 4" checks against "RPE 6" and a correct reply in RIR isn't hidden.
+    for (const m of raw.matchAll(EFFORT_TEXT)) addEffortTwin(values, m[1] ?? m[2] ?? '');
+    for (const m of raw.matchAll(EFFORT_KEY)) addEffortTwin(values, m[1] ?? '');
   }
   return { values, dates, pairs };
 }

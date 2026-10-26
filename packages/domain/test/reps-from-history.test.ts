@@ -180,7 +180,7 @@ describe('Ben’s shrugs, reproduced: did 15 last time → planned around 15, no
     expect(result.decision).toBe('increase_load');
     expect(result.sets.map((s) => [s.load?.value, s.reps])).toEqual([0, 1, 2].map(() => [32.5, { min: 12, max: 15 }]));
     expect(rule.method === 'double_progression' ? rule.repRange : null).toEqual({ min: 12, max: 15 });
-    expect(rule.name).toBe('12–15 reps, up to RPE 9');
+    expect(rule.name).toBe('12–15 reps, RIR 1 or more');
     expect(result.reps).toEqual({ last: 15, goal: ISO, range: { min: 12, max: 15 }, kind: 'history', aim: 12 });
     expect(result.explanation.facts[0]).toBe('Reps follow your last session (15 reps): 12–15.');
   });

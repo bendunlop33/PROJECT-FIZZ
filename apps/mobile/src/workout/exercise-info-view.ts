@@ -1,4 +1,4 @@
-import { cardioValuesText, formatDuration, formatNumber, NBSP, repRangeText, type AddDestination, type SlotShapeInput } from '@fizz/domain';
+import { cardioValuesText, formatDuration, formatNumber, NBSP, repRangeText, type AddDestination, type SlotShapeInput, rirOfRpe } from '@fizz/domain';
 
 import type { LibraryAddShape } from '../services/library-service';
 import type { RepsDraft } from './reps-draft';
@@ -48,7 +48,9 @@ export function addRepsRow(shape: LibraryAddShape, perSide: boolean): { label: s
 /** The `Target RPE` row; null (hidden) with the effort scale off. */
 export function addEffortRow(shape: LibraryAddShape, scale: 'rpe' | 'rir' | null): { label: string; text: string } | null {
   if (scale === null) return null;
-  return { label: scale === 'rpe' ? SET_SHAPE_COPY.targetRpe : SET_SHAPE_COPY.targetRir, text: shape.effort.value === null ? SET_SHAPE_COPY.none : formatNumber(shape.effort.value) };
+  // (Ben, 26 Oct) Reads RIR; an RPE value converts (RIR = 10 − RPE).
+  const v = shape.effort.value;
+  return { label: SET_SHAPE_COPY.targetRir, text: v === null ? SET_SHAPE_COPY.none : formatNumber(shape.effort.scale === 'rpe' ? rirOfRpe(v) : v) };
 }
 
 /** What the Reps sheet opens with. */

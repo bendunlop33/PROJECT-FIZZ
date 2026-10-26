@@ -277,7 +277,7 @@ describe('checkReview: comments on his edits, offers fenced and guarded', () => 
   it('rest, reps and RPE are offers too; rest on the builder’s 15 s steps', () => {
     const { s } = run({});
     const { r } = run({ suggestions: [{ ops: [{ op: 'rest', slotKey: s.key('crunch'), seconds: 100 }], reason: 'Cable crunch rest 1:00 is short.' }, { ops: [{ op: 'rpe', slotKey: s.key('incline_db'), rpe: 9 }], reason: 'Push the incline.' }] });
-    expect(r.suggestions.map((x) => x.proposal.lines)).toEqual([['Cable crunch: rest 1:00 → 1:45'], ['Incline dumbbell press: RPE 8 / 9 → 9']]);
+    expect(r.suggestions.map((x) => x.proposal.lines)).toEqual([['Cable crunch: rest 1:00 → 1:45'], ['Incline dumbbell press: RIR 2 / 1 → 1']]);
     expect(r.suggestions[0]?.proposal.reason).toBe('Cable crunch rest 1:00 is short.');
   });
 });

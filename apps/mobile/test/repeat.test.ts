@@ -39,7 +39,7 @@ describe('repeat a past workout', () => {
     if (!data) throw new Error('no workout');
     expect(data.aggregate.sets.every((x) => x.status === 'pending')).toBe(true);
     const v = s.workout.view(data, h.clockMs, null);
-    expect(plain(v.focus?.target)).toBe('Target 60 kg · 10 reps @ RPE 8.5');
+    expect(plain(v.focus?.target)).toBe('Target 60 kg · 10 reps · RIR 1.5');
     expect(plain(v.primary.label)).toBe('Log 60 kg × 10');
     // One workout at a time.
     expect(await s.workout.start({ ...req, opId: 'repeat-2' })).toMatchObject({ ok: false, error: { code: 'session_already_active' } });

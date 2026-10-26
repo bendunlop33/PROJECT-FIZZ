@@ -27,7 +27,7 @@ import {
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import { builtInRepRange, builtInTargetRpe, ruleCategory } from '../default-rule';
-import { cardioDistanceText, dayMonthText, EQUIPMENT_WORD, formatDuration, repRangeText } from '../display';
+import { cardioDistanceText, dayMonthText, EQUIPMENT_WORD, formatDuration, repRangeText, formatNumber, rirOfRpe } from '../display';
 import { needsNoEquipment } from '../exercise-equipment';
 import { PAIN_AREA_WORD, painFlagCovering } from '../pain-flags';
 import { compareDifficulty, loadDirection } from '../equipment';
@@ -506,10 +506,10 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
     rpe = ruleRpe;
   } else if (p.targetRpe === null) {
     rpe = ruleRpe;
-    note('rpe_missing', `${ex.name} · RPE missing · ${String(rpe)} used`);
+    note('rpe_missing', `${ex.name} · RIR missing · ${formatNumber(rirOfRpe(rpe))} used`);
   } else {
     rpe = clampRpe(p.targetRpe);
-    if (rpe !== p.targetRpe) note('clamped', `${ex.name} · RPE ${String(p.targetRpe)} → ${String(rpe)}`);
+    if (rpe !== p.targetRpe) note('clamped', `${ex.name} · RIR ${formatNumber(10 - p.targetRpe)} → ${formatNumber(rirOfRpe(rpe))}`);
   }
 
   // Rest: Ben's nearest preset, then clamped to the draft's limits.
@@ -555,7 +555,7 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
     // Review S9: every clamp has its line (WB13), and the top set counts against the set limit.
     if (topReps.min !== p.topSet.reps.min || topReps.max !== p.topSet.reps.max) note('clamped', `${ex.name} · top set reps ${repRangeText(p.topSet.reps)} → ${repRangeText(topReps)}`);
     const topRpe = p.topSet.targetRpe === null ? rpe : clampRpe(p.topSet.targetRpe);
-    if (p.topSet.targetRpe !== null && topRpe !== p.topSet.targetRpe) note('clamped', `${ex.name} · top set RPE ${String(p.topSet.targetRpe)} → ${String(topRpe)}`);
+    if (p.topSet.targetRpe !== null && topRpe !== p.topSet.targetRpe) note('clamped', `${ex.name} · top set RIR ${formatNumber(10 - p.topSet.targetRpe)} → ${formatNumber(rirOfRpe(topRpe))}`);
     const backoffs = Math.min(working, L.maxWorkingSets - 1);
     if (backoffs !== working) note('clamped', `${ex.name} · sets ${String(working + 1)} → ${String(backoffs + 1)} with the top set (most allowed)`);
     const top = checkLoad(p.topSet.load, topReps, topRpe);
@@ -1182,7 +1182,7 @@ export function draftDiffLines(diff: DraftDiff, nameOf: (exerciseId: string) => 
   for (const s of diff.removed) out.push({ change: 'remove', text: `− ${nameOf(s.exerciseId)}` });
   for (const s of diff.added) out.push({ change: 'add', text: `+ ${nameOf(s.exerciseId)} · ${draftSchemeText(s)}` });
   for (const c of diff.changed) {
-    const what = c.fields.includes('sets') ? `${String(c.setsFrom)} → ${String(c.setsTo)} sets` : c.fields.map((f) => (f === 'rpe' ? 'RPE' : f === 'warmups' ? 'warm-ups' : f)).join(', ');
+    const what = c.fields.includes('sets') ? `${String(c.setsFrom)} → ${String(c.setsTo)} sets` : c.fields.map((f) => (f === 'rpe' ? 'RIR' : f === 'warmups' ? 'warm-ups' : f)).join(', ');
     out.push({ change: 'edit', text: `✎ ${nameOf(c.exerciseId)} · ${what}` });
   }
   if (diff.reordered && diff.added.length === 0 && diff.removed.length === 0) out.push({ change: 'reorder', text: '✎ Order changed' });

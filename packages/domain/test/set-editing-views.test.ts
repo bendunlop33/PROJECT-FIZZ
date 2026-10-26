@@ -156,8 +156,8 @@ describe('rest screen: Last set and Next (F8)', () => {
     expect(r.last).toMatchObject({ exerciseName: 'Bench press', setNumber: 1, setTypeLabel: 'Warm-up', status: 'done', effort: { rpe: 6, rir: null }, isCurrent: false });
     expect(plain(r.last?.value)).toBe('60 kg × 10');
     expect(r.next).toMatchObject({ setNumber: 2, setCount: 3, setTypeLabel: 'Working', status: 'pending', isCurrent: true });
-    expect(plain(r.next?.value)).toBe('100 kg × 6–8 @RPE 8');
-    expect(plain(r.next?.accessibilityLabel)).toBe('Bench press, set 2 of 3, Working, current, target 100 kg × 6–8 @RPE 8');
+    expect(plain(r.next?.value)).toBe('100 kg × 6–8 · RIR 2');
+    expect(plain(r.next?.accessibilityLabel)).toBe('Bench press, set 2 of 3, Working, current, target 100 kg × 6–8 · RIR 2');
   });
 
   it('nothing logged: no Last set; Ben’s own target RPE wins on Next', () => {
@@ -165,7 +165,7 @@ describe('rest screen: Last set and Next (F8)', () => {
     expect(restSetsView(s).last).toBeNull();
     const b1 = bench(s, 1);
     s = apply(s, { type: 'edit_planned_set', at: at(3), opId: 'e', setId: b1.id, expectedSetVersion: b1.version, patch: { targetRpe: 7.5 } });
-    expect(plain(setGlance(s, b1.id, { [b1.sessionExerciseId]: 8 })?.value)).toBe('100 kg × 6–8 @RPE 7.5');
+    expect(plain(setGlance(s, b1.id, { [b1.sessionExerciseId]: 8 })?.value)).toBe('100 kg × 6–8 · RIR 2.5');
   });
 });
 

@@ -188,8 +188,9 @@ describe('drag drops only on rows Ben can see (parity S2)', () => {
     expect(visibleFrames(frames, null)).toEqual(frames);
   });
 
-  it('the set box and the Workout sheet pass their visible window', () => {
-    expect(read('screens', 'workout', 'WorkoutTable.tsx')).toContain('viewport={boxView}');
+  it('the round page and the Workout sheet pass their visible window', () => {
+    // (Ben, 26 Oct) One scroll per round page: its visible frame is the page's.
+    expect(read('screens', 'workout', 'WorkoutTable.tsx')).toContain('viewport={outer}');
     expect(read('screens', 'workout', 'RoundSheets.tsx')).toContain('viewport={listView}');
     expect(read('ui', 'drag-list.tsx')).toContain('visibleFrames([...frames.current.values()], boxWindow.current)');
   });

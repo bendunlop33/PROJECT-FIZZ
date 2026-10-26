@@ -20,6 +20,9 @@ import type { ComparableSet } from './view';
  *   After a gym switch, sets are numbered across the parts on the same equipment item, as history stores them.
  * - No partner (a 4th set when last time had 3), a warm-up, or a load in another unit or convention gives null:
  *   nothing is shown rather than a guess (rule 6). Never the nearest set, never an estimate.
+ * - (Ben, 26 Oct) The table's PREVIOUS column (`lastPerSet`) also shows a `W` row its own previous: today's n-th
+ *   warm-up ↔ last time's n-th warm-up (`PreviousSession.warmups`), by the same like-for-like test. The Lock Screen
+ *   and notification still name only working sets.
  *
  * Pure; nothing here is written.
  */
@@ -152,6 +155,13 @@ function spokenOf(values: SetValues, ex: Pick<SessionExercise, 'measurement' | '
   return `Last time ${parts.join(', ')}`;
 }
 
+/** Today's n-th warm-up ↔ last time's n-th warm-up (same unit and convention), else null. */
+function warmupPick(set: WorkoutSet, todayWarmups: readonly string[], last: readonly ComparableSet[], ex: SessionExercise): ComparableSet | null {
+  const k = todayWarmups.indexOf(set.id);
+  const match = k < 0 ? undefined : last[k];
+  return match !== undefined && compatible(match, ex) ? match : null;
+}
+
 /**
  * Every live set of the block `rowId` is in (all its gym-switch parts) → its last-time line, or null (`—`).
  * `previous` is keyed by session-exercise row, as `buildActiveSetView` reads it. A part with no comparable session
@@ -160,7 +170,7 @@ function spokenOf(values: SetValues, ex: Pick<SessionExercise, 'measurement' | '
 export function lastPerSet(state: Pick<SessionAggregate, 'exercises' | 'sets' | 'session'>, rowId: string, previous: Readonly<Record<string, PreviousSession | null>>): Map<string, SetLast | null> {
   const out = new Map<string, SetLast | null>();
   const rows = new Map(state.exercises.map((e) => [e.id, e]));
-  const groups = new Map<string, { ordinals: Map<string, number> }>();
+  const groups = new Map<string, { ordinals: Map<string, number>; warmups: string[] }>();
   for (const s of blockSets(state, rowId)) {
     const ex = rows.get(s.sessionExerciseId);
     const prev = ex === undefined ? null : (previous[ex.id] ?? null);
@@ -171,10 +181,12 @@ export function lastPerSet(state: Pick<SessionAggregate, 'exercises' | 'sets' | 
     const key = ex.equipmentId ?? '';
     let g = groups.get(key);
     if (g === undefined) {
-      g = { ordinals: todayOrdinals(comparisonSets(state, ex)) };
+      const today = comparisonSets(state, ex);
+      g = { ordinals: todayOrdinals(today), warmups: today.filter((x) => x.setType === 'warmup' && x.status !== 'deleted').map((x) => x.id) };
       groups.set(key, g);
     }
-    const c = pick(s, g.ordinals.get(s.id), prev.sets, historyOrdinals(prev.sets), ex);
+    // (Ben, 26 Oct) A warm-up row shows last time's warm-up in the same place (n-th warm-up), if there was one.
+    const c = s.setType === 'warmup' ? warmupPick(s, g.warmups, prev.warmups ?? [], ex) : pick(s, g.ordinals.get(s.id), prev.sets, historyOrdinals(prev.sets), ex);
     if (c === null) {
       out.set(s.id, null);
       continue;

@@ -114,13 +114,13 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
     const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-1', setId: s1.id, values: { load: s1.planned.load, reps: 8, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
     if (!logged.ok) throw new Error(logged.error.message);
     const offer = await s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false });
-    expect(offer).toMatchObject({ kind: 'rpe_high', fact: 'RPE 10 on set 1 (target 8.5)', prompt: 'That looked hard. Adjust remaining sets?' });
+    expect(offer).toMatchObject({ kind: 'rpe_high', fact: 'RIR 0 on set 1 (target RIR 1.5)', prompt: 'That looked hard. Adjust remaining sets?' });
     expect(model.requests).toEqual([]);
     // CA4: the same kind on the same exercise doesn't come back.
     expect(await s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: true, pending: false })).toBeNull();
     // Offline: no offers at all.
     expect(await s.coach.offerAfterLog({ aggregate: logged.aggregate, setId: s1.id, resting: true, coachReachable: false, pending: false })).toBeNull();
-    expect(slotView({ pending: false, adjustment: null, outcome: null, offer })).toMatchObject({ kind: 'offer', fact: 'RPE 10 on set 1 (target 8.5)' });
+    expect(slotView({ pending: false, adjustment: null, outcome: null, offer })).toMatchObject({ kind: 'offer', fact: 'RIR 0 on set 1 (target RIR 1.5)' });
 
     model = new StepModel([
       (req) => {

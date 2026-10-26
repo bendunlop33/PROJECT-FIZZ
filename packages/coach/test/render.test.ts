@@ -148,9 +148,9 @@ describe('renderActionResult: an exercise added today (12 Oct)', () => {
     );
 
   it('values only, with where it went', () => {
-    expect(nb(renderActionResult(added(), 'sheet').text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8.');
-    expect(nb(renderActionResult(added({ afterName: 'Bench press' }), 'sheet').text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8 · after Bench press.');
-    expect(nb(renderActionResult(added({ supersetWithName: 'Bench press' }), 'sheet').text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8 · superset with Bench press.');
+    expect(nb(renderActionResult(added(), 'sheet').text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 · RIR 2.');
+    expect(nb(renderActionResult(added({ afterName: 'Bench press' }), 'sheet').text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 · RIR 2 · after Bench press.');
+    expect(nb(renderActionResult(added({ supersetWithName: 'Bench press' }), 'sheet').text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 · RIR 2 · superset with Bench press.');
   });
 
   it('a blank load (no history, B6), a timed exercise, an assisted machine and lb', () => {

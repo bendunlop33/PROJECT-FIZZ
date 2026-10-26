@@ -281,7 +281,7 @@ describe('muscles (checks 9–15, PG26, PG27)', () => {
     expect(fr.markedCounted).toBe(1);
     const home = buildProgressHomeView({ sessions: [s], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
-    expect(home.muscles.notCounted).toMatchObject({ summary: '1 warm-up set · 1 rated under RPE 6', marked: '1 set you marked (spotted) is counted here.' });
+    expect(home.muscles.notCounted).toMatchObject({ summary: '1 warm-up set · 1 rated over RIR 4', marked: '1 set you marked (spotted) is counted here.' });
   });
 
   it('check 14: 3 left + 3 right sets of a single-arm row count 3 sets', () => {

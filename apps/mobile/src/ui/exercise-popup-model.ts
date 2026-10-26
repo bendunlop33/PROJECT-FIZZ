@@ -145,7 +145,7 @@ export interface PopupView {
   name: string;
   works: string | null;
   kgHeader: string;
-  /** `RPE` (absent) or `RIR`, Ben's effort scale. */
+  /** What the rows' `rpe` hold: `RPE` (absent) or `RIR`; the column always reads RIR (`effortCellText`). */
   effortHeader?: string;
   rows: PopupSetRow[];
   canAddWarmup: boolean;
@@ -164,7 +164,40 @@ export interface PopupView {
   canDeleteExercise: boolean;
 }
 
-/** `Next` order: Reps → Kg → RPE → next set's Reps (§2.7). Null at the end. */
+/**
+ * (Ben, 26 Oct: RIR replaces RPE in the UI) The effort column always reads RIR. A view whose rows hold RPE
+ * (`effortHeader` absent or `RPE`: the builder, the workout) is shown as RIR = 10 − RPE and what Ben types is
+ * stored back as RPE; a view already in RIR (a saved workout in Ben's RIR scale) passes through.
+ */
+export const EFFORT_HEADER = 'RIR';
+
+const viewHoldsRir = (view: Pick<PopupView, 'effortHeader'>): boolean => view.effortHeader === 'RIR';
+
+/** The effort cell's text: `2`, `1.5`, `` (none). */
+export function effortCellText(view: Pick<PopupView, 'effortHeader'>, stored: number | null): string {
+  if (stored === null) return '';
+  return trim(viewHoldsRir(view) ? stored : Math.max(0, 10 - stored));
+}
+
+/** The RIR shown for a stored value (null: none). */
+export function shownRir(view: Pick<PopupView, 'effortHeader'>, stored: number | null): number | null {
+  if (stored === null) return null;
+  return viewHoldsRir(view) ? stored : Math.max(0, Math.round((10 - stored) * 100) / 100);
+}
+
+/** What a typed RIR is stored as: RPE = 10 − RIR (1–10) for an RPE view; null when out of range (0–9). */
+export function storedEffort(view: Pick<PopupView, 'effortHeader'>, rir: number): number | null {
+  if (!Number.isFinite(rir) || rir < 0 || rir > 9) return null;
+  return viewHoldsRir(view) ? rir : Math.round((10 - rir) * 100) / 100;
+}
+
+/** The keypad bar's − / + on the effort cell, in RIR: half steps (whole for an RIR view), 0–9. */
+export function stepRir(view: Pick<PopupView, 'effortHeader'>, rir: number, dir: 1 | -1): number {
+  const step = viewHoldsRir(view) ? 1 : KEY_STEPS.rpe;
+  return Math.max(0, Math.min(9, Math.round((rir + dir * step) * 100) / 100));
+}
+
+/** `Next` order: Reps → Kg → RIR → next set's Reps (§2.7). Null at the end. */
 export function nextField(rowIndex: number, field: PopupField, rowCount: number, hasRpe: (i: number) => boolean): { row: number; field: PopupField } | null {
   if (field === 'reps') return { row: rowIndex, field: 'kg' };
   if (field === 'kg' && hasRpe(rowIndex)) return { row: rowIndex, field: 'rpe' };

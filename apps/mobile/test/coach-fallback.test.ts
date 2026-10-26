@@ -875,7 +875,7 @@ describe('CHANGELOG 2026-10-11: offers follow the target RPE, on real SQLite', (
     const data = await s.workout.load(sessionId);
     if (!data) throw new Error('fixture');
     const v = s.workout.view(data, h.clockMs, null);
-    expect(plain(v.focus?.target)).toMatch(/@ RPE 8\.5$/);
+    expect(plain(v.focus?.target)).toMatch(/· RIR 1\.5$/);
     expect(v.focus?.targetRpe).toEqual({ rpe: 8.5, source: 'rule' });
   });
 
@@ -896,7 +896,7 @@ describe('CHANGELOG 2026-10-11: offers follow the target RPE, on real SQLite', (
     await setTarget(8, 'rpe-8');
     const hard = await log(s, sessionId, s2.id, 6, 'log-2', 10);
     const offer = await offerFor(s, hard, s2.id);
-    expect(offer).toMatchObject({ by: 'rule', kind: 'rpe_high', fact: 'RPE 10 on set 2 (target 8)', targetRpe: 8, loggedRpe: 10 });
+    expect(offer).toMatchObject({ by: 'rule', kind: 'rpe_high', fact: 'RIR 0 on set 2 (target RIR 2)', targetRpe: 8, loggedRpe: 10 });
     expect(plain(offer?.change)).toBe('Next set: 57.5 kg × 3–6');
     // Ben's target survives: the remaining set still reads 8 after the rule's change.
     if (offer === null) throw new Error('no offer');
@@ -919,7 +919,7 @@ describe('CHANGELOG 2026-10-11: offers follow the target RPE, on real SQLite', (
     const data = await again.workout.load(sessionId);
     if (!data) throw new Error('fixture');
     expect(data.aggregate.sets.filter((x) => x.setType !== 'warmup').every((x) => x.planned.rpeOverride === 10)).toBe(true);
-    expect(plain(again.workout.view(data, h.clockMs, null).focus?.target)).toMatch(/@ RPE 10$/);
+    expect(plain(again.workout.view(data, h.clockMs, null).focus?.target)).toMatch(/· RIR 0$/);
     // The same op replayed after the restart applies once.
     const dup = await again.workout.dispatch(sessionId, cmd);
     expect(dup.ok && dup.aggregate.session.version).toBe(data.aggregate.session.version);

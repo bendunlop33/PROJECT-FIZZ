@@ -95,7 +95,7 @@ describe("Ben's rows: a new workout's loads come from his recent sets (Build B, 
     // Why this weight? names the estimate from his own sets.
     const why = await s.builder.whyWeight(snap.draftId, main.key);
     // Review S5: an estimate, labelled as one (rule 6), from the est. max of his own sets at the top set's reps.
-    expect(why[0]).toMatch(/^Est\. max \d+ kg \(estimate\) · 6 reps @ RPE 8$/);
+    expect(why[0]).toMatch(/^Est\. max \d+ kg \(estimate\) · 6 reps · RIR 2$/);
   });
 
   it('review B1: the builder’s own format, top 100 × 6 @ 8 + back-offs 95 × 8 → next Pull day top 102.5 × 6, back-offs never below 95; Why? names last time', async () => {

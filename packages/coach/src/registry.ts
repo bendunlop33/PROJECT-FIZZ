@@ -234,7 +234,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Log a set you tell it ("log 100 for 8"), with Undo',
     capabilitySection: 'when_you_ask',
     description:
-      'Log the set the Log button would log (the next pending set of the exercise in focus, or of the one exercise Ben names) with the weight, reps and RPE Ben just said, in the exercise’s own unit and convention. Only numbers Ben said are accepted. Starts rest like the Log button.',
+      'Log the set the Log button would log (the next pending set of the exercise in focus, or of the one exercise Ben names) with the weight, reps and effort Ben just said, in the exercise’s own unit and convention; rpe is RPE (if he gives reps in reserve, rpe = 10 − RIR). Only numbers Ben said are accepted. Starts rest like the Log button.',
   },
   {
     name: 'correct_set',
@@ -245,7 +245,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ['workout'],
     plainLabel: 'Correct a logged set you name ("set 2 was 95"), with Undo',
     capabilitySection: 'when_you_ask',
-    description: 'Correct the weight, reps or RPE of a logged set Ben named, with the numbers he said (null keeps a value). Never marks, deletes or changes set types.',
+    description: 'Correct the weight, reps or effort of a logged set Ben named, with the numbers he said (null keeps a value); rpe is RPE (if he gives reps in reserve, rpe = 10 − RIR). Never marks, deletes or changes set types.',
   },
   {
     name: 'set_next_session_targets',

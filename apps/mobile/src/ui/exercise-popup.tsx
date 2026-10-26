@@ -10,7 +10,7 @@ import { Eyebrow, StatusLine, TextField } from './layout';
 import { BottomCard } from './sheet';
 import { AppText } from './Text';
 import { Divider, Stepper, SwipeRow, Table } from './table-parts';
-import { holdMenu, KEY_STEPS, nextFieldByKey, popupRowActions, popupRowByKey, POPUP_COPY, typeMenu, type PopupField, type PopupRestRow, type PopupSetRow, type PopupView } from './exercise-popup-model';
+import { EFFORT_HEADER, effortCellText, holdMenu, KEY_STEPS, shownRir, stepRir, storedEffort, nextFieldByKey, popupRowActions, popupRowByKey, POPUP_COPY, typeMenu, type PopupField, type PopupRestRow, type PopupSetRow, type PopupView } from './exercise-popup-model';
 
 /**
  * The exercise pop-up (workout-builder-v3 §2.4), one component for the
@@ -96,9 +96,12 @@ export function ExercisePopup(p: ExercisePopupProps) {
     const key = keyOf(rowKey, field);
     setDrafts((d) => Object.fromEntries(Object.entries(d).filter(([k]) => k !== key)));
     if (r === undefined || text.trim() === '' || !Number.isFinite(value)) return;
-    const same = field === 'reps' ? value === r.reps && r.repsText === String(r.reps) : field === 'rpe' ? value === r.rpe : value === r.load;
+    // (Ben, 26 Oct) The effort cell is typed as RIR; stored in the view's own scale.
+    const stored = field === 'rpe' ? storedEffort(view, value) : value;
+    if (stored === null) return;
+    const same = field === 'reps' ? value === r.reps && r.repsText === String(r.reps) : field === 'rpe' ? stored === r.rpe : value === r.load;
     if (same) return;
-    setNote(await p.onEditCell(r, field, value));
+    setNote(await p.onEditCell(r, field, stored));
   }
 
   async function step(dir: 1 | -1) {
@@ -106,10 +109,10 @@ export function ExercisePopup(p: ExercisePopupProps) {
     const r = popupRowByKey(view.rows, focus.key);
     if (r === undefined) return;
     const k = keyOf(focus.key, focus.field);
-    const cur = Number(drafts[k] ?? (focus.field === 'reps' ? (r.reps ?? 0) : focus.field === 'rpe' ? (r.rpe ?? 8) : (r.load ?? 0)));
+    const cur = Number(drafts[k] ?? (focus.field === 'reps' ? (r.reps ?? 0) : focus.field === 'rpe' ? (shownRir(view, r.rpe) ?? 2) : (r.load ?? 0)));
     let next: number | null;
     if (focus.field === 'reps') next = Math.max(1, cur + dir * KEY_STEPS.reps);
-    else if (focus.field === 'rpe') next = Math.max(1, Math.min(10, cur + dir * KEY_STEPS.rpe));
+    else if (focus.field === 'rpe') next = stepRir(view, cur, dir);
     else next = await p.kgStep(r, Number.isFinite(cur) ? cur : null, dir);
     if (next !== null) setDrafts((d) => ({ ...d, [k]: String(next) }));
   }
@@ -223,7 +226,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
           </View>
           <Table>
             <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', paddingHorizontal: theme.space['3'], paddingTop: theme.space['2'], gap: theme.space['2'] }}>
-              {['#', 'Type', 'Reps', view.kgHeader, view.effortHeader ?? 'RPE'].map((h, i) => (
+              {['#', 'Type', 'Reps', view.kgHeader, EFFORT_HEADER].map((h, i) => (
                 <AppText key={h} variant="label" color="text.secondary" style={{ width: i === 0 ? 24 : i === 1 ? undefined : VALUE_COL_W, flex: i === 1 ? 1 : undefined, textAlign: i > 1 ? 'right' : 'left' }}>
                   {h}
                 </AppText>
@@ -280,7 +283,7 @@ export function ExercisePopup(p: ExercisePopupProps) {
                         –
                       </AppText>
                     ) : (
-                      cell(r, 'rpe', r.rpe === null ? '' : String(r.rpe), `${r.spokenName}, ${r.done ? (view.effortHeader ?? 'RPE') : `target ${view.effortHeader ?? 'RPE'}`}`)
+                      cell(r, 'rpe', effortCellText(view, r.rpe), `${r.spokenName}, ${r.done ? 'reps in reserve' : 'target reps in reserve'}`)
                     )}
                   </View>
                 </SwipeRow>

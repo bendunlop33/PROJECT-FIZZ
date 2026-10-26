@@ -1,5 +1,5 @@
 import type { SessionAggregate, SetType, WorkoutSet } from '@fizz/schemas';
-import { formatNumber, NBSP, SET_TYPE_WORD, targetShort, valuesText } from '../display';
+import { formatNumber, NBSP, SET_TYPE_WORD, targetShort, valuesText, effortRir, rirOfRpe, rirWords } from '../display';
 import { targetRpeOf } from '../coach/target-rpe';
 import { DEFAULT_COACH_TRIGGER_THRESHOLDS, evaluateCoachTrigger } from '../coach/trigger';
 import { equipmentOfRow } from './equipment-snapshot';
@@ -72,12 +72,13 @@ export function setGlance(state: SessionAggregate, setId: string, ruleTargetRpe:
     const target = targetShort({ ...shownPlannedIn(state, set, ex, carry), source: undefined }, { convention: ex.loadConvention, ...(eq ? { equipment: eq } : {}) });
     const rpe = targetRpeOf(set, ruleTargetRpe[ex.id] ?? null);
     const base = target === null ? 'No target' : target.replace(TARGET_WORD, '');
-    value = rpe === null ? base : `${base} @RPE${NBSP}${formatNumber(rpe.rpe)}`;
+    value = rpe === null ? base : `${base} · RIR${NBSP}${formatNumber(rirOfRpe(rpe.rpe))}`;
   }
   const isCurrent = state.session.activeSetId === set.id;
   const typeLabel = SET_TYPE_WORD[set.setType];
   const plain = value.replaceAll(NBSP, ' ');
-  const effortWords = effort?.rpe != null ? `, RPE ${formatNumber(effort.rpe)}` : effort?.rir != null ? `, ${String(effort.rir)} reps in reserve` : '';
+  const loggedRir = effort === null ? null : effortRir(effort);
+  const effortWords = loggedRir === null ? '' : `, ${rirWords(loggedRir)}`;
   const stateWord = status === 'done' ? 'done' : status === 'skipped' ? 'skipped' : isCurrent ? (ownValues ? 'current, your edit' : 'current, target') : ownValues ? 'your edit' : 'target';
   return {
     setId: set.id,

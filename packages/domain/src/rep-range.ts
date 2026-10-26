@@ -1,5 +1,6 @@
 import type { LoadDirection } from './equipment';
 import type { ProgressionDecision } from './progression';
+import { formatNumber, rirOfRpe } from './display';
 
 /**
  * Reps from history (Ben, 21 Oct, live Back workout: shrugs planned at 8 reps
@@ -144,7 +145,7 @@ export function ruleRepsFact(r: Pick<RuleReps, 'last' | 'goal' | 'range' | 'kind
   return null;
 }
 
-/** `12–15 reps, up to RPE 9`: the rule's name with the range it used. */
+/** `12–15 reps, RIR 1 or more`: the rule's name with the range it used (RIR = 10 − its RPE cap). */
 export function personalRuleName(range: RepRangeValue, maxRpe: number | null): string {
-  return maxRpe === null ? `${rangeText(range)} reps` : `${rangeText(range)} reps, up to RPE ${String(maxRpe)}`;
+  return maxRpe === null ? `${rangeText(range)} reps` : `${rangeText(range)} reps, RIR ${formatNumber(rirOfRpe(maxRpe))} or more`;
 }

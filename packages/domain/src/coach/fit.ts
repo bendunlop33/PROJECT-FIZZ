@@ -236,7 +236,7 @@ export interface FitPlanItem {
   bensEdit: boolean;
   painFlag: boolean;
   supersetWith: string[];
-  /** `3 × 6–8 @ 100 kg @ RPE 8 · 2 warm-ups` (the first working set's target RPE, `targetRpeOf`). */
+  /** `3 × 6–8 @ 100 kg · RIR 2 · 2 warm-ups` (the first working set's target RPE, `targetRpeOf`). */
   sets: string;
   restS: number | null;
   last: string | null;
@@ -277,7 +277,7 @@ export function fitPlanOf(input: FitPlanInput): { items: FitPlanItem[]; slots: F
     const load = first?.planned.load ? ` @ ${loadText(first.planned.load, ex.loadConvention)}` : '';
     // The target RPE goes with the plan (ADR 0006 amendment 3), so a fit keeps the effort the sets were planned at.
     const rpe = first === undefined ? null : targetRpeOf(first, input.ruleTargetRpe?.[ex.id] ?? null);
-    const effort = rpe === null ? '' : ` ${targetRpeText(rpe.rpe)}`;
+    const effort = rpe === null ? '' : ` · ${targetRpeText(rpe.rpe)}`;
     const tier = input.tiers[slotKey] ?? 'C';
     const held = input.held(ex.exerciseId);
     items.push({

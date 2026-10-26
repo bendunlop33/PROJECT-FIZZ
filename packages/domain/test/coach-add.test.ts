@@ -206,7 +206,7 @@ describe('checkCoachAdd: loads from history, fitted to this gym', () => {
     const r = ok(input(RAISE, s, {}, { workingSets: 15, reps: { min: 15, max: 8 }, targetRpe: 11 }));
     expect(r.command.plan).toHaveLength(10);
     expect(r.command.plan?.[0]?.planned).toMatchObject({ reps: { min: 8, max: 15 }, rpe: 10 });
-    expect(r.guardNotes.map((n) => n.text)).toEqual(expect.arrayContaining(['Sets 15 → 10', 'RPE 11 → 10']));
+    expect(r.guardNotes.map((n) => n.text)).toEqual(expect.arrayContaining(['Sets 15 → 10', 'RIR -1 → 0']));
     const none = ok(input(RAISE, s, {}, { targetRpe: null, reps: null }));
     expect(none.command.plan?.[0]?.planned.rpe).toBeNull();
     expect(none.command.plan?.[0]?.planned.reps).not.toBeNull();
