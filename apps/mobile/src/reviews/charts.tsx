@@ -6,6 +6,7 @@ import { CHANGE_TAP_LABEL, changeRowTaps, PROGRESS_COPY, type CalendarRowView, t
 import { createGuardedLoader } from '../guide/guarded-load';
 import { TICK_MAX_SCALE } from '../progress/axis-width';
 import { useAx } from '../progress/components';
+import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
 import { AppText, Card, TextButton } from '../ui';
 import { LIFT_TABLE, liftCellLines, liftRowStacked, liftsChartLayout, liftTableColumnWidth, lineAt, pointAt, ringAt } from './lifts-layout';
@@ -435,7 +436,19 @@ function LiftHead({ cells, top }: { cells: readonly string[]; top: boolean }) {
 }
 
 /** Lifts: the chart (all lifts, or one alone on its own scale) and the table `LIFT · REPS · CURRENT · TARGET`. */
-export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (() => void) | null; /** `All lifts ›` (null) → the Lifts tab; `Open Bench ›` → that lift's page there. */ onOpen: (exerciseId: string | null) => void }) {
+export function LiftsCard({
+  view,
+  onEdit,
+  onOpen,
+  onOpenWorkout,
+}: {
+  view: LiftsView;
+  onEdit: (() => void) | null;
+  /** `All lifts ›` (null) → the Lifts tab; `Open Bench ›` → that lift's page there. */
+  onOpen: (exerciseId: string | null) => void;
+  /** (Ben, 26 Oct) A PB ring, or a point of one lift, opens the workout it came from. */
+  onOpenWorkout?: (sessionId: string) => void;
+}) {
   const theme = useTheme();
   const pal = progressPalette(theme);
   const [focus, setFocus] = useState<string | null>(null);
@@ -571,10 +584,15 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
             accessible={false}
             onPress={(e) => {
               const { locationX, locationY } = e.nativeEvent;
-              // A PB ring first (`PB · Bench 100 × 6 · week of 13 Oct`), then (all lifts) the line to focus.
+              // A PB ring first, then (all lifts) the line to focus, else (one lift) a point. (Ben, 26 Oct) A ring or a
+              // point opens the workout it came from; its line (`PB · Bench 100 × 6 · week of 13 Oct`) shows on return.
               const ring = ringAt(layout, locationX, locationY);
               if (ring?.ringDetail != null) {
                 setPicked(ring.ringDetail.replaceAll('\u00a0', ' '));
+                if (onOpenWorkout !== undefined) {
+                  haptic('step');
+                  onOpenWorkout(ring.sessionId);
+                }
                 return;
               }
               if (one === null) {
@@ -584,6 +602,10 @@ export function LiftsCard({ view, onEdit, onOpen }: { view: LiftsView; onEdit: (
               }
               const p = pointAt(layout, locationX, locationY);
               setPicked(p === null ? null : p.detail.replaceAll(' ', ' '));
+              if (p !== null && onOpenWorkout !== undefined) {
+                haptic('step');
+                onOpenWorkout(p.sessionId);
+              }
             }}
             style={{ height: layout.height }}
             onLayout={(e) => {

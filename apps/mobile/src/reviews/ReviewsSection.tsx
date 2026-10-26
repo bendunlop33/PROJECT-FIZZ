@@ -353,6 +353,9 @@ export function ReviewsSection({ onOpenLifts, onOpenTraining, active = true }: {
               setLiftsOpen(true);
             }}
             onOpen={onOpenLifts}
+            onOpenWorkout={(sessionId) => {
+              navigation.navigate('Summary', { sessionId, back: true });
+            }}
           />
           {!d.muscles.empty ? <MusclesCard view={d.muscles} onDetails={onOpenTraining} /> : null}
         </>
