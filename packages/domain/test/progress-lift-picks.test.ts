@@ -30,7 +30,7 @@ function workout(date: string, ids: readonly string[], n = 3): Pick<ProgressSess
   return {
     date,
     startedMs: Date.parse(`${date}T17:00:00.000Z`),
-    exercises: ids.map((id) => ({ sessionExerciseId: `${date}-${id}`, exerciseId: id, exerciseName: id, equipmentId: null, equipmentKind: null, gymId: null, convention: 'total' as const, unit: 'kg' as const, measurement: 'weight_reps' as const, laterality: 'bilateral' as const, sets: [set(0, true), ...Array.from({ length: n }, (_, i) => set(i + 1))] })),
+    exercises: ids.map((id) => ({ sessionExerciseId: `${date}-${id}`, exerciseId: id, exerciseName: id, equipmentId: null, equipmentKind: null, gymId: null, convention: 'total' as const, unit: 'kg' as const, measurement: 'reps' as const, laterality: 'bilateral' as const, sets: [set(0, true), ...Array.from({ length: n }, (_, i) => set(i + 1))] })),
   };
 }
 
