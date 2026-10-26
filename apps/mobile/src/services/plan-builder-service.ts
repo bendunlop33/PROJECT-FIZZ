@@ -9,6 +9,16 @@ import {
   PB_PREF_QUESTIONS,
   PB_SIMILAR,
   addPlanVersion,
+  applyPlanEdit,
+  pbEditPreview,
+  PB_EDIT_COPY,
+  pbScopeHas,
+  pbWeekDaysOf,
+  undoPlanEdit,
+  type PbBlockView,
+  type PbBlockWeek,
+  type PbEditBlock,
+  type PbEditScope,
   buildPlanFromAnswers,
   catalogueExerciseId,
   currentPlanVersion,
@@ -28,6 +38,7 @@ import {
   pbNewPlanDraft,
   pbPlanIdFor,
   pbPlanVersion,
+  pbStartReps,
   pbSameDays,
   planIsOpen,
   stableStringify,
@@ -38,9 +49,10 @@ import {
   type PlanKit,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
-import type { EquipmentInstance, Exercise, PainFlag, PlanBuilderAnswers, PlanDraft, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, PainFlag, PlanBuilderAnswers, PlanDayDraft, PlanDraft, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
-import type { PlanServices, PlanWriteOutcome } from './plan-services';
+import { PLAN_COPY, type PlanServices, type PlanWriteOutcome } from './plan-services';
+import { editBlockOf, readPlanBlock, slotKits, weekViews } from './plan-edit-read';
 
 /**
  * The plan builder (plan-builder.md; prototype `plan-builder.html`; D7). Offline and deterministic: the engine in
@@ -117,9 +129,65 @@ export interface PlanBuilderSession {
   /** ✦ on a preference question: the option his history favours, else null. */
   prefSuggestion: (questionId: string) => 0 | 1 | null;
   equipmentVersion: string;
+  /**
+   * (Ben, 26 Oct) `Edit plan` on the plan in use: nothing is written until `Apply changes`; every change to the answers
+   * (Goals, Week, Any preferences, abs) is shown as the Changes card against the plan as it is. Null: a new plan, or
+   * an open one (Build writes its versions).
+   */
+  running: PlanEditSession | null;
 }
 
+/** The plan in use being edited: where its block is, and the preview of any answers. */
+export interface PlanEditSession {
+  planId: string;
+  /** The plan's version as read: Apply changes writes against it (rule 5). */
+  planVersion: number;
+  /** The block week now (1-based) and the plan's length now. */
+  week: number;
+  weeksNow: number;
+  preview: (answers: PlanBuilderAnswers, rejected: ReadonlySet<string>, scope: PbEditScope) => PlanEditView;
+}
+
+/** The Changes card and the week strip for an edit. */
+export interface PlanEditView {
+  items: { id: string; text: string; accepted: boolean }[];
+  accepted: number;
+  /** `2 of 5`. */
+  counted: string;
+  /** Every week as it will be (1…the new length); done weeks read-only. */
+  views: PbBlockView[];
+  /** Weeks the accepted changes reach. */
+  changed: number[];
+  /** The new length is shorter than the week the plan is in. */
+  tooShort: boolean;
+  /** Anything to apply (an accepted change, or new answers). */
+  canApply: boolean;
+}
+
+export type PlanEditOutcome = { ok: true; planId: string; version: number } | { ok: false; reason: 'stale' | 'nothing' | 'too_short' | 'changed_since' | 'missing' | 'failed'; message: string };
+
 export type PlanBuildOutcome = { ok: true; planId: string; version: number; versionN: number } | { ok: false; reason: 'stale' | 'empty' | 'missing' | 'failed' };
+
+type EditWrite = Awaited<ReturnType<Store['repos']['planDrafts']['edit']>>;
+
+function editOutcome(r: EditWrite | null): PlanEditOutcome {
+  if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+  switch (r.status) {
+    case 'written':
+    case 'replayed':
+      return { ok: true, planId: r.plan.id, version: r.plan.version };
+    case 'nothing':
+      return { ok: false, reason: 'nothing', message: PLAN_COPY.stale };
+    case 'changed_since':
+      return { ok: false, reason: 'changed_since', message: PLAN_COPY.changedSince(r.names) };
+    case 'missing':
+      return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+    case 'invalid':
+    case 'stale':
+    case 'closed':
+      return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+  }
+}
 
 export function createPlanBuilderService(deps: PlanBuilderDeps) {
   const repo = () => deps.store().repos.planDrafts;
@@ -198,6 +266,14 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     const owned = from === null || from.ownerId !== p.id ? null : from;
     const fromAnswers = owned === null ? null : (pbAppliedBuilder(owned)?.builder.answers ?? currentPlanVersion(owned).builder?.answers ?? null);
     const editing = opts.editPlanId !== undefined && fromAnswers !== null;
+    // (Ben, 26 Oct) `Edit plan` on the plan in use while its block runs: the Changes card, nothing written until Apply.
+    const inUse = editing && owned !== null && owned.status === 'applied' ? owned : null;
+    const block: PbBlockWeek | null = inUse === null ? null : await readPlanBlock(store, p.id, inUse, nowMs, at.tz);
+    const eb: PbEditBlock | null = editBlockOf(block);
+    const keepDays = inUse === null || eb === null ? null : pbWeekDaysOf(inUse, eb.week);
+    const keep = keepDays === null ? undefined : (i: number): readonly string[] => keepDays.find((d) => d.index === i)?.plan.slots.map((x) => x.catalogueId) ?? [];
+    const slotKitOf = inUse === null ? null : await slotKits(store, p.id);
+    const exerciseName = (id: string): string => byId.get(id)?.name ?? 'Exercise';
     // Editing an open builder plan writes new versions of it; anything else is a new plan until Build.
     const draft = editing && owned !== null && planIsOpen(owned, at.utc) ? owned : null;
     const v = draft === null ? null : currentPlanVersion(draft);
@@ -226,7 +302,7 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
       painHeld,
       lifts,
       needsCheck: pbNeedsLiftCheck(lifts(answers)),
-      build: (a) => buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, factsOf, painHeld, nowMs }),
+      build: (a) => buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, factsOf, painHeld, nowMs, keep }),
       expect: (a) =>
         pbExpect(
           a,
@@ -237,7 +313,38 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
         ),
       prefSuggestion: (q) => pbPrefSuggestion(q, historyOf),
       equipmentVersion: deriveId(`gym-items:${stableStringify(equipment.map((x) => [x.id, x.version]))}`),
+      running:
+        inUse === null || eb === null || block === null || slotKitOf === null || fromAnswers === null
+          ? null
+          : {
+              planId: inUse.id,
+              planVersion: inUse.version,
+              week: eb.week,
+              weeksNow: fromAnswers.weeks,
+              preview: (a, rejected, scope) => {
+                const next = editNext(inUse.id, a);
+                const pv = pbEditPreview({ plan: inUse, weeksNow: fromAnswers.weeks, weeks: a.weeks, next: next.days, block: eb, rejected, scope, nameOf: exerciseName });
+                const views = weekViews({ plan: inUse, answers: a, block, weekDays: pv.weekDays, kitOf: slotKitOf, nameOf: exerciseName, startReps: next.startReps });
+                const answersChanged = stableStringify(a) !== stableStringify(fromAnswers);
+                return {
+                  items: pv.items.map((it) => ({ id: it.id, text: it.text, accepted: !rejected.has(it.id) })),
+                  accepted: pv.accepted,
+                  counted: `${String(pv.accepted)} of ${String(pv.items.length)}`,
+                  views,
+                  changed: pv.changed,
+                  tooShort: pv.tooShort,
+                  canApply: !pv.tooShort && (pv.changed.length > 0 || answersChanged) && pv.weekDays.slice(eb.week - 1).some((_, k) => pbScopeHas(scope, eb.week + k)),
+                };
+              },
+            },
     };
+
+    /** The rebuild for new answers as the plan's own days (its ID seeds the slot keys, so kept exercises match). */
+    function editNext(planId: string, a: PlanBuilderAnswers): { days: PlanDayDraft[]; startReps: Record<string, number> } {
+      const built = buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, factsOf, painHeld, nowMs, keep });
+      const v = pbPlanVersion({ plan: built, answers: a, kitOf, gymId: gym?.id ?? null, equipmentVersion: 'edit', opId: 'edit', at, planId });
+      return { days: v.days, startReps: pbStartReps(built, planId) };
+    }
   }
 
   return {
@@ -283,6 +390,49 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     /** `Plan applied · Undo`: the setup before Apply back, exactly (rule 2, 5). */
     undo(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
       return deps.plans.undo(req);
+    },
+
+    /**
+     * (Ben, 26 Oct) `Apply changes` on the plan in use: the accepted changes to the chosen weeks, as one versioned,
+     * idempotent write with the plan's workouts made to match (rule 5). The block week is read again first, and the
+     * changes are composed against the plan as stored inside the write, so a newer plan (or a workout finished since
+     * the read moved the week) is refused, never applied to it.
+     */
+    async applyEdit(s: PlanBuilderSession, answers: PlanBuilderAnswers, rejected: ReadonlySet<string>, scope: PbEditScope, opId: string): Promise<PlanEditOutcome> {
+      const p = await deps.profile();
+      const run = s.running;
+      if (p === null || run === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const at = deps.now();
+      const store = deps.store();
+      const plan = await repo().get(run.planId).catch(() => null);
+      if (plan === null || plan.ownerId !== p.id) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      if (plan.opIds.includes(opId)) return { ok: true, planId: plan.id, version: plan.version };
+      const eb = editBlockOf(await readPlanBlock(store, p.id, plan, toMs(at.utc), p.timezone));
+      if (eb === null || eb.week !== run.week) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+      if (answers.weeks < eb.week) return { ok: false, reason: 'too_short', message: PB_EDIT_COPY.tooShort(eb.week) };
+      // The session's own build (it keeps each day's exercises as read): what the preview showed.
+      const built = s.build(answers);
+      const v = pbPlanVersion({ plan: built, answers, kitOf: s.kitOf, gymId: s.gym?.id ?? null, equipmentVersion: s.equipmentVersion, opId, at, planId: plan.id });
+      const startReps = pbStartReps(built, plan.id);
+      const r = await repo()
+        .edit(p.id, plan.id, (current, routines) => {
+          const weeksNow = pbAppliedBuilder(current)?.builder.answers.weeks ?? run.weeksNow;
+          const pv = pbEditPreview({ plan: current, weeksNow, weeks: answers.weeks, next: v.days, block: eb, rejected, scope, nameOf: s.nameOf });
+          return applyPlanEdit(current, { expectedVersion: run.planVersion, opId, at, answers, gymId: s.gym?.id ?? null, equipmentVersion: s.equipmentVersion, weekDays: pv.weekDays, startReps, block: eb, routines });
+        })
+        .catch(() => null);
+      return editOutcome(r);
+    },
+
+    /** `Plan updated · Undo`: the plan and its workouts exactly as before the edit, only from the version it left (rule 5). */
+    async undoEdit(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanEditOutcome> {
+      const p = await deps.profile();
+      if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      const at = deps.now();
+      const r = await repo()
+        .edit(p.id, req.planId, (current, routines) => undoPlanEdit(current, { expectedVersion: req.expectedVersion, opId: req.opId, at, routines }))
+        .catch(() => null);
+      return editOutcome(r);
     },
 
     /** The plan ID a first Build with `opId` writes (so a retried tap finds it). */

@@ -138,7 +138,8 @@ export type TabParams = {
   /** `toast`: a one-off message after returning from the check-in (e.g. Skip workout), or Your workout's Start with a workout in progress. */
   /** `startEmpty`: `Empty workout` on the Workouts list, once per nonce (Today's own start, with its check-in gate). */
   /** `planApplied`: back from the plan builder's Apply: `Plan applied · Undo` once per `key` (Undo at that plan version, rule 5). */
-  Today: { toast?: string; startEmpty?: string; planApplied?: PlanAppliedToastParam } | undefined;
+  /** `pickDay` (Ben, 26 Oct): Your plan's `Do today ›`: that plan day on Today's card, today only (`nonce`: once). */
+  Today: { toast?: string; startEmpty?: string; planApplied?: PlanAppliedToastParam; pickDay?: { key: string; nonce: string } } | undefined;
   Library: NavigatorScreenParams<LibraryStackParams> | undefined;
   Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
@@ -207,9 +208,12 @@ export type RootStackParams = {
    */
   PainFlag: { flagId: string; sessionId?: string; sessionExerciseId?: string };
   AddGym: undefined;
-  /** `Start from a past workout` list. */
-  PastWorkouts: undefined;
-  /** Recently deleted (delete-workouts §2.5): from Past workouts' footer and Data & backup. */
+  /**
+   * (Ben, 26 Oct) History: workouts and activities by week (docs/design/history.md); repeat, select and delete, Save
+   * to Workouts. From Today's `All history ›`, Library › Workouts and Progress › Calendar. Was `PastWorkouts`.
+   */
+  History: undefined;
+  /** Recently deleted (delete-workouts §2.5): from History's footer and Data & backup. */
   RecentlyDeleted: undefined;
   /** Repeat a finished workout (routines.md §2.4). */
   Repeat: { sessionId: string };
@@ -270,6 +274,8 @@ export interface PlanAppliedToastParam {
   key: string;
   planId: string;
   version: number;
+  /** (Ben, 26 Oct) `Apply changes` on the plan in use: Undo puts the plan as it was before the edit (not Apply's Undo). */
+  edit?: true;
 }
 
 /** A library toast handed back to the screen below (`key`: shown once). */

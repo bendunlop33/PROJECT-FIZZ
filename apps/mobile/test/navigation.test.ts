@@ -160,11 +160,11 @@ describe('correction sheet back to the workout (review coach-fallback B1)', () =
 
 describe('starting from a sheet or a pushed screen', () => {
   const router = StackRouter({});
-  const routeNames = ['Tabs', 'Workout', 'CheckIn', 'Summary', 'PastWorkouts', 'Repeat'];
+  const routeNames = ['Tabs', 'Workout', 'CheckIn', 'Summary', 'History', 'Repeat'];
   const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
   it('check-in from Repeat → Start leaves exactly [Tabs, Workout]', () => {
     let s = router.getInitialState(options);
-    for (const name of ['PastWorkouts', 'Repeat', 'CheckIn']) {
+    for (const name of ['History', 'Repeat', 'CheckIn']) {
       const next = router.getStateForAction(s, { type: 'NAVIGATE', payload: { name, params: {} } }, options);
       if (!next) throw new Error(name);
       s = next as typeof s;

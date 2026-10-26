@@ -2307,6 +2307,7 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs:
   const prior = state.processedOps[cmd.targetOpId];
   if (!prior) return fail('operation_not_found', 'Nothing to undo.');
   if (prior.commandType === 'fit_today_to_time') return undoFitToday(state, cmd, nowMs);
+  if (prior.commandType === 'tick_all_planned') return undoTickAll(state, cmd, nowMs);
   const events: SessionEvent[] = [];
   switch (prior.commandType) {
     case 'delete_set':
@@ -2914,6 +2915,78 @@ function undoFitToday(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs:
   }, nowMs);
 }
 
+/**
+ * The values `Tick all as planned` logs for a set (Ben, 26 Oct; Q-PL2): its planned load (bodyweight as
+ * bodyweight; an `added` row with nothing planned adds nothing), the target reps (the low end of a range, as
+ * Progress counts planned reps), the planned time or distance; never an effort. Null when the plan doesn't say
+ * enough to log the set (Ben ticks it himself).
+ */
+export function plannedLogValues(set: WorkoutSet, ex: SessionExercise): SetValues | null {
+  const p = set.planned;
+  let load = p.load;
+  if (ex.loadConvention === 'bodyweight') load = { value: 0, unit: ex.unit, convention: 'bodyweight' };
+  else if (ex.loadConvention === 'added' && (load === null || load.convention === 'bodyweight')) load = { value: 0, unit: ex.unit, convention: 'added' };
+  const values: SetValues = { load, reps: p.reps?.min ?? null, durationS: p.durationS, rpe: null, rir: null, ...(p.distanceM == null ? {} : { distanceM: p.distanceM }) };
+  if (ex.measurement === 'reps' && (values.reps === null || values.reps < 1)) return null;
+  if ((ex.measurement === 'duration' && (values.durationS === null || values.durationS < 1)) || (ex.measurement === 'cardio' && !cardioHasValue(values))) return null;
+  return values;
+}
+
+/**
+ * The sets `Tick all as planned` would log, in workout order, with their values: every planned set not done yet
+ * (not one Ben added, not one taken out before the start, not the other side of a single-side log) whose plan is
+ * complete and fits the row (`validateValues`). Empty unless this is a past log started from a saved workout or a
+ * plan day (never a live workout).
+ */
+export function tickAllPlannedSets(state: SessionAggregate): { setId: string; values: SetValues }[] {
+  const { session } = state;
+  if (session.status !== 'active' || !isPastLog(session) || (session.routineId === null && session.planDay === undefined)) return [];
+  const removed = new Set(state.exercises.filter((e) => e.removed !== undefined).map((e) => e.id));
+  const out: { setId: string; values: SetValues }[] = [];
+  for (const id of buildExecutionOrder(state.exercises, state.sets)) {
+    const set = state.sets.find((x) => x.id === id);
+    if (set?.status !== 'pending' || set.pairedWithSetId !== null || set.planned.addedInWorkout === true || set.skippedBy !== undefined || removed.has(set.sessionExerciseId)) continue;
+    const ex = exerciseOf(state, set);
+    if (ex === undefined) continue;
+    const values = plannedLogValues(set, ex);
+    if (values === null || validateValues(values, ex, state) !== null) continue;
+    out.push({ setId: set.id, values });
+  }
+  return out;
+}
+
+/** `tick_all_planned`: every set `tickAllPlannedSets` lists, logged in order as its own step; one version bump. */
+function handleTickAllPlanned(state: SessionAggregate, cmd: CommandOf<'tick_all_planned'>, nowMs: number): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Check it and try again.');
+  if (state.session.status !== 'active') return fail('session_finished', 'This workout is finished.');
+  if (!isPastLog(state.session)) return fail('invalid_values', 'Only a past workout can be ticked all at once.');
+  const plan = tickAllPlannedSets(state);
+  if (plan.length === 0) return fail('invalid_values', 'Nothing planned to tick.');
+  return runAll(state, (_s, i) => {
+    const step = plan[i];
+    if (step === undefined) return null;
+    const opId = coachEditStepOpId(cmd.opId, i);
+    return { type: 'log_set', at: cmd.at, opId, setId: step.setId, values: step.values, restTimerId: deriveId(`tick-all-rest:${opId}`) };
+  }, nowMs);
+}
+
+/** Undo of `Tick all as planned`: each set it ticked goes back to not done, last first; refused if any changed since. */
+function undoTickAll(state: SessionAggregate, cmd: CommandOf<'undo_op'>, nowMs: number): Handled {
+  const steps = editSteps(state, cmd.targetOpId).reverse();
+  const sets = steps.map((step) => {
+    const entry = state.audit.find((e) => e.opId === step.opId && e.kind === 'logged');
+    const set = entry === undefined ? undefined : state.sets.find((x) => x.id === entry.setId);
+    return set !== undefined && set.status === 'completed' && set.completedByOpId === step.opId && set.version === entry?.after?.version ? set : null;
+  });
+  if (sets.length === 0 || sets.some((x) => x === null)) return fail('stale_version', STALE_UNDO);
+  const r = runAll(state, (_s, i) => {
+    const set = sets[i];
+    return set == null ? null : { type: 'undo_log', at: cmd.at, opId: coachEditStepOpId(cmd.opId, i), setId: set.id, expectedSetVersion: set.version };
+  }, nowMs);
+  // A set logged since (not by this tick) means these aren't the latest any more: out of date, never half undone.
+  return r.ok ? r : fail('stale_version', STALE_UNDO);
+}
+
 /** `revert_coach_edit`: each step's own Undo, last step first, all or none. */
 function handleRevertCoachEdit(state: SessionAggregate, cmd: CommandOf<'revert_coach_edit'>, nowMs: number): Handled {
   const prior = state.processedOps[cmd.targetOpId];
@@ -3018,6 +3091,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleReorderSets(state, command);
     case 'add_warmup':
       return handleAddWarmup(state, command);
+    case 'tick_all_planned':
+      return handleTickAllPlanned(state, command, nowMs);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -3144,6 +3219,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'fit_today_to_time':
       // Any step no longer in place (undone, or overtaken).
       return command.steps.some((step) => isSuperseded(state, { ...step, at: command.at }));
+    case 'tick_all_planned':
+      // A set it ticked was unticked, corrected or deleted since (or the whole tick was undone).
+      return editSteps(state, command.opId).some((step) => !state.sets.some((x) => x.status === 'completed' && x.completedByOpId === step.opId));
     case 'undo_op':
     case 'revert_target_adjustment':
     case 'revert_coach_edit':

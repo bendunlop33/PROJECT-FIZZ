@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 
-import { nothingLoggedText, weekdayDayMonth, type ActivityRow, type CalendarSessionRow } from '@fizz/domain';
+import { HISTORY_COPY, nothingLoggedText, weekdayDayMonth, type ActivityRow, type CalendarSessionRow } from '@fizz/domain';
 import type { Activity } from '@fizz/schemas';
 
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
@@ -176,6 +176,17 @@ export function CalendarView({ month, onMonth, onActivitySaved, active = true }:
           )}
         </View>
       )}
+      {/* (Ben, 26 Oct) The same days as a list, by week: History. */}
+      <View style={{ alignSelf: 'flex-start' }}>
+        <TextButton
+          label={HISTORY_COPY.allHistory}
+          accessibilityLabel={HISTORY_COPY.allHistoryLabel}
+          tone="secondary"
+          onPress={() => {
+            navigation.navigate('History');
+          }}
+        />
+      </View>
       <ActivitySheet
         visible={editing !== null}
         activity={editing}

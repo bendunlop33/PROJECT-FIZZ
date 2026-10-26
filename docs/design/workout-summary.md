@@ -1,5 +1,7 @@
 # Workout summary
 
+> **Revision (Ben, 26 Oct).** `Edit times` (and the Finish sheet): once Started has moved, chips `Move whole workout` (default) / `Only the start`; the second keeps the sets where they are (start at or before the first set, at most a day back), `Times changed` [Undo] as before. Not on a past log. See log-past-workout.md (Ben, 26 Oct).
+
 > **Revision (Ben, 25 Oct).** `Edit times`: Started takes any past date and time and moves the whole workout (sets, pauses, rests) with it; Ended can then be set on its own; `Times changed` [Undo] after Save ([log-past-workout.md](log-past-workout.md) §2). A workout dated before newer ones is read as of its date: compared with the one before it, records and highlight from earlier workouts only, no `Next time` row for an exercise done again since (§4 there).
 
 > **Revision (Ben, 23 Oct).** (1) **The built-in rule's stall reset is an offer:** its `Next time` row holds (`Same target: 60 kg × 6–8`) with `Reset to 52.5 kg × 6–8?` `Skip` / `Apply`; applied: `Target 52.5 kg × 6–8` and `Undo`; skipped: no buttons (coach-adjustments revision 23 Oct). (2) **An unasked extra set from the coach** is a suggestion row with `Skip` / `Apply`, never dropped. Suggestion buttons read `Skip` / `Apply` (were `Not now`). (3) **A main lift Ben swapped** gets its own row before `Keep for next time?`: `Make Incline barbell press the main lift for Chest?` `Skip` / `Apply`, then `Incline barbell press · main lift for Chest` with `Undo` (workout-builder-v3 §2.8).

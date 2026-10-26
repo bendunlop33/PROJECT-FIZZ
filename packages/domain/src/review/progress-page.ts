@@ -526,6 +526,7 @@ export function liftsView(input: WeeklyReviewInput, opts: LiftsOptions): LiftsVi
   const sunday = addDays(input.monday, 6);
   const all = [...input.sessions].filter((s) => s.date <= sunday).sort((a, b) => a.startedMs - b.startedMs);
   const pool = withEarlier(all, opts.earlier);
+  const importedIds = new Set(pool.flatMap((s) => (s.imported === true ? [s.sessionId] : [])));
   const targets = new Map(input.liftTargets.map((t) => [t.exerciseId, t]));
   const ids = [...new Set(input.lifts)];
   const views: Omit<LiftView, 'colour' | 'accessory'>[] = [];
@@ -568,7 +569,8 @@ export function liftsView(input: WeeklyReviewInput, opts: LiftsOptions): LiftsVi
       const rows = liftRows(pool, id, newest);
       for (const p of points) {
         const at = topAt.get(p.week);
-        if (p.estimate || at === undefined) continue;
+        // An imported workout never claims a best (ADR 0016; Ben, 26 Oct: one rule for the ring, Summary and records).
+        if (p.estimate || at === undefined || importedIds.has(p.sessionId)) continue;
         const best = bestSets(rows.filter((x) => x.at < at), t, r.reps ?? 1, unit).real?.load;
         if (best !== undefined && (lowerIsBetter ? p.value < best : p.value > best)) {
           p.pb = true;
@@ -786,7 +788,7 @@ export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOption
   const pool = withEarlier([...input.sessions].sort((a, b) => a.startedMs - b.startedMs), opts.earlier);
   const at = pool.findIndex((s) => s.sessionId === sessionId);
   const session = pool[at];
-  if (session === undefined) return [];
+  if (session === undefined || session.imported === true) return [];
   const upTo = pool.slice(0, at + 1);
   const earlier = pool.slice(0, at);
   const targets = new Map(input.liftTargets.map((t) => [t.exerciseId, t]));
@@ -890,11 +892,81 @@ function liveNewBests(ctx: LiveBestsContext, aggregate: SessionAggregate): Map<s
   return out;
 }
 
+/** One `New best` (`sessionNewBests`) of one workout: what Progress's `RECORDS` lists and the monthly recap show. */
+export interface NewBestClaim {
+  sessionId: string;
+  exerciseId: string;
+  /** The workout's local date. */
+  date: string;
+  startedMs: number;
+  /** In `unit`, rounded as the Summary shows it. */
+  load: number;
+  unit: WeightUnit;
+  reps: number;
+  convention: LoadConvention;
+  /** The Summary's own line: `New best · Bench press 102.5 × 8`. */
+  view: NewBestView;
+}
+
+/** The tracked lifts and every `New best` they have: Progress's records (Ben, 26 Oct: one definition of best). */
+export interface NewBestRecords {
+  /** The lifts judged (tracked, history readable): another lift has no records. */
+  tracked: ReadonlySet<string>;
+  /** Oldest first. */
+  claims: readonly NewBestClaim[];
+}
+
+/**
+ * (Ben, 26 Oct; one definition of best) Every `New best` in history: for each workout, exactly what its Summary's
+ * `sessionNewBests` says, so Progress's `RECORDS` (Lifts, Exercise detail, Training), the monthly recap's count,
+ * the PB ring and the table's PB mark always agree. Tracked lifts only, at their tracked reps, real sets only (an
+ * estimate never is one), the same machine for stacks and plate-loaded, a lift's first top set never one, an
+ * imported workout never one, a lift whose older history couldn't be read none. One pass per lift with running
+ * bests (the same answers as asking `sessionNewBests` for every workout; property-tested). Pure.
+ */
+export function newBestClaims(input: WeeklyReviewInput, opts: Pick<LiftsOptions, 'planReps' | 'pickedReps' | 'nameOf' | 'earlier' | 'historyUnknown'>): NewBestRecords {
+  const unit = input.unit;
+  const pool = withEarlier([...input.sessions].sort((a, b) => a.startedMs - b.startedMs), opts.earlier);
+  const targets = new Map(input.liftTargets.map((t) => [t.exerciseId, t]));
+  const tracked = new Set<string>();
+  const claims: NewBestClaim[] = [];
+  for (const id of new Set(input.lifts)) {
+    if (opts.historyUnknown?.has(id) === true) continue;
+    tracked.add(id);
+    // Terms and rows only read this lift's rows, so the workouts without it change nothing.
+    const mine = pool.filter((s) => s.exercises.some((e) => e.exerciseId === id));
+    /** The best real top set before workout `upTo` for one set of terms, extended as the pass moves on. */
+    const running = new Map<string, { upTo: number; best: number | null }>();
+    for (let i = 0; i < mine.length; i += 1) {
+      const session = mine[i] as ReviewSession;
+      if (session.imported === true) continue;
+      const t = liftTermsOf(mine.slice(0, i + 1), id, targets.get(id) ?? null, opts);
+      if (!t.chartable || t.tracked.reps === null || t.convention === null) continue;
+      const reps = t.tracked.reps;
+      const now = bestSets(liftRows([session], id, t.newest), t, reps, unit).real;
+      if (now === null) continue;
+      const key = `${t.convention}|${String(t.lowerIsBetter)}|${String(reps)}|${t.newest?.machine === true ? `m:${t.newest.equipmentId ?? '-'}` : '*'}`;
+      const r = running.get(key) ?? { upTo: 0, best: null };
+      if (r.upTo < i) {
+        const more = bestSets(liftRows(mine.slice(r.upTo, i), id, t.newest), t, reps, unit).real?.load ?? null;
+        if (more !== null && (r.best === null || (t.lowerIsBetter ? more < r.best : more > r.best))) r.best = more;
+        r.upTo = i;
+      }
+      running.set(key, r);
+      const before = r.best;
+      if (before === null || !(t.lowerIsBetter ? now.load < before : now.load > before)) continue;
+      claims.push({ sessionId: session.sessionId, exerciseId: id, date: session.date, startedMs: session.startedMs, load: now.load, unit, reps: now.reps, convention: t.convention, view: newBestView(id, opts.nameOf(id), now.load, now.reps, t.convention, unit) });
+    }
+  }
+  claims.sort((a, b) => a.startedMs - b.startedMs || a.sessionId.localeCompare(b.sessionId) || [...tracked].indexOf(a.exerciseId) - [...tracked].indexOf(b.exerciseId));
+  return { tracked, claims };
+}
+
 /**
  * Older history of one lift (`listExerciseHistory`) as review workouts, for PBs beyond the loaded window. Only
  * what a PB needs: the sets, their load, reps and whether they count, and the machine.
  */
-export function liftHistorySessions(exerciseId: string, history: readonly { sessionId: string; performedAtUtc: string; equipmentId: string | null; tz?: string; sets: readonly { setType: SetType; load: ReviewSession['exercises'][number]['sets'][number]['load']; reps: number | null; exclusions?: readonly SetExclusion[] }[] }[], tz: string): ReviewSession[] {
+export function liftHistorySessions(exerciseId: string, history: readonly { sessionId: string; performedAtUtc: string; equipmentId: string | null; tz?: string; imported?: boolean; sets: readonly { setType: SetType; load: ReviewSession['exercises'][number]['sets'][number]['load']; reps: number | null; exclusions?: readonly SetExclusion[] }[] }[], tz: string): ReviewSession[] {
   return history.map((h) => {
     const ms = toMs(h.performedAtUtc);
     return {
@@ -908,6 +980,7 @@ export function liftHistorySessions(exerciseId: string, history: readonly { sess
       feel: null,
       plannedReps: null,
       doneReps: 0,
+      ...(h.imported === true ? { imported: true as const } : {}),
       exercises: [{ exerciseId, name: '', equipmentKind: null, equipmentId: h.equipmentId, plannedWorking: 0, sets: h.sets.map((x) => ({ setType: x.setType, load: x.load, reps: x.reps, rpe: null, targetRpe: null, counts: isSetCountable(x, 'record') })) }],
     };
   });

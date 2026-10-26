@@ -185,8 +185,17 @@ describe('one exercise-progress screen (Ben, 26 Oct): Lifts and Exercise detail 
         catalogueExercises: () => [],
         dispatch: () => Promise.reject(new Error('unused')),
         slicer: () => () => Promise.resolve(),
+        // (Ben, 26 Oct) Records are the tracked lifts' New bests: bench tracked, its newest workout's set a best.
+        newBests: () => Promise.resolve(benchBests()),
       });
       const bench = HISTORY_EXERCISES[0]?.id ?? '';
+      const benchBests = () => {
+        const last = [...history].reverse().find((x) => x.exercises.some((e) => e.exerciseId === bench));
+        const set = last?.sets.find((x) => x.status === 'completed' && x.setType !== 'warmup' && x.actual?.load != null && x.actual.reps != null && last.exercises.find((e) => e.id === x.sessionExerciseId)?.exerciseId === bench);
+        const load = set?.actual?.load;
+        if (last === undefined || set === undefined || load == null) throw new Error('no bench set');
+        return { tracked: new Set([bench]), claims: [{ sessionId: last.session.id, exerciseId: bench, date: last.session.startedAt.utc.slice(0, 10), startedMs: Date.parse(last.session.startedAt.utc), load: load.value, unit: load.unit, reps: set.actual?.reps ?? 0, convention: load.convention, view: { exerciseId: bench, text: 'New best', accessibilityLabel: 'New best' } }] };
+      };
       const tab = await svc.exerciseTab({ exerciseId: bench, period: '6m' });
       const extras = tab?.extras;
       if (!extras || !tab.view) throw new Error('no extras');
@@ -195,6 +204,7 @@ describe('one exercise-progress screen (Ben, 26 Oct): Lifts and Exercise detail 
       expect(extras.repTable?.rows.length).toBeGreaterThan(0);
       for (const r of extras.repTable?.rows ?? []) if (r.sessionId !== null) expect(ids.has(r.sessionId)).toBe(true);
       expect(extras.records).not.toBeNull();
+      expect(extras.records?.items.map((r) => r.sessionId)).toEqual([benchBests().claims[0]?.sessionId]);
       for (const r of extras.records?.items ?? []) expect(ids.has(r.sessionId)).toBe(true);
       expect(extras.pain).toBeNull();
       // Every chart point is a workout (a tap opens it).
@@ -283,6 +293,20 @@ describe('monthly recap (Ben, 26 Oct): facts only, offline, dismissible, Your da
     expect(card.view.lifts[0]?.text.replace(/\u00a0/g, ' ')).toBe('70 × 5 → 80 × 5');
     expect(card.view.lifts[0]?.sessionId).toBe(october[2]);
     for (const r of card.view.records) expect(october).toContain(r.sessionId);
+    // (Ben, 26 Oct; one definition of best) The recap's records are exactly the month's Summary `New best`s, and
+    // the same rows Training's RECORDS and the exercise screen list.
+    const summaryBests = (await Promise.all(october.map(async (id) => ((await s.reviews.sessionBests(id)).length > 0 ? [id] : [])))).flat();
+    expect(card.view.records.map((r) => r.sessionId).sort()).toEqual([...summaryBests].sort());
+    expect(card.view.records).toHaveLength(3);
+    expect(card.view.line.replace(/\u00a0/g, ' ')).toMatch(/· 3 records$/);
+    const home = await s.progress.home({ range: { from: '2026-10-01', to: '2026-10-31' } });
+    const homeRecords = home?.view.dataState === 'normal' ? home.view.records.items.map((r) => [r.sessionId, r.value]) : [];
+    expect(homeRecords).toEqual(card.view.records.map((r) => [r.sessionId, r.text]));
+    const benchId = (await s.progress.exercises())?.view.rows.find((r) => r.name === 'Bench press')?.exerciseId ?? '';
+    const detail = (await s.progress.exerciseDetail({ exerciseId: benchId }))?.view;
+    expect(detail?.records?.items.filter((r) => october.includes(r.sessionId)).map((r) => [r.sessionId, r.value])).toEqual(homeRecords);
+    const ring = (await s.reviews.progress())?.lifts.lifts.find((l) => l.exerciseId === benchId)?.points.filter((p) => p.pb).map((p) => p.sessionId) ?? [];
+    for (const id of ring) expect(summaryBests).toContain(id);
     expect(JSON.stringify(card.view)).not.toMatch(/≈|score|recovery|readiness/i);
     // Answered from memory while nothing is written.
     expect(await s.progress.recap()).toBe(card);

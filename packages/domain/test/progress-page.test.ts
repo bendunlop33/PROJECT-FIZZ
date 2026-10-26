@@ -23,6 +23,7 @@ import {
   percentOfPlan,
   planDayLetters,
   sessionNewBests,
+  newBestClaims,
   liftHistorySessions,
   weeksOnPlan,
   thisWeekView,
@@ -486,6 +487,39 @@ describe('PBs: a real top set beyond every earlier real one at the tracked reps 
     // Older history beyond the window sets the bar too.
     const older = liftHistorySessions(BENCH, [{ sessionId: 'old', performedAtUtc: '2025-03-01T17:00:00.000Z', equipmentId: null, sets: [{ setType: 'working', load: kg(102.5), reps: 6 }] }], TZ);
     expect(sessionNewBests(inp, opts({ earlier: older }), b.sessionId).map((x) => x.exerciseId)).toEqual([DB_PRESS]);
+  });
+
+  it('(Ben, 26 Oct) an imported workout never claims a best (no ring, no Summary line, no record) but sets the bar', () => {
+    const a = sess('2026-10-05', [{ exerciseId: BENCH, sets: [work(kg(95), 6)] }]);
+    const imp = sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(105), 6)] }], { imported: true });
+    const c = sess('2026-10-14', [{ exerciseId: BENCH, sets: [work(kg(102.5), 6)] }]);
+    const inp = input({ sessions: [a, imp, c], lifts: [BENCH] });
+    expect(sessionNewBests(inp, opts(), imp.sessionId)).toEqual([]);
+    expect(sessionNewBests(inp, opts(), c.sessionId)).toEqual([]);
+    expect(liftsView(inp, opts()).lifts[0]?.points.some((p) => p.pb)).toBe(false);
+    expect(newBestClaims(inp, opts()).claims).toEqual([]);
+    // Imported history read for the lift keeps the mark.
+    expect(liftHistorySessions(BENCH, [{ sessionId: 'x', performedAtUtc: '2025-03-01T17:00:00.000Z', equipmentId: null, imported: true, sets: [] }], TZ)[0]?.imported).toBe(true);
+  });
+
+  it('(Ben, 26 Oct) one definition of best: every PB ring, every Summary `New best` and every record are the same workouts and sets', () => {
+    const A = id(710);
+    const sessions = [
+      ...series(BENCH, [work(kg(95), 6), work(kg(97.5), 6), work(kg(97.5), 8), work(kg(102.5), 4), work(kg(100), 6), null, work(kg(105), 6), work(kg(100), 6)]),
+      ...series(ROW, [work(kg(60, 'stack'), 8), null, work(kg(65, 'stack'), 8), work(kg(62.5, 'stack'), 8), null, work(kg(70, 'stack'), 8), null, null], { equipmentId: A, equipmentKind: 'weight_stack' }),
+      ...series(PULLUP, [work(kg(30, 'assistance'), 8), work(kg(25, 'assistance'), 8), work(kg(27.5, 'assistance'), 8), null, null, null, null, null]),
+    ];
+    const inp = input({ sessions, lifts: [BENCH, ROW, PULLUP] });
+    const claims = newBestClaims(inp, opts());
+    const summaries = sessions.flatMap((s) => sessionNewBests(inp, opts(), s.sessionId).map((b) => `${s.sessionId}|${b.exerciseId}|${b.text}`)).sort();
+    expect(claims.claims.map((c) => `${c.sessionId}|${c.exerciseId}|${c.view.text}`).sort()).toEqual(summaries);
+    // Every ringed point is a record of that workout, with the same set.
+    const rings = liftsView(inp, opts()).lifts.flatMap((l) => l.points.filter((p) => p.pb).map((p) => `${p.sessionId}|${l.exerciseId}|${p.detail.replaceAll(' ', ' ')}`));
+    const recorded = claims.claims.map((c) => `${c.sessionId}|${c.exerciseId}|${String(c.load)} × ${String(c.reps)}`);
+    expect(rings.length).toBeGreaterThan(2);
+    for (const r of rings) expect(recorded).toContain(r);
+    expect([...claims.tracked]).toEqual([BENCH, ROW, PULLUP]);
+    expect(newBestClaims(inp, opts({ historyUnknown: new Set([ROW]) })).claims.some((c) => c.exerciseId === ROW)).toBe(false);
   });
 });
 

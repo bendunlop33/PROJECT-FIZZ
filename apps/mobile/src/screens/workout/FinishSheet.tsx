@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { pastLogDefaultEnd, timelineOf, toIso, toMs } from '@fizz/domain';
+import { pastLogDefaultEnd, startMoveWrite, timelineOf, toIso, toMs, workoutTimeBounds, type StartMove } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { nowMs as clockNow } from '../../clock';
@@ -57,6 +57,8 @@ export function FinishSheet({
   const endMs = times.endMs;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // (Ben, 26 Oct) A moved Started: the whole workout (default) or only the start.
+  const [startMove, setStartMove] = useState<StartMove>('whole');
   const tz = aggregate.session.startedAt.tz;
 
   // Each opening is a new intent: fresh opId, fresh default time.
@@ -67,6 +69,7 @@ export function FinishSheet({
     setTimes({ startMs: toMs(aggregate.session.startedAt.utc), endMs: pastLog ? pastLogDefaultEnd(timeline.startMs, timeline.lastSetMs, t) : finishModel(aggregate, t).defaultEndMs });
     setOpId(newUuid());
     setError(null);
+    setStartMove('whole');
   }, [visible, aggregate]);
 
   async function finish() {
@@ -75,15 +78,18 @@ export function FinishSheet({
     setError(null);
     const at = services.now();
     const moved = times.startMs !== recordedStartMs;
-    const chosenIsNow = !moved && !pastLog && Math.abs(endMs - now) < 60_000;
+    // `Only the start` (Ben, 26 Oct): the sets stay, so the end is Ben's own as on any finish.
+    const whole = moved && (pastLog || startMove === 'whole');
+    const chosenIsNow = !whole && !pastLog && Math.abs(endMs - now) < 60_000;
     const r = await services.workout.dispatch(aggregate.session.id, {
       type: 'finish',
       at,
       opId,
       expectedVersion: aggregate.session.version,
       endedAt: chosenIsNow ? null : { utc: toIso(endMs), tz: moved || pastLog ? tz : at.tz },
-      // The workout's own zone (review N6); only when Ben moved it, and then the whole workout moves (Ben, 25 Oct).
-      ...(moved ? { startedAt: { utc: toIso(times.startMs), tz }, shift: true as const } : {}),
+      // The workout's own zone (review N6); only when Ben moved it. The whole workout moves (Ben, 25 Oct) unless he
+      // chose `Only the start` (Ben, 26 Oct; a past log always moves whole).
+      ...(moved ? { startedAt: { utc: toIso(times.startMs), tz }, ...startMoveWrite(pastLog ? 'whole' : startMove, true) } : {}),
     });
     setBusy(false);
     if (!r.ok) {
@@ -122,7 +128,15 @@ export function FinishSheet({
           )}
           {!model.nothingLogged ? (
             <View style={{ gap: theme.space['2'] }}>
-              <WorkoutTimesRows times={times} shift={{ timeline, nowMs: now }} tz={tz} onChange={setTimes} endNow={pastLog ? null : now} endEstimate={pastLog ? defaultEnd(now) : model.forgotten ? model.defaultEndMs : null} />
+              <WorkoutTimesRows
+                times={times}
+                shift={{ timeline, nowMs: now }}
+                startMove={{ mode: startMove, onMode: setStartMove, fixed: workoutTimeBounds(aggregate, now), pastLog }}
+                tz={tz}
+                onChange={setTimes}
+                endNow={pastLog ? null : now}
+                endEstimate={pastLog ? defaultEnd(now) : model.forgotten ? model.defaultEndMs : null}
+              />
               {!pastLog && Math.abs(endMs - now) >= 60_000 ? (
                 <TextButton
                   label={`Use now (${formatTime(now, tz)})`}

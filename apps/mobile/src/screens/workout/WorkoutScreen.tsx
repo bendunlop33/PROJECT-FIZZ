@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
+import { canDropRound, canRemoveExercise, cardioTimeText, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -150,6 +150,8 @@ export function WorkoutScreen() {
   const [timesOpen, setTimesOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const renameOp = useRef(newUuid());
+  /** (Ben, 26 Oct) `Tick all as planned`: one operation per intent, so a retry is the same write. */
+  const tickAllOp = useRef(newUuid());
   const [renameAfter] = useState(() => createAfterDismiss());
   /** `Rest after` for one set (the open row's, or the set `Why?` names): its number, exercise, seconds and where they came from. */
   const [restEditor, setRestEditor] = useState<{ setId: string; stepName: string; exerciseName: string; seconds: number; sourceLabel: string } | null>(null);
@@ -783,6 +785,8 @@ export function WorkoutScreen() {
   }
   const loaded = data;
   const session = loaded.aggregate.session;
+  // (Ben, 26 Oct; Q-PL2) What `Tick all as planned` would tick: only in a past log from a saved workout or plan day.
+  const tickAll = tickAllPlannedSets(loaded.aggregate);
   const tz = session.startedAt.tz;
   const focus = view.focus;
   // F7 / F8: the set pager and the rest screen's blocks (domain views; nothing computed here).
@@ -836,6 +840,32 @@ export function WorkoutScreen() {
     addSet: (id) => void addSet(id),
     beforeEdit: closeCellEditors,
   };
+
+  /**
+   * (Ben, 26 Oct; Q-PL2) `Tick all as planned`: one versioned `tick_all_planned` (a retry is the same write), each
+   * set still editable after; `Undo` puts every set it ticked back to not done (refused once one changed since).
+   */
+  async function tickAllPlanned() {
+    const opId = tickAllOp.current;
+    const r = await run({ type: 'tick_all_planned', at: services.now(), opId, expectedVersion: loaded.aggregate.session.version });
+    if (!r.ok) {
+      showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message });
+      return;
+    }
+    tickAllOp.current = newUuid();
+    if (r.duplicate) return;
+    haptic('commit');
+    showToast({
+      text: tickAllDoneText(r.aggregate, opId),
+      action: 'Undo',
+      onAction: () => {
+        setToast(null);
+        void run({ type: 'undo_op', at: services.now(), opId: newUuid(), targetOpId: opId }).then((u) => {
+          if (!u.ok) showToast({ icon: 'info.circle', text: u.error.code === 'stale_version' ? 'Couldn’t undo: changed since' : `Couldn’t undo: ${u.error.message}` });
+        });
+      },
+    });
+  }
 
   /** Run one command; adopt the committed state; never throw. */
   async function run(command: SessionCommand): Promise<CommandOutcome> {
@@ -2850,6 +2880,12 @@ export function WorkoutScreen() {
           {alertsOff(permission, prefs.alertsAsk) ? <IconButton icon="bell.slash" tint="text.secondary" label={alertsOffLabel(permission)} onPress={openAlertSettings} /> : null}
           <IconButton icon="ellipsis.circle" label="Workout menu" onPress={topMenu} />
         </View>
+        {/* (Ben, 26 Oct; Q-PL2) A past log from a saved workout or plan day: every planned set done as planned, in one tap. */}
+        {tickAll.length > 0 ? (
+          <View style={{ flexDirection: 'row', paddingHorizontal: theme.space['4'] }}>
+            <TextButton label={TICK_ALL_LABEL} onPress={() => void tickAllPlanned()} />
+          </View>
+        ) : null}
       </View>
 
       {tableMode ? (

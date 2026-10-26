@@ -67,6 +67,7 @@ Credentials (ChatGPT sign-in, API keys) are in the Keychain, in neither domain, 
 | `gym-switch.md` | Mid-workout gym switch (card, Undo, switch back) and `snapPlanToGym`, the one function that fits any plan to a gym's equipment |
 | `rest-state.md` | Rest timer inside the workout: presets, adjust/skip, background behaviour, spoken cue modes and scripts |
 | `workout-summary.md` | Post-workout facts, comparisons, `Next time` targets (coach or built-in rule), `Keep for next time?` (D1), backup line |
+| `history.md` | **New (Ben, 26 Oct).** Today › Recent (last 14 days, workouts and activities) and History (Past workouts grown: by week, All · Workouts · Activities, Show more), keeping repeat, delete, Save to Workouts, Log a past workout |
 | `log-past-workout.md` | **New (Ben, 25 Oct).** `Log a past workout` (date, start, no clock) and free date/time editing: moving the start moves the whole workout, with Undo; ordering by workout date |
 | `lock-screen-and-alerts.md` | Lock-screen Live Activity, rest-end notifications, loud alerts (AlarmKit), speak-while-locked experiment, alert arbitration and Test rest alert |
 | `today.md` | *Superseded* by Today v2 (workout-builder-v3 §2.0). Kept for the states v2 keeps (Resume, stale workout, banners) |

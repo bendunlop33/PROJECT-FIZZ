@@ -1097,6 +1097,14 @@ export class SqliteSessions implements SessionRepository {
     });
   }
 
+  /** (Ben, 26 Oct) When the newest workout in history started before `beforeUtc`, or null: History's `Show more`. */
+  latestInHistoryStartBefore(ownerId: string, beforeUtc: string): Promise<string | null> {
+    return this.db.read(async (q) => {
+      const row = await q.getFirst<{ t: string | null }>(`SELECT max(started_at_utc) AS t FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND started_at_utc < ?`, [ownerId, beforeUtc]);
+      return row?.t ?? null;
+    });
+  }
+
   /** The most recently started finished session, if any, as history reads it. */
   latestFinished(ownerId: string): Promise<HistoryWorkout | null> {
     return this.db.read(async (q) => {

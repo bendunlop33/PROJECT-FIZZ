@@ -7,7 +7,6 @@ import {
   collectExerciseSeries,
   exerciseRecords,
   exerciseTrend,
-  leastAssistRecords,
   mondayOf,
   seriesKindLabel,
   TREND_MAX_POINTS,
@@ -20,6 +19,7 @@ import {
 } from '../src/index';
 import { at, kg, lb, values } from './fixtures';
 import { apply, BENCH, logCmd, setsFor, startFixture } from './session-fixture';
+import { bestsFor } from './new-best-fixture';
 
 /**
  * Review progress-B fixes: B1 (Latest and Change are sessions under weekly
@@ -166,41 +166,41 @@ describe('S1: assisted records; timed has no records section', () => {
   const asst = (d: string, l: number, reps = 8, over: Partial<ProgressSet> = {}) =>
     session(d, [row([set(kg(l, 'assistance'), reps, over)], { exerciseId: 'chin', exerciseName: 'Assisted pull-up', convention: 'assistance', equipmentKind: 'assisted_stack', equipmentId: 'as', equipmentName: 'Assist machine' })]);
 
-  it('five sessions from 30 to 15 kg of assistance: `Least assistance for 8+ reps` records, newest first', () => {
+  const chinBests = (sessions: ProgressSession[]) => bestsFor(sessions, ['chin'], { reps: { chin: 8 } });
+
+  it('five sessions from 30 to 15 kg of assistance: each with less assistance at 8 reps is a New best (Ben, 26 Oct)', () => {
     const sessions = [asst('2026-09-01', 30), asst('2026-09-04', 27.5), asst('2026-09-07', 25), asst('2026-09-10', 20), asst('2026-10-02', 15)];
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'chin', today: TODAY });
-    expect(v?.records?.items.map((r) => sp(`${r.label}  ${r.value} · ${r.date}`))).toEqual(['Least assistance for 8+ reps  15 kg · 2 Oct', 'Least assistance for 8+ reps  20 kg · 10 Sep']);
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'chin', today: TODAY, bests: chinBests(sessions) });
+    expect(v?.records?.items.map((r) => sp(`${r.label}  ${r.value} · ${r.date}`))).toEqual(['New best  Assist 15 kg × 8 · 2 Oct', 'New best  Assist 20 kg × 8 · 10 Sep', 'New best  Assist 25 kg × 8 · 7 Sep', 'New best  Assist 27.5 kg × 8 · 4 Sep']);
     expect(v?.records?.empty).toBeNull();
-    expect(v?.records?.items[0]?.words).toBe('Least assistance for 8 or more reps, 15 kilograms of assistance, 8 reps, 2 October.');
+    expect(v?.records?.items[0]?.words).toBe('New best, 15 kilograms of assistance by 8, 2 October.');
   });
 
-  it('only sets of 8+ reps count, marked sets never do, and an equal value is not a record', () => {
-    const base = [asst('2026-09-01', 30), asst('2026-09-04', 30), asst('2026-09-07', 30)];
-    expect(leastAssistRecords([...base, asst('2026-09-10', 15, 6)])).toEqual([]);
-    expect(leastAssistRecords([...base, asst('2026-09-10', 15, 8, { exclusions: ['spotted'] })])).toEqual([]);
-    expect(leastAssistRecords([...base, asst('2026-09-10', 30, 10)])).toEqual([]);
-    expect(leastAssistRecords([...base, asst('2026-09-10', 25, 12)]).map((r) => [r.value, r.reps])).toEqual([[25, 12]]);
-    // Fewer than 3 earlier sessions: none.
-    expect(leastAssistRecords([asst('2026-09-01', 30), asst('2026-09-04', 25), asst('2026-09-07', 20)])).toEqual([]);
+  it('short of the tracked reps, marked sets and an equal value are never one', () => {
+    const base = [asst('2026-09-01', 30)];
+    const one = (s: ProgressSession) => chinBests([...base, s]).claims.map((c) => [c.load, c.reps]);
+    expect(one(asst('2026-09-10', 15, 6))).toEqual([]);
+    expect(one(asst('2026-09-10', 15, 8, { exclusions: ['spotted'] }))).toEqual([]);
+    expect(one(asst('2026-09-10', 30, 10))).toEqual([]);
+    expect(one(asst('2026-09-10', 25, 12))).toEqual([[25, 12]]);
   });
 
-  it('an imported set with as little assistance or less (converted) suppresses the claim', () => {
-    const base = [asst('2026-09-01', 30), asst('2026-09-04', 30), asst('2026-09-07', 30), asst('2026-09-10', 20)];
-    const imp = (l: Load) => imported('2025-01-01', [row([set(l, 8)], { exerciseId: 'chin', convention: 'assistance', unit: l.unit })]);
-    expect(leastAssistRecords([imp(kg(20, 'assistance')), ...base])).toEqual([]);
-    expect(leastAssistRecords([imp(lb(40, 'assistance')), ...base])).toEqual([]); // 40 lb ≈ 18.1 kg
-    expect(leastAssistRecords([imp(kg(22.5, 'assistance')), ...base]).map((r) => r.value)).toEqual([20]);
+  it('an imported assisted set (no machine recorded) is not the same machine, so it is never compared (the PB ring\u2019s rule)', () => {
+    const base = [asst('2026-09-01', 30), asst('2026-09-10', 20)];
+    const imp = (l: Load) => imported('2025-01-01', [row([set(l, 8)], { exerciseId: 'chin', convention: 'assistance', unit: l.unit, equipmentId: null })]);
+    expect(chinBests([imp(kg(15, 'assistance')), ...base]).claims.map((c) => c.load)).toEqual([20]);
+    expect(chinBests([imp(lb(40, 'assistance')), ...base]).claims.map((c) => c.load)).toEqual([20]);
   });
 
-  it('one series for kg and lb assistance (20 Oct): an earlier lighter lb assist (≈9 kg) means 25 kg is no record (review B2)', () => {
+  it('kg and lb assistance compare in Ben\u2019s unit: an earlier lighter lb assist (≈9 kg) means 25 kg is no record', () => {
     const lbAsst = (d: string, l: number) => session(d, [row([set(lb(l, 'assistance'), 8)], { exerciseId: 'chin', convention: 'assistance', unit: 'lb', equipmentKind: 'assisted_stack', equipmentId: 'as' })]);
-    const kgOnly = [asst('2026-09-01', 30), asst('2026-09-04', 30), asst('2026-09-07', 30), asst('2026-09-10', 25)];
+    const kgOnly = [asst('2026-09-01', 30), asst('2026-09-10', 25)];
     const one = collectExerciseSeries(kgOnly, 'chin', { unit: 'kg' })[0] as ExerciseSeries;
-    expect(exerciseRecords(kgOnly, one).items.map((r) => [r.kind, r.value])).toEqual([['least_assist', 25]]);
-    const sessions = [...kgOnly.slice(0, 3), lbAsst('2026-09-08', 20), kgOnly[3] as ProgressSession];
+    expect(exerciseRecords(one, chinBests(kgOnly)).items.map((r) => [r.kind, r.value])).toEqual([['new_best', 25]]);
+    const sessions = [kgOnly[0] as ProgressSession, lbAsst('2026-09-08', 20), kgOnly[1] as ProgressSession];
     const merged = collectExerciseSeries(sessions, 'chin', { unit: 'kg' });
     expect(merged).toHaveLength(1);
-    expect(exerciseRecords(sessions, merged[0] as ExerciseSeries).items).toEqual([]);
+    expect(exerciseRecords(merged[0] as ExerciseSeries, chinBests(sessions)).items.map((r) => r.value)).toEqual([9]);
   });
 
   it('a timed series has no records section (no record is defined for holds)', () => {
@@ -216,11 +216,10 @@ describe('review B2: records of the merged series (two gyms, kg and lb)', () => 
   const away = [bench('2026-07-10', [[60, 5]], hotel), bench('2026-07-13', [[60, 5]], hotel), bench('2026-07-16', [[60, 5]], hotel), bench('2026-07-22', [[62.5, 5]], hotel)];
 
   it('a hotel 62.5 kg set is no `Heaviest set` beside 102.5 kg at the main gym; only records of the whole exercise show', () => {
-    const v = buildExerciseDetailView({ sessions: [...main, ...away], exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg' });
+    const sessions = [...main, ...away];
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg', bests: bestsFor(sessions, ['bench'], { reps: { bench: 5 } }) });
     const labels = v?.records?.items.map((r) => sp(`${r.label}  ${r.value}`) ?? '') ?? [];
-    expect(labels).toContain('Heaviest set  102.5 kg × 5');
-    expect(labels.some((l) => l.includes('62.5'))).toBe(false);
-    expect(labels.some((l) => l.startsWith('Best Est. 1RM') && l.includes('≈73'))).toBe(false);
+    expect(labels).toEqual(['New best  102.5 kg × 5']);
   });
 
   it('records logged in lb show in Ben’s unit and are compared with the kg sessions', () => {
@@ -228,14 +227,14 @@ describe('review B2: records of the merged series (two gyms, kg and lb)', () => 
     const lbs = (date: string, l: number) => session(date, [row([set(lb(l), 5)], lbRow)]);
     // 225 lb is ≈102.06 kg (below 102.5 kg, no record); 235 lb is ≈106.59 kg, a record of the whole exercise.
     const sessions = [...main, lbs('2026-07-10', 225), lbs('2026-07-13', 225), lbs('2026-07-16', 225), lbs('2026-07-22', 235)];
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg' });
-    const heaviest = v?.records?.items.filter((r) => r.label === 'Heaviest set').map((r) => sp(r.value));
-    expect(heaviest).toEqual(['106.59 kg × 5', '102.5 kg × 5']);
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg', bests: bestsFor(sessions, ['bench'], { reps: { bench: 5 } }) });
+    // As the Summary says it: in Ben's unit, rounded (≈106.59 → 106.5 kg).
+    expect(v?.records?.items.map((r) => sp(r.value))).toEqual(['106.5 kg × 5', '102.5 kg × 5']);
     expect(v?.records?.items.every((r) => !r.value.includes('lb'))).toBe(true);
-    // Lighter than everything earlier in kg: the 205 lb set is a record of its own record series only, not of the exercise.
+    // Lighter than everything earlier in kg: no record.
     const light = [...main, lbs('2026-07-10', 200), lbs('2026-07-13', 200), lbs('2026-07-16', 200), lbs('2026-07-22', 205)];
-    const w = buildExerciseDetailView({ sessions: light, exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg' });
-    expect(w?.records?.items.filter((r) => r.label === 'Heaviest set').map((r) => sp(r.value))).toEqual(['102.5 kg × 5']);
+    const w = buildExerciseDetailView({ sessions: light, exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg', bests: bestsFor(light, ['bench'], { reps: { bench: 5 } }) });
+    expect(w?.records?.items.map((r) => sp(r.value))).toEqual(['102.5 kg × 5']);
   });
 });
 
@@ -401,13 +400,16 @@ describe('S5: home lists 3 records, then `All records (n)`', () => {
     const lifts = ['a', 'b', 'c', 'd', 'e'].map((id) => lift(id, `Lift ${id}`));
     const sessions = lifts.flatMap((f, i) => [f('2026-08-01', 50), f('2026-08-04', 50), f('2026-08-07', 50), f(`2026-10-0${String(i + 1)}`, 60)]);
     const info = new Map<string, MuscleInfo>();
-    const home = buildProgressHomeView({ sessions, exercises: info, today: TODAY, period: '1m', grouping: 'body_part', gymNames: GYMS });
+    const ids = ['a', 'b', 'c', 'd', 'e'];
+    const reps = Object.fromEntries(ids.map((id) => [id, 5]));
+    const home = buildProgressHomeView({ sessions, exercises: info, today: TODAY, period: '1m', grouping: 'body_part', gymNames: GYMS, bests: bestsFor(sessions, ids, { reps }) });
     if (home.dataState !== 'normal') throw new Error('home');
     expect(home.records.items).toHaveLength(5);
     expect(home.records.initial).toBe(3);
     expect(home.records.more).toEqual({ label: 'All records (5)', words: 'All records, 5.' });
     expect(home.records.items[0]?.sessionExerciseId).toBeTruthy();
-    const few = buildProgressHomeView({ sessions: sessions.filter((s) => !s.exercises.some((e) => e.exerciseId === 'a' || e.exerciseId === 'b')), exercises: info, today: TODAY, period: '1m', grouping: 'body_part' });
+    const fewer = sessions.filter((s) => !s.exercises.some((e) => e.exerciseId === 'a' || e.exerciseId === 'b'));
+    const few = buildProgressHomeView({ sessions: fewer, exercises: info, today: TODAY, period: '1m', grouping: 'body_part', bests: bestsFor(fewer, ids, { reps }) });
     if (few.dataState !== 'normal') throw new Error('home');
     expect(few.records.items).toHaveLength(3);
     expect(few.records.more).toBeNull();

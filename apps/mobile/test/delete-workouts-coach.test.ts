@@ -171,7 +171,7 @@ describe('a coach write citing a workout deleted meanwhile is stale (DW16, rule 
     expect(seesLabel({ kind: 'summary', sessionId: 'x' }, 'Push A', false, 'unavailable')).toBe('Workout unavailable');
     expect(seesLabel({ kind: 'summary', sessionId: 'x' }, 'Push A', false)).toBe('Sees: Push A');
     expect(seesLabel({ kind: 'today' }, null, false, 'deleted')).toBe('Sees: Today');
-    expect(COACH_INSTRUCTIONS).toContain('reply only: "Delete workouts from Past workouts."');
+    expect(COACH_INSTRUCTIONS).toContain('reply only: "Delete workouts from History."');
   });
 });
 

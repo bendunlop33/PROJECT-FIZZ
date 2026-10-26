@@ -270,7 +270,7 @@ describe('custom period', () => {
   });
 
   it('the home on a past period names its dates (never "last") and labels months with the year when it crosses one', () => {
-    const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', period: '1m', grouping: 'body_part', range: { from: '2025-11-01', to: '2026-04-30' } });
+    const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', period: '1m', grouping: 'body_part', range: { from: '2025-11-01', to: '2026-04-30' }, bests: { tracked: new Set(), claims: [] } });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.window).toMatchObject({ preset: null, from: '2025-11-01', to: '2026-04-30', days: 181 });
     expect(home.datesLine).toBe('1\u00a0Nov\u00a02025 – 30\u00a0Apr\u00a02026');

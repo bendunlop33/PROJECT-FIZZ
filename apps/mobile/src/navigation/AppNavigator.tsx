@@ -64,7 +64,7 @@ import { ExerciseDetailScreen } from '../screens/progress/ExerciseDetailScreen';
 import { MusclesScreen } from '../screens/progress/MusclesScreen';
 import { ProgressScreen } from '../screens/progress/ProgressScreen';
 import { PastWeeksScreen, ReviewDetailScreen } from '../screens/progress/ReviewDetailScreen';
-import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
+import { HistoryScreen } from '../screens/history/HistoryScreen';
 import { RecentlyDeletedScreen } from '../screens/repeat/RecentlyDeletedScreen';
 import { RepeatScreen } from '../screens/repeat/RepeatScreen';
 import { EditWorkoutScreen } from '../screens/builder/EditWorkoutScreen';
@@ -354,7 +354,7 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               {/* Workout → Summary replaces with a 200 ms fade (motion.screenFade). */}
               <RootStack.Screen name="Summary" component={SummaryScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Summary', theme.a11y.reduceMotion) }} />
               <RootStack.Screen name="AddGym" component={AddGymScreen} options={{ presentation: 'modal' }} />
-              <RootStack.Screen name="PastWorkouts" component={PastWorkoutsScreen} options={{ headerShown: true, title: 'Past workouts' }} />
+              <RootStack.Screen name="History" component={HistoryScreen} options={{ headerShown: true, title: 'History' }} />
               <RootStack.Screen name="RecentlyDeleted" component={RecentlyDeletedScreen} options={{ headerShown: true, title: 'Recently deleted' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
               {/* (Ben, 23 Oct: one editor) A saved workout or plan day, New, Duplicate and Save-as are edited on Your workout's page (Cancel / Save), full-screen like it. */}

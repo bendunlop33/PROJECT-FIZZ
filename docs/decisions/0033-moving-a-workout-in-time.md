@@ -39,3 +39,17 @@ pauses append-only and unclipped (stored exactly as recorded).
   last time. The Summary reads an older workout as of its date.
 - Moving the start no longer keeps the sets where they were (the 19 Oct "forgot Start" case). Open for Ben:
   `docs/design/log-past-workout.md` Q-PL1.
+
+## Amendment (Ben, 26 Oct)
+
+- **Q-PL1 `Only the start`:** the Finish sheet and `Edit times` offer `Move whole workout` (default) or `Only the
+  start` once Started moved. The second writes `finish` / `update_session_timing` without `shift`, so the 19 Oct
+  checks apply (start not after the first set, not in the future; the sheet keeps it within a day back). Pure
+  helpers: `startMoveShown`, `switchStartMove`, `startMoveWrite` (`packages/domain/src/session/workout-times.ts`).
+  Undo is the existing `timingUndoCommand` (no `shiftMs`, so the start alone goes back). Not offered on a past log.
+- **Q-PL2 `Tick all as planned`:** a new session command `tick_all_planned` (opId, expected version): in an active
+  past log started from a saved workout or plan day, every planned set not done (`tickAllPlannedSets`) is logged with
+  `plannedLogValues` as its own `log_set` step (step opIds `<opId>:<n>`, the `fit_today_to_time` pattern), one
+  version bump. `undo_op` on it unticks every step, last first, only while each set is as the tick left it and is
+  the latest log; else `stale_version` and nothing changes. No migration: steps are ordinary logged sets and
+  processed operations.

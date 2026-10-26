@@ -1,11 +1,11 @@
 import type { ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
-import { formatNumber } from '../display';
 import { EXCLUSION_WORD } from '../exclusions';
 import { deriveWorkoutTitle } from '../session/first-run';
 import { countAxisTicks, countSessions, timeInGym, type LeftOutSession } from './activity';
 import { muscleFrequency, type MuscleInfo } from './muscles';
 import type { ProgressSession } from './projection';
 import { recordsInWindow, type ProgressRecord } from './records';
+import type { NewBestRecords } from '../review/progress-page';
 import {
   dayMonth,
   dayMonthLong,
@@ -47,6 +47,8 @@ export interface ProgressHomeInput {
   gymNames?: Readonly<Record<string, string>>;
   /** At most this many records in `items` (default: all of them). */
   recordLimit?: number;
+  /** (Ben, 26 Oct) The tracked lifts' `New best`s (`newBestClaims`): the records. Absent: not known, none shown. */
+  bests?: NewBestRecords | null;
 }
 
 export interface StatView {
@@ -209,13 +211,7 @@ function sessionTitle(s: ProgressSession, exercises: ReadonlyMap<string, MuscleI
 function recordView(r: ProgressRecord, gymNames: Readonly<Record<string, string>>): RecordView {
   const gym = r.gymId === null || r.equipmentId === null ? null : (gymNames[r.gymId] ?? null);
   const title = gym === null ? r.exerciseName : `${r.exerciseName} · ${gym}`;
-  const unitWords = r.load.unit === 'kg' ? 'kilograms' : 'pounds';
-  const what =
-    r.kind === 'heaviest'
-      ? `Heaviest set, ${massWords(r.load, r.equipmentKind)} by ${String(r.reps)}`
-      : r.kind === 'best_e1rm'
-        ? `Best estimated one-rep max, an estimate, about ${formatNumber(r.estimate ?? 0)} ${unitWords}${r.load.convention === 'per_hand' ? ' each' : ''}`
-        : `Most reps at ${massWords(r.load, r.equipmentKind)}, ${String(r.reps)}`;
+  const what = `New best, ${massWords(r.load, r.equipmentKind)} by ${String(r.reps)}`;
   return {
     key: `${r.sessionExerciseId}:${r.kind}`,
     sessionId: r.sessionId,
@@ -371,8 +367,10 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   };
 
   // Records (PG10, PG30)
-  const rec = recordsInWindow(input.sessions, window, { limit: input.recordLimit ?? Number.POSITIVE_INFINITY, estimates: true });
-  const listed = rec.items.length;
+  // (Ben, 26 Oct) The tracked lifts' `New best`s; not known (no `bests`): no rows and no `No new records` line.
+  const rec = input.bests == null ? null : recordsInWindow(input.sessions, window, { limit: input.recordLimit ?? Number.POSITIVE_INFINITY, bests: input.bests });
+  const recItems = rec?.items ?? [];
+  const listed = recItems.length;
   return {
     dataState: 'normal',
     window,
@@ -382,11 +380,11 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
     activity,
     muscles,
     records: {
-      items: rec.items.map((r) => recordView(r, gymNames)),
-      total: rec.total,
+      items: recItems.map((r) => recordView(r, gymNames)),
+      total: rec?.total ?? 0,
       initial: HOME_RECORDS_INITIAL,
       more: listed > HOME_RECORDS_INITIAL ? { label: `All records (${String(listed)})`, words: `All records, ${String(listed)}.` } : null,
-      empty: rec.total === 0 ? (endsToday ? `No new records in the last ${phrase}.` : `No new records, ${rangeText(window, input.today)}.`) : null,
+      empty: rec === null ? null : rec.total === 0 ? (endsToday ? `No new records in the last ${phrase}.` : `No new records, ${rangeText(window, input.today)}.`) : null,
     },
   };
 }

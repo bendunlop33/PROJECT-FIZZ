@@ -64,6 +64,8 @@ import {
   liftsView,
   liftHistorySessions,
   sessionNewBests,
+  newBestClaims,
+  type NewBestRecords,
   liveNewBestLine,
   liveNewBestSets,
   type LiveBestsContext,
@@ -732,6 +734,25 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     };
   }
 
+  /**
+   * (Ben, 26 Oct; one definition of best) Every `New best` of the tracked lifts (`newBestClaims`): Progress's
+   * `RECORDS` and the monthly recap's count, from the same reads as the Summary's `sessionBests` and the PB ring.
+   * Kept while nothing is written. Null with no profile.
+   */
+  const bestsMemo = createVersionMemo<NewBestRecords | null>(2);
+  async function newBestRecordsOf(): Promise<NewBestRecords | null> {
+    const owner = await deps.profile();
+    if (owner === null) return null;
+    const nowMs = toMs(deps.now().utc);
+    const monday = localWeekBounds(nowMs, owner.timezone).mondayLocalDate;
+    return bestsMemo.get(deps.store(), JSON.stringify([owner.id, owner.timezone, owner.preferredUnit, monday]), async () => {
+      const g = await gather(monday);
+      if (g === null) return null;
+      const history = await liftHistory(g);
+      return newBestClaims(g.input, { planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, nameOf: g.nameOf, earlier: history.earlier, historyUnknown: history.unknown });
+    });
+  }
+
   async function sessionBestsOf(sessionId: string): Promise<NewBestView[]> {
     const owner = await deps.profile();
     if (owner === null) return [];
@@ -784,6 +805,11 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
      */
     async sessionBests(sessionId: string): Promise<NewBestView[]> {
       return sessionBestsOf(sessionId);
+    },
+
+    /** (Ben, 26 Oct) Every `New best` of the tracked lifts: Progress's records (`newBestClaims`). Local only. */
+    async newBestRecords(): Promise<NewBestRecords | null> {
+      return newBestRecordsOf();
     },
 
     /**

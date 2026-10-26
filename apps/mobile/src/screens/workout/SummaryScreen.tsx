@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, PLAN_VERDICT_WORD, summaryTimeline, timingUndoCommand, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
+import { checkRoutineName, PLAN_VERDICT_WORD, startMoveWrite, summaryTimeBounds, summaryTimeline, timingUndoCommand, toIso, toMs, type StartMove, type WorkoutSummary } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 import { nextTargetTapOpId } from '@fizz/coach';
 import { readTextCoachState } from '@fizz/providers';
@@ -922,6 +922,8 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
   const [times, setTimes] = useState<WorkoutTimes>(recorded);
   const [opId, setOpId] = useState(newUuid);
   const [error, setError] = useState<string | null>(null);
+  // (Ben, 26 Oct) A moved Started: the whole workout (default) or only the start.
+  const [startMove, setStartMove] = useState<StartMove>('whole');
   const [lastShown, setLastShown] = useState(false);
   if (visible !== lastShown) {
     setLastShown(visible);
@@ -929,9 +931,11 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
       setTimes(recorded());
       setOpId(newUuid());
       setError(null);
+      setStartMove('whole');
     }
   }
   const timeline = summaryTimeline(summary.startedAtUtc, summary.timeline);
+  const pastLog = summary.pastLog;
 
   async function save() {
     const startChanged = times.startMs !== toMs(summary.startedAtUtc);
@@ -949,7 +953,8 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
       // The workout's own zone, not the phone's current one (review N6). A moved start moves the whole workout.
       startedAt: startChanged ? { utc: toIso(times.startMs), tz } : null,
       endedAt: endChanged || startChanged ? { utc: toIso(times.endMs), tz } : null,
-      ...(startChanged ? { shift: true as const } : {}),
+      // `Only the start` (Ben, 26 Oct) keeps the sets where they were; a past log always moves whole.
+      ...startMoveWrite(pastLog ? 'whole' : startMove, startChanged),
     });
     if (!r.ok) {
       setError(r.error.code === 'stale_version' ? 'The workout changed. Close and try again.' : r.error.message);
@@ -964,7 +969,13 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
         <AppText variant="title2" accessibilityRole="header">
           Edit workout times
         </AppText>
-        <WorkoutTimesRows times={times} shift={{ timeline, nowMs: clockNow() }} tz={tz} onChange={setTimes} />
+        <WorkoutTimesRows
+          times={times}
+          shift={{ timeline, nowMs: clockNow() }}
+          startMove={{ mode: startMove, onMode: setStartMove, fixed: summaryTimeBounds(summary.timingBounds, summary.startedAtUtc, clockNow()), pastLog }}
+          tz={tz}
+          onChange={setTimes}
+        />
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         <PrimaryButton label="Save" onPress={() => void save()} />
         <TextButton label="Cancel" tone="secondary" onPress={onClose} />

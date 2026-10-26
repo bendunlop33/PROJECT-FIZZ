@@ -28,7 +28,7 @@ import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 import { GymChip } from './workout/GymSwitch';
-import { DayControl, DaySheet, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
+import { DayControl, DaySheet, RecentSection, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
 import { LogPastWorkoutSheet } from './workout/LogPastWorkoutSheet';
 import { builderApplyOpId, type BuilderCoachReach } from '@fizz/coach';
 import { setTodaySetupDay } from '../builder/coach-ports';
@@ -50,7 +50,8 @@ import { createOnDeviceSpeech } from '../voice/on-device-speech';
  * The card's workout comes from `todaySession` (the builder rules); this screen only lays it out and
  * keeps the selection. Picking a day, chip or control writes nothing; Start commits the card as
  * today's builder draft and starts it (check-in sheet when due). Supersedes today.md's Up next card,
- * alternatives, Recent and Ask pill (§2.0.9, §7).
+ * alternatives, Recent and Ask pill (§2.0.9, §7). (Ben, 26 Oct) `Recent` is back under the session: the last 14
+ * days of workouts and activities, then `All history ›` (history.md §2).
  */
 
 /** An empty workout, or (No plan) the app's Up next: its routine or the last workout's next session (review today-fix-21oct B1). */
@@ -297,7 +298,9 @@ export function TodayScreen() {
       action: PB_COPY.undo,
       onAction: () => {
         setToast(null);
-        void services.planBuilder.undo({ planId: planApplied.planId, expectedVersion: planApplied.version, opId: newUuid() }).then((r) => {
+        // (Ben, 26 Oct) After `Apply changes`, Undo puts the plan as it was before the edit; after `Apply plan`, no plan.
+        const undo = planApplied.edit === true ? services.planBuilder.undoEdit({ planId: planApplied.planId, expectedVersion: planApplied.version, opId: newUuid() }) : services.planBuilder.undo({ planId: planApplied.planId, expectedVersion: planApplied.version, opId: newUuid() });
+        void undo.then((r) => {
           if (!r.ok) setToast({ text: r.message });
           changed();
           reload();
@@ -305,6 +308,28 @@ export function TodayScreen() {
       },
     });
   }, [planApplied, navigation]);
+
+  // (Ben, 26 Oct) Your plan's `Do today ›`: that plan day on the card, today only, like Today's own day row (nothing is
+  // written; the week reflows because Up next follows what is done). Undo puts the card back on the day it was on.
+  const pickDayParam = route.params?.pickDay;
+  const pickedNonce = useRef<string | null>(null);
+  useEffect(() => {
+    if (pickDayParam === undefined || session === null || pickedNonce.current === pickDayParam.nonce) return;
+    pickedNonce.current = pickDayParam.nonce;
+    navigation.setParams({ pickDay: undefined });
+    const day = session.days.find((d) => d.key === pickDayParam.key);
+    if (day === undefined) return;
+    const was = selection?.dayKey ?? session.nextKey;
+    pickDay(day.key);
+    setToast({
+      text: TODAY_V2_COPY.doToday(day.name),
+      action: PB_COPY.undo,
+      onAction: () => {
+        setToast(null);
+        if (was !== null) pickDay(was);
+      },
+    });
+  }, [pickDayParam, session]);
 
   const startEmpty = route.params?.startEmpty;
   const startedEmpty = useRef<string | null>(null);
@@ -1006,6 +1031,19 @@ export function TodayScreen() {
               grow
             />
           </View>
+        ) : null}
+        {/* (Ben, 26 Oct) Recent: the last 14 days of what Ben did, then All history ›. Nothing done: no section. */}
+        {!openWorkout && session !== null && session.recent.length > 0 ? (
+          <RecentSection
+            items={session.recent}
+            onItem={(it) => {
+              if (it.kind === 'workout') navigation.navigate('Summary', { sessionId: it.sessionId, back: true });
+              else void openActivity(it.activityId);
+            }}
+            onAll={() => {
+              navigation.navigate('History');
+            }}
+          />
         ) : null}
       </ScrollView>
       <ActivitySheet

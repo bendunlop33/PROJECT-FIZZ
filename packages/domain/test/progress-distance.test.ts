@@ -25,6 +25,7 @@ import {
 } from '../src/index';
 import { at, exercise, idGen, kg, lb, profile, values } from './fixtures';
 import { apply, BENCH, logCmd, setsFor, startFixture } from './session-fixture';
+import { bestsFor } from './new-best-fixture';
 
 /**
  * Progress for distance sets (sled push, carries): the projection carries
@@ -267,15 +268,13 @@ describe('exercise detail for a distance series', () => {
   });
 
   it('home records leave distance sets out (no heaviest-set record from a sled)', () => {
-    const r = recordsInWindow(
-      [
-        session('2026-09-01', [sledRow([set(added(40), 20)])]),
-        session('2026-09-10', [sledRow([set(added(60), 20)])]),
-        session('2026-09-20', [sledRow([set(added(80), 20)])]),
-        session('2026-10-01', [sledRow([set(added(100), 20, { reps: 1 })])]),
-      ],
-      { from: '2026-09-01', to: TODAY },
-    );
+    const sessions = [
+      session('2026-09-01', [sledRow([set(added(40), 20)])]),
+      session('2026-09-10', [sledRow([set(added(60), 20)])]),
+      session('2026-09-20', [sledRow([set(added(80), 20)])]),
+      session('2026-10-01', [sledRow([set(added(100), 20, { reps: 1 })])]),
+    ];
+    const r = recordsInWindow(sessions, { from: '2026-09-01', to: TODAY }, { bests: bestsFor(sessions, ['sled-push']) });
     expect(r.items).toEqual([]);
   });
 });

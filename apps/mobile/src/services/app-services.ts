@@ -876,6 +876,8 @@ export function createAppServices(deps: AppServicesDeps) {
       const c = await plans.consistency();
       return c === null || c.planThisWeek === null ? null : [...c.weeks, c.thisWeek].map((w) => ({ monday: w.monday, atAim: w.atAim }));
     },
+    // (Ben, 26 Oct; one definition of best) Records are the tracked lifts' `New best`s, read as the Summary reads them.
+    newBests: () => reviews.newBestRecords(),
     // Progress › Lifts' chips (Ben, 26 Oct): the plan in use's main lift per day, in day order; null with no plan.
     planMainLifts: async () => {
       const p = await getProfile();
@@ -952,6 +954,7 @@ export function createAppServices(deps: AppServicesDeps) {
     now: deps.now,
     profile: getProfile,
     describe: (a, gyms) => loop.repeat.describe(a, gyms),
+    describeMany: (ws, gyms) => loop.repeat.describeMany(ws, gyms),
     activeWorkout: () => sessions.active(),
   });
 

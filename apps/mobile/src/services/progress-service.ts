@@ -52,6 +52,7 @@ import {
   type ProgressSession,
   type ResumeBar,
   type HistoryWorkout,
+  type NewBestRecords,
 } from '@fizz/domain';
 import { timeSlicer, type Slicer, type Store } from '@fizz/persistence';
 
@@ -100,6 +101,11 @@ export interface ProgressServiceDeps {
   progressLifts?: () => Promise<readonly string[]>;
   /** (Ben, 26 Oct) With a plan in use: each recent week and whether it reached his aim (the consistency card's); null otherwise. */
   planWeeks?: () => Promise<readonly { monday: string; atAim: boolean | null }[] | null>;
+  /**
+   * (Ben, 26 Oct; one definition of best) The tracked lifts' `New best`s (the weekly review's `newBestClaims`, the
+   * Summary's rule): every `RECORDS` list and the recap's count. Absent or null: not known, no records shown.
+   */
+  newBests?: () => Promise<NewBestRecords | null>;
 }
 
 /** (Ben, 26 Oct) The monthly recap card: the month just ended, while its card shows on Progress. */
@@ -346,6 +352,11 @@ export function createProgressService(deps: ProgressServiceDeps) {
     return out;
   }
 
+  /** The records' `New best`s, or null when they can't be read (never a guess: no records are shown then). */
+  async function bestsNow(): Promise<NewBestRecords | null> {
+    return (await deps.newBests?.().catch(() => null)) ?? null;
+  }
+
   async function context(profile: UserProfile) {
     const [{ sessions, unreadable }, rows, gyms] = await Promise.all([finishedSessions(profile), repos().exercises.list(), repos().gyms.listByOwner(profile.id)]);
     return {
@@ -424,11 +435,11 @@ export function createProgressService(deps: ProgressServiceDeps) {
     const { period, grouping, range } = periodNow(profile, req, today);
     // (Perf, Ben 26 Oct) Kept while nothing is written: a return to Progress or a period picked before reads nothing.
     const base = await homeMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, today, period, grouping, range]), async () => {
-      const ctx = await context(profile);
+      const [ctx, bests] = await Promise.all([context(profile), bestsNow()]);
       let earliest = today;
       for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
       const home: ProgressHome = {
-        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period, grouping, range }),
+        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period, grouping, range, bests }),
         period,
         range,
         today,
@@ -489,6 +500,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
           .catch(() => []);
         const pain = painFlagCovering(flags, view.exerciseId, nowMs, profile.timezone);
         extras = buildExerciseExtras({
+          bests: await bestsNow(),
           sessions: ctx.sessions,
           exerciseId: view.exerciseId,
           seriesId: view.seriesId,
@@ -543,7 +555,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
         const picked = (await deps.progressLifts?.().catch(() => null)) ?? [];
         const lifts = trackedLiftPicks({ picked, defaults: defaultLiftPicks({ planMains, sessions: ctx.sessions, info: (id) => ctx.exercises.get(id) ?? null, today }), logged: (id) => names.has(id) }).ids;
         const planWeeks = (await deps.planWeeks?.().catch(() => null)) ?? null;
-        const view = buildMonthlyRecap({ sessions: ctx.sessions, exercises: ctx.exercises, today, lifts, unit: profile.preferredUnit, planWeeks, nameOf: (id) => ctx.exercises.get(id)?.name ?? names.get(id) ?? null });
+        const view = buildMonthlyRecap({ sessions: ctx.sessions, exercises: ctx.exercises, today, lifts, unit: profile.preferredUnit, planWeeks, nameOf: (id) => ctx.exercises.get(id)?.name ?? names.get(id) ?? null, bests: await bestsNow() });
         return recapCardShown({ today, dismissed: profile.progress?.recapDismissed ?? null, recap: view }) && view !== null ? { view } : null;
       });
     },
@@ -598,10 +610,11 @@ export function createProgressService(deps: ProgressServiceDeps) {
       detailChoice.set(req.exerciseId, next);
       const nowMs = toMs(deps.now().utc);
       const today = localDateOf(nowMs, profile.timezone);
-      const [ctx, flags] = await Promise.all([context(profile), repos().painFlags.listActive(profile.id).catch(() => [])]);
+      const [ctx, flags, bests] = await Promise.all([context(profile), repos().painFlags.listActive(profile.id).catch(() => []), bestsNow()]);
       const pain = painFlagCovering(flags, req.exerciseId, nowMs, profile.timezone);
       const opening = req.sessionId != null || req.equipmentId != null || req.gymId != null;
       const view = buildExerciseDetailView({
+        bests,
         sessions: ctx.sessions,
         exerciseId: req.exerciseId,
         today,
