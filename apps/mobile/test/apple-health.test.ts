@@ -269,7 +269,7 @@ describe('reading activities and linking', () => {
     const feed = await s.history.feed();
     const workoutItem = feed.items.find((i) => i.kind === 'workout' && i.sessionId === id);
     expect(workoutItem).toMatchObject({ linkedSource: 'Garmin' });
-    expect(feed.items.filter((i) => i.kind === 'activity').map((i) => [i.key, i.kind === 'activity' ? i.fromHealth : null])).toEqual([[`a:${run}`, 'Garmin']]);
+    expect(feed.items.flatMap((i) => (i.kind === 'activity' ? [[i.key, i.fromHealth]] : []))).toEqual([[`a:${run}`, 'Garmin']]);
     // The coach sees the linked workout's recorded data (Q4): HR only while its switch is on.
     expect(await s.health.coachLinked(id)).toMatchObject({ source: 'Garmin', type: 'Strength', avgHeartRate: null, maxHeartRate: null });
     await s.health.setSwitch('readHeartRate', true);
