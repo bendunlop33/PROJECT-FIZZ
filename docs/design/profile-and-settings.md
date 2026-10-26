@@ -1,5 +1,7 @@
 # Profile and settings
 
+> **Revision (Ben, 26 Oct; app review finding 13, rule 10): Your data and Coaching knowledge are separate groups.** The Profile hub no longer mixes them under `Coach`. Order: Data · Gyms · Training (`Training details`, `Split`, `Targets hit`, `Check-in`) · **Your data** (`Memory`, `Pain flags`) · **Coaching knowledge** (`Playbook`) · Coach (`Coach connection`) · Voice · App · Developer. The group names are Data & backup's. `Pain flags` moved from Training to Your data; it opens the same list.
+
 > **Revision (Ben, 22–23 Oct, D7): one source for the split and workout defaults.** Training gets `Split` (no plan: `Chest · Legs · Shoulders · Back`, which drives Today's Up next; with a plan: `Set by your plan`, opening Library › Your plan) and `Workout defaults` (no plan: `60 min · Supersets on · Abs on`; with a plan: `Set by your plan`). Session length in Goals & schedule (§2.2) follows the same rule: with a plan it reads `Set by your plan`. Prototype: `prototypes/app/app-shell.html` Profile.
 
 > **Revision 2026-10-09 (import from any app).** §2.8 now names the Data & backup import rows (`Import history`, `Saved import layouts`, `Past imports`; data-import-export.md §9) and says saved import layouts are Your data. No new Profile row or setting.
