@@ -481,6 +481,9 @@ describe('PBs: a real top set beyond every earlier real one at the tracked reps 
     const bests = sessionNewBests(inp, opts(), b.sessionId);
     expect(bests.map((x) => x.text.replaceAll('\u00a0', ' '))).toEqual(['New best · Bench 100 × 6', 'New best · DB press 32.5 each × 10']);
     expect(bests[1]?.accessibilityLabel).toBe('New best: DB press, 32.5 kg each for 10 reps');
+    // (Ben, 27 Oct; redesign §E2) The Summary's card: the name, the set with its unit, and the best it beat (when).
+    expect([bests[0]?.name, bests[0]?.set?.replaceAll('\u00a0', ' '), bests[0]?.last?.set.replaceAll('\u00a0', ' '), bests[0]?.last?.atMs]).toEqual(['Bench', '100 kg × 6', '95 × 6', a.startedMs]);
+    expect(bests[1]?.set?.replaceAll('\u00a0', ' ')).toBe('32.5 kg each × 10');
     expect(sessionNewBests(inp, opts(), a.sessionId)).toEqual([]);
     expect(sessionNewBests(inp, opts(), c.sessionId)).toEqual([]);
     expect(sessionNewBests(inp, opts(), 'nope')).toEqual([]);

@@ -1,9 +1,9 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, PLAN_VERDICT_WORD, startMoveWrite, summaryTimeBounds, summaryTimeline, timingUndoCommand, toIso, toMs, type StartMove, type WorkoutSummary } from '@fizz/domain';
+import { checkRoutineName, startMoveWrite, summaryTimeBounds, summaryTimeline, timingUndoCommand, toIso, toMs, type StartMove, type WorkoutSummary } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 import { nextTargetTapOpId } from '@fizz/coach';
 import { readTextCoachState } from '@fizz/providers';
@@ -21,9 +21,9 @@ import type { RootStackParams } from '../../navigation/types';
 import type { WorkoutPresence } from '../../services/history-services';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { finishMotion, listEnterMotion, shouldPlayFinish, TIMING, useTheme } from '../../theme';
-import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, ChecklistRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatStrip, StatusLine, Tag, type StatItem, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
+import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, ChecklistRow, HeroHeader, Icon, LinkLine, PrimaryButton, SecondaryButton, SectionHeader, StatStrip, StatusLine, Tag, type StatItem, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
 import { useAx } from '../../progress/components';
-import { summaryPlanLine, summaryResultsLine, VERDICT_ICON } from '../../workout/summary-view';
+import { newBestLastLine, summaryDoneRows, summaryMenu, summarySavedLine, summaryShownRows, summaryStatItems, type SummaryMenuId } from '../../workout/summary-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
@@ -72,6 +72,8 @@ export function SummaryScreen() {
   const reviewing = useRef(false);
   // `Keep for next time?`: one tap at a time (Apply then Skip can't race).
   const [keepBusy, setKeepBusy] = useState(false);
+  // (Ben, 27 Oct; redesign §E2) `Exercises · done` shows 3, then `N more`.
+  const [showAll, setShowAll] = useState(false);
   const [data, reload] = useScreenData(async (s) => {
     // Keychain + settings file only, no network; a read failure counts as not connected.
     const coach = summaryCoachView(await readTextCoachState(coachConnectionPorts().ports).catch(() => null));
@@ -194,17 +196,25 @@ export function SummaryScreen() {
   const { summary: sum, backup, painFlags, savedAs, coachNote, nextTime, presence } = data.value;
   const canDelete = summaryCanDelete(presence);
 
-  // From a saved workout, the save lives in `⋯` so it doesn't read as a prompt (§A2.6).
-  const fromSaved = sum.routineId !== null;
   const openSave = () => void saveSheet.open({ kind: 'session', sessionId }, sum.storedName ?? null);
-  /** `⋯`: `Save to Workouts` (from a saved workout not saved again, §A2.6) and `Delete workout` (delete-workouts §2.2). */
-  const moreItems: { label: string; run: () => void; destructive?: boolean }[] = [
-    ...(fromSaved && savedAs === null ? [{ label: LIBRARY_COPY_UI.saveToWorkouts, run: openSave }] : []),
-    // (Ben, 27 Oct) Link a watch workout from Apple Health by hand (the day before to the day after).
-    ...(healthChoices > 0 ? [{ label: HEALTH_COPY.linkFromHealth, run: () => { setHealthPicker(true); } }] : []),
-    ...(canDelete ? [{ label: DELETE_COPY.menuItem, run: () => void deleteThis(), destructive: true }] : []),
-  ];
-  /** `⋯` → `Delete workout` (§2.2, DW1, DW2): the tap is the confirmation; Undo comes as a toast where Ben lands. */
+  /**
+   * (Ben, 27 Oct; redesign §E2) `⋯`: Edit times, Save as workout (until saved), Rename, Link activity from Health,
+   * Delete workout (delete-workouts §2.2; the tap is the confirmation, Undo comes as a toast where Ben lands).
+   */
+  const menuRun: Record<SummaryMenuId, () => void> = {
+    edit_times: () => {
+      setTimes(true);
+    },
+    save: openSave,
+    rename: () => {
+      openName('workout');
+    },
+    link_health: () => {
+      setHealthPicker(true);
+    },
+    delete: () => void deleteThis(),
+  };
+  const moreItems = summaryMenu({ dateOnly: sum.dateOnly !== null, saved: savedAs !== null, canDelete, healthChoices, linkLabel: HEALTH_COPY.linkFromHealth }).map((m) => ({ ...m, run: menuRun[m.id] }));
   function openMenu() {
     const options = [...moreItems.map((m) => m.label), DELETE_COPY.cancel];
     const destructive = moreItems.findIndex((m) => m.destructive === true);
@@ -274,50 +284,95 @@ export function SummaryScreen() {
     return null;
   }
 
+  /** `Keep for next time?` and the main-lift offer: one tap at a time (Apply then Skip can't race). */
+  const keepTap = (run: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
+    if (keepBusy) return;
+    setKeepBusy(true);
+    void run()
+      .catch(() => ({ ok: false as const, message: 'Couldn’t save. Try again.' }))
+      .then((r) => {
+        setKeepBusy(false);
+        if (!r.ok) setToast({ text: r.message });
+        changed();
+        reload();
+      });
+  };
+
   const pvd = data.value.planVsDone;
-  // Design pass 3.3: the shared strip. Active, Exercises x/y, Sets, Planned x/y (with a plan).
-  const statItems: StatItem[] = [
-    ...(sum.facts.activeText !== null ? [{ label: 'Active', value: sum.facts.activeText }] : []),
-    { label: 'Exercises', value: `${String(sum.facts.exercisesDone)}/${String(sum.facts.exercisesTotal)}` },
-    { label: 'Sets', value: String(sum.facts.workingSets) },
-    ...(pvd !== null ? [{ label: 'Planned', value: `${String(pvd.doneSets)}/${String(pvd.plannedSets)}` }] : []),
-  ];
+  // (Ben, 27 Oct; redesign §E2) Time / Sets / Exercises.
+  const statItems: StatItem[] = summaryStatItems(sum.facts, pvd);
+  const doneRows = summaryShownRows(summaryDoneRows(sum.exercises, pvd?.rows ?? null), showAll);
   const flaggedHere = painFlags.filter((f) => sum.exercises.some((e) => e.exerciseId === f.exerciseId));
   const tz = sum.tz;
   const range = `${formatTime(toMs(sum.startedAtUtc), tz)}–${sum.endedAtUtc ? formatTime(toMs(sum.endedAtUtc), tz) : ''}`;
   const edited = sum.timingEdited.end ? ' (end time edited)' : sum.timingEdited.start ? ' (start time edited)' : '';
-  const line = backup.onPhone.line;
   const failed = backup.onPhone.state === 'failed';
+  const bests = data.value.newBests;
+  const mainLift = data.value.mainLift;
+  const keep = data.value.keep;
+  const nextOpen = nextTime !== null || mainLift !== null || keep !== null;
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'], gap: theme.space['5'] }}>
-        {/* The finish moment (premium-feel §6): the saved check draws once, then the title fades in. Done works from the first frame. */}
-        <View style={{ gap: theme.space['1'] }} accessibilityRole="summary">
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-            <RevealOnce durationMs={finish.strokeMs} size={20} background={theme.colors['bg.canvas']}>
-              <Icon name="checkmark.circle.fill" color="status.done" size={20} />
-            </RevealOnce>
-            <AppText variant="callout">Workout saved on this phone</AppText>
-          </View>
-          {failed ? (
-            <LinkLine
-              accessibilityLabel="Backup didn’t save. Open Data and backup."
-              onPress={() => {
-                navigation.dispatch(popToTabs({ screen: 'Profile', params: { screen: 'DataBackup', initial: false } }));
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-                <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
-                <AppText variant="callout">Backup didn’t save ›</AppText>
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + theme.space['3'], paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'], gap: theme.space['5'] }}>
+        {/* (Ben, 27 Oct; redesign §E2) The Saved line: the check draws once (premium-feel §6), then the title fades in. */}
+        <DelayedFade delayMs={finish.titleDelayMs} durationMs={finish.titleFadeMs}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
+            <View style={{ flex: 1, gap: theme.space['1'] }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }} accessible accessibilityLabel={`${summarySavedLine(sum.endedAtUtc === null ? null : toMs(sum.endedAtUtc), (ms) => formatTime(ms, tz))} on this phone`}>
+                <RevealOnce durationMs={finish.strokeMs} size={14} background={theme.colors['bg.canvas']}>
+                  <Icon name="checkmark.circle.fill" color="status.done" size={14} />
+                </RevealOnce>
+                <AppText variant="callout" color="text.secondary" numeric>
+                  {summarySavedLine(sum.endedAtUtc === null ? null : toMs(sum.endedAtUtc), (ms) => formatTime(ms, tz))}
+                </AppText>
               </View>
-            </LinkLine>
-          ) : (
-            <AppText variant="callout" color="text.secondary" numeric>
-              {line.text}
-            </AppText>
-          )}
-        </View>
+              {failed ? (
+                <LinkLine
+                  accessibilityLabel="Backup didn’t save. Open Data and backup."
+                  onPress={() => {
+                    navigation.dispatch(popToTabs({ screen: 'Profile', params: { screen: 'DataBackup', initial: false } }));
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+                    <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
+                    <AppText variant="callout">Backup didn’t save ›</AppText>
+                  </View>
+                </LinkLine>
+              ) : null}
+              {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
+              <HeroHeader
+                title={sum.title}
+                titleLines={2}
+                lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')]}
+              />
+              {savedAs !== null ? (
+                <LinkLine
+                  accessibilityLabel={`Saved to Workouts as ${savedAs.name}. Opens it.`}
+                  onPress={() => {
+                    navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: savedAs.id }, back: 'Summary' });
+                  }}
+                >
+                  <AppText variant="callout" color="text.secondary">
+                    {LIBRARY_COPY_UI.savedLink(savedAs.name)}
+                  </AppText>
+                </LinkLine>
+              ) : null}
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="More"
+              accessibilityActions={moreItems.map((m) => ({ name: m.label, label: m.label }))}
+              onAccessibilityAction={(e) => {
+                moreItems.find((m) => m.label === e.nativeEvent.actionName)?.run();
+              }}
+              onPress={openMenu}
+              style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+            >
+              <Icon name="ellipsis" color="text.secondary" size={20} />
+            </Pressable>
+          </View>
+        </DelayedFade>
 
         {data.value.planChange !== null ? (
           <StatusLine
@@ -341,84 +396,166 @@ export function SummaryScreen() {
           />
         ) : null}
 
-        {/* D: a quiet hero (label, large title, facts); no tinted block. */}
-        {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
-        <DelayedFade delayMs={finish.titleDelayMs} durationMs={finish.titleFadeMs}>
-          <View style={{ gap: theme.space['2'] }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
-              <View style={{ flex: 1 }}>
-                <HeroHeader
-                  eyebrow="Workout done"
-                  title={sum.title}
-                  titleLines={2}
-                  lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')]}
-                />
+        {bests.length > 0 ? (
+          // (Ben, 27 Oct; redesign §E2) New best first: the tracked lifts' new PBs (the Lifts chart's definition), each
+          // with the best it beat.
+          <FadeIn motion={follow(0)}>
+            <Card>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+                <Icon name="star.fill" color="accent" size={14} />
+                <AppText variant="sectionLabel">New best</AppText>
               </View>
-              {/* Rename (premium-feel §6.2): a 44 pt pencil next to the title; the routine keeps its name. */}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Rename workout, ${sum.title}`}
-                onPress={() => {
-                  openName('workout');
-                }}
-                style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
-              >
-                <Icon name="pencil" color="text.secondary" size={18} />
-              </Pressable>
-              {(fromSaved && savedAs === null) || canDelete || healthChoices > 0 ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="More"
-                  accessibilityActions={moreItems.map((m) => ({ name: m.label, label: m.label }))}
-                  onAccessibilityAction={(e) => {
-                    moreItems.find((m) => m.label === e.nativeEvent.actionName)?.run();
-                  }}
-                  onPress={openMenu}
-                  style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
-                >
-                  <Icon name="ellipsis" color="text.secondary" size={18} />
-                </Pressable>
+              {bests.map((b) => {
+                const last = newBestLastLine(b.last, (ms) => formatDayMonth(ms, tz));
+                return (
+                  <View key={b.exerciseId} accessible accessibilityLabel={[b.accessibilityLabel, last].filter((x): x is string => x !== null).join('. ')} style={{ gap: 2 }}>
+                    <AppText numeric style={{ fontSize: 26, lineHeight: 32, fontWeight: '600' }} maxFontSizeMultiplier={1.6}>
+                      {b.name !== undefined && b.set !== undefined ? `${b.name} ${b.set}` : b.text}
+                    </AppText>
+                    {last !== null ? (
+                      <AppText variant="callout" color="text.secondary" numeric>
+                        {last}
+                      </AppText>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </Card>
+          </FadeIn>
+        ) : null}
+
+        <FadeIn motion={follow(1)}>
+          <StatStrip ax={ax} accessibilityLabel={statItems.map((it) => `${it.label} ${it.value}`).join(', ')} items={statItems} />
+          {/* Progress v3: the reps behind This week's `Mon – 92%`, and what was short or skipped (extras can't hide it). */}
+          {pvd?.reps != null ? (
+            <View accessible accessibilityLabel={[pvd.reps.text, pvd.reps.short].filter((x): x is string => x !== null).join('. ')} style={{ paddingTop: theme.space['2'], gap: 2 }}>
+              <AppText variant="callout" color="text.secondary" numeric>
+                {pvd.reps.text}
+              </AppText>
+              {pvd.reps.short !== null ? (
+                <AppText variant="callout" color="text.secondary">
+                  {pvd.reps.short}
+                </AppText>
               ) : null}
             </View>
-            {savedAs !== null ? (
-              <LinkLine
-                accessibilityLabel={`Saved to Workouts as ${savedAs.name}. Opens it.`}
-                onPress={() => {
-                  navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: savedAs.id }, back: 'Summary' });
+          ) : null}
+        </FadeIn>
+
+        {nextOpen ? (
+          // (Ben, 27 Oct; redesign §E2) One Next time list: the targets (Why? / Undo; offers Skip / Apply), the
+          // coach's or the rule's offers to keep a change, Undo all at the top.
+          <View style={{ gap: theme.space['2'] }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+              <View style={{ flex: 1 }}>
+                <SectionHeader title={nextTime?.heading ?? 'Next time'} />
+              </View>
+              {nextTime?.undoAll != null ? (
+                <TextButton
+                  label="Undo all"
+                  tone="secondary"
+                  onPress={() => {
+                    const all = nextTime.undoAll;
+                    if (all === null) return;
+                    void services.coach
+                      .undoNextTargets(all.actionId, all.rows)
+                      .catch(() => ({ ok: false }))
+                      .then((r) => {
+                        if (!r.ok) setToast({ text: 'Couldn’t undo.' });
+                        reload();
+                        changed();
+                      });
+                  }}
+                />
+              ) : null}
+            </View>
+            {nextTime?.status != null ? (
+              <AppText variant="callout" color="text.secondary">
+                {nextTime.status}
+              </AppText>
+            ) : null}
+            {nextTime?.emptyText != null ? (
+              <AppText variant="callout" color="text.secondary">
+                {nextTime.emptyText}
+              </AppText>
+            ) : null}
+            {(nextTime?.rows ?? []).map((r) => (
+              <NextRow key={r.key} row={r} onTap={(tap) => void tapNext(r, tap)} />
+            ))}
+            {mainLift !== null ? (
+              <MainLiftRow
+                view={mainLift}
+                busy={keepBusy}
+                onTap={(tap) => {
+                  keepTap(() => (tap === 'undo' ? services.builder.undoKeepMainLift(sessionId) : services.builder.keepMainLift(sessionId, tap)));
+                }}
+              />
+            ) : null}
+            {keep !== null ? (
+              <KeepRow
+                view={keep}
+                busy={keepBusy}
+                onTap={(tap) => {
+                  keepTap(() => (tap === 'undo' ? services.builder.undoKeepNextTime(sessionId) : services.builder.keepNextTime(sessionId, tap)));
+                }}
+              />
+            ) : null}
+          </View>
+        ) : null}
+
+        {doneRows.shown.length > 0 ? (
+          <View>
+            <SectionHeader title="Exercises · done" />
+            {doneRows.shown.map((e, i) => (
+              <View
+                key={e.key}
+                style={{
+                  gap: 2,
+                  paddingVertical: theme.space['3'],
+                  borderTopWidth: i === 0 ? 0 : theme.dividerWidth,
+                  borderColor: theme.colors['border.divider'],
+                  marginTop: i === 0 ? theme.space['1'] : 0,
                 }}
               >
-                <AppText variant="callout" color="text.secondary">
-                  {LIBRARY_COPY_UI.savedLink(savedAs.name)}
-                </AppText>
-              </LinkLine>
-            ) : !fromSaved ? (
+                {/* The exercise's history (progress.md §2.7, slice B): its series, with this workout's point selected. */}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={e.spoken}
+                  accessibilityHint="Opens this exercise’s history"
+                  onPress={() => {
+                    navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, sessionExerciseId: e.sessionExerciseId, name: e.name });
+                  }}
+                  style={({ pressed }) => ({ minHeight: theme.target.min.height, gap: 2, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+                    <AppText variant="headline" numberOfLines={2} style={{ flex: 1 }}>
+                      {e.name}
+                    </AppText>
+                    {e.count !== '' ? (
+                      <AppText variant="callout" color="text.secondary" numeric>
+                        {e.count}
+                      </AppText>
+                    ) : null}
+                  </View>
+                  {e.results !== '' ? (
+                    <AppText variant="callout" numeric>
+                      {e.results}
+                    </AppText>
+                  ) : null}
+                </Pressable>
+              </View>
+            ))}
+            {doneRows.more !== null ? (
               <View style={{ alignSelf: 'flex-start' }}>
-                <TextButton label={LIBRARY_COPY_UI.saveToWorkouts} onPress={openSave} />
+                <TextButton
+                  label={doneRows.more}
+                  tone="secondary"
+                  onPress={() => {
+                    setShowAll(true);
+                  }}
+                />
               </View>
             ) : null}
           </View>
-        </DelayedFade>
-
-        {/* (Ben, 27 Oct; apple-health.md §2.3) The watch's actuals for this workout, or `Link to this workout?`; nothing otherwise. */}
-        <LinkedActivityRow
-          sessionId={sessionId}
-          pickerOpen={healthPicker}
-          onPickerClose={() => {
-            setHealthPicker(false);
-          }}
-          onChoices={setHealthChoices}
-          onTimesChanged={reload}
-        />
-
-        {/* (Ben, 21 Oct; workout-builder-v3 §6.2) One tap, a weekly review fact. */}
-        <FeelRow sessionId={sessionId} />
-
-        {sum.highlight ? (
-          <RuledSection title="Today" gap="2">
-            <AppText variant="title1" numeric style={{ fontSize: 28, lineHeight: 34, fontWeight: '500' }}>
-              {sum.highlight}
-            </AppText>
-          </RuledSection>
         ) : null}
 
         {sum.checkIn ? (
@@ -507,177 +644,19 @@ export function SummaryScreen() {
           />
         ))}
 
-        {/* D: the shared stat strip (design pass 3.3): one row of light numerals between hairlines, so the exercises start higher. */}
-        <FadeIn motion={follow(0)}>
-          <StatStrip ax={ax} accessibilityLabel={statItems.map((it) => `${it.label} ${it.value}`).join(', ')} items={statItems} />
-          {/* Progress v3: the reps behind This week's `Mon – 92%`, and what was short or skipped (extras can't hide it). */}
-          {pvd?.reps != null ? (
-            <View accessible accessibilityLabel={[pvd.reps.text, pvd.reps.short].filter((x): x is string => x !== null).join('. ')} style={{ paddingTop: theme.space['2'], gap: 2 }}>
-              <AppText variant="callout" color="text.secondary" numeric>
-                {pvd.reps.text}
-              </AppText>
-              {pvd.reps.short !== null ? (
-                <AppText variant="callout" color="text.secondary">
-                  {pvd.reps.short}
-                </AppText>
-              ) : null}
-            </View>
-          ) : null}
-        </FadeIn>
+        {/* (Ben, 21 Oct; workout-builder-v3 §6.2) One tap, a weekly review fact. */}
+        <FeelRow sessionId={sessionId} />
 
-        {sum.comparison ? (
-          <FadeIn motion={follow(1)}>
-            <Comparison c={sum.comparison} tz={tz} />
-          </FadeIn>
-        ) : null}
-        {data.value.newBests.length > 0 ? (
-          // `New best · Bench 100 × 6` (Progress v3): the tracked lifts' new PBs, same definition as the Lifts chart.
-          <FadeIn motion={follow(1)}>
-            <View style={{ gap: theme.space['2'] }}>
-              {data.value.newBests.map((b) => (
-                <View key={b.exerciseId} accessible accessibilityLabel={b.accessibilityLabel} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-                  <Icon name="star.fill" color="text.secondary" size={16} />
-                  <AppText variant="callout" numeric style={{ flex: 1 }}>
-                    {b.text}
-                  </AppText>
-                </View>
-              ))}
-            </View>
-          </FadeIn>
-        ) : null}
-        {/* (Ben, 26 Oct) One definition of best: the `New best` lines above are the Summary's only record lines (the old
-            heaviest-set lines judged by another rule are no longer shown, so they can't disagree with the PB mark). */}
-
-        {sum.exercises.length > 0 ? (
-          <View>
-            <SectionHeader title="Exercises" />
-            {/* Plan tracker v1 (19 Oct): planned vs done, numbers and one word each, never colour alone. */}
-            {sum.exercises.map((e, i) => {
-              // Design pass 3.1: at most 3 lines. Name + verdict; the sets logged (unit note on the line); one plan line.
-              const plan = data.value.planVsDone?.rows.find((r) => r.sessionExerciseId === e.sessionExerciseId) ?? null;
-              const word = plan === null ? null : PLAN_VERDICT_WORD[plan.verdict];
-              const results = summaryResultsLine(e);
-              const third = summaryPlanLine(e, plan);
-              return (
-                <View
-                  key={e.sessionExerciseId}
-                  style={{
-                    gap: 2,
-                    paddingVertical: theme.space['3'],
-                    borderTopWidth: theme.dividerWidth,
-                    borderBottomWidth: i === sum.exercises.length - 1 ? theme.dividerWidth : 0,
-                    borderColor: theme.colors['border.divider'],
-                    marginTop: i === 0 ? theme.space['2'] : 0,
-                  }}
-                >
-                  {/* The exercise's history (progress.md §2.7, slice B): its series, with this workout's point selected. */}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={[e.name, e.setsText, word].filter((x): x is string => x !== null).join(', ')}
-                    accessibilityHint="Opens this exercise’s history"
-                    onPress={() => {
-                      navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, sessionExerciseId: e.sessionExerciseId, name: e.name });
-                    }}
-                    style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
-                  >
-                    <AppText variant="headline" numberOfLines={2} style={{ flex: 1 }}>
-                      {e.name}
-                    </AppText>
-                    {plan !== null && word !== null ? <Tag text={word} icon={VERDICT_ICON[plan.verdict]} /> : null}
-                    <Icon name="chevron.right" color="text.tertiary" size={14} />
-                  </Pressable>
-                  {results !== '' ? (
-                    <AppText variant="callout" numeric>
-                      {results}
-                    </AppText>
-                  ) : null}
-                  {third.text !== '' ? (
-                    <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={third.spoken}>
-                      {third.text}
-                    </AppText>
-                  ) : null}
-                </View>
-              );
-            })}
-          </View>
-        ) : null}
-
-        {data.value.mainLift !== null ? (
-          <MainLiftRow
-            view={data.value.mainLift}
-            busy={keepBusy}
-            onTap={(tap) => {
-              if (keepBusy) return;
-              setKeepBusy(true);
-              const run = tap === 'undo' ? services.builder.undoKeepMainLift(sessionId) : services.builder.keepMainLift(sessionId, tap);
-              void run
-                .catch(() => ({ ok: false as const, message: 'Couldn’t save. Try again.' }))
-                .then((r) => {
-                  setKeepBusy(false);
-                  if (!r.ok) setToast({ text: r.message });
-                  changed();
-                  reload();
-                });
-            }}
-          />
-        ) : null}
-
-        {data.value.keep !== null ? (
-          <KeepRow
-            view={data.value.keep}
-            busy={keepBusy}
-            onTap={(tap) => {
-              if (keepBusy) return;
-              setKeepBusy(true);
-              const run = tap === 'undo' ? services.builder.undoKeepNextTime(sessionId) : services.builder.keepNextTime(sessionId, tap);
-              void run
-                .catch(() => ({ ok: false as const, message: 'Couldn’t save. Try again.' }))
-                .then((r) => {
-                  setKeepBusy(false);
-                  if (!r.ok) setToast({ text: r.message });
-                  changed();
-                  reload();
-                });
-            }}
-          />
-        ) : null}
-
-        {nextTime ? (
-          <View style={{ gap: theme.space['3'] }}>
-            <SectionHeader title={nextTime.heading} />
-            {nextTime.status !== null ? (
-              <AppText variant="callout" color="text.secondary">
-                {nextTime.status}
-              </AppText>
-            ) : null}
-            {nextTime.emptyText ? (
-              <AppText variant="callout" color="text.secondary">
-                {nextTime.emptyText}
-              </AppText>
-            ) : null}
-            {nextTime.rows.map((r) => (
-              <NextRow key={r.key} row={r} onTap={(tap) => void tapNext(r, tap)} />
-            ))}
-            {nextTime.undoAll !== null ? (
-              <TextButton
-                label="Undo all"
-                tone="secondary"
-                onPress={() => {
-                  const all = nextTime.undoAll;
-                  if (all === null) return;
-                  void services.coach
-                    .undoNextTargets(all.actionId, all.rows)
-                    .catch(() => ({ ok: false }))
-                    .then((r) => {
-                      if (!r.ok) setToast({ text: 'Couldn’t undo.' });
-                      reload();
-                      changed();
-                    });
-                }}
-              />
-            ) : null}
-          </View>
-        ) : null}
+        {/* (Ben, 27 Oct; apple-health.md §2.3) The watch's actuals for this workout, or `Link to this workout?`; nothing otherwise. */}
+        <LinkedActivityRow
+          sessionId={sessionId}
+          pickerOpen={healthPicker}
+          onPickerClose={() => {
+            setHealthPicker(false);
+          }}
+          onChoices={setHealthChoices}
+          onTimesChanged={reload}
+        />
 
         <View style={{ gap: theme.space['1'] }}>
           {/* No orphan label (design pass 3.5): the heading only over a note. */}
@@ -688,13 +667,15 @@ export function SummaryScreen() {
             </AppText>
           ) : null}
           {sum.dateOnly === null ? (
-            <TextButton
-              label="Ask about this workout"
-              tone="secondary"
-              onPress={() => {
-                navigation.navigate('Coach', { entry: { kind: 'summary', sessionId } });
-              }}
-            />
+            <View style={{ alignSelf: 'flex-start' }}>
+              <TextButton
+                label="Ask about this workout"
+                tone="secondary"
+                onPress={() => {
+                  navigation.navigate('Coach', { entry: { kind: 'summary', sessionId } });
+                }}
+              />
+            </View>
           ) : null}
         </View>
 
@@ -702,22 +683,7 @@ export function SummaryScreen() {
       </ScrollView>
       {toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
       <BottomBar>
-        <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-          {sum.dateOnly === null ? (
-            <View style={{ flex: 1 }}>
-              <SecondaryButton
-                label="Edit times"
-                size="primary"
-                onPress={() => {
-                  setTimes(true);
-                }}
-              />
-            </View>
-          ) : null}
-          <View style={{ flex: 2 }}>
-            <PrimaryButton label="Done" onPress={done} />
-          </View>
-        </View>
+        <PrimaryButton label="Done" onPress={done} />
       </BottomBar>
       {nameSheet !== null ? (
         <NameSheet
@@ -779,43 +745,6 @@ export function SummaryScreen() {
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
-  const theme = useTheme();
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.space['3'], flexWrap: 'wrap' }} accessible accessibilityLabel={`${label}: ${value}`}>
-      <AppText variant="body" color="text.secondary">
-        {label}
-      </AppText>
-      <AppText variant="body" numeric>
-        {value}
-      </AppText>
-    </View>
-  );
-}
-
-function Comparison({ c, tz }: { c: NonNullable<WorkoutSummary['comparison']>; tz: string }) {
-  const theme = useTheme();
-  return (
-    <View style={{ gap: theme.space['1'] }}>
-      <SectionHeader title="Compared with last time" />
-      {c.kind === 'compared' ? (
-        <>
-          <AppText variant="headline">{`${c.exerciseName} · top set`}</AppText>
-          <Fact label="Today" value={c.todayText} />
-          <Fact label={formatDayMonth(toMs(c.lastAtUtc), tz)} value={c.lastText} />
-          <AppText variant="callout" color="text.secondary">
-            {c.why}
-          </AppText>
-        </>
-      ) : (
-        <AppText variant="callout" color="text.secondary">
-          {c.text}
-        </AppText>
-      )}
-    </View>
-  );
-}
-
 /**
  * (Ben, 23 Oct, D1) `Keep for next time?` with what would change, `Skip` and `Apply`; once kept, `<day> updated` with
  * `Undo`. Values from the builder service only.
@@ -826,7 +755,7 @@ function KeepRow({ view, busy, onTap }: { view: KeepNextTimeView; busy: boolean;
     return <StatusLine icon="checkmark.circle" tone="info" text={view.text} {...(view.canUndo ? { action: <TextButton label="Undo" disabled={busy} onPress={() => { onTap('undo'); }} /> } : {})} />;
   }
   return (
-    <Card>
+    <NextTimeItem>
       <View accessible accessibilityLabel={[KEEP_COPY.title, view.label, ...view.lines].join('. ')} style={{ gap: theme.space['1'] }}>
         <AppText variant="headline">{KEEP_COPY.title}</AppText>
         {view.lines.map((l, i) => (
@@ -840,7 +769,7 @@ function KeepRow({ view, busy, onTap }: { view: KeepNextTimeView; busy: boolean;
         <TextButton label={KEEP_COPY.skip} tone="secondary" disabled={busy} onPress={() => { onTap('skip'); }} />
         <TextButton label={KEEP_COPY.apply} accessibilityLabel={`${KEEP_COPY.apply}: keep for next ${view.label}`} disabled={busy} onPress={() => { onTap('apply'); }} />
       </View>
-    </Card>
+    </NextTimeItem>
   );
 }
 
@@ -856,14 +785,20 @@ function MainLiftRow({ view, busy, onTap }: { view: KeepMainLiftView; busy: bool
     return <StatusLine icon="checkmark.circle" tone="info" text={view.text} {...(view.canUndo ? { action: <TextButton label="Undo" disabled={busy} onPress={() => { onTap('undo'); }} /> } : {})} />;
   }
   return (
-    <Card>
+    <NextTimeItem>
       <AppText variant="headline">{view.text}</AppText>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
         <TextButton label={KEEP_COPY.skip} tone="secondary" disabled={busy} onPress={() => { onTap('skip'); }} />
         <TextButton label={KEEP_COPY.apply} accessibilityLabel={`${KEEP_COPY.apply}: ${view.text}`} disabled={busy} onPress={() => { onTap('apply'); }} />
       </View>
-    </Card>
+    </NextTimeItem>
   );
+}
+
+/** (Ben, 27 Oct; redesign §E2) One item of the one `Next time` list: ruled rows, not cards. */
+function NextTimeItem({ children }: { children: ReactNode }) {
+  const theme = useTheme();
+  return <View style={{ gap: theme.space['1'], paddingTop: theme.space['3'], paddingBottom: theme.space['1'], borderTopWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'] }}>{children}</View>;
 }
 
 /**
@@ -875,12 +810,16 @@ function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTa
   const theme = useTheme();
   const [why, setWhy] = useState(false);
   return (
-    <Card>
-      <AppText variant="headline">{row.exerciseName}</AppText>
+    <NextTimeItem>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+        <AppText variant="headline" style={{ flex: 1 }}>
+          {row.exerciseName}
+        </AppText>
+        <Tag text={row.tag} />
+      </View>
       <AppText variant="body" numeric>
         {row.pct === null ? row.target : `${row.target} · ${row.pct}`}
       </AppText>
-      <Tag text={row.tag} />
       {row.note !== null ? (
         <AppText variant="callout" color="text.secondary">
           {row.note}
@@ -916,7 +855,7 @@ function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTa
           ))}
         </View>
       ) : null}
-    </Card>
+    </NextTimeItem>
   );
 }
 
