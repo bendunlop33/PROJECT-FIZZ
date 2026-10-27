@@ -9,7 +9,6 @@ import {
   localDateOf,
   localDateText,
   localHourUtcMs,
-  PB_BLOCK_COPY,
   PB_EDIT_COPY,
   PLAN_OVERVIEW_COPY,
   PLAN_PAUSE_MAX_DAYS,
@@ -18,38 +17,44 @@ import {
   planTabEditAction,
   planTabMenu,
   planTabView,
+  planWeekCircles,
   pbWeekdayName,
   toMs,
+  type LibraryChangesView,
   type PlanOverview,
   type PlanTabRow,
 } from '@fizz/domain';
 
 import { dateAt } from '../../clock';
+import { changePlanView, CHANGE_PLAN_COPY, type ChangePlanAction } from '../../library/change-plan-view';
 import { WEEK_COPY } from '../../services/week-services';
 import type { PlanOverviewWithBlock } from '../../services/plan-services';
-import { openNextBlock, openPlanEdit, todayWithDay } from '../../navigation/actions';
+import { openNextBlock, openPlanChange, todayWithDay } from '../../navigation/actions';
 import { newUuid } from '../../device/runtime';
 import type { LibraryStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, Eyebrow, Icon, TextButton } from '../../ui';
 import { SwipeRow } from '../../ui/table-parts';
+import { ChangePlanSheet, EditPlanButton } from './ChangePlanSheet';
 import { LiftTargetsBlock } from './LiftTargetsBlock';
-import { WeekChips } from './WeekChips';
+import { WeekCircles } from './WeekCircles';
 
 /** `why`: a line behind the toast's `Why?` (End plan's `N workouts not restored`). */
 export type PlanToast = { text: string; action?: string; onAction?: () => void; why?: string };
 
 /**
- * Library › Plan › the plan in use (Ben, 27 Oct: Library › Plan v2, docs/design/plan-tab-v2.md; replaces the 19 Oct
- * block and the week strip's duplicate day list). A header card: the plan's name with `⋯` (Edit plan or Start next
- * block shown on the card; `⋯`: Pause/Resume, Ask coach to change, Edit goal, End plan), `Week 3 of 6 · deload in
- * week 6`, the goal, the week chips (current week dotted, selected week filled). Then **one** list of the selected
- * week's days: ✓ done with its date, Up next, the weekday on Set days plans and the main lifts; a tap opens the day,
- * a swipe (or `⋯`, long-press, VoiceOver actions) has `Do today` and `Move day`. Every value comes from `services.plans.overview()` through `planTabView`; nothing here
- * computes a plan or a load. Local only (rule 1). Every write keeps its op ID and Undo toast.
+ * Library › Plan › the plan in use (redesign 27 Oct, section D; prototype `Library › Plan`). A header card: the plan's
+ * name with `⋯` (Pause / Resume, Ask coach), `Goal: Muscle · 3 days a week · 45 min`, and the week circles spread
+ * evenly (done ✓, this week filled, later outlined, `Deload` under a deload week; a tap shows that week). Under it,
+ * when there are any, `✦ 3 changes · next week ›` (the Changes screen). Then `This week`: the selected week's days,
+ * ✓ done with its date, Up next; a tap opens the day, a swipe (or `⋯`, long-press, VoiceOver actions) has `Do today`
+ * and `Move day`. At the bottom the full-width `Edit plan` opens **Change plan** (Days and time, Goal, a day's
+ * exercises, Ask the coach, End plan). Every value comes from `services.plans.overview()` and
+ * `services.libraryChanges` through pure views; nothing here computes a plan, a load or a change. Local only (rule 1).
+ * Every write keeps its op ID, its read version (rule 5) and its Undo toast.
  */
-export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; onToast: (t: PlanToast | null) => void }) {
+export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWithBlock; changes: LibraryChangesView | null; onToast: (t: PlanToast | null) => void }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -57,6 +62,7 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
   const stack = useNavigation<NativeStackNavigationProp<LibraryStackParams, 'LibraryHome'>>();
   // (Ben, 20 Oct) Pause: the in-place picker; null closed, else the picked `until` (null: until Resume).
   const [pausing, setPausing] = useState<{ until: string | null } | null>(null);
+  const [sheet, setSheet] = useState(false);
   const busy = useRef(false);
   // One op ID per confirm, so a retried tap is the same End (rule 5).
   const endOp = useRef<string | null>(null);
@@ -205,32 +211,47 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
   });
 
   const edit = planTabEditAction(view);
+  const sheetView = changePlanView({
+    answers: b?.answers ?? null,
+    editable: view.editable,
+    goalText: view.goal,
+    days: plan.days.map((d) => ({ name: d.name, routineId: d.routineId })),
+    block: b === null ? null : { current: b.current, of: b.views.length },
+  });
 
-  function confirmEnd() {
-    endOp.current = null;
-    ActionSheetIOS.showActionSheetWithOptions({ title: PLAN_TAB_VIEW_COPY.endConfirm, options: [PLAN_TAB_VIEW_COPY.endPlan, PLAN_TAB_VIEW_COPY.cancel], destructiveButtonIndex: 0, cancelButtonIndex: 1 }, (i) => {
-      if (i === 0) void end();
-    });
-  }
-
-  /** The header's `⋯`: Pause/Resume, Ask coach to change, Edit goal, End plan (`Edit plan` is visible on the card). */
+  /** The header's `⋯` (D1): Pause / Resume and Ask coach. */
   function openMenu() {
     const items = planTabMenu(view, plan.paused !== null);
     const options = [...items.map((x) => x.label), PLAN_TAB_VIEW_COPY.cancel];
-    ActionSheetIOS.showActionSheetWithOptions({ title: plan.name, options, cancelButtonIndex: items.length, destructiveButtonIndex: items.findIndex((x) => x.kind === 'end') }, (i) => {
+    ActionSheetIOS.showActionSheetWithOptions({ title: plan.name, options, cancelButtonIndex: items.length }, (i) => {
       const item = items[i];
       if (item === undefined) return;
       if (item.kind === 'pause') setPausing({ until: null });
       else if (item.kind === 'resume') resume();
-      else if (item.kind === 'coach') navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: PLAN_OVERVIEW_COPY.coachDraft });
-      else if (item.kind === 'goal') openTraining();
-      else confirmEnd();
+      else navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: PLAN_OVERVIEW_COPY.coachDraft });
     });
   }
 
-  /** `Edit plan` (the block runs) or `Start next block` (done): visible on the card (UX review 27 Oct §P4). */
-  function editAction(kind: 'edit' | 'next') {
-    navigation.dispatch(kind === 'edit' ? openPlanEdit(plan.planId) : openNextBlock(plan.planId));
+  /** Change plan's rows (D4): each opens its page; End plan was confirmed in the sheet. */
+  function changePlan(a: ChangePlanAction) {
+    setSheet(false);
+    switch (a.kind) {
+      case 'week':
+      case 'goal':
+        if (a.kind === 'goal' && sheetView.goalOpens === 'profile') openTraining();
+        else navigation.dispatch(openPlanChange(plan.planId, a.kind === 'week' ? 'week' : 'goals'));
+        return;
+      case 'day':
+        navigation.navigate('WorkoutEditor', { routineId: a.routineId, from: 'PlanDay' });
+        return;
+      case 'coach':
+        navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: PLAN_OVERVIEW_COPY.coachDraft });
+        return;
+      case 'end':
+        endOp.current = null;
+        void end();
+        return;
+    }
   }
 
   function doToday(row: PlanTabRow) {
@@ -251,6 +272,8 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
     else if (kind === 'move') setMoving(row.dayIndex);
   }
 
+  const circles = view.chips === null ? null : planWeekCircles(view.chips);
+
   return (
     <View style={{ gap: theme.space['4'] }}>
       <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['2'] }}>
@@ -268,9 +291,21 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
             <Icon name="ellipsis" color="text.secondary" size={20} />
           </Pressable>
         </View>
-        <AppText variant="callout" color="text.secondary" numeric>
-          {view.line}
-        </AppText>
+        {view.goal !== null ? (
+          <AppText variant="callout" color="text.secondary" numeric>
+            {view.goal}
+          </AppText>
+        ) : null}
+        {view.chips === null ? (
+          <AppText variant="callout" color="text.secondary" numeric>
+            {view.line}
+          </AppText>
+        ) : null}
+        {view.blockDone ? (
+          <AppText variant="callout" color="text.secondary">
+            {view.line}
+          </AppText>
+        ) : null}
         {plan.paused !== null ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
             <Icon name="pause.circle" color="text.secondary" size={16} />
@@ -280,36 +315,14 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
             <TextButton label={PLAN_OVERVIEW_COPY.resume} onPress={resume} />
           </View>
         ) : null}
-        {view.goal !== null ? (
-          <AppText variant="callout" color="text.secondary" numeric>
-            {view.goal}
-          </AppText>
-        ) : null}
-        {view.chips !== null ? (
-          <View style={{ paddingTop: theme.space['1'] }}>
-            <WeekChips
-              chips={view.chips}
-              onSelect={(w) => {
-                setPicked({ key: blockKey, week: w });
-                setMoving(null);
-              }}
-            />
-          </View>
-        ) : null}
-        {edit !== null ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: theme.space['2'] }}>
-            {view.blockDone ? (
-              <AppText variant="callout" color="text.secondary">
-                {`${PB_BLOCK_COPY.done} ·`}
-              </AppText>
-            ) : null}
-            <TextButton
-              label={edit.label}
-              onPress={() => {
-                editAction(edit.kind);
-              }}
-            />
-          </View>
+        {circles !== null ? (
+          <WeekCircles
+            circles={circles}
+            onSelect={(w) => {
+              setPicked({ key: blockKey, week: w });
+              setMoving(null);
+            }}
+          />
         ) : null}
         {pausing !== null ? (
           <View style={{ gap: theme.space['2'], paddingTop: theme.space['2'] }}>
@@ -362,6 +375,25 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
           </View>
         ) : null}
       </View>
+      {/* (D2) The coach's changes to come, only when there are any. */}
+      {changes !== null && changes.rowText !== null ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={changes.rowText}
+          onPress={() => {
+            stack.navigate('LibraryChanges');
+          }}
+          style={({ pressed }) => ({ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingHorizontal: theme.space['4'], borderRadius: theme.radius.lg, backgroundColor: theme.colors['bg.surface'], opacity: pressed ? 0.7 : 1 })}
+        >
+          <AppText variant="body" color="accent">
+            ✦
+          </AppText>
+          <AppText variant="body" numeric style={{ flex: 1, fontWeight: '600' }}>
+            {changes.rowText}
+          </AppText>
+          <Icon name="chevron.right" color="text.tertiary" size={14} />
+        </Pressable>
+      ) : null}
       <View>
         <View style={{ minHeight: 36, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: theme.space['2'] }}>
           <View accessibilityRole="header">
@@ -429,6 +461,23 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
       </View>
       {/* (Ben approved 20 Oct) Lift targets: nothing while the setting is off. */}
       <LiftTargetsBlock onToast={onToast} />
+      {/* (D4) Full-width at the bottom: Change plan; once the block is done, Start next block. */}
+      <EditPlanButton
+        label={edit?.kind === 'next' ? edit.label : CHANGE_PLAN_COPY.editPlan}
+        onPress={() => {
+          if (edit?.kind === 'next') navigation.dispatch(openNextBlock(plan.planId));
+          else setSheet(true);
+        }}
+      />
+      <ChangePlanSheet
+        visible={sheet}
+        title={plan.name}
+        view={sheetView}
+        onAction={changePlan}
+        onClose={() => {
+          setSheet(false);
+        }}
+      />
     </View>
   );
 }

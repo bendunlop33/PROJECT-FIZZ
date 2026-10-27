@@ -36,6 +36,10 @@ export const PLAN_TAB_VIEW_COPY = {
   editGoal: 'Edit goal',
   setGoal: 'Set goal',
   pause: 'Pause plan',
+  /** (Redesign D1) The header ⋯ items. */
+  pauseShort: 'Pause',
+  askCoachShort: 'Ask coach',
+  deload: 'Deload',
   resume: 'Resume',
   endPlan: 'End plan',
   endConfirm: 'End this plan?',
@@ -228,21 +232,43 @@ export function planTabView(input: PlanTabInput): PlanTabView {
   };
 }
 
-export type PlanTabMenuKind = 'pause' | 'resume' | 'coach' | 'goal' | 'end';
+export type PlanTabMenuKind = 'pause' | 'resume' | 'coach';
 
 /**
- * The header's `⋯` (iOS action sheet), in order: `Pause plan` / `Resume`, `Ask coach to change`, `Edit goal` /
- * `Set goal`, `End plan` (destructive, last). `Edit plan` (or `Start next block` once done) is **not** here: it stays
- * a visible button on the card (UX review 27 Oct §P4: Ben wants plan editing easy to find).
+ * (Redesign 27 Oct, D1) The header's `⋯` (iOS action sheet): `Pause` / `Resume` and `Ask coach`. Everything else that
+ * changes the plan (Days and time, Goal, a day's exercises, End plan) is behind the full-width `Edit plan` at the
+ * bottom of the page (`changePlanView`). `view` is kept for callers; the goal action lives in Change plan now.
  */
-export function planTabMenu(view: Pick<PlanTabView, 'goalAction'>, paused: boolean): { kind: PlanTabMenuKind; label: string }[] {
+export function planTabMenu(_view: Pick<PlanTabView, 'goalAction'>, paused: boolean): { kind: PlanTabMenuKind; label: string }[] {
   const C = PLAN_TAB_VIEW_COPY;
-  return [
-    paused ? { kind: 'resume' as const, label: C.resume } : { kind: 'pause' as const, label: C.pause },
-    { kind: 'coach' as const, label: C.askCoach },
-    { kind: 'goal' as const, label: view.goalAction },
-    { kind: 'end' as const, label: C.endPlan },
-  ];
+  return [paused ? { kind: 'resume' as const, label: C.resume } : { kind: 'pause' as const, label: C.pauseShort }, { kind: 'coach' as const, label: C.askCoachShort }];
+}
+
+export type PlanWeekCircleState = 'done' | 'current' | 'later';
+
+export interface PlanWeekCircle {
+  week: number;
+  state: PlanWeekCircleState;
+  /** The number inside the circle; null on a done week (a ✓). */
+  text: string | null;
+  /** Picked (and not this week): a ring around it; the list shows that week. */
+  selected: boolean;
+  /** `Deload` under a deload week; else null. */
+  caption: string | null;
+  accessibilityLabel: string;
+}
+
+/**
+ * (Redesign 27 Oct, D1) The plan's weeks as evenly spread circles: done = ✓ (green), this week = filled with its
+ * number, later = outlined with its number, `Deload` under a deload week. Tapping one shows that week (`selected`).
+ * Never colour alone: each says its state.
+ */
+export function planWeekCircles(chips: readonly Pick<PlanTabChip, 'week' | 'done' | 'current' | 'selected' | 'deload'>[]): PlanWeekCircle[] {
+  return chips.map((c) => {
+    const state: PlanWeekCircleState = c.done ? 'done' : c.current ? 'current' : 'later';
+    const said = [`Week ${String(c.week)}`, ...(state === 'done' ? ['done'] : state === 'current' ? ['this week'] : []), ...(c.deload ? ['deload'] : [])];
+    return { week: c.week, state, text: state === 'done' ? null : String(c.week), selected: c.selected && !c.current, caption: c.deload ? PLAN_TAB_VIEW_COPY.deload : null, accessibilityLabel: said.join(', ') };
+  });
 }
 
 /**

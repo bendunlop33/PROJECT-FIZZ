@@ -17,6 +17,7 @@ import { AddGymScreen } from '../screens/AddGymScreen';
 import { BuilderSetupScreen } from '../screens/builder/BuilderSetupScreen';
 import { BuilderWorkoutScreen } from '../screens/builder/BuilderWorkoutScreen';
 import { PlanSetupScreen } from '../screens/plan/PlanSetupScreen';
+import { ChangesScreen, EarlierChangesScreen, EarlierWeekScreen } from '../screens/library/ChangesScreen';
 import { CapabilityProbeScreen } from '../screens/CapabilityProbeScreen';
 import { DataBackupScreen } from '../screens/data/DataBackupScreen';
 import { EquipmentEditorScreen } from '../screens/gym/EquipmentEditorScreen';
@@ -168,6 +169,10 @@ function LibraryNavigator() {
       <LibraryStack.Screen name="LibraryExercise" component={ExerciseInfoScreen} options={({ route }) => ({ title: route.params.name ?? '', headerBackTitle: 'Library' })} />
       {/* Your plan › a day (Ben, 19 Oct): the big title is in the page; back reads `Your plan`. */}
       <LibraryStack.Screen name="LibraryPlanDay" component={PlanDayScreen} options={{ title: '', headerBackTitle: 'Plan' }} />
+      {/* (Redesign 27 Oct, D2) The coach's changes to come, moved here from Progress; earlier weeks under it. */}
+      <LibraryStack.Screen name="LibraryChanges" component={ChangesScreen} options={{ title: 'Changes', headerBackTitle: 'Plan' }} />
+      <LibraryStack.Screen name="LibraryEarlierChanges" component={EarlierChangesScreen} options={{ title: 'Earlier changes', headerBackTitle: 'Changes' }} />
+      <LibraryStack.Screen name="LibraryEarlierWeek" component={EarlierWeekScreen} options={{ title: 'Changes', headerBackTitle: 'Earlier' }} />
     </LibraryStack.Navigator>
   );
 }

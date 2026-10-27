@@ -8,6 +8,7 @@ import {
   planTabEditAction,
   planTabLine,
   planTabMenu,
+  planWeekCircles,
   planTabView,
   type PbBlockDay,
   type PbBlockStripCell,
@@ -209,7 +210,7 @@ describe('one list of days (states, dates, weekday, main lifts)', () => {
     expect(v.chips?.every((c) => c.done && !c.current)).toBe(true);
     expect(v.rows.every((r) => r.state !== 'next' && r.actions === null)).toBe(true);
     expect(planTabEditAction(v)).toEqual({ kind: 'next', label: 'Start next block' });
-    expect(planTabMenu(v, false).map((x) => x.kind)).toEqual(['pause', 'coach', 'goal', 'end']);
+    expect(planTabMenu(v, false).map((x) => x.kind)).toEqual(['pause', 'coach']);
   });
 });
 
@@ -224,19 +225,44 @@ describe('coach plans (no length)', () => {
       ['todo', null],
     ]);
     expect(planTabEditAction(v)).toBeNull();
-    expect(planTabMenu(v, false).map((x) => x.kind)).toEqual(['pause', 'coach', 'goal', 'end']);
+    expect(planTabMenu(v, false).map((x) => x.kind)).toEqual(['pause', 'coach']);
   });
 });
 
-describe('every action stays reachable: Edit plan visible, the rest in ⋯ (UX review 27 Oct §P4)', () => {
-  it('running block: `Edit plan` on the card; ⋯ has Pause plan, Ask coach to change, Edit goal, End plan; paused: Resume; no goal: Set goal', () => {
+describe('every action stays reachable: ⋯ has Pause and Ask coach; the rest behind Edit plan (redesign 27 Oct D1)', () => {
+  it('running block: `Edit plan`; ⋯ has Pause, Ask coach; paused: Resume', () => {
     const v = view({ overview: overview(), block: block(2), selected: null });
     expect(planTabEditAction(v)).toEqual({ kind: 'edit', label: 'Edit plan' });
-    expect(planTabMenu(v, false).map((x) => x.label)).toEqual(['Pause plan', 'Ask coach to change', 'Edit goal', 'End plan']);
-    expect(planTabMenu(v, true).map((x) => x.label)).toEqual(['Resume', 'Ask coach to change', 'Edit goal', 'End plan']);
-    const noGoal = view({ overview: { ...overview(), goal: { text: null, action: 'Set goal' } }, block: block(2), selected: null });
-    expect(noGoal.goal).toBeNull();
-    expect(planTabMenu(noGoal, false).map((x) => x.label)).toContain('Set goal');
+    expect(planTabMenu(v, false).map((x) => x.label)).toEqual(['Pause', 'Ask coach']);
+    expect(planTabMenu(v, true).map((x) => x.label)).toEqual(['Resume', 'Ask coach']);
+  });
+});
+
+describe('week circles (redesign 27 Oct D1)', () => {
+  it('done = ✓, this week = its number filled, later = outlined numbers, `Deload` under a deload week; a tapped week is ringed', () => {
+    const chips = planTabChips(
+      [
+        { week: 1, deload: false, state: 'done' },
+        { week: 2, deload: false, state: 'done' },
+        { week: 3, deload: false, state: 'current' },
+        { week: 4, deload: false, state: 'todo' },
+        { week: 5, deload: false, state: 'todo' },
+        { week: 6, deload: true, state: 'todo' },
+      ],
+      5,
+    );
+    const c = planWeekCircles(chips);
+    expect(c.map((x) => [x.state, x.text, x.caption, x.selected])).toEqual([
+      ['done', null, null, false],
+      ['done', null, null, false],
+      ['current', '3', null, false],
+      ['later', '4', null, false],
+      ['later', '5', null, true],
+      ['later', '6', 'Deload', false],
+    ]);
+    expect(c.map((x) => x.accessibilityLabel)).toEqual(['Week 1, done', 'Week 2, done', 'Week 3, this week', 'Week 4', 'Week 5', 'Week 6, deload']);
+    // The current week selected is never drawn as a separate pick.
+    expect(planWeekCircles(planTabChips([{ week: 1, deload: false, state: 'current' }], 1))[0]?.selected).toBe(false);
   });
 });
 
