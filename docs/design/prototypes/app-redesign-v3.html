@@ -246,6 +246,7 @@ body{background:#050505;color:#F3EEE8;margin:0;color-scheme:dark;padding-block:1
 #histcal .d .o{min-width:0;height:auto;font-size:14px;line-height:16px;border:0;background:none}
 .sd{width:8px;height:8px;border-radius:4px;display:inline-block}
 .sd.push{background:#F2A65A}.sd.pull{background:#6FA8F5}.sd.legs{background:#C792EA}.sd.act{background:transparent;box-shadow:inset 0 0 0 1.5px var(--t2)}
+.lg{display:inline-block;width:16px;height:10px;border-radius:4px}.lg.done{background:var(--done-fill);border:1px solid var(--done-edge)}.lg.act{background:var(--run-fill);border:1px solid rgba(127,178,229,.4)}.lg.plan{border:1px dashed var(--t3)}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;line-height:18px;color:var(--t2);align-items:center}
 .legend>span{display:inline-flex;align-items:center;gap:5px}
 .cal .d{min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
@@ -303,8 +304,9 @@ body{background:#050505;color:#F3EEE8;margin:0;color-scheme:dark;padding-block:1
 <div class="scr" id="s-today" data-name="Today (after) · collapsed card, two Start buttons" hidden>
 <div class="phone"><div class="sb"></div><div class="body">
 <div class="scroll" style="padding-top:12px;gap:12px">
-  <div class="thead"><div class="tt"><span class="t1">Tuesday</span><span class="co c2 num">Week 3 of 6</span></div><span class="iconbtn acc" aria-label="Coach">✦</span><span class="iconbtn" aria-label="Talk to the coach"><i data-ic="mic" data-s="18"></i></span></div>
+  <div class="thead"><div class="tt"><span class="t1">Tuesday</span><span class="co c2 num">27 October</span></div><span class="iconbtn acc" aria-label="Coach">✦</span><span class="iconbtn" aria-label="Talk to the coach"><i data-ic="mic" data-s="18"></i></span></div>
   <div class="row" data-go="prog-body" data-long="today-custom" aria-label="Sleep last night 7 hours 5 minutes. Resting heart rate 58. From Apple Health. Long-press to customise" style="gap:8px;min-height:40px;padding:4px 0 8px"><span class="c3"><i data-ic="heart" data-s="16"></i></span><span class="co c2 num">Sleep 7h&nbsp;05m · RHR 58</span><span class="c3"><i data-ic="chev-r" data-s="12"></i></span></div>
+  <div class="row between" style="align-items:baseline;margin-top:4px"><span class="sec">This week</span><span class="co c2 num sm14">Plan week 3 of 6</span></div>
   <div class="strip">
     <div class="cell past"><span class="wd">SAT</span><span class="dm num">24</span><span class="pill done">Legs</span></div>
     <div class="cell past"><span class="wd">SUN</span><span class="dm num">25</span><span class="pill rest">Rest</span></div>
@@ -312,8 +314,9 @@ body{background:#050505;color:#F3EEE8;margin:0;color-scheme:dark;padding-block:1
     <div class="cell today"><span class="wd">TODAY</span><span class="dm num">27</span><span class="pill plan">Push</span></div>
     <div class="cell"><span class="wd">WED</span><span class="dm num">28</span></div><div class="cell"><span class="wd">THU</span><span class="dm num">29</span><span class="pill plan">Legs</span></div><div class="cell"><span class="wd">FRI</span><span class="dm num">30</span></div>
   </div>
-  <div class="col" style="gap:6px"><span class="sec">Your split</span><div class="daycontrol"><span class="on">Push</span><span>Pull</span><span>Legs</span><span class="more" data-go="today-other">⋯</span></div></div>
-  <div class="col" style="gap:6px"><span class="sec">Up next</span>
+  <div class="legend" style="margin-top:-2px"><span><span class="lg done"></span>Strength</span><span><span class="lg act"></span>Activity</span><span><span class="lg plan"></span>Planned</span></div>
+  <div class="col" style="gap:7px;margin-top:4px"><span class="sec">Your split</span><div class="daycontrol"><span class="on">Push</span><span>Pull</span><span>Legs</span><span class="more" data-go="today-other">⋯</span></div></div>
+  <div class="col" style="gap:7px;margin-top:7px"><span class="sec">Up next</span>
   <div class="card" id="tcard" style="gap:8px">
     <div class="row between" style="align-items:flex-start"><div class="col f1" style="gap:2px"><span class="t2">Push</span><span class="co c2 num">5 exercises · 45&nbsp;min</span></div><span class="lnk" data-go="your-workout" style="padding:4px 0 0 12px">Edit</span></div>
     <div class="row between"><span class="lnk sec2 xmore" data-tog="tcard">Show exercises</span><span class="lnk sec2 xless" data-tog="tcard">Hide exercises</span><span class="tag xmore" data-go="today-offer"><span class="acc">✦</span>1 change</span></div>
