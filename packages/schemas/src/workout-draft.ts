@@ -270,6 +270,8 @@ export const DraftSlotBuilderSchema = z.object({
       added: z.literal(true).optional(),
       from: IdSchema.optional(),
       setsFrom: z.int().min(1).max(BUILD_LIMITS.maxWorkingSets).optional(),
+      /** (Ben, 27 Oct) He changed its superset (paired, unlinked) or moved it himself. */
+      placed: z.literal(true).optional(),
     })
     .optional(),
   /** (D1) Working sets Today's Time took from this slot (Today's card only), so Keep compares Ben's count like with like. */

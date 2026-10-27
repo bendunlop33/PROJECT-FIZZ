@@ -57,11 +57,14 @@ import {
   undoMovePlanDay,
   syncPlanWeek,
   type PbBlockView,
+  type PbBlockWeek,
+  pbDaysAtOf,
+  pbVersionOf,
   type HistoryWorkout,
 } from '@fizz/domain';
 import type { PlanWrite, Store } from '@fizz/persistence';
 import { createVersionMemo } from './version-memo';
-import { editBlockOf, readPlanBlock, slotKits, weekViews } from './plan-edit-read';
+import { editBlockOf, readPlanBlock, slotKits, weekViews, type WeekViewsInput } from './plan-edit-read';
 import type { Exercise, MuscleGroup, PlanApplyMode, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
@@ -83,6 +86,8 @@ export interface PlanServicesDeps {
   upNextRoutineId?: (gymId: string | null) => Promise<string | null>;
   /** What Start would create for a workout at this gym (a dry run, saves nothing) and about how long. */
   plannedDay?: (routineId: string, gymId: string) => Promise<{ aggregate: SessionAggregate; aboutMinutes: number | null } | null>;
+  /** (Ben, 27 Oct) Today's card minutes for a plan day's workout (the shared estimate); absent or null: the dry run's. */
+  todayMinutes?: (routineId: string) => Promise<number | null>;
   /** Each split day's main lift (`Targets hit` shows on main lifts only, Ben 20 Oct); absent: none. */
   splitMainLiftIds?: () => Promise<ReadonlySet<string>>;
   /** (Ben, 20 Oct) This week's activity lines and the week change in use (week-services); absent: none. */
@@ -259,7 +264,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     const kitOf = await slotKits(deps.store(), p.id);
     const a = b.builder.answers;
     // (Ben, 26 Oct: Edit plan) Each week from the plan's week map; Set days plans show each day's weekday.
-    const views = weekViews({ plan, answers: a, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise' });
+    const views = weekViews({ plan, answers: a, block, kitOf, nameOf: (id) => of(id)?.name ?? 'Exercise', asWorkout: await asWorkoutOf(p, plan, block, of) });
     const deloads = views[0]?.deloadWeeks ?? [];
     const line = [`${String(a.weeks)} weeks`, EFFORT_WORD[a.effort], ...(deloads.length === 0 ? [] : [`deload ${deloads.length === 1 ? 'week' : 'weeks'} ${deloads.join(', ')}`])].join(' · ');
     const eb = editBlockOf(block);
@@ -276,6 +281,32 @@ export function createPlanServices(deps: PlanServicesDeps) {
   }
 
   /**
+   * (Ben, 27 Oct: "If I add superset it doesn't then change the plan") Weeks not done yet show each plan day as its
+   * workout will run it: the day's workout (the one Apply made, else the first) and the version it was last made to
+   * match (`daysAt`). Undefined: the block is done.
+   */
+  async function asWorkoutOf(p: UserProfile, plan: PlanDraft, block: PbBlockWeek, of: (id: string) => Exercise | null): Promise<WeekViewsInput['asWorkout']> {
+    if (block.done) return undefined;
+    const routines = await live(p.id);
+    const at = pbDaysAtOf(plan);
+    return {
+      fromWeek: block.week,
+      doneThisWeek: block.daysDone[block.week - 1] ?? [],
+      dayOf: (dayIndex) => {
+        const made = plan.applied?.made.find((m) => m.dayIndex === dayIndex)?.routineId;
+        const r = routines.find((x) => x.id === made) ?? routines.find((x) => planDayOf(x)?.planId === plan.id && planDayOf(x)?.dayIndex === dayIndex);
+        if (r === undefined) return null;
+        const n = at.get(dayIndex) ?? null;
+        return { template: r.exercises, base: n === null ? null : (pbVersionOf(plan, n)?.days.find((d) => d.index === dayIndex) ?? null) };
+      },
+      unitOf: (id) => {
+        const e = of(id);
+        return e === null ? null : { unit: p.preferredUnit, convention: e.defaultLoadConvention };
+      },
+    };
+  }
+
+  /**
    * (Ben, 27 Oct: Library › Plan v2) A plan day's planned targets in block week `w`, when that isn't the block's week
    * now: what the old week strip's day card showed. Null: this week, a coach plan, or not a day of the plan.
    */
@@ -287,7 +318,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     const a = b.builder.answers;
     if (dayIndex === null || block === null || w < 1 || w > a.weeks || (!block.done && w === block.week)) return null;
     const of = await exerciseOf();
-    const views = weekViews({ plan, answers: a, block, kitOf: await slotKits(deps.store(), p.id), nameOf: (id) => of(id)?.name ?? 'Exercise' });
+    const views = weekViews({ plan, answers: a, block, kitOf: await slotKits(deps.store(), p.id), nameOf: (id) => of(id)?.name ?? 'Exercise', asWorkout: await asWorkoutOf(p, plan, block, of) });
     const view = views[w - 1];
     const day = view?.days.find((d) => d.index === dayIndex);
     if (view === undefined || day === undefined) return null;
@@ -654,7 +685,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const detail =
         run === null
           ? planDayFromTemplates({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, routine, exerciseOf: await exerciseOf(), unit: p.preferredUnit, history, targetsHit })
-          : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: run.aboutMinutes, planned: run.aggregate, history, targetsHit });
+          : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: (await deps.todayMinutes?.(routine.id).catch(() => null)) ?? run.aboutMinutes, planned: run.aggregate, history, targetsHit });
       const status = run !== null ? 'planned' : gym === null ? 'no_gym' : 'not_here';
       const nowMs = toMs(deps.now().utc);
       // Pinned while no workout since the pin did that day (as Up next reads it).

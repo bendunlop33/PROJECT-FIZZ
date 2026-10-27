@@ -1,5 +1,6 @@
 import {
   pbBlockOfPlan,
+  pbDayAsWorkout,
   pbBlockViews,
   pbKitOfEquipment,
   pbVersionOf,
@@ -12,7 +13,7 @@ import {
   type PlanKit,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
-import type { DraftSlot, EquipmentInstance, PlanBuilderAnswers, PlanDayDraft, PlanDraft } from '@fizz/schemas';
+import type { DraftSlot, EquipmentInstance, LoadConvention, PlanBuilderAnswers, PlanDayDraft, PlanDraft, RoutineExercise, WeightUnit } from '@fizz/schemas';
 
 /**
  * (Ben, 26 Oct: Edit plan on a running plan) Reads shared by Library › Your plan and the plan builder's edit: the
@@ -58,6 +59,17 @@ export interface WeekViewsInput {
   nameOf: (exerciseId: string) => string;
   /** An edit's new accessory slots' week-1 reps (the rebuild's). */
   startReps?: Readonly<Record<string, number>>;
+  /**
+   * (Ben, 27 Oct) Weeks not done yet show each day as its workout will run it (`pbDayAsWorkout`): the plan day's
+   * workout (template) and the version day it was last made to match. A day done this week shows as planned. Absent:
+   * the stored versions only (an edit's preview).
+   */
+  asWorkout?: | {
+    fromWeek: number;
+    doneThisWeek: readonly number[];
+    dayOf: (dayIndex: number) => { template: readonly RoutineExercise[]; base: PlanDayDraft | null } | null;
+    unitOf: (exerciseId: string) => { unit: WeightUnit; convention: LoadConvention } | null;
+  } | undefined;
 }
 
 /** Every week's view: its days (planned targets that week), weekdays on Set days plans (a `Move day` this week). */
@@ -67,7 +79,16 @@ export function weekViews(input: WeekViewsInput): PbBlockView[] {
   // A kept slot keeps its plan's start (the plan's versions win); only a new slot takes the rebuild's.
   const merged: Record<string, number> = { ...(input.startReps ?? {}) };
   for (const v of plan.versions) Object.assign(merged, v.builder?.startReps ?? {});
-  const daysOf = (w: number): PlanDayDraft[] => [...(input.weekDays?.[w - 1] ?? pbWeekDaysOf(plan, w))];
+  const aw = input.asWorkout;
+  const daysOf = (w: number): PlanDayDraft[] => {
+    const days = [...(input.weekDays?.[w - 1] ?? pbWeekDaysOf(plan, w))];
+    if (aw === undefined || w < aw.fromWeek) return days;
+    return days.map((d) => {
+      if (w === aw.fromWeek && aw.doneThisWeek.includes(d.index)) return d;
+      const t = aw.dayOf(d.index);
+      return t === null ? d : pbDayAsWorkout(d, t.template, t.base, aw.unitOf);
+    });
+  };
   const first = daysOf(1);
   return pbBlockViews({
     version: { days: first },

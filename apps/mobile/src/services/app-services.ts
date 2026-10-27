@@ -922,6 +922,15 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     upNextRoutineId: async (gymId) => (await loop.next.preview(gymId ?? 'typical-gym-preview'))?.routine?.id ?? null,
     plannedDay: (routineId, gymId) => loop.routines.planned(routineId, gymId),
+    // (Ben, 27 Oct) A plan day's `about N min` is Today's card's (the one shared estimate), not the pace-based one.
+    todayMinutes: async (routineId) => {
+      const data = await todaySession.load().catch(() => null);
+      const day = data?.days.find((d) => d.templates.some((t) => t.routineId === routineId));
+      const c = day === undefined ? undefined : data?.initial[day.key];
+      if (data == null || day === undefined || c === undefined) return null;
+      const t = day.templates.find((x) => x.routineId === routineId);
+      return todaySession.card(data, { dayKey: day.key, controls: { ...c, mainLiftExerciseId: t?.mainLiftExerciseId ?? c.mainLiftExerciseId } })?.minutes ?? null;
+    },
     splitMainLiftIds: () => training.splitMainLiftIds(),
   });
 

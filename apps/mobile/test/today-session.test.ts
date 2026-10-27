@@ -40,8 +40,8 @@ const kgLoad = (value: number, convention = 'total') => ({ value, unit: 'kg', co
 const FOUR: [string, string | null, Ex[]][] = [
   ['Push', 'push', [['Bench press', { reps: { min: 6, max: 8 }, load: kgLoad(100) }], ['Incline dumbbell press', { load: kgLoad(27.5, 'per_hand') }]]],
   ['Pull', 'pull', [['Lat pulldown', { load: kgLoad(60, 'stack') }], ['Barbell row', { reps: { min: 6, max: 8 }, load: kgLoad(70) }]]],
-  ['Legs', 'legs', [['Back squat', { reps: { min: 5, max: 6 }, load: kgLoad(100) }]]],
-  ['Upper', null, [['Overhead press', { reps: { min: 6, max: 8 }, load: kgLoad(50) }]]],
+  ['Legs', 'legs', [['Back squat', { reps: { min: 5, max: 6 }, load: kgLoad(100) }], ['Leg extension', { load: kgLoad(40, 'stack') }], ['Leg curl', { load: kgLoad(35, 'stack') }]]],
+  ['Upper', null, [['Overhead press', { reps: { min: 6, max: 8 }, load: kgLoad(50) }], ['Lateral raise', { load: kgLoad(10, 'per_hand') }], ['Triceps pushdown', { load: kgLoad(30, 'stack') }]]],
 ];
 
 function usableOf(req: ModelRequest): { catalogueId: string; name: string }[] {

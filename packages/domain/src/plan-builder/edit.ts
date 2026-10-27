@@ -2,6 +2,7 @@ import {
   PLAN_LIMITS,
   type DraftSetTemplate,
   type DraftSlot,
+  type LoadConvention,
   type PlanBuilderAnswers,
   type PlanDayAt,
   type PlanDayDraft,
@@ -12,6 +13,7 @@ import {
   type Routine,
   type RoutineExercise,
   type SetTemplate,
+  type WeightUnit,
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import { deriveId } from '../stable';
@@ -694,4 +696,44 @@ export function undoMovePlanDay(current: PlanDraft, input: { expectedVersion: nu
   if (current.version !== input.expectedVersion || m === null || m.versionAfter !== current.version) return { kind: 'stale', current };
   const version = current.version + 1;
   return { kind: 'write', next: { ...current, moves: m.before, lastMove: null, opIds: remember(current.opIds, input.opId), version, updatedAtUtc: input.at.utc }, expectedVersion: current.version };
+}
+
+// ---------------------------------------------------------------------------
+// (Ben, 27 Oct: "If I add superset it doesn't then change the plan") A plan day as its workout now has it
+
+/**
+ * `pbDayAsWorkout`: a plan day of a week not done yet, as its workout will run it. The plan's workout (the template
+ * Today drafts) is the day from now on: Ben's own changes to it (Library › Plan › day › Edit, `Keep for next time?`)
+ * stay through a new week's sync, which adds only the version's own changes since the version the workout was last
+ * made to match (`base`; `syncPlanWeek`'s same patch). So the day is the template with that week's changes on top, in
+ * the template's order with its supersets and set counts; each exercise the week's version has keeps its targets. An
+ * exercise only the template has shows its stored sets. A whole-day change (another focus) is the version's day.
+ * Pure; the stored plan never changes.
+ */
+export function pbDayAsWorkout(day: PlanDayDraft, template: readonly RoutineExercise[], base: PlanDayDraft | null, unitOf: (exerciseId: string) => { unit: WeightUnit; convention: LoadConvention } | null = () => null): PlanDayDraft {
+  if (base !== null && base.name !== day.name) return day;
+  const projected = base === null ? [...template] : patchExercises(template, base, day, 'plan-day-view', 1, 'plan-day-view', '1970-01-01T00:00:00.000Z');
+  const workingOf = (n: readonly { setType: string }[]): number => n.filter((t) => t.setType !== 'warmup').length;
+  const used = new Set<string>();
+  const slots: DraftSlot[] = [];
+  [...projected]
+    .sort((a, b) => a.order - b.order)
+    .forEach((e, order) => {
+      const own = day.plan.slots.find((x) => x.exerciseId === e.exerciseId && !used.has(x.slotKey));
+      if (own !== undefined) {
+        used.add(own.slotKey);
+        const n = Math.max(1, Math.min(10, workingOf(e.setTemplates)));
+        slots.push({ ...own, order, supersetGroup: e.supersetGroup, setTemplates: n === pbSlotSets(own) ? own.setTemplates : pbResizeSlot(own.setTemplates, n) });
+        return;
+      }
+      const setTemplates = e.setTemplates.map(
+        (t): DraftSetTemplate => ({ setType: t.setType, reps: t.targetReps, durationS: t.targetReps === null ? t.targetDurationS : null, ...(t.targetReps === null && t.targetDistanceM != null ? { distanceM: t.targetDistanceM } : {}), targetRpe: t.targetRpe, restS: null }),
+      );
+      if (setTemplates.length === 0) return;
+      // Its load is the workout's own (`Auto`, from what Ben lifts): no plan load to show, and not bodyweight unless it is.
+      const u = unitOf(e.exerciseId);
+      const meta = u === null ? {} : { builder: { repRange: setTemplates.find((t) => t.reps !== null)?.reps ?? { min: 8, max: 12 }, unit: u.unit, convention: u.convention, source: 'none' as const, anchorE1rm: null, startLight: null } };
+      slots.push({ slotKey: deriveId(`plan-day-workout:${e.id}`), exerciseId: e.exerciseId, catalogueId: e.exerciseId, order, main: e.main === true, supersetGroup: e.supersetGroup, setTemplates, checkedOn: null, ...meta });
+    });
+  return slots.length === 0 ? day : { ...day, plan: { ...day.plan, slots } };
 }

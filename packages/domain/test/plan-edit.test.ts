@@ -80,7 +80,8 @@ describe('the Changes card: diff and compose', () => {
     const next = rebuilt(plan.id, { ...a, abs: 14 }, built);
     const items = pbDiffDays(pbWeekDaysOf(plan, 1), next.days, nameOf);
     expect(items.length).toBeGreaterThan(0);
-    expect(items.length).toBeLessThanOrEqual(6);
+    // (Ben, 27 Oct) Days are sized by the shared time estimate, so 4 more ab sets take a set from a few other rows too.
+    expect(items.length).toBeLessThanOrEqual(10);
     for (const it of items) expect(['add', 'remove', 'sets']).toContain(it.kind);
     expect(items.every((it) => /^(Upper|Lower) [AB]: /.test(it.text))).toBe(true);
     // Without keeping the plan, the same change reshuffles more.

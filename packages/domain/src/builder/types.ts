@@ -232,6 +232,8 @@ export interface BuilderKeepMarks {
   added?: true;
   from?: string;
   setsFrom?: number;
+  /** (Ben, 27 Oct) Ben himself changed this slot's superset (paired, unlinked) or moved it. */
+  placed?: true;
 }
 
 export interface BuilderSlot {

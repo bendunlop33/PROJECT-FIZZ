@@ -1,3 +1,4 @@
+import { supersetLabels } from '../superset-labels';
 import type { DraftSlot, PlanBuilderAnswers, PlanBuilderRecord, PlanDraft, PlanDraftVersion, PlanPause, SessionDeload } from '@fizz/schemas';
 import { addDays, localDateOf, localWeekBounds } from '../calendar';
 import { pausedInWeek } from '../progress/plan-tracker';
@@ -191,7 +192,8 @@ export function pbExerciseOfSlot(slot: DraftSlot, kit: PlanKit | null, startReps
   const first = work[0];
   const loadOf = (l: DraftSlot['setTemplates'][number]['load']): PbLoad => {
     const v = l?.load ?? null;
-    if (v === null) return slot.checkedOn == null ? { kind: 'bodyweight' } : { kind: 'none' };
+    // (27 Oct) A workout-only exercise (`pbDayAsWorkout`) names its convention: bodyweight only when it is.
+    if (v === null) return slot.checkedOn == null && (slot.builder === undefined || slot.builder.convention === 'bodyweight') ? { kind: 'bodyweight' } : { kind: 'none' };
     return { kind: 'kg', value: v.value, unit: v.unit, convention: v.convention, equipmentId: kit?.equipmentId ?? slot.checkedOn?.equipmentId ?? 'none' };
   };
   const base = { key: slot.catalogueId, muscle: 'Chest' as const, tags: [], pair: null, why: '', estimate: (top?.load ?? first?.load)?.estimate === true };
@@ -225,6 +227,8 @@ export interface PbBlockRow {
   /** Others: `30`, `24 each`, `BW`, `—`; main lifts with a load: null (in the line). */
   kg: string | null;
   est: boolean;
+  /** (Ben, 27 Oct) Its superset label (`A1`, `A2`); null: on its own. */
+  superset: string | null;
 }
 
 export interface PbBlockDay {
@@ -279,12 +283,15 @@ export interface PbBlockViewInput {
   weekdaysOf?: ((w: number, dayIndexes: readonly number[]) => ReadonlyMap<number, number> | null) | undefined;
 }
 
-function rowOf(slot: DraftSlot, t: PbWeekTarget, kit: PlanKit | null, e: PbExercise, name: string): PbBlockRow {
+function rowOf(slot: DraftSlot, t: PbWeekTarget, kit: PlanKit | null, e: PbExercise, name: string, superset: string | null = null): PbBlockRow {
   const perHand = kit?.convention === 'per_hand' || (e.load.kind === 'kg' && e.load.convention === 'per_hand');
   const loadedMain = e.role === 'main' && e.main !== null;
   const kg = loadedMain ? null : e.load.kind === 'bodyweight' ? 'BW' : t.load === null ? '—' : `${fmt(t.load)}${perHand ? ' each' : ''}`;
-  return { key: slot.slotKey, exerciseId: slot.exerciseId, name, main: slot.main, line: t.line, kg, est: e.estimate };
+  return { key: slot.slotKey, exerciseId: slot.exerciseId, name, main: slot.main, line: t.line, kg, est: e.estimate, superset };
 }
+
+/** (Ben, 27 Oct) Superset labels for a day's slots in order (`A1`, `A2`; null on its own). */
+export const pbSupersetLabels = supersetLabels;
 
 export function pbBlockView(input: PbBlockViewInput): PbBlockView {
   const { block, builder } = input;
@@ -305,13 +312,13 @@ export function pbBlockView(input: PbBlockViewInput): PbBlockView {
   const week = input.weekOf?.(viewed) ?? { days: input.version.days, startReps: builder.startReps };
   const weekdays = input.weekdaysOf?.(viewed, week.days.map((d) => d.index)) ?? null;
   const days = week.days.map((d): PbBlockDay => {
-    const rows = [...d.plan.slots]
-      .sort((x, y) => x.order - y.order)
-      .map((slot) => {
-        const kit = input.kitOf(slot);
-        const e = pbExerciseOfSlot(slot, kit, week.startReps?.[slot.slotKey] ?? builder.startReps?.[slot.slotKey]);
-        return rowOf(slot, pbAtWeek(a, e, kit, viewed), kit, e, input.nameOf(slot.exerciseId));
-      });
+    const sorted = [...d.plan.slots].sort((x, y) => x.order - y.order);
+    const labels = pbSupersetLabels(sorted);
+    const rows = sorted.map((slot, i) => {
+      const kit = input.kitOf(slot);
+      const e = pbExerciseOfSlot(slot, kit, week.startReps?.[slot.slotKey] ?? builder.startReps?.[slot.slotKey]);
+      return rowOf(slot, pbAtWeek(a, e, kit, viewed), kit, e, input.nameOf(slot.exerciseId), labels[i] ?? null);
+    });
     const done = viewed <= block.mondays.length && daysDone.has(d.index);
     return { index: d.index, name: d.name, weekday: weekdays?.get(d.index) ?? null, done, doneOn: done ? (doneOn[d.index] ?? null) : null, rows };
   });

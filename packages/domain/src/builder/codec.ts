@@ -64,10 +64,11 @@ function draftLoadOf(slot: BuilderSlot, row: BuilderSetRow): DraftLoad {
 }
 
 /** (D1) Ben's keep marks as stored: only the fields set (a set count clamped to the limits); none: undefined. */
-function keepOf(k: { added?: true | undefined; from?: string | undefined; setsFrom?: number | undefined } | undefined): BuilderKeepMarks | undefined {
+function keepOf(k: { added?: true | undefined; from?: string | undefined; setsFrom?: number | undefined; placed?: true | undefined } | undefined): BuilderKeepMarks | undefined {
   if (k === undefined) return undefined;
   const out: BuilderKeepMarks = {};
   if (k.added === true) out.added = true;
+  if (k.placed === true) out.placed = true;
   if (k.from !== undefined) out.from = k.from;
   if (k.setsFrom !== undefined) out.setsFrom = Math.max(BUILD_LIMITS.minWorkingSets, Math.min(BUILD_LIMITS.maxWorkingSets, Math.round(k.setsFrom)));
   return Object.keys(out).length === 0 ? undefined : out;

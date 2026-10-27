@@ -4,6 +4,7 @@ import {
   currentPlanVersion,
   makeSlot,
   pbCapSets,
+  pbDayEstimateS,
   pbDayWarmups,
   pbNewPlanDraft,
   pbWarmupsOf,
@@ -42,8 +43,9 @@ describe('each plan day’s warm-up time comes from its own warm-ups', () => {
       expect(pbDayWarmups(d, answers(), { kitOf: KIT_OF }).timeS).toBe(d.warmupS);
       // It fits: the capacity is never more than the length less this day's warm-ups allows.
       expect(d.cap).toBeLessThanOrEqual(pbCapSets(answers(), d.warmupS));
-      // The day's minutes include its warm-ups.
-      expect(d.minutes).toBe(Math.round(d.warmupS / 60 + d.exercises.reduce((n, e) => n + e.sets, 0) * 3));
+      // (Ben, 27 Oct) The day's minutes are the shared estimate's (Today's), warm-ups included, and fit the length.
+      expect(d.minutes).toBe(Math.round(pbDayEstimateS(d, pbDayWarmups(d, answers({ split: 'ppl', sessions: 3, days: [0, 2, 4] }), { kitOf: KIT_OF })) / 60));
+      expect(d.minutes).toBeLessThanOrEqual(60);
     }
   });
 
@@ -90,7 +92,8 @@ describe('Warm-ups: Full / Short / None', () => {
       expect(n.warmupS).toBe(0);
       expect(s.cap).toBeGreaterThanOrEqual(d.cap);
       expect(n.cap).toBeGreaterThanOrEqual(s.cap);
-      expect(n.cap).toBe(pbCapSets(answers(), 0));
+      // (Ben, 27 Oct) No warm-ups: the most the length allows, then sized by the shared estimate.
+      expect(n.cap).toBeLessThanOrEqual(pbCapSets(answers(), 0));
     });
     const total = (p: PbPlan) => p.days.reduce((t, d) => t + d.cap, 0);
     expect(total(short)).toBeGreaterThan(total(full));

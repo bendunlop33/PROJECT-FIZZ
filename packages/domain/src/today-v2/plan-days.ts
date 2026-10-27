@@ -38,6 +38,8 @@ export interface TodayPlanDaysInput {
   info: BuilderInfoLookup;
   /** Ben's usual length (Profile), when the template has none. */
   defaultMinutes: number;
+  /** (Ben, 27 Oct) The plan's own length for a template's day (the plan builder's session length); null: none. */
+  planMinutesOf?: (r: Routine) => number | null;
 }
 
 /** The chip for a template: the part of its name after `·` (`Chest · bench` → `Bench`), else its main lift's name. */
@@ -69,10 +71,15 @@ export function todayPlanDays(input: TodayPlanDaysInput): TodayDay[] {
       label: templateLabel(r, mainLift === null ? null : (input.info(mainLift)?.name ?? null)),
       mainLiftExerciseId: mainLift,
       exerciseIds,
-      minutes: r.planDay?.minutes ?? input.defaultMinutes,
+      minutes: r.planDay?.minutes ?? input.planMinutesOf?.(r) ?? input.defaultMinutes,
       absPlan: exerciseIds.some((id) => input.info(id)?.group === 'Core'),
       supersetsPlan: r.exercises.some((e) => e.supersetGroup !== null),
       groups: groups.length > 0 ? groups : mix !== undefined ? BUILDER_DAY_MIXES[mix].map((g) => ({ ...g })) : [],
+      // (Ben, 27 Oct) The day as stored: Today drafts these (order, set counts, superset pairs) at the plan's controls.
+      slots: [...r.exercises]
+        .sort((a, b) => a.order - b.order)
+        .filter((e) => input.info(e.exerciseId) !== null)
+        .map((e) => ({ exerciseId: e.exerciseId, workingSets: Math.max(1, e.setTemplates.filter((x) => x.setType !== 'warmup').length), group: e.supersetGroup })),
     };
     const name = splitDay?.name ?? r.name.split('·')[0]?.trim() ?? r.name;
     const entry = days.get(dayKey) ?? { day: { key: dayKey, kind: 'plan' as const, name, planId: key.planId, dayIndex: key.dayIndex, splitDayId: key.splitDayId }, templates: [] as TodayTemplate[] };

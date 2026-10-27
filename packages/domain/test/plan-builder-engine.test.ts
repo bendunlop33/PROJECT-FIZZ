@@ -261,7 +261,10 @@ describe('the build', () => {
         for (const m of PB_GROUPS[g]) {
           const days = p.days.filter((d) => d.exercises.some((e) => e.muscle === m)).length;
           expect(days, `${g} ${String(n)} days ${m}`).toBeGreaterThanOrEqual(2);
-          expect(p.weekly[m] ?? 0, `${g} ${String(n)} days ${m}`).toBeGreaterThanOrEqual(p.ranges[m]?.[0] ?? 0);
+          // (Ben, 27 Oct) Days sized by the shared time estimate: where the week can't hold it (Legs on 3 × 60 min:
+          // calves) it is shown short (↓), never hidden.
+          if ((p.weekly[m] ?? 0) < (p.ranges[m]?.[0] ?? 0)) expect(p.short, `${g} ${String(n)} days ${m}`).toContain(m);
+          else expect(p.weekly[m] ?? 0, `${g} ${String(n)} days ${m}`).toBeGreaterThanOrEqual(p.ranges[m]?.[0] ?? 0);
         }
       }
   });
@@ -518,7 +521,7 @@ describe('the built plan as the app’s plan model', () => {
     const v = currentPlanVersion(draft);
     expect(v.builder?.answers).toEqual(a);
     expect(v.days.map((d) => d.name)).toEqual(['Upper A', 'Lower A', 'Upper B', 'Lower B']);
-    const bench = v.days.flatMap((d) => d.plan.slots).find((s) => s.catalogueId === 'barbell-bench-press');
+    const bench = v.days.flatMap((d) => d.plan.slots).find((s) => s.catalogueId === 'barbell-bench-press' && s.main);
     expect(bench?.exerciseId).toBe(catalogueExerciseId('barbell-bench-press'));
     expect(bench?.setTemplates.map((t) => t.setType)).toEqual(['warmup', 'warmup', 'warmup', 'warmup', 'top', 'backoff', 'backoff']);
     expect(bench?.setTemplates.find((t) => t.setType === 'top')?.load).toMatchObject({ source: 'plan', load: { value: 100, unit: 'kg', convention: 'total' } });

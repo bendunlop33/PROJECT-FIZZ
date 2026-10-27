@@ -91,6 +91,7 @@ import {
   type SkippedOp,
   keepDiff,
   keepNextTimeMark,
+  withMidWorkoutEdits,
   landStructuralOps,
   structuralLine,
   type AppliedStructural,
@@ -122,7 +123,7 @@ import {
   type CarryDay,
   type CarryItem,
 } from '@fizz/domain';
-import { builderFocusCounts, builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
+import { builderFocusCounts, builderFocusSections, BUILDER_GROUPS, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftFrom, type BuilderDraftKey, type DraftPlan, type BuilderGroup, type BuilderSetup, type DraftBasis, type EquipmentInstance, type Gym, type SessionAggregate, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SetTemplate, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { KeepNextTimeWrite, Store } from '@fizz/persistence';
 
 import type { WorkoutStartOutcome, WorkoutStartRequest } from '../services/workout-services';
@@ -1533,7 +1534,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const routine = await repos().routines.get(target.routineId).catch(() => null);
     if (routine === null || routine.ownerId !== p.id || isDeleted(routine)) return null;
     const workout = untimed(stored, fromDraftPlan(version.plan, stored.restLevel ?? 'normal'));
-    const env = await envFor(p, { gymId: version.request.gymId, exerciseIds: [...routine.exercises.map((e) => e.exerciseId), ...exerciseIdsOf(workout)], keySeed: `keep:${draft.id}` });
+    const started: KeepCurrentItem[] = workout.blocks.flatMap((b, round) => b.slots.map((x) => ({ key: x.key, exerciseId: x.exerciseId, workingSets: workingCount(x), origin: x.origin ?? null, round, ben: x.keep ?? null })));
+    // (Ben, 27 Oct) His own mid-workout edits count too: an exercise he added, a superset he made or split.
+    const { current } = withMidWorkoutEdits(started, a);
+    const env = await envFor(p, { gymId: version.request.gymId, exerciseIds: [...routine.exercises.map((e) => e.exerciseId), ...exerciseIdsOf(workout), ...current.map((x) => x.exerciseId)], keySeed: `keep:${draft.id}` });
     // What the workout opened: a plan day the exercises the builder knows; a saved workout all but those it left out.
     const leftOut = new Set(stored.leftOut ?? []);
     const opened = (id: string) => (target.plan ? env.info(id) !== null : !leftOut.has(id));
@@ -1546,8 +1550,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const base: KeepBaseItem[] = [...routine.exercises]
       .sort((x, y) => x.order - y.order)
       .filter((e) => opened(e.exerciseId))
-      .map((e) => ({ exerciseId: e.exerciseId, workingSets: Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, e.setTemplates.filter((t) => t.setType !== 'warmup').length)), ref: e.id, ...(isMain(e) ? { locked: true } : {}) }));
-    const current: KeepCurrentItem[] = workout.blocks.flatMap((b, round) => b.slots.map((x) => ({ key: x.key, exerciseId: x.exerciseId, workingSets: workingCount(x), origin: x.origin ?? null, round, ben: x.keep ?? null })));
+      .map((e) => ({ exerciseId: e.exerciseId, workingSets: Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, e.setTemplates.filter((t) => t.setType !== 'warmup').length)), ref: e.id, group: e.supersetGroup, ...(isMain(e) ? { locked: true } : {}) }));
     const label = target.plan ? planLabel(pageSetup(draft), env, null) : routine.name;
     const diff = keepDiff(base, current, stored.keepRemoved ?? []);
     // Each row writes at the version the workout opened, or the one the other row's Apply wrote (rule 5).
@@ -2916,7 +2919,14 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const fromDraft = new Map(asRoutine.exercises.map((e) => [e.id, e]));
       const entryFor = (item: KeepCurrentItem): RoutineExercise => {
         const e = fromDraft.get(item.key);
-        const setTemplates = (e?.setTemplates ?? []).map((t, k) => ({ ...t, id: deriveId(`keep-set:${opId}:${item.key}:${String(k)}`), targetLoad: null }));
+        // (Ben, 27 Oct) An exercise added mid-workout: its sets as the workout planned them (loads automatic).
+        const fromWorkout = (): SetTemplate[] =>
+          c.session.sets
+            .filter((x) => x.sessionExerciseId === item.key && x.setType !== 'warmup' && x.status !== 'deleted')
+            .sort((x, y) => x.index - y.index)
+            .map((x) => ({ id: x.id, setType: x.setType, targetLoad: null, targetReps: x.planned.reps, targetDurationS: x.planned.reps === null ? x.planned.durationS : null, targetRpe: x.planned.rpe, targetRir: null, restOverrideS: null }))
+            .filter((x) => x.targetReps !== null || x.targetDurationS !== null);
+        const setTemplates = (e?.setTemplates ?? fromWorkout()).map((t, k) => ({ ...t, id: deriveId(`keep-set:${opId}:${item.key}:${String(k)}`), targetLoad: null }));
         return { id: deriveId(`keep-ex:${opId}:${item.key}`), exerciseId: item.exerciseId, equipmentId: null, order: e?.order ?? 0, supersetGroup: null, setTemplates, restBySetType: {}, transitionRestS: null, progressionRuleId: null, structureChangedAtUtc: at.utc };
       };
       const exercises = keptExercises({ before: c.routine.exercises, base: c.base, current: c.current, diff: c.diff, entryFor, opId, atUtc: at.utc });

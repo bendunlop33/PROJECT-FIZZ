@@ -152,13 +152,13 @@ function DayCard({
             <View
               key={r.key}
               accessible
-              accessibilityLabel={`${r.name}, ${r.line}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
+              accessibilityLabel={`${r.superset === null ? '' : `${r.superset}, superset, `}${r.name}, ${r.line}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
               style={{ minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
             >
               {r.kg === null ? (
                 <View style={{ flex: 1, paddingVertical: theme.space['1'] }}>
                   <AppText variant="callout" style={{ fontWeight: '600' }}>
-                    {r.name}
+                    {r.superset === null ? r.name : `${r.superset}  ${r.name}`}
                   </AppText>
                   <AppText variant="label" color="text.secondary" numeric>
                     {`${r.line}${r.est ? ' est.' : ''}`}
@@ -167,7 +167,7 @@ function DayCard({
               ) : (
                 <>
                   <AppText variant="callout" style={{ flex: 1, ...(r.main ? { fontWeight: '600' } : {}) }}>
-                    {r.name}
+                    {r.superset === null ? r.name : `${r.superset}  ${r.name}`}
                   </AppText>
                   <AppText variant="callout" color="text.secondary" numeric>
                     {r.line}
