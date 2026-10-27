@@ -1,5 +1,7 @@
 # Lock screen and alerts
 
+> **Revision 2026-10-27 (Ben, 27 Oct; device feedback on build 435).** The rest countdown on the Lock Screen worked but stayed at `0:00` when the rest ran out. **Root cause:** the switch to Ready was only ever written by the app (a JS re-check at the deadline, or the reconcile on return to the foreground); locked and suspended, JS doesn't run, and without push nothing else can update the activity. **Change:** the Resting content now carries the Ready content for after the rest (next set, target, last time), written when the rest starts, and the activity's stale date is the rest's end. iOS marks the activity stale at that moment with the app suspended, and the widget then draws that Ready content (no countdown, no buttons). When the app next runs it writes the same Ready state, so nothing jumps. The re-check and the foreground reconcile stay as the safety net, and the rest-done notification is unchanged. Design rule 2 and §2.1, §3.2 case B and acceptance check 10 are updated. Not yet run on the phone (device test `2026-10-12-live-activity-rest.md`, step 5). Spoken cues while the app is open also changed (Ben, 27 Oct): the pre-end cue is at 15 s with the next set, and the end says only `Rest over` (voice.md, rest-state.md §5).
+
 > **Revision 2026-10-26 (Ben, 26 Oct; competitor-landscape Pass 4, changes 3 and 8).** Approved: (1) the Live Activity shows **last time** for the next set (`Last 100 kg × 7`, §2.1); (2) the rest-done notification body names the set, its target and last time (`Bench press · set 3 · target 100 kg × 6–8 · last 100 kg × 7`, §2.2); (3) **`−15 s` / `+15 s` / `Skip` buttons** on the Live Activity while a rest runs (§2.1, §4.2), replacing P-L4 for timer buttons. They are App Intents (`LiveActivityIntent`, iOS 17+), which need no entitlement, push or new App Group, so they fit the free Apple ID (ADR 0004); they are built and unit-tested but **not yet run on the phone** (device test `2026-10-12-live-activity-rest.md`, steps 2–8). `Log as planned` on the Lock Screen is **not built** (§8 P-L4b): it waits until the buttons pass on the phone. **Nothing on the Lock Screen logs a set.**
 
 > **Revision 2026-10-08 (consolidation).** P-L1 is applied in rest-state.md §4.8 (no Time Sensitive option; the brief's wording is the product manager's to change). profile-and-settings.md §2.6 now hosts this file's `When rest ends`, `Alert check` and `Test rest alert` unchanged, and its own duplicate rest-alert rows (`Loud alerts (AlarmKit)` with a threshold picker) are withdrawn in favour of `Loud rest alerts` here. `runAlertTest()` is renamed `runRestAlertTest()` (one name across specs). Capability evidence from tests is shown in App status (system-states.md). Tokens and the widget colour mirror are merged into design-system (§2.2, §3 `type.liveCountdown`, §6 timings, `sound.restEnd`).
@@ -29,7 +31,7 @@ There is no primary action on the lock screen. Every surface opens the active wo
 
 Design rules:
 1. **One alert per rest end, never zero when Ben has allowed alerts, never two.** Each layer has a defined job; the arbitration in §4.1 picks which one fires.
-2. **Lock-screen text is written once, at the moment the app last ran, and must stay true without the app.** The Live Activity can't change itself when rest ends (no push). So it shows the end time and the next set from the start.
+2. **Lock-screen text is written once, at the moment the app last ran, and must stay true without the app.** The app can't update the activity when rest ends (no push, and it is usually suspended). So the Resting content carries the end time, the next set, and the Ready content for after the rest; iOS switches to it by itself at the rest's end (its stale date; Ben, 27 Oct).
 3. **Targets say "target".** Lock-screen and notification text names the next set's planned values as a target, never as a result.
 4. **Honest capability.** If a layer isn't available, Voice & alerts says so in plain words. No error appears mid-workout because a layer is missing.
 
@@ -45,7 +47,7 @@ Design rules:
 
 | State | When | Banner (Lock Screen) | Compact (Dynamic Island) | Minimal |
 |---|---|---|---|---|
-| Ready | Workout started; rest skipped; a zero-length rest; after the app updates an ended rest | `figure.strengthtraining.traditional` `Ready · Push A` / `Bench press · Set 3 of 4` / `Target 100 kg × 6–8` / `Last 100 kg × 7` | leading: figure icon · trailing: `Set 3` | figure icon |
+| Ready | Workout started; rest skipped; a zero-length rest; a rest ran out (drawn by the widget at the stale date, then written by the app when it runs; Ben, 27 Oct) | `figure.strengthtraining.traditional` `Ready · Push A` / `Bench press · Set 3 of 4` / `Target 100 kg × 6–8` / `Last 100 kg × 7` | leading: figure icon · trailing: `Set 3` | figure icon |
 | Resting | `commitSetAndBeginRest` returned a timer, or `adjustRestTimer` | `timer` `Rest` + countdown / `Until 18:42 · Bench press · Set 3 of 4 next` / `Target 100 kg × 6–8` / `Last 100 kg × 7` / `−15 s` `+15 s` … `Skip` | leading: `timer` (accent) · trailing: countdown `2:47` | countdown `2:47` |
 | Working (timed) | `startWorkInterval` | `timer` `Work · Plank` + countdown / `Until 18:40 · Target 0:45` / `Open Fizz to log it` | leading: `timer` · trailing: countdown | countdown |
 | Paused | `pauseSession` | `pause.circle.fill` (warning) `Paused · Push A` / `Rest 1:10 left when you resume` (or `Ready for set 3`) | leading: pause icon · trailing: `1:10` (static) | pause icon |
@@ -74,16 +76,16 @@ Lock Screen banner, Resting (Ben, 26 Oct: last time and rest buttons):
 - VoiceOver: `15 seconds less rest`, `15 seconds more rest`, `Skip rest`.
 - Step is 15 s on the Lock Screen (Hevy's step; a smaller target than the app's ±30 s). In-app stays ±30 s.
 
-The same banner after the deadline, with Fizz suspended (nothing can update it):
+The same banner after the deadline, with Fizz suspended (Ben, 27 Oct): iOS marks the activity stale at the rest's end and the widget draws the Ready content written with the rest:
 ```
 ┌──────────────────────────────────────┐
-│ ⏱ Rest                         0:00  │ the system timer stops at 0:00
-│ Until 18:42 · Bench press ·          │ "Until 18:42" keeps it unambiguous
-│ Set 3 of 4 next                      │
+│ 🏋 Ready · Push A              Set 3 │ no countdown, no buttons
+│ Bench press · Set 3 of 4             │
 │ Target 100 kg × 6–8                  │
+│ Last 100 kg × 7                      │
 └──────────────────────────────────────┘
 ```
-The rest-end notification (§2.2) arrives at the same moment and says `Rest done`. Opening Fizz switches the activity to Ready.
+The rest-end notification (§2.2) arrives at the same moment and says `Rest done`. Opening Fizz writes the same Ready state (no visible change). If iOS doesn't redraw at the stale date (to be confirmed on the phone), the banner shows `0:00` with `Until 18:42` until Fizz runs, as before.
 
 Lock Screen banner, Ready (written by the app while running):
 ```
@@ -268,7 +270,7 @@ Assume a 3:00 rest that ends at 18:42, with the next set Bench press set 3, targ
 |---|---|---|---|
 | **A. Today (build 7):** notifications on, Live Activity failing, loud off | Nothing from Fizz on the Lock Screen | `Rest done` notification with sound and vibration | Rest card: `Ready when you are` + `Rested 0:20`; notification removed from Notification Centre |
 | **A+.** As A with `Show rest end time on the Lock Screen` on | Quiet notification `Resting until 18:42 · Next: Bench press · 100 kg × 6–8 target` (visible when he wakes the screen) | `Rest done` notification (same stack) | As A; both notifications removed |
-| **B.** Live Activity working | Banner countdown `2:47 … Until 18:42 · Set 3 of 4 next · Target 100 kg × 6–8`; Dynamic Island when unlocked in another app | Countdown shows `0:00` with `Until 18:42`; `Rest done` notification | Activity switches to Ready |
+| **B.** Live Activity working | Banner countdown `2:47 … Until 18:42 · Set 3 of 4 next · Target 100 kg × 6–8`; Dynamic Island when unlocked in another app | Activity turns to Ready for set 3 by itself (stale date; Ben, 27 Oct); `Rest done` notification | Ready already shows; the app rewrites it unchanged |
 | **C.** Silent switch on | As A or B | Notification without sound; it vibrates if iOS haptics in silent mode are on | As A |
 | **D.** In a Focus that doesn't allow Fizz | As A or B (Live Activities still show) | Notification delivered quietly to Notification Centre: **no sound, no banner** | As A. Alert check suggests: `In a Focus, allow Fizz or turn on Loud rest alerts.` |
 | **E.** Loud rest alerts on and this rest qualifies | As A or B | Alarm rings, even in silent mode and Focus; `Stop` | As A. No notification was sent for this rest |
@@ -399,7 +401,7 @@ Notifications (must pass on today's build)
 
 Live Activity (when `getRestAlertCapabilities` reports available)
 9. Starting a workout shows the Ready banner; logging a set switches it to Resting with the countdown, `Until hh:mm` and the next target, all at once.
-10. Locked through the deadline: the countdown stops at `0:00`, the `Until` time and target stay, and the notification arrives. Opening Fizz switches it to Ready.
+10. Locked through the deadline (Fizz suspended): at the deadline the activity turns to Ready with the next set, its target and last time, without opening Fizz, and the notification arrives (Ben, 27 Oct). Opening Fizz changes nothing visible.
 11. Pause freezes it with `Paused` and the remaining time; Resume restores the countdown.
 12. Finish or Discard ends it within 1 s. Force-quit mid-rest then relaunch after 6 h: the activity is ended on launch.
 13. The countdown digits don't shift sideways as they change.
@@ -437,7 +439,7 @@ Last time and rest buttons (Ben, 26 Oct)
 |---|---|---|
 | P-L1 | Remove "Time Sensitive only if Ben enables it" from rest-state.md §4.8 and the brief's alert layers; the free route can't use it (ADR 0004) | Avoids designing a control that can't work |
 | P-L2 | One Live Activity per workout (Ready / Resting / Working / Paused), not one per rest | Shows the next set even between rests, and avoids starting and ending an activity at every Log |
-| P-L3 | Lock-screen text carries the absolute end time (`Until 18:42`) | The activity can't change at the deadline without push; the end time keeps `0:00` unambiguous. Use `staleDate` once on SDK 58 |
+| P-L3 | Lock-screen text carries the absolute end time (`Until 18:42`) | Kept. `staleDate` is now used (Ben, 27 Oct): the widget switches to the Ready content at the rest's end; `Until` still covers a phone that doesn't redraw at the stale date |
 | P-L4 | ~~No lock-screen buttons (+30 s, Skip, Log) in the first milestone~~ **Superseded for timer buttons (Ben, 26 Oct):** `−15 s` / `+15 s` / `Skip` via `LiveActivityIntent`, which needs no entitlement (built; device test `2026-10-12-live-activity-rest.md` steps 2–8 pending) | Logging blind risks wrong data, so `Log` stays out (P-L4b) |
 | P-L4b | `Log as planned` on the Live Activity (Hevy) | **Not built (26 Oct).** Only after the rest buttons pass on the phone. It would log the shown target with an operation ID and an Undo in the app, and is the one lock-screen action that writes a set |
 | P-L5 | Alarm only while Fizz is in the background (§4.1) | Keeps "exactly one alert" without racing the in-app cue |
