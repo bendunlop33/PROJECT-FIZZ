@@ -13,7 +13,7 @@ import { apply, BENCH, logCmd, setsFor, startFixture } from './session-fixture';
  * code running. It must be exactly what the app writes itself at that moment.
  */
 
-const plain = (s: string) => s.replace(/ /g, ' ');
+const plain = (s: string) => s.replace(/\u00a0/g, ' ');
 
 function afterWarmup(state = startFixture().state, load = kg(60)): SessionAggregate {
   const [warm] = setsFor(state, BENCH);
