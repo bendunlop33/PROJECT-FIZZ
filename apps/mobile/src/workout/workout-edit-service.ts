@@ -2,11 +2,18 @@ import {
   adviseSessionChange,
   currentGymEquipment,
   fitPlanToItem,
+  isMainLiftRow,
+  liveRoutines,
+  mainLiftFirst,
   makeSlot,
+  planDayMainLifts,
+  planRoutines,
   pendingSetsOf,
   plannedFromBuilderRows,
   similarLast,
+  splitInUse,
   supersetPartnerSets,
+  workoutMainLifts,
   type BuilderAdvice,
   type CommandOutcome,
   type TargetExplanation,
@@ -78,11 +85,31 @@ export function createWorkoutEditService(deps: WorkoutEditDeps) {
     return { plan: fitPlanToItem(plannedFromBuilderRows(slot.rows, { unit: slot.unit, convention: slot.convention }), item), item };
   }
 
+  /**
+   * (Ben, 27 Oct; redesign §E3) Swapping the main lift: the plan day's main-lift options (Today's main-lift chips for
+   * the day this workout was started as), in plan order, else none. Reads only; a failed read offers none.
+   */
+  async function mainLiftOptions(a: SessionAggregate, owner: UserProfile, sessionExerciseId: string): Promise<string[]> {
+    const planDay = a.session.planDay;
+    if (planDay === undefined) return [];
+    const repos = deps.store().repos;
+    const ref = a.session.coachDraft;
+    const draft = ref === undefined ? null : await repos.workoutDrafts.get(ref.draftId).catch(() => null);
+    const draftMains = new Set(draft === null || draft.ownerId !== owner.id ? [] : (draft.versions.find((v) => v.n === ref?.version)?.plan.slots ?? []).filter((x) => x.main).map((x) => x.exerciseId));
+    if (!isMainLiftRow(a, sessionExerciseId, workoutMainLifts(a, draftMains))) return [];
+    const plan = await repos.planDrafts.applied(owner.id).catch(() => null);
+    if (plan === null || plan.id !== planDay.planId) return [];
+    const templates = planRoutines(plan, liveRoutines(await repos.routines.listByOwner(owner.id).catch(() => [])));
+    const training = await repos.trainingProfiles.get(owner.id).catch(() => null);
+    return planDayMainLifts({ planDay, templates, split: training?.split ?? splitInUse(training), mainLifts: training?.mainLifts });
+  }
+
   return {
     /**
      * Swap / Add (builder §2.5): this gym's exercises of a group by focus with their works line,
      * minus what's in the workout; pain-flagged ones marked. The group defaults to the swapped
-     * exercise's (Add: the workout's first exercise's).
+     * exercise's (Add: the workout's first exercise's). (Ben, 27 Oct) Swapping the main lift: the plan's
+     * main-lift alternatives this gym has come first (`Main lift`), then everything else.
      */
     async choices(sessionId: string, req: { sessionExerciseId: string | null; group?: BuilderGroup }): Promise<ExerciseChoices | null> {
       const a = await sessionOf(sessionId);
@@ -91,11 +118,13 @@ export function createWorkoutEditService(deps: WorkoutEditDeps) {
       const probe = await envFor(a, live.map((e) => e.exerciseId), []);
       if (probe === null) return null;
       const anchor = req.sessionExerciseId === null ? live[0] : live.find((e) => e.id === req.sessionExerciseId);
-      const group: BuilderGroup = req.group ?? (anchor === undefined ? 'Chest' : (probe.env.info(anchor.exerciseId)?.group ?? 'Chest'));
-      const got = await envFor(a, [], [group]);
+      const anchorGroup = anchor === undefined ? null : (probe.env.info(anchor.exerciseId)?.group ?? null);
+      const group: BuilderGroup = req.group ?? anchorGroup ?? 'Chest';
+      const inWorkout = new Set(live.map((e) => e.exerciseId));
+      const options = req.sessionExerciseId === null || group !== anchorGroup ? [] : (await mainLiftOptions(a, probe.owner, req.sessionExerciseId)).filter((id) => !inWorkout.has(id));
+      const got = await envFor(a, options, [group]);
       if (got === null) return null;
       const { env } = got;
-      const inWorkout = new Set(live.map((e) => e.exerciseId));
       // (Ben, 23 Oct) Near-duplicates of what stays in the workout go last, marked `Like …`; still pickable.
       const staying = live.filter((e) => e.id !== req.sessionExerciseId).map((e) => e.exerciseId);
       const ranked = similarLast(env.candidates(group).filter((id) => !inWorkout.has(id)), staying, env.info);
@@ -107,7 +136,11 @@ export function createWorkoutEditService(deps: WorkoutEditDeps) {
         (e) => e,
         group,
       ).map((sec) => ({ focus: sec.focus, items: sec.items.map((e) => ({ exerciseId: e.id, name: e.name, works: env.worksOf(e.id), mayHurt: env.painFlagged(e.id), painLine: env.painLine(e.id), similarTo: ranked.similarTo.get(e.id) ?? null })) }));
-      return { group, groups: GROUPS, sections };
+      const alternatives = options.flatMap((id) => {
+        const e = env.exercise(id);
+        return e === null || !env.doable(id) ? [] : [{ exerciseId: id, name: e.name, works: env.worksOf(id), mayHurt: env.painFlagged(id), painLine: env.painLine(id), similarTo: null }];
+      });
+      return { group, groups: GROUPS, sections: mainLiftFirst(sections, alternatives) };
     },
 
     /**
