@@ -1,5 +1,7 @@
 # Lock screen and alerts
 
+> **Revision 2026-10-27 (b) (Ben, 27 Oct: a `Log` button on the Lock Screen, like Hevy).** **Reverses P-L4b and the 26 Oct rule "Nothing on the Lock Screen logs a set".** The Ready state (no rest running, or a rest that has run out, including the Ready the widget draws at the rest's end with the app suspended) shows one button, `Log 80 kg × 8`: the current set's values exactly as the in-app `Log` would save them (Ben's saved draft, else the target with the carry; dumbbells `each`, `per side` for unilateral). A tap is the same versioned `log_set` the app sends: a fixed operation ID per (set, version), so a double tap, a retry or a relaunch logs once; refused if the set was logged, edited or undone in the app since (rule 5). The rest for the next set then starts (deadline, notification, Live Activity) as after an in-app Log. The next time GymSmarter is open: `Set 3 logged from Lock Screen · Undo`. No `Log` for timed, distance or cardio sets, a set with a missing value, or a warm-up without a saved draft (open the app); after the last set the banner says `Open GymSmarter to finish`. During a rest the buttons stay `−15 s` / `+15 s` / `Skip` (no Log while counting). Same intent and tap queue as the rest buttons (ADR 0034 amendment), no new entitlement; `FIZZ_LA_LOG=0` leaves it out. §1, §2.1, §4.2, §4.7, §5, §7 (checks 31–36) and §8 P-L4b are updated. Not yet run on the phone (device test `2026-10-12-live-activity-rest.md`, steps L1–L7), and it ships before the rest buttons have passed there.
+
 > **Revision 2026-10-27 (Ben, 27 Oct; device feedback on build 435).** The rest countdown on the Lock Screen worked but stayed at `0:00` when the rest ran out. **Root cause:** the switch to Ready was only ever written by the app (a JS re-check at the deadline, or the reconcile on return to the foreground); locked and suspended, JS doesn't run, and without push nothing else can update the activity. **Change:** the Resting content now carries the Ready content for after the rest (next set, target, last time), written when the rest starts, and the activity's stale date is the rest's end. iOS marks the activity stale at that moment with the app suspended, and the widget then draws that Ready content (no countdown, no buttons). When the app next runs it writes the same Ready state, so nothing jumps. The re-check and the foreground reconcile stay as the safety net, and the rest-done notification is unchanged. Design rule 2 and §2.1, §3.2 case B and acceptance check 10 are updated. Not yet run on the phone (device test `2026-10-12-live-activity-rest.md`, step 5). Spoken cues while the app is open also changed (Ben, 27 Oct): the pre-end cue is at 15 s with the next set, and the end says only `Rest over` (voice.md, rest-state.md §5).
 
 > **Revision 2026-10-26 (Ben, 26 Oct; competitor-landscape Pass 4, changes 3 and 8).** Approved: (1) the Live Activity shows **last time** for the next set (`Last 100 kg × 7`, §2.1); (2) the rest-done notification body names the set, its target and last time (`Bench press · set 3 · target 100 kg × 6–8 · last 100 kg × 7`, §2.2); (3) **`−15 s` / `+15 s` / `Skip` buttons** on the Live Activity while a rest runs (§2.1, §4.2), replacing P-L4 for timer buttons. They are App Intents (`LiveActivityIntent`, iOS 17+), which need no entitlement, push or new App Group, so they fit the free Apple ID (ADR 0004); they are built and unit-tested but **not yet run on the phone** (device test `2026-10-12-live-activity-rest.md`, steps 2–8). `Log as planned` on the Lock Screen is **not built** (§8 P-L4b): it waits until the buttons pass on the phone. **Nothing on the Lock Screen logs a set.**
@@ -27,7 +29,7 @@ Sources: brief §12 (rest state, spoken set companion); CHANGELOG v0.2 and v0.3 
 
 These surfaces answer one question when Ben **isn't looking at Fizz**: **"Is my rest over, and what's my next set?"**
 
-There is no primary action on the lock screen. Every surface opens the active workout in one tap, where `Log …` is already waiting. **Nothing on the lock screen logs a set** (rest-state.md §4.8): logging without seeing the values risks wrong data. The only controls are the rest buttons (`−15 s`, `+15 s`, `Skip`; Ben, 26 Oct), which change the running rest through the same versioned command as the in-app buttons.
+Every surface opens the active workout in one tap. The controls are the rest buttons (`−15 s`, `+15 s`, `Skip`; Ben, 26 Oct), which change the running rest through the same versioned command as the in-app buttons, and, in the Ready state, `Log 80 kg × 8` (Ben, 27 Oct; reverses P-L4b), which logs the shown values through the same versioned `log_set` as the in-app `Log`. The button shows the exact values it saves, so nothing is logged blind; anything that needs input opens the app.
 
 Design rules:
 1. **One alert per rest end, never zero when Ben has allowed alerts, never two.** Each layer has a defined job; the arbitration in §4.1 picks which one fires.
@@ -47,7 +49,7 @@ Design rules:
 
 | State | When | Banner (Lock Screen) | Compact (Dynamic Island) | Minimal |
 |---|---|---|---|---|
-| Ready | Workout started; rest skipped; a zero-length rest; a rest ran out (drawn by the widget at the stale date, then written by the app when it runs; Ben, 27 Oct) | `figure.strengthtraining.traditional` `Ready · Push A` / `Bench press · Set 3 of 4` / `Target 100 kg × 6–8` / `Last 100 kg × 7` | leading: figure icon · trailing: `Set 3` | figure icon |
+| Ready | Workout started; rest skipped; a zero-length rest; a rest ran out (drawn by the widget at the stale date, then written by the app when it runs; Ben, 27 Oct) | `figure.strengthtraining.traditional` `Ready · Push A` / `Bench press · Set 3 of 4` / `Target 100 kg × 6–8` / `Last 100 kg × 7` / `[Log 100 kg × 8]` (Ben, 27 Oct) | leading: figure icon · trailing: `Set 3` | figure icon |
 | Resting | `commitSetAndBeginRest` returned a timer, or `adjustRestTimer` | `timer` `Rest` + countdown / `Until 18:42 · Bench press · Set 3 of 4 next` / `Target 100 kg × 6–8` / `Last 100 kg × 7` / `−15 s` `+15 s` … `Skip` | leading: `timer` (accent) · trailing: countdown `2:47` | countdown `2:47` |
 | Working (timed) | `startWorkInterval` | `timer` `Work · Plank` + countdown / `Until 18:40 · Target 0:45` / `Open Fizz to log it` | leading: `timer` · trailing: countdown | countdown |
 | Paused | `pauseSession` | `pause.circle.fill` (warning) `Paused · Push A` / `Rest 1:10 left when you resume` (or `Ready for set 3`) | leading: pause icon · trailing: `1:10` (static) | pause icon |
@@ -76,13 +78,23 @@ Lock Screen banner, Resting (Ben, 26 Oct: last time and rest buttons):
 - VoiceOver: `15 seconds less rest`, `15 seconds more rest`, `Skip rest`.
 - Step is 15 s on the Lock Screen (Hevy's step; a smaller target than the app's ±30 s). In-app stays ±30 s.
 
-The same banner after the deadline, with Fizz suspended (Ben, 27 Oct): iOS marks the activity stale at the rest's end and the widget draws the Ready content written with the rest:
+**Log (Ben, 27 Oct; reverses P-L4b).** In the Ready state the banner and the expanded Dynamic Island show one button under the text: `Log 100 kg × 8`, the values the in-app `Log` would save for the set shown (Ben's saved draft, else the target with the carried load; `Log 22.5 kg each × 10`, `Log 225 lb × 5`, `Log 60 kg × 8 per side`, `Log Assist 20 kg × 8`, `Log BW × 12`, `Log BW + 10 kg × 8`). A tap logs exactly those values without opening the app:
+- It is the same `log_set` command as the in-app button, at the moment of the tap, with an operation ID fixed per (set, set version) and the set version (and saved draft) it was drawn for. A double tap, the event and the queue both delivering it, or a retry after a relaunch log once. If the set was logged, edited, undone or changed by the coach in the app since, the tap does nothing and the activity is redrawn (rule 5).
+- The rest for the next set starts from the tap, exactly as after an in-app Log: the countdown and `−15 s` / `+15 s` / `Skip` on the Lock Screen, the rest-done notification, `Until`.
+- A Log tap that launched a killed app and wasn't read in time is applied at the next launch, at the tap's time, if the set is unchanged (within 6 h, the stale-workout limit).
+- The next time GymSmarter is open on the workout: `Set 3 logged from Lock Screen · Undo` (the in-app saved toast's Undo, versioned). No Undo on the Lock Screen itself: the activity can only change when the app runs, so a timed Undo there can't be kept honest.
+- **No Log** (the banner looks as before) for a timed, distance or cardio set (they need a time or distance), a set with a missing value (no target, nothing logged today, no history), a warm-up without a saved draft (its load comes from the warm-up planner), while paused or counting, in a past log, or below iOS 17 / without the tap queue / with `FIZZ_LA_LOG=0` or `FIZZ_LA_BUTTONS=0`.
+- After the last set: `All sets done` / `Open GymSmarter to finish`, no Log. In a superset, Ready shows the next exercise's set with its own Log.
+- VoiceOver: `Log 100 kilograms, 8 reps`.
+
+The same banner after the deadline, with Fizz suspended (Ben, 27 Oct): iOS marks the activity stale at the rest's end and the widget draws the Ready content written with the rest, `Log` included (drawn for the next set when the rest started):
 ```
 ┌──────────────────────────────────────┐
-│ 🏋 Ready · Push A              Set 3 │ no countdown, no buttons
+│ 🏋 Ready · Push A              Set 3 │ no countdown, no rest buttons
 │ Bench press · Set 3 of 4             │
 │ Target 100 kg × 6–8                  │
 │ Last 100 kg × 7                      │
+│ [Log 100 kg × 8]                     │ bordered; iOS 17+ only
 └──────────────────────────────────────┘
 ```
 The rest-end notification (§2.2) arrives at the same moment and says `Rest done`. Opening Fizz writes the same Ready state (no visible change). If iOS doesn't redraw at the stale date (to be confirmed on the phone), the banner shows `0:00` with `Until 18:42` until Fizz runs, as before.
@@ -93,6 +105,7 @@ Lock Screen banner, Ready (written by the app while running):
 │ 🏋 Ready · Push A                     │
 │ Bench press · Set 3 of 4             │
 │ Target 100 kg × 6–8                  │
+│ [Log 100 kg × 8]                     │
 └──────────────────────────────────────┘
 ```
 
@@ -133,7 +146,7 @@ Dynamic Island, expanded (long-press), Resting:
 - Accent is used only for the `timer` icon (`#5AA9FF` in dark appearance, `#0A63C9` in light; mirrored from `color.accent`). Paused uses `status.warning` (`#F2B84B` / `#8A5A00`) for the icon, plus the word `Paused`.
 - Countdown digits are monospaced (`.monospacedDigit()`), so they don't jitter. If the `@expo/ui` subset can't express this, the widget needs a small native modifier (developer note).
 - Always-On Display (`isLuminanceReduced`): regular weight, no accent tint; content unchanged.
-- Only the rest buttons above (Ben, 26 Oct); no `Log` (§8, P-L4b). Tapping anywhere else opens `fizz://workout` (the active workout).
+- Only the rest buttons and `Log` above (Ben, 26 and 27 Oct). Tapping anywhere else opens `fizz://workout` (the active workout).
 - Long exercise names: one line, tail ellipsis; the target line never truncates its numbers.
 
 ### 2.2 Notifications
@@ -304,6 +317,7 @@ Every alert is keyed `(timerId, timerVersion, kind)` (flow §4.2). These events 
 - **Tap** (banner or Dynamic Island): opens `fizz://workout` → Active workout in its persisted state (zero further taps).
 - **Long-press** the Dynamic Island: system expanded view (§2.1), with the rest buttons during a rest.
 - **Rest buttons** (Ben, 26 Oct): `−15 s` / `+15 s` / `Skip` (§2.1). How a tap travels: an expo-widgets `LiveActivityIntent` runs in the app's process (iOS wakes or launches the app in the background); the patched intent stores the tap (`fizz.liveActivity.tap.<id>` in the app's own defaults), tells the app, and waits up to 8 s for the app to handle it. The app reads the queue on that signal, at launch and on return to the foreground, applies each tap through the normal write path, waits for the activity and the alert to be updated, then removes the entry. So a tap that wakes a suspended app updates the Lock Screen before iOS suspends it again, and a tap that launches a killed app is still handled once JavaScript starts (if within a minute).
+- **Log** (Ben, 27 Oct): the same route as the rest buttons (one intent, one queue), with a `fizz.log|…` target that carries the set, its version, a key of its saved draft and the values shown. The app decides it against the stored workout (`lockScreenLogCommand`), sends `log_set` through the normal write path, waits for the next rest's activity and notification, then removes the entry. A Log entry is kept until handled (up to 6 h), so one that launched a killed app is applied at the next launch, at the tap's time.
 - **Swipe the banner away:** iOS removes it from the Lock Screen. Fizz doesn't start another one for this workout until the next app launch reconcile.
 - **Relaunch reconcile:** `getInstances()` against `getActiveSession`. Unknown or finished workouts → end with immediate dismissal. The current workout → update to its true state. A workout that is now stale (≥ 6 h, flow §4.2) → end.
 - **Gym switch, coach adjustment, set correction during rest:** the next-set lines update (Fizz is running). Rest time is unchanged (rest-state.md §4.5).
@@ -327,7 +341,7 @@ Every alert is keyed `(timerId, timerVersion, kind)` (flow §4.2). These events 
 Spoken commands live in rest-state.md §4.9 ("add thirty seconds", "skip rest"). They need Fizz in the foreground with the microphone open; there is no voice control from the lock screen.
 
 ### 4.7 Undo
-Nothing on these surfaces changes workout data except the rest buttons (Ben, 26 Oct), which change only the running rest; their undo is the opposite button, as in the app. Timer changes made in the app are undone in the app (rest-state.md §4.10), and the lock-screen layers follow automatically.
+Nothing on these surfaces changes workout data except the rest buttons (Ben, 26 Oct), which change only the running rest (their undo is the opposite button, as in the app), and `Log` (Ben, 27 Oct): its undo is `Set 3 logged from Lock Screen · Undo` the next time GymSmarter is open on the workout (once per log, for 15 minutes, while it is still the last set logged), the same versioned undo as the in-app saved toast. After that, correct or delete the set in the app as usual. Timer changes made in the app are undone in the app (rest-state.md §4.10), and the lock-screen layers follow automatically.
 
 ---
 
@@ -337,6 +351,8 @@ Nothing on these surfaces changes workout data except the rest buttons (Ben, 26 
 |---|---|---|
 | LA Resting | `Rest` · countdown · `Until 18:42 · Bench press · Set 3 of 4 next` · `Target 100 kg × 6–8` · `Last 100 kg × 7` | Target, actual |
 | LA rest buttons (Ben, 26 Oct) | `−15 s` · `+15 s` · `Skip` | — |
+| LA Log (Ben, 27 Oct) | `Log 100 kg × 8` (Ready only) · after the last set `All sets done` / `Open GymSmarter to finish` | Values to save |
+| Toast after a Lock Screen Log | `Set 3 logged from Lock Screen` · `Undo` | Actual |
 | LA Resting, next exercise | `Until 18:42 · Next: Incline DB press` · `Target 30 kg each × 8–10` | Target |
 | LA Resting, coach target | `Coach target 95 kg × 8` | Target |
 | LA Ready | `Ready · Push A` · `Bench press · Set 3 of 4` · `Target 100 kg × 6–8` | Target |
@@ -431,6 +447,14 @@ Last time and rest buttons (Ben, 26 Oct)
 29. Force-closed mid-rest, a button tap still changes the rest (iOS launches the app in the background) or, at worst, does nothing; it never applies to a later rest.
 30. Below iOS 17, or in a build with `FIZZ_LA_BUTTONS=0`, no buttons show and everything else behaves as before.
 
+Log on the Lock Screen (Ben, 27 Oct)
+31. Ready shows `Log <values>` equal to the in-app `Log` button for the same set (draft, target, carry, `each`, `per side`, unit); a tap logs exactly those values without opening the app, at the tap's time.
+32. After the tap the activity turns to Resting for the next set with the countdown and rest buttons, and the rest-done notification is scheduled for that rest.
+33. A double tap, or the same tap delivered twice, logs one set. A tap on a set logged, edited or undone in the app since logs nothing.
+34. Force-closed: a Log tap is applied (in the background, or at the next launch) once, at the tap's time; never twice.
+35. Opening GymSmarter after a Lock Screen Log shows `Set n logged from Lock Screen · Undo` once; Undo puts the set back as pending and ends its rest.
+36. No Log for timed, distance or cardio sets, a missing value, while paused or resting; after the last set the banner says `Open GymSmarter to finish`. With `FIZZ_LA_LOG=0` there's no Log and the rest buttons are unchanged.
+
 ---
 
 ## 8. Proposed changes (for Ben / the product manager)
@@ -441,7 +465,7 @@ Last time and rest buttons (Ben, 26 Oct)
 | P-L2 | One Live Activity per workout (Ready / Resting / Working / Paused), not one per rest | Shows the next set even between rests, and avoids starting and ending an activity at every Log |
 | P-L3 | Lock-screen text carries the absolute end time (`Until 18:42`) | Kept. `staleDate` is now used (Ben, 27 Oct): the widget switches to the Ready content at the rest's end; `Until` still covers a phone that doesn't redraw at the stale date |
 | P-L4 | ~~No lock-screen buttons (+30 s, Skip, Log) in the first milestone~~ **Superseded for timer buttons (Ben, 26 Oct):** `−15 s` / `+15 s` / `Skip` via `LiveActivityIntent`, which needs no entitlement (built; device test `2026-10-12-live-activity-rest.md` steps 2–8 pending) | Logging blind risks wrong data, so `Log` stays out (P-L4b) |
-| P-L4b | `Log as planned` on the Live Activity (Hevy) | **Not built (26 Oct).** Only after the rest buttons pass on the phone. It would log the shown target with an operation ID and an Undo in the app, and is the one lock-screen action that writes a set |
+| P-L4b | ~~`Log as planned` on the Live Activity (Hevy): not built until the rest buttons pass on the phone~~ **Reversed (Ben, 27 Oct): built.** `Log <values>` in the Ready state (§2.1), the same versioned `log_set` as the app, Undo on the next open (§4.7) | The button shows the exact values it saves, so it isn't logging blind; device test `2026-10-12-live-activity-rest.md` steps L1–L7 pending |
 | P-L5 | Alarm only while Fizz is in the background (§4.1) | Keeps "exactly one alert" without racing the in-app cue |
 | P-L6 | Optional quiet `Resting until 18:42` notification when the Live Activity is unavailable | Gives the lock screen the end time and next set on the free route today |
 | P-L7 | Optional `still running` reminder, off by default | Catches a forgotten Finish before the stale-workout path (6 h) |

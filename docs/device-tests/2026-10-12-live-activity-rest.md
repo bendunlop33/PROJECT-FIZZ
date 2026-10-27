@@ -2,7 +2,7 @@
 
 **About 10 minutes on the iPhone, with one short real workout.** Updated 26 Oct 2026 for the build with Ben's lock-screen changes (last time on the Lock Screen, `−15 s` / `+15 s` / `Skip` buttons, the new rest-done text). Put **P**, **F** (with one line) or **–** in each row and paste the table back. A screenshot of anything odd helps.
 
-**Status: open, not run.** (27 Oct: rest-end switch and new cues added at the top.) Every Live Activity check so far ran against a fake ActivityKit. Only the Capability probe's countdown has passed on the phone. The buttons are new and are the main unknown: they need no entitlement, but whether iOS delivers the tap to GymSmarter when it's installed through SideStore is only known once this runs.
+**Status: open, not run.** (27 Oct: rest-end switch and new cues added at the top; 27 Oct (b): Log on the Lock Screen, steps L1–L7.) Every Live Activity check so far ran against a fake ActivityKit. Only the Capability probe's countdown has passed on the phone. The buttons are new and are the main unknown: they need no entitlement, but whether iOS delivers the tap to GymSmarter when it's installed through SideStore is only known once this runs.
 
 ## New in the 27 Oct build: rest end on the Lock Screen, and rest cues (3 min)
 Ben, 27 Oct (build 435): the Lock Screen stayed at 0:00 when the rest ran out. Now the activity is told the next set when the rest starts, and iOS switches to it by itself at the end, even with GymSmarter suspended.
@@ -10,6 +10,16 @@ Ben, 27 Oct (build 435): the Lock Screen stayed at 0:00 when the rest ran out. N
 - **B. Workout:** step 5 below (lock through a rest): at 0:00 the banner turns to **Ready** with the next set, target and `Last …`, no countdown, no buttons, and the **Rest done** notification arrives. Note how long after 0:00 it changed (at once / a few seconds / only when I woke the screen / never).
 - **C. Dynamic Island:** in another app through a rest end: the compact island shows `Set n` instead of a countdown.
 - **D. Voice cues (app open, Profile › Voice › Timer and set details):** 15 s before the end: "15 seconds. Next: bench press, set 3, 80 kilos for 8." (dumbbells say "each"; pounds if the set is in pounds). At 0:00: just "Rest over." With **Timer only**: "15 seconds." then "Rest over." A rest of 15 s or less: only "Rest over."
+
+## New in the 27 Oct (b) build: Log on the Lock Screen (4 min)
+Ben, 27 Oct: a **Log** button on the Lock Screen, like Hevy. Build without `FIZZ_LA_LOG=0` or `FIZZ_LA_BUTTONS=0`. Use a rep exercise with a target (bench press).
+- **L1. Ready shows Log:** start, skip the first rest (or lock before the first set). Lock: under the target, one button **Log 100 kg × 8** with the same numbers as the in-app Log button. Dumbbells read `each`; a set you edited in the app shows your edit.
+- **L2. Log from the Lock Screen** (don't unlock): within about a second the banner turns to **Rest** with the countdown and **−15 s / +15 s / Skip** for the next set. The **Rest done** notification arrives at the end.
+- **L3. Rest end → Log again:** stay locked through that rest: at 0:00 the banner shows Ready with **Log** for the next set. Tap it: the next rest starts.
+- **L4. Open the app:** the logged sets are there with the right values and times; a toast **Set n logged from Lock Screen · Undo** shows once. Tap **Undo**: that set is back as not done and its rest is gone.
+- **L5. Double tap Log quickly:** one set logged, not two.
+- **L6. Force-closed:** with Ready on the Lock Screen, swipe GymSmarter away, lock, tap **Log**. Either the banner turns to Rest (best case) or nothing changes. Open the app: the set is logged once, with the tap's time. Never twice, never an error.
+- **L7. No Log where it needs input:** a timed set (plank) or cardio set shows no Log; after the last set the banner says `Open GymSmarter to finish`. Also: is the banner too tall with the Log row?
 
 ## Before you start (1 min)
 - Install the IPA built from branch `claude/lockscreen-26oct` (or the branch it was merged into) **over the top** with SideStore. Built with the Live Activity on (the default) and without `FIZZ_LA_BUTTONS=0`.
@@ -42,6 +52,13 @@ If time is short, run 2, 3, 4, 6 and 8.
 
 | Step | Result | Note |
 |---|---|---|
+| L1 Ready shows Log with the in-app numbers | | |
+| L2 Log from Lock Screen → Rest with buttons; notification at end | | |
+| L3 Rest end shows Log for next set; tap starts next rest | | |
+| L4 App: values/times right; toast once; Undo works | | |
+| L5 Double tap logs once | | |
+| L6 Force-closed: logged once (in background or at open) | | |
+| L7 No Log for timed/cardio; last set says finish in app; height OK | | |
 | 1 Ready with target and `Last` | | |
 | 2 Rest: countdown, Until, target, `Last` matches History, 3 buttons | | |
 | 3 +15 s / −15 s from the Lock Screen move it; app matches | | |
@@ -70,7 +87,8 @@ If time is short, run 2, 3, 4, 6 and 8.
 - In-app rest buttons stay ±30 s; the Lock Screen's are ±15 s.
 - The notification's target is the planned one: if you edited the load in the app, the Live Activity shows `Your edit …` but the notification doesn't (known gap, unchanged).
 - Tapping the activity outside the buttons opens GymSmarter where it was; there is no `fizz://workout` deep link yet.
-- There is no **Log** button on the Lock Screen (not built; it waits on this test).
+- **Log** shows only in Ready (not while a rest counts), and only for rep sets whose values are known; anything else needs the app. A Log for a set you changed in the app since does nothing (by design). Undo is in the app (`… logged from Lock Screen · Undo`), not on the Lock Screen.
+- If a Log tap launches GymSmarter from killed and it can't finish within a few seconds, the set is logged when you next open the app, at the time you tapped.
 
 ## What the 12 Oct version had
 The 12 Oct list (L1–L17) is in git history. Its checks are folded in above: Ready/Rest/Paused (1, 2, 9), ±/Skip (3, 4), force-close (6), Dynamic Island (7, 14), legibility (8, 14), Always-On (15), swipe (12), Live Activities off and on (11), VoiceOver (13), Finish and Discard (10). Left out as covered by automated tests: the Capability probe running during a workout (old L16) and the launch/foreground read ordering (old L4, L8 detail).
