@@ -10,6 +10,7 @@ import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
 import { getAlertPermission, requestAlertPermission, type AlertPermission } from '../../alerts/notifier';
 import { restEndCueKey, setWorkoutOnScreen } from '../../alerts/presentation';
 import { nowMs as clockNow } from '../../clock';
+import { lockLogNotices } from '../../live-activity/lock-log-notice';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { voiceCapability } from '../../voice/speaker';
 import { toggleCues } from '../../voice/settings';
@@ -380,6 +381,31 @@ export function WorkoutScreen() {
       clearTimeout(t);
     };
   }, [toast]);
+
+  // (Ben, 27 Oct) A set logged from the Lock Screen: `Set 2 logged from Lock Screen · Undo`, once, when the app is open.
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      setAppActive(s === 'active');
+    });
+    return () => {
+      sub.remove();
+    };
+  }, []);
+  const lockUndo = useRef<((setId: string, opId: string, name: string) => void) | null>(null);
+  const lockNoticeKey = data === 'loading' || data === null ? null : `${data.aggregate.session.id}:${String(data.aggregate.session.version)}`;
+  useEffect(() => {
+    if (data === 'loading' || data === null) return;
+    const n = lockLogNotices.take(data.aggregate, clockNow(), appActive);
+    if (n === null) return;
+    showToast({
+      text: n.text,
+      action: 'Undo',
+      onAction: () => {
+        lockUndo.current?.(n.setId, n.undoOpId, n.stepName);
+      },
+    });
+  }, [lockNoticeKey, appActive]);
 
   // One-off launch notices (flow §4.2) and the toast handed over by the check-in.
   useEffect(() => {
@@ -830,6 +856,9 @@ export function WorkoutScreen() {
     return code === 'stale_version' || code === 'write_conflict' ? 'The workout changed. Try again.' : message;
   }
 
+  lockUndo.current = (setId, opId, name) => {
+    void undo(setId, opId, name);
+  };
   editDeps.current = {
     run: (c) => run(c),
     adopt: (a) => {
