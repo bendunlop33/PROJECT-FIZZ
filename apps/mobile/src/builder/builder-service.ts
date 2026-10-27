@@ -33,6 +33,7 @@ import {
   deriveId,
   draftAsRoutine,
   estimateBuilderMinutes,
+  estimateBuilderSeconds,
   fromDraftPlan,
   groupsOfParts,
   groupsToAdd,
@@ -302,6 +303,11 @@ export interface BuilderSnapshot {
   minutes: number;
   /** Even at the minimum the estimate is over the length (`⚠ Over 20 min`). */
   over: boolean;
+  /**
+   * (Ben, 27 Oct) The length at or above which Time cuts nothing (the live fit's, else the set-up's before the first
+   * Time change): Time's `−` steps below it (`liveTime`). Absent: the set-up's length.
+   */
+  fullMinutes?: number;
   name: string;
   planDay: { planId: string; dayIndex: number; splitDayId: string; templateRoutineId: string | null; templateVersion: number | null; label: string } | null;
   variationLabel: string | null;
@@ -815,6 +821,40 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     return toDraftPlan(w, env.codec);
   }
 
+  /**
+   * A planned library or past workout (the Workout overview's plan at this gym) as Your workout opens it: what it can
+   * hold (`plannedAsDraftPlan`), its main lift (`pickMain`: the rule over what opens, a past workout), loads fitted
+   * to this gym's items (rule 4), the plan's deload week, and its warm-ups as the builder plans them. Sync over `env`,
+   * so the workout editor's estimate (`routineTimer`) is this same workout's (Ben, 27 Oct). Zero slots: nothing opens.
+   */
+  function draftFromPlanned(planned: SessionAggregate, o: { env: BuilderEnv; items: readonly EquipmentInstance[]; main: string | null; keySeed: string; pickMain: ((id: string) => boolean) | null }): { plan: DraftPlan; leftOut: string[]; main: string | null } {
+    const { env, items } = o;
+    const out = plannedAsDraftPlan({
+      exercises: planned.exercises,
+      sets: planned.sets,
+      mainExerciseId: o.main,
+      // (22 Oct) Cardio, timed sets and a second copy open as saved; only an exercise it can't find is left out.
+      holds: (id) => env.exercise(id) !== null,
+      slotKey: (n) => deriveId(`builder-slot:${o.keySeed}:${String(n)}`),
+      catalogueIdOf: (id) => env.codec.catalogueIdOf(id),
+      checkedOnOf: (equipmentId, unit, convention) => checkedOnOf({ equipment: items.find((x) => x.id === equipmentId) ?? null, unit, convention }),
+    });
+    if (out.plan.slots.length === 0) return { plan: out.plan, leftOut: out.leftOut, main: o.main };
+    let slots = out.plan.slots;
+    let main = o.main;
+    if (o.pickMain !== null) {
+      const lead = defaultMain(slots, o.pickMain).indexOf(true);
+      slots = slots.map((x, i) => ({ ...x, main: i === lead }));
+      main = slots[lead]?.exerciseId ?? null;
+    }
+    // Rule 4: an exercise the planner put on no item is fitted to the builder's item here (never past its max).
+    const fitted: DraftPlan = { slots: slots.map((x) => fitPlannedSlotHere(x, slotLoadOf(env.ctx.loads(x.exerciseId), x.main), env.codec.checkedOnOf(x.exerciseId))) };
+    // (Ben, 23 Oct: plan length = block 1) The plan's deload week: what opens is lighter and a set fewer, as on Today.
+    const lighter = deloadedHere(fitted, env);
+    // (WU1–WU12) Its warm-ups as the builder plans them for each exercise's place (Ben's own kept), so what opens is what saves.
+    return { plan: settlePlanWarmups(lighter, { ...env.codec, loads: env.ctx.loads }), leftOut: out.leftOut, main };
+  }
+
   async function sourcePlanOf(p: UserProfile, from: BuilderDraftFrom, gymId: string | null | undefined, keySeed: string): Promise<{ plan: DraftPlan; gymId: string | null; sourceVersion: number | null; leftOut: string[]; main: string | null; name: string; slotSeed?: string } | { closed: string }> {
     switch (from.kind) {
       case 'routine':
@@ -832,7 +872,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         // opens (fit-to-time §4.2; 22 Oct review B3). Compound as `saveFrom` reads it: the exercise's mechanic.
         const isCompound = (id: string) => env.exercise(id)?.mechanic === 'compound';
         const flags = r === null ? [] : mainFlags(r.exercises, isCompound);
-        let main = r?.exercises.find((_, i) => flags[i] === true)?.exerciseId ?? null;
+        const main = r?.exercises.find((_, i) => flags[i] === true)?.exerciseId ?? null;
         if (deps.planned === undefined) {
           const specs = r !== null ? specsFromWorkout(r.exercises) : a === null ? [] : specsFromSession(a);
           return { plan: toDraftPlan(workoutFromTemplate(specs, env.ctx), env.codec), gymId: env.gymId, sourceVersion, leftOut: [], main, name, slotSeed: keySeed };
@@ -840,29 +880,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const planned = await deps.planned(r !== null ? { kind: 'routine', routineId: r.id } : { kind: 'session', sourceSessionId: from.id }, env.gymId).catch(() => null);
         if (planned === null) return { closed: BUILDER_COPY.notFound };
         const items = env.gymId === null ? [] : await repos().equipment.listByGym(env.gymId).catch(() => [] as EquipmentInstance[]);
-        const out = plannedAsDraftPlan({
-          exercises: planned.exercises,
-          sets: planned.sets,
-          mainExerciseId: main,
-          // (22 Oct) Cardio, timed sets and a second copy open as saved; only an exercise it can't find is left out.
-          holds: (id) => env.exercise(id) !== null,
-          slotKey: (n) => deriveId(`builder-slot:${keySeed}:${String(n)}`),
-          catalogueIdOf: (id) => env.codec.catalogueIdOf(id),
-          checkedOnOf: (equipmentId, unit, convention) => checkedOnOf({ equipment: items.find((x) => x.id === equipmentId) ?? null, unit, convention }),
-        });
+        const out = draftFromPlanned(planned, { env, items, main, keySeed, pickMain: r === null ? isCompound : null });
         if (out.plan.slots.length === 0) return { closed: out.leftOut.length > 0 ? BUILDER_COPY.cantOpen : BUILDER_COPY.notFound };
-        let slots = out.plan.slots;
-        if (r === null) {
-          const lead = defaultMain(slots, isCompound).indexOf(true);
-          slots = slots.map((x, i) => ({ ...x, main: i === lead }));
-          main = slots[lead]?.exerciseId ?? null;
-        }
-        // Rule 4: an exercise the planner put on no item is fitted to the builder's item here (never past its max).
-        const fitted: DraftPlan = { slots: slots.map((x) => fitPlannedSlotHere(x, slotLoadOf(env.ctx.loads(x.exerciseId), x.main), env.codec.checkedOnOf(x.exerciseId))) };
-        // (Ben, 23 Oct: plan length = block 1) The plan's deload week: what opens is lighter and a set fewer, as on Today.
-        const lighter = deloadedHere(fitted, env);
-        // (WU1–WU12) Its warm-ups as the builder plans them for each exercise's place (Ben's own kept), so what opens is what saves.
-        return { plan: settlePlanWarmups(lighter, { ...env.codec, loads: env.ctx.loads }), gymId: env.gymId, sourceVersion, leftOut: out.leftOut.slice(0, BUILD_LIMITS.maxExercises * 3), main, name, slotSeed: keySeed };
+        return { plan: out.plan, gymId: env.gymId, sourceVersion, leftOut: out.leftOut.slice(0, BUILD_LIMITS.maxExercises * 3), main: out.main, name, slotSeed: keySeed };
       }
       case 'coach_draft': {
         const d = await repos().workoutDrafts.get(from.id).catch(() => null);
@@ -931,6 +951,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       planDayChanged,
       gymChanged,
       over: minutes > setup.minutes,
+      ...(stored === null ? {} : { fullMinutes: fit?.fromMinutes ?? setupMinutesOf(stored) }),
       name: d.name,
       planDay,
       variationLabel: variation?.label ?? null,
@@ -2485,6 +2506,29 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       if (ids.length === 0) return {};
       const env = await envFor(p, { gymId: req.gymId, exerciseIds: ids, keySeed: 'template-facts' });
       return Object.fromEntries(ids.map((id) => [id, { works: env.worksOf(id), mayHurt: env.painFlagged(id), notHere: req.gymId !== null && !env.doable(id), hasHistory: env.hasHistory(id) }]));
+    },
+
+    /**
+     * (Ben, 27 Oct: "if I manually change an exercise it should update too") The workout editor's Time: a workout's
+     * estimate as Your workout would open it at `gymId` (the planner's plan for it, `draftFromPlanned`), by the one
+     * estimate the plan and Today's card use (`estimateBuilderSeconds`). Reads once (env, the gym's items); the timer
+     * is sync, so the editor's fit (`fitTemplateToMinutes`) can run it on every candidate. Null: it can't be read.
+     */
+    async routineTimer(req: { gymId: string | null; exerciseIds: readonly string[] }): Promise<((planned: SessionAggregate, exercises: readonly RoutineExercise[]) => number) | null> {
+      try {
+        const p = await owner();
+        const env = await envFor(p, { gymId: req.gymId, exerciseIds: [...new Set(req.exerciseIds)], keySeed: 'editor-estimate' });
+        const items = env.gymId === null ? [] : await repos().equipment.listByGym(env.gymId).catch(() => [] as EquipmentInstance[]);
+        const isCompound = (id: string) => env.exercise(id)?.mechanic === 'compound';
+        return (planned, exercises) => {
+          const flags = mainFlags(exercises, isCompound);
+          const main = exercises.find((_, i) => flags[i] === true)?.exerciseId ?? null;
+          const out = draftFromPlanned(planned, { env, items, main, keySeed: 'editor-estimate', pickMain: null });
+          return estimateBuilderSeconds(fromDraftPlan(out.plan), env.ctx);
+        };
+      } catch {
+        return null;
+      }
     },
 
     /** `Why this weight?` (§2.4): where the load came from, numbers from code only. */

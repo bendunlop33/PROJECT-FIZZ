@@ -17,7 +17,7 @@ const HIT = { top: 5, bottom: 5, left: 4, right: 4 } as const;
  * adjustable VoiceOver element for the value. It shows a length and reports a step; the page's service fits the
  * workout to it.
  */
-export function TimeStepper({ minutes, onStep }: { minutes: number; onStep: (d: -1 | 1) => void }) {
+export function TimeStepper({ minutes, over = false, onStep }: { minutes: number; over?: boolean; onStep: (d: -1 | 1) => void }) {
   const theme = useTheme();
   const btn = (d: -1 | 1) => (
     <Pressable accessibilityRole="button" accessibilityLabel={d < 0 ? TIME_LABELS.less : TIME_LABELS.more} hitSlop={HIT} onPress={() => { onStep(d); }} style={({ pressed }) => ({ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors['border.divider'], opacity: pressed ? 0.7 : 1 })}>
@@ -36,7 +36,8 @@ export function TimeStepper({ minutes, onStep }: { minutes: number; onStep: (d: 
           onStep(e.nativeEvent.actionName === 'increment' ? 1 : -1);
         }}
       >
-        <AppText variant="label" numeric style={{ minWidth: 64, textAlign: 'center' }}>
+        {/* (Ben, 27 Oct) The live estimate; past the length (Ben's own edits) in the warning tone, no extra words. */}
+        <AppText variant="label" numeric color={over ? 'status.warning' : 'text.primary'} style={{ minWidth: 64, textAlign: 'center' }}>
           {TODAY_V2_COPY.minutesValue(minutes)}
         </AppText>
       </View>
@@ -50,7 +51,7 @@ export function TimeStepper({ minutes, onStep }: { minutes: number; onStep: (d: 
  * workout: the note after the label (light orange) is the biggest change the fit made, and a tap opens everything it
  * changed (`TimeDetailSheet`). Nothing moves when the note comes or goes; the row stays ≥ 44 pt.
  */
-export function TimeNoteRow({ minutes, note, noteLabel, onStep, onNote }: { minutes: number; note: string | null; noteLabel: string | null; onStep: (d: -1 | 1) => void; onNote: () => void }) {
+export function TimeNoteRow({ minutes, over = false, note, noteLabel, onStep, onNote }: { minutes: number; over?: boolean; note: string | null; noteLabel: string | null; onStep: (d: -1 | 1) => void; onNote: () => void }) {
   const theme = useTheme();
   const label = (
     <AppText variant="callout" color="text.secondary" style={{ fontSize: 15 }}>
@@ -69,7 +70,7 @@ export function TimeNoteRow({ minutes, note, noteLabel, onStep, onNote }: { minu
           </AppText>
         </Pressable>
       )}
-      <TimeStepper minutes={minutes} onStep={onStep} />
+      <TimeStepper minutes={minutes} over={over} onStep={onStep} />
     </View>
   );
 }

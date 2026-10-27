@@ -432,7 +432,7 @@ describe('Time on Your workout (source): the same control as Today’s; the scre
     // One Time row with its note (fit-to-time 22 Oct revision) for Today's card and Your workout.
     expect(read('screens/today/TodaySession.tsx')).toContain("import { TimeNoteRow } from '../../ui/time-stepper';");
     expect(read('screens/today/TodaySession.tsx')).not.toContain('function TimeStepper(');
-    expect(stepper).toContain('<TimeStepper minutes={minutes} onStep={onStep} />');
+    expect(stepper).toContain('<TimeStepper minutes={minutes} over={over} onStep={onStep} />');
     expect(stepper).toContain('color="status.warning"');
     const page = read('screens/builder/BuilderWorkoutScreen.tsx');
     expect(page).toContain("import { TimeDetailSheet, TimeNoteRow } from '../../ui/time-stepper';");

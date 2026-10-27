@@ -362,13 +362,15 @@ describe('S4: an edited card with a plan keeps Time (D3: Time is one of the lean
     snap = snapOf(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: mine.key }, { opId: 'mine', basis: { version: snap.version } }));
     let card = s.todaySession.card(await loaded(s), sel(data, key));
     expect(card?.edited?.draftId).toBe(snap.draftId);
-    expect(card?.time).toMatchObject({ minutes: plan, note: null, undoMinutes: null });
+    // (Ben, 27 Oct) The number is the draft's live estimate (Your workout's); the length the plan's.
+    expect(card?.time).toMatchObject({ minutes: workoutView(snap).time.minutes, length: plan, note: null, undoMinutes: null });
     // A step down on Today's card (the screen calls Your workout's Time on the draft).
     snap = snapOf(await s.builder.setTime(snap.draftId, 30, { opId: 'today-30', expectedVersion: snap.version }));
     const after = await loaded(s);
     card = s.todaySession.card(after, sel(after, key));
     expect(card?.edited?.draftId).toBe(snap.draftId);
-    expect(card?.time?.minutes).toBe(30);
+    expect(card?.time?.length).toBe(30);
+    expect(card?.time?.minutes).toBe(workoutView(snap).time.minutes);
     expect(card?.time?.note).toBe(workoutView(snap).time.note);
     expect(card?.time?.lines).toEqual(workoutView(snap).time.lines);
     expect(card?.time?.undoMinutes).toBe(plan);

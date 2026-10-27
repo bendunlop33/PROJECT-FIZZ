@@ -558,8 +558,8 @@ export function SessionCard({
   onBackToPlan: () => void;
   /** The Time note's tap: everything the fit changed, with Undo (the screen's sheet). */
   onTimeNote: () => void;
-  /** (Review todaylean S4) An edited card's Time step: Your workout's Time on that draft (the screen writes it). */
-  onEditedTime: (dir: -1 | 1) => void;
+  /** (Review todaylean S4) An edited card's Time step: Your workout's Time on that draft at this length (the screen writes it). */
+  onEditedTime: (minutes: number) => void;
 }) {
   const theme = useTheme();
   const time = view.time;
@@ -568,11 +568,15 @@ export function SessionCard({
     time === null ? null : (
       <TimeNoteRow
         minutes={time.minutes}
+        over={time.over}
         note={time.note}
         noteLabel={time.noteLabel}
         onStep={(d) => {
-          if (view.edited !== null) onEditedTime(d);
-          else dispatch({ kind: 'minutes', delta: d });
+          // (Ben, 27 Oct) The number is the live estimate; a step goes to the service's next length (`liveTime`).
+          const to = d < 0 ? time.less : time.more;
+          if (to === null) return;
+          if (view.edited !== null) onEditedTime(to);
+          else dispatch({ kind: 'minutes_to', minutes: to });
         }}
         onNote={onTimeNote}
       />

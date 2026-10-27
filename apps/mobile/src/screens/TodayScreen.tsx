@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, sessionCheckInForSkip, stepTimeMinutes, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
+import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, sessionCheckInForSkip, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
@@ -909,10 +909,7 @@ export function TodayScreen() {
             onTimeNote={() => {
               setTimeDetail(true);
             }}
-            onEditedTime={(dir) => {
-              const t = view.time;
-              if (t !== null) void editedTime(stepTimeMinutes(t.minutes, dir));
-            }}
+            onEditedTime={(minutes) => void editedTime(minutes)}
           />
         ) : null}
         {actions.emptyWorkout && !actions.emptyOnCard ? (

@@ -121,8 +121,10 @@ describe('B1 (D1): Keep for next time keeps the plan day’s own length, never T
     // Longer first (nothing cut, no fit record), then back down past the original: the length before Time stands.
     const longer = opened(await s.builder.setTime(snap0.draftId, snap0.setup.minutes + 20, { opId: 'longer', expectedVersion: snap0.version }));
     expect(longer.time).toBeNull();
-    const down = await step(s, longer, 'less', 'down-1');
+    // (Ben, 27 Oct) `−` now steps from the live estimate (it cuts below the plan's length); a length above it only fits.
+    const down = opened(await s.builder.setTime(longer.draftId, snap0.setup.minutes + 15, { opId: 'down-1', expectedVersion: longer.version }));
     expect(down.setup.minutes).toBe(snap0.setup.minutes + 15);
+    expect(down.time).toBeNull();
     const bench = slotsOf(down.workout.blocks).find((x) => x.main);
     if (bench === undefined) throw new Error('no main');
     const edited = opened(await s.builder.edit(down.draftId, { kind: 'add_set', slotKey: bench.key }, { opId: 'own-change', basis: { version: down.version } }));
