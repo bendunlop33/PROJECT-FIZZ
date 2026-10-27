@@ -2,9 +2,27 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { ActionSheetIOS, Pressable, View } from 'react-native';
 
-import { addDays, localDateOf, localDateText, localHourUtcMs, PB_EDIT_COPY, pbWeekdayName, PLAN_OVERVIEW_COPY, PLAN_PAUSE_MAX_DAYS, toMs, type PlanOverview, type PlanOverviewDay } from '@fizz/domain';
+import {
+  addDays,
+  localDateOf,
+  localDateText,
+  localHourUtcMs,
+  PB_BLOCK_COPY,
+  PB_EDIT_COPY,
+  PLAN_OVERVIEW_COPY,
+  PLAN_PAUSE_MAX_DAYS,
+  PLAN_TAB_VIEW_COPY,
+  planTabDayMenu,
+  planTabEditAction,
+  planTabMenu,
+  planTabView,
+  pbWeekdayName,
+  toMs,
+  type PlanOverview,
+  type PlanTabRow,
+} from '@fizz/domain';
 
 import { dateAt } from '../../clock';
 import { WEEK_COPY } from '../../services/week-services';
@@ -14,21 +32,22 @@ import { newUuid } from '../../device/runtime';
 import type { LibraryStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Eyebrow, Icon, SecondaryButton, TextButton } from '../../ui';
+import { AppText, Chip, Eyebrow, Icon, TextButton } from '../../ui';
+import { SwipeRow } from '../../ui/table-parts';
 import { LiftTargetsBlock } from './LiftTargetsBlock';
-import { PlanWeeksBlock } from './PlanWeeksBlock';
+import { WeekChips } from './WeekChips';
 
 /** `why`: a line behind the toast's `Why?` (End plan's `N workouts not restored`). */
 export type PlanToast = { text: string; action?: string; onAction?: () => void; why?: string };
 
 /**
- * Library › Workouts › Your plan (Ben, 19 Oct; mockup approved "ok"): the
- * plan in use, since when, the goal line (`Edit` / `Set goal` open Profile ›
- * Training details), its days in plan order with a state dot (✓ done this
- * week, a numbered ring for Up next, a plain ring to do), days this week and
- * planned sets done, then `Ask coach to change` and `End plan` (an in-page
- * confirm, then a toast with Undo). Every value comes from
- * `services.plans.overview()`; this draws it. Local only (rule 1).
+ * Library › Plan › the plan in use (Ben, 27 Oct: Library › Plan v2, docs/design/plan-tab-v2.md; replaces the 19 Oct
+ * block and the week strip's duplicate day list). A header card: the plan's name with `⋯` (Edit plan or Start next
+ * block shown on the card; `⋯`: Pause/Resume, Ask coach to change, Edit goal, End plan), `Week 3 of 6 · deload in
+ * week 6`, the goal, the week chips (current week dotted, selected week filled). Then **one** list of the selected
+ * week's days: ✓ done with its date, Up next, the weekday on Set days plans and the main lifts; a tap opens the day,
+ * a swipe (or `⋯`, long-press, VoiceOver actions) has `Do today` and `Move day`. Every value comes from `services.plans.overview()` through `planTabView`; nothing here
+ * computes a plan or a load. Local only (rule 1). Every write keeps its op ID and Undo toast.
  */
 export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; onToast: (t: PlanToast | null) => void }) {
   const theme = useTheme();
@@ -36,7 +55,6 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
   const changed = useDataChanged();
   const navigation = useNavigation();
   const stack = useNavigation<NativeStackNavigationProp<LibraryStackParams, 'LibraryHome'>>();
-  const [confirming, setConfirming] = useState(false);
   // (Ben, 20 Oct) Pause: the in-place picker; null closed, else the picked `until` (null: until Resume).
   const [pausing, setPausing] = useState<{ until: string | null } | null>(null);
   const busy = useRef(false);
@@ -147,7 +165,6 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
     endOp.current ??= newUuid();
     try {
       const r = await services.plans.end({ planId: plan.planId, expectedVersion: plan.planVersion, opId: endOp.current });
-      setConfirming(false);
       endOp.current = null;
       changed();
       if (!r.ok) {
@@ -175,242 +192,357 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverviewWithBlock; 
     }
   }
 
+  // (Ben, 27 Oct: Library › Plan v2) One page: the header card, then one list of the selected week's days.
+  const [picked, setPicked] = useState<{ key: string; week: number } | null>(null);
+  const [moving, setMoving] = useState<number | null>(null);
+  const b = plan.block ?? null;
+  const blockKey = b === null ? '' : `${plan.planId}:${String(b.current)}:${String(b.done)}`;
+  const view = planTabView({
+    overview: plan,
+    block: b === null ? null : { views: b.views, current: b.current, done: b.done, editable: b.editable, actions: b.actions },
+    // A new block week (or another plan) opens on the current week again.
+    selected: picked !== null && picked.key === blockKey ? picked.week : null,
+  });
+
+  const edit = planTabEditAction(view);
+
+  function confirmEnd() {
+    endOp.current = null;
+    ActionSheetIOS.showActionSheetWithOptions({ title: PLAN_TAB_VIEW_COPY.endConfirm, options: [PLAN_TAB_VIEW_COPY.endPlan, PLAN_TAB_VIEW_COPY.cancel], destructiveButtonIndex: 0, cancelButtonIndex: 1 }, (i) => {
+      if (i === 0) void end();
+    });
+  }
+
+  /** The header's `⋯`: Pause/Resume, Ask coach to change, Edit goal, End plan (`Edit plan` is visible on the card). */
+  function openMenu() {
+    const items = planTabMenu(view, plan.paused !== null);
+    const options = [...items.map((x) => x.label), PLAN_TAB_VIEW_COPY.cancel];
+    ActionSheetIOS.showActionSheetWithOptions({ title: plan.name, options, cancelButtonIndex: items.length, destructiveButtonIndex: items.findIndex((x) => x.kind === 'end') }, (i) => {
+      const item = items[i];
+      if (item === undefined) return;
+      if (item.kind === 'pause') setPausing({ until: null });
+      else if (item.kind === 'resume') resume();
+      else if (item.kind === 'coach') navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: PLAN_OVERVIEW_COPY.coachDraft });
+      else if (item.kind === 'goal') openTraining();
+      else confirmEnd();
+    });
+  }
+
+  /** `Edit plan` (the block runs) or `Start next block` (done): visible on the card (UX review 27 Oct §P4). */
+  function editAction(kind: 'edit' | 'next') {
+    navigation.dispatch(kind === 'edit' ? openPlanEdit(plan.planId) : openNextBlock(plan.planId));
+  }
+
+  function doToday(row: PlanTabRow) {
+    if (row.actions !== null) navigation.dispatch(todayWithDay(row.actions.todayKey, newUuid()));
+  }
+
+  /** A day's `⋯` / long-press (the same as its swipes): `Do today` and, on Set days plans, `Move day`. */
+  function openDayMenu(row: PlanTabRow) {
+    const items = planTabDayMenu(row);
+    if (items.length === 0) return;
+    ActionSheetIOS.showActionSheetWithOptions({ title: row.name, options: [...items.map((x) => x.label), PLAN_TAB_VIEW_COPY.cancel], cancelButtonIndex: items.length }, (i) => {
+      dayAction(row, items[i]?.kind);
+    });
+  }
+
+  function dayAction(row: PlanTabRow, kind: string | undefined) {
+    if (kind === 'today') doToday(row);
+    else if (kind === 'move') setMoving(row.dayIndex);
+  }
+
   return (
-    <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['3'] }}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: theme.space['2'] }} accessibilityRole="header">
-        <Eyebrow color="text.secondary">{PLAN_OVERVIEW_COPY.label}</Eyebrow>
-        <AppText variant="callout" color="text.secondary" numeric>
-          {plan.since}
-        </AppText>
-      </View>
-      <AppText variant="title2">{plan.name}</AppText>
-      {plan.paused !== null ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
-          <Icon name="pause.circle" color="text.secondary" size={16} />
-          <AppText variant="callout" color="text.secondary" numeric>
-            {`${plan.paused.text} ·`}
+    <View style={{ gap: theme.space['4'] }}>
+      <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['2'] }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
+            {view.title}
           </AppText>
-          <TextButton label={PLAN_OVERVIEW_COPY.resume} onPress={resume} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${PLAN_TAB_VIEW_COPY.more}, ${view.title}`}
+            onPress={openMenu}
+            hitSlop={4}
+            style={({ pressed }) => ({ width: 44, height: 44, marginVertical: -theme.space['2'], marginRight: -theme.space['2'], alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+          >
+            <Icon name="ellipsis" color="text.secondary" size={20} />
+          </Pressable>
         </View>
-      ) : null}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['1'] }}>
-        {plan.goal.text !== null ? (
+        <AppText variant="callout" color="text.secondary" numeric>
+          {view.line}
+        </AppText>
+        {plan.paused !== null ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
+            <Icon name="pause.circle" color="text.secondary" size={16} />
+            <AppText variant="callout" color="text.secondary" numeric>
+              {`${plan.paused.text} ·`}
+            </AppText>
+            <TextButton label={PLAN_OVERVIEW_COPY.resume} onPress={resume} />
+          </View>
+        ) : null}
+        {view.goal !== null ? (
           <AppText variant="callout" color="text.secondary" numeric>
-            {`${plan.goal.text} ·`}
+            {view.goal}
           </AppText>
         ) : null}
-        <TextButton label={plan.goal.action} tone="secondary" accessibilityLabel={plan.goal.action === PLAN_OVERVIEW_COPY.edit ? 'Edit goal' : 'Set goal'} onPress={openTraining} />
+        {view.chips !== null ? (
+          <View style={{ paddingTop: theme.space['1'] }}>
+            <WeekChips
+              chips={view.chips}
+              onSelect={(w) => {
+                setPicked({ key: blockKey, week: w });
+                setMoving(null);
+              }}
+            />
+          </View>
+        ) : null}
+        {edit !== null ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: theme.space['2'] }}>
+            {view.blockDone ? (
+              <AppText variant="callout" color="text.secondary">
+                {`${PB_BLOCK_COPY.done} ·`}
+              </AppText>
+            ) : null}
+            <TextButton
+              label={edit.label}
+              onPress={() => {
+                editAction(edit.kind);
+              }}
+            />
+          </View>
+        ) : null}
+        {pausing !== null ? (
+          <View style={{ gap: theme.space['2'], paddingTop: theme.space['2'] }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
+              <Choice
+                label={PLAN_OVERVIEW_COPY.pauseNoDate}
+                selected={pausing.until === null}
+                onPress={() => {
+                  setPausing({ until: null });
+                }}
+              />
+              <Choice
+                label={pausing.until === null ? PLAN_OVERVIEW_COPY.pauseUntil : `${PLAN_OVERVIEW_COPY.pauseUntil} ${localDateText(pausing.until)}`}
+                selected={pausing.until !== null}
+                onPress={() => {
+                  setPausing({ until: pausing.until ?? addDays(today, 7) });
+                }}
+              />
+            </View>
+            {pausing.until !== null ? (
+              <DateTimePicker
+                value={dateAt(noon(pausing.until))}
+                mode="date"
+                display="spinner"
+                timeZoneName={now.tz}
+                minimumDate={dateAt(noon(addDays(today, 1)))}
+                maximumDate={dateAt(noon(addDays(today, PLAN_PAUSE_MAX_DAYS)))}
+                themeVariant={theme.scheme}
+                onValueChange={(_e, date) => {
+                  setPausing({ until: localDateOf(date.getTime(), now.tz) });
+                }}
+              />
+            ) : null}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
+              <TextButton
+                label={PLAN_OVERVIEW_COPY.pause}
+                onPress={() => {
+                  pause(pausing.until);
+                }}
+              />
+              <TextButton
+                label={PLAN_OVERVIEW_COPY.cancel}
+                tone="secondary"
+                onPress={() => {
+                  setPausing(null);
+                  pauseOp.current = null;
+                }}
+              />
+            </View>
+          </View>
+        ) : null}
       </View>
-      {/* (Ben, 23 Oct: plan length = block 1) A builder plan's weeks: the strip, that week's days, and the block's end. */}
-      {plan.block != null ? (
-        <PlanWeeksBlock
-          key={`${plan.planId}:${String(plan.block.current)}:${String(plan.block.done)}`}
-          block={plan.block}
-          onStartNext={() => {
-            navigation.dispatch(openNextBlock(plan.planId));
-          }}
-          actions={plan.block.actions}
-          onMove={(dayIndex, weekday) => {
-            void moveDay(dayIndex, weekday);
-          }}
-          onDoToday={(key) => {
-            navigation.dispatch(todayWithDay(key, newUuid()));
-          }}
-        />
-      ) : null}
-      {plan.block?.editable === true ? (
-        <SecondaryButton
-          label={PB_EDIT_COPY.editPlan}
-          onPress={() => {
-            navigation.dispatch(openPlanEdit(plan.planId));
-          }}
-        />
-      ) : null}
       <View>
-        {plan.days.map((d, i) => (
+        <View style={{ minHeight: 36, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: theme.space['2'] }}>
+          <View accessibilityRole="header">
+            <Eyebrow>{view.listTitle}</Eyebrow>
+          </View>
+          {view.listMeta !== null ? (
+            <AppText variant="callout" color="text.secondary" numeric>
+              {view.listMeta}
+            </AppText>
+          ) : null}
+        </View>
+        {view.note !== null ? (
+          <AppText variant="callout" color="text.secondary">
+            {view.note}
+          </AppText>
+        ) : null}
+        {view.rows.map((row, i) => (
           <DayRow
-            key={d.routineId}
-            day={d}
+            key={row.key}
+            row={row}
             first={i === 0}
+            moving={moving !== null && moving === row.dayIndex}
             onPress={() => {
-              stack.navigate('LibraryPlanDay', { routineId: d.routineId, name: d.name });
+              if (row.routineId === null) return;
+              const week = view.selected !== null && !view.thisWeek ? view.selected : undefined;
+              stack.navigate('LibraryPlanDay', { routineId: row.routineId, name: row.name, ...(week === undefined ? {} : { week }) });
+            }}
+            onMore={() => {
+              openDayMenu(row);
+            }}
+            onAction={(kind) => {
+              dayAction(row, kind);
+            }}
+            onMove={(wd) => {
+              setMoving(null);
+              if (row.dayIndex !== null) void moveDay(row.dayIndex, wd);
+            }}
+            onCancelMove={() => {
+              setMoving(null);
             }}
           />
         ))}
-      </View>
-      {plan.weekChange !== null ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
-          <AppText variant="callout" style={{ flexShrink: 1 }}>
-            {plan.weekChange.text}
-          </AppText>
-          <TextButton
-            label={WEEK_COPY.undo}
-            tone="secondary"
-            accessibilityLabel="Undo this week's change"
-            onPress={() => {
-              if (plan.weekChange !== null) undoWeek(plan.weekChange);
-            }}
-          />
-        </View>
-      ) : null}
-      {plan.activities.map((line) => (
-        <AppText key={line} variant="callout" color="text.secondary" numeric>
-          {line}
-        </AppText>
-      ))}
-      <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-        <Stat value={plan.daysThisWeek.text} label={PLAN_OVERVIEW_COPY.daysThisWeek} />
-        {plan.setsDone !== null ? <Stat value={plan.setsDone.text} label={PLAN_OVERVIEW_COPY.setsDone} /> : null}
+        {view.thisWeek && plan.weekChange !== null ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'], paddingTop: theme.space['2'] }}>
+            <AppText variant="callout" style={{ flexShrink: 1 }}>
+              {plan.weekChange.text}
+            </AppText>
+            <TextButton
+              label={WEEK_COPY.undo}
+              tone="secondary"
+              accessibilityLabel="Undo this week's change"
+              onPress={() => {
+                if (plan.weekChange !== null) undoWeek(plan.weekChange);
+              }}
+            />
+          </View>
+        ) : null}
+        {view.thisWeek
+          ? plan.activities.map((line) => (
+              <AppText key={line} variant="callout" color="text.secondary" numeric style={{ paddingTop: theme.space['1'] }}>
+                {line}
+              </AppText>
+            ))
+          : null}
       </View>
       {/* (Ben approved 20 Oct) Lift targets: nothing while the setting is off. */}
       <LiftTargetsBlock onToast={onToast} />
-      {pausing !== null ? (
-        <View style={{ gap: theme.space['2'] }}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
-            <Choice
-              label={PLAN_OVERVIEW_COPY.pauseNoDate}
-              selected={pausing.until === null}
-              onPress={() => {
-                setPausing({ until: null });
-              }}
-            />
-            <Choice
-              label={pausing.until === null ? PLAN_OVERVIEW_COPY.pauseUntil : `${PLAN_OVERVIEW_COPY.pauseUntil} ${localDateText(pausing.until)}`}
-              selected={pausing.until !== null}
-              onPress={() => {
-                setPausing({ until: pausing.until ?? addDays(today, 7) });
-              }}
-            />
-          </View>
-          {pausing.until !== null ? (
-            <DateTimePicker
-              value={dateAt(noon(pausing.until))}
-              mode="date"
-              display="spinner"
-              timeZoneName={now.tz}
-              minimumDate={dateAt(noon(addDays(today, 1)))}
-              maximumDate={dateAt(noon(addDays(today, PLAN_PAUSE_MAX_DAYS)))}
-              themeVariant={theme.scheme}
-              onValueChange={(_e, date) => {
-                setPausing({ until: localDateOf(date.getTime(), now.tz) });
-              }}
-            />
-          ) : null}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
-            <TextButton
-              label={PLAN_OVERVIEW_COPY.pause}
-              onPress={() => {
-                pause(pausing.until);
-              }}
-            />
-            <TextButton
-              label={PLAN_OVERVIEW_COPY.cancel}
-              tone="secondary"
-              onPress={() => {
-                setPausing(null);
-                pauseOp.current = null;
-              }}
-            />
-          </View>
-        </View>
-      ) : confirming ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
-          <AppText variant="callout">{PLAN_OVERVIEW_COPY.endConfirm}</AppText>
-          <TextButton label={PLAN_OVERVIEW_COPY.endPlan} onPress={() => void end()} />
-          <TextButton
-            label={PLAN_OVERVIEW_COPY.cancel}
-            tone="secondary"
-            onPress={() => {
-              setConfirming(false);
-              endOp.current = null;
-            }}
-          />
-        </View>
-      ) : (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
-          <TextButton
-            label={PLAN_OVERVIEW_COPY.askCoach}
-            onPress={() => {
-              navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: PLAN_OVERVIEW_COPY.coachDraft });
-            }}
-          />
-          {plan.paused === null ? (
-            <TextButton
-              label={PLAN_OVERVIEW_COPY.pause}
-              tone="secondary"
-              onPress={() => {
-                setPausing({ until: null });
-              }}
-            />
-          ) : null}
-          <TextButton
-            label={PLAN_OVERVIEW_COPY.endPlan}
-            tone="secondary"
-            onPress={() => {
-              setConfirming(true);
-            }}
-          />
-        </View>
-      )}
     </View>
   );
 }
 
-/** A plan day (≥ 52pt): the dot, the name with `NEXT`, when, a chevron. Opens the day. */
-function DayRow({ day, first, onPress }: { day: PlanOverviewDay; first: boolean; onPress: () => void }) {
+/**
+ * A day of the selected week (≥ 60pt): its mark (✓ done, a numbered ring for Up next, a plain ring), name with `Next`,
+ * the weekday and main lifts, the date done, and a chevron (opens the day). This week's not-done days also swipe:
+ * `Do today` (leading) and `Move` (trailing, Set days plans), with the same in a `⋯` button, long-press and VoiceOver
+ * actions (UX review 27 Oct §P4). `Move day` shows the weekday chips under the row.
+ */
+function DayRow({ row, first, moving, onPress, onMore, onAction, onMove, onCancelMove }: { row: PlanTabRow; first: boolean; moving: boolean; onPress: () => void; onMore: () => void; onAction: (kind: string) => void; onMove: (weekday: number) => void; onCancelMove: () => void }) {
   const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={day.accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: 52,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: theme.space['3'],
-        borderTopWidth: first ? 0 : theme.dividerWidth,
-        borderTopColor: theme.colors['border.divider'],
-        opacity: pressed ? 0.7 : 1,
-      })}
-    >
-      <Dot day={day} />
-      <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
-        <AppText variant="body">{day.name}</AppText>
-        {day.next ? (
-          <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}>
-            <AppText variant="sectionLabel" color="text.primary">
-              {PLAN_OVERVIEW_COPY.next}
-            </AppText>
-          </View>
+  const menu = planTabDayMenu(row);
+  const today = menu.find((x) => x.kind === 'today');
+  const move = menu.find((x) => x.kind === 'move');
+  const content = (
+    <View style={{ minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingVertical: theme.space['2'] }}>
+      <Mark row={row} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
+          <AppText variant="body">{row.name}</AppText>
+          {row.state === 'next' ? (
+            <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}>
+              <AppText variant="sectionLabel" color="text.primary">
+                {PLAN_TAB_VIEW_COPY.next}
+              </AppText>
+            </View>
+          ) : null}
+        </View>
+        {row.sub !== null ? (
+          <AppText variant="callout" color="text.secondary" numberOfLines={1}>
+            {row.sub}
+          </AppText>
         ) : null}
       </View>
-      {day.when !== null ? (
-        <AppText variant="callout" color="text.secondary" numeric style={{ flexShrink: 1, textAlign: 'right' }}>
-          {day.when}
+      {row.trailing !== null ? (
+        <AppText variant="callout" color="text.secondary" numeric style={{ flexShrink: 0 }}>
+          {row.trailing}
         </AppText>
       ) : null}
-      <Icon name="chevron.right" color="text.tertiary" size={14} />
-    </Pressable>
+      {menu.length > 0 ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={PLAN_TAB_VIEW_COPY.dayActions(row.name)} onPress={onMore} style={({ pressed }) => ({ width: 36, minHeight: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+          <Icon name="ellipsis" color="text.secondary" size={18} />
+        </Pressable>
+      ) : null}
+      {row.routineId !== null ? <Icon name="chevron.right" color="text.tertiary" size={14} /> : null}
+    </View>
+  );
+  return (
+    <View style={{ borderTopWidth: first ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
+      {menu.length > 0 ? (
+        <SwipeRow
+          surface="bg.canvas"
+          onPress={onPress}
+          accessibilityLabel={row.accessibilityLabel}
+          actions={menu.map((x) => ({ name: x.kind, label: x.label }))}
+          onAction={onAction}
+          holdProps={{ onLongPress: onMore }}
+          {...(today !== undefined ? { rightAction: { label: today.label, onPress: () => { onAction('today'); } } } : {})}
+          {...(move !== undefined ? { leftAction: { label: PLAN_TAB_VIEW_COPY.move, tone: 'accent' as const, onPress: () => { onAction('move'); } } } : {})}
+        >
+          {content}
+        </SwipeRow>
+      ) : (
+        <Pressable accessibilityRole="button" accessibilityLabel={row.accessibilityLabel} disabled={row.routineId === null} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+          {content}
+        </Pressable>
+      )}
+      {moving && row.actions?.moveTo != null ? (
+        <View style={{ gap: theme.space['1'], paddingBottom: theme.space['2'] }}>
+          <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', gap: theme.space['1'] }}>
+            {[0, 1, 2, 3, 4, 5, 6].map((wd) => {
+              const can = row.actions?.moveTo?.includes(wd) === true;
+              return (
+                <Chip
+                  key={wd}
+                  grow
+                  size="min"
+                  label={pbWeekdayName(wd)}
+                  selected={wd === row.weekday}
+                  disabled={!can}
+                  onPress={() => {
+                    if (!can || wd === row.weekday) return;
+                    onMove(wd);
+                  }}
+                />
+              );
+            })}
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <TextButton label={PLAN_TAB_VIEW_COPY.cancel} tone="secondary" onPress={onCancelMove} />
+          </View>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
-/** ✓ (done this week, a word for VoiceOver in the row's label), a numbered ring (next), a plain ring (to do): never colour alone. */
-function Dot({ day }: { day: PlanOverviewDay }) {
+/** ✓ (done that week), a numbered ring (Up next), a plain ring (to do): never colour alone (the row's label says it). */
+function Mark({ row }: { row: PlanTabRow }) {
   const theme = useTheme();
-  const size = 22;
-  if (day.state === 'done') {
+  const size = 24;
+  if (row.state === 'done') {
     return (
       <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: theme.colors['status.done.subtle'], alignItems: 'center', justifyContent: 'center' }}>
         <Icon name="checkmark" color="status.done" size={12} weight="bold" />
       </View>
     );
   }
-  if (day.state === 'next') {
+  if (row.state === 'next') {
     return (
       <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center' }}>
         <AppText variant="label" color="accent" numeric style={{ fontSize: 13, lineHeight: 16 }}>
-          {String(day.n)}
+          {String(row.n)}
         </AppText>
       </View>
     );
@@ -431,16 +563,3 @@ function Choice({ label, selected, onPress }: { label: string; selected: boolean
   );
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
-  const theme = useTheme();
-  return (
-    <View accessible accessibilityLabel={`${label}: ${value}`} style={{ flex: 1, backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['3'], paddingVertical: theme.space['2'], gap: 2 }}>
-      <AppText variant="title2" numeric>
-        {value}
-      </AppText>
-      <AppText variant="callout" color="text.secondary">
-        {label}
-      </AppText>
-    </View>
-  );
-}

@@ -97,17 +97,20 @@ export function SwipeRow({
   onAction,
   container = false,
   holdProps,
+  surface = 'bg.surface',
 }: {
   children: ReactNode;
   onPress: () => void;
+  /** The row's own colour (a list on the canvas: `bg.canvas`); pressed is `bg.raised`. */
+  surface?: 'bg.surface' | 'bg.canvas';
   /**
    * The row holds its own accessible controls (the pop-up's set rows: reps,
    * kg and RPE fields): it isn't one VoiceOver element, so they stay
    * reachable; its label and actions belong on a child (review B6).
    */
   container?: boolean;
-  /** Revealed by a swipe left (on the right edge): `Delete`. */
-  leftAction?: { label: string; onPress: () => void };
+  /** Revealed by a swipe left (on the right edge): `Delete` (danger, the default), or a plain action (`accent`: Library › Plan's `Move`). */
+  leftAction?: { label: string; onPress: () => void; tone?: 'danger' | 'accent' };
   /** Revealed by a swipe right (on the left edge): `Swap`. */
   rightAction?: { label: string; onPress: () => void };
   accessibilityLabel: string;
@@ -166,7 +169,7 @@ export function SwipeRow({
             close();
             leftAction.onPress();
           }}
-          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: REVEAL, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors['status.danger'] }}
+          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: REVEAL, alignItems: 'center', justifyContent: 'center', backgroundColor: leftAction.tone === 'accent' ? theme.colors.accent : theme.colors['status.danger'] }}
         >
           <AppText variant="headline" color="on.accent">
             {leftAction.label}
@@ -205,7 +208,7 @@ export function SwipeRow({
             if (open !== null) close();
             else onPress();
           }}
-          style={({ pressed }) => ({ minHeight: 52, backgroundColor: pressed ? theme.colors['bg.raised'] : theme.colors['bg.surface'] })}
+          style={({ pressed }) => ({ minHeight: 52, backgroundColor: pressed ? theme.colors['bg.raised'] : theme.colors[surface] })}
         >
           {children}
         </Pressable>

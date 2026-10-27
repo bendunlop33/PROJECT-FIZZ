@@ -37,3 +37,13 @@ export function planSetupRoute(coach: CoachAvailability | null, builderAvailable
   const v = statusView(coach);
   return v.canSend ? { kind: 'coach', draft: PLAN_TAB_COPY.coachDraft } : { kind: 'connect', state: v.placeholder };
 }
+
+/**
+ * (UX review 27 Oct §P4, PM) The segment Library opens on: a segment asked for (a link) wins; with a plan in use, Plan,
+ * so the plan Ben runs every week is never behind a remembered Exercises or Workouts; else the remembered one. The
+ * remembered segment itself is left alone (it still applies once no plan is in use).
+ */
+export function librarySegmentAtOpen<S extends string>(o: { asked: S | undefined; remembered: S; planInUse: boolean; plan: S }): S {
+  if (o.asked !== undefined) return o.asked;
+  return o.planInUse ? o.plan : o.remembered;
+}

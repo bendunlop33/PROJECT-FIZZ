@@ -18,8 +18,8 @@ import { LiftTargetsBlock } from './LiftTargetsBlock';
 import { YourPlanBlock, type PlanToast } from './YourPlanBlock';
 
 /**
- * Library › Plan (Ben, 22 Oct; prototype `renderLibrary`; review gaps V1):
- * Your plan (the block: days, goal, Pause, End) or, with no plan, `Set up a
+ * Library › Plan (Ben, 22 Oct; prototype `renderLibrary`; review gaps V1; v2 27 Oct, plan-tab-v2.md):
+ * the plan in use (`YourPlanBlock`: one header card and one list of days) or, with no plan, `Set up a
  * plan ›`; then `Previous` plans, each with `Start again` (`Replace my
  * workouts` / `Add alongside`, then `Plan applied` with Undo). Every value
  * from `services.plans`; nothing here computes a plan. Local only except
@@ -38,6 +38,9 @@ export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined })
   // One op ID per choice, so a retried tap is the same Start again (rule 5).
   const startOp = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  // (Ben, 27 Oct: Library › Plan v2) A hairline at the scroll area's top edge once the page scrolls, so a row going
+  // under the segmented control reads as under an edge, never as clipped by it.
+  const [scrolled, setScrolled] = useState(false);
   const [data, reload] = useScreenData(async (s) => {
     // Review planview S5: a failed read is said, never shown as no plan.
     // (Ben, 26 Oct) A new block week takes its version first (idempotent), so the overview and Today agree.
@@ -173,9 +176,18 @@ export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined })
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <ScrollView ref={scrollRef} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }}>
+      <ScrollView
+        ref={scrollRef}
+        contentInsetAdjustmentBehavior="automatic"
+        scrollEventThrottle={64}
+        onScroll={(e) => {
+          const on = e.nativeEvent.contentOffset.y > 0;
+          if (on !== scrolled) setScrolled(on);
+        }}
+        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }}>
         {body}
       </ScrollView>
+      {scrolled ? <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: theme.dividerWidth, backgroundColor: theme.colors['border.divider'] }} /> : null}
       <ToastHost bottom={toastBottom({ footerHeight: null, insetBottom: insets.bottom, space2: theme.space['2'], tab: true })}>
         {toast ? (
           <Toast
