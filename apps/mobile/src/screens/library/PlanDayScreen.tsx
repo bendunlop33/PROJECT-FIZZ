@@ -40,9 +40,9 @@ export function PlanDayScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { routineId, name: shownName } = useRoute<RouteProp<LibraryStackParams, 'LibraryPlanDay'>>().params;
+  const { routineId, name: shownName, week } = useRoute<RouteProp<LibraryStackParams, 'LibraryPlanDay'>>().params;
   const { prefs } = useDevicePrefs();
-  const [data, reload] = useScreenData((s) => s.plans.planDay(routineId, { targetsHit: prefs.targetsHit }));
+  const [data, reload] = useScreenData((s) => s.plans.planDay(routineId, { targetsHit: prefs.targetsHit, week }));
   const day = data.state === 'ready' ? data.value : null;
   const name = day?.name ?? shownName ?? '';
   const services = useServices();
@@ -125,9 +125,33 @@ export function PlanDayScreen() {
       {data.state === 'ready' && day === null ? <StatusLine icon="info.circle" tone="info" text={PLAN_COPY.missing} /> : null}
       {day !== null ? (
         <>
-          <HeroHeader size="screen" title={day.name} lines={[day.header]} />
-          {day.status !== 'planned' ? <StatusLine icon="info.circle" tone="info" text={day.status === 'no_gym' ? PLAN_COPY.noGym : PLAN_COPY.notHere} /> : null}
-          {day.rows.length > 0 ? (
+          {/* (Ben, 27 Oct: Library › Plan v2) From another block week: that week's planned targets, as its day card showed. */}
+          <HeroHeader size="screen" title={day.name} lines={day.week === null ? [day.header] : [day.week.header, ...(day.week.note === null ? [] : [day.week.note])]} />
+          {day.week === null && day.status !== 'planned' ? <StatusLine icon="info.circle" tone="info" text={day.status === 'no_gym' ? PLAN_COPY.noGym : PLAN_COPY.notHere} /> : null}
+          {day.week !== null ? (
+            <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['1'] }}>
+              {day.week.rows.map((r, i) => (
+                <View
+                  key={r.key}
+                  accessible
+                  accessibilityLabel={`${r.name}, ${r.line}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
+                  style={{ minHeight: 48, paddingVertical: theme.space['2'], flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['3'], borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
+                >
+                  <AppText variant="body" style={{ flex: 1, minWidth: 140, ...(r.main ? { fontWeight: '600' } : {}) }}>
+                    {r.name}
+                  </AppText>
+                  <AppText variant="callout" color="text.secondary" numeric>
+                    {`${r.line}${r.kg === null && r.est ? ' est.' : ''}`}
+                  </AppText>
+                  {r.kg !== null ? (
+                    <AppText variant="body" numeric style={{ minWidth: 56, textAlign: 'right' }}>
+                      {`${r.kg}${r.est ? ' est.' : ''}`}
+                    </AppText>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          ) : day.rows.length > 0 ? (
             <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['1'] }}>
               {day.rows.map((r, i) => (
                 <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel} style={{ paddingVertical: theme.space['3'], gap: 2, borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>

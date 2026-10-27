@@ -50,6 +50,9 @@ import {
   type PlanOverview,
   pbAppliedBuilder,
   pbBlockOfPlan,
+  planDayOf,
+  PB_BLOCK_COPY,
+  type PbBlockRow,
   movePlanDay,
   undoMovePlanDay,
   syncPlanWeek,
@@ -218,6 +221,12 @@ export interface PlanDayScreenData {
   pinned: boolean;
   /** The plan is paused: `Make next` isn't offered. */
   paused: boolean;
+  /**
+   * (Ben, 27 Oct: Library › Plan v2) Opened from another week of a builder plan: that week's planned targets
+   * (`Week 5 of 6 · Deload`, each exercise's sets × reps · kg), as the week's day card showed; null: this week (the
+   * rows are what Start would plan) or a coach plan.
+   */
+  week: { header: string; note: string | null; rows: PbBlockRow[] } | null;
 }
 
 /** Library › Plan › Previous: one row (`Summer PPL` / `Push / Pull / Legs · ended 20 Sep`). */
@@ -264,6 +273,26 @@ export function createPlanServices(deps: PlanServicesDeps) {
       }
     }
     return { views, current: Math.min(block.week, a.weeks), done: block.done, header: views[0] === undefined ? '' : views[0].header, line, planId: plan.id, planVersion: plan.version, editable: eb !== null, actions };
+  }
+
+  /**
+   * (Ben, 27 Oct: Library › Plan v2) A plan day's planned targets in block week `w`, when that isn't the block's week
+   * now: what the old week strip's day card showed. Null: this week, a coach plan, or not a day of the plan.
+   */
+  async function weekOfDay(p: UserProfile, plan: PlanDraft, routine: Routine, w: number, nowMs: number): Promise<PlanDayScreenData['week']> {
+    const b = pbAppliedBuilder(plan);
+    if (b === null || plan.applied === null) return null;
+    const dayIndex = plan.applied.made.find((m) => m.routineId === routine.id)?.dayIndex ?? planDayOf(routine)?.dayIndex ?? null;
+    const block = await readPlanBlock(deps.store(), p.id, plan, nowMs, p.timezone);
+    const a = b.builder.answers;
+    if (dayIndex === null || block === null || w < 1 || w > a.weeks || (!block.done && w === block.week)) return null;
+    const of = await exerciseOf();
+    const views = weekViews({ plan, answers: a, block, kitOf: await slotKits(deps.store(), p.id), nameOf: (id) => of(id)?.name ?? 'Exercise' });
+    const view = views[w - 1];
+    const day = view?.days.find((d) => d.index === dayIndex);
+    if (view === undefined || day === undefined) return null;
+    const deload = view.deloadWeeks.includes(w);
+    return { header: `${PB_BLOCK_COPY.week(w, a.weeks)}${deload ? ` · ${PB_BLOCK_COPY.deload}` : ''}`, note: view.note, rows: day.rows };
   }
 
   async function exerciseOf(): Promise<(id: string) => Exercise | null> {
@@ -569,7 +598,9 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const nowMs = toMs(now.utc);
       const tz = p.timezone;
       const parts = await bodyPartsOf(p.id, days);
-      const dayRefs = days.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, bodyParts: parts.get(r.id) ?? [] }));
+      // (27 Oct) Each workout's plan day, so Library › Plan's one list joins the week's days to their workouts.
+      const madeDay = new Map(plan.applied.made.map((m) => [m.routineId, m.dayIndex] as const));
+      const dayRefs = days.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, bodyParts: parts.get(r.id) ?? [], dayIndex: madeDay.get(r.id) ?? planDayOf(r)?.dayIndex ?? null }));
       const from = planWeekStartMs({ appliedAtUtc: plan.applied.atUtc, nowMs, tz });
       const week = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, toIso(from), toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }));
       // (Ben, 20 Oct) This week's workouts carry the muscles they trained: an off-plan leg day ticks Legs.
@@ -601,7 +632,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     },
 
     /** One day of the plan in use (Library › Your plan › a day): its planned sets at this gym and last time's. Null: not a day of it. */
-    async planDay(routineId: string, opts: { targetsHit: boolean } = { targetsHit: false }): Promise<PlanDayScreenData | null> {
+    async planDay(routineId: string, opts: { targetsHit: boolean; week?: number | undefined } = { targetsHit: false }): Promise<PlanDayScreenData | null> {
       const p = await owner();
       if (p === null) return null;
       const plan = await repo().applied(p.id).catch(() => null);
@@ -636,7 +667,8 @@ export function createPlanServices(deps: PlanServicesDeps) {
         const ws: PlanDueWorkout[] = r.sessions.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, of) }));
         pinned = activePin(plan.pin, days.map((r) => ({ routineId: r.id, name: r.name, bodyParts: parts.get(r.id) ?? [], createdFromSessionId: r.createdFromSessionId ?? null })), ws) !== null;
       }
-      return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, status, planVersion: plan.version, pinned, paused: activePause(plan, nowMs, p.timezone) !== null };
+      const week = opts.week === undefined ? null : await weekOfDay(p, plan, routine, opts.week, nowMs);
+      return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, status, planVersion: plan.version, pinned, paused: activePause(plan, nowMs, p.timezone) !== null, week };
     },
 
     /**
