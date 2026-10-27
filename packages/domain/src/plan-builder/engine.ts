@@ -3,6 +3,8 @@ import { inKitUnit, kitAbove, kitBelow, kitDown, kitHasFormula, pbBackOff, pbMai
 import { generalWarmupMinutes, isWarmed, planSessionWarmupsAs, warmupProfileOf, type SessionWarmupItem, type WarmupExerciseFacts, type WarmupProfile } from '../warmup/plan';
 import { pbLiftStart, type PbHistoryOf, type PbKitOf, type PbLiftStart } from './lifts';
 import { nearDuplicate, trapsIsolation, type SimilarityFacts } from '../builder/similar';
+import { estimateBuilderSeconds } from '../builder/estimate';
+import type { BuilderBlock, BuilderInfoLookup, BuilderSetRow, BuilderSlot } from '../builder/types';
 import {
   PB_COMPAT,
   PB_CORE,
@@ -307,6 +309,8 @@ interface WorkDay extends Omit<PbDay, 'cap' | 'warmupS' | 'minutes'> {
 
 /** Rounds of the capacity loop: each lowers at least one day's capacity, so it ends well before this. */
 const PB_CAP_ROUNDS = 8;
+/** (27 Oct) Rounds of the shared-estimate check: each takes a set off a day still over the session length. */
+const PB_FIT_ROUNDS = 30;
 
 export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
   const a = input.answers;
@@ -322,18 +326,58 @@ export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
     built = buildWithCaps(input, caps);
     warm = built.days.map((d) => pbDayWarmups(d, a, input));
   }
-  const perSet = pbSetMinutes(a);
+  // (Ben, 27 Oct) Then each day must fit the session length by the one shared estimate (Today's). A day still over it
+  // gives up accessory sets (never the main lift's; a muscle that isn't a priority or target first, the most sets
+  // first, down to 2), then its last such accessory, until it fits (deterministic; the picks stand, so an edit that
+  // keeps the plan meets the same day).
+  const limitS = a.minutes * 60 + 29;
+  const chart = pbChartMuscles(a);
+  const trims = built.days.map((d0, i) => {
+    let d = { ...d0, exercises: d0.exercises.map((e) => ({ ...e })) };
+    let w = warm[i];
+    let cut = false;
+    for (let guard = 0; guard < PB_FIT_ROUNDS && pbDayEstimateS(d, w) > limitS; guard += 1) {
+      const next = trimOnce(a, d.exercises);
+      if (next === null) break;
+      cut = true;
+      d = { ...d, exercises: next };
+      w = pbDayWarmups(d, a, input);
+    }
+    if (w !== undefined) warm[i] = w;
+    return { d, cut };
+  });
+  const days = trims.map((t) => t.d);
+  if (trims.some((t) => t.cut)) {
+    const weekly = weeklySetsOf(days, chart);
+    built = { ...built, days, weekly, short: chart.filter((m) => (weekly[m] ?? 0) < (built.ranges[m]?.[0] ?? 0)) };
+  }
   return {
     ...built,
     days: built.days.map((d, i) => {
       const w = warm[i];
       const warmupS = w?.timeS ?? 0;
-      const sets = d.exercises.reduce((t, e) => t + e.sets, 0);
       // The main lift's warm-ups as the day plans them (its place, the day's budget, the Warm-ups setting).
       const exercises = d.exercises.map((e, k) => (e.role !== 'main' || e.main === null || w === undefined ? e : { ...e, main: { ...e.main, warmup: w.mainSteps(k) ?? e.main.warmup } }));
-      return { ...d, exercises, cap: caps[i] ?? pbCapSets(a, warmupS), warmupS, minutes: Math.round(warmupS / 60 + sets * perSet) };
+      return { ...d, exercises, cap: Math.min(caps[i] ?? pbCapSets(a, warmupS), pbCapSets(a, warmupS)), warmupS, minutes: Math.round(pbDayEstimateS(d, w) / 60) };
     }),
   };
+}
+
+/**
+ * (Ben, 27 Oct) One step off a plan day over its length: a set off the accessory with the most sets above 2 (a muscle
+ * that isn't a priority or a specific target first, the later one on a tie), else the last such accessory (its pair
+ * partner then stands alone). Never the main lift. Null: nothing left to take.
+ */
+function trimOnce(a: PlanBuilderAnswers, list: readonly PbExercise[]): PbExercise[] | null {
+  const kept = (e: PbExercise): number => (isPri(a, e.muscle) || isSpec(a, e.muscle) || e.tags.some((t) => isSpec(a, t)) ? 1 : 0);
+  const acc = list.map((e, k) => ({ e, k })).filter((x) => x.e.role !== 'main');
+  const order = (x: { e: PbExercise; k: number }, y: { e: PbExercise; k: number }): number => kept(x.e) - kept(y.e) || y.e.sets - x.e.sets || y.k - x.k;
+  const more = acc.filter((x) => x.e.sets > 2).sort(order)[0];
+  if (more !== undefined) return list.map((e, k) => (k === more.k ? { ...e, sets: e.sets - 1 } : e));
+  const last = [...acc].sort((x, y) => kept(x.e) - kept(y.e) || y.k - x.k)[0];
+  if (last === undefined || acc.length <= 1) return null;
+  const letter = last.e.pair?.charAt(0) ?? null;
+  return list.filter((_, k) => k !== last.k).map((e) => (letter !== null && e.pair?.charAt(0) === letter ? { ...e, pair: null } : e));
 }
 
 /** One build at fixed per-day capacities (`caps[day index]`). */
@@ -662,6 +706,8 @@ export interface PbDayWarmups {
   generalMinutes: number | null;
   /** The warm-up sets the day plans for its exercise at index `k` (on known loads), else null. */
   mainSteps: (k: number) => PbWarmupSet[] | null;
+  /** (Ben, 27 Oct) The warm-up steps (reps, load; nominal loads too) for its exercise at index `k`, for the time estimate. */
+  stepsOf?: (k: number) => readonly { reps: number; load: number }[];
 }
 
 /**
@@ -725,7 +771,41 @@ export function pbDayWarmups(day: Pick<PbDay, 'exercises'>, a: Pick<PlanBuilderA
       const bar = barOf[i] ?? null;
       return (plan.steps[i] ?? []).map((st, j) => ({ bar: j === 0 && bar !== null && Math.abs(st.load - bar) < 1e-9, load: st.load, reps: st.reps }));
     },
+    stepsOf: (k) => {
+      const i = at.indexOf(k);
+      return i < 0 ? [] : (plan.steps[i] ?? []).map((st) => ({ reps: st.reps, load: st.load }));
+    },
   };
+}
+
+/**
+ * (Ben, 27 Oct: "I set the plan to be 45 mins so why is Pull B 50+ mins?") A plan day's time by the one estimate Today,
+ * Your workout and Time use (`estimateBuilderSeconds`: 2 min setup, 1 min between stations, 45 s a set plus its rest
+ * by role, a superset's rounds, each exercise's warm-up steps and the rest before its first working set). The day as
+ * its workout will hold it: the exercises in order, its supersets (`pair`), the main lift's top set and back-offs.
+ */
+export function pbDayEstimateS(day: Pick<PbDay, 'exercises'>, w: Pick<PbDayWarmups, 'stepsOf'> | undefined): number {
+  const roleOf = new Map(day.exercises.map((e) => [e.key, e.role] as const));
+  const info: BuilderInfoLookup = (id) => {
+    const r = roleOf.get(id);
+    if (r === undefined) return null;
+    return { exerciseId: id, name: id, group: 'Chest', role: r === 'i' ? 'isolation' : 'compound', heavy: false, part: id, muscles: [], angle: '', barbell: false };
+  };
+  const blocks: BuilderBlock[] = [];
+  day.exercises.forEach((e, k) => {
+    const warm: BuilderSetRow[] = (w?.stepsOf?.(k) ?? []).map((st) => ({ type: 'warmup', reps: st.reps, load: st.load, rpe: null }));
+    const work: BuilderSetRow[] =
+      e.role === 'main' && e.main !== null
+        ? [{ type: 'top', reps: e.main.reps, load: null, rpe: null }, ...Array.from({ length: Math.max(0, e.sets - 1) }, (): BuilderSetRow => ({ type: 'backoff', reps: e.main?.backReps ?? e.reps, load: null, rpe: null }))]
+        : Array.from({ length: Math.max(1, e.sets) }, (): BuilderSetRow => ({ type: 'working', reps: e.reps, load: null, rpe: null }));
+    const slot: BuilderSlot = { key: `${e.key}:${String(k)}`, exerciseId: e.key, main: e.role === 'main', repRange: { min: e.reps, max: e.reps }, rows: [...warm, ...work], unit: 'kg', convention: 'total', source: 'none', startLight: null, anchorE1rm: null };
+    const last = blocks[blocks.length - 1];
+    const prev = day.exercises[k - 1];
+    const letter = e.pair?.charAt(0) ?? null;
+    if (last !== undefined && letter !== null && prev?.pair?.charAt(0) === letter) last.slots.push(slot);
+    else blocks.push({ slots: [slot], auto: false });
+  });
+  return estimateBuilderSeconds({ blocks, restLevel: 'normal' }, { info });
 }
 
 /** A muscle's exercise list (Core has its own pair). */
