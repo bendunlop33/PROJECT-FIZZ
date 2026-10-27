@@ -44,7 +44,7 @@ export const TRAINING_LIMITS = {
   sessionMinDefault: 45,
   splitDaysMax: 7,
   dayNameMax: 30,
-  weightsMax: 1000,
+  weightsMax: 20000,
   recentOpsMax: 50,
   /** Lifts shown on Progress › Reviews (Ben, 21 Oct: up to 6). */
   progressLiftsMax: 6,
