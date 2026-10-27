@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { REST_WHEN_SHORT_COPY } from '@fizz/domain';
+import { HISTORY_COPY, REST_WHEN_SHORT_COPY } from '@fizz/domain';
 import type { WeightUnit } from '@fizz/schemas';
 
 import { onNotificationTap } from '../alerts/notifier';
@@ -155,6 +155,8 @@ function ProgressNavigator() {
       <ProgressStack.Screen name="ProgressExerciseInfo" component={ExerciseInfoScreen} options={({ route }) => ({ title: route.params.name ?? '' })} />
       <ProgressStack.Screen name="ProgressReview" component={ReviewDetailScreen} options={{ title: 'Review' }} />
       <ProgressStack.Screen name="ProgressPastWeeks" component={PastWeeksScreen} options={{ title: 'Past weeks' }} />
+      {/* (Redesign v3 C6) All workouts, in this stack so back goes to Progress. */}
+      <ProgressStack.Screen name="ProgressHistory" component={HistoryScreen} options={{ title: HISTORY_COPY.title, headerBackTitle: 'Progress' }} />
     </ProgressStack.Navigator>
   );
 }
@@ -357,7 +359,7 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               {/* Workout → Summary replaces with a 200 ms fade (motion.screenFade). */}
               <RootStack.Screen name="Summary" component={SummaryScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Summary', theme.a11y.reduceMotion) }} />
               <RootStack.Screen name="AddGym" component={AddGymScreen} options={{ presentation: 'modal' }} />
-              <RootStack.Screen name="History" component={HistoryScreen} options={{ headerShown: true, title: 'History' }} />
+              <RootStack.Screen name="History" component={HistoryScreen} options={{ headerShown: true, title: HISTORY_COPY.title }} />
               <RootStack.Screen name="RecentlyDeleted" component={RecentlyDeletedScreen} options={{ headerShown: true, title: 'Recently deleted' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
               {/* (Ben, 23 Oct: one editor) A saved workout or plan day, New, Duplicate and Save-as are edited on Your workout's page (Cancel / Save), full-screen like it. */}

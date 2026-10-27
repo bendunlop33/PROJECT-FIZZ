@@ -46,15 +46,15 @@ export function createBodyweightService(deps: BodyweightServiceDeps) {
   const outcome = (r: { ok: true } | { ok: false; reason: string }): BodyweightOutcome => (r.ok ? { ok: true } : { ok: false, message: MESSAGE[r.reason] ?? 'Couldn’t save. Try again.' });
 
   return {
-    /** The card for a range; null without a profile. Local reads only. */
-    async card(range: BodyweightRange): Promise<BodyweightCard | null> {
+    /** The card for a range, or (Progress's period bar) a window; null without a profile. Local reads only. */
+    async card(range: BodyweightRange, window: { from: string; to: string } | null = null): Promise<BodyweightCard | null> {
       const owner = await deps.profile();
       if (owner === null) return null;
       const [profile, health] = await Promise.all([deps.store().repos.trainingProfiles.get(owner.id), healthWeights(owner.id)]);
       const today = localDateOf(toMs(deps.now().utc), owner.timezone);
       const unit = owner.preferredUnit;
       const mine = [...(profile?.weights ?? [])].reverse();
-      return { view: bodyweightChart(bodyweightEntries(profile?.weights ?? [], health), { range, unit, today }), version: profile?.version ?? 1, unit, today, mine };
+      return { view: bodyweightChart(bodyweightEntries(profile?.weights ?? [], health), { range, unit, today, window }), version: profile?.version ?? 1, unit, today, mine };
     },
 
     /** `＋ Weight`: the op ID is the entry's ID, so a retried Save adds it once. */

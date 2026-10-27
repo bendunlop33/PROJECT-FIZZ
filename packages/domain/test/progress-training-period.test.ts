@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { at } from './fixtures';
 import { apply, startFixture } from './session-fixture';
-import { buildProgressHomeView, buildTrainingPeriodView, periodBar, sessionPlanDayName, toProgressSession, weekBars, type ActivityRow, type MuscleInfo, type ProgressSession, type TrainingPlanDays } from '../src/index';
+import { buildProgressHomeView, buildTrainingPeriodView, periodBar, sessionPlanDayName, toProgressSession, trainingPlanDays, weekBars, type ActivityRow, type MuscleInfo, type ProgressSession, type TrainingPlanDays } from '../src/index';
 
 /**
  * (Redesign v3 C3, C4; Ben 27 Oct) Progress › Training for the period bar: the Month calendar (tiles, dots by plan
@@ -174,6 +174,7 @@ describe('3M / 6M / 1Y bars (C4)', () => {
     expect(bars?.weeks.at(-1)).toMatchObject({ monday: '2026-10-26', count: 1, underAim: null, current: true });
     expect(bars?.weeks).toHaveLength(13);
     expect(bars?.aim).toBe('aim 3');
+    expect(bars?.aimLine).toBe(1);
     expect(bars?.last).toBe('this week');
     expect(v.legend).toEqual([]);
     expect(v.totals.map((t) => t.label)).toEqual(['Sessions', 'Time', 'A week']);
@@ -185,6 +186,18 @@ describe('3M / 6M / 1Y bars (C4)', () => {
     expect(b.weeks.length).toBeGreaterThanOrEqual(51);
     expect(b.weeks.every((w) => w.underAim === null)).toBe(true);
     expect(b.aim).toBeNull();
+  });
+});
+
+describe('trainingPlanDays', () => {
+  it('names in day order with each day’s routines', () => {
+    expect(trainingPlanDays('p', ['Push', 'Pull'], [{ id: 'a', dayIndex: 0 }, { id: 'b', dayIndex: 1 }, { id: 'c', dayIndex: 0 }, { id: 'x', dayIndex: null }])).toEqual({
+      planId: 'p',
+      days: [
+        { dayIndex: 0, name: 'Push', routineIds: ['a', 'c'] },
+        { dayIndex: 1, name: 'Pull', routineIds: ['b'] },
+      ],
+    });
   });
 });
 

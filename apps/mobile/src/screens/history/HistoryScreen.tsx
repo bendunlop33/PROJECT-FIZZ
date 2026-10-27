@@ -1,4 +1,4 @@
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
 import { ActionSheetIOS, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,7 +10,8 @@ import { activitySavedToast, type ActivitySaved } from '../../activity/activity-
 import { deleteToolbarLabel, pastRowDetail, pastRowOpens, pastRowTitle, recentlyDeletedFooter, rowCustomActions, selectRowLabel, unreadableLine } from '../../history/delete-view';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { HEALTH_COPY } from '../../health/health-view';
-import { historyRowTitle, historySelectable, historyView, historyWorkoutLine } from '../../history/history-view';
+import { historyFeedFrom, historyRowTitle, historyTitle, historyView, historyWorkoutLine } from '../../history/history-view';
+import type { ProgressStackParams } from '../../navigation/types';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import { useSelectDelete } from '../../history/useSelectDelete';
 import { newUuid } from '../../device/runtime';
@@ -29,7 +30,8 @@ import { PAST_LOG_COPY } from '../../workout/past-log-view';
  * History (docs/design/history.md; Ben, 26 Oct: "the app isn't very good at showing recent activity beyond the last
  * couple of days"). Everything Ben did, workouts and activities merged, newest first, grouped by Monday-first week
  * (`This week`, `Last week`, `13–19 Oct`) with each week's tiny total; `All · Workouts · Activities`; `Show more`
- * loads older weeks. Opened from Today's `All history ›`, Library › Workouts and Progress › Calendar.
+ * loads older weeks. Opened from Today's `All history ›`, Library › Workouts and Progress's `All workouts` (redesign v3
+ * C6: titled `All workouts`, list only, back to Progress) or Training's `October workouts ›` (that month only).
  *
  * It is the old Past workouts list grown, so every capability stays (delete-workouts §2.3, routines §A2.6): a
  * workout opens Repeat (one with nothing logged its Summary); `Select` → tick → `Delete (n)` → one confirm sheet →
@@ -45,12 +47,18 @@ export function HistoryScreen() {
   // The oldest Monday loaded; `Show more` moves it back (whole weeks, a long gap skipped).
   const [from, setFrom] = useState<string | undefined>(undefined);
   const [filter, setFilter] = useState<FeedFilter>('all');
-  const [data, reload] = useScreenData(async (s) => ({ feed: await s.history.feed(from === undefined ? {} : { from }), deleted: await s.history.recentlyDeletedCount() }));
+  // (Redesign v3 C3) Training's `October workouts ›`: that month only.
+  const route = useRoute<RouteProp<ProgressStackParams, 'ProgressHistory'>>();
+  const month = route.params?.month ?? null;
+  const [data, reload] = useScreenData(async (s) => {
+    const start = historyFeedFrom(month, from);
+    return { feed: await s.history.feed(start === undefined ? {} : { from: start }), deleted: await s.history.recentlyDeletedCount() };
+  });
   const toast = useDeleteToast();
   const tz = services.now().tz;
   // Kept while the page is the same: select mode keeps its ticks across renders.
-  const rows = useMemo(() => (data.state === 'ready' ? historySelectable(data.value.feed) : NO_ROWS), [data]);
-  const sel = useSelectDelete({ rows, loaded: data.state === 'ready', title: HISTORY_COPY.title, reload, toast });
+  const rows = useMemo(() => (data.state === 'ready' ? historyView(data.value.feed, 'workouts', true, month).selectable : NO_ROWS), [data, month]);
+  const sel = useSelectDelete({ rows, loaded: data.state === 'ready', title: historyTitle(month, data.state === 'ready' ? data.value.feed.today : ''), reload, toast });
   const { selecting, selected, line } = sel;
   const changed = useDataChanged();
   const [saveToast, setSaveToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
@@ -102,7 +110,7 @@ export function HistoryScreen() {
     );
   }
   const { feed, deleted } = data.value;
-  const view = historyView(feed, filter, selecting);
+  const view = historyView(feed, filter, selecting, month);
   const footer = recentlyDeletedFooter(deleted);
 
   /** One-tap Link (Ben, 27 Oct): linked at once, rows merge, `Linked · Undo`. */

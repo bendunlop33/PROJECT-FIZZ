@@ -10,20 +10,22 @@ import { useTheme } from '../../theme';
 import { AppText, RuledSection, Sparkline } from '../../ui';
 
 /**
- * (Ben, 27 Oct, Q8) Progress: resting heart rate and sleep as small trend lines, one value a day for the last 30,
- * each labelled with its source. Raw values only: no score, target or verdict (rule 6). Nothing while the switches
+ * (Ben, 27 Oct, Q8) Progress: resting heart rate and sleep as small trend lines, one value a day for the last 30
+ * (Progress › Body: the period bar's days, redesign v3 C2), each labelled with its source. Raw values only: no score, target or verdict (rule 6). Nothing while the switches
  * are off or Health has fewer than two days. (Ben, 27 Oct; gym first) Above them, last night's sleep and this
  * morning's resting heart rate against its 28-day median (`Sleep 6h 10m · RHR 58 ↑4`), only when there is one.
  */
-export function HealthTrends() {
+export function HealthTrends({ window = null }: { /** (Redesign v3 C2) Progress › Body: the period bar's days; null: the last 30. */ window?: { from: string; to: string } | null } = {}) {
   const theme = useTheme();
   const services = useServices();
   const [trends, setTrends] = useState<HealthTrendView[]>([]);
   const [line, setLine] = useState<TodayHealthLine | null>(null);
+  const from = window?.from ?? null;
+  const to = window?.to ?? null;
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      void services.health.lastNight().then(
+      void services.health.lastNight(from === null || to === null ? null : { from, to }).then(
         (r) => {
           if (!alive) return;
           setTrends(healthTrendViews(r.signals));
@@ -34,7 +36,7 @@ export function HealthTrends() {
       return () => {
         alive = false;
       };
-    }, [services]),
+    }, [services, from, to]),
   );
   if (trends.length === 0 && line === null) return null;
   return (

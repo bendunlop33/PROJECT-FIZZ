@@ -53,6 +53,14 @@ import {
   type ResumeBar,
   type HistoryWorkout,
   type NewBestRecords,
+  addDays,
+  buildTrainingPeriodView,
+  DEFAULT_PERIOD_SPAN,
+  periodBar,
+  type PeriodBarView,
+  type PeriodSpan,
+  type TrainingPeriodView,
+  type TrainingPlanDays,
 } from '@fizz/domain';
 import { timeSlicer, type Slicer, type Store } from '@fizz/persistence';
 
@@ -106,6 +114,25 @@ export interface ProgressServiceDeps {
    * Summary's rule): every `RECORDS` list and the recap's count. Absent or null: not known, no records shown.
    */
   newBests?: () => Promise<NewBestRecords | null>;
+  /** (Redesign v3 C3) The plan in use's days (names in plan order, the routines each was made from); null with no plan. */
+  planDays?: () => Promise<TrainingPlanDays | null>;
+  /** (Redesign v3 C4) Ben's days-a-week aim (Profile › Training); null: none. */
+  aim?: () => Promise<number | null>;
+}
+
+/** (Redesign v3 C2) The period bar's choice: a span and how many periods back. */
+export interface PeriodChoice {
+  span: PeriodSpan;
+  offset: number;
+}
+
+/** (Redesign v3 C3, C4) Progress › Training for the bar's period. */
+export interface ProgressTraining {
+  bar: PeriodBarView;
+  /** Muscles, records and the left-out-time sheet, on the bar's window. */
+  home: ProgressHome;
+  /** Null with nothing logged at all. */
+  view: TrainingPeriodView | null;
 }
 
 /** (Ben, 26 Oct) The monthly recap card: the month just ended, while its card shows on Progress. */
@@ -119,6 +146,10 @@ export interface ProgressShell {
   period: ProgressPeriodKey;
   range: DateRange | null;
   resume: ResumeBar | null;
+  /** (Redesign v3 C2) The period bar for the choice asked (default: this month), shared by Lifts, Training and Body. */
+  bar: PeriodBarView;
+  /** Today in Ben's zone (a span change keeps the place: `offsetHolding`). */
+  today: string;
 }
 
 export interface ProgressHome {
@@ -411,6 +442,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
   const activeMemo = createVersionMemo<SessionAggregate | null>(1);
   const shellMemo = createVersionMemo<ProgressShell>(4);
   const recapMemo = createVersionMemo<RecapCard | null>(2);
+  const trainingMemo = createVersionMemo<ProgressTraining | null>(8);
   const activeOf = (ownerId: string): Promise<SessionAggregate | null> =>
     activeMemo.get(deps.store(), ownerId, () =>
       repos()
@@ -571,18 +603,67 @@ export function createProgressService(deps: ProgressServiceDeps) {
      * (Perf, Ben 26 Oct) What Progress needs before any tab: whether there is anything to show, the period the
      * coach is asked about, and the ResumeBar. Cheap: no workout is read.
      */
-    async shell(): Promise<ProgressShell | null> {
+    async shell(choice: PeriodChoice = { span: DEFAULT_PERIOD_SPAN, offset: 0 }): Promise<ProgressShell | null> {
       const profile = await deps.profile();
       if (!profile) return null;
       const nowMs = toMs(deps.now().utc);
       const today = localDateOf(nowMs, profile.timezone);
       const { period, range } = periodNow(profile, {}, today);
-      const base = await shellMemo.get(deps.store(), JSON.stringify([profile.id, today, period, range]), async () => {
-        const refs = await repos().sessions.listFinishedRevisions(profile.id);
-        return { hasData: refs.length > 0, period, range, resume: null };
+      const base = await shellMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, today, period, range, choice.span, choice.offset]), async () => {
+        const [refs, first] = await Promise.all([repos().sessions.listFinishedRevisions(profile.id), repos().sessions.earliestFinishedStartUtc(profile.id).catch(() => null)]);
+        const earliest = first === null ? today : localDateOf(toMs(first), profile.timezone);
+        return { hasData: refs.length > 0, period, range, resume: null, today, bar: periodBar({ today, span: choice.span, offset: choice.offset, earliest: earliest < today ? earliest : today }) };
       });
       const resume = resumeBar(await activeOf(profile.id), nowMs);
       return resume === null ? base : { ...base, resume };
+    },
+
+    /**
+     * (Redesign v3 C3, C4) Progress › Training for the period bar's choice: the Month calendar, the Week's days or the
+     * weekly bars, totals against the previous period, muscles and records. Local reads only; kept while nothing is
+     * written, so stepping back to a period seen before reads nothing.
+     */
+    async training(choice: PeriodChoice = { span: DEFAULT_PERIOD_SPAN, offset: 0 }): Promise<ProgressTraining | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const nowMs = toMs(deps.now().utc);
+      const today = localDateOf(nowMs, profile.timezone);
+      const { grouping } = periodNow(profile, {}, today);
+      const base = await trainingMemo.get(deps.store(), JSON.stringify([profile.id, profile.timezone, today, grouping, choice.span, choice.offset]), async () => {
+        const [ctx, bests, plan, aim] = await Promise.all([context(profile), bestsNow(), deps.planDays?.().catch(() => null) ?? Promise.resolve(null), deps.aim?.().catch(() => null) ?? Promise.resolve(null)]);
+        let earliest = today;
+        for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
+        const bar = periodBar({ today, span: choice.span, offset: choice.offset, earliest });
+        const view = buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period: bar.preset, grouping, bests, bar: { window: bar.window, title: bar.title, phrase: bar.phrase } });
+        const tiled = choice.span === 'week' || choice.span === 'month';
+        const acts = tiled
+          ? await repos()
+              .activities.listBetween(profile.id, bar.full.from, addDays(bar.full.to, 1))
+              .catch(() => [])
+          : [];
+        const home: ProgressHome = { view, period: bar.preset, range: { from: bar.window.from, to: bar.window.to }, today, earliest, grouping, unreadable: ctx.unreadable, resume: null };
+        return {
+          bar,
+          home,
+          view:
+            view.dataState === 'empty'
+              ? null
+              : buildTrainingPeriodView({
+                  sessions: ctx.sessions,
+                  exercises: ctx.exercises,
+                  gymNames: ctx.gymNames,
+                  today,
+                  bar,
+                  plan,
+                  aim,
+                  earliest,
+                  activities: acts.filter((a) => a.fields.status === 'done').map((a) => ({ date: a.fields.date, row: activityRow(a, today) })),
+                }),
+        };
+      });
+      if (base === null) return null;
+      const resume = resumeBar(await activeOf(profile.id), nowMs);
+      return resume === null ? base : { ...base, home: { ...base.home, resume } };
     },
 
     /**

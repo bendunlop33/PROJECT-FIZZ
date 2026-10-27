@@ -8,7 +8,7 @@ import { bigDataset, bigDatasetExerciseId, type BigDataset } from './perf-datase
 /**
  * (Ben, 26 Oct: "Progress slow"; app-review-26oct finding 1, 9) Progress on his real-sized phone: ~800 workouts,
  * ~20k sets and an applied 4-day plan (`perf-dataset.ts`). Each path is what the screen awaits for what is on
- * screen (ProgressScreen: the shell, then only the visible tab's reads). Node stands in for Hermes; `npm run
+ * screen (ProgressScreen: the shell, then only the visible tab's reads; redesign v3 C: Lifts first, Overview gone). Node stands in for Hermes; `npm run
  * test:perf:jitless` runs this file without the JIT too (budgets ×4 there unless given). On a loaded machine
  * budgets scale (`timingBudget`).
  *
@@ -32,13 +32,23 @@ async function timed<T>(label: string, budgetMs: number, fn: () => Promise<T>, o
   return m.result;
 }
 
-/** What Progress awaits on open with Overview showing (the default tab). */
-function overviewOpen(s: AppServices) {
-  return Promise.all([s.progress.shell(), s.reviews.progress()]);
+/**
+ * (Redesign v3 C) What Progress awaits on open: the shell (with the period bar, Month by default) and the Lifts tab
+ * (the default tab) for the bar's dates, as `ExercisesTab` asks for it with no pick yet on this phone.
+ */
+const MONTH = { span: 'month' as const, offset: 0 };
+async function liftsReq(s: AppServices, exerciseId: string | null = null) {
+  const shell = await s.progress.shell(MONTH);
+  const range = shell === null ? null : { from: shell.bar.window.from, to: shell.bar.window.to };
+  return { exerciseId, remembered: null, period: shell?.bar.preset ?? ('1m' as const), range, measure: null, trailing: null, seriesId: null, open: null, targetsHit: false, repBy: 'weight' as const };
 }
-/** Training › Totals: its totals and the consistency card. */
-function trainingOpen(s: AppServices) {
-  return Promise.all([s.progress.home(), s.plans.consistency()]);
+async function progressOpen(s: AppServices) {
+  const req = await liftsReq(s);
+  return Promise.all([s.progress.shell(MONTH), s.progress.exerciseTab(req)]);
+}
+/** Training › Month: the calendar, totals, muscles and the consistency card. */
+function trainingOpen(s: AppServices, choice: { span: 'week' | 'month' | '3m' | '6m' | '1y'; offset: number } = MONTH) {
+  return Promise.all([s.progress.training(choice), s.plans.consistency()]);
 }
 
 beforeAll(async () => {
@@ -50,8 +60,8 @@ afterAll(async () => {
   await big.h.cleanup();
 });
 
-describe('Progress on ~800 workouts (Ben, 26 Oct)', () => {
-  it('cold just after a launch, before the launch pass: Overview opens from the stored summaries', async () => {
+describe('Progress on ~800 workouts (Ben, 26 Oct; redesign v3 C)', () => {
+  it('cold just after a launch, before the launch pass: Progress opens on Lifts', async () => {
     const { h } = big;
     await h.forceClose();
     let open = (): void => undefined;
@@ -59,11 +69,11 @@ describe('Progress on ~800 workouts (Ben, 26 Oct)', () => {
       open = resolve;
     });
     const s = (await h.launch({ backgroundGate: () => gate })).services;
-    const [shell, data] = await timed('Overview, cold (just launched)', 500, () => overviewOpen(s), { jitlessMs: 1500, blockMs: 400 });
+    const [shell, lifts] = await timed('Progress open (Lifts), cold (just launched)', 1500, () => progressOpen(s), { jitlessMs: 4000 });
     expect(shell?.hasData).toBe(true);
-    expect(data?.lifts.empty).toBe(false);
-    // Training isn't read while Overview shows; opening it cold is its own budget.
-    await timed('Training tab, cold (first switch)', 1500, () => trainingOpen(s), { jitlessMs: 4000 });
+    expect(lifts?.view).not.toBeNull();
+    // Training isn't read while Lifts shows; opening it is its own budget (the workouts are in memory now).
+    await timed('Training tab, first switch', 150, () => trainingOpen(s), { jitlessMs: 600 });
     open();
     await s.progress.prewarm();
   }, 1_200_000);
@@ -72,41 +82,47 @@ describe('Progress on ~800 workouts (Ben, 26 Oct)', () => {
     const { h } = big;
     await h.forceClose();
     const s = (await h.launch()).services;
-    await timed('Overview, cold, background work at once', 4000, () => overviewOpen(s));
+    await timed('Progress open (Lifts), cold, background work at once', 4000, () => progressOpen(s));
   }, 1_200_000);
 
-  it('after the launch pass: open, return with nothing changed, tab switches and Lifts option changes', async () => {
+  it('after the launch pass: open, return with nothing changed, tab switches, period steps and Lifts option changes', async () => {
     const { h } = big;
     await h.forceClose();
     const s = (await h.launch()).services;
     await h.settle(s);
     await s.progress.prewarm();
 
-    const [, first] = await timed('Overview (after the launch pass)', 400, () => overviewOpen(s));
+    const [, first] = await timed('Progress open (after the launch pass)', 400, () => progressOpen(s));
     // A return to the tab with nothing written: answered from memory, the very same objects (no render).
-    const [, again] = await timed('Overview again, nothing changed (focus return)', 25, () => overviewOpen(s), { jitlessMs: 50 });
+    const [, again] = await timed('Progress again, nothing changed (focus return)', 25, () => progressOpen(s), { jitlessMs: 50 });
     expect(again).toBe(first);
 
-    const lifts = await timed('Lifts tab (switch)', 250, () => s.progress.exerciseTab({ period: '6m' }));
     const training = await timed('Training tab (switch)', 150, () => trainingOpen(s));
-    expect(training[0]?.view.dataState).toBe('normal');
+    expect(training[0]?.view?.month).not.toBeNull();
     const back = await timed('Training again, nothing changed', 25, () => trainingOpen(s), { jitlessMs: 50 });
     expect(back[0]).toBe(training[0]);
-    expect(await s.progress.exerciseTab({ period: '6m' })).toBe(lifts);
+
+    // The period bar: ‹ a month back, Week, 1Y; each is one pass over the workouts in memory.
+    await timed('Training: ‹ (September)', 150, () => trainingOpen(s, { span: 'month', offset: -1 }));
+    await timed('Training: Week', 150, () => trainingOpen(s, { span: 'week', offset: 0 }));
+    const year = await timed('Training: 1Y (a bar per week)', 150, () => trainingOpen(s, { span: '1y', offset: 0 }));
+    expect(year[0]?.view?.bars?.weeks.length).toBeGreaterThanOrEqual(51);
 
     // Lifts dropdowns and chips: no workout is read again (review finding 9).
-    const id = lifts?.view?.exerciseId ?? bigDatasetExerciseId('barbell-bench-press');
-    await timed('Lifts: period 3 months', 150, () => s.progress.exerciseTab({ exerciseId: id, period: '3m' }));
-    await timed('Lifts: measure Weight', 150, () => s.progress.exerciseTab({ exerciseId: id, period: '3m', measure: 'weight' }));
-    await timed('Lifts: trailing 10', 150, () => s.progress.exerciseTab({ exerciseId: id, period: '3m', measure: 'weight', trailing: 10 }));
-    await timed('Lifts: another chip (Squat)', 150, () => s.progress.exerciseTab({ exerciseId: bigDatasetExerciseId('barbell-back-squat'), period: '3m' }));
+    const id = first?.view?.exerciseId ?? bigDatasetExerciseId('barbell-bench-press');
+    const base = await liftsReq(s, id);
+    const threeMonths = { ...base, period: '3m' as const, range: { from: (await s.progress.shell({ span: '3m', offset: 0 }))?.bar.window.from ?? '', to: base.range?.to ?? '' } };
+    await timed('Lifts: period 3M', 150, () => s.progress.exerciseTab(threeMonths));
+    await timed('Lifts: measure Weight', 150, () => s.progress.exerciseTab({ ...threeMonths, measure: 'weight' }));
+    await timed('Lifts: trailing 10', 150, () => s.progress.exerciseTab({ ...threeMonths, measure: 'weight', trailing: 10 }));
+    await timed('Lifts: another chip (Squat)', 150, () => s.progress.exerciseTab({ ...threeMonths, exerciseId: bigDatasetExerciseId('barbell-back-squat') }));
 
     // A write (a profile setting) is seen at once: the next open reads again.
-    const saved = await s.progress.saveSettings({ period: '3m' });
+    const saved = await s.progress.saveSettings({ grouping: 'ppl' });
     expect(saved.ok).toBe(true);
-    const after = await timed('Training after a write (period saved)', 150, () => trainingOpen(s));
+    const after = await timed('Training after a write (grouping saved)', 150, () => trainingOpen(s));
     expect(after[0]).not.toBe(training[0]);
-    expect(after[0]?.period).toBe('3m');
+    expect(after[0]?.home.grouping).toBe('ppl');
 
     // The monthly recap on the 2nd of the next month: from the projections already in memory (no workout re-read).
     h.clockMs = Date.parse('2026-11-02T08:00:00.000Z');

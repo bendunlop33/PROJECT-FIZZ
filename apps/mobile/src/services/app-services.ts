@@ -14,6 +14,8 @@ import {
   localDateOf,
   materialiseGymDraft,
   planRoutines,
+  planDayOf,
+  trainingPlanDays,
   starterExercises,
   toIso,
   toMs,
@@ -898,6 +900,27 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     // (Ben, 26 Oct; one definition of best) Records are the tracked lifts' `New best`s, read as the Summary reads them.
     newBests: () => reviews.newBestRecords(),
+    // (Redesign v3 C3) The plan in use's day names and routines: the calendar's dot colours.
+    planDays: async () => {
+      const p = await getProfile();
+      if (p === null) return null;
+      const plan = await repos().planDrafts.applied(p.id);
+      if (plan === null || plan.applied === null) return null;
+      const version = plan.versions.find((v) => v.n === plan.currentVersion) ?? plan.versions.find((v) => v.n === plan.applied?.versionN);
+      if (version === undefined) return null;
+      const routines = planRoutines(plan, await repos().routines.listByOwner(p.id));
+      return trainingPlanDays(
+        plan.id,
+        version.days.map((d) => d.name),
+        routines.map((r) => ({ id: r.id, dayIndex: planDayOf(r)?.dayIndex ?? null })),
+      );
+    },
+    // (Redesign v3 C4) Weeks under Ben's days-a-week aim are greyed on the 3M/6M/1Y bars.
+    aim: async () => {
+      const p = await getProfile();
+      if (p === null) return null;
+      return (await repos().trainingProfiles.get(p.id))?.daysPerWeek ?? null;
+    },
     // Progress › Lifts' chips (Ben, 26 Oct): the plan in use's main lift per day, in day order; null with no plan.
     planMainLifts: async () => {
       const p = await getProfile();

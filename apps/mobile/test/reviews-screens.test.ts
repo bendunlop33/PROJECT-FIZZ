@@ -19,23 +19,20 @@ describe('Progress v3 screens', () => {
   const progress = read('screens', 'progress', 'ProgressScreen.tsx');
   const detail = read('screens', 'progress', 'ReviewDetailScreen.tsx');
 
-  it('Progress tabs `Overview | Lifts | Training`, Overview first and the default; its links open Lifts (on a lift) and Training', () => {
-    expect(progress).toContain("useState<'overview' | 'lifts' | 'training'>('overview')");
-    const tabs = ["{ key: 'overview', label: 'Overview' }", "{ key: 'lifts', label: 'Lifts' }", "{ key: 'training', label: 'Training' }"].map((t) => progress.indexOf(t));
+  it('(Redesign v3 C2, C5) Progress is `Lifts | Training | Body`: no Overview, so This week and Coach’s changes aren’t on it; the section’s parts stay for Library', () => {
+    expect(progress).not.toContain('ReviewsSection');
+    expect(progress).not.toContain("'overview'");
+    const tabs = ["{ key: 'lifts', label: 'Lifts' }", "{ key: 'training', label: 'Training' }", "{ key: 'body', label: 'Body' }"].map((t) => progress.indexOf(t));
     expect(tabs.every((i) => i > 0)).toBe(true);
     expect([...tabs].sort((a, b) => a - b)).toEqual(tabs);
-    // (Ben, 26 Oct) Each tab reads only while it shows.
-    expect(progress).toContain("<ReviewsSection active={tab === 'overview'} onOpenLifts={openLifts} onOpenTraining={openTraining} />");
-    // `Open Bench ›` lands on that lift's page in Lifts (no workout picked); `Details ›` on Training's totals.
-    expect(progress).toContain('setExercisesFocus((f) => ({ exerciseId, sessionId: null, sessionExerciseId: null, n: (f?.n ?? 0) + 1 }))');
-    expect(progress).toContain("<ExercisesTab focus={exercisesFocus} active={tab === 'lifts'} />");
+    // Each tab reads only while it shows (Ben, 26 Oct).
+    expect(progress).toContain("<ExercisesTab active={tab === 'lifts'} shared={{ period: bar.preset, range: dates }} />");
     expect(read('screens', 'progress', 'ExercisesTab.tsx')).toContain('focus.sessionId === null ? null');
     expect(charts).toContain('PROGRESS_COPY.allLiftsLink : PROGRESS_COPY.openLift(one.name)');
     expect(charts).toContain('onOpen(one === null ? null : one.exerciseId)');
     expect(charts).toContain('<SmallLink label={PROGRESS_COPY.details}');
     expect(section).toContain('<SectionHead title={PROGRESS_COPY.trends} right={PROGRESS_COPY.last8} />');
-    // Today's `Reviews ›` lands on Overview.
-    expect(progress).toContain("setTab('overview');");
+    expect(section).toContain('export function ChangesSection(');
   });
 
   it('This week: `THIS WEEK · 13–19 OCT` with a small Week | Month switch (44 pt to tap); Month is the 5-week calendar with its key', () => {

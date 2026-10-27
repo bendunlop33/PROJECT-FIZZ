@@ -1,67 +1,59 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
-import { ACTIVITY_COPY, toMs, type DateRange, type ProgressHomeView, type RecordView } from '@fizz/domain';
-import type { ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
+import { ACTIVITY_COPY, offsetHolding, toMs, type ActivityView, type PeriodSpan } from '@fizz/domain';
 
 import { newUuid } from '../../device/runtime';
 import { activitySavedToast } from '../../activity/activity-toast';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast, type ToastState } from '../../history/useDeleteToast';
 import { runCountIt, type CountItToast } from '../../progress/count-it';
-import { consistencyCardView, type ConsistencyCardView } from '../../progress/consistency-view';
-import { ActivityChart, FrequencyHeader, FrequencyRow, FrequencySubRows, PeriodPicker, ResumeBar, Segmented, useAx } from '../../progress/components';
+import { ResumeBar, Segmented } from '../../progress/components';
+import { PeriodBar } from '../../progress/PeriodBar';
+import { useReloadOn } from '../../progress/use-reload-on';
 import type { ProgressStackParams } from '../../navigation/types';
-import type { ProgressHome, ProgressShell } from '../../services/progress-service';
+import type { PeriodChoice, ProgressShell } from '../../services/progress-service';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Card, Icon, PrimaryButton, SecondaryButton, StatStrip, StatusLine, TextButton, Toast } from '../../ui';
+import { AppText, Card, PrimaryButton, SecondaryButton, StatusLine, TextButton, Toast } from '../../ui';
 import { AskPill } from '../coach/AskPill';
+import type { ActivitySaved } from '../activity/ActivitySheet';
 import { HealthTrends } from './HealthTrends';
 import { BodyweightCard } from './BodyweightCard';
-import { CalendarView } from './CalendarView';
-import { unreadableText } from '../../progress/copy';
-import { ExercisesTab, type ExercisesFocus } from './ExercisesTab';
-import { ReviewsSection } from '../../reviews/ReviewsSection';
+import { ExercisesTab } from './ExercisesTab';
+import { TrainingTab } from './TrainingTab';
 import { HowCountedSheet, TimeSheet } from './sheets';
 
 /**
- * Progress: `Overview | Lifts | Training` (Progress v3, Ben 21 Oct; progress-goals.md "Structure").
- * Overview (default) is the glance: This week, Trends, Coach's changes. Lifts owns each exercise's detail
- * (PRs, rep maxes, history). Training owns totals and habits (progress.md v1.0 slice A, §2.2: one period
- * drives every card; Activity, Muscles, Records; and the Calendar). Local data only: identical offline and
- * with no coach (check 20). The screen lays out the services' view models and computes nothing.
+ * Progress (redesign v3 C, Ben 27 Oct): looking back. `Progress` with `All workouts` top right; `Lifts | Training |
+ * Body`; under them one period bar `Week | Month | 3M | 6M | 1Y` with `‹ ›` that every tab follows (default Month).
+ * The plan's This week card and Coach's changes live in Library now; the Overview tab and the Calendar segment are
+ * replaced by Training's Month view. Local data only: identical offline and with no coach. The screen lays out the
+ * services' view models and computes nothing.
  */
 
+type Tab = 'lifts' | 'training' | 'body';
 type Toasted = CountItToast | null;
+
+const TABS: readonly { key: Tab; label: string }[] = [
+  { key: 'lifts', label: 'Lifts' },
+  { key: 'training', label: 'Training' },
+  { key: 'body', label: 'Body' },
+];
 
 export function ProgressScreen() {
   const theme = useTheme();
   const navigation = useNavigation();
   const services = useServices();
   const changed = useDataChanged();
-  const ax = useAx();
-  const [tab, setTab] = useState<'overview' | 'lifts' | 'training'>('overview');
-  // Training: its totals, or the calendar of every workout and activity.
-  const [segment, setSegment] = useState<'activity' | 'calendar'>('activity');
-  const [month, setMonth] = useState<string | null>(null);
-  const [calendarSeen, setCalendarSeen] = useState(false);
-  const [exercisesSeen, setExercisesSeen] = useState(false);
-  // A record tap opens the Exercises tab on that exercise and workout (review S3); `n` makes a repeat tap re-open it.
-  const [exercisesFocus, setExercisesFocus] = useState<ExercisesFocus | null>(null);
-  // (Perf, Ben 26 Oct) Only what is on screen loads: the shell (is there history, the period, the ResumeBar) always;
-  // each tab's reads only while it shows. A return with nothing changed is answered from memory.
-  const [shellData, reloadShell] = useScreenData((s) => s.progress.shell());
-  // No local window or grouping: the service holds the one shared choice, so home and Muscles never disagree (check 15).
-  const [data, reloadHome] = useScreenData((s) => s.progress.home(), { enabled: tab === 'training' });
-  // Plan tracker v1 (19 Oct): the last 8 weeks against Ben's days-a-week aim, and his plan's days this week.
-  const [consistencyData] = useScreenData((s) => s.plans.consistency(), { enabled: tab === 'training' });
-  const reload = () => {
-    reloadShell();
-    reloadHome();
-  };
-  const [timeOpen, setTimeOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>('lifts');
+  const [seen, setSeen] = useState<ReadonlySet<Tab>>(new Set<Tab>(['lifts']));
+  const [choice, setChoice] = useState<PeriodChoice>({ span: 'month', offset: 0 });
+  // (Perf, Ben 26 Oct) The shell (is there history, the period bar, the ResumeBar) always; each tab reads only while it shows.
+  const [shellData, reloadShell] = useScreenData((s) => s.progress.shell(choice));
+  useReloadOn(`${choice.span}:${String(choice.offset)}`, reloadShell);
+  const [timeSheet, setTimeSheet] = useState<ActivityView['sheet'] | null>(null);
   const [howOpen, setHowOpen] = useState(false);
   const [toast, setToast] = useState<Toasted>(null);
   const [placeholder, setPlaceholder] = useState(false);
@@ -71,27 +63,14 @@ export function ProgressScreen() {
   // A workout deleted from a Summary opened here comes back with Undo (delete-workouts DW1).
   const deleted = useDeleteToast();
   const toastShown = toast !== null || deleted.toast !== null;
-  // Today's `Reviews ›` lands on Reviews, at the top, whatever the scroll was (review b3-wave3-ux S9).
   const route = useRoute<RouteProp<ProgressStackParams, 'ProgressHome'>>();
   const scroll = useRef<ScrollView>(null);
+  // Today's old `Reviews ›` link still lands here, at the top (reviews moved to Library, redesign v3 C5).
   const focusN = route.params?.focus === 'reviews' ? (route.params.n ?? 0) : null;
   useEffect(() => {
     if (focusN === null) return;
-    setTab('overview');
     scroll.current?.scrollTo({ y: 0, animated: false });
   }, [focusN]);
-  // Overview's links: `All lifts ›` / `Open Bench ›` → Lifts (on that lift's page), `Details ›` → Training.
-  const openLifts = (exerciseId: string | null) => {
-    if (exerciseId !== null) setExercisesFocus((f) => ({ exerciseId, sessionId: null, sessionExerciseId: null, n: (f?.n ?? 0) + 1 }));
-    setExercisesSeen(true);
-    setTab('lifts');
-    scroll.current?.scrollTo({ y: 0, animated: false });
-  };
-  const openTraining = () => {
-    setSegment('activity');
-    setTab('training');
-    scroll.current?.scrollTo({ y: 0, animated: false });
-  };
 
   useEffect(() => {
     // Loading: nothing for `timing.placeholderDelay`, then still grey blocks (no shimmer).
@@ -116,201 +95,139 @@ export function ProgressScreen() {
       setToast(null);
     }, theme.timing.undoToast);
   };
-
-  const change = (patch: { period?: ProgressPeriodKey; grouping?: ProgressGrouping }) => {
-    // The choice is shared the moment it's made; reload again once saved (a failed save falls back to the saved setting).
-    const saved = services.progress.saveSettings(patch);
-    reload();
-    void saved.then(reload);
-  };
-
   const hide = () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast(null);
   };
-
+  const reload = () => {
+    changed();
+    reloadShell();
+  };
   const countDeps = {
     confirm: (req: { sessionId: string; expectedVersion: number; opId: string }) => services.progress.confirmDuration(req),
     undo: (req: { sessionId: string; expectedVersion: number; opId: string }) => services.progress.undoConfirmDuration(req),
     newId: newUuid,
     closeSheet: () => {
-      setTimeOpen(false);
+      setTimeSheet(null);
     },
     show,
     hide,
     reload,
   };
+  const activitySaved = (saved: ActivitySaved) => {
+    // (review B2) Calendar edits and deletes get Today's toast with Undo (the delete toast's timing and VoiceOver close).
+    const showDeleted = (t: ToastState | null) => {
+      if (t === null) deleted.dismiss();
+      else deleted.show(t);
+    };
+    deleted.show(activitySavedToast(saved, { undo: services.activities.undo, newOpId: newUuid, changed, show: showDeleted }));
+  };
 
-  const home: ProgressHome | null = data.state === 'ready' ? data.value : null;
   const shell: ProgressShell | null = shellData.state === 'ready' ? shellData.value : null;
   const resume = shell?.resume ?? null;
+  const bar = shell?.bar ?? null;
+  const dates = bar === null ? null : { from: bar.window.from, to: bar.window.to };
+
+  const pickTab = (k: Tab) => {
+    setSeen((s) => (s.has(k) ? s : new Set([...s, k])));
+    setTab(k);
+  };
+  const onSpan = (span: PeriodSpan) => {
+    // A span change keeps the place (Week after stepping back to September shows September's last week).
+    setChoice({ span, offset: shell === null || bar === null ? 0 : offsetHolding(shell.today, span, bar.window.to) });
+  };
+  const onStep = (by: -1 | 1) => {
+    if (bar === null || (by < 0 && !bar.canBack) || (by > 0 && !bar.canForward)) return;
+    setChoice((c) => ({ span: c.span, offset: Math.min(0, c.offset + by) }));
+  };
+  const openList = (month: string | null) => {
+    navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressHistory', params: month === null ? {} : { month } } });
+  };
 
   const header = (
     <View style={{ gap: theme.space['4'] }}>
-      <AppText variant="title1" accessibilityRole="header">
-        Progress
-      </AppText>
-      {shell?.hasData === true ? (
-        <Segmented
-          options={[
-            { key: 'overview', label: 'Overview' },
-            { key: 'lifts', label: 'Lifts' },
-            { key: 'training', label: 'Training' },
-          ]}
-          selected={tab}
-          onSelect={(k) => {
-            if (k === 'lifts') setExercisesSeen(true);
-            setTab(k);
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: theme.target.min.height }}>
+        <AppText variant="title1" accessibilityRole="header">
+          Progress
+        </AppText>
+        <TextButton
+          label="All workouts"
+          onPress={() => {
+            openList(null);
           }}
-          label="Progress"
         />
+      </View>
+      {shell?.hasData === true && bar !== null ? (
+        <>
+          <Segmented options={TABS} selected={tab} onSelect={pickTab} label="Progress" />
+          <PeriodBar bar={bar} onSpan={onSpan} onStep={onStep} />
+        </>
       ) : null}
     </View>
   );
-  // Overview: This week, Trends, Coach's changes (Progress v3). With no data (or an error) it still shows above the empty state.
-  const overview = <ReviewsSection active={tab === 'overview'} onOpenLifts={openLifts} onOpenTraining={openTraining} />;
 
-  const failed = shellData.state === 'error' ? shellData : data.state === 'error' && tab === 'training' ? data : null;
   let body: React.ReactNode;
-  if (failed !== null) {
+  if (shellData.state === 'error') {
     body = (
-      <>
-        {overview}
-        <StatusLine
-          icon="exclamationmark.triangle"
-          tone="warning"
-          text="Couldn’t open your training data."
-          info={failed.message}
-          infoLabel="Error details"
-          action={
-            <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
-              <TextButton label="Try again" onPress={reload} />
-              <TextButton
-                label="Restore from backup"
-                onPress={() => {
-                  navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'Restore', params: { mode: 'restore' }, initial: false } });
-                }}
-              />
-            </View>
-          }
-        />
-      </>
-    );
-  } else if (shell === null) {
-    // Loading: grey blocks after the delay. Ready with no profile: the empty state, never a blank page (review N3).
-    body =
-      shellData.state === 'loading' ? (
-        placeholder ? <Placeholder /> : null
-      ) : (
-        <>
-          {overview}
-          <EmptyState hasResume={false} />
-        </>
-      );
-  } else if (!shell.hasData) {
-    body = (
-      <>
-        {overview}
-        <EmptyState hasResume={resume !== null} />
-      </>
-    );
-  } else {
-    // Every tab (and Training's segment) stays mounted once seen, so each keeps its place (selected day, exercise, scroll) (§3.5).
-    body = (
-      <>
-        <View style={tab === 'overview' ? null : { display: 'none' }}>{overview}</View>
-        {exercisesSeen || tab === 'lifts' ? (
-          <View style={tab === 'lifts' ? null : { display: 'none' }}>
-            <ExercisesTab focus={exercisesFocus} active={tab === 'lifts'} />
-          </View>
-        ) : null}
-        {tab === 'training' ? (
-          <Segmented
-            options={[
-              { key: 'activity' as const, label: 'Totals' },
-              { key: 'calendar' as const, label: 'Calendar' },
-            ]}
-            selected={segment}
-            onSelect={(k) => {
-              if (k === 'calendar') setCalendarSeen(true);
-              setSegment(k);
-            }}
-            label="Training"
-          />
-        ) : null}
-        {calendarSeen || (tab === 'training' && segment === 'calendar') ? (
-          <View style={tab === 'training' && segment === 'calendar' ? null : { display: 'none' }}>
-            <CalendarView
-              active={tab === 'training' && segment === 'calendar'}
-              month={month}
-              onMonth={(m) => {
-                setMonth(m);
-              }}
-              onActivitySaved={(saved) => {
-                // (review B2) Calendar edits and deletes get Today's toast with Undo (the delete toast's timing and VoiceOver close).
-                const show = (t: ToastState | null) => {
-                  if (t === null) deleted.dismiss();
-                  else deleted.show(t);
-                };
-                deleted.show(activitySavedToast(saved, { undo: services.activities.undo, newOpId: newUuid, changed, show }));
+      <StatusLine
+        icon="exclamationmark.triangle"
+        tone="warning"
+        text="Couldn’t open your training data."
+        info={shellData.message}
+        infoLabel="Error details"
+        action={
+          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+            <TextButton label="Try again" onPress={reloadShell} />
+            <TextButton
+              label="Restore from backup"
+              onPress={() => {
+                navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'Restore', params: { mode: 'restore' }, initial: false } });
               }}
             />
           </View>
-        ) : null}
-        <View style={tab === 'training' && segment === 'activity' ? { gap: theme.space['5'] } : { display: 'none' }}>
-      {home === null ? (
-        data.state === 'loading' && tab === 'training' && placeholder ? <Placeholder /> : null
-      ) : home.view.dataState === 'empty' ? (
-        <EmptyState hasResume={resume !== null} />
-      ) : (
-      <>
-      {consistencyData.state === 'ready' && consistencyData.value !== null ? <ConsistencyCard ax={ax} view={consistencyCardView(consistencyData.value, home.today)} /> : null}
-      <Overview
-        home={home}
-        view={home.view}
-        ax={ax}
-        onPeriod={(period) => {
-          change({ period });
-        }}
-        onCustom={(r) => {
-          services.progress.choosePeriod(r);
-          reload();
-        }}
-        onGrouping={(grouping) => {
-          change({ grouping });
-        }}
-        onCalendar={() => {
-          setMonth(null);
-          setCalendarSeen(true);
-          setSegment('calendar');
-        }}
-        onTime={() => {
-          setTimeOpen(true);
-        }}
-        onHow={() => {
-          setHowOpen(true);
-        }}
-        onMuscles={() => {
-          navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressMuscles', params: { group: '' } } });
-        }}
-        onRecord={(r) => {
-          // (Ben, 26 Oct) A record opens the workout it was set in (read-only Summary, as Past workouts).
-          navigation.navigate('Summary', { sessionId: r.sessionId, back: true });
-        }}
+        }
       />
-      {/* (Ben, 27 Oct; gym first) Bodyweight below the lifting cards: his entries and Health's, ＋ Weight. */}
-      <BodyweightCard active={tab === 'training'} />
-      {/* (Ben, 27 Oct, Q8) Resting heart rate and sleep from Apple Health, raw and labelled; nothing while off. */}
-      <HealthTrends />
-      </>
-      )}
+    );
+  } else if (shell === null || bar === null || dates === null) {
+    // Loading: grey blocks after the delay. Ready with no profile: the empty state, never a blank page (review N3).
+    body = shellData.state === 'loading' ? placeholder ? <Placeholder /> : null : <EmptyState hasResume={false} />;
+  } else if (!shell.hasData) {
+    body = <EmptyState hasResume={resume !== null} />;
+  } else {
+    // Every tab stays mounted once seen, so each keeps its place (selected exercise, day, scroll) (§3.5).
+    body = (
+      <>
+        <View style={tab === 'lifts' ? null : { display: 'none' }}>
+          <ExercisesTab active={tab === 'lifts'} shared={{ period: bar.preset, range: dates }} />
         </View>
+        {seen.has('training') ? (
+          <View style={tab === 'training' ? null : { display: 'none' }}>
+            <TrainingTab
+              choice={choice}
+              active={tab === 'training'}
+              onMonthList={openList}
+              onTime={setTimeSheet}
+              onHow={() => {
+                setHowOpen(true);
+              }}
+              onMuscles={() => {
+                navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressMuscles', params: { group: '' } } });
+              }}
+              onActivitySaved={activitySaved}
+            />
+          </View>
+        ) : null}
+        {seen.has('body') ? (
+          <View style={tab === 'body' ? { gap: theme.space['5'] } : { display: 'none' }}>
+            <BodyweightCard active={tab === 'body'} window={dates} />
+            {/* (Ben, 27 Oct, Q8) Resting heart rate and sleep from Apple Health, raw and labelled; nothing while off. */}
+            {tab === 'body' ? <HealthTrends window={dates} /> : null}
+          </View>
+        ) : null}
       </>
     );
   }
 
-  const period = shell?.period ?? null;
-  const range = shell?.range ?? null;
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       {/* Everything that floats (Ask, toast) lives in this area, which ends above the ResumeBar, so the bar never covers them (review S1). */}
@@ -331,7 +248,7 @@ export function ProgressScreen() {
         <AskPill
           bottom={theme.space['4'] + (toastShown ? toastHeight : 0)}
           onPress={() => {
-            navigation.navigate('Coach', { entry: period === null ? { kind: 'today' } : { kind: 'progress', period, ...(range === null ? {} : { range }) } });
+            navigation.navigate('Coach', { entry: bar === null ? { kind: 'today' } : { kind: 'progress', period: bar.preset, range: { from: bar.window.from, to: bar.window.to } } });
           }}
         />
         {toastShown ? (
@@ -358,18 +275,18 @@ export function ProgressScreen() {
           }}
         />
       ) : null}
-      {home?.view.dataState === 'normal' ? (
+      {timeSheet !== null ? (
         <TimeSheet
-          visible={timeOpen}
-          sheet={home.view.activity.sheet}
+          visible
+          sheet={timeSheet}
           onClose={() => {
-            setTimeOpen(false);
+            setTimeSheet(null);
           }}
           onCount={(r) => {
             void runCountIt(r, countDeps, inFlight.current);
           }}
           onEdit={(r) => {
-            setTimeOpen(false);
+            setTimeSheet(null);
             navigation.navigate('Summary', { sessionId: r.sessionId, back: true, editTimes: true });
           }}
         />
@@ -380,260 +297,6 @@ export function ProgressScreen() {
           setHowOpen(false);
         }}
       />
-    </View>
-  );
-}
-
-/**
- * `Consistency` (plan tracker v1): counts and a mark per week, never colour alone; never "missed".
- * Design pass 6.1: 8 equal columns (`flex: 1, minWidth: 0`) with day-number labels on one line,
- * capped in scale, so the newest week is always visible; at AX sizes, one row per week.
- */
-function ConsistencyCard({ view, ax }: { view: ConsistencyCardView; ax: boolean }) {
-  const theme = useTheme();
-  return (
-    <Card>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', columnGap: theme.space['2'] }}>
-        <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-          {view.title.toUpperCase()}
-        </AppText>
-        <AppText variant="callout" numeric>
-          {view.thisWeek}
-        </AppText>
-      </View>
-      {ax ? (
-        <View>
-          {view.weeks.map((w) => (
-            <View key={w.key} accessible accessibilityLabel={w.accessibilityLabel} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: 44, borderTopWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'] }}>
-              <AppText variant="callout" color="text.secondary" numeric style={{ flex: 1 }}>
-                {w.rowLabel}
-              </AppText>
-              <AppText variant="callout" numeric>
-                {w.value}
-              </AppText>
-              {w.atAim === true ? <Icon name="checkmark" size={14} color="text.secondary" /> : <View style={{ width: 14 }} />}
-            </View>
-          ))}
-        </View>
-      ) : (
-        <View style={{ flexDirection: 'row' }}>
-          {view.weeks.map((w) => (
-            <View key={w.key} accessible accessibilityLabel={w.accessibilityLabel} style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 2 }}>
-              <AppText variant="callout" numeric numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                {w.value}
-              </AppText>
-              {w.atAim === true ? <Icon name="checkmark" size={12} color="text.secondary" /> : <View style={{ height: 12 }} />}
-              <AppText variant="label" color="text.tertiary" numeric numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                {w.label}
-              </AppText>
-            </View>
-          ))}
-        </View>
-      )}
-      {view.atAim !== null ? (
-        <AppText variant="callout" color="text.secondary" numeric>
-          {view.atAim}
-        </AppText>
-      ) : null}
-      {view.plan !== null ? (
-        <AppText variant="callout" color="text.secondary" numeric>
-          {view.plan}
-        </AppText>
-      ) : null}
-    </Card>
-  );
-}
-
-function Overview({
-  home,
-  view,
-  ax,
-  onPeriod,
-  onCustom,
-  onGrouping,
-  onCalendar,
-  onTime,
-  onHow,
-  onMuscles,
-  onRecord,
-}: {
-  home: ProgressHome;
-  view: Extract<ProgressHomeView, { dataState: 'normal' }>;
-  ax: boolean;
-  onPeriod: (p: ProgressPeriodKey) => void;
-  onCustom: (r: DateRange) => void;
-  onGrouping: (g: ProgressGrouping) => void;
-  onCalendar: () => void;
-  onTime: () => void;
-  onHow: () => void;
-  onMuscles: () => void;
-  onRecord: (r: RecordView) => void;
-}) {
-  const theme = useTheme();
-  const { activity, muscles, records } = view;
-  // `All records (n) ›` lists the rest in place (§2.2 region 5).
-  // Expanded for one window only: a window change shows 3 again (review progress-B r2 N3).
-  const windowKey = `${view.window.from}:${view.window.to}`;
-  const [recordsAllFor, setRecordsAllFor] = useState<string | null>(null);
-  const recordsAll = recordsAllFor === windowKey;
-  const recordRows = recordsAll ? records.items : records.items.slice(0, records.initial);
-  // D2: parents only; a row opens to its sub-rows in place.
-  const [openRows, setOpenRows] = useState<ReadonlySet<string>>(new Set());
-  return (
-    <View style={{ gap: theme.space['5'] }}>
-      <PeriodPicker
-        period={home.period}
-        custom={home.range !== null}
-        today={home.today}
-        earliest={home.earliest}
-        current={view.window}
-        datesLine={view.datesLine}
-        datesWords={view.datesWords}
-        onPreset={onPeriod}
-        onCustom={onCustom}
-      />
-
-      <View style={{ gap: theme.space['2'] }}>
-        <Pressable accessibilityRole="button" accessibilityLabel={activity.cardWords} onPress={onCalendar}>
-          <Card>
-            <View style={{ gap: theme.space['4'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-              <StatStrip items={activity.stats.map((s) => ({ value: s.value, label: s.label, ...(s.note !== undefined ? { note: s.note } : {}) }))} accessibilityLabel={activity.statsWords} ax={ax} />
-              <ActivityChart chart={activity.chart} />
-              <AppText variant="callout" color="text.secondary" numeric>
-                {activity.comparison}
-              </AppText>
-              {activity.lastWorkout !== null ? (
-                <AppText variant="callout" color="text.secondary" numeric>
-                  {activity.lastWorkout}
-                </AppText>
-              ) : null}
-            </View>
-          </Card>
-        </Pressable>
-        {activity.footnote !== null ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${activity.footnote}. Shows what was left out.`}
-            onPress={onTime}
-            style={{ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}
-          >
-            <Icon name="info.circle" color="text.secondary" size={16} />
-            <AppText variant="callout" color="text.secondary" numeric>
-              {activity.footnote}
-            </AppText>
-          </Pressable>
-        ) : null}
-      </View>
-
-      <View style={{ gap: theme.space['3'] }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-          <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-            MUSCLES
-          </AppText>
-          <Pressable accessibilityRole="button" accessibilityLabel="How muscles are counted" onPress={onHow} style={{ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="info.circle" color="text.secondary" size={16} />
-          </Pressable>
-        </View>
-        <Segmented
-          options={[
-            { key: 'body_part' as const, label: 'Body parts' },
-            { key: 'ppl' as const, label: 'Push/Pull/Legs' },
-          ]}
-          selected={home.grouping}
-          onSelect={onGrouping}
-          label="Muscles"
-        />
-        {muscles.noneSet ? (
-          <AppText variant="callout" color="text.secondary">
-            No muscles set on these exercises.
-          </AppText>
-        ) : (
-          <View>
-            <FrequencyHeader perWeek={false} />
-            {muscles.rows.map((r) => {
-              const expanded = openRows.has(r.key);
-              return (
-                <View key={r.key}>
-                  <FrequencyRow
-                    row={r}
-                    perWeek={false}
-                    expanded={expanded}
-                    onPress={() => {
-                      setOpenRows((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(r.key)) next.delete(r.key);
-                        else next.add(r.key);
-                        return next;
-                      });
-                    }}
-                  />
-                  {expanded ? <FrequencySubRows rows={r.subRows} empty={r.lastTrained} /> : null}
-                </View>
-              );
-            })}
-          </View>
-        )}
-        {muscles.noMusclesLine !== null ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${muscles.noMusclesLine}. Opens Muscles.`}
-            onPress={onMuscles}
-            style={{ minHeight: theme.target.min.height, justifyContent: 'center' }}
-          >
-            <AppText variant="callout" color="text.secondary">{`${muscles.noMusclesLine} ›`}</AppText>
-          </Pressable>
-        ) : null}
-      </View>
-
-      <View style={{ gap: theme.space['2'] }}>
-        <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-          RECORDS
-        </AppText>
-        {records.empty !== null ? (
-          <AppText variant="callout" color="text.secondary">
-            {records.empty}
-          </AppText>
-        ) : (
-          recordRows.map((r) => (
-            <Pressable
-              key={r.key}
-              accessibilityRole="button"
-              accessibilityLabel={r.words}
-              accessibilityHint="Opens the workout"
-              onPress={() => {
-                onRecord(r);
-              }}
-              style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
-            >
-              <View style={{ flex: 1, gap: 2 }}>
-                <AppText variant="body">{r.title}</AppText>
-                <AppText variant="callout" color="text.secondary" numeric>{`${r.label}  ${r.value} · ${r.date}`}</AppText>
-              </View>
-              <Icon name="chevron.right" color="text.tertiary" size={14} />
-            </Pressable>
-          ))
-        )}
-        {!recordsAll && records.more !== null ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={records.more.words}
-            accessibilityHint="Lists every record"
-            onPress={() => {
-              setRecordsAllFor(windowKey);
-            }}
-            style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
-          >
-            <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
-              {records.more.label}
-            </AppText>
-            <Icon name="chevron.right" color="text.tertiary" size={14} />
-          </Pressable>
-        ) : null}
-      </View>
-
-      {home.unreadable > 0 ? (
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text={unreadableText(home.unreadable)} />
-      ) : null}
     </View>
   );
 }

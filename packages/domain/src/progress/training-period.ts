@@ -24,6 +24,14 @@ export interface TrainingPlanDays {
   days: readonly { dayIndex: number; name: string; routineIds: readonly string[] }[];
 }
 
+/** The plan in use's days for the calendar: its version's day names and each routine made for a day (`planDayOf`). */
+export function trainingPlanDays(planId: string, dayNames: readonly string[], routines: readonly { id: string; dayIndex: number | null }[]): TrainingPlanDays {
+  return {
+    planId,
+    days: dayNames.map((name, dayIndex) => ({ dayIndex, name, routineIds: routines.filter((r) => r.dayIndex === dayIndex).map((r) => r.id) })),
+  };
+}
+
 export interface TrainingActivityInput {
   date: string;
   row: ActivityRow;
@@ -104,7 +112,7 @@ export interface TrainingPeriodView {
   /** Week: the 7 days. */
   week: DayTile[] | null;
   /** 3M/6M/1Y: one bar per Monday–Sunday week starting in the period, up to this week. */
-  bars: { weeks: WeekBar[]; max: number; aim: string | null; first: string; last: string; words: string } | null;
+  bars: { weeks: WeekBar[]; max: number; aim: string | null; /** The aim's height, 0–1 of `max` (drawn as a line); null with none. */ aimLine: number | null; first: string; last: string; words: string } | null;
   /** Shown for Month and Week (the dots need it); every colour used plus neutral and the ring, never colour alone. */
   legend: LegendItem[];
   weekdayLetters: readonly string[];
@@ -319,10 +327,12 @@ export function weekBars(sessions: readonly ProgressSession[], full: DateRange, 
     return { monday, count, underAim, current, words: `Week of ${dayMonth(monday)}: ${countNoun(count, 'session', 'sessions')}${underAim === true ? ', under your aim' : ''}${current ? ', this week' : ''}` };
   });
   const last = weeks[weeks.length - 1];
+  const max = Math.max(aim ?? 0, 1, ...weeks.map((w) => w.count));
   return {
     weeks,
-    max: Math.max(aim ?? 0, 1, ...weeks.map((w) => w.count)),
+    max,
     aim: aim === null || aim <= 0 ? null : `aim ${String(aim)}`,
+    aimLine: aim === null || aim <= 0 ? null : aim / max,
     first: weeks[0] === undefined ? '' : dayMonth(weeks[0].monday),
     last: last === undefined ? '' : last.current ? 'this week' : dayMonth(last.monday),
     words: `Sessions per week, ${countNoun(weeks.length, 'week', 'weeks')}${aim === null || aim <= 0 ? '' : `, aim ${String(aim)}`}. ${weeks.map((w) => w.words).join('. ')}`,

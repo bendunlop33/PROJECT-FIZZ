@@ -1,4 +1,5 @@
 import {
+  localMidnightUtcMs,
   autoLinkPairs,
   classifyHealthWorkout,
   dismissHealthLink,
@@ -120,15 +121,20 @@ export function createHealthService(deps: HealthServiceDeps) {
   }
 
 /** (Q8) Resting heart rate and sleep, a value a day for the last 30 days, each with its source; empty while off. */
-  async function readSignals(): Promise<HealthSignals> {
+  async function readSignals(window: { from: string; to: string } | null = null): Promise<HealthSignals> {
     const p = await owner();
     const s = p === null ? null : await settings(p.id);
     if (p === null || s === null) return { restingHeartRate: [], sleep: [] };
-    const from = toIso(toMs(deps.now().utc) - (SIGNAL_DAYS + 1) * 86_400_000);
+    // (Redesign v3 C2) Progress › Body follows the period bar: the days in its window (a day early for last night's sleep).
+    const from = window === null ? toIso(toMs(deps.now().utc) - (SIGNAL_DAYS + 1) * 86_400_000) : toIso(localMidnightUtcMs(window.from, p.timezone) - 86_400_000);
     const [hr, sleep] = await Promise.all([
       s.readRestingHeartRate ? repo().samplesSince(p.id, 'resting_hr', from).catch(() => []) : Promise.resolve([]),
       s.readSleep ? repo().samplesSince(p.id, 'sleep', from).catch(() => []) : Promise.resolve([]),
     ]);
+    if (window !== null) {
+      const inside = (d: { date: string }) => d.date >= window.from && d.date <= window.to;
+      return { restingHeartRate: restingHeartRateDays(hr).filter(inside), sleep: sleepNights(sleep).filter(inside) };
+    }
     return { restingHeartRate: restingHeartRateDays(hr).slice(-SIGNAL_DAYS), sleep: sleepNights(sleep).slice(-SIGNAL_DAYS) };
   }
 
@@ -419,15 +425,15 @@ export function createHealthService(deps: HealthServiceDeps) {
     },
 
     /** (Q8) Resting heart rate and sleep, a value a day for the last 30 days, each with its source; empty while off. */
-    signals: readSignals,
+    signals: () => readSignals(),
 
     /**
      * (Ben, 27 Oct) Progress › Training's Apple Health block: last night's sleep and this morning's resting heart rate
      * against its 28-day median (gym first: not on Today, pending Ben), then the trend lines. Local reads only.
      */
-    async lastNight(): Promise<{ line: TodayHealthLine | null; signals: HealthSignals }> {
+    async lastNight(window: { from: string; to: string } | null = null): Promise<{ line: TodayHealthLine | null; signals: HealthSignals }> {
       const p = await owner();
-      const signals = await readSignals();
+      const signals = await readSignals(window);
       if (p === null) return { line: null, signals };
       return { line: todayHealthLine(signals, localDateOf(toMs(deps.now().utc), p.timezone)), signals };
     },

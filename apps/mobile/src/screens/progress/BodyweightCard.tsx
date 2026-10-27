@@ -11,6 +11,7 @@ import { newUuid } from '../../device/runtime';
 import { loadTrendCanvas } from '../../progress/load-charts';
 import { Segmented, useAx } from '../../progress/components';
 import { trendLayout } from '../../progress/trend-layout';
+import { useReloadOn } from '../../progress/use-reload-on';
 import type { BodyweightCard as CardData } from '../../services/bodyweight-service';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -29,12 +30,13 @@ const COPY = { title: 'Bodyweight', add: '＋ Weight', entries: 'Entries', save:
 type Sheet = { kind: 'add' } | { kind: 'edit'; entry: WeightEntry } | { kind: 'list' } | null;
 type UndoState = { text: string; run: () => Promise<unknown> } | null;
 
-export function BodyweightCard({ active }: { active: boolean }) {
+export function BodyweightCard({ active, window = null }: { active: boolean; /** (Redesign v3 C2) Progress › Body: the period bar's dates replace the range control. */ window?: { from: string; to: string } | null }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
   const [range, setRange] = useState<BodyweightRange>('3m');
-  const [data, reload] = useScreenData((s) => s.bodyweight.card(range), { enabled: active });
+  const [data, reload] = useScreenData((s) => s.bodyweight.card(range, window), { enabled: active });
+  useReloadOn(window === null ? '' : `${window.from}:${window.to}`, reload);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [undo, setUndo] = useState<UndoState>(null);
@@ -60,7 +62,7 @@ export function BodyweightCard({ active }: { active: boolean }) {
           text: undoText,
           // Undo is a new versioned write on the profile as it is after this one.
           run: async () => {
-            const fresh = await services.bodyweight.card(range);
+            const fresh = await services.bodyweight.card(range, window);
             if (fresh !== null) await undoFn(fresh.version);
           },
         });
@@ -105,7 +107,7 @@ export function BodyweightCard({ active }: { active: boolean }) {
       </View>
       {!v.empty ? (
         <>
-          <Segmented options={BODYWEIGHT_RANGES.map((k) => ({ key: k, label: BODYWEIGHT_RANGE_LABEL[k] }))} selected={range} onSelect={setRange} label="Bodyweight range" />
+          {window === null ? <Segmented options={BODYWEIGHT_RANGES.map((k) => ({ key: k, label: BODYWEIGHT_RANGE_LABEL[k] }))} selected={range} onSelect={setRange} label="Bodyweight range" /> : null}
           <BodyweightPlot card={card} />
           {v.source !== null ? (
             <AppText variant="callout" color="text.secondary">
