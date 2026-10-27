@@ -123,6 +123,9 @@ export function restAfterRows(slot: BuilderSlot, info: BuilderInfoLookup, level:
     const kind: RestKind = next?.type === 'drop' && row.type !== 'warmup' ? 'before_drop' : row.type;
     const own = slot.restS?.[kind];
     if (own !== undefined) return own;
+    // (Ben, 27 Oct) The plan day's stored rest: as stored at normal length; a shorter level may shorten an accessory's.
+    const plan = slot.planRestS?.[kind];
+    if (plan !== undefined) return level === 'normal' || role === 'main' || kind === 'top' || kind === 'backoff' ? plan : Math.min(plan, defaultRestS(kind, role, level, presets));
     // (WU11) The last warm-up rests 2 min before a rep-band first working set, 3 min before a heavy-band one.
     if (row.type === 'warmup' && next !== undefined && next.type !== 'warmup' && firstWork !== undefined && firstWork.durationS === undefined && firstWork.distanceM === undefined) return nearestPreset(warmupRestS(firstWork.reps, true), presets);
     return defaultRestS(kind, role, level, presets);

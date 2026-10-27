@@ -284,7 +284,12 @@ describe('R3 / S1: a draft from Today’s Edit (SP6, PM 23 Oct: the original is 
     const whole = opened(await s.builder.setTime(back.draftId, 90, { opId: 'whole', expectedVersion: back.version }));
     expect(whole.time).toBeNull();
     for (const id of slotsOf(back.workout.blocks).map((x) => x.exerciseId)) expect(slotsOf(whole.workout.blocks).map((x) => x.exerciseId)).toContain(id);
-    expect(slotsOf(whole.workout.blocks).length).toBeGreaterThan(slotsOf(snap0.workout.blocks).length);
+    // (Ben, 27 Oct) The plan day's own rests are drafted now, so 10 minutes less may come from rests and sets rather
+    // than an exercise: the whole day has at least as many exercises and sets, and the fit Today made is gone.
+    const total = (x: BuilderSnapshot) => slotsOf(x.workout.blocks).reduce((n, sl) => n + work(sl), 0);
+    expect(slotsOf(whole.workout.blocks).length).toBeGreaterThanOrEqual(slotsOf(snap0.workout.blocks).length);
+    expect(total(whole)).toBeGreaterThanOrEqual(total(snap0));
+    expect(snap0.time?.changes.length ?? 0).toBeGreaterThan(0);
     // Less time again cuts from it and lists the cuts.
     const less = await stepUntil(s, whole, (x) => x.time !== null && x.time.changes.some((ch) => ch.kind !== 'rest'), 'today');
     expect(workoutView(less).time.note).not.toBeNull();

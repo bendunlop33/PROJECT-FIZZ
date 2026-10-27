@@ -254,6 +254,12 @@ export interface BuilderSlot {
   anchorE1rm: number | null;
   /** Ben's own rest per kind (seconds); defaults otherwise. */
   restS?: Partial<Record<RestKind, number>>;
+  /**
+   * (Ben, 27 Oct) The plan day's stored rest per kind (seconds), drafted from Library › Plan › day: used instead of the
+   * builder's default at normal length; a shorter rest level (Time) may still shorten an accessory's, never the main
+   * lift's. `restS` (Ben's own edit on Your workout) wins over it.
+   */
+  planRestS?: Partial<Record<RestKind, number>>;
   /** Ben edited this slot (swap, sets, reps…): merges and fits leave it alone. */
   touched?: true;
   /**

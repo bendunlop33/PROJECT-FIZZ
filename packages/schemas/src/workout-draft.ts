@@ -288,6 +288,11 @@ export const DraftSlotBuilderSchema = z.object({
   /** Ben's own rest per kind (seconds). */
   restS: z.partialRecord(BuilderRestKindSchema, z.int().min(0).max(BUILD_LIMITS.maxRestS)).optional(),
   /**
+   * (Ben, 27 Oct) The plan day's stored rest per kind (seconds): the rest at normal length; Time's shorter rest levels
+   * may still shorten an accessory's (never the main lift's). Ben's own `restS` wins over it.
+   */
+  planRestS: z.partialRecord(BuilderRestKindSchema, z.int().min(0).max(BUILD_LIMITS.maxRestS)).optional(),
+  /**
    * (Retire-overview R3) Why the slot's loads are what they are, from the library or past workout it was opened on
    * (its own rule's line, held on pain, capped or rounded at this gym). Shown under `Why this weight?`.
    */
