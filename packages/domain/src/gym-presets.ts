@@ -49,12 +49,19 @@ export interface GymPresetSummary {
   subtitle: string | null;
 }
 
+/**
+ * The most values `loadRange` makes (hang fix, 27 Oct): far above any real rack or stack (the equipment schema keeps
+ * 500), so a huge `to` or a tiny `step` from odd stored values throws at once instead of allocating without end.
+ */
+export const LOAD_RANGE_MAX_VALUES = 10_000;
+
 /** Ascending values from `from` to `to` inclusive, every `step`, without float drift. */
 export function loadRange(from: number, to: number, step: number): number[] {
   const a = toScaled(from);
   const b = toScaled(to);
   const s = toScaled(step);
-  if (s <= 0 || a <= 0 || b < a) throw new RangeError('loadRange needs 0 < from <= to and step > 0');
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(s) || s <= 0 || a <= 0 || b < a) throw new RangeError('loadRange needs 0 < from <= to and step > 0');
+  if ((b - a) / s >= LOAD_RANGE_MAX_VALUES) throw new RangeError(`loadRange would make more than ${String(LOAD_RANGE_MAX_VALUES)} values`);
   const out: number[] = [];
   for (let v = a; v <= b; v += s) out.push(fromScaled(v));
   return out;

@@ -158,8 +158,14 @@ let launchGuardStarted = false;
 let currentPhase: LaunchPhase | null = 'launch';
 /** Native calls of optional features in flight, newest last (each one breadcrumbed while it runs). */
 const inFlight: NativeFeature[] = [];
-/** In the background a close is iOS's to make (memory, suspension), never a launch crash: no breadcrumb then. */
+/**
+ * In the background a close inside a native call is iOS's to make (memory, suspension), so in-flight native calls
+ * aren't breadcrumbed then. This run's own phase stays until the settler settles it (hang fix, 27 Oct: a blank
+ * screen Ben swipes away must still make the next launch a safe start).
+ */
 let inBackground = false;
+/** A contained render error: this run's breadcrumb stays whatever happens next (the next launch is a safe start). */
+let held = false;
 let offFeatures: ReadonlySet<NativeFeature> = new Set();
 
 function launchGuardFile(): File {
@@ -199,7 +205,7 @@ export function startLaunchGuard(): void {
 
 function writeBreadcrumb(): void {
   try {
-    const phase = inBackground ? null : (inFlight.at(-1) ?? currentPhase);
+    const phase = held ? 'render_error' : inBackground ? currentPhase : (inFlight.at(-1) ?? currentPhase);
     const f = launchGuardFile();
     if (phase === null) {
       if (f.exists) f.delete();
@@ -221,6 +227,12 @@ export function armLaunchGuard(phase: LaunchPhase): void {
 /** The run settled (on screen long enough, or sent to the background): no breadcrumb, so the next launch is normal. */
 export function settleLaunchGuard(): void {
   currentPhase = null;
+  writeBreadcrumb();
+}
+
+/** (Hang fix, 27 Oct) A render error was contained: the breadcrumb stays for the rest of the run, so the next launch is a safe start showing it. */
+export function holdLaunchGuard(): void {
+  held = true;
   writeBreadcrumb();
 }
 

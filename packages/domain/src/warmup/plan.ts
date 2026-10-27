@@ -159,6 +159,8 @@ export interface WarmupPlanInput {
 const EPS = 1e-6;
 const MAX_STEPS = 6;
 const MAX_TOTAL_REPS = 25;
+/** `fitWarmupCount`'s ceiling (hang fix, 27 Oct): far above any real warm-up count. */
+const MAX_FIT_COUNT = 30;
 const MAX_STEP_REPS = 8;
 
 /** WU3. */
@@ -430,7 +432,8 @@ export function planSessionWarmupsAs(items: readonly SessionWarmupItem[], mode: 
 export function fitWarmupCount(full: readonly WarmupStep[], n: number, W: number, loads: readonly number[]): WarmupStep[] {
   if (n <= 0) return [];
   const out = full.slice(Math.max(0, full.length - n)).map((s) => ({ ...s }));
-  while (out.length < n) {
+  // Bounded (hang fix, 27 Oct): never more than the planner's own step cap allows, whatever count is stored.
+  while (out.length < Math.min(n, MAX_FIT_COUNT)) {
     const gap = gapFill(out, W, loads);
     if (gap === null) break;
     out.push(gap);

@@ -34,6 +34,11 @@ export interface MonthCount {
  */
 export const WEEKLY_POINTS_MAX_DAYS = 186;
 
+/** (Hang fix, 27 Oct) Loop bounds above any real window (the longest period is 3 years: 157 weeks), a month's days plus slack, axis ticks. */
+const MAX_BUCKETS = 400;
+const MAX_BUCKET_DAYS = 40;
+const MAX_AXIS_TICKS = 20;
+
 export type ActivityGranularity = 'week' | 'month';
 
 export function activityGranularity(days: number): ActivityGranularity {
@@ -77,22 +82,23 @@ export function countSessions(sessions: readonly ProgressSession[], window: Prog
   if (activityGranularity(totalDays) === 'month') {
     months = [];
     let from = window.from;
-    while (from <= window.to) {
+    // (Hang fix, 27 Oct) Bounded: dates that don't advance (an odd stored date) never loop without end.
+    for (let guard = 0; from <= window.to && guard < MAX_BUCKETS; guard += 1) {
       const monthEnd = addDays(addMonths(`${from.slice(0, 8)}01`, 1), -1);
       const to = monthEnd < window.to ? monthEnd : window.to;
       let n = 0;
-      for (let d = from; d <= to; d = addDays(d, 1)) n += byDate.get(d) ?? 0;
+      for (let d = from, i = 0; d <= to && i < MAX_BUCKET_DAYS; d = addDays(d, 1), i += 1) n += byDate.get(d) ?? 0;
       months.push({ from, to, count: n, partial: from.slice(8, 10) !== '01' || to !== monthEnd });
       from = addDays(to, 1);
     }
   } else {
     weeks = [];
     let from = window.from;
-    while (from <= window.to) {
+    for (let guard = 0; from <= window.to && guard < MAX_BUCKETS; guard += 1) {
       const sunday = addDays(from, 6 - weekdayIndexOfDate(from));
       const to = sunday < window.to ? sunday : window.to;
       let n = 0;
-      for (let d = from; d <= to; d = addDays(d, 1)) n += byDate.get(d) ?? 0;
+      for (let d = from, i = 0; d <= to && i < MAX_BUCKET_DAYS; d = addDays(d, 1), i += 1) n += byDate.get(d) ?? 0;
       weeks.push({ from, to, count: n, partial: weekdayIndexOfDate(from) !== 0 || to !== sunday });
       from = addDays(to, 1);
     }
@@ -201,7 +207,8 @@ export function timeInGym(sessions: readonly ProgressSession[], window: Progress
  * so one session never fills the plot).
  */
 export function countAxisTicks(largest: number): number[] {
-  const max = Math.max(3, Math.ceil(largest));
+  // (Hang fix, 27 Oct) A count that isn't a finite number (Infinity looped without end) draws the empty axis.
+  const max = Number.isFinite(largest) ? Math.max(3, Math.ceil(largest)) : 3;
   let step = 1;
   for (const s of [1, 2, 5, 10, 20, 50, 100, 200, 500]) {
     step = s;
@@ -209,6 +216,6 @@ export function countAxisTicks(largest: number): number[] {
   }
   const top = Math.ceil(max / step) * step;
   const out: number[] = [];
-  for (let v = 0; v <= top; v += step) out.push(v);
+  for (let v = 0; v <= top && out.length <= MAX_AXIS_TICKS; v += step) out.push(v);
   return out;
 }

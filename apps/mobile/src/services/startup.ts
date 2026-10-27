@@ -43,6 +43,11 @@ export type StartupOutcome =
        * confirm revoking it online: the first-run screen says so (§3.6; review r2 N4).
        */
       signOutNotConfirmed: boolean;
+      /**
+       * (Hang fix, 27 Oct) A safe start reads the unfinished workout as stored, without recovering it (no catch-up of
+       * its timers, no write): its name for the Safe start screen. Null: none, or not a safe start.
+       */
+      activeWorkout: { name: string | null } | null;
     }
   /**
    * A Delete my data couldn't be finished at launch (review S1). `deleted`:
@@ -73,6 +78,11 @@ export interface StartupDeps extends Omit<AppServicesDeps, 'manager'> {
    * workouts). The phone passes a short delay then an idle moment; default: at once.
    */
   backgroundGate?: () => Promise<void>;
+  /**
+   * (Hang fix, 27 Oct) The last run never settled: boot without the unfinished workout's recovery (no timer catch-up,
+   * no write, no alert reconcile). Only its name is read, for the Safe start screen; Resume recovers it then.
+   */
+  safe?: boolean;
 }
 
 function errorText(e: unknown): string {
@@ -117,8 +127,12 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     const setup = await services.setup.getState();
     let recovery: RecoveryResult | null = null;
     let recoveryError: string | null = null;
+    let activeWorkout: { name: string | null } | null = null;
     try {
-      recovery = setup.profile ? await services.sessions.recover() : null;
+      if (deps.safe === true) {
+        const stored = setup.profile ? await services.sessions.active() : null;
+        activeWorkout = stored === null ? null : { name: stored.session.routineName ?? null };
+      } else recovery = setup.profile ? await services.sessions.recover() : null;
     } catch (e) {
       recoveryError = errorText(e);
     }
@@ -140,7 +154,8 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     // Workouts past their 30 days in Recently deleted are purged after that check, silently,
     // never while a workout is unfinished (delete-workouts §6.4).
     const gate = (deps.backgroundGate?.() ?? Promise.resolve()).catch(() => undefined);
-    if (recoveryError === null && recovery?.state.session.status !== 'active') {
+    const workoutOpen = activeWorkout !== null || recovery?.state.session.status === 'active';
+    if (recoveryError === null && !workoutOpen) {
       void gate
         .then(() => services.backups.ensureBackedUp())
         .catch(() => null)
@@ -149,10 +164,10 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     }
     void gate.then(() => services.integrity.checkAll()).catch(() => null);
     // (§6.1) The weekly review on open: facts by code, the coach when reachable; never awaited, never during a workout.
-    if (recoveryError === null && recovery?.state.session.status !== 'active' && setup.profile) void gate.then(() => services.reviews.runOnOpen()).catch(() => null);
+    if (recoveryError === null && !workoutOpen && setup.profile) void gate.then(() => services.reviews.runOnOpen()).catch(() => null);
     // Progress projections, so the first Progress open after a cold start is quick (review progress-A S4).
     void gate.then(() => services.progress.prewarm()).catch(() => null);
-    return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery, recoveryError, personalDataCleared, signOutNotConfirmed };
+    return { kind: 'ready', services, migration: manager.store.migration, sqliteVersion, setup, recovery, recoveryError, personalDataCleared, signOutNotConfirmed, activeWorkout };
   } catch (e) {
     await manager.close().catch(() => undefined);
     return { kind: 'open_failed', message: errorText(e) };
