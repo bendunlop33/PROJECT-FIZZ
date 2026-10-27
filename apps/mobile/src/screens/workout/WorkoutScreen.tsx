@@ -215,6 +215,7 @@ export function WorkoutScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   /** (Ben, 26 Oct) An RIR picked for a set not done yet, applied to its edits once it is the open row. */
   const [pendingRir, setPendingRir] = useState<{ setId: string; rir: number | null } | null>(null);
+  const setValuesRef = useRef<(values: SetValues, side?: SetSide) => void>(() => undefined);
   // `Time left` (§2.15.1): its own clock moves on events (any new data) and once a minute, never every second.
   const [timeLeftNow, setTimeLeftNow] = useState(clockNow);
   const [timeLeftOpen, setTimeLeftOpen] = useState(false);
@@ -811,6 +812,17 @@ export function WorkoutScreen() {
   });
   openAddRef.current = workoutEdits.openAdd;
 
+  // (Ben, 26 Oct) An RIR picked for a set lands in its edits once that set is the open row (at once when it already is).
+  // Above every early return: a hook after one changes the hook count between renders ("Rendered more hooks than during
+  // the previous render"), which closed the app on Start (27 Oct).
+  const rirFocus = view?.focus ?? null;
+  const pendingRirTarget = pendingRir !== null && rirFocus !== null && rirFocus.setId === pendingRir.setId ? pendingRir : null;
+  useEffect(() => {
+    if (pendingRirTarget === null || rirFocus === null) return;
+    setPendingRir(null);
+    setValuesRef.current({ ...rirFocus.draft, ...effortPatch(pendingRirTarget.rir) });
+  }, [pendingRirTarget]);
+
   if (loadError !== null && (data === 'loading' || data === null)) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top + theme.space['4'], paddingHorizontal: theme.space['4'], gap: theme.space['4'] }}>
@@ -945,13 +957,9 @@ export function WorkoutScreen() {
     setRestoredDraft(null);
   }
 
-  // (Ben, 26 Oct) An RIR picked for a set lands in its edits once that set is the open row (at once when it already is).
-  const pendingRirTarget = pendingRir !== null && focus?.setId === pendingRir.setId ? pendingRir : null;
-  useEffect(() => {
-    if (pendingRirTarget === null || !focus) return;
-    setPendingRir(null);
-    setValues({ ...focus.draft, ...effortPatch(pendingRirTarget.rir) });
-  }, [pendingRirTarget]);
+  // (Ben, 26 Oct) An RIR picked for a set lands in its edits once that set is the open row: the effect sits above the
+  // early returns (Rules of Hooks, crash on Start 27 Oct); it reaches `setValues` through this ref.
+  setValuesRef.current = setValues;
 
   /** `Last …`: copies last time's values into the open row (its effort is never copied). */
   function copyLast(f: FocusView) {
