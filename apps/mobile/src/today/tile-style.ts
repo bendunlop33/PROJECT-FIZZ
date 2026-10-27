@@ -1,4 +1,4 @@
-import type { PlanDayColourKey, WeekTile, WeekTileMark } from '@fizz/domain';
+import { PLAN_DAY_HEX, type PlanDayColour, type PlanDayColourKey, type WeekTile, type WeekTileMark } from '@fizz/domain';
 
 import { progressPalette, withAlpha } from '../reviews/palette';
 import type { ResolvedTheme } from '../theme';
@@ -13,19 +13,16 @@ import type { ResolvedTheme } from '../theme';
 
 export const TILE_LAYOUT = { height: 64, gap: 7, radius: 10, letterSize: 11, dateSize: 15, mark: 7, markGap: 3, todayBorder: 1.5, plannedBorder: 1 } as const;
 
-/**
- * Plan-day colours (redesign v3 §C3: Push orange, Pull blue, Legs violet; Upper / Lower / Full body their own set;
- * neutral for workouts outside the plan). Minimal values on this branch, like Progress's palette (not design-system
- * tokens yet); the Progress stream's shared palette replaces them when merged.
- */
+/** Plan-day colours: Progress's shared palette (`PLAN_DAY_HEX`, checked for colour-blind separation), so Today and the calendar agree. */
+const HUE_OF: Readonly<Record<PlanDayColourKey, PlanDayColour>> = { push: 'orange', pull: 'blue', legs: 'violet', upper: 'aqua', lower: 'crimson', full: 'amber', neutral: 'neutral' };
 export const PLAN_DAY_COLOURS: Readonly<Record<PlanDayColourKey, { dark: string; light: string }>> = {
-  push: { dark: '#E8834A', light: '#C55A1C' },
-  pull: { dark: '#5B9BE6', light: '#2467B8' },
-  legs: { dark: '#A684E8', light: '#6C45C2' },
-  upper: { dark: '#3FB8A6', light: '#167D6F' },
-  lower: { dark: '#E0B341', light: '#99730C' },
-  full: { dark: '#E36D93', light: '#B23863' },
-  neutral: { dark: '#9A9A9F', light: '#6B6B70' },
+  push: PLAN_DAY_HEX[HUE_OF.push],
+  pull: PLAN_DAY_HEX[HUE_OF.pull],
+  legs: PLAN_DAY_HEX[HUE_OF.legs],
+  upper: PLAN_DAY_HEX[HUE_OF.upper],
+  lower: PLAN_DAY_HEX[HUE_OF.lower],
+  full: PLAN_DAY_HEX[HUE_OF.full],
+  neutral: PLAN_DAY_HEX[HUE_OF.neutral],
 };
 
 /** Activities (rings): the run tint Today's strip used. */
