@@ -7,7 +7,7 @@ import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, pa
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
-import { CARDIO_TIMER_CAP_S, cardioDistanceSteps, cardioDurationSteps, cardioElapsedMs, cardioHasValue, paceText, resumeCardioInterval } from '../cardio';
+import { CARDIO_TIMER_CAP_S, cardioDistanceSteps, cardioDurationSteps, cardioElapsedMs, paceText, resumeCardioInterval } from '../cardio';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 import { addedWeightItems, addWeightToggle, canAddWeight, isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
@@ -26,6 +26,7 @@ import { changedTargetFields, draftWithNewTarget, markCarriedLoad, pendingOwnVal
 import { carriedLoad, hasOwnValuesAnyFlags, painFlaggedOf, shownPlannedIn, shownTargetShortIn, warmupLookupOf, type CarryOptions } from './carry';
 import type { WarmupExerciseFacts } from '../warmup/plan';
 import { isPastLog } from './time-shift';
+import { logSetValues, missingLogValue, shownSetValues } from './log-values';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -629,15 +630,6 @@ export function exclusionFields(set: Pick<WorkoutSet, 'status' | 'exclusions'>):
   return { exclusions: xs, exclusionTag: exclusionTag(xs), notCounted: notCountedLine(xs), exclusionAccessibility: exclusionAccessibility(xs) };
 }
 
-function missingFor(values: SetValues, ex: SessionExercise): FocusView['missing'] {
-  if (ex.loadConvention !== 'bodyweight' && values.load === null && ex.loadConvention !== 'added') return 'load';
-  if (ex.measurement === 'reps' && values.reps === null) return 'reps';
-  if (ex.measurement === 'duration' && values.durationS === null) return 'time';
-  if (ex.measurement === 'distance' && (values.distanceM === null || values.distanceM === undefined)) return 'distance';
-  if (ex.measurement === 'cardio' && !cardioHasValue(values)) return 'time';
-  return null;
-}
-
 export interface WorkTimerView {
   state: 'idle' | 'running' | 'paused' | 'ended';
   /** What `Start` runs: the planned time, else the draft's, else 30 s. */
@@ -723,15 +715,12 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   const painNote: PainFlagNoteView | null = covering
     ? { flagId: covering.flag.id, flagVersion: covering.flag.version, checkDue: covering.checkDue, text: painNoteText(covering.checkDue), accessibilityLabel: painNoteAccessibility(covering.checkDue) }
     : null;
-  let values: SetValues = edits ? edits.values : pre.values;
   // Effort is never prefilled; only Ben sets it: a chip after the log, or (Ben, 26 Oct) the row's RIR cell before
-  // it, kept in his edits or the set's saved draft (never history's, never on a warm-up).
+  // it, kept in his edits or the set's saved draft (never history's, never on a warm-up). A bodyweight exercise has
+  // no load; weighted today after a bodyweight Last: nothing added until Ben steps it (`shownSetValues`, shared
+  // with the Lock Screen's Log).
   const ownEffort = set.setType === 'warmup' ? null : edits ? edits.values : set.draft;
-  values = { ...values, rpe: ownEffort?.rpe ?? null, rir: ownEffort?.rir ?? null };
-  // A bodyweight exercise has no load; `added` with nothing entered means none added.
-  if (ex.loadConvention === 'bodyweight') values = { ...values, load: { value: 0, unit: ex.unit, convention: 'bodyweight' } };
-  // Weighted today after a bodyweight Last: nothing added until Ben steps it.
-  if (ex.loadConvention === 'added' && values.load?.convention === 'bodyweight') values = { ...values, load: { value: 0, unit: ex.unit, convention: 'added' } };
+  const values: SetValues = shownSetValues(ex, edits ? edits.values : pre.values, ownEffort);
   const draftSource: FocusView['draftSource'] = edits ? (edits.copied ? 'copied' : 'edited') : pre.source;
 
   const unilateral = ex.laterality === 'unilateral';
@@ -770,12 +759,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   const pastLog = isPastLog(state.session);
   const cardioTimer = ex.measurement === 'cardio' && !pastLog ? cardioTimerView(state, set, input.nowMs) : null;
   const timedCardioS = cardioTimer?.elapsedMs != null ? Math.round(cardioTimer.elapsedMs / 1000) : null;
-  const missing = missingFor(timedCardioS === null ? values : { ...values, durationS: timedCardioS }, ex);
-  const logValues: SetValues = {
-    ...values,
-    ...(timedCardioS === null ? {} : { durationS: timedCardioS }),
-    load: ex.loadConvention === 'added' && values.load === null ? { value: 0, unit: ex.unit, convention: 'added' } : values.load,
-  };
+  const missing = missingLogValue(timedCardioS === null ? values : { ...values, durationS: timedCardioS }, ex);
+  const logValues: SetValues = logSetValues(ex, values, timedCardioS);
   const labelValues = valuesText(logValues, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, side: chosenSide });
   const logLabel = missing === null ? `Log ${labelValues}` : null;
 

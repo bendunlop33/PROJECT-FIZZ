@@ -44,7 +44,9 @@ describe('LockScreenContent.afterRest', () => {
     for (const t of [deadline, deadline + 500, deadline + 60_000]) {
       const at = buildLockScreenContent(s, t, TZ);
       expect(at?.state).toBe('ready');
-      expect(during?.afterRest).toEqual({ title: at?.title, line1: at?.line1, line2: at?.line2, line3: at?.line3, side: at?.side, a11y: at?.a11y });
+      expect(during?.afterRest).toEqual({ title: at?.title, line1: at?.line1, line2: at?.line2, line3: at?.line3, side: at?.side, a11y: at?.a11y, log: at?.log });
+      // (Ben, 27 Oct) The Log drawn with the rest is the one the app draws at its end.
+      expect(during?.afterRest?.log?.label.replaceAll('\u00a0', ' ')).toBe('Log 100 kg × 8');
     }
   });
 

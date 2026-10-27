@@ -32,6 +32,8 @@ export * from './session/recovery';
 export * from './session/lock-screen';
 export * from './session/last-time';
 export * from './session/lock-screen-taps';
+export * from './session/lock-screen-log';
+export * from './session/log-values';
 export * from './session/volume';
 export * from './session/time-left';
 export * from './ports';
