@@ -143,7 +143,8 @@ describe('Progress v3 screens', () => {
 
   it('the app reloads screens when a run stores a review or applies its changes', () => {
     expect(read('shell', 'context.tsx')).toContain('services.reviews.subscribe(changed)');
-    expect(read('screens', 'TodayScreen.tsx')).toContain("params: { focus: 'reviews', n: (reviewsTaps += 1) }");
+    // (Redesign v3 §A5) Today's coach offer is a sheet with Apply / Skip only; its `Reviews ›` link left Today.
+    expect(read('screens', 'TodayScreen.tsx')).not.toContain("focus: 'reviews'");
     expect(progress).toContain('scroll.current?.scrollTo({ y: 0, animated: false })');
   });
 });

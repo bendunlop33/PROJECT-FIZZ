@@ -614,8 +614,8 @@ describe('source checks (feel and device behaviour go on Ben’s checklist)', ()
     const bar = flat('ui/coach-ask-bar.tsx');
     expect(bar).toContain('const BAR_HEIGHT = 48;');
     // Two controls (bar, mic) in each layout; the active workout's `icons` layout and Today's `compact` header
-    // (`✦ Coach` pill, §2.0.2) each have their own ✦ button and share the mic.
-    expect(bar.match(/accessibilityRole="button"/g)?.length).toBe(4);
+    // (`✦ Coach` pill, §2.0.2) and (redesign v3 §A1) its round `✦` icon button each have their own ✦ button and share the mic.
+    expect(bar.match(/accessibilityRole="button"/g)?.length).toBe(5);
     expect(bar).toContain('const ICON_SIZE = 44;');
     expect(bar).toContain("AccessibilityInfo.announceForAccessibility('Listening')");
     expect(bar).toContain('AccessibilityInfo.announceForAccessibility(text)');
