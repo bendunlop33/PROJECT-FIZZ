@@ -19,10 +19,12 @@ describe('fitNoteOf', () => {
       { kind: 'drop', slotKey: 'k-fly', exerciseId: 'fly' },
       { kind: 'sets', slotKey: 'k-crunch', exerciseId: 'crunch', from: 3, to: 2 },
     ];
-    expect(fitNoteOf(steps, nameOf, slotName)).toEqual({ note: '−1 exercise', lines: ['Shortest rests', 'Superset Triceps pushdown + Cable crunch', 'Dropped Cable fly', 'Cable crunch 3 → 2 sets'] });
+    expect(fitNoteOf(steps, nameOf, slotName)).toEqual({ note: '−1 exercise', lines: ['Minimum rest', 'Superset Triceps pushdown + Cable crunch', 'Dropped Cable fly', 'Cable crunch 3 → 2 sets'] });
     expect(fitNoteOf(steps.filter((s) => s.kind !== 'drop'), nameOf, slotName).note).toBe('−1 set');
     expect(fitNoteOf(steps.filter((s) => s.kind !== 'drop' && s.kind !== 'sets'), nameOf, slotName).note).toBe('supersets');
-    expect(fitNoteOf(steps.slice(0, 1), nameOf, slotName)).toEqual({ note: 'shorter rests', lines: ['Shorter rests'] });
+    expect(fitNoteOf(steps.slice(0, 1), nameOf, slotName)).toEqual({ note: 'medium rest', lines: ['Medium rest'] });
+    // (Ben, 27 Oct) The rest levels by their Profile › Training names.
+    expect(fitNoteOf([{ kind: 'rest', from: 'shortest', to: 'normal' }], nameOf, slotName)).toEqual({ note: 'standard rest', lines: ['Standard rest'] });
   });
 
   it('more time on Today: exercises and sets added read with +; an effort step is not listed', () => {

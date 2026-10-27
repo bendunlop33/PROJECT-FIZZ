@@ -165,7 +165,7 @@ describe('controls → draft (§2.0.2 controls 1–5)', () => {
     // The Time note (fit-to-time 22 Oct revision): the biggest change, rests first in the detail.
     const note = fitNoteOf(short.fit.steps, name, (k) => name(short.workout.blocks.flatMap((b) => b.slots).find((s) => s.key === k)?.exerciseId ?? ''));
     expect(note.note).not.toBeNull();
-    expect(note.lines[0]).toMatch(/^(Shorter|Shortest) rests$/);
+    expect(note.lines[0]).toMatch(/^(Medium|Minimum) rest$/);
   });
 
   it('Time steps of 5 within 15–180', () => {

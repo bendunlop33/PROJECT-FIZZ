@@ -109,9 +109,9 @@ describe('timeFitOffer: the builder ladder over the sets left (v3 §5)', () => {
 
   it('more over: the ladder in order — rests, then RPE 9 on an accessory’s last set, then the cheapest cut (one lateral raise set is enough)', () => {
     const s = underWay();
-    const o = offer(s, 7);
+    // (Ben, 27 Oct) The bench's rests never shorten for time, so 5 over (was 7) is where one raise set is enough.
+    const o = offer(s, 5);
     expect(o.lines.map(timeFitLineText)).toEqual([
-      'Bench press rest 3:00 → 2:00',
       'Lateral raise rest 1:30 → 1:00',
       'Cable fly rest 1:30 → 1:00',
       'Cable crunch rest 1:30 → 1:00',
@@ -132,14 +132,14 @@ describe('timeFitOffer: the builder ladder over the sets left (v3 §5)', () => {
     const s = underWay();
     const o = offer(s, 12);
     const text = o.lines.map(timeFitLineText);
-    expect(text[0]).toBe('Bench press rest 3:00 → 2:00');
+    expect(text[0]).toBe('Cable fly rest 1:30 → 1:00');
     expect(text).toContain('Skip: Lateral raise');
     expect(text).not.toContain('Skip: Cable fly');
-    // The main lift: its rests may shorten (the builder's rule); its sets and loads never change for time.
-    expect(text.filter((t) => t.startsWith('Bench press')).every((t) => t.includes(' rest '))).toBe(true);
+    // (Ben, 27 Oct) The main lift: its sets, loads and rests never change for time (its rests did shorten before).
+    expect(text.some((t) => t.startsWith('Bench press'))).toBe(false);
     const benchIds = new Set(setsOf(s, BENCH).map((x) => x.id));
     for (const st of o.steps) {
-      if (st.type === 'delete_set') expect(benchIds.has(st.setId)).toBe(false);
+      if (st.type === 'delete_set' || st.type === 'edit_planned_set') expect(benchIds.has(st.setId)).toBe(false);
       if (st.type === 'skip_exercise') expect(st.sessionExerciseId).not.toBe(exId(s, BENCH));
       if (st.type === 'edit_planned_set') expect(st.patch.load).toBeUndefined();
     }
@@ -165,8 +165,10 @@ describe('timeFitOffer: the builder ladder over the sets left (v3 §5)', () => {
       if (st.type === 'delete_set') expect(flaggedSets.has(st.setId)).toBe(false);
       if (st.type === 'edit_planned_set' && flaggedSets.has(st.setId)) expect(st.patch.targetRpe).toBeUndefined();
     }
-    // Nothing left but rests: the most it can do, honestly `over`.
-    expect(o.status).toBe('over');
+    // Nothing left to change: every accessory is flagged and the main lift's rests never shorten for time (Ben, 27 Oct;
+    // before, its rests made this an `over` offer), so there is no offer.
+    expect(o.status).toBe('none');
+    expect(o.steps).toEqual([]);
   });
 });
 
@@ -367,16 +369,17 @@ describe('fit_today_to_time: Apply and Undo', () => {
 
   it('Undo after Ben logged a set whose rest the fit shortened: the logged set stays, the rest comes back', () => {
     const s = underWay();
-    const o = offer(s, 12);
+    // (Ben, 27 Oct) A cable fly set: the bench's rests are no longer the fit's to shorten.
+    const o = offer(s, 3);
     const after = expectOk(applyOffer(s, o).r).state;
-    const [, , b1] = setsOf(after, BENCH);
-    expect(b1?.planned.edit?.opId).toBe('fit-1:0');
-    const logged = apply(after, logCmd(b1?.id ?? '', values(kg(90), 8), 500));
+    const [f1, f2] = setsOf(after, FLY);
+    expect(f1?.planned.edit?.opId).toMatch(/^fit-1:\d+$/);
+    expect(f2?.rest.seconds).toBe(60);
+    const logged = apply(after, logCmd(f1?.id ?? '', values(kg(25, 'stack'), 12), 500));
     const back = expectOk(reduceSession(logged, { type: 'undo_op', at: at(520), opId: 'undo-fit-2', targetOpId: 'fit-1' })).state;
-    expect(back.sets.find((x) => x.id === b1?.id)?.status).toBe('completed');
-    expect(setsOf(back, RAISE).every((x) => x.status === 'pending')).toBe(true);
-    const [, , , b2] = setsOf(back, BENCH);
-    expect(b2?.rest.seconds).toBe(setsOf(s, BENCH)[3]?.rest.seconds);
+    expect(back.sets.find((x) => x.id === f1?.id)?.status).toBe('completed');
+    expect(setsOf(back, FLY)[1]?.rest.seconds).toBe(setsOf(s, FLY)[1]?.rest.seconds);
+    expect(setsOf(back, BENCH).map((x) => x.rest.seconds)).toEqual(setsOf(s, BENCH).map((x) => x.rest.seconds));
   });
 });
 
@@ -395,5 +398,55 @@ describe('supersets and timed sets', () => {
     }
     const cmd = fitTodayCommand(o, { opId: 'fit-ss', at: at(10) });
     if (cmd !== null) expectOk(reduceSession(state, cmd));
+  });
+});
+
+describe('(Ben, 27 Oct) the main lift’s rests never change; accessory rests only as far as `Rest when short on time`', () => {
+  const lines = (o: TimeFitOffer) => o.lines.map(timeFitLineText);
+
+  it('the main lift’s rests are never in the offer, even longer than the builder’s default, at any overrun', () => {
+    // Bench back-offs at 4:00 (the routine's, not Ben's edit): still never shortened for time.
+    let s = start();
+    s = { ...s, sets: s.sets.map((x) => (x.sessionExerciseId === exId(s, BENCH) && x.setType === 'backoff' ? { ...x, rest: { ...x.rest, seconds: 240 } } : x)) };
+    const [w, top] = setsOf(s, BENCH);
+    s = apply(s, logCmd(w?.id ?? '', values(kg(60), 8), 30));
+    s = apply(s, logCmd(top?.id ?? '', values(kg(100), 5), 120));
+    const benchIds = new Set(setsOf(s, BENCH).map((x) => x.id));
+    for (const n of [1, 3, 5, 12, 30]) {
+      const o = offer(s, n);
+      expect(lines(o).some((t) => t.startsWith('Bench press')), `${String(n)} over`).toBe(false);
+      for (const st of o.steps) if (st.type === 'edit_planned_set' || st.type === 'delete_set') expect(benchIds.has(st.setId)).toBe(false);
+    }
+  });
+
+  it('Minimum rest (default): isolation rests to 1:00; Medium rest: 1:15 and no lower; Standard rest: no rest change, sets instead', () => {
+    const s = underWay();
+    const at3 = (fitRestLevel?: 'normal' | 'shorter' | 'shortest') => timeFitOffer({ aggregate: s, overByMinutes: 3, info, ...(fitRestLevel === undefined ? {} : { fitRestLevel }) });
+    expect(lines(at3())).toEqual(['Lateral raise rest 1:30 → 1:00', 'Cable fly rest 1:30 → 1:00', 'Cable crunch rest 1:30 → 1:00']);
+    expect(lines(at3('shortest'))).toEqual(lines(at3()));
+    const medium = at3('shorter');
+    expect(medium.lines.filter((l) => l.kind === 'rest').map(timeFitLineText)).toEqual(['Lateral raise rest 1:30 → 1:15', 'Cable fly rest 1:30 → 1:15', 'Cable crunch rest 1:30 → 1:15']);
+    expect(medium.lines.some((l) => l.kind === 'sets')).toBe(true);
+    const standard = at3('normal');
+    expect(standard.lines.some((l) => l.kind === 'rest')).toBe(false);
+    expect(standard.lines.some((l) => l.kind === 'sets')).toBe(true);
+    expect(standard.lines.some((l) => l.kind === 'drop')).toBe(false);
+    for (const o of [at3(), medium, standard]) expect(o.status).toBe('fitted');
+  });
+
+  it('a compound accessory’s rest goes to 1:30 and no lower', () => {
+    // The lateral raise read as a compound accessory (2:00 by the routine) for this check.
+    const s0 = start();
+    const s1 = { ...s0, sets: s0.sets.map((x) => (x.sessionExerciseId === exId(s0, RAISE) ? { ...x, rest: { ...x.rest, seconds: 120 } } : x)) };
+    const [w, top] = setsOf(s1, BENCH);
+    let s = apply(s1, logCmd(w?.id ?? '', values(kg(60), 8), 30));
+    s = apply(s, logCmd(top?.id ?? '', values(kg(100), 5), 120));
+    const compoundInfo = (id: string) => (id === RAISE.id ? { ...infoOf(RAISE, 'Shoulders', 'compound'), heavy: false, barbell: false } : info(id));
+    for (const n of [2, 4, 8]) {
+      const o = timeFitOffer({ aggregate: s, overByMinutes: n, info: compoundInfo });
+      const raise = o.lines.filter((l) => l.kind === 'rest' && l.sessionExerciseId === exId(s, RAISE));
+      for (const l of raise) if (l.kind === 'rest') expect(l.toS, `${String(n)} over`).toBe(90);
+      expect(raise.length, `${String(n)} over`).toBeGreaterThan(0);
+    }
   });
 });

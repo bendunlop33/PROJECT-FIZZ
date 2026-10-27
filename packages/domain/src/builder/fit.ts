@@ -1,5 +1,6 @@
 import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
 import { BUILDER_TIME, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
+import { DEFAULT_FIT_REST_LEVEL } from './rest';
 import { makeSlot } from './slot';
 import { autoPickClash, BUILDER_SUB_ROLES, subRoleOf } from './similar';
 import { BUILDER_SET_RULES, isTimedSlot, setWorkingCount, workingCount } from './set-rows';
@@ -7,26 +8,31 @@ import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type Bui
 
 /**
  * Fit to the time: the one shared fit (Today's Time control, Your workout's Time, Set up's length, the coach's
- * length change and the workout's `+N min` offer). Shorter follows fit-to-time.md's 22 Oct revision (Ben, 22–23 Oct,
- * D9), only as far as needed:
- *   (a) free savings first: shorter rests, then shortest; then, only with Supersets on, pair what the builder may
- *       pair (`pairSlots`: never the main lift, a heavy lift, a pair Ben unlinked or a slot he edited). With
- *       Supersets off nothing is ever paired (design review V14);
+ * length change and the workout's `+N min` offer). Shorter, in Ben's 27 Oct order (fit-to-time.md revision 27 Oct;
+ * it replaces the 22 Oct revision's "all rests first"), only as far as needed:
+ *   (1) accessory rests: down to the level Ben picked in Profile › Training › `Rest when short on time`
+ *       (`ctx.fitRestLevel`; default `shortest`, Minimum rest), one level at a time (`BUILDER_REST_LEVELS`: isolation
+ *       and round 1:30 → 1:15 → 1:00, compound 2:00 → 1:30 and never lower). Standard rest: no rest step. The main
+ *       lift's rests (top, back-off, working) never change for time; Ben's own rests and edited slots stay;
+ *   (2) only with Supersets on, pair what the builder may pair (`pairSlots`: never the main lift, a heavy lift, a pair
+ *       Ben unlinked or a slot he edited). With Supersets off nothing is ever paired (design review V14);
  *   (b) only when asked (`pushEffort`, the workout's `+N min` offer, workout-table-v3 §5): accessory last sets to
  *       RPE 9. Today and Your workout have no effort step;
- *   (c) the cheapest cut, as the least training lost (D9; SP2, the design track's 23 Oct proposal, for Ben to
- *       confirm): of every way of keeping each accessory at 2+ sets or leaving it out, the one that fits and keeps the
- *       most training value. Value per set (`FIT_SET_VALUE`): compound accessory 3, isolation 2, abs 2.5 (Ben's
- *       choice), extra 1.5 (another group's isolation, or an exercise with no builder group such as cardio). Ties: more
- *       sets kept, then more of the time used, then the earlier exercises kept. So it cuts only as far as needed:
- *       nothing it left out or cut could come back and still fit (review todaylean B1), and a compound is never
- *       dropped for want of two isolation sets (design review V15). The main lift is never cut; at least one exercise
- *       stays. Less time never keeps more training, but a shorter fit isn't always a subset of a longer one.
+ *   (3) accessory sets down to 2, nothing left out: of every way of keeping each accessory at 2+ sets, the one that
+ *       fits and keeps the most training value, so the lowest-value sets go first (`FIT_SET_VALUE`: extra 1.5,
+ *       isolation 2, abs 2.5, compound 3). Wherever trimming alone fits, nothing is left out. A main sub-role's
+ *       exercise (below) loses sets only once every other accessory is at 2 (Ben, 27 Oct: sets before exercises, so
+ *       the 24 Oct "others are cut first" now means others' sets first, then others left out);
+ *   (4) only then leave out whole accessories: the least training lost (D9; SP2): of every way of keeping each
+ *       accessory at 2+ sets or leaving it out, the one that fits and keeps the most training value. Ties: more sets
+ *       kept, then more of the time used, then the earlier exercises kept. So it cuts only as far as needed: nothing
+ *       it left out or cut could come back and still fit (review todaylean B1), and a compound is never dropped for
+ *       want of two isolation sets (design review V15). The main lift is never cut; at least one exercise stays.
  *       (Ben, 24 Oct) Sub-role coverage: on a day whose main group has main sub-roles (`BUILDER_SUB_ROLES`: a Back
  *       day's vertical pull and row) the fit keeps one exercise for each (`subRoleGuards`). Other exercises are cut first; if that isn't enough, those
  *       exercises keep their place and lose sets (down to 2) before anything else they could keep; still too long, the
  *       later main sub-role goes before the earlier one (the row before the vertical pull); only then is coverage given up.
- * Main-lift sets and loads never change for time. Still over → `over`. Length clamped to 15–180.
+ * Main-lift sets, loads and rests never change for time. Still over → `over`. Length clamped to 15–180.
  * Longer (grow): normal rests back first; then exercises (a second arm exercise, then a main-group accessory), then
  * +1 set on accessories (max 4). The plan's own spare minutes stay as a buffer: only time beyond it is filled.
  * Slots Ben edited (`touched`) are never cut, paired or grown.
@@ -150,14 +156,16 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
   const steps: BuilderFitStep[] = [];
   if (!over(w)) return opts.grow ? grow(w, ctx, opts) : done(w, steps, 'fits');
 
-  // (a) Free savings: shorter rests, then shortest.
+  // (1) Accessory rests, one level at a time, no lower than Ben's `Rest when short on time` (the main lift's never move).
+  const restFloor = ctx.fitRestLevel ?? DEFAULT_FIT_REST_LEVEL;
   for (const level of ['shorter', 'shortest'] as const) {
+    if (rank(level) > rank(restFloor)) break;
     if (rank(w.restLevel) >= rank(level)) continue;
     steps.push({ kind: 'rest', from: w.restLevel, to: level });
     w = { ...w, restLevel: level };
     if (!over(w)) return done(w, steps, 'fitted');
   }
-  // Then, with Supersets on only, pairs (no work lost); never a slot Ben edited.
+  // (2) Then, with Supersets on only, pairs (no work lost); never a slot Ben edited.
   if (opts.supersets) {
     const blocks = pairSlots(w.blocks, ctx.info, { skip: (s) => s.touched === true });
     const made = blocks.filter((b) => b.slots.length > 1 && !w.blocks.includes(b));
@@ -185,9 +193,16 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts
   if (pushed.length > 0) steps.push({ kind: 'effort', slotKeys: pushed });
   if (!over(w)) return done(w, steps, 'fitted');
 
-  // (c) The least training lost: every way of keeping each accessory (2+ sets, or left out) is weighed at once,
-  // keeping the main sub-roles' exercises as long as anything else can go (Ben, 24 Oct).
   const valueOf = (s: BuilderSlot) => fitSetValue(s.exerciseId, ctx.info, opts.mainGroup);
+  // (3) Accessory sets down to 2, nothing left out (Ben, 27 Oct): the most value kept, the main sub-roles' sets last
+  // (their value is weighed first, as in step 4).
+  const trimmed = leastLostFit(w, ctx, limitS, valueOf, new Map(subRoleGuards(w, ctx.info, opts.mainGroup).map((g) => [g.slotKey, 'kept'])), false);
+  if (trimmed.fits) {
+    steps.push(...trimmed.steps);
+    return done(trimmed.workout, steps, 'fitted');
+  }
+  // (4) The least training lost: every way of keeping each accessory (2+ sets, or left out) is weighed at once,
+  // keeping the main sub-roles' exercises as long as anything else can go (Ben, 24 Oct).
   const best = guardedFit(w, ctx, limitS, valueOf, opts.mainGroup);
   steps.push(...best.steps);
   return done(best.workout, steps, best.fits ? 'fitted' : 'over');
@@ -227,7 +242,7 @@ export function subRoleGuards(w: BuilderWorkout, info: BuilderInfoLookup, mainGr
 type GuardMode = 'full' | 'kept';
 
 /**
- * Step (c) with sub-role coverage (Ben, 24 Oct), in order, the first that fits: the guarded exercises whole (others are
+ * Step (4) with sub-role coverage (Ben, 24 Oct), in order, the first that fits: the guarded exercises whole (others are
  * cut); then kept with fewer sets (their sets go before anything else's); then without the later sub-roles, one at a
  * time (the row before the vertical pull); then no guard at all (the plain least-lost fit, or the shortest).
  */
@@ -288,7 +303,7 @@ function keepsMore(a: FitState, b: FitState, secs?: { a: number; b: number }): b
  * out (a slot with fewer than 2 keeps its own or goes); a pair left with one member is that one alone (`removeSlot`).
  * More kept first, so a lower index keeps more of the earlier slot.
  */
-function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, valueOf: (s: BuilderSlot) => number, guard: ReadonlyMap<string, GuardMode>): BlockChoice[] {
+function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, valueOf: (s: BuilderSlot) => number, guard: ReadonlyMap<string, GuardMode>, mayLeaveOut: boolean): BlockChoice[] {
   const per = b.slots.map((s) => {
     if (s.main || s.touched === true) return null;
     const n = workingCount(s);
@@ -297,7 +312,7 @@ function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, v
     if (mode === 'full') return [n];
     const keep: number[] = [];
     for (let k = n; k >= Math.min(n, FIT_RULES.minAccessorySets); k -= 1) keep.push(k);
-    return mode === 'kept' ? keep : [...keep, 0];
+    return mode === 'kept' || !mayLeaveOut ? keep : [...keep, 0];
   });
   const out: BlockChoice[] = [];
   const walk = (i: number, counts: number[]): void => {
@@ -338,15 +353,15 @@ function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, v
 }
 
 /**
- * Step (c), the least training lost (Ben's "the cheapest cut", D9; fit-to-time 23 Oct "the least training lost, not
+ * Steps (3) and (4) (`mayLeaveOut` false: step 3, sets only), the least training lost (Ben's "the cheapest cut", D9; fit-to-time 23 Oct "the least training lost, not
  * one step at a time", SP2): of every way to keep each cuttable accessory at 2+ sets or leave it out, the one that fits
  * and keeps the most training value (`FIT_SET_VALUE`); ties: more sets kept, then more of the time used, then the
  * earlier exercises kept. Exact, by block (an estimate is a sum over blocks, `estimateBuilderSeconds`), so nothing it
  * left out or cut could come back and still fit. Nothing fits: the shortest it can be (status over). The main lift and
  * Ben's edited slots are never cut; at least one exercise stays.
  */
-function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, valueOf: (s: BuilderSlot) => number, guard: ReadonlyMap<string, GuardMode>): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
-  const choices = w.blocks.map((b) => blockChoices(b, w, ctx, valueOf, guard));
+function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, valueOf: (s: BuilderSlot) => number, guard: ReadonlyMap<string, GuardMode>, mayLeaveOut = true): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
+  const choices = w.blocks.map((b) => blockChoices(b, w, ctx, valueOf, guard, mayLeaveOut));
   // The blocks' seconds (with a changeover each) against the limit: setup is once, and the first block has no changeover.
   const room = limitS - BUILDER_TIME.setupS + BUILDER_TIME.betweenS;
   const minAfter: number[] = new Array<number>(choices.length + 1).fill(0);

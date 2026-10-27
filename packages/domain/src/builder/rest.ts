@@ -22,19 +22,30 @@ export const BUILDER_REST_DEFAULTS = {
 } as const;
 
 /**
- * Fit-to-time rest levels (§2.0.2 3a). `shortest` is the spec's
- * (main 3:00→2:00, compound 2:00→1:15, isolation 1:30→1:00, round
- * 1:30→1:00). OPEN (for Ben): `shorter` is not specified; here it is
- * halfway, rounded down to 15 s; the main lift's top set and back-offs move
- * by the same minute as its working sets. Warm-ups and `before a drop`
- * never change.
+ * Fit-to-time rest levels (Ben, 27 Oct; user-facing names `Standard rest` / `Medium rest` / `Minimum rest`,
+ * `REST_LEVEL_NAMES`). Accessory rests only: the main lift's top set, back-offs and working sets NEVER change for time
+ * (they keep the normal 3:30 / 3:00 / 3:00 at every level). `shorter` (Medium): compound 2:00 → 1:30, isolation and
+ * superset round 1:30 → 1:15. `shortest` (Minimum): isolation and round 1:00; a compound accessory never below 1:30.
+ * Warm-ups and `before a drop` never change.
  */
 type RestTable = Record<'top' | 'backoff' | 'workingMain' | 'workingCompound' | 'workingIsolation' | 'round', number>;
 
+const MAIN_RESTS = { top: BUILDER_REST_DEFAULTS.top, backoff: BUILDER_REST_DEFAULTS.backoff, workingMain: BUILDER_REST_DEFAULTS.workingMain } as const;
+
 export const BUILDER_REST_LEVELS: Readonly<Record<Exclude<RestLevel, 'normal'>, RestTable>> = {
-  shorter: { top: 180, backoff: 150, workingMain: 150, workingCompound: 90, workingIsolation: 75, round: 75 },
-  shortest: { top: 150, backoff: 120, workingMain: 120, workingCompound: 75, workingIsolation: 60, round: 60 },
+  shorter: { ...MAIN_RESTS, workingCompound: 90, workingIsolation: 75, round: 75 },
+  shortest: { ...MAIN_RESTS, workingCompound: 90, workingIsolation: 60, round: 60 },
 };
+
+/** (Ben, 27 Oct) What Ben reads for each rest level (Profile › Training › `Rest when short on time`, the fit's note). */
+export const REST_LEVEL_NAMES: Readonly<Record<RestLevel, string>> = {
+  normal: 'Standard rest',
+  shorter: 'Medium rest',
+  shortest: 'Minimum rest',
+};
+
+/** (Ben, 27 Oct) The shortest rest level a time fit may go to when Ben hasn't chosen: `Minimum rest`. */
+export const DEFAULT_FIT_REST_LEVEL: RestLevel = 'shortest';
 
 /** §9 Q7 limits (`BUILD_LIMITS`): before a drop 0–1:00; everything else 0:30–6:00; 15 s steps. */
 export const BUILDER_REST_LIMITS = {
@@ -138,4 +149,13 @@ export function workingRestS(slot: BuilderSlot, info: BuilderInfoLookup, level: 
 export function restClockText(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   return `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** (Ben, 27 Oct) Profile › Training › `Rest when short on time`: the row title and its options, in order. */
+export const REST_WHEN_SHORT_COPY = { title: 'Rest when short on time' } as const;
+export const FIT_REST_LEVEL_OPTIONS: readonly RestLevel[] = ['normal', 'shorter', 'shortest'];
+
+/** Ben's `Rest when short on time` from his training profile (absent or unreadable: Minimum rest). */
+export function fitRestLevelOf(profile: { fitRestLevel?: RestLevel | undefined } | null): RestLevel {
+  return profile?.fitRestLevel ?? DEFAULT_FIT_REST_LEVEL;
 }
