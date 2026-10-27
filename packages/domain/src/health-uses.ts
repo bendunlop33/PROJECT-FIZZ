@@ -308,12 +308,23 @@ export function bodyweightDaily(entries: readonly BodyweightEntry[], unit: Weigh
     .map((e) => ({ date: e.date, value: round1(convertMass({ value: e.value, unit: e.unit }, unit).value), from: e.from, id: e.id, sourceName: e.sourceName }));
 }
 
-/** The mean of the points dated within the 7 days ending on each point (points before the range count too). */
+/** The mean of the points dated within the 7 days ending on each point (points before the range count too); oldest first. */
 export function bodyweightTrailingAverage(points: readonly Pick<BodyweightPoint, 'date' | 'value'>[], days = BODYWEIGHT_AVG_DAYS): number[] {
-  return points.map((p) => {
-    const win = points.filter((q) => q.date <= p.date && daysBetween(q.date, p.date) < days);
-    return round1(win.reduce((m, q) => m + q.value, 0) / win.length);
+  // Points are oldest first: a sliding window over day numbers (linear; a year of daily points stays cheap).
+  const first = points[0]?.date;
+  const dayNo = points.map((p) => (first === undefined ? 0 : daysBetween(first, p.date)));
+  const out: number[] = [];
+  let lo = 0;
+  let sum = 0;
+  points.forEach((p, i) => {
+    sum += p.value;
+    while ((dayNo[i] ?? 0) - (dayNo[lo] ?? 0) >= days) {
+      sum -= points[lo]?.value ?? 0;
+      lo += 1;
+    }
+    out.push(round1(sum / (i - lo + 1)));
   });
+  return out;
 }
 
 function signed(n: number, unit: WeightUnit): string {
