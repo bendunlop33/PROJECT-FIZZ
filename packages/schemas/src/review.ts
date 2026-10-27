@@ -100,6 +100,28 @@ export const ReviewFactSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('week_day'), name: z.string().trim().min(1).max(60), done: z.boolean(), localDate: LocalDateSchema.nullable() }),
   /** (Weekly) Runs Ben logged (only his own activities, rule 6); distance only when every run had one. */
   z.object({ kind: z.literal('runs'), count: z.int().min(0).max(50), distanceM: z.number().min(0).max(5_000_000).nullable() }),
+  /**
+   * (Weekly; Ben, 27 Oct) Other activity done in the week, one per group: Ben's own and what was read from Apple
+   * Health (a linked watch workout is the workout, never one of these). Totals only when every one gave the value.
+   */
+  z.object({
+    kind: z.literal('activity_group'),
+    group: z.enum(['run', 'ride', 'swim', 'walk', 'cardio', 'sport', 'strength', 'other']),
+    count: z.int().min(1).max(50),
+    durationS: z.int().min(0).max(7 * 86_400).nullable(),
+    distanceM: z.number().min(0).max(5_000_000).nullable(),
+    fromHealth: z.boolean(),
+  }),
+  /**
+   * (Weekly; Ben, 27 Oct) Sleep and resting heart rate from Apple Health, raw: the week's average minutes asleep over
+   * the nights recorded, and its first and last resting heart rate. Source names are data (rule 8). No score (rule 6).
+   */
+  z.object({
+    kind: z.literal('health_week'),
+    sleep: z.object({ avgMin: z.int().min(0).max(1440), nights: z.int().min(1).max(7) }).nullable(),
+    restingHr: z.object({ start: z.object({ localDate: LocalDateSchema, bpm: z.int().min(20).max(250) }), end: z.object({ localDate: LocalDateSchema, bpm: z.int().min(20).max(250) }) }).nullable(),
+    sources: z.array(z.string().trim().min(1).max(40)).max(4),
+  }),
   /** (Weekly) `How did it feel?` taps on this week's Summaries (Ben's own words, never inferred). */
   z.object({ kind: z.literal('feel'), easy: z.int().min(0).max(50), good: z.int().min(0).max(50), hard: z.int().min(0).max(50) }),
   /**

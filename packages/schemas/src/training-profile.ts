@@ -155,6 +155,8 @@ export type TrainingChange =
   | { kind: 'experience'; level: LiftingExperience | null }
   | { kind: 'add_weight'; entry: Omit<WeightEntry, 'recordedAtUtc'> }
   | { kind: 'delete_weight'; entryId: string }
+  /** (Ben, 27 Oct) Correct one of his entries: value, unit and date (Undo is the same change back). */
+  | { kind: 'edit_weight'; entryId: string; value: number; unit: WeightEntry['unit']; date: string }
   | { kind: 'goal'; goal: TrainingGoal | null }
   | { kind: 'check_in_weeks'; weeks: number }
   | { kind: 'days_per_week'; days: number | null }

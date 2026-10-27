@@ -18,7 +18,7 @@ import {
 
 import type { SessionAggregate } from '@fizz/schemas';
 
-import { addDays, localDateOf, localMidnightUtcMs } from './calendar';
+import { addDays, localDateOf, localHourUtcMs, localMidnightUtcMs } from './calendar';
 import { isInHistory } from './session/deletion';
 import { NBSP } from './display';
 import { deriveId } from './stable';
@@ -714,10 +714,24 @@ export function restingHeartRateDays(samples: readonly HealthRestingHrSample[]):
 
 const ASLEEP: ReadonlySet<string> = new Set(['asleep', 'core', 'deep', 'rem']);
 
+/** A night runs from 18:00 the evening before to 12:00 on its date (local). */
+export const SLEEP_NIGHT = { eveningHour: 18, noonHour: 12 } as const;
+
 /**
- * Minutes asleep per night (the local date it ended), oldest first. Only asleep stages count; overlapping
- * segments of one source count once; with two sources (watch and phone) the night is the source with the most
- * sleep that night, never the two added together.
+ * The night (its local wake-up date) a sleep segment belongs to (Ben, 27 Oct): a segment ending at or after 18:00
+ * belongs to the next date, so 22:30–23:59 and 00:00–06:30 are one night. A segment starting at or after noon on
+ * that date (an afternoon nap) belongs to no night: null.
+ */
+export function sleepNightOf(startMs: number, endMs: number, tz: string): string | null {
+  const endDate = localDateOf(endMs, tz);
+  const night = endMs >= localHourUtcMs(endDate, SLEEP_NIGHT.eveningHour, tz) ? addDays(endDate, 1) : endDate;
+  return startMs < localHourUtcMs(night, SLEEP_NIGHT.noonHour, tz) ? night : null;
+}
+
+/**
+ * Minutes asleep per night (its local wake-up date, `sleepNightOf`), oldest first. Only asleep stages count;
+ * overlapping segments of one source count once; with two sources (watch and phone) the night is the source with
+ * the most sleep that night, never the two added together. Afternoon naps are left out.
  */
 export function sleepNights(samples: readonly HealthSleepSample[]): HealthDailyValue[] {
   const groups = new Map<string, { date: string; source: string; spans: [number, number][] }>();
@@ -726,7 +740,8 @@ export function sleepNights(samples: readonly HealthSleepSample[]): HealthDailyV
     const start = toMs(s.startUtc);
     const end = toMs(s.endUtc);
     if (!(end > start)) continue;
-    const date = localDateOf(end, s.tz);
+    const date = sleepNightOf(start, end, s.tz);
+    if (date === null) continue;
     const key = `${date}|${s.sourceBundleId}`;
     const g = groups.get(key) ?? { date, source: healthSourceText(s.sourceName), spans: [] };
     g.spans.push([start, end]);
