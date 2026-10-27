@@ -263,9 +263,11 @@ describe('the screens show the service’s live number (no estimate of their own
   it('Your workout, Today’s card and the editor pass the estimate, its warning tone and its steps', () => {
     const page = read('screens/builder/BuilderWorkoutScreen.tsx');
     expect(page).toContain('over={v.time.over}');
+    // (Redesign v3) Today's card shows the live estimate (`Est. time`) and the warning; its steps are Your workout's.
     const card = read('screens/today/TodaySession.tsx');
-    expect(card).toContain('over={time.over}');
-    expect(card).toContain("dispatch({ kind: 'minutes_to', minutes: to })");
+    expect(card).toContain('todayCardRows(view, gymLabel)');
+    expect(card).toContain('time?.overText != null');
+    expect(read('today/today-view.ts')).toContain('TODAY_V2_COPY.minutesValue(v.time?.minutes ?? v.minutes)');
     const editor = read('screens/builder/EditWorkoutScreen.tsx');
     expect(editor).toContain('editorTimeView({ estimate: minutes, length: timeLength, fitted: fit !== null })');
     expect(editor).toContain('over={time?.over ?? false}');

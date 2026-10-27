@@ -281,21 +281,19 @@ describe('V5: Edit opens Your workout with today’s draft; Start is one tap', (
 describe('V5: the screen', () => {
   const screen = read('screens/TodayScreen.tsx');
   const parts = read('screens/today/TodaySession.tsx');
-  it('no chip row (D7), one card for every day (no Main lift / Accessories / Abs / Supersets / breakdown / Mix it up on Today)', () => {
+  it('no chip row (D7), one card for every day (no Main lift / Accessories / Abs / Supersets / breakdown / Mix it up controls on Today)', () => {
     expect(screen).not.toContain('OtherSessionChips');
     expect(parts).not.toContain('export function OtherSessionChips');
-    const card = parts.slice(parts.indexOf('export function SessionCard('));
+    const card = parts.slice(parts.indexOf('export function TodayCard('), parts.indexOf('/** A rest day on a Set days plan'));
     for (const gone of ['TODAY_V2_COPY.mainLift', 'TODAY_V2_COPY.accessories', 'TODAY_V2_COPY.abs', 'TODAY_V2_COPY.supersets', 'TODAY_V2_COPY.breakdown', 'TODAY_V2_COPY.mix', 'view.lean']) expect(card).not.toContain(gone);
-    expect(card).toContain('{timeRow}');
-    expect(card).toContain('<PrimaryButton label={TODAY_V2_COPY.start}');
-    expect(card).toContain('<SecondaryButton label={TODAY_V2_COPY.edit}');
+    expect(card).toContain('<WorkoutList rows={view.list}');
+    expect(card).toContain('<TextButton label={TODAY_V2_COPY.edit} onPress={onEdit} />');
   });
-  it('no plan: `No plan` and `Set up a plan ›` on one row, then the day row (split days with NEXT, ⋯) and the card', () => {
-    const block = screen.slice(screen.indexOf('const sessionBlock = '));
-    expect(block.indexOf('TODAY_V2_COPY.noPlan')).toBeLessThan(block.indexOf('<DayControl'));
-    expect(block.indexOf('<DayControl')).toBeLessThan(block.indexOf('<SessionCard'));
-    expect(screen).toContain('(session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey');
-    // ⋯ lists the other workouts with Empty workout and Build your own, with or without a plan.
-    expect(screen).toContain("days={session === null ? [] : listSheet === 'all' ? [...session.days, ...session.others] : [...(segs?.overflow ?? []), ...session.others]}");
+  it('no plan: `No plan` and `Set up a plan ›` on one row, then the card (redesign v3 option C: the days are in `Push ⌄`)', () => {
+    const block = screen.slice(screen.indexOf('const cardBlock = '));
+    expect(block.indexOf('TODAY_V2_COPY.noPlan')).toBeLessThan(block.indexOf('<TodayCard'));
+    expect(screen).toContain('todayDayRows({ days: session.days, nextKey:');
+    // `Push ⌄` lists the days and the other workouts, then Build your own, Log a past workout and ＋ Activity.
+    expect(screen).toContain('others={session === null ? [] : session.others.map(');
   });
 });

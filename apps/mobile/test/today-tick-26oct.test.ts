@@ -32,12 +32,12 @@ describe('Today’s clock tick (review 26 Oct, finding 8)', () => {
     expect(screen).not.toMatch(/setInterval\([\s\S]{0,80}?\}, 1000\)/);
   });
 
-  it('the strip and the day row are memoised (not rebuilt on every render)', () => {
-    expect(screen).toMatch(/const strip = useMemo\(/);
-    expect(screen).toMatch(/const segs = useMemo\(/);
+  it('the week tiles and the day sheet’s rows are memoised (not rebuilt on every render)', () => {
+    expect(screen).toMatch(/const tiles = useMemo\(/);
+    expect(screen).toMatch(/const pickRows = useMemo\(/);
     // Both hooks run before the early returns (rules of hooks).
     const firstReturn = screen.indexOf("if (data.state === 'loading') return");
-    expect(screen.indexOf('const strip = useMemo(')).toBeLessThan(firstReturn);
-    expect(screen.indexOf('const segs = useMemo(')).toBeLessThan(firstReturn);
+    expect(screen.indexOf('const tiles = useMemo(')).toBeLessThan(firstReturn);
+    expect(screen.indexOf('const pickRows = useMemo(')).toBeLessThan(firstReturn);
   });
 });

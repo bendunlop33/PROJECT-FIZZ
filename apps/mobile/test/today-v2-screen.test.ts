@@ -102,7 +102,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
   const parts = read('screens/today/TodaySession.tsx');
 
   it('Start is one tap: commit then start, the check-in sheet only when due; never the overview or builder', () => {
-    const start = screen.slice(screen.indexOf('async function startCard()'), screen.indexOf('async function editCard()'));
+    const start = screen.slice(screen.indexOf('async function startCard('), screen.indexOf('async function editCard()'));
     expect(start).toContain('await commitCard(sel, fresh, commitKey)');
     expect(screen).toContain('return services.todaySession.commit(data2, sel, opId);');
     expect(start).toContain('services.todaySession.start');
@@ -157,7 +157,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
 
   it('44 pt targets, VoiceOver for every gesture, lists at accessibility sizes', () => {
     // Small chips keep 44 pt with hitSlop (34 + 5 + 5) inside 44 pt rows with no gap, so slop never reaches the next
-    // row (review S9); segments 48; strip cells ≥ 44 wide.
+    // row (review S9); segments 48; (redesign v3) week tiles ≈42 wide with 7 pt gaps reach 44+ with their 3 pt hitSlop.
     expect(parts).toContain('const ROW_H = 44;');
     expect(parts).toContain('const HIT = { top: 5, bottom: 5, left: 4, right: 4 } as const;');
     // Abs and Supersets: the whole row is the switch (a View's hitSlop doesn't enlarge an iOS Switch).
@@ -165,18 +165,17 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(parts).toContain('accessibilityState={{ checked: value }}');
     expect(parts).not.toMatch(/<View hitSlop=\{HIT\}>\s*<Switch/);
     expect(parts).toMatch(/minHeight: 34,[\s\S]*?hitSlop=\{HIT\}|hitSlop=\{HIT\}[\s\S]*?minHeight: 34,/);
-    expect(parts).toContain('minHeight: 48,');
-    // Strip cells: seven equal columns (flex 1, basis 0), each ≥ 44 pt at 375 pt (20 pt margins, 2 pt gaps, the divider).
-    expect(parts).toMatch(/flex: 1,\s*flexBasis: 0,\s*minWidth: 0,/);
-    expect((375 - 2 * 20 - 6 * 2 - 1) / 7).toBeGreaterThanOrEqual(44);
-    // The Time row (shared with Your workout since 22 Oct; its note per fit-to-time's 22 Oct revision): one adjustable element.
-    expect(parts).toContain('<TimeNoteRow');
+    expect(parts).toContain('minHeight: 52,');
+    // Week tiles: seven equal columns (flex 1, basis 0); at 375 pt (20 pt margins, 7 pt gaps) each ≈42 pt plus 3 pt slop a side.
+    expect(parts).toMatch(/flex: 1, flexBasis: 0, minWidth: 0,/);
+    expect(parts).toContain('hitSlop={TILE_SLOP}');
+    expect((375 - 2 * 20 - 6 * 7) / 7 + 2 * 3).toBeGreaterThanOrEqual(44);
+    // (Redesign v3) Time left the card: `Exercises 5 (1 left out)` opens the fit detail; the stepper is Your workout's.
+    expect(parts).not.toContain('<TimeNoteRow');
     expect(read('ui/time-stepper.tsx')).toContain('<TimeStepper minutes={minutes} over={over} onStep={onStep} />');
-    expect(read('ui/time-stepper.tsx')).toContain("accessibilityRole=\"adjustable\"");
     expect(parts).toContain('fontScale >= AX_FONT_SCALE');
-    // The strip lists at AX sizes; the day row from xxxLarge (Ben, 26 Oct: `dayRowAsList`).
+    // The week lists at AX sizes (one list).
     expect(parts.match(/if \(ax\) \{/g)).toHaveLength(1);
-    expect(parts).toContain('if (asList) {');
     // No swipe gestures on Today (§2.0.5): every action is a tap.
     expect(parts).not.toMatch(/PanResponder|Swipeable|onSwipe/);
   });
@@ -189,28 +188,31 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
   });
 
   it('Edit’s op ID is cleared once saved (review S6); (V5) no card has Main lift chips, with or without a plan', () => {
-    const card = parts.slice(parts.indexOf('export function SessionCard('));
+    const card = parts.slice(parts.indexOf('export function TodayCard('), parts.indexOf('/** A rest day on a Set days plan'));
     expect(card).not.toContain('TODAY_V2_COPY.mainLift');
+    expect(card).not.toContain('<Chip');
     const edit = screen.slice(screen.indexOf('async function editCard()'), screen.indexOf('function buildYourOwn()'));
     expect(edit).toContain('startOps.current.delete(editKey)');
     expect(edit).toContain('session.equipmentVersion');
   });
 
-  it('(V5, D7) no plan: the day row (Profile › Split, NEXT, ⋯) stays after a day is picked, with Build your own secondary beside the card', () => {
-    expect(screen).toContain('(session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey');
-    expect(screen).toContain("noPlan: session?.status === 'no_plan', cardShown: view !== null");
-    expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: true, upNext: false }).buildYourOwn).toBe('secondary');
+  it('(V5, D7; redesign v3 option C) the days (plan, or Profile › Split) are in `Push ⌄` → Today’s workout, with Build your own, Log a past workout and ＋ Activity', () => {
+    expect(screen).toContain('todayDayRows({ days: session.days, nextKey:');
+    expect(screen).toContain('<TodayPickSheet');
+    const sheet = parts.slice(parts.indexOf('export function TodayPickSheet('), parts.indexOf('// Cards:'));
+    for (const t of ['TODAY_V2_COPY.buildYourOwn', 'PAST_LOG_COPY.entry', 'TODAY_SCREEN_COPY.addActivity']) expect(sheet).toContain(t);
+    expect(screen).not.toContain('<DayControl');
   });
 
   it('(V5) no plan is compact: `No plan` and `Set up a plan ›` on one row, no chip row (D7); with no split and no card, Build your own is primary beside ＋ Activity', () => {
-    const block = screen.slice(screen.indexOf('const sessionBlock = '), screen.indexOf('return (\n    <View style={{ flex: 1, backgroundColor'));
-    const noPlan = block.slice(block.indexOf('{noPlan ? ('), block.indexOf('{segs !== null ? ('));
+    const block = screen.slice(screen.indexOf('const cardBlock = '), screen.indexOf('return (\n    <View style={{ flex: 1, backgroundColor'));
+    const noPlan = block.slice(block.indexOf('{noPlan ? ('), block.indexOf("{session.status === 'paused' ? ("));
     expect(noPlan).toContain('TODAY_V2_COPY.noPlan');
     expect(noPlan).toContain('TODAY_V2_COPY.setUpPlan');
     expect(noPlan).not.toContain('<PrimaryButton');
     expect(screen).not.toContain('OtherSessionChips');
-    const bottom = screen.slice(screen.indexOf("{actions.buildYourOwn === 'primary' ? ("));
-    expect(bottom.slice(0, 400)).toContain('<PrimaryButton label={TODAY_V2_COPY.buildYourOwn}');
+    // (Redesign v3) Starting is the pinned dock's: Start Plan Workout and Start Empty Workout.
+    expect(screen).toContain('<StartDock plan={dockPlan}');
     expect(todayActions({ openWorkout: false, read: 'ready', noPlan: true, cardShown: false, upNext: false })).toEqual({ gymRow: true, failed: false, upNext: false, buildYourOwn: 'primary', emptyWorkout: true, emptyOnCard: false });
   });
 
@@ -218,7 +220,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     const hook = screen.slice(screen.indexOf('function useTodaySessionData('));
     expect(hook).not.toContain('.catch(() => null)');
     expect(hook).toContain('setFailed(bad)');
-    expect(screen).toContain('actions.failed ? <StatusLine');
+    expect(screen).toContain('sessionFailed ? <StatusLine');
     expect(screen).toContain('TODAY_SCREEN_COPY.sessionFailed');
     const svc = read('services/today-session.ts');
     expect(svc).toContain('await repos().planDrafts.applied(p.id);');
@@ -248,7 +250,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(screen).toContain('accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNextTitle)}');
     expect(screen).toContain('upNext.edited != null ? `${upNext.title} · ${TODAY_V2_COPY.edited}` : upNext.title');
     expect(screen).toContain('if (upNext.edited != null) void startUpNextDraft(upNext.edited);');
-    expect(screen).toContain("{actions.emptyWorkout ? (");
+    expect(screen).toContain('onEmpty={startEmptyNow}');
   });
 
   it('the header clears the status bar: the safe-area top inset pads the scroll content (Ben 21 Oct: Wednesday ran under the clock)', () => {
@@ -264,27 +266,25 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(screen).not.toContain('contentInsetAdjustmentBehavior="automatic"');
   });
 
-  it('header is one line (§2.0.2, prototype `.hdr`): day name left (shrinks to fit), compact `✦ Coach` + mic right; the gym chip on the session row', () => {
-    const header = parts.slice(parts.indexOf('export function TodayHeader('), parts.indexOf('// The 7-day strip'));
+  it('(redesign v3 §A1, Ben 27 Oct) header: `Tuesday` over `27 October`; ✦ and mic as two round 44 pt icon buttons; the plan week by `This week`', () => {
+    const header = parts.slice(parts.indexOf('export function TodayHeader('), parts.indexOf('// Apple Health line'));
     expect(header).toContain("flexDirection: 'row'");
-    expect(header).not.toContain('flexWrap');
     expect(header).toContain('numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}');
     expect(header).not.toContain('gym');
-    const call = screen.slice(screen.indexOf('<TodayHeader'), screen.indexOf('{strip.length > 0'));
-    expect(call).toContain('<CoachAskBar');
-    expect(call).toMatch(/page="today"\s+compact/);
-    expect(call).not.toContain('GymChip');
-    const row = screen.slice(screen.indexOf('const gymRow = '));
-    expect(row.indexOf('<Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>')).toBeGreaterThan(0);
-    expect(row.indexOf('<Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>')).toBeLessThan(row.indexOf('<GymChip'));
+    const call = screen.slice(screen.indexOf('<TodayHeader'), screen.indexOf('{healthLine !== null'));
+    expect(call).toContain('date={todayDateLine(zoned.utc, zoned.tz)}');
+    expect(call).toMatch(/page="today"\s+compact\s+round/);
+    expect(call).not.toContain('week=');
+    expect(screen).toContain('TODAY_PICK_COPY.planWeek(session.block.text)');
+    expect(read('ui/coach-ask-bar.tsx')).toContain('if (compact && !inline && round) {');
   });
 
-  it('strip labels: centred, one line, shrink to fit (no `…`), pill colours from strip-style', () => {
-    const strip = parts.slice(parts.indexOf('function StripPill('), parts.indexOf('/** A day’s sheet'));
-    expect(strip).toContain('{...STRIP_LABEL_FIT}');
-    expect(strip).toContain('align="center"');
-    expect(strip).toContain('stripPillStyle(item, theme)');
-    expect(strip).not.toContain('status.done.subtle');
+  it('(option B) the week is seven tiles from tile-style; no pills or legend on Today', () => {
+    const tiles = parts.slice(parts.indexOf('export function WeekTiles('), parts.indexOf('/** A tapped day'));
+    expect(tiles).toContain('tileStyle(t, theme)');
+    expect(tiles).toContain('markStyle(m, theme)');
+    expect(parts).not.toContain('StripPill');
+    expect(parts).not.toContain('STRIP_LEGEND');
   });
 
   it('the scroll position survives re-renders (one ScrollView, never keyed)', () => {

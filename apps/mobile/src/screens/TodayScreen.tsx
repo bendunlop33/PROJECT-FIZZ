@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { deriveId, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, sessionCheckInForSkip, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
+import { DEFAULT_TODAY_HEALTH_SHOWS, deriveId, discardCommand, discardConfirmation, formatDuration, HISTORY_COPY, reasonsText, scoreText, sessionCheckInForSkip, TODAY_PICK_COPY, TODAY_V2_COPY, todayDayRows, todayRestDay, toMs, type ResumeRow, type TodayHealthLine, type TodayMain, type WeekTile } from '@fizz/domain';
 import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
@@ -22,13 +22,13 @@ import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import { followLatestDraft, todayActions, todayCardReducer, todaySegments, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
-import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
+import { daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, plannedDayDetail, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { AppText, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
-import { GymChip } from './workout/GymSwitch';
-import { DayControl, DaySheet, RecentSection, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
+import { DaySheet, DoneCard, HealthLine, OfferSheet, RecentList, RestDayCard, SectionLabel, ShowOnTodaySheet, StartDock, TodayCard, TodayHeader, TodayPickSheet, TODAY_SPACING, WeekTiles } from './today/TodaySession';
+import { useDevicePrefs } from '../device/DevicePrefsContext';
 import { LogPastWorkoutSheet } from './workout/LogPastWorkoutSheet';
 import { builderApplyOpId, type BuilderCoachReach } from '@fizz/coach';
 import { setTodaySetupDay } from '../builder/coach-ports';
@@ -57,9 +57,6 @@ import { createOnDeviceSpeech } from '../voice/on-device-speech';
 /** An empty workout, or (No plan) the app's Up next: its routine or the last workout's next session (review today-fix-21oct B1). */
 type StartIntent = { kind: 'empty' } | { kind: 'routine'; routineId: string } | { kind: 'next'; sourceSessionId: string };
 type Nav = NavigationProp<ParamListBase>;
-
-/** Today's `Reviews ›` taps this run: each lands Progress on Reviews again (review b3-wave3-ux S9). */
-let reviewsTaps = 0;
 
 export function TodayScreen() {
   const theme = useTheme();
@@ -100,8 +97,15 @@ export function TodayScreen() {
     reloadSession();
   }, [reloadScreen, reloadSession]);
   const [activitySheet, setActivitySheet] = useState<{ activity: Activity | null } | null>(null);
-  const [daySheet, setDaySheet] = useState<StripCell | null>(null);
-  const [listSheet, setListSheet] = useState<'other' | 'all' | null>(null);
+  const [daySheet, setDaySheet] = useState<WeekTile | null>(null);
+  // (Redesign v3 option C) `Push ⌄` → Today's workout; `✦ 1 change` → the offer; long-press Health → Show on Today.
+  const [pickSheet, setPickSheet] = useState(false);
+  const [offerSheet, setOfferSheet] = useState(false);
+  const [healthSheet, setHealthSheet] = useState(false);
+  // Ben picked a day this visit (the sheet, or Your plan's `Do today`): a rest day's card gives way to it.
+  const [picked, setPicked] = useState(false);
+  const { prefs, update: updatePrefs } = useDevicePrefs();
+  const dataVersion = useDataVersion();
   const [pastLog, setPastLog] = useState(false);
   // The Time note's detail (fit-to-time 22 Oct revision): what the fit changed, and Undo back to the plan's length.
   const [timeDetail, setTimeDetail] = useState(false);
@@ -141,6 +145,7 @@ export function TodayScreen() {
   const pickDay = (key: string) => {
     const initial = session?.initial[key];
     if (initial === undefined) return;
+    setPicked(true);
     setSelection((cur) => todayCardReducer(cur ?? { dayKey: key, controls: initial, open: false, why: false }, { kind: 'day', dayKey: key, initial }));
   };
 
@@ -470,15 +475,16 @@ export function TodayScreen() {
   }
 
   /** `Start`: one tap (the check-in sheet when due). No builder, no overview (§2.0.5). */
-  async function startCard() {
-    if (session === null || selection === null || !guard()) return;
+  async function startCard(override?: TodaySelection) {
+    const chosen = override ?? (selection === null ? null : { dayKey: selection.dayKey, controls: selection.controls });
+    if (session === null || chosen === null || !guard()) return;
     try {
       const g = await ensureGym();
       if (g === null) return;
       // A gym just made: plan on it (its items), not the typical preview.
       const fresh = g.created ? await services.todaySession.load() : session;
       if (fresh === null) return;
-      const sel: TodaySelection = { dayKey: selection.dayKey, controls: selection.controls };
+      const sel: TodaySelection = chosen;
       const commitKey = `commit:${sel.dayKey}:${JSON.stringify(sel.controls)}:${fresh.gymId ?? '-'}:${fresh.equipmentVersion}`;
       const c = await commitCard(sel, fresh, commitKey);
       if (!c.ok) {
@@ -507,6 +513,15 @@ export function TodayScreen() {
       setError(TODAY_SCREEN_COPY.notStarted(e instanceof Error ? e.message : String(e)));
       reload();
     }
+  }
+
+  /** (Ben, 27 Oct) A planned day's line in a tile's sheet: `Back squat · 5 exercises · 45 min`, from its own card. */
+  function plannedDetailOf(data: TodaySessionData, dayName: string): string | null {
+    const day = data.days.find((d) => d.name === dayName) ?? null;
+    const initial = day === null ? undefined : data.initial[day.key];
+    if (day === null || initial === undefined) return null;
+    const v = services.todaySession.card(data, { dayKey: day.key, controls: initial });
+    return v === null ? null : plannedDayDetail(v);
   }
 
   /** `Edit`: the builder on Your workout with this draft (the builder stream's screen). */
@@ -655,18 +670,57 @@ export function TodayScreen() {
     setToast({ text: 'Workout discarded' });
   }
 
-  // (App review 26 Oct, finding 8) The strip and the day row only change with the session, the selection and the main
-  // state, never with a re-render (a toast, a sheet, the rest tick).
+  // (App review 26 Oct, finding 8) The week and the card's label only change with the session, the selection and the
+  // main state, never with a re-render (a toast, a sheet, the rest tick).
   const mainKind = data.state === 'ready' ? (data.value.view?.main.kind ?? 'no_plan') : 'no_plan';
-  const chosenName = view === null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
-  const strip = useMemo(() => (session === null ? [] : services.todaySession.strip(session, mainKind === 'done_today' ? null : chosenName)), [services, session, mainKind, chosenName]);
-  // The day row: the plan's days, or (V5, no plan; D7) Profile › Split's, NEXT on the Up next pick; `⋯` is the other
-  // workouts (Full body, Upper, Push, Empty workout, Build your own). No plan and no split: `⋯` alone.
   const selectedKey = selection?.dayKey ?? null;
-  const segs = useMemo(
-    () => (session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey, selectedKey, paused: session.status === 'paused' })),
-    [session, selectedKey],
+  // (Redesign v3 option C) A rest day on a Set days plan: the rest card until Ben picks a day (`picked`).
+  const restDay = useMemo(
+    () => (session === null || picked || session.status !== 'plan' ? null : todayRestDay({ setDays: session.week.setDays, doneToday: session.doneToday, today: session.localDate, days: session.days, plannedOn: Object.fromEntries(session.week.planned.map((d) => [d.key, d.localDate])) })),
+    [session, picked],
   );
+  const chosenName = view === null || restDay !== null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
+  const tiles = useMemo(() => (session === null ? [] : services.todaySession.week(session, mainKind === 'done_today' ? null : chosenName)), [services, session, mainKind, chosenName]);
+  const pickRows = useMemo(
+    () => (session === null ? [] : todayDayRows({ days: session.days, nextKey: session.status === 'paused' ? null : session.nextKey, selectedKey: restDay === null ? selectedKey : null, today: session.localDate, doneOn: session.week.doneOn, plannedOn: Object.fromEntries(session.week.planned.map((d) => [d.key, d.localDate])) })),
+    [session, selectedKey, restDay],
+  );
+
+  // (Redesign v3 §A2) The Health line: what Ben chose to show, read locally; hidden while Health is off or empty.
+  const shown = prefs.todayHealth ?? DEFAULT_TODAY_HEALTH_SHOWS;
+  const healthShows = useMemo(() => ({ sleep: shown.sleep, rhr: shown.rhr, bodyweight: shown.bodyweight }), [shown.sleep, shown.rhr, shown.bodyweight]);
+  const [healthLine, setHealthLine] = useState<TodayHealthLine | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      void services.health.todayLine(healthShows).then(
+        (l) => {
+          if (alive) setHealthLine(l);
+        },
+        () => undefined,
+      );
+      return () => {
+        alive = false;
+      };
+    }, [services, healthShows, dataVersion]),
+  );
+
+  // (Option C) The done card's `New best` count: the Summary's own definition (tracked lifts' new bests).
+  const doneId = data.state === 'ready' && data.value.view?.main.kind === 'done_today' ? data.value.view.main.sessionId : null;
+  const [doneBests, setDoneBests] = useState<{ id: string; n: number } | null>(null);
+  useEffect(() => {
+    if (doneId === null) return;
+    let alive = true;
+    void services.reviews.sessionBests(doneId).then(
+      (b) => {
+        if (alive) setDoneBests({ id: doneId, n: b.length });
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [services, doneId, dataVersion]);
 
   if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
   if (data.state === 'error') {
@@ -766,63 +820,56 @@ export function TodayScreen() {
     }
   })();
 
-  const doneLine =
-    main.kind === 'done_today' ? (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${main.title}, done today${doneTodayDurationLine(main.title, main.activeMs) ? `, ${doneTodayDurationLine(main.title, main.activeMs) ?? ''}` : ''}. Opens its summary.`}
-        onPress={() => {
-          navigation.navigate('Summary', { sessionId: main.sessionId });
-        }}
-        style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['4'], borderRadius: theme.radius.lg, backgroundColor: theme.colors['status.done.subtle'], opacity: pressed ? 0.7 : 1 })}
-      >
-        <Icon name="checkmark.circle.fill" color="status.done" size={18} />
-        <AppText variant="headline" style={{ flex: 1 }}>
-          {[main.title, doneTodayDurationLine(main.title, main.activeMs)].filter(Boolean).join(' · ')}
-        </AppText>
-        <Icon name="chevron.right" size={14} color="text.tertiary" />
-      </Pressable>
-    ) : null;
-
-  const actions = todayActions({ openWorkout, read: session !== null ? 'ready' : sessionFailed ? 'failed' : 'loading', noPlan: session?.status === 'no_plan', cardShown: view !== null, upNext: session?.upNext != null && session.days.length === 0 });
-  // The gym sits on the session's row (its loads are this gym's), so the header stays one line at 375 pt. It shows
-  // while the session loads and after a failed read too (review today-fix-21oct S3).
-  const gymRow = actions.gymRow ? (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'] }}>
-      <Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>
-      <GymChip
-        gymName={gym?.name ?? null}
-        onPress={() => {
-          if (!gym) navigation.navigate('AddGym');
-          else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: gym.id }, initial: false } });
-        }}
-      />
-    </View>
-  ) : null;
-  const sessionBlock = (() => {
+  // ---------------------------------------------------------------------------
+  // (Redesign v3, Ben 27 Oct; options B and C) The card area: the workout card under `Up next` / `Today`, the rest-day
+  // card, or the done card; the pinned dock starts it. Every value is the service's or a pure view rule's.
+  const noPlan = session?.status === 'no_plan';
+  const upNext = session !== null && noPlan && view === null && session.days.length === 0 ? session.upNext : null;
+  const upNextTitle = upNext === null ? '' : upNext.edited != null ? `${upNext.title} · ${TODAY_V2_COPY.edited}` : upNext.title;
+  const doneMain = main.kind === 'done_today' && selection === null ? main : null;
+  const offerView = offerCard !== null && offerCard.offer !== null && offerCard.offer.lines.length > 0 ? { line: offerCard.line, lines: offerCard.offer.lines, busy: nudgeBusy, onApply: () => { setOfferSheet(false); void onOffer(true); }, onSkip: () => { setOfferSheet(false); void onOffer(false); } } : null;
+  // The gym row: this gym's page (its equipment), or Add a gym. (No Today-only gym switch exists to call.)
+  const openGym = () => {
+    if (!gym) navigation.navigate('AddGym');
+    else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: gym.id }, initial: false } });
+  };
+  const exercisesOpen = prefs.todayExercisesOpen === true;
+  const cardBlock = (() => {
     if (openWorkout) return null;
     if (session === null) {
-      // A failed read keeps every way to start (review S2): Build your own below, Empty workout here.
+      return sessionFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={TODAY_SCREEN_COPY.sessionFailed} action={<TextButton label="Try again" tone="secondary" onPress={reload} />} /> : null;
+    }
+    const label = (text: string) => (
+      <View style={{ marginTop: TODAY_SPACING.aboveCardLabel, marginBottom: TODAY_SPACING.labelToContent - theme.space['3'] }}>
+        <SectionLabel title={text} />
+      </View>
+    );
+    if (doneMain !== null) {
       return (
-        <View style={{ gap: theme.space['2'] }}>
-          {gymRow}
-          {actions.failed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={TODAY_SCREEN_COPY.sessionFailed} action={<TextButton label="Try again" tone="secondary" onPress={reload} />} /> : null}
-          {actions.emptyWorkout ? (
-            <View style={{ alignSelf: 'flex-start' }}>
-              <TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" disabled={starting} onPress={startEmptyNow} />
-            </View>
-          ) : null}
-        </View>
+        <>
+          {label(TODAY_PICK_COPY.today)}
+          <DoneCard
+            title={doneMain.title}
+            rows={doneCardRows(doneMain.activeMs, doneBests?.id === doneMain.sessionId ? doneBests.n : 0)}
+            onSummary={() => {
+              navigation.navigate('Summary', { sessionId: doneMain.sessionId });
+            }}
+          />
+        </>
       );
     }
-    const noPlan = session.status === 'no_plan';
-    const upNext = actions.upNext ? session.upNext : null;
-    const upNextTitle = upNext === null ? '' : upNext.edited != null ? `${upNext.title} · ${TODAY_V2_COPY.edited}` : upNext.title;
+    if (restDay !== null) {
+      return (
+        <>
+          {label(TODAY_PICK_COPY.today)}
+          <RestDayCard next={restDay.text} label={restDay.accessibilityLabel} />
+        </>
+      );
+    }
     return (
-      <View style={{ gap: theme.space['2'] }}>
-        {gymRow}
+      <>
         {noPlan ? (
-          // (§2.0.4 No plan, V5) `No plan` with `Set up a plan ›` on one row; the day row and the card below read as with a plan.
+          // (§2.0.4 No plan, V5) `No plan` with `Set up a plan ›` on one row.
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], flexWrap: 'wrap' }}>
             <AppText variant="title2" accessibilityRole="header">
               {TODAY_V2_COPY.noPlan}
@@ -831,25 +878,15 @@ export function TodayScreen() {
               label={`${TODAY_V2_COPY.setUpPlan} ›`}
               tone="secondary"
               onPress={() => {
-                // (Plan builder, 23 Oct) The builder, no longer the coach or the empty Library (gap T2).
                 navigation.dispatch(openPlanSetup());
               }}
             />
           </View>
         ) : null}
-        {segs !== null ? (
-          <DayControl
-            segments={segs.segments}
-            paused={session.status === 'paused'}
-            onDay={pickDay}
-            onMore={() => {
-              setListSheet('other');
-            }}
-            onAxList={() => {
-              setListSheet('all');
-            }}
-            axLabel={chosenName ?? TODAY_V2_COPY.other}
-          />
+        {session.status === 'paused' ? (
+          <AppText variant="callout" color="text.secondary">
+            {TODAY_V2_COPY.planPaused}
+          </AppText>
         ) : null}
         {upNext !== null ? (
           // No plan and no Profile split: the old Today's Up next (routines in rotation, the longest gap), Start in one tap.
@@ -858,7 +895,6 @@ export function TodayScreen() {
             accessibilityLabel={TODAY_SCREEN_COPY.upNextLabel(upNextTitle)}
             disabled={starting}
             onPress={() => {
-              // (D8) Changed on Your workout (by Ben, or a coach change he applied): that draft starts.
               if (upNext.edited != null) void startUpNextDraft(upNext.edited);
               else if (upNext.routineId !== null) void start({ kind: 'routine', routineId: upNext.routineId });
               else if (upNext.sourceSessionId !== null) void start({ kind: 'next', sourceSessionId: upNext.sourceSessionId });
@@ -881,64 +917,84 @@ export function TodayScreen() {
           </Pressable>
         ) : null}
         {view !== null && selection !== null ? (
-          <SessionCard
-            view={view}
-            why={selection.why}
-            moved={moved}
-            busy={starting}
-            dispatch={act}
-            offer={
-              offerCard === null
-                ? null
-                : {
-                    line: offerCard.line,
-                    lines: offerCard.offer?.lines ?? [],
-                    busy: nudgeBusy,
-                    onApply: () => void onOffer(true),
-                    onSkip: () => void onOffer(false),
-                    // (§6.2) Today only ever shows this one line; the reviews live in Progress.
-                    onReviews: () => {
-                      navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressHome', params: { focus: 'reviews', n: (reviewsTaps += 1) } } });
-                    },
-                  }
-            }
-            onStart={() => void startCard()}
-            onEmpty={actions.emptyOnCard ? startEmptyNow : undefined}
-            onEdit={() => void editCard()}
-            onBackToPlan={() => void backToPlan()}
-            onTimeNote={() => {
-              setTimeDetail(true);
-            }}
-            onEditedTime={(minutes) => void editedTime(minutes)}
-          />
+          <>
+            {label(todayCardLabel(selection.dayKey, session.status === 'paused' ? null : session.nextKey))}
+            <TodayCard
+              view={view}
+              open={exercisesOpen}
+              why={selection.why}
+              moved={moved}
+              gymName={gym?.name ?? null}
+              onGym={openGym}
+              onTitle={() => {
+                setPickSheet(true);
+              }}
+              onEdit={() => void editCard()}
+              onToggle={() => {
+                updatePrefs({ todayExercisesOpen: !exercisesOpen });
+              }}
+              onOffer={() => {
+                setOfferSheet(true);
+              }}
+              onTimeNote={() => {
+                setTimeDetail(true);
+              }}
+              onBackToPlan={() => void backToPlan()}
+              onWhy={() => {
+                act({ kind: 'why' });
+              }}
+            />
+          </>
         ) : null}
-        {actions.emptyWorkout && !actions.emptyOnCard ? (
-          // (Ben, 26 Oct) No card (nothing up next, done today, a paused plan with no day picked): its own row.
+        {view === null && upNext === null && (session.days.length > 0 || session.others.length > 0) ? (
+          // Nothing on the card (a paused plan): the day sheet is one tap away.
           <View style={{ alignSelf: 'flex-start' }}>
-            <TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" disabled={starting} onPress={startEmptyNow} />
+            <TextButton
+              label={`${TODAY_PICK_COPY.title} ›`}
+              tone="secondary"
+              onPress={() => {
+                setPickSheet(true);
+              }}
+            />
           </View>
         ) : null}
-      </View>
+      </>
     );
   })();
+
+  // The dock's primary: the card's day; a rest day's next day early; done or nothing picked: the day sheet.
+  const dockPlan: 'enabled' | 'disabled' | 'hidden' = openWorkout || session === null ? 'hidden' : restDay !== null || doneMain !== null ? 'enabled' : view !== null ? (view.startable ? 'enabled' : 'disabled') : session.days.length > 0 || session.others.length > 0 ? 'enabled' : 'hidden';
+  const onDockPlan = () => {
+    if (session === null) return;
+    if (restDay !== null) {
+      const initial = session.initial[restDay.nextKey];
+      if (initial !== undefined) void startCard({ dayKey: restDay.nextKey, controls: initial });
+      return;
+    }
+    if (doneMain !== null || view === null) {
+      setPickSheet(true);
+      return;
+    }
+    void startCard();
+  };
+  const recentRows = session === null || openWorkout ? [] : todayRecentRows(session.recent);
+  const sheetRows = daySheet === null || session === null ? [] : daySheetRows(daySheet, session.week.feed, (name) => plannedDetailOf(session, name));
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView
         contentInsetAdjustmentBehavior="never"
-        // Re-renders keep the scroll position (Mix it up, a control): the ScrollView stays mounted (§2.0.2).
+        // Re-renders keep the scroll position (a control, the Health line): the ScrollView stays mounted (§2.0.2).
         contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: insets.top + theme.space['3'], paddingBottom: theme.space['6'], gap: theme.space['3'] }}
       >
         <TodayHeader
           title={todayTitle(zoned.utc, zoned.tz)}
-          week={session?.block ?? null}
-          onWeek={() => {
-            navigation.dispatch(openYourPlan(newUuid()));
-          }}
+          date={todayDateLine(zoned.utc, zoned.tz)}
           coach={
             <CoachAskBar
               page="today"
               compact
+              round
               reach={reach}
               speech={speech}
               onOpen={(heard) => {
@@ -951,7 +1007,30 @@ export function TodayScreen() {
             />
           }
         />
-        {strip.length > 0 ? <WeekStrip cells={strip} onDay={setDaySheet} /> : null}
+        {healthLine !== null ? (
+          <HealthLine
+            line={healthLine}
+            onPress={() => {
+              navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressHome' } });
+            }}
+            onLongPress={() => {
+              setHealthSheet(true);
+            }}
+          />
+        ) : null}
+        {tiles.length > 0 ? (
+          <View style={{ gap: TODAY_SPACING.labelToContent }}>
+            <SectionLabel
+              title={TODAY_PICK_COPY.thisWeek}
+              right={session?.block == null ? null : TODAY_PICK_COPY.planWeek(session.block.text)}
+              rightLabel={session?.block?.accessibilityLabel ?? ''}
+              onRight={() => {
+                navigation.dispatch(openYourPlan(newUuid()));
+              }}
+            />
+            <WeekTiles tiles={tiles} onDay={setDaySheet} />
+          </View>
+        ) : null}
 
         <BannerList banners={banners} />
         {interrupted ? (
@@ -972,7 +1051,6 @@ export function TodayScreen() {
         ) : null}
 
         {openHero}
-        {doneLine}
 
         {unlinked && !openWorkout ? (
           <LinkLine
@@ -1008,41 +1086,31 @@ export function TodayScreen() {
 
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
 
-        {sessionBlock}
+        {cardBlock}
 
-        {!openWorkout ? (
-          <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
-            {actions.buildYourOwn === 'primary' ? (
-              <View style={{ flex: 1 }}>
-                <PrimaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} />
-              </View>
-            ) : actions.buildYourOwn === 'secondary' ? (
-              <SecondaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} grow />
-            ) : null}
-            <SecondaryButton
-              label={TODAY_SCREEN_COPY.addActivity}
-              accessibilityLabel={TODAY_SCREEN_COPY.activity}
-              onPress={() => {
-                setActivitySheet({ activity: null });
-              }}
-              grow
+        {/* (Ben, 27 Oct) Recent: the last three things done, newest first. Nothing done: no section. */}
+        {recentRows.length > 0 ? (
+          <View style={{ gap: TODAY_SPACING.labelToContent, marginTop: TODAY_SPACING.aboveCardLabel }}>
+            <SectionLabel title={HISTORY_COPY.recent} />
+            <RecentList
+              rows={recentRows.map((r) => ({
+                key: r.item.key,
+                mark: r.mark,
+                health: r.health,
+                title: r.title,
+                line: r.line,
+                accessibilityLabel: r.accessibilityLabel,
+                onPress: () => {
+                  const it = r.item;
+                  if (it.kind === 'workout') navigation.navigate('Summary', { sessionId: it.sessionId, back: true });
+                  else void openActivity(it.activityId);
+                },
+              }))}
             />
           </View>
         ) : null}
-        {/* (Ben, 26 Oct) Recent: the last 14 days of what Ben did, then All history ›. Nothing done: no section. */}
-        {!openWorkout && session !== null && session.recent.length > 0 ? (
-          <RecentSection
-            items={session.recent}
-            onItem={(it) => {
-              if (it.kind === 'workout') navigation.navigate('Summary', { sessionId: it.sessionId, back: true });
-              else void openActivity(it.activityId);
-            }}
-            onAll={() => {
-              navigation.navigate('History');
-            }}
-          />
-        ) : null}
       </ScrollView>
+      {!openWorkout ? <StartDock plan={dockPlan} busy={starting} onPlan={onDockPlan} onEmpty={startEmptyNow} bottom={theme.space['2']} /> : null}
       <ActivitySheet
         visible={activitySheet !== null}
         activity={activitySheet?.activity ?? null}
@@ -1052,45 +1120,64 @@ export function TodayScreen() {
         onSaved={activitySaved}
       />
       <DaySheet
-        cell={daySheet}
+        title={daySheet === null || sheetRows.length === 0 ? null : daySheetTitle(daySheet.date)}
+        rows={sheetRows}
         onClose={() => {
           setDaySheet(null);
         }}
-        onWorkout={(id) => {
+        onOpen={(o) => {
           setDaySheet(null);
-          navigation.navigate('Summary', { sessionId: id, back: true });
-        }}
-        onActivity={(id) => {
-          setDaySheet(null);
-          void openActivity(id);
+          if (o.kind === 'summary') navigation.navigate('Summary', { sessionId: o.sessionId, back: true });
+          else if (o.kind === 'activity') void openActivity(o.activityId);
+          else {
+            const routineId = session?.days.find((d) => d.name === o.dayName)?.templates[0]?.routineId ?? null;
+            if (routineId !== null) navigation.navigate('Tabs', { screen: 'Library', params: { screen: 'LibraryPlanDay', params: { routineId, name: o.dayName }, initial: false } });
+          }
         }}
       />
-      <SessionListSheet
-        visible={listSheet !== null}
-        title={listSheet === 'all' ? 'Day' : TODAY_V2_COPY.otherLabel}
-        days={session === null ? [] : listSheet === 'all' ? [...session.days, ...session.others] : [...(segs?.overflow ?? []), ...session.others]}
-        selectedKey={selection?.dayKey ?? null}
-        nextKey={session?.nextKey ?? null}
+      <TodayPickSheet
+        visible={pickSheet}
+        rows={pickRows}
+        others={session === null ? [] : session.others.map((d) => ({ key: d.key, name: d.name, selected: restDay === null && d.key === selectedKey }))}
         onPick={(key) => {
-          setListSheet(null);
+          setPickSheet(false);
           pickDay(key);
-        }}
-        onEmpty={() => {
-          listAfter.arm(() => void start({ kind: 'empty' }));
-          setListSheet(null);
         }}
         onBuild={() => {
           listAfter.arm(buildYourOwn);
-          setListSheet(null);
+          setPickSheet(false);
         }}
         onPastLog={() => {
           listAfter.arm(() => {
             setPastLog(true);
           });
-          setListSheet(null);
+          setPickSheet(false);
+        }}
+        onActivity={() => {
+          listAfter.arm(() => {
+            setActivitySheet({ activity: null });
+          });
+          setPickSheet(false);
         }}
         onClose={() => {
-          setListSheet(null);
+          setPickSheet(false);
+        }}
+      />
+      <OfferSheet
+        visible={offerSheet}
+        offer={offerView}
+        onClose={() => {
+          setOfferSheet(false);
+        }}
+      />
+      <ShowOnTodaySheet
+        visible={healthSheet}
+        shows={healthShows}
+        onChange={(next) => {
+          updatePrefs({ todayHealth: next });
+        }}
+        onClose={() => {
+          setHealthSheet(false);
         }}
       />
       <LogPastWorkoutSheet

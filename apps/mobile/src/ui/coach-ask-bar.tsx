@@ -54,6 +54,11 @@ export interface CoachAskBarProps {
   asking?: boolean;
   /** The active workout's action bar: `✦` + mic as two 44 pt buttons (§1.6). */
   icons?: boolean;
+  /**
+   * (Redesign v3 §A1, Ben 27 Oct) Today's header with `compact`: `✦` and the mic as two round 44 pt icon buttons. With
+   * no coach the `✦` is greyed and its label says why (`Coach, offline`); the sheet shows the status in words.
+   */
+  round?: boolean;
 }
 
 const BAR_HEIGHT = 48;
@@ -62,7 +67,7 @@ const ICON_SIZE = 44;
 /** The compact pill's text grows with Dynamic Type only this far, so the day name keeps the header line (review today-fix-21oct N1). */
 const COMPACT_MAX_SCALE = 1.3;
 
-export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, speech, asking = false, icons = false }: CoachAskBarProps) {
+export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, speech, asking = false, icons = false, round = false }: CoachAskBarProps) {
   const theme = useTheme();
   const [mic, setMic] = useState<MicState>('idle');
   const [heard, setHeard] = useState('');
@@ -170,6 +175,38 @@ export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, sp
           </AppText>
           <AppText variant="label" color="text.secondary" accessible={false} style={{ fontSize: 11, lineHeight: 14 }}>
             {view.short}
+          </AppText>
+        </Pressable>
+        {micButton}
+      </View>
+    );
+  }
+
+  if (compact && !inline && round) {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], flexShrink: 0 }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={listening ? `Listening. ${heard}` : view.accessibilityLabel}
+          accessibilityState={{ disabled: view.disabled || listening }}
+          disabled={view.disabled || listening}
+          onPress={() => {
+            onOpen();
+          }}
+          style={({ pressed }) => ({
+            width: ICON_SIZE,
+            height: ICON_SIZE,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: ICON_SIZE / 2,
+            backgroundColor: theme.colors['bg.surface'],
+            borderWidth: 1,
+            borderColor: theme.colors['border.control'],
+            opacity: view.disabled ? 0.6 : pressed ? 0.7 : 1,
+          })}
+        >
+          <AppText variant="headline" color={view.status === null ? 'accent' : 'text.tertiary'} accessible={false} maxFontSizeMultiplier={COMPACT_MAX_SCALE}>
+            ✦
           </AppText>
         </Pressable>
         {micButton}

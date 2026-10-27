@@ -22,6 +22,11 @@ import {
   restingHeartRateDays,
   sleepNights,
   todayHealthLine,
+  todayHealthLineFor,
+  bodyweightEntries,
+  convertMass,
+  latestBodyweight,
+  type TodayHealthShows,
   toIso,
   toMs,
   unlinkHealthActivity,
@@ -430,6 +435,32 @@ export function createHealthService(deps: HealthServiceDeps) {
       const signals = await readSignals();
       if (p === null) return { line: null, signals };
       return { line: todayHealthLine(signals, localDateOf(toMs(deps.now().utc), p.timezone)), signals };
+    },
+
+    /**
+     * (Redesign v3 §A2; Ben, 27 Oct) Today's small line under the header: the parts Ben chose (`Show on Today`), from
+     * the same local reads as Progress. Null while Health is off (no read switch on) or there is nothing to show.
+     */
+    async todayLine(shows: TodayHealthShows): Promise<TodayHealthLine | null> {
+      const p = await owner();
+      const s = p === null ? null : await settings(p.id);
+      if (p === null || s === null || !(s.readSleep || s.readRestingHeartRate || s.readWeight)) return null;
+      const signals = await readSignals();
+      let bw: { date: string; value: number; unit: 'kg' | 'lb'; source: string | null } | null = null;
+      if (shows.bodyweight && s.readWeight) {
+        const [profile, health] = await Promise.all([
+          deps
+            .store()
+            .repos.trainingProfiles.get(p.id)
+            .catch(() => null),
+          repo()
+            .weightSamples(p.id)
+            .catch(() => []),
+        ]);
+        const last = latestBodyweight(bodyweightEntries(profile?.weights ?? [], health));
+        if (last !== null) bw = { date: last.date, value: convertMass({ value: last.value, unit: last.unit }, p.preferredUnit).value, unit: p.preferredUnit, source: last.sourceName };
+      }
+      return todayHealthLineFor(signals, localDateOf(toMs(deps.now().utc), p.timezone), shows, bw);
     },
 
     readNow: () => readNow(true),

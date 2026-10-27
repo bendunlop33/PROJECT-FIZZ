@@ -1,4 +1,4 @@
-import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type TodayControls, type TodayDay, type TodayMain } from '@fizz/domain';
+import { clampMinutes, localDateOf, stepTodayMinutes, toMs, toggleTodayAbs, TODAY_PICK_COPY, TODAY_V2_COPY, weekdayIndexOfDate, withTodayControl, type FeedItem, planDayColourKey, type TodayControls, type TodayDay, type TodayMain, type WeekTile, type WeekTileMark } from '@fizz/domain';
 
 /**
  * Today (v2)'s screen rules (workout-builder-v3 §2.0, prototypes/today-v2.html), pure so they are tested
@@ -143,6 +143,11 @@ export const TODAY_SCREEN_COPY = {
   /** No plan in use: the old Today's Up next (split, rotation) still offered (review today-fix-21oct B1). */
   upNext: 'Up next',
   upNextLabel: (title: string) => `Start ${title}, up next`,
+  /** (Redesign v3 §A2) The Health line's long-press sheet. */
+  showOnToday: 'Show on Today',
+  done: 'Done',
+  /** (Redesign v3 §A5) The coach's offer sheet: `1 change for today`. */
+  changesForToday: (n: number) => `${String(n)} ${n === 1 ? 'change' : 'changes'} for today`,
 } as const;
 
 /** What Today's session area offers in each state of its read (review today-fix-21oct B1, S2, S3). */
@@ -214,4 +219,121 @@ export function dayRowAsList(fontScale: number): boolean {
  */
 export function todayWeekStacked(widthPt: number, fontScale: number): boolean {
   return widthPt < 375 || fontScale >= 1.1;
+}
+
+// ---------------------------------------------------------------------------
+// Redesign v3 (Ben, 27 Oct): option C card rows, the day sheet, Recent, the section label
+
+/** The label above the card: `Up next` on the plan's next day, `Today` when Ben picked another (option C). */
+export function todayCardLabel(selectedKey: string | null, nextKey: string | null): string {
+  return selectedKey !== null && nextKey !== null && selectedKey !== nextKey ? TODAY_PICK_COPY.today : TODAY_PICK_COPY.upNext;
+}
+
+export interface LabelValueRow {
+  label: string;
+  value: string;
+  /** A small secondary part after the value (`(1 left out)`), tappable when the row says so. */
+  note?: string;
+}
+
+/** The collapsed card's rows: `Main lift  Bench press`, `Exercises  5`, `Est. time  45 min` (the live estimate). */
+export function todayCardRows(v: { list: readonly { main: boolean; fullName: string }[]; exerciseCount: number; minutes: number; time: { minutes: number } | null; leftOut?: number }, gymName: string | null = null): LabelValueRow[] {
+  const main = v.list.find((r) => r.main)?.fullName ?? null;
+  const left = v.leftOut ?? 0;
+  return [
+    ...(main === null ? [] : [{ label: TODAY_PICK_COPY.mainLift, value: main }]),
+    // (Ben, 27 Oct) `Exercises  5 (1 left out)`: only when Time left something out; the note opens the fit with Undo.
+    { label: TODAY_PICK_COPY.exercises, value: String(v.exerciseCount), ...(left > 0 ? { note: TODAY_PICK_COPY.leftOut(left) } : {}) },
+    { label: TODAY_PICK_COPY.estTime, value: TODAY_V2_COPY.minutesValue(v.time?.minutes ?? v.minutes) },
+    ...(gymName === null ? [] : [{ label: TODAY_PICK_COPY.gym, value: gymName }]),
+  ];
+}
+
+/** The done card's rows (`Time 47 min`, `New best 1`); a date-only workout has no time; no bests: no row. */
+export function doneCardRows(activeMs: number | null, newBests: number): LabelValueRow[] {
+  return [
+    ...(activeMs === null ? [] : [{ label: TODAY_PICK_COPY.time, value: TODAY_V2_COPY.minutesValue(Math.max(1, Math.round(activeMs / 60_000))) }]),
+    ...(newBests > 0 ? [{ label: TODAY_PICK_COPY.newBest, value: String(newBests) }] : []),
+  ];
+}
+
+const SHORT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const LONG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
+
+/** `27 October`: the header's date line under the day name (Ben, 27 Oct). */
+export function todayDateLine(utc: string, tz: string): string {
+  const d = localDateOf(toMs(utc), tz);
+  return `${String(Number(d.slice(8, 10)))} ${LONG_MONTHS[Number(d.slice(5, 7)) - 1] ?? ''}`;
+}
+
+/** `Mon 26 Oct`: a day sheet's title. */
+export function daySheetTitle(date: string): string {
+  return `${SHORT_DAYS[weekdayIndexOfDate(date)] ?? ''} ${String(Number(date.slice(8, 10)))} ${MONTHS[Number(date.slice(5, 7)) - 1] ?? ''}`;
+}
+
+export type DaySheetOpen = { kind: 'summary'; sessionId: string } | { kind: 'activity'; activityId: string } | { kind: 'plan_day'; dayName: string } | null;
+
+export interface DaySheetRow {
+  key: string;
+  mark: WeekTileMark;
+  title: string;
+  /** Imported from Apple Health: a small `♥` after the name (Ben, 27 Oct); VoiceOver says `from Apple Health`. */
+  health: boolean;
+  detail: string | null;
+  open: DaySheetOpen;
+  accessibilityLabel: string;
+}
+
+/**
+ * A tapped tile's rows (Ben, 27 Oct): a done workout (`54 min · 17 sets`, opens its Summary), an activity (`5.2 km ·
+ * 28 min`, opens it), a planned day (`Legs · planned`, `Back squat · 5 exercises · 45 min`, opens the plan day). The
+ * values are History's (`feed`) and the plan day's card (`plannedDetail`); nothing invented. A tile with nothing on it
+ * has no sheet (`[]`).
+ */
+export function daySheetRows(tile: Pick<WeekTile, 'items' | 'marks'>, feed: readonly FeedItem[], plannedDetail: (dayName: string) => string | null): DaySheetRow[] {
+  return tile.items.map((it, i) => {
+    const mark = tile.marks[i] ?? { shape: 'ring', colour: 'neutral', planned: true };
+    switch (it.kind) {
+      case 'workout': {
+        const f = feed.find((x) => x.kind === 'workout' && x.sessionId === it.sessionId);
+        return { key: `w:${it.sessionId}`, mark, title: f?.title ?? it.text, health: false, detail: f?.value ?? null, open: { kind: 'summary', sessionId: it.sessionId }, accessibilityLabel: [f?.title ?? it.text, 'done', f?.value ?? null].filter((x): x is string => x !== null).join(', ') };
+      }
+      case 'activity': {
+        const f = feed.find((x) => x.kind === 'activity' && x.activityId === it.activityId);
+        const title = f?.title ?? it.text;
+        const detail = it.planned ? 'planned' : (f?.value ?? null);
+        const health = f?.kind === 'activity' && f.fromHealth !== undefined;
+        return { key: `a:${it.activityId}`, mark, title, health, detail, open: { kind: 'activity', activityId: it.activityId }, accessibilityLabel: [title, health ? 'from Apple Health' : null, detail].filter((x): x is string => x !== null).join(', ') };
+      }
+      case 'plan_day':
+      case 'today': {
+        const title = `${it.text} · ${it.kind === 'today' ? 'today' : 'planned'}`;
+        const detail = plannedDetail(it.text);
+        return { key: `p:${it.text}:${String(i)}`, mark, title, health: false, detail, open: { kind: 'plan_day', dayName: it.text }, accessibilityLabel: [title, detail].filter((x): x is string => x !== null).join(', ') };
+      }
+      case 'rest':
+        return { key: `r:${String(i)}`, mark, title: it.text, health: false, detail: null, open: null, accessibilityLabel: it.text };
+    }
+  });
+}
+
+/** `Back squat · 5 exercises · 45 min`: a planned day's line from its card. */
+export function plannedDayDetail(v: { list: readonly { main: boolean; fullName: string }[]; exerciseCount: number; minutes: number; time: { minutes: number } | null }): string {
+  const main = v.list.find((r) => r.main)?.fullName ?? null;
+  const n = v.exerciseCount;
+  return [main, `${String(n)} ${n === 1 ? 'exercise' : 'exercises'}`, TODAY_V2_COPY.minutesValue(v.time?.minutes ?? v.minutes)].filter((x): x is string => x !== null).join(' · ');
+}
+
+/** Today's Recent (Ben, 27 Oct): the last three things done, newest first, `Push` over `Mon 26 · 54 min · 17 sets`. */
+export const TODAY_RECENT_MAX = 3;
+
+export function todayRecentRows(items: readonly FeedItem[]): { item: FeedItem; mark: WeekTileMark; title: string; health: boolean; line: string; accessibilityLabel: string }[] {
+  return items.slice(0, TODAY_RECENT_MAX).map((it) => {
+    const day = it.when.split(' ').slice(0, 2).join(' ');
+    // (Ben, 27 Oct) The week tiles' marker leads every row: a session dot in its plan day's colour, a ring for an activity.
+    const mark: WeekTileMark = it.kind === 'workout' ? { shape: 'dot', colour: planDayColourKey(it.title), planned: false } : { shape: 'ring', colour: 'activity', planned: false };
+    const health = it.kind === 'activity' && it.fromHealth !== undefined;
+    return { item: it, mark, title: it.title, health, line: [day, it.value].filter((x) => x !== '').join(' · '), accessibilityLabel: health ? `${it.accessibilityLabel}, from Apple Health` : it.accessibilityLabel };
+  });
 }

@@ -25,6 +25,12 @@ import {
   pbWarmupsOf,
   pbBlockOfPlan,
   pbBlockLine,
+  pbAppliedBuilder,
+  pbWeekdaysOf,
+  buildWeekTiles,
+  mondayOf,
+  type WeekTile,
+  type PbBlockWeek,
   ruleCategory,
   currentDraftVersion,
   defaultTodayControls,
@@ -100,6 +106,9 @@ import {
   type SubstituteContext,
   type SwapPlan,
   type TodayBreakdownRow,
+  workoutListRows,
+  workoutListTargetHeader,
+  type WorkoutListRow,
   type TodayControls,
   type TodayDay,
   type TodayDraft,
@@ -121,6 +130,7 @@ import {
   worksLine,
   type Activity,
   type BuilderDraftKey,
+  type PlanDraft,
   type DraftPlan,
   type EquipmentInstance,
   type Exercise,
@@ -312,6 +322,20 @@ export interface TodaySessionData {
   /** The long or hard run near today (the clash line). */
   near: LegRunNear | null;
   strip: { workouts: { sessionId: string; localDate: string; title: string }[]; activities: Activity[]; firstUse: boolean };
+  /**
+   * (Redesign v3, Ben 27 Oct) This calendar week (Mon–Sun) for Today's tiles, the `Push ⌄` sheet and the rest-day card:
+   * the week's finished workouts and activities, the plan days still to do with their date (a Set days plan only;
+   * never inferred from a rotation), and the date each plan day was first done this week.
+   */
+  week: {
+    workouts: { sessionId: string; localDate: string; title: string }[];
+    activities: Activity[];
+    planned: { key: string; name: string; localDate: string }[];
+    doneOn: Record<string, string>;
+    setDays: boolean;
+    /** The week's done workouts and activities as History reads them (`52 min · 16 sets`, `5.2 km · 28 min`), for a day's sheet. */
+    feed: FeedItem[];
+  };
   /** (Ben, 26 Oct) Today's Recent: what Ben did in the last 14 days, workouts and activities, newest first, at most 6. */
   recent: FeedItem[];
   /** Done today (a second session can still be picked). */
@@ -407,6 +431,14 @@ export interface TodayCardView {
   };
   unit: 'kg' | 'lb';
   rows: TodayBreakdownRow[];
+  /** (Redesign v3 §A5, §B) The compact WorkoutList's rows; the coach's offered value on an affected row (`✦ 22 ea`). */
+  list: WorkoutListRow[];
+  /** `Target kg` / `Target kg ea`. */
+  listTarget: string;
+  /** (Redesign v3 §A5) The coach's changes for today waiting on Apply/Skip (`✦ 1 change`); 0: none. */
+  coachChanges: number;
+  /** (Ben, 27 Oct) Exercises Time left out to fit (`Exercises  5 (1 left out)`); 0: none. */
+  leftOut: number;
   why: string[];
   startable: boolean;
   /** For `commit` (the code draft; null when edited). */
@@ -1000,7 +1032,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
     // The strip (3 back, today, 3 ahead) and Recent (the last 14 days, Ben 26 Oct): one activities read for both.
     const actsWide = await repos()
-      .activities.listBetween(p.id, addDays(today, -(RECENT_DAYS - 1)), addDays(today, 4))
+      .activities.listBetween(p.id, addDays(today, -(RECENT_DAYS - 1)), addDays(today, 7))
       .catch(() => [] as Activity[]);
     const acts = actsWide.filter((a) => a.fields.date >= addDays(today, -3));
     // (Ben, 26 Oct) Today's Recent: the window's workouts (already read, stored summaries) and done activities, merged.
@@ -1017,9 +1049,17 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       }),
       today,
     );
-    const stripWorkouts = newest
-      .map((a) => ({ sessionId: a.session.id, localDate: localDateOf(toMs(a.session.startedAt.utc), tz), title: titleOf(a.session.routineName) }))
-      .filter((w) => w.localDate >= addDays(today, -3) && w.localDate <= today);
+    const allWorkouts = newest.map((a) => ({ sessionId: a.session.id, localDate: localDateOf(toMs(a.session.startedAt.utc), tz), title: titleOf(a.session.routineName) }));
+    const stripWorkouts = allWorkouts.filter((w) => w.localDate >= addDays(today, -3) && w.localDate <= today);
+    // (Redesign v3) This calendar week, for the tiles and the day sheet.
+    const monday = mondayOf(today);
+    const weekWorkouts = allWorkouts.filter((w) => w.localDate >= monday && w.localDate <= today);
+    const weekActs = actsWide.filter((a) => a.fields.date >= monday && a.fields.date <= addDays(monday, 6));
+    const weekFeed = mergeFeed({
+      workouts: newest.filter((a) => localDateOf(toMs(a.session.startedAt.utc), a.session.startedAt.tz) >= monday).map((a) => withLinkedSource(feedWorkoutOf(a, { title: feedWorkoutTitle(a, titleInfo), nowMs }), linked)),
+      activities: weekActs.filter((a) => a.fields.date <= today).map(feedActivityOf),
+    }).filter((i) => i.localDate >= monday && i.localDate <= today);
+    const week = { ...weekOf(plan, block, planDays, weekWorkouts, weekActs, today), feed: weekFeed };
     // The nudge's real signals (rule 6): finished sessions in the window, today's check-in, what Ben logged.
     const recentForNudge: NudgeSession[] = newest.slice(0, 10).map((a) => ({
       sessionId: a.session.id,
@@ -1092,6 +1132,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       carryAnswers,
       near,
       strip: { workouts: stripWorkouts, activities: acts, firstUse: newest.length === 0 && refs.length === 0 && acts.length === 0 },
+      week,
       recent,
       doneToday: stripWorkouts.some((w) => w.localDate === today),
       nudgeInput,
@@ -1160,6 +1201,18 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return { t: { ...first, mainLiftExerciseId: null }, chips: [], gap: first.mainLiftExerciseId === null ? null : data.internal.nameOf(first.mainLiftExerciseId) };
   }
 
+  /**
+   * (Redesign v3 §A5, §B) The card's compact WorkoutList and the coach's waiting offer: its change count and, on a row
+   * whose load it changes, the offered value. Read from the offer only (rule 3: nothing applied here).
+   */
+  function listOf(data: TodaySessionData, w: BuilderWorkout, unit: 'kg' | 'lb', coach: TodayCoachInputs): Pick<TodayCardView, 'list' | 'listTarget' | 'coachChanges'> {
+    const n = coach.nudge;
+    const offer = n?.kind === 'line' ? n.offer : null;
+    const changes = offer === null ? 0 : offer.proposal.lines.length;
+    const list = workoutListRows(w, data.internal.info, unit, { pained: data.internal.pained, ...(changes > 0 && offer !== null ? { coach: offer.proposal.topLoadsAfter ?? {} } : {}) });
+    return { list, listTarget: workoutListTargetHeader(unit, w.blocks.flatMap((b) => b.slots.map((x) => x.convention))), coachChanges: changes };
+  }
+
   /** `card`: the session card for a day and its controls. Pure over `data`. */
   function card(data: TodaySessionData, sel: TodaySelection, coach: TodayCoachInputs = {}): TodayCardView | null {
     const day = dayOf(data, sel.dayKey);
@@ -1202,6 +1255,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
         rows: todayBreakdown(held.workout, info, worksOf, unit, pained),
+        ...listOf(data, held.workout, unit, coach),
+        leftOut: edited?.fit?.dropped.length ?? 0,
         why: [...whyLines(data, day, t, sel.controls, null, heldIn(held.workout), gap, coachWhyOf(data, coach)), ...deloadWhy(data)],
         startable: count > 0,
         draft: null,
@@ -1229,6 +1284,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: d.absOn, planOn: t.absPlan, differs: d.absOn !== t.absPlan }, supersets: sel.controls.supersets },
       unit,
       rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
+      ...listOf(data, d.workout, unit, coach),
+      leftOut: d.fit.steps.filter((x) => x.kind === 'drop').length,
       // (Ben, 23 Oct) Sets carried over to this day: one line each behind Why?.
       why: [...whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach)), ...d.carried.map((x) => TODAY_CARRIED(x)), ...deloadWhy(data)],
       startable: d.exerciseCount > 0,
@@ -1674,6 +1731,16 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     start,
     review,
     mainLiftsFor,
+    /** (Redesign v3) This week's seven tiles, Mon–Sun, with the card's day (`chosen`) as today's planned ring. */
+    week(data: TodaySessionData, chosen: string | null): WeekTile[] {
+      return buildWeekTiles({
+        today: data.localDate,
+        workouts: data.week.workouts,
+        activities: data.week.activities.map((a) => ({ activityId: a.id, localDate: a.fields.date, kind: a.fields.kind, status: a.fields.status, distanceM: a.fields.distanceM, durationS: a.fields.durationS, effort: a.fields.effort })),
+        plannedDays: data.week.planned.map((d) => ({ localDate: d.localDate, name: d.name })),
+        chosen,
+      });
+    },
     /** The 7-day strip for the card's day (`chosen`). */
     strip(data: TodaySessionData, chosen: string | null): StripCell[] {
       return buildTodayStrip({
@@ -1685,6 +1752,44 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       });
     },
   };
+}
+
+/**
+ * (Redesign v3, Ben 27 Oct) This week's plan facts for Today: on a Set days builder plan, each plan day not done yet
+ * this block week with its date (Ben's moves included); the date each plan day was first done this week (the block's
+ * record, else a workout titled as the day). A rotation has no dates, so nothing is planned on a date (rule 6).
+ */
+function weekOf(
+  plan: PlanDraft | null,
+  block: PbBlockWeek | null,
+  planDays: readonly TodayDay[],
+  workouts: { sessionId: string; localDate: string; title: string }[],
+  activities: Activity[],
+  today: string,
+): Omit<TodaySessionData['week'], 'feed'> {
+  const monday = mondayOf(today);
+  const doneOn: Record<string, string> = {};
+  const builder = pbAppliedBuilder(plan);
+  const thisWeek = block === null || block.done ? -1 : block.week - 1;
+  const blockDone = thisWeek >= 0 ? (block?.doneOn?.[thisWeek] ?? {}) : {};
+  for (const d of planDays) {
+    const byIndex = d.dayIndex === null ? undefined : blockDone[d.dayIndex];
+    const byTitle = [...workouts].reverse().find((w) => w.title === d.name)?.localDate;
+    const on = byIndex ?? byTitle;
+    if (on !== undefined && on >= monday) doneOn[d.key] = on;
+  }
+  const planned: TodaySessionData['week']['planned'] = [];
+  const setDays = builder !== null && builder.builder.answers.schedule === 'set' && plan !== null && block !== null && !block.done;
+  if (setDays) {
+    const indexes = planDays.flatMap((d) => (d.dayIndex === null ? [] : [d.dayIndex]));
+    const weekdays = pbWeekdaysOf(builder.builder.answers, plan.moves, block.week, indexes);
+    for (const d of planDays) {
+      const wd = d.dayIndex === null ? undefined : weekdays?.get(d.dayIndex);
+      if (wd === undefined || doneOn[d.key] !== undefined) continue;
+      planned.push({ key: d.key, name: d.name, localDate: addDays(monday, wd) });
+    }
+  }
+  return { workouts, activities, planned, doneOn, setDays };
 }
 
 /** A builder draft key's Today day: `plan:<planId>:<dayIndex>`, else `other:<splitDayId>` (a Profile split day or an Other session). */

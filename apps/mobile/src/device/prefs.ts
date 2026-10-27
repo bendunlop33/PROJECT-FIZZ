@@ -1,4 +1,4 @@
-import { DEFAULT_MORNING_REMINDER, parseMorningReminder, type MorningReminderSettings } from '@fizz/domain';
+import { DEFAULT_MORNING_REMINDER, parseMorningReminder, type MorningReminderSettings, type TodayHealthShows } from '@fizz/domain';
 
 import type { TextFile } from '../backup/backup-service';
 import { DEFAULT_VOICE_PREFS, parseVoicePrefs, type VoicePrefs } from '../voice/settings';
@@ -31,6 +31,10 @@ export interface DevicePrefs {
   liftsExercise?: string;
   /** Profile › Morning reminder (Ben, 20 Oct): per phone, as notification permission is. Absent: never changed (`morningReminderOf`). */
   morningReminder?: MorningReminderSettings;
+  /** (Redesign v3 §A5) Today's card `Show exercises` / `Hide exercises`, as Ben last left it on this phone. Absent: collapsed. */
+  todayExercisesOpen?: boolean;
+  /** (Redesign v3 §A2) Today's Health line: what shows (long-press → `Show on Today`). Absent: Sleep and RHR. */
+  todayHealth?: TodayHealthShows;
 }
 
 /** The morning reminder's settings, the defaults until Ben changes one. */
@@ -48,7 +52,8 @@ export function parsePrefs(text: string | null): DevicePrefs {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
     const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment, voice, targetsHit } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown; voice?: unknown; targetsHit?: unknown };
-    const { morningReminder, liftsExercise } = json as { morningReminder?: unknown; liftsExercise?: unknown };
+    const { morningReminder, liftsExercise, todayExercisesOpen, todayHealth } = json as { morningReminder?: unknown; liftsExercise?: unknown; todayExercisesOpen?: unknown; todayHealth?: unknown };
+    const th = typeof todayHealth === 'object' && todayHealth !== null ? (todayHealth as Record<string, unknown>) : null;
     return {
       themeDirection: dir === 'A' || dir === 'D' ? dir : null,
       guideAnimations: guideAnimations !== false,
@@ -59,6 +64,8 @@ export function parsePrefs(text: string | null): DevicePrefs {
       targetsHit: targetsHit === true,
       ...(typeof liftsExercise === 'string' && liftsExercise.length > 0 && liftsExercise.length <= 200 ? { liftsExercise } : {}),
       ...(morningReminder === undefined ? {} : { morningReminder: parseMorningReminder(morningReminder) }),
+      ...(typeof todayExercisesOpen === 'boolean' ? { todayExercisesOpen } : {}),
+      ...(th === null ? {} : { todayHealth: { sleep: th.sleep !== false, rhr: th.rhr !== false, bodyweight: th.bodyweight === true } }),
     };
   } catch {
     return DEFAULT_PREFS;

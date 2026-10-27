@@ -35,13 +35,11 @@ describe('Today text fit (Ben, 26 Oct)', () => {
   });
 
   const src = readFileSync(join(import.meta.dirname, '../src/screens/today/TodaySession.tsx'), 'utf8');
-  it('the screen uses them (no bare numberOfLines={1} on the segment label)', () => {
-    const day = src.slice(src.indexOf('export function DayControl('), src.indexOf('export function SessionListSheet('));
-    expect(day).toContain('const asList = dayRowAsList(useWindowDimensions().fontScale);');
-    expect(day).toContain('{...TODAY_TEXT_FIT.segmentLabel}');
-    expect(day).not.toContain("numberOfLines={1} style={{ fontSize: 15 }}");
-    const header = src.slice(src.indexOf('export function TodayHeader('), src.indexOf('// The 7-day strip'));
-    expect(header).toContain('todayWeekStacked(width, fontScale)');
-    expect(header).toContain('{stacked ? weekLink : null}');
+  it('(redesign v3) the day control and the header’s week line left Today: the days are in `Push ⌄`, the week by `This week`', () => {
+    expect(src).not.toContain('export function DayControl(');
+    const header = src.slice(src.indexOf('export function TodayHeader('), src.indexOf('// Apple Health line'));
+    expect(header).not.toContain('week');
+    // The header's day name still shrinks to fit rather than wrap.
+    expect(header).toContain('adjustsFontSizeToFit minimumFontScale={0.75}');
   });
 });

@@ -429,9 +429,10 @@ describe('Time on Your workout (source): the same control as Today’s; the scre
     const stepper = read('ui/time-stepper.tsx');
     expect(stepper).toContain('accessibilityRole="adjustable"');
     expect(stepper).toContain('TIME_LABELS.less');
-    // One Time row with its note (fit-to-time 22 Oct revision) for Today's card and Your workout.
-    expect(read('screens/today/TodaySession.tsx')).toContain("import { TimeNoteRow } from '../../ui/time-stepper';");
+    // One Time row with its note (fit-to-time 22 Oct revision) on Your workout; (redesign v3) Today's card shows the
+    // estimate and opens the same fit detail, with no stepper of its own.
     expect(read('screens/today/TodaySession.tsx')).not.toContain('function TimeStepper(');
+    expect(read('screens/TodayScreen.tsx')).toContain('<TimeDetailSheet');
     expect(stepper).toContain('<TimeStepper minutes={minutes} over={over} onStep={onStep} />');
     expect(stepper).toContain('color="status.warning"');
     const page = read('screens/builder/BuilderWorkoutScreen.tsx');
