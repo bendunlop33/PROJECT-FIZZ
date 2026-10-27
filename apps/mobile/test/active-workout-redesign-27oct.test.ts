@@ -51,7 +51,7 @@ describe('Finish always in the top bar', () => {
 describe('Empty workout: the same table', () => {
   it('Table view: the round strip’s one chip, the column header, `No exercises yet`, `＋ Add exercise`; Focus view keeps its own', () => {
     const table = read('screens/workout/WorkoutTable.tsx');
-    const page = table.slice(table.indexOf('export function EmptyRoundPage'), table.indexOf('/** `SET · PREVIOUS'));
+    const page = table.slice(table.indexOf('export function EmptyRoundPage'), table.indexOf('// Timer bar (§1.5), Chat'));
     expect(page).toContain('<RoundStrip');
     expect(page).toContain('<ColumnLabels');
     expect(page).toContain('No exercises yet');

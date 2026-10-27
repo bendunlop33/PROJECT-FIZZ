@@ -714,36 +714,6 @@ function CompactRow({ ex, index, page: p }: { ex: RoundExercise; index: number; 
   );
 }
 
-/**
- * (Ben, 27 Oct; redesign §E1) An empty workout uses the same table: the round strip's one chip, the table's column
- * header over `No exercises yet`, and `＋ Add exercise` under it (the dock's primary adds one too). Nothing is logged
- * or invented here.
- */
-export function EmptyRoundPage({ unitHeader, ax, top, onAddExercise }: { unitHeader: string; ax: boolean; top?: ReactNode; onAddExercise: () => void }) {
-  const theme = useTheme();
-  const { width, fontScale } = useWindowDimensions();
-  const cols = useMemo(() => setColumns({ windowWidth: width, fontScale, hasLoad: true, hasRir: true, texts: { previous: [], load: ['100'], value: ['10'] } }), [width, fontScale]);
-  return (
-    <View style={{ flex: 1 }}>
-      <RoundStrip chips={[{ key: 'empty', index: 0, text: '1', done: false, shown: true, accessibilityLabel: 'Round 1 of 1, no exercises yet' }]} onPick={() => undefined} onWorkout={null} />
-      <ScrollView {...ROUND_TABLE_KEYBOARD} contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['4'], gap: theme.space['3'] }}>
-        {top}
-        <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['3'], gap: theme.space['1'] }}>
-          {ax || cols.blockRows ? null : <ColumnLabels cols={cols} loadHeader={unitHeader} valueHeader="REPS" />}
-          <View style={{ alignItems: 'center', paddingTop: theme.space['6'], paddingBottom: theme.space['5'], borderTopWidth: ax || cols.blockRows ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
-            <AppText variant="headline" accessibilityRole="header">
-              No exercises yet
-            </AppText>
-          </View>
-        </View>
-        <View style={{ alignItems: 'flex-start' }}>
-          <TextButton label="＋ Add exercise" onPress={onAddExercise} />
-        </View>
-      </ScrollView>
-    </View>
-  );
-}
-
 /** `SET · PREVIOUS · KG · REPS · RIR · ✓` (Ben, 26 Oct): the unit once, in the header (§2). */
 function ColumnLabels({ cols, loadHeader, valueHeader }: { cols: SetColumns; loadHeader: string | null; valueHeader: string }) {
   const theme = useTheme();
@@ -1650,6 +1620,36 @@ export function RoundStrip({ chips, onPick, onWorkout }: { chips: readonly { key
           </AppText>
         </Pressable>
       )}
+    </View>
+  );
+}
+
+/**
+ * (Ben, 27 Oct; redesign §E1) An empty workout uses the same table: the round strip's one chip, the table's column
+ * header over `No exercises yet`, and `＋ Add exercise` under it (the dock's primary adds one too). Nothing is logged
+ * or invented here.
+ */
+export function EmptyRoundPage({ unitHeader, ax, top, onAddExercise }: { unitHeader: string; ax: boolean; top?: ReactNode; onAddExercise: () => void }) {
+  const theme = useTheme();
+  const { width, fontScale } = useWindowDimensions();
+  const cols = useMemo(() => setColumns({ windowWidth: width, fontScale, hasLoad: true, hasRir: true, texts: { previous: [], load: ['100'], value: ['10'] } }), [width, fontScale]);
+  return (
+    <View style={{ flex: 1 }}>
+      <RoundStrip chips={[{ key: 'empty', index: 0, text: '1', done: false, shown: true, accessibilityLabel: 'Round 1 of 1, no exercises yet' }]} onPick={() => undefined} onWorkout={null} />
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['4'], gap: theme.space['3'] }}>
+        {top}
+        <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['3'], gap: theme.space['1'] }}>
+          {ax || cols.blockRows ? null : <ColumnLabels cols={cols} loadHeader={unitHeader} valueHeader="REPS" />}
+          <View style={{ alignItems: 'center', paddingTop: theme.space['6'], paddingBottom: theme.space['5'], borderTopWidth: ax || cols.blockRows ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
+            <AppText variant="headline" accessibilityRole="header">
+              No exercises yet
+            </AppText>
+          </View>
+        </View>
+        <View style={{ alignItems: 'flex-start' }}>
+          <TextButton label="＋ Add exercise" onPress={onAddExercise} />
+        </View>
+      </ScrollView>
     </View>
   );
 }
