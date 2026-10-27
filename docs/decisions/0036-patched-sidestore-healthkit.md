@@ -54,3 +54,44 @@ source now lists as the newest stable. Only 0.6.3 and older use the old AltSign 
 When SideSign merges PR #3 (or an equivalent) and a SideStore release includes it: switch Ben to that official
 release (or the nightly channel if that comes first), reinstall GymSmarter once, check Profile › Apple Health, then
 delete `sidestore-healthkit.yml` and mark this ADR superseded. Also retire it if Ben moves to Xcode or paid signing.
+
+## Amendment, 27 Oct 2026: build from a reviewed fork for -80045 and iloader pairing
+
+**Status:** PROPOSED by the developer agent; the PM merges and triggers the build after reading the review. Ben
+approves.
+
+**Why.** Build 2 (nightly `d97ec13` + PR #3) installed through iloader "Import IPA" but (1) kept asking for a pairing
+file after iloader "Manage Pairing File › Place", and (2) Apple ID sign-in failed with **-80045**, an Apple-side change
+since about 12 Oct that hits all free sideloaders. SideStore has no official fix yet. (1) is the cause our own research
+predicted (`docs/research/sidestore-pairing-ios26.md` §2.1–2.2): iloader writes one combined Lockdown + RemotePairing
+file under the old name, which 0.7 nightly ignores after first launch and rejects as ambiguous on import.
+
+**Change.** Decision 1 ("pinned upstream refs plus that one upstream PR, nothing else; no fork") is relaxed for the
+0.7 build: the default is now an unofficial fork, reviewed line by line, at exact commits, plus the same PR #3:
+
+| | Repo | Commit |
+|---|---|---|
+| SideStore | `Ti800/SideStore` (`fix/gsa-80045`) | `f4921377291c69e31eb8505eb5d9e5a16abb78d8` (same tree as nightly `d97ec133` plus 7 commits) |
+| SideSign base | `Ti800/SideSign` (`fix/gsa-80045`) | `73ca02de240da894241f53dc57b39fe02d084b16` (upstream `752d1ef` plus 3 commits) |
+| HealthKit patch | `SideStore/SideSign` PR #3 | `74950d37f2333d29cbf3bfc9ca4a60820498c2d3`, cherry-picked onto the base (no conflicts) |
+
+The fork splits iloader's combined pairing file and imports `ALTPairingFile.mobiledevicepairing` on every launch; it
+switches GSA's anisette client info to the Windows iTunes identity (migrating saved macOS/Android strings), trims a
+trailing newline, and resyncs anisette once on GSA `hsc 434`. Review and verdict (safe to build from at these SHAs):
+`docs/research/sidestore-ti800-review.md`. We pin the branch head, not the fork's release tag `d8789df6`, whose SideSign
+still uses the Android identity that the fork's author reports GSA now rejects (HTTP 503).
+
+**Guardrails.** The workflow accepts a non-SideStore repo only at a full 40-character SHA and checks it checked out
+exactly that commit. Moving either SHA needs a new review. The HealthKit verification and bundle-ID check are
+unchanged. The 0.6.4 alternative still builds from upstream only.
+
+**Consequences.**
+- Ben runs third-party code from an unaffiliated, AI-assisted fork that sees his Apple ID password and 2FA session.
+  Mitigated by the review and the SHA pins; the risk is accepted only because no official fix exists.
+- The Windows client identity is a workaround; Apple may reject it later. Then sign-in fails again and we re-check.
+- If the fork's history is rewritten, the pinned commits may become unfetchable and the build fails (it doesn't
+  silently build something else).
+- Unverified until Ben's device test: that it compiles on GitHub's runner, that iloader's pairing file is picked up,
+  and that sign-in succeeds.
+- **Retire** the fork as soon as an official SideStore nightly or release fixes -80045 and the iloader pairing file:
+  go back to upstream refs with PR #3 (or to the official build once PR #3 is merged), and re-run the device test.
