@@ -20,6 +20,8 @@ import {
   sleepNights,
   thisWeekView,
   todayHealthLine,
+  todayHealthLineFor,
+  DEFAULT_TODAY_HEALTH_SHOWS,
   toMs,
   weekDataOfReview,
   weekHealthFacts,
@@ -106,6 +108,19 @@ describe('Today’s line', () => {
     expect(plain(compactSleepText(45))).toBe('45m');
     expect(appleHealthSourceLine(['Garmin', 'Garmin'])).toBe('Apple Health · Garmin');
   });
+  it('(Redesign v3 §A2) Today shows only what Ben chose; bodyweight off by default, within 7 days when on', () => {
+    const sig = { sleep: [day(today, 425)], restingHeartRate: [...base, day(today, 55)] };
+    expect(plain(todayHealthLineFor(sig, today, DEFAULT_TODAY_HEALTH_SHOWS, { date: today, value: 82.4, unit: 'kg', source: null })?.text)).toBe('Sleep 7h 05m · RHR 55');
+    expect(plain(todayHealthLineFor(sig, today, { sleep: false, rhr: true, bodyweight: false })?.text)).toBe('RHR 55');
+    const all = todayHealthLineFor(sig, today, { sleep: true, rhr: true, bodyweight: true }, { date: '2026-10-25', value: 82.44, unit: 'kg', source: 'Withings' });
+    expect(plain(all?.text)).toBe('Sleep 7h 05m · RHR 55 · Weight 82.4 kg');
+    expect(all?.accessibilityLabel).toContain('Bodyweight 82.4 kilograms, 2 days ago');
+    expect(all?.sources).toContain('Withings');
+    // lb stays lb; an old weight isn't today's.
+    expect(plain(todayHealthLineFor({ sleep: [], restingHeartRate: [] }, today, { sleep: true, rhr: true, bodyweight: true }, { date: today, value: 181.5, unit: 'lb', source: null })?.text)).toBe('Weight 181.5 lb');
+    expect(todayHealthLineFor({ sleep: [], restingHeartRate: [] }, today, { sleep: true, rhr: true, bodyweight: true }, { date: '2026-10-01', value: 82, unit: 'kg', source: null })).toBeNull();
+    expect(todayHealthLineFor(sig, today, { sleep: false, rhr: false, bodyweight: false })).toBeNull();
+  });
 });
 
 describe('the week’s other activity, grouped (Ben, 27 Oct: "and other exercise too")', () => {
@@ -152,7 +167,7 @@ describe('the week’s sleep and resting heart rate', () => {
   it('average sleep over the nights recorded; resting HR first → last; nothing outside the week', () => {
     const f = weekHealthFacts({ sleep: [day('2026-10-18', 300), day('2026-10-19', 420), day('2026-10-20', 430)], restingHeartRate: [day('2026-10-18', 70), day('2026-10-19', 56), day('2026-10-22', 57), day('2026-10-25', 58)] }, monday);
     expect(f).toEqual({ sleep: { avgMin: 425, nights: 2 }, restingHr: { start: { date: '2026-10-19', bpm: 56 }, end: { date: '2026-10-25', bpm: 58 } }, sources: ['Garmin'] });
-    expect(plain(weekHealthLine(f))).toBe('Sleep avg 7h 5m · RHR 56 → 58');
+    expect(plain(weekHealthLine(f))).toBe('Sleep avg 7h 05m · RHR 56 → 58');
   });
   it('one resting HR day is no trend; nothing at all is null', () => {
     expect(weekHealthFacts({ sleep: [], restingHeartRate: [day('2026-10-20', 55)] }, monday)).toBeNull();

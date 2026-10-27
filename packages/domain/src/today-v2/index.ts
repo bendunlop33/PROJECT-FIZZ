@@ -3,3 +3,5 @@ export * from './view';
 export * from './strip';
 export * from './plan-days';
 export * from './split-days';
+export * from './workout-list';
+export * from './week-tiles';

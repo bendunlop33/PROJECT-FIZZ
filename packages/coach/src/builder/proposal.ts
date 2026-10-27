@@ -1,4 +1,5 @@
 import type { BuilderEditOp } from '@fizz/schemas';
+import { coachRowLoads } from '@fizz/domain';
 import type { TextCheck } from './claims';
 import { OUT_OF_DATE_LINE, applyBuilderEdits, preconditionsHold, type BuilderCoachEnv, type BuilderCoachSnapshot, type EditOutcome, type SlotPrecondition } from './edit-ops';
 
@@ -33,6 +34,8 @@ export interface BuilderProposal {
   hidden: string[];
   /** Ben asked for heavier when it was made: Apply's re-check uses the same load guard step (spec §5, `stepsHarderAsked`). */
   askedHeavier: boolean;
+  /** (Redesign v3 §A5) Slots whose top working load the change moves, with the load after (`✦ 22 ea` on Today's row). */
+  topLoadsAfter?: Readonly<Record<string, number>>;
 }
 
 /** Build the proposal from checked ops. Null when nothing would change (every op was left out). */
@@ -56,6 +59,7 @@ export function makeBuilderProposal(input: { id: string; snapshot: BuilderCoachS
       reason: checked.shown,
       hidden: checked.hidden,
       askedHeavier: input.env.askedHeavier,
+      topLoadsAfter: coachRowLoads(input.snapshot.workout, outcome.workout),
     },
     outcome,
     reason: checked.shown,
