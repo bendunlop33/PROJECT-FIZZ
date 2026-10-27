@@ -5,16 +5,21 @@
  *
  * A breadcrumb is written as early as JS runs (`index.ts` → `install.ts`), and
  * again while the workout screen opens. It is removed once the app has stayed
- * open on a screen for `LAUNCH_STABLE_MS`, or when it goes to the background
- * (Ben left it; not a crash). One still there at the next launch means the
- * last run closed before it settled: a JS error React Native treats as fatal,
- * or a native crash (neither leaves the app able to say so itself).
+ * open on a screen for `LAUNCH_STABLE_MS` and drawn a frame after that, or when
+ * it goes to the background having drawn one (Ben left it; not a crash). One
+ * still there at the next launch means the last run closed (or froze) before it
+ * settled: a JS error React Native treats as fatal, a native crash, or a stuck
+ * main thread. A render error an error boundary contained holds the run
+ * unsettled too (hang fix, 27 Oct: on build 457 the workout's render error left
+ * a blank modal, and swiping the app away settled it, so every launch reopened
+ * the workout into the same blank screen).
  *
  * That next launch is a safe start: the unfinished workout is not opened by
  * itself, and the optional native layers that run on launch with a workout in
  * progress (the Live Activity, Apple Health) are left off for that run. The
- * workout and every other record are read and kept exactly as stored; nothing
- * is repaired or rewritten. Ben chooses Resume, Today (Discard is there, with
+ * workout and every other record are read and kept exactly as stored, and not
+ * recovered until Resume; nothing is repaired or rewritten. The Safe start
+ * screen shows before the data is even opened. Ben chooses Resume, Today (Discard is there, with
  * its own confirmation) or a backup copy. A safe start that settles clears the
  * breadcrumb like any other, so the following launch is a normal one.
  */
@@ -31,7 +36,7 @@ export const LAUNCH_STABLE_MS = 8000;
  * optional feature (the Live Activity's ActivityKit calls, Apple Health's HealthKit calls), which is breadcrumbed
  * for its duration so a native crash in it is named at the next launch.
  */
-export type LaunchPhase = 'launch' | 'workout' | NativeFeature;
+export type LaunchPhase = 'launch' | 'workout' | 'render_error' | NativeFeature;
 
 /** Optional native features a crash inside turns off on this phone until the next build (`nativeOffAfter`). */
 export type NativeFeature = 'live_activity' | 'health';
@@ -70,7 +75,7 @@ export function parseLaunchBreadcrumb(text: string | null | undefined): LaunchBr
     const j = JSON.parse(text) as Record<string, unknown> | null;
     if (typeof j !== 'object' || j === null || j.v !== 1 || typeof j.atUtc !== 'string') return null;
     toMs(j.atUtc);
-    const phase: LaunchPhase = j.phase === 'workout' || j.phase === 'live_activity' || j.phase === 'health' ? j.phase : 'launch';
+    const phase: LaunchPhase = j.phase === 'workout' || j.phase === 'render_error' || j.phase === 'live_activity' || j.phase === 'health' ? j.phase : 'launch';
     const failures = typeof j.failures === 'number' && Number.isFinite(j.failures) && j.failures >= 1 ? Math.min(1000, Math.floor(j.failures)) : 1;
     return { v: 1, phase, atUtc: j.atUtc, build: typeof j.build === 'string' ? j.build : null, failures };
   } catch {
@@ -128,31 +133,83 @@ export function nativeOffAfter(input: { previous: LaunchBreadcrumb | null; store
 export interface SettleClock {
   setTimeout: (fn: () => void, ms: number) => unknown;
   clearTimeout: (handle: unknown) => void;
+  /**
+   * (Hang fix, 27 Oct) Calls back once the screen has drawn a frame (React Native's `requestAnimationFrame`, driven
+   * by the display on the main thread). Absent: no frame check (tests of the timer alone).
+   */
+  frame?: (fn: () => void) => void;
 }
 
+/**
+ * (Hang fix, 27 Oct) A run settles only when the app is provably alive: the timer ran AND a frame was drawn after
+ * it (a main thread stuck in a loop draws none, so its breadcrumb stays and the next launch is a safe start), and
+ * never while a contained render error holds it (`hold`). Going to the background settles only a run that has
+ * drawn a frame since its last arm: Ben swiping away a blank or frozen app is not "Ben left it".
+ */
 export function createSettler(clock: SettleClock, settle: () => void) {
   let timer: unknown = null;
   let settled = false;
-  const fire = () => {
+  let held = false;
+  /** A frame was drawn since the last arm (always true without a frame source). */
+  let framed = clock.frame === undefined;
+  let generation = 0;
+  const done = () => {
     timer = null;
-    if (settled) return;
+    if (settled || held) return;
     settled = true;
     settle();
   };
+  const fire = () => {
+    timer = null;
+    if (settled || held) return;
+    if (framed || clock.frame === undefined) {
+      done();
+      return;
+    }
+    const g = generation;
+    clock.frame(() => {
+      if (g !== generation) return;
+      framed = true;
+      done();
+    });
+  };
   return {
-    /** A screen is up (or the workout screen opened): settle after `LAUNCH_STABLE_MS` unless re-armed. */
+    /** A screen is up (or the workout screen opened): settle after `LAUNCH_STABLE_MS` and a drawn frame, unless re-armed. */
     arm(): void {
       settled = false;
+      generation += 1;
       if (timer !== null) clock.clearTimeout(timer);
       timer = clock.setTimeout(fire, LAUNCH_STABLE_MS);
+      if (clock.frame !== undefined) {
+        framed = false;
+        const g = generation;
+        clock.frame(() => {
+          if (g === generation) framed = true;
+        });
+      }
     },
-    /** The app went to the background: whatever happens next isn't a launch crash. */
+    /** The app went to the background: Ben left a working app (it drew a frame since the last arm), not a crash. */
     background(): void {
+      if (!framed || held) return;
       if (timer !== null) clock.clearTimeout(timer);
-      fire();
+      done();
+    },
+    /** A run that started in the background (a Lock Screen button's intent): nothing on screen to wait for. */
+    settleNow(): void {
+      if (timer !== null) clock.clearTimeout(timer);
+      done();
+    },
+    /** A render error was contained: this run never settles (the next launch is a safe start, showing the error). */
+    hold(): void {
+      held = true;
+      if (timer !== null) clock.clearTimeout(timer);
+      timer = null;
     },
     get settled(): boolean {
       return settled;
+    },
+    get held(): boolean {
+      return held;
     },
   };
 }
@@ -168,6 +225,7 @@ export interface SafeStartView {
 const CLOSED_WHERE: Readonly<Record<LaunchPhase, string>> = {
   launch: 'GymSmarter closed during the last launch.',
   workout: 'GymSmarter closed while opening the workout.',
+  render_error: 'GymSmarter hit an error last time.',
   live_activity: 'GymSmarter closed while starting the Live Activity.',
   health: 'GymSmarter closed while reading Apple Health.',
 };

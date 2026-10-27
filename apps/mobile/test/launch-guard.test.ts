@@ -122,6 +122,85 @@ describe('launch guard: settle', () => {
   });
 });
 
+/** A display that draws frames only while `drawing` (a stuck main thread draws none). */
+function fakeFrames() {
+  const pending: (() => void)[] = [];
+  const f = {
+    drawing: true,
+    frame: (fn: () => void) => {
+      pending.push(fn);
+    },
+    /** One display refresh: the frames asked for so far run, if the main thread is drawing. */
+    tick() {
+      if (!f.drawing) return;
+      for (const fn of pending.splice(0)) fn();
+    },
+  };
+  return f;
+}
+
+describe('launch guard: settle only a live app (hang fix, 27 Oct: build 457 blank after Start, blank again at every launch)', () => {
+  it('the timer alone doesn’t settle: a frame must be drawn after it; a stuck main thread leaves the breadcrumb', () => {
+    const clock = fakeClock();
+    const frames = fakeFrames();
+    let settled = 0;
+    const s = createSettler({ ...clock, frame: frames.frame }, () => (settled += 1));
+    s.arm();
+    frames.drawing = false;
+    clock.advance(LAUNCH_STABLE_MS * 10);
+    frames.tick();
+    expect(settled).toBe(0);
+    frames.drawing = true;
+    frames.tick();
+    expect(settled).toBe(1);
+  });
+
+  it('background settles a run that drew a frame since its last arm; a blank or frozen app swiped away stays unsettled', () => {
+    const clock = fakeClock();
+    const frames = fakeFrames();
+    let settled = 0;
+    const s = createSettler({ ...clock, frame: frames.frame }, () => (settled += 1));
+    s.arm();
+    s.background();
+    expect(settled).toBe(0);
+    frames.tick();
+    s.background();
+    expect(settled).toBe(1);
+  });
+
+  it('a contained render error holds the run: no timer, frame or background settles it', () => {
+    const clock = fakeClock();
+    const frames = fakeFrames();
+    let settled = 0;
+    const s = createSettler({ ...clock, frame: frames.frame }, () => (settled += 1));
+    s.arm();
+    frames.tick();
+    s.hold();
+    clock.advance(LAUNCH_STABLE_MS * 2);
+    frames.tick();
+    s.background();
+    expect(settled).toBe(0);
+    expect(s.held).toBe(true);
+  });
+
+  it('a launch in the background (a Lock Screen intent) settles at once, with no frame', () => {
+    const clock = fakeClock();
+    const frames = fakeFrames();
+    let settled = 0;
+    const s = createSettler({ ...clock, frame: frames.frame }, () => (settled += 1));
+    s.settleNow();
+    expect(settled).toBe(1);
+  });
+
+  it('a render-error breadcrumb is read back and names it; the safe start shows the error', () => {
+    const crumb = parseLaunchBreadcrumb(JSON.stringify({ v: 1, phase: 'render_error', atUtc: '2026-10-27T18:00:00.000Z', build: '457', failures: 1 }));
+    expect(crumb?.phase).toBe('render_error');
+    const v = safeStartView({ workoutName: 'Push', workoutOpen: true, lastError: { name: 'TypeError', message: 'x is undefined', atUtc: '2026-10-27T18:00:01.000Z' }, previous: crumb });
+    expect(v.lines[0]).toBe('GymSmarter hit an error last time.');
+    expect(v.lines).toContain('Last error: TypeError: x is undefined');
+  });
+});
+
 describe('launch guard: the safe start’s words', () => {
   it('names what closed, the workout kept, what is off, and the last error when one was recorded', () => {
     const v = safeStartView({ workoutName: 'Push', workoutOpen: true, lastError: { name: 'TypeError', message: "Cannot read property 'x' of undefined", atUtc: '2026-10-27T18:00:01.000Z' }, previous: { v: 1, phase: 'workout', atUtc: '2026-10-27T18:00:00.000Z', build: null, failures: 1 } });
@@ -153,15 +232,35 @@ describe('launch guard: wiring (source checks; React Native isn’t run in Node)
     expect(root).toContain("if (!nativeFeatureOn('health')) return null;");
     expect(root).toContain("setLaunchGuardBackground(s === 'background');");
     expect(root).toContain('createLiveActivityController(guardedLiveActivityPort');
-    expect(root).toContain("...(launchSafeMode().safe ? {} : { restAlerts })");
+    expect(root).toContain("...(launchSafeMode().safe ? { safe: true } : { restAlerts })");
     expect(root).toContain('health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild() }');
     expect(root).toContain('{safe.safe ? null : <ForegroundAlerts services={services} />}');
     expect(root).toContain('{safe.safe ? null : <HealthHost services={services} />}');
     expect(root).toContain("safe.safe ? safeChoice === 'resume' && inProgress !== null : recovery?.openInto === 'active_workout'");
     expect(root).toMatch(/<AppBoundary[\s\S]*<AppNavigator key=\{navKey\}/);
     expect(root).toContain('else launchSettler.arm();');
-    expect(root).toMatch(/if \(AppState\.currentState === 'background'\) \{\s*setLaunchGuardBackground\(true\);\s*launchSettler\.background\(\);/);
+    expect(root).toMatch(/if \(AppState\.currentState === 'background'\) \{\s*setLaunchGuardBackground\(true\);\s*launchSettler\.settleNow\(\);/);
     expect(root).toContain("if (s === 'background') launchSettler.background()");
+  });
+
+  it('(hang fix) a safe start shows before the data opens, and Resume recovers the workout first', () => {
+    const root = src('src/shell/Root.tsx');
+    // Before `startApp` resolves (outcome null), a safe start already renders its screen.
+    expect(root).toMatch(/if \(outcome === null\) \{[\s\S]*?if \(safe\.safe\) return <SafeStartScreen decision=\{safe\} workout=\{null\} ready=\{false\}/);
+    expect(root).toContain('const inProgress = safe.safe ? outcome.activeWorkout');
+    expect(root).toMatch(/onResume=\{\(\) => \{[\s\S]*?services\.sessions\s*\.recover\(\)[\s\S]*?setSafeChoice\('resume'\)/);
+  });
+
+  it('(hang fix) a contained render error holds the run unsettled; the workout and Summary modals contain their own', () => {
+    const safeStart = src('src/shell/SafeStart.tsx');
+    expect(safeStart).toMatch(/componentDidCatch\(error: unknown\): void \{[\s\S]*?recordContainedError\([\s\S]*?holdLaunch\(\);/);
+    const nav = src('src/navigation/AppNavigator.tsx');
+    expect(nav).toContain("const GuardedWorkout = withScreenBoundary(WorkoutScreen, 'workout');");
+    expect(nav).toContain('<RootStack.Screen name="Workout" component={GuardedWorkout} ');
+    expect(nav).toContain('<RootStack.Screen name="Summary" component={GuardedSummary} ');
+    const capture = src('src/diagnostics/crash-capture.ts');
+    expect(capture).toContain("const phase = held ? 'render_error' : inBackground ? currentPhase : (inFlight.at(-1) ?? currentPhase);");
+    expect(src('src/diagnostics/launch-settle.ts')).toMatch(/frame: \(fn\) => \{\s*requestAnimationFrame/);
   });
 
   it('the workout screen breadcrumbs its own opening', () => {

@@ -203,7 +203,7 @@ function Launch() {
     // A launch in the background (a Lock Screen button's intent) is no launch Ben sees: settle it at once.
     if (AppState.currentState === 'background') {
       setLaunchGuardBackground(true);
-      launchSettler.background();
+      launchSettler.settleNow();
     } else launchSettler.arm();
     const sub = AppState.addEventListener('change', (s) => {
       setLaunchGuardBackground(s === 'background');
@@ -230,8 +230,9 @@ function Launch() {
       now: nowZoned,
       newId: newUuid,
       app: appInfo(),
-      // A safe start reconciles no alert or Live Activity at launch (the workout's own commits still do).
-      ...(launchSafeMode().safe ? {} : { restAlerts }),
+      // A safe start reconciles no alert or Live Activity at launch (the workout's own commits still do), and
+      // doesn't recover the unfinished workout until Ben taps Resume (hang fix, 27 Oct).
+      ...(launchSafeMode().safe ? { safe: true } : { restAlerts }),
       idle: () => whenIdle(),
       // (ADR 0032) Launch background work waits a moment, so Today's first read never queues behind it.
       backgroundGate: () => afterLaunch(),
@@ -278,6 +279,8 @@ function Launch() {
   );
 
   if (outcome === null) {
+    // (Hang fix, 27 Oct) A safe start shows at once, before the data is opened: nothing at boot can leave it blank.
+    if (safe.safe) return <SafeStartScreen decision={safe} workout={null} ready={false} onResume={() => undefined} onToday={() => undefined} />;
     return slow ? (
       <MessageScreen title="Opening your training data" lines={['Keep GymSmarter open. If it closes, this carries on next time.']} />
     ) : (
@@ -341,7 +344,8 @@ function Launch() {
             relaunchWith('finish');
           });
       };
-      const inProgress = recovery?.state.session.status === 'active' ? recovery.state : null;
+      // A safe start read the unfinished workout without recovering it (`activeWorkout`); a normal one recovered it.
+      const inProgress = safe.safe ? outcome.activeWorkout : recovery?.state.session.status === 'active' ? { name: recovery.state.session.routineName ?? null } : null;
       const choosing = safe.safe && safeChoice === null;
       // A safe start opens the workout only when Ben taps Resume; after a render error the navigator opens at Today.
       const openWorkout = navKey === 0 && (safe.safe ? safeChoice === 'resume' && inProgress !== null : recovery?.openInto === 'active_workout');
@@ -353,9 +357,16 @@ function Launch() {
           {choosing ? (
             <SafeStartScreen
               decision={safe}
-              workout={inProgress === null ? null : { name: inProgress.session.routineName ?? null }}
+              workout={inProgress}
+              ready
               onResume={() => {
-                setSafeChoice('resume');
+                // Resume recovers it now (timers caught up from their stored deadlines), then opens it.
+                void services.sessions
+                  .recover()
+                  .catch(() => null)
+                  .finally(() => {
+                    setSafeChoice('resume');
+                  });
               }}
               onToday={() => {
                 setSafeChoice('today');

@@ -80,12 +80,17 @@ import { CoachSheetScreen } from '../screens/coach/CoachSheetScreen';
 import { ExerciseFormScreen } from '../screens/library/ExerciseFormScreen';
 import { SummaryScreen } from '../screens/workout/SummaryScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
+import { withScreenBoundary } from '../shell/screen-boundary';
 import type { SetupStep } from '../services/setup';
 import { screenAnimation, useTheme } from '../theme';
 import { AppText, MessageScreen, PrimaryButton, type SymbolName } from '../ui';
 import { popToToday } from './actions';
 import { initialRootState } from './initial-state';
 import type { ImportQuestionKind, LibraryStackParams, ProfileStackParams, ProgressStackParams, RootStackParams, TabParams } from './types';
+
+/** The workout (a full-screen modal) contains its own render errors, as the Summary does (hang fix, 27 Oct; `screen-boundary.tsx`). */
+const GuardedWorkout = withScreenBoundary(WorkoutScreen, 'workout');
+const GuardedSummary = withScreenBoundary(SummaryScreen, 'summary');
 
 /**
  * How to is required on first open, not at launch (review S1): it keeps the
@@ -341,7 +346,7 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
             <>
               <RootStack.Screen name="Tabs" component={TabsNavigator} />
               {/* Slides up; a fade under Reduce Motion (premium-feel §4.2). */}
-              <RootStack.Screen name="Workout" component={WorkoutScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
+              <RootStack.Screen name="Workout" component={GuardedWorkout} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
               {/* Swipe-down = "not now": back to where Ben was, nothing started (check-in.md CI3). */}
               <RootStack.Screen
                 name="CheckIn"
@@ -362,7 +367,7 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               />
               {/* No back navigation into a finished workout; corrections go through Edit (workout-summary §2). */}
               {/* Workout → Summary replaces with a 200 ms fade (motion.screenFade). */}
-              <RootStack.Screen name="Summary" component={SummaryScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Summary', theme.a11y.reduceMotion) }} />
+              <RootStack.Screen name="Summary" component={GuardedSummary} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Summary', theme.a11y.reduceMotion) }} />
               <RootStack.Screen name="AddGym" component={AddGymScreen} options={{ presentation: 'modal' }} />
               <RootStack.Screen name="History" component={HistoryScreen} options={{ headerShown: true, title: HISTORY_COPY.title }} />
               <RootStack.Screen name="RecentlyDeleted" component={RecentlyDeletedScreen} options={{ headerShown: true, title: 'Recently deleted' }} />
