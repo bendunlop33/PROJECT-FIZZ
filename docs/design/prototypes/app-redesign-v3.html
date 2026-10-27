@@ -1,0 +1,1326 @@
+<title>GymSmarter Redesign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<style>
+:root{
+  color-scheme: dark;
+  --canvas:#0D0C0B; --surface:#181615; --raised:#23201E; --divider:#302C29; --control:#75706A;
+  --t1:#F3EEE8; --t2:#B5ADA5; --t3:#948C84; --accent:#EDE5DA; --accent-s:#2B2724; --on-accent:#0D0C0B;
+  --done:#5CC98A; --done-s:#15301F; --warn:#F2B84B; --danger:#FF7B72;
+  --scrim:rgba(0,0,0,.55); --done-fill:rgba(92,201,138,.2); --done-edge:rgba(92,201,138,.55);
+  --run:#7FB2E5; --run-fill:#172636;
+  --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Inter, Roboto, system-ui, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:#050505;color:var(--t1);font-family:var(--font);-webkit-text-size-adjust:100%}
+body{background:#050505;color:#F3EEE8;margin:0;color-scheme:dark;padding-block:12px 24px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));overflow-x:hidden}
+
+/* Phone */
+.phone{width:100%;max-width:410px;min-height:864px;background:var(--canvas);border-radius:44px;border:10px solid #1d1d1f;box-shadow:0 0 0 1px #333, 0 20px 50px rgba(0,0,0,.6);overflow:hidden;position:relative;display:flex;flex-direction:column}
+.sb{height:50px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:6px 26px 0 30px;font-size:15px;font-weight:600;position:relative}
+.sb .di{position:absolute;left:50%;top:10px;transform:translateX(-50%);width:110px;height:30px;border-radius:20px;background:#000}
+.sb .r{display:flex;gap:5px;align-items:center}
+.sb .bat{width:24px;height:11px;border:1.5px solid var(--t1);border-radius:3px;position:relative}
+.sb .bat:after{content:"";position:absolute;inset:1.5px;right:5px;background:var(--t1);border-radius:1px}
+.body{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+.scroll{padding:16px 20px 32px;display:flex;flex-direction:column;gap:20px}
+.hi{height:34px;flex:0 0 auto;position:relative}
+.hi:after{content:"";position:absolute;left:50%;bottom:8px;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--t1);opacity:.85}
+.tabbar{flex:0 0 auto;border-top:1px solid var(--divider);background:var(--canvas);display:flex;height:49px;align-items:center}
+.tabbar span{flex:1;text-align:center;font-size:11px;line-height:14px;letter-spacing:1px;text-transform:uppercase;color:var(--t3);font-weight:400;min-height:44px;display:flex;align-items:center;justify-content:center}
+.tabbar span.on{color:var(--t1);font-weight:600}
+.navbar{height:44px;display:flex;align-items:center;padding:0 8px;position:relative;flex:0 0 auto}
+.navbar .back{color:var(--accent);font-size:17px;display:flex;align-items:center;gap:2px;z-index:1;min-height:44px}
+.navbar .ttl{position:absolute;left:70px;right:70px;text-align:center;font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.navbar .rt{margin-left:auto;color:var(--accent);font-size:17px;z-index:1;padding-right:8px}
+
+/* Type */
+.t1{font-size:30px;line-height:36px;font-weight:600;letter-spacing:-.4px}
+.hero{font-size:40px;line-height:46px;font-weight:600;letter-spacing:-.8px}
+.t2{font-size:22px;line-height:28px;font-weight:600}
+.hl{font-size:17px;line-height:22px;font-weight:600}
+.bd{font-size:17px;line-height:24px}
+.co{font-size:16px;line-height:22px}
+.lb{font-size:16px;line-height:20px;font-weight:500}
+.sec{font-size:13px;line-height:18px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--t3)}
+.c2{color:var(--t2)} .c3{color:var(--t3)} .acc{color:var(--accent)} .ok{color:var(--done)} .wr{color:var(--warn)}
+.num{font-variant-numeric:tabular-nums}
+.sm15{font-size:15px;line-height:20px} .sm14{font-size:14px;line-height:19px} .sm13{font-size:13px;line-height:18px} .sm12{font-size:12px;line-height:16px}
+.w6{font-weight:600}.w7{font-weight:700}
+.u{text-decoration:underline;text-decoration-color:var(--control);text-underline-offset:3px}
+.row{display:flex;align-items:center;gap:8px}
+.rowt{display:flex;align-items:flex-start;gap:8px}
+.wrap{flex-wrap:wrap}
+.between{justify-content:space-between}
+.col{display:flex;flex-direction:column}
+.g1{gap:4px}.g2{gap:8px}.g3{gap:12px}
+.f1{flex:1;min-width:0}.f2{flex:2;min-width:0}
+.r{text-align:right}.c{text-align:center}
+.mt1{margin-top:4px}.mt2{margin-top:8px}
+
+/* Components */
+.card{background:var(--surface);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.group{background:var(--surface);border-radius:20px;overflow:hidden}
+.group>.gr{display:flex;align-items:center;gap:12px;min-height:52px;padding:12px 16px;position:relative}
+.group>.gr+.gr:before{content:"";position:absolute;left:16px;right:0;top:0;height:1px;background:var(--divider)}
+.gr .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.chev{color:var(--t3);display:inline-flex}
+.btn-p{min-height:60px;border-radius:999px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;padding:8px 16px;text-align:center;gap:8px}
+.btn-s{min-height:52px;border-radius:999px;border:1px solid var(--control);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:500;padding:8px 20px;gap:8px;text-align:center}
+.btn-s.h60{min-height:60px}
+.btn-p.sm,.btn-s.sm{min-height:44px;font-size:16px;padding:4px 16px}
+.lnk{min-height:44px;display:inline-flex;align-items:center;gap:4px;font-size:16px;line-height:22px;color:var(--t1);text-decoration:underline;text-decoration-color:var(--control);text-underline-offset:3px;align-self:flex-start}
+.lnk.sec2{color:var(--t2)}
+.dlink{min-height:44px;display:inline-flex;align-items:center;font-size:17px;font-weight:600;color:var(--danger)}
+.chip{min-height:52px;min-width:44px;padding:0 12px;border-radius:999px;border:1px solid var(--divider);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;gap:4px;font-size:16px;font-weight:500;white-space:nowrap}
+.chip.min{min-height:44px}
+/* Selected chip: accent fill + Semibold, no tick */
+.optc .xrows .gr{display:flex;align-items:center;gap:12px;min-height:52px;padding:10px 16px;border-top:1px solid var(--divider)}
+.optc .gr .xmore{display:inline}.optc.open .xmore{display:none}
+.chip.tg.open{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+.chip.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+/* Selected chip where a primary button shares the sheet: subtle fill + 2pt accent border, no tick */
+.chip.sel2{background:var(--accent-s);border:2px solid var(--accent);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.hscroll{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;margin:0 -20px;padding:0 20px;white-space:nowrap}
+.hscroll::-webkit-scrollbar{display:none}
+.hscroll>.chip{flex:0 0 auto}
+/* Today header: big title, week line under it, icon-only buttons */
+.thead{display:flex;align-items:flex-start;gap:8px}
+.thead .tt{flex:1;min-width:0;display:flex;flex-direction:column}
+.iconbtn{width:44px;height:44px;border-radius:22px;background:var(--raised);border:1px solid var(--control);display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-size:18px}
+/* Plan week circles */
+.wks{display:flex;justify-content:space-between;align-items:flex-start;padding-top:4px}
+.wk{width:44px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.wk .cc{width:36px;height:36px;border-radius:18px;border:1.5px solid var(--control);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:500;color:var(--t2);font-variant-numeric:tabular-nums}
+.wk.done .cc{background:var(--done);border-color:var(--done);color:var(--on-accent)}
+.wk.cur .cc{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.wk.sel .cc{box-shadow:0 0 0 2px var(--canvas),0 0 0 4px var(--t2)}
+.wk small{font-size:11px;line-height:13px;color:var(--t3)}
+.seg{display:flex;background:var(--raised);border-radius:8px;padding:2px;gap:2px}
+.seg span{flex:1;min-height:44px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:400;color:var(--t2);border-radius:6px;white-space:nowrap;padding:0 2px}
+.seg.per span{min-height:36px;font-size:15px}
+.bars{display:flex;align-items:flex-end;gap:4px;height:120px;padding-top:8px}
+.bars>div{flex:1;border-radius:4px 4px 0 0;background:var(--accent)}
+.bars>div.lo{background:var(--control)}
+.cdot{display:inline-block;width:6px;height:6px;border-radius:3px;background:var(--accent);margin-left:4px;vertical-align:middle}
+.seg span.on{background:var(--accent-s);color:var(--t1);font-weight:600}
+.tag{display:inline-flex;align-items:center;gap:4px;background:var(--raised);border-radius:8px;padding:2px 8px;font-size:14px;line-height:20px;font-weight:500;color:var(--t2)}
+.sw-ios{width:51px;height:31px;border-radius:16px;background:#34C759;position:relative;flex:0 0 auto}
+.sw-ios:after{content:"";position:absolute;top:2px;right:2px;width:27px;height:27px;border-radius:50%;background:#fff}
+.sw-ios.off{background:#39393D}
+.sw-ios.off:after{right:auto;left:2px}
+.dim-bg{position:absolute;inset:0;background:var(--scrim);z-index:6}
+.bcard{position:absolute;left:0;right:0;bottom:0;z-index:7;background:var(--surface);border-radius:20px 20px 0 0;padding:24px 20px 0;display:flex;flex-direction:column;gap:16px;max-height:90%}
+.bcard .foot{display:flex;flex-direction:column;gap:8px;padding-bottom:4px}
+.ghost{opacity:.5;filter:saturate(.6)}
+.ruled{border-top:1px solid var(--divider);padding-top:16px;display:flex;flex-direction:column;gap:12px}
+/* Pinned bottom bar: primary action never scrolls away */
+.dock{position:sticky;bottom:0;z-index:4;background:var(--canvas);border-top:1px solid var(--divider);padding:10px 20px;display:flex;gap:8px;align-items:stretch;margin-top:auto}
+.dock.colm{flex-direction:column}
+.ptoast{position:absolute;left:16px;right:16px;bottom:96px;z-index:8;display:flex;align-items:center;gap:8px;padding:0 4px 0 16px;min-height:52px;border-radius:999px;border:1px solid var(--control);background:var(--raised);font-size:16px}
+.ptoast b{margin-left:auto;font-weight:600;color:var(--accent);padding:0 14px;min-height:44px;display:flex;align-items:center}
+
+/* Today */
+.strip{display:flex;gap:3px}
+.strip .cell{flex:1 1 0;min-width:0;min-height:92px;padding:8px 2px;display:flex;flex-direction:column;align-items:center;gap:4px;border-radius:12px}
+.strip .cell.today{border:1.5px solid var(--accent);background:var(--accent-s)}
+.strip .dv{width:1px;background:var(--divider)}
+.strip .wd{font-size:12px;line-height:15px;letter-spacing:.4px;font-weight:600;color:var(--t3)}
+.strip .today .wd{color:var(--t1)}
+.strip .dm{font-size:21px;line-height:26px;font-weight:600}
+.strip .past .dm{color:var(--t2)}
+.pill{align-self:stretch;border-radius:8px;padding:4px 1px;font-size:12px;line-height:15px;letter-spacing:-.1px;text-align:center;white-space:nowrap;overflow:hidden}
+.pill.done{background:var(--done-fill);border:1px solid var(--done-edge);color:var(--t1)}
+.pill.plan{border:1px dashed var(--t3);color:var(--t2)}
+.pill.act{background:var(--run-fill);border:1px solid rgba(127,178,229,.4);color:var(--run)}
+.pill.rest{color:var(--t3)}
+.daycontrol{display:flex;background:var(--surface);border-radius:14px;padding:3px;gap:3px}
+.daycontrol span{flex:1;min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;font-size:15px;font-weight:500;color:var(--t3)}
+.daycontrol span.on{background:var(--raised);color:var(--t1)}
+.daycontrol span.more{flex:.6}
+.daycontrol small{font-size:10px;line-height:12px;letter-spacing:1.2px;font-weight:600}
+.tstep{width:44px;height:44px;border-radius:22px;border:1px solid var(--divider);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:500}
+.coachpill{min-height:44px;display:flex;align-items:center;gap:4px;padding:0 12px;border-radius:999px;background:var(--surface);border:1px solid var(--control);font-size:16px}
+.coachchip{min-height:44px;display:inline-flex;align-items:center;gap:6px;padding:0 14px;border-radius:999px;background:var(--raised);border:1px solid var(--control);font-size:16px;align-self:flex-start}
+.micbtn{width:44px;height:44px;border-radius:22px;background:var(--raised);border:1px solid var(--control);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.micsq{width:48px;min-height:48px;border-radius:14px;background:var(--raised);border:1px solid var(--control);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.askbar{flex:1;min-height:48px;display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:14px;background:var(--raised);border:1px solid var(--control);font-size:16px}
+.gymchip{max-width:190px;min-height:44px;display:inline-flex;align-items:center;gap:4px;padding:0 12px;border-radius:999px;border:1px solid var(--control);font-size:16px;white-space:nowrap;overflow:hidden;flex:0 1 auto}
+.gymchip>span{min-width:0;max-width:16ch;overflow:hidden;text-overflow:ellipsis}
+.ib{width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.xrows,.xless{display:none}
+.open .xrows{display:block}.open .xless{display:inline-flex}.open .xmore{display:none}
+#tcard .xrows>div+div{margin-top:4px}
+
+/* WorkoutList: one component for every planned workout */
+.wl-h{display:flex;align-items:flex-end;gap:8px;padding-bottom:4px;border-bottom:1px solid var(--divider)}
+.wl-h span{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--t3);white-space:nowrap}
+.wl-r{display:flex;align-items:center;gap:8px;min-height:48px;padding:6px 0;border-top:1px solid var(--divider)}
+.wl-h+.wl-r{border-top:0}
+.wl-n{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.wl-n>span:first-child{font-size:16px}
+.wl-h .wl-s,.wl-h .wl-k{font-size:11px}
+.wl-s{width:64px;flex:0 0 auto;text-align:right;font-size:14px;color:var(--t2);line-height:22px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wl-k{width:62px;flex:0 0 auto;text-align:right;font-size:14px;line-height:22px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wl-ss{border-left:2px solid var(--t3);padding-left:10px;border-top:1px solid var(--divider)}
+.wl-ss .wl-r:first-child{border-top:0}
+.xc{background:var(--surface);border-radius:16px;overflow:hidden;position:relative}
+.xh{display:flex;align-items:center;gap:10px;min-height:60px;padding:8px 14px}
+.grip{color:var(--t3);font-size:20px;width:18px;text-align:center;line-height:1}
+.chevx{color:var(--t3);display:inline-flex;transition:transform .15s}
+.xb{display:none;padding:0 14px 14px;flex-direction:column;gap:8px}
+.xc.open .xb{display:flex}
+.xc.open .chevx{transform:rotate(180deg)}
+.sg{display:grid;grid-template-columns:34px 1fr 1fr 52px;gap:8px;align-items:center}
+.sg .h{font-size:11px;line-height:14px;letter-spacing:1px;color:var(--t3);font-weight:600;text-align:center}
+.sg .n{text-align:center;color:var(--t2);font-size:15px;font-variant-numeric:tabular-nums}
+.xss{border-left:2px solid var(--t3);padding-left:8px;display:flex;flex-direction:column;gap:8px}
+.xss:before{content:"SUPERSET";font-size:11px;line-height:14px;letter-spacing:1.1px;font-weight:600;color:var(--t3)}
+.xmeta{display:flex;gap:8px}
+.xmeta>span{flex:1;min-height:40px;border-radius:9px;background:var(--raised);display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:15px}
+.xacts{display:flex;gap:8px}
+.xacts>span{flex:1;min-height:40px;border-radius:999px;border:1px solid var(--control);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500}
+.swwrap{position:relative;border-radius:16px;overflow:hidden;background:var(--raised)}
+.swwrap .xc{transform:translateX(-152px)}
+.swacts{position:absolute;right:0;top:0;bottom:0;display:flex}
+.swacts>span{width:76px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+.swacts .rm{background:var(--danger);color:#fff}
+.lifted{transform:scale(1.03);box-shadow:0 12px 30px rgba(0,0,0,.55);outline:1.5px solid var(--accent)}
+.dimc{opacity:.35}
+.dropline{height:3px;border-radius:2px;background:var(--accent);margin:-4px 8px}
+.ctxm{background:var(--raised);border-radius:14px;overflow:hidden;align-self:flex-end;width:78%}
+.ctxm>div{min-height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:16px;border-top:1px solid var(--divider)}
+.ctxm>div:first-child{border-top:0}
+
+.wl-ss:before{content:"SUPERSET";display:block;font-size:11px;line-height:14px;letter-spacing:1.1px;font-weight:600;color:var(--t3);padding-top:8px}
+
+/* Active workout table */
+.wtop{position:sticky;top:0;z-index:4;background:var(--canvas);display:flex;align-items:center;min-height:52px;padding:0 8px 0 4px;gap:4px}
+.finbtn{min-height:44px;padding:0 16px;border-radius:999px;background:var(--accent-s);border:1px solid var(--control);display:flex;align-items:center;font-size:17px;font-weight:600}
+.rstrip{display:flex;align-items:center;gap:8px;padding:0 16px 8px}
+.rchip{min-width:44px;height:30px;padding:0 8px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;background:var(--surface);color:var(--t3);border:1.5px solid transparent}
+.rchip.done{background:var(--done-s);color:var(--done)}
+.rchip.on{border-color:var(--accent);color:var(--t1)}
+.wcard{background:var(--surface);border-radius:20px;padding:12px;display:flex;flex-direction:column}
+.cols{display:flex;align-items:center;gap:6px;padding:8px 0 4px;font-size:11px;line-height:14px;letter-spacing:.6px;color:var(--t3);font-weight:500}
+.srow{display:flex;align-items:center;gap:6px;min-height:48px;border-top:1px solid var(--divider)}
+.c-set{width:34px}.c-prev{width:66px}.c-kg{flex:1;min-width:0}.c-reps{flex:1;min-width:0}.c-rir{width:40px}.c-tick{width:44px;display:flex;justify-content:center}
+.box{min-height:40px;border-radius:9px;background:var(--raised);display:flex;align-items:center;justify-content:center;font-size:19px;font-variant-numeric:tabular-nums;border:1.5px solid transparent}
+.box.dimv{color:var(--t2)}
+.box.on{border-color:var(--accent)}
+.rirbox{min-height:40px;border-radius:8px;background:var(--raised);display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--t3)}
+.dv-done{font-size:19px;color:var(--done);text-align:center;font-weight:500;font-variant-numeric:tabular-nums}
+.ring{width:32px;height:32px;border-radius:16px;border:1.5px solid var(--t3);display:flex;align-items:center;justify-content:center;color:var(--t3)}
+.ring.acc{border:2px solid var(--accent);color:var(--accent)}
+.ring.fill{background:var(--done);border-color:var(--done);color:var(--on-accent)}
+.setpill{min-height:36px;padding:0 12px;border-radius:999px;border:1.5px solid var(--divider);display:inline-flex;align-items:center;font-size:14px;color:var(--t2)}
+.addrow{min-height:52px;border-radius:14px;border:1.5px dashed var(--control);display:flex;align-items:center;justify-content:center;gap:6px;font-size:16px;font-weight:500}
+.restbar{min-height:64px;border-radius:14px;background:var(--surface);position:relative;overflow:hidden;display:flex;align-items:center;padding:0 12px;gap:8px}
+.restbar .drain,.drain{position:absolute;left:0;bottom:0;height:3px;background:var(--accent)}
+.rpill{height:44px;min-width:48px;padding:0 12px;border-radius:999px;border:1.5px solid var(--t3);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500}
+.coachicon{min-width:44px;min-height:44px;border-radius:14px;border:1px solid var(--control);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 4px}
+.kbar{display:flex;align-items:center;gap:8px;background:var(--surface);padding:6px 12px}
+.kkey{width:52px;min-height:44px;border-radius:999px;background:var(--raised);display:flex;align-items:center;justify-content:center;font-size:22px}
+.klog{min-height:44px;padding:0 18px;border-radius:999px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;gap:6px;font-size:17px;font-weight:600}
+.keyboard{background:#2b2b2d;padding:6px 4px 4px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.keyboard span{background:#6b6b6f;border-radius:6px;min-height:46px;display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff}
+.keyboard span.k2{background:transparent}
+
+/* Progress / History */
+.stat{display:flex;border-top:1px solid var(--divider);border-bottom:1px solid var(--divider)}
+.stat>div{flex:1;padding:10px 0;min-width:0}
+.stat>div+div{padding-left:14px;border-left:1px solid var(--divider)}
+.stat .v{font-size:32px;line-height:36px;font-weight:300;letter-spacing:-.6px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat .v small{font-size:16px;color:var(--t2);font-weight:400;letter-spacing:0}
+.dd{min-height:44px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;border-radius:8px;background:var(--raised);font-size:17px;font-weight:600;align-self:flex-start}
+.cal{display:grid;grid-template-columns:repeat(7,1fr)}
+#histcal{gap:7px;margin-top:6px}
+#histcal .d{min-height:46px;aspect-ratio:1/1.05;border-radius:12px;background:var(--surface);justify-content:center;gap:5px}
+#histcal .d.blank{background:none}
+#histcal .d.done{background:rgba(92,201,138,.17)}
+#histcal .d.fut{background:transparent;border:1px solid var(--surface)}
+#histcal .d.fut .o{color:var(--t3)}
+#histcal .d.today{box-shadow:inset 0 0 0 1.5px var(--t1)}
+#histcal .d .o{min-width:0;height:auto;font-size:14px;line-height:16px;border:0;background:none}
+.sd{width:8px;height:8px;border-radius:4px;display:inline-block}
+.sd.push{background:#F2A65A}.sd.pull{background:#6FA8F5}.sd.legs{background:#C792EA}.sd.act{background:transparent;box-shadow:inset 0 0 0 1.5px var(--t2)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;line-height:18px;color:var(--t2);align-items:center}
+.legend>span{display:inline-flex;align-items:center;gap:5px}
+.cal .d{min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.cal .d .o{min-width:32px;height:32px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.cal .d .o.td{border:1px solid var(--t2)}
+.cal .d .o.sel{background:var(--accent-s);font-weight:600}
+.dot{width:6px;height:6px;border-radius:3px;background:var(--t1);display:inline-block}
+.odot{width:6px;height:6px;border-radius:3px;border:1px solid var(--t1);display:inline-block}
+.wkchip{min-width:44px;min-height:44px;padding:0 8px;border-radius:8px;background:var(--raised);display:flex;align-items:center;justify-content:center;gap:2px;font-size:16px;font-weight:500;color:var(--t2);position:relative}
+.wkchip.cur{color:var(--t1)}
+.wkchip.on{background:var(--accent);color:var(--on-accent)}
+.wkchip .cd{position:absolute;bottom:5px;width:5px;height:5px;border-radius:3px;background:currentColor}
+.wchip{flex:1;min-height:52px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 2px;border:1.5px solid var(--divider)}
+.wchip.done{background:var(--done-fill);border-color:var(--done-edge)}
+.wchip.td{border-color:var(--t2)}
+.mark{width:24px;height:24px;border-radius:12px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+.mark.done{background:var(--done-s);color:var(--done)}
+.mark.next{border:2px solid var(--accent);color:var(--accent);font-size:13px;font-weight:500}
+.nexttag{background:var(--raised);border-radius:6px;padding:2px 7px;font-size:13px;line-height:18px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase}
+.nt{display:flex;flex-direction:column;gap:2px;padding:10px 0;border-top:1px solid var(--divider)}
+.bfr{display:inline-block;background:var(--warn);color:#0D0C0B;border-radius:6px;padding:1px 8px;font-size:12px;font-weight:700;letter-spacing:.8px}
+
+/* Prototype shell */
+.ph{max-width:620px;margin:0 auto 10px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ph .nm{flex:1 1 160px;min-width:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph button,.ph select,.ph label{font:inherit;font-size:14px;color:#F3EEE8;background:#181615;border:1px solid #75706A;border-radius:999px;min-height:36px;padding:0 12px;cursor:pointer}
+.ph button[hidden]{display:none}
+.ph #pba{border-color:#F2B84B;color:#F2B84B}
+.ph select{max-width:100%;border-radius:10px}
+.ph label{display:inline-flex;align-items:center;gap:6px}
+.stage{display:flex;justify-content:center}
+.wrapp{position:relative;overflow:hidden}
+.scale{transform-origin:top left;width:410px}
+.scale .phone{height:864px;min-height:0;max-width:410px;width:410px}
+.scale .phone>.body{overflow-y:auto;overflow-x:hidden;scrollbar-width:none}
+.scale .phone>.body::-webkit-scrollbar{display:none}
+.hs{cursor:pointer;transition:filter .12s, box-shadow .12s}
+.hs:hover{filter:brightness(1.25);box-shadow:inset 0 0 0 999px rgba(237,229,218,.06)}
+.hs:active{filter:brightness(1.45)}
+.show-taps .hs{outline:2px dashed rgba(242,184,75,.9);outline-offset:-2px}
+.foot-note{max-width:620px;margin:12px auto 0;color:#948C84;font-size:12.5px;line-height:17px;text-align:center}
+</style>
+<div class="ph">
+  <span class="nm" id="pn" aria-live="polite">Today</span>
+  <button id="pback" aria-label="Back">Back</button>
+  <button id="pprev" aria-label="Previous screen">‹</button>
+  <button id="pnext" aria-label="Next screen">›</button>
+  <button id="pba" hidden>Show before</button>
+  <select id="psel" aria-label="Screens"></select>
+  <label><input type="checkbox" id="ptaps"> Show taps</label>
+</div>
+<div class="stage" id="stage"><div class="wrapp" id="wrapp"><div class="scale" id="scale">
+
+<!-- ================= TODAY (after) ================= -->
+<div class="scr" id="s-today" data-name="Today (after) · collapsed card, two Start buttons" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll" style="padding-top:12px;gap:12px">
+  <div class="thead"><div class="tt"><span class="t1">Tuesday</span><span class="co c2 num">Week 3 of 6</span></div><span class="iconbtn acc" aria-label="Coach">✦</span><span class="iconbtn" aria-label="Talk to the coach"><i data-ic="mic" data-s="18"></i></span></div>
+  <div class="row" data-go="prog-body" data-long="today-custom" aria-label="Sleep last night 7 hours 5 minutes. Resting heart rate 58. From Apple Health. Long-press to customise" style="gap:6px;min-height:32px;margin-top:-6px"><span class="c3"><i data-ic="heart" data-s="14"></i></span><span class="co c2 num sm14">Sleep 7h&nbsp;05m · RHR 58</span><span class="c3"><i data-ic="chev-r" data-s="12"></i></span></div>
+  <div class="strip">
+    <div class="cell past"><span class="wd">SAT</span><span class="dm num">24</span><span class="pill done">Legs</span></div>
+    <div class="cell past"><span class="wd">SUN</span><span class="dm num">25</span><span class="pill rest">Rest</span></div>
+    <span class="dv"></span><div class="cell past"><span class="wd">MON</span><span class="dm num">26</span><span class="pill done">Pull</span><span class="pill act">Run</span></div>
+    <div class="cell today"><span class="wd">TODAY</span><span class="dm num">27</span><span class="pill plan">Push</span></div>
+    <div class="cell"><span class="wd">WED</span><span class="dm num">28</span></div><div class="cell"><span class="wd">THU</span><span class="dm num">29</span><span class="pill plan">Legs</span></div><div class="cell"><span class="wd">FRI</span><span class="dm num">30</span></div>
+  </div>
+  <div class="col" style="gap:6px"><span class="sec">Your split</span><div class="daycontrol"><span class="on">Push</span><span>Pull</span><span>Legs</span><span class="more" data-go="today-other">⋯</span></div></div>
+  <div class="card" id="tcard" style="gap:8px">
+    <div class="row between" style="align-items:flex-start"><div class="col f1" style="gap:2px"><span class="sec" style="color:var(--accent)">Up next</span><span class="t2">Push</span><span class="co c2 num">5 exercises · 45&nbsp;min</span></div><span class="lnk" data-go="your-workout" style="padding:4px 0 0 12px">Edit</span></div>
+    <div class="row between"><span class="lnk sec2 xmore" data-tog="tcard">Show exercises</span><span class="lnk sec2 xless" data-tog="tcard">Hide exercises</span><span class="tag xmore" data-go="today-offer"><span class="acc">✦</span>1 change</span></div>
+    <div class="xrows">
+    <div class="row" style="gap:12px;padding-bottom:4px"><span class="co c2" style="display:inline-flex;align-items:center;gap:4px"><i data-ic="building" data-s="14"></i>Main Gym <i data-ic="chev-d" data-s="12"></i></span><span class="lnk sec2" data-go="today-time" style="min-height:0">1 left out to fit 45&nbsp;min</span></div>
+    <div>
+      <div class="wl-h"><span class="f1">Exercise</span><span class="wl-s">Sets</span><span class="wl-k">Target kg</span></div>
+      <div class="wl-r" data-go="row-sheet" aria-label="Bench press, main lift, 4 sets of 6 to 8, target 82.5 kilograms"><div class="wl-n"><span class="co w6">Bench press</span></div><span class="wl-s">4 × 6–8</span><span class="wl-k">82.5</span></div>
+      <div>
+        <div class="wl-r" data-go="row-sheet"><div class="wl-n"><span class="co">DB shoulder press</span></div><span class="wl-s">3 × 8–10</span><span class="wl-k acc" data-go="today-offer" aria-label="Coach suggests 22 kg ea, tap to review">✦&nbsp;22&nbsp;ea</span></div>
+        <div class="wl-r" data-go="row-sheet"><div class="wl-n"><span class="co">Incline DB press</span></div><span class="wl-s">3 × 8–10</span><span class="wl-k">22&nbsp;ea</span></div>
+        <div class="wl-ss" aria-label="Superset">
+          <div class="wl-r" data-go="row-sheet"><div class="wl-n"><span class="co">Cable lateral raise</span></div><span class="wl-s">3 × 12–15</span><span class="wl-k">7.5</span></div>
+          <div class="wl-r" data-go="row-sheet"><div class="wl-n"><span class="co">Triceps pushdown</span></div><span class="wl-s">3 × 10–12</span><span class="wl-k">30</span></div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+</div>
+<div class="dock colm" style="gap:8px"><div class="btn-p" data-go="active">Start Plan Workout</div><div class="btn-s" data-go="empty">Start Empty Workout</div></div>
+</div><div class="tabbar" data-on="Today"></div><div class="hi"></div></div>
+</div>
+
+<!-- Today › coach offer (one-line chip → sheet) -->
+<div class="scr" id="s-today-offer" data-name="Today › 1 change for today (coach offer)" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost" style="padding-top:12px"><span class="t1" style="font-size:28px">Tuesday</span><div class="card" style="height:420px"><span class="t2">Push</span></div></div></div><div class="tabbar" data-on="Today"></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <div class="col g1"><span class="t2">1 change for today</span><span class="co c2">Coach · today only</span></div>
+  <div class="card" style="background:var(--raised);gap:8px">
+    <span class="hl">Dumbbell shoulder press</span>
+    <div class="row between"><span class="co c2">Target now</span><span class="bd num">24&nbsp;kg ea × 8–10</span></div>
+    <div class="row between"><span class="co c2">Target after</span><span class="bd num w6">22&nbsp;kg ea × 8–10</span></div>
+    <span class="lnk sec2">Why?</span>
+  </div>
+  <div class="foot"><div class="btn-p" data-go="back" data-toast="Applied for today">Apply</div><div class="btn-s" data-go="back">Skip</div></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- Today › time / left out -->
+<div class="scr" id="s-today-time" data-name="Today › 1 left out to fit 45 min" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost" style="padding-top:12px"><span class="t1" style="font-size:28px">Tuesday</span><div class="card" style="height:420px"><span class="t2">Push</span></div></div></div><div class="tabbar" data-on="Today"></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <span class="t2">Time</span>
+  <div class="row between" style="min-height:52px"><span class="bd">Session</span><div class="row"><span class="tstep">−</span><span class="hl num" style="min-width:72px;text-align:center">45&nbsp;min</span><span class="tstep">+</span></div></div>
+  <div class="col g2"><span class="sec">Left out to fit</span>
+    <div class="group" style="filter:brightness(1.18)"><div class="gr"><div class="tx"><span class="bd">Overhead cable extension</span><span class="co c2 num">2 × 10–12 · 25&nbsp;kg</span></div><span class="lnk" style="align-self:center">Add back</span></div></div>
+  </div>
+  <div class="foot"><div class="btn-p" data-go="back">Done</div></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- Today › Other -->
+<div class="scr" id="s-today-other" data-name="Today › Other ›" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost" style="padding-top:12px"><span class="t1" style="font-size:28px">Tuesday</span><div class="card" style="height:420px"><span class="t2">Push</span></div></div></div><div class="tabbar" data-on="Today"></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <span class="t2">Other</span>
+  <div class="col g2"><span class="sec">Plan days</span>
+    <div class="group" style="filter:brightness(1.18)"><div class="gr"><span class="bd f1">Pull</span><span class="co c2">Done Mon</span></div><div class="gr"><span class="bd f1">Legs</span><span class="co c2">Thu</span></div></div></div>
+  <div class="group" style="filter:brightness(1.18)">
+    <div class="gr"><span class="bd f1">Build your own</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr" data-go="history"><span class="bd f1">Log a past workout</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr"><span class="bd f1">＋ Activity</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+  </div>
+  <div class="foot"><span class="lnk sec2" data-go="back">Close</span></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- Today › Show on Today (long-press Health row) -->
+<div class="scr" id="s-today-custom" data-name="Today › Show on Today (long-press Health row)" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost" style="padding-top:12px"><span class="t1" style="font-size:28px">Tuesday</span><div class="card" style="height:300px"><span class="t2">Push</span></div><div class="group"><div class="gr"><span class="co c2 f1">Sleep 7h&nbsp;05m · RHR 58</span></div></div></div></div><div class="tabbar" data-on="Today"></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <span class="t2">Show on Today</span>
+  <div class="group" style="filter:brightness(1.18)">
+    <div class="gr"><span class="bd f1">Sleep</span><span class="sw-ios" role="switch" aria-checked="true"></span></div>
+    <div class="gr"><span class="bd f1">Resting heart rate</span><span class="sw-ios" role="switch" aria-checked="true"></span></div>
+    <div class="gr"><span class="bd f1">Bodyweight</span><span class="sw-ios off" role="switch" aria-checked="false"></span></div>
+  </div>
+  <div class="foot"><div class="btn-p" data-go="back">Done</div></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- WorkoutList row sheet -->
+<div class="scr" id="s-row-sheet" data-name="WorkoutList › tap a row (last time)" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost" style="padding-top:12px"><span class="t1" style="font-size:28px">Tuesday</span><div class="card" style="height:360px"></div></div></div><div class="tabbar" data-on="Today"></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <div class="col g1"><span class="t2">Bench press</span><span class="co c2">Barbell · Chest, triceps, shoulders</span></div>
+  <div>
+    <div class="row between" style="min-height:44px"><span class="bd c2">Target</span><span class="bd num">4 × 6–8 · 82.5&nbsp;kg</span></div>
+    <div class="row between" style="min-height:44px;border-top:1px solid var(--divider)"><span class="bd c2">Last · 20 Oct</span><span class="bd num">80 × 8, 8, 7, 6</span></div>
+    <div class="row between" style="min-height:44px;border-top:1px solid var(--divider)"><span class="bd c2">Best set</span><span class="bd num">80 × 8 · 20 Oct</span></div>
+  </div>
+  <div class="group" style="filter:brightness(1.18)">
+    <div class="gr"><span class="bd f1">How to</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr" data-go="prog-lifts"><span class="bd f1">History</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+  </div>
+  <div class="foot"><span class="lnk sec2" data-go="back">Close</span></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- Your workout (Edit) -->
+<div class="scr" id="s-your-workout" data-name="Your workout (Edit) · WorkoutList full" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div style="padding:0 20px;display:flex;flex-direction:column;gap:4px">
+  <div class="row between"><span class="lnk sec2" data-go="back">‹ Today</span><span class="ib c2" aria-label="More: Review, Save as workout"><i data-ic="ellipsis" data-s="20"></i></span></div>
+  <span class="t1">Push</span>
+  <div class="row between" style="min-height:52px"><span class="co c2">Time</span><div class="row"><span class="tstep">−</span><span class="lb num" style="min-width:64px;text-align:center">45&nbsp;min</span><span class="tstep">+</span></div></div>
+  <span class="lnk sec2" data-go="today-time"><i data-ic="clock" data-s="16"></i>1 left out to fit 45&nbsp;min ›</span>
+</div>
+<div style="padding:8px 20px 20px;display:flex;flex-direction:column;gap:12px">
+  <div class="group optc" id="yw-opt"><div class="gr" data-tog="yw-opt" style="min-height:56px"><span class="hl f1">Options</span><span class="co c2 xmore">Abs · Supersets</span><span class="c2"><i data-ic="chev-d" data-s="16"></i></span></div>
+    <div class="xrows"><div class="gr"><span class="bd f1">Main lift</span><span class="co c2">Bench press ›</span></div><div class="gr"><span class="bd f1">Accessories</span><span class="co c2">Focused ›</span></div><div class="gr"><span class="bd f1">Abs</span><span class="sw-ios" role="switch" aria-checked="true"></span></div><div class="gr"><span class="bd f1">Supersets</span><span class="sw-ios" role="switch" aria-checked="true"></span></div><div class="gr"><span class="lnk sec2">Mix it up</span></div></div></div>
+  <div class="card" style="gap:0">
+    <div class="wl-h"><span class="f1">Exercise</span><span class="wl-s">Sets</span><span class="wl-k">Target kg</span></div>
+    <div class="wl-r" data-go="ex-edit"><div class="wl-n"><span class="bd w6">Bench press</span><span class="co c3">Chest · triceps</span></div><span class="wl-s">4 × 6–8</span><span class="wl-k">82.5</span></div>
+    <div class="wl-r" data-go="ex-edit"><div class="wl-n"><span class="bd">DB shoulder press</span><span class="co c3">Shoulders</span></div><span class="wl-s">3 × 8–10</span><span class="wl-k">24&nbsp;ea</span></div>
+    <div class="wl-r" data-go="ex-edit"><div class="wl-n"><span class="bd">Incline DB press</span><span class="co c3">Upper chest</span></div><span class="wl-s">3 × 8–10</span><span class="wl-k">22&nbsp;ea</span></div>
+    <div class="wl-ss" aria-label="Superset">
+      <div class="wl-r" data-go="ex-edit"><div class="wl-n"><span class="bd">Cable lateral raise</span><span class="co c3">Side delts</span></div><span class="wl-s">3 × 12–15</span><span class="wl-k">7.5</span></div>
+      <div class="wl-r" data-go="ex-edit"><div class="wl-n"><span class="bd">Triceps pushdown</span><span class="co c3">Triceps</span></div><span class="wl-s">3 × 10–12</span><span class="wl-k">30</span></div>
+    </div>
+    <div class="row co" style="min-height:52px;justify-content:center;border-top:1px solid var(--divider)">＋ Add exercise</div>
+  </div>
+</div>
+<div class="dock colm">
+  <div class="row" style="gap:8px;align-items:stretch"><div class="askbar"><span class="acc">✦</span><span class="f1">Ask the coach to change it</span></div><span class="micsq"><i data-ic="mic" data-s="18"></i></span></div>
+  <div class="btn-p" data-go="active">Start</div>
+</div>
+</div><div class="hi"></div></div>
+</div>
+
+<div class="scr" id="s-yw-ss" data-name="Your workout · after Superset with…" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div style="padding:0 20px;display:flex;flex-direction:column;gap:4px">
+  <div class="row between"><span class="lnk sec2" data-go="root:your-workout">‹ Today</span><span class="ib c2" aria-label="More: Review, Save as workout"><i data-ic="ellipsis" data-s="20"></i></span></div>
+  <span class="t1">Push</span>
+  <div class="row between" style="min-height:52px"><span class="co c2">Time</span><div class="row"><span class="tstep">−</span><span class="lb num" style="min-width:64px;text-align:center">45&nbsp;min</span><span class="tstep">+</span></div></div>
+  <span class="lnk sec2" data-go="today-time"><i data-ic="clock" data-s="16"></i>1 left out to fit 45&nbsp;min ›</span>
+</div>
+<div style="padding:8px 20px 20px;display:flex;flex-direction:column;gap:12px">
+  <div class="group optc" id="yws-opt"><div class="gr" data-tog="yws-opt" style="min-height:56px"><span class="hl f1">Options</span><span class="co c2 xmore">Abs · Supersets</span><span class="c2"><i data-ic="chev-d" data-s="16"></i></span></div>
+    <div class="xrows"><div class="gr"><span class="bd f1">Main lift</span><span class="co c2">Bench press ›</span></div><div class="gr"><span class="bd f1">Accessories</span><span class="co c2">Focused ›</span></div><div class="gr"><span class="bd f1">Abs</span><span class="sw-ios" role="switch" aria-checked="true"></span></div><div class="gr"><span class="bd f1">Supersets</span><span class="sw-ios" role="switch" aria-checked="true"></span></div><div class="gr"><span class="lnk sec2">Mix it up</span></div></div></div>
+  <div class="card" style="gap:0">
+    <div class="wl-h"><span class="f1">Exercise</span><span class="wl-s">Sets</span><span class="wl-k">Target kg</span></div>
+    <div class="wl-r"><div class="wl-n"><span class="bd w6">Bench press</span><span class="co c3">Chest · triceps</span></div><span class="wl-s">4 × 6–8</span><span class="wl-k">82.5</span></div>
+    <div class="wl-ss" aria-label="Superset">
+      <div class="wl-r"><div class="wl-n"><span class="bd">DB shoulder press</span><span class="co c3">Shoulders</span></div><span class="wl-s">3 × 8–10</span><span class="wl-k">24&nbsp;ea</span></div>
+    <div class="wl-r"><div class="wl-n"><span class="bd">Incline DB press</span><span class="co c3">Upper chest</span></div><span class="wl-s">3 × 8–10</span><span class="wl-k">22&nbsp;ea</span></div>
+    </div>
+    <div class="wl-ss" aria-label="Superset">
+      <div class="wl-r"><div class="wl-n"><span class="bd">Cable lateral raise</span><span class="co c3">Side delts</span></div><span class="wl-s">3 × 12–15</span><span class="wl-k">7.5</span></div>
+      <div class="wl-r"><div class="wl-n"><span class="bd">Triceps pushdown</span><span class="co c3">Triceps</span></div><span class="wl-s">3 × 10–12</span><span class="wl-k">30</span></div>
+    </div>
+    <div class="row co" style="min-height:52px;justify-content:center;border-top:1px solid var(--divider)">＋ Add exercise</div>
+  </div>
+</div>
+<div class="dock colm">
+  <div class="row" style="gap:8px;align-items:stretch"><div class="askbar"><span class="acc">✦</span><span class="f1">Ask the coach to change it</span></div><span class="micsq"><i data-ic="mic" data-s="18"></i></span></div>
+  <div class="btn-p" data-go="active">Start</div>
+</div>
+</div><div class="hi"></div></div>
+</div>
+
+
+<!-- Your workout › row actions -->
+<div class="scr" id="s-ex-edit" data-name="Your workout › tap an exercise (Superset with…)" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost" style="padding-top:12px"><span class="t1">Push</span><div class="card" style="height:420px"></div></div></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <div class="col g1"><span class="t2">Dumbbell shoulder press</span><span class="co c2 num">3 × 8–10 · 24&nbsp;kg ea</span></div>
+  <div class="group" style="filter:brightness(1.18)">
+    <div class="gr"><span class="bd f1">Sets and target</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr" data-go="ss-pick"><span class="bd f1">Superset with…</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr"><span class="bd f1">Swap exercise</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr"><span class="bd f1">Move</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr"><span class="bd f1" style="color:var(--danger)">Remove</span></div>
+  </div>
+  <div class="foot"><span class="lnk sec2" data-go="back">Close</span></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<div class="scr" id="s-ss-pick" data-name="Superset with… (pick a partner)" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost" style="padding-top:12px"><span class="t1">Push</span><div class="card" style="height:420px"></div></div></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <div class="col g1"><span class="t2">Superset with</span><span class="co c2">Dumbbell shoulder press</span></div>
+  <div class="group" style="filter:brightness(1.18)">
+    <div class="gr"><span class="bd f1">Bench press</span></div>
+    <div class="gr" data-go="yw-ss" data-toast="Superset made"><span class="bd f1">Incline dumbbell press</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr"><span class="bd f1">Cable lateral raise</span><span class="co c2">in a superset</span></div>
+    <div class="gr"><span class="bd f1">Triceps pushdown</span><span class="co c2">in a superset</span></div>
+  </div>
+  <div class="foot"><span class="lnk sec2" data-go="back">Cancel</span></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- ================= ACTIVE WORKOUT (after) ================= -->
+<div class="scr" id="s-active" data-name="Active workout (after) · Finish in top bar" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+  <div class="wtop"><span class="ib" data-go="today-progress" aria-label="Minimise"><i data-ic="chev-d" data-s="22"></i></span><span class="sec f1" style="color:var(--t2)">Push</span><span class="co c2 num" style="padding:0 4px">24:13</span><span class="ib" aria-label="More"><i data-ic="ellipsis" data-s="20"></i></span><span class="finbtn" data-go="finish">Finish</span></div>
+  <div class="rstrip"><div class="row f1" style="gap:6px"><span class="rchip done">✓ 1</span><span class="rchip on">2</span><span class="rchip">3</span><span class="rchip">4a·b</span></div><span class="co u sm14">Workout</span></div>
+  <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:12px">
+    <div class="wcard">
+      <div class="rowt" style="min-height:44px;gap:8px"><div class="f1" style="padding-top:4px"><div class="hl">Dumbbell shoulder press</div><div class="co c2 sm13">Shoulders, triceps</div></div><span class="co c2 num" style="padding-top:6px">1/3</span><span class="ib"><i data-ic="ellipsis" data-s="20"></i></span></div>
+      <div class="cols"><span class="c-set">SET</span><span class="c-prev">PREVIOUS</span><span class="c-kg c">KG EA</span><span class="c-reps c">REPS</span><span class="c-rir c">RIR</span><span class="c-tick c">✓</span></div>
+      <div class="srow"><span class="c-set co c2 num">1</span><span class="c-prev co c2 num sm15">24 × 8</span><span class="c-kg dv-done">24</span><span class="c-reps dv-done">8</span><span class="c-rir dv-done" style="font-size:17px">2</span><span class="c-tick"><span class="ring fill"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="srow"><span class="c-set co num w7">2</span><span class="c-prev co c2 num sm15">24 × 8</span><span class="c-kg"><span class="box" data-go="keypad" aria-label="Set 2 kilograms, target 24">24</span></span><span class="c-reps"><span class="box" data-go="keypad">8</span></span><span class="c-rir"><span class="rirbox" data-go="keypad">–</span></span><span class="c-tick" data-go="rest" aria-label="Log set 2"><span class="ring acc"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="srow"><span class="c-set co c2 num">3</span><span class="c-prev co c2 num sm15">24 × 6</span><span class="c-kg"><span class="box dimv">24</span></span><span class="c-reps"><span class="box dimv">8</span></span><span class="c-rir"><span class="rirbox">–</span></span><span class="c-tick"><span class="ring"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="row between" style="padding-top:6px"><span class="setpill">＋ Set</span><span class="co c2 sm13 u">Why?</span></div>
+    </div>
+    <div class="addrow">＋ Add exercise</div>
+    <div class="co c2" style="padding:0 4px">Up next: <b style="font-weight:600;color:var(--t1)">Incline dumbbell press</b></div>
+  </div>
+  <div class="dock colm" style="padding:8px 12px 10px">
+    <div class="restbar" data-go="rest-full"><div class="row f1" style="gap:8px"><span class="lb c2" style="font-size:11px;letter-spacing:1.3px">REST</span><span class="num" style="font-size:36px;line-height:42px;font-weight:600">1:12</span></div><span class="rpill">−30</span><span class="rpill">+30</span><span class="rpill">Skip</span><span class="drain" style="width:55%"></span></div>
+    <div class="row" style="gap:8px"><span class="coachicon"><span class="acc co" style="line-height:18px">✦</span><span class="c2" style="font-size:11px;line-height:14px">Coach</span></span><span class="micsq" style="width:44px;min-height:44px"><i data-ic="mic" data-s="18"></i></span><div class="btn-p f1" data-go="rest" data-toast="Set 2 logged">Log set 2 · 24&nbsp;kg ea × 8</div></div>
+  </div>
+</div><div class="hi"></div></div>
+</div>
+
+<!-- Keypad open -->
+<div class="scr" id="s-keypad" data-name="Active workout › keypad (Log ✓ key)" hidden>
+<div class="phone"><div class="sb"></div><div class="body" style="overflow:hidden">
+  <div class="wtop"><span class="ib"><i data-ic="chev-d" data-s="22"></i></span><span class="sec f1" style="color:var(--t2)">Push</span><span class="co c2 num" style="padding:0 4px">24:31</span><span class="ib"><i data-ic="ellipsis" data-s="20"></i></span><span class="finbtn" data-go="finish">Finish</span></div>
+  <div class="rstrip"><div class="row f1" style="gap:6px"><span class="rchip done">✓ 1</span><span class="rchip on">2</span><span class="rchip">3</span><span class="rchip">4a·b</span></div><span class="co u sm14">Workout</span></div>
+  <div style="padding:0 16px" data-go="back" aria-label="Tap outside to close the keypad">
+    <div class="wcard">
+      <div class="f1" style="min-height:44px"><div class="hl">Dumbbell shoulder press</div><div class="co c2 sm13">Shoulders, triceps</div></div>
+      <div class="cols"><span class="c-set">SET</span><span class="c-prev">PREVIOUS</span><span class="c-kg c">KG EA</span><span class="c-reps c">REPS</span><span class="c-rir c">RIR</span><span class="c-tick c">✓</span></div>
+      <div class="srow"><span class="c-set co c2 num">1</span><span class="c-prev co c2 num sm15">24 × 8</span><span class="c-kg dv-done">24</span><span class="c-reps dv-done">8</span><span class="c-rir dv-done" style="font-size:17px">2</span><span class="c-tick"><span class="ring fill"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="srow"><span class="c-set co num w7">2</span><span class="c-prev co c2 num sm15">24 × 8</span><span class="c-kg"><span class="box on">26</span></span><span class="c-reps"><span class="box">8</span></span><span class="c-rir"><span class="rirbox">–</span></span><span class="c-tick"><span class="ring acc"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="srow"><span class="c-set co c2 num">3</span><span class="c-prev co c2 num sm15">24 × 6</span><span class="c-kg"><span class="box dimv">24</span></span><span class="c-reps"><span class="box dimv">8</span></span><span class="c-rir"><span class="rirbox">–</span></span><span class="c-tick"><span class="ring"><i data-ic="check" data-s="14"></i></span></span></div>
+    </div>
+  </div>
+  <div style="flex:1"></div>
+  <div style="margin:0 12px 4px;min-height:36px;border-radius:8px;background:var(--surface);display:flex;align-items:center;padding:0 12px;position:relative;overflow:hidden"><span class="lb num">Rest 0:54</span><span class="drain" style="width:40%;height:2px"></span></div>
+  <div class="kbar"><span class="kkey">−</span><span class="kkey">+</span><span class="f1"></span><span class="hl acc" style="padding:0 6px;min-height:44px;display:flex;align-items:center">RIR</span><span class="hl acc" style="padding:0 6px;min-height:44px;display:flex;align-items:center">Next ›</span><span class="klog" data-go="rest" data-toast="Set 2 logged · 26 kg ea × 8" aria-label="Log set 2, 26 kilograms each, 8 reps">Log <i data-ic="check" data-s="16"></i></span></div>
+  <div class="keyboard"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span class="k2">.</span><span>0</span><span class="k2">⌫</span></div>
+</div><div class="hi" style="background:#2b2b2d"></div></div>
+</div>
+
+<!-- Rest (after logging set 2) -->
+<div class="scr" id="s-rest" data-name="Active workout › resting after set 2" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+  <div class="wtop"><span class="ib" data-go="today-progress"><i data-ic="chev-d" data-s="22"></i></span><span class="sec f1" style="color:var(--t2)">Push</span><span class="co c2 num" style="padding:0 4px">24:40</span><span class="ib"><i data-ic="ellipsis" data-s="20"></i></span><span class="finbtn" data-go="finish">Finish</span></div>
+  <div class="rstrip"><div class="row f1" style="gap:6px"><span class="rchip done">✓ 1</span><span class="rchip on">2</span><span class="rchip">3</span><span class="rchip">4a·b</span></div><span class="co u sm14">Workout</span></div>
+  <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:12px">
+    <div class="wcard">
+      <div class="rowt" style="min-height:44px;gap:8px"><div class="f1" style="padding-top:4px"><div class="hl">Dumbbell shoulder press</div><div class="co c2 sm13">Shoulders, triceps</div></div><span class="co c2 num" style="padding-top:6px">2/3</span><span class="ib"><i data-ic="ellipsis" data-s="20"></i></span></div>
+      <div class="cols"><span class="c-set">SET</span><span class="c-prev">PREVIOUS</span><span class="c-kg c">KG EA</span><span class="c-reps c">REPS</span><span class="c-rir c">RIR</span><span class="c-tick c">✓</span></div>
+      <div class="srow"><span class="c-set co c2 num">1</span><span class="c-prev co c2 num sm15">24 × 8</span><span class="c-kg dv-done">24</span><span class="c-reps dv-done">8</span><span class="c-rir dv-done" style="font-size:17px">2</span><span class="c-tick"><span class="ring fill"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="srow"><span class="c-set co c2 num">2</span><span class="c-prev co c2 num sm15">24 × 8</span><span class="c-kg dv-done">26</span><span class="c-reps dv-done">8</span><span class="c-rir"><span class="rirbox" data-go="rest-full">–</span></span><span class="c-tick"><span class="ring fill"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="srow"><span class="c-set co num w7">3</span><span class="c-prev co c2 num sm15">24 × 6</span><span class="c-kg"><span class="box" data-go="keypad">24</span></span><span class="c-reps"><span class="box" data-go="keypad">8</span></span><span class="c-rir"><span class="rirbox">–</span></span><span class="c-tick" data-go="finish"><span class="ring acc"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="row between" style="padding-top:6px"><span class="setpill">＋ Set</span><span class="co c2 sm13 u">Why?</span></div>
+    </div>
+    <div class="addrow">＋ Add exercise</div>
+    <div class="co c2" style="padding:0 4px">Up next: <b style="font-weight:600;color:var(--t1)">Incline dumbbell press</b></div>
+  </div>
+  <div class="dock colm" style="padding:8px 12px 10px">
+    <div class="restbar" data-go="rest-full"><div class="row f1" style="gap:8px"><span class="lb c2" style="font-size:11px;letter-spacing:1.3px">REST</span><span class="num" style="font-size:36px;line-height:42px;font-weight:600">1:58</span></div><span class="rpill">−30</span><span class="rpill">+30</span><span class="rpill">Skip</span><span class="drain" style="width:96%"></span></div>
+    <div class="row" style="gap:8px"><span class="coachicon"><span class="acc co" style="line-height:18px">✦</span><span class="c2" style="font-size:11px;line-height:14px">Coach</span></span><span class="micsq" style="width:44px;min-height:44px"><i data-ic="mic" data-s="18"></i></span><div class="btn-p f1" data-go="finish">Log set 3 · 24&nbsp;kg ea × 8</div></div>
+  </div>
+</div><div class="hi"></div></div>
+</div>
+
+<!-- Rest full screen (tap the rest bar) -->
+<div class="scr" id="s-rest-full" data-name="Rest › full screen (tap rest bar)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+  <div class="row" style="min-height:52px;padding:0 8px"><span class="ib" data-go="back"><i data-ic="chev-d" data-s="22"></i></span></div>
+  <div style="padding:0 20px 16px;display:flex;flex-direction:column;gap:24px;flex:1">
+    <div class="col" style="align-items:center;gap:4px;padding-top:14px"><span class="sec">Rest</span><span class="num" style="font-size:88px;line-height:92px;font-weight:300;letter-spacing:-2px">1:58</span><span class="co c2 num c">Next · Set 3 · <span style="color:var(--t1)">target 24&nbsp;kg ea × 8</span></span></div>
+    <div class="row" style="gap:12px"><div class="btn-s f1">−30 s</div><div class="btn-s f1">+30 s</div><div class="btn-s f1" data-go="back">Skip</div></div>
+    <div class="col g2"><span class="sec">Set 2 · RIR</span>
+      <div class="chips"><span class="chip">0</span><span class="chip">1</span><span class="chip on" aria-selected="true">2</span><span class="chip">3</span><span class="chip">4+</span></div></div>
+  </div>
+  <div class="dock" style="padding:10px 12px"><span class="coachicon"><span class="acc co" style="line-height:18px">✦</span><span class="c2" style="font-size:11px;line-height:14px">Coach</span></span><span class="micsq" style="width:44px;min-height:44px"><i data-ic="mic" data-s="18"></i></span><div class="btn-p f1" data-go="back">Log set 3 · 24&nbsp;kg ea × 8</div></div>
+</div><div class="hi"></div></div>
+</div>
+
+<!-- Empty workout: same table, empty state -->
+<div class="scr" id="s-empty" data-name="Empty workout · same table, empty state" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+  <div class="wtop"><span class="ib" data-go="back"><i data-ic="chev-d" data-s="22"></i></span><span class="sec f1" style="color:var(--t2)">Workout</span><span class="co c2 num" style="padding:0 4px">0:42</span><span class="ib"><i data-ic="ellipsis" data-s="20"></i></span><span class="finbtn">Finish</span></div>
+  <div class="rstrip"><div class="row f1" style="gap:6px"><span class="rchip on">1</span></div><span class="co u sm14 c3">Workout</span></div>
+  <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:12px">
+    <div class="wcard" style="gap:4px">
+      <div class="cols"><span class="c-set">SET</span><span class="c-prev">PREVIOUS</span><span class="c-kg c">KG</span><span class="c-reps c">REPS</span><span class="c-rir c">RIR</span><span class="c-tick c">✓</span></div>
+      <div class="col" style="align-items:center;gap:4px;padding:28px 0 20px;border-top:1px solid var(--divider)"><span class="hl">No exercises yet</span></div>
+    </div>
+    <div class="addrow">＋ Add exercise</div>
+  </div>
+  <div class="dock" style="padding:10px 12px"><span class="coachicon"><span class="acc co" style="line-height:18px">✦</span><span class="c2" style="font-size:11px;line-height:14px">Coach</span></span><span class="micsq" style="width:44px;min-height:44px"><i data-ic="mic" data-s="18"></i></span><div class="btn-p f1">＋ Add exercise</div></div>
+</div><div class="hi"></div></div>
+</div>
+
+<!-- Finish sheet -->
+<div class="scr" id="s-finish" data-name="Finish (from top bar)" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="ghost"><div class="wtop"><span class="ib"><i data-ic="chev-d" data-s="22"></i></span><span class="sec f1">Push</span><span class="finbtn">Finish</span></div><div style="padding:0 16px"><div class="wcard" style="height:420px"></div></div></div></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <div class="col g1"><span class="t2">Finish workout?</span><span class="co c2 num">15 of 16 sets · 1 not done</span></div>
+  <div class="foot"><div class="btn-p" data-go="summary">Finish</div><div class="btn-s" data-go="back">Keep going</div><span class="dlink" style="align-self:center">Discard workout</span></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- Today › workout in progress (Health row hidden) -->
+<div class="scr" id="s-today-progress" data-name="Today · workout in progress (Resume)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll" style="padding-top:12px;gap:12px">
+  <div class="thead"><div class="tt"><span class="t1">Tuesday</span><span class="co c2 num">Week 3 of 6</span></div><span class="iconbtn acc" aria-label="Coach">✦</span><span class="iconbtn" aria-label="Talk to the coach"><i data-ic="mic" data-s="18"></i></span></div>
+  <div class="card" style="gap:6px"><span class="sec">In progress · 18:02</span><span class="hero">Push</span>
+    <span class="co c2 num">Dumbbell shoulder press · set 2</span><span class="co c2 num">5 of 16 sets · Rest 1:12</span></div>
+</div>
+<div class="dock"><div class="btn-p f1" data-go="active">Resume</div></div>
+</div><div class="tabbar" data-on="Today"></div><div class="hi"></div></div>
+</div>
+
+<!-- ================= SUMMARY (after) ================= -->
+<div class="scr" id="s-summary" data-name="Summary (after) · PBs first, one Next time" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll" style="padding-top:8px">
+  <div class="rowt"><div class="f1"><div class="row c2 sm14" style="gap:4px"><span class="ok"><i data-ic="check-c" data-s="14"></i></span>Saved 18:49</div><div class="hero">Push</div><div class="co c2 num mt1">Tue 27 Oct · Main Gym · 18:02–18:49</div></div><span class="ib c2" data-go="summary-more" aria-label="More"><i data-ic="ellipsis" data-s="20"></i></span></div>
+  <div class="card" style="gap:4px"><div class="row" style="gap:8px"><span class="acc"><i data-ic="star" data-s="18"></i></span><span class="sec" style="color:var(--t1)">New best</span></div><span class="num" style="font-size:26px;line-height:32px;font-weight:600">Bench press 82.5&nbsp;kg × 6</span><span class="co c2 num">Last: 80 × 6 · 20 Oct</span></div>
+  <div class="stat"><div><div class="v">47<small> min</small></div><div class="sec mt1">Time</div></div><div><div class="v">15/16</div><div class="sec mt1">Sets</div></div><div><div class="v">5/5</div><div class="sec mt1">Exercises</div></div></div>
+  <div class="col">
+    <div class="row between"><span class="sec">Next time · Push · targets</span><span class="lnk sec2" data-toast="All undone">Undo all</span></div>
+    <div class="nt"><div class="row"><span class="hl f1">Bench press</span><span class="tag">Coach</span></div><span class="bd num">85&nbsp;kg × 6–8 <span class="c2">(was 82.5)</span></span><div class="row" style="gap:20px"><span class="lnk sec2">Why?</span><span class="lnk" data-toast="Bench press back to 82.5 kg">Undo</span></div></div>
+    <div class="nt"><div class="row"><span class="hl f1">Dumbbell shoulder press</span><span class="tag">Rule</span></div><span class="bd num">24&nbsp;kg ea × 8–10 · hold</span><div class="row" style="gap:20px"><span class="lnk sec2">Why?</span><span class="lnk" data-toast="Undone">Undo</span></div></div>
+    <div class="nt"><div class="row"><span class="hl f1">Incline dumbbell press → Incline machine press</span><span class="tag">Coach</span></div><span class="co c2">You asked for variety</span><div class="row" style="gap:8px;padding-top:4px"><div class="btn-s sm f1" data-toast="Swap applied to next Push">Apply</div><div class="btn-s sm f1">Skip</div></div></div>
+  </div>
+  <div class="col"><span class="sec">Exercises · done</span>
+    <div class="nt"><div class="row"><span class="hl f1">Bench press</span><span class="co c2 num">4/4</span></div><span class="co num">80×8 · 82.5×6 · 80×7 · 80×7</span></div>
+    <div class="nt"><div class="row"><span class="hl f1">Dumbbell shoulder press</span><span class="co c2 num">2/3</span></div><span class="co num">24×8 · 26×8 <span class="c2">kg ea</span></span></div>
+    <div class="nt"><div class="row"><span class="hl f1">Incline dumbbell press</span><span class="co c2 num">3/3</span></div><span class="co num">22×10 · 22×9 · 22×8 <span class="c2">kg ea</span></span></div>
+    <span class="lnk sec2">2 more</span>
+  </div>
+  <div class="col g2"><span class="sec">Feel</span><div class="row" style="gap:8px"><span class="chip min f1" style="background:transparent;border-color:var(--control)">Easy</span><span class="chip min f1 sel2" aria-selected="true">Good</span><span class="chip min f1" style="background:transparent;border-color:var(--control)">Hard</span></div></div>
+  <div class="group"><div class="gr"><span class="c2"><i data-ic="heart" data-s="16"></i></span><span class="co c2 num f1">Garmin · 48 min · avg HR 118</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div></div>
+  <span class="lnk sec2">Ask about this workout</span>
+</div>
+<div class="dock"><div class="btn-p f1" data-go="root:today-done">Done</div></div>
+</div><div class="hi"></div></div>
+</div>
+
+<!-- Summary ⋯ -->
+<div class="scr" id="s-summary-more" data-name="Summary › ⋯ (Edit times lives here)" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost"><span class="hero">Push</span><div class="card" style="height:400px"></div></div></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <div class="group" style="filter:brightness(1.18)">
+    <div class="gr"><span class="bd f1">Edit times</span><span class="co c2 num">18:02–18:49</span></div>
+    <div class="gr"><span class="bd f1">Save as workout</span></div>
+    <div class="gr"><span class="bd f1" style="color:var(--danger)">Delete workout</span></div>
+  </div>
+  <div class="foot"><span class="lnk sec2" data-go="back">Close</span></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- Today · done -->
+<div class="scr" id="s-today-done" data-name="Today · done (after Summary › Done)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll" style="padding-top:12px;gap:12px">
+  <div class="thead"><div class="tt"><span class="t1">Tuesday</span><span class="co c2 num">Week 3 of 6</span></div><span class="iconbtn acc" aria-label="Coach">✦</span><span class="iconbtn" aria-label="Talk to the coach"><i data-ic="mic" data-s="18"></i></span></div>
+  <div class="strip">
+    <div class="cell past"><span class="wd">SAT</span><span class="dm num">24</span><span class="pill done">Legs</span></div><div class="cell past"><span class="wd">SUN</span><span class="dm num">25</span><span class="pill rest">Rest</span></div>
+    <span class="dv"></span><div class="cell past"><span class="wd">MON</span><span class="dm num">26</span><span class="pill done">Pull</span><span class="pill act">Run</span></div>
+    <div class="cell today"><span class="wd">TODAY</span><span class="dm num">27</span><span class="pill done">Push</span></div>
+    <div class="cell"><span class="wd">WED</span><span class="dm num">28</span></div><div class="cell"><span class="wd">THU</span><span class="dm num">29</span><span class="pill plan">Legs</span></div><div class="cell"><span class="wd">FRI</span><span class="dm num">30</span></div>
+  </div>
+  <div class="card" style="gap:6px" data-go="summary"><div class="row"><span class="t2 f1">Push</span><span class="tag" style="color:var(--done)"><i data-ic="check" data-s="14"></i>Done</span></div><span class="co c2 num">47 min · 15 sets · 1 new best</span><span class="lnk">Summary ›</span></div>
+  <div class="row between" style="min-height:44px;padding:0 4px"><span class="co c2">Next</span><span class="co num">Legs · Thu 29</span></div>
+  <div class="row" style="gap:20px;padding:0 4px"><span class="lnk sec2" data-go="empty">Empty workout</span><span class="lnk sec2" data-go="today-other">Other ›</span></div>
+  <div class="group" data-go="prog-body" data-long="today-custom"><div class="gr" style="padding:8px 16px"><span class="c2"><i data-ic="heart" data-s="16"></i></span><span class="co c2 num f1">Sleep 7h&nbsp;05m · RHR 58</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div></div>
+</div>
+</div><div class="tabbar" data-on="Today"></div><div class="hi"></div></div>
+</div>
+
+<!-- ================= HISTORY ================= -->
+<div class="scr" id="s-history" data-name="History · the full list (calendar lives in Progress › Month)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="navbar"><span class="back" data-go="back"><i data-ic="chev-l" data-s="22"></i>Progress</span><span class="ttl">All workouts</span><span class="rt">Select</span></div>
+<div class="scroll">
+  <div class="seg"><span class="on">All</span><span>Workouts</span><span>Activities</span></div>
+  <span class="lnk"><i data-ic="plus" data-s="16"></i>Log a past workout</span>
+  <div class="col g2"><div class="row between" style="align-items:baseline"><span class="hl">This week</span><span class="co c2 num">2 workouts · 1 activity</span></div>
+    <div class="group">
+      <div class="gr" data-go="summary"><div class="tx"><span class="bd">Tue 27 Oct · Push</span><span class="co c2 num">Main Gym · 47 min · 15 sets</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+      <div class="gr"><div class="tx"><span class="bd">Mon 26 Oct · Pull</span><span class="co c2 num">Main Gym · 54 min · 17 sets</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+      <div class="gr"><span class="c2"><i data-ic="heart" data-s="20"></i></span><div class="tx"><span class="bd">Mon 26 Oct · Run</span><span class="co c2 num">5.2 km · 28 min</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    </div></div>
+  <div class="col g2"><div class="row between" style="align-items:baseline"><span class="hl">Last week</span><span class="co c2 num">3 workouts</span></div>
+    <div class="group">
+      <div class="gr"><div class="tx"><span class="bd">Sat 24 Oct · Legs</span><span class="co c2 num">Main Gym · 58 min · 18 sets</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+      <div class="gr"><div class="tx"><span class="bd">Thu 22 Oct · Pull</span><span class="co c2 num">Main Gym · 51 min · 17 sets</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+      <div class="gr"><div class="tx"><span class="bd">Tue 20 Oct · Push</span><span class="co c2 num">Main Gym · 52 min · 16 sets</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    </div></div>
+  <span class="lnk sec2">Show more</span>
+  <div class="group"><div class="gr"><span class="bd f1">Recently deleted (1)</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div></div>
+</div>
+</div><div class="hi"></div></div>
+</div>
+
+<!-- ================= LIBRARY › PLAN ================= -->
+<div class="scr" id="s-lib-plan" data-name="Library › Plan (as built, Edit plan visible)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div style="padding:12px 20px 0;display:flex;flex-direction:column;gap:12px">
+  <div class="row between" style="min-height:44px"><span class="t1">Library</span></div>
+  <div class="seg"><span class="on" data-go="root:lib-plan">Plan</span><span data-go="root:lib-workouts">Workouts</span><span>Exercises</span></div>
+</div>
+<div class="scroll">
+  <div class="card" style="gap:8px">
+    <div class="row" style="gap:4px"><span class="t2 f1">Push / Pull / Legs</span><span class="ib c2" aria-label="More: Pause, Ask coach"><i data-ic="ellipsis" data-s="20"></i></span></div>
+    <span class="co c2 num">Goal: Muscle · 3 days a week · 45 min</span>
+    <div class="wks" role="radiogroup" aria-label="Plan weeks">
+      <span class="wk done" role="radio" aria-label="Week 1, done"><span class="cc"><i data-ic="check" data-s="16"></i></span></span>
+      <span class="wk done" role="radio" aria-label="Week 2, done"><span class="cc"><i data-ic="check" data-s="16"></i></span></span>
+      <span class="wk cur" role="radio" aria-checked="true" aria-label="Week 3, this week"><span class="cc">3</span></span>
+      <span class="wk" role="radio" aria-label="Week 4"><span class="cc">4</span></span>
+      <span class="wk" role="radio" aria-label="Week 5"><span class="cc">5</span></span>
+      <span class="wk" role="radio" aria-label="Week 6, deload"><span class="cc">6</span><small>Deload</small></span>
+    </div>
+  </div>
+  <div class="group" data-go="plan-changes"><div class="gr"><span class="acc">✦</span><span class="bd f1">3 changes · next week</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div></div>
+  <div>
+    <div class="row between wrap" style="min-height:36px"><span class="sec">This week</span><span class="co c2 num">1 of 3 days · 34% sets</span></div>
+    <div class="row" data-go="plan-day" style="min-height:60px;gap:12px;padding:8px 0"><span class="mark next">1</span><div class="f1 col" style="gap:2px"><div class="row wrap" style="gap:8px"><span class="bd">Push</span><span class="nexttag">Next</span></div><span class="co c2">Bench press</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="row" data-go="plan-day" style="min-height:60px;gap:12px;padding:8px 0;border-top:1px solid var(--divider)"><span class="mark done"><i data-ic="check" data-s="12"></i></span><div class="f1 col" style="gap:2px"><span class="bd">Pull</span><span class="co c2">Deadlift</span></div><span class="co c2 num">Mon 26 Oct</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="row" data-go="plan-day" style="min-height:60px;gap:12px;padding:8px 0;border-top:1px solid var(--divider)"><span class="mark next" style="border-color:var(--t3);color:var(--t3)">3</span><div class="f1 col" style="gap:2px"><span class="bd">Legs</span><span class="co c2">Back squat</span></div><span class="co c2 num">Thu</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+  </div>
+  <div class="btn-s" data-go="pb-choose" style="margin-top:8px">Edit plan</div>
+</div>
+</div><div class="tabbar" data-on="Library"></div><div class="hi"></div></div>
+</div>
+
+<!-- Plan › Changes -->
+<div class="scr" id="s-plan-changes" data-name="Library › Plan › Changes (coach)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="navbar"><span class="back" data-go="back"><i data-ic="chev-l" data-s="22"></i>Plan</span><span class="ttl">Changes</span></div>
+<div class="scroll">
+  <div class="col"><span class="sec">Next week</span>
+    <div class="nt"><div class="row"><div class="f1 col"><span class="co w6 num">Bench press 82.5 → 85&nbsp;kg</span><span class="co c2 sm14">Push · all reps hit</span></div><span class="btn-s sm" data-toast="Bench press back to 82.5 kg">Undo</span></div><span class="lnk sec2">Why?</span></div>
+    <div class="nt"><div class="row"><div class="f1 col"><span class="co w6 num">Cable lateral raise 3 → 4 sets</span><span class="co c2 sm14">Push · shoulders under plan</span></div><span class="btn-s sm" data-toast="Undone">Undo</span></div><span class="lnk sec2">Why?</span></div>
+    <div class="nt"><span class="co w6">Incline dumbbell → machine press</span><span class="co c2 sm14">You asked for variety</span><div class="row" style="gap:8px;padding-top:6px"><div class="btn-s sm f1" data-toast="Swap applied from next Push">Apply</div><div class="btn-s sm f1">Skip</div></div></div>
+  </div>
+  <span class="lnk sec2">Earlier changes ›</span>
+</div>
+</div><div class="tabbar" data-on="Library"></div><div class="hi"></div></div>
+</div>
+
+<!-- Library › Workouts (no plan) -->
+<div class="scr" id="s-lib-workouts" data-name="Library › Workouts (saved, no plan)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div style="padding:12px 20px 0;display:flex;flex-direction:column;gap:12px">
+  <div class="row between" style="min-height:44px"><span class="t1">Library</span><span class="lnk">＋ New</span></div>
+  <div class="seg"><span data-go="root:lib-plan">Plan</span><span class="on" data-go="root:lib-workouts">Workouts</span><span>Exercises</span></div>
+</div>
+<div class="scroll">
+  <div class="group">
+    <div class="gr" data-go="wo-detail"><div class="tx"><span class="bd">Upper A</span><span class="co c2 num">6 exercises · about 50 min</span></div><span class="tag"><span class="acc">✦</span>1</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr"><div class="tx"><span class="bd">Lower A</span><span class="co c2 num">5 exercises · about 55 min</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr"><div class="tx"><span class="bd">Quick full body</span><span class="co c2 num">4 exercises · about 30 min</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+  </div>
+</div>
+</div><div class="tabbar" data-on="Library"></div><div class="hi"></div></div>
+</div>
+
+<div class="scr" id="s-wo-detail" data-name="Library › Workouts › Upper A (change: next time)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="navbar"><span class="back" data-go="back"><i data-ic="chev-l" data-s="22"></i>Workouts</span></div>
+<div class="scroll" style="padding-top:12px">
+  <div><div class="t1">Upper A</div><div class="co c2 num mt2">Main Gym · about 50 min</div></div>
+  <div class="card" style="gap:2px"><div class="row"><span class="acc">✦</span><span class="sec f1" style="color:var(--t1)">Next time</span></div>
+    <div class="nt"><div class="row"><div class="f1 col"><span class="co w6 num">Bench press 80 → 82.5&nbsp;kg</span><span class="co c2 sm14">All reps hit · Tue 27 Oct</span></div><span class="btn-s sm" data-toast="Bench press back to 80 kg">Undo</span></div><span class="lnk sec2">Why?</span></div></div>
+  <div class="card" style="gap:0">
+    <div class="wl-h"><span class="f1">Exercise</span><span class="wl-s">Sets</span><span class="wl-k">Target kg</span></div>
+    <div class="wl-r"><div class="wl-n"><span class="bd w6">Bench press</span><span class="co c3">Chest · triceps</span></div><span class="wl-s">4 × 6–8</span><span class="wl-k">82.5<span class="cdot"></span></span></div>
+    <div class="wl-r"><div class="wl-n"><span class="bd">Chest-supported row</span><span class="co c3">Back</span></div><span class="wl-s">3 × 8–10</span><span class="wl-k">30&nbsp;ea</span></div>
+    <div class="wl-r"><div class="wl-n"><span class="bd">Lat pulldown</span><span class="co c3">Back</span></div><span class="wl-s">3 × 8–12</span><span class="wl-k">55</span></div>
+  </div>
+  <div class="row" style="gap:8px"><div class="btn-p f2" data-go="active">Start</div><div class="btn-s h60 f1" data-go="day-edit">Edit</div></div>
+</div>
+</div><div class="tabbar" data-on="Library"></div><div class="hi"></div></div>
+</div>
+
+<!-- Plan day -->
+<div class="scr" id="s-plan-day" data-name="Library › Plan › day · WorkoutList full" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="navbar"><span class="back" data-go="back"><i data-ic="chev-l" data-s="22"></i>Plan</span></div>
+<div class="scroll" style="padding-top:12px">
+  <div><div class="t1">Push</div><div class="co c2 num mt2">Day 1 of 3 · Main Gym · about 50 min</div></div>
+  <div class="card" style="gap:0">
+    <div class="wl-h"><span class="f1">Exercise</span><span class="wl-s">Sets</span><span class="wl-k">Target kg</span></div>
+    <div class="wl-r" data-toast="Bench press 85 kg · was 82.5"><div class="wl-n"><span class="bd w6">Bench press</span><span class="co c3">Chest · triceps</span></div><span class="wl-s">4 × 6–8</span><span class="wl-k">85<span class="cdot" aria-label="changed by coach"></span></span></div>
+    <div class="wl-r" data-go="row-sheet"><div class="wl-n"><span class="bd">DB shoulder press</span><span class="co c3">Shoulders</span></div><span class="wl-s">3 × 8–10</span><span class="wl-k">24&nbsp;ea</span></div>
+    <div class="wl-r" data-go="row-sheet"><div class="wl-n"><span class="bd">Incline DB press</span><span class="co c3">Upper chest</span></div><span class="wl-s">3 × 8–10</span><span class="wl-k">22&nbsp;ea</span></div>
+    <div class="wl-ss" aria-label="Superset">
+      <div class="wl-r" data-go="row-sheet"><div class="wl-n"><span class="bd">Cable lateral raise</span><span class="co c3">Side delts</span></div><span class="wl-s">3 × 12–15</span><span class="wl-k">7.5</span></div>
+      <div class="wl-r" data-go="row-sheet"><div class="wl-n"><span class="bd">Triceps pushdown</span><span class="co c3">Triceps</span></div><span class="wl-s">3 × 10–12</span><span class="wl-k">30</span></div>
+    </div>
+    <div class="wl-r" data-go="row-sheet"><div class="wl-n"><span class="bd">Overhead cable extension</span><span class="co c3">Triceps</span></div><span class="wl-s">2 × 10–12</span><span class="wl-k">25 <span class="c2">est.</span></span></div>
+  </div>
+  <div class="row" style="gap:8px"><div class="btn-p f2" data-go="active">Start</div><div class="btn-s h60 f1" data-go="day-edit">Edit</div></div>
+  <div class="row wrap" style="gap:0 20px"><span class="lnk">Ask coach</span><span class="lnk">Make next</span></div>
+</div>
+</div><div class="tabbar" data-on="Library"></div><div class="hi"></div></div>
+</div>
+
+<!-- Plan day › Edit (builder structure) -->
+<div class="scr" id="s-day-edit" data-name="Plan › day › Edit · tap a card to expand" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="row between" style="padding:0 20px;min-height:44px"><span class="lnk" data-go="back">‹ Plan</span><span class="lnk" data-go="pb-review">Save</span></div>
+<div class="scroll" style="gap:10px">
+  <div><div class="t1">Push</div><div class="row between"><span class="co c2 num">Day 1 of 3 · about 44 min</span></div></div>
+  <div class="group optc" id="de0-opt"><div class="gr" data-tog="de0-opt" style="min-height:56px"><span class="hl f1">Options</span><span class="co c2 xmore">Abs · Supersets</span><span class="c2"><i data-ic="chev-d" data-s="16"></i></span></div>
+    <div class="xrows"><div class="gr"><span class="bd f1">Abs</span><span class="sw-ios" role="switch" aria-checked="true"></span></div><div class="gr"><span class="bd f1">Supersets</span><span class="sw-ios" role="switch" aria-checked="true"></span></div></div></div>
+  <div class="xc open " id="xa1"><div class="xh" data-tog="xa1"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Bench press</span><span class="co c2 num sm14">4 × 6–8 · 82.5&nbsp;kg</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">W</span><span class="box dimv">40</span><span class="box dimv">8</span><span class="rirbox">–</span><span class="n">W</span><span class="box dimv">60</span><span class="box dimv">5</span><span class="rirbox">–</span><span class="n">1</span><span class="box">82.5</span><span class="box">8</span><span class="rirbox">2</span><span class="n">2</span><span class="box">82.5</span><span class="box">7</span><span class="rirbox">2</span><span class="n">3</span><span class="box">82.5</span><span class="box">7</span><span class="rirbox">1</span><span class="n">4</span><span class="box">82.5</span><span class="box">6</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">2:00</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div>
+  <div class="xc " id="xa2"><div class="xh" data-tog="xa2"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Dumbbell shoulder press</span><span class="co c2 num sm14">3 × 8–10 · 24&nbsp;kg ea</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG EA</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">24</span><span class="box">10</span><span class="rirbox">2</span><span class="n">2</span><span class="box">24</span><span class="box">9</span><span class="rirbox">2</span><span class="n">3</span><span class="box">24</span><span class="box">8</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">2:00</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div>
+  <div class="xc " id="xa3"><div class="xh" data-tog="xa3"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Incline dumbbell press</span><span class="co c2 num sm14">3 × 8–10 · 22&nbsp;kg ea</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG EA</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">22</span><span class="box">10</span><span class="rirbox">2</span><span class="n">2</span><span class="box">22</span><span class="box">9</span><span class="rirbox">2</span><span class="n">3</span><span class="box">22</span><span class="box">8</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">2:00</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div>
+  <div class="xss"><div class="xc " id="xa4"><div class="xh" data-tog="xa4"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Cable lateral raise</span><span class="co c2 num sm14">3 × 12–15 · 7.5&nbsp;kg</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">7.5</span><span class="box">15</span><span class="rirbox">2</span><span class="n">2</span><span class="box">7.5</span><span class="box">13</span><span class="rirbox">2</span><span class="n">3</span><span class="box">7.5</span><span class="box">12</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">0:30</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div><div class="xc " id="xa5"><div class="xh" data-tog="xa5"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Triceps pushdown</span><span class="co c2 num sm14">3 × 10–12 · 30&nbsp;kg</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">30</span><span class="box">12</span><span class="rirbox">2</span><span class="n">2</span><span class="box">30</span><span class="box">11</span><span class="rirbox">2</span><span class="n">3</span><span class="box">30</span><span class="box">10</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">1:30</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div></div>
+  <div class="addrow">＋ Add exercise</div>
+  <div class="row" style="gap:8px;align-items:stretch"><div class="askbar"><span class="acc">✦</span><span class="f1">Ask the coach to change it</span></div><span class="micsq"><i data-ic="mic" data-s="18"></i></span></div>
+</div>
+</div><div class="hi"></div></div>
+</div>
+<div class="scr" id="s-day-swipe" data-name="Plan › day › Edit · swipe left: Swap / Remove" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="row between" style="padding:0 20px;min-height:44px"><span class="lnk" data-go="back">‹ Plan</span><span class="lnk" data-go="pb-review">Save</span></div>
+<div class="scroll" style="gap:10px">
+  <div><div class="t1">Push</div><div class="row between"><span class="co c2 num">Day 1 of 3 · about 44 min</span></div></div>
+  <div class="group optc" id="de1-opt"><div class="gr" data-tog="de1-opt" style="min-height:56px"><span class="hl f1">Options</span><span class="co c2 xmore">Abs · Supersets</span><span class="c2"><i data-ic="chev-d" data-s="16"></i></span></div>
+    <div class="xrows"><div class="gr"><span class="bd f1">Abs</span><span class="sw-ios" role="switch" aria-checked="true"></span></div><div class="gr"><span class="bd f1">Supersets</span><span class="sw-ios" role="switch" aria-checked="true"></span></div></div></div>
+  <div class="xc " id="xb1"><div class="xh" data-tog="xb1"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Bench press</span><span class="co c2 num sm14">4 × 6–8 · 82.5&nbsp;kg</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">W</span><span class="box dimv">40</span><span class="box dimv">8</span><span class="rirbox">–</span><span class="n">W</span><span class="box dimv">60</span><span class="box dimv">5</span><span class="rirbox">–</span><span class="n">1</span><span class="box">82.5</span><span class="box">8</span><span class="rirbox">2</span><span class="n">2</span><span class="box">82.5</span><span class="box">7</span><span class="rirbox">2</span><span class="n">3</span><span class="box">82.5</span><span class="box">7</span><span class="rirbox">1</span><span class="n">4</span><span class="box">82.5</span><span class="box">6</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">2:00</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div>
+  <div class="swwrap"><div class="swacts"><span>Swap</span><span class="rm" data-toast="Removed">Remove</span></div><div class="xc " id="xb2"><div class="xh" data-tog="xb2"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Dumbbell shoulder press</span><span class="co c2 num sm14">3 × 8–10 · 24&nbsp;kg ea</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG EA</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">24</span><span class="box">10</span><span class="rirbox">2</span><span class="n">2</span><span class="box">24</span><span class="box">9</span><span class="rirbox">2</span><span class="n">3</span><span class="box">24</span><span class="box">8</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">2:00</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div></div>
+  <div class="xc " id="xb3"><div class="xh" data-tog="xb3"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Incline dumbbell press</span><span class="co c2 num sm14">3 × 8–10 · 22&nbsp;kg ea</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG EA</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">22</span><span class="box">10</span><span class="rirbox">2</span><span class="n">2</span><span class="box">22</span><span class="box">9</span><span class="rirbox">2</span><span class="n">3</span><span class="box">22</span><span class="box">8</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">2:00</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div>
+  <div class="xss"><div class="xc " id="xb4"><div class="xh" data-tog="xb4"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Cable lateral raise</span><span class="co c2 num sm14">3 × 12–15 · 7.5&nbsp;kg</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">7.5</span><span class="box">15</span><span class="rirbox">2</span><span class="n">2</span><span class="box">7.5</span><span class="box">13</span><span class="rirbox">2</span><span class="n">3</span><span class="box">7.5</span><span class="box">12</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">0:30</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div><div class="xc " id="xb5"><div class="xh" data-tog="xb5"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Triceps pushdown</span><span class="co c2 num sm14">3 × 10–12 · 30&nbsp;kg</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">30</span><span class="box">12</span><span class="rirbox">2</span><span class="n">2</span><span class="box">30</span><span class="box">11</span><span class="rirbox">2</span><span class="n">3</span><span class="box">30</span><span class="box">10</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">1:30</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div></div>
+  <div class="addrow">＋ Add exercise</div>
+  <div class="row" style="gap:8px;align-items:stretch"><div class="askbar"><span class="acc">✦</span><span class="f1">Ask the coach to change it</span></div><span class="micsq"><i data-ic="mic" data-s="18"></i></span></div>
+</div>
+</div><div class="hi"></div></div>
+</div>
+<div class="scr" id="s-day-hold" data-name="Plan › day › Edit · hold: drag to move, or menu" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="row between" style="padding:0 20px;min-height:44px"><span class="lnk" data-go="back">‹ Plan</span><span class="lnk" data-go="pb-review">Save</span></div>
+<div class="scroll" style="gap:10px">
+  <div><div class="t1">Push</div><div class="row between"><span class="co c2 num">Day 1 of 3 · about 44 min</span></div></div>
+  <div class="group optc" id="de2-opt"><div class="gr" data-tog="de2-opt" style="min-height:56px"><span class="hl f1">Options</span><span class="co c2 xmore">Abs · Supersets</span><span class="c2"><i data-ic="chev-d" data-s="16"></i></span></div>
+    <div class="xrows"><div class="gr"><span class="bd f1">Abs</span><span class="sw-ios" role="switch" aria-checked="true"></span></div><div class="gr"><span class="bd f1">Supersets</span><span class="sw-ios" role="switch" aria-checked="true"></span></div></div></div>
+  <div class="xc dimc " id="xc1"><div class="xh" data-tog="xc1"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Bench press</span><span class="co c2 num sm14">4 × 6–8 · 82.5&nbsp;kg</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">W</span><span class="box dimv">40</span><span class="box dimv">8</span><span class="rirbox">–</span><span class="n">W</span><span class="box dimv">60</span><span class="box dimv">5</span><span class="rirbox">–</span><span class="n">1</span><span class="box">82.5</span><span class="box">8</span><span class="rirbox">2</span><span class="n">2</span><span class="box">82.5</span><span class="box">7</span><span class="rirbox">2</span><span class="n">3</span><span class="box">82.5</span><span class="box">7</span><span class="rirbox">1</span><span class="n">4</span><span class="box">82.5</span><span class="box">6</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">2:00</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div>
+  <div class="dropline"></div>
+  <div class="xc lifted " id="xc3"><div class="xh" data-tog="xc3"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Incline dumbbell press</span><span class="co c2 num sm14">3 × 8–10 · 22&nbsp;kg ea</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG EA</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">22</span><span class="box">10</span><span class="rirbox">2</span><span class="n">2</span><span class="box">22</span><span class="box">9</span><span class="rirbox">2</span><span class="n">3</span><span class="box">22</span><span class="box">8</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">2:00</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div>
+  <div class="ctxm">
+    <div data-go="ss-pick"><span>Superset with…</span><span class="c2">⇄</span></div>
+    <div><span>Swap exercise</span></div>
+    <div><span>Duplicate</span></div>
+    <div><span style="color:var(--danger)">Remove</span></div>
+  </div>
+  <div class="xc dimc " id="xc2"><div class="xh" data-tog="xc2"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Dumbbell shoulder press</span><span class="co c2 num sm14">3 × 8–10 · 24&nbsp;kg ea</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG EA</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">24</span><span class="box">10</span><span class="rirbox">2</span><span class="n">2</span><span class="box">24</span><span class="box">9</span><span class="rirbox">2</span><span class="n">3</span><span class="box">24</span><span class="box">8</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">2:00</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div>
+  <div class="xss"><div class="xc dimc " id="xc4"><div class="xh" data-tog="xc4"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Cable lateral raise</span><span class="co c2 num sm14">3 × 12–15 · 7.5&nbsp;kg</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">7.5</span><span class="box">15</span><span class="rirbox">2</span><span class="n">2</span><span class="box">7.5</span><span class="box">13</span><span class="rirbox">2</span><span class="n">3</span><span class="box">7.5</span><span class="box">12</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">0:30</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div><div class="xc dimc " id="xc5"><div class="xh" data-tog="xc5"><span class="grip">≡</span><div class="f1 col" style="gap:2px;min-width:0"><span class="bd w6">Triceps pushdown</span><span class="co c2 num sm14">3 × 10–12 · 30&nbsp;kg</span></div><span class="chevx"><i data-ic="chev-d" data-s="16"></i></span></div>
+  <div class="xb"><div class="sg"><span class="h">SET</span><span class="h">KG</span><span class="h">REPS</span><span class="h">RIR</span><span class="n">1</span><span class="box">30</span><span class="box">12</span><span class="rirbox">2</span><span class="n">2</span><span class="box">30</span><span class="box">11</span><span class="rirbox">2</span><span class="n">3</span><span class="box">30</span><span class="box">10</span><span class="rirbox">1</span></div>
+  <span class="lnk sec2" style="align-self:center">＋ Add set</span>
+  <div class="xmeta"><span><span class="c2">Rest</span><span class="num">1:30</span></span><span><span class="c2">Warm-up</span><span>Auto</span></span></div>
+  <div class="xacts"><span data-go="ss-pick">Superset</span><span>Swap</span><span data-go="ex-edit">⋯</span></div></div></div></div>
+  <div class="addrow">＋ Add exercise</div>
+  <div class="row" style="gap:8px;align-items:stretch"><div class="askbar"><span class="acc">✦</span><span class="f1">Ask the coach to change it</span></div><span class="micsq"><i data-ic="mic" data-s="18"></i></span></div>
+</div>
+</div><div class="hi"></div></div>
+</div>
+
+<!-- Plan builder · Your week (chips: fill, no tick) -->
+<div class="scr" id="s-pb-week" data-name="Edit plan › Days and time" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="row between" style="padding:0 20px;min-height:44px"><span class="lnk" data-go="back">‹ Back</span><span class="lnk sec2" data-go="root:lib-plan">Close</span></div>
+<div class="scroll">
+  <span class="t1">Days and time</span>
+  <div class="col g2"><span class="sec" style="color:var(--t2)">Sessions a week</span>
+    <div class="row" style="gap:8px"><span class="chip min f1">2</span><span class="chip min f1 on" aria-selected="true">3</span><span class="chip min f1">4</span><span class="chip min f1">5</span><span class="chip min f1">6</span></div></div>
+  <div class="col g2"><span class="sec" style="color:var(--t2)">Session length (min)</span>
+    <div class="row" style="gap:8px"><span class="chip min f1">30</span><span class="chip min f1 on">45</span><span class="chip min f1">60</span><span class="chip min f1">75</span><span class="chip min f1">Other</span></div></div>
+  <div class="col g2"><span class="sec" style="color:var(--t2)">Split</span>
+    <div class="row" style="gap:8px"><span class="chip min f1">Upper / Lower</span><span class="chip min f1 on">✦ Push / Pull / Legs</span></div>
+    <div class="row" style="gap:8px"><span class="chip min f1">Full body</span><span class="chip min f1">Other</span></div></div>
+  <div class="col g2"><span class="sec" style="color:var(--t2)">Days</span>
+    <div class="row" style="gap:4px"><span class="chip min f1 on" style="padding:0 2px;font-size:14px">Mon</span><span class="chip min f1" style="padding:0 2px;font-size:14px">Tue</span><span class="chip min f1 on" style="padding:0 2px;font-size:14px">Wed</span><span class="chip min f1" style="padding:0 2px;font-size:14px">Thu</span><span class="chip min f1" style="padding:0 2px;font-size:14px">Fri</span><span class="chip min f1 on" style="padding:0 2px;font-size:14px">Sat</span><span class="chip min f1" style="padding:0 2px;font-size:14px">Sun</span></div></div>
+  <div class="col g2"><span class="sec" style="color:var(--t2)">Warm-ups</span>
+    <div class="row" style="gap:8px"><span class="chip min f1 on">Full</span><span class="chip min f1">Short</span><span class="chip min f1">None</span></div></div>
+</div>
+<div class="dock"><div class="btn-p f1" data-go="pb-review">Review changes</div></div>
+</div><div class="hi"></div></div>
+</div>
+
+
+<!-- Edit plan › chooser -->
+<div class="scr" id="s-pb-choose" data-name="Edit plan › What do you want to change?" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost" style="padding-top:12px"><span class="t1">Library</span><div class="card" style="height:420px"><span class="t2">Push / Pull / Legs</span></div></div></div><div class="tabbar" data-on="Library"></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <span class="t2">Change plan</span>
+  <div class="group" style="filter:brightness(1.18)">
+    <div class="gr" data-go="pb-week"><div class="tx"><span class="bd">Days and time</span><span class="co c2 num">3 a week · 45 min · Mon Wed Sat</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    <div class="gr" data-go="pb-goal"><div class="tx"><span class="bd">Goal</span><span class="co c2">Muscle</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+  </div>
+  <div class="col g2"><span class="sec">A day’s exercises</span>
+    <div class="group" style="filter:brightness(1.18)">
+      <div class="gr" data-go="plan-day"><span class="bd f1">Push</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+      <div class="gr" data-go="plan-day"><span class="bd f1">Pull</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+      <div class="gr" data-go="plan-day"><span class="bd f1">Legs</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div>
+    </div></div>
+  <div class="group" style="filter:brightness(1.18)"><div class="gr" data-toast="Coach: “More back work” → proposal"><span class="acc">✦</span><span class="bd f1">Ask the coach</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div></div>
+  <div class="group" style="filter:brightness(1.18)"><div class="gr" data-go="pb-end"><span class="bd f1" style="color:var(--danger)">End plan</span></div></div>
+  <div class="foot"><span class="lnk sec2" data-go="back">Close</span></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- Edit plan › End plan -->
+<div class="scr" id="s-pb-end" data-name="Edit plan › End plan (confirm)" hidden>
+<div class="phone"><div class="sb"></div><div class="body"><div class="scroll ghost" style="padding-top:12px"><span class="t1">Library</span><div class="card" style="height:420px"><span class="t2">Push / Pull / Legs</span></div></div></div><div class="tabbar" data-on="Library"></div><div class="hi"></div>
+<div class="dim-bg"></div><div class="bcard">
+  <div class="col g1"><span class="t2">End plan?</span><span class="co c2 num">Week 3 of 6 · history kept</span></div>
+  <div class="foot"><div class="btn-p" style="background:var(--danger)" data-go="root:lib-plan" data-toast="Plan ended">End plan</div><div class="btn-s" data-go="back">Keep plan</div></div>
+  <div class="hi" style="margin:0 -20px"></div>
+</div></div>
+</div>
+
+<!-- Edit plan › Goal -->
+<div class="scr" id="s-pb-goal" data-name="Edit plan › Goal" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="row between" style="padding:0 20px;min-height:44px"><span class="lnk" data-go="back">‹ Back</span><span class="lnk sec2" data-go="root:lib-plan">Close</span></div>
+<div class="scroll">
+  <span class="t1">Goal</span>
+  <div class="col g2">
+    <div class="row" style="gap:8px"><span class="chip min f1 on" aria-selected="true">Muscle</span><span class="chip min f1">Strength</span></div>
+    <div class="row" style="gap:8px"><span class="chip min f1">Both</span><span class="chip min f1">General fitness</span></div></div>
+  <div class="col g2"><span class="sec" style="color:var(--t2)">Focus</span>
+    <div class="row wrap" style="gap:8px"><span class="chip min">Chest</span><span class="chip min on">Back</span><span class="chip min">Shoulders</span><span class="chip min">Arms</span><span class="chip min">Legs</span></div></div>
+</div>
+<div class="dock"><div class="btn-p f1" data-go="pb-review">Review changes</div></div>
+</div><div class="hi"></div></div>
+</div>
+
+<!-- Edit plan › Review changes -->
+<div class="scr" id="s-pb-review" data-name="Edit plan › Review changes (Apply / Undo)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="row between" style="padding:0 20px;min-height:44px"><span class="lnk" data-go="back">‹ Back</span><span class="lnk sec2" data-go="root:lib-plan">Close</span></div>
+<div class="scroll">
+  <span class="t1">Changes</span>
+  <div class="col">
+    <div class="nt"><div class="row"><span class="hl f1">Days</span><span class="co num">Sat → Fri</span></div><div class="row" style="gap:8px;padding-top:4px"><div class="btn-s sm f1">Accept</div><div class="btn-s sm f1">Reject</div></div></div>
+    <div class="nt"><div class="row"><span class="hl f1">Push</span><span class="co num">5 → 4 exercises</span></div><span class="co c2">Overhead cable extension out</span><div class="row" style="gap:8px;padding-top:4px"><div class="btn-s sm f1">Accept</div><div class="btn-s sm f1">Reject</div></div></div>
+  </div>
+  <div class="col g2"><span class="sec" style="color:var(--t2)">Apply to</span>
+    <div class="row" style="gap:8px"><span class="chip min f1">This week</span><span class="chip min f1 on" aria-selected="true">Week 3 onward</span></div></div>
+</div>
+<div class="dock"><div class="btn-p f1" data-go="root:lib-plan" data-toast="Plan updated">Apply</div></div>
+</div><div class="hi"></div></div>
+</div>
+
+<!-- ================= PROGRESS ================= -->
+<div class="scr" id="s-prog-lifts" data-name="Progress › Lifts (default)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll" style="gap:16px">
+  <div class="row between" style="min-height:44px"><span class="t1">Progress</span><span class="lnk" data-go="history">All workouts</span></div>
+  <div class="seg"><span class="on" data-go="root:prog-lifts">Lifts</span><span data-go="root:prog-training">Training</span><span data-go="root:prog-body">Body</span></div>
+  <div class="seg per"><span>Week</span><span>Month</span><span class="on">3M</span><span>6M</span><span>1Y</span></div>
+  <div class="row between"><span class="ib acc" data-toast="September 2026"><i data-ic="chev-l" data-s="20"></i></span><div class="col" style="align-items:center"><span class="hl">Aug – Oct 2026</span><span class="co c2 num sm14">27 Jul – 27 Oct</span></div><span class="ib c3"><i data-ic="chev-r" data-s="20"></i></span></div>
+  <div class="hscroll"><span class="chip min">Main lifts</span><span class="chip min on" aria-selected="true">Bench press</span><span class="chip min">Back squat</span><span class="chip min">Deadlift</span><span class="chip min">More</span></div>
+  <svg viewBox="0 0 330 220" width="100%" height="220" style="display:block" aria-label="Bench press top set, 1 Sep to 27 Oct"><line x1="36" y1="20" x2="306" y2="20" stroke="#302C29"/><text x="30" y="24" fill="#948C84" font-size="11" text-anchor="end">85</text><line x1="36" y1="80" x2="306" y2="80" stroke="#302C29"/><text x="30" y="84" fill="#948C84" font-size="11" text-anchor="end">80</text><line x1="36" y1="140" x2="306" y2="140" stroke="#302C29"/><text x="30" y="144" fill="#948C84" font-size="11" text-anchor="end">75</text><polyline points="40,140 77,128 114,122 151,104 189,98 226,80 263,82 300,50" fill="none" stroke="#3987e5" stroke-width="2"/><circle cx="300" cy="50" r="5" fill="none" stroke="#3987e5" stroke-width="2"/><text x="40" y="214" fill="#948C84" font-size="11">1 Sep</text><text x="300" y="214" fill="#948C84" font-size="11" text-anchor="end">27 Oct</text></svg>
+  <span class="dd">Top set <i data-ic="chev-d" data-s="14"></i></span>
+  <div class="stat"><div><div class="v">12</div><div class="sec mt1">Sessions</div></div><div><div class="v" style="font-size:26px">82.5×6</div><div class="sec mt1">Best set</div></div><div><div class="v" style="font-size:26px"><span class="c2">≈</span>99</div><div class="sec mt1">Est. 1RM</div></div></div>
+  <div class="col g2"><span class="sec">Sessions · kg</span>
+    <div class="row" style="min-height:44px;gap:8px;border-top:1px solid var(--divider)"><span class="co num" style="width:64px">27 Oct</span><span class="co num" style="flex:1.6">82.5 × 6</span><span class="co num f1 r">4 sets</span></div>
+    <div class="row" style="min-height:44px;gap:8px;border-top:1px solid var(--divider)"><span class="co num" style="width:64px">20 Oct</span><span class="co num" style="flex:1.6">80 × 8</span><span class="co num f1 r">4 sets</span></div>
+  </div>
+</div>
+</div><div class="tabbar" data-on="Progress"></div><div class="hi"></div></div>
+</div>
+
+<div class="scr" id="s-prog-training" data-name="Progress › Training · Month (‹ › steps back)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll">
+  <div class="row between" style="min-height:44px"><span class="t1">Progress</span><span class="lnk" data-go="history">All workouts</span></div>
+  <div class="seg"><span data-go="root:prog-lifts">Lifts</span><span class="on" data-go="root:prog-training">Training</span><span data-go="root:prog-body">Body</span></div>
+  <div class="seg per"><span>Week</span><span class="on" data-go="root:prog-training">Month</span><span data-go="root:prog-3m">3M</span><span>6M</span><span>1Y</span></div>
+  <div class="row between"><span class="ib acc" data-toast="September 2026"><i data-ic="chev-l" data-s="20"></i></span><div class="col" style="align-items:center"><span class="hl">October 2026</span></div><span class="ib c3"><i data-ic="chev-r" data-s="20"></i></span></div>
+  <div><div class="row"><span class="lb c2 c f1">M</span><span class="lb c2 c f1">T</span><span class="lb c2 c f1">W</span><span class="lb c2 c f1">T</span><span class="lb c2 c f1">F</span><span class="lb c2 c f1">S</span><span class="lb c2 c f1">S</span></div><div class="cal" id="histcal"></div><div class="legend" style="margin-top:14px"><span><span class="sd push"></span>Push</span><span><span class="sd pull"></span>Pull</span><span><span class="sd legs"></span>Legs</span><span><span class="sd act"></span>Run / other</span></div></div>
+  <div class="group" data-go="history"><div class="gr"><span class="bd f1">October workouts</span><span class="co c2 num">11</span><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div></div>
+  <div class="stat"><div><div class="v">11</div><div class="sec mt1">Sessions</div><div class="co c2 num sm14">+2 vs Sep</div></div><div><div class="v" style="font-size:26px">9 h 40</div><div class="sec mt1">Time</div><div class="co c2 num sm14">+1 h 10</div></div><div><div class="v">182</div><div class="sec mt1">Sets</div><div class="co c2 num sm14">+24</div></div></div>
+  <div class="col g2">
+    <div class="row between"><span class="sec">Muscles · sets</span><span class="dd" style="font-size:16px">Body parts <i data-ic="chev-d" data-s="14"></i></span></div>
+    <div><div class="row" style="min-height:44px;gap:12px;border-top:1px solid var(--divider)"><span class="bd f1">Chest</span><span class="bd num">46</span></div>
+    <div class="row" style="min-height:44px;gap:12px;border-top:1px solid var(--divider)"><span class="bd f1">Back</span><span class="bd num">52</span></div>
+    <div class="row" style="min-height:44px;gap:12px;border-top:1px solid var(--divider)"><span class="bd f1">Shoulders</span><span class="bd num">41</span></div></div>
+  </div>
+  <div class="card">
+    <div class="row between"><span class="sec">Consistency</span><span class="co c2 num">8 weeks</span></div>
+    <div class="row" id="cons"></div>
+    <span class="co c2 num">6 of 8 weeks at your aim</span>
+  </div>
+</div>
+</div><div class="tabbar" data-on="Progress"></div><div class="hi"></div></div>
+</div>
+
+<div class="scr" id="s-prog-3m" data-name="Progress › Training · 3M (a bar per week)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll">
+  <div class="row between" style="min-height:44px"><span class="t1">Progress</span><span class="lnk" data-go="history">All workouts</span></div>
+  <div class="seg"><span data-go="root:prog-lifts">Lifts</span><span class="on" data-go="root:prog-training">Training</span><span data-go="root:prog-body">Body</span></div>
+  <div class="seg per"><span>Week</span><span data-go="root:prog-training">Month</span><span class="on" data-go="root:prog-3m">3M</span><span>6M</span><span>1Y</span></div>
+  <div class="row between"><span class="ib acc" data-toast="September 2026"><i data-ic="chev-l" data-s="20"></i></span><div class="col" style="align-items:center"><span class="hl">Aug – Oct 2026</span><span class="co c2 num sm14">3 Aug – 1 Nov</span></div><span class="ib c3"><i data-ic="chev-r" data-s="20"></i></span></div>
+  <div class="col g1"><div class="row between"><span class="sec">Sessions a week</span><span class="co c2 num">aim 3</span></div>
+    <div class="bars" aria-label="Sessions per week, 13 weeks"><div class="" style="height:99%"></div><div class="" style="height:99%"></div><div class="lo" style="height:66%"></div><div class="" style="height:99%"></div><div class="" style="height:99%"></div><div class="lo" style="height:33%"></div><div class="" style="height:99%"></div><div class="" style="height:99%"></div><div class="" style="height:99%"></div><div class="lo" style="height:66%"></div><div class="" style="height:99%"></div><div class="" style="height:99%"></div><div class="lo" style="height:66%"></div></div>
+    <div class="row between"><span class="co c3 num sm14">3 Aug</span><span class="co c3 num sm14">this week</span></div></div>
+  <div class="stat"><div><div class="v">35</div><div class="sec mt1">Sessions</div></div><div><div class="v" style="font-size:26px">30 h</div><div class="sec mt1">Time</div></div><div><div class="v">2.7</div><div class="sec mt1">A week</div></div></div>
+  <div class="col g2">
+    <div class="row between"><span class="sec">Muscles · sets</span><span class="dd" style="font-size:16px">Body parts <i data-ic="chev-d" data-s="14"></i></span></div>
+    <div><div class="row" style="min-height:44px;gap:12px;border-top:1px solid var(--divider)"><span class="bd f1">Chest</span><span class="bd num">46</span></div>
+    <div class="row" style="min-height:44px;gap:12px;border-top:1px solid var(--divider)"><span class="bd f1">Back</span><span class="bd num">52</span></div>
+    <div class="row" style="min-height:44px;gap:12px;border-top:1px solid var(--divider)"><span class="bd f1">Shoulders</span><span class="bd num">41</span></div></div>
+  </div>
+</div>
+</div><div class="tabbar" data-on="Progress"></div><div class="hi"></div></div>
+</div>
+
+<div class="scr" id="s-prog-body" data-name="Progress › Body (bodyweight, sleep, RHR)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll">
+  <div class="row between" style="min-height:44px"><span class="t1">Progress</span><span class="lnk" data-go="history">All workouts</span></div>
+  <div class="seg"><span data-go="root:prog-lifts">Lifts</span><span data-go="root:prog-training">Training</span><span class="on" data-go="root:prog-body">Body</span></div>
+  <div class="seg per"><span>Week</span><span class="on">Month</span><span>3M</span><span>6M</span><span>1Y</span></div>
+  <div class="row between"><span class="ib acc" data-toast="September 2026"><i data-ic="chev-l" data-s="20"></i></span><div class="col" style="align-items:center"><span class="hl">October 2026</span></div><span class="ib c3"><i data-ic="chev-r" data-s="20"></i></span></div>
+  <div class="col g2">
+    <div class="row between"><span class="sec">Bodyweight</span><span class="lnk">＋ Weight</span></div>
+    <div><div class="hl num">78.4&nbsp;kg · Mon 26 Oct</div><div class="co c2 num">−0.6&nbsp;kg this month</div></div>
+    <svg viewBox="0 0 330 90" width="100%" height="90" aria-hidden="true"><polyline points="10,30 60,34 110,40 160,38 210,48 260,52 320,58" fill="none" stroke="#F3EEE8" stroke-width="2"/></svg>
+    <span class="co c2">Withings · Apple Health</span>
+  </div>
+  <div class="ruled"><div class="row between"><span class="sec">Sleep</span><span class="co num">7h&nbsp;05m · Tue 27 Oct</span></div>
+    <svg viewBox="0 0 330 32" width="100%" height="32" aria-hidden="true"><polyline points="4,12 60,18 110,10 160,22 210,14 260,20 326,16" fill="none" stroke="#75706A" stroke-width="1.5"/><circle cx="326" cy="16" r="3.5" fill="#EDE5DA"/></svg><span class="co c2">Garmin · Apple Health</span></div>
+  <div class="ruled"><div class="row between"><span class="sec">Resting heart rate</span><span class="co num">58&nbsp;bpm · Tue 27 Oct</span></div>
+    <svg viewBox="0 0 330 32" width="100%" height="32" aria-hidden="true"><polyline points="4,20 60,18 110,22 160,16 210,20 260,18 326,10" fill="none" stroke="#75706A" stroke-width="1.5"/><circle cx="326" cy="10" r="3.5" fill="#EDE5DA"/></svg><span class="co c2">Garmin · Apple Health</span></div>
+  <div class="group" data-go="apple-health"><div class="gr"><div class="tx"><span class="bd">Show on Today</span><span class="co c2">Sleep · Resting heart rate</span></div><span class="chev"><i data-ic="chev-r" data-s="14"></i></span></div></div>
+</div>
+</div><div class="tabbar" data-on="Progress"></div><div class="hi"></div></div>
+</div>
+
+<div class="scr" id="s-apple-health" data-name="Profile › Apple Health · Show on Today" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="navbar"><span class="back" data-go="back"><i data-ic="chev-l" data-s="22"></i>Profile</span><span class="ttl">Apple Health</span></div>
+<div class="scroll">
+  <div class="group"><div class="gr"><span class="c2"><i data-ic="heart" data-s="20"></i></span><div class="tx"><span class="bd">Apple Health</span><span class="co c2 num">On · last read 07:42</span></div></div></div>
+  <div class="col g2"><span class="sec">Show on Today</span><div class="group">
+    <div class="gr"><span class="bd f1">Sleep</span><span class="sw-ios" role="switch" aria-checked="true"></span></div>
+    <div class="gr"><span class="bd f1">Resting heart rate</span><span class="sw-ios" role="switch" aria-checked="true"></span></div>
+    <div class="gr"><span class="bd f1">Bodyweight</span><span class="sw-ios off" role="switch" aria-checked="false"></span></div></div></div>
+  <div class="col g2"><span class="sec">Read from Health</span><div class="group">
+    <div class="gr"><span class="bd f1">Runs, rides and other activities</span><span class="sw-ios"></span></div>
+    <div class="gr"><span class="bd f1">Bodyweight</span><span class="sw-ios"></span></div>
+    <div class="gr"><span class="bd f1">Resting heart rate</span><span class="sw-ios"></span></div>
+    <div class="gr"><span class="bd f1">Sleep</span><span class="sw-ios"></span></div></div></div>
+</div>
+</div><div class="tabbar" data-on="Profile"></div><div class="hi"></div></div>
+</div>
+
+<!-- ================= BEFORE (v1, as built) ================= -->
+<div class="scr" id="s-before-today" data-name="Before · Today (v1, as built)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll" style="padding-top:12px;gap:12px">
+  <span class="bfr">BEFORE</span>
+  <div class="row between" style="min-height:44px"><div class="row f1" style="gap:8px"><span class="t1" style="font-size:28px">Tuesday</span><span class="co c2 num">· Week 3 of 6</span></div><div class="row" style="gap:8px"><span class="coachpill"><span class="acc">✦</span>Coach</span><span class="micbtn"><i data-ic="mic" data-s="18"></i></span></div></div>
+  <div class="strip"><div class="cell past"><span class="wd">SAT</span><span class="dm num">24</span><span class="pill done">Legs</span></div><div class="cell past"><span class="wd">SUN</span><span class="dm num">25</span><span class="pill rest">Rest</span></div><span class="dv"></span><div class="cell past"><span class="wd">MON</span><span class="dm num">26</span><span class="pill done">Pull</span><span class="pill act">Run</span></div><div class="cell today"><span class="wd">TODAY</span><span class="dm num">27</span><span class="pill plan">Push</span></div><div class="cell"><span class="wd">WED</span><span class="dm num">28</span></div><div class="cell"><span class="wd">THU</span><span class="dm num">29</span></div><div class="cell"><span class="wd">FRI</span><span class="dm num">30</span></div></div>
+  <div class="row between"><span class="sec">Today’s session</span><span class="gymchip"><i data-ic="building"></i><span>Main Gym</span><i data-ic="chev-d" data-s="12"></i></span></div>
+  <div class="daycontrol"><span class="on">Push<small>NEXT</small></span><span>Pull</span><span>Legs</span><span class="more">⋯</span></div>
+  <div class="card" style="gap:8px">
+    <div class="rowt between"><span class="t2">Push</span><span class="co c2 num">5 exercises · ~55 min</span></div>
+    <div class="row between" style="min-height:44px"><span class="co c2 sm15">Time</span><div class="row"><span class="tstep">−</span><span class="lb num" style="min-width:64px;text-align:center">55 min</span><span class="tstep">+</span></div></div>
+    <div class="row sm12 c3 w6" style="border-bottom:1px solid var(--divider);padding-bottom:4px"><span style="width:30px">#</span><span class="f1">EXERCISE</span><span style="width:50px" class="r">SETS</span><span style="width:84px" class="r">TOP SET (KG)</span></div>
+    <div class="row" style="min-height:44px"><span class="c3" style="width:30px">1</span><div class="f1"><div class="co">Bench press</div><div class="sm13 c3">Chest, triceps, shoulders</div></div><div style="width:50px" class="r co num">4<div class="sm12 c3">+3 W</div></div><span style="width:84px" class="r co num">82.5</span></div>
+    <div class="row" style="min-height:44px"><span class="c3" style="width:30px">2</span><div class="f1"><div class="co">Dumbbell shoulder press</div><div class="sm13 c3">Shoulders, triceps</div></div><div style="width:50px" class="r co num">3<div class="sm12 c3">+1 W</div></div><span style="width:84px" class="r co num">24 ea</span></div>
+    <div class="row" style="min-height:44px"><span class="c3" style="width:30px">3</span><div class="f1"><div class="co">Incline dumbbell press</div><div class="sm13 c3">Upper chest</div></div><span style="width:50px" class="r co num">3</span><span style="width:84px" class="r co num">22 ea</span></div>
+    <div style="background:var(--raised);border-left:2px solid var(--control);border-radius:8px;padding-left:4px"><div class="row" style="min-height:44px"><span class="c3" style="width:26px">4a</span><div class="f1"><div class="co">Cable lateral raise</div><div class="sm13 c3">Side delts</div></div><span style="width:50px" class="r co num">3</span><span style="width:84px" class="r co num">7.5</span></div><div class="row" style="min-height:44px"><span class="c3" style="width:26px">4b</span><div class="f1"><div class="co">Triceps pushdown</div><div class="sm13 c3">Triceps</div></div><span style="width:50px" class="r co num">3</span><span style="width:84px" class="r co num">30</span></div></div>
+    <span class="lnk sec2">Why?</span>
+    <div class="co c2">✦ Coach suggests 1 change for today<br><span class="co">Shoulder press 24 → 22 kg ea</span></div>
+    <div class="row" style="gap:8px"><div class="btn-s sm f1">Apply</div><div class="btn-s sm f1">Skip</div><span class="lnk sec2">Reviews ›</span></div>
+    <div class="row" style="gap:8px"><div class="f2"><div class="btn-p">Start</div></div><div class="f1"><div class="btn-s h60">Edit</div></div></div>
+    <span class="lnk sec2">Empty workout</span>
+  </div>
+  <div class="row" style="gap:8px"><div class="btn-s f1">Build your own</div><div class="btn-s f1">＋ Activity</div></div>
+  <div class="sec">Recent</div>
+  <div class="group"><div class="gr"><span class="co c2 num">Mon 26 Oct</span><span class="bd f1">Pull</span><span class="co c2 num">54 min</span></div><div class="gr"><span class="co c2 num">Sat 24 Oct</span><span class="bd f1">Legs</span><span class="co c2 num">58 min</span></div></div>
+  <span class="lnk sec2">All history ›</span>
+</div>
+</div><div class="tabbar" data-on="Today"></div><div class="hi"></div></div>
+</div>
+
+<div class="scr" id="s-before-active" data-name="Before · Active workout (v1, as built)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+  <div class="wtop"><span class="ib"><i data-ic="chev-d" data-s="22"></i></span><span class="sec f1" style="color:var(--t2)">Push</span><span class="gymchip"><i data-ic="building"></i><span>Main Gym</span></span><span class="co c2 num" style="padding:0 4px">24:13</span><span class="ib"><i data-ic="dots-c" data-s="22"></i></span></div>
+  <div class="rstrip"><span class="bfr">BEFORE</span><div class="row f1" style="gap:6px"><span class="rchip done">✓ 1</span><span class="rchip on">2</span><span class="rchip">3</span><span class="rchip">4a·b</span></div><span class="co u sm14">Workout</span></div>
+  <div style="padding:0 16px;display:flex;flex-direction:column;gap:8px;flex:1">
+    <div class="wcard">
+      <div class="rowt" style="min-height:44px"><span class="hl num" style="min-width:22px">2</span><div class="f1"><div class="hl">Dumbbell shoulder press</div><div class="co c2 sm13">Shoulders, triceps</div></div><span class="co c2 num">1/3</span></div>
+      <div class="cols"><span class="c-set">SET</span><span class="c-prev">PREVIOUS</span><span class="c-kg c">KG EA</span><span class="c-reps c">REPS</span><span class="c-rir c">RIR</span><span class="c-tick c">✓</span></div>
+      <div class="srow"><span class="c-set co c2">1</span><span class="c-prev co c2 num sm15">24 × 8</span><span class="c-kg dv-done">24</span><span class="c-reps dv-done">8</span><span class="c-rir dv-done">2</span><span class="c-tick"><span class="ring fill"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="srow"><span class="c-set co w7">2</span><span class="c-prev co c2 num sm15">24 × 8</span><span class="c-kg"><span class="box">24</span></span><span class="c-reps"><span class="box">8</span></span><span class="c-rir"><span class="rirbox">2</span></span><span class="c-tick"><span class="ring acc"><i data-ic="check" data-s="14"></i></span></span></div>
+      <div class="srow"><span class="c-set co c2">3</span><span class="c-prev co c2 num sm15">24 × 7</span><span class="c-kg"><span class="box dimv">24</span></span><span class="c-reps"><span class="box dimv">8</span></span><span class="c-rir"><span class="rirbox">2</span></span><span class="c-tick"><span class="ring"><i data-ic="check" data-s="14"></i></span></span></div>
+    </div>
+    <div class="co c2" style="padding:0 4px">＋ Add exercise only on the last round · Finish only in ⋯ until the last set · keypad hides Log</div>
+  </div>
+  <div class="restbar" style="margin:0 12px 8px"><div class="row f1" style="gap:8px"><span class="lb c2" style="font-size:11px;letter-spacing:1.3px">REST</span><span class="num" style="font-size:36px;line-height:42px;font-weight:600">1:29</span></div><span class="rpill">−30</span><span class="rpill">+30</span><span class="rpill">Skip</span></div>
+  <div class="row" style="gap:8px;padding:8px 20px 12px"><span class="coachicon"><span class="acc co">✦</span></span><div class="btn-p f1">Set 2 · Log 24 kg ea × 8</div></div>
+</div><div class="hi"></div></div>
+</div>
+
+<div class="scr" id="s-before-summary" data-name="Before · Summary (v1, as built)" hidden>
+<div class="phone"><div class="sb"></div><div class="body">
+<div class="scroll" style="padding-top:16px">
+  <span class="bfr">BEFORE</span>
+  <div class="row"><span class="ok"><i data-ic="check-c" data-s="18"></i></span><span class="co">Workout saved on this phone</span></div>
+  <div><div class="sec">Workout done</div><div class="hero">Push</div><div class="co c2 num">Tue 27 Oct · Main Gym · 18:02–18:58</div></div>
+  <div style="border-radius:14px;border:1px solid var(--divider);padding:12px"><div class="row"><span class="c2"><i data-ic="heart" data-s="14"></i></span><span class="bd f1">Garmin · 57 min</span></div><span class="co c2">Avg HR 118 · Max 162 · 412 kcal active</span></div>
+  <div class="col g2"><span class="co c2">How did it feel?</span><div class="row" style="gap:8px"><span class="chip min f1">Easy</span><span class="chip min f1" style="border-color:var(--accent);background:var(--accent-s)"><i data-ic="check" data-s="14"></i>Good</span><span class="chip min f1">Hard</span></div></div>
+  <div class="ruled"><span class="sec">Today</span><span style="font-size:28px;line-height:34px;font-weight:500">Bench press 82.5 kg × 6</span></div>
+  <div class="stat"><div><div class="v">56<small> min</small></div><div class="sec mt1">Active</div></div><div><div class="v">16</div><div class="sec mt1">Sets</div></div><div><div class="v">16/17</div><div class="sec mt1">Planned</div></div></div>
+  <div class="col g1"><span class="sec">Compared with last time</span><span class="hl">Bench press · top set</span><span class="co c2">Heavier for the same reps</span></div>
+  <div class="col"><span class="sec">Exercises</span><div class="nt"><span class="hl">Bench press</span><span class="co num">80×8 · 82.5×6 · 80×7 · 80×7</span></div><div class="nt"><span class="hl">Dumbbell shoulder press</span><span class="co num">24×8 · 24×8 · 24×6</span></div><div class="nt"><span class="hl">Incline dumbbell press</span><span class="co num">22×10 · 22×9 · 22×8</span></div></div>
+  <div class="col g2"><span class="sec">Next time · Push</span><div class="card"><span class="hl">Bench press</span><span class="bd num">82.5 kg × 6–8 · +3%</span><div class="row between"><span class="lnk sec2">Why?</span><span class="lnk">Undo</span></div></div><span class="lnk sec2">Undo all</span></div>
+</div>
+<div style="padding:12px 20px;display:flex;gap:8px"><div class="btn-s h60 f1">Edit times</div><div class="btn-p f2">Done</div></div>
+</div><div class="hi"></div></div>
+</div>
+
+</div></div></div>
+<p class="foot-note">GymSmarter combined redesign (v3, 27 Oct), example data. Tap through: Today › Start › tap a cell › Log ✓ › Finish › Summary › Done. “Show before” on Today, Active workout and Summary flips to the v1 as-built frame. Long-press the Health row to customise it. Proposal only; nothing here is approved.</p>
+<script>
+(function(){
+var ORDER=[['today','Today (after)'],['today-offer','Today › 1 change for today'],['today-time','Today › 1 left out to fit 45 min'],['today-other','Today › Other ›'],['today-custom','Today › Show on Today'],['row-sheet','WorkoutList › row sheet'],['your-workout','Your workout (Edit)'],['ex-edit','Your workout › exercise options'],['ss-pick','Superset with…'],['yw-ss','Your workout · superset made'],
+ ['active','Active workout (after)'],['keypad','Active › keypad, Log ✓'],['rest','Active › resting'],['rest-full','Rest › full screen'],['empty','Empty workout'],['today-progress','Today · in progress'],['finish','Finish'],
+ ['summary','Summary (after)'],['summary-more','Summary › ⋯'],['today-done','Today · done'],['history','History'],['lib-plan','Library › Plan'],['plan-changes','Plan › Changes'],['lib-workouts','Library › Workouts'],['wo-detail','Workouts › Upper A'],['plan-day','Plan › day'],['day-edit','Plan › day › Edit (expand)'],['day-swipe','Plan › day › Edit · swipe'],['day-hold','Plan › day › Edit · hold'],['pb-choose','Edit plan › chooser'],['pb-week','Edit plan › Days and time'],['pb-goal','Edit plan › Goal'],['pb-end','Edit plan › End plan'],['pb-review','Edit plan › Review changes'],
+ ['prog-lifts','Progress › Lifts'],['prog-training','Progress › Month'],['prog-3m','Progress › 3M'],['prog-body','Progress › Body'],['apple-health','Profile › Apple Health'],
+ ['before-today','Before · Today (v1)'],['before-active','Before · Active workout (v1)'],['before-summary','Before · Summary (v1)']];
+var PARENT={'today-offer':'today','today-time':'today','today-other':'today','today-custom':'today','row-sheet':'today','your-workout':'today','ex-edit':'your-workout','ss-pick':'ex-edit','yw-ss':'your-workout','keypad':'active','rest-full':'rest','finish':'active','summary-more':'summary','history':'prog-training','plan-day':'lib-plan','plan-changes':'lib-plan','wo-detail':'lib-workouts','prog-3m':'prog-training','day-edit':'plan-day','day-swipe':'day-edit','day-hold':'day-edit','pb-choose':'lib-plan','pb-week':'pb-choose','pb-goal':'pb-choose','pb-end':'pb-choose','pb-review':'lib-plan','apple-health':'prog-body','empty':'today','today-progress':'today'};
+var PAIR={'today':'before-today','active':'before-active','summary':'before-summary'};
+Object.keys(PAIR).forEach(function(k){PAIR[PAIR[k]]=k;});
+var IC={'chev-r':'<polyline points="9 5 16 12 9 19"/>','chev-l':'<polyline points="15 5 8 12 15 19"/>','chev-d':'<polyline points="5 9 12 16 19 9"/>',
+ 'check':'<polyline points="5 12.5 10 17.5 19 7"/>','plus':'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+ 'mic':'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><line x1="12" y1="17.5" x2="12" y2="21"/>',
+ 'ellipsis':'<circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/>',
+ 'dots-c':'<circle cx="12" cy="12" r="9.5"/><circle cx="7.5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="16.5" cy="12" r="1.2" fill="currentColor"/>',
+ 'building':'<rect x="5" y="3" width="14" height="18" rx="1"/><line x1="9" y1="7" x2="9" y2="7.5"/><line x1="15" y1="7" x2="15" y2="7.5"/><line x1="9" y1="11" x2="9" y2="11.5"/><line x1="15" y1="11" x2="15" y2="11.5"/><rect x="10" y="16" width="4" height="5"/>',
+ 'heart':'<path fill="currentColor" stroke="none" d="M12 20.5s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.9c0 5.4-7.5 10-7.5 10z"/>',
+ 'clock':'<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/>',
+ 'star':'<polygon fill="currentColor" stroke="none" points="12 3 14.6 9 21 9.5 16 13.6 17.6 20 12 16.5 6.4 20 8 13.6 3 9.5 9.4 9"/>',
+ 'check-c':'<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><polyline points="7.5 12.5 10.5 15.5 16.5 9" stroke="#0D0C0B"/>'};
+document.querySelectorAll('i[data-ic]').forEach(function(i){
+  var s=i.getAttribute('data-s')||'16', b=IC[i.getAttribute('data-ic')]||'';
+  i.outerHTML='<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto" aria-hidden="true">'+b+'</svg>';
+});
+document.querySelectorAll('.sb').forEach(function(s){ s.innerHTML='<span>9:41</span><span class="di"></span><span class="r"><span class="sm12">5G</span><span class="bat"></span></span>'; });
+var TABS={Today:'today',Library:'lib-plan',Progress:'prog-lifts',Profile:'apple-health'};
+document.querySelectorAll('.tabbar[data-on]').forEach(function(t){
+  var on=t.getAttribute('data-on');
+  t.innerHTML=Object.keys(TABS).map(function(k){return '<span class="'+(k===on?'on':'')+'" data-go="root:'+TABS[k]+'">'+k+'</span>';}).join('');
+});
+(function(){
+  var wd=[1,3,6,8,10,13,15,17,20,22,24,26,27], kinds=['push','pull','legs'], names={push:'Push',pull:'Pull',legs:'Legs'}, work={}, acts={4:1,11:1,18:1,26:1}, h='';
+  // Most recent first: 27 Push, 26 Pull, 24 Legs, ...
+  wd.slice().reverse().forEach(function(d,i){ work[d]=kinds[i%3]; });
+  for(var k=0;k<3;k++) h+='<div class="d blank"></div>';
+  for(var d=1;d<=31;d++){
+    var did=work[d]||acts[d], cls='d'+(did?' done':'')+(d>27?' fut':'')+(d===27?' today':'');
+    var tap=d===27?' data-go="summary"':(did?' data-toast="'+(work[d]?names[work[d]]:'')+(work[d]&&acts[d]?' + ':'')+(acts[d]?'Run':'')+' · '+d+' Oct"':'');
+    h+='<div class="'+cls+'"'+tap+'><span class="o num">'+d+'</span><span class="row" style="height:8px;gap:3px">'+(work[d]?'<span class="sd '+work[d]+'"></span>':'')+(acts[d]?'<span class="sd act"></span>':'')+'</span></div>';
+  }
+  document.getElementById('histcal').innerHTML=h;
+  var w=[['3',1,'7 Sep'],['3',1,'14'],['2',0,'21'],['3',1,'28'],['3',1,'5 Oct'],['3',1,'12'],['3',1,'19'],['2',0,'26']], c='';
+  w.forEach(function(x){ c+='<div class="f1 col" style="align-items:center;gap:2px"><span class="co num">'+x[0]+'</span><span class="c2" style="height:12px">'+(x[1]?'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><polyline points="5 12.5 10 17.5 19 7"/></svg>':'')+'</span><span class="c3 num" style="font-size:12px;line-height:16px;white-space:nowrap">'+x[2]+'</span></div>'; });
+  document.getElementById('cons').innerHTML=c;
+})();
+var ids=ORDER.map(function(o){return o[0]}), stack=[], cur=null, longFired=false, toastT=null;
+var nameEl=document.getElementById('pn'), sel=document.getElementById('psel'), ba=document.getElementById('pba');
+sel.innerHTML=ORDER.map(function(o){return '<option value="'+o[0]+'">'+o[1]+'</option>'}).join('');
+function wire(sid){
+  var root=document.getElementById('s-'+sid); if(!root||root.dataset.wired) return; root.dataset.wired='1';
+  root.querySelectorAll('[data-go],[data-tog],[data-toast]').forEach(function(t){ t.classList.add('hs'); t.setAttribute('role','button'); t.tabIndex=0; });
+  root.querySelectorAll('.wk').forEach(function(t){ t.classList.add('hs'); t.tabIndex=0; });
+  root.querySelectorAll('.dim-bg').forEach(function(t){ if(!t.dataset.go){ t.dataset.go='back'; t.classList.add('hs'); } });
+}
+function toast(msg){
+  var ph=document.querySelector('#s-'+cur+' .phone'); if(!ph) return;
+  var old=document.querySelector('.ptoast'); if(old) old.remove();
+  var t=document.createElement('div'); t.className='ptoast'; t.setAttribute('role','status');
+  t.innerHTML='<span>'+msg+'</span><b>Undo</b>'; ph.appendChild(t);
+  clearTimeout(toastT); toastT=setTimeout(function(){ t.remove(); }, 3200);
+}
+function show(sid, push){
+  if(ids.indexOf(sid)<0) sid='today';
+  if(push && cur && cur!==sid) stack.push(cur);
+  if(cur){ var o=document.getElementById('s-'+cur); if(o) o.hidden=true; }
+  var old=document.querySelector('.ptoast'); if(old) old.remove();
+  cur=sid; var el=document.getElementById('s-'+sid); el.hidden=false; wire(sid);
+  var b=el.querySelector('.phone>.body'); if(b) b.scrollTop=0;
+  nameEl.textContent=el.dataset.name; sel.value=sid;
+  ba.hidden=!PAIR[sid]; ba.textContent=sid.indexOf('before-')===0?'Show after':'Show before';
+  if(location.hash!=='#'+sid) history.replaceState(null,'','#'+sid);
+}
+function go(t){
+  if(t==='back'){ show(stack.pop()||PARENT[cur]||'today', false); return; }
+  if(t.indexOf('root:')===0){ stack=[]; show(t.slice(5), false); return; }
+  show(t, true);
+}
+var stage=document.getElementById('stage'), lpTimer=null;
+stage.addEventListener('pointerdown', function(e){
+  var h=e.target.closest('[data-long]'); longFired=false; if(!h) return;
+  lpTimer=setTimeout(function(){ longFired=true; go(h.dataset.long); }, 500);
+});
+['pointerup','pointerleave','pointercancel'].forEach(function(n){ stage.addEventListener(n, function(){ if(lpTimer){ clearTimeout(lpTimer); lpTimer=null; } }); });
+stage.addEventListener('contextmenu', function(e){ var h=e.target.closest('[data-long]'); if(h){ e.preventDefault(); if(!longFired) go(h.dataset.long); longFired=true; } });
+function act(h){
+  if(h.dataset.tog){ var c=document.getElementById(h.dataset.tog); if(c) c.classList.toggle('open'); return; }
+  var msg=h.dataset.toast;
+  if(h.dataset.go) go(h.dataset.go);
+  if(msg) toast(msg);
+}
+stage.addEventListener('click', function(e){
+  if(longFired){ longFired=false; e.preventDefault(); return; }
+  var wk=e.target.closest('.wk');
+  if(wk){ wk.parentNode.querySelectorAll('.wk').forEach(function(x){ x.classList.remove('sel'); x.setAttribute('aria-checked','false'); }); if(!wk.classList.contains('cur')) wk.classList.add('sel'); wk.setAttribute('aria-checked','true'); return; }
+  var h=e.target.closest('[data-tog],[data-go],[data-toast]'); if(!h) return; e.preventDefault(); e.stopPropagation(); act(h);
+});
+stage.addEventListener('keydown', function(e){ var d=e.target.dataset; if((e.key==='Enter'||e.key===' ') && d && (d.go||d.tog||d.toast)){ e.preventDefault(); act(e.target);} });
+sel.addEventListener('change', function(){ stack=[]; show(sel.value,false); });
+function step(d){ var i=ids.indexOf(cur)+d; if(i<0) i=ids.length-1; if(i>=ids.length) i=0; stack=[]; show(ids[i],false); }
+document.getElementById('pprev').onclick=function(){step(-1)};
+document.getElementById('pnext').onclick=function(){step(1)};
+document.getElementById('pback').onclick=function(){go('back')};
+ba.onclick=function(){ if(PAIR[cur]){ stack=[]; show(PAIR[cur],false); } };
+document.getElementById('ptaps').onchange=function(e){ stage.classList.toggle('show-taps', e.target.checked); };
+function fit(){
+  var head=document.querySelector('.ph').getBoundingClientRect().height;
+  var cw=document.documentElement.clientWidth-32;
+  var s=Math.min(1, cw/410, Math.max(0.55,(window.innerHeight-head-40)/864));
+  if(410*s>cw) s=cw/410;
+  var wr=document.getElementById('wrapp'), sc=document.getElementById('scale');
+  wr.style.width=(410*s)+'px'; wr.style.height=(864*s)+'px'; sc.style.transform='scale('+s+')';
+}
+window.addEventListener('resize', fit);
+window.addEventListener('hashchange', function(){ var h=location.hash.slice(1); if(h && h!==cur){ stack=[]; show(h,false);} });
+fit();
+show((location.hash||'#today').slice(1), false);
+})();
+</script>
