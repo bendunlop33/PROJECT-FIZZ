@@ -73,6 +73,7 @@ import { createBuilderCoachService, createDayNotes } from '../coach/builder-coac
 import { createBuilderReviewProvider } from '../coach/builder-review-provider';
 import { deloadAtOf } from './deload-at';
 import { createHealthService } from '../health/health-service';
+import { createBodyweightService } from './bodyweight-service';
 
 /**
  * The app's in-process services (no HTTP layer). Screens call these and never
@@ -556,6 +557,8 @@ export function createAppServices(deps: AppServicesDeps) {
 
   /** Training details and split (Ben 13 Oct: D5, D7, D8; F19). Your data, local only. */
   const training = createTrainingService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, catalogueExercises });
+  // (Ben, 27 Oct) Progress's bodyweight card: entries are training-profile changes (versioned, op IDs).
+  const bodyweight = createBodyweightService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, change: (c, v, op) => training.change(c, v, op) });
 
   /** Lift targets (Ben approved 20 Oct): Your data on the training profile; the coach sees them only while on. */
   const liftTargets = createLiftTargetService({
@@ -1124,6 +1127,7 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.coach === undefined ? {} : { model: deps.coach.model }),
     catalogueExercises,
     mainLiftIds: () => training.splitMainLiftIds(),
+    healthSignals: () => health.signals(),
   });
 
   /**
@@ -1157,6 +1161,7 @@ export function createAppServices(deps: AppServicesDeps) {
     data,
     coach,
     training,
+    bodyweight,
     health,
     liftTargets,
     gyms,

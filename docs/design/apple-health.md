@@ -196,7 +196,7 @@ Health-only workouts (runs, a Garmin strength session with no GymSmarter workout
 
 ### 2.5 Progress
 
-**Training › Bodyweight** (the points chart progress-goals Q6 already describes; no target, no trend line beyond the points):
+**Training › Bodyweight** (the points chart progress-goals Q6 already describes; no target). *(Ben, 27 Oct: built with a 7-day average line, ranges 1M/3M/1Y/All and `＋ Weight`; see §14.)*
 
 ```
 │ BODYWEIGHT                     6 mo ▾  │
@@ -494,3 +494,21 @@ What the branch builds against this spec and Ben's §11 answers, and where it di
 
 **Not built yet**
 - Hide (and the `Hidden` list), Ben's effort word on a Health activity, `Same as your Run 12k?` / `Unpair` / `Unmerge`, `Also recorded by …` line, the week strip's ♥ glyph, `Open Health`, Progress › Training › Bodyweight chart, the coach's `link_health_activity` tool, Today v2 check 6 wording.
+
+## 14. Uses of Health data (Ben approved three, 27 Oct; built on `claude/healthuse-27oct`, for review)
+
+**Gym first (Ben, 27 Oct: "it should be gym first still").** Health and activity data is secondary context and never competes with lifting: lifting facts lead every view; the Health lines come after, small, one line each; no new tab or top-level entry point for Health; where space is tight they are the first thing hidden. No scores, no good/bad colours, no verdicts (rule 6); the coach never changes loads from them on its own (rule 3).
+
+**Built**
+1. **Last night's sleep and this morning's resting heart rate.** `Sleep 6h 10m · RHR 58 ↑4` at the top of Progress › Training's Apple Health block (above the 30-day trend lines). The arrow and change show only when today's resting HR is 3 bpm or more from the **median of the 28 days before today** (at least 7 of them; otherwise the value alone). Shown only when there is a value for last night or today; never yesterday's standing in, no placeholder. A sleep night is dated by the morning Ben woke: a segment ending from 18:00 belongs to the next date, so 22:30–23:59 and 00:00–06:30 are one night; a segment starting after noon (an afternoon nap) belongs to no night. **Not on Today:** the PM brief asked for the line under Today's header; the UX review (`ux-review-27oct.md`) and competitor pass 5 recommended keeping Today gym-only, so pending Ben's confirmation it lives on Progress only. The pure view (`todayHealthLine`) is built and tested if Ben wants it on Today later (below the session card, never above it).
+2. **The week's other activity and Health values.** Every done activity in the week, Ben's `＋ Activity` and Health's, grouped by type: runs, rides, swims, walks/hikes, other cardio (rowing, elliptical, stairs, HIIT …), sports, watch strength not linked to a GymSmarter workout, other. Count, then distance (runs, rides, swims, walks) or minutes; a total only when every one in the group gave it. One compact line on Progress › Overview's week card, after the session chips (`♥ 2 runs 14 km · 1 ride 45 min · 3 walks 2 h · +2 more`, the tap shows every group), and `Sleep avg 7h 5m · RHR 56 → 58` (average over the nights recorded; the week's first and last resting HR) under it. The weekly review stores both as facts (`activity_group`, `health_week`); its card lists them after the lifting facts; the coach gets every group and the raw values as labelled data with "no score; never a reason to change loads on its own; never diagnose", and its numbers are checked against them. A linked watch workout is the workout, never counted again. The `· 2 runs` suffix on the sessions line moves into the activity line (older reviews keep it). The coach's `week` context gains `activityTotals`. A late watch sync never re-asks the coach: `health_week` is left out of the review's inputs hash. Nothing shows with no Health data and no activity.
+3. **Bodyweight.** Progress › Training, below the lifting cards: latest value and date, the change over the range, `＋ Weight` (number pad, kg/lb defaulting to his unit, date defaulting to today), a chart of one point a day (his entry wins over Health's that day; Health's points hollow) with the 7-day trailing average as the thin dashed line the Exercises tab uses, ranges `1M · 3M · 1Y · All`, Health's source when any point came from it, and `Entries ›` to edit or delete his own, each with an Undo toast. Entries are the training profile's dated `weights` (Your data: in backup, export and Delete my data; no migration needed). Edit is a new versioned `edit_weight` change; every tap has its own op ID; a stale card is refused. The newest entry (his or Health's) is what the coach and the bodyweight-exercise context already read (`latestBodyweight`), so there is no second field to keep in sync. Health's readings stay local to the install, as built (§13).
+
+**Rejected by Ben (27 Oct), not built**
+- Per-exercise heart rate and heart-rate charts on the Summary. The linked activity row's avg/max HR (§2.3) stays; nothing per exercise or per set.
+- An automatic coach "lighter today?" offer from sleep or resting HR. RIR already autoregulates; sleep and RHR are data the coach may mention when Ben asks, never a trigger.
+
+**Open**
+- Ben to confirm the last-night line stays off Today (PM default) or moves under the session card.
+- The training profile keeps at most 1,000 weight entries (about 2.7 years of daily logging); beyond that the oldest are dropped. A separate table would lift the cap if Ben logs daily for years.
+- Nothing here has run on Ben's iPhone yet (Health reads need the patched SideStore install, §11 Q10).

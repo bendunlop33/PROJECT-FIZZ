@@ -47,6 +47,8 @@ import {
   type WeekFacts,
   type WeekProposal,
   type HistoryWorkout,
+  activityGroupText,
+  activityGroupTotals,
 } from '@fizz/domain';
 import type { ActivityWrite, Store } from '@fizz/persistence';
 import type { ActionRecord, Activity, ActivityFields, Exercise, PlanDraft, Routine, RoutineExercise, SessionAggregate, SplitBodyPart, SplitDay, TrainingProfile, UserProfile, WeekBasis, WeekPlan, ZonedTimestamp } from '@fizz/schemas';
@@ -410,6 +412,14 @@ export function createWeekServices(deps: WeekServicesDeps) {
         daysFrom: s.basis.kind,
         remaining: s.facts.remaining.map((d) => ({ id: d.id, name: d.name, bodyParts: [...d.bodyParts] })),
         activities: s.activities.map((a) => [ACTIVITY_WORD[a.fields.kind], `${dateWeekdayShort(a.fields.date)} ${a.fields.date}`, activityStatusOn(a, s.today), activityDetail(a.fields).replaceAll(' ', ' '), a.health === undefined ? '' : `from Apple Health (${a.health.label}, ${a.health.sourceName})`].filter((x) => x !== '').join(' · ')),
+        ...(() => {
+          const totals = activityGroupTotals(
+            s.activities
+              .filter((a) => a.fields.status === 'done' && a.fields.date <= s.today)
+              .map((a) => ({ kind: a.fields.kind, durationS: a.fields.durationS, distanceM: a.fields.distanceM, healthType: a.health?.activityType ?? null, fromHealth: a.health !== undefined })),
+          );
+          return totals.length === 0 ? {} : { activityTotals: totals.map((t) => activityGroupText(t).replaceAll('\u00a0', ' ')) };
+        })(),
         needsReshape: s.facts.needsReshape && s.active === null,
         suggestion: suggestion === null || suggestion.merges.length === 0 ? null : { merges: suggestion.merges.map((m) => ({ dayIds: [...m.dayIds], name: m.name })) },
         applied: s.active === null ? null : weekChangeText(s.active),

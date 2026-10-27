@@ -3,6 +3,7 @@ import { addDays } from '../calendar';
 import { formatNumber, loadText, localDateText, NBSP, rirOfRpe } from '../display';
 import { longDate, shortDate } from '../progress/exercise-view';
 import { reviewProposalText } from './template-sets';
+import { activityGroupsLine, weekHealthLine, type ActivityGroupTotal, type WeekHealthFacts } from '../health-uses';
 import type { GroupSets, LiftMetric, LiftTrend, ReviewWeekCount, WeeklyFacts } from './weekly';
 
 /**
@@ -13,7 +14,7 @@ import type { GroupSets, LiftMetric, LiftTrend, ReviewWeekCount, WeeklyFacts } f
  */
 
 /** What a view needs of the week: the live facts, or the facts stored on a review. */
-export type ReviewWeekData = Pick<WeeklyFacts, 'monday' | 'complete' | 'basis' | 'week' | 'days' | 'missed' | 'missedCount' | 'weeks' | 'groups' | 'lifts' | 'runs' | 'rpe' | 'stalled' | 'feel' | 'edits'>;
+export type ReviewWeekData = Pick<WeeklyFacts, 'monday' | 'complete' | 'basis' | 'week' | 'days' | 'missed' | 'missedCount' | 'weeks' | 'groups' | 'lifts' | 'runs' | 'rpe' | 'stalled' | 'feel' | 'edits' | 'activities' | 'health'>;
 
 export const REVIEW_COPY = {
   section: 'Reviews',
@@ -86,6 +87,10 @@ export function weekDataOfReview(r: Pick<TrainingReview, 'subject' | 'facts'>, n
     };
   });
   const runs = of('runs')[0];
+  const activities: ActivityGroupTotal[] = of('activity_group').map((a) => ({ group: a.group, count: a.count, durationS: a.durationS, distanceM: a.distanceM, fromHealth: a.fromHealth }));
+  const hw = of('health_week')[0];
+  const health: WeekHealthFacts | null =
+    hw === undefined ? null : { sleep: hw.sleep, restingHr: hw.restingHr === null ? null : { start: { date: hw.restingHr.start.localDate, bpm: hw.restingHr.start.bpm }, end: { date: hw.restingHr.end.localDate, bpm: hw.restingHr.end.bpm } }, sources: hw.sources };
   const rpe = of('rpe_drift')[0];
   const feel = of('feel')[0];
   // Missed days as code stored them, never re-derived from the dots (review b3-wave3-truth B4). A review
@@ -104,6 +109,8 @@ export function weekDataOfReview(r: Pick<TrainingReview, 'subject' | 'facts'>, n
     groups,
     lifts,
     runs: { count: runs?.count ?? 0, distanceM: runs?.distanceM ?? null },
+    activities,
+    health,
     rpe: rpe === undefined ? null : { sessions: rpe.sessions, mean: rpe.meanRpe, target: rpe.targetRpe },
     stalled: of('stalled_lift').map((s) => ({ exerciseId: s.exerciseId, name: nameOf(s.exerciseId), sessions: s.sessions })),
     feel: { easy: feel?.easy ?? 0, good: feel?.good ?? 0, hard: feel?.hard ?? 0 },
@@ -205,7 +212,8 @@ export function missedText(d: Pick<ReviewWeekData, 'missed' | 'missedCount'>): s
 export function reviewFactLines(d: ReviewWeekData): string[] {
   const out: string[] = [];
   const s = [sessionsText(d.week), d.week.planned !== null ? 'sessions' : null].filter(Boolean).join(' ');
-  out.push(d.runs.count > 0 ? `${s} · ${runsText(d.runs.count)}` : s);
+  // (Ben, 27 Oct) With grouped activity facts the runs are in that line (after lifting: gym first); older reviews keep `· 2 runs`.
+  out.push(d.runs.count > 0 && d.activities.length === 0 ? `${s} · ${runsText(d.runs.count)}` : s);
   const missed = missedText(d);
   if (missed !== null) out.push(missed);
   for (const g of d.groups) {
@@ -221,6 +229,11 @@ export function reviewFactLines(d: ReviewWeekData): string[] {
     const now = liftNowText(l);
     if (now !== null) out.push(`${l.name}: ${now}`);
   }
+  // (Ben, 27 Oct) Gym first: other activity and Apple Health's sleep and resting heart rate come after lifting.
+  const acts = activityGroupsLine(d.activities);
+  if (acts !== null) out.push(`${acts.line}${acts.more > 0 ? ` · +${String(acts.more)} more` : ''}`);
+  const health = weekHealthLine(d.health);
+  if (health !== null) out.push(health);
   return out;
 }
 
@@ -307,7 +320,7 @@ export interface ReviewHistoryRow {
 
 export function reviewHistoryRow(r: TrainingReview, d: ReviewWeekData, today: string): ReviewHistoryRow {
   const v = verdictOf(r);
-  const sessions = `${sessionsText(d.week)}${d.runs.count > 0 ? ` · ${runsText(d.runs.count)}` : ''}`;
+  const sessions = `${sessionsText(d.week)}${d.runs.count > 0 && d.activities.length === 0 ? ` · ${runsText(d.runs.count)}` : ''}`;
   const missed = missedText(d);
   const title = `w/c ${shortDate(d.monday, today)} · ${sessions}`;
   const detail = [v.verdict, missed].filter((x): x is string => x !== null).join(' · ');

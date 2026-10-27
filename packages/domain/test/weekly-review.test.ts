@@ -252,7 +252,8 @@ describe('weekly signals: RPE, feel, runs, repeated edits (§6.1 feedback loop)'
     expect(f.feel).toEqual({ easy: 0, good: 1, hard: 1 });
     expect(f.runs).toEqual({ count: 2, distanceM: 20000 });
     expect(f.week.runs).toBe(2);
-    expect(reviewFactLines(f)).toEqual(['2 workouts · 2 runs', 'RIR 0.7 · target 2', 'Felt: 1 good, 1 hard']);
+    // (Ben, 27 Oct; gym first) Runs are in the grouped activity line, after lifting.
+    expect(reviewFactLines(f).map((t) => t.replaceAll('\u00a0', ' '))).toEqual(['2 workouts', 'RIR 0.7 · target 2', 'Felt: 1 good, 1 hard', '2 runs 20 km']);
     // No RPE logged: no RPE fact (rule 6).
     expect(weeklyFacts(input({ sessions: [sess('2026-10-13', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }])] })).rpe).toBeNull();
   });

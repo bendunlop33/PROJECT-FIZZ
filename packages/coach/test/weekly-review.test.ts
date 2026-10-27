@@ -208,3 +208,31 @@ describe('a re-run review: the coach’s unanswered asks (review build-b-21oct S
     expect(unansweredAsk(ask({ source: 'code' }))).toBe(false);
   });
 });
+
+describe('weekly review: other activity and Apple Health facts (Ben, 27 Oct)', () => {
+  const day = (date: string, value: number) => ({ date, value, source: 'Garmin' });
+  const withHealth = weeklyFacts({
+    ...input,
+    activities: [
+      { id: 'a1', date: '2026-10-13', kind: 'run', status: 'done', distanceM: 6000, durationS: 1800 },
+      { id: 'a2', date: '2026-10-14', kind: 'other', status: 'done', distanceM: null, durationS: 2700, healthType: 52, fromHealth: true },
+      { id: 'a3', date: '2026-10-16', kind: 'ride', status: 'done', distanceM: null, durationS: 2700, fromHealth: true },
+    ],
+    health: { sleep: [day('2026-10-13', 400), day('2026-10-14', 440)], restingHeartRate: [day('2026-10-12', 55), day('2026-10-18', 58)] },
+  });
+  const hctx = { ...ctx, facts: withHealth };
+
+  it('the coach is given every group and the raw values as data, after lifting', () => {
+    const t = weeklyFactTexts(withHealth);
+    const acts = t.findIndex((x) => x.startsWith('Other activity this week'));
+    expect(t[acts]).toBe("Other activity this week (Ben's and Apple Health's, never lifting): 1 run 6 km, 1 ride 45 min, 1 walk 45 min");
+    expect(t.find((x) => x.startsWith('From Apple Health'))).toBe('From Apple Health (data, "Garmin"): average sleep 7h over 2 nights; resting heart rate 55 bpm on 2026-10-12, 58 bpm on 2026-10-18. No score; never a reason to change loads on its own; never diagnose.');
+    expect(t.findIndex((x) => x.startsWith('Bench'))).toBeLessThan(acts);
+  });
+
+  it('numbers that are those facts pass; others hide their sentence', () => {
+    const r = checkWeeklyReview({ verdict: 'Solid week.', lines: ['You also walked 1 walk for 45 min.', 'Sleep averaged 7 hours.', 'Resting HR went from 55 to 58.', 'You did 3 walks.'], tweaks: [] }, hctx);
+    expect(r.lines).toEqual(['You also walked 1 walk for 45 min.', 'Sleep averaged 7 hours.', 'Resting HR went from 55 to 58.']);
+    expect(r.hidden).toEqual(['You did 3 walks.']);
+  });
+});

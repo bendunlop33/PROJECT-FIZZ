@@ -147,6 +147,16 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
     }
     case 'delete_weight':
       return { ...p, weights: p.weights.filter((w) => w.id !== c.entryId) };
+    case 'edit_weight': {
+      const kg = weightKg(c);
+      if (!(kg >= TRAINING_LIMITS.weightKgMin && kg <= TRAINING_LIMITS.weightKgMax)) return null;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(c.date) || c.date > today) return null;
+      const have = p.weights.find((w) => w.id === c.entryId);
+      if (have === undefined) return null;
+      // Its entry time stays (when it was first logged): an edit corrects the value, it isn't a new weigh-in.
+      const next = { ...have, value: Math.round(c.value * 100) / 100, unit: c.unit, date: c.date };
+      return { ...p, weights: p.weights.map((w) => (w.id === c.entryId ? next : w)).sort(byDate) };
+    }
     case 'goal': {
       const next = { ...p };
       if (c.goal === null) {

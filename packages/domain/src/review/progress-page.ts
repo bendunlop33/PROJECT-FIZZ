@@ -1,3 +1,4 @@
+import { activityGroupsLine, activityGroupTotals, weekHealthFacts, weekHealthLine, type ActivityGroupsLine } from '../health-uses';
 import { type SessionAggregate, type LiftTarget, type MuscleGroup, type LoadConvention, type ReviewProposal, type SetExclusion, type SetType, type TrainingReview, type WeightUnit } from '@fizz/schemas';
 import { addDays, daysBetween, localDateOf, localMidnightUtcMs, weekdayIndexOfDate } from '../calendar';
 import { formatNumber, NBSP } from '../display';
@@ -155,6 +156,13 @@ export interface ThisWeekView {
   sessions: string;
   /** `2 cardio`; null with none. */
   cardio: string | null;
+  /**
+   * (Ben, 27 Oct) Other activity this week, grouped (`2 runs 14 km · 1 ride 45 min · +2 more`), Ben's and Apple
+   * Health's; shown after lifting (gym first). Null with none.
+   */
+  activities: ActivityGroupsLine | null;
+  /** (Ben, 27 Oct) `Sleep avg 7h 05m · RHR 56 → 58` from Apple Health; null with none. */
+  health: string | null;
   chips: WeekChipView[];
   /** Month: the last 5 weeks as a calendar. */
   month: MonthCalendarView;
@@ -315,6 +323,14 @@ export function thisWeekView(input: WeeklyReviewInput, opts: { today: string; re
     range: plain(weekRangeText(monday)),
     sessions: sessionsText,
     cardio: cardio > 0 ? `${String(cardio)} cardio` : null,
+    activities: activityGroupsLine(
+      activityGroupTotals(
+        input.activities
+          .filter((a) => a.status === 'done' && inWeek(a.date, monday))
+          .map((a) => ({ kind: a.kind, durationS: a.durationS ?? null, distanceM: a.distanceM, healthType: a.healthType ?? null, fromHealth: a.fromHealth === true })),
+      ),
+    ),
+    health: input.health === undefined ? null : weekHealthLine(weekHealthFacts(input.health, monday)),
     chips,
     month: { rows, weeksOnPlan: onPlan > 0 ? `${plural(onPlan, 'week', 'weeks')} on plan` : null },
     accessibilityLabel: chips.map((x) => x.accessibilityLabel).join('; '),

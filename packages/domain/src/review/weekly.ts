@@ -24,6 +24,8 @@ import { planDaysDoneThisWeek, plannedRepsOf, planWeekOf, pausedInWeek, type Pla
 import { toProgressSession } from '../progress/projection';
 import { isInHistory } from '../session/deletion';
 import { toMs } from '../time';
+import type { HealthDailyValue } from '../health';
+import { activityGroupTotals, weekHealthFacts, type ActivityGroupTotal, type WeekHealthFacts } from '../health-uses';
 import { convertMass } from '../units';
 
 /**
@@ -209,6 +211,12 @@ export interface ReviewActivity {
   kind: ActivityKind;
   status: 'done' | 'planned';
   distanceM: number | null;
+  /** (Ben, 27 Oct) Its duration, for the grouped activity facts; absent: not known. */
+  durationS?: number | null;
+  /** Health's workout type when read from Apple Health (a walk, a rowing session, watch strength not linked). */
+  healthType?: number | null;
+  /** Read from Apple Health (a linked watch workout is never listed: it is the workout). */
+  fromHealth?: boolean;
 }
 
 export interface WeeklyReviewInput {
@@ -234,6 +242,8 @@ export interface WeeklyReviewInput {
   painFlagged: ReadonlySet<string>;
   /** Ben's unit: a lift's trend is in it unless its target says otherwise. */
   unit: WeightUnit;
+  /** (Ben, 27 Oct) Sleep and resting heart rate from Apple Health, a value a day; absent or empty: none (switches off). */
+  health?: { sleep: readonly HealthDailyValue[]; restingHeartRate: readonly HealthDailyValue[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +328,10 @@ export interface WeeklyFacts {
   groups: GroupSets[];
   lifts: LiftTrend[];
   runs: { count: number; distanceM: number | null };
+  /** (Ben, 27 Oct) Every other activity done this week (Ben's and Apple Health's), grouped by type. Never lifting. */
+  activities: ActivityGroupTotal[];
+  /** (Ben, 27 Oct) The week's sleep average and resting heart rate start → end from Apple Health; null with none. */
+  health: WeekHealthFacts | null;
   rpe: { sessions: number; mean: number; target: number | null } | null;
   stalled: { exerciseId: string; name: string; sessions: number }[];
   feel: { easy: number; good: number; hard: number };
@@ -626,6 +640,14 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
   const weekRuns = input.activities.filter((a) => a.status === 'done' && a.kind === 'run' && a.date >= monday && a.date <= sunday);
   const runs = { count: weekRuns.length, distanceM: weekRuns.length > 0 && weekRuns.every((a) => a.distanceM !== null) ? weekRuns.reduce((m, a) => m + (a.distanceM ?? 0), 0) : null };
 
+  // (Ben, 27 Oct) Every other activity this week, grouped; sleep and resting heart rate from Health.
+  const activities = activityGroupTotals(
+    input.activities
+      .filter((a) => a.status === 'done' && a.date >= monday && a.date <= sunday)
+      .map((a) => ({ kind: a.kind, durationS: a.durationS ?? null, distanceM: a.distanceM, healthType: a.healthType ?? null, fromHealth: a.fromHealth === true })),
+  );
+  const health = input.health === undefined ? null : weekHealthFacts(input.health, monday);
+
   const feel = { easy: 0, good: 0, hard: 0 };
   for (const s of thisWeek) if (s.feel !== null) feel[s.feel] += 1;
 
@@ -641,6 +663,8 @@ export function weeklyFacts(input: WeeklyReviewInput): WeeklyFacts {
     groups,
     lifts,
     runs,
+    activities,
+    health,
     rpe,
     stalled,
     feel,
@@ -708,6 +732,15 @@ export function weeklyReviewFacts(f: WeeklyFacts): ReviewFact[] {
   for (const s of f.stalled) if (UUID.test(s.exerciseId)) out.push({ kind: 'stalled_lift', exerciseId: s.exerciseId, sessions: s.sessions });
   if (f.rpe !== null) out.push({ kind: 'rpe_drift', exerciseId: null, sessions: Math.max(1, Math.min(20, f.rpe.sessions)), meanRpe: Math.min(10, Math.max(1, f.rpe.mean)), targetRpe: f.rpe.target });
   if (f.runs.count > 0) out.push({ kind: 'runs', count: clampInt(f.runs.count, 50), distanceM: f.runs.distanceM });
+  for (const a of f.activities)
+    out.push({ kind: 'activity_group', group: a.group, count: clampInt(a.count, 50), durationS: a.durationS === null ? null : clampInt(a.durationS, 7 * 86_400), distanceM: a.distanceM === null ? null : Math.min(5_000_000, Math.round(a.distanceM)), fromHealth: a.fromHealth });
+  if (f.health !== null)
+    out.push({
+      kind: 'health_week',
+      sleep: f.health.sleep === null ? null : { avgMin: clampInt(f.health.sleep.avgMin, 1440), nights: Math.max(1, clampInt(f.health.sleep.nights, 7)) },
+      restingHr: f.health.restingHr === null ? null : { start: { localDate: f.health.restingHr.start.date, bpm: Math.max(20, clampInt(f.health.restingHr.start.bpm, 250)) }, end: { localDate: f.health.restingHr.end.date, bpm: Math.max(20, clampInt(f.health.restingHr.end.bpm, 250)) } },
+      sources: f.health.sources.map((x) => x.slice(0, 40)).slice(0, 4),
+    });
   if (f.feel.easy + f.feel.good + f.feel.hard > 0) out.push({ kind: 'feel', easy: f.feel.easy, good: f.feel.good, hard: f.feel.hard });
   for (const e of f.edits) if (UUID.test(e.routineId) && UUID.test(e.exerciseId)) out.push({ kind: 'template_edit', routineId: e.routineId, exerciseId: e.exerciseId, sessions: Math.min(20, Math.max(2, e.sessions)), fromSets: clampInt(e.fromSets, 30), toSets: clampInt(e.toSets, 30) });
   return out.slice(0, 60);
@@ -715,6 +748,6 @@ export function weeklyReviewFacts(f: WeeklyFacts): ReviewFact[] {
 
 /** Whether there is anything to review for the week: a workout, a run, or a plan or aim to count against. */
 export function weeklyReviewWorthwhile(f: WeeklyFacts): boolean {
-  return f.hasHistory && (f.week.workouts > 0 || f.runs.count > 0 || f.week.planned !== null);
+  return f.hasHistory && (f.week.workouts > 0 || f.runs.count > 0 || f.activities.length > 0 || f.week.planned !== null);
 }
 
