@@ -7,8 +7,8 @@ import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderInfoLookup,
 
 /**
  * The workout's `+N min` offer (workout-table-v3 §5; Ben, 20 Oct): the
- * builder's fit ladder (`fitToMinutes`: shorter rests → RPE 9 → the cheapest
- * cut, a set or an exercise, never the main lift) over the sets not done yet, as one
+ * builder's fit ladder (`fitToMinutes`: shorter accessory rests → RPE 9 → accessory
+ * sets down to 2 → an exercise left out, never the main lift) over the sets not done yet, as one
  * offer. Pure: the screen shows `lines`, and only Ben's Apply sends
  * `fitTodayCommand` (rule 3: never applied unasked). Done sets are never in
  * it (rule 2); it only shortens rests, raises no load and adds nothing.
@@ -24,8 +24,9 @@ import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderInfoLookup,
  *
  * The main lift (builder rule, workout-builder-v3 §2.0.2, kept the same here
  * so the workout and the builder agree): its sets and loads never change for
- * time; only its rests may shorten, as the builder's (working 3:00 → 2:00,
- * top 3:30 → 2:30, back-off 3:00 → 2:00 at `shortest`).
+ * time, nor do its rests (Ben, 27 Oct). Accessory rests shorten only as far as
+ * Ben's `Rest when short on time` (`fitRestLevel`; default Minimum rest): isolation
+ * and round 1:30 → 1:15 → 1:00, a compound accessory 2:00 → 1:30, never lower.
  *
  * The target never collapses (review S3): the sets left are never fitted
  * below half their length. When the overrun is more than that, the offer is
@@ -47,6 +48,8 @@ export interface TimeFitInput {
    * or empty: the plan day's main lift, else a Top set, else the first compound.
    */
   mainExerciseIds?: ReadonlySet<string>;
+  /** (Ben, 27 Oct) Profile › Training › `Rest when short on time` (absent: `shortest`, Minimum rest), as the builder's. */
+  fitRestLevel?: RestLevel;
 }
 
 /** One change, with its before → after (rule 2). */
@@ -105,7 +108,7 @@ const restKindAt = (rows: readonly BuilderSetRow[], i: number): RestKind | undef
   return rows[i + 1]?.type === 'drop' && row.type !== 'warmup' ? 'before_drop' : row.type;
 };
 
-/** A left-alone slot's rests, pinned at what its sets have now (so no level moves them in the estimate). */
+/** A left-alone slot's rests (and the main lift's, which time never moves), pinned at what its sets have now (so no level moves them in the estimate). */
 function pinnedRests(rows: readonly FitRow[], byId: ReadonlyMap<string, WorkoutSet>): Partial<Record<RestKind, number>> {
   const out: Partial<Record<RestKind, number>> = {};
   rows.forEach((r, i) => {
@@ -153,7 +156,7 @@ function slotOf(a: SessionAggregate, ex: SessionExercise, main: boolean, touched
     source: 'plan',
     startLight: null,
     anchorE1rm: null,
-    ...(touched ? { touched: true as const, restS: pinnedRests(rows, byId) } : {}),
+    ...(touched ? { touched: true as const, restS: pinnedRests(rows, byId) } : main ? { restS: pinnedRests(rows, byId) } : {}),
   };
 }
 
@@ -218,7 +221,8 @@ function aligned(orig: BuilderSlot, after: BuilderSlot): { kept: { setId: string
 
 /**
  * Rests a level shortens: set ID → seconds, only where it is shorter than
- * now. Warm-ups and the rest before a drop never change; nor do the rests of
+ * now. Warm-ups and the rest before a drop never change; nor do the main lift's
+ * (Ben, 27 Oct: whatever they are now, even longer than the default), the rests of
  * a left-alone slot (Ben's edit, pain flag, timed: `touched`), of a set Ben
  * edited, or a superset round with a left-alone exercise in it (review B1).
  */
@@ -231,7 +235,7 @@ function restCuts(a: SessionAggregate, orig: BuilderWorkout, w: BuilderWorkout, 
     const round = b.slots.length > 1 ? roundRestOf(b, w.restLevel, presets) : null;
     for (const slot of b.slots) {
       const o = origSlots.get(slot.key);
-      if (o === undefined || o.touched === true) continue;
+      if (o === undefined || o.touched === true || o.main) continue;
       if (round !== null && origBlockOf.get(slot.key)?.slots.some((x) => x.touched === true) === true) continue;
       const targets = restAfterRows(slot, info, w.restLevel, presets);
       aligned(o, slot).kept.forEach((k, i) => {
@@ -257,6 +261,7 @@ export function timeFitOffer(input: TimeFitInput): TimeFitOffer {
   const ctx: BuilderContext = {
     info: input.info,
     ...(input.restPresetsS === undefined ? {} : { restPresetsS: input.restPresetsS }),
+    ...(input.fitRestLevel === undefined ? {} : { fitRestLevel: input.fitRestLevel }),
     // Shrinking never adds an exercise, so these are never asked for.
     loads: () => ({ unit: 'kg', convention: 'total', equipment: null, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: null, painCap: null }),
     newKey: (id) => `fit:${id}`,

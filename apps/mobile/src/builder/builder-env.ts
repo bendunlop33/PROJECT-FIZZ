@@ -143,11 +143,14 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     // (D4) Back-offs sit in the band for Ben's goal (Strength / Balanced / Muscle); not set or unreadable: Balanced.
     // (S7) A builder plan in use sets the band (its focus), so its days' back-offs match Your plan.
     const appliedPlan = await repos.planDrafts.applied(p.id).catch(() => null);
-    const mainFocus = pbMainFocus(appliedPlan, (await repos.trainingProfiles.get(p.id).catch(() => null))?.goal);
+    const trainingProfile = await repos.trainingProfiles.get(p.id).catch(() => null);
+    const mainFocus = pbMainFocus(appliedPlan, trainingProfile?.goal);
     // (Ben, 23 Oct) The plan's Warm-ups setting (Full / Short / None): Your workout plans warm-ups as Today and Start do;
     // a slot with Ben's own warm-ups keeps them.
     const warmups = pbWarmupsOf(appliedPlan);
+    // (Ben, 27 Oct) Profile › Training › `Rest when short on time`: how far Time may shorten accessory rests.
     const warmupsOpt = warmups === 'full' ? {} : { warmups };
+    const fitRestOpt = trainingProfile?.fitRestLevel === undefined ? {} : { fitRestLevel: trainingProfile.fitRestLevel };
     // (Ben, 23 Oct: plan length = block 1) The applied plan's deload week (derived from its Apply, pauses and his plan
     // workouts): every load worked out here is ~10 % lighter and each slot a set fewer, as on Today's card and at Start.
     const block = appliedPlan === null ? null : pbBlockOfPlan(appliedPlan, await repos.sessions.listFinishedRefs(p.id, 400).catch(() => []), nowMs, p.timezone);
@@ -333,7 +336,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       const e = byId.get(id);
       return e === undefined ? null : builderExtraOf(e);
     };
-    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt };
+    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt, ...fitRestOpt };
     // Prehab and forearm work (cuff, shins, wrist curls) is in `candidates` for Swap / Add, never picked by itself.
     const pool: BuilderPool = (g) => candidates(g).filter((id) => !painFlagged(id) && !isBrowseOnlyFocus(info(id)?.angle ?? ''));
     // The one `checkedOnOf` (domain): what Start's re-check compares against, so a builder draft and Today's agree

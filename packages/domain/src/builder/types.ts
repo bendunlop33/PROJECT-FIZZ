@@ -315,6 +315,11 @@ export interface BuilderContext {
    */
   warmups?: PlanWarmups;
   /**
+   * (Ben, 27 Oct) Profile › Training › `Rest when short on time`: the shortest rest level a time fit may take the
+   * accessories' rests to (`normal`: never shortened). Absent: `DEFAULT_FIT_REST_LEVEL` (`shortest`, Minimum rest).
+   */
+  fitRestLevel?: RestLevel;
+  /**
    * (Ben, 27 Oct: "add 8 min bike warm up") An exercise with no builder group that the builder still holds
    * (`BuilderExtraInfo`: cardio, a timed hold, plyometric or med-ball reps). Absent or null: not one.
    */

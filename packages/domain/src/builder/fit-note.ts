@@ -1,4 +1,5 @@
 import type { BuilderFitStep } from './fit';
+import { REST_LEVEL_NAMES } from './rest';
 
 /**
  * The Time control's note and detail, one wording for Today's card and Your workout (fit-to-time.md 22 Oct revision,
@@ -6,9 +7,10 @@ import type { BuilderFitStep } from './fit';
  * (`Time · −1 exercise ›`); a tap lists everything combined. Values only (minimal copy).
  */
 export const FIT_NOTE_COPY = {
-  shorter: 'Shorter rests',
-  shortest: 'Shortest rests',
-  normal: 'Normal rests',
+  /** (Ben, 27 Oct) The rest levels by their Profile names. */
+  shorter: REST_LEVEL_NAMES.shorter,
+  shortest: REST_LEVEL_NAMES.shortest,
+  normal: REST_LEVEL_NAMES.normal,
   sets: (name: string, from: number, to: number) => `${name} ${String(from)} → ${String(to)} sets`,
   dropped: (name: string) => `Dropped ${name}`,
   added: (name: string) => `Added ${name}`,
@@ -16,9 +18,9 @@ export const FIT_NOTE_COPY = {
 } as const;
 
 export interface FitNoteView {
-  /** `−1 exercise`, `+1 exercise`, `−2 sets`, `+2 sets`, `supersets`, `shorter rests`; null: nothing changed. */
+  /** `−1 exercise`, `+1 exercise`, `−2 sets`, `+2 sets`, `supersets`, `medium rest`; null: nothing changed. */
   note: string | null;
-  /** Everything it changed, rests first: `Shorter rests`, `Superset Fly + Crunch`, `Fly 3 → 2 sets`, `Dropped Pushdown`. */
+  /** Everything it changed, rests first: `Medium rest`, `Superset Fly + Crunch`, `Fly 3 → 2 sets`, `Dropped Pushdown`. */
   lines: string[];
 }
 
@@ -39,7 +41,7 @@ export function fitNoteOf(steps: readonly BuilderFitStep[], nameOf: (exerciseId:
   for (const st of steps) {
     switch (st.kind) {
       case 'rest':
-        rest = st.to === 'shorter' ? { line: FIT_NOTE_COPY.shorter, note: 'shorter rests' } : st.to === 'shortest' ? { line: FIT_NOTE_COPY.shortest, note: 'shortest rests' } : { line: FIT_NOTE_COPY.normal, note: 'normal rests' };
+        rest = { line: FIT_NOTE_COPY[st.to], note: FIT_NOTE_COPY[st.to].toLowerCase() };
         break;
       case 'pair':
         pairs.push(FIT_NOTE_COPY.paired(st.slotKeys.map(slotName)));

@@ -86,13 +86,15 @@ describe('fitWorkoutToTime', () => {
         expect(row.reps).toBe(was.rows[i]?.reps);
       });
     }
-    // A little shorter, the abs (2.5 a set, Ben's choice) go before the compounds; a minute longer, sets go instead
-    // (a fly, a pushdown and a crunch set lose 6, the crunch 7.5: the least training lost).
+    // (Ben, 27 Oct) Sets before exercises: a minute longer than the first one left out, every accessory is at 2 sets and
+    // nothing is left out; then the abs (2.5 a set, Ben's choice) go before the compounds. (The bench's rests no longer
+    // shorten, so these are a minute earlier than before: 15 and 14, were 16 and 15.)
     const crunchKey = order.find((s) => s.exerciseId === 'crunch')?.key;
-    expect(at(base, full - 16, null, full).fit?.dropped).toEqual([crunchKey]);
-    expect(at(base, full - 15, null, full).fit?.dropped).toEqual([]);
-    expect(slotsOf(at(base, full - 16, null, full).workout.blocks).find((s) => s.exerciseId === 'assisted_pullup')?.convention).toBe('assistance');
-    expect(slotsOf(at(base, full - 16, null, full).workout.blocks).find((s) => s.exerciseId === 'incline_db')?.convention).toBe('per_hand');
+    expect(at(base, full - 15, null, full).fit?.dropped).toEqual([crunchKey]);
+    expect(at(base, full - 14, null, full).fit?.dropped).toEqual([]);
+    expect(slotsOf(at(base, full - 14, null, full).workout.blocks).filter((s) => !s.main).every((s) => workingCount(s) === 2)).toBe(true);
+    expect(slotsOf(at(base, full - 15, null, full).workout.blocks).find((s) => s.exerciseId === 'assisted_pullup')?.convention).toBe('assistance');
+    expect(slotsOf(at(base, full - 15, null, full).workout.blocks).find((s) => s.exerciseId === 'incline_db')?.convention).toBe('per_hand');
   });
 
   it('no superset is ever made (Supersets off is a hard rule, review V14): pairs only stay or shrink', () => {
@@ -130,8 +132,9 @@ describe('fitWorkoutToTime', () => {
   });
 
   it('Ben’s edits after a fit stay: his set edit, a slot he deleted, a slot he added; only what the fit cut comes back (a set it took from a slot he edited too)', () => {
-    // 11 minutes shorter: rests, then one crunch set (the least lost when one cut is enough).
-    const short = at(base, full - 11, null, full);
+    // 7 minutes shorter (was 11 before the bench's rests stopped shortening, Ben 27 Oct): rests, then one crunch set
+    // (the least lost when one cut is enough).
+    const short = at(base, full - 7, null, full);
     const fit = short.fit;
     if (fit === null) throw new Error('no fit');
     const cutKey = Object.keys(fit.cut ?? {})[0] ?? '';
@@ -202,7 +205,8 @@ describe('a slot Ben edits after the fit cut it (22 Oct review)', () => {
   const pushdownOf = (w: BuilderWorkout) => slotsOf(w.blocks).find((s) => s.exerciseId === 'pushdown');
 
   it('an RPE edit doesn’t lock the cut in: the detail still lists it, and more time (or Undo) brings the set back with his RPE kept', () => {
-    const short = at(base, full - 12, null, full);
+    // (Ben, 27 Oct: the bench's rests no longer shorten) 8 minutes shorter (was 12): one pushdown set.
+    const short = at(base, full - 8, null, full);
     const fit = short.fit;
     const pd = pushdownOf(short.workout);
     if (fit === null || pd === undefined) throw new Error('no fit');
@@ -220,7 +224,8 @@ describe('a slot Ben edits after the fit cut it (22 Oct review)', () => {
   });
 
   it('never past the original: a set Ben added back himself isn’t added again; one he removed himself stays removed', () => {
-    const short = at(base, full - 12, null, full);
+    // (Ben, 27 Oct: the bench's rests no longer shorten) 8 minutes shorter (was 12): one pushdown set.
+    const short = at(base, full - 8, null, full);
     const fit = short.fit;
     const pd = pushdownOf(short.workout);
     if (fit === null || pd === undefined) throw new Error('no fit');
@@ -234,7 +239,8 @@ describe('a slot Ben edits after the fit cut it (22 Oct review)', () => {
   });
 
   it('a fit stored before `cut` was recorded reads as before (his slot as he left it)', () => {
-    const short = at(base, full - 12, null, full);
+    // (Ben, 27 Oct: the bench's rests no longer shorten) 8 minutes shorter (was 12): one pushdown set.
+    const short = at(base, full - 8, null, full);
     const fit = short.fit;
     const pd = pushdownOf(short.workout);
     if (fit === null || pd === undefined) throw new Error('no fit');
@@ -469,13 +475,14 @@ describe('one shared fit for Today and Your workout (22 Oct revision, D9)', () =
       blocks: [slot('bench', { main: true, sets: 4 }), slot('incline_db', { sets: 3 }), slot('cable_fly', { sets: 3 }), slot('pushdown', { sets: 3 }), { ...slot('pushdown', { sets: 3 }), key: 'ride', exerciseId: 'rowing_machine' }].map((x) => ({ slots: [x], auto: false })),
     };
     const n = estimateBuilderMinutes(w, ctx);
-    const today = fitToMinutes(w, ctx, { minutes: n - 16, mainGroup: 'Chest', grow: false, supersets: false });
-    const yours = fitToMinutes(w, ctx, { minutes: n - 16, mainGroup: 'Chest', grow: false, supersets: false, pushEffort: false });
+    // (Ben, 27 Oct: the bench's rests no longer shorten; every accessory at 2 sets first) 15 shorter (was 16).
+    const today = fitToMinutes(w, ctx, { minutes: n - 15, mainGroup: 'Chest', grow: false, supersets: false });
+    const yours = fitToMinutes(w, ctx, { minutes: n - 15, mainGroup: 'Chest', grow: false, supersets: false, pushEffort: false });
     expect(yours).toEqual(today);
     const cuts = today.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop');
     expect(cuts).toEqual([{ kind: 'drop', slotKey: 'ride', exerciseId: 'rowing_machine' }]);
-    // A little shorter, a set off the ride first.
-    const less = fitToMinutes(w, ctx, { minutes: n - 12, mainGroup: 'Chest', grow: false, supersets: false });
+    // A little shorter, a set off the ride first (8 shorter, was 12).
+    const less = fitToMinutes(w, ctx, { minutes: n - 8, mainGroup: 'Chest', grow: false, supersets: false });
     expect(less.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop').map((x) => ('slotKey' in x ? x.slotKey : ''))).toEqual(['ride']);
   });
 });

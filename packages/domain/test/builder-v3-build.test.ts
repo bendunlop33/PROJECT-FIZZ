@@ -50,9 +50,11 @@ describe('rest (§3.2, §9 Q7)', () => {
     expect(defaultRestS('round', 'isolation', 'normal')).toBe(90);
   });
 
-  it('shortest: main 3:00 → 2:00, compound 2:00 → 1:15, isolation 1:30 → 1:00, round 1:30 → 1:00', () => {
-    expect(defaultRestS('working', 'main', 'shortest')).toBe(120);
-    expect(defaultRestS('working', 'compound', 'shortest')).toBe(75);
+  it('shortest (Ben, 27 Oct): main lift unchanged (was 3:00 → 2:00), compound 2:00 → 1:30 (was 1:15), isolation 1:30 → 1:00, round 1:30 → 1:00', () => {
+    expect(defaultRestS('working', 'main', 'shortest')).toBe(180);
+    expect(defaultRestS('top', 'main', 'shortest')).toBe(210);
+    expect(defaultRestS('backoff', 'main', 'shortest')).toBe(180);
+    expect(defaultRestS('working', 'compound', 'shortest')).toBe(90);
     expect(defaultRestS('working', 'isolation', 'shortest')).toBe(60);
     expect(defaultRestS('round', 'isolation', 'shortest')).toBe(60);
     expect(defaultRestS('warmup', 'main', 'shortest')).toBe(60);
@@ -96,8 +98,9 @@ describe('estimateBuilderMinutes (§3.6, no switch time per Q16)', () => {
     // fly + crunch: warm-ups 2 × (8 × 4 + 120) = 304; 3 rounds × (2 × 45 + 90) → 844
     expect(estimateBuilderSeconds(w, ctx)).toBe(120 + 120 + 1350 + 631 + 844);
     expect(estimateBuilderMinutes(w, ctx)).toBe(51);
-    // shortest (the warm-up rests are WU11's at every level): bench 420 + 195 + 3 × 165; incline 136 + 3 × 120; superset 304 + 3 × 150
-    expect(estimateBuilderSeconds({ ...w, restLevel: 'shortest' }, ctx)).toBe(120 + 120 + 1110 + 496 + 754);
+    // shortest (the warm-up rests are WU11's at every level; Ben, 27 Oct: the main lift's rests never shorten, a compound
+    // accessory's go to 1:30): bench 1350 as at normal; incline 136 + 3 × 135; superset 304 + 3 × 150
+    expect(estimateBuilderSeconds({ ...w, restLevel: 'shortest' }, ctx)).toBe(120 + 120 + 1350 + 541 + 754);
     // Ben's own warm-up rest wins between steps and before the first working set: bench 15 × 4 + 4 × 90.
     const ownRest = { ...bench, restS: { ...bench.restS, warmup: 90 } };
     expect(estimateBuilderSeconds({ restLevel: 'normal', blocks: [{ slots: [ownRest], auto: false }] }, ctx) - estimateBuilderSeconds({ restLevel: 'normal', blocks: [{ slots: [bench], auto: false }] }, ctx)).toBe(60 + 4 * 90 - 420);
@@ -156,7 +159,8 @@ describe('recommendBuilderGroups / scaleMix (§3.7)', () => {
     const b = buildFromSetup({ minutes: 20, mainLiftExerciseId: 'bench', supersets: true, groups: rec.groups }, pool, ctx);
     expect(ids(b.workout)).toEqual(['bench']);
     expect(b.fit.status).toBe('over');
-    expect(b.fit.minutes).toBe(21);
+    // (Ben, 27 Oct) Its rests never shorten for time either (was 21 min with bench at 2:00).
+    expect(b.fit.minutes).toBe(25);
     // Main-lift sets and loads never change for time.
     expect(all(b.workout)[0]?.rows.filter((r) => r.type !== 'warmup')).toHaveLength(4);
   });
@@ -195,12 +199,13 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     const { ctx, w } = sixty();
     // (WU1–WU12) Warm-ups by place: bench's ladder; the chest accessories after it none; the pushdown and crunch one each.
     expect(estimateBuilderMinutes(w, ctx)).toBe(63);
-    const f = fitToMinutes(w, ctx, { minutes: 55, mainGroup: 'Chest', grow: false, supersets: true });
+    // (Ben, 27 Oct) Accessory rests only, so the rests alone take less off than before: 58 (was 55).
+    const f = fitToMinutes(w, ctx, { minutes: 58, mainGroup: 'Chest', grow: false, supersets: true });
     expect(f.steps).toEqual([
       { kind: 'rest', from: 'normal', to: 'shorter' },
       { kind: 'rest', from: 'shorter', to: 'shortest' },
     ]);
-    expect(f.minutes).toBeLessThanOrEqual(55);
+    expect(f.minutes).toBeLessThanOrEqual(58);
     const g = fitToMinutes(w, ctx, { minutes: 62, mainGroup: 'Chest', grow: false, supersets: true });
     expect(g.workout.restLevel).toBe('shorter');
   });
@@ -217,29 +222,33 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     const { ctx, w } = solo();
     expect(estimateBuilderMinutes(w, ctx)).toBe(71);
     const f = (m: number) => fitToMinutes(w, ctx, { minutes: m, mainGroup: 'Chest', grow: false, supersets: false });
-    // 55: a fly set and a pushdown set (3.5 lost), not the whole pushdown (4.5).
+    // 60: a fly set and a pushdown set (3.5 lost), not the whole pushdown (4.5).
+    expect(ids(f(60).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'pushdown', 'crunch']);
+    expect(cuts(f(60)).map((c) => c.kind)).toEqual(['sets', 'sets']);
+    // (Ben, 27 Oct) 55: every accessory at 2 sets before any is left out (trimming alone fits).
     expect(ids(f(55).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'pushdown', 'crunch']);
-    expect(cuts(f(55)).map((c) => c.kind)).toEqual(['sets', 'sets']);
-    // 40: the warmed chest compounds (no warm-ups of their own, WU2) keep more training than fly + pushdown + crunch.
-    expect(ids(f(40).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly']);
-    for (const m of [55, 50, 45, 40, 35, 30, 25]) {
+    expect(cuts(f(55)).every((c) => c.kind === 'sets')).toBe(true);
+    // 45: the warmed chest compounds (no warm-ups of their own, WU2) keep more training than fly + pushdown + crunch.
+    expect(ids(f(45).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly']);
+    for (const m of [60, 55, 50, 45, 40, 35, 30, 25]) {
       const r = f(m);
       expect(r.status).toBe('fitted');
       expect(r.minutes).toBeLessThanOrEqual(m);
       expect(all(r.workout)[0]).toEqual(all(w)[0]);
       expect(all(r.workout).every((s) => s.main || s.rows.filter((x) => x.type !== 'warmup').length >= 2)).toBe(true);
     }
-    // 25: two fly sets still fit after the main lift (the old one-cut-at-a-time fit kept the main lift alone).
-    expect(ids(f(25).workout)).toEqual(['bench', 'cable_fly']);
+    // 30: two incline sets still fit after the main lift (the old one-cut-at-a-time fit kept the main lift alone). The
+    // main lift alone is 25 min now its rests never shorten (Ben, 27 Oct).
+    expect(ids(f(30).workout)).toEqual(['bench', 'incline_db']);
     const f10 = f(10);
     expect(f10.status).toBe('over');
     expect(ids(f10.workout)).toEqual(['bench']);
     expect(all(f10.workout)[0]?.rows.filter((r) => r.type !== 'warmup')).toHaveLength(4);
   });
 
-  it('cuts are listed in workout order: at 55 a fly set and a pushdown set', () => {
+  it('cuts are listed in workout order: at 60 a fly set and a pushdown set', () => {
     const { ctx, w } = solo();
-    const r = fitToMinutes(w, ctx, { minutes: 55, mainGroup: 'Chest', grow: false, supersets: false });
+    const r = fitToMinutes(w, ctx, { minutes: 60, mainGroup: 'Chest', grow: false, supersets: false });
     expect(cuts(r)).toEqual([
       { kind: 'sets', slotKey: all(w)[3]?.key, exerciseId: 'cable_fly', from: 3, to: 2 },
       { kind: 'sets', slotKey: all(w)[4]?.key, exerciseId: 'pushdown', from: 3, to: 2 },
@@ -264,7 +273,7 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
 
   it('Supersets on: pairing is a free saving before any cut; Supersets off: nothing is ever paired; a slot Ben edited is never paired', () => {
     const { ctx, w } = solo();
-    const on = fitToMinutes(w, ctx, { minutes: 55, mainGroup: 'Chest', grow: false, supersets: true });
+    const on = fitToMinutes(w, ctx, { minutes: 60, mainGroup: 'Chest', grow: false, supersets: true });
     expect(on.steps.map((x) => x.kind)).toEqual(['rest', 'rest', 'pair']);
     expect(ids(on.workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'pushdown+crunch']);
     expect(on.workout.blocks.find((b) => b.slots.length > 1)?.auto).toBe(true);
@@ -274,7 +283,7 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     expect(t.workout.blocks.some((b) => b.slots.length > 1 && b.slots.some((x) => x.exerciseId === 'crunch'))).toBe(false);
   });
 
-  it('sweep (design review S2): one minute at a time from the full length to 15, less time never keeps more training (FIT_SET_VALUE), never touches the main lift, never pairs with Supersets off, and keeps every accessory at 2+ sets', () => {
+  it('sweep (design review S2): one minute at a time from the full length to 15, less time never keeps more training (FIT_SET_VALUE) within each step (sets only, then leaving out; Ben, 27 Oct), never leaves out while trimming fits, never touches the main lift, never pairs with Supersets off, and keeps every accessory at 2+ sets', () => {
     const days: { main: string; mainGroup: 'Chest' | 'Legs' | 'Back'; groups: { group: 'Chest' | 'Legs' | 'Back' | 'Arms' | 'Core'; count: number }[] }[] = [
       { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] },
       { main: 'bench', mainGroup: 'Chest', groups: [{ group: 'Chest', count: 3 }, { group: 'Arms', count: 3 }, { group: 'Core', count: 1 }] },
@@ -288,14 +297,22 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
         const ctx = context();
         const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: d.main, supersets, groups: d.groups }, pool, ctx).workout;
         const main = all(w).find((s) => s.main);
-        let kept = Infinity;
+        // (Ben, 27 Oct) Trimming sets comes before leaving anything out, so at the switch from one to the other a fit can
+        // keep more value than one a minute longer (it may drop one exercise and keep the rest whole). Within each step
+        // less time never keeps more; once something is left out, every shorter length leaves something out too.
+        const kept = { trim: Infinity, drop: Infinity };
+        let dropped = false;
         for (let m = estimateBuilderMinutes(w, ctx); m >= 15; m -= 1) {
           const r = fitToMinutes(w, ctx, { minutes: m, mainGroup: d.mainGroup, grow: false, supersets });
           const value = all(r.workout)
             .filter((s) => !s.main)
             .reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, d.mainGroup), 0);
-          expect(value, `${d.main} ${String(m)} min, supersets ${String(supersets)}`).toBeLessThanOrEqual(kept + 1e-9);
-          kept = value;
+          const drops = r.steps.some((s) => s.kind === 'drop');
+          if (dropped) expect(drops, `${d.main} ${String(m)} min, supersets ${String(supersets)}: left out at a longer length`).toBe(true);
+          dropped = drops;
+          const step = drops ? 'drop' : 'trim';
+          expect(value, `${d.main} ${String(m)} min, supersets ${String(supersets)}`).toBeLessThanOrEqual(kept[step] + 1e-9);
+          kept[step] = value;
           expect(all(r.workout).find((s) => s.main)).toEqual(main);
           expect(all(r.workout).filter((s) => !s.main).every((s) => work(s) >= 2)).toBe(true);
           if (!supersets) expect(r.workout.blocks.every((b) => b.slots.length === 1)).toBe(true);
@@ -360,11 +377,40 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
       expect(checked).toBeGreaterThan(100);
     });
 
-    it('brute force on the small fixture: no achievable fit keeps more training (FIT_SET_VALUE) at the same Time (with sub-role coverage first, Ben 24 Oct)', () => {
+    it('brute force on the small fixture: no achievable fit keeps more training (FIT_SET_VALUE) at the same Time (sets only first, Ben 27 Oct; with sub-role coverage first, Ben 24 Oct)', () => {
       let guarded = 0;
+      let trimmedOnly = 0;
       for (const { ctx, base, r, m, value, label, mainGroup } of cases()) {
         if (r.status !== 'fitted') continue;
         const acc = all(base).filter((s) => !s.main);
+        // (Ben, 27 Oct) Step 3: if every accessory kept at 2+ sets fits, nothing is left out and no such fit keeps more
+        // (the sub-role exercises' sets weighed first, then the rest).
+        const guardKeys = subRoleGuards(base, ctx.info, mainGroup).map((g) => g.slotKey);
+        const gv = (x: BuilderWorkout) => all(x).filter((s) => guardKeys.includes(s.key)).reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, mainGroup), 0);
+        const trim: { best: { g: number; v: number } | null } = { best: null };
+        const trimWalk = (i: number, counts: Map<string, number>): void => {
+          const s = acc[i];
+          if (s === undefined) {
+            const x = withCounts(base, counts);
+            if (estimateBuilderSeconds(x, ctx) > m * 60 + 29) return;
+            const g = gv(x);
+            const v = value(x);
+            const b = trim.best;
+            if (b === null || g > b.g + 1e-9 || (Math.abs(g - b.g) <= 1e-9 && v > b.v)) trim.best = { g, v };
+            return;
+          }
+          const n = work(s);
+          for (let k = Math.min(2, n); k <= n; k += 1) trimWalk(i + 1, new Map(counts).set(s.key, k));
+        };
+        trimWalk(0, new Map());
+        if (trim.best !== null) {
+          trimmedOnly += 1;
+          expect(r.steps.some((s) => s.kind === 'drop'), `${label}: left out while trimming fits`).toBe(false);
+          expect(gv(r.workout), `${label}: sub-role sets`).toBeGreaterThanOrEqual(trim.best.g - 1e-9);
+          if (Math.abs(gv(r.workout) - trim.best.g) <= 1e-9) expect(value(r.workout), label).toBeGreaterThanOrEqual(trim.best.v - 1e-9);
+          continue;
+        }
+        expect(r.steps.some((s) => s.kind === 'drop'), `${label}: trimming alone doesn't fit`).toBe(true);
         // (Ben, 24 Oct) The guarded exercises (a Back day's vertical pull and row) first: whole, then at 2+ sets with their
         // sets weighed before the rest, then the later sub-roles given up one at a time, then no guard.
         const guards = subRoleGuards(base, ctx.info, mainGroup).map((g) => g.slotKey);
@@ -407,18 +453,20 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
         if (Math.abs(guardValue(r.workout, keys) - found.g) <= 1e-9) expect(value(r.workout), label).toBeGreaterThanOrEqual(found.v - 1e-9);
       }
       expect(guarded).toBeGreaterThan(0);
+      expect(trimmedOnly).toBeGreaterThan(0);
     });
 
-    it('the examples the review found: Chest with Supersets on at 35 min uses ~35 min; off at 27 min keeps more than the main lift', () => {
+    it('the examples the review found: Chest with Supersets on at 35 min uses ~35 min; off at 30 min keeps more than the main lift', () => {
       const ctx = context();
       const groups = days[0]?.groups ?? [];
       const on = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: true, groups }, pool, ctx).workout;
       const r35 = fitToMinutes(on, ctx, { minutes: 35, mainGroup: 'Chest', grow: false, supersets: true });
       expect(r35.minutes).toBeGreaterThanOrEqual(34);
       const off = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups }, pool, ctx).workout;
-      const r27 = fitToMinutes(off, ctx, { minutes: 27, mainGroup: 'Chest', grow: false, supersets: false });
-      expect(ids(r27.workout).length).toBeGreaterThan(1);
-      expect(r27.minutes).toBeLessThanOrEqual(27);
+      // (Ben, 27 Oct) The main lift alone is 25 min now its rests never shorten for time (was 27 here, at ~21).
+      const r30 = fitToMinutes(off, ctx, { minutes: 30, mainGroup: 'Chest', grow: false, supersets: false });
+      expect(ids(r30.workout).length).toBeGreaterThan(1);
+      expect(r30.minutes).toBeLessThanOrEqual(30);
     });
   });
 
@@ -553,10 +601,11 @@ describe('fit value and the week’s carry-over (fit-to-time 22 Oct revision)', 
     const ctx = context();
     const w = buildFromSetup({ minutes: 999, mainLiftExerciseId: 'bench', supersets: false, groups: [{ group: 'Chest', count: 4 }, { group: 'Arms', count: 1 }, { group: 'Core', count: 1 }] }, pool, ctx).workout;
     const at = (m: number) => fitToMinutes(w, ctx, { minutes: m, mainGroup: 'Chest', grow: false, supersets: false }).workout;
-    // 50: a fly set and the whole pushdown went: 3 triceps sets.
-    expect(fitCarryOver(w, at(50), info, 'Chest')).toEqual({ group: 'Arms', sets: 3 });
-    // 55: a set each from fly and pushdown: no group lost 2.
-    expect(fitCarryOver(w, at(55), info, 'Chest')).toBeNull();
+    // 45 (Ben, 27 Oct; was 50): a fly set, the whole pushdown and the crunch went: 3 triceps sets (the tie with Core
+    // goes to the earlier group).
+    expect(fitCarryOver(w, at(45), info, 'Chest')).toEqual({ group: 'Arms', sets: 3 });
+    // 60 (was 55): a set each from fly and pushdown: no group lost 2.
+    expect(fitCarryOver(w, at(60), info, 'Chest')).toBeNull();
     // Fly and pushdown gone (3 sets each): the tie goes to Chest.
     const gone = (keys: readonly string[]): BuilderWorkout => ({ ...w, blocks: w.blocks.flatMap((b) => { const slots = b.slots.filter((x) => !keys.includes(x.exerciseId)); return slots.length === 0 ? [] : [{ ...b, slots }]; }) });
     expect(fitCarryOver(w, gone(['cable_fly', 'pushdown']), info, 'Chest')).toEqual({ group: 'Chest', sets: 3 });

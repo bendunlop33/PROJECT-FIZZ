@@ -361,6 +361,7 @@ import type {
   ZonedTimestamp,
   WeekPlan,
   SplitBodyPart,
+  FitRestLevel,
 } from '@fizz/schemas';
 
 import { undoOpId, undoRefusalText } from '../workout/undo-op';
@@ -629,6 +630,8 @@ export interface ActiveWorkoutData {
    */
   pinnedNotes?: Readonly<Record<string, PinnedNote>>;
   pinnedVersion?: number;
+  /** (Ben, 27 Oct) Profile › Training › `Rest when short on time`, for the `+N min` fit (absent: Minimum rest). */
+  fitRestLevel?: FitRestLevel;
 }
 
 /**
@@ -3166,6 +3169,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         recentPace: pace,
         pinnedNotes,
         pinnedVersion: training?.version ?? 1,
+        ...(training?.fitRestLevel === undefined ? {} : { fitRestLevel: training.fitRestLevel }),
       };
     },
 
@@ -3269,7 +3273,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      */
     timeFit(data: ActiveWorkoutData, overByMinutes: number): TimeFitOffer | null {
       const info = data.builderInfo ?? {};
-      const o = timeFitOffer({ aggregate: data.aggregate, overByMinutes, info: (id) => info[id] ?? null, painFlagged: new Set(data.painFlagged), ...(data.mainExerciseIds === undefined ? {} : { mainExerciseIds: data.mainExerciseIds }) });
+      const o = timeFitOffer({ aggregate: data.aggregate, overByMinutes, info: (id) => info[id] ?? null, painFlagged: new Set(data.painFlagged), ...(data.mainExerciseIds === undefined ? {} : { mainExerciseIds: data.mainExerciseIds }), ...(data.fitRestLevel === undefined ? {} : { fitRestLevel: data.fitRestLevel }) });
       return o.status === 'none' ? null : o;
     },
 

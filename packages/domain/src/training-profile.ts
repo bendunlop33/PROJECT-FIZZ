@@ -1,6 +1,7 @@
 import type { HistoryLike } from './history-summary';
 import {
   type BuildFocus,
+  FitRestLevelSchema,
   muscleGroupOf,
   SplitBodyPartSchema,
   TRAINING_LIMITS,
@@ -206,6 +207,8 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
       const weekdays = CHECK_IN_WEEKDAYS.filter((d) => c.schedule.kind === 'days' && c.schedule.weekdays.includes(d));
       return weekdays.length === 0 ? null : { ...p, checkInSchedule: { kind: 'days', weekdays } };
     }
+    case 'fit_rest_level':
+      return FitRestLevelSchema.safeParse(c.level).success ? { ...p, fitRestLevel: c.level } : null;
     case 'progress_lifts': {
       const ids = [...new Set(c.exerciseIds.map((x) => x.trim()))];
       if (ids.length > TRAINING_LIMITS.progressLiftsMax || ids.some((x) => x.length === 0 || x.length > 64)) return null;

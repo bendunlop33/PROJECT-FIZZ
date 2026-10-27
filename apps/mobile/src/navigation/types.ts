@@ -24,6 +24,8 @@ export type ProfileStackParams = {
   Split: undefined;
   /** Profile › Training › Check-in (Ben, 26 Oct; check-in.md §2.8): when Start asks. */
   CheckInSettings: undefined;
+  /** Profile › Training › Rest when short on time (Ben, 27 Oct): how far Time may shorten accessory rests. */
+  RestWhenShort: undefined;
   /** Profile → Coach → Memory (coach-memory §2.1). */
   Memory: undefined;
   /** Profile → Coach → Playbook: chat rules to review (coaching-playbook §2.1). */

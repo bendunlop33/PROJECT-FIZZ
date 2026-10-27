@@ -897,6 +897,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       ...(p.restPresets.length > 0 ? { restPresetsS: p.restPresets.map((r) => r.seconds) } : {}),
       // (Ben, 23 Oct) The plan's Warm-ups setting (Full / Short / None), as Your workout and Start plan them.
       ...(warmups === 'full' ? {} : { warmups }),
+      // (Ben, 27 Oct) `Rest when short on time`, as Your workout's Time.
+      ...(training?.fitRestLevel === undefined ? {} : { fitRestLevel: training.fitRestLevel }),
     };
 
     // Each day's own sessions (credited by plan day or by its templates), newest first.

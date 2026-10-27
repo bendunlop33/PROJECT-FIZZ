@@ -68,7 +68,7 @@ describe('fitTemplateToMinutes (Ben, 26 Oct)', () => {
     expect(working(r.exercises.find((e) => e.exerciseId === 'row'))).toBe(3);
     for (const e of r.exercises) expect(working(e)).toBeGreaterThanOrEqual(2);
     const note = fitNoteOf(r.steps, (x) => ({ fly: 'Cable fly', row: 'Row', crunch: 'Crunch' })[x] ?? x, () => '');
-    expect(note.lines[0]).toBe('Shorter rests');
+    expect(note.lines[0]).toBe('Medium rest');
     expect(note.lines).toContain('Cable fly 3 → 2 sets');
     expect(note.note).toMatch(/^−\d sets?$/);
   });

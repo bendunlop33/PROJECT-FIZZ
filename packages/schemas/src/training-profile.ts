@@ -93,6 +93,14 @@ export const PinnedNoteSchema = z.object({
 });
 export type PinnedNote = z.infer<typeof PinnedNoteSchema>;
 
+/**
+ * (Ben, 27 Oct) Profile › Training › `Rest when short on time`: how far a time fit may shorten accessory rests.
+ * `normal` Standard rest (never), `shorter` Medium rest, `shortest` Minimum rest (the default). The builder's rest
+ * levels (`RestLevel`); the main lift's rests never change for time whichever is picked.
+ */
+export const FitRestLevelSchema = z.enum(['normal', 'shorter', 'shortest']);
+export type FitRestLevel = z.infer<typeof FitRestLevelSchema>;
+
 export const TrainingProfileSchema = RecordMetaSchema.extend({
   about: z.object({
     birthYear: z.int().min(TRAINING_LIMITS.birthYearMin).max(2100).optional(),
@@ -140,6 +148,8 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
    * choose` (the 23 Oct default). Your data (rule 10).
    */
   checkInSchedule: CheckInScheduleSchema.optional(),
+  /** (Ben, 27 Oct) `Rest when short on time`. Absent: `shortest` (Minimum rest). Your data (rule 10). */
+  fitRestLevel: FitRestLevelSchema.optional(),
   /** (Ben, 26 Oct) Pinned exercise notes, one per exercise and gym (null gym: every gym). Absent: none. */
   pinnedNotes: z.array(PinnedNoteSchema).max(TRAINING_LIMITS.pinnedNotesMax).optional(),
   /** Operation IDs already applied, newest last (a repeat is a no-op; rule 5). */
@@ -175,6 +185,8 @@ export type TrainingChange =
   | { kind: 'progress_lifts'; exerciseIds: readonly string[]; reps?: Readonly<Record<string, number>> }
   /** (Ben, 26 Oct) Profile › Training › Check-in. `days` needs at least one weekday. */
   | { kind: 'check_in_schedule'; schedule: CheckInSchedule }
+  /** (Ben, 27 Oct) Profile › Training › `Rest when short on time`. */
+  | { kind: 'fit_rest_level'; level: FitRestLevel }
   /** (Ben, 26 Oct) Pin a note on an exercise (at one gym, or every gym with `gymId` null), replacing that pin. */
   | { kind: 'pin_note'; exerciseId: string; gymId: string | null; text: string }
   /** (Ben, 26 Oct) Unpin it (the text is kept as today's note by the caller when Ben asks). */
