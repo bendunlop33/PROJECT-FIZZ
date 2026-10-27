@@ -13,7 +13,7 @@ import { createRestAlertController } from '../alerts/rest-alerts';
 import { nowMs } from '../clock';
 import { createLiveActivityController } from '../live-activity/controller';
 import { createLastTimeCache } from '../live-activity/last-time-cache';
-import { lockScreenButtonsAvailable, nativeTapQueue, onLockScreenTap } from '../live-activity/tap-bridge';
+import { lockScreenButtonsAvailable, lockScreenLogAvailable, nativeTapQueue, onLockScreenTap } from '../live-activity/tap-bridge';
 import { createLockScreenTapHandler } from '../live-activity/taps';
 import { activePainFlagged } from '../workout/pain-flagged';
 import { lazyLiveActivityPort } from '../live-activity/lazy-port';
@@ -53,6 +53,7 @@ const liveActivity = createLiveActivityController(lazyLiveActivityPort, {
   painFlagged: activePainFlagged,
   lastComparable: (state) => lastTime.lookup(state),
   buttons: lockScreenButtonsAvailable,
+  log: lockScreenLogAvailable,
   clock: { now: nowMs, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => { clearTimeout(h as ReturnType<typeof setTimeout>); } },
 });
 

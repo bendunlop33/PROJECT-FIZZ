@@ -442,6 +442,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'This set is already logged or skipped.');
+  if (cmd.expectedSetVersion !== undefined && set.version !== cmd.expectedSetVersion) return fail('stale_version', 'This set changed since these values were shown.');
   const ex = exerciseOf(state, set);
   if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
   const wi = state.workInterval;

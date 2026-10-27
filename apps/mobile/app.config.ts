@@ -14,6 +14,8 @@ import { withHealthKit } from './plugins/with-healthkit.mts';
  *   out (Ben, 26 Oct; on by default), a fallback if they misbehave on the phone.
  *   They need no entitlement; the app hides them below iOS 17 or without the
  *   native tap queue.
+ * - FIZZ_LA_LOG=0: leave the Live Activity's `Log` button out (Ben, 27 Oct; on
+ *   by default, and only with the rest buttons: it uses the same tap queue).
  * - FIZZ_HEALTHKIT=0: leave the HealthKit entitlement out (ADR 0035; on by default). The app then shows
  *   Apple Health as `Not available on this install`, exactly as when SideStore strips the entitlement.
  * - FIZZ_BACKGROUND_AUDIO=1: opt-in experiment (default OFF). Adds
@@ -30,6 +32,7 @@ const buildNumber = envString('FIZZ_BUILD_NUMBER') ?? '1';
 const includeLiveActivity = envString('FIZZ_LIVE_ACTIVITY') !== '0';
 const backgroundAudioExperiment = envString('FIZZ_BACKGROUND_AUDIO') === '1';
 const liveActivityButtons = includeLiveActivity && envString('FIZZ_LA_BUTTONS') !== '0';
+const liveActivityLog = liveActivityButtons && envString('FIZZ_LA_LOG') !== '0';
 const includeHealthKit = envString('FIZZ_HEALTHKIT') !== '0';
 
 const plugins: NonNullable<ExpoConfig['plugins']> = [
@@ -84,7 +87,7 @@ const config: ExpoConfig = {
   },
   plugins,
   // Read at runtime by the capability probe (Metro can't import app-identity.mts).
-  extra: { includeLiveActivity, liveActivityButtons, backgroundAudioExperiment, includeHealthKit, appGroupIdentifier: APP_GROUP_IDENTIFIER, displayName: DISPLAY_NAME },
+  extra: { includeLiveActivity, liveActivityButtons, liveActivityLog, backgroundAudioExperiment, includeHealthKit, appGroupIdentifier: APP_GROUP_IDENTIFIER, displayName: DISPLAY_NAME },
 };
 
 // withFreeProvisioning wraps the config directly, so its mods are registered

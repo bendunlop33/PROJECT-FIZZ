@@ -37,6 +37,15 @@ export function lockScreenButtonsAvailable(): boolean {
   );
 }
 
+/**
+ * (Ben, 27 Oct) `Log` on the Ready state: everything the rest buttons need
+ * (it is the same tap queue), and not built with `FIZZ_LA_LOG=0`, the switch
+ * to leave Log out on its own if it misbehaves on the phone.
+ */
+export function lockScreenLogAvailable(): boolean {
+  return lockScreenButtonsAvailable() && extraFlag('liveActivityLog');
+}
+
 export const nativeTapQueue: TapQueuePort = {
   available: lockScreenButtonsAvailable,
   list: () => AudioCoach?.liveActivityTaps?.() ?? [],

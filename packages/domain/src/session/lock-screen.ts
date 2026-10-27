@@ -9,6 +9,7 @@ import { STALE_SESSION_MS } from './recovery';
 import { getSessionPhase } from './view';
 import { isPastLog } from './time-shift';
 import { lastTimeOfSet, type LastComparableLookup } from './last-time';
+import { lockScreenLogOf, type LockScreenLog } from './lock-screen-log';
 
 /**
  * What the Lock Screen Live Activity shows for the workout in progress
@@ -54,10 +55,16 @@ export interface LockScreenContent {
    * nothing visible. Null in every other state, or when nothing would show.
    */
   afterRest: LockScreenAfterRest | null;
+  /**
+   * (Ben, 27 Oct) Ready only: `Log 80 kg × 8` for the set shown, logged
+   * without opening the app (`lock-screen-log.ts`); null when that set needs
+   * input in the app (timed, cardio, a missing value) or nothing is next.
+   */
+  log: LockScreenLog | null;
 }
 
-/** The text of the Ready state shown after a rest (`LockScreenContent.afterRest`). */
-export type LockScreenAfterRest = Pick<LockScreenContent, 'title' | 'line1' | 'line2' | 'line3' | 'side' | 'a11y'>;
+/** The text of the Ready state shown after a rest (`LockScreenContent.afterRest`), with its `Log`. */
+export type LockScreenAfterRest = Pick<LockScreenContent, 'title' | 'line1' | 'line2' | 'line3' | 'side' | 'a11y' | 'log'>;
 
 const TITLE_FALLBACK = 'Workout';
 
@@ -131,7 +138,7 @@ function lastLine(state: SessionAggregate, setId: string | null, opts: LockScree
 function afterRestOf(state: SessionAggregate, endMs: number, tz: string, carry: LockScreenOptions): LockScreenAfterRest | null {
   const c = buildLockScreenContent(state, endMs, tz, carry);
   if (c?.state !== 'ready') return null;
-  return { title: c.title, line1: c.line1, line2: c.line2, line3: c.line3, side: c.side, a11y: c.a11y };
+  return { title: c.title, line1: c.line1, line2: c.line2, line3: c.line3, side: c.side, a11y: c.a11y, log: c.log };
 }
 
 /**
@@ -146,7 +153,7 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
   if (isPastLog(state.session)) return null;
   if (nowMs - toMs(state.session.lastActivityAtUtc) >= STALE_SESSION_MS) return null;
   const name = state.session.routineName ?? TITLE_FALLBACK;
-  const base = { sessionId: state.session.id, line3: '', rest: null, afterRest: null };
+  const base = { sessionId: state.session.id, line3: '', rest: null, afterRest: null, log: null };
   const phase = getSessionPhase(state, nowMs);
 
   switch (phase.kind) {
@@ -233,17 +240,20 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
       const next = phase.kind === 'ready' ? nextSetOf(state, phase.setId, carry) : null;
       const line1 = next === null ? (phase.kind === 'all_done' ? 'All sets done' : '') : `${next.ex.exerciseName} · Set ${String(next.number)} of ${String(next.of)}`;
       const target = next?.target ?? '';
+      // (Ben, 27 Oct) Everything logged (from the Lock Screen too): Finish is in the app.
+      const finish = phase.kind === 'all_done' ? 'Open GymSmarter to finish' : '';
       const line3 = phase.kind === 'ready' ? lastLine(state, phase.setId, carry) : '';
       return {
         ...base,
         state: 'ready',
         title: `Ready · ${name}`,
         line1,
-        line2: target,
+        line2: target === '' ? finish : target,
         line3,
+        log: phase.kind === 'ready' ? lockScreenLogOf(state, phase.setId, carry) : null,
         countdown: null,
         side: next === null ? '' : `Set ${String(next.number)}`,
-        a11y: `Ready, ${name}.${line1 === '' ? '' : ` ${line1}.`}${target === '' ? '' : ` ${lockScreenTargetWords(target)[0]?.toUpperCase() ?? ''}${lockScreenTargetWords(target).slice(1)}.`}${lastWords(line3)}`,
+        a11y: `Ready, ${name}.${line1 === '' ? '' : ` ${line1}.`}${target === '' ? '' : ` ${lockScreenTargetWords(target)[0]?.toUpperCase() ?? ''}${lockScreenTargetWords(target).slice(1)}.`}${lastWords(line3)}${finish === '' ? '' : ` ${finish}.`}`,
         staleAtMs: null,
       };
     }

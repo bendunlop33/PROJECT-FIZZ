@@ -1,4 +1,4 @@
-import { lockScreenTapCommand, parseLockScreenTap, type CommandOutcome, type LockScreenTapIgnored } from '@fizz/domain';
+import { lockScreenLogCommand, lockScreenTapCommand, parseLockScreenLog, parseLockScreenTap, type CommandOutcome, type LockScreenLogIgnored, type LockScreenTapIgnored } from '@fizz/domain';
 import type { SessionAggregate, SessionCommand, ZonedTimestamp } from '@fizz/schemas';
 
 /**
@@ -14,7 +14,13 @@ import type { SessionAggregate, SessionCommand, ZonedTimestamp } from '@fizz/sch
  * expected timer version: rule 5), the Live Activity and the alert are
  * reconciled to the result and awaited, and only then is the entry removed.
  *
- * - Never logs a set: there is no Log button (rule 2; `Log as planned` is not built).
+ * - `Log` (Ben, 27 Oct; Ready state): the same `log_set` as the in-app
+ *   button, with the values the button showed, a fixed operation ID per (set,
+ *   version) and the set version it was drawn for (`lockScreenLogCommand`).
+ *   Settling it starts the next rest's notification and Live Activity, as a
+ *   Log in the app does. A Log read late (the app was killed and only read the
+ *   queue at the next launch) is still applied, at the tap's time, while the
+ *   set is unchanged; the app then shows `Set 2 logged from Lock Screen · Undo`.
  * - A duplicate delivery is one write (deterministic operation ID).
  * - A tap for an older picture of the rest, another workout, a paused
  *   workout, an ended rest, or older than a minute is dropped, and the
@@ -53,24 +59,37 @@ export interface LockScreenTapDeps {
 export type TapResult =
   | { id: string; result: 'applied' | 'duplicate' }
   | { id: string; result: 'refused'; code: string }
-  | { id: string; result: 'ignored'; reason: LockScreenTapIgnored | 'not_ours' }
+  | { id: string; result: 'ignored'; reason: LockScreenTapIgnored | LockScreenLogIgnored | 'not_ours' }
   | { id: string; result: 'failed'; message: string };
 
 export function createLockScreenTapHandler(deps: LockScreenTapDeps) {
   let chain: Promise<TapResult[]> = Promise.resolve([]);
 
   async function handleOne(id: string, raw: RawLockScreenTap): Promise<TapResult> {
+    const tappedAtMs = typeof raw.atMs === 'number' && Number.isFinite(raw.atMs) ? raw.atMs : 0;
+    const log = parseLockScreenLog(raw.target);
+    if (log !== null) {
+      const state = await deps.readActive();
+      return finish(id, state, log.sessionId, lockScreenLogCommand(state, log, deps.now(), tappedAtMs));
+    }
     const tap = parseLockScreenTap(raw.target);
     if (tap === null) return { id, result: 'ignored', reason: 'not_ours' };
     const state = await deps.readActive();
-    const tappedAtMs = typeof raw.atMs === 'number' && Number.isFinite(raw.atMs) ? raw.atMs : 0;
-    const decision = lockScreenTapCommand(state, tap, deps.now(), tappedAtMs);
+    return finish(id, state, tap.sessionId, lockScreenTapCommand(state, tap, deps.now(), tappedAtMs));
+  }
+
+  async function finish(
+    id: string,
+    state: SessionAggregate | null,
+    sessionId: string,
+    decision: { kind: 'dispatch'; command: SessionCommand } | { kind: 'ignore'; reason: LockScreenTapIgnored | LockScreenLogIgnored },
+  ): Promise<TapResult> {
     if (decision.kind === 'ignore') {
       // Redraw from the truth (an older picture stays wrong otherwise); never with null, which would end it.
       if (state !== null) await deps.settle(state);
       return { id, result: 'ignored', reason: decision.reason };
     }
-    const outcome = await deps.dispatch(tap.sessionId, decision.command);
+    const outcome = await deps.dispatch(sessionId, decision.command);
     if (!outcome.ok) {
       if (state !== null) await deps.settle(state);
       return { id, result: 'refused', code: outcome.error.code };

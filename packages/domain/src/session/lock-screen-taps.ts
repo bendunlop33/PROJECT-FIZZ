@@ -16,7 +16,8 @@ import { toMs } from '../time';
  * - `expectedTimerVersion`, so a tap on an older picture of the rest (the
  *   rest already moved by another tap, Log, Undo or a coach change) is
  *   refused, never applied to newer state (rule 5).
- * Nothing here logs a set: there is no Log button on the Lock Screen.
+ * Nothing here logs a set: the Lock Screen's `Log` (Ben, 27 Oct) is its own
+ * target and command (`lock-screen-log.ts`).
  */
 
 export type LockScreenTapAction = 'minus15' | 'plus15' | 'skip';

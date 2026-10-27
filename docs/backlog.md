@@ -479,7 +479,7 @@ SideStore trial run (update over the top, skip a refresh, restore) · Live Activ
 | Garmin LiveTrack, Connect IQ app, Garmin developer API, Strava API | Rejected in research (anti-bot checks, write routes, business-only) |
 | Web client, cross-device sync, private backend | Personal use only (CLAUDE.md) |
 | Time Sensitive rest notifications | Not possible on a free Apple ID (ADR 0004) |
-| Lock-screen `Log as planned` | Not built (P-L4b, 26 Oct): only after the Lock Screen rest buttons (−15 s / +15 s / Skip, built 26 Oct, ADR 0034) pass on the phone |
+| Lock-screen `Log` | Built 27 Oct (Ben reversed P-L4b; ADR 0034 amendment). Open: device test `2026-10-12-live-activity-rest.md` steps L1–L7 |
 | Inline "Alert when rest ends?" row on the rest card | The ask happens once at the first Start (premium-feel §3.5) |
 | Sign in on a computer and move the credential | Not needed: on-phone sign-in passed |
 | Routine detail screen; a Start button on routine rows | The workout overview is the one pre-workout page |

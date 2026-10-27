@@ -45,6 +45,13 @@ export const LogSetCommandSchema = z.object({
   exclusions: SetExclusionsSchema.refine((xs) => !xs.includes('pain'), { message: 'Mark pain through the correction sheet, which also flags the movement' }).optional(),
   /** ID for the rest timer this commit may start (generated with the draft). */
   restTimerId: IdSchema,
+  /**
+   * The set's version the values were shown for (Lock Screen `Log`, Ben 27 Oct):
+   * a newer write to the set (a draft, a target change, Undo) refuses this log
+   * as `stale_version`, so a set is never logged from an older picture (rule 5).
+   * Omit for in-app taps, which always log the values on screen.
+   */
+  expectedSetVersion: z.int().min(1).optional(),
 });
 
 export const SaveDraftCommandSchema = z.object({
