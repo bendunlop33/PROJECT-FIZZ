@@ -21,6 +21,7 @@ import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness
  */
 
 const FIXTURE_TZ = 'Pacific/Auckland';
+const NO_AFTER = { afterTitle: '', afterLine1: '', afterLine2: '', afterLine3: '', afterSide: '', afterA11y: '' };
 const plain = (s: string) => s.replaceAll(NBSP, ' ');
 
 interface FakeActivity {
@@ -256,6 +257,29 @@ describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
     expect(clock.pending()).toBe(0);
   });
 
+  it('Resting carries the Ready content for after the rest, stale at the rest’s end, so the widget turns to the next set with the app suspended (Ben, 27 Oct)', async () => {
+    const fake = fakeActivities();
+    const s = loggedWarmup();
+    const deadline = toMs(s.restTimer?.deadlineUtc ?? '');
+    // No clock: the app is suspended and no JS re-check can run.
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
+    await la.reconcile(s, ms(31));
+    const a = fake.only();
+    expect(a.props.state).toBe('resting');
+    expect(a.staleAtMs).toBe(deadline);
+    expect(a.props.afterTitle).toBe('Ready · Push A');
+    expect(plain(a.props.afterLine1)).toBe('Bench press · Set 2 of 3');
+    expect(plain(a.props.afterLine2)).toBe('Target 100 kg × 6–8');
+    expect(a.props.afterSide).toBe('Set 2');
+    // What the app writes itself once it runs again is the same text, so nothing jumps.
+    await la.reconcile(s, deadline + 5_000);
+    const ready = fake.only().props;
+    expect(ready.state).toBe('ready');
+    expect([ready.title, ready.line1, ready.line2, ready.line3, ready.side, ready.a11y]).toEqual([a.props.afterTitle, a.props.afterLine1, a.props.afterLine2, a.props.afterLine3, a.props.afterSide, a.props.afterA11y]);
+    expect(ready.afterTitle).toBe('');
+    expect(fake.only().staleAtMs).toBeNull();
+  });
+
   it('after a force-close: the first reconcile adopts one running activity for the workout and ends strays', async () => {
     const fake = fakeActivities();
     const before = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
@@ -274,11 +298,11 @@ describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
 
   it('after a relaunch with no workout in progress, every activity is ended; later a null reconcile leaves other activities alone (the probe’s)', async () => {
     const fake = fakeActivities();
-    fake.running.set('old', { props: { state: 'resting', title: 'Rest', line1: '', line2: '', line3: '', tap: '', startMs: 1, endMs: 2, side: '', a11y: '' }, staleAtMs: null, updates: 0 });
+    fake.running.set('old', { props: { state: 'resting', title: 'Rest', line1: '', line2: '', line3: '', tap: '', startMs: 1, endMs: 2, side: '', a11y: '', ...NO_AFTER }, staleAtMs: null, updates: 0 });
     const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
     await la.reconcile(null, ms(0));
     expect(fake.running.size).toBe(0);
-    fake.running.set('probe', { props: { state: 'resting', title: 'Rest', line1: '', line2: '', line3: '', tap: '', startMs: 1, endMs: 2, side: '', a11y: '' }, staleAtMs: null, updates: 0 });
+    fake.running.set('probe', { props: { state: 'resting', title: 'Rest', line1: '', line2: '', line3: '', tap: '', startMs: 1, endMs: 2, side: '', a11y: '', ...NO_AFTER }, staleAtMs: null, updates: 0 });
     await la.reconcile(null, ms(1));
     expect([...fake.running.keys()]).toEqual(['probe']);
   });
