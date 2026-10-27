@@ -69,7 +69,8 @@ describe('Progress on ~800 workouts (Ben, 26 Oct; redesign v3 C)', () => {
       open = resolve;
     });
     const s = (await h.launch({ backgroundGate: () => gate })).services;
-    const [shell, lifts] = await timed('Progress open (Lifts), cold (just launched)', 1500, () => progressOpen(s), { jitlessMs: 4000 });
+    // Every workout is read for Lifts (Overview, 0.5 s, read stored summaries): the old cold Training budget, Overview's block budget.
+    const [shell, lifts] = await timed('Progress open (Lifts), cold (just launched)', 1500, () => progressOpen(s), { jitlessMs: 4000, blockMs: 400 });
     expect(shell?.hasData).toBe(true);
     expect(lifts?.view).not.toBeNull();
     // Training isn't read while Lifts shows; opening it is its own budget (the workouts are in memory now).
