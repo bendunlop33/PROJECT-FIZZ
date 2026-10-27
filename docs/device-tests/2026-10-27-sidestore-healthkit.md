@@ -114,3 +114,10 @@ A **Refresh is not enough**: the app on the phone was signed without Health and 
   steps from the error text.
 - **Still `Not available on this install`:** report it. The remaining routes are Xcode on a Mac or the paid
   programme (ADR 0035, Q10). You can stay on the patched SideStore or go back; either is fine.
+
+## Result so far (Ben, 27 Oct 2026, ~01:00)
+
+- Patched build 1 (0.6.4) and 2 (nightly): sign-in failed ("invalid server response", then -80045); build 2 also looped on "pairing file" (nightly can't read iloader's combined file).
+- Build 3 (reviewed Ti800 fork + HealthKit, `+f492137`) via iloader Import IPA: pairing configured (Lockdown + RemotePairing), then -80046 at sign-in.
+- **What fixed sign-in** (SideStore issue #1693): Settings › User Customizations › On-Device Anisette **off**; Anisette Servers › **SideStore (New)** (new.ani.sidestore.io) and **Enable Auto Rotation off**; Anisette Client Configuration › Remote Server Sync › **Fetch** › **Save as Overrides**; User Customizations › **Reset adi.pb**; sign in once and wait. **Signed in.**
+- Next: reinstall GymSmarter (fresh install over the top via SideStore) and check Profile › Apple Health.
