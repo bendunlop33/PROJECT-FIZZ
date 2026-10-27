@@ -105,6 +105,7 @@ import {
   type TodayReviewStatus,
   type TodayTemplate,
   coachTargetRows,
+  planDayOf,
   standingCoachTarget,
   type HistoryLike,
   type HistoryWorkout,
@@ -125,6 +126,7 @@ import {
   type Gym,
   type NextSessionTargetRecord,
   type PainFlag,
+  type Routine,
   type SessionAggregate,
   type SessionCheckIn,
   type TrainingProfile,
@@ -744,7 +746,17 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       return infoCache.get(id) ?? null;
     };
     const split = training?.split ?? (plan !== null ? splitInUse(training) : null);
-    const planDays = plan === null ? [] : todayPlanDays({ planId: plan.id, templates, split, mainLifts: training?.mainLifts, info, defaultMinutes: training?.sessionMinutes ?? 60 });
+    // (Ben, 27 Oct: "I set the plan to be 45 mins") A plan day's length is the plan's own for that day (the version its
+    // workout was last made to match), before Profile's usual length.
+    const planMinutesOf = (r: Routine): number | null => {
+      if (plan === null) return null;
+      const ref = planDayOf(r);
+      const dayIndex = plan.applied?.made.find((m) => m.routineId === r.id)?.dayIndex ?? ref?.dayIndex ?? null;
+      if (dayIndex === null) return null;
+      const n = r.createdFromPlan?.planId === plan.id ? r.createdFromPlan.versionN : plan.currentVersion;
+      return (plan.versions.find((v) => v.n === n) ?? plan.versions.find((v) => v.n === plan.currentVersion))?.days.find((d) => d.index === dayIndex)?.minutes ?? null;
+    };
+    const planDays = plan === null ? [] : todayPlanDays({ planId: plan.id, templates, split, mainLifts: training?.mainLifts, info, defaultMinutes: training?.sessionMinutes ?? 60, planMinutesOf });
     // An applied plan with no live workouts left is no plan in use (Library › Your plan shows none either).
     const status: TodaySessionStatus = plan === null || planDays.length === 0 ? 'no_plan' : paused ? 'paused' : 'plan';
 
@@ -1097,6 +1109,15 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
    * this gym can do and nothing pain-flagged (§3.7, rule 9): a template exercise that fails either falls through to
    * the next candidate of its group.
    */
+  /**
+   * (Ben, 27 Oct) A plan day is drafted as stored at the Accessories style it opens with (Ben's goal's), from what this
+   * gym has and isn't pain-flagged.
+   */
+  function storedOpts(data: TodaySessionData): { planAccessories: TodayControls['accessories']; usable: (id: string) => boolean } {
+    const { info, here, pained } = data.internal;
+    return { planAccessories: data.goal === 'muscle' || data.goal === 'both' ? 'varied' : 'focused', usable: (id) => info(id) !== null && here(id) && !pained(id) };
+  }
+
   function poolFor(data: TodaySessionData, t: TodayTemplate) {
     const { info, groupPool, here, pained } = data.internal;
     return (g: BuilderGroupName) => [...new Set([...t.exerciseIds.filter((id) => info(id)?.group === g && here(id) && !pained(id)), ...groupPool(g)])];
@@ -1167,7 +1188,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     }
     // (D3, Ben 22–23 Oct; V5) `↻ Mix it up` left the card with the other Today-only controls (Your workout has it): the
     // card never swaps an accessory, whatever an older selection carried.
-    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day) });
+    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day), ...storedOpts(data) });
     if (d === null) return null;
     const unit = breakdownUnit(d.workout, data.unit);
     const advice = d.advice[0]?.reason ?? null;
@@ -1489,7 +1510,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const found = templateHere(data, day, req.controls.mainLiftExerciseId);
     if (found === null || (found.gap === null && found.t.mainLiftExerciseId !== req.controls.mainLiftExerciseId)) return null;
     const { t, gap } = found;
-    const d = assembleTodayDraft({ day: gap === null ? day : { ...day, templates: [t] }, controls: { ...req.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx: data.internal.ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day) });
+    const d = assembleTodayDraft({ day: gap === null ? day : { ...day, templates: [t] }, controls: { ...req.controls, mainLiftExerciseId: t.mainLiftExerciseId, mix: 0 }, ctx: data.internal.ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day), ...storedOpts(data) });
     if (d === null) return null;
     return {
       workout: d.workout,

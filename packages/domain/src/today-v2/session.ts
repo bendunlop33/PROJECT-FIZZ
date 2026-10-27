@@ -1,12 +1,12 @@
 import { adviseBuilder, type BuilderAdvice } from '../builder/advise';
-import { infoOrDefault, splitInvalidAutoPairs } from '../builder/arrange';
+import { infoOrDefault, pairSlots, slotsOf, splitInvalidAutoPairs } from '../builder/arrange';
 import { buildFromSetup, type AccessoryStyle, type BuilderPool, type GroupCount } from '../builder/build';
 import { estimateBuilderMinutes } from '../builder/estimate';
 import { absOff, clampMinutes, fitToMinutes, type BuilderFitResult, type BuilderFitStep } from '../builder/fit';
 import { mixItUpShortlist, mixItUpTarget } from '../builder/mix';
 import { workingCount } from '../builder/set-rows';
 import { makeSlot } from '../builder/slot';
-import { type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
+import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
 import { landCarryOver, type CarryItem } from '../builder/carry';
 import { withCoachSetCounts } from '../builder/carried';
 import { withDeloadSets } from '../builder/deload';
@@ -52,6 +52,22 @@ export interface TodayTemplate {
   supersetsPlan: boolean;
   /** The day's mix: the template's groups (main group first), or the Other session's preset. */
   groups: readonly GroupCount[];
+  /**
+   * (Ben, 27 Oct: "If I add superset it doesn't then change the plan") A plan day's exercises as stored, in order: its
+   * set counts and superset pairs. At the plan's own controls Today drafts exactly these (`assembleTodayDraft`), so a
+   * superset, order or set count in the plan day reaches Today, Your workout and the workout. Absent: an Other session
+   * (drafted from `groups`).
+   */
+  slots?: readonly TodayTemplateSlot[];
+}
+
+/** One stored exercise of a plan day (`TodayTemplate.slots`). */
+export interface TodayTemplateSlot {
+  exerciseId: string;
+  /** Working sets as stored (1–10). */
+  workingSets: number;
+  /** Its superset letter in the plan day; null: on its own. */
+  group: string | null;
 }
 
 export interface TodayDay {
@@ -108,6 +124,14 @@ export interface TodayAssembleInput {
    * added after this day's own fit, so they aren't cut again.
    */
   carry?: readonly CarryItem[];
+  /**
+   * (Ben, 27 Oct) The Accessories style the plan day opens with (Today's default for Ben's goal). A template with stored
+   * `slots` is drafted as stored while Accessories is this one; another style rebuilds its accessories by group.
+   * Absent: any style drafts the stored slots.
+   */
+  planAccessories?: AccessoryStyle;
+  /** (Ben, 27 Oct) An exercise Today can put in the workout here (known, at this gym, not pain-flagged); absent: all. */
+  usable?: (exerciseId: string) => boolean;
 }
 
 export interface TodayMix {
@@ -212,13 +236,70 @@ function armCandidates(w: BuilderWorkout, pool: BuilderPool, ctx: BuilderContext
   return [...ids.filter((id) => !have.has(infoOrDefault(ctx.info, id).part)), ...ids.filter((id) => have.has(infoOrDefault(ctx.info, id).part))];
 }
 
+/**
+ * (Ben, 27 Oct) The plan day as stored: its exercises in order, each with its stored working sets, and its superset
+ * pairs (Supersets off splits them; on, for a day with none, pairs as the builder does). An exercise Today can't use
+ * here (another gym's, or pain-flagged) gives way to its group's next pick in the same place and pair, else leaves; the
+ * main lift stays (a pain-flagged one is held, as the group draft holds it). Null: no stored slots.
+ */
+export function storedTemplateWorkout(t: TodayTemplate, c: Pick<TodayControls, 'supersets'>, input: Pick<TodayAssembleInput, 'ctx' | 'pool' | 'usable'>): BuilderWorkout | null {
+  const stored = t.slots;
+  if (stored === undefined || stored.length === 0) return null;
+  const { ctx, pool } = input;
+  const usable = input.usable ?? (() => true);
+  const taken = new Set(stored.map((x) => x.exerciseId));
+  const placed: { slot: BuilderSlot; group: string | null }[] = [];
+  for (const x of stored) {
+    const main = t.mainLiftExerciseId !== null && x.exerciseId === t.mainLiftExerciseId;
+    let id: string | null = x.exerciseId;
+    if (!main && (ctx.info(x.exerciseId) === null || !usable(x.exerciseId))) {
+      const g = ctx.info(x.exerciseId)?.group ?? null;
+      id = g === null ? null : (pool(g).find((y) => !taken.has(y) && usable(y)) ?? null);
+      if (id !== null) taken.add(id);
+    }
+    if (id === null || ctx.info(id) === null || placed.some((p) => p.slot.exerciseId === id)) continue;
+    placed.push({ slot: makeSlot(id, { main, workingSets: Math.max(1, Math.min(10, Math.round(x.workingSets))) }, ctx), group: x.group });
+  }
+  if (placed.length === 0) return null;
+  // The main lift leads (it names the day); the rest keep their stored order.
+  const mainAt = placed.findIndex((p) => p.slot.main);
+  if (mainAt > 0) placed.unshift(...placed.splice(mainAt, 1));
+  let blocks: BuilderBlock[] = [];
+  for (const p of placed) {
+    const last = blocks[blocks.length - 1];
+    const lastGroup = last === undefined ? null : (placed.find((q) => q.slot === last.slots[0])?.group ?? null);
+    if (c.supersets && p.group !== null && last !== undefined && lastGroup === p.group && !p.slot.main && !last.slots.some((s) => s.main)) last.slots.push(p.slot);
+    else blocks.push({ slots: [p.slot], auto: false });
+  }
+  blocks = blocks.map((b) => ({ ...b, slots: [...b.slots] }));
+  if (c.supersets && !t.supersetsPlan) blocks = pairSlots(blocks, ctx.info);
+  return settleWarmups({ blocks, restLevel: 'normal' }, ctx);
+}
+
+/** (Ben, 27 Oct) Another Accessories style keeps the plan day's main lift as stored (only the accessories change). */
+function withStoredMainSets(w: BuilderWorkout, t: TodayTemplate, ctx: BuilderContext): BuilderWorkout {
+  const n = t.slots?.find((x) => x.exerciseId === t.mainLiftExerciseId)?.workingSets;
+  if (n === undefined) return w;
+  const differs = (s: BuilderSlot): boolean => s.main && s.exerciseId === t.mainLiftExerciseId && workingCount(s) !== n;
+  if (!w.blocks.some((b) => b.slots.some(differs))) return w;
+  const blocks = w.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (differs(s) ? { ...makeSlot(s.exerciseId, { main: true, workingSets: n }, ctx), key: s.key } : s)) }));
+  return settleWarmups({ ...w, blocks }, ctx);
+}
+
 /** Build (untrimmed), abs off, then the mix swap. */
 function build(input: TodayAssembleInput, t: TodayTemplate, c: TodayControls, absOn: boolean): Built {
   const { ctx, pool } = input;
   const groups = groupsFor(t, absOn);
-  const r = buildFromSetup({ minutes: c.minutes, mainLiftExerciseId: t.mainLiftExerciseId, supersets: c.supersets, groups, accessories: c.accessories }, pool, ctx, { trim: false });
+  // (Ben, 27 Oct) A plan day with stored exercises is drafted as stored at the plan's Accessories; another style rebuilds.
+  const asStored = input.planAccessories === undefined || c.accessories === input.planAccessories ? storedTemplateWorkout(t, c, input) : null;
+  let workout0 = asStored ?? withStoredMainSets(buildFromSetup({ minutes: c.minutes, mainLiftExerciseId: t.mainLiftExerciseId, supersets: c.supersets, groups, accessories: c.accessories }, pool, ctx, { trim: false }).workout, t, ctx);
+  // Abs on for a stored day without them: the group's first pick, on its own at the end.
+  if (asStored !== null && absOn && !slotsOf(workout0.blocks).some((s) => infoOrDefault(ctx.info, s.exerciseId).group === 'Core')) {
+    const id = pool('Core').find((x) => !slotsOf(workout0.blocks).some((s) => s.exerciseId === x));
+    if (id !== undefined) workout0 = settleWarmups({ ...workout0, blocks: [...workout0.blocks, { slots: [makeSlot(id, { main: false }, ctx)], auto: false }] }, ctx);
+  }
   // (Ben, 23 Oct) The coach's set count for next time (a small change, or one Ben applied on the Summary), as Start plans it.
-  let workout = withCoachSetCounts(r.workout, ctx).workout;
+  let workout = withCoachSetCounts(workout0, ctx).workout;
   // (Ben, 23 Oct: plan length = block 1) The plan's deload week: a set fewer and RPE ≤ 7 (loads are lighter already).
   workout = withDeloadSets(workout, ctx).workout;
   if (!absOn && groups.some((g) => g.group === 'Core')) workout = absOff(workout, ctx, { supersets: c.supersets, armCandidates: armCandidates(workout, pool, ctx) }).workout;

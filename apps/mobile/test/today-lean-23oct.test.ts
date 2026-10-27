@@ -236,14 +236,15 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     expect(names(snap)).toEqual(before);
   });
 
-  it('Accessories: Varied is three main-group accessories at 2 sets, Focused two at 3; an accessory Ben edited keeps his sets; the main lift is untouched', async () => {
+  it('Accessories: Varied is three main-group accessories at 2 sets, the plan’s own style the plan day as stored; an accessory Ben edited keeps his sets; the main lift is untouched', async () => {
     const { s } = await benWithPlan();
     const data = await loaded(s);
     const key = dayKeyOf(data, 'Push');
     let snap = await edit(s, data, sel(data, key, { accessories: 'focused', abs: false, supersets: false }));
     const chestAcc = (n: BuilderSnapshot) => slotsOf(n.workout.blocks).filter((x) => !x.main && n.facts[x.exerciseId]?.group === 'Chest');
     const main = slotsOf(snap.workout.blocks).find((x) => x.main);
-    expect(chestAcc(snap).map(workingCount)).toEqual([3, 3]);
+    // (Ben, 27 Oct) The plan's own style (Focused, no goal set) drafts the plan day as stored: Incline dumbbell press × 3.
+    expect(chestAcc(snap).map(workingCount)).toEqual([3]);
     const varied = await s.builder.setTodayOption(snap.draftId, { kind: 'accessories', style: 'varied' }, { opId: 'acc-varied', expectedVersion: snap.version });
     expect(toastOf(varied)).toEqual({ text: 'Accessories: Varied', undoOpId: 'acc-varied', why: null });
     snap = snapOf(varied);
@@ -257,9 +258,9 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     snap = snapOf(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: first.key }, { opId: 'add-set-2', basis: { version: snap.version } }));
     snap = snapOf(await s.builder.setTodayOption(snap.draftId, { kind: 'accessories', style: 'focused' }, { opId: 'acc-focused', expectedVersion: snap.version }));
     const acc = chestAcc(snap);
-    expect(acc).toHaveLength(2);
+    // (Ben, 27 Oct) Focused is the plan's own style here: the plan day as stored (its one chest accessory), with Ben's sets.
+    expect(acc).toHaveLength(1);
     expect(acc.find((x) => x.key === first.key)?.rows.filter((r) => r.type !== 'warmup')).toHaveLength(4);
-    expect(acc.filter((x) => x.key !== first.key).map(workingCount)).toEqual([3]);
   });
 
   it('Main lift: the other template opens (Rebuilt · Undo); Today follows it on return; Undo puts Bench back', async () => {
