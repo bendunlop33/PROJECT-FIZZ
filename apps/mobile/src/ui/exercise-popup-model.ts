@@ -41,6 +41,11 @@ export const POPUP_COPY = {
   history: 'History',
   /** (Ben, 23 Oct: one editor) A rest back to the default. */
   restDefault: 'Default',
+  /** (Redesign 27 Oct, D6) The card expanded in place. */
+  addSet: '＋ Add set',
+  superset: 'Superset',
+  swap: 'Swap',
+  more: 'More',
 } as const;
 
 export type PopupField = 'reps' | 'kg' | 'rpe';

@@ -137,20 +137,20 @@ describe('Library › Plan v2: the screen', () => {
   const block = code(read('screens/library/YourPlanBlock.tsx'));
   const tab = code(read('screens/library/PlanTab.tsx'));
 
-  it('one list: no week-strip day cards and no second rotation list; the big Edit plan button is gone', () => {
+  it('one list: no week-strip day cards and no second rotation list (the plan days only in Change plan)', () => {
     expect(block).not.toContain('PlanWeeksBlock');
-    expect(block).not.toContain('SecondaryButton');
     expect(block.match(/view\.rows\.map\(/g)).toHaveLength(1);
-    expect(block).not.toMatch(/plan\.days\.map\(/);
     expect(block).toContain('planTabView(');
+    // (Redesign D4) The plan's days feed Change plan's `A day's exercises` only, never a second list on the page.
+    expect(block.match(/plan\.days\.map\(/g)).toHaveLength(1);
+    expect(block).toContain('changePlanView({');
   });
 
-  it('every action stays reachable: Edit plan visible on the card; ⋯ for the rest; rows swipe (UX review 27 Oct §P4)', () => {
+  it('every action stays reachable (redesign 27 Oct D1–D4): ⋯ Pause / Ask coach; Changes row; Edit plan at the bottom → Change plan; rows swipe', () => {
     expect(block).toContain('planTabEditAction(view)');
-    expect(block).toContain("editAction(edit.kind)");
-    expect(block).toContain('openPlanEdit(plan.planId)');
     expect(block).toContain('openNextBlock(plan.planId)');
-    for (const k of ["item.kind === 'pause'", "item.kind === 'resume'", "item.kind === 'coach'", "item.kind === 'goal'", 'confirmEnd()']) expect(block).toContain(k);
+    expect(block).toContain("openPlanChange(plan.planId, a.kind === 'week' ? 'week' : 'goals')");
+    for (const k of ["item.kind === 'pause'", "item.kind === 'resume'", "navigation.navigate('Coach'", '<ChangePlanSheet', '<EditPlanButton', "stack.navigate('LibraryChanges')", '<WeekCircles', 'void end();']) expect(block).toContain(k);
     // Do today (leading swipe) and Move (trailing swipe), the same in ⋯, long-press and VoiceOver actions.
     expect(block).toContain('<SwipeRow');
     expect(block).toMatch(/rightAction: \{ label: today\.label/);

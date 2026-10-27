@@ -37,7 +37,7 @@ describe('the exercise pop-up’s effort column reads RIR (builder, workout and 
     expect(stepRir(rpeView, 9, 1)).toBe(9);
   });
   it('the pop-up’s header says RIR', () => {
-    expect(src('ui', 'exercise-popup.tsx')).toContain('EFFORT_HEADER].map((h, i) => (');
+    expect(src('ui', 'exercise-popup.tsx')).toContain('EFFORT_HEADER]).map((h, i) =>');
   });
 });
 

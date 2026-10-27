@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react';
 import { ActionSheetIOS, Pressable, View } from 'react-native';
 
 import { WORKOUT_COPY, type WorkoutRoundView, type WorkoutRowView } from '../../builder/builder-view';
 import { useTheme } from '../../theme';
-import { AppText } from '../../ui';
+import { AppText, Icon } from '../../ui';
 import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
 import type { DropTarget } from '../../ui/drag-logic';
 import { holdMenu } from '../../ui/exercise-popup-model';
@@ -29,6 +30,9 @@ export function WorkoutTable({
   onRowPress,
   onRowAction,
   onAdd,
+  expandedKey = null,
+  renderExpanded,
+  marked,
 }: {
   rounds: readonly WorkoutRoundView[];
   topHeader: string;
@@ -40,6 +44,12 @@ export function WorkoutTable({
   onRowPress: (row: WorkoutRowView) => void;
   onRowAction: (row: WorkoutRowView, action: WorkoutRowAction) => void;
   onAdd: () => void;
+  /** (Redesign 27 Oct, D6) The row open in place (one at a time); a tap on a row toggles it (`onRowPress`). */
+  expandedKey?: string | null;
+  /** Its editing card, drawn under the row inside the round's box. */
+  renderExpanded?: (row: WorkoutRowView) => ReactNode;
+  /** (D5) Exercises whose number the coach changed for next time: a small dot by the value. */
+  marked?: ReadonlySet<string>;
 }) {
   const theme = useTheme();
 
@@ -54,13 +64,16 @@ export function WorkoutTable({
     });
   };
 
-  const row = (r: WorkoutRowView) => (
-    <DragItem key={r.slotKey} dragKey={r.slotKey} draggable>
+  const row = (r: WorkoutRowView) => {
+    const open = expandedKey === r.slotKey && renderExpanded !== undefined;
+    return (
+    <View key={r.slotKey}>
+    <DragItem dragKey={r.slotKey} draggable>
       <HeldSwipeRow
         onPress={() => {
           onRowPress(r);
         }}
-        accessibilityLabel={r.accessibilityLabel}
+        accessibilityLabel={renderExpanded === undefined ? r.accessibilityLabel : `${r.accessibilityLabel}, ${open ? 'expanded' : 'collapsed'}`}
         actions={r.actions}
         onAction={(name) => {
           const a = r.actions.find((x) => x.name === name);
@@ -113,13 +126,20 @@ export function WorkoutTable({
               </AppText>
             ) : null}
           </View>
-          <AppText variant="callout" numeric align="right" style={{ width: 76 }}>
-            {r.topText}
-          </AppText>
+          <View style={{ width: 76, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+            <AppText variant="callout" numeric align="right">
+              {r.topText}
+            </AppText>
+            {marked?.has(r.exerciseId) === true ? <View accessibilityLabel="changed by coach" style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent }} /> : null}
+          </View>
+          {renderExpanded !== undefined ? <Icon name={open ? 'chevron.up' : 'chevron.down'} color="text.tertiary" size={12} /> : null}
         </View>
       </HeldSwipeRow>
     </DragItem>
-  );
+    {open && !dragging ? renderExpanded(r) : null}
+    </View>
+    );
+  };
 
   return (
     <>

@@ -79,6 +79,7 @@ import {
   timeFitFromStored,
   timeFitToStored,
   type BuilderFitStep,
+  type BuilderExerciseInfo,
   type BuilderTimeFit,
   type BuilderAdvice,
   type BuilderEditBasis,
@@ -2506,6 +2507,24 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       if (ids.length === 0) return {};
       const env = await envFor(p, { gymId: req.gymId, exerciseIds: ids, keySeed: 'template-facts' });
       return Object.fromEntries(ids.map((id) => [id, { works: env.worksOf(id), mayHurt: env.painFlagged(id), notHere: req.gymId !== null && !env.doable(id), hasHistory: env.hasHistory(id) }]));
+    },
+
+    /**
+     * (Redesign 27 Oct, D6) The editor's Options card (Abs, Supersets): each exercise's builder facts (group, part,
+     * heavy, role) for the pairing and abs rules (`routineSupersetsOn`, `routineAbsOff`), and this gym's ab and arm
+     * picks, best first, pain-flagged ones left out (rule 9). Local only.
+     */
+    async templateOptionsInfo(req: { gymId: string | null; exerciseIds: readonly string[] }): Promise<{ info: Record<string, BuilderExerciseInfo>; core: string[]; arms: string[] }> {
+      const p = await owner();
+      const env = await envFor(p, { gymId: req.gymId, exerciseIds: [...new Set(req.exerciseIds)], groups: ['Core', 'Arms'], keySeed: 'template-options' });
+      const core = env.pool('Core').slice(0, 12);
+      const arms = env.pool('Arms').slice(0, 12);
+      const info: Record<string, BuilderExerciseInfo> = {};
+      for (const id of new Set([...req.exerciseIds, ...core, ...arms])) {
+        const i = env.info(id);
+        if (i !== null) info[id] = i;
+      }
+      return { info, core, arms };
     },
 
     /**

@@ -1,5 +1,5 @@
-import { useNavigation } from '@react-navigation/native';
-import { useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,6 +10,10 @@ import { PLAN_COPY as CARD_COPY } from '../../coach/plan-view';
 import { newUuid } from '../../device/runtime';
 import { PLAN_TAB_COPY, planSetupRoute, type PlanSetupRoute } from '../../library/plan-tab-view';
 import { openPlanSetup } from '../../navigation/actions';
+import type { PlanAppliedToastParam } from '../../navigation/types';
+import { PB_COPY } from '../../plan-builder/plan-builder-view';
+import { takeLibraryToast } from '../../workout/library-toast';
+import { undoTemplateSave } from '../../workout/template-editor';
 import { PLAN_COPY, type PreviousPlanRow } from '../../services/plan-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
@@ -25,7 +29,7 @@ import { YourPlanBlock, type PlanToast } from './YourPlanBlock';
  * from `services.plans`; nothing here computes a plan. Local only except
  * the coach hand-off, which is said honestly when the coach can't answer.
  */
-export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined }) {
+export function PlanTab({ scrollTopKey, planApplied, onPlanApplied }: { scrollTopKey?: string | undefined; /** (Redesign D4) Back from Change plan's Apply: `Plan updated · Undo`. */ planApplied?: PlanAppliedToastParam | undefined; onPlanApplied?: () => void }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -45,16 +49,18 @@ export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined })
     // Review planview S5: a failed read is said, never shown as no plan.
     // (Ben, 26 Oct) A new block week takes its version first (idempotent), so the overview and Today agree.
     await s.plans.syncWeek().catch(() => false);
-    const [planRead, previous, coach] = await Promise.all([
+    const [planRead, previous, coach, changes] = await Promise.all([
       s.plans.overview().then(
         (v) => ({ plan: v, planFailed: false }),
         () => ({ plan: null, planFailed: true }),
       ),
       s.plans.previous().catch(() => null),
       s.coach.availability().catch(() => null),
+      // (Redesign D2) The coach's changes to come; a failed read hides the row (never a made-up count).
+      s.libraryChanges.read().catch(() => null),
     ]);
     // (Plan builder, 23 Oct) `Set up a plan` opens the offline builder; the coach only if it were missing.
-    return { ...planRead, previous, setup: planSetupRoute(coach, 'planBuilder' in s) };
+    return { ...planRead, previous, changes: changes?.view ?? null, setup: planSetupRoute(coach, 'planBuilder' in s) };
   });
 
   useEffect(() => {
@@ -77,6 +83,53 @@ export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined })
       clearTimeout(t);
     };
   }, [toast]);
+
+  // (Redesign D4) Change plan's Apply lands here: `Plan updated · Undo` (Undo puts the plan as it was before the edit).
+  const appliedKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (planApplied === undefined || appliedKey.current === planApplied.key) return;
+    appliedKey.current = planApplied.key;
+    onPlanApplied?.();
+    const undoOp = newUuid();
+    setToast({
+      text: PB_COPY.updated,
+      action: PB_COPY.undo,
+      onAction: () => {
+        setToast(null);
+        void services.planBuilder.undoEdit({ planId: planApplied.planId, expectedVersion: planApplied.version, opId: undoOp }).then((r) => {
+          changed();
+          setToast({ text: r.ok ? PLAN_TAB_COPY.undone : r.message });
+        });
+      },
+    });
+  }, [planApplied?.key]);
+
+  // (Redesign D4) Change plan › a day's exercises → the editor's Save comes back here: `Saved Push · Undo` (the
+  // template's version before, only while it is still at the saved one; rule 5).
+  useFocusEffect(
+    useCallback(() => {
+      const t = takeLibraryToast();
+      if (t === null) return;
+      reload();
+      const undo = t.undo;
+      setToast(
+        undo === null
+          ? { text: t.text }
+          : {
+              text: t.text,
+              action: PLAN_TAB_COPY.undo,
+              onAction: () => {
+                setToast(null);
+                void undoTemplateSave(services.routines, undo, newUuid()).then((u) => {
+                  changed();
+                  reload();
+                  if (!u.ok) setToast({ text: u.message });
+                });
+              },
+            },
+      );
+    }, [reload, services, changed]),
+  );
 
   /** `Set up a plan ›`: the one hook (`planSetupRoute`): the plan builder; the coach only as the fallback. */
   function setUpPlan(route: PlanSetupRoute) {
@@ -129,11 +182,11 @@ export function PlanTab({ scrollTopKey }: { scrollTopKey?: string | undefined })
       ) : null;
     }
     if (data.state === 'error') return <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_TAB_COPY.loadFailed} action={<TextButton label={PLAN_TAB_COPY.tryAgain} onPress={reload} />} />;
-    const { plan, planFailed, previous, setup } = data.value;
+    const { plan, planFailed, previous, setup, changes } = data.value;
     return (
       <View style={{ gap: theme.space['5'] }}>
         {planFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_COPY.loadFailed} action={<TextButton label={PLAN_TAB_COPY.tryAgain} onPress={reload} />} /> : null}
-        {plan !== null ? <YourPlanBlock plan={plan} onToast={setToast} /> : null}
+        {plan !== null ? <YourPlanBlock plan={plan} changes={changes} onToast={setToast} /> : null}
         {plan === null && !planFailed ? (
           <SetUpRow
             route={setup}

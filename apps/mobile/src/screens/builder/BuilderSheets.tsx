@@ -37,6 +37,8 @@ export function ExerciseSheet({
   onHowTo,
   onHistory,
   toast,
+  inline,
+  recap,
 }: {
   snap: BuilderSnapshot;
   slotKey: string | null;
@@ -52,6 +54,9 @@ export function ExerciseSheet({
   onHowTo?: (() => void) | undefined;
   onHistory?: (() => void) | undefined;
   toast?: ReactNode;
+  /** (Redesign 27 Oct, D6) Open in place under its row, with `Last` / `Best` above the sets. */
+  inline?: boolean;
+  recap?: ReactNode;
 }) {
   const view = slotKey === null ? null : popupView(snap, slotKey, (k) => snap.rests[slotKey]?.[k] ?? 0);
   const refusal = (r: BuilderWriteResult | null): string | null => (r?.status === 'refused' ? r.message : null);
@@ -97,6 +102,8 @@ export function ExerciseSheet({
       onHowTo={onHowTo}
       onHistory={onHistory}
       toast={toast}
+      inline={inline === true}
+      recap={recap}
     />
   );
 }

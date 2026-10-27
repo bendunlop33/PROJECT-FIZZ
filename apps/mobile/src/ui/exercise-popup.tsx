@@ -70,6 +70,13 @@ export interface ExercisePopupProps {
   /** (Ben, 26 Oct) A read-only `History` section (mid-workout: the last 3 comparable sessions and a top-set chart). */
   history?: ReactNode;
   toast?: ReactNode;
+  /**
+   * (Redesign 27 Oct, D6) Expanded in place under its row in the workout editor (plan day, saved workout, Your
+   * workout), not a sheet. The active workout keeps the sheet.
+   */
+  inline?: boolean;
+  /** (D6) `Last · 12 Oct  80 × 8, 8, 7, 6` and `Best 82.5 × 6` with `History`, above the sets. */
+  recap?: ReactNode;
 }
 
 export function ExercisePopup(p: ExercisePopupProps) {
@@ -79,12 +86,15 @@ export function ExercisePopup(p: ExercisePopupProps) {
   const [focus, setFocus] = useState<{ key: string; field: PopupField } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [note, setNote] = useState<string | null>(null);
+  // (Redesign D6) The inline card's ⋯: rests by type, options, move, links, Delete.
+  const [more, setMore] = useState(false);
   const refs = useRef(new Map<string, TextInput | null>());
   useEffect(() => {
     setWhyLines(null);
     setDrafts({});
     setNote(null);
     setFocus(null);
+    setMore(false);
   }, [p.resetKey]);
   // Every draft, ref and focus is keyed by the row's key (its set ID), never its position (review B1).
   const keyOf = (rowKey: string, field: PopupField) => `${rowKey}:${field}`;
@@ -188,9 +198,269 @@ export function ExercisePopup(p: ExercisePopupProps) {
     });
   };
 
+  if (view === null) return p.inline === true ? null : <BottomCard visible={false} onClose={p.onClose}>{null}</BottomCard>;
+
+  const header = (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
+      <View style={{ flex: 1, gap: theme.space['1'] }}>
+        <AppText variant="title2" accessibilityRole="header">
+          {view.name}
+        </AppText>
+        {view.works !== null ? (
+          <AppText variant="label" color="text.secondary">
+            {view.works}
+          </AppText>
+        ) : null}
+        {view.mayHurt ? (
+          <AppText variant="label" color="status.warning">
+            {POPUP_COPY.mayHurt}
+          </AppText>
+        ) : null}
+      </View>
+      {view.canSwap ? <TextButton label={POPUP_COPY.swapExercise} onPress={p.onSwap} /> : null}
+    </View>
+  );
+
+  /** One set row; the inline card's columns are `SET · KG · REPS · RIR` (redesign D6), the sheet's `# · Type · Reps · Kg · RIR`. */
+  const setRow = (r: PopupSetRow, inline: boolean) => {
+    const actions = actionsOf(r);
+    const onAction = (name: string) => {
+      const a = actions.find((x) => x.name === name);
+      if (a !== undefined) rowAction(r, a.name);
+    };
+    const effort = r.noRpe ? (
+      <AppText variant="callout" color="text.tertiary" style={{ width: VALUE_COL_W, textAlign: 'right' }} accessibilityElementsHidden importantForAccessibility="no">
+        –
+      </AppText>
+    ) : (
+      cell(r, 'rpe', effortCellText(view, r.rpe), `${r.spokenName}, ${r.done ? 'reps in reserve' : 'target reps in reserve'}`)
+    );
+    const kg = cell(r, 'kg', r.load === null ? '' : String(r.load), `${r.spokenName}, ${view.kgHeader}`);
+    const reps = cell(r, 'reps', r.repsText, `${r.spokenName}, reps`);
+    return (
+      <SwipeRow
+        key={`${r.key}:${r.type}`}
+        container
+        onPress={() => {
+          pickType(r);
+        }}
+        accessibilityLabel={r.accessibilityLabel}
+        actions={actions}
+        onAction={onAction}
+        holdProps={{ onLongPress: () => { openMenu(r); } }}
+        {...(r.canDelete ? { leftAction: { label: POPUP_COPY.delete, onPress: () => { p.onDeleteRow(r); } } } : {})}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['3'], gap: theme.space['2'], minHeight: inline ? 48 : 52 }}>
+          {/* `#` and Type are one VoiceOver element with the row's actions; the fields after it stay reachable (review B6). */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={r.accessibilityLabel}
+            accessibilityHint="Changes the set type"
+            accessibilityActions={actions}
+            onAccessibilityAction={(e: AccessibilityActionEvent) => {
+              onAction(e.nativeEvent.actionName);
+            }}
+            onPress={() => {
+              pickType(r);
+            }}
+            onLongPress={() => {
+              openMenu(r);
+            }}
+            style={{ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}
+          >
+            <AppText variant="callout" color={r.done ? 'status.done' : 'text.secondary'} numeric style={{ width: 24 }}>
+              {r.mark}
+            </AppText>
+            {inline && r.type === 'working' ? null : (
+              <AppText variant={inline ? 'label' : 'callout'} color={inline ? 'text.secondary' : 'text.primary'} style={{ flex: 1 }} numberOfLines={1}>
+                {r.typeText}
+              </AppText>
+            )}
+          </Pressable>
+          {inline ? kg : reps}
+          {inline ? reps : kg}
+          {effort}
+        </View>
+      </SwipeRow>
+    );
+  };
+
+  const columns = (inline: boolean) => (
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', paddingHorizontal: theme.space['3'], paddingTop: theme.space['2'], gap: theme.space['2'] }}>
+      {(inline ? ['SET', view.kgHeader.toUpperCase(), 'REPS', EFFORT_HEADER.toUpperCase()] : ['#', 'Type', 'Reps', view.kgHeader, EFFORT_HEADER]).map((h, i) => {
+        const lead = inline ? i === 0 : i <= 1;
+        return (
+          <AppText key={h} variant="label" color="text.secondary" style={{ width: lead ? (i === 0 && !inline ? 24 : undefined) : VALUE_COL_W, flex: lead && (inline || i === 1) ? 1 : undefined, textAlign: lead ? 'left' : 'right' }}>
+            {h}
+          </AppText>
+        );
+      })}
+    </View>
+  );
+
+  const rests =
+    view.rests.length > 0 ? (
+      <Table>
+        {view.rests.map((x, i) => (
+          <View key={x.kind}>
+            {i > 0 ? <Divider /> : null}
+            <View style={{ minHeight: 54, flexDirection: 'row', alignItems: 'center', paddingLeft: theme.space['4'], paddingRight: theme.space['2'] }}>
+              <AppText variant="body" style={{ flex: 1 }}>
+                {x.label}
+              </AppText>
+              {x.own === true && p.onRestDefault !== undefined ? <TextButton label={POPUP_COPY.restDefault} tone="secondary" accessibilityLabel={`${x.label}, ${POPUP_COPY.restDefault}`} onPress={() => { p.onRestDefault?.(x); }} /> : null}
+              <Stepper
+                label={x.label}
+                valueText={x.text}
+                canMinus={x.canMinus}
+                canPlus={x.canPlus}
+                repeat
+                onStep={(d) => {
+                  p.onRestStep(x, d > 0 ? 1 : -1);
+                }}
+              />
+            </View>
+          </View>
+        ))}
+      </Table>
+    ) : null;
+
+  const moveButtons = (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+      {view.canMoveUp ? <SecondaryButton label={`↑ ${POPUP_COPY.moveUp}`} onPress={() => { p.onMove('up'); }} /> : null}
+      {view.canMoveDown ? <SecondaryButton label={`↓ ${POPUP_COPY.moveDown}`} onPress={() => { p.onMove('down'); }} /> : null}
+      {view.canSupersetNext ? <SecondaryButton label={POPUP_COPY.supersetNext} onPress={p.onSupersetNext} /> : null}
+      {view.canUnlink ? <SecondaryButton label={POPUP_COPY.unlink} onPress={p.onUnlink} /> : null}
+    </View>
+  );
+
+  const links =
+    p.onHowTo !== undefined || p.onHistory !== undefined ? (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
+        {p.onHowTo !== undefined ? <TextButton label={POPUP_COPY.howTo} icon="chevron.right" tone="secondary" accessibilityLabel={`How to, ${view.name}`} onPress={p.onHowTo} /> : null}
+        {p.onHistory !== undefined ? <TextButton label={POPUP_COPY.history} icon="chevron.right" tone="secondary" accessibilityLabel={`History, ${view.name}`} onPress={p.onHistory} /> : null}
+      </View>
+    ) : null;
+
+  const why =
+    p.why !== undefined ? (
+      <>
+        <TextButton
+          label={`${POPUP_COPY.whyWeight}${whyLines === null ? ' ›' : ''}`}
+          tone="secondary"
+          onPress={() => {
+            if (whyLines !== null) setWhyLines(null);
+            else void p.why?.().then(setWhyLines);
+          }}
+        />
+        {whyLines !== null
+          ? whyLines.map((l) => (
+              <AppText key={l} variant="label" color="text.secondary" numeric>
+                {l}
+              </AppText>
+            ))
+          : null}
+      </>
+    ) : null;
+
+  const keyBar = (
+    <InputAccessoryView nativeID={POPUP_SET_BAR_ID}>
+      <View style={{ flexDirection: 'row', gap: theme.space['2'], padding: theme.space['2'], backgroundColor: theme.colors['bg.raised'] }}>
+        <View style={{ flex: 1 }} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Less" onPress={() => void step(-1)} style={{ minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }}>
+          <AppText variant="headline">−</AppText>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="More" onPress={() => void step(1)} style={{ minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }}>
+          <AppText variant="headline">+</AppText>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={POPUP_COPY.next} onPress={goNext} style={{ minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }}>
+          <AppText variant="headline">{POPUP_COPY.next}</AppText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={POPUP_COPY.done}
+          onPress={() => {
+            if (focus !== null) refs.current.get(keyOf(focus.key, focus.field))?.blur();
+          }}
+          style={{ minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors.accent }}
+        >
+          <AppText variant="headline" color="on.accent">
+            {POPUP_COPY.done}
+          </AppText>
+        </Pressable>
+      </View>
+    </InputAccessoryView>
+  );
+
+  if (p.inline === true) {
+    // (Redesign 27 Oct, D6) Expanded in place under its row: last time and best, every set (kg, reps, RIR, warm-ups),
+    // ＋ Add set / ＋ Warm-up, Rest, then Superset / Swap / ⋯ (⋯: rests by type, the exercise's options, move, How to,
+    // History, Why this weight?, Delete).
+    const restChip = view.rests.find((x) => x.kind === 'working') ?? view.rests[0];
+    const chip = (label: string, value: string | null, onPress: () => void, a11y?: string) => (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={a11y ?? (value === null ? label : `${label}, ${value}`)}
+        onPress={onPress}
+        style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: theme.space['3'], borderRadius: 999, borderWidth: 1, borderColor: theme.colors['border.divider'], opacity: pressed ? 0.7 : 1 })}
+      >
+        <AppText variant="callout" color="text.secondary">
+          {label}
+        </AppText>
+        {value !== null ? (
+          <AppText variant="callout" numeric style={{ fontWeight: '600' }}>
+            {value}
+          </AppText>
+        ) : null}
+      </Pressable>
+    );
+    return (
+      <View style={{ gap: theme.space['2'], paddingHorizontal: theme.space['3'], paddingBottom: theme.space['3'] }}>
+        {view.mayHurt ? (
+          <AppText variant="label" color="status.warning">
+            {POPUP_COPY.mayHurt}
+          </AppText>
+        ) : null}
+        {p.recap}
+        <View>
+          {columns(true)}
+          {view.rows.map((r) => setRow(r, true))}
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: theme.space['2'] }}>
+          <TextButton label={POPUP_COPY.addSet} disabled={!view.canAddSet} onPress={p.onAddSet} />
+          <TextButton label={POPUP_COPY.warmup} tone="secondary" disabled={!view.canAddWarmup} onPress={() => void p.onAddWarmup().then(setNote)} />
+        </View>
+        {note !== null ? <StatusLine icon="info.circle" tone="info" text={note} /> : null}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+          {restChip !== undefined
+            ? chip(POPUP_COPY.rest, restChip.text, () => {
+                setMore((m) => !m);
+              }, `${POPUP_COPY.rest}, ${restChip.text}. Change rests`)
+            : null}
+          {view.canSupersetNext ? chip(POPUP_COPY.superset, null, p.onSupersetNext, POPUP_COPY.supersetNext) : view.canUnlink ? chip(POPUP_COPY.unlink, null, p.onUnlink) : null}
+          {view.canSwap ? chip(POPUP_COPY.swap, null, p.onSwap, `${POPUP_COPY.swap} ${view.name}`) : null}
+          {chip('⋯', null, () => {
+            setMore((m) => !m);
+          }, `${POPUP_COPY.more}, ${view.name}`)}
+        </View>
+        {more ? (
+          <View style={{ gap: theme.space['3'] }}>
+            {rests}
+            {p.options}
+            {moveButtons}
+            {links}
+            {why}
+            {view.canDeleteExercise ? <DangerTextButton label={view.deleteLabel} onPress={p.onDelete} /> : null}
+          </View>
+        ) : null}
+        {keyBar}
+      </View>
+    );
+  }
+
   return (
     <BottomCard
-      visible={view !== null}
+      visible
       onClose={p.onClose}
       footer={
         <View style={{ gap: theme.space['2'] }}>
@@ -199,187 +469,30 @@ export function ExercisePopup(p: ExercisePopupProps) {
             <View style={{ flex: 1 }}>
               <PrimaryButton label={POPUP_COPY.done} onPress={p.onClose} />
             </View>
-            {view === null || view.canDeleteExercise ? <DangerTextButton label={view?.deleteLabel ?? POPUP_COPY.delete} onPress={p.onDelete} /> : null}
+            {view.canDeleteExercise ? <DangerTextButton label={view.deleteLabel} onPress={p.onDelete} /> : null}
           </View>
         </View>
       }
     >
-      {view === null ? null : (
-        <>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
-            <View style={{ flex: 1, gap: theme.space['1'] }}>
-              <AppText variant="title2" accessibilityRole="header">
-                {view.name}
-              </AppText>
-              {view.works !== null ? (
-                <AppText variant="label" color="text.secondary">
-                  {view.works}
-                </AppText>
-              ) : null}
-              {view.mayHurt ? (
-                <AppText variant="label" color="status.warning">
-                  {POPUP_COPY.mayHurt}
-                </AppText>
-              ) : null}
-            </View>
-            {view.canSwap ? <TextButton label={POPUP_COPY.swapExercise} onPress={p.onSwap} /> : null}
-          </View>
-          <Table>
-            <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', paddingHorizontal: theme.space['3'], paddingTop: theme.space['2'], gap: theme.space['2'] }}>
-              {['#', 'Type', 'Reps', view.kgHeader, EFFORT_HEADER].map((h, i) => (
-                <AppText key={h} variant="label" color="text.secondary" style={{ width: i === 0 ? 24 : i === 1 ? undefined : VALUE_COL_W, flex: i === 1 ? 1 : undefined, textAlign: i > 1 ? 'right' : 'left' }}>
-                  {h}
-                </AppText>
-              ))}
-            </View>
-            {view.rows.map((r) => {
-              const actions = actionsOf(r);
-              const onAction = (name: string) => {
-                const a = actions.find((x) => x.name === name);
-                if (a !== undefined) rowAction(r, a.name);
-              };
-              return (
-                <SwipeRow
-                  key={`${r.key}:${r.type}`}
-                  container
-                  onPress={() => {
-                    pickType(r);
-                  }}
-                  accessibilityLabel={r.accessibilityLabel}
-                  actions={actions}
-                  onAction={onAction}
-                  holdProps={{ onLongPress: () => { openMenu(r); } }}
-                  {...(r.canDelete ? { leftAction: { label: POPUP_COPY.delete, onPress: () => { p.onDeleteRow(r); } } } : {})}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['3'], gap: theme.space['2'], minHeight: 52 }}>
-                    {/* `#` and Type are one VoiceOver element with the row's actions; the fields after it stay reachable (review B6). */}
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={r.accessibilityLabel}
-                      accessibilityHint="Changes the set type"
-                      accessibilityActions={actions}
-                      onAccessibilityAction={(e: AccessibilityActionEvent) => {
-                        onAction(e.nativeEvent.actionName);
-                      }}
-                      onPress={() => {
-                        pickType(r);
-                      }}
-                      onLongPress={() => {
-                        openMenu(r);
-                      }}
-                      style={{ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}
-                    >
-                      <AppText variant="callout" color={r.done ? 'status.done' : 'text.secondary'} numeric style={{ width: 24 }}>
-                        {r.mark}
-                      </AppText>
-                      <AppText variant="callout" style={{ flex: 1 }}>
-                        {r.typeText}
-                      </AppText>
-                    </Pressable>
-                    {cell(r, 'reps', r.repsText, `${r.spokenName}, reps`)}
-                    {cell(r, 'kg', r.load === null ? '' : String(r.load), `${r.spokenName}, ${view.kgHeader}`)}
-                    {r.noRpe ? (
-                      <AppText variant="callout" color="text.tertiary" style={{ width: VALUE_COL_W, textAlign: 'right' }} accessibilityElementsHidden importantForAccessibility="no">
-                        –
-                      </AppText>
-                    ) : (
-                      cell(r, 'rpe', effortCellText(view, r.rpe), `${r.spokenName}, ${r.done ? 'reps in reserve' : 'target reps in reserve'}`)
-                    )}
-                  </View>
-                </SwipeRow>
-              );
-            })}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: theme.space['3'] }}>
-              <TextButton label={POPUP_COPY.warmup} disabled={!view.canAddWarmup} onPress={() => void p.onAddWarmup().then(setNote)} />
-              <TextButton label={POPUP_COPY.set} disabled={!view.canAddSet} onPress={p.onAddSet} />
-            </View>
-          </Table>
-          {note !== null ? <StatusLine icon="info.circle" tone="info" text={note} /> : null}
-          {view.rests.length > 0 ? <Eyebrow>{POPUP_COPY.rest}</Eyebrow> : null}
-          {view.rests.length > 0 ? (
-            <Table>
-              {view.rests.map((x, i) => (
-                <View key={x.kind}>
-                  {i > 0 ? <Divider /> : null}
-                  <View style={{ minHeight: 54, flexDirection: 'row', alignItems: 'center', paddingLeft: theme.space['4'], paddingRight: theme.space['2'] }}>
-                    <AppText variant="body" style={{ flex: 1 }}>
-                      {x.label}
-                    </AppText>
-                    {x.own === true && p.onRestDefault !== undefined ? <TextButton label={POPUP_COPY.restDefault} tone="secondary" accessibilityLabel={`${x.label}, ${POPUP_COPY.restDefault}`} onPress={() => { p.onRestDefault?.(x); }} /> : null}
-                    <Stepper
-                      label={x.label}
-                      valueText={x.text}
-                      canMinus={x.canMinus}
-                      canPlus={x.canPlus}
-                      repeat
-                      onStep={(d) => {
-                        p.onRestStep(x, d > 0 ? 1 : -1);
-                      }}
-                    />
-                  </View>
-                </View>
-              ))}
-            </Table>
-          ) : null}
-          {p.options}
-          {p.history}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
-            {view.canMoveUp ? <SecondaryButton label={`↑ ${POPUP_COPY.moveUp}`} onPress={() => { p.onMove('up'); }} /> : null}
-            {view.canMoveDown ? <SecondaryButton label={`↓ ${POPUP_COPY.moveDown}`} onPress={() => { p.onMove('down'); }} /> : null}
-            {view.canSupersetNext ? <SecondaryButton label={POPUP_COPY.supersetNext} onPress={p.onSupersetNext} /> : null}
-            {view.canUnlink ? <SecondaryButton label={POPUP_COPY.unlink} onPress={p.onUnlink} /> : null}
-          </View>
-          {p.onHowTo !== undefined || p.onHistory !== undefined ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
-              {p.onHowTo !== undefined ? <TextButton label={POPUP_COPY.howTo} icon="chevron.right" tone="secondary" accessibilityLabel={`How to, ${view.name}`} onPress={p.onHowTo} /> : null}
-              {p.onHistory !== undefined ? <TextButton label={POPUP_COPY.history} icon="chevron.right" tone="secondary" accessibilityLabel={`History, ${view.name}`} onPress={p.onHistory} /> : null}
-            </View>
-          ) : null}
-          {p.why !== undefined ? (
-            <TextButton
-              label={`${POPUP_COPY.whyWeight}${whyLines === null ? ' ›' : ''}`}
-              tone="secondary"
-              onPress={() => {
-                if (whyLines !== null) setWhyLines(null);
-                else void p.why?.().then(setWhyLines);
-              }}
-            />
-          ) : null}
-          {whyLines !== null
-            ? whyLines.map((l) => (
-                <AppText key={l} variant="label" color="text.secondary" numeric>
-                  {l}
-                </AppText>
-              ))
-            : null}
-          <InputAccessoryView nativeID={POPUP_SET_BAR_ID}>
-            <View style={{ flexDirection: 'row', gap: theme.space['2'], padding: theme.space['2'], backgroundColor: theme.colors['bg.raised'] }}>
-              <View style={{ flex: 1 }} />
-              <Pressable accessibilityRole="button" accessibilityLabel="Less" onPress={() => void step(-1)} style={{ minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }}>
-                <AppText variant="headline">−</AppText>
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="More" onPress={() => void step(1)} style={{ minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }}>
-                <AppText variant="headline">+</AppText>
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={POPUP_COPY.next} onPress={goNext} style={{ minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'] }}>
-                <AppText variant="headline">{POPUP_COPY.next}</AppText>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={POPUP_COPY.done}
-                onPress={() => {
-                  if (focus !== null) refs.current.get(keyOf(focus.key, focus.field))?.blur();
-                }}
-                style={{ minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, backgroundColor: theme.colors.accent }}
-              >
-                <AppText variant="headline" color="on.accent">
-                  {POPUP_COPY.done}
-                </AppText>
-              </Pressable>
-            </View>
-          </InputAccessoryView>
-        </>
-      )}
+      {header}
+      {p.recap}
+      <Table>
+        {columns(false)}
+        {view.rows.map((r) => setRow(r, false))}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: theme.space['3'] }}>
+          <TextButton label={POPUP_COPY.warmup} disabled={!view.canAddWarmup} onPress={() => void p.onAddWarmup().then(setNote)} />
+          <TextButton label={POPUP_COPY.set} disabled={!view.canAddSet} onPress={p.onAddSet} />
+        </View>
+      </Table>
+      {note !== null ? <StatusLine icon="info.circle" tone="info" text={note} /> : null}
+      {view.rests.length > 0 ? <Eyebrow>{POPUP_COPY.rest}</Eyebrow> : null}
+      {rests}
+      {p.options}
+      {p.history}
+      {moveButtons}
+      {links}
+      {why}
+      {keyBar}
     </BottomCard>
   );
 }

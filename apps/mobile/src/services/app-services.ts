@@ -1,3 +1,4 @@
+import { createLibraryChangesService } from '../library/library-changes-service';
 import { createWeeklyReviewService } from '../reviews/weekly-review-service';
 import { createCustomExercises } from './custom-exercises';
 import {
@@ -1165,6 +1166,9 @@ export function createAppServices(deps: AppServicesDeps) {
     healthSignals: () => health.signals(),
   });
 
+  /** (Redesign 27 Oct, D2/D5) Library › Plan › Changes: the coach's next-time targets and the weekly review's changes. */
+  const libraryChanges = createLibraryChangesService({ store: () => deps.manager.store, profile: getProfile, reviews, coach });
+
   /**
    * (workout-table-v3 §7) Same editing as the builder mid-workout: its Swap / Add sheet and load sources,
    * `Why this weight?` and advice, over the workout's own versioned commands (today only).
@@ -1177,6 +1181,7 @@ export function createAppServices(deps: AppServicesDeps) {
     builder,
     builderCoach,
     reviews,
+    libraryChanges,
     workoutEdit,
     exercisePicker,
     library,

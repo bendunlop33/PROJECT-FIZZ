@@ -107,11 +107,18 @@ export type HistoryParams = { month?: string } | undefined;
 export type LibraryStackParams = {
   /** `segment`: open on it (the picker's `Edit workouts`); `toast`: back from the editor (`Saved Push A` [Undo]). */
   /** `plan`: Today's `Day 2 of 4 ›` (a nonce): Workouts, scrolled to the top where Your plan is (Ben, 19 Oct). */
-  LibraryHome: { segment?: LibrarySegment; toast?: LibraryToastParam; plan?: string } | undefined;
+  /** `planApplied` (redesign 27 Oct, D4): back from Change plan's review, `Plan updated · Undo`. */
+  LibraryHome: { segment?: LibrarySegment; toast?: LibraryToastParam; plan?: string; planApplied?: PlanAppliedToastParam } | undefined;
   LibraryExercise: ExerciseInfoParams;
   /** Your plan › a day (Ben, 19 Oct): what Start plans here and last time's sets; Start, Edit, Ask coach. */
   /** `week` (27 Oct): opened from another block week on Library › Plan: that week's planned targets. */
   LibraryPlanDay: { routineId: string; name?: string; week?: number };
+  /** (Redesign 27 Oct, D2) `✦ 3 changes · next week ›`: the coach's changes to come (Why?, Undo; Apply / Skip). */
+  LibraryChanges: undefined;
+  /** `Earlier changes ›`: each earlier weekly review, newest first. */
+  LibraryEarlierChanges: undefined;
+  /** One earlier week's changes (Undo / Redo while they still apply; offers Apply / Skip). */
+  LibraryEarlierWeek: { reviewId: string };
 };
 
 /** (Ben, 22 Oct) Library tabs `Plan | Workouts | Exercises`. */
@@ -259,7 +266,8 @@ export type RootStackParams = {
    * on Your plan, the builder starting from that plan's answers.
    */
   /** `fromPlanId`: Start next block (a new plan from that block's answers). `editPlanId`: Edit plan (opens on Your plan). */
-  PlanSetup: { fromPlanId?: string; editPlanId?: string } | undefined;
+  /** `start` (redesign 27 Oct, D4): Change plan's `Days and time` / `Goal`, that page of `editPlanId`, ending on its Changes review. */
+  PlanSetup: { fromPlanId?: string; editPlanId?: string; start?: 'week' | 'goals' } | undefined;
 };
 
 /** Your workout's back control when it wasn't opened from Set up: `‹ Today`, `‹ Library`, `‹ Summary`, else `‹ Back`. */

@@ -71,9 +71,9 @@ describe('tabs, links and the set-up hook', () => {
   });
 
   it('Your plan lives on Library › Plan, not on Workouts', () => {
-    expect(code(read('screens/library/PlanTab.tsx'))).toContain('<YourPlanBlock plan={plan} onToast={setToast} />');
+    expect(code(read('screens/library/PlanTab.tsx'))).toContain('<YourPlanBlock plan={plan} changes={changes} onToast={setToast} />');
     expect(code(read('screens/routines/WorkoutsScreen.tsx'))).not.toContain('YourPlanBlock');
-    expect(code(read('screens/library/LibraryScreen.tsx'))).toContain('<PlanTab scrollTopKey={route.params?.plan} />');
+    expect(code(read('screens/library/LibraryScreen.tsx'))).toContain('scrollTopKey={route.params?.plan}');
   });
 
   it('copy is minimal: values and actions', () => {

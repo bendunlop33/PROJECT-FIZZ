@@ -84,7 +84,13 @@ export function LibraryScreen() {
       {segment === 'exercises' ? (
         <ExercisesBrowse />
       ) : segment === 'plan' ? (
-        <PlanTab scrollTopKey={route.params?.plan} />
+        <PlanTab
+          scrollTopKey={route.params?.plan}
+          planApplied={route.params?.planApplied}
+          onPlanApplied={() => {
+            navigation.setParams({ planApplied: undefined } as never);
+          }}
+        />
       ) : (
         <WorkoutsList
           from="Library"

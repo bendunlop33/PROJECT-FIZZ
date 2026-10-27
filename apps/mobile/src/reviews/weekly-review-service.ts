@@ -806,6 +806,26 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     },
 
     /**
+     * (Redesign 27 Oct, D2) Library › Plan › Changes: the newest weekly review's changes only (no Lifts, Muscles or
+     * week reads), with its proposals so each change names its workout and exercise. Local only; null with no profile.
+     */
+    async changesNow(): Promise<{ view: CoachChangesView; proposals: ReviewProposal[]; hasPast: boolean } | { view: null; proposals: []; hasPast: boolean } | null> {
+      const owner = await deps.profile();
+      if (owner === null) return null;
+      const nowMs = toMs(deps.now().utc);
+      const today = localDateOf(nowMs, owner.timezone);
+      const stored = await storedWeekly(owner.id);
+      const newest = stored[0];
+      if (newest === undefined) return { view: null, proposals: [], hasPast: false };
+      const current = mondayOf(newest) === weeklyReviewWeek(nowMs, owner.timezone);
+      const pain = await repos()
+        .painFlags.listActive(owner.id)
+        .catch(() => []);
+      const view = coachChangesView(newest, today, { current, actedOn: await actedOn(newest), painFlagged: new Set(pain.map((p) => p.exerciseId)), reviewing: asking === newest.id });
+      return view === null ? { view: null, proposals: [], hasPast: stored.length > 1 } : { view, proposals: newest.proposals ?? [], hasPast: stored.length > 1 };
+    },
+
+    /**
      * The Summary's PB moment (Progress v3): `New best · Bench 100 × 6` for each tracked lift whose real top set
      * in this workout beats every earlier real one at its tracked reps (the Lifts chart's definition). Local only.
      */

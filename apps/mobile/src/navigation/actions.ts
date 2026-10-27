@@ -139,6 +139,16 @@ export function openPlanEdit(editPlanId: string) {
   return { type: 'NAVIGATE', payload: { name: 'PlanSetup', params: { editPlanId } } } as const;
 }
 
+/** (Redesign 27 Oct, D4) Change plan's `Days and time` / `Goal`: that page of the plan in use, then its Changes review. */
+export function openPlanChange(editPlanId: string, start: 'week' | 'goals') {
+  return { type: 'NAVIGATE', payload: { name: 'PlanSetup', params: { editPlanId, start } } } as const;
+}
+
+/** (Redesign 27 Oct, D4) Change plan's `Apply`: back to Library › Plan with `Plan updated · Undo`. */
+export function libraryAfterPlanChange(planApplied: PlanAppliedToastParam): PopToTabsAction {
+  return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'plan', plan: planApplied.key, planApplied }, pop: true } });
+}
+
 /** (Ben, 26 Oct) Your plan's `Do today ›`: that plan day on Today's card (today only, as Today's own day row). */
 export function todayWithDay(key: string, nonce: string): PopToTabsAction {
   return popToTabs({ screen: 'Today', params: { pickDay: { key, nonce } } });

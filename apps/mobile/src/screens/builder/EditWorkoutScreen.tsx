@@ -4,7 +4,27 @@ import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, ScrollView, Switch
 import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { dropRoutineSlot, fitNoteOf, formatDuration, mergeRoutineEdits, routineEditDirty, routineIssues, slotShapeOf, type BuilderFitStep, type RoutineConflict, type RoutineEdit } from '@fizz/domain';
+import {
+  dropRoutineSlot,
+  editorMainFlags,
+  fitNoteOf,
+  formatDuration,
+  mergeRoutineEdits,
+  pairAddedWith,
+  routineAbsOff,
+  routineAbsOnPick,
+  routineEditDirty,
+  routineIssues,
+  routineOptionsState,
+  routineSupersetsOff,
+  routineSupersetsOn,
+  slotShapeOf,
+  type BuilderExerciseInfo,
+  type BuilderFitStep,
+  type RoutineConflict,
+  type RoutineEdit,
+  type RoutineOptionsState,
+} from '@fizz/domain';
 import type { BuilderGroup, Routine, RoutineExercise, SetType } from '@fizz/schemas';
 
 import type { ExerciseChoices, TemplateFact } from '../../builder/builder-service';
@@ -46,6 +66,7 @@ import {
   type TemplateEditorCtx,
   type TemplateOptionsView,
 } from '../../workout/template-editor';
+import { RecapLines, useExerciseRecap } from './ExerciseRecap';
 import { WorkoutTable, type WorkoutRowAction } from './WorkoutTable';
 
 type Stale = { current: Routine; lines: string[]; changedAtUtc: string };
@@ -88,6 +109,12 @@ export function EditWorkoutScreen() {
   const [stale, setStale] = useState<Stale | null>(null);
   const [picks, setPicks] = useState<Record<string, 'mine' | 'theirs'>>({});
   const [popup, setPopup] = useState<string | null>(null);
+  // (Redesign 27 Oct, D6) The Options card (Abs, Supersets): open or folded, and the slots Ben unlinked on this page.
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const unlinked = useRef(new Set<string>());
+  const optionBusy = useRef(false);
+  // (D6) The open card's `Last` and `Best`.
+  const recap = useExerciseRecap(popup === null ? null : (list.find((e) => e.id === popup)?.exerciseId ?? null));
   const [swap, setSwap] = useState<Swap | null>(null);
   // (Ben, 25 Oct) Swap / Add's full list: every exercise at the editor's gym, read once per open; search and chips are pure over it.
   const picker = useExercisePicker();
@@ -234,6 +261,23 @@ export function EditWorkoutScreen() {
     };
   }, [services, list, gymId, editedRoutineId]);
 
+  // (D6) Each exercise's builder facts for the Options switches (Abs: a Core exercise here), read per set of exercises.
+  const [optInfo, setOptInfo] = useState<Record<string, BuilderExerciseInfo>>({});
+  const optKey = [...new Set(list.map((e) => e.exerciseId))].sort().join(',');
+  useEffect(() => {
+    if (optKey === '' || data === 'loading' || data === null || data.routine === null) return;
+    let live = true;
+    void services.builder
+      .templateOptionsInfo({ gymId, exerciseIds: optKey.split(',') })
+      .then((o) => {
+        if (live) setOptInfo((cur) => ({ ...cur, ...o.info }));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [services, optKey, gymId, data]);
+
   const showToast = useCallback(
     (t: { text: string; before: RoutineExercise[] | null; length?: number | null } | null) => {
       if (toastTimer.current !== null) clearTimeout(toastTimer.current);
@@ -278,6 +322,11 @@ export function EditWorkoutScreen() {
 
   /** One edit on the page's list, on the list as it is now (quick taps add up). Returns the pop-up's line, if any. */
   function apply(op: TemplateEditOp): string | null {
+    // (D6) A pair Ben unlinks is never paired again by the Supersets switch.
+    if (op.kind === 'unlink') {
+      const g = listRef.current.find((e) => e.id === op.slotId)?.supersetGroup ?? null;
+      if (g !== null) for (const e of listRef.current) if (e.supersetGroup === g) unlinked.current.add(e.id);
+    }
     const r = applyTemplateEdit(listRef.current, op, ctx, newUuid);
     setList(r.list);
     setFit(null);
@@ -516,101 +565,71 @@ export function EditWorkoutScreen() {
   const shapeSlot = shapeSheet === null ? undefined : list.find((e) => e.id === shapeSheet.slotId);
   const shapeView = shapeSlot === undefined ? null : slotShapeOf(shapeSlot);
 
-  const toastNode =
-    toast === null ? null : (
-      <Toast
-        icon="info.circle"
-        text={toast.text}
-        {...(toast.before !== null
-          ? {
-              action: TEMPLATE_COPY.undo,
-              onAction: () => {
-                const before = toast.before;
-                const length = toast.length;
-                showToast(null);
-                if (before !== null) setList(before);
-                if (length !== undefined) setTimeLength(length);
-                setFit(null);
-              },
-            }
-          : {})}
-        onDismiss={() => {
-          showToast(null);
-        }}
-        showClose={screenReader}
-      />
-    );
+  /**
+   * (Redesign 27 Oct, D6) Options › Abs / Supersets: Today's rules on this workout's list (`routineAbsOff`,
+   * `routineSupersetsOn`), as page edits with Undo; Save writes them (a plan day's: this week onward). Local only.
+   */
+  async function setOption(kind: 'abs' | 'supersets', on: boolean) {
+    if (optionBusy.current) return;
+    optionBusy.current = true;
+    try {
+      const before = listRef.current;
+      const o = await services.builder.templateOptionsInfo({ gymId: editor.gym?.id ?? null, exerciseIds: before.map((e) => e.exerciseId) }).catch(() => null);
+      if (o === null) {
+        setError(TEMPLATE_COPY.optionFailed);
+        return;
+      }
+      setOptInfo((cur) => ({ ...cur, ...o.info }));
+      const lookup = (id: string) => o.info[id] ?? null;
+      let next: RoutineExercise[] = before;
+      let add: { exerciseId: string; withSlotId: string | null; workingSets: number | null } | null = null;
+      if (kind === 'supersets') {
+        const flags = editorMainFlags(before, (id) => info[id]?.compound ?? false);
+        next = on ? routineSupersetsOn(before, lookup, { mains: new Set(before.filter((_, i) => flags[i] === true).map((e) => e.id)), unlinked: unlinked.current }) : routineSupersetsOff(before);
+      } else if (!on) {
+        const r = routineAbsOff(before, lookup, { supersets: routineOptionsState(before, lookup).supersets, armCandidates: o.arms });
+        next = r.list;
+        add = r.add;
+      } else {
+        const pick = routineAbsOnPick(before, o.core);
+        if (pick !== null) add = { exerciseId: pick, withSlotId: null, workingSets: null };
+      }
+      if (add !== null) {
+        const x = (await services.routines.exerciseInfo([add.exerciseId]).catch((): Record<string, EditorExerciseInfo> => ({})))[add.exerciseId];
+        const more = await services.builder.templateFacts({ gymId: editor.gym?.id ?? null, exerciseIds: [add.exerciseId] }).catch((): Record<string, TemplateFact> => ({}));
+        if (x !== undefined) {
+          setInfo((cur) => ({ ...cur, [x.id]: x }));
+          setFacts((cur) => ({ ...cur, ...more }));
+          const withX: TemplateEditorCtx = { ...ctx, info: { ...ctx.info, [x.id]: x }, facts: { ...ctx.facts, ...more } };
+          const shape = add.workingSets === null ? x.defaultShape : { ...x.defaultShape, workingSets: add.workingSets };
+          const added = applyTemplateEdit(next, { kind: 'add_exercise', exercise: { id: x.id, measurement: x.measurement }, shape }, withX, newUuid).list;
+          const newSlot = added.find((e) => !next.some((n) => n.id === e.id));
+          next = add.withSlotId !== null && newSlot !== undefined ? pairAddedWith(added, newSlot.id, add.withSlotId) : added;
+        }
+      }
+      if (!routineEditDirty({ name, exercises: before }, { name, exercises: next })) {
+        showToast({ text: TEMPLATE_COPY.optionNoChange, before: null });
+        return;
+      }
+      setList(next);
+      setFit(null);
+      setPopup(null);
+      const word = kind === 'abs' ? TEMPLATE_COPY.abs : TEMPLATE_COPY.supersets;
+      showToast({ text: TEMPLATE_COPY.optionDone(word, on, editor.routine?.planDay !== undefined), before });
+    } finally {
+      optionBusy.current = false;
+    }
+  }
 
-  return (
-    <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
-      <View style={{ flex: 1 }}>
-        <View style={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <TextButton label={EDITOR_COPY.cancel} tone="secondary" onPress={cancel} />
-          </View>
-          <TextField
-            accessibilityLabel={TEMPLATE_COPY.name}
-            placeholder={isNew ? TEMPLATE_COPY.newTitle : TEMPLATE_COPY.name}
-            value={name}
-            onChangeText={setName}
-            autoFocus={(target.kind === 'new' && name.trim() === '') || selectName === true}
-            selectTextOnFocus={selectName === true}
-            returnKeyType="done"
-            maxLength={160}
-            style={{ fontSize: theme.type.title1.fontSize, fontWeight: '700', paddingHorizontal: theme.space['2'], backgroundColor: 'transparent' }}
-          />
-          {/* (Ben, 26 Oct) Your workout's Time control: the estimate, ± fits the sets and rests (as edits to save). */}
-          {shownMinutes === null ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
-              <AppText variant="callout" color="text.secondary" style={{ fontSize: 15 }}>
-                {TEMPLATE_COPY.time}
-              </AppText>
-              <AppText variant="label" numeric>
-                —
-              </AppText>
-            </View>
-          ) : (
-            <TimeNoteRow
-              minutes={shownMinutes}
-              over={time?.over ?? false}
-              note={fitNote.note}
-              noteLabel={fitNote.note === null ? null : `Time changes: ${fitNote.note}`}
-              onStep={(d) => void stepTime(d)}
-              onNote={() => {
-                setTimeDetail(true);
-              }}
-            />
-          )}
-        </View>
-        <ScrollView scrollEnabled={!dragging} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingVertical: theme.space['3'], gap: theme.space['3'] }}>
-          {editor.inProgress ? <StatusLine icon="info.circle" tone="info" text={EDITOR_COPY.inProgress} /> : null}
-          <WorkoutTable
-            rounds={table.rounds}
-            topHeader={table.topHeader}
-            canAdd={table.canAdd}
-            dragging={dragging}
-            onDragChange={setDragging}
-            canDrop={(slotId, t) => dropRoutineSlot(listRef.current, slotId, t.key, t.edge) !== null}
-            onDrop={(slotId, t) => {
-              apply({ kind: 'drop', slotId, targetId: t.key, edge: t.edge });
-            }}
-            onRowPress={(r) => {
-              setPopup(r.slotKey);
-            }}
-            onRowAction={(r, a) => {
-              rowAction(r.slotKey, a);
-            }}
-            onAdd={() => void openSwap(null)}
-          />
-        </ScrollView>
-        <ToastHost bottom={8}>{popup === null ? toastNode : null}</ToastHost>
-      </View>
-      <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: insets.bottom + theme.space['2'], gap: theme.space['2'], backgroundColor: theme.colors['bg.canvas'] }}>
-        {error !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
-        <PrimaryButton label={primary.label} disabled={primary.disabled} busy={busy} onPress={() => void save()} />
-      </View>
-
+  const openHistory = () => {
+    if (popupSlot === undefined) return;
+    navigation.navigate('ExerciseProgress', { exerciseId: popupSlot.exerciseId, name: info[popupSlot.exerciseId]?.name ?? 'Exercise', ...(gymId === null ? {} : { gymId }) });
+  };
+  // (Redesign 27 Oct, D6) The tapped exercise opens in place under its row (one at a time), not as a pop-up.
+  const popupNode = (
       <ExercisePopup
+        inline
+        recap={<RecapLines recap={recap} onHistory={popupSlot === undefined || facts[popupSlot.exerciseId]?.hasHistory !== true ? undefined : openHistory} />}
         view={view}
         resetKey={popup}
         onEditCell={(row, field, value) => Promise.resolve(popup === null ? null : apply({ kind: 'cell', slotId: popup, setId: row.key, field, value }))}
@@ -692,8 +711,118 @@ export function EditWorkoutScreen() {
             />
           )
         }
-        toast={toastNode}
       />
+  );
+
+  const toastNode =
+    toast === null ? null : (
+      <Toast
+        icon="info.circle"
+        text={toast.text}
+        {...(toast.before !== null
+          ? {
+              action: TEMPLATE_COPY.undo,
+              onAction: () => {
+                const before = toast.before;
+                const length = toast.length;
+                showToast(null);
+                if (before !== null) setList(before);
+                if (length !== undefined) setTimeLength(length);
+                setFit(null);
+              },
+            }
+          : {})}
+        onDismiss={() => {
+          showToast(null);
+        }}
+        showClose={screenReader}
+      />
+    );
+
+  return (
+    <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
+      <View style={{ flex: 1 }}>
+        <View style={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <TextButton label={EDITOR_COPY.cancel} tone="secondary" onPress={cancel} />
+          </View>
+          <TextField
+            accessibilityLabel={TEMPLATE_COPY.name}
+            placeholder={isNew ? TEMPLATE_COPY.newTitle : TEMPLATE_COPY.name}
+            value={name}
+            onChangeText={setName}
+            autoFocus={(target.kind === 'new' && name.trim() === '') || selectName === true}
+            selectTextOnFocus={selectName === true}
+            returnKeyType="done"
+            maxLength={160}
+            style={{ fontSize: theme.type.title1.fontSize, fontWeight: '700', paddingHorizontal: theme.space['2'], backgroundColor: 'transparent' }}
+          />
+          {/* (Ben, 26 Oct) Your workout's Time control: the estimate, ± fits the sets and rests (as edits to save). */}
+          {shownMinutes === null ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
+              <AppText variant="callout" color="text.secondary" style={{ fontSize: 15 }}>
+                {TEMPLATE_COPY.time}
+              </AppText>
+              <AppText variant="label" numeric>
+                —
+              </AppText>
+            </View>
+          ) : (
+            <TimeNoteRow
+              minutes={shownMinutes}
+              over={time?.over ?? false}
+              note={fitNote.note}
+              noteLabel={fitNote.note === null ? null : `Time changes: ${fitNote.note}`}
+              onStep={(d) => void stepTime(d)}
+              onNote={() => {
+                setTimeDetail(true);
+              }}
+            />
+          )}
+        </View>
+        <ScrollView scrollEnabled={!dragging} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingVertical: theme.space['3'], gap: theme.space['3'] }}>
+          {editor.inProgress ? <StatusLine icon="info.circle" tone="info" text={EDITOR_COPY.inProgress} /> : null}
+          {editor.routine !== null ? (
+            <OptionsCard
+              state={routineOptionsState(list, (id) => optInfo[id] ?? null)}
+              open={optionsOpen}
+              onToggle={() => {
+                setOptionsOpen((o) => !o);
+              }}
+              onChange={(k, on) => void setOption(k, on)}
+            />
+          ) : null}
+          <WorkoutTable
+            rounds={table.rounds}
+            topHeader={table.topHeader}
+            canAdd={table.canAdd}
+            dragging={dragging}
+            onDragChange={(active) => {
+              setDragging(active);
+              if (active) setPopup(null);
+            }}
+            canDrop={(slotId, t) => dropRoutineSlot(listRef.current, slotId, t.key, t.edge) !== null}
+            onDrop={(slotId, t) => {
+              apply({ kind: 'drop', slotId, targetId: t.key, edge: t.edge });
+            }}
+            onRowPress={(r) => {
+              setPopup((k) => (k === r.slotKey ? null : r.slotKey));
+            }}
+            expandedKey={popup}
+            renderExpanded={() => popupNode}
+            onRowAction={(r, a) => {
+              rowAction(r.slotKey, a);
+            }}
+            onAdd={() => void openSwap(null)}
+          />
+        </ScrollView>
+        <ToastHost bottom={8}>{toastNode}</ToastHost>
+      </View>
+      <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: insets.bottom + theme.space['2'], gap: theme.space['2'], backgroundColor: theme.colors['bg.canvas'] }}>
+        {error !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
+        <PrimaryButton label={primary.label} disabled={primary.disabled} busy={busy} onPress={() => void save()} />
+      </View>
+
       {/* (Ben, 26 Oct) What `Time ±` changed, with Undo back to the list before it. */}
       <TimeDetailSheet
         visible={timeDetail && fit !== null}
@@ -788,6 +917,44 @@ export function EditWorkoutScreen() {
           />
         ) : null}
       </BottomCard>
+    </View>
+  );
+}
+
+/**
+ * (Redesign 27 Oct, D6) The Options card on a plan day / saved workout: a bold `Options` row (≥ 56 pt) with what's on
+ * (`Abs · Supersets`), folded by default; open: `Abs` and `Supersets` switches.
+ */
+function OptionsCard({ state, open, onToggle, onChange }: { state: RoutineOptionsState; open: boolean; onToggle: () => void; onChange: (k: 'abs' | 'supersets', on: boolean) => void }) {
+  const theme = useTheme();
+  const summary = [state.abs ? TEMPLATE_COPY.abs : null, state.supersets ? TEMPLATE_COPY.supersets : null].filter((x) => x !== null).join(' · ');
+  return (
+    <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, overflow: 'hidden' }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${TEMPLATE_COPY.options}${summary === '' ? '' : `, ${summary}`}`}
+        onPress={onToggle}
+        style={({ pressed }) => ({ minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], paddingHorizontal: theme.space['4'], opacity: pressed ? 0.7 : 1 })}
+      >
+        <AppText variant="headline" style={{ fontWeight: '700' }}>
+          {TEMPLATE_COPY.options}
+        </AppText>
+        <AppText variant="callout" color="text.secondary" style={{ flex: 1 }} numberOfLines={1}>
+          {open ? '' : summary}
+        </AppText>
+        <AppText variant="callout" color="text.tertiary">
+          {open ? '⌃' : '⌄'}
+        </AppText>
+      </Pressable>
+      {open ? (
+        <View>
+          <Divider />
+          <SwitchRow label={TEMPLATE_COPY.abs} value={state.abs} onChange={() => { onChange('abs', !state.abs); }} />
+          <Divider />
+          <SwitchRow label={TEMPLATE_COPY.supersets} value={state.supersets} onChange={() => { onChange('supersets', !state.supersets); }} />
+        </View>
+      ) : null}
     </View>
   );
 }

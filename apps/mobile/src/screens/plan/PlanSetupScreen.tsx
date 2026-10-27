@@ -8,7 +8,8 @@ import type { PlanBuilderAnswers, PlanPrefAnswer, PlanTarget } from '@fizz/schem
 
 import { newUuid } from '../../device/runtime';
 import { formatShortDate } from '../../format/dates';
-import { todayAfterPlanApplied } from '../../navigation/actions';
+import { CHANGE_PLAN_COPY } from '../../library/change-plan-view';
+import { libraryAfterPlanChange, todayAfterPlanApplied } from '../../navigation/actions';
 import { PlanWeeksBlock } from '../library/PlanWeeksBlock';
 import { PlanChangesCard, type PlanEditScopeKind } from './PlanChangesCard';
 import type { RootStackParams } from '../../navigation/types';
@@ -78,6 +79,9 @@ export function PlanSetupScreen() {
   const fromPlanId = params?.fromPlanId;
   // `Edit plan` only: the one entry that opens on Your plan. `Set up a plan` always starts a new plan at step 1.
   const editPlanId = params?.editPlanId;
+  // (Redesign 27 Oct, D4) Change plan's `Days and time` / `Goal`: open on that page, then `Review changes` (the Changes
+  // review on Your plan), and Apply lands back on Library › Plan with `Plan updated · Undo`.
+  const start = editPlanId === undefined ? undefined : params?.start;
   const insets = useSafeAreaInsets();
   const [session, setSession] = useState<PlanBuilderSession | null | 'error'>(null);
   const [answers, setAnswers] = useState<PlanBuilderAnswers | null>(null);
@@ -116,7 +120,7 @@ export function PlanSetupScreen() {
           return;
         }
         setAnswers(s.answers);
-        setPage(pbFirstPage(s));
+        setPage(start !== undefined && s.running !== null ? start : pbFirstPage(s));
       })
       .catch(() => {
         setSession('error');
@@ -241,7 +245,8 @@ export function PlanSetupScreen() {
       return;
     }
     changed();
-    navigation.dispatch(todayAfterPlanApplied({ key: applyOp.current, planId: r.planId, version: r.version, edit: true }));
+    const applied = { key: applyOp.current, planId: r.planId, version: r.version, edit: true as const };
+    navigation.dispatch(start !== undefined ? libraryAfterPlanChange(applied) : todayAfterPlanApplied(applied));
   }
 
   /** `Continue last draft ›`: that built plan's answers on Your plan (Build there writes its next version). */
@@ -263,7 +268,14 @@ export function PlanSetupScreen() {
   // ---------------------------------------------------------------------------
   // Top bar: one back control (D7)
 
+  // (D4) From Change plan: `‹ Back` on its page closes; on the review it goes back to that page.
+  const fromChange = start !== undefined && s.running !== null;
   const stepBack = (): void => {
+    if (fromChange && fromPlan === null) {
+      if (page === 'plan') setPage(start);
+      else navigation.goBack();
+      return;
+    }
     if (fromPlan !== null) {
       setAnswers(fromPlan);
       setFromPlan(null);
@@ -274,7 +286,7 @@ export function PlanSetupScreen() {
     const prev = flow[at - 1];
     if (prev !== undefined) setPage(prev);
   };
-  const canBack = fromPlan !== null || (page === 'plan' ? s.running === null && (draft === null || flow.length > 0) : flow.indexOf(page) > 0);
+  const canBack = fromChange || fromPlan !== null || (page === 'plan' ? s.running === null && (draft === null || flow.length > 0) : flow.indexOf(page) > 0);
   const topBar = (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: insets.top, paddingHorizontal: theme.components.screenMargin, minHeight: 44 + insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
       {canBack ? <TextButton label={fromPlan !== null ? C.yourPlan : C.back} onPress={stepBack} /> : <View />}
@@ -283,7 +295,9 @@ export function PlanSetupScreen() {
   );
 
   const footer =
-    page === 'plan' ? (
+    fromChange && fromPlan === null && page === start ? (
+      <PrimaryButton label={CHANGE_PLAN_COPY.reviewChanges} busy={busy} onPress={() => void build(answers, null)} />
+    ) : page === 'plan' ? (
       s.running !== null ? (
         <PrimaryButton label={PB_EDIT_COPY.apply} busy={busy} disabled={editView?.canApply !== true} onPress={() => void applyChanges()} />
       ) : (
@@ -552,7 +566,7 @@ export function PlanSetupScreen() {
     const maxSets = 24;
     body = (
       <>
-        {title(C.plan)}
+        {title(fromChange ? CHANGE_PLAN_COPY.changes : C.plan)}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <AppText variant="callout" color="text.secondary">{`${String(answers.weeks)} weeks · ${PB_EFFORTS.find((e) => e.key === answers.effort)?.label ?? ''}`}</AppText>
           <AppText variant="callout" color="text.secondary">{`${String(answers.minutes)} min`}</AppText>

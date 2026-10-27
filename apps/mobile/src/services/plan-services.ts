@@ -65,7 +65,7 @@ import {
 import type { PlanWrite, Store } from '@fizz/persistence';
 import { createVersionMemo } from './version-memo';
 import { editBlockOf, readPlanBlock, slotKits, weekViews, type WeekViewsInput } from './plan-edit-read';
-import type { Exercise, MuscleGroup, PlanApplyMode, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, MuscleGroup, PlanApplyMode, PlanBuilderAnswers, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Coach-built plans (Ben, 19 Oct): the plan card and its day view, Apply
@@ -117,6 +117,8 @@ export interface PlanBlockOverview {
    * weekdays it can move to this week (Set days plans; null on Any days).
    */
   actions: Readonly<Record<number, { todayKey: string; moveTo: number[] | null }>>;
+  /** (Redesign 27 Oct, D4) The answers the plan was built from: Change plan's `Days and time` and `Goal` lines. */
+  answers: PlanBuilderAnswers;
 }
 
 export interface PlanOverviewWithBlock extends PlanOverview {
@@ -277,7 +279,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
         actions[d.index] = { todayKey: `plan:${plan.id}:${String(d.index)}`, moveTo: d.weekday === null ? null : [0, 1, 2, 3, 4, 5, 6].filter((x) => x === d.weekday || !taken.has(x)) };
       }
     }
-    return { views, current: Math.min(block.week, a.weeks), done: block.done, header: views[0] === undefined ? '' : views[0].header, line, planId: plan.id, planVersion: plan.version, editable: eb !== null, actions };
+    return { views, current: Math.min(block.week, a.weeks), done: block.done, header: views[0] === undefined ? '' : views[0].header, line, planId: plan.id, planVersion: plan.version, editable: eb !== null, actions, answers: a };
   }
 
   /**
