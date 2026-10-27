@@ -258,6 +258,21 @@ describe('bodyweight: merge, daily points, 7-day average, kg/lb', () => {
     expect(bodyweightChart([], { range: '3m', unit: 'kg', today: '2026-10-27' }).empty).toBe(true);
   });
 
+  it('(Redesign v3 C2) follows the period bar: a past month shows its own points and its own latest', () => {
+    const entries = bodyweightEntries([mine('1', '2026-08-30', 86), mine('2', '2026-09-02', 85), mine('3', '2026-09-28', 84.2), mine('4', '2026-10-26', 82.4)], []);
+    const sep = bodyweightChart(entries, { range: '3m', unit: 'kg', today: '2026-10-27', window: { from: '2026-09-01', to: '2026-09-30' } });
+    expect(sep.points.map((p) => p.date)).toEqual(['2026-09-02', '2026-09-28']);
+    expect(sep.from).toBe('2026-09-01');
+    expect(sep.to).toBe('2026-09-30');
+    expect(plain(sep.latest)).toBe('84.2 kg · 28 Sep');
+    expect(plain(sep.change)).toBe('−0.8 kg');
+    // The average still carries the day before the window.
+    expect(sep.average[0]).toBe(85.5);
+    const oct = bodyweightChart(entries, { range: '3m', unit: 'kg', today: '2026-10-27', window: { from: '2026-10-01', to: '2026-10-31' } });
+    expect(oct.to).toBe('2026-10-27');
+    expect(oct.change).toBeNull();
+  });
+
   it('Health points name their source', () => {
     const v = bodyweightChart(bodyweightEntries([], [health('a0000000-0000-4000-8000-000000000003', '2026-10-21T06:00:00.000Z', 81)]), { range: '3m', unit: 'kg', today: '2026-10-27' });
     expect(v.source).toBe('Withings · Apple Health');

@@ -336,16 +336,18 @@ function signed(n: number, unit: WeightUnit): string {
  * Progress's bodyweight card: the points in the range with the 7-day average line, the latest value, and the change
  * over the range. Actuals only (rule 6), shown in Ben's unit; no target, no projection.
  */
-export function bodyweightChart(entries: readonly BodyweightEntry[], opts: { range: BodyweightRange; unit: WeightUnit; today: string }): BodyweightChartView {
+export function bodyweightChart(entries: readonly BodyweightEntry[], opts: { range: BodyweightRange; unit: WeightUnit; today: string; /** (Redesign v3 C2) Progress's period bar: these dates instead of `range` (the end never past today). */ window?: { from: string; to: string } | null }): BodyweightChartView {
   const daily = bodyweightDaily(entries, opts.unit);
   const avgAll = bodyweightTrailingAverage(daily);
   const span = RANGE_DAYS[opts.range];
   const first = daily[0]?.date ?? opts.today;
-  const from = span === null ? (first < opts.today ? first : addDays(opts.today, -30)) : addDays(opts.today, -span);
-  const idx = daily.map((p, i) => ({ p, i })).filter(({ p }) => p.date >= from && p.date <= opts.today);
+  const w = opts.window ?? null;
+  const from = w !== null ? w.from : span === null ? (first < opts.today ? first : addDays(opts.today, -30)) : addDays(opts.today, -span);
+  const to = w !== null && w.to < opts.today ? w.to : opts.today;
+  const idx = daily.map((p, i) => ({ p, i })).filter(({ p }) => p.date >= from && p.date <= to);
   const points = idx.map(({ p }) => p);
   const average = idx.map(({ i }) => avgAll[i] ?? 0);
-  const last = daily.at(-1) ?? null;
+  const last = w !== null ? (idx.at(-1)?.p ?? null) : (daily.at(-1) ?? null);
   const latest = last === null ? null : `${formatNumber(last.value)}${NBSP}${opts.unit} · ${dayText(last.date)}`;
   const a = points[0];
   const b = points.at(-1);
@@ -355,8 +357,8 @@ export function bodyweightChart(entries: readonly BodyweightEntry[], opts: { ran
   const said = [
     'Bodyweight',
     latest === null ? 'no entries' : `latest ${latest.replace(' · ', ' on ')}`,
-    change === null ? null : `change ${change.replace('−', 'minus ')} over ${BODYWEIGHT_RANGE_LABEL[opts.range]}`,
+    change === null ? null : `change ${change.replace('−', 'minus ')}${w !== null ? '' : ` over ${BODYWEIGHT_RANGE_LABEL[opts.range]}`}`,
     points.length > 0 ? `${String(points.length)} ${points.length === 1 ? 'day' : 'days'}` : null,
   ].filter((x): x is string => x !== null);
-  return { range: opts.range, unit: opts.unit, from, to: opts.today, points, average, latest, change, source, accessibilityLabel: said.join(', ').replaceAll(NBSP, ' '), empty: daily.length === 0 };
+  return { range: opts.range, unit: opts.unit, from, to, points, average, latest, change, source, accessibilityLabel: said.join(', ').replaceAll(NBSP, ' '), empty: daily.length === 0 };
 }

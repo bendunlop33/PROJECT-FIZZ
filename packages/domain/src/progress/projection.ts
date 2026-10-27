@@ -81,6 +81,10 @@ export interface ProgressSession {
   /** `Count it` was used on this workout (PG25a). */
   durationConfirmed: boolean;
   exercises: readonly ProgressExercise[];
+  /** (Redesign v3 C3) The plan day it was started as (calendar dot colours); absent: not started from a plan day (or older). */
+  planDay?: { planId: string; dayIndex: number };
+  /** (Redesign v3 C3) The routine it was started from (older plan workouts carry no `planDay`); absent: none. */
+  routineId?: string;
 }
 
 /**
@@ -150,5 +154,7 @@ export function toProgressSession(aggregate: HistoryLike, ownerTz: string, nowMs
     durationMs: dateOnly || session.endedAt === null ? null : workoutDurationMs(aggregate, nowMs),
     durationConfirmed: session.durationConfirmedAt !== undefined,
     exercises,
+    ...(session.planDay !== undefined ? { planDay: { planId: session.planDay.planId, dayIndex: session.planDay.dayIndex } } : {}),
+    ...(session.routineId !== null ? { routineId: session.routineId } : {}),
   };
 }
