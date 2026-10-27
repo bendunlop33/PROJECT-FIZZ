@@ -531,6 +531,13 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
         endMs: endsAtMs,
         side: '',
         a11y: 'Rest. Probe countdown.',
+        // (Ben, 27 Oct) What the widget switches to at 0:00 with the app suspended (stale date = the end).
+        afterTitle: 'Ready · Probe',
+        afterLine1: 'Bench press · Set 2 of 3',
+        afterLine2: 'Target 100\u00a0kg\u00a0×\u00a08',
+        afterLine3: '',
+        afterSide: 'Set 2',
+        afterA11y: 'Ready, probe. Bench press, set 2 of 3. Target 100 kilograms, 8 reps.',
       },
       undefined,
       // eslint-disable-next-line no-restricted-globals -- converting an injected time, not reading the clock
@@ -545,7 +552,7 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
     return {
       status: 'needs_check',
       summary: `Started a ${LIVE_ACTIVITY_DURATION_S / 60}-minute countdown. Lock the phone to check`,
-      details: [`Activity ID ${probeId}`, 'Started locally with no push token (free Apple ID)'],
+      details: [`Activity ID ${probeId}`, 'Started locally with no push token (free Apple ID)', 'At 0:00 it should turn to Ready · Probe without opening the app'],
     };
   } catch (e) {
     return {

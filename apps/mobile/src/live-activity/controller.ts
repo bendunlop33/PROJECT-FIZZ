@@ -12,7 +12,14 @@ import type { SessionAggregate } from '@fizz/schemas';
  *   updated in place on every commit; never one per rest.
  * - Updates are local only (no push: free Apple ID, ADR 0004). The countdown
  *   is a pair of instants the system renders, so it keeps counting with the
- *   app suspended or force-closed; `Until hh:mm` keeps `0:00` honest.
+ *   app suspended or force-closed.
+ * - Rest end with the app suspended (Ben, 27 Oct): JS can't run then, so the
+ *   deadline re-check below never fires and nothing can call `update`. The
+ *   Resting props therefore carry the Ready content for after the rest
+ *   (`after*`), with the stale date at the rest's end; iOS marks the activity
+ *   stale at that moment without the app and the widget draws the `after*`
+ *   content (`RestCountdownActivity.tsx`). The re-check and the foreground
+ *   reconcile still write the real Ready state when the app does run.
  * - Finish, Discard, a restore, Delete my data, or a stale workout end it
  *   with immediate dismissal.
  * - After a relaunch nothing is known: the first reconcile adopts one running
@@ -49,6 +56,18 @@ export interface WorkoutActivityProps {
   endMs: number;
   side: string;
   a11y: string;
+  /**
+   * (Ben, 27 Oct) The Ready content for when the rest runs out, written with
+   * the rest: the widget shows it once the activity is stale (its stale date
+   * is the rest's end), so the Lock Screen turns to the next set with the app
+   * suspended. '' (`afterTitle`) = nothing to switch to.
+   */
+  afterTitle: string;
+  afterLine1: string;
+  afterLine2: string;
+  afterLine3: string;
+  afterSide: string;
+  afterA11y: string;
 }
 
 export function activityProps(c: LockScreenContent, buttons = false): WorkoutActivityProps {
@@ -63,6 +82,12 @@ export function activityProps(c: LockScreenContent, buttons = false): WorkoutAct
     endMs: c.countdown?.endMs ?? 0,
     side: c.side,
     a11y: c.a11y,
+    afterTitle: c.afterRest?.title ?? '',
+    afterLine1: c.afterRest?.line1 ?? '',
+    afterLine2: c.afterRest?.line2 ?? '',
+    afterLine3: c.afterRest?.line3 ?? '',
+    afterSide: c.afterRest?.side ?? '',
+    afterA11y: c.afterRest?.a11y ?? '',
   };
 }
 

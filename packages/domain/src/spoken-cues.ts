@@ -12,8 +12,10 @@ import { isPlatesAddedKind } from './plates-added';
  * "Spoken" column). Pure: the words only. When to speak is the app's cue
  * controller; how is the audio-coach module.
  *
- * Detail levels: `timer` says only "10 seconds" and "Rest done"; `timer_and_set`
- * adds the next set: "Rest done. Set 2, bench press, 80 kilos for 8."
+ * Detail levels (Ben, 27 Oct): `timer` says "15 seconds" before a rest ends and
+ * "Rest over" at its end; `timer_and_set` adds the next set to the 15 s cue:
+ * "15 seconds. Next: bench press, set 3, 80 kilos for 8." The end of a rest
+ * is only ever "Rest over", in both. Timed sets keep "10 seconds" and "Time."
  */
 
 export type CueDetail = 'timer' | 'timer_and_set';
@@ -104,6 +106,8 @@ export interface SpokenSetInput {
   reps: RepRange | null;
   durationS: number | null;
   distanceM: number | null;
+  /** The planned reps in reserve (working sets only); absent or null = none said. */
+  rir?: number | null;
 }
 
 /**
@@ -115,20 +119,7 @@ export function spokenSetDetail(s: SpokenSetInput): string {
   const head = s.setType === 'warmup' ? 'Warm-up' : `Set ${String(s.number)}`;
   const side = s.side === 'left' ? ', left side' : s.side === 'right' ? ', right side' : '';
   const name = s.exerciseName.trim();
-  // Plain bodyweight is never said: such a set is just its reps or time ("12 reps"); "bodyweight plus 10 kilos" is.
-  const raw = spokenLoad(s.load, s.convention, s.equipment);
-  const bodyweight = raw === 'bodyweight';
-  const load = bodyweight ? null : raw;
-  let amount: string | null = null;
-  if (s.measurement === 'duration' && s.durationS !== null) amount = `for ${spokenDuration(s.durationS)}`;
-  else if (s.measurement === 'distance' && s.distanceM !== null) amount = `for ${spokenDistance(s.distanceM)}`;
-  else if (s.measurement === 'reps' && s.reps !== null) {
-    // A chosen side is already said ("left side"); "each side" only when both sides are done.
-    const each = s.unilateral && s.side === null ? ' each side' : '';
-    // No load to say on a loaded exercise (none anywhere): left out, never phrased as a bodyweight set.
-    amount = bodyweight ? `${spokenReps(s.reps)} reps${each}` : `for ${spokenReps(s.reps)}${each}`;
-  }
-  const what = [load, amount].filter((x): x is string => x !== null).join(' ');
+  const what = spokenAmount(s);
   return `${head}${side}, ${name}${what === '' ? '' : `, ${what}`}`;
 }
 
@@ -160,23 +151,61 @@ export function spokenSetOf(state: SessionAggregate, setId: string | null, lastC
     reps: v.reps === null ? null : { min: v.reps, max: v.reps },
     durationS: v.durationS,
     distanceM: v.distanceM ?? null,
+    rir: set.setType === 'warmup' ? null : set.planned.rir,
   };
 }
 
-export type CueEvent = { kind: 'warning'; seconds: number } | { kind: 'rest_end'; next: SpokenSetInput | null } | { kind: 'work_end' };
+export type CueEvent =
+  | { kind: 'rest_warning'; seconds: number; next: SpokenSetInput | null }
+  | { kind: 'warning'; seconds: number }
+  | { kind: 'rest_end' }
+  | { kind: 'work_end' };
+
+/** The load and amount of a set in words (`80 kilos for 8`, `12 reps`, `for 45 seconds`); '' when none. */
+function spokenAmount(s: SpokenSetInput): string {
+  // Plain bodyweight is never said: such a set is just its reps or time ("12 reps"); "bodyweight plus 10 kilos" is.
+  const raw = spokenLoad(s.load, s.convention, s.equipment);
+  const bodyweight = raw === 'bodyweight';
+  const load = bodyweight ? null : raw;
+  let amount: string | null = null;
+  if (s.measurement === 'duration' && s.durationS !== null) amount = `for ${spokenDuration(s.durationS)}`;
+  else if (s.measurement === 'distance' && s.distanceM !== null) amount = `for ${spokenDistance(s.distanceM)}`;
+  else if (s.measurement === 'reps' && s.reps !== null) {
+    const each = s.unilateral && s.side === null ? ' each side' : '';
+    amount = bodyweight ? `${spokenReps(s.reps)} reps${each}` : `for ${spokenReps(s.reps)}${each}`;
+  }
+  return [load, amount].filter((x): x is string => x !== null).join(' ');
+}
 
 /**
- * The words of one cue: `10 seconds.` · `Rest done.` · `Rest done. Set 2, bench
- * press, 80 kilos for 8.` · `Time.` The set detail is added only at
- * `timer_and_set`.
+ * The next set for the 15 s cue (Ben, 27 Oct), name first: `Next: bench press,
+ * set 3, 80 kilos for 8` · `Next: incline dumbbell press, set 1, 30 kilos each
+ * for 8` · `Next: bench press, warm-up, 40 kilos for 10` · `Next: split squat,
+ * set 2, left side, 20 kilos each for 8`. A planned RIR is added only as the
+ * short `, 2 in reserve`, and only when there is an amount to attach it to.
+ */
+export function spokenNextSet(s: SpokenSetInput): string {
+  const head = s.setType === 'warmup' ? 'warm-up' : `set ${String(s.number)}`;
+  const side = s.side === 'left' ? ', left side' : s.side === 'right' ? ', right side' : '';
+  const what = spokenAmount(s);
+  const rir = what !== '' && s.rir != null && s.setType !== 'warmup' ? `, ${String(s.rir)} in reserve` : '';
+  return `Next: ${s.exerciseName.trim()}, ${head}${side}${what === '' ? '' : `, ${what}`}${rir}`;
+}
+
+/**
+ * The words of one cue: `15 seconds.` · `15 seconds. Next: bench press, set 3,
+ * 80 kilos for 8.` · `Rest over.` · `10 seconds.` · `Time.` The next set is
+ * said only in the rest's 15 s cue, and only at `timer_and_set` (Ben, 27 Oct).
  */
 export function cueText(event: CueEvent, detail: CueDetail): string {
   switch (event.kind) {
+    case 'rest_warning':
+      return detail === 'timer_and_set' && event.next !== null ? `${spokenDuration(event.seconds)}. ${spokenNextSet(event.next)}.` : `${spokenDuration(event.seconds)}.`;
     case 'warning':
       return `${spokenDuration(event.seconds)}.`;
     case 'work_end':
       return 'Time.';
     case 'rest_end':
-      return detail === 'timer_and_set' && event.next !== null ? `Rest done. ${spokenSetDetail(event.next)}.` : 'Rest done.';
+      return 'Rest over.';
   }
 }

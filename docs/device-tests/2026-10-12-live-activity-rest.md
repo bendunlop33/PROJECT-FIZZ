@@ -2,7 +2,14 @@
 
 **About 10 minutes on the iPhone, with one short real workout.** Updated 26 Oct 2026 for the build with Ben's lock-screen changes (last time on the Lock Screen, `−15 s` / `+15 s` / `Skip` buttons, the new rest-done text). Put **P**, **F** (with one line) or **–** in each row and paste the table back. A screenshot of anything odd helps.
 
-**Status: open, not run.** Every Live Activity check so far ran against a fake ActivityKit. Only the Capability probe's countdown has passed on the phone. The buttons are new and are the main unknown: they need no entitlement, but whether iOS delivers the tap to GymSmarter when it's installed through SideStore is only known once this runs.
+**Status: open, not run.** (27 Oct: rest-end switch and new cues added at the top.) Every Live Activity check so far ran against a fake ActivityKit. Only the Capability probe's countdown has passed on the phone. The buttons are new and are the main unknown: they need no entitlement, but whether iOS delivers the tap to GymSmarter when it's installed through SideStore is only known once this runs.
+
+## New in the 27 Oct build: rest end on the Lock Screen, and rest cues (3 min)
+Ben, 27 Oct (build 435): the Lock Screen stayed at 0:00 when the rest ran out. Now the activity is told the next set when the rest starts, and iOS switches to it by itself at the end, even with GymSmarter suspended.
+- **A. Probe (2 min, no workout):** Profile › Developer › Capability probe › Live Activity › Run. Lock the phone and wait for its 2:00 countdown to reach 0:00 (don't open the app). It should turn to **Ready · Probe** / `Bench press · Set 2 of 3` / `Target 100 kg × 8` within a second or two of 0:00.
+- **B. Workout:** step 5 below (lock through a rest): at 0:00 the banner turns to **Ready** with the next set, target and `Last …`, no countdown, no buttons, and the **Rest done** notification arrives. Note how long after 0:00 it changed (at once / a few seconds / only when I woke the screen / never).
+- **C. Dynamic Island:** in another app through a rest end: the compact island shows `Set n` instead of a countdown.
+- **D. Voice cues (app open, Profile › Voice › Timer and set details):** 15 s before the end: "15 seconds. Next: bench press, set 3, 80 kilos for 8." (dumbbells say "each"; pounds if the set is in pounds). At 0:00: just "Rest over." With **Timer only**: "15 seconds." then "Rest over." A rest of 15 s or less: only "Rest over."
 
 ## Before you start (1 min)
 - Install the IPA built from branch `claude/lockscreen-26oct` (or the branch it was merged into) **over the top** with SideStore. Built with the Live Activity on (the default) and without `FIZZ_LA_BUTTONS=0`.
@@ -15,7 +22,7 @@
 2. Log a working set. Lock straight away: **Rest** with the big countdown, `Until hh:mm · Bench press · Set 2 of n next`, the target, `Last 100 kg × 7` (your number from last time's matching set), and three buttons **−15 s**, **+15 s**, **Skip**. Check `Last` against that workout in History.
 3. **+15 s on the Lock Screen** (don't unlock): within about a second the countdown and `Until` move 15 s later. Tap **−15 s** twice: 15 s earlier than where it started. Unlock and open GymSmarter: the rest on screen matches.
 4. Lock, tap **Skip** on the Lock Screen: the activity turns **Ready** for the next set. No **Rest done** notification arrives later for that rest. In the app, rest is over and **no set was logged**.
-5. Log another set, lock, and **wait through the rest**: the countdown stops at 0:00, and the **Rest done** notification arrives at that moment reading `Bench press · set n · target … · last …`.
+5. Log another set, lock, and **wait through the rest** (don't open the app): at 0:00 the activity turns to **Ready** with the next set, target and `Last …` (no countdown, no buttons), and the **Rest done** notification arrives at that moment reading `Bench press · set n · target … · last …`. Open the app: nothing on the Lock Screen changes.
 6. **Force-close mid-rest**: log a set, swipe GymSmarter away in the app switcher, lock, tap **+15 s**. Either the countdown moves (iOS launched the app in the background: best case) or nothing happens. It must never show an error, and the notification still arrives (at the new time if it moved). Note which.
 7. **Dynamic Island** (in another app during a rest): long-press shows the countdown, the next set, `Last …` and the three buttons; **+15 s** there works too.
 8. **Legibility**: at arm's length in gym light, the countdown is easy to read; with the buttons and the `Last` line nothing important is cut off (`Until …` may end in `…`; the target must not). Is the banner too tall or cramped?
@@ -39,7 +46,11 @@ If time is short, run 2, 3, 4, 6 and 8.
 | 2 Rest: countdown, Until, target, `Last` matches History, 3 buttons | | |
 | 3 +15 s / −15 s from the Lock Screen move it; app matches | | |
 | 4 Skip → Ready, no later notification, no set logged | | |
-| 5 0:00 + notification `… set n · target … · last …` | | |
+| A Probe turns to Ready · Probe at 0:00 without the app | | |
+| B Rest end: turned to Ready (how fast?) | | |
+| C Dynamic Island shows `Set n` after the rest | | |
+| D Cues: 15 s with next set, "Rest over" at end | | |
+| 5 Ready at 0:00 + notification `… set n · target … · last …` | | |
 | 6 Force-closed: tap moved it / did nothing (which?), no error | | |
 | 7 Dynamic Island expanded with `Last` and buttons | | |
 | 8 Readable, nothing important cut off, height OK | | |
@@ -52,7 +63,7 @@ If time is short, run 2, 3, 4, 6 and 8.
 | 15 Always-On | | |
 
 ## Known limits (not faults)
-- The activity is updated only while GymSmarter runs (no push on a free Apple ID). A button tap wakes it briefly to make the change. If the app is suspended when a rest ends, the activity shows **0:00** with `Until` until you open the app; the notification is the alert.
+- The activity is updated only while GymSmarter runs (no push on a free Apple ID). A button tap wakes it briefly to make the change. At a rest's end the switch to Ready is done by iOS from content written when the rest started (27 Oct); if iOS doesn't redraw then, it shows **0:00** with `Until` until you open the app, and the notification is the alert.
 - A button tap more than a minute old, for a rest that has changed since, or while paused does nothing (by design: it's never applied to a newer rest).
 - Two quick taps before the activity redraws count as one (the second is for the old picture of the rest).
 - `Last …` can appear a moment after the rest starts (history is read once per exercise).

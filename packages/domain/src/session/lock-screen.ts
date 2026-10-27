@@ -45,7 +45,19 @@ export interface LockScreenContent {
   a11y: string;
   /** After this the system may de-emphasise it (the countdown's end); null = never. */
   staleAtMs: number | null;
+  /**
+   * (Ben, 27 Oct) While resting: the Ready content for the moment the rest
+   * runs out, written now. The widget shows it once the activity goes stale
+   * (`staleAtMs` = the rest's end), so the Lock Screen turns to the next set
+   * with GymSmarter suspended (no push, ADR 0004). It is exactly what the
+   * app itself writes at that moment, so the app's own update changes
+   * nothing visible. Null in every other state, or when nothing would show.
+   */
+  afterRest: LockScreenAfterRest | null;
 }
+
+/** The text of the Ready state shown after a rest (`LockScreenContent.afterRest`). */
+export type LockScreenAfterRest = Pick<LockScreenContent, 'title' | 'line1' | 'line2' | 'line3' | 'side' | 'a11y'>;
 
 const TITLE_FALLBACK = 'Workout';
 
@@ -112,6 +124,17 @@ function lastLine(state: SessionAggregate, setId: string | null, opts: LockScree
 }
 
 /**
+ * The Ready text at the rest's end, as `buildLockScreenContent` will give it
+ * then (the same committed state, read at `endMs`); null when nothing would
+ * be Ready (a stale or finished workout).
+ */
+function afterRestOf(state: SessionAggregate, endMs: number, tz: string, carry: LockScreenOptions): LockScreenAfterRest | null {
+  const c = buildLockScreenContent(state, endMs, tz, carry);
+  if (c?.state !== 'ready') return null;
+  return { title: c.title, line1: c.line1, line2: c.line2, line3: c.line3, side: c.side, a11y: c.a11y };
+}
+
+/**
  * The content for `state` at `nowMs`, with clock times in `tz`; null when no
  * activity should show (no workout, finished or discarded, a past log, or stale: ≥ 6 h
  * since the last activity, flow §4.2). `carry.painFlagged`: movements with
@@ -123,7 +146,7 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
   if (isPastLog(state.session)) return null;
   if (nowMs - toMs(state.session.lastActivityAtUtc) >= STALE_SESSION_MS) return null;
   const name = state.session.routineName ?? TITLE_FALLBACK;
-  const base = { sessionId: state.session.id, line3: '', rest: null };
+  const base = { sessionId: state.session.id, line3: '', rest: null, afterRest: null };
   const phase = getSessionPhase(state, nowMs);
 
   switch (phase.kind) {
@@ -157,6 +180,7 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
         side: '',
         a11y: `Rest, until ${clockText(endMs, tz)}.${nextWords}${target === '' ? '' : `, ${lockScreenTargetWords(target)}`}${nextWords === '' && target === '' ? '' : '.'}${lastWords(line3)}`,
         staleAtMs: endMs,
+        afterRest: afterRestOf(state, endMs, tz, carry),
       };
     }
     case 'working': {

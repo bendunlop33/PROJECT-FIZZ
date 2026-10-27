@@ -49,41 +49,54 @@ import type { WorkoutActivityProps } from './controller';
  * is `props.tap` plus the action; the app turns the tap into the same
  * versioned rest command as the in-app buttons (`lock-screen-taps.ts`). Not
  * yet device-checked: the buttons, and the banner's height with them (device test steps 2–8).
+ *
+ * (Ben, 27 Oct) Rest end with the app suspended: the activity's stale date is
+ * the rest's end, and iOS sets `isStale` at that moment without the app. A
+ * stale Resting activity with `afterTitle` draws the Ready content written
+ * with the rest (`after*`: the next set, its target, last time), with no
+ * countdown and no buttons. The app writes the same Ready state when it next
+ * runs. Not yet device-checked (device test 2026-10-12, step 5).
  */
 const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityEnvironment) => {
   'widget';
-  const counting = props.endMs > 0;
-  const range = { lower: new Date(props.startMs), upper: new Date(props.endMs) };
+  // The rest ran out while the app was suspended: show the Ready content written with it.
+  // Plain fields, no spread: the function is serialised alone, so no helper may be needed.
+  const restOver = environment.isStale === true && props.state === 'resting' && props.afterTitle !== '';
+  const p = restOver
+    ? { state: 'ready', title: props.afterTitle, line1: props.afterLine1, line2: props.afterLine2, line3: props.afterLine3, side: props.afterSide, a11y: props.afterA11y, tap: '', startMs: 0, endMs: 0 }
+    : { state: props.state, title: props.title, line1: props.line1, line2: props.line2, line3: props.line3, side: props.side, a11y: props.a11y, tap: props.tap, startMs: props.startMs, endMs: props.endMs };
+  const counting = p.endMs > 0;
+  const range = { lower: new Date(p.startMs), upper: new Date(p.endMs) };
   const dim = environment.isLuminanceReduced === true;
   const numeralWeight = dim ? 'ultraLight' : 'light';
-  const icon = props.state === 'paused' ? 'pause.circle.fill' : props.state === 'ready' ? 'figure.strengthtraining.traditional' : 'timer';
-  const iconColour = props.state === 'paused' ? '#F2B84B' : '#EDE5DA';
+  const icon = p.state === 'paused' ? 'pause.circle.fill' : p.state === 'ready' ? 'figure.strengthtraining.traditional' : 'timer';
+  const iconColour = p.state === 'paused' ? '#F2B84B' : '#EDE5DA';
   const big = counting ? (
     <Text timerInterval={range} countsDown modifiers={[font({ size: 56, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.6)]} />
-  ) : props.side !== '' ? (
-    <Text modifiers={[font({ size: 40, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{props.side}</Text>
+  ) : p.side !== '' ? (
+    <Text modifiers={[font({ size: 40, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{p.side}</Text>
   ) : null;
   const buttons =
-    counting && props.state === 'resting' && props.tap !== '' ? (
+    counting && p.state === 'resting' && p.tap !== '' ? (
       <HStack spacing={8} modifiers={[buttonStyle('bordered'), controlSize('small'), tint('#EDE5DA')]}>
-        <Button target={`${props.tap}|minus15`} label="−15 s" modifiers={[accessibilityLabel('15 seconds less rest')]} />
-        <Button target={`${props.tap}|plus15`} label="+15 s" modifiers={[accessibilityLabel('15 seconds more rest')]} />
+        <Button target={`${p.tap}|minus15`} label="−15 s" modifiers={[accessibilityLabel('15 seconds less rest')]} />
+        <Button target={`${p.tap}|plus15`} label="+15 s" modifiers={[accessibilityLabel('15 seconds more rest')]} />
         <Spacer />
-        <Button target={`${props.tap}|skip`} label="Skip" modifiers={[accessibilityLabel('Skip rest')]} />
+        <Button target={`${p.tap}|skip`} label="Skip" modifiers={[accessibilityLabel('Skip rest')]} />
       </HStack>
     ) : null;
   return {
     banner: (
       <VStack alignment="leading" spacing={8} modifiers={[padding({ horizontal: 18, vertical: buttons === null ? 14 : 12 }), activityBackgroundTint('#0D0C0B')]}>
         <HStack alignment="center" spacing={12}>
-          <VStack alignment="leading" spacing={4} modifiers={[accessibilityElement('ignore'), accessibilityLabel(props.a11y)]}>
+          <VStack alignment="leading" spacing={4} modifiers={[accessibilityElement('ignore'), accessibilityLabel(p.a11y)]}>
             <HStack spacing={6}>
               <Image systemName={icon} color={iconColour} />
-              <Text modifiers={[font({ size: 17, weight: 'semibold' }), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{props.title}</Text>
+              <Text modifiers={[font({ size: 17, weight: 'semibold' }), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{p.title}</Text>
             </HStack>
-            {props.line1 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(buttons === null ? 2 : 1)]}>{props.line1}</Text> : null}
-            {props.line2 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{props.line2}</Text> : null}
-            {props.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1)]}>{props.line3}</Text> : null}
+            {p.line1 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(buttons === null ? 2 : 1)]}>{p.line1}</Text> : null}
+            {p.line2 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{p.line2}</Text> : null}
+            {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1)]}>{p.line3}</Text> : null}
           </VStack>
           <Spacer />
           {big}
@@ -95,25 +108,25 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
     compactTrailing: counting ? (
       <Text timerInterval={range} countsDown modifiers={[font({ size: 15, weight: 'semibold' }), monospacedDigit(), frame({ width: 48 })]} />
     ) : (
-      <Text modifiers={[font({ size: 15, weight: 'semibold' }), monospacedDigit()]}>{props.side}</Text>
+      <Text modifiers={[font({ size: 15, weight: 'semibold' }), monospacedDigit()]}>{p.side}</Text>
     ),
     minimal: counting ? <Text timerInterval={range} countsDown modifiers={[font({ size: 13, weight: 'semibold' }), monospacedDigit()]} /> : <Image systemName={icon} color={iconColour} />,
     expandedLeading: (
       <HStack spacing={6} modifiers={[padding({ leading: 8 })]}>
         <Image systemName={icon} color={iconColour} />
-        <Text modifiers={[font({ size: 17, weight: 'semibold' }), lineLimit(1)]}>{props.title}</Text>
+        <Text modifiers={[font({ size: 17, weight: 'semibold' }), lineLimit(1)]}>{p.title}</Text>
       </HStack>
     ),
     expandedTrailing: counting ? (
       <Text timerInterval={range} countsDown modifiers={[font({ size: 44, weight: numeralWeight }), monospacedDigit(), lineLimit(1), minimumScaleFactor(0.6), padding({ trailing: 8 })]} />
     ) : (
-      <Text modifiers={[font({ size: 34, weight: numeralWeight }), monospacedDigit(), padding({ trailing: 8 })]}>{props.side}</Text>
+      <Text modifiers={[font({ size: 34, weight: numeralWeight }), monospacedDigit(), padding({ trailing: 8 })]}>{p.side}</Text>
     ),
     expandedBottom: (
       <VStack alignment="leading" spacing={2} modifiers={[padding({ horizontal: 8 })]}>
-        {props.line1 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), lineLimit(1)]}>{props.line1}</Text> : null}
-        {props.line2 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), lineLimit(1)]}>{props.line2}</Text> : null}
-        {props.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1)]}>{props.line3}</Text> : null}
+        {p.line1 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), lineLimit(1)]}>{p.line1}</Text> : null}
+        {p.line2 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), lineLimit(1)]}>{p.line2}</Text> : null}
+        {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1)]}>{p.line3}</Text> : null}
         {buttons}
       </VStack>
     ),

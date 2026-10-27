@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { cueText, spokenDuration, spokenLoad, spokenNumber, spokenReplyText, spokenSetDetail, spokenSetOf, speakableText, type SpokenSetInput } from '../src/index';
+import { cueText, spokenDuration, spokenNextSet, spokenLoad, spokenNumber, spokenReplyText, spokenSetDetail, spokenSetOf, speakableText, type SpokenSetInput } from '../src/index';
 import { at, kg, lb, values } from './fixtures';
 import { apply, BENCH, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -59,17 +59,35 @@ describe('spoken numbers, loads and durations', () => {
 });
 
 describe('cue text', () => {
-  it('timer-only cues never name the set', () => {
+  it('timer-only cues never name the set (Ben, 27 Oct: "15 seconds", then "Rest over")', () => {
+    expect(cueText({ kind: 'rest_warning', seconds: 15, next: set() }, 'timer')).toBe('15 seconds.');
+    expect(cueText({ kind: 'rest_end' }, 'timer')).toBe('Rest over.');
     expect(cueText({ kind: 'warning', seconds: 10 }, 'timer')).toBe('10 seconds.');
-    expect(cueText({ kind: 'rest_end', next: set() }, 'timer')).toBe('Rest done.');
     expect(cueText({ kind: 'work_end' }, 'timer_and_set')).toBe('Time.');
   });
 
-  it('timer and set details adds the next set: number, exercise, load in words, reps', () => {
-    expect(cueText({ kind: 'rest_end', next: set() }, 'timer_and_set')).toBe('Rest done. Set 2, Bench press, 80 kilos for 8.');
-    expect(cueText({ kind: 'rest_end', next: set({ reps: { min: 6, max: 8 }, load: lb(185) }) }, 'timer_and_set')).toBe('Rest done. Set 2, Bench press, 185 pounds for 6 to 8.');
-    // No next set (the last one): just the timer.
-    expect(cueText({ kind: 'rest_end', next: null }, 'timer_and_set')).toBe('Rest done.');
+  it('timer and set details: the next set at 15 s (exercise, set number, load in words, reps); the end is only "Rest over"', () => {
+    expect(cueText({ kind: 'rest_warning', seconds: 15, next: set({ number: 3 }) }, 'timer_and_set')).toBe('15 seconds. Next: Bench press, set 3, 80 kilos for 8.');
+    expect(cueText({ kind: 'rest_warning', seconds: 15, next: set({ reps: { min: 6, max: 8 }, load: lb(185) }) }, 'timer_and_set')).toBe('15 seconds. Next: Bench press, set 2, 185 pounds for 6 to 8.');
+    expect(cueText({ kind: 'rest_end' }, 'timer_and_set')).toBe('Rest over.');
+    // No next set (the last one): just the time.
+    expect(cueText({ kind: 'rest_warning', seconds: 15, next: null }, 'timer_and_set')).toBe('15 seconds.');
+  });
+
+  it('the next set in the 15 s cue: kg/lb, each for dumbbells, stack, assisted, warm-up, sides, short RIR', () => {
+    expect(spokenNextSet(set({ load: kg(97.5) }))).toBe('Next: Bench press, set 2, 97 and a half kilos for 8');
+    expect(spokenNextSet(set({ load: lb(1), reps: { min: 1, max: 1 } }))).toBe('Next: Bench press, set 2, 1 pound for 1');
+    expect(spokenNextSet(set({ exerciseName: 'Incline dumbbell press', number: 1, convention: 'per_hand', equipment: { kind: 'dumbbells' }, load: kg(30, 'per_hand') }))).toBe('Next: Incline dumbbell press, set 1, 30 kilos each for 8');
+    expect(spokenNextSet(set({ exerciseName: 'Hammer curl', convention: 'per_hand', equipment: { kind: 'dumbbells' }, load: lb(35, 'per_hand'), reps: { min: 10, max: 12 } }))).toBe('Next: Hammer curl, set 2, 35 pounds each for 10 to 12');
+    expect(spokenNextSet(set({ exerciseName: 'Cable row', convention: 'stack', equipment: { kind: 'weight_stack' }, load: kg(45, 'stack') }))).toBe('Next: Cable row, set 2, 45 kilos on the stack for 8');
+    expect(spokenNextSet(set({ exerciseName: 'Assisted pull-up', convention: 'assistance', equipment: { kind: 'assisted_stack' }, load: kg(25, 'assistance'), reps: { min: 6, max: 8 } }))).toBe('Next: Assisted pull-up, set 2, 25 kilos of assistance for 6 to 8');
+    expect(spokenNextSet(set({ setType: 'warmup', load: kg(40), reps: { min: 10, max: 10 }, rir: 3 }))).toBe('Next: Bench press, warm-up, 40 kilos for 10');
+    expect(spokenNextSet(set({ exerciseName: 'Split squat', unilateral: true, side: 'left', convention: 'per_hand', equipment: { kind: 'dumbbells' }, load: kg(20, 'per_hand') }))).toBe('Next: Split squat, set 2, left side, 20 kilos each for 8');
+    expect(spokenNextSet(set({ exerciseName: 'Push-up', convention: 'bodyweight', equipment: null, load: null, reps: { min: 12, max: 12 } }))).toBe('Next: Push-up, set 2, 12 reps');
+    // RIR only as the short "2 in reserve", only with an amount to attach it to.
+    expect(spokenNextSet(set({ rir: 2 }))).toBe('Next: Bench press, set 2, 80 kilos for 8, 2 in reserve');
+    expect(spokenNextSet(set({ rir: 0 }))).toBe('Next: Bench press, set 2, 80 kilos for 8, 0 in reserve');
+    expect(spokenNextSet(set({ load: null, reps: null, rir: 2 }))).toBe('Next: Bench press, set 2');
   });
 
   it('warm-ups say warm-up; per-hand says each; unilateral says each side; assisted and bodyweight + added', () => {
@@ -105,7 +123,7 @@ describe('cue text', () => {
     const next = spokenSetOf(s, s.session.activeSetId);
     expect(next).not.toBeNull();
     // The card's prefill: target load, top of the rep range.
-    expect(cueText({ kind: 'rest_end', next }, 'timer_and_set')).toBe('Rest done. Set 2, Bench press, 100 kilos for 8.');
+    expect(cueText({ kind: 'rest_warning', seconds: 15, next }, 'timer_and_set')).toBe('15 seconds. Next: Bench press, set 2, 100 kilos for 8.');
     expect(spokenSetOf(s, 'missing')).toBeNull();
     expect(spokenSetOf(s, null)).toBeNull();
     // The stack exercise and the timed one read their own conventions.
@@ -115,6 +133,16 @@ describe('cue text', () => {
     expect(spokenSetDetail(spokenSetOf(s, hang?.id ?? null) ?? set())).toMatch(/^Set 1, Dead hang, for \d+ (seconds|minutes?)/);
   });
 
+  it('carries the planned RIR of a working set, never of a warm-up (Ben, 27 Oct)', () => {
+    const { state } = startFixture();
+    const [warm, b1] = setsFor(state, BENCH);
+    if (!warm || !b1) throw new Error('fixture');
+    const withRir = { ...state, sets: state.sets.map((x) => (x.id === b1.id || x.id === warm.id ? { ...x, planned: { ...x.planned, rir: 2 } } : x)) };
+    expect(spokenSetOf(withRir, b1.id)?.rir).toBe(2);
+    expect(spokenSetOf(withRir, warm.id)?.rir).toBeNull();
+    expect(spokenNextSet(spokenSetOf(withRir, b1.id) ?? set())).toBe('Next: Bench press, set 2, 100 kilos for 8, 2 in reserve');
+  });
+
   it('a draft saved during the rest wins over the target, as on the card (review B1)', () => {
     const { state } = startFixture();
     const [warm, b1] = setsFor(state, BENCH);
@@ -122,7 +150,7 @@ describe('cue text', () => {
     let s = apply(state, logCmd(warm.id, values(kg(60), 10), 30));
     s = apply(s, { type: 'save_draft', at: at(40), setId: b1.id, values: values(kg(85), 8) });
     expect(s.session.activeSetId).toBe(b1.id);
-    expect(cueText({ kind: 'rest_end', next: spokenSetOf(s, b1.id) }, 'timer_and_set')).toBe('Rest done. Set 2, Bench press, 85 kilos for 8.');
+    expect(cueText({ kind: 'rest_warning', seconds: 15, next: spokenSetOf(s, b1.id) }, 'timer_and_set')).toBe('15 seconds. Next: Bench press, set 2, 85 kilos for 8.');
   });
 
   it('a partial target (load open) takes the load from history, as the card does; none anywhere → left out (review B1)', () => {

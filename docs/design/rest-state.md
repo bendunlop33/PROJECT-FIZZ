@@ -197,6 +197,8 @@ Full specification: [lock-screen-and-alerts.md](lock-screen-and-alerts.md) §2 (
 
 ## 5. Spoken cue modes and copy
 
+> **(Ben, 27 Oct) Built rest cues supersede the scripts below:** "15 seconds. Next: bench press, set 3, 80 kilos for 8." 15 s before the end (set detail only at `Timer and set details`; none for rests under 20 s), and only "Rest over." at the end. See voice.md, revision 2026-10-27.
+
 The mode is chosen from the `VoiceModePill` menu (active workout) or Profile → Voice & alerts. It applies to future workouts until changed.
 
 ```
