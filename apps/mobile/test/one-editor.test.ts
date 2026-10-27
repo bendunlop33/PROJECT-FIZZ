@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { addExercise, NBSP, mergeRoutineEdits, routineEditDirty, routineIssues, type RoutineEdit } from '@fizz/domain';
+import { addExercise, mergeRoutineEdits, routineEditDirty, routineIssues, type GymLearn, type RoutineEdit } from '@fizz/domain';
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import type { RoutineExercise } from '@fizz/schemas';
 
@@ -39,7 +39,6 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
  */
 
 const DAY = 86_400_000;
-const plain = (s: string | null | undefined) => (s ?? '').replaceAll(NBSP, ' ');
 let h: Harness;
 let model: StepModel;
 beforeEach(() => {
@@ -67,9 +66,12 @@ class Page {
     this.list = opened.list;
     this.ctx = ctxOf(opened);
   }
+  /** (Ben, 27 Oct) What the last edit had the gym learn (a kg typed off its kit), as the screen writes it. */
+  learn: GymLearn | null = null;
   apply(op: TemplateEditOp): string | null {
     const r = applyTemplateEdit(this.list, op, this.ctx, newId);
     this.list = r.list;
+    this.learn = r.learn ?? null;
     return r.note;
   }
   get edit(): RoutineEdit {
@@ -142,7 +144,7 @@ describe('the page shows Your workout’s table and pop-up for a saved workout',
       ['delete', 'swap', 'move_up', 'unlink'],
     ]);
     expect(t.topHeader).toBe('Top set (kg)');
-    // Typed Fixed load on per-hand dumbbells: rounded down to the rack (rule 4), `each`.
+    // (Ben, 27 Oct) A typed Fixed load on per-hand dumbbells is kept exactly as typed, `each`.
     const v = templatePopupView(p.list, incline.id, p.ctx);
     const first = v?.rows[0];
     if (v === null || first === undefined) throw new Error('no pop-up');
@@ -150,16 +152,19 @@ describe('the page shows Your workout’s table and pop-up for a saved workout',
     expect(first.kgPlaceholder).toBe('Auto');
     const note = p.apply({ kind: 'cell', slotId: incline.id, setId: first.key, field: 'kg', value: 26.3 });
     const typed = p.list.find((e) => e.id === incline.id)?.setTemplates[0]?.targetLoad;
-    expect(typed?.convention).toBe('per_hand');
-    expect(typed?.value).toBeLessThanOrEqual(26.3);
-    expect(note === null ? 'exact' : plain(note)).toMatch(/exact|At Start .* each/);
+    expect(typed).toEqual({ value: 26.3, unit: 'kg', convention: 'per_hand' });
+    expect(note).toBeNull();
+    // Not a dumbbell size (off the 0.5 grid): nothing for the gym to learn.
+    expect(p.learn).toBeNull();
     expect(templateTableView(p.list, p.ctx).rounds[1]?.rows[0]?.topText).toMatch(/ each$/);
-    // Equipment max: past the rack's heaviest dumbbell it's capped there, with the line saying so.
-    const capped = p.apply({ kind: 'cell', slotId: incline.id, setId: first.key, field: 'kg', value: 500 });
-    expect(plain(capped)).toMatch(/^Max here .* each$/);
-    const max = p.list.find((e) => e.id === incline.id)?.setTemplates[0]?.targetLoad?.value ?? 0;
-    expect(templateKgStep(p.list, incline.id, max, 1, p.ctx)).toBeNull();
-    expect(templateKgStep(p.list, incline.id, max, -1, p.ctx)).toBeLessThan(max);
+    // A dumbbell past the rack's heaviest: kept as typed, and the rack learns it (the screen writes it with Undo).
+    expect(p.apply({ kind: 'cell', slotId: incline.id, setId: first.key, field: 'kg', value: 62.5 })).toBeNull();
+    expect(p.list.find((e) => e.id === incline.id)?.setTemplates[0]?.targetLoad?.value).toBe(62.5);
+    expect(p.learn).toMatchObject({ kind: 'add_dumbbell', value: 62.5 });
+    // A typo past the learn ceiling: still as typed, nothing learned.
+    p.apply({ kind: 'cell', slotId: incline.id, setId: first.key, field: 'kg', value: 500 });
+    expect(p.learn).toBeNull();
+    expect(templateKgStep(p.list, incline.id, 500, -1, p.ctx)).toBeLessThan(500);
     // From an Auto cell, `+` starts at the last logged load (10 kg each), snapped here (design pass 5.1).
     expect(templateKgStep(p.list, lateral.id, null, 1, p.ctx)).toBe(10);
     // `Auto load` puts it back to Auto.
@@ -237,14 +242,15 @@ describe('the page shows Your workout’s table and pop-up for a saved workout',
     const note = p.apply({ kind: 'cell', slotId: assist.id, setId: assist.setTemplates[0]?.id ?? '', field: 'kg', value: 999 });
     const load = p.slot('Assisted pull-up').setTemplates[0]?.targetLoad;
     expect(load).toMatchObject({ unit: 'lb', convention: 'assistance' });
-    expect(load?.value).toBeLessThan(999);
-    expect(plain(note)).toMatch(/lb/);
+    // (Ben, 27 Oct) Kept as typed.
+    expect(load?.value).toBe(999);
+    expect(note).toBeNull();
     expect(templateTableView(p.list, p.ctx).rounds[0]?.rows[0]?.topText).toMatch(/assist$/);
-    // Per-hand dumbbells in lb: rounded down on the rack, `each`.
+    // Per-hand dumbbells in lb: as typed, `each`.
     p.apply({ kind: 'cell', slotId: db.id, setId: db.setTemplates[0]?.id ?? '', field: 'kg', value: 52 });
     const dbLoad = p.slot('Incline dumbbell press').setTemplates[0]?.targetLoad;
     expect(dbLoad).toMatchObject({ unit: 'lb', convention: 'per_hand' });
-    expect(dbLoad?.value).toBeLessThanOrEqual(52);
+    expect(dbLoad?.value).toBe(52);
     expect(templateTableView(p.list, p.ctx).rounds[1]?.rows[0]?.topText).toMatch(/ each$/);
   });
 });

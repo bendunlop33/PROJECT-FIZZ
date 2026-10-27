@@ -68,13 +68,13 @@ describe('B1: a kg slot on lb equipment works in lb and says so', () => {
     const d = addDropSet(s, load);
     // 40 lb × 0.78 = 31.2 → 30 lb.
     expect(d.ok && d.slot.rows[d.slot.rows.length - 1]?.load).toBe(30);
-    // Ben types 20 kg (his unit): 44.1 lb → 40 lb, `Why?` has both.
+    // (Ben, 27 Oct) Ben types 20 kg (his unit): kept as typed, in the slot's lb (44.092 lb), never rounded to the rack.
     const t = editSetRow(s, 0, { kind: 'load', value: 20, unit: 'kg' }, load);
-    expect(t.ok && t.slot.rows[0]?.load).toBe(40);
-    expect(t.ok && t.rounded).toMatchObject({ value: 40, unit: 'lb', rounded: true, capped: null });
-    // A number typed without a unit is in the slot's unit (lb).
+    expect(t.ok && t.slot.rows[0]?.load).toBe(44.092);
+    expect(t.ok && t.rounded).toMatchObject({ value: 44.092, unit: 'lb', rounded: false, capped: null });
+    // A number typed without a unit is in the slot's unit (lb), as typed.
     const u = editSetRow(s, 0, { kind: 'load', value: 47 }, load);
-    expect(u.ok && u.slot.rows[0]?.load).toBe(45);
+    expect(u.ok && u.slot.rows[0]?.load).toBe(47);
   });
 
   it('a pain cap in kg is applied in lb (30 kg ≈ 66.1 lb → 65 lb)', () => {
@@ -169,19 +169,21 @@ describe('S2–S4: typed kg, pain, ranges', () => {
     expect(below.ok && below.mayHurt).toBeUndefined();
   });
 
-  it('S3: a typed kg below the lightest load is refused with the lightest, the row unchanged', () => {
+  it('S3 (Ben, 27 Oct): a typed kg below the lightest load is kept as typed; below 0 or not a number is refused, the row unchanged', () => {
     const s = slotOf(acc(load));
-    expect(editSetRow(s, 0, { kind: 'load', value: 3 }, load)).toEqual({ ok: false, reason: 'lightest_is_harder', lightest: 5 });
+    const light = editSetRow(s, 0, { kind: 'load', value: 3 }, load);
+    expect(light.ok && light.slot.rows[0]?.load).toBe(3);
     expect(editSetRow(s, 0, { kind: 'load', value: -5 }, load)).toEqual({ ok: false, reason: 'load_out_of_range' });
     expect(editSetRow(s, 0, { kind: 'load', value: Number.NaN }, load)).toEqual({ ok: false, reason: 'load_out_of_range' });
   });
 
-  it('assisted: typed assistance past the machine max is refused (it would be harder), the max offered', () => {
+  it('(Ben, 27 Oct) assisted: typed assistance, past the machine max or between its steps, is kept as typed', () => {
     const a = loadInput({ convention: 'assistance', equipment: assist, ruleTarget: { value: 25, reps: 8, rpe: 8 } });
     const s = slotOf(acc(a, { role: 'compound' }));
-    expect(editSetRow(s, 0, { kind: 'load', value: 50 }, a)).toEqual({ ok: false, reason: 'lightest_is_harder', lightest: 40 });
+    const past = editSetRow(s, 0, { kind: 'load', value: 50 }, a);
+    expect(past.ok && past.slot.rows[0]?.load).toBe(50);
     const ok = editSetRow(s, 0, { kind: 'load', value: 27 }, a);
-    expect(ok.ok && ok.slot.rows[0]?.load).toBe(30);
+    expect(ok.ok && ok.slot.rows[0]?.load).toBe(27);
   });
 
   it('S4: RPE outside 1–10 or off 0.5 steps, and reps outside 1–100, are refused', () => {

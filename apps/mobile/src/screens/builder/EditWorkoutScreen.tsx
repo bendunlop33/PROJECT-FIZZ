@@ -4,7 +4,7 @@ import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, ScrollView, Switch
 import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { dropRoutineSlot, fitNoteOf, formatDuration, mergeRoutineEdits, routineEditDirty, routineIssues, slotShapeOf, type BuilderFitStep, type RoutineConflict, type RoutineEdit } from '@fizz/domain';
+import { dropRoutineSlot, fitNoteOf, formatDuration, gymLearnToast, type GymEdit, mergeRoutineEdits, routineEditDirty, routineIssues, slotShapeOf, type BuilderFitStep, type RoutineConflict, type RoutineEdit } from '@fizz/domain';
 import type { BuilderGroup, Routine, RoutineExercise, SetType } from '@fizz/schemas';
 
 import type { ExerciseChoices, TemplateFact } from '../../builder/builder-service';
@@ -102,7 +102,7 @@ export function EditWorkoutScreen() {
   });
   const [shapeSheet, setShapeSheet] = useState<{ slotId: string; kind: 'reps' | 'effort' } | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [toast, setToast] = useState<{ text: string; before: RoutineExercise[] | null; length?: number | null } | null>(null);
+  const [toast, setToast] = useState<{ text: string; before: RoutineExercise[] | null; length?: number | null; /** (Ben, 27 Oct) The gym learned a typed kg: Undo takes it back too. */ gymEdit?: GymEdit } | null>(null);
   const [screenReader, setScreenReader] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const opId = useRef(newUuid());
@@ -235,7 +235,7 @@ export function EditWorkoutScreen() {
   }, [services, list, gymId, editedRoutineId]);
 
   const showToast = useCallback(
-    (t: { text: string; before: RoutineExercise[] | null; length?: number | null } | null) => {
+    (t: { text: string; before: RoutineExercise[] | null; length?: number | null; gymEdit?: GymEdit } | null) => {
       if (toastTimer.current !== null) clearTimeout(toastTimer.current);
       setToast(t);
       // With VoiceOver on, an Undo toast stays until dismissed (close button).
@@ -278,11 +278,20 @@ export function EditWorkoutScreen() {
 
   /** One edit on the page's list, on the list as it is now (quick taps add up). Returns the pop-up's line, if any. */
   function apply(op: TemplateEditOp): string | null {
+    const before = listRef.current;
     const r = applyTemplateEdit(listRef.current, op, ctx, newUuid);
     setList(r.list);
     setFit(null);
     setError(null);
     if (op.kind !== 'delete_exercise' && op.kind !== 'swap') showToast(null);
+    // (Ben, 27 Oct: "If I add it it should work") A kg typed off the gym's known kit is kept; the gym learns it.
+    const learn = r.learn;
+    if (learn !== undefined) {
+      void services.gyms.learn(learn).then((g) => {
+        if (!g.ok) return;
+        showToast({ text: gymLearnToast(learn, editor.gym?.name ?? null), before, gymEdit: g.edit });
+      });
+    }
     return r.note;
   }
 
@@ -527,7 +536,9 @@ export function EditWorkoutScreen() {
               onAction: () => {
                 const before = toast.before;
                 const length = toast.length;
+                const gymEdit = toast.gymEdit;
                 showToast(null);
+                if (gymEdit !== undefined) void services.gyms.undoEdit(gymEdit);
                 if (before !== null) setList(before);
                 if (length !== undefined) setTimeLength(length);
                 setFit(null);

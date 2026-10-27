@@ -220,16 +220,17 @@ describe('the workout’s exercise pop-up (sessionPopupView)', () => {
 });
 
 describe('pop-up edits as the workout’s own writes', () => {
-  it('a set not done yet: exact reps, a kg rounded toward easier on the bar (said so), a target RPE; never on a warm-up', () => {
+  it('a set not done yet: exact reps, a kg exactly as typed (Ben, 27 Oct; the bar learns nothing it can’t make), a target RPE; never on a warm-up', () => {
     const s = startFixture().state;
     const [w, b1] = setsFor(s, BENCH);
     expect(popupCellWrite(s, b1?.id ?? '', 'reps', 7)).toMatchObject({ kind: 'planned', patch: { reps: { min: 7, max: 7 } } });
-    // 21 Oct (R4): rounded back onto the row's own 100 is no change: said where Ben typed, never `updated · Undo`.
-    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 101)).toEqual({ kind: 'unchanged', note: 'Nearest here: 100 kg' });
+    // (Ben, 27 Oct: "If I add it it should work") Kept exactly as typed, never rounded or refused for the kit.
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 101)).toMatchObject({ kind: 'planned', patch: { load: kg(101), loadAsTyped: true }, note: null });
     expect(popupCellWrite(s, b1?.id ?? '', 'kg', 100)).toEqual({ kind: 'unchanged', note: null });
-    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 103)).toMatchObject({ kind: 'planned', patch: { load: kg(102.5) }, note: 'Rounded to 102.5 kg' });
-    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 102.5)).toMatchObject({ kind: 'planned', note: null });
-    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 5)).toEqual({ kind: 'refused', text: 'Lighter than this gym can load' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 103)).toMatchObject({ kind: 'planned', patch: { load: kg(103) }, note: null });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 102.5)).toMatchObject({ kind: 'planned', note: null, learn: null });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 5)).toMatchObject({ kind: 'planned', patch: { load: kg(5) } });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', -1)).toEqual({ kind: 'refused', text: 'Weight can’t be below 0' });
     expect(popupCellWrite(s, b1?.id ?? '', 'rpe', 9)).toMatchObject({ kind: 'planned', patch: { targetRpe: 9 } });
     expect(popupCellWrite(s, w?.id ?? '', 'rpe', 9)).toEqual({ kind: 'refused', text: 'Warm-ups have no target effort' });
     expect(popupCellWrite(s, b1?.id ?? '', 'rpe', 9.3)).toEqual({ kind: 'refused', text: 'RIR 0–9' });
@@ -246,7 +247,7 @@ describe('pop-up edits as the workout’s own writes', () => {
     // The table's round page agrees (one source).
     expect(exOf(s, BENCH).rows.find((r) => r.setId === b1?.id)?.row.cells.load).toBe('105');
     const w = popupCellWrite(s, b1?.id ?? '', 'kg', 101);
-    expect(w).toMatchObject({ kind: 'planned', patch: { load: kg(100) }, note: 'Rounded to 100 kg' });
+    expect(w).toMatchObject({ kind: 'planned', patch: { load: kg(101), loadAsTyped: true }, note: null });
     expect(popupCellWrite(s, b1?.id ?? '', 'reps', 8)).toMatchObject({ kind: 'planned' });
     const after = apply(s, { type: 'edit_planned_set', at: at(30), opId: 'pop-1', setId: b1?.id ?? '', expectedSetVersion: w.kind === 'planned' ? w.expectedSetVersion : 0, patch: { load: kg(100) } });
     // Only the load was written: his 7 reps stay (B1).
@@ -280,7 +281,7 @@ describe('pop-up edits as the workout’s own writes', () => {
     const [, b1] = setsFor(s, BENCH);
     s = apply(s, { type: 'save_draft', at: at(20), setId: b1?.id ?? '', values: values(kg(105), 7) });
     expect(popupCellWrite(s, b1?.id ?? '', 'kg', 105)).toEqual({ kind: 'unchanged', note: null });
-    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 106)).toEqual({ kind: 'unchanged', note: 'Nearest here: 105 kg' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 106)).toMatchObject({ kind: 'planned', patch: { load: kg(106) }, note: null });
     expect(popupCellWrite(s, b1?.id ?? '', 'reps', 7)).toEqual({ kind: 'unchanged', note: null });
     expect(popupCellWrite(s, b1?.id ?? '', 'kg', 100)).toMatchObject({ kind: 'planned', patch: { load: kg(100) } });
   });

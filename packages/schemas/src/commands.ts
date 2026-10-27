@@ -736,8 +736,14 @@ export const EditPlannedSetCommandSchema = z.object({
       setType: SetTypeSchema.optional(),
       targetRpe: RpeSchema.nullable().optional(),
       restS: DurationSecondsSchema.refine((x) => x <= 3600, { message: 'At most an hour' }).optional(),
+      /**
+       * (Ben, 27 Oct: "If I add it it should work") Ben typed `load` himself: kept exactly, even off this gym's known
+       * kit or above an item's max (rule 4 checks suggestions, not his own entries). Absent: checked as before.
+       */
+      loadAsTyped: z.literal(true).optional(),
     })
-    .refine((p) => Object.values(p).some((v) => v !== undefined), { message: 'Nothing to change' }),
+    .refine((p) => Object.entries(p).some(([k, v]) => k !== 'loadAsTyped' && v !== undefined), { message: 'Nothing to change' })
+    .refine((p) => p.loadAsTyped === undefined || p.load != null, { message: 'loadAsTyped needs a load' }),
 });
 
 /**

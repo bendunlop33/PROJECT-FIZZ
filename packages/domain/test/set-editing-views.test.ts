@@ -47,7 +47,7 @@ describe('buildPlannedSetEditView: Edit set for a set not done yet', () => {
     const s = startFixture().state;
     const b1 = bench(s, 1);
     const v = buildPlannedSetEditView(s, b1.id, { load: 105, reps: { min: 5, max: 5 }, setType: 'top', targetRpe: 9, restS: 240 });
-    expect(v?.patch).toEqual({ load: kg(105), reps: { min: 5, max: 5 }, setType: 'top', targetRpe: 9, restS: 240 });
+    expect(v?.patch).toEqual({ load: kg(105), loadAsTyped: true, reps: { min: 5, max: 5 }, setType: 'top', targetRpe: 9, restS: 240 });
     expect(v?.reps).toMatchObject({ range: false, max: null });
     expect(plain(v?.text)).toBe('Target 105 kg × 5');
     const r = expectOk(reduceSession(s, { type: 'edit_planned_set', at: at(5), opId: 'e', setId: b1.id, expectedSetVersion: v?.setVersion ?? 0, patch: v?.patch ?? {} }));

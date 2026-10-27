@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, canRemoveExercise, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
+import { canDropRound, canRemoveExercise, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, gymLearnToast, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -424,7 +424,7 @@ export function WorkoutScreen() {
       }, 4000);
     }
     const handed = route.params?.toast;
-    if (handed && handed.kind !== 'exclusion' && handed.kind !== 'undo_op' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
+    if (handed && handed.kind !== 'exclusion' && handed.kind !== 'undo_op' && handed.kind !== 'learn' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id]);
 
   // (Ben, 23 Oct) Back from the workout's own `How are you feeling?`: its toast, once.
@@ -443,6 +443,12 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (handedUndo && firstTime(`toast:undo_op:${handedUndo.targetOpId}`)) showHanded(handedUndo);
   }, [handedUndo?.targetOpId]);
+  // (Ben, 27 Oct) Back from Edit set with a load off the kit: the gym learns it, once the workout is drawn.
+  const handedLearn = route.params?.toast?.kind === 'learn' ? route.params.toast : null;
+  const drawnNow = data !== 'loading' && data !== null;
+  useEffect(() => {
+    if (handedLearn && drawnNow && firstTime(`toast:learn:${handedLearn.targetOpId}`)) showHanded(handedLearn);
+  }, [handedLearn?.targetOpId, drawnNow]);
 
   /**
    * A toast with `Undo` for an operation that applied at once (copy D4):
@@ -497,6 +503,10 @@ export function WorkoutScreen() {
         break;
       case 'undo_op':
         if (data !== 'loading' && data !== null) toastUndoOp(t.text, t.targetOpId, data.aggregate.session.id);
+        break;
+      case 'learn':
+        // (Ben, 27 Oct) Through the loaded screen's deps (the gym's name, the session).
+        editDeps.current?.learnTyped(t.learn, [t.targetOpId]);
         break;
       case 'exclusion':
         showToast({
@@ -773,7 +783,7 @@ export function WorkoutScreen() {
       {...(toast.secondary && toast.onSecondary ? { secondary: toast.secondary, onSecondary: toast.onSecondary } : {})}
     />
   ) : null;
-  const editDeps = useRef<Pick<WorkoutEditsInput, 'run' | 'adopt' | 'undoToast' | 'refusalText' | 'addSet' | 'beforeEdit'> | null>(null);
+  const editDeps = useRef<Pick<WorkoutEditsInput, 'run' | 'adopt' | 'undoToast' | 'refusalText' | 'addSet' | 'beforeEdit' | 'learnTyped'> | null>(null);
   const workoutEdits = useWorkoutEdits({
     services,
     sessionId: data === 'loading' || data === null ? '' : data.aggregate.session.id,
@@ -786,6 +796,7 @@ export function WorkoutScreen() {
     changed,
     showToast,
     undoToast: (text, opId) => editDeps.current?.undoToast(text, opId),
+    learnTyped: (learn, ops) => editDeps.current?.learnTyped(learn, ops),
     refusalText: (code, message) => editDeps.current?.refusalText(code, message) ?? message,
     addSet: (id) => editDeps.current?.addSet(id),
     beforeEdit: () => editDeps.current?.beforeEdit(),
@@ -870,6 +881,9 @@ export function WorkoutScreen() {
     refusalText,
     addSet: (id) => void addSet(id),
     beforeEdit: closeCellEditors,
+    learnTyped: (learn, ops) => {
+      learnTyped(learn, ops);
+    },
   };
 
   /**
@@ -1039,6 +1053,13 @@ export function WorkoutScreen() {
     }, TIMING.commitGuard);
     const saved = r.aggregate.sets.find((s) => s.id === focus.setId);
     const label = focus.logLabel.replace(/^Log /, '');
+    // (Ben, 27 Oct) Logged off the gym's known kit and not answered yet: the gym learns it, with its own Undo (the
+    // logged set stays as logged; untick undoes the log).
+    const learn = focus.gymLearn !== null && !learnAnswered.has(gymLearnKey(focus.gymLearn.learn)) ? focus.gymLearn.learn : null;
+    if (learn !== null) {
+      learnTyped(learn, []);
+      return;
+    }
     showToast({
       text: `✓ ${focus.stepName} saved · ${label}`,
       action: 'Undo',
@@ -1655,6 +1676,60 @@ export function WorkoutScreen() {
   }
 
   /** `Add 22 kg dumbbells here?` (ADR 0029): offered once per idea in this workout; Yes saves it to the gym with Undo. */
+  /**
+   * (Ben, 27 Oct: "If I add it it should work") A load Ben typed (or logged) off the gym's known kit: the gym learns it
+   * at once (versioned, op ID) with `Main Gym: 27.5 kg added · Undo`. Undo takes the learn back, then `undoOpIds`
+   * (his typed target, newest first; a logged set stays as logged, rule 2).
+   */
+  function learnTyped(learn: GymLearn, undoOpIds: readonly string[]) {
+    setLearnAnswered((cur) => new Set(cur).add(gymLearnKey(learn)));
+    const failed = (message: string) => {
+      // His value stays as typed either way; only the gym wasn't updated.
+      if (undoOpIds.length > 0) toastUndoOp(message, undoOpIds[0] ?? '', session.id);
+      else showToast({ icon: 'info.circle', text: message });
+    };
+    const shown = (undoGym: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
+      haptic('commit');
+      changed();
+      void reload();
+      showToast({
+        text: gymLearnToast(learn, loaded.gymName),
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void (async () => {
+            // His target first (nothing has moved it since), then the gym.
+            for (const target of undoOpIds) {
+              const o = await services.workout.undoOp({ sessionId: session.id, targetOpId: target });
+              if (!o.ok) {
+                showToast({ icon: 'info.circle', text: o.message });
+                break;
+              }
+            }
+            const u = await undoGym();
+            changed();
+            void reload();
+            if (!u.ok) showToast({ icon: 'info.circle', text: u.message });
+            else haptic('undo');
+          })();
+        },
+      });
+    };
+    if (undoOpIds.length > 0) {
+      // A typed target: the gym only (today's kit isn't refreshed under it, so Undo can put his target back exactly).
+      void services.gyms.learn(learn).then((r) => {
+        if (!r.ok) failed(r.message);
+        else shown(() => services.gyms.undoEdit(r.edit));
+      });
+      return;
+    }
+    // A logged set: the gym, and today's kit when that moves no target (ADR 0029).
+    void services.gyms.learnInWorkout({ sessionId: session.id, learn, opId: newUuid() }).then((r) => {
+      if (!r.ok) failed(r.message);
+      else shown(() => services.gyms.undoLearnInWorkout({ sessionId: session.id, edit: r.edit, refreshed: r.refreshed, opId: newUuid() }));
+    });
+  }
+
   function answerGymLearn(learn: GymLearn, yes: boolean) {
     setLearnAnswered((cur) => new Set(cur).add(gymLearnKey(learn)));
     if (!yes) return;

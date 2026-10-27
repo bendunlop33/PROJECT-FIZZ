@@ -11,6 +11,7 @@ import {
   supersetPartners,
   type BuilderAdvice,
   type CommandOutcome,
+  type GymLearn,
   type HistoryGlanceView,
   type SupersetPartner,
 } from '@fizz/domain';
@@ -68,6 +69,11 @@ export interface WorkoutEditsInput {
   showToast: (t: EditToast) => void;
   /** `<text> · Undo` (`undo_op` on `opId`). */
   undoToast: (text: string, opId: string) => void;
+  /**
+   * (Ben, 27 Oct) A load Ben typed off the gym's known kit: the gym learns it (versioned, op ID) and the toast
+   * `Main Gym: 27.5 kg added · Undo` undoes the learn and then `undoOpIds` (newest first; his target goes back).
+   */
+  learnTyped: (learn: GymLearn, undoOpIds: readonly string[]) => void;
   refusalText: (code: string, message: string) => string;
   /** `＋ Set` (the screen's: after a gym switch it goes on today's item). */
   addSet: (sessionExerciseId: string) => void;
@@ -452,9 +458,37 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
         case 'planned': {
           const r = await send({ type: 'edit_planned_set', at: at(), opId, setId: w.setId, expectedSetVersion: w.expectedSetVersion, patch: w.patch });
           if (!r.ok) return latest.current.refusalText(r.error.code, r.error.message);
-          // `Set 3 updated · Undo`, as the round page's own target edits (review S4); the rounding note stays under the table.
-          if (!r.duplicate) latest.current.undoToast(UNDO_TOAST.correctedNamed(row.spokenName), opId);
+          // (Ben, 27 Oct) Kept as typed; off the known kit the gym learns it (`Main Gym: 27.5 kg added · Undo`).
+          if (!r.duplicate && w.learn != null) latest.current.learnTyped(w.learn, [opId]);
+          // `Set 3 updated · Undo`, as the round page's own target edits (review S4).
+          else if (!r.duplicate) latest.current.undoToast(UNDO_TOAST.correctedNamed(row.spokenName), opId);
           return w.note;
+        }
+        case 'add_weight': {
+          // (Ben, 27 Oct) kg on a bodyweight exercise: `+ Weight` for today, then this target as typed; one Undo for both.
+          const modeOp = newUuid();
+          const m = await send({ type: 'set_load_mode', at: at(), opId: modeOp, expectedVersion: a.session.version, sessionExerciseId: w.sessionExerciseId, mode: 'added' });
+          if (!m.ok) return latest.current.refusalText(m.error.code, m.error.message);
+          const set = m.aggregate.sets.find((x) => x.id === w.setId);
+          if (set === undefined) return POPUP_REFUSAL.changed;
+          const r = await send({ type: 'edit_planned_set', at: at(), opId, setId: w.setId, expectedSetVersion: set.version, patch: { load: w.load, loadAsTyped: true } });
+          if (!r.ok) return latest.current.refusalText(r.error.code, r.error.message);
+          const undo = () => {
+            void (async () => {
+              for (const target of [opId, modeOp]) {
+                const u = await latest.current.services.workout.undoOp({ sessionId: latest.current.sessionId, targetOpId: target });
+                if (!u.ok) {
+                  latest.current.showToast({ text: u.message });
+                  break;
+                }
+              }
+              latest.current.changed();
+              void latest.current.reload();
+              haptic('undo');
+            })();
+          };
+          latest.current.showToast({ text: `${row.spokenName}: +${String(w.load.value)} ${w.load.unit}`, action: 'Undo', onAction: undo });
+          return null;
         }
       }
     });

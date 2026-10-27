@@ -1,4 +1,4 @@
-import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, shownPlannedIn, type RestKind, type TargetExplanation } from '@fizz/domain';
+import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, supersetNextCommand, typeRestCommand, typedLoadPlan, shownPlannedIn, type GymLearn, type RestKind, type TargetExplanation } from '@fizz/domain';
 import { BUILD_LIMITS, type CommandOf, type Load, type SessionAggregate, type SetType, type SetValues, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 
 import { loadSpoken, loadText, POPUP_COPY, REST_STEP_S, restText, SET_TYPE_LABEL, SET_TYPES, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
@@ -151,10 +151,9 @@ export const POPUP_REFUSAL = {
   superset: 'No warm-ups in a superset',
   done: 'Nothing left to warm up for',
   not_found: 'Not in this workout',
-  notLoadable: 'Not at this gym',
-  lighter: 'Lighter than this gym can load',
-  /** An assisted machine: easier is more assistance, and it has a most (N2). */
-  moreAssist: 'More assistance than this machine gives',
+  /** (Ben, 27 Oct) A typed weight is kept as typed; only these are refused. */
+  belowZero: 'Weight can’t be below 0',
+  loggedBodyweight: 'Logged as bodyweight',
   noTarget: 'Warm-ups have no target effort',
   changed: 'The workout changed. Try again.',
 } as const;
@@ -162,16 +161,23 @@ export const POPUP_REFUSAL = {
 /** A pop-up cell edit as the workout's own write: a logged set's correction (rule 2), a pending set's new target, or why not. */
 export type PopupCellWrite =
   | { kind: 'correct'; setId: string; expectedSetVersion: number; patch: Partial<SetValues> }
-  | { kind: 'planned'; setId: string; expectedSetVersion: number; patch: { reps?: { min: number; max: number }; load?: Load; targetRpe?: number }; note: string | null }
+  /**
+   * A target. A kg Ben typed is kept as typed (`loadAsTyped`, Ben 27 Oct); `learn`: what the gym learns from it when it
+   * isn't on the known kit (the screen writes it with Undo).
+   */
+  | { kind: 'planned'; setId: string; expectedSetVersion: number; patch: { reps?: { min: number; max: number }; load?: Load; targetRpe?: number; loadAsTyped?: true }; note: string | null; learn?: GymLearn | null }
+  /** (Ben, 27 Oct) kg on a bodyweight exercise: the row goes to `+ Weight` (added), then this target, as typed. */
+  | { kind: 'add_weight'; setId: string; sessionExerciseId: string; load: Load }
   /** Nothing to write: the value (after rounding to the kit) is already the row's (`Nearest here: 100 kg`), never a silent `updated`. */
   | { kind: 'unchanged'; note: string | null }
   | { kind: 'refused'; text: string };
 
 /**
  * What a typed value in the pop-up sends (§7). Logged: the value Ben did, corrected as typed (no
- * rounding: it's what happened). Not done yet: the target; a kg rounds toward easier on the row's
- * item (rule 4; `Rounded to 97.5 kg` when it moved), never past its max; reps are exact; a warm-up
- * has no target effort.
+ * rounding: it's what happened). Not done yet: the target, as typed too (Ben, 27 Oct: "If I add it it should work";
+ * was rounded toward easier on the kit): off the gym's known kit the gym learns it (`learn`, written by the screen
+ * with Undo); kg on a bodyweight exercise is added weight (`add_weight`). Reps are exact; a warm-up has no target
+ * effort.
  */
 export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps' | 'kg' | 'rpe', value: number, bodyweightExercises?: ReadonlySet<string>, painFlagged?: ReadonlySet<string>): PopupCellWrite {
   const set = a.sets.find((s) => s.id === setId);
@@ -179,7 +185,9 @@ export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps'
   if (set === undefined || ex === undefined || set.status === 'deleted' || set.status === 'skipped') return { kind: 'refused', text: POPUP_REFUSAL.changed };
   if (field === 'reps' && (!Number.isInteger(value) || value < 1 || value > 100)) return { kind: 'refused', text: 'Reps 1–100' };
   if (field === 'rpe' && (value < 1 || value > 10 || Math.round(value * 2) !== value * 2)) return { kind: 'refused', text: 'RIR 0–9' };
-  if (field === 'kg' && (value < 0 || ex.loadConvention === 'bodyweight')) return { kind: 'refused', text: POPUP_REFUSAL.notLoadable };
+  if (field === 'kg' && value < 0) return { kind: 'refused', text: POPUP_REFUSAL.belowZero };
+  // A logged bodyweight set stays what it was logged as (rule 2); say so plainly (never `Not at this gym`).
+  if (field === 'kg' && set.status === 'completed' && ex.loadConvention === 'bodyweight') return { kind: 'refused', text: POPUP_REFUSAL.loggedBodyweight };
   if (set.status === 'completed') {
     const load = set.actual?.load ?? null;
     if (field === 'kg') return { kind: 'correct', setId, expectedSetVersion: set.version, patch: { load: { value, unit: load?.unit ?? ex.unit, convention: load?.convention ?? ex.loadConvention } } };
@@ -197,16 +205,13 @@ export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps'
     if (set.setType === 'warmup' || set.setType === 'drop') return { kind: 'refused', text: POPUP_REFUSAL.noTarget };
     return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { targetRpe: value }, note: null };
   }
-  const snapped = snapTypedLoadEasier(a, setId, value, bodyweightExercises);
-  if (snapped === undefined || snapped === null) return { kind: 'refused', text: ex.loadConvention === 'assistance' ? POPUP_REFUSAL.moreAssist : POPUP_REFUSAL.lighter };
-  const rounded = Math.abs(snapped - value) >= 1e-9;
+  // (Ben, 27 Oct: "If I add it it should work") Kept exactly as typed, never refused for the kit or rounded.
+  const plan = typedLoadPlan(a, setId, value, bodyweightExercises);
+  if (plan.kind === 'refused') return { kind: 'refused', text: plan.reason };
+  if (plan.kind === 'add_weight') return { kind: 'add_weight', setId, sessionExerciseId: plan.sessionExerciseId, load: plan.load };
   const stored = shown.load;
-  if (stored !== null && stored.convention !== 'bodyweight' && Math.abs(stored.value - snapped) < 1e-9) {
-    // Rounded back onto the load the row shows: say so where Ben typed, no write and no `updated · Undo` (21 Oct).
-    return { kind: 'unchanged', note: rounded ? `Nearest here: ${trim(snapped)} ${ex.unit}` : null };
-  }
-  const note = rounded ? `Rounded to ${trim(snapped)} ${ex.unit}` : null;
-  return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { load: { value: snapped, unit: ex.unit, convention: ex.loadConvention } }, note };
+  if (stored !== null && stored.convention !== 'bodyweight' && Math.abs(stored.value - value) < 1e-9) return { kind: 'unchanged', note: null };
+  return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { load: plan.load, loadAsTyped: true }, note: null, learn: plan.learn };
 }
 
 /** A rest row's step (15 s, within the builder's limits) as `set_rest_after`; null when it wouldn't change. */

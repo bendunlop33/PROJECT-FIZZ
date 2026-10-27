@@ -199,17 +199,17 @@ describe('set edits (§2.4)', () => {
     expect(addDropSet(s, load)).toEqual({ ok: false, reason: 'max_drops' });
   });
 
-  it('reps or RPE recalculates kg; a typed kg rounds down, is kept on later edits, and says it moved', () => {
+  it('reps or RPE recalculates kg; a typed kg is kept exactly as typed (Ben, 27 Oct) and on later edits', () => {
     const more = editSetRow(bench(), 5, { kind: 'reps', reps: 10 }, load);
     // 126.67 / (1 + 12/30) = 90.48 → 90.
     expect(more.ok && more.slot.rows[5]?.load).toBe(90);
     const typed = editSetRow(bench(), 5, { kind: 'load', value: 101.3 }, load);
     expect(typed.ok).toBe(true);
     if (!typed.ok) return;
-    expect(typed.slot.rows[5]).toMatchObject({ load: 100, typed: true });
-    expect(typed.rounded).toMatchObject({ value: 100, rounded: true });
+    expect(typed.slot.rows[5]).toMatchObject({ load: 101.3, typed: true });
+    expect(typed.rounded).toMatchObject({ value: 101.3, rounded: false });
     const after = editSetRow(typed.slot, 5, { kind: 'rpe', rpe: 9 }, load);
-    expect(after.ok && after.slot.rows[5]).toMatchObject({ load: 100, rpe: 9, typed: true });
+    expect(after.ok && after.slot.rows[5]).toMatchObject({ load: 101.3, rpe: 9, typed: true });
   });
 
   it('set count: copies the last set (top → back-off), removes from the end but never the top set; last @ RPE 9', () => {

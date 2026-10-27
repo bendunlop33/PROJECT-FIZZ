@@ -154,14 +154,14 @@ describe('only what works is offered (parity S5, integrity B1)', () => {
     expect(exerciseActions(s2, rowIdOf(s2, HANG)).map((x) => x.name)).not.toContain('superset_next');
   });
 
-  it('an assisted machine’s typed assistance past its most says so, not “lighter”', () => {
+  it('(Ben, 27 Oct) an assisted machine’s typed assistance past its most is kept as typed (never refused or rounded)', () => {
     const PULL = id(270);
     const machine = assisted();
     const r = routine([routineExercise(700, { exerciseId: PULL, equipmentId: machine.id, order: 0, setTemplates: [template(7001, { targetLoad: kg(25, 'assistance') })] })]);
     const s = startWorkout({ opId: 'start-as', owner: profile(), gymId: GYM, routine: r, exercises: new Map([[PULL, exercise(270, 'Assisted pull-up', { compatibleEquipment: ['assisted_stack'], defaultLoadConvention: 'assistance' })]]), gymEquipment: [machine], at: at(0), newId: idGen() }).aggregate;
     const set = s.sets[0];
     if (set === undefined) throw new Error('no set');
-    expect(popupCellWrite(s, set.id, 'kg', 1000)).toEqual({ kind: 'refused', text: POPUP_REFUSAL.moreAssist });
+    expect(popupCellWrite(s, set.id, 'kg', 70)).toMatchObject({ kind: 'planned', patch: { load: kg(70, 'assistance'), loadAsTyped: true }, note: null });
   });
 });
 

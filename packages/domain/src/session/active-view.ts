@@ -750,7 +750,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     const max = maxText(eq, values.load);
     offProfileWarning = `Not on ${eq.name}${input.gymName ? ` at ${input.gymName}` : ''}${max === '' ? '' : ` (max ${max})`}`;
     offProfileEquipment = { gymId: eq.gymId, equipmentId: eq.id, kind: eq.kind };
-    const learn = gymLearnFor(eq, values.load, { id: ex.exerciseId, name: ex.exerciseName });
+    // (Ben, 27 Oct) Ben's own typed load: learned as typed (no "too far above the rack" guard; the ceilings stay).
+    const learn = gymLearnFor(eq, values.load, { id: ex.exerciseId, name: ex.exerciseName }, { typed: true });
     gymLearn = learn === null ? null : { learn, text: gymLearnText(learn) };
   }
 
@@ -1334,6 +1335,39 @@ export function snapTypedLoadEasier(state: SessionAggregate, setId: string, type
   return snapLoadWith(state, setId, typed, 'easier', bodyweightExercises);
 }
 
+/**
+ * (Ben, 27 Oct: "If I add it it should work") A kg Ben types for a set not done yet is kept exactly as typed, never
+ * refused for the gym's kit or rounded (rule 4 is about suggestions; the coach's and the rule's still snap). Off the
+ * kit the gym learns it where it can (`learn`: a dumbbell, a stack's top or step, an item's max) for the caller to
+ * write with Undo. On a bodyweight exercise the kg is added weight (`add_weight`: the row goes to `+ Weight` first);
+ * one that can't take added weight says so.
+ */
+export type TypedLoadPlan =
+  | { kind: 'exact'; load: Load; offKit: boolean; learn: GymLearn | null }
+  | { kind: 'add_weight'; sessionExerciseId: string; load: Load }
+  | { kind: 'refused'; reason: string };
+
+export function typedLoadPlan(state: SessionAggregate, setId: string, typed: number, bodyweightExercises?: ReadonlySet<string>): TypedLoadPlan {
+  const set = state.sets.find((s) => s.id === setId);
+  const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+  if (!ex || !Number.isFinite(typed)) return { kind: 'refused', reason: 'That set changed. Try again.' };
+  if (typed < 0) return { kind: 'refused', reason: 'Weight can’t be below 0' };
+  const own = equipmentOf(state, ex);
+  const bodyweight = isBodyweightExercise(state, ex, bodyweightExercises);
+  if (ex.loadConvention === 'bodyweight') {
+    if (!canAddWeight(ex, own, bodyweight)) return { kind: 'refused', reason: `${ex.exerciseName} can’t take added weight` };
+    return { kind: 'add_weight', sessionExerciseId: ex.id, load: { value: typed, unit: ex.unit, convention: 'added' } };
+  }
+  const load: Load = { value: typed, unit: ex.unit, convention: ex.loadConvention };
+  if (isWeightedBodyweight(ex, own, bodyweight)) {
+    const options = checkEquipmentOf(state, ex, own, bodyweightExercises);
+    return { kind: 'exact', load, offKit: typed > 0 && options !== null && !isLoadAchievable(load, options), learn: null };
+  }
+  if (own === null || own.unit !== ex.unit || own.loadConvention !== ex.loadConvention) return { kind: 'exact', load, offKit: false, learn: null };
+  const offKit = !isLoadAchievable(load, own);
+  return { kind: 'exact', load, offKit, learn: offKit ? gymLearnFor(own, load, { id: ex.exerciseId, name: ex.exerciseName }, { typed: true }) : null };
+}
+
 function snapLoadWith(state: SessionAggregate, setId: string, typed: number | null, policy: 'nearest' | 'easier', bodyweightExercises?: ReadonlySet<string>): number | null | undefined {
   if (typed === null) return null;
   const set = state.sets.find((s) => s.id === setId);
@@ -1406,6 +1440,8 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
   // Over a carried load, only a load other than the carry is a change (CB1, 21 Oct): Save with the carry untouched
   // writes no load, so the target keeps the plan's and the carry still follows his logged set (Undo of that log too).
   if (showsCarry ? !same(norm(load), norm(carried)) : differs(norm(load), norm(p.load), norm(shownLoad))) patch.load = load;
+  // (Ben, 27 Oct) A load Ben typed in this sheet is kept as typed, off the known kit too (the gym learns it).
+  if (patch.load != null && edits.load !== undefined) patch.loadAsTyped = true;
   if (ex.measurement === 'reps' && differs(reps, p.reps, shown.reps)) patch.reps = reps;
   if ((ex.measurement === 'duration' || ex.measurement === 'cardio') && differs(durationS, p.durationS, shown.durationS)) patch.durationS = durationS;
   if ((ex.measurement === 'distance' || ex.measurement === 'cardio') && differs(distanceM, p.distanceM ?? null, shown.distanceM ?? null)) patch.distanceM = distanceM;

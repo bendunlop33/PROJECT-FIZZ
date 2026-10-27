@@ -529,18 +529,12 @@ export function fixedLoadNote(load: Load, eq: EquipmentInstance | null, display:
 }
 
 /**
- * A load typed in the pop-up's Kg cell (Ben, 23 Oct: one editor): pinned as a Fixed load, rounded **down** to what this
- * gym's item can load (rule 4: never past its max; toward easier on an assisted machine), with the line that says
- * what moved (`At Start 27.5 kg each`, `Max here 30 kg each`). With no item here it is kept as typed (fitted at
- * Start, as before). Never negative.
+ * A load typed in the pop-up's Kg cell (Ben, 23 Oct: one editor): pinned as a Fixed load **exactly as typed** (Ben, 27
+ * Oct: "If I add it it should work"; was rounded down to the item). Off the gym's known kit the editor has the gym
+ * learn it (`gymLearnFor` with `typed`); the coach's and the rule's loads still snap (rule 4). Never negative.
  */
-export function typedFixedLoad(value: number, frame: { unit: WeightUnit; convention: LoadConvention }, eq: EquipmentInstance | null, display: LoadContext = eq): { load: Load; note: string | null } {
-  const typed: Load = { value: Math.max(0, value), unit: frame.unit, convention: frame.convention };
-  if (eq === null || eq.kind === 'bodyweight_station') return { load: typed, note: null };
-  const note = fixedLoadNote(typed, eq, display);
-  const r = roundToAvailableLoad(typed, eq, 'easier');
-  if (!r.ok || r.load.unit !== frame.unit) return { load: typed, note };
-  return { load: r.load, note: r.exact && r.convertedRequest === null ? null : note };
+export function typedFixedLoad(value: number, frame: { unit: WeightUnit; convention: LoadConvention }, _eq: EquipmentInstance | null, _display: LoadContext = _eq): { load: Load; note: string | null } {
+  return { load: { value: Math.max(0, value), unit: frame.unit, convention: frame.convention }, note: null };
 }
 
 /** The new Fixed load's unit and convention: the item's at this gym, else Ben's unit and the exercise's own. */
