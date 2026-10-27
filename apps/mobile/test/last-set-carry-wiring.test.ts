@@ -44,7 +44,8 @@ describe('last set carries: mobile wiring', () => {
     const c = createLiveActivityController(port, { tz: () => 'UTC', painFlagged: () => new Set<string>() });
     await c.reconcile(s, Date.parse(s.session.lastActivityAtUtc));
     expect(JSON.stringify(started).replaceAll(NBSP, ' ')).toContain('97.5 kg');
-    expect(cueWords('rest_end', s, 'timer_and_set')).toContain('97 and a half');
+    expect(cueWords('rest_warning', s, 'timer_and_set')).toContain('97 and a half');
+    expect(cueWords('rest_end', s, 'timer_and_set')).toBe('Rest over.');
   });
 
   it('the pain-flag cache holds what the workout read last', () => {
