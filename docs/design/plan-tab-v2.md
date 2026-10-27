@@ -1,6 +1,7 @@
 # Library › Plan v2 (one page, one list)
 
-Status: **Built 27 Oct 2026, for Ben's review.** Mock: [prototypes/plan-tab-v2.html](prototypes/plan-tab-v2.html) (before/after at phone width, example data).
+Status: **Built 27 Oct 2026, for Ben's review; amended the same day by the UX review (`ux-review-27oct.md` §P4, PM):
+`Edit plan` stays visible on the card, Do today / Move are row swipes, Library opens on Plan while a plan runs.** Mock: [prototypes/plan-tab-v2.html](prototypes/plan-tab-v2.html) (before/after at phone width, example data).
 
 > Ben (27 Oct, build 419): "don't really understand this page. Seems poorly designed."
 
@@ -28,11 +29,12 @@ Plan | Workouts | Exercises
 │ Week 3 of 6 · deload in week 6   │
 │ Goal: Strength · 4 days · 60 min │
 │ [✓1][✓2][ 3 ][ 4 ][ 5 ][6 · Deload]   (current: dot under; selected: filled)
+│ Edit plan                        │
 └──────────────────────────────────┘
 THIS WEEK                2 of 5 days · 92% sets
 (✓) Push A          Mon · Bench press      Mon 20 Oct  ›
 (✓) Pull A          Deadlift               Wed 22 Oct  ›
-(3) Legs   NEXT     Squat                           ⋯  ›
+(3) Legs   NEXT     Squat                           ⋯  ›   ← swipe right: Do today · swipe left: Move
 ( ) Push B          Overhead press                  ⋯  ›
 ( ) Pull B          Barbell row                     ⋯  ›
 Run · Sat · long
@@ -51,9 +53,11 @@ PREVIOUS …
 - **Week chips:** `1 … N`; a deload week reads `6 · Deload`; done weeks `✓`; the **current week has a dot under its
   number**; the **selected week is filled**. They are separate states (VoiceOver: `Week 3, current, selected`).
   Opens on the current week.
-- **`⋯` menu** (iOS action sheet): `Edit plan` (block running) or `Start next block` (block done) · `Pause plan` or
-  `Resume` · `Ask coach to change` · `Edit goal` / `Set goal` · `End plan` (destructive; then `End this plan?` with
-  `End plan` / `Cancel`, then the toast with Undo, as before). Pause opens the same in-card picker as before.
+- **`Edit plan`** (UX review §P4): a visible text button on the card under the chips while the block runs;
+  `Block done · Start next block` once done. Coach plans have none (`Ask coach to change` is in `⋯`).
+- **`⋯` menu** (iOS action sheet): `Pause plan` or `Resume` · `Ask coach to change` · `Edit goal` / `Set goal` ·
+  `End plan` (destructive; then `End this plan?` with `End plan` / `Cancel`, then the toast with Undo, as before).
+  Pause opens the same in-card picker as before.
 
 ### 2.2 The days (one list, the selected week)
 
@@ -65,15 +69,21 @@ PREVIOUS …
   - Secondary: the weekday on Set days plans, then the day's main lifts (`Mon · Squat`); no main lift: its first two
     exercises.
   - Trailing: the date done (`Mon 20 Oct`). Coach plans: `Last 12 Oct` when not done this week.
-  - `⋯` on this week's not-done days of a running block: `Do today` and `Move day` (Set days plans). Long-press
-    opens the same sheet. `Move day` shows the weekday chips under the row (taken ones dimmed), then the toast with
-    Undo (unchanged).
+  - This week's not-done days of a running block **swipe** (UX review §P4): right reveals `Do today` (leading),
+    left reveals `Move` (trailing, Set days plans). The same two are in the row's `⋯`, on long-press and as VoiceOver
+    actions. `Move` shows the weekday chips under the row (taken ones dimmed), then the toast with Undo (unchanged).
 - **Tap opens the day** (Plan day screen: `Open Legs`, `Edit`, `Ask coach`, `Make next`). Opened from another week
   of a builder plan, the day shows **that week's** planned sets × reps · kg (`Week 5 of 6 · Deload`), which the
   old inline expansion showed; from this week it shows what Start would plan at this gym, as before.
 - Below the list (current week only): this week's change with `Undo`, and the activity lines (unchanged).
 
-### 2.3 Scrolling under the segmented control
+### 2.3 Library opens on Plan while a plan runs
+
+Library remembers its last segment; with a plan in use it opens on `Plan` instead (a link's own segment still wins,
+and a segment Ben taps first is kept). The remembered segment is unchanged and applies again once no plan is in use.
+Checked once each time Library mounts (app launch), not on every tab switch.
+
+### 2.4 Scrolling under the segmented control
 
 The scroll area starts below the segmented control; a hairline appears at its top edge once the page scrolls, so a
 half-scrolled row reads as "under the edge", never as overlapping the control.
@@ -85,15 +95,17 @@ half-scrolled row reads as "under the edge", never as overlapping the control.
 | `Your plan` eyebrow + `Since 13 Oct` | dropped on builder plans (the week line says where you are); coach plans: the line |
 | Goal line `Edit` / `Set goal` | goal text stays; action in `⋯` |
 | `6 weeks · Standard · deload week 6` header | `Week 3 of 6 · deload in week 6`; deload chip `6 · Deload` |
-| Week strip day cards (tap expands to exercises, `Move day`, `Do today ›`) | the one list; exercises on the day screen for that week; actions in row `⋯` / long-press |
-| Big `Edit plan` button | `⋯` › `Edit plan` |
+| Week strip day cards (tap expands to exercises, `Move day`, `Do today ›`) | the one list; exercises on the day screen for that week; actions as row swipes, row `⋯`, long-press |
+| Big `Edit plan` button | `Edit plan` text button on the header card |
 | Rotation list (rings, `Next`, `Mon`, `Last 12 Oct`) | folded into the one list |
 | `Days this week` / `Planned sets done` tiles | the list header's right side |
-| `Ask coach to change · Pause plan · End plan` | `⋯` |
+| `Ask coach to change · Pause plan · End plan`, goal `Edit` | `⋯` |
 
 Nothing is removed. No-plan state (`Set up a plan`), Lift targets and `Previous` are unchanged.
 
 ## 4. Open for Ben
 
 1. Past weeks' days not done show a plain ring, not "missed" (D19 says nothing is called missed). OK, or say `Not done`?
-2. Should `Edit plan` also be a visible button (e.g. at the bottom) rather than only in `⋯`?
+2. ~~Should `Edit plan` be visible?~~ Yes (UX review §P4): visible on the card.
+3. The UX review also suggests `Edit goal` open a goal sheet in place instead of Profile › Training details; not
+   built here (it still opens Training details, as before).
