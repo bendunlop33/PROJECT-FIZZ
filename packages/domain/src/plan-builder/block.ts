@@ -1,5 +1,5 @@
 import type { DraftSlot, PlanBuilderAnswers, PlanBuilderRecord, PlanDraft, PlanDraftVersion, PlanPause, SessionDeload } from '@fizz/schemas';
-import { addDays, localWeekBounds } from '../calendar';
+import { addDays, localDateOf, localWeekBounds } from '../calendar';
 import { pausedInWeek } from '../progress/plan-tracker';
 import { activePause, pausedDates } from '../session/plan-adapt';
 import { toMs } from '../time';
@@ -57,6 +57,8 @@ export interface PbBlockWeek {
   mondays: string[];
   /** Plan day indexes done in each block week of `mondays` (same order). */
   daysDone: number[][];
+  /** (27 Oct) The local date each of those days was first done that week (same order); absent: not known. */
+  doneOn?: Record<number, string>[];
 }
 
 /** Calendar weeks looked at, at most (12-week plans with pauses and gaps fit easily). */
@@ -68,12 +70,20 @@ export function pbBlockWeekOf(input: PbBlockInput): PbBlockWeek {
   const startMonday = localWeekBounds(appliedMs, input.tz).mondayLocalDate;
   const nowMonday = localWeekBounds(input.nowMs, input.tz).mondayLocalDate;
   const byMonday = new Map<string, Set<number>>();
+  const firstOn = new Map<string, Record<number, string>>();
   for (const w of input.workouts) {
     const ms = toMs(w.startedAtUtc);
     if (ms < appliedMs || ms > input.nowMs) continue;
     const m = localWeekBounds(ms, input.tz).mondayLocalDate;
     const days = byMonday.get(m) ?? new Set<number>();
-    if (w.dayIndex !== null) days.add(w.dayIndex);
+    if (w.dayIndex !== null) {
+      days.add(w.dayIndex);
+      const on = firstOn.get(m) ?? {};
+      const date = localDateOf(ms, input.tz);
+      const was = on[w.dayIndex];
+      if (was === undefined || date < was) on[w.dayIndex] = date;
+      firstOn.set(m, on);
+    }
     byMonday.set(m, days);
   }
   const counted: string[] = [];
@@ -87,7 +97,7 @@ export function pbBlockWeekOf(input: PbBlockInput): PbBlockWeek {
   const mondays = done ? counted.slice(0, of) : [...counted, nowMonday];
   const week = done ? of + 1 : counted.length + 1;
   const daysOf = (monday: string): number[] => [...(byMonday.get(monday) ?? [])].sort((a, b) => a - b);
-  return { week, of, deload: !done && pbIsDeload(input.answers, week), done, mondays, daysDone: mondays.map(daysOf) };
+  return { week, of, deload: !done && pbIsDeload(input.answers, week), done, mondays, daysDone: mondays.map(daysOf), doneOn: mondays.map((x) => ({ ...(firstOn.get(x) ?? {}) })) };
 }
 
 /** The builder record of the plan version in use (Apply's), else null (a coach plan, or not applied). */
@@ -224,6 +234,8 @@ export interface PbBlockDay {
   weekday: number | null;
   /** Done in the week viewed (done or current week). */
   done: boolean;
+  /** (27 Oct) The local date it was first done in the week viewed (`YYYY-MM-DD`); null: not done, or not known. */
+  doneOn: string | null;
   rows: PbBlockRow[];
 }
 
@@ -289,6 +301,7 @@ export function pbBlockView(input: PbBlockViewInput): PbBlockView {
     return { week: w, deload: dl, state, selected: w === viewed, accessibilityLabel: said.join(', ') };
   });
   const daysDone = new Set(block.daysDone[viewed - 1] ?? []);
+  const doneOn = block.doneOn?.[viewed - 1] ?? {};
   const week = input.weekOf?.(viewed) ?? { days: input.version.days, startReps: builder.startReps };
   const weekdays = input.weekdaysOf?.(viewed, week.days.map((d) => d.index)) ?? null;
   const days = week.days.map((d): PbBlockDay => {
@@ -299,7 +312,8 @@ export function pbBlockView(input: PbBlockViewInput): PbBlockView {
         const e = pbExerciseOfSlot(slot, kit, week.startReps?.[slot.slotKey] ?? builder.startReps?.[slot.slotKey]);
         return rowOf(slot, pbAtWeek(a, e, kit, viewed), kit, e, input.nameOf(slot.exerciseId));
       });
-    return { index: d.index, name: d.name, weekday: weekdays?.get(d.index) ?? null, done: viewed <= block.mondays.length && daysDone.has(d.index), rows };
+    const done = viewed <= block.mondays.length && daysDone.has(d.index);
+    return { index: d.index, name: d.name, weekday: weekdays?.get(d.index) ?? null, done, doneOn: done ? (doneOn[d.index] ?? null) : null, rows };
   });
   return {
     header: pbBlockLine(block).text,

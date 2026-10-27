@@ -1,5 +1,5 @@
 import type { Exercise, Load, PlanDraftStatus, Routine, SessionAggregate, SessionExercise, TrainingGoal, WorkoutSet } from '@fizz/schemas';
-import { weekdayOf } from '../calendar';
+import { localDateOf, weekdayOf } from '../calendar';
 import { paceText } from '../cardio';
 import { cardioValuesText, dayMonthText, formatDistance, formatDuration, formatNumber, loadText, localDateText, repRangeText } from '../display';
 import { equipmentOfRow } from '../session/equipment-snapshot';
@@ -96,6 +96,10 @@ export interface PlanOverviewDay {
   next: boolean;
   /** `Sat` (done this week), `Last 12 Oct` (done before), or null (never). */
   when: string | null;
+  /** (27 Oct) The local date it was done this week (`YYYY-MM-DD`); null: not this week. */
+  doneOn: string | null;
+  /** (27 Oct) The plan day it is (a builder plan's day index); null: not known. */
+  dayIndex: number | null;
   accessibilityLabel: string;
 }
 
@@ -128,8 +132,8 @@ export interface PlanOverview {
 export interface PlanOverviewInput {
   /** The plan Ben is using; anything but `applied` has no block. */
   plan: { id: string; name: string; status: PlanDraftStatus; version: number; appliedAtUtc: string } | null;
-  /** The plan's live days in plan order. */
-  days: readonly (PlanWeekDay & { name: string })[];
+  /** The plan's live days in plan order (`dayIndex`: the plan day each is, when known). */
+  days: readonly (PlanWeekDay & { name: string; dayIndex?: number | null | undefined })[];
   /** Finished workouts (any order). */
   workouts: readonly (PlanWeekWorkout & { tz: string })[];
   /** Up next's workout when it is one of the plan's days. */
@@ -188,7 +192,7 @@ export function planOverview(input: PlanOverviewInput): PlanOverview | null {
       ...(next ? ['next'] : []),
       day !== null ? `done ${WEEKDAY_SAID[day]}` : lastDate !== null ? `last done ${lastDate}` : 'not done yet',
     ];
-    return { routineId: d.routineId, n: i + 1, name: d.name, state, next, when, accessibilityLabel: said.join(', ') };
+    return { routineId: d.routineId, n: i + 1, name: d.name, state, next, when, doneOn: thisWeek === undefined ? null : localDateOf(toMs(thisWeek), input.tz), dayIndex: d.dayIndex ?? null, accessibilityLabel: said.join(', ') };
   });
   const change = input.weekChange ?? null;
   // This week's merged day counts once (Chest + Shoulders done by one Push workout is one day of this week's).
