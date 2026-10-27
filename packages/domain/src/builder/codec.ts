@@ -92,6 +92,7 @@ function metaOf(slot: BuilderSlot, block: BuilderBlock, first: boolean): DraftSl
     ...(first && block.auto && block.slots.length > 1 ? { autoPair: true as const } : {}),
     ...(first && block.roundRestS !== undefined && block.slots.length > 1 ? { roundRestS: block.roundRestS } : {}),
     ...(slot.restS !== undefined && Object.keys(slot.restS).length > 0 ? { restS: { ...slot.restS } } : {}),
+    ...(slot.planRestS !== undefined && Object.keys(slot.planRestS).length > 0 ? { planRestS: { ...slot.planRestS } } : {}),
     ...(slot.why !== undefined && slot.why.length > 0 ? { why: [...slot.why] } : {}),
   };
 }
@@ -187,6 +188,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
     anchorE1rm: meta?.anchorE1rm ?? null,
   };
   if (meta?.restS !== undefined) out.restS = { ...meta.restS };
+  if (meta?.planRestS !== undefined) out.planRestS = { ...meta.planRestS };
   if (meta?.touched === true) out.touched = true;
   if (meta?.ownWarmups === true) out.ownWarmups = true;
   if (meta?.unlinked === true) out.unlinked = true;

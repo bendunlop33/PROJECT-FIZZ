@@ -92,9 +92,9 @@ describe('route reachability (review 26 Oct, findings 3 and 15)', () => {
     expect(registeredRoutes(fake).filter((r) => !used.has(r))).toEqual(['Orphan']);
   });
 
-  it('History is opened from Today (`All history ›`), Library › Workouts and Progress › Calendar (Ben, 26 Oct)', () => {
+  it('History is opened from Library › Workouts and Progress › Calendar (Ben, 26 Oct; redesign v3: no longer from Today)', () => {
     const files = sourceFiles(SRC).filter((f) => readFileSync(f, 'utf8').match(/navigate\(\s*'History'/));
     const names = files.map((f) => relative(SRC, f));
-    for (const f of ['screens/TodayScreen.tsx', 'screens/routines/WorkoutsScreen.tsx', 'screens/progress/CalendarView.tsx']) expect(names).toContain(f);
+    for (const f of ['screens/routines/WorkoutsScreen.tsx', 'screens/progress/CalendarView.tsx']) expect(names).toContain(f);
   });
 });

@@ -27,14 +27,16 @@ export function slotLoadOf(load: SlotLoadInput, main: boolean): SlotLoadInput {
  *   builder's accessory range follows his last reps the same way, planned at
  *   what he did; the load then follows from the rule load's e1RM
  *   (`AnchorLoad.repsMax`).
- * - No history: the builder's defaults (main 6–8, others 8–12).
+ * - No history: the builder's defaults (main 6–8, others 8–12), or (Ben, 27 Oct) a plan day's stored reps.
  */
-export function slotRepRange(main: boolean, load: Pick<SlotLoadInput, 'ruleReps'>): RepRangeT {
-  if (main) return { ...BUILDER_SET_RULES.mainRange };
+export function slotRepRange(main: boolean, load: Pick<SlotLoadInput, 'ruleReps'>, stored: RepRangeT | null = null): RepRangeT {
+  // (Ben, 27 Oct) A plan day's stored reps are the goal in place of the builder's defaults; his last session still moves
+  // an accessory's reps from there as before (21 Oct), and an exercise's own progression rule still decides its own.
+  if (main) return { ...(stored ?? BUILDER_SET_RULES.mainRange) };
   const r = load.ruleReps ?? null;
-  if (r === null || r.last === null) return { ...BUILDER_SET_RULES.accessoryRange };
+  if (r === null || r.last === null) return { ...(stored ?? BUILDER_SET_RULES.accessoryRange) };
   if (r.kind === 'fixed') {
-    const goal = BUILDER_SET_RULES.accessoryRange;
+    const goal = stored ?? BUILDER_SET_RULES.accessoryRange;
     const p = personalRepRange(goal, r.last, goal.max + 3);
     const aim = Math.max(p.range.min, Math.min(p.range.max, r.last));
     return { min: aim, max: Math.max(aim, p.range.max) };

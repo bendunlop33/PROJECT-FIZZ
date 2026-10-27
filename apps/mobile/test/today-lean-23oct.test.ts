@@ -131,14 +131,15 @@ describe('D3: Today with a plan is lean (V5: without a plan too)', () => {
     // (Ben, 27 Oct) Time shows the card's live estimate; the length is the plan's.
     expect(push.time).toMatchObject({ minutes: push.minutes, length: data.initial[push.dayKey]?.minutes, note: null, undoMinutes: null });
     expect(push.startable).toBe(true);
-    // The card has Time and the rows; Main lift, Accessories, Abs and Supersets are on Your workout (V5: no plan too).
+    // (Redesign v3 option C) The card: label/value rows and the WorkoutList; Main lift, Accessories, Abs and Supersets
+    // controls are on Your workout (V5: no plan too); Start is the pinned dock's, Edit the card's link.
     const card = read('screens/today/TodaySession.tsx');
-    const sc = card.slice(card.indexOf('export function SessionCard('));
-    expect(sc).toContain('{timeRow}');
-    expect(sc).toContain('{details}');
+    const sc = card.slice(card.indexOf('export function TodayCard('), card.indexOf('/** A rest day on a Set days plan'));
+    expect(sc).toContain('todayCardRows(view, gymLabel)');
+    expect(sc).toContain('<WorkoutList rows={view.list}');
     for (const gone of ['TODAY_V2_COPY.mainLift', 'TODAY_V2_COPY.accessories', 'TODAY_V2_COPY.abs', 'TODAY_V2_COPY.supersets', 'TODAY_V2_COPY.breakdown']) expect(sc).not.toContain(gone);
-    expect(sc).toContain('<PrimaryButton label={TODAY_V2_COPY.start}');
-    expect(sc).toContain('<SecondaryButton label={TODAY_V2_COPY.edit}');
+    expect(card).toContain('<PrimaryButton label={TODAY_PICK_COPY.startPlan}');
+    expect(sc).toContain('<TextButton label={TODAY_V2_COPY.edit} onPress={onEdit} />');
     // `↻ Mix it up` went with them (it is on Your workout).
     expect(sc).not.toContain('TODAY_V2_COPY.mix');
   });

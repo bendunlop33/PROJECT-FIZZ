@@ -457,9 +457,11 @@ describe('Done today and the in-place switch (§5, SP9, SP11, r2 S1)', () => {
     const today = readFileSync(join(__dirname, '..', 'src', 'screens', 'TodayScreen.tsx'), 'utf8');
     expect(today).not.toContain('SESSION_PICKER_COPY');
     expect(today).not.toContain('label="Up next"');
-    const done = today.slice(today.indexOf('const doneLine ='), today.indexOf('const sessionBlock ='));
-    expect(done).toContain("navigation.navigate('Summary', { sessionId: main.sessionId })");
-    // The session block (day control, card) shows unless a workout is open; done today keeps it.
+    // (Redesign v3 option C) Done today: the done card opens its Summary; `Push ⌄` / Start Plan Workout pick a second session.
+    const done = today.slice(today.indexOf('if (doneMain !== null) {'), today.indexOf('if (restDay !== null) {'));
+    expect(done).toContain("navigation.navigate('Summary', { sessionId: doneMain.sessionId })");
+    expect(today).toContain('if (doneMain !== null || view === null) {\n      setPickSheet(true);');
+    // The card area shows unless a workout is open; done today keeps it.
     expect(today).toContain('if (openWorkout) return null;');
     expect(today).not.toMatch(/if \(openWorkout[^)]*done/i);
     expect(today).toContain("const openWorkout = main.kind === 'resume' || main.kind === 'stale';");

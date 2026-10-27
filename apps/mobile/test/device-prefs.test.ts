@@ -136,4 +136,12 @@ describe('createPrefsHolder (review S2)', () => {
     expect((JSON.parse(f.text ?? 'null') as DevicePrefs).targetsHit).toBe(true);
     expect(parsePrefs(f.text ?? '').targetsHit).toBe(true);
   });
+
+  it('(redesign v3 §A2, §A5) Today remembers Show exercises and what the Health line shows', () => {
+    expect(parsePrefs('{}').todayExercisesOpen).toBeUndefined();
+    expect(parsePrefs('{"todayExercisesOpen":true}').todayExercisesOpen).toBe(true);
+    expect(parsePrefs('{"todayExercisesOpen":"yes"}').todayExercisesOpen).toBeUndefined();
+    expect(parsePrefs('{"todayHealth":{"sleep":false,"bodyweight":true}}').todayHealth).toEqual({ sleep: false, rhr: true, bodyweight: true });
+    expect(parsePrefs('{"todayHealth":7}').todayHealth).toBeUndefined();
+  });
 });

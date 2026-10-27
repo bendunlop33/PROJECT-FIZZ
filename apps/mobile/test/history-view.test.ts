@@ -70,13 +70,14 @@ describe('History view', () => {
 
 describe('screens (source checks)', () => {
   const read = (...p: string[]) => readFileSync(join(import.meta.dirname, '../src', ...p), 'utf8');
-  it('Today shows Recent only with something in it, and opens History from All history ›', () => {
+  it('Today shows Recent (the last three) only with something in it; History moved to Progress (redesign v3 §A6)', () => {
     const today = read('screens', 'TodayScreen.tsx');
-    expect(today).toContain('session.recent.length > 0 ? (');
-    expect(today).toContain("navigation.navigate('History')");
+    expect(today).toContain('recentRows.length > 0 ? (');
+    expect(today).toContain('todayRecentRows(session.recent)');
+    expect(today).not.toContain("navigation.navigate('History')");
     const parts = read('screens', 'today', 'TodaySession.tsx');
-    expect(parts).toContain('accessibilityLabel={it.accessibilityLabel}');
-    expect(parts).toMatch(/numeric[\s\S]*\{it\.value\}/);
+    expect(parts).toContain('accessibilityLabel={r.accessibilityLabel}');
+    expect(parts).toMatch(/numeric[\s\S]*\{r\.line\}/);
   });
 
   it('History keeps every Past workouts capability', () => {

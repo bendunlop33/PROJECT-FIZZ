@@ -59,21 +59,20 @@ describe('Today: the screen draws it and starts it the one way', () => {
 
   it('one start for every Empty workout on Today: start({ kind: "empty" }) (gym, alerts, check-in gate, op ID per intent)', () => {
     expect(screen).toContain("const startEmptyNow = () => void start({ kind: 'empty' });");
-    expect(screen).toContain('onEmpty={actions.emptyOnCard ? startEmptyNow : undefined}');
-    expect(screen).toContain('{actions.emptyWorkout && !actions.emptyOnCard ? (');
+    // (Redesign v3 §A6) One pinned `Start Empty Workout` under Start Plan Workout, in every state but an open workout.
+    expect(screen).toContain('{!openWorkout ? <StartDock plan={dockPlan} busy={starting} onPlan={onDockPlan} onEmpty={startEmptyNow}');
     // The idempotent op ID: kept per intent key (`empty`) until a start succeeds, so a double tap starts one workout.
     expect(screen).toContain('const opId = startOps.current.get(key) ?? newUuid();');
-    // `⋯` keeps it.
-    expect(screen).toContain("listAfter.arm(() => void start({ kind: 'empty' }));");
-    expect(card).toContain('<SecondaryButton label={TODAY_V2_COPY.emptyWorkout} onPress={onEmpty} grow />');
+    expect(card).toContain('<SecondaryButton label={TODAY_PICK_COPY.startEmpty} disabled={busy} onPress={onEmpty} />');
   });
 
-  it('on the card it is a secondary text button under Start and Edit (one line, 44 pt via TextButton), disabled while starting', () => {
-    const body = card.slice(card.indexOf('export function SessionCard('));
-    const startAt = body.indexOf('<PrimaryButton label={TODAY_V2_COPY.start}');
-    const emptyAt = body.indexOf('<TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" disabled={busy} onPress={onEmpty} />');
+  it('(redesign v3 §A6) the dock: Start Plan Workout (primary) over Start Empty Workout (secondary), disabled while starting; no small link on the card', () => {
+    const body = card.slice(card.indexOf('export function StartDock('));
+    const startAt = body.indexOf('<PrimaryButton label={TODAY_PICK_COPY.startPlan}');
+    const emptyAt = body.indexOf('<SecondaryButton label={TODAY_PICK_COPY.startEmpty}');
     expect(startAt).toBeGreaterThan(0);
     expect(emptyAt).toBeGreaterThan(startAt);
+    expect(card).not.toContain('TODAY_V2_COPY.emptyWorkout');
     expect(read('ui/buttons.tsx')).toContain("minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1");
   });
 

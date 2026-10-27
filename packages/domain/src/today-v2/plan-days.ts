@@ -1,6 +1,6 @@
-import type { Routine, RoutineExercise, SplitDay } from '@fizz/schemas';
+import { BUILD_LIMITS, type Routine, type RoutineExercise, type SetType, type SplitDay } from '@fizz/schemas';
 import { BUILDER_DAY_MIXES, type GroupCount } from '../builder/build';
-import type { BuilderGroupName, BuilderInfoLookup } from '../builder/types';
+import type { BuilderGroupName, BuilderInfoLookup, RestKind } from '../builder/types';
 import { planDayKeyOf, planDayOf, type PlanDayKeySplit } from '../session/coach-plan';
 import type { FinishedRef } from '../session/routines';
 import type { TodayDay, TodayTemplate } from './session';
@@ -79,6 +79,36 @@ export function todayPlanDays(input: TodayPlanDaysInput): TodayDay[] {
   return [...days.values()].map((d) => ({ ...d.day, templates: d.templates }));
 }
 
+const REST_KIND_OF: Readonly<Record<SetType, RestKind>> = { warmup: 'warmup', working: 'working', top: 'top', backoff: 'backoff', drop: 'drop' };
+
+/**
+ * (Ben, 27 Oct) A stored exercise's reps for its straight working sets: the working sets' target range (lowest min to
+ * highest max). Null: timed or distance work, or a top set (the builder plans a top / back-off shape itself).
+ */
+export function storedReps(e: Pick<RoutineExercise, 'setTemplates'>): { min: number; max: number } | null {
+  const work = e.setTemplates.filter((t) => t.setType !== 'warmup');
+  if (work.length === 0 || work.some((t) => t.setType === 'top' || t.targetReps === null)) return null;
+  const ranges = work.flatMap((t) => (t.targetReps === null ? [] : [t.targetReps]));
+  const min = Math.min(...ranges.map((r) => r.min));
+  const max = Math.max(...ranges.map((r) => r.max));
+  return Number.isFinite(min) && Number.isFinite(max) && min >= 1 && max >= min ? { min, max } : null;
+}
+
+/**
+ * (Ben, 27 Oct) A stored exercise's rests per kind: its rest by set type, else the first set of that type's own rest,
+ * within the builder's limits. Null: none stored (the builder's defaults apply). A superset member's rests are its
+ * round's, so none are taken (as a past workout opened on Your workout).
+ */
+export function storedRests(e: Pick<RoutineExercise, 'setTemplates' | 'restBySetType' | 'supersetGroup'>): Partial<Record<RestKind, number>> | null {
+  if (e.supersetGroup !== null) return null;
+  const out: Partial<Record<RestKind, number>> = {};
+  for (const type of ['warmup', 'working', 'top', 'backoff', 'drop'] as const) {
+    const s = e.restBySetType[type]?.seconds ?? e.setTemplates.find((t) => t.setType === type && t.restOverrideS !== null)?.restOverrideS ?? null;
+    if (s !== null) out[REST_KIND_OF[type]] = Math.min(BUILD_LIMITS.maxRestS, Math.max(BUILD_LIMITS.minRestS, Math.round(s)));
+  }
+  return Object.keys(out).length === 0 ? null : out;
+}
+
 /**
  * A plan day's exercises as Today drafts them (`TodayTemplate`'s stored fields): in order, its groups (else the split
  * day's mix), abs and supersets as stored, and each exercise's set count and superset letter. Pure.
@@ -94,7 +124,12 @@ function storedTemplateFields(exercises: readonly RoutineExercise[], mainLift: s
     supersetsPlan: exercises.some((e) => e.supersetGroup !== null),
     groups: groups.length > 0 ? groups : mix !== undefined ? BUILDER_DAY_MIXES[mix].map((g) => ({ ...g })) : [],
     // (Ben, 27 Oct) The day as stored: Today drafts these (order, set counts, superset pairs) at the plan's controls.
-    slots: sorted.map((e) => ({ exerciseId: e.exerciseId, workingSets: Math.max(1, e.setTemplates.filter((x) => x.setType !== 'warmup').length), group: e.supersetGroup })),
+    // (Ben, 27 Oct) …and its reps and rests as Ben set them in Library › Plan › day › Edit.
+    slots: sorted.map((e) => {
+      const reps = storedReps(e);
+      const restS = storedRests(e);
+      return { exerciseId: e.exerciseId, workingSets: Math.max(1, e.setTemplates.filter((x) => x.setType !== 'warmup').length), group: e.supersetGroup, ...(reps === null ? {} : { reps }), ...(restS === null ? {} : { restS }) };
+    }),
   };
 }
 

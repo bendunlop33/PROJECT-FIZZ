@@ -12,7 +12,7 @@ import type { BuilderSnapshot, BuilderToast, BuilderWriteResult, TodayOptionChan
 import { TodayOptionRows } from '../today/TodaySession';
 import { reviewAfterApply } from '../../builder/review';
 import { editAskView, EDIT_ASK_COPY, proposalCardView, replyCardView, type ProposalState } from '../../coach/builder-coach-view';
-import { addAnywayConfirm, editsFromText, OPTIONS_ROW_COPY, popupLinks, todayOptionsSummary, todayOptionsView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
+import { addAnywayConfirm, earlierEditsMenu, OPTIONS_ROW_COPY, popupLinks, todayOptionsSummary, todayOptionsView, workoutView, WORKOUT_COPY, type WorkoutRowView } from '../../builder/builder-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
@@ -519,6 +519,8 @@ export function BuilderWorkoutScreen() {
   const moreItems: { label: string; run: () => void }[] = [
     ...(snap.canSave ? [{ label: WORKOUT_COPY.saveToWorkouts, run: () => void save.open({ kind: 'draft', draftId: snap.draftId, gymId: snap.gymId }, snap.name) }] : []),
     ...(snap.canSaveVariation ? [{ label: services.builder.copy.saveAsVariation, run: () => void openVariationName() }] : []),
+    // (Redesign v3 §A9) Earlier unused edits: offered here, not as status lines on the page.
+    ...earlierEditsMenu(earlier).map((e) => ({ label: e.label, run: () => { navigation.dispatch(builderPage('BuilderWorkout', { draftId: e.draftId })); } })),
   ];
   const openMore = () => {
     const options = [...moreItems.map((m) => m.label), 'Cancel'];
@@ -634,9 +636,6 @@ export function BuilderWorkoutScreen() {
         <ScrollArea scrollEnabled={!dragging}>
           {/* (D3, §2.3a; Ben, 26 Oct) Today's options fold into one `Options` row so the exercises start at the top; their state is the snapshot's (review todaylean S1, S3). */}
           {todayView !== null ? <OptionsRow options={todayView} open={optionsOpen} onToggle={() => { setOptionsOpen((o) => !o); }} onChange={(c) => void setTodayOption(c)} onMix={() => void mixItUp()} /> : null}
-          {earlier.map((e) => (
-            <StatusLine key={e.draftId} icon="clock" tone="info" text={editsFromText(e.localDate)} action={<TextButton label={WORKOUT_COPY.useEdits} onPress={() => { navigation.dispatch(builderPage('BuilderWorkout', { draftId: e.draftId })); }} />} />
-          ))}
           {/* (D8; review batch23 S1) The coach's change Ben applied in chat, landed here: it stays with its Undo while it's the last change, not only as a toast. */}
           {snap.coachLanded !== null && toast?.undoOpId !== snap.coachLanded.undoOpId ? (
             <StatusLine
@@ -928,27 +927,31 @@ function StartButton({ enabled, busy, onPress }: { enabled: boolean; busy: boole
 }
 
 /**
- * (Ben, 26 Oct; app review finding 7; §2.3a) Today's options as one row: `Options  Bench · Focused · Abs  ⌄`.
- * Collapsed by default so the table starts near the top; a tap shows the same controls (Main lift, Accessories,
- * Abs, Supersets, Mix it up) under it. Each control is still one change the service makes, with Undo.
+ * (Ben, 26 Oct; app review finding 7; §2.3a; redesign v3 §A8) Today's options as one clear card: a bold `Options`
+ * label on a ≥ 56 pt row with what's on (`Abs · Supersets`) and `⌄`. Collapsed by default so the table starts near the
+ * top; a tap shows the same controls (Main lift, Accessories, Abs, Supersets, Mix it up) under it. Each control is
+ * still one change the service makes, with Undo.
  */
+/** (Redesign v3 §A8) The Options card's row height. */
+const OPTIONS_ROW_MIN_HEIGHT = 56;
+
 function OptionsRow({ options, open, onToggle, onChange, onMix }: { options: TodayOptions; open: boolean; onToggle: () => void; onChange: (c: TodayOptionChange) => void; onMix: () => void }) {
   const theme = useTheme();
   const summary = todayOptionsSummary(options);
   return (
-    <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.space['3'] }}>
+    <View style={{ borderRadius: theme.radius.lg, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.space['4'] }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={summary.accessibilityLabel}
         accessibilityState={{ expanded: open }}
         onPress={onToggle}
-        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: OPTIONS_ROW_MIN_HEIGHT, gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}
       >
-        <AppText variant="callout">{OPTIONS_ROW_COPY.title}</AppText>
-        <AppText variant="callout" color="text.secondary" style={{ flex: 1, textAlign: 'right' }}>
+        <AppText variant="headline">{OPTIONS_ROW_COPY.title}</AppText>
+        <AppText variant="callout" color="text.secondary" numberOfLines={1} style={{ flex: 1, textAlign: 'right' }}>
           {open ? '' : summary.text}
         </AppText>
-        <Icon name={open ? 'chevron.up' : 'chevron.down'} color="text.secondary" size={14} />
+        <Icon name={open ? 'chevron.up' : 'chevron.down'} color="text.secondary" size={16} />
       </Pressable>
       {open ? <TodayOptionRows options={options} onChange={onChange} onMix={onMix} /> : null}
     </View>

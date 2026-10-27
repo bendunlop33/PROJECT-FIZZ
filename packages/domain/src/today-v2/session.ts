@@ -6,7 +6,7 @@ import { absOff, clampMinutes, fitToMinutes, type BuilderFitResult, type Builder
 import { mixItUpShortlist, mixItUpTarget } from '../builder/mix';
 import { workingCount } from '../builder/set-rows';
 import { makeSlot } from '../builder/slot';
-import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout } from '../builder/types';
+import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSlot, type BuilderWorkout, type RestKind } from '../builder/types';
 import { landCarryOver, type CarryItem } from '../builder/carry';
 import { withCoachSetCounts } from '../builder/carried';
 import { withDeloadSets } from '../builder/deload';
@@ -68,6 +68,13 @@ export interface TodayTemplateSlot {
   workingSets: number;
   /** Its superset letter in the plan day; null: on its own. */
   group: string | null;
+  /**
+   * (Ben, 27 Oct) The plan day's stored reps for its straight working sets (`8–10`), drafted as stored; absent: the
+   * builder's (a timed exercise, or a main lift with a top set, whose top / back-off shape the builder plans).
+   */
+  reps?: { min: number; max: number };
+  /** (Ben, 27 Oct) The plan day's stored rests per kind (seconds), drafted as the slot's `planRestS`. */
+  restS?: Partial<Record<RestKind, number>>;
 }
 
 export interface TodayDay {
@@ -258,7 +265,10 @@ export function storedTemplateWorkout(t: TodayTemplate, c: Pick<TodayControls, '
       if (id !== null) taken.add(id);
     }
     if (id === null || ctx.info(id) === null || placed.some((p) => p.slot.exerciseId === id)) continue;
-    placed.push({ slot: makeSlot(id, { main, workingSets: Math.max(1, Math.min(10, Math.round(x.workingSets))) }, ctx), group: x.group });
+    // (Ben, 27 Oct) The stored reps and rests come with the exercise as stored (not a substitute picked here).
+    const same = id === x.exerciseId;
+    const made = makeSlot(id, { main, workingSets: Math.max(1, Math.min(10, Math.round(x.workingSets))), ...(same && x.reps !== undefined ? { repRange: x.reps } : {}) }, ctx);
+    placed.push({ slot: same && x.restS !== undefined && Object.keys(x.restS).length > 0 ? { ...made, planRestS: { ...x.restS } } : made, group: x.group });
   }
   if (placed.length === 0) return null;
   // The main lift leads (it names the day); the rest keep their stored order.

@@ -51,12 +51,12 @@ export function restingHrVsBaseline(days: readonly HealthDailyValue[], today: st
   return { date: today, bpm: t.value, source: t.source, baseline: base, delta: base === null ? null : Math.round(t.value - base) };
 }
 
-/** `6h 10m`, `7h`, `45m`: the Today line's compact sleep (Ben's wording). */
+/** `6h 10m`, `7h 05m` (redesign v3 §A2), `7h`, `45m`: the Today line's compact sleep (Ben's wording). */
 export function compactSleepText(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   if (h === 0) return `${String(m)}m`;
-  return m === 0 ? `${String(h)}h` : `${String(h)}h${NBSP}${String(m)}m`;
+  return m === 0 ? `${String(h)}h` : `${String(h)}h${NBSP}${String(m).padStart(2, '0')}m`;
 }
 
 function spokenSleep(minutes: number): string {
@@ -96,6 +96,39 @@ export function todayHealthLine(signals: { sleep: readonly HealthDailyValue[]; r
   }
   const sources = [...new Set([night?.source, rhr?.source].filter((x): x is string => x !== undefined))];
   return { text: parts.join(' · '), accessibilityLabel: `${said.join('. ')}. From Apple Health${sources.length > 0 ? `, ${sources.join(', ')}` : ''}`, sources };
+}
+
+/** (Redesign v3 §A2; Ben, 27 Oct) What Today's Health line shows (long-press → `Show on Today`). Per phone. */
+export interface TodayHealthShows {
+  sleep: boolean;
+  rhr: boolean;
+  bodyweight: boolean;
+}
+
+export const DEFAULT_TODAY_HEALTH_SHOWS: TodayHealthShows = { sleep: true, rhr: true, bodyweight: false };
+
+/** A bodyweight older than this many days isn't shown on Today (it isn't today's). */
+export const TODAY_BODYWEIGHT_DAYS = 7;
+
+/**
+ * Today's line under the header (Redesign v3 §A2): the parts Ben chose, from the same reads as `todayHealthLine`, plus
+ * his latest bodyweight (his own entry or Health's, within `TODAY_BODYWEIGHT_DAYS`) when chosen: `Sleep 7h 05m · RHR 58`,
+ * `Weight 82.4 kg`. Null when nothing chosen has a value (no placeholder, no score; rule 6).
+ */
+export function todayHealthLineFor(
+  signals: { sleep: readonly HealthDailyValue[]; restingHeartRate: readonly HealthDailyValue[] },
+  today: string,
+  shows: TodayHealthShows,
+  bodyweight: { date: string; value: number; unit: WeightUnit; source: string | null } | null = null,
+): TodayHealthLine | null {
+  const base = todayHealthLine({ sleep: shows.sleep ? signals.sleep : [], restingHeartRate: shows.rhr ? signals.restingHeartRate : [] }, today);
+  const bw = shows.bodyweight && bodyweight !== null && bodyweight.date <= today && daysBetween(bodyweight.date, today) <= TODAY_BODYWEIGHT_DAYS ? bodyweight : null;
+  if (bw === null) return base;
+  const text = `Weight${NBSP}${formatNumber(Math.round(bw.value * 10) / 10)}${NBSP}${bw.unit}`;
+  const said = `Bodyweight ${formatNumber(Math.round(bw.value * 10) / 10)} ${bw.unit === 'kg' ? 'kilograms' : 'pounds'}${bw.date === today ? '' : `, ${String(daysBetween(bw.date, today))} days ago`}`;
+  if (base === null) return { text, accessibilityLabel: said, sources: bw.source === null ? [] : [bw.source] };
+  const sources = [...new Set([...base.sources, ...(bw.source === null ? [] : [bw.source])])];
+  return { text: `${base.text} · ${text}`, accessibilityLabel: `${base.accessibilityLabel}. ${said}`, sources };
 }
 
 /** `Apple Health · Garmin`: the sheet's source line. */

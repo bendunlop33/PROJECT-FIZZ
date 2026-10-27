@@ -1,23 +1,22 @@
-import { Fragment, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Pressable, Switch, View, useWindowDimensions } from 'react-native';
 
-import { HISTORY_COPY, TODAY_V2_COPY, type FeedItem, type StripCell, type StripItem, type TodayBreakdownRow, type TodayDay } from '@fizz/domain';
+import { TODAY_PICK_COPY, TODAY_V2_COPY, WORKOUT_LIST_COPY, type TodayDayRow, type TodayHealthLine, type TodayHealthShows, type WeekTile, type WeekTileMark } from '@fizz/domain';
 
 import type { TodayOptionChange, TodayOptions } from '../../builder/builder-service';
 import type { TodayCardView } from '../../services/today-session';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Group, Icon, PrimaryButton, SecondaryButton, SectionHeader, TextButton } from '../../ui';
-import { TimeNoteRow } from '../../ui/time-stepper';
+import { AppText, BottomCard, Group, Icon, PrimaryButton, SecondaryButton, TextButton } from '../../ui';
+import { WorkoutList } from '../../ui/workout-list';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
-import { STRIP_LABEL_FIT, STRIP_LAYOUT, stripPillStyle } from '../../today/strip-style';
-import { dayRowAsList, TODAY_SCREEN_COPY, TODAY_TEXT_FIT, todayWeekStacked, type TodayCardAction, type TodaySegment } from '../../today/today-view';
+import { markStyle, TILE_LAYOUT, tileStyle } from '../../today/tile-style';
+import { todayCardRows, TODAY_SCREEN_COPY, type DaySheetOpen, type DaySheetRow, type LabelValueRow } from '../../today/today-view';
 import { PAST_LOG_COPY } from '../../workout/past-log-view';
 
 /**
- * Today (v2)'s pieces (workout-builder-v3 §2.0, prototypes/today-v2.html). They only lay out what
- * `todaySession` worked out; no rule lives here. Every gesture is a tap with a VoiceOver label; every
- * target is ≥ 44 pt (small chips extend theirs with `hitSlop`); text scales with Dynamic Type, and at
- * accessibility sizes the strip and day control become lists.
+ * Today (redesign v3, Ben 27 Oct; options B and C; docs/design/redesign-27oct.md §A): the pieces only lay out what
+ * `todaySession` and the pure view rules worked out; no rule lives here. Every gesture is a tap with a VoiceOver label;
+ * every target is ≥ 44 pt; text scales with Dynamic Type, and at accessibility sizes the week becomes a list.
  */
 
 /** Control rows are 44 pt with no gap between them, so a 34 pt chip's 5 pt slop stays inside its own row (review S9). */
@@ -25,91 +24,125 @@ const ROW_H = 44;
 const HIT = { top: 5, bottom: 5, left: 4, right: 4 } as const;
 const useAx = () => useWindowDimensions().fontScale >= AX_FONT_SCALE;
 
-// ---------------------------------------------------------------------------
-// Header: `Tuesday` · `✦ Coach` + mic, one line
+/** (Ben, 27 Oct) Spacing between Today's sections: extra above `Up next`, and between a label and its card. */
+export const TODAY_SPACING = { labelToContent: 7, aboveCardLabel: 7, labelColumn: 96 } as const;
 
-/**
- * (§2.0.2, Ben 20 Oct; prototypes/today-v2.html `.hdr`) The day name on the left, the compact coach
- * (`✦ Coach` pill + mic, 44 pt each) on the right, on one line at 375 pt: the name shrinks to fit
- * before it would wrap. The screen pads it below the status bar (safe-area inset).
- */
-export function TodayHeader({
-  title,
-  coach,
-  week = null,
-  onWeek,
-}: {
-  title: string;
-  /** The shared coach bar, compact (`CoachAskBar compact`). */ coach: ReactNode;
-  /** (Ben, 23 Oct: plan length = block 1; training-blocks §3.1) `· Week 3 of 6`, `· Week 6 of 6 · Deload`, `· Block done`. */
-  week?: { text: string; accessibilityLabel: string; deload: boolean; done: boolean } | null;
-  /** Opens Library › Your plan (the week strip). */
-  onWeek?: () => void;
-}) {
+// ---------------------------------------------------------------------------
+// Header: `Tuesday` over `27 October`, ✦ and mic as 44 pt icon buttons
+
+export function TodayHeader({ title, date, coach }: { title: string; /** `27 October`. */ date: string; /** `CoachAskBar compact round`. */ coach: ReactNode }) {
   const theme = useTheme();
-  const { width, fontScale } = useWindowDimensions();
-  // (Ben, 26 Oct; review finding 14) The week goes under the name when the row has no room for it (320 pt, large text).
-  const stacked = week !== null && todayWeekStacked(width, fontScale);
-  const weekLink =
-    week === null ? null : (
-      <Pressable accessibilityRole="button" accessibilityLabel={week.accessibilityLabel} onPress={onWeek} hitSlop={HIT} style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', flexShrink: 1, opacity: pressed ? 0.7 : 1 })}>
-        <AppText variant="callout" color="text.secondary" numeric {...TODAY_TEXT_FIT.weekLabel} numberOfLines={stacked ? 2 : 1}>
-          {`${stacked ? '' : '· '}${week.deload ? '◐ ' : ''}${week.text}${week.done ? ' ›' : ''}`}
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'] }}>
+      <View style={{ flexShrink: 1 }}>
+        <AppText variant="title1" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+          {title}
         </AppText>
-      </Pressable>
-    );
-  return (
-    <View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 44 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: theme.space['2'], flexShrink: 1 }}>
-          <AppText variant="title1" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ flexShrink: 1 }}>
-            {title}
-          </AppText>
-          {stacked ? null : weekLink}
-        </View>
-        {coach}
+        <AppText variant="callout" color="text.secondary" numeric>
+          {date}
+        </AppText>
       </View>
-      {stacked ? weekLink : null}
+      {coach}
     </View>
   );
 }
 
 // ---------------------------------------------------------------------------
-// The 7-day strip
+// Apple Health line (redesign v3 §A2): one quiet row, tap → Progress, long-press → Show on Today
 
-function StripPill({ item }: { item: StripItem }) {
+export function HealthLine({ line, onPress, onLongPress }: { line: TodayHealthLine; onPress: () => void; onLongPress: () => void }) {
   const theme = useTheme();
-  const st = stripPillStyle(item, theme);
   return (
-    <View
-      style={{
-        alignSelf: 'stretch',
-        borderRadius: theme.radius.sm,
-        paddingHorizontal: STRIP_LAYOUT.pillPadding,
-        paddingVertical: 2,
-        backgroundColor: st.backgroundColor,
-        borderWidth: st.borderWidth,
-        borderStyle: st.borderStyle,
-        borderColor: st.borderColor,
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={line.accessibilityLabel}
+      accessibilityHint="Opens Progress. Long-press to choose what shows"
+      accessibilityActions={[{ name: 'longpress', label: 'Choose what shows' }]}
+      onAccessibilityAction={(e) => {
+        if (e.nativeEvent.actionName === 'longpress') onLongPress();
       }}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={({ pressed }) => ({ minHeight: 40, marginTop: 4 - theme.space['3'], marginBottom: 8 - theme.space['3'], flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}
     >
-      <AppText variant="callout" align="center" {...STRIP_LABEL_FIT} style={{ fontSize: STRIP_LAYOUT.fontSize, lineHeight: STRIP_LAYOUT.lineHeight, letterSpacing: STRIP_LAYOUT.letterSpacing, color: st.color }}>
-        {item.text}
+      <Icon name="heart" size={16} color="text.secondary" />
+      <AppText variant="body" color="text.secondary" numeric numberOfLines={1} style={{ flexShrink: 1 }}>
+        {line.text}
       </AppText>
+      <Icon name="chevron.right" size={12} color="text.tertiary" />
+    </Pressable>
+  );
+}
+
+/** Long-press on the Health line: what shows (Sleep, Resting heart rate, Bodyweight), saved on this phone. */
+export function ShowOnTodaySheet({ visible, shows, onChange, onClose }: { visible: boolean; shows: TodayHealthShows; onChange: (next: TodayHealthShows) => void; onClose: () => void }) {
+  const theme = useTheme();
+  const row = (label: string, key: keyof TodayHealthShows) => (
+    <Pressable key={key} accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{ checked: shows[key] }} onPress={() => { onChange({ ...shows, [key]: !shows[key] }); }} style={({ pressed }) => ({ minHeight: 48, paddingHorizontal: theme.space['4'], flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.7 : 1 })}>
+      <AppText variant="body">{label}</AppText>
+      <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
+        <Switch value={shows[key]} accessible={false} />
+      </View>
+    </Pressable>
+  );
+  return (
+    <BottomCard visible={visible} onClose={onClose} footer={<PrimaryButton label={TODAY_SCREEN_COPY.done} onPress={onClose} />}>
+      <AppText variant="title2" accessibilityRole="header">
+        {TODAY_SCREEN_COPY.showOnToday}
+      </AppText>
+      <Group>
+        {row('Sleep', 'sleep')}
+        {row('Resting heart rate', 'rhr')}
+        {row('Bodyweight', 'bodyweight')}
+      </Group>
+    </BottomCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section label rows (`THIS WEEK  Plan week 3 of 6`, `YOUR SPLIT`, `UP NEXT`)
+
+export function SectionLabel({ title, right, onRight, rightLabel }: { title: string; right?: string | null; onRight?: () => void; rightLabel?: string }) {
+  const theme = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 20 }}>
+      <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+        {title}
+      </AppText>
+      {right != null && right !== '' ? (
+        onRight !== undefined ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={rightLabel ?? right} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }} onPress={onRight} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+            <AppText variant="callout" color="text.secondary" numeric style={{ fontSize: 13, lineHeight: 18 }}>
+              {right}
+            </AppText>
+          </Pressable>
+        ) : (
+          <AppText variant="callout" color="text.secondary" numeric style={{ fontSize: 13, lineHeight: 18 }}>
+            {right}
+          </AppText>
+        )
+      ) : null}
     </View>
   );
 }
 
-export function WeekStrip({ cells, onDay }: { cells: readonly StripCell[]; onDay: (cell: StripCell) => void }) {
+// ---------------------------------------------------------------------------
+// The week: seven tiles Mon–Sun (option B)
+
+/** 7 pt gaps leave ≈42 pt tiles at 375 pt: 3 pt of slop a side keeps each target ≥ 44 pt without overlapping its neighbour. */
+const TILE_SLOP = { top: 4, bottom: 4, left: 3, right: 3 } as const;
+
+export function WeekTiles({ tiles, onDay }: { tiles: readonly WeekTile[]; onDay: (tile: WeekTile) => void }) {
   const theme = useTheme();
   const ax = useAx();
+  const L = TILE_LAYOUT;
   if (ax) {
     return (
       <View accessibilityRole="list">
-        {cells.map((c) => (
-          <Pressable key={c.date} accessibilityRole="button" accessibilityLabel={c.accessibilityLabel} onPress={() => { onDay(c); }} style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
-            <AppText variant="callout" color={c.today ? 'text.primary' : 'text.secondary'}>
-              {c.today ? `Today · ${c.listText}` : c.listText}
+        {tiles.map((t) => (
+          <Pressable key={t.date} accessibilityRole="button" accessibilityLabel={t.accessibilityLabel} disabled={t.items.length === 0} onPress={() => { onDay(t); }} style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
+            <AppText variant="callout" color={t.today ? 'text.primary' : 'text.secondary'}>
+              {t.accessibilityLabel}
             </AppText>
           </Pressable>
         ))}
@@ -117,79 +150,379 @@ export function WeekStrip({ cells, onDay }: { cells: readonly StripCell[]; onDay
     );
   }
   return (
-    <View style={{ flexDirection: 'row', gap: STRIP_LAYOUT.cellGap }}>
-      {cells.map((c) => (
-        <Fragment key={c.date}>
-          {c.weekStart ? <View accessible={false} style={{ width: STRIP_LAYOUT.divider, backgroundColor: theme.colors['border.divider'] }} /> : null}
+    <View style={{ flexDirection: 'row', gap: L.gap }}>
+      {tiles.map((t) => {
+        const st = tileStyle(t, theme);
+        return (
           <Pressable
+            key={t.date}
             accessibilityRole="button"
-            accessibilityLabel={c.accessibilityLabel}
+            accessibilityLabel={t.accessibilityLabel}
+            accessibilityState={{ disabled: t.items.length === 0 }}
+            disabled={t.items.length === 0}
+            hitSlop={TILE_SLOP}
             onPress={() => {
-              onDay(c);
+              onDay(t);
             }}
-            style={({ pressed }) => ({
-              // Seven equal columns (§2.0.2 region 3): every cell the same share, never sized by its label.
-              flex: 1,
-              flexBasis: 0,
-              minWidth: 0,
-              minHeight: 64,
-              paddingVertical: theme.space['1'],
-              paddingHorizontal: STRIP_LAYOUT.cellPadding,
-              alignItems: 'center',
-              gap: 2,
-              borderRadius: theme.radius.sm,
-              borderWidth: c.today ? STRIP_LAYOUT.todayBorder : 0,
-              borderColor: theme.colors.accent,
-              opacity: pressed ? 0.7 : 1,
-            })}
+            style={({ pressed }) => ({ flex: 1, flexBasis: 0, minWidth: 0, height: L.height, borderRadius: L.radius, backgroundColor: st.backgroundColor, borderWidth: st.borderWidth, borderColor: st.borderColor, alignItems: 'center', justifyContent: 'center', gap: 2, opacity: pressed ? 0.7 : 1 })}
           >
-            <AppText variant="sectionLabel" color={c.today ? 'text.primary' : 'text.tertiary'} style={{ fontSize: 11, lineHeight: 14, letterSpacing: 0.4 }}>
-              {c.weekday}
+            <AppText variant="callout" color="text.tertiary" maxFontSizeMultiplier={1} style={{ fontSize: L.letterSize, lineHeight: 13 }}>
+              {t.letter}
             </AppText>
-            <AppText variant="label" numeric color={c.past ? 'text.secondary' : 'text.primary'} style={{ fontSize: 15, lineHeight: 18 }}>
-              {String(c.dayOfMonth)}
+            <AppText variant="label" numeric color={st.dateColor} maxFontSizeMultiplier={1} style={{ fontSize: L.dateSize, lineHeight: 19, fontWeight: '600' }}>
+              {String(t.dayOfMonth)}
             </AppText>
-            {c.items.map((it, i) => (
-              <StripPill key={`${it.kind}:${String(i)}`} item={it} />
-            ))}
+            <View style={{ flexDirection: 'row', gap: L.markGap, height: L.mark + 1, alignItems: 'center' }}>
+              {t.marks.slice(0, 3).map((m, i) => (
+                <View key={`${m.shape}:${String(i)}`} style={{ width: L.mark, height: L.mark, borderRadius: L.mark / 2, ...markStyle(m, theme) }} />
+              ))}
+            </View>
           </Pressable>
-        </Fragment>
-      ))}
+        );
+      })}
     </View>
   );
 }
 
-/** A day's sheet (§2.0.5 Tap a day): what's on it; a workout opens its Summary, an activity opens to edit. */
-export function DaySheet({ cell, onClose, onWorkout, onActivity }: { cell: StripCell | null; onClose: () => void; onWorkout: (sessionId: string) => void; onActivity: (activityId: string) => void }) {
+/** A tapped day (Ben, 27 Oct): `Mon 26 Oct`, one row per thing on it, each opening its own page. */
+export function DaySheet({ title, rows, onOpen, onClose }: { title: string | null; rows: readonly DaySheetRow[]; onOpen: (open: NonNullable<DaySheetOpen>) => void; onClose: () => void }) {
   const theme = useTheme();
   return (
-    <BottomCard visible={cell !== null} onClose={onClose} footer={<TextButton label={TODAY_V2_COPY.close} tone="secondary" onPress={onClose} />}>
-      {cell === null ? null : (
-        <View style={{ gap: theme.space['2'] }}>
-          <AppText variant="headline" accessibilityRole="header">
-            {cell.listText.split(' · ')[0] ?? ''}
+    <BottomCard visible={title !== null} onClose={onClose} footer={<TextButton label={TODAY_V2_COPY.close} tone="secondary" onPress={onClose} />}>
+      <AppText variant="title2" accessibilityRole="header">
+        {title ?? ''}
+      </AppText>
+      <Group>
+        {rows.map((r) => (
+          <Pressable
+            key={r.key}
+            accessibilityRole={r.open === null ? 'text' : 'button'}
+            accessibilityLabel={r.accessibilityLabel}
+            disabled={r.open === null}
+            onPress={() => {
+              if (r.open !== null) onOpen(r.open);
+            }}
+            style={({ pressed }) => ({ minHeight: 56, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], opacity: pressed ? 0.7 : 1 })}
+          >
+            <RowMark mark={r.mark} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText variant="body">
+                {r.title}
+                {r.health ? <AppText variant="callout" color="text.tertiary" style={CARD_TEXT.small}>{' ♥'}</AppText> : null}
+              </AppText>
+              {r.detail !== null ? (
+                <AppText variant="callout" color="text.secondary" numeric>
+                  {r.detail}
+                </AppText>
+              ) : null}
+            </View>
+            {r.open !== null ? <Icon name="chevron.right" size={14} color="text.tertiary" /> : null}
+          </Pressable>
+        ))}
+      </Group>
+    </BottomCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// `Push ⌄` → Today's workout (option C)
+
+export function TodayPickSheet({
+  visible,
+  rows,
+  others,
+  onPick,
+  onBuild,
+  onPastLog,
+  onActivity,
+  onClose,
+}: {
+  visible: boolean;
+  rows: readonly TodayDayRow[];
+  /** Other sessions (Full body, Upper …) after the plan's days. */
+  others: readonly { key: string; name: string; selected: boolean }[];
+  onPick: (key: string) => void;
+  onBuild: () => void;
+  onPastLog: () => void;
+  onActivity: () => void;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+  const dayRow = (key: string, name: string, status: string, selected: boolean, label: string) => (
+    <Pressable key={key} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected }} onPress={() => { onPick(key); }} style={({ pressed }) => ({ minHeight: 52, paddingHorizontal: theme.space['4'], flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}>
+      <AppText variant="body" style={{ flex: 1, ...(selected ? { fontWeight: '600' } : {}) }}>
+        {name}
+      </AppText>
+      <AppText variant="callout" color={status === TODAY_PICK_COPY.upNext ? 'accent' : 'text.secondary'} numeric>
+        {status}
+      </AppText>
+      <View style={{ width: 20, alignItems: 'flex-end' }}>{selected ? <Icon name="checkmark" size={16} color="accent" /> : null}</View>
+    </Pressable>
+  );
+  const link = (label: string, onPress: () => void) => (
+    <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => ({ minHeight: 52, paddingHorizontal: theme.space['4'], flexDirection: 'row', alignItems: 'center', opacity: pressed ? 0.7 : 1 })}>
+      <AppText variant="body" style={{ flex: 1 }}>
+        {label}
+      </AppText>
+      <Icon name="chevron.right" size={14} color="text.tertiary" />
+    </Pressable>
+  );
+  return (
+    <BottomCard visible={visible} onClose={onClose} footer={<TextButton label={TODAY_V2_COPY.close} tone="secondary" onPress={onClose} />}>
+      <AppText variant="title2" accessibilityRole="header">
+        {TODAY_PICK_COPY.title}
+      </AppText>
+      {rows.length + others.length > 0 ? (
+        <Group>
+          {rows.map((r) => dayRow(r.key, r.name, r.status, r.selected, r.accessibilityLabel))}
+          {others.map((o) => dayRow(o.key, o.name, '', o.selected, o.selected ? `${o.name}, selected` : o.name))}
+        </Group>
+      ) : null}
+      <Group>
+        {link(TODAY_V2_COPY.buildYourOwn, onBuild)}
+        {link(PAST_LOG_COPY.entry, onPastLog)}
+        {link(TODAY_SCREEN_COPY.addActivity, onActivity)}
+      </Group>
+    </BottomCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cards: the workout (collapsed / expanded), rest day, done
+
+/** (Ben, 27 Oct) One text scale on the card: label/value rows 15 pt (labels regular secondary, values semibold). */
+export const CARD_TEXT = { row: { fontSize: 15, lineHeight: 20 }, small: { fontSize: 14, lineHeight: 18 } } as const;
+
+function ValueRows({ rows, onNote, onValue }: { rows: readonly LabelValueRow[]; /** The row's small note (`(1 left out)`) was tapped. */ onNote?: () => void; /** Rows whose value is a control (`Gym  Main Gym ⌄`), by label. */ onValue?: Readonly<Record<string, { onPress: () => void; accessibilityLabel: string }>> }) {
+  const theme = useTheme();
+  const ax = useAx();
+  return (
+    <View>
+      {rows.map((r) => {
+        const control = onValue?.[r.label];
+        const plain = control === undefined && r.note === undefined;
+        const label = (
+          <AppText variant="callout" color="text.secondary" accessible={false} style={{ ...CARD_TEXT.row, ...(ax ? {} : { width: TODAY_SPACING.labelColumn }) }}>
+            {r.label}
           </AppText>
-          {cell.items.length === 0 ? (
-            <AppText variant="callout" color="text.secondary">
-              {TODAY_SCREEN_COPY.daySheetEmpty}
+        );
+        const value = (
+          <AppText variant="body" numeric accessible={false} style={{ ...CARD_TEXT.row, flexShrink: 1, fontWeight: '600' }}>
+            {control !== undefined ? `${r.value} ⌄` : r.value}
+          </AppText>
+        );
+        const rowStyle = { flexDirection: ax ? ('column' as const) : ('row' as const), alignItems: ax ? ('flex-start' as const) : ('center' as const), minHeight: 30, gap: ax ? 0 : theme.space['2'] };
+        if (control !== undefined) {
+          return (
+            <Pressable key={r.label} accessibilityRole="button" accessibilityLabel={control.accessibilityLabel} onPress={control.onPress} style={({ pressed }) => ({ ...rowStyle, opacity: pressed ? 0.7 : 1 })}>
+              {label}
+              {value}
+            </Pressable>
+          );
+        }
+        return (
+          <View key={r.label} accessible={plain} accessibilityLabel={`${r.label}, ${r.value}`} style={rowStyle}>
+            {label}
+            <View accessible={!plain} accessibilityLabel={`${r.label}, ${r.value}`} style={{ flexShrink: 1 }}>
+              {value}
+            </View>
+            {r.note !== undefined ? (
+              <Pressable accessibilityRole="button" accessibilityLabel={`${r.note.replace(/[()]/g, '')}. Shows what changed to fit`} hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }} onPress={onNote} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+                <AppText variant="callout" color="text.secondary" numeric style={CARD_TEXT.small}>
+                  {r.note}
+                </AppText>
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** A secondary link or note on the card: 14 pt, secondary (Ben, 27 Oct). */
+function SmallLink({ label, onPress, accessibilityLabel, tone = 'text.secondary' }: { label: string; onPress: () => void; accessibilityLabel?: string; tone?: 'text.secondary' | 'accent' }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label} hitSlop={{ top: 12, bottom: 12, left: 4, right: 8 }} onPress={onPress} style={({ pressed }) => ({ minHeight: 28, justifyContent: 'center', alignSelf: 'flex-start', opacity: pressed ? 0.7 : 1 })}>
+      <AppText variant="callout" color={tone} style={CARD_TEXT.small}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
+function CardShell({ children }: { children: ReactNode }) {
+  const theme = useTheme();
+  return <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['2'] }}>{children}</View>;
+}
+
+/**
+ * Today's workout card (option C; Ben 27 Oct): `Push ⌄` (the day sheet), `Edit` top right, then `Main lift`,
+ * `Exercises  5 (1 left out)` (the note opens the fit with Undo), `Est. time`, `Gym  Main Gym ⌄`. `Show exercises`
+ * (remembered on this phone) and, when the coach has changes for today, `✦ 1 change` (the offer: Apply/Skip, rule 3).
+ * Expanded: the moved / clash lines, `Back to plan day` on an edited card, the WorkoutList with the coach's value on its
+ * row, `Why?`, and `Hide exercises` at the bottom. One text scale: rows 15 pt, notes and links 14 pt.
+ */
+export function TodayCard({
+  view,
+  open,
+  why,
+  moved,
+  gymName,
+  onGym,
+  onTitle,
+  onEdit,
+  onToggle,
+  onOffer,
+  onTimeNote,
+  onBackToPlan,
+  onWhy,
+}: {
+  view: TodayCardView;
+  open: boolean;
+  why: boolean;
+  moved: string | null;
+  gymName: string | null;
+  onGym: () => void;
+  onTitle: () => void;
+  onEdit: () => void;
+  onToggle: () => void;
+  onOffer: () => void;
+  onTimeNote: () => void;
+  onBackToPlan: () => void;
+  onWhy: () => void;
+}) {
+  const theme = useTheme();
+  const time = view.time;
+  const gymLabel = gymName ?? TODAY_PICK_COPY.addGym;
+  const tag =
+    view.coachChanges > 0 ? (
+      <Pressable accessibilityRole="button" accessibilityLabel={WORKOUT_LIST_COPY.changesLabel(view.coachChanges)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={onOffer} style={({ pressed }) => ({ minHeight: 30, paddingHorizontal: theme.space['3'], justifyContent: 'center', borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], opacity: pressed ? 0.7 : 1 })}>
+        <AppText variant="callout" color="accent" style={CARD_TEXT.small}>
+          {WORKOUT_LIST_COPY.changes(view.coachChanges)}
+        </AppText>
+      </Pressable>
+    ) : null;
+  const toggleRow = (label: string) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 36 }}>
+      <SmallLink label={label} onPress={onToggle} tone="accent" />
+      {tag}
+    </View>
+  );
+  return (
+    <CardShell>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: theme.space['2'] }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${view.title}. Change today’s workout`} onPress={onTitle} style={({ pressed }) => ({ flexShrink: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], opacity: pressed ? 0.7 : 1 })}>
+          <AppText variant="title2" style={{ flexShrink: 1 }}>
+            {view.title}
+          </AppText>
+          <Icon name="chevron.down" size={16} color="text.secondary" />
+        </Pressable>
+        <TextButton label={TODAY_V2_COPY.edit} onPress={onEdit} />
+      </View>
+      <ValueRows
+        rows={todayCardRows(view, gymLabel)}
+        onNote={onTimeNote}
+        onValue={{ [TODAY_PICK_COPY.gym]: { onPress: onGym, accessibilityLabel: `${TODAY_PICK_COPY.gym}, ${gymLabel}` } }}
+      />
+      {time?.overText != null ? (
+        <AppText variant="callout" color="status.warning" numeric style={CARD_TEXT.small}>
+          {time.overText}
+        </AppText>
+      ) : null}
+      {open ? (
+        <View style={{ gap: theme.space['2'] }}>
+          {moved !== null ? (
+            <AppText variant="callout" color="text.secondary" style={CARD_TEXT.small}>
+              {moved}
             </AppText>
           ) : null}
-          {cell.items.map((it, i) => {
-            const open = it.kind === 'workout' ? () => { onWorkout(it.sessionId); } : it.kind === 'activity' ? () => { onActivity(it.activityId); } : null;
-            return (
-              <Pressable key={`${it.kind}:${String(i)}`} accessibilityRole={open === null ? 'text' : 'button'} disabled={open === null} onPress={open ?? undefined} style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.7 : 1 })}>
-                <AppText variant="body">{it.text}</AppText>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-                  {it.planned && it.kind !== 'today' ? (
-                    <AppText variant="callout" color="text.secondary">
-                      {TODAY_V2_COPY.planned}
-                    </AppText>
-                  ) : null}
-                  {open !== null ? <Icon name="chevron.right" size={14} color="text.tertiary" /> : null}
-                </View>
-              </Pressable>
-            );
-          })}
+          {view.clashLine !== null ? (
+            <AppText variant="callout" color="status.warning" style={CARD_TEXT.small}>
+              {view.clashLine}
+            </AppText>
+          ) : null}
+          {view.edited !== null ? <SmallLink label={TODAY_V2_COPY.backToPlan} onPress={onBackToPlan} /> : null}
+          <WorkoutList rows={view.list} target={view.listTarget} onCoach={() => { onOffer(); }} />
+          <SmallLink label={TODAY_V2_COPY.why} accessibilityLabel={why ? 'Hide why' : 'Why this workout'} onPress={onWhy} />
+          {why ? (
+            <View style={{ gap: 2 }}>
+              {view.why.map((l, i) => (
+                <AppText key={`${String(i)}:${l}`} variant="callout" color="text.secondary" style={CARD_TEXT.small}>
+                  {`· ${l}`}
+                </AppText>
+              ))}
+            </View>
+          ) : null}
+          {toggleRow(WORKOUT_LIST_COPY.hideExercises)}
+        </View>
+      ) : (
+        toggleRow(WORKOUT_LIST_COPY.showExercises)
+      )}
+    </CardShell>
+  );
+}
+
+/** A rest day on a Set days plan: `Rest day`, `Next  Legs · Thu`. Start Plan Workout starts that day early. */
+export function RestDayCard({ next, label }: { next: string; label: string }) {
+  return (
+    <View accessible accessibilityLabel={label}>
+      <CardShell>
+        <AppText variant="title2">{TODAY_PICK_COPY.restDay}</AppText>
+        <ValueRows rows={[{ label: TODAY_PICK_COPY.next, value: next }]} />
+      </CardShell>
+    </View>
+  );
+}
+
+/** Done today: `Push ✓`, `Time 47 min`, `New best 1`, `Summary ›`. */
+export function DoneCard({ title, rows, onSummary }: { title: string; rows: readonly LabelValueRow[]; onSummary: () => void }) {
+  const theme = useTheme();
+  return (
+    <CardShell>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+        <AppText variant="title2" style={{ flexShrink: 1 }}>
+          {title}
+        </AppText>
+        <Icon name="checkmark.circle.fill" size={20} color="status.done" />
+      </View>
+      {rows.length > 0 ? <ValueRows rows={rows} /> : null}
+      <View style={{ alignSelf: 'flex-start' }}>
+        <TextButton label={TODAY_PICK_COPY.summary} accessibilityLabel={`${title} summary`} onPress={onSummary} />
+      </View>
+    </CardShell>
+  );
+}
+
+/** The coach's offer for today (`✦ 1 change`): its line, the before → after lines, Apply / Skip (rule 3). */
+export function OfferSheet({ visible, offer, onClose }: { visible: boolean; offer: { line: string; lines: readonly string[]; busy: boolean; onApply: () => void; onSkip: () => void } | null; onClose: () => void }) {
+  const theme = useTheme();
+  return (
+    <BottomCard
+      visible={visible && offer !== null}
+      onClose={onClose}
+      footer={
+        offer === null ? null : (
+          <View style={{ gap: theme.space['2'] }}>
+            <PrimaryButton label={TODAY_V2_COPY.apply} disabled={offer.busy} onPress={offer.onApply} />
+            <SecondaryButton label={TODAY_V2_COPY.skip} disabled={offer.busy} onPress={offer.onSkip} />
+          </View>
+        )
+      }
+    >
+      {offer === null ? null : (
+        <View style={{ gap: theme.space['2'] }} accessible accessibilityLabel={[offer.line, ...offer.lines].join('. ')}>
+          <AppText variant="title2" accessibilityRole="header">
+            {TODAY_SCREEN_COPY.changesForToday(offer.lines.length)}
+          </AppText>
+          <AppText variant="callout" color="text.secondary">
+            {offer.line}
+          </AppText>
+          {offer.lines.map((l) => (
+            <AppText key={l} variant="body" numeric>
+              {l}
+            </AppText>
+          ))}
         </View>
       )}
     </BottomCard>
@@ -197,157 +530,52 @@ export function DaySheet({ cell, onClose, onWorkout, onActivity }: { cell: Strip
 }
 
 // ---------------------------------------------------------------------------
-// Recent (Ben, 26 Oct; docs/design/history.md §2)
+// Recent (Ben, 27 Oct): the last three things done
 
-/**
- * What Ben did in the last 14 days, newest first, at most 6 rows (`todaySession` picks them), then `All history ›`.
- * One compact row each: `Sun 25 Oct  Push A  52 min · 16 sets ›`; at accessibility sizes the value wraps under the
- * name. A workout opens its Summary, an activity its sheet. Nothing done: the caller shows no section.
- */
-export function RecentSection({ items, onItem, onAll }: { items: readonly FeedItem[]; onItem: (item: FeedItem) => void; onAll: () => void }) {
+/** (Ben, 27 Oct) The week tiles' marker at the start of a row (Recent, a day's sheet), so rows align. */
+function RowMark({ mark }: { mark: WeekTileMark }) {
   const theme = useTheme();
-  const ax = useAx();
-  return (
-    <View style={{ gap: theme.space['2'] }}>
-      <SectionHeader title={HISTORY_COPY.recent} />
-      <Group>
-        {items.map((it) => (
-          <Pressable
-            key={it.key}
-            accessibilityRole="button"
-            accessibilityLabel={it.accessibilityLabel}
-            onPress={() => {
-              onItem(it);
-            }}
-            style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
-          >
-            <View style={{ flex: 1, flexDirection: ax ? 'column' : 'row', alignItems: ax ? 'flex-start' : 'baseline', gap: ax ? 2 : theme.space['3'] }}>
-              <AppText variant="callout" color="text.secondary" numeric style={ax ? undefined : { minWidth: 76 }}>
-                {it.when}
-              </AppText>
-              <AppText variant="body" numberOfLines={ax ? undefined : 1} style={ax ? undefined : { flex: 1 }}>
-                {it.title}
-              </AppText>
-              <AppText variant="callout" color="text.secondary" numeric>
-                {it.value}
-              </AppText>
-            </View>
-            {/* (ADR 0035) From Apple Health, or linked to a Health workout: a small mark (the label says it in words). */}
-            {(it.kind === 'workout' && it.linkedSource !== undefined) || (it.kind === 'activity' && it.fromHealth !== undefined) ? <Icon name="heart.fill" size={12} color="text.secondary" /> : null}
-            <Icon name="chevron.right" size={14} color="text.tertiary" />
-          </Pressable>
-        ))}
-      </Group>
-      <View style={{ alignSelf: 'flex-start' }}>
-        <TextButton label={HISTORY_COPY.allHistory} accessibilityLabel={HISTORY_COPY.allHistoryLabel} tone="secondary" onPress={onAll} />
-      </View>
-    </View>
-  );
+  return <View accessible={false} style={{ width: 9, height: 9, borderRadius: 4.5, ...markStyle(mark, theme) }} />;
 }
 
-// ---------------------------------------------------------------------------
-// Day control
-
-export function DayControl({ segments, paused, onDay, onMore, onAxList, axLabel }: { segments: readonly TodaySegment[]; paused: boolean; onDay: (key: string) => void; onMore: () => void; onAxList: () => void; axLabel: string }) {
+export function RecentList({ rows }: { rows: readonly { key: string; mark: WeekTileMark; title: string; health: boolean; line: string; accessibilityLabel: string; onPress: () => void }[] }) {
   const theme = useTheme();
-  // (Ben, 26 Oct) From xxxLarge, not AX1: the segments would cut `Shoulders` before then.
-  const asList = dayRowAsList(useWindowDimensions().fontScale);
-  if (asList) {
-    return (
-      <Pressable accessibilityRole="button" accessibilityLabel={`Day, ${axLabel}`} onPress={onAxList} style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.7 : 1 })}>
-        <AppText variant="callout" color="text.secondary">
-          Day
-        </AppText>
-        <AppText variant="body" style={{ flexShrink: 1, textAlign: 'right' }}>{`${axLabel} ›`}</AppText>
-      </Pressable>
-    );
-  }
   return (
-    <View style={{ gap: theme.space['1'] }}>
-      <View accessibilityRole="tablist" style={{ flexDirection: 'row', backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, padding: 3, gap: 3 }}>
-        {segments.map((s) => (
-          <Pressable
-            key={s.key}
-            accessibilityRole="tab"
-            accessibilityLabel={s.accessibilityLabel}
-            accessibilityState={{ selected: s.selected }}
-            onPress={() => {
-              if (s.more) onMore();
-              else onDay(s.key);
-            }}
-            style={({ pressed }) => ({
-              flex: s.more && !s.selected ? 0.6 : 1,
-              minHeight: 48,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: theme.radius.sm,
-              backgroundColor: s.selected ? theme.colors['bg.raised'] : 'transparent',
-              opacity: pressed ? 0.7 : 1,
-            })}
-          >
-            <AppText variant="label" color={s.selected ? 'text.primary' : 'text.tertiary'} {...TODAY_TEXT_FIT.segmentLabel} style={{ fontSize: 15, paddingHorizontal: 2 }}>
-              {s.label}
+    <Group>
+      {rows.map((r) => (
+        <Pressable key={r.key} accessibilityRole="button" accessibilityLabel={r.accessibilityLabel} onPress={r.onPress} style={({ pressed }) => ({ minHeight: 56, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}>
+          <RowMark mark={r.mark} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AppText variant="body" numberOfLines={1}>
+              {r.title}
+              {r.health ? <AppText variant="callout" color="text.tertiary" style={CARD_TEXT.small}>{' ♥'}</AppText> : null}
             </AppText>
-            {s.next ? (
-              <AppText variant="sectionLabel" color={s.selected ? 'text.primary' : 'text.tertiary'} {...TODAY_TEXT_FIT.segmentNext} style={{ fontSize: 10, lineHeight: 12 }}>
-                {TODAY_V2_COPY.next}
-              </AppText>
-            ) : null}
-          </Pressable>
-        ))}
-      </View>
-      {paused ? (
-        <AppText variant="callout" color="text.secondary">
-          {TODAY_V2_COPY.planPaused}
-        </AppText>
-      ) : null}
-    </View>
-  );
-}
-
-/** `⋯` Other sessions (or, at AX sizes, every day): a list sheet; Empty workout and Build your own at the end. */
-export function SessionListSheet({ visible, title, days, selectedKey, nextKey, onPick, onEmpty, onBuild, onPastLog, onClose }: { visible: boolean; title: string; days: readonly TodayDay[]; selectedKey: string | null; nextKey: string | null; onPick: (key: string) => void; onEmpty: () => void; onBuild: () => void; /** (Ben, 25 Oct) `Log a past workout`. */ onPastLog?: () => void; onClose: () => void }) {
-  const theme = useTheme();
-  return (
-    <BottomCard
-      visible={visible}
-      onClose={onClose}
-      footer={
-        <>
-          <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-            <SecondaryButton label={TODAY_V2_COPY.emptyWorkout} onPress={onEmpty} grow />
-            <SecondaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={onBuild} grow />
+            <AppText variant="callout" color="text.secondary" numeric>
+              {r.line}
+            </AppText>
           </View>
-          {onPastLog ? <TextButton label={PAST_LOG_COPY.entry} onPress={onPastLog} /> : null}
-          <TextButton label={TODAY_V2_COPY.close} tone="secondary" onPress={onClose} />
-        </>
-      }
-    >
-      <AppText variant="headline" accessibilityRole="header">
-        {title}
-      </AppText>
-      {days.map((d) => (
-        <Pressable
-          key={d.key}
-          accessibilityRole="button"
-          accessibilityLabel={[d.name, d.key === nextKey ? 'next' : null, d.key === selectedKey ? 'selected' : null].filter((x): x is string => x !== null).join(', ')}
-          onPress={() => {
-            onPick(d.key);
-          }}
-          style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.7 : 1 })}
-        >
-          <AppText variant="body">{d.name}</AppText>
-          <AppText variant="callout" color="text.secondary">
-            {d.key === selectedKey ? '✓' : d.key === nextKey ? TODAY_V2_COPY.next : ''}
-          </AppText>
+          <Icon name="chevron.right" size={14} color="text.tertiary" />
         </Pressable>
       ))}
-    </BottomCard>
+    </Group>
   );
 }
 
 // ---------------------------------------------------------------------------
-// The session card
+// The pinned dock (redesign v3 §A6)
+
+export function StartDock({ plan, onPlan, onEmpty, busy, bottom }: { plan: 'enabled' | 'disabled' | 'hidden'; onPlan: () => void; onEmpty: () => void; busy: boolean; bottom: number }) {
+  const theme = useTheme();
+  return (
+    <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: bottom, gap: theme.space['2'], backgroundColor: theme.colors['bg.canvas'], borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
+      {plan !== 'hidden' ? <PrimaryButton label={TODAY_PICK_COPY.startPlan} busy={busy} disabled={plan === 'disabled'} onPress={onPlan} /> : null}
+      <SecondaryButton label={TODAY_PICK_COPY.startEmpty} disabled={busy} onPress={onEmpty} />
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Your workout's options (D3), unchanged rows; the Options card wraps them on Your workout
 
 function Chip({ label, selected, onPress, accessibilityLabel }: { label: string; selected: boolean; onPress: () => void; accessibilityLabel?: string }) {
   const theme = useTheme();
@@ -459,222 +687,3 @@ export function TodayOptionRows({ options, onChange, onMix }: { options: TodayOp
   );
 }
 
-function BreakdownTable({ rows, unit }: { rows: readonly TodayBreakdownRow[]; unit: 'kg' | 'lb' }) {
-  const theme = useTheme();
-  const groups: TodayBreakdownRow[][] = [];
-  for (const r of rows) {
-    const last = groups[groups.length - 1];
-    if (r.superset !== null && last !== undefined && last[0]?.superset?.block === r.superset.block) last.push(r);
-    else groups.push([r]);
-  }
-  const col = { n: 30, sets: 56, top: 84 } as const;
-  const row = (r: TodayBreakdownRow) => (
-    <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel} style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingVertical: 2 }}>
-      <AppText variant="callout" color="text.tertiary" numeric style={{ width: col.n }}>
-        {r.label}
-      </AppText>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-          {r.held ? <Icon name="exclamationmark.triangle" size={13} color="status.warning" /> : null}
-          <AppText variant="callout" style={{ flexShrink: 1 }}>
-            {r.name}
-          </AppText>
-        </View>
-        {r.works !== null ? (
-          <AppText variant="callout" color="text.tertiary" style={{ fontSize: 13, lineHeight: 16 }}>
-            {r.works}
-          </AppText>
-        ) : null}
-      </View>
-      <View style={{ width: col.sets, alignItems: 'flex-end' }}>
-        <AppText variant="callout" numeric>
-          {String(r.sets)}
-        </AppText>
-        {r.warmupText !== null ? (
-          <AppText variant="callout" color="text.tertiary" numeric style={{ fontSize: 12, lineHeight: 14 }}>
-            {r.warmupText}
-          </AppText>
-        ) : null}
-      </View>
-      <AppText variant="callout" numeric align="right" style={{ width: col.top }}>
-        {r.top}
-      </AppText>
-    </View>
-  );
-  return (
-    <View>
-      <View accessible={false} importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', paddingBottom: theme.space['1'], borderBottomWidth: theme.dividerWidth, borderBottomColor: theme.colors['border.divider'] }}>
-        <AppText variant="sectionLabel" color="text.tertiary" style={{ width: col.n }}>
-          #
-        </AppText>
-        <AppText variant="sectionLabel" color="text.tertiary" style={{ flex: 1 }}>
-          {TODAY_V2_COPY.exercise}
-        </AppText>
-        <AppText variant="sectionLabel" color="text.tertiary" align="right" style={{ width: col.sets }}>
-          {TODAY_V2_COPY.sets}
-        </AppText>
-        <AppText variant="sectionLabel" color="text.tertiary" align="right" style={{ width: col.top }}>
-          {TODAY_V2_COPY.topSet(unit)}
-        </AppText>
-      </View>
-      {groups.map((g) =>
-        g.length > 1 ? (
-          <View key={`ss:${g[0]?.key ?? ''}`} style={{ borderLeftWidth: 2, borderLeftColor: theme.colors['border.control'], borderRadius: theme.radius.sm, paddingLeft: theme.space['1'], marginVertical: 2, backgroundColor: theme.colors['bg.raised'] }}>
-            {g.map(row)}
-          </View>
-        ) : (
-          g.map(row)
-        ),
-      )}
-    </View>
-  );
-}
-
-export function SessionCard({
-  view,
-  why,
-  moved,
-  busy,
-  dispatch,
-  onStart,
-  onEdit,
-  onBackToPlan,
-  onTimeNote,
-  onEditedTime,
-  offer = null,
-  onEmpty,
-}: {
-  /** (Ben, 26 Oct) `Empty workout` under Start: one tap, the screen's own empty start. */
-  onEmpty?: (() => void) | undefined;
-  /** (§6.1) The coach's pre-session line with code's offer (`Apply` / `Skip`, rule 3); null: nothing to say. */
-  offer?: { line: string; lines: string[]; busy: boolean; onApply: () => void; onSkip: () => void; /** (§6.2) Opens Progress › Reviews. */ onReviews?: () => void } | null;
-  view: TodayCardView;
-  why: boolean;
-  moved: string | null;
-  busy: boolean;
-  dispatch: (a: TodayCardAction) => void;
-  onStart: () => void;
-  onEdit: () => void;
-  onBackToPlan: () => void;
-  /** The Time note's tap: everything the fit changed, with Undo (the screen's sheet). */
-  onTimeNote: () => void;
-  /** (Review todaylean S4) An edited card's Time step: Your workout's Time on that draft at this length (the screen writes it). */
-  onEditedTime: (minutes: number) => void;
-}) {
-  const theme = useTheme();
-  const time = view.time;
-  // (fit-to-time 22 Oct revision, item 4) `Time · −1 exercise ›  [−] 45 min [+]`: the note in place, nothing moves.
-  const timeRow =
-    time === null ? null : (
-      <TimeNoteRow
-        minutes={time.minutes}
-        over={time.over}
-        note={time.note}
-        noteLabel={time.noteLabel}
-        onStep={(d) => {
-          // (Ben, 27 Oct) The number is the live estimate; a step goes to the service's next length (`liveTime`).
-          const to = d < 0 ? time.less : time.more;
-          if (to === null) return;
-          if (view.edited !== null) onEditedTime(to);
-          else dispatch({ kind: 'minutes_to', minutes: to });
-        }}
-        onNote={onTimeNote}
-      />
-    );
-  const backToPlan = (
-    <View style={{ alignSelf: 'flex-start' }}>
-      <TextButton label={TODAY_V2_COPY.backToPlan} tone="secondary" onPress={onBackToPlan} />
-    </View>
-  );
-  // The session's rows, then `Why?`. (D3; V5: with or without a plan) Mix it up left the card with the other Today-only
-  // controls; it is on Your workout.
-  const details = (
-    <View style={{ gap: theme.space['2'] }}>
-      <BreakdownTable rows={view.rows} unit={view.unit} />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['4'] }}>
-        <TextButton label={TODAY_V2_COPY.why} tone="secondary" accessibilityLabel={why ? 'Hide why' : 'Why this workout'} onPress={() => { dispatch({ kind: 'why' }); }} />
-      </View>
-      {why ? (
-        <View style={{ gap: 2 }}>
-          {view.why.map((l, i) => (
-            <AppText key={`${String(i)}:${l}`} variant="callout" color="text.secondary">
-              {`· ${l}`}
-            </AppText>
-          ))}
-        </View>
-      ) : null}
-    </View>
-  );
-  return (
-    <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['2'] }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: theme.space['2'] }}>
-        <AppText variant="title2" accessibilityRole="header" style={{ flexShrink: 1 }}>
-          {view.title}
-        </AppText>
-        <View style={{ alignItems: 'flex-end' }}>
-          <AppText variant="callout" color="text.secondary" numeric>
-            {view.summary}
-          </AppText>
-          {moved !== null ? (
-            <AppText variant="callout" color="text.tertiary" style={{ fontSize: 13 }}>
-              {moved}
-            </AppText>
-          ) : null}
-        </View>
-      </View>
-      {time?.overText != null ? (
-        <AppText variant="label" color="status.warning" numeric>
-          {time.overText}
-        </AppText>
-      ) : null}
-      {view.clashLine !== null ? (
-        <View style={{ flexDirection: 'row', gap: theme.space['1'], alignItems: 'center' }}>
-          <AppText variant="label" color="status.warning">
-            !
-          </AppText>
-          <AppText variant="callout" color="text.secondary" style={{ fontSize: 14, flexShrink: 1 }}>
-            {view.clashLine}
-          </AppText>
-        </View>
-      ) : null}
-
-      {/* (D3, Ben 22–23 Oct; V5: no plan reads the same) The rows, Time, Start and Edit. Main lift, accessories, abs and
-          supersets are in Edit (Your workout). An edited card keeps Time (the draft's own; review todaylean S4) and `Back to plan`. */}
-      {timeRow}
-      {view.edited === null ? null : backToPlan}
-      {details}
-
-      {offer !== null ? (
-        <View style={{ gap: theme.space['1'] }} accessibilityLabel={[offer.line, ...offer.lines].join('. ')}>
-          <AppText variant="callout">{offer.line}</AppText>
-          {offer.lines.map((l) => (
-            <AppText key={l} variant="callout" color="text.secondary" numeric>
-              {l}
-            </AppText>
-          ))}
-          {offer.lines.length > 0 || offer.onReviews !== undefined ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['4'] }}>
-              {offer.lines.length > 0 ? <TextButton label={TODAY_V2_COPY.apply} disabled={offer.busy} onPress={offer.onApply} /> : null}
-              {offer.lines.length > 0 ? <TextButton label={TODAY_V2_COPY.skip} tone="secondary" disabled={offer.busy} onPress={offer.onSkip} /> : null}
-              {offer.onReviews !== undefined ? <TextButton label="Reviews" icon="chevron.right" tone="secondary" accessibilityLabel="Open Reviews in Progress" onPress={offer.onReviews} /> : null}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
-        <View style={{ flex: 2 }}>
-          <PrimaryButton label={TODAY_V2_COPY.start} busy={busy} disabled={!view.startable} onPress={onStart} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <SecondaryButton label={TODAY_V2_COPY.edit} onPress={onEdit} grow size="primary" />
-        </View>
-      </View>
-      {onEmpty !== undefined ? (
-        <View style={{ alignSelf: 'flex-start' }}>
-          <TextButton label={TODAY_V2_COPY.emptyWorkout} tone="secondary" disabled={busy} onPress={onEmpty} />
-        </View>
-      ) : null}
-    </View>
-  );
-}

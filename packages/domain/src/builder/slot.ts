@@ -3,15 +3,16 @@ import { slotLoadOf, slotRepRange } from './reps';
 import { BUILDER_SET_RULES, setRowsFor } from './set-rows';
 import { BUILD_LIMITS } from '@fizz/schemas';
 import { CARDIO_DEFAULT_S } from '../cardio';
-import type { BuilderContext, BuilderSlot } from './types';
+import type { BuilderContext, BuilderSlot, RepRangeT } from './types';
 
 /** `makeSlot`: one exercise's slot with the default shape (§3.1.9), reps from history (`slotRepRange`), and its rows and loads. */
-export function makeSlot(exerciseId: string, opts: { main: boolean; workingSets?: number }, ctx: BuilderContext): BuilderSlot {
+export function makeSlot(exerciseId: string, opts: { main: boolean; workingSets?: number; /** (Ben, 27 Oct) A plan day's stored reps. */ repRange?: RepRangeT | null }, ctx: BuilderContext): BuilderSlot {
   const info = infoOrDefault(ctx.info, exerciseId);
   const sets = opts.workingSets ?? (opts.main ? BUILDER_SET_RULES.mainSets : BUILDER_SET_RULES.accessorySets);
   const load = slotLoadOf(ctx.loads(exerciseId), opts.main);
-  // Reps from history (21 Oct): a slot's reps follow Ben's last session of this exercise through the built-in rule.
-  const repRange = slotRepRange(opts.main, load);
+  // Reps from history (21 Oct): a slot's reps follow Ben's last session of this exercise through the built-in rule;
+  // (Ben, 27 Oct) a plan day's stored reps are drafted as stored.
+  const repRange = slotRepRange(opts.main, load, opts.repRange ?? null);
   const r = setRowsFor({ main: opts.main, role: info.role, barbell: info.barbell, workingSets: sets, repRange, load, group: info.group, ...(info.warmup === undefined ? {} : { facts: info.warmup }) });
   const hv = load.historyVersion ?? null;
   return { key: ctx.newKey(exerciseId), exerciseId, main: opts.main, repRange, rows: r.rows, unit: r.unit, convention: r.convention, source: r.source, startLight: r.startLight, anchorE1rm: r.anchorE1rm, ...(hv === null ? {} : { historyVersion: hv }) };
