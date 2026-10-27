@@ -1,7 +1,9 @@
-# Builds SideStore (third-party, AGPL) from pinned upstream refs with one upstream patch,
+# Builds SideStore (third-party, AGPL) from pinned refs with one upstream patch,
 # SideSign PR #3 "Enable HealthKit capability on App IDs", so a free-Apple-ID SideStore
 # install keeps GymSmarter's HealthKit entitlement (ADR 0036, Ben approved 26 Oct 2026).
-# Research: docs/research/sidestore-healthkit.md. Ben's steps:
+# Since 27 Oct the default refs are a reviewed unofficial fork (Ti800) at exact commit SHAs,
+# for Apple's -80045 sign-in change and iloader pairing files; see the note below.
+# Research: docs/research/sidestore-healthkit.md, docs/research/sidestore-ti800-review.md. Ben's steps:
 # docs/device-tests/2026-10-27-sidestore-healthkit.md
 #
 # Isolated on purpose: it never runs on branch pushes, uses no secrets, never touches
@@ -30,6 +32,12 @@
 # - 27 Oct (Ben, build 1): sign-in failed on 0.7.0-alpha ("invalid server response"); 0.7.0-alpha's
 #   SideSign lacks the 2FA sign-in fix (752d1ef). Default is now the nightly d97ec13 (16 Oct), which pins
 #   SideSign 752d1ef, with PR #3 cherry-picked onto it, Xcode 26.4 as SideStore's nightly.yml uses.
+# - 27 Oct (Ben, build 2): kept asking for a pairing file after iloader placed one, and Apple ID sign-in failed with
+#   -80045 (Apple-side change since ~12 Oct, hits all free sideloaders). Default is now the reviewed unofficial fork
+#   Ti800/SideStore f4921377 (same tree as nightly d97ec13 plus the iloader pairing fix) with its SideSign,
+#   Ti800/SideSign 73ca02d (752d1ef plus the -80045 client-info fix and GSA 434 resync), PR #3 cherry-picked on top.
+#   Review: docs/research/sidestore-ti800-review.md. Never point these at a branch name: a fork repo needs a full
+#   commit SHA that has been reviewed (the plan job enforces 40-hex SHAs for any non-SideStore repo).
 # - Xcode: what SideStore's own CI used for each tag on macos-26 (0.7.0-alpha alpha.yml: 26.2;
 #   0.6.4 stable.yml: 26.4). Their develop branch has since moved to a custom "xcode-27" runner
 #   and Xcode 27.2, which GitHub-hosted runners may not have; a newer sidestore_ref may need a
@@ -40,12 +48,24 @@ name: SideStore HealthKit (patched)
 on:
   workflow_dispatch:
     inputs:
-      sidestore_ref:
-        description: 'SideStore tag, branch or full commit SHA for the 0.7 build (github.com/SideStore/SideStore)'
+      sidestore_repo:
+        description: 'GitHub owner/repo of SideStore for the 0.7 build (default: reviewed fork, docs/research/sidestore-ti800-review.md)'
         type: string
-        default: 'd97ec133719d79916675bdaf722b82a8d091d545'
+        default: 'Ti800/SideStore'
+      sidestore_ref:
+        description: 'SideStore commit for the 0.7 build. Full 40-char SHA required unless the repo is SideStore/SideStore'
+        type: string
+        default: 'f4921377291c69e31eb8505eb5d9e5a16abb78d8'
+      sidesign_repo:
+        description: 'GitHub owner/repo of the SideSign the patch goes onto (0.7 build, cherry-pick mode)'
+        type: string
+        default: 'Ti800/SideSign'
+      sidesign_base:
+        description: 'SideSign commit the patch is cherry-picked onto. Empty = the SideSign that sidestore_ref pins. Full SHA required unless the repo is SideStore/SideSign'
+        type: string
+        default: '73ca02de240da894241f53dc57b39fe02d084b16'
       sideSign_ref:
-        description: 'SideSign commit carrying the HealthKit patch (PR #3 head by default; full or short SHA)'
+        description: 'SideSign commit carrying the HealthKit patch, fetched from SideStore/SideSign (PR #3 head by default; full or short SHA)'
         type: string
         default: '74950d37f2333d29cbf3bfc9ca4a60820498c2d3'
       sidesign_mode:
@@ -93,7 +113,11 @@ jobs:
         id: plan
         env:
           # Inputs are empty on tag pushes, so fall back to the same defaults.
-          SIDESTORE_REF: ${{ inputs.sidestore_ref || 'd97ec133719d79916675bdaf722b82a8d091d545' }}
+          SIDESTORE_REPO: ${{ inputs.sidestore_repo || 'Ti800/SideStore' }}
+          SIDESTORE_REF: ${{ inputs.sidestore_ref || 'f4921377291c69e31eb8505eb5d9e5a16abb78d8' }}
+          SIDESIGN_REPO: ${{ inputs.sidesign_repo || 'Ti800/SideSign' }}
+          # An empty dispatch input means "use the pin"; on pushes inputs don't exist, so use the reviewed default.
+          SIDESIGN_BASE: ${{ github.event_name == 'workflow_dispatch' && inputs.sidesign_base || github.event_name != 'workflow_dispatch' && '73ca02de240da894241f53dc57b39fe02d084b16' || '' }}
           SIDESIGN_REF: ${{ inputs.sideSign_ref || '74950d37f2333d29cbf3bfc9ca4a60820498c2d3' }}
           SIDESIGN_MODE: ${{ inputs.sidesign_mode || 'cherry-pick' }}
           XCODE_VERSION: ${{ inputs.xcode_version || '26.4' }}
@@ -105,13 +129,29 @@ jobs:
               exit 1
             fi
           done
+          for r in "$SIDESTORE_REPO" "$SIDESIGN_REPO"; do
+            printf '%s' "$r" | grep -Eq '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$' \
+              || { echo "::error::'$r' isn't a GitHub owner/repo."; exit 1; }
+          done
+          is_sha() { printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
+          # Forks are third-party code that sees Ben's Apple ID: only exact reviewed commits, never a branch or tag.
+          if [ "$SIDESTORE_REPO" != "SideStore/SideStore" ] && ! is_sha "$SIDESTORE_REF"; then
+            echo "::error::sidestore_ref must be a full 40-char commit SHA when building from $SIDESTORE_REPO."; exit 1
+          fi
+          if [ -n "$SIDESIGN_BASE" ] && ! is_sha "$SIDESIGN_BASE" && [ "$SIDESIGN_REPO" != "SideStore/SideSign" ]; then
+            echo "::error::sidesign_base must be a full 40-char commit SHA when building from $SIDESIGN_REPO."; exit 1
+          fi
+          if [ -n "$SIDESIGN_BASE" ] && ! printf '%s' "$SIDESIGN_BASE" | grep -Eq '^[A-Za-z0-9._/-]+$'; then
+            echo "::error::sidesign_base has characters a git ref can't contain."; exit 1
+          fi
           case "$SIDESIGN_MODE" in pr-head|cherry-pick) ;; *) echo "::error::Unknown sidesign_mode $SIDESIGN_MODE"; exit 1;; esac
           M=$(jq -cn \
-            --arg ref "$SIDESTORE_REF" --arg ss "$SIDESIGN_REF" --arg mode "$SIDESIGN_MODE" --arg xc "$XCODE_VERSION" \
-            '[{line: "0.7", sidestore_ref: $ref, sidesign_ref: $ss, sidesign_mode: $mode, xcode: $xc, ipa_name: "SideStore-HealthKit"}]')
+            --arg repo "$SIDESTORE_REPO" --arg ref "$SIDESTORE_REF" --arg ssrepo "$SIDESIGN_REPO" --arg base "$SIDESIGN_BASE" \
+            --arg ss "$SIDESIGN_REF" --arg mode "$SIDESIGN_MODE" --arg xc "$XCODE_VERSION" \
+            '[{line: "0.7", sidestore_repo: $repo, sidestore_ref: $ref, sidesign_repo: $ssrepo, sidesign_base: $base, sidesign_ref: $ss, sidesign_mode: $mode, xcode: $xc, ipa_name: "SideStore-HealthKit"}]')
           if [ "$BUILD_064" = "true" ]; then
             M=$(jq -c --arg ss "$SIDESIGN_REF" \
-              '. + [{line: "0.6.4", sidestore_ref: "0.6.4", sidesign_ref: $ss, sidesign_mode: "cherry-pick", xcode: "26.4", ipa_name: "SideStore-0.6.4-HealthKit"}]' <<< "$M")
+              '. + [{line: "0.6.4", sidestore_repo: "SideStore/SideStore", sidestore_ref: "0.6.4", sidesign_repo: "SideStore/SideSign", sidesign_base: "", sidesign_ref: $ss, sidesign_mode: "cherry-pick", xcode: "26.4", ipa_name: "SideStore-0.6.4-HealthKit"}]' <<< "$M")
           fi
           echo "matrix={\"include\":$M}" >> "$GITHUB_OUTPUT"
           jq . <<< "$M"
@@ -126,20 +166,25 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       LINE: ${{ matrix.line }}
+      SIDESTORE_REPO: ${{ matrix.sidestore_repo }}
       SIDESTORE_REF: ${{ matrix.sidestore_ref }}
+      SIDESIGN_REPO: ${{ matrix.sidesign_repo }}
+      SIDESIGN_BASE: ${{ matrix.sidesign_base }}
       SIDESIGN_REF: ${{ matrix.sidesign_ref }}
       SIDESIGN_MODE: ${{ matrix.sidesign_mode }}
       XCODE_VERSION: ${{ matrix.xcode }}
       IPA_NAME: ${{ matrix.ipa_name }}
-      # The PR whose head carries the patch; fetched so its commit is reachable.
+      # The PR whose head carries the patch, always fetched from upstream SideSign (a fork has no refs/pull/3).
       SIDESIGN_PR: '3'
+      SIDESIGN_PATCH_REPO: 'SideStore/SideSign'
       OUT_DIR: ${{ github.workspace }}/out
     steps:
-      # Upstream SideStore, read-only, no token kept in .git/config.
+      # SideStore (upstream or the reviewed fork at a pinned SHA), read-only, no token kept in .git/config.
+      # Submodules come from that commit's .gitmodules at the commits it pins.
       - name: Check out SideStore
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: SideStore/SideStore
+          repository: ${{ matrix.sidestore_repo }}
           ref: ${{ matrix.sidestore_ref }}
           path: sidestore
           submodules: recursive
@@ -154,25 +199,45 @@ jobs:
             exit 1
           fi
           SIDESTORE_SHA=$(git rev-parse HEAD)
+          case "$SIDESTORE_REF" in
+            *[!0-9a-f]*) ;;
+            *) if [ ${#SIDESTORE_REF} -eq 40 ] && [ "$SIDESTORE_SHA" != "$SIDESTORE_REF" ]; then
+                 echo "::error::Checked out $SIDESTORE_SHA, not the requested $SIDESTORE_REF."; exit 1
+               fi ;;
+          esac
           # The SideSign commit this SideStore ref pins (recorded in the README).
           UPSTREAM_PIN=$(git ls-tree HEAD Dependencies/SideSign | awk '{print $3}')
+          echo "SideSign submodule URL at this ref: $(git config -f .gitmodules submodule.Dependencies/SideSign.url)"
           cd Dependencies/SideSign
-          git fetch --no-tags origin \
-            "+refs/pull/${SIDESIGN_PR}/head:refs/remotes/origin/pr-${SIDESIGN_PR}" \
-            '+refs/heads/main:refs/remotes/origin/main'
+          PATCH_URL="https://github.com/${SIDESIGN_PATCH_REPO}.git"
+          git fetch --no-tags "$PATCH_URL" \
+            "+refs/pull/${SIDESIGN_PR}/head:refs/remotes/patch/pr-${SIDESIGN_PR}" \
+            '+refs/heads/main:refs/remotes/patch/main'
           if git rev-parse -q --verify "${SIDESIGN_REF}^{commit}" >/dev/null; then
             PATCH_SHA=$(git rev-parse "${SIDESIGN_REF}^{commit}")
           else
             # Not in PR #3 or main: try it as a full SHA or a branch name.
-            git fetch --no-tags origin "$SIDESIGN_REF"
+            git fetch --no-tags "$PATCH_URL" "$SIDESIGN_REF"
             PATCH_SHA=$(git rev-parse FETCH_HEAD)
+          fi
+          # The SideSign the patch goes onto: sidesign_base from sidesign_repo, or SideStore's own pin.
+          if [ -n "$SIDESIGN_BASE" ]; then
+            if ! git rev-parse -q --verify "${SIDESIGN_BASE}^{commit}" >/dev/null; then
+              git fetch --no-tags "https://github.com/${SIDESIGN_REPO}.git" "$SIDESIGN_BASE"
+            fi
+            BASE_SHA=$(git rev-parse "${SIDESIGN_BASE}^{commit}")
+            if [ "$BASE_SHA" != "$UPSTREAM_PIN" ]; then
+              echo "::warning::sidesign_base $BASE_SHA differs from the SideSign $SIDESTORE_SHA pins ($UPSTREAM_PIN)."
+            fi
+          else
+            BASE_SHA=$UPSTREAM_PIN
           fi
           GIT_ID=(-c user.name=gymsmarter-ci -c user.email=ci@invalid)
           if [ "$SIDESIGN_MODE" = "pr-head" ]; then
             git checkout --detach "$PATCH_SHA"
           else
-            # Keep SideStore's own SideSign and apply only the patch commit on top.
-            git checkout --detach "$UPSTREAM_PIN"
+            # Keep the base SideSign and apply only the patch commit on top.
+            git checkout --detach "$BASE_SHA"
             git "${GIT_ID[@]}" cherry-pick "$PATCH_SHA"
             E=Sources/Models/Entitlement.swift
             if ! grep -Eq 'static let healthKit:[[:space:]]*Entitlement' "$E"; then
@@ -187,14 +252,15 @@ jobs:
           {
             echo "SIDESTORE_SHA=$SIDESTORE_SHA"
             echo "SIDESIGN_UPSTREAM_PIN=$UPSTREAM_PIN"
+            echo "SIDESIGN_BASE_SHA=$BASE_SHA"
             echo "SIDESIGN_PATCH_SHA=$PATCH_SHA"
             echo "SIDESIGN_SHA=$SIDESIGN_SHA"
           } >> "$GITHUB_ENV"
-          echo "SideStore $SIDESTORE_REF = $SIDESTORE_SHA"
-          echo "SideSign: upstream pin $UPSTREAM_PIN, patch $PATCH_SHA ($SIDESIGN_MODE), building $SIDESIGN_SHA"
-          echo "Diff from SideStore's pin:"
-          git diff --stat "$UPSTREAM_PIN" HEAD
-          git log --oneline "$UPSTREAM_PIN..HEAD" 2>/dev/null || echo "(pin is not an ancestor, or history is shallow)"
+          echo "SideStore $SIDESTORE_REPO $SIDESTORE_REF = $SIDESTORE_SHA"
+          echo "SideSign: pin $UPSTREAM_PIN, base $BASE_SHA ($SIDESIGN_REPO), patch $PATCH_SHA ($SIDESIGN_MODE), building $SIDESIGN_SHA"
+          echo "Diff from the base:"
+          git diff --stat "$BASE_SHA" HEAD
+          git log --oneline "$BASE_SHA..HEAD" 2>/dev/null || echo "(base is not an ancestor, or history is shallow)"
 
       # Fail unless SideSign now maps the HealthKit entitlement to an App ID feature that
       # free teams may turn on. Clinical records (healthKitAccess) must stay off.
@@ -298,16 +364,20 @@ jobs:
           {
             echo "# $IPA_NAME.ipa (SideStore $LINE line)"
             echo ""
-            echo "Upstream SideStore plus SideSign PR #$SIDESIGN_PR (HealthKit App ID feature HK421J6T7P allowed for free teams)."
+            echo "SideStore from $SIDESTORE_REPO plus SideSign PR #$SIDESIGN_PR (HealthKit App ID feature HK421J6T7P allowed for free teams)."
+            if [ "$SIDESTORE_REPO" != "SideStore/SideStore" ]; then
+              echo "Built from an unofficial fork at a reviewed commit: docs/research/sidestore-ti800-review.md."
+            fi
             echo "Built for GymSmarter's Apple Health on a free Apple ID (ADR 0036). Unsigned: fake-signed with ldid like SideStore's"
             echo "own CI; SideStore or iloader signs it with Ben's Apple ID on install. Steps: docs/device-tests/2026-10-27-sidestore-healthkit.md."
             echo ""
             echo "| | |"
             echo "|---|---|"
-            echo "| SideStore ref | \`$SIDESTORE_REF\` = \`$SIDESTORE_SHA\` (github.com/SideStore/SideStore) |"
+            echo "| SideStore ref | \`$SIDESTORE_REF\` = \`$SIDESTORE_SHA\` (github.com/$SIDESTORE_REPO) |"
             echo "| SideSign pinned by that ref | \`$SIDESIGN_UPSTREAM_PIN\` |"
-            echo "| SideSign patch | \`$SIDESIGN_REF\` = \`$SIDESIGN_PATCH_SHA\` (github.com/SideStore/SideSign refs/pull/$SIDESIGN_PR/head) |"
-            echo "| How applied | $SIDESIGN_MODE (pr-head: SideSign at the patch commit; cherry-pick: patch on the pinned SideSign) |"
+            echo "| SideSign base | \`$SIDESIGN_BASE_SHA\` (github.com/$SIDESIGN_REPO) |"
+            echo "| SideSign patch | \`$SIDESIGN_REF\` = \`$SIDESIGN_PATCH_SHA\` (github.com/$SIDESIGN_PATCH_REPO refs/pull/$SIDESIGN_PR/head) |"
+            echo "| How applied | $SIDESIGN_MODE (pr-head: SideSign at the patch commit; cherry-pick: patch on the base SideSign) |"
             echo "| SideSign built | \`$SIDESIGN_SHA\` |"
             echo "| Version shown in SideStore | $IPA_VERSION |"
             echo "| Bundle ID | \`$IPA_BUNDLE_ID\` |"
