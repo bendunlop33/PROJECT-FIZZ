@@ -29,7 +29,7 @@ const view = (input: PlanTabInput) => plain(planTabView(input));
 const NAMES = ['Push A', 'Pull A', 'Legs', 'Push B', 'Pull B'] as const;
 const MAINS = ['Bench press', 'Deadlift', 'Squat', 'Overhead press', 'Barbell row'] as const;
 
-const row = (name: string, main: boolean) => ({ key: name, exerciseId: name, name, main, line: '3 × 8', kg: main ? null : '30', est: false });
+const row = (name: string, main: boolean) => ({ key: name, exerciseId: name, name, main, line: '3 × 8', kg: main ? null : '30', est: false, superset: null });
 
 function day(index: number, o: { done?: boolean; doneOn?: string | null; weekday?: number | null; noMain?: boolean } = {}): PbBlockDay {
   const rows = o.noMain === true ? [row('Leg curl', false), row('Calf raise', false), row('Plank', false)] : [row(MAINS[index] ?? 'Lift', true), row('Accessory', false)];

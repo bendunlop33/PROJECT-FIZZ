@@ -134,9 +134,14 @@ export function PlanDayScreen() {
                 <View
                   key={r.key}
                   accessible
-                  accessibilityLabel={`${r.name}, ${r.line}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
+                  accessibilityLabel={`${r.superset === null ? '' : `${r.superset}, superset, `}${r.name}, ${r.line}${r.kg === null ? '' : `, ${r.kg}`}${r.est ? ', estimate' : ''}`}
                   style={{ minHeight: 48, paddingVertical: theme.space['2'], flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['3'], borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
                 >
+                  {r.superset !== null ? (
+                    <AppText variant="callout" color="text.secondary" numeric style={{ minWidth: 24 }}>
+                      {r.superset}
+                    </AppText>
+                  ) : null}
                   <AppText variant="body" style={{ flex: 1, minWidth: 140, ...(r.main ? { fontWeight: '600' } : {}) }}>
                     {r.name}
                   </AppText>
@@ -157,7 +162,7 @@ export function PlanDayScreen() {
                 <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel} style={{ paddingVertical: theme.space['3'], gap: 2, borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', columnGap: theme.space['3'] }}>
                     <AppText variant="body" style={{ flexShrink: 1 }}>
-                      {r.name}
+                      {r.superset === null ? r.name : `${r.superset}  ${r.name}`}
                     </AppText>
                     <AppText variant="body" numeric>
                       {r.line}

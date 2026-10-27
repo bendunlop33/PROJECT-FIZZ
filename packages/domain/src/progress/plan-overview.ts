@@ -1,3 +1,4 @@
+import { supersetLabels } from '../superset-labels';
 import type { Exercise, Load, PlanDraftStatus, Routine, SessionAggregate, SessionExercise, TrainingGoal, WorkoutSet } from '@fizz/schemas';
 import { localDateOf, weekdayOf } from '../calendar';
 import { paceText } from '../cardio';
@@ -227,6 +228,8 @@ export interface PlanDayDetailRow {
   /** `Last 17 Oct: 80 × 12, 12 · Targets hit 5 of last 6`, `est.` (no history; an estimated load), or null. */
   sub: string | null;
   accessibilityLabel: string;
+  /** (Ben, 27 Oct) Its superset label (`A1`, `A2`); null: on its own. */
+  superset: string | null;
 }
 
 export interface PlanDayDetail {
@@ -328,8 +331,9 @@ export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
       const own = input.planned.sets.filter((s) => s.sessionExerciseId === e.id && s.setType !== 'warmup' && s.status !== 'deleted');
       return !(own.length > 0 && own.every((s) => s.skippedBy === 'before_start'));
     })
-    .sort((a, b) => a.order - b.order)
-    .map((ex): PlanDayDetailRow => {
+    .sort((a, b) => a.order - b.order);
+  const labels = supersetLabels(rows);
+  return { header, rows: rows.map((ex, i): PlanDayDetailRow => {
       const sets = input.planned.sets.filter((s) => s.sessionExerciseId === ex.id && isPrescribed(s)).sort((a, b) => a.index - b.index);
       const eq = equipmentOfRow(snapshot, ex);
       const loadsOf = (xs: readonly WorkoutSet[]): string[] => (ex.measurement === 'cardio' ? [] : xs.flatMap((s) => (s.planned.load === null ? [] : [loadText(s.planned.load, ex.loadConvention, eq)])).filter((t) => t !== '—' && t !== 'BW'));
@@ -350,13 +354,12 @@ export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
       const line = parts.join(', ');
       const unit = sets.find((s) => s.planned.load !== null)?.planned.load?.unit ?? null;
       const sub = lastTimeSub(ex.exerciseId, input.history(ex.exerciseId), unit, input.targetsHit(ex.exerciseId)) ?? (sets.some((s) => s.planned.provenance?.estimate === true) ? 'est.' : null);
-      return detailRow(ex.id, ex.exerciseId, ex.exerciseName, line, sub);
-    });
-  return { header, rows };
+      return detailRow(ex.id, ex.exerciseId, ex.exerciseName, line, sub, labels[i] ?? null);
+    }) };
 }
 
-function detailRow(key: string, exerciseId: string, name: string, line: string, sub: string | null): PlanDayDetailRow {
-  return { key, exerciseId, name, line, sub, accessibilityLabel: [name, line, ...(sub === null ? [] : [sub === 'est.' ? 'estimated load' : sub])].join(', ') };
+function detailRow(key: string, exerciseId: string, name: string, line: string, sub: string | null, superset: string | null = null): PlanDayDetailRow {
+  return { key, exerciseId, name, line, sub, superset, accessibilityLabel: [...(superset === null ? [] : [`${superset}, superset`]), name, line, ...(sub === null ? [] : [sub === 'est.' ? 'estimated load' : sub])].join(', ') };
 }
 
 /** `Last 17 Oct: 80 × 12, 12 · Targets hit 5 of last 6` (`Targets hit` only when `withHit`) from his newest finished workout with it, else null. */
@@ -395,9 +398,9 @@ export interface PlanDayTemplateInput {
  * time's sets. Values only.
  */
 export function planDayFromTemplates(input: PlanDayTemplateInput): PlanDayDetail {
-  const rows = [...input.routine.exercises]
-    .sort((a, b) => a.order - b.order)
-    .map((re): PlanDayDetailRow => {
+  const sorted = [...input.routine.exercises].sort((a, b) => a.order - b.order);
+  const labels = supersetLabels(sorted);
+  const rows = sorted.map((re, i): PlanDayDetailRow => {
       const ex = input.exerciseOf(re.exerciseId);
       const name = ex?.name ?? 'Exercise';
       const ts = re.setTemplates.filter((t) => t.setType !== 'warmup');
@@ -411,7 +414,7 @@ export function planDayFromTemplates(input: PlanDayTemplateInput): PlanDayDetail
       });
       const scheme = sameOf(values, rest.length);
       const parts = [...(tops.length === 0 ? [] : [tops.length === 1 ? 'Top set' : `${String(tops.length)} top sets`]), ...(rest.length > 0 || tops.length === 0 ? [scheme === null ? `${String(rest.length)} ${rest.length === 1 ? 'set' : 'sets'}` : `${String(rest.length)} × ${scheme}`] : [])];
-      return detailRow(re.id, re.exerciseId, name, parts.join(', '), lastTimeSub(re.exerciseId, input.history(re.exerciseId), input.unit, input.targetsHit(re.exerciseId)));
+      return detailRow(re.id, re.exerciseId, name, parts.join(', '), lastTimeSub(re.exerciseId, input.history(re.exerciseId), input.unit, input.targetsHit(re.exerciseId)), labels[i] ?? null);
     });
   return { header: planDayHeader(input.dayN, input.of, input.gymName, null), rows };
 }
