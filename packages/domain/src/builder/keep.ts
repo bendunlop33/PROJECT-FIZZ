@@ -1,4 +1,4 @@
-import { BUILD_LIMITS, MAX_WORKOUT_DRAFT_OPS, type KeepMainLift, type KeepNextTime, type Routine, type RoutineExercise, type SetTemplate, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
+import { BUILD_LIMITS, coachEditStepOpId, MAX_WORKOUT_DRAFT_OPS, type KeepMainLift, type SessionAggregate, type KeepNextTime, type Routine, type RoutineExercise, type SetTemplate, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { DraftLifeChange } from '../session/coach-draft';
 import { deriveId } from '../stable';
 import { slotsOf } from './arrange';
@@ -28,7 +28,8 @@ import type { BuilderKeepMarks, BuilderSlot, BuilderWorkout } from './types';
  * - `keepNextTimeMark`: the answer (Apply, Skip, Undo) on the started builder draft, versioned and idempotent.
  */
 
-export type KeepChange = Extract<BuilderChange, { kind: 'swap' | 'add' | 'delete' | 'sets' }>;
+/** (Ben, 27 Oct) Pairs and unlinks count too, when Ben made them himself (`BuilderKeepMarks.placed`). Order alone never. */
+export type KeepChange = Extract<BuilderChange, { kind: 'swap' | 'add' | 'delete' | 'sets' | 'pair' | 'unpair' }>;
 
 const clampSets = (n: number): number => Math.max(BUILD_LIMITS.minWorkingSets, Math.min(BUILD_LIMITS.maxWorkingSets, Math.round(n)));
 
@@ -40,6 +41,7 @@ function withKeep(s: BuilderSlot, k: BuilderKeepMarks): BuilderSlot {
   if (k.added === true) marks.added = true;
   if (k.from !== undefined) marks.from = k.from;
   if (k.setsFrom !== undefined) marks.setsFrom = clampSets(k.setsFrom);
+  if (k.placed === true) marks.placed = true;
   return Object.keys(marks).length === 0 ? out : { ...out, keep: marks };
 }
 
@@ -74,10 +76,19 @@ export interface BenEditMarks {
 export function markBenEdit(before: BuilderWorkout, after: BuilderWorkout, setsFrom: (slot: BuilderSlot) => number): BenEditMarks {
   const was = new Map(slotsOf(before.blocks).map((s) => [s.key, s] as const));
   const now = new Set(slotsOf(after.blocks).map((s) => s.key));
+  // (Ben, 27 Oct) A slot whose superset partners changed (he paired or unlinked it) is his placement; a move, an add
+  // or a removal alone isn't (order never counts, D1). A slot an add of his joined in a superset is placed too.
+  const partnersOf = (w: BuilderWorkout): Map<string, string> => new Map(w.blocks.flatMap((b) => b.slots.map((x) => [x.key, b.slots.map((y) => y.key).filter((k) => k !== x.key && was.has(k) && now.has(k)).sort().join('+')] as const)));
+  const pb = partnersOf(before);
+  const pa = partnersOf(after);
+  const joined = new Set(after.blocks.flatMap((b) => (b.slots.length > 1 && b.slots.some((x) => !was.has(x.key)) ? b.slots.filter((x) => was.has(x.key)).map((x) => x.key) : [])));
+  const joinedBefore = new Set(before.blocks.flatMap((b) => (b.slots.length > 1 ? b.slots.map((x) => x.key) : [])));
+  const placed = (k: string): boolean => was.has(k) && (pa.get(k) !== pb.get(k) || (joined.has(k) && !joinedBefore.has(k)));
   const mark = (s: BuilderSlot): BuilderSlot => {
     const prev = was.get(s.key);
     if (prev === undefined) return withKeep(s, { ...s.keep, added: true });
     const marks: BuilderKeepMarks = { ...prev.keep };
+    if (placed(s.key)) marks.placed = true;
     if (prev.exerciseId !== s.exerciseId && marks.added !== true && marks.from === undefined) marks.from = prev.exerciseId;
     if (workingCount(prev) !== workingCount(s) && marks.setsFrom === undefined) marks.setsFrom = setsFrom(prev);
     return withKeep(s, marks);
@@ -98,6 +109,8 @@ export interface KeepBaseItem {
   ref: string;
   /** The plan day's main lift: never swapped or removed by Keep (it names the plan day; SP7). */
   locked?: boolean;
+  /** (Ben, 27 Oct) Its superset letter as stored; absent or null: on its own. */
+  group?: string | null;
 }
 
 /**
@@ -127,6 +140,13 @@ export interface KeepDiff {
   added: boolean[];
   /** Base items Ben removed. */
   deleted: number[];
+  /**
+   * (Ben, 27 Oct) Ben's own pairs and unlinks are kept: for the rounds he paired or unlinked, the plan day takes the
+   * workout's supersets (the members side by side). False: supersets as stored.
+   */
+  placed: boolean;
+  /** Per current item: its round's superset is his (paired, or unlinked when alone), so Keep writes it. */
+  regroup: boolean[];
 }
 
 /**
@@ -188,7 +208,63 @@ export function keepDiff(base: readonly KeepBaseItem[], current: readonly KeepCu
     const b = base[k];
     return b === undefined ? [] : [{ kind: 'delete' as const, exerciseId: b.exerciseId }];
   });
-  return { changes: [...swaps, ...adds, ...removals, ...sets], matchOf, swapped, setsTo, added, deleted };
+  const placement = keepPlacement(base, current, matchOf, added, new Set(deleted));
+  return { changes: [...swaps, ...adds, ...removals, ...sets, ...placement.changes], matchOf, swapped, setsTo, added, deleted, placed: placement.placed, regroup: placement.regroup };
+}
+
+/**
+ * (Ben, 27 Oct: "If I add superset it doesn't then change the plan") Ben's own pairs and unlinks (`placed` marks)
+ * against the stored plan day: `Superset A with B` for a round he made that isn't stored, `Unlink A` for an exercise he
+ * took out of a stored superset. Nothing when no slot carries his mark (Supersets on/off, Time's pairs and the coach's
+ * never do); order alone never counts (D1).
+ */
+function keepPlacement(base: readonly KeepBaseItem[], current: readonly KeepCurrentItem[], matchOf: readonly (number | null)[], added: readonly boolean[], deleted: ReadonlySet<number>): { changes: KeepChange[]; placed: boolean; regroup: boolean[] } {
+  const regroup = current.map(() => false);
+  if (!current.some((c) => c.ben?.placed === true)) return { changes: [], placed: false, regroup };
+  // Who each current item is in the stored day: its base item, or (an add Ben keeps) itself.
+  const kept = (i: number): boolean => matchOf[i] != null || added[i] === true;
+  const id = (i: number): string => {
+    const j = matchOf[i];
+    return j === null || j === undefined ? `add:${String(i)}` : `base:${String(j)}`;
+  };
+  const storedPartners = (i: number): string => {
+    const j = matchOf[i];
+    const g = j === null || j === undefined ? null : (base[j]?.group ?? null);
+    if (j === null || j === undefined || g === null) return '';
+    return current
+      .flatMap((_, k) => (k !== i && kept(k) && matchOf[k] != null && !deleted.has(matchOf[k] ?? -1) && base[matchOf[k] ?? -1]?.group === g ? [id(k)] : []))
+      .sort()
+      .join('+');
+  };
+  const nowPartners = (i: number): string =>
+    current
+      .flatMap((c, k) => (k !== i && kept(k) && c.round === current[i]?.round ? [id(k)] : []))
+      .sort()
+      .join('+');
+  const changes: KeepChange[] = [];
+  const rounds = [...new Set(current.map((c) => c.round))];
+  for (const r of rounds) {
+    const members = current.flatMap((c, i) => (c.round === r && kept(i) ? [i] : []));
+    if (!members.some((i) => current[i]?.ben?.placed === true || added[i] === true)) continue;
+    const differs = members.filter((i) => nowPartners(i) !== storedPartners(i) && added[i] !== true);
+    if (members.length > 1) {
+      if (differs.length === 0) continue;
+      for (const i of members) regroup[i] = true;
+      const first = current[members[0] ?? -1];
+      for (const i of members.slice(1)) {
+        const c = current[i];
+        if (first !== undefined && c !== undefined && added[i] !== true && nowPartners(i) !== storedPartners(i)) changes.push({ kind: 'pair', a: first.exerciseId, b: c.exerciseId });
+      }
+    } else {
+      const i = members[0];
+      const c = i === undefined ? undefined : current[i];
+      if (i !== undefined && c !== undefined && c.ben?.placed === true && storedPartners(i) !== '') {
+        regroup[i] = true;
+        changes.push({ kind: 'unpair', exerciseId: c.exerciseId });
+      }
+    }
+  }
+  return { changes, placed: changes.length > 0, regroup };
 }
 
 const isWork = (t: Pick<SetTemplate, 'setType'>): boolean => t.setType !== 'warmup';
@@ -315,7 +391,48 @@ export function keptExercises(i: KeptExercisesInput): RoutineExercise[] {
     for (let n = c - 1; n >= 0 && prev < 0; n -= 1) prev = placeOf(n);
     out.splice(prev < 0 ? 0 : groupEnd(prev) + 1, 0, { entry: changed(fresh), item: c });
   });
-  return out.map((o, n) => (o.entry.order === n ? o.entry : { ...o.entry, order: n }));
+  const placed = i.diff.placed ? withPlacement(out, i.current, i.diff.regroup, (e) => changed(e)) : out;
+  return placed.map((o, n) => (o.entry.order === n ? o.entry : { ...o.entry, order: n }));
+}
+
+/**
+ * (Ben, 27 Oct) Ben's pairs onto the kept exercises: each round he regrouped takes one fresh superset letter (one
+ * exercise: none), its members side by side where the first of them is, in his order; everything else keeps its place.
+ * A stored superset left with one exercise is no longer one.
+ */
+function withPlacement(out: readonly { entry: RoutineExercise; item: number | null }[], current: readonly KeepCurrentItem[], regroup: readonly boolean[], changed: (e: RoutineExercise) => RoutineExercise): { entry: RoutineExercise; item: number | null }[] {
+  let next = [...out];
+  const roundOfEntry = (o: { item: number | null }): number | null => (o.item === null || regroup[o.item] !== true ? null : (current[o.item]?.round ?? null));
+  for (const r of [...new Set(next.map(roundOfEntry).filter((x): x is number => x !== null))]) {
+    const members = next.filter((o) => roundOfEntry(o) === r).sort((a, b) => (a.item ?? 0) - (b.item ?? 0));
+    if (members.length < 2) continue;
+    const at = next.findIndex((o) => roundOfEntry(o) === r);
+    const rest = next.filter((o) => roundOfEntry(o) !== r);
+    const before = next.slice(0, at).filter((o) => roundOfEntry(o) !== r).length;
+    next = [...rest.slice(0, before), ...members, ...rest.slice(before)];
+  }
+  const rounds = new Map<number, number[]>();
+  next.forEach((o, n) => {
+    if (o.item === null || regroup[o.item] !== true) return;
+    const r = current[o.item]?.round ?? -1;
+    rounds.set(r, [...(rounds.get(r) ?? []), n]);
+  });
+  const regrouped = new Set([...rounds.values()].flat());
+  const used = new Set(next.flatMap((o, n) => (regrouped.has(n) || o.entry.supersetGroup === null ? [] : [o.entry.supersetGroup])));
+  for (const ns of rounds.values()) {
+    let letter: string | null = null;
+    if (ns.length > 1) {
+      letter = LETTERS.split('').find((l) => !used.has(l)) ?? null;
+      if (letter !== null) used.add(letter);
+    }
+    for (const n of ns) {
+      const o = next[n];
+      if (o !== undefined && o.entry.supersetGroup !== letter) next[n] = { ...o, entry: changed({ ...o.entry, supersetGroup: letter }) };
+    }
+  }
+  const size = new Map<string, number>();
+  for (const o of next) if (o.entry.supersetGroup !== null) size.set(o.entry.supersetGroup, (size.get(o.entry.supersetGroup) ?? 0) + 1);
+  return next.map((o) => (o.entry.supersetGroup !== null && (size.get(o.entry.supersetGroup) ?? 0) < 2 ? { ...o, entry: changed({ ...o.entry, supersetGroup: null }) } : o));
 }
 
 const workingOf = (e: RoutineExercise): number => e.setTemplates.filter(isWork).length;
@@ -441,5 +558,94 @@ export function keepMainLiftMark(current: WorkoutDraft, m: { sessionId: string; 
     kind: 'write',
     next: { ...current, keepMainLift: next, opIds: [...current.opIds, m.opId].slice(-MAX_WORKOUT_DRAFT_OPS), version: current.version + 1, updatedAtUtc: m.at.utc },
     expectedVersion: current.version,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// (Ben, 27 Oct: "If I add superset it doesn't then change the plan") Ben's own mid-workout structure edits.
+
+/** Session commands that are Ben's own structure edits mid-workout, when he made them (never a coach or Time step). */
+const MID_WORKOUT_KINDS: ReadonlySet<string> = new Set(['link_superset', 'split_superset', 'add_exercise']);
+/** Commands whose steps run under their own op IDs (`coachEditStepOpId`): the app's or the coach's, never Ben's edits. */
+const STEPPED_KINDS: ReadonlySet<string> = new Set(['coach_edit_today', 'fit_today_to_time', 'tick_all_planned']);
+
+/** The workout's rows a mid-workout edit added, as Keep reads them: its exercise and working sets. */
+export interface KeepMidWorkoutAdd {
+  key: string;
+  exerciseId: string;
+  workingSets: number;
+}
+
+/**
+ * `withMidWorkoutEdits`: the workout as Ben left it at Start (`current`), with his own mid-workout structure edits on
+ * top (spec §2.8: "Mid-workout structure changes count the same way"): an exercise he added (`＋ Add`, `Superset
+ * with…` a new one) is his add, and when he paired or split a superset (`Superset with…`, `Remove superset`) the rounds
+ * are the workout's own and every exercise whose partners changed is his placement. The coach's and Time's steps never
+ * count. Nothing of his mid-workout: `current` as it is. Pure.
+ */
+export function withMidWorkoutEdits(current: readonly KeepCurrentItem[], a: Pick<SessionAggregate, 'exercises' | 'sets' | 'processedOps'>): { current: KeepCurrentItem[]; adds: KeepMidWorkoutAdd[] } {
+  const ops = Object.values(a.processedOps);
+  const stepped = new Set<string>();
+  for (const op of ops) {
+    if (!STEPPED_KINDS.has(op.commandType)) continue;
+    for (let i = 0; i < 400; i += 1) {
+      const id = coachEditStepOpId(op.opId, i);
+      if (a.processedOps[id] === undefined) break;
+      stepped.add(id);
+    }
+  }
+  const mine = ops.filter((op) => MID_WORKOUT_KINDS.has(op.commandType) && !stepped.has(op.opId));
+  if (mine.length === 0) return { current: [...current], adds: [] };
+  const addedRows = new Set(mine.filter((op) => op.commandType === 'add_exercise').flatMap((op) => op.createdIds ?? []));
+  const live = a.exercises.filter((e) => e.removed === undefined && e.continuesFromId === undefined).sort((x, y) => x.order - y.order);
+  // `Superset with…` a new exercise is an add in a superset: the rounds are the workout's then too.
+  const regrouped = mine.some((op) => op.commandType !== 'add_exercise') || live.some((e) => addedRows.has(e.id) && e.supersetGroup !== null);
+  // The workout's rounds: a run of rows with one superset letter is one round.
+  const roundOf = new Map<string, number>();
+  let round = -1;
+  live.forEach((e, i) => {
+    const prev = live[i - 1];
+    if (prev === undefined || e.supersetGroup === null || prev.supersetGroup !== e.supersetGroup) round += 1;
+    roundOf.set(e.id, round);
+  });
+  // Its planned working sets (a set left unlogged at Finish still counts: it's what he set up).
+  const working = (rowId: string): number => a.sets.filter((s) => s.sessionExerciseId === rowId && s.setType !== 'warmup' && s.status !== 'deleted').length;
+  // Each started item meets its row (same exercise, in order); rows Ben added are his adds.
+  const used = new Set<string>();
+  const rowOfItem = current.map((c) => {
+    const row = live.find((e) => !used.has(e.id) && !addedRows.has(e.id) && e.exerciseId === c.exerciseId);
+    if (row !== undefined) used.add(row.id);
+    return row ?? null;
+  });
+  const adds: KeepMidWorkoutAdd[] = [];
+  const out: { item: KeepCurrentItem; at: number }[] = current.map((c, i) => {
+    const row = rowOfItem[i];
+    if (!regrouped || row === null || row === undefined) return { item: c, at: row === null || row === undefined ? Number.MAX_SAFE_INTEGER : live.indexOf(row) };
+    return { item: { ...c, round: roundOf.get(row.id) ?? c.round }, at: live.indexOf(row) };
+  });
+  for (const row of live) {
+    if (!addedRows.has(row.id)) continue;
+    const n = Math.max(1, Math.min(BUILD_LIMITS.maxWorkingSets, working(row.id)));
+    adds.push({ key: row.id, exerciseId: row.exerciseId, workingSets: n });
+    // Not regrouped: a round of its own (never a started round's number).
+    out.push({ item: { key: row.id, exerciseId: row.exerciseId, workingSets: n, origin: null, round: regrouped ? (roundOf.get(row.id) ?? 0) : 1_000_000 + live.indexOf(row), ben: { added: true } }, at: live.indexOf(row) });
+  }
+  if (!regrouped) return { current: [...out].sort((x, y) => x.at - y.at).map((o) => o.item), adds };
+  // Partners before (the started rounds) and after (the workout's): a change is his placement.
+  const partners = (items: readonly KeepCurrentItem[], i: number): string =>
+    items
+      .flatMap((x, k) => (k !== i && x.round === items[i]?.round ? [x.key] : []))
+      .sort()
+      .join('+');
+  const sorted = [...out].sort((x, y) => x.at - y.at);
+  const before = new Map(current.map((c, i) => [c.key, partners(current, i)] as const));
+  const after = sorted.map((o) => o.item);
+  return {
+    current: after.map((c, i) => {
+      const was = before.get(c.key);
+      if (was === undefined || was === partners(after, i)) return c;
+      return { ...c, ben: { ...(c.ben ?? {}), placed: true } };
+    }),
+    adds,
   };
 }
