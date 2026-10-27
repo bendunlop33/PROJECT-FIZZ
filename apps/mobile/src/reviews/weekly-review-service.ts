@@ -113,6 +113,7 @@ import {
   type WeeklyFacts,
   type WeeklyReviewInput,
   type HistoryWorkout,
+  type HealthDailyValue,
 } from '@fizz/domain';
 import { timeSlicer, type Store } from '@fizz/persistence';
 
@@ -132,6 +133,8 @@ export interface WeeklyReviewServiceDeps {
   catalogueExercises?: () => readonly Exercise[];
   /** Each split day's main lift: the default `Lifts shown` with no plan templates. */
   mainLiftIds?: () => Promise<ReadonlySet<string>>;
+  /** (Ben, 27 Oct) Sleep and resting heart rate from Apple Health (empty while off). Absent: none. */
+  healthSignals?: () => Promise<{ sleep: HealthDailyValue[]; restingHeartRate: HealthDailyValue[] }>;
 }
 
 export type WeeklyRun =
@@ -361,7 +364,8 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         .catch(() => [] as Activity[])
     )
       .filter((a) => a.deletedAtUtc === null)
-      .map((a) => ({ id: a.id, date: a.fields.date, kind: a.fields.kind, status: a.fields.status, distanceM: a.fields.distanceM }));
+      .map((a) => ({ id: a.id, date: a.fields.date, kind: a.fields.kind, status: a.fields.status, distanceM: a.fields.distanceM, durationS: a.fields.durationS, healthType: a.health?.activityType ?? null, fromHealth: a.health !== undefined }));
+    const health = (await deps.healthSignals?.().catch(() => null)) ?? null;
     const pain = await repos()
       .painFlags.listActive(owner.id)
       .catch(() => []);
@@ -406,6 +410,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
         templates,
         painFlagged: new Set(pain.map((p) => p.exerciseId)),
         unit: owner.preferredUnit,
+        ...(health === null ? {} : { health }),
       },
     };
   }
@@ -420,7 +425,8 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
    * keeps the plan it was reviewed against.
    */
   function inputsHashOf(g: Gathered, facts: ReturnType<typeof weeklyReviewFacts>): string {
-    const kept = facts.filter((f) => f.kind !== 'template_edit').map((f) => (f.kind === 'group_sets' ? { ...f, planned: f.planned === null ? null : 'plan' } : f));
+    // (Ben, 27 Oct) Apple Health's sleep and resting heart rate are left out: a late watch sync never re-asks the coach.
+    const kept = facts.filter((f) => f.kind !== 'template_edit' && f.kind !== 'health_week').map((f) => (f.kind === 'group_sets' ? { ...f, planned: f.planned === null ? null : 'plan' } : f));
     return deriveId(`weekly:${stableStringify({ facts: kept, goal: g.input.goal, lifts: g.input.lifts, templates: g.input.templates.map((t) => t.routineId), pain: [...g.input.painFlagged].sort() })}`).slice(0, 128);
   }
 

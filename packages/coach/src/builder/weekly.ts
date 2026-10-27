@@ -1,4 +1,4 @@
-import { formatNumber, groupLabel, NBSP, reviewFactLines, WEEKLY_REVIEW, type ReviewTemplate, type TemplateEdit, type WeeklyFacts } from '@fizz/domain';
+import { activityGroupsLine, activityGroupWord, compactSleepText, formatNumber, groupLabel, NBSP, reviewFactLines, WEEKLY_REVIEW, type ReviewTemplate, type TemplateEdit, type WeeklyFacts } from '@fizz/domain';
 import { builderGroupOfMuscleGroup, type ReviewProposal, type WeeklyReviewArgs, type WeightUnit } from '@fizz/schemas';
 import { checkClaims, claimLower, exerciseNames, type ClaimFacts, type SessionClaims } from './claims';
 
@@ -24,6 +24,17 @@ export function weeklyFactTexts(f: WeeklyFacts): string[] {
     if (l.target !== null) out.push(`${l.name} target: ${formatNumber(l.target.value)} ${unit}${l.was === null ? '' : `, was ${formatNumber(l.was.value)}`}`);
   }
   for (const w of f.weeks) out.push(`Week of ${w.monday}: ${w.planned === null ? `${String(w.workouts)} workouts` : `${String(w.done)} of ${String(w.planned)} sessions`}, ${String(w.runs)} runs`);
+  // (Ben, 27 Oct) Every other activity, grouped (the card's line is cut at three), and Apple Health's raw values:
+  // data only (rules 8, 10). Lifting comes first (gym first); none of these are reasons to change loads (rule 3).
+  const acts = activityGroupsLine(f.activities, 99);
+  if (acts !== null) out.push(`Other activity this week (Ben's and Apple Health's, never lifting): ${acts.all.join(', ')}`);
+  if (f.health !== null) {
+    const parts = [
+      f.health.sleep === null ? null : `average sleep ${compactSleepText(f.health.sleep.avgMin)} over ${String(f.health.sleep.nights)} nights`,
+      f.health.restingHr === null ? null : `resting heart rate ${String(f.health.restingHr.start.bpm)} bpm on ${f.health.restingHr.start.date}, ${String(f.health.restingHr.end.bpm)} bpm on ${f.health.restingHr.end.date}`,
+    ].filter((x): x is string => x !== null);
+    out.push(`From Apple Health (data${f.health.sources.length > 0 ? `, ${f.health.sources.map((x) => JSON.stringify(x)).join(', ')}` : ''}): ${parts.join('; ')}. No score; never a reason to change loads on its own; never diagnose.`);
+  }
   return out.map((t) => t.replaceAll(NBSP, ' '));
 }
 
@@ -70,6 +81,24 @@ export function weeklyClaimFacts(f: WeeklyFacts): ClaimFacts {
   }
   const runs = entity(['runs', 'run', 'km']);
   add(runs.sets, f.runs.count, f.runs.distanceM === null ? null : Math.round(f.runs.distanceM / 100) / 10);
+  // (Ben, 27 Oct) Each activity group's count, distance (km) and hours; its minutes join the minutes the coach may name.
+  const activityMinutes: number[] = [];
+  for (const a of f.activities) {
+    const one = activityGroupWord(a.group, 1);
+    const many = activityGroupWord(a.group, 2);
+    const e = a.group === 'run' ? runs : entity(a.group === 'other' ? ['other activity', 'other activities'] : [one, many]);
+    const minutes = a.durationS === null ? null : Math.round(a.durationS / 60);
+    add(e.sets, a.count, a.distanceM === null ? null : Math.round(a.distanceM / 100) / 10, minutes === null ? null : Math.floor(minutes / 60), minutes === null ? null : Math.round(minutes / 6) / 10);
+    if (minutes !== null) activityMinutes.push(minutes, minutes % 60);
+  }
+  if (f.health !== null) {
+    if (f.health.sleep !== null) {
+      const m = f.health.sleep.avgMin;
+      add(entity(['sleep', 'slept', 'asleep']).sets, Math.floor(m / 60), Math.round(m / 6) / 10, f.health.sleep.nights);
+      activityMinutes.push(m % 60, m);
+    }
+    if (f.health.restingHr !== null) add(entity(['resting heart rate', 'resting hr', 'rhr', 'bpm']).sets, f.health.restingHr.start.bpm, f.health.restingHr.end.bpm, Math.abs(f.health.restingHr.end.bpm - f.health.restingHr.start.bpm));
+  }
   // Each count against the fact it names (review b3-wave3-truth B2), never one shared pool.
   const set = (...vs: (number | null | undefined)[]): Set<number> => {
     const out = new Set<number>();
@@ -90,7 +119,7 @@ export function weeklyClaimFacts(f: WeeklyFacts): ClaimFacts {
     exercises: new Set(),
     compound: new Set(),
     isolation: new Set(),
-    minutes: new Set(),
+    minutes: new Set(activityMinutes),
     ofPairs,
     plan: new Set(),
     ben: new Set(),

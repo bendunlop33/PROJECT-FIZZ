@@ -210,6 +210,11 @@ export interface WeekContextView {
   remaining: { id: string; name: string; bodyParts: string[] }[];
   /** `Run · Sat 24 Oct · planned · long`. */
   activities: string[];
+  /**
+   * (Ben, 27 Oct) This week's done activities grouped (`2 runs 14 km`, `3 walks 2 h`): Ben's and Apple Health's, a
+   * linked watch workout never counted again. Absent: none. Data, never lifting (gym first).
+   */
+  activityTotals?: string[];
   /** More days left than gym days. */
   needsReshape: boolean;
   /** Code's merge idea (day IDs from `remaining`). */

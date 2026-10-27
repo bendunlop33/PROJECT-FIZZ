@@ -1124,6 +1124,7 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.coach === undefined ? {} : { model: deps.coach.model }),
     catalogueExercises,
     mainLiftIds: () => training.splitMainLiftIds(),
+    healthSignals: () => health.signals(),
   });
 
   /**

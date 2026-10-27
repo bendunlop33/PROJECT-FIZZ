@@ -316,17 +316,20 @@ export function WeekCard({ view, mode, onOpenSession, onOpenReview }: { view: Th
   const perRow = ax ? 2 : 4;
   const gap = 4;
   const chipWidth = width > 0 ? Math.floor((width - gap * (perRow - 1)) / perRow) : null;
+  const [allActivities, setAllActivities] = useState(false);
+  // (Ben, 27 Oct) The grouped activity line replaces `· 2 cardio`; older views without it keep the suffix.
+  const cardio = view.activities === null ? view.cardio : null;
   return (
     <ProgressCard>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'baseline', columnGap: 10 }} accessible accessibilityLabel={`Sessions ${view.sessions}${view.cardio === null ? '' : `, ${view.cardio}`}`}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'baseline', columnGap: 10 }} accessible accessibilityLabel={`Sessions ${view.sessions}${cardio === null ? '' : `, ${cardio}`}`}>
         <AppText variant="callout" color="text.secondary" style={PROGRESS_TEXT.k}>
           {PROGRESS_COPY.sessions}
         </AppText>
         <AppText variant="headline" numeric style={PROGRESS_TEXT.v}>
           {view.sessions}
-          {view.cardio !== null ? (
+          {cardio !== null ? (
             <AppText variant="callout" color="text.secondary" style={{ fontSize: 14, fontWeight: '500' }}>
-              {` · ${view.cardio}`}
+              {` · ${cardio}`}
             </AppText>
           ) : null}
         </AppText>
@@ -346,7 +349,42 @@ export function WeekCard({ view, mode, onOpenSession, onOpenReview }: { view: Th
           ))}
         </View>
       ) : null}
+      {/* (Ben, 27 Oct) Gym first: other activity and Apple Health's sleep/RHR come after the lifting, small and secondary. */}
+      {view.activities !== null ? (
+        <WeekActivityLine
+          line={view.activities}
+          expanded={allActivities}
+          onMore={() => {
+            setAllActivities((x) => !x);
+          }}
+        />
+      ) : null}
+      {view.health !== null ? (
+        <AppText variant="callout" color="text.secondary" numeric style={PROGRESS_TEXT.sub} accessibilityLabel={`${view.health.replaceAll('\u00a0', ' ').replace('RHR', 'Resting heart rate').replace('→', 'to')}, from Apple Health`}>
+          {view.health}
+        </AppText>
+      ) : null}
     </ProgressCard>
+  );
+}
+
+/** `2 runs 14 km · 1 ride 45 min · 3 walks 2 h · +2 more` (the tap lists every group). ♥ when any came from Health. */
+function WeekActivityLine({ line, expanded, onMore }: { line: NonNullable<ThisWeekView['activities']>; expanded: boolean; onMore: () => void }) {
+  const text = expanded ? line.all.join(' · ') : line.line;
+  const mark = line.fromHealth ? '♥ ' : '';
+  if (line.more === 0) {
+    return (
+      <AppText variant="callout" color="text.secondary" numeric style={PROGRESS_TEXT.sub} accessibilityLabel={line.accessibilityLabel}>
+        {`${mark}${text}`}
+      </AppText>
+    );
+  }
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={line.accessibilityLabel} accessibilityState={{ expanded }} onPress={onMore} hitSlop={6} style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
+      <AppText variant="callout" color="text.secondary" numeric style={PROGRESS_TEXT.sub}>
+        {`${mark}${text}${expanded ? '' : ` · +${String(line.more)} more`}`}
+      </AppText>
+    </Pressable>
   );
 }
 
