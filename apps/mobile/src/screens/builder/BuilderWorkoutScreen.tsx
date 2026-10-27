@@ -30,6 +30,8 @@ import { useAddOwn } from '../../ui/use-add-own';
 import { useExercisePicker, usePickerView } from '../../ui/use-exercise-picker';
 import { TimeDetailSheet, TimeNoteRow } from '../../ui/time-stepper';
 import { createOnDeviceSpeech } from '../../voice/on-device-speech';
+import { NextTimeCard } from '../library/NextTimeCard';
+import { RecapLines, useExerciseRecap } from './ExerciseRecap';
 import { WorkoutTable } from './WorkoutTable';
 import { ExerciseSheet, ProposalSheet, ReviewSheet, SwapSheet, type ChoiceSection } from './BuilderSheets';
 
@@ -82,6 +84,9 @@ export function BuilderWorkoutScreen() {
   const [variationName, setVariationName] = useState<string | null>(null);
   const variationOp = useRef(newUuid());
   const [popup, setPopup] = useState<string | null>(null);
+  const [marked, setMarked] = useState<ReadonlySet<string>>(new Set());
+  // (D6) The open card's `Last` and `Best`.
+  const recap = useExerciseRecap(snap === null || popup === null ? null : (slotsOf(snap.workout.blocks).find((x) => x.key === popup)?.exerciseId ?? null));
   const [dragging, setDragging] = useState(false);
   const [swap, setSwap] = useState<{ slotKey: string | null; sections: ChoiceSection[] } | null>(null);
   // (Ben, 25 Oct) Swap / Add's full list: every exercise, read once per open; search and chips are pure over it.
@@ -596,6 +601,45 @@ export function BuilderWorkoutScreen() {
   const links = popupSlot === null ? null : popupLinks(snap, popupSlot, (x) => howToRouteFor(x, bundledHowToSources()));
   const howTo = links?.howTo ?? null;
   const history = links?.history ?? null;
+  // (Redesign 27 Oct, D6) The tapped exercise opens in place under its row (one at a time), not as a pop-up.
+  const sheetNode = (
+      <ExerciseSheet
+        inline
+        recap={<RecapLines recap={recap} onHistory={history === null ? undefined : () => { navigation.navigate('ExerciseProgress', history); }} />}
+        snap={snap}
+        slotKey={popupSlot}
+        onEdit={edit}
+        onSwap={() => {
+          const k = popupSlot;
+          setPopup(null);
+          if (k !== null) void openSwap(k);
+        }}
+        onDelete={() => {
+          const k = popupSlot;
+          setPopup(null);
+          if (k !== null) void edit({ kind: 'delete_exercise', slotKey: k });
+        }}
+        onClose={() => { setPopup(null); }}
+        why={(k) => services.builder.whyWeight(snap.draftId, k)}
+        kgStep={kgStep}
+        onHowTo={
+          howTo === null
+            ? undefined
+            : () => {
+                setPopup(null);
+                navigation.navigate('HowTo', howTo);
+              }
+        }
+        onHistory={
+          history === null
+            ? undefined
+            : () => {
+                setPopup(null);
+                navigation.navigate('ExerciseProgress', history);
+              }
+        }
+      />
+  );
   return (
     <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
       <View style={{ flex: 1 }}>
@@ -726,23 +770,31 @@ export function BuilderWorkoutScreen() {
               }
             />
           ) : null}
+          {/* (Redesign D5) A saved workout's coach changes for next time, with Undo; the dot marks the changed number. */}
+          {snap.from?.kind === 'routine' ? <NextTimeCard routineId={snap.from.id} onMarks={setMarked} /> : null}
           {/* The table, shared with the one workout editor (Ben, 23 Oct): drops the builder takes only (the main lift, more than 4, a no-op spring back; review S5). */}
           <WorkoutTable
             rounds={v.rounds}
             topHeader={v.topHeader}
             canAdd={v.canAdd}
             dragging={dragging}
-            onDragChange={setDragging}
+            onDragChange={(active) => {
+              setDragging(active);
+              if (active) setPopup(null);
+            }}
             canDrop={(slotKey, t) => snapRef.current !== null && dropBuilderSlot(snapRef.current.workout.blocks, slotKey, t.key, t.edge) !== null}
             onDrop={(slotKey, t) => void edit({ kind: 'drop', slotKey, targetKey: t.key, edge: t.edge })}
             onRowPress={(r) => {
-              setPopup(r.slotKey);
+              setPopup((k) => (k === r.slotKey ? null : r.slotKey));
             }}
+            expandedKey={popup}
+            renderExpanded={() => sheetNode}
+            marked={marked}
             onRowAction={rowAction}
             onAdd={() => void openSwap(null)}
           />
         </ScrollArea>
-        <ToastHost bottom={8}>{popupSlot === null ? toastNode : null}</ToastHost>
+        <ToastHost bottom={8}>{toastNode}</ToastHost>
       </View>
       <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: insets.bottom + theme.space['2'], gap: theme.space['2'], backgroundColor: theme.colors['bg.canvas'] }}>
         <CoachAskBar
@@ -768,41 +820,6 @@ export function BuilderWorkoutScreen() {
         </View>
       </View>
 
-      <ExerciseSheet
-        snap={snap}
-        slotKey={popupSlot}
-        onEdit={edit}
-        onSwap={() => {
-          const k = popupSlot;
-          setPopup(null);
-          if (k !== null) void openSwap(k);
-        }}
-        onDelete={() => {
-          const k = popupSlot;
-          setPopup(null);
-          if (k !== null) void edit({ kind: 'delete_exercise', slotKey: k });
-        }}
-        onClose={() => { setPopup(null); }}
-        why={(k) => services.builder.whyWeight(snap.draftId, k)}
-        kgStep={kgStep}
-        onHowTo={
-          howTo === null
-            ? undefined
-            : () => {
-                setPopup(null);
-                navigation.navigate('HowTo', howTo);
-              }
-        }
-        onHistory={
-          history === null
-            ? undefined
-            : () => {
-                setPopup(null);
-                navigation.navigate('ExerciseProgress', history);
-              }
-        }
-        toast={toastNode}
-      />
       <SwapSheet
         visible={swap !== null}
         title={swap?.slotKey == null ? 'Add exercise' : `Swap ${snap.facts[slotsOf(snap.workout.blocks).find((s) => s.key === swap.slotKey)?.exerciseId ?? '']?.name ?? ''}`}
@@ -912,7 +929,7 @@ function ScrollArea({ children, scrollEnabled }: { children: ReactNode; scrollEn
   const theme = useTheme();
   // A plain scroll view: the list is short (≤ 10 exercises) and the bottom bar stays visible. It holds still while a row is dragged.
   return (
-    <ScrollView scrollEnabled={scrollEnabled} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingVertical: theme.space['3'], gap: theme.space['3'] }}>
+    <ScrollView scrollEnabled={scrollEnabled} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingVertical: theme.space['3'], gap: theme.space['3'] }}>
       {children}
     </ScrollView>
   );

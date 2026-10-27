@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { PLAN_OVERVIEW_COPY, withoutRoutines, type LibraryHistoryRow, type LibraryRow, type LibrarySort } from '@fizz/domain';
+import { libraryChangeCounts, PLAN_OVERVIEW_COPY, withoutRoutines, type LibraryHistoryRow, type LibraryRow, type LibrarySort } from '@fizz/domain';
 import type { Routine } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -65,8 +65,9 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym().catch(() => null);
     // The plan's days are on Library › Plan; a failed plan read is said there (review planview S5), and here every workout shows.
-    const [library, plan] = await Promise.all([s.routines.library({ gymId: gym?.id ?? null, sort, showAllHistory: showAll }), s.plans.overview().catch(() => null)]);
-    return { gym, library, plan };
+    const [library, plan, changes] = await Promise.all([s.routines.library({ gymId: gym?.id ?? null, sort, showAllHistory: showAll }), s.plans.overview().catch(() => null), s.libraryChanges.read().catch(() => null)]);
+    // (Redesign 27 Oct, D5) A workout with a coach change for next time shows `✦1`.
+    return { gym, library, plan, changeCounts: changes === null ? new Map<string, number>() : libraryChangeCounts(changes.view) };
   });
   useEffect(() => {
     reload();
@@ -262,6 +263,7 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
     }
     const { active } = data.value.library;
     const plan = data.value.plan;
+    const changeCounts = data.value.changeCounts;
     const view = plan === null ? data.value.library.view : withoutRoutines(data.value.library.view, new Set(plan.days.map((d) => d.routineId)));
     return (
       <View style={{ gap: theme.space['5'] }}>
@@ -305,14 +307,14 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
         {view.rotation.length > 0 ? (
           <Section title={LIBRARY_COPY_UI.rotation}>
             {view.rotation.map((r, i) => (
-              <WorkoutRow key={r.routineId} row={r} first={i === 0} onPress={() => { openRow(r); }} onMenu={() => { openMenu(r); }} onAction={(a) => void act(r, a)} />
+              <WorkoutRow key={r.routineId} row={r} changes={changeCounts.get(r.routineId) ?? 0} first={i === 0} onPress={() => { openRow(r); }} onMenu={() => { openMenu(r); }} onAction={(a) => void act(r, a)} />
             ))}
           </Section>
         ) : null}
         {view.all.length > 0 ? (
           <Section title={plan !== null ? PLAN_OVERVIEW_COPY.otherWorkouts : LIBRARY_COPY_UI.all} action={<TextButton label={sort === 'recent' ? LIBRARY_COPY_UI.recent : LIBRARY_COPY_UI.az} icon="chevron.down" tone="secondary" accessibilityLabel={`Sort, ${sort === 'recent' ? 'recent' : 'A to Z'}`} onPress={pickSort} />}>
             {view.all.map((r, i) => (
-              <WorkoutRow key={r.routineId} row={r} first={i === 0} onPress={() => { openRow(r); }} onMenu={() => { openMenu(r); }} onAction={(a) => void act(r, a)} />
+              <WorkoutRow key={r.routineId} row={r} changes={changeCounts.get(r.routineId) ?? 0} first={i === 0} onPress={() => { openRow(r); }} onMenu={() => { openMenu(r); }} onAction={(a) => void act(r, a)} />
             ))}
           </Section>
         ) : null}
@@ -425,7 +427,7 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
  * here`, and a 44pt `⋯`. Long-press and VoiceOver custom actions give the
  * same menu; nothing is swipe-only. At AX sizes everything wraps.
  */
-function WorkoutRow({ row, first, onPress, onMenu, onAction }: { row: LibraryRow; first: boolean; onPress: () => void; onMenu: () => void; onAction: (action: string) => void }) {
+function WorkoutRow({ row, changes = 0, first, onPress, onMenu, onAction }: { row: LibraryRow; /** (D5) Coach changes for next time: `✦1`. */ changes?: number; first: boolean; onPress: () => void; onMenu: () => void; onAction: (action: string) => void }) {
   const theme = useTheme();
   const actions = rowMenu(row);
   return (
@@ -445,6 +447,11 @@ function WorkoutRow({ row, first, onPress, onMenu, onAction }: { row: LibraryRow
           <AppText variant="headline">{row.name}</AppText>
           {row.upNext ? <Tag icon="arrow.clockwise" text={LIBRARY_COPY_UI.upNext.toUpperCase()} /> : null}
           {row.sourceTag !== null ? <Tag icon={row.sourceTag === 'Coach' ? 'text.bubble' : 'square.and.arrow.down'} text={row.sourceTag} /> : null}
+          {changes > 0 ? (
+            <AppText variant="label" color="accent" numeric accessibilityLabel={`${String(changes)} coach ${changes === 1 ? 'change' : 'changes'} for next time`}>
+              {`✦${String(changes)}`}
+            </AppText>
+          ) : null}
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['1'] }}>
           <AppText variant="callout" color="text.secondary" numeric>

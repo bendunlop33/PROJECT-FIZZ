@@ -121,7 +121,7 @@ describe('Set up a plan always starts a new plan at the first step', () => {
 
   it('the screen opens on `pbFirstPage` and passes Edit plan through; `Continue last draft` sits on the first page only', () => {
     const src = readFileSync(join(__dirname, '../src/screens/plan/PlanSetupScreen.tsx'), 'utf8');
-    expect(src).toContain('setPage(pbFirstPage(s));');
+    expect(src).toContain(': pbFirstPage(s));');
     expect(src).not.toMatch(/setPage\(s\.draft !== null/);
     expect(src).toContain('editPlanId !== undefined ? { editPlanId }');
     expect(src).toMatch(/page === flow\[0\] \? <TextButton label=\{C\.continueDraft\}/);

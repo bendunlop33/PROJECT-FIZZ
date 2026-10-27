@@ -59,6 +59,13 @@ import { shapeEffortRow, shapeRepsText, SET_SHAPE_COPY } from './set-shape-view'
  */
 
 export const TEMPLATE_COPY = {
+  /** (Redesign 27 Oct, D6) The Options card. */
+  options: 'Options',
+  abs: 'Abs',
+  supersets: 'Supersets',
+  optionDone: (word: string, on: boolean, planDay: boolean) => `${word} ${on ? 'on' : 'off'}${planDay ? ' · this week on' : ''}`,
+  optionNoChange: 'Nothing to change',
+  optionFailed: 'Couldn’t change that. Try again.',
   newTitle: 'New workout',
   name: 'Name',
   time: 'Time',

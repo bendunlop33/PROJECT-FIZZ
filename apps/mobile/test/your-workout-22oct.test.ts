@@ -120,7 +120,7 @@ describe('`How to` and `History` in the row pop-up', () => {
     const popup = read('ui/exercise-popup.tsx');
     expect(popup).toContain('label={POPUP_COPY.howTo}');
     expect(popup).toContain('label={POPUP_COPY.history}');
-    expect(popup).toContain('{p.onHowTo !== undefined || p.onHistory !== undefined ? (');
+    expect(popup).toContain('p.onHowTo !== undefined || p.onHistory !== undefined ? (');
     const page = read('screens/builder/BuilderWorkoutScreen.tsx');
     expect(page).toContain('popupLinks(snap, popupSlot, (x) => howToRouteFor(x, bundledHowToSources()))');
     expect(page).toMatch(/setPopup\(null\);\s*navigation\.navigate\('HowTo', howTo\);/);

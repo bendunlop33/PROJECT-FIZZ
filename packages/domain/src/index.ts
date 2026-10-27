@@ -63,6 +63,7 @@ export * from './session/routines';
 export * from './session/template-fit';
 export * from './session/library';
 export * from './session/routine-editor';
+export * from './session/routine-options';
 export * from './session/session-types';
 export * from './session/split-up-next';
 export * from './session/recent';

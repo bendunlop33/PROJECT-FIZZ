@@ -1,6 +1,8 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
+
+import { libraryChangeMarks, type LibraryChangeMark } from '@fizz/domain';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
@@ -44,6 +46,10 @@ export function PlanDayScreen() {
   const { prefs } = useDevicePrefs();
   const [data, reload] = useScreenData((s) => s.plans.planDay(routineId, { targetsHit: prefs.targetsHit, week }));
   const day = data.state === 'ready' ? data.value : null;
+  // (Redesign 27 Oct, D2) A number the coach changed carries a dot; a tap says was / now with Undo.
+  const [changesData, reloadChanges] = useScreenData((s) => s.libraryChanges.read().catch(() => null));
+  const changes = changesData.state === 'ready' ? changesData.value : null;
+  const marks = changes === null ? new Map<string, LibraryChangeMark>() : libraryChangeMarks(changes.view, routineId);
   const name = day?.name ?? shownName ?? '';
   const services = useServices();
   const changed = useDataChanged();
@@ -85,6 +91,25 @@ export function PlanDayScreen() {
       );
     }, [reload, services, changed]),
   );
+
+  /** A changed number's tap: `Bench press 85 kg · was 82.5 kg` with Undo (the change's own versioned write). */
+  function showMark(m: LibraryChangeMark) {
+    if (changes === null) return;
+    const opId = newUuid();
+    setToast({
+      text: m.text,
+      action: PLAN_DAY_COPY.undo,
+      onAction: () => {
+        setToast(null);
+        void services.libraryChanges.tap(changes, m.row, 'undo', opId).then((r) => {
+          changed();
+          reload();
+          reloadChanges();
+          setToast({ text: r.ok ? (r.text ?? PLAN_DAY_COPY.undo) : r.message });
+        });
+      },
+    });
+  }
 
   /** `Make next` / `Unpin` (rule 5: the screen's read of the plan; a retried tap is the same write), then Undo. */
   async function pin(on: boolean) {
@@ -158,23 +183,39 @@ export function PlanDayScreen() {
             </View>
           ) : day.rows.length > 0 ? (
             <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['1'] }}>
-              {day.rows.map((r, i) => (
-                <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel} style={{ paddingVertical: theme.space['3'], gap: 2, borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
+              {day.rows.map((r, i) => {
+                const mark = marks.get(r.exerciseId);
+                return (
+                <Pressable
+                  key={r.key}
+                  accessible
+                  accessibilityRole={mark === undefined ? undefined : 'button'}
+                  accessibilityLabel={mark === undefined ? r.accessibilityLabel : `${r.accessibilityLabel}, changed by coach`}
+                  disabled={mark === undefined}
+                  onPress={() => {
+                    if (mark !== undefined) showMark(mark);
+                  }}
+                  style={({ pressed }) => ({ paddingVertical: theme.space['3'], gap: 2, borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'], opacity: pressed ? 0.7 : 1 })}
+                >
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', columnGap: theme.space['3'] }}>
                     <AppText variant="body" style={{ flexShrink: 1 }}>
                       {r.superset === null ? r.name : `${r.superset}  ${r.name}`}
                     </AppText>
-                    <AppText variant="body" numeric>
-                      {r.line}
-                    </AppText>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <AppText variant="body" numeric>
+                        {r.line}
+                      </AppText>
+                      {mark !== undefined ? <View accessibilityElementsHidden style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent }} /> : null}
+                    </View>
                   </View>
                   {r.sub !== null ? (
                     <AppText variant="callout" color="text.secondary" numeric>
                       {r.sub}
                     </AppText>
                   ) : null}
-                </View>
-              ))}
+                </Pressable>
+                );
+              })}
             </View>
           ) : null}
           <PrimaryButton

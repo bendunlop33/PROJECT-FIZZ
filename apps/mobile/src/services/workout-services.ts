@@ -114,6 +114,8 @@ import {
   lastComparableSessions,
   pinnedNoteFor,
   exerciseHistoryGlance,
+  exerciseRecap,
+  type ExerciseRecap,
   HISTORY_GLANCE,
   type HistoryGlanceView,
   lastWorkingLoad,
@@ -4066,6 +4068,25 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       } catch {
         return null;
       }
+    },
+
+    /**
+     * (Redesign 27 Oct, D6) The editor card's `Last · 12 Oct` (that workout's sets) and `Best`, per exercise, from
+     * logged history only (`exerciseRecap`). Local only; one that can't be read is null (no line), never an error.
+     */
+    async exerciseRecaps(ids: readonly string[]): Promise<Record<string, ExerciseRecap | null>> {
+      const p = await ctx.profile();
+      if (!p) return {};
+      const out: Record<string, ExerciseRecap | null> = {};
+      const nowMs = toMs(ctx.now().utc);
+      const today = localDateOf(nowMs, p.timezone);
+      const histories = await historiesFor(p.id, ids).catch(() => new Map<string, HistorySession[]>());
+      for (const id of new Set(ids)) {
+        const x = await exerciseById(id).catch(() => null);
+        if (!x) continue;
+        out[id] = exerciseRecap({ history: histories.get(id) ?? [], measurement: x.measurement, laterality: x.laterality, tz: p.timezone, today });
+      }
+      return out;
     },
 
     /** Editor info for exercises (added ones too): Ben's list, then the catalogue. */
