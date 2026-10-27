@@ -72,6 +72,8 @@ export const WORKOUT_COPY = {
   rest: 'Rest',
   startLight: 'Start light',
   useEdits: 'Use',
+  /** (Redesign v3 §A9) Your workout's `⋯` item for earlier unused edits. */
+  useEarlierEdits: 'Use earlier edits',
   notHere: 'Not at this gym',
   checkIn: 'Check-in',
   skip: 'Skip',
@@ -378,7 +380,8 @@ export const OPTIONS_ROW_COPY = { title: 'Options' } as const;
 
 export function todayOptionsSummary(o: TodayOptions): { text: string; accessibilityLabel: string } {
   const main = o.mainLifts.length > 1 ? (o.mainLifts.find((m) => m.selected)?.label ?? null) : null;
-  const parts = [main, o.accessories === 'focused' ? TODAY_V2_COPY.focused : o.accessories === 'varied' ? TODAY_V2_COPY.varied : null, o.abs ? TODAY_V2_COPY.abs : null, o.supersets ? TODAY_V2_COPY.supersets : null].filter((x): x is string => x !== null);
+  // (Redesign v3 §A8) The collapsed card shows what's on: `Abs · Supersets`.
+  const parts = [o.abs ? TODAY_V2_COPY.abs : null, o.supersets ? TODAY_V2_COPY.supersets : null].filter((x) => x !== null);
   const spoken = [
     main === null ? null : `${TODAY_V2_COPY.mainLift} ${main}`,
     o.accessories === null ? null : `${TODAY_V2_COPY.accessories} ${o.accessories === 'focused' ? TODAY_V2_COPY.focused : TODAY_V2_COPY.varied}`,
@@ -541,6 +544,15 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
 /** `Edits from Mon 19 Oct` (§2.3) for a local date `2026-10-19`. */
+/**
+ * (Redesign v3 §A9, Ben 27 Oct) Earlier unused edits are offered in Your workout's `⋯`, not as status lines: one item
+ * `Use earlier edits`; with more than one, each names its day (`Use edits from Sat 25 Oct`). Newest first as given.
+ */
+export function earlierEditsMenu(earlier: readonly { draftId: string; localDate: string }[]): { draftId: string; label: string }[] {
+  if (earlier.length === 1) return earlier.map((e) => ({ draftId: e.draftId, label: WORKOUT_COPY.useEarlierEdits }));
+  return earlier.map((e) => ({ draftId: e.draftId, label: `Use e${editsFromText(e.localDate).slice(1)}` }));
+}
+
 export function editsFromText(localDate: string): string {
   const [y = 0, m = 1, d = 1] = localDate.split('-').map(Number);
   // Sakamoto's weekday for the Gregorian calendar (0 = Sunday).
