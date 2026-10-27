@@ -49,7 +49,9 @@ describe('a typed weight is kept and the gym learns it', () => {
     const { s, sessionId, a, row, gymId } = await started();
     const set = a.sets.find((x) => x.sessionExerciseId === row && x.status === 'pending' && x.setType !== 'warmup');
     if (set === undefined) throw new Error('no set');
-    const rack = equipmentOfRow(a.session.equipmentSnapshot, a.exercises.find((e) => e.id === row) ?? a.exercises[0]!);
+    const rowEx = a.exercises.find((e) => e.id === row);
+    if (rowEx === undefined) throw new Error('no row');
+    const rack = equipmentOfRow(a.session.equipmentSnapshot, rowEx);
     if (rack === null) throw new Error('no rack');
     const top = rack.kind === 'dumbbells' ? (rack.loads.at(-1) ?? 0) : 0;
     const typed = top + 12.5;
@@ -57,12 +59,14 @@ describe('a typed weight is kept and the gym learns it', () => {
     if (w.kind !== 'planned') throw new Error(`expected planned, got ${w.kind}`);
     expect(w.patch).toMatchObject({ load: { value: typed, unit: 'kg', convention: 'per_hand' }, loadAsTyped: true });
     expect(w.learn).toMatchObject({ kind: 'add_dumbbell', value: typed });
+    const learn = w.learn;
+    if (learn == null) throw new Error('no learn');
     const after = ok(await s.workout.dispatch(sessionId, { type: 'edit_planned_set', at: h.now(), opId: 'typed-1', setId: w.setId, expectedSetVersion: w.expectedSetVersion, patch: w.patch }));
     expect(after.sets.find((x) => x.id === set.id)?.planned.load?.value).toBe(typed);
     // A typed target: the gym learns it (today's kit isn't refreshed under his target, so Undo is exact).
-    const learned = await s.gyms.learn(w.learn!);
+    const learned = await s.gyms.learn(learn);
     if (!learned.ok) throw new Error(learned.message);
-    expect(gymLearnToast(w.learn!, 'Main Gym')).toBe(`Main Gym: ${String(typed)} kg added`);
+    expect(gymLearnToast(learn, 'Main Gym')).toBe(`Main Gym: ${String(typed)} kg added`);
     const now = await rackOf(s, gymId, rack.id);
     expect(now?.kind === 'dumbbells' && now.loads.includes(typed)).toBe(true);
     expect(now?.version).toBe(rack.version + 1);
@@ -126,15 +130,17 @@ describe('Your workout: a typed kg is kept and the gym learns it', () => {
     if (r2.status !== 'written') throw new Error(r2.status);
     expect(r2.snapshot.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === db.key)?.rows.find((r) => r.typed === true)?.load).toBe(52.5);
     expect(r2.toast).toMatchObject({ undoOpId: 'typed-db-1', learn: { kind: 'add_dumbbell', value: 52.5 } });
-    const g = await s.gyms.learn(r2.toast!.learn!);
+    const dbLearn = r2.toast?.learn;
+    if (dbLearn === undefined) throw new Error('no learn');
+    const g = await s.gyms.learn(dbLearn);
     if (!g.ok) throw new Error(g.message);
-    const rack = await s.gyms.item(r2.toast!.learn!.equipmentId);
+    const rack = await s.gyms.item(dbLearn.equipmentId);
     expect(rack?.equipment.kind === 'dumbbells' && rack.equipment.loads.includes(52.5)).toBe(true);
     // Undo (as the screen does): the gym, then the edit.
     expect((await s.gyms.undoEdit(g.edit)).ok).toBe(true);
     const undone = await s.builder.undo(snap.draftId, 'typed-db-1', 'undo-typed-db-1');
     expect(undone.status).toBe('written');
-    const again = await s.gyms.item(r2.toast!.learn!.equipmentId);
+    const again = await s.gyms.item(dbLearn.equipmentId);
     expect(again?.equipment.kind === 'dumbbells' && again.equipment.loads.includes(52.5)).toBe(false);
   });
 });

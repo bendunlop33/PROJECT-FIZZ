@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RoutineExercise } from '@fizz/schemas';
 
 import { dropRoutineSlot, normaliseRoutineExercises, slotRestOf, stepSlotRest, typedFixedLoad, updateSet } from '../src/index';
-import { assisted, barbell, dumbbells, id, kg, lb, routineExercise, stack, template } from './fixtures';
+import { id, kg, lb, routineExercise, template } from './fixtures';
 import { BENCH, FACE, HANG, ROW } from './session-fixture';
 
 /**
@@ -45,22 +45,19 @@ describe('dropRoutineSlot (drag on the one editor)', () => {
 });
 
 describe('typedFixedLoad (a typed Kg cell; Ben, 27 Oct: kept as typed)', () => {
-  it('kept exactly as typed on every kind of item, between steps and past a max; per-hand, lb and assisted keep theirs', () => {
-    const rack = dumbbells();
+  it('kept exactly as typed, between steps and past a max; per-hand, lb, assisted and stacks keep their own', () => {
     const f = { unit: 'kg' as const, convention: 'per_hand' as const };
-    expect(typedFixedLoad(27.5, f, rack)).toEqual({ load: kg(27.5, 'per_hand'), note: null });
-    expect(typedFixedLoad(26, f, rack)).toEqual({ load: kg(26, 'per_hand'), note: null });
-    expect(typedFixedLoad(37.5, f, rack)).toEqual({ load: kg(37.5, 'per_hand'), note: null });
-    expect(typedFixedLoad(101.3, { unit: 'kg', convention: 'total' }, barbell()).load).toEqual(kg(101.3));
-    const lbRack = dumbbells({ unit: 'lb', loads: [10, 15, 20, 25, 30, 35, 40, 45, 50] });
-    expect(typedFixedLoad(42, { unit: 'lb', convention: 'per_hand' }, lbRack).load).toEqual(lb(42, 'per_hand'));
-    expect(typedFixedLoad(60, { unit: 'kg', convention: 'assistance' }, assisted()).load).toEqual(kg(60, 'assistance'));
-    expect(typedFixedLoad(12, { unit: 'kg', convention: 'stack' }, stack()).load).toEqual(kg(12, 'stack'));
+    expect(typedFixedLoad(27.5, f)).toEqual({ load: kg(27.5, 'per_hand'), note: null });
+    expect(typedFixedLoad(26, f)).toEqual({ load: kg(26, 'per_hand'), note: null });
+    expect(typedFixedLoad(37.5, f)).toEqual({ load: kg(37.5, 'per_hand'), note: null });
+    expect(typedFixedLoad(101.3, { unit: 'kg', convention: 'total' }).load).toEqual(kg(101.3));
+    expect(typedFixedLoad(42, { unit: 'lb', convention: 'per_hand' }).load).toEqual(lb(42, 'per_hand'));
+    expect(typedFixedLoad(60, { unit: 'kg', convention: 'assistance' }).load).toEqual(kg(60, 'assistance'));
+    expect(typedFixedLoad(12, { unit: 'kg', convention: 'stack' }).load).toEqual(kg(12, 'stack'));
   });
 
-  it('no item here: kept as typed (fitted at Start); never negative', () => {
-    expect(typedFixedLoad(101.3, { unit: 'kg', convention: 'total' }, null)).toEqual({ load: kg(101.3), note: null });
-    expect(typedFixedLoad(-5, { unit: 'kg', convention: 'total' }, null).load.value).toBe(0);
+  it('never negative', () => {
+    expect(typedFixedLoad(-5, { unit: 'kg', convention: 'total' }).load.value).toBe(0);
   });
 });
 

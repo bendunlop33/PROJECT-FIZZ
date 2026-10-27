@@ -533,7 +533,7 @@ export function fixedLoadNote(load: Load, eq: EquipmentInstance | null, display:
  * Oct: "If I add it it should work"; was rounded down to the item). Off the gym's known kit the editor has the gym
  * learn it (`gymLearnFor` with `typed`); the coach's and the rule's loads still snap (rule 4). Never negative.
  */
-export function typedFixedLoad(value: number, frame: { unit: WeightUnit; convention: LoadConvention }, _eq: EquipmentInstance | null, _display: LoadContext = _eq): { load: Load; note: string | null } {
+export function typedFixedLoad(value: number, frame: { unit: WeightUnit; convention: LoadConvention }): { load: Load; note: string | null } {
   return { load: { value: Math.max(0, value), unit: frame.unit, convention: frame.convention }, note: null };
 }
 

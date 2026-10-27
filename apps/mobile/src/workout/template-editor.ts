@@ -385,9 +385,9 @@ export function applyTemplateEdit(list: readonly RoutineExercise[], op: Template
       if (lf.bodyweight) {
         const weighted = setAddedWeight(list, op.slotId, true);
         const wf = slotLoadFrame(weighted.find((e) => e.id === op.slotId) ?? slot, ctx);
-        return { list: updateSet(weighted, op.slotId, op.setId, { targetLoad: typedFixedLoad(op.value, wf.frame, wf.item, wf.display).load }), note: null };
+        return { list: updateSet(weighted, op.slotId, op.setId, { targetLoad: typedFixedLoad(op.value, wf.frame).load }), note: null };
       }
-      const typed = typedFixedLoad(op.value, lf.frame, lf.item, lf.display);
+      const typed = typedFixedLoad(op.value, lf.frame);
       // Off the gym's known kit: kept as typed, and the gym learns it (the editor writes it with Undo).
       const learn = lf.item === null || lf.frame.convention === 'added' ? null : gymLearnFor(lf.item, typed.load, { id: slot.exerciseId, name: ctx.info[slot.exerciseId]?.name ?? 'Exercise' }, { typed: true });
       return { list: updateSet(list, op.slotId, op.setId, { targetLoad: typed.load }), note: typed.note, ...(learn === null ? {} : { learn }) };
