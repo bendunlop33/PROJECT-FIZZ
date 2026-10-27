@@ -18,3 +18,6 @@ export * from './plan-tab';
 export * from './targets-hit';
 export * from './lift-picks';
 export * from './recap';
+export * from './plan-day-colours';
+export * from './period-bar';
+export * from './training-period';

@@ -18,12 +18,13 @@ const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
 describe('Exercises tab (review S3–S5)', () => {
   const tab = read('screens/progress/ExercisesTab.tsx');
   const chart = read('progress/exercise-line-chart.tsx');
-  const screen = read('screens/progress/ProgressScreen.tsx');
+  // (Redesign v3 C3) Training's totals live in their own tab component.
+  const screen = read('screens/progress/TrainingTab.tsx');
 
   it('S5: shows the unreadable line, the same words as Activity', () => {
     expect(tab).toContain('tab.unreadable > 0 ? <StatusLine');
     expect(tab).toContain('unreadableText(tab.unreadable)');
-    expect(screen).toContain('unreadableText(home.unreadable)');
+    expect(screen).toContain('unreadableText(t.home.unreadable)');
     expect(unreadableText(1)).toBe('1 workout couldn’t be read and isn’t counted.');
     expect(unreadableText(2)).toBe('2 workouts couldn’t be read and aren’t counted.');
   });
@@ -49,10 +50,11 @@ describe('Exercises tab (review S3–S5)', () => {
   });
 
   it('S3, Ben 26 Oct: a record opens the workout it was set in (Summary), not the old detail; the old list route is gone', () => {
-    const onRecord = screen.slice(screen.indexOf('onRecord={(r) => {'), screen.indexOf('onRecord={(r) => {') + 400);
-    expect(onRecord).toContain("navigate('Summary', { sessionId: r.sessionId, back: true })");
-    expect(onRecord).not.toContain('ProgressExercise');
-    expect(screen).toContain("<ExercisesTab focus={exercisesFocus} active={tab === 'lifts'} />");
+    // (Redesign v3 C3) Training's records: a row opens its workout's Summary.
+    expect(screen).toContain('<Records view={home} onOpen={openSession} />');
+    expect(screen).toContain('onOpen(r.sessionId);');
+    expect(screen).toContain("navigation.navigate('Summary', { sessionId, back: true });");
+    expect(screen).not.toContain('ProgressExercise');
     expect(read('navigation/AppNavigator.tsx')).not.toContain('"ProgressExercises"');
     expect(read('navigation/types.ts')).not.toContain('ProgressExercises:');
   });

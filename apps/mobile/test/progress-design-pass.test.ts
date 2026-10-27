@@ -45,11 +45,13 @@ describe('6.3 axis width', () => {
 
 describe('6.1, 6.2 Progress screen', () => {
   const screen = read('screens', 'progress', 'ProgressScreen.tsx');
+  // (Redesign v3 C3) Consistency lives on Training's Month view.
+  const training = read('screens', 'progress', 'TrainingTab.tsx');
   it('8 equal columns with one-line capped labels; stacked rows at AX', () => {
-    expect(screen).toContain("style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 2 }}");
-    expect(screen).toContain('numberOfLines={1} maxFontSizeMultiplier={1.3}');
-    expect(screen).toContain('{w.rowLabel}');
-    expect(screen).toContain('<ConsistencyCard ax={ax}');
+    expect(training).toContain("style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 2 }}");
+    expect(training).toContain('numberOfLines={1} maxFontSizeMultiplier={1.3}');
+    expect(training).toContain('{w.rowLabel}');
+    expect(training).toContain('<ConsistencyCard ax={ax}');
   });
   it('one tap on a search result opens it', () => {
     expect(screen).toContain('keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"');

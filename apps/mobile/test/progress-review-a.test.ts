@@ -74,12 +74,12 @@ describe('B3, S3: window and grouping are one shared, saved setting', () => {
     expect([again.period, again.grouping]).toEqual(['1y', 'ppl']);
   });
 
-  it('neither screen keeps its own window or grouping; both read the service with no request', () => {
-    for (const file of ['screens/progress/ProgressScreen.tsx', 'screens/progress/MusclesScreen.tsx']) {
-      const src = read(file);
-      expect(src).toContain('s.progress.home()');
-      expect(src).not.toMatch(/useState<\{\s*days\?/);
-    }
+  it('Muscles reads the service with no request; Progress (redesign v3 C2) reads by the period bar’s one choice', () => {
+    const muscles = read('screens/progress/MusclesScreen.tsx');
+    expect(muscles).toContain('s.progress.home()');
+    expect(muscles).not.toMatch(/useState<\{\s*days\?/);
+    expect(read('screens/progress/ProgressScreen.tsx')).toContain('s.progress.shell(choice)');
+    expect(read('screens/progress/TrainingTab.tsx')).toContain('s.progress.training(choice)');
   });
 });
 
@@ -164,7 +164,7 @@ describe('B2, N6: Count it closes the sheet before its Undo toast shows', () => 
   it('the screen wires Count it through runCountIt with a closeSheet that hides the Time sheet', () => {
     const src = read('screens/progress/ProgressScreen.tsx');
     expect(src).toContain('runCountIt(r, countDeps, inFlight.current)');
-    expect(src).toMatch(/closeSheet: \(\) => \{\s*setTimeOpen\(false\);/);
+    expect(src).toMatch(/closeSheet: \(\) => \{\s*setTimeSheet\(null\);/);
   });
 });
 
@@ -180,7 +180,7 @@ describe('S1, S2: Ask floats above the ResumeBar and carries the Progress window
     expect(ask).toBeLessThan(areaClose);
     expect(toast).toBeLessThan(areaClose);
     expect(resume).toBeGreaterThan(areaClose);
-    expect(src).toContain("{ kind: 'progress', period, ");
+    expect(src).toContain("{ kind: 'progress', period: bar.preset, range: { from: bar.window.from, to: bar.window.to } }");
   });
 
   it('the coach sheet reads the window; the context frames it without inventing numbers', () => {

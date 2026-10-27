@@ -49,6 +49,11 @@ export interface ProgressHomeInput {
   recordLimit?: number;
   /** (Ben, 26 Oct) The tracked lifts' `New best`s (`newBestClaims`): the records. Absent: not known, none shown. */
   bests?: NewBestRecords | null;
+  /**
+   * (Redesign v3 C2) The period bar's period: its window (with the whole previous period), title (`October 2026`) and
+   * phrase (`in October`). When set it replaces `period` and `range`.
+   */
+  bar?: { window: ProgressWindow; title: string; phrase: string } | null;
 }
 
 export interface StatView {
@@ -239,14 +244,15 @@ function leftOutRow(s: LeftOutSession, title: string): TimeSheetRow {
 
 export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeView {
   if (input.sessions.length === 0) return { dataState: 'empty' };
-  const window = input.range ? customProgressWindow(input.range) : periodProgressWindow(input.today, input.period);
+  const bar = input.bar ?? null;
+  const window = bar !== null ? bar.window : input.range ? customProgressWindow(input.range) : periodProgressWindow(input.today, input.period);
   const custom = input.range !== undefined && input.range !== null;
-  const label = custom ? `${String(window.days)} days` : progressPeriodLabel(input.period);
+  const label = bar !== null ? bar.title : custom ? `${String(window.days)} days` : progressPeriodLabel(input.period);
   // `Last month`, `Previous 3 months`; a custom period counts days.
-  const phrase = custom ? label : progressPeriodPhrase(input.period);
+  const phrase = custom || bar !== null ? label : progressPeriodPhrase(input.period);
   // A custom period may end before today: its words name the dates, never "last".
-  const endsToday = window.to === input.today;
-  const span = endsToday ? `Last ${phrase}` : rangeText(window, input.today);
+  const endsToday = window.to === input.today && bar === null;
+  const span = bar !== null ? bar.title : endsToday ? `Last ${phrase}` : rangeText(window, input.today);
   const gymNames = input.gymNames ?? {};
   const byId = new Map(input.sessions.map((s) => [s.sessionId, s]));
   const titleOf = (id: string): string => {
@@ -384,7 +390,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
       total: rec?.total ?? 0,
       initial: HOME_RECORDS_INITIAL,
       more: listed > HOME_RECORDS_INITIAL ? { label: `All records (${String(listed)})`, words: `All records, ${String(listed)}.` } : null,
-      empty: rec === null ? null : rec.total === 0 ? (endsToday ? `No new records in the last ${phrase}.` : `No new records, ${rangeText(window, input.today)}.`) : null,
+      empty: rec === null ? null : rec.total === 0 ? (bar !== null ? `No new records ${bar.phrase}.` : endsToday ? `No new records in the last ${phrase}.` : `No new records, ${rangeText(window, input.today)}.`) : null,
     },
   };
 }

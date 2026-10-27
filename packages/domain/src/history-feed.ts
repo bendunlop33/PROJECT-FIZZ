@@ -95,7 +95,8 @@ export const FEED_FILTERS: readonly { key: FeedFilter; label: string }[] = [
 ];
 
 export const HISTORY_COPY = {
-  title: 'History',
+  /** (Redesign v3 C6) History is titled All workouts. */
+  title: 'All workouts',
   allHistory: 'All history ›',
   allHistoryLabel: 'All history',
   recent: 'Recent',

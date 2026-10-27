@@ -11,6 +11,7 @@ import { DropdownButton, DropdownPanel, PeriodPicker, Segmented, useAx } from '.
 import { ExerciseLineChart } from '../../progress/exercise-line-chart';
 import { LIFTS_TAB_SECTIONS, type LiftsTabSection } from '../../progress/lifts-tab-layout';
 import { RepTable } from '../../progress/trend-chart';
+import { useReloadOn } from '../../progress/use-reload-on';
 import { unreadableText } from '../../progress/copy';
 import type { ExerciseTab } from '../../services/progress-service';
 import { useScreenData, useServices } from '../../shell/context';
@@ -21,8 +22,9 @@ import { AppText, Chip, Icon, InfoLine, StatStrip, StatusLine, TextButton, TextF
  * Progress › Lifts (Ben, 13–14 Oct 2026; ideas-2026-10-12 D3; layout Ben
  * 26 Oct): his main lifts as chips with `More` (searchable), the line chart
  * with a dashed trailing average straight under them, then the series,
- * Measure and Period dropdowns, one stat line and the sessions table. The tab
- * keeps its own period. Lays out the service's view model and computes
+ * Measure and Period dropdowns, one stat line and the sessions table. In
+ * Progress the period is the shared period bar's (redesign v3 C2); Exercise
+ * detail keeps its own Period dropdown. Lays out the service's view model and computes
  * nothing. Local only.
  *
  * (Ben, 26 Oct: one exercise-progress screen) Exercise detail is this same component for one exercise
@@ -49,6 +51,7 @@ export function ExercisesTab({
   exerciseId: only = null,
   opening = null,
   onLoaded,
+  shared = null,
 }: {
   focus?: ExercisesFocus | null;
   /** Showing now: a hidden tab doesn't read (Ben, 26 Oct). */
@@ -59,6 +62,8 @@ export function ExercisesTab({
   opening?: { sessionId: string; sessionExerciseId: string | null } | null;
   /** The tab's data each time it loads (Exercise detail's title and the coach's entry). */
   onLoaded?: (tab: ExerciseTab | null) => void;
+  /** (Redesign v3 C2) Progress's period bar: its dates replace the tab's own Period dropdown. */
+  shared?: { period: ProgressPeriodKey; range: DateRange } | null;
 } = {}) {
   const theme = useTheme();
   const ax = useAx();
@@ -78,9 +83,23 @@ export function ExercisesTab({
   const [opened, setOpened] = useState<{ sessionId: string; sessionExerciseId: string | null } | null>(opening);
   const { prefs, update } = useDevicePrefs();
   const [data, reload] = useScreenData(
-    (s) => s.progress.exerciseTab({ exerciseId, remembered: only === null ? (prefs.liftsExercise ?? null) : null, period, range, measure, trailing, seriesId, open: opened, targetsHit: prefs.targetsHit, repBy }),
+    (s) =>
+      s.progress.exerciseTab({
+        exerciseId,
+        remembered: only === null ? (prefs.liftsExercise ?? null) : null,
+        period: shared?.period ?? period,
+        range: shared?.range ?? range,
+        measure,
+        trailing,
+        seriesId,
+        open: shared === null ? opened : null,
+        targetsHit: prefs.targetsHit,
+        repBy,
+      }),
     { enabled: active },
   );
+  // (Redesign v3 C2) A new period on the bar: read again (a new period clears the selected point).
+  useReloadOn(shared === null ? '' : `${shared.range.from}:${shared.range.to}`, reload);
   const loaded = data.state === 'ready' ? data.value : undefined;
   useEffect(() => {
     if (loaded !== undefined) onLoaded?.(loaded);
@@ -212,6 +231,23 @@ export function ExercisesTab({
             ) : null}
           </View>
         ) : null}
+        {shared !== null ? (
+          view.measures.length > 1 ? (
+            <View style={{ gap: theme.space['1'] }}>
+              <View style={{ alignSelf: 'flex-start' }}>
+                <DropdownButton
+                  label={view.measureLabel}
+                  accessibilityLabel={`Measure, ${view.measureLabel}`}
+                  open={open === 'measure'}
+                  onPress={() => {
+                    toggle('measure');
+                  }}
+                />
+              </View>
+              {measurePanel}
+            </View>
+          ) : null
+        ) : (
         <PeriodPicker
           period={tab.period}
           custom={tab.range !== null}
@@ -251,6 +287,7 @@ export function ExercisesTab({
           }
           leadingPanel={measurePanel}
         />
+        )}
       </View>
     ),
     stats: <StatStrip items={view.stats} accessibilityLabel={view.statsWords} ax={ax} />,

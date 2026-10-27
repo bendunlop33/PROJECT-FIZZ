@@ -93,7 +93,15 @@ export type ProgressStackParams = {
   ProgressReview: { reviewId: string };
   /** (Progress v3) Coach's changes › `Past weeks ›`: earlier weekly reviews, newest first. */
   ProgressPastWeeks: undefined;
+  /**
+   * (Redesign v3 C6) `All workouts`: History inside Progress (back goes to Progress). `month` (`YYYY-MM`): only that
+   * month (Training's `October workouts ›`).
+   */
+  ProgressHistory: HistoryParams;
 };
+
+/** History's list: every workout and activity, or (`month`, `YYYY-MM`) one month's. */
+export type HistoryParams = { month?: string } | undefined;
 
 /** The Library tab's stack (exercise-library §9, EL10). */
 export type LibraryStackParams = {
@@ -213,9 +221,10 @@ export type RootStackParams = {
   AddGym: undefined;
   /**
    * (Ben, 26 Oct) History: workouts and activities by week (docs/design/history.md); repeat, select and delete, Save
-   * to Workouts. From Today's `All history ›`, Library › Workouts and Progress › Calendar. Was `PastWorkouts`.
+   * to Workouts. From Today's `All history ›` and Library › Workouts (Progress opens it in its own stack:
+   * `ProgressHistory`). Was `PastWorkouts`. Titled `All workouts` (redesign v3 C6).
    */
-  History: undefined;
+  History: HistoryParams;
   /** Recently deleted (delete-workouts §2.5): from History's footer and Data & backup. */
   RecentlyDeleted: undefined;
   /** Repeat a finished workout (routines.md §2.4). */
