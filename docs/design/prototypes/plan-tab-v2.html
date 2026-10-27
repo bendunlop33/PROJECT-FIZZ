@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library › Plan v2 — before / after (example data)</title>
+<style>
+  :root {
+    --canvas: #0D0C0B; --surface: #181615; --raised: #23201E; --divider: #302C29;
+    --text: #F3EEE8; --text2: #B5ADA5; --text3: #948C84; --accent: #EDE5DA; --onaccent: #0D0C0B;
+    --done: #5CC98A; --donesub: #15301F;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: var(--text); font: 15px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; display: flex; gap: 32px; justify-content: center; padding: 24px; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .cap { color: #888; font-size: 13px; }
+  .phone { width: 390px; height: 844px; background: var(--canvas); border-radius: 44px; overflow: hidden; display: flex; flex-direction: column; border: 1px solid #222; }
+  .status { height: 47px; }
+  .top { padding: 12px 20px 12px; }
+  .title1 { font-size: 30px; font-weight: 700; margin: 0 0 12px; }
+  .seg { display: flex; background: var(--raised); border-radius: 10px; padding: 2px; }
+  .seg div { flex: 1; text-align: center; padding: 7px 0; border-radius: 8px; font-size: 14px; color: var(--text2); }
+  .seg .on { background: var(--surface); color: var(--text); font-weight: 600; }
+  .scroll { flex: 1; overflow: auto; padding: 16px 20px 40px; position: relative; }
+  .edge { border-top: 1px solid var(--divider); }
+  .card { background: var(--surface); border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .row-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .t2 { font-size: 22px; font-weight: 700; }
+  .sec { color: var(--text2); font-size: 15px; }
+  .ter { color: var(--text3); }
+  .eyebrow { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); font-weight: 600; }
+  .more { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--text2); margin: -10px -10px -10px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { min-width: 44px; height: 44px; padding: 0 10px; border-radius: 10px; background: var(--raised); display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; position: relative; }
+  .chip.sel { background: var(--accent); color: var(--onaccent); }
+  .chip .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; position: absolute; bottom: 5px; }
+  .chip.todo { color: var(--text2); }
+  .chip small { font-size: 11px; }
+  .list-h { display: flex; justify-content: space-between; align-items: baseline; margin: 22px 0 4px; }
+  .day { display: flex; align-items: center; gap: 12px; min-height: 60px; border-top: 1px solid var(--divider); padding: 6px 0; }
+  .day:first-of-type { border-top: 0; }
+  .mark { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--text3); flex: none; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+  .mark.done { border: 0; background: var(--donesub); color: var(--done); }
+  .mark.next { border: 2px solid var(--accent); color: var(--accent); }
+  .body { flex: 1; min-width: 0; }
+  .name { display: flex; align-items: center; gap: 8px; }
+  .tag { background: var(--raised); border-radius: 6px; padding: 2px 7px; font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+  .sub { color: var(--text2); font-size: 14px; }
+  .trail { color: var(--text2); font-size: 14px; white-space: nowrap; }
+  .chev { color: var(--text3); }
+  .dots { color: var(--text2); width: 32px; text-align: center; font-size: 18px; }
+  .btn2 { background: var(--raised); border-radius: 12px; text-align: center; padding: 13px; font-weight: 600; }
+  .link { color: var(--accent); font-weight: 600; }
+  .muted-link { color: var(--text2); font-weight: 600; }
+  .stat { flex: 1; background: var(--raised); border-radius: 12px; padding: 8px 12px; }
+  .clip { margin-top: -10px; }
+  .sheet { position: absolute; left: 8px; right: 8px; bottom: 8px; }
+  .sheet .grp { background: rgba(40,38,36,.97); border-radius: 14px; overflow: hidden; margin-bottom: 8px; }
+  .sheet .grp div { text-align: center; padding: 16px; border-top: 1px solid #3a3633; color: #0A84FF; font-size: 18px; }
+  .sheet .grp div:first-child { border-top: 0; }
+  .sheet .danger { color: #FF453A !important; }
+  .sheet .cancel { font-weight: 600; }
+  .note { color: var(--text2); font-size: 14px; margin: 0 0 4px; }
+</style>
+</head>
+<body>
+
+<div class="col">
+  <div class="cap">Before (build 419, scrolled)</div>
+  <div class="phone">
+    <div class="status"></div>
+    <div class="top">
+      <div class="title1">Library</div>
+      <div class="seg"><div class="on">Plan</div><div>Workouts</div><div>Exercises</div></div>
+    </div>
+    <div class="scroll">
+      <div class="card">
+        <div class="row-h clip"><b style="opacity:.55">6 weeks · Standard · deload week 6</b></div>
+        <div class="chips">
+          <div class="chip sel">1</div><div class="chip todo">2</div><div class="chip todo">3</div><div class="chip todo">4</div><div class="chip todo">5</div><div class="chip todo">6<small>D</small></div>
+        </div>
+        <div>
+          <div class="day"><div class="body">Push A</div><span class="chev">›</span></div>
+          <div class="day"><div class="body">Pull A</div><span class="chev">›</span></div>
+          <div class="day"><div class="body">Legs</div><span style="color:var(--done)">✓ Done</span><span class="chev">›</span></div>
+          <div class="day"><div class="body">Push B</div><span class="chev">›</span></div>
+          <div class="day"><div class="body">Pull B</div><span class="chev">›</span></div>
+        </div>
+        <div class="btn2">Edit plan</div>
+        <div>
+          <div class="day"><div class="mark"></div><div class="body">Push A</div><span class="chev">›</span></div>
+          <div class="day"><div class="mark"></div><div class="body">Pull A</div><span class="chev">›</span></div>
+          <div class="day"><div class="mark done">✓</div><div class="body">Legs</div><span class="trail">Mon</span><span class="chev">›</span></div>
+          <div class="day"><div class="mark next">4</div><div class="body name">Push B <span class="tag">NEXT</span></div><span class="chev">›</span></div>
+          <div class="day"><div class="mark"></div><div class="body">Pull B</div><span class="chev">›</span></div>
+        </div>
+        <div style="display:flex;gap:8px"><div class="stat"><div class="t2">1 of 5</div><div class="sec">Days this week</div></div><div class="stat"><div class="t2">100%</div><div class="sec">Planned sets done</div></div></div>
+        <div style="display:flex;gap:20px"><span class="link">Ask coach to change</span><span class="muted-link">Pause plan</span><span class="muted-link">End plan</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="col">
+  <div class="cap">After: this week</div>
+  <div class="phone">
+    <div class="status"></div>
+    <div class="top">
+      <div class="title1">Library</div>
+      <div class="seg"><div class="on">Plan</div><div>Workouts</div><div>Exercises</div></div>
+    </div>
+    <div class="scroll">
+      <div class="card">
+        <div class="row-h"><div class="t2">Push / Pull / Legs</div><div class="more">⋯</div></div>
+        <div class="sec">Week 1 of 6 · deload in week 6</div>
+        <div class="sec">Goal: Strength · 5 days a week · 60 min</div>
+        <div class="chips">
+          <div class="chip sel">1<span class="dot"></span></div><div class="chip todo">2</div><div class="chip todo">3</div><div class="chip todo">4</div><div class="chip todo">5</div><div class="chip todo">6 · Deload</div>
+        </div>
+      </div>
+      <div class="list-h"><span class="eyebrow">This week</span><span class="sec">1 of 5 days · 100% sets</span></div>
+      <div>
+        <div class="day"><div class="mark"></div><div class="body"><div>Push A</div><div class="sub">Bench press</div></div><span class="dots">⋯</span><span class="chev">›</span></div>
+        <div class="day"><div class="mark"></div><div class="body"><div>Pull A</div><div class="sub">Deadlift</div></div><span class="dots">⋯</span><span class="chev">›</span></div>
+        <div class="day"><div class="mark done">✓</div><div class="body"><div>Legs</div><div class="sub">Squat</div></div><span class="trail">Mon 27 Oct</span><span class="chev">›</span></div>
+        <div class="day"><div class="mark next">4</div><div class="body"><div class="name">Push B <span class="tag">NEXT</span></div><div class="sub">Overhead press</div></div><span class="dots">⋯</span><span class="chev">›</span></div>
+        <div class="day"><div class="mark"></div><div class="body"><div>Pull B</div><div class="sub">Barbell row</div></div><span class="dots">⋯</span><span class="chev">›</span></div>
+      </div>
+      <div class="list-h"><span class="eyebrow">Previous</span></div>
+      <div class="day"><div class="body"><div>Upper / Lower</div><div class="sub">Upper / Lower · ended 20 Sep</div></div><span class="link">Start again</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="col">
+  <div class="cap">After: week 6 selected (Set days), header ⋯ open</div>
+  <div class="phone" style="position:relative">
+    <div class="status"></div>
+    <div class="top">
+      <div class="title1">Library</div>
+      <div class="seg"><div class="on">Plan</div><div>Workouts</div><div>Exercises</div></div>
+    </div>
+    <div class="scroll">
+      <div class="card">
+        <div class="row-h"><div class="t2">Push / Pull / Legs</div><div class="more">⋯</div></div>
+        <div class="sec">Week 3 of 6 · deload in week 6</div>
+        <div class="chips">
+          <div class="chip">✓1</div><div class="chip">✓2</div><div class="chip">3<span class="dot"></span></div><div class="chip todo">4</div><div class="chip todo">5</div><div class="chip sel">6 · Deload</div>
+        </div>
+      </div>
+      <div class="list-h"><span class="eyebrow">Week 6</span></div>
+      <p class="note">Deload: lighter, fewer sets</p>
+      <div>
+        <div class="day"><div class="mark"></div><div class="body"><div>Push A</div><div class="sub">Mon · Bench press</div></div><span class="chev">›</span></div>
+        <div class="day"><div class="mark"></div><div class="body"><div>Pull A</div><div class="sub">Tue · Deadlift</div></div><span class="chev">›</span></div>
+        <div class="day"><div class="mark"></div><div class="body"><div>Legs</div><div class="sub">Thu · Squat</div></div><span class="chev">›</span></div>
+      </div>
+    </div>
+    <div class="sheet">
+      <div class="grp"><div>Edit plan</div><div>Pause plan</div><div>Ask coach to change</div><div>Edit goal</div><div class="danger">End plan</div></div>
+      <div class="grp"><div class="cancel">Cancel</div></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
