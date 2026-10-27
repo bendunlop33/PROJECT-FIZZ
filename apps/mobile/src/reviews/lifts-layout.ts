@@ -54,6 +54,9 @@ function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
 }
 
+/** The y-axis's most labels (hang fix, 27 Oct): a huge spread of values draws a capped axis, never an endless loop. */
+const MAX_LABELS = 400;
+
 /**
  * `focus`: the one lift shown alone, or null for every drawn lift. `weeks`: the 8 week labels. A line with
  * no points draws nothing; an all-empty chart has no lines (the table still lists the lifts).
@@ -69,7 +72,8 @@ export function liftsChartLayout(input: { lifts: readonly LiftView[]; focus: str
   const B = LIFTS_CHART.bottom;
   const etaCols = one !== null && one.focus.eta !== null && one.target !== null ? one.focus.etaWeeks : 0;
   const cols = WEEKS + etaCols;
-  const vals = shown.flatMap((l) => l.points.map((p) => p.value)).concat(shown.flatMap((l) => (l.target === null ? [] : [l.target])));
+  // (Hang fix, 27 Oct) Only finite values scale the axis: an Infinity looped the label loop without end.
+  const vals = shown.flatMap((l) => l.points.map((p) => p.value)).concat(shown.flatMap((l) => (l.target === null ? [] : [l.target]))).filter((v) => Number.isFinite(v));
   const step = one !== null ? 5 : 10;
   const min = vals.length === 0 ? 0 : Math.min(...vals);
   const max = vals.length === 0 ? step : Math.max(...vals);
@@ -78,10 +82,10 @@ export function liftsChartLayout(input: { lifts: readonly LiftView[]; focus: str
   const x = (i: number) => L + (i * (W - L - R)) / (cols - 1);
   const y = (v: number) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
   const labels: string[] = [];
-  for (let v = lo; v <= hi + 1e-9; v += step) labels.push(fmt(v));
+  for (let v = lo; v <= hi + 1e-9 && labels.length < MAX_LABELS; v += step) labels.push(fmt(v));
   L = liftsAxisLeft(labels, input.fontScale ?? 1);
   const ticks: LiftsChartLayout['ticks'] = [];
-  for (let v = lo; v <= hi + 1e-9; v += step) ticks.push({ y: y(v), label: fmt(v) });
+  for (let v = lo; v <= hi + 1e-9 && ticks.length < MAX_LABELS; v += step) ticks.push({ y: y(v), label: fmt(v) });
   const lines: ChartLine[] = shown.map((l) => {
     const pts = l.points.map((p, i) => {
       const last = i === l.points.length - 1;
