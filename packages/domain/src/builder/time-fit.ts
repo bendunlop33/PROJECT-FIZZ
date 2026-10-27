@@ -399,3 +399,42 @@ export function stepTimeMinutes(minutes: number, dir: -1 | 1): number {
   const next = dir < 0 ? Math.floor((m - 1) / 5) * 5 : Math.ceil((m + 1) / 5) * 5;
   return Math.max(FIT_RULES.minMinutes, Math.min(FIT_RULES.maxMinutes, next));
 }
+
+/**
+ * (Ben, 27 Oct: "if I add an exercise without changing the time it changes the time automatically") What the Time
+ * control shows on Today's card, Your workout and the workout editor: the live estimate of the workout on the page
+ * (`estimateBuilderMinutes`, the one estimate the plan and Today use), never the length Time last fitted to.
+ */
+export interface LiveTime {
+  /** The estimate, in minutes: the number shown. */
+  minutes: number;
+  /** The estimate is past the length (Ben's own edits are never cut to hold it): the number shows in the warning tone. */
+  over: boolean;
+  /** What `−` / `+` fit to; null: nothing to step to (a limit). */
+  less: number | null;
+  more: number | null;
+}
+
+/**
+ * The live Time control (`LiveTime`). `estimate`: the workout's estimate in minutes; `length`: the length it is held to
+ * (the plan's, or the one Time last fitted to); `floor`: the length a `−` must go below to cut anything (default
+ * `length`). Your workout's fit cuts only below the length before the first Time change (`refitWorkoutToTime`), so
+ * there it is the lower of the two; the workout editor's fit works from the list on the page, so with no live fit it is
+ * the estimate itself.
+ *
+ * `−` / `+` step from the estimate to the next 5-minute step (`stepTimeMinutes`), past the floor (`−`) or the length
+ * (`+`) so every tap moves something: an estimate just under its length (a fit can't land on the minute) would step to
+ * where it already is, and one over it (Ben's own edits) to a length the fit gives back uncut. Pure.
+ */
+export function liveTime(i: { estimate: number; length: number; floor?: number }): LiveTime {
+  const estimate = Math.max(0, Math.round(i.estimate));
+  const length = clampMinutes(i.length);
+  const floor = clampMinutes(i.floor ?? length);
+  // An empty workout (0) has nothing to time: the steps go from the length.
+  const from = estimate === 0 ? length : estimate;
+  let less = stepTimeMinutes(from, -1);
+  if (less >= floor) less = stepTimeMinutes(floor, -1);
+  let more = stepTimeMinutes(from, 1);
+  if (more <= length) more = stepTimeMinutes(length, 1);
+  return { minutes: estimate, over: estimate > length, less: less < floor ? less : null, more: more > length ? more : null };
+}
