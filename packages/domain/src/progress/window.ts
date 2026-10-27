@@ -116,7 +116,8 @@ export function pickerMonths(earliest: string, today: string): string[] {
   const floor = monthKeyOf(addDays(today, -(PROGRESS_MAX_PERIOD_DAYS - 1)));
   const lowest = monthKeyOf(earliest) < floor ? floor : monthKeyOf(earliest);
   const out: string[] = [];
-  for (let m = `${lowest}-01`; monthKeyOf(m) <= monthKeyOf(today); m = addMonths(m, 1)) out.push(monthKeyOf(m));
+  // Bounded (hang fix, 27 Oct): at most the longest period's months, whatever the stored dates.
+  for (let m = `${lowest}-01`; monthKeyOf(m) <= monthKeyOf(today) && out.length < 120; m = addMonths(m, 1)) out.push(monthKeyOf(m));
   return out;
 }
 

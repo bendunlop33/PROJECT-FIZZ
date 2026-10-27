@@ -79,7 +79,8 @@ export function weekFacts(input: WeekFactsInput): WeekFacts {
   const runDays = new Set(runs.map((a) => a.fields.date));
   const openDates: string[] = [];
   const start = input.gymDates.has(input.today) ? addDays(input.today, 1) : input.today;
-  for (let d = start; d <= sunday; d = addDays(d, 1)) if (!runDays.has(d)) openDates.push(d);
+  // Bounded (hang fix, 27 Oct): a week has 7 days, whatever `today` holds.
+  for (let d = start, i = 0; d <= sunday && i < 7; d = addDays(d, 1), i += 1) if (!runDays.has(d)) openDates.push(d);
   const gymDaysDone = [...input.gymDates].filter((d) => d >= monday && d <= sunday).length;
   // Review S7, the spec's formula (Ben, 20 Oct): aim − done − days blocked by a long or hard run from today on;
   // never more than the open dates left.

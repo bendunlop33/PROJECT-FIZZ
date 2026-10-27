@@ -42,14 +42,28 @@ export function loadDirection(convention: LoadConvention): LoadDirection {
   return convention === 'assistance' ? 'assistance' : 'resistance';
 }
 
+/**
+ * (Hang fix, 27 Oct) Work bounds for odd stored inventories: a real gym's bar makes a few hundred sums from ~10k
+ * steps, but the schema allows 50 plate masses × 200 plates each, whose sums would never finish on the phone. Past
+ * these the list stops growing (the heaviest combinations of a huge inventory are left out) rather than hang.
+ */
+export const SUBSET_SUM_LIMITS = { maxSums: 10_000, maxSteps: 400_000 } as const;
+/** The fewest-plates search's node budget (a real setup takes a few hundred). */
+export const PLATE_SEARCH_MAX_NODES = 50_000;
+
 /** Distinct sums from using up to `maxUses[i]` of `items[i]` (scaled integers). */
 function boundedSubsetSums(items: readonly { scaled: number; maxUses: number }[]): Set<number> {
   let sums = new Set<number>([0]);
+  let steps = 0;
   for (const item of items) {
-    if (item.maxUses <= 0 || item.scaled <= 0) continue;
+    if (!(item.maxUses > 0) || !(item.scaled > 0) || !Number.isFinite(item.scaled)) continue;
     const next = new Set<number>();
-    for (const s of sums) {
-      for (let k = 0; k <= item.maxUses; k += 1) next.add(s + k * item.scaled);
+    outer: for (const s of [...sums].sort((a, b) => a - b)) {
+      for (let k = 0; k <= item.maxUses; k += 1) {
+        steps += 1;
+        if (steps > SUBSET_SUM_LIMITS.maxSteps || next.size >= SUBSET_SUM_LIMITS.maxSums) break outer;
+        next.add(s + k * item.scaled);
+      }
     }
     sums = next;
   }
@@ -326,8 +340,11 @@ export function buildPlateSetup(totalLoad: Mass, eq: EquipmentInstance): PlateSe
   // Fewest-plates search over the bounded inventory, heaviest plates first.
   const found: { counts: number[] | null; used: number } = { counts: null, used: Infinity };
   const counts = plates.map(() => 0);
+  let nodes = 0;
   const search = (i: number, remaining: number, used: number): void => {
-    if (used >= found.used) return;
+    // (Hang fix, 27 Oct) Bounded: an odd inventory never searches without end; the best setup found so far stands.
+    nodes += 1;
+    if (nodes > PLATE_SEARCH_MAX_NODES || used >= found.used) return;
     if (remaining === 0) {
       found.counts = [...counts];
       found.used = used;

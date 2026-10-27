@@ -99,7 +99,8 @@ export function rangeValues(r: RangeSpec): number[] {
   const a = toScaled(r.from);
   const b = toScaled(r.to);
   const s = toScaled(r.step);
-  if (a <= 0 || s <= 0 || b < a || (b - a) / s > 499) return [];
+  // (Hang fix, 27 Oct) Finite only: a `from` of Infinity pushed without end (Node: Invalid array length; a phone: killed).
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(s) || a <= 0 || s <= 0 || b < a || (b - a) / s > 499) return [];
   const out: number[] = [];
   for (let v = a; v <= b; v += s) out.push(fromScaled(v));
   return out;

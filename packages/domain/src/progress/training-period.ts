@@ -311,7 +311,8 @@ export function weekBars(sessions: readonly ProgressSession[], full: DateRange, 
   const lastDay = full.to < today ? full.to : today;
   const thisMonday = mondayOf(today);
   const mondays: string[] = [];
-  for (let m = firstMonday; m <= lastDay; m = addDays(m, 7)) mondays.push(m);
+  // Bounded (hang fix, 27 Oct): far more weeks than any period holds.
+  for (let m = firstMonday; m <= lastDay && mondays.length < 600; m = addDays(m, 7)) mondays.push(m);
   const counts = new Map<string, number>(mondays.map((m) => [m, 0]));
   const end = mondays.length === 0 ? firstMonday : addDays(mondays[mondays.length - 1] ?? firstMonday, 6);
   for (const s of sessions) {

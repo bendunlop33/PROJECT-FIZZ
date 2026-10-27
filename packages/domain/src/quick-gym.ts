@@ -16,7 +16,7 @@ import { formatNumber } from './display';
 import { getAchievableLoads, isLoadAchievable } from './equipment';
 import { isExcludedFor, isNotFor, needsNoEquipment } from './exercise-equipment';
 import { BAR_MASS } from './gym-editor';
-import { loadRange, type EquipmentDraftBody, type GymDraft, type GymDraftItem } from './gym-presets';
+import { loadRange, LOAD_RANGE_MAX_VALUES, type EquipmentDraftBody, type GymDraft, type GymDraftItem } from './gym-presets';
 import { fromScaled, toScaled } from './units';
 
 /**
@@ -87,14 +87,17 @@ const LIGHT_LADDER: Readonly<Record<WeightUnit, { step: number; until: number; t
 /** The rack from `step` up to `max` (never above it): every `step`, or the light ladder (1s to 10 kg, then 2.5s). */
 export function dumbbellLoadsFor(unit: WeightUnit, step: number, max: number): number[] {
   if (!validDumbbellStep(unit, step)) throw new RangeError(`Dumbbell step ${String(step)} ${unit} is out of range`);
+  // (Hang fix, 27 Oct) A max that isn't a finite number makes no rack; one past `loadRange`'s cap throws there.
+  if (!Number.isFinite(max)) throw new RangeError(`Dumbbell max ${String(max)} ${unit} is out of range`);
   const s = toScaled(step);
   const top = Math.floor(toScaled(max) / s) * s;
   if (top < s) return [step];
   const ladder = LIGHT_LADDER[unit];
   if (toScaled(ladder.step) !== s) return loadRange(step, fromScaled(top), step);
+  const t = toScaled(ladder.then);
+  if ((toScaled(max) - toScaled(ladder.until)) / t >= LOAD_RANGE_MAX_VALUES) throw new RangeError(`Dumbbell max ${String(max)} ${unit} is out of range`);
   const out: number[] = [];
   for (let v = s; v <= Math.min(toScaled(ladder.until), toScaled(max)); v += s) out.push(fromScaled(v));
-  const t = toScaled(ladder.then);
   for (let v = (Math.floor(toScaled(ladder.until) / t) + 1) * t; v <= toScaled(max); v += t) out.push(fromScaled(v));
   return out;
 }
