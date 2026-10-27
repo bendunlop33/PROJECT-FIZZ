@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { compactEachText, compactExerciseName } from '@fizz/domain';
+
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { newUuid } from '../../device/runtime';
 import type { LibraryStackParams } from '../../navigation/types';
@@ -36,6 +38,9 @@ export const PLAN_DAY_COPY = {
  * is sent). Every value comes from `services.plans.planDay`; nothing is
  * computed here. Local only (rule 1).
  */
+/** (Redesign v3 §B) The compact list's sets and target text: ≈14 pt. */
+const COMPACT_VALUE = { fontSize: 14, lineHeight: 20 } as const;
+
 export function PlanDayScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -142,15 +147,16 @@ export function PlanDayScreen() {
                       {r.superset}
                     </AppText>
                   ) : null}
+                  {/* (Redesign v3 §B) Compact list: `DB` in names, `ea` on per-dumbbell loads, 14 pt sets and target. */}
                   <AppText variant="body" style={{ flex: 1, minWidth: 140, ...(r.main ? { fontWeight: '600' } : {}) }}>
-                    {r.name}
+                    {compactExerciseName(r.name)}
                   </AppText>
-                  <AppText variant="callout" color="text.secondary" numeric>
-                    {`${r.line}${r.kg === null && r.est ? ' est.' : ''}`}
+                  <AppText variant="callout" color="text.secondary" numeric style={COMPACT_VALUE}>
+                    {`${compactEachText(r.line)}${r.kg === null && r.est ? ' est.' : ''}`}
                   </AppText>
                   {r.kg !== null ? (
-                    <AppText variant="body" numeric style={{ minWidth: 56, textAlign: 'right' }}>
-                      {`${r.kg}${r.est ? ' est.' : ''}`}
+                    <AppText variant="callout" numeric style={{ ...COMPACT_VALUE, minWidth: 56, textAlign: 'right' }}>
+                      {`${compactEachText(r.kg)}${r.est ? ' est.' : ''}`}
                     </AppText>
                   ) : null}
                 </View>
@@ -162,10 +168,10 @@ export function PlanDayScreen() {
                 <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel} style={{ paddingVertical: theme.space['3'], gap: 2, borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', columnGap: theme.space['3'] }}>
                     <AppText variant="body" style={{ flexShrink: 1 }}>
-                      {r.superset === null ? r.name : `${r.superset}  ${r.name}`}
+                      {r.superset === null ? compactExerciseName(r.name) : `${r.superset}  ${compactExerciseName(r.name)}`}
                     </AppText>
-                    <AppText variant="body" numeric>
-                      {r.line}
+                    <AppText variant="callout" numeric style={COMPACT_VALUE}>
+                      {compactEachText(r.line)}
                     </AppText>
                   </View>
                   {r.sub !== null ? (
