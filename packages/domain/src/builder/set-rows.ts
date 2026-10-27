@@ -320,10 +320,9 @@ export type RowPatch = { kind: 'reps'; reps: number } | { kind: 'rpe'; rpe: numb
 /**
  * `editSetRow`: reps or RPE recalculates kg unless Ben typed kg in that set
  * (or the lift has no formula: assisted and added weight keep their kg). A
- * typed kg is rounded down to what this gym can load; `rounded` says if it
- * moved (for `Why?`). A typed kg is never capped by the pain hold: it
- * stays, with `mayHurt` (§2.3). Below the item's lightest load, or out of
- * range, the edit is refused and nothing changes.
+ * typed kg is kept exactly as typed (Ben, 27 Oct; was rounded down to the kit): the caller has the gym learn it when
+ * it's off the known kit. A typed kg is never capped by the pain hold: it stays, with `mayHurt` (§2.3). Below 0 the
+ * edit is refused and nothing changes.
  */
 export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, load: SlotLoadInput): SetRowEdit {
   const row = slot.rows[index];
@@ -335,13 +334,14 @@ export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, lo
     case 'load': {
       if (!Number.isFinite(patch.value) || patch.value < 0) return { ok: false, reason: 'load_out_of_range' };
       const ctx = roundCtx(load);
-      const value = convertValue(patch.value, patch.unit ?? slot.unit, ctx.unit);
-      const r = fitHere(value, { ...ctx, painCap: null });
-      if (!r.ok) return r.reason === 'lightest_is_harder' ? { ok: false, reason: 'lightest_is_harder', ...(r.lightest === null ? {} : { lightest: r.lightest }) } : { ok: false, reason: 'not_loadable' };
+      // (Ben, 27 Oct: "If I add it it should work") Kept exactly as typed, never rounded to the kit or refused for it;
+      // off the kit the caller has the gym learn it (`gymLearnFor` with `typed`). Suggestions still round (rule 4).
+      const asTyped = Math.round(convertValue(patch.value, patch.unit ?? slot.unit, slot.unit) * 1000) / 1000;
+      const r = { load: { value: asTyped, unit: slot.unit, requested: asTyped, requestedUnit: slot.unit, rounded: false, bounded: null, capped: null } satisfies RoundedLoad };
       const plain: BuilderSetRow = { ...cur, load: r.load.value, typed: true };
       delete plain.roundedFrom;
       delete plain.backoffFrom;
-      rows[index] = { ...plain, ...(r.load.rounded ? { roundedFrom: convertValue(value, ctx.unit, slot.unit) } : {}) };
+      rows[index] = plain;
       // (Ben, 23 Oct, SP2) Ben typed the top himself: back-offs that followed the coach's top stop following, measured
       // from where they are now (a heavier top he types never raises them; a lighter one lowers them).
       if (row.type === 'top') {

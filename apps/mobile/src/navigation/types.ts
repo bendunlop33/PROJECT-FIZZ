@@ -1,6 +1,7 @@
 import type { BuilderOpenTarget } from '../builder/builder-service';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { CustomExerciseFields, EquipmentKind, RoutineExercise, SetExclusion } from '@fizz/schemas';
+import type { GymLearn } from '@fizz/domain';
 
 import type { CoachEntry } from '../coach/coach-service';
 import type { BuilderCoachEntry } from '../coach/builder-sheet-view';
@@ -327,7 +328,9 @@ export type WorkoutToastParam =
    * (copy D4): `Set 2 deleted` [Undo] → `undo_op` on `targetOpId`, which is
    * also the key, so each shows once.
    */
-  | { kind: 'undo_op'; text: string; targetOpId: string };
+  | { kind: 'undo_op'; text: string; targetOpId: string }
+  /** (Ben, 27 Oct) Back from Edit set with a load typed off the kit: the gym learns it (`Main Gym: 27.5 kg added · Undo`). */
+  | { kind: 'learn'; learn: GymLearn; targetOpId: string };
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

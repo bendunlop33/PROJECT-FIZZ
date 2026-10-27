@@ -310,7 +310,7 @@ export function buildFromSetup(setup: BuilderSetup, pool: BuilderPool, ctx: Buil
     const m = estimateBuilderMinutes(workout, ctx);
     return { workout, fit: { workout, steps: [], status: m <= setup.minutes ? 'fits' : 'over', minutes: m }, short };
   }
-  const fitted = fitToMinutes(workout, ctx, { minutes: setup.minutes, mainGroup, grow: false, supersets: setup.supersets });
+  const fitted = fitToMinutes(workout, ctx, { minutes: setup.minutes, mainGroup, grow: false, supersets: setup.supersets, settle: (x) => settleWarmups(x, ctx) });
   // The fit may reorder, pair or drop slots: warm-ups follow the final order.
   const settled = settleWarmups(fitted.workout, ctx);
   const fit = settled === fitted.workout ? fitted : { ...fitted, workout: settled, minutes: estimateBuilderMinutes(settled, ctx) };

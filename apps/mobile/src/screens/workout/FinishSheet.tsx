@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Modal, ScrollView, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View } from 'react-native';
 
 import { pastLogDefaultEnd, startMoveWrite, timelineOf, toIso, toMs, workoutTimeBounds, type StartMove } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
@@ -10,16 +9,17 @@ import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, DangerTextButton, Eyebrow, PrimaryButton, StatusLine, TextButton } from '../../ui';
-import { finishModel } from '../../workout/finish';
+import { AppText, BottomCard, DangerTextButton, PrimaryButton, SecondaryButton, StatusLine, TextButton } from '../../ui';
+import { finishLine, finishLineSpoken, finishModel } from '../../workout/finish';
 import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
 
 /**
- * Finish sheet (active-workout §4.8; today.md §4 for a stale workout).
- * Nothing is written until `Finish`: one `finish` with the chosen end time
- * (and start, when Ben moved it on the wheel; Ben, 19 Oct) in the same
- * transaction (ADR 0003 S5). A stale version reloads and says so
- * (review N8). With nothing logged, `Discard workout` is the primary.
+ * Finish sheet (active-workout §4.8; today.md §4 for a stale workout; redesign-27oct §E1: opened from the top bar's
+ * `Finish`, a bottom card with `15 of 16 sets · 1 not done`, Finish, Keep going and Discard).
+ * Nothing is written until `Finish`: one `finish` with the end time (now, or the last set + 3 min after a forgotten
+ * Finish; a past log's own times, set here on the wheels, and its start when Ben moved it; Ben, 19 Oct) in the same
+ * transaction (ADR 0003 S5). A stale version reloads and says so (review N8). With nothing logged, `Discard workout`
+ * is the primary.
  *
  * (Ben, 25 Oct) Moving Started moves the whole workout (its sets, pauses and rests with it) to any
  * past date and time; the `finish` then carries `shift: true` and the end as shown. A past log's
@@ -45,7 +45,6 @@ export function FinishSheet({
 }) {
   const theme = useTheme();
   const services = useServices();
-  const insets = useSafeAreaInsets();
   const [opId, setOpId] = useState(newUuid);
   const [now, setNow] = useState(clockNow);
   const pastLog = aggregate.session.pastLog !== undefined;
@@ -109,49 +108,32 @@ export function FinishSheet({
   }
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose} {...(onDismissed ? { onDismiss: onDismissed } : {})}>
-      {/* 2.2: the body scrolls (the end-time wheel can be tall at AX); Finish and Keep going stay pinned. */}
-      <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['4'], gap: theme.space['4'] }}>
-          <View style={{ gap: theme.space['2'] }}>
-            <Eyebrow>Finish</Eyebrow>
-            <AppText variant="title2" accessibilityRole="header">
-              Finish workout?
+    // (Ben, 27 Oct; redesign §E1) A bottom card from the top bar's Finish: the sets done, Finish, Keep going, Discard.
+    // A live workout's times are edited on the Summary (⋯ › Edit times); a past log sets its times here.
+    <BottomCard
+      visible={visible}
+      onClose={onClose}
+      closeLabel="Keep going"
+      {...(onDismissed ? { onDismissed } : {})}
+      header={
+        <View style={{ gap: theme.space['1'] }}>
+          <AppText variant="title2" accessibilityRole="header">
+            Finish workout?
+          </AppText>
+          <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={finishLineSpoken(model)}>
+            {finishLine(model)}
+          </AppText>
+          {/* A forgotten Finish ends at the last set + 3 min (finishModel): shown, one tap away on the Summary. */}
+          {!pastLog && !model.nothingLogged && model.forgotten ? (
+            <AppText variant="callout" color="text.secondary" numeric>
+              {`Ends ${formatTime(endMs, tz)}`}
             </AppText>
-          </View>
-          {model.nothingLogged ? (
-            <AppText variant="body">Nothing logged yet.</AppText>
-          ) : (
-            <AppText variant="body" numeric>
-              {`${String(model.done)} of ${String(model.total)} sets done.${model.willSkip > 0 ? ` ${String(model.willSkip)} not done will be marked skipped.` : ''}`}
-            </AppText>
-          )}
-          {!model.nothingLogged ? (
-            <View style={{ gap: theme.space['2'] }}>
-              <WorkoutTimesRows
-                times={times}
-                shift={{ timeline, nowMs: now }}
-                startMove={{ mode: startMove, onMode: setStartMove, fixed: workoutTimeBounds(aggregate, now), pastLog }}
-                tz={tz}
-                onChange={setTimes}
-                endNow={pastLog ? null : now}
-                endEstimate={pastLog ? defaultEnd(now) : model.forgotten ? model.defaultEndMs : null}
-              />
-              {!pastLog && Math.abs(endMs - now) >= 60_000 ? (
-                <TextButton
-                  label={`Use now (${formatTime(now, tz)})`}
-                  onPress={() => {
-                    setTimes((t) => ({ ...t, endMs: now }));
-                  }}
-                />
-              ) : null}
-            </View>
           ) : null}
+        </View>
+      }
+      footer={
+        <>
           {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
-          <View style={{ flex: 1 }} />
-          {!model.nothingLogged ? <DangerTextButton label="Discard workout" onPress={onDiscard} disabled={busy} /> : null}
-        </ScrollView>
-        <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['2'] }}>
           {model.nothingLogged ? (
             <>
               <PrimaryButton label="Discard workout" onPress={onDiscard} disabled={busy} />
@@ -160,9 +142,26 @@ export function FinishSheet({
           ) : (
             <PrimaryButton label="Finish" busy={busy} onPress={() => void finish()} />
           )}
-          <TextButton label="Keep going" tone="secondary" onPress={onClose} />
-        </View>
-      </View>
-    </Modal>
+          <SecondaryButton label="Keep going" onPress={onClose} />
+          {!model.nothingLogged ? (
+            <View style={{ alignItems: 'center' }}>
+              <DangerTextButton label="Discard workout" onPress={onDiscard} disabled={busy} />
+            </View>
+          ) : null}
+        </>
+      }
+    >
+      {pastLog && !model.nothingLogged ? (
+        <WorkoutTimesRows
+          times={times}
+          shift={{ timeline, nowMs: now }}
+          startMove={{ mode: startMove, onMode: setStartMove, fixed: workoutTimeBounds(aggregate, now), pastLog }}
+          tz={tz}
+          onChange={setTimes}
+          endNow={null}
+          endEstimate={defaultEnd(now)}
+        />
+      ) : null}
+    </BottomCard>
   );
 }

@@ -102,7 +102,8 @@ describe('Progress v3 screens', () => {
   it('Summary lists new PBs (`New best · Bench 100 × 6`), from the service, local only', () => {
     const summary = read('screens', 'workout', 'SummaryScreen.tsx');
     expect(summary).toContain('s.reviews.sessionBests(sessionId).catch(() => [])');
-    expect(summary).toContain('accessibilityLabel={b.accessibilityLabel}');
+    // (Ben, 27 Oct; redesign §E2) The New best card reads each best with the one it beat.
+    expect(summary).toContain('accessibilityLabel={[b.accessibilityLabel, last]');
   });
 
   it('changes: small ones Undo / Redo, offers Apply / Skip with their scope (D2); one op ID per tap; Got it is versioned', () => {

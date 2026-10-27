@@ -1372,7 +1372,8 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
   if (p.load != null) {
     if (p.load.convention !== ex.loadConvention) return fail('convention_mismatch', `Load convention ${p.load.convention} does not match ${ex.loadConvention}.`);
     if (p.load.unit !== ex.unit) return fail('unit_mismatch', `Load unit ${p.load.unit} does not match ${ex.unit}; convert explicitly first.`);
-    const eq = nothingAdded(p.load, state, ex) ? undefined : checkEquipmentOf(state, ex);
+    // (Ben, 27 Oct) A load Ben typed himself is kept as typed (`loadAsTyped`); any other is checked on the kit (rule 4).
+    const eq = nothingAdded(p.load, state, ex) || p.loadAsTyped === true ? undefined : checkEquipmentOf(state, ex);
     if (eq && !isLoadAchievable(p.load, eq)) return fail('invalid_values', `${eq.name} can’t make that load.`);
   }
   const setType = p.setType ?? set.setType;

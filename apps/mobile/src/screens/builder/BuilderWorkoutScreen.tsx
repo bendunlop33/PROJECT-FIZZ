@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { builderApplyOpId, type BuilderCoachReach, type BuilderProposal } from '@fizz/coach';
-import { dropBuilderSlot, sessionCheckInForSkip, slotsOf, type BuilderEditOp } from '@fizz/domain';
+import { dropBuilderSlot, gymLearnToast, sessionCheckInForSkip, slotsOf, type BuilderEditOp, type GymLearn } from '@fizz/domain';
 import type { BuilderGroup, CheckInScore, Routine, SessionCheckIn } from '@fizz/schemas';
 
 import type { BuilderSnapshot, BuilderToast, BuilderWriteResult, TodayOptionChange, TodayOptions } from '../../builder/builder-service';
@@ -231,11 +231,43 @@ export function BuilderWorkoutScreen() {
       if (r.snapshot !== null) setSnap(r.snapshot);
       if (r.status === 'written') {
         changed();
-        if (r.toast !== null) showToast(r.toast);
+        const learn = r.toast?.learn;
+        if (learn !== undefined && r.toast !== null) void learnTyped(learn, r.toast.undoOpId);
+        else if (r.toast !== null) showToast(r.toast);
       } else if (r.status !== 'replayed') {
         showToast({ text: r.message, undoOpId: null, why: null });
       }
       return r;
+    });
+  }
+
+  /**
+   * (Ben, 27 Oct: "If I add it it should work") A kg typed off the gym's known kit is kept as typed and the gym learns
+   * it (versioned): `Main Gym: 27.5 kg added · Undo` takes the learn back, then the edit.
+   */
+  async function learnTyped(learn: GymLearn, editOpId: string | null): Promise<void> {
+    const r = await services.gyms.learn(learn).catch(() => null);
+    if (r === null || !r.ok) {
+      showToast({ text: r?.message ?? 'Gym not updated', undoOpId: editOpId, why: null });
+      return;
+    }
+    changed();
+    const gymName = (await services.gyms.list().catch(() => [])).find((g) => g.gym.id === r.edit.gymId)?.gym.name ?? null;
+    showToast({
+      text: gymLearnToast(learn, gymName),
+      undoOpId: null,
+      why: null,
+      onUndo: () => {
+        void services.gyms.undoEdit(r.edit).then((u) => {
+          changed();
+          if (!u.ok) {
+            showToast({ text: u.message, undoOpId: null, why: null });
+            return;
+          }
+          if (editOpId !== null) void undo(editOpId);
+          else showToast(null);
+        });
+      },
     });
   }
 

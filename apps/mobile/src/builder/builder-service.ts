@@ -86,6 +86,9 @@ import {
   type BuilderEditOp,
   type BuilderEditRefusal,
   type BuilderWorkout,
+  type GymLearn,
+  type RoundedLoad,
+  gymLearnFor,
   type BuilderSlot,
   type DraftLifeChange,
   type RestKind,
@@ -378,6 +381,11 @@ export interface BuilderToast {
   text: string;
   undoOpId: string | null;
   why: string | null;
+  /**
+   * (Ben, 27 Oct: "If I add it it should work") A kg Ben typed off the gym's known kit, kept as typed: what the gym
+   * learns from it. The screen writes it (versioned) with `Main Gym: 27.5 kg added · Undo` (the learn, then the edit).
+   */
+  learn?: GymLearn;
 }
 
 /**
@@ -1068,6 +1076,15 @@ export function createBuilderService(deps: BuilderServiceDeps) {
 
   // -------------------------------------------------------------------------
   // Writes
+
+  /** (Ben, 27 Oct) What the gym learns from a kg Ben typed in a slot, on the item its loads are worked out on (or null). */
+  function typedLearn(before: BuilderWorkout, slotKey: string, typed: RoundedLoad | null | undefined, env: BuilderEnv): GymLearn | null {
+    const slot = before.blocks.flatMap((b) => b.slots).find((x) => x.key === slotKey);
+    if (slot === undefined || typed == null) return null;
+    const item = env.ctx.loads(slot.exerciseId).equipment;
+    if (item === null || item.unit !== typed.unit) return null;
+    return gymLearnFor(item, { value: typed.value, unit: typed.unit, convention: slot.convention }, { id: slot.exerciseId, name: env.nameOf(slot.exerciseId) }, { typed: true });
+  }
 
   async function writeDraft(p: UserProfile, draftId: string, compute: (current: WorkoutDraft) => Promise<{ change: DraftLifeChange; env: BuilderEnv; toast: BuilderToast | null; skipped?: SkippedOp[] } | { refused: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since' | 'nothing_to_carry'; env: BuilderEnv | null }>): Promise<BuilderWriteResult> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -2066,10 +2083,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         // Today's draft for another choice (its Undo puts the list back with the workout).
         const setup = op.kind === 'delete_exercise' && todayDrafted(stored) ? { ...kept, todayRemoved: [...new Set([...(stored.todayRemoved ?? []), op.slotKey])].slice(-BUILD_LIMITS.maxExercises * 3) } : kept;
         const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: w.basis, plan, setup, undoable: true });
-        // A typed kg this gym can't make exactly: the cell shows the new value, the toast says so, `Why?` names the item (rule 4; review S6).
-        const item = op.kind === 'edit_row' ? env.itemNameOf(before.blocks.flatMap((b) => b.slots).find((x) => x.key === op.slotKey)?.exerciseId ?? '') : null;
-        const rounded = r.rounded?.rounded === true ? { text: BUILDER_COPY.roundedTo(r.rounded.value, r.rounded.unit), undoOpId: null, why: item === null ? null : `Rounded down: ${item}` } : null;
-        return { change, env, toast: rounded ?? toastFor(op, before, r.advice, env, w.opId) };
+        // (Ben, 27 Oct) A typed kg is kept as typed; off the gym's known kit the gym learns it (the screen writes it).
+        const learn = op.kind === 'edit_row' && op.patch.kind === 'load' ? typedLearn(before, op.slotKey, r.rounded, env) : null;
+        const toast = toastFor(op, before, r.advice, env, w.opId);
+        return { change, env, toast: learn === null ? toast : { text: toast?.text ?? '', undoOpId: w.opId, why: null, learn } };
       });
     },
 

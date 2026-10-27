@@ -8,7 +8,7 @@ import { Eyebrow, StatusLine, TextField } from './layout';
 import { BottomCard } from './sheet';
 import { AppText } from './Text';
 import { POPUP_COPY } from './exercise-popup-model';
-import { choiceLine, swapPainConfirm, SWAP_SHEET_COPY, type ChoiceSection } from './swap-sheet-model';
+import { choiceLine, mainLiftSection, swapPainConfirm, SWAP_SHEET_COPY, type ChoiceItem, type ChoiceSection } from './swap-sheet-model';
 import { ChoiceRow, Divider, Table } from './table-parts';
 import { Chip } from './workout';
 
@@ -66,7 +66,9 @@ export function SwapSheet({
   const searching = picker.query.trim() !== '';
   const equipment = picker.equipment ?? null;
   // An equipment chip hides suggestions of another kind; their order stays as ranked.
-  const shown = sections.map((sec) => ({ ...sec, items: sec.items.filter((it) => suggestionKept(picker.index ?? null, it.exerciseId, equipment)) })).filter((sec) => sec.items.length > 0);
+  const kept = sections.map((sec) => ({ ...sec, items: sec.items.filter((it) => suggestionKept(picker.index ?? null, it.exerciseId, equipment)) })).filter((sec) => sec.items.length > 0);
+  // (Ben, 27 Oct) Swapping the main lift: the plan's main-lift alternatives first, above Recent and the rest.
+  const { main: mainSec, rest: shown } = mainLiftSection(kept);
   const partnerRows = (partners?.rows ?? []).filter((x) => !searching || x.name.toLowerCase().includes(picker.query.trim().toLowerCase()));
   const ask = (c: { title: string; message: string | null; cancel: string; confirm: string } | null, exerciseId: string) => {
     if (c === null) {
@@ -84,6 +86,20 @@ export function SwapSheet({
       },
     ]);
   };
+  const choice = (it: ChoiceItem, i: number) => (
+    <View key={it.exerciseId}>
+      {i > 0 ? <Divider /> : null}
+      <ChoiceRow
+        title={it.name}
+        line={choiceLine(it)}
+        tag={it.mayHurt ? POPUP_COPY.mayHurt : null}
+        onPress={() => {
+          // Rule 9: a flagged exercise asks first.
+          ask(swapPainConfirm(it, actionWord), it.exerciseId);
+        }}
+      />
+    </View>
+  );
   const row = (r: PickerRowView, i: number) => (
     <View key={r.exerciseId}>
       {i > 0 ? <Divider /> : null}
@@ -129,6 +145,12 @@ export function SwapSheet({
           </Table>
         </View>
       ) : null}
+      {!searching && mainSec !== null ? (
+        <View style={{ gap: theme.space['2'] }}>
+          <Eyebrow>{mainSec.focus}</Eyebrow>
+          <Table>{mainSec.items.map((it, i) => choice(it, i))}</Table>
+        </View>
+      ) : null}
       {view !== null && view.recent.length > 0 ? (
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>{PICKER_COPY.recent}</Eyebrow>
@@ -145,22 +167,7 @@ export function SwapSheet({
                   {sec.focus}
                 </AppText>
               ) : null}
-              <Table>
-                {sec.items.map((it, i) => (
-                  <View key={it.exerciseId}>
-                    {i > 0 ? <Divider /> : null}
-                    <ChoiceRow
-                      title={it.name}
-                      line={choiceLine(it)}
-                      tag={it.mayHurt ? POPUP_COPY.mayHurt : null}
-                      onPress={() => {
-                        // Rule 9: a flagged exercise asks first.
-                        ask(swapPainConfirm(it, actionWord), it.exerciseId);
-                      }}
-                    />
-                  </View>
-                ))}
-              </Table>
+              <Table>{sec.items.map((it, i) => choice(it, i))}</Table>
             </View>
           ))}
         </View>

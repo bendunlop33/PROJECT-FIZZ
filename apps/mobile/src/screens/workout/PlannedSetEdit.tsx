@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 
-import { setStepName, toggleRepRange, type PlannedSetEdits } from '@fizz/domain';
+import { setStepName, toggleRepRange, typedLoadPlan, type PlannedSetEdits } from '@fizz/domain';
 
 import { newUuid } from '../../device/runtime';
 import { returnToWorkout } from '../../navigation/actions';
@@ -42,7 +42,8 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
   const [insertOp] = useState(newUuid);
   const [deleteOp] = useState(newUuid);
   const aggregate = data.aggregate;
-  const snapped = typedLoad === undefined ? undefined : services.workout.snapPlannedLoad(data, setId, typedLoad);
+  // (Ben, 27 Oct: "If I add it it should work") The load as typed, never rounded to the kit; off the kit the gym learns it.
+  const snapped = typedLoad;
   const view = services.workout.plannedEditView(data, setId, { ...edits, ...(snapped !== undefined ? { load: snapped } : {}) });
   const set = aggregate.sets.find((s) => s.id === setId);
   if (!view || !set) {
@@ -78,6 +79,11 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
     }
     changed();
     if (r.kind === 'edited') {
+      const typed = typeof typedLoad === 'number' && view.patch?.loadAsTyped === true ? typedLoadPlan(aggregate, setId, typedLoad, data.bodyweightExercises) : null;
+      if (typed?.kind === 'exact' && typed.learn !== null) {
+        navigation.dispatch(returnToWorkout({ toast: { kind: 'learn', learn: typed.learn, targetOpId: saveOp } }));
+        return;
+      }
       navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: correctionToastText(UNDO_TOAST.correctedNamed(view.stepName), r.noteFailed), targetOpId: saveOp } }));
       return;
     }

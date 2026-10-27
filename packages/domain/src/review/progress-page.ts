@@ -791,6 +791,11 @@ export interface NewBestView {
   /** `New best · Bench 100 × 6`. */
   text: string;
   accessibilityLabel: string;
+  /** (Ben, 27 Oct; redesign §E2) The Summary's New best card: the lift's name and the set with its unit (`82.5 kg × 6`). */
+  name?: string;
+  set?: string;
+  /** The best it beat (`80 × 6`) and when (that workout's start, ms); absent where no earlier set is named. */
+  last?: { set: string; atMs: number };
 }
 
 /**
@@ -817,7 +822,7 @@ export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOption
     const now = bestSets(liftRows([session], id, t.newest), t, reps, unit).real;
     const before = bestSets(liftRows(earlier, id, t.newest), t, reps, unit).real;
     if (now === null || before === null || !(t.lowerIsBetter ? now.load < before.load : now.load > before.load)) continue;
-    out.push(newBestView(id, opts.nameOf(id), now.load, now.reps, t.convention, unit));
+    out.push(newBestView(id, opts.nameOf(id), now.load, now.reps, t.convention, unit, { set: `${nf(before.load)}${NBSP}×${NBSP}${String(before.reps)}`, atMs: before.at }));
   }
   return out;
 }
@@ -854,9 +859,16 @@ export function liveNewBestLine(ctx: LiveBestsContext, aggregate: SessionAggrega
   return newBestView(ex.exerciseId, ex.exerciseName, hit.load, hit.reps, hit.convention, ctx.input.unit);
 }
 
-function newBestView(exerciseId: string, name: string, load: number, reps: number, convention: LoadConvention | null, unit: WeeklyReviewInput['unit']): NewBestView {
+function newBestView(exerciseId: string, name: string, load: number, reps: number, convention: LoadConvention | null, unit: WeeklyReviewInput['unit'], last?: { set: string; atMs: number }): NewBestView {
   const set = withSuffix(`${nf(load)}${NBSP}×${NBSP}${String(reps)}`, suffixOf(convention));
-  return { exerciseId, text: `${PROGRESS_COPY.newBest} · ${name} ${set}`, accessibilityLabel: plain(`New best: ${name}, ${nf(load)} ${liftUnitText(unit, convention)} for ${String(reps)} reps`) };
+  return {
+    exerciseId,
+    text: `${PROGRESS_COPY.newBest} · ${name} ${set}`,
+    accessibilityLabel: plain(`New best: ${name}, ${nf(load)} ${liftUnitText(unit, convention)} for ${String(reps)} reps`),
+    name,
+    set: `${nf(load)}${NBSP}${liftUnitText(unit, convention)}${NBSP}×${NBSP}${String(reps)}`,
+    ...(last === undefined ? {} : { last }),
+  };
 }
 
 /** Each new-best set of the workout in progress → its load (in the review's unit) and reps. */

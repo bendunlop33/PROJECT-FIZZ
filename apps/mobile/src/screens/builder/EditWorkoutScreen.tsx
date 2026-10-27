@@ -9,6 +9,8 @@ import {
   editorMainFlags,
   fitNoteOf,
   formatDuration,
+  gymLearnToast,
+  type GymEdit,
   mergeRoutineEdits,
   pairAddedWith,
   routineAbsOff,
@@ -129,7 +131,7 @@ export function EditWorkoutScreen() {
   });
   const [shapeSheet, setShapeSheet] = useState<{ slotId: string; kind: 'reps' | 'effort' } | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [toast, setToast] = useState<{ text: string; before: RoutineExercise[] | null; length?: number | null } | null>(null);
+  const [toast, setToast] = useState<{ text: string; before: RoutineExercise[] | null; length?: number | null; /** (Ben, 27 Oct) The gym learned a typed kg: Undo takes it back too. */ gymEdit?: GymEdit } | null>(null);
   const [screenReader, setScreenReader] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const opId = useRef(newUuid());
@@ -279,7 +281,7 @@ export function EditWorkoutScreen() {
   }, [services, optKey, gymId, data]);
 
   const showToast = useCallback(
-    (t: { text: string; before: RoutineExercise[] | null; length?: number | null } | null) => {
+    (t: { text: string; before: RoutineExercise[] | null; length?: number | null; gymEdit?: GymEdit } | null) => {
       if (toastTimer.current !== null) clearTimeout(toastTimer.current);
       setToast(t);
       // With VoiceOver on, an Undo toast stays until dismissed (close button).
@@ -322,6 +324,7 @@ export function EditWorkoutScreen() {
 
   /** One edit on the page's list, on the list as it is now (quick taps add up). Returns the pop-up's line, if any. */
   function apply(op: TemplateEditOp): string | null {
+    const before = listRef.current;
     // (D6) A pair Ben unlinks is never paired again by the Supersets switch.
     if (op.kind === 'unlink') {
       const g = listRef.current.find((e) => e.id === op.slotId)?.supersetGroup ?? null;
@@ -332,6 +335,14 @@ export function EditWorkoutScreen() {
     setFit(null);
     setError(null);
     if (op.kind !== 'delete_exercise' && op.kind !== 'swap') showToast(null);
+    // (Ben, 27 Oct: "If I add it it should work") A kg typed off the gym's known kit is kept; the gym learns it.
+    const learn = r.learn;
+    if (learn !== undefined) {
+      void services.gyms.learn(learn).then((g) => {
+        if (!g.ok) return;
+        showToast({ text: gymLearnToast(learn, editor.gym?.name ?? null), before, gymEdit: g.edit });
+      });
+    }
     return r.note;
   }
 
@@ -725,7 +736,9 @@ export function EditWorkoutScreen() {
               onAction: () => {
                 const before = toast.before;
                 const length = toast.length;
+                const gymEdit = toast.gymEdit;
                 showToast(null);
+                if (gymEdit !== undefined) void services.gyms.undoEdit(gymEdit);
                 if (before !== null) setList(before);
                 if (length !== undefined) setTimeLength(length);
                 setFit(null);

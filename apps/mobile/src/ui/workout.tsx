@@ -77,7 +77,13 @@ export function CellKeypadBarView({
   onDone,
   keypadOpen,
   onRir = null,
+  commit = null,
 }: {
+  /**
+   * (Ben, 27 Oct; redesign §E1) The last key: `Log ✓` on the open row (logs the set; off with a hint while a value is
+   * missing), `Done` on a done row's correction. Null: `Done`.
+   */
+  commit?: { label: string; accessibilityLabel: string; enabled: boolean; hint: string | null; onPress: () => void } | null;
   /** (Ben, 26 Oct) `RIR` on the bar: enter this set's reps in reserve (null: the row has no RIR, e.g. a warm-up). */
   onRir?: (() => void) | null;
   /** The equipment's limit when + is off (`Max 40 kg`), else null. */
@@ -151,10 +157,38 @@ export function CellKeypadBarView({
       </View>
       {onRir ? textKey('RIR', 'Reps in reserve', onRir) : null}
       {onNext ? textKey('Next ›', 'Next field', onNext) : null}
-      {textKey('Done', 'Done', () => {
-        Keyboard.dismiss();
-        onDone();
-      })}
+      {commit === null || commit.label === 'Done'
+        ? textKey('Done', 'Done', () => {
+            Keyboard.dismiss();
+            onDone();
+          })
+        : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={commit.accessibilityLabel}
+              accessibilityState={{ disabled: !commit.enabled }}
+              {...(commit.hint !== null ? { accessibilityHint: commit.hint } : {})}
+              disabled={!commit.enabled}
+              onPress={() => {
+                haptic('step');
+                commit.onPress();
+              }}
+              style={({ pressed }) => ({
+                minHeight: theme.target.min.height,
+                minWidth: theme.target.min.width,
+                justifyContent: 'center',
+                alignItems: 'center',
+                paddingHorizontal: theme.space['3'],
+                borderRadius: theme.radius.pill,
+                backgroundColor: !commit.enabled ? theme.colors['bg.raised'] : pressed ? theme.colors['accent.pressed'] : theme.colors.accent,
+                opacity: pressed ? TEXT_PRESSED_OPACITY : 1,
+              })}
+            >
+              <AppText variant="headline" color={commit.enabled ? 'on.accent' : 'text.secondary'} maxFontSizeMultiplier={1.6}>
+                {commit.label}
+              </AppText>
+            </Pressable>
+          )}
     </View>
   );
 }

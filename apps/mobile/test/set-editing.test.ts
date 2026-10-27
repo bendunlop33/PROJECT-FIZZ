@@ -141,7 +141,9 @@ describe('screens wire it (source checks; the feel needs a real iPhone)', () => 
     expect(edit).toContain('<PlannedSetEdit');
     const planned = readFileSync(join(SRC, 'PlannedSetEdit.tsx'), 'utf8');
     expect(planned).toContain('services.workout.plannedEditView(');
-    expect(planned).toContain('services.workout.snapPlannedLoad(');
+    // (Ben, 27 Oct) A typed load is kept as typed (no snapping here); the domain says what the gym learns.
+    expect(planned).not.toContain('services.workout.snapPlannedLoad(');
+    expect(planned).toContain('typedLoadPlan(aggregate, setId, typedLoad, data.bodyweightExercises)');
     expect(planned).not.toMatch(/roundToAvailableLoad|getAchievableLoads|stepLoad/);
     expect(planned).toContain('if (loadNeedsFit(typedLoad, snapped))');
   });

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { canDropRound, canRemoveExercise, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
+import { canDropRound, canRemoveExercise, cardioTimeText, effortRir, checkRoutineName, movableSetIds, roundDraggable, roundSteps, setMoveSteps, supersetNextCommand, discardCommand, gymLearnDoneText, gymLearnKey, gymLearnToast, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, latestCommittedSetId, pausedMsWithin, reconcileDraftEdits, saveDraftCommand, setStepName, targetLineLabel, targetLineText, TIME_LEFT, timelineOf, tickAllDoneText, tickAllPlannedSets, TICK_ALL_LABEL, timingUndoCommand, toIso, toMs, undoableTimeFit, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView, type TimeFitOffer, rpeOfRir } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -71,7 +71,7 @@ import { stepperRowTiles } from '../../workout/tile-fit';
 import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
 import { logRefusal, reloadsAfterRefusal } from '../../workout/log-refusal';
 import { FinishSheet } from './FinishSheet';
-import { GymChip, GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
+import { GymPartDivider, GymReviewSheet, GymSwitchCard, GymSwitcherSheet, SnapNote } from './GymSwitch';
 import { afterSwitchRefused, logBlockedBySwitch, reviewOpenAfterCheckAgain, logGuardAfterSwitch, onGymChosen, sheetClosesOn, switchCardView, switchedToast, undoneToast, type CardButton, type OpenSwitchCard } from '../../workout/gym-switch-card';
 import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
 import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
@@ -87,9 +87,9 @@ import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { createDraftSaver } from '../../workout/draft-saver';
-import { cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
+import { cellEditReducer, cellKeypadBar, correctionPatch, keypadCommitKey, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
 import { bottomChrome, buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockMs, setClockStartMs, shownRoundIndex, stepRound, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
-import { CorrectionEditor, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
+import { CorrectionEditor, EmptyRoundPage, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
 import { WorkoutRoundsSheet, WhySheet } from './RoundSheets';
 import { useWorkoutEdits, type WorkoutEditsInput } from './WorkoutEdits';
 import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
@@ -431,7 +431,7 @@ export function WorkoutScreen() {
       }, 4000);
     }
     const handed = route.params?.toast;
-    if (handed && handed.kind !== 'exclusion' && handed.kind !== 'undo_op' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
+    if (handed && handed.kind !== 'exclusion' && handed.kind !== 'undo_op' && handed.kind !== 'learn' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id]);
 
   // (Ben, 23 Oct) Back from the workout's own `How are you feeling?`: its toast, once.
@@ -450,6 +450,12 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (handedUndo && firstTime(`toast:undo_op:${handedUndo.targetOpId}`)) showHanded(handedUndo);
   }, [handedUndo?.targetOpId]);
+  // (Ben, 27 Oct) Back from Edit set with a load off the kit: the gym learns it, once the workout is drawn.
+  const handedLearn = route.params?.toast?.kind === 'learn' ? route.params.toast : null;
+  const drawnNow = data !== 'loading' && data !== null;
+  useEffect(() => {
+    if (handedLearn && drawnNow && firstTime(`toast:learn:${handedLearn.targetOpId}`)) showHanded(handedLearn);
+  }, [handedLearn?.targetOpId, drawnNow]);
 
   /**
    * A toast with `Undo` for an operation that applied at once (copy D4):
@@ -504,6 +510,10 @@ export function WorkoutScreen() {
         break;
       case 'undo_op':
         if (data !== 'loading' && data !== null) toastUndoOp(t.text, t.targetOpId, data.aggregate.session.id);
+        break;
+      case 'learn':
+        // (Ben, 27 Oct) Through the loaded screen's deps (the gym's name, the session).
+        editDeps.current?.learnTyped(t.learn, [t.targetOpId]);
         break;
       case 'exclusion':
         showToast({
@@ -780,7 +790,7 @@ export function WorkoutScreen() {
       {...(toast.secondary && toast.onSecondary ? { secondary: toast.secondary, onSecondary: toast.onSecondary } : {})}
     />
   ) : null;
-  const editDeps = useRef<Pick<WorkoutEditsInput, 'run' | 'adopt' | 'undoToast' | 'refusalText' | 'addSet' | 'beforeEdit'> | null>(null);
+  const editDeps = useRef<Pick<WorkoutEditsInput, 'run' | 'adopt' | 'undoToast' | 'refusalText' | 'addSet' | 'beforeEdit' | 'learnTyped'> | null>(null);
   const workoutEdits = useWorkoutEdits({
     services,
     sessionId: data === 'loading' || data === null ? '' : data.aggregate.session.id,
@@ -793,6 +803,7 @@ export function WorkoutScreen() {
     changed,
     showToast,
     undoToast: (text, opId) => editDeps.current?.undoToast(text, opId),
+    learnTyped: (learn, ops) => editDeps.current?.learnTyped(learn, ops),
     refusalText: (code, message) => editDeps.current?.refusalText(code, message) ?? message,
     addSet: (id) => editDeps.current?.addSet(id),
     beforeEdit: () => editDeps.current?.beforeEdit(),
@@ -877,6 +888,9 @@ export function WorkoutScreen() {
     refusalText,
     addSet: (id) => void addSet(id),
     beforeEdit: closeCellEditors,
+    learnTyped: (learn, ops) => {
+      learnTyped(learn, ops);
+    },
   };
 
   /**
@@ -1046,6 +1060,13 @@ export function WorkoutScreen() {
     }, TIMING.commitGuard);
     const saved = r.aggregate.sets.find((s) => s.id === focus.setId);
     const label = focus.logLabel.replace(/^Log /, '');
+    // (Ben, 27 Oct) Logged off the gym's known kit and not answered yet: the gym learns it, with its own Undo (the
+    // logged set stays as logged; untick undoes the log).
+    const learn = focus.gymLearn !== null && !learnAnswered.has(gymLearnKey(focus.gymLearn.learn)) ? focus.gymLearn.learn : null;
+    if (learn !== null) {
+      learnTyped(learn, []);
+      return;
+    }
     showToast({
       text: `✓ ${focus.stepName} saved · ${label}`,
       action: 'Undo',
@@ -1662,6 +1683,60 @@ export function WorkoutScreen() {
   }
 
   /** `Add 22 kg dumbbells here?` (ADR 0029): offered once per idea in this workout; Yes saves it to the gym with Undo. */
+  /**
+   * (Ben, 27 Oct: "If I add it it should work") A load Ben typed (or logged) off the gym's known kit: the gym learns it
+   * at once (versioned, op ID) with `Main Gym: 27.5 kg added · Undo`. Undo takes the learn back, then `undoOpIds`
+   * (his typed target, newest first; a logged set stays as logged, rule 2).
+   */
+  function learnTyped(learn: GymLearn, undoOpIds: readonly string[]) {
+    setLearnAnswered((cur) => new Set(cur).add(gymLearnKey(learn)));
+    const failed = (message: string) => {
+      // His value stays as typed either way; only the gym wasn't updated.
+      if (undoOpIds.length > 0) toastUndoOp(message, undoOpIds[0] ?? '', session.id);
+      else showToast({ icon: 'info.circle', text: message });
+    };
+    const shown = (undoGym: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
+      haptic('commit');
+      changed();
+      void reload();
+      showToast({
+        text: gymLearnToast(learn, loaded.gymName),
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void (async () => {
+            // His target first (nothing has moved it since), then the gym.
+            for (const target of undoOpIds) {
+              const o = await services.workout.undoOp({ sessionId: session.id, targetOpId: target });
+              if (!o.ok) {
+                showToast({ icon: 'info.circle', text: o.message });
+                break;
+              }
+            }
+            const u = await undoGym();
+            changed();
+            void reload();
+            if (!u.ok) showToast({ icon: 'info.circle', text: u.message });
+            else haptic('undo');
+          })();
+        },
+      });
+    };
+    if (undoOpIds.length > 0) {
+      // A typed target: the gym only (today's kit isn't refreshed under it, so Undo can put his target back exactly).
+      void services.gyms.learn(learn).then((r) => {
+        if (!r.ok) failed(r.message);
+        else shown(() => services.gyms.undoEdit(r.edit));
+      });
+      return;
+    }
+    // A logged set: the gym, and today's kit when that moves no target (ADR 0029).
+    void services.gyms.learnInWorkout({ sessionId: session.id, learn, opId: newUuid() }).then((r) => {
+      if (!r.ok) failed(r.message);
+      else shown(() => services.gyms.undoLearnInWorkout({ sessionId: session.id, edit: r.edit, refreshed: r.refreshed, opId: newUuid() }));
+    });
+  }
+
   function answerGymLearn(learn: GymLearn, yes: boolean) {
     setLearnAnswered((cur) => new Set(cur).add(gymLearnKey(learn)));
     if (!yes) return;
@@ -1888,9 +1963,6 @@ export function WorkoutScreen() {
         openCoach();
       },
       undo_fit: undoTimeFit,
-      finish: () => {
-        setFinishOpen(true);
-      },
       edit_times: () => {
         setTimesOpen(true);
       },
@@ -2684,6 +2756,8 @@ export function WorkoutScreen() {
 
   // ---- Round page (workout-table-v3) ----
   const tableMode = mode === 'table' && table !== null && view.phase !== 'empty';
+  // (Ben, 27 Oct; redesign §E1) An empty workout in Table view is the same table: one round, its header, `No exercises yet`.
+  const emptyTable = mode === 'table' && view.phase === 'empty';
   // Ben, 23 Oct: with the pad up the table gets the room (no SET clock, no Log / coach / mic); Done brings them back.
   const chrome = bottomChrome({ tableMode, keypadUp: chromeKeypad, rest });
   const shown = shownRoundIndex(rounds, pickedRound);
@@ -2868,6 +2942,8 @@ export function WorkoutScreen() {
           }),
         })
       : null;
+  // (Ben, 27 Oct; redesign §E1) The keypad bar's last key: `Log ✓` on the open row, `Done` on a done row's correction.
+  const keypadCommit = keypadCommitKey({ row: barCell?.row ?? 'done', logLabel: focus?.logLabel ?? null, canLog: focus !== null && !busy && !guard && !logBlockedBySwitch(switchCard), missing: focus?.missing ?? null });
   // (Ben, 26 Oct) The keypad bar's `RIR` key: the set being typed in (the open row, or a done row's correction).
   const barSetId = barCell === null ? null : barCell.row === 'open' ? (focus?.setId ?? null) : (doneEdit?.setId ?? null);
   const barRirSetId = barSetId !== null && rirItem(barSetId).length > 0 ? barSetId : null;
@@ -2954,8 +3030,7 @@ export function WorkoutScreen() {
           <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, minWidth: 64 }} accessibilityRole="header">
             {view.title}
           </AppText>
-          {/* The gym chip sits in the top bar (§2); at AX1+ it moves into ⋯. */}
-          {!ax ? <GymChip gymName={loaded.gymName} onPress={openGymSheet} /> : null}
+          {/* (Ben, 27 Oct; redesign §E1) The gym is in ⋯ (`Gym: Main Gym ›`), so Finish fits beside it at every size. */}
           {/* (Ben, 25 Oct) A past log runs no clock: its date and start time instead of the elapsed time. */}
           {session.pastLog !== undefined ? (
             <AppText variant="callout" numeric color="text.secondary" accessibilityLabel={`Past workout, ${pastLogWhen(toMs(session.startedAt.utc), session.startedAt.tz)}`}>
@@ -2988,6 +3063,22 @@ export function WorkoutScreen() {
           </Pressable>}
           {alertsOff(permission, prefs.alertsAsk) ? <IconButton icon="bell.slash" tint="text.secondary" label={alertsOffLabel(permission)} onPress={openAlertSettings} /> : null}
           <IconButton icon="ellipsis.circle" label="Workout menu" onPress={topMenu} />
+          {/* (Ben, 27 Oct; redesign §E1) Finish is always here; the sheet says how many sets are done and offers Keep going. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Finish workout"
+            onPress={() => {
+              closeCellEditors();
+              Keyboard.dismiss();
+              setFinishOpen(true);
+            }}
+            hitSlop={4}
+            style={({ pressed }) => ({ minHeight: theme.target.min.height, minWidth: theme.target.min.width, justifyContent: 'center', alignItems: 'center', paddingHorizontal: theme.space['2'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+          >
+            <AppText variant="headline" color="accent" maxFontSizeMultiplier={1.4}>
+              Finish
+            </AppText>
+          </Pressable>
         </View>
         {/* (Ben, 26 Oct; Q-PL2) A past log from a saved workout or plan day: every planned set done as planned, in one tap. */}
         {tickAll.length > 0 ? (
@@ -2997,7 +3088,7 @@ export function WorkoutScreen() {
         ) : null}
       </View>
 
-      {tableMode ? (
+      {tableMode || emptyTable ? (
         <View style={{ flex: 1 }}>
           {banners.length > 0 ? (
             <View style={{ paddingHorizontal: theme.space['4'], gap: theme.space['2'] }}>
@@ -3009,7 +3100,16 @@ export function WorkoutScreen() {
             </View>
           ) : null}
           {!resting && checkInPrompt !== null ? <View style={{ paddingHorizontal: theme.space['4'] }}>{checkInPrompt}</View> : null}
-          {shownRound !== undefined ? (
+          {emptyTable ? (
+            <EmptyRoundPage
+              unitHeader={(loaded.preferredUnit ?? 'kg').toUpperCase()}
+              ax={ax}
+              top={resting ? null : switchSlot}
+              onAddExercise={() => {
+                workoutEdits.openAdd();
+              }}
+            />
+          ) : shownRound !== undefined ? (
             <>
               <RoundStrip
                 chips={roundStrip(rounds, shown)}
@@ -3233,6 +3333,19 @@ export function WorkoutScreen() {
             }
             onDone={closeCellEditors}
             onRir={barRirSetId === null ? null : () => { enterRir(barRirSetId); }}
+            commit={{
+              ...keypadCommit,
+              onPress: () => {
+                if (keypadCommit.kind === 'close') {
+                  Keyboard.dismiss();
+                  closeCellEditors();
+                  return;
+                }
+                // (Ben, 27 Oct) `Log ✓` logs the set being typed in, as Log does (it closes the pad first).
+                closeCellEditors();
+                void log();
+              },
+            }}
           />
         ) : null}
       </View>

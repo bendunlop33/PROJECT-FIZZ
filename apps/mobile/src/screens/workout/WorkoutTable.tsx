@@ -1561,7 +1561,7 @@ function NoteLink({ icon, text, accessibilityLabel, onPress }: { icon: SymbolNam
 // ---------------------------------------------------------------------------
 // Round strip (§1.2)
 
-export function RoundStrip({ chips, onPick, onWorkout }: { chips: readonly { key: string; index: number; text: string; done: boolean; shown: boolean; accessibilityLabel: string }[]; onPick: (index: number) => void; onWorkout: () => void }) {
+export function RoundStrip({ chips, onPick, onWorkout }: { chips: readonly { key: string; index: number; text: string; done: boolean; shown: boolean; accessibilityLabel: string }[]; onPick: (index: number) => void; /** Null: nothing to overview yet (an empty workout): `Workout` shows dimmed and isn't a button. */ onWorkout: (() => void) | null }) {
   const theme = useTheme();
   const strip = useRef<ScrollView>(null);
   const x = useRef(new Map<number, number>());
@@ -1607,11 +1607,49 @@ export function RoundStrip({ chips, onPick, onWorkout }: { chips: readonly { key
           </Pressable>
         ))}
       </ScrollView>
-      <Pressable accessibilityRole="button" accessibilityLabel="Workout overview" onPress={onWorkout} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={({ pressed }) => ({ minHeight: 30, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
-        <AppText variant="callout" style={{ fontSize: 14, textDecorationLine: 'underline', textDecorationColor: theme.colors['text.tertiary'] }}>
-          Workout
-        </AppText>
-      </Pressable>
+      {onWorkout === null ? (
+        <View style={{ minHeight: 30, justifyContent: 'center' }} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+          <AppText variant="callout" color="text.tertiary" style={{ fontSize: 14 }}>
+            Workout
+          </AppText>
+        </View>
+      ) : (
+        <Pressable accessibilityRole="button" accessibilityLabel="Workout overview" onPress={onWorkout} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={({ pressed }) => ({ minHeight: 30, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
+          <AppText variant="callout" style={{ fontSize: 14, textDecorationLine: 'underline', textDecorationColor: theme.colors['text.tertiary'] }}>
+            Workout
+          </AppText>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/**
+ * (Ben, 27 Oct; redesign §E1) An empty workout uses the same table: the round strip's one chip, the table's column
+ * header over `No exercises yet`, and `＋ Add exercise` under it (the dock's primary adds one too). Nothing is logged
+ * or invented here.
+ */
+export function EmptyRoundPage({ unitHeader, ax, top, onAddExercise }: { unitHeader: string; ax: boolean; top?: ReactNode; onAddExercise: () => void }) {
+  const theme = useTheme();
+  const { width, fontScale } = useWindowDimensions();
+  const cols = useMemo(() => setColumns({ windowWidth: width, fontScale, hasLoad: true, hasRir: true, texts: { previous: [], load: ['100'], value: ['10'] } }), [width, fontScale]);
+  return (
+    <View style={{ flex: 1 }}>
+      <RoundStrip chips={[{ key: 'empty', index: 0, text: '1', done: false, shown: true, accessibilityLabel: 'Round 1 of 1, no exercises yet' }]} onPick={() => undefined} onWorkout={null} />
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['4'], gap: theme.space['3'] }}>
+        {top}
+        <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['3'], gap: theme.space['1'] }}>
+          {ax || cols.blockRows ? null : <ColumnLabels cols={cols} loadHeader={unitHeader} valueHeader="REPS" />}
+          <View style={{ alignItems: 'center', paddingTop: theme.space['6'], paddingBottom: theme.space['5'], borderTopWidth: ax || cols.blockRows ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}>
+            <AppText variant="headline" accessibilityRole="header">
+              No exercises yet
+            </AppText>
+          </View>
+        </View>
+        <View style={{ alignItems: 'flex-start' }}>
+          <TextButton label="＋ Add exercise" onPress={onAddExercise} />
+        </View>
+      </ScrollView>
     </View>
   );
 }

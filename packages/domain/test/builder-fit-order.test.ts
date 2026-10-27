@@ -106,12 +106,12 @@ describe('fitToMinutes, shorter (Ben, 27 Oct)', () => {
     expect(roundRestOf(pair, 'shorter')).toBe(75);
   });
 
-  it('Standard rest: no rest step; straight to sets', () => {
+  it('Standard rest: no rest step; straight to sets (rule F: the arm isolation\'s first)', () => {
     const { ctx, w } = chest();
     const f = fitToMinutes(w, withLevel(ctx, 'normal'), { minutes: estimateBuilderMinutes(w, ctx) - 3, mainGroup: 'Chest', grow: false, supersets: false });
     expect(f.workout.restLevel).toBe('normal');
     expect(f.steps.some((s) => s.kind === 'rest')).toBe(false);
-    expect(f.steps.some((s) => s.kind === 'sets')).toBe(true);
+    expect(f.steps.flatMap((s) => (s.kind === 'sets' || s.kind === 'drop' ? [s.exerciseId] : []))).toEqual(['pushdown']);
     expect(f.status).toBe('fitted');
   });
 
@@ -141,7 +141,7 @@ describe('fitToMinutes, shorter (Ben, 27 Oct)', () => {
     }
   });
 
-  it('trimming to 2 sets is preferred over leaving an exercise out wherever it fits', () => {
+  it('trimming to 2 sets is preferred over leaving an exercise out wherever it fits (rule F: but an arm isolation goes first)', () => {
     const { ctx, w } = chest();
     // Each accessory at 2 sets: the shortest trim-only form.
     let trimmedAll = w;
@@ -149,8 +149,9 @@ describe('fitToMinutes, shorter (Ben, 27 Oct)', () => {
     const floor = estimateBuilderMinutes({ ...trimmedAll, restLevel: 'shortest' }, ctx);
     for (let m = floor; m <= estimateBuilderMinutes(w, ctx); m += 1) {
       const f = fitToMinutes(w, ctx, { minutes: m, mainGroup: 'Chest', grow: false, supersets: false });
-      expect(ids(f.workout), String(m)).toEqual(ids(w));
-      expect(f.steps.some((s) => s.kind === 'drop'), String(m)).toBe(false);
+      // (Rule F, Ben 27 Oct) Only the arm isolation may be left out before the chest and abs lose a set.
+      expect(ids(f.workout).filter((id) => id !== 'pushdown'), String(m)).toEqual(ids(w).filter((id) => id !== 'pushdown'));
+      expect(f.steps.flatMap((s) => (s.kind === 'drop' ? [s.exerciseId] : [])), String(m)).toEqual(ids(f.workout).includes('pushdown') ? [] : ['pushdown']);
       expect(f.minutes).toBeLessThanOrEqual(m);
     }
     // Below that something has to go.
@@ -158,7 +159,7 @@ describe('fitToMinutes, shorter (Ben, 27 Oct)', () => {
     expect(short.steps.some((s) => s.kind === 'drop')).toBe(true);
   });
 
-  it('the lowest-value sets go first: an isolation or abs set before a compound accessory set', () => {
+  it('the lowest-value sets go first: an isolation or abs set before a compound accessory set (the arm isolation first, rule F)', () => {
     const { ctx, w } = chest();
     // Just past Minimum rest: one set comes off.
     const atMin = estimateBuilderMinutes({ ...w, restLevel: 'shortest' }, ctx);
@@ -166,6 +167,7 @@ describe('fitToMinutes, shorter (Ben, 27 Oct)', () => {
     const cut = f.steps.flatMap((s) => (s.kind === 'sets' ? [s.exerciseId] : []));
     expect(cut.length).toBeGreaterThan(0);
     for (const id of cut) expect(info(id)?.role).toBe('isolation');
+    expect(cut).toEqual(['pushdown']);
   });
 
   // The fixture has no shoulder exercises, so the default Push mix is the Chest day's (bench, chest, triceps, abs).
@@ -173,7 +175,7 @@ describe('fitToMinutes, shorter (Ben, 27 Oct)', () => {
     ['chest', 'bench', 'Chest'],
     ['pull', 'row', 'Back'],
   ] as const)
-    it(`a default ${mix} day built for 60 min, set to 45: accessory sets trimmed, nothing left out, ${main}'s sets and rests intact`, () => {
+    it(`a default ${mix} day built for 60 min, set to 45: the arm isolation left out first (rule F), nothing else left out or trimmed, ${main}'s sets and rests intact`, () => {
       const ctx = context();
       const setup = { minutes: 60, mainLiftExerciseId: main, supersets: false } as const;
       const groups = recommendForSetup(BUILDER_DAY_MIXES[mix], setup, pool, ctx).groups;
@@ -182,9 +184,11 @@ describe('fitToMinutes, shorter (Ben, 27 Oct)', () => {
       const f = fitToMinutes(w, ctx, { minutes: 45, mainGroup: group, grow: false, supersets: false });
       expect(f.status).toBe('fitted');
       expect(f.minutes).toBeLessThanOrEqual(45);
-      expect(ids(f.workout)).toEqual(ids(w));
-      expect(f.steps.some((s) => s.kind === 'drop')).toBe(false);
-      expect(f.steps.some((s) => s.kind === 'sets')).toBe(true);
+      const arm = (id: string) => info(id)?.group === 'Arms';
+      expect(ids(f.workout)).toEqual(ids(w).filter((id) => !arm(id)));
+      expect(f.steps.flatMap((s) => (s.kind === 'drop' ? [s.exerciseId] : []))).toEqual(ids(w).filter(arm));
+      // The day's main group and abs keep every set: the arm isolation went first.
+      expect(f.steps.filter((s) => s.kind === 'sets' && !arm(s.exerciseId))).toEqual([]);
       expect(all(f.workout).every((s) => s.main || working(s) >= 2)).toBe(true);
       const lift = mainOf(f.workout);
       expect(lift?.exerciseId).toBe(main);

@@ -51,15 +51,14 @@ describe('SummaryScreen layout (source checks)', () => {
     expect(src).toContain('titleLines={2}');
   });
 
-  it('exercise header: name on 2 lines + verdict Tag; no separate skipped or plan-header lines', () => {
+  it('exercise row: name on 2 lines with done of planned at the right, then the sets logged; no plan-header lines', () => {
     expect(src).toContain('<AppText variant="headline" numberOfLines={2} style={{ flex: 1 }}>');
-    expect(src).toContain('<Tag text={word} icon={VERDICT_ICON[plan.verdict]} />');
+    expect(src).toContain('{e.count}');
     expect(src).not.toContain('skipped`}</AppText>');
     expect(src).not.toContain('planVsDone.header');
   });
 
-  it('Edit times matches Done’s height; Next time actions wrap; no orphan Coach note label', () => {
-    expect(src).toContain('label="Edit times" size="primary"');
+  it('Next time actions wrap; no orphan Coach note label', () => {
     expect(src).toMatch(/flexWrap: 'wrap', justifyContent: 'space-between'/);
     expect(src).toContain('{coachNote !== null ? <SectionHeader title="Coach note" /> : null}');
   });

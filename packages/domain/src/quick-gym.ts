@@ -47,9 +47,11 @@ export const FULL_DUMBBELL_MAX: Readonly<Record<WeightUnit, number>> = { kg: 50,
 /** The largest dumbbell step accepted from Ben or the coach. */
 const MAX_DUMBBELL_STEP: Readonly<Record<WeightUnit, number>> = { kg: 10, lb: 20 };
 /** Above these a typed load is taken as a typo, not a dumbbell or stack to add. */
-const LEARN_CEILING: Readonly<Record<'dumbbells' | 'weight_stack', Record<WeightUnit, number>>> = {
+const LEARN_CEILING: Readonly<Record<'dumbbells' | 'weight_stack' | 'max', Record<WeightUnit, number>>> = {
   dumbbells: { kg: 100, lb: 220 },
   weight_stack: { kg: 400, lb: 900 },
+  /** (Ben, 27 Oct) A typed load above an item's max (a bar, a plate-loaded machine). */
+  max: { kg: 1000, lb: 2200 },
 };
 
 const PLATES: Readonly<Record<WeightUnit, readonly number[]>> = { kg: [25, 20, 15, 10, 5, 2.5, 1.25], lb: [45, 35, 25, 10, 5, 2.5] };
@@ -588,7 +590,9 @@ interface StackLearnFor {
 export type GymLearn =
   | { kind: 'add_dumbbell'; equipmentId: string; unit: WeightUnit; value: number }
   | ({ kind: 'stack_step'; equipmentId: string; unit: WeightUnit; step: number } & StackLearnFor)
-  | ({ kind: 'stack_max'; equipmentId: string; unit: WeightUnit; max: number } & StackLearnFor);
+  | ({ kind: 'stack_max'; equipmentId: string; unit: WeightUnit; max: number } & StackLearnFor)
+  /** (Ben, 27 Oct) A load Ben typed above an item's recorded max: the item goes that high (his entry is the evidence). */
+  | { kind: 'raise_max'; equipmentId: string; unit: WeightUnit; max: number; itemName: string };
 
 /** The chip: `Add 22 kg dumbbells here?`, `Leg extension goes up in 7 kg?`, `Leg press goes to 140 kg?`. */
 export function gymLearnText(l: GymLearn): string {
@@ -599,6 +603,8 @@ export function gymLearnText(l: GymLearn): string {
       return `${l.exerciseName} goes up in ${formatNumber(l.step)} ${l.unit}?`;
     case 'stack_max':
       return `${l.exerciseName} goes to ${formatNumber(l.max)} ${l.unit}?`;
+    case 'raise_max':
+      return `${l.itemName} goes to ${formatNumber(l.max)} ${l.unit}?`;
   }
 }
 
@@ -611,13 +617,33 @@ export function gymLearnDoneText(l: GymLearn): string {
       return `${l.exerciseName}: every ${formatNumber(l.step)} ${l.unit}`;
     case 'stack_max':
       return `${l.exerciseName}: to ${formatNumber(l.max)} ${l.unit}`;
+    case 'raise_max':
+      return `${l.itemName}: to ${formatNumber(l.max)} ${l.unit}`;
+  }
+}
+
+/**
+ * (Ben, 27 Oct) The toast after a typed load taught the gym: `Main Gym: 27.5 kg added`, `Main Gym: Leg press to
+ * 140 kg`, `Main Gym: Leg extension every 7 kg`.
+ */
+export function gymLearnToast(l: GymLearn, gymName: string | null): string {
+  const where = gymName === null || gymName === '' ? '' : `${gymName}: `;
+  switch (l.kind) {
+    case 'add_dumbbell':
+      return `${where}${formatNumber(l.value)} ${l.unit} added`;
+    case 'stack_step':
+      return `${where}${l.exerciseName} every ${formatNumber(l.step)} ${l.unit}`;
+    case 'stack_max':
+      return `${where}${l.exerciseName} to ${formatNumber(l.max)} ${l.unit}`;
+    case 'raise_max':
+      return `${where}${l.itemName} to ${formatNumber(l.max)} ${l.unit}`;
   }
 }
 
 /** One offer per load idea: the chip isn't shown again after Ben answers it (this workout). */
 export function gymLearnKey(l: GymLearn): string {
   const value = formatNumber(l.kind === 'add_dumbbell' ? l.value : l.kind === 'stack_step' ? l.step : l.max);
-  return l.kind === 'add_dumbbell' ? `${l.equipmentId}:${l.kind}:${value}` : `${l.equipmentId}:${l.exerciseId}:${l.kind}:${value}`;
+  return l.kind === 'add_dumbbell' || l.kind === 'raise_max' ? `${l.equipmentId}:${l.kind}:${value}` : `${l.equipmentId}:${l.exerciseId}:${l.kind}:${value}`;
 }
 
 /**
@@ -650,18 +676,27 @@ function usualGap(values: readonly number[]): number | null {
  * whole family (review B2). Units and conventions must match; a load past a
  * sane ceiling is a typo, never a suggestion.
  */
-export function gymLearnFor(eq: EquipmentInstance, load: Load | null, exercise: { id: string; name: string } | null = null): GymLearn | null {
+export function gymLearnFor(eq: EquipmentInstance, load: Load | null, exercise: { id: string; name: string } | null = null, opts: { typed?: boolean } = {}): GymLearn | null {
   if (load === null || load.unit !== eq.unit || load.convention !== eq.loadConvention || !(load.value > 0)) return null;
   if (isLoadAchievable(load, eq)) return null;
+  const typed = opts.typed === true;
   const v = toScaled(load.value);
   if (eq.kind === 'dumbbells') {
     if (v > toScaled(LEARN_CEILING.dumbbells[eq.unit]) || v % 500 !== 0) return null;
     const top = eq.loads.at(-1);
     const gap = lastGap(eq.loads);
-    if (top !== undefined && gap !== null && v > toScaled(top) + DUMBBELL_LEARN_STEPS_ABOVE * gap) return null;
+    // (Ben, 27 Oct) A load Ben typed himself is the evidence: no "too far above the rack" guard (the ceiling stays).
+    if (!typed && top !== undefined && gap !== null && v > toScaled(top) + DUMBBELL_LEARN_STEPS_ABOVE * gap) return null;
     return { kind: 'add_dumbbell', equipmentId: eq.id, unit: eq.unit, value: load.value };
   }
-  if (exercise === null || eq.kind !== 'weight_stack' || !isAssumed(eq) || eq.onlyFor !== undefined || v > toScaled(LEARN_CEILING.weight_stack[eq.unit])) return null;
+  // (Ben, 27 Oct) Typed above an item's recorded max (a plate-loaded machine, a bar's max): the max goes up to it.
+  if (typed && eq.kind !== 'weight_stack' && eq.maxLoad !== undefined && load.value > eq.maxLoad && v <= toScaled(LEARN_CEILING.max[eq.unit]) && isLoadAchievable(load, { ...eq, maxLoad: load.value })) {
+    return { kind: 'raise_max', equipmentId: eq.id, unit: eq.unit, max: load.value, itemName: eq.name };
+  }
+  // A typed load on a confirmed stack, or on a machine's own stack, teaches that machine too (Ben, 27 Oct).
+  const own = exercise !== null && eq.onlyFor?.includes(exercise.id) === true;
+  const stackOpen = isAssumed(eq) ? eq.onlyFor === undefined || (typed && own) : typed && (eq.onlyFor === undefined || own);
+  if (exercise === null || eq.kind !== 'weight_stack' || !stackOpen || v > toScaled(LEARN_CEILING.weight_stack[eq.unit])) return null;
   const about = { equipmentId: eq.id, unit: eq.unit, exerciseId: exercise.id, exerciseName: exercise.name };
   const top = eq.stackLoads.at(-1);
   const gap = usualGap(eq.stackLoads);
@@ -689,6 +724,28 @@ export function planGymLearn(eq: EquipmentInstance, learn: GymLearn, atUtc: stri
     if (eq.kind !== 'dumbbells' || eq.loads.some((l) => toScaled(l) === toScaled(learn.value))) return null;
     const loads = [...eq.loads, learn.value].sort((a, b) => a - b);
     const after = validItem(bumped(eq, { loads, ...(eq.maxLoad !== undefined && eq.maxLoad < learn.value ? { maxLoad: learn.value } : {}) }, atUtc));
+    return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after }], lines: [gymLearnDoneText(learn)] };
+  }
+  if (learn.kind === 'raise_max') {
+    if (eq.kind === 'weight_stack' || eq.maxLoad === undefined || eq.maxLoad >= learn.max) return null;
+    const after = validItem(bumped(eq, { maxLoad: learn.max }, atUtc));
+    return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after }], lines: [gymLearnDoneText(learn)] };
+  }
+  // (Ben, 27 Oct) The machine's own stack (typed on it): changed in place.
+  if (eq.kind === 'weight_stack' && eq.onlyFor?.length === 1 && eq.onlyFor[0] === learn.exerciseId) {
+    const top = eq.stackLoads.at(-1) ?? 0;
+    const gap = usualGap(eq.stackLoads);
+    let stackLoads: number[];
+    if (learn.kind === 'stack_max') {
+      if (gap === null || toScaled(learn.max) <= toScaled(top)) return null;
+      stackLoads = [...eq.stackLoads, ...loadRange(fromScaled(toScaled(top) + gap), learn.max, fromScaled(gap))];
+    } else {
+      const st = toScaled(learn.step);
+      const newTop = Math.floor(Math.max(toScaled(top), toScaled(learn.step)) / st) * st;
+      stackLoads = loadRange(learn.step, fromScaled(newTop), learn.step);
+    }
+    const after = validItem(bumped(eq, { stackLoads, detailsSource: 'user', checkedAtUtc: atUtc }, atUtc));
+    if (getAchievableLoads(after).loads.length === 0) return null;
     return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after }], lines: [gymLearnDoneText(learn)] };
   }
   if (eq.kind !== 'weight_stack' || eq.onlyFor !== undefined || isNotFor(eq, learn.exerciseId)) return null;

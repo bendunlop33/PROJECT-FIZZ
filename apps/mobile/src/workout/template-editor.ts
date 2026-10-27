@@ -18,6 +18,8 @@ import {
   replaceExercise,
   ROUTINE_MAX_EXERCISES,
   setAddedWeight,
+  gymLearnFor,
+  type GymLearn,
   setMain,
   setRestBySetType,
   setSlotReps,
@@ -365,7 +367,7 @@ export type TemplateEditOp =
   | { kind: 'slot_effort'; slotId: string; value: number | null };
 
 /** One edit on the page's list: the next list and a line for the pop-up (`At Start 25 kg each`), else null. */
-export function applyTemplateEdit(list: readonly RoutineExercise[], op: TemplateEditOp, ctx: TemplateEditorCtx, newId: () => string): { list: RoutineExercise[]; note: string | null } {
+export function applyTemplateEdit(list: readonly RoutineExercise[], op: TemplateEditOp, ctx: TemplateEditorCtx, newId: () => string): { list: RoutineExercise[]; note: string | null; /** (Ben, 27 Oct) What the gym learns from a kg typed off its kit. */ learn?: GymLearn } {
   const same = { list: [...list], note: null };
   const slot = 'slotId' in op ? list.find((e) => e.id === op.slotId) : undefined;
   if ('slotId' in op && slot === undefined) return same;
@@ -386,9 +388,16 @@ export function applyTemplateEdit(list: readonly RoutineExercise[], op: Template
         return ok(updateSet(list, op.slotId, op.setId, { targetRpe: Math.max(1, Math.min(10, Math.round(op.value * 2) / 2)), targetRir: null }));
       }
       const lf = slotLoadFrame(slot, ctx);
-      if (lf.bodyweight) return same;
-      const typed = typedFixedLoad(op.value, lf.frame, lf.item, lf.display);
-      return { list: updateSet(list, op.slotId, op.setId, { targetLoad: typed.load }), note: typed.note };
+      // (Ben, 27 Oct) kg on a bodyweight exercise is added weight (`Add weight`), then the load as typed.
+      if (lf.bodyweight) {
+        const weighted = setAddedWeight(list, op.slotId, true);
+        const wf = slotLoadFrame(weighted.find((e) => e.id === op.slotId) ?? slot, ctx);
+        return { list: updateSet(weighted, op.slotId, op.setId, { targetLoad: typedFixedLoad(op.value, wf.frame).load }), note: null };
+      }
+      const typed = typedFixedLoad(op.value, lf.frame);
+      // Off the gym's known kit: kept as typed, and the gym learns it (the editor writes it with Undo).
+      const learn = lf.item === null || lf.frame.convention === 'added' ? null : gymLearnFor(lf.item, typed.load, { id: slot.exerciseId, name: ctx.info[slot.exerciseId]?.name ?? 'Exercise' }, { typed: true });
+      return { list: updateSet(list, op.slotId, op.setId, { targetLoad: typed.load }), note: typed.note, ...(learn === null ? {} : { learn }) };
     }
     case 'set_type':
       return ok(updateSet(list, op.slotId, op.setId, { setType: op.type }));

@@ -82,8 +82,8 @@ describe('draft codec (§4.4): stored plan round-trips the builder workout', () 
     expect(ids(back)).toEqual(ids(w));
     expect(back.blocks.map((b) => b.auto)).toEqual(w.blocks.map((b) => b.auto));
     const flyBack = slotsOf(back.blocks).find((s) => s.exerciseId === 'cable_fly');
-    // 21 kg on a 5 kg stack rounds down to 20, kept as typed (`ben`).
-    expect(flyBack?.rows[0]).toMatchObject({ load: 20, typed: true });
+    // (Ben, 27 Oct) 21 kg on a 5 kg stack is kept exactly as typed (`typed`); the gym learns it elsewhere.
+    expect(flyBack?.rows[0]).toMatchObject({ load: 21, typed: true });
     expect(flyBack?.restS).toEqual({ working: 105 });
     expect(flyBack?.touched).toBe(true);
     const bench = slotsOf(back.blocks).find((s) => s.main);
@@ -259,15 +259,15 @@ describe("Ben's own edits (§2.3–§2.5)", () => {
     for (const l of loads) expect(Math.abs((l - 20) / 2.5 - Math.round((l - 20) / 2.5))).toBeLessThan(1e-9);
   });
 
-  it('a typed kg above a stack max is bounded to the max (rule 4)', () => {
+  it('(Ben, 27 Oct) a typed kg above a stack max is kept as typed (the stack learns it; rule 4 bounds suggestions only)', () => {
     const c = ctx();
     const w = chest(c, false);
     const fly = slotsOf(w.blocks).find((s) => s.exerciseId === 'cable_fly');
     const r = applyBuilderEdit(w, { kind: 'edit_row', slotKey: fly?.key ?? '', index: 0, patch: { kind: 'load', value: 140 } }, c);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(slotsOf(r.workout.blocks).find((s) => s.key === fly?.key)?.rows[0]?.load).toBe(100);
-    expect(r.rounded?.bounded).toBe('max');
+    expect(slotsOf(r.workout.blocks).find((s) => s.key === fly?.key)?.rows[0]?.load).toBe(140);
+    expect(r.rounded).toMatchObject({ value: 140, rounded: false, bounded: null });
   });
 
   it('a typed kg on per-hand dumbbells stays per hand; lb items keep lb', () => {
@@ -276,7 +276,7 @@ describe("Ben's own edits (§2.3–§2.5)", () => {
     const db = slotsOf(w.blocks).find((s) => s.exerciseId === 'incline_db');
     expect(db?.convention).toBe('per_hand');
     const r = applyBuilderEdit(w, { kind: 'edit_row', slotKey: db?.key ?? '', index: db?.rows.findIndex((x) => x.type !== 'warmup') ?? 0, patch: { kind: 'load', value: 28 } }, c);
-    expect(r.ok && slotsOf(r.workout.blocks).find((s) => s.key === db?.key)?.rows.find((x) => x.typed === true)?.load).toBe(27.5);
+    expect(r.ok && slotsOf(r.workout.blocks).find((s) => s.key === db?.key)?.rows.find((x) => x.typed === true)?.load).toBe(28);
   });
 });
 

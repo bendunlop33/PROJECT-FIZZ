@@ -68,11 +68,17 @@ const setsOf = (w: BuilderWorkout, id: string): number => {
   return s === undefined ? 0 : workingCount(s);
 };
 const others = ['face_pull', 'shrug', 'curl'];
+/** The Back day's own accessories that aren't guarded (the curl is the arm isolation rule F cuts first). */
+const backOthers = ['face_pull', 'shrug'];
 const guardedIds = ['lat_pulldown', 'cable_row'];
-/** The workout at shortest rests with the guarded exercises whole and every other accessory at `n` sets (0: left out). */
-const othersAt = (w: BuilderWorkout, n: number): BuilderWorkout => {
+/**
+ * The workout at shortest rests with the guarded exercises whole and every other accessory at `n` sets (0: left out);
+ * the arm isolation (curl) at `arm` sets, by default left out (rule F, Ben 27 Oct: it goes before the others lose sets).
+ */
+const othersAt = (w: BuilderWorkout, n: number, arm = 0): BuilderWorkout => {
+  const at = (x: BuilderSlot) => (x.exerciseId === 'curl' ? arm : n);
   const blocks = w.blocks
-    .map((b) => ({ ...b, slots: b.slots.flatMap((x) => (x.main || guardedIds.includes(x.exerciseId) ? [x] : n === 0 ? [] : [setWorkingCount(x, Math.min(n, workingCount(x)))])) }))
+    .map((b) => ({ ...b, slots: b.slots.flatMap((x) => (x.main || guardedIds.includes(x.exerciseId) ? [x] : at(x) === 0 ? [] : [setWorkingCount(x, Math.min(at(x), workingCount(x)))])) }))
     .filter((b) => b.slots.length > 0);
   return { restLevel: 'shortest', blocks };
 };
@@ -113,7 +119,7 @@ describe('time fit keeps sub-role coverage (Ben, 24 Oct)', () => {
         // While coverage holds, a guarded exercise lost sets (or the row went) only when the pair whole with every other
         // exercise at 2 sets doesn't fit; and, once anything is left out, only when the pair whole alone doesn't fit.
         expect(fitsIn(othersAt(w, 2), m), `${String(m)} min: others at 2 would fit`).toBe(false);
-        if (others.some((o) => setsOf(r.workout, o) === 0)) {
+        if (backOthers.some((o) => setsOf(r.workout, o) === 0)) {
           expect(fitsIn(othersAt(w, 0), m), `${String(m)} min: the pair whole would fit`).toBe(false);
           for (const o of others) expect(setsOf(r.workout, o), `${String(m)} min: ${o}`).toBe(0);
         }
@@ -135,13 +141,16 @@ describe('time fit keeps sub-role coverage (Ben, 24 Oct)', () => {
 
   it('the example ladder (Back day, 67 min): others first, then the row’s and the pull’s sets, then the row, then coverage', () => {
     const shape = (m: number) => slotsOf(fit(w, m).workout.blocks).map((s) => `${s.exerciseId}×${String(workingCount(s))}`).join(' ');
-    // (Ben, 27 Oct) Sets before exercises: the others' sets to 2 (54), then the row's and the pull's (49, 45), all
-    // before anything is left out. Then the 24 Oct ladder; the deadlift's rests no longer shorten for time, so each
-    // step comes a few minutes earlier (was 32, 28, 24, 23, 19).
-    expect(shape(54)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×2 shrug×2 curl×2');
-    expect(shape(49)).toBe('deadlift×4 lat_pulldown×4 cable_row×2 face_pull×2 shrug×2 curl×2');
-    expect(shape(45)).toBe('deadlift×4 lat_pulldown×2 cable_row×2 face_pull×2 shrug×2 curl×2');
-    expect(shape(38)).toBe('deadlift×4 lat_pulldown×4 cable_row×4');
+    // (Rule F, Ben 27 Oct) The curl first: trimmed (58), then left out (56), before a Back exercise loses a set.
+    expect(shape(58)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×3 shrug×3 curl×2');
+    expect(shape(56)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×3 shrug×3');
+    // (Ben, 27 Oct) Sets before exercises: the others' sets to 2 (47), then the row's and the pull's (43, 38), all
+    // before another exercise is left out. Then the 24 Oct ladder; the deadlift's rests no longer shorten for time, so
+    // each step comes a few minutes earlier (was 32, 28, 24, 23, 19).
+    expect(shape(47)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×2 shrug×2');
+    expect(shape(43)).toBe('deadlift×4 lat_pulldown×4 cable_row×2 face_pull×2 shrug×2');
+    expect(shape(38)).toBe('deadlift×4 lat_pulldown×2 cable_row×2 face_pull×2 shrug×2');
+    expect(shape(36)).toBe('deadlift×4 lat_pulldown×4 cable_row×3');
     expect(shape(33)).toBe('deadlift×4 lat_pulldown×4 cable_row×2');
     expect(shape(29)).toBe('deadlift×4 lat_pulldown×2 cable_row×2');
     expect(shape(28)).toBe('deadlift×4 lat_pulldown×4');
@@ -170,12 +179,24 @@ describe('time fit keeps sub-role coverage (Ben, 24 Oct)', () => {
       const pull = setsOf(r.workout, 'lat_pulldown');
       if (pull === 0 || (pull === 4 && setsOf(r.workout, 'cable_row') === 4)) continue;
       expect(fitsIn(othersAt(two, 2), m), `${String(m)} min: db row and the others at 2 would fit`).toBe(false);
-      if (r.steps.some((x) => x.kind === 'drop')) {
+      if (r.steps.some((x) => x.kind === 'drop' && x.exerciseId !== 'curl')) {
         expect(setsOf(r.workout, 'db_row'), `${String(m)} min`).toBe(0);
         sawDropped = true;
       }
     }
     expect(sawDropped).toBe(true);
+  });
+
+  it('rule F (Ben, 27 Oct): at every length the curl is trimmed and left out before any Back accessory loses a set, with or without a second row', () => {
+    for (const day of [w, backDay({ extraRow: true })]) {
+      const was = new Map(slotsOf(day.blocks).map((s) => [s.exerciseId, workingCount(s)]));
+      for (let m = estimateBuilderMinutes(day, ctx); m >= 15; m -= 1) {
+        const r = fit(day, m);
+        const backCut = [...was].some(([id, n]) => id !== 'curl' && id !== 'deadlift' && setsOf(r.workout, id) < n);
+        if (backCut) expect(setsOf(r.workout, 'curl'), `${String(m)} min`).toBe(0);
+        expect(setsOf(r.workout, 'deadlift')).toBe(4);
+      }
+    }
   });
 
   it('loads, units and conventions of what is kept are untouched (per-hand dumbbells and stacks alike)', () => {

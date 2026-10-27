@@ -416,8 +416,9 @@ describe('review: carry forward fixes', () => {
 
     it('a load other than the carry is still a change (100 back, or 107.5)', () => {
       const { s, b3 } = loggedB2At105();
-      expect(buildPlannedSetEditView(s, b3.id, { load: 100 })?.patch).toEqual({ load: kg(100) });
-      expect(buildPlannedSetEditView(s, b3.id, { load: 107.5 })?.patch).toEqual({ load: kg(107.5) });
+      // (Ben, 27 Oct) A load typed in the sheet is kept as typed (`loadAsTyped`).
+      expect(buildPlannedSetEditView(s, b3.id, { load: 100 })?.patch).toEqual({ load: kg(100), loadAsTyped: true });
+      expect(buildPlannedSetEditView(s, b3.id, { load: 107.5 })?.patch).toEqual({ load: kg(107.5), loadAsTyped: true });
       expect(buildPlannedSetEditView(s, b3.id, { load: 105 })?.changed).toBe(false);
     });
 
