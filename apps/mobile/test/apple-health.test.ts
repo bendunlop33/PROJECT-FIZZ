@@ -420,3 +420,99 @@ describe('the settings view', () => {
     expect(healthScreenView({ ...base, capability: 'not_on_this_install' })).toMatchObject({ available: false, why: 'This install’s signing doesn’t include Health.' });
   });
 });
+
+describe('Health uses (Ben, 27 Oct; gym first)', () => {
+  it('Progress › Training: last night’s sleep and this morning’s RHR vs its 28-day median; nothing with Health off', async () => {
+    const s = await launch();
+    await setUpGym(h, s);
+    // 28 mornings at 54, today (27 Oct) at 58; one night 22:40 → 04:50 (crossing midnight) ending this morning.
+    fake.resting = Array.from({ length: 29 }, (_, i) => ({ uuid: `C${String(i).padStart(7, '0')}-0000-4000-8000-000000000000`, bpm: i === 0 ? 58 : 54, atMs: Date.parse('2026-10-27T07:00:00.000Z') - i * DAY, sourceName: 'Garmin Connect', sourceBundleId: 'g' }));
+    fake.sleep = [
+      { uuid: 'D0000001-0000-4000-8000-000000000000', value: 3, startMs: Date.parse('2026-10-26T22:40:00.000Z'), endMs: Date.parse('2026-10-26T23:59:00.000Z'), sourceName: 'Garmin Connect', sourceBundleId: 'g' },
+      { uuid: 'D0000002-0000-4000-8000-000000000000', value: 4, startMs: Date.parse('2026-10-27T00:00:00.000Z'), endMs: Date.parse('2026-10-27T04:51:00.000Z'), sourceName: 'Garmin Connect', sourceBundleId: 'g' },
+    ];
+    expect((await s.health.lastNight()).line).toBeNull();
+    await s.health.setSwitch('readRestingHeartRate', true);
+    await s.health.setSwitch('readSleep', true);
+    await s.health.readNow();
+    const r = await s.health.lastNight();
+    expect(r.line?.text.replaceAll(' ', ' ')).toBe('Sleep 6h 10m · RHR 58 ↑4');
+    expect(r.line?.sources).toEqual(['Garmin']);
+    await s.health.setSwitch('readRestingHeartRate', false);
+    await s.health.setSwitch('readSleep', false);
+    expect((await s.health.lastNight()).line).toBeNull();
+  });
+
+  it('the week card and the weekly review count every other activity once, Ben’s and Garmin’s, after lifting', async () => {
+    const s = await launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8 }] }]);
+    // A Garmin walk and a Garmin rowing session this week (Mon 26 Oct), and a strength workout linked to nothing.
+    fake.addGarmin({ activityType: 52, startMs: Date.parse('2026-10-26T08:00:00.000Z'), endMs: Date.parse('2026-10-26T08:45:00.000Z') });
+    fake.addGarmin({ activityType: 35, startMs: Date.parse('2026-10-26T12:00:00.000Z'), endMs: Date.parse('2026-10-26T12:20:00.000Z') });
+    await s.health.setSwitch('readActivities', true);
+    await s.health.readNow();
+    const week = (await s.reviews.progress())?.week;
+    expect(week?.activities?.all.map((t) => t.replaceAll(' ', ' '))).toEqual(['1 walk 45 min', '1 cardio 20 min']);
+    expect(week?.activities?.fromHealth).toBe(true);
+    expect(week?.health).toBeNull();
+  });
+});
+
+describe('bodyweight card (Ben, 27 Oct)', () => {
+  it('＋ Weight, edit and delete, each with Undo; a double tap writes once; a stale card is refused; Health merges in, his entry wins', async () => {
+    const s = await launch();
+    await setUpGym(h, s);
+    let card = await s.bodyweight.card('3m');
+    expect(card?.view.empty).toBe(true);
+    const v1 = card?.version ?? 1;
+    expect(await s.bodyweight.log({ value: 82.4, unit: 'kg', date: '2026-10-27', opId: 'tap-1', expectedVersion: v1 })).toEqual({ ok: true });
+    // The same tap again (a double tap or a retry): one entry.
+    expect(await s.bodyweight.log({ value: 82.4, unit: 'kg', date: '2026-10-27', opId: 'tap-1', expectedVersion: v1 })).toEqual({ ok: true });
+    card = await s.bodyweight.card('3m');
+    expect(card?.mine).toHaveLength(1);
+    // A second sheet still on the old version is refused.
+    expect(await s.bodyweight.log({ value: 90, unit: 'kg', date: '2026-10-26', opId: 'tap-2', expectedVersion: v1 })).toEqual({ ok: false, message: 'Changed since. Try again.' });
+    // The latest entry is what the coach reads.
+    expect((await s.training.coachInput())?.profile?.weights.at(-1)?.value).toBe(82.4);
+
+    // Edit to lb, then Undo it (the same change back, on the newer version).
+    const v2 = card?.version ?? 0;
+    expect(await s.bodyweight.edit({ entryId: 'tap-1', value: 181, unit: 'lb', date: '2026-10-27', opId: 'e1', expectedVersion: v2 })).toEqual({ ok: true });
+    card = await s.bodyweight.card('3m');
+    expect(card?.view.latest?.replaceAll(' ', ' ')).toBe('82.1 kg · 27 Oct');
+    expect(await s.bodyweight.edit({ entryId: 'tap-1', value: 82.4, unit: 'kg', date: '2026-10-27', opId: 'e2', expectedVersion: card?.version ?? 0 })).toEqual({ ok: true });
+
+    // Health's reading on the same day doesn't replace his; another day's does show.
+    fake.weights = [
+      { uuid: 'B0000000-0000-4000-8000-000000000001', kg: 83.5, atMs: Date.parse('2026-10-27T06:00:00.000Z'), sourceName: 'Withings', sourceBundleId: 'com.withings' },
+      { uuid: 'B0000000-0000-4000-8000-000000000002', kg: 83, atMs: Date.parse('2026-10-20T06:00:00.000Z'), sourceName: 'Withings', sourceBundleId: 'com.withings' },
+    ];
+    await s.health.setSwitch('readWeight', true);
+    await s.health.readNow();
+    card = await s.bodyweight.card('1m');
+    expect(card?.view.points.map((p) => [p.date, p.value, p.from])).toEqual([
+      ['2026-10-20', 83, 'health'],
+      ['2026-10-27', 82.4, 'you'],
+    ]);
+    expect(card?.view.source).toBe('Withings · Apple Health');
+    expect(card?.view.change?.replaceAll(' ', ' ')).toBe('−0.6 kg');
+
+    // Delete, then Undo: the same entry back.
+    const entry = card?.mine[0];
+    if (entry === undefined || card === null) throw new Error('no entry');
+    expect(await s.bodyweight.remove({ entryId: entry.id, opId: 'd1', expectedVersion: card.version })).toEqual({ ok: true });
+    const after = await s.bodyweight.card('1m');
+    expect(after?.mine).toEqual([]);
+    expect(await s.bodyweight.restore({ entry, opId: 'u1', expectedVersion: after?.version ?? 0 })).toEqual({ ok: true });
+    expect((await s.bodyweight.card('1m'))?.mine.map((w) => w.id)).toEqual(['tap-1']);
+  });
+
+  it('a lb owner logs in lb; the card shows lb', async () => {
+    const s = await launch();
+    await s.setup.saveUnits('lb');
+    const card = await s.bodyweight.card('all');
+    expect(await s.bodyweight.log({ value: 181.5, unit: 'lb', date: '2026-10-25', opId: 'lb-1', expectedVersion: card?.version ?? 1 })).toEqual({ ok: true });
+    expect((await s.bodyweight.card('all'))?.view.latest?.replaceAll(' ', ' ')).toBe('181.5 lb · 25 Oct');
+  });
+});

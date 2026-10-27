@@ -194,3 +194,36 @@ describe('migration 27 (coach lift targets; 25 on its branch, renumbered on merg
     expect(String(row?.sql)).toContain("'update_gym'");
   });
 });
+
+describe('bodyweight entries (Ben, 27 Oct): Your data, versioned, in backups', () => {
+  it('log, edit, delete and restore round-trip; a repeated op ID writes once; a stale version is refused; Health samples stay local', async () => {
+    const source = await manager();
+    await source.store.repos.profiles.save(profile(), null);
+    const tp = source.store.repos.trainingProfiles;
+    const add = (id: string, date: string, value: number, unit: 'kg' | 'lb', v: number) => tp.change(OWNER, { kind: 'add_weight', entry: { id, date, value, unit } }, W(id, v));
+    expect((await add('w1', '2026-10-10', 83.2, 'kg', 1)).status).toBe('written');
+    expect((await add('w1', '2026-10-10', 83.2, 'kg', 1)).status).toBe('replayed');
+    expect((await add('w2', '2026-10-12', 182, 'lb', 2)).status).toBe('written');
+    expect((await add('w3', '2026-10-13', 82, 'kg', 2)).status).toBe('stale');
+    expect((await tp.change(OWNER, { kind: 'edit_weight', entryId: 'w2', value: 82.6, unit: 'kg', date: '2026-10-12' }, W('e1', 3))).status).toBe('written');
+    expect((await tp.change(OWNER, { kind: 'delete_weight', entryId: 'w1' }, W('d1', 4))).status).toBe('written');
+    // Undo of the delete: the same entry back.
+    expect((await tp.change(OWNER, { kind: 'add_weight', entry: { id: 'w1', date: '2026-10-10', value: 83.2, unit: 'kg' } }, W('u1', 5))).status).toBe('written');
+    await source.store.repos.health.replaceSamples(OWNER, 'weight', '2026-01-01T00:00:00.000Z', [
+      { uuid: 'b0000000-0000-4000-8000-000000000001', kg: 81, atUtc: '2026-10-14T06:00:00.000Z', tz: 'Europe/London', sourceName: 'Withings', sourceBundleId: 'w' },
+    ]);
+    const before = await tp.get(OWNER);
+    expect(before?.weights.map((w) => [w.id, w.value, w.unit])).toEqual([
+      ['w1', 83.2, 'kg'],
+      ['w2', 82.6, 'kg'],
+    ]);
+    const made = await createBackup(source.store, { at: at(20), app: APP });
+    const target = await manager();
+    expect(await target.restore(made.text, at(30))).toMatchObject({ ok: true, status: 'restored' });
+    expect((await target.store.repos.trainingProfiles.get(OWNER))?.weights).toEqual(before?.weights);
+    // Read from Health: local to the install (re-read after a restore), never in the backup.
+    expect(await target.store.repos.health.weightSamples(OWNER)).toEqual([]);
+    expect(await target.deleteYourData()).toMatchObject({ ok: true });
+    expect(await target.store.repos.trainingProfiles.get(OWNER)).toBeNull();
+  });
+});

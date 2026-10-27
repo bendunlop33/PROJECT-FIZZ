@@ -21,10 +21,12 @@ import {
   readSinceMs,
   restingHeartRateDays,
   sleepNights,
+  todayHealthLine,
   toIso,
   toMs,
   unlinkHealthActivity,
   type HealthDailyValue,
+  type TodayHealthLine,
   type HealthWriteCandidate,
   type HealthWriteOp,
   type LinkableWorkout,
@@ -115,6 +117,19 @@ export function createHealthService(deps: HealthServiceDeps) {
     return repo()
       .settings(ownerId)
       .catch(() => null);
+  }
+
+/** (Q8) Resting heart rate and sleep, a value a day for the last 30 days, each with its source; empty while off. */
+  async function readSignals(): Promise<HealthSignals> {
+    const p = await owner();
+    const s = p === null ? null : await settings(p.id);
+    if (p === null || s === null) return { restingHeartRate: [], sleep: [] };
+    const from = toIso(toMs(deps.now().utc) - (SIGNAL_DAYS + 1) * 86_400_000);
+    const [hr, sleep] = await Promise.all([
+      s.readRestingHeartRate ? repo().samplesSince(p.id, 'resting_hr', from).catch(() => []) : Promise.resolve([]),
+      s.readSleep ? repo().samplesSince(p.id, 'sleep', from).catch(() => []) : Promise.resolve([]),
+    ]);
+    return { restingHeartRate: restingHeartRateDays(hr).slice(-SIGNAL_DAYS), sleep: sleepNights(sleep).slice(-SIGNAL_DAYS) };
   }
 
   // ------------------------------------------------------------------ writes
@@ -404,16 +419,17 @@ export function createHealthService(deps: HealthServiceDeps) {
     },
 
     /** (Q8) Resting heart rate and sleep, a value a day for the last 30 days, each with its source; empty while off. */
-    async signals(): Promise<HealthSignals> {
+    signals: readSignals,
+
+    /**
+     * (Ben, 27 Oct) Progress › Training's Apple Health block: last night's sleep and this morning's resting heart rate
+     * against its 28-day median (gym first: not on Today, pending Ben), then the trend lines. Local reads only.
+     */
+    async lastNight(): Promise<{ line: TodayHealthLine | null; signals: HealthSignals }> {
       const p = await owner();
-      const s = p === null ? null : await settings(p.id);
-      if (p === null || s === null) return { restingHeartRate: [], sleep: [] };
-      const from = toIso(toMs(deps.now().utc) - (SIGNAL_DAYS + 1) * 86_400_000);
-      const [hr, sleep] = await Promise.all([
-        s.readRestingHeartRate ? repo().samplesSince(p.id, 'resting_hr', from).catch(() => []) : Promise.resolve([]),
-        s.readSleep ? repo().samplesSince(p.id, 'sleep', from).catch(() => []) : Promise.resolve([]),
-      ]);
-      return { restingHeartRate: restingHeartRateDays(hr).slice(-SIGNAL_DAYS), sleep: sleepNights(sleep).slice(-SIGNAL_DAYS) };
+      const signals = await readSignals();
+      if (p === null) return { line: null, signals };
+      return { line: todayHealthLine(signals, localDateOf(toMs(deps.now().utc), p.timezone)), signals };
     },
 
     readNow: () => readNow(true),

@@ -164,7 +164,7 @@ export function activityGroupTotals(done: readonly GroupableActivity[]): Activit
   for (const g of ACTIVITY_GROUPS) {
     const list = by.get(g);
     if (list === undefined || list.length === 0) continue;
-    const all = <K extends 'durationS' | 'distanceM'>(k: K): number | null => (list.every((a) => a[k] !== null) ? list.reduce((m, a) => m + (a[k] ?? 0), 0) : null);
+    const all = (k: 'durationS' | 'distanceM'): number | null => (list.every((a) => a[k] !== null) ? list.reduce((m, a) => m + (a[k] ?? 0), 0) : null);
     out.push({ group: g, count: list.length, durationS: all('durationS'), distanceM: HAS_DISTANCE.has(g) ? all('distanceM') : null, fromHealth: list.some((a) => a.fromHealth === true) });
   }
   return out;
