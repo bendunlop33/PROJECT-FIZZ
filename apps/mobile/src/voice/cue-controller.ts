@@ -4,9 +4,10 @@ import type { SessionAggregate } from '@fizz/schemas';
 import { TIMING } from '../theme/tokens';
 
 /**
- * Spoken workout cues while GymSmarter is open (Ben, 19 Oct 2026): "10
- * seconds" before a rest or timed set ends, then "Rest done" (+ the next
- * set, at `timer_and_set`) or "Time". Driven by the persisted deadlines the
+ * Spoken workout cues while GymSmarter is open (Ben, 19 Oct 2026; rest cues
+ * revised Ben, 27 Oct): "15 seconds" before a rest ends (+ the next set, at
+ * `timer_and_set`: "15 seconds. Next: bench press, set 3, 80 kilos for 8."),
+ * then just "Rest over"; a timed set gets "10 seconds" then "Time". Driven by the persisted deadlines the
  * rest alerts use: the alert controller hands every committed state here
  * (after its version guard), so a Log, Skip, ±30 s, Undo, Pause or a relaunch
  * reschedules or drops the cues. Each cue speaks at most once, only at its
@@ -16,14 +17,17 @@ import { TIMING } from '../theme/tokens';
  * alert, as before. Pure: ports for the speaker, clock and app state.
  */
 
-/** Rests and timed sets shorter than this get no "10 seconds" warning (it would land at the start). */
+/** The rest's pre-end cue, with the next set (Ben, 27 Oct). */
+export const REST_WARNING_LEAD_S = 15;
+/** A timed set's pre-end cue ("10 seconds", unchanged). */
 export const WARNING_LEAD_S = 10;
+/** Rests and timed sets shorter than this get no warning (it would land at, or close to, the start). */
 export const WARNING_MIN_DURATION_S = 20;
 
-/** A "10 seconds" warning later than this would say the wrong time: dropped. */
+/** A warning later than this would say the wrong time: dropped. */
 export const WARNING_LATE_DROP_MS = 1500;
 
-export type CueKind = 'warning' | 'rest_end' | 'work_end';
+export type CueKind = 'rest_warning' | 'warning' | 'rest_end' | 'work_end';
 
 export interface PlannedCue {
   /** `rest:<timerId>:<deadline>:end`, `work:<setId>:<deadline>:warn`… Played keys never play again. */
@@ -54,7 +58,9 @@ export function planCues(state: SessionAggregate | null): PlannedCue[] {
     const deadline = toMs(t.deadlineUtc);
     // Keyed by the deadline, not the version: the tick that saves the expiry bumps the version.
     const base = `rest:${t.id}:${t.deadlineUtc}`;
-    if (t.status === 'running' && t.durationS >= WARNING_MIN_DURATION_S) out.push({ key: `${base}:warn`, kind: 'warning', fireAtMs: deadline - WARNING_LEAD_S * 1000 });
+    // Its length as it now stands (a −30 s can make a 60 s rest a short one), never more than set.
+    const lengthS = Math.min(t.durationS, (deadline - toMs(t.startedAtUtc)) / 1000);
+    if (t.status === 'running' && lengthS >= WARNING_MIN_DURATION_S) out.push({ key: `${base}:warn`, kind: 'rest_warning', fireAtMs: deadline - REST_WARNING_LEAD_S * 1000 });
     out.push({ key: `${base}:end`, kind: 'rest_end', fireAtMs: deadline });
   }
   return out;
@@ -68,13 +74,19 @@ export function planCues(state: SessionAggregate | null): PlannedCue[] {
  */
 export function cueWords(kind: CueKind, state: SessionAggregate | null, detail: CueDetail, lastComparable: readonly ComparableSet[] = [], painFlagged?: ReadonlySet<string>): string {
   const event: CueEvent =
-    kind === 'warning' ? { kind: 'warning', seconds: WARNING_LEAD_S } : kind === 'work_end' ? { kind: 'work_end' } : { kind: 'rest_end', next: state === null ? null : spokenSetOf(state, state.session.activeSetId, lastComparable, { painFlagged }) };
+    kind === 'rest_warning'
+      ? { kind: 'rest_warning', seconds: REST_WARNING_LEAD_S, next: state === null ? null : spokenSetOf(state, state.session.activeSetId, lastComparable, { painFlagged }) }
+      : kind === 'warning'
+        ? { kind: 'warning', seconds: WARNING_LEAD_S }
+        : kind === 'work_end'
+          ? { kind: 'work_end' }
+          : { kind: 'rest_end' };
   return cueText(event, detail);
 }
 
-/** How late a cue may still speak: the rest end up to `timing.lateCueDrop`, the warning only just. */
+/** How late a cue may still speak: the rest end up to `timing.lateCueDrop`, a warning only just. */
 export function lateLimitMs(kind: CueKind): number {
-  return kind === 'warning' ? WARNING_LATE_DROP_MS : TIMING.lateCueDrop;
+  return kind === 'warning' || kind === 'rest_warning' ? WARNING_LATE_DROP_MS : TIMING.lateCueDrop;
 }
 
 /** Speak now? Not before its moment (a timer firing a hair early is allowed), not too late, never twice. */
@@ -161,6 +173,7 @@ export function createSpokenCueController(ports: CuePorts) {
       const nowMs = ports.clock.now();
       latest = state;
       const planned = planCues(state);
+      // The 15 s cue says the next set as the card shows it, history included: read ahead as the rest starts.
       if (planned.some((c) => c.kind === 'rest_end')) readAhead(state);
       const keys = new Set(planned.map((c) => c.key));
       for (const [key, t] of timers) {

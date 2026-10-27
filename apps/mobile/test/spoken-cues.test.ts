@@ -73,26 +73,45 @@ function resting(): { state: SessionAggregate; logged: SessionAggregate } {
   return { state, logged: apply(state, logCmd(warm, values(kg(60), 10), 5)) };
 }
 
-describe('spoken cue timing (Ben, 19 Oct)', () => {
-  it('"10 seconds" then "Rest done" with the next set, each once per rest', () => {
+/** The 15 s cue for bench set 2 at 100 kg (Ben, 27 Oct). */
+const NEXT_B2 = '15 seconds. Next: Bench press, set 2, 100 kilos for 8.';
+const OVER = 'Rest over.';
+
+describe('spoken cue timing (Ben, 19 Oct; rest cues Ben, 27 Oct)', () => {
+  it('"15 seconds" with the next set, then just "Rest over", each once per rest', () => {
     const { logged } = resting();
     const { clock, said, controller } = rig({ startMs: ms(6) });
     controller.reconcile(logged);
     expect(planCues(logged).map((c) => [c.kind, c.fireAtMs])).toEqual([
-      ['warning', ms(55)],
+      ['rest_warning', ms(50)],
       ['rest_end', ms(65)],
     ]);
-    clock.advanceTo(ms(54));
+    clock.advanceTo(ms(49));
     expect(said).toEqual([]);
-    clock.advanceTo(ms(55));
-    expect(said).toEqual(['10 seconds.']);
+    clock.advanceTo(ms(50));
+    expect(said).toEqual([NEXT_B2]);
     clock.advanceTo(ms(65));
-    expect(said).toEqual(['10 seconds.', 'Rest done. Set 2, Bench press, 100 kilos for 8.']);
+    expect(said).toEqual([NEXT_B2, OVER]);
     // The same state again (a foreground read), or the screen's tick saving the expiry: nothing twice.
     controller.reconcile(logged);
     controller.reconcile(apply(logged, { type: 'tick', at: at(66) }));
     clock.advanceTo(ms(200));
-    expect(said).toEqual(['10 seconds.', 'Rest done. Set 2, Bench press, 100 kilos for 8.']);
+    expect(said).toEqual([NEXT_B2, OVER]);
+  });
+
+  it('rests under 20 s get no 15 s cue, only "Rest over"; 20 s gets both', () => {
+    const { logged } = resting();
+    const t = logged.restTimer;
+    if (t === null) throw new Error('fixture');
+    const short = (lengthS: number): SessionAggregate => ({ ...logged, restTimer: { ...t, durationS: lengthS, deadlineUtc: new Date(ms(5) + lengthS * 1000).toISOString() } });
+    expect(planCues(short(19)).map((c) => c.kind)).toEqual(['rest_end']);
+    expect(planCues(short(20)).map((c) => [c.kind, c.fireAtMs])).toEqual([
+      ['rest_warning', ms(10)],
+      ['rest_end', ms(25)],
+    ]);
+    // A 60 s rest cut to 15 s (in-app −30 s twice, −15 s once) is a short rest now.
+    const cut: SessionAggregate = { ...logged, restTimer: { ...t, deadlineUtc: new Date(ms(20)).toISOString() } };
+    expect(planCues(cut).map((c) => c.kind)).toEqual(['rest_end']);
   });
 
   it('the screen ticking the expiry a moment before the cue timer fires does not cancel it', () => {
@@ -104,8 +123,8 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     expect(expired.restTimer?.status).toBe('expired');
     controller.reconcile(expired);
     clock.advanceTo(ms(65.2));
-    // Joined at 1:00, 5 s after the warning's moment: the warning is dropped, the rest end still speaks.
-    expect(said).toEqual(['Rest done. Set 2, Bench press, 100 kilos for 8.']);
+    // Joined at 1:00, 10 s after the warning's moment: the warning is dropped, the rest end still speaks.
+    expect(said).toEqual([OVER]);
   });
 
   it('says the card’s values: a draft saved during the rest, history for an open target field (review B1)', async () => {
@@ -129,7 +148,7 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     const edited = apply(open, { type: 'save_draft', at: at(30), setId: b1.id, values: values(kg(85), 7) });
     controller.reconcile(edited);
     clock.advanceTo(ms(70));
-    expect(said).toEqual(['10 seconds.', 'Rest done. Set 2, Bench press, 85 kilos for 7.']);
+    expect(said).toEqual(['15 seconds. Next: Bench press, set 2, 85 kilos for 7.', OVER]);
     // Read once per exercise row, ahead of the cue.
     expect(reads).toEqual([b1.sessionExerciseId]);
   });
@@ -146,15 +165,15 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     clock.advanceTo(ms(70));
     const card = prefillDraft(open, b1.id, [{ index: b1.index, values: values(kg(97.5), 8) }]).values;
     expect(card.load).toEqual(kg(60));
-    expect(said.at(-1)).toBe('Rest done. Set 2, Bench press, 60 kilos for 8.');
+    expect(said).toEqual(['15 seconds. Next: Bench press, set 2, 60 kilos for 8.', OVER]);
   });
 
-  it('timer only: no set details', () => {
+  it('timer only: "15 seconds" and "Rest over", no set details', () => {
     const { logged } = resting();
     const { clock, said, controller } = rig({ startMs: ms(6), settings: { cueDetail: 'timer' } });
     controller.reconcile(logged);
     clock.advanceTo(ms(70));
-    expect(said).toEqual(['10 seconds.', 'Rest done.']);
+    expect(said).toEqual(['15 seconds.', OVER]);
   });
 
   it('cues off, app in the background, or no module: nothing is spoken', () => {
@@ -174,7 +193,7 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     clock.advanceTo(ms(56));
     env.settings = { ...env.settings, cuesOn: false };
     clock.advanceTo(ms(70));
-    expect(said).toEqual(['10 seconds.']);
+    expect(said).toEqual([NEXT_B2]);
   });
 
   it('after a force-close, a deadline that already passed is never spoken', () => {
@@ -192,15 +211,19 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     const { clock, said, controller } = rig({ startMs: ms(58) });
     controller.reconcile(logged);
     clock.advanceTo(ms(70));
-    expect(said).toEqual(['Rest done. Set 2, Bench press, 100 kilos for 8.']);
+    expect(said).toEqual([OVER]);
+    const early = rig({ startMs: ms(40) });
+    early.controller.reconcile(logged);
+    early.clock.advanceTo(ms(70));
+    expect(early.said).toEqual([NEXT_B2, OVER]);
   });
 
   it('a timer that fires late (JS suspended) is dropped after timing.lateCueDrop', () => {
     const { logged } = resting();
     const { clock, said, controller } = rig({ startMs: ms(6) });
     controller.reconcile(logged);
-    // Suspended from 0:50 to 1:20: both timers run late.
-    clock.advanceTo(ms(50));
+    // Suspended from 0:45 to 1:20: both timers run late.
+    clock.advanceTo(ms(45));
     clock.suspendUntil(ms(80));
     clock.advanceTo(ms(80));
     expect(said).toEqual([]);
@@ -216,11 +239,11 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     clock.advanceTo(ms(70));
     expect(said).toEqual([]);
     clock.advanceTo(ms(85));
-    expect(said).toEqual(['10 seconds.']);
+    expect(said).toEqual([NEXT_B2]);
     const paused = apply(longer, { type: 'pause', at: at(86), opId: 'p' });
     controller.reconcile(paused);
     clock.advanceTo(ms(200));
-    expect(said).toEqual(['10 seconds.']);
+    expect(said).toEqual([NEXT_B2]);
     expect(controller.pending).toEqual([]);
 
     const r2 = rig({ startMs: ms(6) });
@@ -230,12 +253,12 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     expect(r2.said).toEqual([]);
   });
 
-  it('an untick that brings back a rest already run out says nothing: no late "Rest done" (workout-table-v3 §3)', () => {
+  it('an untick that brings back a rest already run out says nothing: no late "Rest over" (workout-table-v3 §3)', () => {
     const { logged } = resting();
     const { clock, said, controller } = rig({ startMs: ms(6) });
     controller.reconcile(logged);
     clock.advanceTo(ms(56));
-    expect(said).toEqual(['10 seconds.']);
+    expect(said).toEqual([NEXT_B2]);
     // B1 ticked by accident at 0:58 (warm-up rest due at 1:05), unticked at 1:07, inside the late-cue window.
     const b1 = setsFor(logged, BENCH)[1]?.id ?? '';
     const ticked = apply(logged, logCmd(b1, values(kg(100), 8), 58));
@@ -245,7 +268,7 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     expect(back.restTimer).toMatchObject({ id: logged.restTimer?.id, status: 'expired', endedAtUtc: at(65).utc });
     controller.reconcile(back);
     clock.advanceTo(ms(200));
-    expect(said).toEqual(['10 seconds.']);
+    expect(said).toEqual([NEXT_B2]);
     expect(controller.pending).toEqual([]);
   });
 
@@ -272,7 +295,7 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     expect(again.said).toEqual([]);
   });
 
-  it('a running rest left out of one reconcile and back expired on its own still says "Rest done" (review rest-undo-sp1 S2)', () => {
+  it('a running rest left out of one reconcile and back expired on its own still says "Rest over" (review rest-undo-sp1 S2)', () => {
     const { logged } = resting();
     const { clock, said, controller } = rig({ startMs: ms(6) });
     controller.reconcile(logged);
@@ -285,7 +308,7 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     controller.reconcile(ranOut);
     clock.advanceTo(ms(70));
     expect(said).toHaveLength(2);
-    expect(said[1]).toMatch(/^Rest done\./);
+    expect(said[1]).toBe(OVER);
   });
 
   it('a timed set: "10 seconds" and "Time."; short ones get no warning', () => {
@@ -313,7 +336,7 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     clock.advanceTo(ms(100));
     expect(said).toEqual([]);
     clock.advanceTo(ms(200));
-    expect(said).toEqual(['10 seconds.', 'Rest done. Set 3, Bench press, 100 kilos for 8.']);
+    expect(said).toEqual(['15 seconds. Next: Bench press, set 3, 100 kilos for 8.', OVER]);
   });
 });
 

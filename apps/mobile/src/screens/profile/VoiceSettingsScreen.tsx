@@ -18,9 +18,9 @@ import { BETTER_VOICES_HINT, defaultVoice, needsBetterVoiceHint, resolveVoice, v
  */
 
 const CUE_MODES: readonly CueMode[] = ['off', 'timer', 'timer_and_set'];
-const CUE_EXAMPLE: Record<CueMode, string | null> = { off: null, timer: '“10 seconds” · “Rest done”', timer_and_set: '+ “Set 2, bench press, 80 kilos for 8”' };
+const CUE_EXAMPLE: Record<CueMode, string | null> = { off: null, timer: '“15 seconds” · “Rest over”', timer_and_set: '+ “Next: bench press, set 3, 80 kilos for 8”' };
 const READ_MODES: readonly ReadReplies[] = ['workout', 'always', 'off'];
-const TEST_LINE = 'Rest done. Set 2, bench press, 80 kilos for 8.';
+const TEST_LINE = '15 seconds. Next: bench press, set 3, 80 kilos for 8.';
 
 export function VoiceSettingsScreen() {
   const theme = useTheme();
