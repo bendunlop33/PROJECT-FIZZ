@@ -62,7 +62,7 @@ import type { WorkoutActivityProps } from './controller';
  * and tap queue as the rest buttons, with a `fizz.log|…` target the app turns
  * into the versioned `log_set` the in-app Log sends (`lock-screen-log.ts`).
  * One button, full width under the text; none while counting. Not yet
- * device-checked (device test 2026-10-12, steps 9–14).
+ * device-checked (device test 2026-10-12, steps L1–L7).
  */
 const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityEnvironment) => {
   'widget';

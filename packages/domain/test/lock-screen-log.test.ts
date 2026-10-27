@@ -121,11 +121,12 @@ describe('lockScreenLogOf: what Log shows and saves', () => {
     const assisted = afterWarmup(benchAs(startFixture().state, 'assistance', 'kg', 20), kg(40, 'assistance'));
     const a = lockScreenLogOf(assisted, bench(assisted).b1.id);
     expect(a?.values.load).toEqual(kg(20, 'assistance'));
-    expect(plain(a?.label)).toMatch(/20 kg/);
+    expect(plain(a?.label)).toBe('Log Assist 20 kg × 8');
     const bw = afterWarmup(benchAs(startFixture().state, 'bodyweight', 'kg', 0), { value: 0, unit: 'kg', convention: 'bodyweight' });
     const b = lockScreenLogOf(bw, bench(bw).b1.id);
     expect(b?.values.load).toEqual({ value: 0, unit: 'kg', convention: 'bodyweight' });
     expect(b?.values.reps).toBe(8);
+    expect(plain(b?.label)).toBe('Log BW × 8');
   });
 
   it('the equipment-snapped target is what is logged, never a load past it', () => {
