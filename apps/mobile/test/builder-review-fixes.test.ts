@@ -325,22 +325,23 @@ describe('variations Ben saved before D1: open, rename and delete; Start today o
   });
 });
 
-describe('S6: a typed kg the gym can’t make is rounded down, with the item named', () => {
-  it('typed 101 on bench becomes 100; the toast and Why? say so', async () => {
+describe('S6 (Ben, 27 Oct: "If I add it it should work"): a typed kg the gym can’t make is kept as typed', () => {
+  it('typed 101 on bench stays 101 (no `Rounded to`), after a relaunch too; `Why?` says Ben typed it', async () => {
     const { s } = await benBench();
     const snap = await benchDraft(s);
     const bench = slotNamed(snap, 'Bench press');
     const top = bench.rows.findIndex((r) => r.type === 'top');
     const r = ok(await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: bench.key, index: top, patch: { kind: 'load', value: 101 } }, { opId: 'kg-101', basis: { version: snap.version } }));
-    expect(slotNamed(r.snapshot, 'Bench press').rows[top]?.load).toBe(100);
-    expect(r.toast?.text).toBe('Rounded to 100 kg');
-    expect(r.toast?.why).toMatch(/^Rounded down: /);
-    // After a relaunch too.
+    expect(slotNamed(r.snapshot, 'Bench press').rows[top]?.load).toBe(101);
+    expect(r.toast?.text ?? '').not.toMatch(/Rounded/);
     await h.forceClose();
     const { services: s2 } = await h.launch();
     const why = await s2.builder.whyWeight(snap.draftId, bench.key);
     expect(why).toContain('Typed by you');
-    expect(why.some((l) => l.startsWith('Rounded down: '))).toBe(true);
+    expect(why.some((l) => l.startsWith('Rounded down: '))).toBe(false);
+    const reread = await s2.builder.read(snap.draftId);
+    if (reread === null) throw new Error('no draft');
+    expect(slotNamed(reread, 'Bench press').rows[top]?.load).toBe(101);
   });
 });
 

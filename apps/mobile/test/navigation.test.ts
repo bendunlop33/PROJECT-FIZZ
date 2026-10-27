@@ -154,7 +154,8 @@ describe('correction sheet back to the workout (review coach-fallback B1)', () =
     // Edit set for a set not done yet (14 Oct) returns the same way.
     const planned = readFileSync(join(import.meta.dirname, '../src/screens/workout/PlannedSetEdit.tsx'), 'utf8');
     expect(planned).not.toMatch(/navigate\(\s*'Workout'/);
-    expect(planned.match(/dispatch\(returnToWorkout\(/g)?.length).toBe(3);
+    // (Ben, 27 Oct) plus a typed load the gym learns from (`kind: 'learn'`).
+    expect(planned.match(/dispatch\(returnToWorkout\(/g)?.length).toBe(4);
   });
 });
 
