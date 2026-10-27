@@ -404,6 +404,16 @@ export interface WorkoutServicesContext {
    * reached (no provider call). Absent: not in this build's wiring.
    */
   coachFit?: (context: TodayFitContext, signal?: AbortSignal) => Promise<TodayFitAnswer | null>;
+  /**
+   * (Ben, 27 Oct) The workout editor's Time: a workout's estimate as Your workout would open it, by the one estimate
+   * the plan and Today's card use (the builder's `routineTimer`). Absent or null: the editor shows no estimate (`—`).
+   */
+  routineTimer?: (req: { gymId: string | null; exerciseIds: readonly string[] }) => Promise<((planned: SessionAggregate, exercises: readonly RoutineExercise[]) => number) | null>;
+  /**
+   * (Ben, 27 Oct) A plan day's template in the editor: the day as Today would draft it from the list (Today's
+   * `planDayTimer`), so the editor and Today's card agree. Absent or null: not a plan day Today shows (`routineTimer`).
+   */
+  planDayTimer?: (routineId: string) => Promise<{ minutes: number; timer: (exercises: readonly RoutineExercise[]) => number } | null>;
 }
 
 /** `Ask coach` on `How long?` (fit-to-time §6): what came of it. Nothing is written unless `applied`. */
@@ -797,6 +807,8 @@ export interface RoutineEditorData {
   inProgress: boolean;
   /** `Target RPE` / `Target RIR` on the cards (WL11); null hides the row (effort scale off). */
   effortScale: 'rpe' | 'rir' | null;
+  /** (Ben, 27 Oct) A plan day's template: the plan's length for the day (Today's); null: not a plan day Today shows. */
+  planMinutes?: number | null;
 }
 
 /** An editor save (WL10): the new version and the record its Undo reads. */
@@ -3933,6 +3945,37 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
+  /**
+   * (Ben, 27 Oct) The workout editor's timer: the list as edited, planned at this gym as Start plans it (no targets,
+   * `planRoutineStart`), then timed as Your workout would open it (`ctx.routineTimer`: the one estimate the plan, Today's
+   * card and Your workout use). Reads once; the timer it returns is sync (the editor's fit runs it on every candidate).
+   * Null: no gym, nothing listed, or no timer in this wiring.
+   */
+  async function editorTimer(req: { exercises: readonly RoutineExercise[]; gymId: string | null; routineId?: string | null }): Promise<((list: readonly RoutineExercise[]) => number) | null> {
+    const p = await ctx.profile();
+    if (!p || req.gymId === null || req.exercises.length === 0) return null;
+    // A plan day's template: as Today drafts the day (the card, the plan and the editor show one number).
+    const planDay = req.routineId == null || ctx.planDayTimer === undefined ? null : await ctx.planDayTimer(req.routineId).catch(() => null);
+    if (planDay !== null) return planDay.timer;
+    if (ctx.routineTimer === undefined) return null;
+    const gymId = req.gymId;
+    const exercises = new Map<string, Exercise>();
+    for (const e of req.exercises) {
+      const x = await exerciseById(e.exerciseId);
+      if (x) exercises.set(x.id, x);
+    }
+    const timer = await ctx.routineTimer({ gymId, exerciseIds: [...exercises.keys()] });
+    if (timer === null) return null;
+    const at = ctx.now();
+    const gymEquipment = await repos().equipment.listByGym(gymId);
+    const knownEquipment = await allEquipment(p.id);
+    return (list) => {
+      const routine: Routine = { id: deriveId('editor-estimate'), ownerId: p.id, version: 1, createdAtUtc: at.utc, updatedAtUtc: at.utc, name: 'Estimate', exercises: [...list], createdFromSessionId: null, source: 'ben' };
+      const out = planRoutineStart({ opId: 'editor-estimate', owner: p, gymId, routine, exercises, gymEquipment, knownEquipment, at, newId: previewIds() });
+      return timer(out.aggregate, list);
+    };
+  }
+
   const routines = {
     /** Live routines in list order with `last done` (premium-feel §2.6). Never throws: an unreadable list reads as none. */
     async list(): Promise<RoutineRow[]> {
@@ -4013,6 +4056,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           restPresets: p.restPresets,
           effortScale: p.effortScale === 'off' ? null : p.effortScale,
           inProgress: routine !== null && active?.session.routineId === routine.id,
+          // (Ben, 27 Oct) A plan day's length (as Today's card has it): the editor's Time is warned past it.
+          planMinutes: routine === null || ctx.planDayTimer === undefined ? null : ((await ctx.planDayTimer(routine.id).catch(() => null))?.minutes ?? null),
         };
       } catch {
         return null;
@@ -4057,20 +4102,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         .map(({ x }) => ({ id: x.id, name: x.name, measurement: x.measurement, laterality: x.laterality, defaultLoadConvention: x.defaultLoadConvention, compatibleEquipment: x.compatibleEquipment, defaultRestS: p?.exerciseRestS?.[x.id] ?? x.defaultRestS ?? null, compound: x.mechanic === 'compound', defaultShape: defaultSlotShape(x) }));
     },
 
-    /** `≈ N min` while editing (§A2.3): the workout as edited, planned at this gym with no targets. Null when it can't be estimated. */
-    async estimate(req: { exercises: readonly RoutineExercise[]; gymId: string | null }): Promise<number | null> {
+    /**
+     * `≈ N min` while editing (§A2.3): the workout as edited, as Your workout would open it at this gym (the planner's
+     * plan for it, no targets), by the one estimate the plan and Today's card use (Ben, 27 Oct; `editorTimer`). Null
+     * when it can't be estimated.
+     */
+    async estimate(req: { exercises: readonly RoutineExercise[]; gymId: string | null; routineId?: string | null }): Promise<number | null> {
       try {
-        const p = await ctx.profile();
-        if (!p || req.gymId === null || req.exercises.length === 0) return null;
-        const exercises = new Map<string, Exercise>();
-        for (const e of req.exercises) {
-          const x = await exerciseById(e.exerciseId);
-          if (x) exercises.set(x.id, x);
-        }
-        const at = ctx.now();
-        const routine: Routine = { id: deriveId('editor-estimate'), ownerId: p.id, version: 1, createdAtUtc: at.utc, updatedAtUtc: at.utc, name: 'Estimate', exercises: [...req.exercises], createdFromSessionId: null, source: 'ben' };
-        const out = planRoutineStart({ opId: 'editor-estimate', owner: p, gymId: req.gymId, routine, exercises, gymEquipment: await repos().equipment.listByGym(req.gymId), knownEquipment: await allEquipment(p.id), at, newId: previewIds() });
-        const m = estimateRemainingDuration(out.aggregate, { recent: await recentFinished(p) }).minutes;
+        const timer = await editorTimer(req);
+        if (timer === null) return null;
+        const m = Math.round(timer(req.exercises) / 60);
         return m > 0 ? m : null;
       } catch {
         return null;
@@ -4082,24 +4123,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * with the editor's own estimate, read once here. Nothing is written: the screen shows the result as edits Ben saves.
      * Null: no gym or nothing to fit, or a read failed (the screen says nothing changed).
      */
-    async fitTemplate(req: { exercises: readonly RoutineExercise[]; gymId: string | null; minutes: number; defaultRestS: number }): Promise<TemplateFitResult | null> {
+    async fitTemplate(req: { exercises: readonly RoutineExercise[]; gymId: string | null; minutes: number; defaultRestS: number; routineId?: string | null }): Promise<TemplateFitResult | null> {
       try {
-        const p = await ctx.profile();
-        if (!p || req.gymId === null || req.exercises.length === 0) return null;
+        const timer = await editorTimer(req);
+        if (timer === null) return null;
         const exercises = new Map<string, Exercise>();
         for (const e of req.exercises) {
           const x = await exerciseById(e.exerciseId);
           if (x) exercises.set(x.id, x);
         }
-        const at = ctx.now();
-        const gymEquipment = await repos().equipment.listByGym(req.gymId);
-        const knownEquipment = await allEquipment(p.id);
-        const recent = await recentFinished(p);
-        const estimateS = (list: readonly RoutineExercise[]): number => {
-          const routine: Routine = { id: deriveId('editor-estimate'), ownerId: p.id, version: 1, createdAtUtc: at.utc, updatedAtUtc: at.utc, name: 'Estimate', exercises: [...list], createdFromSessionId: null, source: 'ben' };
-          const out = planRoutineStart({ opId: 'editor-estimate', owner: p, gymId: req.gymId ?? '', routine, exercises, gymEquipment, knownEquipment, at, newId: previewIds() });
-          return estimateRemainingDuration(out.aggregate, { recent }).seconds;
-        };
+        const estimateS = (list: readonly RoutineExercise[]): number => timer(list);
         const isCompound = (id: string) => exercises.get(id)?.mechanic === 'compound';
         return fitTemplateToMinutes({
           exercises: req.exercises,

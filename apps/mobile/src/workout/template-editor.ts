@@ -11,6 +11,7 @@ import {
   fixedLoadSeed,
   fixedLoadSteps,
   isRefusedDistanceSlot,
+  liveTime,
   moveExercise,
   NO_DISTANCE_IN_WORKOUTS,
   removeExercise,
@@ -32,6 +33,7 @@ import {
   typedFixedLoad,
   ungroup,
   updateSet,
+  type LiveTime,
   type RoutineEdit,
   type SlotShapeInput,
 } from '@fizz/domain';
@@ -581,4 +583,17 @@ export async function undoTemplateSave(s: Pick<TemplateLibraryPort, 'revert' | '
 /** `Keep both` after a stale Save (v0.1 §3.3): the newer version as the editor sees it, never raw (review S3). */
 export function editableOf(r: Routine): RoutineEdit {
   return editableEdit(r);
+}
+
+/**
+ * (Ben, 27 Oct: "if I add an exercise without changing the time it changes the time automatically") The editor's Time
+ * row: the live estimate of the list on the page (the workout services' `estimate`, the one estimate the plan and Today's
+ * card use), held to `length` (the plan day's, or the length `Time ±` last fitted to; null: none, so never over).
+ * The editor's fit works from the list on the page (`fitTemplate`), so with no live fit `−` steps below the estimate;
+ * with one, below its length (`liveTime`). Null: no estimate yet (`—`). Pure.
+ */
+export function editorTimeView(i: { estimate: number | null; length: number | null; fitted: boolean }): LiveTime | null {
+  if (i.estimate === null) return null;
+  const length = i.length ?? i.estimate;
+  return liveTime({ estimate: i.estimate, length, floor: i.fitted ? length : i.estimate });
 }

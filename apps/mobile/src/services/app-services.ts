@@ -553,6 +553,9 @@ export function createAppServices(deps: AppServicesDeps) {
     catalogueAliases,
     // `Ask coach` on How long? (fit-to-time §5): the coach's one request; `coach` is defined below and only read when Ben asks.
     coachFit: (context, signal) => coach.fitToday(context, signal),
+    // (Ben, 27 Oct) The workout editor's Time: Your workout's estimate of the list; `builder` is defined below and only read when the editor asks.
+    routineTimer: (req) => builder.routineTimer(req),
+    planDayTimer: (routineId) => todaySession.planDayTimer(routineId),
   });
 
   /** Training details and split (Ben 13 Oct: D5, D7, D8; F19). Your data, local only. */

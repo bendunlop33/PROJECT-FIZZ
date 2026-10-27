@@ -4,7 +4,7 @@ import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, ScrollView, Switch
 import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { dropRoutineSlot, fitNoteOf, formatDuration, mergeRoutineEdits, routineEditDirty, routineIssues, slotShapeOf, stepTimeMinutes, type BuilderFitStep, type RoutineConflict, type RoutineEdit } from '@fizz/domain';
+import { dropRoutineSlot, fitNoteOf, formatDuration, mergeRoutineEdits, routineEditDirty, routineIssues, slotShapeOf, type BuilderFitStep, type RoutineConflict, type RoutineEdit } from '@fizz/domain';
 import type { BuilderGroup, Routine, RoutineExercise, SetType } from '@fizz/schemas';
 
 import type { ExerciseChoices, TemplateFact } from '../../builder/builder-service';
@@ -31,6 +31,7 @@ import { slotRepsDraft, SET_SHAPE_COPY } from '../../workout/set-shape-view';
 import {
   applyTemplateEdit,
   editableOf,
+  editorTimeView,
   openTemplate,
   parseClock,
   parseMetres,
@@ -101,7 +102,7 @@ export function EditWorkoutScreen() {
   });
   const [shapeSheet, setShapeSheet] = useState<{ slotId: string; kind: 'reps' | 'effort' } | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [toast, setToast] = useState<{ text: string; before: RoutineExercise[] | null } | null>(null);
+  const [toast, setToast] = useState<{ text: string; before: RoutineExercise[] | null; length?: number | null } | null>(null);
   const [screenReader, setScreenReader] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const opId = useRef(newUuid());
@@ -112,8 +113,11 @@ export function EditWorkoutScreen() {
   // (Ben, 26 Oct) Unsaved edits kept on the phone; autosave waits until the resume question is answered.
   const draftKey = editorDraftKey(target);
   const [draftReady, setDraftReady] = useState(draftKey === null);
-  // (Ben, 26 Oct) `Time ±`: the list before the first step (Undo), the length asked for and what the fit changed.
-  const [fit, setFit] = useState<{ before: RoutineExercise[]; fromMinutes: number | null; target: number; steps: BuilderFitStep[] } | null>(null);
+  // (Ben, 26 Oct) `Time ±`: the list before the first step (Undo), its estimate and length then, and what the fit changed.
+  const [fit, setFit] = useState<{ before: RoutineExercise[]; fromMinutes: number | null; fromLength: number | null; steps: BuilderFitStep[] } | null>(null);
+  // (Ben, 27 Oct) The length the workout is held to: the plan day's, then the one `Time ±` last fitted to. Ben's own
+  // edits never cut to hold it; the number shown is always the live estimate (`editorTimeView`), past it in the warning tone.
+  const [timeLength, setTimeLength] = useState<number | null>(null);
   const fitBusy = useRef(false);
   const [timeDetail, setTimeDetail] = useState(false);
 
@@ -131,6 +135,7 @@ export function EditWorkoutScreen() {
       setInfo(o.info);
       setFacts(o.facts);
       setFit(null);
+      setTimeLength(o.data.planMinutes ?? o.data.routine?.planDay?.minutes ?? null);
       setData(o.data);
       if (draftKey === null) return;
       // A kept draft from before a force-close: offered back once, never applied without Ben's answer.
@@ -213,10 +218,12 @@ export function EditWorkoutScreen() {
 
   // `about N min` while editing (debounced; local).
   const gymId = data !== 'loading' && data !== null ? (data.gym?.id ?? null) : null;
+  // (Ben, 27 Oct) A plan day's template is timed as Today drafts the day (one number on the card, the plan and here).
+  const editedRoutineId = data !== 'loading' && data !== null ? (data.routine?.id ?? null) : null;
   useEffect(() => {
     const t = setTimeout(() => {
       void services.routines
-        .estimate({ exercises: list, gymId })
+        .estimate({ exercises: list, gymId, routineId: editedRoutineId })
         .then(setMinutes)
         .catch(() => {
           setMinutes(null);
@@ -225,10 +232,10 @@ export function EditWorkoutScreen() {
     return () => {
       clearTimeout(t);
     };
-  }, [services, list, gymId]);
+  }, [services, list, gymId, editedRoutineId]);
 
   const showToast = useCallback(
-    (t: { text: string; before: RoutineExercise[] | null } | null) => {
+    (t: { text: string; before: RoutineExercise[] | null; length?: number | null } | null) => {
       if (toastTimer.current !== null) clearTimeout(toastTimer.current);
       setToast(t);
       // With VoiceOver on, an Undo toast stays until dismissed (close button).
@@ -264,7 +271,9 @@ export function EditWorkoutScreen() {
   const primary = editorPrimary({ issues, dirty, isNew });
   const table = templateTableView(list, ctx);
   const nameOfSlot = (slotId: string) => info[list.find((e) => e.id === slotId)?.exerciseId ?? '']?.name ?? 'Exercise';
-  const shownMinutes = fit?.target ?? minutes;
+  // (Ben, 27 Oct) The live estimate of the list on the page, and the steps from it.
+  const time = editorTimeView({ estimate: minutes, length: timeLength, fitted: fit !== null });
+  const shownMinutes = time?.minutes ?? null;
   const fitNote = fit === null ? { note: null, lines: [] as string[] } : fitNoteOf(fit.steps, (id) => info[id]?.name ?? 'Exercise', nameOfSlot);
 
   /** One edit on the page's list, on the list as it is now (quick taps add up). Returns the pop-up's line, if any. */
@@ -356,21 +365,23 @@ export function EditWorkoutScreen() {
   }
 
   /**
-   * (Ben, 26 Oct) `Time ±`: the next 5-minute step, the template's sets and rests fitted to it from the list as it was
-   * before the first step (so steps don't add up), shown as page edits with the note and `Undo`. Nothing is saved.
+   * (Ben, 26 Oct) `Time ±`: the next 5-minute step from the estimate (`editorTimeView`), the template's sets and rests
+   * fitted to it from the list as it was before the first step (so steps don't add up), shown as page edits with the
+   * note and `Undo`. Nothing is saved. (Ben, 27 Oct) The step becomes the length; the number shown is the new estimate.
    */
   async function stepTime(dir: -1 | 1) {
-    const shown = fit?.target ?? minutes;
-    if (shown === null || fitBusy.current) return;
+    const to = time === null ? null : dir < 0 ? time.less : time.more;
+    if (to === null || fitBusy.current) return;
     fitBusy.current = true;
     try {
       const from = fit?.before ?? listRef.current;
-      const targetMin = stepTimeMinutes(shown, dir);
-      const r = await services.routines.fitTemplate({ exercises: from, gymId: editor.gym?.id ?? null, minutes: targetMin, defaultRestS: editor.globalDefault.seconds });
+      const r = await services.routines.fitTemplate({ exercises: from, gymId: editor.gym?.id ?? null, minutes: to, defaultRestS: editor.globalDefault.seconds, routineId: editor.routine?.id ?? null });
       if (r === null) {
         setError(TEMPLATE_COPY.fitNoChange);
         return;
       }
+      setTimeLength(to);
+      setMinutes(Math.max(1, Math.round(r.seconds / 60)));
       if (r.status === 'fits') {
         setList(from);
         setFit(null);
@@ -378,9 +389,9 @@ export function EditWorkoutScreen() {
         return;
       }
       setList(r.exercises);
-      setFit({ before: from, fromMinutes: fit?.fromMinutes ?? minutes, target: targetMin, steps: r.steps });
+      setFit({ before: from, fromMinutes: fit?.fromMinutes ?? minutes, fromLength: fit === null ? timeLength : fit.fromLength, steps: r.steps });
       setError(null);
-      if (r.status === 'over') showToast({ text: TEMPLATE_COPY.fitOver(Math.max(1, Math.round(r.seconds / 60))), before: from });
+      if (r.status === 'over') showToast({ text: TEMPLATE_COPY.fitOver(Math.max(1, Math.round(r.seconds / 60))), before: from, length: fit === null ? timeLength : fit.fromLength });
     } finally {
       fitBusy.current = false;
     }
@@ -515,8 +526,10 @@ export function EditWorkoutScreen() {
               action: TEMPLATE_COPY.undo,
               onAction: () => {
                 const before = toast.before;
+                const length = toast.length;
                 showToast(null);
                 if (before !== null) setList(before);
+                if (length !== undefined) setTimeLength(length);
                 setFit(null);
               },
             }
@@ -559,6 +572,7 @@ export function EditWorkoutScreen() {
           ) : (
             <TimeNoteRow
               minutes={shownMinutes}
+              over={time?.over ?? false}
               note={fitNote.note}
               noteLabel={fitNote.note === null ? null : `Time changes: ${fitNote.note}`}
               onStep={(d) => void stepTime(d)}
@@ -687,7 +701,10 @@ export function EditWorkoutScreen() {
         lines={fitNote.lines}
         undoMinutes={fit?.fromMinutes ?? null}
         onUndo={() => {
-          if (fit !== null) setList(fit.before);
+          if (fit !== null) {
+            setList(fit.before);
+            setTimeLength(fit.fromLength);
+          }
           setFit(null);
           setTimeDetail(false);
         }}

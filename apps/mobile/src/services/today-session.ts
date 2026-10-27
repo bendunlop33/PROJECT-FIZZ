@@ -36,6 +36,8 @@ import {
   doableHere,
   estimateBuilderMinutes,
   estimateBuilderSeconds,
+  liveTime,
+  todayTemplateWithExercises,
   formatNumber,
   fromDraftPlan,
   isInHistory,
@@ -127,6 +129,7 @@ import {
   type NextSessionTargetRecord,
   type PainFlag,
   type Routine,
+  type RoutineExercise,
   type SessionAggregate,
   type SessionCheckIn,
   type TrainingProfile,
@@ -358,7 +361,15 @@ export interface TodaySelection {
  * label (light orange) is the biggest change the fit made; a tap lists everything with `Undo` (back to the plan's length).
  */
 export interface TodayTimeView {
+  /** (Ben, 27 Oct) The live estimate of the card's workout (`liveTime`, the one estimate): the number shown. */
   minutes: number;
+  /** The length Time holds it to (the controls', or the edited draft's). */
+  length: number;
+  /** The estimate is past the length: the number in the warning tone. */
+  over: boolean;
+  /** What `−` and `+` go to (`liveTime`: the next 5-minute step from the estimate past the length); null at a limit. */
+  less: number | null;
+  more: number | null;
   /** `−1 exercise`, `−2 sets`, `supersets`, `shorter rests`, `+1 exercise`; null: the plan as it is. */
   note: string | null;
   noteLabel: string | null;
@@ -515,15 +526,24 @@ function ruleAnchorFromPlan(sp: SwapPlan, convention: string, unit: 'kg' | 'lb',
 }
 
 /** The card's Time row from the fit's note (`fitNoteOf`), the length shown and the plan's own length. */
-export function timeView(minutes: number, planMinutes: number, fit: { note: string | null; lines: string[] }, over: boolean): TodayTimeView {
+/**
+ * Today's card's Time (Ben, 27 Oct: the live estimate, `liveTime`). `full`: the length at or above which Your
+ * workout's fit cuts nothing (an edited card's draft); `−` steps below it.
+ */
+export function timeView(length: number, planMinutes: number, fit: { note: string | null; lines: string[] }, estimate: number, full?: number): TodayTimeView {
   const plan = clampMinutes(planMinutes);
+  const live = liveTime({ estimate, length, floor: Math.min(length, full ?? length) });
   return {
-    minutes,
+    minutes: live.minutes,
+    length,
+    over: live.over,
+    less: live.less,
+    more: live.more,
     note: fit.note,
     noteLabel: fit.note === null ? null : `Time changes: ${fit.note}`,
     lines: fit.lines,
-    overText: over ? `⚠ Over ${TODAY_V2_COPY.minutesValue(minutes)}` : null,
-    undoMinutes: minutes === plan ? null : plan,
+    overText: live.over ? `⚠ Over ${TODAY_V2_COPY.minutesValue(length)}` : null,
+    undoMinutes: length === plan ? null : plan,
   };
 }
 
@@ -1175,7 +1195,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         exerciseCount: count,
         // The coach's version Ben applied keeps Time (a step is Today's card again). (D3; review todaylean S4; V5) An
         // edited card keeps Time too: the draft's own (Your workout's Time on it, refitted around Ben's edits, FT5).
-        time: edited === null ? timeView(sel.controls.minutes, t.minutes, { note: null, lines: [] }, false) : editedTime(data, edited),
+        time: edited === null ? timeView(sel.controls.minutes, t.minutes, { note: null, lines: [] }, minutes) : editedTime(data, edited),
         clashLine: clash,
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
@@ -1202,7 +1222,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       summary: TODAY_V2_COPY.summary(d.exerciseCount, d.minutes),
       minutes: d.minutes,
       exerciseCount: d.exerciseCount,
-      time: timeView(sel.controls.minutes, t.minutes, fitNoteOf(d.fit.steps, nameOf, slotName), d.fit.status === 'over'),
+      time: timeView(sel.controls.minutes, t.minutes, fitNoteOf(d.fit.steps, nameOf, slotName), d.minutes),
       clashLine: clash ?? advice,
       controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: d.absOn, planOn: t.absPlan, differs: d.absOn !== t.absPlan }, supersets: sel.controls.supersets },
       unit,
@@ -1278,7 +1298,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const { nameOf, ctx } = data.internal;
     const changes = e.fit === null ? [] : timeFitChanges(e.fit, e.workout);
     const slotName = (key: string) => nameOf(e.workout.blocks.flatMap((b) => b.slots).find((x) => x.key === key)?.exerciseId ?? '');
-    return timeView(e.minutes, e.timeFrom ?? e.minutes, fitNoteOf(changes, nameOf, slotName), estimateBuilderSeconds(e.workout, ctx) > e.minutes * 60 + 29);
+    // (Ben, 27 Oct) The number is the draft's estimate, as Your workout shows it; `−` steps below the length a fit cuts from.
+    return timeView(e.minutes, e.timeFrom ?? e.minutes, fitNoteOf(changes, nameOf, slotName), estimateBuilderMinutes(e.workout, ctx), e.fit?.fromMinutes ?? e.timeFrom ?? e.minutes);
   }
 
   /** The coach's part of Why?: its nudge (`todayCoachWhy`); no nudge yet: the connection's status. */
@@ -1584,6 +1605,31 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return data === null || day === null ? [] : data.internal.carryFor(day);
   }
 
+  /**
+   * (Ben, 27 Oct: "if I manually change an exercise it should update too") The workout editor on a plan day's template:
+   * the day as Today would draft it from the list on the page once saved, at the plan's own controls, before Time's fit
+   * (Ben's own edits are never cut to hold the length), timed by the one estimate (`estimateBuilderSeconds`). So the
+   * editor, Today's card and the plan show the same minutes for the same workout. Reads once; the timer is sync (the
+   * editor's fit runs it on every candidate), with the plan's length for the day. Null: not a template of a plan day
+   * Today shows here.
+   */
+  async function planDayTimer(routineId: string): Promise<{ minutes: number; timer: (exercises: readonly RoutineExercise[]) => number } | null> {
+    const data = await load().catch(() => null);
+    if (data === null) return null;
+    const day = data.days.find((d) => d.kind === 'plan' && d.templates.some((t) => t.routineId === routineId));
+    const t = day?.templates.find((x) => x.routineId === routineId);
+    const c = day === undefined ? undefined : data.initial[day.key];
+    if (day === undefined || t === undefined || c === undefined) return null;
+    const { ctx, info } = data.internal;
+    const timer = (exercises: readonly RoutineExercise[]): number => {
+      const edited = todayTemplateWithExercises(t, exercises, info, day.splitDayId);
+      const controls = { ...c, mainLiftExerciseId: edited.mainLiftExerciseId, abs: null, supersets: edited.supersetsPlan, mix: 0 };
+      const d = assembleTodayDraft({ day: { ...day, templates: [edited] }, controls, ctx, pool: poolFor(data, edited), mix: data.internal.mixFor(day), carry: data.internal.carryFor(day), ...storedOpts(data) });
+      return d === null ? 0 : estimateBuilderSeconds(d.unfitted, ctx);
+    };
+    return { minutes: t.minutes, timer };
+  }
+
   /** `start`: the draft as committed (version-checked, rule 5), through the one Start path. */
   async function start(req: { draftId: string; expectedVersion: number; gymId: string; opId: string; checkIn: SessionCheckIn | null }): Promise<TodayStartResult> {
     const p = await deps.profile();
@@ -1622,6 +1668,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     carryDaysFor,
     carryItemsFor,
     carryOver,
+    planDayTimer,
     start,
     review,
     mainLiftsFor,

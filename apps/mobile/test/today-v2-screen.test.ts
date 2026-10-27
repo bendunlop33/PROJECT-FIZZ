@@ -171,7 +171,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect((375 - 2 * 20 - 6 * 2 - 1) / 7).toBeGreaterThanOrEqual(44);
     // The Time row (shared with Your workout since 22 Oct; its note per fit-to-time's 22 Oct revision): one adjustable element.
     expect(parts).toContain('<TimeNoteRow');
-    expect(read('ui/time-stepper.tsx')).toContain('<TimeStepper minutes={minutes} onStep={onStep} />');
+    expect(read('ui/time-stepper.tsx')).toContain('<TimeStepper minutes={minutes} over={over} onStep={onStep} />');
     expect(read('ui/time-stepper.tsx')).toContain("accessibilityRole=\"adjustable\"");
     expect(parts).toContain('fontScale >= AX_FONT_SCALE');
     // The strip lists at AX sizes; the day row from xxxLarge (Ben, 26 Oct: `dayRowAsList`).

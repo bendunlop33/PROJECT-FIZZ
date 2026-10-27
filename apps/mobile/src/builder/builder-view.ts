@@ -1,4 +1,4 @@
-import { canAddWarmup, cardioValuesText, clampBuilderRest, FIT_RULES, fitNoteOf, isTimedRow, slotsOf, spokenDistance, spokenDuration, stepTimeMinutes, TODAY_V2_COPY, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
+import { canAddWarmup, cardioValuesText, clampBuilderRest, fitNoteOf, isTimedRow, liveTime, slotsOf, spokenDistance, spokenDuration, TODAY_V2_COPY, workingCount, type BuilderSetRow, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderGroup } from '@fizz/schemas';
 
 import type { BuilderSnapshot, SetupFacts, SetupInput, TodayOptions } from './builder-service';
@@ -233,7 +233,12 @@ export interface WorkoutRoundView {
 
 /** (22 Oct) Your workout's Time: `Time · −1 exercise ›  [−] 45 min [+]`, the same control as Today's. */
 export interface TimeRowView {
+  /** (Ben, 27 Oct) The live estimate of the workout on the page (`liveTime`): the number shown. */
   minutes: number;
+  /** The length it is held to (the set-up's, or the one Time last fitted to). */
+  length: number;
+  /** The estimate is past the length (Ben's own edits): the number in the warning tone. */
+  over: boolean;
   /** `45 min`. */
   valueText: string;
   /** The biggest change a live fit made, after the label in light orange (`−1 exercise`, `−2 sets`, `shorter rests`); null: none. */
@@ -242,7 +247,7 @@ export interface TimeRowView {
   lines: string[];
   /** The detail's `Undo`: back to this length and the workout as it was before the first change; null: nothing to undo. */
   undoMinutes: number | null;
-  /** The next length down and up (5-minute steps, 15–180); null at a limit. */
+  /** What `−` and `+` fit to: the next 5-minute step from the estimate past the length (`liveTime`); null at a limit. */
   less: number | null;
   more: number | null;
   /** VoiceOver for the note: `Time changes: −1 exercise`. */
@@ -384,26 +389,28 @@ export function todayOptionsSummary(o: TodayOptions): { text: string; accessibil
 }
 
 /**
- * The Time row (22 Oct): the length, its steps, and what a live fit changed (from the service's `time`). The note is
+ * The Time row (22 Oct; live estimate, Ben 27 Oct): the workout's estimate, its steps, and what a live fit changed (from the service's `time`). The note is
  * the biggest change: exercises left out, else sets fewer, else supersets, else shorter rests (`fitNoteOf`). Values only.
  */
 export function timeRowView(snap: BuilderSnapshot): TimeRowView {
-  const minutes = snap.setup.minutes;
+  const length = snap.setup.minutes;
   const name = (id: string) => snap.facts[id]?.name ?? 'Exercise';
   const slotName = (key: string) => name(slotsOf(snap.workout.blocks).find((s) => s.key === key)?.exerciseId ?? '');
   // One wording with Today's card (fit-to-time 22 Oct revision): rests, supersets the fit made, sets, exercises left out.
   const { note, lines } = fitNoteOf(snap.time?.changes ?? [], name, slotName);
-  const less = stepTimeMinutes(minutes, -1);
-  const more = stepTimeMinutes(minutes, 1);
+  // (Ben, 27 Oct) The number is the workout on the page (`snap.minutes`, the shared estimate), live after every edit.
+  const live = liveTime({ estimate: snap.minutes, length, floor: Math.min(length, snap.fullMinutes ?? length) });
   return {
-    minutes,
-    valueText: TODAY_V2_COPY.minutesValue(minutes),
+    minutes: live.minutes,
+    length,
+    over: live.over,
+    valueText: TODAY_V2_COPY.minutesValue(live.minutes),
     note,
     lines,
     // Hidden at the length it goes back to (as Today's card's Undo).
-    undoMinutes: note === null || snap.time === null || snap.time.fromMinutes === minutes ? null : snap.time.fromMinutes,
-    less: minutes <= FIT_RULES.minMinutes || less === minutes ? null : less,
-    more: minutes >= FIT_RULES.maxMinutes || more === minutes ? null : more,
+    undoMinutes: note === null || snap.time === null || snap.time.fromMinutes === length ? null : snap.time.fromMinutes,
+    less: live.less,
+    more: live.more,
     noteLabel: note === null ? null : `Time changes: ${note}`,
   };
 }

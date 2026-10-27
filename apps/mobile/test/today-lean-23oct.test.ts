@@ -8,6 +8,7 @@ import { slotsOf, workingCount, type BuilderWorkout } from '@fizz/domain';
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 
 import type { BuilderSnapshot, BuilderWriteResult } from '../src/builder/builder-service';
+import { workoutView } from '../src/builder/builder-view';
 import type { AppServices } from '../src/services/app-services';
 import type { TodaySelection, TodaySessionData } from '../src/services/today-session';
 import { followLatestDraft, todayCardReducer, type TodayCardState } from '../src/today/today-view';
@@ -127,7 +128,8 @@ describe('D3: Today with a plan is lean (V5: without a plan too)', () => {
     const push = s.todaySession.card(data, sel(data, dayKeyOf(data, 'Push')));
     if (push === null) throw new Error('no card');
     expect(push.rows.length).toBeGreaterThan(0);
-    expect(push.time).toMatchObject({ minutes: data.initial[push.dayKey]?.minutes, note: null, undoMinutes: null });
+    // (Ben, 27 Oct) Time shows the card's live estimate; the length is the plan's.
+    expect(push.time).toMatchObject({ minutes: push.minutes, length: data.initial[push.dayKey]?.minutes, note: null, undoMinutes: null });
     expect(push.startable).toBe(true);
     // The card has Time and the rows; Main lift, Accessories, Abs and Supersets are on Your workout (V5: no plan too).
     const card = read('screens/today/TodaySession.tsx');
@@ -216,7 +218,11 @@ describe('D3: Today’s options on Your workout opened from Today', () => {
     const after = await loaded(s);
     const card = s.todaySession.card(after, sel(after, key));
     expect(card?.edited?.draftId).toBe(snap.draftId);
-    expect(card?.time?.minutes).toBe(snap.setup.minutes);
+    // (Ben, 27 Oct) The number is the draft's live estimate, as Your workout shows it; the length is its set-up's.
+    const now = await s.builder.read(snap.draftId);
+    if (now === null) throw new Error('no draft');
+    expect(card?.time?.minutes).toBe(workoutView(now).time.minutes);
+    expect(card?.time?.length).toBe(now.setup.minutes);
   });
 
   it('Abs on adds one ab exercise; off removes it; nothing else changes', async () => {

@@ -153,7 +153,10 @@ describe('Today (v2) session card from the plan', () => {
     const short = s.todaySession.card(data, sel(data, pushKey, { minutes: shorter }));
     expect(short?.time?.note).toMatch(/^(−\d+ (exercise|exercises|set|sets)|supersets|shorter rests|shortest rests)$/);
     expect(short?.time?.lines[0]).toMatch(/^(Shorter|Shortest) rests$/);
-    expect(short?.time?.minutes).toBe(shorter);
+    // (Ben, 27 Oct) The number is the trimmed card's estimate, at or under the length asked for.
+    expect(short?.time?.length).toBe(shorter);
+    expect(short?.time?.minutes).toBe(short?.minutes);
+    expect(short?.time?.over).toBe((short?.minutes ?? 0) > shorter);
     expect(short?.time?.undoMinutes).toBe(data.initial[pushKey]?.minutes);
     expect(short?.rows[0]?.name).toBe('Bench press');
     // Supersets off: no pairs.

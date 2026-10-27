@@ -249,8 +249,8 @@ export function BuilderWorkoutScreen() {
   /**
    * (22 Oct, Ben: "add option to reduce time") Time: the service fits today's draft to the new length (the same
    * built-in fit as Today's; offline, no coach call). Steps run one at a time on the latest snapshot, so quick taps
-   * add up: `dir` steps from the length now (the view's next length down or up, none at a limit); `to` is the
-   * detail's Undo (back to the length before the first change).
+   * add up: `dir` steps from the estimate now (the view's next length down or up past the length, `liveTime`; none at
+   * a limit); `to` is the detail's Undo (back to the length before the first change).
    */
   function setTime(step: { dir: -1 | 1 } | { to: number }): Promise<void> {
     return inTurn(async () => {
@@ -622,6 +622,7 @@ export function BuilderWorkoutScreen() {
           ) : null}
           <TimeNoteRow
             minutes={v.time.minutes}
+            over={v.time.over}
             note={v.time.note}
             noteLabel={v.time.noteLabel}
             onStep={(d) => void setTime({ dir: d })}
