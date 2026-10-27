@@ -16,8 +16,8 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
  * notification; −15 s / +15 s / Skip taps queued by the (fake) intent and
  * drained through the same idempotent, versioned write path as the in-app
  * buttons; stale, duplicate, paused, too-old and foreign taps dropped; a tap
- * queued before a force-close handled after the relaunch; and never a set
- * logged from the Lock Screen.
+ * queued before a force-close handled after the relaunch; and no rest button
+ * ever logs a set (Lock Screen `Log`: lock-screen-log.test.ts).
  */
 
 const plain = (s: string) => s.replaceAll(NBSP, ' ');

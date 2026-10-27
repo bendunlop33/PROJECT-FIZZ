@@ -79,6 +79,8 @@ export function createHarness(
     lastTime?: LastTimeLayer;
     /** The Lock Screen rest buttons are deliverable (Root's `lockScreenButtonsAvailable`). */
     liveActivityButtons?: boolean;
+    /** (Ben, 27 Oct) `Log` on the Ready state too (Root's `lockScreenLogAvailable`). */
+    liveActivityLog?: boolean;
   } = {},
 ): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'fizz-harness-'));
@@ -187,6 +189,7 @@ export function createHarness(
                   tz: () => TZ,
                   ...(opts.lastTime ? { lastComparable: (st: Parameters<LastTimeLayer['lookup']>[0]) => opts.lastTime?.lookup(st) ?? (() => undefined) } : {}),
                   ...(opts.liveActivityButtons === true ? { buttons: () => true } : {}),
+                  ...(opts.liveActivityLog === true ? { log: () => true } : {}),
                 }),
               }
             : {}),

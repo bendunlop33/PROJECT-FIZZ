@@ -1,4 +1,4 @@
-import { buildLockScreenContent, lockScreenTapBase, type LastComparableLookup, type LockScreenContent, type LockScreenState } from '@fizz/domain';
+import { buildLockScreenContent, lockScreenLogTarget, lockScreenTapBase, type LastComparableLookup, type LockScreenContent, type LockScreenLog, type LockScreenState } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 /**
@@ -68,9 +68,30 @@ export interface WorkoutActivityProps {
   afterLine3: string;
   afterSide: string;
   afterA11y: string;
+  /**
+   * (Ben, 27 Oct) `Log` on the Ready state: the button's target
+   * (`fizz.log|…`, `lock-screen-log.ts`), its text `Log 80 kg × 8` and its
+   * VoiceOver label; '' = no Log (not Ready, a set that needs the app, or the
+   * build can't deliver the tap). `afterLog*`: the same for the Ready content
+   * drawn at the rest's end without the app.
+   */
+  log: string;
+  logLabel: string;
+  logA11y: string;
+  afterLog: string;
+  afterLogLabel: string;
+  afterLogA11y: string;
 }
 
-export function activityProps(c: LockScreenContent, buttons = false): WorkoutActivityProps {
+function logProps(log: LockScreenLog | null | undefined, on: boolean): { target: string; label: string; a11y: string } {
+  if (!on || log === null || log === undefined) return { target: '', label: '', a11y: '' };
+  return { target: lockScreenLogTarget(log), label: log.label, a11y: log.a11y };
+}
+
+/** `buttons`: the rest buttons can be delivered; `log`: Log too (it uses the same tap queue, so it needs `buttons`). */
+export function activityProps(c: LockScreenContent, buttons = false, log = false): WorkoutActivityProps {
+  const now = logProps(c.log, buttons && log);
+  const after = logProps(c.afterRest?.log, buttons && log);
   return {
     state: c.state,
     title: c.title,
@@ -88,6 +109,12 @@ export function activityProps(c: LockScreenContent, buttons = false): WorkoutAct
     afterLine3: c.afterRest?.line3 ?? '',
     afterSide: c.afterRest?.side ?? '',
     afterA11y: c.afterRest?.a11y ?? '',
+    log: now.target,
+    logLabel: now.label,
+    logA11y: now.a11y,
+    afterLog: after.target,
+    afterLogLabel: after.label,
+    afterLogA11y: after.a11y,
   };
 }
 
@@ -123,6 +150,8 @@ export function createLiveActivityController(
     lastComparable?: (state: SessionAggregate) => LastComparableLookup;
     /** The −15 s / +15 s / Skip buttons can be delivered on this phone and build (`lock-screen-taps.ts`). */
     buttons?: () => boolean;
+    /** (Ben, 27 Oct) `Log` on the Ready state too (`FIZZ_LA_LOG`); only with `buttons`. */
+    log?: () => boolean;
   },
 ) {
   let current: { sessionId: string; id: string; key: string } | null = null;
@@ -140,6 +169,13 @@ export function createLiveActivityController(
   const buttonsOn = (): boolean => {
     try {
       return opts.buttons?.() === true;
+    } catch {
+      return false;
+    }
+  };
+  const logOn = (): boolean => {
+    try {
+      return opts.log?.() === true;
     } catch {
       return false;
     }
@@ -215,7 +251,7 @@ export function createLiveActivityController(
       scheduleRecheck(null, nowMs);
       return;
     }
-    const props = activityProps(content, buttonsOn());
+    const props = activityProps(content, buttonsOn(), logOn());
     const key = `${JSON.stringify(props)}|${String(content.staleAtMs)}`;
     if (current === null) {
       try {

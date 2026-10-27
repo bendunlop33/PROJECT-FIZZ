@@ -56,6 +56,13 @@ import type { WorkoutActivityProps } from './controller';
  * with the rest (`after*`: the next set, its target, last time), with no
  * countdown and no buttons. The app writes the same Ready state when it next
  * runs. Not yet device-checked (device test 2026-10-12, step 5).
+ *
+ * (Ben, 27 Oct) `Log 80 kg × 8` in the Ready state (also the Ready drawn at
+ * the rest's end without the app, `afterLog*`): the same expo-widgets intent
+ * and tap queue as the rest buttons, with a `fizz.log|…` target the app turns
+ * into the versioned `log_set` the in-app Log sends (`lock-screen-log.ts`).
+ * One button, full width under the text; none while counting. Not yet
+ * device-checked (device test 2026-10-12, steps 9–14).
  */
 const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityEnvironment) => {
   'widget';
@@ -63,8 +70,8 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
   // Plain fields, no spread: the function is serialised alone, so no helper may be needed.
   const restOver = environment.isStale === true && props.state === 'resting' && props.afterTitle !== '';
   const p = restOver
-    ? { state: 'ready', title: props.afterTitle, line1: props.afterLine1, line2: props.afterLine2, line3: props.afterLine3, side: props.afterSide, a11y: props.afterA11y, tap: '', startMs: 0, endMs: 0 }
-    : { state: props.state, title: props.title, line1: props.line1, line2: props.line2, line3: props.line3, side: props.side, a11y: props.a11y, tap: props.tap, startMs: props.startMs, endMs: props.endMs };
+    ? { state: 'ready', title: props.afterTitle, line1: props.afterLine1, line2: props.afterLine2, line3: props.afterLine3, side: props.afterSide, a11y: props.afterA11y, log: props.afterLog, logLabel: props.afterLogLabel, logA11y: props.afterLogA11y, tap: '', startMs: 0, endMs: 0 }
+    : { state: props.state, title: props.title, line1: props.line1, line2: props.line2, line3: props.line3, side: props.side, a11y: props.a11y, log: props.log, logLabel: props.logLabel, logA11y: props.logA11y, tap: props.tap, startMs: props.startMs, endMs: props.endMs };
   const counting = p.endMs > 0;
   const range = { lower: new Date(p.startMs), upper: new Date(p.endMs) };
   const dim = environment.isLuminanceReduced === true;
@@ -85,23 +92,32 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
         <Button target={`${p.tap}|skip`} label="Skip" modifiers={[accessibilityLabel('Skip rest')]} />
       </HStack>
     ) : null;
+  // (Ben, 27 Oct) Ready only: log the shown set without opening the app.
+  const logButton =
+    !counting && p.state === 'ready' && p.log !== '' ? (
+      <HStack modifiers={[buttonStyle('bordered'), controlSize('regular'), tint('#EDE5DA')]}>
+        <Button target={p.log} label={p.logLabel} modifiers={[lineLimit(1), minimumScaleFactor(0.7), monospacedDigit(), accessibilityLabel(p.logA11y)]} />
+        <Spacer />
+      </HStack>
+    ) : null;
+  const controls = buttons !== null ? buttons : logButton;
   return {
     banner: (
-      <VStack alignment="leading" spacing={8} modifiers={[padding({ horizontal: 18, vertical: buttons === null ? 14 : 12 }), activityBackgroundTint('#0D0C0B')]}>
+      <VStack alignment="leading" spacing={8} modifiers={[padding({ horizontal: 18, vertical: controls === null ? 14 : 12 }), activityBackgroundTint('#0D0C0B')]}>
         <HStack alignment="center" spacing={12}>
           <VStack alignment="leading" spacing={4} modifiers={[accessibilityElement('ignore'), accessibilityLabel(p.a11y)]}>
             <HStack spacing={6}>
               <Image systemName={icon} color={iconColour} />
               <Text modifiers={[font({ size: 17, weight: 'semibold' }), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{p.title}</Text>
             </HStack>
-            {p.line1 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(buttons === null ? 2 : 1)]}>{p.line1}</Text> : null}
+            {p.line1 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(controls === null ? 2 : 1)]}>{p.line1}</Text> : null}
             {p.line2 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{p.line2}</Text> : null}
             {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1)]}>{p.line3}</Text> : null}
           </VStack>
           <Spacer />
           {big}
         </HStack>
-        {buttons}
+        {controls}
       </VStack>
     ),
     compactLeading: <Image systemName={icon} color={iconColour} />,
@@ -127,7 +143,7 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
         {p.line1 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), lineLimit(1)]}>{p.line1}</Text> : null}
         {p.line2 !== '' ? <Text modifiers={[font({ size: 17, weight: 'medium' }), monospacedDigit(), lineLimit(1)]}>{p.line2}</Text> : null}
         {p.line3 !== '' ? <Text modifiers={[font({ size: 15 }), monospacedDigit(), foregroundStyle('#B5ADA5'), lineLimit(1)]}>{p.line3}</Text> : null}
-        {buttons}
+        {controls}
       </VStack>
     ),
   };

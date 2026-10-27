@@ -21,7 +21,7 @@ import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness
  */
 
 const FIXTURE_TZ = 'Pacific/Auckland';
-const NO_AFTER = { afterTitle: '', afterLine1: '', afterLine2: '', afterLine3: '', afterSide: '', afterA11y: '' };
+const NO_AFTER = { afterTitle: '', afterLine1: '', afterLine2: '', afterLine3: '', afterSide: '', afterA11y: '', log: '', logLabel: '', logA11y: '', afterLog: '', afterLogLabel: '', afterLogA11y: '' };
 const plain = (s: string) => s.replaceAll(NBSP, ' ');
 
 interface FakeActivity {

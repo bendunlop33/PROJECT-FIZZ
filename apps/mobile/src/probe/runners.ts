@@ -538,6 +538,13 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
         afterLine3: '',
         afterSide: 'Set 2',
         afterA11y: 'Ready, probe. Bench press, set 2 of 3. Target 100 kilograms, 8 reps.',
+        // The probe never offers Log: it has no workout to write to.
+        log: '',
+        logLabel: '',
+        logA11y: '',
+        afterLog: '',
+        afterLogLabel: '',
+        afterLogA11y: '',
       },
       undefined,
       // eslint-disable-next-line no-restricted-globals -- converting an injected time, not reading the clock
