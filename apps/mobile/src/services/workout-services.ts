@@ -605,6 +605,8 @@ export interface ActiveWorkoutData {
   /** Active pain flags: the note's `check due` and the rest card's `Still hurts?` (§2.14.2). */
   painFlags: PainFlag[];
   effortScale: UserProfile['effortScale'];
+  /** (Ben, 27 Oct) Ben's unit: an empty workout's table header (`KG`) before any exercise names its own. */
+  preferredUnit?: UserProfile['preferredUnit'];
   checkIn: CheckIn | null;
   /** `Push`, from the exercises, for a workout without a name (audit F5). */
   title: string | null;
@@ -3164,6 +3166,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         painFlagged: new Set(flags.map((f) => f.exerciseId)),
         painFlags: flags,
         effortScale: p.effortScale,
+        preferredUnit: p.preferredUnit,
         checkIn: ci,
         title,
         recentPace: pace,

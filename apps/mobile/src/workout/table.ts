@@ -242,12 +242,11 @@ export async function selectRowFlow(i: SelectRowInput): Promise<{ ok: true } | {
 
 export type WorkoutView = 'table' | 'focus';
 
-export type WorkoutMenuId = 'view' | 'pause' | 'rename' | 'gym' | 'cues' | 'coach' | 'undo_fit' | 'finish' | 'edit_times' | 'discard';
+export type WorkoutMenuId = 'view' | 'pause' | 'rename' | 'gym' | 'cues' | 'coach' | 'undo_fit' | 'edit_times' | 'discard';
 
 /**
- * The top bar's `⋯` (§4.6), in order. `Finish workout` lives here (and in
- * the Log slot once all planned sets are done, never in the list or beside
- * Log). At AX1+ the gym chip moves in here.
+ * The top bar's `⋯` (§4.6), in order. (Ben, 27 Oct; redesign §E1) `Finish` is always in the top bar itself (and in
+ * the Log slot once all planned sets are done), so not in here; the gym is in here at every text size.
  */
 export function workoutMenu(o: {
   view: WorkoutView;
@@ -267,11 +266,12 @@ export function workoutMenu(o: {
     { id: 'view' as const, label: o.view === 'table' ? 'Focus view' : 'Table view' },
     ...(past ? [] : [{ id: 'pause' as const, label: o.paused ? 'Resume workout' : 'Pause workout' }]),
     ...(o.openEnded ? [] : [{ id: 'rename' as const, label: 'Rename workout' }]),
-    ...(o.ax && o.gymName !== null ? [{ id: 'gym' as const, label: `Gym: ${o.gymName} ›` }] : []),
+    // (Ben, 27 Oct; redesign §E1) The top bar keeps the name, the time, ⋯ and Finish: the gym is in ⋯ at every text size.
+    ...(o.gymName !== null ? [{ id: 'gym' as const, label: `Gym: ${o.gymName} ›` }] : []),
     ...(o.cuesOn === undefined || past ? [] : [{ id: 'cues' as const, label: o.cuesOn ? 'Turn off spoken cues' : 'Turn on spoken cues' }]),
     ...(o.undoFit === true ? [{ id: 'undo_fit' as const, label: 'Undo fit to time' }] : []),
     { id: 'coach' as const, label: 'Ask the coach' },
-    { id: 'finish' as const, label: 'Finish workout' },
+    // (Ben, 27 Oct; redesign §E1) Finish is always in the top bar, so not here too.
     { id: 'edit_times' as const, label: 'Edit workout times' },
     { id: 'discard' as const, label: 'Discard workout' },
   ];
@@ -402,6 +402,22 @@ export function cellKeypadBar(p: { field: CellField | null; fields: CellFields |
   const label = (describe: string, t: StepTarget) => (t.enabled ? `${describe} to ${t.label}` : describe);
   const limit = !f.up.enabled && f.value !== null ? f.up.reason : null;
   return { field: p.field, down: f.down, up: f.up, decreaseLabel: label(decrease, f.down), increaseLabel: label(increase, f.up), limit, next: p.next };
+}
+
+/**
+ * (Ben, 27 Oct; redesign §E1) The keypad bar's last key. Typing in the open row: `Log ✓` logs that set (VoiceOver
+ * reads what it logs, `Log 26 kg each × 8`), off while the set can't be logged yet (a missing value; the hint names
+ * it). A done row's correction: `Done` saves the correction and closes the pad (a logged set is never logged again).
+ */
+export type KeypadCommitKey =
+  | { kind: 'log'; label: 'Log ✓'; accessibilityLabel: string; enabled: boolean; hint: string | null }
+  | { kind: 'close'; label: 'Done'; accessibilityLabel: 'Done'; enabled: true; hint: null };
+
+export function keypadCommitKey(p: { row: 'open' | 'done'; logLabel: string | null; canLog: boolean; missing?: 'load' | 'reps' | 'time' | 'distance' | null }): KeypadCommitKey {
+  if (p.row === 'done') return { kind: 'close', label: 'Done', accessibilityLabel: 'Done', enabled: true, hint: null };
+  const enabled = p.logLabel !== null && p.canLog;
+  const hint = enabled || p.logLabel !== null ? null : `Enter ${p.missing ?? 'reps'}`;
+  return { kind: 'log', label: 'Log ✓', accessibilityLabel: p.logLabel ?? 'Log set', enabled, hint };
 }
 
 /**

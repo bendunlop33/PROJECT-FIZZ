@@ -32,17 +32,18 @@ describe('Edit set and planned-set edit (2.1)', () => {
   }
 });
 
-describe('Finish sheet (2.2)', () => {
+describe('Finish sheet (2.2; redesign 27 Oct §E1)', () => {
   const src = read('FinishSheet.tsx');
-  it('the body scrolls; Finish and Keep going are pinned; Discard stays at the end of the scroll', () => {
-    const scroll = src.slice(src.indexOf('<ScrollView'), src.indexOf('</ScrollView>'));
-    const footer = src.slice(src.indexOf('</ScrollView>'));
-    expect(scroll).toContain('contentContainerStyle={{ flexGrow: 1,');
-    expect(scroll).toContain('<View style={{ flex: 1 }} />');
-    expect(scroll).toContain('<DangerTextButton label="Discard workout"');
+  it('a bottom card: the sets line under the title; Finish, Keep going and Discard pinned at the bottom; a past log’s times scroll', () => {
+    expect(src).toContain('<BottomCard');
+    const header = src.slice(src.indexOf('header={'), src.indexOf('footer={'));
+    const footer = src.slice(src.indexOf('footer={'), src.indexOf('</BottomCard>'));
+    expect(header).toContain('{finishLine(model)}');
     expect(footer).toContain('<PrimaryButton label="Finish"');
-    expect(footer).toContain('<TextButton label="Keep going"');
-    expect(footer).toContain("paddingBottom: theme.space['4'] + insets.bottom");
+    expect(footer).toContain('<SecondaryButton label="Keep going"');
+    expect(footer).toContain('<DangerTextButton label="Discard workout"');
+    expect(footer.indexOf('label="Finish"')).toBeLessThan(footer.indexOf('label="Keep going"'));
+    expect(src.slice(src.indexOf('</>\n      }\n    >'))).toContain('<WorkoutTimesRows');
   });
 });
 

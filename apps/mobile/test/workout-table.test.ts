@@ -143,18 +143,22 @@ describe('selectRowFlow: save the open row’s draft, then select (review S6, N9
 });
 
 describe('Finish placement and the top bar menu (WT27, WT28, check 14)', () => {
-  it('Finish is in ⋯ (and the Log slot only when all is done), never in the list; Focus view leads', () => {
+  it('(Ben, 27 Oct; redesign §E1) Finish is in the top bar, not ⋯; the gym is in ⋯ at every text size; Focus view leads', () => {
     const m = workoutMenu({ view: 'table', paused: false, openEnded: false, ax: false, gymName: 'Main Gym' });
-    expect(m.map((x) => x.label)).toEqual(['Focus view', 'Pause workout', 'Rename workout', 'Ask the coach', 'Finish workout', 'Edit workout times', 'Discard workout']);
+    expect(m.map((x) => x.label)).toEqual(['Focus view', 'Pause workout', 'Rename workout', 'Gym: Main Gym ›', 'Ask the coach', 'Edit workout times', 'Discard workout']);
     expect(workoutMenu({ view: 'focus', paused: true, openEnded: true, ax: true, gymName: 'Main Gym' }).map((x) => x.label)).toEqual([
       'Table view',
       'Resume workout',
       'Gym: Main Gym ›',
       'Ask the coach',
-      'Finish workout',
       'Edit workout times',
       'Discard workout',
     ]);
+    expect(workoutMenu({ view: 'table', paused: false, openEnded: false, ax: false, gymName: null }).some((x) => x.id === 'gym')).toBe(false);
+    const screen = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/workout/WorkoutScreen.tsx'), 'utf8');
+    const top = screen.slice(screen.indexOf('{/* Top bar'), screen.indexOf('{tableMode || emptyTable ? ('));
+    expect(top).toContain('accessibilityLabel="Finish workout"');
+    expect(top).not.toContain('<GymChip');
   });
 
   it('Table is the default view', () => {

@@ -43,3 +43,20 @@ export function finishModel(state: SessionAggregate, nowMs: number): FinishModel
     workTimerRunning: wi !== null && (wi.status === 'running' || wi.status === 'paused'),
   };
 }
+
+/**
+ * (Ben, 27 Oct; redesign-27oct.md §E1) The Finish sheet's one line: `15 of 16 sets · 1 not done` (`16 of 16 sets`
+ * when every set is done; `Nothing logged` before the first set). The sets not done are marked skipped by Finish.
+ */
+export function finishLine(m: Pick<FinishModel, 'done' | 'total' | 'willSkip' | 'nothingLogged'>): string {
+  if (m.nothingLogged) return 'Nothing logged';
+  const sets = `${String(m.done)} of ${String(m.total)} sets`;
+  return m.willSkip > 0 ? `${sets} · ${String(m.willSkip)} not done` : sets;
+}
+
+/** Spoken: `15 of 16 sets done, 1 not done`. */
+export function finishLineSpoken(m: Pick<FinishModel, 'done' | 'total' | 'willSkip' | 'nothingLogged'>): string {
+  if (m.nothingLogged) return 'Nothing logged';
+  const sets = `${String(m.done)} of ${String(m.total)} sets done`;
+  return m.willSkip > 0 ? `${sets}, ${String(m.willSkip)} not done` : sets;
+}
