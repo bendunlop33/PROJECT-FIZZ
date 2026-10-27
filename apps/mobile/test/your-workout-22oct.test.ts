@@ -207,7 +207,7 @@ describe('Time on Your workout: the same built-in fit as Today’s, today’s dr
     const short = await cutUntilDropped(s, one);
     const v = workoutView(short);
     expect(v.time.note).toMatch(/^−\d+ exercises?$/);
-    expect(v.time.lines.some((l) => l === 'Shorter rests' || l === 'Shortest rests')).toBe(true);
+    expect(v.time.lines.some((l) => l === 'Medium rest' || l === 'Minimum rest')).toBe(true);
     expect(v.time.lines.some((l) => l.startsWith('Dropped '))).toBe(true);
     expect(v.time.undoMinutes).toBe(snap0.setup.minutes);
     expect(short.minutes).toBeLessThan(snap0.minutes);
@@ -486,10 +486,10 @@ describe('the Time row’s view', () => {
         ],
       }),
     );
-    expect(v).toMatchObject({ minutes: 45, note: '−1 exercise', lines: ['Shortest rests', 'Incline DB press 3 → 2 sets', 'Dropped Triceps pushdown'], undoMinutes: 60, less: 40, more: 50, noteLabel: 'Time changes: −1 exercise' });
+    expect(v).toMatchObject({ minutes: 45, note: '−1 exercise', lines: ['Minimum rest', 'Incline DB press 3 → 2 sets', 'Dropped Triceps pushdown'], undoMinutes: 60, less: 40, more: 50, noteLabel: 'Time changes: −1 exercise' });
     expect(v.valueText.replace('\u00a0', ' ')).toBe('45 min');
     expect(timeRowView(base(50, { fromMinutes: 60, changes: [{ kind: 'sets', slotKey: 'a', exerciseId: 'inc', from: 3, to: 2 }, { kind: 'sets', slotKey: 'c', exerciseId: 'pd', from: 3, to: 2 }] })).note).toBe('−2 sets');
-    expect(timeRowView(base(55, { fromMinutes: 60, changes: [{ kind: 'rest', from: 'normal', to: 'shorter' }] })).note).toBe('shorter rests');
+    expect(timeRowView(base(55, { fromMinutes: 60, changes: [{ kind: 'rest', from: 'normal', to: 'shorter' }] })).note).toBe('medium rest');
     // No live fit, or a fit whose cuts Ben has since undone himself: no note, no Undo.
     expect(timeRowView(base(60, null))).toMatchObject({ note: null, lines: [], undoMinutes: null });
     expect(timeRowView(base(60, { fromMinutes: 60, changes: [] }))).toMatchObject({ note: null, undoMinutes: null });

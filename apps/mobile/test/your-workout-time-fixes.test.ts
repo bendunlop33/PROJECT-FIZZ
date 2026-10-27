@@ -290,7 +290,7 @@ describe('the coach’s version over a Time fit (rule 3: Ben’s tap)', () => {
     if (after === null) throw new Error('gone');
     expect(after.workout.restLevel).toBe(short.workout.restLevel);
     expect(after.time?.changes).toEqual([{ kind: 'rest', from: 'normal', to: short.workout.restLevel }]);
-    expect(workoutView(after).time.note).toMatch(/rests$/);
+    expect(workoutView(after).time.note).toMatch(/^(medium|minimum) rest$/);
     const undo = opened(await s.builder.setTime(after.draftId, after.time?.fromMinutes ?? 0, { opId: 'coach-undo', expectedVersion: after.version }));
     expect(undo.workout.restLevel).toBe('normal');
     expect(undo.time).toBeNull();

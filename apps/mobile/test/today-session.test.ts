@@ -121,6 +121,30 @@ const nbsp = (t: string | null | undefined) => (t ?? '').replaceAll('\u00a0', ' 
 /** A set logged with no planned load: 20 kg, or no external load on a bodyweight exercise (a push-up the builder picked). */
 const fallbackLoad = (convention: LoadConvention): { value: number; unit: 'kg'; convention: LoadConvention } => ({ value: convention === 'bodyweight' ? 0 : 20, unit: 'kg', convention });
 
+describe('(Ben, 27 Oct) Rest when short on time: Today’s Time reads it', () => {
+  it('Minimum rest (default) shortens accessory rests first; Standard rest never does, it trims sets; the main lift stays first and whole', async () => {
+    const { s } = await benWithPlan();
+    const data = await loaded(s);
+    const pushKey = dayKeyOf(data, 'Push');
+    const push = s.todaySession.card(data, sel(data, pushKey));
+    if (push === null) throw new Error('no card');
+    const shorter = Math.floor((push.minutes - 5) / 5) * 5;
+    const byDefault = s.todaySession.card(data, sel(data, pushKey, { minutes: shorter }));
+    expect(byDefault?.time?.lines.filter((l) => /rest$/.test(l))).toEqual(['Minimum rest']);
+
+    const snap = await s.training.snapshot();
+    if (snap === null) throw new Error('no profile');
+    const r = await s.training.change({ kind: 'fit_rest_level', level: 'normal' }, snap.profile.version, 'rest-standard');
+    expect(r.ok).toBe(true);
+    const again = await loaded(s);
+    const standard = s.todaySession.card(again, sel(again, pushKey, { minutes: shorter }));
+    expect(standard?.time?.lines.some((l) => /rest$/.test(l))).toBe(false);
+    expect(standard?.time?.note).toMatch(/^−\d+ (exercise|exercises|set|sets)$/);
+    expect(standard?.rows[0]?.name).toBe('Bench press');
+    expect(standard?.rows[0]?.sets).toBe(push.rows[0]?.sets);
+  });
+});
+
 describe('Today (v2) session card from the plan', () => {
   it('days in plan order with NEXT; the card from the controls; picking writes nothing; Start in one tap from the committed draft with the card’s loads and plan-day provenance; Up next moves on', async () => {
     const { s, gymId, planId } = await benWithPlan();
@@ -151,8 +175,8 @@ describe('Today (v2) session card from the plan', () => {
     // Your workout.) Undo goes back to the plan's length.
     const shorter = Math.floor((push.minutes - 10) / 5) * 5;
     const short = s.todaySession.card(data, sel(data, pushKey, { minutes: shorter }));
-    expect(short?.time?.note).toMatch(/^(−\d+ (exercise|exercises|set|sets)|supersets|shorter rests|shortest rests)$/);
-    expect(short?.time?.lines[0]).toMatch(/^(Shorter|Shortest) rests$/);
+    expect(short?.time?.note).toMatch(/^(−\d+ (exercise|exercises|set|sets)|supersets|medium rest|minimum rest)$/);
+    expect(short?.time?.lines[0]).toMatch(/^(Medium|Minimum) rest$/);
     expect(short?.time?.minutes).toBe(shorter);
     expect(short?.time?.undoMinutes).toBe(data.initial[pushKey]?.minutes);
     expect(short?.rows[0]?.name).toBe('Bench press');
