@@ -86,15 +86,18 @@ describe('fitWorkoutToTime', () => {
         expect(row.reps).toBe(was.rows[i]?.reps);
       });
     }
-    // (Ben, 27 Oct) Sets before exercises: a minute longer than the first one left out, every accessory is at 2 sets and
-    // nothing is left out; then the abs (2.5 a set, Ben's choice) go before the compounds. (The bench's rests no longer
-    // shorten, so these are a minute earlier than before: 15 and 14, were 16 and 15.)
-    const crunchKey = order.find((s) => s.exerciseId === 'crunch')?.key;
-    expect(at(base, full - 15, null, full).fit?.dropped).toEqual([crunchKey]);
-    expect(at(base, full - 14, null, full).fit?.dropped).toEqual([]);
-    expect(slotsOf(at(base, full - 14, null, full).workout.blocks).filter((s) => !s.main).every((s) => workingCount(s) === 2)).toBe(true);
-    expect(slotsOf(at(base, full - 15, null, full).workout.blocks).find((s) => s.exerciseId === 'assisted_pullup')?.convention).toBe('assistance');
-    expect(slotsOf(at(base, full - 15, null, full).workout.blocks).find((s) => s.exerciseId === 'incline_db')?.convention).toBe('per_hand');
+    // (Rule F, Ben 27 Oct) The pushdown (an arm isolation on a Chest day) goes first, before any other set: at 6 shorter.
+    // (Ben, 27 Oct) Sets before exercises: a minute longer than the next one left out, every other accessory is at 2
+    // sets and nothing else is left out; then the abs (2.5 a set, Ben's choice) go before the compounds.
+    const key = (id: string) => order.find((s) => s.exerciseId === id)?.key;
+    expect(at(base, full - 5, null, full).fit?.dropped).toEqual([]);
+    expect(at(base, full - 6, null, full).fit?.dropped).toEqual([key('pushdown')]);
+    expect(at(base, full - 6, null, full).fit?.cut).toEqual({});
+    expect(at(base, full - 17, null, full).fit?.dropped).toEqual([key('pushdown'), key('crunch')]);
+    expect(at(base, full - 16, null, full).fit?.dropped).toEqual([key('pushdown')]);
+    expect(slotsOf(at(base, full - 16, null, full).workout.blocks).filter((s) => !s.main).every((s) => workingCount(s) === 2)).toBe(true);
+    expect(slotsOf(at(base, full - 17, null, full).workout.blocks).find((s) => s.exerciseId === 'assisted_pullup')?.convention).toBe('assistance');
+    expect(slotsOf(at(base, full - 17, null, full).workout.blocks).find((s) => s.exerciseId === 'incline_db')?.convention).toBe('per_hand');
   });
 
   it('no superset is ever made (Supersets off is a hard rule, review V14): pairs only stay or shrink', () => {
@@ -132,16 +135,16 @@ describe('fitWorkoutToTime', () => {
   });
 
   it('Ben’s edits after a fit stay: his set edit, a slot he deleted, a slot he added; only what the fit cut comes back (a set it took from a slot he edited too)', () => {
-    // 7 minutes shorter (was 11 before the bench's rests stopped shortening, Ben 27 Oct): rests, then one crunch set
+    // 9 minutes shorter: rests, the pushdown left out (rule F, Ben 27 Oct: the arm isolation first), then one fly set
     // (the least lost when one cut is enough).
-    const short = at(base, full - 7, null, full);
+    const short = at(base, full - 9, null, full);
     const fit = short.fit;
     if (fit === null) throw new Error('no fit');
     const cutKey = Object.keys(fit.cut ?? {})[0] ?? '';
     const edited = slotsOf(short.workout.blocks).find((s) => s.key === cutKey);
     const pull = slotsOf(short.workout.blocks).find((s) => s.exerciseId === 'assisted_pullup');
     if (edited === undefined || pull === undefined) throw new Error('missing');
-    expect(edited.exerciseId).toBe('crunch');
+    expect(edited.exerciseId).toBe('cable_fly');
     let w = short.workout;
     const e1 = applyBuilderEdit(w, { kind: 'edit_row', slotKey: edited.key, index: edited.rows.length - 1, patch: { kind: 'reps', reps: 12 } }, ctx);
     if (!e1.ok) throw new Error(e1.reason);
@@ -450,7 +453,8 @@ describe('review N3: an exercise the fit left out that Ben added back himself', 
   it('doesn’t come back a second time, and the detail stops listing it as dropped', () => {
     const base = push();
     const full = estimateBuilderMinutes(base, ctx);
-    const short = at(base, full - 16, null, full);
+    // 17 shorter: the pushdown (rule F) and then the crunch left out.
+    const short = at(base, full - 17, null, full);
     const fit = short.fit;
     const crunchKey = slotsOf(base.blocks).find((s) => s.exerciseId === 'crunch')?.key ?? '';
     if (fit === null || !fit.dropped.includes(crunchKey)) throw new Error('crunch not dropped');
@@ -469,21 +473,23 @@ describe('review N3: an exercise the fit left out that Ben added back himself', 
 });
 
 describe('one shared fit for Today and Your workout (22 Oct revision, D9)', () => {
-  it('an exercise with no builder group is an extra (1.5 a set): cut first by Today’s fit and Your workout’s Time alike', () => {
+  it('an exercise with no builder group is an extra (1.5 a set): cut first after the arm isolation (rule F) by Today’s fit and Your workout’s Time alike', () => {
     const w: BuilderWorkout = {
       restLevel: 'normal',
       blocks: [slot('bench', { main: true, sets: 4 }), slot('incline_db', { sets: 3 }), slot('cable_fly', { sets: 3 }), slot('pushdown', { sets: 3 }), { ...slot('pushdown', { sets: 3 }), key: 'ride', exerciseId: 'rowing_machine' }].map((x) => ({ slots: [x], auto: false })),
     };
     const n = estimateBuilderMinutes(w, ctx);
-    // (Ben, 27 Oct: the bench's rests no longer shorten; every accessory at 2 sets first) 15 shorter (was 16).
-    const today = fitToMinutes(w, ctx, { minutes: n - 15, mainGroup: 'Chest', grow: false, supersets: false });
-    const yours = fitToMinutes(w, ctx, { minutes: n - 15, mainGroup: 'Chest', grow: false, supersets: false, pushEffort: false });
-    expect(yours).toEqual(today);
-    const cuts = today.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop');
-    expect(cuts).toEqual([{ kind: 'drop', slotKey: 'ride', exerciseId: 'rowing_machine' }]);
-    // A little shorter, a set off the ride first (8 shorter, was 12).
-    const less = fitToMinutes(w, ctx, { minutes: n - 8, mainGroup: 'Chest', grow: false, supersets: false });
-    expect(less.steps.filter((x) => x.kind === 'sets' || x.kind === 'drop').map((x) => ('slotKey' in x ? x.slotKey : ''))).toEqual(['ride']);
+    const cutsAt = (d: number, pushEffort?: boolean) => {
+      const f = fitToMinutes(w, ctx, { minutes: n - d, mainGroup: 'Chest', grow: false, supersets: false, ...(pushEffort === undefined ? {} : { pushEffort }) });
+      return { f, cuts: f.steps.flatMap((x) => (x.kind === 'sets' || x.kind === 'drop' ? [`${x.kind} ${x.slotKey.split('#')[0] ?? ''}`] : [])) };
+    };
+    expect(cutsAt(22, false).f).toEqual(cutsAt(22).f);
+    // (Rule F, Ben 27 Oct) The pushdown first: a set off (8 shorter), then left out (9).
+    expect(cutsAt(8).cuts).toEqual(['sets pushdown']);
+    expect(cutsAt(9).cuts).toEqual(['drop pushdown']);
+    // Then the ride (an extra) before the chest: a set off (16), left out once trimming can't fit (22).
+    expect(cutsAt(16).cuts).toEqual(['drop pushdown', 'sets ride']);
+    expect(cutsAt(22).cuts).toEqual(['drop pushdown', 'drop ride']);
   });
 });
 

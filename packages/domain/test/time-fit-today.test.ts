@@ -450,3 +450,45 @@ describe('(Ben, 27 Oct) the main lift’s rests never change; accessory rests on
     }
   });
 });
+
+describe('rule F (Ben, 27 Oct): the arm isolation goes first on a day whose main group isn’t Arms', () => {
+  // The same workout with its second exercise read as an arm isolation (a pushdown): Bench is the main lift, so Chest.
+  const armInfo = (id: string): BuilderExerciseInfo | null => {
+    const i = info(id);
+    return id === RAISE.id && i !== null ? { ...i, group: 'Arms', part: 'triceps' } : i;
+  };
+  const armOffer = (s: SessionAggregate, overByMinutes: number) => timeFitOffer({ aggregate: s, overByMinutes, info: armInfo });
+
+  it('at every overrun: the fly or the crunch loses a set only once the arm isolation is left out; done sets and the bench never change', () => {
+    const s = underWay();
+    const arm = exId(s, RAISE);
+    let sawArmOut = false;
+    let sawOthersCut = false;
+    for (let n = 1; n <= 30; n += 1) {
+      const o = armOffer(s, n);
+      const armOut = o.lines.some((l) => l.kind === 'drop' && l.sessionExerciseId === arm);
+      const othersCut = o.lines.some((l) => (l.kind === 'drop' || l.kind === 'sets') && l.sessionExerciseId !== arm);
+      if (othersCut) expect(armOut, `${String(n)} over`).toBe(true);
+      sawArmOut ||= armOut;
+      sawOthersCut ||= othersCut;
+      for (const st of o.steps) {
+        const id = st.type === 'skip_exercise' ? null : st.setId;
+        const set = s.sets.find((x) => x.id === id);
+        if (set !== undefined) expect(set.status).toBe('pending');
+        expect(st.type === 'skip_exercise' && st.sessionExerciseId === exId(s, BENCH)).toBe(false);
+        if (set !== undefined) expect(set.sessionExerciseId).not.toBe(exId(s, BENCH));
+      }
+    }
+    expect(sawArmOut).toBe(true);
+    expect(sawOthersCut).toBe(true);
+  });
+
+  it('read as a Shoulders isolation instead, the same overrun trims rather than leaving it out', () => {
+    const s = underWay();
+    const raise = exId(s, RAISE);
+    const n = Array.from({ length: 30 }, (_, i) => i + 1).find((k) => armOffer(s, k).lines.some((l) => l.kind === 'drop' && l.sessionExerciseId === raise));
+    expect(n).toBeDefined();
+    const plain = offer(s, n ?? 0);
+    expect(plain.lines.some((l) => l.kind === 'drop' && l.sessionExerciseId === raise)).toBe(false);
+  });
+});

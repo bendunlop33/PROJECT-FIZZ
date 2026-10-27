@@ -278,7 +278,8 @@ describe('the builder never re-pairs a heavy lift', () => {
       { group: 'Back', count: 4 },
       { group: 'Arms', count: 2 },
     ];
-    const prev = { minutes: 40, mainLiftExerciseId: null, supersets: false, groups, dayId: 'back', variationId: null };
+    // 60 min (was 40): at 40 rule F (Ben, 27 Oct) leaves both arm isolations out, so nothing is left to pair.
+    const prev = { minutes: 60, mainLiftExerciseId: null, supersets: false, groups, dayId: 'back', variationId: null };
     const built = buildFromSetup(prev, pool, ctx).workout;
     const merged = mergeSetupChange(prev, { ...prev, supersets: true }, built, pool, ctx);
     if (merged.kind !== 'merged') throw new Error('expected a merge');

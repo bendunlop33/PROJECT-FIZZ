@@ -18,6 +18,7 @@ import {
   setWorkingCount,
   fitCarryOver,
   fitSetValue,
+  armsCutFirst,
   applyAccessoryStyleTo,
   pairSlots,
   removeSlot,
@@ -222,12 +223,17 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     const { ctx, w } = solo();
     expect(estimateBuilderMinutes(w, ctx)).toBe(71);
     const f = (m: number) => fitToMinutes(w, ctx, { minutes: m, mainGroup: 'Chest', grow: false, supersets: false });
-    // 60: a fly set and a pushdown set (3.5 lost), not the whole pushdown (4.5).
-    expect(ids(f(60).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'pushdown', 'crunch']);
-    expect(cuts(f(60)).map((c) => c.kind)).toEqual(['sets', 'sets']);
-    // (Ben, 27 Oct) 55: every accessory at 2 sets before any is left out (trimming alone fits).
-    expect(ids(f(55).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'pushdown', 'crunch']);
-    expect(cuts(f(55)).every((c) => c.kind === 'sets')).toBe(true);
+    // (Rule F, Ben 27 Oct) The pushdown (an arm isolation on a Chest day) first: a set off at 63, left out at 60 and 55,
+    // before the chest or the abs lose a set.
+    expect(ids(f(63).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'pushdown', 'crunch']);
+    expect(cuts(f(63))).toEqual([{ kind: 'sets', slotKey: all(w)[4]?.key, exerciseId: 'pushdown', from: 3, to: 2 }]);
+    for (const m of [60, 55]) {
+      expect(ids(f(m).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'crunch']);
+      expect(cuts(f(m))).toEqual([{ kind: 'drop', slotKey: all(w)[4]?.key, exerciseId: 'pushdown' }]);
+    }
+    // (Ben, 27 Oct) 50: then every other accessory at 2 sets before another is left out (trimming alone fits).
+    expect(ids(f(50).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly', 'crunch']);
+    expect(cuts(f(50)).filter((c) => c.kind === 'drop')).toHaveLength(1);
     // 45: the warmed chest compounds (no warm-ups of their own, WU2) keep more training than fly + pushdown + crunch.
     expect(ids(f(45).workout)).toEqual(['bench', 'incline_db', 'machine_press', 'cable_fly']);
     for (const m of [60, 55, 50, 45, 40, 35, 30, 25]) {
@@ -246,12 +252,14 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     expect(all(f10.workout)[0]?.rows.filter((r) => r.type !== 'warmup')).toHaveLength(4);
   });
 
-  it('cuts are listed in workout order: at 60 a fly set and a pushdown set', () => {
+  it('cuts are listed in workout order: at 50 a press set, a fly set, the pushdown, a crunch set', () => {
     const { ctx, w } = solo();
-    const r = fitToMinutes(w, ctx, { minutes: 60, mainGroup: 'Chest', grow: false, supersets: false });
+    const r = fitToMinutes(w, ctx, { minutes: 50, mainGroup: 'Chest', grow: false, supersets: false });
     expect(cuts(r)).toEqual([
+      { kind: 'sets', slotKey: all(w)[2]?.key, exerciseId: 'machine_press', from: 3, to: 2 },
       { kind: 'sets', slotKey: all(w)[3]?.key, exerciseId: 'cable_fly', from: 3, to: 2 },
-      { kind: 'sets', slotKey: all(w)[4]?.key, exerciseId: 'pushdown', from: 3, to: 2 },
+      { kind: 'drop', slotKey: all(w)[4]?.key, exerciseId: 'pushdown' },
+      { kind: 'sets', slotKey: all(w)[5]?.key, exerciseId: 'crunch', from: 3, to: 2 },
     ]);
   });
 
@@ -300,19 +308,25 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
         // (Ben, 27 Oct) Trimming sets comes before leaving anything out, so at the switch from one to the other a fit can
         // keep more value than one a minute longer (it may drop one exercise and keep the rest whole). Within each step
         // less time never keeps more; once something is left out, every shorter length leaves something out too.
-        const kept = { trim: Infinity, drop: Infinity };
+        // (Rule F, Ben 27 Oct) An arm isolation on a day whose main group isn't Arms is cut first, left out in the trim
+        // step too: "less" is the value of everything else first (`held`), then the total.
+        const cutFirst = armsCutFirst(info, d.mainGroup);
+        const kept = { trim: { held: Infinity, value: Infinity }, drop: { held: Infinity, value: Infinity } };
         let dropped = false;
         for (let m = estimateBuilderMinutes(w, ctx); m >= 15; m -= 1) {
           const r = fitToMinutes(w, ctx, { minutes: m, mainGroup: d.mainGroup, grow: false, supersets });
-          const value = all(r.workout)
-            .filter((s) => !s.main)
-            .reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, d.mainGroup), 0);
-          const drops = r.steps.some((s) => s.kind === 'drop');
+          const acc = all(r.workout).filter((s) => !s.main);
+          const valueOf = (xs: typeof acc) => xs.reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, d.mainGroup), 0);
+          const now = { held: valueOf(acc.filter((s) => !cutFirst(s))), value: valueOf(acc) };
+          const drops = r.steps.some((s) => s.kind === 'drop' && !cutFirst(s));
           if (dropped) expect(drops, `${d.main} ${String(m)} min, supersets ${String(supersets)}: left out at a longer length`).toBe(true);
           dropped = drops;
           const step = drops ? 'drop' : 'trim';
-          expect(value, `${d.main} ${String(m)} min, supersets ${String(supersets)}`).toBeLessThanOrEqual(kept[step] + 1e-9);
-          kept[step] = value;
+          const was = kept[step];
+          const label = `${d.main} ${String(m)} min, supersets ${String(supersets)}`;
+          expect(now.held, label).toBeLessThanOrEqual(was.held + 1e-9);
+          if (Math.abs(now.held - was.held) <= 1e-9) expect(now.value, label).toBeLessThanOrEqual(was.value + 1e-9);
+          kept[step] = now;
           expect(all(r.workout).find((s) => s.main)).toEqual(main);
           expect(all(r.workout).filter((s) => !s.main).every((s) => work(s) >= 2)).toBe(true);
           if (!supersets) expect(r.workout.blocks.every((b) => b.slots.length === 1)).toBe(true);
@@ -387,37 +401,49 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
         // (the sub-role exercises' sets weighed first, then the rest).
         const guardKeys = subRoleGuards(base, ctx.info, mainGroup).map((g) => g.slotKey);
         const gv = (x: BuilderWorkout) => all(x).filter((s) => guardKeys.includes(s.key)).reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, mainGroup), 0);
-        const trim: { best: { g: number; v: number } | null } = { best: null };
+        // (Rule F, Ben 27 Oct) An arm isolation on a day whose main group isn't Arms is cut first: it may be left out
+        // while the rest is only trimmed, and the value of the rest (`hv`) is weighed before the total.
+        const cutFirst = armsCutFirst(info, mainGroup);
+        const hv = (x: BuilderWorkout) => all(x).filter((s) => !s.main && !cutFirst(s)).reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, mainGroup), 0);
+        type Score = { g: number; h: number; v: number };
+        const better = (a: Score, b: Score | null) => b === null || a.g > b.g + 1e-9 || (Math.abs(a.g - b.g) <= 1e-9 && (a.h > b.h + 1e-9 || (Math.abs(a.h - b.h) <= 1e-9 && a.v > b.v + 1e-9)));
+        /** `r` keeps at least as much as `best` (guarded value, then the rest's, then the total). */
+        const atLeast = (got: Score, best: Score) => {
+          expect(got.g, `${label}: sub-role sets`).toBeGreaterThanOrEqual(best.g - 1e-9);
+          if (Math.abs(got.g - best.g) > 1e-9) return;
+          expect(got.h, `${label}: kept before the arm isolations`).toBeGreaterThanOrEqual(best.h - 1e-9);
+          if (Math.abs(got.h - best.h) <= 1e-9) expect(got.v, label).toBeGreaterThanOrEqual(best.v - 1e-9);
+        };
+        const trim: { best: Score | null } = { best: null };
         const trimWalk = (i: number, counts: Map<string, number>): void => {
           const s = acc[i];
           if (s === undefined) {
             const x = withCounts(base, counts);
             if (estimateBuilderSeconds(x, ctx) > m * 60 + 29) return;
-            const g = gv(x);
-            const v = value(x);
-            const b = trim.best;
-            if (b === null || g > b.g + 1e-9 || (Math.abs(g - b.g) <= 1e-9 && v > b.v)) trim.best = { g, v };
+            const sc = { g: gv(x), h: hv(x), v: value(x) };
+            if (better(sc, trim.best)) trim.best = sc;
             return;
           }
           const n = work(s);
+          if (cutFirst(s)) trimWalk(i + 1, new Map(counts).set(s.key, 0));
           for (let k = Math.min(2, n); k <= n; k += 1) trimWalk(i + 1, new Map(counts).set(s.key, k));
         };
         trimWalk(0, new Map());
+        const leftOut = r.steps.some((s) => s.kind === 'drop' && !cutFirst(s));
         if (trim.best !== null) {
           trimmedOnly += 1;
-          expect(r.steps.some((s) => s.kind === 'drop'), `${label}: left out while trimming fits`).toBe(false);
-          expect(gv(r.workout), `${label}: sub-role sets`).toBeGreaterThanOrEqual(trim.best.g - 1e-9);
-          if (Math.abs(gv(r.workout) - trim.best.g) <= 1e-9) expect(value(r.workout), label).toBeGreaterThanOrEqual(trim.best.v - 1e-9);
+          expect(leftOut, `${label}: left out while trimming fits`).toBe(false);
+          atLeast({ g: gv(r.workout), h: hv(r.workout), v: value(r.workout) }, trim.best);
           continue;
         }
-        expect(r.steps.some((s) => s.kind === 'drop'), `${label}: trimming alone doesn't fit`).toBe(true);
+        expect(leftOut, `${label}: trimming alone doesn't fit`).toBe(true);
         // (Ben, 24 Oct) The guarded exercises (a Back day's vertical pull and row) first: whole, then at 2+ sets with their
         // sets weighed before the rest, then the later sub-roles given up one at a time, then no guard.
         const guards = subRoleGuards(base, ctx.info, mainGroup).map((g) => g.slotKey);
         const levels: (Map<string, 'full' | 'kept'> | null)[] = guards.length === 0 ? [null] : [new Map(guards.map((k) => [k, 'full'])), ...guards.map((_, i) => new Map(guards.slice(0, guards.length - i).map((k) => [k, 'kept' as const]))), null];
         if (guards.length > 0) guarded += 1;
         const guardValue = (x: BuilderWorkout, keys: readonly string[]) => all(x).filter((s) => keys.includes(s.key)).reduce((n, s) => n + work(s) * fitSetValue(s.exerciseId, info, mainGroup), 0);
-        const top: { best: { g: number; v: number } | null } = { best: null };
+        const top: { best: Score | null } = { best: null };
         let level: Map<string, 'full' | 'kept'> | null = null;
         for (const lv of levels) {
           const walk = (i: number, counts: Map<string, number>): void => {
@@ -425,10 +451,8 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
             if (s === undefined) {
               const x = withCounts(base, counts);
               if (estimateBuilderSeconds(x, ctx) > m * 60 + 29) return;
-              const g = lv === null ? 0 : guardValue(x, [...lv.keys()]);
-              const v = value(x);
-              const b = top.best;
-              if (b === null || g > b.g + 1e-9 || (Math.abs(g - b.g) <= 1e-9 && v > b.v)) top.best = { g, v };
+              const sc = { g: lv === null ? 0 : guardValue(x, [...lv.keys()]), h: hv(x), v: value(x) };
+              if (better(sc, top.best)) top.best = sc;
               return;
             }
             const n = work(s);
@@ -449,8 +473,7 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
         const found = top.best;
         if (found === null) continue;
         const keys = level === null ? [] : [...level.keys()];
-        expect(guardValue(r.workout, keys), `${label}: sub-role coverage`).toBeGreaterThanOrEqual(found.g - 1e-9);
-        if (Math.abs(guardValue(r.workout, keys) - found.g) <= 1e-9) expect(value(r.workout), label).toBeGreaterThanOrEqual(found.v - 1e-9);
+        atLeast({ g: guardValue(r.workout, keys), h: hv(r.workout), v: value(r.workout) }, found);
       }
       expect(guarded).toBeGreaterThan(0);
       expect(trimmedOnly).toBeGreaterThan(0);
@@ -604,8 +627,9 @@ describe('fit value and the week’s carry-over (fit-to-time 22 Oct revision)', 
     // 45 (Ben, 27 Oct; was 50): a fly set, the whole pushdown and the crunch went: 3 triceps sets (the tie with Core
     // goes to the earlier group).
     expect(fitCarryOver(w, at(45), info, 'Chest')).toEqual({ group: 'Arms', sets: 3 });
-    // 60 (was 55): a set each from fly and pushdown: no group lost 2.
-    expect(fitCarryOver(w, at(60), info, 'Chest')).toBeNull();
+    // 63: one pushdown set: no group lost 2. 60 (rule F, Ben 27 Oct): the whole pushdown went first: 3 triceps sets.
+    expect(fitCarryOver(w, at(63), info, 'Chest')).toBeNull();
+    expect(fitCarryOver(w, at(60), info, 'Chest')).toEqual({ group: 'Arms', sets: 3 });
     // Fly and pushdown gone (3 sets each): the tie goes to Chest.
     const gone = (keys: readonly string[]): BuilderWorkout => ({ ...w, blocks: w.blocks.flatMap((b) => { const slots = b.slots.filter((x) => !keys.includes(x.exerciseId)); return slots.length === 0 ? [] : [{ ...b, slots }]; }) });
     expect(fitCarryOver(w, gone(['cable_fly', 'pushdown']), info, 'Chest')).toEqual({ group: 'Chest', sets: 3 });

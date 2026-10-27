@@ -383,6 +383,7 @@ export function assembleTodayDraft(input: TodayAssembleInput): TodayDraft | null
     grow: true,
     supersets: c.supersets,
     planBufferMin,
+    settle: (x) => settleWarmups(x, input.ctx),
     // The accessory Mix it up swapped out stays out for today (the fill never brings it back).
     addCandidates: {
       arm: armCandidates(built.workout, input.pool, input.ctx).filter((id) => id !== built.mix?.fromExerciseId),
