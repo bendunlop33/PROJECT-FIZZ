@@ -1,8 +1,12 @@
 # Device test: Apple Health through a patched SideStore (27 Oct 2026)
 
-ADR 0036. About 20 minutes, phone only (the Windows laptop only if step 3 fails). You install a SideStore we built with
-one upstream fix that lets a free Apple ID turn on HealthKit, then install GymSmarter again. Record each step as
+ADR 0036. About 30 minutes, phone plus the Windows laptop with iloader. You install a SideStore we built with one
+upstream fix that lets a free Apple ID turn on HealthKit, then install GymSmarter again. Record each step as
 Pass / Fail / Not run with a note, and screenshot any error.
+
+**Build 3 (27 Oct, amendment to ADR 0036):** after build 2 kept asking for a pairing file and sign-in failed with
+**-80045**, the `.ipa` is now built from a reviewed unofficial fork that fixes both (review:
+`docs/research/sidestore-ti800-review.md`). Its version ends in **`+f492137`**. Install it with iloader (§3).
 
 **Never delete GymSmarter or SideStore during this test.** Install over the top only.
 
@@ -19,6 +23,7 @@ down exactly, then pick the file:
 
 | Your version | Install |
 |---|---|
+| Contains `healthkit` (our build 1 or 2) | `SideStore-HealthKit.ipa` from the newest run (build 3, `+f492137`) |
 | `0.6.4` | **Recommended:** `SideStore-HealthKit.ipa` (moves you to 0.7, see below). Alternative: `SideStore-0.6.4-HealthKit.ipa` keeps you on 0.6.4 |
 | `0.7.0-20260911…` (alpha/stable) | `SideStore-HealthKit.ipa` |
 | Any other `0.7.0-2026…` (a nightly), or anything newer | **Stop** and send the version. We rebuild from that exact version first; installing an older SideStore over a newer one can lose its data |
@@ -42,14 +47,27 @@ touched by any of this.
 2. The summary shows each build's refs and version. Under **Artifacts**, tap the `.ipa` from §1. It lands in
    **Files › Downloads** as a plain `.ipa`. (Optional: the matching `…-README.md` lists exact refs and the SHA-256.)
 
-## 3. Install the patched SideStore (3 min)
+## 3. Install the patched SideStore with iloader (10 min)
 
-1. SideStore › **My Apps** › **+** › choose the `.ipa` from Downloads. Wait; SideStore may close itself when it has
-   replaced itself. Reopen it.
-2. Check: SideStore's version now contains **`healthkit`** (for example `0.7.0-healthkit.1+6032424`); you're still
-   signed in (Settings shows your Apple ID); My Apps still lists GymSmarter.
-3. **If the install fails:** note the error. Fallback: on the Windows laptop, iloader › **Import any IPA** › the same
-   `.ipa`, then let iloader place the pairing file (as in `docs/guides/sidestore-windows.md` §3).
+1. On the laptop, download `SideStore-HealthKit.ipa` from the run's **Artifacts**. Phone plugged in and unlocked.
+2. iloader › **Import IPA** (Import any IPA) › the `.ipa`. It installs over your SideStore.
+3. iloader › **Manage Pairing File** › **Place** (into SideStore). Do this after every SideStore install.
+4. Phone: LocalDevVPN shows **Connected**.
+5. Open SideStore. It should **not** ask for a pairing file (this build reads the file iloader placed when it
+   launches). If it asks: swipe SideStore away, reopen once. Still asking: repeat step 3, then reopen. Note which.
+6. Sign in with your Apple ID if asked, and enter the 2FA code.
+7. Check: SideStore's version contains **`healthkit`** and ends **`+f492137`**; Settings shows your Apple ID; My Apps
+   still lists GymSmarter.
+
+**If sign-in fails** (-80045, "invalid server response", or an anisette error), try these in order, signing in again
+after each, and note which one worked:
+
+1. SideStore › Settings › User Customizations › **On-Device Anisette**: off.
+2. SideStore › Settings › anisette server: pick **`ani.sidestore.zip`** from the list.
+3. SideStore › Settings › User Customizations › **Reset adi.pb** › **Reset & Sign Out** (your signing certificate is
+   kept), then sign in.
+
+Still failing: screenshot the exact error and stop. Your current GymSmarter keeps working until its expiry date.
 
 ## 4. Stop SideStore updating itself (1 min)
 
@@ -79,6 +97,8 @@ A **Refresh is not enough**: the app on the phone was signed without Health and 
 
 - SideStore version before (§1) and after (§3), and which `.ipa` you used.
 - How SideStore installed (My Apps or iloader) and whether you had to sign in again.
+- Pairing: did SideStore ask for a pairing file after iloader's **Place**, and did reopening or re-placing fix it.
+- Sign-in: worked first time, or which anisette tip (§3) fixed it; any error code (e.g. -80045).
 - Any SideStore error text at §3 or §5 (screenshots).
 - Profile › Apple Health: switches or `Not available on this install`; whether the Health permission sheet appeared.
 - Workouts still all there (yes/no).
