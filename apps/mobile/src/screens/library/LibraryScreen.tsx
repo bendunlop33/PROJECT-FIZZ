@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,6 +8,7 @@ import { NO_FILTERS, toMs, withBroadGroup, type BrowseRowView, type ExerciseFilt
 
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { EXERCISE_FORM_COPY } from '../../library/exercise-form-view';
+import { librarySegmentAtOpen } from '../../library/plan-tab-view';
 import type { LibrarySegment, LibraryStackParams } from '../../navigation/types';
 import { ResumeBar, Segmented } from '../../progress/components';
 import { useScreenData, useServices } from '../../shell/context';
@@ -35,6 +36,23 @@ export function LibraryScreen() {
   const { prefs, update } = useDevicePrefs();
   const asked = route.params?.segment;
   const [segment, setSegment] = useState<LibrarySegment>(asked ?? prefs.librarySegment);
+  const services = useServices();
+  // (UX review 27 Oct §P4) With a plan in use, Library opens on Plan (a local read; a segment Ben picks first wins).
+  const picked = useRef(false);
+  useEffect(() => {
+    let live = true;
+    void services.plans
+      .inUse()
+      .catch(() => null)
+      .then((p) => {
+        if (!live || picked.current) return;
+        setSegment((now) => librarySegmentAtOpen({ asked, remembered: now, planInUse: p !== null, plan: 'plan' }));
+      });
+    return () => {
+      live = false;
+    };
+    // Once per mount: Library opening, not every re-render.
+  }, []);
   useEffect(() => {
     if (asked !== undefined) {
       setSegment(asked);
@@ -57,6 +75,7 @@ export function LibraryScreen() {
           selected={segment}
           label={LIBRARY_BROWSE_COPY.segmentLabel}
           onSelect={(k) => {
+            picked.current = true;
             setSegment(k);
             update({ librarySegment: k });
           }}

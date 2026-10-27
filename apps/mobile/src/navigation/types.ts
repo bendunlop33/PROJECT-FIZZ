@@ -100,7 +100,8 @@ export type LibraryStackParams = {
   LibraryHome: { segment?: LibrarySegment; toast?: LibraryToastParam; plan?: string } | undefined;
   LibraryExercise: ExerciseInfoParams;
   /** Your plan › a day (Ben, 19 Oct): what Start plans here and last time's sets; Start, Edit, Ask coach. */
-  LibraryPlanDay: { routineId: string; name?: string };
+  /** `week` (27 Oct): opened from another block week on Library › Plan: that week's planned targets. */
+  LibraryPlanDay: { routineId: string; name?: string; week?: number };
 };
 
 /** (Ben, 22 Oct) Library tabs `Plan | Workouts | Exercises`. */

@@ -14,6 +14,7 @@ export * from './exercise-view';
 export * from './exercise-tab';
 export * from './plan-tracker';
 export * from './plan-overview';
+export * from './plan-tab';
 export * from './targets-hit';
 export * from './lift-picks';
 export * from './recap';

@@ -165,7 +165,7 @@ function LibraryNavigator() {
       <LibraryStack.Screen name="LibraryHome" component={LibraryScreen} options={{ headerShown: false }} />
       <LibraryStack.Screen name="LibraryExercise" component={ExerciseInfoScreen} options={({ route }) => ({ title: route.params.name ?? '', headerBackTitle: 'Library' })} />
       {/* Your plan › a day (Ben, 19 Oct): the big title is in the page; back reads `Your plan`. */}
-      <LibraryStack.Screen name="LibraryPlanDay" component={PlanDayScreen} options={{ title: '', headerBackTitle: 'Your plan' }} />
+      <LibraryStack.Screen name="LibraryPlanDay" component={PlanDayScreen} options={{ title: '', headerBackTitle: 'Plan' }} />
     </LibraryStack.Navigator>
   );
 }

@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { PB_BLOCK_COPY, PB_EDIT_COPY, pbWeekdayName, type PbBlockDay, type PbBlockStripCell } from '@fizz/domain';
+import { PB_BLOCK_COPY, PB_EDIT_COPY, planTabChips, pbWeekdayName, type PbBlockDay } from '@fizz/domain';
 
 import type { PlanBlockOverview } from '../../services/plan-services';
 import { useTheme } from '../../theme';
 import { AppText, Chip, Icon, TextButton } from '../../ui';
+import { WeekChips } from './WeekChips';
 
 /**
+ * (Ben, 27 Oct) Now the plan builder's edit preview only (Library › Plan draws its own one list, `YourPlanBlock`).
  * (Ben, 23 Oct: plan length = block 1; prototypes plan-builder.html `renderPlan`, training-blocks.html) Your plan's
  * weeks: `Week 3 of 6` with the plan's length and effort, the week strip 1…N (D on deload weeks, ✓ on done weeks),
  * and that week's days, each opening to its exercises at that week's planned sets, reps and weights. Done weeks are
@@ -68,18 +70,13 @@ export function PlanWeeksBlock({
           <Icon name="chevron.right" color="text.tertiary" size={14} />
         </Pressable>
       ) : null}
-      <View accessibilityRole="tablist" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['1'] }}>
-        {view.strip.map((c) => (
-          <WeekCell
-            key={c.week}
-            cell={{ ...c, selected: c.week === viewed }}
-            onPress={() => {
-              setViewed(c.week);
-              setOpen(null);
-            }}
-          />
-        ))}
-      </View>
+      <WeekChips
+        chips={planTabChips(view.strip, viewed)}
+        onSelect={(w) => {
+          setViewed(w);
+          setOpen(null);
+        }}
+      />
       {view.note !== null ? (
         <AppText variant="callout" color="text.secondary">
           {view.note}
@@ -103,44 +100,6 @@ export function PlanWeeksBlock({
         ))}
       </View>
     </View>
-  );
-}
-
-/** A week (≥ 44pt): its number, `D` on a deload week, a ✓ once done; selected is filled. Never colour alone. */
-function WeekCell({ cell, onPress }: { cell: PbBlockStripCell; onPress: () => void }) {
-  const theme = useTheme();
-  const tint: 'on.accent' | 'text.secondary' | 'text.primary' = cell.selected ? 'on.accent' : cell.state === 'todo' ? 'text.secondary' : 'text.primary';
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected: cell.selected }}
-      accessibilityLabel={cell.accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minWidth: 44,
-        minHeight: 44,
-        paddingHorizontal: theme.space['2'],
-        borderRadius: theme.radius.sm,
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexDirection: 'row',
-        gap: 2,
-        backgroundColor: cell.selected ? theme.colors.accent : theme.colors['bg.raised'],
-        borderWidth: cell.state === 'current' && !cell.selected ? 1.5 : 0,
-        borderColor: theme.colors.accent,
-        opacity: pressed ? 0.7 : 1,
-      })}
-    >
-      {cell.state === 'done' ? <Icon name="checkmark" color={tint} size={10} weight="bold" /> : null}
-      <AppText variant="label" color={tint} numeric>
-        {String(cell.week)}
-      </AppText>
-      {cell.deload ? (
-        <AppText variant="label" color={tint} style={{ fontSize: 11 }}>
-          D
-        </AppText>
-      ) : null}
-    </Pressable>
   );
 }
 
