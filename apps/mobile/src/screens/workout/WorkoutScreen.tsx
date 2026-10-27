@@ -11,6 +11,7 @@ import { getAlertPermission, requestAlertPermission, type AlertPermission } from
 import { restEndCueKey, setWorkoutOnScreen } from '../../alerts/presentation';
 import { nowMs as clockNow } from '../../clock';
 import { lockLogNotices } from '../../live-activity/lock-log-notice';
+import { guardScreenOpen } from '../../diagnostics/launch-settle';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { voiceCapability } from '../../voice/speaker';
 import { toggleCues } from '../../voice/settings';
@@ -381,6 +382,12 @@ export function WorkoutScreen() {
       clearTimeout(t);
     };
   }, [toast]);
+
+  // (Launch-crash guard, 27 Oct) Opening the workout is breadcrumbed until it has stayed up a few seconds: if the app
+  // closes here (at Start or at a launch into the workout), the next launch is a safe start (`launch-guard.ts`).
+  useEffect(() => {
+    guardScreenOpen('workout');
+  }, []);
 
   // (Ben, 27 Oct) A set logged from the Lock Screen: `Set 2 logged from Lock Screen · Undo`, once, when the app is open.
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');

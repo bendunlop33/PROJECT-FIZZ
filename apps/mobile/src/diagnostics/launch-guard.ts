@@ -1,0 +1,187 @@
+/**
+ * Launch-crash guard (Ben, 27 Oct 2026: "flashes then closes" on every launch
+ * after a Start, no device logs). Pure parts, unit-tested in Node;
+ * `crash-capture.ts` binds them to a small file in the app's container.
+ *
+ * A breadcrumb is written as early as JS runs (`index.ts` → `install.ts`), and
+ * again while the workout screen opens. It is removed once the app has stayed
+ * open on a screen for `LAUNCH_STABLE_MS`, or when it goes to the background
+ * (Ben left it; not a crash). One still there at the next launch means the
+ * last run closed before it settled: a JS error React Native treats as fatal,
+ * or a native crash (neither leaves the app able to say so itself).
+ *
+ * That next launch is a safe start: the unfinished workout is not opened by
+ * itself, and the optional native layers that run on launch with a workout in
+ * progress (the Live Activity, Apple Health) are left off for that run. The
+ * workout and every other record are read and kept exactly as stored; nothing
+ * is repaired or rewritten. Ben chooses Resume, Today (Discard is there, with
+ * its own confirmation) or a backup copy. A safe start that settles clears the
+ * breadcrumb like any other, so the following launch is a normal one.
+ */
+
+import { toMs } from '@fizz/domain';
+
+export const LAUNCH_GUARD_FILE = 'launch-guard.json';
+
+/** How long the app must stay open on a screen before a launch (or opening the workout) counts as settled. */
+export const LAUNCH_STABLE_MS = 8000;
+
+/**
+ * Where the last run was when it closed: launching, opening the workout screen, or inside a native call of an
+ * optional feature (the Live Activity's ActivityKit calls, Apple Health's HealthKit calls), which is breadcrumbed
+ * for its duration so a native crash in it is named at the next launch.
+ */
+export type LaunchPhase = 'launch' | 'workout' | NativeFeature;
+
+/** Optional native features a crash inside turns off on this phone until the next build (`nativeOffAfter`). */
+export type NativeFeature = 'live_activity' | 'health';
+export const NATIVE_FEATURES: readonly NativeFeature[] = ['live_activity', 'health'];
+
+/** Features turned off after a crash inside them, and the build that crashed (a new build tries them again). */
+export const NATIVE_OFF_FILE = 'native-off.json';
+
+export interface NativeOffRecord {
+  v: 1;
+  build: string | null;
+  features: NativeFeature[];
+  atUtc: string;
+}
+
+export interface LaunchBreadcrumb {
+  v: 1;
+  phase: LaunchPhase;
+  atUtc: string;
+  build: string | null;
+  /** Unsettled runs in a row, this one included. */
+  failures: number;
+}
+
+export interface LaunchGuardDecision {
+  /** Start safe: no auto-open of the workout, no Live Activity, no Apple Health on this run. */
+  safe: boolean;
+  /** The breadcrumb the last run left (null: it settled, or this is the first run). */
+  previous: LaunchBreadcrumb | null;
+}
+
+/** The saved breadcrumb, or null if missing or unreadable (never throws). */
+export function parseLaunchBreadcrumb(text: string | null | undefined): LaunchBreadcrumb | null {
+  if (text === null || text === undefined || text === '') return null;
+  try {
+    const j = JSON.parse(text) as Record<string, unknown> | null;
+    if (typeof j !== 'object' || j === null || j.v !== 1 || typeof j.atUtc !== 'string') return null;
+    toMs(j.atUtc);
+    const phase: LaunchPhase = j.phase === 'workout' || j.phase === 'live_activity' || j.phase === 'health' ? j.phase : 'launch';
+    const failures = typeof j.failures === 'number' && Number.isFinite(j.failures) && j.failures >= 1 ? Math.min(1000, Math.floor(j.failures)) : 1;
+    return { v: 1, phase, atUtc: j.atUtc, build: typeof j.build === 'string' ? j.build : null, failures };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * This launch, from what the last one left. A breadcrumb that is there at all means the last run never settled:
+ * start safe. An unreadable file counts as one too (it was written by a run that never removed it).
+ */
+export function decideLaunch(previousText: string | null | undefined): LaunchGuardDecision {
+  if (previousText === null || previousText === undefined) return { safe: false, previous: null };
+  const previous = parseLaunchBreadcrumb(previousText);
+  return { safe: true, previous };
+}
+
+/** The breadcrumb a run writes while it is not yet settled. */
+export function launchBreadcrumb(phase: LaunchPhase, atUtc: string, build: string | null, previous: LaunchBreadcrumb | null): LaunchBreadcrumb {
+  return { v: 1, phase, atUtc, build, failures: (previous?.failures ?? 0) + 1 };
+}
+
+const isFeature = (x: unknown): x is NativeFeature => x === 'live_activity' || x === 'health';
+
+export function parseNativeOff(text: string | null | undefined): NativeOffRecord | null {
+  if (text === null || text === undefined || text === '') return null;
+  try {
+    const j = JSON.parse(text) as Record<string, unknown> | null;
+    if (typeof j !== 'object' || j === null || j.v !== 1 || !Array.isArray(j.features)) return null;
+    const features = [...new Set(j.features.filter(isFeature))];
+    return { v: 1, build: typeof j.build === 'string' ? j.build : null, features, atUtc: typeof j.atUtc === 'string' ? j.atUtc : '' };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The optional native features off on this launch: those a run of THIS build closed inside (the record kept from
+ * earlier launches, plus the last run's if it closed inside one). A different build tries them all again (a fix may
+ * have landed); the build is unknown (null) on both sides only in tests. `record`: what to keep for later launches
+ * (null: nothing off, the file can go).
+ */
+export function nativeOffAfter(input: { previous: LaunchBreadcrumb | null; stored: NativeOffRecord | null; build: string | null; nowUtc: string }): { off: ReadonlySet<NativeFeature>; record: NativeOffRecord | null } {
+  const kept = input.stored !== null && input.stored.build === input.build ? input.stored.features : [];
+  const crashed = input.previous !== null && isFeature(input.previous.phase) && input.previous.build === input.build ? [input.previous.phase] : [];
+  const features = [...new Set([...kept, ...crashed])];
+  if (features.length === 0) return { off: new Set(), record: null };
+  return { off: new Set(features), record: { v: 1, build: input.build, features, atUtc: crashed.length > 0 ? input.nowUtc : (input.stored?.atUtc ?? input.nowUtc) } };
+}
+
+/**
+ * Settling: a timer from the first screen, cancelled by nothing but a new arm. Pure over its clock, so the rule
+ * ("on screen for 8 s, or sent to the background") is tested without React Native.
+ */
+export interface SettleClock {
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
+}
+
+export function createSettler(clock: SettleClock, settle: () => void) {
+  let timer: unknown = null;
+  let settled = false;
+  const fire = () => {
+    timer = null;
+    if (settled) return;
+    settled = true;
+    settle();
+  };
+  return {
+    /** A screen is up (or the workout screen opened): settle after `LAUNCH_STABLE_MS` unless re-armed. */
+    arm(): void {
+      settled = false;
+      if (timer !== null) clock.clearTimeout(timer);
+      timer = clock.setTimeout(fire, LAUNCH_STABLE_MS);
+    },
+    /** The app went to the background: whatever happens next isn't a launch crash. */
+    background(): void {
+      if (timer !== null) clock.clearTimeout(timer);
+      fire();
+    },
+    get settled(): boolean {
+      return settled;
+    },
+  };
+}
+
+/** The safe start's words (minimal, Ben 10 Oct): what happened, what is kept, the error if one was recorded. */
+export interface SafeStartView {
+  title: string;
+  lines: string[];
+  /** `Resume workout` when a workout is in progress. */
+  resume: boolean;
+}
+
+const CLOSED_WHERE: Readonly<Record<LaunchPhase, string>> = {
+  launch: 'GymSmarter closed during the last launch.',
+  workout: 'GymSmarter closed while opening the workout.',
+  live_activity: 'GymSmarter closed while starting the Live Activity.',
+  health: 'GymSmarter closed while reading Apple Health.',
+};
+
+const FEATURE_NAME: Readonly<Record<NativeFeature, string>> = { live_activity: 'Live Activity', health: 'Apple Health' };
+
+export function safeStartView(input: { workoutName: string | null; workoutOpen: boolean; lastError: { name: string; message: string; atUtc: string } | null; previous: LaunchBreadcrumb | null; offForBuild?: ReadonlySet<NativeFeature> }): SafeStartView {
+  const lines: string[] = [];
+  lines.push(CLOSED_WHERE[input.previous?.phase ?? 'launch']);
+  if (input.workoutOpen) lines.push(`${input.workoutName ?? 'Workout'} in progress · kept`);
+  const offForBuild = NATIVE_FEATURES.filter((f) => input.offForBuild?.has(f) === true).map((f) => FEATURE_NAME[f]);
+  const offForRun = NATIVE_FEATURES.filter((f) => input.offForBuild?.has(f) !== true).map((f) => FEATURE_NAME[f]);
+  if (offForBuild.length > 0) lines.push(`${offForBuild.join(' and ')} off on this build.`);
+  if (offForRun.length > 0) lines.push(`${offForRun.join(' and ')} off until next launch.`);
+  if (input.lastError !== null) lines.push(`Last error: ${input.lastError.name}: ${input.lastError.message}`);
+  return { title: 'Safe start', lines, resume: input.workoutOpen };
+}

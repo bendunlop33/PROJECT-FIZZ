@@ -17,6 +17,11 @@ import { lockScreenButtonsAvailable, lockScreenLogAvailable, nativeTapQueue, onL
 import { createLockScreenTapHandler } from '../live-activity/taps';
 import { activePainFlagged } from '../workout/pain-flagged';
 import { lazyLiveActivityPort } from '../live-activity/lazy-port';
+import type { LiveActivityPort } from '../live-activity/controller';
+import { guardNativeCall, guardNativeCallAsync, launchSafeMode, nativeFeatureOn, setLaunchGuardBackground } from '../diagnostics/crash-capture';
+import type { HealthPort } from '@fizz/providers';
+import { launchSettler } from '../diagnostics/launch-settle';
+import { AppBoundary, AppErrorScreen, SafeStartScreen } from './SafeStart';
 import { containerBackupFiles, containerTextFile, emptyTemporaryFiles, removeContainerFiles } from '../device/files';
 import { createPersonalFiles, DEVICE_PREFS_FILE } from '../device/personal-files';
 import { expoDatabaseHost, removeDatabaseFiles } from '../data/expo-sqlite-host';
@@ -48,7 +53,42 @@ const lastTime = createLastTimeCache(nowMs);
  * per workout, driven by the same reconciles as the rest alert. `Until hh:mm`
  * is in the phone's zone now, so it matches the Lock Screen clock.
  */
-const liveActivity = createLiveActivityController(lazyLiveActivityPort, {
+/**
+ * (Launch-crash guard, 27 Oct) On a safe start, or on a build the app has already closed inside ActivityKit, the Live
+ * Activity is off for the run: nothing is started, adopted or ended. Otherwise every ActivityKit call is breadcrumbed
+ * while it runs, so a native crash inside one is named at the next launch and turns the Live Activity off on this
+ * build (the rest notification stays the alert).
+ */
+const guardedLiveActivityPort: LiveActivityPort = {
+  available: () => nativeFeatureOn('live_activity') && lazyLiveActivityPort.available(),
+  listIds: () => guardNativeCall('live_activity', () => lazyLiveActivityPort.listIds()),
+  start: (props, staleAtMs) => guardNativeCall('live_activity', () => lazyLiveActivityPort.start(props, staleAtMs)),
+  update: (id, props, staleAtMs) => guardNativeCallAsync('live_activity', () => lazyLiveActivityPort.update(id, props, staleAtMs)),
+  end: (id) => guardNativeCallAsync('live_activity', () => lazyLiveActivityPort.end(id)),
+};
+
+/** (Launch-crash guard) Apple Health's HealthKit calls, breadcrumbed the same way; off on a safe start or after a crash in one on this build. */
+function guardedHealthPort(): HealthPort | null {
+  if (!nativeFeatureOn('health')) return null;
+  const p = nativeHealthPort();
+  if (p === null) return null;
+  const g = <T,>(fn: () => Promise<T>) => guardNativeCallAsync('health', fn);
+  return {
+    bundleId: p.bundleId,
+    capability: () => g(() => p.capability()),
+    requestAuthorization: (share, read) => g(() => p.requestAuthorization(share, read)),
+    workoutShareStatus: () => g(() => p.workoutShareStatus()),
+    saveWorkout: (input) => g(() => p.saveWorkout(input)),
+    deleteWorkout: (uuid) => g(() => p.deleteWorkout(uuid)),
+    deleteAllOwnWorkouts: () => g(() => p.deleteAllOwnWorkouts()),
+    readWorkouts: (since, until, hr) => g(() => p.readWorkouts(since, until, hr)),
+    readBodyMass: (since) => g(() => p.readBodyMass(since)),
+    readRestingHeartRate: (since) => g(() => p.readRestingHeartRate(since)),
+    readSleep: (since) => g(() => p.readSleep(since)),
+  };
+}
+
+const liveActivity = createLiveActivityController(guardedLiveActivityPort, {
   tz: () => deviceTimeZone(),
   painFlagged: activePainFlagged,
   lastComparable: (state) => lastTime.lookup(state),
@@ -150,6 +190,29 @@ function Launch() {
   const [slow, setSlow] = useState(false);
   // `leave`: Continue after an interrupted delete kept failing (S1).
   const [attempt, setAttempt] = useState<{ n: number; interruptedDelete: 'finish' | 'leave' }>({ n: 0, interruptedDelete: 'finish' });
+  // (Launch-crash guard) A safe start: Ben's choice on the safe screen (null: not made yet), and the navigator's
+  // remount count after a render error (it then opens at Today).
+  const safe = useMemo(() => launchSafeMode(), []);
+  const [safeChoice, setSafeChoice] = useState<'resume' | 'today' | null>(null);
+  const [navKey, setNavKey] = useState(0);
+
+  // The run settles once a screen has stayed up `LAUNCH_STABLE_MS`, or at once when the app goes to the background.
+  const ready = outcome?.kind === 'ready';
+  useEffect(() => {
+    if (!ready) return;
+    // A launch in the background (a Lock Screen button's intent) is no launch Ben sees: settle it at once.
+    if (AppState.currentState === 'background') {
+      setLaunchGuardBackground(true);
+      launchSettler.background();
+    } else launchSettler.arm();
+    const sub = AppState.addEventListener('change', (s) => {
+      setLaunchGuardBackground(s === 'background');
+      if (s === 'background') launchSettler.background();
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [ready]);
 
   useEffect(() => {
     let alive = true;
@@ -167,7 +230,8 @@ function Launch() {
       now: nowZoned,
       newId: newUuid,
       app: appInfo(),
-      restAlerts,
+      // A safe start reconciles no alert or Live Activity at launch (the workout's own commits still do).
+      ...(launchSafeMode().safe ? {} : { restAlerts }),
       idle: () => whenIdle(),
       // (ADR 0032) Launch background work waits a moment, so Today's first read never queues behind it.
       backgroundGate: () => afterLaunch(),
@@ -180,7 +244,8 @@ function Launch() {
         connection: () => readTextCoachState(coachConnectionPorts().ports),
       },
       // (ADR 0035) Apple Health: the HealthKit module if this build has it; usable only if the install's signing kept the entitlement.
-      health: { port: nativeHealthPort(), buildIncludesHealth: healthInBuild() },
+      // A safe start (or a crash in HealthKit on this build) leaves Health off for the run (shown as not available).
+      health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild() },
       dataLedger: containerTextFile(DATA_LEDGER),
       credentials: deviceCredentials(),
       interruptedDelete: attempt.interruptedDelete,
@@ -276,16 +341,36 @@ function Launch() {
             relaunchWith('finish');
           });
       };
+      const inProgress = recovery?.state.session.status === 'active' ? recovery.state : null;
+      const choosing = safe.safe && safeChoice === null;
+      // A safe start opens the workout only when Ben taps Resume; after a render error the navigator opens at Today.
+      const openWorkout = navKey === 0 && (safe.safe ? safeChoice === 'resume' && inProgress !== null : recovery?.openInto === 'active_workout');
       return (
         <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, recoveryError, restAlerts, restoreInterrupted: services.restore.interruptedRestore, signOutNotConfirmed }} relaunch={relaunch}>
-          <ForegroundAlerts services={services} />
-          <MorningReminderHost services={services} />
-          <HealthHost services={services} />
-          <AppNavigator
-            setupStep={setup.step}
-            setupUnit={setup.profile?.preferredUnit ?? null}
-            openWorkout={recovery?.openInto === 'active_workout'}
-          />
+          {safe.safe ? null : <ForegroundAlerts services={services} />}
+          {safe.safe ? null : <MorningReminderHost services={services} />}
+          {safe.safe ? null : <HealthHost services={services} />}
+          {choosing ? (
+            <SafeStartScreen
+              decision={safe}
+              workout={inProgress === null ? null : { name: inProgress.session.routineName ?? null }}
+              onResume={() => {
+                setSafeChoice('resume');
+              }}
+              onToday={() => {
+                setSafeChoice('today');
+              }}
+            />
+          ) : (
+            <AppBoundary
+              onReset={() => {
+                setNavKey((k) => k + 1);
+              }}
+              fallback={(error, reset) => <AppErrorScreen error={error} onToday={reset} />}
+            >
+              <AppNavigator key={navKey} setupStep={setup.step} setupUnit={setup.profile?.preferredUnit ?? null} openWorkout={openWorkout} />
+            </AppBoundary>
+          )}
         </AppProvider>
       );
     }
