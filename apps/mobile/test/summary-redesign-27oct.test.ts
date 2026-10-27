@@ -26,7 +26,7 @@ describe('the order on screen', () => {
       expect(i, needle).toBeGreaterThanOrEqual(0);
       return i;
     };
-    const order = ['summarySavedLine(', '<HeroHeader', 'New best</AppText>', '<StatStrip', '<NextRow', '<MainLiftRow', '<KeepRow', 'title="Exercises · done"', '<FeelRow', '<LinkedActivityRow', 'label="Ask about this workout"', '<PrimaryButton label="Done"'];
+    const order = ['{savedLine}', '<HeroHeader', 'New best</AppText>', '<StatStrip', '<NextRow', '<MainLiftRow', '<KeepRow', 'title="Exercises · done"', '<FeelRow', '<LinkedActivityRow', 'label="Ask about this workout"', '<PrimaryButton label="Done"'];
     const pos = order.map(at);
     expect([...pos].sort((x, y) => x - y)).toEqual(pos);
   });

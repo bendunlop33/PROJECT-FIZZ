@@ -307,6 +307,7 @@ export function SummaryScreen() {
   const range = `${formatTime(toMs(sum.startedAtUtc), tz)}–${sum.endedAtUtc ? formatTime(toMs(sum.endedAtUtc), tz) : ''}`;
   const edited = sum.timingEdited.end ? ' (end time edited)' : sum.timingEdited.start ? ' (start time edited)' : '';
   const failed = backup.onPhone.state === 'failed';
+  const savedLine = summarySavedLine(sum.endedAtUtc === null ? null : toMs(sum.endedAtUtc), (ms) => formatTime(ms, tz));
   const bests = data.value.newBests;
   const mainLift = data.value.mainLift;
   const keep = data.value.keep;
@@ -315,31 +316,45 @@ export function SummaryScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + theme.space['3'], paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'], gap: theme.space['5'] }}>
-        {/* (Ben, 27 Oct; redesign §E2) The Saved line: the check draws once (premium-feel §6), then the title fades in. */}
-        <DelayedFade delayMs={finish.titleDelayMs} durationMs={finish.titleFadeMs}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['2'] }}>
-            <View style={{ flex: 1, gap: theme.space['1'] }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }} accessible accessibilityLabel={`${summarySavedLine(sum.endedAtUtc === null ? null : toMs(sum.endedAtUtc), (ms) => formatTime(ms, tz))} on this phone`}>
-                <RevealOnce durationMs={finish.strokeMs} size={14} background={theme.colors['bg.canvas']}>
-                  <Icon name="checkmark.circle.fill" color="status.done" size={14} />
-                </RevealOnce>
-                <AppText variant="callout" color="text.secondary" numeric>
-                  {summarySavedLine(sum.endedAtUtc === null ? null : toMs(sum.endedAtUtc), (ms) => formatTime(ms, tz))}
-                </AppText>
+        {/* (Ben, 27 Oct; redesign §E2) The Saved line and ⋯: the check draws once (premium-feel §6), then the title fades in. */}
+        <View style={{ gap: theme.space['1'] }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }} accessible accessibilityLabel={`${savedLine} on this phone`}>
+              <RevealOnce durationMs={finish.strokeMs} size={14} background={theme.colors['bg.canvas']}>
+                <Icon name="checkmark.circle.fill" color="status.done" size={14} />
+              </RevealOnce>
+              <AppText variant="callout" color="text.secondary" numeric>
+                {savedLine}
+              </AppText>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="More"
+              accessibilityActions={moreItems.map((m) => ({ name: m.label, label: m.label }))}
+              onAccessibilityAction={(e) => {
+                moreItems.find((m) => m.label === e.nativeEvent.actionName)?.run();
+              }}
+              onPress={openMenu}
+              style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+            >
+              <Icon name="ellipsis" color="text.secondary" size={20} />
+            </Pressable>
+          </View>
+          {failed ? (
+            <LinkLine
+              accessibilityLabel="Backup didn’t save. Open Data and backup."
+              onPress={() => {
+                navigation.dispatch(popToTabs({ screen: 'Profile', params: { screen: 'DataBackup', initial: false } }));
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+                <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
+                <AppText variant="callout">Backup didn’t save ›</AppText>
               </View>
-              {failed ? (
-                <LinkLine
-                  accessibilityLabel="Backup didn’t save. Open Data and backup."
-                  onPress={() => {
-                    navigation.dispatch(popToTabs({ screen: 'Profile', params: { screen: 'DataBackup', initial: false } }));
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-                    <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
-                    <AppText variant="callout">Backup didn’t save ›</AppText>
-                  </View>
-                </LinkLine>
-              ) : null}
+            </LinkLine>
+          ) : null}
+          <DelayedFade delayMs={finish.titleDelayMs} durationMs={finish.titleFadeMs}>
+            <View style={{ gap: theme.space['1'] }}>
               {/* A date-only (imported) workout shows its date and nothing else about time (rule 6). */}
               <HeroHeader
                 title={sum.title}
@@ -359,20 +374,8 @@ export function SummaryScreen() {
                 </LinkLine>
               ) : null}
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="More"
-              accessibilityActions={moreItems.map((m) => ({ name: m.label, label: m.label }))}
-              onAccessibilityAction={(e) => {
-                moreItems.find((m) => m.label === e.nativeEvent.actionName)?.run();
-              }}
-              onPress={openMenu}
-              style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
-            >
-              <Icon name="ellipsis" color="text.secondary" size={20} />
-            </Pressable>
-          </View>
-        </DelayedFade>
+          </DelayedFade>
+        </View>
 
         {data.value.planChange !== null ? (
           <StatusLine
