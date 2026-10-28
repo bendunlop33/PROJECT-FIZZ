@@ -1,6 +1,8 @@
 import { buildLockScreenContent, lockScreenLogTarget, lockScreenTapBase, type LastComparableLookup, type LockScreenContent, type LockScreenLog, type LockScreenState } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
+import type { NativePause } from '../diagnostics/launch-guard';
+
 /**
  * Keeps the Lock Screen Live Activity in step with the workout
  * (lock-screen-and-alerts.md §2.1, §4.2; rest-state.md §4.7). Pure
@@ -121,6 +123,11 @@ export function activityProps(c: LockScreenContent, buttons = false, log = false
 export interface LiveActivityPort {
   /** The build has the widget extension (capability flag). */
   available(): boolean;
+  /**
+   * (Ben, 28 Oct) Why it is off this run on a build that has it (the launch guard: a safe start, or it closed the app
+   * on this build). Absent or null: not paused.
+   */
+  paused?(): NativePause | null;
   /** IDs of this app's activities that are still running. */
   listIds(): string[];
   /** Starts one; returns its ID. Throws when iOS refuses (Live Activities off, not in build). */
@@ -135,7 +142,8 @@ export interface ActivityClock {
   clearTimeout(handle: unknown): void;
 }
 
-export type LiveActivityStatus = 'not_in_build' | 'idle' | 'showing' | 'failed';
+/** `paused`: off this run by the launch guard (Ben, 28 Oct), not missing from the build. */
+export type LiveActivityStatus = 'not_in_build' | 'paused' | 'idle' | 'showing' | 'failed';
 
 /** Re-check a little after a countdown ends, so a Resting activity left at 0:00 turns Ready while the app runs. */
 export const DEADLINE_RECHECK_MS = 500;
@@ -301,7 +309,7 @@ export function createLiveActivityController(
       return chain;
     },
     get status(): LiveActivityStatus {
-      if (!port.available()) return 'not_in_build';
+      if (!port.available()) return (port.paused?.() ?? null) !== null ? 'paused' : 'not_in_build';
       if (failed) return 'failed';
       return current === null ? 'idle' : 'showing';
     },

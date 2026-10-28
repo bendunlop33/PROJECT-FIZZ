@@ -514,7 +514,7 @@ export function useWorkoutEdits(p: WorkoutEditsInput) {
             const a = current();
             if (a === null || popupFor === null) return POPUP_REFUSAL.changed;
             const opId = newUuid();
-            const c = addWarmupCommand(a, popupFor, { opId, at: at(), newSetId: newUuid() });
+            const c = addWarmupCommand(a, popupFor, { opId, at: at(), newSetId: newUuid(), warmupRestS: p.latest()?.restDefaultsS?.warmup });
             if (!c.ok) return POPUP_REFUSAL[c.reason];
             const r = await send(c.command);
             if (!r.ok) return latest.current.refusalText(r.error.code, r.error.message);

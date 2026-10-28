@@ -120,6 +120,7 @@ import {
   standingCoachTarget,
   type HistoryLike,
   type HistoryWorkout,
+  restDefaultsOf,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import {
@@ -931,6 +932,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       ...(warmups === 'full' ? {} : { warmups }),
       // (Ben, 27 Oct) `Rest when short on time`, as Your workout's Time.
       ...(training?.fitRestLevel === undefined ? {} : { fitRestLevel: training.fitRestLevel }),
+      // (Ben, 28 Oct) Profile › Rest times, as Your workout's: today's drafts, their ~N min and Time use Ben's defaults.
+      ...(training?.restDefaultsS === undefined ? {} : { restDefaultsS: restDefaultsOf(training) }),
     };
 
     // Each day's own sessions (credited by plan day or by its templates), newest first.
@@ -1418,7 +1421,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
   /** The builder's codec over Today's facts (per-slot state, rests from the rest level, the history each load came from). */
   function codecOf(data: TodaySessionData) {
-    return { info: data.internal.info, loads: data.internal.ctx.loads, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }), ...(data.internal.ctx.warmups === undefined ? {} : { warmups: data.internal.ctx.warmups }) };
+    return { info: data.internal.info, loads: data.internal.ctx.loads, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }), ...(data.internal.ctx.restDefaultsS === undefined ? {} : { restDefaultsS: data.internal.ctx.restDefaultsS }), ...(data.internal.ctx.warmups === undefined ? {} : { warmups: data.internal.ctx.warmups }) };
   }
 
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {

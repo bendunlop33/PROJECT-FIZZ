@@ -233,7 +233,7 @@ describe('launch guard: wiring (source checks; React Native isn’t run in Node)
     expect(root).toContain("setLaunchGuardBackground(s === 'background');");
     expect(root).toContain('createLiveActivityController(guardedLiveActivityPort');
     expect(root).toContain("...(launchSafeMode().safe ? { safe: true } : { restAlerts })");
-    expect(root).toContain('health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild() }');
+    expect(root).toContain("health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild(), paused: () => (healthInBuild() ? nativeFeaturePause('health') : null) }");
     expect(root).toContain('{safe.safe ? null : <ForegroundAlerts services={services} />}');
     expect(root).toContain('{safe.safe ? null : <HealthHost services={services} />}');
     expect(root).toContain("safe.safe ? safeChoice === 'resume' && inProgress !== null : recovery?.openInto === 'active_workout'");

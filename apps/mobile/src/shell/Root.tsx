@@ -18,7 +18,7 @@ import { createLockScreenTapHandler } from '../live-activity/taps';
 import { activePainFlagged } from '../workout/pain-flagged';
 import { lazyLiveActivityPort } from '../live-activity/lazy-port';
 import type { LiveActivityPort } from '../live-activity/controller';
-import { guardNativeCall, guardNativeCallAsync, launchSafeMode, nativeFeatureOn, setLaunchGuardBackground } from '../diagnostics/crash-capture';
+import { guardNativeCall, guardNativeCallAsync, launchSafeMode, nativeFeatureOn, nativeFeaturePause, setLaunchGuardBackground } from '../diagnostics/crash-capture';
 import type { HealthPort } from '@fizz/providers';
 import { launchSettler } from '../diagnostics/launch-settle';
 import { AppBoundary, AppErrorScreen, SafeStartScreen } from './SafeStart';
@@ -61,6 +61,8 @@ const lastTime = createLastTimeCache(nowMs);
  */
 const guardedLiveActivityPort: LiveActivityPort = {
   available: () => nativeFeatureOn('live_activity') && lazyLiveActivityPort.available(),
+  // (Ben, 28 Oct) Off by the guard on a build that has it: `paused`, not `not_in_build`.
+  paused: () => (lazyLiveActivityPort.available() ? nativeFeaturePause('live_activity') : null),
   listIds: () => guardNativeCall('live_activity', () => lazyLiveActivityPort.listIds()),
   start: (props, staleAtMs) => guardNativeCall('live_activity', () => lazyLiveActivityPort.start(props, staleAtMs)),
   update: (id, props, staleAtMs) => guardNativeCallAsync('live_activity', () => lazyLiveActivityPort.update(id, props, staleAtMs)),
@@ -245,8 +247,9 @@ function Launch() {
         connection: () => readTextCoachState(coachConnectionPorts().ports),
       },
       // (ADR 0035) Apple Health: the HealthKit module if this build has it; usable only if the install's signing kept the entitlement.
-      // A safe start (or a crash in HealthKit on this build) leaves Health off for the run (shown as not available).
-      health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild() },
+      // A safe start (or a crash in HealthKit on this build) leaves Health off for the run: `Paused for this launch` /
+      // `Paused on this build` (Ben, 28 Oct), never `Not available on this install` (that is a build without Health).
+      health: { port: guardedHealthPort(), buildIncludesHealth: healthInBuild(), paused: () => (healthInBuild() ? nativeFeaturePause('health') : null) },
       dataLedger: containerTextFile(DATA_LEDGER),
       credentials: deviceCredentials(),
       interruptedDelete: attempt.interruptedDelete,

@@ -266,7 +266,7 @@ const RAMP_CONVENTIONS: ReadonlySet<Load['convention']> = new Set(['total', 'per
  * spec says how warm-ups run in a superset). Mirrors the reducer's placement (never before a done
  * set), so the button is only offered when the write works.
  */
-export function addWarmupCommand(state: SessionAggregate, sessionExerciseId: string, op: Op & { newSetId: string }): { ok: true; command: CommandOf<'add_warmup'> } | { ok: false; reason: AddWarmupRefusal } {
+export function addWarmupCommand(state: SessionAggregate, sessionExerciseId: string, op: Op & { newSetId: string; /** (Ben, 28 Oct) Ben's warm-up rest (Rest times) when the exercise has no warm-up yet. */ warmupRestS?: number | undefined }): { ok: true; command: CommandOf<'add_warmup'> } | { ok: false; reason: AddWarmupRefusal } {
   const ex = state.exercises.find((e) => e.id === sessionExerciseId && e.removed === undefined);
   if (ex === undefined) return { ok: false, reason: 'not_found' };
   if (ex.supersetGroup !== null) return { ok: false, reason: 'superset' };
@@ -303,7 +303,7 @@ export function addWarmupCommand(state: SessionAggregate, sessionExerciseId: str
       sessionExerciseId: ex.id,
       newSetId: op.newSetId,
       planned,
-      restS: warm[0]?.rest.seconds ?? BUILDER_REST_DEFAULTS.warmup,
+      restS: warm[0]?.rest.seconds ?? op.warmupRestS ?? BUILDER_REST_DEFAULTS.warmup,
       expectedVersion: state.session.version,
     },
   };

@@ -3,7 +3,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEffect } from 'react';
 import { Switch } from 'react-native';
 
-import { checkInScheduleLine, checkInSettingsFor, fitRestLevelOf, REST_LEVEL_NAMES, REST_WHEN_SHORT_COPY, toMs } from '@fizz/domain';
+import { checkInScheduleLine, checkInSettingsFor, fitRestLevelOf, hasOwnRestDefaults, REST_LEVEL_NAMES, REST_TIMES_COPY, REST_WHEN_SHORT_COPY, restDefaultsOf, toMs } from '@fizz/domain';
 import { readTextCoachState } from '@fizz/providers';
 
 import { coachConnectionPorts } from '../../ai/coach-connection-ports';
@@ -57,7 +57,7 @@ export function ProfileScreen() {
     ]);
     const [snap, owner] = training;
     const split = snap === null || planInUse === null ? null : profileSplitRow(snap.profile, snap.mainLifts, planInUse);
-    const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg', healthWeights: snap.healthWeights }).summary, split, checkIn: checkInScheduleLine(checkInSettingsFor(snap.profile).schedule), restWhenShort: REST_LEVEL_NAMES[fitRestLevelOf(snap.profile)] };
+    const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg', healthWeights: snap.healthWeights }).summary, split, checkIn: checkInScheduleLine(checkInSettingsFor(snap.profile).schedule), restWhenShort: REST_LEVEL_NAMES[fitRestLevelOf(snap.profile)], restTimes: hasOwnRestDefaults(restDefaultsOf(snap.profile)) ? REST_TIMES_COPY.own : REST_TIMES_COPY.standard };
     return { backup, banners, pain, gyms, coach, training: lines, health };
   });
   useEffect(() => {
@@ -143,6 +143,15 @@ export function ProfileScreen() {
           subtitle={data.state === 'ready' ? (data.value.training?.checkIn ?? null) : null}
           onPress={() => {
             navigation.navigate('CheckInSettings');
+          }}
+        />
+        {/* (Ben, 28 Oct) Ben's default rests (Main lift, Top set, ... Warm-up). */}
+        <Row
+          title={REST_TIMES_COPY.title}
+          icon="stopwatch"
+          subtitle={data.state === 'ready' ? (data.value.training?.restTimes ?? null) : null}
+          onPress={() => {
+            navigation.navigate('RestTimes');
           }}
         />
         {/* (Ben, 27 Oct) How far Time may shorten accessory rests: Standard / Medium / Minimum rest (default Minimum). */}

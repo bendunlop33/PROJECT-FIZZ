@@ -15,7 +15,7 @@ import {
   type ErrorRecord,
   type GlobalHandler,
 } from './error-record';
-import { decideLaunch, LAUNCH_GUARD_FILE, launchBreadcrumb, NATIVE_OFF_FILE, nativeOffAfter, parseNativeOff, type LaunchGuardDecision, type LaunchPhase, type NativeFeature } from './launch-guard';
+import { decideLaunch, LAUNCH_GUARD_FILE, launchBreadcrumb, NATIVE_OFF_FILE, nativeOffAfter, nativePauseOf, parseNativeOff, type LaunchGuardDecision, type LaunchPhase, type NativeFeature, type NativePause } from './launch-guard';
 
 /**
  * Phone bindings for crash capture (`error-record.ts`). Installed from
@@ -280,6 +280,11 @@ export function launchSafeMode(): LaunchGuardDecision {
 /** An optional native feature is on for this run: not a safe start, and not turned off on this build by a crash in it. */
 export function nativeFeatureOn(feature: NativeFeature): boolean {
   return !launchDecision.safe && !offFeatures.has(feature);
+}
+
+/** (Ben, 28 Oct) Why a feature is off this run (safe start, or off on this build), so it reads `Paused`, not missing. */
+export function nativeFeaturePause(feature: NativeFeature): NativePause | null {
+  return nativePauseOf(feature, { safe: launchDecision.safe, offForBuild: offFeatures });
 }
 
 /** The optional native features off on this build (a crash inside them). */

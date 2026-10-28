@@ -307,7 +307,7 @@ function withHeldBack(r: WorkoutTimeFitOutcome, held: readonly CarriedHold[], ct
  * length as `fromMinutes`: Time at or below it gives the plan day back, and Start never offers the fill (D1).
  * Null when the fit changed nothing.
  */
-export function todayTimeFit(unfitted: BuilderWorkout, steps: readonly BuilderFitStep[], planMinutes: number, ctx: Pick<BuilderContext, 'info' | 'restPresetsS'>, minutes?: number): BuilderTimeFit | null {
+export function todayTimeFit(unfitted: BuilderWorkout, steps: readonly BuilderFitStep[], planMinutes: number, ctx: Pick<BuilderContext, 'info' | 'restPresetsS' | 'restDefaultsS'>, minutes?: number): BuilderTimeFit | null {
   const rank = (l: BuilderWorkout['restLevel']) => (l === 'normal' ? 0 : l === 'shorter' ? 1 : 2);
   const grew = steps.some((st) => st.kind === 'add' || (st.kind === 'sets' && st.to > st.from) || (st.kind === 'rest' && rank(st.to) < rank(st.from)));
   const shrank = steps.some((st) => st.kind === 'drop' || st.kind === 'pair' || st.kind === 'effort' || (st.kind === 'sets' && st.to < st.from) || (st.kind === 'rest' && rank(st.to) > rank(st.from)));

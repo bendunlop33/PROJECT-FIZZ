@@ -170,7 +170,7 @@ export function builderWorkoutView(snapshot: BuilderCoachSnapshot, ctx: BuilderC
       const first = work[0];
       const repsText = first === undefined ? String(s.repRange.min) : builderRepsText(first);
       const rpes = [...new Set(work.flatMap((r) => (r.rpe == null ? [] : [String(r.rpe)])))];
-      const rest = workingRestS(s, ctx.info, snapshot.workout.restLevel, ctx.restPresetsS);
+      const rest = workingRestS(s, ctx.info, snapshot.workout.restLevel, ctx.restPresetsS, ctx.restDefaultsS);
       slots.push({
         slotKey: s.key,
         exerciseId: s.exerciseId,

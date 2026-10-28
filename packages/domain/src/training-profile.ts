@@ -3,6 +3,9 @@ import {
   type BuildFocus,
   FitRestLevelSchema,
   muscleGroupOf,
+  REST_DEFAULT_LIMITS,
+  RestDefaultKeySchema,
+  type RestDefaultKey,
   SplitBodyPartSchema,
   TRAINING_LIMITS,
   TrainingProfileSchema,
@@ -209,6 +212,19 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
     }
     case 'fit_rest_level':
       return FitRestLevelSchema.safeParse(c.level).success ? { ...p, fitRestLevel: c.level } : null;
+    case 'rest_default': {
+      // (Ben, 28 Oct) Profile › Rest times: 0:30–6:00 in 15 s steps, kept as he set it (used exactly; `Reset to
+      // defaults` clears them all).
+      const L = REST_DEFAULT_LIMITS;
+      if (!RestDefaultKeySchema.safeParse(c.key).success || !intIn(c.seconds, L.minS, L.maxS) || c.seconds % L.stepS !== 0) return null;
+      const own: Partial<Record<RestDefaultKey, number>> = { ...(p.restDefaultsS ?? {}), [c.key]: c.seconds };
+      return { ...p, restDefaultsS: own };
+    }
+    case 'reset_rest_defaults': {
+      const next = { ...p };
+      delete next.restDefaultsS;
+      return next;
+    }
     case 'progress_lifts': {
       const ids = [...new Set(c.exerciseIds.map((x) => x.trim()))];
       if (ids.length > TRAINING_LIMITS.progressLiftsMax || ids.some((x) => x.length === 0 || x.length > 64)) return null;

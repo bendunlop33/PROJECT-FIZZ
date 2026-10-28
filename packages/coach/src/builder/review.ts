@@ -262,7 +262,7 @@ export function revertsEdit(e: ReviewEdit, snapshot: BuilderCoachSnapshot, outco
   const against = (a: number | null, b: number | null): boolean => e.before !== null && e.after !== null && a !== null && b !== null && sign(b - a) !== 0 && sign(b - a) === -sign(e.after - e.before);
   const rpeOf = (x: BuilderSlot | undefined) => x?.rows.find((r) => r.type === 'top')?.rpe ?? x?.rows.find((r) => r.type !== 'warmup')?.rpe ?? null;
   const repsOf = (x: BuilderSlot | undefined) => x?.rows.find((r) => r.type === 'top')?.reps ?? x?.rows.find((r) => r.type !== 'warmup')?.reps ?? null;
-  const restOf = (x: BuilderSlot | undefined, w: BuilderWorkout) => (x === undefined ? null : workingRestS(x, env.ctx.info, w.restLevel, env.ctx.restPresetsS));
+  const restOf = (x: BuilderSlot | undefined, w: BuilderWorkout) => (x === undefined ? null : workingRestS(x, env.ctx.info, w.restLevel, env.ctx.restPresetsS, env.ctx.restDefaultsS));
   switch (e.kind) {
     case 'minutes':
       return against(snapshot.minutes, outcome.minutes);
