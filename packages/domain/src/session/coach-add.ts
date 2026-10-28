@@ -58,6 +58,13 @@ export interface CoachAddInput {
   owner: UserProfile;
   opId: string;
   at: ZonedTimestamp;
+  /**
+   * ADR 0038 (Ben, 28 Oct): an exercise this gym's profile has nothing for is added anyway, with no item
+   * (loads as given); the app learns the kit separately. Absent: refused, as before.
+   */
+  kitOptional?: boolean;
+  /** ADR 0038: `args.load` is a weight Ben named himself: kept as typed (only a machine's max or pain changes it). */
+  benNamed?: boolean;
 }
 
 export interface CoachAddSummary {
@@ -124,7 +131,7 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
 
   // 5. Rule 4: something to do it on at this gym.
   const gym = { ...input.substitute.gym, equipment: currentGymEquipment(s.session) };
-  if (!doableHere(exercise, gym)) return reject(`nothing for it at ${gym.name}`);
+  if (!doableHere(exercise, gym) && input.kitOptional !== true) return reject(`nothing for it at ${gym.name}`);
 
   // 6. Position or superset partner.
   let after: string | undefined;
@@ -238,7 +245,11 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
       return out;
     }
     const f = slot?.sets[i];
+    // ADR 0038: no item to fit it to (an exercise the gym's profile doesn't have yet): Ben's or the coach's load as given.
+    if (equipment === null && p.load !== null && !timed) return { ...p, load: { ...p.load, convention: rowConvention } };
     let load: Load | null = f === undefined || f.outcome === 'dropped' ? null : f.load;
+    // ADR 0038: Ben's own weight stays as he typed it; only a machine's max (`capped`) or a pain hold moves it.
+    if (input.benNamed === true && p.load !== null && f !== undefined && load !== null && f.outcome !== 'capped' && f.painHeld !== true && p.load.unit === unit && load.convention === rowConvention) load = { ...load, value: p.load.value };
     if (p.load !== null && load === null) dropped += 1;
     if (load !== null && (load.unit !== unit || load.convention !== rowConvention)) {
       load = null;

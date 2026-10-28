@@ -455,6 +455,12 @@ export interface LoadCheckContext {
   bandsChecked?: boolean;
   /** Plan-time re-check: the easy-side bounds never make the stored load harder (review r3 S3s). */
   noRaise?: boolean;
+  /**
+   * ADR 0038 (Ben, 28 Oct: "builds up to 95 kg barbell row as the last set"): a weight Ben named himself. No
+   * ceiling (`capE` / `capLastTop` are for the coach's own choices) and no rounding to the rack: only the item's
+   * max (rule 4) and a pain hold (rule 9) change it.
+   */
+  asTyped?: boolean;
 }
 
 export type LoadSource = 'coach' | 'coach_est' | 'rule' | 'none';
@@ -634,6 +640,7 @@ export function checkProposedLoad(p: LoadProposalIn | null, slot: LoadSlot, refs
   const out = (o: Partial<LoadCheck> & Pick<LoadCheck, 'source'>): LoadCheck => ({ load: null, held: false, basis: null, coachNote: null, notUsed: null, ...o, notes: [...notes, ...(o.notes ?? [])] });
   const rule = (note: string): LoadCheck => out({ source: 'rule', notes: [note], notUsed: p?.basis ?? null });
   if (p === null) return rule('no load from coach · rule used');
+  if (ctx.asTyped === true && ctx.pain === null && refs.convention !== 'bodyweight' && Number.isFinite(p.value) && p.value > 0) return benLoad(p, refs, out);
   if (refs.convention === 'bodyweight' || p.convention !== refs.convention) return rule('wrong load type · rule used');
   if (!Number.isFinite(p.value) || p.value <= 0) return rule('no load from coach · rule used');
   const eq = refs.equipment;
@@ -710,6 +717,27 @@ export function checkProposedLoad(p: LoadProposalIn | null, slot: LoadSlot, refs
   const changed = Math.abs(final - asked) > EPS || r.load.unit !== p.unit;
   const ok = !changed && p.basis !== null && checkBasis(p.basis);
   return out({ load: r.load, source, held, basis, coachNote: ok ? p.basis : null, notUsed: ok ? null : p.basis });
+}
+
+/**
+ * ADR 0038: Ben's own weight, as he typed it (in the item's unit when it has one, else his), in the slot's
+ * convention. Only the item's range moves it (never past a machine's max, rule 4), with one note.
+ */
+function benLoad(p: LoadProposalIn, refs: LoadReferences, out: (o: Partial<LoadCheck> & Pick<LoadCheck, 'source'>) => LoadCheck): LoadCheck {
+  const eq = refs.equipment;
+  const unit = eq?.unit ?? p.unit;
+  let value = p.unit === unit ? p.value : round2(convertMass({ value: p.value, unit: p.unit }, unit).value);
+  const notes: string[] = [];
+  let capped = false;
+  if (eq !== null && eq.loadConvention === refs.convention) {
+    const r = roundToAvailableLoad({ value, unit, convention: refs.convention }, eq, 'nearest');
+    if (r.ok && r.bounded !== null) {
+      value = r.load.value;
+      capped = true;
+      notes.push(`capped at machine ${r.bounded} ${formatNumber(value)} ${unit}`);
+    }
+  }
+  return out({ load: { value, unit, convention: refs.convention }, source: 'coach', notes, basis: finalBasis('your weight', capped, value, refs.convention, unit) });
 }
 
 /** Longest stored reason basis (the reason line keeps room for `held · est. · ` and a short shape note). */

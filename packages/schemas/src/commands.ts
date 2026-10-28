@@ -479,10 +479,14 @@ export const AdjustPendingTargetsCommandSchema = z.object({
       facts: z.array(z.string().max(600)).max(20),
     })
     .optional(),
-  changes: z.array(z.object({ setId: IdSchema, target: TargetValuesSchema })).max(40),
+  /**
+   * `loadAsTyped` (ADR 0038, Ben 28 Oct): the load is a weight Ben named himself, kept as he typed it (as
+   * `edit_planned_set`'s, 27 Oct); any other load must be makeable on the row's item (rule 4).
+   */
+  changes: z.array(z.object({ setId: IdSchema, target: TargetValuesSchema, loadAsTyped: z.literal(true).optional() })).max(40),
   removeSetIds: z.array(IdSchema).max(12),
   /** New pending sets, copying type and rest from `copyFromSetId`. IDs derive from the opId, so a replay adds the same rows. */
-  addSets: z.array(z.object({ newSetId: IdSchema, copyFromSetId: IdSchema, target: TargetValuesSchema })).max(12),
+  addSets: z.array(z.object({ newSetId: IdSchema, copyFromSetId: IdSchema, target: TargetValuesSchema, loadAsTyped: z.literal(true).optional() })).max(12),
 });
 
 /**

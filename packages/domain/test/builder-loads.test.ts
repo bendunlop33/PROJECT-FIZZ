@@ -847,3 +847,29 @@ describe('review builder-v2 r5: the draft message is words only (B1u); notes kee
     expect(cut.length).toBeLessThanOrEqual(48);
   });
 });
+
+describe('ADR 0038 (Ben, 28 Oct): a weight Ben names is kept as typed in a build', () => {
+  it('his 140 kg bench is used exactly (no 20% ceiling, no rejection); the coach’s own 140 is still capped or refused', () => {
+    const mine = checkProposedLoad(P(140, 'total'), BENCH_SLOT, benchRefs(), { ...NO_PAIN, asTyped: true });
+    expect(mine).toMatchObject({ load: { value: 140, unit: 'kg', convention: 'total' }, source: 'coach', held: false, notes: [] });
+    const coach = checkProposedLoad(P(140, 'total'), BENCH_SLOT, benchRefs(), NO_PAIN);
+    expect(coach.load?.value ?? 0).toBeLessThan(140);
+  });
+
+  it('not rounded to the rack; only a machine’s max moves it; pain still holds it (rule 9)', () => {
+    expect(checkProposedLoad(P(101, 'total'), BENCH_SLOT, benchRefs(), { ...NO_PAIN, asTyped: true }).load).toEqual({ value: 101, unit: 'kg', convention: 'total' });
+    const fly = checkProposedLoad(P(140, 'stack'), slot(10, 12, 8), refs(FLY, [], [cable]), { ...NO_PAIN, asTyped: true });
+    expect(fly).toMatchObject({ load: { value: 100, convention: 'stack' }, notes: ['capped at machine max 100 kg'] });
+    const held = checkProposedLoad(P(140, 'total'), BENCH_SLOT, benchRefs(), { pain: { text: 'shoulder flagged 6 Oct' }, askedHeavier: false, asTyped: true });
+    expect(held.held).toBe(true);
+    expect(held.load?.value ?? 0).toBeLessThanOrEqual(100);
+  });
+
+  it('an assisted machine: his assistance is kept as typed inside the range', () => {
+    expect(checkProposedLoad(P(23, 'assistance'), slot(6, 8, 8), refs(PULLUP, [], [assist]), { ...NO_PAIN, asTyped: true }).load).toEqual({ value: 23, unit: 'kg', convention: 'assistance' });
+  });
+
+  it('kg/lb: a weight in lb on a kg bar is converted exactly, not rounded', () => {
+    expect(checkProposedLoad(P(225, 'total', null, 'lb'), BENCH_SLOT, benchRefs(), { ...NO_PAIN, asTyped: true }).load).toEqual({ value: 102.06, unit: 'kg', convention: 'total' });
+  });
+});

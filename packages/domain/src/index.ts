@@ -113,6 +113,7 @@ export * from './session/today-template';
 export * from './coach/trigger';
 export * from './coach/target-rpe';
 export * from './coach/adjust';
+export * from './coach/ben-loads';
 export * from './coach/session-adjust';
 export * from './coach/lighter-session';
 export * from './coach/signals';

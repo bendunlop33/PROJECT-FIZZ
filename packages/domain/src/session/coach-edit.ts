@@ -1,5 +1,5 @@
 import { coachEditStepOpId, type ActionDetail, type CoachEditStep, type CoachEditTodayCommand, type CommandOf, type EditTodayArgs, type EditTodayOp, type Exercise, type ExerciseTargetChanges, type GuardNote, type PainFlag, type SessionAggregate, type SessionExercise, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
-import { isIncrease, validateTodayAdjustment, type AdjustIntent, type MessagePain } from '../coach/adjust';
+import { isBenLoad, isIncrease, validateTodayAdjustment, type AdjustIntent, type BenLoad, type MessagePain } from '../coach/adjust';
 import { dayMonthText } from '../display';
 import { painFlagForMovement, rowIsMovement } from '../exercise-identity';
 import { PAIN_AREA_WORD } from '../pain-flags';
@@ -34,8 +34,11 @@ import { supersetLinkSides } from './order';
  *   here (both with a set left). An `add` may name an exercise already in the workout: a second copy,
  *   e.g. a superset with itself at 0 (`load`).
  *
- * A structural op that is refused refuses the whole edit (nothing half applies). Two ops on the same
- * row that would fight (a swap and a set change, two moves) are refused too. IDs derive from the
+ * ADR 0038 (Ben, 28 Oct): an op that can't be done is left out with one line (a guard note) and the rest
+ * applies, as one change with one Undo; only an edit where nothing can be done is refused. Two ops on the
+ * same row that would fight (a swap and a set change, two moves) still refuse the edit (the model's slip).
+ * `sets` lays out an exercise's remaining working sets ("build up to 95 as the last set"); weights Ben
+ * named (`benLoads`) are kept as typed, the coach's own ramp is snapped and kept under his top set. IDs derive from the
  * opId, so a replay builds the same rows. Steps run in a fixed order: targets and counts, swaps,
  * removals, adds, moves, supersets.
  */
@@ -60,6 +63,10 @@ export interface CoachEditInput {
   onlySessionExerciseId?: string | null;
   /** Reads for each `add` and `swap` op's exercise, by op index; null when it couldn't be read. */
   exercises: ReadonlyMap<number, CoachEditExerciseInputs | null>;
+  /** ADR 0038: weights Ben named in his words this turn (`namedWeights`): used as typed. */
+  benLoads?: readonly BenLoad[];
+  /** ADR 0038: an add or swap to an exercise the gym's profile has nothing for goes ahead with no item (the caller learns the kit). */
+  kitOptional?: boolean;
 }
 
 type Line = Extract<ActionDetail, { kind: 'edit_today' }>['lines'][number];
@@ -88,6 +95,7 @@ function rowOf(state: SessionAggregate, op: EditTodayOp): string | null {
     case 'set':
       return state.sets.find((s) => s.id === op.setId)?.sessionExerciseId ?? null;
     case 'set_count':
+    case 'sets':
     case 'swap':
     case 'remove':
     case 'move':
@@ -117,7 +125,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
 
   // An offer's Adjust about one row: that row's targets and set count only (review S1).
   const only = input.onlySessionExerciseId ?? null;
-  if (only !== null && ops.some((op) => (op.op !== 'set' && op.op !== 'set_count') || rowOf(s, op) !== only)) return reject(`only ${nameOf(only)}`);
+  if (only !== null && ops.some((op) => (op.op !== 'set' && op.op !== 'set_count' && op.op !== 'sets') || rowOf(s, op) !== only)) return reject(`only ${nameOf(only)}`);
 
   // Rows that a swap or removal takes over can't be changed, moved or used as an anchor by another op.
   const taken = new Map<string, number>();
@@ -131,7 +139,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       if (taken.has(op.sessionExerciseId)) return reject(`two changes to ${nameOf(op.sessionExerciseId)} at once`);
       taken.set(op.sessionExerciseId, i);
     }
-    if (op.op === 'set_count') {
+    if (op.op === 'set_count' || op.op === 'sets') {
       if (counted.has(op.sessionExerciseId)) return reject(`two set counts for ${nameOf(op.sessionExerciseId)}`);
       counted.add(op.sessionExerciseId);
     }
@@ -153,6 +161,13 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
   }
 
   const steps: CoachEditStep[] = [];
+  /** ADR 0038: an op that can't be done is left out with its line; the rest applies. */
+  const skipped: string[] = [];
+  const skip = (line: string): void => {
+    const text = line.slice(0, 200);
+    skipped.push(text);
+    notes.push({ kind: 'structural_dropped', setIds: [], text: `Not done: ${text}`.slice(0, 300) });
+  };
   const nextOpId = (): string => coachEditStepOpId(input.opId, steps.length);
   const lines: Line[] = [];
   const names = new Set<string>();
@@ -163,18 +178,54 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
   // 1. Targets and set counts: one `adjust_pending_targets` step.
   const setOps = ops.filter((op): op is Extract<EditTodayOp, { op: 'set' }> => op.op === 'set');
   const countOps = ops.filter((op): op is Extract<EditTodayOp, { op: 'set_count' }> => op.op === 'set_count');
-  if (setOps.length > 0 || countOps.length > 0) {
+  const layoutOps = ops.filter((op): op is Extract<EditTodayOp, { op: 'sets' }> => op.op === 'sets');
+  if (setOps.length > 0 || countOps.length > 0 || layoutOps.length > 0) {
     const rows = new Map<string, { sets: { setId: string; target: Extract<EditTodayOp, { op: 'set' }>['target'] }[]; more: number }>();
     const entry = (id: string) => rows.get(id) ?? rows.set(id, { sets: [], more: 0 }).get(id) ?? { sets: [], more: 0 };
     for (const op of setOps) entry(rowOf(s, op) ?? '').sets.push({ setId: op.setId, target: op.target });
     const fewer = new Map<string, WorkoutSet[]>();
     const countLines: Line[] = [];
+    /** ADR 0038: new sets with their own targets (a `sets` op longer than what's left). */
+    const addTargets: Record<string, Extract<EditTodayOp, { op: 'set' }>['target'][]> = {};
+    for (const op of layoutOps) {
+      const row = liveRow(s, op.sessionExerciseId);
+      if (row === undefined) {
+        skip('the coach named an exercise that isn’t in this workout');
+        continue;
+      }
+      const own = s.sets.filter((x) => x.sessionExerciseId === row.id && x.status !== 'deleted' && x.status !== 'skipped' && working(x)).sort((a, b) => a.index - b.index);
+      const pending = own.filter((x) => x.status === 'pending');
+      const done = own.length - pending.length;
+      const keep = Math.min(op.sets.length, pending.length);
+      for (let i = 0; i < keep; i += 1) {
+        const set = pending[i];
+        const target = op.sets[i];
+        if (set !== undefined && target !== undefined) entry(row.id).sets.push({ setId: set.id, target });
+      }
+      if (op.sets.length > pending.length) addTargets[row.id] = op.sets.slice(pending.length);
+      else if (op.sets.length < pending.length) {
+        const gone = pending.slice(op.sets.length).filter((x) => x.pairedWithSetId === null);
+        if (gone.length > 0) fewer.set(row.id, gone);
+      }
+      const total = done + op.sets.length;
+      if (total !== own.length) {
+        countLines.push({ change: 'edit', text: `${row.exerciseName}: ${String(own.length)} → ${String(total)} sets` });
+        names.add(row.exerciseName);
+      }
+      entry(row.id);
+    }
     for (const op of countOps) {
       const row = liveRow(s, op.sessionExerciseId);
-      if (row === undefined) return reject('the coach named an exercise that isn’t in this workout');
+      if (row === undefined) {
+        skip('the coach named an exercise that isn’t in this workout');
+        continue;
+      }
       const own = s.sets.filter((x) => x.sessionExerciseId === row.id && x.status !== 'deleted' && x.status !== 'skipped' && working(x)).sort((a, b) => a.index - b.index);
       const done = own.filter((x) => x.status !== 'pending').length;
-      if (op.workingSets < done) return reject(`${row.exerciseName}: ${String(done)} ${done === 1 ? 'set is' : 'sets are'} already done`);
+      if (op.workingSets < done) {
+        skip(`${row.exerciseName}: ${String(done)} ${done === 1 ? 'set is' : 'sets are'} already done`);
+        continue;
+      }
       if (op.workingSets === own.length) continue;
       if (op.workingSets > own.length) entry(row.id).more = op.workingSets - own.length;
       else {
@@ -184,7 +235,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       countLines.push({ change: 'edit', text: `${row.exerciseName}: ${String(own.length)} → ${String(op.workingSets)} sets` });
       names.add(row.exerciseName);
     }
-    const adjustRows = [...rows.entries()].filter(([, r]) => r.sets.length > 0 || r.more > 0).map(([sessionExerciseId, r]) => ({
+    const adjustRows = [...rows.entries()].filter(([id, r]) => r.sets.length > 0 || r.more > 0 || addTargets[id] !== undefined).map(([sessionExerciseId, r]) => ({
       sessionExerciseId,
       sets: r.sets.filter((x) => ![...(fewer.get(sessionExerciseId) ?? [])].some((g) => g.id === x.setId)),
       addSet: r.more > 0 ? { load: null, reps: null, rpe: null } : null,
@@ -203,14 +254,22 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
             gymName: input.gymName,
             messagePain: input.messagePain,
             ruleTargetRpe: input.ruleTargetRpe,
+            benLoads: input.benLoads,
+            addTargets,
           });
     if (v?.status === 'stale') return { status: 'stale', guardNotes: notes };
     if (v !== null) notes.push(...v.guardNotes);
     const plans = v?.status === 'apply' ? v.exercises : [];
-    // A set count the checks held (pain, a lighter session) is refused rather than quietly dropped.
+    const typedIds = new Set(v?.status === 'apply' ? (v.asTypedSetIds ?? []) : []);
+    // A set count the checks held (pain, a lighter session) is left out with its line, never quietly dropped.
+    const heldLine = (rowId: string): string => (v?.status === 'unchanged' ? v.outcome.replace(/\s*(?:Sets unchanged|Nothing changed)\.?$/i, '') : `no more sets of ${nameOf(rowId)}`);
     for (const [rowId, r] of rows) {
-      if (r.more > 0 && !plans.some((p) => p.sessionExerciseId === rowId && p.added !== null)) {
-        return reject(v?.status === 'unchanged' ? v.outcome.replace(/\s*(?:Sets unchanged|Nothing changed)\.?$/i, '') : `no more sets of ${nameOf(rowId)}`);
+      const wantedMore = r.more > 0 || (addTargets[rowId]?.length ?? 0) > 0;
+      const gotMore = plans.some((p) => p.sessionExerciseId === rowId && (p.added !== null || (p.addedMore?.length ?? 0) > 0));
+      if (wantedMore && !gotMore) {
+        skip(heldLine(rowId));
+        const line = countLines.findIndex((l) => l.text.startsWith(`${nameOf(rowId)}:`));
+        if (line >= 0) countLines.splice(line, 1);
       }
     }
     const changes: CommandOf<'adjust_pending_targets'>['changes'] = [];
@@ -222,16 +281,20 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       const out = record(p.sessionExerciseId);
       for (const c of p.changes) {
         if (c.before === null || c.after === null) continue;
-        changes.push({ setId: c.setId, target: c.after });
+        changes.push({ setId: c.setId, target: c.after, ...(typedIds.has(c.setId) ? { loadAsTyped: true as const } : {}) });
         out.changes.push(c);
       }
       if (p.added !== null) {
         const more = rows.get(p.sessionExerciseId)?.more ?? 1;
         for (let k = 0; k < more; k += 1) {
           const setId = k === 0 ? p.added.setId : deriveId(`coach-edit-set:${input.opId}:${p.sessionExerciseId}:${String(k)}`);
-          addSets.push({ newSetId: setId, copyFromSetId: p.added.copyFromSetId, target: p.added.after });
+          addSets.push({ newSetId: setId, copyFromSetId: p.added.copyFromSetId, target: p.added.after, ...(typedIds.has(p.added.setId) ? { loadAsTyped: true as const } : {}) });
           out.changes.push({ setId, setNumber: p.added.setNumber + k, before: null, after: p.added.after });
         }
+      }
+      for (const a of p.addedMore ?? []) {
+        addSets.push({ newSetId: a.setId, copyFromSetId: a.copyFromSetId, target: a.after, ...(typedIds.has(a.setId) ? { loadAsTyped: true as const } : {}) });
+        out.changes.push({ setId: a.setId, setNumber: a.setNumber, before: null, after: a.after });
       }
       names.add(p.exerciseName);
     }
@@ -247,9 +310,9 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     if (changes.length > 0 || addSets.length > 0 || removeSetIds.length > 0) {
       steps.push({ type: 'adjust_pending_targets', at: input.at, opId: nextOpId(), expectedVersion: input.args.baseVersion, actionId: input.actionId, reason: input.args.reason, changes, removeSetIds, addSets });
       lines.push(...countLines);
-    } else if (ops.every((op) => op.op === 'set' || op.op === 'set_count')) {
+    } else if (ops.every((op) => op.op === 'set' || op.op === 'set_count' || op.op === 'sets')) {
       // Nothing structural, and no target changed: the checks' own line.
-      return reject(v?.status === 'unchanged' ? v.outcome.replace(/\s*(?:Sets unchanged|Nothing changed)\.?$/i, '') : 'no change');
+      return reject(skipped[0] ?? (v?.status === 'unchanged' ? v.outcome.replace(/\s*(?:Sets unchanged|Nothing changed)\.?$/i, '') : 'no change'));
     }
   }
 
@@ -265,18 +328,39 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
   for (const [i, op] of ops.entries()) {
     if (op.op !== 'swap') continue;
     const row = liveRow(s, op.sessionExerciseId);
-    if (row === undefined) return reject('the coach named an exercise that isn’t in this workout');
+    if (row === undefined) {
+      skip('the coach named an exercise that isn’t in this workout');
+      continue;
+    }
     const slot = midSwapSlot(s, row.id);
-    if (slot === null) return reject(`nothing left to swap: ${row.exerciseName} is done`);
+    if (slot === null) {
+      skip(`nothing left to swap: ${row.exerciseName} is done`);
+      continue;
+    }
     const got = input.exercises.get(i) ?? null;
     const exercise = got?.exercise ?? null;
-    if (got === null || exercise === null) return reject('it isn’t one of your exercises');
+    if (got === null || exercise === null) {
+      skip('it isn’t one of your exercises');
+      continue;
+    }
     const ids = [exercise.id, ...(got.sameMovementIds ?? [])];
-    if (exercise.id === row.exerciseId || s.exercises.some((e) => e.removed === undefined && rowIsMovement(e, exercise, ids))) return reject(`${exercise.name} is already in today’s workout`);
-    if (exercise.measurement !== row.measurement) return reject(`${exercise.name} is measured differently`);
-    if (!doableHere(exercise, { ...got.substitute.gym, equipment: currentGymEquipment(s.session) })) return reject(`nothing for ${exercise.name} at ${got.substitute.gym.name}`);
+    if (exercise.id === row.exerciseId || s.exercises.some((e) => e.removed === undefined && rowIsMovement(e, exercise, ids))) {
+      skip(`${exercise.name} is already in today’s workout`);
+      continue;
+    }
+    if (exercise.measurement !== row.measurement) {
+      skip(`${exercise.name} is measured differently`);
+      continue;
+    }
+    if (input.kitOptional !== true && !doableHere(exercise, { ...got.substitute.gym, equipment: currentGymEquipment(s.session) })) {
+      skip(`nothing for ${exercise.name} at ${got.substitute.gym.name}`);
+      continue;
+    }
     const pain = flagged(exercise, ids);
-    if (pain !== null) return reject(pain);
+    if (pain !== null) {
+      skip(pain);
+      continue;
+    }
     // Pain on the row being swapped holds the substitute today (B5, rule 9).
     const carried = swapPainCarry(s, row.id, input.painFlags);
     const sctx = { ...got.substitute, gym: { ...got.substitute.gym, equipment: currentGymEquipment(s.session) }, sessionPain: got.substitute.sessionPain.active ? got.substitute.sessionPain : carried };
@@ -295,7 +379,10 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       at: input.at,
       newId: () => deriveId(`coach-edit-swap:${opId}:${String((n += 1))}`),
     });
-    if (!built.ok) return reject(built.reason === 'measurement' ? `${exercise.name} is measured differently` : `nothing left to swap: ${row.exerciseName} is done`);
+    if (!built.ok) {
+      skip(built.reason === 'measurement' ? `${exercise.name} is measured differently` : `nothing left to swap: ${row.exerciseName} is done`);
+      continue;
+    }
     steps.push(built.command);
     used.push(exercise);
     lines.push({ change: 'swap', text: `${row.exerciseName} → ${exercise.name}` });
@@ -306,9 +393,15 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
   for (const op of ops) {
     if (op.op !== 'remove') continue;
     const row = liveRow(s, op.sessionExerciseId);
-    if (row === undefined) return reject('the coach named an exercise that isn’t in this workout');
+    if (row === undefined) {
+      skip('the coach named an exercise that isn’t in this workout');
+      continue;
+    }
     const own = s.sets.filter((x) => x.sessionExerciseId === row.id && x.status !== 'deleted');
-    if (!own.some((x) => x.status === 'pending')) return reject(`${row.exerciseName} is done`);
+    if (!own.some((x) => x.status === 'pending')) {
+      skip(`${row.exerciseName} is done`);
+      continue;
+    }
     const parted = row.continuesFromId !== undefined || s.exercises.some((e) => e.continuesFromId === row.id && e.removed === undefined);
     if (own.some((x) => x.status === 'completed') || parted) {
       steps.push({ type: 'skip_exercise', at: input.at, opId: nextOpId(), sessionExerciseId: row.id });
@@ -325,7 +418,10 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
   for (const [i, op] of ops.entries()) {
     if (op.op !== 'add') continue;
     const got = input.exercises.get(i) ?? null;
-    if (got === null || got.exercise === null) return reject('it isn’t one of your exercises');
+    if (got === null || got.exercise === null) {
+      skip('it isn’t one of your exercises');
+      continue;
+    }
     const opId = nextOpId();
     const after = op.afterSessionExerciseId === null ? null : (placedAfter.get(op.afterSessionExerciseId) ?? op.afterSessionExerciseId);
     const check = checkCoachAdd({
@@ -334,11 +430,14 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       ...got,
       opId,
       at: input.at,
+      ...(input.kitOptional === true ? { kitOptional: true } : {}),
+      ...(op.load != null && op.load > 0 && isBenLoad({ value: op.load, unit: got.owner.preferredUnit, convention: 'total' }, input.benLoads) ? { benNamed: true } : {}),
     });
     if (check.status === 'stale') return { status: 'stale', guardNotes: notes };
     if (check.status === 'rejected') {
       notes.push(...check.guardNotes);
-      return reject(`${check.exerciseName ?? 'that exercise'}: ${check.failure}`);
+      skip(`${check.exerciseName ?? 'that exercise'}: ${check.failure}`);
+      continue;
     }
     const command = after === null || op.supersetWithSessionExerciseId !== null ? check.command : { ...check.command, afterSessionExerciseId: after };
     if (op.afterSessionExerciseId !== null) placedAfter.set(op.afterSessionExerciseId, command.newSessionExerciseId);
@@ -356,11 +455,23 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
   for (const op of ops) {
     if (op.op !== 'move') continue;
     const row = liveRow(s, op.sessionExerciseId);
-    if (row === undefined) return reject('the coach named an exercise that isn’t in this workout');
-    if (!s.sets.some((x) => x.sessionExerciseId === row.id && x.status === 'pending')) return reject(`${row.exerciseName} is done`);
+    if (row === undefined) {
+      skip('the coach named an exercise that isn’t in this workout');
+      continue;
+    }
+    if (!s.sets.some((x) => x.sessionExerciseId === row.id && x.status === 'pending')) {
+      skip(`${row.exerciseName} is done`);
+      continue;
+    }
     const after = op.afterSessionExerciseId === null ? null : liveRow(s, op.afterSessionExerciseId);
-    if (after === undefined) return reject('the coach named an exercise that isn’t in this workout');
-    if (after !== null && after.id === row.id) return reject(`${row.exerciseName} can’t go after itself`);
+    if (after === undefined) {
+      skip('the coach named an exercise that isn’t in this workout');
+      continue;
+    }
+    if (after !== null && after.id === row.id) {
+      skip(`${row.exerciseName} can’t go after itself`);
+      continue;
+    }
     steps.push({ type: 'move_exercise', at: input.at, opId: nextOpId(), sessionExerciseId: row.id, afterSessionExerciseId: after?.id ?? null, expectedVersion: input.args.baseVersion });
     lines.push({ change: 'reorder', text: after === null ? `${row.exerciseName} moved first` : `${row.exerciseName} moved after ${after.exerciseName}` });
     names.add(row.exerciseName);
@@ -371,11 +482,20 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
   for (const op of ops) {
     if (op.op !== 'superset' && op.op !== 'split_superset') continue;
     const row = liveRow(s, op.sessionExerciseId);
-    if (row === undefined) return reject('the coach named an exercise that isn’t in this workout');
-    if (grouped.has(row.id)) return reject(`two superset changes to ${row.exerciseName}`);
+    if (row === undefined) {
+      skip('the coach named an exercise that isn’t in this workout');
+      continue;
+    }
+    if (grouped.has(row.id)) {
+      skip(`two superset changes to ${row.exerciseName}`);
+      continue;
+    }
     grouped.add(row.id);
     if (op.op === 'split_superset') {
-      if (row.supersetGroup === null) return reject(`${row.exerciseName} isn’t in a superset`);
+      if (row.supersetGroup === null) {
+      skip(`${row.exerciseName} isn’t in a superset`);
+      continue;
+    }
       steps.push({ type: 'split_superset', at: input.at, opId: nextOpId(), sessionExerciseId: row.id, expectedVersion: input.args.baseVersion });
       const others = s.exercises.filter((e) => e.removed === undefined && e.id !== row.id && e.supersetGroup === row.supersetGroup).map((e) => e.exerciseName);
       lines.push({ change: 'edit', text: `Superset split: ${[row.exerciseName, ...others].join(', ')}`.slice(0, 200) });
@@ -383,10 +503,23 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       continue;
     }
     const other = liveRow(s, op.withSessionExerciseId);
-    if (other === undefined) return reject('the coach named an exercise that isn’t in this workout');
-    if (other.id === row.id) return reject(`${row.exerciseName} can’t be in a superset with itself`);
-    for (const r of [row, other]) if (!s.sets.some((x) => x.sessionExerciseId === r.id && x.status === 'pending')) return reject(`${r.exerciseName} is done`);
-    if (row.supersetGroup !== null && other.supersetGroup !== null && row.supersetGroup !== other.supersetGroup) return reject(`${row.exerciseName} is already in a superset`);
+    if (other === undefined) {
+      skip('the coach named an exercise that isn’t in this workout');
+      continue;
+    }
+    if (other.id === row.id) {
+      skip(`${row.exerciseName} can’t be in a superset with itself`);
+      continue;
+    }
+    const doneRow = [row, other].find((r) => !s.sets.some((x) => x.sessionExerciseId === r.id && x.status === 'pending'));
+    if (doneRow !== undefined) {
+      skip(`${doneRow.exerciseName} is done`);
+      continue;
+    }
+    if (row.supersetGroup !== null && other.supersetGroup !== null && row.supersetGroup !== other.supersetGroup) {
+      skip(`${row.exerciseName} is already in a superset`);
+      continue;
+    }
     if (row.supersetGroup !== null && row.supersetGroup === other.supersetGroup) continue;
     steps.push({ type: 'link_superset', at: input.at, opId: nextOpId(), sessionExerciseId: row.id, withSessionExerciseId: other.id, expectedVersion: input.args.baseVersion });
     // Named in the order they'll run: the one further along first (review B1).
@@ -396,7 +529,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     names.add(row.exerciseName).add(other.exerciseName);
   }
 
-  if (steps.length === 0) return reject('no change');
+  if (steps.length === 0) return reject(skipped[0] ?? 'no change');
   return {
     status: 'ok',
     command: { type: 'coach_edit_today', at: input.at, opId: input.opId, expectedVersion: input.args.baseVersion, actionId: input.actionId, steps },

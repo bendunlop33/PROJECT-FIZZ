@@ -69,6 +69,28 @@ export interface TodayAdjustmentInput {
    * target-rpe S1). Omitted: only stored RPE/RIR targets count.
    */
   ruleTargetRpe?: Readonly<Record<string, number>> | undefined;
+  /**
+   * ADR 0038: weights Ben named in his own words this turn (`namedWeights`). A target load equal to one
+   * is his, used as typed (`snapLoad` `asTyped`); the coach's other loads on that exercise in the same
+   * call (its ramp-up) are snapped quietly and never go above his heaviest one.
+   */
+  benLoads?: readonly BenLoad[] | undefined;
+  /**
+   * ADR 0038: more new sets per session exercise, each with its own target (the `sets` op of
+   * `edit_today`: "build up to 95 as the last set"). Checked like `addSet`, in order, after it.
+   */
+  addTargets?: Readonly<Record<string, readonly CoachTarget[]>> | undefined;
+}
+
+/** A weight Ben typed or said this turn; `unit` null when he gave none ("use 30 for curls"). */
+export interface BenLoad {
+  value: number;
+  unit: Load['unit'] | null;
+}
+
+/** Is this load one Ben named himself (the same number, in his unit when he gave one)? */
+export function isBenLoad(load: Load, benLoads: readonly BenLoad[] | undefined): boolean {
+  return (benLoads ?? []).some((b) => Math.abs(b.value - load.value) < 1e-6 && (b.unit === null || b.unit === load.unit));
 }
 
 export interface MessagePain {
@@ -93,6 +115,8 @@ export interface AddedSetPlan {
 
 export interface ExerciseAdjustmentPlan extends ExerciseTargetChanges {
   added: AddedSetPlan | null;
+  /** ADR 0038: more new sets with their own targets (`addTargets`), after `added`. */
+  addedMore?: AddedSetPlan[];
   removed: { setId: string; setNumber: number; before: CoachTarget } | null;
 }
 
@@ -103,6 +127,8 @@ export type TodayAdjustmentResult =
       guardNotes: GuardNote[];
       /** Every set ID whose version the apply must check. */
       touchedSetIds: string[];
+      /** ADR 0038: set IDs (changed or added) whose load is a weight Ben named, kept as typed (`loadAsTyped`). */
+      asTypedSetIds?: string[];
     }
   /** Nothing to apply; `outcome` is the app's line for the coach slot (no Undo). */
   | { status: 'unchanged'; outcome: string; guardNotes: GuardNote[] }
@@ -177,34 +203,53 @@ type LoadOutcome =
 /**
  * `weighted`: a bodyweight exercise with weight held or worn; `eq` is then the
  * gym's dumbbells and plates (`loadCheckEquipment`), not one item.
+ *
+ * ADR 0038 (Ben, 28 Oct: "It gets very caught up in whether I have equipment"):
+ * - `asTyped`: a weight Ben named himself is used exactly as he typed it (no
+ *   rounding to the rack), only kept inside what the item can physically do
+ *   (never past a machine's max, rule 4), with one short line when it was.
+ * - No equipment row (FitNotes imports, unknown kit): the load is kept as
+ *   given, never refused.
+ * - A load labelled with another convention is read in the exercise's own
+ *   (the tool asks for the exercise's convention; a wrong label is the model's slip).
  */
-export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInstance | null, policy: RoundingPolicy, weighted = false): LoadOutcome {
-  const asked = loadText(requested, requested.convention);
+export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInstance | null, policy: RoundingPolicy, weighted = false, opts: { asTyped?: boolean; lenient?: boolean } = {}): LoadOutcome {
   const where = (e: EquipmentInstance): string => (weighted ? 'with the weights here' : `on this ${equipmentNoun(e)}`);
   if (ex.loadConvention === 'bodyweight') {
     if (requested.convention === 'bodyweight') return { ok: true, load: requested, note: null, extra: null };
-    return { ok: false, note: { kind: 'convention_mismatch', text: `Couldn't use the coach's load: ${ex.exerciseName} is bodyweight. Load unchanged.` } };
+    return { ok: false, note: { kind: 'convention_mismatch', text: `${ex.exerciseName} is bodyweight.` } };
   }
-  if (requested.convention !== ex.loadConvention) {
-    return {
-      ok: false,
-      note: { kind: 'convention_mismatch', text: `Couldn't use the coach's load: ${asked} doesn't match how ${ex.exerciseName} is loaded. Load unchanged.` },
-    };
+  // `lenient` (today's sets, ADR 0038): the exercise's own convention, never a refusal over a label; no item to fit
+  // it to, or an item loaded another way: kept as given. Otherwise (next session's targets) both are refused.
+  if (opts.lenient !== true && requested.convention !== ex.loadConvention) {
+    return { ok: false, note: { kind: 'convention_mismatch', text: `${loadText(requested, requested.convention)} doesn't match how ${ex.exerciseName} is loaded.` } };
   }
-  if (eq === null) {
-    return { ok: false, note: { kind: 'no_equipment', text: `Couldn't check the coach's load for ${ex.exerciseName}: no equipment is set. Load unchanged.` } };
+  if (opts.lenient !== true && eq === null) return { ok: false, note: { kind: 'no_equipment', text: `No equipment set for ${ex.exerciseName}.` } };
+  const own: Load = requested.convention === ex.loadConvention ? requested : { ...requested, convention: ex.loadConvention };
+  if (eq === null || own.convention !== eq.loadConvention) return { ok: true, load: own, note: null, extra: null };
+  const asked = loadText(own, own.convention);
+  const target = own;
+  if (opts.asTyped === true) {
+    const inUnit = target.unit === eq.unit ? target : { value: Math.round(convertMass(target, eq.unit).value * 100) / 100, unit: eq.unit, convention: target.convention };
+    const r = roundToAvailableLoad(target, eq, 'nearest');
+    if (r.ok && r.bounded !== null) {
+      const got = loadText(r.load, r.load.convention, eq);
+      const text = r.bounded === 'max' ? boundWords('max', got, loadDirection(eq.loadConvention) !== 'resistance') : boundWords('min', got, loadDirection(eq.loadConvention) !== 'resistance');
+      return { ok: true, load: r.load, note: { kind: 'capped', text }, extra: null };
+    }
+    return { ok: true, load: inUnit, note: null, extra: null };
   }
-  const r = roundToAvailableLoad(requested, eq, policy);
+  const r = roundToAvailableLoad(target, eq, policy);
   if (!r.ok) {
-    return { ok: false, note: { kind: 'no_achievable_load', text: `Couldn't use the coach's load: ${asked} isn't possible ${where(eq)}. Load unchanged.` } };
+    return { ok: false, note: { kind: 'no_achievable_load', text: `${asked} isn't possible ${where(eq)}.` } };
   }
   const direction = loadDirection(eq.loadConvention);
-  const requestedInUnit = r.convertedRequest?.value ?? requested.value;
+  const requestedInUnit = r.convertedRequest?.value ?? target.value;
   const harderThanAsked = compareDifficulty(r.load.value, requestedInUnit, direction) > 0;
   const easierThanAsked = compareDifficulty(r.load.value, requestedInUnit, direction) < 0;
   // "Too hard" never rounds to something harder than the coach asked for (§2.6).
   if (policy === 'easier' && harderThanAsked) {
-    return { ok: false, note: { kind: 'no_achievable_load', text: `Couldn't use the coach's load: ${asked} isn't possible ${where(eq)}. Load unchanged.` } };
+    return { ok: false, note: { kind: 'no_achievable_load', text: `${asked} isn't possible ${where(eq)}.` } };
   }
   const got = loadText(r.load, r.load.convention, eq);
   const extra =
@@ -309,6 +354,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
   let anyRequested = false;
   const requestedNumbers: number[] = [];
   const seenExercises = new Set<string>();
+  const asTyped: string[] = [];
 
   for (const req of args.exercises) {
     const ex = state.exercises.find((e) => e.id === req.sessionExerciseId);
@@ -344,18 +390,35 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
     const changes: SetTargetChange[] = [];
     const removeId = req.removeSetId;
     const seenSets = new Set<string>();
+    // ADR 0038: Ben's heaviest named weight on this exercise in this call caps the coach's own loads (its ramp-up).
+    const dir = loadDirection(ex.loadConvention);
+    const askedLoads = [...req.sets.map((c) => c.target.load), req.addSet?.load ?? null, ...(input.addTargets?.[ex.id] ?? []).map((t) => t.load)].filter((l): l is Load => l !== null && l.convention !== 'bodyweight');
+    const benTop = askedLoads.filter((l) => isBenLoad(l, input.benLoads)).reduce<Load | null>((top, l) => (top === null || compareDifficulty(l.unit === top.unit ? l.value : convertMass(l, top.unit).value, top.value, dir) > 0 ? l : top), null);
 
     /**
      * Resolve one requested target against the set's current target. Null = drop.
      * `set`: the set it changes (or copies, for an added set), whose resolved
      * target RPE is what a coach `rpe` is compared with.
      */
+    /** ADR 0038: whether the last `resolve` kept a load Ben named as typed. */
+    let typed = false;
     const resolve = (before: CoachTarget | null, ask: CoachTarget, setIds: string[], set: WorkoutSet): CoachTarget | null => {
+      typed = false;
       let load = before?.load ?? null;
       // Snap notes only count when the change is kept.
       const pending: { kind: GuardNoteKind; text: string }[] = [];
       if (ask.load !== null) {
-        const snapped = snapLoad(ask.load, ex, eq, policy, weighted);
+        const mine = isBenLoad(ask.load, input.benLoads);
+        let wanted = ask.load;
+        let how = policy;
+        if (!mine && benTop !== null && wanted.convention !== 'bodyweight') {
+          const topHere = wanted.unit === benTop.unit ? benTop.value : convertMass(benTop, wanted.unit).value;
+          if (compareDifficulty(wanted.value, topHere, dir) > 0) {
+            wanted = { ...wanted, value: topHere };
+            how = 'easier';
+          }
+        }
+        const snapped = snapLoad(wanted, ex, eq, how, weighted, { asTyped: mine, lenient: true });
         if (!snapped.ok) {
           notes.add(snapped.note.kind, snapped.note.text, setIds);
           blockedOutcomes.push(snapped.note.text.replace('Load unchanged.', 'Sets unchanged.'));
@@ -364,6 +427,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
         if (snapped.note) pending.push(snapped.note);
         if (snapped.extra) pending.push(snapped.extra);
         load = snapped.load;
+        typed = mine;
       }
       let reps = before?.reps ?? null;
       if (ask.reps !== null) {
@@ -428,6 +492,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       const before = targetOf(set);
       const after = resolve(before, change.target, [set.id], set);
       if (after === null || sameTarget(before, after)) continue;
+      if (typed && after.load !== null && after.load !== before.load) asTyped.push(set.id);
       changes.push({ setId: set.id, setNumber: n, before, after });
       touched.push(set.id);
     }
@@ -464,6 +529,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
           const after = resolve(targetOf(template), req.addSet, [], template);
           if (after !== null) {
             const liveCount = sets.length - (removed === null ? 0 : 1);
+            if (typed) asTyped.push(deriveId(`coach-add-set:${input.opId}:${ex.id}`));
             added = {
               setId: deriveId(`coach-add-set:${input.opId}:${ex.id}`),
               setNumber: liveCount + 1,
@@ -476,16 +542,40 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       }
     }
 
-    if (changes.length > 0 || added !== null || removed !== null) {
+    const addedMore: AddedSetPlan[] = [];
+    const more = input.addTargets?.[ex.id] ?? [];
+    if (more.length > 0) {
+      anyRequested = true;
+      const template = [...sets].reverse().find((s) => s.setType !== 'warmup') ?? sets[sets.length - 1];
+      if (template === undefined) {
+        notes.add('unknown_target', `Not added: ${ex.exerciseName} has no set to copy.`, []);
+      } else if (increaseBlock !== null) {
+        notes.add(increaseBlock.kind, increaseBlock.text, []);
+        blockedOutcomes.push(increaseBlock.outcome);
+      } else {
+        const liveCount = sets.length - (removed === null ? 0 : 1) + (added === null ? 0 : 1);
+        for (const [i, t] of more.entries()) {
+          const resolved = resolve(targetOf(template), t, [], template);
+          const after = resolved ?? targetOf(template);
+          const setId = deriveId(`coach-add-set:${input.opId}:${ex.id}:${String(i + 1)}`);
+          if (resolved !== null && typed) asTyped.push(setId);
+          addedMore.push({ setId, setNumber: liveCount + 1 + i, copyFromSetId: template.id, after });
+        }
+        touched.push(template.id);
+      }
+    }
+
+    if (changes.length > 0 || added !== null || removed !== null || addedMore.length > 0) {
       const recordChanges: SetTargetChange[] = [...changes];
       if (removed !== null) recordChanges.push({ setId: removed.setId, setNumber: removed.setNumber, before: removed.before, after: null });
       if (added !== null) recordChanges.push({ setId: added.setId, setNumber: added.setNumber, before: null, after: added.after });
-      plans.push({ sessionExerciseId: ex.id, exerciseName: ex.exerciseName, changes: recordChanges, added, removed });
+      for (const a of addedMore) recordChanges.push({ setId: a.setId, setNumber: a.setNumber, before: null, after: a.after });
+      plans.push({ sessionExerciseId: ex.id, exerciseName: ex.exerciseName, changes: recordChanges, added, removed, ...(addedMore.length > 0 ? { addedMore } : {}) });
     }
   }
 
   const guardNotes = notes.list();
-  if (plans.length > 0) return { status: 'apply', exercises: plans, guardNotes, touchedSetIds: [...new Set(touched)] };
+  if (plans.length > 0) return { status: 'apply', exercises: plans, guardNotes, touchedSetIds: [...new Set(touched)], ...(asTyped.length > 0 ? { asTypedSetIds: [...new Set(asTyped)] } : {}) };
   const firstBlocked = blockedOutcomes[0];
   if (firstBlocked !== undefined) return { status: 'unchanged', outcome: firstBlocked, guardNotes };
   const firstNote = guardNotes[0];

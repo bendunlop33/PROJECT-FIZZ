@@ -258,7 +258,8 @@ describe('validateTodayAdjustment: snapping and caps (rule 4)', () => {
     );
     expect(r.status).toBe('unchanged');
     if (r.status !== 'unchanged') return;
-    expect(r.outcome).toMatch(/^Couldn't use the coach's load: 2\u00a0kg\u00a0each isn't possible on this rack\. Sets unchanged\.$/);
+    // ADR 0038: one short line, no explanation of the rule.
+    expect(r.outcome).toMatch(/^2\u00a0kg\u00a0each isn't possible on this rack\.$/);
     expect(r.guardNotes[0]?.kind).toBe('no_achievable_load');
   });
 
@@ -305,10 +306,10 @@ describe('validateTodayAdjustment: snapping and caps (rule 4)', () => {
     expect(r.guardNotes).toEqual([]);
   });
 
-  it('a load in the wrong convention is refused, not reinterpreted', () => {
-    const r = validateTodayAdjustment(input([adj(exId(2), { sets: [{ setId: setId(2, 0), target: { load: kg(50), reps: null } }] })]));
-    expect(r.status).toBe('unchanged');
-    expect(r.guardNotes[0]?.kind).toBe('convention_mismatch');
+  it('ADR 0038: a load labelled with another convention is read in the exercise’s own (never refused), then fitted like any coach load', () => {
+    const r = applied(validateTodayAdjustment(input([adj(exId(2), { sets: [{ setId: setId(2, 0), target: { load: kg(20), reps: null } }] })])));
+    expect(r.exercises[0]?.changes[0]?.after?.load).toEqual(kg(20, 'per_hand'));
+    expect(r.guardNotes.map((n) => n.kind)).not.toContain('convention_mismatch');
   });
 
   it('a load for an exercise with no equipment is refused; its reps can still change', () => {

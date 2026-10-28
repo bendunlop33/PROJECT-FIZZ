@@ -1798,7 +1798,7 @@ function handleAdjustPendingTargets(state: SessionAggregate, cmd: CommandOf<'adj
     if (byId.get(id)?.status !== 'pending') return fail('set_not_pending', 'Only sets not done yet can change.');
   }
   if (isWorkLive(state, [...cmd.changes.map((c) => c.setId), ...cmd.removeSetIds])) return fail('work_interval_running', 'Stop the work timer first.');
-  const targetsToCheck = [...cmd.changes.map((c) => ({ setId: c.setId, target: c.target })), ...cmd.addSets.map((a) => ({ setId: a.copyFromSetId, target: a.target }))];
+  const targetsToCheck = [...cmd.changes.map((c) => ({ setId: c.setId, target: c.target, asTyped: c.loadAsTyped === true })), ...cmd.addSets.map((a) => ({ setId: a.copyFromSetId, target: a.target, asTyped: a.loadAsTyped === true }))];
   for (const c of targetsToCheck) {
     const set = byId.get(c.setId);
     const ex = set ? exerciseOf(state, set) : undefined;
@@ -1810,7 +1810,8 @@ function handleAdjustPendingTargets(state: SessionAggregate, cmd: CommandOf<'adj
     }
     // Rule 4, as for a gym switch: the load must be makeable on the row's current item, and an
     // exercise that had equipment and has none left (or whose item is gone) can't carry one.
-    if (load.convention === 'bodyweight' || nothingAdded(load, state, ex)) continue;
+    // ADR 0038: a weight Ben named himself is kept as typed (unit and convention still the row's).
+    if (load.convention === 'bodyweight' || nothingAdded(load, state, ex) || c.asTyped) continue;
     const eq = checkEquipmentOf(state, ex);
     if (eq === undefined) {
       const hadEquipment = ex.equipmentId !== null || (set.planned.snap?.intendedOn?.equipmentId ?? null) !== null;
