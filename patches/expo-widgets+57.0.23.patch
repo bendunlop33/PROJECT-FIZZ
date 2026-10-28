@@ -52,8 +52,36 @@ index 972fa4f..b0d1e81 100644
 +    }
 +  }
 +}
+diff --git a/node_modules/expo-widgets/ios/WidgetsModule.swift b/node_modules/expo-widgets/ios/WidgetsModule.swift
+index b1b4295..a4dd94d 100644
+--- a/node_modules/expo-widgets/ios/WidgetsModule.swift
++++ b/node_modules/expo-widgets/ios/WidgetsModule.swift
+@@ -63,6 +63,23 @@ public final class WidgetsModule: Module {
+       WidgetCenter.shared.reloadAllTimelines()
+     }
+ 
++    // PROJECT-FIZZ patch (patches/expo-widgets+57.0.23.patch; ADR 0007 amendment 28 Oct 2026).
++    // Ends every Live Activity of this app whose ID is not in `keepIds`, with immediate
++    // dismissal, including ones already ended but still on the Lock Screen (the JS
++    // getInstances() lists only active/stale ones of one factory). Called on launch and
++    // when a rest ends or the workout finishes or is discarded. Returns the IDs ended.
++    AsyncFunction("fizzEndActivitiesExcept") { (keepIds: [String]) async -> [String] in
++      guard #available(iOS 16.2, *) else { return [] }
++      var ended: [String] = []
++      for activity in Activity<LiveActivityAttributes>.activities
++      where !keepIds.contains(activity.id) && activity.activityState != .dismissed {
++        let finalContent: ActivityContent<LiveActivityAttributes.ContentState>? = nil
++        await activity.end(finalContent, dismissalPolicy: .immediate)
++        ended.append(activity.id)
++      }
++      return ended
++    }
++
+     Class("Widget", WidgetObject.self) {
+       Constructor { (name: String, layout: String) in
+         WidgetObject(name: name, layout: layout)
 diff --git a/node_modules/expo-widgets/ios/WidgetsStorage.swift b/node_modules/expo-widgets/ios/WidgetsStorage.swift
-index 86f9d6c..29575ec 100644
+index 86f9d6c..f75ac7b 100644
 --- a/node_modules/expo-widgets/ios/WidgetsStorage.swift
 +++ b/node_modules/expo-widgets/ios/WidgetsStorage.swift
 @@ -1,5 +1,10 @@
@@ -63,56 +91,103 @@ index 86f9d6c..29575ec 100644
 -  public static var appGroupIdentifier: String? = Bundle.main.object(forInfoDictionaryKey: "ExpoWidgetsAppGroupIdentifier") as? String
 +  // PROJECT-FIZZ patch (docs/decisions/0007): resolved at runtime, not only read from
 +  // the build-time Info.plist key. SideStore/AltStore sign the app and the extension
-+  // with "<group>.<TEAMID>" and list it in ALTAppGroups. See FizzAppGroupResolver.
++  // with "<group>.<suffix>" (and may list it in ALTAppGroups). See FizzAppGroupResolver.
 +  public static var appGroupIdentifier: String? = FizzAppGroupResolver.resolve()
    static let defaults = UserDefaults(suiteName: appGroupIdentifier)
  
    static func set(_ value: [String: Any], forKey key: String) {
-@@ -56,3 +61,71 @@ public enum WidgetsStorage {
+@@ -56,3 +61,118 @@ public enum WidgetsStorage {
      defaults.removeObject(forKey: key)
    }
  }
 +
 +// PROJECT-FIZZ patch (docs/decisions/0007, patches/expo-widgets+57.0.23.patch).
 +// Runs once per process (the app, and the widget extension) on first use of
-+// WidgetsStorage. Order:
-+//   1. ALTAppGroups in this bundle's own Info.plist (written by the signing tool);
++// WidgetsStorage. Candidates, in order; the first one this binary has a container
++// for (containerURL non-nil, i.e. it is entitled to it) wins:
++//   1. ALTAppGroups in this bundle's own Info.plist (written by AltStore/SideStore);
 +//   2. in the extension only, ALTAppGroups in the parent app's Info.plist;
-+//   3. the configured group (ExpoWidgetsAppGroupIdentifier, set at build time).
-+// Only groups equal to the configured one or "<configured>.<suffix>" are taken from
-+// ALTAppGroups, and only if containerURL resolves (i.e. this binary is entitled to it).
++//   3. the groups in this bundle's installed embedded.mobileprovision (the extension:
++//      its own profile, then the parent app's). Ti800's SideStore fork signs with the
++//      renamed group but writes no ALTAppGroups (build 475, 28 Oct 2026);
++//   4. "<configured>.<suffix>", where <suffix> is what the signing tool appended to the
++//      bundle ID (the configured bundle ID is the configured group minus "group.",
++//      app-identity.mts; the extension's ".ExpoWidgetsTarget" is stripped first);
++//   5. the configured group (ExpoWidgetsAppGroupIdentifier, set at build time).
++// Only the configured group or "<configured>.<anything>" is accepted from 1-3.
 +// The choice is written to the chosen group's shared defaults so the app's capability
 +// probe can check that the app and the extension agree.
 +enum FizzAppGroupResolver {
 +  static let configuredKey = "ExpoWidgetsAppGroupIdentifier"
 +  static let recordKeyPrefix = "fizz.appGroupResolution."
++  /// expo-widgets' extension bundle ID is "<app bundle ID>.ExpoWidgetsTarget".
++  static let extensionIdSuffix = ".ExpoWidgetsTarget"
 +
 +  static func resolve() -> String? {
 +    let bundle = Bundle.main
 +    let configured = bundle.object(forInfoDictionaryKey: configuredKey) as? String
 +    let isExtension = bundle.bundleURL.pathExtension == "appex"
-+    var sources: [(source: String, groups: [String])] = [
-+      ("altAppGroups", bundle.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? [])
++    // <App>.app/PlugIns/<Extension>.appex -> <App>.app
++    let parentURL = bundle.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
++
++    // Lazy, so a profile is only read when the earlier sources found nothing.
++    var sources: [(source: String, groups: () -> [String])] = [
++      ("altAppGroups", { () -> [String] in bundle.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? [] })
 +    ]
 +    if isExtension {
-+      // <App>.app/PlugIns/<Extension>.appex -> <App>.app/Info.plist
-+      let parentInfo = bundle.bundleURL
-+        .deletingLastPathComponent()
-+        .deletingLastPathComponent()
-+        .appendingPathComponent("Info.plist")
-+      let parent = NSDictionary(contentsOf: parentInfo) as? [String: Any]
-+      sources.append(("parentAltAppGroups", parent?["ALTAppGroups"] as? [String] ?? []))
++      sources.append(("parentAltAppGroups", { () -> [String] in
++        let parent = NSDictionary(contentsOf: parentURL.appendingPathComponent("Info.plist")) as? [String: Any]
++        return parent?["ALTAppGroups"] as? [String] ?? []
++      }))
 +    }
++    sources.append(("profile", { () -> [String] in FizzAppGroupResolver.profileGroups(in: bundle.bundleURL) }))
++    if isExtension {
++      sources.append(("parentProfile", { () -> [String] in FizzAppGroupResolver.profileGroups(in: parentURL) }))
++    }
++    sources.append(("bundleIdSuffix", { () -> [String] in
++      guard let configured,
++            let suffix = FizzAppGroupResolver.bundleIdSuffix(bundleId: bundle.bundleIdentifier, configuredGroup: configured, isExtension: isExtension)
++      else { return [] }
++      return [configured + "." + suffix]
++    }))
++    sources.append(("configured", { () -> [String] in configured.map { [$0] } ?? [] }))
++
 +    for (source, groups) in sources {
-+      for group in groups where isRelated(group, to: configured) && hasContainer(group) {
++      for group in groups() where isRelated(group, to: configured) && hasContainer(group) {
 +        record(group: group, source: source, configured: configured, isExtension: isExtension)
 +        return group
 +      }
 +    }
-+    if let configured, hasContainer(configured) {
-+      record(group: configured, source: "configured", configured: configured, isExtension: isExtension)
-+    }
 +    return configured
++  }
++
++  /// What the signing tool appended to the bundle ID ("MDP255CUTA" for
++  /// com.projectfizz.fizz.MDP255CUTA), or nil if unchanged or unrelated.
++  static func bundleIdSuffix(bundleId: String?, configuredGroup: String, isExtension: Bool) -> String? {
++    guard var id = bundleId, configuredGroup.hasPrefix("group.") else { return nil }
++    if isExtension {
++      guard id.hasSuffix(extensionIdSuffix) else { return nil }
++      id = String(id.dropLast(extensionIdSuffix.count))
++    }
++    let configuredId = String(configuredGroup.dropFirst("group.".count))
++    guard id.hasPrefix(configuredId + "."), id.count > configuredId.count + 1 else { return nil }
++    return String(id.dropFirst(configuredId.count + 1))
++  }
++
++  /// App Groups in a bundle's installed signing profile. embedded.mobileprovision is
++  /// CMS-signed; the plist is plain XML inside it (same reader as the audio-coach probe).
++  static func profileGroups(in bundleURL: URL) -> [String] {
++    let url = bundleURL.appendingPathComponent("embedded.mobileprovision")
++    guard let data = try? Data(contentsOf: url),
++          let start = data.range(of: Data("<?xml".utf8)),
++          let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
++          let plist = try? PropertyListSerialization.propertyList(
++            from: data.subdata(in: start.lowerBound..<end.upperBound), options: [], format: nil
++          ) as? [String: Any],
++          let entitlements = plist["Entitlements"] as? [String: Any] else {
++      return []
++    }
++    return entitlements["com.apple.security.application-groups"] as? [String] ?? []
 +  }
 +
 +  private static func isRelated(_ group: String, to configured: String?) -> Bool {
