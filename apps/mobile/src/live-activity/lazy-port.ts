@@ -27,4 +27,5 @@ export const lazyLiveActivityPort: LiveActivityPort = {
   },
   update: (id, props, staleAtMs) => port()?.update(id, props, staleAtMs) ?? Promise.resolve(),
   end: (id) => port()?.end(id) ?? Promise.resolve(),
+  endAllExcept: (keepIds) => port()?.endAllExcept?.(keepIds) ?? Promise.resolve([]),
 };

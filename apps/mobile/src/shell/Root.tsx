@@ -12,6 +12,7 @@ import { createPlanModelPort } from '../coach/plan-model-port';
 import { createRestAlertController } from '../alerts/rest-alerts';
 import { nowMs } from '../clock';
 import { createLiveActivityController } from '../live-activity/controller';
+import { probeActivityLedger } from '../live-activity/probe-ledger';
 import { createLastTimeCache } from '../live-activity/last-time-cache';
 import { lockScreenButtonsAvailable, lockScreenLogAvailable, nativeTapQueue, onLockScreenTap } from '../live-activity/tap-bridge';
 import { createLockScreenTapHandler } from '../live-activity/taps';
@@ -68,6 +69,7 @@ const guardedLiveActivityPort: LiveActivityPort = {
   start: (props, staleAtMs) => guardNativeCall('live_activity', () => lazyLiveActivityPort.start(props, staleAtMs)),
   update: (id, props, staleAtMs) => guardNativeCallAsync('live_activity', () => lazyLiveActivityPort.update(id, props, staleAtMs)),
   end: (id) => guardNativeCallAsync('live_activity', () => lazyLiveActivityPort.end(id)),
+  endAllExcept: (keepIds) => guardNativeCallAsync('live_activity', () => lazyLiveActivityPort.endAllExcept?.(keepIds) ?? Promise.resolve([])),
 };
 
 /** (Launch-crash guard) Apple Health's HealthKit calls, breadcrumbed the same way; off on a safe start or after a crash in one on this build. */
@@ -97,6 +99,8 @@ const liveActivity = createLiveActivityController(guardedLiveActivityPort, {
   lastComparable: (state) => lastTime.lookup(state),
   buttons: lockScreenButtonsAvailable,
   log: lockScreenLogAvailable,
+  // The probe's own countdown started this run is left to the probe (it ends it at 0:00 + 30 s).
+  keepIds: () => probeActivityLedger.ids(),
   clock: { now: nowMs, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => { clearTimeout(h as ReturnType<typeof setTimeout>); } },
 });
 

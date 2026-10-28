@@ -70,6 +70,26 @@ describe('expo-widgets runtime App Group patch', () => {
     expect(existsSync(join(widgetsDir, 'prebuilds'))).toBe(false);
   });
 
+  it('tries the sources in the agreed order, and the probe names each one (28 Oct, build 475)', () => {
+    const storage = read(widgetsDir, 'ios', 'WidgetsStorage.swift');
+    const swiftOrder = [...storage.matchAll(/\("(\w+)", \{ \(\) -> \[String\] in/g)].map((m) => m[1]);
+    expect(swiftOrder).toEqual(['altAppGroups', 'parentAltAppGroups', 'profile', 'parentProfile', 'bundleIdSuffix', 'configured']);
+    const probe = read(root, 'apps', 'mobile', 'src', 'probe', 'app-group.ts');
+    const block = /export const RESOLUTION_SOURCES = \{([\s\S]*?)\} as const;/.exec(probe)?.[1] ?? '';
+    const tsOrder = [...block.matchAll(/^\s*(\w+):/gm)].map((m) => m[1]);
+    expect(tsOrder).toEqual(swiftOrder);
+    // Same profile reader as the audio-coach probe.
+    expect(storage).toContain('"com.apple.security.application-groups"');
+    expect(storage).toContain('static let extensionIdSuffix = ".ExpoWidgetsTarget"');
+  });
+
+  it('exposes the Live Activity sweep the app calls', () => {
+    const module = read(widgetsDir, 'ios', 'WidgetsModule.swift');
+    expect(module).toContain('AsyncFunction("fizzEndActivitiesExcept")');
+    expect(module).toContain('dismissalPolicy: .immediate');
+    expect(read(root, 'apps', 'mobile', 'src', 'live-activity', 'expo-port.ts')).toContain('fizzEndActivitiesExcept');
+  });
+
   it('the probe reads the record keys the patch writes', () => {
     const storage = read(widgetsDir, 'ios', 'WidgetsStorage.swift');
     const probe = read(root, 'apps', 'mobile', 'modules', 'audio-coach', 'ios', 'AudioCoachModule.swift');

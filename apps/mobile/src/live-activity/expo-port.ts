@@ -1,3 +1,4 @@
+import { requireOptionalNativeModule } from 'expo';
 import Constants from 'expo-constants';
 import { addUserInteractionListener, type LiveActivity } from 'expo-widgets';
 
@@ -27,6 +28,22 @@ function refresh(): LiveActivity<WorkoutActivityProps>[] {
   return list;
 }
 
+/**
+ * The patched expo-widgets native function (patches/expo-widgets+57.0.23.patch,
+ * `fizzEndActivitiesExcept`): ends every activity of the app not in the list,
+ * any name, including ended ones still on the Lock Screen. Absent in builds
+ * made before it.
+ */
+interface FizzWidgetsNative {
+  fizzEndActivitiesExcept?: (keepIds: string[]) => Promise<string[]>;
+}
+
+function nativeSweep(): ((keepIds: string[]) => Promise<string[]>) | null {
+  const mod = requireOptionalNativeModule<FizzWidgetsNative>('ExpoWidgets');
+  const fn = mod?.fizzEndActivitiesExcept;
+  return typeof fn === 'function' ? fn.bind(mod) : null;
+}
+
 // eslint-disable-next-line no-restricted-globals -- converting an injected instant, not reading the clock
 const dateOf = (ms: number | null) => (ms === null ? undefined : new Date(ms));
 
@@ -49,6 +66,13 @@ export const expoLiveActivityPort: LiveActivityPort = {
     const a = instances.get(id) ?? refresh().find((x) => x.getId() === id);
     instances.delete(id);
     if (a) await a.end('immediate');
+  },
+  async endAllExcept(keepIds) {
+    const sweep = nativeSweep();
+    if (sweep === null) return [];
+    const ended = await sweep([...keepIds]);
+    for (const id of ended) instances.delete(id);
+    return ended;
   },
 };
 

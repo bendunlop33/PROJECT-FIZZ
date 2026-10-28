@@ -110,12 +110,32 @@ CLAUDE.md says one Swift module (`audio-coach`) owns the iOS audio session. Two 
 
 The extension's record exists only after the extension has run, so the row says "run Live Activity, then App Group again" until it has. A rename that is handled is reported as "renamed (handled at runtime)".
 
+### Amendment, 28 Oct 2026: signing tools that write no `ALTAppGroups` (build 475)
+
+**Status:** implemented on `claude/lagroup`; not yet run on Ben's iPhone.
+
+**What build 475 showed** (iOS 26.6.1, Ti800's SideStore fork, ADR 0036): two blank Live Activity cards on the Lock Screen. The probe showed both bundles signed with `group.com.projectfizz.fizz.MDP255CUTA` (writable), bundle ID `com.projectfizz.fizz.MDP255CUTA`, but `ALTAppGroups` "unknown" in both Info.plists and no resolution records. This signing tool renames the group but **does not write `ALTAppGroups`**, so the resolver above fell back to the configured group, which has no container. The layout and props went to a private, app-only defaults domain, the extension found nothing, and drew empty cards.
+
+**Resolver now** (`FizzAppGroupResolver`, same patch). The first candidate this process has a container for wins:
+1. `ALTAppGroups` (own bundle);
+2. `ALTAppGroups` (parent app, extension only);
+3. the `application-groups` in the bundle's own `embedded.mobileprovision` (the extension: its own, then the parent app's), read the way the audio-coach probe reads it;
+4. `<configured>.<suffix>`, where `<suffix>` is what the signing tool appended to the bundle ID. The configured bundle ID is the configured group minus `group.` (`app-identity.mts` builds the group that way); the extension's `.ExpoWidgetsTarget` is stripped first;
+5. the configured group.
+
+Record `source` values: `altAppGroups`, `parentAltAppGroups`, `profile`, `parentProfile`, `bundleIdSuffix`, `configured` (`RESOLUTION_SOURCES` in `apps/mobile/src/probe/app-group.ts`; `scripts/test/native-patches.test.ts` checks the Swift order matches).
+
+**Stale activities.** The patch also adds `fizzEndActivitiesExcept(keepIds)` to `WidgetsModule`. It ends every `Activity<LiveActivityAttributes>` of the app not in the list, with immediate dismissal, including ended cards still on the Lock Screen and other factory names, which expo-widgets' `getInstances()` does not list. It lives in the expo-widgets patch, not audio-coach, because `LiveActivityAttributes` is internal to the ExpoWidgets module, and reaching it from audio-coach would need a new pod dependency. The workout controller calls it on launch, when a rest ends (including Skip), and on Finish, Discard or a restore. It keeps the current activity and the probe's countdown started this run. The probe now ends its own countdown with `immediate` at 0:00 + 30 s; the old `default` policy could leave an ended card on screen for up to 4 hours. While the app stays suspended, nothing can end it; the stale date covers that, and the next launch sweeps it.
+
+**JS side:** nothing in production reads `Paths.appleSharedContainers` or the configured group for Live Activity data. All of it goes through `WidgetsStorage` natively. Only the probe's JS write/read uses the build-time list, and it is reported as evidence only.
+
 ## Known risks
 
-- **The App Group fix above has not run on a device yet.** The next build is its test. If the extension's record never appears even though the countdown shows, or the countdown still doesn't show, the fallbacks are option (b) (build with the suffixed group) or (c) (an upgrade trigger under ADR 0004).
+- **The ALTAppGroups-free resolution (amendment, 28 Oct) has not run on a device yet.** The next build is its test: Live Activity shows content, App Group PASSes with records from `profile` (or `bundleIdSuffix`). If the extension can't read its own `embedded.mobileprovision`, it falls through to the parent's profile and then the bundle ID suffix. Ending an already-ended activity with `.immediate` to remove a lingering card is believed to work but is unverified.
+- **The App Group fix above has not run on a device yet.** Build 475 showed the ALTAppGroups route alone isn't enough for Ti800's SideStore (amendment above). If the extension's record never appears even though the countdown shows, or the countdown still doesn't show, the fallbacks are option (b) (build with the suffixed group) or (c) (an upgrade trigger under ADR 0004).
 - `expo-file-system`'s `Paths.appleSharedContainers` can't show a rename. Its group list is baked in at `pod install` by autolinking from the build-time entitlements. Production code that needs the shared container must use the runtime-resolved group, not this list.
 - **Swift written without a Mac.** The audio-coach module compiled and ran in build 7. These have not been compiled yet, and the next macOS CI run is their compile test:
-  - the `expo-widgets` patch;
+  - the `expo-widgets` patch, including the 28 Oct resolver sources and `fizzEndActivitiesExcept` (an `async` `AsyncFunction` closure; `activity.end(nil-content, dismissalPolicy: .immediate)` on iOS 16.2+);
   - the audio-coach additions: extension evidence, `requestAlarmKitAuthorization`, and the keep-alive and timeout fixes.
 
   `.allowBluetooth` is used for HFP. It was renamed `.allowBluetoothHFP` in the iOS 26 SDK, and the old name should only warn.

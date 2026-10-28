@@ -5,11 +5,13 @@ import type { ResultUpdate } from './model';
  * and checks the ADR 0007 fix.
  *
  * SideStore/AltStore sign the app AND the Live Activity extension with
- * `<group>.<TEAMID>` instead of the group we built with, and write the renamed
- * group into each bundle's ALTAppGroups. Stock expo-widgets reads only the
- * build-time group, so the Live Activity can't share data. Our pinned patch
- * (patches/expo-widgets+57.0.23.patch) resolves the group at runtime in both
- * processes and records its choice in the chosen group's shared defaults.
+ * `<group>.<suffix>` instead of the group we built with. AltStore writes the
+ * renamed group into each bundle's ALTAppGroups; Ti800's SideStore fork does
+ * not (build 475, 28 Oct 2026), so the signing profile is the evidence there.
+ * Stock expo-widgets reads only the build-time group, so the Live Activity
+ * can't share data. Our pinned patch (patches/expo-widgets+57.0.23.patch)
+ * resolves the group at runtime in both processes (`RESOLUTION_SOURCES`) and
+ * records its choice in the chosen group's shared defaults.
  *
  * PASS needs both sides:
  * - app: signed with the configured group (or a rename the app resolved at
@@ -60,11 +62,35 @@ export interface ExtensionInfo extends SigningProfile {
   altAppGroups: readonly string[] | null;
 }
 
+/**
+ * Where the patched expo-widgets found the group, in the order it tries them
+ * (FizzAppGroupResolver): the first one this process has a container for wins.
+ */
+export const RESOLUTION_SOURCES = {
+  altAppGroups: 'ALTAppGroups',
+  parentAltAppGroups: 'the app’s ALTAppGroups',
+  profile: 'its signing profile',
+  parentProfile: 'the app’s signing profile',
+  bundleIdSuffix: 'the bundle ID suffix',
+  configured: 'the configured group',
+} as const;
+
+export type ResolutionSource = keyof typeof RESOLUTION_SOURCES;
+
+export function isResolutionSource(source: string): source is ResolutionSource {
+  return Object.prototype.hasOwnProperty.call(RESOLUTION_SOURCES, source);
+}
+
+/** A readable name for a record's `source`; an unknown one (another build) is shown raw. */
+export function describeResolutionSource(source: string): string {
+  return isResolutionSource(source) ? `${RESOLUTION_SOURCES[source]} (${source})` : source;
+}
+
 /** Which group a process chose at runtime (written by the expo-widgets patch). */
 export interface ResolutionRecord {
   role: 'app' | 'extension';
   group: string;
-  /** "altAppGroups" | "parentAltAppGroups" | "configured" */
+  /** A `ResolutionSource`; kept as a string, since a record may come from another build. */
   source: string;
   bundleId: string;
   buildNumber: string;
@@ -149,7 +175,7 @@ function describeProfile(who: string, p: SigningProfile): string[] {
 
 function describeRecord(r: ResolutionRecord, currentBuild: string): string {
   const build = r.buildNumber === currentBuild ? `build ${r.buildNumber}` : `OLDER build ${r.buildNumber || '?'} (ignored)`;
-  return `${r.role === 'app' ? 'App' : 'Extension'} resolved ${r.group} from ${r.source} at ${r.atUtc} (${build}, ${r.bundleId})`;
+  return `${r.role === 'app' ? 'App' : 'Extension'} resolved ${r.group} from ${describeResolutionSource(r.source)} at ${r.atUtc} (${build}, ${r.bundleId})`;
 }
 
 /** Newest record for a role written by this build, if any. */

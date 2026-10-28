@@ -27,6 +27,12 @@ import type { NativePause } from '../diagnostics/launch-guard';
  * - After a relaunch nothing is known: the first reconcile adopts one running
  *   activity for the workout in progress (updated to its true state) and ends
  *   any others.
+ * - Sweep (28 Oct, build 475's two stuck blank cards): on that first
+ *   reconcile, when a rest ends, and when the workout finishes or is
+ *   discarded (a null), every activity of the app except the current one and
+ *   the probe's own running countdown is ended through `endAllExcept`, which
+ *   also reaches ones already ended but still on the Lock Screen and ones of
+ *   other names. Builds without it keep the adopt-and-end above.
  * - Swiped away by Ben: not started again for that workout this run (§4.2).
  *   Refused by iOS: tried again on the next reconcile (a Log, or the return
  *   to the foreground), as the refusal may have been transient.
@@ -134,6 +140,12 @@ export interface LiveActivityPort {
   start(props: WorkoutActivityProps, staleAtMs: number | null): string;
   update(id: string, props: WorkoutActivityProps, staleAtMs: number | null): Promise<void>;
   end(id: string): Promise<void>;
+  /**
+   * Ends every activity of this app (any name, including ended ones still on
+   * the Lock Screen) whose ID is not in `keepIds`, dismissed at once; returns
+   * the IDs ended. Absent in builds without the patched expo-widgets function.
+   */
+  endAllExcept?(keepIds: readonly string[]): Promise<string[]>;
 }
 
 export interface ActivityClock {
@@ -160,6 +172,8 @@ export function createLiveActivityController(
     buttons?: () => boolean;
     /** (Ben, 27 Oct) `Log` on the Ready state too (`FIZZ_LA_LOG`); only with `buttons`. */
     log?: () => boolean;
+    /** Activities a sweep must leave alone: the capability probe's countdown started this run (`probe-ledger.ts`). */
+    keepIds?: () => readonly string[];
   },
 ) {
   let current: { sessionId: string; id: string; key: string } | null = null;
@@ -173,6 +187,8 @@ export function createLiveActivityController(
   let lastState: SessionAggregate | null = null;
   /** The newest workout state applied, so an older one arriving late is ignored (review ben-bugs S2). */
   let applied: { sessionId: string; version: number } | null = null;
+  /** What the last applied content showed, so the end of a rest is seen. */
+  let shown: { sessionId: string; state: LockScreenState } | null = null;
 
   const buttonsOn = (): boolean => {
     try {
@@ -210,6 +226,23 @@ export function createLiveActivityController(
     }
   }
 
+  /** Ends every activity but the current one and the probe's; skipped on builds without `endAllExcept`. */
+  async function sweep(): Promise<void> {
+    if (port.endAllExcept === undefined) return;
+    let extra: readonly string[];
+    try {
+      extra = opts.keepIds?.() ?? [];
+    } catch {
+      extra = [];
+    }
+    const keep = [...(current === null ? [] : [current.id]), ...extra];
+    try {
+      await port.endAllExcept(keep);
+    } catch (e) {
+      note(e);
+    }
+  }
+
   function scheduleRecheck(content: LockScreenContent | null, nowMs: number): void {
     const clock = opts.clock;
     if (!clock) return;
@@ -233,6 +266,14 @@ export function createLiveActivityController(
     const lookup = state === null ? undefined : opts.lastComparable?.(state);
     const content = state === null ? null : buildLockScreenContent(state, nowMs, opts.tz(state), { painFlagged: opts.painFlagged?.(), ...(lookup === undefined ? {} : { lastComparable: lookup }) });
     const running = listIds();
+    const launch = !adopted;
+    const before = shown;
+    shown = content === null ? null : { sessionId: content.sessionId, state: content.state };
+    // Launch, Finish / Discard / restore (null), or a rest that just ended (or a new workout).
+    const sweepNow =
+      launch ||
+      content === null ||
+      (before !== null && before.state === 'resting' && (content.sessionId !== before.sessionId || content.state !== 'resting'));
 
     if (!adopted) {
       adopted = true;
@@ -247,6 +288,7 @@ export function createLiveActivityController(
       current = null;
     }
     if (content === null) {
+      if (sweepNow) await sweep();
       scheduleRecheck(null, nowMs);
       return;
     }
@@ -256,6 +298,7 @@ export function createLiveActivityController(
       current = null;
     }
     if (skip.has(content.sessionId)) {
+      if (sweepNow) await sweep();
       scheduleRecheck(null, nowMs);
       return;
     }
@@ -283,6 +326,7 @@ export function createLiveActivityController(
         note(e);
       }
     }
+    if (sweepNow) await sweep();
     scheduleRecheck(content, nowMs);
   }
 
