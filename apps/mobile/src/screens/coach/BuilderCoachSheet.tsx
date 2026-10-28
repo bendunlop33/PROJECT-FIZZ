@@ -199,7 +199,7 @@ export function BuilderCoachSheet({ entry }: { entry: BuilderCoachEntry }) {
         {keyboardUp ? null : (
           <View style={{ alignSelf: 'flex-start', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: theme.colors['bg.raised'] }}>
             <Icon name="eye" size={16} />
-            <AppText variant="label">{builderSeesLabel(entry.name)}</AppText>
+            <AppText variant="label">{builderSeesLabel(entry.name, services.builderCoach.sees().lastDays)}</AppText>
           </View>
         )}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['2'] }}>

@@ -162,6 +162,12 @@ export const GetExerciseRecordsArgsSchema = z.strictObject({
 /** (Coach v3) Ben's last finished workouts, every exercise's sets as logged. */
 export const GetRecentSessionsArgsSchema = z.strictObject({
   count: z.int().min(1).max(10),
+  /**
+   * (Ben, 28 Oct: "yesterday's workout") Only the workouts on one local day: `date` (`YYYY-MM-DD`), or `daysAgo`
+   * (0 today, 1 yesterday). Null or absent: the newest `count`. `date` wins when both are given.
+   */
+  date: LocalDateSchema.nullable().optional(),
+  daysAgo: z.int().min(0).max(366).nullable().optional(),
 });
 
 /**

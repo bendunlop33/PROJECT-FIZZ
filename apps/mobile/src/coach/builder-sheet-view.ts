@@ -40,9 +40,9 @@ export const BUILDER_SHEET_COPY = {
   retry: EDIT_ASK_COPY.retry,
 } as const;
 
-/** `Sees: Push A (draft)`, as the general sheet names a draft. */
-export function builderSeesLabel(name: string): string {
-  return `Sees: ${name} (draft)`;
+/** `Sees: Push A (draft)`, as the general sheet names a draft; (Ben, 28 Oct) `Sees: Push A · last 7 days` when it has them. */
+export function builderSeesLabel(name: string, lastDays = false): string {
+  return lastDays ? `Sees: ${name} · last 7 days` : `Sees: ${name} (draft)`;
 }
 
 /** The status row: the one word when the coach can't answer, and whether Send works. */

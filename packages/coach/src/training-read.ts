@@ -1,4 +1,4 @@
-import type { BuiltInTargetsView, EquipmentView, ExerciseHistoryView, ExerciseRecordsView, RecentSessionsView, TrainingOverviewView } from '@fizz/domain';
+import { addDays, localDateOf, toMs, type BuiltInTargetsView, type EquipmentView, type ExerciseHistoryView, type ExerciseRecordsView, type RecentSessionsView, type TrainingOverviewView } from '@fizz/domain';
 import type { CoachExecutors, ToolResult } from './executors';
 
 /**
@@ -28,11 +28,21 @@ export interface TrainingReadPort {
   builtInTargets(exerciseId: string): Promise<BuiltInTargetsView | null>;
   /** (Coach v3) Records per equipment item; the e1RM labelled an estimate. Absent: the tool is withheld. */
   exerciseRecords?(exerciseId: string): Promise<ExerciseRecordsView | null>;
-  /** (Coach v3) The last finished workouts. Absent: the tool is withheld. */
-  recentSessions?(count: number): Promise<RecentSessionsView>;
+  /**
+   * (Coach v3) The last finished workouts. Absent: the tool is withheld. (Ben, 28 Oct) `opts.date`: only the
+   * workouts on that local day (Ben's timezone), up to `count`.
+   */
+  recentSessions?(count: number, opts?: { date?: string }): Promise<RecentSessionsView>;
 }
 
 const NOT_AVAILABLE = (what: string): ToolResult => ({ kind: 'read', data: { domain: 'Your data', not_available: what } });
+
+/** (Ben, 28 Oct) The local day `get_recent_sessions` asks for: its `date`, else `daysAgo` from today in `tz`; null: none. */
+export function recentSessionsDate(args: { date?: string | null | undefined; daysAgo?: number | null | undefined }, now: { utc: string; tz: string }): string | null {
+  if (args.date != null) return args.date;
+  if (args.daysAgo != null) return addDays(localDateOf(toMs(now.utc), now.tz), -args.daysAgo);
+  return null;
+}
 
 export function createTrainingReadExecutors(port: TrainingReadPort): CoachExecutors {
   return {
@@ -67,10 +77,12 @@ export function createTrainingReadExecutors(port: TrainingReadPort): CoachExecut
     ...(port.recentSessions === undefined
       ? {}
       : {
-          get_recent_sessions: async (call) => {
+          get_recent_sessions: async (call, ctx) => {
             if (call.tool !== 'get_recent_sessions' || port.recentSessions === undefined) throw new TypeError(call.tool);
-            const v = await port.recentSessions(call.args.count);
-            return v.sessions.length === 0 ? NOT_AVAILABLE('no finished workouts') : { kind: 'read', data: v };
+            const date = recentSessionsDate(call.args, ctx.now);
+            const v = date === null ? await port.recentSessions(call.args.count) : await port.recentSessions(call.args.count, { date });
+            if (v.sessions.length > 0) return { kind: 'read', data: v };
+            return NOT_AVAILABLE(date === null ? 'no finished workouts' : `no finished workouts on ${date}`);
           },
         }),
   };

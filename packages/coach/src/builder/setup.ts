@@ -1,4 +1,4 @@
-import { parseRequestedMinutes } from '@fizz/domain';
+import { parseRequestedMinutes, type LastDaysView } from '@fizz/domain';
 import { BUILD_LIMITS, BUILDER_GROUPS, type BuilderGroup, type FillSetupArgs } from '@fizz/schemas';
 import { bareNumbers, buildMinutesFor } from '../build';
 
@@ -44,6 +44,8 @@ export interface SetupCoachContext {
   current: SetupState;
   /** The recommended groups for a set-up (code's `recommendForSetup`), used when the day changes. */
   recommend: (s: Omit<SetupState, 'groups'>) => { group: BuilderGroup; count: number }[];
+  /** (Ben, 28 Oct) The last 7 days' workouts and activities (Your data), so "not legs again after yesterday" is read. */
+  lastDays?: LastDaysView;
 }
 
 export type SetupField = 'day' | 'minutes' | 'main_lift' | 'supersets' | 'groups';

@@ -107,7 +107,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ALL,
     plainLabel: null,
     capabilitySection: 'read',
-    description: 'Ben’s last finished workouts (count, newest first): date, title, gym, minutes and every exercise’s sets as logged. FitNotes imports are his own history.',
+    description: 'Ben’s last finished workouts (count, newest first): date, title, gym, minutes and every exercise’s sets as logged. FitNotes imports are his own history. For one day’s full log give `date` (YYYY-MM-DD) or `daysAgo` (1 = yesterday); null otherwise.',
   },
   {
     // Coach v3 (Ben 18 Oct): a mid-workout turn starts light; this buys one deeper step when it's needed.
