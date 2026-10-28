@@ -1,4 +1,4 @@
-import { BUILDER_MAX_SUPERSET, BUILDER_SET_RULES, adviseBuilder, isTimedSlot, makeExtraSlot, bandInsertIndex, anchorE1rmOf, builderSupersetWithNext, builderUnlink, canPair, clampBuilderRest, clampMinutes, compareDifficulty, editSetRow, estimateBuilderMinutes, fitToMinutes, formulaApplies, infoOrDefault, loadDirection, makeSlot, removeSlot, restClockText, roundContextOf, roundDownHere, setWorkingCount, settleBackoffs, slotsOf, splitInvalidAutoPairs, warmupsFor, withBackoffBases, followTop, workingCount, workingRestS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSetRow, type BuilderSlot, type BuilderWorkout, rirOfRpe } from '@fizz/domain';
+import { BUILDER_MAX_SUPERSET, BUILDER_SET_RULES, adviseBuilder, isTimedSlot, makeExtraSlot, bandInsertIndex, anchorE1rmOf, builderSupersetWithNext, builderUnlink, canPair, clampBuilderRest, clampMinutes, compareDifficulty, editSetRow, estimateBuilderMinutes, fitToMinutes, formulaApplies, infoOrDefault, loadDirection, makeSlot, removeSlot, restClockText, roundContextOf, roundDownHere, setWorkingCount, settleBackoffs, slotsOf, splitInvalidAutoPairs, warmupsFor, withBackoffBases, followTop, workingCount, workingRestS, type BuilderBlock, type BuilderContext, type BuilderGroupName, type BuilderSetRow, type BuilderSlot, type BuilderWorkout, rirOfRpe, isBenLoad, type BenLoad } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderEditOp, type LoadConvention, type WeightUnit } from '@fizz/schemas';
 import { topLoad, type BuilderLoadGuard } from './load-guard';
 
@@ -37,6 +37,8 @@ export interface BuilderCoachEnv {
   loads: BuilderLoadGuard;
   /** Ben asked heavier in his own words: one more step allowed (BD16). */
   askedHeavier: boolean;
+  /** ADR 0038: weights Ben named in his own words: a `load` op with one of them is kept as typed. */
+  benLoads?: readonly BenLoad[];
   /** The day's main group (fit ladder). */
   mainGroup: BuilderGroupName | null;
   /** Exercises a longer length may add, best first (gym-available, not pain-flagged). */
@@ -380,7 +382,8 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
         st.notes.push(`Not changed: ${name(s.exerciseId)} has no load to change`);
         return;
       }
-      const g = env.loads.check(s, requested, { askedHeavier: env.askedHeavier, step: op.value === null });
+      const benNamed = op.value !== null && isBenLoad({ value: op.value, unit: op.unit ?? s.unit, convention: s.convention }, env.benLoads);
+      const g = env.loads.check(s, requested, { askedHeavier: env.askedHeavier, step: op.value === null, benNamed });
       if (!g.ok) {
         st.notes.push(`${name(s.exerciseId)}: ${g.note}`);
         return;

@@ -181,9 +181,9 @@ describe('rename_workout (build 151: "Change name of workout to …")', () => {
     expect(asksToRename("Don't rename it")).toBe(false);
   });
 
-  it('is a registered, gated, versioned tool for workout turns only', () => {
+  it('is a registered, gated, versioned tool for today’s live workout (ADR 0038: from its sheet and from Today’s general turn)', () => {
     const t = COACH_TOOLS.find((x) => x.name === 'rename_workout');
-    expect(t).toMatchObject({ effect: 'versioned_update', writes: ['session_name'], needs: 'ben_request', turnKinds: ['workout'] });
+    expect(t).toMatchObject({ effect: 'versioned_update', writes: ['session_name'], needs: 'ben_request', turnKinds: ['general', 'workout'] });
   });
 
   it('Ben asks: the workout is renamed at once, with Undo back to the old name; a replay renames once', async () => {

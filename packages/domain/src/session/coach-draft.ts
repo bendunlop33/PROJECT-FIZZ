@@ -26,6 +26,7 @@ import {
   type WorkoutDraftVersion,
   type ZonedTimestamp,
 } from '@fizz/schemas';
+import { isBenLoad, type BenLoad } from '../coach/adjust';
 import { builtInRepRange, builtInTargetRpe, ruleCategory } from '../default-rule';
 import { cardioDistanceText, dayMonthText, EQUIPMENT_WORD, formatDuration, repRangeText, formatNumber, rirOfRpe } from '../display';
 import { needsNoEquipment } from '../exercise-equipment';
@@ -260,6 +261,8 @@ export interface ProposalLoadContext {
   painFor(exercise: Exercise): { text: string } | null;
   /** Ben asked heavier in his words (BD16). */
   askedHeavier: boolean;
+  /** ADR 0038: weights Ben named in his words (`namedWeights`): a coach load equal to one is his, kept as typed. */
+  benLoads?: readonly BenLoad[];
 }
 
 export type WorkoutProposalCheck =
@@ -534,7 +537,8 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   const checkLoad = (proposal: ProposedExercise['load'], r: RepRange, targetRpe: number): LoadCheck | null => {
     if (refs === null || loadCtx === null) return null;
     if (swapped) return { load: null, source: 'rule', held: false, notes: ['swapped here · rule used'], basis: null, coachNote: null, notUsed: null };
-    return checkProposedLoad(proposal === undefined || proposal === null ? null : { value: proposal.value, unit: proposal.unit, convention: proposal.convention, basis: proposal.basis }, { repsMin: r.min, repsMax: r.max, targetRpe }, refs, loadCtx);
+    const mine = proposal != null && isBenLoad({ value: proposal.value, unit: proposal.unit, convention: proposal.convention }, lc?.benLoads);
+    return checkProposedLoad(proposal === undefined || proposal === null ? null : { value: proposal.value, unit: proposal.unit, convention: proposal.convention, basis: proposal.basis }, { repsMin: r.min, repsMax: r.max, targetRpe }, refs, mine ? { ...loadCtx, asTyped: true } : loadCtx);
   };
   const loadNotes = (c: LoadCheck | null, label: string): void => {
     if (c === null) return;

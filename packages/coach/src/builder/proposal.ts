@@ -1,5 +1,5 @@
 import type { BuilderEditOp } from '@fizz/schemas';
-import { coachRowLoads } from '@fizz/domain';
+import { coachRowLoads, type BenLoad } from '@fizz/domain';
 import type { TextCheck } from './claims';
 import { OUT_OF_DATE_LINE, applyBuilderEdits, preconditionsHold, type BuilderCoachEnv, type BuilderCoachSnapshot, type EditOutcome, type SlotPrecondition } from './edit-ops';
 
@@ -34,6 +34,8 @@ export interface BuilderProposal {
   hidden: string[];
   /** Ben asked for heavier when it was made: Apply's re-check uses the same load guard step (spec §5, `stepsHarderAsked`). */
   askedHeavier: boolean;
+  /** ADR 0038: weights Ben named when it was made (kept as typed); Apply's re-check reads the same. Absent on older proposals. */
+  benLoads?: BenLoad[];
   /** (Redesign v3 §A5) Slots whose top working load the change moves, with the load after (`✦ 22 ea` on Today's row). */
   topLoadsAfter?: Readonly<Record<string, number>>;
 }
@@ -59,6 +61,7 @@ export function makeBuilderProposal(input: { id: string; snapshot: BuilderCoachS
       reason: checked.shown,
       hidden: checked.hidden,
       askedHeavier: input.env.askedHeavier,
+      ...(input.env.benLoads !== undefined && input.env.benLoads.length > 0 ? { benLoads: [...input.env.benLoads] } : {}),
       topLoadsAfter: coachRowLoads(input.snapshot.workout, outcome.workout),
     },
     outcome,
@@ -75,7 +78,7 @@ export function recheckBuilderProposal(p: BuilderProposal, now: BuilderCoachSnap
   const fresh = preconditionsHold(p.preconditions, now);
   if (!fresh.ok) return fresh;
   // The guard runs as it did when Ben saw the lines: his "heavier" request stands (integrity B1).
-  const outcome = applyBuilderEdits(now, p.ops, { ...env, askedHeavier: p.askedHeavier });
+  const outcome = applyBuilderEdits(now, p.ops, { ...env, askedHeavier: p.askedHeavier, ...(p.benLoads === undefined ? {} : { benLoads: p.benLoads }) });
   const differs = (a: readonly string[], b: readonly string[]): boolean => a.length !== b.length || a.some((l, i) => l !== b[i]);
   // A new ⚠ since (Ben's other edits) is shown before Apply, never applied unseen (review N5).
   if (differs(outcome.lines, p.lines) || outcome.warnings.some((w) => !p.warnings.includes(w))) return { ok: false, line: OUT_OF_DATE_LINE };

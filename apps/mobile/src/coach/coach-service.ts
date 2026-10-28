@@ -25,6 +25,7 @@ import {
   acceptLiftTargetOffer,
   createEditTodayExecutor,
   type EditTodayDeps,
+  type ToolExecutor,
   createRenameExecutor,
   createChatSetExecutors,
   createNextTargetsExecutor,
@@ -144,6 +145,8 @@ import {
   substitutionOptions,
   cleanMemoryText,
   deriveId,
+  namedWeights,
+  planGymUpdate,
   memoryCanBeSaved,
   memoryList,
   type AppliedStructural,
@@ -226,7 +229,7 @@ import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
 import { summaryNoteSentences } from './next-time-view';
 import type { CustomWrite } from '../services/custom-exercises';
 import type { TextCoachState } from '@fizz/providers';
-import { muscleGroupOf } from '@fizz/schemas';
+import { GymEquipmentKindSchema, muscleGroupOf } from '@fizz/schemas';
 import type {
   ActionDetail,
   CheckInSettings,
@@ -491,6 +494,11 @@ export interface CoachServiceDeps {
    * time limits, and a stream lost there is retried once on return. Absent: plain timers.
    */
   lifecycle?: TurnLifecycle;
+  /**
+   * ADR 0038: today's workout takes its gym's saved equipment now (the manual `Use changes today` with nothing to
+   * review, as Ben's own "learn as you train" does). True when the snapshot was refreshed. Absent: today keeps its kit.
+   */
+  refreshTodayKit?: (sessionId: string, opId: string) => Promise<boolean>;
 }
 
 /** (Ben, 28 Oct) The thread a turn lands in before it has one: a workout's (its summary's too) or the general one. */
@@ -983,6 +991,57 @@ export function createCoachService(deps: CoachServiceDeps) {
       ruleTargetRpe: ruleRpesOf,
       ...(addInputs === undefined ? {} : { inputs: (exerciseId: string, aggregate: SessionAggregate) => addInputs(exerciseId, aggregate).catch(() => null) }),
       ...(deps.onSessionChanged === undefined ? {} : { onSessionChanged: deps.onSessionChanged }),
+      learnKit: (exercise, aggregate, ctx) => learnKitFor(p, exercise, aggregate, ctx),
+    };
+  }
+
+  /**
+   * ADR 0038 (Ben, 28 Oct: "It gets very caught up in whether I have equipment"): the coach adds or swaps to an
+   * exercise the workout's gym has nothing for in its profile. The gym learns that kind of equipment (Ben's own
+   * gym edit, as `update_gym` saves it: a card with Undo), then today's snapshot takes it. Null when nothing could
+   * be learned (no gym, the kind is already there, or a single machine marked not here).
+   */
+  async function learnKitFor(p: UserProfile, exercise: Exercise, aggregate: SessionAggregate, ctx: { ownerId: string; turnId: string; opId: string; now: ZonedTimestamp }): Promise<ActionRecord | null> {
+    const gymId = aggregate.session.gymId;
+    if (gymId === null) return null;
+    const gym = await repos().gyms.get(gymId).catch(() => null);
+    if (gym === null || gym.ownerId !== p.id) return null;
+    const equipment = await repos().equipment.listByGym(gymId).catch(() => [] as EquipmentInstance[]);
+    const unit = equipment.find((e) => e.availability === 'available')?.unit ?? p.preferredUnit;
+    const kind = exercise.compatibleEquipment.flatMap((k) => { const g = GymEquipmentKindSchema.safeParse(k); return g.success ? [g.data] : []; }).find((k) => !equipment.some((e) => e.kind === k && e.availability === 'available'));
+    if (kind === undefined) return null;
+    const opId = deriveId(`coach-kit-learn:${ctx.opId}:${exercise.id}`);
+    let n = 0;
+    const plan = planGymUpdate({ gym, equipment, unit, changes: [{ op: 'add', equipment: kind }], exercise: () => null, atUtc: ctx.now.utc, newId: () => deriveId(`coach-gym-item:${opId}:${String((n += 1))}`) });
+    if (!plan.ok || (plan.edit.gym === null && plan.edit.equipment.length === 0)) return null;
+    const detail: ActionDetail = { kind: 'update_gym', gymId, gymName: gym.name, lines: plan.edit.lines.length > 0 ? plan.edit.lines : ['No change'], edit: plan.edit };
+    const entityVersions = [
+      ...(plan.edit.gym === null ? [] : [{ entity: 'gym', id: gymId, before: plan.edit.gym.before.version, after: plan.edit.gym.after.version }]),
+      ...plan.edit.equipment.map((e) => ({ entity: 'equipment', id: e.after.id, before: e.before?.version ?? null, after: e.after.version })),
+    ];
+    const w = await coachStore().commit(p.id, { kind: 'gym_edit', action: newActionRecord({ ...ctx, opId }, detail, { reason: `Learned for ${exercise.name}`.slice(0, 200), entityVersions }), edit: plan.edit });
+    if (w.status === 'conflict') return null;
+    await refreshKitAfterGymEdit(p, gymId, opId);
+    return w.action;
+  }
+
+  /** ADR 0038: after a gym edit (the coach's, or Ben's Apply on its card), today's workout at that gym takes the change. */
+  async function refreshKitAfterGymEdit(p: UserProfile, gymId: string, opId: string): Promise<void> {
+    if (deps.refreshTodayKit === undefined) return;
+    const live = await repos().sessions.getActive(p.id).catch(() => null);
+    if (live === null || live.session.status !== 'active' || live.session.gymId !== gymId) return;
+    // A derived opId: the workout's own commands take at most 128 characters, and a retry refreshes once.
+    if (!(await deps.refreshTodayKit(live.session.id, deriveId(`coach-kit-today:${opId}`)).catch(() => false))) return;
+    const fresh = await repos().sessions.get(live.session.id).catch(() => null);
+    if (fresh !== null) deps.onSessionChanged?.(fresh);
+  }
+
+  /** ADR 0038: `update_gym` applied (Ben said it): today's workout at that gym takes the change too. */
+  function withKitRefresh(p: UserProfile, run: ToolExecutor): ToolExecutor {
+    return async (call, ctx) => {
+      const r = await run(call, ctx);
+      if (r.kind === 'action' && !r.replayed && r.record.status === 'committed' && r.record.detail.kind === 'update_gym') await refreshKitAfterGymEdit(p, r.record.detail.gymId, ctx.opId).catch(() => undefined);
+      return r;
     };
   }
 
@@ -992,7 +1051,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const base: CoachExecutors = {
       ...reads,
       // (20 Oct, ADR 0029) "This gym has no leg press": applied with Undo when Ben said it, else a card he applies.
-      update_gym: createGymUpdateExecutor({ store, gym: (name) => gymForUpdate(p, session, name), exercise: exerciseByIdOrKey }),
+      update_gym: withKitRefresh(p, createGymUpdateExecutor({ store, gym: (name) => gymForUpdate(p, session, name), exercise: exerciseByIdOrKey })),
       // (Ben, 23 Oct, D8) `propose_next_workout_change` is back: an Apply lands on the next workout's Your workout draft
       // (today-only edits with Undo; the builder's `landCoachChanges`), so the card never says Applied for nothing.
       ...createStructuralExecutors(structuralDeps(p, session)),
@@ -1008,7 +1067,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     const load = () => repos().sessions.get(session.session.id);
     const painFlags = () => repos().painFlags.listActive(p.id);
     const out: CoachExecutors = { ...base, get_active_session: createSessionReadExecutor({ loadSession: load, gymName, ruleTargetRpe: ruleRpesOf }) };
-    if (kind === 'workout') {
+    // ADR 0038: today's live workout from any entry point (the workout's sheet, Today, Progress, Plan).
+    if (kind === 'workout' || (kind === 'general' && session.session.status === 'active')) {
       // Coach v3 (ADR 0027): one tool for today's workout (swap, add, remove, move, set count, targets); applies only when Ben asked.
       out.edit_today = createEditTodayExecutor(editDepsFor(p, session, gymName, checkIn, onlySessionExerciseId));
       // "Log 100 for 8", "set 2 was 95" (backlog §4.3): the workout's own commands, only when Ben's words ask.
@@ -1541,7 +1601,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           ruleReps: (e) => reps.get(e.id) ?? null,
           previous,
           newSlotKey: (exerciseId, i) => deriveId(`coach-draft-slot:${opId}:${exerciseId}:${String(i)}`),
-          loads: { refsFor: refsHere, painFor, askedHeavier: words.askedHeavier },
+          loads: { refsFor: refsHere, painFor, askedHeavier: words.askedHeavier, benLoads: namedWeights(newest.join('\n')) },
           mainLift: mainEx === null ? null : { exercise: mainEx, skip: words.skipMainInsert || (draft !== null && parent !== null && !parent.plan.slots.some((sl) => sl.exerciseId === mainEx.id)) },
           namedByBen: (e) => namedKeys.has(e.id),
         };
@@ -1677,8 +1737,12 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (a.status !== 'ok' && a.status !== 'offline') throw new Error(`The coach isn't available (${a.status}).`);
     const model = deps.model?.();
     if (model === undefined || a.model === null) throw new Error("The coach isn't connected.");
-    const session = await sessionOf(req.entry);
-    const kind = kindFor(req.entry, session, req.summary === true);
+    const own = await sessionOf(req.entry);
+    // ADR 0038 (Ben, 28 Oct: "It fails to make the changes I want"): Today, Progress and Plan open a general thread;
+    // while a workout is live, that workout is in context there too, with the same tools as its own sheet.
+    const liveHere = own === null && isGeneralEntry(req.entry) && req.summary !== true ? await repos().sessions.getActive(p.id).catch(() => null) : null;
+    const session = own ?? (liveHere?.session.status === 'active' ? liveHere : null);
+    const kind = kindFor(req.entry, own, req.summary === true);
     const ctx = await contextInput(p, kind, session, req.entry);
     const offerScope = req.input.kind === 'chip' ? (req.input.sessionExerciseId ?? null) : null;
     const executors = await executorsFor(p, req.entry, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
@@ -1706,7 +1770,9 @@ export function createCoachService(deps: CoachServiceDeps) {
     const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
     // Review planview-19oct B1: no open plan here and Ben's words change "my plan" (Library's `Ask coach to change`): the plan in use is the basis.
     const planInUse = kind === 'general' && req.input.kind === 'words' && planInThread === null && changesPlanInUse(said) ? await appliedPlanOf(p) : null;
-    const planWanted = kind === 'general' && req.input.kind === 'words' && (planFollowUp || asksForPlan(said) || (planInThread !== null && (revisesPlan(said) || changesPlanInUse(said))) || planInUse !== null);
+    // ADR 0038: "change my plan to 4 days" with no plan in use and none open here builds one (the plan builder's proposal).
+    const planFromNothing = kind === 'general' && req.input.kind === 'words' && planInThread === null && planInUse === null && changesPlanInUse(said);
+    const planWanted = kind === 'general' && req.input.kind === 'words' && (planFollowUp || asksForPlan(said) || (planInThread !== null && (revisesPlan(said) || changesPlanInUse(said))) || planInUse !== null || planFromNothing);
     const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, said, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread, basedOn: planInUse } : null) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan": the plan in use and today's date, and the tool.
@@ -1735,23 +1801,25 @@ export function createCoachService(deps: CoachServiceDeps) {
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
     // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first. Review exlist
     // S2: what he named in his recent messages in this workout's thread counts too (same limits as a build's).
-    const allAddable = kind === 'workout' && session !== null && session.session.status === 'active' && deps.coachAddInputs !== undefined ? await addableFor(p, session) : null;
+    const liveNow = (kind === 'workout' || kind === 'general') && session !== null && session.session.status === 'active';
+    const allAddable = liveNow && deps.coachAddInputs !== undefined ? await addableFor(p, session) : null;
     const recentBen = recentBenWords(benWordsOf(thread), toMs(deps.now().utc));
     const addable = allAddable === null ? null : capAddable(allAddable, [req.input.kind === 'words' ? req.input.text : '', ...recentBen].join('\n'));
     // 21 Oct (Ben's Build B report): a live turn carries the last sessions of the exercises in play (the one he's on,
     // the ones he named here or in his recent messages), so "it's too light given Friday" has Friday's sets without a read.
-    const recentLifts = kind === 'workout' && session !== null && session.session.status === 'active' ? await recentLiftsFor(p, session, [req.input.kind === 'words' ? req.input.text : '', ...recentBen].join('\n')).catch(() => []) : [];
+    const recentLifts = liveNow ? await recentLiftsFor(p, session, [req.input.kind === 'words' ? req.input.text : '', ...recentBen].join('\n')).catch(() => []) : [];
     // (19 Oct) The capped addable list in the prompt; `find_exercises` searches all of it (`edit_today` add checks against all of it).
     if (allAddable !== null && session !== null) {
       const ids = new Set(allAddable.map((a) => a.exerciseId));
       const everything = await exercisePool();
-      const pool = everything.filter((e) => ids.has(e.catalogueKey ?? e.id));
       const proposeHere = proposeDeps(p, everything);
-      const usableIds = new Set(pool.map((e) => e.id));
       const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
       const flaggedMove = movementMatcher(everything, flags.filter((f) => f.status === 'active'));
       const atNow = deps.now();
       const flaggedHere = (e: Exercise): boolean => flaggedMove(e) || painFlagCovering(flags, e.id, toMs(atNow.utc), atNow.tz) !== null;
+      // ADR 0038: an exercise the gym's profile has nothing for is still found and used (the app learns the kit on add).
+      const pool = everything.filter((e) => ids.has(e.catalogueKey ?? e.id) || ((e.ownerId === null || e.ownerId === p.id) && !isArchivedExercise(e) && e.measurement !== 'distance' && !flaggedHere(e)));
+      const usableIds = new Set(pool.map((e) => e.id));
       const gymHere = { name: (await repos().gyms.get(session.session.gymId ?? '').catch(() => null))?.name ?? 'This gym', equipment: currentGymEquipment(session.session) };
       Object.assign(executors, createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(pool)), elsewhere: () => Promise.resolve(elsewherePool(p, everything, usableIds, gymHere, flaggedHere)), ...(proposeHere === undefined ? {} : { propose: proposeHere }) }));
     }
@@ -1771,13 +1839,15 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(kind === 'workout' && a.workoutModel != null ? { workoutModel: a.workoutModel } : {}),
           surface: 'sheet',
           context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(weekView === null ? {} : { week: weekView }) },
-          structuralSignals: await structuralSignalsFor(p, session).catch(() => []),
+          structuralSignals: await structuralSignalsFor(p, own).catch(() => []),
+          // ADR 0038: a general thread stays general when today's workout is in its context.
+          ...(liveHere !== null && own === null ? { threadSessionId: null } : {}),
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),
           ...((await threadHasOpenDraft(p, req.threadId)) ? { draftInThread: true } : {}),
           // Review B1, S4: the coach is told the app builds a session only when it really can here.
           ...(kind === 'general' && build !== null ? { buildAvailable: true } : {}),
-          ...(planInThread !== null || planInUse !== null ? { planInContext: true } : {}),
+          ...(planInThread !== null || planInUse !== null || planFromNothing ? { planInContext: true } : {}),
           ...(liftTargetsOn ? { liftTargetsOn: true } : {}),
           ...(weekView?.needsReshape === true ? { weekOpen: true } : {}),
           signal: stop.signal,
@@ -1796,7 +1866,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(deps.lifecycle === undefined ? {} : { lifecycle: deps.lifecycle }),
           ...(build?.inPlay === true ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : kind === 'workout' ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_WORKOUT_TIMEOUT_MS } } : {}),
           // Coach v3: Adjust on an offered edit applies exactly that offer (no model call); stale when the workout moved on.
-          ...(kind === 'workout' && session !== null ? { acceptOffer: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptEditOffer(editDepsFor(p, session, ctx.gymName, ctx.checkIn), proposal, c) } : {}),
+          ...(liveNow ? { acceptOffer: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptEditOffer(editDepsFor(p, session, ctx.gymName, ctx.checkIn), proposal, c) } : {}),
           // Review lift-targets B1: Apply (or "yes") on the coach's target offer sets exactly that target; stale when his targets changed.
           ...(liftTargetsOn ? { acceptLiftTarget: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptLiftTargetOffer(coachStore(), proposal, c) } : {}),
         },
@@ -2111,6 +2181,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const record: ActionRecord = { ...base, turnId: null };
       const r = tap === 'apply' ? await coachStore().commit(p.id, { kind: 'gym_edit', action: record, edit: proposal.detail.edit }) : await coachStore().commit(p.id, { kind: 'record', action: record });
       if (r.status === 'conflict') return { ok: false, state: 'out_of_date' };
+      if (tap === 'apply' && r.status === 'written') await refreshKitAfterGymEdit(p, proposal.detail.gymId, opId).catch(() => undefined);
       return { ok: true, record: r.action };
     },
 

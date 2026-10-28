@@ -205,11 +205,12 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['pending_set_target', 'session_exercise'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['workout'],
+    // ADR 0038: from every entry point while the workout is live (Today, Progress and Plan open a general turn).
+    turnKinds: ['general', 'workout'],
     plainLabel: "Change today's workout (exercises, sets and targets), with Undo",
     capabilitySection: 'when_you_ask',
     description:
-      "Change today's live workout in one call, any mix of ops: `set` a pending set's target (load in the exercise's unit and convention, reps, target RPE; null keeps a value), `set_count` an exercise's working sets today (done ones included), `swap` an exercise's remaining sets to another exercise, `add` an exercise (exerciseId from YOUR DATA addable or find_exercises; sets, reps or workSeconds, targetRpe, optional position or superset partner; load null: the app plans it from his history on this gym's equipment, unless Ben gave a weight (`load` in his unit, 0 = no weight); a cardio exercise takes workSeconds and, if Ben gave one, distanceMetres; an exercise already in today's workout is added as a second copy with its own sets, e.g. supersetted with itself at 0, while more sets of the same one is set_count), `remove` an exercise's remaining sets, `move` an exercise (with its superset) after another or first (null), `superset` two exercises already in today's workout (their remaining sets alternate), `split_superset` an exercise's superset. Done sets never change. The app snaps and bounds every load to the equipment, holds increases on pain, and refuses the whole call if a swap, add, removal or move can't be done. baseVersion: the workout's version; after a change, use the sessionVersion it returns. Today only: never for next time, his routine or template. benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer he can accept.",
+      "Change today's live workout in one call, any mix of ops: `sets` lays out an exercise's remaining working sets in order, each with its target (load, reps, target RPE): use it to fill in sets and weights (\"build up to 95 kg as the last set\": ramp sets, then his weight last); `set` one pending set's target (null keeps a value); `set_count` an exercise's working sets today (done ones included); `swap` an exercise's remaining sets to another exercise; `add` an exercise (exerciseId from YOUR DATA addable or find_exercises; sets, reps or workSeconds, targetRpe, optional position or superset partner; `load` in his unit when Ben gave a weight, 0 = no weight, else null and the app plans it; a cardio exercise takes workSeconds and, if Ben gave one, distanceMetres; an exercise already in today's workout is added as a second copy, while more sets of the same one is set_count); `remove` an exercise's remaining sets; `move` an exercise (with its superset) after another or first (null); `superset` two exercises already in today's workout; `split_superset` an exercise's superset. Loads are in the exercise's unit and convention (dumbbells per hand). Weights, reps and sets Ben names are used exactly; the app fits your own loads to his equipment. Done sets never change. An op that can't be done is left out and named in the result; the rest applies. baseVersion: the workout's version; after a change, use the sessionVersion it returns; when stale, call once more with the baseVersion it returns. Today only: never for next time, his routine or template. benAsked: true when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words; false when it is your own idea, which he sees as an offer he can accept.",
   },
   {
     // (14 Oct, PM decision pending Ben) Offered on every live-workout turn; applies at once with Undo only when
@@ -219,7 +220,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['session_name'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['workout'],
+    turnKinds: ['general', 'workout'],
     plainLabel: "Rename today's workout, with Undo",
     capabilitySection: 'when_you_ask',
     description: "Rename today's live workout to the name Ben asked for (baseVersion from the workout). Today's workout only: the routine it came from keeps its name. benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer.",
@@ -612,7 +613,8 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
       if (t.name === 'update_gym') return g.gymWords === true ? null : 'needs_request';
       if (requestOpens(t, g.benRequest)) return null;
       if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
-      if (TODAY_TOOLS.has(t.name) && g.kind === 'workout' && g.liveWorkout === true) return null;
+      // ADR 0038: from any entry point while today's workout is live (the workout's sheet, Today, Progress, Plan).
+      if (TODAY_TOOLS.has(t.name) && g.kind !== 'summary' && g.liveWorkout === true) return null;
       // An accepted offer only counts for today's sets (CA1).
       return g.acceptedOffer && (t.name === 'adjust_pending_sets' || t.name === 'edit_today') ? null : 'needs_request';
     case 'ben_pain_words':
@@ -635,6 +637,11 @@ export function buildTurnRegistry(gate: TurnGate, tools: readonly ToolDeclaratio
   const withheld: WithheldTool[] = [];
   for (const t of tools) {
     if (!t.turnKinds.includes(gate.kind)) {
+      withheld.push({ name: t.name, reason: 'turn_kind' });
+      continue;
+    }
+    // ADR 0038: a general turn (Today, Progress, Plan) gets today's tools only while a workout is live.
+    if (TODAY_TOOLS.has(t.name) && gate.kind === 'general' && gate.liveWorkout !== true) {
       withheld.push({ name: t.name, reason: 'turn_kind' });
       continue;
     }

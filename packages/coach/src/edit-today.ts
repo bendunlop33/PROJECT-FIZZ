@@ -1,4 +1,4 @@
-import { coachEditPainHold, planCoachEdit, type CoachEditExerciseInputs } from '@fizz/domain';
+import { coachEditPainHold, currentGymEquipment, doableHere, namedWeights, planCoachEdit, type CoachEditExerciseInputs } from '@fizz/domain';
 import type { ActionDetail, ActionRecord, CoachEditTodayCommand, EditTodayOp, Exercise, GuardNote, PainFlag, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 import { actionIdFor, newActionRecord, type CoachWriteStore, type ToolCallContext, type ToolExecutor, type ToolResult } from './executors';
 
@@ -36,6 +36,13 @@ export interface EditTodayDeps {
   inputs?: (exerciseId: string, aggregate: SessionAggregate) => Promise<(CoachEditExerciseInputs & { exerciseUnsaved?: boolean }) | null>;
   /** After a write: the workout screen and rest alerts follow the new state. */
   onSessionChanged?: (aggregate: SessionAggregate) => void;
+  /**
+   * ADR 0038 (Ben, 28 Oct: "It gets very caught up in whether I have equipment"): an add or swap names an
+   * exercise this gym's profile has nothing for. The app learns the kit (the gym gains that equipment, with its
+   * own card and Undo) and refreshes today's snapshot, like the manual "learn as you train". Its record, or null
+   * when nothing could be learned (the exercise is then added with no item, loads as given).
+   */
+  learnKit?: (exercise: Exercise, aggregate: SessionAggregate, ctx: ToolCallContext) => Promise<ActionRecord | null>;
 }
 
 const NO_ID = '00000000-0000-4000-8000-000000000000';
@@ -82,10 +89,42 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
     const refuse = (status: 'stale' | 'rejected', failure: string | null, guardNotes: GuardNote[] = [], opId = ctx.opId): Promise<ToolResult> =>
       recordOnly(deps.store, ctx.ownerId, newActionRecord({ ...ctx, opId }, editDetail(sessionId, a.baseVersion), { status, failure: status === 'stale' ? null : failure, guardNotes, reason: a.reason }), 'refused edit');
     if (aggregate === null) return refuse('stale', null);
-    const { byOp, unsaved } = await readInputs(deps, a.ops, aggregate);
+    // ADR 0038: a stale call gets the version as it is now, so the model can call once more against it.
+    const staleNow = async (guardNotes: GuardNote[], opId = ctx.opId): Promise<ToolResult> => {
+      const r = await refuse('stale', null, guardNotes, opId);
+      const now = await deps.loadSession().catch(() => null);
+      return r.kind === 'action' && now !== null && now.session.status === 'active' ? { ...r, retry: { baseVersion: now.session.version } } : r;
+    };
+    let current = aggregate;
+    let args = a;
+    const also: ActionRecord[] = [];
+    const withAlso = (r: ToolResult): ToolResult => (r.kind === 'action' && also.length > 0 ? { ...r, also } : r);
+    let first = await readInputs(deps, a.ops, current);
+    // ADR 0038: learn the kit for an add or swap the gym's profile can't do yet (not on an offer: that waits for Ben).
+    if (ctx.propose !== true && deps.learnKit !== undefined && current.session.version === a.baseVersion) {
+      const missing = new Map<string, Exercise>();
+      for (const got of first.byOp.values()) {
+        const e = got?.exercise ?? null;
+        if (e !== null && got !== null && !doableHere(e, { ...got.substitute.gym, equipment: currentGymEquipment(current.session) })) missing.set(e.id, e);
+      }
+      for (const e of missing.values()) {
+        const rec = await deps.learnKit(e, current, ctx).catch(() => null);
+        if (rec !== null) also.push(rec);
+      }
+      if (also.some((r) => r.status === 'committed')) {
+        const fresh = await deps.loadSession().catch(() => null);
+        // Today's own refresh moved the version: the call is rebased on it, nothing else changed in between.
+        if (fresh !== null && fresh.session.status === 'active') {
+          current = fresh;
+          args = { ...a, baseVersion: fresh.session.version };
+          first = await readInputs(deps, a.ops, current);
+        }
+      }
+    }
+    const { byOp, unsaved } = first;
     const plan = planCoachEdit({
-      aggregate,
-      args: a,
+      aggregate: current,
+      args,
       intent: ctx.intent,
       opId: ctx.opId,
       actionId: actionIdFor(ctx.opId),
@@ -94,13 +133,15 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
       sessionPainUnspecified: deps.sessionPainUnspecified,
       gymName: deps.gymName,
       messagePain: ctx.messagePain,
-      ruleTargetRpe: deps.ruleTargetRpe ? await deps.ruleTargetRpe(aggregate).catch(() => undefined) : undefined,
+      ruleTargetRpe: deps.ruleTargetRpe ? await deps.ruleTargetRpe(current).catch(() => undefined) : undefined,
       onlySessionExerciseId: deps.onlySessionExerciseId ?? null,
       exercises: byOp,
+      benLoads: namedWeights(ctx.benWords),
+      kitOptional: true,
     });
-    if (plan.status === 'stale') return refuse('stale', null, plan.guardNotes);
-    if (plan.status === 'rejected') return refuse('rejected', plan.failure, plan.guardNotes);
-    const detail = editDetail(sessionId, a.baseVersion, { lines: plan.lines, exercises: plan.exercises, ...(plan.added.length > 0 ? { added: plan.added } : {}), names: plan.names, command: plan.command });
+    if (plan.status === 'stale') return withAlso(await staleNow(plan.guardNotes));
+    if (plan.status === 'rejected') return withAlso(await refuse('rejected', plan.failure, plan.guardNotes));
+    const detail = editDetail(sessionId, args.baseVersion, { lines: plan.lines, exercises: plan.exercises, ...(plan.added.length > 0 ? { added: plan.added } : {}), names: plan.names, command: plan.command });
     // Rule 3: an offer saves exactly what would apply, and nothing else.
     if (ctx.propose === true) {
       return recordOnly(deps.store, ctx.ownerId, newActionRecord(ctx, detail, { status: 'proposed', guardNotes: plan.guardNotes, reason: a.reason }), 'offer');
@@ -108,19 +149,19 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
     const action = newActionRecord(ctx, detail, {
       reason: a.reason,
       guardNotes: plan.guardNotes,
-      entityVersions: [{ entity: 'session', id: sessionId, before: a.baseVersion, after: a.baseVersion + 1 }],
+      entityVersions: [{ entity: 'session', id: sessionId, before: args.baseVersion, after: args.baseVersion + 1 }],
     });
     const saveExercises = plan.used.filter((e) => unsaved.has(e.id));
-    const w = await deps.store.commit(ctx.ownerId, { kind: 'session_command', action, sessionId, command: plan.command, expectedSessionVersion: a.baseVersion, ...(saveExercises.length > 0 ? { saveExercises } : {}) });
+    const w = await deps.store.commit(ctx.ownerId, { kind: 'session_command', action, sessionId, command: plan.command, expectedSessionVersion: args.baseVersion, ...(saveExercises.length > 0 ? { saveExercises } : {}) });
     if (w.status === 'conflict') {
-      const stale = w.reason === 'stale_version';
-      return refuse(stale ? 'stale' : 'rejected', stale ? null : 'the workout refused it', plan.guardNotes, `${ctx.opId}:refused`);
+      if (w.reason === 'stale_version') return withAlso(await staleNow(plan.guardNotes, `${ctx.opId}:refused`));
+      return withAlso(await refuse('rejected', 'the workout refused it', plan.guardNotes, `${ctx.opId}:refused`));
     }
     if (w.status === 'written') {
       const fresh = await deps.loadSession().catch(() => null);
       if (fresh !== null) deps.onSessionChanged?.(fresh);
     }
-    return { kind: 'action', record: w.action, replayed: w.status === 'replayed' };
+    return withAlso({ kind: 'action', record: w.action, replayed: w.status === 'replayed' });
   };
 }
 

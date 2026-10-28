@@ -20,7 +20,7 @@ export interface AskClaim {
 }
 
 export type AskVerdict =
-  | { asked: true; by: 'chip' | 'accepted_offer' | 'quote' | 'words' }
+  | { asked: true; by: 'chip' | 'accepted_offer' | 'quote' | 'claim' | 'words' }
   | { asked: false; by: 'model_said_no' | 'no_request' | 'not_a_request' };
 
 export interface AskInput {
@@ -45,6 +45,11 @@ export interface AskInput {
    * claim of the model's whose quote is only part of it ("It's too light") then still counts as his ask.
    */
   benWordsAsk?: boolean;
+  /**
+   * ADR 0038: code's own reading of Ben's message this turn (`classifyBenRequest` and friends) says he asked
+   * for a change (a change, an add, a swap, a difficulty, a build). With the model's claim, that is his ask.
+   */
+  benRequested?: boolean;
 }
 
 /** Fewest words a quote needs, unless it is Ben's whole message ("Heavier"). */
@@ -137,9 +142,45 @@ export function asksOutright(text: string): boolean {
 }
 
 /**
- * Did Ben ask for this today-change? A tap counts (for today's sets). Then the model's claim, if its quote is in his
- * message and reads as a request (`quoteAsks`); a quote of his that doesn't is an offer. A claim of "he didn't ask" is taken (the call becomes an offer). No claim, or one code
- * can't verify: the word lists decide.
+ * ADR 0038 (Ben, 28 Oct: "It fails to make the changes I want"): a verb of change that starts a sentence or
+ * follows a polite ask ("can you make", "please swap", "I want to add", "let's do"). Read on Ben's whole
+ * message, so a paraphrase in the model's quote doesn't matter. A statement ("set 2 felt good", "that went up
+ * nicely") has none.
+ */
+const ASK_VERB =
+  /(?:^|[.!?;:,\n]\s*|\b(?:can|could|would|will) (?:you|we|i) (?:please |just |maybe )?|\bplease |\bi (?:want|need|would like|'d like) (?:you to |to )?|\blet'?s |\blet us |\bgo ahead and |\bjust )(?:make|swap|switch|change|add|remove|drop|lower|raise|increase|decrease|reduce|bump|cut|skip|move|replace|put|give|use|adjust|build|fill|update|superset|pair|go|bring|start|finish|ramp|work up|build up|knock|sub|substitute|take out|get rid of|have)\b/;
+/** "Rows instead of pull-ups", "Heavier please", "more weight on curls": asking without a verb. */
+const ASK_NO_VERB = /\binstead\b|\b(?:heavier|lighter|harder|easier|more|less|fewer) (?:please|pls|then|today|for|on)\b|\bplease\s*[.!]?$/;
+
+/**
+ * ADR 0038: does Ben's message this turn ask for a change? A short answer to the coach's question ("Working set",
+ * "Heavier"), a verb of change at a sentence's start or after a polite ask, or a verbless ask ("instead",
+ * "heavier please"); with `correction`, a planned value he contradicts with a number ("I did 15, why 8?").
+ * A message that only asks the coach's opinion ("should I go heavier?") doesn't, unless it also asks outright.
+ */
+export function benMessageAsks(words: string, opts: { correction?: boolean; structural?: boolean } = {}): boolean {
+  const list = wordsOf(words);
+  if (list.length === 0) return false;
+  const w = list.join(' ');
+  if (OPINION_ONLY.test(w) && !ASKS_OUTRIGHT.test(w)) return false;
+  if (list.length <= MAX_ANSWER_WORDS) return true;
+  const raw = words.toLowerCase().replace(/[‘’`´]/g, "'").trim();
+  // A swap, add, removal or move must be what he asked for, not only a change of some kind ("it's too light" asks for loads).
+  if (opts.structural === true) return STRUCTURAL_ASK.test(raw);
+  if (ASK_VERB.test(raw) || ASK_NO_VERB.test(raw) || ASKS_OUTRIGHT.test(w)) return true;
+  return opts.correction === true && quoteCorrects(words, words);
+}
+
+/** ADR 0038: words that ask for a swap, add, removal, move or superset (a structural edit of today's workout). */
+const STRUCTURAL_ASK = /\b(?:swap|switch|replace|substitute|sub|instead|remove|drop|take out|get rid of|skip|add|put in|stick in|throw in|move|reorder|superset|pair|something else|something different|different exercise|alternative)\b/;
+
+/**
+ * Did Ben ask for this today-change? A tap counts (for today's sets). ADR 0038 (Ben, 28 Oct): decided once per
+ * turn, leniently. The model says he asked (`benAsked`) and his message this turn asks for a change
+ * (`benMessageAsks`, code's own reading `benRequested`, or a quote of his that reads as a request): asked, whatever
+ * the quote's exact wording. A claim of "he didn't ask" is taken (the call becomes an offer), and so is a message
+ * that asks for nothing (a statement, a question for an opinion): the coach raising a change itself is an offer.
+ * No claim: the word lists decide.
  */
 export function verifyAsked(input: AskInput): AskVerdict {
   // A tap asks for a change to today's sets: the set tool, or (Coach v3) the edit tool that replaced it.
@@ -150,14 +191,15 @@ export function verifyAsked(input: AskInput): AskVerdict {
   // Review coach-fail B2: Ben declined or deferred ("I'll fix it myself", "don't bump it", "not now"): his words never
   // ask, whatever the model quotes or the word lists say (rule 3). The call becomes an offer.
   if (input.words !== null && declinesChange(input.words)) return { asked: false, by: benAsked === false ? 'model_said_no' : 'not_a_request' };
-  if (benAsked === true && quoteInWords(benQuote, input.words) && benQuote != null && input.words !== null) {
-    // His words, but a statement or a question for an opinion: the coach's idea, offered (review S3).
+  if (benAsked === false) return { asked: false, by: 'model_said_no' };
+  if (benAsked === true && input.words !== null) {
     // Review B1: a correction ("I did 15") asks only for today's set targets, never a structural edit or a lift target.
     const correction = input.tool === 'edit_today' && input.setsOnly === true;
-    if (quoteAsks(benQuote, input.words, { correction })) return { asked: true, by: 'quote' };
-    return input.benWordsAsk === true ? { asked: true, by: 'words' } : { asked: false, by: 'not_a_request' };
+    if (benQuote != null && quoteInWords(benQuote, input.words) && quoteAsks(benQuote, input.words, { correction })) return { asked: true, by: 'quote' };
+    if (input.benWordsAsk === true) return { asked: true, by: 'words' };
+    if (asksOpinionOnly(input.words)) return { asked: false, by: 'not_a_request' };
+    if (input.benRequested === true || benMessageAsks(input.words, { correction, structural: input.tool === 'edit_today' && input.setsOnly === false })) return { asked: true, by: 'claim' };
+    return { asked: false, by: 'not_a_request' };
   }
-  if (benAsked === true && input.benWordsAsk === true) return { asked: true, by: 'words' };
-  if (benAsked === false) return { asked: false, by: 'model_said_no' };
   return input.fallback() ? { asked: true, by: 'words' } : { asked: false, by: 'no_request' };
 }

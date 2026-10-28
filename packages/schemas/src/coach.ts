@@ -373,6 +373,12 @@ export type RenameWorkoutArgs = z.infer<typeof RenameWorkoutArgsSchema>;
 export const EditTodayOpSchema = z.discriminatedUnion('op', [
   /** A pending set's target (load, reps, target RPE; null keeps a value). */
   z.strictObject({ op: z.literal('set'), setId: IdSchema, target: CoachTargetSchema }),
+  /**
+   * ADR 0038 (Ben, 28 Oct: "build up to 95 kg barbell row as the last set"): the exercise's remaining working sets,
+   * in order, each with its target. Pending working sets take them in order; more add sets, fewer remove pending
+   * ones from the end. Done sets stay and aren't listed.
+   */
+  z.strictObject({ op: z.literal('sets'), sessionExerciseId: IdSchema, sets: z.array(CoachTargetSchema).min(1).max(12) }),
   /** The exercise's working sets today, done ones included: more adds pending sets like its last one, fewer removes pending ones from the end. */
   z.strictObject({ op: z.literal('set_count'), sessionExerciseId: IdSchema, workingSets: z.int().min(0).max(20) }),
   /** The exercise's pending sets move to another exercise (done sets stay). */

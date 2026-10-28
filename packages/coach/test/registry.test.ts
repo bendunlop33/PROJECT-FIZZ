@@ -83,8 +83,8 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
       if (t.writes.includes('gym_equipment')) expect([t.name, t.needs]).toEqual(['update_gym', 'ben_request']);
       // (Ben, 20 Oct) A lift target on his profile: only set_lift_target, never a workout's sets.
       if (t.writes.includes('lift_target')) expect([t.name, t.writes]).toEqual(['set_lift_target', ['lift_target']]);
-      // (14 Oct) The live workout's name: only rename_workout, gated, only in the workout.
-      if (t.writes.includes('session_name')) expect([t.name, t.needs, t.turnKinds]).toEqual(['rename_workout', 'ben_request', ['workout']]);
+      // (14 Oct) The live workout's name: only rename_workout, gated, only on the live workout (ADR 0038: from any entry; `buildTurnRegistry` withholds it with no live workout).
+      if (t.writes.includes('session_name')) expect([t.name, t.needs, t.turnKinds]).toEqual(['rename_workout', 'ben_request', ['general', 'workout']]);
       // (Ben, 20 Oct) The plan's pause: only pause_plan, on Ben's own pause words, in a general turn.
       if (t.writes.includes('plan_pause')) expect([t.name, t.needs, t.turnKinds]).toEqual(['pause_plan', 'ben_request', ['general']]);
       if (t.writes.includes('logged_set')) {
@@ -92,11 +92,11 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
         expect(t.needs).toBe('ben_request');
         expect(t.turnKinds).toEqual(['workout']);
       }
-      // (12 Oct) An exercise added to today's workout: only on Ben's request, only in the workout (Coach v3: edit_today).
+      // (12 Oct) An exercise added to today's workout: only on Ben's request, only on the live workout (Coach v3: edit_today; ADR 0038: from any entry).
       if (t.writes.includes('session_exercise')) {
         expect(t.name).toBe('edit_today');
         expect(t.needs).toBe('ben_request');
-        expect(t.turnKinds).toEqual(['workout']);
+        expect(t.turnKinds).toEqual(['general', 'workout']);
       }
     }
   });
@@ -107,11 +107,13 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_exercise_records', 'get_recent_sessions', 'get_progression_targets', 'get_substitutions', 'find_exercises', 'propose_exercise', 'get_recent_actions', 'suggest_memory', 'log_activity']);
   });
 
-  it("today's sets need Ben's request or an accepted offer, and only in a workout", () => {
+  it("today's sets need Ben's request or an accepted offer, and a live workout (ADR 0038: from any entry)", () => {
     expect(names(gate({ kind: 'workout' }))).not.toContain('edit_today');
     expect(names(gate({ kind: 'workout', benRequest: ASKED }))).toContain('edit_today');
     expect(names(gate({ kind: 'workout', acceptedOffer: true }))).toContain('edit_today');
     expect(names(gate({ kind: 'general', benRequest: ASKED }))).not.toContain('edit_today');
+    expect(names(gate({ kind: 'general', liveWorkout: true }))).toContain('edit_today');
+    expect(names(gate({ kind: 'summary', liveWorkout: true, benRequest: ASKED }))).not.toContain('edit_today');
     // An accepted offer is not a request for anything else.
     expect(names(gate({ kind: 'workout', acceptedOffer: true }))).not.toContain('save_memory');
   });

@@ -32,7 +32,7 @@ export interface BuilderLoadGuard {
    * Check a working load (in the slot's unit) the coach asked for. `step`: the value is one step from
    * the slot's load on this gym's item (a `heavier` / `lighter` op), not a number the coach named.
    */
-  check(slot: BuilderSlot, requested: number, opts: { askedHeavier: boolean; step?: boolean }): GuardResult;
+  check(slot: BuilderSlot, requested: number, opts: { askedHeavier: boolean; step?: boolean; benNamed?: boolean }): GuardResult;
   /** The working load `steps` steps heavier or lighter than `from` on this gym's item; null when there's none. */
   step(slot: BuilderSlot, from: number, dir: 'heavier' | 'lighter', steps: number): number | null;
 }
@@ -78,7 +78,7 @@ export function createBuilderLoadGuard(deps: LoadGuardDeps): BuilderLoadGuard {
     return null;
   };
 
-  const check = (slot: BuilderSlot, requested: number, opts: { askedHeavier: boolean; step?: boolean }): GuardResult => {
+  const check = (slot: BuilderSlot, requested: number, opts: { askedHeavier: boolean; step?: boolean; benNamed?: boolean }): GuardResult => {
     const input = deps.ctx.loads(slot.exerciseId);
     const rc = roundContextOf(input);
     const pain = deps.pain(slot.exerciseId);
@@ -87,6 +87,13 @@ export function createBuilderLoadGuard(deps: LoadGuardDeps): BuilderLoadGuard {
     const heavier = now === null || compareDifficulty(requested, now, d) > EPS;
     if (pain !== null && now !== null && heavier) return { ok: false, note: `Not heavier: ${pain}` };
     const notes: string[] = [];
+    // ADR 0038 (Ben, 28 Oct): a weight Ben named is kept as he typed it: no ceiling, no rounding to the rack;
+    // only the item's max (rule 4; the pain check above is rule 9).
+    if (opts.benNamed === true) {
+      const r = roundDownHere(requested, rc);
+      if (r !== null && r.bounded === 'max') return { ok: true, value: r.value, notes: [`capped at machine max ${fmt(r.value)} ${r.unit}`] };
+      return { ok: true, value: requested, notes };
+    }
     let value = requested;
     const refs = deps.refs(slot.exerciseId);
     if (refs === null) {
