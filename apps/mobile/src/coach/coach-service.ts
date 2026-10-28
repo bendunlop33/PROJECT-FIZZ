@@ -154,6 +154,10 @@ import {
   type ExerciseHistoryView,
   exerciseRecordsView,
   recentSessionsView,
+  lastDaysView,
+  LAST_DAYS,
+  localMidnightUtcMs,
+  type LastDaysView,
   toIso,
   trainingOverviewView,
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
@@ -904,7 +908,15 @@ export function createCoachService(deps: CoachServiceDeps) {
         if (name === null || aggs.length === 0) return null;
         return exerciseRecordsView({ exerciseId, exerciseName: name, sessions: aggs, gymNames: await gymNames(), equipmentNames: equipmentNames(aggs) });
       },
-      async recentSessions(count) {
+      async recentSessions(count, opts) {
+        // (Ben, 28 Oct) One local day ("yesterday's workout"): the day's workouts in his timezone, imports by their date.
+        if (opts?.date !== undefined) {
+          const date = opts.date;
+          const from = localMidnightUtcMs(addDays(date, -1), p.timezone);
+          const to = localMidnightUtcMs(addDays(date, 2), p.timezone);
+          const day = (await repos().sessions.listFinishedBetween(p.id, toIso(from), toIso(to)).catch(() => [] as HistoryWorkout[])).filter((a) => (a.session.localDate ?? localDateOf(toMs(a.session.startedAt.utc), p.timezone)) === date);
+          return recentSessionsView({ sessions: day, count, gymNames: await gymNames() });
+        }
         const refs = await repos().sessions.listFinishedRefs(p.id, count, { includeImported: true }).catch(() => []);
         const aggs: SessionAggregate[] = [];
         for (const r of refs) {
@@ -1003,6 +1015,28 @@ export function createCoachService(deps: CoachServiceDeps) {
     return out;
   }
 
+  /**
+   * (Ben, 28 Oct) The last 7 days for every coach surface: finished workouts (app, past-logged, imported) and the done
+   * activities (Apple Health's too), trimmed to its budget. Local reads only; a failed read is no section, never a turn
+   * that fails.
+   */
+  async function lastDaysFor(p: UserProfile): Promise<LastDaysView | null> {
+    try {
+      const nowMs = toMs(deps.now().utc);
+      const today = localDateOf(nowMs, p.timezone);
+      const from = addDays(today, -LAST_DAYS);
+      // A day either side: imports carry their date at noon in the zone they were imported in.
+      const workouts = await repos().sessions.listFinishedBetween(p.id, toIso(localMidnightUtcMs(addDays(from, -1), p.timezone)), toIso(nowMs + 1));
+      const activities = await repos().activities.listBetween(p.id, from, addDays(today, 1));
+      const gyms = await repos().gyms.listByOwner(p.id).catch(() => []);
+      const training = await repos().trainingProfiles.get(p.id).catch(() => null);
+      const splitDayNames = Object.fromEntries(splitInUse(training).days.map((d) => [d.id, d.name]));
+      return lastDaysView({ workouts, activities, today, gymNames: Object.fromEntries(gyms.map((g) => [g.id, g.name])), splitDayNames });
+    } catch {
+      return null;
+    }
+  }
+
   /** (21 Oct) The recent sessions of a live workout's exercises in play, as `get_recent_training` reads them. Local reads only. */
   async function recentLiftsFor(p: UserProfile, session: SessionAggregate, words: string): Promise<ExerciseHistoryView[]> {
     const reads = trainingReads(p, session);
@@ -1036,6 +1070,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const builtIn = kind === 'summary' && session !== null ? await builtInNext(session) : null;
     const training = (await deps.training?.().catch(() => null)) ?? null;
     const linkedActivity = session === null || deps.healthLinked === undefined ? null : await deps.healthLinked(session.session.id).catch(() => null);
+    const lastDays = await lastDaysFor(p);
     return {
       gymName,
       checkIn,
@@ -1055,6 +1090,7 @@ export function createCoachService(deps: CoachServiceDeps) {
         ...(openedFrom === undefined ? {} : { openedFrom }),
         ...(training === null ? {} : { training }),
         ...(linkedActivity === null ? {} : { linkedActivity }),
+        ...(lastDays === null ? {} : { lastDays }),
         ...(builtIn === null || session === null
           ? {}
           : {
@@ -1712,6 +1748,16 @@ export function createCoachService(deps: CoachServiceDeps) {
     availability,
     resolveThread,
     loadThread,
+    /** (Ben, 28 Oct) The last 7 days as every coach surface sees it (the builder's coach too); null: no profile or unreadable. */
+    lastDays: async (): Promise<LastDaysView | null> => {
+      const p = await deps.profile().catch(() => null);
+      return p === null ? null : lastDaysFor(p);
+    },
+    /** (Ben, 28 Oct) The read port the builder's edit coach reads history through (the main coach's own; local reads only). */
+    readPort: async (): Promise<TrainingReadPort | null> => {
+      const p = await deps.profile().catch(() => null);
+      return p === null ? null : trainingReads(p, null);
+    },
     listThreads: async (): Promise<CoachThread[]> => coachStore().listThreads((await owner()).id),
     send,
 

@@ -1132,6 +1132,9 @@ export function createAppServices(deps: AppServicesDeps) {
       update: async (next, expectedVersion, opId) => repos().reviews.update(await ownerIdOf(), next, expectedVersion, opId),
     },
     dayNotes: createDayNotes({ store: () => repos().coach, ownerId: ownerIdOf, now: deps.now }),
+    // (Ben, 28 Oct) The last 7 days on every builder request, and the main coach's read tools for the edit coach.
+    lastDays: () => coach.lastDays(),
+    reads: () => coach.readPort(),
     // (Ben, 23 Oct; §2.9) Coach review's own Your data: lift targets only while they're on, and today's check-in.
     reviewExtras: async () => {
       const p = await getProfile();

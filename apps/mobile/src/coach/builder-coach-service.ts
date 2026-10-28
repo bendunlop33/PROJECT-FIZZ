@@ -26,6 +26,12 @@ import {
   buildReviewRequest,
   buildSetupRequest,
   checkCoachText,
+  createTrainingReadExecutors,
+  lastDaysClaimExtras,
+  readClaimExtras,
+  requestBuilderToolWithReads,
+  type BuilderReadLog,
+  type TrainingReadPort,
   checkFillSetup,
   checkMixPick,
   checkNudge,
@@ -75,7 +81,7 @@ import {
   type SetupCoachContext,
   type SetupFill,
 } from '@fizz/coach';
-import { deriveId, estimateBuilderMinutes, infoOrDefault, parseBuildRequest, slotsOf, stableStringify, toMs, type BuilderGroupName, type BuilderWorkout, type LoadReferences, type MainFocus } from '@fizz/domain';
+import { deriveId, estimateBuilderMinutes, infoOrDefault, parseBuildRequest, slotsOf, stableStringify, toMs, type BuilderGroupName, type BuilderWorkout, type LastDaysView, type LoadReferences, type MainFocus } from '@fizz/domain';
 import {
   BUILDER_COACH_TOOL,
   type ActionDetail,
@@ -190,6 +196,16 @@ export interface BuilderCoachServiceDeps {
   dayNotes?: DayNotesPort;
   /** (Ben, 23 Oct) Lift targets and today's check-in for Coach review; absent or failing: none given. */
   reviewExtras?: () => Promise<BuilderReviewExtras>;
+  /**
+   * (Ben, 28 Oct) The last 7 days' workouts and activities (Your data, local reads only) for every builder request
+   * (Set up, edit, review, the pre-session nudge). Absent or failing: not given, and the `Sees` chip doesn't say it.
+   */
+  lastDays?: () => Promise<LastDaysView | null>;
+  /**
+   * (Ben, 28 Oct) The main coach's read port, so the edit coach can read a day in full (`get_recent_sessions` with a
+   * date), an exercise's history or records: reads only, restricted as the main coach's. Absent: no reads.
+   */
+  reads?: () => Promise<TrainingReadPort | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +351,23 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
     }
   };
 
+  /** (Ben, 28 Oct) The last 7 days, or null (not wired, or the read failed: never a reason to fail the ask). */
+  async function lastDaysNow(): Promise<LastDaysView | null> {
+    return deps.lastDays === undefined ? null : await deps.lastDays().catch(() => null);
+  }
+
+  /** The edit coach's request with the read tools (when wired), its network state kept like `call`'s. */
+  async function callWithReads<K extends BuilderCoachToolName>(req: Parameters<typeof requestBuilderTool>[1], tool: K, ask: { words: string; opId: string }, signal?: AbortSignal): Promise<{ answer: BuilderToolAnswer<K>; reads: BuilderReadLog[] }> {
+    const port = deps.model?.();
+    if (port === undefined) return { answer: { ok: false, error: 'unavailable' }, reads: [] };
+    const readPort = deps.reads === undefined ? null : await deps.reads().catch(() => null);
+    const reads = readPort === null ? null : { executors: createTrainingReadExecutors(readPort), context: { ownerId: await deps.ownerId(), turnId: ask.opId, opId: ask.opId, now: deps.now(), benWords: ask.words, messagePain: null, intent: 'general' as const } };
+    const r = await requestBuilderToolWithReads(port, req, tool, reads, signal === undefined ? {} : { signal });
+    if (!r.answer.ok && r.answer.error === 'network') lastNetworkFailureMs = nowMs();
+    else if (r.answer.ok) lastNetworkFailureMs = null;
+    return r;
+  }
+
   function envFor(world: BuilderCoachWorld, words: string): BuilderCoachEnv {
     return { ...world.env, askedHeavier: parseBuildRequest(words).askedHeavier };
   }
@@ -408,6 +441,11 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
   }
 
   const service = {
+    /** (Ben, 28 Oct) What the coach sees beyond the draft, for the `Sees` chip: the last 7 days when wired. */
+    sees(): { lastDays: boolean } {
+      return { lastDays: deps.lastDays !== undefined };
+    },
+
     /** The bar's status word now (`● Coach`, `Offline`, `Coach not connected`). No provider call. */
     async status(): Promise<BuilderCoachReach> {
       return (await reach()).reach;
@@ -420,7 +458,9 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
      */
     async askSetup(req: { words: string; opId: string; from?: SetupFrom; signal?: AbortSignal }): Promise<SetupAsk> {
       const from = req.from ?? 'setup';
-      const ctx = await deps.source.setup(from);
+      const setup = await deps.source.setup(from);
+      const days = setup === null ? null : await lastDaysNow();
+      const ctx = setup === null || days === null ? setup : { ...setup, lastDays: days };
       const r = await reach();
       if (ctx === null) return { kind: 'failed', status: r.reach };
       const write = { openBuilder: from === 'today' };
@@ -455,9 +495,14 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       if (world === null) return { kind: 'gone' };
       const env = envFor(world, req.words);
       const view = builderWorkoutView(world.snapshot, env.ctx, estimateBuilderMinutes(world.snapshot.workout, env.ctx));
-      const answer = await call(buildEditRequest(view, world.extras, req.words, builderModelFor('edit', r.models)), BUILDER_COACH_TOOL.proposeWorkoutEdit, req.signal);
+      const days = await lastDaysNow();
+      const extras = days === null ? world.extras : { ...world.extras, lastDays: days };
+      // (Ben, 28 Oct) It may read his history first (a day in full, an exercise's sets or records), then proposes.
+      const { answer, reads } = await callWithReads(buildEditRequest(view, extras, req.words, builderModelFor('edit', r.models)), BUILDER_COACH_TOOL.proposeWorkoutEdit, { words: req.words, opId: req.opId }, req.signal);
       if (!answer.ok) return { kind: 'unavailable', status: failedReach(answer), ...(answer.error === 'timeout' ? { timeout: true as const } : {}) };
-      const made = makeBuilderProposal({ id: req.opId, snapshot: world.snapshot, ops: answer.args.ops, words: answer.args.reply, check: workoutClaimCheck(world.snapshot.workout, claimBase(world, req.words)), env });
+      // What it saw and read may be quoted back, each number with its exercise (the claim check, rule 6).
+      const base: ClaimBase = { ...claimBase(world, req.words), extra: [...lastDaysClaimExtras(extras.lastDays), ...readClaimExtras(reads)] };
+      const made = makeBuilderProposal({ id: req.opId, snapshot: world.snapshot, ops: answer.args.ops, words: answer.args.reply, check: workoutClaimCheck(world.snapshot.workout, base), env });
       if (made.proposal === null) return { kind: 'reply', text: made.reason, notes: made.outcome.notes, status: 'ok' };
       return { kind: 'proposal', proposal: made.proposal, status: 'ok' };
     },
@@ -504,9 +549,11 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
         const view = builderWorkoutView(world.snapshot, env.ctx, estimateBuilderMinutes(world.snapshot.workout, env.ctx));
         // (Ben, 23 Oct) The numbers too: his own edits against what was drafted, and per exercise his history, all code's.
         const ctx = await reviewContextOf(world, env);
-        const answer = await call(buildReviewRequest(view, world.extras, lines, builderModelFor('review', r.models), ctx.request), BUILDER_COACH_TOOL.reviewWorkout, req.signal);
+        const days = await lastDaysNow();
+        const extras = days === null ? world.extras : { ...world.extras, lastDays: days };
+        const answer = await call(buildReviewRequest(view, extras, lines, builderModelFor('review', r.models), ctx.request), BUILDER_COACH_TOOL.reviewWorkout, req.signal);
         if (answer.ok) {
-          coach = checkReview({ reviewId, args: answer.args, snapshot: world.snapshot, env, claims: { ...claims, extra: ctx.claims }, edits: ctx.edits });
+          coach = checkReview({ reviewId, args: answer.args, snapshot: world.snapshot, env, claims: { ...claims, extra: [...ctx.claims, ...lastDaysClaimExtras(extras.lastDays)] }, edits: ctx.edits });
           status = 'reviewed';
         } else {
           const st = failedReach(answer);
@@ -578,7 +625,8 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       const name = (id: string) => infoOrDefault(env.ctx.info, id).name;
       const signalLines = signals.map((s) => signalLine(s, name));
       const offer = signals.length === 0 ? null : nudgeOffer(signals, world.snapshot, env);
-      const text = nudgeContextText({ day: world.snapshot.dayName, signals: signalLines, offer: offer === null ? null : { id: offer.id, lines: offer.proposal.lines }, extras: { goal: world.extras.goal, painFlags: world.extras.painFlags } });
+      const days = signals.length === 0 ? null : await lastDaysNow();
+      const text = nudgeContextText({ day: world.snapshot.dayName, signals: signalLines, offer: offer === null ? null : { id: offer.id, lines: offer.proposal.lines }, extras: { goal: world.extras.goal, painFlags: world.extras.painFlags, ...(days === null ? {} : { lastDays: days }) } });
       const facts = builderFacts([text]);
       const subject: ReviewSubject = { kind: 'pre_session', localDate: req.input.today, splitDayId: req.splitDayId, draftId: req.draftId };
       // The inputs: the signals and the plan day only (not the draft or the offer, which move with Apply).
