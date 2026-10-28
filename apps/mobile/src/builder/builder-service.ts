@@ -1300,9 +1300,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
    * (Ben, 28 Oct) What Your workout's `+` may add, best first: the day's main group's pool, then the secondary group's
    * (`growSecondaryGroup`: arms on a Chest, Back or Shoulders day). Gym-available and not pain-flagged (`env.pool`).
    */
-  const growCandidates = (workout: BuilderWorkout, mainGroup: BuilderGroup | null, env: BuilderEnv): { arm: string[]; mainGroup: string[] } => {
+  const growCandidates = (mainGroup: BuilderGroup | null, env: BuilderEnv): { arm: string[]; mainGroup: string[] } => {
     // Not filtered by what's on the page: the fit skips those itself, so the same Time picks the same exercises.
-    void workout;
     const fresh = (g: BuilderGroup) => env.pool(g).slice(0, 16);
     const secondary = growSecondaryGroup(mainGroup);
     return { mainGroup: mainGroup === null ? [] : fresh(mainGroup), arm: secondary === null ? [] : fresh(secondary) };
@@ -2033,7 +2032,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const mainGroup = mainGroupOf(workout, stored, env);
         // (Ben, 28 Oct) What `+` may add: the day's main group, then the secondary group (arms on Chest, Back, Shoulders).
         const growEnv = w.grow === true ? await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(workout), ...exerciseIdsOf(fit?.base ?? null)], groups: [...(mainGroup === null ? [] : [mainGroup]), 'Arms'], keySeed: `${current.id}:${w.opId}` }) : env;
-        const addCandidates = w.grow === true ? growCandidates(workout, mainGroup, growEnv) : undefined;
+        const addCandidates = w.grow === true ? growCandidates(mainGroup, growEnv) : undefined;
         const r = fitWorkoutToTime({ current: workout, fit, minutes: from, to: minutes, ctx: growEnv.ctx, mainGroup, supersets: stored.supersets, ...(w.grow === true ? { grow: true } : {}), ...(addCandidates === undefined ? {} : { addCandidates }) });
         if (r.full === true) return { refused: 'nothing_more', env };
         const plan = withSlotRevs(v.plan, toDraftPlan(r.workout, growEnv.codec)).plan;

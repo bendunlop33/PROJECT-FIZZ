@@ -65,7 +65,7 @@ describe('the + ladder (fitToMinutes grow)', () => {
     const w = push();
     const r = grow(w, Math.round(mins(w)) + 14, 'Chest', { mainGroup: [], arm: [] });
     expect(shape(r.workout)).toEqual(['bench×5', 'incline_db×4', 'pushdown×4']);
-    expect(r.steps.filter((s) => s.kind === 'sets').map((s) => s.kind === 'sets' && s.exerciseId)).toEqual(['incline_db', 'pushdown', 'bench']);
+    expect(r.steps.flatMap((s) => (s.kind === 'sets' ? [s.exerciseId] : []))).toEqual(['incline_db', 'pushdown', 'bench']);
   });
 
   it('then exercises: the day’s main group first, then arms (Chest day), never a near-duplicate, up to 8', () => {
@@ -210,5 +210,8 @@ describe('liveTime: Your workout’s + steps from the estimate', () => {
     expect(liveTime({ estimate: 33, length: 60, growFromEstimate: true }).more).toBe(40);
     expect(liveTime({ estimate: 180, length: 180, growFromEstimate: true }).more).toBeNull();
     expect(liveTime({ estimate: 32, length: 60 }).more).toBe(65);
+    // A cut live (a fit landed under its length): past the length, so more Time always gives something back.
+    expect(liveTime({ estimate: 42, length: 45, growFromEstimate: true, cutLive: true }).more).toBe(50);
+    expect(liveTime({ estimate: 42, length: 45, growFromEstimate: true }).more).toBe(45);
   });
 });

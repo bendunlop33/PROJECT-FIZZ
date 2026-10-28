@@ -465,7 +465,7 @@ export interface LiveTime {
  * (`+`) so every tap moves something: an estimate just under its length (a fit can't land on the minute) would step to
  * where it already is, and one over it (Ben's own edits) to a length the fit gives back uncut. Pure.
  */
-export function liveTime(i: { estimate: number; length: number; floor?: number; growFromEstimate?: boolean }): LiveTime {
+export function liveTime(i: { estimate: number; length: number; floor?: number; growFromEstimate?: boolean; cutLive?: boolean }): LiveTime {
   const estimate = Math.max(0, Math.round(i.estimate));
   const length = clampMinutes(i.length);
   const floor = clampMinutes(i.floor ?? length);
@@ -478,7 +478,9 @@ export function liveTime(i: { estimate: number; length: number; floor?: number; 
   // estimate, never past the length first. Elsewhere `+` goes past the length (a fit there only gives back cuts).
   // At least 3 minutes more, so a fit that landed just under its step (34 of 35) still moves on a tap.
   if (i.growFromEstimate === true && estimate > 0) {
-    const up = stepTimeMinutes(estimate + 2, 1);
+    // While a cut is live (`cutLive`), past the length too: more Time first gives back what it cut, and a cut that
+    // landed under its length would otherwise be asked for the same length again.
+    const up = Math.max(stepTimeMinutes(estimate + 2, 1), i.cutLive === true ? stepTimeMinutes(length, 1) : 0);
     return { minutes: estimate, over: estimate > length, less: less < floor ? less : null, more: up > estimate ? up : null };
   }
   if (more <= length) more = stepTimeMinutes(length, 1);

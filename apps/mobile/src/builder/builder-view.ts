@@ -403,7 +403,8 @@ export function timeRowView(snap: BuilderSnapshot): TimeRowView {
   const { note, lines } = fitNoteOf(snap.time?.changes ?? [], name, slotName);
   // (Ben, 27 Oct) The number is the workout on the page (`snap.minutes`, the shared estimate), live after every edit.
   // (Ben, 28 Oct) `+` makes the workout on the page longer: it steps from the estimate (`fitWorkoutToTime` grow).
-  const live = liveTime({ estimate: snap.minutes, length, floor: Math.min(length, snap.fullMinutes ?? length), growFromEstimate: true });
+  const cutLive = snap.time !== null && snap.fullMinutes !== undefined && length < snap.fullMinutes;
+  const live = liveTime({ estimate: snap.minutes, length, floor: Math.min(length, snap.fullMinutes ?? length), growFromEstimate: true, cutLive });
   return {
     minutes: live.minutes,
     length,

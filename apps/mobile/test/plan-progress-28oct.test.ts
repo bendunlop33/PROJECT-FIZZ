@@ -298,7 +298,11 @@ describe('5. The time estimate learns Ben’s pace', () => {
     const { s, gymId } = await benWithPlan();
     const before = await loaded(s);
     const key = before.days.find((d) => d.name === 'Push')?.key ?? '';
-    const sel = (d: TodaySessionData) => ({ dayKey: key, controls: d.initial[key] ?? before.initial[key]! });
+    const sel = (d: TodaySessionData) => {
+      const controls = d.initial[key];
+      if (controls === undefined) throw new Error('no Push');
+      return { dayKey: key, controls };
+    };
     const card0 = s.todaySession.card(before, sel(before));
     // Imported history (no times) leaves the estimate as it was.
     await importFile(s, ['2026-10-01,Leg Extension,Legs,50.0,10,,,', '2026-10-01,Leg Extension,Legs,50.0,10,,,', '2026-10-02,Seated Calf Raise,Legs,40.0,12,,,'], 'import-old');

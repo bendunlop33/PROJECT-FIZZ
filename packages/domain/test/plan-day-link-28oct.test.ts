@@ -146,6 +146,6 @@ describe('Ben’s answer: versioned, op ID, Undo (rule 5)', () => {
 
   it('Count needs a plan day; a plan not in use is refused', () => {
     expect(answerPlanDayLink(plan(), { expectedVersion: 3, opId: 'x', at, sessionId: 'imp', answer: 'count', dayIndex: null, routineId: null }).kind).toBe('invalid');
-    expect(answerPlanDayLink({ ...plan(), status: 'ended' } as PlanDraft, { expectedVersion: 3, opId: 'y', at, sessionId: 'imp', answer: 'not_plan_day', dayIndex: null, routineId: null }).kind).toBe('stale');
+    expect(answerPlanDayLink({ ...plan(), status: 'ended' }, { expectedVersion: 3, opId: 'y', at, sessionId: 'imp', answer: 'not_plan_day', dayIndex: null, routineId: null }).kind).toBe('stale');
   });
 });

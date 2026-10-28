@@ -251,7 +251,7 @@ describe('Time on Your workout: the same built-in fit as Today’s, today’s dr
     expect(shapeOf(short)).not.toEqual(shapeOf(snap0));
     // Step back up: each step brings back some; at the original length it is the original exactly.
     let snap = short;
-    for (let i = 0; i < 12 && workoutView(snap).time.note !== null; i += 1) {
+    for (let i = 0; i < 30 && workoutView(snap).time.note !== null; i += 1) {
       const to = workoutView(snap).time.more;
       if (to === null) break;
       snap = opened(await s.builder.setTime(snap.draftId, to, { opId: `more-${String(i)}`, expectedVersion: snap.version }));
@@ -438,7 +438,8 @@ describe('Time on Your workout (source): the same control as Today’s; the scre
     const page = read('screens/builder/BuilderWorkoutScreen.tsx');
     expect(page).toContain("import { TimeDetailSheet, TimeNoteRow } from '../../ui/time-stepper';");
     expect(page).toContain('<TimeNoteRow');
-    expect(page).toContain('services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version })');
+    // (Ben, 28 Oct) `+` asks the service to make the workout longer (`grow`); `−` and Undo fit as before.
+    expect(page).toContain("services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version, ...(grow ? { grow: true } : {}) })");
     expect(page).toContain('onUndo={(back) => void setTime({ to: back })}');
     for (const banned of ['fitToMinutes', 'fitWorkoutToTime', 'unfitWorkout', 'builderCoach.askEdit({ draftId: cur.draftId, words: `']) expect(page).not.toContain(banned);
   });
