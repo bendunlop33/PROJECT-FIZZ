@@ -38,7 +38,6 @@ import {
   weekFactsKey,
   isSplitDayName,
   isNotPlanDay,
-  linkedRoutineId,
   SPLIT_WINDOW_DAYS,
   dateWeekdayShort,
   activityDetail,
@@ -54,6 +53,7 @@ import {
 } from '@fizz/domain';
 import type { ActivityWrite, Store } from '@fizz/persistence';
 import { readPlanLinks } from './plan-day-links';
+import { planWeekDayOf, planWeekWorkoutOf } from './plan-week';
 import type { ActionRecord, Activity, ActivityFields, Exercise, MuscleGroup, PlanDraft, Routine, RoutineExercise, SessionAggregate, SplitBodyPart, SplitDay, TrainingProfile, UserProfile, WeekBasis, WeekPlan, ZonedTimestamp } from '@fizz/schemas';
 
 /**
@@ -243,11 +243,12 @@ export function createWeekServices(deps: WeekServicesDeps) {
     const planDays = plan === null ? [] : planRoutines(plan, liveRoutines(routines));
     // (Ben, 28 Oct) An imported or past-logged workout that matches a plan day ticks it; `Not a plan day` ticks none.
     const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan, templates: planDays, nowMs, exerciseOf: of, sessions: thisWeek });
-    const workouts = thisWeek.map((a) => ({ sessionId: a.session.id, routineId: linkedRoutineId(links, a.session.id, a.session.routineId ?? null), startedAtUtc: a.session.startedAt.utc, groups: isNotPlanDay(links, a.session.id) ? new Map<MuscleGroup, number>() : splitWorkoutOf(a, of, null).groups }));
+    // (Ben, 28 Oct) One workout, one plan day: each with its plan day, the lift it led with and any variants.
+    const workouts = thisWeek.map((a) => ({ ...planWeekWorkoutOf(a, links, (x) => splitWorkoutOf(x, of, null).groups), groups: isNotPlanDay(links, a.session.id) ? new Map<MuscleGroup, number>() : splitWorkoutOf(a, of, null).groups }));
     const basis: WeekBasis = plan !== null && planDays.length > 0 ? { kind: 'plan', planId: plan.id, planVersion: plan.version } : { kind: 'split' };
     let days: WeekDay[];
     if (basis.kind === 'plan' && plan?.applied != null) {
-      const refs = planDays.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, bodyParts: planDayBodyParts(r, of, split) }));
+      const refs = planDays.map((r) => planWeekDayOf(plan, r, planDayBodyParts(r, of, split)));
       const done = planDaysDoneThisWeek({ days: refs, appliedAtUtc: plan.applied.atUtc, workouts, nowMs, tz });
       days = planDays.map((r, i) => ({ id: r.id, name: r.name, bodyParts: refs[i]?.bodyParts ?? [], done: done.has(r.id), routine: r, splitDay: null }));
     } else {
@@ -522,11 +523,11 @@ export function createWeekServices(deps: WeekServicesDeps) {
     },
 
     /** Your plan's `This week: Push (Chest + Shoulders)` with Undo, while a change is in use. */
-    async change(): Promise<{ text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][] } | null> {
+    async change(): Promise<{ text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][]; mergedRoutineIds: (string | null)[] } | null> {
       const p = await deps.profile();
       if (p === null) return null;
       const s = await state(p);
-      return s.active === null ? null : { text: weekChangeText(s.active), weekPlanId: s.active.id, version: s.active.version, daysRemoved: weekDaysRemoved(s.active), merged: s.active.merges.map((m) => [...m.dayIds]) };
+      return s.active === null ? null : { text: weekChangeText(s.active), weekPlanId: s.active.id, version: s.active.version, daysRemoved: weekDaysRemoved(s.active), merged: s.active.merges.map((m) => [...m.dayIds]), mergedRoutineIds: s.active.merges.map((_, i) => s.active?.made[i]?.routineId ?? null) };
     },
   };
 

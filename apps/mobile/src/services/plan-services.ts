@@ -14,6 +14,7 @@ import {
   pinPlanDay,
   isNotPlanDay,
   linkedRoutineId,
+  linkedVariants,
   answerPlanDayLink,
   isInHistory,
   planLinksFor,
@@ -72,8 +73,9 @@ import {
 import type { PlanWrite, Store } from '@fizz/persistence';
 import { createVersionMemo } from './version-memo';
 import { readPlanLinks } from './plan-day-links';
+import { planWeekDayOf, planWeekWorkoutOf, planWeekdaysNow } from './plan-week';
 import { editBlockOf, readPlanBlock, slotKits, weekViews, type WeekViewsInput } from './plan-edit-read';
-import type { Exercise, MuscleGroup, PlanApplyMode, PlanBuilderAnswers, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, PlanApplyMode, PlanBuilderAnswers, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Coach-built plans (Ben, 19 Oct): the plan card and its day view, Apply
@@ -99,7 +101,7 @@ export interface PlanServicesDeps {
   /** Each split day's main lift (`Targets hit` shows on main lifts only, Ben 20 Oct); absent: none. */
   splitMainLiftIds?: () => Promise<ReadonlySet<string>>;
   /** (Ben, 20 Oct) This week's activity lines and the week change in use (week-services); absent: none. */
-  weekInfo?: () => Promise<{ lines: string[]; change: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][] } | null }>;
+  weekInfo?: () => Promise<{ lines: string[]; change: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][]; mergedRoutineIds?: (string | null)[] } | null }>;
 }
 
 /**
@@ -452,13 +454,6 @@ export function createPlanServices(deps: PlanServicesDeps) {
     return new Map(days.map((r) => [r.id, planDayBodyParts(r, of, split)]));
   }
 
-  /** Finished workouts from `fromMs` with the working sets they did per muscle group (Your plan's ✓, 20 Oct). */
-  async function groupedWorkouts(ownerId: string, fromMs: number, nowMs: number): Promise<Map<string, ReadonlyMap<MuscleGroup, number>>> {
-    const r = await deps.store().repos.sessions.listFinishedBetweenReadable(ownerId, toIso(fromMs), toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }));
-    const of = await exerciseOf();
-    return new Map(r.sessions.map((a) => [a.session.id, workoutGroupsOf(a, of)]));
-  }
-
   return {
     get,
     active,
@@ -641,7 +636,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const parts = await bodyPartsOf(p.id, days);
       // (27 Oct) Each workout's plan day, so Library › Plan's one list joins the week's days to their workouts.
       const madeDay = new Map(plan.applied.made.map((m) => [m.routineId, m.dayIndex] as const));
-      const dayRefs = days.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, bodyParts: parts.get(r.id) ?? [], dayIndex: madeDay.get(r.id) ?? planDayOf(r)?.dayIndex ?? null }));
+      const dayRefs = days.map((r) => ({ ...planWeekDayOf(plan, r, parts.get(r.id) ?? []), dayIndex: madeDay.get(r.id) ?? planDayOf(r)?.dayIndex ?? null }));
       const from = planWeekStartMs({ appliedAtUtc: plan.applied.atUtc, nowMs, tz });
       const week = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, toIso(from), toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }));
       // (Ben, 20 Oct) This week's workouts carry the muscles they trained: an off-plan leg day ticks Legs.
@@ -650,7 +645,14 @@ export function createPlanServices(deps: PlanServicesDeps) {
       // (Ben, 28 Oct) An imported or past-logged workout that matches a plan day (or Ben counted) is that day's;
       // `Not a plan day` ticks none.
       const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan, templates: days, nowMs, exerciseOf: of });
-      const workouts = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).map((w) => ({ ...w, routineId: linkedRoutineId(links, w.sessionId, w.routineId), groups: isNotPlanDay(links, w.sessionId) ? undefined : groups.get(w.sessionId) }));
+      // (Ben, 28 Oct) This week's workouts as this week's count reads them (one workout, one plan day): the lift each led
+      // with, and the variants a workout named for several (`Pull`) may fill.
+      const thisWeek = new Map(week.sessions.map((a) => [a.session.id, planWeekWorkoutOf(a, links, () => groups.get(a.session.id) ?? new Map())]));
+      const workouts = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).map((w) => {
+        const wk = thisWeek.get(w.sessionId);
+        const variants = linkedVariants(links, w.sessionId);
+        return { ...w, routineId: linkedRoutineId(links, w.sessionId, w.routineId), groups: isNotPlanDay(links, w.sessionId) ? undefined : groups.get(w.sessionId), leadExerciseId: wk?.leadExerciseId ?? null, ...(variants === null ? {} : { variants, variantRoutineIds: variants }) };
+      });
       const training = await deps.store().repos.trainingProfiles.get(p.id).catch(() => null);
       const gym = (await deps.currentGym?.().catch(() => null)) ?? null;
       const pause = activePause(plan, nowMs, tz);
@@ -668,6 +670,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
         nextRoutineId,
         training: training === null ? null : { goal: training.goal, daysPerWeek: training.daysPerWeek, sessionMinutes: training.sessionMinutes },
         sets: plannedSetsThisWeek({ sessions: week.sessions, days: dayRefs, appliedAtUtc: plan.applied.atUtc, nowMs, tz }),
+        weekdays: planWeekdaysNow(plan, pbBlockOfPlan(plan, workouts, nowMs, tz), dayRefs),
         nowMs,
         tz,
       });
@@ -890,17 +893,30 @@ export function createPlanServices(deps: PlanServicesDeps) {
         for (const x of pausedDates(d.pauses, firstMonday, end, tz, planInUseUntilUtc(d))) paused.add(x);
       }
       const weekStart = plan === null ? nowMs : planWeekStartMs({ appliedAtUtc: plan.appliedAtUtc, nowMs, tz });
-      const groups = plan === null ? new Map<string, ReadonlyMap<MuscleGroup, number>>() : await groupedWorkouts(p.id, weekStart, nowMs);
-      const parts = plan === null ? new Map<string, SplitBodyPart[]>() : await bodyPartsOf(p.id, (await live(p.id)).filter((r) => plan.days.some((d) => d.routineId === r.id)));
+      const of = await exerciseOf();
+      const weekSessions = plan === null ? [] : (await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, toIso(weekStart), toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }))).sessions;
+      const groups = new Map(weekSessions.map((a) => [a.session.id, workoutGroupsOf(a, of)]));
+      const liveNow = plan === null ? [] : await live(p.id);
+      // In plan order (variants fill in that order).
+      const planRoutinesLive = plan === null ? [] : plan.days.flatMap((d) => liveNow.filter((r) => r.id === d.routineId));
+      const parts = plan === null ? new Map<string, SplitBodyPart[]>() : await bodyPartsOf(p.id, planRoutinesLive);
       // (Ben, 28 Oct) Imported and past-logged workouts that count as plan days (the same links as Library › Plan).
       const applied = plan === null ? null : await repo().applied(p.id).catch(() => null);
       const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan: applied, nowMs });
+      // (Ben, 28 Oct) The same one-to-one count as Library › Plan: each workout's lead lift and variants.
+      const thisWeek = new Map(weekSessions.map((a) => [a.session.id, planWeekWorkoutOf(a, links, () => groups.get(a.session.id) ?? new Map())]));
+      const dayRefs = applied === null ? [] : planRoutinesLive.map((r) => planWeekDayOf(applied, r, parts.get(r.id) ?? []));
+      const variantRefs = refs.map((r) => {
+        const v = linkedVariants(links, r.sessionId);
+        return { ...r, routineId: linkedRoutineId(links, r.sessionId, r.routineId), ...(v === null ? {} : { variantRoutineIds: v }) };
+      });
+      const weekdays = applied === null ? null : planWeekdaysNow(applied, pbBlockOfPlan(applied, variantRefs, nowMs, tz), dayRefs);
       return consistency({
-        workouts: refs.map((r) => ({ sessionId: r.sessionId, routineId: linkedRoutineId(links, r.sessionId, r.routineId), startedAtUtc: r.startedAtUtc, groups: isNotPlanDay(links, r.sessionId) ? undefined : groups.get(r.sessionId) })),
+        workouts: refs.map((r) => ({ sessionId: r.sessionId, routineId: linkedRoutineId(links, r.sessionId, r.routineId), startedAtUtc: r.startedAtUtc, groups: isNotPlanDay(links, r.sessionId) ? undefined : groups.get(r.sessionId), ...(r.planDay === undefined ? {} : { planDay: r.planDay }), leadExerciseId: thisWeek.get(r.sessionId)?.leadExerciseId ?? null, variants: linkedVariants(links, r.sessionId) })),
         nowMs,
         tz,
         aim: training?.daysPerWeek ?? null,
-        plan: plan === null ? null : { days: plan.days.map((d) => ({ ...d, bodyParts: parts.get(d.routineId) ?? [] })), appliedAtUtc: plan.appliedAtUtc },
+        plan: plan === null ? null : { days: dayRefs.length > 0 ? dayRefs : plan.days.map((d) => ({ ...d, bodyParts: parts.get(d.routineId) ?? [] })), appliedAtUtc: plan.appliedAtUtc, weekdays },
         pausedDates: paused,
       });
   }

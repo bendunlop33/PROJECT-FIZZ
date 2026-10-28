@@ -61,6 +61,9 @@ import {
   painFlagCovering,
   planRoutines,
   splitInUse,
+  planDayBodyParts,
+  planWeekFills,
+  workoutGroupsOf,
   stableStringify,
   storedGroupsOf,
   substituteTargets,
@@ -127,6 +130,7 @@ import {
 import type { Store } from '@fizz/persistence';
 import { learnedPace, paceOpt } from './pace';
 import { readPlanLinks } from './plan-day-links';
+import { planWeekDayOf, planWeekWorkoutOf } from './plan-week';
 import {
   COACH_DRAFT_DAYS,
   MAX_WORKOUT_DRAFT_OPS,
@@ -333,9 +337,15 @@ export interface TodaySessionData {
    * never inferred from a rotation), and the date each plan day was first done this week.
    */
   week: {
-    workouts: { sessionId: string; localDate: string; title: string }[];
+    /** `dayName`: the plan day it did this week (one workout, one plan day), for its dot's colour. */
+    workouts: { sessionId: string; localDate: string; title: string; dayName?: string | null }[];
     activities: Activity[];
     planned: { key: string; name: string; localDate: string }[];
+    /**
+     * (Ben, 28 Oct) Any days plans: the plan days not done yet this week, in plan order, with no date (the tiles place
+     * them one a day after today, the card's day excepted). Empty on Set days (`planned`), paused or done blocks.
+     */
+    ahead: { key: string; name: string }[];
     doneOn: Record<string, string>;
     setDays: boolean;
     /** The week's done workouts and activities as History reads them (`52 min · 16 sets`, `5.2 km · 28 min`), for a day's sheet. */
@@ -1069,12 +1079,26 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       workouts: newest.filter((a) => localDateOf(toMs(a.session.startedAt.utc), a.session.startedAt.tz) >= monday).map((a) => withLinkedSource(feedWorkoutOf(a, { title: feedWorkoutTitle(a, titleInfo), nowMs }), linked)),
       activities: weekActs.filter((a) => a.fields.date <= today).map(feedActivityOf),
     }).filter((i) => i.localDate >= monday && i.localDate <= today);
-    // (Ben, 28 Oct) A workout linked to a plan day (imported or past-logged, matched or counted by Ben) marks that day done.
-    const linkedDayKey = (sessionId: string): string | null => {
-      const routineId = linkedRoutineId(links, sessionId, null);
-      return routineId === null ? null : (planDays.find((d) => d.templates.some((t) => t.routineId === routineId))?.key ?? null);
+    // (Ben, 28 Oct) This week's plan days done, as Library › Plan counts them: one workout, one plan day (a plan workout
+    // its own day, a workout named for variants the first free one, any other the day it mainly trained), from Monday.
+    const weekRefs = plan === null ? [] : templates.map((r) => planWeekDayOf(plan, r, planDayBodyParts(r, exerciseOf, splitInUse(training))));
+    const fills =
+      plan?.applied == null
+        ? new Map<string, { sessionId: string; startedAtUtc: string }>()
+        : planWeekFills({
+            days: weekRefs,
+            workouts: newest.filter((a) => localDateOf(toMs(a.session.startedAt.utc), tz) >= monday).map((a) => planWeekWorkoutOf(a, links, (x) => workoutGroupsOf(x, exerciseOf))),
+            nowMs,
+            tz,
+          });
+    const weekDone = new Map([...fills].map(([id, w]) => [id, w.startedAtUtc] as const));
+    const dayNameOf = new Map<string, string>();
+    for (const d of planDays) for (const t of d.templates) if (t.routineId !== null && fills.has(t.routineId)) dayNameOf.set(fills.get(t.routineId)?.sessionId ?? '', d.name);
+    const doneOnOf = (d: TodayDay): string | null => {
+      const at = d.templates.map((t) => (t.routineId === null ? undefined : weekDone.get(t.routineId))).find((x): x is string => x !== undefined);
+      return at === undefined ? null : localDateOf(toMs(at), tz);
     };
-    const week = { ...weekOf(plan, block, planDays, weekWorkouts, weekActs, today, linkedDayKey), feed: weekFeed };
+    const week = { ...weekOf(plan, block, planDays, weekWorkouts.map((w) => ({ ...w, dayName: dayNameOf.get(w.sessionId) ?? null })), weekActs, today, doneOnOf), feed: weekFeed };
     // The nudge's real signals (rule 6): finished sessions in the window, today's check-in, what Ben logged.
     const recentForNudge: NudgeSession[] = newest.slice(0, 10).map((a) => ({
       sessionId: a.session.id,
@@ -1753,6 +1777,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         workouts: data.week.workouts,
         activities: data.week.activities.map((a) => ({ activityId: a.id, localDate: a.fields.date, kind: a.fields.kind, status: a.fields.status, distanceM: a.fields.distanceM, durationS: a.fields.durationS, effort: a.fields.effort })),
         plannedDays: data.week.planned.map((d) => ({ localDate: d.localDate, name: d.name })),
+        ahead: data.week.ahead.map((d) => d.name),
         chosen,
       });
     },
@@ -1770,32 +1795,34 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 }
 
 /**
- * (Redesign v3, Ben 27 Oct) This week's plan facts for Today: on a Set days builder plan, each plan day not done yet
- * this block week with its date (Ben's moves included); the date each plan day was first done this week (the block's
- * record, else a workout titled as the day). A rotation has no dates, so nothing is planned on a date (rule 6).
+ * (Redesign v3, Ben 27 Oct) This week's plan facts for Today. `doneOn`: the date each plan day was done this week, as
+ * Library › Plan counts it (Ben, 28 Oct: one workout, one plan day; `planDaysDoneThisWeek`). Planned days:
+ * - Set days builder plan: each plan day not done yet with its weekday this block week (Ben's moves included). A day
+ *   done on another weekday fills its own plan day and never moves the others' weekdays (Ben, 28 Oct).
+ * - Any days (Ben, 28 Oct): no dates, so `ahead` lists the plan days not done yet, in plan order; Today's tiles show
+ *   them one a day after today (the next N − done days), never on a past day.
+ * Paused, or the block done: nothing planned.
  */
 function weekOf(
   plan: PlanDraft | null,
   block: PbBlockWeek | null,
   planDays: readonly TodayDay[],
-  workouts: { sessionId: string; localDate: string; title: string }[],
+  workouts: { sessionId: string; localDate: string; title: string; dayName?: string | null }[],
   activities: Activity[],
   today: string,
-  linkedDayKey: (sessionId: string) => string | null = () => null,
+  doneOnOf: (d: TodayDay) => string | null,
 ): Omit<TodaySessionData['week'], 'feed'> {
   const monday = mondayOf(today);
   const doneOn: Record<string, string> = {};
   const builder = pbAppliedBuilder(plan);
-  const thisWeek = block === null || block.done ? -1 : block.week - 1;
-  const blockDone = thisWeek >= 0 ? (block?.doneOn?.[thisWeek] ?? {}) : {};
   for (const d of planDays) {
-    const byIndex = d.dayIndex === null ? undefined : blockDone[d.dayIndex];
-    const byTitle = [...workouts].reverse().find((w) => w.title === d.name || linkedDayKey(w.sessionId) === d.key)?.localDate;
-    const on = byIndex ?? byTitle;
-    if (on !== undefined && on >= monday) doneOn[d.key] = on;
+    const on = doneOnOf(d);
+    if (on !== null && on >= monday) doneOn[d.key] = on;
   }
   const planned: TodaySessionData['week']['planned'] = [];
-  const setDays = builder !== null && builder.builder.answers.schedule === 'set' && plan !== null && block !== null && !block.done;
+  const ahead: TodaySessionData['week']['ahead'] = [];
+  const running = plan !== null && block !== null && !block.done;
+  const setDays = builder !== null && builder.builder.answers.schedule === 'set' && running;
   if (setDays) {
     const indexes = planDays.flatMap((d) => (d.dayIndex === null ? [] : [d.dayIndex]));
     const weekdays = pbWeekdaysOf(builder.builder.answers, plan.moves, block.week, indexes);
@@ -1804,8 +1831,10 @@ function weekOf(
       if (wd === undefined || doneOn[d.key] !== undefined) continue;
       planned.push({ key: d.key, name: d.name, localDate: addDays(monday, wd) });
     }
+  } else if (running) {
+    for (const d of planDays) if (doneOn[d.key] === undefined) ahead.push({ key: d.key, name: d.name });
   }
-  return { workouts, activities, planned, doneOn, setDays };
+  return { workouts, activities, planned, ahead, doneOn, setDays };
 }
 
 /** A builder draft key's Today day: `plan:<planId>:<dayIndex>`, else `other:<splitDayId>` (a Profile split day or an Other session). */

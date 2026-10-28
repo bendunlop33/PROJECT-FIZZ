@@ -105,13 +105,14 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     expect(v).toMatchObject({ planId, name: '4-day plan', goal: { action: 'Set goal' } });
     expect(plain(v?.since)).toBe('Since 13 Oct');
     // (Ben, 20 Oct) Up next adapts: Ben trained chest yesterday (before Apply), so Pull is next, not day 1.
+    // (Ben, 28 Oct) The plan's first week counts from Monday: that chest workout is this week's Push.
     expect(v?.days.map((d) => [d.n, d.name, d.state, d.next, d.when])).toEqual([
-      [1, 'Push', 'todo', false, null],
+      [1, 'Push', 'done', false, 'Mon'],
       [2, 'Pull', 'next', true, null],
       [3, 'Legs', 'todo', false, null],
       [4, 'Upper', 'todo', false, null],
     ]);
-    expect(v?.daysThisWeek.text).toBe('0 of 4');
+    expect(v?.daysThisWeek.text).toBe('1 of 4');
     expect(v?.setsDone).toBeNull();
 
     // Profile › Training details: the goal line follows.
@@ -140,7 +141,8 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     // A workout that isn't one of the plan's days has no plan-day screen.
     expect(await s.plans.planDay('not-a-plan-day')).toBeNull();
 
-    // Log day 1 (Tuesday 13 Oct): ✓ with its weekday; day 2 is next; the stats count it.
+    // Log day 1 (Tuesday 13 Oct): ✓ with its weekday (the plan's own workout fills its day; Monday's chest fills no
+    // other day); day 2 is next; the stats count it.
     h.clockMs += 3_600_000;
     await doDay(s, gymId, days[0] ?? '');
     v = await s.plans.overview();
