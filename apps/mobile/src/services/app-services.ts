@@ -44,7 +44,7 @@ import {
 } from '@fizz/persistence';
 import type { CheckInSettings, EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
-import type { CoachModelPort } from '@fizz/coach';
+import type { CoachModelPort, TurnLifecycle } from '@fizz/coach';
 import type { HealthPort, TextCoachState } from '@fizz/providers';
 
 import type { RestAlertController } from '../alerts/rest-alerts';
@@ -112,7 +112,12 @@ export interface AppServicesDeps {
    * The coach's model and connection (the phone wires the ChatGPT-plan route).
    * Absent: the coach reads as not connected; nothing else changes (rule 1).
    */
-  coach?: { model: () => CoachModelPort; connection: () => Promise<TextCoachState> };
+  coach?: {
+    model: () => CoachModelPort;
+    connection: () => Promise<TextCoachState>;
+    /** (Ben, 28 Oct) The app's foreground state for coach turns (`AppState`). Absent: plain timers. */
+    lifecycle?: TurnLifecycle;
+  };
   /**
    * Delete my data / Reset coaching knowledge: the marker and op-ID ledger
    * (a small file in the container), the Keychain items and the Your-data
@@ -630,6 +635,7 @@ export function createAppServices(deps: AppServicesDeps) {
     now: deps.now,
     newId: deps.newId,
     ...(deps.coach === undefined ? {} : { model: deps.coach.model, connection: deps.coach.connection }),
+    ...(deps.coach?.lifecycle === undefined ? {} : { lifecycle: deps.coach.lifecycle }),
     builtInNextTargets: (sessionId, reps) => loop.workout.builtInNextTargets(sessionId, reps),
     upNextTitle: (gymId) => loop.workout.upNextTitle(gymId),
     coachAddInputs: (exerciseId, aggregate) => loop.workout.coachAddInputs(exerciseId, aggregate),

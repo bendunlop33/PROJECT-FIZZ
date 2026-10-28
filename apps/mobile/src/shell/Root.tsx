@@ -35,6 +35,7 @@ import { HealthHost } from '../health/HealthHost';
 import { healthInBuild, nativeHealthPort } from '../health/native-port';
 import type { AppServices } from '../services/app-services';
 import { startApp, type StartupOutcome } from '../services/startup';
+import { createAppForeground, HOST_CLOCK } from '../coach/turn-lifecycle';
 import { ThemeProvider, TIMING, useTheme, type AvailableDirectionId } from '../theme';
 import { MessageScreen, PrimaryButton, SecondaryButton } from '../ui';
 import { createSpokenCueController } from '../voice/cue-controller';
@@ -110,6 +111,15 @@ const spokenCues = createSpokenCueController({
   appActive: () => AppState.currentState === 'active',
   settings: () => voicePrefs(),
   painFlagged: activePainFlagged,
+});
+
+/**
+ * (Ben, 28 Oct) The app's foreground state for coach turns: time away doesn't count towards a turn's time limits,
+ * and a reply stream iOS dropped while away is asked for again on return. Any state but `active` pauses them.
+ */
+const coachForeground = createAppForeground(HOST_CLOCK, AppState.currentState !== 'background');
+AppState.addEventListener('change', (state) => {
+  coachForeground.setActive(state === 'active');
 });
 
 /** One rest-alert controller for the app run (it remembers what is scheduled); the Live Activity and spoken cues follow it. */
@@ -245,6 +255,7 @@ function Launch() {
           return createPlanModelPort({ fetch: ports.fetch, vault: ports.vault, settings: ports.settings, nowMs: ports.nowMs });
         },
         connection: () => readTextCoachState(coachConnectionPorts().ports),
+        lifecycle: coachForeground,
       },
       // (ADR 0035) Apple Health: the HealthKit module if this build has it; usable only if the install's signing kept the entitlement.
       // A safe start (or a crash in HealthKit on this build) leaves Health off for the run: `Paused for this launch` /
