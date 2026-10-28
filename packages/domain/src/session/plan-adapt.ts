@@ -619,3 +619,23 @@ export function aimWithPause(n: number, paused: number): number {
   const p = Math.min(7, Math.max(0, paused));
   return Math.round((n * (7 - p)) / 7);
 }
+
+/**
+ * (Ben, 28 Oct: "Set weekdays decide Up next") A Set days plan's Up next order this week: the plan day scheduled
+ * today (not done this week); then a missed earlier day this week not done (earliest first); then the next scheduled
+ * days not done (by weekday); then the rest (done this week, or with no weekday) in `order` (least recently trained,
+ * D19). `today`: Mon = 0. "Done" is this week's count (one workout, one plan day), the one Today's tiles read, so Up
+ * next and the tiles agree. Pure.
+ */
+export function setDaysUpNextOrder<T>(order: readonly T[], input: { weekdayOf: (t: T) => number | null; done: (t: T) => boolean; today: number }): T[] {
+  const open = order.filter((t) => !input.done(t) && input.weekdayOf(t) !== null);
+  const by = (pred: (wd: number) => boolean) =>
+    open
+      .filter((t) => pred(input.weekdayOf(t) ?? -1))
+      .map((t, i) => ({ t, i, wd: input.weekdayOf(t) ?? 0 }))
+      .sort((a, b) => a.wd - b.wd || a.i - b.i)
+      .map((x) => x.t);
+  const first = [...by((wd) => wd === input.today), ...by((wd) => wd < input.today), ...by((wd) => wd > input.today)];
+  const taken = new Set(first);
+  return [...first, ...order.filter((t) => !taken.has(t))];
+}

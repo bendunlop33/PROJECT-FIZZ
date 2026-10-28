@@ -116,10 +116,9 @@ describe('Ben’s week on a 6-day Set days plan', () => {
     d = await loaded(s);
     expect(await tiles(s, null)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today done dot:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
     expect((await s.plans.consistency())?.planThisWeek?.text).toBe('3 of 6');
-    // Up next follows what he last trained (D19, Ben 20 Oct: the day trained least recently): legs were Monday, so a
-    // legs day; Legs is done this week, so Legs B (variants alternate). Not Push B: Up next doesn't follow the weekdays
-    // (plan-builder.md, open question 1).
-    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(5);
+    // (Ben, 28 Oct) Set weekdays decide Up next: Wednesday's Legs is done (Monday's legs), Mon and Tue are done, so the
+    // next scheduled day, Push B (Thu); it agrees with the tiles.
+    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(3);
 
     // A force-close re-derives the same week.
     await h.forceClose();
@@ -130,6 +129,69 @@ describe('Ben’s week on a 6-day Set days plan', () => {
     h.clockMs = Date.parse('2026-11-02T08:00:00.000Z');
     expect((await loaded(s2)).block?.text).toBe('Week 2 of 6');
     expect(await doneNames(s2)).toEqual([]);
+  });
+});
+
+describe('switching between Set days and Any days (Days and time) while Push A is in progress (Ben, 28 Oct)', () => {
+  async function switchTo(s: AppServices, schedule: 'set' | 'any'): Promise<void> {
+    const planId = (await s.plans.overview())?.block?.planId ?? '';
+    const e = await s.planBuilder.open({ editPlanId: planId });
+    if (e?.running == null) throw new Error('not running');
+    const a = { ...e.answers, schedule, days: schedule === 'set' ? [0, 1, 2, 3, 4, 5] : [] };
+    const r = await s.planBuilder.applyEdit(e, a, new Set(), { kind: 'from', week: e.running.week }, h.ids());
+    if (!r.ok) throw new Error(r.message);
+  }
+  const open = async (s: AppServices) => {
+    const w = await s.todaySession.weekWhileOpen({ planDay: { planId: (await s.plans.overview())?.block?.planId ?? '', dayIndex: 0 }, title: 'Push A' });
+    return w?.tiles.map((t) => `${t.date.slice(8)} ${t.today ? 'today ' : ''}${t.state}${t.marks.length === 0 ? '' : ` ${t.marks.map((m) => `${m.shape}:${m.colour}`).join(',')}`}`);
+  };
+  it('both ways the open workout’s week shows the days left planned (Thu Push B, Fri Pull B, Sat Legs B), today ringed; Up next follows the weekdays on Set days', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await applyPlan(s, 'any');
+    await monAndTue(s, gymId);
+    const pushA = await startPushA(s, gymId);
+    const want = ['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain'];
+    expect(await open(s)).toEqual(want);
+    await switchTo(s, 'set');
+    expect((await loaded(s)).week.setDays).toBe(true);
+    expect(await open(s)).toEqual(want);
+    await switchTo(s, 'any');
+    expect((await loaded(s)).week.setDays).toBe(false);
+    expect(await open(s)).toEqual(want);
+    await switchTo(s, 'set');
+    expect(await open(s)).toEqual(want);
+    await finishWorkout(h, s, pushA);
+    const d = await loaded(s);
+    // Set days: Thu's Push B is next (tiles: Thu push ring).
+    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(3);
+    // Thursday: today's scheduled day.
+    h.clockMs = Date.parse('2026-10-29T08:00:00.000Z');
+    const thu = await loaded(s);
+    expect(thu.days.find((x) => x.key === thu.nextKey)?.dayIndex).toBe(3);
+    // Friday with Thursday missed: Friday's Pull B first; once done, the missed Push B.
+    h.clockMs = Date.parse('2026-10-30T08:00:00.000Z');
+    const fri = await loaded(s);
+    expect(fri.days.find((x) => x.key === fri.nextKey)?.dayIndex).toBe(4);
+  });
+
+  it('a restored backup keeps the Set days rings', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await applyPlan(s, 'set');
+    await monAndTue(s, gymId);
+    const made = await s.backups.backUpOnPhone('manual');
+    if (!made.ok) throw new Error(made.error);
+    const text = await s.restore.readOnPhone(made.record.fileName);
+    if (text === null) throw new Error('no backup');
+    // A workout after the backup, so the restore replaces something.
+    h.clockMs = Date.parse('2026-10-28T06:00:00.000Z');
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8 }] }]);
+    const p = await s.restore.prepare(text);
+    if (!p.ok) throw new Error('preview');
+    expect(await s.restore.restore(text, p.preview.stamp)).toMatchObject({ ok: true, status: 'restored' });
+    h.clockMs = Date.parse('2026-10-28T08:00:00.000Z');
+    expect(await tiles(s, 'Push')).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
   });
 });
 

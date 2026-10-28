@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MuscleGroup } from '@fizz/schemas';
-import { aheadDates, assignPlanWeek, planDaysByDue, buildWeekTiles, pbBlockLine, pbBlockWeekOf, pbMoveWeek, planDaysDoneThisWeek, planFirstWeekExpected, planWeekExpectedNow, type PlanWeekSlotDay, type PlanWeekSlotWorkout } from '../src/index';
+import { aheadDates, assignPlanWeek, planDaysByDue, setDaysUpNextOrder, buildWeekTiles, pbBlockLine, pbBlockWeekOf, pbMoveWeek, planDaysDoneThisWeek, planFirstWeekExpected, planWeekExpectedNow, type PlanWeekSlotDay, type PlanWeekSlotWorkout } from '../src/index';
 
 /**
  * (Ben, 28 Oct) A plan started mid-week, and this week's plan days one to one: Ben's 6-day Set days PPL (Mon Push A,
@@ -162,5 +162,26 @@ describe('Up next after Ben’s week (D19: the day trained least recently)', () 
     // Led with the RDL (Legs B's main lift): Legs is next instead.
     const rdl = [{ ...ws[0], leadExerciseId: 'rdl' } as PlanWeekSlotWorkout, ...ws.slice(1)];
     expect(planDaysByDue(DAYS, rdl)[0]?.day.name).toBe('Legs');
+  });
+});
+
+describe('Set days decide Up next (Ben, 28 Oct): setDaysUpNextOrder', () => {
+  // Mon Push A, Tue Pull A, Wed Legs, Thu Push B, Fri Pull B, Sat Legs B; `order`: least recently trained first.
+  const wd: Record<string, number> = { pushA: 0, pullA: 1, legs: 2, pushB: 3, pullB: 4, legsB: 5 };
+  const order = ['legsB', 'pushB', 'pullB', 'pushA', 'pullA', 'legs'];
+  const run = (today: number, done: string[]) => setDaysUpNextOrder(order, { weekdayOf: (t) => wd[t] ?? null, done: (t) => done.includes(t), today });
+  it('today’s scheduled day first, whatever was trained least recently', () => {
+    expect(run(3, ['pushA', 'pullA', 'legs'])[0]).toBe('pushB');
+  });
+  it('today’s done: a missed earlier day next (earliest first), then the days to come by weekday, then the rest', () => {
+    expect(run(2, ['legs'])).toEqual(['pushA', 'pullA', 'pushB', 'pullB', 'legsB', 'legs']);
+  });
+  it('Wed, Legs done Mon off-plan and Pull A Tue: Push A (missed Mon) before Push B (Thu); after Push A, Push B', () => {
+    expect(run(2, ['legs', 'pullA'])[0]).toBe('pushA');
+    expect(run(2, ['legs', 'pullA', 'pushA'])[0]).toBe('pushB');
+  });
+  it('all done this week: least recently trained (D19); a day with no weekday goes with the rest', () => {
+    expect(run(6, order)).toEqual(order);
+    expect(setDaysUpNextOrder(['x', 'pushA'], { weekdayOf: (t) => wd[t] ?? null, done: () => false, today: 0 })).toEqual(['pushA', 'x']);
   });
 });
