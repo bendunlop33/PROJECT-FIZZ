@@ -248,6 +248,8 @@ import {
   recentPaceSamples,
   timeLeftSheet,
   timeFitOffer,
+  restDefaultsOf,
+  type RestDefaults,
   fitTodayCommand,
   builderInfoOf,
   type BuilderExerciseInfo,
@@ -636,6 +638,8 @@ export interface ActiveWorkoutData {
   pinnedVersion?: number;
   /** (Ben, 27 Oct) Profile › Training › `Rest when short on time`, for the `+N min` fit (absent: Minimum rest). */
   fitRestLevel?: FitRestLevel;
+  /** (Ben, 28 Oct) Profile › Rest times (absent: the standard ones): the `+N min` fit's levels, a new warm-up's rest. */
+  restDefaultsS?: RestDefaults;
 }
 
 /**
@@ -3175,6 +3179,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         pinnedNotes,
         pinnedVersion: training?.version ?? 1,
         ...(training?.fitRestLevel === undefined ? {} : { fitRestLevel: training.fitRestLevel }),
+        // (Ben, 28 Oct) Profile › Rest times: for the `+N min` fit's levels and a warm-up added here. The workout's
+        // own rests are what Start stored (an open workout keeps its rests).
+        restDefaultsS: restDefaultsOf(training),
       };
     },
 
@@ -3278,7 +3285,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      */
     timeFit(data: ActiveWorkoutData, overByMinutes: number): TimeFitOffer | null {
       const info = data.builderInfo ?? {};
-      const o = timeFitOffer({ aggregate: data.aggregate, overByMinutes, info: (id) => info[id] ?? null, painFlagged: new Set(data.painFlagged), ...(data.mainExerciseIds === undefined ? {} : { mainExerciseIds: data.mainExerciseIds }), ...(data.fitRestLevel === undefined ? {} : { fitRestLevel: data.fitRestLevel }) });
+      const o = timeFitOffer({ aggregate: data.aggregate, overByMinutes, info: (id) => info[id] ?? null, painFlagged: new Set(data.painFlagged), ...(data.mainExerciseIds === undefined ? {} : { mainExerciseIds: data.mainExerciseIds }), ...(data.fitRestLevel === undefined ? {} : { fitRestLevel: data.fitRestLevel }), ...(data.restDefaultsS === undefined ? {} : { restDefaultsS: data.restDefaultsS }) });
       return o.status === 'none' ? null : o;
     },
 
@@ -4162,7 +4169,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         const estimateS = (list: readonly RoutineExercise[]): number => timer(list);
         const isCompound = (id: string) => exercises.get(id)?.mechanic === 'compound';
+        // (Ben, 28 Oct) The shorter level scales from Ben's Rest times.
+        const p = await ctx.profile();
+        const training = p === null ? null : await ctx.store().repos.trainingProfiles.get(p.id).catch(() => null);
         return fitTemplateToMinutes({
+          restDefaultsS: restDefaultsOf(training),
           exercises: req.exercises,
           minutes: req.minutes,
           main: mainFlags(req.exercises, isCompound),

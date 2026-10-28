@@ -145,6 +145,50 @@ describe('(Ben, 27 Oct) Rest when short on time: Today’s Time reads it', () =>
   });
 });
 
+describe('(Ben, 28 Oct) Rest times: Today’s drafts and Start use Ben’s defaults; an open workout keeps its rests', () => {
+  it('his compound and main-lift rests reach the started workout; a change while it is open leaves it as it is', async () => {
+    const { s, gymId } = await benWithPlan();
+    const restsOf = (a: { exercises: readonly { id: string; exerciseName: string }[]; sets: readonly { sessionExerciseId: string; setType: string; rest: { seconds: number } }[] }, name: string, type: string) => {
+      const row = a.exercises.find((e) => e.exerciseName === name)?.id;
+      return [...new Set(a.sets.filter((x) => x.sessionExerciseId === row && x.setType === type).map((x) => x.rest.seconds))];
+    };
+    // Standard: the incline press (a compound accessory) rests 2:00, snapped to his presets (1:30).
+    const std = await loaded(s);
+    const stdKey = dayKeyOf(std, 'Push');
+    const before = s.todaySession.card(std, sel(std, stdKey));
+    const snap = await s.training.snapshot();
+    if (snap === null) throw new Error('no profile');
+    let v = snap.profile.version;
+    for (const [key, seconds] of [['workingCompound', 150], ['workingMain', 240], ['top', 270]] as const) {
+      const r = await s.training.change({ kind: 'rest_default', key, seconds }, v, `rt-${key}`);
+      if (!r.ok) throw new Error('not saved');
+      v = r.profile.version;
+    }
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const card = s.todaySession.card(data, sel(data, key));
+    // Longer rests: a longer ~N min for the same exercises.
+    expect(card?.exerciseCount).toBe(before?.exerciseCount);
+    expect(card?.minutes ?? 0).toBeGreaterThan(before?.minutes ?? Infinity);
+    const c = await s.todaySession.commit(data, sel(data, key, { minutes: 120 }), 'rt-commit');
+    if (!c.ok) throw new Error(c.message);
+    const started = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'rt-start', checkIn: null });
+    if (!started.ok) throw new Error(started.error.message);
+    const a = started.aggregate;
+    expect(restsOf(a, 'Incline dumbbell press', 'working')).toEqual([150]);
+    const benchWork = [...restsOf(a, 'Bench press', 'top'), ...restsOf(a, 'Bench press', 'working')];
+    expect(benchWork.length).toBeGreaterThan(0);
+    expect(benchWork.every((x) => x === 270 || x === 240)).toBe(true);
+
+    // Reset while the workout is open: its rests stay as Start stored them (rule 2; an open workout keeps its rests).
+    const reset = await s.training.change({ kind: 'reset_rest_defaults' }, v, 'rt-reset');
+    expect(reset.ok).toBe(true);
+    const open = await s.workout.load(a.session.id);
+    expect(open?.aggregate.sets.map((x) => [x.id, x.rest.seconds])).toEqual(a.sets.map((x) => [x.id, x.rest.seconds]));
+    expect(open?.restDefaultsS).toEqual({});
+  });
+});
+
 describe('Today (v2) session card from the plan', () => {
   it('days in plan order with NEXT; the card from the controls; picking writes nothing; Start in one tap from the committed draft with the card’s loads and plan-day provenance; Up next moves on', async () => {
     const { s, gymId, planId } = await benWithPlan();

@@ -38,6 +38,7 @@ import {
   type RuleReps,
   type SlotLoadInput,
   type SubstituteContext,
+  restDefaultsOf,
 } from '@fizz/domain';
 import { builderFocusOf, isBrowseOnlyFocus, isBuilderStrength, type BuilderFocus, type BuilderGroup, type CheckedOnRecord, type EquipmentInstance, type Exercise, type PainFlag, type PlanDraft, type Routine, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
@@ -151,6 +152,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     // (Ben, 27 Oct) Profile › Training › `Rest when short on time`: how far Time may shorten accessory rests.
     const warmupsOpt = warmups === 'full' ? {} : { warmups };
     const fitRestOpt = trainingProfile?.fitRestLevel === undefined ? {} : { fitRestLevel: trainingProfile.fitRestLevel };
+    // (Ben, 28 Oct) Profile › Rest times: every default rest here (rests, Time, the drafts saved) is Ben's.
+    const restDefaultsOpt = trainingProfile?.restDefaultsS === undefined ? {} : { restDefaultsS: restDefaultsOf(trainingProfile) };
     // (Ben, 23 Oct: plan length = block 1) The applied plan's deload week (derived from its Apply, pauses and his plan
     // workouts): every load worked out here is ~10 % lighter and each slot a set fewer, as on Today's card and at Start.
     const block = appliedPlan === null ? null : pbBlockOfPlan(appliedPlan, await repos.sessions.listFinishedRefs(p.id, 400).catch(() => []), nowMs, p.timezone);
@@ -336,14 +339,14 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       const e = byId.get(id);
       return e === undefined ? null : builderExtraOf(e);
     };
-    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt, ...fitRestOpt };
+    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt, ...fitRestOpt, ...restDefaultsOpt };
     // Prehab and forearm work (cuff, shins, wrist curls) is in `candidates` for Swap / Add, never picked by itself.
     const pool: BuilderPool = (g) => candidates(g).filter((id) => !painFlagged(id) && !isBrowseOnlyFocus(info(id)?.angle ?? ''));
     // The one `checkedOnOf` (domain): what Start's re-check compares against, so a builder draft and Today's agree
     // (an lb bar's mass in kg, the slot's convention).
     const checkedOn = (id: string): CheckedOnRecord | null => checkedOnOf(loads(id));
     // (WU1–WU12) With the gym's load inputs, saving plans every slot's warm-ups for its place in the workout.
-    const codec: DraftCodecContext = { info, loads, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf: checkedOn, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt };
+    const codec: DraftCodecContext = { info, loads, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf: checkedOn, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt, ...restDefaultsOpt };
     return {
       ctx,
       pool,

@@ -53,9 +53,9 @@ function Circle({ glyph, label, disabled, onPress }: { glyph: 'minus' | 'plus'; 
  * adjustable"; swipe up/down) plus the two buttons ("Fewer sets", "More
  * sets"). At a limit a button is dimmed.
  */
-export function CountStepper({ label, value, limits, onChange, fewerLabel, moreLabel, stacked = false }: { label: string; value: number; limits: { min: number; max: number }; onChange: (n: number) => void; fewerLabel: string; moreLabel: string; stacked?: boolean }) {
+export function CountStepper({ label, value, limits, onChange, fewerLabel, moreLabel, stacked = false, valueText, steps: given }: { label: string; value: number; limits: { min: number; max: number }; onChange: (n: number) => void; fewerLabel: string; moreLabel: string; stacked?: boolean; /** Shown instead of the number (e.g. `3:00`). */ valueText?: string; /** The values − and + go to, from the domain (null: off); absent: ±1 within `limits`. */ steps?: { down: number | null; up: number | null } }) {
   const theme = useTheme();
-  const steps = countSteps(value, limits);
+  const steps = given ?? countSteps(value, limits);
   const onAction = (e: AccessibilityActionEvent) => {
     if (e.nativeEvent.actionName === 'increment' && steps.up !== null) onChange(steps.up);
     if (e.nativeEvent.actionName === 'decrement' && steps.down !== null) onChange(steps.down);
@@ -66,7 +66,7 @@ export function CountStepper({ label, value, limits, onChange, fewerLabel, moreL
         accessible
         accessibilityRole="adjustable"
         accessibilityLabel={label}
-        accessibilityValue={{ text: String(value) }}
+        accessibilityValue={{ text: valueText ?? String(value) }}
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onAccessibilityAction={onAction}
         style={{ flex: stacked ? 0 : 1, minHeight: 44, justifyContent: 'center' }}
@@ -75,8 +75,8 @@ export function CountStepper({ label, value, limits, onChange, fewerLabel, moreL
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'] }}>
         <Circle glyph="minus" label={fewerLabel} disabled={steps.down === null} onPress={() => { if (steps.down !== null) onChange(steps.down); }} />
-        <AppText variant="headline" numeric align="center" style={{ minWidth: 32 }} accessibilityElementsHidden importantForAccessibility="no">
-          {String(value)}
+        <AppText variant="headline" numeric align="center" style={{ minWidth: valueText === undefined ? 32 : 48 }} accessibilityElementsHidden importantForAccessibility="no">
+          {valueText ?? String(value)}
         </AppText>
         <Circle glyph="plus" label={moreLabel} disabled={steps.up === null} onPress={() => { if (steps.up !== null) onChange(steps.up); }} />
       </View>

@@ -27,6 +27,8 @@ export type ProfileStackParams = {
   CheckInSettings: undefined;
   /** Profile › Training › Rest when short on time (Ben, 27 Oct): how far Time may shorten accessory rests. */
   RestWhenShort: undefined;
+  /** Profile › Training › Rest times (Ben, 28 Oct): Ben's default rests. */
+  RestTimes: undefined;
   /** Profile → Coach → Memory (coach-memory §2.1). */
   Memory: undefined;
   /** Profile → Coach → Playbook: chat rules to review (coaching-playbook §2.1). */
