@@ -3,6 +3,7 @@ import { isSplitBodyPart, matchSplitDay, workoutMuscleGroups } from '../training
 import { addDays, localDateOf, localMidnightUtcMs } from '../calendar';
 import { toIso, toMs } from '../time';
 import { splitDaysTrained } from './split-up-next';
+import { splitNameOf } from './plan-day-link';
 import type { Exercise, MuscleGroup, PlanControlUndo, PlanDraft, PlanPause, PlanPin, Routine, SplitBodyPart, TrainingSplit, ZonedTimestamp } from '@fizz/schemas';
 import { PLAN_LIMITS } from '@fizz/schemas';
 
@@ -46,6 +47,8 @@ export interface PlanDueDay {
    * twice is two days (review b3-data B1). Absent: by routine only.
    */
   planKey?: PlanDayKey | null | undefined;
+  /** (28 Oct) Its main lift: tells variants (Pull A / Pull B) apart for a workout off the plan. */
+  mainLiftExerciseId?: string | null | undefined;
 }
 
 /** A plan day's identity: (planId, dayIndex), as `PlanDayRef`. */
@@ -65,6 +68,8 @@ export interface PlanDueWorkout {
   groups: ReadonlyMap<MuscleGroup, number>;
   /** (v3 §4.2) The plan day it was started as (`WorkoutSession.planDay`), and the template it used; absent on older workouts. */
   planDay?: (PlanDayKey & { templateRoutineId?: string | null | undefined }) | null | undefined;
+  /** (28 Oct) The lift it led with (`leadLiftOf`: its first exercise with a completed working set); absent: unknown. */
+  leadExerciseId?: string | null | undefined;
 }
 
 /**
@@ -163,6 +168,89 @@ export function planDaysDoneBy(days: readonly PlanDueDay[], w: PlanDueWorkout): 
   return main === null || mine.includes(main.id) ? mine : [...mine, main.id];
 }
 
+/** This week's merged day (`WeekPlan.merges` with the workout it made): one workout of it does all its days. */
+export interface PlanWeekMerge {
+  routineId: string;
+  dayIds: readonly string[];
+}
+
+/** A plan day for this week's count (`assignPlanWeek`). */
+export type PlanWeekSlotDay = PlanDueDay;
+
+/** A finished workout for this week's count. */
+export interface PlanWeekSlotWorkout extends PlanDueWorkout {
+  /**
+   * (Ben, 28 Oct) Matched by name to one of several variants (`Pull` → Pull A / Pull B) that its lifts don't tell
+   * apart: those days' templates in plan order; it fills the first one not filled yet this week.
+   */
+  variants?: readonly string[] | null | undefined;
+}
+
+/**
+ * (Ben, 28 Oct: "one workout counts for two plan days") This week's plan days and the workout that did each, one to
+ * one: a workout fills at most one plan day and a plan day takes at most one workout. Pure. In this order:
+ *
+ * 1. A workout started as a plan day (or from its workout, or linked to it by Ben's answer or clearly by lifts) fills
+ *    that day; name or muscle matching never moves it. A second workout of a day already filled fills nothing.
+ * 2. A workout matched by name to variants it doesn't tell apart fills the first of them (plan order) not filled yet.
+ * 3. Any other workout fills one of the days it mainly trained (the split rule with the plan's days as the split):
+ *    the one whose main lift it led with when that day is free, else the first free one in plan order (days with the
+ *    same body parts as the day it mostly trained first).
+ *
+ * A workout of this week's merged day (`merges`) fills each of its days. Within each step, oldest first. Every template of a filled plan day (same plan and day index) is filled with it.
+ * Returns each filled template's workout. `workouts`: the week's (the caller picks the window).
+ */
+export function assignPlanWeek<W extends PlanWeekSlotWorkout>(days: readonly PlanWeekSlotDay[], workouts: readonly W[], merges: readonly PlanWeekMerge[] = []): Map<string, W> {
+  const filled = new Map<string, W>();
+  const byId = new Map(days.map((d) => [d.routineId, d]));
+  const order = new Map(days.map((d, i) => [d.routineId, i]));
+  const free = (id: string): boolean => byId.has(id) && !filled.has(id);
+  const take = (id: string, w: W): void => {
+    const d = byId.get(id);
+    if (d === undefined) return;
+    for (const x of sameDayIds(days, d)) filled.set(x, w);
+  };
+  const oldestFirst = [...workouts].sort((a, b) => toMs(a.startedAtUtc) - toMs(b.startedAtUtc) || (a.sessionId < b.sessionId ? -1 : 1));
+  const flexible: W[] = [];
+  const byMuscle: W[] = [];
+  for (const w of oldestFirst) {
+    if ((w.variants?.length ?? 0) > 0) {
+      flexible.push(w);
+      continue;
+    }
+    // This week's merged day (Chest + Shoulders → Push): a workout of it does each of its days.
+    const merge = merges.find((m) => m.routineId === w.routineId);
+    if (merge !== undefined) {
+      if (merge.dayIds.every(free)) for (const id of merge.dayIds) take(id, w);
+      continue;
+    }
+    const own = ownPlanDay(days, w);
+    if (own === undefined) {
+      byMuscle.push(w);
+      continue;
+    }
+    if (free(own.routineId)) take(own.routineId, w);
+  }
+  for (const w of flexible) {
+    const id = (w.variants ?? []).find(free);
+    if (id !== undefined) take(id, w);
+  }
+  const split = planSplit(days);
+  if (split === null) return filled;
+  for (const w of byMuscle) {
+    const trained = splitDaysTrained(split, w.groups);
+    if (trained.length === 0) continue;
+    const main = byId.get(matchSplitDay(split, w.groups)?.id ?? '');
+    const same = (d: PlanWeekSlotDay | undefined): boolean => main !== undefined && d !== undefined && d.bodyParts.length === main.bodyParts.length && d.bodyParts.every((x) => main.bodyParts.includes(x));
+    const rank = (id: string): number => (same(byId.get(id)) ? 0 : 1000) + (order.get(id) ?? 0);
+    const cands = [...trained].sort((a, b) => rank(a) - rank(b)).filter(free);
+    const lead = w.leadExerciseId ?? null;
+    const id = cands.find((x) => lead !== null && byId.get(x)?.mainLiftExerciseId === lead) ?? cands[0];
+    if (id !== undefined) take(id, w);
+  }
+  return filled;
+}
+
 const newestFirst = <W extends Pick<PlanDueWorkout, 'sessionId' | 'startedAtUtc'>>(ws: readonly W[]): W[] => [...ws].sort((a, b) => toMs(b.startedAtUtc) - toMs(a.startedAtUtc) || (a.sessionId < b.sessionId ? 1 : -1));
 
 export interface PlanDuePick<D extends PlanDueDay = PlanDueDay> {
@@ -205,12 +293,33 @@ export function planDaysByDue<D extends PlanDueDay>(days: readonly D[], workouts
     const trained = planDaysTrained(days, w);
     const credited = planDaysCredited(days, w);
     const ms = toMs(w.startedAtUtc);
-    const own = ownPlanDay(days, w);
-    if (own !== undefined) for (const id of sameDayIds(days, own)) if (!lastOwn.has(id)) lastOwn.set(id, ms);
     if (trained.length === 0 && credited.length === 0) continue;
     // The newest workout's days are left out of the pool: never the day(s) just trained.
     justDone ??= credited;
     for (const id of credited) if (!last.has(id)) last.set(id, ms);
+  }
+  // Each day's newest own workout, oldest first: a plan workout's own day. (Ben, 28 Oct) An off-plan workout that
+  // trained variants of one day (Legs, Legs B: the same split word, else the same body parts) counts as one of them, so they still alternate (Legs done
+  // off-plan Mon → Legs B next, not Legs again): the one whose main lift it led with, else the one done longest ago
+  // (plan order on a tie). Days with their own body parts are left as they were.
+  const idx = new Map(days.map((d, i) => [d.routineId, i]));
+  const partsKey = (d: PlanDueDay): string => splitNameOf(d.name)?.base ?? [...d.bodyParts].sort().join('+');
+  for (const w of [...newestFirst(workouts)].reverse()) {
+    const ms = toMs(w.startedAtUtc);
+    const own = ownPlanDay(days, w);
+    if (own !== undefined) {
+      for (const id of sameDayIds(days, own)) lastOwn.set(id, ms);
+      continue;
+    }
+    const cands = planDaysTrained(days, w).flatMap((id) => days.filter((d) => d.routineId === id && d.bodyParts.length > 0));
+    const groups = new Map<string, D[]>();
+    for (const d of cands) groups.set(partsKey(d), [...(groups.get(partsKey(d)) ?? []), d]);
+    for (const twins of groups.values()) {
+      if (new Set(twins.map((d) => d.planKey == null ? d.routineId : `${d.planKey.planId}:${String(d.planKey.dayIndex)}`)).size < 2) continue;
+      const lead = w.leadExerciseId ?? null;
+      const day = twins.find((d) => lead !== null && d.mainLiftExerciseId === lead) ?? [...twins].sort((a, b) => (lastOwn.get(a.routineId) ?? Number.NEGATIVE_INFINITY) - (lastOwn.get(b.routineId) ?? Number.NEGATIVE_INFINITY) || (idx.get(a.routineId) ?? 0) - (idx.get(b.routineId) ?? 0))[0];
+      if (day !== undefined) for (const id of sameDayIds(days, day)) lastOwn.set(id, ms);
+    }
   }
   const done = justDone ?? [];
   const others = days.filter((d) => !done.includes(d.routineId));

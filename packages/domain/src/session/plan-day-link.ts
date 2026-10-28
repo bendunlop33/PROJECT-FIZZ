@@ -14,8 +14,9 @@ import { isPastLog } from './time-shift';
  *
  * 1. **By name**: its name (or, with none, its derived title) names a plan day: the same split word (Push, Pull, Legs,
  *    Upper, Lower, Full body; `Leg` = `Legs`) and, when both name one, the same variant (`Pull B`), or the day's own
- *    name exactly. Several days of that name (Pull A, Pull B) and no variant: the one whose main lift it did and that
- *    shares most exercises; a tie is unclear.
+ *    name exactly. Several days of that name (Pull A, Pull B) and no variant: (Ben, 28 Oct) the one whose main lift it
+ *    led with, else the only one whose main lift it did; else it counts as the first of them not done that week, in
+ *    plan order (`variants`; this week's count picks, `assignPlanWeek`). Never asked: the split is sure.
  * 2. **Else by lifts**: the plan day whose main lift it did, sharing at least 40% of the two lists (Jaccard), clearly
  *    ahead of any other day with its main lift (0.15). Something in common but not that clear: unclear.
  * 3. **Unclear: never guessed silently.** A one-time `Count as Pull?` (Count / Not a plan day) on that workout's
@@ -42,11 +43,22 @@ export interface LinkWorkout {
   title: string | null;
   /** The exercises it did (a completed set). */
   exerciseIds: readonly string[];
+  /** (28 Oct) The lift it led with (`leadLiftOf`); absent: its first exercise. */
+  leadExerciseId?: string | null | undefined;
 }
 
 export type PlanDayLinkView =
   /** Counts as this plan day: matched by name or lifts, or Ben said `Count`. */
-  | { kind: 'linked'; day: LinkPlanDay; by: 'name' | 'lift' | 'ben' }
+  | {
+      kind: 'linked';
+      day: LinkPlanDay;
+      by: 'name' | 'lift' | 'ben';
+      /**
+       * (Ben, 28 Oct) Named for variants (`Pull` → Pull A, Pull B) its lifts don't tell apart: every one of them in plan
+       * order (`day` is the first). This week's count fills the first not filled yet; absent: `day` for sure.
+       */
+      variants?: readonly LinkPlanDay[];
+    }
   /** Unclear: ask `Count as <day>?` once. */
   | { kind: 'ask'; day: LinkPlanDay }
   /** Ben said `Not a plan day`. */
@@ -137,11 +149,22 @@ export function planDayLinkOf(w: LinkWorkout, days: readonly LinkPlanDay[], answ
   if (named.length === 1 && named[0] !== undefined) return { kind: 'linked', day: named[0], by: 'name' };
   if (named.length > 1) {
     const scored = named.map((d) => scoreOf(w, d)).sort(better);
-    const [a, b] = scored;
+    const [a] = scored;
+    if (a === undefined) return { kind: 'none' };
     // Templates of one plan day (`Chest · bench`, `Chest · incline`): that day, by the best of them.
-    if (a !== undefined && new Set(named.map((d) => d.dayIndex)).size === 1) return { kind: 'linked', day: a.day, by: 'name' };
-    if (a !== undefined && b !== undefined && better(a, b) < 0 && (a.main || a.common > 0)) return { kind: 'linked', day: a.day, by: 'name' };
-    return a === undefined ? { kind: 'none' } : { kind: 'ask', day: a.day };
+    if (new Set(named.map((d) => d.dayIndex)).size === 1) return { kind: 'linked', day: a.day, by: 'name' };
+    // (Ben, 28 Oct: the Tue 27 pull ticked Pull B, not Pull A) Variants: the one whose main lift it led with, else the
+    // only one whose main lift it did. A share of accessories alone never picks a variant.
+    const lead = w.leadExerciseId ?? w.exerciseIds[0] ?? null;
+    const one = (ds: readonly LinkPlanDay[]): LinkPlanDay | null => (new Set(ds.map((d) => d.dayIndex)).size === 1 ? (ds[0] ?? null) : null);
+    const led = one(named.filter((d) => lead !== null && d.mainLiftExerciseId === lead));
+    if (led !== null) return { kind: 'linked', day: led, by: 'name' };
+    const did = one(named.filter((d) => d.mainLiftExerciseId !== null && w.exerciseIds.includes(d.mainLiftExerciseId)));
+    if (did !== null) return { kind: 'linked', day: did, by: 'name' };
+    // Unclear which variant: the split is sure, so it counts as the first of them not done yet this week (plan order).
+    const ordered = [...named].sort((x, y) => days.indexOf(x) - days.indexOf(y));
+    const first = ordered[0] ?? a.day;
+    return { kind: 'linked', day: first, by: 'name', variants: ordered };
   }
   // 2. By lifts.
   const scored = days.map((d) => scoreOf(w, d)).sort(better);
@@ -242,7 +265,7 @@ export function linkWorkoutOf(a: HistoryLike, exerciseOf: (id: string) => Pick<E
   const ids = [...a.exercises].filter((e) => e.removed === undefined && done.has(e.id)).sort((x, y) => x.order - y.order).map((e) => e.exerciseId);
   const infos = ids.map(exerciseOf).filter((x): x is Pick<Exercise, 'movementPattern' | 'primaryMuscles'> => x !== null);
   const derived = infos.length === 0 ? null : deriveWorkoutTitle(infos);
-  return { sessionId: a.session.id, title: storedWorkoutName(a.session) ?? (derived === 'Workout' ? null : derived), exerciseIds: ids };
+  return { sessionId: a.session.id, title: storedWorkoutName(a.session) ?? (derived === 'Workout' ? null : derived), exerciseIds: ids, leadExerciseId: leadLiftOf(a) };
 }
 
 /** A candidate workout's link, and whether it was imported (an unlinked import reads as before: from no routine). */
@@ -263,11 +286,11 @@ export function planLinksFor(input: { plan: Pick<PlanDraft, 'id' | 'applied' | '
  * Finished-workout refs (any source) as the plan's block and week read them: a linked workout carries its plan day's
  * template as `routineId`; an imported one that isn't linked is left out, as before (it comes from no routine).
  */
-export function linkRefs<R extends { sessionId: string; routineId: string | null }>(refs: readonly R[], links: ReadonlyMap<string, PlanLinkEntry>): R[] {
+export function linkRefs<R extends { sessionId: string; routineId: string | null }>(refs: readonly R[], links: ReadonlyMap<string, PlanLinkEntry>): (R & { variantRoutineIds?: readonly string[] })[] {
   return refs.flatMap((r) => {
     const v = links.get(r.sessionId);
     if (v === undefined) return [r];
-    if (v.kind === 'linked') return [{ ...r, routineId: v.day.routineId }];
+    if (v.kind === 'linked') return [{ ...r, routineId: v.day.routineId, ...(v.variants === undefined ? {} : { variantRoutineIds: v.variants.map((d) => d.routineId) }) }];
     return v.imported ? [] : [r];
   });
 }
@@ -276,6 +299,21 @@ export function linkRefs<R extends { sessionId: string; routineId: string | null
 export function linkedRoutineId(links: ReadonlyMap<string, PlanDayLinkView> | null | undefined, sessionId: string, routineId: string | null): string | null {
   const v = links?.get(sessionId);
   return v?.kind === 'linked' ? v.day.routineId : routineId;
+}
+
+/** (28 Oct) A workout named for variants it doesn't tell apart: their templates in plan order (`assignPlanWeek`); else null. */
+export function linkedVariants(links: ReadonlyMap<string, PlanDayLinkView> | null | undefined, sessionId: string): string[] | null {
+  const v = links?.get(sessionId);
+  return v?.kind === 'linked' && v.variants !== undefined ? v.variants.map((d) => d.routineId) : null;
+}
+
+/**
+ * (28 Oct) The lift a workout led with: its first exercise (in order) with a completed working set. Null: none done.
+ */
+export function leadLiftOf(a: Pick<HistoryLike, 'exercises' | 'sets'>): string | null {
+  const done = new Set(a.sets.filter((x) => x.status === 'completed' && x.setType !== 'warmup').map((x) => x.sessionExerciseId));
+  const live = [...a.exercises].filter((e) => e.removed === undefined && done.has(e.id)).sort((x, y) => x.order - y.order);
+  return live[0]?.exerciseId ?? null;
 }
 
 /** Ben said `Not a plan day`: it ticks no plan day. */

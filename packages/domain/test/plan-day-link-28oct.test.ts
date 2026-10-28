@@ -41,8 +41,16 @@ describe('planDayLinkOf', () => {
     expect(linkedTo(planDayLinkOf(w('Pull B', ['deadlift']), AB))).toBe('r-pull-b/name');
     expect(linkedTo(planDayLinkOf(w('Pull · Barbell row', ['row', 'pullup']), AB))).toBe('r-pull-b/name');
     expect(linkedTo(planDayLinkOf(w('Pull', ['deadlift', 'curl']), AB))).toBe('r-pull-a/name');
-    // Neither main lift, nothing to tell them apart: asked, never guessed.
-    expect(linkedTo(planDayLinkOf(w('Pull', ['face_pull']), AB))).toBe('ask:r-pull-a');
+    // (Ben, 28 Oct) Neither main lift: the split is sure, so it counts as the first variant not done that week.
+    const v = planDayLinkOf(w('Pull', ['face_pull']), AB);
+    expect(linkedTo(v)).toBe('r-pull-a/name');
+    expect(v.kind === 'linked' ? v.variants?.map((d) => d.routineId) : null).toEqual(['r-pull-a', 'r-pull-b']);
+    // Both main lifts done: the one it led with (Ben's Tue 27: rows first → the row day).
+    expect(linkedTo(planDayLinkOf({ ...w('Pull · Barbell row', ['row', 'deadlift']), leadExerciseId: 'row' }, AB))).toBe('r-pull-b/name');
+    expect(linkedTo(planDayLinkOf({ ...w('Pull', ['deadlift', 'row']), leadExerciseId: 'deadlift' }, AB))).toBe('r-pull-a/name');
+    // Both done and it led with neither: unclear → the first not done, with the variants.
+    const both = planDayLinkOf({ ...w('Pull', ['curl', 'row', 'deadlift']), leadExerciseId: 'curl' }, AB);
+    expect(both.kind === 'linked' ? both.variants?.length : null).toBe(2);
   });
 
   it('no name: by the main lift and the exercises shared, clearly ahead', () => {

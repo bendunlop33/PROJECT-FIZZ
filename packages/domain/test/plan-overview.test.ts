@@ -86,10 +86,9 @@ describe('planOverview: the Your plan block', () => {
     expect(v?.daysThisWeek.text).toBe('1 of 4');
   });
 
-  it('applied mid-week: a day done before Apply isn’t done this week; the next day done this week keeps ✓ with the Next tag', () => {
+  it('applied mid-week: a day done earlier that week (before Apply) is done this week (Ben, 28 Oct); the next day done this week keeps ✓ with the Next tag', () => {
     const before = planOverview(input({ plan: { id: id(900), name: '4-day plan', status: 'applied', version: 2, appliedAtUtc: '2026-10-06T00:00:00.000Z' } }));
-    expect(before?.days.map((d) => d.state)).toEqual(['todo', 'next', 'done', 'todo']);
-    expect(plain(before?.days[0]?.when)).toBe('Last 6 Oct');
+    expect(before?.days.map((d) => d.state)).toEqual(['done', 'next', 'done', 'todo']);
     const wrap = planOverview(input({ nextRoutineId: PUSH }));
     expect(wrap?.days[0]).toMatchObject({ state: 'done', next: true });
     expect(wrap?.days[1]).toMatchObject({ state: 'todo', next: false });
@@ -118,7 +117,7 @@ describe('planOverview: the Your plan block', () => {
     expect(planOverview(input({ training: null }))?.goal).toEqual({ text: null, action: 'Set goal' });
   });
 
-  it('planDaysDoneThisWeek: newest per day, a day done twice counts once; a workout saved as a day counts for it; the future doesn’t', () => {
+  it('planDaysDoneThisWeek: the first workout per day (one to one), a day done twice counts once; a workout saved as a day counts for it; the future doesn’t', () => {
     const days = [{ routineId: PUSH }, { routineId: PULL, createdFromSessionId: id(7) }];
     const done = planDaysDoneThisWeek({
       days,
@@ -128,7 +127,7 @@ describe('planOverview: the Your plan block', () => {
       tz: TZ,
     });
     expect([...done.entries()]).toEqual([
-      [PUSH, '2026-10-06T20:00:00.000Z'],
+      [PUSH, '2026-10-05T20:00:00.000Z'],
       [PULL, '2026-10-06T21:00:00.000Z'],
     ]);
   });
@@ -195,7 +194,8 @@ describe('plannedSetsThisWeek: logged planned sets of planned sets in the plan�
       added,
     ];
     expect(plannedSetsThisWeek({ sessions, days: DAYS, appliedAtUtc: '2026-09-01T00:00:00.000Z', nowMs: NOW, tz: TZ })).toEqual({ planned: 6, done: 5 });
-    expect(plannedSetsThisWeek({ sessions, days: DAYS, appliedAtUtc: '2026-10-07T00:00:00.000Z', nowMs: NOW, tz: TZ })).toEqual({ planned: 3, done: 3 });
+    // (Ben, 28 Oct) Applied mid-week: the week still counts from Monday.
+    expect(plannedSetsThisWeek({ sessions, days: DAYS, appliedAtUtc: '2026-10-07T00:00:00.000Z', nowMs: NOW, tz: TZ })).toEqual({ planned: 6, done: 5 });
     expect(plannedSetsThisWeek({ sessions: [], days: DAYS, appliedAtUtc: '2026-09-01T00:00:00.000Z', nowMs: NOW, tz: TZ })).toEqual({ planned: 0, done: 0 });
   });
 });

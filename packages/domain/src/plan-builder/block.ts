@@ -12,7 +12,8 @@ import { pbAtWeek, pbIsDeload, type PbWeekTarget } from './weeks';
  * A builder plan's training block (Ben, 23 Oct: **the plan's length is block 1**; training-blocks.md §4.1). Pure.
  *
  * - `pbBlockWeekOf`: the block week now, derived (never stored) from the plan's Apply, its pauses and Ben's finished
- *   workouts of the plan: weeks run Monday–Sunday in his zone; week 1 is the week the plan was applied; a calendar
+ *   workouts of the plan: weeks run Monday–Sunday in his zone; week 1 is the week the plan was applied, even a partial
+ *   one (training-blocks.md §4.1, approved; its plan workouts from that Monday count, 28 Oct); a calendar
  *   week counts once it has a finished plan workout and isn't fully paused, else the number holds (nothing is
  *   "missed", D19). A correction or a deleted workout re-derives it. Past the plan's length the block is done.
  * - `pbBlockView`: Library › Plan › Your plan's week strip (1…N, D on deload weeks) and the plan days for the week
@@ -35,6 +36,8 @@ export const PB_BLOCK_COPY = {
 export interface PbBlockWorkout {
   startedAtUtc: string;
   dayIndex: number | null;
+  /** (28 Oct) Named for variants it doesn't tell apart (Pull A / Pull B): their day indexes in plan order; it is the first not done that week. */
+  dayIndexes?: readonly number[] | undefined;
 }
 
 export interface PbBlockInput {
@@ -72,17 +75,23 @@ export function pbBlockWeekOf(input: PbBlockInput): PbBlockWeek {
   const nowMonday = localWeekBounds(input.nowMs, input.tz).mondayLocalDate;
   const byMonday = new Map<string, Set<number>>();
   const firstOn = new Map<string, Record<number, string>>();
-  for (const w of input.workouts) {
+  // (Ben, 28 Oct) The plan's first week counts from its Monday: a workout of that week before Apply that is a plan
+  // day's (linked by name or lifts) counts too. A workout counts in its own calendar week only.
+  const startMs = localWeekBounds(appliedMs, input.tz).startMs;
+  // Workouts of one day first, then ones named for variants: each takes the first of its variants not done that week.
+  const ordered = [...input.workouts].sort((a, b) => Number((a.dayIndexes?.length ?? 0) > 0) - Number((b.dayIndexes?.length ?? 0) > 0) || toMs(a.startedAtUtc) - toMs(b.startedAtUtc));
+  for (const w of ordered) {
     const ms = toMs(w.startedAtUtc);
-    if (ms < appliedMs || ms > input.nowMs) continue;
+    if (ms < startMs || ms > input.nowMs) continue;
     const m = localWeekBounds(ms, input.tz).mondayLocalDate;
     const days = byMonday.get(m) ?? new Set<number>();
-    if (w.dayIndex !== null) {
-      days.add(w.dayIndex);
+    const dayIndex = w.dayIndexes !== undefined && w.dayIndexes.length > 0 ? (w.dayIndexes.find((i) => !days.has(i)) ?? null) : w.dayIndex;
+    if (dayIndex !== null) {
+      days.add(dayIndex);
       const on = firstOn.get(m) ?? {};
       const date = localDateOf(ms, input.tz);
-      const was = on[w.dayIndex];
-      if (was === undefined || date < was) on[w.dayIndex] = date;
+      const was = on[dayIndex];
+      if (was === undefined || date < was) on[dayIndex] = date;
       firstOn.set(m, on);
     }
     byMonday.set(m, days);
@@ -132,6 +141,8 @@ export interface PbFinishedRef {
   routineId: string | null;
   startedAtUtc: string;
   planDay?: { planId: string; dayIndex: number } | undefined;
+  /** (28 Oct) Linked by name to variants it doesn't tell apart (`linkRefs`): their templates in plan order. */
+  variantRoutineIds?: readonly string[] | undefined;
 }
 
 /**
@@ -145,7 +156,11 @@ export function pbBlockOfPlan(plan: Pick<PlanDraft, 'id' | 'status' | 'versions'
   const workouts: PbBlockWorkout[] = refs.flatMap((r) => {
     if (r.planDay !== undefined && r.planDay.planId === plan.id) return [{ startedAtUtc: r.startedAtUtc, dayIndex: r.planDay.dayIndex }];
     const day = r.routineId === null ? undefined : made.get(r.routineId);
-    return day === undefined ? [] : [{ startedAtUtc: r.startedAtUtc, dayIndex: day }];
+    const variants = (r.variantRoutineIds ?? []).flatMap((id) => {
+      const i = made.get(id);
+      return i === undefined ? [] : [i];
+    });
+    return day === undefined ? [] : [{ startedAtUtc: r.startedAtUtc, dayIndex: day, ...(variants.length > 1 ? { dayIndexes: variants } : {}) }];
   });
   return pbBlockWeekOf({ answers: b.builder.answers, appliedAtUtc: plan.applied.atUtc, pauses: plan.pauses, workouts, nowMs, tz });
 }
