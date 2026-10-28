@@ -81,7 +81,7 @@ import {
   type SetupCoachContext,
   type SetupFill,
 } from '@fizz/coach';
-import { deriveId, estimateBuilderMinutes, infoOrDefault, parseBuildRequest, slotsOf, stableStringify, toMs, type BuilderGroupName, type BuilderWorkout, type LastDaysView, type LoadReferences, type MainFocus } from '@fizz/domain';
+import { deriveId, estimateBuilderMinutes, infoOrDefault, namedWeights, parseBuildRequest, slotsOf, stableStringify, toMs, type BuilderGroupName, type BuilderWorkout, type LastDaysView, type LoadReferences, type MainFocus } from '@fizz/domain';
 import {
   BUILDER_COACH_TOOL,
   type ActionDetail,
@@ -369,7 +369,8 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
   }
 
   function envFor(world: BuilderCoachWorld, words: string): BuilderCoachEnv {
-    return { ...world.env, askedHeavier: parseBuildRequest(words).askedHeavier };
+    // ADR 0038: weights Ben named are kept as typed (only a machine's max and pain move them).
+    return { ...world.env, askedHeavier: parseBuildRequest(words).askedHeavier, benLoads: namedWeights(words) };
   }
 
   /** The claim check's base for a workout: code's counts, lengths and Ben's words only (never IDs, slot keys or memories; B2). */

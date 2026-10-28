@@ -646,6 +646,17 @@ export function createAppServices(deps: AppServicesDeps) {
     // (Ben, 23 Oct, D8) An applied next-workout change lands on Your workout; its chat Undo takes it back off there.
     // `builder` is made below and only called after startup.
     nextWorkout: { revert: (applyActionId, check) => builder.revertCoachLanding(applyActionId, check) },
+    // ADR 0038: after the coach changes the gym (or learns kit for an exercise it adds), today's snapshot takes it,
+    // as `learnInWorkout` does: only when it moves no target (otherwise the gym screen's `Use changes today` stays the way).
+    refreshTodayKit: async (sessionId, opId) => {
+      const a = await repos().sessions.get(sessionId).catch(() => null);
+      const gymId = a?.session.gymId ?? null;
+      if (a === null || gymId === null || a.session.status !== 'active') return false;
+      const proposal = await loop.gymSwitch.propose(sessionId, gymId).catch(() => null);
+      if (proposal === null || proposal.card.changesTargets || proposal.draftsToReplace.length > 0) return false;
+      const applied = await loop.gymSwitch.apply(proposal, opId).catch(() => null);
+      return applied?.ok === true;
+    },
   });
 
   /** (Today v2, workout-builder-v3 §2.0) Today's session card from the plan, with the builder's rules. Local only. */
