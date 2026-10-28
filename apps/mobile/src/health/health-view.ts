@@ -2,6 +2,7 @@ import { healthActivityLine, healthSourceText, READ_WINDOW_WORD, sleepText, toMs
 import type { HealthActivityProvenance, HealthReadWindow, HealthSettings, HealthWorkoutSample } from '@fizz/schemas';
 import type { HealthCapability } from '@fizz/providers';
 
+import { NATIVE_PAUSED_COPY, type NativePause } from '../diagnostics/launch-guard';
 import { formatShortDate, formatTime, formatWhen } from '../format/dates';
 
 /**
@@ -86,6 +87,11 @@ export interface HealthScreenView {
 
 export interface HealthStatusInput {
   capability: HealthCapability;
+  /**
+   * (Ben, 28 Oct) Off this run by the launch guard (a safe start) or the native-off record (it closed the app on this
+   * build): reads `Paused for this launch` / `Paused on this build`, never `Not available on this install`.
+   */
+  paused?: NativePause | null;
   settings: HealthSettings;
   shareStatus: 'notDetermined' | 'denied' | 'authorized' | null;
   /** Workouts not yet saved to Health after a failed write. */
@@ -105,11 +111,12 @@ export interface HealthStatusInput {
 /** Profile › Apple Health and its Profile row (apple-health.md §2.1, §4). */
 export function healthScreenView(i: HealthStatusInput): HealthScreenView {
   const s = i.settings;
-  if (i.capability !== 'available') {
+  const paused = i.paused ?? null;
+  if (i.capability !== 'available' || paused !== null) {
     return {
       available: false,
-      line: i.capability === 'unsupported' ? HEALTH_COPY.unsupported : HEALTH_COPY.notAvailable,
-      why: i.capability === 'unsupported' ? null : HEALTH_COPY.notAvailableWhy,
+      line: paused !== null ? NATIVE_PAUSED_COPY[paused].line : i.capability === 'unsupported' ? HEALTH_COPY.unsupported : HEALTH_COPY.notAvailable,
+      why: paused !== null ? NATIVE_PAUSED_COPY[paused].why : i.capability === 'unsupported' ? null : HEALTH_COPY.notAvailableWhy,
       save: [],
       read: [],
       sources: [],
@@ -155,7 +162,7 @@ function windowView(value: HealthReadWindow): HealthScreenView['window'] {
   return { value, text: READ_WINDOW_WORD[value], choices: (Object.keys(READ_WINDOW_WORD) as HealthReadWindow[]).map((v) => ({ value: v, text: READ_WINDOW_WORD[v] })) };
 }
 
-/** The Profile row's subtitle: `On · last read 07:42`, `Off`, `Not available on this install`. */
+/** The Profile row's subtitle: `On · last read 07:42`, `Off`, `Not available on this install`, `Paused for this launch`. */
 export function healthProfileLine(v: HealthScreenView): string {
   return v.line;
 }

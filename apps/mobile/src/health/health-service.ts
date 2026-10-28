@@ -42,7 +42,8 @@ import { healthCapability, restingHrSamplesFrom, sleepSamplesFrom, weightSamples
 import type { LinkedActivityContext } from '@fizz/coach';
 import { DEFAULT_HEALTH_SETTINGS, type Activity, type HealthLink, type HealthReadWindow, type HealthSettings, type HealthWorkoutSample, type SessionCommand, type HealthWorkoutWrite, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 
-import { healthScreenView, linkCandidateLine, linkedActivityView, type HealthScreenView, type HealthSwitch, type LinkCandidateView, type WorkoutHealthView } from './health-view';
+import { NATIVE_PAUSED_COPY, type NativePause } from '../diagnostics/launch-guard';
+import { HEALTH_COPY, healthScreenView, linkCandidateLine, linkedActivityView, type HealthScreenView, type HealthSwitch, type LinkCandidateView, type WorkoutHealthView } from './health-view';
 
 /**
  * Apple Health (Ben, 27 Oct; ADR 0035; apple-health.md). Local only, never waits on the network (rule 1), and
@@ -75,6 +76,11 @@ export interface HealthServiceDeps {
   port: HealthPort | null;
   /** False when the build left the entitlement out (`FIZZ_HEALTHKIT=0`). */
   buildIncludesHealth: boolean;
+  /**
+   * (Ben, 28 Oct) Off this run by the launch guard (safe start) or the native-off record (`nativeFeaturePause`): shown
+   * as `Paused for this launch` / `Paused on this build`, distinct from an install without Health. Absent: never.
+   */
+  paused?: () => NativePause | null;
   /** Whether a workout is open now (reads wait until it is finished). */
   workoutOpen: () => Promise<boolean>;
   /** The workout's versioned commands (`Use watch times` goes through the existing time-shift path). */
@@ -109,6 +115,13 @@ export function createHealthService(deps: HealthServiceDeps) {
   let notSaved = 0;
   let syncing: Promise<void> | null = null;
   let lastReadStartMs = 0;
+
+  const paused = (): NativePause | null => deps.paused?.() ?? null;
+  /** What a refused Health action says: paused this run, else not on this install. */
+  const unavailableText = (): string => {
+    const p = paused();
+    return p === null ? HEALTH_COPY.notAvailable : NATIVE_PAUSED_COPY[p].line;
+  };
 
   function cap(refresh = false): Promise<HealthCapability> {
     if (capability === null || refresh) capability = healthCapability(deps.port, deps.buildIncludesHealth);
@@ -357,8 +370,8 @@ export function createHealthService(deps: HealthServiceDeps) {
       const p = await owner();
       const s = p === null ? null : await settings(p.id);
       const base = { notSaved, reading, newOnLastRead, nowMs: toMs(deps.now().utc), tz: deps.now().tz };
-      if (p === null || s === null || c !== 'available') {
-        return healthScreenView({ ...base, capability: c === 'available' ? 'not_on_this_install' : c, settings: s ?? DEFAULT_HEALTH_SETTINGS, shareStatus: null, readCounts: { workouts: 0, weights: 0 }, sources: [], written: 0 });
+      if (p === null || s === null || c !== 'available' || paused() !== null) {
+        return healthScreenView({ ...base, capability: c === 'available' ? 'not_on_this_install' : c, paused: paused(), settings: s ?? DEFAULT_HEALTH_SETTINGS, shareStatus: null, readCounts: { workouts: 0, weights: 0 }, sources: [], written: 0 });
       }
       const nowMs = toMs(deps.now().utc);
       const [workouts, weights, writes, shareStatus] = await Promise.all([
@@ -391,7 +404,7 @@ export function createHealthService(deps: HealthServiceDeps) {
       const p = await owner();
       if (p === null) return { ok: false, message: 'Couldn’t save. Try again.' };
       if (on) {
-        if ((await cap(true)) !== 'available' || deps.port === null) return { ok: false, message: 'Not available on this install' };
+        if ((await cap(true)) !== 'available' || deps.port === null) return { ok: false, message: unavailableText() };
         const share: HealthType[] = key === 'writeWorkouts' ? ['workout'] : [];
         const read: HealthType[] = key === 'writeWorkouts' ? [] : [...READ_TYPES[key]];
         const asked = await deps.port.requestAuthorization(share, read).catch(() => ({ ok: false, message: '' }));
@@ -481,7 +494,7 @@ export function createHealthService(deps: HealthServiceDeps) {
     /** `Remove GymSmarter workouts from Health`: only this app's samples; each record becomes `removed` (never written again). */
     async removeAllOwn(): Promise<{ ok: true; count: number } | { ok: false; message: string }> {
       const p = await owner();
-      if (p === null || deps.port === null) return { ok: false, message: 'Not available on this install' };
+      if (p === null || deps.port === null) return { ok: false, message: unavailableText() };
       try {
         const count = await deps.port.deleteAllOwnWorkouts();
         const opId = `health-remove-all:${deps.newId()}`;

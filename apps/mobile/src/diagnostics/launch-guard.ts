@@ -232,6 +232,24 @@ const CLOSED_WHERE: Readonly<Record<LaunchPhase, string>> = {
 
 const FEATURE_NAME: Readonly<Record<NativeFeature, string>> = { live_activity: 'Live Activity', health: 'Apple Health' };
 
+/**
+ * (Ben, 28 Oct) Why an optional native feature is off this run when the build has it: `launch` (a safe start, back on
+ * at the next launch) or `build` (it closed the app on this build: the native-off record, back with the next build).
+ * Null: not paused (it may still be missing from the install, which reads as that).
+ */
+export type NativePause = 'launch' | 'build';
+
+export function nativePauseOf(feature: NativeFeature, input: { safe: boolean; offForBuild: ReadonlySet<NativeFeature> }): NativePause | null {
+  if (input.offForBuild.has(feature)) return 'build';
+  return input.safe ? 'launch' : null;
+}
+
+/** What a paused feature reads (values only; the reason behind `Why?`). */
+export const NATIVE_PAUSED_COPY: Readonly<Record<NativePause, { line: string; why: string }>> = {
+  launch: { line: 'Paused for this launch', why: 'Safe start. On again at the next launch.' },
+  build: { line: 'Paused on this build', why: 'It closed the app on this build. On again with the next build.' },
+};
+
 export function safeStartView(input: { workoutName: string | null; workoutOpen: boolean; lastError: { name: string; message: string; atUtc: string } | null; previous: LaunchBreadcrumb | null; offForBuild?: ReadonlySet<NativeFeature> }): SafeStartView {
   const lines: string[] = [];
   lines.push(CLOSED_WHERE[input.previous?.phase ?? 'launch']);

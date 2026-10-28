@@ -48,6 +48,7 @@ import type { CoachModelPort } from '@fizz/coach';
 import type { HealthPort, TextCoachState } from '@fizz/providers';
 
 import type { RestAlertController } from '../alerts/rest-alerts';
+import type { NativePause } from '../diagnostics/launch-guard';
 import { createCoachService } from '../coach/coach-service';
 import { createBackupService, type BackupFileStore, type TextFile } from '../backup/backup-service';
 import { createRestoreService } from '../backup/restore-service';
@@ -129,7 +130,7 @@ export interface AppServicesDeps {
    * (ADR 0035) Apple Health: the HealthKit bridge and whether the build has the entitlement. Absent (tests, Expo
    * Go): Apple Health reads `Not available on this install`; nothing else changes.
    */
-  health?: { port: HealthPort | null; buildIncludesHealth: boolean };
+  health?: { port: HealthPort | null; buildIncludesHealth: boolean; /** (Ben, 28 Oct) Off this run by the launch guard: `Paused`. */ paused?: () => NativePause | null };
   /** Resolves when the UI is idle; background backups wait for it so Finish's Summary appears first (backup review B1). */
   idle?: () => Promise<void>;
 }
@@ -600,6 +601,7 @@ export function createAppServices(deps: AppServicesDeps) {
     newId: deps.newId,
     port: deps.health?.port ?? null,
     buildIncludesHealth: deps.health?.buildIncludesHealth ?? false,
+    ...(deps.health?.paused === undefined ? {} : { paused: deps.health.paused }),
     workoutOpen: async () => (await sessions.active()) !== null,
     dispatch: (sessionId, command) => loop.workout.dispatch(sessionId, command),
   });

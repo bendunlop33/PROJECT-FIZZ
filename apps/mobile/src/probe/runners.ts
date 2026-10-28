@@ -14,6 +14,8 @@ import { widgetsDirectory } from 'expo-widgets';
 
 import AudioCoach from '../../modules/audio-coach';
 import { isoUtc, nowMs } from '../clock';
+import { nativeFeaturePause } from '../diagnostics/crash-capture';
+import { NATIVE_PAUSED_COPY } from '../diagnostics/launch-guard';
 import { createProbeActivityLedger } from '../live-activity/probe-ledger';
 import { restCountdownActivity } from '../live-activity/RestCountdownActivity';
 import { judgeAlarmKitStatus } from './alarmkit';
@@ -507,6 +509,9 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
   if (!liveActivityIncludedInBuild()) {
     return { status: 'unavailable', summary: 'This build was made without the Live Activity extension', details: [] };
   }
+  // (Ben, 28 Oct) Off this run by the launch guard: `Paused`, and ActivityKit isn't called.
+  const pause = nativeFeaturePause('live_activity');
+  if (pause !== null) return { status: 'unavailable', summary: NATIVE_PAUSED_COPY[pause].line, details: [NATIVE_PAUSED_COPY[pause].why] };
   try {
     const factory = restCountdownActivity();
     // Only the probe's own earlier countdowns: a workout's activity is left alone (review ben-bugs N2).
