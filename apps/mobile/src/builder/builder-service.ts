@@ -950,7 +950,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const fit = timeFitOf(stored);
     // The detail's Undo goes back to the length before Time changed it (a plan day Today drafted: the plan's length, as
     // Today's Undo does; there a plan day longer than its length is still fitted, as on Today's card).
-    const time = fit === null ? null : { fromMinutes: stored?.timeFrom ?? fit.fromMinutes, changes: timeFitChanges(fit, workout) };
+    // (Ben, 28 Oct) A fill `+` made on Your workout goes back to the workout's own length (its record's), not the set-up's.
+    const time = fit === null ? null : { fromMinutes: fit.filledTo !== undefined ? fit.fromMinutes : (stored?.timeFrom ?? fit.fromMinutes), changes: timeFitChanges(fit, workout) };
     const today = todayDrafted(stored) && key !== undefined ? { mainLiftExerciseId: stored.mainLiftExerciseId ?? key.mainLiftExerciseId ?? null, accessories: stored.accessories ?? null, abs: hasAbs(untimed(stored, workout), env), supersets: stored.supersets } : null;
     const carry = d.status === 'open' && fit !== null && time !== null && stored !== null && key?.planId != null && key.dayIndex !== null ? await carryOf(key, key.dayIndex, stored, fit, time.changes, workout, env) : null;
     for (const st of time?.changes ?? []) if (st.kind === 'drop') facts[st.exerciseId] ??= { name: env.nameOf(st.exerciseId), works: env.worksOf(st.exerciseId), group: env.info(st.exerciseId)?.group ?? null, counts: builderFocusCounts(env.focusOf(st.exerciseId)), compound: env.info(st.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(st.exerciseId), notHere: false, hasHistory: env.hasHistory(st.exerciseId) };

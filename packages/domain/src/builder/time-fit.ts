@@ -314,7 +314,8 @@ export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome 
 
 /**
  * (Ben, 28 Oct) `+` on Your workout: the original grown to `to` by the longer ladder (`fitToMinutes` grow), recorded as
- * a fill (`added`, `raised`, `filledTo`) with the original as `base` and its own length as `fromMinutes`, so a shorter
+ * a fill (`added`, `raised`, `filledTo`) with the original as `base` and its own length as `fromMinutes` (at or below
+ * it the original is back: the note's Undo), so a shorter
  * Time, the note's Undo and Start read it as Time's (today only; the plan day and saved workout never change). Nothing
  * could be added: the original as it is, `full`.
  */
