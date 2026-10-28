@@ -59,7 +59,7 @@ export function ImportLayoutCheckScreen() {
     changed();
   }
 
-  async function useLayout() {
+  async function confirmLayout() {
     if (!review) return;
     if (v.plan !== null) {
       navigation.popToTop();
@@ -87,7 +87,7 @@ export function ImportLayoutCheckScreen() {
 
   return (
     <Screen
-      footer={<PrimaryButton label={v.primary.label} disabled={!v.primary.enabled || busy} busy={busy} onPress={() => void useLayout()} />}
+      footer={<PrimaryButton label={v.primary.label} disabled={!v.primary.enabled || busy} busy={busy} onPress={() => void confirmLayout()} />}
       floating={
         toast ? (
           <Toast

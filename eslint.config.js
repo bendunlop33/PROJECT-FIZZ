@@ -1,5 +1,6 @@
 // @ts-check
 import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -21,6 +22,17 @@ export default tseslint.config(
         'error',
         { name: 'Date', message: 'Domain code takes time as an explicit argument; use the injected clock.' },
       ],
+    },
+  },
+  {
+    // Rules of Hooks (ADR 0037; crash on Start, 27 Oct). Only the two classic rules: the React Compiler rules in the
+    // plugin's `recommended` preset are for code written for the compiler, which this app doesn't use.
+    // exhaustive-deps is off: 46 findings, nearly all deliberate trigger-only effects (ADR 0037 has the follow-up).
+    files: ['**/*.tsx', 'apps/mobile/**/*.ts'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'off',
     },
   },
   {
