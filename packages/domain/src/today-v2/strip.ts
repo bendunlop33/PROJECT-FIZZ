@@ -23,6 +23,8 @@ export interface StripWorkoutInput {
   sessionId: string;
   localDate: string;
   title: string;
+  /** (28 Oct) The plan day it did this week (`planWeekFills`): its dot takes that day's colour. */
+  dayName?: string | null;
 }
 
 export interface StripActivityInput {

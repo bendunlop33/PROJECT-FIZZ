@@ -1,6 +1,6 @@
 import type { Load, MuscleGroup, SessionAggregate, SessionExercise, SplitBodyPart, WorkoutSet } from '@fizz/schemas';
 import { addDays, localDateOf, localWeekBounds } from '../calendar';
-import { aimWithPause, planDaysDoneBy } from '../session/plan-adapt';
+import { aimWithPause, assignPlanWeek, type PlanDayKey, type PlanWeekMerge } from '../session/plan-adapt';
 import { formatDuration, loadText, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
 import { toMs } from '../time';
@@ -295,7 +295,7 @@ export interface ConsistencyInput {
   /** Profile's `Days a week you lift`; null: not set. */
   aim: number | null;
   /** The applied plan's live days (their workout IDs and the finished workouts saved from them), and when it was applied. */
-  plan: { days: readonly PlanWeekDay[]; appliedAtUtc: string } | null;
+  plan: { days: readonly PlanWeekDay[]; appliedAtUtc: string; /** (28 Oct) Set days: each template's weekday (a mid-week start expects fewer). */ weekdays?: ReadonlyMap<string, number> | null | undefined } | null;
   /**
    * (Ben, 20 Oct) Local dates the plan was paused (`pausedDates`; a running pause's coming days
    * included): they don't count against the aim. Absent: none.
@@ -308,6 +308,10 @@ export interface PlanWeekDay {
   createdFromSessionId?: string | null | undefined;
   /** (20 Oct) The day's body parts (`planDayBodyParts`): an off-plan workout that mainly trained them counts it done. */
   bodyParts?: readonly SplitBodyPart[] | undefined;
+  /** (28 Oct) Its name, main lift and plan day: variants (Pull A / Pull B) are told apart by the main lift led with. */
+  name?: string | undefined;
+  mainLiftExerciseId?: string | null | undefined;
+  planKey?: PlanDayKey | null | undefined;
 }
 
 export interface PlanWeekWorkout {
@@ -316,6 +320,12 @@ export interface PlanWeekWorkout {
   startedAtUtc: string;
   /** (20 Oct) Working sets per muscle group; absent: only a plan workout counts. */
   groups?: ReadonlyMap<MuscleGroup, number> | undefined;
+  /** (28 Oct) The plan day it was started as (`WorkoutSession.planDay`); absent on older workouts. */
+  planDay?: (PlanDayKey & { templateRoutineId?: string | null | undefined }) | null | undefined;
+  /** (28 Oct) The lift it led with (`leadLiftOf`); absent: unknown. */
+  leadExerciseId?: string | null | undefined;
+  /** (28 Oct) Matched by name to variants its lifts don't tell apart (`linkedVariants`): their templates in plan order. */
+  variants?: readonly string[] | null | undefined;
 }
 
 /** The finished workout is that plan day's: started from its workout (or the workout it was saved from). */
@@ -323,32 +333,64 @@ export function dayOf<D extends PlanWeekDay>(days: readonly D[], w: Pick<PlanWee
   return days.find((d) => d.routineId === w.routineId || (d.createdFromSessionId != null && d.createdFromSessionId === w.sessionId));
 }
 
-/** Since Monday 00:00 local, and since Apply: the instant this week's plan counts from. */
-export function planWeekStartMs(input: { appliedAtUtc: string; nowMs: number; tz: string }): number {
-  return Math.max(localWeekBounds(input.nowMs, input.tz).startMs, toMs(input.appliedAtUtc));
+/**
+ * The instant this week's plan count starts: Monday 00:00 local. (Ben, 28 Oct) In the week the plan was applied too:
+ * that week's workouts before Apply count by the same rules (a plan day matched by name, lifts or muscles), so a plan
+ * started mid-week sees what was already done that week. `appliedAtUtc` is kept for callers; it no longer moves it.
+ */
+export function planWeekStartMs(input: { appliedAtUtc?: string; nowMs: number; tz: string }): number {
+  return localWeekBounds(input.nowMs, input.tz).startMs;
 }
 
 /**
- * The plan days done this week (since Apply, up to now): per day, its newest
- * such workout. A plan workout counts for its own day; (Ben, 20 Oct) any other
- * workout counts for the days it mainly trained by muscles done
- * (`planDaysDoneBy`, the split rule's threshold). The Progress consistency
- * card's `3 of 4` counts the same.
+ * The plan days done this week (Monday 00:00 local up to now): per day, the time of the workout that did it.
+ * (Ben, 28 Oct) One to one (`assignPlanWeek`): a workout fills at most one plan day and a plan day takes at most
+ * one workout, so one leg workout never ticks both Legs and Legs B. A plan workout fills its own day; a workout
+ * matched by name to variants it doesn't tell apart fills the first free one; any other workout fills one of the
+ * days it mainly trained by muscles done (the split rule's threshold, Ben 20 Oct), by the main lift it led with,
+ * else plan order. The Progress consistency card's `3 of 4` counts the same.
  */
-export function planDaysDoneThisWeek(input: { days: readonly PlanWeekDay[]; appliedAtUtc: string; workouts: readonly PlanWeekWorkout[]; nowMs: number; tz: string }): Map<string, string> {
-  const from = planWeekStartMs(input);
-  const days = input.days.map((d) => ({ routineId: d.routineId, name: d.routineId, bodyParts: d.bodyParts ?? [], createdFromSessionId: d.createdFromSessionId ?? null }));
+export function planDaysDoneThisWeek(input: { days: readonly PlanWeekDay[]; appliedAtUtc: string; workouts: readonly PlanWeekWorkout[]; nowMs: number; tz: string; merges?: readonly PlanWeekMerge[] | undefined }): Map<string, string> {
   const done = new Map<string, string>();
-  for (const w of input.workouts) {
-    const ms = toMs(w.startedAtUtc);
-    if (ms < from || ms > input.nowMs) continue;
-    const ids = planDaysDoneBy(days, { sessionId: w.sessionId, routineId: w.routineId, startedAtUtc: w.startedAtUtc, groups: w.groups ?? new Map() });
-    for (const id of ids) {
-      const prev = done.get(id);
-      if (prev === undefined || toMs(prev) < ms) done.set(id, w.startedAtUtc);
-    }
-  }
+  for (const [id, w] of planWeekFills(input)) done.set(id, w.startedAtUtc);
   return done;
+}
+
+/** `planDaysDoneThisWeek` with the workout that filled each plan day's template (its session ID too). */
+export function planWeekFills<W extends PlanWeekWorkout>(input: { days: readonly PlanWeekDay[]; workouts: readonly W[]; nowMs: number; tz: string; merges?: readonly PlanWeekMerge[] | undefined }): Map<string, W> {
+  const from = planWeekStartMs(input);
+  const days = input.days.map((d) => ({ routineId: d.routineId, name: d.name ?? d.routineId, bodyParts: d.bodyParts ?? [], createdFromSessionId: d.createdFromSessionId ?? null, mainLiftExerciseId: d.mainLiftExerciseId ?? null, planKey: d.planKey ?? null }));
+  const week = input.workouts
+    .filter((w) => {
+      const ms = toMs(w.startedAtUtc);
+      return ms >= from && ms <= input.nowMs;
+    })
+    .map((w) => ({ sessionId: w.sessionId, routineId: w.routineId, startedAtUtc: w.startedAtUtc, groups: w.groups ?? new Map<MuscleGroup, number>(), planDay: w.planDay ?? null, leadExerciseId: w.leadExerciseId ?? null, variants: w.variants ?? null, source: w }));
+  const out = new Map<string, W>();
+  for (const [id, w] of assignPlanWeek(days, week, input.merges ?? [])) out.set(id, w.source);
+  return out;
+}
+
+/**
+ * (Ben, 28 Oct) A plan started partway through a week expects only the plan days still possible from its start that
+ * week, plus the ones already done (`done`): on Set days, the days not done whose weekday is on or after the start's;
+ * on Any days, as many of the days not done as there are dates from the start to Sunday. Null: not the plan's first
+ * week, or it started on its Monday (the whole week is expected).
+ */
+export function planFirstWeekExpected(input: { appliedLocalDate: string; monday: string; done: number; notDone: readonly { weekday: number | null }[] }): number | null {
+  if (input.appliedLocalDate <= input.monday || input.appliedLocalDate > addDays(input.monday, 6)) return null;
+  let from = 0;
+  while (from < 7 && addDays(input.monday, from) < input.appliedLocalDate) from += 1;
+  const setDays = input.notDone.length > 0 && input.notDone.every((d) => d.weekday !== null);
+  const possible = setDays ? input.notDone.filter((d) => (d.weekday ?? -1) >= from).length : Math.min(input.notDone.length, 7 - from);
+  return input.done + possible;
+}
+
+/** `planFirstWeekExpected` for this week of a plan: its days (`weekdays`: each template's Set days weekday; absent: Any days). */
+export function planWeekExpectedNow(input: { days: readonly Pick<PlanWeekDay, 'routineId'>[]; done: ReadonlyMap<string, string>; appliedAtUtc: string; nowMs: number; tz: string; weekdays?: ReadonlyMap<string, number> | null | undefined }): number | null {
+  const monday = localWeekBounds(input.nowMs, input.tz).mondayLocalDate;
+  const notDone = input.days.filter((d) => !input.done.has(d.routineId)).map((d) => ({ weekday: input.weekdays?.get(d.routineId) ?? null }));
+  return planFirstWeekExpected({ appliedLocalDate: localDateOf(toMs(input.appliedAtUtc), input.tz), monday, done: input.done.size, notDone });
 }
 
 /** This week's plan days against the plan, its paused days left out: `of` is never below `done`. */
@@ -407,7 +449,8 @@ export function consistency(input: ConsistencyInput): ConsistencyView {
   if (plan !== null && plan.days.length > 0) {
     // The same count as Library › Your plan's `Days this week` (planDaysDoneThisWeek, planWeekOf).
     const done = planDaysDoneThisWeek({ days: plan.days, appliedAtUtc: plan.appliedAtUtc, workouts: input.workouts, nowMs: input.nowMs, tz: input.tz });
-    const of = planWeekOf(plan.days.length, done.size, thisWeek.pausedDays);
+    const expected = planWeekExpectedNow({ days: plan.days, done, appliedAtUtc: plan.appliedAtUtc, nowMs: input.nowMs, tz: input.tz, weekdays: plan.weekdays });
+    const of = planWeekOf(Math.min(plan.days.length, expected ?? plan.days.length), done.size, thisWeek.pausedDays);
     planThisWeek = { done: done.size, of, text: `${String(done.size)} of ${String(of)}` };
   }
   return { weeks, thisWeek, aim: input.aim, atAimText: input.aim === null ? null : `Weeks at your aim: ${String(atAim)} of ${String(judged)}`, planThisWeek };

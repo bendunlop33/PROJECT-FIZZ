@@ -217,7 +217,8 @@ describe('build a 4-day plan → card → Apply (replace) → Up next walks it �
     if (!snap) throw new Error('snapshot');
     expect(await s2.training.change({ kind: 'days_per_week', days: 4 }, snap.profile.version, 'days-4')).toMatchObject({ ok: true });
     const c = await s2.plans.consistency();
-    expect(c?.planThisWeek).toEqual({ done: 1, of: 4, text: '1 of 4' });
+    // (Ben, 28 Oct) The plan's first week counts from Monday: his pull and leg workouts earlier this week count too.
+    expect(c?.planThisWeek).toEqual({ done: 3, of: 4, text: '3 of 4' });
     expect(c?.thisWeek.text).toMatch(/^\d\/4$/);
     expect(c?.atAimText).toMatch(/^Weeks at your aim: \d of 8$/);
     expect(JSON.stringify(c)).not.toMatch(/miss/i);

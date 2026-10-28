@@ -9,6 +9,8 @@ Supersedes the Your plan layout in [plan-builder.md](plan-builder.md) (§3 "Plan
 `Move day` / `Do today ›`) and the Library › Your plan strip in [training-blocks.md](training-blocks.md) where they
 differ. Every capability stays; only where it lives changes.
 
+> **This week's count (Ben, 28 Oct):** one workout fills one plan day and a plan day takes one workout (a Monday leg workout ticks Legs, not Legs B too); a pull led with rows is the row day. The count runs Monday–Sunday, in the plan's first week too (earlier workouts that week count); a plan started mid-week expects only the days still possible from its start (`2 of 5`). Week 1 is the week of Apply (training-blocks §4.1). CHANGELOG 2026-10-28 (plan week fixes).
+
 ## 1. What was wrong (build 419)
 
 Top to bottom: `Your plan · Since 13 Oct`, name, goal line, then a header line `6 weeks · Standard · deload week 6`

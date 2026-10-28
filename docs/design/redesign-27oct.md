@@ -2,6 +2,8 @@
 
 > **Today, latest (Ben, 27 Oct, supersedes A3–A6 where they differ):** week shown as 7 calendar tiles Mon–Sun like Progress (done = light green + session dot, planned = outline + empty ring, today outlined; no pills or legend) under `This week · Plan week 3 of 6`; no `Your split` row — the card title is `Push ⌄` (sheet: plan days with status, Build your own, Log a past workout, ＋ Activity); `Up next` label above the card; collapsed card shows label/value rows `Main lift`, `Exercises`, `Est. time`; rest-day and done cards in the same style. Prototype frame `Today (after)`.
 
+> **Plan week (Ben, 28 Oct):** planned rings show the plan days not done this week, never on a past day. Set days: on their weekdays still to come. Any days: one a day after today, in plan order (the next N − done days), today holding the card's day. A done day's dot is the colour of the plan day it filled (one workout, one plan day). Today's in-progress list never shows a row swapped away or with no sets. CHANGELOG 2026-10-28 (plan week fixes).
+
 Prototype (the visual spec, example data): `docs/design/prototypes/app-redesign-v3.html`
 (open it in a browser; the screen picker lists every frame; "Show before" flips Today, Active and Summary to v1).
 Earlier inputs: `docs/design/ux-review-27oct.md`, `docs/design/ia-simplify-27oct.md`, `docs/design/plan-tab-v2.md`.

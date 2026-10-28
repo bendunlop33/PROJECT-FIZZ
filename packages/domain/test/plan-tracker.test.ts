@@ -240,9 +240,9 @@ describe('consistency: the last 8 weeks against the aim (proposal 2)', () => {
       plan: { days, appliedAtUtc: '2026-09-20T00:00:00.000Z' },
     });
     expect(v.planThisWeek).toEqual({ done: 3, of: 4, text: '3 of 4' });
-    // Applied mid-week: workouts before Apply don't count.
+    // (Ben, 28 Oct) Applied mid-week: that week's workouts before Apply count too (by the same rules).
     const later = consistency({ workouts: [w(1, '2026-10-05T06:00:00.000Z', id(100)), w(2, '2026-10-07T06:00:00.000Z', id(101))], nowMs, tz: TZ, aim: 4, plan: { days, appliedAtUtc: '2026-10-06T00:00:00.000Z' } });
-    expect(later.planThisWeek?.text).toBe('1 of 4');
+    expect(later.planThisWeek?.text).toBe('2 of 4');
   });
 });
 

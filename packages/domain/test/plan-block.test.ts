@@ -56,9 +56,11 @@ describe('block week (pbBlockWeekOf)', () => {
     expect(paused.week).toBe(4);
   });
 
-  it('an empty week holds the number (nothing is missed); workouts before Apply or in the future are not counted', () => {
-    const b = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [w('2026-10-13T08:00:00Z'), w('2026-12-01T08:00:00Z')], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ });
+  it('an empty week holds the number (nothing is missed); workouts before the plan’s first week or in the future are not counted', () => {
+    const b = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [w('2026-10-10T08:00:00Z'), w('2026-12-01T08:00:00Z')], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ });
     expect(b.week).toBe(1);
+    // (Ben, 28 Oct) A plan workout of the first week before Apply (Tue, applied Wed) counts that week: week 1 is done.
+    expect(pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [w('2026-10-13T08:00:00Z')], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ }).week).toBe(2);
     // A deleted workout re-derives: the week goes back (never stored).
     const before = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [w('2026-10-15T08:00:00Z')], nowMs: ms('2026-10-20T08:00:00Z'), tz: TZ });
     const after = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [], nowMs: ms('2026-10-20T08:00:00Z'), tz: TZ });

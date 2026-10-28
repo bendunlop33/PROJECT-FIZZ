@@ -65,9 +65,14 @@ export interface ResumeRow {
   firstPendingSetId: string | null;
 }
 
-/** Resume rows from the active workout and its current exercise. Pure. */
+/**
+ * Resume rows from the active workout and its current exercise. Pure. (Ben, 28 Oct: "If I swap exercises … the old
+ * still shows here") A row out of the workout (`removed`: swapped away or removed, its sets deleted tombstones) isn't
+ * listed, nor is a row with no set at all (`0 of 0 sets`): the substitute shows in its place.
+ */
 export function resumeRows(active: SessionAggregate, currentExerciseId: string | null): ResumeRow[] {
   return [...active.exercises]
+    .filter((e) => e.removed === undefined && active.sets.some((s) => s.sessionExerciseId === e.id && s.status !== 'deleted'))
     .sort((a, b) => a.order - b.order)
     .map((e) => {
       const sets = active.sets.filter((s) => s.sessionExerciseId === e.id && s.status !== 'deleted').sort((a, b) => a.index - b.index);

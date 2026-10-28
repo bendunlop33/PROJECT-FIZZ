@@ -39,6 +39,27 @@ describe('Today', () => {
     await r.unmount();
   });
 
+  it('(Ben, 28 Oct) the plan days left this week show as planned rings on the coming tiles, never on a past day', async () => {
+    const ben = await benWithHistory(h);
+    // An Any days 4-day plan applied Monday: Up next today, the other three one a day from Tuesday.
+    await withPlan(h, ben);
+    const r = await renderScreen(h, ben.launched, TodayScreen, { name: 'Today' }, (t) => t.includes('Up next'));
+    const labels = r.all((n) => n.props.accessibilityRole === 'button' && typeof n.props.accessibilityLabel === 'string' && /^(Today, )?(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) \d+(: .*)?$/.test(n.props.accessibilityLabel)).map((n) => n.props.accessibilityLabel as string);
+    const tiles = [...new Set(labels)];
+    expect(tiles).toHaveLength(7);
+    expect(tiles[0]).toMatch(/^Today, Monday 19: .+, today's workout$/);
+    expect(tiles.slice(1, 4)).toEqual(['Tuesday 20: Lower A, Planned', 'Wednesday 21: Upper B, Planned', 'Thursday 22: Lower B, Planned']);
+    for (const t of tiles.slice(4)) expect(t).not.toContain('Planned');
+    // Drawn as 7 pt empty rings (transparent, 1.5 pt outline): today's and the three coming days'.
+    const rings = r.all((n) => {
+      const st = n.props.style as { width?: number; borderWidth?: number; backgroundColor?: string } | undefined;
+      return st?.width === 7 && st.borderWidth === 1.5 && st.backgroundColor === 'transparent';
+    });
+    expect(rings).toHaveLength(4);
+    expectHealthy(r);
+    await r.unmount();
+  });
+
   it('done for today: the workout with its Summary link', async () => {
     const ben = await benWithHistory(h);
     await withPlan(h, ben);

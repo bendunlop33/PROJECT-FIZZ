@@ -59,6 +59,9 @@ const rotation = async (s: AppServices) => (await s.routines.list()).filter((r) 
 async function benWithPlan() {
   const { services: s } = await h.launch();
   const gymId = await setUpGym(h, s);
+  // His history is the week before (28 Oct: a plan's first week counts from its Monday, so history that week would
+  // already tick its days).
+  h.clockMs -= 7 * DAY;
   const push = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 7, rpe: 8 }, { load: 100, reps: 7, rpe: 8 }] }]);
   h.clockMs += DAY;
   const pull = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 60, reps: 10, rpe: 8 }, { load: 60, reps: 10, rpe: 8 }] }]);
@@ -68,7 +71,7 @@ async function benWithPlan() {
   h.clockMs += 60_000;
   const pullA = await s.routines.saveFromSession({ sessionId: pull, name: 'Pull A', opId: 'save-pull', addToRotation: true });
   if (!pushA.ok || !pullA.ok) throw new Error('save');
-  h.clockMs += DAY;
+  h.clockMs += DAY + 7 * DAY;
   model = new StepModel([planStub, () => replyWith('Here is your week.')]);
   const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Build me a 4-day plan', spoken: false }, turnId: h.ids() });
   const card = r.cards[0]?.record;

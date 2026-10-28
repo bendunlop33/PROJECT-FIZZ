@@ -8,8 +8,8 @@ import { stripActivityText, type StripActivityInput, type StripItem, type StripP
  * labels, no legend. Only what happened or what Ben said (rule 6):
  * - a done day (any finished workout or done activity) is tinted light green, with a dot per gym session in its plan
  *   day's colour and a hollow ring per activity;
- * - a planned day (a dated plan day not done yet, a planned activity, or today's chosen workout) is transparent with a
- *   1 pt outline and an empty ring in that session's colour;
+ * - a planned day (a dated plan day not done yet, an Any days plan's day left placed after today, a planned activity,
+ *   or today's chosen workout) is transparent with a 1 pt outline and an empty ring in that session's colour;
  * - today is outlined; future days with nothing are plain. Colour is never the only signal: VoiceOver reads each day.
  * Tap a tile → that day's sheet (`items`). Pure.
  */
@@ -64,6 +64,11 @@ export interface WeekTilesInput {
   activities: readonly StripActivityInput[];
   /** Dated plan days not done yet this week (a Set days plan, or a day Ben moved). */
   plannedDays?: readonly StripPlannedDayInput[];
+  /**
+   * (Ben, 28 Oct) Any days plans: the plan days not done yet this week, in plan order, undated (`aheadDates` places
+   * them). Absent or empty: none.
+   */
+  ahead?: readonly string[];
   /** The workout on Today's card (`Push`); null: none (done today, rest day). */
   chosen: string | null;
 }
@@ -76,8 +81,29 @@ function spokenActivity(a: StripActivityInput): string {
   return parts.join(', ');
 }
 
+/**
+ * (Ben, 28 Oct) Where an Any days plan's days left this week go: one a day, in order, from tomorrow to Sunday (the
+ * next N − done days). Today holds the card's day (`chosen`, taken out of the list once) or a workout done today, so
+ * the rest start tomorrow. More days left than dates: the ones that fit. Never a past day.
+ */
+export function aheadDates(today: string, ahead: readonly string[], chosen: string | null): StripPlannedDayInput[] {
+  const left = [...ahead];
+  const i = chosen === null ? -1 : left.indexOf(chosen);
+  if (i >= 0) left.splice(i, 1);
+  const sunday = addDays(mondayOf(today), 6);
+  const out: StripPlannedDayInput[] = [];
+  let date = addDays(today, 1);
+  for (const name of left) {
+    if (date > sunday) break;
+    out.push({ localDate: date, name });
+    date = addDays(date, 1);
+  }
+  return out;
+}
+
 export function buildWeekTiles(input: WeekTilesInput): WeekTile[] {
   const monday = mondayOf(input.today);
+  const plannedDays = [...(input.plannedDays ?? []), ...aheadDates(input.today, input.ahead ?? [], input.chosen)];
   return Array.from({ length: 7 }, (_, i) => {
     const date = addDays(monday, i);
     const isToday = date === input.today;
@@ -88,7 +114,7 @@ export function buildWeekTiles(input: WeekTilesInput): WeekTile[] {
     const done = input.workouts.filter((w) => w.localDate === date);
     for (const w of done) {
       items.push({ kind: 'workout', text: w.title, sessionId: w.sessionId, planned: false });
-      marks.push({ shape: 'dot', colour: planDayColourKey(w.title), planned: false });
+      marks.push({ shape: 'dot', colour: planDayColourKey(w.dayName ?? w.title), planned: false });
       spoken.push(`${w.title}, done`);
     }
     if (isToday && done.length === 0 && input.chosen !== null) {
@@ -97,7 +123,7 @@ export function buildWeekTiles(input: WeekTilesInput): WeekTile[] {
       spoken.push(`${input.chosen}, today's workout`);
     }
     if (!past && !isToday) {
-      for (const d of input.plannedDays?.filter((x) => x.localDate === date) ?? []) {
+      for (const d of plannedDays.filter((x) => x.localDate === date)) {
         items.push({ kind: 'plan_day', text: d.name, planned: true });
         marks.push({ shape: 'ring', colour: planDayColourKey(d.name), planned: true });
         spoken.push(`${d.name}, Planned`);

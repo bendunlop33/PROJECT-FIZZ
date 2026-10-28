@@ -5,7 +5,7 @@ import { paceText } from '../cardio';
 import { cardioValuesText, dayMonthText, formatDistance, formatDuration, formatNumber, loadText, localDateText, repRangeText } from '../display';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 import { toMs } from '../time';
-import { dayOf, exerciseTargetHistory, planDaysDoneThisWeek, plannedVsDone, planWeekOf, planWeekStartMs, type PlanWeekDay, type PlanWeekWorkout } from './plan-tracker';
+import { dayOf, exerciseTargetHistory, planDaysDoneThisWeek, plannedVsDone, planWeekExpectedNow, planWeekOf, planWeekStartMs, type PlanWeekDay, type PlanWeekWorkout } from './plan-tracker';
 
 /**
  * Library › Workouts › Your plan (Ben, 19 Oct: "can i see it visually?",
@@ -150,7 +150,9 @@ export interface PlanOverviewInput {
   /** (Ben, 20 Oct) `weekActivityLine` for each activity this week. */
   activities?: readonly string[];
   /** (Ben, 20 Oct) This week's change in use: its days merged or skipped come off `Days this week` (`weekDaysRemoved`). */
-  weekChange?: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged?: readonly (readonly string[])[] } | null;
+  weekChange?: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged?: readonly (readonly string[])[]; /** (28 Oct) Each merge's workout, in `merged` order. */ mergedRoutineIds?: readonly (string | null)[] } | null;
+  /** (Ben, 28 Oct) Set days plans: each day's weekday this week (a plan started mid-week expects only the days left). */
+  weekdays?: ReadonlyMap<string, number> | null;
   nowMs: number;
   tz: string;
 }
@@ -168,7 +170,12 @@ export function goalLine(training: PlanOverviewInput['training']): PlanOverview[
 export function planOverview(input: PlanOverviewInput): PlanOverview | null {
   const plan = input.plan;
   if (plan === null || plan.status !== 'applied' || input.days.length === 0) return null;
-  const doneThisWeek = planDaysDoneThisWeek({ days: input.days, appliedAtUtc: plan.appliedAtUtc, workouts: input.workouts, nowMs: input.nowMs, tz: input.tz });
+  const wc = input.weekChange ?? null;
+  const merges = (wc?.merged ?? []).flatMap((dayIds, i) => {
+    const routineId = wc?.mergedRoutineIds?.[i] ?? null;
+    return routineId === null ? [] : [{ routineId, dayIds }];
+  });
+  const doneThisWeek = planDaysDoneThisWeek({ days: input.days, appliedAtUtc: plan.appliedAtUtc, workouts: input.workouts, nowMs: input.nowMs, tz: input.tz, merges });
   const newest = new Map<string, PlanWeekWorkout & { tz: string }>();
   for (const w of input.workouts) {
     if (toMs(w.startedAtUtc) > input.nowMs) continue;
@@ -199,7 +206,9 @@ export function planOverview(input: PlanOverviewInput): PlanOverview | null {
   // This week's merged day counts once (Chest + Shoulders done by one Push workout is one day of this week's).
   const doubled = (change?.merged ?? []).filter((ids) => ids.length > 1 && ids.every((id) => doneThisWeek.has(id))).reduce((n, ids) => n + ids.length - 1, 0);
   const done = doneThisWeek.size - doubled;
-  const of = planWeekOf(Math.max(1, input.days.length - (change?.daysRemoved ?? 0)), done, input.pausedDaysThisWeek ?? 0);
+  // (Ben, 28 Oct) A plan started partway through this week expects only the days still possible from its start.
+  const expected = planWeekExpectedNow({ days: input.days, done: doneThisWeek, appliedAtUtc: plan.appliedAtUtc, nowMs: input.nowMs, tz: input.tz, weekdays: input.weekdays });
+  const of = planWeekOf(Math.max(1, Math.min(expected ?? Number.POSITIVE_INFINITY, input.days.length) - (change?.daysRemoved ?? 0)), done, input.pausedDaysThisWeek ?? 0);
   const pct = input.sets.planned > 0 ? Math.round((100 * Math.min(input.sets.done, input.sets.planned)) / input.sets.planned) : null;
   return {
     planId: plan.id,
