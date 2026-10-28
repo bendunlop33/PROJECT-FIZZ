@@ -159,7 +159,7 @@ function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): Build
     unit: 'kg',
     skipped: [],
     revs: {},
-    rests: { 'k-bench': { warmup: 60, top: 210, backoff: 180 }, 'k-fly': { working: 90, round: 90 }, 'k-crunch': { working: 90, round: 90 }, 'k-incline': { warmup: 60, working: 120 } },
+    rests: { 'k-bench': { warmup: 60, top: 150, backoff: 180 }, 'k-fly': { working: 90, round: 90 }, 'k-crunch': { working: 90, round: 90 }, 'k-incline': { warmup: 60, working: 120 } },
     items: {},
     startable: true,
     gymId: 'g1',
@@ -259,7 +259,7 @@ describe('Exercise pop-up and keyboard (§2.4, §2.7)', () => {
     ]);
     expect(p?.rests.map((r) => [r.label, r.text])).toEqual([
       ['Warm-ups', '1:00'],
-      ['Top set', '3:30'],
+      ['Top set', '2:30'],
       ['Back-offs', '3:00'],
     ]);
     // Room for more (at most 6 warm-ups, WU4's longest ladder; was 4).

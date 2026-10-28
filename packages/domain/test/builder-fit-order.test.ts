@@ -31,7 +31,7 @@ const all = (w: BuilderWorkout) => w.blocks.flatMap((b) => b.slots);
 const ids = (w: BuilderWorkout) => all(w).map((s) => s.exerciseId);
 const working = (s: BuilderSlot) => s.rows.filter((r) => r.type !== 'warmup').length;
 const mainOf = (w: BuilderWorkout) => all(w).find((s) => s.main);
-const restsOf = (s: BuilderSlot | undefined, w: BuilderWorkout, ctx: BuilderContext) => (s === undefined ? [] : restAfterRows(s, ctx.info, w.restLevel, ctx.restPresetsS));
+const restsOf = (s: BuilderSlot | undefined, w: BuilderWorkout, ctx: BuilderContext) => (s === undefined ? [] : restAfterRows(s, ctx.info, w.restLevel, ctx.restDefaultsS));
 const withLevel = (ctx: BuilderContext, l: RestLevel | undefined): BuilderContext => (l === undefined ? ctx : { ...ctx, fitRestLevel: l });
 
 /** Chest day, Supersets off: bench (main), incline DB, machine press, cable fly, pushdown, crunch. */
@@ -42,9 +42,9 @@ const chest = (supersets = false) => {
 };
 
 describe('rest levels (Ben, 27 Oct): accessories only', () => {
-  it('the main lift keeps 3:30 top, 3:00 back-off, 3:00 working at every level', () => {
+  it('the main lift keeps 2:30 top (Ben, 28 Oct), 3:00 back-off, 3:00 working at every level', () => {
     for (const l of ['normal', 'shorter', 'shortest'] as const) {
-      expect(defaultRestS('top', 'main', l)).toBe(210);
+      expect(defaultRestS('top', 'main', l)).toBe(150);
       expect(defaultRestS('backoff', 'main', l)).toBe(180);
       expect(defaultRestS('working', 'main', l)).toBe(180);
     }

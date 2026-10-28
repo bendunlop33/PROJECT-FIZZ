@@ -12,7 +12,7 @@ import type { BuilderBlock, BuilderInfoLookup, BuilderSlot, RestKind, RestLevel 
 /** §3.2 defaults, seconds [Ben]. */
 export const BUILDER_REST_DEFAULTS = {
   warmup: 60,
-  top: 210,
+  top: 150, // (Ben, 28 Oct) 2:30
   backoff: 180,
   workingMain: 180,
   workingCompound: 120,
@@ -34,8 +34,8 @@ export const BUILDER_REST_LIMITS = {
  * (Ben, 28 Oct) Profile › Rest times: the defaults Ben can change (all but `before a drop`). `RestDefaults` holds only
  * the ones he set (seconds); every default reader (`defaultRestS` and everything over it: `restAfterRows`, the
  * estimate, the fit, Today's drafts, Start) uses his value where he set one, else the standard one. A value he set is
- * used exactly as he set it; a standard one still snaps to his rest presets, as before. A rest of his own on a slot
- * still wins, and stored workouts, an open workout and done sets keep theirs.
+ * used exactly as he set it, and (Ben, 28 Oct) so is a standard one: defaults no longer snap to his rest presets. A
+ * rest of his own on a slot still wins, and stored workouts, an open workout and done sets keep theirs.
  */
 export type RestDefaults = Readonly<Partial<Record<RestDefaultKey, number>>>;
 
@@ -107,15 +107,11 @@ function shortened(standard: number, scale: number, floor: number): number {
 }
 
 /**
- * The rest table for a level: Ben's own values where he set them (exact), else the standard ones snapped to his
- * presets (`presets`, as before 28 Oct). A shortened value follows its key: from his own value, exact; from a standard
- * one, snapped.
+ * The rest table for a level: Ben's own values where he set them, else the standard ones, both exact (Ben, 28 Oct:
+ * no snapping to his rest presets). A shortened level scales from that value.
  */
-export function restTableOf(level: RestLevel, defaults: RestDefaults = {}, presets?: readonly number[]): RestTable {
-  const at = (key: RestDefaultKey, f: (s: number) => number = (s) => s): number => {
-    const own = defaults[key];
-    return own !== undefined ? f(own) : nearestPreset(f(STANDARD_REST_DEFAULTS[key]), presets);
-  };
+export function restTableOf(level: RestLevel, defaults: RestDefaults = {}): RestTable {
+  const at = (key: RestDefaultKey, f: (s: number) => number = (s) => s): number => f(defaults[key] ?? STANDARD_REST_DEFAULTS[key]);
   const main = { top: at('top'), backoff: at('backoff'), workingMain: at('workingMain') };
   if (level === 'normal') return { ...main, workingCompound: at('workingCompound'), workingIsolation: at('workingIsolation'), round: at('round') };
   const k = LEVEL_SCALE[level];
@@ -127,9 +123,9 @@ export function restTableOf(level: RestLevel, defaults: RestDefaults = {}, prese
   };
 }
 
-/** The warm-up default: Ben's own exactly, else the standard snapped to his presets. */
-function warmupDefaultS(defaults: RestDefaults | undefined, presets: readonly number[] | undefined): number {
-  return defaults?.warmup ?? nearestPreset(STANDARD_REST_DEFAULTS.warmup, presets);
+/** The warm-up default: Ben's own, else the standard, exactly. */
+function warmupDefaultS(defaults: RestDefaults | undefined): number {
+  return defaults?.warmup ?? STANDARD_REST_DEFAULTS.warmup;
 }
 
 /** The standard defaults' shorter levels (kept for readers of the fixed table). */
@@ -149,12 +145,11 @@ export interface RestTimesRow {
 }
 
 /**
- * (Ben, 28 Oct) Profile › Rest times: the seven rows at the values he gets now (his own, else the standard snapped to
- * his presets), and whether `Reset to defaults` has anything to reset.
+ * (Ben, 28 Oct) Profile › Rest times: the seven rows at the values he gets now (his own, else the standard), and whether `Reset to defaults` has anything to reset.
  */
-export function restTimesView(defaults: RestDefaults, presets?: readonly number[]): { rows: RestTimesRow[]; canReset: boolean } {
-  const t = restTableOf('normal', defaults, presets);
-  const value: Record<RestDefaultKey, number> = { ...t, warmup: warmupDefaultS(defaults, presets) };
+export function restTimesView(defaults: RestDefaults): { rows: RestTimesRow[]; canReset: boolean } {
+  const t = restTableOf('normal', defaults);
+  const value: Record<RestDefaultKey, number> = { ...t, warmup: warmupDefaultS(defaults) };
   return {
     rows: REST_DEFAULT_ROWS.map(({ key, label }) => ({ key, label, seconds: value[key], text: restClockText(value[key]), down: stepRestDefault(value[key], -1), up: stepRestDefault(value[key], 1) })),
     canReset: hasOwnRestDefaults(defaults),
@@ -165,14 +160,14 @@ export function restTimesView(defaults: RestDefaults, presets?: readonly number[
  * (Ben, 28 Oct) What `Rest when short on time` shows under each option: the accessory rests that level gives, from
  * Ben's values, e.g. `Compound 2:00 · Isolation 1:30`.
  */
-export function restLevelTimesLine(level: RestLevel, defaults: RestDefaults = {}, presets?: readonly number[]): string {
-  const t = restTableOf(level, defaults, presets);
+export function restLevelTimesLine(level: RestLevel, defaults: RestDefaults = {}): string {
+  const t = restTableOf(level, defaults);
   return `Compound ${restClockText(t.workingCompound)} · Isolation ${restClockText(t.workingIsolation)}`;
 }
 
 /** The main lift's rest, shown once on that screen (it never shortens): `Main lift 3:00`. */
-export function mainLiftRestLine(defaults: RestDefaults = {}, presets?: readonly number[]): string {
-  return `Main lift ${restClockText(restTableOf('normal', defaults, presets).workingMain)}`;
+export function mainLiftRestLine(defaults: RestDefaults = {}): string {
+  return `Main lift ${restClockText(restTableOf('normal', defaults).workingMain)}`;
 }
 
 /** (Ben, 27 Oct) What Ben reads for each rest level (Profile › Training › `Rest when short on time`, the fit's note). */
@@ -193,20 +188,6 @@ export function clampBuilderRest(kind: RestKind | 'round', seconds: number): num
   return Math.min(hi, Math.max(lo, stepped));
 }
 
-function nearestPreset(seconds: number, presets: readonly number[] | undefined): number {
-  if (presets === undefined || presets.length === 0) return seconds;
-  let best = seconds;
-  let gap = Infinity;
-  for (const p of [...presets].sort((a, b) => a - b)) {
-    const d = Math.abs(p - seconds);
-    if (d < gap) {
-      gap = d;
-      best = p;
-    }
-  }
-  return best;
-}
-
 export type RestRole = 'main' | 'compound' | 'isolation';
 
 /** A slot's role for rest: main lift, compound accessory or isolation. Unknown exercises rest as isolations. */
@@ -216,13 +197,13 @@ export function restRoleOf(slot: Pick<BuilderSlot, 'main' | 'exerciseId'>, info:
 }
 
 /**
- * The default rest (seconds) for a kind, role and level, from Ben's defaults (`defaults`; absent: the standard ones);
- * Ben's presets snap it.
+ * The default rest (seconds) for a kind, role and level, from Ben's defaults (`defaults`; absent: the standard ones),
+ * used exactly.
  */
-export function defaultRestS(kind: RestKind | 'round', role: RestRole, level: RestLevel, presets?: readonly number[], defaults?: RestDefaults): number {
+export function defaultRestS(kind: RestKind | 'round', role: RestRole, level: RestLevel, defaults?: RestDefaults): number {
   if (kind === 'before_drop') return BUILDER_REST_DEFAULTS.beforeDrop;
-  if (kind === 'warmup') return warmupDefaultS(defaults, presets);
-  const table = restTableOf(level, defaults, presets);
+  if (kind === 'warmup') return warmupDefaultS(defaults);
+  const table = restTableOf(level, defaults);
   let s: number;
   switch (kind) {
     case 'top':
@@ -246,7 +227,7 @@ export function defaultRestS(kind: RestKind | 'round', role: RestRole, level: Re
  * Rest after each row of a solo slot (seconds), in row order. Ben's own rest
  * per kind wins over the default and the fit level.
  */
-export function restAfterRows(slot: BuilderSlot, info: BuilderInfoLookup, level: RestLevel, presets?: readonly number[], defaults?: RestDefaults): number[] {
+export function restAfterRows(slot: BuilderSlot, info: BuilderInfoLookup, level: RestLevel, defaults?: RestDefaults): number[] {
   const role = restRoleOf(slot, info);
   const firstWork = slot.rows.find((r) => r.type !== 'warmup');
   return slot.rows.map((row, i) => {
@@ -256,27 +237,27 @@ export function restAfterRows(slot: BuilderSlot, info: BuilderInfoLookup, level:
     if (own !== undefined) return own;
     // (Ben, 27 Oct) The plan day's stored rest: as stored at normal length; a shorter level may shorten an accessory's.
     const plan = slot.planRestS?.[kind];
-    if (plan !== undefined) return level === 'normal' || role === 'main' || kind === 'top' || kind === 'backoff' ? plan : Math.min(plan, defaultRestS(kind, role, level, presets, defaults));
+    if (plan !== undefined) return level === 'normal' || role === 'main' || kind === 'top' || kind === 'backoff' ? plan : Math.min(plan, defaultRestS(kind, role, level, defaults));
     // (WU11) The last warm-up rests 2 min before a rep-band first working set, 3 min before a heavy-band one.
-    if (row.type === 'warmup' && next !== undefined && next.type !== 'warmup' && firstWork !== undefined && firstWork.durationS === undefined && firstWork.distanceM === undefined) return nearestPreset(warmupRestS(firstWork.reps, true), presets);
-    return defaultRestS(kind, role, level, presets, defaults);
+    if (row.type === 'warmup' && next !== undefined && next.type !== 'warmup' && firstWork !== undefined && firstWork.durationS === undefined && firstWork.distanceM === undefined) return warmupRestS(firstWork.reps, true);
+    return defaultRestS(kind, role, level, defaults);
   });
 }
 
 /** `After each round` for a superset block. */
-export function roundRestOf(block: BuilderBlock, level: RestLevel, presets?: readonly number[], defaults?: RestDefaults): number {
-  return block.roundRestS ?? defaultRestS('round', 'isolation', level, presets, defaults);
+export function roundRestOf(block: BuilderBlock, level: RestLevel, defaults?: RestDefaults): number {
+  return block.roundRestS ?? defaultRestS('round', 'isolation', level, defaults);
 }
 
 /**
  * (Ben, 23 Oct; §2.9) A slot's working rest as Ben reads it: the rest after its first working set (the top set's, or
  * the working sets'), his own or the default. Null: no working set.
  */
-export function workingRestS(slot: BuilderSlot, info: BuilderInfoLookup, level: RestLevel, presets?: readonly number[], defaults?: RestDefaults): number | null {
+export function workingRestS(slot: BuilderSlot, info: BuilderInfoLookup, level: RestLevel, defaults?: RestDefaults): number | null {
   const first = slot.rows.find((r) => r.type !== 'warmup');
   if (first === undefined) return null;
   const kind: RestKind = first.type === 'warmup' ? 'working' : first.type;
-  return slot.restS?.[kind] ?? defaultRestS(kind, restRoleOf(slot, info), level, presets, defaults);
+  return slot.restS?.[kind] ?? defaultRestS(kind, restRoleOf(slot, info), level, defaults);
 }
 
 /** `3:00`, `1:30`. */

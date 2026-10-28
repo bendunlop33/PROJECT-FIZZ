@@ -152,7 +152,7 @@ describe('(Ben, 28 Oct) Rest times: Today’s drafts and Start use Ben’s defau
       const row = a.exercises.find((e) => e.exerciseName === name)?.id;
       return [...new Set(a.sets.filter((x) => x.sessionExerciseId === row && x.setType === type).map((x) => x.rest.seconds))];
     };
-    // Standard: the incline press (a compound accessory) rests 2:00, snapped to his presets (1:30).
+    // Standard: the incline press (a compound accessory) rests 2:00, exactly (Ben, 28 Oct: no longer snapped to his presets).
     const std = await loaded(s);
     const stdKey = dayKeyOf(std, 'Push');
     const before = s.todaySession.card(std, sel(std, stdKey));

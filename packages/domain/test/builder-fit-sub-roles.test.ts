@@ -125,36 +125,37 @@ describe('time fit keeps sub-role coverage (Ben, 24 Oct)', () => {
         }
         sawSetsCut = true;
       }
-      // Row before vertical pull: the pulldown stays whenever it fits at 2 sets (23 min here, the deadlift's rests never
-      // shortened for time since Ben's 27 Oct order; was 19); the row goes first.
+      // Row before vertical pull: the pulldown stays whenever it fits at 2 sets (22 min here, the deadlift's rests never
+      // shortened for time since Ben's 27 Oct order; was 19, then 23 with a 3:30 top set); the row goes first.
       if (row === 0 && pull > 0) sawRowDropped = true;
-      if (pull === 0) expect(m, `${String(m)} min: the vertical pull was dropped while it still fits`).toBeLessThan(23);
-      if (row === 0) expect(m, `${String(m)} min: the row was dropped while both still fit at 2 sets`).toBeLessThan(29);
+      if (pull === 0) expect(m, `${String(m)} min: the vertical pull was dropped while it still fits`).toBeLessThan(22);
+      if (row === 0) expect(m, `${String(m)} min: the row was dropped while both still fit at 2 sets`).toBeLessThan(28);
       if (r.status !== 'over') expect(estimateBuilderMinutes(r.workout, ctx)).toBeLessThanOrEqual(m);
     }
     expect(sawSetsCut).toBe(true);
     expect(sawRowDropped).toBe(true);
     // Shorter than even the vertical pull at 2 sets: coverage is given up, and the plain least-lost fit applies.
-    const tiny = fit(w, 22);
+    const tiny = fit(w, 21);
     expect(setsOf(tiny.workout, 'lat_pulldown')).toBe(0);
   });
 
-  it('the example ladder (Back day, 67 min): others first, then the row’s and the pull’s sets, then the row, then coverage', () => {
+  it('the example ladder (Back day, 66 min): others first, then the row’s and the pull’s sets, then the row, then coverage', () => {
     const shape = (m: number) => slotsOf(fit(w, m).workout.blocks).map((s) => `${s.exerciseId}×${String(workingCount(s))}`).join(' ');
-    // (Rule F, Ben 27 Oct) The curl first: trimmed (58), then left out (56), before a Back exercise loses a set.
-    expect(shape(58)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×3 shrug×3 curl×2');
-    expect(shape(56)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×3 shrug×3');
-    // (Ben, 27 Oct) Sets before exercises: the others' sets to 2 (47), then the row's and the pull's (43, 38), all
+    // (Ben, 28 Oct) The deadlift's top set rests 2:30 (was 3:30): every step comes a minute earlier than on 27 Oct.
+    // (Rule F, Ben 27 Oct) The curl first: trimmed (57), then left out (55), before a Back exercise loses a set.
+    expect(shape(57)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×3 shrug×3 curl×2');
+    expect(shape(55)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×3 shrug×3');
+    // (Ben, 27 Oct) Sets before exercises: the others' sets to 2 (46), then the row's and the pull's (42, 37), all
     // before another exercise is left out. Then the 24 Oct ladder; the deadlift's rests no longer shorten for time, so
     // each step comes a few minutes earlier (was 32, 28, 24, 23, 19).
-    expect(shape(47)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×2 shrug×2');
-    expect(shape(43)).toBe('deadlift×4 lat_pulldown×4 cable_row×2 face_pull×2 shrug×2');
-    expect(shape(38)).toBe('deadlift×4 lat_pulldown×2 cable_row×2 face_pull×2 shrug×2');
-    expect(shape(36)).toBe('deadlift×4 lat_pulldown×4 cable_row×3');
-    expect(shape(33)).toBe('deadlift×4 lat_pulldown×4 cable_row×2');
-    expect(shape(29)).toBe('deadlift×4 lat_pulldown×2 cable_row×2');
-    expect(shape(28)).toBe('deadlift×4 lat_pulldown×4');
-    expect(shape(23)).toBe('deadlift×4 lat_pulldown×2');
+    expect(shape(46)).toBe('deadlift×4 lat_pulldown×4 cable_row×4 face_pull×2 shrug×2');
+    expect(shape(42)).toBe('deadlift×4 lat_pulldown×4 cable_row×2 face_pull×2 shrug×2');
+    expect(shape(37)).toBe('deadlift×4 lat_pulldown×2 cable_row×2 face_pull×2 shrug×2');
+    expect(shape(35)).toBe('deadlift×4 lat_pulldown×4 cable_row×3');
+    expect(shape(32)).toBe('deadlift×4 lat_pulldown×4 cable_row×2');
+    expect(shape(28)).toBe('deadlift×4 lat_pulldown×2 cable_row×2');
+    expect(shape(27)).toBe('deadlift×4 lat_pulldown×4');
+    expect(shape(22)).toBe('deadlift×4 lat_pulldown×2');
   });
 
   it('kept at fewer sets, never below 2; the row goes only when both at 2 sets don’t fit', () => {

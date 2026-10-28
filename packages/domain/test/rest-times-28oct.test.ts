@@ -63,8 +63,8 @@ describe('the setting (training profile, Your data)', () => {
     expect(restDefaultsOf(null)).toEqual({});
     expect(restDefaultsOf(fresh())).toEqual({});
     expect(hasOwnRestDefaults(restDefaultsOf(fresh()))).toBe(false);
-    for (const k of REST_DEFAULT_KEYS) expect(defaultRestS(k === 'workingMain' || k === 'workingCompound' || k === 'workingIsolation' ? 'working' : k, k === 'workingCompound' ? 'compound' : k === 'workingIsolation' || k === 'round' ? 'isolation' : 'main', 'normal', undefined, {})).toBe(STANDARD_REST_DEFAULTS[k]);
-    expect(STANDARD_REST_DEFAULTS).toEqual({ workingMain: 180, top: 210, backoff: 180, workingCompound: 120, workingIsolation: 90, round: 90, warmup: 60 });
+    for (const k of REST_DEFAULT_KEYS) expect(defaultRestS(k === 'workingMain' || k === 'workingCompound' || k === 'workingIsolation' ? 'working' : k, k === 'workingCompound' ? 'compound' : k === 'workingIsolation' || k === 'round' ? 'isolation' : 'main', 'normal', {})).toBe(STANDARD_REST_DEFAULTS[k]);
+    expect(STANDARD_REST_DEFAULTS).toEqual({ workingMain: 180, top: 150, backoff: 180, workingCompound: 120, workingIsolation: 90, round: 90, warmup: 60 });
     expect(REST_DEFAULT_LIMITS.minS).toBe(BUILD_LIMITS.minRestS);
     expect(REST_DEFAULT_LIMITS.maxS).toBe(BUILD_LIMITS.maxRestS);
   });
@@ -75,11 +75,11 @@ describe('the setting (training profile, Your data)', () => {
     expect(p1.restDefaultsS).toEqual({ workingCompound: 150 });
     expect(TrainingProfileSchema.parse(p1)).toEqual(p1);
     expect(restDefaultsOf(p1)).toEqual({ workingCompound: 150 });
-    // Set to the standard value: still his (used exactly, never snapped to a preset).
+    // Set to the standard value: still his, used exactly.
     const p2 = ok(p1, { kind: 'rest_default', key: 'workingCompound', seconds: 120 });
     expect(restDefaultsOf(p2)).toEqual({ workingCompound: 120 });
-    expect(defaultRestS('working', 'compound', 'normal', [60, 90, 180], restDefaultsOf(p2))).toBe(120);
-    expect(defaultRestS('working', 'compound', 'normal', [60, 90, 180], {})).toBe(90);
+    expect(defaultRestS('working', 'compound', 'normal', restDefaultsOf(p2))).toBe(120);
+    expect(defaultRestS('working', 'compound', 'normal', {})).toBe(120);
   });
 
   it('refuses a value off the 15 s steps, outside 0:30–6:00, or an unknown key', () => {
@@ -110,7 +110,7 @@ describe('the setting (training profile, Your data)', () => {
 describe('Profile › Rest times view', () => {
   it('seven rows in order with their values; − / + in 15 s steps, off at the limits; Reset only with his own', () => {
     const v = restTimesView({});
-    expect(v.rows.map((r) => `${r.label} ${r.text}`)).toEqual(['Main lift 3:00', 'Top set 3:30', 'Back-off 3:00', 'Compound 2:00', 'Isolation 1:30', 'Superset round 1:30', 'Warm-up 1:00']);
+    expect(v.rows.map((r) => `${r.label} ${r.text}`)).toEqual(['Main lift 3:00', 'Top set 2:30', 'Back-off 3:00', 'Compound 2:00', 'Isolation 1:30', 'Superset round 1:30', 'Warm-up 1:00']);
     expect(v.rows[0]).toMatchObject({ down: 165, up: 195 });
     expect(v.canReset).toBe(false);
     const edge = { warmup: 30, top: 360 };
@@ -124,18 +124,17 @@ describe('Profile › Rest times view', () => {
     expect(hasOwnRestDefaults(edge)).toBe(true);
   });
 
-  it('shows what he gets now: a standard value snapped to his presets, his own exactly', () => {
-    const presets = [60, 90, 180];
-    expect(restTimesView({}, presets).rows.map((r) => r.text)).toEqual(['3:00', '3:00', '3:00', '1:30', '1:30', '1:30', '1:00']);
-    expect(restTimesView({ top: 225, workingCompound: 135 }, presets).rows.map((r) => r.text)).toEqual(['3:00', '3:45', '3:00', '2:15', '1:30', '1:30', '1:00']);
+  it('shows what he gets now (Ben, 28 Oct): the standard values exactly, his own exactly', () => {
+    expect(restTimesView({}).rows.map((r) => r.text)).toEqual(['3:00', '2:30', '3:00', '2:00', '1:30', '1:30', '1:00']);
+    expect(restTimesView({ top: 225, workingCompound: 135 }).rows.map((r) => r.text)).toEqual(['3:00', '3:45', '3:00', '2:15', '1:30', '1:30', '1:00']);
   });
 });
 
 describe('rest levels from his defaults', () => {
-  it('the standard defaults give the 27 Oct table exactly', () => {
-    expect(restTableOf('normal')).toEqual({ top: 210, backoff: 180, workingMain: 180, workingCompound: 120, workingIsolation: 90, round: 90 });
-    expect(restTableOf('shorter')).toEqual({ top: 210, backoff: 180, workingMain: 180, workingCompound: 90, workingIsolation: 75, round: 75 });
-    expect(restTableOf('shortest')).toEqual({ top: 210, backoff: 180, workingMain: 180, workingCompound: 90, workingIsolation: 60, round: 60 });
+  it('the standard defaults give the 27 Oct table exactly, top set 2:30 (Ben, 28 Oct)', () => {
+    expect(restTableOf('normal')).toEqual({ top: 150, backoff: 180, workingMain: 180, workingCompound: 120, workingIsolation: 90, round: 90 });
+    expect(restTableOf('shorter')).toEqual({ top: 150, backoff: 180, workingMain: 180, workingCompound: 90, workingIsolation: 75, round: 75 });
+    expect(restTableOf('shortest')).toEqual({ top: 150, backoff: 180, workingMain: 180, workingCompound: 90, workingIsolation: 60, round: 60 });
     expect(BUILDER_REST_LEVELS.shorter).toEqual(restTableOf('shorter'));
   });
 
@@ -163,27 +162,27 @@ describe('rest levels from his defaults', () => {
     expect(restLevelTimesLine('normal', BENS)).toBe('Compound 3:00 · Isolation 2:00');
     expect(restLevelTimesLine('shortest', BENS)).toBe('Compound 2:00 · Isolation 1:15');
     expect(mainLiftRestLine(BENS)).toBe('Main lift 4:00');
-    // As he gets them: the standard ones snap to his presets (60 / 90 / 180), his own don't.
-    expect(restLevelTimesLine('normal', {}, [60, 90, 180])).toBe('Compound 1:30 · Isolation 1:30');
-    expect(restLevelTimesLine('normal', { workingCompound: 120 }, [60, 90, 180])).toBe('Compound 2:00 · Isolation 1:30');
+    // (Ben, 28 Oct) The standard ones are exact too: compound 2:00 stays 2:00.
+    expect(restLevelTimesLine('normal', {})).toBe('Compound 2:00 · Isolation 1:30');
+    expect(restLevelTimesLine('normal', { workingCompound: 135 })).toBe('Compound 2:15 · Isolation 1:30');
   });
 });
 
 describe('every default reader uses his values', () => {
-  it('defaultRestS: by kind and role; before a drop never changes; his own exact, the standard ones still snap to his presets', () => {
-    expect(defaultRestS('working', 'main', 'normal', undefined, BENS)).toBe(240);
-    expect(defaultRestS('top', 'main', 'shortest', undefined, BENS)).toBe(270);
-    expect(defaultRestS('backoff', 'compound', 'normal', undefined, BENS)).toBe(210);
-    expect(defaultRestS('working', 'compound', 'normal', undefined, BENS)).toBe(180);
-    expect(defaultRestS('drop', 'isolation', 'normal', undefined, BENS)).toBe(120);
-    expect(defaultRestS('round', 'isolation', 'normal', undefined, BENS)).toBe(60);
-    expect(defaultRestS('warmup', 'main', 'shortest', undefined, BENS)).toBe(90);
-    expect(defaultRestS('before_drop', 'isolation', 'normal', undefined, BENS)).toBe(15);
-    expect(defaultRestS('working', 'compound', 'normal', [60, 150, 300], BENS)).toBe(180);
-    expect(defaultRestS('working', 'compound', 'normal', [60, 150, 300], { workingIsolation: 120 })).toBe(150);
-    expect(defaultRestS('working', 'isolation', 'shorter', [60, 150, 300], { workingIsolation: 120 })).toBe(90);
-    expect(defaultRestS('warmup', 'main', 'normal', [45, 300], {})).toBe(45);
-    expect(defaultRestS('warmup', 'main', 'normal', [45, 300], { warmup: 75 })).toBe(75);
+  it('defaultRestS: by kind and role; before a drop never changes; his own and the standard ones exact (Ben, 28 Oct)', () => {
+    expect(defaultRestS('working', 'main', 'normal', BENS)).toBe(240);
+    expect(defaultRestS('top', 'main', 'shortest', BENS)).toBe(270);
+    expect(defaultRestS('backoff', 'compound', 'normal', BENS)).toBe(210);
+    expect(defaultRestS('working', 'compound', 'normal', BENS)).toBe(180);
+    expect(defaultRestS('drop', 'isolation', 'normal', BENS)).toBe(120);
+    expect(defaultRestS('round', 'isolation', 'normal', BENS)).toBe(60);
+    expect(defaultRestS('warmup', 'main', 'shortest', BENS)).toBe(90);
+    expect(defaultRestS('before_drop', 'isolation', 'normal', BENS)).toBe(15);
+    expect(defaultRestS('working', 'compound', 'normal', { workingIsolation: 120 })).toBe(120);
+    expect(defaultRestS('working', 'isolation', 'shorter', { workingIsolation: 120 })).toBe(90);
+    expect(defaultRestS('top', 'main', 'normal', {})).toBe(150);
+    expect(defaultRestS('warmup', 'main', 'normal', {})).toBe(60);
+    expect(defaultRestS('warmup', 'main', 'normal', { warmup: 75 })).toBe(75);
   });
 
   it('the builder: rests after rows, round rest, working rest, the estimate and the saved draft; his own slot rest wins', () => {
@@ -193,10 +192,10 @@ describe('every default reader uses his values', () => {
     const main = all(w).find((s) => s.main) as BuilderSlot;
     const acc = all(w).find((s) => !s.main && std.info(s.exerciseId)?.role === 'compound') as BuilderSlot;
     const iso = all(w).find((s) => std.info(s.exerciseId)?.role === 'isolation') as BuilderSlot;
-    expect(workingRestS(main, std.info, 'normal', undefined, BENS)).toBe(main.rows.some((r) => r.type === 'top') ? 270 : 240);
-    expect(workingRestS(acc, std.info, 'normal', undefined, BENS)).toBe(180);
-    expect(workingRestS(iso, std.info, 'normal', undefined, BENS)).toBe(120);
-    expect(roundRestOf({ slots: [acc, iso], auto: false }, 'normal', undefined, BENS)).toBe(60);
+    expect(workingRestS(main, std.info, 'normal', BENS)).toBe(main.rows.some((r) => r.type === 'top') ? 270 : 240);
+    expect(workingRestS(acc, std.info, 'normal', BENS)).toBe(180);
+    expect(workingRestS(iso, std.info, 'normal', BENS)).toBe(120);
+    expect(roundRestOf({ slots: [acc, iso], auto: false }, 'normal', BENS)).toBe(60);
     // Longer defaults: a longer workout.
     expect(estimateBuilderSeconds(w, bens)).toBeGreaterThan(estimateBuilderSeconds(w, std));
     // The draft saved carries his rests.
@@ -205,7 +204,7 @@ describe('every default reader uses his values', () => {
     expect(isoRests?.every((r) => r === 120)).toBe(true);
     // A rest of his own on the slot keeps it.
     const own: BuilderSlot = { ...iso, restS: { working: 45 } };
-    expect(restAfterRows(own, std.info, 'normal', undefined, BENS).filter((_, i) => own.rows[i]?.type === 'working')).toEqual(own.rows.filter((r) => r.type === 'working').map(() => 45));
+    expect(restAfterRows(own, std.info, 'normal', BENS).filter((_, i) => own.rows[i]?.type === 'working')).toEqual(own.rows.filter((r) => r.type === 'working').map(() => 45));
   });
 
   it('the fit: the main lift keeps his rests at every level; accessories go to his scaled level', () => {
@@ -213,13 +212,13 @@ describe('every default reader uses his values', () => {
     const bens: BuilderContext = { ...std, restDefaultsS: BENS };
     const w = chest(bens);
     const main = all(w).find((s) => s.main) as BuilderSlot;
-    const before = restAfterRows(main, bens.info, 'normal', undefined, BENS);
+    const before = restAfterRows(main, bens.info, 'normal', BENS);
     const f = fitToMinutes(w, bens, { minutes: Math.floor(estimateBuilderSeconds({ ...w, restLevel: 'shortest' }, bens) / 60), mainGroup: 'Chest', grow: false, supersets: false });
     expect(f.workout.restLevel).toBe('shortest');
     const fm = all(f.workout).find((s) => s.main) as BuilderSlot;
-    expect(restAfterRows(fm, bens.info, f.workout.restLevel, undefined, BENS)).toEqual(before);
+    expect(restAfterRows(fm, bens.info, f.workout.restLevel, BENS)).toEqual(before);
     const iso = all(f.workout).find((s) => bens.info(s.exerciseId)?.role === 'isolation') as BuilderSlot;
-    expect(workingRestS(iso, bens.info, f.workout.restLevel, undefined, BENS)).toBe(75);
+    expect(workingRestS(iso, bens.info, f.workout.restLevel, BENS)).toBe(75);
   });
 
   it('the saved-workout editor’s Time: the shorter level from his defaults', () => {

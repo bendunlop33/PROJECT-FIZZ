@@ -783,13 +783,12 @@ export function createBuilderService(deps: BuilderServiceDeps) {
 
   function restsOf(w: BuilderWorkout, env: BuilderEnv): BuilderSnapshot['rests'] {
     const out: BuilderSnapshot['rests'] = {};
-    const presets = env.ctx.restPresetsS;
     for (const b of w.blocks) {
       for (const s of b.slots) {
         const role = restRoleOf(s, env.info);
         const kinds: RestKind[] = ['warmup', 'top', 'backoff', 'working', 'drop', 'before_drop'];
-        const r: Partial<Record<RestKind | 'round', number>> = Object.fromEntries(kinds.map((k) => [k, s.restS?.[k] ?? defaultRestS(k, role, w.restLevel, presets, env.ctx.restDefaultsS)]));
-        if (b.slots.length > 1) r.round = roundRestOf(b, w.restLevel, presets, env.ctx.restDefaultsS);
+        const r: Partial<Record<RestKind | 'round', number>> = Object.fromEntries(kinds.map((k) => [k, s.restS?.[k] ?? defaultRestS(k, role, w.restLevel, env.ctx.restDefaultsS)]));
+        if (b.slots.length > 1) r.round = roundRestOf(b, w.restLevel, env.ctx.restDefaultsS);
         out[s.key] = r;
       }
     }

@@ -21,8 +21,6 @@ export function RestTimesScreen() {
   const changed = useDataChanged();
   const [profile, setProfile] = useState<TrainingProfile | null | 'error'>(null);
   const [failed, setFailed] = useState(false);
-  // Ben's rest presets: the standard values snap to them, as every default reader does (his own are exact).
-  const [presets, setPresets] = useState<readonly number[]>([]);
   const busy = useRef(false);
 
   const load = () => {
@@ -30,7 +28,6 @@ export function RestTimesScreen() {
       .snapshot()
       .then((s) => {
         setProfile(s?.profile ?? 'error');
-        setPresets(s?.owner.restPresets.map((r) => r.seconds) ?? []);
       })
       .catch(() => {
         setProfile('error');
@@ -47,7 +44,7 @@ export function RestTimesScreen() {
   }
   if (profile === null) return <Screen>{null}</Screen>;
 
-  const view = restTimesView(restDefaultsOf(profile), presets);
+  const view = restTimesView(restDefaultsOf(profile));
 
   async function save(change: TrainingChange) {
     if (profile === null || profile === 'error' || busy.current) return;

@@ -23,8 +23,6 @@ export function RestWhenShortScreen() {
   const changed = useDataChanged();
   const [profile, setProfile] = useState<TrainingProfile | null | 'error'>(null);
   const [failed, setFailed] = useState(false);
-  // Ben's rest presets: the standard values snap to them, as every default reader does (his own are exact).
-  const [presets, setPresets] = useState<readonly number[]>([]);
   const busy = useRef(false);
 
   const load = () => {
@@ -32,7 +30,6 @@ export function RestWhenShortScreen() {
       .snapshot()
       .then((s) => {
         setProfile(s?.profile ?? 'error');
-        setPresets(s?.owner.restPresets.map((r) => r.seconds) ?? []);
       })
       .catch(() => {
         setProfile('error');
@@ -71,11 +68,11 @@ export function RestWhenShortScreen() {
     <Screen>
       <View style={{ gap: theme.space['2'] }} accessibilityRole="radiogroup">
         {FIT_REST_LEVEL_OPTIONS.map((l) => (
-          <ChoiceCard key={l} title={REST_LEVEL_NAMES[l]} subtitle={restLevelTimesLine(l, defaults, presets)} selected={level === l} onPress={() => void save(l)} />
+          <ChoiceCard key={l} title={REST_LEVEL_NAMES[l]} subtitle={restLevelTimesLine(l, defaults)} selected={level === l} onPress={() => void save(l)} />
         ))}
       </View>
       <AppText variant="callout" color="text.secondary">
-        {mainLiftRestLine(defaults, presets)}
+        {mainLiftRestLine(defaults)}
       </AppText>
       {failed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text="Not saved. Try again." /> : null}
     </Screen>

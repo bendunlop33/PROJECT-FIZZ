@@ -336,7 +336,6 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       return { mainFocus, unit: eq?.unit ?? p.preferredUnit, convention: eq?.loadConvention ?? e?.defaultLoadConvention ?? 'total', equipment: eq, bodyweightExercise: e?.defaultLoadConvention === 'bodyweight', gymEquipment: equipment, coachTarget: null, planFirstLoad: null, ruleTarget: null, e1rm: null, startLightCeiling: noReferenceCeiling(eq), painCap: null, ...deloadOpt };
     };
 
-    const presets = p.restPresets.map((r) => r.seconds);
     // (Ben, 27 Oct) Cardio machines and timed exercises (no builder group): held as timed slots (`makeExtraSlot`).
     const timed = (id: string): BuilderExtraInfo | null => {
       const e = byId.get(id);
@@ -344,14 +343,14 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     };
     // (Ben, 28 Oct) The one estimate at Ben's own pace (his logged times; the defaults until there are some).
     const pace = await learnedPace(deps.store(), p.id, nowMs);
-    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt, ...fitRestOpt, ...restDefaultsOpt, ...paceOpt(pace) };
+    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...warmupsOpt, ...fitRestOpt, ...restDefaultsOpt, ...paceOpt(pace) };
     // Prehab and forearm work (cuff, shins, wrist curls) is in `candidates` for Swap / Add, never picked by itself.
     const pool: BuilderPool = (g) => candidates(g).filter((id) => !painFlagged(id) && !isBrowseOnlyFocus(info(id)?.angle ?? ''));
     // The one `checkedOnOf` (domain): what Start's re-check compares against, so a builder draft and Today's agree
     // (an lb bar's mass in kg, the slot's convention).
     const checkedOn = (id: string): CheckedOnRecord | null => checkedOnOf(loads(id));
     // (WU1–WU12) With the gym's load inputs, saving plans every slot's warm-ups for its place in the workout.
-    const codec: DraftCodecContext = { info, loads, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf: checkedOn, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt, ...restDefaultsOpt };
+    const codec: DraftCodecContext = { info, loads, catalogueIdOf: (id) => byId.get(id)?.catalogueKey ?? id, checkedOnOf: checkedOn, ...warmupsOpt, ...restDefaultsOpt };
     return {
       ctx,
       pool,

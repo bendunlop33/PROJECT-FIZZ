@@ -313,8 +313,6 @@ export interface BuilderContext {
   info: BuilderInfoLookup;
   /** Load inputs for one exercise at today's gym. */
   loads: (exerciseId: string) => SlotLoadInput;
-  /** Ben's saved rest presets (seconds); defaults snap to the nearest. */
-  restPresetsS?: readonly number[];
   /** (Ben, 28 Oct) Profile › Rest times: Ben's default rests (`restDefaultsOf`). Absent: the standard ones. */
   restDefaultsS?: RestDefaults;
   /** Stable key for a new slot (injected so the rules stay pure and deterministic). */

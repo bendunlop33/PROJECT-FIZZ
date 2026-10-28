@@ -31,7 +31,6 @@ function amountOf(row: BuilderSetRow): Pick<DraftSetTemplate, 'reps' | 'duration
 
 export interface DraftCodecContext {
   info: BuilderInfoLookup;
-  restPresetsS?: readonly number[];
   /** (Ben, 28 Oct) Ben's default rests (Profile › Rest times); absent: the standard ones. */
   restDefaultsS?: RestDefaults;
   /** The catalogue key a slot's exercise came from (provenance); its ID when none. */
@@ -109,9 +108,9 @@ export function toDraftPlan(input: BuilderWorkout, ctx: DraftCodecContext): Draf
     if (block.slots.length === 0) continue;
     const group = block.slots.length > 1 ? (LETTERS[letter] ?? `S${String(letter)}`) : null;
     if (group !== null) letter += 1;
-    const round = roundRestOf(block, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS);
+    const round = roundRestOf(block, w.restLevel, ctx.restDefaultsS);
     block.slots.forEach((slot, si) => {
-      const solo = restAfterRows(slot, ctx.info, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS);
+      const solo = restAfterRows(slot, ctx.info, w.restLevel, ctx.restDefaultsS);
       const last = si === block.slots.length - 1;
       const setTemplates: DraftSetTemplate[] = slot.rows.map((row, i) => {
         const beforeDrop = slot.rows[i + 1]?.type === 'drop' && row.type !== 'warmup';
@@ -249,7 +248,7 @@ export function withSlotRevs(prev: DraftPlan | null, next: DraftPlan): { plan: D
  * loads untouched). Slots whose warm-ups are Ben's own keep theirs. For plans that open in the builder without passing
  * through `toDraftPlan` (a saved or past workout as Start would plan it, a coach draft). Pure.
  */
-export function settlePlanWarmups(plan: DraftPlan, ctx: Pick<DraftCodecContext, 'info' | 'restPresetsS' | 'restDefaultsS' | 'warmups'> & { loads: (exerciseId: string) => SlotLoadInput }, restLevel: RestLevel = 'normal'): DraftPlan {
+export function settlePlanWarmups(plan: DraftPlan, ctx: Pick<DraftCodecContext, 'info' | 'restDefaultsS' | 'warmups'> & { loads: (exerciseId: string) => SlotLoadInput }, restLevel: RestLevel = 'normal'): DraftPlan {
   const before = fromDraftPlan(plan, restLevel);
   const after = settleWarmups(before, { info: ctx.info, loads: ctx.loads, ...(ctx.warmups === undefined ? {} : { warmups: ctx.warmups }) });
   if (after === before) return plan;
@@ -259,7 +258,7 @@ export function settlePlanWarmups(plan: DraftPlan, ctx: Pick<DraftCodecContext, 
     slots: plan.slots.map((ds) => {
       const now = bySlot.get(ds.slotKey);
       if (now === undefined || now === was.get(ds.slotKey)) return ds;
-      const rests = restAfterRows(now, ctx.info, restLevel, ctx.restPresetsS, ctx.restDefaultsS);
+      const rests = restAfterRows(now, ctx.info, restLevel, ctx.restDefaultsS);
       const warm: DraftSetTemplate[] = now.rows.flatMap((row, i) => (row.type !== 'warmup' ? [] : [{ setType: 'warmup' as const, ...amountOf(row), targetRpe: null, restS: rests[i] ?? null, load: draftLoadOf(now, row) }]));
       return { ...ds, setTemplates: [...warm, ...ds.setTemplates.filter((t) => t.setType !== 'warmup')] };
     }),

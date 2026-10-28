@@ -26,7 +26,6 @@ const T = BUILDER_TIME;
 
 export interface EstimateContext {
   info: BuilderInfoLookup;
-  restPresetsS?: readonly number[];
   /** (Ben, 28 Oct) Ben's default rests (Profile › Rest times); absent: the standard ones. */
   restDefaultsS?: RestDefaults;
   /**
@@ -56,7 +55,7 @@ function warmupSeconds(slot: BuilderSlot, ctx: EstimateContext, w: BuilderWorkou
   const steps = idx.map((i) => ({ load: slot.rows[i]?.load ?? 0, reps: slot.rows[i]?.reps ?? 0 }));
   const own = slot.restS?.warmup;
   const ladder = own === undefined ? warmupTimeS(steps) : steps.reduce((m, s) => m + s.reps * WARMUP_REP_S, 0) + own * (steps.length - 1);
-  return ladder + restAsTaken(restAfterRows(slot, ctx.info, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS)[last] ?? 0, paceOf(ctx));
+  return ladder + restAsTaken(restAfterRows(slot, ctx.info, w.restLevel, ctx.restDefaultsS)[last] ?? 0, paceOf(ctx));
 }
 
 /**
@@ -74,11 +73,11 @@ export function blockSeconds(block: BuilderBlock, w: BuilderWorkout, ctx: Estima
   const timed = block.slots.reduce((m, s) => m + timedExtraS(s, pace.setS), 0);
   const only = block.slots.length === 1 ? block.slots[0] : undefined;
   if (only !== undefined) {
-    const rests = restAfterRows(only, ctx.info, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS);
+    const rests = restAfterRows(only, ctx.info, w.restLevel, ctx.restDefaultsS);
     return warm + timed + only.rows.reduce((m, r, i) => (r.type === 'warmup' ? m : m + pace.setS + restAsTaken(rests[i] ?? 0, pace)), 0);
   }
   const rounds = Math.max(0, ...block.slots.map((s) => s.rows.filter((r) => r.type !== 'warmup').length));
-  return warm + timed + rounds * (pace.setS * block.slots.length + restAsTaken(roundRestOf(block, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS), pace));
+  return warm + timed + rounds * (pace.setS * block.slots.length + restAsTaken(roundRestOf(block, w.restLevel, ctx.restDefaultsS), pace));
 }
 
 /** The changeover between two blocks (`betweenS`, or Ben's own, `ctx.pace`). */

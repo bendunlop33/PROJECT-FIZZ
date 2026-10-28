@@ -612,7 +612,7 @@ Ben, 23 Oct, on the old `Edit workout` screen (Cancel / Edit workout / Save, a N
 │ └──────────────────────────────────────┘ │
 │ REST                                     │
 │ │ Warm-ups        [−] 1:00 [+]        │  │
-│ │ Top set         [−] 3:30 [+]        │  │
+│ │ Top set         [−] 2:30 [+]        │  │
 │ │ Back-offs       [−] 3:00 [+]        │  │
 │ [↑ Move up] [↓ Move down] [Superset w…]  │
 │ Why this weight? ›                       │
@@ -875,7 +875,7 @@ Open for Ben: the width (3), the cap as "wildly outside", the 2-rep step, Epley 
 | Set type | Default |
 |---|---|
 | Warm-up | 1:00 |
-| Top set | 3:30 |
+| Top set | 2:30 (Ben, 28 Oct; was 3:30) |
 | Back-off | 3:00 |
 | Working, main lift | 3:00 |
 | Working, compound accessory | 2:00 |
@@ -885,7 +885,7 @@ Open for Ben: the width (3), the cap as "wildly outside", the 2-rep step, Epley 
 
 - Each set's rest runs **after** that set. So `Before a drop set` is the rest after the set the drop follows, and the drop set itself then rests like a normal working set before the next exercise [Proposal].
 - In a superset there's no rest between exercises inside a round; `After each round` is the rest after the round's last exercise [Proposal].
-- Steps of 15 s. Where Ben has saved rest presets, defaults snap to the nearest one. Limits: Q7.
+- Steps of 15 s. Limits: Q7. The defaults are used exactly; they no longer snap to Ben's saved rest presets (Ben, 28 Oct). Values Ben sets in Profile › Rest times replace them, also exactly.
 
 ### 3.3 Warm-ups [Ben]
 

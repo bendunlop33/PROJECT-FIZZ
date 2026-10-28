@@ -70,6 +70,19 @@ describe('the setting', () => {
 });
 
 describe('Your workout and Start read it', () => {
+  it('(Ben, 28 Oct) with rest presets 1:00 / 1:30 / 3:00 in his profile, the standard defaults are exact: top set 2:30, compound 2:00', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    expect((await s.training.snapshot())?.owner.restPresets.map((r) => r.seconds)).toEqual([60, 90, 180]);
+    const b = await buildPull(s, 'build-presets');
+    const main = slotsOf(b.workout.blocks).find((x) => x.main);
+    if (main === undefined) throw new Error('no main lift');
+    expect(b.rests[main.key]?.top).toBe(150);
+    const compounds = slotsOf(b.workout.blocks).filter((x) => !x.main && b.facts[x.exerciseId]?.compound === true);
+    expect(compounds.length).toBeGreaterThan(0);
+    for (const c of compounds) expect(b.rests[c.key]?.working, b.facts[c.exerciseId]?.name).toBe(120);
+  });
+
   it('a new Your workout: his main-lift and accessory rests; Start keeps them; the open workout keeps them after Reset', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
@@ -150,11 +163,13 @@ describe('screens', () => {
     const screen = src('screens/profile/RestTimesScreen.tsx');
     expect(screen).toContain("kind: 'rest_default'");
     expect(screen).toContain("kind: 'reset_rest_defaults'");
-    expect(screen).toContain('restTimesView(restDefaultsOf(profile), presets)');
+    expect(screen).toContain('restTimesView(restDefaultsOf(profile))');
+    expect(screen).not.toContain('restPresets');
     // Rest when short on time: each option's times, and the main lift once.
     const short = src('screens/profile/RestWhenShortScreen.tsx');
-    expect(short).toContain('subtitle={restLevelTimesLine(l, defaults, presets)}');
-    expect(short).toContain('mainLiftRestLine(defaults, presets)');
+    expect(short).toContain('subtitle={restLevelTimesLine(l, defaults)}');
+    expect(short).toContain('mainLiftRestLine(defaults)');
+    expect(short).not.toContain('restPresets');
     // A warm-up added in the workout rests his warm-up value when the exercise has none.
     expect(src('screens/workout/WorkoutEdits.tsx')).toContain('warmupRestS: p.latest()?.restDefaultsS?.warmup');
   });

@@ -932,8 +932,6 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       info,
       loads: (id) => loads.get(id) ?? fallbackLoad(id),
       newKey: (id) => deriveId(`today-slot:${today}:${id}`),
-      // Ben's rest presets, as the builder's (rests and the ~N min agree with Your workout).
-      ...(p.restPresets.length > 0 ? { restPresetsS: p.restPresets.map((r) => r.seconds) } : {}),
       // (Ben, 23 Oct) The plan's Warm-ups setting (Full / Short / None), as Your workout and Start plan them.
       ...(warmups === 'full' ? {} : { warmups }),
       // (Ben, 27 Oct) `Rest when short on time`, as Your workout's Time.
@@ -1435,7 +1433,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
   /** The builder's codec over Today's facts (per-slot state, rests from the rest level, the history each load came from). */
   function codecOf(data: TodaySessionData) {
-    return { info: data.internal.info, loads: data.internal.ctx.loads, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }), ...(data.internal.ctx.restDefaultsS === undefined ? {} : { restDefaultsS: data.internal.ctx.restDefaultsS }), ...(data.internal.ctx.warmups === undefined ? {} : { warmups: data.internal.ctx.warmups }) };
+    return { info: data.internal.info, loads: data.internal.ctx.loads, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restDefaultsS === undefined ? {} : { restDefaultsS: data.internal.ctx.restDefaultsS }), ...(data.internal.ctx.warmups === undefined ? {} : { warmups: data.internal.ctx.warmups }) };
   }
 
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {

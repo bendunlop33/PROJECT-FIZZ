@@ -40,8 +40,6 @@ export interface TimeFitInput {
   info: BuilderInfoLookup;
   /** Pain-flagged movements (exercise IDs): never trimmed, pushed or dropped (rule 9). */
   painFlagged?: ReadonlySet<string>;
-  /** Ben's rest presets (seconds), as the builder's. */
-  restPresetsS?: readonly number[];
   /** (Ben, 28 Oct) Ben's default rests (Profile › Rest times), as the builder's; absent: the standard ones. */
   restDefaultsS?: RestDefaults;
   /**
@@ -228,18 +226,18 @@ function aligned(orig: BuilderSlot, after: BuilderSlot): { kept: { setId: string
  * a left-alone slot (Ben's edit, pain flag, timed: `touched`), of a set Ben
  * edited, or a superset round with a left-alone exercise in it (review B1).
  */
-function restCuts(a: SessionAggregate, orig: BuilderWorkout, w: BuilderWorkout, info: BuilderInfoLookup, presets?: readonly number[], defaults?: RestDefaults): Map<string, number> {
+function restCuts(a: SessionAggregate, orig: BuilderWorkout, w: BuilderWorkout, info: BuilderInfoLookup, defaults?: RestDefaults): Map<string, number> {
   const out = new Map<string, number>();
   const byId = new Map(a.sets.map((s) => [s.id, s]));
   const origSlots = new Map(orig.blocks.flatMap((b) => b.slots.map((x) => [x.key, x] as const)));
   const origBlockOf = new Map(orig.blocks.flatMap((b) => b.slots.map((x) => [x.key, b] as const)));
   for (const b of w.blocks) {
-    const round = b.slots.length > 1 ? roundRestOf(b, w.restLevel, presets, defaults) : null;
+    const round = b.slots.length > 1 ? roundRestOf(b, w.restLevel, defaults) : null;
     for (const slot of b.slots) {
       const o = origSlots.get(slot.key);
       if (o === undefined || o.touched === true || o.main) continue;
       if (round !== null && origBlockOf.get(slot.key)?.slots.some((x) => x.touched === true) === true) continue;
-      const targets = restAfterRows(slot, info, w.restLevel, presets, defaults);
+      const targets = restAfterRows(slot, info, w.restLevel, defaults);
       aligned(o, slot).kept.forEach((k, i) => {
         const set = byId.get(k.setId);
         if (set === undefined || set.status !== 'pending' || bensEdit(a, set) || k.row.type === 'warmup' || k.next?.type === 'drop') return;
@@ -262,7 +260,6 @@ export function timeFitOffer(input: TimeFitInput): TimeFitOffer {
   const { w: built, mainGroup } = remainingWorkout(input);
   const ctx: BuilderContext = {
     info: input.info,
-    ...(input.restPresetsS === undefined ? {} : { restPresetsS: input.restPresetsS }),
     ...(input.restDefaultsS === undefined ? {} : { restDefaultsS: input.restDefaultsS }),
     ...(input.fitRestLevel === undefined ? {} : { fitRestLevel: input.fitRestLevel }),
     // Shrinking never adds an exercise, so these are never asked for.
@@ -271,7 +268,7 @@ export function timeFitOffer(input: TimeFitInput): TimeFitOffer {
   };
   // Rests already at a level count as that level, so the ladder's first step changes something.
   let start: RestLevel = 'normal';
-  for (const l of ['shorter', 'shortest'] as const) if (restCuts(a, built, { ...built, restLevel: l }, input.info, input.restPresetsS, input.restDefaultsS).size === 0) start = l;
+  for (const l of ['shorter', 'shortest'] as const) if (restCuts(a, built, { ...built, restLevel: l }, input.info, input.restDefaultsS).size === 0) start = l;
   const w: BuilderWorkout = { ...built, restLevel: start };
   const beforeS = estimateBuilderSeconds(w, ctx);
   const beforeMinutes = Math.round(beforeS / 60);
@@ -293,7 +290,7 @@ export function timeFitOffer(input: TimeFitInput): TimeFitOffer {
   const steps: FitStepDraft[] = [];
 
   // (a) rests: one line per exercise and before → after.
-  const rests = rank(fit.workout.restLevel) > rank(start) ? restCuts(a, w, fit.workout, input.info, input.restPresetsS, input.restDefaultsS) : new Map<string, number>();
+  const rests = rank(fit.workout.restLevel) > rank(start) ? restCuts(a, w, fit.workout, input.info, input.restDefaultsS) : new Map<string, number>();
   const restLines: Extract<TimeFitLine, { kind: 'rest' }>[] = [];
   for (const slot of w.blocks.flatMap((b) => b.slots)) {
     for (const r of rowsOf(slot)) {
