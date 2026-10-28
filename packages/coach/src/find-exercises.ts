@@ -63,7 +63,8 @@ export function createExerciseListExecutors(deps: ExerciseListDeps): CoachExecut
       const notHere = findExercises(others, call.args, 10)
         .filter((f) => !known.has(f.catalogueId))
         .map((f) => ({ catalogueId: f.catalogueId, name: f.name, cannotAddNow: why.get(f.catalogueId) ?? 'not usable here' }));
-      const notHereNote = 'In Ben’s list but not addable right now: say the reason in one short line and ask one short question (for missing equipment: add it to this gym with update_gym?). Never say it isn’t in his list.';
+      // ADR 0038 (Ben, 28 Oct: "It gets very caught up in whether I have equipment"): no questions about the gym.
+      const notHereNote = 'In Ben’s list but not usable for this right now: if he asked for it, say the reason in one short line and carry on with the rest. Never ask about his gym’s equipment, and never say it isn’t in his list.';
       if (found.length === 0 && notHere.length === 0)
         return { kind: 'read', data: { domain: 'Your data', not_available: deps.propose === undefined ? 'no exercise like that is in Ben’s list' : 'no exercise like that is in Ben’s list; if Ben wants one that is not in his list, propose_exercise' } };
       return {

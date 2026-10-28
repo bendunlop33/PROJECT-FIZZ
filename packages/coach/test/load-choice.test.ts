@@ -7,10 +7,15 @@ import { liveWorkoutInstructions } from '../src/turn';
 describe('coach load choice: 20% is a ceiling, not a target', () => {
   it('states the ceiling from the same bounds the checker uses', () => {
     expect(BUILDER_LOAD_BOUNDS.capE).toBe(1.2);
-    expect(LOAD_CHOICE_LINE).toContain('Never more than 20% above the weight his e1rmEst supports for those reps and target RPE (not above the e1rmEst itself), or 20% above his last weight for those reps');
-    expect(LOAD_CHOICE_LINE).toContain('caps loads there or lower (assisted, added and estimated loads tighter)');
+    expect(LOAD_CHOICE_LINE).toContain('Your own loads are never more than 20% above the weight his e1rmEst supports for those reps and target RPE (not above the e1rmEst itself), or 20% above his last weight for those reps');
     expect(LOAD_CHOICE_LINE).not.toMatch(/caps it there,/);
     expect(LIVE_LOAD_CHOICE_LINE).toContain('never more than 20% above the planned weight');
+  });
+
+  it('ADR 0038 (Ben, 28 Oct): the ceiling is only for the coach’s own loads; a weight Ben names is used exactly', () => {
+    expect(LOAD_CHOICE_LINE).toContain('A weight, reps or sets Ben names are used exactly as he said them');
+    expect(LIVE_LOAD_CHOICE_LINE).toContain('A weight Ben names is used exactly');
+    expect(LIVE_LOAD_CHOICE_LINE).toContain('stay below it');
   });
 
   it('asks for small steps by default and a stated reason for anything bigger', () => {
@@ -26,7 +31,7 @@ describe('coach load choice: 20% is a ceiling, not a target', () => {
   it('is in the build, plan and live-workout instructions', () => {
     expect(BUILD_INSTRUCTIONS).toContain(LOAD_CHOICE_LINE);
     expect(PLAN_INSTRUCTIONS).toContain(LOAD_CHOICE_LINE);
-    expect(OFFERED_BUILD_INSTRUCTIONS).toContain('Only if you call `propose_workout`: choose each load from his evidence');
+    expect(OFFERED_BUILD_INSTRUCTIONS).toContain('Only if you call `propose_workout`: a weight, reps or sets Ben names are used exactly');
     expect(liveWorkoutInstructions(true)).toContain(LIVE_LOAD_CHOICE_LINE);
     expect(liveWorkoutInstructions(false)).toContain(LIVE_LOAD_CHOICE_LINE);
   });

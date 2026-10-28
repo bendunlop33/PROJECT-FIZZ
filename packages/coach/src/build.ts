@@ -584,7 +584,7 @@ const CEILING_PERCENT = Math.min(CAP_E_PERCENT, CAP_LAST_PERCENT);
  * hard limit the app enforces (`checkProposedLoad`), not a target: the model
  * chooses within them from evidence and says why in the basis.
  */
-export const LOAD_CHOICE_LINE = `Choose each load from his evidence. Normally repeat it or take one small step (one plate or dumbbell step, a few percent). Go further only with a clear signal: reps well over the range at low RPE, a weight that has stayed easy for weeks, or Ben saying he is ready; then the basis says which, in words. Never more than ${CEILING_TEXT}. That is a ceiling; the app caps loads there or lower (assisted, added and estimated loads tighter), fits them to the equipment and holds them on pain.`;
+export const LOAD_CHOICE_LINE = `A weight, reps or sets Ben names are used exactly as he said them (e.g. "build up to 95 kg as the last set": that top set is 95 kg, with lighter sets before it). For loads you choose: from his evidence, normally repeat it or take one small step (one plate or dumbbell step, a few percent); go further only with a clear signal (reps well over the range at low RPE, a weight that has stayed easy for weeks, or Ben saying he is ready) and the basis says which, in words. Your own loads are never more than ${CEILING_TEXT}; the app fits them to the equipment and holds them on pain.`;
 
 /**
  * The same choice for today's live sets (`edit_today`). The app snaps and
@@ -592,7 +592,7 @@ export const LOAD_CHOICE_LINE = `Choose each load from his evidence. Normally re
  * percentage is the coach's own limit there, not a code clamp, so a weight
  * Ben names himself is his call.
  */
-export const LIVE_LOAD_CHOICE_LINE = `When you choose a load for today's sets, the default is one small step (one plate or dumbbell step, a few percent) from what is planned. Go further only with a clear signal (reps well over the range at low RPE, or Ben saying it is easy) and say why in your reason. Unless Ben names the weight, never more than ${String(CEILING_PERCENT)}% above the planned weight or his last weight for those reps.`;
+export const LIVE_LOAD_CHOICE_LINE = `A weight Ben names is used exactly. When you choose a load for today's sets yourself, the default is one small step from what is planned; go further only with a clear signal (reps well over the range at low RPE, or Ben saying it is easy) and say why in your reason, never more than ${String(CEILING_PERCENT)}% above the planned weight or his last weight for those reps. Sets you fill in before his weight (a ramp) stay below it.`;
 
 /** About the `propose_workout` call itself (a turn that is building). */
 const CALL_RULES = [

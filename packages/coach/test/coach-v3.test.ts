@@ -113,9 +113,13 @@ describe('verifyAsked: the model says Ben asked; code checks his words', () => {
     expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', acceptedOffer: true, words: null })).toEqual({ asked: true, by: 'accepted_offer' });
     expect(verifyAsked({ ...base, tool: 'rename_workout', acceptedOffer: true, words: null })).toEqual({ asked: false, by: 'no_request' });
     expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: { benAsked: true, benQuote: 'Working set' } })).toEqual({ asked: true, by: 'quote' });
-    // An invented quote is never trusted: the word lists decide.
-    expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: { benAsked: true, benQuote: 'make it heavier' } })).toEqual({ asked: false, by: 'no_request' });
-    expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: { benAsked: true, benQuote: 'make it heavier' }, fallback: () => true })).toEqual({ asked: true, by: 'words' });
+    // ADR 0038 (Ben, 28 Oct): decided once per turn, on his message. A short answer ("Working set") asks, whatever
+    // the quote's wording; a statement that asks for nothing doesn't, whatever the claim or the word lists.
+    expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: { benAsked: true, benQuote: 'make it heavier' } })).toEqual({ asked: true, by: 'claim' });
+    expect(verifyAsked({ ...base, tool: 'edit_today', words: 'Can you make the rows a bit heavier for the last two', claim: { benAsked: true, benQuote: 'rows heavier' } })).toEqual({ asked: true, by: 'claim' });
+    expect(verifyAsked({ ...base, tool: 'edit_today', words: 'Set 2 done, that one felt pretty solid today', claim: { benAsked: true, benQuote: 'make it heavier' }, fallback: () => true })).toEqual({ asked: false, by: 'not_a_request' });
+    // No claim: the word lists decide, as before.
+    expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: {}, fallback: () => true })).toEqual({ asked: true, by: 'words' });
     expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: { benAsked: false, benQuote: null }, fallback: () => true })).toEqual({ asked: false, by: 'model_said_no' });
     expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: { benAsked: null } })).toEqual({ asked: false, by: 'no_request' });
   });
@@ -225,14 +229,22 @@ describe('Ben’s report "Not adjusting during workout" (build 156), reproduced'
     expect((await undoCoachAction(s.repos.coach, { ownerId: OWNER, actionId, opId: undoOpId(actionId), now: at(900) })).result.status).toBe('written');
   });
 
-  it('a quote Ben never wrote is not trusted: the call becomes an offer (rule 3)', async () => {
+  it('ADR 0038: a paraphrased quote counts when Ben’s message asks; a claim on a message that asks nothing is an offer (rule 3)', async () => {
     const s = await store();
     await saved(s, afterWarmup());
-    const model = new ScriptedCoachModel([[call('edit_today', raise({ benAsked: true, benQuote: 'make bench heavier' })), { type: 'completed' }], reply('Want me to adjust?')]);
-    const r = await runCoachTurn(request({ kind: 'workout', input: words('Working set'), context: ctx(afterWarmup()) }), ports(s, model, liveExecutors(s)));
-    expect(r.cards.map((c) => c.record.status)).toEqual(['proposed']);
-    expect(r.offer).toBe('adjust_today');
-    expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(7);
+    // His words ask; the model's quote is its own paraphrase: applied, with Undo.
+    const asked = new ScriptedCoachModel([[call('edit_today', raise({ benAsked: true, benQuote: 'make bench heavier' })), { type: 'completed' }], reply('Done.')]);
+    const r1 = await runCoachTurn(request({ kind: 'workout', input: words('Could you bump the rest of my bench sets up a little'), context: ctx(afterWarmup()) }), ports(s, asked, liveExecutors(s)));
+    expect(r1.cards.map((c) => c.record.status)).toEqual(['committed']);
+    expect(r1.offer).toBeNull();
+    // His message asks for nothing (a statement): the claim isn't taken, the call is an offer.
+    const s2 = await store();
+    await saved(s2, afterWarmup());
+    const unasked = new ScriptedCoachModel([[call('edit_today', raise({ benAsked: true, benQuote: 'make bench heavier' })), { type: 'completed' }], reply('Want me to adjust?')]);
+    const r2 = await runCoachTurn(request({ kind: 'workout', input: words('Set 2 done, that one felt pretty solid today'), context: ctx(afterWarmup()) }), ports(s2, unasked, liveExecutors(s2)));
+    expect(r2.cards.map((c) => c.record.status)).toEqual(['proposed']);
+    expect(r2.offer).toBe('adjust_today');
+    expect((await s2.repos.sessions.get(SESSION))?.session.version).toBe(7);
   });
 
   it('the coach’s own idea (benAsked false) is an offer even on words the lists would read as a request', async () => {

@@ -175,9 +175,11 @@ describe('the gate for adding to today’s workout (table)', () => {
     expect(writeTools(text)).toEqual([...expected].sort());
   });
 
-  it('only a workout turn offers the tool; elsewhere it is withheld by turn kind', () => {
+  it('a live workout offers the tool from its own sheet and (ADR 0038) from Today, Progress and Plan; with no live workout or on a summary it is withheld', () => {
     const g = gateFor({ kind: 'general', input: words('add 3 sets of lateral raises'), previousOffer: null, structuralSignals: [] });
     expect(buildTurnRegistry(g).withheld).toContainEqual({ name: 'edit_today', reason: 'turn_kind' });
+    const live = gateFor({ kind: 'general', input: words('add 3 sets of lateral raises'), previousOffer: null, structuralSignals: [], liveWorkout: true });
+    expect(buildTurnRegistry(live).tools.map((t) => t.name)).toEqual(expect.arrayContaining(['edit_today', 'rename_workout']));
     const summary = gateFor({ kind: 'summary', input: words('add 3 sets of lateral raises'), previousOffer: null, structuralSignals: [] });
     expect(buildTurnRegistry(summary).tools.map((t) => t.name)).not.toContain('edit_today');
   });

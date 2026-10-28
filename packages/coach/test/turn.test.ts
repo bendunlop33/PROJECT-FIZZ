@@ -243,19 +243,37 @@ describe("today's sets through the turn (rule 3: offer, accept, apply; rule 4, r
     expect(await version(s)).toBe(8);
   });
 
-  it('contract check 3: the validator snaps 98 to 97.5 kg; the card says 97.5, a sentence with 98 is dropped', async () => {
+  it('contract check 3: the validator snaps the coach’s own 98 to 97.5 kg; the card says 97.5, a sentence with 98 is dropped', async () => {
     const s = await store();
     const w = await savedWorkout(s);
     const args = { ...lower(), ops: [setOp(id(102), { load: kg(98), reps: null }), setOp(id(103), { load: kg(98), reps: null })] };
     const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Sets 3 and 4 are 98 kg now. Keep the bar path tight.')]);
     const r = await runCoachTurn(
-      request({ kind: 'workout', input: words('Drop the last two to 98'), context: { session: w, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
+      // ADR 0038: the coach picked 98 (Ben named no weight), so it is fitted to the bar quietly.
+      request({ kind: 'workout', input: words('Make the last two lighter'), context: { session: w, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
       ports(s, model, adjustExecutors(s)),
     );
     expect(nb(r.cards[0]?.rendered.text ?? '')).toBe('Changed sets 3–4 to 97.5 kg × 6–8 (targets).');
     expect(r.cards[0]?.record.guardNotes.map((n) => n.kind)).toContain('snapped');
     expect(sentences(r)).toEqual(['Keep the bar path tight.']);
     expect(JSON.stringify(r.items)).not.toContain('98');
+  });
+
+  it('ADR 0038: a weight Ben names (98 kg) is kept exactly as he typed it, never rounded to the rack, and the turn says nothing about rounding', async () => {
+    const s = await store();
+    const w = await savedWorkout(s);
+    const args = { ...lower(), ops: [setOp(id(102), { load: kg(98), reps: null }), setOp(id(103), { load: kg(98), reps: null })] };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Keep the bar path tight.')]);
+    const r = await runCoachTurn(
+      request({ kind: 'workout', input: words('Drop the last two to 98'), context: { session: w, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
+      ports(s, model, adjustExecutors(s)),
+    );
+    expect(nb(r.cards[0]?.rendered.text ?? '')).toBe('Changed sets 3–4 to 98 kg × 6–8 (targets).');
+    expect(r.cards[0]?.record.guardNotes.map((n) => n.kind)).not.toContain('snapped');
+    const after = await s.repos.sessions.get(w.session.id);
+    expect(after?.sets.find((x) => x.id === id(103))?.planned.load).toEqual(kg(98));
+    const fed = model.requests[1]?.input.find((i) => i.type === 'function_call_output');
+    expect(fed?.type === 'function_call_output' ? fed.output : '').not.toMatch(/Rounded|rack|possible/);
   });
 
   it('contract check 4: a stale base version is a stale card; nothing changes', async () => {
