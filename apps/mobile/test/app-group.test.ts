@@ -5,6 +5,9 @@ import {
   bundleIdSuffix,
   classifyAppGroup,
   currentRecord,
+  describeResolutionSource,
+  isResolutionSource,
+  RESOLUTION_SOURCES,
   parseNativeAppGroupInfo,
   type AppGroupEvidence,
   type ExtensionInfo,
@@ -149,7 +152,7 @@ describe('analyseAppGroup: SideStore rename (ADR 0007 runtime fix)', () => {
     expect(r.summary).toContain(`Renamed by the signing tool to ${RENAMED} (suffix .ABCDE12345)`);
     expect(r.summary).toContain('renamed (handled at runtime)');
     expect(r.details).toContain(`${GROUP}: no container (not entitled to this group)`);
-    expect(r.details).toContain(`App resolved ${RENAMED} from altAppGroups at 2026-10-09T08:00:00Z (build 8, com.projectfizz.fizz)`);
+    expect(r.details).toContain(`App resolved ${RENAMED} from ALTAppGroups (altAppGroups) at 2026-10-09T08:00:00Z (build 8, com.projectfizz.fizz)`);
     expect(r.details).toContain('Extension ALTAppGroups: ' + RENAMED);
   });
 
@@ -300,6 +303,76 @@ describe('parseNativeAppGroupInfo', () => {
     expect(parseNativeAppGroupInfo(null)).toBeNull();
     expect(parseNativeAppGroupInfo('x')).toBeNull();
     expect(parseNativeAppGroupInfo([])).toBeNull();
+  });
+});
+
+/**
+ * Build 475 (28 Oct 2026), Ti800's SideStore fork: both bundles signed with
+ * the renamed group, but no ALTAppGroups in either Info.plist.
+ */
+const TI800 = `${GROUP}.MDP255CUTA`;
+const ti800Native = (records: ResolutionRecord[]): NativeAppGroupInfo =>
+  native({
+    profileGroups: [TI800],
+    profileTeamId: 'MDP255CUTA',
+    altAppGroups: null,
+    extension: extension({
+      bundleId: 'com.projectfizz.fizz.MDP255CUTA.ExpoWidgetsTarget',
+      profileGroups: [TI800],
+      altAppGroups: null,
+    }),
+    containers: { [GROUP]: { resolved: false }, [TI800]: { resolved: true, path: '/p', writeRead: true } },
+    records,
+  });
+
+describe('analyseAppGroup: signing tool that writes no ALTAppGroups (build 475, Ti800 SideStore)', () => {
+  const ti800Evidence = (records: ResolutionRecord[]): AppGroupEvidence =>
+    evidence({ buildNumber: '476', expoSharedContainers: [], jsWriteRead: null, expoWidgetsDirectory: null, native: ti800Native(records) });
+
+  it('reproduces build 475: the app resolved nothing, so it fails with no records', () => {
+    const r = analyseAppGroup(ti800Evidence([]));
+    expect(r.status).toBe('fail');
+    expect(r.summary).toBe(
+      `Renamed by the signing tool to ${TI800} (suffix .MDP255CUTA), but expo-widgets in the app did not resolve the renamed group at runtime (no record: the patch is not in this build or did not run)`,
+    );
+    expect(r.details).toContain('App ALTAppGroups: unknown');
+    expect(r.details).toContain('Extension ALTAppGroups: unknown');
+  });
+
+  it('passes when the app and the extension both resolve the renamed group from their signing profiles', () => {
+    const rec = (over: Partial<ResolutionRecord>) =>
+      record({ group: TI800, foundIn: TI800, source: 'profile', buildNumber: '476', bundleId: 'com.projectfizz.fizz.MDP255CUTA', ...over });
+    const r = analyseAppGroup(ti800Evidence([rec({}), rec({ role: 'extension', bundleId: 'com.projectfizz.fizz.MDP255CUTA.ExpoWidgetsTarget' })]));
+    expect(r.status).toBe('pass');
+    expect(r.summary).toContain('renamed (handled at runtime)');
+    expect(r.details).toContain(`App resolved ${TI800} from its signing profile (profile) at 2026-10-09T08:00:00Z (build 476, com.projectfizz.fizz.MDP255CUTA)`);
+  });
+
+  it('passes with the extension resolving from the parent app’s profile or the bundle ID suffix', () => {
+    for (const source of ['parentProfile', 'bundleIdSuffix'] as const) {
+      const r = analyseAppGroup(
+        ti800Evidence([
+          record({ group: TI800, foundIn: TI800, source: 'profile', buildNumber: '476' }),
+          record({ role: 'extension', group: TI800, foundIn: TI800, source, buildNumber: '476' }),
+        ]),
+      );
+      expect(r.status).toBe('pass');
+      expect((r.details ?? []).some((d) => d.startsWith(`Extension resolved ${TI800} from ${RESOLUTION_SOURCES[source]} (${source})`))).toBe(true);
+    }
+  });
+
+  it('is incomplete until the extension has run (app resolved, no extension record yet)', () => {
+    const r = analyseAppGroup(ti800Evidence([record({ group: TI800, foundIn: TI800, source: 'bundleIdSuffix', buildNumber: '476' })]));
+    expect(r.status).toBe('not_run');
+  });
+});
+
+describe('resolution sources', () => {
+  it('names every source the patched resolver writes, in its order; an unknown one is shown raw', () => {
+    expect(Object.keys(RESOLUTION_SOURCES)).toEqual(['altAppGroups', 'parentAltAppGroups', 'profile', 'parentProfile', 'bundleIdSuffix', 'configured']);
+    expect(describeResolutionSource('parentProfile')).toBe('the app’s signing profile (parentProfile)');
+    expect(describeResolutionSource('somethingNew')).toBe('somethingNew');
+    expect(isResolutionSource('toString')).toBe(false);
   });
 });
 
