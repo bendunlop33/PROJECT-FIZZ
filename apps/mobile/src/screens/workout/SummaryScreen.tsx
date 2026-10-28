@@ -34,6 +34,7 @@ import { handOffDeleteToast } from '../../history/toast-handoff';
 import { DeletedWorkoutView } from './DeletedWorkoutView';
 import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
 import { LinkedActivityRow } from './LinkedActivityRow';
+import { PlanDayAskRow } from './PlanDayAskRow';
 import { HEALTH_COPY } from '../../health/health-view';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
@@ -646,6 +647,9 @@ export function SummaryScreen() {
             }
           />
         ))}
+
+        {/* (Ben, 28 Oct) An imported or past-logged workout the plan couldn't place for sure: `Count as Pull?` once. */}
+        <PlanDayAskRow sessionId={sessionId} onToast={setToast} />
 
         {/* (Ben, 21 Oct; workout-builder-v3 §6.2) One tap, a weekly review fact. */}
         <FeelRow sessionId={sessionId} />

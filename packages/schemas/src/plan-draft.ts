@@ -217,6 +217,25 @@ export const PlanControlUndoSchema = z.object({
 export type PlanControlUndo = z.infer<typeof PlanControlUndoSchema>;
 
 /**
+ * (Ben, 28 Oct) Ben's answer to `Count as Pull?` on an imported or past-logged workout that couldn't be matched to a
+ * plan day for sure: `count` (it counts as that plan day: `dayIndex`, and the template it was asked about) or
+ * `not_plan_day`. Your data; the workout itself (its sets) never changes (rule 2). Versioned with the plan, op ID.
+ */
+export const PlanDayLinkSchema = z.object({
+  sessionId: IdSchema,
+  answer: z.enum(['count', 'not_plan_day']),
+  dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1).nullable(),
+  routineId: IdSchema.nullable(),
+  opId: OperationIdSchema,
+  atUtc: UtcTimestampSchema,
+});
+export type PlanDayLink = z.infer<typeof PlanDayLinkSchema>;
+
+/** The last `Count` / `Not a plan day`, for its Undo: that workout's answer before it (null: none). Undo only from `versionAfter`. */
+export const PlanLinkUndoSchema = z.object({ opId: OperationIdSchema, versionAfter: z.int().min(2), sessionId: IdSchema, before: PlanDayLinkSchema.nullable() });
+export type PlanLinkUndo = z.infer<typeof PlanLinkUndoSchema>;
+
+/**
  * (Ben, 26 Oct: Edit plan on a running plan; plan-builder.md "Editing a running plan") Each block week's plan version,
  * week 1 first (`weekVersions[w - 1]`). Absent: every week is the applied version. Done weeks never change (rule 2).
  */
@@ -313,6 +332,9 @@ export const PlanDraftSchema = z
     /** (26 Oct) `Move day`s, each for one block week. */
     moves: z.array(PlanDayMoveSchema).max(84).optional(),
     lastMove: PlanMoveUndoSchema.nullable().optional(),
+    /** (Ben, 28 Oct) Ben's `Count as Pull?` answers, one per workout, oldest first. */
+    dayLinks: z.array(PlanDayLinkSchema).max(200).optional(),
+    lastLink: PlanLinkUndoSchema.nullable().optional(),
     opIds: z.array(OperationIdSchema).max(PLAN_LIMITS.maxOps),
     createdAt: ZonedTimestampSchema,
     tz: TimeZoneSchema,

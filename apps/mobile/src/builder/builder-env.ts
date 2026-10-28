@@ -41,6 +41,8 @@ import {
 } from '@fizz/domain';
 import { builderFocusOf, isBrowseOnlyFocus, isBuilderStrength, type BuilderFocus, type BuilderGroup, type CheckedOnRecord, type EquipmentInstance, type Exercise, type PainFlag, type PlanDraft, type Routine, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
+import { learnedPace, paceOpt } from '../services/pace';
+import { planRefs } from '../services/plan-day-links';
 
 /**
  * What the builder rules read from Ben's data at one gym (workout-builder-v3
@@ -153,7 +155,8 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
     const fitRestOpt = trainingProfile?.fitRestLevel === undefined ? {} : { fitRestLevel: trainingProfile.fitRestLevel };
     // (Ben, 23 Oct: plan length = block 1) The applied plan's deload week (derived from its Apply, pauses and his plan
     // workouts): every load worked out here is ~10 % lighter and each slot a set fewer, as on Today's card and at Start.
-    const block = appliedPlan === null ? null : pbBlockOfPlan(appliedPlan, await repos.sessions.listFinishedRefs(p.id, 400).catch(() => []), nowMs, p.timezone);
+    // (Ben, 28 Oct) Imported and past-logged workouts that count as plan days count here too.
+    const block = appliedPlan === null ? null : pbBlockOfPlan(appliedPlan, await planRefs(deps.store(), { ownerId: p.id, plan: appliedPlan, nowMs }, 400).catch(() => []), nowMs, p.timezone);
     const deloadOpt = block?.deload === true && activePause(appliedPlan, nowMs, p.timezone) === null ? { deload: true as const } : {};
     const snapGym = { id: req.gymId ?? 'no-gym', name: gym?.name ?? 'this gym', equipment };
     const substitute: SubstituteContext = { ownerId: p.id, unit: p.preferredUnit, gym: snapGym, knownEquipment: known, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, at };
@@ -336,7 +339,9 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       const e = byId.get(id);
       return e === undefined ? null : builderExtraOf(e);
     };
-    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt, ...fitRestOpt };
+    // (Ben, 28 Oct) The one estimate at Ben's own pace (his logged times; the defaults until there are some).
+    const pace = await learnedPace(deps.store(), p.id, nowMs);
+    const ctx: BuilderContext = { info, loads, newKey: req.newKey, extra: timed, ...(presets.length > 0 ? { restPresetsS: presets } : {}), ...warmupsOpt, ...fitRestOpt, ...paceOpt(pace) };
     // Prehab and forearm work (cuff, shins, wrist curls) is in `candidates` for Swap / Add, never picked by itself.
     const pool: BuilderPool = (g) => candidates(g).filter((id) => !painFlagged(id) && !isBrowseOnlyFocus(info(id)?.angle ?? ''));
     // The one `checkedOnOf` (domain): what Start's re-check compares against, so a builder draft and Today's agree

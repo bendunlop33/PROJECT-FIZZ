@@ -12,6 +12,13 @@ import {
   pausedInWeek,
   pausePlan,
   pinPlanDay,
+  isNotPlanDay,
+  linkedRoutineId,
+  answerPlanDayLink,
+  isInHistory,
+  planLinksFor,
+  linkPlanDaysOf,
+  undoPlanDayLink,
   previousPlanLine,
   previousPlans,
   restartedPlanIdFor,
@@ -64,6 +71,7 @@ import {
 } from '@fizz/domain';
 import type { PlanWrite, Store } from '@fizz/persistence';
 import { createVersionMemo } from './version-memo';
+import { readPlanLinks } from './plan-day-links';
 import { editBlockOf, readPlanBlock, slotKits, weekViews, type WeekViewsInput } from './plan-edit-read';
 import type { Exercise, MuscleGroup, PlanApplyMode, PlanBuilderAnswers, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
@@ -639,7 +647,10 @@ export function createPlanServices(deps: PlanServicesDeps) {
       // (Ben, 20 Oct) This week's workouts carry the muscles they trained: an off-plan leg day ticks Legs.
       const of = await exerciseOf();
       const groups = new Map(week.sessions.map((a) => [a.session.id, workoutGroupsOf(a, of)]));
-      const workouts = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).map((w) => ({ ...w, groups: groups.get(w.sessionId) }));
+      // (Ben, 28 Oct) An imported or past-logged workout that matches a plan day (or Ben counted) is that day's;
+      // `Not a plan day` ticks none.
+      const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan, templates: days, nowMs, exerciseOf: of });
+      const workouts = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).map((w) => ({ ...w, routineId: linkedRoutineId(links, w.sessionId, w.routineId), groups: isNotPlanDay(links, w.sessionId) ? undefined : groups.get(w.sessionId) }));
       const training = await deps.store().repos.trainingProfiles.get(p.id).catch(() => null);
       const gym = (await deps.currentGym?.().catch(() => null)) ?? null;
       const pause = activePause(plan, nowMs, tz);
@@ -697,7 +708,8 @@ export function createPlanServices(deps: PlanServicesDeps) {
         // Every finished workout since the pin, read as Up next reads it (review plan-adapt S3).
         const r = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, plan.pin.atUtc, toIso(nowMs + 1)).catch(() => ({ sessions: [] as HistoryWorkout[] }));
         const of = await exerciseOf();
-        const ws: PlanDueWorkout[] = r.sessions.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, of) }));
+        const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan, templates: days, nowMs, exerciseOf: of });
+        const ws: PlanDueWorkout[] = r.sessions.map((a) => ({ sessionId: a.session.id, routineId: linkedRoutineId(links, a.session.id, a.session.routineId ?? null), startedAtUtc: a.session.startedAt.utc, groups: isNotPlanDay(links, a.session.id) ? new Map() : workoutGroupsOf(a, of) }));
         pinned = activePin(plan.pin, days.map((r) => ({ routineId: r.id, name: r.name, bodyParts: parts.get(r.id) ?? [], createdFromSessionId: r.createdFromSessionId ?? null })), ws) !== null;
       }
       const week = opts.week === undefined ? null : await weekOfDay(p, plan, routine, opts.week, nowMs);
@@ -742,6 +754,44 @@ export function createPlanServices(deps: PlanServicesDeps) {
     async undoControl(req: { planId: string; targetOpId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
       const at = deps.now();
       return controlWrite(req.planId, (c) => undoPlanControl(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, targetOpId: req.targetOpId }));
+    },
+
+    /**
+     * (Ben, 28 Oct) `Count as Pull?` on an imported or past-logged workout's Summary: `count` (it counts as that plan
+     * day, `routineId`) or `not_plan_day`. One versioned write on the plan in use (op ID; refused when the plan moved,
+     * rule 5); the workout itself never changes (rule 2). `undoDayLink` is its Undo.
+     */
+    async answerDayLink(req: { planId: string; sessionId: string; answer: 'count' | 'not_plan_day'; routineId: string | null; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const at = deps.now();
+      return controlWrite(req.planId, (c, routines) => {
+        const day = req.routineId === null ? undefined : linkPlanDaysOf(c, planRoutines(c, liveRoutines(routines))).find((d) => d.routineId === req.routineId);
+        return answerPlanDayLink(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, sessionId: req.sessionId, answer: req.answer, routineId: day?.routineId ?? null, dayIndex: day?.dayIndex ?? null });
+      });
+    },
+
+    /**
+     * (Ben, 28 Oct) The one-time question on an imported or past-logged workout's Summary: `Count as Pull?` when it
+     * couldn't be matched to a plan day for sure and Ben hasn't answered. Null: nothing to ask (no plan in use, not
+     * such a workout, matched, or answered).
+     */
+    async dayLinkAsk(sessionId: string): Promise<PlanDayAsk | null> {
+      const p = await owner();
+      if (p === null) return null;
+      const plan = await repo().applied(p.id).catch(() => null);
+      if (plan === null || plan.applied === null) return null;
+      const a = await deps.store().repos.sessions.get(sessionId).catch(() => null);
+      if (a === null || a.session.ownerId !== p.id || !isInHistory(a.session)) return null;
+      const days = linkPlanDaysOf(plan, planRoutines(plan, await live(p.id)));
+      const of = await exerciseOf();
+      const v = planLinksFor({ plan, days, workouts: [a], exerciseOf: of }).get(sessionId);
+      if (v?.kind !== 'ask') return null;
+      return { planId: plan.id, planVersion: plan.version, routineId: v.day.routineId, dayName: (v.day.name.split('·')[0] ?? v.day.name).trim() };
+    },
+
+    /** Undo of the last `Count` / `Not a plan day` (`targetOpId`), from the version it left (`expectedVersion`). */
+    async undoDayLink(req: { planId: string; targetOpId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const at = deps.now();
+      return controlWrite(req.planId, (c) => undoPlanDayLink(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, targetOpId: req.targetOpId }));
     },
 
     /**
@@ -842,8 +892,11 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const weekStart = plan === null ? nowMs : planWeekStartMs({ appliedAtUtc: plan.appliedAtUtc, nowMs, tz });
       const groups = plan === null ? new Map<string, ReadonlyMap<MuscleGroup, number>>() : await groupedWorkouts(p.id, weekStart, nowMs);
       const parts = plan === null ? new Map<string, SplitBodyPart[]>() : await bodyPartsOf(p.id, (await live(p.id)).filter((r) => plan.days.some((d) => d.routineId === r.id)));
+      // (Ben, 28 Oct) Imported and past-logged workouts that count as plan days (the same links as Library › Plan).
+      const applied = plan === null ? null : await repo().applied(p.id).catch(() => null);
+      const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan: applied, nowMs });
       return consistency({
-        workouts: refs.map((r) => ({ sessionId: r.sessionId, routineId: r.routineId, startedAtUtc: r.startedAtUtc, groups: groups.get(r.sessionId) })),
+        workouts: refs.map((r) => ({ sessionId: r.sessionId, routineId: linkedRoutineId(links, r.sessionId, r.routineId), startedAtUtc: r.startedAtUtc, groups: isNotPlanDay(links, r.sessionId) ? undefined : groups.get(r.sessionId) })),
         nowMs,
         tz,
         aim: training?.daysPerWeek ?? null,
@@ -851,6 +904,15 @@ export function createPlanServices(deps: PlanServicesDeps) {
         pausedDates: paused,
       });
   }
+}
+
+/** (Ben, 28 Oct) `Count as Pull?` on a workout's Summary: the plan day it would count as, and the plan's version. */
+export interface PlanDayAsk {
+  planId: string;
+  planVersion: number;
+  routineId: string;
+  /** `Pull`. */
+  dayName: string;
 }
 
 export type PlanServices = ReturnType<typeof createPlanServices>;

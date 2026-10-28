@@ -37,6 +37,8 @@ import {
   weekFacts,
   weekFactsKey,
   isSplitDayName,
+  isNotPlanDay,
+  linkedRoutineId,
   SPLIT_WINDOW_DAYS,
   dateWeekdayShort,
   activityDetail,
@@ -51,7 +53,8 @@ import {
   activityGroupTotals,
 } from '@fizz/domain';
 import type { ActivityWrite, Store } from '@fizz/persistence';
-import type { ActionRecord, Activity, ActivityFields, Exercise, PlanDraft, Routine, RoutineExercise, SessionAggregate, SplitBodyPart, SplitDay, TrainingProfile, UserProfile, WeekBasis, WeekPlan, ZonedTimestamp } from '@fizz/schemas';
+import { readPlanLinks } from './plan-day-links';
+import type { ActionRecord, Activity, ActivityFields, Exercise, MuscleGroup, PlanDraft, Routine, RoutineExercise, SessionAggregate, SplitBodyPart, SplitDay, TrainingProfile, UserProfile, WeekBasis, WeekPlan, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * (Ben, 20 Oct: "Can we add ability to flex ordering and sessions etc subject
@@ -233,12 +236,14 @@ export function createWeekServices(deps: WeekServicesDeps) {
       .catch(() => ({ sessions: [] as HistoryWorkout[] }));
     const thisWeek = sessions.filter((a) => isInHistory(a.session));
     const gymDates = new Set(thisWeek.map((a) => localDateOf(toMs(a.session.startedAt.utc), tz)));
-    const workouts = thisWeek.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: splitWorkoutOf(a, of, null).groups }));
     const plan = await planInUse(p, nowMs);
     const routines = await repos()
       .routines.listByOwner(p.id)
       .catch(() => [] as Routine[]);
     const planDays = plan === null ? [] : planRoutines(plan, liveRoutines(routines));
+    // (Ben, 28 Oct) An imported or past-logged workout that matches a plan day ticks it; `Not a plan day` ticks none.
+    const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan, templates: planDays, nowMs, exerciseOf: of, sessions: thisWeek });
+    const workouts = thisWeek.map((a) => ({ sessionId: a.session.id, routineId: linkedRoutineId(links, a.session.id, a.session.routineId ?? null), startedAtUtc: a.session.startedAt.utc, groups: isNotPlanDay(links, a.session.id) ? new Map<MuscleGroup, number>() : splitWorkoutOf(a, of, null).groups }));
     const basis: WeekBasis = plan !== null && planDays.length > 0 ? { kind: 'plan', planId: plan.id, planVersion: plan.version } : { kind: 'split' };
     let days: WeekDay[];
     if (basis.kind === 'plan' && plan?.applied != null) {

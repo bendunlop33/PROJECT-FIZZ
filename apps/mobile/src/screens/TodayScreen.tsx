@@ -22,7 +22,7 @@ import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import { daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, plannedDayDetail, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { daySheetRows, daySheetTitle, doneCardRows, followLatestDraft, followUpNext, hasOwnDraftFor, plannedDayDetail, todayCardLabel, todayCardReducer, todayDateLine, todayRecentRows, todayTickMs, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
 import { AppText, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
@@ -124,15 +124,32 @@ export function TodayScreen() {
   const wasDone = useRef<boolean | null>(null);
   // (D3) When each day's latest draft was last seen: a newer one from Your workout (its Main lift) moves the card to it.
   const seenDraft = useRef<Readonly<Record<string, string>>>({});
+  // (Ben, 28 Oct) The read before this one (Up next then, and each day's controls), and the day Ben picked himself.
+  const lastRead = useRef<TodaySessionData | null>(null);
+  const pickedKey = useRef<string | null>(null);
   useEffect(() => {
     if (session === null) return;
     const justDone = wasDone.current === false && session.doneToday;
     wasDone.current = session.doneToday;
     const seen = seenDraft.current;
     seenDraft.current = Object.fromEntries(Object.entries(session.latestDraft).map(([k, v]) => [k, v.atUtc]));
+    const before = lastRead.current;
+    lastRead.current = session;
     setSelection((cur) => {
       if (justDone) return null;
-      if (cur !== null && session.initial[cur.dayKey] !== undefined) return followLatestDraft(cur, session.latestDraft[cur.dayKey], seen[cur.dayKey], session.initial[cur.dayKey]?.mainLiftExerciseId);
+      if (cur !== null && session.initial[cur.dayKey] !== undefined) {
+        // (Ben, 28 Oct) History changed Up next: an untouched Up next card follows it; Ben's own choice stays.
+        const moved = followUpNext(cur, {
+          prevNextKey: session.doneToday ? null : (before?.nextKey ?? null),
+          nextKey: session.nextKey,
+          picked: pickedKey.current === cur.dayKey,
+          hasOwnDraft: hasOwnDraftFor(cur.dayKey, session),
+          initialWas: before?.initial[cur.dayKey] ?? null,
+          initial: session.initial,
+        });
+        if (moved !== cur) return moved;
+        return followLatestDraft(cur, session.latestDraft[cur.dayKey], seen[cur.dayKey], session.initial[cur.dayKey]?.mainLiftExerciseId);
+      }
       const key = session.doneToday ? null : (session.nextKey ?? (session.status === 'no_plan' ? null : (session.days[0]?.key ?? null)));
       const initial = key === null ? undefined : session.initial[key];
       return key === null || initial === undefined ? null : { dayKey: key, controls: initial, open: false, why: false };
@@ -146,6 +163,7 @@ export function TodayScreen() {
     const initial = session?.initial[key];
     if (initial === undefined) return;
     setPicked(true);
+    pickedKey.current = key;
     setSelection((cur) => todayCardReducer(cur ?? { dayKey: key, controls: initial, open: false, why: false }, { kind: 'day', dayKey: key, initial }));
   };
 
