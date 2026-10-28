@@ -39,6 +39,7 @@ import {
   planRoutineForSplitDay,
   activePause,
   planDayBodyParts,
+  linkedRoutineId,
   planDayGroups,
   planDaysAhead,
   planDayPick,
@@ -370,6 +371,7 @@ import type {
 
 import { undoOpId, undoRefusalText } from '../workout/undo-op';
 import { setActivePainFlagged } from '../workout/pain-flagged';
+import { readPlanLinks } from './plan-day-links';
 import { deloadAtOf } from './deload-at';
 
 /** A past workout's title when it has no exercise (`Finish anyway` with nothing added). */
@@ -2312,7 +2314,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const split = splitInUse(training);
     const info = (id: string) => infos.get(id) ?? null;
     const days: (PlanAheadDay & { routine: Routine })[] = planDays.map((r) => ({ routineId: r.id, name: r.name, bodyParts: planDayBodyParts(r, info, split), plannedGroups: planDayGroups(r, info), createdFromSessionId: r.createdFromSessionId ?? null, routine: r }));
-    const all: PlanDueWorkout[] = read.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, exerciseOf) }));
+    // (Ben, 28 Oct) An imported or past-logged workout that matches a plan day (or that Ben counted as one) reads as it.
+    const plan = await repos().planDrafts.applied(p.id).catch(() => null);
+    const links = await readPlanLinks(ctx.store(), { ownerId: p.id, plan, templates: planDays, nowMs: toMs(ctx.now().utc), exerciseOf, sessions: read });
+    const all: PlanDueWorkout[] = read.map((a) => ({ sessionId: a.session.id, routineId: linkedRoutineId(links, a.session.id, a.session.routineId ?? null), startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, exerciseOf) }));
     const live = activePin(pin, days, all);
     const workouts = all.filter((w) => toMs(w.startedAtUtc) >= windowFrom);
     return { days, workouts, live };

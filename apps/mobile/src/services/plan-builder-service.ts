@@ -49,6 +49,7 @@ import {
   type PlanKit,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
+import { learnedPace } from './pace';
 import type { EquipmentInstance, Exercise, PainFlag, PlanBuilderAnswers, PlanDayDraft, PlanDraft, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import { PLAN_COPY, type PlanServices, type PlanWriteOutcome } from './plan-services';
@@ -219,6 +220,9 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
     const chosen = training?.split?.kind ?? null;
     const profileSplit = chosen === 'ppl' ? 'ppl' : chosen === 'clsb' ? 'body' : null;
     const flags: readonly PainFlag[] = await store.repos.painFlags.listActive(p.id);
+    // (Ben, 28 Oct) Each day sized at Ben's own pace (the one estimate), the defaults until he has timed workouts.
+    const learned = await learnedPace(store, p.id, nowMs);
+    const pace = learned.workouts > 0 ? learned : undefined;
 
     const byId = new Map<string, Exercise>();
     for (const e of deps.catalogueExercises()) byId.set(e.id, e);
@@ -302,7 +306,7 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
       painHeld,
       lifts,
       needsCheck: pbNeedsLiftCheck(lifts(answers)),
-      build: (a) => buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, factsOf, painHeld, nowMs, keep }),
+      build: (a) => buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, factsOf, painHeld, nowMs, keep, pace }),
       expect: (a) =>
         pbExpect(
           a,
@@ -341,7 +345,7 @@ export function createPlanBuilderService(deps: PlanBuilderDeps) {
 
     /** The rebuild for new answers as the plan's own days (its ID seeds the slot keys, so kept exercises match). */
     function editNext(planId: string, a: PlanBuilderAnswers): { days: PlanDayDraft[]; startReps: Record<string, number> } {
-      const built = buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, factsOf, painHeld, nowMs, keep });
+      const built = buildPlanFromAnswers({ answers: a, profileSplit, kitOf, historyOf, factsOf, painHeld, nowMs, keep, pace });
       const v = pbPlanVersion({ plan: built, answers: a, kitOf, gymId: gym?.id ?? null, equipmentVersion: 'edit', opId: 'edit', at, planId });
       return { days: v.days, startReps: pbStartReps(built, planId) };
     }

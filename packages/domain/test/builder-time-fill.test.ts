@@ -59,8 +59,12 @@ describe('todayTimeFit: a filled card', () => {
       const now = slotsOf(workout.blocks).find((s) => s.key === k);
       expect(workingCount(now ?? { rows: [] }) - workingCount(was ?? { rows: [] })).toBe(n);
     }
-    // The main lift is never raised.
-    expect(Object.keys(fit.raised ?? {})).not.toContain(slotsOf(base.blocks)[0]?.key);
+    // (Ben, 28 Oct) The main lift is raised only once every accessory is at 4 (up to 5).
+    const mainKey = slotsOf(base.blocks)[0]?.key ?? '';
+    if (Object.keys(fit.raised ?? {}).includes(mainKey)) {
+      for (const s of slotsOf(base.blocks)) if (!s.main) expect(workingCount(slotsOf(workout.blocks).find((x) => x.key === s.key) ?? { rows: [] })).toBe(4);
+      expect(workingCount(slotsOf(workout.blocks).find((x) => x.key === mainKey) ?? { rows: [] })).toBeLessThanOrEqual(5);
+    }
   });
 
   it('a card that fits as it is has no record; a cut one has no fill fields', () => {
@@ -100,7 +104,8 @@ describe('unfitWorkout on a fill record', () => {
     }
     const back = unfitWorkout(fit, w);
     const count = (k: string) => workingCount(slotsOf(back.blocks).find((s) => s.key === k) ?? { rows: [] });
-    expect(count(main.key)).toBe(workingCount(main) + 1);
+    // His extra set on the main lift stays; the fill's raise of it goes.
+    expect(count(main.key)).toBe(workingCount(slotsOf(base.blocks)[0] ?? { rows: [] }) + 1);
     // The plan's 3, the fill's +1 gone, his +1 kept.
     const planCount = workingCount(slotsOf(base.blocks).find((s) => s.key === raisedKey) ?? { rows: [] });
     expect(count(raisedKey)).toBe(planCount + 1);

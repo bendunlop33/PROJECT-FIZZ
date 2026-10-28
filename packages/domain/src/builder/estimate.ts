@@ -1,4 +1,5 @@
 import { WARMUP_REP_S, warmupTimeS } from '../warmup/plan';
+import { PACE_DEFAULT, type BuilderPace } from './pace';
 import { restAfterRows, roundRestOf, type RestDefaults } from './rest';
 import type { BuilderBlock, BuilderInfoLookup, BuilderSlot, BuilderWorkout } from './types';
 
@@ -28,7 +29,20 @@ export interface EstimateContext {
   restPresetsS?: readonly number[];
   /** (Ben, 28 Oct) Ben's default rests (Profile › Rest times); absent: the standard ones. */
   restDefaultsS?: RestDefaults;
+  /**
+   * (Ben, 28 Oct) Ben's own pace (`learnPace`): seconds per set, rest overrun and changeover in place of 45 s, ×1 and
+   * 60 s. Absent: the defaults (so a context without it times exactly as before).
+   */
+  pace?: BuilderPace;
 }
+
+/** The pace an estimate uses: Ben's (`ctx.pace`) or the defaults. */
+export function paceOf(ctx: Pick<EstimateContext, 'pace'>): BuilderPace {
+  return ctx.pace ?? PACE_DEFAULT;
+}
+
+/** A planned rest as Ben actually takes it (`restScale`), whole seconds. */
+const restAsTaken = (s: number, pace: BuilderPace): number => (pace.restScale === 1 ? s : Math.round(s * pace.restScale));
 
 /**
  * (WU11, Ben approved WU1–WU12 22 Oct) A slot's warm-ups: the shared planner's warm-up time (`warmupTimeS`: Σ reps ×
@@ -42,35 +56,41 @@ function warmupSeconds(slot: BuilderSlot, ctx: EstimateContext, w: BuilderWorkou
   const steps = idx.map((i) => ({ load: slot.rows[i]?.load ?? 0, reps: slot.rows[i]?.reps ?? 0 }));
   const own = slot.restS?.warmup;
   const ladder = own === undefined ? warmupTimeS(steps) : steps.reduce((m, s) => m + s.reps * WARMUP_REP_S, 0) + own * (steps.length - 1);
-  return ladder + (restAfterRows(slot, ctx.info, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS)[last] ?? 0);
+  return ladder + restAsTaken(restAfterRows(slot, ctx.info, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS)[last] ?? 0, paceOf(ctx));
 }
 
 /**
  * (22 Oct) What a timed set takes beyond a set's `setS`: its work time past 45 s (a 20:00 ride counts 20 minutes). A
  * distance alone has no time to count (none is invented). Zero for every rep-based set, so their estimate is unchanged.
  */
-function timedExtraS(slot: BuilderSlot): number {
-  return slot.rows.reduce((m, r) => (r.type === 'warmup' || r.durationS === undefined ? m : m + Math.max(0, r.durationS - T.setS)), 0);
+function timedExtraS(slot: BuilderSlot, setS: number): number {
+  return slot.rows.reduce((m, r) => (r.type === 'warmup' || r.durationS === undefined ? m : m + Math.max(0, r.durationS - setS)), 0);
 }
 
 /** Seconds for one block (solo or superset). */
 export function blockSeconds(block: BuilderBlock, w: BuilderWorkout, ctx: EstimateContext): number {
+  const pace = paceOf(ctx);
   const warm = block.slots.reduce((m, s) => m + warmupSeconds(s, ctx, w), 0);
-  const timed = block.slots.reduce((m, s) => m + timedExtraS(s), 0);
+  const timed = block.slots.reduce((m, s) => m + timedExtraS(s, pace.setS), 0);
   const only = block.slots.length === 1 ? block.slots[0] : undefined;
   if (only !== undefined) {
     const rests = restAfterRows(only, ctx.info, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS);
-    return warm + timed + only.rows.reduce((m, r, i) => (r.type === 'warmup' ? m : m + T.setS + (rests[i] ?? 0)), 0);
+    return warm + timed + only.rows.reduce((m, r, i) => (r.type === 'warmup' ? m : m + pace.setS + restAsTaken(rests[i] ?? 0, pace)), 0);
   }
   const rounds = Math.max(0, ...block.slots.map((s) => s.rows.filter((r) => r.type !== 'warmup').length));
-  return warm + timed + rounds * (T.setS * block.slots.length + roundRestOf(block, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS));
+  return warm + timed + rounds * (pace.setS * block.slots.length + restAsTaken(roundRestOf(block, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS), pace));
+}
+
+/** The changeover between two blocks (`betweenS`, or Ben's own, `ctx.pace`). */
+export function betweenSecondsOf(ctx: Pick<EstimateContext, 'pace'>): number {
+  return paceOf(ctx).betweenS;
 }
 
 /** Estimated seconds for the whole workout; 0 when it's empty. */
 export function estimateBuilderSeconds(w: BuilderWorkout, ctx: EstimateContext): number {
   const blocks = w.blocks.filter((b) => b.slots.length > 0);
   if (blocks.length === 0) return 0;
-  return T.setupS + T.betweenS * (blocks.length - 1) + blocks.reduce((m, b) => m + blockSeconds(b, w, ctx), 0);
+  return T.setupS + betweenSecondsOf(ctx) * (blocks.length - 1) + blocks.reduce((m, b) => m + blockSeconds(b, w, ctx), 0);
 }
 
 /** `about N min`: the estimate rounded to the minute. */

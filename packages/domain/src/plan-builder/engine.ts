@@ -4,6 +4,7 @@ import { generalWarmupMinutes, isWarmed, planSessionWarmupsAs, warmupProfileOf, 
 import { pbLiftStart, type PbHistoryOf, type PbKitOf, type PbLiftStart } from './lifts';
 import { nearDuplicate, trapsIsolation, type SimilarityFacts } from '../builder/similar';
 import { estimateBuilderSeconds } from '../builder/estimate';
+import type { BuilderPace } from '../builder/pace';
 import type { BuilderBlock, BuilderInfoLookup, BuilderSetRow, BuilderSlot } from '../builder/types';
 import {
   PB_COMPAT,
@@ -77,6 +78,8 @@ export interface PlanEngineInput {
    */
   keep?: ((dayIndex: number) => readonly string[]) | undefined;
   nowMs: number;
+  /** (Ben, 28 Oct) Ben's own pace for the day sizing (`learnPace`); absent: the defaults. */
+  pace?: BuilderPace | undefined;
 }
 
 export type PbLoad =
@@ -336,7 +339,7 @@ export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
     let d = { ...d0, exercises: d0.exercises.map((e) => ({ ...e })) };
     let w = warm[i];
     let cut = false;
-    for (let guard = 0; guard < PB_FIT_ROUNDS && pbDayEstimateS(d, w) > limitS; guard += 1) {
+    for (let guard = 0; guard < PB_FIT_ROUNDS && pbDayEstimateS(d, w, input.pace) > limitS; guard += 1) {
       const next = trimOnce(a, d.exercises);
       if (next === null) break;
       cut = true;
@@ -358,7 +361,7 @@ export function buildPlanFromAnswers(input: PlanEngineInput): PbPlan {
       const warmupS = w?.timeS ?? 0;
       // The main lift's warm-ups as the day plans them (its place, the day's budget, the Warm-ups setting).
       const exercises = d.exercises.map((e, k) => (e.role !== 'main' || e.main === null || w === undefined ? e : { ...e, main: { ...e.main, warmup: w.mainSteps(k) ?? e.main.warmup } }));
-      return { ...d, exercises, cap: Math.min(caps[i] ?? pbCapSets(a, warmupS), pbCapSets(a, warmupS)), warmupS, minutes: Math.round(pbDayEstimateS(d, w) / 60) };
+      return { ...d, exercises, cap: Math.min(caps[i] ?? pbCapSets(a, warmupS), pbCapSets(a, warmupS)), warmupS, minutes: Math.round(pbDayEstimateS(d, w, input.pace) / 60) };
     }),
   };
 }
@@ -784,7 +787,7 @@ export function pbDayWarmups(day: Pick<PbDay, 'exercises'>, a: Pick<PlanBuilderA
  * by role, a superset's rounds, each exercise's warm-up steps and the rest before its first working set). The day as
  * its workout will hold it: the exercises in order, its supersets (`pair`), the main lift's top set and back-offs.
  */
-export function pbDayEstimateS(day: Pick<PbDay, 'exercises'>, w: Pick<PbDayWarmups, 'stepsOf'> | undefined): number {
+export function pbDayEstimateS(day: Pick<PbDay, 'exercises'>, w: Pick<PbDayWarmups, 'stepsOf'> | undefined, pace?: BuilderPace): number {
   const roleOf = new Map(day.exercises.map((e) => [e.key, e.role] as const));
   const info: BuilderInfoLookup = (id) => {
     const r = roleOf.get(id);
@@ -805,7 +808,7 @@ export function pbDayEstimateS(day: Pick<PbDay, 'exercises'>, w: Pick<PbDayWarmu
     if (last !== undefined && letter !== null && prev?.pair?.charAt(0) === letter) last.slots.push(slot);
     else blocks.push({ slots: [slot], auto: false });
   });
-  return estimateBuilderSeconds({ blocks, restLevel: 'normal' }, { info });
+  return estimateBuilderSeconds({ blocks, restLevel: 'normal' }, { info, ...(pace === undefined ? {} : { pace }) });
 }
 
 /** A muscle's exercise list (Core has its own pair). */

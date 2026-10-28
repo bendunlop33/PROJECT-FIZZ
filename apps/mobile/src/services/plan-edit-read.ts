@@ -13,6 +13,7 @@ import {
   type PlanKit,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
+import { planRefs } from './plan-day-links';
 import type { DraftSlot, EquipmentInstance, LoadConvention, PlanBuilderAnswers, PlanDayDraft, PlanDraft, RoutineExercise, WeightUnit } from '@fizz/schemas';
 
 /**
@@ -23,7 +24,8 @@ import type { DraftSlot, EquipmentInstance, LoadConvention, PlanBuilderAnswers, 
 
 /** The applied builder plan's block now; null on a coach plan. */
 export async function readPlanBlock(store: Store, ownerId: string, plan: PlanDraft, nowMs: number, tz: string): Promise<PbBlockWeek | null> {
-  const refs = await store.repos.sessions.listFinishedRefs(ownerId, 400, { includeImported: true }).catch(() => []);
+  // (Ben, 28 Oct) Imported and past-logged workouts that count as plan days count for the block too.
+  const refs = await planRefs(store, { ownerId, plan, nowMs }, 400).catch(() => []);
   return pbBlockOfPlan(plan, refs, nowMs, tz);
 }
 

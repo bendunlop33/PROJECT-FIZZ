@@ -24,6 +24,8 @@ import {
   pbMainFocus,
   pbWarmupsOf,
   pbBlockOfPlan,
+  linkRefs,
+  linkedRoutineId,
   pbBlockLine,
   pbAppliedBuilder,
   pbWeekdaysOf,
@@ -123,6 +125,8 @@ import {
   restDefaultsOf,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
+import { learnedPace, paceOpt } from './pace';
+import { readPlanLinks } from './plan-day-links';
 import {
   COACH_DRAFT_DAYS,
   MAX_WORKOUT_DRAFT_OPS,
@@ -785,11 +789,13 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const plan = await repos().planDrafts.applied(p.id);
     const paused = activePause(plan, nowMs, tz) !== null;
     // (Ben, 23 Oct: plan length = block 1) The block week, derived from the plan's Apply, pauses and his plan workouts.
-    const block = plan === null || paused ? null : pbBlockOfPlan(plan, await repos().sessions.listFinishedRefs(p.id, 400).catch(() => []), nowMs, tz);
-    const deload = block?.deload === true;
     const live = liveRoutines(await repos().routines.listByOwner(p.id));
     const templates = planRoutines(plan, live);
     const exercises = await exerciseIndex();
+    // (Ben, 28 Oct) Imported and past-logged workouts that match a plan day (or Ben counted) read as that day's.
+    const links = await readPlanLinks(deps.store(), { ownerId: p.id, plan, templates, nowMs, exerciseOf: (id) => exercises.get(id) ?? null });
+    const block = plan === null || paused ? null : pbBlockOfPlan(plan, linkRefs(await repos().sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => []), links), nowMs, tz);
+    const deload = block?.deload === true;
     const infoCache = new Map<string, BuilderExerciseInfo | null>();
     const info = (id: string): BuilderExerciseInfo | null => {
       if (!infoCache.has(id)) {
@@ -934,6 +940,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       ...(training?.fitRestLevel === undefined ? {} : { fitRestLevel: training.fitRestLevel }),
       // (Ben, 28 Oct) Profile › Rest times, as Your workout's: today's drafts, their ~N min and Time use Ben's defaults.
       ...(training?.restDefaultsS === undefined ? {} : { restDefaultsS: restDefaultsOf(training) }),
+      // (Ben, 28 Oct) Ben's own pace, as Your workout and the plan time it.
+      ...paceOpt(await learnedPace(deps.store(), p.id, nowMs)),
     };
 
     // Each day's own sessions (credited by plan day or by its templates), newest first.
@@ -943,7 +951,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         if (day.kind === 'split') return trainedDays.get(a.session.id)?.includes(day.splitDayId) === true;
         const pd = a.session.planDay;
         if (pd !== undefined && day.planId !== null) return pd.planId === day.planId && pd.dayIndex === day.dayIndex;
-        return a.session.routineId !== null && day.templates.some((t) => t.routineId === a.session.routineId);
+        const routineId = linkedRoutineId(links, a.session.id, a.session.routineId);
+        return routineId !== null && day.templates.some((t) => t.routineId === routineId);
       });
     const exerciseIdsOf = (a: HistoryLike) => new Set(a.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId));
     const mixFor = (day: TodayDay): TodayMixFacts => {
@@ -1062,7 +1071,12 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       workouts: newest.filter((a) => localDateOf(toMs(a.session.startedAt.utc), a.session.startedAt.tz) >= monday).map((a) => withLinkedSource(feedWorkoutOf(a, { title: feedWorkoutTitle(a, titleInfo), nowMs }), linked)),
       activities: weekActs.filter((a) => a.fields.date <= today).map(feedActivityOf),
     }).filter((i) => i.localDate >= monday && i.localDate <= today);
-    const week = { ...weekOf(plan, block, planDays, weekWorkouts, weekActs, today), feed: weekFeed };
+    // (Ben, 28 Oct) A workout linked to a plan day (imported or past-logged, matched or counted by Ben) marks that day done.
+    const linkedDayKey = (sessionId: string): string | null => {
+      const routineId = linkedRoutineId(links, sessionId, null);
+      return routineId === null ? null : (planDays.find((d) => d.templates.some((t) => t.routineId === routineId))?.key ?? null);
+    };
+    const week = { ...weekOf(plan, block, planDays, weekWorkouts, weekActs, today, linkedDayKey), feed: weekFeed };
     // The nudge's real signals (rule 6): finished sessions in the window, today's check-in, what Ben logged.
     const recentForNudge: NudgeSession[] = newest.slice(0, 10).map((a) => ({
       sessionId: a.session.id,
@@ -1769,6 +1783,7 @@ function weekOf(
   workouts: { sessionId: string; localDate: string; title: string }[],
   activities: Activity[],
   today: string,
+  linkedDayKey: (sessionId: string) => string | null = () => null,
 ): Omit<TodaySessionData['week'], 'feed'> {
   const monday = mondayOf(today);
   const doneOn: Record<string, string> = {};
@@ -1777,7 +1792,7 @@ function weekOf(
   const blockDone = thisWeek >= 0 ? (block?.doneOn?.[thisWeek] ?? {}) : {};
   for (const d of planDays) {
     const byIndex = d.dayIndex === null ? undefined : blockDone[d.dayIndex];
-    const byTitle = [...workouts].reverse().find((w) => w.title === d.name)?.localDate;
+    const byTitle = [...workouts].reverse().find((w) => w.title === d.name || linkedDayKey(w.sessionId) === d.key)?.localDate;
     const on = byIndex ?? byTitle;
     if (on !== undefined && on >= monday) doneOn[d.key] = on;
   }

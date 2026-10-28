@@ -181,7 +181,9 @@ describe('B3: a card Today filled above the plan’s length goes into Your worko
     const main = slotsOf(snap.workout.blocks).find((x) => x.main);
     if (main === undefined) throw new Error('no main');
     snap = snapOf(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: main.key }, { opId: 'main-set', basis: { version: snap.version } }));
-    const mainSets = workingCount(slotsOf(snap.workout.blocks).find((x) => x.main) ?? { rows: [] });
+    // (Ben, 28 Oct) The fill may raise the main lift too (up to 5); at the plan's length its raise goes, his set stays.
+    const planMain = workingCount(slotsOf((cardAt(s, data, key, plan).draft?.workout ?? { blocks: [], restLevel: 'normal' }).blocks).find((x) => x.main) ?? { rows: [] });
+    const mainSets = planMain + 1;
     const at60 = snapOf(await s.builder.setTime(snap.draftId, plan, { opId: 't-60', expectedVersion: snap.version }));
     expect(workingCount(slotsOf(at60.workout.blocks).find((x) => x.main) ?? { rows: [] })).toBe(mainSets);
     const card60 = cardAt(s, data, key, plan).draft?.workout ?? { blocks: [], restLevel: 'normal' };

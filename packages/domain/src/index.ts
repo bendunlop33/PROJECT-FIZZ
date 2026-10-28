@@ -94,6 +94,7 @@ export * from './session/coach-draft';
 export * from './session/coach-plan';
 export * from './session/plan-restart';
 export * from './session/plan-adapt';
+export * from './session/plan-day-link';
 export * from './session/week-plan';
 export * from './activity';
 export * from './health';

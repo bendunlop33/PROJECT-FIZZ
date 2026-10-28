@@ -120,6 +120,39 @@ export function followLatestDraft(cur: TodayCardState, latest: { mainLiftExercis
   return todayCardReducer(cur, { kind: 'main_lift', exerciseId: latest.mainLiftExerciseId });
 }
 
+/**
+ * (Ben, 28 Oct) Up next re-checks when history changes (an import committed, a past workout logged, edited or deleted,
+ * an Undo of those): a card that was showing Up next's day and that Ben left untouched is redrafted for the new Up next
+ * day (its own controls). A day Ben picked, a card whose controls he changed, or a day with a draft he edited (or a
+ * coach offer he applied) keeps his choice. Anything else: the card as it is.
+ */
+export function followUpNext(
+  cur: TodayCardState,
+  i: {
+    /** Up next before this read, and now. */
+    prevNextKey: string | null;
+    nextKey: string | null;
+    /** Ben picked this day himself (the sheet, `Do today`). */
+    picked: boolean;
+    /** A draft of this day Ben edited, or a coach offer he applied. */
+    hasOwnDraft: boolean;
+    /** The day's controls as the previous read opened it (null: unknown). */
+    initialWas: TodayControls | null;
+    initial: Readonly<Record<string, TodayControls>>;
+  },
+): TodayCardState {
+  if (i.prevNextKey === null || i.nextKey === null || i.nextKey === i.prevNextKey || cur.dayKey !== i.prevNextKey) return cur;
+  if (i.picked || i.hasOwnDraft || i.initialWas === null || JSON.stringify(cur.controls) !== JSON.stringify(i.initialWas)) return cur;
+  const next = i.initial[i.nextKey];
+  return next === undefined ? cur : { dayKey: i.nextKey, controls: next, open: cur.open, why: false };
+}
+
+/** A day has a draft Ben edited, or a coach offer he applied (`edited` / `nudged` are keyed `dayKey|mainLift`). */
+export function hasOwnDraftFor(dayKey: string, s: { edited: Readonly<Record<string, unknown>>; nudged: Readonly<Record<string, unknown>> }): boolean {
+  const mine = (k: string) => k.startsWith(`${dayKey}|`);
+  return Object.keys(s.edited).some(mine) || Object.keys(s.nudged).some(mine);
+}
+
 /** The card's one button for VoiceOver: `Chest, Bench, details, collapsed`. */
 export function breakdownLabel(title: string, mainLift: string | null, open: boolean): string {
   return [title, mainLift, 'details', open ? 'expanded' : 'collapsed'].filter((x): x is string => x !== null && x !== '').join(', ');
