@@ -20,6 +20,7 @@ import {
   type DeletionError,
   type DeletionPlan,
   type FencedResult,
+  type PaceWorkout,
   type SaveResult,
   type SessionRef,
   type SessionRepository,
@@ -1341,6 +1342,59 @@ export class SqliteSessions implements SessionRepository {
         };
       }),
     );
+  }
+
+  /**
+   * (Ben, 28 Oct) What the time estimate learns Ben's pace from (`learnPace`): his workouts logged live (not imported,
+   * not `Log a past workout`) that started in [`fromUtc`, `toUtc`), each with its completed sets' times, rows and planned
+   * rests, and its closed pauses. Small rows, no aggregate decode; read once per state of the database.
+   */
+  listPaceWorkouts(ownerId: string, fromUtc: string, toUtc: string): Promise<PaceWorkout[]> {
+    const key = `${ownerId}|${fromUtc.slice(0, 13)}|${toUtc.slice(0, 13)}`;
+    const writes = this.db.writeCount;
+    if (this.paceMemo?.writes !== writes) this.paceMemo = { writes, rows: new Map() };
+    const memo = this.paceMemo;
+    let got = memo.rows.get(key);
+    if (got === undefined) {
+      got = this.readPaceWorkouts(ownerId, fromUtc, toUtc);
+      memo.rows.set(key, got);
+      got.catch(() => {
+        memo.rows.delete(key);
+      });
+    }
+    return got.then((ws) => ws.map((w) => ({ ...w, sets: [...w.sets], pauses: [...w.pauses] })));
+  }
+
+  private paceMemo: { writes: number; rows: Map<string, Promise<PaceWorkout[]>> } | null = null;
+
+  private readPaceWorkouts(ownerId: string, fromUtc: string, toUtc: string): Promise<PaceWorkout[]> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ id: string; started_at_utc: string; ex: string; done: string; rest: number | null; src: string | null }>(
+        `SELECT s.id, s.started_at_utc, x.session_exercise_id AS ex, x.completed_at_utc AS done,
+                json_extract(x.rest, '$.seconds') AS rest, json_extract(x.rest, '$.source') AS src
+         FROM sessions s JOIN session_sets x ON x.session_id = s.id
+         WHERE s.owner_id = ? AND ${inHistorySql('s')} AND s.source = 'manual' AND s.past_log IS NULL
+           AND s.started_at_utc >= ? AND s.started_at_utc < ?
+           AND x.status = 'completed' AND x.completed_at_utc IS NOT NULL
+         ORDER BY s.started_at_utc DESC, s.id, x.completed_at_utc`,
+        [ownerId, fromUtc, toUtc],
+      );
+      const out = new Map<string, PaceWorkout & { sets: PaceWorkout['sets'][number][]; pauses: { fromMs: number; toMs: number }[] }>();
+      for (const r of rows) {
+        let w = out.get(r.id);
+        if (w === undefined) {
+          w = { source: 'manual', pastLog: false, startedAtMs: toMs(r.started_at_utc), pauses: [], sets: [] };
+          out.set(r.id, w);
+        }
+        w.sets.push({ rowId: r.ex, completedAtMs: toMs(r.done), restS: r.src === 'not_recorded' || typeof r.rest !== 'number' ? null : r.rest });
+      }
+      if (out.size > 0) {
+        const ids = [...out.keys()];
+        const pauses = await q.getAll<{ session_id: string; start_utc: string; end_utc: string }>(`SELECT session_id, start_utc, end_utc FROM session_pauses WHERE session_id IN (${ids.map(() => '?').join(', ')})`, ids);
+        for (const p of pauses) out.get(p.session_id)?.pauses.push({ fromMs: toMs(p.start_utc), toMs: toMs(p.end_utc) });
+      }
+      return [...out.values()];
+    });
   }
 
   /**
