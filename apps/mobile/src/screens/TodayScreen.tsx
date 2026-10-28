@@ -698,7 +698,11 @@ export function TodayScreen() {
     [session, picked],
   );
   const chosenName = view === null || restDay !== null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
-  const tiles = useMemo(() => (session === null ? [] : services.todaySession.week(session, mainKind === 'done_today' ? null : chosenName)), [services, session, mainKind, chosenName]);
+  const cardTiles = useMemo(() => (session === null ? [] : services.todaySession.week(session, mainKind === 'done_today' ? null : chosenName)), [services, session, mainKind, chosenName]);
+  // (Ben, 28 Oct) While a workout is open the card's session isn't read, but the week still is (the open workout ringed).
+  const openWeek = useOpenWorkoutWeek(data.state === 'ready' ? data.value.active : null);
+  const tiles = workoutOpen ? (openWeek?.tiles ?? []) : cardTiles;
+  const blockLine = workoutOpen ? (openWeek?.block ?? null) : (session?.block ?? null);
   const pickRows = useMemo(
     () => (session === null ? [] : todayDayRows({ days: session.days, nextKey: session.status === 'paused' ? null : session.nextKey, selectedKey: restDay === null ? selectedKey : null, today: session.localDate, doneOn: session.week.doneOn, plannedOn: Object.fromEntries(session.week.planned.map((d) => [d.key, d.localDate])) })),
     [session, selectedKey, restDay],
@@ -1040,8 +1044,8 @@ export function TodayScreen() {
           <View style={{ gap: TODAY_SPACING.labelToContent }}>
             <SectionLabel
               title={TODAY_PICK_COPY.thisWeek}
-              right={session?.block == null ? null : TODAY_PICK_COPY.planWeek(session.block.text)}
-              rightLabel={session?.block?.accessibilityLabel ?? ''}
+              right={blockLine === null ? null : TODAY_PICK_COPY.planWeek(blockLine.text)}
+              rightLabel={blockLine?.accessibilityLabel ?? ''}
               onRight={() => {
                 navigation.dispatch(openYourPlan(newUuid()));
               }}
@@ -1340,6 +1344,42 @@ function DetailList({ rows }: { rows: readonly DetailRow[] }) {
       ) : null}
     </View>
   );
+}
+
+/**
+ * (Ben, 28 Oct) This week's tiles while a workout is open: read on focus, and again whenever data changes (a plan
+ * switched between Set days and Any days, a set logged). Reads only. Null: no workout open, or not read yet.
+ */
+function useOpenWorkoutWeek(active: SessionAggregate | null): { tiles: WeekTile[]; block: TodaySessionData['block'] } | null {
+  const services = useServices();
+  const version = useDataVersion();
+  const [value, setValue] = useState<{ tiles: WeekTile[]; block: TodaySessionData['block'] } | null>(null);
+  const sessionId = active?.session.id ?? null;
+  const pd = active?.session.planDay;
+  const planId = pd?.planId ?? null;
+  const dayIndex = pd?.dayIndex ?? null;
+  const title = active?.session.routineName ?? null;
+  useFocusEffect(
+    useCallback(() => {
+      if (sessionId === null) {
+        setValue(null);
+        return;
+      }
+      let alive = true;
+      void services.todaySession
+        .weekWhileOpen({ planDay: planId === null || dayIndex === null ? null : { planId, dayIndex }, title: title ?? 'Workout' })
+        .then(
+          (v) => {
+            if (alive) setValue(v);
+          },
+          () => undefined,
+        );
+      return () => {
+        alive = false;
+      };
+    }, [services, version, sessionId, planId, dayIndex, title]),
+  );
+  return sessionId === null ? null : value;
 }
 
 /**
