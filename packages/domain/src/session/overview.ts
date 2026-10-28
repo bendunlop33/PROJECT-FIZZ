@@ -1007,7 +1007,8 @@ function flagText(flag: PainFlag): string {
 
 export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
   const { aggregate } = input;
-  const ordered = [...aggregate.exercises].sort((a, b) => a.order - b.order);
+  // (Ben, 28 Oct) A row swapped away or removed mid-workout is out of the workout: never listed.
+  const ordered = [...aggregate.exercises].filter((e) => e.removed === undefined).sort((a, b) => a.order - b.order);
   const sets = aggregate.sets.filter(live);
   const today = input.today ?? null;
   const slotOf = (sxId: string): string => today?.slotOf[sxId] ?? sxId;
