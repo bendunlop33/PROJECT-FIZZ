@@ -4,7 +4,6 @@ import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import type { OverviewData } from '../src/services/workout-services';
 import { CONNECTED, contextWorkout, replyWith, StepModel, toolCall, type ContextWorkout } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -16,7 +15,6 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
  */
 
 const DAY = 86_400_000;
-const BEN_95 = 'give me a workout which builds up to 95 kg barbell row as the last set (with sets and weights)';
 let h: Harness;
 let model: StepModel;
 beforeEach(() => {
@@ -81,7 +79,6 @@ const edit = (ops: (w: ContextWorkout) => unknown[], quote: string) => (req: Mod
   return toolCall('edit_today', { baseVersion: w.version, ops: ops(w), reason: 'Ben asked.', benAsked: true, benQuote: quote });
 };
 const kg = (value: number, convention = 'total') => ({ value, unit: 'kg', convention });
-const target = (value: number, reps: number, convention = 'total') => ({ load: kg(value, convention), reps: { min: reps, max: reps }, rpe: null });
 
 
 async function items(s: AppServices, gymId: string) {
