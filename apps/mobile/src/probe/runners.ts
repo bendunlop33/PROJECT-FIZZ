@@ -16,7 +16,7 @@ import AudioCoach from '../../modules/audio-coach';
 import { isoUtc, nowMs } from '../clock';
 import { nativeFeaturePause } from '../diagnostics/crash-capture';
 import { NATIVE_PAUSED_COPY } from '../diagnostics/launch-guard';
-import { createProbeActivityLedger } from '../live-activity/probe-ledger';
+import { probeActivityLedger } from '../live-activity/probe-ledger';
 import { restCountdownActivity } from '../live-activity/RestCountdownActivity';
 import { judgeAlarmKitStatus } from './alarmkit';
 import { analyseAppGroup, parseNativeAppGroupInfo } from './app-group';
@@ -498,7 +498,7 @@ export async function runAppGroupProbe(): Promise<ResultUpdate> {
 
 export const LIVE_ACTIVITY_DURATION_S = 120;
 
-const probeActivities = createProbeActivityLedger();
+const probeActivities = probeActivityLedger;
 
 export function liveActivityIncludedInBuild(): boolean {
   const extra: unknown = Constants.expoConfig?.extra;
@@ -522,8 +522,9 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
     }
     const endsAtMs = now + LIVE_ACTIVITY_DURATION_S * 1000;
     // staleDate: the system can de-emphasise it once the countdown is over, so a
-    // 0:00 timer doesn't sit on the Lock Screen looking live. The next Run (or
-    // the timer below, if the app is still running) ends it.
+    // 0:00 timer doesn't sit on the Lock Screen looking live. It is ended at
+    // 0:00 + 30 s by the timer below (if the app is running then), by the next
+    // Run, or by the workout controller's sweep on the next launch.
     const instance = factory.start(
       {
         state: 'resting',
@@ -559,7 +560,8 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
     probeActivities.started(probeId);
     setTimeout(() => {
       probeActivities.ended(probeId);
-      void instance.end('default').catch(() => undefined);
+      // 'immediate': 'default' leaves an ended card on the Lock Screen for up to 4 hours.
+      void instance.end('immediate').catch(() => undefined);
     }, (LIVE_ACTIVITY_DURATION_S + 30) * 1000);
     return {
       status: 'needs_check',

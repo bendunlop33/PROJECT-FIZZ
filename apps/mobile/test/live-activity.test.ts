@@ -676,3 +676,141 @@ describe('Live Activity through the app services: late reads, Undo, coach change
     expect(fake.calls.slice(callsBefore).every((c) => c.startsWith('update la-'))).toBe(true);
   });
 });
+
+/**
+ * The sweep (28 Oct, build 475: two blank cards stuck on the Lock Screen).
+ * `endAllExcept` (the patched expo-widgets `fizzEndActivitiesExcept`) also
+ * reaches activities `listIds` can't see: ended ones still on the Lock Screen
+ * and ones of other names. Run on launch, when a rest ends, and on Finish,
+ * Discard or a restore (a null); never on ordinary updates.
+ */
+describe('Live Activity sweep of stale activities', () => {
+  function sweepable() {
+    const fake = fakeActivities();
+    /** Ended (or another name's) cards still on the Lock Screen: invisible to listIds. */
+    const lingering = new Set<string>();
+    const sweeps: string[][] = [];
+    const sys = { sweepFails: false };
+    const port: LiveActivityPort = {
+      ...fake.port,
+      endAllExcept(keepIds) {
+        sweeps.push([...keepIds]);
+        if (sys.sweepFails) return Promise.reject(new Error('ActivityKit unavailable'));
+        const ended = [...fake.running.keys(), ...lingering].filter((id) => !keepIds.includes(id));
+        for (const id of ended) {
+          fake.running.delete(id);
+          lingering.delete(id);
+        }
+        return Promise.resolve(ended);
+      },
+    };
+    return { ...fake, port, lingering, sweeps, sweepSys: sys };
+  }
+  const props = (): WorkoutActivityProps => ({ state: 'resting', title: 'Rest', line1: '', line2: '', line3: '', tap: '', startMs: 1, endMs: 2, side: '', a11y: '', ...NO_AFTER });
+
+  it('on launch with a workout in progress: keeps the adopted one, ends strays and the cards listIds cannot see', async () => {
+    const fake = sweepable();
+    fake.running.set('old-1', { props: props(), staleAtMs: null, updates: 0 });
+    fake.running.set('old-2', { props: props(), staleAtMs: null, updates: 0 });
+    fake.lingering.add('ended-but-shown');
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
+    await la.reconcile(loggedWarmup(), ms(31));
+    expect([...fake.running.keys()]).toEqual(['old-1']);
+    expect(fake.lingering.size).toBe(0);
+    expect(fake.sweeps).toEqual([['old-1']]);
+    expect(fake.only().props.state).toBe('resting');
+  });
+
+  it('on launch with no workout: every card is ended, including the probe’s from the last run', async () => {
+    const fake = sweepable();
+    fake.running.set('probe-last-run', { props: props(), staleAtMs: null, updates: 0 });
+    fake.lingering.add('blank-card');
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ, keepIds: () => [] });
+    await la.reconcile(null, ms(0));
+    expect(fake.running.size).toBe(0);
+    expect(fake.lingering.size).toBe(0);
+  });
+
+  it('when a rest ends: ends strays, keeps the current one and the probe’s running countdown', async () => {
+    const fake = sweepable();
+    const ledger = createProbeActivityLedger();
+    const s = loggedWarmup();
+    const deadline = toMs(s.restTimer?.deadlineUtc ?? '');
+    const clock = fakeClock(ms(31));
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ, clock, keepIds: () => ledger.ids() });
+    await la.reconcile(s, ms(31));
+    expect(fake.sweeps).toHaveLength(1); // launch
+    fake.running.set('probe-now', { props: props(), staleAtMs: null, updates: 0 });
+    ledger.started('probe-now');
+    fake.lingering.add('stuck');
+    // An ordinary update (+30 s) does not sweep.
+    const longer = apply(s, { type: 'adjust_rest', at: at(35), opId: 'plus', timerId: s.restTimer?.id ?? '', deltaS: 30 });
+    await la.reconcile(longer, ms(36));
+    expect(fake.sweeps).toHaveLength(1);
+    // The countdown runs out: the recheck turns it Ready and sweeps.
+    const end = toMs(longer.restTimer?.deadlineUtc ?? '') + DEADLINE_RECHECK_MS;
+    expect(end).toBeGreaterThan(deadline);
+    clock.advance(end);
+    await la.reconcile(longer, end); // drain the chain
+    expect(fake.sweeps).toHaveLength(2);
+    expect(fake.sweeps[1]).toEqual(['la-1', 'probe-now']);
+    expect([...fake.running.keys()].sort()).toEqual(['la-1', 'probe-now']);
+    expect(fake.lingering.size).toBe(0);
+    expect(fake.running.get('la-1')?.props.state).toBe('ready');
+  });
+
+  it('Skip (the rest ends early) sweeps too; Finish ends everything but the probe’s', async () => {
+    const fake = sweepable();
+    const ledger = createProbeActivityLedger();
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ, keepIds: () => ledger.ids() });
+    let s = loggedWarmup();
+    await la.reconcile(s, ms(31));
+    fake.lingering.add('stuck');
+    s = apply(s, { type: 'skip_rest', at: at(40), opId: 'skip', timerId: s.restTimer?.id ?? '' });
+    await la.reconcile(s, ms(41));
+    expect(fake.lingering.size).toBe(0);
+    fake.running.set('probe-now', { props: props(), staleAtMs: null, updates: 0 });
+    ledger.started('probe-now');
+    fake.lingering.add('stuck-2');
+    const finished = apply(s, { type: 'finish', at: at(200), opId: 'fin', expectedVersion: s.session.version, endedAt: null });
+    await la.reconcile(finished, ms(201));
+    expect([...fake.running.keys()]).toEqual(['probe-now']);
+    expect(fake.lingering.size).toBe(0);
+    expect(fake.sweeps.at(-1)).toEqual(['probe-now']);
+  });
+
+  it('Discard sweeps; a failing sweep is noted and never breaks the reconcile', async () => {
+    const fake = sweepable();
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
+    const s = loggedWarmup();
+    fake.sweepSys.sweepFails = true;
+    await expect(la.reconcile(s, ms(31))).resolves.toBeUndefined();
+    expect(la.status).toBe('showing');
+    expect(la.lastError).toContain('ActivityKit unavailable');
+    fake.sweepSys.sweepFails = false;
+    fake.lingering.add('stuck');
+    const discarded = apply(s, { type: 'discard', at: at(40), opId: 'd', expectedVersion: s.session.version, confirmedLoggedSets: 1 });
+    await la.reconcile(discarded, ms(41));
+    expect(fake.running.size).toBe(0);
+    expect(fake.lingering.size).toBe(0);
+  });
+
+  it('a build without the sweep keeps the old adopt-and-end behaviour', async () => {
+    const fake = fakeActivities();
+    expect('endAllExcept' in fake.port).toBe(false);
+    fake.running.set('stray', { props: props(), staleAtMs: null, updates: 0 });
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
+    await la.reconcile(null, ms(0));
+    expect(fake.running.size).toBe(0);
+  });
+});
+
+describe('probe ledger', () => {
+  it('lists the probe’s running countdowns for the sweep to keep', () => {
+    const ledger = createProbeActivityLedger();
+    ledger.started('a');
+    ledger.started('b');
+    ledger.ended('a');
+    expect(ledger.ids()).toEqual(['b']);
+  });
+});
