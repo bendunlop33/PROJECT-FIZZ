@@ -14,6 +14,7 @@ import type { ActionRecord, BenInput, CustomExerciseFields, CoachMessage, CoachT
 
 import type { CoachAvailability, CoachEntry, GymProposalState, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
 import type { WorkoutPresence } from '../services/history-services';
+import type { RunningTurn } from './running-turns';
 
 /**
  * Build 131 ("the keyboard gets stuck on GPT chat"): the conversation hides the keyboard when
@@ -528,13 +529,19 @@ function nextBenText(messages: readonly CoachMessage[], turnId: string): string 
   return next === undefined || next.body.role !== 'ben' ? null : benText(next.body.input);
 }
 
-/** Every row of a stored thread, oldest first. Cards come from the records, in commit order. */
-export function threadRows(data: ThreadData & { nowUtc?: string }): ThreadRow[] {
+/**
+ * Every row of a stored thread, oldest first. Cards come from the records, in commit order.
+ * (Ben, 28 Oct) `running`: whether a turn is running in this app run. A saved `running` turn that is shows as the
+ * live turn instead (its rows are left out here); one that isn't was cut off (`Interrupted.`, Try again).
+ */
+export function threadRows(data: ThreadData & { nowUtc?: string; running?: (turnId: string) => boolean }): ThreadRow[] {
   const rows: ThreadRow[] = [];
   const byTurn = new Map<string, CoachMessage[]>();
   for (const m of data.messages) byTurn.set(m.turnId, [...(byTurn.get(m.turnId) ?? []), m]);
   for (const [turnId, msgs] of byTurn) {
-    const turn = data.turns.get(turnId) ?? null;
+    const stored = data.turns.get(turnId) ?? null;
+    if (stored?.status === 'running' && data.running?.(turnId) === true) continue;
+    const turn = stored?.status === 'running' && data.running !== undefined ? { ...stored, status: 'interrupted' as const } : stored;
     const actions = data.actionsByTurn.get(turnId) ?? [];
     for (const m of msgs) {
       if (m.body.role === 'ben') {
@@ -595,6 +602,11 @@ export interface LiveTurn {
 
 export function startLiveTurn(turnId: string, input: BenInput, nowMs: number): LiveTurn {
   return { turnId, benText: benText(input), startedAtMs: nowMs, firstEvent: false, tools: [], cards: [], sentences: [] };
+}
+
+/** (Ben, 28 Oct) A turn running in the service as the sheet shows it: what it has shown so far, however long the sheet was closed. */
+export function liveTurnOf(turn: Pick<RunningTurn, 'turnId' | 'input' | 'startedAtMs' | 'progress'>): LiveTurn {
+  return turn.progress.reduce(applyProgress, startLiveTurn(turn.turnId, turn.input, turn.startedAtMs));
 }
 
 /** Fold one progress event into the live turn. Only what the saved message will also hold. */

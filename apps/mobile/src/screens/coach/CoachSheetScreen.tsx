@@ -9,9 +9,9 @@ import type { BenInput, BuildFocus, CoachThread } from '@fizz/schemas';
 
 import { MANAGE_USAGE_URL } from '../../ai/coach-connection-view';
 import { nowMs as clockNow } from '../../clock';
-import { isGeneralEntry, type CoachAvailability, type CoachEntry } from '../../coach/coach-service';
+import { coachScopeOf, isGeneralEntry, type CoachAvailability, type CoachEntry } from '../../coach/coach-service';
+import { onThread } from '../../coach/running-turns';
 import {
-  applyProgress,
   COACH_DONE_ACCESSORY_ID,
   COACH_TRANSCRIPT_KEYBOARD,
   loadedOutOfContext,
@@ -27,6 +27,7 @@ import {
   transcriptFollow,
   type WorkoutChipContext,
   startLiveTurn,
+  liveTurnOf,
   statusView,
   thinkingLabel,
   threadRows,
@@ -196,11 +197,52 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
       }
       const data = await services.coach.loadThread(id);
       if (data === null) return;
-      setRows(threadRows({ ...data, nowUtc: toIso(clockNow()) }));
+      // (Ben, 28 Oct) A turn running in the service shows as the live turn; one saved `running` that isn't was cut off.
+      setRows(threadRows({ ...data, nowUtc: toIso(clockNow()), running: (turnId) => services.coach.isRunning(turnId) }));
       setTitle(data.thread.title);
     },
     [services],
   );
+
+  /**
+   * (Ben, 28 Oct: "it stops 'running' if I move away from the chat screen") The turn runs in the service, not here.
+   * The sheet attaches to the turn running on its thread (on mount, on focus, when its thread is known) and follows
+   * it: the same live rows and Stop, Send off. When it ends the rows are read again, whether or not the sheet was
+   * open the whole time.
+   */
+  const scope = coachScopeOf(entry);
+  const threadRef = useRef(threadId);
+  threadRef.current = threadId;
+  const attached = useRef<string | null>(null);
+  const syncLive = useCallback(() => {
+    const r = services.coach.running.runningOn(threadRef.current ?? null, scope);
+    attached.current = r?.turnId ?? null;
+    setLive(r === null ? null : liveTurnOf(r));
+  }, [services, scope]);
+  useEffect(() => {
+    syncLive();
+    return services.coach.running.subscribe((e) => {
+      if (e.kind === 'finished') {
+        if (attached.current !== e.turn.turnId) return;
+        attached.current = null;
+        setLive(null);
+        const id = e.turn.threadId ?? threadRef.current ?? null;
+        if ((threadRef.current ?? null) === null && id !== null) setThreadId(id);
+        void loadRows(id);
+        return;
+      }
+      if (!onThread(e.turn, threadRef.current ?? null, scope)) {
+        if (attached.current === e.turn.turnId) syncLive();
+        return;
+      }
+      attached.current = e.turn.turnId;
+      setLive(liveTurnOf(e.turn));
+    });
+  }, [services, scope, loadRows, syncLive]);
+  useEffect(() => {
+    syncLive();
+  }, [threadId, syncLive]);
+  useFocusEffect(syncLive);
 
   /** The workout as last read; the bar is worked out from it each second without reading SQLite (review N3). */
   const loadedWorkout = useRef<Awaited<ReturnType<typeof services.workout.load>>>(null);
@@ -313,15 +355,8 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
     Keyboard.dismiss();
     void replyVoice.hush();
     try {
-      const r = await services.coach.send({
-        entry,
-        threadId: threadId ?? null,
-        input,
-        turnId,
-        onProgress: (p) => {
-          setLive((l) => (l === null || l.turnId !== turnId ? l : applyProgress(l, p)));
-        },
-      });
+      // Its live rows follow the service's running turn (`syncLive`), so they carry on if the sheet closes and reopens.
+      const r = await services.coach.send({ entry, threadId: threadId ?? null, input, turnId });
       setThreadId(r.threadId);
       const words = replyToSpeak(r, readAloud.current, { open: sheetOpen.current, typing: typedText.current.trim() !== '' });
       if (words !== null) void replyVoice.say(words);
@@ -345,7 +380,7 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
       if (typed !== null) setDraft(typed);
       setNotice('Not sent.');
     } finally {
-      setLive(null);
+      syncLive();
       setAvailability(await services.coach.availability());
     }
   }
@@ -402,9 +437,6 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
         mainLift: chip === null ? null : (buildCard?.mainLifts[chip.id]?.name ?? null),
         extra: text,
         origin: 'card',
-        onProgress: (p) => {
-          setLive((l) => (l === null || l.turnId !== turnId ? l : applyProgress(l, p)));
-        },
       });
       if (!r.ok) {
         setNotice(needsCoachView(r.block).line);
@@ -418,7 +450,7 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
       setNotice('Not sent.');
     } finally {
       setBuilding(null);
-      setLive(null);
+      syncLive();
       setAvailability(await services.coach.availability());
     }
   }
@@ -445,7 +477,7 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
       const r = await services.coach.runSummaryTurn(entry.sessionId).catch(() => null);
       if (r === null) setNotice('Not sent.');
     } finally {
-      setLive(null);
+      syncLive();
       setAvailability(await services.coach.availability());
     }
     await loadRows(threadId ?? (await services.coach.resolveThread(entry).catch(() => null)));
