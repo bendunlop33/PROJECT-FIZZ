@@ -275,7 +275,7 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(call).toContain('date={todayDateLine(zoned.utc, zoned.tz)}');
     expect(call).toMatch(/page="today"\s+compact\s+round/);
     expect(call).not.toContain('week=');
-    expect(screen).toContain('TODAY_PICK_COPY.planWeek(session.block.text)');
+    expect(screen).toContain('TODAY_PICK_COPY.planWeek(blockLine.text)');
     expect(read('ui/coach-ask-bar.tsx')).toContain('if (compact && !inline && round) {');
   });
 

@@ -284,7 +284,8 @@ export const PlanEditUndoSchema = z.object({
 export type PlanEditUndo = z.infer<typeof PlanEditUndoSchema>;
 
 /** (Ben, 26 Oct) `Move day`: a plan day on another weekday in one block week only (Set days plans). */
-export const PlanDayMoveSchema = z.object({ week: z.int().min(1).max(12), dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1), weekday: z.int().min(0).max(6) });
+/** `week` 0: the lead-in week of a plan applied after its Monday (Ben, 28 Oct). */
+export const PlanDayMoveSchema = z.object({ week: z.int().min(0).max(12), dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1), weekday: z.int().min(0).max(6) });
 export type PlanDayMove = z.infer<typeof PlanDayMoveSchema>;
 
 /** The last `Move day`, for its Undo: the moves before it. Undo only from `versionAfter`. */

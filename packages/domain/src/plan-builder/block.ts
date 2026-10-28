@@ -2,6 +2,7 @@ import { supersetLabels } from '../superset-labels';
 import type { DraftSlot, PlanBuilderAnswers, PlanBuilderRecord, PlanDraft, PlanDraftVersion, PlanPause, SessionDeload } from '@fizz/schemas';
 import { addDays, localDateOf, localWeekBounds } from '../calendar';
 import { pausedInWeek } from '../progress/plan-tracker';
+import { weekdayDayMonth, weekdayDayMonthLong } from '../progress/text';
 import { activePause, pausedDates } from '../session/plan-adapt';
 import { toMs } from '../time';
 import type { PbExercise, PbLoad } from './engine';
@@ -12,10 +13,13 @@ import { pbAtWeek, pbIsDeload, type PbWeekTarget } from './weeks';
  * A builder plan's training block (Ben, 23 Oct: **the plan's length is block 1**; training-blocks.md §4.1). Pure.
  *
  * - `pbBlockWeekOf`: the block week now, derived (never stored) from the plan's Apply, its pauses and Ben's finished
- *   workouts of the plan: weeks run Monday–Sunday in his zone; week 1 is the week the plan was applied, even a partial
- *   one (training-blocks.md §4.1, approved; its plan workouts from that Monday count, 28 Oct); a calendar
- *   week counts once it has a finished plan workout and isn't fully paused, else the number holds (nothing is
- *   "missed", D19). A correction or a deleted workout re-derives it. Past the plan's length the block is done.
+ *   workouts of the plan: weeks run Monday–Sunday in his zone; week 1 is the week the plan was applied when that was
+ *   its Monday. (Ben, 28 Oct) Applied on any other day, that week is a **lead-in**: it runs week 1's days and its
+ *   workouts count for that week (its plan workouts from that Monday count, 28 Oct), but week 1 of the block starts the
+ *   next Monday, so the plan's weeks (and its deload) are full weeks after it (training-blocks.md §4.1). Derived from
+ *   the stored Apply time, so a plan already in its first week becomes a lead-in with no migration. A calendar week
+ *   counts once it has a finished plan workout and isn't fully paused, else the number holds (nothing is "missed",
+ *   D19). A correction or a deleted workout re-derives it. Past the plan's length the block is done.
  * - `pbBlockView`: Library › Plan › Your plan's week strip (1…N, D on deload weeks) and the plan days for the week
  *   viewed, each exercise's planned target that week from `pbAtWeek` (snapped to the item's achievable loads, never
  *   past its max, rule 4). Done weeks are read-only and say which days were done. These are planned targets: Today
@@ -24,6 +28,8 @@ import { pbAtWeek, pbIsDeload, type PbWeekTarget } from './weeks';
 
 export const PB_BLOCK_COPY = {
   week: (w: number, n: number) => `Week ${String(w)} of ${String(n)}`,
+  /** (Ben, 28 Oct) The lead-in week: `Starts Mon 2 Nov` (Today reads `Plan starts Mon 2 Nov`). */
+  starts: (date: string) => `Starts ${weekdayDayMonth(date)}`,
   deload: 'Deload',
   done: 'Block done',
   startNext: 'Start next block',
@@ -63,6 +69,12 @@ export interface PbBlockWeek {
   daysDone: number[][];
   /** (27 Oct) The local date each of those days was first done that week (same order); absent: not known. */
   doneOn?: Record<number, string>[];
+  /**
+   * (Ben, 28 Oct) This week is the lead-in of a plan applied after its Monday: `week` is 1 (the lead-in runs week 1's
+   * days, and its workouts count for this week) and week 1 itself starts on `startsOn` (the next Monday). Absent: not
+   * a lead-in.
+   */
+  leadIn?: { startsOn: string } | undefined;
 }
 
 /** Calendar weeks looked at, at most (12-week plans with pauses and gaps fit easily). */
@@ -71,7 +83,10 @@ const MAX_WEEKS = 260;
 export function pbBlockWeekOf(input: PbBlockInput): PbBlockWeek {
   const of = input.answers.weeks;
   const appliedMs = toMs(input.appliedAtUtc);
-  const startMonday = localWeekBounds(appliedMs, input.tz).mondayLocalDate;
+  const applyMonday = localWeekBounds(appliedMs, input.tz).mondayLocalDate;
+  // (Ben, 28 Oct) Applied after its Monday: that week is a lead-in, and the block's weeks start the next Monday.
+  const leadIn = localDateOf(appliedMs, input.tz) !== applyMonday;
+  const startMonday = leadIn ? addDays(applyMonday, 7) : applyMonday;
   const nowMonday = localWeekBounds(input.nowMs, input.tz).mondayLocalDate;
   const byMonday = new Map<string, Set<number>>();
   const firstOn = new Map<string, Record<number, string>>();
@@ -107,7 +122,17 @@ export function pbBlockWeekOf(input: PbBlockInput): PbBlockWeek {
   const mondays = done ? counted.slice(0, of) : [...counted, nowMonday];
   const week = done ? of + 1 : counted.length + 1;
   const daysOf = (monday: string): number[] => [...(byMonday.get(monday) ?? [])].sort((a, b) => a - b);
-  return { week, of, deload: !done && pbIsDeload(input.answers, week), done, mondays, daysDone: mondays.map(daysOf), doneOn: mondays.map((x) => ({ ...(firstOn.get(x) ?? {}) })) };
+  const inLeadIn = leadIn && nowMonday < startMonday;
+  return {
+    week,
+    of,
+    deload: !done && !inLeadIn && pbIsDeload(input.answers, week),
+    done,
+    mondays,
+    daysDone: mondays.map(daysOf),
+    doneOn: mondays.map((x) => ({ ...(firstOn.get(x) ?? {}) })),
+    ...(inLeadIn ? { leadIn: { startsOn: startMonday } } : {}),
+  };
 }
 
 /** The builder record of the plan version in use (Apply's), else null (a coach plan, or not applied). */
@@ -181,9 +206,18 @@ export function pbDeloadAtStart(
   return b === null || !b.deload ? null : { planId: plan.id, week: b.week, of: b.of };
 }
 
-/** Today's header text: `Week 3 of 6`, `Week 6 of 6 · Deload`, `Block done`; with what VoiceOver reads. */
+/**
+ * (Ben, 28 Oct) The week a move made now belongs to (`PlanDayMove.week`): 0 in the lead-in, so a day moved then
+ * never moves in week 1 too; else the block week.
+ */
+export function pbMoveWeek(b: Pick<PbBlockWeek, 'week' | 'leadIn'>): number {
+  return b.leadIn !== undefined ? 0 : b.week;
+}
+
+/** Today's header text: `Week 3 of 6`, `Week 6 of 6 · Deload`, `Block done`, `Starts Mon 2 Nov` (the lead-in); with what VoiceOver reads. */
 export function pbBlockLine(b: PbBlockWeek): { text: string; accessibilityLabel: string; deload: boolean; done: boolean } {
   if (b.done) return { text: PB_BLOCK_COPY.done, accessibilityLabel: 'Training block done', deload: false, done: true };
+  if (b.leadIn !== undefined) return { text: PB_BLOCK_COPY.starts(b.leadIn.startsOn), accessibilityLabel: `Lead-in week. Training block starts ${weekdayDayMonthLong(b.leadIn.startsOn)}`, deload: false, done: false };
   const week = PB_BLOCK_COPY.week(b.week, b.of);
   return b.deload
     ? { text: `${week} · ${PB_BLOCK_COPY.deload}`, accessibilityLabel: `Training block, week ${String(b.week)} of ${String(b.of)}, deload`, deload: true, done: false }

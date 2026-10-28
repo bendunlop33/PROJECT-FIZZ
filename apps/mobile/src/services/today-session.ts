@@ -24,6 +24,7 @@ import {
   pbMainFocus,
   pbWarmupsOf,
   pbBlockOfPlan,
+  pbMoveWeek,
   linkRefs,
   linkedRoutineId,
   pbBlockLine,
@@ -1840,7 +1841,7 @@ function weekOf(
   const setDays = builder !== null && builder.builder.answers.schedule === 'set' && running;
   if (setDays) {
     const indexes = planDays.flatMap((d) => (d.dayIndex === null ? [] : [d.dayIndex]));
-    const weekdays = pbWeekdaysOf(builder.builder.answers, plan.moves, block.week, indexes);
+    const weekdays = pbWeekdaysOf(builder.builder.answers, plan.moves, pbMoveWeek(block), indexes);
     for (const d of planDays) {
       const wd = d.dayIndex === null ? undefined : weekdays?.get(d.dayIndex);
       if (wd === undefined || doneOn[d.key] !== undefined) continue;

@@ -205,7 +205,7 @@ export function YourPlanBlock({ plan, changes, onToast }: { plan: PlanOverviewWi
   const blockKey = b === null ? '' : `${plan.planId}:${String(b.current)}:${String(b.done)}`;
   const view = planTabView({
     overview: plan,
-    block: b === null ? null : { views: b.views, current: b.current, done: b.done, editable: b.editable, actions: b.actions },
+    block: b === null ? null : { views: b.views, current: b.current, done: b.done, editable: b.editable, actions: b.actions, startsOn: b.startsOn },
     // A new block week (or another plan) opens on the current week again.
     selected: picked !== null && picked.key === blockKey ? picked.week : null,
   });

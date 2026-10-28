@@ -3,6 +3,7 @@ import {
   pbDayAsWorkout,
   pbBlockViews,
   pbKitOfEquipment,
+  pbMoveWeek,
   pbVersionOf,
   pbWeekdaysOf,
   pbWeekDaysOf,
@@ -32,7 +33,7 @@ export async function readPlanBlock(store: Store, ownerId: string, plan: PlanDra
 /** Where an edit stands: the week now and the plan days done in it; null once the block is done (Start next block). */
 export function editBlockOf(b: PbBlockWeek | null): PbEditBlock | null {
   if (b === null || b.done) return null;
-  return { week: b.week, doneThisWeek: b.daysDone[b.week - 1] ?? [] };
+  return { week: b.week, doneThisWeek: b.daysDone[b.week - 1] ?? [], ...(b.leadIn === undefined ? {} : { leadIn: true }) };
 }
 
 /** Each slot's item (by its checked equipment ID) at any of Ben's gyms, as achievable loads; null: gone or bodyweight. */
@@ -99,6 +100,7 @@ export function weekViews(input: WeekViewsInput): PbBlockView[] {
     kitOf: input.kitOf,
     nameOf: input.nameOf,
     weekOf: (w) => ({ days: daysOf(w), startReps: { ...merged, ...(startRepsOf(w) ?? {}) } }),
-    weekdaysOf: (w, idx) => pbWeekdaysOf(answers, plan.moves, w, idx),
+    // (Ben, 28 Oct) The lead-in's own moves (week 0) on the week it shows (week 1's days) while it runs.
+    weekdaysOf: (w, idx) => pbWeekdaysOf(answers, plan.moves, input.block.leadIn !== undefined && w === input.block.week ? pbMoveWeek(input.block) : w, idx),
   });
 }

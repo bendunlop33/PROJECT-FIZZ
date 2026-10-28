@@ -701,7 +701,7 @@ export function TodayScreen() {
   const cardTiles = useMemo(() => (session === null ? [] : services.todaySession.week(session, mainKind === 'done_today' ? null : chosenName)), [services, session, mainKind, chosenName]);
   // (Ben, 28 Oct) While a workout is open the card's session isn't read, but the week still is (the open workout ringed).
   const openWeek = useOpenWorkoutWeek(data.state === 'ready' ? data.value.active : null);
-  const tiles = workoutOpen ? (openWeek?.tiles ?? []) : cardTiles;
+  const tiles = useMemo(() => (workoutOpen ? (openWeek?.tiles ?? []) : cardTiles), [workoutOpen, openWeek, cardTiles]);
   const blockLine = workoutOpen ? (openWeek?.block ?? null) : (session?.block ?? null);
   const pickRows = useMemo(
     () => (session === null ? [] : todayDayRows({ days: session.days, nextKey: session.status === 'paused' ? null : session.nextKey, selectedKey: restDay === null ? selectedKey : null, today: session.localDate, doneOn: session.week.doneOn, plannedOn: Object.fromEntries(session.week.planned.map((d) => [d.key, d.localDate])) })),

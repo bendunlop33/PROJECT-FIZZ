@@ -40,8 +40,8 @@ const at = { utc: '2026-10-22T12:00:00.000Z', tz: TZ } as const;
 describe('block week (pbBlockWeekOf)', () => {
   const six = { weeks: 6 as const, effort: 'standard' as const };
 
-  it('TB1: applied Wed 14 Oct, plan workouts in the weeks of 12, 19 and 26 Oct, none 2–8 Nov: on 10 Nov it is week 4', () => {
-    const b = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [w('2026-10-15T08:00:00Z'), w('2026-10-21T08:00:00Z'), w('2026-10-28T08:00:00Z', 1)], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ });
+  it('TB1: applied Mon 12 Oct, plan workouts in the weeks of 12, 19 and 26 Oct, none 2–8 Nov: on 10 Nov it is week 4', () => {
+    const b = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-12T07:00:00.000Z', workouts: [w('2026-10-15T08:00:00Z'), w('2026-10-21T08:00:00Z'), w('2026-10-28T08:00:00Z', 1)], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ });
     expect(b).toMatchObject({ week: 4, of: 6, deload: false, done: false });
     expect(b.mondays).toEqual(['2026-10-12', '2026-10-19', '2026-10-26', '2026-11-09']);
     expect(b.daysDone).toEqual([[0], [0], [1], []]);
@@ -51,25 +51,25 @@ describe('block week (pbBlockWeekOf)', () => {
   it('the same with 2–8 Nov paused; a fully paused week with a workout in it never counts', () => {
     const pause: PlanPause = { opId: '00000000-0000-4000-8000-00000000a001', fromUtc: '2026-11-01T23:00:00.000Z', untilDate: '2026-11-09', endedAtUtc: null };
     const workouts = [w('2026-10-15T08:00:00Z'), w('2026-10-21T08:00:00Z'), w('2026-10-28T08:00:00Z')];
-    expect(pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', pauses: [pause], workouts, nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ }).week).toBe(4);
-    const paused = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', pauses: [pause], workouts: [...workouts, w('2026-11-04T08:00:00Z')], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ });
+    expect(pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-12T07:00:00.000Z', pauses: [pause], workouts, nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ }).week).toBe(4);
+    const paused = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-12T07:00:00.000Z', pauses: [pause], workouts: [...workouts, w('2026-11-04T08:00:00Z')], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ });
     expect(paused.week).toBe(4);
   });
 
   it('an empty week holds the number (nothing is missed); workouts before the plan’s first week or in the future are not counted', () => {
-    const b = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [w('2026-10-10T08:00:00Z'), w('2026-12-01T08:00:00Z')], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ });
+    const b = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-12T07:00:00.000Z', workouts: [w('2026-10-10T08:00:00Z'), w('2026-12-01T08:00:00Z')], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ });
     expect(b.week).toBe(1);
-    // (Ben, 28 Oct) A plan workout of the first week before Apply (Tue, applied Wed) counts that week: week 1 is done.
-    expect(pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [w('2026-10-13T08:00:00Z')], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ }).week).toBe(2);
+    // (Ben, 28 Oct) A plan workout of the first week counts that week: week 1 is done.
+    expect(pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-12T07:00:00.000Z', workouts: [w('2026-10-13T08:00:00Z')], nowMs: ms('2026-11-10T08:00:00Z'), tz: TZ }).week).toBe(2);
     // A deleted workout re-derives: the week goes back (never stored).
-    const before = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [w('2026-10-15T08:00:00Z')], nowMs: ms('2026-10-20T08:00:00Z'), tz: TZ });
-    const after = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: [], nowMs: ms('2026-10-20T08:00:00Z'), tz: TZ });
+    const before = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-12T07:00:00.000Z', workouts: [w('2026-10-15T08:00:00Z')], nowMs: ms('2026-10-20T08:00:00Z'), tz: TZ });
+    const after = pbBlockWeekOf({ answers: six, appliedAtUtc: '2026-10-12T07:00:00.000Z', workouts: [], nowMs: ms('2026-10-20T08:00:00Z'), tz: TZ });
     expect([before.week, after.week]).toEqual([2, 1]);
   });
 
   it('deload weeks: Standard the last week, Push every 4th, Maintain none; done past the last week', () => {
     const weekly = (n: number) => Array.from({ length: n }, (_, i) => w(new Date(ms('2026-10-15T08:00:00Z') + i * 7 * 86_400_000).toISOString()));
-    const atWeek = (effort: 'standard' | 'push' | 'maintain', weeks: 4 | 6 | 8 | 12, done: number) => pbBlockWeekOf({ answers: { weeks, effort }, appliedAtUtc: '2026-10-14T09:00:00.000Z', workouts: weekly(done), nowMs: ms('2026-10-15T09:00:00Z') + done * 7 * 86_400_000, tz: TZ });
+    const atWeek = (effort: 'standard' | 'push' | 'maintain', weeks: 4 | 6 | 8 | 12, done: number) => pbBlockWeekOf({ answers: { weeks, effort }, appliedAtUtc: '2026-10-12T07:00:00.000Z', workouts: weekly(done), nowMs: ms('2026-10-15T09:00:00Z') + done * 7 * 86_400_000, tz: TZ });
     expect(atWeek('standard', 6, 5)).toMatchObject({ week: 6, deload: true });
     expect(pbBlockLine(atWeek('standard', 6, 5)).text).toBe('Week 6 of 6 · Deload');
     expect(atWeek('standard', 6, 4)).toMatchObject({ week: 5, deload: false });
@@ -90,7 +90,7 @@ describe('block week (pbBlockWeekOf)', () => {
       status: 'applied' as const,
       versions: [version],
       currentVersion: 1,
-      applied: { mode: 'replace' as const, versionN: 1, opId: '00000000-0000-4000-8000-00000000b002', atUtc: '2026-10-14T09:00:00.000Z', made: [{ dayIndex: 1, routineId: 'r-pull', version: 1 }], rotationOff: [] },
+      applied: { mode: 'replace' as const, versionN: 1, opId: '00000000-0000-4000-8000-00000000b002', atUtc: '2026-10-12T07:00:00.000Z', made: [{ dayIndex: 1, routineId: 'r-pull', version: 1 }], rotationOff: [] },
       pauses: [],
     };
     const refs = [

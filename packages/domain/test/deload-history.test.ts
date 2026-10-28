@@ -212,13 +212,13 @@ describe('Start stamps the plan’s deload week (pbDeloadAtStart, session servic
   const TZL = 'Europe/London';
   const a = answers({ split: 'ppl', sessions: 3, days: [0, 2, 4], weeks: 6, effort: 'standard' });
   const plan = buildPlanFromAnswers({ answers: a, profileSplit: null, kitOf: KIT_OF, historyOf: HISTORY_OF, nowMs: NOW });
-  const version = pbPlanVersion({ plan, answers: a, kitOf: KIT_OF, gymId: null, equipmentVersion: 'v', opId: '00000000-0000-4000-8000-00000000c001', at: { utc: '2026-10-14T09:00:00.000Z', tz: TZL }, planId: 'plan-d' });
+  const version = pbPlanVersion({ plan, answers: a, kitOf: KIT_OF, gymId: null, equipmentVersion: 'v', opId: '00000000-0000-4000-8000-00000000c001', at: { utc: '2026-10-12T07:00:00.000Z', tz: TZL }, planId: 'plan-d' });
   const applied = {
     id: 'plan-d',
     status: 'applied' as const,
     versions: [version],
     currentVersion: 1,
-    applied: { mode: 'replace' as const, versionN: 1, opId: '00000000-0000-4000-8000-00000000c002', atUtc: '2026-10-14T09:00:00.000Z', made: [], rotationOff: [] },
+    applied: { mode: 'replace' as const, versionN: 1, opId: '00000000-0000-4000-8000-00000000c002', atUtc: '2026-10-12T07:00:00.000Z', made: [], rotationOff: [] },
     pauses: [],
   };
   /** One plan workout a week for `weeks` weeks from Thu 15 Oct. */

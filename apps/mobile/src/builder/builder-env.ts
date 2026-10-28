@@ -99,7 +99,7 @@ export interface BuilderEnv {
   /** (Ben, 23 Oct; §2.9) The plan's main focus, else his goal's (`pbMainFocus`), for Coach review. */
   mainFocus: MainFocus;
   /** (Ben, 23 Oct; §2.9) The applied builder plan's block week (`Week 3 of 6`); null: no builder plan, or paused. */
-  block: { week: number; of: number; deload: boolean } | null;
+  block: { week: number; of: number; deload: boolean; /** (Ben, 28 Oct) The lead-in week: the Monday week 1 starts. */ startsOn?: string } | null;
 }
 
 export interface BuilderEnvRequest {
@@ -403,7 +403,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
       gymId: req.gymId,
       unit: p.preferredUnit,
       mainFocus,
-      block: block === null || block.done || activePause(appliedPlan, nowMs, p.timezone) !== null ? null : { week: block.week, of: block.of, deload: block.deload },
+      block: block === null || block.done || activePause(appliedPlan, nowMs, p.timezone) !== null ? null : { week: block.week, of: block.of, deload: block.deload, ...(block.leadIn === undefined ? {} : { startsOn: block.leadIn.startsOn }) },
     };
   };
 }
