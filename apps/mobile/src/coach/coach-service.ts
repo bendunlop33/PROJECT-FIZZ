@@ -101,6 +101,8 @@ import {
   type StructuralDeps,
   type TrainingReadPort,
   type CoachModelPort,
+  type CoachTurnStore,
+  type TurnLifecycle,
   type CoachTurnProgress,
   type CoachTurnResult,
   type ContextDescription,
@@ -217,7 +219,8 @@ import {
   type HistoryWorkout,
   missingEquipmentNoun,
 } from '@fizz/domain';
-import type { CandidateWrite, MemoryWrite, SqliteRepositories, Store } from '@fizz/persistence';
+import { TurnAlreadyRunningError, type CandidateWrite, type MemoryWrite, type SqliteRepositories, type Store } from '@fizz/persistence';
+import { createRunningTurns, type TurnScope } from './running-turns';
 import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
 
 import { summaryNoteSentences } from './next-time-view';
@@ -483,6 +486,16 @@ export interface CoachServiceDeps {
    * Absent: nothing landed, so nothing to take back.
    */
   nextWorkout?: { revert(applyActionId: string, check: boolean): Promise<boolean> };
+  /**
+   * (Ben, 28 Oct) The app's foreground state (`AppState`): time in the background doesn't count towards a turn's
+   * time limits, and a stream lost there is retried once on return. Absent: plain timers.
+   */
+  lifecycle?: TurnLifecycle;
+}
+
+/** (Ben, 28 Oct) The thread a turn lands in before it has one: a workout's (its summary's too) or the general one. */
+export function coachScopeOf(entry: CoachEntry): TurnScope {
+  return isGeneralEntry(entry) ? 'general' : `session:${entry.sessionId}`;
 }
 
 /** (Ben, 20 Oct) An activity the coach offered: `Log` while open; once logged, its record (Undo on it). */
@@ -558,6 +571,10 @@ export function createCoachService(deps: CoachServiceDeps) {
   const repos = (): SqliteRepositories => deps.store().repos;
   const coachStore = () => repos().coach;
   const running = new Map<string, AbortController>();
+  /** (Ben, 28 Oct) Turns running in this app run, by thread, with what each has shown: a sheet reopened attaches to it. */
+  const turns = createRunningTurns();
+  /** A double-tapped Send (the same turn ID) gets the one turn's result. */
+  const inFlight = new Map<string, Promise<CoachTurnResult>>();
   const summaryRuns = new Map<string, Promise<CoachTurnResult | null>>();
   const offerLogs = new Map<string, OfferLogEntry[]>();
   const offerQueues = new Map<string, Promise<unknown>>();
@@ -1604,7 +1621,57 @@ export function createCoachService(deps: CoachServiceDeps) {
     return { store: coachStore(), tz: p.timezone, onDate: (date) => repos().activities.listBetween(p.id, date, addDays(date, 1)) };
   }
 
-  async function send(req: SendRequest): Promise<CoachTurnResult> {
+  /**
+   * (Ben, 28 Oct) One turn per thread: refused (`CoachTurnBusyError`) while another runs on it. The turn belongs
+   * to the service: closing the sheet doesn't stop it, and its progress is kept in `turns` for a sheet to attach to.
+   */
+  function send(req: SendRequest): Promise<CoachTurnResult> {
+    const same = inFlight.get(req.turnId);
+    if (same !== undefined) return same;
+    try {
+      turns.start({ turnId: req.turnId, threadId: req.threadId, scope: coachScopeOf(req.entry), input: req.input, startedAtMs: toMs(deps.now().utc) });
+    } catch (e) {
+      return Promise.reject(e instanceof Error ? e : new Error(String(e)));
+    }
+    const stop = new AbortController();
+    running.set(req.turnId, stop);
+    let threadId: string | null = null;
+    const run = runSend(req, stop)
+      .then((r) => {
+        threadId = r.threadId;
+        return r;
+      })
+      .finally(() => {
+        running.delete(req.turnId);
+        inFlight.delete(req.turnId);
+        turns.finish(req.turnId, threadId);
+      });
+    inFlight.set(req.turnId, run);
+    return run;
+  }
+
+  /** The coach store as one turn uses it: its thread is noted when saved; a turn left `running` by no app run is `interrupted` first. */
+  function turnStore(turnId: string): CoachTurnStore {
+    const s = coachStore();
+    return {
+      getThread: (id) => s.getThread(id),
+      listMessages: (id) => s.listMessages(id),
+      appendMessage: (m) => s.appendMessage(m),
+      updateTurn: (id, patch, at) => s.updateTurn(id, patch, at),
+      listTurnActions: (id) => s.listTurnActions(id),
+      async startTurn(input) {
+        const started = await s.startTurn(input).catch(async (e: unknown) => {
+          if (!(e instanceof TurnAlreadyRunningError) || running.has(e.runningTurnId)) throw e;
+          await s.interruptTurn(e.runningTurnId, deps.now().utc);
+          return s.startTurn(input);
+        });
+        turns.setThread(turnId, input.thread.id);
+        return started;
+      },
+    };
+  }
+
+  async function runSend(req: SendRequest, stop: AbortController): Promise<CoachTurnResult> {
     const p = await owner();
     const a = await availability();
     if (a.status !== 'ok' && a.status !== 'offline') throw new Error(`The coach isn't available (${a.status}).`);
@@ -1691,8 +1758,6 @@ export function createCoachService(deps: CoachServiceDeps) {
     // (Ben, 20 Oct) Lift targets on: the coach may set one Ben asks for (the turn checks he asked).
     const liftTargetsOn = (kind === 'general' || kind === 'workout') && deps.liftTargets !== undefined && (await deps.liftTargets.on().catch(() => false));
     if (liftTargetsOn && deps.liftTargets !== undefined) Object.assign(executors, createLiftTargetExecutors({ store: coachStore(), prepare: deps.liftTargets.prepare }));
-    const stop = new AbortController();
-    running.set(req.turnId, stop);
     try {
       const result = await runCoachTurn(
         {
@@ -1716,15 +1781,19 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(liftTargetsOn ? { liftTargetsOn: true } : {}),
           ...(weekView?.needsReshape === true ? { weekOpen: true } : {}),
           signal: stop.signal,
-          ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
+          onProgress: (progress: CoachTurnProgress) => {
+            turns.progress(req.turnId, progress);
+            req.onProgress?.(progress);
+          },
         },
         // A build turn has the whole-build cap (BD13) on top of the first-event and stall timeouts.
         {
           model,
-          store: coachStore(),
+          store: turnStore(req.turnId),
           executors,
           now: deps.now,
           newId: deps.newId,
+          ...(deps.lifecycle === undefined ? {} : { lifecycle: deps.lifecycle }),
           ...(build?.inPlay === true ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : kind === 'workout' ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_WORKOUT_TIMEOUT_MS } } : {}),
           // Coach v3: Adjust on an offered edit applies exactly that offer (no model call); stale when the workout moved on.
           ...(kind === 'workout' && session !== null ? { acceptOffer: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptEditOffer(editDepsFor(p, session, ctx.gymName, ctx.checkIn), proposal, c) } : {}),
@@ -1732,7 +1801,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(liftTargetsOn ? { acceptLiftTarget: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptLiftTargetOffer(coachStore(), proposal, c) } : {}),
         },
       );
-      if (result.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
+      // (Ben, 28 Oct) A stream lost while the app was in the background (`interrupted`) says nothing about the network.
+      if (result.error === 'network' && result.status === 'failed') lastNetworkFailureMs = toMs(deps.now().utc);
       else if (result.status === 'completed') lastNetworkFailureMs = null;
       if (session !== null && result.cards.some((c) => (c.record.detail.kind === 'adjust_pending_sets' || c.record.detail.kind === 'add_exercise_today' || c.record.detail.kind === 'edit_today' || c.record.detail.kind === 'rename_workout') && c.record.status === 'committed')) {
         const fresh = await repos().sessions.get(session.session.id).catch(() => null);
@@ -1846,6 +1916,9 @@ export function createCoachService(deps: CoachServiceDeps) {
     },
 
     isRunning: (turnId: string): boolean => running.has(turnId),
+
+    /** (Ben, 28 Oct) The turns running in this app run: a sheet attaches to the one on its thread and follows it. */
+    running: { runningOn: turns.runningOn, get: turns.get, subscribe: turns.subscribe },
 
     /** (Ben, 20 Oct) An activity the coach offered: open, or the record of Ben's `Log` (with Undo). */
     async activityOffer(actionId: string): Promise<ActivityOfferState> {

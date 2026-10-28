@@ -98,6 +98,35 @@ export const COACH_BUILD_TIMEOUT_MS = 60_000;
 
 export const DEFAULT_COACH_TIMING: CoachTiming = { firstEventMs: 20_000, stallMs: 20_000 };
 
+/** (Ben, 28 Oct) The turn's timers: the app's own, which stop counting while it is in the background. */
+export interface TurnTimers {
+  set(fn: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+/** Plain timers: always counting. */
+export const PLAIN_TURN_TIMERS: TurnTimers = {
+  set: (fn, ms) => setTimeout(fn, ms),
+  clear: (handle) => {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
+};
+
+/**
+ * (Ben, 28 Oct: "it stops 'running' if I move away") The app's foreground state as a turn sees it. Time in the
+ * background doesn't count towards the first-event, stall and whole-turn limits (`timers`); a step whose stream
+ * failed while the app was away runs once more when it is back (nothing committed yet), and one that can't is
+ * `interrupted`, not a network failure.
+ */
+export interface TurnLifecycle {
+  timers: TurnTimers;
+  /** Counts each time the app left the foreground. */
+  backgroundCount(): number;
+  isActive(): boolean;
+  /** Resolves when the app is in the foreground (at once if it is) or the signal aborts. */
+  whenActive(signal: AbortSignal): Promise<void>;
+}
+
 /** The store as the turn uses it (`SqliteCoachStore` implements it). */
 export interface CoachTurnStore {
   getThread(threadId: string): Promise<CoachThread | null>;
@@ -125,6 +154,8 @@ export interface CoachTurnPorts {
    * (`acceptLiftTargetOffer`), when Ben taps Apply or says a bare "yes". Absent: never applied.
    */
   acceptLiftTarget?: (proposal: ActionRecord, ctx: { ownerId: string; turnId: string; now: ZonedTimestamp }) => Promise<ToolResult>;
+  /** (Ben, 28 Oct) The app's foreground state and timers. Absent: plain timers, always in the foreground. */
+  lifecycle?: TurnLifecycle;
 }
 
 export interface CoachTurnRequest {
@@ -517,8 +548,9 @@ export async function runModelStep(
   request: Parameters<CoachModelPort['stream']>[0],
   timing: CoachTiming,
   outer: AbortSignal | undefined,
-  hooks: { onFirstEvent?: () => void; onReplyDelta?: (delta: string) => void } = {},
+  hooks: { onFirstEvent?: () => void; onReplyDelta?: (delta: string) => void; timers?: TurnTimers } = {},
 ): Promise<StepOutcome> {
+  const timers = hooks.timers ?? PLAIN_TURN_TIMERS;
   const controller = new AbortController();
   const onOuter = (): void => {
     controller.abort();
@@ -532,10 +564,10 @@ export async function runModelStep(
   let first = true;
   try {
     for (;;) {
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      let timer: unknown;
       const limit = first ? timing.firstEventMs : timing.stallMs;
       const timeout = new Promise<'timeout'>((resolve) => {
-        timer = setTimeout(() => {
+        timer = timers.set(() => {
           resolve('timeout');
         }, limit);
       });
@@ -550,7 +582,7 @@ export async function runModelStep(
         );
       });
       const next = await Promise.race([iterator.next(), timeout, cancelled]);
-      clearTimeout(timer);
+      timers.clear(timer);
       if (next === 'timeout') {
         controller.abort();
         return { kind: 'error', error: 'timeout' };
@@ -872,6 +904,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   let liftOffered = false;
   let error: CoachTurnError | null = null;
   let failure: ModelFailureDetail | null = null;
+  /** (Ben, 28 Oct) The turn's last step failed because the app was in the background: `interrupted`, never `Offline`. */
+  let lostInBackground = false;
   let refCount = 0;
   // Build 131: on a build turn the model answered in text instead of calling `propose_workout`. It gets
   // one more step with the reason; its text reply isn't shown or streamed until a build was tried.
@@ -957,10 +991,12 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // The whole-turn cap (BD13): when it fires the running step is stopped and the turn ends as a timeout.
   const cap = new AbortController();
   const capped = { fired: false };
+  const lifecycle = ports.lifecycle;
+  const timers = lifecycle?.timers ?? PLAIN_TURN_TIMERS;
   const capTimer =
     timing.totalMs === undefined
       ? undefined
-      : setTimeout(() => {
+      : timers.set(() => {
           capped.fired = true;
           cap.abort();
         }, timing.totalMs);
@@ -985,6 +1021,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       replyStream = new ReplyMessageStream();
       const stream = replyStream;
       return runModelStep(ports.model, { model: stepModel(), instructions, input, tools, toolChoice, parallelToolCalls: false, effort: stepEffort() }, timing, cap.signal, {
+        timers,
         onFirstEvent,
         onReplyDelta: (delta) => {
           if (holdReply) return;
@@ -993,11 +1030,25 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
         },
       });
     };
+    let since = lifecycle?.backgroundCount() ?? 0;
     let out = await runStep();
+    // (Ben, 28 Oct) The stream failed while the app was in the background (iOS drops it): this step runs once more
+    // when the app is back, as below, unless this turn already committed a change (Ben then sees it and asks again).
+    const lostAway = (o: StepOutcome, from: number): boolean => lifecycle !== undefined && o.kind === 'error' && (o.error === 'network' || o.error === 'timeout' || o.transient === true) && !cap.signal.aborted && (lifecycle.backgroundCount() !== from || !lifecycle.isActive());
+    const committedYet = (): boolean => entries.some((e) => e.origin === 'this_turn' && e.record.status === 'committed');
+    if (lifecycle !== undefined && lostAway(out, since) && replyStream.streamed === '' && !committedYet()) {
+      await lifecycle.whenActive(cap.signal);
+      since = lifecycle.backgroundCount();
+      out = cap.signal.aborted ? { kind: 'error', error: 'cancelled' } : await runStep();
+    }
     // 21 Oct: a temporary failure (5xx, 503, a dropped stream or connection) gets this step once more. Nothing of the
     // step ran: a tool runs only after its step ends, and none of its reply was shown. Earlier steps' results are in
     // the input, so nothing is applied twice (and a repeated write is the same op ID, rule 5).
-    if (out.kind === 'error' && out.transient === true && replyStream.streamed === '' && !cap.signal.aborted) out = await runStep();
+    else if (out.kind === 'error' && out.transient === true && replyStream.streamed === '' && !cap.signal.aborted && !lostAway(out, since)) {
+      since = lifecycle?.backgroundCount() ?? 0;
+      out = await runStep();
+    }
+    lostInBackground = lostAway(out, since);
     if (out.kind === 'error') {
       const why = out.error === 'cancelled' && capped.fired ? 'timeout' : out.error;
       // The route refused the forced call (a rejected named tool_choice surfaces as `unavailable` or, 21 Oct, a
@@ -1126,7 +1177,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     if (askedQuestion) break;
   }
 
-  clearTimeout(capTimer);
+  if (capTimer !== undefined) timers.clear(capTimer);
   req.signal?.removeEventListener('abort', onStop);
   if (offeredInstead && error === null && liveWorkout) offer = 'adjust_today';
   if (liftOffered && error === null && offer === null) offer = 'lift_target';
@@ -1142,7 +1193,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     emit(filter.end(false));
   }
   const cancelled = error === 'cancelled';
-  const status: CoachTurnStatus = error === null ? 'completed' : cancelled ? 'cancelled' : 'failed';
+  const status: CoachTurnStatus = error === null ? 'completed' : cancelled ? 'cancelled' : lostInBackground ? 'interrupted' : 'failed';
   const thisTurn = entries.filter((e) => e.origin === 'this_turn').map((e) => e.record);
   const cards = thisTurn.map((record) => ({ record, rendered: renderActionResult(record, req.surface) }));
   let note = message === null ? null : (filter.note()?.text ?? null);

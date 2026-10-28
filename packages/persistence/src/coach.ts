@@ -289,6 +289,21 @@ export interface NextTargetStatusWrite {
 
 export type NextTargetStatusResult = { status: 'written' | 'replayed'; row: NextSessionTargetRecord } | { status: 'not_possible'; reason: 'missing' | 'changed_since' | 'used' };
 
+/**
+ * (Ben, 28 Oct) `startTurn` on a thread with another turn still `running`: one turn per thread. A turn left
+ * `running` by a force-close is made `interrupted` at launch (`recoverInterruptedTurns`); the app does the same
+ * for one it finds here that isn't running in this app run, then starts again.
+ */
+export class TurnAlreadyRunningError extends Error {
+  constructor(
+    readonly threadId: string,
+    readonly runningTurnId: string,
+  ) {
+    super(`Thread ${threadId} already has a turn running (${runningTurnId})`);
+    this.name = 'TurnAlreadyRunningError';
+  }
+}
+
 export class SqliteCoachStore {
   constructor(private readonly db: Database) {}
 
@@ -312,6 +327,8 @@ export class SqliteCoachStore {
       } else {
         const current = await getDoc(tx, COACH_THREAD_SPEC, input.thread.id);
         if (current === null) throw new Error(`Thread ${input.thread.id} doesn't exist`);
+        const busy = await tx.getFirst<{ id: string }>("SELECT id FROM coach_turns WHERE thread_id = ? AND status = 'running' AND id <> ? LIMIT 1", [input.thread.id, input.turn.id]);
+        if (busy !== null) throw new TurnAlreadyRunningError(input.thread.id, busy.id);
         await saveDocumentIn(tx, COACH_THREAD_SPEC, { ...current, version: current.version + 1, updatedAtUtc: input.turn.updatedAtUtc }, current.version);
       }
       const saved = await saveDocumentIn(tx, COACH_TURN_SPEC, input.turn, null);
@@ -373,6 +390,17 @@ export class SqliteCoachStore {
         out.push(next);
       }
       return out;
+    });
+  }
+
+  /** (Ben, 28 Oct) One turn left `running` that isn't running any more (no app run owns it): `interrupted`. */
+  interruptTurn(turnId: string, atUtc: string): Promise<CoachTurn | null> {
+    return this.db.write(async (tx) => {
+      const t = await getDoc(tx, COACH_TURN_SPEC, turnId);
+      if (t === null || t.status !== 'running') return t;
+      const next: CoachTurn = { ...t, status: 'interrupted', endedAtUtc: atUtc, version: t.version + 1, updatedAtUtc: atUtc };
+      await saveDocumentIn(tx, COACH_TURN_SPEC, next, t.version);
+      return next;
     });
   }
 
