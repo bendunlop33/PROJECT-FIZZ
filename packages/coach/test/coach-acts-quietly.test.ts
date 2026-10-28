@@ -43,7 +43,7 @@ function live(s: Store): CoachExecutors {
 
 const ctx = (session: SessionAggregate) => ({ session, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] });
 const t = (value: number, reps: number) => ({ load: kg(value), reps: { min: reps, max: reps }, rpe: null });
-const outputs = (req: { input: readonly { type: string }[] } | undefined): string[] => (req?.input ?? []).flatMap((i) => (i.type === 'function_call_output' ? [(i as { output: string }).output] : []));
+const outputs = (req: { input: readonly { type: string }[] } | undefined): string[] => (req?.input ?? []).flatMap((i) => (i.type === 'function_call_output' ? [(i as unknown as { output: string }).output] : []));
 
 describe('the same tools from every entry point (Today, Progress, Plan)', () => {
   it('a general turn with today’s live workout offers edit_today; "add a set to bench" applies with Undo; the thread stays general', async () => {

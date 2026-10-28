@@ -249,7 +249,7 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
     if (equipment === null && p.load !== null && !timed) return { ...p, load: { ...p.load, convention: rowConvention } };
     let load: Load | null = f === undefined || f.outcome === 'dropped' ? null : f.load;
     // ADR 0038: Ben's own weight stays as he typed it; only a machine's max (`capped`) or a pain hold moves it.
-    if (input.benNamed === true && p.load !== null && f !== undefined && load !== null && f.outcome !== 'capped' && f.painHeld !== true && p.load.unit === unit && load.convention === rowConvention) load = { ...load, value: p.load.value };
+    if (input.benNamed === true && p.load !== null && f !== undefined && load !== null && f.outcome !== 'capped' && !f.painHeld && p.load.unit === unit && load.convention === rowConvention) load = { ...load, value: p.load.value };
     if (p.load !== null && load === null) dropped += 1;
     if (load !== null && (load.unit !== unit || load.convention !== rowConvention)) {
       load = null;

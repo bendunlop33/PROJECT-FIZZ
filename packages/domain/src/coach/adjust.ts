@@ -401,9 +401,9 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
      * target RPE is what a coach `rpe` is compared with.
      */
     /** ADR 0038: whether the last `resolve` kept a load Ben named as typed. */
-    let typed = false;
+    const typed = { last: false };
     const resolve = (before: CoachTarget | null, ask: CoachTarget, setIds: string[], set: WorkoutSet): CoachTarget | null => {
-      typed = false;
+      typed.last = false;
       let load = before?.load ?? null;
       // Snap notes only count when the change is kept.
       const pending: { kind: GuardNoteKind; text: string }[] = [];
@@ -427,7 +427,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
         if (snapped.note) pending.push(snapped.note);
         if (snapped.extra) pending.push(snapped.extra);
         load = snapped.load;
-        typed = mine;
+        typed.last = mine;
       }
       let reps = before?.reps ?? null;
       if (ask.reps !== null) {
@@ -492,7 +492,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       const before = targetOf(set);
       const after = resolve(before, change.target, [set.id], set);
       if (after === null || sameTarget(before, after)) continue;
-      if (typed && after.load !== null && after.load !== before.load) asTyped.push(set.id);
+      if (typed.last && after.load !== null) asTyped.push(set.id);
       changes.push({ setId: set.id, setNumber: n, before, after });
       touched.push(set.id);
     }
@@ -529,7 +529,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
           const after = resolve(targetOf(template), req.addSet, [], template);
           if (after !== null) {
             const liveCount = sets.length - (removed === null ? 0 : 1);
-            if (typed) asTyped.push(deriveId(`coach-add-set:${input.opId}:${ex.id}`));
+            if (typed.last) asTyped.push(deriveId(`coach-add-set:${input.opId}:${ex.id}`));
             added = {
               setId: deriveId(`coach-add-set:${input.opId}:${ex.id}`),
               setNumber: liveCount + 1,
@@ -558,7 +558,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
           const resolved = resolve(targetOf(template), t, [], template);
           const after = resolved ?? targetOf(template);
           const setId = deriveId(`coach-add-set:${input.opId}:${ex.id}:${String(i + 1)}`);
-          if (resolved !== null && typed) asTyped.push(setId);
+          if (resolved !== null && typed.last) asTyped.push(setId);
           addedMore.push({ setId, setNumber: liveCount + 1 + i, copyFromSetId: template.id, after });
         }
         touched.push(template.id);

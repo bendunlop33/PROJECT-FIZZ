@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type EditTodayArgs, type EditTodayOp, type Exercise, type Load, type PainFlag, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
-import { isLoadAchievable, namedWeights, planCoachEdit, reduceSession, snapLoad, startWorkout, type CoachEditExerciseInputs, type CoachEditInput } from '../src/index';
+import { isLoadAchievable, namedWeights, planCoachEdit, snapLoad, startWorkout, type CoachEditExerciseInputs, type CoachEditInput } from '../src/index';
 import { assisted, at, barbell, dumbbells, exercise, GYM, id, kg, OWNER, profile, stack, TZ } from './fixtures';
 import { apply, BENCH, FACE, setsFor, startFixture } from './session-fixture';
 

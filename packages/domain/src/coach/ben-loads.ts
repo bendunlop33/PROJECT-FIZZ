@@ -33,7 +33,7 @@ export function namedWeights(text: string | null | undefined): BenLoad[] {
   };
   for (const m of text.matchAll(NUMBER)) {
     const raw = m[1];
-    if (raw === undefined || m.index === undefined) continue;
+    if (raw === undefined) continue;
     const value = Number(raw);
     if (!Number.isFinite(value) || value <= 0 || value > 2000) continue;
     const before = text.slice(Math.max(0, m.index - 12), m.index);
