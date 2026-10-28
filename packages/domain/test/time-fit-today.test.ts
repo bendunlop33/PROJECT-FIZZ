@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type BuilderGroup, type Exercise, type SessionAggregate, type WorkoutSet } from '@fizz/schemas';
-import { fitTodayCommand, reduceSession, startWorkout, timeFitLineText, timeFitOffer, undoableTimeFit, type BuilderExerciseInfo, type TimeFitOffer } from '../src/index';
+import { fitTodayCommand, reduceSession, startWorkout, STANDARD_REST_DEFAULTS, timeFitLineText, timeFitOffer, undoableTimeFit, type BuilderExerciseInfo, type TimeFitOffer } from '../src/index';
 import { at, barbell, dumbbells, exercise, GYM, idGen, kg, lb, profile, routine, routineExercise, stack, template, values } from './fixtures';
 import { apply, BENCH as SS_BENCH, expectError, expectOk, FACE, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -490,5 +490,17 @@ describe('rule F (Ben, 27 Oct): the arm isolation goes first on a day whose main
     expect(n).toBeDefined();
     const plain = offer(s, n ?? 0);
     expect(plain.lines.some((l) => l.kind === 'drop' && l.sessionExerciseId === raise)).toBe(false);
+  });
+});
+
+describe('+N min with Ben’s Rest times (Ben, 28 Oct)', () => {
+  const lines = (o: TimeFitOffer) => o.lines.map(timeFitLineText);
+  it('the levels scale from his isolation default (1:15: Medium 1:00, Minimum 0:45); the main lift never moves', () => {
+    const s = underWay();
+    const restDefaultsS = { ...STANDARD_REST_DEFAULTS, workingIsolation: 75 };
+    const at3 = (fitRestLevel: 'shorter' | 'shortest') => timeFitOffer({ aggregate: s, overByMinutes: 3, info, fitRestLevel, restDefaultsS });
+    expect(at3('shortest').lines.filter((l) => l.kind === 'rest').map(timeFitLineText)).toEqual(['Lateral raise rest 1:30 → 0:45', 'Cable fly rest 1:30 → 0:45', 'Cable crunch rest 1:30 → 0:45']);
+    expect(at3('shorter').lines.filter((l) => l.kind === 'rest').map(timeFitLineText)).toEqual(['Lateral raise rest 1:30 → 1:00', 'Cable fly rest 1:30 → 1:00', 'Cable crunch rest 1:30 → 1:00']);
+    for (const o of [at3('shorter'), at3('shortest')]) expect(lines(o).some((t) => t.startsWith('Bench press'))).toBe(false);
   });
 });

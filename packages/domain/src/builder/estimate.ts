@@ -1,5 +1,5 @@
 import { WARMUP_REP_S, warmupTimeS } from '../warmup/plan';
-import { restAfterRows, roundRestOf } from './rest';
+import { restAfterRows, roundRestOf, type RestDefaults } from './rest';
 import type { BuilderBlock, BuilderInfoLookup, BuilderSlot, BuilderWorkout } from './types';
 
 /**
@@ -26,6 +26,8 @@ const T = BUILDER_TIME;
 export interface EstimateContext {
   info: BuilderInfoLookup;
   restPresetsS?: readonly number[];
+  /** (Ben, 28 Oct) Ben's default rests (Profile › Rest times); absent: the standard ones. */
+  restDefaultsS?: RestDefaults;
 }
 
 /**
@@ -40,7 +42,7 @@ function warmupSeconds(slot: BuilderSlot, ctx: EstimateContext, w: BuilderWorkou
   const steps = idx.map((i) => ({ load: slot.rows[i]?.load ?? 0, reps: slot.rows[i]?.reps ?? 0 }));
   const own = slot.restS?.warmup;
   const ladder = own === undefined ? warmupTimeS(steps) : steps.reduce((m, s) => m + s.reps * WARMUP_REP_S, 0) + own * (steps.length - 1);
-  return ladder + (restAfterRows(slot, ctx.info, w.restLevel, ctx.restPresetsS)[last] ?? 0);
+  return ladder + (restAfterRows(slot, ctx.info, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS)[last] ?? 0);
 }
 
 /**
@@ -57,11 +59,11 @@ export function blockSeconds(block: BuilderBlock, w: BuilderWorkout, ctx: Estima
   const timed = block.slots.reduce((m, s) => m + timedExtraS(s), 0);
   const only = block.slots.length === 1 ? block.slots[0] : undefined;
   if (only !== undefined) {
-    const rests = restAfterRows(only, ctx.info, w.restLevel, ctx.restPresetsS);
+    const rests = restAfterRows(only, ctx.info, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS);
     return warm + timed + only.rows.reduce((m, r, i) => (r.type === 'warmup' ? m : m + T.setS + (rests[i] ?? 0)), 0);
   }
   const rounds = Math.max(0, ...block.slots.map((s) => s.rows.filter((r) => r.type !== 'warmup').length));
-  return warm + timed + rounds * (T.setS * block.slots.length + roundRestOf(block, w.restLevel, ctx.restPresetsS));
+  return warm + timed + rounds * (T.setS * block.slots.length + roundRestOf(block, w.restLevel, ctx.restPresetsS, ctx.restDefaultsS));
 }
 
 /** Estimated seconds for the whole workout; 0 when it's empty. */

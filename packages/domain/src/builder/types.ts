@@ -1,6 +1,7 @@
 import type { BuilderGroup, DraftLoadSource, EquipmentInstance, LoadConvention, PlanWarmups, SetType, WeightUnit } from '@fizz/schemas';
 import type { RuleReps } from '../rep-range';
 import type { WarmupExerciseFacts } from '../warmup/plan';
+import type { RestDefaults } from './rest';
 
 /**
  * Workout builder v3 (docs/design/workout-builder-v3.md, slice S2): the
@@ -313,6 +314,8 @@ export interface BuilderContext {
   loads: (exerciseId: string) => SlotLoadInput;
   /** Ben's saved rest presets (seconds); defaults snap to the nearest. */
   restPresetsS?: readonly number[];
+  /** (Ben, 28 Oct) Profile › Rest times: Ben's default rests (`restDefaultsOf`). Absent: the standard ones. */
+  restDefaultsS?: RestDefaults;
   /** Stable key for a new slot (injected so the rules stay pure and deterministic). */
   newKey: (exerciseId: string) => string;
   /**

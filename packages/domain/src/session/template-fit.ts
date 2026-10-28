@@ -1,7 +1,7 @@
 import type { RoutineExercise, SetTemplate } from '@fizz/schemas';
 
 import { FIT_RULES, FIT_SET_VALUE, clampMinutes, type BuilderFitStep } from '../builder/fit';
-import { BUILDER_REST_LEVELS } from '../builder/rest';
+import { restTableOf, type RestDefaults } from '../builder/rest';
 
 /**
  * (Ben, 26 Oct; app review finding 6) The one editor's `Time` control: a saved workout or plan day has no length of
@@ -9,7 +9,7 @@ import { BUILDER_REST_LEVELS } from '../builder/rest';
  * (`fitToMinutes`), as edits on the page that Ben then saves (or Cancels). Nothing is written here.
  *
  * Shorter, only as far as needed:
- *   (a) shorter rests on the accessories' working sets (`BUILDER_REST_LEVELS.shorter`: compound 1:30, isolation 1:15;
+ *   (a) shorter rests on the accessories' working sets (`restTableOf('shorter')` from Ben's Rest times; standard: compound 1:30, isolation 1:15;
  *       a rest already shorter stays);
  *   (b) the least training lost: one working set off an accessory (never below 2), or an accessory at 2 sets left
  *       out, each time the cut that loses least value per second saved (`FIT_SET_VALUE`: compound 3, abs 2.5,
@@ -29,6 +29,8 @@ export interface TemplateFitInput {
   isCore: (exerciseId: string) => boolean;
   /** The rest a working set gets when nothing on the exercise says otherwise (the editor's global default). */
   defaultRestS: number;
+  /** (Ben, 28 Oct) Ben's default rests (Profile › Rest times): the shorter level scales from them. Absent: standard. */
+  restDefaultsS?: RestDefaults;
   /** The template's estimated length, in seconds. */
   estimateS: (exercises: readonly RoutineExercise[]) => number;
   newId: () => string;
@@ -68,8 +70,9 @@ function withOneMoreWorking(e: RoutineExercise, newId: () => string): RoutineExe
 }
 
 /** Shorter rests on an accessory's working sets; null when nothing on it is longer than the shorter level. */
-function withShorterRests(e: RoutineExercise, compound: boolean, defaultRestS: number): RoutineExercise | null {
-  const to = compound ? BUILDER_REST_LEVELS.shorter.workingCompound : BUILDER_REST_LEVELS.shorter.workingIsolation;
+function withShorterRests(e: RoutineExercise, compound: boolean, defaultRestS: number, defaults?: RestDefaults): RoutineExercise | null {
+  const shorter = restTableOf('shorter', defaults);
+  const to = compound ? shorter.workingCompound : shorter.workingIsolation;
   const preset = e.restBySetType.working?.seconds ?? defaultRestS;
   const overLong = e.setTemplates.some((t) => t.setType === 'working' && t.restOverrideS !== null && t.restOverrideS > to);
   if (preset <= to && !overLong) return null;
@@ -136,7 +139,7 @@ export function fitTemplateToMinutes(input: TemplateFitInput): TemplateFitResult
   }
 
   // (a) Shorter rests on the accessories.
-  const rested = list.map((e) => (isMain(e) ? e : (withShorterRests(e, input.isCompound(e.exerciseId), input.defaultRestS) ?? e)));
+  const rested = list.map((e) => (isMain(e) ? e : (withShorterRests(e, input.isCompound(e.exerciseId), input.defaultRestS, input.restDefaultsS) ?? e)));
   if (rested.some((e, i) => e !== list[i])) {
     steps.push({ kind: 'rest', from: 'normal', to: 'shorter' });
     list = rested;

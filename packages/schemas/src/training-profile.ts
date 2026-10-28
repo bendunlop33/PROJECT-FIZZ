@@ -101,6 +101,19 @@ export type PinnedNote = z.infer<typeof PinnedNoteSchema>;
 export const FitRestLevelSchema = z.enum(['normal', 'shorter', 'shortest']);
 export type FitRestLevel = z.infer<typeof FitRestLevelSchema>;
 
+/**
+ * (Ben, 28 Oct) Profile › Rest times: the default rests Ben can change, by key (as `BUILDER_REST_DEFAULTS` in the
+ * domain): main lift working sets, top set, back-off, compound accessory, isolation, superset round, warm-up.
+ */
+export const REST_DEFAULT_KEYS = ['workingMain', 'top', 'backoff', 'workingCompound', 'workingIsolation', 'round', 'warmup'] as const;
+export const RestDefaultKeySchema = z.enum(REST_DEFAULT_KEYS);
+export type RestDefaultKey = z.infer<typeof RestDefaultKeySchema>;
+/**
+ * Rest times' limits: the builder's (`BUILD_LIMITS.minRestS` / `maxRestS`, 0:30–6:00, 15 s steps). Literal here, not
+ * imported: `workout-draft` imports this module (a test checks they agree).
+ */
+export const REST_DEFAULT_LIMITS = { minS: 30, maxS: 360, stepS: 15 } as const;
+
 export const TrainingProfileSchema = RecordMetaSchema.extend({
   about: z.object({
     birthYear: z.int().min(TRAINING_LIMITS.birthYearMin).max(2100).optional(),
@@ -150,6 +163,11 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
   checkInSchedule: CheckInScheduleSchema.optional(),
   /** (Ben, 27 Oct) `Rest when short on time`. Absent: `shortest` (Minimum rest). Your data (rule 10). */
   fitRestLevel: FitRestLevelSchema.optional(),
+  /**
+   * (Ben, 28 Oct) Profile › Rest times: Ben's own default rests (seconds), only those he changed from the standard
+   * ones. Absent: the standard defaults. Your data (rule 10).
+   */
+  restDefaultsS: z.partialRecord(RestDefaultKeySchema, z.int().min(REST_DEFAULT_LIMITS.minS).max(REST_DEFAULT_LIMITS.maxS)).optional(),
   /** (Ben, 26 Oct) Pinned exercise notes, one per exercise and gym (null gym: every gym). Absent: none. */
   pinnedNotes: z.array(PinnedNoteSchema).max(TRAINING_LIMITS.pinnedNotesMax).optional(),
   /** Operation IDs already applied, newest last (a repeat is a no-op; rule 5). */
@@ -187,6 +205,10 @@ export type TrainingChange =
   | { kind: 'check_in_schedule'; schedule: CheckInSchedule }
   /** (Ben, 27 Oct) Profile › Training › `Rest when short on time`. */
   | { kind: 'fit_rest_level'; level: FitRestLevel }
+  /** (Ben, 28 Oct) Profile › Rest times: one default rest (0:30–6:00, 15 s steps). */
+  | { kind: 'rest_default'; key: RestDefaultKey; seconds: number }
+  /** (Ben, 28 Oct) Profile › Rest times › `Reset to defaults`. */
+  | { kind: 'reset_rest_defaults' }
   /** (Ben, 26 Oct) Pin a note on an exercise (at one gym, or every gym with `gymId` null), replacing that pin. */
   | { kind: 'pin_note'; exerciseId: string; gymId: string | null; text: string }
   /** (Ben, 26 Oct) Unpin it (the text is kept as today's note by the caller when Ben asks). */

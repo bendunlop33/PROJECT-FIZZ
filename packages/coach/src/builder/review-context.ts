@@ -71,7 +71,7 @@ export interface ReviewEditsInput {
   drafted: ReviewDrafted | null;
   workout: BuilderWorkout;
   minutes: number;
-  ctx: Pick<BuilderContext, 'info' | 'restPresetsS'>;
+  ctx: Pick<BuilderContext, 'info' | 'restPresetsS' | 'restDefaultsS'>;
   /**
    * Your workout's Time (`BuilderSetup.timeFit`): the slots it left out and the working sets it took from each; above
    * the plan's length on Today's card, the slots it added and the working sets it added to each.
@@ -96,7 +96,7 @@ export function reviewEdits(input: ReviewEditsInput): ReviewEdit[] | null {
   const d = input.drafted;
   if (d === null) return null;
   const name = (id: string): string => infoOrDefault(input.ctx.info, id).name;
-  const rest = (s: BuilderSlot, w: BuilderWorkout): number | null => workingRestS(s, input.ctx.info, w.restLevel, input.ctx.restPresetsS);
+  const rest = (s: BuilderSlot, w: BuilderWorkout): number | null => workingRestS(s, input.ctx.info, w.restLevel, input.ctx.restPresetsS, input.ctx.restDefaultsS);
   const dropped = new Set(input.time?.dropped ?? []);
   const cut = input.time?.cut ?? {};
   const timeAdded = new Set(input.time?.added ?? []);
@@ -189,7 +189,7 @@ export interface ReviewLiftFacts {
 
 export interface ReviewLiftInput {
   workout: BuilderWorkout;
-  ctx: Pick<BuilderContext, 'info' | 'restPresetsS'>;
+  ctx: Pick<BuilderContext, 'info' | 'restPresetsS' | 'restDefaultsS'>;
   /** Ben's comparable history for an exercise (`BuilderEnv.refsOf`); null: none read. */
   refs: (exerciseId: string) => LoadReferences | null;
   pain: (exerciseId: string) => string | null;
@@ -332,7 +332,7 @@ export function reviewLiftFacts(input: ReviewLiftInput): ReviewLiftFacts[] {
       if (r.rpe != null) c.rpe.push(r.rpe);
       if (r.load != null) load(r.load);
     }
-    const restNow = workingRestS(s, input.ctx.info, input.workout.restLevel, input.ctx.restPresetsS);
+    const restNow = workingRestS(s, input.ctx.info, input.workout.restLevel, input.ctx.restPresetsS, input.ctx.restDefaultsS);
     if (restNow !== null) c.rests.push(restNow);
     const d = draftedSlots.get(s.key);
     if (d !== undefined && input.drafted !== null) {
@@ -342,7 +342,7 @@ export function reviewLiftFacts(input: ReviewLiftInput): ReviewLiftFacts[] {
         if (r.rpe != null) c.rpe.push(r.rpe);
         if (r.load != null && d.unit === unit) load(r.load);
       }
-      const restWas = workingRestS(d, input.ctx.info, input.drafted.workout.restLevel, input.ctx.restPresetsS);
+      const restWas = workingRestS(d, input.ctx.info, input.drafted.workout.restLevel, input.ctx.restPresetsS, input.ctx.restDefaultsS);
       if (restWas !== null) c.rests.push(restWas);
     }
     for (const e of input.edits ?? []) {

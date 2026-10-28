@@ -557,7 +557,7 @@ export function applyBuilderEdits(snapshot: BuilderCoachSnapshot, ops: readonly 
     }
     if (!same(s, now)) {
       touched.add(s.key);
-      lines.push(...slotLines(s, now, name(s.exerciseId), (x) => workingRestS(x, env.ctx.info, x === s ? base.restLevel : after.restLevel, env.ctx.restPresetsS)));
+      lines.push(...slotLines(s, now, name(s.exerciseId), (x) => workingRestS(x, env.ctx.info, x === s ? base.restLevel : after.restLevel, env.ctx.restPresetsS, env.ctx.restDefaultsS)));
     }
   }
   // (Ben, 27 Oct) A timed add reads with its time (`Add Exercise bike · 8:00`), and one put at the start says so.
