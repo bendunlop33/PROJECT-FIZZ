@@ -66,6 +66,7 @@ import {
   plannedAsDraftPlan,
   settlePlanWarmups,
   fitWorkoutToTime,
+  growSecondaryGroup,
   refitWorkoutToTime,
   withOriginalRows,
   timeFitChanges,
@@ -374,7 +375,7 @@ export type BuilderWriteResult =
   | { status: 'written'; snapshot: BuilderSnapshot; toast: BuilderToast | null }
   | { status: 'replayed'; snapshot: BuilderSnapshot; toast: BuilderToast | null }
   | { status: 'stale' | 'closed'; snapshot: BuilderSnapshot | null; message: string }
-  | { status: 'refused'; reason: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since' | 'nothing_to_mix' | 'nothing_to_carry'; message: string; snapshot: BuilderSnapshot | null };
+  | { status: 'refused'; reason: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since' | 'nothing_to_mix' | 'nothing_to_carry' | 'nothing_more'; message: string; snapshot: BuilderSnapshot | null };
 
 /** A toast after a write: text, and whether `Undo` goes with it. `why`: the advice's one-line reason. */
 export interface BuilderToast {
@@ -515,6 +516,8 @@ export const BUILDER_COPY = {
   /** (Ben, 23 Oct) The carry-over. */
   carried: 'Carried over',
   nothingToCarry: 'Nothing to carry over',
+  /** (Ben, 28 Oct) `+` with nothing left to add. */
+  nothingMore: 'Nothing more to add',
   /** (Ben, 23 Oct) `⋯ Save as a variation`. */
   saveAsVariation: 'Save as a variation',
   notAVariation: 'Can’t save these changes as a variation',
@@ -1086,13 +1089,13 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     return gymLearnFor(item, { value: typed.value, unit: typed.unit, convention: slot.convention }, { id: slot.exerciseId, name: env.nameOf(slot.exerciseId) }, { typed: true });
   }
 
-  async function writeDraft(p: UserProfile, draftId: string, compute: (current: WorkoutDraft) => Promise<{ change: DraftLifeChange; env: BuilderEnv; toast: BuilderToast | null; skipped?: SkippedOp[] } | { refused: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since' | 'nothing_to_carry'; env: BuilderEnv | null }>): Promise<BuilderWriteResult> {
+  async function writeDraft(p: UserProfile, draftId: string, compute: (current: WorkoutDraft) => Promise<{ change: DraftLifeChange; env: BuilderEnv; toast: BuilderToast | null; skipped?: SkippedOp[] } | { refused: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since' | 'nothing_to_carry' | 'nothing_more'; env: BuilderEnv | null }>): Promise<BuilderWriteResult> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const read = await repos().workoutDrafts.get(draftId).catch(() => null);
       if (read === null || read.ownerId !== p.id || read.builderKey === undefined) return { status: 'closed', snapshot: null, message: BUILDER_COPY.closed };
       const r = await compute(read);
       if ('refused' in r) {
-        const message = r.refused === 'changed_since' ? BUILDER_COPY.changedSince : r.refused === 'nothing_to_undo' ? BUILDER_COPY.cantUndo : r.refused === 'nothing_to_carry' ? BUILDER_COPY.nothingToCarry : (REFUSAL_TEXT[r.refused] ?? 'Can’t do that');
+        const message = r.refused === 'changed_since' ? BUILDER_COPY.changedSince : r.refused === 'nothing_to_undo' ? BUILDER_COPY.cantUndo : r.refused === 'nothing_to_carry' ? BUILDER_COPY.nothingToCarry : r.refused === 'nothing_more' ? BUILDER_COPY.nothingMore : (REFUSAL_TEXT[r.refused] ?? 'Can’t do that');
         return { status: 'refused', reason: r.refused, message, snapshot: r.env === null ? null : await snapshotOf(p, read, r.env) };
       }
       // The change was worked out from `read`: written only if the stored draft is still that one.
@@ -1290,6 +1293,18 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   const mainGroupOf = (workout: BuilderWorkout, stored: BuilderSetup, env: BuilderEnv) => {
     const main = slotsOf(workout.blocks).find((x) => x.main);
     return (main === undefined ? undefined : env.info(main.exerciseId)?.group) ?? ruleSetupOf(stored).groups[0]?.group ?? null;
+  };
+
+  /**
+   * (Ben, 28 Oct) What Your workout's `+` may add, best first: the day's main group's pool, then the secondary group's
+   * (`growSecondaryGroup`: arms on a Chest, Back or Shoulders day). Gym-available and not pain-flagged (`env.pool`).
+   */
+  const growCandidates = (workout: BuilderWorkout, mainGroup: BuilderGroup | null, env: BuilderEnv): { arm: string[]; mainGroup: string[] } => {
+    // Not filtered by what's on the page: the fit skips those itself, so the same Time picks the same exercises.
+    void workout;
+    const fresh = (g: BuilderGroup) => env.pool(g).slice(0, 16);
+    const secondary = growSecondaryGroup(mainGroup);
+    return { mainGroup: mainGroup === null ? [] : fresh(mainGroup), arm: secondary === null ? [] : fresh(secondary) };
   };
 
   /**
@@ -1986,7 +2001,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
      * more. One versioned write under `opId` (rule 5), undoable like any edit; the detail's `Undo` is
      * `setTime(fromMinutes)`, which puts the original back with Ben's later edits kept.
      */
-    async setTime(draftId: string, minutes: number, w: { opId: string; expectedVersion: number }): Promise<BuilderWriteResult> {
+    async setTime(draftId: string, minutes: number, w: { opId: string; expectedVersion: number; grow?: boolean }): Promise<BuilderWriteResult> {
       const p = await owner();
       return writeDraft(p, draftId, async (current) => {
         const v = currentDraftVersion(current);
@@ -2001,7 +2016,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         // to the Time it filled to, never past it), Ben's edits replayed, so more Time brings back what less took.
         const key = current.builderKey;
         const cap = stored.timeFill;
-        if (cap !== undefined && minutes > from && todayDrafted(stored) && key !== undefined) {
+        // (Ben, 28 Oct) An explicit `+` grows the workout on the page instead (below), past Today's fill too.
+        if (w.grow !== true && cap !== undefined && minutes > from && todayDrafted(stored) && key !== undefined) {
           const to = Math.max(BUILD_LIMITS.minMinutes, Math.min(BUILD_LIMITS.maxMinutes, Math.round(minutes)));
           const was = todayControlsOf(stored, key, untimed(stored, workout), env);
           const at = await todayAt(p, current, stored, key, { ...was, minutes: Math.min(to, cap) }, { minutes: to, opId: w.opId });
@@ -2013,8 +2029,13 @@ export function createBuilderService(deps: BuilderServiceDeps) {
             return { change: builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, undoable: true }), env: at.env, toast: null };
           }
         }
-        const r = fitWorkoutToTime({ current: workout, fit, minutes: from, to: minutes, ctx: env.ctx, mainGroup: mainGroupOf(workout, stored, env), supersets: stored.supersets });
-        const plan = withSlotRevs(v.plan, toDraftPlan(r.workout, env.codec)).plan;
+        const mainGroup = mainGroupOf(workout, stored, env);
+        // (Ben, 28 Oct) What `+` may add: the day's main group, then the secondary group (arms on Chest, Back, Shoulders).
+        const growEnv = w.grow === true ? await envFor(p, { gymId: v.request.gymId, exerciseIds: [...exerciseIdsOf(workout), ...exerciseIdsOf(fit?.base ?? null)], groups: [...(mainGroup === null ? [] : [mainGroup]), 'Arms'], keySeed: `${current.id}:${w.opId}` }) : env;
+        const addCandidates = w.grow === true ? growCandidates(workout, mainGroup, growEnv) : undefined;
+        const r = fitWorkoutToTime({ current: workout, fit, minutes: from, to: minutes, ctx: growEnv.ctx, mainGroup, supersets: stored.supersets, ...(w.grow === true ? { grow: true } : {}), ...(addCandidates === undefined ? {} : { addCandidates }) });
+        if (r.full === true) return { refused: 'nothing_more', env };
+        const plan = withSlotRevs(v.plan, toDraftPlan(r.workout, growEnv.codec)).plan;
         const setup = withTimeFields(stored, from, r, env);
         // The same length and workout again (a repeated tap at a limit): nothing to write.
         if (stableStringify(setup) === stableStringify(stored) && stableStringify(plan) === stableStringify(v.plan)) return { change: { kind: 'duplicate', current }, env, toast: null };

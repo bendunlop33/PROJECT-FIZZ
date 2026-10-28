@@ -1,5 +1,5 @@
 import { bandInsertIndex, canAutoPair, infoOrDefault, pairSlots } from './arrange';
-import { BUILDER_TIME, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
+import { BUILDER_TIME, betweenSecondsOf, blockSeconds, estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { DEFAULT_FIT_REST_LEVEL } from './rest';
 import { makeSlot } from './slot';
 import { autoPickClash, BUILDER_SUB_ROLES, subRoleOf } from './similar';
@@ -35,8 +35,8 @@ import { type BuilderBlock, type BuilderContext, type BuilderGroupName, type Bui
  *       exercises keep their place and lose sets (down to 2) before anything else they could keep; still too long, the
  *       later main sub-role goes before the earlier one (the row before the vertical pull); only then is coverage given up.
  * Main-lift sets, loads and rests never change for time. Still over → `over`. Length clamped to 15–180.
- * Longer (grow): normal rests back first; then exercises (a second arm exercise, then a main-group accessory), then
- * +1 set on accessories (max 4). The plan's own spare minutes stay as a buffer: only time beyond it is filled.
+ * Longer (grow, Ben 28 Oct): rests back to normal; +1 set on accessories up to 4; +1 set on the main lift up to 5;
+ * then exercises (main group, then the secondary group) up to 8; else `full` (`grow` below).
  * Slots Ben edited (`touched`) are never cut, paired or grown.
  * The sets lost are what the week's carry-over offer is made from (`fitCarryOver`).
  */
@@ -99,6 +99,8 @@ export interface BuilderFitResult {
   status: BuilderFitStatus;
   /** The estimate after fitting (`about N min`). */
   minutes: number;
+  /** (Ben, 28 Oct) Longer asked, and nothing more could be added (`Nothing more to add`). */
+  full?: true;
 }
 
 export interface BuilderFitOptions {
@@ -111,7 +113,10 @@ export interface BuilderFitOptions {
   supersets: boolean;
   /** The plan's own spare minutes (plan length − plan estimate), kept when growing. */
   planBufferMin?: number;
-  /** Exercises to add when growing, best first (gym-available, not pain-flagged, injected). */
+  /**
+   * Exercises to add when growing, best first (gym-available, not pain-flagged, injected): the day's main group's,
+   * then `arm`, the secondary group's (`growSecondaryGroup`: arms on a Chest, Back or Shoulders day).
+   */
   addCandidates?: { arm: readonly string[]; mainGroup: readonly string[] };
   /**
    * Lowest length allowed (default `FIT_RULES.minMinutes`). The workout's
@@ -396,7 +401,7 @@ function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, w
         if (k > 0) slots.push(k === workingCount(s) ? s : setWorkingCount(s, k));
       }
       const block = slots.length === 0 ? null : slots.length === 1 && b.slots.length > 1 ? { slots, auto: false } : { ...b, slots };
-      out.push({ block, secs: block === null ? 0 : blockSeconds(block, w, ctx) + BUILDER_TIME.betweenS, value, guard: guarded, held, sets, counts: kept });
+      out.push({ block, secs: block === null ? 0 : blockSeconds(block, w, ctx) + betweenSecondsOf(ctx), value, guard: guarded, held, sets, counts: kept });
       return;
     }
     const options = per[i];
@@ -421,7 +426,7 @@ function blockChoices(b: BuilderBlock, w: BuilderWorkout, ctx: BuilderContext, w
 function leastLostFit(w: BuilderWorkout, ctx: BuilderContext, limitS: number, weigh: FitWeigh, guard: ReadonlyMap<string, GuardMode>, mayLeaveOut = true): { workout: BuilderWorkout; steps: BuilderFitStep[]; fits: boolean } {
   const choices = w.blocks.map((b) => blockChoices(b, w, ctx, weigh, guard, mayLeaveOut));
   // The blocks' seconds (with a changeover each) against the limit: setup is once, and the first block has no changeover.
-  const room = limitS - BUILDER_TIME.setupS + BUILDER_TIME.betweenS;
+  const room = limitS - BUILDER_TIME.setupS + betweenSecondsOf(ctx);
   const minAfter: number[] = new Array<number>(choices.length + 1).fill(0);
   for (let i = choices.length - 1; i >= 0; i -= 1) minAfter[i] = (minAfter[i + 1] ?? 0) + Math.min(...(choices[i] ?? []).map((c) => c.secs));
   // By total seconds, the state that keeps most. States that can't fit any more are dropped as they arise.
@@ -528,71 +533,107 @@ export function fitCarryOver(before: BuilderWorkout, after: BuilderWorkout, info
 
 const rank = (l: RestLevel): number => (l === 'normal' ? 0 : l === 'shorter' ? 1 : 2);
 
-/** Longer than needed: rests back, then exercises, then sets, within the time beyond the plan's buffer. */
+/**
+ * Longer (Ben, 28 Oct: "+ makes a session longer properly"), only as far as needed to reach the length, in order:
+ *   (1) rests back to normal, a level at a time;
+ *   (2) +1 set on the accessories, round by round in workout order, up to 4 each (a plan day's stored slots too: only a
+ *       slot Ben edited today, `touched`, is never grown; timed and cardio slots aren't);
+ *   (3) +1 set on the main lift, up to 5 working sets;
+ *   (4) add exercises: the day's main group first, then the secondary group (arms on a Chest, Back or Shoulders day; a
+ *       Legs or Arms day adds from its own group only), up to 8 exercises, never a near-duplicate (`autoPickClash`). An
+ *       added exercise gets 3 sets, or 2 when that lands nearer the length.
+ * A step is taken while the workout is still short of the length when it lands within the length, or nearer to it
+ * than staying put (a tie goes to the step: Ben asked for longer). Nothing taken that way but something could be
+ * added: the smallest such step is taken, so every explicit `+` moves something. Nothing at all could be added:
+ * `full` (the UI says `Nothing more to add`). No plan buffer is kept for an explicit `+`; `planBufferMin` (when given)
+ * still holds back the plan's own spare minutes.
+ */
 function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOptions): BuilderFitResult {
-  const limitS = (opts.minutes - Math.max(0, opts.planBufferMin ?? 0)) * 60 + 29;
-  const fits = (w: BuilderWorkout) => estimateBuilderSeconds(w, ctx) <= limitS;
+  const targetS = (opts.minutes - Math.max(0, opts.planBufferMin ?? 0)) * 60;
+  const limitS = targetS + 29;
+  const secs = (w: BuilderWorkout) => estimateBuilderSeconds(w, ctx);
+  const short = (w: BuilderWorkout) => secs(w) < targetS - 30;
+  /** Take `next` from `w`: it fits, or lands nearer the length than `w` (a tie: take it). */
+  const takes = (w: BuilderWorkout, next: BuilderWorkout) => {
+    const after = secs(next);
+    return after <= limitS || Math.abs(after - targetS) <= Math.abs(targetS - secs(w));
+  };
   let w = input;
   const steps: BuilderFitStep[] = [];
-  // Rests back toward normal.
-  for (const level of ['normal', 'shorter'] as const) {
-    if (rank(w.restLevel) <= rank(level)) break;
-    const next = { ...w, restLevel: level };
-    if (fits(next)) {
-      steps.push({ kind: 'rest', from: w.restLevel, to: level });
-      w = next;
-      break;
-    }
+  let smallest: { w: BuilderWorkout; step: BuilderFitStep; secs: number } | null = null;
+  const consider = (next: BuilderWorkout, step: BuilderFitStep): boolean => {
+    const d = secs(next) - secs(w);
+    if (d <= 0) return false;
+    if (smallest === null || d < smallest.secs) smallest = { w: next, step, secs: d };
+    if (!takes(w, next)) return false;
+    w = next;
+    smallest = null;
+    const prev = step.kind === 'sets' ? steps.find((x): x is Extract<BuilderFitStep, { kind: 'sets' }> => x.kind === 'sets' && x.slotKey === step.slotKey) : undefined;
+    if (prev !== undefined && step.kind === 'sets') prev.to = step.to;
+    else steps.push(step);
+    return true;
+  };
+  // (1) Rests back toward normal, a level at a time.
+  for (const level of ['shorter', 'normal'] as const) {
+    if (!short(w)) break;
+    if (rank(w.restLevel) <= rank(level)) continue;
+    consider({ ...w, restLevel: level }, { kind: 'rest', from: w.restLevel, to: level });
   }
-  const inWorkout = (id: string) => allSlots(w).some((s) => s.exerciseId === id);
-  const count = () => allSlots(w).length;
-  const groupOf = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId).group;
-
-  // A second arm exercise: Arms with exactly one exercise gets another, from the other arm part first (D5: the
-  // pushdown gets a curl, as when Biceps and Triceps were groups of their own).
-  const arms = allSlots(w).filter((s) => groupOf(s) === 'Arms');
-  const armPart = arms.length === 1 && arms[0] !== undefined ? infoOrDefault(ctx.info, arms[0].exerciseId).part : null;
-  // (Ben, 23 Oct) Nothing that near-duplicates an exercise in the workout (or a second traps isolation).
-  const clashes = (id: string) => autoPickClash(id, allSlots(w).map((s) => s.exerciseId), ctx.info) !== null;
-  const armIds = (opts.addCandidates?.arm ?? []).filter((id) => !inWorkout(id) && !clashes(id) && infoOrDefault(ctx.info, id).group === 'Arms');
-  const armPick = [...armIds.filter((id) => infoOrDefault(ctx.info, id).part !== armPart), ...armIds.filter((id) => infoOrDefault(ctx.info, id).part === armPart)];
-  for (const id of armPick) {
-    if (armPart === null || count() >= FIT_RULES.maxExercises) break;
-    const next = insertAfterGroup(w, makeSlot(id, { main: false }, ctx), ['Arms'], ctx, opts.supersets);
-    if (fits(next.w)) {
-      w = next.w;
-      steps.push({ kind: 'add', slotKey: next.key, exerciseId: id, why: 'arm' });
-    }
-    break;
-  }
-  // Then one more accessory for the day's main group.
-  const mg = opts.mainGroup;
-  if (mg !== null && count() < FIT_RULES.maxExercises) {
-    const id = (opts.addCandidates?.mainGroup ?? []).find((x) => !inWorkout(x) && !clashes(x) && ctx.info(x)?.group === mg);
-    if (id !== undefined) {
-      const next = insertAfterGroup(w, makeSlot(id, { main: false }, ctx), [mg], ctx, opts.supersets);
-      if (fits(next.w)) {
-        w = next.w;
-        steps.push({ kind: 'add', slotKey: next.key, exerciseId: id, why: 'main_group' });
-      }
-    }
-  }
-  // Then +1 set on accessories, round by round, max 4.
-  for (let changed = true; changed; ) {
+  const growable = (s: BuilderSlot) => s.touched !== true && !isTimedSlot(s);
+  // (2) +1 set on the accessories, round by round, up to 4 each.
+  for (let changed = true, rounds = 0; changed && short(w) && rounds < GROW_RULES.maxSetRounds; rounds += 1) {
     changed = false;
     for (const s of allSlots(w)) {
-      if (s.main || s.touched === true || workingCount(s) >= FIT_RULES.maxAccessorySets) continue;
+      if (!short(w)) break;
+      if (s.main || !growable(s) || workingCount(s) >= FIT_RULES.maxAccessorySets) continue;
       const from = workingCount(s);
-      const next = replaceSlot(w, s.key, setWorkingCount(s, from + 1));
-      if (!fits(next)) continue;
-      w = next;
-      changed = true;
-      const prev = steps.find((x): x is Extract<BuilderFitStep, { kind: 'sets' }> => x.kind === 'sets' && x.slotKey === s.key);
-      if (prev !== undefined) prev.to = from + 1;
-      else steps.push({ kind: 'sets', slotKey: s.key, exerciseId: s.exerciseId, from, to: from + 1 });
+      if (consider(replaceSlot(w, s.key, setWorkingCount(s, from + 1)), { kind: 'sets', slotKey: s.key, exerciseId: s.exerciseId, from, to: from + 1 })) changed = true;
     }
   }
-  return { workout: w, steps, status: steps.length === 0 ? 'fits' : 'fitted', minutes: estimateBuilderMinutes(w, ctx) };
+  // (3) +1 set on the main lift, up to 5.
+  for (let tries = 0; short(w) && tries < GROW_RULES.maxMainSets; tries += 1) {
+    const s = allSlots(w).find((x) => x.main && growable(x));
+    if (s === undefined || workingCount(s) >= GROW_RULES.maxMainSets) break;
+    const from = workingCount(s);
+    if (!consider(replaceSlot(w, s.key, setWorkingCount(s, from + 1, ctx.loads(s.exerciseId))), { kind: 'sets', slotKey: s.key, exerciseId: s.exerciseId, from, to: from + 1 })) break;
+  }
+  // (4) Exercises: the day's main group, then the secondary group; no near-duplicates; up to 8.
+  const mg = opts.mainGroup;
+  const inWorkout = (id: string) => allSlots(w).some((s) => s.exerciseId === id);
+  const clashes = (id: string) => autoPickClash(id, allSlots(w).map((s) => s.exerciseId), ctx.info) !== null;
+  const secondary = growSecondaryGroup(mg);
+  const pools: { ids: readonly string[]; group: BuilderGroupName; why: 'main_group' | 'arm' }[] = [];
+  if (mg !== null) pools.push({ ids: opts.addCandidates?.mainGroup ?? [], group: mg, why: 'main_group' });
+  if (secondary !== null) pools.push({ ids: opts.addCandidates?.arm ?? [], group: secondary, why: 'arm' });
+  for (const pool of pools) {
+    for (const id of pool.ids) {
+      if (!short(w) || allSlots(w).length >= GROW_RULES.maxExercises) break;
+      if (inWorkout(id) || clashes(id) || ctx.info(id)?.group !== pool.group) continue;
+      const made = [3, 2].map((n) => insertAfterGroup(w, makeSlot(id, { main: false, workingSets: n }, ctx), [pool.group], ctx, opts.supersets));
+      const three = made[0];
+      const two = made[1];
+      if (three === undefined || two === undefined) continue;
+      // 3 sets, unless 2 lands nearer the length.
+      const pick = Math.abs(secs(two.w) - targetS) < Math.abs(secs(three.w) - targetS) && secs(three.w) > limitS ? two : three;
+      consider(pick.w, { kind: 'add', slotKey: pick.key, exerciseId: id, why: pool.why });
+    }
+  }
+  // Nothing taken but something could be added: the smallest step (every explicit + moves something).
+  const fallback = smallest as { w: BuilderWorkout; step: BuilderFitStep; secs: number } | null;
+  if (steps.length === 0 && fallback !== null && opts.planBufferMin === undefined) {
+    w = fallback.w;
+    steps.push(fallback.step);
+  }
+  const full = steps.length === 0 && short(w);
+  return { workout: w, steps, status: steps.length === 0 ? 'fits' : 'fitted', minutes: estimateBuilderMinutes(w, ctx), ...(full ? { full: true as const } : {}) };
+}
+
+/** (Ben, 28 Oct) The longer ladder's bounds: the main lift up to 5 working sets, up to 8 exercises. */
+export const GROW_RULES = { maxMainSets: 5, maxExercises: 8, maxSetRounds: 4 } as const;
+
+/** The group `+` adds from after the day's main group: arms on a Chest, Back or Shoulders day; none on Legs, Arms or Core. */
+export function growSecondaryGroup(mainGroup: BuilderGroupName | null): BuilderGroupName | null {
+  return mainGroup === 'Chest' || mainGroup === 'Back' || mainGroup === 'Shoulders' ? 'Arms' : null;
 }
 
 /** Insert a new single where the §3.4 bands put it (`bandInsertIndex`); with Supersets on, pair only the new one (review B3). */

@@ -1,7 +1,7 @@
 import { BUILD_LIMITS, type BuilderSetup } from '@fizz/schemas';
 import { slotsOf } from './arrange';
 import { fromDraftPlan, toDraftPlan, type DraftCodecContext } from './codec';
-import { estimateBuilderMinutes } from './estimate';
+import { estimateBuilderMinutes, estimateBuilderSeconds } from './estimate';
 import { clampMinutes, FIT_RULES, fitToMinutes, type BuilderFitStep } from './fit';
 import { workingCount } from './set-rows';
 import { carriedSets, withCarriedBack, withoutCarried, type CarriedHold } from './carried';
@@ -170,6 +170,13 @@ export interface WorkoutTimeFitInput {
   ctx: BuilderContext;
   mainGroup: BuilderGroupName | null;
   supersets: boolean;
+  /**
+   * (Ben, 28 Oct) An explicit `+`: past the workout as it is without Time's changes, it is made longer by the longer
+   * ladder (`fitToMinutes` grow: rests, accessory sets, main-lift sets, exercises), today's draft only.
+   */
+  grow?: boolean;
+  /** Exercises `+` may add, best first (the day's main group, then the secondary group's). Absent: none. */
+  addCandidates?: { arm: readonly string[]; mainGroup: readonly string[] };
 }
 
 export interface WorkoutTimeFitOutcome {
@@ -179,6 +186,8 @@ export interface WorkoutTimeFitOutcome {
   minutes: number;
   /** Even with every cut allowed the estimate is over the length (`⚠ Over 30 min`). */
   over: boolean;
+  /** (Ben, 28 Oct) `+` asked and nothing more could be added (`Nothing more to add`); nothing changed. */
+  full?: true;
 }
 
 /**
@@ -281,16 +290,45 @@ export function withOriginalRows(original: BuilderWorkout, changed: BuilderWorko
 
 /** `fitWorkoutToTime`: Your workout at a new length (see the module comment). */
 export function fitWorkoutToTime(i: WorkoutTimeFitInput): WorkoutTimeFitOutcome {
-  // (Review todaylean B3) Today's fill is live and Time is still at or above what it filled to: it stays as it is.
-  if (i.fit?.filledTo !== undefined && clampMinutes(i.to) >= i.fit.filledTo) return { workout: i.current, fit: i.fit, minutes: clampMinutes(i.to), over: false };
+  const filled = i.fit?.filledTo !== undefined;
+  // (Review todaylean B3) A fill is live and Time is still at or above what it filled to: it stays as it is (an explicit
+  // `+` grows on, Ben 28 Oct).
+  if (i.grow !== true && i.fit?.filledTo !== undefined && clampMinutes(i.to) >= i.fit.filledTo) return { workout: i.current, fit: i.fit, minutes: clampMinutes(i.to), over: false };
   // (Review ben-8-decisions S3) Carried-over sets aren't Time's to cut: the fit runs without them, then they go back.
   const { workout: current, held } = withoutCarried(i.current, i.ctx);
   const fit = i.fit === null ? null : { ...i.fit, base: withoutCarried(i.fit.base, i.ctx).workout };
   const original = fit === null ? current : unfitWorkout(fit, current);
   const work = fit === null ? current : unfitWorkout(fit, current, { hold: true });
   const fromMinutes = fit?.fromMinutes ?? i.minutes;
+  // (Ben, 28 Oct) Longer than the workout without Time's changes: `+` makes it longer (a shorter Time on a live fill
+  // fills less), from the original each time, so the same Time always gives the same workout.
+  const to = clampMinutes(i.to);
+  if ((i.grow === true || (filled && to > fromMinutes)) && to * 60 - 30 > estimateBuilderSeconds(original, i.ctx)) {
+    // `+` on a live fill grows on from the workout as it is (each tap adds to the last); otherwise from the original.
+    const r = i.grow === true && fit !== null && filled ? growWorkout(current, to, i, fit) : growWorkout(original, to, i, null);
+    return held.length === 0 ? r : withHeldBack(r, held, i.ctx);
+  }
   const r = refitBare({ original, work, fromMinutes, to: i.to, ctx: i.ctx, mainGroup: i.mainGroup, supersets: i.supersets });
   return held.length === 0 ? r : withHeldBack(r, held, i.ctx);
+}
+
+/**
+ * (Ben, 28 Oct) `+` on Your workout: the original grown to `to` by the longer ladder (`fitToMinutes` grow), recorded as
+ * a fill (`added`, `raised`, `filledTo`) with the original as `base` and its own length as `fromMinutes`, so a shorter
+ * Time, the note's Undo and Start read it as Time's (today only; the plan day and saved workout never change). Nothing
+ * could be added: the original as it is, `full`.
+ */
+function growWorkout(from: BuilderWorkout, to: number, i: WorkoutTimeFitInput, live: BuilderTimeFit | null): WorkoutTimeFitOutcome {
+  const g = fitToMinutes(from, i.ctx, { minutes: to, mainGroup: i.mainGroup, grow: true, supersets: i.supersets, addCandidates: i.addCandidates ?? { arm: [], mainGroup: [] } });
+  if (g.steps.length === 0) return live === null ? { workout: from, fit: null, minutes: clampMinutes(i.minutes), over: false, ...(g.full === true ? { full: true as const } : {}) } : { workout: from, fit: live, minutes: live.filledTo ?? to, over: false, ...(g.full === true ? { full: true as const } : {}) };
+  const added = [...(live?.added ?? []), ...g.steps.flatMap((st) => (st.kind === 'add' ? [{ slotKey: st.slotKey, why: st.why }] : []))];
+  const isAdded = new Set(added.map((a) => a.slotKey));
+  const raised: Record<string, number> = { ...(live?.raised ?? {}) };
+  for (const st of g.steps) if (st.kind === 'sets' && st.to > st.from && !isAdded.has(st.slotKey)) raised[st.slotKey] = (raised[st.slotKey] ?? 0) + st.to - st.from;
+  const base = live?.base ?? from;
+  const fromMinutes = live?.fromMinutes ?? clampMinutes(estimateBuilderMinutes(from, i.ctx));
+  const fit: BuilderTimeFit = { base, fromMinutes, dropped: [], ...(added.length === 0 ? {} : { added }), ...(Object.keys(raised).length === 0 ? {} : { raised }), filledTo: to };
+  return { workout: g.workout, fit, minutes: to, over: false };
 }
 
 /** A fit's outcome with the carried sets back on it, and its minutes as they now are. */
@@ -426,7 +464,7 @@ export interface LiveTime {
  * (`+`) so every tap moves something: an estimate just under its length (a fit can't land on the minute) would step to
  * where it already is, and one over it (Ben's own edits) to a length the fit gives back uncut. Pure.
  */
-export function liveTime(i: { estimate: number; length: number; floor?: number }): LiveTime {
+export function liveTime(i: { estimate: number; length: number; floor?: number; growFromEstimate?: boolean }): LiveTime {
   const estimate = Math.max(0, Math.round(i.estimate));
   const length = clampMinutes(i.length);
   const floor = clampMinutes(i.floor ?? length);
@@ -435,6 +473,13 @@ export function liveTime(i: { estimate: number; length: number; floor?: number }
   let less = stepTimeMinutes(from, -1);
   if (less >= floor) less = stepTimeMinutes(floor, -1);
   let more = stepTimeMinutes(from, 1);
+  // (Ben, 28 Oct) Your workout's `+` makes the workout itself longer (`fitWorkoutToTime` grow): it steps from the
+  // estimate, never past the length first. Elsewhere `+` goes past the length (a fit there only gives back cuts).
+  // At least 3 minutes more, so a fit that landed just under its step (34 of 35) still moves on a tap.
+  if (i.growFromEstimate === true && estimate > 0) {
+    const up = stepTimeMinutes(estimate + 2, 1);
+    return { minutes: estimate, over: estimate > length, less: less < floor ? less : null, more: up > estimate ? up : null };
+  }
   if (more <= length) more = stepTimeMinutes(length, 1);
   return { minutes: estimate, over: estimate > length, less: less < floor ? less : null, more: more > length ? more : null };
 }

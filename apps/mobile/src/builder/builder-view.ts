@@ -402,7 +402,8 @@ export function timeRowView(snap: BuilderSnapshot): TimeRowView {
   // One wording with Today's card (fit-to-time 22 Oct revision): rests, supersets the fit made, sets, exercises left out.
   const { note, lines } = fitNoteOf(snap.time?.changes ?? [], name, slotName);
   // (Ben, 27 Oct) The number is the workout on the page (`snap.minutes`, the shared estimate), live after every edit.
-  const live = liveTime({ estimate: snap.minutes, length, floor: Math.min(length, snap.fullMinutes ?? length) });
+  // (Ben, 28 Oct) `+` makes the workout on the page longer: it steps from the estimate (`fitWorkoutToTime` grow).
+  const live = liveTime({ estimate: snap.minutes, length, floor: Math.min(length, snap.fullMinutes ?? length), growFromEstimate: true });
   return {
     minutes: live.minutes,
     length,

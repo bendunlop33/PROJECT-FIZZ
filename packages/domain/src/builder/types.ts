@@ -1,3 +1,4 @@
+import type { BuilderPace } from './pace';
 import type { BuilderGroup, DraftLoadSource, EquipmentInstance, LoadConvention, PlanWarmups, SetType, WeightUnit } from '@fizz/schemas';
 import type { RuleReps } from '../rep-range';
 import type { WarmupExerciseFacts } from '../warmup/plan';
@@ -330,6 +331,8 @@ export interface BuilderContext {
    * (`BuilderExtraInfo`: cardio, a timed hold, plyometric or med-ball reps). Absent or null: not one.
    */
   extra?: (exerciseId: string) => BuilderExtraInfo | null;
+  /** (Ben, 28 Oct) Ben's own pace for the one estimate (`learnPace`); absent: the defaults. */
+  pace?: BuilderPace;
 }
 
 /**

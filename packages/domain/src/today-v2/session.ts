@@ -163,7 +163,7 @@ export interface TodayDraft {
   minutes: number;
   exerciseCount: number;
   absOn: boolean;
-  /** The time the plan's own draft leaves spare (kept, not filled). */
+  /** The time the plan's own draft leaves spare (not filled at the plan's length; `+` above it fills, Ben 28 Oct). */
   planBufferMin: number;
   /** The swap shown, or null. */
   mix: TodayMix | null;
@@ -390,9 +390,9 @@ export function assembleTodayDraft(input: TodayAssembleInput): TodayDraft | null
   const fit = fitToMinutes(built.workout, input.ctx, {
     minutes: c.minutes,
     mainGroup,
-    grow: true,
+    // (Ben, 28 Oct) Longer only when Time is above the plan's length (an explicit `+`), and then with no buffer kept.
+    grow: c.minutes > clampMinutes(t.minutes),
     supersets: c.supersets,
-    planBufferMin,
     settle: (x) => settleWarmups(x, input.ctx),
     // The accessory Mix it up swapped out stays out for today (the fill never brings it back).
     addCandidates: {

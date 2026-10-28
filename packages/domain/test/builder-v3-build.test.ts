@@ -511,7 +511,7 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     expect(all(f.workout).some((s) => s.exerciseId === 'crunch')).toBe(true);
   });
 
-  it('abs off + longer: a second arm exercise first (the other arm part first, D5), then sets; the plan buffer is kept', () => {
+  it('abs off + longer (Ben, 28 Oct): accessory sets first, exercises only once sets are at 4; the plan buffer still holds back when given', () => {
     const ctx = context();
     // 62 min (WU1–WU12: the pushdown and crunch carry a warm-up each, so the day is 62 at normal rests).
     const b = buildFromSetup({ minutes: 62, mainLiftExerciseId: 'bench', supersets: false, groups: chestGroups }, pool, ctx).workout;
@@ -519,26 +519,23 @@ describe('fitToMinutes (§2.0.2 control 3)', () => {
     const off = absOff(b, ctx, { supersets: false, armCandidates: ['oh_ext', 'hammer'] });
     expect(off.partner).toBeNull();
     expect(estimateBuilderMinutes(off.workout, ctx)).toBe(52);
-    const grown = fitToMinutes(off.workout, ctx, { minutes: 62, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 0, addCandidates: { arm: ['oh_ext', 'hammer'], mainGroup: ['machine_press'] } });
-    // Arms is biceps + triceps (D5): the pushdown gets a curl before a second triceps exercise.
-    expect(grown.steps[0]).toMatchObject({ kind: 'add', exerciseId: 'hammer', why: 'arm' });
-    expect(grown.minutes).toBeLessThanOrEqual(62);
-    expect(ids(grown.workout)).toEqual(['bench', 'incline_db', 'cable_fly', 'pushdown', 'hammer']);
-    // Only triceps left to add: the second arm exercise is one.
-    const tri = fitToMinutes(off.workout, ctx, { minutes: 62, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 0, addCandidates: { arm: ['oh_ext'], mainGroup: [] } });
-    expect(tri.steps[0]).toMatchObject({ kind: 'add', exerciseId: 'oh_ext', why: 'arm' });
-    // With spare plan minutes kept as a buffer, only sets fit.
+    const grown = fitToMinutes(off.workout, ctx, { minutes: 62, mainGroup: 'Chest', grow: true, supersets: false, addCandidates: { arm: ['oh_ext', 'hammer'], mainGroup: ['machine_press'] } });
+    // 10 minutes: +1 set on each accessory reaches it; nothing added.
+    expect(grown.steps.every((st) => st.kind === 'sets')).toBe(true);
+    expect(ids(grown.workout)).toEqual(['bench', 'incline_db', 'cable_fly', 'pushdown']);
+    expect(Math.abs(grown.minutes - 62)).toBeLessThanOrEqual(3);
+    // With spare plan minutes held back, it stops short of them.
     const kept = fitToMinutes(off.workout, ctx, { minutes: 62, mainGroup: 'Chest', grow: true, supersets: false, planBufferMin: 5, addCandidates: { arm: ['oh_ext'], mainGroup: ['machine_press'] } });
     expect(kept.steps.some((s) => s.kind === 'add')).toBe(false);
-    expect(kept.minutes).toBeLessThanOrEqual(57);
+    expect(kept.minutes).toBeLessThanOrEqual(59);
   });
 
-  it('longer: +1 set on accessories up to 4, never on the main lift', () => {
+  it('longer (Ben, 28 Oct): accessories up to 4, then the main lift up to 5; with nothing to add, that is all', () => {
     const ctx = context();
     const b = buildFromSetup({ minutes: 60, mainLiftExerciseId: 'bench', supersets: false, groups: chestGroups }, pool, ctx).workout;
     const g = fitToMinutes(b, ctx, { minutes: 180, mainGroup: 'Chest', grow: true, supersets: false });
     expect(all(g.workout).filter((s) => !s.main).every((s) => s.rows.filter((r) => r.type !== 'warmup').length === 4)).toBe(true);
-    expect(all(g.workout)[0]?.rows.filter((r) => r.type !== 'warmup')).toHaveLength(4);
+    expect(all(g.workout)[0]?.rows.filter((r) => r.type !== 'warmup')).toHaveLength(5);
   });
 
   it('abs off with supersets on: the arm exercise gets an arm partner in the same slot, time about the same', () => {

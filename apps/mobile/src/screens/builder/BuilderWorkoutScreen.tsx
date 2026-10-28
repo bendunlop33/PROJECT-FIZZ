@@ -296,7 +296,9 @@ export function BuilderWorkoutScreen() {
       const t = workoutView(cur).time;
       const to = 'to' in step ? step.to : step.dir < 0 ? t.less : t.more;
       if (to === null) return;
-      const r = await services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version });
+      // (Ben, 28 Oct) `+` makes the workout itself longer (today only); `−` and Undo fit as before.
+      const grow = !('to' in step) && step.dir > 0;
+      const r = await services.builder.setTime(cur.draftId, to, { opId: newUuid(), expectedVersion: cur.version, ...(grow ? { grow: true } : {}) });
       if (r.snapshot !== null) setSnap(r.snapshot);
       if (r.status === 'written') changed();
       else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });

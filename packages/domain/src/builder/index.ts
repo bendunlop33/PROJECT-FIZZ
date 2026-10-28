@@ -4,6 +4,7 @@ export * from './backoff';
 export * from './rest';
 export * from './set-rows';
 export * from './estimate';
+export * from './pace';
 export * from './arrange';
 export * from './slot';
 export * from './reps';
