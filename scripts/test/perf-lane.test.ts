@@ -3,7 +3,7 @@ import { join, relative } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import defaultConfig, { PERF_TESTS } from '../../vitest.config.ts';
+import defaultConfig, { PERF_TESTS, RENDER_TESTS } from '../../vitest.config.ts';
 import perfConfig from '../../vitest.perf.config.ts';
 
 /** The perf lane: wall-clock budgets never run in `npm test`, so machine load can't fail it (or the .ipa build). */
@@ -26,7 +26,12 @@ const TIMED = /performance\.now\(\)|timingBudget\(|measureBlocking\(|process\.hr
 
 describe('perf lane', () => {
   it('the default run excludes *.perf.test.ts; the perf config runs only them, one file at a time', () => {
-    expect(defaultConfig.test?.exclude).toContain(PERF_TESTS);
+    // `npm test` runs two projects (ADR 0037): the unit tests (perf excluded) and the screen render smoke tests.
+    const projects = (defaultConfig.test?.projects ?? []) as { test?: { name?: string; include?: string[]; exclude?: string[] } }[];
+    const unit = projects.find((p) => p.test?.name === 'unit');
+    expect(unit?.test?.exclude).toContain(PERF_TESTS);
+    expect(projects.find((p) => p.test?.name === 'render')?.test?.include).toEqual([RENDER_TESTS]);
+    expect(RENDER_TESTS.endsWith('.perf.test.ts')).toBe(false);
     expect(perfConfig.test?.include?.every((g) => g.endsWith('*.perf.test.ts'))).toBe(true);
     expect(perfConfig.test?.fileParallelism).toBe(false);
   });
