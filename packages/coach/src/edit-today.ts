@@ -1,5 +1,5 @@
-import { coachEditPainHold, currentGymEquipment, doableHere, namedWeights, planCoachEdit, type CoachEditExerciseInputs } from '@fizz/domain';
-import type { ActionDetail, ActionRecord, CoachEditTodayCommand, EditTodayOp, Exercise, GuardNote, PainFlag, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
+import { coachEditPainHold, currentGymEquipment, deriveId, doableHere, namedWeightGymEdit, namedWeights, planCoachEdit, type CoachEditExerciseInputs } from '@fizz/domain';
+import type { ActionDetail, ActionRecord, CoachEditTodayCommand, EditTodayOp, EquipmentInstance, Exercise, GuardNote, PainFlag, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 import { actionIdFor, newActionRecord, type CoachWriteStore, type ToolCallContext, type ToolExecutor, type ToolResult } from './executors';
 
 /**
@@ -43,6 +43,12 @@ export interface EditTodayDeps {
    * when nothing could be learned (the exercise is then added with no item, loads as given).
    */
   learnKit?: (exercise: Exercise, aggregate: SessionAggregate, ctx: ToolCallContext) => Promise<ActionRecord | null>;
+  /**
+   * (Ben, 28 Oct: "if i name a weight specifically it probably means its there") The gym's saved items: a weight Ben
+   * named that its profile can't make (a 31 kg dumbbell, a plate) is learned with the change, quietly, and its Undo
+   * takes it back. Absent: nothing learned.
+   */
+  gymItems?: (gymId: string) => Promise<readonly EquipmentInstance[]>;
 }
 
 const NO_ID = '00000000-0000-4000-8000-000000000000';
@@ -141,18 +147,24 @@ export function createEditTodayExecutor(deps: EditTodayDeps): ToolExecutor {
     });
     if (plan.status === 'stale') return withAlso(await staleNow(plan.guardNotes));
     if (plan.status === 'rejected') return withAlso(await refuse('rejected', plan.failure, plan.guardNotes));
-    const detail = editDetail(sessionId, args.baseVersion, { lines: plan.lines, exercises: plan.exercises, ...(plan.added.length > 0 ? { added: plan.added } : {}), names: plan.names, command: plan.command });
+    const base = editDetail(sessionId, args.baseVersion, { lines: plan.lines, exercises: plan.exercises, ...(plan.added.length > 0 ? { added: plan.added } : {}), names: plan.names, command: plan.command });
     // Rule 3: an offer saves exactly what would apply, and nothing else.
     if (ctx.propose === true) {
-      return recordOnly(deps.store, ctx.ownerId, newActionRecord(ctx, detail, { status: 'proposed', guardNotes: plan.guardNotes, reason: a.reason }), 'offer');
+      return recordOnly(deps.store, ctx.ownerId, newActionRecord(ctx, base, { status: 'proposed', guardNotes: plan.guardNotes, reason: a.reason }), 'offer');
     }
+    // (Ben, 28 Oct) A weight he named that the gym's profile can't make: the gym learns it with the change (no line).
+    const gymId = current.session.gymId;
+    const items = gymId === null || deps.gymItems === undefined ? [] : await deps.gymItems(gymId).catch(() => [] as readonly EquipmentInstance[]);
+    let n = 0;
+    const learned = items.length === 0 ? null : namedWeightGymEdit({ aggregate: current, command: plan.command, items, atUtc: ctx.now.utc, newId: () => deriveId(`named-weight-item:${ctx.opId}:${String((n += 1))}`) });
+    const detail = learned === null ? base : { ...base, learned };
     const action = newActionRecord(ctx, detail, {
       reason: a.reason,
       guardNotes: plan.guardNotes,
-      entityVersions: [{ entity: 'session', id: sessionId, before: args.baseVersion, after: args.baseVersion + 1 }],
+      entityVersions: [{ entity: 'session', id: sessionId, before: args.baseVersion, after: args.baseVersion + 1 }, ...(learned === null ? [] : learned.equipment.map((e) => ({ entity: 'equipment', id: e.after.id, before: e.before?.version ?? null, after: e.after.version })))],
     });
     const saveExercises = plan.used.filter((e) => unsaved.has(e.id));
-    const w = await deps.store.commit(ctx.ownerId, { kind: 'session_command', action, sessionId, command: plan.command, expectedSessionVersion: args.baseVersion, ...(saveExercises.length > 0 ? { saveExercises } : {}) });
+    const w = await deps.store.commit(ctx.ownerId, { kind: 'session_command', action, sessionId, command: plan.command, expectedSessionVersion: args.baseVersion, ...(saveExercises.length > 0 ? { saveExercises } : {}), ...(learned === null ? {} : { gymEdit: learned }) });
     if (w.status === 'conflict') {
       if (w.reason === 'stale_version') return withAlso(await staleNow(plan.guardNotes, `${ctx.opId}:refused`));
       return withAlso(await refuse('rejected', 'the workout refused it', plan.guardNotes, `${ctx.opId}:refused`));

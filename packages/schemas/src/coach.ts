@@ -831,6 +831,11 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
       .optional(),
     command: CoachEditTodayCommandSchema.nullable(),
     proposalId: IdSchema.optional(),
+    /**
+     * (Ben, 28 Oct) What the gym learned from weights Ben named (a dumbbell, a plate), written with the change and
+     * taken back by its Undo. Absent: nothing learned.
+     */
+    learned: GymEditSchema.optional(),
   }),
   /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
   z.object({
@@ -1466,7 +1471,7 @@ export type CoachWrite =
    * `saveExercise` (coach add, review S3): a catalogue exercise not yet in Ben's exercises, saved in the same
    * transaction as the command, so a refused or stale add leaves no exercise row behind (audit F4).
    */
-  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number; saveExercise?: Exercise; saveExercises?: readonly Exercise[] }
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number; saveExercise?: Exercise; saveExercises?: readonly Exercise[]; /** (Ben, 28 Oct) The gym learns the weights Ben named, in the same transaction. */ gymEdit?: GymEditRecord }
   /**
    * (12 Oct, workout builder) A coach draft and its record, in one write.
    * `expectedVersion`: null creates the draft; otherwise the draft's version

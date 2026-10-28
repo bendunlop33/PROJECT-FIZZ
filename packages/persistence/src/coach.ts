@@ -559,6 +559,16 @@ export class SqliteCoachStore {
         const r = reduceSession(agg, write.command);
         if (!r.ok) throw new Rollback(r.error.code === 'stale_version' ? 'stale_version' : 'missing');
         if (r.state !== agg) await writeAggregate(tx, r.state);
+        // (Ben, 28 Oct) The gym learns the weights Ben named, with the change (every record at the version read, rule 5).
+        if (write.gymEdit !== undefined) {
+          const current = await gymEditState(tx, write.gymEdit);
+          if (current.gym === null || current.gym.ownerId !== ownerId) throw new Rollback('missing');
+          if (!gymEditLanded(write.gymEdit, current)) {
+            const g = gymEditWrites(write.gymEdit);
+            if (g.gym !== null && !(await saveDocumentIn(tx, GYM_SPEC, g.gym.next, g.gym.expectedVersion)).ok) throw new Rollback('stale_version');
+            for (const e of g.equipment) if (!(await saveDocumentIn(tx, EQUIPMENT_SPEC, e.next, e.expectedVersion)).ok) throw new Rollback('stale_version');
+          }
+        }
         return null;
       }
       case 'playbook_candidate': {
@@ -742,6 +752,15 @@ export class SqliteCoachStore {
         if (!r.ok && r.error.code === 'gym_changed') return 'gym_changed';
         if (!r.ok || r.duplicate) return 'changed_since';
         if (r.state !== agg) await writeAggregate(tx, r.state);
+        // (Ben, 28 Oct) What the gym learned from his named weights goes with it, while nothing changed there since.
+        if (d.learned !== undefined) {
+          const current = await gymEditState(tx, d.learned);
+          const back = current.gym === null || current.gym.ownerId !== ownerId ? 'changed_since' : planRevertGymEdit(d.learned, current, atUtc);
+          if (back !== 'changed_since') {
+            for (const e of back.equipment) if (!(await saveDocumentIn(tx, EQUIPMENT_SPEC, e.next, e.expectedVersion)).ok) throw new Error('equipment changed while it was being undone');
+            for (const x of back.remove) if (!(await deleteDocumentIn(tx, EQUIPMENT_SPEC, x.id, x.expectedVersion))) throw new Error('equipment changed while it was being undone');
+          }
+        }
         const now = new Map(r.state.sets.map((x) => [x.id, x]));
         const was = new Map(agg.sets.map((x) => [x.id, x]));
         const actionId = d.command.actionId;

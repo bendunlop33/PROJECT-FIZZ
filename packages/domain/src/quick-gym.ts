@@ -8,8 +8,10 @@ import {
   type GymEditRecord,
   type GymEquipmentKind,
   type GymSetup,
+  type CoachEditTodayCommand,
   type Load,
   type PlateCount,
+  type SessionAggregate,
   type WeightUnit,
 } from '@fizz/schemas';
 import { formatNumber } from './display';
@@ -595,7 +597,12 @@ export type GymLearn =
   | ({ kind: 'stack_step'; equipmentId: string; unit: WeightUnit; step: number } & StackLearnFor)
   | ({ kind: 'stack_max'; equipmentId: string; unit: WeightUnit; max: number } & StackLearnFor)
   /** (Ben, 27 Oct) A load Ben typed above an item's recorded max: the item goes that high (his entry is the evidence). */
-  | { kind: 'raise_max'; equipmentId: string; unit: WeightUnit; max: number; itemName: string };
+  | { kind: 'raise_max'; equipmentId: string; unit: WeightUnit; max: number; itemName: string }
+  /**
+   * (Ben, 28 Oct: "if i name a weight specifically it probably means its there") A plate total the item's plates can't
+   * make, but one more plate size (a pair, or one on a single horn) can: that plate is there.
+   */
+  | { kind: 'add_plate'; equipmentId: string; unit: WeightUnit; mass: number; count: number; itemName: string };
 
 /** The chip: `Add 22 kg dumbbells here?`, `Leg extension goes up in 7 kg?`, `Leg press goes to 140 kg?`. */
 export function gymLearnText(l: GymLearn): string {
@@ -608,6 +615,8 @@ export function gymLearnText(l: GymLearn): string {
       return `${l.exerciseName} goes to ${formatNumber(l.max)} ${l.unit}?`;
     case 'raise_max':
       return `${l.itemName} goes to ${formatNumber(l.max)} ${l.unit}?`;
+    case 'add_plate':
+      return `Add ${formatNumber(l.mass)} ${l.unit} plates here?`;
   }
 }
 
@@ -622,6 +631,8 @@ export function gymLearnDoneText(l: GymLearn): string {
       return `${l.exerciseName}: to ${formatNumber(l.max)} ${l.unit}`;
     case 'raise_max':
       return `${l.itemName}: to ${formatNumber(l.max)} ${l.unit}`;
+    case 'add_plate':
+      return `Added ${formatNumber(l.mass)} ${l.unit} plates`;
   }
 }
 
@@ -640,13 +651,15 @@ export function gymLearnToast(l: GymLearn, gymName: string | null): string {
       return `${where}${l.exerciseName} to ${formatNumber(l.max)} ${l.unit}`;
     case 'raise_max':
       return `${where}${l.itemName} to ${formatNumber(l.max)} ${l.unit}`;
+    case 'add_plate':
+      return `${where}${formatNumber(l.mass)} ${l.unit} plates added`;
   }
 }
 
 /** One offer per load idea: the chip isn't shown again after Ben answers it (this workout). */
 export function gymLearnKey(l: GymLearn): string {
-  const value = formatNumber(l.kind === 'add_dumbbell' ? l.value : l.kind === 'stack_step' ? l.step : l.max);
-  return l.kind === 'add_dumbbell' || l.kind === 'raise_max' ? `${l.equipmentId}:${l.kind}:${value}` : `${l.equipmentId}:${l.exerciseId}:${l.kind}:${value}`;
+  const value = formatNumber(l.kind === 'add_dumbbell' ? l.value : l.kind === 'stack_step' ? l.step : l.kind === 'add_plate' ? l.mass : l.max);
+  return l.kind === 'add_dumbbell' || l.kind === 'raise_max' || l.kind === 'add_plate' ? `${l.equipmentId}:${l.kind}:${value}` : `${l.equipmentId}:${l.exerciseId}:${l.kind}:${value}`;
 }
 
 /**
@@ -679,11 +692,15 @@ function usualGap(values: readonly number[]): number | null {
  * whole family (review B2). Units and conventions must match; a load past a
  * sane ceiling is a typo, never a suggestion.
  */
-export function gymLearnFor(eq: EquipmentInstance, load: Load | null, exercise: { id: string; name: string } | null = null, opts: { typed?: boolean } = {}): GymLearn | null {
+export function gymLearnFor(eq: EquipmentInstance, load: Load | null, exercise: { id: string; name: string } | null = null, opts: { typed?: boolean; /** (Ben, 28 Oct) A weight Ben named to the coach: a dumbbell or a plate only, never past a max or onto a stack. */ named?: boolean } = {}): GymLearn | null {
   if (load === null || load.unit !== eq.unit || load.convention !== eq.loadConvention || !(load.value > 0)) return null;
   if (isLoadAchievable(load, eq)) return null;
-  const typed = opts.typed === true;
+  const named = opts.named === true;
+  const typed = opts.typed === true || named;
   const v = toScaled(load.value);
+  // (Ben, 28 Oct) A plate total one more plate size makes (within the item's max): that plate is there.
+  const plate = typed ? plateLearnFor(eq, load) : null;
+  if (plate !== null) return plate;
   if (eq.kind === 'dumbbells') {
     if (v > toScaled(LEARN_CEILING.dumbbells[eq.unit]) || v % 500 !== 0) return null;
     const top = eq.loads.at(-1);
@@ -692,6 +709,8 @@ export function gymLearnFor(eq: EquipmentInstance, load: Load | null, exercise: 
     if (!typed && top !== undefined && gap !== null && v > toScaled(top) + DUMBBELL_LEARN_STEPS_ABOVE * gap) return null;
     return { kind: 'add_dumbbell', equipmentId: eq.id, unit: eq.unit, value: load.value };
   }
+  // (Ben, 28 Oct) A weight named to the coach: never past a machine's max, never a stack step or top (kept as typed).
+  if (named) return null;
   // (Ben, 27 Oct) Typed above an item's recorded max (a plate-loaded machine, a bar's max): the max goes up to it.
   if (typed && eq.kind !== 'weight_stack' && eq.maxLoad !== undefined && load.value > eq.maxLoad && v <= toScaled(LEARN_CEILING.max[eq.unit]) && isLoadAchievable(load, { ...eq, maxLoad: load.value })) {
     return { kind: 'raise_max', equipmentId: eq.id, unit: eq.unit, max: load.value, itemName: eq.name };
@@ -708,6 +727,31 @@ export function gymLearnFor(eq: EquipmentInstance, load: Load | null, exercise: 
   }
   const step = STACK_STEPS[eq.unit].find((s) => toScaled(s) !== gap && v % toScaled(s) === 0);
   return step === undefined ? null : { kind: 'stack_step', ...about, step };
+}
+
+/** Plate sizes a gym might have that its profile doesn't list, lightest first (`add_plate`). */
+const PLATE_CANDIDATES: Readonly<Record<WeightUnit, readonly number[]>> = { kg: [0.25, 0.5, 1, 1.25, 1.5, 2, 2.5, 5, 10, 15, 20, 25], lb: [0.25, 0.5, 1, 1.25, 2.5, 5, 10, 15, 25, 35, 45] };
+
+/** The item with `count` more plates of `mass` (a new size, or more of one it has). */
+function withPlates<T extends { plates: readonly { mass: number; count: number }[] }>(eq: T, mass: number, count: number): T {
+  const has = eq.plates.some((p) => toScaled(p.mass) === toScaled(mass));
+  const plates = has ? eq.plates.map((p) => (toScaled(p.mass) === toScaled(mass) ? { ...p, count: p.count + count } : p)) : [...eq.plates, { mass, count }];
+  return { ...eq, plates };
+}
+
+/**
+ * (Ben, 28 Oct) The plate a plate total needs: the lightest standard size that, added as a pair (one on a single
+ * horn), makes the load on this item within its max. Null: not a plate-loaded item, a typo-sized load, or no single
+ * plate size makes it (e.g. 101.25 kg on a 20 kg bar needs 0.625 kg plates).
+ */
+function plateLearnFor(eq: EquipmentInstance, load: Load): GymLearn | null {
+  if (eq.kind !== 'barbell' && eq.kind !== 'ez_bar' && eq.kind !== 'trap_bar' && eq.kind !== 'smith_machine' && eq.kind !== 'plate_loaded_machine') return null;
+  if (toScaled(load.value) > toScaled(LEARN_CEILING.max[eq.unit]) || (eq.maxLoad !== undefined && load.value > eq.maxLoad)) return null;
+  const count = eq.kind === 'plate_loaded_machine' ? eq.loadingSides : 2;
+  for (const mass of PLATE_CANDIDATES[eq.unit]) {
+    if (isLoadAchievable(load, withPlates(eq, mass, count))) return { kind: 'add_plate', equipmentId: eq.id, unit: eq.unit, mass, count, itemName: eq.name };
+  }
+  return null;
 }
 
 /**
@@ -727,6 +771,11 @@ export function planGymLearn(eq: EquipmentInstance, learn: GymLearn, atUtc: stri
     if (eq.kind !== 'dumbbells' || eq.loads.some((l) => toScaled(l) === toScaled(learn.value))) return null;
     const loads = [...eq.loads, learn.value].sort((a, b) => a - b);
     const after = validItem(bumped(eq, { loads, ...(eq.maxLoad !== undefined && eq.maxLoad < learn.value ? { maxLoad: learn.value } : {}) }, atUtc));
+    return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after }], lines: [gymLearnDoneText(learn)] };
+  }
+  if (learn.kind === 'add_plate') {
+    if (eq.kind !== 'barbell' && eq.kind !== 'ez_bar' && eq.kind !== 'trap_bar' && eq.kind !== 'smith_machine' && eq.kind !== 'plate_loaded_machine') return null;
+    const after = validItem(bumped(withPlates(eq, learn.mass, learn.count), {}, atUtc));
     return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after }], lines: [gymLearnDoneText(learn)] };
   }
   if (learn.kind === 'raise_max') {
@@ -783,6 +832,47 @@ export function planGymLearn(eq: EquipmentInstance, learn: GymLearn, atUtc: stri
   if (getAchievableLoads(made).loads.length === 0) return null;
   const family = validItem(bumped(eq, { notFor: [...(eq.notFor ?? []), learn.exerciseId] }, atUtc));
   return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after: family }, { before: null, after: made }], lines: [gymLearnDoneText(learn)] };
+}
+
+/**
+ * (Ben, 28 Oct: "if i name a weight specifically it probably means its there") What the gym learns from the weights
+ * Ben named in a coach edit of today's workout (`loadAsTyped` targets): a dumbbell added to the rack, or the plate a
+ * plate total needs, on the saved item the row uses. Never past a machine's max and never a stack step or top (those
+ * loads are kept as typed, nothing learned). One edit for all of them (each item's first `before`, last `after`), so
+ * it lands and comes back with the change, in its one Undo. Null: nothing to learn. Pure.
+ */
+export function namedWeightGymEdit(input: { aggregate: SessionAggregate; command: CoachEditTodayCommand; items: readonly EquipmentInstance[]; atUtc: string; newId: () => string }): GymEdit | null {
+  const { aggregate } = input;
+  const current = new Map(input.items.map((e) => [e.id, e] as const));
+  const merged = new Map<string, { before: EquipmentInstance | null; after: EquipmentInstance }>();
+  const lines: string[] = [];
+  let gymId: string | null = null;
+  for (const step of input.command.steps) {
+    if (step.type !== 'adjust_pending_targets') continue;
+    const asked = [...step.changes.map((c) => ({ setId: c.setId, c })), ...step.addSets.map((c) => ({ setId: c.copyFromSetId, c }))];
+    for (const { setId, c } of asked) {
+      const load = c.target.load;
+      if (c.loadAsTyped !== true || load === null) continue;
+      const set = aggregate.sets.find((x) => x.id === setId);
+      const ex = set === undefined ? undefined : aggregate.exercises.find((e) => e.id === set.sessionExerciseId);
+      const item = ex?.equipmentId == null ? undefined : current.get(ex.equipmentId);
+      if (ex === undefined || item === undefined || item.availability !== 'available' || item.gymId !== aggregate.session.gymId) continue;
+      const learn = gymLearnFor(item, load, { id: ex.exerciseId, name: ex.exerciseName }, { named: true });
+      const edit = learn === null ? null : planGymLearn(item, learn, input.atUtc, input.newId, [...current.values()]);
+      if (edit === null) continue;
+      gymId = edit.gymId;
+      for (const e of edit.equipment) {
+        const was = merged.get(e.after.id);
+        merged.set(e.after.id, { before: was === undefined ? e.before : was.before, after: e.after });
+        current.set(e.after.id, e.after);
+      }
+      lines.push(...edit.lines);
+    }
+  }
+  if (gymId === null || merged.size === 0) return null;
+  // One version step per item, however many learns touched it.
+  const equipment = [...merged.values()].map((e) => (e.before === null ? e : { before: e.before, after: { ...e.after, version: e.before.version + 1 } }));
+  return { gymId, gym: null, equipment, lines: [...new Set(lines)].slice(0, 12) };
 }
 
 // ---------------------------------------------------------------------------
