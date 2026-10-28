@@ -95,6 +95,15 @@ SideSign PR #3 (`74950d37f2333d29cbf3bfc9ca4a60820498c2d3`, from `SideStore/Side
 cherry-picks onto `73ca02d` with no conflicts (tested locally; same diff (+8/-3) to `Entitlement.swift` and
 `Feature.swift` as on `752d1ef`, `Entitlement.healthKit` already defined).
 
+## Finding on device, 28 Oct 2026: no `ALTAppGroups`
+
+On build 475 (iOS 26.6.1) this fork signed the app and the widget extension with the renamed App Group
+`group.com.projectfizz.fizz.MDP255CUTA` (bundle ID `com.projectfizz.fizz.MDP255CUTA`; the group suffix equals the
+bundle ID suffix), but wrote **no `ALTAppGroups`** key into either Info.plist, unlike AltStore. Our expo-widgets patch
+then fell back to the build-time group, had no container, and the Live Activity drew blank cards. The resolver now also
+reads each bundle's `embedded.mobileprovision` and derives the group from the bundle ID suffix (ADR 0007, amendment
+28 Oct 2026). Treat `ALTAppGroups` as optional for any signing tool.
+
 ## Residual risks for Ben
 
 - Third-party, AI-assisted fork, unaffiliated with SideStore. We build from source at fixed SHAs; re-review before
