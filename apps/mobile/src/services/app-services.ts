@@ -28,6 +28,9 @@ import {
   type StartOutcome,
   DEFAULT_CHECK_IN_SETTINGS,
   gymLearnFor,
+  todayDraftState,
+  currentDraftVersion,
+  type BuilderEditOp,
 } from '@fizz/domain';
 import { bundledCatalogue, toExerciseRow, type CatalogueEntry } from '@fizz/catalogue';
 import {
@@ -43,7 +46,7 @@ import {
   type RecordCounts,
   type SqliteRepositories,
 } from '@fizz/persistence';
-import type { CheckInSettings, EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { CheckInSettings, EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, PlanWeekExerciseEdit, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachModelPort, TurnLifecycle } from '@fizz/coach';
 import type { HealthPort, TextCoachState } from '@fizz/providers';
@@ -1141,6 +1144,51 @@ export function createAppServices(deps: AppServicesDeps) {
   };
 
   /**
+   * (Ben, 29 Oct) A this-week exercise change reaches Your workout too: today's open Your workout drafts for that plan
+   * day that Ben (or the coach) already changed get the same one change as a builder edit (its own Undo goes with the
+   * day sheet's). Today's own draft is redrafted from the card at Start and Edit, so it isn't touched here.
+   */
+  async function weekToDrafts(planId: string, edit: PlanWeekExerciseEdit | Omit<PlanWeekExerciseEdit, 'week' | 'opId' | 'atUtc'>): Promise<{ draftId: string; opId: string }[]> {
+    const p = await getProfile();
+    if (p === null) return [];
+    const today = localDateOf(toMs(deps.now().utc), p.timezone);
+    const drafts = (await repos().workoutDrafts.listByOwner(p.id).catch(() => [])).filter((d) => d.status === 'open' && d.builderKey?.localDate === today && d.builderKey.planId === planId && d.builderKey.dayIndex === edit.dayIndex && todayDraftState(d).state !== 'today');
+    const out: { draftId: string; opId: string }[] = [];
+    for (const d of drafts) {
+      const slots = currentDraftVersion(d).plan.slots;
+      const at = edit.fromExerciseId === null ? undefined : slots.find((x) => x.exerciseId === edit.fromExerciseId);
+      const op: BuilderEditOp | null =
+        edit.kind === 'add' ? (edit.toExerciseId === null || slots.some((x) => x.exerciseId === edit.toExerciseId) ? null : { kind: 'add_exercise', exerciseId: edit.toExerciseId }) : at === undefined ? null : edit.kind === 'remove' ? { kind: 'delete_exercise', slotKey: at.slotKey } : edit.toExerciseId === null || edit.toExerciseId === at.exerciseId ? null : { kind: 'swap', slotKey: at.slotKey, exerciseId: edit.toExerciseId };
+      if (op === null) continue;
+      const opId = deps.newId();
+      const r = await builder.edit(d.id, op, { opId, basis: { version: d.version } }).catch(() => null);
+      if (r?.status === 'written') out.push({ draftId: d.id, opId });
+    }
+    return out;
+  }
+  const plansWithDrafts: typeof plans = {
+    ...plans,
+    async weekChange(req) {
+      const r = await plans.weekChange(req);
+      if (!r.ok || r.duplicate || req.change.kind !== 'exercise') return r;
+      return { ...r, draftEdits: await weekToDrafts(req.planId, req.change.edit) };
+    },
+  };
+  /**
+   * (Ben, 29 Oct) `Open <day>` on Library: the plan day as Today's card drafts it this week (this week's one-change
+   * edits, skips and moves in place), as Today's `Edit` opens it; an edited Your workout draft for it today is that one.
+   * Null: not a plan day on Today (Your workout opens the template as before).
+   */
+  async function openDay(routineId: string): Promise<{ draftId: string } | null> {
+    const data = await todayWithCoach.load().catch(() => null);
+    const day = data?.days.find((d) => d.templates.some((t) => t.routineId === routineId));
+    const controls = day === undefined ? undefined : data?.initial[day.key];
+    if (data == null || day === undefined || controls === undefined) return null;
+    const c = await todaySession.commit(data, { dayKey: day.key, controls }, deriveId(`open-day:${day.key}:${data.localDate}:${data.equipmentVersion}:${String(deps.manager.store.db.writeCount)}`)).catch(() => null);
+    return c?.ok === true ? { draftId: c.draftId } : null;
+  }
+
+  /**
    * (Workout builder v3 §2.6, §2.9, §5, §6.1) The builder's coach: Set up words, Your workout proposals,
    * Coach review and the pre-session nudge, reading and writing through the builder (`coach-ports`). Nothing
    * in Set up, Your workout, Today or logging waits for it (rule 1). Its review is registered for the builder's
@@ -1224,11 +1272,11 @@ export function createAppServices(deps: AppServicesDeps) {
     library,
     customExercises,
     history,
-    todaySession: todayWithCoach,
+    todaySession: { ...todayWithCoach, openDay },
     overview,
     routines,
     coachDrafts,
-    plans,
+    plans: plansWithDrafts,
     planBuilder,
     /** (Ben, 20 Oct) Runs, rides, swims and sport: add, edit, delete, Undo; Recent and calendar rows. */
     activities: weekly.activities,

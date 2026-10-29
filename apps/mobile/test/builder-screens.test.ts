@@ -378,7 +378,8 @@ describe('source checks', () => {
     expect(entry('screens/coach/CoachSheetScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'coach_draft', draftId }, back: 'Back' });");
     expect(entry('screens/coach/CoachSheetScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId }, back: 'Back' });");
     expect(entry('screens/library/ExerciseInfoScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: u.routineId }, back: 'Back' });");
-    expect(entry('screens/library/PlanDayScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: day.routineId }, back: 'Library' });");
+    // (Ben, 29 Oct) A plan day opens as this week has it (Today's Edit's draft), else the template as before.
+    expect(entry('screens/library/PlanDayScreen.tsx')).toContain("navigation.navigate('BuilderWorkout', o === null ? { open: { kind: 'routine', routineId: day.routineId }, back: 'Library' } : { draftId: o.draftId, back: 'Library' });");
     // (22 Oct) The plan day's button opens Your workout, so it says `Open <day>`, never `Start <day>`.
     expect(entry('screens/library/PlanDayScreen.tsx')).toContain('open: (name: string) => `Open ${name}`,');
     expect(entry('screens/library/PlanDayScreen.tsx')).toContain('label={PLAN_DAY_COPY.open(name)}');

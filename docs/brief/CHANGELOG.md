@@ -962,3 +962,10 @@ Merged into `claude/gracious-knuth-joxqpw` on 23 Oct (branches `claude/libplan-2
 - **One-change edits.** Edit: tap an exercise for Swap or Remove, or Add exercise; scope This week only (default from Today) or Every week (default from Library). A swap keeps sets, reps, rest, place and superset; nothing else is recalculated. This week only is stored with the plan (`weekEdits`, `weekSkips`, `lastWeekChange`: optional plan fields, no migration) and never touches the template; Every week edits the template only (done workouts unchanged). Idempotent and versioned; one Undo each. A typed weight is kept as typed and the gym learns it.
 - **Bugs from build 478.** (1) Leg press `BW`: compact lists read a plate-loaded machine's added load as bodyweight; now a kg target. (2) The builder's superset advice (`Both work your quads…`) no longer shows on Today's card. (3) `Legs` card with an RDL main lift: Legs A and Legs B both read `Legs` on Today; plan days now read as the plan names them. (4) The rings: didn't reproduce on HEAD (plan3's Set days rules give Thu Push B, Fri Pull B, Sat Legs B); covered by a regression test with Ben's week.
 - **Open:** not run on Ben's iPhone. No `est.` target on Today's card for a swapped-in exercise with no history (shows `—`). Today's card reads a swapped-in exercise's reps from his last session of it. Library's `Open <day>` and an already-edited Your workout draft don't lay this week's edits on.
+
+## 2026-10-29: Day sheet gaps closed (follow-up)
+
+- A swapped-in exercise with no history shows the first-time estimate marked `est.` on the day sheet and Today's card.
+- This week's changes reach Your workout and Start everywhere: Library's `Open <day>`, the overview's dry run, a Start from the plan workout, and a Your workout draft already edited today (the same change, undone with the day sheet's Undo).
+- Skip on Any days: the day isn't placed on a tile and the days left close up; Up next takes the days not done this week first, the skipped day last; done anyway it counts. Reps keep the 21 Oct rule.
+- **Open:** not run on Ben's iPhone.

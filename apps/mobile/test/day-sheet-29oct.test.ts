@@ -56,6 +56,7 @@ async function applyPlan(s: AppServices): Promise<void> {
 
 /** Ben's Monday to Wednesday, then Thursday 08:00. `appliedAt`: the plan applied then (a lead-in after Monday). */
 async function bensWeek(s: AppServices, gymId: string, appliedAt: string | null = null): Promise<void> {
+  // `skip-apply`: the caller applied its own plan already.
   if (appliedAt === null) await applyPlan(s);
   h.clockMs = Date.parse('2026-10-26T18:00:00.000Z');
   await logWorkout(h, s, gymId, [
@@ -68,7 +69,7 @@ async function bensWeek(s: AppServices, gymId: string, appliedAt: string | null 
     { exercise: 'Barbell row', sets: [{ load: 70, reps: 8 }, { load: 70, reps: 8 }, { load: 70, reps: 8 }] },
     { exercise: 'Pull-up', sets: [{ load: 0, reps: 8 }, { load: 0, reps: 8 }] },
   ]);
-  if (appliedAt !== null) {
+  if (appliedAt !== null && appliedAt !== 'skip-apply') {
     h.clockMs = Date.parse(appliedAt);
     await applyPlan(s);
   }
@@ -216,6 +217,8 @@ describe('This week only: one change, nothing else', () => {
     expect(sheet.list.map((r) => r.fullName)).toEqual(before.list.map((r, k) => (k === i ? 'Leg press' : r.fullName)));
     // The row's set count stays (its reps read from his last leg press, as every card's do).
     expect(sheet.list[i]?.sets.split('\u00a0')[0]).toBe(before.list[i]?.sets.split('\u00a0')[0]);
+    // 4. The 21 Oct reps rule stays: his last leg press was 140 × 10, so the card reads 10 (the stored row keeps 8–12).
+    expect(sheet.list[i]?.sets.endsWith('\u00a010')).toBe(true);
     expect(sheet.list[i]?.superset).toBe(before.list[i]?.superset ?? null);
     expect(sheet.list.filter((_, k) => k !== i)).toEqual(before.list.filter((_, k) => k !== i));
     expect(sheet.changed).toEqual([legPress.exerciseId]);
@@ -427,5 +430,151 @@ describe('a weight Ben types is kept as typed and the gym learns it (rule 4)', (
     expect(await s.plans.undoWeekChange({ planId: typed.plan.id, expectedVersion: typed.plan.version, opId: h.ids() })).toMatchObject({ ok: true });
     expect(await s.gyms.undoEdit(learned)).toEqual({ ok: true });
     expect(await racks()).not.toContain(31);
+  });
+});
+
+describe('gaps closed (coordinator, 29 Oct)', () => {
+  const slotIds = (w: { blocks: readonly { slots: readonly { exerciseId: string }[] }[] }) => w.blocks.flatMap((b) => b.slots.map((x) => x.exerciseId));
+
+  it('1. a swapped-in exercise with no history shows the first-time estimate, `est.`, on the day sheet and Today’s card', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await bensWeek(s, gymId);
+    const d = await loaded(s);
+    const template = await templateOf(s, d, 'Push B');
+    const row = [...template.exercises].sort((a, b) => a.order - b.order).find((e) => e.main !== true);
+    const fly = await pick(s, gymId, 'Cable fly');
+    if (row === undefined || fly === undefined) throw new Error('no row');
+    const p = await planOf(s);
+    expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'exercise', edit: { dayIndex: 3, kind: 'swap', rowId: row.id, fromExerciseId: row.exerciseId, toExerciseId: fly.exerciseId } } })).toMatchObject({ ok: true });
+    const after = await loaded(s);
+    const sheetRow = sheetOf(s, after, 'Push B').list.find((r) => r.exerciseId === fly.exerciseId);
+    expect(sheetRow?.target).toMatch(/^\d+(\.\d+)? est\.$/);
+    expect(sheetRow?.accessibilityLabel).toContain('estimate');
+    const key = dayOf(after, 'Push B').key;
+    const controls = after.initial[key];
+    if (controls === undefined) throw new Error('no controls');
+    expect(s.todaySession.card(after, { dayKey: key, controls })?.list.find((r) => r.exerciseId === fly.exerciseId)?.target).toBe(sheetRow?.target);
+    // Only the swapped-in exercise: the day's other first-time rows read as before.
+    expect(sheetOf(s, after, 'Push B').list.filter((r) => r.exerciseId !== fly.exerciseId).every((r) => !r.target.endsWith('est.'))).toBe(true);
+  });
+
+  it('2. a day already edited in Your workout today takes the this-week swap; Today, Start and Undo follow', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await bensWeek(s, gymId);
+    let d = await loaded(s);
+    const key = dayOf(d, 'Push B').key;
+    const controls = d.initial[key];
+    if (controls === undefined) throw new Error('no controls');
+    // Ben edits Push B in Your workout (Today's Edit): its last exercise out.
+    const c = await s.todaySession.commit(d, { dayKey: key, controls }, h.ids());
+    if (!c.ok) throw new Error(c.message);
+    const snap = await s.builder.read(c.draftId);
+    const lastSlot = snap?.workout.blocks.flatMap((b) => b.slots).at(-1);
+    if (snap === null || lastSlot === undefined) throw new Error('no draft');
+    expect((await s.builder.edit(c.draftId, { kind: 'delete_exercise', slotKey: lastSlot.key }, { opId: h.ids(), basis: { version: snap.version } })).status).toBe('written');
+    d = await loaded(s);
+    expect(s.todaySession.card(d, { dayKey: key, controls })?.edited).not.toBeNull();
+    // The day sheet's swap, this week only.
+    const template = await templateOf(s, d, 'Push B');
+    const row = [...template.exercises].sort((a, b) => a.order - b.order).find((e) => e.main !== true && e.exerciseId !== lastSlot.exerciseId);
+    const fly = await pick(s, gymId, 'Cable fly');
+    if (row === undefined || fly === undefined) throw new Error('no row');
+    const p = await planOf(s);
+    const w = await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'exercise', edit: { dayIndex: 3, kind: 'swap', rowId: row.id, fromExerciseId: row.exerciseId, toExerciseId: fly.exerciseId } } });
+    if (!w.ok) throw new Error(w.message);
+    expect(w.draftEdits?.map((x) => x.draftId)).toEqual([c.draftId]);
+    const now = await s.builder.read(c.draftId);
+    if (now === null) throw new Error('no draft');
+    expect(slotIds(now.workout)).toContain(fly.exerciseId);
+    expect(slotIds(now.workout)).not.toContain(row.exerciseId);
+    expect(slotIds(now.workout)).not.toContain(lastSlot.exerciseId);
+    d = await loaded(s);
+    const card = s.todaySession.card(d, { dayKey: key, controls });
+    expect(card?.list.map((r) => r.exerciseId)).toContain(fly.exerciseId);
+    // Undo: the plan and the draft both as before.
+    const e = w.draftEdits?.[0];
+    if (e === undefined) throw new Error('no draft edit');
+    expect(await s.plans.undoWeekChange({ planId: w.plan.id, expectedVersion: w.plan.version, opId: h.ids() })).toMatchObject({ ok: true });
+    expect((await s.builder.undo(e.draftId, e.opId, h.ids())).status).toBe('written');
+    const back = await s.builder.read(c.draftId);
+    expect(back === null ? [] : slotIds(back.workout)).toContain(row.exerciseId);
+    // Redo the swap, then Start from the edited draft: the workout has the swap and Ben's own edit.
+    const p2 = await planOf(s);
+    expect(await s.plans.weekChange({ planId: p2.planId, expectedVersion: p2.version, opId: h.ids(), change: { kind: 'exercise', edit: { dayIndex: 3, kind: 'swap', rowId: row.id, fromExerciseId: row.exerciseId, toExerciseId: fly.exerciseId } } })).toMatchObject({ ok: true });
+    const ready = await s.builder.read(c.draftId);
+    if (ready === null) throw new Error('no draft');
+    const started = await s.builder.start(c.draftId, { opId: h.ids(), expectedVersion: ready.version, gymId, checkIn: null });
+    if (!started.ok) throw new Error(started.message);
+    const a = (await s.workout.load(started.sessionId))?.aggregate;
+    const ids = a?.exercises.filter((x) => x.removed === undefined).map((x) => x.exerciseId) ?? [];
+    expect(ids).toContain(fly.exerciseId);
+    expect(ids).not.toContain(row.exerciseId);
+    expect(ids).not.toContain(lastSlot.exerciseId);
+  });
+
+  it('2. Library’s `Open <day>`, the overview’s dry run and a Start from the workout itself all take this week’s swap; the template never changes', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await bensWeek(s, gymId);
+    const d = await loaded(s);
+    const template = await templateOf(s, d, 'Legs B');
+    const row = [...template.exercises].sort((a, b) => a.order - b.order).find((e) => e.main !== true);
+    const lp = await pick(s, gymId, 'Leg press');
+    if (row === undefined || lp === undefined) throw new Error('no row');
+    const p = await planOf(s);
+    expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'exercise', edit: { dayIndex: 5, kind: 'swap', rowId: row.id, fromExerciseId: row.exerciseId, toExerciseId: lp.exerciseId } } })).toMatchObject({ ok: true });
+    const opened = await s.todaySession.openDay(template.id);
+    if (opened === null) throw new Error('not opened');
+    const snap = await s.builder.read(opened.draftId);
+    expect(snap === null ? [] : slotIds(snap.workout)).toContain(lp.exerciseId);
+    expect(snap === null ? [] : slotIds(snap.workout)).not.toContain(row.exerciseId);
+    const planned = await s.routines.planned(template.id, gymId);
+    expect(planned?.aggregate.exercises.map((x) => x.exerciseId)).toContain(lp.exerciseId);
+    const r = await s.workout.start({ gymId, opId: h.ids(), checkIn: null, routineOf: template.id });
+    if (!r.ok) throw new Error(r.error.message);
+    const ids = r.aggregate.exercises.map((x) => x.exerciseId);
+    expect(ids).toContain(lp.exerciseId);
+    expect(ids).not.toContain(row.exerciseId);
+    expect((await templateOf(s, await loaded(s), 'Legs B')).exercises).toEqual(template.exercises);
+  });
+
+  it('3. Any days: Skip this week takes the day out of this week (tiles, count, Up next while another day is left); done anyway it counts', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    // The same week on an Any days plan.
+    const session = await s.planBuilder.open();
+    if (session === null) throw new Error('no builder');
+    const built = await s.planBuilder.save(session, { ...session.answers, split: 'ppl' as const, sessions: 6, schedule: 'any' as const, days: [] }, null, h.ids());
+    if (!built.ok) throw new Error('not built');
+    if (!(await s.planBuilder.apply({ planId: built.planId, versionN: built.versionN, expectedVersion: built.version, opId: h.ids() })).ok) throw new Error('not applied');
+    await bensWeek(s, gymId, 'skip-apply');
+    let d = await loaded(s);
+    // Any days: Up next is the day trained least recently (Legs B); the three left go Thu, Fri, Sat.
+    const first = nextName(d);
+    expect(first).toBe('Legs B');
+    expect(tiles(s, d).slice(3)).toEqual(['29 today planned ring:legs', '30 planned ring:push', '31 planned ring:pull', '01 plain']);
+    const p = await planOf(s);
+    // Skipping Up next itself: another day comes up, and the tiles close up (two days left, Thu and Fri).
+    expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'skip', dayIndex: 5 } })).toMatchObject({ ok: true });
+    d = await loaded(s);
+    const second = nextName(d);
+    expect(['Push B', 'Pull B']).toContain(second);
+    expect(tiles(s, d).slice(3).map((t) => t.replace(/ring:\w+/, 'ring'))).toEqual(['29 today planned ring', '30 planned ring', '31 plain', '01 plain']);
+    expect(tiles(s, d).join(' ')).not.toContain('ring:legs');
+    expect((await s.plans.overview())?.daysThisWeek.text).toBe('3 of 5');
+    const sk = sheetOf(s, d, 'Legs B');
+    expect([sk.title, sk.statusText, sk.actions.unskip, sk.actions.doToday]).toEqual(['Legs B', 'Skipped', true, null]);
+    // Done anyway (Ben picks it): it counts, and the week is whole again.
+    const key = dayOf(d, 'Legs B').key;
+    const controls = d.initial[key];
+    if (controls === undefined) throw new Error('no controls');
+    const c = await s.todaySession.commit(d, { dayKey: key, controls }, h.ids());
+    if (!c.ok) throw new Error(c.message);
+    const r = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: h.ids(), checkIn: null });
+    if (!r.ok) throw new Error('not started');
+    await finishWorkout(h, s, r.aggregate.session.id);
+    expect((await s.plans.overview())?.daysThisWeek.text).toBe('4 of 6');
   });
 });

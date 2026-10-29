@@ -1314,11 +1314,13 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
    * (Redesign v3 §A5, §B) The card's compact WorkoutList and the coach's waiting offer: its change count and, on a row
    * whose load it changes, the offered value. Read from the offer only (rule 3: nothing applied here).
    */
-  function listOf(data: TodaySessionData, w: BuilderWorkout, unit: 'kg' | 'lb', coach: TodayCoachInputs): Pick<TodayCardView, 'list' | 'listTarget' | 'coachChanges'> {
+  function listOf(data: TodaySessionData, w: BuilderWorkout, unit: 'kg' | 'lb', coach: TodayCoachInputs, dayKey: string | null = null): Pick<TodayCardView, 'list' | 'listTarget' | 'coachChanges'> {
+    // (Ben, 29 Oct) An exercise a one-change edit put in with no history of its own: the first-time estimate, `est.`.
+    const changed = dayKey === null ? undefined : data.weekEdits[dayKey]?.changed;
     const n = coach.nudge;
     const offer = n?.kind === 'line' ? n.offer : null;
     const changes = offer === null ? 0 : offer.proposal.lines.length;
-    const list = workoutListRows(w, data.internal.info, unit, { pained: data.internal.pained, ...(changes > 0 && offer !== null ? { coach: offer.proposal.topLoadsAfter ?? {} } : {}) });
+    const list = workoutListRows(w, data.internal.info, unit, { pained: data.internal.pained, ...(changes > 0 && offer !== null ? { coach: offer.proposal.topLoadsAfter ?? {} } : {}), ...(changed === undefined || changed.length === 0 ? {} : { estimateFor: new Set(changed) }) });
     return { list, listTarget: workoutListTargetHeader(unit, w.blocks.flatMap((b) => b.slots.map((x) => x.convention))), coachChanges: changes };
   }
 
@@ -1364,7 +1366,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
         rows: todayBreakdown(held.workout, info, worksOf, unit, pained),
-        ...listOf(data, held.workout, unit, coach),
+        ...listOf(data, held.workout, unit, coach, day.key),
         leftOut: edited?.fit?.dropped.length ?? 0,
         why: [...whyLines(data, day, t, sel.controls, null, heldIn(held.workout), gap, coachWhyOf(data, coach)), ...deloadWhy(data)],
         startable: count > 0,
@@ -1394,7 +1396,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: d.absOn, planOn: t.absPlan, differs: d.absOn !== t.absPlan }, supersets: sel.controls.supersets },
       unit,
       rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
-      ...listOf(data, d.workout, unit, coach),
+      ...listOf(data, d.workout, unit, coach, day.key),
       leftOut: d.fit.steps.filter((x) => x.kind === 'drop').length,
       // (Ben, 23 Oct) Sets carried over to this day: one line each behind Why?.
       why: [...whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap, coachWhyOf(data, coach)), ...d.carried.map((x) => TODAY_CARRIED(x)), ...deloadWhy(data)],

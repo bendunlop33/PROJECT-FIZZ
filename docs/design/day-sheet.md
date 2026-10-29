@@ -27,7 +27,10 @@ Do today instead   Move to…   Edit   Skip this week
 - **Do today instead**: Set days, swaps its weekday with today's day this week (no day today: moves it to today).
   Any days: puts it on Today's card (nothing written, as `Do today ›`).
 - **Move to…**: Set days, the weekdays left this week no other day still to do holds.
-- **Skip this week** / **Unskip**: out of this week's tiles, Up next and count (`3 of 5`).
+- **Skip this week** / **Unskip**: out of this week's tiles, Up next and count (`3 of 5`). Any days (no dates): the
+  skipped day isn't placed on a tile, the days left close up; Up next goes to the days not done this week first (the
+  skipped day's turn goes to the next one, never to a day already done this week), the skipped day last. Done anyway,
+  it counts (`4 of 6`). Next week it's back.
 - **Edit**: the day's exercises; tap one for **Swap** or **Remove**, or **＋ Add exercise**. Scope chips
   **This week only** (default from Today) and **Every week** (default from Library).
 - Every change: a toast with **Undo**; the tiles, Up next and the card follow at once.
@@ -49,8 +52,9 @@ One tap puts a day on the card. No plan: Profile › Split's days, as before.
   template when Today reads it. The template never changes; next week is the plan as it was.
 - **Every week** is one versioned write of the template (an `update_routine` record; Undo is its revert). Done
   workouts are their own records and never change (rule 2).
-- Target weight: Today's own rule from Ben's history of the new exercise; with none, `—` (no reference to estimate
-  from on Today's card: see Open). A weight Ben types on a changed row is kept as typed (in the exercise's own load
+- Target weight: Today's own rule from Ben's history of the new exercise; with none, the first-time estimate at this
+  gym marked `est.` (`40 est.`; VoiceOver `estimate`), on the day sheet and Today's card. Reps follow the 21 Oct rule
+  (his last session of that exercise), as on every card. A weight Ben types on a changed row is kept as typed (in the exercise's own load
   convention) and the gym learns it (a dumbbell, a plate, a machine's max; rule 4); the change's Undo takes both back.
 - Writes are idempotent by op ID and refused when stale (the plan's version, the row as seen; rule 5).
 
@@ -64,11 +68,14 @@ One tap puts a day on the card. No plan: Profile › Split's days, as before.
 - The rings: on HEAD the week reads Thu Push B (today), Fri Pull B, Sat Legs B (plan3's Set days rules); with the names
   fixed no ring or sheet can borrow another day's name.
 
-## 5. Open
+## 5. Your workout and Start
 
-- An estimate (`est.`) for a swapped-in exercise with no history isn't on Today's card yet: the card's loads have no
-  related-lift reference, so it shows `—`. Start still plans it light (the first-time ceiling).
-- Today's card reads a swapped-in exercise's reps from Ben's last session of it (as every card does, 21 Oct); the
-  stored row keeps its own.
-- A day already open as an edited Your workout draft today keeps that draft; a this-week edit shows on its next card.
-- Library's `Open <day>` (Your workout from the template) doesn't lay this week's edits on yet.
+A this-week change reaches every way into the day: Today's card and Edit (drafted with it), Library's `Open <day>`
+(opens the day as Today's Edit does), the overview's dry run and a Start from the workout itself (the plan day's rows
+this week), and a Your workout draft Ben already changed today (the same one change made on it as a builder edit; the
+day sheet's Undo takes both back).
+
+## 6. Open
+
+- Every week changes reach an already-edited Your workout draft through its existing `Push B changed` line, not
+  automatically.

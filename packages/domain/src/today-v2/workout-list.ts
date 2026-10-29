@@ -163,7 +163,7 @@ export function coachRowLoads(before: BuilderWorkout, after: BuilderWorkout): Co
 }
 
 /** The workout's rows in order, supersets grouped by block. */
-export function workoutListRows(w: BuilderWorkout, info: BuilderInfoLookup, unit: WeightUnit, o: { pained?: (exerciseId: string) => boolean; coach?: CoachRowLoads } = {}): WorkoutListRow[] {
+export function workoutListRows(w: BuilderWorkout, info: BuilderInfoLookup, unit: WeightUnit, o: { pained?: (exerciseId: string) => boolean; coach?: CoachRowLoads; /** (Ben, 29 Oct) Exercises whose first-time estimate (`startLight`) shows as `40 est.` when they have no target. */ estimateFor?: ReadonlySet<string> } = {}): WorkoutListRow[] {
   const out: WorkoutListRow[] = [];
   w.blocks.forEach((b, bi) => {
     const ss = b.slots.length > 1;
@@ -171,7 +171,10 @@ export function workoutListRows(w: BuilderWorkout, info: BuilderInfoLookup, unit
       const fullName = infoOrDefault(info, s.exerciseId).name;
       const plates = info(s.exerciseId)?.platesAdded === true;
       const n = working(s).length;
-      const value = topLoad(s);
+      const own = topLoad(s);
+      // No target of its own (no history): the first-time estimate, labelled (rule 6), for the exercises asked.
+      const est = own === null && s.startLight !== null && s.convention !== 'bodyweight' && o.estimateFor?.has(s.exerciseId) === true;
+      const value = est ? s.startLight : own;
       const coachValue = o.coach?.[s.key];
       const coach = coachValue === undefined ? null : `✦${NBSP}${compactLoadText(coachValue, s.unit, s.convention, unit, plates)}`;
       const held = o.pained?.(s.exerciseId) ?? false;
@@ -182,7 +185,7 @@ export function workoutListRows(w: BuilderWorkout, info: BuilderInfoLookup, unit
         fullName,
         main: s.main,
         sets: `${String(n)}${NBSP}×${NBSP}${slotRepsText(s)}`,
-        target: compactLoadText(value, s.unit, s.convention, unit, plates),
+        target: est ? `${compactLoadText(value, s.unit, s.convention, unit, plates)} est.` : compactLoadText(value, s.unit, s.convention, unit, plates),
         coach,
         superset: ss ? bi : null,
         held,
@@ -192,7 +195,7 @@ export function workoutListRows(w: BuilderWorkout, info: BuilderInfoLookup, unit
           ss ? 'superset' : null,
           held ? 'pain flag, held' : null,
           spokenSets(s),
-          `target ${compactLoadSpoken(value, s.unit, s.convention, plates)}`,
+          `target ${compactLoadSpoken(value, s.unit, s.convention, plates)}${est ? ', estimate' : ''}`,
           coachValue === undefined ? null : `coach suggests ${compactLoadSpoken(coachValue, s.unit, s.convention, plates)}, tap to review`,
         ]
           .filter((x): x is string => x !== null)
