@@ -147,6 +147,8 @@ export interface PlanOverviewInput {
   paused?: { untilDate: string | null } | null;
   /** (20 Oct) Days of this week the plan is paused (`pausedInWeek`): left out of `Days this week`. */
   pausedDaysThisWeek?: number;
+  /** (Ben, 29 Oct) Plan days skipped this week (`Skip this week`, not done): out of this week's count. */
+  skippedThisWeek?: number;
   /** (Ben, 20 Oct) `weekActivityLine` for each activity this week. */
   activities?: readonly string[];
   /** (Ben, 20 Oct) This week's change in use: its days merged or skipped come off `Days this week` (`weekDaysRemoved`). */
@@ -208,7 +210,7 @@ export function planOverview(input: PlanOverviewInput): PlanOverview | null {
   const done = doneThisWeek.size - doubled;
   // (Ben, 28 Oct) A plan started partway through this week expects only the days still possible from its start.
   const expected = planWeekExpectedNow({ days: input.days, done: doneThisWeek, appliedAtUtc: plan.appliedAtUtc, nowMs: input.nowMs, tz: input.tz, weekdays: input.weekdays });
-  const of = planWeekOf(Math.max(1, Math.min(expected ?? Number.POSITIVE_INFINITY, input.days.length) - (change?.daysRemoved ?? 0)), done, input.pausedDaysThisWeek ?? 0);
+  const of = planWeekOf(Math.max(1, Math.min(expected ?? Number.POSITIVE_INFINITY, input.days.length) - (change?.daysRemoved ?? 0) - (input.skippedThisWeek ?? 0)), done, input.pausedDaysThisWeek ?? 0);
   const pct = input.sets.planned > 0 ? Math.round((100 * Math.min(input.sets.done, input.sets.planned)) / input.sets.planned) : null;
   return {
     planId: plan.id,

@@ -69,6 +69,8 @@ import {
   pbUndoWeekChange,
   pbWeekChange,
   pbWeekEditsOf,
+  pbSkipsOf,
+  pbMoveWeek,
   deriveId,
   weekdayIndexOfDate,
   type PbWeekChangeRequest,
@@ -354,6 +356,14 @@ export function createPlanServices(deps: PlanServicesDeps) {
     if (view === undefined || day === undefined) return null;
     const deload = view.deloadWeeks.includes(w);
     return { header: `${PB_BLOCK_COPY.week(w, a.weeks)}${deload ? ` · ${PB_BLOCK_COPY.deload}` : ''}`, note: view.note, rows: day.rows };
+  }
+
+  /** (Ben, 29 Oct) This week's skipped plan days not done anyway (a skipped day done after all counts as done). */
+  function skippedNow(plan: PlanDraft, block: PbBlockWeek | null, days: readonly { dayIndex: number | null }[]): number {
+    if (block === null || block.done) return 0;
+    const skips = pbSkipsOf(plan, pbMoveWeek(block));
+    const done = new Set(block.daysDone[block.week - 1] ?? []);
+    return days.filter((d) => d.dayIndex !== null && skips.has(d.dayIndex) && !done.has(d.dayIndex)).length;
   }
 
   /** A typed weight is in the exercise's own load convention (per dumbbell, plates, stack…), never the screen's guess. */
@@ -690,6 +700,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
         weekChange: info?.change ?? null,
         paused: pause === null ? null : { untilDate: pause.untilDate },
         pausedDaysThisWeek: pausedInWeek(monday, pausedDates(plan.pauses, monday, addDays(monday, 7), tz)),
+        skippedThisWeek: skippedNow(plan, pbBlockOfPlan(plan, workouts, nowMs, tz), dayRefs),
         plan: { id: plan.id, name: plan.name, status: plan.status, version: plan.version, appliedAtUtc: plan.applied.atUtc },
         days: dayRefs,
         workouts,

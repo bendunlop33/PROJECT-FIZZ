@@ -363,6 +363,8 @@ describe('Do today instead, Move to…, Skip this week: each with Undo; the tile
     expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'skip', dayIndex: 4 } })).toMatchObject({ ok: true });
     let d = await loaded(s);
     expect(tiles(s, d)[4]).toBe('30 plain');
+    // Library › Plan's count: the skipped day is out of this week's.
+    expect((await s.plans.overview())?.daysThisWeek.text).toBe('3 of 5');
     const fri = sheetOf(s, d, 'Pull B');
     expect([fri.title, fri.statusText, fri.actions.unskip, fri.actions.skip]).toEqual(['Fri · Pull B', 'Skipped', true, false]);
     // Friday: Pull B was the day; skipped, Legs B (Sat) is next.
@@ -374,5 +376,37 @@ describe('Do today instead, Move to…, Skip this week: each with Undo; the tile
     expect(await s.plans.undoWeekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids() })).toMatchObject({ ok: true });
     d = await loaded(s);
     expect(tiles(s, d)[4]).toBe('30 planned ring:pull');
+    expect((await s.plans.overview())?.daysThisWeek.text).toBe('3 of 6');
+  });
+});
+
+describe('a weight Ben types is kept as typed and the gym learns it (rule 4)', () => {
+  it('31 kg per dumbbell on a swapped-in dumbbell exercise this week: the card shows 31 ea; the rack learns 31; Undo takes both back', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await bensWeek(s, gymId);
+    const d = await loaded(s);
+    const template = await templateOf(s, d, 'Push B');
+    const row = [...template.exercises].sort((a, b) => a.order - b.order).find((e) => e.main !== true);
+    if (row === undefined) throw new Error('no row');
+    const fly = await pick(s, gymId, 'Dumbbell fly');
+    if (fly === undefined) throw new Error('no dumbbell fly');
+    const racks = async () => (await s.gyms.detail(gymId))?.equipment.filter((i) => i.equipment.kind === 'dumbbells').flatMap((i) => (i.equipment.kind === 'dumbbells' ? i.equipment.loads : [])) ?? [];
+    expect(await racks()).not.toContain(31);
+    let p = await planOf(s);
+    expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'exercise', edit: { dayIndex: 3, kind: 'swap', rowId: row.id, fromExerciseId: row.exerciseId, toExerciseId: fly.exerciseId } } })).toMatchObject({ ok: true });
+    p = await planOf(s);
+    // The screen sends the number; the convention is the exercise's own (per dumbbell).
+    const typed = await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'exercise', edit: { dayIndex: 3, kind: 'swap', rowId: row.id, fromExerciseId: fly.exerciseId, toExerciseId: fly.exerciseId, load: { value: 31, unit: 'kg', convention: 'total' } } } });
+    if (!typed.ok) throw new Error(typed.message);
+    expect(typed.learned).not.toBeNull();
+    expect(await racks()).toContain(31);
+    const sheet = sheetOf(s, await loaded(s), 'Push B');
+    expect(sheet.list.find((r) => r.exerciseId === fly.exerciseId)?.target).toBe('31 ea');
+    const learned = typed.learned;
+    if (learned == null) throw new Error('nothing learned');
+    expect(await s.plans.undoWeekChange({ planId: typed.plan.id, expectedVersion: typed.plan.version, opId: h.ids() })).toMatchObject({ ok: true });
+    expect(await s.gyms.undoEdit(learned)).toEqual({ ok: true });
+    expect(await racks()).not.toContain(31);
   });
 });
