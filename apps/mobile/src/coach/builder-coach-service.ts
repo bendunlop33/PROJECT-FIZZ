@@ -111,7 +111,7 @@ export interface BuilderReviewWorld {
   time: { dropped: readonly string[]; cut: Readonly<Record<string, number>>; added?: readonly string[]; raised?: Readonly<Record<string, number>> } | null;
   refs: (exerciseId: string) => LoadReferences | null;
   focus: MainFocus | null;
-  block: { week: number; of: number; deload: boolean } | null;
+  block: { week: number; of: number; deload: boolean; startsOn?: string } | null;
 }
 
 /** Today's builder draft as the coach sees and checks it. */
@@ -432,7 +432,8 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
         yourEdits: edits === null ? null : reviewEditLines(edits),
         lifts: lifts.map((l) => ({ slotKey: l.slotKey, exercise: l.exercise, facts: l.facts })),
         focus: focus === null ? null : `${focus.charAt(0).toUpperCase()}${focus.slice(1)}`,
-        blockWeek: block === null ? null : `Week ${String(block.week)} of ${String(block.of)}${block.deload ? ' · Deload' : ''}`,
+        // (Ben, 28 Oct) The lead-in week of a plan applied after its Monday: week 1 starts the next Monday.
+        blockWeek: block === null ? null : block.startsOn !== undefined ? `Lead-in week (week 1 of ${String(block.of)} starts ${block.startsOn})` : `Week ${String(block.week)} of ${String(block.of)}${block.deload ? ' · Deload' : ''}`,
         readiness: c === null ? null : `Check-in ${String(c.score)} of 5 today${c.reasons.length === 0 ? '' : ` · ${c.reasons.join(', ').replaceAll('_', ' ')}`}`,
         liftTargets: (more?.liftTargets ?? []).map((t) => `${name(t.exerciseId)} ${String(t.value)} ${t.unit} × ${String(t.reps)}${t.by === null ? '' : ` by ${t.by}`}`),
       },

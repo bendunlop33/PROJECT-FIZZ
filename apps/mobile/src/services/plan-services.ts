@@ -129,6 +129,8 @@ export interface PlanBlockOverview {
   actions: Readonly<Record<number, { todayKey: string; moveTo: number[] | null }>>;
   /** (Redesign 27 Oct, D4) The answers the plan was built from: Change plan's `Days and time` and `Goal` lines. */
   answers: PlanBuilderAnswers;
+  /** (Ben, 28 Oct) The lead-in week: the Monday week 1 starts (`Starts Mon 2 Nov`); null: not a lead-in. */
+  startsOn: string | null;
 }
 
 export interface PlanOverviewWithBlock extends PlanOverview {
@@ -289,7 +291,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
         actions[d.index] = { todayKey: `plan:${plan.id}:${String(d.index)}`, moveTo: d.weekday === null ? null : [0, 1, 2, 3, 4, 5, 6].filter((x) => x === d.weekday || !taken.has(x)) };
       }
     }
-    return { views, current: Math.min(block.week, a.weeks), done: block.done, header: views[0] === undefined ? '' : views[0].header, line, planId: plan.id, planVersion: plan.version, editable: eb !== null, actions, answers: a };
+    return { views, current: Math.min(block.week, a.weeks), done: block.done, header: views[0] === undefined ? '' : views[0].header, line, planId: plan.id, planVersion: plan.version, editable: eb !== null, actions, answers: a, startsOn: block.leadIn?.startsOn ?? null };
   }
 
   /**

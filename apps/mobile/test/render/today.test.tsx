@@ -4,7 +4,7 @@ import { BuilderWorkoutScreen } from '../../src/screens/builder/BuilderWorkoutSc
 import { TodayScreen } from '../../src/screens/TodayScreen';
 import type { Harness } from '../harness';
 import { expectHealthy, renderScreen } from './render-screen';
-import { benWithHistory, doPlanDay, harness, todayData, withPlan } from './seed';
+import { benWithHistory, doPlanDay, harness, startPlanDay, todayData, withPlan } from './seed';
 
 /**
  * Today in its three plan states, and Your workout opened from its Edit, rendered over real SQLite (ADR 0037):
@@ -56,6 +56,25 @@ describe('Today', () => {
       return st?.width === 7 && st.borderWidth === 1.5 && st.backgroundColor === 'transparent';
     });
     expect(rings).toHaveLength(4);
+    expectHealthy(r);
+    await r.unmount();
+  });
+
+  it('(Ben, 28 Oct) a workout open (Resume): the week still shows, today ringed and the Set days still to come planned', async () => {
+    const ben = await benWithHistory(h);
+    // Set days Mon, Tue, Thu, Fri; Monday's plan day started.
+    await withPlan(h, ben, { sessions: 4, schedule: 'set', days: [0, 1, 3, 4] });
+    await startPlanDay(h, ben);
+    const r = await renderScreen(h, ben.launched, TodayScreen, { name: 'Today' }, (t) => t.includes('Resume') && t.includes('This week'));
+    const labels = r.all((n) => n.props.accessibilityRole === 'button' && typeof n.props.accessibilityLabel === 'string' && /^(Today, )?(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) \d+(: .*)?$/.test(n.props.accessibilityLabel)).map((n) => n.props.accessibilityLabel as string);
+    const tiles = [...new Set(labels)];
+    expect(tiles).toHaveLength(7);
+    expect(tiles[0]).toMatch(/^Today, Monday 19: .+, today's workout$/);
+    expect(tiles[1]).toMatch(/^Tuesday 20: .+, Planned$/);
+    expect(tiles[2]).toBe('Wednesday 21');
+    expect(tiles[3]).toMatch(/^Thursday 22: .+, Planned$/);
+    expect(tiles[4]).toMatch(/^Friday 23: .+, Planned$/);
+    expect(r.text()).toContain('Plan week 1 of');
     expectHealthy(r);
     await r.unmount();
   });

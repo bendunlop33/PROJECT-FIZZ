@@ -65,3 +65,24 @@ Next session's targets keep the strict checks (no equipment row or a wrong conve
   builder's own coach (proposal with Apply/Skip), which now keeps Ben's weights as typed. A draft load Ben named can
   still be re-fitted at Start when newer history arrived in between (`recheckDraftLoad`). Kit learning is for the
   live workout only; a build at a gym without the kit still leaves that exercise out.
+
+## Amendment (Ben, 28 Oct 2026): a weight Ben names is there
+
+Ben: "if i name a weight specifically it probably means its there". This confirms the rule-4 reading above: a
+weight Ben names (to the coach, or typed in a set) is his own entry, kept as typed, and **the gym learns it**,
+quietly, as his own "learn as you train" does:
+
+- A dumbbell the rack doesn't list (31 kg on a 30/32 rack) is added to that gym's rack; a plate total the plates
+  can't make gains the lightest standard plate size that makes it (a pair; one on a single horn). Built:
+  `add_plate` in `gymLearnFor` (so typing a set learns a plate too), `namedWeightGymEdit` for the coach.
+- In `edit_today` the learn is written in the same transaction as the change and stored on its record
+  (`learned`); the change's one Undo takes it back. No question and no extra line.
+- Never past a machine's max (rule 4); on a pin-loaded stack a named weight between steps or above the top is kept
+  as typed and not learned. (Ben's manual typing on a stack still teaches it, per the 27 Oct rule.)
+- Future snapping uses the gym as learned. Today's snapshot is not refreshed under the change (as for a typed
+  target), so Undo stays exact.
+- **Not done yet:** named weights in proposals (`propose_workout`, `propose_plan`, the builder's
+  `propose_workout_edit`) are kept as typed but their Apply doesn't yet teach the gym.
+
+Suggested CLAUDE.md rule 4 wording (for Ben / the main session to apply): "A weight Ben names himself is kept as
+typed and the gym learns it (Ben, 28 Oct); never past a machine's max."

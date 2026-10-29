@@ -1,6 +1,6 @@
 import { weekdayIndexOfDate } from '../calendar';
 import { localDateText } from '../display';
-import type { PbBlockStripCell, PbBlockView } from '../plan-builder/block';
+import { PB_BLOCK_COPY, type PbBlockStripCell, type PbBlockView } from '../plan-builder/block';
 import { pbWeekdayName } from '../plan-builder/edit';
 import type { PlanOverview, PlanOverviewDay } from './plan-overview';
 
@@ -131,6 +131,8 @@ export interface PlanTabBlock {
   done: boolean;
   editable: boolean;
   actions: Readonly<Record<number, { todayKey: string; moveTo: number[] | null }>>;
+  /** (Ben, 28 Oct) The lead-in week of a plan applied after its Monday: the Monday week 1 starts. Absent or null: none. */
+  startsOn?: string | null | undefined;
 }
 
 export interface PlanTabInput {
@@ -142,8 +144,10 @@ export interface PlanTabInput {
 }
 
 /** The header's line from the block (`Week 3 of 6 · deload in week 6`). */
-export function planTabLine(block: Pick<PlanTabBlock, 'current' | 'done'> & { of: number; deloadWeeks: readonly number[] }): string {
+export function planTabLine(block: Pick<PlanTabBlock, 'current' | 'done' | 'startsOn'> & { of: number; deloadWeeks: readonly number[] }): string {
   if (block.done) return PLAN_TAB_VIEW_COPY.blockDone;
+  // (Ben, 28 Oct) The lead-in: `Starts Mon 2 Nov`.
+  if (block.startsOn != null) return PB_BLOCK_COPY.starts(block.startsOn);
   const week = PLAN_TAB_VIEW_COPY.week(block.current, block.of);
   if (block.deloadWeeks.includes(block.current)) return `${week} · ${PLAN_TAB_VIEW_COPY.deloadWeek}`;
   const next = block.deloadWeeks.find((w) => w > block.current);
@@ -217,7 +221,7 @@ export function planTabView(input: PlanTabInput): PlanTabView {
   });
   return {
     title: o.name,
-    line: planTabLine({ current, done: b.done, of: n, deloadWeeks }),
+    line: planTabLine({ current, done: b.done, of: n, deloadWeeks, startsOn: b.startsOn }),
     goal: o.goal.text,
     goalAction,
     chips: planTabChips(view?.strip ?? [], selected),

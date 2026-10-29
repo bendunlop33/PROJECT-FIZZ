@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MuscleGroup } from '@fizz/schemas';
-import { aheadDates, assignPlanWeek, planDaysByDue, buildWeekTiles, pbBlockWeekOf, planDaysDoneThisWeek, planFirstWeekExpected, planWeekExpectedNow, type PlanWeekSlotDay, type PlanWeekSlotWorkout } from '../src/index';
+import { aheadDates, assignPlanWeek, planDaysByDue, setDaysUpNextOrder, buildWeekTiles, pbBlockLine, pbBlockWeekOf, pbMoveWeek, planDaysDoneThisWeek, planFirstWeekExpected, planWeekExpectedNow, type PlanWeekSlotDay, type PlanWeekSlotWorkout } from '../src/index';
 
 /**
  * (Ben, 28 Oct) A plan started mid-week, and this week's plan days one to one: Ben's 6-day Set days PPL (Mon Push A,
@@ -92,13 +92,38 @@ describe('a plan started mid-week expects only the days still possible', () => {
   });
 });
 
-describe('block week of a plan started mid-week (training-blocks §4.1, approved: week 1 is the week of Apply)', () => {
+describe('block week of a plan started mid-week: a lead-in (Ben, 28 Oct; training-blocks §4.1)', () => {
   const answers = { weeks: 6 as const, effort: 'standard' as const };
-  it('week 1 is the partial week; week 2 starts the next Monday; a plan workout before Apply that week counts there', () => {
+  it('applied Wed 28 Oct: that week is a lead-in (`Starts Mon 2 Nov`), its workouts count for it (from its Monday, before Apply too); week 1 is Mon 2 Nov', () => {
     const at = '2026-10-28T09:00:00Z';
-    expect(pbBlockWeekOf({ answers, appliedAtUtc: at, workouts: [], nowMs: Date.parse('2026-10-28T20:00:00Z'), tz: TZ }).week).toBe(1);
-    const b = pbBlockWeekOf({ answers, appliedAtUtc: at, workouts: [{ startedAtUtc: '2026-10-27T18:00:00Z', dayIndex: 1 }], nowMs: Date.parse('2026-11-02T08:00:00Z'), tz: TZ });
-    expect(b).toMatchObject({ week: 2, mondays: ['2026-10-26', '2026-11-02'], daysDone: [[1], []] });
+    const lead = pbBlockWeekOf({ answers, appliedAtUtc: at, workouts: [{ startedAtUtc: '2026-10-27T18:00:00Z', dayIndex: 1 }], nowMs: Date.parse('2026-10-28T20:00:00Z'), tz: TZ });
+    expect(lead).toMatchObject({ week: 1, done: false, deload: false, mondays: ['2026-10-26'], daysDone: [[1]], leadIn: { startsOn: '2026-11-02' } });
+    expect(pbBlockLine(lead)).toEqual({ text: 'Starts Mon 2\u00a0Nov', accessibilityLabel: 'Lead-in week. Training block starts Monday 2 November', deload: false, done: false });
+    expect(pbMoveWeek(lead)).toBe(0);
+    // Mon 2 Nov: week 1 of 6, a full week, with nothing done yet (the lead-in's workouts were that week's).
+    const w1 = pbBlockWeekOf({ answers, appliedAtUtc: at, workouts: [{ startedAtUtc: '2026-10-27T18:00:00Z', dayIndex: 1 }], nowMs: Date.parse('2026-11-02T08:00:00Z'), tz: TZ });
+    expect(w1).toMatchObject({ week: 1, mondays: ['2026-11-02'], daysDone: [[]] });
+    expect(w1.leadIn).toBeUndefined();
+    expect(pbBlockLine(w1).text).toBe('Week 1 of 6');
+    expect(pbMoveWeek(w1)).toBe(1);
+  });
+
+  it('the block (and its deload) moves with it: six full weeks from Mon 2 Nov, the deload in the week of 7 Dec, done from 14 Dec', () => {
+    const at = '2026-10-28T09:00:00Z';
+    // A plan workout every week, lead-in included.
+    const workouts = Array.from({ length: 8 }, (_, i) => ({ startedAtUtc: new Date(Date.parse('2026-10-29T18:00:00Z') + i * 7 * 86_400_000).toISOString(), dayIndex: 0 }));
+    const on = (iso: string) => pbBlockWeekOf({ answers, appliedAtUtc: at, workouts, nowMs: Date.parse(iso), tz: TZ });
+    expect(on('2026-11-30T08:00:00Z')).toMatchObject({ week: 5, deload: false });
+    expect(on('2026-12-07T08:00:00Z')).toMatchObject({ week: 6, deload: true, done: false });
+    expect(on('2026-12-14T08:00:00Z')).toMatchObject({ week: 7, done: true });
+  });
+
+  it('applied on a Monday (any time of day): no lead-in; week 1 is that week', () => {
+    const b = pbBlockWeekOf({ answers, appliedAtUtc: '2026-10-26T19:30:00Z', workouts: [], nowMs: Date.parse('2026-10-28T08:00:00Z'), tz: TZ });
+    expect(b).toMatchObject({ week: 1, mondays: ['2026-10-26'] });
+    expect(b.leadIn).toBeUndefined();
+    // Sunday 23:30 London on 25 Oct is still Sunday: a lead-in of one day.
+    expect(pbBlockWeekOf({ answers, appliedAtUtc: '2026-10-25T23:30:00Z', workouts: [], nowMs: Date.parse('2026-10-25T23:45:00Z'), tz: TZ }).leadIn).toEqual({ startsOn: '2026-10-26' });
   });
 
   it('a workout named for variants takes the first not done that week, after the plan’s own', () => {
@@ -137,5 +162,26 @@ describe('Up next after Ben’s week (D19: the day trained least recently)', () 
     // Led with the RDL (Legs B's main lift): Legs is next instead.
     const rdl = [{ ...ws[0], leadExerciseId: 'rdl' } as PlanWeekSlotWorkout, ...ws.slice(1)];
     expect(planDaysByDue(DAYS, rdl)[0]?.day.name).toBe('Legs');
+  });
+});
+
+describe('Set days decide Up next (Ben, 28 Oct): setDaysUpNextOrder', () => {
+  // Mon Push A, Tue Pull A, Wed Legs, Thu Push B, Fri Pull B, Sat Legs B; `order`: least recently trained first.
+  const wd: Record<string, number> = { pushA: 0, pullA: 1, legs: 2, pushB: 3, pullB: 4, legsB: 5 };
+  const order = ['legsB', 'pushB', 'pullB', 'pushA', 'pullA', 'legs'];
+  const run = (today: number, done: string[]) => setDaysUpNextOrder(order, { weekdayOf: (t) => wd[t] ?? null, done: (t) => done.includes(t), today });
+  it('today’s scheduled day first, whatever was trained least recently', () => {
+    expect(run(3, ['pushA', 'pullA', 'legs'])[0]).toBe('pushB');
+  });
+  it('today’s done: a missed earlier day next (earliest first), then the days to come by weekday, then the rest', () => {
+    expect(run(2, ['legs'])).toEqual(['pushA', 'pullA', 'pushB', 'pullB', 'legsB', 'legs']);
+  });
+  it('Wed, Legs done Mon off-plan and Pull A Tue: Push A (missed Mon) before Push B (Thu); after Push A, Push B', () => {
+    expect(run(2, ['legs', 'pullA'])[0]).toBe('pushA');
+    expect(run(2, ['legs', 'pullA', 'pushA'])[0]).toBe('pushB');
+  });
+  it('all done this week: least recently trained (D19); a day with no weekday goes with the rest', () => {
+    expect(run(6, order)).toEqual(order);
+    expect(setDaysUpNextOrder(['x', 'pushA'], { weekdayOf: (t) => wd[t] ?? null, done: () => false, today: 0 })).toEqual(['pushA', 'x']);
   });
 });

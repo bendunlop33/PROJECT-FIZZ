@@ -275,7 +275,7 @@ describe('done dates', () => {
   it('the block keeps the first local date each plan day was done that week (zone-aware)', () => {
     const b = pbBlockWeekOf({
       answers: { weeks: 6, effort: 'standard' },
-      appliedAtUtc: '2026-10-14T09:00:00.000Z',
+      appliedAtUtc: '2026-10-12T07:00:00.000Z',
       // 22:30 UTC on Sat 17 Oct is 23:30 Saturday in London (BST); the later Push A doesn't move its date.
       workouts: [
         { startedAtUtc: '2026-10-16T08:00:00Z', dayIndex: 0 },

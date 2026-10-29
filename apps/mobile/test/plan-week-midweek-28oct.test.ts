@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { TODAY_PICK_COPY } from '@fizz/domain';
+
 import type { AppServices } from '../src/services/app-services';
 import type { ImportDraft } from '../src/import/import-service';
 import type { TodaySessionData } from '../src/services/today-session';
@@ -114,10 +116,9 @@ describe('Ben’s week on a 6-day Set days plan', () => {
     d = await loaded(s);
     expect(await tiles(s, null)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today done dot:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
     expect((await s.plans.consistency())?.planThisWeek?.text).toBe('3 of 6');
-    // Up next follows what he last trained (D19, Ben 20 Oct: the day trained least recently): legs were Monday, so a
-    // legs day; Legs is done this week, so Legs B (variants alternate). Not Push B: Up next doesn't follow the weekdays
-    // (plan-builder.md, open question 1).
-    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(5);
+    // (Ben, 28 Oct) Set weekdays decide Up next: Wednesday's Legs is done (Monday's legs), Mon and Tue are done, so the
+    // next scheduled day, Push B (Thu); it agrees with the tiles.
+    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(3);
 
     // A force-close re-derives the same week.
     await h.forceClose();
@@ -128,6 +129,69 @@ describe('Ben’s week on a 6-day Set days plan', () => {
     h.clockMs = Date.parse('2026-11-02T08:00:00.000Z');
     expect((await loaded(s2)).block?.text).toBe('Week 2 of 6');
     expect(await doneNames(s2)).toEqual([]);
+  });
+});
+
+describe('switching between Set days and Any days (Days and time) while Push A is in progress (Ben, 28 Oct)', () => {
+  async function switchTo(s: AppServices, schedule: 'set' | 'any'): Promise<void> {
+    const planId = (await s.plans.overview())?.block?.planId ?? '';
+    const e = await s.planBuilder.open({ editPlanId: planId });
+    if (e?.running == null) throw new Error('not running');
+    const a = { ...e.answers, schedule, days: schedule === 'set' ? [0, 1, 2, 3, 4, 5] : [] };
+    const r = await s.planBuilder.applyEdit(e, a, new Set(), { kind: 'from', week: e.running.week }, h.ids());
+    if (!r.ok) throw new Error(r.message);
+  }
+  const open = async (s: AppServices) => {
+    const w = await s.todaySession.weekWhileOpen({ planDay: { planId: (await s.plans.overview())?.block?.planId ?? '', dayIndex: 0 }, title: 'Push A' });
+    return w?.tiles.map((t) => `${t.date.slice(8)} ${t.today ? 'today ' : ''}${t.state}${t.marks.length === 0 ? '' : ` ${t.marks.map((m) => `${m.shape}:${m.colour}`).join(',')}`}`);
+  };
+  it('both ways the open workout’s week shows the days left planned (Thu Push B, Fri Pull B, Sat Legs B), today ringed; Up next follows the weekdays on Set days', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await applyPlan(s, 'any');
+    await monAndTue(s, gymId);
+    const pushA = await startPushA(s, gymId);
+    const want = ['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain'];
+    expect(await open(s)).toEqual(want);
+    await switchTo(s, 'set');
+    expect((await loaded(s)).week.setDays).toBe(true);
+    expect(await open(s)).toEqual(want);
+    await switchTo(s, 'any');
+    expect((await loaded(s)).week.setDays).toBe(false);
+    expect(await open(s)).toEqual(want);
+    await switchTo(s, 'set');
+    expect(await open(s)).toEqual(want);
+    await finishWorkout(h, s, pushA);
+    const d = await loaded(s);
+    // Set days: Thu's Push B is next (tiles: Thu push ring).
+    expect(d.days.find((x) => x.key === d.nextKey)?.dayIndex).toBe(3);
+    // Thursday: today's scheduled day.
+    h.clockMs = Date.parse('2026-10-29T08:00:00.000Z');
+    const thu = await loaded(s);
+    expect(thu.days.find((x) => x.key === thu.nextKey)?.dayIndex).toBe(3);
+    // Friday with Thursday missed: Friday's Pull B first; once done, the missed Push B.
+    h.clockMs = Date.parse('2026-10-30T08:00:00.000Z');
+    const fri = await loaded(s);
+    expect(fri.days.find((x) => x.key === fri.nextKey)?.dayIndex).toBe(4);
+  });
+
+  it('a restored backup keeps the Set days rings', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await applyPlan(s, 'set');
+    await monAndTue(s, gymId);
+    const made = await s.backups.backUpOnPhone('manual');
+    if (!made.ok) throw new Error(made.error);
+    const text = await s.restore.readOnPhone(made.record.fileName);
+    if (text === null) throw new Error('no backup');
+    // A workout after the backup, so the restore replaces something.
+    h.clockMs = Date.parse('2026-10-28T06:00:00.000Z');
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8 }] }]);
+    const p = await s.restore.prepare(text);
+    if (!p.ok) throw new Error('preview');
+    expect(await s.restore.restore(text, p.preview.stamp)).toMatchObject({ ok: true, status: 'restored' });
+    h.clockMs = Date.parse('2026-10-28T08:00:00.000Z');
+    expect(await tiles(s, 'Push')).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
   });
 });
 
@@ -152,25 +216,55 @@ describe('the same week on a 6-day Any days plan', () => {
   });
 });
 
-describe('a plan started mid-week (Wed 28), after Legs Mon and Pull Tue', () => {
-  it('week 1 is this week; Mon and Tue count (from Monday); it expects only the days still possible: 2 of 5; week 2 starts next Monday', async () => {
+describe('a plan started mid-week (Wed 28), after Legs Mon and Pull Tue: a lead-in (Ben, 28 Oct)', () => {
+  it('this week is the lead-in (`Starts Mon 2 Nov` on Today and Library); Mon and Tue count for it (2 of 5); week 1 of 6 starts Mon 2 Nov', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     await monAndTue(s, gymId);
     h.clockMs = Date.parse('2026-10-28T09:00:00.000Z');
     await applyPlan(s, 'set');
     const d = await loaded(s);
-    expect(d.block?.text).toBe('Week 1 of 6');
+    expect(d.block?.text).toBe('Starts Mon 2\u00a0Nov');
+    expect(TODAY_PICK_COPY.planWeek(d.block?.text ?? '')).toBe('Plan starts Mon 2\u00a0Nov');
+    expect((await s.plans.overview())?.block?.startsOn).toBe('2026-11-02');
     // Legs and Pull A done; Push A's Monday has gone, so the week expects Wed–Sat's days left: Push B, Pull B, Legs B.
     const ov = await s.plans.overview();
     expect(ov?.daysThisWeek.text).toBe('2 of 5');
     expect(ov?.days.filter((x) => x.state === 'done').map((x) => x.dayIndex)).toEqual([1, 2]);
     const pushA = await startPushA(s, gymId);
     await finishWorkout(h, s, pushA);
-    // Push A done after all (its Monday had gone): it counts, so the week is whole again.
+    // Push A done after all (its Monday had gone): it counts, so the lead-in week is whole again.
     expect((await s.plans.overview())?.daysThisWeek.text).toBe('3 of 6');
+    // A force-close re-derives it (nothing stored, no migration).
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    expect((await loaded(s2)).block?.text).toBe('Starts Mon 2\u00a0Nov');
     h.clockMs = Date.parse('2026-11-02T08:00:00.000Z');
-    expect((await loaded(s)).block?.text).toBe('Week 2 of 6');
+    expect((await loaded(s2)).block?.text).toBe('Week 1 of 6');
+    expect((await s2.plans.overview())?.block?.startsOn).toBeNull();
+    expect(await doneNames(s2)).toEqual([]);
+  });
+});
+
+describe('Move day in the lead-in (Ben, 28 Oct)', () => {
+  it('moves the day this week only: week 1 keeps the plan’s weekday', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    h.clockMs = Date.parse('2026-10-28T09:00:00.000Z');
+    await applyPlan(s, 'set');
+    let ov = await s.plans.overview();
+    const planId = ov?.block?.planId ?? '';
+    // Legs B (Sat, day 6) to Sunday in the lead-in.
+    const r = await s.plans.moveDay({ planId, dayIndex: 5, weekday: 6, expectedVersion: ov?.block?.planVersion ?? 0, opId: h.ids() });
+    expect(r.ok).toBe(true);
+    let d = await loaded(s);
+    expect(d.week.planned.find((x) => x.key.endsWith(':5'))?.localDate).toBe('2026-11-01');
+    h.clockMs = Date.parse('2026-11-02T08:00:00.000Z');
+    d = await loaded(s);
+    expect(d.block?.text).toBe('Week 1 of 6');
+    expect(d.week.planned.find((x) => x.key.endsWith(':5'))?.localDate).toBe('2026-11-07');
+    ov = await s.plans.overview();
+    expect(ov?.block?.views[0]?.days.find((x) => x.index === 5)?.weekday).toBe(5);
   });
 });
 

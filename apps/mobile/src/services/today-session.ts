@@ -24,6 +24,7 @@ import {
   pbMainFocus,
   pbWarmupsOf,
   pbBlockOfPlan,
+  pbMoveWeek,
   linkRefs,
   linkedRoutineId,
   pbBlockLine,
@@ -1756,6 +1757,18 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return deps.nudge({ draftId: c.draftId, splitDayId: day?.kind === 'plan' || day?.kind === 'split' ? day.splitDayId : null, input: data.nudgeInput, opId: `${opId}:${c.draftId}` }).catch(() => null);
   }
 
+  /** (Redesign v3) This week's seven tiles, Mon–Sun, with the card's day (`chosen`) as today's planned ring. */
+  function weekTiles(data: TodaySessionData, chosen: string | null): WeekTile[] {
+    return buildWeekTiles({
+      today: data.localDate,
+      workouts: data.week.workouts,
+      activities: data.week.activities.map((a) => ({ activityId: a.id, localDate: a.fields.date, kind: a.fields.kind, status: a.fields.status, distanceM: a.fields.distanceM, durationS: a.fields.durationS, effort: a.fields.effort })),
+      plannedDays: data.week.planned.map((d) => ({ localDate: d.localDate, name: d.name })),
+      ahead: data.week.ahead.map((d) => d.name),
+      chosen,
+    });
+  }
+
   return {
     load,
     card,
@@ -1770,16 +1783,19 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     start,
     review,
     mainLiftsFor,
-    /** (Redesign v3) This week's seven tiles, Mon–Sun, with the card's day (`chosen`) as today's planned ring. */
-    week(data: TodaySessionData, chosen: string | null): WeekTile[] {
-      return buildWeekTiles({
-        today: data.localDate,
-        workouts: data.week.workouts,
-        activities: data.week.activities.map((a) => ({ activityId: a.id, localDate: a.fields.date, kind: a.fields.kind, status: a.fields.status, distanceM: a.fields.distanceM, durationS: a.fields.durationS, effort: a.fields.effort })),
-        plannedDays: data.week.planned.map((d) => ({ localDate: d.localDate, name: d.name })),
-        ahead: data.week.ahead.map((d) => d.name),
-        chosen,
-      });
+    week: weekTiles,
+    /**
+     * (Ben, 28 Oct: "it wouldn't show up on the calendar") This week's tiles while a workout is open. Today's card is
+     * hidden then and Today used not to read its session at all, so the week showed nothing (a relaunch mid-workout) or
+     * the week as read before Start (a plan switched to Set days during the workout never showed). Read as Today reads
+     * it, with the open workout as today's ring (its plan day's name, else its own). Reads only: nothing is written.
+     */
+    async weekWhileOpen(active: { planDay: { planId: string; dayIndex: number } | null; title: string }): Promise<{ tiles: WeekTile[]; block: TodaySessionData['block'] } | null> {
+      const data = await load();
+      if (data === null) return null;
+      const pd = active.planDay;
+      const day = pd === null ? undefined : data.days.find((d) => d.planId === pd.planId && d.dayIndex === pd.dayIndex);
+      return { tiles: weekTiles(data, day?.name ?? active.title), block: data.block };
     },
     /** The 7-day strip for the card's day (`chosen`). */
     strip(data: TodaySessionData, chosen: string | null): StripCell[] {
@@ -1825,7 +1841,7 @@ function weekOf(
   const setDays = builder !== null && builder.builder.answers.schedule === 'set' && running;
   if (setDays) {
     const indexes = planDays.flatMap((d) => (d.dayIndex === null ? [] : [d.dayIndex]));
-    const weekdays = pbWeekdaysOf(builder.builder.answers, plan.moves, block.week, indexes);
+    const weekdays = pbWeekdaysOf(builder.builder.answers, plan.moves, pbMoveWeek(block), indexes);
     for (const d of planDays) {
       const wd = d.dayIndex === null ? undefined : weekdays?.get(d.dayIndex);
       if (wd === undefined || doneOn[d.key] !== undefined) continue;

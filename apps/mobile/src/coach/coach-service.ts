@@ -992,6 +992,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       ...(addInputs === undefined ? {} : { inputs: (exerciseId: string, aggregate: SessionAggregate) => addInputs(exerciseId, aggregate).catch(() => null) }),
       ...(deps.onSessionChanged === undefined ? {} : { onSessionChanged: deps.onSessionChanged }),
       learnKit: (exercise, aggregate, ctx) => learnKitFor(p, exercise, aggregate, ctx),
+      gymItems: async (gymId) => ((await repos().gyms.get(gymId).catch(() => null))?.ownerId === p.id ? await repos().equipment.listByGym(gymId) : []),
     };
   }
 

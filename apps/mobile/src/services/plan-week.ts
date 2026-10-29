@@ -1,4 +1,4 @@
-import { leadLiftOf, linkedRoutineId, linkedVariants, isNotPlanDay, pbAppliedBuilder, pbWeekDaysOf, pbWeekdaysOf, planDayOf, type HistoryWorkout, type PbBlockWeek, type PlanDayLinkView, type PlanWeekDay, type PlanWeekWorkout } from '@fizz/domain';
+import { leadLiftOf, pbMoveWeek, linkedRoutineId, linkedVariants, isNotPlanDay, pbAppliedBuilder, pbWeekDaysOf, pbWeekdaysOf, planDayOf, type HistoryWorkout, type PbBlockWeek, type PlanDayLinkView, type PlanWeekDay, type PlanWeekWorkout } from '@fizz/domain';
 import type { MuscleGroup, PlanDraft, Routine, SplitBodyPart } from '@fizz/schemas';
 
 /**
@@ -46,7 +46,7 @@ export function planWeekdaysNow(plan: PlanDraft, block: PbBlockWeek | null, days
   const b = pbAppliedBuilder(plan);
   if (b === null || block === null || block.done) return null;
   const indexes = pbWeekDaysOf(plan, block.week).map((d) => d.index);
-  const map = pbWeekdaysOf(b.builder.answers, plan.moves, block.week, indexes.length > 0 ? indexes : days.flatMap((d) => (d.dayIndex === null ? [] : [d.dayIndex])));
+  const map = pbWeekdaysOf(b.builder.answers, plan.moves, pbMoveWeek(block), indexes.length > 0 ? indexes : days.flatMap((d) => (d.dayIndex === null ? [] : [d.dayIndex])));
   if (map === null) return null;
   const out = new Map<string, number>();
   for (const d of days) {

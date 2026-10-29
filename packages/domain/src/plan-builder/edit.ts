@@ -226,6 +226,8 @@ export interface PbEditBlock {
   /** 1-based; never past the plan's length here (a done block isn't edited). */
   week: number;
   doneThisWeek: readonly number[];
+  /** (Ben, 28 Oct) This week is the plan's lead-in: a `Move day` now is for this week only (move week 0). */
+  leadIn?: boolean | undefined;
 }
 
 export interface PbEditPreviewInput {
@@ -681,11 +683,13 @@ export function movePlanDay(current: PlanDraft, input: { expectedVersion: number
   if (current.version !== input.expectedVersion || current.status !== 'applied') return { kind: 'stale', current };
   const a = builderAnswersOf(current);
   const days = pbWeekDaysOf(current, input.block.week).map((d) => d.index);
-  const map = a === null ? null : pbWeekdaysOf(a, current.moves, input.block.week, days);
+  // (Ben, 28 Oct) In the lead-in a move is that week's only (week 0), never week 1's too.
+  const moveWeek = input.block.leadIn === true ? 0 : input.block.week;
+  const map = a === null ? null : pbWeekdaysOf(a, current.moves, moveWeek, days);
   if (map === null || !map.has(input.dayIndex) || input.block.doneThisWeek.includes(input.dayIndex)) return { kind: 'invalid', current };
   if ([...map].some(([i, d]) => i !== input.dayIndex && d === input.weekday)) return { kind: 'invalid', current };
   const before = current.moves ?? [];
-  const moves = [...before.filter((m) => !(m.week === input.block.week && m.dayIndex === input.dayIndex)), { week: input.block.week, dayIndex: input.dayIndex, weekday: input.weekday }].slice(-84);
+  const moves = [...before.filter((m) => !(m.week === moveWeek && m.dayIndex === input.dayIndex)), { week: moveWeek, dayIndex: input.dayIndex, weekday: input.weekday }].slice(-84);
   const version = current.version + 1;
   return { kind: 'write', next: { ...current, moves, lastMove: { opId: input.opId, versionAfter: version, before }, opIds: remember(current.opIds, input.opId), version, updatedAtUtc: input.at.utc }, expectedVersion: current.version };
 }
