@@ -875,12 +875,23 @@ export function asksToLogActivity(text: string): boolean {
  * something: "plan my week around it", "rejig the week", "fit my week around my run". Its own kind
  * (`week_plan`): it opens `propose_week` (a proposal, rule 3), never a new plan.
  */
+const WEEKDAY_WORD = '(?:mon|tues|wednes|thurs|fri|satur|sun)day';
 const WEEK_ASK = new RegExp(
   [
     // "Plan my week" alone is a new plan (`build_plan`); around something, or a reshape verb, is this week.
     '\\b(?:rearrange|re-arrange|rejig|reshuffle|shuffle|reorgani[sz]e|adjust|flex|tweak)\\b(?: out)? (?:my|the|this) (?:training )?week\\b',
     '\\bweek around\\b',
     '\\b(?:plan|train|fit|work|lift)(?: things| it| stuff| my training| my lifting| my sessions)? around (?:my|the|this|that|a|it)\\b',
+    // ADR 0039 (Ben, 29 Oct: "make today a rest day and don't cram the rest of the week"): a rest day, a day
+    // skipped or moved, the rest of the week spread out. A set or an exercise skipped today is not the week.
+    `\\b(?:make|take|have|give me|call) (?:today|tomorrow|${WEEKDAY_WORD}) (?:as )?(?:a |an )?(?:rest|off|recovery|lifting-free)(?: day)?\\b`,
+    `\\b(?:rest|recovery|off) day (?:today|tomorrow|on ${WEEKDAY_WORD})\\b`,
+    '\\bday off (?:today|tomorrow)\\b',
+    `\\btake (?:today|tomorrow|the day|${WEEKDAY_WORD}) off\\b`,
+    `\\b(?:skip|drop|miss|move|push back|bump)(?: back)? (?:today|tomorrow|(?:my |the |this week'?s |today'?s |tomorrow'?s |${WEEKDAY_WORD}'?s )?(?:[a-z]+ )?(?:day|session|workout)s?)\\b(?! (?:set|rep|warm))`,
+    `\\bmove (?:[a-z]+ ){1,2}to (?:${WEEKDAY_WORD}|tomorrow|next)\\b`,
+    "\\b(?:don'?t|do not|no|without|not) (?:try to )?(?:cram|squeez|pack|rush)\\w*",
+    '\\bspread (?:out )?(?:the |my )?(?:rest|remaining|workouts?|sessions?|days?|week)\\b',
   ].join('|'),
 );
 

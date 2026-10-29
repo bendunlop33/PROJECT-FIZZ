@@ -4,6 +4,8 @@ import type { ModelEvent, ModelRequest } from '@fizz/coach';
 
 import { activitySavedToast, type ActivityToast } from '../src/activity/activity-toast';
 import type { AppServices } from '../src/services/app-services';
+import { weekAtOnceOpId } from '@fizz/coach';
+
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -149,27 +151,25 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     // Runs never count as gym days.
     expect((await s.plans.consistency())?.thisWeek.text).toBe('1/4');
 
-    // "Plan my week around it": the coach proposes (rule 3); nothing changes until Apply.
+    // "Plan my week around it": ADR 0039 (Ben, 29 Oct), he asked, so it applies at once with Undo on the card.
     const seen: WeekView[] = [];
     model = new StepModel([weekStub(seen), () => replyWith('Want me to merge Chest and Shoulders into Push this week?')]);
     const asked = await say(s, "I've got a long run Saturday, plan my week around it");
     expect(seen[0]).toMatchObject({ today: '2026-10-23', gymDaysLeft: 2, needsReshape: true, remaining: [{ name: 'Chest' }, { name: 'Shoulders' }, { name: 'Legs' }] });
     expect(seen[0]?.activities.map(sp)).toEqual(['Run · Sat 2026-10-24 · planned · long']);
     const proposal = asked.cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
-    expect(proposal?.status).toBe('proposed');
+    expect(proposal).toMatchObject({ status: 'proposed', detail: { atOnce: true } });
     const card = await s.week.card(proposal?.actionId ?? '');
     expect(card).toMatchObject({
       scope: 'This week',
       before: [{ name: 'Chest' }, { name: 'Shoulders' }, { name: 'Legs' }],
       after: [{ name: 'Push', note: 'Chest + Shoulders' }, { name: 'Legs' }],
-      state: { kind: 'open' },
+      state: { kind: 'applied' },
     });
-    expect((await upNext(s, gymId)).title).toBe('Chest');
 
-    // Apply: Up next is the merged Push day; a double tap applies once; Your plan shows the change.
-    const applied = await s.week.apply({ actionId: proposal?.actionId ?? '', opId: 'week-apply-1' });
-    expect(applied).toMatchObject({ ok: true, duplicate: false });
-    expect(await s.week.apply({ actionId: proposal?.actionId ?? '', opId: 'week-apply-1' })).toMatchObject({ ok: true, duplicate: true });
+    // Up next is the merged Push day; the apply replays once (its op ID), another Apply is stale; Your plan shows it.
+    const applied = await s.week.apply({ actionId: proposal?.actionId ?? '', opId: weekAtOnceOpId(proposal?.actionId ?? '') });
+    expect(applied).toMatchObject({ ok: true, duplicate: true });
     expect(await s.week.apply({ actionId: proposal?.actionId ?? '', opId: 'week-apply-2' })).toMatchObject({ ok: false, reason: 'stale' });
     expect(await upNext(s, gymId)).toEqual({ title: 'Push', why: null });
     v = await s.plans.overview();
@@ -192,10 +192,10 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     expect((await s.plans.overview())?.weekChange).toBeNull();
     expect((await s.week.card(proposal?.actionId ?? ''))?.state).toEqual({ kind: 'undone' });
 
-    // Asked again: a new proposal; Apply; Ben does Push today.
+    // Asked again: applied again at once; Ben does Push today.
     model = new StepModel([weekStub(seen), () => replyWith('Want me to merge them?')]);
     const again = (await say(s, 'rejig my week around the run')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
-    expect(await s.week.apply({ actionId: again?.actionId ?? '', opId: 'week-apply-3' })).toMatchObject({ ok: true });
+    expect((await s.week.card(again?.actionId ?? ''))?.state.kind).toBe('applied');
     const pushId = (await s.next.preview(gymId))?.routine?.id ?? '';
     h.clockMs += 3_600_000;
     await doDay(s, gymId, pushId);
@@ -221,8 +221,10 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-24', durationS: null, distanceM: 18_000, effort: null }, opId: 'sheet-run' });
     const seen: WeekView[] = [];
     model = new StepModel([weekStub(seen), () => replyWith('Want me to merge Chest and Shoulders?')]);
-    const proposal = (await say(s, 'plan my week around my long run')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
+    // ADR 0039: the coach's own idea (Ben asked how the week looks) is a proposal he applies.
+    const proposal = (await say(s, 'how is my week looking with my long run?')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
     expect(proposal?.status).toBe('proposed');
+    expect((await s.week.card(proposal?.actionId ?? ''))?.state).toEqual({ kind: 'open' });
     // Ben trains chest before tapping Apply.
     h.clockMs += 3_600_000;
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 7, rpe: 8 }] }]);
@@ -231,7 +233,7 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     expect((await s.plans.overview())?.weekChange).toBeNull();
   });
 
-  it('code opens the week offer once for the week as it is: not again after it was offered, until the week changes (review S1)', async () => {
+  it('code flags the week to the coach once for the week as it is: not again after it was offered, until the week changes (review S1; ADR 0039: the tool itself is always there)', async () => {
     const { s, gymId } = await benWithPlan();
     h.clockMs = Date.parse('2026-10-23T07:00:00.000Z');
     await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-24', durationS: null, distanceM: null, effort: 'long' }, opId: 'sheet-run' });
@@ -242,18 +244,22 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     const first = (await say(s, 'how is my week looking?')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
     expect(tools(0)).toContain('propose_week');
     expect(first?.status).toBe('proposed');
-    // Turn 2, another topic, Ben ignored the offer: not opened again, and the week isn't flagged to the model.
+    // Turn 2, another topic, Ben ignored the offer: the week isn't flagged to the model again (the tool stays, ADR 0039).
     model = new StepModel([(req) => {
       seen.push(yourData(req).week as WeekView);
       return replyWith('Protein and carbs.');
     }]);
     await say(s, 'what should I eat after training?');
-    expect(tools(0)).not.toContain('propose_week');
-    expect(seen[1]).toMatchObject({ needsReshape: false, suggestion: null });
-    // Ben's own ask still opens it.
-    model = new StepModel([weekStub(seen), () => replyWith('Here it is again.')]);
-    await say(s, 'plan my week around my long run');
     expect(tools(0)).toContain('propose_week');
+    expect(seen[1]).toMatchObject({ needsReshape: false, suggestion: null });
+    // Ben's own ask: the suggestion is back, and his ask applies at once.
+    model = new StepModel([weekStub(seen), () => replyWith('Here it is again.')]);
+    const asked = (await say(s, 'plan my week around my long run')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
+    expect(seen[2]).toMatchObject({ needsReshape: true });
+    expect((await s.week.card(asked?.actionId ?? ''))?.state.kind).toBe('applied');
+    const applied = await s.week.card(asked?.actionId ?? '');
+    if (applied?.state.kind !== 'applied') throw new Error('applied');
+    expect(await s.week.undo({ weekPlanId: applied.state.weekPlanId, expectedVersion: applied.state.version, opId: 'undo-s1' })).toMatchObject({ ok: true });
     // The week changes (Ben trains): code may offer again for the new week.
     h.clockMs += 3_600_000;
     await doDay(s, gymId, (await s.next.preview(gymId))?.routine?.id ?? '');
@@ -411,7 +417,8 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     const seen: WeekView[] = [];
     model = new StepModel([weekStub(seen), () => replyWith('Want me to merge them?')]);
     const proposal = (await say(s, 'plan my week around my long run')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
-    expect(await s.week.apply({ actionId: proposal?.actionId ?? '', opId: 'apply-short' })).toMatchObject({ ok: true });
+    // ADR 0039: Ben asked, so it applied at once (Undo on the card).
+    expect((await s.week.card(proposal?.actionId ?? ''))?.state.kind).toBe('applied');
     const push = await s.next.preview(gymId);
     expect(push?.title).toBe('Push');
     expect(push?.aboutMinutes ?? 99).toBeLessThanOrEqual(30);
@@ -489,7 +496,8 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     model = new StepModel([weekStub(seen), () => replyWith('Want me to merge push and pull into Upper this week?')]);
     const proposal = (await say(s, 'can you rejig my week')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
     expect(seen[0]).toMatchObject({ gymDaysLeft: 2, needsReshape: true, suggestion: { merges: [{ name: 'Upper' }] } });
-    expect(await s.week.apply({ actionId: proposal?.actionId ?? '', opId: 'split-apply' })).toMatchObject({ ok: true });
+    // ADR 0039: Ben asked, so it applied at once (Undo on the card).
+    expect((await s.week.card(proposal?.actionId ?? ''))?.state.kind).toBe('applied');
     const upper = await s.next.preview(gymId);
     expect(upper?.title).toBe('Upper');
     expect(upper?.exercises.map((e) => e.exerciseName)).toEqual(expect.arrayContaining(['Bench press', 'Lat pulldown']));

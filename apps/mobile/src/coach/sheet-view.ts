@@ -132,7 +132,8 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
       // disabled when the coach can't answer (§5.4); `Plan my week` isn't built.
       return [{ label: 'Build a workout', input: null, build: { enabled: a.status === 'ok' } }, ...(ready ? [words('How am I doing?')] : [])];
     case 'draft':
-      // `Ask coach` on a coach draft (BD16): Ben says what to change; no chips.
+    case 'builder':
+      // `Ask coach` on a coach draft (BD16), Your workout's bar (ADR 0039): Ben says what to change; no chips.
       return [];
     case 'progress':
     case 'progress_exercise':
@@ -227,6 +228,10 @@ export interface CardView {
   week?: ActionRecord;
   /** (Ben, 20 Oct) An activity the coach offered to log (he didn't ask): `Log`, then Undo. */
   activityOffer?: ActionRecord;
+  /** ADR 0039: a change to Your workout before Start: its lines, Apply / Skip, then Undo (rule 3). */
+  draftEdit?: ActionRecord;
+  /** ADR 0039: today's Set up filled from Ben's words: `Open` (Undo is on Set up). */
+  setupFill?: ActionRecord;
 }
 
 const GYM_STATUS: Record<GymProposalState['state'], CardView['status']> = {
@@ -407,6 +412,8 @@ export function cardView(r: ActionRecord): CardView {
     ...(r.detail.kind === 'build_plan' && r.status === 'committed' ? { plan: r } : {}),
     ...(r.detail.kind === 'propose_week' && r.status === 'proposed' ? { week: r } : {}),
     ...(r.detail.kind === 'log_activity' && r.status === 'proposed' ? { activityOffer: r } : {}),
+    ...(r.detail.kind === 'propose_workout_edit' && r.status === 'proposed' ? { draftEdit: r } : {}),
+    ...(r.detail.kind === 'fill_setup' && r.status === 'committed' ? { setupFill: r } : {}),
   };
 }
 
@@ -676,6 +683,7 @@ export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active
     case 'workout':
       return `Sees: ${workoutTitle ?? 'Workout'}${active ? ' (live)' : ''}`;
     case 'draft':
+    case 'builder':
       return `Sees: ${entry.name} (draft)`;
   }
 }
@@ -755,3 +763,29 @@ export function followOffset(s: { contentHeight: number; viewportHeight: number;
   if (s.turnTop === null) return end;
   return Math.min(end, Math.max(0, s.turnTop - FOLLOW_TOP_GAP));
 }
+
+/**
+ * (Ben, 29 Oct: "The mic [on Today] listens but doesn't do anything") Words from Today's bar (the mic's, or typed):
+ * the coach sheet opens with them sent as Ben's message at once, so the running turn shows straight away. No model
+ * call runs before the sheet opens; a failure is the sheet's own line. `id`: a re-render or remount sends once.
+ */
+export interface SheetAsk {
+  id: string;
+  text: string;
+  spoken: boolean;
+}
+
+export function todayAskParams(words: string, spoken: boolean, id: string): { entry: { kind: 'today' }; ask: SheetAsk } | null {
+  const text = words.trim();
+  return text === '' ? null : { entry: { kind: 'today' }, ask: { id, text, spoken } };
+}
+
+/** The message to send for `ask`, once per ID (`sent` remembers them while the app runs); null: none, or already sent. */
+export function takeAsk(sent: Set<string>, ask: SheetAsk | undefined): Extract<BenInput, { kind: 'words' }> | null {
+  if (ask === undefined || ask.text.trim() === '' || sent.has(ask.id)) return null;
+  sent.add(ask.id);
+  return { kind: 'words', text: ask.text.trim(), spoken: ask.spoken };
+}
+
+/** ADR 0039: the words on a Your workout change card. Minimal copy. */
+export const DRAFT_EDIT_COPY = { apply: 'Apply', skip: 'Skip', undo: 'Undo', applied: 'Applied', skipped: 'Skipped', undone: 'Undone', openSetup: 'Open Set up' } as const;

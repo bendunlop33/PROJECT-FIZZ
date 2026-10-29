@@ -17,7 +17,7 @@ const words = (text: string) => ({ kind: 'words' as const, text, spoken: false }
 function writeTools(text: string, kind: 'workout' | 'general' = 'workout'): string[] {
   const g = gateFor({ kind, input: words(text), previousOffer: null, structuralSignals: [] });
   return buildTurnRegistry(g)
-    .tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory' && t.name !== 'propose_exercise')
+    .tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory' && t.name !== 'propose_exercise' && t.name !== 'log_activity')
     .map((t) => t.name)
     .sort();
 }
@@ -177,7 +177,7 @@ describe('the gate for adding to today’s workout (table)', () => {
 
   it('a live workout offers the tool from its own sheet and (ADR 0038) from Today, Progress and Plan; with no live workout or on a summary it is withheld', () => {
     const g = gateFor({ kind: 'general', input: words('add 3 sets of lateral raises'), previousOffer: null, structuralSignals: [] });
-    expect(buildTurnRegistry(g).withheld).toContainEqual({ name: 'edit_today', reason: 'turn_kind' });
+    expect(buildTurnRegistry(g).withheld).toContainEqual({ name: 'edit_today', reason: 'no_target' });
     const live = gateFor({ kind: 'general', input: words('add 3 sets of lateral raises'), previousOffer: null, structuralSignals: [], liveWorkout: true });
     expect(buildTurnRegistry(live).tools.map((t) => t.name)).toEqual(expect.arrayContaining(['edit_today', 'rename_workout']));
     const summary = gateFor({ kind: 'summary', input: words('add 3 sets of lateral raises'), previousOffer: null, structuralSignals: [] });

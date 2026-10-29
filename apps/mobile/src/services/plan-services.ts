@@ -82,6 +82,7 @@ import {
   type HistoryWorkout,
   type GymEdit,
 } from '@fizz/domain';
+import type { PlanSplitView } from '@fizz/coach';
 import type { PlanWrite, Store } from '@fizz/persistence';
 import { createVersionMemo } from './version-memo';
 import { readPlanLinks } from './plan-day-links';
@@ -505,6 +506,43 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const plan = await repo().applied(p.id);
       if (plan === null || plan.applied === null) return null;
       return planRoutines(plan, liveRoutines(await deps.store().repos.routines.listByOwner(p.id))).length === 0 ? null : { planId: plan.id, name: plan.name };
+    },
+
+    /**
+     * ADR 0039 (Ben, 29 Oct: "Why does it get confused with my split?"): the plan in use (paused or not) as the coach's
+     * one split: its days in order, this week's weekday on Set days plans, body parts and main lifts. Null: no plan in
+     * use (the profile's split is then the source). Local reads only; never throws.
+     */
+    async splitSource(): Promise<PlanSplitView | null> {
+      try {
+        const p = await owner();
+        if (p === null) return null;
+        const plan = await repo().applied(p.id);
+        if (plan === null || plan.applied === null) return null;
+        const days = planRoutines(plan, await live(p.id));
+        if (days.length === 0) return null;
+        const nowMs = toMs(deps.now().utc);
+        const tz = p.timezone;
+        const parts = await bodyPartsOf(p.id, days);
+        const madeDay = new Map(plan.applied.made.map((m) => [m.routineId, m.dayIndex] as const));
+        const dayRefs = days.map((r) => ({ ...planWeekDayOf(plan, r, parts.get(r.id) ?? []), dayIndex: madeDay.get(r.id) ?? planDayOf(r)?.dayIndex ?? null }));
+        const refs = await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => []);
+        const weekdays = planWeekdaysNow(plan, pbBlockOfPlan(plan, refs, nowMs, tz), dayRefs);
+        const of = await exerciseOf();
+        const paused = activePause(plan, nowMs, tz) !== null;
+        const next = paused ? null : ((await deps.upNextRoutineId?.((await deps.currentGym?.().catch(() => null))?.id ?? null).catch(() => null)) ?? null);
+        return {
+          name: plan.name,
+          paused,
+          days: days.map((r) => {
+            const main = r.exercises.find((e) => e.main === true) ?? null;
+            return { id: r.id, name: r.name, bodyParts: [...(parts.get(r.id) ?? [])], weekday: weekdays?.get(r.id) ?? null, mainLift: main === null ? null : (of(main.exerciseId)?.name ?? null) };
+          }),
+          upNext: days.find((r) => r.id === next)?.name ?? null,
+        };
+      } catch {
+        return null;
+      }
     },
 
     /** The plan card for one version: every value from the stored plan. Null: the plan isn't Ben's. */

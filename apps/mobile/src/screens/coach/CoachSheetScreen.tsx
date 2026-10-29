@@ -40,6 +40,7 @@ import {
   type ThreadRow,
   type ViewIcon,
   type WorkoutOutOfContext,
+  takeAsk,
 } from '../../coach/sheet-view';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { newUuid } from '../../device/runtime';
@@ -51,7 +52,7 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, SecondaryButton, SheetKeyboardAvoidingView, TEXT_PRESSED_OPACITY, TextButton, TextField, useKeyboardVisible } from '../../ui';
-import { BuilderCoachSheet } from './BuilderCoachSheet';
+import { DraftEditCard, SetupFillCard, useOpenSetup } from './DraftCards';
 import { CoachCard } from './CoachCard';
 import { HeaderButton, SendButton } from './SheetButtons';
 import { BuildQuestionCard, BuildRequestCard, PendingBuildCard, QUESTION_COPY, WorkoutDraftCard } from './BuildCards';
@@ -71,20 +72,24 @@ import { BUILD_COPY, buildCardView, needsCoachView, questionTap, type BuildDayCh
 /** Typed text per entry, kept while the app runs (closing the sheet keeps it; CS4). */
 const drafts = new Map<string, string>();
 const entryKey = (e: CoachEntry): string =>
-  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${e.period}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : e.kind === 'draft' ? `draft:${e.draftId}` : `${e.kind}:${e.sessionId}`;
+  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${e.period}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : e.kind === 'draft' ? `draft:${e.draftId}` : e.kind === 'builder' ? `builder:${e.draftId}` : `${e.kind}:${e.sessionId}`;
 
 export function CoachSheetScreen() {
   const params = useRoute<RouteProp<RootStackParams, 'Coach'>>().params;
-  // (Ben, 26 Oct) Your workout's bar: the same sheet, its words go to the builder's askEdit (proposal cards, Apply / Skip).
-  if (params.entry.kind === 'builder') return <BuilderCoachSheet entry={params.entry} />;
+  // ADR 0039 (Ben, 29 Oct): Your workout's bar opens the same thread sheet as every chat, with that draft in context and
+  // the same tools; its changes to the draft come back as proposals with Apply / Skip (rule 3).
   return <ThreadCoachSheet {...params} entry={params.entry} />;
 }
 
-function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draftParam }: Omit<RootStackParams['Coach'], 'entry'> & { entry: CoachEntry }) {
+/** (Ben, 29 Oct) Today's words already sent from this app run (`takeAsk`): a remount never sends them twice. */
+const sentAsks = new Set<string>();
+
+function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draftParam, ask: askParam }: Omit<RootStackParams['Coach'], 'entry'> & { entry: CoachEntry }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
+  const openSetup = useOpenSetup();
   const insets = useSafeAreaInsets();
   const key = entryKey(entry);
 
@@ -310,6 +315,19 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
     }, [services, entry, threadId, loadRows, loadWorkout]),
   );
 
+  // (Ben, 29 Oct: "The mic listens but doesn't do anything") Words from Today's bar go as his message as soon as the
+  // sheet knows its thread: the running turn shows at once, and a failure is the sheet's own line (`Not sent.`).
+  const sendRef = useRef<(input: BenInput) => Promise<void>>(() => Promise.resolve());
+  useEffect(() => {
+    if (threadId === undefined || availability === null) return;
+    const input = takeAsk(sentAsks, askParam);
+    if (input === null) return;
+    sendRef.current(input).catch(() => {
+      setDraft(input.text);
+      setNotice('Not sent.');
+    });
+  }, [threadId, availability, askParam]);
+
   // One ticker for the elapsed label and the workout bar; no animation (check 22). The bar is
   // worked out from the loaded workout; it's read again on focus, after a change, and every 15 s.
   useEffect(() => {
@@ -341,6 +359,7 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
     else drafts.set(key, t);
   };
 
+  sendRef.current = send;
   async function send(input: BenInput) {
     // A double tap within the commit guard sends once; a turn running blocks another.
     if (live !== null || clockNow() - sendGuard.current < TIMING.commitGuard) return;
@@ -796,7 +815,7 @@ function ThreadCoachSheet({ entry, focus = false, build: buildParam, draft: draf
             onNewExercise={(id, tap) => void tapNewExercise(id, tap)}
             onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)}
             onAccept={() => r.kind === 'offer' && live === null && void send(r.input)}
-            onDraft={{ gymId: buildGym?.id ?? null, open: openDraft, openRoutine: openRoutine, changed: () => { changed(); void loadRows(threadId ?? null); } }}
+            onDraft={{ gymId: buildGym?.id ?? null, open: openDraft, openRoutine: openRoutine, openSetup, changed: () => { changed(); void loadRows(threadId ?? null); } }}
             stamped={stamps.has(r.key)}
             onQuestion={{
               disabled: live !== null || status?.canSend !== true,
@@ -916,7 +935,7 @@ function Row({
   /** `Adjust` on the coach's offer (CA1). */
   onAccept: () => void;
   /** A coach draft's card (workout-builder §4.2): `Open ›` closes the sheet and opens its overview; the sheet never opens it by itself. */
-  onDraft?: { gymId: string | null; open: (draftId: string) => void; openRoutine: (routineId: string) => void; changed: () => void };
+  onDraft?: { gymId: string | null; open: (draftId: string) => void; openRoutine: (routineId: string) => void; changed: () => void; /** ADR 0039: Set up filled from Ben's words. */ openSetup: () => void };
   /** (v2, §4.2) The coach's question card: tap answers, `Skip`, and Undo on a saved main lift. */
   onQuestion?: { disabled: boolean; disabledReason: string | null; saved: (actionId: string) => { text: string; canUndo: boolean } | null; answer: (q: QuestionCardView, a: { label: string; catalogueId: string | null } | 'skip') => void; undoSave: (q: QuestionCardView) => void };
 }) {
@@ -975,6 +994,8 @@ function Row({
         );
       }
       if (row.card.week !== undefined && onDraft !== undefined) return <WeekProposalCard record={row.card.week} onChanged={onDraft.changed} />;
+      if (row.card.draftEdit !== undefined && onDraft !== undefined) return <DraftEditCard record={row.card.draftEdit} onChanged={onDraft.changed} />;
+      if (row.card.setupFill !== undefined && onDraft !== undefined) return <SetupFillCard record={row.card.setupFill} onOpen={onDraft.openSetup} />;
       if (row.card.activityOffer !== undefined && onDraft !== undefined) return <ActivityOfferCard record={row.card.activityOffer} onChanged={onDraft.changed} />;
       if (row.card.plan !== undefined && onDraft !== undefined) return <PlanCard record={row.card.plan} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       if (row.card.draft !== undefined && onDraft !== undefined) return <WorkoutDraftCard record={row.card.draft} gymId={onDraft.gymId} onOpen={onDraft.open} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;

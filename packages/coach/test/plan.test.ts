@@ -148,8 +148,9 @@ describe('`propose_plan` is offered only on Ben’s plan request (rule 3)', () =
     expect(tools('build me a 4-day plan')).not.toContain('propose_workout');
     expect(tools('build me a push session')).not.toContain('propose_plan');
     expect(tools('how did my week go?')).not.toContain('propose_plan');
-    // In a workout turn: never.
-    expect(buildTurnRegistry(gateFor({ kind: 'workout', input: words('build me a 4-day plan'), previousOffer: null, structuralSignals: [] })).tools.map((t) => t.name)).not.toContain('propose_plan');
+    // ADR 0039: from a workout's sheet too; never in the post-workout review.
+    expect(buildTurnRegistry(gateFor({ kind: 'workout', input: words('build me a 4-day plan'), previousOffer: null, structuralSignals: [] })).tools.map((t) => t.name)).toContain('propose_plan');
+    expect(buildTurnRegistry(gateFor({ kind: 'summary', input: words('build me a 4-day plan'), previousOffer: null, structuralSignals: [] })).tools.map((t) => t.name)).not.toContain('propose_plan');
     // With an open plan in the thread, change words revise it.
     expect(tools('make legs shorter', { planInContext: true })).toContain('propose_plan');
     expect(tools('only 3 days', { planInContext: true })).toContain('propose_plan');

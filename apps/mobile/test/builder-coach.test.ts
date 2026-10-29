@@ -299,16 +299,15 @@ describe('Your workout bar in the coach sheet (Ben, 26 Oct, option a)', () => {
     expect(builderSeesLabel('Push A')).toBe('Sees: Push A (draft)');
   });
 
-  it('wiring: Your workout opens the sheet with the builder entry (no Alert.prompt); the sheet applies only from Apply', () => {
+  it('wiring: Your workout opens the sheet with the builder entry (no Alert.prompt); ADR 0039: the same thread sheet as every chat, a draft change applies only from Apply', () => {
     const src = (f: string) => readFileSync(join(__dirname, '..', 'src', ...f.split('/')), 'utf8');
     const workout = src('screens/builder/BuilderWorkoutScreen.tsx');
     expect(workout).not.toContain('Alert.prompt');
     expect(workout).toContain("navigation.navigate('Coach', { entry: { kind: 'builder', draftId: snap.draftId, name: snap.name }, focus: true })");
-    const sheet = src('screens/coach/BuilderCoachSheet.tsx');
-    expect(sheet).toContain('services.builderCoach.askEdit(');
-    expect(sheet.match(/services\.builderCoach\.apply\(/g)?.length).toBe(1);
-    expect(sheet).toMatch(/async function apply\(t: BuilderTurn\)[\s\S]*services\.builderCoach\.apply\(proposal\)/);
-    expect(src('screens/coach/CoachSheetScreen.tsx')).toContain("if (params.entry.kind === 'builder') return <BuilderCoachSheet entry={params.entry} />;");
+    expect(src('screens/coach/CoachSheetScreen.tsx')).toContain('return <ThreadCoachSheet {...params} entry={params.entry} />;');
+    expect(src('screens/coach/CoachSheetScreen.tsx')).not.toContain('BuilderCoachSheet');
+    const cards = src('screens/coach/DraftCards.tsx');
+    expect(cards.match(/services\.coach\.applyDraftEdit\(/g)?.length).toBe(1);
   });
 });
 

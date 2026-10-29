@@ -2075,6 +2075,14 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     },
 
     /** Open builder drafts from earlier days (`Edits from Mon 19 Oct · Use`); they expire after 14 days. */
+    /** ADR 0039: today's Your workout draft (open, not started), the one Ben changed last; null: none saved yet. */
+    async todayDraft(): Promise<{ draftId: string; name: string } | null> {
+      const p = await owner();
+      const rows = await repos().workoutDrafts.openBuilderDraftsOn(p.id, localToday()).catch(() => [] as WorkoutDraft[]);
+      const d = rows[0];
+      return d === undefined ? null : { draftId: d.id, name: d.name };
+    },
+
     async earlierEdits(): Promise<{ draftId: string; localDate: string; name: string }[]> {
       const p = await owner();
       await repos().workoutDrafts.expire(p.id, deps.now().utc).catch(() => []);

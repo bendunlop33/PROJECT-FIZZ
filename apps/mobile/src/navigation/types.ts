@@ -5,6 +5,7 @@ import type { GymLearn } from '@fizz/domain';
 
 import type { CoachEntry } from '../coach/coach-service';
 import type { BuilderCoachEntry } from '../coach/builder-sheet-view';
+import type { SheetAsk } from '../coach/sheet-view';
 
 export type ProfileStackParams = {
   ProfileHome: undefined;
@@ -247,7 +248,8 @@ export type RootStackParams = {
   /** `build`: open with the Build card (workout-builder §3, `Build with coach`). */
   /** `draft`: the field starts with this text when it's empty (Your plan's `Ask coach to change`: `Change my plan: `); nothing is sent. */
   /** (Ben, 26 Oct) `builder`: Your workout's bar; words go to the builder's `askEdit`, proposals come back as cards (Apply / Skip). */
-  Coach: { entry: CoachEntry | BuilderCoachEntry; focus?: boolean; build?: boolean; draft?: string };
+  /** `ask` (Ben, 29 Oct): words from Today's bar, sent as his message as the sheet opens (once per ID). */
+  Coach: { entry: CoachEntry | BuilderCoachEntry; focus?: boolean; build?: boolean; draft?: string; ask?: SheetAsk };
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
   /**

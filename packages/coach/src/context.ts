@@ -1,5 +1,5 @@
 import { ageFromBirthYear, bodyweightEntries, lastDaysDetail, type LastDaysView, type HealthDailyValue, buildExecutionOrder, deriveId, latestBodyweight, splitInUse, stableStringify, targetRpeOf, type ExerciseHistoryView, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
-import type { CheckIn, HealthWeightSample, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, WorkoutSet } from '@fizz/schemas';
+import type { CheckIn, HealthWeightSample, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, TrainingSplit, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
 import type { BuildContextView } from './build';
@@ -122,6 +122,8 @@ export interface CoachContextInput {
    * only what he logged (rule 6). Absent when there is nothing to say.
    */
   week?: WeekContextView;
+  /** ADR 0039: today's Your workout draft (not started), the target of `propose_workout_edit`. Your data. */
+  builderDraft?: BuilderDraftView;
   /**
    * (21 Oct, Ben's Build B report) A live workout: the last sessions of the exercises in play (the one
    * he's on, the ones he named), as `get_recent_training` reads them. The coach then has his recent
@@ -214,6 +216,8 @@ export interface WeekContextView {
   /** `plan` (the plan in use) or `split` (his split days). */
   daysFrom: 'plan' | 'split' | null;
   remaining: { id: string; name: string; bodyParts: string[] }[];
+  /** ADR 0039: this week's days already done (names), so the coach sees the whole week's status. Absent: none. */
+  done?: string[];
   /** `Run · Sat 24 Oct · planned · long`. */
   activities: string[];
   /**
@@ -227,6 +231,14 @@ export interface WeekContextView {
   suggestion: { merges: { dayIds: string[]; name: string }[] } | null;
   /** A change Ben applied this week (`This week: Push (Chest + Shoulders)`), else null. */
   applied: string | null;
+}
+
+/** ADR 0039: a Your workout draft before Start as the coach sees it: `Bench press: 4 × 6–8 @ 80 kg`. */
+export interface BuilderDraftView {
+  name: string;
+  aboutMinutes: number;
+  exercises: string[];
+  started: false;
 }
 
 /** The plan in use as `pause_plan` reads it (Your data). `inUse: null`: no plan is in use. */
@@ -252,6 +264,34 @@ export interface TrainingInput {
    * switches are on. Raw data only: no score; the coach never diagnoses or changes loads from them on its own.
    */
   healthSignals?: { restingHeartRate: readonly HealthDailyValue[]; sleep: readonly HealthDailyValue[] };
+  /**
+   * ADR 0039 (Ben, 29 Oct: "Why does it get confused with my split?"): the plan in use, paused or not. While there is
+   * one, it is the only split the coach sees (its days, order, weekdays and main lifts); the profile's split isn't
+   * sent. Absent: no plan in use (the profile's split, as before).
+   */
+  plan?: PlanSplitView;
+}
+
+/** ADR 0039: the plan in use as the coach's one split (Your data). */
+export interface PlanSplitView {
+  name: string;
+  paused: boolean;
+  /** In plan order. `weekday`: Set days plans, this week (Mon = 0); null on Any days. */
+  days: { id: string; name: string; bodyParts: SplitBodyPart[]; weekday: number | null; mainLift: string | null }[];
+  /** Up next's plan day, when it is one. */
+  upNext: string | null;
+}
+
+const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+
+/**
+ * ADR 0039: the split every coach path reads (training details, a build's day, a plan's `splitDays`): the plan in
+ * use's days while there is one (paused too), else the profile's split. Pure.
+ */
+export function coachSplit(t: Pick<TrainingInput, 'profile' | 'plan'> | null): TrainingSplit {
+  const plan = t?.plan;
+  if (plan !== undefined && plan.days.length > 0) return { kind: 'custom', days: plan.days.map((d) => ({ id: d.id, name: d.name, bodyParts: [...d.bodyParts] })) };
+  return splitInUse(t?.profile ?? null);
 }
 
 /** What the coach sees of Ben's training details (Your data). Absent keys are not set. */
@@ -276,9 +316,12 @@ export interface TrainingDetailsView {
   daysPerWeek?: number;
   sessionMinutes: number;
   split: {
-    kind: 'ppl' | 'clsb' | 'custom';
+    /** `plan`: the plan in use is his split (ADR 0039); its name in `plan`. */
+    kind: 'ppl' | 'clsb' | 'custom' | 'plan';
     chosenByBen: boolean;
-    days: { name: string; bodyParts: SplitBodyPart[]; mainLift: { name: string; source: 'Ben chose' | 'recommended from history' } | null }[];
+    /** ADR 0039: the plan in use (paused or not) these days come from. Absent: his profile's split. */
+    plan?: { name: string; paused: boolean };
+    days: { name: string; bodyParts: SplitBodyPart[]; /** Set days plans: this week's weekday. */ on?: string; mainLift: { name: string; source: 'Ben chose' | 'recommended from history' | 'the plan' } | null }[];
     upNext: string | null;
   };
   /** (Ben, 20 Oct) Only while Lift targets is on and he has some. */
@@ -307,11 +350,23 @@ export function trainingDetailsView(t: TrainingInput): { view: TrainingDetailsVi
   else notSet.push('Goal');
   if (p?.daysPerWeek !== undefined) view.daysPerWeek = p.daysPerWeek;
   else notSet.push('Days a week');
-  view.split.days = split.days.map((d) => {
-    const m = t.mainLifts[d.id] ?? null;
-    return { name: d.name, bodyParts: [...d.bodyParts], mainLift: m === null ? null : { name: m.name, source: m.source === 'yours' ? 'Ben chose' : 'recommended from history' } };
-  });
-  view.split.upNext = split.days.find((d) => d.id === t.nextDayId)?.name ?? null;
+  // ADR 0039: one source of truth. While a plan is in use, its days are his split; the profile's split is not sent.
+  if (t.plan !== undefined && t.plan.days.length > 0) {
+    const plan = t.plan;
+    view.split = {
+      kind: 'plan',
+      chosenByBen: true,
+      plan: { name: plan.name, paused: plan.paused },
+      days: plan.days.map((d) => ({ name: d.name, bodyParts: [...d.bodyParts], ...(d.weekday === null ? {} : { on: WEEKDAY_NAMES[d.weekday] ?? '' }), mainLift: d.mainLift === null ? null : { name: d.mainLift, source: 'the plan' } })),
+      upNext: plan.upNext,
+    };
+  } else {
+    view.split.days = split.days.map((d) => {
+      const m = t.mainLifts[d.id] ?? null;
+      return { name: d.name, bodyParts: [...d.bodyParts], mainLift: m === null ? null : { name: m.name, source: m.source === 'yours' ? 'Ben chose' : 'recommended from history' } };
+    });
+    view.split.upNext = split.days.find((d) => d.id === t.nextDayId)?.name ?? null;
+  }
   const hs = t.healthSignals;
   if (hs !== undefined && (hs.restingHeartRate.length > 0 || hs.sleep.length > 0)) {
     view.fromAppleHealth = {
@@ -336,7 +391,12 @@ export interface AddableExercise {
 export type OpenedFrom =
   | { screen: 'progress'; window: { days: number; from: string; to: string; /** A custom period's dates (`1 Sep – 30 Sep`); absent = `last N days`. */ label?: string } }
   /** Exercise detail (progress.md slice B): the exercise, its series and the chart's range. A frame only, no numbers. */
-  | { screen: 'progress_exercise'; exercise: string; series: string; range: { from: string; to: string } };
+  | { screen: 'progress_exercise'; exercise: string; series: string; range: { from: string; to: string } }
+  /**
+   * ADR 0039: a finished workout's thread (its Summary or sheet) while another workout is live: the live one is in
+   * context (the tools act on it); the finished one is named here and read with get_recent_sessions (its date).
+   */
+  | { screen: 'finished_workout'; title: string; date: string };
 
 export interface SessionSetView {
   setId: string;
@@ -415,6 +475,8 @@ export interface YourData {
   plan?: PlanPauseView;
   /** (Ben, 20 Oct) General turns: this week, his activities and the days left. */
   week?: WeekContextView;
+  /** ADR 0039: a Your workout draft before Start (Today's, or the builder sheet's). */
+  builderDraft?: BuilderDraftView;
   /** (21 Oct) Live workouts: the last sessions of the exercises in play. */
   recentLifts?: RecentLiftView[];
   /** (Ben, 27 Oct, Q4) The watch workout linked to this workout (Apple Health). */
@@ -559,6 +621,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.addable === undefined ? {} : { addable: input.addable.map((a) => ({ ...a })) }),
     ...(input.training === undefined ? {} : { training: trainingDetailsView(input.training).view }),
     ...(input.week === undefined ? {} : { week: JSON.parse(JSON.stringify(input.week)) as WeekContextView }),
+    ...(input.builderDraft === undefined ? {} : { builderDraft: { name: input.builderDraft.name, aboutMinutes: input.builderDraft.aboutMinutes, exercises: [...input.builderDraft.exercises], started: false as const } }),
     ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
     ...(input.linkedActivity === undefined ? {} : { linkedActivity: { ...input.linkedActivity } }),
     ...(input.lastDays === undefined ? {} : { lastDays: JSON.parse(JSON.stringify(input.lastDays)) as LastDaysView }),
@@ -567,6 +630,7 @@ export function buildYourData(input: CoachContextInput): YourData {
 }
 
 function copyOpenedFrom(o: OpenedFrom): OpenedFrom {
+  if (o.screen === 'finished_workout') return { ...o };
   return o.screen === 'progress' ? { screen: 'progress', window: { ...o.window } } : { screen: 'progress_exercise', exercise: o.exercise, series: o.series, range: { ...o.range } };
 }
 
@@ -699,8 +763,9 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
   if (y.memories.length > 0) yourData.push({ label: 'Memories', detail: plural(y.memories.length, 'memory', 'memories') });
   if (y.openedFrom !== undefined) {
     const o = y.openedFrom;
-    yourData.push({ label: 'Opened from', detail: o.screen === 'progress' ? `Progress · ${o.window.label ?? `last ${String(o.window.days)} days`}` : `Progress · ${o.exercise} · ${o.series}` });
+    yourData.push({ label: 'Opened from', detail: o.screen === 'finished_workout' ? `${o.title} · ${o.date}` : o.screen === 'progress' ? `Progress · ${o.window.label ?? `last ${String(o.window.days)} days`}` : `Progress · ${o.exercise} · ${o.series}` });
   }
+  if (y.builderDraft !== undefined) yourData.push({ label: 'Your workout', detail: `${y.builderDraft.name} · ${plural(y.builderDraft.exercises.length, 'exercise')} · not started` });
   if (y.build !== undefined) {
     const b = y.build;
     yourData.push({ label: 'Your request', detail: `“${b.request.quote.slice(0, 80)}”` });

@@ -296,7 +296,20 @@ export interface WeekToolContext {
 export interface WeekToolDeps {
   store: CoachWriteStore;
   week(): Promise<WeekToolContext | null>;
+  /**
+   * ADR 0039 (Ben, 29 Oct): apply a saved proposal at once, as Ben's Apply does (`week.apply`: versioned, stale
+   * when the week moved on, idempotent on `opId`). Absent: every call stays a proposal.
+   */
+  apply?(actionId: string, opId: string): Promise<{ ok: true } | { ok: false; stale: boolean }>;
 }
+
+/** ADR 0039: the op ID of a week change applied at once (a replayed call applies once). */
+export const weekAtOnceOpId = (actionId: string): string => `week-at-once:${actionId}`;
+
+/** Fed back when the week change Ben asked for was applied (the card has Undo). */
+export const WEEK_APPLIED_LINE = 'Applied this week, with Undo on the card. Say briefly what it means for his week; never restate the change.';
+/** Fed back when it couldn't be applied at once: he sees it with Apply. */
+export const WEEK_NOT_APPLIED_LINE = 'Not applied: the week changed as it was being saved. Ben sees it with Apply.';
 
 export function createWeekExecutor(deps: WeekToolDeps): CoachExecutors {
   return {
@@ -317,8 +330,14 @@ export function createWeekExecutor(deps: WeekToolDeps): CoachExecutors {
       if (w === null || w.facts.remaining.length === 0) return record(deps.store, ctx.ownerId, newActionRecord(ctx, base({}), { status: 'rejected', failure: 'no days are left this week' }));
       const check = checkWeekProposal(call.args, w.facts);
       if (!check.ok) return record(deps.store, ctx.ownerId, newActionRecord(ctx, base({}), { status: 'rejected', failure: check.failure }));
-      const detail = base({ merges: check.merges, skips: check.skips, before: check.before, after: check.after });
-      return record(deps.store, ctx.ownerId, newActionRecord(ctx, detail, { status: 'proposed', reason: call.args.message.trim() === '' ? null : call.args.message.trim().slice(0, 240) }));
+      // ADR 0039: Ben asked (the turn checked his words, `propose` absent): applied at once, Undo on the card. The
+      // record is saved first (the card and Undo read it); a crash before the apply leaves it with Apply (rule 5).
+      const atOnce = ctx.propose !== true && deps.apply !== undefined;
+      const detail = base({ merges: check.merges, skips: check.skips, before: check.before, after: check.after, ...(atOnce ? { atOnce: true } : {}) });
+      const saved = await record(deps.store, ctx.ownerId, newActionRecord(ctx, detail, { status: 'proposed', reason: call.args.message.trim() === '' ? null : call.args.message.trim().slice(0, 240) }));
+      if (!atOnce || deps.apply === undefined || saved.kind !== 'action' || saved.record.status !== 'proposed') return saved;
+      const applied = await deps.apply(saved.record.actionId, weekAtOnceOpId(saved.record.actionId)).catch(() => ({ ok: false as const, stale: false }));
+      return { ...saved, line: applied.ok ? WEEK_APPLIED_LINE : WEEK_NOT_APPLIED_LINE };
     },
   };
 }

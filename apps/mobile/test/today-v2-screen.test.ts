@@ -128,12 +128,14 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     }
   });
 
-  it('honest AI status: no canned coach text; the shared coach bar shows the builder coach’s reach; heard words go to askSetup, the bar opens the coach sheet', () => {
+  it('honest AI status: no canned coach text; the shared coach bar shows the builder coach’s reach; heard words open the coach sheet sent at once (Ben, 29 Oct), the bar opens the coach sheet', () => {
     expect(screen).not.toMatch(/✦ Coach:/);
     // The shared bar (its status word is `BUILDER_STATUS_WORD[reach]`: `Offline`, `Coach not connected`).
     expect(screen).toContain('<CoachAskBar');
     expect(screen).toMatch(/services\.builderCoach\s*\.status\(\)/);
-    expect(screen).toContain("services.builderCoach.askSetup({ words, opId: newUuid(), from: 'today' })");
+    // (Ben, 29 Oct: "The mic listens but doesn't do anything") No model call before the sheet opens.
+    expect(screen).not.toContain('services.builderCoach.askSetup(');
+    expect(screen).toContain('todayAskParams(words, spoken, newUuid())');
     expect(screen).toContain("navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true })");
     expect(screen).not.toContain('AskPill');
     // The nudge's offer is applied only through applyNudge / skipNudge (rule 3; the day is marked done).

@@ -524,14 +524,37 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       return make(status, text, speakable(text));
     }
     case 'propose_week': {
-      // (Ben, 20 Oct) This week reshaped around a run: always a proposal Ben applies (the card has the before/after list).
+      // (Ben, 20 Oct) This week reshaped around a run (the card has the before/after list, and Apply or Undo).
       const what = d.after.map((r) => (r.note === null ? r.name : `${r.name} (${r.note})`)).join(', ');
+      // ADR 0039: Ben asked, so it was applied at once; whether it is still in use is the card's (week_plans) to say.
+      if (st === 'proposed' && d.atOnce === true) {
+        const text = `This week: ${what}.`;
+        return make(status, text, speakable(text));
+      }
       if (st === 'proposed') {
         const text = `This week: ${what}. Not applied.`;
         return make(status, text, speakable(text));
       }
       if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
       const text = `Couldn't change this week: ${failureOr(record, 'it was refused')}. Nothing changed.`;
+      return make(status, text, speakable(text));
+    }
+    case 'propose_workout_edit': {
+      // ADR 0039: a change to a Your workout draft before Start: always Apply / Skip (the card has the lines).
+      if (st === 'proposed') {
+        const text = `${d.draftName === '' ? 'Your workout' : d.draftName}: ${d.proposal.lines.join('; ')}. Not applied.`;
+        return make(status, text, speakable(text));
+      }
+      const text = `Not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
+    case 'fill_setup': {
+      // ADR 0039: today's Set up filled from Ben's words; he opens it to build (Undo on Set up).
+      if (st === 'committed') {
+        const text = `Set up: ${d.toast}.`;
+        return make(status, text, speakable(text));
+      }
+      const text = `Set up not filled: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
     case 'propose_exercise': {

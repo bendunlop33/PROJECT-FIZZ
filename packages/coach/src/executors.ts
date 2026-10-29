@@ -43,7 +43,8 @@ export type ToolResult =
   | { kind: 'read'; data: unknown; earlier?: readonly ActionRecord[] }
   /** `retry`: (ADR 0038) a stale write's current version, so the model can call once more against it. */
   /** `also`: (ADR 0038) other changes this call saved first (the gym learning the kit), each its own card with Undo. */
-  | { kind: 'action'; record: ActionRecord; replayed: boolean; retry?: { baseVersion: number }; also?: readonly ActionRecord[] }
+  /** `line`: (ADR 0039) what happened, for the model, when the record alone can't say it (a week change applied at once). */
+  | { kind: 'action'; record: ActionRecord; replayed: boolean; retry?: { baseVersion: number }; also?: readonly ActionRecord[]; line?: string }
   /** Nothing ran and nothing was written (e.g. a second build in one turn); `line` goes back to the model. */
   | { kind: 'refused'; line: string };
 
@@ -440,6 +441,10 @@ function undoWhat(target: ActionRecord): string {
       return `the ${ACTIVITY_WORD[d.fields.kind].toLowerCase()} on ${localDateText(d.fields.date)}`;
     case 'propose_week':
       return 'this week’s change';
+    case 'propose_workout_edit':
+      return `the change to ${d.draftName === '' ? 'your workout' : d.draftName}`;
+    case 'fill_setup':
+      return 'today’s Set up';
   }
 }
 

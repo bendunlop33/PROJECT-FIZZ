@@ -113,6 +113,8 @@ function sessionOf(record: ActionRecord): string | null {
     case 'set_lift_target':
     case 'log_activity':
     case 'propose_week':
+    case 'propose_workout_edit':
+    case 'fill_setup':
     case 'undo':
       return null;
   }
@@ -855,6 +857,11 @@ export class SqliteCoachStore {
       }
       // A week proposal is never applied by the coach: Apply and its Undo are Ben's own writes (`week_plans`).
       case 'propose_week':
+        return 'unsupported';
+      // ADR 0039: a draft change's Apply and Undo are the builder's own writes (`workout_drafts`); Set up's fill has its
+      // own Undo on Set up.
+      case 'propose_workout_edit':
+      case 'fill_setup':
         return 'unsupported';
       // A suggestion was never applied (Ben's Not now, or Forget after Save, are the ways back). Ben's routine change from
       // today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.

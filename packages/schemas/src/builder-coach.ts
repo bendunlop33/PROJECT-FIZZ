@@ -77,6 +77,29 @@ export const BuilderEditOpSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('rest'), slotKey: RefSchema, seconds: z.int().min(0).max(1200) }),
 ]);
 export type BuilderEditOp = z.infer<typeof BuilderEditOpSchema>;
+
+/**
+ * ADR 0039: a builder edit proposal as a main-coach record keeps it (`propose_workout_edit`), so its card survives a
+ * restart: the ops, the lines Ben saw, the slot revisions it was made against, and what Apply's re-check needs.
+ */
+export const BuilderProposalSchema = z.object({
+  /** The ask's op ID (a coach turn's is longer than a UUID). */
+  id: z.string().min(1).max(300),
+  draftId: z.string().min(1).max(64),
+  baseVersion: z.int().min(0),
+  ops: z.array(BuilderEditOpSchema).max(40),
+  lines: z.array(z.string().max(300)).max(60),
+  warnings: z.array(z.string().max(300)).max(20),
+  notes: z.array(z.string().max(300)).max(20),
+  preconditions: z.array(z.object({ slotKey: z.string().min(1).max(80), rev: z.int().min(0) })).max(80),
+  estimate: z.number().min(0).max(1000),
+  minutes: z.number().min(0).max(1000),
+  reason: z.string().max(1000).nullable(),
+  hidden: z.array(z.string().max(1000)).max(20),
+  askedHeavier: z.boolean(),
+  benLoads: z.array(z.object({ value: z.number().min(0).max(2000), unit: WeightUnitSchema.nullable() })).max(20).optional(),
+  topLoadsAfter: z.record(z.string(), z.number()).optional(),
+});
 export type BuilderEditOpKind = BuilderEditOp['op'];
 
 /** Most edits in one proposal or suggestion. */

@@ -48,7 +48,7 @@ import {
 } from '@fizz/persistence';
 import type { CheckInSettings, EquipmentInstance, Exercise, Gym, GymSetup, ImplementCount, PlanWeekExerciseEdit, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
-import type { CoachModelPort, TurnLifecycle } from '@fizz/coach';
+import { builderApplyOpId, type CoachModelPort, type TurnLifecycle } from '@fizz/coach';
 import type { HealthPort, TextCoachState } from '@fizz/providers';
 
 import type { RestAlertController } from '../alerts/rest-alerts';
@@ -572,7 +572,8 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   /** Training details and split (Ben 13 Oct: D5, D7, D8; F19). Your data, local only. */
-  const training = createTrainingService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, catalogueExercises });
+  // ADR 0039: `plans` is made below; read only when the Build card asks (after startup).
+  const training = createTrainingService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, catalogueExercises, planSplit: () => plans.splitSource() });
   // (Ben, 27 Oct) Progress's bodyweight card: entries are training-profile changes (versioned, op IDs).
   const bodyweight = createBodyweightService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, change: (c, v, op) => training.change(c, v, op) });
 
@@ -621,7 +622,11 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.checkInSettings === undefined ? {} : { checkInSettings: deps.checkInSettings }),
     // (Ben, 20 Oct) Lift targets join the training details only while the setting is on.
     training: async () => {
-      const t = await training.coachInput();
+      const base = await training.coachInput();
+      // ADR 0039 (Ben, 29 Oct): while a plan is in use (paused too), its days are the coach's one split.
+      // `plans` is made below; this runs only on a coach turn (after startup).
+      const plan = base === null ? null : await plans.splitSource().catch(() => null);
+      const t = base === null || plan === null ? base : { ...base, plan };
       if (t === null || t.profile?.liftTargetsOn !== true) return t;
       const views = await liftTargets.coachViews().catch(() => []);
       return views.length === 0 ? t : { ...t, liftTargets: views };
@@ -632,6 +637,11 @@ export function createAppServices(deps: AppServicesDeps) {
       tool: async () => {
         const s = await weekly.week.state();
         return s === null ? null : { facts: s.facts, basis: s.basis, factsKey: s.factsKey };
+      },
+      // ADR 0039: a week change Ben asked the coach for is applied at once, exactly as his Apply on the card would.
+      apply: async (actionId, opId) => {
+        const r = await weekly.week.apply({ actionId, opId });
+        return r.ok ? { ok: true } : { ok: false, stale: r.reason === 'stale' };
       },
     },
     store: () => deps.manager.store,
@@ -656,6 +666,47 @@ export function createAppServices(deps: AppServicesDeps) {
     // (Ben, 23 Oct, D8) An applied next-workout change lands on Your workout; its chat Undo takes it back off there.
     // `builder` is made below and only called after startup.
     nextWorkout: { revert: (applyActionId, check) => builder.revertCoachLanding(applyActionId, check) },
+    // ADR 0039 (Ben, 29 Oct): the builder's powers in every chat. `builder`, `builderCoach` and `builderPorts` are made
+    // below; these run only on a coach turn or a card tap (after startup).
+    builder: {
+      today: () => builder.todayDraft(),
+      summary: (draftId) => builderCoach.draftSummary(draftId),
+      edit: async (req) => {
+        const a = await builderCoach.askEdit({ draftId: req.draftId, words: req.words, opId: req.opId });
+        switch (a.kind) {
+          case 'proposal':
+            return { kind: 'proposal', proposal: a.proposal };
+          case 'reply':
+            return { kind: 'reply', text: a.text, notes: a.notes };
+          case 'unavailable':
+            return { kind: 'unavailable' };
+          case 'gone':
+            return { kind: 'gone' };
+        }
+      },
+      fillSetup: async (req) => {
+        const a = await builderCoach.askSetup({ words: req.words, opId: req.opId, from: 'today' });
+        switch (a.kind) {
+          case 'filled':
+            return { kind: 'filled', toast: a.toast, notes: a.notes };
+          case 'reply':
+            return { kind: 'reply', text: a.text };
+          case 'not_understood':
+            return { kind: 'not_understood' };
+          case 'failed':
+            return { kind: 'failed' };
+        }
+      },
+      apply: async (proposal) => {
+        const r = await builderCoach.apply(proposal);
+        return r.kind === 'applied' ? { kind: 'applied' } : r;
+      },
+      applied: (proposalId) => builderPorts.writer.applied(builderApplyOpId(proposalId)),
+      undo: async (draftId, proposalId, opId) => {
+        const r = await builder.undo(draftId, builderApplyOpId(proposalId), opId);
+        return r.status === 'written' || r.status === 'replayed';
+      },
+    },
     // ADR 0038: after the coach changes the gym (or learns kit for an exercise it adds), today's snapshot takes it,
     // as `learnInWorkout` does: only when it moves no target (otherwise the gym screen's `Use changes today` stays the way).
     refreshTodayKit: async (sessionId, opId) => {

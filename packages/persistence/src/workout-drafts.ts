@@ -71,6 +71,12 @@ export class SqliteWorkoutDrafts extends DocumentRepository<WorkoutDraft> {
     return rows.filter((d) => d.builderKey !== undefined && d.builderKey.localDate < localDate);
   }
 
+  /** ADR 0039: open builder drafts for `localDate` (Your workout before Start), newest change first. */
+  async openBuilderDraftsOn(ownerId: string, localDate: string): Promise<WorkoutDraft[]> {
+    const rows = await this.listWhere("owner_id = ? AND status = 'open' AND json_extract(data, '$.builderKey') IS NOT NULL", [ownerId]);
+    return rows.filter((d) => d.builderKey !== undefined && d.builderKey.localDate === localDate).sort((a, b) => (a.updatedAtUtc < b.updatedAtUtc ? 1 : -1));
+  }
+
   /**
    * (v3 §4.4) A new builder draft, decided inside one transaction: a retry
    * (same ID, an op ID it already holds) replays; when an open draft already
