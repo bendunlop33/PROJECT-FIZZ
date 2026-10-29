@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IdSchema, OperationIdSchema, TimeZoneSchema, UtcTimestampSchema, ZonedTimestampSchema } from './common';
+import { IdSchema, LoadConventionSchema, OperationIdSchema, TimeZoneSchema, UtcTimestampSchema, WeightUnitSchema, ZonedTimestampSchema } from './common';
 import { BUILD_LIMITS, BuildCheckSchema, BuildFocusSchema, NonEmptyDraftPlanSchema, ProposedExerciseSchema, WorkoutDraftOriginSchema } from './workout-draft';
 import { PlanBuilderRecordSchema } from './plan-builder';
 import { RoutineExerciseSchema, RoutinePlanDaySchema, RoutinePlanLinkSchema } from './routine';
@@ -293,6 +293,43 @@ export const PlanMoveUndoSchema = z.object({ opId: OperationIdSchema, versionAft
 export type PlanMoveUndo = z.infer<typeof PlanMoveUndoSchema>;
 
 /**
+ * (Ben, 29 Oct: day sheet) A plan day left out of one block week (`Skip this week`). `week` 0: the lead-in.
+ */
+export const PlanWeekSkipSchema = z.object({ week: z.int().min(0).max(12), dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1) });
+export type PlanWeekSkip = z.infer<typeof PlanWeekSkipSchema>;
+
+/**
+ * (Ben, 29 Oct: "update the exercise for one day of the plan and no other changes") One change to a plan day's
+ * exercises in one block week only (`This week only`): the day's workout (the template) never changes. `swap` puts
+ * `toExerciseId` in the row `rowId` (its sets, reps, rest, place and superset kept); `remove` leaves the row out;
+ * `add` puts a new row (`rowId`, `toExerciseId`, `sets` × `reps`) after `afterRowId` (null: last). `load`: the
+ * target weight Ben typed (kept as typed); absent or null: from his history, else an estimate.
+ */
+export const PlanWeekExerciseEditSchema = z.object({
+  week: z.int().min(0).max(12),
+  dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1),
+  kind: z.enum(['swap', 'remove', 'add']),
+  rowId: IdSchema,
+  fromExerciseId: z.string().min(1).max(64).nullable(),
+  toExerciseId: z.string().min(1).max(64).nullable(),
+  afterRowId: IdSchema.nullable().optional(),
+  sets: z.int().min(1).max(10).optional(),
+  reps: z.object({ min: z.int().min(1).max(100), max: z.int().min(1).max(100) }).optional(),
+  load: z.object({ value: z.number().min(0).max(1000), unit: WeightUnitSchema, convention: LoadConventionSchema }).nullable().optional(),
+  opId: OperationIdSchema,
+  atUtc: UtcTimestampSchema,
+});
+export type PlanWeekExerciseEdit = z.infer<typeof PlanWeekExerciseEditSchema>;
+
+/** The last day-sheet change (Do today instead, Move to…, Skip this week, a one-change edit), for its one Undo. */
+export const PlanWeekChangeUndoSchema = z.object({
+  opId: OperationIdSchema,
+  versionAfter: z.int().min(2),
+  before: z.object({ moves: z.array(PlanDayMoveSchema).max(84), skips: z.array(PlanWeekSkipSchema).max(84), edits: z.array(PlanWeekExerciseEditSchema).max(200) }),
+});
+export type PlanWeekChangeUndo = z.infer<typeof PlanWeekChangeUndoSchema>;
+
+/**
  * A coach-built plan (Your data). `open` until applied, discarded or
  * expired; Undo of an Apply makes it `open` again (its workouts gone, the
  * rotation as it was). Every write bumps `version` and records its `opId`.
@@ -333,6 +370,12 @@ export const PlanDraftSchema = z
     /** (26 Oct) `Move day`s, each for one block week. */
     moves: z.array(PlanDayMoveSchema).max(84).optional(),
     lastMove: PlanMoveUndoSchema.nullable().optional(),
+    /** (Ben, 29 Oct) Days skipped for one block week (`Skip this week`). */
+    weekSkips: z.array(PlanWeekSkipSchema).max(84).optional(),
+    /** (Ben, 29 Oct) This-week-only exercise changes, one per write. */
+    weekEdits: z.array(PlanWeekExerciseEditSchema).max(200).optional(),
+    /** (Ben, 29 Oct) The last day-sheet change, for its Undo. */
+    lastWeekChange: PlanWeekChangeUndoSchema.nullable().optional(),
     /** (Ben, 28 Oct) Ben's `Count as Pull?` answers, one per workout, oldest first. */
     dayLinks: z.array(PlanDayLinkSchema).max(200).optional(),
     lastLink: PlanLinkUndoSchema.nullable().optional(),
