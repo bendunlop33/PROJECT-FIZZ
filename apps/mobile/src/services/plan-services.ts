@@ -201,7 +201,7 @@ export interface PlanDayData {
   routineId: string | null;
 }
 
-export type PlanWriteOutcome = { ok: true; plan: PlanDraft; duplicate: boolean; /** (29 Oct) What the gym learnt from a typed weight (its Undo goes with the change's). */ learned?: GymEdit | null } | { ok: false; reason: 'stale' | 'closed' | 'changed_since' | 'missing' | 'failed'; message: string };
+export type PlanWriteOutcome = { ok: true; plan: PlanDraft; duplicate: boolean; /** (29 Oct) What the gym learnt from a typed weight (its Undo goes with the change's). */ learned?: GymEdit | null; /** (29 Oct) Your workout drafts today the same change was made on (their Undo goes with it). */ draftEdits?: { draftId: string; opId: string }[] } | { ok: false; reason: 'stale' | 'closed' | 'changed_since' | 'missing' | 'failed'; message: string };
 
 /** The applied plan as Progress and Today read it. */
 export interface ActivePlan {

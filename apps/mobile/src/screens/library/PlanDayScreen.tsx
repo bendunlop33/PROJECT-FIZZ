@@ -225,7 +225,13 @@ export function PlanDayScreen() {
           <PrimaryButton
             label={PLAN_DAY_COPY.open(name)}
             onPress={() => {
-              navigation.navigate('BuilderWorkout', { open: { kind: 'routine', routineId: day.routineId }, back: 'Library' });
+              // (Ben, 29 Oct) The day as this week has it (the day sheet's changes in place), as Today's Edit opens it.
+              void services.todaySession
+                .openDay(day.routineId)
+                .catch(() => null)
+                .then((o) => {
+                  navigation.navigate('BuilderWorkout', o === null ? { open: { kind: 'routine', routineId: day.routineId }, back: 'Library' } : { draftId: o.draftId, back: 'Library' });
+                });
             }}
           />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>

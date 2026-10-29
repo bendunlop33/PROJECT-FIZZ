@@ -10,6 +10,7 @@ import {
   type ValidationIssue,
   type WorkoutDraft,
   type ZonedTimestamp,
+  type RoutineExercise,
 } from '@fizz/schemas';
 import type { AlongsideRefusal, FencedResult, Repositories, SaveResult, StartAlongside, WriteFence } from './ports';
 import { buildAddExerciseCommand, startWorkout, type AddExerciseInput, type SetFit, type StartWarning } from './session/create';
@@ -297,6 +298,11 @@ export function createSessionService(repos: Repositories, newId: () => string, o
       fence?: WriteFence;
       /** Today's edits from the pre-start draft (ADR 0022). */
       today?: TodayEditsInput;
+      /**
+       * (Ben, 29 Oct) A plan day's rows this week (its template with this week's one-change edits): planned instead of
+       * the stored rows. The stored template never changes.
+       */
+      weekExercises?: readonly RoutineExercise[];
     },
   ): Promise<{ ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; duplicate: boolean; fits: Record<string, SetFit>; today: TodayPlanInfo | null } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
     if (!req.preview) {
@@ -311,8 +317,9 @@ export function createSessionService(repos: Repositories, newId: () => string, o
     }
     const owner = await repos.profiles.get(req.ownerId);
     if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
-    const routine = await repos.routines.get(req.routineId);
-    if (!routine || routine.ownerId !== req.ownerId || isDeleted(routine)) return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
+    const stored = await repos.routines.get(req.routineId);
+    if (!stored || stored.ownerId !== req.ownerId || isDeleted(stored)) return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
+    const routine = req.weekExercises === undefined ? stored : { ...stored, exercises: [...req.weekExercises] };
     const exercises = new Map<string, Exercise>();
     for (const rex of routine.exercises) {
       const ex = await repos.exercises.get(rex.exerciseId);

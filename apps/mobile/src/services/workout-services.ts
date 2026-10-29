@@ -52,6 +52,9 @@ import {
   pbBlockOfPlan,
   pbMoveWeek,
   pbSkipsOf,
+  pbWeekEditsOf,
+  pbDayWithEdits,
+  planDayOf,
   planWeekFills,
   setDaysUpNextOrder,
   weekdayIndexOfDate,
@@ -1764,7 +1767,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       pastStart?: ZonedTimestamp;
     },
   ) {
-    const routine = await repos().routines.get(req.routineId);
+    const storedRoutine = await repos().routines.get(req.routineId);
+    // (Ben, 29 Oct) A plan day this week: its rows with this week's one-change edits (the template never changes).
+    const weekRows = storedRoutine ? await weekRowsOf(p, storedRoutine) : null;
+    const routine = storedRoutine && weekRows !== null ? { ...storedRoutine, exercises: weekRows } : storedRoutine;
     const ref = routine ? (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null : null;
     const source = ref ? await repos().sessions.get(ref.sessionId).catch(() => null) : null;
     const fromSource = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
@@ -1793,6 +1799,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       ...(lastUsedHere ? { lastUsedHere } : {}),
       ...(req.todayEdits ? { today: req.todayEdits } : {}),
       ...(req.pastStart ? { pastStart: req.pastStart } : {}),
+      ...(weekRows !== null ? { weekExercises: weekRows } : {}),
     });
     return { r, ref, source, routine, targeted: (targets !== null && targets.size > 0) || (firstLoads !== null && firstLoads.size > 0), targetsFailed: source !== null && targets === null };
   }
@@ -2153,9 +2160,32 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return { kind: 'coach_draft', draft: d, routine: draftAsRoutine(d, v), basis: { kind: 'coach_draft', at: v.createdAt, versionN: v.n } };
   }
 
+  /**
+   * (Ben, 29 Oct) A plan day's rows this week: its template with this week's one-change edits (`This week only`), so
+   * Library's `Open <day>`, Your workout, the overview and Start plan what the day sheet shows. Null: not a plan day of
+   * the plan in use, or no edit this week. Exercises an edit put in are saved as Ben's rows first (as Add does).
+   */
+  async function weekRowsOf(p: UserProfile, routine: Routine): Promise<RoutineExercise[] | null> {
+    const plan = await repos().planDrafts.applied(p.id).catch(() => null);
+    if (plan === null || plan.applied === null || (plan.weekEdits ?? []).length === 0) return null;
+    const dayIndex = plan.applied.made.find((m) => m.routineId === routine.id)?.dayIndex ?? (planDayOf(routine)?.planId === plan.id ? (planDayOf(routine)?.dayIndex ?? null) : null);
+    if (dayIndex === null) return null;
+    const nowMs = toMs(ctx.now().utc);
+    const block = pbBlockOfPlan(plan, await planRefs(ctx.store(), { ownerId: p.id, plan, nowMs }, 400).catch(() => []), nowMs, p.timezone);
+    if (block === null || block.done) return null;
+    const edits = pbWeekEditsOf(plan, pbMoveWeek(block), dayIndex);
+    if (edits.length === 0) return null;
+    for (const e of edits) if (e.toExerciseId !== null) await ensureExercise(e.toExerciseId);
+    const of = new Map<string, Exercise | null>();
+    for (const e of edits) if (e.toExerciseId !== null) of.set(e.toExerciseId, await exerciseById(e.toExerciseId));
+    return pbDayWithEdits(routine.exercises, edits, (id) => of.get(id)?.measurement ?? 'reps').rows;
+  }
+
   async function resolveRoutine(p: UserProfile, routineId: string, basis: OverviewBasis | null): Promise<ResolvedOverview | null> {
-    const routine = await repos().routines.get(routineId);
-    if (!routine || routine.ownerId !== p.id || (routine.deletedAtUtc !== undefined && routine.deletedAtUtc !== null)) return null;
+    const stored = await repos().routines.get(routineId);
+    if (!stored || stored.ownerId !== p.id || (stored.deletedAtUtc !== undefined && stored.deletedAtUtc !== null)) return null;
+    const weekRows = await weekRowsOf(p, stored);
+    const routine = weekRows === null ? stored : { ...stored, exercises: weekRows };
     const ref = (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null;
     return { kind: 'routine', routine, ref, basis: basis ?? (ref ? { kind: 'last_done', at: { utc: ref.startedAtUtc, tz: ref.tz } } : { kind: 'new_routine' }) };
   }
@@ -2301,9 +2331,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * exercises (else the split day it was mapped to), every finished workout in the window by the muscles done.
    */
   async function planDue(p: UserProfile, planDays: readonly Routine[], training: TrainingProfile | null, pin: PlanPin | null, near: LegRunNear | null = null) {
-    const { days, workouts, live, setDays, skipped } = await planDueInput(p, planDays, training, pin);
-    // (Ben, 29 Oct) A day skipped this week goes after every other day (a pin on it still wins).
-    const due = ((xs) => [...xs.filter((d) => d.pinned || !skipped.has(d.day.routineId)), ...xs.filter((d) => !d.pinned && skipped.has(d.day.routineId))])(planDaysByDue(days, workouts, live));
+    const { days, workouts, live, setDays, skipped, doneThisWeek } = await planDueInput(p, planDays, training, pin);
+    // (Ben, 29 Oct) A day skipped this week goes after every other day (a pin on it still wins); with a skip this week,
+    // the days still to do this week come first (its turn goes to the next day not done, never one done this week).
+    const rank = (d: { day: { routineId: string }; pinned: boolean }) => (d.pinned ? 0 : skipped.has(d.day.routineId) ? 3 : doneThisWeek.has(d.day.routineId) ? 2 : 1);
+    const due = planDaysByDue(days, workouts, live)
+      .map((d, i) => ({ d, i }))
+      .sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i)
+      .map((x) => x.d);
     if (setDays !== null) {
       // (Ben, 28 Oct) Set days: the weekdays decide (today's day, a missed one, the next); a pinned day stays first. The
       // run rule doesn't move a day Ben set a weekday for.
@@ -2363,7 +2398,18 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const all: PlanDueWorkout[] = read.map((a) => ({ sessionId: a.session.id, routineId: linkedRoutineId(links, a.session.id, a.session.routineId ?? null), startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, exerciseOf), leadExerciseId: leadLiftOf(a) }));
     const live = activePin(pin, days, all);
     const workouts = all.filter((w) => toMs(w.startedAtUtc) >= windowFrom);
-    return { days, workouts, live, setDays: await setDaysWeek(p, plan, days, read, links, exerciseOf), skipped: await skippedThisWeek(p, plan, days) };
+    const skipped = await skippedThisWeek(p, plan, days);
+    return { days, workouts, live, setDays: await setDaysWeek(p, plan, days, read, links, exerciseOf), skipped, doneThisWeek: skipped.size === 0 || plan === null ? new Set<string>() : doneThisWeekOf(p, plan, days, read, links, exerciseOf) };
+  }
+
+  /** This week's plan days done (one workout, one plan day), by workout ID: the count Today's tiles read. */
+  function doneThisWeekOf(p: UserProfile, plan: PlanDraft, days: readonly { routineId: string; bodyParts: readonly SplitBodyPart[]; routine: Routine }[], read: readonly HistoryWorkout[], links: Awaited<ReturnType<typeof readPlanLinks>>, exerciseOf: (id: string) => Exercise | null): Set<string> {
+    const nowMs = toMs(ctx.now().utc);
+    const today = localDateOf(nowMs, p.timezone);
+    const monday = addDays(today, -weekdayIndexOfDate(today));
+    const refs = days.map((d) => planWeekDayOf(plan, d.routine, d.bodyParts));
+    const fills = planWeekFills({ days: refs, workouts: read.filter((a) => localDateOf(toMs(a.session.startedAt.utc), p.timezone) >= monday).map((a) => planWeekWorkoutOf(a, links, (x) => workoutGroupsOf(x, exerciseOf))), nowMs, tz: p.timezone });
+    return new Set(fills.keys());
   }
 
   /** (Ben, 29 Oct: `Skip this week`) The plan days skipped this block week, by workout ID: never Up next while others are left. */

@@ -130,6 +130,7 @@ export function DaySheetFlow({
       }
       const after = r.plan;
       const learned = r.learned ?? null;
+      const drafts = r.draftEdits ?? [];
       onToast({
         text,
         action: DAY_SHEET_COPY.undo,
@@ -137,6 +138,8 @@ export function DaySheetFlow({
           onToast(null);
           void services.plans.undoWeekChange({ planId: after.id, expectedVersion: after.version, opId: newUuid() }).then(async (u) => {
             if (u.ok && learned !== null) await services.gyms.undoEdit(learned).catch(() => null);
+            // The same change on today's Your workout comes back out with it.
+            if (u.ok) for (const d of drafts) await services.builder.undo(d.draftId, d.opId, newUuid()).catch(() => null);
             reread();
             if (!u.ok) onToast({ text: u.message });
           });
