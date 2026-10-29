@@ -10,7 +10,7 @@ import { AppText, BottomCard, Group, Icon, PrimaryButton, SecondaryButton, TextB
 import { WorkoutList } from '../../ui/workout-list';
 import { AX_FONT_SCALE } from '../../workout/screen-rules';
 import { markStyle, TILE_LAYOUT, tileStyle } from '../../today/tile-style';
-import { todayCardRows, TODAY_SCREEN_COPY, type DaySheetOpen, type DaySheetRow, type LabelValueRow } from '../../today/today-view';
+import { todayCardRows, TODAY_SCREEN_COPY, type LabelValueRow } from '../../today/today-view';
 import { PAST_LOG_COPY } from '../../workout/past-log-view';
 
 /**
@@ -140,7 +140,7 @@ export function WeekTiles({ tiles, onDay }: { tiles: readonly WeekTile[]; onDay:
     return (
       <View accessibilityRole="list">
         {tiles.map((t) => (
-          <Pressable key={t.date} accessibilityRole="button" accessibilityLabel={t.accessibilityLabel} disabled={t.items.length === 0} onPress={() => { onDay(t); }} style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
+          <Pressable key={t.date} accessibilityRole="button" accessibilityLabel={t.accessibilityLabel} onPress={() => { onDay(t); }} style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
             <AppText variant="callout" color={t.today ? 'text.primary' : 'text.secondary'}>
               {t.accessibilityLabel}
             </AppText>
@@ -158,8 +158,6 @@ export function WeekTiles({ tiles, onDay }: { tiles: readonly WeekTile[]; onDay:
             key={t.date}
             accessibilityRole="button"
             accessibilityLabel={t.accessibilityLabel}
-            accessibilityState={{ disabled: t.items.length === 0 }}
-            disabled={t.items.length === 0}
             hitSlop={TILE_SLOP}
             onPress={() => {
               onDay(t);
@@ -184,45 +182,7 @@ export function WeekTiles({ tiles, onDay }: { tiles: readonly WeekTile[]; onDay:
   );
 }
 
-/** A tapped day (Ben, 27 Oct): `Mon 26 Oct`, one row per thing on it, each opening its own page. */
-export function DaySheet({ title, rows, onOpen, onClose }: { title: string | null; rows: readonly DaySheetRow[]; onOpen: (open: NonNullable<DaySheetOpen>) => void; onClose: () => void }) {
-  const theme = useTheme();
-  return (
-    <BottomCard visible={title !== null} onClose={onClose} footer={<TextButton label={TODAY_V2_COPY.close} tone="secondary" onPress={onClose} />}>
-      <AppText variant="title2" accessibilityRole="header">
-        {title ?? ''}
-      </AppText>
-      <Group>
-        {rows.map((r) => (
-          <Pressable
-            key={r.key}
-            accessibilityRole={r.open === null ? 'text' : 'button'}
-            accessibilityLabel={r.accessibilityLabel}
-            disabled={r.open === null}
-            onPress={() => {
-              if (r.open !== null) onOpen(r.open);
-            }}
-            style={({ pressed }) => ({ minHeight: 56, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], opacity: pressed ? 0.7 : 1 })}
-          >
-            <RowMark mark={r.mark} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <AppText variant="body">
-                {r.title}
-                {r.health ? <AppText variant="callout" color="text.tertiary" style={CARD_TEXT.small}>{' ♥'}</AppText> : null}
-              </AppText>
-              {r.detail !== null ? (
-                <AppText variant="callout" color="text.secondary" numeric>
-                  {r.detail}
-                </AppText>
-              ) : null}
-            </View>
-            {r.open !== null ? <Icon name="chevron.right" size={14} color="text.tertiary" /> : null}
-          </Pressable>
-        ))}
-      </Group>
-    </BottomCard>
-  );
-}
+/** (Ben, 29 Oct) A tapped day opens the day sheet (`DaySheet.tsx`): every tile, a rest day too. */
 
 // ---------------------------------------------------------------------------
 // `Push ⌄` → Today's workout (option C)
@@ -238,7 +198,8 @@ export function TodayPickSheet({
   onClose,
 }: {
   visible: boolean;
-  rows: readonly TodayDayRow[];
+  /** (Ben, 29 Oct) The week's plan days: weekday (`Thu`), name and status; no plan: Profile › Split's days. */
+  rows: readonly (TodayDayRow & { weekday?: string })[];
   /** Other sessions (Full body, Upper …) after the plan's days. */
   others: readonly { key: string; name: string; selected: boolean }[];
   onPick: (key: string) => void;
@@ -248,8 +209,13 @@ export function TodayPickSheet({
   onClose: () => void;
 }) {
   const theme = useTheme();
-  const dayRow = (key: string, name: string, status: string, selected: boolean, label: string) => (
+  const dayRow = (key: string, name: string, status: string, selected: boolean, label: string, weekday?: string) => (
     <Pressable key={key} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected }} onPress={() => { onPick(key); }} style={({ pressed }) => ({ minHeight: 52, paddingHorizontal: theme.space['4'], flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.7 : 1 })}>
+      {weekday !== undefined ? (
+        <AppText variant="callout" color="text.secondary" numeric style={{ width: 36 }}>
+          {weekday}
+        </AppText>
+      ) : null}
       <AppText variant="body" style={{ flex: 1, ...(selected ? { fontWeight: '600' } : {}) }}>
         {name}
       </AppText>
@@ -274,7 +240,7 @@ export function TodayPickSheet({
       </AppText>
       {rows.length + others.length > 0 ? (
         <Group>
-          {rows.map((r) => dayRow(r.key, r.name, r.status, r.selected, r.accessibilityLabel))}
+          {rows.map((r) => dayRow(r.key, r.name, r.status, r.selected, r.accessibilityLabel, r.weekday))}
           {others.map((o) => dayRow(o.key, o.name, '', o.selected, o.selected ? `${o.name}, selected` : o.name))}
         </Group>
       ) : null}

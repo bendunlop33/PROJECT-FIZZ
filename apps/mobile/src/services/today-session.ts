@@ -377,6 +377,10 @@ export interface TodaySessionData {
    * small changed mark), the ones a remove left out, and weights Ben typed for them (kept as typed).
    */
   weekEdits: Readonly<Record<string, TodayWeekEdits>>;
+  /** (Ben, 29 Oct) Each plan day's template and its rows this week (row IDs for a one-change edit), by key. */
+  dayRows: Readonly<Record<string, { routineId: string; version: number; rows: readonly { rowId: string; exerciseId: string }[] }>>;
+  /** (Ben, 29 Oct) The plan's version as read (a day-sheet change writes against it, rule 5); null: no plan. */
+  planVersion: number | null;
   /** (Ben, 29 Oct) Plan days skipped this week (`Skip this week`), by key. */
   skipped: readonly string[];
   /** Compute context (pure functions over what `load` read). */
@@ -1231,6 +1235,13 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       week,
       recent,
       weekEdits,
+      dayRows: Object.fromEntries(
+        planDays.flatMap((d) => {
+          const r = weekTemplates.find((x) => x.id === d.templates[0]?.routineId);
+          return r === undefined ? [] : [[d.key, { routineId: r.id, version: r.version, rows: [...r.exercises].sort((a, b) => a.order - b.order).map((e) => ({ rowId: e.id, exerciseId: e.exerciseId })) }] as const];
+        }),
+      ),
+      planVersion: plan?.version ?? null,
       skipped: planDays.filter((d) => d.dayIndex !== null && skippedDays.has(d.dayIndex)).map((d) => d.key),
       doneToday: stripWorkouts.some((w) => w.localDate === today),
       nudgeInput,

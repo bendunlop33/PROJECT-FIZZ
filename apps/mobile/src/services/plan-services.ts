@@ -78,13 +78,14 @@ import {
   pbDaysAtOf,
   pbVersionOf,
   type HistoryWorkout,
+  type GymEdit,
 } from '@fizz/domain';
 import type { PlanWrite, Store } from '@fizz/persistence';
 import { createVersionMemo } from './version-memo';
 import { readPlanLinks } from './plan-day-links';
 import { planWeekDayOf, planWeekWorkoutOf, planWeekdaysNow } from './plan-week';
 import { editBlockOf, readPlanBlock, slotKits, weekViews, type WeekViewsInput } from './plan-edit-read';
-import type { ActionRecord, Exercise, PlanApplyMode, PlanBuilderAnswers, PlanDraft, PlanWeekExerciseEdit, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { ActionRecord, Exercise, Load, PlanApplyMode, PlanBuilderAnswers, PlanDraft, PlanWeekExerciseEdit, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Coach-built plans (Ben, 19 Oct): the plan card and its day view, Apply
@@ -109,6 +110,12 @@ export interface PlanServicesDeps {
   todayMinutes?: (routineId: string) => Promise<number | null>;
   /** Each split day's main lift (`Targets hit` shows on main lifts only, Ben 20 Oct); absent: none. */
   splitMainLiftIds?: () => Promise<ReadonlySet<string>>;
+  /**
+   * (Ben, 29 Oct; CLAUDE.md rule 4) A weight Ben typed for a swapped-in or added exercise: the current gym learns it
+   * (a dumbbell, a plate, a machine's recorded max), never past a machine's max. The edit it made (for the change's
+   * Undo); null: nothing to learn. Absent: not wired.
+   */
+  learnTyped?: (exerciseId: string, load: Load) => Promise<GymEdit | null>;
   /** (Ben, 20 Oct) This week's activity lines and the week change in use (week-services); absent: none. */
   weekInfo?: () => Promise<{ lines: string[]; change: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][]; mergedRoutineIds?: (string | null)[] } | null }>;
 }
@@ -192,7 +199,7 @@ export interface PlanDayData {
   routineId: string | null;
 }
 
-export type PlanWriteOutcome = { ok: true; plan: PlanDraft; duplicate: boolean } | { ok: false; reason: 'stale' | 'closed' | 'changed_since' | 'missing' | 'failed'; message: string };
+export type PlanWriteOutcome = { ok: true; plan: PlanDraft; duplicate: boolean; /** (29 Oct) What the gym learnt from a typed weight (its Undo goes with the change's). */ learned?: GymEdit | null } | { ok: false; reason: 'stale' | 'closed' | 'changed_since' | 'missing' | 'failed'; message: string };
 
 /** The applied plan as Progress and Today read it. */
 export interface ActivePlan {
@@ -347,6 +354,14 @@ export function createPlanServices(deps: PlanServicesDeps) {
     if (view === undefined || day === undefined) return null;
     const deload = view.deloadWeeks.includes(w);
     return { header: `${PB_BLOCK_COPY.week(w, a.weeks)}${deload ? ` · ${PB_BLOCK_COPY.deload}` : ''}`, note: view.note, rows: day.rows };
+  }
+
+  /** A typed weight is in the exercise's own load convention (per dumbbell, plates, stack…), never the screen's guess. */
+  async function withConvention(c: PbWeekChangeRequest): Promise<PbWeekChangeRequest> {
+    if (c.kind !== 'exercise' || c.edit.load == null || c.edit.toExerciseId === null) return c;
+    const x = (await exerciseOf())(c.edit.toExerciseId);
+    const convention = x?.defaultLoadConvention ?? c.edit.load.convention;
+    return { ...c, edit: { ...c.edit, load: { ...c.edit.load, convention } } };
   }
 
   async function exerciseOf(): Promise<(id: string) => Exercise | null> {
@@ -872,7 +887,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const at = deps.now();
       const eb = editBlockOf(await readPlanBlock(deps.store(), p.id, plan, toMs(at.utc), p.timezone));
       if (eb === null) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
-      const c = req.change;
+      const c = await withConvention(req.change);
       if (c.kind === 'exercise' && !plan.opIds.includes(req.opId)) {
         // The row as this week has it now (the template with this week's changes): a swap or remove names it as seen.
         const templates = planRoutines(plan, liveRoutines(await deps.store().repos.routines.listByOwner(p.id)));
@@ -885,7 +900,11 @@ export function createPlanServices(deps: PlanServicesDeps) {
       }
       const todayWeekday = weekdayIndexOfDate(localDateOf(toMs(at.utc), p.timezone));
       const r = await repo().move(p.id, req.planId, (cur) => pbWeekChange(cur, { expectedVersion: req.expectedVersion, opId: req.opId, at, block: eb, todayWeekday, change: c })).catch(() => null);
-      return moveOutcome(r);
+      const out = moveOutcome(r);
+      // A weight Ben typed: the gym learns it, after the write (its Undo takes it back with the change).
+      const typed = c.kind === 'exercise' && c.edit.toExerciseId !== null ? (c.edit.load ?? null) : null;
+      if (!out.ok || out.duplicate || typed === null || c.kind !== 'exercise' || c.edit.toExerciseId === null) return out;
+      return { ...out, learned: (await deps.learnTyped?.(c.edit.toExerciseId, typed).catch(() => null)) ?? null };
     },
 
     async undoWeekChange(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
@@ -901,7 +920,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
      * workouts never change (rule 2): they are their own records. One versioned write with an `update_routine` record
      * (rule 5); its Undo is the routine's `revert` (the version before, only while nothing changed since).
      */
-    async editDayEveryWeek(req: { routineId: string; expectedVersion: number; opId: string; edit: Pick<PlanWeekExerciseEdit, 'kind' | 'rowId' | 'fromExerciseId' | 'toExerciseId' | 'afterRowId' | 'sets' | 'reps' | 'load'> }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean } | { ok: false; reason: 'stale' | 'missing' | 'failed'; message: string }> {
+    async editDayEveryWeek(req: { routineId: string; expectedVersion: number; opId: string; edit: Pick<PlanWeekExerciseEdit, 'kind' | 'rowId' | 'fromExerciseId' | 'toExerciseId' | 'afterRowId' | 'sets' | 'reps' | 'load'> }): Promise<{ ok: true; actionId: string; routine: Routine; duplicate: boolean; learned?: GymEdit | null } | { ok: false; reason: 'stale' | 'missing' | 'failed'; message: string }> {
       try {
         const p = await owner();
         if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
@@ -910,9 +929,10 @@ export function createPlanServices(deps: PlanServicesDeps) {
         const prior = await repos.coach.getAction(actionId).catch(() => null);
         const current = await repos.routines.get(req.routineId).catch(() => null);
         if (current === null || current.ownerId !== p.id || isDeleted(current)) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
-        if (prior !== null) return { ok: true, actionId, routine: current, duplicate: true };
+        if (prior !== null) return { ok: true, actionId, routine: current, duplicate: true, learned: null };
         if (current.version !== req.expectedVersion) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
-        const e = req.edit;
+        const norm = await withConvention({ kind: 'exercise', edit: { ...req.edit, dayIndex: 0 } });
+        const e = norm.kind === 'exercise' ? norm.edit : { ...req.edit, dayIndex: 0 };
         const row = current.exercises.find((x) => x.id === e.rowId);
         if (e.kind === 'add' ? row !== undefined : row?.exerciseId !== e.fromExerciseId) return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
         const of = await exerciseOf();
@@ -941,7 +961,8 @@ export function createPlanServices(deps: PlanServicesDeps) {
         const r = await repos.drafts.applyRoutineChange({ ownerId: p.id, routine: next, expectedRoutineVersion: current.version, action, at });
         if (r.status === 'missing') return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
         if (r.status === 'stale') return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
-        return { ok: true, actionId, routine: r.routine, duplicate: r.status === 'replayed' };
+        const learned = r.status === 'written' && e.load != null && e.toExerciseId !== null ? ((await deps.learnTyped?.(e.toExerciseId, e.load).catch(() => null)) ?? null) : null;
+        return { ok: true, actionId, routine: r.routine, duplicate: r.status === 'replayed', learned };
       } catch {
         return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
       }

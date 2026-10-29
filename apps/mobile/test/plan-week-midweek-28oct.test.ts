@@ -106,7 +106,7 @@ describe('Ben’s week on a 6-day Set days plan', () => {
 
     const pushA = await startPushA(s, gymId);
     // In progress: Mon and Tue done, today ringed, Thu–Sat planned on their own weekdays, Sunday plain.
-    expect(await tiles(s, 'Push')).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
+    expect(await tiles(s, 'Push A')).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
     expect((await loaded(s)).block?.text).toBe('Week 1 of 6');
 
     await finishWorkout(h, s, pushA);
@@ -191,7 +191,7 @@ describe('switching between Set days and Any days (Days and time) while Push A i
     if (!p.ok) throw new Error('preview');
     expect(await s.restore.restore(text, p.preview.stamp)).toMatchObject({ ok: true, status: 'restored' });
     h.clockMs = Date.parse('2026-10-28T08:00:00.000Z');
-    expect(await tiles(s, 'Push')).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
+    expect(await tiles(s, 'Push A')).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
   });
 });
 
@@ -203,7 +203,8 @@ describe('the same week on a 6-day Any days plan', () => {
     await monAndTue(s, gymId);
     const pushA = await startPushA(s, gymId);
     expect((await s.plans.overview())?.daysThisWeek.text).toBe('2 of 6');
-    expect(await tiles(s, 'Push')).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
+    // (Ben, 29 Oct) The card's day reads as the plan names it (Push A), so it holds today and the rest follow.
+    expect(await tiles(s, 'Push A')).toEqual(['26 done dot:legs', '27 done dot:pull', '28 today planned ring:push', '29 planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
     await finishWorkout(h, s, pushA);
     expect((await s.plans.overview())?.daysThisWeek.text).toBe('3 of 6');
     // Done today: the 3 left from tomorrow.

@@ -192,6 +192,8 @@ describe('every Add exercise opens the one shared picker with search at the top'
     ['screens/builder/EditWorkoutScreen.tsx', /onAdd=\{\(\) => void openSwap\(null\)\}/],
     ['screens/builder/BuilderWorkoutScreen.tsx', /onAdd=\{\(\) => void openSwap\(null\)\}/],
     ['screens/workout/WorkoutEdits.tsx', /const openAdd = \(\) => openSheet\(\{ mode: 'add' \}/],
+    // (Ben, 29 Oct) The day sheet's Edit: Swap and Add exercise.
+    ['screens/today/DaySheet.tsx', /onPress=\{\(\) => void openSwap\(null, null\)\}/],
   ];
   for (const [path, entry] of HOSTS) {
     it(path, () => {

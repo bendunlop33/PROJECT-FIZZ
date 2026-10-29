@@ -27,6 +27,7 @@ import {
   type RecoveryResult,
   type StartOutcome,
   DEFAULT_CHECK_IN_SETTINGS,
+  gymLearnFor,
 } from '@fizz/domain';
 import { bundledCatalogue, toExerciseRow, type CatalogueEntry } from '@fizz/catalogue';
 import {
@@ -978,6 +979,20 @@ export function createAppServices(deps: AppServicesDeps) {
       return todaySession.card(data, { dayKey: day.key, controls: { ...c, mainLiftExerciseId: t?.mainLiftExerciseId ?? c.mainLiftExerciseId } })?.minutes ?? null;
     },
     splitMainLiftIds: () => training.splitMainLiftIds(),
+    // (Ben, 29 Oct; rule 4) A weight typed on the day sheet: the current gym's item for the exercise learns it.
+    learnTyped: async (exerciseId, load) => {
+      const gym = await yourData.currentGym();
+      const exercise = (await repos().exercises.get(exerciseId).catch(() => null)) ?? catalogueExercises().find((e) => e.id === exerciseId) ?? null;
+      if (gym === null || exercise === null) return null;
+      const items = (await repos().equipment.listByGym(gym.id).catch(() => [])).filter((e) => e.availability === 'available' && (exercise.compatibleEquipment as readonly string[]).includes(e.kind) && e.loadConvention === load.convention && e.unit === load.unit);
+      for (const item of items) {
+        const learn = gymLearnFor(item, load, { id: exercise.id, name: exercise.name }, { typed: true });
+        if (learn === null) continue;
+        const r = await gymServices.learn(learn);
+        return r.ok ? r.edit : null;
+      }
+      return null;
+    },
   });
 
   /** (Plan builder, 23 Oct) Gym goals → Your week → Your plan, offline: the deterministic engine, Apply / Undo through `plans`. */

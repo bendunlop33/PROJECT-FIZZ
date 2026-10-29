@@ -22,6 +22,7 @@ export const DAY_SHEET_COPY = {
   skip: 'Skip this week',
   unskip: 'Unskip',
   edit: 'Edit',
+  more: 'More ›',
   /** Scope, from Today and the day sheet (default) and from Library (Every week by default). */
   thisWeek: 'This week only',
   everyWeek: 'Every week',
