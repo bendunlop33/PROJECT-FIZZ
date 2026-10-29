@@ -32,7 +32,7 @@ const setOf = (a: SessionAggregate, e: Exercise) => {
 };
 
 describe('the plate a typed or named total needs (add_plate)', () => {
-  const noSmall = barbell({ plates: [{ mass: 25, count: 2 }, { mass: 20, count: 4 }, { mass: 10, count: 2 }, { mass: 5, count: 2 }, { mass: 2.5, count: 2 }] } as never);
+  const noSmall = barbell({ plates: [{ mass: 25, count: 2 }, { mass: 20, count: 4 }, { mass: 10, count: 2 }, { mass: 5, count: 2 }, { mass: 2.5, count: 2 }] });
   it('102.5 kg with no 1.25 kg plates: a pair of 1.25 kg; the bar then makes it; Undo-able as one gym edit', () => {
     const l = gymLearnFor(noSmall, kg(102.5), null, { typed: true });
     expect(l).toEqual({ kind: 'add_plate', equipmentId: noSmall.id, unit: 'kg', mass: 1.25, count: 2, itemName: noSmall.name });
