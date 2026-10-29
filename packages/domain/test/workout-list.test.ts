@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LoadConvention, WeightUnit } from '@fizz/schemas';
-import { coachRowLoads, compactEachText, compactExerciseName, compactLoadSpoken, compactLoadText, NBSP, slotRepsText, workoutListRows, workoutListTargetHeader, type BuilderExerciseInfo, type BuilderSlot, type BuilderWorkout } from '../src/index';
+import { builderInfoOf, coachRowLoads, compactEachText, compactExerciseName, compactLoadSpoken, compactLoadText, NBSP, slotRepsText, workoutListRows, workoutListTargetHeader, type BuilderExerciseInfo, type BuilderSlot, type BuilderWorkout } from '../src/index';
 
 const sp = (s: string) => s.replaceAll(NBSP, ' ');
 
@@ -139,5 +139,22 @@ describe('coachRowLoads: the ✦ value on the affected row (redesign A5)', () =>
   it('assisted: less assistance is the top set', () => {
     const w: BuilderWorkout = { restLevel: 'normal', blocks: [{ auto: false, slots: [slot('x', 'dip', { loads: [30, 30], convention: 'assistance' })] }] };
     expect(coachRowLoads(w, lighter(w, 'x', 35))).toEqual({ x: 35 });
+  });
+});
+
+describe('(Ben, 29 Oct: leg press read `BW`) plates on a loaded machine', () => {
+  it('a leg press target is a kg number, `—` with none, never `BW` or `+…`; a weighted dip is still bodyweight plus', () => {
+    expect(compactLoadText(140, 'kg', 'added', 'kg', true)).toBe('140');
+    expect(compactLoadText(null, 'kg', 'added', 'kg', true)).toBe('—');
+    expect(compactLoadText(0, 'kg', 'added', 'kg', true)).toBe('0');
+    expect(compactLoadText(315, 'lb', 'added', 'kg', true)).toBe('315 lb');
+    expect(compactLoadText(null, 'kg', 'added', 'kg')).toBe('BW');
+    expect(compactLoadText(10, 'kg', 'added', 'kg')).toBe('+10');
+  });
+  it('the catalogue’s leg press is plates-added; a dip isn’t', () => {
+    const lp = builderInfoOf({ id: 'lp', name: 'Leg press', primaryMuscles: ['quads'], secondaryMuscles: [], movementPattern: 'squat', measurement: 'reps', mechanic: 'compound', compatibleEquipment: ['plate_loaded_machine'], defaultLoadConvention: 'added' });
+    expect(lp?.platesAdded).toBe(true);
+    const dip = builderInfoOf({ id: 'dip', name: 'Dip', primaryMuscles: ['triceps'], secondaryMuscles: [], movementPattern: 'vertical_push', measurement: 'reps', mechanic: 'compound', compatibleEquipment: ['bodyweight_station'], defaultLoadConvention: 'added' });
+    expect(dip?.platesAdded).toBeUndefined();
   });
 });
