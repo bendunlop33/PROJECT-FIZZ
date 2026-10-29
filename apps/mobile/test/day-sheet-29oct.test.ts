@@ -54,9 +54,9 @@ async function applyPlan(s: AppServices): Promise<void> {
   if (!applied.ok) throw new Error('not applied');
 }
 
-/** Ben's Monday to Wednesday, then Thursday 08:00. */
-async function bensWeek(s: AppServices, gymId: string): Promise<void> {
-  await applyPlan(s);
+/** Ben's Monday to Wednesday, then Thursday 08:00. `appliedAt`: the plan applied then (a lead-in after Monday). */
+async function bensWeek(s: AppServices, gymId: string, appliedAt: string | null = null): Promise<void> {
+  if (appliedAt === null) await applyPlan(s);
   h.clockMs = Date.parse('2026-10-26T18:00:00.000Z');
   await logWorkout(h, s, gymId, [
     { exercise: 'Back squat', sets: [{ load: 100, reps: 5 }, { load: 100, reps: 5 }, { load: 100, reps: 5 }] },
@@ -68,6 +68,10 @@ async function bensWeek(s: AppServices, gymId: string): Promise<void> {
     { exercise: 'Barbell row', sets: [{ load: 70, reps: 8 }, { load: 70, reps: 8 }, { load: 70, reps: 8 }] },
     { exercise: 'Pull-up', sets: [{ load: 0, reps: 8 }, { load: 0, reps: 8 }] },
   ]);
+  if (appliedAt !== null) {
+    h.clockMs = Date.parse(appliedAt);
+    await applyPlan(s);
+  }
   h.clockMs = Date.parse('2026-10-28T18:04:00.000Z');
   const d = await loaded(s);
   const day = d.days.find((x) => x.key === d.nextKey);
@@ -149,6 +153,21 @@ describe('Ben’s week, Thursday 29 (build 478 screenshot)', () => {
       'Pull B 2026-10-30 planned',
       'Legs B 2026-10-31 planned',
     ]);
+  });
+
+  it('bug 4, the lead-in (the plan applied Tue 27 evening, as Ben’s was this week): the same rings and Up next', async () => {
+    const { services: s } = await h.launch();
+    await bensWeek(s, await setUpGym(h, s), '2026-10-27T20:00:00.000Z');
+    const d = await loaded(s);
+    expect(d.block?.text).toBe('Starts Mon 2\u00a0Nov');
+    expect(nextName(d)).toBe('Push B');
+    expect(tiles(s, d)).toEqual(['26 done dot:legs', '27 done dot:pull', '28 done dot:push', '29 today planned ring:push', '30 planned ring:pull', '31 planned ring:legs', '01 plain']);
+    // A this-week change in the lead-in is the lead-in's only.
+    const p = await planOf(s);
+    expect(await s.plans.weekChange({ planId: p.planId, expectedVersion: p.version, opId: h.ids(), change: { kind: 'skip', dayIndex: 4 } })).toMatchObject({ ok: true });
+    expect(tiles(s, await loaded(s))[4]).toBe('30 plain');
+    h.clockMs = Date.parse('2026-11-06T08:00:00.000Z');
+    expect(tiles(s, await loaded(s))[4]).toMatch(/^06 today planned ring:pull$/);
   });
 
   it('bug 2: the builder’s superset advice never shows on Today’s card', async () => {
