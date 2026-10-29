@@ -55,6 +55,10 @@ import {
   renderActionResult,
   createWeekExecutor,
   coachSplit,
+  createDraftToolExecutors,
+  type BuilderProposal,
+  type DraftEditOutcome,
+  type SetupFillOutcome,
   acceptActivityOffer,
   acceptActivityOpId,
   type WeekContextView,
@@ -285,13 +289,18 @@ export type CoachEntry =
   | { kind: 'workout'; sessionId: string }
   | { kind: 'summary'; sessionId: string }
   /** `⋯ → Ask coach` on a coach draft's overview (workout-builder §6.2): a general thread with the draft in context (BD16). */
-  | { kind: 'draft'; draftId: string; name: string };
+  | { kind: 'draft'; draftId: string; name: string }
+  /**
+   * ADR 0039 (Ben, 29 Oct): Your workout's coach bar (the builder before Start): the general thread with that draft in
+   * context, and the same tools as every chat. Its changes to the draft are proposals with Apply / Skip (rule 3).
+   */
+  | { kind: 'builder'; draftId: string; name: string };
 
-/** Today, Progress and a coach draft: no workout attached; the general thread. */
-export type GeneralEntry = Extract<CoachEntry, { kind: 'today' | 'progress' | 'progress_exercise' | 'draft' }>;
+/** Today, Progress, a coach draft and Your workout's bar: no workout attached; the general thread. */
+export type GeneralEntry = Extract<CoachEntry, { kind: 'today' | 'progress' | 'progress_exercise' | 'draft' | 'builder' }>;
 
 export function isGeneralEntry(entry: CoachEntry): entry is GeneralEntry {
-  return entry.kind === 'today' || entry.kind === 'progress' || entry.kind === 'progress_exercise' || entry.kind === 'draft';
+  return entry.kind === 'today' || entry.kind === 'progress' || entry.kind === 'progress_exercise' || entry.kind === 'draft' || entry.kind === 'builder';
 }
 
 /** Why a build can't start (workout-builder §5.4): the one reason word shown, never a stand-in plan. */
@@ -504,7 +513,27 @@ export interface CoachServiceDeps {
    * review, as Ben's own "learn as you train" does). True when the snapshot was refreshed. Absent: today keeps its kit.
    */
   refreshTodayKit?: (sessionId: string, opId: string) => Promise<boolean>;
+  /**
+   * ADR 0039: the builder's powers in every chat. `today`: today's Your workout draft (open, not started); `summary`:
+   * what the coach sees of one; `edit`: the builder's edit coach on Ben's words (a proposal); `fillSetup`: Set up from
+   * his words. Absent: neither tool is wired.
+   */
+  builder?: {
+    today(): Promise<{ draftId: string; name: string } | null>;
+    summary(draftId: string): Promise<{ aboutMinutes: number; exercises: string[] } | null>;
+    edit(req: { draftId: string; words: string; opId: string }): Promise<DraftEditOutcome>;
+    fillSetup(req: { words: string; opId: string }): Promise<SetupFillOutcome>;
+    /** Apply on the card (rule 3): checked again against the draft now (`Out of date. Ask again.`), one versioned write. */
+    apply(proposal: BuilderProposal): Promise<{ kind: 'applied' } | { kind: 'out_of_date'; line: string } | { kind: 'failed' }>;
+    /** Whether that proposal's Apply was written (a double tap, a restart). */
+    applied(proposalId: string): Promise<boolean>;
+    /** Undo of the Apply: the builder's own Undo. */
+    undo(draftId: string, proposalId: string, opId: string): Promise<boolean>;
+  };
 }
+
+/** ADR 0039: a draft change's card state (Apply / Skip, then Undo). */
+export type DraftEditCardState = { kind: 'open' } | { kind: 'applied' } | { kind: 'gone' };
 
 /** (Ben, 28 Oct) The thread a turn lands in before it has one: a workout's (its summary's too) or the general one. */
 export function coachScopeOf(entry: CoachEntry): TurnScope {
@@ -1842,6 +1871,22 @@ export function createCoachService(deps: CoachServiceDeps) {
       const gymHere = { name: (await repos().gyms.get(session.session.gymId ?? '').catch(() => null))?.name ?? 'This gym', equipment: currentGymEquipment(session.session) };
       Object.assign(executors, createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(pool)), elsewhere: () => Promise.resolve(elsewherePool(p, everything, usableIds, gymHere, flaggedHere)), ...(proposeHere === undefined ? {} : { propose: proposeHere }) }));
     }
+    // ADR 0039: Your workout before Start (the builder sheet's draft, else today's) and today's Set up, from every chat.
+    const builderPorts = chat ? deps.builder : undefined;
+    const draftHere = builderPorts === undefined ? null : req.entry.kind === 'builder' ? { draftId: req.entry.draftId, name: req.entry.name } : session?.session.status === 'active' ? null : await builderPorts.today().catch(() => null);
+    const draftSummary = draftHere === null || builderPorts === undefined ? null : await builderPorts.summary(draftHere.draftId).catch(() => null);
+    const setupOpen = builderPorts !== undefined && session?.session.status !== 'active';
+    if (builderPorts !== undefined) {
+      Object.assign(
+        executors,
+        createDraftToolExecutors({
+          store: coachStore(),
+          draft: draftHere !== null && draftSummary !== null ? draftHere : null,
+          edit: (r) => builderPorts.edit(r),
+          ...(setupOpen ? { fillSetup: (r: { words: string; opId: string }) => builderPorts.fillSetup(r) } : {}),
+        }),
+      );
+    }
     // (Ben, 20 Oct) Lift targets on: the coach may set one Ben asks for (the turn checks he asked).
     const liftTargetsOn = (kind === 'general' || kind === 'workout') && deps.liftTargets !== undefined && (await deps.liftTargets.on().catch(() => false));
     if (liftTargetsOn && deps.liftTargets !== undefined) Object.assign(executors, createLiftTargetExecutors({ store: coachStore(), prepare: deps.liftTargets.prepare }));
@@ -1857,7 +1902,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           // Coach v3 (Ben 18 Oct): his lighter mid-workout model, if he chose one; `think_harder` returns to the main one.
           ...(kind === 'workout' && a.workoutModel != null ? { workoutModel: a.workoutModel } : {}),
           surface: 'sheet',
-          context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(weekView === null ? {} : { week: weekView }) },
+          context: { ...ctx.input, ...(draftHere !== null && draftSummary !== null ? { builderDraft: { name: draftHere.name, ...draftSummary, started: false as const } } : {}), ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(recentLifts.length === 0 ? {} : { recentLifts }), ...(planPause === undefined ? {} : { plan: planPause }), ...(weekView === null ? {} : { week: weekView }) },
           structuralSignals: await structuralSignalsFor(p, own).catch(() => []),
           // ADR 0038: a general thread stays general when today's workout is in its context.
           ...(liveHere !== null ? { threadSessionId: own === null ? null : own.session.id } : {}),
@@ -1870,6 +1915,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(liftTargetsOn ? { liftTargetsOn: true } : {}),
           ...(weekRead !== null && executors.propose_week !== undefined ? { week: true } : {}),
           ...(inUse !== null ? { planInUse: true } : {}),
+          ...(executors.propose_workout_edit !== undefined ? { builderDraft: true } : {}),
+          ...(executors.fill_setup !== undefined ? { setupOpen: true } : {}),
           signal: stop.signal,
           onProgress: (progress: CoachTurnProgress) => {
             turns.progress(req.turnId, progress);
@@ -2011,6 +2058,32 @@ export function createCoachService(deps: CoachServiceDeps) {
     running: { runningOn: turns.runningOn, get: turns.get, subscribe: turns.subscribe },
 
     /** (Ben, 20 Oct) An activity the coach offered: open, or the record of Ben's `Log` (with Undo). */
+    /** ADR 0039: a Your workout change's card: open (Apply / Skip) or applied (Undo). */
+    async draftEditCard(actionId: string): Promise<DraftEditCardState> {
+      const r = await coachStore().getAction(actionId).catch(() => null);
+      if (r === null || r.detail.kind !== 'propose_workout_edit' || deps.builder === undefined) return { kind: 'gone' };
+      return (await deps.builder.applied(r.detail.proposal.id).catch(() => false)) ? { kind: 'applied' } : { kind: 'open' };
+    },
+
+    /** ADR 0039: Apply on a Your workout change (Ben's tap): the builder's checked, versioned write. */
+    async applyDraftEdit(actionId: string): Promise<{ ok: true } | { ok: false; line: string }> {
+      const r = await coachStore().getAction(actionId).catch(() => null);
+      if (r === null || r.detail.kind !== 'propose_workout_edit' || deps.builder === undefined) return { ok: false, line: 'Out of date. Ask again.' };
+      const p = r.detail.proposal;
+      const { benLoads, topLoadsAfter, ...rest } = p;
+      const proposal: BuilderProposal = { ...rest, ...(benLoads === undefined ? {} : { benLoads }), ...(topLoadsAfter === undefined ? {} : { topLoadsAfter }) };
+      const a = await deps.builder.apply(proposal).catch(() => ({ kind: 'failed' as const }));
+      if (a.kind === 'applied') return { ok: true };
+      return { ok: false, line: a.kind === 'out_of_date' ? a.line : 'Couldn’t apply. Try again.' };
+    },
+
+    /** ADR 0039: Undo of that Apply (the builder's own Undo, versioned). */
+    async undoDraftEdit(actionId: string, opId: string): Promise<boolean> {
+      const r = await coachStore().getAction(actionId).catch(() => null);
+      if (r === null || r.detail.kind !== 'propose_workout_edit' || deps.builder === undefined) return false;
+      return deps.builder.undo(r.detail.draftId, r.detail.proposal.id, opId).catch(() => false);
+    },
+
     async activityOffer(actionId: string): Promise<ActivityOfferState> {
       const p = await owner();
       const logged = await coachStore().findActionByOpId(p.id, acceptActivityOpId(actionId));

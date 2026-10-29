@@ -42,6 +42,7 @@ import { MIGRATION_0035 } from './schema/0035-session-exercises-index';
 import { MIGRATION_0036 } from './schema/0036-history-summaries';
 import { MIGRATION_0037 } from './schema/0037-past-log-and-shift';
 import { MIGRATION_0038 } from './schema/0038-apple-health';
+import { MIGRATION_0039 } from './schema/0039-coach-builder-powers';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -101,6 +102,8 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(36, 'history-summaries', MIGRATION_0036),
   sqlMigration(37, 'past-log-and-shift', MIGRATION_0037),
   sqlMigration(38, 'apple-health', MIGRATION_0038),
+  // ADR 0039: the builder's powers in every chat (`propose_workout_edit`, `fill_setup` records).
+  sqlMigration(39, 'coach-builder-powers', MIGRATION_0039),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */

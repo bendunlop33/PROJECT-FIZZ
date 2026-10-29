@@ -132,7 +132,8 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
       // disabled when the coach can't answer (§5.4); `Plan my week` isn't built.
       return [{ label: 'Build a workout', input: null, build: { enabled: a.status === 'ok' } }, ...(ready ? [words('How am I doing?')] : [])];
     case 'draft':
-      // `Ask coach` on a coach draft (BD16): Ben says what to change; no chips.
+    case 'builder':
+      // `Ask coach` on a coach draft (BD16), Your workout's bar (ADR 0039): Ben says what to change; no chips.
       return [];
     case 'progress':
     case 'progress_exercise':
@@ -227,6 +228,10 @@ export interface CardView {
   week?: ActionRecord;
   /** (Ben, 20 Oct) An activity the coach offered to log (he didn't ask): `Log`, then Undo. */
   activityOffer?: ActionRecord;
+  /** ADR 0039: a change to Your workout before Start: its lines, Apply / Skip, then Undo (rule 3). */
+  draftEdit?: ActionRecord;
+  /** ADR 0039: today's Set up filled from Ben's words: `Open` (Undo is on Set up). */
+  setupFill?: ActionRecord;
 }
 
 const GYM_STATUS: Record<GymProposalState['state'], CardView['status']> = {
@@ -407,6 +412,8 @@ export function cardView(r: ActionRecord): CardView {
     ...(r.detail.kind === 'build_plan' && r.status === 'committed' ? { plan: r } : {}),
     ...(r.detail.kind === 'propose_week' && r.status === 'proposed' ? { week: r } : {}),
     ...(r.detail.kind === 'log_activity' && r.status === 'proposed' ? { activityOffer: r } : {}),
+    ...(r.detail.kind === 'propose_workout_edit' && r.status === 'proposed' ? { draftEdit: r } : {}),
+    ...(r.detail.kind === 'fill_setup' && r.status === 'committed' ? { setupFill: r } : {}),
   };
 }
 
@@ -676,6 +683,7 @@ export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active
     case 'workout':
       return `Sees: ${workoutTitle ?? 'Workout'}${active ? ' (live)' : ''}`;
     case 'draft':
+    case 'builder':
       return `Sees: ${entry.name} (draft)`;
   }
 }
@@ -778,3 +786,6 @@ export function takeAsk(sent: Set<string>, ask: SheetAsk | undefined): Extract<B
   sent.add(ask.id);
   return { kind: 'words', text: ask.text.trim(), spoken: ask.spoken };
 }
+
+/** ADR 0039: the words on a Your workout change card. Minimal copy. */
+export const DRAFT_EDIT_COPY = { apply: 'Apply', skip: 'Skip', undo: 'Undo', applied: 'Applied', skipped: 'Skipped', undone: 'Undone', openSetup: 'Open Set up' } as const;

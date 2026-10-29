@@ -448,6 +448,18 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       return { lastDays: deps.lastDays !== undefined };
     },
 
+    /**
+     * ADR 0039: a Your workout draft as every chat's coach sees it (`builderDraft` in YOUR DATA): about how long, and
+     * each exercise's sets as the builder's own coach reads them. Null: gone. Local reads only.
+     */
+    async draftSummary(draftId: string): Promise<{ aboutMinutes: number; exercises: string[] } | null> {
+      const world = await deps.source.world(draftId).catch(() => null);
+      if (world === null) return null;
+      const minutes = estimateBuilderMinutes(world.snapshot.workout, world.env.ctx);
+      const view = builderWorkoutView(world.snapshot, world.env.ctx, minutes);
+      return { aboutMinutes: Math.round(minutes), exercises: view.slots.map((x) => `${x.exercise}: ${x.sets}`).slice(0, 20) };
+    },
+
     /** The bar's status word now (`● Coach`, `Offline`, `Coach not connected`). No provider call. */
     async status(): Promise<BuilderCoachReach> {
       return (await reach()).reach;

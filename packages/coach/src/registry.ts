@@ -426,6 +426,35 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Set one of Ben’s lift targets when he asks: the exercise (a name or ID of one he logs), kind one_rm ("bench 100 kg") or weight_reps ("bench 90 kg for 5", with reps), the load and unit he said, and byDate (YYYY-MM-DD) when he gave a date, else null. The load is in the exercise’s own convention: dumbbells per hand (a pair of 40s is 40, not 80; if unclear whether he means each or the pair, ask), machines the stack, barbells the total. The saved target comes back in `line` with its convention ("40 kg each"); say it that way in reply. It replaces that exercise’s target; at most 3. benAsked true only when his message this turn asks for this target, with benQuote his words copied exactly; false when it is your idea (he sees it as an offer to apply; a "yes" to your question applies that offer, so never call again for it).',
   },
   {
+    // ADR 0039 (Ben, 29 Oct): the builder's Your workout draft before Start, from any chat while one is in context
+    // (`builderDraft`). The builder's own edit coach makes the change from Ben's words; it is always a proposal with
+    // Apply / Skip (rule 3: in the builder before Start, what he asks for comes back as a proposal).
+    name: 'propose_workout_edit',
+    effect: 'propose',
+    writes: ['proposal'],
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Change your workout before you start it, as a change you apply or skip',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Change the Your workout draft in YOUR DATA builderDraft (not started yet) when Ben asks: swap, add, remove or reorder exercises, sets, reps, weights, its length. The app makes the exact change from his own words this turn and shows it with Apply or Skip; nothing changes until he applies it. Not for a live workout (edit_today) or his plan (propose_plan).',
+  },
+  {
+    // ADR 0039: today's Set up from Ben's words (a day, a length, a main lift), from any chat while there is no live
+    // workout (`setupOpen`). Filled at once because his words asked for it; Undo is on Set up. Nothing runs without his words.
+    name: 'fill_setup',
+    effect: 'append',
+    writes: ['builder_setup'],
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Set up today’s workout from what you say (day, length, main lift), with Undo on Set up',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Fill today’s Set up from Ben’s own words this turn when he names today’s workout by a day, a length or a main lift ("legs, 45 min", "push day, bench first"). He opens Set up to build it. Use propose_workout instead when he asks you to write the whole workout yourself.',
+  },
+  {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
     // spec (the stricter one) wins until Ben decides.
     name: 'add_playbook_candidate',
@@ -542,6 +571,10 @@ export interface TurnGate {
   week?: boolean;
   /** ADR 0039: a plan is in use (paused or not): `pause_plan`. */
   planInUse?: boolean;
+  /** ADR 0039: a Your workout draft (not started) is in context: `propose_workout_edit`. */
+  builderDraft?: boolean;
+  /** ADR 0039: today's Set up can be filled (no live workout): `fill_setup`. */
+  setupOpen?: boolean;
   /** ADR 0039: the turn starts light (low effort, Ben's lighter mid-workout model): `think_harder` buys one deeper step. */
   lightTurn?: boolean;
 }
@@ -551,7 +584,7 @@ export interface TurnGate {
  * (no live workout: nothing to edit today; no plan: nothing to pause). Tools not listed act on something that is
  * always there (Ben's memories, his gyms, his history) or are opened by his words alone (`needMet`).
  */
-export type ToolTarget = 'liveWorkout' | 'week' | 'planInUse' | 'lightTurn' | 'liftTargetsOn';
+export type ToolTarget = 'liveWorkout' | 'week' | 'planInUse' | 'lightTurn' | 'liftTargetsOn' | 'builderDraft' | 'setupOpen';
 
 export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   edit_today: 'liveWorkout',
@@ -562,6 +595,8 @@ export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
   pause_plan: 'planInUse',
   think_harder: 'lightTurn',
   set_lift_target: 'liftTargetsOn',
+  propose_workout_edit: 'builderDraft',
+  fill_setup: 'setupOpen',
 };
 
 /**

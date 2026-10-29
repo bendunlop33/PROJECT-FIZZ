@@ -441,6 +441,10 @@ function undoWhat(target: ActionRecord): string {
       return `the ${ACTIVITY_WORD[d.fields.kind].toLowerCase()} on ${localDateText(d.fields.date)}`;
     case 'propose_week':
       return 'this week’s change';
+    case 'propose_workout_edit':
+      return `the change to ${d.draftName === '' ? 'your workout' : d.draftName}`;
+    case 'fill_setup':
+      return 'today’s Set up';
   }
 }
 

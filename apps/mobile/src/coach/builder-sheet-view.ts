@@ -1,6 +1,7 @@
 import { BUILDER_STATUS_WORD, type BuilderCoachReach, type BuilderProposal } from '@fizz/coach';
 
 import { EDIT_ASK_COPY, proposalCardView, replyCardView, type EditAskView, type ProposalCardView, type ProposalState } from './builder-coach-view';
+import type { CoachEntry } from './coach-service';
 
 /**
  * (Ben, 26 Oct, follow-up 3 option a) Your workout's coach bar opens the coach sheet with a `builder` entry. Typed
@@ -151,8 +152,5 @@ export function turnCard(t: BuilderTurn): (ProposalCardView & { undoState: strin
 }
 
 /** The coach sheet's entry from Your workout (a route param, not a thread entry: nothing is stored as a conversation). */
-export interface BuilderCoachEntry {
-  kind: 'builder';
-  draftId: string;
-  name: string;
-}
+/** ADR 0039: Your workout's bar opens the thread sheet with this entry (the same tools as every chat). */
+export type BuilderCoachEntry = Extract<CoachEntry, { kind: 'builder' }>;

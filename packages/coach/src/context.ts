@@ -122,6 +122,8 @@ export interface CoachContextInput {
    * only what he logged (rule 6). Absent when there is nothing to say.
    */
   week?: WeekContextView;
+  /** ADR 0039: today's Your workout draft (not started), the target of `propose_workout_edit`. Your data. */
+  builderDraft?: BuilderDraftView;
   /**
    * (21 Oct, Ben's Build B report) A live workout: the last sessions of the exercises in play (the one
    * he's on, the ones he named), as `get_recent_training` reads them. The coach then has his recent
@@ -229,6 +231,14 @@ export interface WeekContextView {
   suggestion: { merges: { dayIds: string[]; name: string }[] } | null;
   /** A change Ben applied this week (`This week: Push (Chest + Shoulders)`), else null. */
   applied: string | null;
+}
+
+/** ADR 0039: a Your workout draft before Start as the coach sees it: `Bench press: 4 × 6–8 @ 80 kg`. */
+export interface BuilderDraftView {
+  name: string;
+  aboutMinutes: number;
+  exercises: string[];
+  started: false;
 }
 
 /** The plan in use as `pause_plan` reads it (Your data). `inUse: null`: no plan is in use. */
@@ -465,6 +475,8 @@ export interface YourData {
   plan?: PlanPauseView;
   /** (Ben, 20 Oct) General turns: this week, his activities and the days left. */
   week?: WeekContextView;
+  /** ADR 0039: a Your workout draft before Start (Today's, or the builder sheet's). */
+  builderDraft?: BuilderDraftView;
   /** (21 Oct) Live workouts: the last sessions of the exercises in play. */
   recentLifts?: RecentLiftView[];
   /** (Ben, 27 Oct, Q4) The watch workout linked to this workout (Apple Health). */
@@ -609,6 +621,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.addable === undefined ? {} : { addable: input.addable.map((a) => ({ ...a })) }),
     ...(input.training === undefined ? {} : { training: trainingDetailsView(input.training).view }),
     ...(input.week === undefined ? {} : { week: JSON.parse(JSON.stringify(input.week)) as WeekContextView }),
+    ...(input.builderDraft === undefined ? {} : { builderDraft: { name: input.builderDraft.name, aboutMinutes: input.builderDraft.aboutMinutes, exercises: [...input.builderDraft.exercises], started: false as const } }),
     ...(input.recentLifts === undefined || input.recentLifts.length === 0 ? {} : { recentLifts: recentLiftsView(input.recentLifts) }),
     ...(input.linkedActivity === undefined ? {} : { linkedActivity: { ...input.linkedActivity } }),
     ...(input.lastDays === undefined ? {} : { lastDays: JSON.parse(JSON.stringify(input.lastDays)) as LastDaysView }),
@@ -752,6 +765,7 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
     const o = y.openedFrom;
     yourData.push({ label: 'Opened from', detail: o.screen === 'finished_workout' ? `${o.title} · ${o.date}` : o.screen === 'progress' ? `Progress · ${o.window.label ?? `last ${String(o.window.days)} days`}` : `Progress · ${o.exercise} · ${o.series}` });
   }
+  if (y.builderDraft !== undefined) yourData.push({ label: 'Your workout', detail: `${y.builderDraft.name} · ${plural(y.builderDraft.exercises.length, 'exercise')} · not started` });
   if (y.build !== undefined) {
     const b = y.build;
     yourData.push({ label: 'Your request', detail: `“${b.request.quote.slice(0, 80)}”` });

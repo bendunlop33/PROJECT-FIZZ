@@ -203,6 +203,10 @@ export interface CoachTurnRequest {
   week?: boolean;
   /** ADR 0039: a plan is in use (`pause_plan`), from any chat. */
   planInUse?: boolean;
+  /** ADR 0039: a Your workout draft (not started) is in context (`propose_workout_edit`), from any chat. */
+  builderDraft?: boolean;
+  /** ADR 0039: today's Set up can be filled (`fill_setup`): no live workout. */
+  setupOpen?: boolean;
   /**
    * ADR 0038: the session a new thread belongs to. Absent: the workout in context. `null`: a general thread (Today,
    * Progress, Plan) with today's live workout in its context stays general.
@@ -291,6 +295,10 @@ export interface GateInput {
   week?: boolean;
   /** ADR 0039: a plan is in use (`pause_plan`). */
   planInUse?: boolean;
+  /** ADR 0039: a Your workout draft is in context (`propose_workout_edit`). */
+  builderDraft?: boolean;
+  /** ADR 0039: today's Set up can be filled (`fill_setup`). */
+  setupOpen?: boolean;
   /** ADR 0039: the turn starts light (low effort, Ben's lighter mid-workout model): `think_harder` buys one deeper step. */
   lightTurn?: boolean;
 }
@@ -354,6 +362,8 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     ...(gymWords ? { gymWords: true } : {}),
     ...(g.week === true && chat ? { week: true } : {}),
     ...(g.planInUse === true && chat ? { planInUse: true } : {}),
+    ...(g.builderDraft === true && chat ? { builderDraft: true } : {}),
+    ...(g.setupOpen === true && chat && !live ? { setupOpen: true } : {}),
     ...(g.lightTurn === true && chat ? { lightTurn: true } : {}),
   };
 }
@@ -487,6 +497,13 @@ export const COACH_INSTRUCTIONS = [
 /** ADR 0039 (Ben, 29 Oct): sent when `propose_week` is offered (every chat with a week). */
 export const WEEK_TOOL_LINE =
   'This week is in YOUR DATA week (remaining: the days left, in order; done: the days done). When Ben asks to rest today, skip, merge or spread out this week’s days ("make today a rest day and don’t cram the rest of the week"), call propose_week in this turn with benAsked true: it applies at once with Undo. As your own idea, benAsked false: he sees a proposal to apply.';
+
+/** ADR 0039: sent when `propose_workout_edit` is offered (a Your workout draft in context, not started). */
+export const DRAFT_EDIT_LINE =
+  'YOUR DATA builderDraft is his workout for today, not started yet. For any change to it he asks for, call propose_workout_edit in this turn (the app makes the change from his words and he applies or skips it). edit_today is only for a live workout.';
+
+/** ADR 0039: sent when `fill_setup` is offered (no live workout). */
+export const FILL_SETUP_LINE = 'When Ben names today’s workout by a day, a length or a main lift ("legs, 45 min"), call fill_setup: Set up is filled from his words and he opens it to build.';
 
 /**
  * (19 Oct, Ben: "Why can't I add it") Sent when `find_exercises` is offered: the lists in YOUR DATA
@@ -817,6 +834,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     ...(planFollowUp ? { planFollowUp: true } : {}),
     ...(req.week === true ? { week: true } : {}),
     ...(req.planInUse === true ? { planInUse: true } : {}),
+    ...(req.builderDraft === true ? { builderDraft: true } : {}),
+    ...(req.setupOpen === true ? { setupOpen: true } : {}),
     // Mid-workout on the workout's own sheet the turn starts light (low effort, his lighter model if chosen).
     ...(liveWorkout ? { lightTurn: true } : {}),
   });
@@ -928,7 +947,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
   const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
   const findLine = (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
-  const weekLine = registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '';
+  const weekLine = (registry.tools.some((t) => t.name === 'propose_week') ? `\n${WEEK_TOOL_LINE}` : '') + (registry.tools.some((t) => t.name === 'propose_workout_edit') ? `\n${DRAFT_EDIT_LINE}` : '') + (registry.tools.some((t) => t.name === 'fill_setup') ? `\n${FILL_SETUP_LINE}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine + weekLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);

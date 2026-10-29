@@ -12,7 +12,7 @@ describe('migration 32 (session feel)', () => {
     await at31.repos.profiles.save(profile(), null);
     await at31.repos.sessions.save(richFinishedSession(), null);
     const before = await at31.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toMatchObject({ from: 31, applied: [32, 33, 34, 35, 36, 37, 38] });
+    expect(await migrate(db)).toMatchObject({ from: 31, applied: [32, 33, 34, 35, 36, 37, 38, 39] });
     const at32 = await openStore(db);
     const after = await at32.db.read((q) => exportTables(q));
     expect(after.sessions).toEqual((before.sessions ?? []).map((r) => ({ ...r, feel: null, deload: null, past_log: null })));

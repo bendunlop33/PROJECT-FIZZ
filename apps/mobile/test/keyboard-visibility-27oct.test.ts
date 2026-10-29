@@ -150,7 +150,8 @@ describe('every text field is in a keyboard-aware frame', () => {
 });
 
 describe('the coach sheets: the composer sits on the keyboard, the latest message stays in view', () => {
-  for (const f of [['screens', 'coach', 'CoachSheetScreen.tsx'], ['screens', 'coach', 'BuilderCoachSheet.tsx']]) {
+  // ADR 0039: Your workout's bar opens the same sheet (BuilderCoachSheet is gone).
+  for (const f of [['screens', 'coach', 'CoachSheetScreen.tsx']]) {
     const s = read(...f);
     const name = f.join('/');
     it(name, () => {
@@ -167,9 +168,6 @@ describe('the coach sheets: the composer sits on the keyboard, the latest messag
       expect(s.slice(frame, end)).not.toContain('automaticallyAdjustKeyboardInsets');
     });
   }
-  it('the builder sheet keeps its last turn in view when the keyboard shrinks the list', () => {
-    expect(read('screens', 'coach', 'BuilderCoachSheet.tsx')).toContain('onLayout={() => scroll.current?.scrollToEnd({ animated: false })}');
-  });
   it('the coach sheet follows the end on a resize while Ben is there', () => {
     const s = read('screens', 'coach', 'CoachSheetScreen.tsx').replace(/\s+/g, ' ');
     expect(s).toContain('onLayout={(e) => { transcript.current.viewportHeight = e.nativeEvent.layout.height; follow(); }}');
