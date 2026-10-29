@@ -48,15 +48,16 @@ describe('Ben asks to pause or resume his plan', () => {
     expect(asksToPausePlan(text)).toBe(false);
   });
 
-  it('opens pause_plan only (never a build or today’s sets)', () => {
+  it('ADR 0039: offered from every chat whenever a plan is in use (his words decide only whether it applies); never without a plan', () => {
     const r = classifyBenRequest("I'm on holiday till 3 Nov", 'general');
     expect(requestHas(r, 'plan_pause')).toBe(true);
-    const reg = buildTurnRegistry({ kind: 'general', benRequest: r, acceptedOffer: false, benPainWords: false, structuralSignals: [] });
+    const reg = buildTurnRegistry({ kind: 'general', benRequest: r, acceptedOffer: false, benPainWords: false, structuralSignals: [], planInUse: true });
     expect(reg.tools.map((t) => t.name)).toContain('pause_plan');
     expect(reg.tools.map((t) => t.name)).not.toContain('propose_plan');
-    const other = buildTurnRegistry({ kind: 'general', benRequest: classifyBenRequest('Build me a 4-day plan', 'general'), acceptedOffer: false, benPainWords: false, structuralSignals: [] });
-    expect(other.tools.map((t) => t.name)).not.toContain('pause_plan');
-    expect(other.withheld).toContainEqual({ name: 'pause_plan', reason: 'needs_request' });
+    const workout = buildTurnRegistry({ kind: 'workout', benRequest: null, acceptedOffer: false, benPainWords: false, structuralSignals: [], planInUse: true });
+    expect(workout.tools.map((t) => t.name)).toContain('pause_plan');
+    const none = buildTurnRegistry({ kind: 'general', benRequest: r, acceptedOffer: false, benPainWords: false, structuralSignals: [] });
+    expect(none.withheld).toContainEqual({ name: 'pause_plan', reason: 'no_target' });
   });
 });
 

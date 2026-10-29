@@ -36,6 +36,13 @@ export interface ToolDeclaration {
 }
 
 const ALL: readonly CoachTurnKind[] = ['general', 'workout', 'summary'];
+/**
+ * ADR 0039 (Ben, 29 Oct: "broader and more homogenous edit rights"): every chat (Today, Plan, Progress, a
+ * workout's sheet, a Summary's thread, the builder's sheet) is a `general` or `workout` turn, and both get the
+ * same tools. The entry point decides what the coach sees first, never what it can do. Only the post-workout
+ * review (`summary`, an input, not a chat) keeps its closed list.
+ */
+const CHAT: readonly CoachTurnKind[] = ['general', 'workout'];
 
 export const COACH_TOOLS: readonly ToolDeclaration[] = [
   {
@@ -116,7 +123,8 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: [],
     needs: 'none',
     structural: false,
-    turnKinds: ['workout'],
+    // ADR 0039: offered whenever the turn starts light (`lightTurn`: low effort, his lighter model), whatever the entry.
+    turnKinds: CHAT,
     plainLabel: null,
     capabilitySection: 'read',
     description:
@@ -151,7 +159,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: [],
     needs: 'none',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: null,
     capabilitySection: 'read',
     description:
@@ -164,7 +172,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['custom_exercise'],
     needs: 'none',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: 'Suggest a new exercise for your list (added only if you tap Add)',
     capabilitySection: 'suggest_only',
     description:
@@ -178,7 +186,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['gym_equipment'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: 'Update what a gym has (when you say so, with Undo; otherwise as a suggestion you apply)',
     capabilitySection: 'when_you_ask',
     description:
@@ -206,7 +214,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     needs: 'ben_request',
     structural: false,
     // ADR 0038: from every entry point while the workout is live (Today, Progress and Plan open a general turn).
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: "Change today's workout (exercises, sets and targets), with Undo",
     capabilitySection: 'when_you_ask',
     description:
@@ -220,7 +228,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['session_name'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: "Rename today's workout, with Undo",
     capabilitySection: 'when_you_ask',
     description: "Rename today's live workout to the name Ben asked for (baseVersion from the workout). Today's workout only: the routine it came from keeps its name. benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer.",
@@ -231,7 +239,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['logged_set'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['workout'],
+    turnKinds: CHAT,
     plainLabel: 'Log a set you tell it ("log 100 for 8"), with Undo',
     capabilitySection: 'when_you_ask',
     description:
@@ -243,7 +251,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['logged_set'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['workout'],
+    turnKinds: CHAT,
     plainLabel: 'Correct a logged set you name ("set 2 was 95"), with Undo',
     capabilitySection: 'when_you_ask',
     description: 'Correct the weight, reps or effort of a logged set Ben named, with the numbers he said (null keeps a value); rpe is RPE (if he gives reps in reserve, rpe = 10 − RIR). Never marks, deletes or changes set types.',
@@ -277,7 +285,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['pain_flag'],
     needs: 'ben_pain_words',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: 'Turn a pain flag on',
     capabilitySection: 'when_you_ask',
     description: "Turn on a pain flag for movements Ben says hurt in this message. Stops increases for them. Never diagnoses, and can't clear a flag.",
@@ -288,7 +296,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['memory'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: 'Save a memory',
     capabilitySection: 'when_you_ask',
     description: 'Save a short personal fact Ben asked you to remember. Not for general training rules.',
@@ -299,7 +307,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['memory'],
     needs: 'none',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: 'Suggest something to remember (saved only if you tap Save)',
     capabilitySection: 'suggest_only',
     description:
@@ -311,7 +319,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['memory'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: 'Forget a memory',
     capabilitySection: 'when_you_ask',
     description: 'Forget a saved memory Ben asked you to forget. It can be undone.',
@@ -323,7 +331,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['workout_draft'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['general'],
+    turnKinds: CHAT,
     plainLabel: 'Build a workout you ask for, as a draft you open, start or save',
     capabilitySection: 'when_you_ask',
     description:
@@ -336,25 +344,26 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['build_question'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['general'],
+    turnKinds: CHAT,
     plainLabel: 'Ask one quick question before building a workout, when it helps',
     capabilitySection: 'when_you_ask',
     description:
       'Before building, ask Ben one short question (at most 80 characters) with 2 to 4 short tap answers (at most 24 characters each), only when the answer changes the workout and is not already in YOUR DATA (training, build.known). Never ask about the session length, his goal, pain, injury or anything medical. topic main_lift: each answer carries a catalogueId from build.usable. Do not ask if you can build a good workout with what you have. Ben can skip it.',
   },
   {
-    // (Ben, 20 Oct: "should also be able to pause eg if go on hols") Opens only on Ben's own pause or resume words
-    // (`plan_pause`), so it is always his request: it applies at once with Undo (rule 3).
+    // (Ben, 20 Oct: "should also be able to pause eg if go on hols") ADR 0039: offered whenever a plan is in use
+    // (`planInUse`); applies at once with Undo when Ben asked (the turn's `verifyAsked`), else nothing is written and
+    // the coach asks him (rule 3).
     name: 'pause_plan',
     effect: 'versioned_update',
     writes: ['plan_pause'],
-    needs: 'ben_request',
+    needs: 'none',
     structural: false,
-    turnKinds: ['general'],
+    turnKinds: CHAT,
     plainLabel: 'Pause your plan (e.g. on holiday) or resume it, with Undo',
     capabilitySection: 'when_you_ask',
     description:
-      "Pause the plan in use (YOUR DATA plan.inUse) when Ben asks, e.g. \"I'm on holiday till 3 Nov\", or resume it (\"I'm back, resume my plan\"). action: pause or resume. until: the local date (YYYY-MM-DD) the plan is back in use on, from his words and today's date; null when he gave none (paused until he resumes). While paused, Up next follows his other workouts and paused days don't count against his weekly aim. The plan's days don't change. Applies at once with Undo.",
+      "Pause the plan in use (YOUR DATA plan.inUse) when Ben asks, e.g. \"I'm on holiday till 3 Nov\", or resume it (\"I'm back, resume my plan\"). action: pause or resume. until: the local date (YYYY-MM-DD) the plan is back in use on, from his words and today's date; null when he gave none (paused until he resumes). While paused, Up next follows his other workouts and paused days don't count against his weekly aim. The plan's days don't change. Applies at once with Undo when Ben asked. benAsked: true when his message this turn asks to pause or resume, with benQuote his words; false when it is your own idea (nothing changes; ask him).",
   },
   {
     // (Ben, 20 Oct) A run, ride, swim or sport Ben mentions. Offered on every general turn: when his own words tell the
@@ -365,26 +374,27 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['activity'],
     needs: 'none',
     structural: false,
-    turnKinds: ['general'],
+    turnKinds: CHAT,
     plainLabel: 'Log a run, ride, swim or sport you tell it about, with Undo',
     capabilitySection: 'when_you_ask',
     description:
       'Log a run, ride, swim, sport or other activity Ben tells you about, done or planned ("18 km run yesterday", "long run Saturday"). kind, status (done or planned), date (local YYYY-MM-DD from his words and YOUR DATA week.today), durationMin and distanceKm only as he said them (null when he didn’t), effort only from his own word (long for a long session; null otherwise). Never invent pace, heart rate or effort. Runs are not gym days.',
   },
   {
-    // (Ben, 20 Oct: "maybe we swap to a push rather than shoulder and chest separately") This week only, always a
-    // proposal Ben applies (rule 3). Opens when he asks to shape the week, or when code sees more days left this week
-    // than gym days (`weekOpen`: a planned run, a busy week).
+    // (Ben, 20 Oct: "maybe we swap to a push rather than shoulder and chest separately") This week only.
+    // ADR 0039 (Ben, 29 Oct): offered from every chat whenever this week has days (`week`). When Ben asked (the turn's
+    // `verifyAsked` on his words) it applies at once with Undo on the card, like a change to today; the coach's own
+    // idea stays a proposal he applies (rule 3). Not CC10's structural kind: next week is his plan as it was.
     name: 'propose_week',
     effect: 'propose',
     writes: ['week_plan'],
-    needs: 'structural_signal',
-    structural: true,
-    turnKinds: ['general'],
-    plainLabel: 'Suggest merging or skipping this week’s days around a run, for you to apply',
-    capabilitySection: 'suggest_only',
+    needs: 'none',
+    structural: false,
+    turnKinds: CHAT,
+    plainLabel: 'Reshape this week (rest a day, skip or merge days), with Undo',
+    capabilitySection: 'when_you_ask',
     description:
-      'Suggest this week’s shape when YOUR DATA week shows more days left (week.remaining) than gym days (week.gymDaysLeft), e.g. around a long run, or when Ben asks ("plan my week around it"). merges: two remaining upper day IDs into one day (Chest + Shoulders → Push; a leg day is never merged; the app names the merged day); skips: day IDs to leave out this week. week.suggestion is code’s idea. This week only: next week is his plan as it was. Ben applies it; say "Want me to …?", never that it changed.',
+      'Reshape this week’s remaining days (YOUR DATA week.remaining, in order; the first is usually today’s) when Ben asks ("make today a rest day", "skip legs this week", "don’t cram the rest of the week", "plan my week around my run"), or suggest it when YOUR DATA week shows more days left than gym days (week.gymDaysLeft). skips: day IDs to leave out this week (a rest day today: skip today’s day; not cramming: skip or merge so the days left fit the days he has); merges: two remaining upper day IDs into one day (Chest + Shoulders → Push; a leg day is never merged; the app names it). week.suggestion is code’s idea. This week only: next week is his plan as it was. benAsked: true when Ben’s message this turn asks for a change to this week, with benQuote his words: it applies at once with Undo; false when it is your own idea: he sees a proposal to apply, so say "Want me to …?", never that it changed.',
   },
   {
     // (19 Oct, Ben: "Can it build plans across multiple days as well not just single workouts?") Every day at once, as a
@@ -395,7 +405,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     needs: 'ben_request',
     // Not CC10's signal-gated kind: it opens only on Ben's own plan request, and Apply is always his tap.
     structural: false,
-    turnKinds: ['general'],
+    turnKinds: CHAT,
     plainLabel: 'Build a multi-day plan you ask for, as a proposal you apply or undo',
     capabilitySection: 'when_you_ask',
     description:
@@ -409,7 +419,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['lift_target'],
     needs: 'none',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: 'Set a lift target you ask for, with Undo',
     capabilitySection: 'when_you_ask',
     description:
@@ -423,7 +433,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     writes: ['playbook_candidate'],
     needs: 'ben_request',
     structural: false,
-    turnKinds: ['general', 'workout'],
+    turnKinds: CHAT,
     plainLabel: 'Add a general training rule to your playbook to review',
     capabilitySection: 'when_you_ask',
     description: "Add a general training rule (not a personal fact) to the playbook for Ben to review. It isn't used until he approves it.",
@@ -528,12 +538,37 @@ export interface TurnGate {
   gymWords?: boolean;
   /** (Ben, 20 Oct) The Lift targets setting is on. Absent or false: `set_lift_target` is withheld. */
   liftTargetsOn?: boolean;
-  /**
-   * (Ben, 20 Oct) Code sees more days left this week than gym days (a planned long run, a busy week):
-   * `propose_week` is offered so the coach can suggest a reshape. It is always a proposal Ben applies.
-   */
-  weekOpen?: boolean;
+  /** ADR 0039: this week has days (a plan in use, or Ben's split) and its tool is wired: `propose_week`. */
+  week?: boolean;
+  /** ADR 0039: a plan is in use (paused or not): `pause_plan`. */
+  planInUse?: boolean;
+  /** ADR 0039: the turn starts light (low effort, Ben's lighter mid-workout model): `think_harder` buys one deeper step. */
+  lightTurn?: boolean;
 }
+
+/**
+ * ADR 0039: what each tool acts on. A tool is offered only while its target exists, whatever the entry point
+ * (no live workout: nothing to edit today; no plan: nothing to pause). Tools not listed act on something that is
+ * always there (Ben's memories, his gyms, his history) or are opened by his words alone (`needMet`).
+ */
+export type ToolTarget = 'liveWorkout' | 'week' | 'planInUse' | 'lightTurn' | 'liftTargetsOn';
+
+export const TOOL_TARGET: Partial<Record<CoachToolName, ToolTarget>> = {
+  edit_today: 'liveWorkout',
+  rename_workout: 'liveWorkout',
+  log_set: 'liveWorkout',
+  correct_set: 'liveWorkout',
+  propose_week: 'week',
+  pause_plan: 'planInUse',
+  think_harder: 'lightTurn',
+  set_lift_target: 'liftTargetsOn',
+};
+
+/**
+ * ADR 0039: tools offered whenever their target exists, whose call applies at once only when Ben asked (the turn's
+ * `verifyAsked` on his words this turn); otherwise the turn makes it an offer or a proposal (rule 3).
+ */
+export const ASK_CHECKED_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['edit_today', 'rename_workout', 'propose_week', 'pause_plan']);
 
 /**
  * (14 Oct) Tools that change today's live workout and are offered on every live-workout turn: the
@@ -545,7 +580,7 @@ export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['
 export interface WithheldTool {
   name: CoachToolName;
   /** For `Why?` → `Not used`. */
-  reason: 'turn_kind' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build' | 'setting_off';
+  reason: 'turn_kind' | 'no_target' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build' | 'setting_off';
 }
 
 export interface TurnRegistry {
@@ -593,10 +628,8 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   ask_build_question: ['build', 'build_plan'],
   // (19 Oct) A plan of several days ("build me a 4-day plan", "PPL week"), or a change to the plan in context.
   propose_plan: ['build_plan'],
-  // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan".
-  pause_plan: ['plan_pause'],
-  // (Ben, 20 Oct) "Plan my week around it", "rejig the week": a proposal for this week only.
-  propose_week: ['week_plan'],
+  // ADR 0039: `pause_plan` and `propose_week` are offered whenever their target exists (`TOOL_TARGET`); Ben's words
+  // decide only whether a call applies at once (`ASK_CHECKED_TOOLS`).
 };
 
 function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {
@@ -612,7 +645,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
       if (t.name === 'ask_build_question') return requestOpens(t, g.benRequest) && g.buildQuestionOpen === true ? null : 'needs_request';
       if (t.name === 'update_gym') return g.gymWords === true ? null : 'needs_request';
       if (requestOpens(t, g.benRequest)) return null;
-      if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
+      if (t.name === 'propose_workout' && g.kind !== 'summary' && g.buildOpen === true) return null;
       // ADR 0038: from any entry point while today's workout is live (the workout's sheet, Today, Progress, Plan).
       if (TODAY_TOOLS.has(t.name) && g.kind !== 'summary' && g.liveWorkout === true) return null;
       // An accepted offer only counts for today's sets (CA1).
@@ -624,9 +657,6 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'summary_turn':
       return g.kind === 'summary' ? null : 'needs_summary_turn';
     case 'structural_signal':
-      // (Ben, 20 Oct) This week's shape: Ben asks ("plan my week around it", a structural ask), or code sees more
-      // days left than gym days (`weekOpen`). Other signals (a pain flag) are about the next workout, not the week.
-      if (t.name === 'propose_week') return requestOpens(t, g.benRequest) || isStructuralRequest(g.benRequest) || g.weekOpen === true ? null : 'needs_request_or_signal';
       return isStructuralRequest(g.benRequest) || requestOpens(t, g.benRequest) || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
   }
 }
@@ -640,13 +670,12 @@ export function buildTurnRegistry(gate: TurnGate, tools: readonly ToolDeclaratio
       withheld.push({ name: t.name, reason: 'turn_kind' });
       continue;
     }
-    // ADR 0038: a general turn (Today, Progress, Plan) gets today's tools only while a workout is live.
-    if (TODAY_TOOLS.has(t.name) && gate.kind === 'general' && gate.liveWorkout !== true) {
-      withheld.push({ name: t.name, reason: 'turn_kind' });
-      continue;
-    }
-    if (t.name === 'set_lift_target' && gate.liftTargetsOn !== true) {
-      withheld.push({ name: t.name, reason: 'setting_off' });
+    // ADR 0039: offered only while what it acts on exists, the same from every entry point.
+    const target = TOOL_TARGET[t.name];
+    // A workout turn is the live workout's own sheet (`kindFor`): its target is there by definition.
+    const present = target === 'liveWorkout' ? gate.liveWorkout === true || gate.kind === 'workout' : target !== undefined && gate[target] === true;
+    if (target !== undefined && !present) {
+      withheld.push({ name: t.name, reason: target === 'liftTargetsOn' ? 'setting_off' : 'no_target' });
       continue;
     }
     const missing = needMet(t, gate);

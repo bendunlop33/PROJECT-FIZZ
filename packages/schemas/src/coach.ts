@@ -231,6 +231,8 @@ export const PausePlanArgsSchema = z.strictObject({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .nullable(),
   reason,
+  /** ADR 0039: offered from every chat while a plan is in use; it applies only when Ben asked (code checks the claim). */
+  ...askClaim,
 });
 export type PausePlanArgs = z.infer<typeof PausePlanArgsSchema>;
 
@@ -258,8 +260,9 @@ export type LogActivityArgs = z.infer<typeof LogActivityArgsSchema>;
 /**
  * (Ben, 20 Oct: "maybe we swap to a push rather than shoulder and chest separately") This week only:
  * merge two of the week's remaining days into one ("Chest" + "Shoulders" → "Push") and/or skip one,
- * so the week fits around a run. Day IDs are YOUR DATA week.remaining[].id. Always a proposal: Ben
- * taps Apply (rule 3); next week is the plan as it was.
+ * so the week fits around a run. Day IDs are YOUR DATA week.remaining[].id. ADR 0039 (Ben, 29 Oct): when
+ * Ben asked, it applies at once with Undo; the coach's own idea is a proposal he applies (rule 3). Next week
+ * is the plan as it was.
  */
 export const ProposeWeekArgsSchema = z.strictObject({
   merges: z
@@ -267,6 +270,8 @@ export const ProposeWeekArgsSchema = z.strictObject({
     .max(3),
   skips: z.array(z.string().min(1).max(64)).max(3),
   message: z.string().max(400),
+  /** ADR 0039: Ben asked for this change to his week (checked by code): it applies at once with Undo; else a proposal. */
+  ...askClaim,
 });
 export type ProposeWeekArgs = z.infer<typeof ProposeWeekArgsSchema>;
 
@@ -1090,6 +1095,11 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     before: z.array(WeekRowSchema).max(7),
     after: z.array(WeekRowSchema).max(7),
     factsKey: z.string().min(1).max(256),
+    /**
+     * ADR 0039 (Ben, 29 Oct): Ben asked for this change, so the app applied it at once (its Undo is on the card, a
+     * `week_plans` write like his own Apply). Absent on proposals made before and on the coach's own ideas.
+     */
+    atOnce: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal('undo'),

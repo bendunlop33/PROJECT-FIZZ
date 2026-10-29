@@ -20,6 +20,7 @@ import {
   type BenRequest,
   type ToolDeclaration,
   type TurnGate,
+  TOOL_TARGET,
 } from '../src/index';
 import { id } from './records';
 
@@ -85,12 +86,15 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
       if (t.writes.includes('lift_target')) expect([t.name, t.writes]).toEqual(['set_lift_target', ['lift_target']]);
       // (14 Oct) The live workout's name: only rename_workout, gated, only on the live workout (ADR 0038: from any entry; `buildTurnRegistry` withholds it with no live workout).
       if (t.writes.includes('session_name')) expect([t.name, t.needs, t.turnKinds]).toEqual(['rename_workout', 'ben_request', ['general', 'workout']]);
-      // (Ben, 20 Oct) The plan's pause: only pause_plan, on Ben's own pause words, in a general turn.
-      if (t.writes.includes('plan_pause')) expect([t.name, t.needs, t.turnKinds]).toEqual(['pause_plan', 'ben_request', ['general']]);
+      // (Ben, 20 Oct) The plan's pause: only pause_plan. ADR 0039: from every chat while a plan is in use (`TOOL_TARGET`);
+      // the turn applies it only when Ben asked.
+      if (t.writes.includes('plan_pause')) expect([t.name, t.needs, t.turnKinds, TOOL_TARGET[t.name]]).toEqual(['pause_plan', 'none', ['general', 'workout'], 'planInUse']);
       if (t.writes.includes('logged_set')) {
         expect(['log_set', 'correct_set']).toContain(t.name);
         expect(t.needs).toBe('ben_request');
-        expect(t.turnKinds).toEqual(['workout']);
+        // ADR 0039: from every chat, only while a workout is live.
+        expect(t.turnKinds).toEqual(['general', 'workout']);
+        expect(TOOL_TARGET[t.name]).toBe('liveWorkout');
       }
       // (12 Oct) An exercise added to today's workout: only on Ben's request, only on the live workout (Coach v3: edit_today; ADR 0038: from any entry).
       if (t.writes.includes('session_exercise')) {
@@ -184,8 +188,9 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
   it('a remark during a workout opens no write tool, so the coach can only offer (rule 3, review r2 B2)', () => {
     for (const remark of ['set 2 felt good', 'Set 3 was fine', 'Plan looks good', 'Remember when I did 100 for 8?']) {
       const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(remark) }));
-      // A memory suggestion is only a card with Save (CM2), a new exercise only a card with Add (19 Oct); nothing else that writes is offered.
-      expect(r.tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory' && t.name !== 'propose_exercise').map((t) => t.name)).toEqual([]);
+      // A memory suggestion is only a card with Save (CM2), a new exercise only a card with Add (19 Oct), an activity he
+      // didn't tell it about only a card with Log (ADR 0039: every chat); nothing else that writes is offered.
+      expect(r.tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory' && t.name !== 'propose_exercise' && t.name !== 'log_activity').map((t) => t.name)).toEqual([]);
       expect(r.withheld).toContainEqual({ name: 'edit_today', reason: 'needs_request' });
     }
     expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('remember that I train before work') }))).not.toContain('edit_today');
@@ -425,6 +430,7 @@ describe('listCoachCapabilities (check 11)', () => {
               "Ask one quick question before building a workout, when it helps",
               "Pause your plan (e.g. on holiday) or resume it, with Undo",
               "Log a run, ride, swim or sport you tell it about, with Undo",
+              "Reshape this week (rest a day, skip or merge days), with Undo",
               "Build a multi-day plan you ask for, as a proposal you apply or undo",
               "Set a lift target you ask for, with Undo",
               "Add a general training rule to your playbook to review",
@@ -444,7 +450,6 @@ describe('listCoachCapabilities (check 11)', () => {
               "Suggest a new exercise for your list (added only if you tap Add)",
               "Swapping, adding, removing or reordering exercises in your next workout",
               "Suggest something to remember (saved only if you tap Save)",
-              "Suggest merging or skipping this week’s days around a run, for you to apply",
             ],
             "section": "suggest_only",
             "title": "Only as a suggestion you apply",

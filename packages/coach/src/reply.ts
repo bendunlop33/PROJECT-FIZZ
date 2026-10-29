@@ -181,6 +181,27 @@ export function claimsNoTodayTool(sentence: string): boolean {
   return NO_TODAY_TOOL.test(t) || CANT_DO_HERE.test(t) || DO_IT_YOURSELF_TODAY.test(t);
 }
 
+/** `Why?` → `Not shown` for a sentence saying the coach can't change this week (ADR 0039). */
+export const NO_WEEK_TOOL_DETAIL = 'The coach can change this week.';
+
+/** Shown once in place of a hidden "no week tool" sentence (ADR 0039). */
+export const WEEK_ASK_LINE = 'Want me to change this week?';
+
+const WEEK_WORDS = /\b(?:week|weekly|weeks|plan|planning|schedule|rest day|days|sessions|workouts)\b/;
+const NOT_AVAILABLE_HERE = /\b(?:not|isn't|is not|aren't|are not)\b[^.?!]{0,20}\bavailable\b[^.?!]{0,20}\b(?:here|in this chat|from this chat|in this thread)\b/;
+const IN_THIS_CHAT = /\b(?:in|from) this (?:chat|thread)\b/;
+
+/**
+ * ADR 0039: "I don't have a weekly-plan editing tool available in this chat", "I can't change your plan here":
+ * false wherever `propose_week` is offered (every chat with a week). Only about his week or plan: a true limit
+ * ("multi-week blocks aren't available yet") names no chat and no missing tool, and is kept.
+ */
+export function claimsNoWeekTool(sentence: string): boolean {
+  const t = sentence.toLowerCase().replace(/[‘’]/g, "'");
+  if (!WEEK_WORDS.test(t) || /\bmulti-?week\b|\bblocks?\b|\bdeloads?\b/.test(t)) return false;
+  return claimsNoTodayTool(t) || NOT_AVAILABLE_HERE.test(t) || (IN_THIS_CHAT.test(t) && new RegExp(NO_TOOL_LEAD).test(t));
+}
+
 /** `Why?` → `Not shown` for a sentence saying a change failed when nothing this turn says so (21 Oct). */
 export const FAILURE_CLAIM_DETAIL = 'It said a change didn’t go through; no tool result this turn says so.';
 
@@ -262,6 +283,12 @@ export interface ReplyFilterOptions {
   /** Review S3: the today-tools were offered (a live workout). A "no tool" sentence is then false (`claimsNoTodayTool`). */
   todayToolsOffered?: boolean;
   /**
+   * ADR 0039 (Ben, 29 Oct: "I don't have a weekly-plan editing tool available in this chat"): `propose_week` was
+   * offered. A sentence saying the coach can't change his week or plan here (`claimsNoWeekTool`) is then false: hidden,
+   * and `WEEK_ASK_LINE` shown once in its place.
+   */
+  weekToolOffered?: boolean;
+  /**
    * Coach v3 (ADR 0027): the numbers the coach was given (context, tool outputs, Ben's words),
    * read again for every sentence. A sentence with a number not among them (or in this turn's
    * cards) is hidden (`unverified_number`). Absent: numbers aren't checked.
@@ -281,6 +308,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
   const said: string[] = [];
   let askLineShown = false;
   let noTodayToolHidden = false;
+  let weekAskShown = false;
   const todayKinds = new Set(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout']);
 
   const process = (sentence: string): ReplyItem[] => {
@@ -303,6 +331,15 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_BUILD_TOOL_DETAIL });
       if (!askLineShown) out.push({ kind: 'sentence', text: toolOffered ? BUILD_OFFER_LINE : BUILD_ASK_LINE });
       askLineShown = true;
+      for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
+      return out;
+    }
+    // ADR 0039: the week tool is in every chat with a week; "not in this chat" is false.
+    if (options.weekToolOffered === true && claimsNoWeekTool(tokens.plainText)) {
+      hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_WEEK_TOOL_DETAIL });
+      const changed = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'propose_week');
+      if (!changed && !weekAskShown) out.push({ kind: 'sentence', text: WEEK_ASK_LINE });
+      weekAskShown = true;
       for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
       return out;
     }

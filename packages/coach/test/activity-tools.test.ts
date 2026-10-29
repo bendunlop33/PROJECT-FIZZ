@@ -13,6 +13,8 @@ import {
   classifyBenRequest,
   createActivityExecutor,
   createWeekExecutor,
+  WEEK_APPLIED_LINE,
+  weekAtOnceOpId,
   readActivityCall,
   renderActionResult,
   requestHas,
@@ -237,14 +239,31 @@ describe('propose_week: always a proposal', () => {
     expect(bad.kind === 'action' && bad.record.status).toBe('rejected');
   });
 
-  it('opens on Ben’s ask or when code sees more days than gym days; never on a plain question', () => {
+  it('ADR 0039: offered from every chat whenever this week has days, whatever Ben’s words; never without a week or in the post-workout review', () => {
     const gate = { kind: 'general' as const, acceptedOffer: false, benPainWords: false, structuralSignals: [] };
     const has = (g: Parameters<typeof buildTurnRegistry>[0]) => buildTurnRegistry(g).tools.some((t) => t.name === 'propose_week');
-    expect(has({ ...gate, benRequest: classifyBenRequest('plan my week around my long run', 'general') })).toBe(true);
-    expect(has({ ...gate, benRequest: null, weekOpen: true })).toBe(true);
-    expect(has({ ...gate, benRequest: classifyBenRequest('how was my week?', 'general') })).toBe(false);
-    // A pain flag is about the next workout, not the week.
-    expect(has({ ...gate, benRequest: null, structuralSignals: ['pain_flag'] })).toBe(false);
-    expect(has({ ...gate, kind: 'workout', benRequest: null, weekOpen: true })).toBe(false);
+    expect(has({ ...gate, benRequest: classifyBenRequest('plan my week around my long run', 'general'), week: true })).toBe(true);
+    expect(has({ ...gate, benRequest: classifyBenRequest('how was my week?', 'general'), week: true })).toBe(true);
+    expect(has({ ...gate, kind: 'workout', benRequest: null, week: true })).toBe(true);
+    expect(has({ ...gate, benRequest: classifyBenRequest('plan my week around my long run', 'general') })).toBe(false);
+    expect(has({ ...gate, kind: 'summary', benRequest: null, week: true })).toBe(false);
+  });
+
+  it('ADR 0039: Ben asked (no `propose`): saved, then applied at once through `apply`, with the line for the model; his own idea stays a proposal', async () => {
+    const m = memoryStore();
+    const applied: string[] = [];
+    const exec = createWeekExecutor({ store: m.store, week: () => Promise.resolve({ facts, basis: { kind: 'split' }, factsKey: 'k1' }), apply: (id, opId) => { applied.push(`${id}|${opId}`); return Promise.resolve({ ok: true }); } }).propose_week;
+    if (exec === undefined) throw new Error('no executor');
+    const r = await exec({ tool: 'propose_week', args: { merges: [], skips: ['d3'], message: 'Rest.' } }, ctx('skip legs this week'));
+    if (r.kind !== 'action') throw new Error(r.kind);
+    expect(r.record).toMatchObject({ status: 'proposed', detail: { kind: 'propose_week', atOnce: true, skips: [{ dayId: 'd3' }] } });
+    expect(applied).toEqual([`${r.record.actionId}|${weekAtOnceOpId(r.record.actionId)}`]);
+    expect(r.line).toBe(WEEK_APPLIED_LINE);
+    expect(renderActionResult(r.record, 'sheet').text).not.toContain('Not applied');
+    const offer = await exec({ tool: 'propose_week', args: { merges: [], skips: ['d3'], message: 'Rest.' } }, { ...ctx(null, 'call-3'), propose: true });
+    if (offer.kind !== 'action') throw new Error(offer.kind);
+    expect(offer.record.detail).not.toHaveProperty('atOnce');
+    expect(applied).toHaveLength(1);
+    expect(renderActionResult(offer.record, 'sheet').text).toContain('Not applied');
   });
 });

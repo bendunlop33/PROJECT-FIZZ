@@ -524,8 +524,13 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       return make(status, text, speakable(text));
     }
     case 'propose_week': {
-      // (Ben, 20 Oct) This week reshaped around a run: always a proposal Ben applies (the card has the before/after list).
+      // (Ben, 20 Oct) This week reshaped around a run (the card has the before/after list, and Apply or Undo).
       const what = d.after.map((r) => (r.note === null ? r.name : `${r.name} (${r.note})`)).join(', ');
+      // ADR 0039: Ben asked, so it was applied at once; whether it is still in use is the card's (week_plans) to say.
+      if (st === 'proposed' && d.atOnce === true) {
+        const text = `This week: ${what}.`;
+        return make(status, text, speakable(text));
+      }
       if (st === 'proposed') {
         const text = `This week: ${what}. Not applied.`;
         return make(status, text, speakable(text));

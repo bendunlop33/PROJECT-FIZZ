@@ -156,10 +156,10 @@ describe('`propose_workout` in the registry (§8.2)', () => {
   const tools = (kind: 'general' | 'workout' | 'summary', text: string) =>
     buildTurnRegistry({ kind, benRequest: classifyBenRequest(text), acceptedOffer: false, benPainWords: false, structuralSignals: [] }).tools.map((t) => t.name);
 
-  it('is offered only in a general turn when Ben asked for a workout', () => {
+  it('is offered in every chat (ADR 0039) when Ben asked for a workout; never in the post-workout review', () => {
     expect(tools('general', 'build me a push workout')).toContain('propose_workout');
     expect(tools('general', 'how am I doing?')).not.toContain('propose_workout');
-    expect(tools('workout', 'build me a push workout')).not.toContain('propose_workout');
+    expect(tools('workout', 'build me a push workout')).toContain('propose_workout');
     expect(tools('summary', 'build me a push workout')).not.toContain('propose_workout');
   });
 

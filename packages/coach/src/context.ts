@@ -214,6 +214,8 @@ export interface WeekContextView {
   /** `plan` (the plan in use) or `split` (his split days). */
   daysFrom: 'plan' | 'split' | null;
   remaining: { id: string; name: string; bodyParts: string[] }[];
+  /** ADR 0039: this week's days already done (names), so the coach sees the whole week's status. Absent: none. */
+  done?: string[];
   /** `Run · Sat 24 Oct · planned · long`. */
   activities: string[];
   /**

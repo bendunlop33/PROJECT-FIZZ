@@ -213,9 +213,9 @@ describe('build requests in a general turn (diagnosis table)', () => {
     expect(opens(t)).toBe(false);
   });
 
-  it('never in a workout or summary turn (§8.2)', () => {
-    expect(asksForBuild({ turnKind: 'workout', text: 'make me a push session', draftInContext: false, followUp: null })).toBe(false);
-    expect(buildTurnRegistry(gateFor({ kind: 'workout', input: words('make me a push session'), previousOffer: null, structuralSignals: [] })).tools.map((t) => t.name)).not.toContain('propose_workout');
+  it('ADR 0039: a workout’s sheet builds too (the same tools in every chat); never the post-workout review', () => {
+    expect(buildTurnRegistry(gateFor({ kind: 'workout', input: words('make me a push session'), previousOffer: null, structuralSignals: [] })).tools.map((t) => t.name)).toContain('propose_workout');
+    expect(buildTurnRegistry(gateFor({ kind: 'summary', input: words('make me a push session'), previousOffer: null, structuralSignals: [] })).tools.map((t) => t.name)).not.toContain('propose_workout');
   });
 });
 
@@ -743,8 +743,8 @@ describe('review r4: propose_workout offered on every general turn with a gym, f
       expect(forcesBuild(t)).toBe(false);
     },
   );
-  it('not in a workout turn, and not without a gym (buildOpen absent)', () => {
-    expect(offered('make me a push session', 'workout')).toBe(false);
+  it('ADR 0039: in a workout turn too; not without a gym (buildOpen absent)', () => {
+    expect(offered('how is my bench going?', 'workout')).toBe(true);
     expect(opens('how is my bench going?')).toBe(false);
   });
   it('a chip never opens it through buildOpen', () => {
